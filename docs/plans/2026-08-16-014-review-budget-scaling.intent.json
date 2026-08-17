@@ -1,0 +1,67 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "2026-08-16-014-review-budget-scaling",
+  "owner": "user",
+  "goal": "Close the review-contract cutover after task 013 stopped because its review could never complete within the fixed 12-turn budget (3/3 dispatch attempts aborted or truncated on an 11-file, 570KB, 6-acceptance heavy bundle): scale the reserved Review turn budget by workload (quick 12 / standard 16 / heavy 24), carry the outcome-evidence and prompt-division contract, and record all evidence fresh in working phase.",
+  "acceptance": [
+    {
+      "id": "acc-planner-settlement-contract",
+      "assertion": "The packaged planner contract and its source skill entry point require every settlement-class TaskIntent (one touching terminal settlement, cancellation, timeout, race, or authority lifecycle) to embed an explicit enumeration of trigger sources, job states, and the single terminal owner per state, and to list every code path touching the same state machine in scope_hint; a focused contract test proves the requirement text is present and consistent between packaged artifact and source skill.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/planner-settlement-contract.test.ts\",\n    \"plugins/immune-brain/tests/skill-registry-consistency.test.ts\",\n    \"tests/skill-registry-metadata-contract.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 300000,\n  \"max_output_bytes\": 262144\n}\n"
+    },
+    {
+      "id": "acc-pattern-documentation",
+      "assertion": "docs/solutions/contracts.md records the settlement-enumeration pattern together with its origin evidence from the phase-aware Assurance retrospective (five sequential repair tasks for one feature), and the focused contract test asserts the entry exists.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/planner-settlement-contract.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 300000,\n  \"max_output_bytes\": 262144\n}\n"
+    },
+    {
+      "id": "acc-bundle-outcome-evidence",
+      "assertion": "The host-captured immutable review bundle embeds, for every acceptance id, its recorded verification outcome (status passed, failed, or blocked plus the evidence summary bound to the snapshot digest) read from the TaskRecord before dispatch; outcome fields are frozen at capture time with the bundle digest covering them, and a focused test proves the payload carries per-acceptance outcomes and that no live TaskRecord reads occur after capture.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/pi-canary-review-outcome-evidence.test.ts\",\n    \"tests/pi-canary-assurance-progression.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 300000,\n  \"max_output_bytes\": 262144\n}\n"
+    },
+    {
+      "id": "acc-review-prompt-division",
+      "assertion": "The reserved Review prompt states that execution outcomes are deterministic QA-verified authority state embedded in the bundle, and instructs the reviewer to verify bundle provenance and code correctness, regressions, security, and missing tests rather than re-executing descriptors or treating absent local test runs as findings; contract tests assert the division-of-labor text is present in the prompt builder and consistent between source and packaged protocol documentation.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/pi-canary-review-outcome-evidence.test.ts\",\n    \"tests/pi-subagent-dispatch-observability-contract.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 300000,\n  \"max_output_bytes\": 262144\n}\n"
+    },
+    {
+      "id": "acc-settlement-enumeration",
+      "assertion": "The outcome-embedding path is enumerated by trigger (dispatch, capture, settle, crash, shutdown) crossed with state (reserved, captured, dispatched, settling, terminal) with a single artifact owner per state: outcome embedding occurs under the reservation lock before dispatch, never mutates after capture, and capture/cleanup ordering is exercised by focused tests; repeated capture after settlement fails closed.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/pi-canary-review-outcome-evidence.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 300000,\n  \"max_output_bytes\": 262144\n}\n"
+    },
+    {
+      "id": "acc-review-turn-budget",
+      "assertion": "The reserved Review turn budget scales by workload: quick 12, standard 16, heavy 24 via a single reviewTurnBudget mapping used at every dispatch site (standard Agent reserved params and injected startReview both receive the workload-scaled value); a heavy bundle (11+ files or 512KB+) never dispatches with the quick budget; focused tests assert the mapping, the dispatch wiring, and that the protocol documentation states the scaled budgets consistently across source and packaged copies.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/pi-canary-review-outcome-evidence.test.ts\",\n    \"tests/pi-canary-work-extension.test.ts\",\n    \"tests/pi-subagent-dispatch-observability-contract.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 300000,\n  \"max_output_bytes\": 262144\n}\n"
+    },
+    {
+      "id": "acc-typecheck-and-regression",
+      "assertion": "The complete Pi extension graph passes strict TypeScript checking and the full repository test suite passes with no regressions.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 600000,\n  \"max_output_bytes\": 262144\n}\n"
+    }
+  ],
+  "scope_hint": [
+    "docs/plans/2026-08-16-assurance-workflow-hardening.plan.md",
+    "docs/reference/subagent-dispatch-protocol.md",
+    "docs/solutions/contracts.md",
+    "plugins/immune-brain/.pi-extension/imm-canary-work.ts",
+    "plugins/immune-brain/.pi-extension/pi-canary-assurance-progression.ts",
+    "plugins/immune-brain/.pi-extension/pi-canary-native-review.ts",
+    "plugins/immune-brain/.pi-extension/pi-canary-review-bundle.ts",
+    "plugins/immune-brain/.pi-extension/runtime-stub.ts",
+    "plugins/immune-brain/dist/docs/reference/subagent-dispatch-protocol.md",
+    "plugins/immune-brain/dist/imm-planner.md",
+    "plugins/immune-brain/skills/imm-planner/SKILL.md",
+    "plugins/immune-brain/tests/skill-registry-consistency.test.ts",
+    "tests/pi-canary-assurance-progression.test.ts",
+    "tests/pi-canary-native-review.test.ts",
+    "tests/pi-canary-review-bundle.test.ts",
+    "tests/pi-canary-review-outcome-evidence.test.ts",
+    "tests/pi-canary-work-extension.test.ts",
+    "tests/pi-subagent-dispatch-observability-contract.test.ts",
+    "tests/planner-settlement-contract.test.ts",
+    "tests/skill-registry-metadata-contract.test.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}

@@ -1,0 +1,43 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "2026-08-14-002-retire-public-release-sync-surface",
+  "owner": "user",
+  "goal": "Retire the obsolete public-repository sync script and templates as one coherent release-contract change: the root Pi package workspace and package.json manifest become the only artifact source, release adapters receive the repository root by default while preserving an explicit artifact-path override, active documentation and tests no longer depend on generated public-release files, and the direct package boundary remains fail-closed against development or retired host surfaces.",
+  "acceptance": [
+    {
+      "id": "acc-retired-public-sync-absent",
+      "assertion": "The tracked sync script and four public-release templates are absent, and active README and current-contract tests no longer instruct, open, execute, or recreate the retired public-release surface; historical Plans, Specs, archives, and solution evidence may retain explicitly historical references.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/pi-only-current-contracts.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 262144\n}\n"
+    },
+    {
+      "id": "acc-direct-package-artifact-boundary",
+      "assertion": "Root package.json remains the sole package and version authority, and focused release tests derive and inspect the direct package artifact boundary from its files, exports, and Pi metadata while rejecting repository-only development trees and retired host adapter surfaces without using a copied public repository.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/pi-only-release-contract.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 262144\n}\n"
+    },
+    {
+      "id": "acc-release-adapter-root-artifact",
+      "assertion": "plugin_release dry-run and configured-adapter flows use the canonical repository root as the default artifact_path, honor an explicit --artifact-path literally, never generate or probe a sibling immune-brain-public tree, and preserve package.json as manifest_path.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/pi-only-release-contract.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 262144\n}\n"
+    },
+    {
+      "id": "acc-direct-release-regression",
+      "assertion": "Root manifest validation and the complete repository test suite pass with the retired surface absent, with no real publish, Git tag, push, or external repository mutation during verification.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 300000,\n  \"max_output_bytes\": 262144\n}\n"
+    }
+  ],
+  "scope_hint": [
+    "docs/specs/direct-pi-package-release-surface.spec.md",
+    "README.md",
+    "package.json",
+    "scripts/plugin_release.ts",
+    "scripts/sync-to-public.sh",
+    "public-release/templates/CONTRIBUTING.md",
+    "public-release/templates/README.md",
+    "public-release/templates/SECURITY.md",
+    "public-release/templates/mise.toml",
+    "tests/pi-only-release-contract.test.ts",
+    "tests/pi-only-current-contracts.test.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}

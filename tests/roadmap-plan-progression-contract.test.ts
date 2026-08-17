@@ -1,0 +1,87 @@
+import { describe, expect, it } from "bun:test";
+import { readFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+
+const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+
+function read(path: string): string {
+	return readFileSync(resolve(REPO_ROOT, path), "utf8");
+}
+
+const ROLE_PAIRS = [
+	[
+		"plugins/immune-brain/skills/imm-loop/SKILL.md",
+		"plugins/immune-brain/dist/imm-loop.md",
+	],
+	[
+		"plugins/immune-brain/skills/imm-work/SKILL.md",
+		"plugins/immune-brain/dist/imm-work.md",
+	],
+	[
+		"plugins/immune-brain/skills/imm-qa/SKILL.md",
+		"plugins/immune-brain/dist/imm-qa.md",
+	],
+	[
+		"plugins/immune-brain/skills/imm-code-review/SKILL.md",
+		"plugins/immune-brain/dist/imm-code-review.md",
+	],
+] as const;
+
+describe("Roadmap successor workflow role contracts", () => {
+	it("keeps source loaders and packaged role contracts aligned on user authority", () => {
+		for (const [sourcePath, distPath] of ROLE_PAIRS) {
+			const source = read(sourcePath);
+			const packaged = read(distPath);
+			for (const contract of [
+				"awaiting_user_successor_decision",
+				"--approve-successor",
+				"literal user",
+			]) {
+				expect(source).toContain(contract);
+				expect(packaged).toContain(contract);
+			}
+		}
+	});
+
+	it("orders Compounder and finish before the terminal user decision stop", () => {
+		const loop = read("plugins/immune-brain/dist/imm-loop.md");
+		const work = read("plugins/immune-brain/dist/imm-work.md");
+		for (const content of [loop, work]) {
+			expect(content).toContain("imm-compounder");
+			expect(content).toContain("imm-finish");
+			expect(content).toContain("recommended_authority: user");
+			expect(content).toContain("must not dispatch");
+		}
+	});
+
+	it("keeps QA and review closure separate from successor activation", () => {
+		for (const role of ["imm-qa", "imm-code-review"]) {
+			const content = read(`plugins/immune-brain/dist/${role}.md`);
+			expect(content).toContain("--expected-current-plan");
+			expect(content).toContain("--expected-ledger-revision");
+			expect(content).toContain("cannot approve or activate");
+		}
+	});
+
+	it("defines HANDOFF as a stale-tolerant non-authoritative mirror", () => {
+		for (const path of [
+			"docs/reference/HANDOFF-template.md",
+			"plugins/immune-brain/dist/docs/reference/HANDOFF-template.md",
+		]) {
+			const content = read(path);
+			expect(content).toContain(
+				"## Successor decision (non-authoritative mirror)",
+			);
+			expect(content).toContain("Current Plan");
+			expect(content).toContain("Current Phase");
+			expect(content).toContain("Successor candidate");
+			expect(content).toContain("Successor preconditions");
+			expect(content).toContain("Expected Ledger revision");
+			expect(content).toContain("Next user decision");
+			expect(content).toContain("Deferred scope");
+			expect(content).toContain("may be stale");
+			expect(content).toContain("must never be parsed as transition authority");
+		}
+	});
+});

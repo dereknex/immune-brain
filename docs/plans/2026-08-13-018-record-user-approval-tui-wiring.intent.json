@@ -1,0 +1,40 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "2026-08-13-018-record-user-approval-tui-wiring",
+  "owner": "user",
+  "goal": "Wire the literal-user approval recording surface for Kernel canary tasks: /imm-canary-authorize <task-id> record-user-approval mints an exact-action user-kind capability after a fresh TUI confirmation and applies record_user_approval through the existing authority-bound application, so critical-risk tasks can reach completion without weakening the closed tool schema or privileged-action boundaries.",
+  "acceptance": [
+    {
+      "id": "acc-user-approval-tui-wired",
+      "assertion": "The Pi TUI command /imm-canary-authorize <task-id> record-user-approval records a user-kind approval on the task record (phase review) through the exact-action capability path after a fresh ctx.ui.confirm; cancellation, timeout, abort, late confirmation, reentry, replay, and stale record/intent/diff state perform zero writes; the capability is consumed exactly once.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/user-approval-tui-wiring.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 262144\n}\n"
+    },
+    {
+      "id": "acc-user-approval-authority-bound",
+      "assertion": "The extension builds the approval payload (kind user, authority_role user) bound to the fresh projection's task_revision, intent_content_hash, and diff_hash and mints a capability with authority_kind user and action_kind record_user_approval; the reducer record_user_approval path requires kind user, user authority, phase review, matching revision/hash/diff, and rejects duplicate approval ids; userOperationFor returns the record_user_approval op; the imm_kernel_canary tool schema remains closed to record_user_approval as an ordinary op.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/user-approval-authority.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 262144\n}\n"
+    },
+    {
+      "id": "acc-critical-completion-reachable",
+      "assertion": "A critical-risk canary task with fresh evidence for every acceptance id and fresh qa+review+user approvals is eligible for completion: completionDecisionV2 reports complete=true and the complete action transitions review to done with the task tombstone, released workspace pointer, and removed active claim.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/user-approval-critical-completion.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 262144\n}\n"
+    },
+    {
+      "id": "acc-user-approval-package-contract",
+      "assertion": "dist/imm-canary-work.md and the skills shim document the record-user-approval wiring and its TUI-only exact-action confirmation semantics; package.json imports/exports and the .pi-extension entry manifest stay unchanged; no new privileged CLI, RPC, JSON, or print route exposes user approval recording; README describes user-kind approval for critical tasks.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/user-approval-package-contract.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 262144\n}\n"
+    }
+  ],
+  "scope_hint": [
+    "plugins/immune-brain/.pi-extension/imm-canary-work.ts",
+    "plugins/immune-brain/runtime/kernel/canary_application.ts",
+    "plugins/immune-brain/runtime/kernel/reducer_v2.ts",
+    "plugins/immune-brain/runtime/kernel/authority_port.ts",
+    "plugins/immune-brain/dist/imm-canary-work.md",
+    "plugins/immune-brain/skills/imm-canary-work/SKILL.md",
+    "plugins/immune-brain/README.md",
+    "tests/"
+  ],
+  "risk": "critical",
+  "revision": 1
+}

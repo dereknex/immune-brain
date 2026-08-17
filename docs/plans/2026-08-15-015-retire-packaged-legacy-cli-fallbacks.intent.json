@@ -1,0 +1,50 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "2026-08-15-015-retire-packaged-legacy-cli-fallbacks",
+  "owner": "user",
+  "goal": "Remove shipped agent instructions that invoke retired v3 mutation commands or a legacy dispatcher absent from the Pi package, while preserving read-only Plan validation, Kernel TaskIntent handoff, Compounder learning capture, static catalog integrity, and the separately bounded legacy runtime closure.",
+  "acceptance": [
+    {
+      "id": "acc-planner-contract",
+      "assertion": "The shipped Planner contract uses read-only v4 Plan validation and Kernel TaskIntent enrollment with no v3 sync or direct legacy runtime fallback.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/pi-packaged-legacy-fallbacks.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 180000,\n  \"max_output_bytes\": 262144\n}\n"
+    },
+    {
+      "id": "acc-compounder-contract",
+      "assertion": "The shipped Compounder contract treats workflow closure as complete and advertises no imm-finish, imm-heal, or direct legacy runtime mutation path.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/pi-packaged-legacy-fallbacks.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 180000,\n  \"max_output_bytes\": 262144\n}\n"
+    },
+    {
+      "id": "acc-activation-reference",
+      "assertion": "Source and packaged activation-policy references are byte-identical and describe static catalog-reference integrity without a retired runtime command.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/pi-packaged-legacy-fallbacks.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 180000,\n  \"max_output_bytes\": 262144\n}\n"
+    },
+    {
+      "id": "acc-packed-bytes",
+      "assertion": "A real npm pack artifact contains the corrected contracts and no legacy dispatcher path or retired command guidance in those shipped files.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/pi-packaged-legacy-fallbacks.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 300000,\n  \"max_output_bytes\": 262144\n}\n"
+    },
+    {
+      "id": "acc-boundary-retained",
+      "assertion": "The legacy dispatcher, source Skill entries, Pi factories, package surface, and host runtime remain outside this slice and pass their focused contracts.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/v4-runtime-launchers.test.ts\",\n    \"tests/pi-canary-discovery-regression.test.ts\",\n    \"tests/pi-canary-packed-loader.test.ts\",\n    \"tests/pi-only-package-surface.test.ts\",\n    \"tests/host-runtime-cutover.test.ts\",\n    \"plugins/immune-brain/tests/skill-registry-consistency.test.ts\",\n    \"plugins/immune-brain/tests/host-manifest-consistency.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 300000,\n  \"max_output_bytes\": 262144\n}\n"
+    },
+    {
+      "id": "acc-full-regression",
+      "assertion": "The full repository test suite passes after packaged fallback retirement.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 300000,\n  \"max_output_bytes\": 262144\n}\n"
+    }
+  ],
+  "scope_hint": [
+    "docs/reference/automatic-subagent-activation-policy.md",
+    "docs/specs/host-native-lightweight-workflow-roadmap.spec.md",
+    "docs/specs/retire-packaged-legacy-cli-fallbacks.spec.md",
+    "plugins/immune-brain/dist/docs/reference/automatic-subagent-activation-policy.md",
+    "plugins/immune-brain/dist/imm-compounder.md",
+    "plugins/immune-brain/dist/imm-planner.md",
+    "tests/pi-packaged-legacy-fallbacks.test.ts",
+    "tests/v4-runtime-launchers.test.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}

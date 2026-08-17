@@ -1,0 +1,62 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "2026-08-15-018-reconcile-v4-plan-control-plane",
+  "owner": "user",
+  "goal": "Restore the shipped v4 imm-plan read-only control plane so routing-status returns the complete Git-owned policy projection, explicit Plan paths receive genuine parse, semantic, and dynamic origin-coverage validation, active-policy Managed authority remains separately bound to TaskIntent validation and Pi TUI enrollment, and all mutation paths remain retired without importing the legacy dispatcher.",
+  "acceptance": [
+    {
+      "id": "acc-routing-status",
+      "assertion": "The source and packed imm-plan --routing-status --json wrappers return the complete strict routing projection for absent, active, malformed, drifted, untracked, tracked-deleted, symlinked, oversize, and unreadable policies, preserving every route, v3_new_plan_sync, mode, hash, ownership, and reason field instead of substituting a legacy Ledger projection.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/imm-plan-routing-status-contract.test.ts\",\n    \"tests/v4-plan-control-plane.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 300000,\n  \"max_output_bytes\": 262144\n}\n"
+    },
+    {
+      "id": "acc-plan-validation",
+      "assertion": "The source and packed imm-plan wrappers genuinely parse and validate the explicit Plan path, preserve normalized fields and warnings, dynamically derive the seven-field closed-world origin_coverage projection, and fail non-zero for missing, malformed, or semantically invalid Plans.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/plan-validation.test.ts\",\n    \"tests/v4-plan-control-plane.test.ts\",\n    \"tests/host-runtime-cutover.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 300000,\n  \"max_output_bytes\": 262144\n}\n"
+    },
+    {
+      "id": "acc-read-only-retired-wall",
+      "assertion": "Accepted, invalid, and retired imm-plan forms preserve complete fixture-tree bytes and Git index/worktree state, create no .imm authority artifact, and keep every v3 mutation option fail-closed while permitting only the existing bounded Ledger read needed for drain-sensitive rejection reasons.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/v4-plan-control-plane.test.ts\",\n    \"tests/v4-runtime-launchers.test.ts\",\n    \"tests/v3-plan-creation-retirement.test.ts\",\n    \"tests/v4-storage-retirement-v3-writers.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 300000,\n  \"max_output_bytes\": 262144\n}\n"
+    },
+    {
+      "id": "acc-package-parity",
+      "assertion": "The npm package ships only the pure Plan validator closure required by v4, omits the legacy dispatcher and commands/plan.ts, and its extracted imm-plan wrapper matches source routing, validation, failure, authority-separation, and no-write behavior.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/v4-plan-control-plane.test.ts\",\n    \"tests/pi-only-package-surface.test.ts\",\n    \"tests/pi-canary-packed-loader.test.ts\",\n    \"tests/plugin-package-runtime.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 300000,\n  \"max_output_bytes\": 262144\n}\n"
+    },
+    {
+      "id": "acc-planner-authority",
+      "assertion": "Under active routing policy the shipped Planner requires an explicit Plan path for advisory validation and separately requires canonical TaskIntent validation before Pi TUI enrollment; source and packed behavior tests prove valid Plan validation creates no TaskIntent or TaskRecord and an invalid TaskIntent fails through the shipped Kernel validator.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/pi-packaged-legacy-fallbacks.test.ts\",\n    \"tests/dist-docs-sync-contract.test.ts\",\n    \"tests/v4-plan-control-plane.test.ts\",\n    \"tests/kernel-intent-authoring.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 300000,\n  \"max_output_bytes\": 262144\n}\n"
+    },
+    {
+      "id": "acc-full-regression",
+      "assertion": "The complete repository suite passes after v4 Plan control-plane reconciliation with Pi factories, Kernel canary behavior, bounded legacy audit, and enrolled scope isolation unchanged.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 300000,\n  \"max_output_bytes\": 262144\n}\n"
+    }
+  ],
+  "scope_hint": [
+    "CONTEXT.md",
+    "docs/specs/host-native-lightweight-workflow-roadmap.spec.md",
+    "docs/specs/reconcile-v4-plan-control-plane.spec.md",
+    "package.json",
+    "plugins/immune-brain/dist/imm-planner.md",
+    "plugins/immune-brain/runtime/plan_core.ts",
+    "plugins/immune-brain/runtime/v4_runtime.ts",
+    "tests/dist-docs-sync-contract.test.ts",
+    "tests/host-runtime-cutover.test.ts",
+    "tests/imm-plan-routing-status-contract.test.ts",
+    "tests/kernel-intent-authoring.test.ts",
+    "tests/pi-canary-packed-loader.test.ts",
+    "tests/pi-only-package-surface.test.ts",
+    "tests/pi-packaged-legacy-fallbacks.test.ts",
+    "tests/plan-validation.test.ts",
+    "tests/plugin-package-runtime.test.ts",
+    "tests/v3-plan-creation-retirement.test.ts",
+    "tests/v4-plan-control-plane.test.ts",
+    "tests/v4-runtime-launchers.test.ts",
+    "tests/v4-storage-retirement-v3-writers.test.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}

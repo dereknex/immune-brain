@@ -1,0 +1,35 @@
+[tasks.test]
+run = "bun test"
+description = "Run test suite"
+
+[tasks.list-runtime-tools]
+run = "bun plugins/immune-brain/runtime/v4_runtime.ts list-commands --json"
+description = "List plugin-local Immune-Brain runtime commands"
+
+[tasks.check-plugin]
+run = "bun scripts/plugin_versioning.ts validate && bun plugins/immune-brain/runtime/v4_runtime.ts list-commands --json"
+description = "Validate Pi package metadata and runtime"
+
+[tasks.check-install]
+run = "test -L skills && test -d skills && bun scripts/plugin_versioning.ts validate && echo 'Pi package installation OK'"
+description = "Check Pi package skill installation status"
+
+[tasks.plugin-versioning]
+run = "bun scripts/plugin_versioning.ts"
+description = "Manage Immune-Brain plugin versions (bump/validate)"
+
+[tasks.sync-dist]
+run = "bun scripts/sync-dist-docs.ts"
+description = "Regenerate packaged dist/ mirror docs + BASELINE from canonical sources"
+
+[tasks.check-dist-sync]
+run = "bun scripts/sync-dist-docs.ts --check"
+description = "Fail if packaged dist/ mirror docs drift from canonical sources"
+
+[tasks.benchmark-contract]
+run = "bun test tests/immune-brain-behavior-eval-contract.test.ts tests/brainstorm-decision-probing-contract.test.ts"
+description = "Run benchmark behavior contract tests"
+
+[tasks.benchmark-eval]
+run = "bun scripts/benchmark_eval.ts --results-dir benchmark-results/immune-brain-u5-telemetry"
+description = "Run Immune-Brain benchmark baseline and record comparable metrics"

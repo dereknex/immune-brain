@@ -1,0 +1,61 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "2026-08-13-019-pi-only-host-simplification",
+  "owner": "user",
+  "goal": "Make Pi the sole supported code-agent host for Immune-Brain by removing every Codex, Claude Code, Cursor, and OpenCode installation, adapter, configuration, release, and current-documentation surface while preserving the Pi package, Pi extension authority, shared runtime and Kernel behavior required by Pi, provider-agnostic model selection inside Pi, and immutable historical records.",
+  "acceptance": [
+    {
+      "id": "acc-pi-only-package-surface",
+      "assertion": "The shipped and public package exposes only the root Pi package manifest, Pi skills, Pi extensions, and Pi-required runtime files; Codex, Claude Code, Cursor, and OpenCode manifests, marketplaces, adapters, package dependencies, exports, and release artifacts are absent.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/pi-only-package-surface.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 262144\n}\n"
+    },
+    {
+      "id": "acc-pi-only-runtime-contract",
+      "assertion": "Production host routing accepts only Pi for local configuration, advisory dispatch, work probes, and completion metadata, with no non-Pi tool-envelope branch or generic unknown-host fallback; Pi may still select model IDs from any configured model provider.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/pi-only-runtime-host-contract.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 262144\n}\n"
+    },
+    {
+      "id": "acc-pi-only-release-contract",
+      "assertion": "Versioning, release, install checks, public synchronization, and package validation derive from the Pi package boundary and cannot require, publish, copy, or recreate a non-Pi host surface.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/pi-only-release-contract.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 262144\n}\n"
+    },
+    {
+      "id": "acc-current-contracts-pi-only",
+      "assertion": "Current README, user guides, reference docs, Skill contracts, packaged dist artifacts, registry metadata, architecture map, and ADR guidance describe Pi as the only supported code-agent host, while historical Plans, Specs, archives, and Learnings remain retained as historical evidence rather than rewritten compatibility claims.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/pi-only-current-contracts.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 262144\n}\n"
+    },
+    {
+      "id": "acc-pi-capabilities-preserved",
+      "assertion": "Pi installation, Skill discovery, isolated Agent subagents, progress projection, TUI canary enrollment and lifecycle authority, verification descriptor execution, Kernel storage, and package registry contracts continue to pass after the non-Pi support removal.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 300000,\n  \"max_output_bytes\": 262144\n}\n"
+    }
+  ],
+  "scope_hint": [
+    "package.json",
+    "bun.lock",
+    ".agents/",
+    ".claude-plugin/",
+    ".cursor-plugin/",
+    "plugins/immune-brain/.codex-plugin/",
+    "plugins/immune-brain/.claude-plugin/",
+    "plugins/immune-brain/.cursor-plugin/",
+    "plugins/immune-brain/.opencode-plugin/",
+    "plugins/immune-brain/.pi-extension/",
+    "plugins/immune-brain/runtime/",
+    "plugins/immune-brain/skills/",
+    "plugins/immune-brain/dist/",
+    "plugins/immune-brain/tests/",
+    "scripts/",
+    "public-release/",
+    "mise.toml",
+    "README.md",
+    "CONTEXT.md",
+    "docs/adr/",
+    "docs/reference/",
+    "docs/user_manual.md",
+    "plugins/immune-brain/README.md",
+    "tests/"
+  ],
+  "risk": "critical",
+  "revision": 1
+}

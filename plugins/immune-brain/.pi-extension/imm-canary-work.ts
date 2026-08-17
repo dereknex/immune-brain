@@ -1,0 +1,1302 @@
+// P2B2 Pi lifecycle extension: the only production route for Kernel canary
+// lifecycle mutations after enrollment.
+//
+// Surface (exactly):
+//   1. `imm_kernel_canary` — one LLM-callable tool, closed to ordinary
+//      executor operations (status, record_evidence, record_finding,
+//      resolve_finding, submit_review, compatible revise_intent, complete).
+//      Privileged action kinds are structurally absent from its schema.
+//   2. `/imm-canary-assure <task-id> qa` — TUI-only deterministic verification.
+//      `/imm-canary-assure <task-id> review [model]` requests one standard Agent
+//      review subagent. Its advisory verdict requires literal-user confirmation
+//      before host revalidation and Kernel mutation.
+//   3. `/imm-canary-authorize <task-id> <operation>` — TUI-only. Requires a
+//      fresh exact-action ctx.ui.confirm; any cancellation, timeout, abort,
+//      late resolution, reentry, replay, or stale state performs zero writes.
+//
+// This file is the Pi adapter for the Assurance progression module
+// (pi-canary-assurance-progression.ts), which owns the session-scoped QA/Review
+// operation lifecycle. It retains command/tool registration with exact
+// schemas and text, TUI-only gates and literal-user confirmation rendering,
+// pure argument/verdict/snapshot/prompt helpers, Kernel authority capability
+// creation and mutation application, and translation of progression results
+// into tool output. It contains no lifecycle Maps, timers, reservations,
+// transition helpers, or TaskRecord evidence/approval freshness filtering:
+// freshness comes exclusively from the internal Kernel assurance projection
+// (runtime/kernel/assurance_projection.ts).
+//
+// The production mutation-authority registry and canary application are
+// created lazily inside this module and never exported. No session entry,
+// session ID, model output, command text, callback, CLI flag, JSON/RPC/print
+// path, or serialized descriptor mints authority.
+
+import { createHash, randomUUID } from "node:crypto";
+import { join, resolve } from "node:path";
+import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { Type } from "typebox";
+import {
+	parseVerificationDescriptor,
+	canonicalDescriptorBytes,
+	resolveBunRunner,
+	assertRunnerCompatible,
+	runFixedVerification,
+	VerificationAbortedError,
+	findingsDigest,
+	type FrozenRunner,
+	type VerificationDescriptor,
+} from "./pi-canary-verification";
+import { captureReviewBundle, writeNativeReviewEvidence, type ReviewBundle } from "./pi-canary-review-bundle";
+import { registerSucceedCommand } from "./imm-canary-succeed";
+import type { InvocationToken } from "./pi-canary-invocations";
+import { qaEvidenceFreshnessId, qaFindingId } from "./pi-canary-qa-findings";
+import {
+	reviewDispatchFollowUp,
+	reservedAgentParams,
+	type NativeReviewHandle,
+	type ReservedAgentParams,
+} from "./pi-canary-native-review";
+import {
+	AssurancePresenter,
+	renderAssuranceResultMessage,
+	renderCanaryCall,
+	renderCanaryResult,
+	type AssuranceCorrelation,
+	type AssuranceRole,
+	type AssuranceView,
+} from "./pi-canary-assurance";
+import { taskDiffHash, captureGitTaskSnapshot } from "../runtime/workspace_scope";
+import {
+	AssuranceProgression,
+	buildReviewPrompt,
+	classifyReviewWorkload,
+	deriveQaJobTimeoutMs,
+	parseAssuranceVerdict,
+	snapshotDigest,
+	QA_JOB_TIMEOUT_SECONDS,
+	REVIEW_DISPATCH_TIMEOUT_MS,
+	REVIEW_PREPARATION_TIMEOUT_MS,
+	REVIEW_TIMING_PROFILES,
+	REVIEW_VERDICT_VALIDATION_TIMEOUT_MS,
+	type AssuranceAdvanceResult,
+	type AssuranceCancelResult,
+	type AssuranceProgressionPorts,
+	type AssuranceVerdict,
+	type PendingReviewVerdict,
+	type QaVerificationProgress,
+	type SnapshotDescriptor,
+} from "./pi-canary-assurance-progression";
+
+// The Kernel runtime graph is never type-checked from this extension: static
+// imports resolve to ./runtime-stub.ts (relative so the Pi extension loader
+// can resolve them at runtime), and the stub forwards to the real Kernel
+// modules via dynamic import.
+import {
+	createMutationAuthorityRegistry,
+	createCanaryApplication,
+	readTaskRecordV2,
+	readTaskIntent,
+	projectAssurance,
+	deriveAssuranceAuthorization,
+	findingsDigestV2,
+	capabilityActionFor,
+	digestOfAction,
+	type AssuranceAuthorizationReadiness,
+	type AssuranceProjectionResult,
+	type CanaryApplication,
+	type MutationAuthorityRegistry,
+	type CapabilityBindingV2,
+} from "./runtime-stub";
+import { invocationRegistry } from "./pi-canary-assurance-progression";
+
+const TASK_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
+
+export type { AssuranceRole } from "./pi-canary-assurance";
+export type AssuranceCommandRole = AssuranceRole | "cancel";
+export type AuthorizeOperation =
+	| "begin-drain"
+	| "record-review-verdict"
+	| "record-user-approval"
+	| "approve-breaking-intent-revision"
+	| "resolve-user-decision"
+	| "stop";
+
+export function parseAssureArgs(raw: string): {
+	task_id: string;
+	role: AssuranceCommandRole;
+	model?: string;
+} {
+	const parts = raw.trim().split(/\s+/).filter(Boolean);
+	if (parts.length < 2 || parts.length > 3)
+		throw new Error("usage: /imm-canary-assure <task-id> <qa|review|cancel> [model]");
+	const [taskId, role, model] = parts;
+	if (!TASK_ID_PATTERN.test(taskId)) throw new Error(`invalid task id: ${taskId}`);
+	if (role !== "qa" && role !== "review" && role !== "cancel")
+		throw new Error("role must be qa, review, or cancel");
+	if (role !== "review" && model !== undefined)
+		throw new Error(`${role} does not accept a model`);
+	return { task_id: taskId, role, ...(model ? { model } : {}) };
+}
+
+export function parseAuthorizeArgs(raw: string): { task_id: string; operation: AuthorizeOperation } {
+	const parts = raw.trim().split(/\s+/).filter(Boolean);
+	if (parts.length < 2) throw new Error("usage: /imm-canary-authorize <task-id> <operation>");
+	const [taskId, operation] = parts;
+	if (!TASK_ID_PATTERN.test(taskId)) throw new Error(`invalid task id: ${taskId}`);
+	if (
+		!["begin-drain", "record-review-verdict", "record-user-approval", "approve-breaking-intent-revision", "resolve-user-decision", "stop"].includes(operation)
+	)
+		throw new Error(`unknown operation: ${operation}`);
+	return { task_id: taskId, operation: operation as AuthorizeOperation };
+}
+
+export interface SnapshotDescriptorInput {
+	root: string;
+	task_id: string;
+	role: AssuranceRole;
+	record_revision: string;
+	workspace_revision: string;
+	intent_revision: number;
+	intent_content_hash: string;
+	diff_hash: string;
+	phase: string;
+	risk?: "routine" | "material" | "critical";
+	fresh_acceptance_ids: string[];
+	missing_acceptance_ids: string[];
+	stale_evidence_ids: string[];
+	acceptance: Array<{ id: string; assertion: string; verification: string }>;
+	dirty_files?: string[];
+	review_bundle_digest?: string | null;
+}
+
+export function buildSnapshot(input: SnapshotDescriptorInput): SnapshotDescriptor {
+	return {
+		contract: "assurance_kernel/assurance_snapshot/v1",
+		task_id: input.task_id,
+		role: input.role,
+		record_revision: input.record_revision,
+		workspace_revision: input.workspace_revision,
+		intent_revision: input.intent_revision,
+		intent_content_hash: input.intent_content_hash,
+		diff_hash: input.diff_hash,
+		phase: input.phase,
+		risk: input.risk ?? "material",
+		fresh_acceptance_ids: input.fresh_acceptance_ids,
+		missing_acceptance_ids: input.missing_acceptance_ids,
+		stale_evidence_ids: input.stale_evidence_ids,
+		acceptance: input.acceptance,
+		dirty_files: [...(input.dirty_files ?? [])].sort(),
+		review_bundle_digest: input.review_bundle_digest ?? null,
+		root: resolve(input.root),
+	};
+}
+
+export interface CanaryWorkExtensionDependencies {
+	buildAssurance?: typeof buildAssuranceSnapshot;
+	startReview?: (input: {
+		prompt: string;
+		description: string;
+		cwd: string;
+		model?: string;
+		maxTurns?: number;
+	}) => Promise<NativeReviewHandle>;
+	runQa?: typeof runDeterministicQa;
+	writeReviewEvidence?: typeof writeNativeReviewEvidence;
+	advanceBeforeProjection?: () => Promise<void>;
+	qaBeforeProjection?: () => Promise<void>;
+	qaBeforeAuthorityCommit?: () => Promise<void>;
+	qaOnAuthorityCommit?: () => void;
+	qaAfterAuthorityCommit?: () => Promise<void>;
+	authorizationBeforeRecordRead?: () => Promise<void>;
+	qaJobTimeoutMs?: number;
+	reviewJobTimeoutMs?: number;
+	reviewSoftDeadlineMs?: number;
+	reviewPreparationTimeoutMs?: number;
+	reviewSpawnTimeoutMs?: number;
+}
+
+export default function (
+	pi: ExtensionAPI,
+	dependencies: CanaryWorkExtensionDependencies = {},
+) {
+	const presenter = new AssurancePresenter(pi);
+
+	const progression = new AssuranceProgression({
+		publish: (ctx, view: AssuranceView) => presenter.publish(ctx, view),
+		deliverFollowUp: (followUp) => presenter.deliverFollowUp(followUp),
+		notify: (ctx, message, kind) => ctx.ui.notify(message, kind),
+		projectTask: (root, taskId) => projectAssuranceState(root, taskId),
+		readTaskRecordV2: (root, taskId) => readTaskRecordV2(root, taskId),
+		readTaskIntent: (root, taskId) => readTaskIntent(root, taskId),
+		frozenRunner: () => frozenRunner(),
+		buildAssurance: (root, taskId, role, projection, runner) =>
+			(dependencies.buildAssurance ?? buildAssuranceSnapshot)(root, taskId, role, projection, runner),
+		runQa: (snapshot, descriptors, runner, options) =>
+			(dependencies.runQa ?? runDeterministicQa)(snapshot, descriptors, runner, options),
+		writeReviewEvidence: (input) =>
+			(dependencies.writeReviewEvidence ?? writeNativeReviewEvidence)(input),
+		startReview: dependencies.startReview,
+		dispatchReviewFollowUp: ({ taskId, operationId, params, correlation }) => {
+			pi.sendMessage(
+				{
+					customType: "imm-assurance-dispatch",
+					content: reviewDispatchFollowUp({ taskId, operationId, params }),
+					display: true,
+					details: {
+						task_id: taskId,
+						operation_id: operationId,
+						role: "review",
+						...correlation,
+						agent_params: params,
+					},
+				},
+				{ deliverAs: "followUp", triggerTurn: true },
+			);
+		},
+		applyVerdict: (ctx, input) =>
+			applyAssuranceVerdict(
+				ctx,
+				input.snapshot,
+				input.verdict,
+				input.invocation,
+				input.actorId,
+				input.hooks,
+			),
+		applyOrdinaryOperation: (ctx, input) => executeOrdinaryOperation(ctx, input),
+		advanceBeforeProjection: dependencies.advanceBeforeProjection,
+		qaBeforeProjection: dependencies.qaBeforeProjection,
+		qaBeforeAuthorityCommit: dependencies.qaBeforeAuthorityCommit,
+		qaOnAuthorityCommit: dependencies.qaOnAuthorityCommit,
+		qaAfterAuthorityCommit: dependencies.qaAfterAuthorityCommit,
+		qaJobTimeoutMs: dependencies.qaJobTimeoutMs,
+		reviewJobTimeoutMs: dependencies.reviewJobTimeoutMs,
+		reviewSoftDeadlineMs: dependencies.reviewSoftDeadlineMs,
+		reviewPreparationTimeoutMs: dependencies.reviewPreparationTimeoutMs,
+		reviewSpawnTimeoutMs: dependencies.reviewSpawnTimeoutMs,
+	} satisfies AssuranceProgressionPorts);
+
+	pi.registerMessageRenderer("imm-assurance-result", (message, options, theme) =>
+		renderAssuranceResultMessage(message, options, theme),
+	);
+
+	pi.on("session_start", () => {
+		presenter.reset();
+		progression.onSessionStart();
+	});
+	pi.on("tool_execution_start", (event: { toolName?: string; args?: unknown; toolCallId?: string }) => {
+		progression.observeToolStart(event);
+	});
+	pi.on("tool_execution_end", (event: unknown) => {
+		progression.observeToolEnd(event as Parameters<AssuranceProgression["observeToolEnd"]>[0]);
+	});
+	pi.on("session_shutdown", async () => {
+		presenter.clear();
+		await progression.onSessionShutdown();
+	});
+
+	pi.registerTool({
+		name: "imm_kernel_canary",
+		label: "Kernel canary assurance and executor operations",
+		description:
+			"Advance observable QA/Review orchestration or record ordinary executor facts for one enrolled Kernel canary task. No privileged action schema exists.",
+		promptSnippet: "Kernel canary: record facts, then advance observable assurance without polling.",
+		promptGuidelines: [
+			"Only the exact enrolled canary task is routable; verify the active backend claim first via status.",
+			"After fresh acceptance evidence, call advance_assurance and rely on native chat rendering plus push follow-up; do not poll or manually sequence QA and Review.",
+			"After awaiting_user or a Review-ready follow-up, call request_authorization so the host opens the exact confirmation; do not ask the user to type /imm-canary-authorize.",
+		],
+		parameters: Type.Object({
+			task_id: Type.String({ pattern: "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$" }),
+			action: Type.Union([
+				Type.Object({ op: Type.Literal("status") }),
+				Type.Object({ op: Type.Literal("advance_assurance") }),
+				Type.Object({ op: Type.Literal("cancel_assurance") }),
+				Type.Object({ op: Type.Literal("request_authorization") }),
+				Type.Object({
+					op: Type.Literal("record_evidence"),
+					acceptance_id: Type.String(),
+					status: Type.Union([
+						Type.Literal("passed"),
+						Type.Literal("failed"),
+						Type.Literal("blocked"),
+					]),
+					summary: Type.String(),
+				}),
+				Type.Object({
+					op: Type.Literal("record_finding"),
+					finding: Type.Object({
+						id: Type.String(),
+						kind: Type.Union([Type.Literal("blocking"), Type.Literal("advisory")]),
+						acceptance_id: Type.Union([Type.String(), Type.Null()]),
+						summary: Type.String(),
+					}),
+				}),
+				Type.Object({ op: Type.Literal("resolve_finding"), finding_id: Type.String() }),
+				Type.Object({ op: Type.Literal("submit_review") }),
+				Type.Object({
+					op: Type.Literal("revise_intent"),
+					next_intent: Type.Object({
+						contract: Type.Literal("assurance_kernel/task_intent/v1"),
+						task_id: Type.String(),
+						goal: Type.String(),
+						acceptance: Type.Array(
+							Type.Object({
+								id: Type.String(),
+								assertion: Type.String(),
+								verification: Type.String(),
+							}),
+						),
+						scope_hint: Type.Array(Type.String()),
+						risk: Type.Union([
+							Type.Literal("routine"),
+							Type.Literal("material"),
+							Type.Literal("critical"),
+						]),
+						revision: Type.Number(),
+						owner: Type.Literal("user"),
+					}),
+				}),
+				Type.Object({ op: Type.Literal("complete") }),
+			]),
+		}),
+		execute: async (toolCallId: string, params: { task_id: string; action: { op: string } }, signal: AbortSignal | undefined, _onUpdate, ctx: ExtensionContext) => {
+			const { task_id: taskId, action } = params;
+			if (action.op === "advance_assurance" || action.op === "cancel_assurance" || action.op === "request_authorization") {
+				if (ctx.mode !== "tui") return toolResult("imm_kernel_canary mutation is TUI-only");
+				const result = action.op === "advance_assurance"
+					? await progression.advance(taskId, ctx)
+					: action.op === "cancel_assurance"
+						? await progression.cancel(taskId, ctx)
+						: await requestAuthorization(taskId, ctx);
+				return toolResult(JSON.stringify(result, null, 2), result);
+			}
+			const projection = await projectAssuranceState(ctx.cwd, taskId);
+			if (projection.error) {
+				return toolResult(`kernel canary unavailable: ${projection.error}`, {
+					state: "blocked",
+					operation: action.op,
+					result: projection.error,
+					next_action: "inspect authority state",
+				});
+			}
+			if (action.op === "status") {
+				const state = projection.projection;
+				const fresh = state.fresh_acceptance_ids.length;
+				const total = fresh + state.missing_acceptance_ids.length;
+				const blockers = state.blocking_finding_ids.length
+					+ state.unresolved_user_decision_ids.length
+					+ state.replan_required_ids.length;
+				return toolResult(JSON.stringify(state, null, 2), {
+					state: "status",
+					operation: "status",
+					phase: state.phase,
+					result: `${fresh}/${total} acceptance items fresh; ${blockers} blocker${blockers === 1 ? "" : "s"}`,
+					next_action: statusNextAction(state),
+				});
+			}
+			// Production mutation requires the TUI host; RPC/JSON/print fail
+			// before any state read that could lead to mutation.
+			if (ctx.mode !== "tui") {
+				return toolResult("imm_kernel_canary mutation is TUI-only");
+			}
+			const claim = projection.claim;
+			if (!claim || claim.task_id !== taskId) {
+				return toolResult(`no active backend claim for ${taskId}`);
+			}
+			try {
+				const result = (await executeOrdinaryOperation(ctx, {
+					taskId,
+					operation: toCanaryOperation(action, "executor") as { op: string; actor_id: string },
+				})) as unknown as { revision: string; record: { phase: string } };
+				return toolResult(
+					JSON.stringify(
+						{ revision: result.revision, phase: (result as unknown as { record: { phase: string } }).record.phase },
+						null,
+						2,
+					),
+					{
+						state: "recorded",
+						operation: action.op,
+						phase: result.record.phase,
+						result: "Kernel executor fact recorded",
+						next_action: action.op === "submit_review"
+							? "advance assurance"
+							: "record remaining evidence or advance assurance",
+					},
+				);
+			} catch (error) {
+				return toolResult(`kernel canary mutation failed: ${error instanceof Error ? error.message : String(error)}`);
+			}
+		},
+		renderCall(args, theme) {
+			return renderCanaryCall(args, theme);
+		},
+		renderResult(result, _options, theme) {
+			return renderCanaryResult(
+				result as Parameters<typeof renderCanaryResult>[0],
+				theme,
+			);
+		},
+	});
+
+	registerSucceedCommand(pi);
+
+	pi.registerCommand("imm-canary-assure", {
+		description: "Manually start or cancel a diagnostic canary QA/Review job",
+		handler: async (args: string, ctx: ExtensionContext) => {
+			if (ctx.mode !== "tui") {
+				ctx.ui.notify("imm-canary-assure is TUI-only and was rejected", "warning");
+				return;
+			}
+			let parsed: ReturnType<typeof parseAssureArgs>;
+			try {
+				parsed = parseAssureArgs(args);
+			} catch (error) {
+				ctx.ui.notify(`imm-canary-assure: ${error instanceof Error ? error.message : String(error)}`, "error");
+				return;
+			}
+			const { task_id: taskId, role } = parsed;
+			if (role === "cancel") {
+				const result = await progression.cancel(taskId, ctx);
+				if (result.state === "idle")
+					ctx.ui.notify(`no active assurance job for ${taskId}`, "warning");
+				return;
+			}
+			const existing = progression.active(taskId);
+			if (existing) {
+				ctx.ui.notify(
+					existing.state === "awaiting_user"
+						? `native review verdict for ${taskId} already awaits request_authorization`
+						: `assurance is already running in the background for ${taskId}; use /imm-canary-assure ${taskId} cancel to stop it`,
+					"warning",
+				);
+				return;
+			}
+			if (role === "qa") await progression.startQa(taskId, ctx);
+			else progression.startReview(taskId, ctx, parsed.model);
+		},
+	});
+
+	type AuthorizationOutcome =
+		| { state: "applied"; operation: AuthorizeOperation; phase?: string }
+		| { state: "cancelled"; operation: AuthorizeOperation; reason: string }
+		| { state: "blocked"; reason: string };
+
+	async function authorizeExactOperation(
+		taskId: string,
+		operation: AuthorizeOperation,
+		ctx: ExtensionContext,
+	): Promise<AuthorizationOutcome> {
+		if (ctx.mode !== "tui") return { state: "blocked", reason: "imm_kernel_canary mutation is TUI-only" };
+			let invocation: InvocationToken;
+			const authorizationGeneration = progression.sessionGenerationValue();
+			try {
+				invocation = progression.openInvocation(taskId);
+		} catch (error) {
+			const reason = error instanceof Error ? error.message : String(error);
+			ctx.ui.notify(`cannot authorize ${taskId}: ${reason}`, "error");
+			return { state: "blocked", reason };
+		}
+		const projection = await projectAssuranceState(ctx.cwd, taskId);
+		if (projection.error || !projection.claim) {
+			const reason = projection.error ?? "no active backend claim";
+			ctx.ui.notify(`cannot authorize ${taskId}: ${reason}`, "error");
+			progression.closeInvocation(invocation);
+			return { state: "blocked", reason };
+		}
+		let pendingReview: PendingReviewVerdict | undefined;
+		if (operation === "record-review-verdict") {
+			pendingReview = progression.pendingReviewVerdict(taskId);
+			if (!pendingReview) {
+				const reason = "no pending native review verdict in this session";
+				ctx.ui.notify(`cannot authorize ${taskId}: ${reason}`, "error");
+				progression.closeInvocation(invocation);
+				return { state: "blocked", reason };
+			}
+		}
+		let userDecisionOperation: ReturnType<typeof buildUserDecisionOperation> | undefined;
+		if (operation === "resolve-user-decision") {
+			try {
+				const current = await readTaskRecordV2(ctx.cwd, taskId);
+				if (!current.record) throw new Error(`task ${taskId} has no TaskRecord v2`);
+				if (current.revision !== projection.projection.record_revision)
+					throw new Error("task record changed while preparing user decision");
+				userDecisionOperation = buildUserDecisionOperation(current.record);
+			} catch (error) {
+				const reason = error instanceof Error ? error.message : String(error);
+				ctx.ui.notify(`cannot authorize ${taskId}: ${reason}`, "error");
+				progression.closeInvocation(invocation);
+				return { state: "blocked", reason };
+			}
+		}
+		const reviewFindings = pendingReview?.verdict.findings ?? [];
+		const reviewBlockers = reviewFindings.filter((finding) => finding.kind === "blocking").length;
+		const reviewWarnings = reviewFindings.filter((finding) => finding.kind === "advisory").length;
+		const summary = [
+			`Task: ${taskId}`,
+			`Decision: ${operation}`,
+			...(pendingReview
+				? [
+						`Review: ${pendingReview.verdict.decision.toUpperCase()} | Blockers: ${reviewBlockers} | Warnings: ${reviewWarnings}`,
+						`Impact: ${pendingReview.snapshot.dirty_files.length} scoped changed file(s)`,
+					]
+				: [`State: ${projection.projection.phase} | Claim: ${projection.claim.lifecycle_status}`]),
+			"",
+			"Authority details",
+			`Operation: ${operation}`,
+			...(userDecisionOperation
+				? [
+						`Finding: ${userDecisionOperation.finding_id}`,
+						`Resolution: ${userDecisionOperation.resolution}`,
+					]
+				: []),
+			...(pendingReview
+				? [
+						`Native agent: ${pendingReview.agentId}`,
+						`Verdict: ${pendingReview.verdict.decision}`,
+						`Summary: ${pendingReview.verdict.decision === "pass" ? pendingReview.verdict.approval!.summary : pendingReview.verdict.findings!.map((finding) => `${finding.id} ${finding.kind}: ${finding.summary}`).join("; ")}`,
+						...(pendingReview.durationMs !== undefined ? [`Duration: ${Math.round(pendingReview.durationMs / 1000)}s`] : []),
+						...(pendingReview.tokens ? [`Tokens: ${pendingReview.tokens.total}`] : []),
+					]
+				: []),
+			`Claim: ${projection.claim.lifecycle_status}`,
+			`Record revision: ${projection.projection.record_revision}`,
+			`Phase: ${projection.projection.phase}`,
+			`Intent: rev ${projection.projection.intent_revision} (${projection.projection.intent_content_hash})`,
+			`Diff: ${projection.projection.diff_hash}`,
+		].join("\n");
+		const snapshotDigestRef = pendingReview
+			? snapshotDigest(pendingReview.snapshot)
+			: projection.projection.record_revision;
+			let confirmed: boolean;
+			try {
+				confirmed = await ctx.ui.confirm(`Authorize ${operation} for canary ${taskId}?`, summary, {
+					timeout: 10 * 60 * 1000,
+					signal: ctx.signal,
+				});
+		} catch {
+			ctx.ui.notify(`authorize ${operation}: confirmation aborted`, "info");
+			await recordCancelledUserDecision(ctx, taskId, operation, snapshotDigestRef).catch(() => undefined);
+			if (operation === "record-review-verdict") progression.clearPendingReviewVerdict(taskId);
+			progression.closeInvocation(invocation);
+			return { state: "cancelled", operation, reason: "confirmation aborted" };
+		}
+		if (!confirmed) {
+			ctx.ui.notify(`authorize ${operation}: cancelled`, "info");
+			await recordCancelledUserDecision(ctx, taskId, operation, snapshotDigestRef).catch(() => undefined);
+			if (operation === "record-review-verdict") progression.clearPendingReviewVerdict(taskId);
+			progression.closeInvocation(invocation);
+			return { state: "cancelled", operation, reason: "cancelled" };
+		}
+		if (!progression.sessionActiveValue() || progression.sessionGenerationValue() !== authorizationGeneration || progression.invocationState(invocation) !== "open") {
+			ctx.ui.notify(`authorize ${operation}: session changed; confirmation discarded`, "warning");
+			progression.closeInvocation(invocation);
+			return { state: "blocked", reason: "session changed; confirmation discarded" };
+		}
+		try {
+			if (operation === "record-review-verdict") {
+				if (!pendingReview) throw new Error("pending native review verdict disappeared");
+				await applyAssuranceVerdict(
+					ctx,
+					pendingReview.snapshot,
+					pendingReview.verdict,
+					invocation,
+					`native-review-${pendingReview.agentId}`,
+				);
+				progression.clearPendingReviewVerdict(taskId);
+				return { state: "applied", operation, phase: pendingReview.verdict.decision === "rework" ? "working" : "review" };
+			}
+				// Linearization point: only this fresh affirmative continuation
+				// may mint/apply; timeout/cancel already won open -> cancelled.
+			try {
+				progression.commitInvocation(invocation);
+			} catch (error) {
+				const reason = error instanceof Error ? error.message : String(error);
+				ctx.ui.notify(`authorize ${operation} aborted: ${reason}`, "error");
+				return { state: "blocked", reason };
+			}
+				const { registry, app } = await authorityPair();
+				const now = new Date().toISOString();
+				if (operation === "begin-drain") {
+					// The drain capability digest is bound to the canonical
+					// begin_drain action shared with the consuming application
+					// (capabilityActionFor delegates to beginDrainCapabilityAction).
+					const capability = await mintCapability(registry, {
+						authority_kind: "user",
+						task_id: taskId,
+						action_kind: "begin-drain",
+						expected_record_hash: projection.projection.record_revision,
+						intent_revision: projection.projection.intent_revision,
+						intent_content_hash: projection.projection.intent_content_hash,
+						diff_hash: "sha256:" + "0".repeat(64),
+						actor_id: "literal-user",
+						now,
+					});
+				const claim = (await app.beginDrain({
+					root: ctx.cwd,
+					task_id: taskId,
+					capability,
+					now,
+				})) as unknown as { lifecycle_status: string };
+				ctx.ui.notify(`drain applied: claim is now ${claim.lifecycle_status}`, "info");
+				return { state: "applied", operation, phase: claim.lifecycle_status };
+			}
+				// record-user-approval: literal-user approval for critical-task
+				// completion. The approval payload is bound to the fresh
+				// projection (task revision, intent content hash, diff hash) and
+				// applied through the same exact-action capability path; the
+				// reducer requires kind user, user authority, and phase review.
+				const isUserApproval = operation === "record-user-approval";
+				const approval = isUserApproval
+					? {
+							id: `approval-user-${randomUUID().slice(0, 8)}`,
+							kind: "user" as const,
+							authority_role: "user" as const,
+							task_revision: projection.projection.intent_revision,
+							intent_content_hash: projection.projection.intent_content_hash,
+							diff_hash: projection.projection.diff_hash,
+							actor_id: "literal-user",
+							summary: "literal user approval",
+						}
+					: undefined;
+				const exactOperation = userDecisionOperation ?? userOperationFor(operation, approval);
+				const capability = await mintCapability(registry, {
+					authority_kind: "user",
+					task_id: taskId,
+					action_kind: exactOperation.op,
+					expected_record_hash: projection.projection.record_revision,
+					intent_revision: projection.projection.intent_revision,
+					intent_content_hash: projection.projection.intent_content_hash,
+					diff_hash: projection.projection.diff_hash,
+					actor_id: "literal-user",
+					reason: exactOperation.op === "stop" ? exactOperation.reason : undefined,
+					...(exactOperation.op === "record_user_approval" ? { approval: exactOperation.approval } : {}),
+					...(exactOperation.op === "resolve_user_decision"
+						? { finding_id: exactOperation.finding_id, resolution: exactOperation.resolution }
+						: {}),
+					now,
+				});
+				// The exact host-built operation is shared by capability digest and
+				// application payload; command arguments cannot inject authority fields.
+				const result = (await app.execute({
+					root: ctx.cwd,
+					task_id: taskId,
+					operation: { ...exactOperation, capability, actor_id: "literal-user" } as never,
+					prior_intent_token: (await readTaskIntent(ctx.cwd, taskId)).token,
+					diffProvider: (root: string, intent: { scope_hint: unknown }) => diffHashOf(root, intent),
+					now,
+				})) as unknown as { record: { phase: string } };
+				ctx.ui.notify(`authorize ${operation}: applied, phase=${result.record.phase}`, "info");
+				return { state: "applied", operation, phase: result.record.phase };
+			} catch (error) {
+				const reason = error instanceof Error ? error.message : String(error);
+				if (
+					operation === "record-review-verdict" &&
+					pendingReview &&
+					reason === "assurance snapshot changed before authority application" &&
+					progression.pendingReviewVerdict(taskId)?.operationId === pendingReview.operationId
+				) progression.clearPendingReviewVerdict(taskId);
+				ctx.ui.notify(`authorize failed: ${reason}`, "error");
+				return { state: "blocked", reason };
+			} finally {
+				progression.closeInvocation(invocation);
+			}
+	}
+
+	async function requestAuthorization(taskId: string, ctx: ExtensionContext): Promise<AuthorizationOutcome> {
+		if (ctx.mode !== "tui") return { state: "blocked", reason: "imm_kernel_canary mutation is TUI-only" };
+		if (progression.isInvocationOpen(taskId))
+			return { state: "blocked", reason: `task ${taskId} already has an open invocation; concurrent assure/authorize is rejected` };
+		const projection = await projectAssuranceState(ctx.cwd, taskId);
+		if (projection.error || !projection.claim)
+			return { state: "blocked", reason: projection.error ?? "no active backend claim" };
+		await dependencies.authorizationBeforeRecordRead?.();
+		const read = await readTaskRecordV2(ctx.cwd, taskId);
+		if (!read.record) return { state: "blocked", reason: `task ${taskId} has no TaskRecord v2` };
+		if (read.revision !== projection.projection.record_revision)
+			return { state: "blocked", reason: "TaskRecord changed while deriving authorization operation" };
+		const derived = deriveAuthorizationOperation({
+			hasPendingReviewVerdict: progression.hasPendingReviewVerdict(taskId),
+			readiness: projection.projection.authorization,
+		});
+		if ("blocked" in derived) return { state: "blocked", reason: derived.blocked };
+		return authorizeExactOperation(taskId, derived.operation, ctx);
+	}
+
+	pi.registerCommand("imm-canary-authorize", {
+		description: "Literal-user TUI confirmation for one exact privileged canary operation",
+		handler: async (args: string, ctx: ExtensionContext) => {
+			if (ctx.mode !== "tui") {
+				ctx.ui.notify("imm-canary-authorize is TUI-only and was rejected", "warning");
+				return;
+			}
+			let parsed: ReturnType<typeof parseAuthorizeArgs>;
+			try {
+				parsed = parseAuthorizeArgs(args);
+			} catch (error) {
+				ctx.ui.notify(`imm-canary-authorize: ${error instanceof Error ? error.message : String(error)}`, "error");
+				return;
+			}
+			await authorizeExactOperation(parsed.task_id, parsed.operation, ctx);
+		},
+	});
+}
+
+// ---------------------------------------------------------------------------
+// Helpers (module scope; no workflow state)
+// ---------------------------------------------------------------------------
+
+export type DerivedAuthorizationOperation =
+	| "record-review-verdict"
+	| "resolve-user-decision"
+	| "record-user-approval";
+
+// Kernel-facts authorization readiness comes from the assurance projection;
+// only the Pi-session pending native Review verdict is composed here.
+export function deriveAuthorizationOperation(input: {
+	hasPendingReviewVerdict: boolean;
+	readiness: AssuranceAuthorizationReadiness;
+}): { operation: DerivedAuthorizationOperation } | { blocked: string } {
+	if (input.hasPendingReviewVerdict) return { operation: "record-review-verdict" };
+	if (input.readiness.state === "resolve_user_decision") return { operation: "resolve-user-decision" };
+	if (input.readiness.state === "record_user_approval") return { operation: "record-user-approval" };
+	if (input.readiness.blocked) return { blocked: input.readiness.blocked };
+	return { blocked: "no unique host-derived authorization operation" };
+}
+
+function toCanaryOperation(action: { op: string }, actorId: string) {
+	switch (action.op) {
+		case "record_evidence": {
+			const a = action as unknown as { acceptance_id: string; status: string; summary: string };
+			return {
+				op: "record_evidence",
+				acceptance_id: a.acceptance_id,
+				status: a.status,
+				summary: a.summary,
+				actor_id: actorId,
+			};
+		}
+		case "record_finding":
+			return {
+				op: "record_finding",
+				finding: (action as unknown as { finding: unknown }).finding,
+				actor_id: actorId,
+			};
+		case "resolve_finding":
+			return { op: "resolve_finding", finding_id: (action as unknown as { finding_id: string }).finding_id, actor_id: actorId };
+		case "submit_review":
+			return { op: "submit_review", actor_id: actorId };
+		case "revise_intent":
+			return { op: "revise_intent", next_intent: (action as unknown as { next_intent: unknown }).next_intent, actor_id: actorId };
+		case "complete":
+			return { op: "complete", actor_id: actorId };
+		default:
+			throw new Error(`unsupported ordinary operation: ${action.op}`);
+	}
+}
+
+export async function recordCancelledUserDecision(
+	ctx: ExtensionContext,
+	taskId: string,
+	operation: string,
+	snapshotDigestRef: string,
+): Promise<{ recorded: boolean; finding_id: string }> {
+	const findingId = `user-decision-${operation}`;
+	const current = await readTaskRecordV2(ctx.cwd, taskId);
+	const openDecision = current.record?.findings.find(
+		(finding) =>
+			finding.kind === "unresolved_user_decision" && finding.status === "open",
+	);
+	// Deduplicate onto the existing open decision trail regardless of its id:
+	// a pending decision must never be shadowed by a second trail entry.
+	if (openDecision) return { recorded: false, finding_id: openDecision.id };
+	const { app } = await authorityPair();
+	await app.execute({
+		root: ctx.cwd,
+		task_id: taskId,
+		operation: {
+			op: "record_finding",
+			finding: {
+				id: findingId,
+				kind: "unresolved_user_decision",
+				acceptance_id: null,
+				summary: `${operation} confirmation cancelled by literal user; snapshot ${snapshotDigestRef}`,
+			},
+			actor_id: "literal-user",
+		} as never,
+		prior_intent_token: (await readTaskIntent(ctx.cwd, taskId)).token,
+		diffProvider: (root: string, intent: { scope_hint: unknown }) => diffHashOf(root, intent),
+		now: new Date().toISOString(),
+	});
+	return { recorded: true, finding_id: findingId };
+}
+
+export function buildUserDecisionOperation(record: {
+	findings: Array<{ id: string; kind: string; status: string; summary?: string }>;
+}) {
+	const open = record.findings.filter(
+		(finding) => finding.kind === "unresolved_user_decision" && finding.status === "open",
+	);
+	if (open.length !== 1)
+		throw new Error(`resolve-user-decision requires exactly one open user decision; found ${open.length}`);
+	return {
+		op: "resolve_user_decision" as const,
+		finding_id: open[0].id,
+		resolution: `resume after literal-user decision: ${open[0].summary}`,
+	};
+}
+
+export function userOperationFor(operation: AuthorizeOperation, approval?: unknown) {
+	switch (operation) {
+		case "record-review-verdict":
+			throw new Error("record-review-verdict must use the session-bound native verdict");
+		case "record-user-approval":
+			// The approval payload is constructed by the authorize handler from
+			// the fresh projection; it is never derived from untrusted input.
+			if (approval === undefined)
+				throw new Error("record-user-approval requires an approval payload");
+			return { op: "record_user_approval" as const, approval };
+		case "approve-breaking-intent-revision":
+			throw new Error("approve-breaking-intent-revision requires the next intent payload");
+		case "resolve-user-decision":
+			throw new Error("resolve-user-decision must use the host-built decision operation");
+		case "stop":
+			return { op: "stop" as const, reason: "literal user stop" };
+		default:
+			throw new Error(`unsupported authorize operation: ${operation}`);
+	}
+}
+
+function diffHashOf(root: string, intent: { scope_hint?: unknown }): string {
+	return taskDiffHash(root, intent.scope_hint);
+}
+
+// Translation-only adapter for the internal Kernel assurance projection. All
+// freshness, approval, finding, claim, and authorization facts come from the
+// Kernel module; this wrapper only binds the host diff provider.
+function projectAssuranceState(root: string, taskId: string): Promise<AssuranceProjectionResult> {
+	return projectAssurance(root, taskId, diffHashOf);
+}
+
+export interface QaVerificationProgressInput {
+	index: number;
+	total: number;
+	acceptance_id: string;
+	phase: "running" | "passed" | "failed";
+	elapsed_ms: number;
+}
+
+export function boundedVerificationFailureDetail(stdout: string, stderr: string): string {
+	const output = (stderr || stdout).trim();
+	const limit = 500;
+	if (output.length <= limit) return output;
+	const marker = "\n... output omitted ...\n";
+	const available = limit - marker.length;
+	const headLength = Math.floor(available / 3);
+	const tailLength = available - headLength;
+	return `${output.slice(0, headLength)}${marker}${output.slice(-tailLength)}`;
+}
+
+export async function runDeterministicQa(
+	snapshot: SnapshotDescriptor,
+	descriptors: Map<string, VerificationDescriptor>,
+	runner: FrozenRunner,
+	options: {
+		signal?: AbortSignal;
+		onProgress?: (progress: QaVerificationProgressInput) => void;
+		runVerification?: typeof runFixedVerification;
+	} = {},
+): Promise<AssuranceVerdict> {
+	if (snapshot.role !== "qa") throw new Error("deterministic QA requires qa role");
+	if (options.signal?.aborted) throw new VerificationAbortedError();
+	const findings: NonNullable<AssuranceVerdict["findings"]> = [];
+	if (snapshot.missing_acceptance_ids.length > 0) {
+		findings.push({
+			id: qaEvidenceFreshnessId(snapshotDigest(snapshot)),
+			kind: "blocking",
+			acceptance_id: null,
+			summary: `executor evidence must be refreshed in working phase for acceptance ids: ${snapshot.missing_acceptance_ids.join(",")}`,
+			findings_digest: "",
+		});
+	} else {
+		const runVerification = options.runVerification ?? runFixedVerification;
+		for (const [offset, item] of snapshot.acceptance.entries()) {
+			if (options.signal?.aborted) throw new VerificationAbortedError();
+			const descriptor = descriptors.get(item.id);
+			if (!descriptor) throw new Error(`verification descriptor missing for ${item.id}`);
+			const startedAt = Date.now();
+			options.onProgress?.({
+				index: offset + 1,
+				total: snapshot.acceptance.length,
+				acceptance_id: item.id,
+				phase: "running",
+				elapsed_ms: 0,
+			});
+			const result = await runVerification(snapshot.root, descriptor, runner, {
+				signal: options.signal,
+			});
+			const failed = result.exit_code !== 0 || result.timed_out;
+			options.onProgress?.({
+				index: offset + 1,
+				total: snapshot.acceptance.length,
+				acceptance_id: item.id,
+				phase: failed ? "failed" : "passed",
+				elapsed_ms: Date.now() - startedAt,
+			});
+			if (failed) {
+				const detail = boundedVerificationFailureDetail(result.stdout, result.stderr);
+				findings.push({
+					id: qaFindingId(item.id, snapshotDigest(snapshot)),
+					kind: "blocking",
+					acceptance_id: item.id,
+					summary: `verification failed (exit ${result.exit_code}${result.timed_out ? ", timed out" : ""}) stdout=${result.stdout.length}B stderr=${result.stderr.length}B${detail ? `: ${detail}` : ""}`,
+					findings_digest: "",
+				});
+			}
+		}
+	}
+	if (findings.length > 0) {
+		return {
+			contract: "assurance_kernel/assurance_verdict/v2",
+			role: "qa",
+			task_id: snapshot.task_id,
+			snapshot_digest: snapshotDigest(snapshot),
+			decision: "rework",
+			findings,
+		};
+	}
+	return {
+		contract: "assurance_kernel/assurance_verdict/v2",
+		role: "qa",
+		task_id: snapshot.task_id,
+		snapshot_digest: snapshotDigest(snapshot),
+		decision: "pass",
+		approval: {
+			kind: "qa",
+			authority_role: "qa",
+			summary: `all ${snapshot.acceptance.length} fixed verification descriptor(s) passed`,
+		},
+	};
+}
+
+async function applyAssuranceVerdict(
+	ctx: ExtensionContext,
+	snapshot: SnapshotDescriptor,
+	verdict: AssuranceVerdict,
+	invocation: InvocationToken,
+	actorId: string,
+	hooks: { beforeCommit?: () => Promise<void>; onCommit?: () => void; afterCommit?: () => Promise<void> } = {},
+): Promise<void> {
+	const fresh = await projectAssuranceState(ctx.cwd, snapshot.task_id);
+	if (
+		fresh.error ||
+		fresh.claim?.task_id !== snapshot.task_id ||
+		fresh.projection.record_revision !== snapshot.record_revision ||
+		fresh.projection.workspace_revision !== snapshot.workspace_revision ||
+		fresh.projection.intent_revision !== snapshot.intent_revision ||
+		fresh.projection.intent_content_hash !== snapshot.intent_content_hash ||
+		fresh.projection.diff_hash !== snapshot.diff_hash ||
+		fresh.projection.phase !== snapshot.phase
+	) {
+		throw new Error("assurance snapshot changed before authority application");
+	}
+	const { registry, app } = await authorityPair();
+	const priorIntentToken = (await readTaskIntent(ctx.cwd, snapshot.task_id)).token;
+	if (verdict.decision === "rework") {
+		const findings = verdict.findings!.map((finding) => ({
+			id: finding.id,
+			kind: finding.kind,
+			status: "open",
+			acceptance_id: finding.acceptance_id,
+			source: "review",
+			review_round: null,
+			summary: finding.summary,
+		}));
+		const now = new Date().toISOString();
+		const capability = await mintCapability(registry, {
+			authority_kind: snapshot.role,
+			task_id: snapshot.task_id,
+			action_kind: "request_rework",
+			expected_record_hash: snapshot.record_revision,
+			intent_revision: snapshot.intent_revision,
+			intent_content_hash: snapshot.intent_content_hash,
+			diff_hash: snapshot.diff_hash,
+			actor_id: actorId,
+			findings,
+			now,
+		});
+		await hooks.beforeCommit?.();
+		invocationRegistry.commit(invocation);
+		hooks.onCommit?.();
+		await hooks.afterCommit?.();
+		const result = (await app.execute({
+			root: ctx.cwd,
+			task_id: snapshot.task_id,
+			operation: {
+				op: "request_rework",
+				capability,
+				findings: findings as never[],
+				actor_id: actorId,
+			},
+			prior_intent_token: priorIntentToken,
+			diffProvider: (root: string, intent: { scope_hint: unknown }) => diffHashOf(root, intent),
+			now,
+		})) as unknown as { record: { phase: string } };
+		const parked = (result.record as { findings?: Array<{ kind: string; status: string }> }).findings?.some(
+			(finding) => finding.kind === "replan_required" && finding.status === "open",
+		);
+		ctx.ui.notify(
+			parked
+				? `rework applied: review parked for replan with ${findings.length} finding(s)`
+				: `rework applied: ${result.record.phase} with ${findings.length} finding(s)`,
+			parked ? "warning" : "info",
+		);
+		return;
+	}
+	const now = new Date().toISOString();
+	const approval = {
+		id: `approval-${snapshot.role}-${randomUUID().slice(0, 8)}`,
+		kind: snapshot.role === "qa" ? "qa" : "review",
+		authority_role: snapshot.role === "qa" ? "qa" : "reviewer",
+		task_revision: snapshot.intent_revision,
+		intent_content_hash: snapshot.intent_content_hash,
+		diff_hash: snapshot.diff_hash,
+		actor_id: actorId,
+		summary: verdict.approval!.summary,
+	};
+	const capability = await mintCapability(registry, {
+		authority_kind: snapshot.role,
+		task_id: snapshot.task_id,
+		action_kind: "record_approval",
+		expected_record_hash: snapshot.record_revision,
+		intent_revision: snapshot.intent_revision,
+		intent_content_hash: snapshot.intent_content_hash,
+		diff_hash: snapshot.diff_hash,
+		actor_id: actorId,
+		approval,
+		now,
+	});
+	await hooks.beforeCommit?.();
+	invocationRegistry.commit(invocation);
+	hooks.onCommit?.();
+	await hooks.afterCommit?.();
+	const result = (await app.execute({
+		root: ctx.cwd,
+		task_id: snapshot.task_id,
+		operation: { op: "record_approval", capability, approval, actor_id: actorId },
+		prior_intent_token: priorIntentToken,
+		diffProvider: (root: string, intent: { scope_hint: unknown }) => diffHashOf(root, intent),
+		now,
+	})) as unknown as { record: { phase: string } };
+	ctx.ui.notify(`assurance applied: ${snapshot.role} approval recorded on ${result.record.phase}`, "info");
+}
+
+async function buildAssuranceSnapshot(
+	root: string,
+	taskId: string,
+	role: AssuranceRole,
+	projection: AssuranceProjectionResult,
+	runner: FrozenRunner,
+): Promise<{ snapshot: SnapshotDescriptor; descriptors: Map<string, VerificationDescriptor>; reviewBundle: ReviewBundle | null }> {
+	const record = await readTaskRecordV2(root, taskId);
+	if (
+		!record.record ||
+		record.revision !== projection.projection.record_revision ||
+		record.record.intent_revision !== projection.projection.intent_revision ||
+		record.record.intent_ref.content_hash !== projection.projection.intent_content_hash
+	) {
+		throw new Error("TaskRecord changed before assurance snapshot capture");
+	}
+	const intent = record.record.intent_snapshot;
+	const acceptance = intent.acceptance;
+	const descriptors = new Map<string, VerificationDescriptor>();
+		// Every verification string must parse as strict canonical JSON
+		// verification_descriptor/v1 and claim the frozen runner version;
+		// a free-form or version-mismatched string is ineligible.
+	for (const item of acceptance) {
+		const descriptor = parseVerificationDescriptor(item.verification);
+		assertRunnerCompatible(descriptor, runner);
+		descriptors.set(item.id, descriptor);
+	}
+	const reviewBundle = role === "review"
+		? captureReviewBundle(
+				root,
+				intent.scope_hint,
+				projection.projection.diff_hash,
+				Object.fromEntries(
+					record.record.evidence.map((ev) => [ev.acceptance_id, { status: ev.status, summary: ev.summary }]),
+				),
+			)
+		: null;
+	const taskSnapshot = reviewBundle ? null : captureGitTaskSnapshot(root, intent.scope_hint);
+	const dirtyFiles = reviewBundle
+		? Object.keys(reviewBundle.dirty_files)
+		: Object.keys(taskSnapshot!.staged_files);
+	return {
+		snapshot: buildSnapshot({
+				root,
+				task_id: taskId,
+				role,
+				record_revision: projection.projection.record_revision,
+				workspace_revision: projection.projection.workspace_revision,
+				intent_revision: projection.projection.intent_revision,
+				intent_content_hash: projection.projection.intent_content_hash,
+				diff_hash: projection.projection.diff_hash,
+				phase: projection.projection.phase,
+				risk: intent.risk,
+				fresh_acceptance_ids: projection.projection.fresh_acceptance_ids,
+				missing_acceptance_ids: projection.projection.missing_acceptance_ids,
+				stale_evidence_ids: projection.projection.stale_evidence_ids,
+				acceptance,
+				dirty_files: dirtyFiles,
+				review_bundle_digest: reviewBundle?.bundle_digest ?? null,
+		}),
+		descriptors,
+		reviewBundle,
+	};
+}
+
+let frozenRunnerValue: FrozenRunner | undefined;
+async function frozenRunner(): Promise<FrozenRunner> {
+	frozenRunnerValue ??= resolveBunRunner();
+	return frozenRunnerValue;
+}
+
+// The invocation registry is shared with the progression module's
+// module-scoped registry (see the top-level import above); commit/cancel
+// semantics are identical to the previous extension implementation.
+
+async function mintCapability(
+	registry: MutationAuthorityRegistry,
+	input: {
+		authority_kind: "review" | "qa" | "user";
+		task_id: string;
+		action_kind: string;
+		expected_record_hash: string;
+		intent_revision: number;
+		intent_content_hash: string;
+		diff_hash: string;
+		actor_id: string;
+		findings?: unknown[];
+		approval?: unknown;
+		reason?: string;
+		finding_id?: string;
+		resolution?: string;
+		now: string;
+	},
+) {
+	const now = input.now;
+	// The action digest is computed by the Kernel from the canonical action
+	// builder (same field order and payload the consuming application will
+	// inspect), so the minted capability always matches the applied action.
+	const action = (await capabilityActionFor({
+		op: input.action_kind,
+		task_id: input.task_id,
+		at: now,
+		actor_id: input.actor_id,
+		...(input.reason !== undefined ? { reason: input.reason } : {}),
+		...(input.findings !== undefined ? { findings: input.findings } : {}),
+		...(input.approval !== undefined ? { approval: input.approval } : {}),
+		...(input.finding_id !== undefined ? { finding_id: input.finding_id } : {}),
+		...(input.resolution !== undefined ? { resolution: input.resolution } : {}),
+	})) as unknown as Record<string, unknown>;
+	const digest = await digestOfAction(action as never);
+	const binding: CapabilityBindingV2 = {
+		authority_kind: input.authority_kind,
+		task_id: input.task_id,
+		action_digest: digest,
+		expected_record_hash: input.expected_record_hash,
+		intent_revision: input.intent_revision,
+		intent_content_hash: input.intent_content_hash,
+		diff_hash: input.diff_hash,
+		actor_id: input.actor_id,
+		confirmation_ref: `pi-confirm-${createHash("sha256").update(`${input.task_id}\0${now}`).digest("hex").slice(0, 16)}`,
+		expires_at: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
+		findings_digest:
+			input.action_kind === "request_rework"
+				? await findingsDigestV2(
+						(input.findings as Array<{ id: string; kind: string; acceptance_id: string | null; summary: string }>).map((f) => ({
+							id: f.id,
+							kind: f.kind,
+							acceptance_id: f.acceptance_id,
+							summary: f.summary,
+						})),
+					)
+				: null,
+	};
+	return registry.issue(binding);
+}
+
+let authorityPairPromise: Promise<{ registry: MutationAuthorityRegistry; app: CanaryApplication }> | null = null;
+function authorityPair(): Promise<{ registry: MutationAuthorityRegistry; app: CanaryApplication }> {
+	if (!authorityPairPromise) {
+		authorityPairPromise = (async () => {
+			const registry = await createMutationAuthorityRegistry();
+			const app = await createCanaryApplication(registry);
+			return { registry, app };
+		})();
+	}
+	return authorityPairPromise;
+}
+
+async function executeOrdinaryOperation(
+	ctx: ExtensionContext,
+	input: { taskId: string; operation: { op: string; actor_id: string } },
+): Promise<unknown> {
+	const { app } = await authorityPair();
+	return app.execute({
+		root: ctx.cwd,
+		task_id: input.taskId,
+		operation: input.operation as never,
+		prior_intent_token: (await readTaskIntent(ctx.cwd, input.taskId)).token,
+		diffProvider: (root: string, intent: { scope_hint: unknown }) => diffHashOf(root, intent),
+		now: new Date().toISOString(),
+	});
+}
+
+function statusNextAction(state: {
+	phase: string;
+	missing_acceptance_ids: string[];
+	blocking_finding_ids: string[];
+	unresolved_user_decision_ids: string[];
+	replan_required_ids: string[];
+	completion_ready: boolean;
+}): string {
+	if (state.phase === "done" || state.phase === "stopped") return "none";
+	if (state.missing_acceptance_ids.length > 0) return "record remaining acceptance evidence";
+	if (
+		state.blocking_finding_ids.length > 0
+		|| state.unresolved_user_decision_ids.length > 0
+		|| state.replan_required_ids.length > 0
+	) return "resolve blocking assurance state";
+	if (state.completion_ready) return "complete task";
+	return "advance assurance";
+}
+
+function toolResult(text: string, details?: Record<string, unknown>) {
+	return { content: [{ type: "text" as const, text }], details };
+}
+
+// Re-exported pure lifecycle helpers and types (single source of truth in the
+// progression module; the extension keeps its historical export surface).
+export {
+	AssuranceProgression,
+	buildReviewPrompt,
+	classifyReviewWorkload,
+	deriveQaJobTimeoutMs,
+	parseAssuranceVerdict,
+	snapshotDigest,
+	QA_JOB_TIMEOUT_SECONDS,
+	REVIEW_DISPATCH_TIMEOUT_MS,
+	REVIEW_PREPARATION_TIMEOUT_MS,
+	REVIEW_TIMING_PROFILES,
+	REVIEW_VERDICT_VALIDATION_TIMEOUT_MS,
+};
+export type {
+	AssuranceAdvanceResult,
+	AssuranceCancelResult,
+	AssuranceProgressionPorts,
+	AssuranceVerdict,
+	PendingReviewVerdict,
+	QaVerificationProgress,
+	SnapshotDescriptor,
+} from "./pi-canary-assurance-progression";

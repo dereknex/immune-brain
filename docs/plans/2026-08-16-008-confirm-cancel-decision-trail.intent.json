@@ -1,0 +1,39 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "2026-08-16-008-confirm-cancel-decision-trail",
+  "owner": "user",
+  "goal": "Turn cancelled literal-user confirmations into durable, resumable Kernel state instead of session-only pending payloads: cancelling any Assurance confirmation records exactly one unresolved_user_decision bound to the blocked operation, survives session restart, and resumes through the existing resolve-user-decision authority path with the identical operation.",
+  "acceptance": [
+    {
+      "id": "acc-cancel-decision-trail",
+      "assertion": "Every cancellable Assurance confirmation (record-review-verdict, record-review-approval, record-user-approval, stop, begin-drain, approve-breaking-intent-revision, and resolve-user-decision) is enumerated by trigger (user cancel, timeout, session shutdown) crossed with state (pending, applied, superseded) with a single decision-trail owner per state; a cancel before application records exactly one unresolved_user_decision bound to the exact operation and snapshot digest without applying the underlying verdict or approval; repeated cancels deduplicate onto the same open decision; the pending payload is durable Kernel state rather than Pi session memory and survives session restart; resolve-user-decision re-opens the identical operation for literal-user confirmation; and invocation tokens are released across terminal completion, cancellation, error, and session-shutdown exit paths.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/pi-canary-confirm-cancel-decision.test.ts\",\n    \"tests/pi-canary-assurance-authority.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 300000,\n  \"max_output_bytes\": 262144\n}\n"
+    },
+    {
+      "id": "acc-single-terminal-invariants",
+      "assertion": "Existing single-terminal settlement, deferred-rejection nonterminal ownership, and invocation lifecycle cleanup invariants remain intact under the new cancel path with zero automatic retries.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/pi-canary-assurance-progression.test.ts\",\n    \"tests/pi-canary-assurance-continuation.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 300000,\n  \"max_output_bytes\": 262144\n}\n"
+    },
+    {
+      "id": "acc-typecheck-and-regression",
+      "assertion": "The complete Pi extension graph passes strict TypeScript checking and the full repository test suite passes with no regressions.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 600000,\n  \"max_output_bytes\": 262144\n}\n"
+    }
+  ],
+  "scope_hint": [
+    "docs/plans/2026-08-16-assurance-workflow-hardening.plan.md",
+    "plugins/immune-brain/.pi-extension/imm-canary-work.ts",
+    "plugins/immune-brain/.pi-extension/pi-canary-assurance-progression.ts",
+    "plugins/immune-brain/.pi-extension/pi-canary-invocations.ts",
+    "plugins/immune-brain/runtime/kernel/assurance_projection.ts",
+    "plugins/immune-brain/runtime/kernel/reducer_v2.ts",
+    "plugins/immune-brain/runtime/kernel/types.ts",
+    "plugins/immune-brain/runtime/kernel/validation.ts",
+    "tests/pi-canary-assurance-authority.test.ts",
+    "tests/pi-canary-assurance-continuation.test.ts",
+    "tests/pi-canary-assurance-progression.test.ts",
+    "tests/pi-canary-confirm-cancel-decision.test.ts"
+  ],
+  "risk": "critical",
+  "revision": 1
+}

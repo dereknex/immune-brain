@@ -1,0 +1,36 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "2026-08-16-010-review-dispatch-resilience",
+  "owner": "user",
+  "goal": "Make reserved Review dispatch resilient to provider and artifact failures: dispatch preconditions are verified before spawning, immutable review bundle artifacts outlive unsettled reservations, and provider failures that produce no verdict never consume review rounds or block re-dispatch of the reserved operation.",
+  "acceptance": [
+    {
+      "id": "acc-bundle-lifetime",
+      "assertion": "Immutable review bundle artifacts, including evidence.json, persist under the reservation lock until the bound reservation reaches terminal settlement or explicit release; garbage collection never removes artifacts referenced by an unsettled reservation; dispatch or settlement that finds a required artifact missing fails closed, writes zero authority, and exposes an explicit re-reserve path; bundle capture, lock, and cleanup ordering is enumerated by trigger (settle, release, crash, shutdown) crossed with state (reserved, dispatched, settling, terminal) with a single artifact owner per state.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/pi-canary-review-dispatch-resilience.test.ts\",\n    \"tests/pi-canary-native-review.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 300000,\n  \"max_output_bytes\": 262144\n}\n"
+    },
+    {
+      "id": "acc-provider-failure-classification",
+      "assertion": "Provider quota and transport failures during standard Agent dispatch are classified as no-verdict dispatch failures: they write zero authority, leave the reserved operation valid, emit no terminal review event, consume no review follow-up round, and permit exactly one re-dispatch of the same reserved operation; validated native terminal status remains the only verdict source.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/pi-canary-review-dispatch-resilience.test.ts\",\n    \"tests/pi-canary-assurance-progression.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 300000,\n  \"max_output_bytes\": 262144\n}\n"
+    },
+    {
+      "id": "acc-typecheck-and-regression",
+      "assertion": "The complete Pi extension graph passes strict TypeScript checking and the full repository test suite passes with no regressions.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 600000,\n  \"max_output_bytes\": 262144\n}\n"
+    }
+  ],
+  "scope_hint": [
+    "docs/plans/2026-08-16-assurance-workflow-hardening.plan.md",
+    "docs/reference/subagent-dispatch-protocol.md",
+    "plugins/immune-brain/.pi-extension/pi-canary-assurance-progression.ts",
+    "plugins/immune-brain/.pi-extension/pi-canary-native-review.ts",
+    "plugins/immune-brain/.pi-extension/pi-canary-review-bundle.ts",
+    "plugins/immune-brain/dist/docs/reference/subagent-dispatch-protocol.md",
+    "tests/pi-canary-assurance-progression.test.ts",
+    "tests/pi-canary-native-review.test.ts",
+    "tests/pi-canary-review-dispatch-resilience.test.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}

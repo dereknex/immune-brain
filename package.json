@@ -1,0 +1,64 @@
+{
+  "name": "@immune-brain/agent-skills",
+  "version": "2.0.0",
+  "private": true,
+  "description": "Immune-Brain agent skill system with active context-mode tools",
+  "author": "Immune-Brain Team",
+  "license": "MIT",
+  "keywords": [
+    "pi-package"
+  ],
+  "pi": {
+    "skills": [
+      "./plugins/immune-brain/skills"
+    ],
+    "extensions": [
+      "./plugins/immune-brain/.pi-extension"
+    ]
+  },
+  "dependencies": {
+    "context-mode": "*"
+  },
+  "devDependencies": {
+    "zod": "^4.1.8"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*",
+    "@earendil-works/pi-tui": "*",
+    "typebox": "*"
+  },
+  "imports": {
+    "#kernel/enrollment_authority": "./plugins/immune-brain/runtime/kernel/enrollment_authority.ts",
+    "#kernel/pi_canary_prepare": "./plugins/immune-brain/runtime/kernel/pi_canary_prepare.ts",
+    "#kernel/canary_eligibility": "./plugins/immune-brain/runtime/kernel/canary_eligibility.ts",
+    "#kernel/enrollment": "./plugins/immune-brain/runtime/kernel/enrollment.ts",
+    "#kernel/authority_port": "./plugins/immune-brain/runtime/kernel/authority_port.ts",
+    "#kernel/canary_application": "./plugins/immune-brain/runtime/kernel/canary_application.ts",
+    "#kernel/backend_claim": "./plugins/immune-brain/runtime/kernel/backend_claim.ts",
+    "#kernel/storage": "./plugins/immune-brain/runtime/kernel/storage.ts",
+    "#kernel/intent": "./plugins/immune-brain/runtime/kernel/intent.ts",
+    "#kernel/reducer_v2": "./plugins/immune-brain/runtime/kernel/reducer_v2.ts"
+  },
+  "exports": {
+    ".": "./README.md",
+    "./package.json": "./package.json",
+    "./dist/*": "./plugins/immune-brain/dist/*",
+    "./skills/*": "./plugins/immune-brain/skills/*",
+    "./extensions/*": "./plugins/immune-brain/.pi-extension/*"
+  },
+  "files": [
+    "plugins/immune-brain/.pi-extension",
+    "plugins/immune-brain/runtime/v4_runtime.ts",
+    "plugins/immune-brain/runtime/plan_core.ts",
+    "plugins/immune-brain/runtime/commands/kernel.ts",
+    "plugins/immune-brain/runtime/kernel",
+    "plugins/immune-brain/runtime/canonical_json.ts",
+    "plugins/immune-brain/runtime/workspace_scope.ts",
+    "plugins/immune-brain/runtime/authority_commit_receipts.ts",
+    "plugins/immune-brain/runtime/managed_task_routing_policy.ts",
+    "plugins/immune-brain/runtime/verification_descriptor.ts",
+    "plugins/immune-brain/skills",
+    "plugins/immune-brain/dist",
+    "plugins/immune-brain/bin"
+  ]
+}

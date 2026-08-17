@@ -1,0 +1,35 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "2026-08-16-017-descriptor-rehearsal-integrity-settlement",
+  "owner": "user",
+  "goal": "Complete descriptor rehearsal preflight after Task 016 reached its Review follow-up limit by making setup timeout, live integrity drift, and parent-worktree byte fingerprints fail closed across every terminal and race path.",
+  "acceptance": [
+    {
+      "id": "acc-rehearsal",
+      "assertion": "Enrollment readiness executes canonical verification argv in parallel isolated copies from one frozen Git index snapshot, binds index digest and scope paths into the receipt, writes zero authority before enrollment, and leaves the parent worktree byte-identical. Terminal settlement matrix: descriptor validation -> validation_failed, waivable; descriptor nonzero exit -> failed, waivable; descriptor execution timeout -> timed_out, waivable only after process-tree close; setup timeout -> setup_timed_out, non-waivable and close-settled; cancellation during setup or execution -> cancelled, non-waivable and close-settled; output limit -> output_exceeded, non-waivable and close-settled; setup/spawn failure -> setup_failed, non-waivable; live scope/index drift -> integrity_drift, non-waivable, immediately aborts every running descriptor and waits for every started process tree to close before cleanup. The integrity monitor compares the frozen index and scope plus parent tracked dirty and untracked content bytes, not only Git status path classification, and reports actionable per-descriptor status and timing.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/kernel-descriptor-rehearsal.test.ts\",\n    \"tests/imm-canary-work-contract.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 300000,\n  \"max_output_bytes\": 262144\n}\n"
+    },
+    {
+      "id": "acc-enrollment-contract",
+      "assertion": "Enrollment readiness documentation, command output, Kernel projection, and contract tests consistently describe frozen-index rehearsal, live integrity monitoring, byte-bound parent mutation detection, the terminal settlement matrix, and the single explicit literal-user waiver route across source and packaged artifacts.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/imm-canary-work-contract.test.ts\",\n    \"tests/pi-canary-packed-consumer.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 300000,\n  \"max_output_bytes\": 262144\n}\n"
+    },
+    {
+      "id": "acc-typecheck-and-regression",
+      "assertion": "The complete Pi extension graph passes strict TypeScript checking and the full repository test suite passes with no regressions under frozen-index production rehearsal.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 600000,\n  \"max_output_bytes\": 262144\n}\n"
+    }
+  ],
+  "scope_hint": [
+    "docs/plans/2026-08-16-assurance-workflow-hardening.plan.md",
+    "plugins/immune-brain/.pi-extension/imm-canary-enroll.ts",
+    "plugins/immune-brain/.pi-extension/imm-canary-new.ts",
+    "plugins/immune-brain/USER_GUIDE.md",
+    "plugins/immune-brain/runtime/commands/kernel.ts",
+    "tests/imm-canary-work-contract.test.ts",
+    "tests/kernel-descriptor-rehearsal.test.ts",
+    "tests/pi-canary-packed-consumer.test.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}

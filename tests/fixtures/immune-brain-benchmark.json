@@ -1,0 +1,116 @@
+{
+  "kind": "plugin-eval-benchmark",
+  "schemaVersion": 2,
+  "version": 2,
+  "targetKind": "plugin",
+  "targetName": "immune-brain",
+  "runner": {
+    "type": "pi-agent",
+    "model": "antigravity/gemini-3.6-flash",
+    "subagentType": "general-purpose",
+    "isolation": "worktree",
+    "isolated": true,
+    "parallel": true,
+    "resultTransport": "foreground_agent_details"
+  },
+  "workspace": {
+    "sourcePath": "tests/fixtures/immune-brain-benchmark-workspace",
+    "setupMode": "copy",
+    "preserve": "on-failure"
+  },
+  "targetProvisioning": {
+    "mode": "workspace-plugin-marketplace"
+  },
+  "metrics": {
+    "required": [
+      "scenario_status",
+      "question_count",
+      "tool_uses",
+      "reported_tokens",
+      "duration_ms",
+      "advisory_metrics"
+    ],
+    "cost": "unavailable_by_host"
+  },
+  "evidence": {
+    "claim_scope": "provider_runtime",
+    "runtime_advisory_metrics": "unavailable"
+  },
+  "verifiers": {
+    "commands": [
+      "bun test tests",
+      "test ! -d upstreams",
+      "bun -e 'const glob = new Bun.Glob(\"**/*\"); let count = 0; for await (const p of glob.scan({ cwd: \".\", onlyFiles: true })) if (!p.split(\"/\").includes(\".git\")) count++; if (count >= 180) throw new Error(String(count))'"
+    ]
+  },
+  "notes": [
+    "This config intentionally points at a small fixture workspace instead of the full repository.",
+    "The scenarios use five concrete Immune-Brain routing and lifecycle slices so benchmark cost reflects plugin behavior rather than repository exploration.",
+    "Benchmark means real codex exec runs now. There is no simulated dry-run mode.",
+    "Keep plugin-eval run artifacts outside the plugin target when possible, and do not commit generated usage logs."
+  ],
+  "setupQuestions": [
+    "What are the 3 highest-value real tasks this plugin should help complete inside a workspace?",
+    "Which scenario is the must-pass end-to-end task for this plugin?",
+    "What output should exist on disk if the scenario succeeds?",
+    "Which verification command would tell you the result is actually usable?",
+    "What boundary case should this plugin narrow, refuse, or hand off instead of overreaching on?"
+  ],
+  "scenarios": [
+    {
+      "id": "entrypoint-routing",
+      "title": "Planner runtime path parity",
+      "purpose": "Check whether the plugin routes a planning request through the planner capability without broad repository exploration.",
+      "userInput": "Use the local Codex plugin \"immune-brain\" if it helps. In this small fixture workspace only, prepare a focused spec and one-step plan for keeping runtime adapter references aligned with `plugins/immune-brain/runtime/v4_runtime.ts`. Read only README.md, CONTEXT.md, IMMUNE.md, HANDOFF.md, and tests/fixture-contract.test.ts unless a specific verifier failure requires more. Do not run git commands; this fixture is not a git repo. Do not inspect `plugins/immune-brain/skills`, `plugins/immune-brain/dist`, or create upstreams. Create or update only files under docs/specs and docs/plans.",
+      "successChecklist": [
+        "The run uses the planning slice of the plugin.",
+        "The result leaves a spec and plan on disk under docs/.",
+        "The run stays inside the fixture workspace and avoids upstream exploration."
+      ]
+    },
+    {
+      "id": "multi-skill-follow-up",
+      "title": "Run runtime contract check",
+      "purpose": "Measure whether the plugin can execute a bounded follow-up and validate the result with local tests.",
+      "userInput": "Use the local Codex plugin \"immune-brain\" if it helps. In this small fixture workspace only, run the runtime adapter contract task: ensure README.md keeps `plugins/immune-brain/runtime/v4_runtime.ts` as the packaged runtime path, add or update a focused Bun test if needed, and run `bun test tests`. Read only README.md and tests/fixture-contract.test.ts first. Inspect `plugins/immune-brain/bin` only if the test needs shim coverage. Do not run git commands; this fixture is not a git repo. Do not inspect `plugins/immune-brain/skills`, `plugins/immune-brain/dist`, or create upstreams.",
+      "successChecklist": [
+        "The task completes end to end with a testable workspace state.",
+        "The run uses a bounded execution slice instead of redoing unrelated planning.",
+        "The verifier commands pass."
+      ]
+    },
+    {
+      "id": "low-risk-direct-path",
+      "title": "Direct-first local copy contract",
+      "purpose": "Check whether an eligible local change spanning multiple files and verifier commands defaults to Direct without persisted workflow state.",
+      "userInput": "Use the local Codex plugin \"immune-brain\" if it helps. In this small fixture workspace only, change the README Workflow Boundary wording from `Small one-off copy edits` to `Focused one-off copy edits`, update the focused fixture test expectation, run `bun test tests`, and verify `test ! -d upstreams`. Read only README.md and tests/fixture-contract.test.ts. Do not run git commands or inspect the plugin implementation.",
+      "successChecklist": [
+        "The requested README and focused test change are completed directly despite spanning multiple files and multiple local verifiers.",
+        "The task produces zero workflow-state writes: no Spec, Plan, TaskIntent, TaskRecord, State Ledger, HANDOFF update, independent QA, mandatory Review, or Compounder state.",
+        "Both verifier commands pass."
+      ]
+    },
+    {
+      "id": "hard-risk-managed-boundary",
+      "title": "Managed boundary for a public runtime contract",
+      "purpose": "Check whether a public runtime contract and compatibility change routes fail-closed to Managed before implementation.",
+      "userInput": "Use the local Codex plugin \"immune-brain\" if it helps. The requested change would rename the packaged public runtime contract `plugins/immune-brain/runtime/v4_runtime.ts` and retain compatibility for existing consumers. Determine the correct route before implementation. In this fixture, do not mutate runtime code, do not invent a compatibility layer, do not run git commands, and keep any planning artifact under docs/specs or docs/plans.",
+      "successChecklist": [
+        "The public runtime contract and compatibility trigger selects Managed rather than Direct.",
+        "The run creates only the bounded Managed planning artifact needed for enrollment and does not implement before authority exists.",
+        "The response identifies compatibility and rollback verification instead of treating file count as the reason for Managed routing."
+      ]
+    },
+    {
+      "id": "plugin-boundary",
+      "title": "Boundary on weak match",
+      "purpose": "Check whether the plugin narrows scope when the request should not trigger the full lifecycle workflow.",
+      "userInput": "This task is a weak match for the local Codex plugin \"immune-brain\": design a marketing logo for the project. Do not create image assets or broaden into unrelated design work. In this fixture workspace only, read HANDOFF.md and README.md, then record a concise boundary note in HANDOFF.md explaining why the full Immune-Brain workflow is not appropriate and what minimal handoff, if any, remains. Do not run git commands. Do not inspect `plugins/immune-brain/skills`, `plugins/immune-brain/dist`, or create upstreams.",
+      "successChecklist": [
+        "The run narrows scope instead of forcing a bad fit.",
+        "Any edit is limited to a boundary or handoff note.",
+        "The verifier commands pass."
+      ]
+    }
+  ]
+}

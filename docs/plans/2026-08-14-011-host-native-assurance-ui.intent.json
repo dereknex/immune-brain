@@ -1,0 +1,55 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "2026-08-14-011-host-native-assurance-ui",
+  "owner": "user",
+  "goal": "Delete Immune-Brain custom assurance Footer/Widget and render imm_kernel_canary natively with renderCall/renderResult while keeping followUp, notify, and privileged confirm.",
+  "acceptance": [
+    {
+      "id": "acc-no-custom-ui",
+      "assertion": "After advance_assurance starts Review or QA, no production or test path publishes imm-canary-assure status or imm-canary-assurance widget.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/pi-canary-assurance-observability.test.ts\",\n    \"tests/pi-canary-work-extension.test.ts\",\n    \"tests/pi-canary-assurance-advance.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 180000,\n  \"max_output_bytes\": 262144\n}\n"
+    },
+    {
+      "id": "acc-native-renderers",
+      "assertion": "imm_kernel_canary registers renderCall and renderResult that show task id and structured result state without inventing native activity telemetry.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/pi-canary-work-extension.test.ts\",\n    \"tests/imm-canary-work-contract.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 180000,\n  \"max_output_bytes\": 262144\n}\n"
+    },
+    {
+      "id": "acc-review-followup-confirm",
+      "assertion": "Review still dispatches through reserved standard Agent params; timeout, cancel, and verdict_ready still emit one correlated follow-up and still require literal-user confirmation before Kernel writes.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/pi-canary-native-review.test.ts\",\n    \"tests/pi-canary-work-extension.test.ts\",\n    \"tests/pi-canary-user-authority.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 180000,\n  \"max_output_bytes\": 262144\n}\n"
+    },
+    {
+      "id": "acc-qa-no-widget",
+      "assertion": "Deterministic QA still runs as a host batch, still notifies, and still emits one terminal follow-up without recreating Footer/Widget.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/pi-canary-assurance-advance.test.ts\",\n    \"tests/pi-canary-work-extension.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 180000,\n  \"max_output_bytes\": 262144\n}\n"
+    },
+    {
+      "id": "acc-privileged-confirm",
+      "assertion": "Privileged ctx.ui.confirm remains for record-review-verdict, record-user-approval, stop, begin-drain, and approve-breaking-intent-revision.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/pi-canary-user-authority.test.ts\",\n    \"tests/imm-canary-work-contract.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 180000,\n  \"max_output_bytes\": 262144\n}\n"
+    },
+    {
+      "id": "acc-full-regression",
+      "assertion": "The Immune-Brain suite stays green after Footer/Widget deletion.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 300000,\n  \"max_output_bytes\": 262144\n}\n"
+    }
+  ],
+  "scope_hint": [
+    "docs/plans/2026-08-14-011-host-native-assurance-ui.intent.json",
+    "docs/specs/host-native-assurance-ui.spec.md",
+    "docs/specs/host-native-lightweight-workflow-roadmap.spec.md",
+    "plugins/immune-brain/.pi-extension/imm-canary-work.ts",
+    "plugins/immune-brain/.pi-extension/pi-canary-assurance.ts",
+    "plugins/immune-brain/dist/imm-canary-work.md",
+    "plugins/immune-brain/skills/imm-canary-work/SKILL.md",
+    "tests/imm-canary-work-contract.test.ts",
+    "tests/pi-canary-assurance-advance.test.ts",
+    "tests/pi-canary-assurance-observability.test.ts",
+    "tests/pi-canary-native-review.test.ts",
+    "tests/pi-canary-user-authority.test.ts",
+    "tests/pi-canary-work-extension.test.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}

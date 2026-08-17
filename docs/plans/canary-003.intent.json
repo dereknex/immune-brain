@@ -1,0 +1,18 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "canary-003",
+  "owner": "user",
+  "goal": "Execute the complete P2C drain drill on canary-003: enroll, record drill-start evidence, submit for review, perform a user-confirmed begin_drain (claim active -> draining), perform a user-confirmed stop (terminal tombstone + workspace release), and record the full drill in docs/evidence/assurance-kernel/p2c-drain-drill.md including the canary-002 stop-only walkthrough note.",
+  "acceptance": [
+    {
+      "id": "acc-1",
+      "assertion": "The committed drill note docs/evidence/assurance-kernel/p2c-drain-drill.md exists and documents the canary-003 drain drill end to end: the enrollment, the user-confirmed begin_drain with the claim transitioning active -> draining, the user-confirmed stop, the terminal tombstone, and the workspace release; it also records the canary-002 stop-only walkthrough (no drain) for completeness.",
+      "verification": "{\"contract\":\"assurance_kernel/verification_descriptor/v1\",\"runner_id\":\"bun\",\"runner_version\":\"1.3.14\",\"argv\":[\"-e\",\"const fs=require('node:fs');const p='docs/evidence/assurance-kernel/p2c-drain-drill.md';if(!fs.existsSync(p))process.exit(1);const t=fs.readFileSync(p,'utf8');for(const k of ['canary-003','canary-002','begin_drain','draining','stop','tombstone'])if(!t.includes(k))process.exit(2);const t2=fs.existsSync('.imm/tasks/canary-003.backend-claim.json')?fs.readFileSync('.imm/tasks/canary-003.backend-claim.json','utf8'):'';if(!t2.includes('\\\"terminal\\\"'))process.exit(3);const w=fs.existsSync('.imm/workspace.json')?fs.readFileSync('.imm/workspace.json','utf8'):'';if(!w.includes('null'))process.exit(4);\"],\"cwd\":\".\",\"timeout_ms\":60000,\"max_output_bytes\":65536}"
+    }
+  ],
+  "scope_hint": [
+    "docs/evidence/assurance-kernel/p2c-drain-drill.md"
+  ],
+  "risk": "routine",
+  "revision": 1
+}

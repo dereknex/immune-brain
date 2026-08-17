@@ -1,0 +1,55 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "2026-08-13-017-v4-only-storage-retirement",
+  "owner": "user",
+  "goal": "Retire v3 State Ledger authority and TaskRecord v1 production storage so managed execution and Pi enrollment are v4-only on Kernel TaskRecord v2 transactions, while preserving immutable legacy audit access and a fail-closed drain-first upgrade boundary for projects that still have nonterminal v3 ownership.",
+  "acceptance": [
+    {
+      "id": "acc-v3-writers-retired",
+      "assertion": "No shipped production command, migration path, recovery hook, observer, runtime adapter, or host integration can create or mutate the v3 State Ledger, v3 authority-commit receipts, or v3 automatic-observation journals; those artifacts are outside production mutation authority.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/v4-storage-retirement-v3-writers.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 262144\n}\n"
+    },
+    {
+      "id": "acc-v3-upgrade-boundary",
+      "assertion": "A project containing a nonterminal v3 owner is rejected before any write with a stable drain_required diagnostic that instructs the operator to drain or terminate it using the prior runtime, while terminal or owner-free legacy artifacts remain byte-identical.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/v4-storage-retirement-upgrade-boundary.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 262144\n}\n"
+    },
+    {
+      "id": "acc-v2-store-only",
+      "assertion": "All production Kernel task and workspace mutations use TaskRecord v2 plus workspace_transaction/v2 under the existing locks and content-hash CAS; TaskRecord v1 and workspace_transaction/v1 entry points are absent from the production export and call graph and unresolved v1 transaction markers fail closed.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/v4-storage-retirement-kernel-store.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 262144\n}\n"
+    },
+    {
+      "id": "acc-kernel-enrollment-only",
+      "assertion": "Pi task preparation, confirmation binding, rehearsal, and enrollment derive their decision and digest exclusively from securely reread Kernel TaskIntent, workspace, backend-claim, TaskRecord v2, and tombstone owners; enrollment has no dependency on v3 migration reports, readiness evidence, authority receipts, automatic observations, or an observation-window waiver route.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/v4-storage-retirement-enrollment.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 262144\n}\n"
+    },
+    {
+      "id": "acc-legacy-audit-read-only",
+      "assertion": "A packaged explicit legacy-audit projection can securely inspect retained terminal v3 history with bounded no-symlink reads and deterministic redacted output, performs no journal or workflow write, and never imports, synthesizes, or activates a Kernel TaskRecord from legacy data.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/v4-storage-retirement-legacy-audit.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 262144\n}\n"
+    },
+    {
+      "id": "acc-package-contract",
+      "assertion": "Source, packaged runtime, command manifests, Pi extension registration, generated docs, and operator guidance consistently describe Kernel v2 storage as the sole production authority and document the drain-first upgrade requirement plus permanent read-only legacy audit boundary.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/v4-storage-retirement-package-contract.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 262144\n}\n"
+    }
+  ],
+  "scope_hint": [
+    "plugins/immune-brain/runtime/kernel/",
+    "plugins/immune-brain/runtime/state_ledger.ts",
+    "plugins/immune-brain/runtime/project_migration.ts",
+    "plugins/immune-brain/runtime/authority_commit_receipts.ts",
+    "plugins/immune-brain/runtime/commands/",
+    "plugins/immune-brain/runtime/immune_brain_runtime.ts",
+    "plugins/immune-brain/.pi-extension/",
+    "plugins/immune-brain/bin/",
+    "plugins/immune-brain/dist/",
+    "plugins/immune-brain/README.md",
+    "plugins/immune-brain/docs/USER_GUIDE.md",
+    "docs/reference/",
+    "tests/"
+  ],
+  "risk": "critical",
+  "revision": 1
+}

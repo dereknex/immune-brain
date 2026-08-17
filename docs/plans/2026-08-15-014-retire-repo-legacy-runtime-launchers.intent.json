@@ -1,0 +1,48 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "2026-08-15-014-retire-repo-legacy-runtime-launchers",
+  "owner": "user",
+  "goal": "Remove repository-owned launchers and current documentation that still select the legacy v3 dispatcher, routing operational tasks through the shipped v4 runtime without modifying the legacy dispatcher or packaged Skill fallback contracts.",
+  "acceptance": [
+    {
+      "id": "acc-launcher-config",
+      "assertion": "Repository task configuration contains no legacy dispatcher launcher or obsolete heal task, and retained runtime tasks select v4_runtime.ts.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/v4-runtime-launchers.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 180000,\n  \"max_output_bytes\": 262144\n}\n"
+    },
+    {
+      "id": "acc-list-runtime",
+      "assertion": "The real mise list-runtime-tools task succeeds through the v4-only command manifest.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/v4-runtime-launchers.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 180000,\n  \"max_output_bytes\": 262144\n}\n"
+    },
+    {
+      "id": "acc-check-plugin",
+      "assertion": "The real mise check-plugin task validates package metadata and the v4 runtime successfully.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/v4-runtime-launchers.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 180000,\n  \"max_output_bytes\": 262144\n}\n"
+    },
+    {
+      "id": "acc-current-docs",
+      "assertion": "README and the current CONTEXT architecture identify v4_runtime.ts as active while the legacy dispatcher remains present and outside this task scope.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/v4-runtime-launchers.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 180000,\n  \"max_output_bytes\": 262144\n}\n"
+    },
+    {
+      "id": "acc-package-retained",
+      "assertion": "Source and packed Pi discovery, package surface, and host runtime remain unchanged and load exactly the retained canary factories.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/pi-canary-discovery-regression.test.ts\",\n    \"tests/pi-canary-packed-loader.test.ts\",\n    \"tests/pi-only-package-surface.test.ts\",\n    \"tests/host-runtime-cutover.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 300000,\n  \"max_output_bytes\": 262144\n}\n"
+    },
+    {
+      "id": "acc-full-regression",
+      "assertion": "The full repository test suite passes after repository launcher retirement.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 300000,\n  \"max_output_bytes\": 262144\n}\n"
+    }
+  ],
+  "scope_hint": [
+    "CONTEXT.md",
+    "README.md",
+    "docs/specs/host-native-lightweight-workflow-roadmap.spec.md",
+    "docs/specs/retire-repo-legacy-runtime-launchers.spec.md",
+    "mise.toml",
+    "tests/v4-runtime-launchers.test.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}

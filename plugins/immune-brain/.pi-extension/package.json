@@ -1,0 +1,12 @@
+{
+  "name": "immune-brain-pi-extension",
+  "private": true,
+  "description": "Explicit extension entry manifest for the Immune-Brain Pi lifecycle extensions. Helper modules in this directory (pi-canary-invocations.ts, pi-canary-assurance-progression.ts, pi-canary-native-review.ts, pi-canary-review-bundle.ts, pi-canary-verification.ts, runtime-stub.ts) are library code, not extension factories; listing only the three factory files here prevents Pi's directory discovery from loading them as extensions.",
+  "pi": {
+    "extensions": [
+      "./imm-canary-enroll.ts",
+      "./imm-canary-new.ts",
+      "./imm-canary-work.ts"
+    ]
+  }
+}

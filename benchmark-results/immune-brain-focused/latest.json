@@ -1,0 +1,79 @@
+{
+  "schema_version": 1,
+  "run_id": "2026-07-29T10-01-43.784Z",
+  "recorded_at": "2026-07-29T10:01:43.784Z",
+  "benchmark": "imm-brainstorm",
+  "benchmark_version": 2,
+  "model": "antigravity/gemini-3.6-flash",
+  "cost": "unavailable_by_host",
+  "exit_code": 0,
+  "duration_ms": 128058,
+  "metrics_complete": true,
+  "scenarios": [
+    {
+      "scenario_id": "dependent-probe-single-question",
+      "scenario_status": "completed",
+      "question_count": 1,
+      "tool_uses": 8,
+      "reported_tokens": 55100,
+      "duration_ms": 36000,
+      "advisory_metrics": {
+        "child_count": 0,
+        "packet_bytes": 0,
+        "truncation_count": 0
+      }
+    },
+    {
+      "scenario_id": "independent-probes-within-budget",
+      "scenario_status": "completed",
+      "question_count": 4,
+      "tool_uses": 5,
+      "reported_tokens": 37800,
+      "duration_ms": 32100,
+      "advisory_metrics": {
+        "child_count": 0,
+        "packet_bytes": 0,
+        "truncation_count": 0
+      }
+    },
+    {
+      "scenario_id": "scenario-gap-replaces-probe",
+      "scenario_status": "completed",
+      "question_count": 1,
+      "tool_uses": 5,
+      "reported_tokens": 39000,
+      "duration_ms": 33600,
+      "advisory_metrics": {
+        "child_count": 0,
+        "packet_bytes": 0,
+        "truncation_count": 0
+      }
+    },
+    {
+      "scenario_id": "clear-frame-no-forced-scenario",
+      "scenario_status": "completed",
+      "question_count": 1,
+      "tool_uses": 2,
+      "reported_tokens": 28100,
+      "duration_ms": 27400,
+      "advisory_metrics": {
+        "child_count": 0,
+        "packet_bytes": 0,
+        "truncation_count": 0
+      }
+    },
+    {
+      "scenario_id": "rejected-decision-unmet-condition",
+      "scenario_status": "completed",
+      "question_count": 1,
+      "tool_uses": 6,
+      "reported_tokens": 84900,
+      "duration_ms": 17000,
+      "advisory_metrics": {
+        "child_count": 0,
+        "packet_bytes": 0,
+        "truncation_count": 0
+      }
+    }
+  ]
+}

@@ -1,0 +1,53 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "2026-08-15-019-shrink-kernel-cli-surface",
+  "owner": "user",
+  "goal": "Shrink the shipped Kernel CLI surface by removing the retired migrate/readiness/journal branches from commands/kernel.ts while keeping buildMigrationDryRunReport/migrationDryRunDigest as pure helpers, making status and audit strictly read-only with zero journal writes, extending the no-journal guard to all six kernel subcommands so retired rejection also writes zero journal entries, and preserving the shipped v4 router behavior and legacy dispatcher bytes.",
+  "acceptance": [
+    {
+      "id": "acc-retired-rejected",
+      "assertion": "runKernelCommand with first arg migrate, readiness, or journal returns invalid_command (returncode 2) with zero journal appends, and the shipped v4_runtime path returns invalid_kernel_command unchanged.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/kernel-migrate.test.ts\",\n    \"tests/kernel-shadow-cli.test.ts\",\n    \"tests/kernel-r2a-boundary.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 300000,\n  \"max_output_bytes\": 262144\n}\n"
+    },
+    {
+      "id": "acc-read-only-status-audit",
+      "assertion": "imm-kernel status --json and audit --legacy perform zero friction-journal appends and zero .imm writes with byte-identical Ledger, proven through focused contract tests.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/kernel-shadow-cli.test.ts\",\n    \"tests/plugin-package-runtime.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 300000,\n  \"max_output_bytes\": 262144\n}\n"
+    },
+    {
+      "id": "acc-kept-helpers",
+      "assertion": "buildMigrationDryRunReport and migrationDryRunDigest remain exported from commands/kernel.ts and tests/pi-canary-enroll-extension.test.ts continues to build enrollment readiness fixtures from them.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/pi-canary-enroll-extension.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 300000,\n  \"max_output_bytes\": 262144\n}\n"
+    },
+    {
+      "id": "acc-legacy-dispatcher-preserved",
+      "assertion": "immune_brain_runtime.ts bytes remain identical and the shipped v4 router behavior for retired kernel subcommands is unchanged (invalid_kernel_command).",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/v4-storage-retirement-v3-writers.test.ts\",\n    \"tests/host-runtime-cutover.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 300000,\n  \"max_output_bytes\": 262144\n}\n"
+    },
+    {
+      "id": "acc-help-surface",
+      "assertion": "imm-kernel --help and usage strings list only status --json | audit --legacy | intent author <path> --stdin --json | intent validate <path> --json, with no migrate/readiness/journal references in the shipped command manifest.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/plugin-package-runtime.test.ts\",\n    \"tests/host-runtime-cutover.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 300000,\n  \"max_output_bytes\": 262144\n}\n"
+    },
+    {
+      "id": "acc-full-regression",
+      "assertion": "The complete repository suite passes after the kernel CLI surface shrink.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 300000,\n  \"max_output_bytes\": 262144\n}\n"
+    }
+  ],
+  "scope_hint": [
+    "CONTEXT.md",
+    "docs/specs/host-native-lightweight-workflow-roadmap.spec.md",
+    "docs/specs/shrink-kernel-cli-surface.spec.md",
+    "plugins/immune-brain/runtime/commands/kernel.ts",
+    "tests/host-runtime-cutover.test.ts",
+    "tests/kernel-migrate.test.ts",
+    "tests/kernel-r2a-boundary.test.ts",
+    "tests/kernel-shadow-cli.test.ts",
+    "tests/pi-canary-enroll-extension.test.ts",
+    "tests/plugin-package-runtime.test.ts",
+    "tests/v4-storage-retirement-v3-writers.test.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}

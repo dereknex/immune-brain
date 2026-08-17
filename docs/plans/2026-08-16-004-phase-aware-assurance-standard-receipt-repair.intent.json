@@ -1,0 +1,58 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "2026-08-16-004-phase-aware-assurance-standard-receipt-repair",
+  "owner": "user",
+  "goal": "Close the phase-aware Assurance deadline cutover after the terminal-receipt repair exhausted its Review follow-up limit, requiring standard Agent settlement to use only a host-created validated terminal receipt.",
+  "acceptance": [
+    {
+      "id": "acc-phase-aware-review",
+      "assertion": "Native Review preparation, standard Agent dispatch, workload-classified execution, and verdict validation use independent budgets; quick, standard, and heavy profiles derive only from the frozen intent risk and immutable bundle; soft expiry remains nonterminal and accepts a later matching fresh verdict; the former 300-second end-to-end deadline and heartbeat-free stalled state are absent.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/pi-canary-assurance-progression.test.ts\",\n    \"tests/pi-canary-work-extension.test.ts\",\n    \"tests/pi-canary-assurance-observability.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 300000,\n  \"max_output_bytes\": 262144\n}\n"
+    },
+    {
+      "id": "acc-terminal-ownership",
+      "assertion": "Review stop thresholds and explicit cancellation enter nonterminal fail-closed settlement; standard Agent and injected handles treat stop acknowledgement, local promise resolution or rejection, elapsed time, and nonterminal get_subagent_result payloads as non-authoritative; both paths use host-created deferred receipts resolved or rejected only after matching agent identity, reserved operation provenance, and validated native terminal status from get_subagent_result; handle.result is advisory-only and is never assigned as the terminal receipt; evidence deletion and terminal follow-up require a branded native_terminal outcome; startup and dispatch-timeout late handles never fall back to local result; helper rejection retains settlement ownership and evidence; late or conflicting results perform zero authority writes; and exactly one terminal follow-up wins for each task, operation, and role across completion, startup stop, cancel, failure, and same-tick races.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/pi-canary-assurance-progression.test.ts\",\n    \"tests/pi-canary-work-extension.test.ts\",\n    \"tests/pi-canary-assurance-continuation.test.ts\",\n    \"tests/pi-canary-assurance-authority.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 300000,\n  \"max_output_bytes\": 262144\n}\n"
+    },
+    {
+      "id": "acc-derived-qa-budget",
+      "assertion": "Deterministic QA derives one aggregate deadline from the sequential verification descriptor timeouts plus bounded overhead, retains the fifteen-minute floor and sixty-minute ceiling, rejects an impossible declared aggregate before immutable snapshot capture or the first verification, and projects the derived value consistently without weakening each descriptor timeout or authority-commit linearization.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/pi-canary-assurance-progression.test.ts\",\n    \"tests/pi-canary-assurance-advance.test.ts\",\n    \"tests/pi-canary-work-extension.test.ts\",\n    \"tests/kernel-verification-descriptor.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 300000,\n  \"max_output_bytes\": 262144\n}\n"
+    },
+    {
+      "id": "acc-contract-alignment",
+      "assertion": "Source, Pi extension exports, focused contracts, protocol documentation, source Skill, and packaged Skill describe the same phase-aware budgets, workload profiles, waiting-user semantics, terminal ownership, and deferred cross-session persistence boundary with no active five-second startup or 300-second end-to-end Review contract.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/imm-canary-work-contract.test.ts\",\n    \"tests/pi-subagent-dispatch-observability-contract.test.ts\",\n    \"tests/pi-canary-discovery-regression.test.ts\",\n    \"tests/pi-canary-packed-consumer.test.ts\",\n    \"tests/pi-canary-packed-loader.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 300000,\n  \"max_output_bytes\": 262144\n}\n"
+    },
+    {
+      "id": "acc-typecheck-and-regression",
+      "assertion": "The complete Pi extension graph passes strict TypeScript checking and the full repository test suite passes after the timing-policy cutover.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 600000,\n  \"max_output_bytes\": 262144\n}\n"
+    }
+  ],
+  "scope_hint": [
+    "docs/reference/subagent-dispatch-protocol.md",
+    "docs/specs/phase-aware-assurance-deadlines.spec.md",
+    "plugins/immune-brain/.pi-extension/imm-canary-work.ts",
+    "plugins/immune-brain/.pi-extension/pi-canary-assurance-progression.ts",
+    "plugins/immune-brain/.pi-extension/pi-canary-assurance.ts",
+    "plugins/immune-brain/.pi-extension/pi-canary-native-review.ts",
+    "plugins/immune-brain/dist/docs/reference/subagent-dispatch-protocol.md",
+    "plugins/immune-brain/dist/imm-canary-work.md",
+    "plugins/immune-brain/skills/imm-canary-work/SKILL.md",
+    "tests/imm-canary-work-contract.test.ts",
+    "tests/kernel-verification-descriptor.test.ts",
+    "tests/pi-canary-assurance-advance.test.ts",
+    "tests/pi-canary-assurance-authority.test.ts",
+    "tests/pi-canary-assurance-continuation.test.ts",
+    "tests/pi-canary-assurance-observability.test.ts",
+    "tests/pi-canary-assurance-progression.test.ts",
+    "tests/pi-canary-discovery-regression.test.ts",
+    "tests/pi-canary-packed-consumer.test.ts",
+    "tests/pi-canary-packed-loader.test.ts",
+    "tests/pi-canary-work-extension.test.ts",
+    "tests/pi-subagent-dispatch-observability-contract.test.ts"
+  ],
+  "risk": "critical",
+  "revision": 1
+}

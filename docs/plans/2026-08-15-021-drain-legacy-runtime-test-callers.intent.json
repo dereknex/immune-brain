@@ -1,0 +1,57 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "2026-08-15-021-drain-legacy-runtime-test-callers",
+  "owner": "user",
+  "goal": "Verify and record evidence for the shipped legacy-runtime test-caller drain state on main: 30 deleted test files, 3 files trimmed to live pure-unit blocks, 4 subprocess tests migrated to v4_runtime.ts (including python-reference-boundary), v4 manifest assertions, and zero imports or subprocesses of immune_brain_runtime.ts outside the enumerated out-of-scope and absence/string-assert files, without changing any production code.",
+  "acceptance": [
+    {
+      "id": "acc-deleted-files",
+      "assertion": "All 30 enumerated test files are absent from source, and no remaining test file imports them.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/kernel-intent-authoring.test.ts\",\n    \"tests/plan-validation.test.ts\",\n    \"tests/kernel-r2a-boundary.test.ts\",\n    \"tests/python-reference-boundary.test.ts\",\n    \"tests/loop-child-output-contract.test.ts\",\n    \"tests/execution-evidence-runtime.test.ts\",\n    \"tests/fast-track-detection.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 300000,\n  \"max_output_bytes\": 262144\n}\n"
+    },
+    {
+      "id": "acc-migrated-subprocesses",
+      "assertion": "kernel-intent-authoring, plan-validation, kernel-r2a-boundary, and python-reference-boundary execute runtime/v4_runtime.ts and never immune_brain_runtime.ts for CLI subprocesses; python-reference-boundary asserts the v4 retired-wall semantics for imm-work status, imm-activation-plan, and imm-heal.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/kernel-intent-authoring.test.ts\",\n    \"tests/plan-validation.test.ts\",\n    \"tests/kernel-r2a-boundary.test.ts\",\n    \"tests/python-reference-boundary.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 300000,\n  \"max_output_bytes\": 262144\n}\n"
+    },
+    {
+      "id": "acc-trimmed-files",
+      "assertion": "loop-child-output-contract, execution-evidence-runtime, and fast-track-detection keep their live pure-unit blocks (loop_contract validation, structured evidence/failure_exit enum validation, planSupportsFastTrack) and no longer import runImmCommand or immune_brain_runtime.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/loop-child-output-contract.test.ts\",\n    \"tests/execution-evidence-runtime.test.ts\",\n    \"tests/fast-track-detection.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 300000,\n  \"max_output_bytes\": 262144\n}\n"
+    },
+    {
+      "id": "acc-remaining-references",
+      "assertion": "rg -l immune_brain_runtime under tests/ and plugins/immune-brain/tests/ returns exactly the absence/string-assert files (v4-plan-control-plane, wrapper-retirement, pi-packaged-legacy-fallbacks, host-runtime-cutover, code-review-activation-contract, active-runtime-docs-contract, python-reference-boundary existence asserts), the 5 out-of-scope existence/absence-assert files (roadmap-plan-host-acceptance, kernel-r2c1-boundary, v4-storage-retirement-v3-writers, v4-runtime-launchers, pi-only-current-contracts), and the benchmark fixture workspace files, with zero import or subprocess of the legacy dispatcher in any other test file.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/host-runtime-cutover.test.ts\",\n    \"tests/wrapper-retirement.test.ts\",\n    \"tests/v4-plan-control-plane.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 300000,\n  \"max_output_bytes\": 262144\n}\n"
+    },
+    {
+      "id": "acc-contract-retention",
+      "assertion": "Live invariants remain covered: migrated and trimmed focused suites plus v4-owned suites (authority-commit-receipts, kernel-r2a-boundary, kernel-shadow-cli, plugin-package-runtime, v4-storage-retirement-v3-writers, host-runtime-cutover, wrapper-retirement, v4-plan-control-plane) all pass.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/authority-commit-receipts.test.ts\",\n    \"tests/kernel-r2a-boundary.test.ts\",\n    \"tests/kernel-shadow-cli.test.ts\",\n    \"tests/plugin-package-runtime.test.ts\",\n    \"tests/v4-storage-retirement-v3-writers.test.ts\",\n    \"tests/host-runtime-cutover.test.ts\",\n    \"tests/wrapper-retirement.test.ts\",\n    \"tests/v4-plan-control-plane.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 300000,\n  \"max_output_bytes\": 262144\n}\n"
+    },
+    {
+      "id": "acc-zero-production-changes",
+      "assertion": "git diff from the 020 implementation commit shows only this task plan/spec artifacts; no production runtime, package, skill, or dist file changes beyond the shipped 020 state.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/host-runtime-cutover.test.ts\",\n    \"tests/plugin-package-runtime.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 300000,\n  \"max_output_bytes\": 262144\n}\n"
+    },
+    {
+      "id": "acc-full-regression",
+      "assertion": "The complete repository suite passes on the shipped drain state.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 300000,\n  \"max_output_bytes\": 262144\n}\n"
+    }
+  ],
+  "scope_hint": [
+    "docs/specs/drain-legacy-runtime-test-callers-r2.spec.md",
+    "docs/specs/drain-legacy-runtime-test-callers.spec.md",
+    "docs/specs/host-native-lightweight-workflow-roadmap.spec.md",
+    "tests/execution-evidence-runtime.test.ts",
+    "tests/fast-track-detection.test.ts",
+    "tests/kernel-intent-authoring.test.ts",
+    "tests/kernel-r2a-boundary.test.ts",
+    "tests/loop-child-output-contract.test.ts",
+    "tests/plan-validation.test.ts",
+    "tests/python-reference-boundary.test.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}

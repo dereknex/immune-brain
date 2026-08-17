@@ -1,0 +1,53 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "2026-08-14-012-retire-unreachable-progress-extension",
+  "owner": "user",
+  "goal": "Delete the unreachable legacy Pi Roadmap/Plan progress extension closure while preserving the three manifest-enrolled Kernel lifecycle factories and all retained legacy audit and Review authority boundaries.",
+  "acceptance": [
+    {
+      "id": "acc-retired-paths-absent",
+      "assertion": "The three unreachable progress extension source files and their dedicated test are absent, with no retained production/test imm-progress command or immune-brain-progress widget surface.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/pi-canary-discovery-regression.test.ts\",\n    \"tests/pi-only-package-surface.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 180000,\n  \"max_output_bytes\": 262144\n}\n"
+    },
+    {
+      "id": "acc-source-discovery",
+      "assertion": "The real Pi source-tree loader discovers exactly imm-canary-enroll, imm-canary-new, and imm-canary-work with zero errors, and the entry manifest remains load-bearing for helper exclusion.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/pi-canary-discovery-regression.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 180000,\n  \"max_output_bytes\": 262144\n}\n"
+    },
+    {
+      "id": "acc-packed-discovery",
+      "assertion": "npm pack excludes all retired progress paths and the real Pi loader still discovers exactly the three retained lifecycle factories from packed bytes.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/pi-canary-packed-loader.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 300000,\n  \"max_output_bytes\": 262144\n}\n"
+    },
+    {
+      "id": "acc-host-runtime-retained",
+      "assertion": "Host runtime cutover tests retain v4_runtime.ts and all shipped bin wrappers on Bun without treating the deleted progress index as a production path.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/host-runtime-cutover.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 180000,\n  \"max_output_bytes\": 262144\n}\n"
+    },
+    {
+      "id": "acc-retained-boundaries",
+      "assertion": "The deletion does not change the three canary factory files, legacy projection/parser runtime, explicit legacy audit, retired-command wall, Kernel snapshot/CAS, or Review confirmation machinery.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/v4-storage-retirement-legacy-audit.test.ts\",\n    \"tests/v4-storage-retirement-v3-writers.test.ts\",\n    \"tests/pi-canary-package-boundary.test.ts\",\n    \"tests/pi-canary-user-authority.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 240000,\n  \"max_output_bytes\": 262144\n}\n"
+    },
+    {
+      "id": "acc-full-regression",
+      "assertion": "The complete repository test suite passes after the unreachable progress extension deletion.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 300000,\n  \"max_output_bytes\": 262144\n}\n"
+    }
+  ],
+  "scope_hint": [
+    "docs/plans/2026-08-14-012-retire-unreachable-progress-extension.intent.json",
+    "docs/specs/host-native-lightweight-workflow-roadmap.spec.md",
+    "docs/specs/retire-unreachable-progress-extension.spec.md",
+    "plugins/immune-brain/.pi-extension/index.ts",
+    "plugins/immune-brain/.pi-extension/progress_client.ts",
+    "plugins/immune-brain/.pi-extension/progress_views.ts",
+    "tests/host-runtime-cutover.test.ts",
+    "tests/pi-canary-discovery-regression.test.ts",
+    "tests/pi-canary-packed-loader.test.ts",
+    "tests/pi-only-package-surface.test.ts",
+    "tests/pi-progress-extension.test.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}

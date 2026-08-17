@@ -1,0 +1,67 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "2026-08-15-022-retire-legacy-v3-dispatcher",
+  "owner": "user",
+  "goal": "Delete the retired v3 dispatcher immune_brain_runtime.ts and its five exclusively-owned v3 command modules (commands/plan, work, review, finish, autowork, command_types), flip the six remaining existence assertions to absence assertions, update benchmark fixture literals to v4_runtime.ts, and keep commands/kernel.ts plus all deep modules (imm_core, environment, state_ledger, project_migration, authority_commit_receipts, kernel/*) intact for library and test consumers, without changing the shipped npm package or v4 router behavior.",
+  "acceptance": [
+    {
+      "id": "acc-deleted-files",
+      "assertion": "immune_brain_runtime.ts and commands/{plan,work,review,finish,autowork,command_types}.ts are absent from source.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/roadmap-plan-host-acceptance.test.ts\",\n    \"tests/kernel-r2c1-boundary.test.ts\",\n    \"tests/python-reference-boundary.test.ts\",\n    \"tests/v4-storage-retirement-v3-writers.test.ts\",\n    \"tests/v4-runtime-launchers.test.ts\",\n    \"tests/pi-only-current-contracts.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 300000,\n  \"max_output_bytes\": 262144\n}\n"
+    },
+    {
+      "id": "acc-assertion-flips",
+      "assertion": "The 6 existence-assert test files pass with absence semantics and no test file references the deleted paths as imports or subprocess targets.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/roadmap-plan-host-acceptance.test.ts\",\n    \"tests/kernel-r2c1-boundary.test.ts\",\n    \"tests/python-reference-boundary.test.ts\",\n    \"tests/v4-storage-retirement-v3-writers.test.ts\",\n    \"tests/v4-runtime-launchers.test.ts\",\n    \"tests/pi-only-current-contracts.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 300000,\n  \"max_output_bytes\": 262144\n}\n"
+    },
+    {
+      "id": "acc-fixture-update",
+      "assertion": "Benchmark fixture workspace files (README, docs/plans/runtime-adapter-alignment, docs/specs/runtime-adapter-alignment, fixture-contract.test.ts) and immune-brain-benchmark.json reference runtime/v4_runtime.ts; the fixture contract test passes.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/fixtures/immune-brain-benchmark-workspace/tests/fixture-contract.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 300000,\n  \"max_output_bytes\": 262144\n}\n"
+    },
+    {
+      "id": "acc-no-imports",
+      "assertion": "No source or test file imports the deleted modules.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/plugin-package-runtime.test.ts\",\n    \"tests/host-runtime-cutover.test.ts\",\n    \"tests/wrapper-retirement.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 300000,\n  \"max_output_bytes\": 262144\n}\n"
+    },
+    {
+      "id": "acc-v4-surface-intact",
+      "assertion": "v4 router, package, wrapper, and kernel-intent focused suites pass unchanged (kernel-intent-authoring, plan-validation, kernel-r2a-boundary, plugin-package-runtime, host-runtime-cutover, wrapper-retirement, v4-plan-control-plane).",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/kernel-intent-authoring.test.ts\",\n    \"tests/plan-validation.test.ts\",\n    \"tests/kernel-r2a-boundary.test.ts\",\n    \"tests/plugin-package-runtime.test.ts\",\n    \"tests/host-runtime-cutover.test.ts\",\n    \"tests/wrapper-retirement.test.ts\",\n    \"tests/v4-plan-control-plane.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 300000,\n  \"max_output_bytes\": 262144\n}\n"
+    },
+    {
+      "id": "acc-retained-modules",
+      "assertion": "commands/kernel.ts, imm_core.ts, environment.ts, state_ledger.ts, project_migration.ts, authority_commit_receipts.ts, and kernel/* remain present and their library/test consumers still pass.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/kernel-shadow-cli.test.ts\",\n    \"tests/authority-commit-receipts.test.ts\",\n    \"tests/kernel-r2a-boundary.test.ts\",\n    \"tests/loop-child-output-contract.test.ts\",\n    \"tests/execution-evidence-runtime.test.ts\",\n    \"tests/fast-track-detection.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 300000,\n  \"max_output_bytes\": 262144\n}\n"
+    },
+    {
+      "id": "acc-full-regression",
+      "assertion": "The complete repository suite passes after the dispatcher deletion.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 300000,\n  \"max_output_bytes\": 262144\n}\n"
+    }
+  ],
+  "scope_hint": [
+    "docs/specs/host-native-lightweight-workflow-roadmap.spec.md",
+    "docs/specs/retire-legacy-v3-dispatcher.spec.md",
+    "plugins/immune-brain/runtime/commands/autowork.ts",
+    "plugins/immune-brain/runtime/commands/command_types.ts",
+    "plugins/immune-brain/runtime/commands/finish.ts",
+    "plugins/immune-brain/runtime/commands/plan.ts",
+    "plugins/immune-brain/runtime/commands/review.ts",
+    "plugins/immune-brain/runtime/commands/work.ts",
+    "plugins/immune-brain/runtime/immune_brain_runtime.ts",
+    "tests/fixtures/immune-brain-benchmark-workspace/README.md",
+    "tests/fixtures/immune-brain-benchmark-workspace/docs/plans/runtime-adapter-alignment.md",
+    "tests/fixtures/immune-brain-benchmark-workspace/docs/specs/runtime-adapter-alignment.md",
+    "tests/fixtures/immune-brain-benchmark-workspace/tests/fixture-contract.test.ts",
+    "tests/fixtures/immune-brain-benchmark.json",
+    "tests/kernel-r2c1-boundary.test.ts",
+    "tests/pi-only-current-contracts.test.ts",
+    "tests/python-reference-boundary.test.ts",
+    "tests/roadmap-plan-host-acceptance.test.ts",
+    "tests/v4-runtime-launchers.test.ts",
+    "tests/v4-storage-retirement-v3-writers.test.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}

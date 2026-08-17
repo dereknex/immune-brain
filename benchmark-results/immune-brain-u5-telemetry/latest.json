@@ -1,0 +1,53 @@
+{
+  "schema_version": 2,
+  "run_id": "2026-07-30T02-47-33.454Z",
+  "recorded_at": "2026-07-30T02:47:33.454Z",
+  "benchmark": "immune-brain",
+  "benchmark_version": 2,
+  "model": "antigravity/gemini-3.6-flash",
+  "cost": "unavailable_by_host",
+  "exit_code": 0,
+  "duration_ms": 119251,
+  "metrics_complete": false,
+  "evidence_status": "unavailable",
+  "evidence_reason_code": "runtime_advisory_metrics_unavailable",
+  "claim_scope": "provider_runtime",
+  "scenarios": [
+    {
+      "scenario_id": "entrypoint-routing",
+      "scenario_status": "completed",
+      "question_count": 0,
+      "tool_uses": 10,
+      "reported_tokens": 83200,
+      "reported_tokens_source": "host_runtime",
+      "duration_ms": 43456
+    },
+    {
+      "scenario_id": "multi-skill-follow-up",
+      "scenario_status": "completed",
+      "question_count": 0,
+      "tool_uses": 8,
+      "reported_tokens": 62600,
+      "reported_tokens_source": "host_runtime",
+      "duration_ms": 35430
+    },
+    {
+      "scenario_id": "low-risk-direct-path",
+      "scenario_status": "completed",
+      "question_count": 0,
+      "tool_uses": 18,
+      "reported_tokens": 123900,
+      "reported_tokens_source": "host_runtime",
+      "duration_ms": 73384
+    },
+    {
+      "scenario_id": "plugin-boundary",
+      "scenario_status": "completed",
+      "question_count": 0,
+      "tool_uses": 5,
+      "reported_tokens": 57300,
+      "reported_tokens_source": "host_runtime",
+      "duration_ms": 34036
+    }
+  ]
+}

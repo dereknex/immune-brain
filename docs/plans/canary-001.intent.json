@@ -1,0 +1,24 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "canary-001",
+  "owner": "user",
+  "goal": "Add a regression test proving Pi extension discovery loads exactly the two factory files (imm-canary-enroll.ts and imm-canary-work.ts) and never auto-discovers helper modules (pi-canary-child.ts, pi-canary-invocations.ts, pi-canary-verification.ts, runtime-stub.ts) or any other file in .pi-extension/ as an extension.",
+  "acceptance": [
+    {
+      "id": "acc-1",
+      "assertion": "A new test file tests/pi-canary-discovery-regression.test.ts loads the real Pi DefaultResourceLoader (in-memory settings, packages pointing at the repo root), asserts loader.getExtensions() returns exactly two extensions whose resolved paths end with imm-canary-enroll.ts and imm-canary-work.ts, and asserts no discovered extension path contains the four helper module names.",
+      "verification": "{\"contract\":\"assurance_kernel/verification_descriptor/v1\",\"runner_id\":\"bun\",\"runner_version\":\"1.3.14\",\"argv\":[\"test\",\"tests/pi-canary-discovery-regression.test.ts\"],\"cwd\":\".\",\"timeout_ms\":180000,\"max_output_bytes\":262144}"
+    },
+    {
+      "id": "acc-2",
+      "assertion": "The regression test fails when the explicit entry manifest is removed: the test must mutate a temporary copy of the .pi-extension package manifest (delete plugins/immune-brain/.pi-extension/package.json in a scratch worktree copy) and prove discovery then reports helper modules as extensions, demonstrating the manifest is load-bearing.",
+      "verification": "{\"contract\":\"assurance_kernel/verification_descriptor/v1\",\"runner_id\":\"bun\",\"runner_version\":\"1.3.14\",\"argv\":[\"test\",\"tests/pi-canary-discovery-regression.test.ts\"],\"cwd\":\".\",\"timeout_ms\":180000,\"max_output_bytes\":262144}"
+    }
+  ],
+  "scope_hint": [
+    "tests/pi-canary-discovery-regression.test.ts",
+    "plugins/immune-brain/.pi-extension/package.json"
+  ],
+  "risk": "routine",
+  "revision": 1
+}

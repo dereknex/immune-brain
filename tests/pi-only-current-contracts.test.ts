@@ -1,0 +1,111 @@
+import { describe, expect, it } from "bun:test";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { resolve } from "node:path";
+
+const ROOT = resolve(import.meta.dir, "..");
+const CURRENT_CONTRACTS = [
+  "README.md",
+  "CONTEXT.md",
+  "docs/adr/0002-maintenance-surface-ownership.md",
+  "docs/reference/immune-brain-config.md",
+  "docs/reference/subagent-dispatch-protocol.md",
+  "docs/reference/automatic-subagent-activation-policy.md",
+  "docs/reference/workflow-and-subagents.md",
+  "docs/reference/HANDOFF-template.md",
+  "docs/reference/immune-brain-skills-guide.md",
+  "docs/user_manual.md",
+  "plugins/immune-brain/README.md",
+  "plugins/immune-brain/USER_GUIDE.md",
+  "plugins/immune-brain/EVALUATION.md",
+  "plugins/immune-brain/skills/registry.yaml",
+  "plugins/immune-brain/dist/registry.yaml",
+];
+const UNSUPPORTED_HOST_CLAIM = /\b(Codex|Cursor|Claude Code|OpenCode)\b|\.(?:codex|cursor|claude|opencode)(?:-plugin)?\//;
+
+describe("current Pi-only contracts", () => {
+  it("removes the retired public sync surface from active release contracts", () => {
+    for (const path of [
+      "scripts/sync-to-public.sh",
+      "public-release/templates/CONTRIBUTING.md",
+      "public-release/templates/README.md",
+      "public-release/templates/SECURITY.md",
+      "public-release/templates/mise.toml",
+    ]) expect(existsSync(resolve(ROOT, path))).toBe(false);
+
+    const release = readFileSync(resolve(ROOT, "scripts/plugin_release.ts"), "utf8");
+    const readme = readFileSync(resolve(ROOT, "README.md"), "utf8");
+    for (const token of ["scripts/sync-to-public.sh", "public-release/templates", "immune-brain-public"]) {
+      expect(release).not.toContain(token);
+      expect(readme).not.toContain(token);
+    }
+  });
+
+  it("does not retain the legacy progress projection surface", () => {
+    for (const path of [
+      "plugins/immune-brain/runtime/progress_projection.ts",
+      "tests/progress-projection-runtime.test.ts",
+    ]) expect(existsSync(resolve(ROOT, path))).toBe(false);
+
+    const sources = [
+      "plugins/immune-brain/runtime/imm_core.ts",
+      "plugins/immune-brain/runtime/commands/kernel.ts",
+    ].map((path) => readFileSync(resolve(ROOT, path), "utf8"));
+    for (const source of sources) {
+      expect(source).not.toContain("progress_projection");
+      expect(source).not.toContain("buildWorkProgressProjection");
+      expect(source).not.toContain('"progress"');
+    }
+  });
+
+  it("describe Pi as the sole code-agent host", () => {
+    const distSkills = readdirSync(resolve(ROOT, "plugins/immune-brain/dist"))
+      .filter((name) => name.endsWith(".md"))
+      .map((name) => `plugins/immune-brain/dist/${name}`);
+    for (const path of [...CURRENT_CONTRACTS, ...distSkills]) {
+      const content = readFileSync(resolve(ROOT, path), "utf8");
+      expect({ path, unsupported: content.match(UNSUPPORTED_HOST_CLAIM)?.[0] }).toEqual({
+        path,
+        unsupported: undefined,
+      });
+    }
+    expect(readFileSync(resolve(ROOT, "README.md"), "utf8")).toContain("Pi 是唯一支持的 code-agent host");
+    const configDoc = readFileSync(resolve(ROOT, "docs/reference/immune-brain-config.md"), "utf8");
+    expect(configDoc).toContain("覆盖优先级由高到低");
+    expect(configDoc.indexOf("`IMMUNE_BRAIN_AGENT_CONFIG`")).toBeLessThan(configDoc.indexOf("`IMMUNE_BRAIN_CONFIG`"));
+  });
+
+  it("documents valid Pi native research subagent invocations", () => {
+    for (const path of [
+      "plugins/immune-brain/dist/imm-arch-explorer.md",
+      "plugins/immune-brain/dist/imm-brainstorm.md",
+      "plugins/immune-brain/dist/imm-planner.md",
+    ]) {
+      const content = readFileSync(resolve(ROOT, path), "utf8");
+      expect({ path, nativeExplore: content.includes('subagent_type: "Explore"') }).toEqual({
+        path,
+        nativeExplore: true,
+      });
+      expect({ path, legacyAgentType: content.includes("generalPurpose") }).toEqual({
+        path,
+        legacyAgentType: false,
+      });
+    }
+  });
+
+  it("does not publish retired host selectors or host-specific workflow fields", () => {
+    const activePaths = [
+      "plugins/immune-brain/runtime/imm_core.ts",
+      "plugins/immune-brain/runtime/commands/kernel.ts",
+      "plugins/immune-brain/dist/imm-work.md",
+      "plugins/immune-brain/dist/imm-compounder.md",
+    ];
+    for (const path of activePaths) {
+      const content = readFileSync(resolve(ROOT, path), "utf8");
+      for (const token of ["coding_agent", "IMMUNE_BRAIN_CODING_AGENT", "--coding-agent", "codex_status", "codex_plan"]) {
+        expect({ path, token, present: content.includes(token) }).toEqual({ path, token, present: false });
+      }
+    }
+    expect(existsSync(resolve(ROOT, "docs/reference/compaction-handoff-hosts.md"))).toBe(false);
+    expect(existsSync(resolve(ROOT, "plugins/immune-brain/dist/docs/reference/compaction-handoff-hosts.md"))).toBe(false);
+  });
+});

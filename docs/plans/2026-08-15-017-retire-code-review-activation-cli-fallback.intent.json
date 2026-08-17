@@ -1,0 +1,48 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "2026-08-15-017-retire-code-review-activation-cli-fallback",
+  "owner": "user",
+  "goal": "Remove the retired imm-activation-plan CLI fallback from shipped imm-code-review contracts while preserving catalog-driven lens selection, shared dispatch/authorization, same-boundary follow_up, public Skill aliases, and the separately bounded legacy dispatcher.",
+  "acceptance": [
+    {
+      "id": "acc-code-review-contract",
+      "assertion": "Source and packaged imm-code-review contracts keep catalog-driven lenses and shared dispatch ownership, and advertise no imm-activation-plan, immune_brain_runtime.ts, or activation_runtime_unavailable CLI ladder.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/code-review-activation-contract.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 180000,\n  \"max_output_bytes\": 262144\n}\n"
+    },
+    {
+      "id": "acc-packaged-activation-spec",
+      "assertion": "The packaged automatic-subagent-activation spec no longer names the omitted dispatcher or retired imm-activation-plan command as the planner entrypoint.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/code-review-activation-contract.test.ts\",\n    \"tests/pi-packaged-legacy-fallbacks.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 180000,\n  \"max_output_bytes\": 262144\n}\n"
+    },
+    {
+      "id": "acc-wrapper-fail-closed",
+      "assertion": "The existing v4 wrapper continues to reject imm-activation-plan as an unknown command without restoring it as a production surface.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/activation-plan-runtime-surface.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 180000,\n  \"max_output_bytes\": 262144\n}\n"
+    },
+    {
+      "id": "acc-boundary-retained",
+      "assertion": "The legacy dispatcher, public Skill aliases, Pi factories, package surface, and host runtime remain outside this slice and pass their focused contracts.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/v4-runtime-launchers.test.ts\",\n    \"tests/dist-docs-sync-contract.test.ts\",\n    \"tests/pi-canary-discovery-regression.test.ts\",\n    \"tests/pi-canary-packed-loader.test.ts\",\n    \"tests/pi-only-package-surface.test.ts\",\n    \"tests/host-runtime-cutover.test.ts\",\n    \"plugins/immune-brain/tests/skill-registry-consistency.test.ts\",\n    \"plugins/immune-brain/tests/host-manifest-consistency.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 300000,\n  \"max_output_bytes\": 262144\n}\n"
+    },
+    {
+      "id": "acc-runtime-untouched",
+      "assertion": "This slice does not modify the legacy dispatcher, v4 runtime, or command modules.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/v4-runtime-launchers.test.ts\",\n    \"tests/activation-plan-runtime-surface.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 180000,\n  \"max_output_bytes\": 262144\n}\n"
+    },
+    {
+      "id": "acc-full-regression",
+      "assertion": "The full repository test suite passes after code-review activation CLI fallback retirement.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 300000,\n  \"max_output_bytes\": 262144\n}\n"
+    }
+  ],
+  "scope_hint": [
+    "docs/specs/host-native-lightweight-workflow-roadmap.spec.md",
+    "docs/specs/retire-code-review-activation-cli-fallback.spec.md",
+    "plugins/immune-brain/dist/docs/specs/automatic-subagent-activation.spec.md",
+    "plugins/immune-brain/dist/imm-code-review.md",
+    "plugins/immune-brain/skills/imm-code-review/SKILL.md",
+    "tests/code-review-activation-contract.test.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}

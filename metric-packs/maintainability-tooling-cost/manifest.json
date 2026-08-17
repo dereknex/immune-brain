@@ -1,0 +1,6 @@
+{
+  "name": "maintainability-tooling-cost",
+  "version": "1.0.0",
+  "supportedTargetKinds": ["skill", "plugin"],
+  "command": ["node", "./emit-maintainability-tooling-cost.js"]
+}

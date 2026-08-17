@@ -1,0 +1,35 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "2026-08-16-011-review-semantic-neighborhood",
+  "owner": "user",
+  "goal": "Give isolated Review the full semantic neighborhood of settlement-class changes so one review round can audit every path of a state machine instead of discovering sibling paths across sequential repair tasks: bundles include same-state-machine sibling files and the reserved prompt requires enumerating every terminal, cancellation, and race path present.",
+  "acceptance": [
+    {
+      "id": "acc-neighborhood-bundle",
+      "assertion": "For settlement-class diffs, review bundle capture extends beyond changed files to sibling files within the task scope_hint that own paths of the same state machine, carrying base blob OIDs and current bytes under the unchanged two-mebibyte total and 256-kibibyte per-file limits; sibling selection never includes files outside scope_hint; isolated review continues to read exclusively from bundle bytes with zero live Git or worktree I/O; and bundle provenance records which paths are diff payloads versus neighborhood context.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/pi-canary-review-neighborhood.test.ts\",\n    \"tests/pi-canary-native-review.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 300000,\n  \"max_output_bytes\": 262144\n}\n"
+    },
+    {
+      "id": "acc-review-prompt-enumeration",
+      "assertion": "The reserved Review prompt for settlement-class tasks requires the reviewer to enumerate every terminal, cancellation, and race path present in the bundle and report findings for all of them, with the verdict schema able to reference neighborhood paths; protocol documentation and packaged contracts describe the same behavior consistently.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/pi-subagent-dispatch-observability-contract.test.ts\",\n    \"tests/pi-canary-review-neighborhood.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 300000,\n  \"max_output_bytes\": 262144\n}\n"
+    },
+    {
+      "id": "acc-typecheck-and-regression",
+      "assertion": "The complete Pi extension graph passes strict TypeScript checking and the full repository test suite passes with no regressions.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 600000,\n  \"max_output_bytes\": 262144\n}\n"
+    }
+  ],
+  "scope_hint": [
+    "docs/plans/2026-08-16-assurance-workflow-hardening.plan.md",
+    "docs/reference/subagent-dispatch-protocol.md",
+    "plugins/immune-brain/.pi-extension/pi-canary-native-review.ts",
+    "plugins/immune-brain/.pi-extension/pi-canary-review-bundle.ts",
+    "plugins/immune-brain/dist/docs/reference/subagent-dispatch-protocol.md",
+    "tests/pi-canary-native-review.test.ts",
+    "tests/pi-canary-review-neighborhood.test.ts",
+    "tests/pi-subagent-dispatch-observability-contract.test.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}

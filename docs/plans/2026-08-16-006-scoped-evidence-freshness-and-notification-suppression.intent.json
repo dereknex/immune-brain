@@ -1,0 +1,47 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "2026-08-16-006-scoped-evidence-freshness-and-notification-suppression",
+  "owner": "user",
+  "goal": "Eliminate the dominant source of assurance-loop rework observed in session 01a0088c (the same five acceptance evidence items re-recorded eleven times and twenty-six late/already-settled verdict follow-ups re-checked) by (a) refining evidence freshness so a scoped change only invalidates the acceptance items whose declared verification scope it actually touches, instead of invalidating all evidence on any diff-digest change, and (b) suppressing late verdict_ready follow-ups whose TaskRecord has already left the awaiting-verdict state, while every literal-user authority boundary, the immutable intent/record schema guarantees, and the fail-closed semantics of stale/replayed evidence stay unchanged.",
+  "acceptance": [
+    {
+      "id": "acc-scoped-evidence-freshness",
+      "assertion": "Evidence freshness is evaluated per acceptance item against the workspace regions that acceptance's verification actually covers: a change confined to one acceptance's covered scope marks only that acceptance's evidence stale, evidence for acceptances whose covered scope is untouched by the current diff remains fresh, and an acceptance with no declared covered scope falls back to the current whole-diff behavior so the change is purely additive and never weakens an existing freshness guarantee.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/kernel-canary-scoped-freshness.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 262144\n}\n"
+    },
+    {
+      "id": "acc-stale-notification-suppression",
+      "assertion": "A verdict_ready follow-up is delivered to the parent Agent only when the authoritative TaskRecord is still awaiting that exact operation's verdict at delivery time; a follow-up whose task has already reached a terminal phase, been returned to working, or had its verdict already recorded is suppressed from triggering a turn, and the suppression is observable as a bounded non-terminal status rather than a parent-Agent wake.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/pi-canary-assurance-continuation.test.ts\",\n    \"tests/pi-canary-assurance-observability.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 262144\n}\n"
+    },
+    {
+      "id": "acc-freshness-authority-preserved",
+      "assertion": "The freshness change is authority-neutral: completion still requires fresh passed evidence for every current acceptance id, the scoped-freshness evaluation is deterministic and derived from recorded intent/workspace data with no new privileged action, stale or replayed evidence and follow-ups still fail closed, and the critical-risk three-approval (qa, review, user) independence requirement is unchanged.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/kernel-canary-application.test.ts\",\n    \"tests/kernel-canary-authority.test.ts\",\n    \"tests/kernel-canary-rework-authority.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 262144\n}\n"
+    },
+    {
+      "id": "acc-contract-and-regression",
+      "assertion": "Every contract surface touched by the freshness and notification model (Kernel completion/reducer, source and packaged protocol docs, source and packaged Skills, and their contract tests) is updated to one consistent scoped-freshness and late-notification model, the strict TypeScript graph typechecks with no diagnostics, and the full repository regression passes.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 300000,\n  \"max_output_bytes\": 262144\n}\n"
+    }
+  ],
+  "scope_hint": [
+    "plugins/immune-brain/runtime/kernel/completion.ts",
+    "plugins/immune-brain/runtime/kernel/types.ts",
+    "plugins/immune-brain/runtime/kernel/reducer_v2.ts",
+    "plugins/immune-brain/runtime/kernel/application_v2.ts",
+    "plugins/immune-brain/runtime/kernel/assurance_projection.ts",
+    "plugins/immune-brain/.pi-extension/pi-canary-assurance.ts",
+    "plugins/immune-brain/.pi-extension/pi-canary-assurance-progression.ts",
+    "tests/kernel-canary-scoped-freshness.test.ts",
+    "tests/kernel-canary-application.test.ts",
+    "tests/kernel-canary-authority.test.ts",
+    "tests/kernel-canary-rework-authority.test.ts",
+    "tests/pi-canary-assurance-continuation.test.ts",
+    "tests/pi-canary-assurance-observability.test.ts",
+    "tests/pi-canary-assurance-progression.test.ts",
+    "tests/pi-canary-work-extension.test.ts"
+  ],
+  "risk": "critical",
+  "revision": 1
+}

@@ -1,0 +1,230 @@
+#!/bin/sh
+set -eu
+
+# ─────────────────────────────────────────────────────────────────────────────
+# imm-pr-diag — Collect PR diagnostic data and emit a single JSON report
+# ─────────────────────────────────────────────────────────────────────────────
+# This is a STANDALONE script. It does NOT depend on Python or
+# immune_brain_runtime.py.  It requires only `gh` (GitHub CLI) and `jq`.
+# ─────────────────────────────────────────────────────────────────────────────
+
+usage() {
+  cat <<EOF
+Usage: $(basename "$0") <PR>
+
+Collect diagnostic data for a GitHub pull request and output a single JSON
+object to stdout.
+
+Arguments:
+  <PR>    Pull request identifier — a number, URL, or branch name.
+
+Options:
+  -h, --help    Show this help message and exit.
+
+Prerequisites:
+  • gh   — GitHub CLI (https://cli.github.com)
+  • jq   — Command-line JSON processor (https://stedolan.github.io/jq)
+
+Output:
+  A JSON object containing pr_target, checks, reviews, review_threads,
+  conflicts, and blocker_summary fields.
+EOF
+  exit 0
+}
+
+# ── Argument handling ────────────────────────────────────────────────────────
+
+if [ $# -eq 0 ]; then
+  usage
+fi
+
+case "${1:-}" in
+  -h|--help) usage ;;
+esac
+
+PR="$1"
+
+# ── Dependency checks ───────────────────────────────────────────────────────
+
+if ! command -v gh >/dev/null 2>&1; then
+  echo "error: 'gh' (GitHub CLI) is required but not found in PATH." >&2
+  exit 1
+fi
+
+if ! command -v jq >/dev/null 2>&1; then
+  echo "error: 'jq' is required but not found in PATH." >&2
+  exit 1
+fi
+
+# ── Fetch PR metadata ───────────────────────────────────────────────────────
+
+PR_JSON=$(gh pr view "$PR" --json number,headRefName,baseRefName,url,mergeable,mergeStateStatus,files 2>&1) || {
+  echo "error: failed to fetch PR data for '${PR}'. Is this a valid PR identifier?" >&2
+  echo "       gh output: ${PR_JSON}" >&2
+  exit 1
+}
+
+PR_NUMBER=$(printf '%s\n' "$PR_JSON" | jq -r '.number')
+
+# ── Fetch CI checks ─────────────────────────────────────────────────────────
+
+CHECKS_STATUS=0
+CHECKS_JSON=$(gh pr checks "$PR" --json name,state,bucket,link,workflow 2>&1) || CHECKS_STATUS=$?
+if [ "$CHECKS_STATUS" -ne 0 ] && [ "$CHECKS_STATUS" -ne 8 ]; then
+  echo "error: failed to fetch PR checks for '${PR}'." >&2
+  echo "       gh output: ${CHECKS_JSON}" >&2
+  exit 1
+fi
+
+# ── Fetch reviews ───────────────────────────────────────────────────────────
+
+REVIEWS_JSON=$(gh pr view "$PR" --json reviews --jq '.reviews' 2>/dev/null) || REVIEWS_JSON="[]"
+
+# ── Fetch review threads (comments) ─────────────────────────────────────────
+
+REPO_FULL_NAME=$(gh repo view --json nameWithOwner --jq '.nameWithOwner' 2>&1) || {
+  echo "error: failed to determine repository name for review thread lookup." >&2
+  echo "       gh output: ${REPO_FULL_NAME}" >&2
+  exit 1
+}
+REPO_OWNER=${REPO_FULL_NAME%/*}
+REPO_NAME=${REPO_FULL_NAME#*/}
+THREADS_PAGES=$(gh api graphql --paginate --slurp \
+  -f owner="$REPO_OWNER" \
+  -f repo="$REPO_NAME" \
+  -F pr="$PR_NUMBER" \
+  -f query='
+query($owner: String!, $repo: String!, $pr: Int!, $endCursor: String) {
+  repository(owner: $owner, name: $repo) {
+    pullRequest(number: $pr) {
+      reviewThreads(first: 100, after: $endCursor) {
+        nodes {
+          path
+          line
+          startLine
+          isResolved
+          comments(first: 1) {
+            nodes {
+              body
+            }
+          }
+        }
+        pageInfo {
+          hasNextPage
+          endCursor
+        }
+      }
+    }
+  }
+}
+' 2>&1) || {
+  echo "error: failed to fetch PR review threads for '${PR}'." >&2
+  echo "       gh output: ${THREADS_PAGES}" >&2
+  exit 1
+}
+THREADS_JSON=$(printf '%s\n' "$THREADS_PAGES" | jq '[.[].data.repository.pullRequest.reviewThreads.nodes[]?]')
+
+# ── Assemble the final JSON ─────────────────────────────────────────────────
+
+jq -n \
+  --argjson pr "$PR_JSON" \
+  --argjson checks "$CHECKS_JSON" \
+  --argjson reviews "$REVIEWS_JSON" \
+  --argjson threads "$THREADS_JSON" \
+'
+# ── pr_target ──────────────────────────────────────────────────────────────
+($pr.mergeable // "UNKNOWN") as $mergeable |
+
+{
+  pr_target: {
+    number:    $pr.number,
+    branch:    $pr.headRefName,
+    base:      $pr.baseRefName,
+    url:       $pr.url,
+    mergeable: $mergeable
+  },
+
+# ── checks ─────────────────────────────────────────────────────────────────
+  checks: [
+    $checks[] | {
+      name:       .name,
+      status:     .state,
+      bucket:     (.bucket // null),
+      conclusion: (.bucket // .state),
+      url:        (.link // null),
+      workflow:   (.workflow // null)
+    }
+  ],
+
+# ── reviews (deduplicate to latest per author) ─────────────────────────────
+  reviews: [
+    ($reviews
+      | group_by(.author.login)
+      | map(sort_by(.submittedAt) | last)
+      | .[]
+    ) | {
+      author: .author.login,
+      state:  .state,
+      body:   (.body // "")
+    }
+  ],
+
+# ── review_threads ─────────────────────────────────────────────────────────
+  review_threads: [
+    $threads[] | {
+      path:       .path,
+      line:       (.line // .startLine // null),
+      body:       (.comments.nodes[0].body // .comments[0].body // ""),
+      isResolved: .isResolved
+    }
+  ],
+
+# ── conflicts ──────────────────────────────────────────────────────────────
+  conflicts: (
+    ($mergeable == "CONFLICTING") as $has |
+    {
+      has_conflicts:    $has,
+      conflicting_files_status: (
+        if $has then
+          "unknown"
+        else
+          "none"
+        end
+      ),
+      conflicting_files: (
+        if $has then
+          []
+        else
+          []
+        end
+      )
+    }
+  ),
+
+# ── blocker_summary (computed) ─────────────────────────────────────────────
+  blocker_summary: (
+    # Failing checks
+    [ $checks[] | select(.bucket == "fail" or .state == "FAILURE" or .state == "ACTION_REQUIRED") | .name ] as $failing |
+
+    # Unresolved review threads
+    [ $threads[] | select(.isResolved == false) ] | length as $pending |
+
+    # Merge conflicts
+    ($mergeable == "CONFLICTING") as $has_conflicts |
+
+    # Categories
+    (
+      (if ($failing | length) > 0     then ["check_repair"]    else [] end) +
+      (if $pending > 0                then ["feedback_repair"]  else [] end) +
+      (if $has_conflicts              then ["conflict_repair"]  else [] end)
+    ) as $cats |
+
+    {
+      failing_checks:       $failing,
+      pending_feedback_count: $pending,
+      has_merge_conflicts:  $has_conflicts,
+      blocker_categories:   $cats
+    }
+  )
+}
+'

@@ -1,0 +1,129 @@
+version: 1
+source_glob: skills/*/SKILL.md
+skills:
+  - name: imm-arch-explorer
+    path: skills/imm-arch-explorer/SKILL.md
+    role: explorer
+    title: Architecture Explorer
+    role_class: discovery
+    output_artifacts: [architecture_map]
+    next_actions: [imm-brainstorm, imm-planner]
+    boundary: Repository exploration only; no implementation edits.
+  - name: imm-advisory-reviewer
+    path: skills/imm-advisory-reviewer/SKILL.md
+    role: reviewer
+    title: Advisory Reviewer
+    role_class: advisory
+    canonical: true
+    lenses:
+      [security, api_contract, data_integrity, reliability, debug_hypothesis]
+    output_artifacts: [advisory_review]
+    next_actions: [imm-work, imm-planner]
+    boundary: Read-only lens-based advisory review; requires an explicit lens.
+  - name: imm-brainstorm
+    path: skills/imm-brainstorm/SKILL.md
+    role: brainstorm
+    title: Brainstormer
+    role_class: framing
+    canonical: true
+    modes: [default, roundtable, adversarial]
+    output_artifacts: [brainstorm_framing]
+    next_actions: [imm-planner]
+    boundary: Problem framing only; no implementation or QA closure.
+  - name: imm-code-review
+    path: skills/imm-code-review/SKILL.md
+    role: reviewer
+    title: Code Review
+    role_class: review_host
+    output_artifacts: [code_review]
+    next_actions: [imm-work, imm-planner]
+    boundary: Review and same-boundary follow-up handoff only; no direct edits.
+  - name: imm-compounder
+    path: skills/imm-compounder/SKILL.md
+    role: compound
+    title: Compounder
+    role_class: authority
+    output_artifacts: [solution_learning]
+    next_actions: []
+    boundary: Capture reusable learnings from completed work; no implementation edits.
+  - name: imm-executor
+    path: skills/imm-executor/SKILL.md
+    role: execute
+    title: Executor
+    role_class: authority
+    output_artifacts: [execution_evidence]
+    next_actions: [imm-qa, imm-planner]
+    boundary: Implement only the activated step or follow-up scope.
+  - name: imm-init
+    path: skills/imm-init/SKILL.md
+    role: bootstrap
+    title: Init
+    role_class: bootstrap
+    output_artifacts: [imm_bootstrap]
+    next_actions: [imm-brainstorm, imm-planner]
+    boundary: Bootstrap Immune-Brain files only.
+  - name: imm-planner
+    path: skills/imm-planner/SKILL.md
+    role: plan
+    title: Planner
+    role_class: authority
+    output_artifacts: [validated_plan]
+    next_actions: [imm-loop, imm-work]
+    boundary: Owns plan creation and revision; no executor edits.
+  - name: imm-pr-fix
+    path: skills/imm-pr-fix/SKILL.md
+    role: execute
+    title: PR Repairer
+    role_class: repair
+    output_artifacts: [pr_repair]
+    next_actions: [imm-code-review, imm-qa]
+    boundary: Repair PR feedback and CI failures within the current PR scope.
+  - name: imm-qa
+    path: skills/imm-qa/SKILL.md
+    role: qa
+    title: QA
+    role_class: authority
+    output_artifacts: [qa_review]
+    next_actions: [imm-work, imm-planner, imm-compounder]
+    boundary: Close, rework, or replan based on recorded evidence only.
+  - name: imm-ui-review
+    path: skills/imm-ui-review/SKILL.md
+    role: reviewer
+    title: UI Review
+    role_class: advisory
+    output_artifacts: [ui_review]
+    next_actions: [imm-work, imm-planner]
+    boundary: UI advisory review only; no implementation or QA closure.
+  - name: imm-canary-work
+    path: skills/imm-canary-work/SKILL.md
+    role: coordinate
+    title: Canary Work (Pi-only Kernel routing)
+    role_class: coordinator
+    output_artifacts: [canary_projection]
+    next_actions: [imm-work, imm-planner]
+    boundary: Pi-only routing of one Kernel-owned canary task to the lifecycle extension; no enrollment, no v3 mutation, no Plan activation.
+  - name: imm-work
+    path: skills/imm-work/SKILL.md
+    role: coordinate
+    title: Current Step Driver
+    role_class: coordinator
+    output_artifacts: [work_status]
+    next_actions: [imm-executor, imm-qa, imm-planner, imm-compounder]
+    boundary: Drive only the active step or pending follow-up to the next boundary.
+  - name: imm-loop
+    path: skills/imm-loop/SKILL.md
+    role: coordinate
+    title: Run
+    role_class: coordinator
+    output_artifacts: [run_status]
+    next_actions:
+      [imm-planner, imm-work, imm-code-review, imm-ui-review, imm-compounder]
+    boundary: Coordinate the imm-autowork checkpoint runtime, execution, review gate follow-up, and compounder for a validated plan; no planning bypass.
+  - name: test-fixer
+    path: skills/test-fixer/SKILL.md
+    role: execute
+    title: Test Fixer
+    role_class: active-step-bounded-executor
+    output_artifacts: [child_evidence]
+    next_actions: [imm-work, imm-executor]
+    boundary: Edit only explicitly delegated test files for an active step; no workflow-state mutation.

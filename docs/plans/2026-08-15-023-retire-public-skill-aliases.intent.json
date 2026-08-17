@@ -1,0 +1,74 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "2026-08-15-023-retire-public-skill-aliases",
+  "owner": "user",
+  "goal": "Retire the four public Skill compatibility entries (debug-investigator, imm-page-design, imm-party, imm-preplan-review) by migrating their remaining behavior contracts into the canonical skills (imm-advisory-reviewer debug_hypothesis, imm-planner page_design, imm-brainstorm roundtable/adversarial), removing the registry entries, SKILL.md stub directories, and packaged dist/*.md alias copies, updating current-facing docs (including skills-guide deep-dive sections, mermaid nodes, counts, and the three reference contrast/borrow maps) and the three contract tests to canonical mode expressions, and regenerating dist/registry.yaml and the README role map via the sync script, without changing runtime, Kernel, or authority surface and without touching historical evidence.",
+  "acceptance": [
+    {
+      "id": "acc-alias-absence",
+      "assertion": "The four alias registry entries, SKILL.md stub directories, and packaged dist/*.md copies are gone.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/skill-mode-consolidation.test.ts\",\n    \"plugins/immune-brain/tests/skill-registry-consistency.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 300000,\n  \"max_output_bytes\": 262144\n}\n"
+    },
+    {
+      "id": "acc-canonical-migration",
+      "assertion": "dist/imm-brainstorm.md contains the adversarial question protocol (Ask one question at a time / provide a recommended answer); imm-advisory-reviewer.md, imm-planner.md, and imm-init.md use canonical mode expressions without alias entry references.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/brainstorm-decision-probing-contract.test.ts\",\n    \"tests/skill-mode-consolidation.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 300000,\n  \"max_output_bytes\": 262144\n}\n"
+    },
+    {
+      "id": "acc-current-docs",
+      "assertion": "user_manual, IMMUNE, USER_GUIDE, skills-guide (table, mermaid, deep-dive sections, counts), planning-quality-gate (source+dist), workflow-and-subagents, subagent-remaining-work, skill-details README, addy-agent-skills-contrast, mattpocock-skills-contrast, and upstream-pro-workflow-borrow-map use canonical mode expressions; no current-facing doc advertises an alias as an entry point.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/pi-only-current-contracts.test.ts\",\n    \"plugins/immune-brain/tests/authorization-phrase-consistency.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 300000,\n  \"max_output_bytes\": 262144\n}\n"
+    },
+    {
+      "id": "acc-contract-tests",
+      "assertion": "The 3 updated contract test files (skill-mode-consolidation, brainstorm-decision-probing, authorization-phrase-consistency) pass.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/skill-mode-consolidation.test.ts\",\n    \"tests/brainstorm-decision-probing-contract.test.ts\",\n    \"plugins/immune-brain/tests/authorization-phrase-consistency.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 300000,\n  \"max_output_bytes\": 262144\n}\n"
+    },
+    {
+      "id": "acc-dist-sync",
+      "assertion": "sync-dist-docs.ts --check passes; dist/registry.yaml has no alias entries; README role map regenerated without alias rows.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/pi-canary-discovery-regression.test.ts\",\n    \"tests/pi-canary-packed-loader.test.ts\",\n    \"tests/pi-only-package-surface.test.ts\",\n    \"plugins/immune-brain/tests/skill-registry-consistency.test.ts\",\n    \"plugins/immune-brain/tests/host-manifest-consistency.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 300000,\n  \"max_output_bytes\": 262144\n}\n"
+    },
+    {
+      "id": "acc-full-regression",
+      "assertion": "The complete repository suite passes after the alias retirement.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 300000,\n  \"max_output_bytes\": 262144\n}\n"
+    }
+  ],
+  "scope_hint": [
+    "IMMUNE.md",
+    "docs/reference/addy-agent-skills-contrast.md",
+    "docs/reference/immune-brain-skill-details/README.md",
+    "docs/reference/immune-brain-skills-guide.md",
+    "docs/reference/mattpocock-skills-contrast.md",
+    "docs/reference/planning-quality-gate.md",
+    "docs/reference/subagent-remaining-work.md",
+    "docs/reference/upstream-pro-workflow-borrow-map.md",
+    "docs/reference/workflow-and-subagents.md",
+    "docs/specs/host-native-lightweight-workflow-roadmap.spec.md",
+    "docs/specs/retire-public-skill-aliases.spec.md",
+    "docs/user_manual.md",
+    "plugins/immune-brain/README.md",
+    "plugins/immune-brain/USER_GUIDE.md",
+    "plugins/immune-brain/dist/debug-investigator.md",
+    "plugins/immune-brain/dist/imm-advisory-reviewer.md",
+    "plugins/immune-brain/dist/imm-brainstorm.md",
+    "plugins/immune-brain/dist/imm-init.md",
+    "plugins/immune-brain/dist/imm-page-design.md",
+    "plugins/immune-brain/dist/imm-party.md",
+    "plugins/immune-brain/dist/imm-planner.md",
+    "plugins/immune-brain/dist/imm-preplan-review.md",
+    "plugins/immune-brain/dist/registry.yaml",
+    "plugins/immune-brain/skills/debug-investigator",
+    "plugins/immune-brain/skills/imm-brainstorm/SKILL.md",
+    "plugins/immune-brain/skills/imm-page-design",
+    "plugins/immune-brain/skills/imm-party",
+    "plugins/immune-brain/skills/imm-preplan-review",
+    "plugins/immune-brain/skills/registry.yaml",
+    "plugins/immune-brain/tests/authorization-phrase-consistency.test.ts",
+    "tests/brainstorm-decision-probing-contract.test.ts",
+    "tests/skill-mode-consolidation.test.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}
