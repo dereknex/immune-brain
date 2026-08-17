@@ -570,7 +570,6 @@ export default function (
 			let confirmed: boolean;
 			try {
 				confirmed = await ctx.ui.confirm(`Authorize ${operation} for canary ${taskId}?`, summary, {
-					timeout: 10 * 60 * 1000,
 					signal: ctx.signal,
 				});
 		} catch {

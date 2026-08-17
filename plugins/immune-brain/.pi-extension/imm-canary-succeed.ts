@@ -493,7 +493,7 @@ export function registerSucceedCommand(pi: ExtensionAPI): void {
 					confirmed = await ctx.ui.confirm(
 						`Succeed ${predecessor_id} into ${successorId}?`,
 						summary,
-						{ timeout: 10 * 60 * 1000, signal: ctx.signal },
+						{ signal: ctx.signal },
 					);
 				} catch {
 					ctx.ui.notify("imm-canary-succeed: confirmation aborted; zero writes", "info");

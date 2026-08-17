@@ -176,7 +176,6 @@ export default function (pi: ExtensionAPI) {
 			].join("\n");
 			coordinator.updateStage(taskId, "awaiting confirmation");
 			const confirmed = await ctx.ui.confirm("Create Kernel-managed task?", summary, {
-				timeout: 10 * 60 * 1000,
 				signal: ctx.signal,
 			});
 			if (!confirmed) {
