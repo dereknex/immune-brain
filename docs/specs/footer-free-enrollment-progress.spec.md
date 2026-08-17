@@ -2,7 +2,8 @@
 
 **Task ID**: `2026-08-17-003-footer-free-enrollment-progress-r2`
 **Owner**: user
-**Status**: Proposed
+**Status**: Superseded by `docs/specs/foreground-interactive-workflow-roadmap.spec.md` Phase 2
+**Supersession**: The aboveEditor Widget, detached `EnrollmentJobCoordinator`, refresh timer, completion notification, and slash-command cancel surface defined here are retired. Enrollment now runs as one foreground Tool call with host-native progress/result rendering and a concrete Tool `AbortSignal`; the Footer remains empty. The descriptor close-settlement, exact confirmation, single-flight, commit linearization, and authority invariants remain active.
 **Design risk**: High
 
 Task `2026-08-17-002-footer-free-enrollment-progress` stopped before implementation

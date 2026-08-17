@@ -54,16 +54,15 @@ describe("v4 enrollment is kernel-owner-only", () => {
 		expect(src).toContain("preparation digest mismatch");
 	});
 
-	test("new-task extension never mints a waiver and never reads readiness", () => {
+	test("new-task launcher owns no waiver or Kernel preparation surface", () => {
 		const src = readFileSync(NEW_EXT, "utf8");
 		expect(src).not.toContain("explicit user risk acceptance");
 		expect(src).not.toContain("preparation.readiness");
 		expect(src).not.toContain("preparation.evidence");
-		expect(src).not.toContain("preparation.evidence.status");
 		expect(src).not.toContain("waiver,\n");
-		expect(src).not.toContain("explicit user risk acceptance");
 		expect(src).not.toContain("mintWaiver");
-		expect(src).toContain("preparation.digest");
+		expect(src).not.toContain("preparePiCanary");
+		expect(src).toContain("launchEnrollmentRequest");
 	});
 
 	test("enroll extension derives binding from kernel owners, not readiness", () => {

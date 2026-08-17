@@ -1,223 +1,197 @@
 import { expect, test } from "bun:test";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import enrollExtension, {
-	ENROLLMENT_WIDGET_KEY,
-	EnrollmentJobCoordinator,
+	ForegroundEnrollmentCoordinator,
+	type EnrollmentAction,
+	type EnrollmentTerminal,
 } from "../plugins/immune-brain/.pi-extension/imm-canary-enroll.ts";
 import newTaskExtension from "../plugins/immune-brain/.pi-extension/imm-canary-new.ts";
 
-interface WidgetCall {
-	key: string;
-	content: string[] | undefined;
-	options?: { placement?: string };
+interface RegisteredTool {
+	name: string;
+	execute: (...args: any[]) => Promise<any>;
+	renderCall?: (...args: any[]) => unknown;
+	renderResult?: (...args: any[]) => unknown;
 }
 
-function makeContext() {
-	const widgetCalls: WidgetCall[] = [];
-	const statusCalls: Array<[string, string | undefined]> = [];
-	const notifications: string[] = [];
-	const ctx = {
-		ui: {
-			setWidget: (
-				key: string,
-				content: string[] | undefined,
-				options?: { placement?: string },
-			) => widgetCalls.push({ key, content, options }),
-			setStatus: (key: string, text: string | undefined) => statusCalls.push([key, text]),
-			notify: (message: string) => notifications.push(message),
+function loadEnrollmentSurface() {
+	const commands = new Map<string, (args: string, ctx: ExtensionContext) => Promise<void>>();
+	const tools: RegisteredTool[] = [];
+	const shutdown: Array<() => Promise<void>> = [];
+	const messages: string[] = [];
+	const pi = {
+		registerCommand: (
+			name: string,
+			spec: { handler: (args: string, ctx: ExtensionContext) => Promise<void> },
+		) => commands.set(name, spec.handler),
+		registerTool: (tool: RegisteredTool) => tools.push(tool),
+		sendUserMessage: (message: string) => messages.push(message),
+		on: (event: string, handler: () => Promise<void>) => {
+			if (event === "session_shutdown") shutdown.push(handler);
 		},
-	} as unknown as ExtensionContext;
-	return { ctx, widgetCalls, statusCalls, notifications };
+	} as unknown as ExtensionAPI;
+	enrollExtension(pi);
+	newTaskExtension(pi);
+	return { commands, tools, shutdown, messages };
 }
 
-function latestVisibleWidget(calls: WidgetCall[]): WidgetCall {
-	const call = [...calls].reverse().find((candidate) => candidate.content !== undefined);
-	if (!call) throw new Error("expected a visible enrollment Widget");
-	return call;
-}
-
-test("Enrollment Widget renders bounded live progress and clears once at terminal settlement", async () => {
-	let now = 0;
-	let release!: () => void;
-	const { ctx, widgetCalls, statusCalls } = makeContext();
-	const coordinator = new EnrollmentJobCoordinator({
-		now: () => now,
-		refreshIntervalMs: 5,
-	});
-	const taskId = `task-${"x".repeat(123)}`;
-	const work = async (): Promise<void> => {
-		await new Promise<void>((resolve) => { release = resolve; });
-	};
-
-	expect(coordinator.start(taskId, "imm-canary-new", ctx, work)).toBe(true);
-	const initial = latestVisibleWidget(widgetCalls);
-	expect(initial.key).toBe(ENROLLMENT_WIDGET_KEY);
-	expect(initial.options).toEqual({ placement: "aboveEditor" });
-	expect(initial.content).toHaveLength(2);
-	expect(initial.content?.[0]).toContain("preparing | elapsed 0s");
-	expect(initial.content?.[0]).not.toContain(taskId);
-	expect(initial.content?.[1]).toBe(`Action: /imm-canary-new cancel ${taskId}`);
-
-	now = 65_000;
-	await Bun.sleep(8);
-	expect(latestVisibleWidget(widgetCalls).content?.[0]).toContain("elapsed 1m 5s");
-	coordinator.updateStage(taskId, "awaiting confirmation");
-	expect(latestVisibleWidget(widgetCalls).content?.[0]).toContain("awaiting confirmation");
-
-	release();
-	await Bun.sleep(0);
-	expect(widgetCalls.filter((call) => call.content === undefined)).toHaveLength(1);
-	expect(widgetCalls.at(-1)?.content).toBeUndefined();
-	const terminalCallCount = widgetCalls.length;
-	now = 120_000;
-	await Bun.sleep(12);
-	expect(widgetCalls).toHaveLength(terminalCallCount);
-	expect(statusCalls).toEqual([]);
-});
-
-test("cancellation changes the action, aborts work, and leaves no stale refresh", async () => {
-	const { ctx, widgetCalls, statusCalls } = makeContext();
-	const coordinator = new EnrollmentJobCoordinator({ refreshIntervalMs: 5 });
-	let signal: AbortSignal | undefined;
-	const work = async (backgroundCtx: ExtensionContext): Promise<void> => {
-		signal = backgroundCtx.signal;
-		await new Promise<void>((resolve) => {
-			backgroundCtx.signal.addEventListener("abort", () => resolve(), { once: true });
-		});
-	};
-
-	expect(coordinator.start("task-cancel", "imm-canary-enroll", ctx, work)).toBe(true);
-	coordinator.cancel("task-cancel", ctx);
-	expect(signal?.aborted).toBe(true);
-	expect(latestVisibleWidget(widgetCalls).content).toEqual([
-		expect.stringContaining("cancelling"),
-		"Cancellation requested; waiting for background work to close",
-	]);
-	await Bun.sleep(0);
-	expect(widgetCalls.at(-1)?.content).toBeUndefined();
-
-	expect(coordinator.start("task-next", "imm-canary-new", ctx, async () => {})).toBe(true);
-	await Bun.sleep(0);
-	expect(widgetCalls.at(-1)?.content).toBeUndefined();
-	const settledCallCount = widgetCalls.length;
-	await Bun.sleep(12);
-	expect(widgetCalls).toHaveLength(settledCallCount);
-	expect(statusCalls).toEqual([]);
-});
-
-test("commit disables cancellation and concurrent shutdown shares one settlement", async () => {
-	const { ctx, widgetCalls, statusCalls, notifications } = makeContext();
-	const coordinator = new EnrollmentJobCoordinator({ refreshIntervalMs: 5 });
-	let signal: AbortSignal | undefined;
-	let release!: () => void;
-	const work = async (backgroundCtx: ExtensionContext): Promise<void> => {
-		signal = backgroundCtx.signal;
-		await new Promise<void>((resolve) => { release = resolve; });
-	};
-
-	expect(coordinator.start("task-commit", "imm-canary-new", ctx, work)).toBe(true);
-	expect(coordinator.markCommitting("task-commit", ctx)).toBe(true);
-	expect(latestVisibleWidget(widgetCalls).content).toEqual([
-		expect.stringContaining("committing"),
-		"Cancellation unavailable while Kernel enrollment settles",
-	]);
-	coordinator.cancel("task-commit", ctx);
-	expect(signal?.aborted).toBe(false);
-	expect(notifications.join("\n")).toContain("commit already owns settlement");
-
-	const firstShutdown = coordinator.shutdown();
-	const secondShutdown = coordinator.shutdown();
-	expect(secondShutdown).toBe(firstShutdown);
-	expect(latestVisibleWidget(widgetCalls).content?.[0]).toContain("shutdown waiting for commit");
-	release();
-	await firstShutdown;
-	expect(widgetCalls.filter((call) => call.content === undefined)).toHaveLength(1);
-	expect(widgetCalls.at(-1)?.content).toBeUndefined();
-	const settledCallCount = widgetCalls.length;
-	await coordinator.shutdown();
-	expect(widgetCalls).toHaveLength(settledCallCount);
-	expect(statusCalls).toEqual([]);
-});
-
-test("both Enrollment commands return after starting the shared background Widget owner", async () => {
-	const root = mkdtempSync(join(tmpdir(), "enrollment-widget-command-"));
-	try {
-		const handlers = new Map<string, (args: string, ctx: ExtensionContext) => Promise<void>>();
-		const shutdownHandlers: Array<() => Promise<void>> = [];
-		const pi = {
-			registerCommand: (
-				name: string,
-				spec: { handler: (args: string, ctx: ExtensionContext) => Promise<void> },
-			) => handlers.set(name, spec.handler),
-			on: (event: string, handler: () => Promise<void>) => {
-				if (event === "session_shutdown") shutdownHandlers.push(handler);
-			},
-		} as unknown as ExtensionAPI;
-		enrollExtension(pi);
-		newTaskExtension(pi);
-		const widgetCalls: WidgetCall[] = [];
-		const statusCalls: Array<[string, string | undefined]> = [];
-		const notifications: string[] = [];
-		const ctx = {
-			mode: "tui",
-			cwd: root,
-			signal: new AbortController().signal,
-			ui: {
-				setWidget: (
-					key: string,
-					content: string[] | undefined,
-					options?: { placement?: string },
-				) => widgetCalls.push({ key, content, options }),
-				setStatus: (key: string, text: string | undefined) => statusCalls.push([key, text]),
-				notify: (message: string) => notifications.push(message),
-				confirm: async () => false,
-			},
-		} as unknown as ExtensionContext;
-
-		for (const command of ["imm-canary-new", "imm-canary-enroll"]) {
-			const handler = handlers.get(command);
-			if (!handler) throw new Error(`missing ${command} handler`);
-			const before = widgetCalls.length;
-			await handler("task-command", ctx);
-			expect(widgetCalls.slice(before).some((call) => call.content?.[0]?.includes("preparing"))).toBe(true);
-			expect(notifications.some((message) => message.includes("input remains available"))).toBe(true);
-			const deadline = Date.now() + 2_000;
-			while (widgetCalls.at(-1)?.content !== undefined && Date.now() < deadline)
-				await Bun.sleep(10);
-			expect(widgetCalls.at(-1)?.content).toBeUndefined();
-		}
-
-		expect(shutdownHandlers).toHaveLength(2);
-		await Promise.all(shutdownHandlers.map((handler) => handler()));
-		expect(statusCalls).toEqual([]);
-	} finally {
-		rmSync(root, { recursive: true, force: true });
-	}
-});
-
-test("Widget presentation failures cannot leak job ownership or block settlement", async () => {
-	let widgetAttempts = 0;
-	const notifications: string[] = [];
-	const ctx = {
+function tuiContext(notifications: string[] = []): ExtensionContext {
+	return {
+		mode: "tui",
+		cwd: process.cwd(),
+		isIdle: () => true,
 		ui: {
+			notify: (message: string) => notifications.push(message),
+			confirm: async () => {
+				throw new Error("launcher must not confirm");
+			},
 			setWidget: () => {
-				widgetAttempts += 1;
-				throw new Error("UI disposed");
+				throw new Error("launcher must not render a Widget");
 			},
-			notify: (message: string) => notifications.push(message),
+			setStatus: () => {
+				throw new Error("Footer must remain empty");
+			},
 		},
 	} as unknown as ExtensionContext;
-	const coordinator = new EnrollmentJobCoordinator({ refreshIntervalMs: 5 });
+}
 
-	expect(coordinator.start("task-first", "imm-canary-new", ctx, async () => {})).toBe(true);
+test("Enrollment registers one foreground Tool and two thin visible launchers", async () => {
+	const surface = loadEnrollmentSurface();
+	expect(surface.tools.map((tool) => tool.name)).toEqual(["imm_canary_enrollment"]);
+	expect([...surface.commands.keys()].sort()).toEqual(["imm-canary-enroll", "imm-canary-new"]);
+	expect(surface.shutdown).toHaveLength(1);
+
+	for (const [command, action] of [
+		["imm-canary-new", "new"],
+		["imm-canary-enroll", "enroll"],
+	] as const) {
+		await surface.commands.get(command)!("task-visible", tuiContext());
+		expect(surface.messages.at(-1)).toContain("imm_canary_enrollment");
+		expect(surface.messages.at(-1)).toContain(`\"action\":\"${action}\"`);
+		expect(surface.messages.at(-1)).toContain(`\"task_id\":\"task-visible\"`);
+	}
+
+	const tool = surface.tools[0];
+	expect(typeof tool.execute).toBe("function");
+	expect(typeof tool.renderCall).toBe("function");
+	expect(typeof tool.renderResult).toBe("function");
+});
+
+test("launchers reject cancel syntax and non-TUI calls without sending a Parent request", async () => {
+	const surface = loadEnrollmentSurface();
+	const notifications: string[] = [];
+	await surface.commands.get("imm-canary-new")!("cancel task-visible", tuiContext(notifications));
+	await surface.commands.get("imm-canary-enroll")!(
+		"task-visible",
+		{ ...tuiContext(notifications), mode: "rpc" } as ExtensionContext,
+	);
+	expect(surface.messages).toEqual([]);
+	expect(notifications.join("\n")).toMatch(/invalid task id|TUI-only/i);
+});
+
+function coordinatorResult(action: EnrollmentAction, taskId: string, state: EnrollmentTerminal["state"]): EnrollmentTerminal {
+	return {
+		contract: "assurance_kernel/enrollment_tool_result/v1",
+		state,
+		action,
+		task_id: taskId,
+		stage: "test",
+		summary: state,
+		next_action: "none",
+	};
+}
+
+test("foreground coordinator is single-flight and shutdown closes pre-commit work", async () => {
+	const coordinator = new ForegroundEnrollmentCoordinator();
+	let releaseFirst!: () => void;
+	const first = coordinator.run("new", "task-first", undefined, async () => {
+		await new Promise<void>((resolve) => { releaseFirst = resolve; });
+		return coordinatorResult("new", "task-first", "rejected");
+	});
 	await Bun.sleep(0);
-	expect(coordinator.start("task-second", "imm-canary-enroll", ctx, async () => {})).toBe(true);
+	let blockedWorkCalls = 0;
+	const sameTaskSecond = await coordinator.run("enroll", "task-first", undefined, async () => {
+		blockedWorkCalls += 1;
+		return coordinatorResult("enroll", "task-first", "completed");
+	});
+	expect(sameTaskSecond.state).toBe("blocked");
+	expect(sameTaskSecond.summary).toContain("task-first");
+	const third = await coordinator.run("enroll", "task-third", undefined, async () => {
+		blockedWorkCalls += 1;
+		return coordinatorResult("enroll", "task-third", "completed");
+	});
+	expect(third.state).toBe("blocked");
+	expect(third.summary).toContain("task-first");
+	expect(blockedWorkCalls).toBe(0);
+	releaseFirst();
+	expect((await first).state).toBe("rejected");
+	expect((await coordinator.run("enroll", "task-after-settlement", undefined, async () =>
+		coordinatorResult("enroll", "task-after-settlement", "completed"))).state).toBe("completed");
+
+	const shutdownCoordinator = new ForegroundEnrollmentCoordinator();
+	let observedAbort = false;
+	const active = shutdownCoordinator.run("new", "task-shutdown", undefined, (signal) =>
+		new Promise<EnrollmentTerminal>((resolve) => {
+			signal.addEventListener("abort", () => {
+				observedAbort = true;
+				resolve(coordinatorResult("new", "task-shutdown", "cancelled"));
+			}, { once: true });
+		}));
 	await Bun.sleep(0);
-	await coordinator.shutdown();
-	expect(widgetAttempts).toBeGreaterThanOrEqual(4);
-	expect(notifications.some((message) => message.includes("preflight failed"))).toBe(false);
+	await shutdownCoordinator.shutdown();
+	expect(observedAbort).toBe(true);
+	expect((await active).state).toBe("cancelled");
+	expect((await shutdownCoordinator.run("new", "task-after", undefined, async () =>
+		coordinatorResult("new", "task-after", "completed"))).state).toBe("blocked");
+});
+
+test("commit linearization ignores later host cancellation and settles", async () => {
+	const coordinator = new ForegroundEnrollmentCoordinator();
+	const host = new AbortController();
+	let releaseCommit!: () => void;
+	let commitSignal: AbortSignal | undefined;
+	const active = coordinator.run("enroll", "task-commit", host.signal, async (signal, beginCommit) => {
+		commitSignal = signal;
+		expect(beginCommit()).toBe(true);
+		await new Promise<void>((resolve) => { releaseCommit = resolve; });
+		return coordinatorResult("enroll", "task-commit", "completed");
+	});
+	await Bun.sleep(0);
+	host.abort(new Error("too late"));
+	expect(commitSignal?.aborted).toBe(false);
+	const shutdown = coordinator.shutdown();
+	let shutdownSettled = false;
+	void shutdown.then(() => { shutdownSettled = true; });
+	await Bun.sleep(0);
+	expect(shutdownSettled).toBe(false);
+	releaseCommit();
+	expect((await active).state).toBe("completed");
+	await shutdown;
+});
+
+test("Enrollment source has no detached job, Widget, Footer, completion push, or recovery polling", () => {
+	const root = join(__dirname, "..", "plugins", "immune-brain", ".pi-extension");
+	const enroll = readFileSync(join(root, "imm-canary-enroll.ts"), "utf8");
+	const create = readFileSync(join(root, "imm-canary-new.ts"), "utf8");
+	const combined = `${enroll}\n${create}`;
+	for (const forbidden of [
+		"EnrollmentJobCoordinator",
+		"BACKGROUND_ENROLLMENT_CONTEXT",
+		"setWidget(",
+		"setStatus(",
+		"get_subagent_result",
+		"descriptor rehearsal started in the background",
+		"input remains available",
+		"cancel <task-id>",
+	]) {
+		expect(combined).not.toContain(forbidden);
+	}
+	expect(enroll.match(/registerTool\(/g)).toHaveLength(1);
+	expect(enroll).toContain('name: "imm_canary_enrollment"');
+	expect(enroll).toContain("onUpdate");
+	expect(enroll).toContain("renderCall");
+	expect(enroll).toContain("renderResult");
 });

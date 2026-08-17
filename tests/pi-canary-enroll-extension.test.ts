@@ -37,11 +37,16 @@ function makeCtx(root: string, ui: FakeUI, mode: Mode, cwdOverride?: string) {
 		mode,
 		hasUI: mode === "tui" || mode === "rpc",
 		cwd: cwdOverride ?? root,
-		signal: ui.signal,
+		isIdle: () => true,
 		ui: {
-			confirm: async (title: string, body: string) => {
+			confirm: async (
+				title: string,
+				body: string,
+				options?: { signal?: AbortSignal },
+			) => {
 				ui.confirmCalls.push({ title, body });
-				if (ui.signal?.aborted) throw new DOMException("aborted", "AbortError");
+				const signal = options?.signal ?? ui.signal;
+				if (signal?.aborted) throw new DOMException("aborted", "AbortError");
 				ui.beforeConfirm?.();
 				return ui.confirmResult;
 			},
@@ -82,57 +87,65 @@ function makeRoot(): string {
 }
 
 describe("pi canary enroll extension", () => {
-	test("registers exactly one command with TUI-only enrollment", async () => {
+	test("registers one foreground Tool and one thin enrollment launcher", async () => {
 		const commands: string[] = [];
+		const tools: string[] = [];
 		const factory = await loadExtension();
 		const pi = {
-			registerCommand: (name: string, _spec: unknown) => {
-				commands.push(name);
-			},
+			registerCommand: (name: string) => commands.push(name),
+			registerTool: (tool: { name: string }) => tools.push(tool.name),
 		};
 		factory(pi as never);
 		expect(commands).toEqual(["imm-canary-enroll"]);
+		expect(tools).toEqual(["imm_canary_enrollment"]);
 	});
+
+	async function directTool(root: string, ui: FakeUI, mode: Mode, taskId: string) {
+		const factory = await loadExtension();
+		let tool: { execute: (...args: any[]) => Promise<any> } | undefined;
+		factory({
+			registerCommand: () => undefined,
+			registerTool: (candidate: { execute: (...args: any[]) => Promise<any> }) => { tool = candidate; },
+		} as never);
+		if (!tool) throw new Error("enrollment Tool not registered");
+		return tool.execute(
+			"tool-call",
+			{ action: "enroll", task_id: taskId },
+			ui.signal,
+			undefined,
+			makeCtx(root, ui, mode),
+		);
+	}
 
 	test("non-TUI modes reject before any readiness read or confirm", async () => {
 		const root = makeRoot();
 		const ui = makeFakeUI(true);
-		const factory = await loadExtension();
-		const registered: Array<{ handler: (args: string, ctx: unknown) => Promise<void> }> = [];
-		factory({ registerCommand: (_n: string, spec: { handler: (args: string, ctx: unknown) => Promise<void> }) => registered.push(spec) } as never);
 		for (const mode of ["rpc", "json", "print"] as Mode[]) {
-			const ctx = makeCtx(root, ui, mode);
-			await registered[0].handler("task-001", ctx);
+			const result = await directTool(root, ui, mode, "task-001");
+			expect(result.details.state).toBe("blocked");
+			expect(result.details.summary).toMatch(/TUI-only/i);
 			expect(ui.confirmCalls.length).toBe(0);
-			expect(ui.notifyCalls.some((n) => /TUI-only/i.test(n.text))).toBe(true);
 		}
-		// zero writes
 		expect(readdirSync(join(root, ".imm", "tasks"))).toEqual([]);
 	});
 
-	test("missing intent sidecar rejects BEFORE any confirm", async () => {
+	test("missing intent sidecar rejects before any confirm", async () => {
 		const root = makeRoot();
 		const ui = makeFakeUI(true);
-		const factory = await loadExtension();
-		const registered: Array<{ handler: (args: string, ctx: unknown) => Promise<void> }> = [];
-		factory({ registerCommand: (_n: string, spec: { handler: (args: string, ctx: unknown) => Promise<void> }) => registered.push(spec) } as never);
-		const ctx = makeCtx(root, ui, "tui");
-		await registered[0].handler("task-001", ctx);
+		const result = await directTool(root, ui, "tui", "task-001");
+		expect(result.details.state).toBe("blocked");
+		expect(result.details.summary).toMatch(/TaskIntent is required/i);
 		expect(ui.confirmCalls.length).toBe(0);
-		expect(ui.notifyCalls.some((n) => /TaskIntent is required/i.test(n.text))).toBe(true);
 		expect(readdirSync(join(root, ".imm", "tasks"))).toEqual([]);
 	});
 
 	test("malformed task id rejects before any confirm", async () => {
 		const root = makeRoot();
 		const ui = makeFakeUI(true);
-		const factory = await loadExtension();
-		const registered: Array<{ handler: (args: string, ctx: unknown) => Promise<void> }> = [];
-		factory({ registerCommand: (_n: string, spec: { handler: (args: string, ctx: unknown) => Promise<void> }) => registered.push(spec) } as never);
-		const ctx = makeCtx(root, ui, "tui");
-		await registered[0].handler("../evil", ctx);
+		const result = await directTool(root, ui, "tui", "../evil");
+		expect(result.details.state).toBe("blocked");
+		expect(result.details.summary).toMatch(/invalid task id/i);
 		expect(ui.confirmCalls.length).toBe(0);
-		expect(ui.notifyCalls.some((n) => /invalid task id/i.test(n.text))).toBe(true);
 	});
 });
 
@@ -347,37 +360,51 @@ describe("pi canary enroll handler integration", () => {
 		return parts.join("\n");
 	}
 
-	async function runHandler(root: string, ui: FakeUI): Promise<void> {
+	async function runTool(root: string, ui: FakeUI, updates: string[] = []): Promise<any> {
 		const factory = await loadExtension();
-		const registered: Array<{ handler: (args: string, ctx: unknown) => Promise<void> }> = [];
-		factory({ registerCommand: (_n: string, spec: { handler: (args: string, ctx: unknown) => Promise<void> }) => registered.push(spec) } as never);
-		await registered[0].handler(TASK, makeCtx(root, ui, "tui"));
+		let tool: { execute: (...args: any[]) => Promise<any> } | undefined;
+		factory({
+			registerCommand: () => undefined,
+			registerTool: (candidate: { execute: (...args: any[]) => Promise<any> }) => { tool = candidate; },
+		} as never);
+		if (!tool) throw new Error("enrollment Tool not registered");
+		return tool.execute(
+			"tool-call",
+			{ action: "enroll", task_id: TASK },
+			ui.signal,
+			(update: { details?: { stage?: string } }) => {
+				if (update.details?.stage) updates.push(update.details.stage);
+			},
+			makeCtx(root, ui, "tui"),
+		);
 	}
 
-	test("declined confirmation cancels enrollment with zero writes", async () => {
+	test("declined confirmation returns rejection with zero writes", async () => {
 		const root = mkdtempSync(join(tmpdir(), "p2b1-enroll-"));
 		try {
 			makeEligibleRepo(root, TASK);
 			const before = authoritySnapshot(root);
 			const ui = makeFakeUI(false);
-			await runHandler(root, ui);
+			const result = await runTool(root, ui);
 			expect(ui.confirmCalls.length).toBe(1);
-			expect(ui.notifyCalls.some((n) => /Enrollment cancelled/i.test(n.text))).toBe(true);
+			expect(result.details.state).toBe("rejected");
+			expect(result.details.summary).toMatch(/confirmation was rejected/i);
 			expect(authoritySnapshot(root)).toBe(before);
 		} finally {
 			rmSync(root, { recursive: true, force: true });
 		}
 	});
 
-	test("AbortSignal abort rejects before any write", async () => {
+	test("AbortSignal cancellation returns only after child settlement with zero writes", async () => {
 		const root = mkdtempSync(join(tmpdir(), "p2b1-enroll-"));
 		try {
 			makeEligibleRepo(root, TASK);
 			const before = authoritySnapshot(root);
 			const ui = makeFakeUI(true);
-			ui.signal = AbortSignal.abort();
-			await expect(runHandler(root, ui)).rejects.toThrow(/abort/i);
-			expect(ui.confirmCalls.length).toBe(1);
+			ui.signal = AbortSignal.abort(new Error("host cancelled"));
+			const result = await runTool(root, ui);
+			expect(result.details.state).toBe("cancelled");
+			expect(ui.confirmCalls.length).toBe(0);
 			expect(authoritySnapshot(root)).toBe(before);
 		} finally {
 			rmSync(root, { recursive: true, force: true });
@@ -388,13 +415,23 @@ describe("pi canary enroll handler integration", () => {
 		const root = mkdtempSync(join(tmpdir(), "p2b1-enroll-"));
 		try {
 			makeEligibleRepo(root, TASK);
-			const first = makeFakeUI(true);
-			await runHandler(root, first);
-			expect(first.notifyCalls.some((n) => /canary enrolled/i.test(n.text))).toBe(true);
+			const updates: string[] = [];
+			const first = await runTool(root, makeFakeUI(true), updates);
+			expect(first.details.state).toBe("completed");
+			expect(first.details.summary).toMatch(/enrollment completed/i);
+			expect(updates).toEqual([
+				"preparing",
+				"snapshotting",
+				"rehearsing",
+				"awaiting_confirmation",
+				"revalidating",
+				"rehearsing",
+				"committing",
+			]);
 			expect(readdirSync(join(root, ".imm", "tasks")).sort()).toEqual([".backend-claim.json", `${TASK}.json`]);
-			const second = makeFakeUI(true);
-			await runHandler(root, second);
-			expect(second.notifyCalls.some((n) => /rehearsal failed.*already exists/i.test(n.text))).toBe(true);
+			const second = await runTool(root, makeFakeUI(true));
+			expect(second.details.state).toMatch(/failed|blocked/);
+			expect(second.details.summary).toMatch(/already exists|failed/i);
 			expect(readdirSync(join(root, ".imm", "tasks")).sort()).toEqual([".backend-claim.json", `${TASK}.json`]);
 		} finally {
 			rmSync(root, { recursive: true, force: true });
@@ -429,9 +466,10 @@ describe("pi canary enroll handler integration", () => {
 					)}\n`,
 				);
 			};
-			await runHandler(root, ui);
+			const result = await runTool(root, ui);
 			expect(ui.confirmCalls.length).toBe(1);
-			expect(ui.notifyCalls.some((n) => /workspace changed after confirmation/i.test(n.text))).toBe(true);
+			expect(result.details.state).toBe("blocked");
+			expect(result.details.summary).toMatch(/workspace changed after confirmation/i);
 			expect(authoritySnapshot(root)).toBe(before);
 		} finally {
 			rmSync(root, { recursive: true, force: true });

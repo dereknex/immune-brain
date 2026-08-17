@@ -1,6 +1,5 @@
 import { execFileSync } from "node:child_process";
 import { describe, expect, test } from "bun:test";
-import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -10,7 +9,6 @@ import {
 	descriptorRehearsalDigest,
 	descriptorRehearsalReceiptRef,
 	decideDescriptorRehearsalRoute,
-	EnrollmentJobCoordinator,
 	runDescriptorRehearsalForDescriptors,
 } from "../plugins/immune-brain/.pi-extension/imm-canary-enroll.ts";
 
@@ -368,55 +366,6 @@ describe("descriptor rehearsal preflight", () => {
 		expect(
 			decideDescriptorRehearsalRoute({ ...failed, enrollment_ready: true }, "default"),
 		).toEqual({ proceed_to_confirmation: true, override: false });
-	});
-
-	test("returns immediately for session-owned jobs and supports cancellation and shutdown", async () => {
-		const statuses: Array<string | undefined> = [];
-		const widgets: Array<string[] | undefined> = [];
-		const notifications: string[] = [];
-		const ctx = {
-			ui: {
-				setStatus: (_key: string, text: string | undefined) => statuses.push(text),
-				setWidget: (_key: string, content: string[] | undefined) => widgets.push(content),
-				notify: (message: string) => notifications.push(message),
-			},
-		} as unknown as ExtensionContext;
-		const coordinator = new EnrollmentJobCoordinator({ refreshIntervalMs: 5 });
-		let started = false;
-		const work = async (backgroundCtx: ExtensionContext): Promise<void> => {
-			started = true;
-			await new Promise<void>((resolve) => {
-				backgroundCtx.signal.addEventListener("abort", () => resolve(), { once: true });
-			});
-		};
-
-		expect(coordinator.start("task-background", "imm-canary-new", ctx, work)).toBe(true);
-		expect(started).toBe(true);
-		expect(notifications.join("\n")).toContain("input remains available");
-		expect(coordinator.start("task-other", "imm-canary-enroll", ctx, work)).toBe(false);
-		coordinator.cancel("task-background", ctx);
-		await Bun.sleep(0);
-		expect(widgets.some((widget) => widget?.join("\n").includes("Cancellation requested"))).toBe(true);
-		expect(widgets.at(-1)).toBeUndefined();
-
-		expect(coordinator.start("task-shutdown", "imm-canary-new", ctx, work)).toBe(true);
-		await coordinator.shutdown();
-		expect(widgets.at(-1)).toBeUndefined();
-
-		let finishCommit: (() => void) | undefined;
-		const committingWork = async (): Promise<void> => {
-			await new Promise<void>((resolve) => { finishCommit = resolve; });
-		};
-		expect(coordinator.start("task-commit", "imm-canary-new", ctx, committingWork)).toBe(true);
-		expect(coordinator.markCommitting("task-commit", ctx)).toBe(true);
-		coordinator.cancel("task-commit", ctx);
-		expect(notifications.join("\n")).toContain("commit already owns settlement");
-		const shutdown = coordinator.shutdown();
-		expect(widgets.some((widget) => widget?.join("\n").includes("shutdown waiting for commit"))).toBe(true);
-		finishCommit?.();
-		await shutdown;
-		expect(widgets.at(-1)).toBeUndefined();
-		expect(statuses).toEqual([]);
 	});
 
 	test("fails closed before execution for a non-canonical or incompatible descriptor", async () => {

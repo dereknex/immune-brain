@@ -3,9 +3,9 @@
 ## Metadata
 
 - Roadmap: Foreground Interactive Workflow
-- Current Task ID: `2026-08-17-004-interactive-advisory-foreground-r3`
+- Current Task ID: `2026-08-17-007-foreground-canary-enrollment`
 - Owner: user
-- Status: Phase 1 planned; Phases 2-3 deferred
+- Status: Phase 1 completed; Phase 2 implementation active; Phase 3 deferred
 - Design risk: High
 - Design risk reason: The roadmap changes cancellation, dispatch result transport, Enrollment commit settlement, QA execution, and native Review receipt authority across multiple Pi extension boundaries.
 - Diagram decision: required

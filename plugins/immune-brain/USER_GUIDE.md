@@ -89,8 +89,8 @@ Direct 没有专用命令或持久化 router。普通 host agent 完成实现、
 
 1. `imm-planner` 定义目标、acceptance、risk 与 canonical scope envelope；后续任何 scope 扩展都是 breaking revision，需要重新 enrollment。
 2. canonical `imm-kernel intent author/validate` 生成并验证 TaskIntent；`intent validate` 输出 `descriptor_rehearsal.status=pending_tui_enrollment` 时，表示 structural eligibility 已通过，但最终 `enrollment_ready` 仍须由 TUI enrollment preflight 决定。
-3. Pi TUI 通过 `/imm-canary-new <task-id>` 在 session-owned background job 中冻结一个 Git index snapshot，并把 `index_digest` 绑定进 enrollment receipt；`scope_hint`（含 TaskIntent sidecar）存在 unstaged/untracked bytes、确认后 index drift 或 snapshot integrity drift 时一律 non-waivable fail closed。每个 canonical verification descriptor 从同一个 frozen index 创建独立 copy，copy/setup 与 argv execution 从同一起点并行且共同受该 descriptor timeout 和 AbortSignal 约束，并报告逐项耗时；live integrity monitor 比较 index、scope 与含 tracked dirty/untracked content bytes 的 parent fingerprint，漂移时立即 abort 全部 descriptor。timeout/cancel/output-limit/integrity-drift 先终止 process group，发起终止后 child `error` 仅记录诊断，必须等待 child `close` terminal receipt 后才 cleanup copy。`setup_timed_out`、`cancelled`、`integrity_drift`、`output_exceeded` 与 `setup_failed` 是不可 waiver 的终态；只有 descriptor validation、nonzero exit 或 descriptor execution timeout 能产生可 waiver 的 `enrollment_ready=false`。handler 立即返回、footer 持续显示 stage，主输入保持可用；对 parent worktree 与 authority 零写入。可用 `/imm-canary-new cancel <task-id>` 取消，session shutdown 也会 abort 未完成 job；取消只在线性化 commit 前生效，commit owner 建立后会拒绝取消并完成 authority settlement。
-4. 仅显式 `/imm-canary-enroll <task-id>` route 可覆盖 descriptor validation/nonzero/descriptor-execution-timeout；同一个 literal-user confirmation 必须展示全部失败项和 `REHEARSAL WAIVER`，确认后的 backend claim receipt ref 记录 `descriptor-rehearsal/v1:waived:<digest>`，其中 digest 同时绑定 frozen `index_digest` 与 scope paths。scope/index snapshot integrity、live integrity drift、setup timeout、cancellation、output-limit 与 setup failure 不可 waiver；取消确认保持零 authority writes。
+3. Pi TUI 的 `/imm-canary-new <task-id>` 只发送一条可见 Parent request；Parent 随即在前台调用一次 `imm_canary_enrollment` Tool 并直接消费 terminal result。Tool 冻结 Git index snapshot，把 `index_digest` 绑定进 enrollment receipt，并通过 host-native `onUpdate`/`renderResult` 展示有界 stage，不写 Footer、不创建 Widget、不发送 completion notification，也不要求轮询或 `get-result` recovery。`scope_hint`（含 TaskIntent sidecar）存在 unstaged/untracked bytes、确认后 index drift 或 snapshot integrity drift 时一律 non-waivable fail closed。每个 canonical verification descriptor 从同一个 frozen index 创建独立 copy，copy/setup 与 argv execution 从同一起点并行且共同受该 descriptor timeout 和 Tool `AbortSignal` 约束，并报告逐项耗时；live integrity monitor 比较 index、scope 与含 tracked dirty/untracked content bytes 的 parent fingerprint，漂移时立即 abort 全部 descriptor。timeout/cancel/output-limit/integrity-drift 先终止 process group，发起终止后 child `error` 只记录诊断，必须等待 child `close` terminal receipt 后才 cleanup copy。`setup_timed_out`、`cancelled`、`integrity_drift`、`output_exceeded` 与 `setup_failed` 是不可 waiver 的终态；只有 descriptor validation、nonzero exit 或 descriptor execution timeout 能产生可 waiver 的 `enrollment_ready=false`。Escape/host cancellation 是唯一的 pre-commit cancellation path；commit owner 建立后 settlement 不可取消，Tool 必须返回 success、known failure 或 `settlement_unknown`。
+4. `/imm-canary-enroll <task-id>` 使用同一个 foreground Tool 的显式 waiver action；它只可覆盖 descriptor validation/nonzero/descriptor-execution-timeout。同一个 literal-user confirmation 必须展示全部失败项和 `REHEARSAL WAIVER`，确认后的 backend claim receipt ref 记录 `descriptor-rehearsal/v1:waived:<digest>`，其中 digest 同时绑定 frozen `index_digest` 与 scope paths。scope/index snapshot integrity、live integrity drift、setup timeout、cancellation、output-limit 与 setup failure不可 waiver；拒绝或取消确认保持零 authority writes。
 5. Agent 在当前 owner 内连续实现，并用 `git add -- <exact task paths>` 显式声明 task-owned `HEAD -> index` snapshot；禁止在 dirty worktree 使用 bulk staging。
 6. Agent 针对该 staged snapshot 运行 acceptance verification，并把 evidence 记录到 Kernel。
 7. `advance_assurance` 运行 deterministic host QA；通过后启动单一 Pi native Review。
@@ -124,8 +124,9 @@ v3 mutating commands 已退出生产路径。历史 v3 State Ledger 只能通过
 | `imm-kernel intent author/validate` | canonical TaskIntent authoring 与 validation |
 | `imm-kernel status --json` | read-only Kernel/legacy shadow status |
 | `imm-kernel audit --legacy` | 显式 read-only legacy audit |
-| `/imm-canary-new <task-id>` | Pi TUI 中启动 background descriptor rehearsal；全部通过后确认并 enrollment 新 Managed TaskIntent；`cancel <task-id>` 可取消 |
-| `/imm-canary-enroll <task-id>` | 显式 waiver route；只在 literal-user confirmation 展示失败明细后覆盖 descriptor rehearsal failure，并在 enrollment receipt 记录 override；`cancel <task-id>` 可取消 |
+| `/imm-canary-new <task-id>` | 发送可见 Parent request，并通过一次 foreground `imm_canary_enrollment` Tool 创建新 Managed TaskIntent；默认 route 不允许 waiver |
+| `/imm-canary-enroll <task-id>` | 发送可见 Parent request，并通过同一个 foreground Tool 展示 explicit descriptor waiver；Escape/host cancellation 仅在 commit 前生效 |
+| `imm_canary_enrollment` | Parent 调用的 foreground Enrollment Tool；直接返回 bounded progress 与唯一 terminal result，不使用 background recovery |
 | `imm_kernel_canary` | Agent 调用的 evidence、assurance、authorization 与 completion 工具 |
 | `imm-pr-fix` | 在当前 PR scope 内修复 review/CI feedback |
 | `imm-arch-explorer` | 只读探索陌生仓库结构 |
@@ -166,7 +167,7 @@ mid = "deepseek/deepseek-v4-pro"
 strong = "inherit"
 ```
 
-Pi native subagent 负责可见的后台 agent UI 与模型执行。Immune-Brain 不维护其他 code-agent host adapter、私有模型 runtime 或独立 credential injection 路径。
+Pi native subagent 负责可见的 agent UI 与模型执行。Interactive advisory、Enrollment 与 Assurance lifecycle 均按 foreground contract 运行；只有显式配置的 offline sidecar 可以后台执行。Immune-Brain 不维护其他 code-agent host adapter、私有模型 runtime 或独立 credential injection 路径。
 
 ## 适用边界
 

@@ -2,6 +2,8 @@
 
 ## 1. Context
 
+> **Phase 2 supersession:** `docs/specs/foreground-interactive-workflow-roadmap.spec.md` supersedes only P2C's direct long-running command ownership. `/imm-canary-new` now sends a visible Parent request for one TUI-only foreground `imm_canary_enrollment` Tool call. The no-waiver default route, backend affinity, preparation, confirmation, revalidation, rehearsal, and atomic enrollment contracts below remain unchanged.
+
 P2B2 shipped and walked the first real canary (canary-001) end-to-end on the
 Pi host: enroll -> evidence -> submit_review -> QA assurance -> complete ->
 task tombstone, with workspace release back to v3 routing. The walkthrough
@@ -88,17 +90,9 @@ re-run after root cause remediation.
 
 ### 6.1 Entry point
 
-`/imm-canary-new <task-id>` — a TUI-only command that is the default way to
-start a new managed task on Pi. It reuses the P2B1 enrollment machinery
-verbatim (preparePiCanary -> evaluateCanaryEligibility -> ctx.ui.confirm ->
-revalidatePiCanary -> runEnrollmentRehearsal -> enrollCanaryTask) with one
-difference: eligibility must pass without a waiver (readiness `candidate`),
-so a non-candidate readiness rejects before confirmation. After enrollment
-the command reports the read-only projection and routes the session to
-`imm-canary-work`.
+`/imm-canary-new <task-id>` is a TUI-only visible launcher and remains the default way to start a new managed task on Pi. It sends a Parent request for one foreground `imm_canary_enrollment` Tool invocation. The Tool reuses the P2B1 enrollment machinery verbatim (preparePiCanary -> evaluateCanaryEligibility -> ctx.ui.confirm -> revalidatePiCanary -> runEnrollmentRehearsal -> enrollCanaryTask) with one difference: eligibility must pass without a waiver (readiness `candidate`), so a non-candidate readiness rejects before confirmation. Its direct terminal result routes the session to `imm-canary-work`; no background notification or result recovery path exists.
 
-`/imm-canary-enroll` remains for explicit re-enrollment semantics and is
-unchanged.
+`/imm-canary-enroll` remains the visible launcher for explicit re-enrollment semantics; both launchers share the same foreground Tool owner.
 
 ### 6.2 Routing gate
 

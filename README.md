@@ -28,9 +28,9 @@ Immune-Brain 为 Pi 提供确定性的任务意图、自动化 QA 验证、隔�
 ```
 
 ### 步骤 1：创建或注册任务意图 (TaskIntent)
-- **交互式新建**：在 Pi 中输入 `/imm-canary-new <task-id>` 确认创建新任务。
-- **从文件注册**：编写 `docs/plans/<task-id>.intent.json`，然后运行 `/imm-canary-enroll <task-id>`。
-- Enrollment 在编辑器上方使用临时 Widget 展示当前阶段、已耗时和有效取消命令；任务结束后清除 Widget，并仅用终态通知唤醒用户。
+- **交互式新建**：在 Pi 中输入 `/imm-canary-new <task-id>`；launcher 会发送可见 Parent request，随后由单一 foreground `imm_canary_enrollment` Tool 完成确认与创建。
+- **从文件注册**：编写 `docs/plans/<task-id>.intent.json`，然后运行 `/imm-canary-enroll <task-id>`；explicit waiver 同样由该 foreground Tool 执行。
+- Enrollment 使用 host-native Tool progress/result 渲染当前 stage。它不写 Footer、不创建 Widget、不发送后台 completion notification；Escape 或 host cancellation 在 commit 前生效，Tool 直接返回唯一 terminal result。
 
 ### 步骤 2：代码实现与快照暂存
 在完成代码开发后，将任务范围内受信任的文件暂存至 Git Index：
@@ -67,8 +67,8 @@ QA 验证通过后运行：
 
 | Slash 命令 | 描述说明 | 适用场景 |
 | :--- | :--- | :--- |
-| `/imm-canary-new <task-id>` | 确认并创建新的 Kernel 任务意图 | 开始全新任务时 |
-| `/imm-canary-enroll [intent-file]` | 校验并向 Kernel 后端注册指定 `TaskIntent` | 导入已编写好的意图文件时 |
+| `/imm-canary-new <task-id>` | 发送可见 Parent request，并通过 foreground Enrollment Tool 创建新 Kernel task | 开始全新任务时 |
+| `/imm-canary-enroll <task-id>` | 通过同一个 foreground Tool 校验并注册指定 `TaskIntent`，必要时展示 explicit descriptor waiver | 导入已编写好的意图文件时 |
 | `/imm-canary-assure <task-id> qa` | 触发后台确定性 QA 验证（非阻塞） | 代码编写完成后验证逻辑 |
 | `/imm-canary-assure <task-id> review [model]` | 启动隔离式 Subagent 进行只读代码审查 | QA 通过后发起代码与安全审查 |
 | `/imm-canary-assure <task-id> cancel` | 取消正在运行的后台 QA 或 Review 任务 | 需要中断正在执行的后台验证时 |

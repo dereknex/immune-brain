@@ -2,7 +2,8 @@
 
 ## Status
 
-- **Status:** Draft
+- **Status:** Superseded in part by `docs/specs/foreground-interactive-workflow-roadmap.spec.md` Phase 2
+- **Superseded clauses:** The slash-command handler is no longer the long-running authority owner, and the prohibition on an LLM-callable enrollment Tool no longer applies. `/imm-canary-enroll` is now a thin visible launcher for one bounded TUI-only foreground Tool. The original exact confirmation, preparation, revalidation, capability, rehearsal, final-lock, atomic transaction, and non-TUI rejection invariants remain authoritative.
 - **Owner:** Immune-Brain maintainers
 - **Date:** 2026-08-12
 - **Parent:** `docs/specs/assurance-kernel-v4-p2-managed-cutover.spec.md`

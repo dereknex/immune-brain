@@ -99,19 +99,15 @@ describe("packed consumer surface", () => {
 			join(ROOT, "plugins/immune-brain/.pi-extension/imm-canary-enroll.ts"),
 			"utf8",
 		);
-		expect(guide).toContain("descriptor_rehearsal.status=pending_tui_enrollment");
+		expect(guide).toContain("foreground");
 		expect(guide).toContain("descriptor-rehearsal/v1:waived:<digest>");
-		expect(guide).toContain("session-owned background job");
 		expect(guide).toContain("frozen `index_digest`");
 		expect(guide).toContain("scope/index snapshot integrity");
-		expect(guide).toContain("`setup_timed_out`、`cancelled`、`integrity_drift`、`output_exceeded` 与 `setup_failed` 是不可 waiver 的终态");
-		expect(guide).toContain("/imm-canary-new cancel <task-id>");
-		expect(defaultRoute).toContain('decideDescriptorRehearsalRoute(descriptorRehearsal, "default")');
-		expect(defaultRoute).toContain("if (!rehearsalDecision.proceed_to_confirmation)");
-		expect(defaultRoute).toContain("blocked enrollment_ready");
-		expect(defaultRoute).toContain("assertDescriptorRehearsalSnapshot");
-		expect(defaultRoute).toContain('pi.on("session_shutdown"');
-		expect(defaultRoute).not.toContain("REHEARSAL WAIVER");
+		expect(defaultRoute).toContain('launchEnrollmentRequest(pi, "new"');
+		expect(defaultRoute).not.toContain("runDescriptorRehearsal");
+		expect(waiverRoute).toContain('name: "imm_canary_enrollment"');
+		expect(waiverRoute).toContain('const route = action === "new" ? "default" : "explicit_waiver"');
+		expect(waiverRoute).toContain("if (!rehearsalDecision.proceed_to_confirmation)");
 		expect(waiverRoute).toContain("REHEARSAL WAIVER: enrollment_ready=false");
 		expect(waiverRoute).toContain('waiver_gate: rehearsalOverride ? "descriptor_rehearsal"');
 		expect(waiverRoute).toContain("waiver_allowed");
@@ -122,8 +118,14 @@ describe("packed consumer surface", () => {
 		expect(waiverRoute).toContain('child.once("close"');
 		expect(waiverRoute).toContain('gitBytes(root, ["diff", "--binary"');
 		expect(waiverRoute).toContain("setInterval(monitorIntegrity, 250)");
-		expect(waiverRoute).toContain("class EnrollmentJobCoordinator");
-		expect(waiverRoute).toContain("input remains available");
+		expect(waiverRoute).toContain('pi.on("session_shutdown"');
+		expect(waiverRoute).toContain("class ForegroundEnrollmentCoordinator");
+		expect(waiverRoute).toContain("hostSignal?.addEventListener");
+		expect(waiverRoute).toContain("onUpdate");
+		expect(waiverRoute).toContain('"settlement_unknown"');
+		expect(waiverRoute).not.toContain("EnrollmentJobCoordinator");
+		expect(waiverRoute).not.toContain("setWidget(");
+		expect(waiverRoute).not.toContain("setStatus(");
 	});
 
 	test("host registry inspection after real loading registers only the specified surface", async () => {
