@@ -152,7 +152,7 @@ Runtime helpers: `imm_core.planner_research`, `imm_core.buildPlannerEnsembleRequ
 
 A planner ensemble is optional advisory input for elevated-risk planning, not a vote and not a child-owned Plan draft. When risk gates or an explicit user request justify it, derive candidates from `workflow_models.planner_ensemble`. The default roles are: fast candidate for divergent options and simpler alternatives, mid candidate for repo-grounded executable slice, and strong candidate for adversarial risk and verification strength review.
 
-All planner ensemble children are advisory-only with `tool_policy: no tools`; they do not edit code, write Specs, write Plans, mutate workflow state, or close QA. The parent `imm-planner` owns final Spec and Plan synthesis, Brainstorm Trace mapping, Step Results, and Verification paths.
+All planner ensemble children are advisory-only with `tool_policy: no tools`; they do not edit code, write Specs, write Plans, mutate workflow state, or close QA. The parent `imm-planner` owns final Spec and Plan synthesis, Brainstorm Trace mapping, Step Results, and Verification paths. Pi launches one foreground Agent at a time, consumes its direct result, and re-evaluates the remaining dispatch budget before launching another candidate.
 
 Agreement becomes evidence. Disagreement becomes decision criteria. strong-model blockers become explicit risks or verification requirements in the planner-owned output. Small plans do not fan out by default even when the `ensemble` preset is configured; use solo planning unless the task has elevated planning risk or an explicit ensemble request.
 

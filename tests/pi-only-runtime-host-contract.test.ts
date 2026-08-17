@@ -47,7 +47,16 @@ describe("Pi-only runtime host contract", () => {
         parallel_probes: [{ scope: "runtime", output: "map", readonly: true }],
       },
     });
-    expect(probes[0]).toMatchObject({ runtime: "pi", dispatch_call: { tool: "Agent" } });
+    expect(probes[0]).toMatchObject({
+      runtime: "pi",
+      dispatch_call: {
+        tool: "Agent",
+        args: {
+          inherit_context: false,
+          run_in_background: false,
+        },
+      },
+    });
     expect(resolveWorkProbeDispatch({
       activation_mode: "auto",
       activation_mode_reason: "config_default",

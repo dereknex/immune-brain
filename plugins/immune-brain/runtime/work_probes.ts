@@ -184,7 +184,7 @@ function buildDispatchCall(
 			description: `Read-only probe for ${probe.scope}`,
 			prompt: message,
 			inherit_context: false,
-			run_in_background: true,
+			run_in_background: false,
 		},
 	};
 }

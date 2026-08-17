@@ -218,7 +218,7 @@ describe("planner ensemble contract", () => {
 			expect(envelope.call).toMatchObject({
 				subagent_type: "general-purpose",
 				inherit_context: false,
-				run_in_background: true,
+				run_in_background: false,
 			});
 			expect(envelope.call.prompt).toContain("tool_policy: no tools");
 			expect(envelope.call.prompt).toContain(
@@ -238,6 +238,33 @@ describe("planner ensemble contract", () => {
 			expect(Object.keys(envelope.call)).not.toContain("reasoning_effort");
 			expect(Object.keys(envelope.call)).not.toContain("verbosity");
 		}
+	});
+
+	it("does not let callers force brainstorm envelopes into the background", () => {
+		const request = buildBrainstormEnsembleRequest({
+			task_summary: "Frame foreground dispatch.",
+			brainstorm_risk: "elevated",
+			config: {
+				workflow_models: { brainstorm_ensemble: ["fast", "mid"] },
+				subagent_models: { fast: "model-fast", mid: "model-mid" },
+			},
+		});
+
+		const result = buildBrainstormEnsembleDispatchEnvelopes({
+			request,
+			task_summary: "Frame foreground dispatch.",
+			run_in_background: true,
+		} as Parameters<typeof buildBrainstormEnsembleDispatchEnvelopes>[0] & {
+			run_in_background: boolean;
+		});
+
+		expect(result.ok).toBe(true);
+		if (!result.ok) throw new Error(result.fallback_reason);
+		expect(
+			result.envelopes.every(
+				(envelope) => envelope.call.run_in_background === false,
+			),
+		).toBe(true);
 	});
 
 	it("does not build brainstorm dispatch envelopes when dispatch is false", () => {
@@ -542,9 +569,6 @@ describe("planner ensemble contract", () => {
 			);
 			expect(content).not.toContain("Pi host adapters");
 			expect(content).toContain("does not transfer framing authority");
-			expect(content).toContain("Pi itself may launch those subagents");
-			expect(content).toContain("normalizePiBrainstormAgentResults");
-			expect(content).toContain("runtime does not call any agent, poll");
 			expect(content).toContain(
 				"mutate state, or own final Spec/Plan authority",
 			);
@@ -552,5 +576,12 @@ describe("planner ensemble contract", () => {
 			expect(content).toContain("Disagreement becomes decision criteria");
 			expect(content).toContain("strong-model blockers");
 		}
+
+		const packaged = read("plugins/immune-brain/dist/imm-brainstorm.md");
+		expect(packaged).toContain("one foreground Agent at a time");
+		expect(packaged).toContain("direct result");
+		expect(packaged).toContain("remaining dispatch budget");
+		expect(packaged).not.toContain("Pi itself may launch those subagents");
+		expect(packaged).not.toContain("poll background work");
 	});
 });

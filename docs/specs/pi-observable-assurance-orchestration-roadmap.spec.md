@@ -3,6 +3,8 @@
 **Task ID**: `2026-08-14-001-pi-observable-assurance-dispatch`
 **Owner**: user
 **Status**: Phase 1 delivered; deferred Phase 2/3/4 superseded by [`host-native-lightweight-workflow-roadmap.spec.md`](host-native-lightweight-workflow-roadmap.spec.md)
+
+**Interactive advisory supersession**: The generic advisory scheduling clauses are superseded by [`foreground-interactive-workflow-roadmap.spec.md`](foreground-interactive-workflow-roadmap.spec.md) Phase 1. Planning, exploration, specialist advisory Review, and work-probe children now use sequential foreground calls and direct results. Kernel authority Review remains background-only until Phase 3 of that roadmap; the Kernel-specific coordinator, receipt, follow-up, timeout, and authority clauses below remain active until that atomic cutover.
 **Design risk**: High
 
 The change crosses Pi extension tool and command surfaces, asynchronous job
@@ -210,11 +212,9 @@ The default allocation is:
 | Parallel discovery | At most two non-overlapping read-only probes when existing evidence is insufficient |
 | Nested delegation | Forbidden |
 
-Unknown-duration planning, exploration, and review children default to
-`run_in_background: true`. The parent must emit a dispatch line before or
-immediately after spawn, keep a visible status surface, and synthesize terminal
-results. Foreground dispatch is reserved for a bounded short child whose result
-is required immediately and whose `onUpdate` stream remains visible.
+Interactive planning, exploration, specialist advisory Review, and work-probe children use `run_in_background: false`. The parent launches one foreground child at a time, consumes the direct result, and re-evaluates the remaining dispatch budget before another launch. These calls rely on Pi's native foreground Tool row, cancellation, and steer; they do not create acknowledgement timers, Footer/Widget progress, completion push, `get_subagent_result` retrieval, or late-notification recovery.
+
+Kernel authority Review remains background-only until Phase 3 of the foreground roadmap. Its reserved background receipt, correlation, timeout, and authority behavior in this Spec is not changed by the advisory cutover.
 
 ### 3.5 Authority preservation
 
@@ -273,8 +273,7 @@ the current Pi package while preserving every existing authority boundary.
 3. Fresh QA pass automatically starts one Review; every material terminal state
    sends one correlated parent follow-up that resumes the Agent without a user
    "continue" message.
-4. Skill and dispatch contracts enforce the subagent budget, background default,
-   dispatch feedback, no polling, and no nested delegation.
+4. Skill and dispatch contracts enforce the subagent budget, sequential foreground advisory default, direct result consumption, no polling, and no nested delegation.
 5. Cancellation, timeout, session shutdown, stale snapshot, duplicate advance,
    duplicate terminal event, and follow-up replay cannot create duplicate jobs
    or unauthorized Kernel writes.

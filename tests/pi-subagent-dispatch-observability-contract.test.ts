@@ -12,17 +12,19 @@ describe("Pi subagent dispatch observability contract", () => {
 		);
 	});
 
-	test("dispatch protocol requires background visibility and push completion", () => {
+	test("dispatch protocol uses foreground advisory results while preserving the Phase 3 Kernel Review exclusion", () => {
 		const protocol = read("docs/reference/subagent-dispatch-protocol.md");
-		expect(protocol).toContain("run_in_background: true");
-		expect(protocol).toContain("250ms");
-		expect(protocol).toContain("Footer/Widget");
-		expect(protocol).toContain("telemetry unavailable");
+		expect(protocol).toContain("run_in_background: false");
+		expect(protocol).toContain("direct terminal result");
+		expect(protocol).toContain("one child at a time");
+		expect(protocol).toContain("re-evaluates the remaining dispatch budget");
+		expect(protocol).toContain("No defined-value `setStatus` call");
+		expect(protocol).toContain("Kernel authority Review remains background-only until Phase 3");
 		expect(protocol).toContain("snapshot/准备 30 秒");
 		expect(protocol).toContain("`Agent` receipt 120 秒");
 		expect(protocol).toContain("Quick 为 5 分钟 soft / 15 分钟 stop");
 		expect(protocol).toContain("Soft expiry 只投影 `slow`");
-		expect(protocol).toContain("不得轮询 `get_subagent_result`");
+		expect(protocol).toContain("普通 advisory/discovery 不调用 `get_subagent_result`");
 		expect(protocol).toContain("nested delegation 一律禁止");
 		expect(protocol).toContain("恰好一个 primary reviewer");
 		expect(protocol).toContain("turn 预算按 workload 缩放（Quick 12 / Standard 16 / Heavy 24）");
@@ -50,6 +52,60 @@ describe("Pi subagent dispatch observability contract", () => {
 		expect(protocol).toContain("helper 必须 reject、保留 ownership 与 immutable evidence");
 		expect(protocol).toContain("late injected handle 也不得回退到 local result");
 		expect(protocol).toContain("branded `native_terminal` receipt resolve");
+	});
+
+	test("all interactive advisory producers and packaged roles require sequential foreground dispatch", () => {
+		const producers = [
+			{
+				path: "plugins/immune-brain/runtime/advisory_dispatch.ts",
+				functions: [
+					"buildAdvisoryDispatchEnvelope",
+					"buildBrainstormEnsembleDispatchEnvelopes",
+				],
+			},
+			{
+				path: "plugins/immune-brain/runtime/work_probes.ts",
+				functions: ["buildWorkProbeInvocationEnvelopes"],
+			},
+		];
+		for (const producer of producers) {
+			const source = read(producer.path);
+			for (const functionName of producer.functions)
+				expect(source).toContain(`function ${functionName}`);
+			expect(source.match(/run_in_background:/g)).toHaveLength(1);
+			expect(source).toContain("run_in_background: false");
+			expect(source).not.toContain("run_in_background: true");
+			for (const forbidden of [
+				"setStatus(",
+				"setWidget(",
+				"notify(",
+				"followUp(",
+				"get_subagent_result",
+				"setTimeout(",
+				"setInterval(",
+			]) {
+				expect(source).not.toContain(forbidden);
+			}
+		}
+
+		for (const path of [
+			"plugins/immune-brain/dist/imm-brainstorm.md",
+			"plugins/immune-brain/dist/imm-planner.md",
+		]) {
+			const contract = read(path);
+			expect(contract).toContain("one foreground Agent at a time");
+			expect(contract).toContain("direct result");
+			expect(contract).toContain("remaining dispatch budget");
+		}
+
+		const brainstormSpec = read("docs/specs/pi-brainstorm-ensemble-host-adapter.spec.md");
+		expect(brainstormSpec).toContain("superseded by `foreground-interactive-workflow-roadmap.spec.md` Phase 1");
+		expect(brainstormSpec).toContain("run_in_background: false");
+		expect(brainstormSpec).toContain("sequentially");
+
+		const assuranceSpec = read("docs/specs/pi-observable-assurance-orchestration-roadmap.spec.md");
+		expect(assuranceSpec).toContain("generic advisory scheduling clauses are superseded");
+		expect(assuranceSpec).toContain("Kernel authority Review remains background-only until Phase 3");
 	});
 
 	test("Kernel routing contracts select automatic assurance without polling", () => {

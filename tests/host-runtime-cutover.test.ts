@@ -118,7 +118,7 @@ describe("host runtime cutover", () => {
 		expect(readme).toContain("从 Pi 已加载 Skill 的绝对路径反推");
 	});
 
-	it("documents Pi subagent dispatch through the Agent tool", () => {
+	it("documents Pi advisory dispatch through foreground Agent calls", () => {
 		const protocolPaths = [
 			"docs/reference/subagent-dispatch-protocol.md",
 			"plugins/immune-brain/dist/docs/reference/subagent-dispatch-protocol.md",
@@ -127,7 +127,9 @@ describe("host runtime cutover", () => {
 			const content = readFileSync(resolve(REPO_ROOT, rel), "utf-8");
 			expect(content).toContain("## Pi Agent Invocation");
 			expect(content).toContain('subagent_type: "general-purpose"');
-			expect(content).toContain("get_subagent_result");
+			expect(content).toContain("run_in_background: false");
+			expect(content).toContain("direct terminal result");
+			expect(content).toContain("one child at a time");
 			expect(content).toContain("没有 `readonly` 参数");
 		}
 

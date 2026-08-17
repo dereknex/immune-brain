@@ -262,7 +262,6 @@ export function buildAdvisoryDispatchEnvelope(
 		prompt: string;
 		model?: string;
 		description?: string;
-		run_in_background?: boolean;
 	},
 ): {
 	ok: true;
@@ -283,7 +282,7 @@ export function buildAdvisoryDispatchEnvelope(
 			prompt: input.prompt,
 			...model,
 			inherit_context: false,
-			run_in_background: input.run_in_background ?? true,
+			run_in_background: false,
 		},
 	};
 }
@@ -525,7 +524,6 @@ export function buildBrainstormEnsembleDispatchEnvelopes(
 		};
 		task_summary: string;
 		shared_context_summary?: string;
-		run_in_background?: boolean;
 	},
 ):
 	| {
@@ -579,7 +577,6 @@ export function buildBrainstormEnsembleDispatchEnvelopes(
 			prompt,
 			model: candidate.model,
 			description: `${candidate.role} brainstorm for ${taskSummary}`,
-			run_in_background: input.run_in_background ?? true,
 		});
 		envelopes.push({
 			candidate_id: candidate.candidate_id,

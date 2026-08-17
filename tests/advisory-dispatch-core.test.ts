@@ -142,8 +142,18 @@ describe("advisory dispatch core", () => {
       prompt,
       model: "model-security",
       inherit_context: false,
-      run_in_background: true,
+      run_in_background: false,
     })
+
+    const attemptedOverride = buildAdvisoryDispatchEnvelope({
+      candidate: "imm-advisory-reviewer",
+      lens: "security",
+      prompt,
+      run_in_background: true,
+    } as Parameters<typeof buildAdvisoryDispatchEnvelope>[0] & {
+      run_in_background: boolean
+    })
+    expect(attemptedOverride.call.run_in_background).toBe(false)
 
     expect(Object.keys(pi.call)).not.toContain("plan_write")
     expect(Object.keys(pi.call)).not.toContain("qa_closure")

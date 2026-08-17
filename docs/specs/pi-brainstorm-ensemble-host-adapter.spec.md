@@ -2,7 +2,9 @@
 
 **Task ID**: IMM-PI-BRAINSTORM-ADAPTER-001  
 **Owner**: imm-planner  
-**Status**: Draft
+**Status**: Phase 1 scheduling superseded by `foreground-interactive-workflow-roadmap.spec.md` Phase 1; authority and normalization clauses remain active
+
+The background scheduling clauses in the original draft are superseded by `foreground-interactive-workflow-roadmap.spec.md` Phase 1. Brainstorm advisory children now execute sequentially as foreground Pi `Agent` calls; model routing, no-tools authority, packet budgets, and normalization remain unchanged.
 
 ## 1. Goal
 
@@ -22,7 +24,8 @@
 
 - `buildAdvisoryDispatchEnvelope("pi", ...)` 输出 `primitive: "Agent"`
 - Pi call shape 使用 `subagent_type: "general-purpose"`
-- Pi 支持 `model`、`inherit_context: false`、`run_in_background: true`
+- Pi 支持 `model`、`inherit_context: false`、`run_in_background: false`
+- foreground scheduling 由 helper 固定，caller 不提供 override
 - Pi 没有 readonly 参数；readonly 通过 prompt 的 `tool_policy: no tools` 和 advisory-only boundary 约束
 
 缺口是 Brainstorm-specific adapter：如何从 Brainstorm candidate 构造 prompt、description、Pi envelope，以及如何把 child output 标准化为父 Brainstorm 可合成的 packet。
@@ -42,7 +45,6 @@ buildBrainstormEnsembleDispatchEnvelopes("pi", input)
 - `request`：`buildBrainstormEnsembleRequest` 或 CLI JSON 等价结构
 - `task_summary`
 - `shared_context_summary`
-- `run_in_background`
 
 输出：
 
@@ -73,7 +75,7 @@ Pi envelope 必须复用既有 dispatch call shape：
     prompt,
     model?,
     inherit_context: false,
-    run_in_background: true
+    run_in_background: false
   }
 }
 ```
@@ -91,10 +93,11 @@ Adapter 不得绕过 activation policy。
 
 父 Brainstorm host 负责：
 
-1. 并行启动 envelopes。
-2. 收集 child outputs。
-3. 将 child outputs 转为 `normalizeBrainstormEnsemblePacket` 输入。
-4. 最终仍由 `imm-brainstorm` 产出 framing 和 manifest。
+1. 按优先级 sequentially 启动一个 foreground envelope。
+2. 直接消费该 child output，并重新评估 remaining dispatch budget。
+3. 证据仍不足且下一候选独立有用时才启动下一个 envelope。
+4. 将已消费 outputs 转为 `normalizeBrainstormEnsemblePacket` 输入。
+5. 最终仍由 `imm-brainstorm` 产出 framing 和 manifest。
 
 Runtime helper 只构造 envelope 和 prompt，不拥有 synthesis authority。
 
@@ -113,13 +116,13 @@ Runtime helper 只构造 envelope 和 prompt，不拥有 synthesis authority。
 - [ ] Prompt contains tool policy, advisory boundary, role, and output schema.
 - [ ] `request.dispatch === false` returns no envelopes with stable fallback.
 - [ ] Existing `buildAdvisoryDispatchEnvelope("pi")` tests still pass.
-- [ ] Contract tests cover model propagation and background execution.
+- [ ] Contract tests cover model propagation, fixed foreground execution, and rejected caller overrides.
 - [ ] Brainstorm docs mention Pi host adapter consumes dispatch JSON but does not give Brainstorm final Plan authority.
 
 ## 6. Non-goals
 
 - 不真实调用 `Agent`。
-- 不等待或轮询 `get_subagent_result`。
+- 不等待或轮询 `get_subagent_result`；foreground `Agent` call 直接返回结果。
 - 不实现 non-Pi host adapters in this slice。
 - 不实现 UI for choosing candidates。
 - 不扩展 imm-code-review reviewer catalog。
