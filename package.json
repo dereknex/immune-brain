@@ -1,6 +1,6 @@
 {
   "name": "@immune-brain/agent-skills",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "private": true,
   "description": "Immune-Brain agent skill system with active context-mode tools",
   "author": "Immune-Brain Team",

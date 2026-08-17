@@ -372,14 +372,16 @@ describe("descriptor rehearsal preflight", () => {
 
 	test("returns immediately for session-owned jobs and supports cancellation and shutdown", async () => {
 		const statuses: Array<string | undefined> = [];
+		const widgets: Array<string[] | undefined> = [];
 		const notifications: string[] = [];
 		const ctx = {
 			ui: {
 				setStatus: (_key: string, text: string | undefined) => statuses.push(text),
+				setWidget: (_key: string, content: string[] | undefined) => widgets.push(content),
 				notify: (message: string) => notifications.push(message),
 			},
 		} as unknown as ExtensionContext;
-		const coordinator = new EnrollmentJobCoordinator();
+		const coordinator = new EnrollmentJobCoordinator({ refreshIntervalMs: 5 });
 		let started = false;
 		const work = async (backgroundCtx: ExtensionContext): Promise<void> => {
 			started = true;
@@ -394,11 +396,12 @@ describe("descriptor rehearsal preflight", () => {
 		expect(coordinator.start("task-other", "imm-canary-enroll", ctx, work)).toBe(false);
 		coordinator.cancel("task-background", ctx);
 		await Bun.sleep(0);
-		expect(statuses.at(-1)).toContain("cancelled");
+		expect(widgets.some((widget) => widget?.join("\n").includes("Cancellation requested"))).toBe(true);
+		expect(widgets.at(-1)).toBeUndefined();
 
 		expect(coordinator.start("task-shutdown", "imm-canary-new", ctx, work)).toBe(true);
 		await coordinator.shutdown();
-		expect(statuses.some((status) => status?.includes("task-shutdown: cancelled"))).toBe(true);
+		expect(widgets.at(-1)).toBeUndefined();
 
 		let finishCommit: (() => void) | undefined;
 		const committingWork = async (): Promise<void> => {
@@ -409,10 +412,11 @@ describe("descriptor rehearsal preflight", () => {
 		coordinator.cancel("task-commit", ctx);
 		expect(notifications.join("\n")).toContain("commit already owns settlement");
 		const shutdown = coordinator.shutdown();
-		expect(statuses.at(-1)).toContain("shutdown waiting for commit");
+		expect(widgets.some((widget) => widget?.join("\n").includes("shutdown waiting for commit"))).toBe(true);
 		finishCommit?.();
 		await shutdown;
-		expect(statuses.at(-1)).toContain("finished");
+		expect(widgets.at(-1)).toBeUndefined();
+		expect(statuses).toEqual([]);
 	});
 
 	test("fails closed before execution for a non-canonical or incompatible descriptor", async () => {

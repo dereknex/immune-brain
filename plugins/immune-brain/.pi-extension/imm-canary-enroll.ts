@@ -687,18 +687,49 @@ export function descriptorRehearsalSummary(receipt: DescriptorRehearsalReceipt):
 }
 
 const BACKGROUND_ENROLLMENT_CONTEXT = Symbol("background-enrollment-context");
-const ENROLLMENT_STATUS_KEY = "imm-canary-enrollment";
+export const ENROLLMENT_WIDGET_KEY = "imm-canary-enrollment";
+const DEFAULT_WIDGET_REFRESH_MS = 1_000;
+const MAX_WIDGET_TASK_LABEL = 64;
 
 interface BackgroundEnrollmentJob {
 	controller: AbortController;
 	ctx: ExtensionContext;
 	command: string;
+	startedAt: number;
+	stage: string;
 	committing: boolean;
+	refreshTimer?: ReturnType<typeof setInterval>;
 	completion?: Promise<void>;
+}
+
+export interface EnrollmentJobCoordinatorOptions {
+	now?: () => number;
+	refreshIntervalMs?: number;
+}
+
+function boundedLabel(value: string, maximum: number): string {
+	if (value.length <= maximum) return value;
+	return `${value.slice(0, maximum - 3)}...`;
+}
+
+function formatElapsed(milliseconds: number): string {
+	const seconds = Math.max(0, Math.floor(milliseconds / 1_000));
+	const minutes = Math.floor(seconds / 60);
+	const remainder = seconds % 60;
+	return minutes === 0 ? `${remainder}s` : `${minutes}m ${remainder}s`;
 }
 
 export class EnrollmentJobCoordinator {
 	private readonly jobs = new Map<string, BackgroundEnrollmentJob>();
+	private readonly now: () => number;
+	private readonly refreshIntervalMs: number;
+	private shutdownPromise: Promise<void> | undefined;
+	private shuttingDown = false;
+
+	constructor(options: EnrollmentJobCoordinatorOptions = {}) {
+		this.now = options.now ?? Date.now;
+		this.refreshIntervalMs = options.refreshIntervalMs ?? DEFAULT_WIDGET_REFRESH_MS;
+	}
 
 	start(
 		taskId: string,
@@ -706,97 +737,180 @@ export class EnrollmentJobCoordinator {
 		ctx: ExtensionContext,
 		work: (backgroundCtx: ExtensionContext) => Promise<void>,
 	): boolean {
+		if (this.shuttingDown) {
+			this.notify(ctx, "enrollment preflight cannot start during session shutdown", "warning");
+			return false;
+		}
 		if (this.jobs.size > 0) {
 			const [activeTaskId] = this.jobs.keys();
-			ctx.ui.notify(
+			this.notify(
+				ctx,
 				`enrollment preflight already running for ${activeTaskId}; cancel it before starting ${taskId}`,
 				"warning",
 			);
 			return false;
 		}
 		const controller = new AbortController();
-		const job: BackgroundEnrollmentJob = { controller, ctx, command, committing: false };
+		const job: BackgroundEnrollmentJob = {
+			controller,
+			ctx,
+			command,
+			startedAt: this.now(),
+			stage: "preparing",
+			committing: false,
+		};
 		this.jobs.set(taskId, job);
-		ctx.ui.setStatus(ENROLLMENT_STATUS_KEY, `${command} ${taskId}: descriptor rehearsal running`);
-		ctx.ui.notify(
+		this.renderWidget(taskId, job);
+		job.refreshTimer = setInterval(() => {
+			if (this.jobs.get(taskId) !== job) {
+				this.stopTimer(job);
+				return;
+			}
+			this.renderWidget(taskId, job);
+		}, this.refreshIntervalMs);
+		this.notify(
+			ctx,
 			`descriptor rehearsal started in the background for ${taskId}; input remains available; use /${command} cancel ${taskId} to stop it`,
 			"info",
 		);
 		const backgroundCtx = Object.create(ctx) as ExtensionContext;
 		Object.defineProperty(backgroundCtx, "signal", { value: controller.signal });
 		Object.defineProperty(backgroundCtx, BACKGROUND_ENROLLMENT_CONTEXT, { value: true });
-		const completion = work(backgroundCtx)
+		let workPromise: Promise<void>;
+		try {
+			workPromise = work(backgroundCtx);
+		} catch (error) {
+			workPromise = Promise.reject(error);
+		}
+		const completion = workPromise
 			.catch((error) => {
-				ctx.ui.notify(
+				this.notify(
+					ctx,
 					`enrollment preflight failed: ${error instanceof Error ? error.message : String(error)}`,
 					"error",
 				);
 			})
-			.finally(() => {
-				if (this.jobs.get(taskId) !== job) return;
-				this.jobs.delete(taskId);
-				ctx.ui.setStatus(
-					ENROLLMENT_STATUS_KEY,
-					`${command} ${taskId}: ${controller.signal.aborted ? "cancelled" : "finished"}`,
-				);
-			});
+			.finally(() => this.settle(taskId, job));
 		job.completion = completion;
 		void completion;
 		return true;
+	}
+
+	updateStage(taskId: string, stage: string): void {
+		const job = this.jobs.get(taskId);
+		if (!job || job.committing || job.controller.signal.aborted) return;
+		job.stage = stage;
+		this.renderWidget(taskId, job);
 	}
 
 	markCommitting(taskId: string, ctx: ExtensionContext): boolean {
 		const job = this.jobs.get(taskId);
 		if (!job) return true;
 		if (job.controller.signal.aborted) {
-			ctx.ui.notify(`enrollment cancelled before commit for ${taskId}; zero authority writes`, "info");
+			this.notify(ctx, `enrollment cancelled before commit for ${taskId}; zero authority writes`, "info");
 			return false;
 		}
 		job.committing = true;
-		ctx.ui.setStatus(ENROLLMENT_STATUS_KEY, `${job.command} ${taskId}: committing`);
+		job.stage = "committing";
+		this.renderWidget(taskId, job);
 		return true;
 	}
 
 	cancel(taskId: string, ctx: ExtensionContext): void {
 		const job = this.jobs.get(taskId);
 		if (!job) {
-			ctx.ui.notify(`no enrollment preflight is running for ${taskId}`, "warning");
+			this.notify(ctx, `no enrollment preflight is running for ${taskId}`, "warning");
 			return;
 		}
 		if (job.committing) {
-			ctx.ui.notify(
+			this.notify(
+				ctx,
 				`cancellation rejected for ${taskId}: enrollment commit already owns settlement`,
 				"warning",
 			);
 			return;
 		}
-		job.controller.abort(new Error("descriptor rehearsal cancelled by user"));
-		ctx.ui.setStatus(ENROLLMENT_STATUS_KEY, `${job.command} ${taskId}: cancelling`);
-		ctx.ui.notify(`cancelling enrollment preflight for ${taskId}`, "info");
+		if (!job.controller.signal.aborted)
+			job.controller.abort(new Error("descriptor rehearsal cancelled by user"));
+		job.stage = "cancelling";
+		this.renderWidget(taskId, job);
+		this.notify(ctx, `cancelling enrollment preflight for ${taskId}`, "info");
 	}
 
-	async shutdown(): Promise<void> {
+	shutdown(): Promise<void> {
+		if (this.shutdownPromise) return this.shutdownPromise;
+		this.shuttingDown = true;
+		const pending = this.performShutdown().finally(() => {
+			if (this.shutdownPromise === pending) this.shutdownPromise = undefined;
+			this.shuttingDown = false;
+		});
+		this.shutdownPromise = pending;
+		return pending;
+	}
+
+	private async performShutdown(): Promise<void> {
 		const jobs = [...this.jobs.entries()];
 		for (const [taskId, job] of jobs) {
 			if (job.committing) {
-				try {
-					job.ctx.ui.setStatus(ENROLLMENT_STATUS_KEY, `${job.command} ${taskId}: shutdown waiting for commit`);
-				} catch {
-					// Session teardown may already have disposed the UI.
-				}
+				job.stage = "shutdown waiting for commit";
+				this.renderWidget(taskId, job);
 				continue;
 			}
-			job.controller.abort(new Error("Pi session shutdown"));
-			try {
-				job.ctx.ui.setStatus(ENROLLMENT_STATUS_KEY, `${job.command} ${taskId}: cancelled`);
-			} catch {
-				// Session teardown may already have disposed the UI.
-			}
+			if (!job.controller.signal.aborted)
+				job.controller.abort(new Error("Pi session shutdown"));
+			job.stage = "cancelling";
+			this.renderWidget(taskId, job);
 		}
 		await Promise.allSettled(
 			jobs.map(([, job]) => job.completion).filter((value): value is Promise<void> => value !== undefined),
 		);
-		this.jobs.clear();
+		for (const [taskId, job] of jobs) this.settle(taskId, job);
+	}
+
+	private renderWidget(taskId: string, job: BackgroundEnrollmentJob): void {
+		if (this.jobs.get(taskId) !== job || typeof job.ctx.ui.setWidget !== "function") return;
+		const task = boundedLabel(taskId, MAX_WIDGET_TASK_LABEL);
+		const elapsed = formatElapsed(this.now() - job.startedAt);
+		const action = job.committing
+			? "Cancellation unavailable while Kernel enrollment settles"
+			: job.controller.signal.aborted
+				? "Cancellation requested; waiting for background work to close"
+				: `Action: /${job.command} cancel ${taskId}`;
+		try {
+			job.ctx.ui.setWidget(
+				ENROLLMENT_WIDGET_KEY,
+				[`Enrollment: ${task} | ${boundedLabel(job.stage, 48)} | elapsed ${elapsed}`, action],
+				{ placement: "aboveEditor" },
+			);
+		} catch {
+			// Presentation failure cannot affect enrollment authority or settlement.
+		}
+	}
+
+	private settle(taskId: string, job: BackgroundEnrollmentJob): void {
+		if (this.jobs.get(taskId) !== job) return;
+		this.stopTimer(job);
+		this.jobs.delete(taskId);
+		if (typeof job.ctx.ui.setWidget !== "function") return;
+		try {
+			job.ctx.ui.setWidget(ENROLLMENT_WIDGET_KEY, undefined);
+		} catch {
+			// Session teardown may already have disposed the UI.
+		}
+	}
+
+	private stopTimer(job: BackgroundEnrollmentJob): void {
+		if (job.refreshTimer === undefined) return;
+		clearInterval(job.refreshTimer);
+		job.refreshTimer = undefined;
+	}
+
+	private notify(ctx: ExtensionContext, message: string, kind: "info" | "warning" | "error"): void {
+		try {
+			ctx.ui.notify(message, kind);
+		} catch {
+			// UI delivery is presentation-only.
+		}
 	}
 }
 
@@ -842,7 +956,7 @@ export default function (pi: ExtensionAPI) {
 			}
 			if (
 				!isBackgroundEnrollmentContext(ctx) &&
-				typeof ctx.ui.setStatus === "function"
+				typeof ctx.ui.setWidget === "function"
 			) {
 				coordinator.start(taskId, "imm-canary-enroll", ctx, (backgroundCtx) =>
 					handler(taskId, backgroundCtx));
@@ -900,6 +1014,7 @@ export default function (pi: ExtensionAPI) {
 			//    isolated Git-index copies before asking for authority. This explicit
 			//    waiver route may continue after a failed rehearsal, but the failure
 			//    and override are displayed in the one literal-user confirmation.
+			coordinator.updateStage(taskId, "descriptor rehearsal");
 			let descriptorRehearsal: DescriptorRehearsalReceipt;
 			try {
 				descriptorRehearsal = await runDescriptorRehearsal(ctx.cwd, taskId, { signal: ctx.signal });
@@ -946,6 +1061,7 @@ export default function (pi: ExtensionAPI) {
 					: [`Rehearsal: enrollment_ready=true`]),
 				`Route: Kernel enrollment${rehearsalOverride ? " (explicit descriptor-rehearsal waiver)" : ""}`,
 			].join("\n");
+			coordinator.updateStage(taskId, "awaiting confirmation");
 			const confirmed = await ctx.ui.confirm("Enroll Kernel canary task?", summary, {
 				timeout: 10 * 60 * 1000,
 				signal: ctx.signal,
@@ -955,6 +1071,7 @@ export default function (pi: ExtensionAPI) {
 				return;
 			}
 			ctx.signal?.throwIfAborted();
+			coordinator.updateStage(taskId, "revalidating");
 
 			// 5. Post-confirm revalidation: every owner must be unchanged since
 			//    the preview. Any drift aborts before any write.
@@ -996,6 +1113,7 @@ export default function (pi: ExtensionAPI) {
 			};
 
 			// 7. Kernel-owner rehearsal (zero-write) before final enrollment.
+			coordinator.updateStage(taskId, "kernel rehearsal");
 			const rehearsal = await runEnrollmentRehearsal(ctx.cwd, input, capability, registry);
 			if (!rehearsal.rehearsed || rehearsal.evidence.outcome !== "ready") {
 				ctx.ui.notify(

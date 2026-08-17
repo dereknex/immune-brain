@@ -1,9 +1,16 @@
 # Spec: Footer-Free Enrollment Progress
 
-**Task ID**: `2026-08-17-002-footer-free-enrollment-progress`
+**Task ID**: `2026-08-17-003-footer-free-enrollment-progress-r2`
 **Owner**: user
 **Status**: Proposed
 **Design risk**: High
+
+Task `2026-08-17-002-footer-free-enrollment-progress` stopped before implementation
+because its scope omitted `README.md`, whose active Footer guidance both violated
+the requested zero-Footer contract and caused four pre-existing documentation
+contract failures. The current Kernel route cannot attach the next-intent payload
+required for a breaking revision, so this R2 successor restates the same design
+with the complete source, test, and active-documentation boundary.
 
 This change moves the session-owned Enrollment preflight progress surface out of
 Pi's Footer and into one bounded `aboveEditor` Widget. It changes no Kernel
@@ -71,14 +78,18 @@ stateDiagram-v2
 
 ### Footer invariant
 
-Immune-Brain publishes no Footer content for Enrollment or Assurance:
+Immune-Brain publishes no Footer content for Enrollment or Assurance, and active
+README guidance must describe the same behavior:
 
 - all Enrollment calls of the form `ctx.ui.setStatus(key, text)` are deleted;
 - Assurance continues publishing no Footer content;
 - `ctx.ui.setStatus(key, undefined)` may remain solely as best-effort cleanup of
   UI left by an older extension version and is not Footer content;
 - no completed, failed, cancelled, waiting, committing, or elapsed state is
-  presented through the Footer.
+  presented through the Footer; and
+- `README.md` contains no Footer progress claim and preserves the repository's
+  existing Bun plus TypeScript, v4 runtime, Pi-only host, and Pi package
+  installation documentation contracts.
 
 ### Widget lifecycle owner
 
@@ -203,8 +214,9 @@ lifecycle guarantee covered by an executable regression test.
 
 ## Scope
 
+- `README.md`
 - `docs/specs/footer-free-enrollment-progress.spec.md`
-- `docs/plans/2026-08-17-002-footer-free-enrollment-progress.intent.json`
+- `docs/plans/2026-08-17-003-footer-free-enrollment-progress-r2.intent.json`
 - `plugins/immune-brain/.pi-extension/imm-canary-enroll.ts`
 - `plugins/immune-brain/.pi-extension/imm-canary-new.ts`
 - `tests/pi-enrollment-progress-widget.test.ts`
@@ -212,6 +224,10 @@ lifecycle guarantee covered by an executable regression test.
 - `tests/pi-canary-enroll-extension.test.ts`
 - `tests/pi-canary-new-extension.test.ts`
 - `tests/pi-canary-assurance-observability.test.ts`
+- `tests/host-runtime-cutover.test.ts`
+- `tests/pi-only-current-contracts.test.ts`
+- `tests/python-reference-boundary.test.ts`
+- `tests/v4-runtime-launchers.test.ts`
 - `tests/imm-canary-work-contract.test.ts`
 - `tests/pi-canary-packed-consumer.test.ts`
 
@@ -232,7 +248,10 @@ lifecycle guarantee covered by an executable regression test.
 5. Assurance retains its current Host-native contract: deterministic QA never
    uses a custom Widget/Footer and Review remains visible through the standard
    `Agent` surface.
-6. Focused tests execute concrete Widget values and lifecycle ordering,
+6. Active README guidance contains no Footer-based progress claim and satisfies
+   the existing Bun plus TypeScript, v4 runtime, Pi-only host, and Pi package
+   installation documentation contracts.
+7. Focused tests execute concrete Widget values and lifecycle ordering,
    TypeScript is diagnostic-free, the full repository suite passes, and
    `git diff --check` reports no formatting errors.
 

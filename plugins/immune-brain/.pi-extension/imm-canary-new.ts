@@ -71,7 +71,7 @@ export default function (pi: ExtensionAPI) {
 			}
 			if (
 				!isBackgroundEnrollmentContext(ctx) &&
-				typeof ctx.ui.setStatus === "function"
+				typeof ctx.ui.setWidget === "function"
 			) {
 				coordinator.start(taskId, "imm-canary-new", ctx, (backgroundCtx) =>
 					handler(taskId, backgroundCtx));
@@ -138,6 +138,7 @@ export default function (pi: ExtensionAPI) {
 
 			// 4. The default route requires a passing concurrent descriptor rehearsal
 			//    and never offers a waiver. Failures block before confirmation.
+			coordinator.updateStage(taskId, "descriptor rehearsal");
 			let descriptorRehearsal: DescriptorRehearsalReceipt;
 			try {
 				descriptorRehearsal = await runDescriptorRehearsal(ctx.cwd, taskId, { signal: ctx.signal });
@@ -173,6 +174,7 @@ export default function (pi: ExtensionAPI) {
 				`Rehearsal: enrollment_ready=true`,
 				`Route: Kernel default (imm-canary-work)`,
 			].join("\n");
+			coordinator.updateStage(taskId, "awaiting confirmation");
 			const confirmed = await ctx.ui.confirm("Create Kernel-managed task?", summary, {
 				timeout: 10 * 60 * 1000,
 				signal: ctx.signal,
@@ -182,6 +184,7 @@ export default function (pi: ExtensionAPI) {
 				return;
 			}
 			ctx.signal?.throwIfAborted();
+			coordinator.updateStage(taskId, "revalidating");
 
 			// 6. Post-confirm revalidation: every owner must be unchanged since
 			//    the preview. Any drift aborts before any write.
@@ -222,6 +225,7 @@ export default function (pi: ExtensionAPI) {
 			};
 
 			// 8. Kernel-owner rehearsal (zero-write) before final enrollment.
+			coordinator.updateStage(taskId, "kernel rehearsal");
 			const rehearsal = await runEnrollmentRehearsal(ctx.cwd, input, capability, registry);
 			if (!rehearsal.rehearsed || rehearsal.evidence.outcome !== "ready") {
 				ctx.ui.notify(
