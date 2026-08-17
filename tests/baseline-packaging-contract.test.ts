@@ -1,11 +1,13 @@
 import { describe, expect, it } from "bun:test"
+import { spawnSync } from "node:child_process"
 import { existsSync, readFileSync, readdirSync } from "node:fs"
 import { fileURLToPath } from "node:url"
 import { dirname, resolve } from "node:path"
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..")
 const BASELINE_ROOT = resolve(REPO_ROOT, "plugins/immune-brain/BASELINE.md")
-const BASELINE_SKILLS = resolve(REPO_ROOT, "plugins/immune-brain/skills/BASELINE.md")
+const BASELINE_SKILLS_REL = "plugins/immune-brain/skills/BASELINE.md"
+const BASELINE_SKILLS = resolve(REPO_ROOT, BASELINE_SKILLS_REL)
 const BASELINE_DIST = resolve(REPO_ROOT, "plugins/immune-brain/dist/BASELINE.md")
 const DIST_DIR = resolve(REPO_ROOT, "plugins/immune-brain/dist")
 const PLANNER = resolve(DIST_DIR, "imm-planner.md")
@@ -24,6 +26,19 @@ function read(abs: string): string {
 describe("immune-brain BASELINE packaging contract", () => {
   it("ships BASELINE.md in the dist package", () => {
     expect(existsSync(BASELINE_DIST)).toBe(true)
+  })
+
+  it("tracks the skills BASELINE as package source", () => {
+    const tracked = spawnSync("git", ["ls-files", "--error-unmatch", BASELINE_SKILLS_REL], {
+      cwd: REPO_ROOT,
+      encoding: "utf8",
+    })
+    const ignored = spawnSync("git", ["check-ignore", "--quiet", BASELINE_SKILLS_REL], {
+      cwd: REPO_ROOT,
+    })
+
+    expect(tracked.status).toBe(0)
+    expect(ignored.status).toBe(1)
   })
 
   it("keeps dist/BASELINE.md in sync with the source copies", () => {
