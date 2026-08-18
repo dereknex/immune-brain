@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import {
 	AssuranceProgression,
+	buildReviewPrompt,
 	parseAssuranceVerdict,
 	snapshotDigest,
 	type AssuranceProgressionPorts,
@@ -303,6 +304,12 @@ describe("foreground assurance progression", () => {
 	});
 });
 
+test("native Review reservations inject the internal Code Review role contract", () => {
+	const prompt = buildReviewPrompt(snapshot("review"), "/tmp/evidence.json");
+	expect(prompt).toContain("internal role: code-review");
+	expect(prompt).toContain("imm-code-review");
+	expect(prompt).toContain("do not discover or load Pi Skills");
+});
 test("parseAssuranceVerdict rejects a verdict bound to another snapshot", () => {
 	const s = snapshot("review");
 	expect(() => parseAssuranceVerdict(resultText({ ...s, diff_hash: "sha256:other" }), s)).toThrow(/snapshot digest/i);

@@ -6,6 +6,13 @@ description: Use when running validated Plans to completion.
 # Immune-Brain: Loop
 
 This skill adheres to the **[BASELINE.md](BASELINE.md)**.
+At runtime role boundaries, build `buildLoopRoleDispatch` from the runtime
+bridge for `qa`, `code-review`, or `ui-review` and pass its foreground `call`
+to Agent. Do not discover or load a Pi Skill for those roles. The public Skills
+remain available as rollback shims during this additive migration. The
+Immune-Brain maintainer removes these public shims in the next minor release
+after Issue #9's three-entry public surface contract and the Issue #6/#7 Loop
+parity tests pass; until then they are the documented rollback path.
 
 ## Workflow Profiles
 
@@ -39,8 +46,8 @@ Repeat this sequence; do not silently stop while a valid action remains:
 2. Emit one progress line: `[target][phase] result | next: action`.
 3. Execute exactly one allowed action:
    - `awaiting_execution_input` / `rework_needed`: implement only the active Step or pending same-boundary `follow_up` in the current conversation under `imm-executor`; verify and call `imm-work record-execution`.
-   - `awaiting_qa_decision`: dispatch an isolated read-only `imm-qa` child with the checkpoint, Plan verification, recorded evidence, and current target identity (`active_step.number` or `execution_target.id`). Validate its raw output with `imm-check-child-output --kind qa --json '<child output>'`, then call `imm-review` from the parent using the validated decision. A `rework` or `replan` must carry the validated `notes` through as `--notes`; the runtime rejects either decision without it.
-   - `review_required`: dispatch the exact `pending_review_gate` (`imm-code-review` or `imm-ui-review`) with `pending_review_gate`, `review_changed_files`, and `review_changed_files_signature` from the checkpoint. Validate its raw output with `imm-check-child-output --kind review --json '<child output>'`. Record a validated pass with `imm-review gate-pass --changed-files-signature <review_changed_files_signature>`, or open a same-boundary follow-up through `imm-work follow-up-open --changed-files-signature <review_changed_files_signature>`.
+   - `awaiting_qa_decision`: build the internal `qa` role dispatch with `buildLoopRoleDispatch`, passing the checkpoint, Plan verification, recorded evidence, and current target identity in its context. Validate the raw output with `imm-check-child-output --kind qa --json '<child output>'`, then call `imm-review` from the parent using the validated decision. A `rework` or `replan` must carry the validated `notes` through as `--notes`; the runtime rejects either decision without it.
+   - `review_required`: map the exact `pending_review_gate` (`imm-code-review` or `imm-ui-review`) to the internal `code-review` or `ui-review` role and build its foreground dispatch with `buildLoopRoleDispatch`, passing `pending_review_gate`, `review_changed_files`, and `review_changed_files_signature` in context. Validate its raw output with `imm-check-child-output --kind review --json '<child output>'`. Record a validated pass with `imm-review gate-pass --changed-files-signature <review_changed_files_signature>`, or open a same-boundary follow-up through `imm-work follow-up-open --changed-files-signature <review_changed_files_signature>`.
    - `awaiting_user_successor_decision`: stop immediately with `recommended_authority: user`, no next skill, and no runtime action. This boundary must not dispatch Planner, transition, Compounder, or a new Pi session/subagent. Only a literal user may supply a concrete validated successor Plan to `--approve-successor`.
 4. `imm-check-child-output` owns the child decision schema: decision enum, required fields, decision-specific fields, unknown fields, and stale target, gate, or signature values. It derives the expected identity from the State Ledger, so never hand-build that expectation or re-derive the schema from this document. A non-zero exit means perform no runtime write and stop with the reported `qa_output_invalid` or `reviewer_output_invalid`.
 5. After every accepted runtime write, discard the old snapshot and read a fresh checkpoint. Emit a result line only when the write completes a major phase or a subagent round.

@@ -30,6 +30,9 @@ import {
 	type ToolExecutionEndLike,
 } from "./pi-canary-native-review";
 import type { AssuranceCorrelation, AssuranceRole, AssuranceResultPresentation } from "./pi-canary-assurance";
+import {
+	buildRoleDelegationPacket,
+} from "../runtime/role_prompt_bridge";
 import type { AssuranceProjectionResult, TaskIntentRead, TaskRecordV2Read } from "./runtime-stub";
 
 export interface AssuranceVerdict {
@@ -207,8 +210,18 @@ export function buildReviewPrompt(snapshot: SnapshotDescriptor, evidencePath?: s
 	if (snapshot.role !== "review") throw new Error("native review prompt requires review role");
 	const acceptance = snapshot.acceptance.map((item) => `- ${item.id}: ${item.assertion}`).join("\n");
 	const digest = snapshotDigest(snapshot);
+	const rolePacket = buildRoleDelegationPacket({
+		role: "code-review",
+		context: {
+			task_id: snapshot.task_id,
+			review_gate: "imm-code-review",
+			changed_files_signature: snapshot.diff_hash,
+			snapshot_digest: digest,
+		},
+	});
 	return [
-		`Perform a read-only code review for Assurance Kernel task ${snapshot.task_id}.`,
+		rolePacket.prompt,
+
 		`Verify immutable bundle provenance before analyzing findings. Review the immutable evidence JSON at ${evidencePath ?? "<evidence-path>"}. Read that file first; verify that git rev-parse HEAD equals bundle.head in the isolated worktree. For every tracked dirty_files entry, verify git rev-parse HEAD:<path> equals base_oid, then compare that immutable HEAD blob with current_content. A null base_oid denotes an untracked current file; a null current_content denotes a deletion. Do not inspect or depend on live bytes from the parent worktree.`,
 		`Limit repository inspection to the acceptance assertions and dirty_files contents in the immutable bundle. Do not explore unrelated repository paths.`,
 		`The isolated worktree contains the committed HEAD snapshot only; staged task changes exist solely in the bundle dirty_files entries as current_content bytes. Analyze code exclusively from those bundle bytes; repository file reads are permitted only for the provenance git commands above. A symbol missing from the worktree but present in current_content is the task change, not an absence.`,

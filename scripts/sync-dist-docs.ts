@@ -22,6 +22,9 @@ import {
 	renderDistDoc,
 	REGISTRY_CANONICAL,
 	REGISTRY_COPIES,
+	ROLE_PROMPT_SOURCE_DIR,
+	ROLE_PROMPT_DIST_DIR,
+	ROLE_PROMPT_FILES,
 } from "./dist-sync-manifest.ts";
 import {
 	README_ROLE_MARKER,
@@ -63,6 +66,13 @@ for (const copy of REGISTRY_COPIES) {
 		label: copy,
 		source: resolve(REPO_ROOT, REGISTRY_CANONICAL),
 		target: resolve(REPO_ROOT, copy),
+	});
+}
+for (const file of ROLE_PROMPT_FILES) {
+	pairs.push({
+		label: `${ROLE_PROMPT_DIST_DIR}/${file}`,
+		source: resolve(REPO_ROOT, ROLE_PROMPT_SOURCE_DIR, file),
+		target: resolve(REPO_ROOT, ROLE_PROMPT_DIST_DIR, file),
 	});
 }
 

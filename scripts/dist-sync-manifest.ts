@@ -124,6 +124,9 @@ export { REGISTRY_CANONICAL, REGISTRY_COPIES } from "./skill-registry.ts";
 
 export const DOCS_SOURCE_DIR = "docs";
 export const DIST_DOCS_DIR = "plugins/immune-brain/dist/docs";
+export const ROLE_PROMPT_SOURCE_DIR = "plugins/immune-brain/runtime/prompts";
+export const ROLE_PROMPT_DIST_DIR = "plugins/immune-brain/dist/role-prompts";
+export const ROLE_PROMPT_FILES = ["qa.md", "code-review.md", "ui-review.md"] as const;
 
 export const MIRROR_ENTRIES = DIST_DOC_ENTRIES.filter(
 	(e) => e.mode === "mirror",

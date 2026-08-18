@@ -57,6 +57,9 @@
     "plugins/immune-brain/runtime/authority_commit_receipts.ts",
     "plugins/immune-brain/runtime/managed_task_routing_policy.ts",
     "plugins/immune-brain/runtime/verification_descriptor.ts",
+    "plugins/immune-brain/runtime/role_prompt_bridge.ts",
+    "plugins/immune-brain/runtime/loop_contract.ts",
+    "plugins/immune-brain/runtime/prompts",
     "plugins/immune-brain/skills",
     "plugins/immune-brain/dist",
     "plugins/immune-brain/bin"

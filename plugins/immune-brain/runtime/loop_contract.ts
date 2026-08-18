@@ -7,6 +7,53 @@
  * the machine-checkable half of that contract so the loop skill does not have
  * to re-derive it in prose.
  */
+import {
+	buildRoleDelegationPacket,
+	type RoleDelegationContext,
+	type RoleDelegationPacket,
+	type InternalRole,
+} from "./role_prompt_bridge";
+
+export type LoopRole = InternalRole;
+
+export function buildLoopRoleDelegationPacket(input: {
+	role: LoopRole;
+	context: RoleDelegationContext;
+}): RoleDelegationPacket {
+	return buildRoleDelegationPacket(input);
+}
+export interface LoopRoleDispatch {
+	packet: RoleDelegationPacket;
+	call: {
+		subagent_type: "general-purpose";
+		description: string;
+		prompt: string;
+		inherit_context: false;
+		isolated: true;
+		isolation: "worktree";
+		run_in_background: false;
+	};
+}
+
+export function buildLoopRoleDispatch(input: {
+	role: LoopRole;
+	context: RoleDelegationContext;
+	description?: string;
+}): LoopRoleDispatch {
+	const packet = buildLoopRoleDelegationPacket(input);
+	return {
+		packet,
+		call: {
+			subagent_type: "general-purpose",
+			description: input.description ?? `${input.role} internal role`,
+			prompt: packet.prompt,
+			inherit_context: false,
+			isolated: true,
+			isolation: "worktree",
+			run_in_background: false,
+		},
+	};
+}
 
 export type ChildOutputReason = "qa_output_invalid" | "reviewer_output_invalid";
 

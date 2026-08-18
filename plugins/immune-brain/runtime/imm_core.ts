@@ -15,6 +15,7 @@ export { normalizePlanPath } from "./plan_core";
 export * from "./activation";
 export * from "./environment";
 export * from "./loop_contract";
+export * from "./role_prompt_bridge";
 export * from "./handoff";
 export * from "./workspace_scope";
 export * from "./advisory_dispatch";
