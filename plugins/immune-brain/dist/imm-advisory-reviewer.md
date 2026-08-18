@@ -5,7 +5,10 @@ description: Use when delegated review.
 
 # Immune-Brain: Advisory Reviewer
 
-This skill adheres to the **[BASELINE.md](BASELINE.md)**.
+This skill adheres to the **[BASELINE.md](BASELINE.md)**. The canonical runtime
+role is internal `advisory-reviewer`, selected with an explicit lens through
+`buildLoopAction`; this packaged Skill remains a compatibility shim until the
+Issue #9 public-surface migration milestone.
 
 ## Core Responsibilities
 

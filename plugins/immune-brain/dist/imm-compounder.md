@@ -10,16 +10,20 @@ This skill adheres to the **[BASELINE.md](BASELINE.md)**.
 ## Workflow Profiles
 
 Run only from an explicit runtime `complete` checkpoint whose
-`compounder_requirement.required` is true. Strict Plans and Plans declaring
-`Compounder: required` preserve the existing handoff. Standard optional Plans
-require Compounder after at least two completed review follow-ups or when the
-current changed-file surface includes `docs/solutions/` or `CONTEXT.md`.
-Otherwise the final review gate atomically finishes and this skill is skipped.
-The host must not infer another trigger or invoke Compounder automatically.
+`compounder_requirement.required` is true. The internal `compounder` action
+also requires a closed Step with structured reusable-learning evidence. Routine
+work with no reusable evidence returns `next: none` and creates no Learning.
+Strict Plans and Plans declaring `Compounder: required` preserve the existing
+handoff. Standard optional Plans require Compounder after at least two completed
+review follow-ups or when the current changed-file surface includes
+`docs/solutions/` or `CONTEXT.md`. Otherwise the final review gate atomically
+finishes and this skill is skipped. The host must not infer another trigger or
+invoke Compounder automatically.
 
 ## Core Responsibilities
 
 - **Learning Capture**: Extract reusable guidance from finished work and update `docs/solutions/`.
+- **Evidence Gate**: The internal `compounder` action is dispatched only for a closed Step with structured reusable-learning evidence. Routine work with no reusable evidence returns `next: none` and creates no Learning.
 - **Memory Maintenance**: Refresh `.imm/memory/MEMORY.md` after learning capture.
 - **Evidence-Backed**: Preserve only evidence-backed lessons, not broad claims.
 - **Debate & Evidence Critique**: Before storing a reusable lesson, challenge whether it is true, reusable, and worth adding to the knowledge base.

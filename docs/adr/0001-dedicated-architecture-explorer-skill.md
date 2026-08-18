@@ -1,3 +1,10 @@
+---
+status: superseded
+superseded_by: docs/adr/0003-internal-role-prompt-routing.md
+retired_at: 2026-08-18
+reason: Architecture exploration is now an internal role dispatch selected by Brainstorm or Planner; public user-facing entry surfaces are being reduced to the three canonical Skills.
+---
+
 # Dedicated Architecture Explorer Skill
 
 ## Context

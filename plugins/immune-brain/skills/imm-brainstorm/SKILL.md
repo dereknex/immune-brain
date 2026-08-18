@@ -10,7 +10,9 @@ task before planning. Do not edit project files. Return goal, constraints,
 unknowns, readiness, and Next Action.
 
 Brainstorm supports `default`, `roundtable`, and `adversarial` modes.
-Brainstorm ensemble is advisory-only and derives candidates from
+Architecture mapping is a bounded, read-only `arch-explorer` role selected
+through the internal Loop bridge; it cannot write a Spec, Plan, or workflow
+state. Brainstorm ensemble is advisory-only and derives candidates from
 `workflow_models.brainstorm_ensemble`; Final Spec and Plan authority stays with `imm-planner`.
 Pi's adapter may consume `brainstorm_ensemble` dispatch JSON to prepare
 advisory Pi subagent envelopes, but envelope construction is not child execution

@@ -111,7 +111,6 @@ describe("advisory dispatch core", () => {
 
   it("builds a Pi Agent envelope without authority fields", () => {
     const prompt = buildAdvisoryDelegationPrompt({
-      skill_path: "plugins/immune-brain/skills/imm-advisory-reviewer/SKILL.md",
       shared_context_summary: {
         goal: "Review the dispatch substrate.",
         changed_surface: "runtime helpers and focused tests",
@@ -125,9 +124,25 @@ describe("advisory dispatch core", () => {
       },
     })
 
+    expect(prompt).toContain("internal role: advisory-reviewer")
+    expect(prompt).toContain("do not discover or load Pi Skills")
+    expect(prompt).not.toContain("skills/")
     expect(prompt).toContain("tool_policy: no tools")
     expect(prompt).toContain("no plan writes")
     expect(prompt).toContain("no QA closure")
+    expect(() => buildAdvisoryDelegationPrompt({
+      shared_context_summary: {
+        goal: "Review the dispatch substrate.",
+        changed_surface: "runtime helpers and focused tests",
+        project_constraints: "advisory-only",
+      },
+      focus_delta: {
+        role: "imm-advisory-reviewer",
+        lens: " ",
+        specific_changes: [],
+        audit_question: "",
+      },
+    })).toThrow("explicit lens")
 
     const pi = buildAdvisoryDispatchEnvelope({
       candidate: "imm-advisory-reviewer",
@@ -144,6 +159,12 @@ describe("advisory dispatch core", () => {
       inherit_context: false,
       run_in_background: false,
     })
+
+    expect(() => buildAdvisoryDispatchEnvelope({
+      candidate: "imm-advisory-reviewer",
+      lens: " ",
+      prompt,
+    })).toThrow("explicit lens")
 
     const attemptedOverride = buildAdvisoryDispatchEnvelope({
       candidate: "imm-advisory-reviewer",

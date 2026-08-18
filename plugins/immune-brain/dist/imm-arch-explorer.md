@@ -5,7 +5,10 @@ description: Use when exploring architecture.
 
 # Immune-Brain: Architecture Explorer
 
-This skill adheres to the **[BASELINE.md](BASELINE.md)**.
+This skill adheres to the **[BASELINE.md](BASELINE.md)**. The canonical runtime
+role is internal `arch-explorer`, selected by Brainstorm or Planner through
+`buildLoopAction`; this packaged Skill remains a compatibility shim until the
+Issue #9 public-surface migration milestone.
 
 ## Core Responsibilities
 

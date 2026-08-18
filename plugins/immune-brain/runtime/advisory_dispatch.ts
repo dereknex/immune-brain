@@ -1,4 +1,5 @@
 import { PlanValidationError } from "./plan_core";
+import { loadRolePrompt } from "./role_prompt_bridge";
 
 // ── advisory dispatch substrate ─────────────────────────────────────
 
@@ -213,7 +214,6 @@ export function resolveWorkflowStageModels(
 }
 
 export function buildAdvisoryDelegationPrompt(input: {
-	skill_path: string;
 	shared_context_summary: {
 		goal: string;
 		changed_surface: string;
@@ -227,13 +227,20 @@ export function buildAdvisoryDelegationPrompt(input: {
 		audit_question: string;
 	};
 }): string {
+	const lens = input.focus_delta.lens.trim();
+	if (!lens) {
+		throw new PlanValidationError("advisory review requires an explicit lens");
+	}
 	const changes = input.focus_delta.specific_changes.length
 		? input.focus_delta.specific_changes
 				.map((path) => `    - ${path}`)
 				.join("\n")
 		: "    - none";
 	return [
-		`Follow the instructions in ${input.skill_path}.`,
+		"internal role: advisory-reviewer",
+		"tool_policy: no tools",
+		"do not discover or load Pi Skills; execute this internal role contract directly",
+		loadRolePrompt("advisory-reviewer").trim(),
 		"shared_context_summary:",
 		`  goal: ${input.shared_context_summary.goal}`,
 		`  changed_surface: ${input.shared_context_summary.changed_surface}`,
@@ -243,7 +250,7 @@ export function buildAdvisoryDelegationPrompt(input: {
 			: null,
 		"focus_delta:",
 		`  role: ${input.focus_delta.role}`,
-		`  lens: ${input.focus_delta.lens}`,
+		`  lens: ${lens}`,
 		"  specific_changes:",
 		changes,
 		`  audit_question: ${input.focus_delta.audit_question}`,
@@ -269,8 +276,12 @@ export function buildAdvisoryDispatchEnvelope(
 	primitive: "Agent";
 	call: Record<string, unknown>;
 } {
+	const lens = input.lens.trim();
+	if (!lens) {
+		throw new PlanValidationError("advisory dispatch requires an explicit lens");
+	}
 	const description =
-		input.description || `${input.candidate}/${input.lens} review`;
+		input.description || `${input.candidate}/${lens} review`;
 	const model = input.model ? { model: input.model } : {};
 	return {
 		ok: true,
@@ -560,10 +571,14 @@ export function buildBrainstormEnsembleDispatchEnvelopes(
 		0,
 		budget.max_candidates,
 	)) {
+		const lens = candidate.role.trim();
+		if (!lens) {
+			throw new PlanValidationError("advisory candidate requires an explicit lens");
+		}
 		const prompt = [
 			`Task: ${taskSummary}`,
 			sharedContext ? `Shared context: ${sharedContext}` : null,
-			`Brainstorm candidate role: ${candidate.role}`,
+			`Brainstorm candidate role: ${lens}`,
 			`Result budget: max ${budget.max_result_entries} entries per field; max ${budget.max_entry_chars} characters per entry`,
 			"Return JSON fields: recommendations, disagreements, open_questions, blockers",
 			"tool_policy: no tools",
@@ -573,10 +588,10 @@ export function buildBrainstormEnsembleDispatchEnvelopes(
 			.join("\n");
 		const envelope = buildAdvisoryDispatchEnvelope({
 			candidate: candidate.candidate_id,
-			lens: candidate.role,
+			lens,
 			prompt,
 			model: candidate.model,
-			description: `${candidate.role} brainstorm for ${taskSummary}`,
+			description: `${lens} brainstorm for ${taskSummary}`,
 		});
 		envelopes.push({
 			candidate_id: candidate.candidate_id,

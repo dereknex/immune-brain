@@ -12,10 +12,24 @@ export type InternalRole =
 	| "ui-review"
 	| "executor"
 	| "test-fixer"
-	| "pr-fix";
+	| "pr-fix"
+	| "arch-explorer"
+	| "advisory-reviewer"
+	| "compounder";
 export type StableReviewGate = "imm-code-review" | "imm-ui-review";
-export type RoleAuthority = "qa" | "advisory" | "executor" | "test-repair" | "pr-repair";
-export type RoleToolPolicy = "no tools" | "workspace tools" | "delegated test files";
+export type RoleAuthority =
+	| "qa"
+	| "advisory"
+	| "executor"
+	| "test-repair"
+	| "pr-repair"
+	| "compounder";
+export type RoleToolPolicy =
+	| "no tools"
+	| "workspace tools"
+	| "delegated test files"
+	| "read-only tools"
+	| "learning tools";
 
 export interface RolePromptSpec {
 	file: `${InternalRole}.md`;
@@ -52,6 +66,21 @@ export const INTERNAL_ROLE_PROMPTS: Record<InternalRole, RolePromptSpec> = {
 		file: "pr-fix.md",
 		authority: "pr-repair",
 		tool_policy: "workspace tools",
+	},
+	"arch-explorer": {
+		file: "arch-explorer.md",
+		authority: "advisory",
+		tool_policy: "read-only tools",
+	},
+	"advisory-reviewer": {
+		file: "advisory-reviewer.md",
+		authority: "advisory",
+		tool_policy: "no tools",
+	},
+	compounder: {
+		file: "compounder.md",
+		authority: "compounder",
+		tool_policy: "learning tools",
 	},
 };
 

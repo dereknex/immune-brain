@@ -28,6 +28,9 @@ describe("Loop execution and repair routing", () => {
 			"executor.md",
 			"test-fixer.md",
 			"pr-fix.md",
+			"arch-explorer.md",
+			"advisory-reviewer.md",
+			"compounder.md",
 		]);
 		for (const role of REPAIR_ROLES) {
 			const source = read(`plugins/immune-brain/runtime/prompts/${role}.md`);

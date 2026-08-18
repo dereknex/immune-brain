@@ -12,6 +12,7 @@ This skill adheres to the **[BASELINE.md](BASELINE.md)**.
 - **Clarification**: Restate the problem and surface constraints, risks, and assumptions.
 - **Critical Framing & Challenge**: Before concluding, perform an agent-internal critique. Balance gap analysis for vague requests with constructive pushback against flawed or over-engineered solutions. Always use internal Socratic derivation before challenging and propose a lower-friction alternative.
 - **Framing**: Convert vague asks into task framing for `imm-planner`.
+- **Architecture evidence**: When a framing or planning decision needs repository topology, select the internal `arch-explorer` role through the Loop bridge. It is read-only and returns candidates, evidence, risks, and selection guidance; it never writes a Spec, Plan, or workflow state.
 - **Think before coding**: Do not let unclear assumptions pass into planning.
 
 ## Invocation modes

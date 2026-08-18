@@ -9,12 +9,16 @@ This skill adheres to the **[BASELINE.md](BASELINE.md)**.
 At runtime role boundaries, build `buildLoopAction` from the runtime bridge. It
 returns `buildLoopRoleContext` for an active `executor` Step, a foreground
 `buildLoopRoleDispatch` for `qa`, `code-review`, `ui-review`, `test-fixer`, or
-`pr-fix`, and the `imm_kernel_canary` Tool action for Kernel ownership. Do not
-discover or load a Pi Skill for these roles. The public Skills remain available as rollback shims
-during this additive migration. Shim removal owner: the Immune-Brain
-maintainer. Cleanup milestone: the next minor release after Issue #9's
-three-entry public surface contract and the Issue #6/#7 Loop parity tests
-pass; until then they are the documented rollback path.
+`pr-fix`, and the `imm_kernel_canary` Tool action for Kernel ownership.
+Brainstorm and Planner may use the same bridge for bounded `arch-explorer` and
+explicit-lens `advisory-reviewer` dispatches. Loop may dispatch `compounder`
+only when a closed Step supplies structured evidence for a reusable Learning;
+routine work without that evidence returns `next: none` and creates no
+Learning. Do not discover or load a Pi Skill for these roles. The public Skills
+remain available as rollback shims during this additive migration. Shim removal
+owner: the Immune-Brain maintainer. Cleanup milestone: the next minor release
+after Issue #9's three-entry public surface contract and the Issue #6/#7 Loop
+parity tests pass; until then they are the documented rollback path.
 
 ## Workflow Profiles
 
@@ -40,7 +44,7 @@ pass; until then they are the documented rollback path.
 - **Observable progress**: Update only at major phase changes: Step start, execution evidence recorded, QA/review result, or terminal stop. Always emit a terminal summary.
 - **State Ledger authority**: Re-read the checkpoint after every persisted action. Conversation memory never overrides State Ledger state.
 - **Scope boundary**: Scope expansion always returns to `imm-planner`; Executor, test repair, and PR/CI repair stop with the concrete missing scope and verification reason instead of widening execution.
-- **Action authority**: The loop always enters through `buildLoopAction`; its `next` authority is `executor`, `test-fixer`, `pr-fix`, `imm_kernel_canary`, or `imm-planner`.
+- **Action authority**: The loop always enters through `buildLoopAction`; its `next` authority is `executor`, `test-fixer`, `pr-fix`, `arch-explorer`, `advisory-reviewer`, `compounder`, `imm_kernel_canary`, `imm-planner`, or `none`.
 
 ## Checkpoint Loop
 

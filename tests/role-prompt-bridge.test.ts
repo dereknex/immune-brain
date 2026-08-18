@@ -3,11 +3,15 @@ import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
+	buildLoopAction,
 	buildLoopRoleDispatch,
 	buildLoopRoleDelegationPacket,
 	determineRequiredReviewGates,
 	INTERNAL_ROLE_PROMPTS,
 	loadRolePrompt,
+	normalizeAdvisoryReviewerOutput,
+	normalizeArchitectureExplorerOutput,
+	resolveLoopRoute,
 	type InternalRole,
 } from "../plugins/immune-brain/runtime/imm_core";
 import { ROLE_PROMPT_FILES } from "../scripts/dist-sync-manifest";
@@ -20,6 +24,9 @@ const ROLES: InternalRole[] = [
 	"executor",
 	"test-fixer",
 	"pr-fix",
+	"arch-explorer",
+	"advisory-reviewer",
+	"compounder",
 ];
 
 function read(path: string): string {
@@ -43,6 +50,122 @@ describe("internal role-prompt bridge", () => {
 			expect(prompt.toLowerCase()).toContain(`internal role: ${role}`);
 			expect(prompt).not.toContain("skills/");
 		}
+	});
+
+	it("routes exploration and advisory review through the internal role contract", () => {
+		expect(
+			resolveLoopRoute({
+				ownership: "brainstorm",
+				target: "architecture-exploration",
+			}),
+		).toEqual({ entry: "imm-loop", next: "arch-explorer" });
+		const archAction = buildLoopAction({
+			ownership: "brainstorm",
+			target: "architecture-exploration",
+			context: { task_id: "task-7", focus_delta: { directories: ["plugins/"] } },
+		});
+		expect(archAction.next).toBe("arch-explorer");
+		if (archAction.next === "arch-explorer") {
+			expect(archAction.dispatch.packet.tool_policy).toBe("read-only tools");
+		}
+		const architectureEvidence = normalizeArchitectureExplorerOutput({
+			candidates: [{ path: "runtime/loop_contract.ts" }],
+			evidence: ["The bridge is the routing boundary."],
+			risks: [],
+			open_questions: [],
+		});
+		expect(architectureEvidence.valid).toBe(true);
+		expect(normalizeArchitectureExplorerOutput({ candidates: [], evidence: [], risks: [], open_questions: [], state_write: true }).valid).toBe(false);
+
+		const advisoryAction = buildLoopAction({
+			ownership: "planner",
+			target: "advisory-review",
+			context: { task_id: "task-7", lens: "reliability" },
+		});
+		expect(advisoryAction.next).toBe("advisory-reviewer");
+		if (advisoryAction.next === "advisory-reviewer") {
+			expect(advisoryAction.dispatch.packet.tool_policy).toBe("no tools");
+			expect(advisoryAction.dispatch.packet.prompt).toContain('"lens": "reliability"');
+		}
+		const advisoryEvidence = normalizeAdvisoryReviewerOutput({
+			recommendations: [],
+			disagreements: [],
+			open_questions: ["Should this be a separate Plan?"],
+			blockers: [],
+		});
+		expect(advisoryEvidence.valid).toBe(true);
+		expect(() =>
+			buildLoopAction({
+				ownership: "planner",
+				target: "advisory-review",
+				context: { task_id: "task-7" },
+			}),
+		).toThrow("explicit lens");
+	});
+
+	it("dispatches Compounder only for closed Steps with reusable Learning evidence", () => {
+		const context = {
+			task_id: "task-7",
+			workflow_phase: "complete" as const,
+			assurance_complete: true,
+			required_reviews_complete: true,
+			closed_steps: [
+				{
+					step_id: "step-1",
+					state: "closed",
+					learning_evidence: {
+						reusable: true,
+						summary: "The role bridge keeps package prompts deterministic.",
+						evidence_ref: "test:role-prompt-bridge",
+					},
+				},
+			],
+		};
+		const action = buildLoopAction({
+			ownership: "loop",
+			target: "compounder",
+			context,
+		});
+		expect(action.next).toBe("compounder");
+		if (action.next === "compounder") {
+			expect(action.dispatch.packet.role).toBe("compounder");
+		}
+
+		expect(
+			buildLoopAction({
+				ownership: "loop",
+				target: "compounder",
+				context: {
+					task_id: "routine-no-learning",
+					workflow_phase: "complete",
+					assurance_complete: true,
+					required_reviews_complete: true,
+					closed_steps: [],
+				},
+			}),
+		).toEqual({
+			entry: "imm-loop",
+			next: "none",
+			reason: "no_reusable_learning",
+		});
+
+		expect(
+			buildLoopAction({
+				ownership: "loop",
+				target: "compounder",
+				context: {
+					task_id: "still-working",
+					workflow_phase: "working",
+					assurance_complete: true,
+					required_reviews_complete: true,
+					closed_steps: context.closed_steps,
+				},
+			}),
+		).toEqual({
+			entry: "imm-loop",
+			next: "none",
+			reason: "no_reusable_learning",
+		});
 	});
 
 	it("injects deterministic Parent context and preserves stable Review Gate identifiers", () => {
@@ -100,6 +223,15 @@ describe("internal role-prompt bridge", () => {
 			expect(dispatch.call.isolation).toBe("worktree");
 		}
 	});
+	it("supersedes the standalone explorer decision with the internal routing ADR", () => {
+		const retired = read("docs/adr/0001-dedicated-architecture-explorer-skill.md");
+		expect(retired).toContain("status: superseded");
+		expect(retired).toContain("superseded_by: docs/adr/0003-internal-role-prompt-routing.md");
+		const current = read("docs/adr/0003-internal-role-prompt-routing.md");
+		expect(current).toContain("read-only `arch-explorer`");
+		expect(current).toContain("reusable Learning");
+	});
+
 	it("ships the bridge source and packaged prompts", () => {
 		const pkg = JSON.parse(read("package.json")) as { files: string[] };
 		expect(pkg.files).toContain("plugins/immune-brain/runtime/role_prompt_bridge.ts");

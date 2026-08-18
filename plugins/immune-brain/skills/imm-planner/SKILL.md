@@ -57,5 +57,9 @@ rehearsal stays within host setup and execution ceilings.
 
 planner ensemble is advisory-only and derives candidates from
 `workflow_models.planner_ensemble`; final Spec and Plan authority stays here.
+Architecture exploration and advisory review use the internal Loop bridge's
+read-only `arch-explorer` and `advisory-reviewer` roles. They can supply
+candidates, evidence, and decision criteria, but cannot write this Spec/Plan or
+activate execution.
 Agreement becomes evidence, Disagreement becomes decision criteria, and
 strong-model blockers become risks or verification requirements.

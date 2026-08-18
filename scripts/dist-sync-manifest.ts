@@ -133,6 +133,9 @@ export const ROLE_PROMPT_FILES = [
 	"executor.md",
 	"test-fixer.md",
 	"pr-fix.md",
+	"arch-explorer.md",
+	"advisory-reviewer.md",
+	"compounder.md",
 ] as const;
 
 export const MIRROR_ENTRIES = DIST_DOC_ENTRIES.filter(

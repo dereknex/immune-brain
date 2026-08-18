@@ -6,5 +6,8 @@ description: Use for a delegated read-only advisory review through one explicit 
 # Immune-Brain: Advisory Reviewer
 
 Load [`../../dist/imm-advisory-reviewer.md`](../../dist/imm-advisory-reviewer.md),
-then apply the delegated lens. Stay read-only. Return concrete findings,
-verification criteria, fallback reason when degraded, and Next Action.
+then apply the delegated lens. Runtime selection uses the internal
+`advisory-reviewer` role through `buildLoopAction`; this Skill remains a
+compatibility shim until the Issue #9 surface milestone. Stay read-only. Return
+concrete findings, verification criteria, fallback reason when degraded, and
+Next Action.
