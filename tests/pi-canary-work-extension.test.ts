@@ -1,7 +1,7 @@
 // Phase 3 foreground Tool and native Review bridge contract.
 
 import { describe, expect, test } from "bun:test";
-import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync } from "node:fs";
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync, existsSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -12,6 +12,7 @@ import { createEnrollmentAuthorityRegistry, type EnrollmentCapabilityBinding } f
 import { canonicalIntentHash } from "../plugins/immune-brain/runtime/kernel/intent";
 import { readBackendClaim } from "../plugins/immune-brain/runtime/kernel/backend_claim";
 import { snapshotDigest, type SnapshotDescriptor } from "../plugins/immune-brain/.pi-extension/pi-canary-assurance-progression.ts";
+import { routeManagedRequest } from "../plugins/immune-brain/runtime/managed_path_router";
 
 const TASK = "canary-ext-task";
 const INTENT = {
@@ -30,7 +31,7 @@ const INTENT = {
 } as const;
 const INTENT_HASH = canonicalIntentHash(INTENT);
 
-type Handler = (event: unknown) => unknown;
+type Handler = (event: unknown, ctx?: unknown) => unknown;
 interface RegisteredTool {
 	name: string;
 	parameters: { type: string; properties?: Record<string, unknown>; anyOf?: unknown[] };
@@ -69,8 +70,11 @@ function makeCtx(root: string, ui: FakeUI, mode = "tui", decision: string | null
 	};
 }
 
-function makeEnrolledRoot(): string {
+function makeEnrolledRoot(managedBootstrap = false): string {
 	const root = mkdtempSync(join(tmpdir(), "phase3-ext-"));
+	if (managedBootstrap) {
+		routeManagedRequest({ root, request: "Implement the managed task" });
+	}
 	mkdirSync(join(root, "docs", "plans"), { recursive: true });
 	mkdirSync(join(root, "plugins", "immune-brain", ".pi-extension"), { recursive: true });
 	mkdirSync(join(root, ".imm", "tasks"), { recursive: true });
@@ -255,10 +259,165 @@ async function preparePendingReview(root: string): Promise<RegisteredTool & { co
 	});
 
 	describe("foreground canary assurance extension", () => {
-	test("registers only the ordinary foreground tool", () => {
+	test("registers assurance and Loop routing Tools without commands", () => {
 		const { tools, commands } = loadSurface();
-		expect(tools.map((tool) => tool.name)).toEqual(["imm_kernel_canary"]);
+		expect(tools.map((tool) => tool.name)).toEqual(["imm_kernel_canary", "imm_loop_action"]);
 		expect(Object.keys(commands)).toEqual([]);
+	});
+
+	test("exposes Loop action and role dispatch builders through a read-only Tool", async () => {
+		const { tools } = loadSurface();
+		const tool = tools.find((candidate) => candidate.name === "imm_loop_action");
+		expect(tool).toBeDefined();
+		const schema = tool!.parameters as unknown as Record<string, any>;
+		const dispatchSchema = schema.properties.action.anyOf.find(
+			(item: Record<string, any>) => item.properties?.op?.const === "dispatch_role",
+		);
+		expect(dispatchSchema.properties.role.anyOf.map((item: Record<string, any>) => item.const)).toEqual([
+			"qa",
+			"code-review",
+			"ui-review",
+		]);
+		const ctx = makeCtx(process.cwd(), makeUI());
+		const action = await tool!.execute(
+			"loop-action",
+			{
+				action: {
+					op: "route",
+					ownership: "plan",
+					target: "step",
+					context: { task_id: "task-6", target_id: "step-1" },
+				},
+			},
+			undefined,
+			undefined,
+			ctx,
+		);
+		expect(JSON.parse(action.content[0].text)).toMatchObject({
+			entry: "imm-loop",
+			next: "executor",
+			context: { role: "executor", tool_policy: "workspace tools" },
+		});
+		const dispatch = await tool!.execute(
+			"role-dispatch",
+			{
+				action: {
+					op: "dispatch_role",
+					role: "qa",
+					context: { task_id: "task-7", target_id: "step-1" },
+				},
+			},
+			undefined,
+			undefined,
+			ctx,
+		);
+		expect(JSON.parse(dispatch.content[0].text)).toMatchObject({
+			packet: { role: "qa", tool_policy: "no tools" },
+			call: { run_in_background: false },
+		});
+	});
+
+	test("automatically routes ordinary host input through the Managed Path", async () => {
+		const managed = mkdtempSync(join(tmpdir(), "managed-input-"));
+		const readOnly = mkdtempSync(join(tmpdir(), "managed-read-"));
+		try {
+			const { events } = loadSurface();
+			const handler = events.input?.[0];
+			expect(handler).toBeDefined();
+			const images = [{ type: "image", data: "fixture", mimeType: "image/png" }];
+			const mutation = await handler!(
+				{ source: "interactive", text: "Implement the login form", images },
+				makeCtx(managed, makeUI()),
+			);
+			expect(mutation).toEqual({
+				action: "transform",
+				text: "/skill:imm-planner Implement the login form",
+				images,
+			});
+			expect(existsSync(join(managed, "AGENTS.md"))).toBe(true);
+
+			const explanation = await handler!(
+				{ source: "interactive", text: "Explain the login flow" },
+				makeCtx(readOnly, makeUI()),
+			);
+			expect(explanation).toEqual({ action: "continue" });
+			expect(existsSync(join(readOnly, "AGENTS.md"))).toBe(false);
+			expect(await handler!(
+				{ source: "interactive", text: "/skill:imm-planner explicit" },
+				makeCtx(readOnly, makeUI()),
+			)).toEqual({ action: "continue" });
+			expect(await handler!(
+				{ source: "interactive", text: "/implement #8" },
+				makeCtx(managed, makeUI()),
+			)).toEqual({
+				action: "transform",
+				text: "/skill:imm-planner /implement #8",
+			});
+		} finally {
+			rmSync(managed, { recursive: true, force: true });
+			rmSync(readOnly, { recursive: true, force: true });
+		}
+	});
+
+	test("fails closed and blocks Tool calls when Managed routing rejects state", async () => {
+		const root = mkdtempSync(join(tmpdir(), "managed-rejected-"));
+		try {
+			mkdirSync(join(root, ".imm", "memory"), { recursive: true });
+			const { events } = loadSurface();
+			const ctx = makeCtx(root, makeUI());
+			const images = [{ type: "image", data: "fixture", mimeType: "image/png" }];
+			const rejected = await events.input![0](
+				{ source: "interactive", text: "Implement the login form", images },
+				ctx,
+			) as { action: string; text: string; images: unknown[] };
+			expect(rejected).toMatchObject({ action: "transform", images });
+			expect(rejected.text).toContain("Managed Path routing failed closed");
+			expect(await events.tool_call![0]({ toolName: "bash", input: { command: "true" } })).toMatchObject({
+				block: true,
+				reason: expect.stringContaining("failed closed"),
+			});
+
+			expect(await events.input![0](
+				{ source: "interactive", text: "/help", streamingBehavior: "steer" },
+				ctx,
+			)).toEqual({ action: "continue" });
+			expect(await events.tool_call![0]({ toolName: "read", input: { path: "README.md" } })).toMatchObject({
+				block: true,
+				reason: expect.stringContaining("failed closed"),
+			});
+
+			await events.agent_settled![0]({});
+			expect(await events.tool_call![0]({ toolName: "read", input: { path: "README.md" } })).toBeUndefined();
+
+			await events.input![0](
+				{ source: "interactive", text: "Implement the login form" },
+				ctx,
+			);
+			expect(await events.input![0](
+				{ source: "interactive", text: "/help" },
+				ctx,
+			)).toEqual({ action: "continue" });
+			expect(await events.tool_call![0]({ toolName: "read", input: { path: "README.md" } })).toBeUndefined();
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
+	test("routes an active backend claim to Loop before classifying the request text", async () => {
+		const root = makeEnrolledRoot(true);
+		try {
+			const { events } = loadSurface();
+			const result = await events.input![0](
+				{ source: "interactive", text: "Explain what remains" },
+				makeCtx(root, makeUI()),
+			);
+			expect(result).toEqual({
+				action: "transform",
+				text: "/skill:imm-loop Explain what remains",
+			});
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
 	});
 
 	test("schema removes command-owned cancellation and agent-supplied authority", () => {

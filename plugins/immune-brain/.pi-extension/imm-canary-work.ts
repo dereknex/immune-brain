@@ -2,8 +2,9 @@
 // assurance after enrollment.
 //
 // Surface:
-//   1. `imm_kernel_canary` — one LLM-callable foreground Tool for ordinary
-//      facts, deterministic QA, Review receipt submission, and authorization.
+//   1. `imm_kernel_canary` — foreground assurance and Review authority.
+//   2. `imm_loop_action` — read-only projection of internal Loop actions.
+//   3. `input` — automatic Managed Path routing to the three public Skills.
 //
 // Deterministic QA and native Review sequencing lives in
 // `pi-canary-assurance-progression.ts`. The adapter owns Tool schemas, TUI
@@ -67,9 +68,13 @@ import {
 import {
 	createMutationAuthorityRegistry,
 	createCanaryApplication,
+	buildLoopAction,
+	buildLoopRoleDispatch,
+	readBackendClaim,
 	readTaskRecordV2,
 	readTaskIntent,
 	projectAssurance,
+	routeManagedRequest,
 	deriveAssuranceAuthorization,
 	findingsDigestV2,
 	capabilityActionFor,
@@ -88,6 +93,29 @@ const REVIEW_DECISIONS = {
 	"Request rework": "rework",
 	Reject: "reject",
 } as const;
+const LOOP_OWNERS = ["plan", "kernel", "brainstorm", "planner", "loop"] as const;
+const LOOP_TARGETS = [
+	"step",
+	"test-repair",
+	"pr-repair",
+	"architecture-exploration",
+	"advisory-review",
+	"compounder",
+] as const;
+const LOOP_DIRECT_ROLES = ["qa", "code-review", "ui-review"] as const;
+const KERNEL_OPERATIONS = [
+	"status",
+	"record_evidence",
+	"record_finding",
+	"resolve_finding",
+	"revise_intent",
+	"complete",
+] as const;
+
+function literalUnion(values: readonly string[]) {
+	return Type.Union(values.map((value) => Type.Literal(value)));
+}
+
 type ReviewDecision = (typeof REVIEW_DECISIONS)[keyof typeof REVIEW_DECISIONS];
 
 export type { AssuranceRole } from "./pi-canary-assurance";
@@ -154,6 +182,43 @@ export interface CanaryWorkExtensionDependencies {
 	reviewSpawnTimeoutMs?: number;
 }
 
+type LoopToolAction =
+	| {
+		op: "route";
+		ownership: (typeof LOOP_OWNERS)[number];
+		target: (typeof LOOP_TARGETS)[number];
+		context?: Record<string, unknown>;
+		scope_expansion?: boolean;
+		kernel_operation?: (typeof KERNEL_OPERATIONS)[number];
+	}
+	| {
+		op: "dispatch_role";
+		role: (typeof LOOP_DIRECT_ROLES)[number];
+		context: Record<string, unknown>;
+	};
+
+async function routeHostRequest(root: string, request: string) {
+	const claim = await readBackendClaim(root);
+	if (!claim) return routeManagedRequest({ root, request });
+	const projected = await projectAssurance(root, claim.task_id, diffHashOf);
+	if (projected.error) throw new Error(projected.error);
+	return routeManagedRequest({
+		root,
+		request,
+		task_id: claim.task_id,
+		assurance: {
+			task_id: claim.task_id,
+			phase: projected.projection.phase,
+			next_action: statusNextAction(projected.projection),
+		},
+	});
+}
+
+function managedSkillCommand(phase: "none" | "brainstorm" | "planner" | "loop", request: string): string | null {
+	if (phase === "none") return null;
+	return `/skill:imm-${phase} ${request}`;
+}
+
 export default function (
 	pi: ExtensionAPI,
 	dependencies: CanaryWorkExtensionDependencies = {},
@@ -187,12 +252,46 @@ export default function (
 		qaJobTimeoutMs: dependencies.qaJobTimeoutMs,
 	} satisfies AssuranceProgressionPorts);
 
+	let managedRouteFailure: string | null = null;
+	pi.on("input", async (event, ctx) => {
+		if (event.source === "extension") return { action: "continue" } as const;
+		if (event.streamingBehavior === undefined) managedRouteFailure = null;
+		const text = event.text.trimStart();
+		if (/^\/skill:imm-(?:brainstorm|planner|loop)(?:\s|$)/.test(text)) {
+			return { action: "continue" } as const;
+		}
+		try {
+			const route = await routeHostRequest(ctx.cwd, event.text);
+			const command = managedSkillCommand(route.phase, event.text);
+			return command
+				? {
+					action: "transform",
+					text: command,
+					...(event.images ? { images: event.images } : {}),
+				} as const
+				: { action: "continue" } as const;
+		} catch (error) {
+			managedRouteFailure = error instanceof Error ? error.message : String(error);
+			return {
+				action: "transform",
+				text: `Managed Path routing failed closed: ${managedRouteFailure}\nDo not call tools or modify files. Report this routing error and stop.\nOriginal request: ${event.text}`,
+				...(event.images ? { images: event.images } : {}),
+			} as const;
+		}
+	});
+	pi.on("agent_settled", () => {
+		managedRouteFailure = null;
+	});
+
 	pi.on("session_start", () => {
 		progression.onSessionStart();
 	});
-	pi.on("tool_call", (event: { toolName?: string; input?: unknown; toolCallId?: string }) =>
-		progression.observeToolCall(event),
-	);
+	pi.on("tool_call", (event: { toolName?: string; input?: unknown; toolCallId?: string }) => {
+		if (managedRouteFailure) {
+			return { block: true, reason: `Managed Path routing failed closed: ${managedRouteFailure}` };
+		}
+		return progression.observeToolCall(event);
+	});
 	pi.on("tool_result", (event: unknown) => {
 		progression.observeToolResult(event as Parameters<AssuranceProgression["observeToolResult"]>[0]);
 	});
@@ -351,6 +450,60 @@ export default function (
 				result as Parameters<typeof renderCanaryResult>[0],
 				theme,
 			);
+		},
+	});
+
+	pi.registerTool({
+		name: "imm_loop_action",
+		label: "Project internal Loop action",
+		description:
+			"Build one deterministic, read-only Loop action or internal role dispatch envelope. This Tool never mutates repository or workflow state.",
+		promptSnippet:
+			"Use imm_loop_action at every internal Loop role boundary before invoking an Agent or performing current-context Executor work.",
+		promptGuidelines: [
+			"Use route for Step, repair, architecture, advisory, Compounder, Kernel, or scope-expansion authority projection.",
+			"Use dispatch_role for QA and Review roles, then invoke the returned foreground Agent call exactly.",
+		],
+		parameters: Type.Object({
+			action: Type.Union([
+				Type.Object({
+					op: Type.Literal("route"),
+					ownership: literalUnion(LOOP_OWNERS),
+					target: literalUnion(LOOP_TARGETS),
+					context: Type.Optional(Type.Record(Type.String(), Type.Unknown())),
+					scope_expansion: Type.Optional(Type.Boolean()),
+					kernel_operation: Type.Optional(literalUnion(KERNEL_OPERATIONS)),
+				}),
+				Type.Object({
+					op: Type.Literal("dispatch_role"),
+					role: literalUnion(LOOP_DIRECT_ROLES),
+					context: Type.Record(Type.String(), Type.Unknown()),
+				}),
+			]),
+		}),
+		execute: async (
+			_toolCallId: string,
+			params: { action: LoopToolAction },
+			_signal: AbortSignal | undefined,
+			_onUpdate: unknown,
+			_ctx: ExtensionContext,
+		) => {
+			const { action } = params;
+			const result = action.op === "route"
+				? await buildLoopAction({
+					ownership: action.ownership,
+					target: action.target,
+					context: action.context,
+					scope_expansion: action.scope_expansion,
+					kernel_operation: action.kernel_operation,
+				})
+				: await buildLoopRoleDispatch({ role: action.role, context: action.context });
+			return toolResult(JSON.stringify(result, null, 2), {
+				state: "projected",
+				operation: action.op,
+				result: "Loop action projected without state mutation",
+				next_action: "follow the projected authority",
+			});
 		},
 	});
 

@@ -41,7 +41,7 @@ describe("imm-code-review activation fallback contract", () => {
 		expect(review).toContain("imm-code-review")
 		expect(review).toContain("follow_up")
 		const dist = read(SKILL_DIST)
-		expect(dist).toContain("buildLoopRoleDispatch")
+		expect(dist).toContain("imm_loop_action")
 		expect(dist).toContain("subagent-dispatch-protocol.md")
 	})
 

@@ -6,15 +6,15 @@ description: Use when running validated Plans to completion.
 # Immune-Brain: Loop
 
 This skill adheres to the **[BASELINE.md](BASELINE.md)**.
-At runtime role boundaries, build `buildLoopAction` from the runtime bridge. It
-returns `buildLoopRoleContext` for an active `executor` Step, a foreground
-`buildLoopRoleDispatch` for `qa`, `code-review`, `ui-review`, `test-fixer`, or
-`pr-fix`, and the `imm_kernel_canary` Tool action for Kernel ownership.
-Brainstorm and Planner may use the same bridge for bounded `arch-explorer` and
-explicit-lens `advisory-reviewer` dispatches. Loop may dispatch `compounder`
-only when a closed Step supplies structured evidence for a reusable Learning;
-routine work without that evidence returns `next: none` and creates no
-Learning. Do not discover or load a Pi Skill for these roles. The three-entry public Skill surface is exactly `imm-brainstorm`, `imm-planner`, and `imm-loop`.
+At every runtime role boundary, call the read-only `imm_loop_action` Tool. Use
+`route` for active Steps, bounded repair, architecture exploration, advisory
+review, Compounder, Kernel ownership, or scope expansion. Use `dispatch_role`
+for `qa`, `code-review`, and `ui-review`, then invoke the returned foreground
+Agent envelope exactly. Brainstorm and Planner use the same Tool for bounded
+`arch-explorer` and explicit-lens `advisory-reviewer` dispatches. Loop may
+dispatch `compounder` only when a closed Step supplies structured evidence for
+a reusable Learning; routine work without that evidence returns `next: none`
+and creates no Learning. Do not discover or load a Pi Skill for these roles. The three-entry public Skill surface is exactly `imm-brainstorm`, `imm-planner`, and `imm-loop`.
 Dispatch authorization follows the [shared Subagent Dispatch
 Protocol](docs/reference/subagent-dispatch-protocol.md#authorization-authority).
 Same-boundary `follow_up` is not a Plan mutation; it repeats the current
@@ -36,12 +36,12 @@ and `tool_execution_end` evidence to the Parent before any workflow mutation.
 ## Core Responsibilities
 
 - **Main-context completion loop**: Consume `imm-autowork --json` checkpoints in the current Pi conversation until completion or a safe stop.
-- **Context-preserving execution**: On `awaiting_execution_input` or `rework_needed`, build `buildLoopRoleContext` for the internal `executor` role in the current Parent conversation, implement only the active Step or pending same-boundary `follow_up`, then record structured execution evidence through the Loop runtime action. A bounded test failure uses the internal `test-fixer` dispatch with its explicit delegated test-file list; PR feedback or CI repair uses the internal `pr-fix` dispatch inside the current Plan boundary.
+- **Context-preserving execution**: On `awaiting_execution_input` or `rework_needed`, call `imm_loop_action` with `op: route`, then follow the returned `executor` context in the current Parent conversation. Implement only the active Step or pending same-boundary `follow_up`, then record structured execution evidence through the Loop runtime action. A bounded test failure uses the returned internal `test-fixer` dispatch with its explicit delegated test-file list; PR feedback or CI repair uses the returned internal `pr-fix` dispatch inside the current Plan boundary.
 - **Independent authority isolation**: Use the host `Agent` subagent primitive when the checkpoint reports `awaiting_qa_decision` and for the exact runtime-reported review gate. Standard Plan Steps close from accepted passing evidence before an internal QA boundary exists; Strict Steps and all follow-ups retain isolated QA. The parent records accepted child decisions through the Loop review action.
 - **Observable progress**: Update only at major phase changes: Step start, execution evidence recorded, QA/review result, or terminal stop. Always emit a terminal summary.
 - **State Ledger authority**: Re-read the checkpoint after every persisted action. Conversation memory never overrides State Ledger state.
 - **Scope boundary**: Scope expansion always returns to `imm-planner`; Executor, test repair, and PR/CI repair stop with the concrete missing scope and verification reason instead of widening execution.
-- **Action authority**: The loop always enters through `buildLoopAction`; its `next` authority is `executor`, `test-fixer`, `pr-fix`, `arch-explorer`, `advisory-reviewer`, `compounder`, `imm_kernel_canary`, `imm-planner`, or `none`.
+- **Action authority**: The loop always enters through `imm_loop_action`; its projected `next` authority is `executor`, `test-fixer`, `pr-fix`, `arch-explorer`, `advisory-reviewer`, `compounder`, `imm_kernel_canary`, `imm-planner`, or `none`.
 
 ## Checkpoint Loop
 
@@ -50,9 +50,9 @@ Repeat this sequence; do not silently stop while a valid action remains:
 1. Run `imm-autowork --json` and validate `recommended_authority`, `required_input`, and `allowed_actions`.
 2. Emit one progress line: `[target][phase] result | next: action`.
 3. Execute exactly one allowed action:
-   - `awaiting_execution_input` / `rework_needed`: build the internal `executor` context with `buildLoopRoleContext`, implement only the active Step or pending same-boundary `follow_up` in the current conversation, verify, record structured execution evidence through the Loop runtime action, and continue. A bounded test-only repair may dispatch internal `test-fixer` with `focus_delta.specific_changes`; PR review or CI repair may dispatch internal `pr-fix` with the current `plan_id`, changed-file boundary, and verification. Both return child evidence to the Parent and cannot widen scope.
-   - `awaiting_qa_decision`: build the internal `qa` role dispatch with `buildLoopRoleDispatch`, passing the checkpoint, Plan verification, recorded evidence, and current target identity in its context. Validate the raw output with `runtime child-output validator`, then record the validated decision through the Loop review action. A `rework` or `replan` must carry the validated `notes` through as `--notes`; the runtime rejects either decision without it.
-   - `review_required`: map the exact `pending_review_gate` (`imm-code-review` or `imm-ui-review`) to the internal `code-review` or `ui-review` role and build its foreground dispatch with `buildLoopRoleDispatch`, passing `pending_review_gate`, `review_changed_files`, and `review_changed_files_signature` in context. Validate its raw output with `runtime child-output validator`. Record a validated pass through the Loop review action, or open a same-boundary follow-up through the runtime review action.
+   - `awaiting_execution_input` / `rework_needed`: call `imm_loop_action` with `op: route` and the active target context, follow the returned `executor` context in the current conversation, implement only the active Step or pending same-boundary `follow_up`, verify, record structured execution evidence through the Loop runtime action, and continue. A bounded test-only repair may request internal `test-fixer` with `focus_delta.specific_changes`; PR review or CI repair may request internal `pr-fix` with the current `plan_id`, changed-file boundary, and verification. Both return child evidence to the Parent and cannot widen scope.
+   - `awaiting_qa_decision`: call `imm_loop_action` with `op: dispatch_role`, role `qa`, the checkpoint, Plan verification, recorded evidence, and current target identity. Invoke the returned foreground Agent envelope exactly. Validate the raw output with `runtime child-output validator`, then record the validated decision through the Loop review action. A `rework` or `replan` must carry the validated `notes` through as `--notes`; the runtime rejects either decision without it.
+   - `review_required`: map the exact `pending_review_gate` (`imm-code-review` or `imm-ui-review`) to the internal `code-review` or `ui-review` role and call `imm_loop_action` with `op: dispatch_role`, passing `pending_review_gate`, `review_changed_files`, and `review_changed_files_signature`. Invoke the returned foreground Agent envelope exactly and validate its raw output with `runtime child-output validator`. Record a validated pass through the Loop review action, or open a same-boundary follow-up through the runtime review action.
    - `awaiting_user_successor_decision`: stop immediately with `recommended_authority: user`, no next skill, and no runtime action. This boundary must not dispatch Planner, transition, Compounder, or a new Pi session/subagent. Only a literal user may supply a concrete validated successor Plan through the native authority gate; the internal runtime token is `--approve-successor`, never a public Skill or user-facing entry.
 4. The internal runtime child-output validator owns the child decision schema: decision enum, required fields, decision-specific fields, unknown fields, and stale target, gate, or signature values. It derives the expected identity from the State Ledger, so never hand-build that expectation or re-derive the schema from this document. A non-zero exit means perform no runtime write and stop with the reported `qa_output_invalid` or `reviewer_output_invalid`.
 5. After every accepted runtime write, discard the old snapshot and read a fresh checkpoint. Emit a result line only when the write completes a major phase or a subagent round.

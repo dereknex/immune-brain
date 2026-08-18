@@ -202,6 +202,30 @@ export interface AssuranceProjectionResult {
 function kernelPath(module: string): string {
 	return `../runtime/kernel/${module}.ts`;
 }
+function runtimePath(module: string): string {
+	return `../runtime/${module}.ts`;
+}
+
+export interface ManagedRouteProjection {
+	phase: "none" | "brainstorm" | "planner" | "loop";
+}
+export async function routeManagedRequest(input: {
+	root: string;
+	request: string;
+	task_id?: string;
+	assurance?: { task_id: string; phase: string; next_action: string };
+}): Promise<ManagedRouteProjection> {
+	const mod = await import(/* @vite-ignore */ runtimePath("managed_path_router"));
+	return mod.routeManagedRequest(input) as ManagedRouteProjection;
+}
+export async function buildLoopAction(input: unknown): Promise<unknown> {
+	const mod = await import(/* @vite-ignore */ runtimePath("loop_contract"));
+	return mod.buildLoopAction(input);
+}
+export async function buildLoopRoleDispatch(input: unknown): Promise<unknown> {
+	const mod = await import(/* @vite-ignore */ runtimePath("loop_contract"));
+	return mod.buildLoopRoleDispatch(input);
+}
 export async function createEnrollmentAuthorityRegistry(): Promise<EnrollmentAuthorityRegistry> {
 	const mod = await import(/* @vite-ignore */ kernelPath("enrollment_authority"));
 	return mod.createEnrollmentAuthorityRegistry();

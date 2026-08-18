@@ -4,7 +4,6 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
 	buildLoopAction,
-	buildLoopRoleContext,
 	buildLoopRoleDispatch,
 	INTERNAL_ROLE_PROMPTS,
 	resolveLoopRoute,
@@ -41,19 +40,22 @@ describe("Loop execution and repair routing", () => {
 	});
 
 	it("injects Executor guidance into the current Parent context", () => {
-		const context = buildLoopRoleContext({
-			role: "executor",
+		const action = buildLoopAction({
+			ownership: "plan",
+			target: "step",
 			context: {
 				task_id: "task-6",
 				target_id: "step-1",
 				active_step: { number: 1, scope: ["src/a.ts"], verification: ["bun test"] },
 			},
 		});
-		expect(context.authority).toBe("executor");
-		expect(context.tool_policy).toBe("workspace tools");
-		expect(context.prompt).toContain("active Step");
-		expect(context.prompt).toContain("scope expansion");
-		expect(context.prompt).not.toContain("skills/");
+		expect(action.next).toBe("executor");
+		if (action.next !== "executor") throw new Error("expected executor action");
+		expect(action.context.authority).toBe("executor");
+		expect(action.context.tool_policy).toBe("workspace tools");
+		expect(action.context.prompt).toContain("active Step");
+		expect(action.context.prompt).toContain("scope expansion");
+		expect(action.context.prompt).not.toContain("skills/");
 	});
 
 	it("builds bounded internal Test Fixer and PR Fix dispatches", () => {
@@ -148,8 +150,8 @@ describe("Loop execution and repair routing", () => {
 
 	it("documents internal execution routing with no public role shims", () => {
 		const loop = read("plugins/immune-brain/dist/imm-loop.md");
-		expect(loop).toContain("buildLoopAction");
-		expect(loop).toContain("buildLoopRoleContext");
+		expect(loop).toContain("imm_loop_action");
+		expect(loop).not.toContain("buildLoopRoleContext");
 		expect(loop).toContain("test-fixer");
 		expect(loop).toContain("pr-fix");
 		expect(loop).toContain("imm_kernel_canary");

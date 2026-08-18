@@ -6,16 +6,15 @@ description: Use to run a validated Plan to completion in the current conversati
 # Immune-Brain: Loop
 
 Load [`../../dist/imm-loop.md`](../../dist/imm-loop.md), then run the checkpoint loop in the current Pi conversation. Keep active Step implementation in this conversation; use Pi native `Agent` subagents only when the runtime reports `awaiting_qa_decision` or a required review gate. Standard Plan Steps close from passing evidence without per-Step QA; Strict Plan Steps retain isolated QA. Return visible checkpoint progress and a final stop summary.
-At runtime role boundaries, build the `buildLoopAction` envelope from the
-runtime bridge. It returns `buildLoopRoleContext` for an active `executor`
-Step, a foreground `buildLoopRoleDispatch` for `qa`, `code-review`,
-`ui-review`, `test-fixer`, or `pr-fix`, and the `imm_kernel_canary` Tool action
-for Kernel ownership. Brainstorm and Planner may use the same bridge for
-bounded `arch-explorer` and explicit-lens `advisory-reviewer` dispatches. Loop
-may dispatch `compounder` only when a closed Step supplies structured evidence
-for a reusable Learning; routine work without that evidence returns `next:
-none` and creates no Learning. Do not discover or load a Pi Skill for these
-roles. The three-entry public Skill surface is exactly `imm-brainstorm`, `imm-planner`, and `imm-loop`. Dispatch authorization follows the [shared
+At every runtime role boundary, call the read-only `imm_loop_action` Tool. Use
+`route` for active Steps, bounded repair, architecture exploration, advisory
+review, Compounder, Kernel ownership, or scope expansion. Use `dispatch_role`
+for `qa`, `code-review`, and `ui-review`, then invoke the returned foreground
+Agent envelope exactly. Brainstorm and Planner use the same Tool for bounded
+`arch-explorer` and explicit-lens `advisory-reviewer` dispatches. Loop may
+dispatch `compounder` only when a closed Step supplies structured evidence for
+a reusable Learning; routine work without that evidence returns `next: none`
+and creates no Learning. Do not discover or load a Pi Skill for these roles. The three-entry public Skill surface is exactly `imm-brainstorm`, `imm-planner`, and `imm-loop`. Dispatch authorization follows the [shared
 Subagent Dispatch Protocol](../../dist/docs/reference/subagent-dispatch-protocol.md#authorization-authority).
 All internal Agent dispatch envelopes use `run_in_background: false` and
 return `tool_call`, `tool_result`, and `tool_execution_end` evidence to the
@@ -25,7 +24,7 @@ At `terminal_plan_complete`, stop with no next skill, authority, or action. At `
 
 Scope expansion always returns to `imm-planner`; Executor and repair roles must stop with the concrete missing scope and verification reason instead of widening execution.
 
-The loop always enters through this action builder: the action's `next`
+The loop always enters through `imm_loop_action`: the projected action's `next`
 authority is `executor`, `test-fixer`, `pr-fix`, `arch-explorer`,
 `advisory-reviewer`, `compounder`, `imm_kernel_canary`, `imm-planner`, or
 `none`.

@@ -60,14 +60,14 @@ export interface ManagedBootstrapInspection {
 	reason: string | null;
 }
 
-const REQUIRED_DIRECTORIES = [
+export const MANAGED_BOOTSTRAP_DIRECTORIES = [
 	".imm/memory",
 	"docs/specs",
 	"docs/brainstorms",
 	"docs/plans",
 ] as const;
 
-const REQUIRED_FILES = {
+export const MANAGED_BOOTSTRAP_FILES = {
 	"AGENTS.md": "AGENTS.md",
 	"IMMUNE.md": "IMMUNE.template.md",
 	"CONTEXT.md": "CONTEXT.template.md",
@@ -106,8 +106,8 @@ function template(name: string): string {
 
 function allManagedPaths(root: string): string[] {
 	return [
-		...REQUIRED_DIRECTORIES,
-		...Object.keys(REQUIRED_FILES),
+		...MANAGED_BOOTSTRAP_DIRECTORIES,
+		...Object.keys(MANAGED_BOOTSTRAP_FILES),
 	];
 }
 
@@ -178,7 +178,7 @@ export function inspectManagedBootstrap(root: string): ManagedBootstrapInspectio
 			reason: `partial Immune-Brain state; missing ${missing.join(", ")}`,
 		};
 	}
-	for (const relativePath of REQUIRED_DIRECTORIES) {
+	for (const relativePath of MANAGED_BOOTSTRAP_DIRECTORIES) {
 		try {
 			if (!lstatSync(join(resolvedRoot, relativePath)).isDirectory()) {
 				return {
@@ -197,7 +197,7 @@ export function inspectManagedBootstrap(root: string): ManagedBootstrapInspectio
 			};
 		}
 	}
-	for (const relativePath of Object.keys(REQUIRED_FILES)) {
+	for (const relativePath of Object.keys(MANAGED_BOOTSTRAP_FILES)) {
 		try {
 			if (!lstatSync(join(resolvedRoot, relativePath)).isFile()) {
 				return {
@@ -233,11 +233,11 @@ export function ensureManagedBootstrap(root: string): BootstrapDisposition {
 	if (inspection.status === "partial" || inspection.status === "incompatible") {
 		throw new Error(inspection.reason ?? "Immune-Brain bootstrap state is invalid");
 	}
-	const files = Object.entries(REQUIRED_FILES).map(([relativePath, templateName]) => ({
+	const files = Object.entries(MANAGED_BOOTSTRAP_FILES).map(([relativePath, templateName]) => ({
 		relativePath,
 		content: template(templateName),
 	}));
-	for (const relativePath of REQUIRED_DIRECTORIES) {
+	for (const relativePath of MANAGED_BOOTSTRAP_DIRECTORIES) {
 		mkdirSync(join(resolvedRoot, relativePath), { recursive: true });
 	}
 	for (const file of files) {

@@ -1,14 +1,13 @@
 #!/usr/bin/env bun
 import { resolve } from "node:path"
-import { ensureManagedBootstrap } from "./managed_path_router"
+import {
+  ensureManagedBootstrap,
+  MANAGED_BOOTSTRAP_DIRECTORIES,
+  MANAGED_BOOTSTRAP_FILES,
+} from "./managed_path_router"
 
-export const DIRS = [".imm/memory", "docs/specs", "docs/brainstorms", "docs/plans"]
-export const FILES: Record<string, string> = {
-  "IMMUNE.md": "IMMUNE.template.md",
-  "CONTEXT.md": "CONTEXT.template.md",
-  "AGENTS.md": "AGENTS.md",
-  ".imm/memory/MEMORY.md": "MEMORY.md",
-}
+export const DIRS = MANAGED_BOOTSTRAP_DIRECTORIES
+export const FILES = MANAGED_BOOTSTRAP_FILES
 
 export interface InitReport {
   root: string

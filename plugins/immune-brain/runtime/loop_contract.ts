@@ -18,13 +18,6 @@ export type LoopRole = InternalRole;
 
 export type LoopRoleContext = RoleDelegationPacket;
 
-export function buildLoopRoleContext(input: {
-	role: LoopRole;
-	context: RoleDelegationContext;
-}): LoopRoleContext {
-	return buildLoopRoleDelegationPacket(input);
-}
-
 export type LoopRouteOwnership =
 	| "plan"
 	| "kernel"
@@ -177,7 +170,7 @@ export function buildLoopAction(input: {
 		return {
 			entry: "imm-loop",
 			next: "executor",
-			context: buildLoopRoleContext({ role: "executor", context: input.context }),
+			context: buildRoleDelegationPacket({ role: "executor", context: input.context }),
 		};
 	}
 	if (route.next === "test-fixer") {
@@ -221,12 +214,6 @@ export function buildLoopAction(input: {
 	};
 }
 
-export function buildLoopRoleDelegationPacket(input: {
-	role: LoopRole;
-	context: RoleDelegationContext;
-}): RoleDelegationPacket {
-	return buildRoleDelegationPacket(input);
-}
 export interface LoopRoleDispatch {
 	packet: RoleDelegationPacket;
 	call: {
@@ -245,7 +232,7 @@ export function buildLoopRoleDispatch(input: {
 	context: RoleDelegationContext;
 	description?: string;
 }): LoopRoleDispatch {
-	const packet = buildLoopRoleDelegationPacket(input);
+	const packet = buildRoleDelegationPacket(input);
 	return {
 		packet,
 		call: {

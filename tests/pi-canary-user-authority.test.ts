@@ -127,7 +127,7 @@ function loadSurface(dependencies: Record<string, unknown> = {}): {
 		on: () => {},
 		registerMessageRenderer: () => {},
 		registerTool: (registered: { name: string; execute: typeof tool extends infer T ? T : never }) => {
-			tool = registered as never;
+			if (registered.name === "imm_kernel_canary") tool = registered as never;
 		},
 	} as unknown as ExtensionAPI;
 	factory(pi, dependencies);

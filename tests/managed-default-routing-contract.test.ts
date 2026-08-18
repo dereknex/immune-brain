@@ -12,8 +12,11 @@ import { join } from "node:path";
 import {
 	classifyManagedRequest,
 	inspectManagedBootstrap,
+	MANAGED_BOOTSTRAP_DIRECTORIES,
+	MANAGED_BOOTSTRAP_FILES,
 	routeManagedRequest,
 } from "../plugins/immune-brain/runtime/managed_path_router";
+import { DIRS, FILES } from "../plugins/immune-brain/runtime/bootstrap";
 import { runCli } from "../plugins/immune-brain/runtime/v4_runtime";
 
 function tempRoot(): string {
@@ -69,6 +72,8 @@ describe("managed default request routing", () => {
 	});
 
 	it("initializes absent state once and leaves complete state byte-stable", () => {
+		expect(DIRS).toBe(MANAGED_BOOTSTRAP_DIRECTORIES);
+		expect(FILES).toBe(MANAGED_BOOTSTRAP_FILES);
 		const root = tempRoot();
 		try {
 			const first = routeManagedRequest({
@@ -116,18 +121,12 @@ describe("managed default request routing", () => {
 
 		const incompatible = tempRoot();
 		try {
-			for (const directory of [
-				".imm/memory",
-				"docs/specs",
-				"docs/brainstorms",
-				"docs/plans",
-			]) mkdirSync(join(incompatible, directory), { recursive: true });
-			for (const file of [
-				"AGENTS.md",
-				"IMMUNE.md",
-				"CONTEXT.md",
-				".imm/memory/MEMORY.md",
-			]) writeFileSync(join(incompatible, file), "incompatible\n");
+			for (const directory of MANAGED_BOOTSTRAP_DIRECTORIES) {
+				mkdirSync(join(incompatible, directory), { recursive: true });
+			}
+			for (const file of Object.keys(MANAGED_BOOTSTRAP_FILES)) {
+				writeFileSync(join(incompatible, file), "incompatible\n");
+			}
 			expect(() =>
 				routeManagedRequest({ root: incompatible, request: "Implement the login form" }),
 			).toThrow(/schema|incompatible/i);

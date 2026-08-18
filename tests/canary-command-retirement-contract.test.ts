@@ -30,7 +30,10 @@ describe("Canary Slash Command retirement", () => {
 
 	test("registers foreground Tools without any Slash Commands", () => {
 		expect(loadFactory("imm-canary-enroll.ts")).toEqual({ tools: ["imm_canary_enrollment"], commands: [] });
-		expect(loadFactory("imm-canary-work.ts")).toEqual({ tools: ["imm_kernel_canary"], commands: [] });
+		expect(loadFactory("imm-canary-work.ts")).toEqual({
+			tools: ["imm_kernel_canary", "imm_loop_action"],
+			commands: [],
+		});
 	});
 
 	test("production extension sources contain no retired command registration", () => {

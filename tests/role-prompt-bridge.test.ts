@@ -5,7 +5,6 @@ import { fileURLToPath } from "node:url";
 import {
 	buildLoopAction,
 	buildLoopRoleDispatch,
-	buildLoopRoleDelegationPacket,
 	determineRequiredReviewGates,
 	INTERNAL_ROLE_PROMPTS,
 	loadRolePrompt,
@@ -169,15 +168,15 @@ describe("internal role-prompt bridge", () => {
 	});
 
 	it("injects deterministic Parent context and preserves stable Review Gate identifiers", () => {
-		const code = buildLoopRoleDelegationPacket({
+		const code = buildLoopRoleDispatch({
 			role: "code-review",
 			context: {
 				task_id: "task-5",
 				target_id: "step-1",
 				changed_files_signature: "sha256:files",
 			},
-		});
-		const ui = buildLoopRoleDelegationPacket({
+		}).packet;
+		const ui = buildLoopRoleDispatch({
 			role: "ui-review",
 			context: {
 				task_id: "task-5",
@@ -185,11 +184,11 @@ describe("internal role-prompt bridge", () => {
 				review_gate: "imm-ui-review",
 				changed_files_signature: "sha256:files",
 			},
-		});
-		const qa = buildLoopRoleDelegationPacket({
+		}).packet;
+		const qa = buildLoopRoleDispatch({
 			role: "qa",
 			context: { task_id: "task-5", target_id: "step-1" },
-		});
+		}).packet;
 
 		expect(code.review_gate).toBe("imm-code-review");
 		expect(ui.review_gate).toBe("imm-ui-review");
@@ -204,7 +203,7 @@ describe("internal role-prompt bridge", () => {
 
 	it("rejects a Review packet with a mismatched stable gate", () => {
 		expect(() =>
-			buildLoopRoleDelegationPacket({
+			buildLoopRoleDispatch({
 				role: "code-review",
 				context: { task_id: "task-5", review_gate: "imm-ui-review" },
 			}),
@@ -245,7 +244,7 @@ describe("internal role-prompt bridge", () => {
 			"plugins/immune-brain/dist/imm-loop.md",
 		]) {
 			const content = read(path);
-			expect(content).toContain("buildLoopRoleDispatch");
+			expect(content).toContain("imm_loop_action");
 			expect(content).toContain("three-entry public Skill surface");
 			expect(content).not.toMatch(/public\s+Skills\s+remain available as rollback shims/);
 			expect(content).not.toContain("dispatch an isolated read-only `imm-qa`");
