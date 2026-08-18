@@ -5,7 +5,7 @@
 
 import { describe, expect, test } from "bun:test";
 import { execFileSync, spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, readdirSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
@@ -15,6 +15,16 @@ const RETIRED_PROGRESS_FILES = [
 	"plugins/immune-brain/.pi-extension/progress_client.ts",
 	"plugins/immune-brain/.pi-extension/progress_views.ts",
 ];
+
+function listFiles(root: string): string[] {
+	const files: string[] = [];
+	for (const entry of readdirSync(root, { withFileTypes: true })) {
+		const path = join(root, entry.name);
+		if (entry.isDirectory()) files.push(...listFiles(path));
+		else files.push(path);
+	}
+	return files;
+}
 
 function extractTarball(): { dir: string; tarball: string } {
 	const dir = mkdtempSync(join(tmpdir(), "p2b2-packed-"));
@@ -40,7 +50,6 @@ describe("packed artifact loader", () => {
 			const pkgDir = join(dir, "package");
 			for (const f of [
 				"plugins/immune-brain/.pi-extension/imm-canary-enroll.ts",
-				"plugins/immune-brain/.pi-extension/imm-canary-new.ts",
 				"plugins/immune-brain/.pi-extension/imm-canary-work.ts",
 				"plugins/immune-brain/skills/imm-brainstorm/SKILL.md",
 				"plugins/immune-brain/skills/imm-loop/SKILL.md",
@@ -56,15 +65,22 @@ describe("packed artifact loader", () => {
 			]) {
 				expect(existsSync(join(pkgDir, f))).toBe(true);
 			}
-			for (const retired of [
-				...RETIRED_PROGRESS_FILES,
-				"plugins/immune-brain/skills/imm-canary-work/SKILL.md",
-				"plugins/immune-brain/skills/imm-init/SKILL.md",
-				"plugins/immune-brain/dist/imm-canary-work.md",
-				"plugins/immune-brain/dist/imm-init.md",
-				"plugins/immune-brain/dist/test-fixer.md",
+			const shippedFiles = listFiles(pkgDir);
+			const shippedText = shippedFiles
+				.map((file) => readFileSync(file, "utf8"))
+				.join("\n");
+			for (const command of [
+				"imm-canary-new",
+				"imm-canary-enroll",
+				"imm-canary-assure",
+				"imm-canary-authorize",
+				"imm-canary-succeed",
 			]) {
-				expect(existsSync(join(pkgDir, retired))).toBe(false);
+				if (command !== "imm-canary-enroll")
+					expect(shippedFiles.some((file) => file.endsWith(`${command}.ts`))).toBe(false);
+				expect(shippedText).not.toMatch(
+					new RegExp("(^|[\\s`])/(" + command + ")(?=[\\s<]|$)", "m"),
+				);
 			}
 		} finally {
 			rmSync(dir, { recursive: true, force: true });
@@ -123,7 +139,6 @@ describe("packed artifact loader", () => {
 					.sort();
 				expect(names).toEqual([
 					"imm-canary-enroll.ts",
-					"imm-canary-new.ts",
 					"imm-canary-work.ts",
 				]);
 				const skills = loader

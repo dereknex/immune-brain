@@ -255,23 +255,10 @@ async function preparePendingReview(root: string): Promise<RegisteredTool & { co
 	});
 
 	describe("foreground canary assurance extension", () => {
-	test("registers only the ordinary tool and literal-user command", () => {
+	test("registers only the ordinary foreground tool", () => {
 		const { tools, commands } = loadSurface();
 		expect(tools.map((tool) => tool.name)).toEqual(["imm_kernel_canary"]);
-		expect(Object.keys(commands).sort()).toEqual(["imm-canary-authorize", "imm-canary-succeed"]);
-	});
-
-	test("temporary authority commands announce their deprecated recovery status", async () => {
-		const { commands } = loadSurface();
-		const notifications: string[] = [];
-		const ctx = { mode: "rpc", cwd: process.cwd(), ui: { notify: (text: string) => notifications.push(text) } } as never;
-		await commands["imm-canary-authorize"].handler("invalid", ctx);
-		await commands["imm-canary-succeed"].handler("invalid", ctx);
-		expect(notifications.filter((notice) => /deprecated/i.test(notice))).toHaveLength(2);
-		for (const notice of notifications.filter((item) => /deprecated/i.test(item))) {
-			expect(notice).toMatch(/deprecated/i);
-			expect(notice).toMatch(/ordinary language/i);
-		}
+		expect(Object.keys(commands)).toEqual([]);
 	});
 
 	test("schema removes command-owned cancellation and agent-supplied authority", () => {
@@ -450,9 +437,9 @@ async function preparePendingReview(root: string): Promise<RegisteredTool & { co
 		} finally { rmSync(root, { recursive: true, force: true }); }
 	});
 
-	test("Tool and deprecated command authorization routes produce the same Kernel transition", { timeout: 30_000 }, async () => {
-		const toolRoot = makeEnrolledRoot();
-		const commandRoot = makeEnrolledRoot();
+	test("repeated foreground Tool authorization produces the same Kernel transition", { timeout: 30_000 }, async () => {
+		const firstRoot = makeEnrolledRoot();
+		const secondRoot = makeEnrolledRoot();
 		const semanticRecord = (root: string) => {
 			const record = JSON.parse(readFileSync(join(root, ".imm", "tasks", `${TASK}.json`), "utf8"));
 			const volatileKeys = new Set(["record_revision", "revision", "recorded_at", "created_at", "updated_at", "timestamp", "at", "issued_at", "expires_at"]);
@@ -474,14 +461,14 @@ async function preparePendingReview(root: string): Promise<RegisteredTool & { co
 			return canonicalize(record);
 		};
 		try {
-			const toolSurface = await preparePendingReview(toolRoot);
-			const commandSurface = await preparePendingReview(commandRoot);
-			await toolSurface.execute("tool-authorize", { task_id: TASK, action: { op: "request_authorization" } }, undefined, undefined, makeCtx(toolRoot, makeUI()));
-			await commandSurface.commands["imm-canary-authorize"].handler(`${TASK} record-review-verdict`, makeCtx(commandRoot, makeUI()));
-			expect(semanticRecord(toolRoot)).toEqual(semanticRecord(commandRoot));
+			const first = await preparePendingReview(firstRoot);
+			const second = await preparePendingReview(secondRoot);
+			await first.execute("first-tool-authorize", { task_id: TASK, action: { op: "request_authorization" } }, undefined, undefined, makeCtx(firstRoot, makeUI()));
+			await second.execute("second-tool-authorize", { task_id: TASK, action: { op: "request_authorization" } }, undefined, undefined, makeCtx(secondRoot, makeUI()));
+			expect(semanticRecord(firstRoot)).toEqual(semanticRecord(secondRoot));
 		} finally {
-			rmSync(toolRoot, { recursive: true, force: true });
-			rmSync(commandRoot, { recursive: true, force: true });
+			rmSync(firstRoot, { recursive: true, force: true });
+			rmSync(secondRoot, { recursive: true, force: true });
 		}
 	});
 

@@ -150,7 +150,6 @@ describe("user approval authority binding", () => {
 			approval,
 		});
 		expect(() => userOperationFor("record-user-approval")).toThrow(/approval payload/);
-		expect(userOperationFor("stop")).toEqual({ op: "stop", reason: "literal user stop" });
 	});
 
 	test("capabilityActionFor builds the canonical record_user_approval action carrying the approval", () => {

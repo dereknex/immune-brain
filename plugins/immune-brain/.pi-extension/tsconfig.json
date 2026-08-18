@@ -13,7 +13,6 @@
 	},
 	"include": [
 		"imm-canary-enroll.ts",
-		"imm-canary-new.ts",
 		"imm-canary-work.ts",
 		"pi-canary-assurance-progression.ts",
 		"runtime-stub.ts"

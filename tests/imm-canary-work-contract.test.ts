@@ -36,7 +36,6 @@ describe("imm-loop Kernel routing contract", () => {
 	test("enrollment contracts require isolated descriptor rehearsal and one explicit waiver route", () => {
 		const guide = read("plugins/immune-brain/USER_GUIDE.md");
 		const kernelCommand = read("plugins/immune-brain/runtime/commands/kernel.ts");
-		const defaultRoute = read("plugins/immune-brain/.pi-extension/imm-canary-new.ts");
 		const waiverRoute = read("plugins/immune-brain/.pi-extension/imm-canary-enroll.ts");
 		expect(guide).toContain("foreground");
 		expect(guide).toContain("descriptor-rehearsal/v1:waived:<digest>");
@@ -52,8 +51,6 @@ describe("imm-loop Kernel routing contract", () => {
 		expect(kernelCommand).toContain('output_limit: "non_waivable_close_settled"');
 		expect(kernelCommand).toContain('setup_failure: "non_waivable"');
 		expect(kernelCommand).toContain('live_integrity_drift: "abort_all_non_waivable_close_settled"');
-		expect(defaultRoute).toContain('launchEnrollmentRequest(pi, "new"');
-		expect(defaultRoute).not.toContain("runDescriptorRehearsal");
 		expect(waiverRoute).toContain('name: "imm_canary_enrollment"');
 		expect(waiverRoute).toContain('const route = action === "new" ? "default" : "explicit_waiver"');
 		expect(waiverRoute).toContain("assertDescriptorRehearsalSnapshot");

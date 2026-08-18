@@ -32,13 +32,12 @@ describe("v4 package contract", () => {
 		expect(joined).not.toContain("automatic_observations");
 	});
 
-	test("pi extension manifest registers only the three canary factories", () => {
+	test("pi extension manifest registers the two foreground Tool factories", () => {
 		const extPkg = JSON.parse(read("plugins/immune-brain/.pi-extension/package.json")) as {
 			pi?: { extensions?: string[] };
 		};
 		expect(extPkg.pi?.extensions).toEqual([
 			"./imm-canary-enroll.ts",
-			"./imm-canary-new.ts",
 			"./imm-canary-work.ts",
 		]);
 	});

@@ -1,9 +1,9 @@
-// canary-001 regression: Pi extension discovery must load exactly the three
-// factory files from .pi-extension/ and never auto-discover helper modules.
+// canary-001 regression: Pi extension discovery must load exactly the two
+// foreground Tool factories from .pi-extension/ and never auto-discover helper modules.
 //
-// acc-1: the real Pi resource loader discovers exactly imm-canary-enroll.ts,
-//        imm-canary-new.ts, and imm-canary-work.ts from the repo package with
-//        zero load errors; no discovered path contains a helper module name.
+// acc-1: the real Pi resource loader discovers exactly imm-canary-enroll.ts
+//        and imm-canary-work.ts from the repo package with zero load errors;
+//        no discovered path contains a helper module name.
 // acc-2: the explicit entry manifest (plugins/immune-brain/.pi-extension/
 //        package.json) is load-bearing: a scratch copy WITHOUT it makes the
 //        loader attempt every helper module as an extension and record a
@@ -18,7 +18,6 @@ const ROOT = resolve(__dirname, "..");
 
 const FACTORY_FILES = [
 	"plugins/immune-brain/.pi-extension/imm-canary-enroll.ts",
-	"plugins/immune-brain/.pi-extension/imm-canary-new.ts",
 	"plugins/immune-brain/.pi-extension/imm-canary-work.ts",
 ];
 const RETIRED_PROGRESS_FILES = [
@@ -76,13 +75,12 @@ function basenameOf(p: string): string {
 }
 
 describe("pi extension discovery regression (canary-001)", () => {
-	test("acc-1: exactly the three factory files are discovered from the repo package", async () => {
+	test("acc-1: exactly the two foreground Tool factories are discovered from the repo package", async () => {
 		const { paths, errors } = await loadExtensions(ROOT);
-		expect(paths.length).toBe(3);
+		expect(paths.length).toBe(2);
 		const names = paths.map(basenameOf).sort();
 		expect(names).toEqual([
 			"imm-canary-enroll.ts",
-			"imm-canary-new.ts",
 			"imm-canary-work.ts",
 		]);
 		for (const helper of HELPER_FILES) {
@@ -128,9 +126,8 @@ describe("pi extension discovery regression (canary-001)", () => {
 
 			const { paths, errors } = await loadExtensions(scratch);
 			const names = paths.map(basenameOf);
-			// The three factory files still load (they export valid factories).
+			// The two factory files still load (they export valid factories).
 			expect(names).toContain("imm-canary-enroll.ts");
-			expect(names).toContain("imm-canary-new.ts");
 			expect(names).toContain("imm-canary-work.ts");
 			// Without the manifest the loader tries to load every top-level
 			// .ts file as an extension, so each helper module produces a

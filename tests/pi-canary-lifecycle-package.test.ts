@@ -294,15 +294,15 @@ describe("pi canary lifecycle package composition", () => {
 			expect(JSON.parse(authorized.content[0].text).next_action).toBe("complete task");
 			const completed = await surface.tool!.execute("complete", { task_id: TASK, action: { op: "complete" } }, undefined, undefined, ctx);
 			expect(JSON.parse(completed.content[0].text)).toMatchObject({ phase: "done", next_action: "none", task_state: { phase: "done" } });
-			expect(surface.commands.sort()).toEqual(["imm-canary-authorize", "imm-canary-succeed"]);
+			expect(surface.commands).toEqual([]);
 		} finally {
 			rmSync(root, { recursive: true, force: true });
 		}
 	});
 
-	test("lifecycle surface registers the tool and both commands exactly once", () => {
+	test("lifecycle surface registers the foreground Tool without Slash Commands", () => {
 		const { tool, commands } = loadWorkSurface();
 		expect(tool).toBeDefined();
-		expect(commands.sort()).toEqual(["imm-canary-authorize", "imm-canary-succeed"]);
+		expect(commands).toEqual([]);
 	});
 });

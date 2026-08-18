@@ -27,7 +27,7 @@ describe("Managed-by-default workflow routing contract", () => {
   it("routes repository mutations through Managed phases without a special phrase", () => {
     expectAll(BASELINE, [
       "Repository-mutating requests use Managed Path by default.",
-      "imm-route --json <request>",
+      "The canonical host applies the Managed Path routing contract for this decision.",
       "Continue an existing Managed owner",
       "Keep non-mutating requests host-native",
       "Route materially ambiguous mutations to `imm-brainstorm`",
@@ -69,18 +69,18 @@ describe("Managed-by-default workflow routing contract", () => {
   });
 
   it("aligns project constitutions, bootstrap, and packaged consumers", () => {
-    expectAll(ROOT_IMMUNE, ["Managed-by-default", "imm-route --json", "literal-user Enrollment"]);
+    expectAll(ROOT_IMMUNE, ["Managed-by-default", "Host 在选择 Skill 前应用 routing contract", "literal-user Enrollment"]);
     expectAll(INIT_AGENTS, [
       "Repository-mutating requests use Managed Path by default",
-      "imm-route --json <request>",
+      "The host applies the routing contract before selecting a Skill",
       "Planner output is a candidate for later literal-user Enrollment",
     ]);
     expectAll(INIT_IMMUNE, ["Repository-mutating requests use Managed Path by default", "partial or incompatible state fails"]);
     expect(INIT_SCRIPT).toContain('ready_for: ["imm-brainstorm", "imm-planner", "imm-loop"]');
     expect(INIT_SCRIPT).toContain("bootstrap_rejected");
     expect(INIT_SCRIPT).toContain("ensureManagedBootstrap");
-    expectAll(README, ["Repository-mutating requests enter Managed Path automatically", "imm-route --json <request>"]);
-    expectAll(USER_GUIDE, ["Managed Path：仓库变更默认路径", "imm-route --json <request>"]);
+    expectAll(README, ["Repository-mutating requests enter Managed Path automatically", "The host applies the routing contract before"]);
+    expectAll(USER_GUIDE, ["Managed Path：仓库变更默认路径", "第一次仓库变更请求由 host 应用 routing contract"]);
     expectAll(PLANNER_SKILL, ["default planning phase for a clear repository mutation", "enrolls a task or enrolls generated", "artifacts unconditionally"]);
     expectAll(QUALITY_GATE, ["clear repository mutations default to `imm-planner`", "literal-user Enrollment remains the authority boundary"]);
     expect(PACKAGED_QUALITY_GATE).toBe(QUALITY_GATE);

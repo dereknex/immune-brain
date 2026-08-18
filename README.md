@@ -21,60 +21,46 @@ Immune-Brain 为 Pi 提供确定性的任务意图、自动化 QA 验证、隔�
 
 ## 🚀 快速上手 (使用工作流)
 
-标准的 Immune-Brain Canary 工作流分为以下 5 个步骤：
+Immune-Brain 通过自然语言请求启动工作流。对仓库提出修改请求时，Managed Path 会自动判断进入 `imm-brainstorm`、`imm-planner` 或恢复中的 `imm-loop`；只读、解释、评审和明确不修改仓库的请求保持 host-native，不会 Enrollment。
+
+标准生命周期为：
 
 ```text
-1. 注册意图 (Enroll) ➔ 2. 代码实现 (Execute) ➔ 3. 自动化 QA (Assure QA) ➔ 4. 代码审查 (Assure Review) ➔ 5. 授权闭环 (Authorize/Complete)
+自然语言请求 ➔ Managed Path 路由 ➔ TaskIntent Enrollment ➔ imm-loop 执行、QA、Review ➔ foreground Tool 授权与收尾
 ```
 
-### 步骤 1：创建或注册任务意图 (TaskIntent)
-- **交互式新建**：在 Pi 中输入 `/imm-canary-new <task-id>`；launcher 会发送可见 Parent request，随后由单一 foreground `imm_canary_enrollment` Tool 展示完整的 TaskIntent 与 staged digest，并要求 routine、material、critical 全部进行 literal-user confirmation。
-- **从文件注册**：编写 `docs/plans/<task-id>.intent.json`，然后运行 `/imm-canary-enroll <task-id>`；explicit waiver 同样由该 foreground Tool 执行并要求 literal-user confirmation。
-- Enrollment 使用 host-native Tool progress/result 渲染当前 stage。它不写 Footer、不创建 Widget、不发送后台 completion notification；Escape 或 host cancellation 在 commit 前生效，Tool 直接返回唯一 terminal result。
+### 任务开始
 
-### 步骤 2：代码实现与快照暂存
-在完成代码开发后，将任务范围内受信任的文件暂存至 Git Index：
+直接描述要完成的仓库修改。需求存在实质歧义时先进入 `imm-brainstorm`，目标明确时进入 `imm-planner`。Planner 生成的 TaskIntent 仍需由用户通过 `imm_canary_enrollment` foreground Tool 明确确认；routine、material、critical 风险都要求 literal-user confirmation，并展示完整意图和冻结的 staged digest。
+
+已存在 `TaskIntent` 文件时，继续使用同一个 `imm_canary_enrollment` Tool 进行 rehearsal、必要的 descriptor waiver 和 Enrollment。失败、取消和 host interruption 在 authority commit 前保持零写入。
+
+### 执行与保证
+
+完成代码后，将任务范围内受信任的文件暂存至 Git Index：
+
 ```bash
 git add -- <task-owned-file-1> <task-owned-file-2>
 ```
-*系统会根据意图中的 `scope_hint` 校验并冻结 `HEAD -> index` 变动快照。*
 
-### 步骤 3：运行确定性 QA 验证
-在 Pi 输入框中运行：
-```text
-/imm-canary-assure <task-id> qa
-```
-- 后台确定性运行任务意图中定义的 Verification Descriptors（无 LLM 介入）。
-- 异步非阻塞执行，主输入框始终可用；QA 通过有界通知展示 verifier 转换与终态。
+随后 Parent 通过 `imm-loop` 调用 `imm_kernel_canary` foreground Tool：先记录 acceptance evidence，再运行确定性 QA；QA 通过后由保留的 foreground Agent 完成 Review，并把 verdict 提交回 Kernel。Tool 结果始终返回新的 Kernel projection 与 `next_action`，Parent 不依赖隐藏的会话状态，也不轮询后台任务。
 
-### 步骤 4：运行隔离式 Code Review
-QA 验证通过后运行：
-```text
-/imm-canary-assure <task-id> review [model]
-```
-- 启动 Pi Native `general-purpose` Subagent 进行只读代码审查，进度由标准 `Agent` 界面展示。
-- 审阅器仅从快照中读取文件 Blob OID，隔离当前工作区的其它实时改动。
-
-### 步骤 5：审核决策与用户授权
-审查完成后，根据返回结果进行闭环授权：
-- **解决未决决策**：`/imm-canary-authorize <task-id> resolve-user-decision`
-- **执行特权授权**：`/imm-canary-authorize <task-id> <operation>`
-- **任务衍生与继承**：若审阅要求重规划，使用 `/imm-canary-succeed <task-id>` 一键原子终止旧任务并同范围派生新任务。
+当 `next_action` 指向授权时，Parent 再次调用 `imm_kernel_canary` 的 `request_authorization` action。宿主显示 native TUI confirmation；用户取消、超时或 host abort 都保持零 authority writes。任务结束由 Tool 返回 `phase=done` 与 `next_action=none`。
 
 ---
 
-## 🛠️ Slash 命令参考
+## 🛠️ 公开操作面
 
-| Slash 命令 | 描述说明 | 适用场景 |
-| :--- | :--- | :--- |
-| `/imm-canary-new <task-id>` | 发送可见 Parent request，并通过 foreground Enrollment Tool 创建新 Kernel task | 开始全新任务时 |
-| `/imm-canary-enroll <task-id>` | 通过同一个 foreground Tool 校验并注册指定 `TaskIntent`，必要时展示 explicit descriptor waiver | 导入已编写好的意图文件时 |
-| `/imm-canary-assure <task-id> qa` | 触发后台确定性 QA 验证（非阻塞） | 代码编写完成后验证逻辑 |
-| `/imm-canary-assure <task-id> review [model]` | 启动隔离式 Subagent 进行只读代码审查 | QA 通过后发起代码与安全审查 |
-| `/imm-canary-assure <task-id> cancel` | 取消正在运行的后台 QA 或 Review 任务 | 需要中断正在执行的后台验证时 |
-| `/imm-canary-authorize <task-id> <op>` | 执行需要显式授权的 privileged action | 收到用户授权门控请求时 |
-| `/imm-canary-authorize <task-id> resolve-user-decision` | 解决当前唯一的 open user-decision finding | 存在待决策项 Finding 时 |
-| `/imm-canary-succeed <task-id>` | 原子终止 `replan_required` 任务并派生继承任务 | 任务需重规划或进行后续演进时 |
+| 操作 | 责任 |
+| :--- | :--- |
+| 自然语言仓库请求 | 自动进入 Managed Path；无需记忆入口名称或命令 |
+| `imm-brainstorm` | 澄清实质歧义，不执行仓库修改 |
+| `imm-planner` | 创建和修订 TaskIntent，不自动 Enrollment |
+| `imm-loop` | 通过 foreground Tools 协调执行、QA、Review、恢复与收尾 |
+| `imm_canary_enrollment` | TUI-only Enrollment、rehearsal、确认与中断恢复 |
+| `imm_kernel_canary` | 记录 evidence、推进 assurance、提交 Review、请求授权与完成任务 |
+
+上述为唯一的用户工作流入口。Enrollment、assurance、authorization 和 successor 状态转换没有 Slash Command fallback 或替代 alias。
 
 ---
 

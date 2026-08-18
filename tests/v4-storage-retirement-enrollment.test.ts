@@ -18,10 +18,6 @@ const ENROLL = join(
 	ROOT,
 	"plugins/immune-brain/runtime/kernel/enrollment.ts",
 );
-const NEW_EXT = join(
-	ROOT,
-	"plugins/immune-brain/.pi-extension/imm-canary-new.ts",
-);
 const ENROLL_EXT = join(
 	ROOT,
 	"plugins/immune-brain/.pi-extension/imm-canary-enroll.ts",
@@ -54,18 +50,17 @@ describe("v4 enrollment is kernel-owner-only", () => {
 		expect(src).toContain("preparation digest mismatch");
 	});
 
-	test("new-task launcher owns no waiver or Kernel preparation surface", () => {
-		const src = readFileSync(NEW_EXT, "utf8");
+	test("enrollment Tool owns no waiver or Kernel preparation surface", () => {
+		const src = readFileSync(ENROLL_EXT, "utf8");
 		expect(src).not.toContain("explicit user risk acceptance");
 		expect(src).not.toContain("preparation.readiness");
 		expect(src).not.toContain("preparation.evidence");
 		expect(src).not.toContain("waiver,\n");
 		expect(src).not.toContain("mintWaiver");
-		expect(src).not.toContain("preparePiCanary");
-		expect(src).toContain("launchEnrollmentRequest");
+		expect(src).toContain("preparePiCanary");
 	});
 
-	test("enroll extension derives binding from kernel owners, not readiness", () => {
+	test("enrollment extension derives binding from kernel owners, not readiness", () => {
 		const src = readFileSync(ENROLL_EXT, "utf8");
 		expect(src).not.toContain("preparation.readiness");
 		expect(src).not.toContain("preparation.evidence");

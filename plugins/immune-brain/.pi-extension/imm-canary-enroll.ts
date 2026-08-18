@@ -1,9 +1,9 @@
-// Phase 2 foreground Enrollment extension.
-// `/imm-canary-enroll` is a thin visible launcher. The sole production
-// enrollment authority route is the Parent-invoked `imm_canary_enrollment`
-// Tool, whose execute callback owns preparation through terminal settlement.
-// Host cancellation applies to every pre-commit stage; after the explicit
-// commit linearization point, Kernel settlement is non-cancellable.
+// Foreground Enrollment extension.
+// The sole production enrollment authority route is the Parent-invoked
+// `imm_canary_enrollment` Tool, whose execute callback owns preparation through
+// terminal settlement. Host cancellation applies to every pre-commit stage;
+// after the explicit commit linearization point, Kernel settlement is
+// non-cancellable.
 
 import { DynamicBorder, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Container, SelectList, Text, type SelectItem } from "@earendil-works/pi-tui";
@@ -1033,7 +1033,7 @@ async function executeForegroundEnrollment(
 		const rehearsalDecision = decideDescriptorRehearsalRoute(descriptorRehearsal, route);
 		if (!rehearsalDecision.proceed_to_confirmation) {
 			const hint = descriptorRehearsal.waiver_allowed && action === "new"
-				? "use /imm-canary-enroll to request one explicit literal-user waiver"
+				? "describe the waiver need in ordinary language and let the Parent invoke Enrollment"
 				: "correct the non-waivable rehearsal blockers";
 			return terminal(
 				action,
@@ -1153,36 +1153,6 @@ async function executeForegroundEnrollment(
 	}
 }
 
-export function enrollmentParentRequest(action: EnrollmentAction, taskId: string): string {
-	return `Call imm_canary_enrollment exactly once with ${JSON.stringify({ action, task_id: taskId })}. Execute it in the foreground and consume its terminal Tool result directly; do not spawn background work or poll.`;
-}
-
-export function notifyDeprecatedEnrollmentCommand(ctx: ExtensionContext, command: string): void {
-	ctx.ui.notify(`/${command} is deprecated and retained only for recovery; describe the task in ordinary language and let the Parent invoke the foreground Tool`, "warning");
-}
-
-export async function launchEnrollmentRequest(
-	pi: ExtensionAPI,
-	action: EnrollmentAction,
-	args: string,
-	ctx: ExtensionContext,
-): Promise<void> {
-	const command = action === "new" ? "imm-canary-new" : "imm-canary-enroll";
-	notifyDeprecatedEnrollmentCommand(ctx, command);
-	if (ctx.mode !== "tui") {
-		ctx.ui.notify(`${command} is TUI-only and was rejected`, "warning");
-		return;
-	}
-	const taskId = (args || "").trim();
-	if (!TASK_ID_PATTERN.test(taskId)) {
-		ctx.ui.notify(`invalid task id: ${taskId}`, "error");
-		return;
-	}
-	const message = enrollmentParentRequest(action, taskId);
-	if (ctx.isIdle()) pi.sendUserMessage(message);
-	else pi.sendUserMessage(message, { deliverAs: "steer" });
-}
-
 export default function (pi: ExtensionAPI) {
 	const coordinator = new ForegroundEnrollmentCoordinator();
 	let registryPromise: ReturnType<typeof createEnrollmentAuthorityRegistry> | undefined;
@@ -1194,7 +1164,7 @@ export default function (pi: ExtensionAPI) {
 		description: "Run one exact Kernel new-task or explicit-waiver enrollment synchronously in the foreground with host cancellation before authority commit.",
 		promptSnippet: "Kernel enrollment: invoke once in foreground and consume the direct terminal result.",
 		promptGuidelines: [
-			"Call only after a visible /imm-canary-new or /imm-canary-enroll launcher request.",
+			"Call from the Parent after natural-language routing selects Enrollment; execute once in the foreground and consume the terminal Tool result.",
 			"Do not run this Tool in background, poll for completion, or issue a cancel subcommand; host cancellation is the only pre-commit cancellation path.",
 		],
 		parameters: Type.Object(
@@ -1254,10 +1224,6 @@ export default function (pi: ExtensionAPI) {
 		},
 	});
 
-	pi.registerCommand("imm-canary-enroll", {
-		description: "Request one explicit-waiver Kernel enrollment through the foreground Tool",
-		handler: (args, ctx) => launchEnrollmentRequest(pi, "enroll", args, ctx),
-	});
 	if (typeof pi.on === "function")
 		pi.on("session_shutdown", async () => coordinator.shutdown());
 }

@@ -1,10 +1,9 @@
 // P2B2 U2: packed package consumer surface. A real package consumer
 // enumerates the root package's explicit export map and probes every declared
 // subpath; the export map exposes no executable Kernel internal. Host registry
-// inspection after Pi resource loading proves only the specified tool and
-// commands are registered, and no registry issuer, generic mutation
-// application, direct claim writer/remover, or terminal transaction internals
-// are package-exported.
+// inspection after Pi resource loading proves only the specified foreground
+// Tools are registered, with no registry issuer, generic mutation application,
+// direct claim writer/remover, or terminal transaction internals package-exported.
 
 import { describe, expect, test } from "bun:test";
 import { readFileSync, existsSync } from "node:fs";
@@ -91,10 +90,6 @@ describe("packed consumer surface", () => {
 
 	test("packed enrollment contract exposes descriptor rehearsal and the single explicit waiver route", () => {
 		const guide = readFileSync(join(ROOT, "plugins/immune-brain/USER_GUIDE.md"), "utf8");
-		const defaultRoute = readFileSync(
-			join(ROOT, "plugins/immune-brain/.pi-extension/imm-canary-new.ts"),
-			"utf8",
-		);
 		const waiverRoute = readFileSync(
 			join(ROOT, "plugins/immune-brain/.pi-extension/imm-canary-enroll.ts"),
 			"utf8",
@@ -103,8 +98,6 @@ describe("packed consumer surface", () => {
 		expect(guide).toContain("descriptor-rehearsal/v1:waived:<digest>");
 		expect(guide).toContain("frozen `index_digest`");
 		expect(guide).toContain("scope/index snapshot integrity");
-		expect(defaultRoute).toContain('launchEnrollmentRequest(pi, "new"');
-		expect(defaultRoute).not.toContain("runDescriptorRehearsal");
 		expect(waiverRoute).toContain('name: "imm_canary_enrollment"');
 		expect(waiverRoute).toContain('const route = action === "new" ? "default" : "explicit_waiver"');
 		expect(waiverRoute).toContain("if (!rehearsalDecision.proceed_to_confirmation)");
@@ -152,17 +145,14 @@ describe("packed consumer surface", () => {
 				path?: string;
 			}>;
 			const paths = extensions.map((e) => e.path ?? "");
-			// Exactly the three canary extensions are discovered; no other
+			// Exactly the two canary Tool extensions are discovered; no other
 			// extension (and no issuer surface) is registered by the host.
 			expect(paths.filter((p) => p.endsWith("imm-canary-enroll.ts"))).toHaveLength(1);
-			expect(paths.filter((p) => p.endsWith("imm-canary-new.ts"))).toHaveLength(1);
 			expect(paths.filter((p) => p.endsWith("imm-canary-work.ts"))).toHaveLength(1);
-			expect(extensions.length).toBe(3);
-			// The exact registered surface (one ordinary tool, two TUI
-			// commands, one enroll command, one new-task command) is proven by
-			// the extension factory surface tests; the host discovery here
-			// proves no fourth extension or issuer-named surface exists in
-			// shipped bytes.
+			expect(extensions.length).toBe(2);
+			// The exact registered Tool surface is proven by the factory tests;
+			// host discovery here proves no third extension or issuer-named
+			// surface exists in shipped bytes.
 			const joined = paths.join("\n");
 			expect(joined).not.toMatch(/issuer|forTest|claim.*writer|terminal.*transaction/i);
 		} finally {

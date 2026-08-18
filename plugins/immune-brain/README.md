@@ -20,8 +20,8 @@ loading. Bootstrap is provided by `runtime/bootstrap.ts` and is not a public
 Skill.
 
 Repository-mutating requests enter Managed Path automatically; users do not
-need to say "Managed Path". The host applies `imm-route --json <request>` (or
-the equivalent routing contract) before selecting a Skill.
+need to say "Managed Path". The host applies the routing contract before
+selecting a Skill.
 
 - An active Assurance projection resumes through `imm-loop`.
 - Read-only, explanation, review-only, Plan-only, and explicit no-modification
@@ -104,7 +104,6 @@ stable `drain_required` / `v3_storage_retired` diagnostic. Common entry points:
 
 | Command | Purpose |
 | --------- | --------- |
-| `bin/imm-route --json <request>` | Classify a natural-language request as host-native, Brainstorm, Planner, or Loop and bootstrap Managed state when required. |
 | `bin/imm-kernel intent author/validate` | Author or validate host-neutral TaskIntent drafts (sole new-managed-work surface). |
 | `bin/imm-kernel status --json` | Read-only legacy shadow status. |
 | `bin/imm-kernel audit --legacy` | Explicit read-only legacy audit projection. |
@@ -125,11 +124,10 @@ The v4 runtime accepts only Kernel TaskRecord v2 + `workspace_transaction/v2`
 as production storage. Historical v3 State Ledger artifacts remain readable
 only through the explicit read-only `imm-kernel audit --legacy` projection;
 v3 writers, automatic migration, authority receipts, and automatic
-observation journals are outside production mutation authority. Critical-risk
-Kernel tasks require qa, review, and user approvals to complete; the
-user-kind approval is recorded only through the TUI `/imm-canary-authorize
-<task-id> record-user-approval` exact-action confirmation. If a project
-still has a nonterminal v3 owner, the v4 runtime rejects writes with
+observation journals are outside production mutation authority. Critical-risk Kernel tasks require qa, review, and user approvals to complete;
+user-kind approval is recorded only through the `imm_kernel_canary`
+`request_authorization` foreground Tool action and its exact TUI confirmation.
+If a project still has a nonterminal v3 owner, the v4 runtime rejects writes with
 `drain_required` and instructs the operator to drain or terminate it using the
 prior runtime before upgrading.
 

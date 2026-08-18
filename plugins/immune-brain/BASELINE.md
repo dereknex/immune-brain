@@ -37,8 +37,8 @@ Apply this ordered route before selecting an Immune-Brain Skill:
    execution for a small validated target, but it preserves TaskIntent scope,
    Enrollment, QA, Review, authorization, and completion boundaries.
 
-The canonical host may use `imm-route --json <request>` for this decision. A
-missing Immune-Brain bootstrap is created idempotently only for Managed phases;
+The canonical host applies the Managed Path routing contract for this decision.
+A missing Immune-Brain bootstrap is created idempotently only for Managed phases;
 complete state is left byte-for-byte untouched, while partial or incompatible
 state fails closed before any write.
 

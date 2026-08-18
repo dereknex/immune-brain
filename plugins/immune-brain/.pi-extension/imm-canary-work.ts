@@ -4,8 +4,6 @@
 // Surface:
 //   1. `imm_kernel_canary` — one LLM-callable foreground Tool for ordinary
 //      facts, deterministic QA, Review receipt submission, and authorization.
-//   2. `/imm-canary-authorize <task-id> <operation>` — TUI-only literal-user
-//      confirmation for exact privileged operations.
 //
 // Deterministic QA and native Review sequencing lives in
 // `pi-canary-assurance-progression.ts`. The adapter owns Tool schemas, TUI
@@ -29,7 +27,6 @@ import {
 	type VerificationDescriptor,
 } from "./pi-canary-verification";
 import { captureReviewBundle, writeNativeReviewEvidence, type ReviewBundle } from "./pi-canary-review-bundle";
-import { notifyDeprecatedCanaryCommand, registerSucceedCommand } from "./imm-canary-succeed";
 import type { InvocationToken } from "./pi-canary-invocations";
 import { qaEvidenceFreshnessId, qaFindingId } from "./pi-canary-qa-findings";
 import {
@@ -95,24 +92,9 @@ type ReviewDecision = (typeof REVIEW_DECISIONS)[keyof typeof REVIEW_DECISIONS];
 
 export type { AssuranceRole } from "./pi-canary-assurance";
 export type AuthorizeOperation =
-	| "begin-drain"
 	| "record-review-verdict"
 	| "record-user-approval"
-	| "approve-breaking-intent-revision"
-	| "resolve-user-decision"
-	| "stop";
-
-export function parseAuthorizeArgs(raw: string): { task_id: string; operation: AuthorizeOperation } {
-	const parts = raw.trim().split(/\s+/).filter(Boolean);
-	if (parts.length < 2) throw new Error("usage: /imm-canary-authorize <task-id> <operation>");
-	const [taskId, operation] = parts;
-	if (!TASK_ID_PATTERN.test(taskId)) throw new Error(`invalid task id: ${taskId}`);
-	if (
-		!["begin-drain", "record-review-verdict", "record-user-approval", "approve-breaking-intent-revision", "resolve-user-decision", "stop"].includes(operation)
-	)
-		throw new Error(`unknown operation: ${operation}`);
-	return { task_id: taskId, operation: operation as AuthorizeOperation };
-}
+	| "resolve-user-decision";
 
 export interface SnapshotDescriptorInput {
 	root: string;
@@ -231,7 +213,7 @@ export default function (
 			"Only the exact enrolled canary task is routable; verify the active backend claim first via status.",
 			"After fresh acceptance evidence, call advance_assurance and consume its direct terminal result; do not poll or create a detached job.",
 			"When advance_assurance returns review_ready, invoke the exact foreground Agent parameters from agent_params once, then call submit_review.",
-			"After awaiting_user, call request_authorization so the host opens the exact confirmation; do not ask the user to type /imm-canary-authorize.",
+			"After awaiting_user, call request_authorization so the host opens the exact confirmation; do not ask the user to copy or report a command.",
 		],
 		parameters: Type.Object({
 			task_id: Type.String({ pattern: "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$" }),
@@ -371,8 +353,6 @@ export default function (
 			);
 		},
 	});
-
-	registerSucceedCommand(pi);
 
 	type AuthorizationOutcome =
 		| { state: "applied"; operation: AuthorizeOperation; phase?: string; decision?: ReviewDecision }
@@ -603,67 +583,42 @@ export default function (
 				ctx.ui.notify(`authorize ${operation} aborted: ${reason}`, "error");
 				return { state: "blocked", reason };
 			}
-				const { registry, app } = await authorityPair();
-				const now = new Date().toISOString();
-				if (operation === "begin-drain") {
-					// The drain capability digest is bound to the canonical
-					// begin_drain action shared with the consuming application
-					// (capabilityActionFor delegates to beginDrainCapabilityAction).
-					const capability = await mintCapability(registry, {
-						authority_kind: "user",
-						task_id: taskId,
-						action_kind: "begin-drain",
-						expected_record_hash: projection.projection.record_revision,
-						intent_revision: projection.projection.intent_revision,
+			const { registry, app } = await authorityPair();
+			const now = new Date().toISOString();
+			// record-user-approval: literal-user approval for critical-task
+			// completion. The approval payload is bound to the fresh
+			// projection (task revision, intent content hash, diff hash) and
+			// applied through the same exact-action capability path; the
+			// reducer requires kind user, user authority, and phase review.
+			const isUserApproval = operation === "record-user-approval";
+			const approval = isUserApproval
+				? {
+						id: `approval-user-${randomUUID().slice(0, 8)}`,
+						kind: "user" as const,
+						authority_role: "user" as const,
+						task_revision: projection.projection.intent_revision,
 						intent_content_hash: projection.projection.intent_content_hash,
-						diff_hash: "sha256:" + "0".repeat(64),
+						diff_hash: projection.projection.diff_hash,
 						actor_id: "literal-user",
-						now,
-					});
-				const claim = (await app.beginDrain({
-					root: ctx.cwd,
-					task_id: taskId,
-					capability,
-					now,
-				})) as unknown as { lifecycle_status: string };
-				ctx.ui.notify(`drain applied: claim is now ${claim.lifecycle_status}`, "info");
-				return { state: "applied", operation, phase: claim.lifecycle_status };
-			}
-				// record-user-approval: literal-user approval for critical-task
-				// completion. The approval payload is bound to the fresh
-				// projection (task revision, intent content hash, diff hash) and
-				// applied through the same exact-action capability path; the
-				// reducer requires kind user, user authority, and phase review.
-				const isUserApproval = operation === "record-user-approval";
-				const approval = isUserApproval
-					? {
-							id: `approval-user-${randomUUID().slice(0, 8)}`,
-							kind: "user" as const,
-							authority_role: "user" as const,
-							task_revision: projection.projection.intent_revision,
-							intent_content_hash: projection.projection.intent_content_hash,
-							diff_hash: projection.projection.diff_hash,
-							actor_id: "literal-user",
-							summary: "literal user approval",
-						}
-					: undefined;
-				const exactOperation = userDecisionOperation ?? userOperationFor(operation, approval);
-				const capability = await mintCapability(registry, {
-					authority_kind: "user",
-					task_id: taskId,
-					action_kind: exactOperation.op,
-					expected_record_hash: projection.projection.record_revision,
-					intent_revision: projection.projection.intent_revision,
-					intent_content_hash: projection.projection.intent_content_hash,
-					diff_hash: projection.projection.diff_hash,
-					actor_id: "literal-user",
-					reason: exactOperation.op === "stop" ? exactOperation.reason : undefined,
-					...(exactOperation.op === "record_user_approval" ? { approval: exactOperation.approval } : {}),
-					...(exactOperation.op === "resolve_user_decision"
-						? { finding_id: exactOperation.finding_id, resolution: exactOperation.resolution }
-						: {}),
-					now,
-				});
+						summary: "literal user approval",
+					}
+				: undefined;
+			const exactOperation = userDecisionOperation ?? userOperationFor(operation, approval);
+			const capability = await mintCapability(registry, {
+				authority_kind: "user",
+				task_id: taskId,
+				action_kind: exactOperation.op,
+				expected_record_hash: projection.projection.record_revision,
+				intent_revision: projection.projection.intent_revision,
+				intent_content_hash: projection.projection.intent_content_hash,
+				diff_hash: projection.projection.diff_hash,
+				actor_id: "literal-user",
+				...(exactOperation.op === "record_user_approval" ? { approval: exactOperation.approval } : {}),
+				...(exactOperation.op === "resolve_user_decision"
+					? { finding_id: exactOperation.finding_id, resolution: exactOperation.resolution }
+					: {}),
+				now,
+			});
 				// The exact host-built operation is shared by capability digest and
 				// application payload; command arguments cannot inject authority fields.
 				const result = (await app.execute({
@@ -710,25 +665,6 @@ export default function (
 		if ("blocked" in derived) return { state: "blocked", reason: derived.blocked };
 		return authorizeExactOperation(taskId, derived.operation, ctx);
 	}
-
-	pi.registerCommand("imm-canary-authorize", {
-		description: "Literal-user TUI confirmation for one exact privileged canary operation",
-		handler: async (args: string, ctx: ExtensionContext) => {
-			notifyDeprecatedCanaryCommand(ctx, "imm-canary-authorize");
-			if (ctx.mode !== "tui") {
-				ctx.ui.notify("imm-canary-authorize is TUI-only and was rejected", "warning");
-				return;
-			}
-			let parsed: ReturnType<typeof parseAuthorizeArgs>;
-			try {
-				parsed = parseAuthorizeArgs(args);
-			} catch (error) {
-				ctx.ui.notify(`imm-canary-authorize: ${error instanceof Error ? error.message : String(error)}`, "error");
-				return;
-			}
-			await authorizeExactOperation(parsed.task_id, parsed.operation, ctx);
-		},
-	});
 }
 
 // ---------------------------------------------------------------------------
@@ -836,24 +772,12 @@ export function buildUserDecisionOperation(record: {
 }
 
 export function userOperationFor(operation: AuthorizeOperation, approval?: unknown) {
-	switch (operation) {
-		case "record-review-verdict":
-			throw new Error("record-review-verdict must use the session-bound native verdict");
-		case "record-user-approval":
-			// The approval payload is constructed by the authorize handler from
-			// the fresh projection; it is never derived from untrusted input.
-			if (approval === undefined)
-				throw new Error("record-user-approval requires an approval payload");
-			return { op: "record_user_approval" as const, approval };
-		case "approve-breaking-intent-revision":
-			throw new Error("approve-breaking-intent-revision requires the next intent payload");
-		case "resolve-user-decision":
-			throw new Error("resolve-user-decision must use the host-built decision operation");
-		case "stop":
-			return { op: "stop" as const, reason: "literal user stop" };
-		default:
-			throw new Error(`unsupported authorize operation: ${operation}`);
-	}
+	if (operation !== "record-user-approval")
+		throw new Error(`unsupported authorize operation: ${operation}`);
+	// The approval payload is constructed by the authorize handler from
+	// the fresh projection; it is never derived from untrusted input.
+	if (approval === undefined) throw new Error("record-user-approval requires an approval payload");
+	return { op: "record_user_approval" as const, approval };
 }
 
 function diffHashOf(root: string, intent: { scope_hint?: unknown }): string {

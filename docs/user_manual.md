@@ -72,7 +72,7 @@ Brainstorm Trace，并让每个 Step 有明确 Result、Scope 和 Verification�
 5. Tool result 必须返回持久化 projection 和 `next_action`，中断后从 Kernel state 恢复。
 6. 终态返回 `phase=done` 和 `next_action=none`；取消、失败和 settlement 不靠 promise resolution 推断。
 
-内部 runtime 操作包括 `imm-route --json <request>`、`imm_canary_enrollment`、
+内部 runtime 操作包括 Managed Path routing、`imm_canary_enrollment`、
 `imm_kernel_canary` 和必要的 Kernel CLI。它们不是 public Skills，不构成第二套用户工作流。
 
 ## 验证与发布

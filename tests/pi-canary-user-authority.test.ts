@@ -9,7 +9,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { parseAuthorizeArgs, buildUserDecisionOperation, deriveAuthorizationOperation } from "../plugins/immune-brain/.pi-extension/imm-canary-work.ts";
+import { buildUserDecisionOperation, deriveAuthorizationOperation } from "../plugins/immune-brain/.pi-extension/imm-canary-work.ts";
 import { enrollCanaryTask } from "../plugins/immune-brain/runtime/kernel/enrollment";
 import { preparePiCanary } from "../plugins/immune-brain/runtime/kernel/pi_canary_prepare";
 import {
@@ -116,14 +116,12 @@ function seedOpenUserDecision(root: string): string {
 }
 
 function loadSurface(dependencies: Record<string, unknown> = {}): {
-	handler: (args: string, ctx: unknown) => Promise<void>;
 	tool: {
 		execute: (id: string, params: unknown, signal: unknown, onUpdate: unknown, ctx: unknown) => Promise<{ content: Array<{ text: string }>; details?: Record<string, unknown> }>;
 	};
 } {
 	const mod = require("../plugins/immune-brain/.pi-extension/imm-canary-work.ts");
 	const factory = mod.default as (pi: ExtensionAPI) => void;
-	let handler: ((args: string, ctx: unknown) => Promise<void>) | undefined;
 	let tool: { execute: (id: string, params: unknown, signal: unknown, onUpdate: unknown, ctx: unknown) => Promise<{ content: Array<{ text: string }>; details?: Record<string, unknown> }> } | undefined;
 	const pi = {
 		on: () => {},
@@ -131,17 +129,10 @@ function loadSurface(dependencies: Record<string, unknown> = {}): {
 		registerTool: (registered: { name: string; execute: typeof tool extends infer T ? T : never }) => {
 			tool = registered as never;
 		},
-		registerCommand: (name: string, spec: { handler: (args: string, ctx: unknown) => Promise<void> }) => {
-			if (name === "imm-canary-authorize") handler = spec.handler;
-		},
 	} as unknown as ExtensionAPI;
 	factory(pi, dependencies);
-	if (!handler || !tool) throw new Error("surface not registered");
-	return { handler, tool };
-}
-
-function loadAuthorizeHandler(): (args: string, ctx: unknown) => Promise<void> {
-	return loadSurface().handler;
+	if (!tool) throw new Error("foreground Tool not registered");
+	return { tool };
 }
 
 function parseToolState(result: { content: Array<{ text: string }>; details?: Record<string, unknown> }): Record<string, unknown> {
@@ -188,122 +179,6 @@ describe("pi canary user authority", () => {
 		expect(() => buildUserDecisionOperation({ findings: [open, { ...open, id: "decision-2" }] })).toThrow(
 			/exactly one open user decision/i,
 		);
-	});
-
-	test("parseAuthorizeArgs accepts the exact six-operation union", () => {
-		for (const op of ["begin-drain", "record-review-verdict", "record-user-approval", "approve-breaking-intent-revision", "resolve-user-decision", "stop"]) {
-			expect(parseAuthorizeArgs(`${TASK} ${op}`).operation).toBe(op);
-		}
-		expect(() => parseAuthorizeArgs(`${TASK} steal`)).toThrow(/unknown operation/i);
-		expect(() => parseAuthorizeArgs("bad/id stop")).toThrow(/invalid task id/i);
-		expect(() => parseAuthorizeArgs("only-task")).toThrow(/usage/i);
-	});
-
-	test("confirmation rejection records exactly one decision finding without authority writes", async () => {
-		const root = makeEnrolledRoot();
-		try {
-			const handler = loadAuthorizeHandler();
-			const ui = makeUI();
-			await handler(`${TASK} begin-drain`, ctxFor(root, ui, false));
-			expect(ui.notifyCalls.some((n) => /cancelled/i.test(n.text))).toBe(true);
-			expect(ui.confirmCalls.length).toBe(1);
-			expect(readBackendClaim(root)?.lifecycle_status).toBe("active");
-			const decisions = readTaskRecordV2(root, TASK).record?.findings.filter(
-				(f) => f.kind === "unresolved_user_decision" && f.status === "open",
-			);
-			expect(decisions).toHaveLength(1);
-			expect(decisions![0].id).toBe("user-decision-begin-drain");
-			expect(decisions![0].summary).toContain("begin-drain confirmation cancelled");
-		} finally {
-			rmSync(root, { recursive: true, force: true });
-		}
-	});
-
-	test("confirmation abort (throw) records exactly one decision finding without authority writes", async () => {
-		const root = makeEnrolledRoot();
-		try {
-			const handler = loadAuthorizeHandler();
-			const ui = makeUI();
-			await handler(
-				`${TASK} stop`,
-				ctxFor(root, ui, async () => {
-					throw new Error("aborted");
-				}),
-			);
-			expect(ui.notifyCalls.some((n) => /aborted/i.test(n.text))).toBe(true);
-			expect(readBackendClaim(root)?.lifecycle_status).toBe("active");
-			const decisions = readTaskRecordV2(root, TASK).record?.findings.filter(
-				(f) => f.kind === "unresolved_user_decision" && f.status === "open",
-			);
-			expect(decisions).toHaveLength(1);
-			expect(decisions![0].id).toBe("user-decision-stop");
-		} finally {
-			rmSync(root, { recursive: true, force: true });
-		}
-	});
-
-	test("confirmed begin-drain converges the claim", async () => {
-		const root = makeEnrolledRoot();
-		try {
-			const handler = loadAuthorizeHandler();
-			const ui = makeUI();
-			await handler(`${TASK} begin-drain`, ctxFor(root, ui, true));
-			expect(ui.confirmCalls.length).toBe(1);
-			expect(ui.notifyCalls.some((n) => /drain applied/i.test(n.text))).toBe(true);
-			expect(readBackendClaim(root)?.lifecycle_status).toBe("draining");
-		} finally {
-			rmSync(root, { recursive: true, force: true });
-		}
-	});
-
-	test("repeated confirmed drain is a no-op replay that cannot reactivate", async () => {
-		const root = makeEnrolledRoot();
-		try {
-			const handler = loadAuthorizeHandler();
-			const ui = makeUI();
-			await handler(`${TASK} begin-drain`, ctxFor(root, ui, true));
-			const ui2 = makeUI();
-			await handler(`${TASK} begin-drain`, ctxFor(root, ui2, true));
-			const claim = readBackendClaim(root);
-			expect(claim?.lifecycle_status).toBe("draining");
-			expect(claim?.updated_at).toBe(claim?.updated_at);
-		} finally {
-			rmSync(root, { recursive: true, force: true });
-		}
-	});
-
-	test("non-TUI modes reject before any confirm", async () => {
-		const root = makeEnrolledRoot();
-		try {
-			const handler = loadAuthorizeHandler();
-			for (const mode of ["rpc", "json", "print"]) {
-				const ui = makeUI();
-				await handler(`${TASK} stop`, ctxFor(root, ui, true, mode));
-				expect(ui.confirmCalls.length).toBe(0);
-				expect(ui.notifyCalls.some((n) => /TUI-only/i.test(n.text))).toBe(true);
-			}
-			expect(readBackendClaim(root)?.lifecycle_status).toBe("active");
-		} finally {
-			rmSync(root, { recursive: true, force: true });
-		}
-	});
-
-	test("confirmed user-decision resolution binds the unique open finding", async () => {
-		const root = makeEnrolledRoot();
-		try {
-			const findingId = seedOpenUserDecision(root);
-			const handler = loadAuthorizeHandler();
-			const ui = makeUI();
-			await handler(`${TASK} resolve-user-decision`, ctxFor(root, ui, true));
-			expect(ui.confirmCalls).toHaveLength(1);
-			expect(ui.confirmCalls[0].body).toContain(`Finding: ${findingId}`);
-			expect(ui.notifyCalls.some((n) => /applied/i.test(n.text))).toBe(true);
-			const record = JSON.parse(readFileSync(join(root, ".imm", "tasks", `${TASK}.json`), "utf8"));
-			expect(record.findings.find((finding: { id: string }) => finding.id === findingId)?.status).toBe("resolved");
-			expect(record.history.at(-1)?.reason).toContain("resume after literal-user decision");
-		} finally {
-			rmSync(root, { recursive: true, force: true });
-		}
 	});
 
 	test("deriveAuthorizationOperation prefers pending review then Kernel readiness", () => {
@@ -506,18 +381,19 @@ describe("pi canary user authority", () => {
 		}
 	});
 
-	test("confirmed stop applies through the paired application", async () => {
+	test("request_authorization with no unique operation stays blocked", async () => {
 		const root = makeEnrolledRoot();
 		try {
-			const handler = loadAuthorizeHandler();
+			const { tool } = loadSurface();
 			const ui = makeUI();
-			await handler(`${TASK} stop`, ctxFor(root, ui, true));
-			expect(ui.notifyCalls.some((n) => /applied/i.test(n.text))).toBe(true);
-			expect(readBackendClaim(root)).toBeNull();
-			const record = JSON.parse(
-				readFileSync(join(root, ".imm", "tasks", `${TASK}.json`), "utf8"),
+			const result = await tool.execute(
+				"req-stop",
+				{ task_id: TASK, action: { op: "request_authorization" } },
+				undefined,
+				undefined,
+				ctxFor(root, ui, true),
 			);
-			expect(record.phase).toBe("stopped");
+			expect(parseToolState(result).state).toBe("blocked");
 		} finally {
 			rmSync(root, { recursive: true, force: true });
 		}

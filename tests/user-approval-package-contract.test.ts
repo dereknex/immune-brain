@@ -47,7 +47,6 @@ describe("user approval package contract", () => {
 		};
 		expect(ext.pi?.extensions).toEqual([
 			"./imm-canary-enroll.ts",
-			"./imm-canary-new.ts",
 			"./imm-canary-work.ts",
 		]);
 	});

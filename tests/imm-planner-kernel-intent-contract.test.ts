@@ -40,9 +40,10 @@ describe("imm-planner kernel intent contract", () => {
 
 	test("Planner enrollment authority stays Pi TUI-only", () => {
 		const skill = readFileSync(SKILL_PATH, "utf8");
-		expect(skill).toContain("/imm-canary-new");
-		expect(skill).toContain("/imm-canary-enroll");
-		expect(skill).toContain("literal-user-confirmed");
+		expect(skill).toContain("imm_canary_enrollment");
+		expect(skill).toContain("literal-user confirmation");
+		expect(skill).not.toContain("/imm-canary-new");
+		expect(skill).not.toContain("/imm-canary-enroll");
 		expect(skill).toContain("Pi host identity is implicit");
 		expect(skill).toContain("production boundary");
 		expect(skill).not.toContain("Other hosts");
@@ -52,7 +53,9 @@ describe("imm-planner kernel intent contract", () => {
 		const dist = readFileSync(DIST_PATH, "utf8");
 		expect(dist).toContain("imm-plan --routing-status --json");
 		expect(dist).toContain("imm-kernel intent author");
-		expect(dist).toContain("/imm-canary-enroll");
+		expect(dist).toContain("imm_canary_enrollment");
+		expect(dist).not.toContain("/imm-canary-new");
+		expect(dist).not.toContain("/imm-canary-enroll");
 		expect(dist).toContain("routing_policy_invalid");
 	});
 });

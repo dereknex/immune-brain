@@ -16,11 +16,11 @@ describe("pi canary package boundary", () => {
 		expect(pkg.pi.skills).toContain("./plugins/immune-brain/skills");
 	});
 
-	test("extension registers exactly one bounded enrollment Tool plus one launcher command", () => {
+	test("extension registers exactly one bounded enrollment Tool and no command", () => {
 		const ext = readFileSync(join(ROOT, "plugins/immune-brain/.pi-extension/imm-canary-enroll.ts"), "utf8");
 		expect(ext.match(/registerTool\(/g)).toHaveLength(1);
 		expect(ext).toContain('name: "imm_canary_enrollment"');
-		expect(ext.match(/registerCommand\(/g)).toHaveLength(1);
+		expect(ext.match(/registerCommand\(/g) ?? []).toHaveLength(0);
 		expect(ext).not.toContain("registerFlag");
 		expect(ext).not.toContain("registerShortcut");
 	});

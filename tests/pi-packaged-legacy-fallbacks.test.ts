@@ -79,8 +79,9 @@ describe("packaged legacy CLI fallbacks", () => {
 		expectRetiredGuidanceAbsent(planner, "imm-planner.md");
 		expect(planner).toContain("imm-plan <plan-path> --json");
 		expect(planner).toContain("imm-kernel intent author");
-		expect(planner).toContain("/imm-canary-new");
-		expect(planner).toContain("/imm-canary-enroll");
+		expect(planner).toContain("imm_canary_enrollment");
+		expect(planner).not.toContain("/imm-canary-new");
+		expect(planner).not.toContain("/imm-canary-enroll");
 	});
 
 	it("treats Compounder as post-closure learning capture", () => {
@@ -126,7 +127,9 @@ describe("packaged legacy CLI fallbacks", () => {
 				policy,
 				"packed/automatic-subagent-activation-policy.md",
 			);
-			expect(planner).toContain("imm-kernel intent author");
+			expect(planner).toContain("imm_canary_enrollment");
+			expect(planner).not.toContain("/imm-canary-new");
+			expect(planner).not.toContain("/imm-canary-enroll");
 			expect(compounder).toContain(
 				"# Internal Compounder",
 			);

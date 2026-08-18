@@ -18,8 +18,8 @@ enumeration required by the loaded contract before they are execution-ready.
 ## Managed Request Routing
 
 `imm-planner` is the default planning phase for a clear repository mutation; the
-user does not need to name Managed Path. The host first applies `imm-route` (or
-the equivalent routing contract):
+user does not need to name Managed Path. The host applies the routing contract
+before selecting a Skill:
 
 - an active Assurance projection resumes through `imm-loop`;
 - read-only, explanation, review-only, Plan-only, and explicit no-modification
@@ -50,9 +50,9 @@ deterministically:
 - no Planner path enrolls a task or falls back to v3 after retirement.
 
 Pi host identity is implicit and never a planning input. The production boundary
-that turns a Git-tracked TaskIntent draft into managed execution authority is Pi
-TUI: `/imm-canary-new` (default, no waiver) or `/imm-canary-enroll` (explicit
-literal-user-confirmed waiver).
+that turns a Git-tracked TaskIntent draft into managed execution authority is the
+native host TUI: Parent invokes the `imm_canary_enrollment` foreground Tool for
+literal-user confirmation and optional descriptor waiver.
 
 The Planner never writes the `docs/plans/<task-id>.intent.json` artifact
 directly and never overwrites an existing TaskIntent. Under an active

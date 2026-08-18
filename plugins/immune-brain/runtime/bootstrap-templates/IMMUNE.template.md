@@ -5,8 +5,7 @@ This project uses the Immune-Brain workflow when work needs managed authority.
 ## Route Selection
 
 Repository-mutating requests use Managed Path by default. Users do not need to
-name the route; the host applies `imm-route --json <request>` (or the equivalent
-routing contract) before selecting a Skill.
+name the route; the host applies the routing contract before selecting a Skill.
 
 - An active Assurance projection, TaskIntent, TaskRecord, or reviewer follow-up
   resumes through `imm-loop` and keeps its existing authority.

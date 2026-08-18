@@ -1,7 +1,5 @@
-// P2B1 U2: Pi extension surface tests.
-// Simulates the Pi loader (default export factory), verifies exactly one
-// command registers, TUI-only gate, missing-evidence fail-closed BEFORE any
-// confirm, and zero writes on every rejection path.
+// Simulates the Pi loader (default export factory), verifies the foreground
+// Tool surface and zero writes on every rejection path.
 
 import { describe, expect, test } from "bun:test";
 import { mkdtempSync, mkdirSync, writeFileSync, readdirSync, rmSync, readFileSync, existsSync } from "node:fs";
@@ -110,7 +108,7 @@ describe("pi canary enroll extension", () => {
 		expect(requiresEnrollmentConfirmation("critical")).toBe(true);
 	});
 
-	test("registers one foreground Tool and one thin enrollment launcher", async () => {
+	test("registers one foreground Tool and no Slash Command", async () => {
 		const commands: string[] = [];
 		const tools: string[] = [];
 		const factory = await loadExtension();
@@ -119,7 +117,7 @@ describe("pi canary enroll extension", () => {
 			registerTool: (tool: { name: string }) => tools.push(tool.name),
 		};
 		factory(pi as never);
-		expect(commands).toEqual(["imm-canary-enroll"]);
+		expect(commands).toEqual([]);
 		expect(tools).toEqual(["imm_canary_enrollment"]);
 	});
 

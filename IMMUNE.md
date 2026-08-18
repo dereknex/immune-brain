@@ -54,7 +54,7 @@ Review 或 Compounder 状态，也不写 `.imm/` workflow authority。
 
 ### Managed Path（仓库变更默认路径）
 
-仓库变更请求自动进入 Managed Path。Host 先应用 `imm-route --json <request>`：已有
+仓库变更请求自动进入 Managed Path：Host 在选择 Skill 前应用 routing contract。已有
 Assurance projection 通过 `imm-loop` 恢复；实质歧义进入 `imm-brainstorm`；清晰变更
 进入 `imm-planner`。Planner 输出只是后续 literal-user Enrollment 的候选，不能
 绕过 Enrollment、QA、Review、authorization 或 completion。

@@ -49,7 +49,7 @@ describe("immune-brain BASELINE packaging contract", () => {
     const baseline = read(BASELINE_ROOT)
     expect(baseline).toContain("## Workflow Activation")
     expect(baseline).toContain("Repository-mutating requests use Managed Path by default.")
-    expect(baseline).toContain("imm-route --json <request>")
+    expect(baseline).toContain("The canonical host applies the Managed Path routing contract for this decision.")
     expect(baseline).toContain("read-only, explanation")
     expect(baseline).toContain("This path creates no Spec, Plan, TaskIntent, TaskRecord, State Ledger")
     expect(baseline).toContain("Planner output is a candidate for later literal-user")

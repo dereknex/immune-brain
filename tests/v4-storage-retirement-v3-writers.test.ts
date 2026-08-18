@@ -52,7 +52,6 @@ describe("v4 storage retirement: v3 writers retired from shipped surface", () =>
 
 	test("Pi extension factories never import a v3 writer", () => {
 		const factories = [
-			"imm-canary-new.ts",
 			"imm-canary-enroll.ts",
 			"imm-canary-work.ts",
 		];
