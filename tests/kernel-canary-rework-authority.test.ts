@@ -1,6 +1,6 @@
 // P2B2 U1: request_rework Kernel authority. Covers direct request_rework
 // rejection without a consumed QA/review capability, normalized findings
-// digest binding, review/qa acceptance, user rejection, and rework->working
+// digest binding, review/qa/user acceptance, and rework->working
 // with review_round and escalation behavior.
 
 import { describe, expect, test, beforeEach, afterEach } from "bun:test";
@@ -139,11 +139,12 @@ const FINDINGS = [
 function reworkCapability(kind: "review" | "qa" | "user", overrides: Record<string, unknown> = {}) {
 	const record = readTaskRecordV2(root, TASK);
 	const findings = [...FINDINGS] as never[];
+	const actorId = kind === "user" ? "literal-user" : "reviewer-1";
 	const action = {
 		type: "request_rework",
 		event_id: `request_rework:${TASK}:2026-08-12T10:00:03.000Z`,
 		at: "2026-08-12T10:00:03.000Z",
-		actor_id: "reviewer-1",
+		actor_id: actorId,
 		expected_record_hash: undefined,
 		expected_workspace_hash: undefined,
 		diff_hash: undefined,
@@ -158,7 +159,7 @@ function reworkCapability(kind: "review" | "qa" | "user", overrides: Record<stri
 		intent_revision: 1,
 		intent_content_hash: INTENT_HASH,
 		diff_hash: DIFF,
-		actor_id: kind === "user" ? "user-1" : "reviewer-1",
+		actor_id: actorId,
 		confirmation_ref: "conf-rework",
 		expires_at: "2099-01-01T00:00:00.000Z",
 		findings_digest: findingsDigestV2([...FINDINGS] as never[]),
@@ -180,16 +181,17 @@ describe("request_rework authority", () => {
 		expect(record.record?.findings).toHaveLength(0);
 	});
 
-	test("user-kind capability cannot request rework", () => {
+	test("user capability requests rework without reviewer escalation", () => {
 		toReview();
 		const cap = reworkCapability("user");
-		expect(() =>
-			execute(
-				{ op: "request_rework", capability: cap, findings: [...FINDINGS] as never[], actor_id: "reviewer-1" },
-				"2026-08-12T10:00:03.000Z",
-			),
-		).toThrow(/review or qa authority/i);
-		expect(mutationRegistry.isConsumed(cap)).toBe(false);
+		const result = execute(
+			{ op: "request_rework", capability: cap, findings: [...FINDINGS] as never[], actor_id: "literal-user" },
+			"2026-08-12T10:00:03.000Z",
+		);
+		expect(result.record.phase).toBe("working");
+		expect(result.record.findings[0].summary).toBe(FINDINGS[0].summary);
+		expect(result.record.history.at(-1)?.authority?.authority_kind).toBe("user");
+		expect(mutationRegistry.isConsumed(cap)).toBe(true);
 	});
 
 	test("review capability applies normalized findings and moves to working", () => {

@@ -481,10 +481,11 @@ export function reduceTaskV2(
 				]);
 			if (
 				authorityAudit.authority_kind !== "review" &&
-				authorityAudit.authority_kind !== "qa"
+				authorityAudit.authority_kind !== "qa" &&
+				authorityAudit.authority_kind !== "user"
 			)
 				throw new KernelInvariantError([
-					"request_rework requires review or qa authority",
+					"request_rework requires review, qa, or user authority",
 				]);
 			const round = reviewRound(record);
 			const reviewAuthorityReworks = record.history.filter(

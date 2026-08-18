@@ -86,6 +86,12 @@ import {
 import { invocationRegistry } from "./pi-canary-assurance-progression";
 
 const TASK_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
+const REVIEW_DECISIONS = {
+	Approve: "approve",
+	"Request rework": "rework",
+	Reject: "reject",
+} as const;
+type ReviewDecision = (typeof REVIEW_DECISIONS)[keyof typeof REVIEW_DECISIONS];
 
 export type { AssuranceRole } from "./pi-canary-assurance";
 export type AuthorizeOperation =
@@ -363,7 +369,7 @@ export default function (
 	registerSucceedCommand(pi);
 
 	type AuthorizationOutcome =
-		| { state: "applied"; operation: AuthorizeOperation; phase?: string }
+		| { state: "applied"; operation: AuthorizeOperation; phase?: string; decision?: ReviewDecision }
 		| { state: "cancelled"; operation: AuthorizeOperation; reason: string }
 		| { state: "blocked"; reason: string };
 
@@ -419,13 +425,18 @@ export default function (
 		const reviewWarnings = reviewFindings.filter((finding) => finding.kind === "advisory").length;
 		const summary = [
 			`Task: ${taskId}`,
-			`Decision: ${operation}`,
 			...(pendingReview
 				? [
 						`Review: ${pendingReview.verdict.decision.toUpperCase()} | Blockers: ${reviewBlockers} | Warnings: ${reviewWarnings}`,
-						`Impact: ${pendingReview.snapshot.dirty_files.length} scoped changed file(s)`,
+						`QA: ${projection.projection.fresh_approval_kinds.includes("qa") ? "passed" : "missing"}`,
+						`Scope: ${pendingReview.snapshot.dirty_files.length} scoped changed file(s)`,
+						`Evidence: ${pendingReview.snapshot.review_bundle_digest ?? "unavailable"}`,
+						`Pending operation: ${operation}`,
 					]
-				: [`State: ${projection.projection.phase} | Claim: ${projection.claim.lifecycle_status}`]),
+				: [
+						`Decision: ${operation}`,
+						`State: ${projection.projection.phase} | Claim: ${projection.claim.lifecycle_status}`,
+					]),
 			"",
 			"Authority details",
 			`Operation: ${operation}`,
@@ -453,22 +464,54 @@ export default function (
 		const snapshotDigestRef = pendingReview
 			? snapshotDigest(pendingReview.snapshot)
 			: projection.projection.record_revision;
-			let confirmed: boolean;
+		let confirmed: boolean;
+		let reviewDecision: ReviewDecision | undefined;
+		let reviewNote: string | undefined;
+		if (pendingReview) {
+			let selected: keyof typeof REVIEW_DECISIONS | undefined;
+			try {
+				selected = await ctx.ui.select(summary, Object.keys(REVIEW_DECISIONS), {
+					signal: ctx.signal,
+				}) as keyof typeof REVIEW_DECISIONS | undefined;
+				if (selected === "Request rework" || selected === "Reject") {
+					reviewNote = (await ctx.ui.input(
+						selected === "Request rework" ? "Required rework" : "Reason for rejection",
+						"Required",
+						{ signal: ctx.signal },
+					))?.trim();
+				}
+			} catch (error) {
+				if (!ctx.signal.aborted && (!(error instanceof DOMException) || error.name !== "AbortError")) {
+					const detail = error instanceof Error ? error.message : String(error);
+					const reason = `Review decision UI failed: ${detail}`;
+					ctx.ui.notify(reason, "error");
+					progression.closeInvocation(invocation);
+					return { state: "blocked", reason };
+				}
+				selected = undefined;
+			}
+			if (selected === undefined || ((selected === "Request rework" || selected === "Reject") && !reviewNote)) {
+				ctx.ui.notify(`authorize ${operation}: cancelled`, "info");
+				progression.closeInvocation(invocation);
+				return { state: "cancelled", operation, reason: "cancelled" };
+			}
+			reviewDecision = REVIEW_DECISIONS[selected];
+			confirmed = true;
+		} else {
 			try {
 				confirmed = await ctx.ui.confirm(`Authorize ${operation} for canary ${taskId}?`, summary, {
 					signal: ctx.signal,
 				});
-		} catch {
-			ctx.ui.notify(`authorize ${operation}: confirmation aborted`, "info");
-			await recordCancelledUserDecision(ctx, taskId, operation, snapshotDigestRef).catch(() => undefined);
-			if (operation === "record-review-verdict") progression.clearPendingReviewVerdict(taskId);
-			progression.closeInvocation(invocation);
-			return { state: "cancelled", operation, reason: "confirmation aborted" };
+			} catch {
+				ctx.ui.notify(`authorize ${operation}: confirmation aborted`, "info");
+				await recordCancelledUserDecision(ctx, taskId, operation, snapshotDigestRef).catch(() => undefined);
+				progression.closeInvocation(invocation);
+				return { state: "cancelled", operation, reason: "confirmation aborted" };
+			}
 		}
 		if (!confirmed) {
 			ctx.ui.notify(`authorize ${operation}: cancelled`, "info");
 			await recordCancelledUserDecision(ctx, taskId, operation, snapshotDigestRef).catch(() => undefined);
-			if (operation === "record-review-verdict") progression.clearPendingReviewVerdict(taskId);
 			progression.closeInvocation(invocation);
 			return { state: "cancelled", operation, reason: "cancelled" };
 		}
@@ -479,7 +522,62 @@ export default function (
 		}
 		try {
 			if (operation === "record-review-verdict") {
-				if (!pendingReview) throw new Error("pending native review verdict disappeared");
+				if (!pendingReview || !reviewDecision) throw new Error("pending native review verdict disappeared");
+				if (reviewDecision === "rework") {
+					await applyAssuranceVerdict(
+						ctx,
+						pendingReview.snapshot,
+						{
+							contract: "assurance_kernel/assurance_verdict/v2",
+							role: "review",
+							task_id: taskId,
+							snapshot_digest: snapshotDigest(pendingReview.snapshot),
+							decision: "rework",
+							findings: [{
+								id: `user-rework-${randomUUID().slice(0, 8)}`,
+								kind: "blocking",
+								acceptance_id: null,
+								summary: reviewNote!,
+								findings_digest: "",
+							}],
+						},
+						invocation,
+						"literal-user",
+						{},
+						"user",
+					);
+					progression.clearPendingReviewVerdict(taskId);
+					return { state: "applied", operation, decision: "rework", phase: "working" };
+				}
+				if (reviewDecision === "reject") {
+					progression.commitInvocation(invocation);
+					const { registry, app } = await authorityPair();
+					const now = new Date().toISOString();
+					const reason = `literal user rejected Review: ${reviewNote}`;
+					const capability = await mintCapability(registry, {
+						authority_kind: "user",
+						task_id: taskId,
+						action_kind: "stop",
+						expected_record_hash: projection.projection.record_revision,
+						intent_revision: projection.projection.intent_revision,
+						intent_content_hash: projection.projection.intent_content_hash,
+						diff_hash: projection.projection.diff_hash,
+						actor_id: "literal-user",
+						reason,
+						now,
+					});
+					const result = (await app.execute({
+						root: ctx.cwd,
+						task_id: taskId,
+						operation: { op: "stop", capability, reason, actor_id: "literal-user" },
+						prior_intent_token: (await readTaskIntent(ctx.cwd, taskId)).token,
+						diffProvider: (root: string, intent: { scope_hint: unknown }) => diffHashOf(root, intent),
+						now,
+					})) as unknown as { record: { phase: string } };
+					progression.clearPendingReviewVerdict(taskId);
+					ctx.ui.notify(`authorize ${operation}: rejected, phase=${result.record.phase}`, "info");
+					return { state: "applied", operation, decision: "reject", phase: result.record.phase };
+				}
 				await applyAssuranceVerdict(
 					ctx,
 					pendingReview.snapshot,
@@ -488,7 +586,7 @@ export default function (
 					`native-review-${pendingReview.agentId}`,
 				);
 				progression.clearPendingReviewVerdict(taskId);
-				return { state: "applied", operation, phase: pendingReview.verdict.decision === "rework" ? "working" : "review" };
+				return { state: "applied", operation, decision: "approve", phase: pendingReview.verdict.decision === "rework" ? "working" : "review" };
 			}
 				// Linearization point: only this fresh affirmative continuation
 				// may mint/apply; timeout/cancel already won open -> cancelled.
@@ -870,6 +968,7 @@ async function applyAssuranceVerdict(
 	invocation: InvocationToken,
 	actorId: string,
 	hooks: { beforeCommit?: () => Promise<void>; onCommit?: () => void; afterCommit?: () => Promise<void> } = {},
+	authorityKind: "qa" | "review" | "user" = snapshot.role,
 ): Promise<void> {
 	const fresh = await projectAssuranceState(ctx.cwd, snapshot.task_id);
 	if (
@@ -908,7 +1007,7 @@ async function applyAssuranceVerdict(
 		}));
 		const now = new Date().toISOString();
 		const capability = await mintCapability(registry, {
-			authority_kind: snapshot.role,
+			authority_kind: authorityKind,
 			task_id: snapshot.task_id,
 			action_kind: "request_rework",
 			expected_record_hash: snapshot.record_revision,
