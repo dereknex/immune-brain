@@ -1,11 +1,9 @@
 #!/usr/bin/env bun
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
-import { dirname, resolve } from "node:path"
+import { resolve } from "node:path"
+import { ensureManagedBootstrap } from "../../../runtime/managed_path_router"
 
 export const ROOT = resolve(import.meta.dir, "..")
 export const TEMPLATES = resolve(ROOT, "templates")
-export const START = "<!-- IMMUNE-BRAIN:START -->"
-export const END = "<!-- IMMUNE-BRAIN:END -->"
 
 export const DIRS = [".imm/memory", "docs/specs", "docs/brainstorms", "docs/plans"]
 export const FILES: Record<string, string> = {
@@ -14,7 +12,6 @@ export const FILES: Record<string, string> = {
   "AGENTS.md": "AGENTS.md",
   ".imm/memory/MEMORY.md": "MEMORY.md",
 }
-export const ENTRY_POINTERS = new Set(["AGENTS.md"])
 
 export interface InitReport {
   root: string
@@ -23,65 +20,24 @@ export interface InitReport {
   updated_files: string[]
   skipped_files: string[]
   ready_for: string[]
+  bootstrap: "initialized" | "complete"
 }
 
-function template(name: string): string {
-  return readFileSync(resolve(TEMPLATES, name), "utf8")
-}
-function immuneSection(text: string): string {
-  const start = text.indexOf(START)
-  const end = text.indexOf(END)
-  if (start === -1 || end === -1 || end < start) throw new Error("template missing IMMUNE-BRAIN bounded section")
-  return text.slice(start, end + END.length)
-}
-export function ensureDirectories(root: string): string[] {
-  const created: string[] = []
-  for (const rel of DIRS) {
-    const dest = resolve(root, rel)
-    if (!existsSync(dest)) {
-      mkdirSync(dest, { recursive: true })
-      created.push(rel)
-    }
-  }
-  return created
-}
-export function ensureFiles(root: string): [string[], string[], string[]] {
-  const created: string[] = []
-  const updated: string[] = []
-  const skipped: string[] = []
-  for (const [rel, templateName] of Object.entries(FILES)) {
-    const dest = resolve(root, rel)
-    const text = template(templateName)
-    if (!existsSync(dest)) {
-      mkdirSync(dirname(dest), { recursive: true })
-      writeFileSync(dest, text, "utf8")
-      created.push(rel)
-    } else if (!ENTRY_POINTERS.has(rel)) {
-      skipped.push(rel)
-    } else {
-      const existing = readFileSync(dest, "utf8")
-      if (existing.includes(START) && existing.includes(END)) skipped.push(rel)
-      else {
-        writeFileSync(dest, `${existing.trimEnd()}\n\n${immuneSection(text)}\n`, "utf8")
-        updated.push(rel)
-      }
-    }
-  }
-  return [created, updated, skipped]
-}
 export function buildReport(rootPath: string): InitReport {
   const root = resolve(rootPath)
-  const createdDirectories = ensureDirectories(root)
-  const [createdFiles, updatedFiles, skippedFiles] = ensureFiles(root)
+  const bootstrap = ensureManagedBootstrap(root)
+  const initialized = bootstrap === "initialized"
   return {
     root,
-    created_directories: createdDirectories,
-    created_files: createdFiles,
-    updated_files: updatedFiles,
-    skipped_files: skippedFiles,
-    ready_for: ["direct", "imm-brainstorm", "imm-planner"],
+    created_directories: initialized ? [...DIRS] : [],
+    created_files: initialized ? Object.keys(FILES) : [],
+    updated_files: [],
+    skipped_files: initialized ? [] : Object.keys(FILES),
+    ready_for: ["imm-brainstorm", "imm-planner", "imm-loop"],
+    bootstrap,
   }
 }
+
 function main(argv = process.argv.slice(2)): number {
   let root = "."
   let json = false
@@ -93,18 +49,24 @@ function main(argv = process.argv.slice(2)): number {
       return 2
     }
   }
-  const report = buildReport(root)
-  if (json) {
-    console.log(JSON.stringify(report, null, 2))
+  try {
+    const report = buildReport(root)
+    if (json) {
+      console.log(JSON.stringify(report, null, 2))
+      return 0
+    }
+    console.log(`Target root: ${report.root}`)
+    console.log(`Bootstrap: ${report.bootstrap}`)
+    for (const key of ["created_directories", "created_files", "updated_files", "skipped_files"] as const) {
+      console.log(`${key}:`)
+      for (const path of report[key]) console.log(`  - ${path}`)
+    }
+    console.log("Ready for: imm-brainstorm, imm-planner, imm-loop")
     return 0
+  } catch (error) {
+    console.error(`bootstrap_rejected: ${error instanceof Error ? error.message : String(error)}`)
+    return 1
   }
-  console.log(`Target root: ${report.root}`)
-  for (const key of ["created_directories", "created_files", "updated_files", "skipped_files"] as const) {
-    console.log(`${key}:`)
-    for (const path of report[key]) console.log(`  - ${path}`)
-  }
-  console.log("Ready for: direct, imm-brainstorm, imm-planner")
-  return 0
 }
 
 if (import.meta.main) process.exit(main())

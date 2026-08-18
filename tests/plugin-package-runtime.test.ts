@@ -204,7 +204,7 @@ describe("plugin package runtime cutover parity", () => {
 		expect(ts.status).toBe(0);
 		const commands = JSON.parse(ts.stdout).commands;
 		const names = commands.map((command: any) => command.name).sort();
-		expect(names).toEqual(["imm-kernel", "imm-plan"]);
+		expect(names).toEqual(["imm-kernel", "imm-plan", "imm-route"]);
 		const retired = JSON.parse(ts.stdout).retired as string[];
 		expect(retired).toContain("imm-work");
 		expect(retired).toContain("imm-review");

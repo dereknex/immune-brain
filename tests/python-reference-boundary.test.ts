@@ -153,7 +153,7 @@ describe("python reference boundary", () => {
 		expect(result.status).toBe(0);
 		const manifest = JSON.parse(result.stdout);
 		const commands = manifest.commands.map((command: any) => command.name).sort();
-		expect(commands).toEqual(["imm-kernel", "imm-plan"]);
+		expect(commands).toEqual(["imm-kernel", "imm-plan", "imm-route"]);
 		for (const retired of [
 			"imm-autowork",
 			"imm-check-child-output",

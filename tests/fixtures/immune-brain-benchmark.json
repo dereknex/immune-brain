@@ -80,14 +80,14 @@
       ]
     },
     {
-      "id": "low-risk-direct-path",
-      "title": "Direct-first local copy contract",
-      "purpose": "Check whether an eligible local change spanning multiple files and verifier commands defaults to Direct without persisted workflow state.",
-      "userInput": "Use the local Codex plugin \"immune-brain\" if it helps. In this small fixture workspace only, change the README Workflow Boundary wording from `Small one-off copy edits` to `Focused one-off copy edits`, update the focused fixture test expectation, run `bun test tests`, and verify `test ! -d upstreams`. Read only README.md and tests/fixture-contract.test.ts. Do not run git commands or inspect the plugin implementation.",
+      "id": "managed-default-mutation",
+      "title": "Managed-by-default local mutation contract",
+      "purpose": "Check whether a clear repository mutation routes to Planner and preserves Managed authority without requiring a special route phrase.",
+      "userInput": "Use the local Codex plugin \"immune-brain\" if it helps. In this small fixture workspace only, change the README Workflow Boundary wording from `Small one-off copy edits` to `Focused one-off copy edits`, update the focused fixture test expectation, run `bun test tests`, and verify `test ! -d upstreams`. Read only README.md and tests/fixture-contract.test.ts first. Do not run git commands or inspect the plugin implementation.",
       "successChecklist": [
-        "The requested README and focused test change are completed directly despite spanning multiple files and multiple local verifiers.",
-        "The task produces zero workflow-state writes: no Spec, Plan, TaskIntent, TaskRecord, State Ledger, HANDOFF update, independent QA, mandatory Review, or Compounder state.",
-        "Both verifier commands pass."
+        "The clear repository mutation routes to the Managed Planner without the user saying Managed Path.",
+        "Wholly absent Immune-Brain state is initialized idempotently before the Managed phase; generated Planner artifacts are not enrolled automatically.",
+        "The requested README and focused test change are completed inside the validated Managed boundary and both verifier commands pass."
       ]
     },
     {

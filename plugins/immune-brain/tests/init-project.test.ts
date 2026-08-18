@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test"
-import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs"
+import { existsSync, mkdtempSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
 import { spawnSync } from "node:child_process"
@@ -22,23 +22,15 @@ describe("imm-init bootstrap", () => {
     expect(report.created_files).not.toContain("CLAUDE.md")
     expect(existsSync(join(root, "CLAUDE.md"))).toBe(false)
     expect(report.created_directories).toContain(".imm/memory")
-    expect(report.ready_for).toEqual(["direct", "imm-brainstorm", "imm-planner"])
+    expect(report.ready_for).toEqual(["imm-brainstorm", "imm-planner", "imm-loop"])
+    expect(report.bootstrap).toBe("initialized")
   })
 
-  it("updates entry pointer without overwriting existing text", () => {
+  it("fails closed instead of patching partial bootstrap state", () => {
     const root = tempRoot()
-    const agents = join(root, "AGENTS.md")
-    writeFileSync(agents, "project rules\n", "utf8")
-    const report = buildReport(root)
-    expect(report.updated_files).toContain("AGENTS.md")
-    const content = readFileSync(agents, "utf8")
-    expect(content).toContain("project rules")
-    expect(content).toContain("IMMUNE-BRAIN:START")
-    expect(content).toContain("Direct Path is the default")
-    expect(content).toContain("Use `imm-planner` only when a Managed trigger applies")
-    expect(content).not.toContain("Use `imm-planner` before implementation work.")
-    const second = buildReport(root)
-    expect(second.skipped_files).toContain("AGENTS.md")
+    writeFileSync(join(root, "AGENTS.md"), "project rules\n", "utf8")
+    expect(() => buildReport(root)).toThrow(/partial|incompatible/i)
+    expect(existsSync(join(root, "IMMUNE.md"))).toBe(false)
   })
 
   it("prints JSON and text reports from the CLI", () => {
@@ -46,8 +38,9 @@ describe("imm-init bootstrap", () => {
     const json = spawnSync("bun", [SCRIPT, "--root", jsonRoot, "--json"], { encoding: "utf8" })
     expect(json.status).toBe(0)
     expect(json.stdout).toContain('"ready_for": [')
-    expect(json.stdout).toContain('"direct"')
     expect(json.stdout).toContain('"imm-brainstorm"')
+    expect(json.stdout).toContain('"imm-brainstorm"')
+    expect(json.stdout).toContain('"imm-loop"')
     expect(json.stderr).toBe("")
 
     const textRoot = tempRoot()
@@ -55,7 +48,7 @@ describe("imm-init bootstrap", () => {
     expect(text.status).toBe(0)
     expect(text.stdout).toContain("Target root:")
     expect(text.stdout).toContain("created_directories:")
-    expect(text.stdout).toContain("Ready for: direct, imm-brainstorm, imm-planner")
+    expect(text.stdout).toContain("Ready for: imm-brainstorm, imm-planner, imm-loop")
     expect(text.stderr).toBe("")
   })
 })

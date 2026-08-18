@@ -4,38 +4,35 @@ This project uses the Immune-Brain workflow when work needs managed authority.
 
 ## Route Selection
 
-Direct Path is the default when no Managed trigger applies. The ordinary host
-agent implements and verifies the requested local change without creating
-workflow state.
+Repository-mutating requests use Managed Path by default. Users do not need to
+name the route; the host applies `imm-route --json <request>` (or the equivalent
+routing contract) before selecting a Skill.
 
-Use Managed Path only when one of these triggers applies:
+- An active Assurance projection, TaskIntent, TaskRecord, or reviewer follow-up
+  resumes through `imm-loop` and keeps its existing authority.
+- Read-only, explanation, review-only, Plan-only, and explicit no-modification
+  requests stay host-native and do not enroll or create task authority.
+- A materially ambiguous mutation goes to `imm-brainstorm` for clarification;
+  a clear new mutation goes to `imm-planner`.
+- Planner output is a candidate for later literal-user Enrollment. Generated
+  artifacts are never enrolled unconditionally.
+- Fast-Track remains Managed and preserves TaskIntent scope, Enrollment, QA,
+  Review, authorization, and completion boundaries.
+- A wholly absent bootstrap is initialized idempotently for Managed phases;
+  complete state remains byte-stable, and partial or incompatible state fails
+  closed before any write.
 
-- a nonterminal Plan, TaskIntent, TaskRecord, or reviewer follow-up already owns
-  the work;
-- the user explicitly requests planning, audit, independent closure, or Managed
-  execution;
-- the task touches security, credentials, permissions, public API/schema or
-  compatibility, persistence/migration, concurrency/recovery,
-  release/deployment/external writes, destructive or irreversible effects,
-  authority discard, or risk override;
-- multiple independently owned domains cannot close as one coherent outcome;
-- material ownership or risk uncertainty remains after one minimal question or
-  bounded read-only probe.
+File count, local verifier count, ordinary retries, optional read-only advisors,
+and unrelated dirty files do not change this route or authority boundary.
 
-Multiple files, multiple local verifier commands, ordinary retries, optional
-read-only advisors, and unrelated dirty files do not independently select
-Managed.
+## Non-Mutating Host Path
 
-## Direct Path
-
-- Keep changes inside the user's requested scope and leave unrelated changes
-  untouched.
-- Run reproducible task-scoped verification and inspect the stable task-owned
-  diff before reporting completion.
+- Keep read-only and explicit no-modification requests inside the ordinary host
+  agent.
 - Do not create a Spec, Plan, TaskIntent, TaskRecord, State Ledger, acceptance
   evidence, QA job, mandatory Review job, HANDOFF update, or Compounder gate.
-- If discovery reveals a Managed trigger, stop further mutation and route to
-  Managed before continuing.
+- If a request becomes a mutation while work is in progress, stop before the
+  next write and route it through `imm-planner`.
 
 ## Managed Path
 

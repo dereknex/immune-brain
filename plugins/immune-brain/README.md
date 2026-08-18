@@ -9,31 +9,32 @@ instructions from `dist/<name>.md` only on invocation. Shared rules live in
 modules under [`runtime/`](runtime/), while `imm_core.ts` is the public API
 barrel.
 
-## Direct-first route model
+## Managed-by-default route model
 
-Direct Path is the default when no Managed trigger applies. The ordinary host
-agent handles local implementation and reproducible task-scoped verification
-without creating Spec, Plan, TaskIntent, TaskRecord, State Ledger, QA, mandatory
-Review, HANDOFF, or Compounder state.
+Repository-mutating requests enter Managed Path automatically; users do not
+need to say "Managed Path". The host applies `imm-route --json <request>` (or
+the equivalent routing contract) before selecting a Skill.
 
-Managed is selected only by an existing Managed owner, explicit user request for
-planning/audit/Managed execution, or a hard boundary: security/permissions,
-public API/schema/compatibility, migration/persistence, concurrency/recovery,
-release/deployment/external writes, destructive or irreversible effects,
-authority/risk override, multiple independent owners, or unresolved material
-risk. File count, local verifier count, ordinary retries, read-only advisors,
-and unrelated dirty files are not Managed triggers.
+- An active Assurance projection resumes through `imm-loop`.
+- Read-only, explanation, review-only, Plan-only, and explicit no-modification
+  requests stay host-native and do not enroll.
+- Materially ambiguous mutations go to `imm-brainstorm`.
+- Clear new mutations go to `imm-planner`; Planner artifacts remain candidates
+  for later literal-user Enrollment and are never enrolled unconditionally.
+- Fast-Track compresses Managed Path without bypassing TaskIntent scope,
+  Enrollment, QA, Review, authorization, or completion.
 
 ```mermaid
 flowchart LR
-  request[request] --> owner{existing Managed owner?}
-  owner -->|yes| managed[Managed lifecycle]
-  owner -->|no| risk{explicit Managed intent or hard trigger?}
-  risk -->|yes| managed
-  risk -->|no| direct[Direct Path]
-  direct --> implement[implement and verify in host agent]
-  managed --> planner[imm-planner / existing owner]
-  planner --> work[Kernel or legacy managed execution]
+  request[request] --> owner{active Assurance owner?}
+  owner -->|yes| loop[imm-loop]
+  owner -->|no| classify{request classification}
+  classify -->|read-only / no-modification| host[host-native]
+  classify -->|materially ambiguous mutation| brainstorm[imm-brainstorm]
+  classify -->|clear mutation| planner[imm-planner]
+  brainstorm --> planner
+  planner --> enroll[literal-user Enrollment]
+  enroll --> loop
 ```
 
 ## Managed lifecycle
@@ -109,6 +110,7 @@ stable `drain_required` / `v3_storage_retired` diagnostic. Common entry points:
 
 | Command | Purpose |
 | --------- | --------- |
+| `bin/imm-route --json <request>` | Classify a natural-language request as host-native, Brainstorm, Planner, or Loop and bootstrap Managed state when required. |
 | `bin/imm-kernel intent author/validate` | Author or validate host-neutral TaskIntent drafts (sole new-managed-work surface). |
 | `bin/imm-kernel status --json` | Read-only legacy shadow status. |
 | `bin/imm-kernel audit --legacy` | Explicit read-only legacy audit projection. |

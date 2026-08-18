@@ -2,9 +2,9 @@
 
 ## 简介
 
-Immune-Brain 是一套 **Direct-first、按风险启用 Managed authority** 的 AI 编码工作流。
+Immune-Brain 是一套 **Managed-by-default、按请求类型保留 host-native path** 的 AI 编码工作流。
 
-普通本地任务由 Pi host agent 直接实现和验证。只有已有 Managed owner、用户明确要求规划或审计，或任务触及安全、公共契约、迁移、并发、发布、外部写入、不可逆操作等硬边界时，才进入可审核、可恢复的 Managed lifecycle。
+仓库变更请求会自动进入 Managed Path，用户不需要说 “Managed Path”，也不需要先运行单独的 setup command。只读、解释、仅审查、仅规划和明确不修改请求停留在 host-native path，不会 Enrollment。已有 Assurance owner 通过 `imm-loop` 恢复；有实质歧义的变更先进入 `imm-brainstorm`，清晰的新变更进入 `imm-planner`。Planner 产物不会被无条件 Enrollment。
 
 核心目标有两个：
 
@@ -13,41 +13,21 @@ Immune-Brain 是一套 **Direct-first、按风险启用 Managed authority** 的 
 
 ## 路由模型
 
-### Direct Path：默认路径
+### Managed Path：仓库变更默认路径
 
-当没有 Managed trigger 时，普通 host agent：
+Host 先应用 `imm-route --json <request>`（或等价 routing contract），再选择 Skill：
 
-1. 在用户请求范围内实现本地修改。
-2. 运行可复现的 task-scoped verification。
-3. 检查 stable task-owned diff，确认没有误改或无关改动。
-4. 在 zero task-owned unresolved failure 时报告完成。
+1. 已有 Assurance projection、TaskIntent、TaskRecord 或 reviewer follow-up：通过 `imm-loop` 继续现有 owner。
+2. 只读、解释、仅审查、Plan-only、明确 no-modification：留在 host-native path，不 Enrollment、不创建 task authority。
+3. 有实质歧义的 mutation：进入 `imm-brainstorm`，澄清前不 Enrollment。
+4. 清晰的新 mutation：进入 `imm-planner`，Planner 只创建候选 Spec/TaskIntent；literal-user Enrollment 仍是 authority boundary。
+5. Fast-Track 只压缩 Managed Path，不绕过 TaskIntent scope、Enrollment、QA、Review、authorization 或 completion。
 
-Direct 不创建 Spec、Plan、TaskIntent、TaskRecord、State Ledger、QA、mandatory Review、HANDOFF 或 Compounder 状态，也不写 `.imm/` workflow authority。
+首次 Managed 请求会自动幂等 bootstrap：完全不存在的 Immune-Brain state 才会创建；完整 state 保持 byte-stable；partial 或 schema-incompatible state 在写入前 fail closed。
 
-以下因素本身不会把 Direct 升级为 Managed：
+### Host-native Path：非变更请求
 
-- 修改多个文件；
-- 运行多条本地 verifier；
-- 普通测试失败、修复和重试；
-- 使用可选的只读 subagent；
-- worktree 中存在无关的用户改动。
-
-整个 Git worktree 不必干净。Agent 只检查 task-owned diff，不触碰无关修改；需要 staging 时必须列出明确路径，不能在 dirty worktree 使用 `git add .` 或 `git add -A`。
-
-### Managed Path：按触发器启用
-
-以下任一条件成立时使用 Managed：
-
-- 已有 Plan、TaskIntent、TaskRecord 或 reviewer follow-up 正在拥有任务；
-- 用户明确要求规划、审计、安全或合规审查、独立闭环或 Managed lifecycle；
-- 涉及安全、凭据、权限、公共 API/schema/兼容性；
-- 涉及迁移、持久化、并发、恢复或跨 worktree ownership；
-- 涉及发布、部署、远程或外部系统写入；
-- 涉及破坏性或不可逆操作、Git history rewrite、authority discard、risk/policy override；
-- 多个独立 owner 无法作为一个连贯的 task-owned outcome 闭合；
-- 最小澄清或只读 probe 后，material risk/ownership 仍不明确。
-
-已有 Managed owner 具有排他所有权，必须完成或明确终止，不能为了减少流程切回 Direct。Direct 执行中发现 hard trigger 时，应停止进一步修改、保留当前工作，再进入 Managed。
+普通 host agent 可以解释、检查和 review，而不创建 Spec、Plan、TaskIntent、TaskRecord、State Ledger、QA、mandatory Review、HANDOFF 或 Compounder state。
 
 ## 用户确认边界
 
@@ -58,30 +38,26 @@ Direct 不创建 Spec、Plan、TaskIntent、TaskRecord、State Ledger、QA、man
 - destructive deletion、irreversible mutation、Git history rewrite；
 - authority discard、task stop、breaking intent revision、risk/policy override。
 
-普通本地编辑、本地验证、Direct rework、scoped diff review 和完成报告不需要流程确认。Managed 的 evidence、QA、Review 与 completion authority 由 Kernel contract 决定。
+普通本地编辑、本地验证、host-native rework、scoped diff review 和完成报告不需要流程确认。Managed 的 evidence、QA、Review 与 completion authority 由 Kernel contract 决定。
 
 ## 快速上手
 
-### 1. 初始化
+### 1. 自动 bootstrap
 
-在目标项目根目录运行 `imm-init`：
-
-```text
-/imm-init
-```
-
-初始化会安装共享规则、Skill 入口和 Managed 所需目录。初始化本身不代表后续请求都必须走 Managed。
+无需先运行 setup command。第一次仓库变更请求由 host 调用 `imm-route`，在 Managed phase 开始前完成严格、幂等 bootstrap。`/imm-init` 只作为显式诊断入口；partial 或 schema-incompatible state 会 fail closed。
 
 ### 2. 先选择路径
 
-收到请求后先应用 Direct/Managed matrix：
+Host 先应用 Managed-by-default route：
 
-- 没有 Managed trigger：直接实现和验证，不调用 Planner。
-- 命中 Managed trigger：需求明确时由 `imm-planner` 创建 Spec 与 TaskIntent；关键需求仍有歧义时先用 `imm-brainstorm` 做最小澄清。
+- 只读、解释、review-only、Plan-only、明确 no-modification：host-native，不 Enrollment；
+- 有实质歧义的 mutation：`imm-brainstorm`；
+- 清晰的新 mutation：`imm-planner`；
+- 已有 Assurance owner：`imm-loop`。
 
-### 3. 执行 Direct 工作
+### 3. 执行非变更请求
 
-Direct 没有专用命令或持久化 router。普通 host agent 完成实现、verification 与 diff 检查后直接报告结果。
+Host agent 直接完成 explanation、inspection 或 review，不创建 workflow authority。
 
 ### 4. 执行 Managed Kernel 工作
 
@@ -118,9 +94,10 @@ v3 mutating commands 已退出生产路径。历史 v3 State Ledger 只能通过
 
 | 入口 | 用途 |
 | --- | --- |
-| `imm-init` | 初始化项目规则、Skill 与目录 |
+| `imm-route --json <request>` | 按自然语言请求选择 host-native、Brainstorm、Planner 或 Loop，并在 Managed phase 自动 bootstrap |
+| `imm-init` | Managed Path 自动 bootstrap 的显式诊断入口；不替代请求路由 |
 | `imm-brainstorm` | 澄清关键需求、约束和风险；不写计划或代码 |
-| `imm-planner` | 为 Managed 任务创建或修订 Spec/TaskIntent |
+| `imm-planner` | 为清晰的仓库变更创建或修订候选 Spec/TaskIntent；不自动 Enrollment |
 | `imm-kernel intent author/validate` | canonical TaskIntent authoring 与 validation |
 | `imm-kernel status --json` | read-only Kernel/legacy shadow status |
 | `imm-kernel audit --legacy` | 显式 read-only legacy audit |
@@ -143,7 +120,7 @@ v3 mutating commands 已退出生产路径。历史 v3 State Ledger 只能通过
 | Deterministic QA | 重验 acceptance descriptors 与 freshness | 编辑实现、接受 stale evidence |
 | Native Reviewer | 对锁定 snapshot 提供 advisory verdict | 直接写 Kernel authority、修改文件 |
 | Host authorization | 展示 exact operation 并绑定 literal-user confirmation | 推断或扩大用户批准内容 |
-| Compounder | 对已闭合工作按需沉淀可复用知识 | 阻塞普通 Direct completion、处理未闭合工作 |
+| Compounder | 对已闭合工作按需沉淀可复用知识 | 阻塞普通 host-native completion、处理未闭合工作 |
 
 并行只用于无状态只读工作，例如仓库探索、独立 advisory review 或测试 probe。Task mutation、QA decision、review authority 与 owner transition 保持串行。
 
@@ -173,7 +150,7 @@ Pi native subagent 负责可见的 agent UI 与模型执行。Interactive adviso
 
 适合：
 
-- 普通本地工程任务：Direct 保持 host-native 实现与验证体验；
+- 普通本地工程任务：仓库变更自动进入 Managed；只读请求保持 host-native 实现与验证体验；
 - 高风险、公共契约、持久化、并发或多 owner 任务：Managed 提供明确 authority 和恢复边界；
 - 需要审计 provenance、snapshot-bound approval 和可复现证据的长期项目。
 

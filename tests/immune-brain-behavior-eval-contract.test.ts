@@ -32,42 +32,30 @@ describe("Immune-Brain behavior eval contract", () => {
 		});
 	});
 
-	it("covers managed planning, managed execution, direct work, hard-risk routing, and weak matches", () => {
+	it("covers managed planning, managed execution, managed-by-default mutations, hard-risk routing, and weak matches", () => {
 		expect(
 			benchmark.scenarios.map((scenario: { id: string }) => scenario.id),
 		).toEqual([
 			"entrypoint-routing",
 			"multi-skill-follow-up",
-			"low-risk-direct-path",
+			"managed-default-mutation",
 			"hard-risk-managed-boundary",
 			"plugin-boundary",
 		]);
 	});
 
-	it("makes the direct-path lifecycle exclusions observable", () => {
+	it("makes the managed-by-default mutation contract observable", () => {
 		const scenario = benchmark.scenarios.find(
-			(item: { id: string }) => item.id === "low-risk-direct-path",
+			(item: { id: string }) => item.id === "managed-default-mutation",
 		);
 		const contract = [scenario.userInput, ...scenario.successChecklist].join(
 			"\n",
 		);
 
-		for (const excluded of [
-			"Spec",
-			"Plan",
-			"TaskIntent",
-			"TaskRecord",
-			"State Ledger",
-			"HANDOFF",
-			"independent QA",
-			"mandatory Review",
-			"Compounder",
-		]) {
-			expect(contract).toContain(excluded);
-		}
-		expect(contract).toContain("multiple local verifiers");
+		expect(contract).toContain("without the user saying Managed Path");
+		expect(contract).toContain("initialized idempotently");
+		expect(contract).toContain("generated Planner artifacts are not enrolled automatically");
 		expect(contract).toContain("bun test tests");
-		expect(contract).toContain("test ! -d upstreams");
 	});
 
 	it("makes the hard-risk Managed boundary observable", () => {

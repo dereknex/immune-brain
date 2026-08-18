@@ -30,6 +30,7 @@ function expectV4Manifest(output: string): void {
 	expect(manifest.commands.map((command: { name: string }) => command.name)).toEqual([
 		"imm-kernel",
 		"imm-plan",
+		"imm-route",
 	]);
 	expect(manifest.retired).toContain("imm-heal");
 }

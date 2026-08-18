@@ -26,57 +26,37 @@ function expectAll(text: string, fragments: string[]): void {
   for (const fragment of fragments) expect(text).toContain(fragment);
 }
 
-describe("Direct-first workflow routing contract", () => {
-  it("selects Direct by default through one ordered negative-trigger matrix", () => {
+describe("Managed-by-default workflow routing contract", () => {
+  it("routes repository mutations through Managed phases without a special phrase", () => {
     expectAll(BASELINE, [
-      "Direct Path is the default when no Managed trigger applies.",
-      "Apply this ordered route before selecting an Immune-Brain Skill",
+      "Repository-mutating requests use Managed Path by default.",
+      "imm-route --json <request>",
       "Continue an existing Managed owner",
-      "Honor explicit Managed intent",
-      "Route hard Managed triggers",
-      "Resolve only material uncertainty",
-      "Otherwise use Direct",
+      "Keep non-mutating requests host-native",
+      "Route materially ambiguous mutations to `imm-brainstorm`",
+      "Route clear new mutations to `imm-planner`",
+      "Fast-Track is compressed Managed Path",
+      "Planner output is a candidate for later literal-user",
     ]);
-
-    expectAll(BASELINE, [
-      "security, credentials, permissions, or access control",
-      "public API, schema, compatibility, migration, or persisted-state behavior",
-      "concurrency, recovery, release, deployment, or external writes",
-      "destructive or irreversible effects, Git history rewrite, authority discard, or risk override",
-      "multiple independently owned domains",
-    ]);
+    expect(BASELINE).not.toContain(
+      "Direct Path is the default when no Managed trigger applies.",
+    );
   });
 
-  it("does not turn routine breadth or rework into Managed workflow state", () => {
+  it("keeps non-mutating requests out of Enrollment and preserves routine breadth rules", () => {
     expectAll(BASELINE, [
-      "Do not select Managed merely because",
-      "multiple files",
-      "multiple local verifier commands",
-      "ordinary implementation retries",
-      "optional read-only advisors",
-      "unrelated dirty files",
-      "Do not create or mutate workflow state while selecting the route",
+      "read-only, explanation",
+      "Plan-only requests may use `imm-planner`",
+      "This path creates no Spec, Plan, TaskIntent, TaskRecord, State Ledger",
+      "File count",
+      "ordinary retries, read-only advisors",
+      "Do not create or mutate workflow state while",
     ]);
     expect(BASELINE).not.toContain("Use the Direct Path only when all of these are true");
     expect(BASELINE).not.toContain("one direct, non-destructive verification");
   });
 
-  it("closes Direct work with scoped evidence and reserves confirmation for privilege", () => {
-    expectAll(BASELINE, [
-      "reproducible task-scoped verification",
-      "stable task-owned diff",
-      "zero task-owned unresolved failures",
-      "The whole Git worktree need not be clean",
-      "Stage only explicit task-owned paths",
-      "Never use `git add .` or `git add -A`",
-      "Require exact host confirmation only for",
-      "publish, release, deployment, or remote-system mutation",
-      "credential, secret, permission, or access-control changes",
-      "Do not request confirmation for local in-scope edits, local verification, ordinary Direct rework, scoped diff review, or completion reporting",
-    ]);
-  });
-
-  it("requires authoritative evidence before claiming scope or breaking-intent drift", () => {
+  it("retains authoritative evidence and privilege confirmation boundaries", () => {
     for (const text of [CANARY_SKILL, PACKAGED_CANARY_SKILL]) {
       expectAll(text, [
         "Before claiming scope drift, a Breaking Revision, or out-of-scope work",
@@ -87,34 +67,29 @@ describe("Direct-first workflow routing contract", () => {
         "Do not infer authority drift from prose",
       ]);
     }
-  });
-
-  it("aligns project constitutions and initialization with Direct-first entry", () => {
-    expectAll(ROOT_IMMUNE, ["Direct Path 是默认路径", "Managed Path", "不会创建或更新 `.imm/` 工作流状态"]);
-    expect(ROOT_IMMUNE).not.toContain("在修改任何核心逻辑前，必须在 `docs/specs/` 下存在或创建");
-
-    expectAll(INIT_AGENTS, [
-      "Direct Path is the default when no Managed trigger applies.",
-      "Use `imm-planner` only when a Managed trigger applies",
+    expectAll(BASELINE, [
+      "Record reproducible evidence before reporting closure",
+      "Require exact host confirmation only for",
+      "publish, release, deployment, or remote-system mutation",
+      "credential, secret, permission, or access-control changes",
     ]);
-    expect(INIT_AGENTS).not.toContain("Use `imm-planner` before implementation work.");
-    expectAll(INIT_IMMUNE, ["Direct Path is the default", "Managed Path"]);
-    expect(INIT_IMMUNE).not.toContain("Plan before code.");
-
-    expect(INIT_SCRIPT).toContain('ready_for: ["direct", "imm-brainstorm", "imm-planner"]');
-    expect(INIT_SCRIPT).toContain("Ready for: direct, imm-brainstorm, imm-planner");
   });
 
-  it("aligns packaged and user-facing consumers without hiding Managed entrypoints", () => {
-    for (const text of [README, USER_GUIDE, INIT_SKILL, PLANNER_SKILL, QUALITY_GATE]) {
-      expect(text).toContain("Direct");
-      expect(text).toContain("Managed");
-    }
-    expect(README).toContain("Direct Path is the default");
-    expect(USER_GUIDE).toContain("默认路径");
-    expect(INIT_SKILL).toContain("continue directly with the ordinary host agent");
-    expect(PLANNER_SKILL).toContain("file count and local verifier count are not Managed triggers");
-    expect(QUALITY_GATE).toContain("Eligible work stays on the Direct Path regardless of file count or local verifier count");
+  it("aligns project constitutions, bootstrap, and packaged consumers", () => {
+    expectAll(ROOT_IMMUNE, ["Managed-by-default", "imm-route --json", "literal-user Enrollment"]);
+    expectAll(INIT_AGENTS, [
+      "Repository-mutating requests use Managed Path by default",
+      "imm-route --json <request>",
+      "Planner output is a candidate for later literal-user Enrollment",
+    ]);
+    expectAll(INIT_IMMUNE, ["Repository-mutating requests use Managed Path by default", "partial or incompatible state fails"]);
+    expect(INIT_SCRIPT).toContain('ready_for: ["imm-brainstorm", "imm-planner", "imm-loop"]');
+    expect(INIT_SCRIPT).toContain("bootstrap_rejected");
+    expectAll(README, ["Managed-by-default route model", "imm-route --json <request>"]);
+    expectAll(USER_GUIDE, ["Managed Path：仓库变更默认路径", "imm-route --json <request>"]);
+    expectAll(INIT_SKILL, ["automatically before the first repository-mutating Managed Path request", "fail-closed"]);
+    expectAll(PLANNER_SKILL, ["default planning phase for a clear repository mutation", "enrolls a task or enrolls generated", "artifacts unconditionally"]);
+    expectAll(QUALITY_GATE, ["clear repository mutations default to `imm-planner`", "literal-user Enrollment remains the authority boundary"]);
     expect(PACKAGED_QUALITY_GATE).toBe(QUALITY_GATE);
   });
 
@@ -138,22 +113,23 @@ describe("Direct-first workflow routing contract", () => {
     }
   });
 
-  it("benchmarks both unprompted Direct routing and hard-risk Managed routing", () => {
+  it("benchmarks clear mutations, hard-risk boundaries, and weak matches", () => {
     const ids = BENCHMARK.scenarios.map((scenario: { id: string }) => scenario.id);
-    expect(ids).toContain("low-risk-direct-path");
+    expect(ids).toContain("managed-default-mutation");
     expect(ids).toContain("hard-risk-managed-boundary");
+    expect(ids).toContain("plugin-boundary");
 
-    const direct = BENCHMARK.scenarios.find(
-      (scenario: { id: string }) => scenario.id === "low-risk-direct-path",
+    const mutation = BENCHMARK.scenarios.find(
+      (scenario: { id: string }) => scenario.id === "managed-default-mutation",
     );
     const managed = BENCHMARK.scenarios.find(
       (scenario: { id: string }) => scenario.id === "hard-risk-managed-boundary",
     );
-    expect([direct.userInput, ...direct.successChecklist].join("\n")).toContain(
-      "multiple local verifiers",
+    expect([mutation.userInput, ...mutation.successChecklist].join("\n")).toContain(
+      "without the user saying Managed Path",
     );
-    expect([direct.userInput, ...direct.successChecklist].join("\n")).toContain(
-      "zero workflow-state writes",
+    expect([mutation.userInput, ...mutation.successChecklist].join("\n")).toContain(
+      "initialized idempotently",
     );
     expect([managed.userInput, ...managed.successChecklist].join("\n")).toContain(
       "public runtime contract",

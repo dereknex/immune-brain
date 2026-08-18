@@ -3,9 +3,9 @@
 这是 **Immune-Brain** 系统的核心规约文件。所有在此工作空间内运行的 Agent 必须严格遵守以下准则。
 
 ## 1. 核心哲学
-- **Direct-first**：Direct Path 是默认路径。只有已有 Managed owner、用户明确要求 Managed，或任务触及安全/权限、公共 API/schema/兼容性、迁移/持久化、并发/恢复、发布/外部写入、不可逆操作、权限覆盖、多 owner 协调等硬边界时，才进入 Managed Path。
-- **文件即 Managed 记忆**：Managed Path 的重要决策和工作流状态必须持久化到 Git-owned Spec/TaskIntent 或 `.imm/` authority；Direct Path 不会创建或更新 `.imm/` 工作流状态，也不依赖对话记忆作为长期 authority。
-- **按风险使用规格**：Managed Path 在修改核心逻辑前必须建立 Spec 与 TaskIntent；Direct Path 在请求范围内直接实现并用可复现的 task-scoped verifier 闭合。
+- **Managed-by-default**：仓库变更请求自动进入 Managed Path。用户不需要说 “Managed Path”；只有只读、解释、仅审查、Plan-only 和明确不修改请求保留在 host-native path，不 Enrollment。
+- **文件即 Managed 记忆**：Managed Path 的重要决策和工作流状态必须持久化到 Git-owned Spec/TaskIntent 或 `.imm/` authority；host-native path 不会创建或更新 `.imm/` 工作流状态，也不依赖对话记忆作为长期 authority。
+- **按请求类型使用规格**：清晰的新仓库变更进入 `imm-planner`，有实质歧义先进入 `imm-brainstorm`；已有 Assurance owner 通过 `imm-loop` 恢复。Planner 只产出候选 Spec/TaskIntent，不无条件 Enrollment。
 - **小步执行**：Managed Plan 必须按可独立闭合结果组织成果步。Direct 不因多文件、多条本地 verifier、普通重试或只读 subagent 自动升级为 Managed。
 - **按证据沉淀**：只有确有复用价值的已闭合工作才写入 `docs/solutions/`；Direct completion 不要求 Compounder。
 - **角色质量上限（gstack quality ceiling）**：Managed 核心 Skill 保持 `preferred bias`（最该坚持的质量目标）和 `prohibited drift`（绝不能越界的权力）。交互仪式压缩为真正的 authority/privilege gate；完备性只在有限输入源（Brainstorm manifest、review follow-up packet）上启用。
@@ -25,7 +25,7 @@
 - `docs/adr/`：轻量架构决策记录（ADR）；目录按需创建，由 `imm-compounder` 在符合 ADR 门槛时写入。
 
 ## 3. 写入边界
-- **Direct Path**：普通 host agent 可在用户请求范围内修改本地实现/测试/文档，运行可复现验证并检查 task-owned diff；不得创建 Plan、TaskIntent、TaskRecord、State Ledger、QA/Review authority 或 Compounder gate。发现 Managed 硬触发器时停止继续修改并升级。
+- **Host-native Path**：只读或明确 no-modification 请求可由普通 host agent 解释、检查和 review，不创建或更新 `.imm/` workflow authority。
 - **只读阶段**：`imm-brainstorm`（含 `adversarial` mode）、`imm-code-review`、`imm-ui-review` 默认不改代码、不改测试、不改运行态。
 - **会诊阶段**：`imm-brainstorm` 的 `roundtable` mode 只作为只读 advisory layer，用于暴露多角色观点、分歧和风险；不得写计划、执行代码、记录验收结论，且不拥有 `imm-planner`、`imm-executor` 或 `imm-qa` 的权限。
 - **规划阶段**：`imm-planner` 只写 `docs/specs/`、`docs/plans/` 与必要的 `.imm/memory/MEMORY.md` 规划记录。
@@ -38,7 +38,7 @@
 - **`imm-brainstorm`**：只在关键需求或风险仍含歧义时负责澄清；澄清后重新应用 Direct/Managed 矩阵，不默认创建计划。其 `roundtable` mode 负责在复杂取舍、需求分歧或可能 replan 的场景中提供多角色只读会诊；输出只能作为后续规划的研究材料，不直接决定 scope、计划、执行或验收。
 - **`imm-brainstorm`（`adversarial` mode）**：可选高压闸门，仅在 scope 不稳且存在显著多方分歧、或需要结构化审计记录（安全、数据迁移、跨边界合约）时触发；大多数任务从 `imm-brainstorm` 直接到 `imm-planner`，不经过此阶段。可调用只读 adversarial helper（`preplan_adversary`）产出风险、争议假设和验证关注点，但最终 scope posture 仍由 preplan host 判断。
 - **Host-bound evidence loops**：当 planner 或 preplan 需要子代理帮助时，每个 host 使用专用 readonly helper（`planner_research`、`preplan_adversary`），不抽 shared registry。子代理只产出 evidence（constraints、risks、unknowns、file_pointers），不写 Plan、Spec、scope posture 或 QA 结论。Compounder 通过 `subagent_scorecard` 汇总子代理结果价值判断是否值得平台化推广。
-- **`imm-planner`**：只负责 Managed Path，在修改前创建/更新 Spec 与 TaskIntent，并按可独立闭合成果组织执行范围；Direct Path 不调用 Planner。
+- **规划阶段**：`imm-planner` 负责清晰仓库变更的候选 Spec/TaskIntent；它不自动 Enrollment，也不把生成的 artifact 当作已授权任务。
 - **`imm-executor`**：负责一次只消费当前小步，不得默认扩张到相邻小步。当 Step 带有 `parallel_probes` 时，`imm-work` 在进入执行前先分发只读并行探针（`active → probing → executing`），探针结果作为 executor 上下文输入；探针失败不阻断步骤，回退到顺序内联调查并记录 fallback reason。
 - **`imm-qa`**：负责先判断当前小步是否闭合，再决定是通过、返工当前小步，还是回退重拆。
 - **`imm-code-review`**：负责 step 外的技术审查（如 PR 反馈、CI 阻塞、跨文件风险），输出 blocker/fix/defer 并驱动后续修复或重排。
@@ -49,13 +49,18 @@
 
 ## 5. 两条执行路径
 
-### Direct Path（默认）
+### Host-native Path（非变更请求）
 
-没有 Managed trigger 时，普通 host agent 直接实现请求、运行可复现的 task-scoped verification、检查稳定的 task-owned diff，并在零 task-owned unresolved failure 时报告完成。整个 Git worktree 不必干净；不得触碰无关用户改动。Direct 不创建 Spec、Plan、TaskIntent、TaskRecord、State Ledger、QA、mandatory Review 或 Compounder 状态。
+只读、解释、仅审查、Plan-only 和明确 no-modification 请求由普通 host agent
+处理，不创建 Spec、Plan、TaskIntent、TaskRecord、State Ledger、QA、mandatory
+Review 或 Compounder 状态，也不写 `.imm/` workflow authority。
 
-### Managed Path（按触发器）
+### Managed Path（仓库变更默认路径）
 
-以下组合式主线只适用于已有 Managed owner、用户明确要求 Managed，或命中硬风险/authority 触发器的任务。硬边界保持固定，软阶段按状态触发，不代表每次都要显式经过每一段：
+仓库变更请求自动进入 Managed Path。Host 先应用 `imm-route --json <request>`：已有
+Assurance projection 通过 `imm-loop` 恢复；实质歧义进入 `imm-brainstorm`；清晰变更
+进入 `imm-planner`。Planner 输出只是后续 literal-user Enrollment 的候选，不能
+绕过 Enrollment、QA、Review、authorization 或 completion。
 
 1. **Brainstorm（按需）**: 当问题陈述、约束或成功标准仍含关键歧义时，进入 `imm-brainstorm`，禁止在关键歧义上猜测。**若澄清信息未获得用户明确回复，必须停止推进，禁止进入规划阶段。**
 2. **Roundtable Advisory（可选）**: `imm-brainstorm` 的 `roundtable` mode 只在复杂取舍、跨角色分歧或 replan 判断前提供只读会诊材料；最终 scope 仍由 `imm-planner` 判断。

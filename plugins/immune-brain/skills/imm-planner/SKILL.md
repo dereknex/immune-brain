@@ -15,6 +15,24 @@ Settlement-class intents (terminal settlement, cancellation, timeout, race, or
 authority-lifecycle semantics) must embed the `Settlement-Design Contract`
 enumeration required by the loaded contract before they are execution-ready.
 
+## Managed Request Routing
+
+`imm-planner` is the default planning phase for a clear repository mutation; the
+user does not need to name Managed Path. The host first applies `imm-route` (or
+the equivalent routing contract):
+
+- an active Assurance projection resumes through `imm-loop`;
+- read-only, explanation, review-only, Plan-only, and explicit no-modification
+  requests do not enroll;
+- materially ambiguous mutations go to `imm-brainstorm` before planning; and
+- clear new mutations reach this Planner phase.
+
+Plan-only output remains non-authoritative. Planner creates or validates a
+candidate Spec/TaskIntent, but it never enrolls a task or enrolls generated
+artifacts unconditionally. Literal-user Enrollment remains the authority
+boundary. Fast-Track may compress the same phases but cannot bypass that
+boundary, QA, Review, authorization, or completion.
+
 ## Kernel TaskIntent Routing
 
 Before producing a new managed planning artifact, read the Pi runtime

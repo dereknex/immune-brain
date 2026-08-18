@@ -13,53 +13,55 @@
 
 ## Workflow Activation
 
-Direct Path is the default when no Managed trigger applies. Route selection is
-an ordered, negative-trigger decision; it is not a caller-selected profile and
-creates no workflow state.
+Repository-mutating requests use Managed Path by default. Users do not need to
+say "Managed Path" or know phase names; the host applies the route contract to
+ordinary natural-language requests before selecting a Skill.
 
 Apply this ordered route before selecting an Immune-Brain Skill:
 
-1. **Continue an existing Managed owner**: an active Plan step, TaskIntent,
-   TaskRecord, reviewer `follow_up`, or other nonterminal Managed owner keeps
-   exclusive ownership. Never switch it to Direct.
-2. **Honor explicit Managed intent**: use Managed when the user explicitly asks
-   for planning, audit, security/compliance review, cross-session continuity,
-   independent closure authority, or the Managed lifecycle.
-3. **Route hard Managed triggers**: use Managed when the work involves any of
-   these boundaries:
-   - security, credentials, permissions, or access control;
-   - public API, schema, compatibility, migration, or persisted-state behavior;
-   - concurrency, recovery, release, deployment, or external writes;
-   - destructive or irreversible effects, Git history rewrite, authority discard, or risk override;
-   - multiple independently owned domains that cannot close as one coherent
-     task-owned outcome; or
-   - an explicit independent review requirement.
-4. **Resolve only material uncertainty**: ask the minimum blocking question or
-   run a bounded read-only probe. If a hard trigger or material ownership/risk
-   uncertainty remains, use Managed.
-5. **Otherwise use Direct**: the ordinary host agent implements and verifies the
-   request without invoking an Immune-Brain lifecycle Skill.
+1. **Continue an existing Managed owner**: an active Assurance projection,
+   TaskIntent, TaskRecord, reviewer `follow_up`, or other nonterminal Managed
+   owner keeps exclusive ownership and resumes through `imm-loop`.
+2. **Keep non-mutating requests host-native**: read-only, explanation,
+   review-only, Plan-only, and explicit no-modification requests do not enroll
+   or create task authority. Plan-only requests may use `imm-planner` to produce
+   planning material, but generated artifacts are never enrolled
+   unconditionally.
+3. **Route materially ambiguous mutations to `imm-brainstorm`**: clarify the
+   goal, constraints, and success criteria before planning. Do not enroll while
+   the mutation remains ambiguous.
+4. **Route clear new mutations to `imm-planner`**: create or revise the Spec and
+   TaskIntent contract. Planner output is a candidate for later literal-user
+   Enrollment, not an automatic Enrollment operation.
+5. **Fast-Track is compressed Managed Path**: it may combine planning and
+   execution for a small validated target, but it preserves TaskIntent scope,
+   Enrollment, QA, Review, authorization, and completion boundaries.
 
-Do not select Managed merely because the task touches multiple files, needs
-multiple local verifier commands, takes ordinary implementation retries, uses
-optional read-only advisors, or coexists with unrelated dirty files. Those are
-cost signals, not authority or risk boundaries. Do not create or mutate workflow state while selecting the route.
+The canonical host may use `imm-route --json <request>` for this decision. A
+missing Immune-Brain bootstrap is created idempotently only for Managed phases;
+complete state is left byte-for-byte untouched, while partial or incompatible
+state fails closed before any write.
 
-### Direct Execution And Completion
+Do not require a user to name the route. File count, local verifier count,
+ordinary retries, read-only advisors, and unrelated dirty files do not change
+these authority boundaries.
 
-On the Direct Path, the ordinary host agent makes only the requested local
-change. It creates no Spec, Plan, TaskIntent, TaskRecord, State Ledger,
+### Non-Mutating Host Path
+
+Read-only and explicit no-modification requests stay with the ordinary host
+agent. This path creates no Spec, Plan, TaskIntent, TaskRecord, State Ledger,
 acceptance evidence, QA job, mandatory Review job, HANDOFF update, or
-Compounder gate. Optional read-only subagents remain advisory and create no
-workflow authority.
+Compounder state. It may explain, inspect, or review without Enrollment.
 
-Direct work is complete only when the requested outcome exists, reproducible task-scoped verification passes, the stable task-owned diff contains no accidental or unrelated change, and there are zero task-owned unresolved failures. The whole Git worktree need not be clean; unrelated pre-existing changes remain untouched and do not invalidate focused evidence.
+### Managed Execution And Completion
 
-Ordinary task-owned failures and retries stay Direct. If discovery reveals a
-hard Managed trigger, stop further mutation, preserve the current work, and
-route to Managed before continuing.
+The matching Managed owner drives execution, evidence, QA, Review, and
+completion without switching to a non-authoritative path. Scope expansion
+returns to `imm-planner`; an enrolled task resumes through `imm-loop` from the
+current Assurance projection. Do not create or mutate workflow state while
+classifying a non-mutating request.
 
-Stage only explicit task-owned paths. Never use `git add .` or `git add -A` in a dirty worktree. A local task-owned commit needs no extra workflow confirmation when the user requested end-to-end delivery or project policy already authorizes it; otherwise leave the verified change ready to commit.
+Stage only explicit task-owned paths. Never use `git add .` or `git add -A` in a dirty worktree.
 
 ### Host Confirmation Boundary
 
