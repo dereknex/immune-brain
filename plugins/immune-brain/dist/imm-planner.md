@@ -49,6 +49,16 @@ file creation; then it validates the created artifact with
 continue through Kernel `revise_intent` authority and are not a Planner
 overwrite path.
 
+### Descriptor Rehearsal Discipline
+
+Every acceptance verification descriptor must be a focused, deterministic,
+repository-local check that exercises only its acceptance assertion. Prefer one
+small `bun test <focused-file>` or `bun run <focused-script>` per acceptance;
+never use the full test suite, a build, package installation, network access, or
+redundant heavyweight checks as rehearsal descriptors. Use the smallest
+`timeout_ms` and `max_output_bytes` that cover the check so isolated descriptor
+rehearsal stays within host setup and execution ceilings.
+
 ## Core Responsibilities
 
 - **Decomposition**: Convert requirements into a concrete spec under `docs/specs/` and an iteration plan.

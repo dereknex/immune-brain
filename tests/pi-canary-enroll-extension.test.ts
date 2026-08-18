@@ -13,6 +13,7 @@ import {
 	AUTHORITY_OBSERVATION_GENERATION_V2,
 	AUTHORITY_OBSERVER_VERSION_V2,
 } from "../plugins/immune-brain/runtime/authority_commit_receipts";
+import { requiresEnrollmentConfirmation } from "../plugins/immune-brain/.pi-extension/imm-canary-enroll";
 import {
 	buildMigrationDryRunReport,
 	migrationDryRunDigest,
@@ -87,6 +88,14 @@ function makeRoot(): string {
 }
 
 describe("pi canary enroll extension", () => {
+	test("only routine default enrollment skips literal confirmation", () => {
+		expect(requiresEnrollmentConfirmation("new", "routine", false)).toBe(false);
+		expect(requiresEnrollmentConfirmation("new", "routine", true)).toBe(true);
+		expect(requiresEnrollmentConfirmation("new", "material", false)).toBe(true);
+		expect(requiresEnrollmentConfirmation("new", "critical", false)).toBe(true);
+		expect(requiresEnrollmentConfirmation("enroll", "routine", false)).toBe(true);
+	});
+
 	test("registers one foreground Tool and one thin enrollment launcher", async () => {
 		const commands: string[] = [];
 		const tools: string[] = [];
@@ -139,6 +148,32 @@ describe("pi canary enroll extension", () => {
 		expect(readdirSync(join(root, ".imm", "tasks"))).toEqual([]);
 	});
 
+	test("tracked malformed intent reports canonical validation before rehearsal", async () => {
+		const root = makeRoot();
+		execFileSync("git", ["init", "-q"], { cwd: root, stdio: "ignore" });
+		execFileSync("git", ["config", "user.email", "test@example.com"], { cwd: root, stdio: "ignore" });
+		execFileSync("git", ["config", "user.name", "test"], { cwd: root, stdio: "ignore" });
+		writeFileSync(
+			join(root, "docs", "plans", "task-001.intent.json"),
+			JSON.stringify({
+				contract: "assurance_kernel/task_intent/v1",
+				task_id: "task-001",
+				owner: "user",
+				risk: "routine",
+				revision: 1,
+				scope_hint: [],
+				acceptance: [],
+			}),
+		);
+		execFileSync("git", ["add", "docs/plans/task-001.intent.json"], { cwd: root, stdio: "ignore" });
+		execFileSync("git", ["commit", "-qm", "malformed intent fixture"], { cwd: root, stdio: "ignore" });
+		const result = await directTool(root, makeFakeUI(true), "tui", "task-001");
+		expect(result.details.state).toBe("blocked");
+		expect(result.details.summary).toMatch(/TaskIntent validation failed/i);
+		expect(result.details.summary).toMatch(/intent\.goal/i);
+		expect(result.details.summary).not.toMatch(/TaskIntent is required/i);
+	});
+
 	test("malformed task id rejects before any confirm", async () => {
 		const root = makeRoot();
 		const ui = makeFakeUI(true);
@@ -172,12 +207,14 @@ describe("pi canary enroll handler integration", () => {
 	// committed per attempt) with matching v2 observations (3 full lifecycles,
 	// all required families), plus a valid evidence bundle whose migration
 	// digest is computed from the live fixture ledger.
-	function makeEligibleRepo(root: string, taskId: string): void {
+	function makeEligibleRepo(root: string, taskId: string, risk: "routine" | "material" = "routine"): void {
 		git(root, ["init", "-q"]);
 		git(root, ["config", "user.email", "t@t"]);
 		git(root, ["config", "user.name", "t"]);
 		mkdirSync(join(root, "docs", "plans"), { recursive: true });
 		mkdirSync(join(root, "docs", "evidence", "assurance-kernel"), { recursive: true });
+		mkdirSync(join(root, "scripts"), { recursive: true });
+		writeFileSync(join(root, "scripts", "accept.ts"), "process.exit(0);\n");
 		mkdirSync(join(root, ".imm", "memory"), { recursive: true });
 		mkdirSync(join(root, ".imm", "tasks"), { recursive: true });
 		writeFileSync(
@@ -204,11 +241,19 @@ describe("pi canary enroll handler integration", () => {
 					task_id: taskId,
 					goal: "publish the canary",
 					owner: "user",
-					risk: "routine",
+					risk,
 					revision: 1,
 					scope_hint: ["publish"],
 					acceptance: [
-						{ id: "A1", assertion: "artifact exists", verification: "test -f artifact" },
+						{ id: "A1", assertion: "artifact exists", verification: JSON.stringify({
+							contract: "assurance_kernel/verification_descriptor/v1",
+							runner_id: "bun",
+							runner_version: "1.3.14",
+							argv: ["run", "scripts/accept.ts"],
+							cwd: ".",
+							timeout_ms: 5_000,
+							max_output_bytes: 16_384,
+						}) },
 					],
 				},
 				null,
@@ -360,7 +405,7 @@ describe("pi canary enroll handler integration", () => {
 		return parts.join("\n");
 	}
 
-	async function runTool(root: string, ui: FakeUI, updates: string[] = []): Promise<any> {
+	async function runTool(root: string, ui: FakeUI, updates: string[] = [], action: "enroll" | "new" = "enroll"): Promise<any> {
 		const factory = await loadExtension();
 		let tool: { execute: (...args: any[]) => Promise<any> } | undefined;
 		factory({
@@ -370,7 +415,7 @@ describe("pi canary enroll handler integration", () => {
 		if (!tool) throw new Error("enrollment Tool not registered");
 		return tool.execute(
 			"tool-call",
-			{ action: "enroll", task_id: TASK },
+			{ action, task_id: TASK },
 			ui.signal,
 			(update: { details?: { stage?: string } }) => {
 				if (update.details?.stage) updates.push(update.details.stage);
@@ -378,6 +423,45 @@ describe("pi canary enroll handler integration", () => {
 			makeCtx(root, ui, "tui"),
 		);
 	}
+
+
+	test("routine new auto-commits after rehearsal without confirmation", async () => {
+		const root = mkdtempSync(join(tmpdir(), "p2b1-enroll-"));
+		try {
+			makeEligibleRepo(root, TASK);
+			const updates: string[] = [];
+			const result = await runTool(root, makeFakeUI(false), updates, "new");
+			expect(result.details.state).toBe("completed");
+			expect(result.details.summary).toMatch(/enrollment completed/i);
+			expect(updates).toEqual([
+				"preparing",
+				"snapshotting",
+				"rehearsing",
+				"revalidating",
+				"rehearsing",
+				"committing",
+			]);
+			expect(readdirSync(join(root, ".imm", "tasks")).sort()).toEqual([".backend-claim.json", `${TASK}.json`]);
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
+	test("material new retains the confirmation gate", async () => {
+		const root = mkdtempSync(join(tmpdir(), "p2b1-enroll-"));
+		try {
+			makeEligibleRepo(root, TASK, "material");
+			const before = authoritySnapshot(root);
+			const ui = makeFakeUI(false);
+			const result = await runTool(root, ui, [], "new");
+			expect(ui.confirmCalls.length).toBe(1);
+			expect(result.details.state).toBe("rejected");
+			expect(result.details.summary).toMatch(/confirmation was rejected/i);
+			expect(authoritySnapshot(root)).toBe(before);
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
 
 	test("declined confirmation returns rejection with zero writes", async () => {
 		const root = mkdtempSync(join(tmpdir(), "p2b1-enroll-"));

@@ -45,6 +45,16 @@ file creation; then it validates the created artifact with
 continue through Kernel `revise_intent` authority and are not a Planner
 overwrite path.
 
+### Descriptor Rehearsal Discipline
+
+Every acceptance verification descriptor must be a focused, deterministic,
+repository-local check that exercises only its acceptance assertion. Prefer one
+small `bun test <focused-file>` or `bun run <focused-script>` per acceptance;
+never use the full test suite, a build, package installation, network access, or
+redundant heavyweight checks as rehearsal descriptors. Use the smallest
+`timeout_ms` and `max_output_bytes` that cover the check so isolated descriptor
+rehearsal stays within host setup and execution ceilings.
+
 planner ensemble is advisory-only and derives candidates from
 `workflow_models.planner_ensemble`; final Spec and Plan authority stays here.
 Agreement becomes evidence, Disagreement becomes decision criteria, and

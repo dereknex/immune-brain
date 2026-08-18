@@ -80,6 +80,14 @@ export function decideDescriptorRehearsalRoute(
 	return { proceed_to_confirmation: false, override: false };
 }
 
+export function requiresEnrollmentConfirmation(
+	action: EnrollmentAction,
+	risk: "routine" | "material" | "critical",
+	rehearsalOverride: boolean,
+): boolean {
+	return action === "enroll" || rehearsalOverride || risk !== "routine";
+}
+
 function gitBytes(root: string, args: string[], extraEnv: NodeJS.ProcessEnv = {}): Buffer {
 	return execFileSync("git", args, {
 		cwd: root,
@@ -897,6 +905,15 @@ async function executeForegroundEnrollment(
 		signal.throwIfAborted();
 		progress("preparing", `Preparing immutable Kernel owners for ${taskId}`);
 		const now = new Date().toISOString();
+		let taskIntent: Awaited<ReturnType<typeof readTaskIntent>>;
+		try {
+			taskIntent = await readTaskIntent(root, taskId);
+		} catch (error) {
+			const message = errorMessage(error);
+			if (/not Git-tracked|ENOENT|no such file/i.test(message))
+				return terminal(action, taskId, "blocked", stage, "A Git-tracked TaskIntent is required for Kernel enrollment", "author and stage the canonical TaskIntent");
+			return terminal(action, taskId, "blocked", stage, `TaskIntent validation failed before rehearsal: ${message}`, "repair the reported TaskIntent schema errors");
+		}
 		const preparation = await preparePiCanary(root, { task_id: taskId, now });
 		signal.throwIfAborted();
 		if (!preparation.intent)
@@ -960,15 +977,22 @@ async function executeForegroundEnrollment(
 			`Route: ${action === "new" ? "Kernel default" : "Kernel explicit enrollment"}${rehearsalOverride ? " (descriptor-rehearsal waiver)" : ""}`,
 		].join("\n");
 
-		progress("awaiting_confirmation", "Waiting for exact literal-user confirmation");
-		const confirmed = await ctx.ui.confirm(
-			action === "new" ? "Create Kernel-managed task?" : "Enroll Kernel canary task?",
-			summary,
-			{ signal },
+		const confirmationRequired = requiresEnrollmentConfirmation(
+			action,
+			taskIntent.intent.risk,
+			rehearsalOverride,
 		);
-		if (!confirmed)
-			return terminal(action, taskId, "rejected", stage, "Enrollment confirmation was rejected; zero authority writes were requested", "invoke the launcher again only if enrollment is still intended");
-		if (signal.aborted) return cancelled();
+		if (confirmationRequired) {
+			progress("awaiting_confirmation", "Waiting for exact literal-user confirmation");
+			const confirmed = await ctx.ui.confirm(
+				action === "new" ? "Create Kernel-managed task?" : "Enroll Kernel canary task?",
+				summary,
+				{ signal },
+			);
+			if (!confirmed)
+				return terminal(action, taskId, "rejected", stage, "Enrollment confirmation was rejected; zero authority writes were requested", "invoke the launcher again only if enrollment is still intended");
+			if (signal.aborted) return cancelled();
+		}
 
 		progress("revalidating", "Revalidating immutable owners and the staged rehearsal snapshot");
 		const { unchanged } = await revalidatePiCanary(root, { task_id: taskId, now }, preparation);
@@ -988,7 +1012,7 @@ async function executeForegroundEnrollment(
 			evidence_digest: rehearsalReceiptRef,
 			waiver_gate: rehearsalOverride ? "descriptor_rehearsal" : "observation_window_days",
 			actor_id: "user",
-			confirmation_ref: `pi-confirm-${createHash("sha256").update(`${taskId}\0${now}\0${nonce}`).digest("hex").slice(0, 16)}`,
+			confirmation_ref: `${confirmationRequired ? "pi-confirm" : "pi-plan-approved"}-${createHash("sha256").update(`${taskId}\0${now}\0${nonce}`).digest("hex").slice(0, 16)}`,
 			expires_at: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
 			nonce,
 		};
