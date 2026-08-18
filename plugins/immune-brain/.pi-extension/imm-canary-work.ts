@@ -1,34 +1,17 @@
-// P2B2 Pi lifecycle extension: the only production route for Kernel canary
-// lifecycle mutations after enrollment.
+// P3 Pi lifecycle extension: the only production route for Kernel canary
+// assurance after enrollment.
 //
-// Surface (exactly):
-//   1. `imm_kernel_canary` — one LLM-callable tool, closed to ordinary
-//      executor operations (status, record_evidence, record_finding,
-//      resolve_finding, submit_review, compatible revise_intent, complete).
-//      Privileged action kinds are structurally absent from its schema.
-//   2. `/imm-canary-assure <task-id> qa` — TUI-only deterministic verification.
-//      `/imm-canary-assure <task-id> review [model]` requests one standard Agent
-//      review subagent. Its advisory verdict requires literal-user confirmation
-//      before host revalidation and Kernel mutation.
-//   3. `/imm-canary-authorize <task-id> <operation>` — TUI-only. Requires a
-//      fresh exact-action ctx.ui.confirm; any cancellation, timeout, abort,
-//      late resolution, reentry, replay, or stale state performs zero writes.
+// Surface:
+//   1. `imm_kernel_canary` — one LLM-callable foreground Tool for ordinary
+//      facts, deterministic QA, Review receipt submission, and authorization.
+//   2. `/imm-canary-authorize <task-id> <operation>` — TUI-only literal-user
+//      confirmation for exact privileged operations.
 //
-// This file is the Pi adapter for the Assurance progression module
-// (pi-canary-assurance-progression.ts), which owns the session-scoped QA/Review
-// operation lifecycle. It retains command/tool registration with exact
-// schemas and text, TUI-only gates and literal-user confirmation rendering,
-// pure argument/verdict/snapshot/prompt helpers, Kernel authority capability
-// creation and mutation application, and translation of progression results
-// into tool output. It contains no lifecycle Maps, timers, reservations,
-// transition helpers, or TaskRecord evidence/approval freshness filtering:
-// freshness comes exclusively from the internal Kernel assurance projection
-// (runtime/kernel/assurance_projection.ts).
-//
-// The production mutation-authority registry and canary application are
-// created lazily inside this module and never exported. No session entry,
-// session ID, model output, command text, callback, CLI flag, JSON/RPC/print
-// path, or serialized descriptor mints authority.
+// Deterministic QA and native Review sequencing lives in
+// `pi-canary-assurance-progression.ts`. The adapter owns Tool schemas, TUI
+// authorization, Kernel capability creation, and translation of direct
+// progression results. No detached assurance job, completion follow-up,
+// result-polling path, Footer, or Widget is created here.
 
 import { createHash, randomUUID } from "node:crypto";
 import { join, resolve } from "node:path";
@@ -50,19 +33,13 @@ import { registerSucceedCommand } from "./imm-canary-succeed";
 import type { InvocationToken } from "./pi-canary-invocations";
 import { qaEvidenceFreshnessId, qaFindingId } from "./pi-canary-qa-findings";
 import {
-	reviewDispatchFollowUp,
 	reservedAgentParams,
-	type NativeReviewHandle,
 	type ReservedAgentParams,
 } from "./pi-canary-native-review";
 import {
-	AssurancePresenter,
-	renderAssuranceResultMessage,
 	renderCanaryCall,
 	renderCanaryResult,
-	type AssuranceCorrelation,
 	type AssuranceRole,
-	type AssuranceView,
 } from "./pi-canary-assurance";
 import { taskDiffHash, captureGitTaskSnapshot } from "../runtime/workspace_scope";
 import {
@@ -78,8 +55,8 @@ import {
 	REVIEW_TIMING_PROFILES,
 	REVIEW_VERDICT_VALIDATION_TIMEOUT_MS,
 	type AssuranceAdvanceResult,
-	type AssuranceCancelResult,
 	type AssuranceProgressionPorts,
+	type AssuranceSubmitReviewResult,
 	type AssuranceVerdict,
 	type PendingReviewVerdict,
 	type QaVerificationProgress,
@@ -111,7 +88,6 @@ import { invocationRegistry } from "./pi-canary-assurance-progression";
 const TASK_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 
 export type { AssuranceRole } from "./pi-canary-assurance";
-export type AssuranceCommandRole = AssuranceRole | "cancel";
 export type AuthorizeOperation =
 	| "begin-drain"
 	| "record-review-verdict"
@@ -119,23 +95,6 @@ export type AuthorizeOperation =
 	| "approve-breaking-intent-revision"
 	| "resolve-user-decision"
 	| "stop";
-
-export function parseAssureArgs(raw: string): {
-	task_id: string;
-	role: AssuranceCommandRole;
-	model?: string;
-} {
-	const parts = raw.trim().split(/\s+/).filter(Boolean);
-	if (parts.length < 2 || parts.length > 3)
-		throw new Error("usage: /imm-canary-assure <task-id> <qa|review|cancel> [model]");
-	const [taskId, role, model] = parts;
-	if (!TASK_ID_PATTERN.test(taskId)) throw new Error(`invalid task id: ${taskId}`);
-	if (role !== "qa" && role !== "review" && role !== "cancel")
-		throw new Error("role must be qa, review, or cancel");
-	if (role !== "review" && model !== undefined)
-		throw new Error(`${role} does not accept a model`);
-	return { task_id: taskId, role, ...(model ? { model } : {}) };
-}
 
 export function parseAuthorizeArgs(raw: string): { task_id: string; operation: AuthorizeOperation } {
 	const parts = raw.trim().split(/\s+/).filter(Boolean);
@@ -192,13 +151,6 @@ export function buildSnapshot(input: SnapshotDescriptorInput): SnapshotDescripto
 
 export interface CanaryWorkExtensionDependencies {
 	buildAssurance?: typeof buildAssuranceSnapshot;
-	startReview?: (input: {
-		prompt: string;
-		description: string;
-		cwd: string;
-		model?: string;
-		maxTurns?: number;
-	}) => Promise<NativeReviewHandle>;
 	runQa?: typeof runDeterministicQa;
 	writeReviewEvidence?: typeof writeNativeReviewEvidence;
 	advanceBeforeProjection?: () => Promise<void>;
@@ -218,12 +170,7 @@ export default function (
 	pi: ExtensionAPI,
 	dependencies: CanaryWorkExtensionDependencies = {},
 ) {
-	const presenter = new AssurancePresenter(pi);
-
 	const progression = new AssuranceProgression({
-		publish: (ctx, view: AssuranceView) => presenter.publish(ctx, view),
-		deliverFollowUp: (followUp) => presenter.deliverFollowUp(followUp),
-		notify: (ctx, message, kind) => ctx.ui.notify(message, kind),
 		projectTask: (root, taskId) => projectAssuranceState(root, taskId),
 		readTaskRecordV2: (root, taskId) => readTaskRecordV2(root, taskId),
 		readTaskIntent: (root, taskId) => readTaskIntent(root, taskId),
@@ -234,24 +181,6 @@ export default function (
 			(dependencies.runQa ?? runDeterministicQa)(snapshot, descriptors, runner, options),
 		writeReviewEvidence: (input) =>
 			(dependencies.writeReviewEvidence ?? writeNativeReviewEvidence)(input),
-		startReview: dependencies.startReview,
-		dispatchReviewFollowUp: ({ taskId, operationId, params, correlation }) => {
-			pi.sendMessage(
-				{
-					customType: "imm-assurance-dispatch",
-					content: reviewDispatchFollowUp({ taskId, operationId, params }),
-					display: true,
-					details: {
-						task_id: taskId,
-						operation_id: operationId,
-						role: "review",
-						...correlation,
-						agent_params: params,
-					},
-				},
-				{ deliverAs: "followUp", triggerTurn: true },
-			);
-		},
 		applyVerdict: (ctx, input) =>
 			applyAssuranceVerdict(
 				ctx,
@@ -268,28 +197,21 @@ export default function (
 		qaOnAuthorityCommit: dependencies.qaOnAuthorityCommit,
 		qaAfterAuthorityCommit: dependencies.qaAfterAuthorityCommit,
 		qaJobTimeoutMs: dependencies.qaJobTimeoutMs,
-		reviewJobTimeoutMs: dependencies.reviewJobTimeoutMs,
-		reviewSoftDeadlineMs: dependencies.reviewSoftDeadlineMs,
-		reviewPreparationTimeoutMs: dependencies.reviewPreparationTimeoutMs,
-		reviewSpawnTimeoutMs: dependencies.reviewSpawnTimeoutMs,
 	} satisfies AssuranceProgressionPorts);
 
-	pi.registerMessageRenderer("imm-assurance-result", (message, options, theme) =>
-		renderAssuranceResultMessage(message, options, theme),
-	);
-
 	pi.on("session_start", () => {
-		presenter.reset();
 		progression.onSessionStart();
 	});
-	pi.on("tool_execution_start", (event: { toolName?: string; args?: unknown; toolCallId?: string }) => {
-		progression.observeToolStart(event);
+	pi.on("tool_call", (event: { toolName?: string; input?: unknown; toolCallId?: string }) =>
+		progression.observeToolCall(event),
+	);
+	pi.on("tool_result", (event: unknown) => {
+		progression.observeToolResult(event as Parameters<AssuranceProgression["observeToolResult"]>[0]);
 	});
 	pi.on("tool_execution_end", (event: unknown) => {
 		progression.observeToolEnd(event as Parameters<AssuranceProgression["observeToolEnd"]>[0]);
 	});
 	pi.on("session_shutdown", async () => {
-		presenter.clear();
 		await progression.onSessionShutdown();
 	});
 
@@ -298,18 +220,18 @@ export default function (
 		label: "Kernel canary assurance and executor operations",
 		description:
 			"Advance observable QA/Review orchestration or record ordinary executor facts for one enrolled Kernel canary task. No privileged action schema exists.",
-		promptSnippet: "Kernel canary: record facts, then advance observable assurance without polling.",
+		promptSnippet: "Kernel canary: record facts, run foreground QA, then submit one native Review receipt without polling.",
 		promptGuidelines: [
 			"Only the exact enrolled canary task is routable; verify the active backend claim first via status.",
-			"After fresh acceptance evidence, call advance_assurance and rely on native chat rendering plus push follow-up; do not poll or manually sequence QA and Review.",
-			"After awaiting_user or a Review-ready follow-up, call request_authorization so the host opens the exact confirmation; do not ask the user to type /imm-canary-authorize.",
+			"After fresh acceptance evidence, call advance_assurance and consume its direct terminal result; do not poll or create a detached job.",
+			"When advance_assurance returns review_ready, invoke the exact foreground Agent parameters from agent_params once, then call submit_review.",
+			"After awaiting_user, call request_authorization so the host opens the exact confirmation; do not ask the user to type /imm-canary-authorize.",
 		],
 		parameters: Type.Object({
 			task_id: Type.String({ pattern: "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$" }),
 			action: Type.Union([
 				Type.Object({ op: Type.Literal("status") }),
 				Type.Object({ op: Type.Literal("advance_assurance") }),
-				Type.Object({ op: Type.Literal("cancel_assurance") }),
 				Type.Object({ op: Type.Literal("request_authorization") }),
 				Type.Object({
 					op: Type.Literal("record_evidence"),
@@ -358,16 +280,16 @@ export default function (
 				Type.Object({ op: Type.Literal("complete") }),
 			]),
 		}),
-		execute: async (toolCallId: string, params: { task_id: string; action: { op: string } }, signal: AbortSignal | undefined, _onUpdate, ctx: ExtensionContext) => {
+		execute: async (toolCallId: string, params: { task_id: string; action: { op: string } }, signal: AbortSignal | undefined, onUpdate: ((update: unknown) => void) | undefined, ctx: ExtensionContext) => {
 			const { task_id: taskId, action } = params;
-			if (action.op === "advance_assurance" || action.op === "cancel_assurance" || action.op === "request_authorization") {
+			if (action.op === "advance_assurance" || action.op === "request_authorization" || action.op === "submit_review") {
 				if (ctx.mode !== "tui") return toolResult("imm_kernel_canary mutation is TUI-only");
 				const result = action.op === "advance_assurance"
-					? await progression.advance(taskId, ctx)
-					: action.op === "cancel_assurance"
-						? await progression.cancel(taskId, ctx)
+					? await progression.advance(taskId, ctx, signal, (update) => onUpdate?.(update))
+					: action.op === "submit_review"
+						? await progression.submitReview(taskId, ctx)
 						: await requestAuthorization(taskId, ctx);
-				return toolResult(JSON.stringify(result, null, 2), result);
+				return toolResult(JSON.stringify(result, null, 2), result as unknown as Record<string, unknown>);
 			}
 			const projection = await projectAssuranceState(ctx.cwd, taskId);
 			if (projection.error) {
@@ -419,7 +341,7 @@ export default function (
 						phase: result.record.phase,
 						result: "Kernel executor fact recorded",
 						next_action: action.op === "submit_review"
-							? "advance assurance"
+							? "request authorization"
 							: "record remaining evidence or advance assurance",
 					},
 				);
@@ -439,42 +361,6 @@ export default function (
 	});
 
 	registerSucceedCommand(pi);
-
-	pi.registerCommand("imm-canary-assure", {
-		description: "Manually start or cancel a diagnostic canary QA/Review job",
-		handler: async (args: string, ctx: ExtensionContext) => {
-			if (ctx.mode !== "tui") {
-				ctx.ui.notify("imm-canary-assure is TUI-only and was rejected", "warning");
-				return;
-			}
-			let parsed: ReturnType<typeof parseAssureArgs>;
-			try {
-				parsed = parseAssureArgs(args);
-			} catch (error) {
-				ctx.ui.notify(`imm-canary-assure: ${error instanceof Error ? error.message : String(error)}`, "error");
-				return;
-			}
-			const { task_id: taskId, role } = parsed;
-			if (role === "cancel") {
-				const result = await progression.cancel(taskId, ctx);
-				if (result.state === "idle")
-					ctx.ui.notify(`no active assurance job for ${taskId}`, "warning");
-				return;
-			}
-			const existing = progression.active(taskId);
-			if (existing) {
-				ctx.ui.notify(
-					existing.state === "awaiting_user"
-						? `native review verdict for ${taskId} already awaits request_authorization`
-						: `assurance is already running in the background for ${taskId}; use /imm-canary-assure ${taskId} cancel to stop it`,
-					"warning",
-				);
-				return;
-			}
-			if (role === "qa") await progression.startQa(taskId, ctx);
-			else progression.startReview(taskId, ctx, parsed.model);
-		},
-	});
 
 	type AuthorizationOutcome =
 		| { state: "applied"; operation: AuthorizeOperation; phase?: string }
@@ -1000,6 +886,16 @@ async function applyAssuranceVerdict(
 	}
 	const { registry, app } = await authorityPair();
 	const priorIntentToken = (await readTaskIntent(ctx.cwd, snapshot.task_id)).token;
+	const commitAndApply = async <T>(apply: () => Promise<T>): Promise<T> => {
+		invocationRegistry.commit(invocation);
+		const settlement = apply();
+		let hookError: unknown;
+		try { hooks.onCommit?.(); } catch (error) { hookError = error; }
+		const result = await settlement;
+		try { await hooks.afterCommit?.(); } catch (error) { hookError ??= error; }
+		if (hookError) throw hookError;
+		return result;
+	};
 	if (verdict.decision === "rework") {
 		const findings = verdict.findings!.map((finding) => ({
 			id: finding.id,
@@ -1024,10 +920,7 @@ async function applyAssuranceVerdict(
 			now,
 		});
 		await hooks.beforeCommit?.();
-		invocationRegistry.commit(invocation);
-		hooks.onCommit?.();
-		await hooks.afterCommit?.();
-		const result = (await app.execute({
+		const result = (await commitAndApply(() => app.execute({
 			root: ctx.cwd,
 			task_id: snapshot.task_id,
 			operation: {
@@ -1039,7 +932,7 @@ async function applyAssuranceVerdict(
 			prior_intent_token: priorIntentToken,
 			diffProvider: (root: string, intent: { scope_hint: unknown }) => diffHashOf(root, intent),
 			now,
-		})) as unknown as { record: { phase: string } };
+		}))) as unknown as { record: { phase: string } };
 		const parked = (result.record as { findings?: Array<{ kind: string; status: string }> }).findings?.some(
 			(finding) => finding.kind === "replan_required" && finding.status === "open",
 		);
@@ -1075,17 +968,14 @@ async function applyAssuranceVerdict(
 		now,
 	});
 	await hooks.beforeCommit?.();
-	invocationRegistry.commit(invocation);
-	hooks.onCommit?.();
-	await hooks.afterCommit?.();
-	const result = (await app.execute({
+	const result = (await commitAndApply(() => app.execute({
 		root: ctx.cwd,
 		task_id: snapshot.task_id,
 		operation: { op: "record_approval", capability, approval, actor_id: actorId },
 		prior_intent_token: priorIntentToken,
 		diffProvider: (root: string, intent: { scope_hint: unknown }) => diffHashOf(root, intent),
 		now,
-	})) as unknown as { record: { phase: string } };
+	}))) as unknown as { record: { phase: string } };
 	ctx.ui.notify(`assurance applied: ${snapshot.role} approval recorded on ${result.record.phase}`, "info");
 }
 
@@ -1292,8 +1182,8 @@ export {
 };
 export type {
 	AssuranceAdvanceResult,
-	AssuranceCancelResult,
 	AssuranceProgressionPorts,
+	AssuranceSubmitReviewResult,
 	AssuranceVerdict,
 	PendingReviewVerdict,
 	QaVerificationProgress,

@@ -118,8 +118,8 @@ lifecycle extension: `imm_kernel_canary` tool plus `/imm-canary-assure` and
 Kernel-owned task through v3 Plan/Step state, and must never issue a v3 managed
 mutation while a workspace-active claim exists (the canonical v3 call site fails
 closed). After fresh executor evidence, call `imm_kernel_canary`
-`advance_assurance`; visible background Footer/Widget state and push follow-up
-replace manual QA/Review sequencing and result polling. A terminal task leaves
+`advance_assurance`; consume the direct foreground QA result, then explicitly
+invoke the foreground Agent and `submit_review`. A terminal task leaves
 only an immutable task tombstone and no
 workspace claim: it is never reactivated, and it never blocks ordinary v3
 routing for a different task. The Kernel projection is advisory; every Kernel

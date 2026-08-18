@@ -228,6 +228,36 @@ describe("atomic succession", () => {
 		}
 	});
 
+	test("succeeds when predecessor is in review phase and workspace current_working is null", () => {
+		const { root, seedReplan } = makePredecessorRoot();
+		try {
+			// Shift predecessor phase to "review" and set current_working to null
+			seedReplan();
+			const predPath = join(root, ".imm", "tasks", `${PRED}.json`);
+			const predContent = readFileSync(predPath, "utf8").replace(`"phase": "working"`, `"phase": "review"`);
+			writeFileSync(predPath, predContent, "utf8");
+			const wsPath = join(root, ".imm", "workspace.json");
+			writeFileSync(wsPath, JSON.stringify({ contract: "assurance_kernel/workspace/v1", current_working: null }), "utf8");
+
+			const input = buildSucceedInput(root, () => {});
+			const result = succeedCanaryTask({
+				...input,
+				diffProvider: (r: string, intent: { scope_hint: unknown }) => taskDiffHash(r, intent.scope_hint),
+				now: NOW,
+			});
+			expect(result).toEqual({ predecessor_phase: "stopped", successor_phase: "working" });
+
+			const pred = readTaskRecordV2(root, PRED);
+			expect(pred.record?.phase).toBe("stopped");
+			const claim = readBackendClaim(root);
+			expect(claim?.task_id).toBe(SUCC);
+			const workspace = JSON.parse(readFileSync(join(root, ".imm", "workspace.json"), "utf8"));
+			expect(workspace.current_working).toBe(SUCC);
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
 	test("precondition failures fail closed with zero writes", () => {
 		const { root } = makePredecessorRoot();
 		try {

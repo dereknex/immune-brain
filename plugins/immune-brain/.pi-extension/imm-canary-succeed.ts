@@ -254,7 +254,10 @@ export function succeedCanaryTask(input: SucceedInput): { predecessor_phase: str
 		if (claim.lifecycle_status !== "active")
 			throw new Error(`predecessor claim must be active; found ${claim.lifecycle_status}`);
 		const workspace = readWorkspaceStateRaw(root);
-		if (workspace.state.current_working !== predecessor_id)
+		if (
+			workspace.state.current_working !== predecessor_id &&
+			!(pred.record.phase === "review" && workspace.state.current_working === null)
+		)
 			throw new Error(`workspace is not owned by ${predecessor_id}`);
 		const succ = readTaskRecordV2Raw(root, successor_id);
 		if (succ.record) throw new Error(`successor ${successor_id} is already enrolled`);

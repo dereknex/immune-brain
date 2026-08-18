@@ -56,10 +56,9 @@ describe("user approval package contract", () => {
 		const source = read("plugins/immune-brain/.pi-extension/imm-canary-work.ts");
 		// The tool action union is the closed ordinary set; record_user_approval
 		// is only reachable through the TUI authorize path.
-		const schemaSection = source.slice(
-			source.indexOf("registerTool"),
-			source.indexOf("registerCommand"),
-		);
+		const schemaStart = source.indexOf("parameters: Type.Object");
+		const schemaEnd = source.indexOf("execute: async", schemaStart);
+		const schemaSection = source.slice(schemaStart, schemaEnd);
 		expect(schemaSection).not.toContain("record_user_approval");
 		expect(source).toContain("record-user-approval");
 		expect(source).toContain("ctx.ui.confirm");

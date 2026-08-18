@@ -2,9 +2,9 @@
 
 **Task ID**: `2026-08-14-001-pi-observable-assurance-dispatch`
 **Owner**: user
-**Status**: Phase 1 delivered; deferred Phase 2/3/4 superseded by [`host-native-lightweight-workflow-roadmap.spec.md`](host-native-lightweight-workflow-roadmap.spec.md)
+**Status**: Phase 3 delivered; this historical roadmap is retained as an implementation record. The active contract is [`foreground-interactive-workflow-roadmap.spec.md`](foreground-interactive-workflow-roadmap.spec.md).
 
-**Interactive advisory supersession**: The generic advisory scheduling clauses are superseded by [`foreground-interactive-workflow-roadmap.spec.md`](foreground-interactive-workflow-roadmap.spec.md) Phase 1. Planning, exploration, specialist advisory Review, and work-probe children now use sequential foreground calls and direct results. Kernel authority Review remains background-only until Phase 3 of that roadmap; the Kernel-specific coordinator, receipt, follow-up, timeout, and authority clauses below remain active until that atomic cutover.
+**Interactive advisory and assurance supersession**: Planning, exploration, specialist advisory Review, work-probe children, deterministic QA, and Kernel authority Review now use explicit foreground calls and direct results. The former coordinator, completion, timeout, retrieval, and Footer/Widget clauses below are historical and are superseded by [`foreground-interactive-workflow-roadmap.spec.md`](foreground-interactive-workflow-roadmap.spec.md) Phase 3.
 **Design risk**: High
 
 The change crosses Pi extension tool and command surfaces, asynchronous job
@@ -207,14 +207,14 @@ The default allocation is:
 | --- | --- |
 | Source edits and ordinary commands | Parent Agent owns execution |
 | QA | Deterministic host runner; no LLM child |
-| Kernel authority Review | Exactly one Pi native background reviewer per immutable snapshot |
+| Kernel authority Review | Exactly one Pi native foreground reviewer per immutable snapshot |
 | Specialist advisory review | Zero by default; at most two bounded read-only children when explicit trigger lenses match |
 | Parallel discovery | At most two non-overlapping read-only probes when existing evidence is insufficient |
 | Nested delegation | Forbidden |
 
 Interactive planning, exploration, specialist advisory Review, and work-probe children use `run_in_background: false`. The parent launches one foreground child at a time, consumes the direct result, and re-evaluates the remaining dispatch budget before another launch. These calls rely on Pi's native foreground Tool row, cancellation, and steer; they do not create acknowledgement timers, Footer/Widget progress, completion push, `get_subagent_result` retrieval, or late-notification recovery.
 
-Kernel authority Review remains background-only until Phase 3 of the foreground roadmap. Its reserved background receipt, correlation, timeout, and authority behavior in this Spec is not changed by the advisory cutover.
+Kernel Assurance uses the foreground Tool pipeline: `advance_assurance` awaits deterministic QA and returns `review_ready`; the Parent invokes the exact foreground Agent parameters once; `submit_review` validates the three host events; and `request_authorization` opens the literal-user confirmation. There is no detached coordinator, completion wake-up, result retrieval, or Footer/Widget lifecycle. Native output remains advisory until the existing authority application revalidates the immutable snapshot.
 
 ### 3.5 Authority preservation
 

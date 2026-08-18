@@ -1,6 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { describe, expect, test } from "bun:test";
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -71,9 +71,12 @@ describe("native canary review evidence", () => {
 		}
 	});
 
-	test("writes bounded session evidence outside the repository and removes it", () => {
+	test("writes canonical bounded session evidence outside the repository and removes it", () => {
 		const evidence = writeNativeReviewEvidence({ contract: "test", secret: "locked" });
 		try {
+			expect(evidence.path).toBe(realpathSync(evidence.path));
+			expect(statSync(evidence.path).mode & 0o777).toBe(0o644);
+			expect(statSync(realpathSync(evidence.path.replace(/\/evidence\.json$/, ""))).mode & 0o777).toBe(0o755);
 			expect(existsSync(evidence.path)).toBe(true);
 			expect(JSON.parse(readFileSync(evidence.path, "utf8"))).toEqual({ contract: "test", secret: "locked" });
 		} finally {

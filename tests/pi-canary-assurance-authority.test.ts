@@ -7,7 +7,6 @@ import {
 	snapshotDigest,
 	buildReviewPrompt,
 	parseAssuranceVerdict,
-	parseAssureArgs,
 	runDeterministicQa,
 	type SnapshotDescriptor,
 } from "../plugins/immune-brain/.pi-extension/imm-canary-work.ts";
@@ -88,16 +87,6 @@ describe("canary assurance authority", () => {
 		expect(prompt).toContain("Do not inspect or depend on live bytes from the parent worktree");
 		expect(prompt).toContain('"authority_role":"reviewer"');
 		expect(() => buildReviewPrompt(snapshot({ role: "qa" }))).toThrow(/review role/i);
-	});
-
-	test("assure args reserve model override for Pi-native review", () => {
-		expect(parseAssureArgs("task-1 qa")).toEqual({ task_id: "task-1", role: "qa" });
-		expect(parseAssureArgs("task-1 review provider/model")).toEqual({
-			task_id: "task-1",
-			role: "review",
-			model: "provider/model",
-		});
-		expect(() => parseAssureArgs("task-1 qa provider/model")).toThrow(/does not accept a model/i);
 	});
 
 	test("strict verdict parsing binds role, task, snapshot, and host findings digest", () => {

@@ -1,43 +1,12 @@
-import type { ExtensionAPI, ExtensionContext, Theme } from "@earendil-works/pi-coding-agent";
+import type { Theme } from "@earendil-works/pi-coding-agent";
 import { Text, type Component } from "@earendil-works/pi-tui";
 
-export const ASSURANCE_STATUS_KEY = "imm-canary-assure";
-export const ASSURANCE_WIDGET_KEY = "imm-canary-assurance";
-
 export type AssuranceRole = "qa" | "review";
-export type AssuranceLifecycle =
-	| "starting"
-	| "running"
-	| "slow"
-	| "stalled"
-	| "stop_requested"
-	| "settling"
-	| "cancellation_requested"
-	| "completed"
-	| "failed"
-	| "timed_out"
-	| "cancelled"
-	| "awaiting_user";
 
 export interface AssuranceCorrelation {
 	record_revision: string;
 	intent_content_hash: string;
 	diff_hash: string;
-}
-
-export interface AssuranceView {
-	task_id: string;
-	operation_id: string;
-	role: AssuranceRole;
-	lifecycle: AssuranceLifecycle;
-	stage: string;
-	started_at: number;
-	deadline_seconds: number;
-	current?: number;
-	total?: number;
-	agent_id?: string;
-	telemetry: "deterministic" | "native_lifecycle_only";
-	footer?: string;
 }
 
 export interface AssuranceFindingPresentation {
@@ -53,23 +22,6 @@ export interface AssuranceResultPresentation {
 	findings: AssuranceFindingPresentation[];
 }
 
-export type AssuranceNextAction =
-	| "request_authorization"
-	| "repair_findings"
-	| "inspect_assurance_failure"
-	| "none";
-
-export interface AssuranceFollowUp extends AssuranceCorrelation {
-	contract: "assurance_kernel/assurance_follow_up/v1";
-	task_id: string;
-	operation_id: string;
-	role: AssuranceRole;
-	terminal: "rework" | "verdict_ready" | "failed" | "timed_out" | "cancelled";
-	summary: string;
-	next_action: AssuranceNextAction;
-	superseded?: boolean;
-	presentation?: AssuranceResultPresentation;
-}
 
 export interface CanaryToolArgs {
 	task_id: string;
@@ -210,55 +162,10 @@ function renderFinding(finding: AssuranceFindingPresentation, theme: Theme): str
 	return `${label} ${finding.id}${acceptance}: ${finding.summary}`;
 }
 
-// Historical custom Widget copy said "native activity telemetry unavailable".
-// R3-D1 deleted that Widget; the phrase remains only as a contract marker.
+// Foreground Tool results render directly in the chat transcript. There is no
+// session-owned status or message continuation channel.
 export class AssurancePresenter {
-	private readonly deliveredFollowUps = new Set<string>();
-	private lastContext: ExtensionContext | undefined;
-
-	constructor(private readonly pi: Pick<ExtensionAPI, "sendMessage">) {}
-
-	publish(ctx: ExtensionContext, _view: AssuranceView): void {
-		this.lastContext = ctx;
-	}
-
-	clear(): void {
-		const ctx = this.lastContext;
-		this.lastContext = undefined;
-		if (!ctx) return;
-		try {
-			ctx.ui.setStatus(ASSURANCE_STATUS_KEY, undefined);
-			if (ctx.mode === "tui") ctx.ui.setWidget(ASSURANCE_WIDGET_KEY, undefined);
-		} catch {
-			// Session teardown may have already disposed the UI.
-		}
-	}
-
-	deliverFollowUp(payload: AssuranceFollowUp): boolean {
-		const key = `${payload.task_id}:${payload.operation_id}:${payload.role}`;
-		if (this.deliveredFollowUps.has(key)) return false;
-		try {
-			const continuation = payload.next_action === "request_authorization"
-				? " Call imm_kernel_canary request_authorization now; native confirmation is the only user interaction."
-				: " Continue from the structured next_action without requiring the user to relay workflow state.";
-			this.pi.sendMessage(
-				{
-					customType: "imm-assurance-result",
-					content: `Assurance ${payload.role} ${payload.terminal} for ${payload.task_id} op ${payload.operation_id}: ${payload.summary}${payload.superseded ? " [superseded]" : ""}.${continuation}`,
-					display: true,
-					details: payload,
-				},
-				{ deliverAs: "followUp", triggerTurn: true },
-			);
-			this.deliveredFollowUps.add(key);
-			return true;
-		} catch {
-			return false;
-		}
-	}
-
-	reset(): void {
-		this.deliveredFollowUps.clear();
-		this.clear();
-	}
+	publish(): void {}
+	clear(): void {}
+	reset(): void {}
 }

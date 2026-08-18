@@ -3,9 +3,9 @@
 ## Metadata
 
 - Roadmap: Foreground Interactive Workflow
-- Current Task ID: `2026-08-17-007-foreground-canary-enrollment`
+- Current Task ID: `2026-08-18-002-foreground-canary-assurance-review-r2`
 - Owner: user
-- Status: Phase 1 completed; Phase 2 implementation active; Phase 3 deferred
+- Status: Phase 1 completed; Phase 2 completed; Phase 3 implementation active
 - Design risk: High
 - Design risk reason: The roadmap changes cancellation, dispatch result transport, Enrollment commit settlement, QA execution, and native Review receipt authority across multiple Pi extension boundaries.
 - Diagram decision: required
@@ -132,7 +132,7 @@ Required behavior:
 - work-probe envelopes emit foreground Agent calls.
 - advisory authority, no-tools policy, model routing, budgets, result normalization, and solo fallback remain unchanged.
 - interactive advisory guidance removes acknowledgement deadlines, background progress UI, completion push, `get_subagent_result`, and late-notification recovery.
-- Kernel Review is explicitly excluded from the Phase 1 protocol cutover and remains governed by its current authority protocol until Phase 3.
+- `Kernel Review` is explicitly excluded from the Phase 1 protocol cutover; its dedicated foreground contract is delivered by Phase 3 below.
 
 Rollback:
 
@@ -176,9 +176,11 @@ Promotion criteria for Phase 3:
 - pass, waiver, integrity-drift, setup-timeout, output-limit, cancellation, and commit-settlement tests pass;
 - manual TUI smoke evidence confirms visible native progress and Escape cancellation with an empty Footer.
 
+Phase 2 was completed by TaskIntent `2026-08-17-007-foreground-canary-enrollment`.
+
 ### Phase 3: Foreground Assurance And Native Review
 
-**Candidate successor TaskIntent:** `foreground-canary-assurance-review`
+**TaskIntent:** `2026-08-18-002-foreground-canary-assurance-review-r2`
 
 Cut deterministic QA and the primary Kernel Review over as one atomic authority change. The foreground native Agent receipt bridge and production cutover belong to the same TaskIntent so the repository never contains a dormant compatibility path or a partially unusable assurance workflow.
 

@@ -8,6 +8,8 @@ import {
 	writeFileSync,
 	statSync,
 	readFileSync,
+	realpathSync,
+	chmodSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -222,21 +224,23 @@ export function verifyReviewBundle(bundle: ReviewBundle): void {
 }
 
 export function writeNativeReviewEvidence(payload: unknown): { path: string; remove(): void } {
-	const directory = mkdtempSync(join(tmpdir(), "imm-canary-native-review-"));
-	const path = join(directory, "evidence.json");
+	const rawDirectory = mkdtempSync(join(tmpdir(), "imm-canary-native-review-"));
 	try {
-		writeFileSync(path, JSON.stringify(payload), { encoding: "utf8", mode: 0o600, flag: "wx" });
+		const directory = realpathSync(rawDirectory);
+		chmodSync(directory, 0o755);
+		const path = join(directory, "evidence.json");
+		writeFileSync(path, JSON.stringify(payload), { encoding: "utf8", mode: 0o644, flag: "wx" });
 		// Fail-closed artifact check: the immutable evidence must be readable
 		// before a reserved review is dispatched.
 		assertReviewArtifact(path);
+		return {
+			path,
+			remove: () => rmSync(directory, { recursive: true, force: true }),
+		};
 	} catch (error) {
-		rmSync(directory, { recursive: true, force: true });
+		rmSync(rawDirectory, { recursive: true, force: true });
 		throw error;
 	}
-	return {
-		path,
-		remove: () => rmSync(directory, { recursive: true, force: true }),
-	};
 }
 
 /**
@@ -246,13 +250,14 @@ export function writeNativeReviewEvidence(payload: unknown): { path: string; rem
  * re-reserve path.
  */
 export function assertReviewArtifact(path: string): void {
+	const targetPath = realpathSync(path);
 	let stat;
 	try {
-		stat = statSync(path);
+		stat = statSync(targetPath);
 	} catch {
 		throw new Error(`review evidence artifact is missing or empty: ${path}`);
 	}
 	if (!stat.isFile() || stat.size === 0) throw new Error(`review evidence artifact is missing or empty: ${path}`);
-	const read = readFileSync(path, { encoding: "utf8" });
+	const read = readFileSync(targetPath, { encoding: "utf8" });
 	if (read.trim().length === 0) throw new Error(`review evidence artifact is empty: ${path}`);
 }

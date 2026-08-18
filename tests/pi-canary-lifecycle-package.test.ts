@@ -162,6 +162,6 @@ describe("pi canary lifecycle package composition", () => {
 	test("lifecycle surface registers the tool and both commands exactly once", () => {
 		const { tool, commands } = loadWorkSurface();
 		expect(tool).toBeDefined();
-		expect(commands.sort()).toEqual(["imm-canary-assure", "imm-canary-authorize", "imm-canary-succeed"]);
+		expect(commands.sort()).toEqual(["imm-canary-authorize", "imm-canary-succeed"]);
 	});
 });
