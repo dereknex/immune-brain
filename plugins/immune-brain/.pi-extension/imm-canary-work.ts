@@ -29,7 +29,7 @@ import {
 	type VerificationDescriptor,
 } from "./pi-canary-verification";
 import { captureReviewBundle, writeNativeReviewEvidence, type ReviewBundle } from "./pi-canary-review-bundle";
-import { registerSucceedCommand } from "./imm-canary-succeed";
+import { notifyDeprecatedCanaryCommand, registerSucceedCommand } from "./imm-canary-succeed";
 import type { InvocationToken } from "./pi-canary-invocations";
 import { qaEvidenceFreshnessId, qaFindingId } from "./pi-canary-qa-findings";
 import {
@@ -295,7 +295,8 @@ export default function (
 					: action.op === "submit_review"
 						? await progression.submitReview(taskId, ctx)
 						: await requestAuthorization(taskId, ctx);
-				return toolResult(JSON.stringify(result, null, 2), result as unknown as Record<string, unknown>);
+				const enriched = await enrichAssuranceResult(ctx, taskId, result as unknown as Record<string, unknown>);
+				return toolResult(JSON.stringify(enriched, null, 2), enriched);
 			}
 			const projection = await projectAssuranceState(ctx.cwd, taskId);
 			if (projection.error) {
@@ -317,6 +318,7 @@ export default function (
 					state: "status",
 					operation: "status",
 					phase: state.phase,
+					task_state: state,
 					result: `${fresh}/${total} acceptance items fresh; ${blockers} blocker${blockers === 1 ? "" : "s"}`,
 					next_action: statusNextAction(state),
 				});
@@ -335,9 +337,14 @@ export default function (
 					taskId,
 					operation: toCanaryOperation(action, "executor") as { op: string; actor_id: string },
 				})) as unknown as { revision: string; record: { phase: string } };
+				const updated = await projectAssuranceState(ctx.cwd, taskId);
+				const taskState = updated.error || !updated.claim ? { phase: result.record.phase } : updated.projection;
+				const nextAction = result.record.phase === "done" || result.record.phase === "stopped"
+					? "none"
+					: updated.error || !updated.claim ? "inspect authority state" : statusNextAction(updated.projection);
 				return toolResult(
 					JSON.stringify(
-						{ revision: result.revision, phase: (result as unknown as { record: { phase: string } }).record.phase },
+						{ revision: result.revision, phase: result.record.phase, task_state: taskState, next_action: nextAction },
 						null,
 						2,
 					),
@@ -345,10 +352,9 @@ export default function (
 						state: "recorded",
 						operation: action.op,
 						phase: result.record.phase,
+						task_state: taskState,
 						result: "Kernel executor fact recorded",
-						next_action: action.op === "submit_review"
-							? "request authorization"
-							: "record remaining evidence or advance assurance",
+						next_action: nextAction,
 					},
 				);
 			} catch (error) {
@@ -708,6 +714,7 @@ export default function (
 	pi.registerCommand("imm-canary-authorize", {
 		description: "Literal-user TUI confirmation for one exact privileged canary operation",
 		handler: async (args: string, ctx: ExtensionContext) => {
+			notifyDeprecatedCanaryCommand(ctx, "imm-canary-authorize");
 			if (ctx.mode !== "tui") {
 				ctx.ui.notify("imm-canary-authorize is TUI-only and was rejected", "warning");
 				return;
@@ -1239,6 +1246,41 @@ async function executeOrdinaryOperation(
 		diffProvider: (root: string, intent: { scope_hint: unknown }) => diffHashOf(root, intent),
 		now: new Date().toISOString(),
 	});
+}
+
+type AssuranceTaskState = AssuranceProjectionResult["projection"] | { error: string };
+
+async function enrichAssuranceResult(
+	ctx: ExtensionContext,
+	taskId: string,
+	result: Record<string, unknown>,
+): Promise<Record<string, unknown>> {
+	const projection = await projectAssuranceState(ctx.cwd, taskId);
+	const taskState: AssuranceTaskState = projection.error
+		? { error: projection.error }
+		: projection.projection;
+	return {
+		...result,
+		task_state: taskState,
+		next_action: nextActionForAssuranceResult(result, taskState),
+	};
+}
+
+function nextActionForAssuranceResult(result: Record<string, unknown>, taskState: AssuranceTaskState): string {
+	if ("error" in taskState) return "inspect authority state";
+	if (taskState.phase === "done" || taskState.phase === "stopped") return "none";
+	switch (result.state) {
+		case "review_ready": return "invoke the reserved foreground Agent";
+		case "awaiting_user": return "request_authorization";
+		case "applied": return taskState.completion_ready ? "complete task" : statusNextAction(taskState);
+		case "completed": return "none";
+		case "rework": return "repair findings and record fresh evidence";
+		case "cancelled": return "retry the interrupted foreground operation";
+		case "settlement_unknown": return "inspect authority state";
+		case "blocked":
+		case "failed":
+		default: return statusNextAction(taskState);
+	}
 }
 
 function statusNextAction(state: {

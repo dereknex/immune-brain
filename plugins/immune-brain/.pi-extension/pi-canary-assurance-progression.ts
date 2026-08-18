@@ -434,51 +434,57 @@ export class AssuranceProgression {
 				ensureOperationLive();
 				if (projection.error || projection.projection.phase !== "review") return this.unknownAfterCommit(taskId, "qa", operationId, projection.error ?? "review transition did not settle");
 			}
-			ensureOperationLive();
-			progress("capturing_snapshot", "Capturing the immutable QA snapshot");
+			const qaAlreadySettled = projection.projection.phase === "review"
+				&& (projection.projection.fresh_approval_kinds?.includes("qa") ?? false);
 			const runner = await this.ports.frozenRunner();
 			ensureOperationLive();
-			await this.ports.qaBeforeProjection?.();
-			ensureOperationLive();
-			const assurance = await this.ports.buildAssurance(ctx.cwd, taskId, "qa", projection, runner);
-			ensureOperationLive();
-			const qaVerdict = await this.ports.runQa(assurance.snapshot, assurance.descriptors, runner, {
-				signal: operationController.signal,
-				onProgress: (item) => progress("verifying", `QA ${item.index}/${item.total} ${item.acceptance_id} ${item.phase}`, { current: item.index, total: item.total, acceptance_id: item.acceptance_id }),
-			});
-			ensureOperationLive();
-			const invocation = this.openInvocation(taskId);
-			try {
-				progress("settling_qa", "Settling deterministic QA through the Kernel revision boundary");
-				authorityBoundaryStarted = true;
-				await this.ports.applyVerdict(ctx, {
-					taskId,
-					snapshot: assurance.snapshot,
-					verdict: qaVerdict,
-					invocation,
-					actorId: "deterministic-qa",
-					hooks: {
-						beforeCommit: async () => {
-							ensureOperationLive();
-							await this.ports.qaBeforeAuthorityCommit?.();
-							ensureOperationLive();
-						},
-						onCommit: () => { authorityCommitted = true; this.ports.qaOnAuthorityCommit?.(); },
-						afterCommit: async () => {
-							await this.ports.qaAfterAuthorityCommit?.();
-						},
-					},
+			let qaVerdict: AssuranceVerdict | undefined;
+			if (qaAlreadySettled) {
+				progress("resuming_review", "Resuming Review preparation from the Kernel assurance projection");
+			} else {
+				progress("capturing_snapshot", "Capturing the immutable QA snapshot");
+				await this.ports.qaBeforeProjection?.();
+				ensureOperationLive();
+				const assurance = await this.ports.buildAssurance(ctx.cwd, taskId, "qa", projection, runner);
+				ensureOperationLive();
+				qaVerdict = await this.ports.runQa(assurance.snapshot, assurance.descriptors, runner, {
+					signal: operationController.signal,
+					onProgress: (item) => progress("verifying", `QA ${item.index}/${item.total} ${item.acceptance_id} ${item.phase}`, { current: item.index, total: item.total, acceptance_id: item.acceptance_id }),
 				});
 				ensureOperationLive();
-			} catch (error) {
-				if (!authorityCommitted && (aborted() || error instanceof VerificationAbortedError)) return this.cancelled("qa", operationId, "host cancellation before QA authority commit");
-				return authorityCommitted
-					? this.unknownAfterCommit(taskId, "qa", operationId, boundedAssuranceError(error))
-					: { state: "failed", operation: "qa", operation_id: operationId, reason: boundedAssuranceError(error) };
-			} finally {
-				if (this.invocationState(invocation) === "open") this.closeInvocation(invocation);
+				const invocation = this.openInvocation(taskId);
+				try {
+					progress("settling_qa", "Settling deterministic QA through the Kernel revision boundary");
+					authorityBoundaryStarted = true;
+					await this.ports.applyVerdict(ctx, {
+						taskId,
+						snapshot: assurance.snapshot,
+						verdict: qaVerdict,
+						invocation,
+						actorId: "deterministic-qa",
+						hooks: {
+							beforeCommit: async () => {
+								ensureOperationLive();
+								await this.ports.qaBeforeAuthorityCommit?.();
+								ensureOperationLive();
+							},
+							onCommit: () => { authorityCommitted = true; this.ports.qaOnAuthorityCommit?.(); },
+							afterCommit: async () => {
+								await this.ports.qaAfterAuthorityCommit?.();
+							},
+						},
+					});
+					ensureOperationLive();
+				} catch (error) {
+					if (!authorityCommitted && (aborted() || error instanceof VerificationAbortedError)) return this.cancelled("qa", operationId, "host cancellation before QA authority commit");
+					return authorityCommitted
+						? this.unknownAfterCommit(taskId, "qa", operationId, boundedAssuranceError(error))
+						: { state: "failed", operation: "qa", operation_id: operationId, reason: boundedAssuranceError(error) };
+				} finally {
+					if (this.invocationState(invocation) === "open") this.closeInvocation(invocation);
+				}
 			}
-			if (qaVerdict.decision === "rework") return { state: "rework", operation: "qa", operation_id: operationId, summary: qaVerdict.findings?.map((finding) => finding.summary).join("; ") ?? "deterministic QA requested rework" };
+			if (qaVerdict?.decision === "rework") return { state: "rework", operation: "qa", operation_id: operationId, summary: qaVerdict.findings?.map((finding) => finding.summary).join("; ") ?? "deterministic QA requested rework" };
 			ensureOperationLive();
 			progress("preparing_review", "Preparing the reserved foreground Review bundle");
 			const fresh = await this.ports.projectTask(ctx.cwd, taskId);

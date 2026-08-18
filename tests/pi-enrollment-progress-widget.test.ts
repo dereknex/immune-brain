@@ -80,6 +80,18 @@ test("Enrollment registers one foreground Tool and two thin visible launchers", 
 	expect(typeof tool.renderResult).toBe("function");
 });
 
+test("temporary Enrollment launchers announce their deprecated recovery status", async () => {
+	const surface = loadEnrollmentSurface();
+	const notifications: string[] = [];
+	const context = tuiContext(notifications);
+	await surface.commands.get("imm-canary-new")!("task-visible", context);
+	await surface.commands.get("imm-canary-enroll")!("task-visible", context);
+	expect(notifications).toHaveLength(2);
+	for (const notice of notifications) {
+		expect(notice).toMatch(/deprecated/i);
+		expect(notice).toMatch(/ordinary language/i);
+	}
+});
 test("launchers reject cancel syntax and non-TUI calls without sending a Parent request", async () => {
 	const surface = loadEnrollmentSurface();
 	const notifications: string[] = [];
@@ -91,6 +103,7 @@ test("launchers reject cancel syntax and non-TUI calls without sending a Parent 
 	expect(surface.messages).toEqual([]);
 	expect(notifications.join("\n")).toMatch(/invalid task id|TUI-only/i);
 });
+
 
 function coordinatorResult(action: EnrollmentAction, taskId: string, state: EnrollmentTerminal["state"]): EnrollmentTerminal {
 	return {

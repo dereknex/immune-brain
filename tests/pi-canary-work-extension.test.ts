@@ -165,9 +165,9 @@ async function recordEvidence(tool: RegisteredTool, root: string): Promise<void>
 	await tool.execute("evidence", { task_id: TASK, action: { op: "record_evidence", acceptance_id: "A1", status: "passed", summary: "fresh" } }, undefined, undefined, makeCtx(root, ui));
 }
 
-async function preparePendingReview(root: string): Promise<RegisteredTool> {
+async function preparePendingReview(root: string): Promise<RegisteredTool & { commands: Record<string, RegisteredCommand> }> {
 	let reviewSnapshot!: SnapshotDescriptor;
-	const { tools, events } = loadSurface({
+	const { tools, commands, events } = loadSurface({
 		buildAssurance: async (rootPath: string, _task: string, role: "qa" | "review", current: { projection?: Record<string, any> }) => {
 			const snapshot = minimalSnapshot(role, rootPath, current);
 			if (role === "review") reviewSnapshot = snapshot;
@@ -218,14 +218,60 @@ async function preparePendingReview(root: string): Promise<RegisteredTool> {
 		makeCtx(root, makeUI()),
 	);
 	expect(JSON.parse(submitted.content[0].text)).toMatchObject({ state: "awaiting_user" });
-	return tool;
+	return Object.assign(tool, { commands });
 }
 
-describe("foreground canary assurance extension", () => {
+	test("a fresh Parent resumes Review preparation from the Kernel projection after interruption", async () => {
+		const root = makeEnrolledRoot();
+		let qaRuns = 0;
+		const dependencies = {
+			buildAssurance: async (rootPath: string, _task: string, role: "qa" | "review", current: { projection?: Record<string, any> }) => ({
+				snapshot: minimalSnapshot(role, rootPath, current),
+				descriptors: new Map(),
+				reviewBundle: role === "review" ? ({ dirty_files: {}, outcomes: {}, bundle_digest: "sha256:bundle" } as never) : null,
+			}),
+			runQa: async (snapshot: SnapshotDescriptor) => {
+				qaRuns += 1;
+				return { contract: "assurance_kernel/assurance_verdict/v2", role: "qa", task_id: TASK, snapshot_digest: snapshotDigest(snapshot), decision: "pass", approval: { kind: "qa", authority_role: "qa", summary: "passed" } };
+			},
+			writeReviewEvidence: () => ({ path: join(root, "review.json"), remove: () => {} }),
+		};
+		try {
+			const first = loadSurface(dependencies);
+			await recordEvidence(first.tools[0], root);
+			const firstResult = await first.tools[0].execute("first", { task_id: TASK, action: { op: "advance_assurance" } }, undefined, undefined, makeCtx(root, makeUI()));
+			expect(JSON.parse(firstResult.content[0].text).state).toBe("review_ready");
+			expect(qaRuns).toBe(1);
+
+			for (const handler of first.events.session_shutdown ?? []) await handler({});
+
+			const freshParent = loadSurface(dependencies);
+			const resumed = await freshParent.tools[0].execute("resume", { task_id: TASK, action: { op: "advance_assurance" } }, undefined, undefined, makeCtx(root, makeUI()));
+			expect(JSON.parse(resumed.content[0].text).state).toBe("review_ready");
+			expect(qaRuns).toBe(1);
+			const record = JSON.parse(readFileSync(join(root, ".imm", "tasks", `${TASK}.json`), "utf8"));
+			expect(record.approvals.filter((approval: { kind: string }) => approval.kind === "qa")).toHaveLength(1);
+		} finally { rmSync(root, { recursive: true, force: true }); }
+	});
+
+	describe("foreground canary assurance extension", () => {
 	test("registers only the ordinary tool and literal-user command", () => {
 		const { tools, commands } = loadSurface();
 		expect(tools.map((tool) => tool.name)).toEqual(["imm_kernel_canary"]);
 		expect(Object.keys(commands).sort()).toEqual(["imm-canary-authorize", "imm-canary-succeed"]);
+	});
+
+	test("temporary authority commands announce their deprecated recovery status", async () => {
+		const { commands } = loadSurface();
+		const notifications: string[] = [];
+		const ctx = { mode: "rpc", cwd: process.cwd(), ui: { notify: (text: string) => notifications.push(text) } } as never;
+		await commands["imm-canary-authorize"].handler("invalid", ctx);
+		await commands["imm-canary-succeed"].handler("invalid", ctx);
+		expect(notifications.filter((notice) => /deprecated/i.test(notice))).toHaveLength(2);
+		for (const notice of notifications.filter((item) => /deprecated/i.test(item))) {
+			expect(notice).toMatch(/deprecated/i);
+			expect(notice).toMatch(/ordinary language/i);
+		}
 	});
 
 	test("schema removes command-owned cancellation and agent-supplied authority", () => {
@@ -264,6 +310,8 @@ describe("foreground canary assurance extension", () => {
 		const result = await tool.execute("advance", { task_id: TASK, action: { op: "advance_assurance" } }, undefined, (update: unknown) => updates.push(update), makeCtx(root, makeUI()));
 		const parsed = JSON.parse(result.content[0].text);
 		expect(parsed.state).toBe("review_ready");
+		expect(parsed.next_action).toBe("invoke the reserved foreground Agent");
+		expect(parsed.task_state).toMatchObject({ phase: "review", record_revision: expect.any(String) });
 		expect(parsed.agent_params.run_in_background).toBe(false);
 		expect(updates.some((item) => JSON.stringify(item).includes("verifying"))).toBe(true);
 	} finally { rmSync(root, { recursive: true, force: true }); }
@@ -366,7 +414,8 @@ describe("foreground canary assurance extension", () => {
 			for (const handler of events.tool_result ?? []) handler({ toolName: "Agent", toolCallId: "agent-call", input: params, details: { status: "completed", agentId: "agent-1" }, content: [{ type: "text", text: verdict }] });
 			for (const handler of events.tool_execution_end ?? []) handler({ toolName: "Agent", toolCallId: "agent-call", args: params, isError: false });
 			const submitted = await tool.execute("submit", { task_id: TASK, action: { op: "submit_review" } }, undefined, undefined, makeCtx(root, makeUI()));
-			expect(JSON.parse(submitted.content[0].text)).toMatchObject({ state: "awaiting_user" });
+			const submittedResult = JSON.parse(submitted.content[0].text);
+			expect(submittedResult).toMatchObject({ state: "awaiting_user", next_action: "request_authorization", task_state: { phase: "review" } });
 
 			const ui = makeUI();
 			const authorized = await tool.execute(
@@ -377,6 +426,18 @@ describe("foreground canary assurance extension", () => {
 				makeCtx(root, ui),
 			);
 			expect(authorized.details).toMatchObject({ state: "applied", operation: "record-review-verdict" });
+			const authorizedResult = JSON.parse(authorized.content[0].text);
+			expect(authorizedResult).toMatchObject({ state: "applied", task_state: { phase: "review" } });
+			expect(authorizedResult.next_action).toMatch(/complete task|advance assurance/);
+			const completed = await tool.execute(
+				"complete",
+				{ task_id: TASK, action: { op: "complete" } },
+				undefined,
+				undefined,
+				makeCtx(root, makeUI()),
+			);
+			const completedResult = JSON.parse(completed.content[0].text);
+			expect(completedResult).toMatchObject({ phase: "done", next_action: "none", task_state: { phase: "done" } });
 			expect(ui.selectCalls).toHaveLength(1);
 			expect(ui.selectCalls[0].options).toEqual(["Approve", "Request rework", "Reject"]);
 			expect(ui.selectCalls[0].title).toContain(`Task: ${TASK}`);
@@ -387,6 +448,41 @@ describe("foreground canary assurance extension", () => {
 			expect(ui.selectCalls[0].title).toContain("Pending operation: record-review-verdict");
 			expect(ui.confirmCalls).toHaveLength(0);
 		} finally { rmSync(root, { recursive: true, force: true }); }
+	});
+
+	test("Tool and deprecated command authorization routes produce the same Kernel transition", { timeout: 30_000 }, async () => {
+		const toolRoot = makeEnrolledRoot();
+		const commandRoot = makeEnrolledRoot();
+		const semanticRecord = (root: string) => {
+			const record = JSON.parse(readFileSync(join(root, ".imm", "tasks", `${TASK}.json`), "utf8"));
+			const volatileKeys = new Set(["record_revision", "revision", "recorded_at", "created_at", "updated_at", "timestamp", "at", "issued_at", "expires_at"]);
+			const canonicalize = (value: unknown, key = ""): unknown => {
+				if (volatileKeys.has(key)) return "<volatile>";
+				if (typeof value === "string") {
+					return value
+						.replace(/sha256:[0-9a-f]+/g, "sha256:<digest>")
+						.replace(/approval-(qa|review)-[0-9a-f]+/g, "approval-$1:<id>")
+						.replace(/(evidence|record_evidence|submit_review|record_approval):[^:\s]+:[^\s]+/g, "$1:<id>")
+						.replace(/pi-confirm-[0-9a-f]+/g, "pi-confirm:<ref>");
+				}
+				if (Array.isArray(value)) return value.map((item) => canonicalize(item));
+				if (value && typeof value === "object") {
+					return Object.fromEntries(Object.entries(value as Record<string, unknown>).sort(([left], [right]) => left.localeCompare(right)).map(([name, item]) => [name, canonicalize(item, name)]));
+				}
+				return value;
+			};
+			return canonicalize(record);
+		};
+		try {
+			const toolSurface = await preparePendingReview(toolRoot);
+			const commandSurface = await preparePendingReview(commandRoot);
+			await toolSurface.execute("tool-authorize", { task_id: TASK, action: { op: "request_authorization" } }, undefined, undefined, makeCtx(toolRoot, makeUI()));
+			await commandSurface.commands["imm-canary-authorize"].handler(`${TASK} record-review-verdict`, makeCtx(commandRoot, makeUI()));
+			expect(semanticRecord(toolRoot)).toEqual(semanticRecord(commandRoot));
+		} finally {
+			rmSync(toolRoot, { recursive: true, force: true });
+			rmSync(commandRoot, { recursive: true, force: true });
+		}
 	});
 
 	test("literal user can return or reject a pending Review", async () => {

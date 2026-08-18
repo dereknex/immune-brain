@@ -1157,6 +1157,10 @@ export function enrollmentParentRequest(action: EnrollmentAction, taskId: string
 	return `Call imm_canary_enrollment exactly once with ${JSON.stringify({ action, task_id: taskId })}. Execute it in the foreground and consume its terminal Tool result directly; do not spawn background work or poll.`;
 }
 
+export function notifyDeprecatedEnrollmentCommand(ctx: ExtensionContext, command: string): void {
+	ctx.ui.notify(`/${command} is deprecated and retained only for recovery; describe the task in ordinary language and let the Parent invoke the foreground Tool`, "warning");
+}
+
 export async function launchEnrollmentRequest(
 	pi: ExtensionAPI,
 	action: EnrollmentAction,
@@ -1164,6 +1168,7 @@ export async function launchEnrollmentRequest(
 	ctx: ExtensionContext,
 ): Promise<void> {
 	const command = action === "new" ? "imm-canary-new" : "imm-canary-enroll";
+	notifyDeprecatedEnrollmentCommand(ctx, command);
 	if (ctx.mode !== "tui") {
 		ctx.ui.notify(`${command} is TUI-only and was rejected`, "warning");
 		return;

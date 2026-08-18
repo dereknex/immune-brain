@@ -418,10 +418,15 @@ export function succeedCanaryTask(input: SucceedInput): { predecessor_phase: str
 // stop, release, derive, and enroll payload before any mutation.
 // ---------------------------------------------------------------------------
 
+export function notifyDeprecatedCanaryCommand(ctx: ExtensionContext, command: string): void {
+	ctx.ui.notify(`/${command} is deprecated and retained only for recovery; describe the task in ordinary language and let the Parent invoke the foreground Tool`, "warning");
+}
+
 export function registerSucceedCommand(pi: ExtensionAPI): void {
 	pi.registerCommand("imm-canary-succeed", {
 		description: "Stop a replan_required task, derive its same-scope successor intent, and enroll it in one confirmed operation",
 		handler: async (args: string, ctx: ExtensionContext) => {
+			notifyDeprecatedCanaryCommand(ctx, "imm-canary-succeed");
 			if (ctx.mode !== "tui") {
 				ctx.ui.notify("imm-canary-succeed is TUI-only and was rejected", "warning");
 				return;
