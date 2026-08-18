@@ -25,6 +25,7 @@ type Mode = "tui" | "rpc" | "json" | "print";
 
 interface FakeUI {
 	confirmCalls: Array<{ title: string; body: string }>;
+	customCalls: Array<{ body: string; collapsedBody: string }>;
 	notifyCalls: Array<{ text: string; kind: string }>;
 	confirmResult: boolean;
 	signal?: AbortSignal;
@@ -32,7 +33,7 @@ interface FakeUI {
 }
 
 function makeFakeUI(confirmResult: boolean): FakeUI {
-	return { confirmCalls: [], notifyCalls: [], confirmResult };
+	return { confirmCalls: [], customCalls: [], notifyCalls: [], confirmResult };
 }
 
 function makeCtx(root: string, ui: FakeUI, mode: Mode, cwdOverride?: string) {
@@ -42,16 +43,29 @@ function makeCtx(root: string, ui: FakeUI, mode: Mode, cwdOverride?: string) {
 		cwd: cwdOverride ?? root,
 		isIdle: () => true,
 		ui: {
-			confirm: async (
-				title: string,
-				body: string,
-				options?: { signal?: AbortSignal },
+			custom: async (
+				factory: (tui: unknown, theme: { fg: (_color: string, text: string) => string; bold: (text: string) => string }, keybindings: unknown, done: (result: boolean) => void) => { render: (width: number) => string[]; handleInput?: (data: string) => void },
 			) => {
-				ui.confirmCalls.push({ title, body });
-				const signal = options?.signal ?? ui.signal;
-				if (signal?.aborted) throw new DOMException("aborted", "AbortError");
+				let selected: boolean | undefined;
+				const component = factory(
+					{ requestRender: () => undefined },
+					{ fg: (_color, text) => text, bold: (text) => text },
+					{},
+					(result) => { selected = result; },
+				);
+				const collapsedBody = component.render(120).join("\n");
+				component.handleInput?.("d");
+				const body = component.render(120).join("\n");
+				ui.customCalls.push({ body, collapsedBody });
+				ui.confirmCalls.push({ title: "Enrollment confirmation", body });
 				ui.beforeConfirm?.();
-				return ui.confirmResult;
+				if (ui.signal?.aborted) return false;
+				if (ui.confirmResult) component.handleInput?.("\r");
+				else {
+					component.handleInput?.("\u001b[B");
+					component.handleInput?.("\r");
+				}
+				return selected ?? ui.confirmResult;
 			},
 			notify: (text: string, kind: string) => {
 				ui.notifyCalls.push({ text, kind });
@@ -90,12 +104,10 @@ function makeRoot(): string {
 }
 
 describe("pi canary enroll extension", () => {
-	test("only routine default enrollment skips literal confirmation", () => {
-		expect(requiresEnrollmentConfirmation("new", "routine", false)).toBe(false);
-		expect(requiresEnrollmentConfirmation("new", "routine", true)).toBe(true);
-		expect(requiresEnrollmentConfirmation("new", "material", false)).toBe(true);
-		expect(requiresEnrollmentConfirmation("new", "critical", false)).toBe(true);
-		expect(requiresEnrollmentConfirmation("enroll", "routine", false)).toBe(true);
+	test("every Enrollment risk requires literal confirmation", () => {
+		expect(requiresEnrollmentConfirmation("routine")).toBe(true);
+		expect(requiresEnrollmentConfirmation("material")).toBe(true);
+		expect(requiresEnrollmentConfirmation("critical")).toBe(true);
 	});
 
 	test("registers one foreground Tool and one thin enrollment launcher", async () => {
@@ -450,23 +462,24 @@ describe("pi canary enroll handler integration", () => {
 		}
 	});
 
-	test("routine new auto-commits after rehearsal without confirmation", async () => {
+	test("routine new waits for confirmation and displays the immutable staged intent", async () => {
 		const root = mkdtempSync(join(tmpdir(), "p2b1-enroll-"));
 		try {
 			makeEligibleRepo(root, TASK);
 			const updates: string[] = [];
-			const result = await runTool(root, makeFakeUI(false), updates, "new");
+			const ui = makeFakeUI(true);
+			const result = await runTool(root, ui, updates, "new");
 			expect(result.details.state).toBe("completed");
-			expect(result.details.summary).toMatch(/enrollment completed/i);
-			expect(updates).toEqual([
-				"preparing",
-				"snapshotting",
-				"rehearsing",
-				"revalidating",
-				"rehearsing",
-				"committing",
-			]);
-			expect(readdirSync(join(root, ".imm", "tasks")).sort()).toEqual([".backend-claim.json", `${TASK}.json`]);
+			expect(ui.confirmCalls).toHaveLength(1);
+			expect(ui.customCalls[0].collapsedBody).toContain("Details collapsed; press d to expand.");
+			expect(ui.customCalls[0].body).toContain("Acceptance descriptors:");
+			expect(ui.confirmCalls[0].body).toContain("Goal: publish the canary");
+			expect(ui.confirmCalls[0].body).toContain("Risk: routine");
+			expect(ui.confirmCalls[0].body).toContain("Scope: publish");
+			expect(ui.confirmCalls[0].body).toContain("A1: artifact exists");
+			const stagedDigest = `sha256:${createHash("sha256").update(execFileSync("git", ["ls-files", "--stage", "-z"], { cwd: root })).digest("hex")}`;
+			expect(ui.confirmCalls[0].body).toContain(`Staged digest: ${stagedDigest}`);
+			expect(updates).toContain("awaiting_confirmation");
 		} finally {
 			rmSync(root, { recursive: true, force: true });
 		}
@@ -548,6 +561,24 @@ describe("pi canary enroll handler integration", () => {
 			const result = await runTool(root, ui);
 			expect(result.details.state).toBe("cancelled");
 			expect(ui.confirmCalls.length).toBe(0);
+			expect(authoritySnapshot(root)).toBe(before);
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
+	test("UI abort during confirmation returns cancellation with zero writes", async () => {
+		const root = mkdtempSync(join(tmpdir(), "p2b1-enroll-"));
+		try {
+			makeEligibleRepo(root, TASK);
+			const before = authoritySnapshot(root);
+			const controller = new AbortController();
+			const ui = makeFakeUI(true);
+			ui.signal = controller.signal;
+			ui.beforeConfirm = () => controller.abort(new Error("user aborted confirmation"));
+			const result = await runTool(root, ui);
+			expect(ui.confirmCalls).toHaveLength(1);
+			expect(result.details.state).toBe("cancelled");
 			expect(authoritySnapshot(root)).toBe(before);
 		} finally {
 			rmSync(root, { recursive: true, force: true });

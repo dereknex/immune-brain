@@ -481,7 +481,7 @@ export default function (
 					))?.trim();
 				}
 			} catch (error) {
-				if (!ctx.signal.aborted && (!(error instanceof DOMException) || error.name !== "AbortError")) {
+				if (ctx.signal?.aborted !== true && (!(error instanceof DOMException) || error.name !== "AbortError")) {
 					const detail = error instanceof Error ? error.message : String(error);
 					const reason = `Review decision UI failed: ${detail}`;
 					ctx.ui.notify(reason, "error");

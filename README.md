@@ -28,8 +28,8 @@ Immune-Brain 为 Pi 提供确定性的任务意图、自动化 QA 验证、隔�
 ```
 
 ### 步骤 1：创建或注册任务意图 (TaskIntent)
-- **交互式新建**：在 Pi 中输入 `/imm-canary-new <task-id>`；launcher 会发送可见 Parent request，随后由单一 foreground `imm_canary_enrollment` Tool 完成风险分级确认与创建。routine 任务在默认 descriptor rehearsal 成功时跳过第二次确认；material/critical、显式 enrollment 与 descriptor-rehearsal waiver 仍要求 literal-user confirmation。
-- **从文件注册**：编写 `docs/plans/<task-id>.intent.json`，然后运行 `/imm-canary-enroll <task-id>`；explicit waiver 同样由该 foreground Tool 执行。
+- **交互式新建**：在 Pi 中输入 `/imm-canary-new <task-id>`；launcher 会发送可见 Parent request，随后由单一 foreground `imm_canary_enrollment` Tool 展示完整的 TaskIntent 与 staged digest，并要求 routine、material、critical 全部进行 literal-user confirmation。
+- **从文件注册**：编写 `docs/plans/<task-id>.intent.json`，然后运行 `/imm-canary-enroll <task-id>`；explicit waiver 同样由该 foreground Tool 执行并要求 literal-user confirmation。
 - Enrollment 使用 host-native Tool progress/result 渲染当前 stage。它不写 Footer、不创建 Widget、不发送后台 completion notification；Escape 或 host cancellation 在 commit 前生效，Tool 直接返回唯一 terminal result。
 
 ### 步骤 2：代码实现与快照暂存

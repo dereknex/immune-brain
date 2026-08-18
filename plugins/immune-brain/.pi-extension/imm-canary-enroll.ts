@@ -5,8 +5,8 @@
 // Host cancellation applies to every pre-commit stage; after the explicit
 // commit linearization point, Kernel settlement is non-cancellable.
 
-import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { Text } from "@earendil-works/pi-tui";
+import { DynamicBorder, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { Container, SelectList, Text, type SelectItem } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 import { execFileSync, spawn } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
@@ -89,11 +89,82 @@ export function assertTaskIntentPreparationStable(
 }
 
 export function requiresEnrollmentConfirmation(
-	action: EnrollmentAction,
 	risk: "routine" | "material" | "critical",
-	rehearsalOverride: boolean,
 ): boolean {
-	return action === "enroll" || rehearsalOverride || risk !== "routine";
+	return risk === "routine" || risk === "material" || risk === "critical";
+}
+
+async function requestEnrollmentConfirmation(
+	ctx: ExtensionContext,
+	title: string,
+	summary: string,
+	details: string,
+	signal: AbortSignal,
+): Promise<boolean> {
+	let finish: ((result: boolean) => void) | undefined;
+	let settled = false;
+	const complete = (result: boolean) => {
+		if (settled) return;
+		settled = true;
+		finish?.(result);
+	};
+	const abort = () => complete(false);
+	if (signal.aborted) return false;
+	signal.addEventListener("abort", abort, { once: true });
+	try {
+		return await ctx.ui.custom<boolean>((tui, theme, _keybindings, done) => {
+			finish = done;
+			if (signal.aborted) {
+				settled = true;
+				done(false);
+			}
+			let expanded = false;
+			const detailText = new Text(theme.fg("muted", "Details collapsed; press d to expand."), 1, 0);
+			const actions: SelectItem[] = [
+				{ value: "confirm", label: "Confirm enrollment", description: "Create the Kernel-managed task" },
+				{ value: "cancel", label: "Cancel", description: "Leave planning artifacts and authority unchanged" },
+			];
+			const selectList = new SelectList(actions, actions.length, {
+				selectedPrefix: (text) => theme.fg("accent", text),
+				selectedText: (text) => theme.fg("accent", text),
+				description: (text) => theme.fg("muted", text),
+				scrollInfo: (text) => theme.fg("dim", text),
+				noMatch: (text) => theme.fg("warning", text),
+			});
+			selectList.onSelect = (item) => complete(item.value === "confirm");
+			selectList.onCancel = () => complete(false);
+			const container = new Container();
+			container.addChild(new DynamicBorder((text: string) => theme.fg("accent", text)));
+			container.addChild(new Text(theme.fg("accent", theme.bold(title)), 1, 0));
+			container.addChild(new Text(summary, 1, 0));
+			container.addChild(detailText);
+			container.addChild(selectList);
+			container.addChild(new Text(theme.fg("dim", "d: toggle details | enter: choose | esc: cancel"), 1, 0));
+			container.addChild(new DynamicBorder((text: string) => theme.fg("accent", text)));
+			const renderDetails = () => {
+				detailText.setText(expanded ? details : theme.fg("muted", "Details collapsed; press d to expand."));
+				tui.requestRender();
+			};
+			return {
+				render: (width) => container.render(width),
+				invalidate: () => container.invalidate(),
+				handleInput: (data) => {
+					if (data === "d" || data === "D") {
+						expanded = !expanded;
+						renderDetails();
+						return;
+					}
+					selectList.handleInput(data);
+					tui.requestRender();
+				},
+			};
+		}, {
+			overlay: true,
+			overlayOptions: { anchor: "center", width: "80%", maxHeight: "80%" },
+		});
+	} finally {
+		signal.removeEventListener("abort", abort);
+	}
 }
 
 function gitBytes(root: string, args: string[], extraEnv: NodeJS.ProcessEnv = {}): Buffer {
@@ -977,10 +1048,25 @@ async function executeForegroundEnrollment(
 		const rehearsalOverride = rehearsalDecision.override;
 		const rehearsalDigest = descriptorRehearsalDigest(descriptorRehearsal);
 		const rehearsalReceiptRef = descriptorRehearsalReceiptRef(descriptorRehearsal, rehearsalOverride);
+		const acceptanceDetails = taskIntent.intent.acceptance.length === 0
+			? "(none)"
+			: taskIntent.intent.acceptance
+				.map((item) => `${item.id}: ${item.assertion} [verification: ${item.verification}]`)
+				.join("\n");
 		const summary = [
 			`Task: ${taskId}`,
+			`Goal: ${taskIntent.intent.goal}`,
+			`Risk: ${taskIntent.intent.risk}`,
+			`Scope: ${taskIntent.intent.scope_hint.length > 0 ? taskIntent.intent.scope_hint.join(", ") : "(none)"}`,
+			`Acceptance: ${taskIntent.intent.acceptance.length} descriptor(s); press d to expand`,
+			`Staged digest: ${descriptorRehearsal.index_digest}`,
+		].join("\n");
+		const details = [
+			`Acceptance descriptors:`,
+			acceptanceDetails,
+			`Preparation digest: ${preparation.digest}`,
+			`Intent digest: ${preparation.intent.content_hash}`,
 			`Intent: ${preparation.intent.path} @ rev ${preparation.intent.revision}`,
-			`Content hash: ${preparation.intent.content_hash}`,
 			`Owners: intent+workspace+claim+record checked`,
 			`Descriptor rehearsal (${rehearsalDigest}):`,
 			descriptorRehearsalSummary(descriptorRehearsal) || "(no descriptors)",
@@ -990,21 +1076,19 @@ async function executeForegroundEnrollment(
 			`Route: ${action === "new" ? "Kernel default" : "Kernel explicit enrollment"}${rehearsalOverride ? " (descriptor-rehearsal waiver)" : ""}`,
 		].join("\n");
 
-		const confirmationRequired = requiresEnrollmentConfirmation(
-			action,
-			taskIntent.intent.risk,
-			rehearsalOverride,
-		);
+		const confirmationRequired = requiresEnrollmentConfirmation(taskIntent.intent.risk);
 		if (confirmationRequired) {
 			progress("awaiting_confirmation", "Waiting for exact literal-user confirmation");
-			const confirmed = await ctx.ui.confirm(
+			const confirmed = await requestEnrollmentConfirmation(
+				ctx,
 				action === "new" ? "Create Kernel-managed task?" : "Enroll Kernel canary task?",
 				summary,
-				{ signal },
+				details,
+				signal,
 			);
+			if (signal.aborted) return cancelled();
 			if (!confirmed)
 				return terminal(action, taskId, "rejected", stage, "Enrollment confirmation was rejected; zero authority writes were requested", "invoke the launcher again only if enrollment is still intended");
-			if (signal.aborted) return cancelled();
 		}
 
 		progress("revalidating", "Revalidating immutable owners and the staged rehearsal snapshot");

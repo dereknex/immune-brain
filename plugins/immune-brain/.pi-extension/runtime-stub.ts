@@ -280,6 +280,7 @@ export interface TaskIntentRead {
 	token: object;
 	content_hash: string;
 	intent: {
+		goal: string;
 		task_id: string;
 		revision: number;
 		risk: "routine" | "material" | "critical";
