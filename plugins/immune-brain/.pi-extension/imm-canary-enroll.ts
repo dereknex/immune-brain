@@ -926,7 +926,7 @@ async function classifyCommitFailure(
 				"completed",
 				"committing",
 				`Kernel enrollment committed for ${taskId}; terminal receipt was recovered from authoritative owners`,
-				"continue with imm-canary-work",
+				"continue with imm-loop",
 			);
 		}
 		if (
@@ -1142,7 +1142,7 @@ async function executeForegroundEnrollment(
 				"completed",
 				stage,
 				`Kernel enrollment completed: task ${result.record.task_id} phase=${result.record.phase} backend=${result.backend_claim.backend} rehearsal=${descriptorRehearsal.enrollment_ready ? "passed" : "waived"}`,
-				"continue with imm-canary-work",
+				"continue with imm-loop",
 			);
 		} catch (error) {
 			return classifyCommitFailure(root, action, taskId, now, error);

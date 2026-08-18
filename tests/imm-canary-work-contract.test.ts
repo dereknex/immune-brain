@@ -11,10 +11,10 @@ function read(rel: string): string {
 	return readFileSync(join(ROOT, rel), "utf8");
 }
 
-describe("imm-canary-work skill contract", () => {
-	test("skill entry and packaged copy describe the foreground assurance route", () => {
-		const entry = read("plugins/immune-brain/skills/imm-canary-work/SKILL.md");
-		const dist = read("plugins/immune-brain/dist/imm-canary-work.md");
+describe("imm-loop Kernel routing contract", () => {
+	test("public Loop entry and packaged copy describe the foreground assurance route", () => {
+		const entry = read("plugins/immune-brain/skills/imm-loop/SKILL.md");
+		const dist = read("plugins/immune-brain/dist/imm-loop.md");
 		for (const text of [entry, dist]) {
 			expect(text).toContain("imm_kernel_canary");
 			expect(text).toContain("advance_assurance");
@@ -30,7 +30,7 @@ describe("imm-canary-work skill contract", () => {
 		}
 		expect(entry).toContain("Load");
 		expect(dist).toContain("record-user-approval");
-		expect(dist).toContain("/imm-canary-authorize");
+		expect(dist).toContain("native TUI gate");
 	});
 
 	test("enrollment contracts require isolated descriptor rehearsal and one explicit waiver route", () => {
@@ -63,15 +63,15 @@ describe("imm-canary-work skill contract", () => {
 		expect(waiverRoute).not.toContain("setStatus(");
 	});
 
-	test("skill is registered in both registry copies", () => {
+	test("the public registry exposes Loop instead of the former canary Skill", () => {
 		for (const rel of [
 			"plugins/immune-brain/skills/registry.yaml",
 			"plugins/immune-brain/dist/registry.yaml",
 		]) {
 			const registry = read(rel);
-			const block = registry.split("  - name: imm-canary-work")[1]?.split("\n  - name:")[0] ?? "";
-			expect(block).toContain("path: skills/imm-canary-work/SKILL.md");
-			expect(block).toContain("role: coordinate");
+			expect(registry).toContain("path: skills/imm-loop/SKILL.md");
+			expect(registry).toContain("role: coordinate");
+			expect(registry).not.toContain("imm-canary-work");
 		}
 	});
 
@@ -81,15 +81,13 @@ describe("imm-canary-work skill contract", () => {
 		);
 	});
 
-	test("imm-work and imm-loop carry the Kernel routing clause", () => {
-		for (const name of ["imm-work", "imm-loop"]) {
-			const entry = read(`plugins/immune-brain/skills/${name}/SKILL.md`);
-			const dist = read(`plugins/immune-brain/dist/${name}.md`);
-			expect(entry).toMatch(/imm-canary-work|Kernel projection/i);
-			expect(dist).toMatch(/Kernel Canary Routing/i);
-			expect(dist).toMatch(/task tombstone|terminal/i);
-			expect(dist).toMatch(/fail(s)?\s+closed/i);
-		}
+	test("public Loop carries the Kernel routing clause", () => {
+		const entry = read("plugins/immune-brain/skills/imm-loop/SKILL.md");
+		const dist = read("plugins/immune-brain/dist/imm-loop.md");
+		expect(entry).toMatch(/imm-canary-work|Kernel projection/i);
+		expect(dist).toMatch(/Kernel Canary Routing/i);
+		expect(dist).toMatch(/task tombstone|terminal/i);
+		expect(dist).toMatch(/fail(s)?\s+closed/i);
 	});
 
 	test("every SKILL.md directory is registered", () => {

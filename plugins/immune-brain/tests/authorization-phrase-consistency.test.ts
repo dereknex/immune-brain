@@ -10,10 +10,7 @@ const AUTHORITY = "dist/docs/reference/subagent-dispatch-protocol.md"
 const AUTHORITY_LINK = "subagent-dispatch-protocol.md#authorization-authority"
 
 const DISPATCH_HOSTS = [
-  "dist/imm-work.md",
-  "dist/imm-ui-review.md",
-  "dist/imm-code-review.md",
-  "dist/imm-arch-explorer.md",
+  "dist/imm-loop.md",
 ]
 
 describe("dispatch authorization source of truth", () => {

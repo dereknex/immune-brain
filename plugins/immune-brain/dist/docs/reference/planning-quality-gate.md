@@ -16,7 +16,7 @@ Apply the gate when the task touches one or more of these surfaces:
 
 - **contract surface**: name the files, skills, runtime modules, generated outputs, or docs whose behavior is part of the promised result.
 - **compatibility**: state whether existing plans, state files, Pi runtime contracts, or users need migration or backwards-compatible behavior.
-- **interruption recovery**: describe what should remain true if execution stops midway and how the next `imm-work` run should continue.
+- **interruption recovery**: describe what should remain true if execution stops midway and how the next `imm-loop` run should continue.
 - **rollback path**: name the smallest coherent set of files or state entries to revert if the step fails.
 - **verification strength**: prefer parser, contract-test, unit-test, or executable command evidence over simple file-existence checks.
 - **design-depth classification**: for a change with a Technical Design concern, record why it is Low, Medium, or High risk. Every new or revised Spec records `**Design risk**: Low|Medium|High` with an adjacent rationale. Medium/High risk requires a Technical Design baseline in the Spec; Low risk may remain concise only when it has no contract, ownership, security, persistence, compatibility, or multi-component concern.

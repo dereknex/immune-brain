@@ -23,7 +23,8 @@ describe("imm-planner kernel intent contract", () => {
 		expect(skill).toContain("imm-plan --routing-status --json");
 		expect(skill).toContain("kernel_task_intent");
 		expect(skill).toContain("routing_policy_invalid");
-		expect(skill).toContain("imm-canary-work");
+		expect(skill).toContain("imm-loop");
+		expect(skill).not.toContain("imm-canary-work");
 		expect(skill).toContain("no Planner path enrolls a task");
 	});
 

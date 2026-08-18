@@ -62,11 +62,11 @@ describe("packed consumer surface", () => {
 				}
 				if (subpath.startsWith("./skills/")) {
 					expect(
-						existsSync(join(ROOT, target.replace("*", "imm-canary-work/SKILL.md"))),
+						existsSync(join(ROOT, target.replace("*", "imm-loop/SKILL.md"))),
 					).toBe(true);
 				}
 				if (subpath.startsWith("./dist/")) {
-					expect(existsSync(join(ROOT, target.replace("*", "imm-canary-work.md")))).toBe(true);
+					expect(existsSync(join(ROOT, target.replace("*", "imm-loop.md")))).toBe(true);
 				}
 				continue;
 			}

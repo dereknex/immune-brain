@@ -1,10 +1,15 @@
-# Skill 目录与系统 Subagent 参考
+# Public Skill 目录与系统 Subagent 参考
+
+本页描述 Immune-Brain 的三个 user-facing Skill 入口及其内部 role/runtime 合同。
+用户可发现的 Skill 只有 `imm-brainstorm`、`imm-planner` 和 `imm-loop`；下文的
+executor、QA、Review、repair、explorer、advisory、Compounder 名称都是 Loop
+内部 role 或稳定 gate identifier，不是可安装 Skill，也没有兼容 alias。
 
 本页从主 [README.md](../../README.md) 拆出，便于单独阅读与打印。内容与仓库契约测试中的「用户文档表面」一致：**契约测试会将本文与 README 合并后做断言**。
 
 ---
 
-## 🎭 十一个 Skill 说明
+## 三个 public Skill 入口与内部 role 合同
 
 ### `imm-brainstorm`
 对问题先做结构化头脑风暴，明确范围、边界和假设，并把任务转换成可规划状态。
@@ -24,13 +29,13 @@
 
 内嵌原则：Think before coding + Simplicity first。ambition 可以主动选择，但不能静默扩张。
 
-### `imm-work`
+### Internal Loop coordination role
 计划后的 current-step driver，负责推进当前 step 的下一段闭环。
 
 职责：
 - 判断是否有可执行计划
 - 激活或定位当前可执行 step
-- 跟踪当前状态并进入 `imm-executor`、`imm-qa` 或 `imm-planner` 语义
+- 跟踪当前状态并进入 internal executor、internal QA 或 `imm-planner` 语义
 - 让一次“继续”只推进当前 step，不静默跨入下一个 step
 - 当前 step 需要执行时，同一轮进入 executor 语义并留下 evidence
 - 在 `pass` 后报告下一个可继续 step，但不默认自动跑完整 plan
@@ -51,11 +56,11 @@
 职责：
 - 按计划自动推进多个 step，并可在 completed Plan 后继续消费 pending reviewer `follow_up`
 - 只到安全阻塞点、计划和 follow-up 完成点，或小预算上限
-- 复用 `imm-work -> imm-executor -> imm-qa` 的权限边界
+- 复用 `imm-loop -> executor -> qa` 的权限边界
 - 在 `pass` 后可以继续下一个已解锁 step，但遇到 `rework`、`replan`、缺证据或依赖缺口就停止
-- 每次 autowork 改变 workflow 状态后，Pi 协调器重新读取 `imm-work status`
+- 每次 autowork 改变 workflow 状态后，Pi 协调器重新读取 Loop runtime projection
   并刷新当前任务投影；该同步只是 `.imm` 到 Pi UI 的只读展示
-- 不把 `imm-work` 默认改造成 full-plan autowork
+- `imm-loop` 不把 runtime checkpoint 默认改造成 full-plan autowork
 
 *   **特色**：机器可读的高安全度推进引擎，支持 validated 计划及 follow-up 自动推进。
 *   **优势**：在保障“安全第一”的前提下，遇到任何执行红灯（断言失败、rework/replan）立即原地刹车退回，不污染本地状态。
@@ -83,7 +88,7 @@
 
 内嵌原则：Simplicity first + Goal-driven execution。规划只保留必要步骤，每步必须能验证。
 
-### `imm-executor`
+### Internal executor role
 负责执行单步。
 
 职责：
@@ -102,7 +107,7 @@
 
 内嵌原则：Surgical changes + Simplicity first。只做当前 step 的最小必要改动。
 
-### `imm-qa`
+### Internal QA role
 负责每步收口和质量判断。
 
 职责：
@@ -126,18 +131,19 @@
 
 Loop Engineering Discipline enhances the existing `Step` evidence loop; it is not a new platform. 它要求 `Executor` 在多轮尝试中记录短格式 loop trace，包含 attempt、observation、judgment、next strategy；要求工具输出先被整理成 structured tool feedback，再交给 `QA` 判断。`QA` 不把 repeated same error、tool failure、no progress、missing credentials、unclear target or verification 写成泛泛 blocker，而是根据是否存在 strategy change 决定 `rework` 或 `replan`。
 
-### `imm-code-review`
+### Internal code-review role (stable gate `imm-code-review`)
 对单步外的代码审查进行结构化处理（PR review、反馈回路、CI 失败归并）；
 输出 blocker/fix/defer，并明确区分“当前边界可直接修”与“需要新 follow-up plan”；
 review 还应附带一个 bounded `follow_up` handoff，把最小修复边界、成功目标和验证提示交给下一轮；
-前者进入 `imm-planner` 收敛成 validated one-step / small-step plan，再由 `imm-work` / `imm-executor` 执行，
+前者进入 `imm-planner` 收敛成 validated one-step / small-step plan，再由 `imm-loop` 的
+internal executor 执行，
 后者则直接路由回 `imm-planner` 生成新的 follow-up slice。
 
 *   **特色**：代码联检宿主，引入“文件级上下文分片（Context Sharding）”，分发任务给各专项只读顾问。
 *   **优势**：利用分片提高审计吞吐率以规避大文件审查死角，采用可观察准则（verification criteria）进行 Findings 排重，将小问题降级回流直修而无需 planner重写计划。
 *   **解决场景**：主干合并前的防守，以及多维度架构/安全漏洞审查。
 
-### `imm-pr-fix`
+### Internal PR repair role
 负责处理 PR 无法继续合并的阻塞项：merge conflict、review feedback、CI failure。
 
 职责：
@@ -149,7 +155,7 @@ review 还应附带一个 bounded `follow_up` handoff，把最小修复边界、
 *   **优势**：仅修改冲突与 Blocker 关联文件，提供严格的冲突区合并校验，防止意外覆盖他人成果。
 *   **解决场景**：解决由于合并频繁、CI 误报等导致的分支 PR 发布拥堵。
 
-### `imm-ui-review`
+### Internal UI review role (stable gate `imm-ui-review`)
 聚焦前端交付后的界面质量与体验完整性：
 功能正确后，先做可用性、无障碍、响应式、视觉一致性等复核；
 给出可执行的修复优先级，决定是 `fix` 还是 `defer`；
@@ -159,7 +165,7 @@ review 还应附带一个 bounded `follow_up` handoff，把最小修复边界、
 *   **优势**：深度关注交互长任务的 Skeleton 体验与表单置灰防呆设计，支持极速的同边界修复路径。
 *   **解决场景**：优化前端交互和人机界面质量，防止纯功能导向的程序员忽略无障碍（a11y）或用户操作体验。
 
-### `imm-compounder`
+### Internal Compounder role
 负责把完成经验沉淀为可复用的组织记忆。
 
 职责：
@@ -177,20 +183,21 @@ review 还应附带一个 bounded `follow_up` handoff，把最小修复边界、
 
 内嵌原则：Simplicity first。只沉淀有复用前提和验证依据的经验，不写泛化口号。
 
-### Skill 边界和产物
+### Public Skills and internal role boundaries
 
-| Skill | 写入边界 | 输出产物 |
+The table below deliberately separates the three discoverable Skills from roles that only
+`imm-loop` dispatches internally.
+
+| Surface | Write boundary | Output |
 |---|---|---|
-| `imm-brainstorm` | 默认只读；最多按用户要求写 `docs/brainstorms/` | 问题定义、in/out scope、假设、风险、下一阶段建议 |
-| `imm-brainstorm`（`adversarial` mode） | 默认只读；不写代码、不拆实现步骤 | Scope Mode、工程闭合检查、plan-ready handoff |
-| `imm-planner` | 只写 `docs/specs/`、`docs/plans/`、必要的 `.imm/memory/MEMORY.md` | 3-5 步计划、验收方式、validator 结果 |
-| `imm-work` | 只运行 `.imm/*` 工具并更新 `.imm/memory/` 状态 | 当前 plan、active step、completed steps、current-step driver 状态、停止条件 |
-| `imm-executor` | 只改当前 active step 需要的实现/测试/文档 | changed files、验证命令、验证结果、剩余风险 |
-| `imm-qa` | 只验证并记录 review 决策 | `pass/rework/replan`、evidence、artifacts、notes |
-| `imm-code-review` | 只读 review；不直接修复 | findings、blockers、deferred、repair-vs-replan routing、next actions |
-| `imm-pr-fix` | 只改明确 PR blocker 相关文件 | 已处理项、文件映射、验证命令、剩余风险 |
-| `imm-ui-review` | 只读 UI review；可产出截图/日志证据 | UI findings、severity、proof、fix/defer/replan 决策 |
-| `imm-compounder` | 只写 `docs/solutions/` 和 `.imm/memory/MEMORY.md` | solution doc、复用前提、证据、memory 更新 |
+| `imm-brainstorm` | Read-only by default; optional `docs/brainstorms/` artifact | Problem frame, assumptions, risks, next-stage handoff |
+| `imm-planner` | `docs/specs/`, `docs/plans/`, and planning memory | Validated Spec/Plan and verification paths |
+| `imm-loop` | Current workflow boundary through explicit runtime actions | Execution, QA, Review, repair, learning, or terminal next action |
+| Internal `executor` | Active Step or accepted same-boundary follow-up only | Execution evidence |
+| Internal `qa` | Evidence and review decision fields only | `pass` / `rework` / `replan` |
+| Internal `code-review` / `ui-review` | Read-only review evidence | Findings and stable gate decisions |
+| Internal `pr-fix` / `test-fixer` | Explicitly delegated repair files only | Bounded child evidence |
+| Internal `compounder` | `docs/solutions/`, ADRs, and memory after closure | Reusable Learning |
 
 ---
 
@@ -198,11 +205,12 @@ review 还应附带一个 bounded `follow_up` handoff，把最小修复边界、
 
 Immune-Brain 的系统级 subagents 按三层设计，避免把上游的大型 agent 清单直接搬进默认流程：
 
-1. **核心闭环层**：默认可用，服务于理解项目、控制范围、计划、执行、验收和沉淀；生命周期职责仍映射到现有 `imm-*` skill 边界。
+1. **核心闭环层**：默认可用，服务于理解项目、控制范围、计划和 Loop 执行；内部 role 不是 public Skill。
 2. **条件风险层**：仅在任务触及对应风险时启用，例如 security、data、API、reliability、UI 或 release readiness；不作为每次任务的默认参与者。
 3. **项目专用层**：仅面向特定项目类型启用，例如 AI eval、prompt contract、docs verification 或 debug investigation。
 
-这些 subagents 只能提供受控执行或 advisory 输入，不能绕过 `imm-work` 激活当前 step，不能替代 `imm-brainstorm` `adversarial` mode 的 scope 判断，不能替代 `imm-executor` 的单步执行权限，也不能替代 `imm-qa` 的闭合判断。
+这些 subagents 只能提供受控执行或 advisory 输入，不能绕过 `imm-loop` 的 active-step
+或 authority gate，也不能替代 `imm-brainstorm`、`imm-planner` 或 `imm-loop` 的边界判断。
 
 #### Authority 与 Routing Boundary
 
@@ -210,19 +218,19 @@ Immune-Brain 的系统级 subagents 按三层设计，避免把上游的大型 a
 
 - `imm-brainstorm`（`roundtable` mode）：独立的只读会诊层，只负责暴露多角色观点；它不是 system subagent roster，也不拥有 scope、plan、execution 或 QA authority。
 - system subagents：父 orchestrator 按需调用的辅助能力；它们可以提供 advisory、planning artifact、active-step bounded execution 或 review evidence，但都不能静默升级成 authority role。
-- `imm-*` authority roles：真正拥有流程决策权的闭环角色，例如 `imm-planner`、`imm-executor`、`imm-qa`；system subagents 只能映射或服务于这些角色，不能取代它们。
+- `imm-*` authority roles：真正拥有流程决策权的闭环内部角色，例如 `imm-planner`、internal executor、internal QA；system subagents 只能映射或服务于这些角色，不能取代它们。
 
 首版只接受 4 类 system subagent authority class：
 
 - **advisory**：只给出研究、评审或风险意见，例如 `context-mapper`、`scope-reviewer`、`code-reviewer`、`ui-reviewer`。
 - **planning artifact writer**：只写 planning artifact，不改实现，例如 `planner`。
-- **active-step bounded executor**：只在 `imm-work` 已激活当前 step 后，改动当前 step 范围内的文件，例如 `executor`。
+- **active-step bounded executor**：只在 `imm-loop` 已激活当前 step 后，改动当前 step 范围内的文件，例如 `executor`。
 - **review evidence producer**：只产出闭合判断或复用沉淀所需 evidence / artifact，例如 `qa-verifier`、`knowledge-compounder`。
 
 无论哪一类 subagent：
 
 - 都不能直接决定最终 scope posture；
-- 都不能跳过 `imm-work` 的 active-step gate；
+- 都不能跳过 `imm-loop` 的 active-step gate；
 - 都不能把 advisory 结果直接转成 plan rewrite、code edit 或 QA `pass`；
 - 一旦需要超出当前 authority class 的行为，必须回到对应的 `imm-*` role 继续闭环。
 
@@ -305,11 +313,11 @@ default、repo default。配置要求显式调用但用户没有明确请求时�
 | `context-mapper` | 提炼项目结构、关键文件和现有约定 | 新项目、陌生代码库、规划前需要 repo context | `brainstorm`, `plan` | `advisory` | 只读；只做 repo context 读取，不改计划、不改代码、不改运行态 | project map、relevant files、constraints、risks | `imm-brainstorm` / `imm-planner` 的 research 输入 |
 | `scope-reviewer` | 判断目标是否过大、是否需要收缩或有限扩展 | brainstorm 后、计划前、review 暴露 scope 风险时 | `preplan`, `review` | `advisory` | 只读；不写 plan、不决定最终 scope posture | scope posture suggestion、in/out boundary、blocking ambiguity | `imm-brainstorm`（`adversarial` mode） |
 | `planner` | 产出 spec 和可独立闭合的小步计划 | scope 已稳定但还没有 validated plan | `plan` | `planning-artifact-writer` | 只写 `docs/specs/`、`docs/plans/` 和必要 planning memory | spec、iteration plan、validator result、next action | `imm-planner` |
-| `executor` | 执行一个 active step 的最小必要改动 | `imm-work` 激活 step 后需要交付结果 | `work` | `active-step-bounded-executor` | 只改当前 active step 所需文件；不改计划和 review state | changed files、verification command、verification result、remaining risk | `imm-executor` |
-| `qa-verifier` | 判断当前 step 是否 pass、rework 或 replan | step 有 execution evidence 后 | `review` | `review-evidence-producer` | 只读验证；只通过 `imm-review` 记录结论 | decision、evidence、artifacts、notes | `imm-qa` |
+| `executor` | 执行一个 active step 的最小必要改动 | `imm-loop` 激活 step 后需要交付结果 | `work` | `active-step-bounded-executor` | 只改当前 active step 所需文件；不改计划和 review state | changed files、verification command、verification result、remaining risk | internal executor |
+| `qa-verifier` | 判断当前 step 是否 pass、rework 或 replan | step 有 execution evidence 后 | `review` | `review-evidence-producer` | 只读验证；只通过 runtime review action 记录结论 | decision、evidence、artifacts、notes | internal QA |
 | `code-reviewer` | 做跨 step 或 PR 级技术审查 | PR review、CI 阻塞、宽 diff 或 review feedback | `review` | `advisory` | 只读；不直接修复；修复回到 executor 或 pr-fix | findings、blockers、deferred items、next actions | `imm-code-review` |
 | `ui-reviewer` | 复核 UI/UX、可访问性、响应式和视觉一致性 | 前端、设计或交互变更完成后 | `review` | `advisory` | 只读评审；不直接改 UI；修复回到 executor | UI findings、severity、proof、fix/defer/replan suggestion | `imm-ui-review` |
-| `knowledge-compounder` | 把已验证经验沉淀为可复用知识 | plan 完成并有可复用证据后 | `compound` | `review-evidence-producer` | 只写 `docs/solutions/` 和 `.imm/memory/MEMORY.md` | solution doc、reuse conditions、evidence、memory update | `imm-compounder` |
+| `knowledge-compounder` | 把已验证经验沉淀为可复用知识 | plan 完成并有可复用证据后 | `compound` | `review-evidence-producer` | 只写 `docs/solutions/` 和 `.imm/memory/MEMORY.md` | solution doc、reuse conditions、evidence、memory update | internal Compounder |
 
 #### 条件风险 Advisory Lenses
 
@@ -383,6 +391,6 @@ system subagents 的首版只做治理与契约，不做以下事情：
 
 - 不实现完整自动调度平台或 runtime registry。
 - 不复制任何上游项目的完整 agent roster。
-- 不允许 subagent 绕过 `imm-work` 激活 step、绕过 `imm-executor` 改实现，或绕过 `imm-qa` 记录闭合结论。
+- 不允许 subagent 绕过 `imm-loop` 激活 step、绕过 internal executor 改实现，或绕过 internal QA 记录闭合结论。
 - 不引入 agent-to-agent 通信、长期 party state 或全局 subagent memory。
 - 不在首版默认常驻大规模项目专用 roster。

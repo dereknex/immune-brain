@@ -392,7 +392,7 @@ function runIntentAuthor(args: string[], root: string): KernelExecution {
 				"rejected",
 				"kernel_owner_active",
 				null,
-				"Route to imm-canary-work instead of authoring a new draft.",
+				"Route to imm-loop instead of authoring a new draft.",
 			),
 		};
 	if (owner.v3)

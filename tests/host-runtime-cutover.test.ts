@@ -11,8 +11,6 @@ const PI_FACING_CONTRACTS = [
 	"README.md",
 	"docs/user_manual.md",
 	"plugins/immune-brain/dist/imm-loop.md",
-	"plugins/immune-brain/dist/imm-work.md",
-	"plugins/immune-brain/dist/imm-qa.md",
 ];
 
 /** Production host runtime paths that must not contain python3 startup. */

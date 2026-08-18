@@ -136,7 +136,7 @@ describe("pi canary lifecycle package composition", () => {
 		for (const f of [
 			"plugins/immune-brain/.pi-extension/imm-canary-enroll.ts",
 			"plugins/immune-brain/.pi-extension/imm-canary-work.ts",
-			"plugins/immune-brain/skills/imm-canary-work/SKILL.md",
+			"plugins/immune-brain/skills/imm-loop/SKILL.md",
 		]) {
 			expect(existsSync(join(ROOT, f))).toBe(true);
 		}

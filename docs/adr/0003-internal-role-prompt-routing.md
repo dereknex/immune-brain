@@ -4,7 +4,7 @@ status: accepted
 
 # Internal Role Prompt Routing
 
-Architecture exploration, bounded advisory review, and post-closure Learning capture use internal role prompts dispatched through the existing Parent/Loop bridge. Brainstorm and Planner may select read-only `arch-explorer` or `advisory-reviewer` roles; Loop may dispatch `compounder` only when closed Step evidence proves a reusable Learning. This preserves coordinator authority and removes the need for separate public Skill entry points while public shims remain only through the Issue #9 migration milestone.
+Architecture exploration, bounded advisory review, and post-closure Learning capture use internal role prompts dispatched through the existing Parent/Loop bridge. Brainstorm and Planner may select read-only `arch-explorer` or `advisory-reviewer` roles; Loop may dispatch `compounder` only when closed Step evidence proves a reusable Learning. This preserves coordinator authority and removes the need for separate public Skill entry points.
 
 ## Consequences
 

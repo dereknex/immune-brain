@@ -146,7 +146,7 @@ describe("Loop execution and repair routing", () => {
 		});
 	});
 
-	it("documents internal execution routing while retaining compatibility shims", () => {
+	it("documents internal execution routing with no public role shims", () => {
 		const loop = read("plugins/immune-brain/dist/imm-loop.md");
 		expect(loop).toContain("buildLoopAction");
 		expect(loop).toContain("buildLoopRoleContext");
@@ -156,11 +156,11 @@ describe("Loop execution and repair routing", () => {
 		expect(loop).toContain("Scope expansion always returns to `imm-planner`");
 		expect(loop).not.toContain("route it through `imm-canary-work`");
 		for (const path of [
-			"plugins/immune-brain/skills/imm-executor/SKILL.md",
-			"plugins/immune-brain/skills/test-fixer/SKILL.md",
-			"plugins/immune-brain/skills/imm-pr-fix/SKILL.md",
+			"plugins/immune-brain/dist/role-prompts/executor.md",
+			"plugins/immune-brain/dist/role-prompts/test-fixer.md",
+			"plugins/immune-brain/dist/role-prompts/pr-fix.md",
 		]) {
-			expect(read(path)).toContain("dist/");
+			expect(read(path)).toContain("Internal role");
 		}
 	});
 });

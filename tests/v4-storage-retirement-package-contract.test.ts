@@ -43,12 +43,12 @@ describe("v4 package contract", () => {
 		]);
 	});
 
-	test("dist imm-canary-work documents Kernel routing and no v3 mutation", () => {
-		const dist = read("plugins/immune-brain/dist/imm-canary-work.md");
+	test("dist imm-loop documents Kernel routing and no v3 mutation", () => {
+		const dist = read("plugins/immune-brain/dist/imm-loop.md");
 		expect(dist).toContain("imm_kernel_canary");
-		expect(dist).toContain("imm-canary-work");
-		expect(dist).toContain("imm-canary-new");
-		expect(dist).toContain("imm-canary-enroll");
+		expect(dist).toContain("imm-loop");
+		expect(dist).toContain("imm_canary_enrollment");
+		expect(dist).toContain("imm_kernel_canary");
 		expect(dist).not.toContain("imm-work activate");
 	});
 

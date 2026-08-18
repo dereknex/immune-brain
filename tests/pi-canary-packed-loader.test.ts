@@ -34,7 +34,7 @@ function extractTarball(): { dir: string; tarball: string } {
 }
 
 describe("packed artifact loader", () => {
-	test("npm pack produces a tarball that extracts both extensions and the Skill", () => {
+	test("npm pack produces a tarball with only the public Skills and internal runtime", () => {
 		const { dir } = extractTarball();
 		try {
 			const pkgDir = join(dir, "package");
@@ -42,13 +42,28 @@ describe("packed artifact loader", () => {
 				"plugins/immune-brain/.pi-extension/imm-canary-enroll.ts",
 				"plugins/immune-brain/.pi-extension/imm-canary-new.ts",
 				"plugins/immune-brain/.pi-extension/imm-canary-work.ts",
-				"plugins/immune-brain/skills/imm-canary-work/SKILL.md",
-				"plugins/immune-brain/dist/imm-canary-work.md",
+				"plugins/immune-brain/skills/imm-brainstorm/SKILL.md",
+				"plugins/immune-brain/skills/imm-loop/SKILL.md",
+				"plugins/immune-brain/skills/imm-planner/SKILL.md",
+				"plugins/immune-brain/skills/registry.yaml",
+				"plugins/immune-brain/dist/imm-brainstorm.md",
+				"plugins/immune-brain/dist/imm-loop.md",
+				"plugins/immune-brain/dist/imm-planner.md",
+				"plugins/immune-brain/runtime/bootstrap.ts",
+				"plugins/immune-brain/runtime/bootstrap-templates/AGENTS.md",
 				"plugins/immune-brain/runtime/kernel/canary_application.ts",
+				"plugins/immune-brain/dist/role-prompts/code-review.md",
 			]) {
 				expect(existsSync(join(pkgDir, f))).toBe(true);
 			}
-			for (const retired of RETIRED_PROGRESS_FILES) {
+			for (const retired of [
+				...RETIRED_PROGRESS_FILES,
+				"plugins/immune-brain/skills/imm-canary-work/SKILL.md",
+				"plugins/immune-brain/skills/imm-init/SKILL.md",
+				"plugins/immune-brain/dist/imm-canary-work.md",
+				"plugins/immune-brain/dist/imm-init.md",
+				"plugins/immune-brain/dist/test-fixer.md",
+			]) {
 				expect(existsSync(join(pkgDir, retired))).toBe(false);
 			}
 		} finally {
@@ -78,7 +93,7 @@ describe("packed artifact loader", () => {
 		}
 	});
 
-	test("real Pi resource loader discovers extensions and the Skill from shipped bytes", async () => {
+	test("real Pi resource loader discovers extensions and all public Skills from shipped bytes", async () => {
 		const { dir } = extractTarball();
 		try {
 			const pkgDir = join(dir, "package");
@@ -111,8 +126,14 @@ describe("packed artifact loader", () => {
 					"imm-canary-new.ts",
 					"imm-canary-work.ts",
 				]);
-				const skills = loader.getSkills().skills.map((s: { name: string }) => s.name);
-				expect(skills).toContain("imm-canary-work");
+				const skills = loader
+					.getSkills()
+					.skills.filter((s: { filePath: string }) =>
+						s.filePath.startsWith(join(pkgDir, "plugins/immune-brain/skills")),
+					)
+					.map((s: { name: string }) => s.name)
+					.sort();
+				expect(skills).toEqual(["imm-brainstorm", "imm-loop", "imm-planner"]);
 			} finally {
 				rmSync(agentDir, { recursive: true, force: true });
 			}

@@ -76,7 +76,6 @@ describe("current Pi-only contracts", () => {
 
   it("documents valid Pi native research subagent invocations", () => {
     for (const path of [
-      "plugins/immune-brain/dist/imm-arch-explorer.md",
       "plugins/immune-brain/dist/imm-brainstorm.md",
       "plugins/immune-brain/dist/imm-planner.md",
     ]) {
@@ -96,8 +95,8 @@ describe("current Pi-only contracts", () => {
     const activePaths = [
       "plugins/immune-brain/runtime/imm_core.ts",
       "plugins/immune-brain/runtime/commands/kernel.ts",
-      "plugins/immune-brain/dist/imm-work.md",
-      "plugins/immune-brain/dist/imm-compounder.md",
+      "plugins/immune-brain/dist/imm-loop.md",
+      "plugins/immune-brain/dist/role-prompts/compounder.md",
     ];
     for (const path of activePaths) {
       const content = readFileSync(resolve(ROOT, path), "utf8");

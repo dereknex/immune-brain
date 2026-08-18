@@ -36,7 +36,8 @@ Before producing a new managed planning artifact, read the Pi runtime
 routing-status projection with `imm-plan --routing-status --json` and route
 deterministically:
 
-- an active Kernel claim routes to `imm-canary-work`, not new planning;
+- an active Kernel claim routes to `imm-loop` for foreground Kernel Tool
+  coordination, not new planning;
 - an active or otherwise nonterminal v3 Plan remains on its existing v3 route;
 - no routing policy preserves the legacy v3 Planner behavior;
 - a valid `kernel_task_intent` retirement policy produces one TaskIntent draft
@@ -149,7 +150,7 @@ implementation-ready contract and routes it to normal planning or execution.
 
 ## Planning Rules
 
-- **Entry Contract**: Use when plan/spec work is actually needed. If a validated plan already exists and scope has not drifted, route forward to `imm-loop` (default full flow) or `imm-work` (single-step) rather than re-exposing planner as ceremony.
+- **Entry Contract**: Use when plan/spec work is actually needed. If a validated plan already exists and scope has not drifted, route forward to `imm-loop` rather than re-exposing planner as ceremony.
 - **Output Language Gate**: Before writing or revising any Spec or Plan, read the project output language policy from `AGENTS.md`, `IMMUNE.md`, or Immune-Brain plugin config. Default Spec and Plan prose to English unless the current user request, project instructions, or host/user preference contains an explicit document-language instruction. A reply-language instruction does not change document language. Keep schema fields, CLI commands, file paths, code identifiers, enum values, JSON keys, and canonical terms such as `Step`, `Plan`, `Spec`, `Verification`, `Discovery cache`, and `Devil's Advocate Audit` literal.
 - **Clarification Barrier**: If an upstream `imm-brainstorm` document exists, you MUST verify that all `BR-Q-*` items have been resolved and all narrowing questions have been answered. **If any clarification information from the brainstorm phase is still missing or unanswered, you MUST STOP immediately, record the missing info as a blocker, and return to `imm-brainstorm` or ask the user for the missing answers before drafting any steps.**
 - **Planning Bootstrap**: When no upstream `imm-brainstorm` document exists and the input is unclear or underspecified (borrowing CE Phase 0.4 Planning Bootstrap), planner self-confirms: problem frame, intended behavior, scope boundaries and non-goals, success criteria, and blocking questions or assumptions. Keep this bootstrap brief — it exists to preserve direct-entry convenience, not to replace a full brainstorm. If the bootstrap uncovers major unresolved product questions, recommend `imm-brainstorm` (and its `adversarial` mode only for high-risk signals). If the user wants to continue here, require explicit assumptions before proceeding.
@@ -158,7 +159,7 @@ implementation-ready contract and routes it to normal planning or execution.
   `CONTEXT.md`, `IMMUNE.md`, `HANDOFF.md`, active tests/docs). Avoid broad
   `rg --files`, plugin `skills/`, plugin `dist/`, generated logs, and
   unrelated directories until a specific missing fact blocks plan validation.
-- **Review Mapping**: If the source origin is a review follow-up packet, map it explicitly: `origin_review` -> `Origin`, findings -> `Research`. Planner processes only packets that cross the current boundary. Planner does not process same-boundary follow-ups; a direct same-boundary `follow_up` handoff should return to `imm-work` as an execution artifact instead of becoming a Plan mutation. A `direct_fix` handoff should usually mean a same-boundary follow-up candidate, not a planner-owned Plan mutation.
+- **Review Mapping**: If the source origin is a review follow-up packet, map it explicitly: `origin_review` -> `Origin`, findings -> `Research`. Planner processes only packets that cross the current boundary. Planner does not process same-boundary follow-ups; a direct same-boundary `follow_up` handoff returns to `imm-loop` as an execution artifact instead of becoming a Plan mutation. A `direct_fix` handoff should usually mean a same-boundary follow-up candidate, not a planner-owned Plan mutation.
 - **Brainstorm Manifest Mapping**: If the source includes a `Brainstorm manifest`, treat it as a closed-world input. Copy the manifest IDs into the Plan and add a `Brainstorm Trace` row for every `BR-*` item. Legal statuses are `covered_by_step`, `partially_covered`, `captured_as_decision`, `out_of_scope`, `deferred`, and `resolved_as_assumption`. `partially_covered`, `out_of_scope`, and `deferred` rows require a reason. `BR-Q-*` rows must be resolved before the Plan is execution-ready. The planner may narrow scope only by recording an explicit mapping; it must not silently omit confirmed brainstorm items. `imm-plan <plan-path> --json` reports an `origin_coverage` summary with `declared_items`, `mapped_items`, `unmapped_items`, reason-required trace counts, and completeness.
 - **Roadmap-Backed Planning**: When a Spec contains a Roadmap or phase map and only part of it is ready to execute, add a current-slice banner to the Plan: `Roadmap source`, `Execution scope`, `Deferred phases`, and a sentence that this is not the full roadmap implementation Plan. Add a coverage matrix for compound requirements. Split compound items when possible; if a Brainstorm item is only partly covered, map the covered part to the Step and keep the remainder explicitly deferred with its next action. Current acceptance criteria must prove only the executable slice; deferred phase acceptance notes must be labeled non-executable until a later Plan promotes them. New successor-ready slices may opt into `Plan contract: roadmap-slice/v1`; record `Current phase`, `Plan boundary`, `Boundary rationale`, `Scope pressure`, zero or one `Successor candidate`, `Successor preconditions`, and `Current-slice warning`. The candidate is static, non-authoritative planning metadata: it does not create, validate, approve, activate, queue, or execute another Plan.
 - **Session Lifecycle Ownership**: The user decides whether progression continues in the current session or a new session. Planner must not turn Plan boundaries, tokens, compactions, tool calls, elapsed time, or review rounds into automatic session creation, closure, or forced-stop policy. Persisted Spec, Plan, State Ledger, and handoff artifacts must support either user choice.
@@ -186,7 +187,7 @@ Agreement becomes evidence. Disagreement becomes decision criteria. strong-model
 
 **Trigger condition:** Only dispatch when the task spans multiple domains (`multi_domain >= 2`) or the user explicitly requests parallel research during planning. Do not dispatch for single-domain tasks or small-scope plans.
 
-**Global activation policy:** Planner research dispatch must honor `[subagent_activation]` before launching Pi native `Explore` subagents. Valid modes are `auto`, `explicit_only`, and `disabled`; the repository default is `auto`. If config requires explicit parallel research and the user did not request it, record `explicit_required`. If config disables planner research dispatch, record `config_disabled`. Planner-defined `parallel_probes` are also subject to the same policy when `imm-work` later dispatches them.
+**Global activation policy:** Planner research dispatch must honor `[subagent_activation]` before launching Pi native `Explore` subagents. Valid modes are `auto`, `explicit_only`, and `disabled`; the repository default is `auto`. If config requires explicit parallel research and the user did not request it, record `explicit_required`. If config disables planner research dispatch, record `config_disabled`. Planner-defined `parallel_probes` are also subject to the same policy when `imm-loop` later dispatches them.
 
 **Retrieval budget:** Stop dispatching as soon as existing evidence is sufficient to decompose steps with concrete verification paths. Do not dispatch additional agents to improve phrasing, add examples, or fill in non-essential details. Dispatch again only when a required interface contract, file dependency, or constraint is still missing and would block step decomposition.
 
@@ -200,7 +201,7 @@ Agreement becomes evidence. Disagreement becomes decision criteria. strong-model
 
 - **Allowed**: Write specs, iteration plans, durable planning memory, and `CONTEXT.md` at the repo root.
 - **Blocked**: Implementation edits, active-step activation, and review decisions.
-- **Workflow guard**: after a validated plan, the default user-facing continuation is `imm-loop` (full completion loop). Use `imm-work` only for single-step / manual control. Neither path may skip into executor edits without the active-step driver. Planner owns scope/spec/step decomposition; it is not the default continue entry once that work is already closed.
+- **Workflow guard**: after a validated plan, the default and only user-facing continuation is `imm-loop`. It must not skip into executor edits without the active-step driver. Planner owns scope/spec/step decomposition; it is not the default continue entry once that work is already closed.
 
 ## Output artifact
 
@@ -241,5 +242,5 @@ Iteration plan under `docs/plans/` and spec under `docs/specs/`. Includes: `Summ
 ## Next Action
 
 - Gate: Plan passes `imm-plan --json` validation, no step has a hypothetical-only verification path, and the user has confirmed scope.
-- If gates pass: for Kernel-managed work, present the TaskIntent path plus `/imm-canary-new` or `/imm-canary-enroll`. Remaining nonterminal v3 Plans may continue through `imm-loop`; suggest `imm-work` only when the user asks for single-step / manual control.
+- If gates pass: for Kernel-managed work, present the TaskIntent path plus `/imm-canary-new` or `/imm-canary-enroll`; the enrolled task continues through `imm-loop`.
 - If gates are not met: state which validation failures or unresolved verification paths remain; do not name a next skill.

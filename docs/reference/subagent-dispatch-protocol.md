@@ -1,6 +1,6 @@
 # Pi Subagent Dispatch Protocol
 
-本文档定义 Immune-Brain workflow role 在 Pi 中调度 advisory child 的唯一可执行协议。`imm-code-review`、`imm-ui-review`、`imm-brainstorm` 和其他可派发 role 引用本协议，不内联另一套宿主分支。
+本文档定义 Immune-Brain workflow role 在 Pi 中调度 advisory child 的唯一可执行协议。公共 `imm-brainstorm`、`imm-planner`、`imm-loop` 和 runtime 内部 roles 引用本协议，不内联另一套宿主分支。
 
 ## Eligibility
 

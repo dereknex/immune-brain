@@ -133,10 +133,12 @@ always run sequentially.
 
 ## Hub skill anatomy
 
-Hub Skills `imm-work`, `imm-executor`, `imm-planner`, and `imm-qa` carry the
-repo's main workflow authority. They must keep explicit `Rationalizations`,
-`Red Flags`, and Verification guidance grounded in Immune-Brain commands and
-`.imm` state, not generic upstream-only examples.
+The public Skills `imm-brainstorm`, `imm-planner`, and `imm-loop` carry the
+repo's user-facing workflow authority. Execution, QA, review, repair,
+exploration, and learning are internal runtime roles dispatched by Loop through
+packaged role prompts; they are not additional public Skills. Keep explicit
+`Rationalizations`, `Red Flags`, and Verification guidance grounded in
+Immune-Brain commands and `.imm` state.
 
 ## Shallow Discovery
 

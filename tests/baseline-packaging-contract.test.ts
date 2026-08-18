@@ -11,12 +11,8 @@ const BASELINE_SKILLS = resolve(REPO_ROOT, BASELINE_SKILLS_REL)
 const BASELINE_DIST = resolve(REPO_ROOT, "plugins/immune-brain/dist/BASELINE.md")
 const DIST_DIR = resolve(REPO_ROOT, "plugins/immune-brain/dist")
 const PLANNER = resolve(DIST_DIR, "imm-planner.md")
-const WORK = resolve(DIST_DIR, "imm-work.md")
 const PROFILE_ROLE_PAIRS = [
   ["plugins/immune-brain/skills/imm-loop/SKILL.md", "plugins/immune-brain/dist/imm-loop.md"],
-  ["plugins/immune-brain/skills/imm-work/SKILL.md", "plugins/immune-brain/dist/imm-work.md"],
-  ["plugins/immune-brain/skills/imm-executor/SKILL.md", "plugins/immune-brain/dist/imm-executor.md"],
-  ["plugins/immune-brain/skills/imm-qa/SKILL.md", "plugins/immune-brain/dist/imm-qa.md"],
 ] as const
 
 function read(abs: string): string {
@@ -62,7 +58,13 @@ describe("immune-brain BASELINE packaging contract", () => {
     expect(baseline).not.toContain("Use the Direct Path only when all of these are true")
     expect(baseline).not.toContain("one direct, non-destructive verification")
     expect(read(PLANNER)).not.toContain("do not skip spec/plan just because the fix is small")
-    expect(read(WORK)).not.toContain("do not bypass preplan/planner or QA")
+    for (const [sourcePath, distPath] of [
+      ["plugins/immune-brain/runtime/prompts/code-review.md", "plugins/immune-brain/dist/role-prompts/code-review.md"],
+      ["plugins/immune-brain/runtime/prompts/compounder.md", "plugins/immune-brain/dist/role-prompts/compounder.md"],
+    ]) {
+      expect(read(resolve(REPO_ROOT, sourcePath))).toContain("# Internal role:")
+      expect(read(resolve(REPO_ROOT, distPath))).toContain("# Internal role:")
+    }
   })
 
   it("keeps risk-tier routing aligned across loaders and packaged roles", () => {
@@ -75,17 +77,11 @@ describe("immune-brain BASELINE packaging contract", () => {
         expect(content).toContain("Strict")
       }
     }
-    for (const role of ["imm-code-review", "imm-compounder"]) {
-      const source = read(resolve(REPO_ROOT, `plugins/immune-brain/skills/${role}/SKILL.md`))
-      const packaged = read(resolve(DIST_DIR, `${role}.md`))
-      expect(source).toContain("Standard")
-      expect(packaged).toContain("Standard")
-    }
-    expect(read(resolve(DIST_DIR, "imm-code-review.md"))).toContain(
+    expect(read(resolve(DIST_DIR, "imm-loop.md"))).toContain(
       "review_budget_state.budget_stop",
     )
-    expect(read(resolve(DIST_DIR, "imm-compounder.md"))).toContain(
-      "compounder_requirement.required",
+    expect(read(resolve(DIST_DIR, "role-prompts/compounder.md"))).toContain(
+      "# Internal role: compounder",
     )
   })
 

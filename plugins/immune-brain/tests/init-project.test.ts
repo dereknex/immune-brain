@@ -3,10 +3,10 @@ import { existsSync, mkdtempSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
 import { spawnSync } from "node:child_process"
-import { buildReport } from "../skills/imm-init/scripts/init_project"
+import { buildReport } from "../runtime/bootstrap"
 
 const PLUGIN_ROOT = resolve(import.meta.dir, "..")
-const SCRIPT = resolve(PLUGIN_ROOT, "skills/imm-init/scripts/init_project.ts")
+const SCRIPT = resolve(PLUGIN_ROOT, "runtime/bootstrap.ts")
 
 function tempRoot(): string {
   return mkdtempSync(join(tmpdir(), "imm-init-"))
@@ -39,7 +39,7 @@ describe("imm-init bootstrap", () => {
     expect(json.status).toBe(0)
     expect(json.stdout).toContain('"ready_for": [')
     expect(json.stdout).toContain('"imm-brainstorm"')
-    expect(json.stdout).toContain('"imm-brainstorm"')
+    expect(json.stdout).toContain('"imm-planner"')
     expect(json.stdout).toContain('"imm-loop"')
     expect(json.stderr).toBe("")
 

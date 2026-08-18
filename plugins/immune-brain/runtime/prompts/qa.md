@@ -16,3 +16,8 @@ Return exactly one JSON object with these fields:
 
 Do not invent fields. Keep rework inside the active boundary. A successor
 Plan remains a literal-user decision.
+
+For elevated-risk work, check the latest referenced Spec's Design Conformance
+against implementation evidence. A local implementation mismatch is `rework`;
+return `rework` with bounded repair evidence. A structural or intended design
+change is `replan`; return `replan` with the missing design fact. QA must not approve a changed design or silently accept a deviation. If the checkpoint is `awaiting_user_successor_decision`, stop without dispatch; only a literal user may invoke `--approve-successor`.

@@ -56,9 +56,8 @@ describe("canonical Skill mode consolidation", () => {
 	it("keeps canonical docs authoritative without alias entry references", () => {
 		for (const doc of [
 			"plugins/immune-brain/dist/imm-brainstorm.md",
-			"plugins/immune-brain/dist/imm-advisory-reviewer.md",
+			"plugins/immune-brain/dist/role-prompts/advisory-reviewer.md",
 			"plugins/immune-brain/dist/imm-planner.md",
-			"plugins/immune-brain/dist/imm-init.md",
 			"plugins/immune-brain/skills/imm-brainstorm/SKILL.md",
 		]) {
 			const content = read(doc);
@@ -74,7 +73,7 @@ describe("canonical Skill mode consolidation", () => {
 
 	it("exposes the consolidated debug lens and page design mode", () => {
 		expect(
-			read("plugins/immune-brain/dist/imm-advisory-reviewer.md"),
+			read("plugins/immune-brain/dist/role-prompts/advisory-reviewer.md"),
 		).toContain("`debug_hypothesis`");
 		expect(read("plugins/immune-brain/dist/imm-planner.md")).toContain(
 			"mode: page_design",

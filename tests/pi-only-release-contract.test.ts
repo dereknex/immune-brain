@@ -29,7 +29,7 @@ describe("Pi-only release contract", () => {
       "package.json",
       "README.md",
       "plugins/immune-brain/.pi-extension/imm-canary-work.ts",
-      "plugins/immune-brain/skills/imm-canary-work/SKILL.md",
+      "plugins/immune-brain/skills/imm-loop/SKILL.md",
       "plugins/immune-brain/runtime/kernel/completion.ts",
     ]) expect(files).toContain(required);
     for (const prefix of [

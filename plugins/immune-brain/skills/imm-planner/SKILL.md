@@ -39,7 +39,8 @@ Before producing a new managed planning artifact, read the Pi runtime
 routing-status projection with `imm-plan --routing-status --json` and route
 deterministically:
 
-- an active Kernel claim routes to `imm-canary-work`, not new planning;
+- an active Kernel claim routes to `imm-loop` for foreground Kernel Tool
+  coordination, not new planning;
 - an active or otherwise nonterminal v3 Plan remains on its existing v3 route;
 - no routing policy preserves the legacy v3 Planner behavior;
 - a valid `kernel_task_intent` retirement policy produces one TaskIntent draft

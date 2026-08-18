@@ -1,9 +1,6 @@
 #!/usr/bin/env bun
 import { resolve } from "node:path"
-import { ensureManagedBootstrap } from "../../../runtime/managed_path_router"
-
-export const ROOT = resolve(import.meta.dir, "..")
-export const TEMPLATES = resolve(ROOT, "templates")
+import { ensureManagedBootstrap } from "./managed_path_router"
 
 export const DIRS = [".imm/memory", "docs/specs", "docs/brainstorms", "docs/plans"]
 export const FILES: Record<string, string> = {

@@ -15,16 +15,12 @@ const ROLE_PAIRS = [
 		"plugins/immune-brain/dist/imm-loop.md",
 	],
 	[
-		"plugins/immune-brain/skills/imm-work/SKILL.md",
-		"plugins/immune-brain/dist/imm-work.md",
+		"plugins/immune-brain/runtime/prompts/qa.md",
+		"plugins/immune-brain/dist/role-prompts/qa.md",
 	],
 	[
-		"plugins/immune-brain/skills/imm-qa/SKILL.md",
-		"plugins/immune-brain/dist/imm-qa.md",
-	],
-	[
-		"plugins/immune-brain/skills/imm-code-review/SKILL.md",
-		"plugins/immune-brain/dist/imm-code-review.md",
+		"plugins/immune-brain/runtime/prompts/code-review.md",
+		"plugins/immune-brain/dist/role-prompts/code-review.md",
 	],
 ] as const;
 
@@ -46,21 +42,19 @@ describe("Roadmap successor workflow role contracts", () => {
 
 	it("orders Compounder and finish before the terminal user decision stop", () => {
 		const loop = read("plugins/immune-brain/dist/imm-loop.md");
-		const work = read("plugins/immune-brain/dist/imm-work.md");
-		for (const content of [loop, work]) {
-			expect(content).toContain("imm-compounder");
-			expect(content).toContain("imm-finish");
+		for (const content of [loop]) {
+			expect(content).toContain("internal Compounder");
+			expect(content).toContain("terminal settlement");
 			expect(content).toContain("recommended_authority: user");
 			expect(content).toContain("must not dispatch");
 		}
 	});
 
 	it("keeps QA and review closure separate from successor activation", () => {
-		for (const role of ["imm-qa", "imm-code-review"]) {
-			const content = read(`plugins/immune-brain/dist/${role}.md`);
-			expect(content).toContain("--expected-current-plan");
-			expect(content).toContain("--expected-ledger-revision");
-			expect(content).toContain("cannot approve or activate");
+		for (const role of ["qa", "code-review"]) {
+			const content = read(`plugins/immune-brain/dist/role-prompts/${role}.md`);
+			expect(content).toContain("approve a successor");
+			expect(content).toContain("Internal role:");
 		}
 	});
 

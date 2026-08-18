@@ -4,8 +4,8 @@ import { fileURLToPath } from "node:url"
 import { dirname, resolve } from "node:path"
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..")
-const SKILL_SOURCE = "plugins/immune-brain/skills/imm-code-review/SKILL.md"
-const SKILL_DIST = "plugins/immune-brain/dist/imm-code-review.md"
+const SKILL_DIST = "plugins/immune-brain/dist/imm-loop.md"
+const INTERNAL_REVIEW = "plugins/immune-brain/dist/role-prompts/code-review.md"
 const PACKAGED_SPEC =
 	"plugins/immune-brain/dist/docs/specs/automatic-subagent-activation.spec.md"
 const RETIRED_CLI = [
@@ -30,21 +30,18 @@ function expectRetiredCliAbsent(content: string, rel: string): void {
 
 describe("imm-code-review activation fallback contract", () => {
 	it("keeps catalog-driven lenses and shared dispatch without a retired CLI ladder", () => {
-		for (const rel of [SKILL_SOURCE, SKILL_DIST]) {
+		for (const rel of [SKILL_DIST, INTERNAL_REVIEW]) {
 			const content = read(rel)
 			expectRetiredCliAbsent(content, rel)
-			expect(content).toContain("trigger_not_hit")
-			expect(content).toContain("explicit_required")
-			expect(content).toContain("host_authorization_required")
 			expect(content).not.toContain("MCP-first")
 			expect(content).not.toContain("imm_activation_plan")
 		}
+		const review = read(INTERNAL_REVIEW)
+		expect(review).toContain("read-only code review")
+		expect(review).toContain("imm-code-review")
+		expect(review).toContain("follow_up")
 		const dist = read(SKILL_DIST)
-		expect(dist).toContain("security")
-		expect(dist).toContain("api_contract")
-		expect(dist).toContain("data_integrity")
-		expect(dist).toContain("reliability")
-		expect(dist).toContain("review-host-dispatch-protocol.md")
+		expect(dist).toContain("buildLoopRoleDispatch")
 		expect(dist).toContain("subagent-dispatch-protocol.md")
 	})
 
@@ -55,12 +52,10 @@ describe("imm-code-review activation fallback contract", () => {
 	})
 
 	it("keeps same-boundary findings on the follow_up execution route", () => {
-		for (const rel of [SKILL_SOURCE, SKILL_DIST]) {
-			const content = read(rel)
-			expect(content).toContain("same-boundary")
-			expect(content).toContain("follow_up")
-			expect(content).toContain("imm-work")
-			expect(content).toContain("not a Plan mutation")
-		}
+		const content = read(SKILL_DIST)
+		expect(content).toContain("same-boundary")
+		expect(content).toContain("follow_up")
+		expect(content).toContain("Loop runtime action")
+		expect(content).toContain("not a Plan mutation")
 	})
 })

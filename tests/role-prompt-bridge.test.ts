@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
@@ -239,22 +239,34 @@ describe("internal role-prompt bridge", () => {
 		expect(pkg.files).toContain("plugins/immune-brain/runtime/prompts");
 		expect(pkg.files).toContain("plugins/immune-brain/dist");
 	});
-	it("keeps Loop role dispatch on the internal bridge while retaining shims", () => {
+	it("keeps Loop role dispatch on the internal bridge and the public surface closed", () => {
 		for (const path of [
 			"plugins/immune-brain/skills/imm-loop/SKILL.md",
 			"plugins/immune-brain/dist/imm-loop.md",
 		]) {
 			const content = read(path);
 			expect(content).toContain("buildLoopRoleDispatch");
-			expect(content).toMatch(/public\s+Skills\s+remain available as rollback shims/);
+			expect(content).toContain("three-entry public Skill surface");
+			expect(content).not.toMatch(/public\s+Skills\s+remain available as rollback shims/);
 			expect(content).not.toContain("dispatch an isolated read-only `imm-qa`");
 		}
 	});
-	it("keeps the public Skill shims available during the additive migration", () => {
-		for (const role of ["imm-qa", "imm-code-review", "imm-ui-review"]) {
-			expect(read(`plugins/immune-brain/skills/${role}/SKILL.md`)).toContain(
-				"dist/",
+	it("loads internal role prompts without public Skill shims", () => {
+		for (const role of [
+			"qa",
+			"code-review",
+			"ui-review",
+			"executor",
+			"test-fixer",
+			"pr-fix",
+			"arch-explorer",
+			"advisory-reviewer",
+			"compounder",
+		]) {
+			expect(read(`plugins/immune-brain/runtime/prompts/${role}.md`)).toContain(
+				"Internal role",
 			);
+			expect(existsSync(resolve(ROOT, `plugins/immune-brain/skills/imm-${role}/SKILL.md`))).toBe(false);
 		}
 	});
 });

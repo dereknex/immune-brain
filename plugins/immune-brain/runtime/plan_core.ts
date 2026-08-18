@@ -574,7 +574,7 @@ export function compounderPolicyForTask(
 }
 
 /**
- * Fast-track eligibility for `imm-work`: a short Plan whose every Step can be
+ * Fast-track eligibility for Managed Loop: a short Plan whose every Step can be
  * proven by running something. Verification is free prose, so an inline code
  * span is the available signal for "automated". A false positive only
  * compresses ceremony — evidence recording and QA closure still apply.

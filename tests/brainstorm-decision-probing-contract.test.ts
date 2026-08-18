@@ -7,7 +7,7 @@ const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const read = (path: string) => readFileSync(resolve(REPO_ROOT, path), "utf-8");
 
 const BRAINSTORM = read("plugins/immune-brain/dist/imm-brainstorm.md");
-const COMPOUNDER = read("plugins/immune-brain/dist/imm-compounder.md");
+const COMPOUNDER = read("plugins/immune-brain/dist/role-prompts/compounder.md");
 const PLANNER = read("plugins/immune-brain/dist/imm-planner.md");
 const PREPLAN = read("plugins/immune-brain/dist/imm-brainstorm.md");
 const GENERAL_BENCHMARK = JSON.parse(
@@ -34,7 +34,7 @@ describe("Brainstorm decision probing contracts", () => {
 			"independently sufficient trigger (OR semantics)",
 			"write them as one complete condition string",
 			"Never invent a reconsideration condition",
-			"omit `reconsider_if` when evidence cannot support one",
+			"If evidence cannot support one, omit `reconsider_if`.",
 			"require no bulk backfill",
 		]) {
 			expect(COMPOUNDER).toContain(fragment);

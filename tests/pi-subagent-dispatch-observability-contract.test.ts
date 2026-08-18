@@ -25,10 +25,8 @@ test("interactive dispatch contracts are foreground-only and do not poll", () =>
 
 test("assurance role guidance describes direct QA and native Review receipt flow", () => {
 	for (const path of [
-		"plugins/immune-brain/skills/imm-canary-work/SKILL.md",
-		"plugins/immune-brain/dist/imm-canary-work.md",
-		"plugins/immune-brain/skills/imm-work/SKILL.md",
-		"plugins/immune-brain/dist/imm-work.md",
+		"plugins/immune-brain/skills/imm-loop/SKILL.md",
+		"plugins/immune-brain/dist/imm-loop.md",
 	]) {
 		const contract = read(path);
 		expect(contract).toContain("advance_assurance");

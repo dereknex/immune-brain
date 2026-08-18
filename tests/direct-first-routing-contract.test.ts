@@ -6,15 +6,12 @@ const ROOT = resolve(import.meta.dir, "..");
 const read = (path: string): string => readFileSync(resolve(ROOT, path), "utf8");
 
 const BASELINE = read("plugins/immune-brain/BASELINE.md");
-const CANARY_SKILL = read("plugins/immune-brain/skills/imm-canary-work/SKILL.md");
-const PACKAGED_CANARY_SKILL = read("plugins/immune-brain/dist/imm-canary-work.md");
 const ROOT_IMMUNE = read("IMMUNE.md");
-const INIT_AGENTS = read("plugins/immune-brain/skills/imm-init/templates/AGENTS.md");
-const INIT_IMMUNE = read("plugins/immune-brain/skills/imm-init/templates/IMMUNE.template.md");
-const INIT_SCRIPT = read("plugins/immune-brain/skills/imm-init/scripts/init_project.ts");
+const INIT_AGENTS = read("plugins/immune-brain/runtime/bootstrap-templates/AGENTS.md");
+const INIT_IMMUNE = read("plugins/immune-brain/runtime/bootstrap-templates/IMMUNE.template.md");
+const INIT_SCRIPT = read("plugins/immune-brain/runtime/bootstrap.ts");
 const README = read("plugins/immune-brain/README.md");
 const USER_GUIDE = read("plugins/immune-brain/USER_GUIDE.md");
-const INIT_SKILL = read("plugins/immune-brain/dist/imm-init.md");
 const PLANNER_SKILL = read("plugins/immune-brain/dist/imm-planner.md");
 const QUALITY_GATE = read("docs/reference/planning-quality-gate.md");
 const PACKAGED_QUALITY_GATE = read(
@@ -57,16 +54,12 @@ describe("Managed-by-default workflow routing contract", () => {
   });
 
   it("retains authoritative evidence and privilege confirmation boundaries", () => {
-    for (const text of [CANARY_SKILL, PACKAGED_CANARY_SKILL]) {
-      expectAll(text, [
-        "Before claiming scope drift, a Breaking Revision, or out-of-scope work",
-        "authoritative TaskIntent",
-        "current Kernel projection",
-        "staged task snapshot",
-        "scoped Git diff",
-        "Do not infer authority drift from prose",
-      ]);
-    }
+    expectAll(BASELINE, [
+      "Record reproducible evidence before reporting closure",
+      "active Managed step boundary",
+      "Managed scope changes",
+      "return to `imm-planner`",
+    ]);
     expectAll(BASELINE, [
       "Record reproducible evidence before reporting closure",
       "Require exact host confirmation only for",
@@ -85,9 +78,9 @@ describe("Managed-by-default workflow routing contract", () => {
     expectAll(INIT_IMMUNE, ["Repository-mutating requests use Managed Path by default", "partial or incompatible state fails"]);
     expect(INIT_SCRIPT).toContain('ready_for: ["imm-brainstorm", "imm-planner", "imm-loop"]');
     expect(INIT_SCRIPT).toContain("bootstrap_rejected");
-    expectAll(README, ["Managed-by-default route model", "imm-route --json <request>"]);
+    expect(INIT_SCRIPT).toContain("ensureManagedBootstrap");
+    expectAll(README, ["Repository-mutating requests enter Managed Path automatically", "imm-route --json <request>"]);
     expectAll(USER_GUIDE, ["Managed Path：仓库变更默认路径", "imm-route --json <request>"]);
-    expectAll(INIT_SKILL, ["automatically before the first repository-mutating Managed Path request", "fail-closed"]);
     expectAll(PLANNER_SKILL, ["default planning phase for a clear repository mutation", "enrolls a task or enrolls generated", "artifacts unconditionally"]);
     expectAll(QUALITY_GATE, ["clear repository mutations default to `imm-planner`", "literal-user Enrollment remains the authority boundary"]);
     expect(PACKAGED_QUALITY_GATE).toBe(QUALITY_GATE);

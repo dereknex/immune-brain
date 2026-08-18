@@ -6,7 +6,7 @@ const REPO_ROOT = resolve(import.meta.dir, "..")
 const read = (path: string) => readFileSync(resolve(REPO_ROOT, path), "utf-8")
 
 const PLANNER = read("plugins/immune-brain/dist/imm-planner.md")
-const QA = read("plugins/immune-brain/dist/imm-qa.md")
+const QA = read("plugins/immune-brain/dist/role-prompts/qa.md")
 const QUALITY_GATE = read("docs/reference/planning-quality-gate.md")
 
 function expectAll(text: string, required: string[], forbidden: string[] = []) {

@@ -52,7 +52,7 @@ imm-code-review = "auto"
 imm-ui-review = "auto"
 imm-brainstorm = "auto"
 imm-planner = "auto"
-imm-work = "auto"
+imm-loop = "auto"
 ```
 
 这里的 `hosts` 是工作流 review/coordination role，不是 code-agent host。优先级为：用户显式 solo、lens/subagent override、workflow role override、global default、repo default。

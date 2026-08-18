@@ -80,7 +80,7 @@ Agreement becomes framing evidence. Disagreement becomes decision criteria or an
 
 - **Allowed**: Clarify framing, inspect read-only context, ask narrowing questions, perform inline gap analysis.
 - **Blocked**: Implementation edits, test changes, plan writes, and runtime state updates. Do not edit implementation files, tests, specs, plans, or `.imm/memory/`.
-- **Workflow guard**: implementation continuations must go through `imm-planner` or `imm-work`. `imm-brainstorm` frames the problem; it is not the default post-framing stage once the task is already stable enough to route forward. The `adversarial` mode remains available as an opt-in high-pressure gate for high-risk scenarios but is not a default route target.
+- **Workflow guard**: implementation continuations must go through `imm-planner` or `imm-loop`. `imm-brainstorm` frames the problem; it is not the default post-framing stage once the task is already stable enough to route forward. The `adversarial` mode remains available as an opt-in high-pressure gate for high-risk scenarios but is not a default route target.
 
 ## Output artifact
 

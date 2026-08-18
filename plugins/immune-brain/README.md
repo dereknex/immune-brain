@@ -3,13 +3,21 @@
 Lifecycle skills for agentic engineering: planning, execution, review, QA, and
 learning capture, backed by a deterministic TypeScript workflow runtime.
 
-Each skill is a compact `skills/<name>/SKILL.md` trigger shim that loads its full
-instructions from `dist/<name>.md` only on invocation. Shared rules live in
-[`BASELINE.md`](BASELINE.md); current workflow behavior lives in the focused
-modules under [`runtime/`](runtime/), while `imm_core.ts` is the public API
-barrel.
+Each of the three public Skills is a compact `skills/<name>/SKILL.md`
+trigger shim that loads its full instructions from `dist/<name>.md` only on
+invocation. Execution, review, QA, repair, learning, and bootstrap capabilities
+are internal runtime roles or tools; they are not additional public Skills.
+Shared rules live in [`BASELINE.md`](BASELINE.md); current workflow behavior
+lives in the focused modules under [`runtime/`](runtime/), while `imm_core.ts`
+is the public API barrel.
 
-## Managed-by-default route model
+## Public Skill surface
+
+The package exposes exactly three Skills: `imm-brainstorm`, `imm-planner`, and
+`imm-loop`. Internal roles are dispatched by the runtime through packaged
+prompts under `dist/role-prompts/`; Loop never discovers them through Skill
+loading. Bootstrap is provided by `runtime/bootstrap.ts` and is not a public
+Skill.
 
 Repository-mutating requests enter Managed Path automatically; users do not
 need to say "Managed Path". The host applies `imm-route --json <request>` (or
@@ -40,16 +48,13 @@ flowchart LR
 ## Managed lifecycle
 
 The role-separated workflow below applies only after Managed routing. Advisory
-skills attach to this line but never own it.
+roles attach to this line but never own it.
 
 ```mermaid
 flowchart LR
-  init[imm-init] --> brainstorm[imm-brainstorm]
-  brainstorm --> planner[imm-planner]
-  planner -->|validated managed target| work[managed owner]
-  work --> executor[executor]
-  executor -->|evidence| qa[QA]
-  qa -->|pass| review[Review]
+  loop[imm-loop] --> executor[internal executor]
+  executor -->|evidence| qa[internal QA]
+  qa -->|pass| review[internal Review]
   qa -->|rework| executor
   review -->|follow-up| executor
   review -->|pass| done[completion]
@@ -70,25 +75,14 @@ Managed invariants (see `BASELINE.md`):
 
 | Entry | Role | Boundary |
 | ------- | ---- | -------- |
-| `imm-arch-explorer` | explorer; discovery | Repository exploration only; no implementation edits. |
-| `imm-advisory-reviewer` | reviewer; advisory; canonical | Read-only lens-based advisory review; requires an explicit lens. |
 | `imm-brainstorm` | brainstorm; framing; canonical | Problem framing only; no implementation or QA closure. |
-| `imm-code-review` | reviewer; review_host | Review and same-boundary follow-up handoff only; no direct edits. |
-| `imm-compounder` | compound; authority | Capture reusable learnings from completed work; no implementation edits. |
-| `imm-executor` | execute; authority | Implement only the activated step or follow-up scope. |
-| `imm-init` | bootstrap; bootstrap | Bootstrap Immune-Brain files only. |
-| `imm-planner` | plan; authority | Owns plan creation and revision; no executor edits. |
-| `imm-pr-fix` | execute; repair | Repair PR feedback and CI failures within the current PR scope. |
-| `imm-qa` | qa; authority | Close, rework, or replan based on recorded evidence only. |
-| `imm-ui-review` | reviewer; advisory | UI advisory review only; no implementation or QA closure. |
-| `imm-canary-work` | coordinate; coordinator | Pi-only routing of one Kernel-owned canary task to the lifecycle extension; no enrollment, no v3 mutation, no Plan activation. |
-| `imm-work` | coordinate; coordinator | Drive only the active step or pending follow-up to the next boundary. |
-| `imm-loop` | coordinate; coordinator | Coordinate the imm-autowork checkpoint runtime, execution, review gate follow-up, and compounder for a validated plan; no planning bypass. |
-| `test-fixer` | execute; active-step-bounded-executor | Edit only explicitly delegated test files for an active step; no workflow-state mutation. |
+| `imm-planner` | plan; authority; canonical | Owns plan creation and revision; no executor edits. |
+| `imm-loop` | coordinate; coordinator; canonical | Coordinate the validated plan through execution, review, and settlement; no planning bypass. |
 <!-- END GENERATED: skill-registry-role-map -->
 
-The authoritative role manifest is [`skills/registry.yaml`](skills/registry.yaml),
-whose per-skill `boundary` and `next_actions` define the allowed transitions.
+The authoritative public role manifest is [`skills/registry.yaml`](skills/registry.yaml).
+It contains only the three user-facing Skill entries; internal role authority
+and transitions live in the runtime bridge.
 
 ## Review gates
 
@@ -121,7 +115,6 @@ stable `drain_required` / `v3_storage_retired` diagnostic. Common entry points:
 | `bin/imm-activation-plan` | Retired after v4 storage retirement. |
 | `bin/imm-heal` | Retired after v4 storage retirement. |
 | `bin/imm-migrate [--check] [--json]` | Retired after v4 storage retirement; legacy v3 projects must drain with the prior runtime first. |
-| `bin/imm-canary-work` | Pi-only Kernel lifecycle: `imm_kernel_canary` tool (ordinary ops) plus TUI `/imm-canary-assure` (qa/review) and `/imm-canary-authorize` (user ops incl. `record-user-approval` for critical-task completion). |
 | `bin/imm-finish` | Retired after v4 storage retirement. |
 
 Workflow state lives under `.imm/` (Kernel TaskRecord v2 / workspace v2
@@ -148,7 +141,4 @@ Tests are Bun contract tests. Run the immune-brain suite from this directory:
 bun test tests/
 ```
 
-Broader `imm_core` / `imm-loop` contract tests live in the repo-root `tests/`
-directory. Consistency guards (`tests/skill-registry-consistency.test.ts`,
-`tests/host-manifest-consistency.test.ts`) keep the registry, skill shims, `dist`
-files, and host manifests aligned.
+Broader `imm_core` / `imm-loop` contract tests live in the repo-root `tests/` directory. Consistency guards (`plugins/immune-brain/tests/skill-registry-consistency.test.ts`, `plugins/immune-brain/tests/host-manifest-consistency.test.ts`) keep the registry, skill shims, `dist` files, and host manifests aligned.

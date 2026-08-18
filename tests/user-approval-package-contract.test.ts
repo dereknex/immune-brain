@@ -15,16 +15,16 @@ function read(p: string): string {
 }
 
 describe("user approval package contract", () => {
-	test("dist imm-canary-work documents record-user-approval wiring", () => {
-		const dist = read("plugins/immune-brain/dist/imm-canary-work.md");
+	test("dist imm-loop documents record-user-approval wiring", () => {
+		const dist = read("plugins/immune-brain/dist/imm-loop.md");
 		expect(dist).toContain("record-user-approval");
 		expect(dist).toMatch(/user-kind approval|user approval/i);
 		expect(dist).toContain("TUI");
 	});
 
-	test("skills shim documents the authorize surface", () => {
-		const skill = read("plugins/immune-brain/skills/imm-canary-work/SKILL.md");
-		expect(skill).toContain("imm-canary-authorize");
+	test("public Loop shim documents the authorize surface", () => {
+		const skill = read("plugins/immune-brain/skills/imm-loop/SKILL.md");
+		expect(skill).toContain("native TUI gate");
 	});
 
 	test("package.json surface is unchanged (no new privileged route)", () => {

@@ -11,6 +11,12 @@ Immune-Brain 是一套 **Managed-by-default、按请求类型保留 host-native 
 - 高风险任务保留明确的 authority、证据和恢复边界。
 - 普通任务不因文件数量、测试数量或常规返工承担 Plan、QA、Review 和流程弹窗开销。
 
+## Public Skill surface
+
+用户可发现的 Skill 只有三个：`imm-brainstorm`、`imm-planner`、`imm-loop`。
+执行、QA、Review、repair、learning 和 bootstrap 都由 `imm-loop` 与 runtime
+内部 roles/tools 完成；它们没有独立的 public Skill 或兼容 alias。
+
 ## 路由模型
 
 ### Managed Path：仓库变更默认路径
@@ -44,7 +50,7 @@ Host 先应用 `imm-route --json <request>`（或等价 routing contract），�
 
 ### 1. 自动 bootstrap
 
-无需先运行 setup command。第一次仓库变更请求由 host 调用 `imm-route`，在 Managed phase 开始前完成严格、幂等 bootstrap。`/imm-init` 只作为显式诊断入口；partial 或 schema-incompatible state 会 fail closed。
+无需先运行 setup command。第一次仓库变更请求由 host 调用 `imm-route`，在 Managed phase 开始前通过内部 runtime bootstrap 完成严格、幂等初始化；partial 或 schema-incompatible state 会 fail closed。
 
 ### 2. 先选择路径
 
@@ -95,21 +101,22 @@ v3 mutating commands 已退出生产路径。历史 v3 State Ledger 只能通过
 | 入口 | 用途 |
 | --- | --- |
 | `imm-route --json <request>` | 按自然语言请求选择 host-native、Brainstorm、Planner 或 Loop，并在 Managed phase 自动 bootstrap |
-| `imm-init` | Managed Path 自动 bootstrap 的显式诊断入口；不替代请求路由 |
 | `imm-brainstorm` | 澄清关键需求、约束和风险；不写计划或代码 |
 | `imm-planner` | 为清晰的仓库变更创建或修订候选 Spec/TaskIntent；不自动 Enrollment |
-| `imm-kernel intent author/validate` | canonical TaskIntent authoring 与 validation |
+| `imm-loop` | 消费已验证计划并协调执行、QA、Review、repair 与 settlement；不绕过 Planner 或 authority gate |
+
+### Internal runtime operations
+
+The following are runtime tools or TUI operations, not public Skills:
+
+| 入口 | 用途 |
+| --- | --- |
 | `imm-kernel status --json` | read-only Kernel/legacy shadow status |
 | `imm-kernel audit --legacy` | 显式 read-only legacy audit |
 | `/imm-canary-new <task-id>` | 发送可见 Parent request，并通过一次 foreground `imm_canary_enrollment` Tool 创建新 Managed TaskIntent；默认 route 不允许 waiver |
 | `/imm-canary-enroll <task-id>` | 发送可见 Parent request，并通过同一个 foreground Tool 展示 explicit descriptor waiver；Escape/host cancellation 仅在 commit 前生效 |
 | `imm_canary_enrollment` | Parent 调用的 foreground Enrollment Tool；直接返回 bounded progress 与唯一 terminal result，不使用 background recovery |
 | `imm_kernel_canary` | Agent 调用的 evidence、assurance、authorization 与 completion 工具 |
-| `imm-pr-fix` | 在当前 PR scope 内修复 review/CI feedback |
-| `imm-arch-explorer` | 只读探索陌生仓库结构 |
-| `imm-advisory-reviewer` | 按明确 lens 做只读 advisory review（含 `debug_hypothesis`） |
-
-`imm-work`、`imm-review`、`imm-autowork`、`imm-finish`、`imm-migrate` 等 v3 mutation 入口已 retired；它们不是新任务的操作路径。兼容入口 `imm-page-design`、`imm-party`、`imm-preplan-review`、`debug-investigator` 已 retired，改用 canonical 技能（`imm-planner` `page_design`、`imm-brainstorm` `roundtable`/`adversarial`、`imm-advisory-reviewer` `debug_hypothesis`）。
 
 ## Managed 角色边界
 
@@ -123,6 +130,10 @@ v3 mutating commands 已退出生产路径。历史 v3 State Ledger 只能通过
 | Compounder | 对已闭合工作按需沉淀可复用知识 | 阻塞普通 host-native completion、处理未闭合工作 |
 
 并行只用于无状态只读工作，例如仓库探索、独立 advisory review 或测试 probe。Task mutation、QA decision、review authority 与 owner transition 保持串行。
+
+Legacy v3 mutation entrypoints are retired and are not new-task operation paths。
+历史兼容 alias 也不再作为 public Skill；需要执行、Review 或 learning 时，统一由
+`imm-loop` 通过内部 runtime role dispatch 完成。
 
 ## 配置
 

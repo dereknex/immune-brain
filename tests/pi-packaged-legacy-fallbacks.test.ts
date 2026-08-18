@@ -16,7 +16,7 @@ const DIST_POLICY = resolve(
 const DIST_PLANNER = resolve(ROOT, "plugins/immune-brain/dist/imm-planner.md");
 const DIST_COMPOUNDER = resolve(
 	ROOT,
-	"plugins/immune-brain/dist/imm-compounder.md",
+	"plugins/immune-brain/dist/role-prompts/compounder.md",
 );
 const LEGACY_RUNTIME = "runtime/immune_brain_runtime.ts";
 const RETIRED_COMMANDS = [
@@ -87,9 +87,8 @@ describe("packaged legacy CLI fallbacks", () => {
 		const compounder = readFileSync(DIST_COMPOUNDER, "utf8");
 		expectRetiredGuidanceAbsent(compounder, "imm-compounder.md");
 		expect(compounder).toContain(
-			"Compounder runs only after workflow closure and assurance are already complete",
+			"# Internal Compounder",
 		);
-		expect(compounder).toContain("compounder_requirement.required");
 	});
 
 	it("describes static catalog-reference integrity", () => {
@@ -111,7 +110,7 @@ describe("packaged legacy CLI fallbacks", () => {
 				"utf8",
 			);
 			const compounder = readFileSync(
-				join(pkgDir, "plugins/immune-brain/dist/imm-compounder.md"),
+				join(pkgDir, "plugins/immune-brain/dist/role-prompts/compounder.md"),
 				"utf8",
 			);
 			const policy = readFileSync(
@@ -129,7 +128,7 @@ describe("packaged legacy CLI fallbacks", () => {
 			);
 			expect(planner).toContain("imm-kernel intent author");
 			expect(compounder).toContain(
-				"Compounder runs only after workflow closure and assurance are already complete",
+				"# Internal Compounder",
 			);
 			expect(policy).toContain(
 				"Catalog `policy_ref`/`spec_ref` integrity is enforced by build and",
