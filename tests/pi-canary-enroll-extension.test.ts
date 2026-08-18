@@ -13,7 +13,9 @@ import {
 	AUTHORITY_OBSERVATION_GENERATION_V2,
 	AUTHORITY_OBSERVER_VERSION_V2,
 } from "../plugins/immune-brain/runtime/authority_commit_receipts";
-import { requiresEnrollmentConfirmation } from "../plugins/immune-brain/.pi-extension/imm-canary-enroll";
+import { requiresEnrollmentConfirmation, assertTaskIntentPreparationStable } from "../plugins/immune-brain/.pi-extension/imm-canary-enroll";
+import { readTaskIntent } from "../plugins/immune-brain/runtime/kernel/intent";
+import { preparePiCanary } from "../plugins/immune-brain/runtime/kernel/pi_canary_prepare";
 import {
 	buildMigrationDryRunReport,
 	migrationDryRunDigest,
@@ -207,7 +209,11 @@ describe("pi canary enroll handler integration", () => {
 	// committed per attempt) with matching v2 observations (3 full lifecycles,
 	// all required families), plus a valid evidence bundle whose migration
 	// digest is computed from the live fixture ledger.
-	function makeEligibleRepo(root: string, taskId: string, risk: "routine" | "material" = "routine"): void {
+	function makeEligibleRepo(
+		root: string,
+		taskId: string,
+		risk: "routine" | "material" | "critical" = "routine",
+	): void {
 		git(root, ["init", "-q"]);
 		git(root, ["config", "user.email", "t@t"]);
 		git(root, ["config", "user.name", "t"]);
@@ -425,6 +431,25 @@ describe("pi canary enroll handler integration", () => {
 	}
 
 
+	test("rejects a TaskIntent changed between preflight and immutable preparation", () => {
+		const root = mkdtempSync(join(tmpdir(), "p2b1-enroll-"));
+		try {
+			makeEligibleRepo(root, TASK);
+			const preflight = readTaskIntent(root, TASK);
+			const intentPath = join(root, "docs", "plans", `${TASK}.intent.json`);
+			const changed = JSON.parse(readFileSync(intentPath, "utf8")) as { risk: string };
+			changed.risk = "material";
+			writeFileSync(intentPath, `${JSON.stringify(changed, null, 2)}\n`);
+			git(root, ["add", intentPath]);
+			const preparation = preparePiCanary(root, { task_id: TASK, now: new Date().toISOString() });
+			expect(() => assertTaskIntentPreparationStable(preflight, preparation)).toThrow(
+				/changed during preparation/i,
+			);
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
 	test("routine new auto-commits after rehearsal without confirmation", async () => {
 		const root = mkdtempSync(join(tmpdir(), "p2b1-enroll-"));
 		try {
@@ -454,6 +479,40 @@ describe("pi canary enroll handler integration", () => {
 			const before = authoritySnapshot(root);
 			const ui = makeFakeUI(false);
 			const result = await runTool(root, ui, [], "new");
+			expect(ui.confirmCalls.length).toBe(1);
+			expect(result.details.state).toBe("rejected");
+			expect(result.details.summary).toMatch(/confirmation was rejected/i);
+			expect(authoritySnapshot(root)).toBe(before);
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
+	test("critical new retains the confirmation gate", async () => {
+		const root = mkdtempSync(join(tmpdir(), "p2b1-enroll-"));
+		try {
+			makeEligibleRepo(root, TASK, "critical");
+			const before = authoritySnapshot(root);
+			const ui = makeFakeUI(false);
+			const result = await runTool(root, ui, [], "new");
+			expect(ui.confirmCalls.length).toBe(1);
+			expect(result.details.state).toBe("rejected");
+			expect(result.details.summary).toMatch(/confirmation was rejected/i);
+			expect(authoritySnapshot(root)).toBe(before);
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
+	test("routine explicit rehearsal waiver retains confirmation and zero writes", async () => {
+		const root = mkdtempSync(join(tmpdir(), "p2b1-enroll-"));
+		try {
+			makeEligibleRepo(root, TASK);
+			writeFileSync(join(root, "scripts", "accept.ts"), "process.exit(1);\n");
+			git(root, ["add", "scripts/accept.ts"]);
+			const before = authoritySnapshot(root);
+			const ui = makeFakeUI(false);
+			const result = await runTool(root, ui, [], "enroll");
 			expect(ui.confirmCalls.length).toBe(1);
 			expect(result.details.state).toBe("rejected");
 			expect(result.details.summary).toMatch(/confirmation was rejected/i);

@@ -278,6 +278,7 @@ export async function readTaskTombstone(
 
 export interface TaskIntentRead {
 	token: object;
+	content_hash: string;
 	intent: {
 		task_id: string;
 		revision: number;

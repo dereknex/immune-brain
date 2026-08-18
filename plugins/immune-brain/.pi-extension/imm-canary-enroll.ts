@@ -80,6 +80,14 @@ export function decideDescriptorRehearsalRoute(
 	return { proceed_to_confirmation: false, override: false };
 }
 
+export function assertTaskIntentPreparationStable(
+	preflight: { content_hash: string },
+	preparation: { intent: { content_hash: string } | null },
+): void {
+	if (preparation.intent?.content_hash !== preflight.content_hash)
+		throw new Error("TaskIntent changed during preparation; retry enrollment");
+}
+
 export function requiresEnrollmentConfirmation(
 	action: EnrollmentAction,
 	risk: "routine" | "material" | "critical",
@@ -918,6 +926,11 @@ async function executeForegroundEnrollment(
 		signal.throwIfAborted();
 		if (!preparation.intent)
 			return terminal(action, taskId, "blocked", stage, "A Git-tracked TaskIntent is required for Kernel enrollment", "author and stage the canonical TaskIntent");
+		try {
+			assertTaskIntentPreparationStable(taskIntent, preparation);
+		} catch (error) {
+			return terminal(action, taskId, "blocked", stage, errorMessage(error), "retry enrollment from the launcher");
+		}
 		if (
 			action === "new"
 			&& (preparation.backend_claim.present || preparation.task_record_v2?.present)
