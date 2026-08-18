@@ -1138,7 +1138,7 @@ export default function (pi: ExtensionAPI) {
 		},
 		renderResult(result, _options, theme) {
 			const details = result.details as Partial<EnrollmentTerminal> | undefined;
-			const state = details?.state ?? "unknown";
+			const state = String(details?.state ?? "unknown");
 			const stage = details?.stage ?? "unknown";
 			const textContent = result.content?.[0]?.type === "text"
 				? (result.content[0] as { text?: string }).text

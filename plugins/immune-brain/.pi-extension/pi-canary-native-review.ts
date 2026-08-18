@@ -84,7 +84,9 @@ export function matchesReservedAgentArgs(
 	params: ReservedAgentParams,
 ): boolean {
 	if (!isRecord(args)) return false;
-	const expectedKeys = Object.keys(params).filter((key) => (params as Record<string, unknown>)[key] !== undefined);
+	const expectedKeys = Object.entries(params)
+		.filter(([, value]) => value !== undefined)
+		.map(([key]) => key);
 	if (
 		Object.keys(args).length !== expectedKeys.length ||
 		expectedKeys.some((key) => !Object.hasOwn(args, key))

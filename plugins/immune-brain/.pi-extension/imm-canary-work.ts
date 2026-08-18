@@ -280,7 +280,7 @@ export default function (
 				Type.Object({ op: Type.Literal("complete") }),
 			]),
 		}),
-		execute: async (toolCallId: string, params: { task_id: string; action: { op: string } }, signal: AbortSignal | undefined, onUpdate: ((update: unknown) => void) | undefined, ctx: ExtensionContext) => {
+		execute: async (toolCallId: string, params: { task_id: string; action: { op: string } }, signal: AbortSignal | undefined, onUpdate: ((update: ReturnType<typeof toolResult>) => void) | undefined, ctx: ExtensionContext) => {
 			const { task_id: taskId, action } = params;
 			if (action.op === "advance_assurance" || action.op === "request_authorization" || action.op === "submit_review") {
 				if (ctx.mode !== "tui") return toolResult("imm_kernel_canary mutation is TUI-only");
@@ -920,7 +920,7 @@ async function applyAssuranceVerdict(
 			now,
 		});
 		await hooks.beforeCommit?.();
-		const result = (await commitAndApply(() => app.execute({
+		const result = (await commitAndApply(async () => app.execute({
 			root: ctx.cwd,
 			task_id: snapshot.task_id,
 			operation: {
@@ -968,7 +968,7 @@ async function applyAssuranceVerdict(
 		now,
 	});
 	await hooks.beforeCommit?.();
-	const result = (await commitAndApply(() => app.execute({
+	const result = (await commitAndApply(async () => app.execute({
 		root: ctx.cwd,
 		task_id: snapshot.task_id,
 		operation: { op: "record_approval", capability, approval, actor_id: actorId },

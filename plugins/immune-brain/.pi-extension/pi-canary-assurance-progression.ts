@@ -96,14 +96,14 @@ export type AssuranceAdvanceResult =
 
 export type AssuranceSubmitReviewResult =
 	| { state: "awaiting_user"; operation: "record-review-verdict"; operation_id: string }
-	| { state: "settlement_unknown"; operation: "review"; operation_id: string; reason: string }
+	| { state: "settlement_unknown"; operation: "qa" | "review"; operation_id: string; reason: string }
 	| { state: "blocked"; reason: string };
 
 export type ActiveAssuranceState =
 	| { state: "running"; operation: "qa"; operation_id: string; deadline_seconds: number }
 	| { state: "review_ready"; operation: "review"; operation_id: string }
 	| { state: "awaiting_user"; operation: "review"; operation_id: string }
-	| { state: "settlement_unknown"; operation: "qa" | "review"; operation_id: string };
+	| { state: "settlement_unknown"; operation: "qa" | "review"; operation_id: string; reason: string };
 
 export interface AssuranceProgressionPorts {
 	projectTask(root: string, taskId: string): Promise<AssuranceProjectionResult>;
@@ -351,7 +351,7 @@ export class AssuranceProgression {
 		const pending = this.pendingReviewVerdicts.get(taskId);
 		if (pending) return { state: "awaiting_user", operation: "review", operation_id: pending.operationId };
 		const unknown = this.unknownOperations.get(taskId);
-		if (unknown) return { state: "settlement_unknown", ...unknown };
+		if (unknown) return { state: "settlement_unknown", operation: unknown.operation, operation_id: unknown.operationId, reason: unknown.reason };
 		return null;
 	}
 
@@ -379,7 +379,7 @@ export class AssuranceProgression {
 		const active = this.active(taskId);
 		if (active?.state === "review_ready") return this.reviewReadyResult(taskId);
 		if (active?.state === "awaiting_user") return { state: "blocked", reason: "native Review verdict already awaits authorization" };
-		if (active?.state === "settlement_unknown") return { state: "settlement_unknown", ...active };
+		if (active?.state === "settlement_unknown") return active;
 		if (active?.state === "running") return { state: "blocked", reason: `assurance operation ${active.operation_id} is already running` };
 		const operationId = randomUUID();
 		const operationGeneration = this.sessionGeneration;
@@ -527,7 +527,7 @@ export class AssuranceProgression {
 		const pending = this.pendingReviewVerdicts.get(taskId);
 		if (pending) return { state: "awaiting_user", operation: "record-review-verdict", operation_id: pending.operationId };
 		const unknown = this.unknownOperations.get(taskId);
-		if (unknown) { this.unknownOperations.delete(taskId); return { state: "settlement_unknown", ...unknown }; }
+		if (unknown) { this.unknownOperations.delete(taskId); return { state: "settlement_unknown", operation: unknown.operation, operation_id: unknown.operationId, reason: unknown.reason }; }
 		const rejected = this.rejectedReviewOperations.get(taskId);
 		if (rejected) return { state: "blocked", reason: rejected.reason };
 		const reservation = this.reviewReservations.get(taskId);

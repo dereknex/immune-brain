@@ -194,6 +194,25 @@ describe("foreground assurance progression", () => {
 		expect(h.counts().applyCount).toBe(0);
 	});
 
+	test("submit_review preserves the operation for an unknown QA settlement", async () => {
+		const controller = new AbortController();
+		const h = makeHarness({ applyVerdict: async (_ctx, input) => {
+			await input.hooks?.beforeCommit?.();
+			input.hooks?.onCommit?.();
+			controller.abort();
+			await input.hooks?.afterCommit?.();
+		} });
+		const advanced = await h.progression.advance(TASK, ctx, controller.signal);
+		expect(advanced.state).toBe("settlement_unknown");
+		expect(await h.progression.advance(TASK, ctx)).toEqual(advanced);
+		expect(await h.progression.submitReview(TASK, ctx)).toEqual({
+			state: "settlement_unknown",
+			operation: "qa",
+			operation_id: (advanced as { operation_id: string }).operation_id,
+			reason: (advanced as { reason: string }).reason,
+		});
+	});
+
 	test("QA rework applies exactly once and does not reserve Review", async () => {
 		const h = makeHarness({ runQa: async (s) => ({ ...passVerdict(s), decision: "rework", approval: undefined, findings: [{ id: "qa-finding", kind: "blocking", acceptance_id: "A1", summary: "repair", findings_digest: "" }] }) });
 		const result = await h.progression.advance(TASK, ctx);
