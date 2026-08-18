@@ -13,7 +13,14 @@ import {
 import { ROLE_PROMPT_FILES } from "../scripts/dist-sync-manifest";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const ROLES: InternalRole[] = ["qa", "code-review", "ui-review"];
+const ROLES: InternalRole[] = [
+	"qa",
+	"code-review",
+	"ui-review",
+	"executor",
+	"test-fixer",
+	"pr-fix",
+];
 
 function read(path: string): string {
 	return readFileSync(resolve(ROOT, path), "utf8");

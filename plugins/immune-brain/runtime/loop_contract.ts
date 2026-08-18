@@ -16,6 +16,116 @@ import {
 
 export type LoopRole = InternalRole;
 
+export type LoopRoleContext = RoleDelegationPacket;
+
+export function buildLoopRoleContext(input: {
+	role: LoopRole;
+	context: RoleDelegationContext;
+}): LoopRoleContext {
+	return buildLoopRoleDelegationPacket(input);
+}
+
+export type LoopRouteOwnership = "plan" | "kernel";
+export type LoopRouteTarget = "step" | "test-repair" | "pr-repair";
+export type LoopRouteNext =
+	| "executor"
+	| "test-fixer"
+	| "pr-fix"
+	| "imm_kernel_canary"
+	| "imm-planner";
+
+export interface LoopRoute {
+	entry: "imm-loop";
+	next: LoopRouteNext;
+}
+
+/**
+ * Project the authoritative task owner and bounded target into Loop's next
+ * authority. This is routing only; State Ledger and Kernel remain authoritative.
+ */
+export function resolveLoopRoute(input: {
+	ownership: LoopRouteOwnership;
+	target: LoopRouteTarget;
+	scope_expansion?: boolean;
+}): LoopRoute {
+	if (input.scope_expansion) return { entry: "imm-loop", next: "imm-planner" };
+	if (input.ownership === "kernel") {
+		return { entry: "imm-loop", next: "imm_kernel_canary" };
+	}
+	const nextByTarget: Record<LoopRouteTarget, LoopRouteNext> = {
+		step: "executor",
+		"test-repair": "test-fixer",
+		"pr-repair": "pr-fix",
+	};
+	return { entry: "imm-loop", next: nextByTarget[input.target] };
+}
+
+export type LoopAction =
+	| { entry: "imm-loop"; next: "executor"; context: LoopRoleContext }
+	| {
+			entry: "imm-loop";
+			next: "test-fixer" | "pr-fix";
+			dispatch: LoopRoleDispatch;
+	  }
+	| {
+			entry: "imm-loop";
+			next: "imm_kernel_canary";
+			tool: {
+				name: "imm_kernel_canary";
+				operation:
+					| "status"
+					| "record_evidence"
+					| "advance_assurance"
+					| "submit_review"
+					| "request_authorization"
+					| "complete";
+			};
+	  }
+	| { entry: "imm-loop"; next: "imm-planner"; reason: "scope_expansion" };
+
+export function buildLoopAction(input: {
+	ownership: LoopRouteOwnership;
+	target: LoopRouteTarget;
+	context?: RoleDelegationContext;
+	scope_expansion?: boolean;
+	kernel_operation?: Extract<LoopAction, { next: "imm_kernel_canary" }>["tool"]["operation"];
+}): LoopAction {
+	const route = resolveLoopRoute(input);
+	if (route.next === "imm-planner") {
+		return { entry: "imm-loop", next: "imm-planner", reason: "scope_expansion" };
+	}
+	if (!input.context) throw new Error(`Loop ${route.next} action requires context`);
+	if (route.next === "executor") {
+		return {
+			entry: "imm-loop",
+			next: "executor",
+			context: buildLoopRoleContext({ role: "executor", context: input.context }),
+		};
+	}
+	if (route.next === "test-fixer") {
+		return {
+			entry: "imm-loop",
+			next: "test-fixer",
+			dispatch: buildLoopRoleDispatch({ role: "test-fixer", context: input.context }),
+		};
+	}
+	if (route.next === "pr-fix") {
+		return {
+			entry: "imm-loop",
+			next: "pr-fix",
+			dispatch: buildLoopRoleDispatch({ role: "pr-fix", context: input.context }),
+		};
+	}
+	return {
+		entry: "imm-loop",
+		next: "imm_kernel_canary",
+		tool: {
+			name: "imm_kernel_canary",
+			operation: input.kernel_operation ?? "status",
+		},
+	};
+}
+
 export function buildLoopRoleDelegationPacket(input: {
 	role: LoopRole;
 	context: RoleDelegationContext;

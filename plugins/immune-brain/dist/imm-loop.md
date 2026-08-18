@@ -6,13 +6,15 @@ description: Use when running validated Plans to completion.
 # Immune-Brain: Loop
 
 This skill adheres to the **[BASELINE.md](BASELINE.md)**.
-At runtime role boundaries, build `buildLoopRoleDispatch` from the runtime
-bridge for `qa`, `code-review`, or `ui-review` and pass its foreground `call`
-to Agent. Do not discover or load a Pi Skill for those roles. The public Skills
-remain available as rollback shims during this additive migration. The
-Immune-Brain maintainer removes these public shims in the next minor release
-after Issue #9's three-entry public surface contract and the Issue #6/#7 Loop
-parity tests pass; until then they are the documented rollback path.
+At runtime role boundaries, build `buildLoopAction` from the runtime bridge. It
+returns `buildLoopRoleContext` for an active `executor` Step, a foreground
+`buildLoopRoleDispatch` for `qa`, `code-review`, `ui-review`, `test-fixer`, or
+`pr-fix`, and the `imm_kernel_canary` Tool action for Kernel ownership. Do not
+discover or load a Pi Skill for these roles. The public Skills remain available as rollback shims
+during this additive migration. Shim removal owner: the Immune-Brain
+maintainer. Cleanup milestone: the next minor release after Issue #9's
+three-entry public surface contract and the Issue #6/#7 Loop parity tests
+pass; until then they are the documented rollback path.
 
 ## Workflow Profiles
 
@@ -33,10 +35,12 @@ parity tests pass; until then they are the documented rollback path.
 ## Core Responsibilities
 
 - **Main-context completion loop**: Consume `imm-autowork --json` checkpoints in the current Pi conversation until completion or a safe stop.
-- **Context-preserving execution**: On `awaiting_execution_input` or `rework_needed`, enter the active Step's `imm-executor` boundary in the current conversation, then record evidence with `imm-work record-execution`.
+- **Context-preserving execution**: On `awaiting_execution_input` or `rework_needed`, build `buildLoopRoleContext` for the internal `executor` role in the current Parent conversation, implement only the active Step or pending same-boundary `follow_up`, then record evidence with `imm-work record-execution`. A bounded test failure uses the internal `test-fixer` dispatch with its explicit delegated test-file list; PR feedback or CI repair uses the internal `pr-fix` dispatch inside the current Plan boundary.
 - **Independent authority isolation**: Use the host `Agent` subagent primitive when the checkpoint reports `awaiting_qa_decision` and for the exact runtime-reported review gate. Standard Plan Steps close from accepted passing evidence before a QA boundary exists; Strict Steps and all follow-ups retain isolated QA. The parent records accepted child decisions through `imm-review`.
 - **Observable progress**: Update only at major phase changes: Step start, execution evidence recorded, QA/review result, or terminal stop. Always emit a terminal summary.
 - **State Ledger authority**: Re-read the checkpoint after every persisted action. Conversation memory never overrides State Ledger state.
+- **Scope boundary**: Scope expansion always returns to `imm-planner`; Executor, test repair, and PR/CI repair stop with the concrete missing scope and verification reason instead of widening execution.
+- **Action authority**: The loop always enters through `buildLoopAction`; its `next` authority is `executor`, `test-fixer`, `pr-fix`, `imm_kernel_canary`, or `imm-planner`.
 
 ## Checkpoint Loop
 
@@ -45,7 +49,7 @@ Repeat this sequence; do not silently stop while a valid action remains:
 1. Run `imm-autowork --json` and validate `recommended_authority`, `required_input`, and `allowed_actions`.
 2. Emit one progress line: `[target][phase] result | next: action`.
 3. Execute exactly one allowed action:
-   - `awaiting_execution_input` / `rework_needed`: implement only the active Step or pending same-boundary `follow_up` in the current conversation under `imm-executor`; verify and call `imm-work record-execution`.
+   - `awaiting_execution_input` / `rework_needed`: build the internal `executor` context with `buildLoopRoleContext`, implement only the active Step or pending same-boundary `follow_up` in the current conversation, verify, and call `imm-work record-execution`. A bounded test-only repair may dispatch internal `test-fixer` with `focus_delta.specific_changes`; PR review or CI repair may dispatch internal `pr-fix` with the current `plan_id`, changed-file boundary, and verification. Both return child evidence to the Parent and cannot widen scope.
    - `awaiting_qa_decision`: build the internal `qa` role dispatch with `buildLoopRoleDispatch`, passing the checkpoint, Plan verification, recorded evidence, and current target identity in its context. Validate the raw output with `imm-check-child-output --kind qa --json '<child output>'`, then call `imm-review` from the parent using the validated decision. A `rework` or `replan` must carry the validated `notes` through as `--notes`; the runtime rejects either decision without it.
    - `review_required`: map the exact `pending_review_gate` (`imm-code-review` or `imm-ui-review`) to the internal `code-review` or `ui-review` role and build its foreground dispatch with `buildLoopRoleDispatch`, passing `pending_review_gate`, `review_changed_files`, and `review_changed_files_signature` in context. Validate its raw output with `imm-check-child-output --kind review --json '<child output>'`. Record a validated pass with `imm-review gate-pass --changed-files-signature <review_changed_files_signature>`, or open a same-boundary follow-up through `imm-work follow-up-open --changed-files-signature <review_changed_files_signature>`.
    - `awaiting_user_successor_decision`: stop immediately with `recommended_authority: user`, no next skill, and no runtime action. This boundary must not dispatch Planner, transition, Compounder, or a new Pi session/subagent. Only a literal user may supply a concrete validated successor Plan to `--approve-successor`.
@@ -131,15 +135,14 @@ Default user-facing shape: checkpoint progress lines, then `Conclusion -> Eviden
 
 ## Kernel Canary Routing
 
-When the runtime Kernel projection reports an active or draining backend claim,
-the owned task is a Kernel canary. Route it through `imm-canary-work` (the Pi
-lifecycle extension) for ordinary facts, QA/review authority, and literal-user
-actions. The loop must never mutate or mirror a Kernel-owned task through v3
-Plan/Step state, and the canonical v3 call site fails closed while a
-workspace-active claim exists. After fresh executor evidence, call
-`imm_kernel_canary` `advance_assurance`; visible background Footer/Widget state
-and push follow-up replace manual QA/Review sequencing and result polling. A
-terminal task leaves only an immutable task
-tombstone: it is never reactivated and never blocks unrelated v3 routing. The
+When the Kernel projection reports an active/draining backend claim, keep
+`imm-loop` as the user-facing entry and call the `imm_kernel_canary` Tool for
+that owned task. The loop must never invoke the `imm-canary-work` Skill as a
+separate entry point, mutate or mirror a Kernel-owned task through v3 state, or
+activate a Plan for it. Invalid or contradictory projections fail closed. After
+fresh executor evidence, call `imm_kernel_canary` `advance_assurance`; visible
+background state and push follow-up replace manual QA/Review sequencing and
+result polling. A terminal task leaves only an immutable task tombstone: it is
+never reactivated and never blocks unrelated v3 routing. The
 Kernel projection is advisory; every Kernel mutation re-enters Kernel
 store-lock validation.

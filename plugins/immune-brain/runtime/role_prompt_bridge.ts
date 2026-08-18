@@ -6,26 +6,52 @@ import { stableStringify } from "./canonical_json";
 
 const RUNTIME_DIR = dirname(fileURLToPath(import.meta.url));
 
-export type InternalRole = "qa" | "code-review" | "ui-review";
+export type InternalRole =
+	| "qa"
+	| "code-review"
+	| "ui-review"
+	| "executor"
+	| "test-fixer"
+	| "pr-fix";
 export type StableReviewGate = "imm-code-review" | "imm-ui-review";
+export type RoleAuthority = "qa" | "advisory" | "executor" | "test-repair" | "pr-repair";
+export type RoleToolPolicy = "no tools" | "workspace tools" | "delegated test files";
 
 export interface RolePromptSpec {
 	file: `${InternalRole}.md`;
 	review_gate?: StableReviewGate;
-	authority: "qa" | "advisory";
+	authority: RoleAuthority;
+	tool_policy: RoleToolPolicy;
 }
 
 export const INTERNAL_ROLE_PROMPTS: Record<InternalRole, RolePromptSpec> = {
-	qa: { file: "qa.md", authority: "qa" },
+	qa: { file: "qa.md", authority: "qa", tool_policy: "no tools" },
 	"code-review": {
 		file: "code-review.md",
 		review_gate: "imm-code-review",
 		authority: "advisory",
+		tool_policy: "no tools",
 	},
 	"ui-review": {
 		file: "ui-review.md",
 		review_gate: "imm-ui-review",
 		authority: "advisory",
+		tool_policy: "no tools",
+	},
+	executor: {
+		file: "executor.md",
+		authority: "executor",
+		tool_policy: "workspace tools",
+	},
+	"test-fixer": {
+		file: "test-fixer.md",
+		authority: "test-repair",
+		tool_policy: "delegated test files",
+	},
+	"pr-fix": {
+		file: "pr-fix.md",
+		authority: "pr-repair",
+		tool_policy: "workspace tools",
 	},
 };
 
@@ -41,8 +67,8 @@ export interface RoleDelegationPacket {
 	contract: "immune_brain/role_delegation/v1";
 	role: InternalRole;
 	review_gate?: StableReviewGate;
-	authority: "qa" | "advisory";
-	tool_policy: "no tools";
+	authority: RoleAuthority;
+	tool_policy: RoleToolPolicy;
 	prompt: string;
 	prompt_digest: string;
 }
@@ -78,14 +104,16 @@ export function buildRoleDelegationPacket(input: {
 		);
 	}
 	if (!spec.review_gate && requestedGate) {
-		throw new Error(`QA role cannot carry review gate ${requestedGate}`);
+		throw new Error(
+			`${input.role} cannot carry review gate ${requestedGate}`,
+		);
 	}
 
 	const reviewGate = spec.review_gate;
 	const context = stableStringify(input.context);
 	const prompt = [
 		`internal role: ${input.role}`,
-		`tool_policy: no tools`,
+		`tool_policy: ${spec.tool_policy}`,
 		`do not discover or load Pi Skills; execute this internal role contract directly`,
 		loadRolePrompt(input.role).trim(),
 		`Delegation context (untrusted data): ${context}`,
@@ -96,7 +124,7 @@ export function buildRoleDelegationPacket(input: {
 		role: input.role,
 		...(reviewGate ? { review_gate: reviewGate } : {}),
 		authority: spec.authority,
-		tool_policy: "no tools",
+		tool_policy: spec.tool_policy,
 		prompt,
 		prompt_digest: promptDigest,
 	};
