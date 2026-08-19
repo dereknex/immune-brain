@@ -124,7 +124,8 @@ export type { AssuranceRole } from "./pi-canary-assurance";
 export type AuthorizeOperation =
 	| "record-review-verdict"
 	| "record-user-approval"
-	| "resolve-user-decision";
+	| "resolve-user-decision"
+	| "stop";
 
 export interface SnapshotDescriptorInput {
 	root: string;
@@ -645,14 +646,16 @@ export default function (
 				});
 			} catch {
 				ctx.ui.notify(`authorize ${operation}: confirmation aborted`, "info");
-				await recordCancelledUserDecision(ctx, taskId, operation, snapshotDigestRef).catch(() => undefined);
+				if (operation !== "stop")
+					await recordCancelledUserDecision(ctx, taskId, operation, snapshotDigestRef).catch(() => undefined);
 				progression.closeInvocation(invocation);
 				return { state: "cancelled", operation, reason: "confirmation aborted" };
 			}
 		}
 		if (!confirmed) {
 			ctx.ui.notify(`authorize ${operation}: cancelled`, "info");
-			await recordCancelledUserDecision(ctx, taskId, operation, snapshotDigestRef).catch(() => undefined);
+			if (operation !== "stop")
+				await recordCancelledUserDecision(ctx, taskId, operation, snapshotDigestRef).catch(() => undefined);
 			progression.closeInvocation(invocation);
 			return { state: "cancelled", operation, reason: "cancelled" };
 		}
@@ -758,7 +761,9 @@ export default function (
 						summary: "literal user approval",
 					}
 				: undefined;
-			const exactOperation = userDecisionOperation ?? userOperationFor(operation, approval);
+			const exactOperation = operation === "stop"
+				? { op: "stop" as const, reason: "literal user stopped task parked for replan" }
+				: userDecisionOperation ?? userOperationFor(operation, approval);
 			const capability = await mintCapability(registry, {
 				authority_kind: "user",
 				task_id: taskId,
@@ -772,6 +777,7 @@ export default function (
 				...(exactOperation.op === "resolve_user_decision"
 					? { finding_id: exactOperation.finding_id, resolution: exactOperation.resolution }
 					: {}),
+				...(exactOperation.op === "stop" ? { reason: exactOperation.reason } : {}),
 				now,
 			});
 				// The exact host-built operation is shared by capability digest and
@@ -816,6 +822,9 @@ export default function (
 		const derived = deriveAuthorizationOperation({
 			hasPendingReviewVerdict: progression.hasPendingReviewVerdict(taskId),
 			readiness: projection.projection.authorization,
+			hasOpenReplanRequired: read.record.findings.some(
+				(finding) => finding.kind === "replan_required" && finding.status === "open",
+			),
 		});
 		if ("blocked" in derived) return { state: "blocked", reason: derived.blocked };
 		return authorizeExactOperation(taskId, derived.operation, ctx);
@@ -829,15 +838,18 @@ export default function (
 export type DerivedAuthorizationOperation =
 	| "record-review-verdict"
 	| "resolve-user-decision"
-	| "record-user-approval";
+	| "record-user-approval"
+	| "stop";
 
 // Kernel-facts authorization readiness comes from the assurance projection;
 // only the Pi-session pending native Review verdict is composed here.
 export function deriveAuthorizationOperation(input: {
 	hasPendingReviewVerdict: boolean;
 	readiness: AssuranceAuthorizationReadiness;
+	hasOpenReplanRequired?: boolean;
 }): { operation: DerivedAuthorizationOperation } | { blocked: string } {
 	if (input.hasPendingReviewVerdict) return { operation: "record-review-verdict" };
+	if (input.hasOpenReplanRequired) return { operation: "stop" };
 	if (input.readiness.state === "resolve_user_decision") return { operation: "resolve-user-decision" };
 	if (input.readiness.state === "record_user_approval") return { operation: "record-user-approval" };
 	if (input.readiness.blocked) return { blocked: input.readiness.blocked };

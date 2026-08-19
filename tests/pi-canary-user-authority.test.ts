@@ -115,6 +115,22 @@ function seedOpenUserDecision(root: string): string {
 	return id;
 }
 
+function seedOpenReplanRequired(root: string): void {
+	const path = join(root, ".imm", "tasks", `${TASK}.json`);
+	const record = JSON.parse(readFileSync(path, "utf8"));
+	record.phase = "review";
+	record.findings.push({
+		id: "rework:review-limit:replan-required",
+		kind: "replan_required",
+		status: "open",
+		acceptance_id: null,
+		source: "kernel",
+		review_round: 3,
+		summary: "Review rework limit reached",
+	});
+	writeFileSync(path, JSON.stringify(record, null, 2) + "\n");
+}
+
 function loadSurface(dependencies: Record<string, unknown> = {}): {
 	tool: {
 		execute: (id: string, params: unknown, signal: unknown, onUpdate: unknown, ctx: unknown) => Promise<{ content: Array<{ text: string }>; details?: Record<string, unknown> }>;
@@ -201,6 +217,16 @@ describe("pi canary user authority", () => {
 			hasPendingReviewVerdict: false,
 			readiness: { state: "record_user_approval", blocked: null },
 		})).toEqual({ operation: "record-user-approval" });
+		expect(deriveAuthorizationOperation({
+			hasPendingReviewVerdict: true,
+			readiness: { state: "none", blocked: null },
+			hasOpenReplanRequired: true,
+		})).toEqual({ operation: "record-review-verdict" });
+		expect(deriveAuthorizationOperation({
+			hasPendingReviewVerdict: false,
+			readiness: { state: "none", blocked: null },
+			hasOpenReplanRequired: true,
+		})).toEqual({ operation: "stop" });
 		expect(deriveAuthorizationOperation({
 			hasPendingReviewVerdict: false,
 			readiness: { state: "none", blocked: "resolve-user-decision requires exactly one open user decision; found 2" },
@@ -377,6 +403,51 @@ describe("pi canary user authority", () => {
 			expect(authorityBytes(root)).toEqual(baseline);
 		} finally {
 			release?.(false);
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
+	test("request_authorization confirms stop for a parked replan task and releases its claim", async () => {
+		const root = makeEnrolledRoot();
+		try {
+			seedOpenReplanRequired(root);
+			const { tool } = loadSurface();
+			const ui = makeUI();
+			const result = await tool.execute(
+				"req-stop",
+				{ task_id: TASK, action: { op: "request_authorization" } },
+				undefined,
+				undefined,
+				ctxFor(root, ui, true),
+			);
+			expect(parseToolState(result)).toMatchObject({ state: "applied", operation: "stop", phase: "stopped" });
+			expect(ui.confirmCalls).toHaveLength(1);
+			expect(ui.confirmCalls[0].title).toContain("stop");
+			expect(readTaskRecordV2(root, TASK).record?.phase).toBe("stopped");
+			expect(readBackendClaim(root)).toBeNull();
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
+	test("cancelling parked replan stop writes nothing", async () => {
+		const root = makeEnrolledRoot();
+		try {
+			seedOpenReplanRequired(root);
+			const initial = authorityBytes(root);
+			const { tool } = loadSurface();
+			const ui = makeUI();
+			const result = await tool.execute(
+				"req-stop-cancel",
+				{ task_id: TASK, action: { op: "request_authorization" } },
+				undefined,
+				undefined,
+				ctxFor(root, ui, false),
+			);
+			expect(parseToolState(result)).toMatchObject({ state: "cancelled", operation: "stop" });
+			expect(ui.confirmCalls).toHaveLength(1);
+			expect(authorityBytes(root)).toEqual(initial);
+		} finally {
 			rmSync(root, { recursive: true, force: true });
 		}
 	});
