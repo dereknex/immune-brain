@@ -141,9 +141,14 @@ describe("packed artifact loader", () => {
 					"imm-canary-enroll.ts",
 					"imm-canary-work.ts",
 				]);
-				const skills = loader
-					.getSkills()
-					.skills.filter((s: { filePath: string }) =>
+				const skillsResult = loader.getSkills();
+				const baselineDiagnostics = skillsResult.diagnostics.filter(
+					(diagnostic: { path?: string }) =>
+						diagnostic.path?.endsWith("plugins/immune-brain/skills/BASELINE.md"),
+				);
+				expect(baselineDiagnostics).toEqual([]);
+				const skills = skillsResult.skills
+					.filter((s: { filePath: string }) =>
 						s.filePath.startsWith(join(pkgDir, "plugins/immune-brain/skills")),
 					)
 					.map((s: { name: string }) => s.name)
