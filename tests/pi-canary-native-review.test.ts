@@ -21,6 +21,10 @@ test("reserved native review parameters are foreground-only and deterministic", 
 		isolation: "worktree",
 		run_in_background: false,
 		max_turns: 16,
+		model: "",
+		resume: "",
+		schedule: "",
+		thinking: "",
 	});
 	expect(params.prompt).toContain("immutable bundle");
 	expect(params.description).toContain("12345678");
@@ -33,6 +37,9 @@ test("exact Agent args are required", () => {
 	expect(matchesReservedAgentArgs({ ...params, max_turns: 12 }, params)).toBe(false);
 	expect(matchesReservedAgentArgs({ ...params, prompt: `${params.prompt}!` }, params)).toBe(false);
 	expect(matchesReservedAgentArgs({ ...params, model: "other" }, params)).toBe(false);
+	expect(matchesReservedAgentArgs({ ...params, resume: "agent-1" }, params)).toBe(false);
+	expect(matchesReservedAgentArgs({ ...params, schedule: "+1m" }, params)).toBe(false);
+	expect(matchesReservedAgentArgs({ ...params, thinking: "high" }, params)).toBe(false);
 	expect(matchesReservedAgentArgs({ ...params, extra: true }, params)).toBe(false);
 	expect(matchesReservedAgentArgs({ subagent_type: params.subagent_type }, params)).toBe(false);
 	const modeled = { ...params, model: "review-model" };

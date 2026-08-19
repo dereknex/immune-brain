@@ -31,7 +31,10 @@ export interface ReservedAgentParams {
 	isolation: "worktree";
 	run_in_background: false;
 	max_turns: number;
-	model?: string;
+	model: string;
+	resume: "";
+	schedule: "";
+	thinking: "";
 }
 
 export interface ToolExecutionEndLike {
@@ -75,7 +78,10 @@ export function reservedAgentParams(input: {
 		isolation: "worktree",
 		run_in_background: false,
 		max_turns: input.max_turns ?? 16,
-		...(input.model === undefined ? {} : { model: input.model }),
+		model: input.model ?? "",
+		resume: "",
+		schedule: "",
+		thinking: "",
 	};
 }
 
@@ -100,7 +106,10 @@ export function matchesReservedAgentArgs(
 		args.isolation === params.isolation &&
 		args.run_in_background === params.run_in_background &&
 		args.max_turns === params.max_turns &&
-		args.model === params.model
+		args.model === params.model &&
+		args.resume === params.resume &&
+		args.schedule === params.schedule &&
+		args.thinking === params.thinking
 	);
 }
 

@@ -196,7 +196,8 @@ describe("internal role-prompt bridge", () => {
 		expect(determineRequiredReviewGates(["styles/change.css"])).toContain(ui.review_gate);
 		expect(qa.review_gate).toBeUndefined();
 		expect(code.prompt).toContain('"task_id": "task-5"');
-		expect(code.prompt).toContain("tool_policy: no tools");
+		expect(code.tool_policy).toBe("read-only tools");
+		expect(code.prompt).toContain("tool_policy: read-only tools");
 		expect(code.prompt).toContain("do not discover or load Pi Skills");
 		expect(code.prompt_digest).toMatch(/^sha256:[0-9a-f]{64}$/);
 	});
