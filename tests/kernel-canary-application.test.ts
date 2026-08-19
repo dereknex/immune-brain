@@ -35,7 +35,7 @@ const INTENT = {
 		{ id: "A1", assertion: "acceptance one", verification: "verify one" },
 		{ id: "A2", assertion: "acceptance two", verification: "verify two" },
 	],
-	scope_hint: ["plugins/immune-brain/runtime/kernel"],
+	scope_hint: ["docs/plans"],
 	risk: "routine",
 	revision: 1,
 	owner: "user",

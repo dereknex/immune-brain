@@ -32,7 +32,7 @@ const INTENT = {
 	task_id: TASK,
 	goal: "authority pairing",
 	acceptance: [{ id: "A1", assertion: "a1", verification: "v1" }],
-	scope_hint: ["plugins/immune-brain/runtime/kernel"],
+	scope_hint: ["docs/plans"],
 	risk: "routine",
 	revision: 1,
 	owner: "user",

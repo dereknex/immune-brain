@@ -38,7 +38,7 @@ function baseIntent(taskId: string, revision = 1) {
 				verification: `bun test tests/${taskId}.test.ts`,
 			},
 		],
-		scope_hint: [`plugins/immune-brain/runtime/kernel/${taskId}.ts`],
+		scope_hint: ["docs/plans"],
 		risk: "routine",
 		revision,
 	};

@@ -31,6 +31,73 @@ import {
 
 export const INTENT_MAX_BYTES = 64 * 1024;
 export const INTENT_SIDECAR_RELATIVE_PREFIX = "docs/plans/";
+
+// Deterministic risk-tier floor: an intent whose scope_hint touches kernel or
+// authority runtime paths is forced to at least `material` regardless of the
+// tier the author declared, so self-graded `routine` can never buy weaker
+// gating over the paths where gating matters most. The floor is derived solely
+// from scope_hint, never from prose fields.
+export const RISK_FLOOR_SCOPE_PREFIXES = [
+	"plugins/immune-brain/runtime/kernel",
+	"plugins/immune-brain/runtime/authority_commit_receipts.ts",
+] as const;
+
+function segmentMatches(e: string, s: string): boolean {
+	if (e === "*") return true;
+	if (!e.includes("*") && !e.includes("?")) return e === s;
+	const rx = new RegExp(
+		`^${e.split("*").map((p) => p.split("?").map((q) => q.replace(/[.\\+^${}()|[\]\\/]/g, "\\$&")).join(".")).join(".*")}$`,
+	);
+	return rx.test(s);
+}
+
+// Decide whether a scope entry can match the kernel/authority prefix itself,
+// any of its ancestor prefixes, or any descendant path beneath it. Glob `**`
+// spans zero or more segments, `*` matches one segment, `?` one character.
+// A match on any of those relations means the entry touches the floored path,
+// so a routine-declared intent cannot hide behind wildcard-leading patterns.
+function scopeEntryTouchesPrefixSegments(es: string[], ps: string[]): boolean {
+	const memo = new Map<string, boolean>();
+	const m = (pi: number, ei: number): boolean => {
+		const key = `${pi}:${ei}`;
+		const cached = memo.get(key);
+		if (cached !== undefined) return cached;
+		let result: boolean;
+		if (ei === es.length) {
+			result = true; // es matched a prefix of ps, ps itself, or a descendant
+		} else {
+			const e = es[ei];
+			if (e === "**") {
+				if (pi >= ps.length) result = true; // beyond ps, descendant always exists
+			else result = m(pi, ei + 1) || m(pi + 1, ei);
+			} else if (pi < ps.length && segmentMatches(e, ps[pi])) {
+				result = m(pi + 1, ei + 1);
+			} else if (pi >= ps.length) {
+				result = m(pi + 1, ei + 1); // remaining literal segments match descendant segments
+			} else {
+				result = false;
+			}
+		}
+		memo.set(key, result);
+		return result;
+	};
+	return m(0, 0);
+}
+
+function scopeEntryTouchesRiskFloorPaths(entry: string): boolean {
+	if (!entry) return false;
+	const es = entry.split("/");
+	return RISK_FLOOR_SCOPE_PREFIXES.some((prefix) =>
+		scopeEntryTouchesPrefixSegments(es, prefix.split("/")),
+	);
+}
+
+function riskFloorForScope(scopeHint: string[]): TaskRisk | null {
+	return scopeHint.some(scopeEntryTouchesRiskFloorPaths)
+		? "material"
+		: null;
+}
+
 const SHA256_HEX = /^sha256:[a-f0-9]{64}$/;
 const TASK_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 const portablePathCollator = new Intl.Collator("und", {
@@ -232,13 +299,18 @@ export function parseTaskIntentV1(raw: unknown): TaskIntentV1 {
 	const acceptance = (acceptanceRaw as unknown[]).map((item, index) =>
 		parseAcceptanceItemV1(item, index, []),
 	);
+	const declaredRisk = risk as TaskRisk;
+	const flooredRisk = riskFloorForScope(scopeHint);
 	return {
 		contract: TASK_INTENT_CONTRACT_V1,
 		task_id: taskId,
 		goal,
 		acceptance,
 		scope_hint: scopeHint,
-		risk: risk as TaskRisk,
+		risk:
+			flooredRisk !== null && RISK_RANK[declaredRisk] < RISK_RANK[flooredRisk]
+				? flooredRisk
+				: declaredRisk,
 		revision,
 		owner: "user",
 	};
