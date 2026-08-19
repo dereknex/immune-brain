@@ -134,7 +134,12 @@ from those assertions rather than the assertions being weakened — they are
 pinning "no progress-projection / no host-selector tokens in live runtime
 sources", so the token scan stays and only the deleted path leaves the list.
 
-### 1.2 `rehome-agent-config-loader`
+### 1.2 `rehome-agent-config-loader` — CLOSED
+
+Promoted as `2026-08-19-006-rehome-agent-config-loader` and completed. The
+dependency direction held: `agent_config.ts` imports only node built-ins and
+`plan_core` (a survivor, trimmed but not deleted by slice 1.6), and
+`advisory_dispatch.ts` imports back from it.
 
 **Risk**: `routine` · **Gate**: `retire-imm-core-barrel` closed
 
@@ -196,9 +201,40 @@ this slice until the direction is chosen; the two directions have disjoint scope
 `scripts/dist-sync-manifest.ts` and the `dist/docs` copy, plus the documentation
 asserters `pi-only-current-contracts.test.ts` and `host-runtime-cutover.test.ts`.
 
-### 1.4 `delete-v3-runtime-island`
+### 1.4 `drain-v3-island-test-surface`
 
 **Risk**: `material` · **Gate**: `rehome-agent-config-loader` closed
+
+**goal**
+
+> Reduce the seven v3 island modules to zero references without deleting them,
+> so that the deletion slice that follows is a pure file removal. The 21 affected
+> test files need three different treatments, and the whole risk of the island
+> retirement concentrates in telling them apart: 10 exercise only island modules
+> and are deleted, 7 also cover surviving modules and must be trimmed rather than
+> deleted, and 4 are path asserters that drop island paths while keeping their
+> assertions. Deleting a mixed file to make the suite green would silently
+> discard live coverage and still leave every test passing, which is precisely
+> why this work is separated from the 6364-line deletion it enables.
+
+**acceptance**
+
+- `acc-references-drained` — no file outside the seven island modules imports
+  any of them or names one by path, while all seven still exist on disk.
+- `acc-live-coverage-preserved` — `authority_commit_receipts`,
+  `automatic_observations`, `plan_core`, `role_prompt_bridge`, `loop_contract`,
+  `dist-sync-manifest`, and `agent_config` each retain test coverage, and none of
+  the seven trimmed files was deleted.
+
+**The 7 files that must be trimmed, never deleted** — `advisory-dispatch-core`,
+`authority-commit-receipts`, `immune-brain-config-runtime`,
+`pi-only-runtime-host-contract`, `planner-ensemble-contract`, `role-prompt-bridge`,
+`state-ledger-migration`.
+
+### 1.5 `delete-v3-runtime-island`
+
+**Risk**: `material` · **Gate**: `drain-v3-island-test-surface` closed. After the
+drain slice this is a pure deletion of seven files with no accompanying edits.
 
 **goal**
 
@@ -263,7 +299,7 @@ additionally covers `docs/reference/immune-brain-config.md`,
 `scripts/dist-sync-manifest.ts`, its `dist/docs` copy, and the documentation
 asserters `pi-only-current-contracts.test.ts` and `host-runtime-cutover.test.ts`.
 
-### 1.5 `trim-partially-live-runtime`
+### 1.6 `trim-partially-live-runtime`
 
 **Risk**: `material` · **Gate**: `delete-v3-runtime-island` closed
 
@@ -294,7 +330,7 @@ Note that this slice trims modules rather than deleting them, so `plan_core.ts`
 path asserters such as `v4-plan-control-plane.test.ts` keep passing; only tests
 covering the removed helpers need scope.
 
-### 1.6 `retire-kernel-v1-store` (conditional)
+### 1.7 `retire-kernel-v1-store` (conditional)
 
 **Risk**: `material` · **Gate**: a completed read-only reachability trace, **not**
 the preceding slices

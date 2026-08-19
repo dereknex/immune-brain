@@ -1,0 +1,30 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "2026-08-19-006-rehome-agent-config-loader",
+  "owner": "user",
+  "goal": "Move the agent-local config loader out of runtime/advisory_dispatch.ts into a new runtime/agent_config.ts that survives the v3 island deletion. Slice 005 established that imm_core.ts was not a pure re-export barrel: it owned the only implementation of resolveImmuneBrainLocalRoot, resolveImmuneBrainLocalPath, and readImmuneBrainConfig together with their private TOML parse and merge helpers, and deleting the barrel relocated that code into advisory_dispatch.ts, which is one of the seven modules the next deletion slice removes. The dependency direction is the substance of this slice: agent_config.ts must own the AdvisoryDispatchConfig and WorkflowModelOptions types the loader returns, and advisory_dispatch.ts must import them back, so the new module carries no dependency into the demolition set and the island deletion stays a pure deletion. Reversing that direction would compile and pass today while breaking the moment the island is deleted. This slice is behavior-preserving relocation only: it does not wire the loader into any caller and does not retire it. Whether the [subagent_activation] policy that only this loader can read should be wired up or removed from AGENTS.md and the packaged planner and brainstorm contracts is a separate decision and is deliberately out of scope here, as are the island deletion itself and any renaming of the relocated types.",
+  "acceptance": [
+    {
+      "id": "acc-loader-rehomed",
+      "assertion": "plugins/immune-brain/runtime/agent_config.ts exports resolveImmuneBrainLocalRoot, resolveImmuneBrainLocalPath, and readImmuneBrainConfig and defines the AdvisoryDispatchConfig and WorkflowModelOptions types; advisory_dispatch.ts defines none of them and imports what it still needs from agent_config.ts, so agent_config.ts imports nothing from any of the seven island modules.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/agent-config-rehome.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 30000,\n  \"max_output_bytes\": 65536\n}\n"
+    },
+    {
+      "id": "acc-behavior-unchanged",
+      "assertion": "Local root resolution, rejection of absolute, parent-traversal, and backslash relative paths, and the documented override precedence in which IMMUNE_BRAIN_AGENT_CONFIG overrides IMMUNE_BRAIN_CONFIG which overrides the Pi-root config.toml, all behave exactly as they did before the move.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/agent-config-rehome.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 30000,\n  \"max_output_bytes\": 65536\n}\n"
+    }
+  ],
+  "scope_hint": [
+    "plugins/immune-brain/runtime/advisory_dispatch.ts",
+    "plugins/immune-brain/runtime/agent_config.ts",
+    "tests/advisory-dispatch-core.test.ts",
+    "tests/agent-config-rehome.test.ts",
+    "tests/imm-core-barrel-retirement.test.ts",
+    "tests/immune-brain-config-runtime.test.ts",
+    "tests/pi-only-runtime-host-contract.test.ts",
+    "tests/planner-ensemble-contract.test.ts"
+  ],
+  "risk": "routine",
+  "revision": 1
+}

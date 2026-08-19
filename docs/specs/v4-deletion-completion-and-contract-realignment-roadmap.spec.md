@@ -376,20 +376,51 @@ into activation resolution so the contract becomes true, or retire the policy
 from all of the above. This is the same contract-lie class Phase 0 removed from
 `dist/imm-loop.md`; Phase 0 missed it because it only rewrote the loop contract.
 
-**`delete-v3-runtime-island`** — gate: `rehome-agent-config-loader` closed.
+The island deletion is split into two slices. The original single-slice plan put
+a 6364-line mechanical deletion and a judgment-heavy test-coverage edit into one
+diff, which would bury the only part a reviewer actually needs to read. The split
+reuses the seam logic that justified separating `retire-imm-core-barrel`: drain
+references first, then delete something referenced by nothing.
+
+**`drain-v3-island-test-surface`** — gate: `rehome-agent-config-loader` closed.
+Risk: `material`. Reduce the seven modules to zero references without deleting
+them. The test surface, derived along both axes, is 21 files needing three
+different treatments, and conflating them is how coverage gets lost:
+
+- 10 files exercise only island modules and are deleted outright:
+  `plugins/immune-brain/tests/review-gates`, `advisory-budget-contract`,
+  `bounded-ledger-history`, `execution-evidence-runtime`, `handoff-projection`,
+  `heal-activation`, `imm-loop-review-lifecycle-state`,
+  `pi-brainstorm-agent-result-contract`, `roadmap-plan-transition-state`,
+  `runtime-state`.
+- 7 files also cover modules that survive and must be trimmed, never deleted:
+  `advisory-dispatch-core`, `authority-commit-receipts`,
+  `immune-brain-config-runtime`, `pi-only-runtime-host-contract`,
+  `planner-ensemble-contract`, `role-prompt-bridge`, `state-ledger-migration`.
+  Between them they are the coverage for `authority_commit_receipts`,
+  `automatic_observations`, `plan_core`, `role_prompt_bridge`, `loop_contract`,
+  `dist-sync-manifest`, and `agent_config`. Deleting any of these files to make
+  the suite green would silently drop live coverage, which is the specific defect
+  this slice exists to prevent.
+- 4 path asserters drop island paths from their lists while keeping their
+  assertions: `agent-config-rehome`,
+  `pi-subagent-dispatch-observability-contract`, `work-probe-packaging-contract`,
+  `wrapper-retirement`.
+
+Proves: zero references to the seven modules remain from anywhere; every module
+named above as surviving is still covered; suite green.
+
+**`delete-v3-runtime-island`** — gate: `drain-v3-island-test-surface` closed.
 Risk: `material`. Delete `state_ledger.ts`, `project_migration.ts`,
 `advisory_dispatch.ts`, `work_probes.ts`, `environment.ts`, `handoff.ts`, and
-`activation.ts` (6364 lines), plus the affected tests. Proves: all seven modules
-absent; suite green; `imm-plan --routing-status --json` and `imm-kernel status
---json` return unchanged projections.
+`activation.ts` (6364 lines). After the drain slice this is a pure file deletion
+with no accompanying edits. Proves: all seven modules absent; suite green;
+`imm-plan --routing-status --json` and `imm-kernel status --json` return
+unchanged projections.
 
-The island is re-confirmed closed after `retire-imm-core-barrel`: the only
+The island is re-confirmed closed after `rehome-agent-config-loader`: the only
 non-test importers of any of the seven are `environment.ts` and
-`project_migration.ts`, both inside the island. The test surface is larger than
-this entry originally estimated at "six test files". Derived along both axes it
-is 20 files: 17 test importers and 6 path asserters, overlapping in 3. Path
-asserters name a module by path string without importing it, so they are invisible
-to an import search and fail the moment the file disappears.
+`project_migration.ts`, both inside the island.
 
 **`trim-partially-live-runtime`** — gate: `delete-v3-runtime-island` closed.
 Risk: `material`. Remove the `loop_contract.ts` child-output validators
@@ -488,6 +519,7 @@ graph LR
   B["retire-imm-core-barrel"]
   H["rehome-agent-config-loader"]
   SA["resolve-subagent-activation-contract"]
+  DR["drain-v3-island-test-surface"]
   I["delete-v3-runtime-island"]
   T["trim-partially-live-runtime"]
   K["retire-kernel-v1-store<br/>(conditional)"]
@@ -501,7 +533,7 @@ graph LR
   C["retirement-completion-contract"]
   G["packaged-contract-coverage"]
 
-  P0 --> B --> H --> I --> T
+  P0 --> B --> H --> DR --> I --> T
   H --> SA
   I -.trace.-> K
   T --> A --> V
