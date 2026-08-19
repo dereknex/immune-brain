@@ -1,31 +1,20 @@
 import {
-	INTENT_CONTRACT,
 	TASK_PHASES,
-	TASK_RECORD_CONTRACT,
 	TASK_RECORD_CONTRACT_V2,
-	TASK_RISKS,
-	type AcceptanceItem,
 	type ApprovalAuthorityRole,
 	type ApprovalKind,
 	type EvidenceStatus,
 	type FindingKind,
 	type FindingSource,
 	type FindingStatus,
-	type TaskApproval,
-	type TaskApprovalV2,
 	type TaskActionV2,
+	type TaskApprovalV2,
 	type AuthorityAuditDescriptorV2,
-	type TaskEvidence,
 	type TaskEvidenceV2,
 	type TaskFinding,
-	type TaskHistoryEntry,
 	type TaskHistoryEntryV2,
-	type TaskIntent,
 	type TaskIntentV1,
-	type TaskPhase,
-	type TaskRecord,
 	type TaskRecordV2,
-	type UserAuthorityAudit,
 } from "./types";
 import { canonicalIntentHash, parseTaskIntentV1 } from "./intent";
 
@@ -148,53 +137,6 @@ function uniqueIds(
 	}
 }
 
-function parseAcceptance(
-	value: unknown,
-	index: number,
-	violations: string[],
-): AcceptanceItem {
-	const path = `intent.acceptance[${index}]`;
-	const item = objectAt(value, path, violations);
-	rejectUnknown(item, ["id", "text"], path, violations);
-	return {
-		id: stringAt(item.id, `${path}.id`, violations),
-		text: stringAt(item.text, `${path}.text`, violations),
-	};
-}
-
-export function parseTaskIntent(raw: unknown): TaskIntent {
-	const violations: string[] = [];
-	const value = objectAt(raw, "intent", violations);
-	rejectUnknown(
-		value,
-		["contract", "task_id", "revision", "goal", "acceptance", "scope_hint", "risk"],
-		"intent",
-		violations,
-	);
-	if (value.contract !== INTENT_CONTRACT)
-		violations.push(`contract must equal ${INTENT_CONTRACT}`);
-	const acceptance = arrayAt(value.acceptance, "intent.acceptance", violations).map(
-		(item, index) => parseAcceptance(item, index, violations),
-	);
-	if (acceptance.length === 0)
-		violations.push("intent.acceptance must contain at least one item");
-	uniqueIds(acceptance, "intent.acceptance", violations);
-	const scopeHint = arrayAt(value.scope_hint, "intent.scope_hint", violations).map(
-		(item, index) => stringAt(item, `intent.scope_hint[${index}]`, violations),
-	);
-	const parsed: TaskIntent = {
-		contract: INTENT_CONTRACT,
-		task_id: stringAt(value.task_id, "intent.task_id", violations),
-		revision: positiveInteger(value.revision, "revision", violations),
-		goal: stringAt(value.goal, "intent.goal", violations),
-		acceptance,
-		scope_hint: scopeHint,
-		risk: enumAt(value.risk, TASK_RISKS, "intent.risk", violations),
-	};
-	if (violations.length > 0) throw new KernelValidationError(violations);
-	return parsed;
-}
-
 const EVIDENCE_STATUSES: EvidenceStatus[] = ["passed", "failed", "blocked"];
 const FINDING_KINDS: FindingKind[] = [
 	"blocking",
@@ -215,30 +157,6 @@ const APPROVAL_AUTHORITY_ROLES: ApprovalAuthorityRole[] = [
 	"qa",
 	"user",
 ];
-
-function parseEvidence(
-	value: unknown,
-	index: number,
-	violations: string[],
-): TaskEvidence {
-	const path = `record.evidence[${index}]`;
-	const item = objectAt(value, path, violations);
-	rejectUnknown(
-		item,
-		["id", "acceptance_id", "task_revision", "diff_hash", "status", "actor_id", "summary"],
-		path,
-		violations,
-	);
-	return {
-		id: stringAt(item.id, `${path}.id`, violations),
-		acceptance_id: stringAt(item.acceptance_id, `${path}.acceptance_id`, violations),
-		task_revision: positiveInteger(item.task_revision, `${path}.task_revision`, violations),
-		diff_hash: stringAt(item.diff_hash, `${path}.diff_hash`, violations),
-		status: enumAt(item.status, EVIDENCE_STATUSES, `${path}.status`, violations),
-		actor_id: stringAt(item.actor_id, `${path}.actor_id`, violations),
-		summary: stringAt(item.summary, `${path}.summary`, violations),
-	};
-}
 
 function parseFinding(
 	value: unknown,
@@ -261,68 +179,6 @@ function parseFinding(
 		source: enumAt(item.source, FINDING_SOURCES, `${path}.source`, violations),
 		review_round: nullablePositiveInteger(item.review_round, `${path}.review_round`, violations),
 		summary: stringAt(item.summary, `${path}.summary`, violations),
-	};
-}
-
-function parseApproval(
-	value: unknown,
-	index: number,
-	violations: string[],
-): TaskApproval {
-	const path = `record.approvals[${index}]`;
-	const item = objectAt(value, path, violations);
-	rejectUnknown(
-		item,
-		[
-			"id",
-			"kind",
-			"authority_role",
-			"task_revision",
-			"diff_hash",
-			"actor_id",
-			"summary",
-		],
-		path,
-		violations,
-	);
-	return {
-		id: stringAt(item.id, `${path}.id`, violations),
-		kind: enumAt(item.kind, APPROVAL_KINDS, `${path}.kind`, violations),
-		authority_role: enumAt(
-			item.authority_role,
-			APPROVAL_AUTHORITY_ROLES,
-			`${path}.authority_role`,
-			violations,
-		),
-		task_revision: positiveInteger(item.task_revision, `${path}.task_revision`, violations),
-		diff_hash: stringAt(item.diff_hash, `${path}.diff_hash`, violations),
-		actor_id: stringAt(item.actor_id, `${path}.actor_id`, violations),
-		summary: stringAt(item.summary, `${path}.summary`, violations),
-	};
-}
-
-function parseUserAuthorityAudit(
-	value: unknown,
-	path: string,
-	violations: string[],
-): UserAuthorityAudit {
-	const item = objectAt(value, path, violations);
-	rejectUnknown(
-		item,
-		["actor_id", "source", "confirmation_ref"],
-		path,
-		violations,
-	);
-	if (item.source !== "literal_user")
-		violations.push(`${path}.source must equal literal_user`);
-	return {
-		actor_id: stringAt(item.actor_id, `${path}.actor_id`, violations),
-		source: "literal_user",
-		confirmation_ref: stringAt(
-			item.confirmation_ref,
-			`${path}.confirmation_ref`,
-			violations,
-		),
 	};
 }
 
@@ -372,193 +228,6 @@ function parseHistoryV2(
 	};
 }
 
-function parseHistory(
-	value: unknown,
-	index: number,
-	violations: string[],
-): TaskHistoryEntry {
-	const path = `record.history[${index}]`;
-	const item = objectAt(value, path, violations);
-	rejectUnknown(
-		item,
-		["id", "at", "type", "from_phase", "to_phase", "reason", "authority"],
-		path,
-		violations,
-	);
-	const nullablePhase = (raw: unknown, field: string): TaskPhase | null =>
-		raw === null ? null : enumAt(raw, TASK_PHASES, field, violations);
-	const parsed: TaskHistoryEntry = {
-		id: stringAt(item.id, `${path}.id`, violations),
-		at: stringAt(item.at, `${path}.at`, violations),
-		type: stringAt(item.type, `${path}.type`, violations),
-		from_phase: nullablePhase(item.from_phase, `${path}.from_phase`),
-		to_phase: nullablePhase(item.to_phase, `${path}.to_phase`),
-		reason: nullableString(item.reason, `${path}.reason`, violations),
-	};
-	if (item.authority !== undefined)
-		parsed.authority = parseUserAuthorityAudit(
-			item.authority,
-			`${path}.authority`,
-			violations,
-		);
-	return parsed;
-}
-
-export function parseTaskRecord(raw: unknown): TaskRecord {
-	const violations: string[] = [];
-	const value = objectAt(raw, "record", violations);
-	rejectUnknown(
-		value,
-		["contract", "task_id", "intent_revision", "phase", "baseline", "evidence", "findings", "approvals", "history"],
-		"record",
-		violations,
-	);
-	if (value.contract !== TASK_RECORD_CONTRACT)
-		violations.push(`contract must equal ${TASK_RECORD_CONTRACT}`);
-	const evidence = arrayAt(value.evidence, "record.evidence", violations).map(
-		(item, index) => parseEvidence(item, index, violations),
-	);
-	const findings = arrayAt(value.findings, "record.findings", violations).map(
-		(item, index) => parseFinding(item, index, violations),
-	);
-	const approvals = arrayAt(value.approvals, "record.approvals", violations).map(
-		(item, index) => parseApproval(item, index, violations),
-	);
-	const history = arrayAt(value.history, "record.history", violations).map(
-		(item, index) => parseHistory(item, index, violations),
-	);
-	uniqueIds(evidence, "record.evidence", violations);
-	uniqueIds(findings, "record.findings", violations);
-	uniqueIds(approvals, "record.approvals", violations);
-	uniqueIds(history, "record.history", violations);
-	const parsed: TaskRecord = {
-		contract: TASK_RECORD_CONTRACT,
-		task_id: stringAt(value.task_id, "record.task_id", violations),
-		intent_revision: positiveInteger(
-			value.intent_revision,
-			"record.intent_revision",
-			violations,
-		),
-		phase: enumAt(value.phase, TASK_PHASES, "phase", violations),
-		baseline: stringAt(value.baseline, "record.baseline", violations),
-		evidence,
-		findings,
-		approvals,
-		history,
-	};
-	if (violations.length > 0) throw new KernelValidationError(violations);
-	return parsed;
-}
-
-function sameJson(left: unknown, right: unknown): boolean {
-	return JSON.stringify(left) === JSON.stringify(right);
-}
-
-export function assertKernelInvariants(
-	intentRaw: TaskIntent,
-	recordRaw: TaskRecord,
-): void {
-	const intent = parseTaskIntent(intentRaw);
-	const record = parseTaskRecord(recordRaw);
-	const violations: string[] = [];
-	if (intent.task_id !== record.task_id)
-		violations.push("intent and record task_id must match");
-	if (intent.revision !== record.intent_revision)
-		violations.push("intent revision and record intent_revision must match");
-	const acceptanceIds = new Set(intent.acceptance.map((item) => item.id));
-	for (const evidence of record.evidence) {
-		if (!acceptanceIds.has(evidence.acceptance_id))
-			violations.push(
-				`evidence ${evidence.id} references unknown acceptance ${evidence.acceptance_id}`,
-			);
-	}
-	for (const finding of record.findings) {
-		if (finding.acceptance_id && !acceptanceIds.has(finding.acceptance_id))
-			violations.push(
-				`finding ${finding.id} references unknown acceptance ${finding.acceptance_id}`,
-			);
-	}
-	const requiredRole: Record<ApprovalKind, ApprovalAuthorityRole> = {
-		review: "reviewer",
-		qa: "qa",
-		user: "user",
-	};
-	for (const approval of record.approvals) {
-		if (approval.authority_role !== requiredRole[approval.kind])
-			violations.push(
-				`approval ${approval.id} kind ${approval.kind} requires authority_role ${requiredRole[approval.kind]}`,
-			);
-	}
-	if (violations.length > 0) throw new KernelInvariantError(violations);
-}
-
-const RISK_RANK = { routine: 0, material: 1, critical: 2 } as const;
-
-export function assertIntentUpdate(
-	previousRaw: TaskIntent,
-	nextRaw: TaskIntent,
-	recordRaw: TaskRecord,
-): void {
-	const previous = parseTaskIntent(previousRaw);
-	const next = parseTaskIntent(nextRaw);
-	const record = parseTaskRecord(recordRaw);
-	const violations: string[] = [];
-	if (previous.task_id !== next.task_id || previous.task_id !== record.task_id)
-		violations.push("intent update must preserve task_id");
-	if (next.revision < previous.revision)
-		violations.push("intent revision cannot decrease");
-	if (RISK_RANK[next.risk] < RISK_RANK[previous.risk])
-		violations.push("risk cannot be downgraded");
-	const contractChanged =
-		previous.goal !== next.goal ||
-		!sameJson(previous.acceptance, next.acceptance);
-	if (contractChanged && next.revision <= previous.revision)
-		violations.push("goal or acceptance changes require a revision bump");
-	if (next.risk !== previous.risk && next.revision <= previous.revision)
-		violations.push("risk changes require a revision bump");
-	if (violations.length > 0) throw new KernelInvariantError(violations);
-}
-
-const ALLOWED_PHASE_TRANSITIONS: Record<TaskPhase, TaskPhase[]> = {
-	working: ["review", "stopped"],
-	review: ["working", "done", "stopped"],
-	done: [],
-	stopped: [],
-};
-
-export function assertTaskRecordUpdate(
-	previousRaw: TaskRecord,
-	nextRaw: TaskRecord,
-): void {
-	const previous = parseTaskRecord(previousRaw);
-	const next = parseTaskRecord(nextRaw);
-	const violations: string[] = [];
-	if (previous.task_id !== next.task_id)
-		violations.push("task record update must preserve task_id");
-	if (next.intent_revision < previous.intent_revision)
-		violations.push("record intent_revision cannot decrease");
-	if (
-		previous.phase !== next.phase &&
-		!ALLOWED_PHASE_TRANSITIONS[previous.phase].includes(next.phase)
-	)
-		violations.push(`illegal phase transition: ${previous.phase} -> ${next.phase}`);
-	if (next.history.length < previous.history.length)
-		violations.push("history is append-only");
-	else {
-		for (let index = 0; index < previous.history.length; index += 1) {
-			if (!sameJson(previous.history[index], next.history[index])) {
-				violations.push(`history entry ${index} is immutable`);
-				break;
-			}
-		}
-	}
-	if (violations.length > 0) throw new KernelInvariantError(violations);
-}
-
-// ---------------------------------------------------------------------------
-// P2C1 additive TaskRecord v2 parser/invariants.
-// v1 APIs above remain byte-for-byte unchanged and stay v1-only.
-// ---------------------------------------------------------------------------
 
 const SHA256_HEX = /^sha256:[a-f0-9]{64}$/;
 

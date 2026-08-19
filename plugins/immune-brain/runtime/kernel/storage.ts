@@ -14,18 +14,15 @@ import {
 	writeFileSync,
 } from "node:fs";
 import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
-import { reduceTask, type UserAuthorityContext } from "./reducer";
-import { KernelInvariantError, parseTaskRecord, parseTaskRecordV2 } from "./validation";
 import {
 	parseBackendClaim,
 	parseTaskTombstone,
 	type BackendClaim,
 	type TaskTombstone,
 } from "./backend_claim";
+import { parseTaskRecordV2 } from "./validation";
 import type {
-	TaskAction,
 	TaskPhase,
-	TaskRecord,
 	TaskRecordV2,
 	StoredTaskMutationV2,
 	V3AuthorityObservation,
@@ -397,24 +394,6 @@ const TRANSACTION_PATH = ".imm/tasks/.workspace-transaction.json";
 // present; recovery of v1 markers is never performed by the v4 runtime.
 const V1_TRANSACTION_RETIRED = "workspace_transaction/v1 is retired after v4 storage retirement; use TaskRecord v2 + workspace_transaction/v2";
 
-interface WorkspaceTransaction {
-	contract: "assurance_kernel/workspace_transaction/v1";
-	task_id: string;
-	expected_task_revision: string;
-	next_task_content: string;
-	expected_workspace_revision: string;
-	next_workspace_content: string;
-}
-
-export interface StoredTaskMutation {
-	revision: string;
-	record: TaskRecord;
-	workspace: {
-		revision: string;
-		state: WorkspaceState;
-	};
-}
-
 let afterTaskTransactionWriteForTest: (() => void) | null = null;
 
 /** Test-only seam for a failure after the first file in a two-file transaction. */
@@ -456,21 +435,6 @@ function serializeWorkspace(state: WorkspaceState): string {
 
 export { serializeWorkspace };
 
-function readTaskRecordRaw(
-	root: string,
-	taskId: string,
-): { revision: string; record: TaskRecord | null } {
-	validateTaskId(taskId);
-	const relativePath = `.imm/tasks/${taskId}.json`;
-	if (currentRevision(root, relativePath) === MISSING_REVISION)
-		return { revision: MISSING_REVISION, record: null };
-	const content = readSecureProjectFile(root, relativePath);
-	return {
-		revision: revisionFor(content),
-		record: parseTaskRecord(JSON.parse(content)),
-	};
-}
-
 export function readWorkspaceStateRaw(root: string): {
 	revision: string;
 	state: WorkspaceState;
@@ -486,59 +450,6 @@ export function readWorkspaceStateRaw(root: string): {
 		};
 	const content = readSecureProjectFile(root, relativePath);
 	return { revision: revisionFor(content), state: parseWorkspaceContent(content) };
-}
-
-function readPendingTransaction(root: string): WorkspaceTransaction | null {
-	if (currentRevision(root, TRANSACTION_PATH) === MISSING_REVISION) return null;
-	// v4-only: an unresolved v1 transaction marker fails closed and is never
-	// recovered or removed by this runtime.
-	throw new KernelStoreSecurityError(V1_TRANSACTION_RETIRED);
-	const raw = JSON.parse(
-		readSecureProjectFile(root, TRANSACTION_PATH),
-	) as Record<string, unknown>;
-	const allowed = [
-		"contract",
-		"task_id",
-		"expected_task_revision",
-		"next_task_content",
-		"expected_workspace_revision",
-		"next_workspace_content",
-	];
-	const unknown = Object.keys(raw).filter((key) => !allowed.includes(key));
-	if (unknown.length > 0)
-		throw new KernelStoreSecurityError(
-			`workspace transaction has unknown field: ${unknown[0]}`,
-		);
-	if (raw.contract !== "assurance_kernel/workspace_transaction/v1")
-		throw new KernelStoreSecurityError("workspace transaction contract is invalid");
-	for (const field of allowed.slice(1)) {
-		if (typeof raw[field] !== "string" || !String(raw[field]).trim())
-			throw new KernelStoreSecurityError(
-				`workspace transaction ${field} is invalid`,
-			);
-	}
-	const transaction = raw as unknown as WorkspaceTransaction;
-	validateTaskId(transaction.task_id);
-	const record = parseTaskRecord(JSON.parse(transaction.next_task_content));
-	if (record.task_id !== transaction.task_id)
-		throw new KernelStoreSecurityError(
-			"workspace transaction task identity is inconsistent",
-		);
-	parseWorkspaceContent(transaction.next_workspace_content);
-	return transaction;
-}
-
-function removeTransactionMarker(root: string): void {
-	const candidate = safeCandidate(root, TRANSACTION_PATH);
-	assertNoSymlinkSegments(candidate.root, candidate.path);
-	const stat = pathStatOrNull(candidate.path);
-	if (!stat) return;
-	if (!stat.isFile())
-		throw new KernelStoreSecurityError(
-			"workspace transaction marker is not a regular file",
-		);
-	rmSync(candidate.path);
-	fsyncDirectory(dirname(candidate.path));
 }
 
 function convergeFile(
@@ -560,235 +471,6 @@ function convergeFile(
 		nextContent,
 		expectedRevision,
 	);
-}
-
-function completeTransactionLocked(
-	root: string,
-	transaction: WorkspaceTransaction,
-	invokeTestHook: boolean,
-): StoredTaskMutation {
-	const taskPath = `.imm/tasks/${transaction.task_id}.json`;
-	const taskRevision = convergeFile(
-		root,
-		taskPath,
-		transaction.expected_task_revision,
-		transaction.next_task_content,
-	);
-	if (invokeTestHook) runAfterTaskTransactionWriteHook();
-	const workspaceRevision = convergeFile(
-		root,
-		".imm/workspace.json",
-		transaction.expected_workspace_revision,
-		transaction.next_workspace_content,
-	);
-	const record = parseTaskRecord(JSON.parse(transaction.next_task_content));
-	const workspace = parseWorkspaceContent(transaction.next_workspace_content);
-	removeTransactionMarker(root);
-	return {
-		revision: taskRevision,
-		record,
-		workspace: { revision: workspaceRevision, state: workspace },
-	};
-}
-
-function recoverPendingTransactionLocked(root: string): void {
-	const transaction = readPendingTransaction(root);
-	if (transaction) completeTransactionLocked(root, transaction, false);
-}
-
-function withKernelStoreLock<T>(root: string, operation: () => T): T {
-	const tasksDirectory = ensureSecureDirectory(root, ".imm/tasks");
-	return withExclusiveLock(resolve(tasksDirectory, STORE_LOCK_NAME), () => {
-		recoverPendingTransactionLocked(root);
-		return operation();
-	});
-}
-
-function commitTaskAndWorkspaceLocked(
-	root: string,
-	taskId: string,
-	expectedTaskRevision: string,
-	nextRecord: TaskRecord,
-	expectedWorkspaceRevision: string,
-	nextWorkspace: WorkspaceState,
-): StoredTaskMutation {
-	const transaction: WorkspaceTransaction = {
-		contract: "assurance_kernel/workspace_transaction/v1",
-		task_id: taskId,
-		expected_task_revision: expectedTaskRevision,
-		next_task_content: `${JSON.stringify(nextRecord, null, 2)}\n`,
-		expected_workspace_revision: expectedWorkspaceRevision,
-		next_workspace_content: serializeWorkspace(nextWorkspace),
-	};
-	atomicCasWrite(
-		root,
-		TRANSACTION_PATH,
-		`${JSON.stringify(transaction, null, 2)}\n`,
-		MISSING_REVISION,
-	);
-	try {
-		return completeTransactionLocked(root, transaction, true);
-	} catch (error) {
-		try {
-			return completeTransactionLocked(root, transaction, false);
-		} catch (recoveryError) {
-			throw new KernelStoreConflictError(
-				`kernel transaction failed and remains recoverable: ${error instanceof Error ? error.message : error}; recovery: ${recoveryError instanceof Error ? recoveryError.message : recoveryError}`,
-			);
-		}
-	}
-}
-
-function assertWorkspaceMatchesTask(
-	taskId: string,
-	record: TaskRecord,
-	workspace: WorkspaceState,
-): void {
-	if (record.phase === "working" && workspace.current_working !== taskId)
-		throw new KernelInvariantError([
-			`working task ${taskId} does not own the workspace pointer`,
-		]);
-	if (record.phase !== "working" && workspace.current_working === taskId)
-		throw new KernelInvariantError([
-			`non-working task ${taskId} owns the workspace pointer`,
-		]);
-}
-
-export function readTaskRecord(
-	root: string,
-	taskId: string,
-): { revision: string; record: TaskRecord | null } {
-	return withKernelStoreLock(root, () => readTaskRecordRaw(root, taskId));
-}
-
-/** Create a TaskRecord. Existing records can only change through applyTaskAction. */
-export function writeTaskRecord(
-	root: string,
-	recordRaw: TaskRecord,
-	expectedRevision: string,
-	expectedWorkspaceRevision: string,
-): StoredTaskMutation {
-	const record = parseTaskRecord(recordRaw);
-	validateTaskId(record.task_id);
-	if (
-		record.phase !== "working" ||
-		record.evidence.length > 0 ||
-		record.findings.length > 0 ||
-		record.approvals.length > 0 ||
-		record.history.length > 0
-	)
-		throw new KernelInvariantError([
-			"canonical TaskRecord creation requires phase working with empty evidence, findings, approvals, and history",
-		]);
-	if (expectedRevision !== MISSING_REVISION)
-		throw new KernelInvariantError([
-			"direct TaskRecord updates are forbidden; use applyTaskAction",
-		]);
-	return withKernelStoreLock(root, () => {
-		const current = readTaskRecordRaw(root, record.task_id);
-		if (current.revision !== expectedRevision)
-			throw new KernelStoreConflictError(
-				`CAS mismatch for task ${record.task_id}: expected ${expectedRevision}, got ${current.revision}`,
-			);
-		const workspace = readWorkspaceStateRaw(root);
-		if (workspace.revision !== expectedWorkspaceRevision)
-			throw new KernelStoreConflictError(
-				`workspace CAS mismatch: expected ${expectedWorkspaceRevision}, got ${workspace.revision}`,
-			);
-		if (
-			record.phase === "working" &&
-			workspace.state.current_working !== null
-		)
-			throw new KernelStoreConflictError(
-				`workspace is already owned by ${workspace.state.current_working}`,
-			);
-		if (workspace.state.current_working === record.task_id)
-			throw new KernelInvariantError([
-				`workspace points to missing task ${record.task_id}`,
-			]);
-		const nextWorkspace: WorkspaceState = {
-			...workspace.state,
-			current_working:
-				record.phase === "working"
-					? record.task_id
-					: workspace.state.current_working,
-		};
-		return commitTaskAndWorkspaceLocked(
-			root,
-			record.task_id,
-			current.revision,
-			record,
-			workspace.revision,
-			nextWorkspace,
-		);
-	});
-}
-
-export function applyTaskAction(
-	root: string,
-	taskId: string,
-	action: TaskAction,
-	expectedTaskRevision: string,
-	expectedWorkspaceRevision: string,
-	authorityContext?: UserAuthorityContext,
-): StoredTaskMutation {
-	validateTaskId(taskId);
-	return withKernelStoreLock(root, () => {
-		const current = readTaskRecordRaw(root, taskId);
-		if (!current.record)
-			throw new KernelStoreConflictError(`task ${taskId} does not exist`);
-		const workspace = readWorkspaceStateRaw(root);
-
-		if (current.revision !== expectedTaskRevision) {
-			const replayed = reduceTask(current.record, action, authorityContext);
-			if (JSON.stringify(replayed) === JSON.stringify(current.record)) {
-				assertWorkspaceMatchesTask(taskId, current.record, workspace.state);
-				return {
-					revision: current.revision,
-					record: current.record,
-					workspace,
-				};
-			}
-			throw new KernelStoreConflictError(
-				`task CAS mismatch: expected ${expectedTaskRevision}, got ${current.revision}`,
-			);
-		}
-		if (workspace.revision !== expectedWorkspaceRevision)
-			throw new KernelStoreConflictError(
-				`workspace CAS mismatch: expected ${expectedWorkspaceRevision}, got ${workspace.revision}`,
-			);
-		assertWorkspaceMatchesTask(taskId, current.record, workspace.state);
-		const nextRecord = reduceTask(current.record, action, authorityContext);
-		let nextWorking = workspace.state.current_working;
-		if (nextRecord.phase === "working") {
-			if (nextWorking !== null && nextWorking !== taskId)
-				throw new KernelStoreConflictError(
-					`workspace is already owned by ${nextWorking}`,
-				);
-			nextWorking = taskId;
-		} else if (current.record.phase === "working") {
-			nextWorking = null;
-		}
-		const nextWorkspace: WorkspaceState = {
-			...workspace.state,
-			current_working: nextWorking,
-		};
-		return commitTaskAndWorkspaceLocked(
-			root,
-			taskId,
-			current.revision,
-			nextRecord,
-			workspace.revision,
-			nextWorkspace,
-		);
-	});
-}
-
-export function readWorkspaceState(root: string): {
-	revision: string;
-	state: WorkspaceState;
-} {
-	return withKernelStoreLock(root, () => readWorkspaceStateRaw(root));
 }
 
 function appendJournalLineLocked(root: string, entry: JournalEntry): void {
@@ -859,8 +541,7 @@ export function appendObservationJournalEntry(
 
 // ---------------------------------------------------------------------------
 // R2C2 dedicated TaskRecord v2 transaction path.
-// Shares the existing exclusive store lock with the v1 transaction; the two
-// markers are mutually exclusive and each parser rejects the other contract.
+// Uses the existing exclusive store lock and rejects the retired v1 marker.
 // ---------------------------------------------------------------------------
 
 const TRANSACTION_PATH_V2 = ".imm/tasks/.workspace-transaction-v2.json";
@@ -988,7 +669,7 @@ function assertNoRetiredV1Marker(root: string): void {
 		throw new KernelStoreSecurityError(V1_TRANSACTION_RETIRED);
 }
 
-/** Recover exactly one pending marker; simultaneous v1/v2/enrollment/drain/terminal markers fail closed. */
+/** Reject any retired v1 marker before considering v2 recovery. */
 function recoverAnyPendingTransactionLocked(root: string): void {
 	const hasV1 = currentRevision(root, TRANSACTION_PATH) !== MISSING_REVISION;
 	const hasV2 = currentRevision(root, TRANSACTION_PATH_V2) !== MISSING_REVISION;
@@ -996,12 +677,13 @@ function recoverAnyPendingTransactionLocked(root: string): void {
 		currentRevision(root, ENROLLMENT_MARKER_PATH) !== MISSING_REVISION;
 	const hasDrain = currentRevision(root, DRAIN_MARKER_PATH) !== MISSING_REVISION;
 	const hasTerminal = currentRevision(root, TERMINAL_MARKER_PATH) !== MISSING_REVISION;
-	const markers = [hasV1, hasV2, hasEnrollment, hasDrain, hasTerminal].filter(Boolean).length;
+	if (hasV1)
+		throw new KernelStoreSecurityError(V1_TRANSACTION_RETIRED);
+	const markers = [hasV2, hasEnrollment, hasDrain, hasTerminal].filter(Boolean).length;
 	if (markers > 1)
 		throw new KernelStoreSecurityError(
 			"simultaneous workspace transaction markers are forbidden",
 		);
-	if (hasV1) recoverPendingTransactionLocked(root);
 	if (hasV2) recoverPendingTransactionV2Locked(root);
 	if (hasEnrollment) recoverPendingEnrollmentLocked(root);
 	if (hasDrain) recoverPendingDrainLocked(root);
@@ -1027,7 +709,7 @@ export function readTaskRecordV2(
 	root: string,
 	taskId: string,
 ): { revision: string; record: TaskRecordV2 | null } {
-	return withKernelStoreLock(root, () => readTaskRecordV2Raw(root, taskId));
+	return withKernelStoreLockV2(root, () => readTaskRecordV2Raw(root, taskId));
 }
 
 /** Commit a v2 reducer result through the dedicated recoverable transaction. */

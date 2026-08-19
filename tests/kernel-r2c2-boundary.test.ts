@@ -1,8 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import * as kernel from "../plugins/immune-brain/runtime/kernel/index";
 import * as storage from "../plugins/immune-brain/runtime/kernel/storage";
-import * as reducerV1 from "../plugins/immune-brain/runtime/kernel/reducer";
-import { parseTaskRecord } from "../plugins/immune-brain/runtime/kernel/validation";
 import {
 	canonicalIntentHash,
 	readTaskIntent,
@@ -62,22 +60,12 @@ describe("R2C2 boundary and compatibility", () => {
 		expect((kernel as Record<string, unknown>).mintToken).toBeUndefined();
 	});
 
-	test("v1 reducer and storage public signatures remain intact", () => {
-		expect(typeof reducerV1.reduceTask).toBe("function");
-		expect(typeof reducerV1.createUserAuthorityContextForTest).toBe("function");
-		expect(typeof storage.writeTaskRecord).toBe("function");
-		expect(typeof storage.applyTaskAction).toBe("function");
-		expect(typeof storage.readTaskRecord).toBe("function");
-		expect(typeof storage.readWorkspaceState).toBe("function");
+	test("v1 reducer and v1 storage entry points are retired", () => {
+		expect((kernel as Record<string, unknown>).reduceTask).toBeUndefined();
+		expect(typeof storage.readTaskRecordV2).toBe("function");
+		expect(typeof storage.withKernelStoreLockV2).toBe("function");
 		expect(typeof storage.setAfterTaskTransactionWriteForTest).toBe("function");
-		expect(typeof parseTaskRecord).toBe("function");
-	});
-
-	test("v1 writeTaskRecord rejects a v2 record", () => {
-		// v2 records are rejected by the v1 parser before any write.
-		expect(() =>
-			parseTaskRecord(recordFixture() as unknown as Parameters<typeof parseTaskRecord>[0]),
-		).toThrow();
+		expect(typeof storage.readWorkspaceStateRaw).toBe("function");
 	});
 
 	test("no v2 creation path exists in storage", () => {

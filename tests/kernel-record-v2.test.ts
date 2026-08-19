@@ -1,7 +1,4 @@
 import { describe, expect, test } from "bun:test";
-import { mkdtempSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import {
 	canonicalIntentHash,
 	parseTaskIntentV1,
@@ -10,15 +7,7 @@ import {
 	completionDecisionV2,
 	projectTaskV2,
 } from "../plugins/immune-brain/runtime/kernel/completion";
-import {
-	parseTaskRecord,
-} from "../plugins/immune-brain/runtime/kernel/validation";
-import {
-	parseTaskRecordV2,
-	assertKernelInvariantsV2,
-} from "../plugins/immune-brain/runtime/kernel/validation";
-import { reduceTask } from "../plugins/immune-brain/runtime/kernel/reducer";
-import { writeTaskRecord } from "../plugins/immune-brain/runtime/kernel/storage";
+import { parseTaskRecordV2, assertKernelInvariantsV2 } from "../plugins/immune-brain/runtime/kernel/validation";
 import type { TaskIntentV1, TaskRecordV2 } from "../plugins/immune-brain/runtime/kernel/types";
 
 const INTENT: Record<string, unknown> = {
@@ -186,33 +175,6 @@ describe("parseTaskRecordV2", () => {
 	test("assertKernelInvariantsV2 passes for a valid record", () => {
 		const record = parseTaskRecordV2(v2Record());
 		expect(() => assertKernelInvariantsV2(intent, record)).not.toThrow();
-	});
-});
-
-describe("v1 compatibility and v2 writer rejection", () => {
-	test("parseTaskRecord remains v1-only and rejects v2 records", () => {
-		expect(() => parseTaskRecord(v2Record())).toThrow();
-	});
-
-	test("reduceTask (v1 reducer) rejects v2 records before any mutation", () => {
-		const record = parseTaskRecordV2(v2Record());
-		expect(() =>
-			reduceTask(
-				record as never,
-				{ event_id: "ev1", at: "2026-08-12T00:00:00Z", type: "submit_review" },
-			),
-		).toThrow();
-	});
-
-	test("writeTaskRecord (v1 writer) rejects v2 records without writing", () => {
-		const root = mkdtempSync(join(tmpdir(), "imm-record-v2-"));
-		const record = parseTaskRecordV2(v2Record());
-		expect(() =>
-			writeTaskRecord(root, record as never, "missing", "missing"),
-		).toThrow();
-		// No task file may exist.
-		const fs = require("node:fs");
-		expect(fs.existsSync(join(root, ".imm/tasks/123-short-goal.json"))).toBe(false);
 	});
 });
 

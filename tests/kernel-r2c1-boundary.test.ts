@@ -2,34 +2,24 @@ import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import * as kernel from "../plugins/immune-brain/runtime/kernel/index";
-import {
-	completionDecision,
-	projectTask,
-} from "../plugins/immune-brain/runtime/kernel/completion";
-import { parseTaskIntent, parseTaskRecord } from "../plugins/immune-brain/runtime/kernel/validation";
-import { reduceTask } from "../plugins/immune-brain/runtime/kernel/reducer";
-import { writeTaskRecord, applyTaskAction, readTaskRecord } from "../plugins/immune-brain/runtime/kernel/storage";
 
 const REPO_ROOT = join(__dirname, "..");
 
-describe("v1 public API compatibility", () => {
-	test("v1 signatures remain exported and functional", () => {
-		expect(typeof parseTaskRecord).toBe("function");
-		expect(typeof parseTaskIntent).toBe("function");
-		expect(typeof completionDecision).toBe("function");
-		expect(typeof projectTask).toBe("function");
-		expect(typeof reduceTask).toBe("function");
-		expect(typeof writeTaskRecord).toBe("function");
-		expect(typeof applyTaskAction).toBe("function");
-		expect(typeof readTaskRecord).toBe("function");
-	});
-
-	test("no v2 record can enter v1 production writers", () => {
-		const v2Shape = {
-			contract: "assurance_kernel/task_record/v2",
-			task_id: "123-short-goal",
-		};
-		expect(() => parseTaskRecord(v2Shape)).toThrow();
+describe("v1 API retirement", () => {
+	test("v1 kernel entry points are absent from the public index", () => {
+		const exported = new Set<string>(Object.keys(kernel));
+		for (const v1 of [
+			"completionDecision",
+			"projectTask",
+			"parseTaskIntent",
+			"parseTaskRecord",
+			"reduceTask",
+			"writeTaskRecord",
+			"applyTaskAction",
+			"readTaskRecord",
+		]) {
+			expect(exported.has(v1)).toBe(false);
+		}
 	});
 });
 
@@ -108,7 +98,7 @@ describe("P2C1 boundary invariants", () => {
 	test("index exports are v4-only: v1 mutation helpers are absent", () => {
 		expect(typeof (kernel as Record<string, unknown>).writeTaskRecord).toBe("undefined");
 		expect(typeof (kernel as Record<string, unknown>).applyTaskAction).toBe("undefined");
-		expect(typeof kernel.reduceTask).toBe("function");
+		expect(typeof (kernel as Record<string, unknown>).reduceTask).toBe("undefined");
 		expect(typeof kernel.readTaskRecordV2).toBe("function");
 	});
 

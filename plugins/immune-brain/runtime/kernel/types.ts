@@ -1,38 +1,10 @@
-export const INTENT_CONTRACT = "assurance_kernel/intent/v1" as const;
-export const TASK_RECORD_CONTRACT = "assurance_kernel/task_record/v1" as const;
-
 export const TASK_PHASES = ["working", "review", "done", "stopped"] as const;
 export type TaskPhase = (typeof TASK_PHASES)[number];
 
 export const TASK_RISKS = ["routine", "material", "critical"] as const;
 export type TaskRisk = (typeof TASK_RISKS)[number];
 
-export interface AcceptanceItem {
-	id: string;
-	text: string;
-}
-
-export interface TaskIntent {
-	contract: typeof INTENT_CONTRACT;
-	task_id: string;
-	revision: number;
-	goal: string;
-	acceptance: AcceptanceItem[];
-	scope_hint: string[];
-	risk: TaskRisk;
-}
-
 export type EvidenceStatus = "passed" | "failed" | "blocked";
-
-export interface TaskEvidence {
-	id: string;
-	acceptance_id: string;
-	task_revision: number;
-	diff_hash: string;
-	status: EvidenceStatus;
-	actor_id: string;
-	summary: string;
-}
 
 export type FindingKind =
 	| "blocking"
@@ -55,42 +27,10 @@ export interface TaskFinding {
 export type ApprovalKind = "review" | "qa" | "user";
 export type ApprovalAuthorityRole = "reviewer" | "qa" | "user";
 
-export interface TaskApproval {
-	id: string;
-	kind: ApprovalKind;
-	authority_role: ApprovalAuthorityRole;
-	task_revision: number;
-	diff_hash: string;
-	actor_id: string;
-	summary: string;
-}
-
 export interface UserAuthorityAudit {
 	actor_id: string;
 	source: "literal_user";
 	confirmation_ref: string;
-}
-
-export interface TaskHistoryEntry {
-	id: string;
-	at: string;
-	type: string;
-	from_phase: TaskPhase | null;
-	to_phase: TaskPhase | null;
-	reason: string | null;
-	authority?: UserAuthorityAudit;
-}
-
-export interface TaskRecord {
-	contract: typeof TASK_RECORD_CONTRACT;
-	task_id: string;
-	intent_revision: number;
-	phase: TaskPhase;
-	baseline: string;
-	evidence: TaskEvidence[];
-	findings: TaskFinding[];
-	approvals: TaskApproval[];
-	history: TaskHistoryEntry[];
 }
 
 export interface CompletionDecision {
@@ -115,46 +55,6 @@ export type KernelNextAction =
 	| "record_approval"
 	| "complete"
 	| null;
-
-export interface TaskProjection extends CompletionDecision {
-	contract: "assurance_kernel/projection/v1";
-	task_id: string;
-	intent_revision: number;
-	phase: TaskPhase;
-	blocked: boolean;
-	next_action: KernelNextAction;
-}
-
-export interface NewReviewFinding {
-	id: string;
-	kind: "blocking" | "advisory";
-	acceptance_id: string | null;
-	summary: string;
-}
-
-interface BaseTaskAction {
-	event_id: string;
-	at: string;
-}
-
-export type TaskAction =
-	| (BaseTaskAction & { type: "submit_review" })
-	| (BaseTaskAction & {
-			type: "request_rework";
-			findings: NewReviewFinding[];
-	  })
-	| (BaseTaskAction & {
-			type: "complete";
-			intent: TaskIntent;
-			current_diff_hash: string;
-	  })
-	| (BaseTaskAction & { type: "stop"; reason: string })
-	| (BaseTaskAction & { type: "resolve_finding"; finding_id: string })
-	| (BaseTaskAction & {
-			type: "resolve_user_decision";
-			finding_id: string;
-			resolution: string;
-	  });
 
 export interface LegacyMapping {
 	phase: TaskPhase | null;
@@ -276,10 +176,6 @@ export type IntentRevisionClass =
 	| "unchanged"
 	| "compatible"
 	| "breaking";
-
-// ---------------------------------------------------------------------------
-// R2C2 additive TaskAction v2, authority audit, and branded mutation result.
-// ---------------------------------------------------------------------------
 
 export const TASK_RECORD_CONTRACT_V2_MUTATION = "assurance_kernel/task_action/v2" as const;
 

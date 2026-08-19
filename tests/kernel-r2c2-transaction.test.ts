@@ -15,7 +15,7 @@ import {
 	canonicalIntentHash,
 	readTaskIntent,
 } from "../plugins/immune-brain/runtime/kernel/intent";
-import { revisionForContent, readTaskRecordV2, readWorkspaceState } from "../plugins/immune-brain/runtime/kernel/storage";
+import { revisionForContent, readTaskRecordV2, readWorkspaceStateRaw } from "../plugins/immune-brain/runtime/kernel/storage";
 import { setAfterTaskTransactionWriteForTest } from "../plugins/immune-brain/runtime/kernel/storage";
 import type { TaskActionV2, TaskRecordV2 } from "../plugins/immune-brain/runtime/kernel/types";
 
@@ -143,7 +143,7 @@ describe("R2C2 v2 transaction recovery", () => {
 		expect(() => commitOnce()).not.toThrow();
 		const { record } = readTaskRecordV2(root, taskId);
 		expect(record?.evidence).toHaveLength(1);
-		expect(readWorkspaceState(root).state.current_working).toBe(taskId);
+		expect(readWorkspaceStateRaw(root).state.current_working).toBe(taskId);
 		// The marker is removed after the auto-recovery completes the two-file
 		// transaction from its own recorded next-state bytes.
 		expect(existsSync(join(root, TX_V2))).toBe(false);
@@ -167,7 +167,7 @@ describe("R2C2 v2 transaction recovery", () => {
 
 	test("workspace ownership follows the resulting phase", () => {
 		commitOnce();
-		expect(readWorkspaceState(root).state.current_working).toBe(taskId);
+		expect(readWorkspaceStateRaw(root).state.current_working).toBe(taskId);
 		// Submitting review releases the workspace pointer.
 		const action = {
 			type: "submit_review",
@@ -191,7 +191,7 @@ describe("R2C2 v2 transaction recovery", () => {
 			prior_intent_token: readTaskIntent(root, taskId).token,
 			diffProvider: () => DIFF,
 		});
-		expect(readWorkspaceState(root).state.current_working).toBeNull();
+		expect(readWorkspaceStateRaw(root).state.current_working).toBeNull();
 	});
 
 	test("contradictory partial task/workspace state is rejected", () => {
@@ -214,17 +214,13 @@ describe("R2C2 v2 transaction recovery", () => {
 		expect(() => commitOnce()).toThrow();
 	});
 
-	test("v1 transaction path remains fully compatible", () => {
-		// A v1 marker without v2 marker is left untouched by v2 recovery:
-		// the v2 path only inspects the v2 marker file.
+	test("a retired v1 marker alone fails closed", () => {
+		// A v1 transaction marker is a permanently retired contract: the v2
+		// store recovery rejects it before considering any v2 marker.
 		writeFileSync(
 			join(root, TX_V1),
 			JSON.stringify({ contract: "assurance_kernel/workspace_transaction/v1" }) + "\n",
 		);
-		writeFileSync(
-			join(root, TX_V2),
-			JSON.stringify({ contract: "assurance_kernel/workspace_transaction/v2" }) + "\n",
-		);
-		expect(() => commitOnce()).toThrow();
+		expect(() => commitOnce()).toThrow(/retired|workspace_transaction\/v1/);
 	});
 });

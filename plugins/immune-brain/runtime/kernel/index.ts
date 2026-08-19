@@ -2,7 +2,6 @@ export * from "./types";
 export * from "./intent";
 export * from "./validation";
 export * from "./completion";
-export { reduceTask } from "./reducer";
 export * from "./legacy";
 // v4 storage retirement: the v1 TaskRecord storage entry points are no
 // longer part of the production kernel surface. Only the v2 store read/commit
