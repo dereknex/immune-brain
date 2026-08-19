@@ -201,7 +201,14 @@ this slice until the direction is chosen; the two directions have disjoint scope
 `scripts/dist-sync-manifest.ts` and the `dist/docs` copy, plus the documentation
 asserters `pi-only-current-contracts.test.ts` and `host-runtime-cutover.test.ts`.
 
-### 1.4 `drain-v3-island-test-surface`
+### 1.4 `drain-v3-island-test-surface` — CLOSED
+
+Promoted as `2026-08-19-007-drain-v3-island-test-surface` and completed. Both
+acceptance items were re-verified independently: zero references to the seven
+modules remain from outside the island, all seven files are still on disk, all
+seven mixed test files survive, and each surviving module still carries between
+two and six test files. The suite went from 973 to 827 passing tests across 9
+fewer files, which is exactly the 10 island-only files removed and 1 added.
 
 **Risk**: `material` · **Gate**: `rehome-agent-config-loader` closed
 
@@ -231,10 +238,62 @@ asserters `pi-only-current-contracts.test.ts` and `host-runtime-cutover.test.ts`
 `pi-only-runtime-host-contract`, `planner-ensemble-contract`, `role-prompt-bridge`,
 `state-ledger-migration`.
 
-### 1.5 `delete-v3-runtime-island`
+### 1.5 `delete-v3-runtime-island` — CLOSED
+
+Promoted as `2026-08-19-008-delete-v3-runtime-island` and completed. All three
+acceptance items re-verified independently: the seven modules are gone with zero
+residual references; the drain guard was superseded rather than dropped, with the
+surviving-module coverage table carried into `tests/v3-island-deletion.test.ts`
+intact; and both live projections are byte-identical to the values recorded
+before any of this work began — `imm-plan --routing-status` still reports
+`tracked_clean / active / policy_active` and `imm-kernel status` still reports
+`{"phase":"done","reason":"legacy-finished"}`.
+
+The diff removed 6341 lines across 8 files, and the suite stayed at exactly 827
+passing tests across 128 files, unchanged from before the deletion. Deleting
+6341 lines while changing zero test outcomes is the strongest available evidence
+that the closure was genuinely dead. **The R4 deletion line the predecessor
+roadmap declared finished is now actually finished.**
+
+**Scope defect caught before enrollment.** The first authoring of this slice
+scoped only the seven modules and a new test. It missed
+`tests/v3-island-drain.test.ts`, the guard written by the drain slice, which
+asserts the seven modules exist using `statSync(...).isFile()` and therefore
+throws the moment they are deleted. The import-and-path scans used to derive
+scope for earlier slices did not surface it, because that test stores bare module
+names in an array and builds the paths by template interpolation, so the literal
+string `runtime/state_ledger.ts` never appears in the source. Deriving deletion
+scope needs a third probe beyond importers and path asserters: a bare-name scan.
+
+That guard is superseded, not discarded. Its second assertion — that every
+surviving module kept its coverage — is the only automated protection against a
+future slice quietly deleting a mixed test file, so it carries forward into
+`tests/v3-island-deletion.test.ts` while the existence check inverts to absence.
+
+A bare-name scan also confirms nothing else references the seven. The remaining
+matches are unrelated data values that must survive: `source_kind:
+"project_migration"` is a live enum in `authority_commit_receipts.ts`,
+`automatic_observations.ts`, and `observation.ts`, and `"activation"` in
+`kernel/readiness.ts` is an event family. A find-and-replace on the module names
+would corrupt all four.
 
 **Risk**: `material` · **Gate**: `drain-v3-island-test-surface` closed. After the
 drain slice this is a pure deletion of seven files with no accompanying edits.
+The intent states the stop condition explicitly: if any edit outside the seven
+module paths turns out to be necessary, that is evidence the drain was
+incomplete, and the correct response is to stop and reopen the drain rather than
+widen this slice.
+
+**Artifact lifecycle note.** Execution has now deleted the TaskIntent file on
+completion three times (006, 007, and by the same behavior 008 will follow),
+while 004 and 005 were left in place. The deletion is not requested by any scope
+or contract. Both 006 and 007 have been restored — 006 byte-exact from Git
+history, 007 by re-running `imm-kernel intent author` on the identical candidate,
+which reproduces content hash `fd15bbce` exactly; a hand-written copy does not,
+because the CLI canonicalizes. Archival belongs to Phase 2's
+`archive-terminal-planning-artifacts`, which is gated on a status/audit fallback
+that does not exist yet. Worth fixing at the source rather than restoring each
+time.
 
 **goal**
 
@@ -335,7 +394,33 @@ covering the removed helpers need scope.
 **Risk**: `material` · **Gate**: a completed read-only reachability trace, **not**
 the preceding slices
 
-**Precondition to resolve before drafting further.** `.imm/tasks/` holds 43
+**TRACE COMPLETE — GO.** Performed read-only on 2026-08-19 while slice 008 was
+executing. The v1 store is unreachable from `canary_application.ts`:
+
+- `canary_application.ts` imports exactly four symbols from `storage.ts`:
+  `commitDrainLocked`, `readTaskRecordV2Raw`, `readWorkspaceStateRaw`, and
+  `withKernelStoreLockV2`. None is a v1 entry point.
+- `withKernelStoreLockV2` has a 22-line body that calls none of
+  `readPendingTransaction`, `completeTransactionLocked`, `readTaskRecordRaw`, or
+  `parseTaskRecord`. The v2 lock does not reach v1 recovery.
+- The four v1 call sites resolve to three private functions
+  (`readTaskRecordRaw`, `readPendingTransaction`, `completeTransactionLocked`)
+  reachable only through three exported entry points: `readTaskRecord`,
+  `writeTaskRecord`, and `applyTaskAction`.
+- Every external reference to those three is a test. The v1 lock
+  `withKernelStoreLock` has no external reference at all.
+- The migration path that exercises them most heavily is already retired:
+  `v4_runtime.ts` lists `imm-migrate` among retired mutating commands, and
+  `.imm/tasks/` holds 47 v2 records and zero v1 records.
+
+The slice is therefore a GO rather than a cancellation. Note when scoping it that
+`kernel-migrate.test.ts`, `kernel-r2c1-boundary.test.ts`,
+`kernel-r2c2-boundary.test.ts`, `kernel-record-v2.test.ts`, and
+`v4-storage-retirement-kernel-store.test.ts` are the test surface, and that some
+of them assert v1 rejection behavior rather than v1 success, so they need the
+three-probe treatment rather than blanket deletion.
+
+**Original precondition, now satisfied.** `.imm/tasks/` holds 43
 `task_record/v2` entries and zero v1 records, but v1 `parseTaskRecord` is still
 called from live `kernel/storage.ts` at lines 470, 522, 584, and 671. v1 and v2
 paths coexist inside a live module. The trace must establish whether any of those

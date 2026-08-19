@@ -1,0 +1,42 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "2026-08-19-012-trim-partially-live-runtime",
+  "owner": "user",
+  "goal": "Trim the dead halves of two partially live modules and shrink the CLI wrapper surface, without touching either module's live half. Remove the loop_contract.ts child-output validators superseded by deterministic QA and native verdict parsing, and the plan_core.ts fast-track and migration-signature helpers whose only callers were deleted with the v3 island. Delete bin/imm-activation-plan, which today exits with an unknown-command error and no guidance, and collapse the eight retired wrappers -- imm-autowork, imm-check-child-output, imm-finish, imm-heal, imm-migrate, imm-review, imm-route, and imm-work -- into a single stub that preserves today's retirement message. imm-kernel, imm-plan, imm-pr-diag, and imm-retire-stale-wrapper stay. package.json declares no bin field and the only historical PATH install is already handled by scripts/retire-stale-global-imm-wrappers.sh, so no supported installation breaks. The distinction that matters is trimmed versus gutted: both modules keep serving live callers, so the slice is wrong if either live projection changes shape.",
+  "acceptance": [
+    {
+      "id": "acc-dead-halves-removed",
+      "assertion": "The named loop_contract child-output validators and plan_core fast-track and migration-signature helpers are absent, and bin/imm-activation-plan no longer exists.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/partially-live-runtime-trim.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 30000,\n  \"max_output_bytes\": 65536\n}\n"
+    },
+    {
+      "id": "acc-live-halves-intact",
+      "assertion": "imm-plan <plan-path> --json and imm_loop_action still return their current projection shapes, proving the modules were trimmed rather than gutted.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/partially-live-runtime-trim.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 30000,\n  \"max_output_bytes\": 65536\n}\n"
+    },
+    {
+      "id": "acc-retired-surface-consistent",
+      "assertion": "Every one of the eight retired command names still prints retirement guidance rather than an unknown-command error, and imm-kernel, imm-plan, imm-pr-diag, and imm-retire-stale-wrapper are unaffected.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/partially-live-runtime-trim.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 30000,\n  \"max_output_bytes\": 65536\n}\n"
+    }
+  ],
+  "scope_hint": [
+    "plugins/immune-brain/bin/imm-activation-plan",
+    "plugins/immune-brain/bin/imm-autowork",
+    "plugins/immune-brain/bin/imm-check-child-output",
+    "plugins/immune-brain/bin/imm-finish",
+    "plugins/immune-brain/bin/imm-heal",
+    "plugins/immune-brain/bin/imm-migrate",
+    "plugins/immune-brain/bin/imm-review",
+    "plugins/immune-brain/bin/imm-route",
+    "plugins/immune-brain/bin/imm-work",
+    "plugins/immune-brain/runtime/loop_contract.ts",
+    "plugins/immune-brain/runtime/plan_core.ts",
+    "tests/loop-child-output-contract.test.ts",
+    "tests/partially-live-runtime-trim.test.ts",
+    "tests/v4-plan-control-plane.test.ts",
+    "tests/wrapper-retirement.test.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}

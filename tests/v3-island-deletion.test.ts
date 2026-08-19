@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { readFileSync, readdirSync, statSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { relative, resolve, sep } from "node:path";
 
 const ROOT = resolve(import.meta.dir, "..");
@@ -12,7 +12,7 @@ const ISLAND_MODULES = [
 	"handoff",
 	"activation",
 ] as const;
-const CHECKER = "tests/v3-island-drain.test.ts";
+const CHECKER = "tests/v3-island-deletion.test.ts";
 
 function listTypeScriptFiles(dir: string): string[] {
 	return readdirSync(dir, { recursive: true })
@@ -36,12 +36,12 @@ function islandPath(module: string): string {
 	return `runtime/${module}.ts`;
 }
 
-describe("v3 island drain", () => {
-	it("keeps all seven island modules on disk with no external imports or path assertions", () => {
+describe("v3 island deletion", () => {
+	it("keeps all seven island modules absent with no external imports or path assertions", () => {
 		for (const module of ISLAND_MODULES) {
 			expect(
-				statSync(resolve(ROOT, "plugins/immune-brain/runtime", `${module}.ts`)).isFile(),
-			).toBe(true);
+				existsSync(resolve(ROOT, "plugins/immune-brain/runtime", `${module}.ts`)),
+			).toBe(false);
 		}
 
 		const offenders: string[] = [];

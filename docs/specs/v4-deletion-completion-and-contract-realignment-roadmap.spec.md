@@ -55,6 +55,20 @@ the repository remained untouched.
 R4 is therefore reopened by this roadmap as Phase 1, with the caller-removal
 precondition already satisfied and verified (§3.2).
 
+**Resolved 2026-08-19.** The reopened deletion line is now genuinely closed. The
+seven-module island was removed by `2026-08-19-008-delete-v3-runtime-island`
+after its test surface was drained by `007`, its config loader rehomed by `006`,
+and its barrel retired by `005`. The four slices together removed the closure
+that R4 left standing, and the suite held at 827 passing tests throughout — the
+same count before and after a 6341-line deletion.
+
+The generalizable lesson, worth more than the deleted lines: R4's rule was
+correct but under-specified. "Proven-unused callers" was read as *entry points
+and dispatchers*, which left the library closure behind them invisible. A
+deletion phase should state explicitly whether it covers callers only or callers
+plus their closure, because a phase that deletes callers and stops has not
+reduced the codebase — it has only made the remainder harder to find.
+
 ## 3. Evidence Base
 
 Recorded so a future planner does not replay the investigation. All facts

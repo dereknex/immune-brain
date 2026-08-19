@@ -1,0 +1,44 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "2026-08-19-007-drain-v3-island-test-surface",
+  "owner": "user",
+  "goal": "Reduce the seven v3 island modules -- state_ledger, project_migration, advisory_dispatch, work_probes, environment, handoff, and activation -- to zero references from outside the island, while leaving all seven files on disk for the deletion slice that follows. Splitting the drain from the deletion keeps a 6364-line mechanical removal out of the same diff as the judgment-heavy part, which is the only part a reviewer needs to read closely. The entire risk of the island retirement concentrates in telling three treatments apart across 21 test files. Ten exercise only island modules and are deleted outright. Seven also cover modules that survive -- authority_commit_receipts, automatic_observations, plan_core, role_prompt_bridge, loop_contract, dist-sync-manifest, and agent_config -- and must be trimmed of their island portions rather than deleted; deleting any of them would turn the suite green while silently discarding live coverage, which is the specific failure this slice exists to prevent. Four are path asserters that name island modules by string without importing them, and they drop those paths while keeping the assertions they were pinning. Deleting the seven modules, trimming the partially live runtime, and the [subagent_activation] contract decision are all out of scope.",
+  "acceptance": [
+    {
+      "id": "acc-references-drained",
+      "assertion": "No file outside the seven island modules imports any of them or names one by path string, and all seven still exist on disk so that the following slice is a pure deletion.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/v3-island-drain.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 30000,\n  \"max_output_bytes\": 65536\n}\n"
+    },
+    {
+      "id": "acc-live-coverage-preserved",
+      "assertion": "All seven mixed test files still exist and still cover the surviving modules they covered before -- authority_commit_receipts, automatic_observations, plan_core, role_prompt_bridge, loop_contract, dist-sync-manifest, and agent_config -- and the four path asserters retain the assertions they were pinning with only island paths removed.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/v3-island-drain.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 30000,\n  \"max_output_bytes\": 65536\n}\n"
+    }
+  ],
+  "scope_hint": [
+    "plugins/immune-brain/tests/review-gates.test.ts",
+    "tests/advisory-budget-contract.test.ts",
+    "tests/advisory-dispatch-core.test.ts",
+    "tests/agent-config-rehome.test.ts",
+    "tests/authority-commit-receipts.test.ts",
+    "tests/bounded-ledger-history.test.ts",
+    "tests/execution-evidence-runtime.test.ts",
+    "tests/handoff-projection.test.ts",
+    "tests/heal-activation.test.ts",
+    "tests/imm-loop-review-lifecycle-state.test.ts",
+    "tests/immune-brain-config-runtime.test.ts",
+    "tests/pi-brainstorm-agent-result-contract.test.ts",
+    "tests/pi-only-runtime-host-contract.test.ts",
+    "tests/pi-subagent-dispatch-observability-contract.test.ts",
+    "tests/planner-ensemble-contract.test.ts",
+    "tests/roadmap-plan-transition-state.test.ts",
+    "tests/role-prompt-bridge.test.ts",
+    "tests/runtime-state.test.ts",
+    "tests/state-ledger-migration.test.ts",
+    "tests/v3-island-drain.test.ts",
+    "tests/work-probe-packaging-contract.test.ts",
+    "tests/wrapper-retirement.test.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}

@@ -1,0 +1,28 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "2026-08-19-010-deterministic-risk-tier-floor",
+  "owner": "user",
+  "goal": "Force a declared risk of at least material whenever an intent's scope_hint touches kernel or authority paths, regardless of the tier the author wrote. Today the tier is planner self-graded and nothing cross-checks it against what the intent actually proposes to modify, so a routine declaration over kernel paths silently buys weaker gating precisely where gating matters most. The floor must be derived from scope_hint deterministically rather than from prose or from the author's judgment. This lands before or with any relocation of the enrollment confirmation, because every tier-based exemption downstream otherwise rests on self-grading; approving that exemption first and adding the floor later would leave a window in which a mis-tiered kernel change skips the gate. Relocating the confirmation itself and deleting the confirmation deadwood are separate slices and out of scope.",
+  "acceptance": [
+    {
+      "id": "acc-floor-enforced",
+      "assertion": "An intent declaring routine with a scope_hint touching kernel or authority paths is rejected or promoted to at least material, and the outcome is derived from scope_hint rather than from any prose field.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/risk-tier-floor.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 30000,\n  \"max_output_bytes\": 65536\n}\n"
+    },
+    {
+      "id": "acc-non-kernel-unaffected",
+      "assertion": "An intent declaring routine with a scope_hint touching only documentation or ordinary test paths keeps its declared tier, so the floor does not silently escalate every task.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/risk-tier-floor.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 30000,\n  \"max_output_bytes\": 65536\n}\n"
+    }
+  ],
+  "scope_hint": [
+    "plugins/immune-brain/runtime/kernel/intent.ts",
+    "plugins/immune-brain/runtime/kernel/types.ts",
+    "tests/kernel-intent-authoring.test.ts",
+    "tests/kernel-intent-v2.test.ts",
+    "tests/kernel-intent-validation.test.ts",
+    "tests/risk-tier-floor.test.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}

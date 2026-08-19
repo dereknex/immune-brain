@@ -1,0 +1,28 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "2026-08-19-009-wire-breaking-intent-revision",
+  "owner": "user",
+  "goal": "Expose the already-implemented approve_breaking_intent_revision operation on the imm_kernel_canary tool schema so a scope change can be approved in place and execution resumed, instead of forcing the current task to stop and a successor intent to be enrolled. The Kernel side already exists end to end -- the action type in types.ts, the reducer branch in reducer_v2.ts, validation in validation.ts, the application path in application_v2.ts, and the capability action builder in canary_application.ts -- so this slice adds no new authority primitive and no new attestation. What is missing is only the tool-schema member and its dispatch in the extension, which is why the capability is unreachable from the host today. The operation is capability-bound exactly like record_user_approval, so it must reuse the existing mintCapability path and the same TUI confirmation route rather than introducing a second way to authorize a mutation. This is the highest value-to-risk slice in the roadmap and it compounds: every future slice that discovers a scope defect mid-execution becomes recoverable in place instead of being discarded and re-authored.",
+  "acceptance": [
+    {
+      "id": "acc-operation-exposed",
+      "assertion": "The imm_kernel_canary tool schema accepts an approve_breaking_intent_revision operation and dispatches it through the existing capability-bound path, using the same mintCapability and confirmation route as record_user_approval rather than a parallel authorization mechanism.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/breaking-intent-revision-gate.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 30000,\n  \"max_output_bytes\": 65536\n}\n"
+    },
+    {
+      "id": "acc-revision-resumes-execution",
+      "assertion": "Approving a breaking intent revision clears replan_required and lets the current task continue under its existing enrollment, with no successor TaskIntent and no second enrollment.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/breaking-intent-revision-gate.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 30000,\n  \"max_output_bytes\": 65536\n}\n"
+    }
+  ],
+  "scope_hint": [
+    "plugins/immune-brain/.pi-extension/imm-canary-work.ts",
+    "tests/breaking-intent-revision-gate.test.ts",
+    "tests/canary-command-retirement-contract.test.ts",
+    "tests/imm-canary-work-contract.test.ts",
+    "tests/pi-canary-user-authority.test.ts",
+    "tests/pi-canary-work-extension.test.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}

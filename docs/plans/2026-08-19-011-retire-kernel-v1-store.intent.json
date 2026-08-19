@@ -1,0 +1,33 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "2026-08-19-011-retire-kernel-v1-store",
+  "owner": "user",
+  "goal": "Delete the Kernel v1 task store now that a completed read-only reachability trace has cleared it. The trace established that canary_application.ts imports only commitDrainLocked, readTaskRecordV2Raw, readWorkspaceStateRaw, and withKernelStoreLockV2 from storage.ts; that withKernelStoreLockV2 reaches none of the v1 recovery helpers; that the four v1 parse call sites resolve to three private functions reachable only via the exported readTaskRecord, writeTaskRecord, and applyTaskAction; and that every external reference to those three is a test, with the v1 lock withKernelStoreLock having no external reference at all. The migration path that exercises them most is already retired -- imm-migrate is listed among retired mutating commands and .imm/tasks/ holds 47 v2 records and zero v1 records. Remove reducer.ts, the v1 storage paths, and the v1 parseTaskIntent and parseTaskRecord validators. kernel/index.ts is live, imported by v4_runtime.ts and commands/kernel.ts, so its re-export of the v1 reducer must be dropped surgically without disturbing the exports around it. Several tests assert v1 rejection behavior rather than v1 success and must be trimmed rather than deleted.",
+  "acceptance": [
+    {
+      "id": "acc-v1-store-absent",
+      "assertion": "kernel/reducer.ts does not exist, storage.ts retains no v1 read, write, apply, lock, or transaction-recovery path, and validation.ts exports no v1 parseTaskIntent or parseTaskRecord.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/kernel-v1-store-retirement.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 30000,\n  \"max_output_bytes\": 65536\n}\n"
+    },
+    {
+      "id": "acc-v2-path-intact",
+      "assertion": "kernel/index.ts still exports every non-v1 symbol it exported before, and imm-kernel status --json plus the canary application path continue to operate on v2 records unchanged.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/kernel-v1-store-retirement.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 30000,\n  \"max_output_bytes\": 65536\n}\n"
+    }
+  ],
+  "scope_hint": [
+    "plugins/immune-brain/runtime/kernel/index.ts",
+    "plugins/immune-brain/runtime/kernel/reducer.ts",
+    "plugins/immune-brain/runtime/kernel/storage.ts",
+    "plugins/immune-brain/runtime/kernel/validation.ts",
+    "tests/kernel-core.test.ts",
+    "tests/kernel-migrate.test.ts",
+    "tests/kernel-r2c1-boundary.test.ts",
+    "tests/kernel-r2c2-boundary.test.ts",
+    "tests/kernel-record-v2.test.ts",
+    "tests/kernel-v1-store-retirement.test.ts",
+    "tests/v4-storage-retirement-kernel-store.test.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}
