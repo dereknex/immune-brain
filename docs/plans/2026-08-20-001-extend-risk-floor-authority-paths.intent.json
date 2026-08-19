@@ -1,0 +1,35 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "2026-08-20-001-extend-risk-floor-authority-paths",
+  "owner": "user",
+  "goal": "Extend the deterministic risk-tier floor to cover the whole plugins/immune-brain/.pi-extension directory, closing the gap between what 2026-08-19-010 asserted and what it implemented. That slice declared the floor covers kernel or authority paths, but implemented authority as the single file runtime/authority_commit_receipts.ts, so a routine declaration over .pi-extension/imm-canary-enroll.ts or .pi-extension/imm-canary-work.ts is left ungated. Those two modules are the human gate itself: imm-canary-enroll.ts holds requiresEnrollmentConfirmation and descriptor rehearsal, and imm-canary-work.ts mints capabilities and authorizes review verdicts, so a self-graded routine tier over them buys weaker gating over the code that implements gating. 010's own goal sequenced it ahead of any relocation of the enrollment confirmation because downstream tier-based exemptions otherwise rest on self-grading, yet that relocation modifies imm-canary-enroll.ts, which the floor does not cover, so 010 does not protect the slice it was ordered to protect. Add the directory prefix to RISK_FLOOR_SCOPE_PREFIXES and widen the authority case in tests/risk-tier-floor.test.ts, whose current authority example is only authority_commit_receipts.ts. Because the floor runs inside parseTaskIntentV1 and canonicalIntentHash covers the risk field, promoting a tier changes an intent's canonical hash: six test modules build a literal routine intent scoped to .pi-extension and derive INTENT_HASH from it, so each must be reconciled where it compares that literal hash against one produced through the parse path. Do not widen the floor beyond .pi-extension; runtime/v4_runtime.ts stays uncovered by deliberate decision.",
+  "acceptance": [
+    {
+      "id": "acc-authority-floored",
+      "assertion": "An intent declaring routine with a scope_hint touching plugins/immune-brain/.pi-extension is promoted to at least material, verified for both imm-canary-enroll.ts and imm-canary-work.ts, and the promotion is derived from scope_hint rather than any prose field.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/risk-tier-floor.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 60000,\n  \"max_output_bytes\": 65536\n}\n"
+    },
+    {
+      "id": "acc-no-over-escalation",
+      "assertion": "An intent declaring routine with a scope_hint touching only documentation or ordinary test paths still keeps its declared tier, and runtime/v4_runtime.ts remains uncovered, so the widened floor does not silently escalate every task.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/risk-tier-floor.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 60000,\n  \"max_output_bytes\": 65536\n}\n"
+    },
+    {
+      "id": "acc-hash-consumers-reconciled",
+      "assertion": "The six test modules deriving INTENT_HASH from a literal routine intent scoped to .pi-extension pass with the widened floor, proving they were reconciled with the new parsed tier rather than the floor being worked around for them.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/breaking-intent-revision-gate.test.ts\",\n    \"tests/pi-canary-confirm-cancel-decision.test.ts\",\n    \"tests/pi-canary-lifecycle-package.test.ts\",\n    \"tests/pi-canary-user-authority.test.ts\",\n    \"tests/pi-canary-work-extension.test.ts\",\n    \"tests/user-approval-authority.test.ts\",\n    \"tests/risk-tier-floor.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 65536\n}\n"
+    }
+  ],
+  "scope_hint": [
+    "plugins/immune-brain/runtime/kernel/intent.ts",
+    "tests/breaking-intent-revision-gate.test.ts",
+    "tests/pi-canary-confirm-cancel-decision.test.ts",
+    "tests/pi-canary-lifecycle-package.test.ts",
+    "tests/pi-canary-user-authority.test.ts",
+    "tests/pi-canary-work-extension.test.ts",
+    "tests/risk-tier-floor.test.ts",
+    "tests/user-approval-authority.test.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}

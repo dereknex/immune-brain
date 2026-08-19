@@ -9,7 +9,7 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { enrollCanaryTask } from "../plugins/immune-brain/runtime/kernel/enrollment";
 import { preparePiCanary } from "../plugins/immune-brain/runtime/kernel/pi_canary_prepare";
 import { createEnrollmentAuthorityRegistry, type EnrollmentCapabilityBinding } from "../plugins/immune-brain/runtime/kernel/enrollment_authority";
-import { canonicalIntentHash } from "../plugins/immune-brain/runtime/kernel/intent";
+import { canonicalIntentHash, parseTaskIntentV1 } from "../plugins/immune-brain/runtime/kernel/intent";
 import { readBackendClaim } from "../plugins/immune-brain/runtime/kernel/backend_claim";
 import { snapshotDigest, type SnapshotDescriptor } from "../plugins/immune-brain/.pi-extension/pi-canary-assurance-progression.ts";
 import { routeManagedRequest } from "../plugins/immune-brain/runtime/managed_path_router";
@@ -29,7 +29,7 @@ const INTENT = {
 	revision: 1,
 	owner: "user",
 } as const;
-const INTENT_HASH = canonicalIntentHash(INTENT);
+const INTENT_HASH = canonicalIntentHash(parseTaskIntentV1(INTENT));
 
 type Handler = (event: unknown, ctx?: unknown) => unknown;
 interface RegisteredTool {
@@ -457,10 +457,10 @@ async function preparePendingReview(root: string): Promise<RegisteredTool & { co
 			const success = await revise(loadSurface().tools[0], successRoot, nextIntent);
 			expect(success.details).toMatchObject({ state: "recorded", operation: "revise_intent" });
 			expect(statSync(successPath).ino).toBe(successInode);
-			expect(JSON.parse(readFileSync(successPath, "utf8"))).toEqual(normalizedNextIntent);
+			expect(JSON.parse(readFileSync(successPath, "utf8"))).toEqual(parseTaskIntentV1(normalizedNextIntent));
 			expect(JSON.parse(readFileSync(join(successRoot, ".imm", "tasks", `${TASK}.json`), "utf8"))).toMatchObject({
 				intent_revision: 2,
-				intent_ref: { content_hash: canonicalIntentHash(normalizedNextIntent) },
+				intent_ref: { content_hash: canonicalIntentHash(parseTaskIntentV1(normalizedNextIntent)) },
 			});
 
 			const failurePath = join(failureRoot, "docs", "plans", `${TASK}.intent.json`);

@@ -14,7 +14,7 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { enrollCanaryTask } from "../plugins/immune-brain/runtime/kernel/enrollment";
 import { preparePiCanary } from "../plugins/immune-brain/runtime/kernel/pi_canary_prepare";
 import { createEnrollmentAuthorityRegistry, type EnrollmentCapabilityBinding } from "../plugins/immune-brain/runtime/kernel/enrollment_authority";
-import { canonicalIntentHash } from "../plugins/immune-brain/runtime/kernel/intent";
+import { canonicalIntentHash, parseTaskIntentV1 } from "../plugins/immune-brain/runtime/kernel/intent";
 import { readBackendClaim } from "../plugins/immune-brain/runtime/kernel/backend_claim";
 
 const TASK = "canary-breaking-task";
@@ -32,7 +32,7 @@ const INTENT = {
 	revision: 1,
 	owner: "user",
 } as const;
-const INTENT_HASH = canonicalIntentHash(INTENT);
+const INTENT_HASH = canonicalIntentHash(parseTaskIntentV1(INTENT));
 
 interface RegisteredTool {
 	name: string;
@@ -186,11 +186,11 @@ describe("breaking intent revision gate", () => {
 			const record = JSON.parse(readFileSync(join(root, ".imm", "tasks", `${TASK}.json`), "utf8"));
 			expect(record).toMatchObject({ intent_revision: 2 });
 			expect(record.intent_ref.content_hash).toBe(
-				canonicalIntentHash({
+				canonicalIntentHash(parseTaskIntentV1({
 					...INTENT,
 					revision: 2,
 					acceptance: [{ ...INTENT.acceptance[0], assertion: "changed assertion" }],
-				}),
+				})),
 			);
 		} finally { rmSync(root, { recursive: true, force: true }); }
 	});

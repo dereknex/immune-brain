@@ -39,7 +39,11 @@ describe("deterministic risk-tier floor", () => {
 	it("promotes routine to material when scope_hint touches authority paths", () => {
 		for (const scope_hint of [
 			["plugins/immune-brain/runtime/authority_commit_receipts.ts"],
-			["plugins/immune-brain/runtime/authority_commit_receipts.ts"],
+			["plugins/immune-brain/.pi-extension"],
+			["plugins/immune-brain/.pi-extension/imm-canary-enroll.ts"],
+			["plugins/immune-brain/.pi-extension/imm-canary-work.ts"],
+			["plugins/immune-brain/.pi-extension/"],
+			["plugins/immune-brain/.pi-extension/imm-canary-*"]
 		]) {
 			const parsed = parseTaskIntentV1({ ...BASE, scope_hint });
 			expect(parsed.risk).toBe("material");
@@ -97,6 +101,9 @@ describe("deterministic risk-tier floor", () => {
 		);
 		expect(RISK_FLOOR_SCOPE_PREFIXES).toContain(
 			"plugins/immune-brain/runtime/authority_commit_receipts.ts",
+		);
+		expect(RISK_FLOOR_SCOPE_PREFIXES).toContain(
+			"plugins/immune-brain/.pi-extension",
 		);
 	});
 });

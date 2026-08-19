@@ -18,7 +18,7 @@ import { createMutationAuthorityCapabilityForTest } from "./fixtures/mutation-au
 import { enrollCanaryTask } from "../plugins/immune-brain/runtime/kernel/enrollment";
 import { preparePiCanary } from "../plugins/immune-brain/runtime/kernel/pi_canary_prepare";
 import { createEnrollmentAuthorityRegistry, type EnrollmentCapabilityBinding } from "../plugins/immune-brain/runtime/kernel/enrollment_authority";
-import { canonicalIntentHash, readTaskIntent } from "../plugins/immune-brain/runtime/kernel/intent";
+import { canonicalIntentHash, parseTaskIntentV1, readTaskIntent } from "../plugins/immune-brain/runtime/kernel/intent";
 import { readTaskRecordV2 } from "../plugins/immune-brain/runtime/kernel/storage";
 
 const TASK = "canary-user-authority-task";
@@ -32,7 +32,7 @@ const INTENT = {
 	revision: 1,
 	owner: "user",
 } as const;
-const INTENT_HASH = canonicalIntentHash(INTENT);
+const INTENT_HASH = canonicalIntentHash(parseTaskIntentV1(INTENT));
 const DIFF = "sha256:" + "b".repeat(64);
 
 function makeReviewRoot(): string {

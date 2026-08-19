@@ -36,10 +36,14 @@ export const INTENT_SIDECAR_RELATIVE_PREFIX = "docs/plans/";
 // authority runtime paths is forced to at least `material` regardless of the
 // tier the author declared, so self-graded `routine` can never buy weaker
 // gating over the paths where gating matters most. The floor is derived solely
-// from scope_hint, never from prose fields.
+// from scope_hint, never from prose fields. The .pi-extension directory is the
+// human gate itself (enrollment confirmation, capability minting, and review
+// authorization), so a self-graded routine over it must not weaken gating over
+// the code that implements gating.
 export const RISK_FLOOR_SCOPE_PREFIXES = [
 	"plugins/immune-brain/runtime/kernel",
 	"plugins/immune-brain/runtime/authority_commit_receipts.ts",
+	"plugins/immune-brain/.pi-extension",
 ] as const;
 
 function segmentMatches(e: string, s: string): boolean {
