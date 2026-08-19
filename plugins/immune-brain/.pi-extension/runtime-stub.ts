@@ -314,6 +314,7 @@ export interface TaskIntentRead {
 	token: object;
 	content_hash: string;
 	intent: TaskIntentV1;
+	intent_ref: { path: string; revision: number; content_hash: string };
 }
 export interface WorkspaceRead {
 	revision: string;
@@ -327,6 +328,11 @@ export async function parseTaskIntentV1(raw: unknown): Promise<TaskIntentV1> {
 	const mod = await import(/* @vite-ignore */ kernelPath("intent"));
 	return mod.parseTaskIntentV1(raw);
 }
+export async function canonicalIntentHash(intent: unknown): Promise<string> {
+	const mod = await import(/* @vite-ignore */ kernelPath("intent"));
+	return mod.canonicalIntentHash(intent);
+}
+
 export async function readWorkspaceState(root: string): Promise<WorkspaceRead> {
 	const mod = await import(/* @vite-ignore */ kernelPath("storage"));
 	return mod.readWorkspaceStateRaw(root);

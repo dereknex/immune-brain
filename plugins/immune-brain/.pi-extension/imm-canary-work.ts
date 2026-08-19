@@ -75,6 +75,7 @@ import {
 	readTaskRecordV2,
 	readTaskIntent,
 	parseTaskIntentV1,
+	canonicalIntentHash,
 	projectAssurance,
 	routeManagedRequest,
 	deriveAssuranceAuthorization,
@@ -118,12 +119,34 @@ function literalUnion(values: readonly string[]) {
 	return Type.Union(values.map((value) => Type.Literal(value)));
 }
 
+const TASK_INTENT_SCHEMA = Type.Object({
+	contract: Type.Literal("assurance_kernel/task_intent/v1"),
+	task_id: Type.String(),
+	goal: Type.String(),
+	acceptance: Type.Array(
+		Type.Object({
+			id: Type.String(),
+			assertion: Type.String(),
+			verification: Type.String(),
+		}),
+	),
+	scope_hint: Type.Array(Type.String()),
+	risk: Type.Union([
+		Type.Literal("routine"),
+		Type.Literal("material"),
+		Type.Literal("critical"),
+	]),
+	revision: Type.Number(),
+	owner: Type.Literal("user"),
+});
+
 type ReviewDecision = (typeof REVIEW_DECISIONS)[keyof typeof REVIEW_DECISIONS];
 
 export type { AssuranceRole } from "./pi-canary-assurance";
 export type AuthorizeOperation =
 	| "record-review-verdict"
 	| "record-user-approval"
+	| "approve-breaking-intent-revision"
 	| "resolve-user-decision"
 	| "stop";
 
@@ -309,12 +332,13 @@ export default function (
 		name: "imm_kernel_canary",
 		label: "Kernel canary assurance and executor operations",
 		description:
-			"Advance observable QA/Review orchestration or record ordinary executor facts for one enrolled Kernel canary task. No privileged action schema exists.",
+			"Advance observable QA/Review orchestration, record executor facts, or request host confirmation for one enrolled Kernel canary task.",
 		promptSnippet: "Kernel canary: record facts, run foreground QA, then submit one native Review receipt without polling.",
 		promptGuidelines: [
 			"Only the exact enrolled canary task is routable; verify the active backend claim first via status.",
 			"After fresh acceptance evidence, call advance_assurance and consume its direct terminal result; do not poll or create a detached job.",
 			"When advance_assurance returns review_ready, invoke the exact foreground Agent parameters from agent_params once, then call submit_review.",
+			"To approve a breaking intent revision, provide the complete next_intent with approve_breaking_intent_revision; the host must confirm before it is applied.",
 			"After awaiting_user, call request_authorization so the host opens the exact confirmation; do not ask the user to copy or report a command.",
 		],
 		parameters: Type.Object({
@@ -346,39 +370,31 @@ export default function (
 				Type.Object({ op: Type.Literal("submit_review") }),
 				Type.Object({
 					op: Type.Literal("revise_intent"),
-					next_intent: Type.Object({
-						contract: Type.Literal("assurance_kernel/task_intent/v1"),
-						task_id: Type.String(),
-						goal: Type.String(),
-						acceptance: Type.Array(
-							Type.Object({
-								id: Type.String(),
-								assertion: Type.String(),
-								verification: Type.String(),
-							}),
-						),
-						scope_hint: Type.Array(Type.String()),
-						risk: Type.Union([
-							Type.Literal("routine"),
-							Type.Literal("material"),
-							Type.Literal("critical"),
-						]),
-						revision: Type.Number(),
-						owner: Type.Literal("user"),
-					}),
+					next_intent: TASK_INTENT_SCHEMA,
+				}),
+				Type.Object({
+					op: Type.Literal("approve_breaking_intent_revision"),
+					next_intent: TASK_INTENT_SCHEMA,
 				}),
 				Type.Object({ op: Type.Literal("complete") }),
 			]),
 		}),
 		execute: async (toolCallId: string, params: { task_id: string; action: { op: string } }, signal: AbortSignal | undefined, onUpdate: ((update: ReturnType<typeof toolResult>) => void) | undefined, ctx: ExtensionContext) => {
 			const { task_id: taskId, action } = params;
-			if (action.op === "advance_assurance" || action.op === "request_authorization" || action.op === "submit_review") {
+			if (action.op === "advance_assurance" || action.op === "request_authorization" || action.op === "submit_review" || action.op === "approve_breaking_intent_revision") {
 				if (ctx.mode !== "tui") return toolResult("imm_kernel_canary mutation is TUI-only");
 				const result = action.op === "advance_assurance"
 					? await progression.advance(taskId, ctx, signal, (update) => onUpdate?.(update))
 					: action.op === "submit_review"
 						? await progression.submitReview(taskId, ctx)
-						: await requestAuthorization(taskId, ctx);
+						: action.op === "approve_breaking_intent_revision"
+							? await authorizeExactOperation(
+								taskId,
+								"approve-breaking-intent-revision",
+								ctx,
+								(action as { next_intent?: unknown }).next_intent,
+							)
+							: await requestAuthorization(taskId, ctx);
 				const enriched = await enrichAssuranceResult(ctx, taskId, result as unknown as Record<string, unknown>);
 				return toolResult(JSON.stringify(enriched, null, 2), enriched);
 			}
@@ -519,8 +535,25 @@ export default function (
 		taskId: string,
 		operation: AuthorizeOperation,
 		ctx: ExtensionContext,
+		nextIntentInput?: unknown,
 	): Promise<AuthorizationOutcome> {
 		if (ctx.mode !== "tui") return { state: "blocked", reason: "imm_kernel_canary mutation is TUI-only" };
+		let nextIntent: Awaited<ReturnType<typeof parseTaskIntentV1>> | undefined;
+		let nextIntentHash: string | undefined;
+		let nextIntentRef: { path: string; revision: number; content_hash: string } | undefined;
+		if (operation === "approve-breaking-intent-revision") {
+			try {
+				nextIntent = await parseTaskIntentV1(nextIntentInput);
+				if (nextIntent.task_id !== taskId)
+					throw new Error("next intent task_id must match the enrolled task");
+				nextIntentHash = await canonicalIntentHash(nextIntent);
+			} catch (error) {
+				return {
+					state: "blocked",
+					reason: error instanceof Error ? error.message : String(error),
+				};
+			}
+		}
 			let invocation: InvocationToken;
 			const authorizationGeneration = progression.sessionGenerationValue();
 			try {
@@ -597,6 +630,14 @@ export default function (
 						...(pendingReview.tokens ? [`Tokens: ${pendingReview.tokens.total}`] : []),
 					]
 				: []),
+			...(nextIntent
+				? [
+						`Next Intent: rev ${nextIntent.revision} (${nextIntentHash})`,
+						`Next Goal: ${nextIntent.goal}`,
+						`Next Scope: ${nextIntent.scope_hint.join(", ")}`,
+						`Next Acceptance Items: ${nextIntent.acceptance.length}`,
+					]
+				: []),
 			`Claim: ${projection.claim.lifecycle_status}`,
 			`Record revision: ${projection.projection.record_revision}`,
 			`Phase: ${projection.projection.phase}`,
@@ -646,7 +687,7 @@ export default function (
 				});
 			} catch {
 				ctx.ui.notify(`authorize ${operation}: confirmation aborted`, "info");
-				if (operation !== "stop")
+				if (operation !== "stop" && operation !== "approve-breaking-intent-revision")
 					await recordCancelledUserDecision(ctx, taskId, operation, snapshotDigestRef).catch(() => undefined);
 				progression.closeInvocation(invocation);
 				return { state: "cancelled", operation, reason: "confirmation aborted" };
@@ -654,7 +695,7 @@ export default function (
 		}
 		if (!confirmed) {
 			ctx.ui.notify(`authorize ${operation}: cancelled`, "info");
-			if (operation !== "stop")
+			if (operation !== "stop" && operation !== "approve-breaking-intent-revision")
 				await recordCancelledUserDecision(ctx, taskId, operation, snapshotDigestRef).catch(() => undefined);
 			progression.closeInvocation(invocation);
 			return { state: "cancelled", operation, reason: "cancelled" };
@@ -743,8 +784,15 @@ export default function (
 			}
 			const { registry, app } = await authorityPair();
 			const now = new Date().toISOString();
-			// record-user-approval: literal-user approval for critical-task
-			// completion. The approval payload is bound to the fresh
+			const priorIntent = await readTaskIntent(ctx.cwd, taskId);
+			if (nextIntent) {
+				nextIntentRef = {
+					path: priorIntent.intent_ref.path,
+					revision: nextIntent.revision,
+					content_hash: nextIntentHash!,
+				};
+			}
+			// record-user-approval: literal-user approval for critical-task-completion. The approval payload is bound to the fresh
 			// projection (task revision, intent content hash, diff hash) and
 			// applied through the same exact-action capability path; the
 			// reducer requires kind user, user authority, and phase review.
@@ -763,17 +811,26 @@ export default function (
 				: undefined;
 			const exactOperation = operation === "stop"
 				? { op: "stop" as const, reason: "literal user stopped task parked for replan" }
-				: userDecisionOperation ?? userOperationFor(operation, approval);
+				: operation === "approve-breaking-intent-revision"
+					? {
+							op: "approve_breaking_intent_revision" as const,
+							next_intent: nextIntent!,
+							next_intent_ref: nextIntentRef!,
+						}
+					: userDecisionOperation ?? userOperationFor(operation, approval);
 			const capability = await mintCapability(registry, {
 				authority_kind: "user",
 				task_id: taskId,
 				action_kind: exactOperation.op,
 				expected_record_hash: projection.projection.record_revision,
-				intent_revision: projection.projection.intent_revision,
-				intent_content_hash: projection.projection.intent_content_hash,
+				intent_revision: nextIntent?.revision ?? projection.projection.intent_revision,
+				intent_content_hash: nextIntentHash ?? projection.projection.intent_content_hash,
 				diff_hash: projection.projection.diff_hash,
 				actor_id: "literal-user",
 				...(exactOperation.op === "record_user_approval" ? { approval: exactOperation.approval } : {}),
+				...(exactOperation.op === "approve_breaking_intent_revision"
+					? { next_intent: exactOperation.next_intent, next_intent_ref: exactOperation.next_intent_ref }
+					: {}),
 				...(exactOperation.op === "resolve_user_decision"
 					? { finding_id: exactOperation.finding_id, resolution: exactOperation.resolution }
 					: {}),
@@ -782,16 +839,28 @@ export default function (
 			});
 				// The exact host-built operation is shared by capability digest and
 				// application payload; command arguments cannot inject authority fields.
-				const result = (await app.execute({
-					root: ctx.cwd,
-					task_id: taskId,
-					operation: { ...exactOperation, capability, actor_id: "literal-user" } as never,
-					prior_intent_token: (await readTaskIntent(ctx.cwd, taskId)).token,
-					diffProvider: (root: string, intent: { scope_hint: unknown }) => diffHashOf(root, intent),
-					now,
-				})) as unknown as { record: { phase: string } };
-				ctx.ui.notify(`authorize ${operation}: applied, phase=${result.record.phase}`, "info");
-				return { state: "applied", operation, phase: result.record.phase };
+				const sidecar = nextIntent ? join(ctx.cwd, priorIntent.intent_ref.path) : undefined;
+				const priorBytes = sidecar ? readFileSync(sidecar) : undefined;
+				try {
+					if (sidecar) writeFileSync(sidecar, `${JSON.stringify(nextIntent, null, 2)}\n`);
+					const result = (await app.execute({
+						root: ctx.cwd,
+						task_id: taskId,
+						operation: { ...exactOperation, capability, actor_id: "literal-user" } as never,
+						prior_intent_token: priorIntent.token,
+						diffProvider: (root: string, intent: { scope_hint: unknown }) => diffHashOf(root, intent),
+						now,
+					})) as unknown as { record: { phase: string } };
+					ctx.ui.notify(`authorize ${operation}: applied, phase=${result.record.phase}`, "info");
+					return { state: "applied", operation, phase: result.record.phase };
+				} catch (error) {
+					if (sidecar && priorBytes) {
+						const current = await readTaskRecordV2(ctx.cwd, taskId);
+						if (current.record?.intent_revision === priorIntent.intent.revision)
+							writeFileSync(sidecar, priorBytes);
+					}
+					throw error;
+				}
 			} catch (error) {
 				const reason = error instanceof Error ? error.message : String(error);
 				if (
@@ -1264,6 +1333,8 @@ async function mintCapability(
 		actor_id: string;
 		findings?: unknown[];
 		approval?: unknown;
+		next_intent?: unknown;
+		next_intent_ref?: unknown;
 		reason?: string;
 		finding_id?: string;
 		resolution?: string;
@@ -1282,6 +1353,8 @@ async function mintCapability(
 		...(input.reason !== undefined ? { reason: input.reason } : {}),
 		...(input.findings !== undefined ? { findings: input.findings } : {}),
 		...(input.approval !== undefined ? { approval: input.approval } : {}),
+		...(input.next_intent !== undefined ? { next_intent: input.next_intent } : {}),
+		...(input.next_intent_ref !== undefined ? { next_intent_ref: input.next_intent_ref } : {}),
 		...(input.finding_id !== undefined ? { finding_id: input.finding_id } : {}),
 		...(input.resolution !== undefined ? { resolution: input.resolution } : {}),
 	})) as unknown as Record<string, unknown>;
