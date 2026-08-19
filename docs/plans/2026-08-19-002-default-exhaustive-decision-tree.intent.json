@@ -1,0 +1,25 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "2026-08-19-002-default-exhaustive-decision-tree",
+  "owner": "user",
+  "goal": "Make exhaustive dependency-aware decision-tree clarification the default interaction protocol in both imm-brainstorm and imm-planner without adding a Skill, mode, runtime state machine, or UI. Brainstorm owns product framing decisions and Planner owns execution-design decisions; both investigate repository facts themselves, ask the complete currently unblocked frontier in rounds with numbered recommendations, allow a zero-question fast path, retain only final decisions, and require an explicit final summary confirmation. Planner returns product-level uncertainty to Brainstorm. Preserve roundtable and adversarial as orthogonal lenses, preserve direct Planner entry for clear requests, repair the repository's pre-existing Managed Path bootstrap markers/headings, and lock source plus packaged contracts while removing the legacy fixed-question probing expectation.",
+  "acceptance": [
+    {
+      "id": "acc-default-decision-tree-contract",
+      "assertion": "The source and packaged imm-brainstorm and imm-planner contracts define the default exhaustive decision-tree protocol, complete-frontier rounds, repository-fact self-resolution, phase-specific decision ownership, zero-question fast path, recommendation/bulk acceptance behavior, result-only persistence, explicit final confirmation, and Planner-to-Brainstorm return for product-level uncertainty; the root bootstrap files satisfy the Managed Path markers and Project Context heading; the prior Brainstorm probing contract no longer enforces fixed question counts or one-at-a-time dependent probing.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/exhaustive-decision-tree-contract.test.ts\",\n    \"tests/brainstorm-decision-probing-contract.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 30000,\n  \"max_output_bytes\": 65536\n}\n"
+    }
+  ],
+  "scope_hint": [
+    "AGENTS.md",
+    "CONTEXT.md",
+    "plugins/immune-brain/dist/imm-brainstorm.md",
+    "plugins/immune-brain/dist/imm-planner.md",
+    "plugins/immune-brain/skills/imm-brainstorm/SKILL.md",
+    "plugins/immune-brain/skills/imm-planner/SKILL.md",
+    "tests/brainstorm-decision-probing-contract.test.ts",
+    "tests/exhaustive-decision-tree-contract.test.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}

@@ -11,6 +11,25 @@ design-contract mode formerly exposed as `imm-page-design`. Keep scope
 explicit, including the Devil's Advocate preplan audit and `Devil's Advocate Audit` output. Return plan path, decisions,
 first step, verification approach, and Next Action.
 
+## Default exhaustive decision tree
+
+Exhaustive clarification is the default protocol, not a separate mode. Direct
+Planner entry remains valid for clear requests. Resolve repository facts through
+read-only investigation, then exhaust every real execution-design decision that
+can change Result, Scope, behavior, Verification, or risk treatment. Scan design
+decisions, component boundaries, failure behavior, compatibility, migration,
+recovery and rollback, verification, execution slices, dependencies, and
+delivery risks.
+
+Ask the complete currently unblocked frontier in dependency-aware rounds. Number
+each question, include a recommended answer, and accept bulk approval of all
+recommendations with explicit exceptions. A zero-question fast path is valid
+when the frontier is already empty. Product-level uncertainty is outside Planner
+ownership: stop and return to `imm-brainstorm`. Once the frontier is empty, present a
+result-only summary for explicit confirmation before finalizing a candidate
+Spec, Plan, or TaskIntent; retain final decisions in the planning artifacts
+rather than copying the question transcript.
+
 Settlement-class intents (terminal settlement, cancellation, timeout, race, or
 authority-lifecycle semantics) must embed the `Settlement-Design Contract`
 enumeration required by the loaded contract before they are execution-ready.

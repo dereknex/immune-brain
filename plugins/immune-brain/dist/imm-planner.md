@@ -25,6 +25,32 @@ artifacts unconditionally. Literal-user Enrollment remains the authority
 boundary. Fast-Track may compress the same phases but cannot bypass that
 boundary, QA, Review, authorization, or completion.
 
+## Default exhaustive decision tree
+
+Exhaustive clarification is the default Planner protocol, not a separate mode.
+Direct Planner entry remains valid for clear requests and does not require a
+Brainstorm pass. Build the stage-specific tree only after resolving repository
+facts through bounded read-only inspection. Ask the user only for decisions that
+can change Result, Scope, behavior, Verification, or risk treatment. Planner
+owns execution-design dimensions: design decisions, component boundaries,
+failure behavior, compatibility, migration, recovery and rollback,
+verification, execution slices, dependencies, and delivery risks.
+
+In each round, ask the complete currently unblocked frontier. Hold downstream
+questions until their prerequisites are decided, but ask independent frontier
+questions together. Number every question, include a recommended answer, and
+accept bulk approval of all recommendations with explicit exceptions. Recompute
+the frontier after each response. A zero-question fast path is valid when
+read-only evidence and supplied requirements leave no unresolved branch.
+
+Product-level uncertainty about goals, users, scope, behavior, or success
+criteria is outside Planner ownership: stop and return to `imm-brainstorm`
+rather than deciding it here. When the execution-design frontier is empty,
+present a concise result-only summary and obtain explicit confirmation before
+finalizing a candidate Spec, Plan, or TaskIntent. Persist only final decisions
+in Decisions, Assumptions, Technical Design, and `Devil's Advocate Audit`; do
+not copy the question transcript into repository artifacts.
+
 ## Kernel TaskIntent Routing
 
 The following Kernel contract applies after this route selects Planner. Eligible
@@ -152,8 +178,8 @@ implementation-ready contract and routes it to normal planning or execution.
 
 - **Entry Contract**: Use when plan/spec work is actually needed. If a validated plan already exists and scope has not drifted, route forward to `imm-loop` rather than re-exposing planner as ceremony.
 - **Output Language Gate**: Before writing or revising any Spec or Plan, read the project output language policy from `AGENTS.md`, `IMMUNE.md`, or Immune-Brain plugin config. Default Spec and Plan prose to English unless the current user request, project instructions, or host/user preference contains an explicit document-language instruction. A reply-language instruction does not change document language. Keep schema fields, CLI commands, file paths, code identifiers, enum values, JSON keys, and canonical terms such as `Step`, `Plan`, `Spec`, `Verification`, `Discovery cache`, and `Devil's Advocate Audit` literal.
-- **Clarification Barrier**: If an upstream `imm-brainstorm` document exists, you MUST verify that all `BR-Q-*` items have been resolved and all narrowing questions have been answered. **If any clarification information from the brainstorm phase is still missing or unanswered, you MUST STOP immediately, record the missing info as a blocker, and return to `imm-brainstorm` or ask the user for the missing answers before drafting any steps.**
-- **Planning Bootstrap**: When no upstream `imm-brainstorm` document exists and the input is unclear or underspecified (borrowing CE Phase 0.4 Planning Bootstrap), planner self-confirms: problem frame, intended behavior, scope boundaries and non-goals, success criteria, and blocking questions or assumptions. Keep this bootstrap brief — it exists to preserve direct-entry convenience, not to replace a full brainstorm. If the bootstrap uncovers major unresolved product questions, recommend `imm-brainstorm` (and its `adversarial` mode only for high-risk signals). If the user wants to continue here, require explicit assumptions before proceeding.
+- **Clarification Barrier**: Run the default exhaustive decision tree before finalizing planning artifacts. If an upstream `imm-brainstorm` document exists, verify that every `BR-Q-*` item is resolved and every confirmed framing decision is represented. Any unresolved product-level branch blocks planning and returns to `imm-brainstorm`; any unresolved execution-design branch remains on Planner's currently unblocked frontier. Finalization requires an empty frontier plus explicit confirmation of the result-only summary.
+- **Planning Bootstrap**: When no upstream `imm-brainstorm` document exists, preserve direct Planner entry by resolving repository facts and scanning the Planner decision dimensions. An already-empty frontier takes the zero-question fast path to final summary confirmation. Discovery of unresolved goals, users, scope, behavior, or success criteria returns to `imm-brainstorm`; Planner does not convert product uncertainty into silent assumptions.
 - **Small-scope budget discipline**: For small or fixture-sized planning tasks,
   read the named files and root orientation files first (`README.md`,
   `CONTEXT.md`, `IMMUNE.md`, `HANDOFF.md`, active tests/docs). Avoid broad
@@ -241,6 +267,6 @@ Iteration plan under `docs/plans/` and spec under `docs/specs/`. Includes: `Summ
 
 ## Next Action
 
-- Gate: Plan passes `imm-plan --json` validation, no step has a hypothetical-only verification path, and the user has confirmed scope.
+- Gate: The default execution-design frontier is empty; the result-only summary has explicit user confirmation; the Plan passes `imm-plan --json` validation; and no step has a hypothetical-only verification path.
 - If gates pass: for Kernel-managed work, hand the TaskIntent to the native host TUI; Parent invokes `imm_canary_enrollment` for literal-user confirmation, and the enrolled task continues through `imm-loop`.
 - If gates are not met: state which validation failures or unresolved verification paths remain; do not name a next skill.

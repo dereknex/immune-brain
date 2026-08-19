@@ -13,9 +13,10 @@ const PREPLAN = read("plugins/immune-brain/dist/imm-brainstorm.md");
 const GENERAL_BENCHMARK = JSON.parse(
 	read("tests/fixtures/immune-brain-benchmark.json"),
 );
-const FOCUSED_BENCHMARK = JSON.parse(
-	read("tests/fixtures/imm-brainstorm-behavior-benchmark.json"),
+const FOCUSED_BENCHMARK_TEXT = read(
+	"tests/fixtures/imm-brainstorm-behavior-benchmark.json",
 );
+const FOCUSED_BENCHMARK = JSON.parse(FOCUSED_BENCHMARK_TEXT);
 const REJECTED_FIXTURE = read(
 	"tests/fixtures/immune-brain-benchmark-workspace/docs/solutions/rejected-generic-dispatcher.md",
 );
@@ -53,19 +54,20 @@ describe("Brainstorm decision probing contracts", () => {
 		expect(metadata.match(/^ {2}- /gm)).toHaveLength(4);
 	});
 
-	it("orders dependent probes without expanding the existing budget", () => {
+	it("orders dependent probes through dependency-aware frontiers", () => {
 		for (const fragment of [
-			"scenario gap (would one concrete user or domain scenario distinguish unresolved behavior, ownership, lifecycle, or scope boundaries?)",
-			"surface only the current highest-value blocking question",
-			"unresolved probes are independent",
-			"within the existing scale-adjusted budget",
-			"replaces a lower-value probe inside the existing budget",
-			"never increases the question count",
-			"must not be forced when framing is already concrete",
-			"not a second full serial Grill Mode",
+			"A concrete scenario is a question only when it distinguishes behavior, ownership, lifecycle, or scope",
+			"ask the complete currently unblocked frontier",
+			"questions until their prerequisites are decided",
+			"questions together. Number every question, include a recommended answer",
+			"zero-question fast path is valid",
+			"Ask fewer questions only because dependencies keep downstream branches blocked",
+			"never because of an arbitrary question budget",
 		]) {
 			expect(BRAINSTORM).toContain(fragment);
 		}
+		expect(BRAINSTORM).not.toContain("lightweight tasks get 1-2 probes");
+		expect(BRAINSTORM).not.toContain("larger tasks may need 3-4");
 	});
 
 	it("consumes rejected-decision metadata through explicit compatibility branches", () => {
@@ -85,12 +87,17 @@ describe("Brainstorm decision probing contracts", () => {
 
 	it("preserves Brainstorm, Planner, and Preplan authority boundaries", () => {
 		expect(BRAINSTORM).toContain("**Read-only by default**");
-		expect(BRAINSTORM).toContain("lightweight tasks get 1-2 probes at most");
-		expect(BRAINSTORM).toContain("larger tasks may need 3-4");
+		expect(BRAINSTORM).toContain("complete currently unblocked frontier");
+		expect(BRAINSTORM).toContain("zero-question fast path");
+		expect(BRAINSTORM).not.toContain("lightweight tasks get 1-2 probes");
+		expect(BRAINSTORM).not.toContain("larger tasks may need 3-4");
 		expect(PLANNER).toContain("Allowed");
 		expect(PLANNER).toContain("`CONTEXT.md` at the repo root");
-		expect(PREPLAN).toContain("Ask one question at a time");
-		expect(PREPLAN).toContain("provide a recommended answer");
+		expect(PREPLAN).toContain(
+			"Ask every independent question on the currently unblocked frontier together",
+		);
+		expect(PREPLAN).toContain("recommended answer");
+		expect(PREPLAN).not.toContain("Ask one question at a time");
 	});
 
 	it("keeps focused Brainstorm behavior scenarios separate from the general baseline", () => {
@@ -109,15 +116,26 @@ describe("Brainstorm decision probing contracts", () => {
 			"plugin-boundary",
 		]);
 		expect(focusedIds).toEqual([
-			"dependent-probe-single-question",
-			"independent-probes-within-budget",
-			"scenario-gap-replaces-probe",
+			"dependent-frontier-blocks-downstream",
+			"independent-complete-frontier",
+			"scenario-qualified-frontier",
 			"clear-frame-no-forced-scenario",
 			"rejected-decision-unmet-condition",
 		]);
+		expect(new Set(focusedIds).size).toBe(focusedIds.length);
 		expect(focusedIds.some((id: string) => generalIds.includes(id))).toBe(
 			false,
 		);
+		for (const legacyFragment of [
+			"dependent-probe-single-question",
+			"independent-probes-within-budget",
+			"scenario-gap-replaces-probe",
+			"lightweight probe budget",
+			"exactly one narrowing question",
+			"no more than two narrowing questions",
+		]) {
+			expect(FOCUSED_BENCHMARK_TEXT).not.toContain(legacyFragment);
+		}
 		expect(FOCUSED_BENCHMARK.kind).toBe("pi-agent-benchmark");
 		expect(FOCUSED_BENCHMARK.runner.type).toBe("pi-agent");
 		expect(FOCUSED_BENCHMARK.runner.model).toBe("antigravity/gemini-3.6-flash");

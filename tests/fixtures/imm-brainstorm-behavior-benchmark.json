@@ -47,38 +47,38 @@
   ],
   "scenarios": [
     {
-      "id": "dependent-probe-single-question",
-      "title": "Ask only the current blocking question",
-      "purpose": "Verify that Brainstorm resolves dependent decisions one branch at a time without adopting full Grill Mode for an ordinary task.",
-      "userInput": "Use the local Pi Skill `imm-brainstorm` to frame this request in the fixture workspace: improve account cancellation. Whether data retention needs discussion depends entirely on whether cancellation means ending a subscription or deleting the account. Inspect only CONTEXT.md, README.md, and docs/solutions first. Ask only the current highest-value blocking question; do not ask downstream retention questions yet. Do not create or edit any files.",
+      "id": "dependent-frontier-blocks-downstream",
+      "title": "Hold downstream decisions until dependencies resolve",
+      "purpose": "Verify that Brainstorm asks the complete currently unblocked frontier while keeping dependent retention decisions blocked.",
+      "userInput": "Use the local Pi Skill `imm-brainstorm` to frame this request in the fixture workspace: improve account cancellation. Whether data retention needs discussion depends entirely on whether cancellation means ending a subscription or deleting the account. Inspect only CONTEXT.md, README.md, and docs/solutions first. Ask the complete currently unblocked frontier and hold downstream retention questions until their prerequisite is decided. Do not create or edit any files.",
       "successChecklist": [
-        "The response asks exactly one narrowing question about the meaning of cancellation.",
-        "The response does not ask a downstream data-retention question in the same turn.",
-        "The response remains a concise Brainstorm interaction and does not route to Planner or Preplan.",
+        "The response asks the currently unblocked question about the meaning of cancellation.",
+        "The response does not ask a downstream data-retention question before its prerequisite is answered.",
+        "The question is numbered and includes a recommended answer.",
+        "The response remains in Brainstorm and no workspace file is created or changed."
+      ]
+    },
+    {
+      "id": "independent-complete-frontier",
+      "title": "Ask the complete independent frontier together",
+      "purpose": "Verify that Brainstorm surfaces every independent unresolved decision in the same dependency-aware round.",
+      "userInput": "Use the local Pi Skill `imm-brainstorm` to frame a lightweight internal status dashboard. The intended audience and the measurable success target are both missing, and either answer can be decided independently. Inspect only CONTEXT.md and README.md first. Ask the complete currently unblocked frontier together with numbered recommendations and allow bulk acceptance. Do not create or edit any files.",
+      "successChecklist": [
+        "The response asks about both intended audience and measurable success target in the same round.",
+        "Each question is numbered and includes a recommended answer.",
+        "The response allows bulk acceptance with explicit exceptions.",
         "No workspace file is created or changed."
       ]
     },
     {
-      "id": "independent-probes-within-budget",
-      "title": "Keep independent probes inside the lightweight budget",
-      "purpose": "Verify that independent ambiguities can be surfaced together without turning every Brainstorm into serial questioning.",
-      "userInput": "Use the local Pi Skill `imm-brainstorm` to frame a lightweight internal status dashboard. The intended audience and the measurable success target are both missing, but either answer can be decided independently. Inspect only CONTEXT.md and README.md first. Ask the necessary independent questions together, staying within the lightweight probe budget. Do not create or edit any files.",
-      "successChecklist": [
-        "The response asks about both intended audience and measurable success target.",
-        "The response asks no more than two narrowing questions.",
-        "The response does not force a concrete edge-case scenario or full Grill Mode.",
-        "No workspace file is created or changed."
-      ]
-    },
-    {
-      "id": "scenario-gap-replaces-probe",
-      "title": "Use one discriminating lifecycle scenario",
-      "purpose": "Verify that a concrete scenario replaces a generic probe when it is the clearest way to distinguish a lifecycle boundary.",
-      "userInput": "Use the local Pi Skill `imm-brainstorm` to frame a `pause workspace` feature. It is unclear whether people with an already-open session may keep working after an admin pauses the workspace. Inspect only CONTEXT.md and README.md first. Use one concrete user scenario to clarify the lifecycle boundary, replacing a lower-value generic question rather than adding more questions. Do not create or edit any files.",
+      "id": "scenario-qualified-frontier",
+      "title": "Use a scenario only when it distinguishes behavior",
+      "purpose": "Verify that a concrete scenario qualifies as an unresolved frontier branch when it distinguishes a lifecycle boundary.",
+      "userInput": "Use the local Pi Skill `imm-brainstorm` to frame a `pause workspace` feature. It is unclear whether people with an already-open session may keep working after an admin pauses the workspace. Inspect only CONTEXT.md and README.md first. Include a concrete user scenario in the currently unblocked frontier because it materially distinguishes the lifecycle boundary. Do not create or edit any files.",
       "successChecklist": [
         "The response asks a concrete scenario question involving an already-open session and an admin pause.",
         "The scenario distinguishes the lifecycle or scope boundary instead of requesting generic implementation detail.",
-        "The response stays within the lightweight probe budget and does not add an exhaustive edge-case checklist.",
+        "The question is numbered and includes a recommended answer.",
         "No workspace file is created or changed."
       ]
     },

@@ -1,4 +1,4 @@
-# Immune-Brain
+# Project Context
 
 An agent skill system that decomposes work into validated plans, executes one step at a time through authority-separated roles, and compounds reusable learnings from completed work.
 
