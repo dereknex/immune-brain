@@ -1,7 +1,7 @@
 // Phase 3 foreground Tool and native Review bridge contract.
 
 import { describe, expect, test } from "bun:test";
-import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync, existsSync } from "node:fs";
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync, existsSync, statSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -432,6 +432,48 @@ async function preparePendingReview(root: string): Promise<RegisteredTool & { co
 			(item: Record<string, any>) => item.properties?.op?.const === "request_authorization",
 		);
 		expect(Object.keys(requestAuthorization.properties)).toEqual(["op"]);
+	});
+
+	test("revise_intent preserves sidecar identity, passes the old token, persists success, and rolls back precommit failure", async () => {
+		const successRoot = makeEnrolledRoot();
+		const failureRoot = makeEnrolledRoot();
+		const nextIntent = {
+			...INTENT,
+			revision: 2,
+			acceptance: [...INTENT.acceptance, { id: "A2", assertion: "a2", verification: INTENT.acceptance[0].verification }],
+		};
+		const revise = (tool: RegisteredTool, root: string, intent: unknown) => tool.execute(
+			"revise",
+			{ task_id: TASK, action: { op: "revise_intent", next_intent: intent } },
+			undefined,
+			undefined,
+			makeCtx(root, makeUI()),
+		);
+		try {
+			const successPath = join(successRoot, "docs", "plans", `${TASK}.intent.json`);
+			const successInode = statSync(successPath).ino;
+			const success = await revise(loadSurface().tools[0], successRoot, nextIntent);
+			expect(success.details).toMatchObject({ state: "recorded", operation: "revise_intent" });
+			expect(statSync(successPath).ino).toBe(successInode);
+			expect(JSON.parse(readFileSync(successPath, "utf8"))).toEqual(nextIntent);
+			expect(JSON.parse(readFileSync(join(successRoot, ".imm", "tasks", `${TASK}.json`), "utf8"))).toMatchObject({
+				intent_revision: 2,
+				intent_ref: { content_hash: canonicalIntentHash(nextIntent) },
+			});
+
+			const failurePath = join(failureRoot, "docs", "plans", `${TASK}.intent.json`);
+			const priorBytes = readFileSync(failurePath, "utf8");
+			const failureInode = statSync(failurePath).ino;
+			const incompatible = { ...nextIntent, goal: "breaking goal" };
+			const failed = await revise(loadSurface().tools[0], failureRoot, incompatible);
+			expect(failed.content[0].text).toContain("kernel canary mutation failed");
+			expect(statSync(failurePath).ino).toBe(failureInode);
+			expect(readFileSync(failurePath, "utf8")).toBe(priorBytes);
+			expect(JSON.parse(readFileSync(join(failureRoot, ".imm", "tasks", `${TASK}.json`), "utf8"))).toMatchObject({ intent_revision: 1 });
+		} finally {
+			rmSync(successRoot, { recursive: true, force: true });
+			rmSync(failureRoot, { recursive: true, force: true });
+		}
 	});
 
 	test("advance emits bounded foreground updates and returns exact Agent params", async () => {

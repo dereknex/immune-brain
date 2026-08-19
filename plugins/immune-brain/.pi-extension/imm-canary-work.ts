@@ -13,6 +13,7 @@
 // result-polling path, Footer, or Widget is created here.
 
 import { createHash, randomUUID } from "node:crypto";
+import { readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
@@ -1312,17 +1313,29 @@ function authorityPair(): Promise<{ registry: MutationAuthorityRegistry; app: Ca
 
 async function executeOrdinaryOperation(
 	ctx: ExtensionContext,
-	input: { taskId: string; operation: { op: string; actor_id: string } },
+	input: { taskId: string; operation: { op: string; actor_id: string; next_intent?: unknown } },
 ): Promise<unknown> {
 	const { app } = await authorityPair();
-	return app.execute({
-		root: ctx.cwd,
-		task_id: input.taskId,
-		operation: input.operation as never,
-		prior_intent_token: (await readTaskIntent(ctx.cwd, input.taskId)).token,
-		diffProvider: (root: string, intent: { scope_hint: unknown }) => diffHashOf(root, intent),
-		now: new Date().toISOString(),
-	});
+	const priorIntent = await readTaskIntent(ctx.cwd, input.taskId);
+	const sidecar = join(ctx.cwd, priorIntent.intent_ref.path);
+	const priorBytes = input.operation.op === "revise_intent" ? readFileSync(sidecar) : null;
+	try {
+		if (priorBytes) writeFileSync(sidecar, `${JSON.stringify(input.operation.next_intent, null, 2)}\n`);
+		return await app.execute({
+			root: ctx.cwd,
+			task_id: input.taskId,
+			operation: input.operation as never,
+			prior_intent_token: priorIntent.token,
+			diffProvider: (root: string, intent: { scope_hint: unknown }) => diffHashOf(root, intent),
+			now: new Date().toISOString(),
+		});
+	} catch (error) {
+		if (priorBytes) {
+			const current = await readTaskRecordV2(ctx.cwd, input.taskId);
+			if (current.record?.intent_revision === priorIntent.intent.revision) writeFileSync(sidecar, priorBytes);
+		}
+		throw error;
+	}
 }
 
 type AssuranceTaskState = AssuranceProjectionResult["projection"] | { error: string };
