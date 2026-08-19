@@ -1,55 +1,15 @@
-import { afterEach, describe, expect, it } from "bun:test";
-import {
-	mkdirSync,
-	mkdtempSync,
-	readFileSync,
-	rmSync,
-	writeFileSync,
-} from "node:fs";
-import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { describe, expect, it } from "bun:test";
+import { readFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { readImmuneBrainConfig } from "../plugins/immune-brain/runtime/agent_config";
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const temps: string[] = [];
 
 function read(rel: string): string {
 	return readFileSync(resolve(REPO_ROOT, rel), "utf-8");
 }
 
-function tempHome(): string {
-	const dir = mkdtempSync(join(tmpdir(), "imm-planner-config-"));
-	temps.push(dir);
-	return dir;
-}
-
-function write(path: string, content: string): void {
-	mkdirSync(path.split("/").slice(0, -1).join("/"), { recursive: true });
-	writeFileSync(path, content);
-}
-
-afterEach(() => {
-	while (temps.length) rmSync(temps.pop()!, { recursive: true, force: true });
-});
-
 describe("planner ensemble contract", () => {
-	it("keeps agent-local workflow configuration available to the planner", () => {
-		const home = tempHome();
-		write(
-			join(home, ".pi/agent/immune-brain/config.toml"),
-			'[workflow_models]\nplanner_ensemble = ["fast", "strong"]\n\n[subagent_models]\nfast = "file-fast"\nstrong = "file-strong"\n',
-		);
-
-		const loaded = readImmuneBrainConfig({ home_dir: home });
-		expect(loaded.config.workflow_models?.planner_ensemble).toEqual([
-			"fast",
-			"strong",
-		]);
-		expect(loaded.config.subagent_models?.fast).toBe("file-fast");
-		expect(loaded.config.subagent_models?.strong).toBe("file-strong");
-	});
-
 	it("documents planner-owned ensemble boundaries in source and packaged planner contracts", () => {
 		for (const rel of [
 			"plugins/immune-brain/skills/imm-planner/SKILL.md",

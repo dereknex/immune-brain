@@ -91,8 +91,6 @@ Agreement becomes framing evidence. Disagreement becomes decision criteria or an
 
 **Trigger condition:** Only dispatch when the task spans multiple domains (`multi_domain >= 2`) or the user explicitly requests parallel research. Do not dispatch for single-domain or lightweight framing tasks.
 
-**Global activation policy:** Brainstorm research dispatch must honor `[subagent_activation]` before launching Pi native `Explore` subagents. Valid modes are `auto`, `explicit_only`, and `disabled`; the repository default is `auto`. If config requires explicit parallel research and the user did not request it, record `explicit_required`. If config disables brainstorm research dispatch, record `config_disabled`.
-
 **Retrieval budget:** Stop dispatching as soon as existing evidence is sufficient to answer the core framing question. Do not dispatch additional agents to improve phrasing, add examples, or cover non-essential details. Dispatch again only when a required constraint, convention, or risk is still missing from the current evidence set.
 
 **Dispatch behavior:** Use Pi native `Explore` subagents (`subagent_type: "Explore"`). Each prompt must state a bounded read-only scope and returns a structured summary (affected files, conventions found, risks). The parent brainstorm agent merges summaries before producing the output artifact. Research subagents do not write files, specs, plans, or `.imm/` state.

@@ -69,7 +69,6 @@ describe("v3 island deletion", () => {
 			["tests/role-prompt-bridge.test.ts", "runtime/role_prompt_bridge"],
 			["tests/loop-execution-routing.test.ts", "runtime/loop_contract"],
 			["tests/role-prompt-bridge.test.ts", "scripts/dist-sync-manifest"],
-			["tests/immune-brain-config-runtime.test.ts", "runtime/agent_config"],
 		];
 
 		for (const [path, modulePath] of coverage) {

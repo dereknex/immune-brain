@@ -24,15 +24,6 @@ const EXPECTED_REPOINTS: Record<string, Record<string, string>> = {
 		resolveLoopRoute: "loop_contract.ts",
 		InternalRole: "role_prompt_bridge.ts",
 	},
-	"tests/advisory-dispatch-core.test.ts": {
-		readImmuneBrainConfig: "agent_config.ts",
-	},
-	"tests/planner-ensemble-contract.test.ts": {
-		readImmuneBrainConfig: "agent_config.ts",
-	},
-	"tests/pi-only-runtime-host-contract.test.ts": {
-		resolveImmuneBrainLocalRoot: "agent_config.ts",
-	},
 	"tests/plan-validation.test.ts": {
 		parsePlan: "plan_core.ts",
 		normalizePlan: "plan_core.ts",
@@ -45,11 +36,6 @@ const EXPECTED_REPOINTS: Record<string, Record<string, string>> = {
 		workflowProfileForTask: "plan_core.ts",
 		compounderPolicyForTask: "plan_core.ts",
 		PlanValidationError: "plan_core.ts",
-	},
-	"tests/immune-brain-config-runtime.test.ts": {
-		readImmuneBrainConfig: "agent_config.ts",
-		resolveImmuneBrainLocalPath: "agent_config.ts",
-		resolveImmuneBrainLocalRoot: "agent_config.ts",
 	},
 	"tests/state-ledger-migration.test.ts": {
 		AUTHORITY_OBSERVATION_GENERATION_V2: "authority_commit_receipts.ts",
