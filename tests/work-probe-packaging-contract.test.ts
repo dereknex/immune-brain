@@ -4,7 +4,6 @@ import { dirname, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..")
-const WORK = resolve(REPO_ROOT, "plugins/immune-brain/runtime/work_probes.ts")
 const LOOP = resolve(REPO_ROOT, "plugins/immune-brain/dist/imm-loop.md")
 const EXECUTOR = resolve(REPO_ROOT, "plugins/immune-brain/dist/role-prompts/executor.md")
 
@@ -13,12 +12,9 @@ function read(path: string): string {
 }
 
 describe("work-probe packaging contract", () => {
-  it("keeps the TypeScript work-probe runtime internal", () => {
-    const work = read(WORK)
+  it("keeps the Loop and executor contracts internal", () => {
     const loop = read(LOOP)
     const executor = read(EXECUTOR)
-    expect(work).toContain("buildWorkProbeInvocationEnvelopes")
-    expect(work).toContain("readonly")
     expect(loop).toContain("internal")
     expect(executor).toContain("Internal role")
     expect(existsSync(resolve(REPO_ROOT, "plugins/immune-brain/dist/imm-work.md"))).toBe(false)

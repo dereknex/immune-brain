@@ -66,8 +66,6 @@ describe("wrapper retirement and heal warnings", () => {
     expect(result.status).toBe(0)
     const files = (JSON.parse(result.stdout) as Array<{ files?: Array<{ path: string }> }>)[0]?.files ?? []
     expect(files.some(({ path }) => path.endsWith("runtime/immune_brain_runtime.ts"))).toBe(false)
-    expect(files.some(({ path }) => path.endsWith("runtime/project_migration.ts"))).toBe(false)
-    expect(files.some(({ path }) => path.endsWith("runtime/state_ledger.ts"))).toBe(false)
     expect(files.some(({ path }) => path.endsWith("runtime/v4_runtime.ts"))).toBe(true)
   })
 

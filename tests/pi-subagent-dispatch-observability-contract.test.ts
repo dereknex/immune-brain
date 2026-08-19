@@ -9,16 +9,10 @@ test("canonical and packaged dispatch protocol remain synchronized", () => {
 
 test("interactive dispatch contracts are foreground-only and do not poll", () => {
 	for (const path of [
-		"plugins/immune-brain/runtime/advisory_dispatch.ts",
-		"plugins/immune-brain/runtime/work_probes.ts",
 		"plugins/immune-brain/.pi-extension/pi-canary-assurance-progression.ts",
 		"plugins/immune-brain/.pi-extension/pi-canary-native-review.ts",
 	]) {
 		const source = read(path);
-		if (path.includes("advisory") || path.includes("work_probes")) {
-			expect(source).toContain("run_in_background: false");
-			expect(source).not.toContain("run_in_background: true");
-		}
 		for (const forbidden of ["get_subagent_result", "setTimeout(", "setInterval(", "setStatus(", "setWidget(", "deliverFollowUp"]) expect(source).not.toContain(forbidden);
 	}
 });

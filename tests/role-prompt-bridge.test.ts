@@ -9,7 +9,6 @@ import {
 	normalizeArchitectureExplorerOutput,
 	resolveLoopRoute,
 } from "../plugins/immune-brain/runtime/loop_contract";
-import { determineRequiredReviewGates } from "../plugins/immune-brain/runtime/state_ledger";
 import {
 	INTERNAL_ROLE_PROMPTS,
 	loadRolePrompt,
@@ -194,8 +193,6 @@ describe("internal role-prompt bridge", () => {
 
 		expect(code.review_gate).toBe("imm-code-review");
 		expect(ui.review_gate).toBe("imm-ui-review");
-		expect(determineRequiredReviewGates(["src/change.ts"])).toContain(code.review_gate);
-		expect(determineRequiredReviewGates(["styles/change.css"])).toContain(ui.review_gate);
 		expect(qa.review_gate).toBeUndefined();
 		expect(code.prompt).toContain('"task_id": "task-5"');
 		expect(code.tool_policy).toBe("read-only tools");

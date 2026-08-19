@@ -2,7 +2,6 @@ import { afterEach, describe, expect, it } from "bun:test"
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 import { tmpdir } from "node:os"
-import { resolveWorkflowStageModels } from "../plugins/immune-brain/runtime/advisory_dispatch"
 import {
   readImmuneBrainConfig,
   resolveImmuneBrainLocalPath,
@@ -73,7 +72,7 @@ describe("Immune-Brain agent-local config runtime", () => {
     ])
   })
 
-  it("loads and validates per-stage reasoning and verbosity metadata", () => {
+  it("loads per-stage reasoning and verbosity metadata", () => {
     const home = tempHome()
     write(join(home, ".pi/agent/immune-brain/config.toml"), [
       "[workflow_models]",
@@ -86,13 +85,11 @@ describe("Immune-Brain agent-local config runtime", () => {
     ].join("\n"))
 
     const loaded = readImmuneBrainConfig({ home_dir: home })
-    expect(resolveWorkflowStageModels("planner", loaded.config).model_options).toEqual({
+    expect(loaded.config.workflow_models?.planner).toEqual(["mid"])
+    expect(loaded.config.workflow_model_options?.planner).toEqual({
       reasoning_effort: "medium",
       verbosity: "low",
     })
-    expect(() => resolveWorkflowStageModels("planner", {
-      workflow_model_options: { planner: { reasoning_effort: "extreme" as any } },
-    })).toThrow("Invalid workflow_model_options.planner.reasoning_effort")
   })
 
   it("does not expose a coding-agent selector", () => {

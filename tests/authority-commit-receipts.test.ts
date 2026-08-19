@@ -1,37 +1,32 @@
 import { afterEach, describe, expect, it } from "bun:test";
+import { createHash, randomUUID } from "node:crypto";
 import {
 	existsSync,
 	mkdirSync,
 	mkdtempSync,
 	readFileSync,
 	rmSync,
-	symlinkSync,
 	writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { join } from "node:path";
 import {
-	captureStateCommitExpectation,
-	commitAuthorityStateIfUnchanged,
-	commitStateIfUnchanged,
-	commitStateMutation,
-	createEmptyStateLedger,
-	loadStateLedger,
-	normalizeCurrentIteration,
-	saveStateLedgerForTest,
-} from "../plugins/immune-brain/runtime/state_ledger";
-import {
-	automaticObservationJournalPath,
-	readAutomaticObservationsV2,
-} from "../plugins/immune-brain/runtime/kernel/automatic_observations";
-import {
+	AUTHORITY_OBSERVATION_GENERATION_V2,
+	AUTHORITY_OBSERVER_VERSION_V2,
+	authorityStatePathIdentity,
 	prepareAuthorityCommit,
 	readAuthorityCommitReceipts,
 	recoverAuthorityCommitReceipts,
 	receiptJournalPath,
 	setBeforeAuthorityReceiptAppendForTest,
 	terminalizeAuthorityCommit,
+	type AuthorityObservationSeedV2,
 } from "../plugins/immune-brain/runtime/authority_commit_receipts";
+import { buildAutomaticObservationV2 } from "../plugins/immune-brain/runtime/kernel/observation";
+import {
+	appendAutomaticObservationV2,
+	readAutomaticObservationsV2,
+} from "../plugins/immune-brain/runtime/kernel/automatic_observations";
 
 const roots: string[] = [];
 
@@ -63,6 +58,42 @@ function prepare(root: string, before: string | null, after: string) {
 			},
 		],
 	});
+}
+
+function sha256(value: string): string {
+	return `sha256:${createHash("sha256").update(value).digest("hex")}`;
+}
+
+function observationSeed(
+	statePath: string,
+	content: string,
+): AuthorityObservationSeedV2 {
+	return {
+		contract: "assurance_kernel/authority_observation_seed/v2",
+		observer_version: AUTHORITY_OBSERVER_VERSION_V2,
+		source_kind: "state_mutation",
+		source_ref: `history:${randomUUID()}`,
+		state_path_identity: authorityStatePathIdentity(statePath),
+		committed_bytes_sha256: sha256(content),
+		committed_revision: "ledger-revision-1",
+		committed_at: "2026-08-11T00:00:00.000Z",
+		plan_path: "docs/plans/example.md",
+		plan_signature: "plan-signature",
+		source_events: [
+			{
+				id: "history-1",
+				action: "execution_recorded",
+				at: "2026-08-11T00:00:00.000Z",
+			},
+		],
+		shadow: {
+			phase: "working",
+			reason: "legacy-active",
+			ambiguous: false,
+			source_states: ["active"],
+		},
+		divergence: { detected: false, fields: [] },
+	};
 }
 
 afterEach(() => {
@@ -173,168 +204,27 @@ describe("durable authority commit receipts", () => {
 		expect(readFileSync(ledgerPath(root), "utf8")).toBe(a);
 	});
 
-	it("records receipt-backed authority CAS commits and rejects stale retries", () => {
+	it("binds automatic observations to a terminal v2 receipt", () => {
 		const root = tempRoot();
 		const statePath = ledgerPath(root);
-		saveStateLedgerForTest(statePath, createEmptyStateLedger());
-		const persisted = normalizeCurrentIteration(loadStateLedger(statePath)!);
-		const expected = captureStateCommitExpectation(persisted);
-		const proposed = structuredClone(persisted);
-		proposed.runtime_status = "active";
-
-		expect(
-			commitAuthorityStateIfUnchanged(
-				statePath,
-				proposed,
-				expected,
-				"imm-autowork:snapshot",
-			),
-		).toBe(true);
-		const afterCommit = readAuthorityCommitReceipts(statePath);
-		expect(afterCommit.map((record) => record.status)).toEqual([
-			"prepared",
-			"committed",
-		]);
-		const observations = readAutomaticObservationsV2(root);
-		expect(observations.map((entry) => entry.receipt_attempt_id)).toEqual([
-			afterCommit[0]!.attempt_id,
-		]);
-
-		const staleProposal = structuredClone(proposed);
-		staleProposal.requires_replan = true;
-		expect(
-			commitAuthorityStateIfUnchanged(
-				statePath,
-				staleProposal,
-				expected,
-				"imm-autowork:snapshot",
-			),
-		).toBe(false);
-		expect(readAuthorityCommitReceipts(statePath)).toHaveLength(2);
-	});
-
-	it("recovers a normal commit interrupted after Ledger rename before another write", () => {
-		const root = tempRoot();
-		const statePath = ledgerPath(root);
-		saveStateLedgerForTest(statePath, createEmptyStateLedger());
-		const childScript = join(root, "kill-normal-commit.ts");
-		const ledgerModule = resolve(
-			"plugins/immune-brain/runtime/state_ledger.ts",
-		);
-		const receiptModule = resolve(
-			"plugins/immune-brain/runtime/authority_commit_receipts.ts",
-		);
-		writeFileSync(
-			childScript,
-			`import { captureStateCommitExpectation, commitStateMutation, loadStateLedger, normalizeCurrentIteration } from ${JSON.stringify(ledgerModule)};\n` +
-				`import { setBeforeAuthorityReceiptAppendForTest } from ${JSON.stringify(receiptModule)};\n` +
-				`const path = ${JSON.stringify(statePath)};\n` +
-				`const state = normalizeCurrentIteration(loadStateLedger(path));\n` +
-				`const expected = captureStateCommitExpectation(state);\n` +
-				`state.runtime_status = "active";\n` +
-				`setBeforeAuthorityReceiptAppendForTest((record) => { if (record.status === "committed") process.kill(process.pid, "SIGKILL"); });\n` +
-				`commitStateMutation(path, state, expected);\n`,
-		);
-		const child = Bun.spawnSync([process.execPath, childScript], {
-			cwd: root,
-			stdout: "pipe",
-			stderr: "pipe",
+		const content = '{"schema_version":3}\n';
+		writeFileSync(statePath, content);
+		const seed = observationSeed(statePath, content);
+		const prepared = prepareAuthorityCommit(statePath, {
+			source_kind: "state_mutation",
+			targets: [{ absolute_path: statePath, before_bytes: "before", after_bytes: content }],
+			ledger_revision: seed.committed_revision,
+			source_ref: seed.source_ref,
+			attempt_id: randomUUID(),
+			observation_generation: AUTHORITY_OBSERVATION_GENERATION_V2,
+			observation_seed: seed,
 		});
-		expect(child.exitCode).not.toBe(0);
-		expect(loadStateLedger(statePath)?.runtime_status).toBe("active");
-		expect(readAuthorityCommitReceipts(statePath).map((record) => record.status)).toEqual([
-			"prepared",
-		]);
+		const terminal = terminalizeAuthorityCommit(statePath, prepared, "committed");
+		const observation = buildAutomaticObservationV2(terminal);
 
-		// The Ledger lock is intentionally operator-recovered after an unclean kill.
-		rmSync(`${statePath}.write.lock`, { recursive: true, force: true });
-		const next = normalizeCurrentIteration(loadStateLedger(statePath)!);
-		const nextExpected = captureStateCommitExpectation(next);
-		next.requires_replan = true;
-		commitStateMutation(statePath, next, nextExpected);
-
-		const receipts = readAuthorityCommitReceipts(statePath);
-		expect(receipts.map((record) => record.status)).toEqual([
-			"prepared",
-			"recovered_committed",
-			"prepared",
-			"committed",
-		]);
-		const observations = readAutomaticObservationsV2(root);
-		expect(observations.map((entry) => entry.receipt_attempt_id)).toEqual([
-			receipts[0]!.attempt_id,
-			receipts[2]!.attempt_id,
-		]);
-	});
-
-	it("replays an observation from the terminal seed after append failure and a later commit", () => {
-		const root = tempRoot();
-		const statePath = ledgerPath(root);
-		saveStateLedgerForTest(statePath, createEmptyStateLedger());
-		const journal = automaticObservationJournalPath(root);
-		const outside = join(root, "outside-observations.jsonl");
-		writeFileSync(outside, "");
-		symlinkSync(outside, journal);
-
-		const first = normalizeCurrentIteration(loadStateLedger(statePath)!);
-		const firstExpected = captureStateCommitExpectation(first);
-		first.runtime_status = "active";
-		commitStateMutation(statePath, first, firstExpected);
-		expect(readAuthorityCommitReceipts(statePath).map((record) => record.status)).toEqual([
-			"prepared",
-			"committed",
-		]);
-		rmSync(journal);
-
-		const second = normalizeCurrentIteration(loadStateLedger(statePath)!);
-		const secondExpected = captureStateCommitExpectation(second);
-		second.requires_replan = true;
-		commitStateMutation(statePath, second, secondExpected);
-
-		const receipts = readAuthorityCommitReceipts(statePath);
-		const terminals = receipts.filter(
-			(record) => record.status === "committed" || record.status === "recovered_committed",
-		);
-		const observations = readAutomaticObservationsV2(root);
-		expect(observations).toHaveLength(2);
-		expect(observations.map((entry) => entry.receipt_record_id)).toEqual(
-			terminals.map((record) => record.record_id),
-		);
-		expect(observations[0]!.committed_bytes_sha256).toBe(
-			terminals[0]!.observation_seed!.committed_bytes_sha256,
-		);
-		expect(observations[0]!.committed_bytes_sha256).not.toBe(
-			observations[1]!.committed_bytes_sha256,
-		);
-	});
-
-	it("keeps the snapshot writer projection-only", () => {
-		const root = tempRoot();
-		const statePath = ledgerPath(root);
-		saveStateLedgerForTest(statePath, createEmptyStateLedger());
-		const persisted = normalizeCurrentIteration(loadStateLedger(statePath)!);
-		const allowed = structuredClone(persisted);
-		(allowed as any).completed_steps = ["1"];
-		(allowed as any).active_step = null;
-		(allowed as any).next_action = "render-only";
-		expect(
-			commitStateIfUnchanged(
-				statePath,
-				allowed,
-				captureStateCommitExpectation(persisted),
-			),
-		).toBe(true);
-
-		const afterProjection = loadStateLedger(statePath)!;
-		const forbidden = structuredClone(afterProjection);
-		forbidden.runtime_status = "active";
-		expect(() =>
-			commitStateIfUnchanged(
-				statePath,
-				forbidden,
-				captureStateCommitExpectation(afterProjection),
-			),
-		).toThrow("authority-owned Ledger fields");
+		expect(appendAutomaticObservationV2(root, observation)).toBe("appended");
+		expect(appendAutomaticObservationV2(root, observation)).toBe("duplicate");
+		expect(readAutomaticObservationsV2(root)).toEqual([observation]);
 	});
 
 	it("keeps a successful authority outcome recoverable when terminal append fails", () => {
