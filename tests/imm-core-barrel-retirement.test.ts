@@ -28,7 +28,7 @@ const EXPECTED_REPOINTS: Record<string, Record<string, string>> = {
 	"tests/advisory-dispatch-core.test.ts": {
 		buildAdvisoryDelegationPrompt: "advisory_dispatch.ts",
 		buildAdvisoryDispatchEnvelope: "advisory_dispatch.ts",
-		readImmuneBrainConfig: "advisory_dispatch.ts",
+		readImmuneBrainConfig: "agent_config.ts",
 		resolveAdvisoryModel: "advisory_dispatch.ts",
 		resolveWorkflowStageModels: "advisory_dispatch.ts",
 	},
@@ -39,11 +39,11 @@ const EXPECTED_REPOINTS: Record<string, Record<string, string>> = {
 		normalizeBrainstormEnsemblePacket: "advisory_dispatch.ts",
 		normalizePiBrainstormAgentResults: "advisory_dispatch.ts",
 		normalizePlannerEnsemblePacket: "advisory_dispatch.ts",
-		readImmuneBrainConfig: "advisory_dispatch.ts",
+		readImmuneBrainConfig: "agent_config.ts",
 	},
 	"tests/pi-only-runtime-host-contract.test.ts": {
 		buildAdvisoryDispatchEnvelope: "advisory_dispatch.ts",
-		resolveImmuneBrainLocalRoot: "advisory_dispatch.ts",
+		resolveImmuneBrainLocalRoot: "agent_config.ts",
 	},
 	"tests/plan-validation.test.ts": {
 		parsePlan: "plan_core.ts",
@@ -74,10 +74,10 @@ const EXPECTED_REPOINTS: Record<string, Record<string, string>> = {
 		normalizePlannerEnsemblePacket: "advisory_dispatch.ts",
 	},
 	"tests/immune-brain-config-runtime.test.ts": {
-		readImmuneBrainConfig: "advisory_dispatch.ts",
-		resolveImmuneBrainLocalPath: "advisory_dispatch.ts",
+		readImmuneBrainConfig: "agent_config.ts",
+		resolveImmuneBrainLocalPath: "agent_config.ts",
 		resolveWorkflowStageModels: "advisory_dispatch.ts",
-		resolveImmuneBrainLocalRoot: "advisory_dispatch.ts",
+		resolveImmuneBrainLocalRoot: "agent_config.ts",
 	},
 	"tests/runtime-state.test.ts": {
 		activateStep: "state_ledger.ts",

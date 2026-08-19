@@ -70,3 +70,4 @@ Backups.backupdb
 MobileBackups.trash
 tmbootpicker.efi
 node_modules/
+.pi/

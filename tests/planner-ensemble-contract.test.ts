@@ -16,8 +16,8 @@ import {
 	normalizeBrainstormEnsemblePacket,
 	normalizePiBrainstormAgentResults,
 	normalizePlannerEnsemblePacket,
-	readImmuneBrainConfig,
 } from "../plugins/immune-brain/runtime/advisory_dispatch";
+import { readImmuneBrainConfig } from "../plugins/immune-brain/runtime/agent_config";
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const temps: string[] = [];

@@ -2,12 +2,12 @@ import { afterEach, describe, expect, it } from "bun:test"
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 import { tmpdir } from "node:os"
+import { resolveWorkflowStageModels } from "../plugins/immune-brain/runtime/advisory_dispatch"
 import {
   readImmuneBrainConfig,
   resolveImmuneBrainLocalPath,
-  resolveWorkflowStageModels,
   resolveImmuneBrainLocalRoot,
-} from "../plugins/immune-brain/runtime/advisory_dispatch"
+} from "../plugins/immune-brain/runtime/agent_config"
 
 const temps: string[] = []
 

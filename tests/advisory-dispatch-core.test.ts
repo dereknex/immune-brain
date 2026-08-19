@@ -5,10 +5,10 @@ import { join } from "node:path"
 import {
   buildAdvisoryDelegationPrompt,
   buildAdvisoryDispatchEnvelope,
-  readImmuneBrainConfig,
   resolveAdvisoryModel,
   resolveWorkflowStageModels,
 } from "../plugins/immune-brain/runtime/advisory_dispatch"
+import { readImmuneBrainConfig } from "../plugins/immune-brain/runtime/agent_config"
 
 const modelConfig = {
   subagent_models: {

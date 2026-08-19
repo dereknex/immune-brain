@@ -4,8 +4,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   buildAdvisoryDispatchEnvelope,
-  resolveImmuneBrainLocalRoot,
 } from "../plugins/immune-brain/runtime/advisory_dispatch";
+import { resolveImmuneBrainLocalRoot } from "../plugins/immune-brain/runtime/agent_config";
 import {
   buildWorkProbeInvocationEnvelopes,
   resolveWorkProbeDispatch,
