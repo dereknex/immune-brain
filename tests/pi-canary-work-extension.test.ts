@@ -440,8 +440,10 @@ async function preparePendingReview(root: string): Promise<RegisteredTool & { co
 		const nextIntent = {
 			...INTENT,
 			revision: 2,
+			scope_hint: ["plugins/immune-brain/.pi-extension/nested", "plugins/immune-brain/.pi-extension"],
 			acceptance: [...INTENT.acceptance, { id: "A2", assertion: "a2", verification: INTENT.acceptance[0].verification }],
 		};
+		const normalizedNextIntent = { ...nextIntent, scope_hint: ["plugins/immune-brain/.pi-extension"] };
 		const revise = (tool: RegisteredTool, root: string, intent: unknown) => tool.execute(
 			"revise",
 			{ task_id: TASK, action: { op: "revise_intent", next_intent: intent } },
@@ -455,10 +457,10 @@ async function preparePendingReview(root: string): Promise<RegisteredTool & { co
 			const success = await revise(loadSurface().tools[0], successRoot, nextIntent);
 			expect(success.details).toMatchObject({ state: "recorded", operation: "revise_intent" });
 			expect(statSync(successPath).ino).toBe(successInode);
-			expect(JSON.parse(readFileSync(successPath, "utf8"))).toEqual(nextIntent);
+			expect(JSON.parse(readFileSync(successPath, "utf8"))).toEqual(normalizedNextIntent);
 			expect(JSON.parse(readFileSync(join(successRoot, ".imm", "tasks", `${TASK}.json`), "utf8"))).toMatchObject({
 				intent_revision: 2,
-				intent_ref: { content_hash: canonicalIntentHash(nextIntent) },
+				intent_ref: { content_hash: canonicalIntentHash(normalizedNextIntent) },
 			});
 
 			const failurePath = join(failureRoot, "docs", "plans", `${TASK}.intent.json`);

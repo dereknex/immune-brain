@@ -74,6 +74,7 @@ import {
 	readBackendClaim,
 	readTaskRecordV2,
 	readTaskIntent,
+	parseTaskIntentV1,
 	projectAssurance,
 	routeManagedRequest,
 	deriveAssuranceAuthorization,
@@ -1316,15 +1317,18 @@ async function executeOrdinaryOperation(
 	input: { taskId: string; operation: { op: string; actor_id: string; next_intent?: unknown } },
 ): Promise<unknown> {
 	const { app } = await authorityPair();
+	const operation = input.operation.op === "revise_intent"
+		? { ...input.operation, next_intent: await parseTaskIntentV1(input.operation.next_intent) }
+		: input.operation;
 	const priorIntent = await readTaskIntent(ctx.cwd, input.taskId);
 	const sidecar = join(ctx.cwd, priorIntent.intent_ref.path);
-	const priorBytes = input.operation.op === "revise_intent" ? readFileSync(sidecar) : null;
+	const priorBytes = operation.op === "revise_intent" ? readFileSync(sidecar) : null;
 	try {
-		if (priorBytes) writeFileSync(sidecar, `${JSON.stringify(input.operation.next_intent, null, 2)}\n`);
+		if (priorBytes) writeFileSync(sidecar, `${JSON.stringify(operation.next_intent, null, 2)}\n`);
 		return await app.execute({
 			root: ctx.cwd,
 			task_id: input.taskId,
-			operation: input.operation as never,
+			operation: operation as never,
 			prior_intent_token: priorIntent.token,
 			diffProvider: (root: string, intent: { scope_hint: unknown }) => diffHashOf(root, intent),
 			now: new Date().toISOString(),

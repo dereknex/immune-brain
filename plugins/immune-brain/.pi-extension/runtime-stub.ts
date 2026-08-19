@@ -300,17 +300,20 @@ export async function readTaskTombstone(
 	return mod.readTaskTombstone(root, taskId);
 }
 
+export interface TaskIntentV1 {
+	contract: "assurance_kernel/task_intent/v1";
+	goal: string;
+	task_id: string;
+	revision: number;
+	risk: "routine" | "material" | "critical";
+	owner: "user";
+	acceptance: Array<{ id: string; assertion: string; verification: string }>;
+	scope_hint: string[];
+}
 export interface TaskIntentRead {
 	token: object;
 	content_hash: string;
-	intent: {
-		goal: string;
-		task_id: string;
-		revision: number;
-		risk: "routine" | "material" | "critical";
-		acceptance: Array<{ id: string; assertion: string; verification: string }>;
-		scope_hint: string[];
-	};
+	intent: TaskIntentV1;
 }
 export interface WorkspaceRead {
 	revision: string;
@@ -319,6 +322,10 @@ export interface WorkspaceRead {
 export async function readTaskIntent(root: string, taskId: string): Promise<TaskIntentRead> {
 	const mod = await import(/* @vite-ignore */ kernelPath("intent"));
 	return mod.readTaskIntent(root, taskId);
+}
+export async function parseTaskIntentV1(raw: unknown): Promise<TaskIntentV1> {
+	const mod = await import(/* @vite-ignore */ kernelPath("intent"));
+	return mod.parseTaskIntentV1(raw);
 }
 export async function readWorkspaceState(root: string): Promise<WorkspaceRead> {
 	const mod = await import(/* @vite-ignore */ kernelPath("storage"));
