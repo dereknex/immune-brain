@@ -154,6 +154,16 @@ describe("packed artifact loader", () => {
 					.map((s: { name: string }) => s.name)
 					.sort();
 				expect(skills).toEqual(["imm-brainstorm", "imm-loop", "imm-planner"]);
+
+				const work = extensions.find((extension: { path?: string }) =>
+					extension.path?.endsWith("imm-canary-work.ts"),
+				) as { handlers: Map<string, Array<(event: unknown, ctx: unknown) => Promise<unknown>>> };
+				const routeInput = work.handlers.get("input")?.[0];
+				expect(routeInput).toBeDefined();
+				expect(await routeInput!(
+					{ source: "interactive", text: "梳理目前进展和待办任务" },
+					{ cwd: dir },
+				)).toEqual({ action: "continue" });
 			} finally {
 				rmSync(agentDir, { recursive: true, force: true });
 			}

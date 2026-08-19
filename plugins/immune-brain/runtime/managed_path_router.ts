@@ -76,7 +76,7 @@ export const MANAGED_BOOTSTRAP_FILES = {
 
 const IMMUNE_START = "<!-- IMMUNE-BRAIN:START -->";
 const IMMUNE_END = "<!-- IMMUNE-BRAIN:END -->";
-const TEMPLATE_ROOT = resolve(import.meta.dir, "bootstrap-templates");
+const TEMPLATE_ROOT = resolve(__dirname, "bootstrap-templates");
 
 const MUTATION_PATTERN =
 	/\b(?:implement|add|build|create|make|develop|introduce|enable|support|ensure|fix|change|update|modify|refactor|remove|delete|write|ship|migrate|rename|move|replace|upgrade|improve|polish|optimi[sz]e|clean(?:\s+up)?)\b|实现|添加|增加|构建|开发|引入|启用|支持|确保|创建|修复|修改|重构|删除|编写|迁移|重命名|移动|替换|升级|改进|优化|清理/i;
