@@ -2,7 +2,7 @@ import { describe, expect, it } from "bun:test";
 import {
 	validateQaChildOutput,
 	validateReviewChildOutput,
-} from "../plugins/immune-brain/runtime/imm_core";
+} from "../plugins/immune-brain/runtime/loop_contract";
 
 const REVIEW_EXPECTATION = {
 	review_gate: "imm-code-review",

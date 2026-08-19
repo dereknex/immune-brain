@@ -8,7 +8,7 @@ import {
   readImmuneBrainConfig,
   resolveAdvisoryModel,
   resolveWorkflowStageModels,
-} from "../plugins/immune-brain/runtime/imm_core"
+} from "../plugins/immune-brain/runtime/advisory_dispatch"
 
 const modelConfig = {
   subagent_models: {
@@ -119,7 +119,7 @@ describe("advisory dispatch core", () => {
       focus_delta: {
         role: "imm-advisory-reviewer",
         lens: "security",
-        specific_changes: ["plugins/immune-brain/runtime/imm_core.ts"],
+        specific_changes: ["plugins/immune-brain/runtime/advisory_dispatch.ts"],
         audit_question: "Can this child mutate workflow state?",
       },
     })

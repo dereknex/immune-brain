@@ -13,8 +13,6 @@ import { spawnSync } from "node:child_process";
 import {
 	deriveOriginCoverage,
 	projectPlanValidation,
-} from "../plugins/immune-brain/runtime/plan_core";
-import {
 	parsePlan,
 	normalizePlan,
 	buildPlanSignature,
@@ -26,7 +24,7 @@ import {
 	workflowProfileForTask,
 	compounderPolicyForTask,
 	type PlanValidationError,
-} from "../plugins/immune-brain/runtime/imm_core";
+} from "../plugins/immune-brain/runtime/plan_core";
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const MIGRATION_PLAN = resolve(

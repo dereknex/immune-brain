@@ -6,7 +6,7 @@ import {
 	normalizeBrainstormEnsemblePacket,
 	normalizePiBrainstormAgentResults,
 	normalizePlannerEnsemblePacket,
-} from "../plugins/immune-brain/runtime/imm_core";
+} from "../plugins/immune-brain/runtime/advisory_dispatch";
 
 const config = {
 	workflow_models: {

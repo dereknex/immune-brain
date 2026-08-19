@@ -47,7 +47,6 @@ describe("current Pi-only contracts", () => {
     ]) expect(existsSync(resolve(ROOT, path))).toBe(false);
 
     const sources = [
-      "plugins/immune-brain/runtime/imm_core.ts",
       "plugins/immune-brain/runtime/commands/kernel.ts",
     ].map((path) => readFileSync(resolve(ROOT, path), "utf8"));
     for (const source of sources) {
@@ -93,7 +92,6 @@ describe("current Pi-only contracts", () => {
 
   it("does not publish retired host selectors or host-specific workflow fields", () => {
     const activePaths = [
-      "plugins/immune-brain/runtime/imm_core.ts",
       "plugins/immune-brain/runtime/commands/kernel.ts",
       "plugins/immune-brain/dist/imm-loop.md",
       "plugins/immune-brain/dist/role-prompts/compounder.md",

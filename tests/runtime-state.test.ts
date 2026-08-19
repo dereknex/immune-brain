@@ -17,7 +17,7 @@ import {
 	normalizeCurrentIteration,
 	validateTransitionState,
 	utcNow,
-} from "../plugins/immune-brain/runtime/imm_core";
+} from "../plugins/immune-brain/runtime/state_ledger";
 
 function passedEvidence(changedFiles: string | string[]) {
 	return {

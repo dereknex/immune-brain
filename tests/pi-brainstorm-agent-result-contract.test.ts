@@ -2,7 +2,7 @@ import { describe, expect, it } from "bun:test";
 import {
 	buildBrainstormEnsembleRequest,
 	normalizePiBrainstormAgentResults,
-} from "../plugins/immune-brain/runtime/imm_core";
+} from "../plugins/immune-brain/runtime/advisory_dispatch";
 
 const request = buildBrainstormEnsembleRequest({
 	task_summary: "explicit brainstorm",

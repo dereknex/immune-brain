@@ -5,14 +5,16 @@ import { fileURLToPath } from "node:url";
 import {
 	buildLoopAction,
 	buildLoopRoleDispatch,
-	determineRequiredReviewGates,
-	INTERNAL_ROLE_PROMPTS,
-	loadRolePrompt,
 	normalizeAdvisoryReviewerOutput,
 	normalizeArchitectureExplorerOutput,
 	resolveLoopRoute,
+} from "../plugins/immune-brain/runtime/loop_contract";
+import { determineRequiredReviewGates } from "../plugins/immune-brain/runtime/state_ledger";
+import {
+	INTERNAL_ROLE_PROMPTS,
+	loadRolePrompt,
 	type InternalRole,
-} from "../plugins/immune-brain/runtime/imm_core";
+} from "../plugins/immune-brain/runtime/role_prompt_bridge";
 import { ROLE_PROMPT_FILES } from "../scripts/dist-sync-manifest";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");

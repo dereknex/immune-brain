@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test"
-import { determineRequiredReviewGates } from "../runtime/imm_core"
+import { determineRequiredReviewGates } from "../runtime/state_ledger"
 
 describe("determineRequiredReviewGates", () => {
   it("returns no gates for an empty changeset", () => {

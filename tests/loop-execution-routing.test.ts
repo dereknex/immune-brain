@@ -5,10 +5,12 @@ import { fileURLToPath } from "node:url";
 import {
 	buildLoopAction,
 	buildLoopRoleDispatch,
-	INTERNAL_ROLE_PROMPTS,
 	resolveLoopRoute,
+} from "../plugins/immune-brain/runtime/loop_contract";
+import {
+	INTERNAL_ROLE_PROMPTS,
 	type InternalRole,
-} from "../plugins/immune-brain/runtime/imm_core";
+} from "../plugins/immune-brain/runtime/role_prompt_bridge";
 import { ROLE_PROMPT_FILES } from "../scripts/dist-sync-manifest";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");

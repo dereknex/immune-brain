@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { planSupportsFastTrack } from "../plugins/immune-brain/runtime/imm_core";
+import { planSupportsFastTrack } from "../plugins/immune-brain/runtime/plan_core";
 
 describe("fast-track detection", () => {
 	it("refuses fast-track when a step has no automated verification", () => {

@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { captureGitWorkspaceSnapshot } from "../plugins/immune-brain/runtime/imm_core";
+import { captureGitWorkspaceSnapshot } from "../plugins/immune-brain/runtime/workspace_scope";
 
 let root: string;
 

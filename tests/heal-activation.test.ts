@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test"
-import { validateActivationMode, resolveActivationMode, buildSoloPlan } from "../plugins/immune-brain/runtime/imm_core"
+import { validateActivationMode, resolveActivationMode, buildSoloPlan } from "../plugins/immune-brain/runtime/activation"
 
 describe("heal and activation parity", () => {
   it("validates activation modes", () => {

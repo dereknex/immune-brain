@@ -7,7 +7,7 @@ import {
 	getReviewPassForChangedFiles,
 	normalizeCurrentIteration,
 	recordReviewPass,
-} from "../plugins/immune-brain/runtime/imm_core";
+} from "../plugins/immune-brain/runtime/state_ledger";
 
 function evidence(changedFiles: string[]) {
 	return {

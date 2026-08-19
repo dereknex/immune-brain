@@ -4,7 +4,7 @@ import {
 	HANDOFF_END_MARKER,
 	HANDOFF_START_MARKER,
 	renderHandoffState,
-} from "../plugins/immune-brain/runtime/imm_core";
+} from "../plugins/immune-brain/runtime/handoff";
 
 const LEDGER = {
 	plan_path: "docs/plans/2026-08-01-001-feat-example-plan.md",

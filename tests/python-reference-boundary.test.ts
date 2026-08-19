@@ -62,7 +62,6 @@ describe("python reference boundary", () => {
 			existsSync(resolve(PLUGIN_ROOT, "runtime/immune_brain_runtime.ts")),
 		).toBe(false);
 		expect(existsSync(resolve(PLUGIN_ROOT, "runtime/v4_runtime.ts"))).toBe(true);
-		expect(existsSync(resolve(PLUGIN_ROOT, "runtime/imm_core.ts"))).toBe(true);
 	});
 
 	it("docs declare Bun + TypeScript as the runtime requirement", () => {

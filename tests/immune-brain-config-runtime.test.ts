@@ -7,7 +7,7 @@ import {
   resolveImmuneBrainLocalPath,
   resolveWorkflowStageModels,
   resolveImmuneBrainLocalRoot,
-} from "../plugins/immune-brain/runtime/imm_core"
+} from "../plugins/immune-brain/runtime/advisory_dispatch"
 
 const temps: string[] = []
 
