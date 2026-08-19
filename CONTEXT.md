@@ -9,7 +9,7 @@ One independently closable outcome unit in a plan. A step has a single Result, a
 _Avoid_: task, ticket, issue
 
 **Plan**:
-An ordered sequence of Steps decomposed from a spec by `imm-planner`. Lives under `docs/plans/`. Validated by `imm-plan.py`. A Plan covers one coherent executable slice; independent authority, risk, verification, promotion, review, or rollback boundaries normally belong in successor Plans rather than oversized Steps.
+An ordered sequence of Steps decomposed from a spec by `imm-planner`. Lives under `docs/plans/`. Validated by `imm-plan`. A Plan covers one coherent executable slice; independent authority, risk, verification, promotion, review, or rollback boundaries normally belong in successor Plans rather than oversized Steps.
 _Avoid_: roadmap, backlog
 
 **Plan boundary**:
@@ -37,12 +37,8 @@ _Avoid_: one Plan per Phase, treating a Phase as a Step
 _Avoid_: milestone, stage, iteration
 
 **acceptance_criteria**:
-The per-phase behavior assertions that let a developer judge whether a Roadmap phase is done, without reading implementation code. Each entry describes observable behavior (e.g., "the export button produces a CSV with all visible columns"), not internal signals. Independent of `promotion_criteria`. Validation depth: L1 errors on a missing/empty field, L2 warns on recognizable non-behavioral patterns. Dual-track: `observable` (visual/interactive) or `verifiable` (named command + output). Required for 3+ phase Roadmaps; optional for single-phase or 2-phase work.
+The per-phase behavior assertions that let a developer judge whether a Roadmap phase is done, without reading implementation code. Each entry describes observable behavior (e.g., "the export button produces a CSV with all visible columns"), not internal signals. Validation depth: L1 errors on a missing/empty field, L2 warns on recognizable non-behavioral patterns. Dual-track: `observable` (visual/interactive) or `verifiable` (named command + output). Required for 3+ phase Roadmaps; optional for single-phase or 2-phase work.
 _Avoid_: definition of done, checklist, test plan
-
-**promotion_criteria**:
-The conditions that must hold before a deferred Roadmap phase can be promoted to an executable Plan. May include "all acceptance_criteria passed human review" but is not limited to it — it also covers external dependencies such as API availability, environment readiness, or stakeholder approval. Distinct from `acceptance_criteria`, which answers "is this phase done?"; `promotion_criteria` answers "can we start the next phase?".
-_Avoid_: exit criteria, gate, go/no-go
 
 **Spec**:
 A behavioral contract defining accepted behaviors for a feature or change. Lives under `docs/specs/`.
@@ -84,10 +80,6 @@ _Avoid_: note, finding
 An architecture decision record in `docs/adr/` capturing a hard-to-reverse decision with context and reasoning. Created only when all three criteria are met: hard to reverse, surprising without context, result of a real trade-off.
 _Avoid_: design doc, RFC
 
-**Activation Plan**:
-A deterministic plan produced by `activation_plan.py` that decides which conditional reviewer subagents to dispatch based on changed paths and trigger keywords, and carries per-child `model_tiers` for optional host-side model resolution.
-_Avoid_: routing table, dispatch config
-
 **Delegation Packet**:
 The structured context bundle sent to a subagent: `shared_context_summary`, `focus_delta` (optionally containing context-sharded fragments in `specific_changes`), `tool_policy`, `fallback_reasons`.
 _Avoid_: prompt, brief
@@ -104,10 +96,6 @@ _Avoid_: shortcut, bypass
 A human-readable convenience document at the repo root summarizing current plan progress for cross-session continuity. Not the source of truth (`.imm/memory/` is).
 _Avoid_: status file, state dump
 
-**State Ledger**:
-The per-step state map in `current_iteration.json` (schema v2) that tracks each step's lifecycle independently via explicit state transitions. Replaces the v1 single-slot `active_step` + flat `completed_steps` model. Each step entry holds its own state (`pending`, `active`, `probing`, `executing`, `ready_for_review`, `closed`, `rework_needed`, `replanning`), evidence, timestamps, and `child_evidence` (durable structured output from subagents). Enables future parallel step execution.
-_Avoid_: step tracker, task board
-
 ## Relationships
 
 - A **Plan** contains one or more **Steps**
@@ -119,17 +107,16 @@ _Avoid_: step tracker, task board
 - An **Executor** implements exactly one active **Step** at a time
 - **QA** judges closure of one **Step** based on evidence
 - A **Compounder** produces **Learnings** from closed **Steps**
-- An **Activation Plan** selects subagents for a review host **Skill**
 - A **Delegation Packet** is sent from a host **Skill** to one subagent
-- A **Roadmap** contains one or more **Phases**, each carrying `acceptance_criteria` and `promotion_criteria`
-- A **Phase** is promoted to a **Plan** when its `promotion_criteria` are met; its `acceptance_criteria` survive as executable acceptance criteria in the Plan
+- A **Roadmap** contains one or more **Phases**, each carrying `acceptance_criteria`
+- A **Phase** is promoted to a **Plan** when it is ready to execute; its `acceptance_criteria` survive as executable acceptance criteria in the Plan
 
 ## Architecture Map
 
 - Workflow runtime: `plugins/immune-brain/` is packaged exclusively for Pi through the root `package.json`; `plugins/immune-brain/.pi-extension/` owns TUI enrollment, automated assurance coordination, native subagent Review dispatch, and literal-user confirmation. `plugins/immune-brain/runtime/v4_runtime.ts` is the only shipped Bun + TypeScript CLI router, `plugins/immune-brain/runtime/kernel/` owns TaskIntent/TaskRecord reducers and storage, and `plugins/immune-brain/runtime/advisory_dispatch.ts` plus `work_probes.ts` build Pi `Agent` dispatch envelopes. `plugins/immune-brain/bin/imm-*` remains the stable wrapper surface; legacy v3 mutation routes are retired while explicit audit/validation projections remain read-only.
 - Assurance Kernel: Git-tracked TaskIntent sidecars define task authority, worktree-local TaskRecords hold execution state, and the Pi canary extension owns enrollment, evidence progression, QA/Review orchestration, confirmation, and completion. `plugins/immune-brain/runtime/commands/kernel.ts` is registered by `v4_runtime.ts` for intent author/validate, status, and explicit bounded legacy audit; `status`/`audit` are strictly read-only (zero journal writes) and the retired `migrate`/`readiness`/`journal` subcommands are rejected with zero writes.
 - Kernel mutation authority: `kernel/reducer_v2.ts`, `kernel/authority_port.ts`, `kernel/intent_token_registry.ts`, `kernel/application_v2.ts`, and `kernel/storage.ts` enforce the closed action vocabulary, opaque single-use authority, same-lock Intent reread, content-hash CAS, and recoverable transactions used by the Pi host integration.
-- Project format migration: historical State Ledger migration modules remain inside the separately bounded legacy runtime closure. The shipped v4 CLI rejects `imm-migrate`; current operation uses TaskIntent/TaskRecord storage and exposes historical state only through explicit bounded `imm-kernel audit --legacy`.
+- Project format migration: historical v3 migration modules remain inside the separately bounded legacy runtime closure. The shipped v4 CLI rejects `imm-migrate`; current operation uses TaskIntent/TaskRecord storage and exposes historical state only through explicit bounded `imm-kernel audit --legacy`.
 - Plan validation: `plugins/immune-brain/bin/imm-plan` routes through `v4_runtime.ts`; `--routing-status --json` returns the strict Git-owned routing-policy projection, while `<plan-path> [--json]` parses and semantically validates that explicit Plan with dynamic origin coverage. Both paths are read-only and advisory: Managed authority still requires a Git-tracked TaskIntent that passes `imm-kernel intent validate` plus Pi TUI enrollment. v3 Plan mutation remains retired.
 - Package ownership: root `package.json` is the sole Pi package/version manifest; repository docs are authoring sources while checked-in `plugins/immune-brain/dist/` is self-contained packaged output guarded by deterministic sync checks.
 - Skill contracts: `plugins/immune-brain/skills/*/SKILL.md` provides host-discoverable entries; `plugins/immune-brain/dist/*.md` provides detailed packaged instructions; the root `skills` symlink, `plugins/immune-brain/skills/registry.yaml`, `plugins/immune-brain/tests/skill-registry-consistency.test.ts`, and `docs/reference/planning-quality-gate.md` preserve role boundaries, registry metadata, and contract regression coverage.

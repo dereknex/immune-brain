@@ -89,8 +89,8 @@ and transitions live in the runtime bridge.
 Whether a change requires code review, UI review, or both is decided
 deterministically by `determineRequiredReviewGates` in
 [`runtime/imm_core.ts`](runtime/imm_core.ts) from the changed-file set — the
-runtime is the single source of truth. `imm-loop` consumes `imm-autowork`
-`review_required` snapshots and invokes the pending gate automatically; a
+runtime is the single source of truth. `imm-loop` consumes Kernel / Loop
+`review_required` projections and invokes the pending gate automatically; a
 recorded reviewer `pass` is keyed to the changed-files signature, so a later
 follow-up that alters the signature reopens the gate.
 

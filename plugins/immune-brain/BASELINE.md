@@ -106,11 +106,11 @@ always run sequentially.
   document-language instruction, then host or user-level explicit
   document-language preference, then English.
 - Do not translate or rename machine contracts: schema fields, enum values,
-  CLI flags, JSON keys, State Ledger fields, file paths, tool names, API names,
+  CLI flags, JSON keys, file paths, tool names, API names,
   and code identifiers stay literal.
 - Preserve `CONTEXT.md` canonical terms such as `Step`, `Plan`, `Spec`,
-  `Skill`, `Brainstorm`, `Executor`, `QA`, `Compounder`, `Learning`, `ADR`,
-  and `State Ledger`; add local-language explanations around them when helpful.
+  `Skill`, `Brainstorm`, `Executor`, `QA`, `Compounder`, `Learning`, and `ADR`;
+  add local-language explanations around them when helpful.
 
 ## Success Criteria
 

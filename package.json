@@ -2,7 +2,7 @@
   "name": "@immune-brain/agent-skills",
   "version": "2.2.0",
   "private": true,
-  "description": "Immune-Brain agent skill system with active context-mode tools",
+  "description": "Immune-Brain agent skill system",
   "author": "Immune-Brain Team",
   "license": "MIT",
   "keywords": [
@@ -15,9 +15,6 @@
     "extensions": [
       "./plugins/immune-brain/.pi-extension"
     ]
-  },
-  "dependencies": {
-    "context-mode": "*"
   },
   "devDependencies": {
     "zod": "^4.1.8"

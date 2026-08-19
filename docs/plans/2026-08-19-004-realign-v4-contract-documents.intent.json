@@ -1,0 +1,48 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "2026-08-19-004-realign-v4-contract-documents",
+  "owner": "user",
+  "goal": "Remove the three agent-facing contract contradictions that make every Managed task reconcile a retired v3 playbook against the live v4 Assurance Kernel path, and add the missing consistency guard that allowed the largest one to drift. Rewrite the packaged imm-loop contract around the Kernel path (imm_loop_action route/dispatch_role and imm_kernel_canary advance_assurance/submit_review/request_authorization), deleting the retired imm-autowork checkpoint loop and the State Ledger authority section, and fix the self-contradicting review-gate paragraph in the plugin README. Delete the ctx_* tool usage mandate from AGENTS.md and drop the unused context-mode dependency, because no host provides those tools and no settings file activates the package. Delete the three CONTEXT.md vocabulary entries that have no live contract reference (State Ledger, promotion_criteria, Activation Plan), correct the two dead Python references to the shipped Bun runtime paths, and synchronize the BASELINE canonical-term list across its packaged copies. Add a consistency guard binding each public skills/*/SKILL.md to its packaged dist/imm-*.md, which is the only copy relationship in the repository without a sync check and therefore the one that drifted. Roadmap-family vocabulary, Fast-Track, Domain Mapper, Plan boundary, and Scope pressure stay in place because live contracts still reference them; the v3 runtime closure deletion, docs archival, and enrollment-flow redesign are deliberately out of scope for this slice.",
+  "acceptance": [
+    {
+      "id": "acc-loop-contract-v4-alignment",
+      "assertion": "The packaged imm-loop contract no longer instructs agents to run the retired imm-autowork command or to treat the State Ledger as checkpoint authority, and instead describes the live Kernel path through imm_loop_action and imm_kernel_canary consistently with skills/imm-loop/SKILL.md; the plugin README no longer both claims imm-loop consumes imm-autowork and lists that command as retired.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/loop-contract-v4-alignment.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 30000,\n  \"max_output_bytes\": 65536\n}\n"
+    },
+    {
+      "id": "acc-host-tool-policy-removal",
+      "assertion": "AGENTS.md no longer mandates a context-mode tool hierarchy or any ctx_* tool that no configured host provides, and the unused context-mode dependency is removed from the package manifest and lockfile.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/host-tool-policy-contract.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 30000,\n  \"max_output_bytes\": 65536\n}\n"
+    },
+    {
+      "id": "acc-vocabulary-dead-reference-removal",
+      "assertion": "CONTEXT.md defines no vocabulary entry for State Ledger, promotion_criteria, or Activation Plan, references no imm-plan.py or activation_plan.py path, and every BASELINE copy states the same canonical-term list with State Ledger removed; Roadmap-family terms, Fast-Track, Domain Mapper, Plan boundary, and Scope pressure remain defined because live contracts still reference them.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/vocabulary-dead-reference-contract.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 30000,\n  \"max_output_bytes\": 65536\n}\n"
+    },
+    {
+      "id": "acc-skill-dist-consistency-guard",
+      "assertion": "A consistency guard fails when a public skills/*/SKILL.md and its packaged dist/imm-*.md disagree about the runtime surface they instruct agents to use, and that guard passes for all three public skills.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/skill-dist-consistency.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 30000,\n  \"max_output_bytes\": 65536\n}\n"
+    }
+  ],
+  "scope_hint": [
+    "AGENTS.md",
+    "CONTEXT.md",
+    "bun.lock",
+    "package.json",
+    "plugins/immune-brain/BASELINE.md",
+    "plugins/immune-brain/README.md",
+    "plugins/immune-brain/dist/BASELINE.md",
+    "plugins/immune-brain/dist/imm-loop.md",
+    "plugins/immune-brain/skills/BASELINE.md",
+    "plugins/immune-brain/skills/imm-brainstorm/SKILL.md",
+    "plugins/immune-brain/skills/imm-loop/SKILL.md",
+    "plugins/immune-brain/skills/imm-planner/SKILL.md",
+    "tests/host-tool-policy-contract.test.ts",
+    "tests/loop-contract-v4-alignment.test.ts",
+    "tests/skill-dist-consistency.test.ts",
+    "tests/vocabulary-dead-reference-contract.test.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}
