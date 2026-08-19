@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import { afterEach, describe, expect, it } from "bun:test";
 import { spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
@@ -56,10 +57,11 @@ describe("activation plan runtime surface", () => {
 		expect(names).not.toContain("imm-activation-plan");
 	});
 
-	it("imm-activation-plan is retired after v4 storage retirement", () => {
+	it("imm-activation-plan has no wrapper and is not a v4 command", () => {
+		expect(existsSync(ACTIVATION_WRAPPER)).toBe(false);
 		const result = spawnSync(
-			ACTIVATION_WRAPPER,
-			["--host", "imm-code-review"],
+			"bun",
+			[TS_RUNTIME, "cli", "imm-activation-plan", "--host", "imm-code-review"],
 			{ cwd: REPO_ROOT, encoding: "utf-8" },
 		);
 		// imm-activation-plan is not a v4 command at all.

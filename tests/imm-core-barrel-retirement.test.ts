@@ -46,13 +46,6 @@ const EXPECTED_REPOINTS: Record<string, Record<string, string>> = {
 		compounderPolicyForTask: "plan_core.ts",
 		PlanValidationError: "plan_core.ts",
 	},
-	"tests/fast-track-detection.test.ts": {
-		planSupportsFastTrack: "plan_core.ts",
-	},
-	"tests/loop-child-output-contract.test.ts": {
-		validateQaChildOutput: "loop_contract.ts",
-		validateReviewChildOutput: "loop_contract.ts",
-	},
 	"tests/immune-brain-config-runtime.test.ts": {
 		readImmuneBrainConfig: "agent_config.ts",
 		resolveImmuneBrainLocalPath: "agent_config.ts",

@@ -1,4 +1,1 @@
-#!/bin/sh
-set -eu
-PLUGIN_ROOT=$(cd "$(dirname "$0")/.." && pwd -P)
-exec bun "$PLUGIN_ROOT/runtime/v4_runtime.ts" cli imm-check-child-output "$@"
+imm-retired

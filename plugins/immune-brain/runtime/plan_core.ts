@@ -573,19 +573,6 @@ export function compounderPolicyForTask(
 	return "required";
 }
 
-/**
- * Fast-track eligibility for Managed Loop: a short Plan whose every Step can be
- * proven by running something. Verification is free prose, so an inline code
- * span is the available signal for "automated". A false positive only
- * compresses ceremony — evidence recording and QA closure still apply.
- */
-export function planSupportsFastTrack(
-	steps: Array<{ verification?: string | null }>,
-): boolean {
-	if (steps.length === 0 || steps.length > 2) return false;
-	return steps.every((step) => /`[^`]+`/.test(step.verification || ""));
-}
-
 export function buildSignaturePayload(normalizedPlan: NormalizedPlan): string {
 	// Keep cross-runtime parity: the legacy Plan signature predates Scope.
 	const payload = {
@@ -604,28 +591,6 @@ export function buildSignaturePayload(normalizedPlan: NormalizedPlan): string {
 		})),
 	};
 	return stableStringify(payload);
-}
-
-export function buildExecutionContractSignature(
-	normalizedPlan: NormalizedPlan,
-): string {
-	return createHash("sha256")
-		.update(
-			stableStringify({
-				summary: normalizedPlan.summary,
-				task: normalizedPlan.task,
-				steps: normalizedPlan.steps,
-			}),
-		)
-		.digest("hex");
-}
-
-export function buildLegacyPlanSignature(
-	normalizedPlan: NormalizedPlan,
-): string {
-	return createHash("sha256")
-		.update(buildSignaturePayload(normalizedPlan))
-		.digest("hex");
 }
 
 export function buildPlanSignature(normalizedPlan: NormalizedPlan): string {
