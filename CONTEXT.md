@@ -13,31 +13,31 @@ An ordered sequence of Steps decomposed from a spec by `imm-planner`. Lives unde
 _Avoid_: roadmap, backlog
 
 **Plan boundary**:
-The semantic boundary that explains why one Plan's Steps belong in the same executable slice. The rationale considers outcome cohesion plus authority, risk, verification, review, and rollback boundaries; it is not a fixed file, token, Step, compaction, or session limit.
+(historical — read-only: archived `roadmap-slice/v1` only; `plan_core.ts` retains parsing for backward compatibility) The semantic boundary that explains why one Plan's Steps belong in the same executable slice. The rationale considers outcome cohesion plus authority, risk, verification, review, and rollback boundaries; it is not a fixed file, token, Step, compaction, or session limit.
 _Avoid_: size cap, session budget
 
 **Scope pressure**:
-Advisory evidence that a proposed Plan may cross independent boundaries, such as broad domain, dependency, verification, or review surfaces. Planner records the evidence and a semantic retain-or-split rationale. Scope pressure never creates an automatic workflow or session gate.
+(historical — read-only: archived `roadmap-slice/v1` only; `plan_core.ts` retains parsing for backward compatibility) Advisory evidence that a proposed Plan may cross independent boundaries, such as broad domain, dependency, verification, or review surfaces. Planner records the evidence and a semantic retain-or-split rationale. Scope pressure never creates an automatic workflow or session gate.
 _Avoid_: hard file limit, context cutoff
 
 **Successor candidate**:
-Zero or one stable Roadmap Phase declared as the likely next planning target. It is non-authoritative metadata: declaration does not create or validate a Plan, record user approval, queue work, activate a Plan, or execute anything. Multiple sequential Plans may implement the same current Phase; each retains that Phase's same future `Successor candidate` until a later Plan advances to it.
+(historical — read-only: archived `roadmap-slice/v1` only; `plan_core.ts` retains parsing for backward compatibility) Zero or one stable Roadmap Phase declared as the likely next planning target. It is non-authoritative metadata: declaration does not create or validate a Plan, record user approval, queue work, activate a Plan, or execute anything. Multiple sequential Plans may implement the same current Phase; each retains that Phase's same future `Successor candidate` until a later Plan advances to it.
 _Avoid_: next active plan, automatic continuation, self-successor
 
 **Roadmap**:
-A durable phase map for large or multi-phase work that preserves future scope,
+(historical — read-only: archived `roadmap-slice/v1` prose Plans only; `plan_core.ts` retains parsing for backward compatibility) A durable phase map for large or multi-phase work that preserves future scope,
 deferred decisions, open questions, and promotion criteria. A Roadmap is not an
 executable Plan; each executable slice still needs its own Plan with
 independently closable Steps.
 _Avoid_: treating roadmap phases as completed Plan coverage
 
 **Phase**:
-A labeled segment within a Roadmap representing one promotable unit of future or current work. A Phase is not a Step; it carries its own goal, deferred scope, and gates. A Phase may require multiple sequential Plans when independent executable boundaries exist; only the currently promoted slice gets Steps, and final Phase review covers the explicit same-Phase continuation chain.
+(historical — read-only: archived `roadmap-slice/v1` prose Plans only; `plan_core.ts` retains parsing for backward compatibility) A labeled segment within a Roadmap representing one promotable unit of future or current work. A Phase is not a Step; it carries its own goal, deferred scope, and gates. A Phase may require multiple sequential Plans when independent executable boundaries exist; only the currently promoted slice gets Steps, and final Phase review covers the explicit same-Phase continuation chain.
 _Avoid_: one Plan per Phase, treating a Phase as a Step
 _Avoid_: milestone, stage, iteration
 
 **acceptance_criteria**:
-The per-phase behavior assertions that let a developer judge whether a Roadmap phase is done, without reading implementation code. Each entry describes observable behavior (e.g., "the export button produces a CSV with all visible columns"), not internal signals. Validation depth: L1 errors on a missing/empty field, L2 warns on recognizable non-behavioral patterns. Dual-track: `observable` (visual/interactive) or `verifiable` (named command + output). Required for 3+ phase Roadmaps; optional for single-phase or 2-phase work.
+(historical — read-only: archived `roadmap-slice/v1` prose Plans only; `plan_core.ts` retains parsing for backward compatibility) The per-phase behavior assertions that let a developer judge whether a Roadmap phase is done, without reading implementation code. Each entry describes observable behavior (e.g., "the export button produces a CSV with all visible columns"), not internal signals. Validation depth: L1 errors on a missing/empty field, L2 warns on recognizable non-behavioral patterns. Dual-track: `observable` (visual/interactive) or `verifiable` (named command + output). Required for 3+ phase Roadmaps; optional for single-phase or 2-phase work.
 _Avoid_: definition of done, checklist, test plan
 
 **Spec**:

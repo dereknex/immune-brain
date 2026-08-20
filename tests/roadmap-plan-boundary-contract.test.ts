@@ -17,6 +17,10 @@ function expectAll(text: string, fragments: string[]) {
 	for (const fragment of fragments) expect(text).toContain(fragment);
 }
 
+function expectNone(text: string, fragments: string[]) {
+	for (const fragment of fragments) expect(text).not.toContain(fragment);
+}
+
 describe("Roadmap Plan boundary authoring contract", () => {
 	it("keeps Plan granularity separate from outcome Step granularity", () => {
 		expectAll(PLANNER, [
@@ -35,20 +39,32 @@ describe("Roadmap Plan boundary authoring contract", () => {
 		]);
 	});
 
-	it("documents one non-authoritative linear successor candidate", () => {
+	it("retires unfollowable Roadmap-backed prose Plan instructions: v3 mutation retired, imm-plan is read-only, roadmap-slice is historical", () => {
+		// Retirement markers must be present
 		expectAll(PLANNER, [
-			"Plan contract: roadmap-slice/v1",
-			"zero or one `Successor candidate`",
-			"static, non-authoritative planning metadata",
-			"does not create, validate, approve, activate, queue, or execute another Plan",
+			"v3 prose Plan mutation is retired",
+			"read-only validator",
+			"(historical — read-only)",
+			"plan_core.ts",
 		]);
 
+		// Old instructive phrases that told agents to produce Roadmap-backed Plans must be gone
+		expectNone(PLANNER, [
+			"When a Spec contains a Roadmap or phase map and only part of it is ready to execute, add a current-slice banner to the Plan",
+			"Add a coverage matrix for compound requirements",
+			"New successor-ready slices may opt into `Plan contract: roadmap-slice/v1`",
+			"Deferred roadmap phases must keep enough information for a future planner to continue without replaying the conversation",
+			"Roadmap-backed Plans also record their executable boundary and deferred continuation",
+		]);
+
+		// CONTEXT still defines roadmap-family terms for parser compatibility, but marked historical (checked in vocabulary contract)
 		expectAll(CONTEXT, [
 			"**Successor candidate**:",
 			"Zero or one stable Roadmap Phase",
 			"does not create or validate a Plan",
 		]);
 
+		// Template retains fields for reading archived plans (parser compatibility), not for new production
 		expectAll(PLAN_TEMPLATE, [
 			"- Plan contract: <optional: roadmap-slice/v1",
 			"- Current phase:",
