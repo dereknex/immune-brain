@@ -1,0 +1,26 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "2026-08-20-004-realign-test-fixture-expiry-convention",
+  "owner": "user",
+  "goal": "Realign three test files to the far-future expiry convention the rest of the suite already uses, and add a guard so the same time bomb cannot be planted again. Twelve enrollment-authority and capability tests began failing with 'enrollment capability must have a future expiry' between two suite runs that bracketed no relevant code change: green at 2026-08-19T17:46Z, red at 2026-08-20T01:12Z. The cause is not a regression in any slice. tests/kernel-enrollment-authority.test.ts, tests/kernel-p2b0-boundary.test.ts, and tests/kernel-canary-eligibility.test.ts hardcode expires_at as 2026-08-20T00:00:00.000Z at six sites, and that instant simply passed. Twenty-one other test files already express the same idea as 2099-01-01T00:00:00.000Z, so this is three files deviating from an established convention rather than a missing convention. A full scan of hardcoded ISO timestamps under tests/ found no other future-dated fixture, so these six sites are the complete set; the many 2026-08-12 and 2020-01-01 values are deliberately in the past to exercise expiry rejection and must not be touched. Replace the six sites with the far-future value, then add a guard that fails when any hardcoded absolute timestamp in tests/ is in the future but less than two years ahead. The guard must not flag deliberately past fixtures, and it is deliberately time-relative: a fixture written too close to the present starts failing about two years before it would silently expire, which converts a dormant time bomb into an early warning. This is the temporal form of the lesson recorded for the 2026-08-20-001 reconciliation: a test that hardcodes today's answer eventually drifts away from it, and hardcoding a future date guarantees it stops being future.",
+  "acceptance": [
+    {
+      "id": "acc-expired-fixtures-realigned",
+      "assertion": "The six expires_at sites across kernel-enrollment-authority, kernel-p2b0-boundary, and kernel-canary-eligibility no longer use a near-term date, and the twelve previously failing enrollment authority and capability tests pass.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/kernel-enrollment-authority.test.ts\",\n    \"tests/kernel-p2b0-boundary.test.ts\",\n    \"tests/kernel-canary-eligibility.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 60000,\n  \"max_output_bytes\": 65536\n}\n"
+    },
+    {
+      "id": "acc-near-future-fixtures-guarded",
+      "assertion": "A guard fails when a hardcoded absolute timestamp under tests/ is in the future but less than two years ahead, passes on the far-future convention, and does not flag the deliberately past fixtures such as 2026-08-12 and 2020-01-01 that exercise expiry rejection.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/fixture-expiry-convention.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 60000,\n  \"max_output_bytes\": 65536\n}\n"
+    }
+  ],
+  "scope_hint": [
+    "tests/fixture-expiry-convention.test.ts",
+    "tests/kernel-canary-eligibility.test.ts",
+    "tests/kernel-enrollment-authority.test.ts",
+    "tests/kernel-p2b0-boundary.test.ts"
+  ],
+  "risk": "routine",
+  "revision": 1
+}

@@ -51,7 +51,7 @@ function baseInput(overrides: Record<string, unknown> = {}): CanaryEligibilityIn
 			reason: "user risk acceptance for bounded Pi canary",
 			actor: "user",
 			confirmation_ref: "pi-confirm-001",
-			expires_at: "2026-08-20T00:00:00.000Z",
+			expires_at: "2099-01-01T00:00:00.000Z",
 			nonce: "nonce-001",
 		},
 		now: "2026-08-11T12:00:00.000Z",
@@ -173,7 +173,7 @@ describe("enrollment capability", () => {
 		waiver_gate: "observation_window_days",
 		actor_id: "user",
 		confirmation_ref: "pi-confirm-001",
-		expires_at: "2026-08-20T00:00:00.000Z",
+		expires_at: "2099-01-01T00:00:00.000Z",
 		nonce: "nonce-001",
 	} as const;
 
@@ -192,10 +192,11 @@ describe("enrollment capability", () => {
 	});
 
 	test("expired capability rejected", () => {
-		const cap = registry.issue(binding, "2026-08-01T00:00:00.000Z");
-		expect(() =>
-			registry.inspect(cap, binding, Date.parse("2026-08-25T00:00:00.000Z")),
-		).toThrow(/expired/);
+		// deliberately past expiry to exercise rejection; far-future binding would not expire at 2026-08-25
+		const expiredBinding = { ...binding, expires_at: "2026-08-15T00:00:00.000Z" } as const;
+		const cap = registry.issue(expiredBinding, "2026-08-01T00:00:00.000Z");
+		const expiredAt = Date.parse(expiredBinding.expires_at) + 10 * 24 * 60 * 60 * 1000;
+		expect(() => registry.inspect(cap, expiredBinding, expiredAt)).toThrow(/expired/);
 	});
 
 	test("mismatched binding rejected", () => {
@@ -217,7 +218,7 @@ describe("enrollment capability", () => {
 				diff_hash: "d",
 				actor_id: "user",
 				confirmation_ref: "ref",
-				expires_at: "2026-08-20T00:00:00.000Z",
+				expires_at: "2099-01-01T00:00:00.000Z",
 				findings_digest: null,
 			},
 		);

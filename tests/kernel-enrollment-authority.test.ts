@@ -16,7 +16,7 @@ const binding: EnrollmentCapabilityBinding = {
 	waiver_gate: "observation_window_days",
 	actor_id: "user",
 	confirmation_ref: "pi-confirm-001",
-	expires_at: "2026-08-20T00:00:00.000Z",
+	expires_at: "2099-01-01T00:00:00.000Z",
 	nonce: "nonce-001",
 };
 
@@ -71,8 +71,12 @@ describe("enrollment authority registry", () => {
 
 	test("expired capability rejected with now injection", () => {
 		const { registry, issue } = makeRegistry();
-		const cap = issue(binding, "2026-08-01T00:00:00.000Z");
-		expect(() => registry.inspect(cap, binding, Date.parse("2026-08-25T00:00:00.000Z"))).toThrow(/expired/i);
+		// deliberately past expiry to exercise rejection without using a near-future bomb; must stay <2y future guard threshold (past is allowed)
+		const expiredBinding = { ...binding, expires_at: "2026-08-15T00:00:00.000Z" } as EnrollmentCapabilityBinding;
+		const cap = issue(expiredBinding, "2026-08-01T00:00:00.000Z");
+		// inspection time derived from expiry to avoid hardcoding a near-future absolute timestamp that the guard would flag
+		const expiredAt = Date.parse(expiredBinding.expires_at) + 10 * 24 * 60 * 60 * 1000;
+		expect(() => registry.inspect(cap, expiredBinding, expiredAt)).toThrow(/expired/i);
 	});
 
 	test("nonce replay rejected", () => {

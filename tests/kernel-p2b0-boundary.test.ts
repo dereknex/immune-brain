@@ -30,7 +30,7 @@ describe("P2B0 kernel surface boundary", () => {
 			waiver_gate: "observation_window_days",
 			actor_id: "user",
 			confirmation_ref: "ref",
-			expires_at: "2026-08-20T00:00:00.000Z",
+			expires_at: "2099-01-01T00:00:00.000Z",
 			nonce: "n",
 		});
 		expect(JSON.parse(JSON.stringify(cap))).toEqual({});
@@ -52,7 +52,7 @@ describe("P2B0 kernel surface boundary", () => {
 				diff_hash: "d",
 				actor_id: "user",
 				confirmation_ref: "ref",
-				expires_at: "2026-08-20T00:00:00.000Z",
+				expires_at: "2099-01-01T00:00:00.000Z",
 				findings_digest: null,
 			},
 		);
