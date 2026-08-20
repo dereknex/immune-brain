@@ -95,7 +95,7 @@ owned by chain D, which is why 3.3 does not overlap a chain-D step.
 
 | Wave | Lane A | Lane D | Lane E |
 | --- | --- | --- | --- |
-| 1 | 007 archive remaining specs | 008 realign IMMUNE.md | 009 forbid risk downgrade |
+| 1 | 007 archive remaining specs | ~~008 realign IMMUNE.md~~ done | ~~009 forbid risk downgrade~~ done |
 | 2 | 2.1b retention policy | 2.3 roadmap vocabulary | — |
 | 3 | — | — | 3.3 relocate confirmation |
 | 4 | — | 4.1 completion contract | 3.4 retire deadwood |
@@ -110,12 +110,43 @@ onward no slice can lower its own risk tier to reach a weaker completion path,
 including 3.3 itself.
 
 **Worktree protocol.** One `git worktree` per lane, as used for 009 through 012.
-Two costs learned there apply. First, a TaskRecord written inside a worktree
-lives in that worktree's state directory and is destroyed with it, so copy
-records back into the main repository before `git worktree remove` or the audit
-trail for that slice is lost. Second, each lane needs its own enrollment, so a
-three-lane wave costs three human gates plus three completions; that load, not
-scope conflict, is what caps practical lane width.
+Three costs apply, the third learned the hard way in wave 1.
+
+1. A TaskRecord written inside a worktree lives in that worktree's state
+   directory and is destroyed with it. Copy records back into the main
+   repository before `git worktree remove`.
+2. Each lane needs its own enrollment, so a three-lane wave costs three human
+   gates plus three completions. That load, not scope conflict, is what caps
+   practical lane width.
+3. **Initialise Kernel state in the worktree, and verify the workspace claim is
+   free, before starting work.** `.imm/tasks/`, `.imm/workspace.json` and
+   `.imm/journal.jsonl` are gitignored, so a fresh worktree has no Kernel state
+   at all and nothing forces enrollment to happen.
+
+### Wave 1 deviation: 008 and 009 landed outside Managed Path
+
+Recorded rather than silently absorbed. Both slices were implemented, merged to
+`main`, and are functionally correct — `IMMUNE.md` carries no retired reference
+and is stamped v4.0.0, the risk guard sits at `reducer_v2.ts:445` in the right
+place with real test coverage — but neither went through the Kernel. There is no
+TaskRecord for 007, 008 or 009 in `.imm/tasks/`, no journal entry, and no Kernel
+state in any of the three worktrees; a filesystem-wide search found nothing
+outside the intent sidecars. Every task from 001 to 006 has a record, so the
+absence is meaningful rather than a gap in how records are written. No
+enrollment, no QA, no Review, no completion decision. 009 in particular modifies
+the authority reducer, and it is the slice whose whole purpose was to stop a task
+weakening its own oversight.
+
+Root cause: `.imm/workspace.json` still named `2026-08-20-006-archive-terminal-specs`
+as `current_working` long after 006 completed and was archived.
+`application_v2.ts:212-216` refuses enrollment while the workspace is owned by
+another task, so enrolling in `main` was blocked, work moved to worktrees, and
+worktrees had no Kernel state to enrol into. The claim has been released to
+`null`, which is what `application_v2.ts:238-241` writes on a normal release.
+
+Releasing a claim is not currently reachable from the `imm-kernel` command
+surface, which offers only author, validate, status and audit. Worth a slice if
+this recurs.
 
 **Do not downgrade a declared tier to speed a merge.** Every wave-1 slice is
 `material` on purpose. Until 009 lands the reducer accepts a downgrade silently,

@@ -28,12 +28,40 @@ function taskPhase(taskId: string): string | null {
   } catch { return null; }
 }
 
+// Bookkeeping for the archival system itself. A commit touching only these is
+// never evidence that an intent was executed, even when the intent declares
+// them in scope_hint.
+const PLANNING_PATHS = [
+  /^docs\/plans\//,
+  /^docs\/reference\/v4-roadmap-taskintent-drafts\.md$/,
+  /^tests\/planning-artifact-archival\.test\.ts$/,
+];
+
+function isPlanningPath(path: string): boolean {
+  return PLANNING_PATHS.some((pattern) => pattern.test(path));
+}
+
+// Fallback for intents whose TaskRecord is missing. Committing a sidecar is a
+// precondition of enrollment, not proof of execution, so the commit that added
+// it cannot count: an intent is implemented once a later commit touches a
+// non-planning path the intent itself declared.
 function hasImplementingCommit(intentPath: string): boolean {
   try {
-    const out = execFileSync("git", ["log", "--all", "--oneline", "--", intentPath], { cwd: REPO_ROOT, encoding: "utf8" } as any) as unknown as string;
-    const lines = out.trim().split("\n").filter(Boolean);
-    // creation commit alone does not count as implementing evidence; require at least 2 commits or a commit beyond the initial add
-    return lines.length > 1;
+    const intent = JSON.parse(readFileSync(join(REPO_ROOT, intentPath), "utf8"));
+    const scope: string[] = (intent.scope_hint ?? []).filter(
+      (path: string) => !isPlanningPath(path),
+    );
+    if (scope.length === 0) return false;
+    const added = (execFileSync("git", ["log", "--reverse", "--format=%H", "--", intentPath], {
+      cwd: REPO_ROOT,
+      encoding: "utf8",
+    } as any) as unknown as string).trim().split("\n")[0];
+    if (!added) return false;
+    const out = execFileSync("git", ["log", "--oneline", `${added}..HEAD`, "--", ...scope], {
+      cwd: REPO_ROOT,
+      encoding: "utf8",
+    } as any) as unknown as string;
+    return out.trim().length > 0;
   } catch { return false; }
 }
 
