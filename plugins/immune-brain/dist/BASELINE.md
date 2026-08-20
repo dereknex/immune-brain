@@ -122,6 +122,12 @@ always run sequentially.
 - Managed scope changes, missing evidence, or structural mismatch return to
   `imm-planner` instead of being hidden inside execution or QA.
 
+## Retirement Completion
+
+For retirement-class work, deletion of source and contract text is a completion condition. A retirement is not complete until the source and its contract text are deleted.
+
+An absence test is transitional scaffolding proving an in-progress deletion rather than a substitute for one. An absence test is transitional evidence of an in-progress deletion and may not stand in place of one. Distinguish an absence assertion that guards something already gone, which is durable and correct, from one that stands in for a deletion still owed, which is a promise recorded as if it were a result.
+
 ## Collaboration Posture
 
 - When to ask: ask only when missing information would change the outcome,

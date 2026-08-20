@@ -100,6 +100,12 @@ rehearsal stays within host setup and execution ceilings.
 
 planner ensemble is advisory-only and derives candidates from
 `workflow_models.planner_ensemble`; final Spec and Plan authority stays here.
+
+## Retirement Completion Contract
+
+For retirement-class work, deletion of source and contract text is a completion condition. A retirement that routes the command to a retirement wall, pins the absence with test assertions, and leaves the source in the tree is not complete. A retirement is not complete until the source and its contract text are deleted.
+
+An absence test is transitional scaffolding proving an in-progress deletion rather than a substitute for one. An absence test is transitional evidence of an in-progress deletion and may not stand in place of one. It proves a deletion in progress, not a completed result. Distinguish an absence assertion that guards something already gone, which is durable and correct, from one that stands in for a deletion still owed, which is a promise recorded as if it were a result.
 Architecture exploration and advisory review use the internal Loop bridge's
 read-only `arch-explorer` and `advisory-reviewer` roles. They can supply
 candidates, evidence, and decision criteria, but cannot write this Spec/Plan or
