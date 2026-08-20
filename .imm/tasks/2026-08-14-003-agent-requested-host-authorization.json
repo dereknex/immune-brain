@@ -1,0 +1,497 @@
+{
+  "contract": "assurance_kernel/task_record/v2",
+  "task_id": "2026-08-14-003-agent-requested-host-authorization",
+  "intent_revision": 1,
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "2026-08-14-003-agent-requested-host-authorization",
+    "goal": "Let the parent Agent open the existing host-derived literal-user confirmation for the unique next canary authority wait, so users click one confirm dialog instead of typing /imm-canary-authorize and then confirming again, without accepting caller-supplied authority fields or changing native Review trust.",
+    "acceptance": [
+      {
+        "id": "acc-closed-request-authorization-schema",
+        "assertion": "The closed imm_kernel_canary tool exposes request_authorization as a no-argument orchestration op in addition to existing ordinary and assurance ops, while privileged reducer kinds remain structurally absent from the schema.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/pi-canary-work-extension.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 180000,\n  \"max_output_bytes\": 262144\n}\n"
+      },
+      {
+        "id": "acc-host-derived-unique-confirm",
+        "assertion": "request_authorization derives at most one existing authorize operation from the Kernel projection and session-local pending Review verdict, opens exactly one shared ctx.ui.confirm dialog whose summary is host-built, and on affirmation applies through the existing /imm-canary-authorize path without accepting operation, finding, approval, or capability fields from the caller.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/pi-canary-user-authority.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 180000,\n  \"max_output_bytes\": 262144\n}\n"
+      },
+      {
+        "id": "acc-zero-write-authorization-failures",
+        "assertion": "Cancel, timeout, abort, non-TUI, missing unique legal operation, and in-flight duplicate request_authorization paths perform zero Kernel writes and return only cancelled or blocked.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/pi-canary-user-authority.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 180000,\n  \"max_output_bytes\": 262144\n}\n"
+      },
+      {
+        "id": "acc-skill-routes-to-request-authorization",
+        "assertion": "Source and packaged imm-canary-work contracts instruct the Agent to call request_authorization after awaiting_user or a Review-ready follow-up, keep /imm-canary-authorize as the manual recovery surface, and do not tell the Agent to ask the user to type the authorize command as the primary path.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/imm-canary-work-contract.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 262144\n}\n"
+      }
+    ],
+    "scope_hint": [
+      "docs/specs/agent-requested-host-authorization.spec.md",
+      "docs/plans/2026-08-14-003-agent-requested-host-authorization.intent.json",
+      "plugins/immune-brain/.pi-extension/imm-canary-work.ts",
+      "plugins/immune-brain/skills/imm-canary-work/SKILL.md",
+      "plugins/immune-brain/dist/imm-canary-work.md",
+      "docs/reference/subagent-dispatch-protocol.md",
+      "tests/pi-canary-work-extension.test.ts",
+      "tests/pi-canary-user-authority.test.ts",
+      "tests/imm-canary-work-contract.test.ts"
+    ],
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/2026-08-14-003-agent-requested-host-authorization.intent.json",
+    "revision": 1,
+    "content_hash": "sha256:d96eb1fc5ccd63d835e3d76058934b722bfabe9692ea39b2ace03bcef6301f14"
+  },
+  "phase": "done",
+  "baseline": "sha256:d96eb1fc5ccd63d835e3d76058934b722bfabe9692ea39b2ace03bcef6301f14",
+  "evidence": [
+    {
+      "id": "evidence-record_evidence:2026-08-14-003-agent-requested-host-authorization:2026-08-14T08:44:15.714Z",
+      "acceptance_id": "acc-closed-request-authorization-schema",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:d96eb1fc5ccd63d835e3d76058934b722bfabe9692ea39b2ace03bcef6301f14",
+      "diff_hash": "sha256:4bbda45e7435f9cb7c8e69663949425ce72cd345c1f31dbb9497ad247d90e850",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "Fresh focused extension suite passed. imm_kernel_canary schema includes request_authorization as a no-argument op; privileged reducer kinds remain absent. 61/61 focused tests and 1107/1107 full suite passed."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-14-003-agent-requested-host-authorization:2026-08-14T08:44:20.898Z",
+      "acceptance_id": "acc-host-derived-unique-confirm",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:d96eb1fc5ccd63d835e3d76058934b722bfabe9692ea39b2ace03bcef6301f14",
+      "diff_hash": "sha256:4bbda45e7435f9cb7c8e69663949425ce72cd345c1f31dbb9497ad247d90e850",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "Fresh user-authority and extension tests prove request_authorization derives record-review-verdict or resolve-user-decision without caller fields, opens exactly one shared confirm dialog with host-built Finding/Verdict summaries, and applies through the existing authorize path."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-14-003-agent-requested-host-authorization:2026-08-14T08:44:26.741Z",
+      "acceptance_id": "acc-zero-write-authorization-failures",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:d96eb1fc5ccd63d835e3d76058934b722bfabe9692ea39b2ace03bcef6301f14",
+      "diff_hash": "sha256:4bbda45e7435f9cb7c8e69663949425ce72cd345c1f31dbb9497ad247d90e850",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "Fresh request_authorization tests cover cancel, abort, non-TUI, missing unique operation, and in-flight duplicate paths: all return cancelled or blocked, open at most one dialog, and leave TaskRecord/claim bytes unchanged."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-14-003-agent-requested-host-authorization:2026-08-14T08:44:31.488Z",
+      "acceptance_id": "acc-skill-routes-to-request-authorization",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:d96eb1fc5ccd63d835e3d76058934b722bfabe9692ea39b2ace03bcef6301f14",
+      "diff_hash": "sha256:4bbda45e7435f9cb7c8e69663949425ce72cd345c1f31dbb9497ad247d90e850",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "Fresh imm-canary-work contract tests pass: source and packaged docs instruct the Agent to call request_authorization after awaiting_user, keep /imm-canary-authorize as manual recovery, and do not tell the Agent to type the authorize command as the primary path."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-14-003-agent-requested-host-authorization:2026-08-14T09:04:29.275Z",
+      "acceptance_id": "acc-closed-request-authorization-schema",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:d96eb1fc5ccd63d835e3d76058934b722bfabe9692ea39b2ace03bcef6301f14",
+      "diff_hash": "sha256:49393a82fb95d59d7e6a8b736d49939d0f230e8f870e14c0d7c90565dfe7589c",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "Post-commit fresh verification: focused extension/schema suite passed; request_authorization remains a closed no-argument orchestration op and privileged reducer kinds remain absent. Focused aggregate 51/51 and full suite 1107/1107 passed."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-14-003-agent-requested-host-authorization:2026-08-14T09:04:38.717Z",
+      "acceptance_id": "acc-host-derived-unique-confirm",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:d96eb1fc5ccd63d835e3d76058934b722bfabe9692ea39b2ace03bcef6301f14",
+      "diff_hash": "sha256:49393a82fb95d59d7e6a8b736d49939d0f230e8f870e14c0d7c90565dfe7589c",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "Post-commit fresh user-authority and extension tests prove host-derived record-review-verdict/resolve-user-decision selection, exactly one shared host-built ctx.ui.confirm, and shared authorize apply without caller-supplied authority fields."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-14-003-agent-requested-host-authorization:2026-08-14T09:04:45.876Z",
+      "acceptance_id": "acc-zero-write-authorization-failures",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:d96eb1fc5ccd63d835e3d76058934b722bfabe9692ea39b2ace03bcef6301f14",
+      "diff_hash": "sha256:49393a82fb95d59d7e6a8b736d49939d0f230e8f870e14c0d7c90565dfe7589c",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "Post-commit fresh tests cover cancel, abort, non-TUI, missing unique operation, and duplicate in-flight authorization; all return cancelled/blocked, open at most one dialog, and preserve TaskRecord/claim authority bytes."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-14-003-agent-requested-host-authorization:2026-08-14T09:04:52.816Z",
+      "acceptance_id": "acc-skill-routes-to-request-authorization",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:d96eb1fc5ccd63d835e3d76058934b722bfabe9692ea39b2ace03bcef6301f14",
+      "diff_hash": "sha256:49393a82fb95d59d7e6a8b736d49939d0f230e8f870e14c0d7c90565dfe7589c",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "Post-commit fresh contract tests confirm source and packaged Skill docs route awaiting_user/Review-ready follow-ups to request_authorization and retain typed /imm-canary-authorize only as manual recovery. Dist sync and git diff checks passed."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-14-003-agent-requested-host-authorization:2026-08-14T09:19:11.474Z",
+      "acceptance_id": "acc-closed-request-authorization-schema",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:d96eb1fc5ccd63d835e3d76058934b722bfabe9692ea39b2ace03bcef6301f14",
+      "diff_hash": "sha256:c6a79e6a5331841e679b168860ebf84d61cb669ccbe465b0d43d7eca371fe65e",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "Fresh current-snapshot verification after stale-verdict and review follow-up fixes: closed no-argument request_authorization schema remains enforced. Focused 52/52 and full suite 1108/1108 passed."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-14-003-agent-requested-host-authorization:2026-08-14T09:19:20.434Z",
+      "acceptance_id": "acc-host-derived-unique-confirm",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:d96eb1fc5ccd63d835e3d76058934b722bfabe9692ea39b2ace03bcef6301f14",
+      "diff_hash": "sha256:c6a79e6a5331841e679b168860ebf84d61cb669ccbe465b0d43d7eca371fe65e",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "Fresh current-snapshot tests prove host-derived unique operation selection, projection/TaskRecord revision equality before derivation, exactly one shared host-built confirm, and no caller-supplied authority fields."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-14-003-agent-requested-host-authorization:2026-08-14T09:19:28.939Z",
+      "acceptance_id": "acc-zero-write-authorization-failures",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:d96eb1fc5ccd63d835e3d76058934b722bfabe9692ea39b2ace03bcef6301f14",
+      "diff_hash": "sha256:c6a79e6a5331841e679b168860ebf84d61cb669ccbe465b0d43d7eca371fe65e",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "Fresh current-snapshot tests compare exact TaskRecord/backend-claim bytes for missing operation, non-TUI, cancel, abort, timeout, duplicate in-flight, revision race, and stale Review verdict rejection; stale advisory slot is discarded without authority writes."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-14-003-agent-requested-host-authorization:2026-08-14T09:19:40.416Z",
+      "acceptance_id": "acc-skill-routes-to-request-authorization",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:d96eb1fc5ccd63d835e3d76058934b722bfabe9692ea39b2ace03bcef6301f14",
+      "diff_hash": "sha256:c6a79e6a5331841e679b168860ebf84d61cb669ccbe465b0d43d7eca371fe65e",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "Fresh current-snapshot contract tests confirm Agent routing to request_authorization and typed authorize only as manual recovery. Full 1108/1108, dist sync, and diff checks passed."
+    }
+  ],
+  "findings": [
+    {
+      "id": "qa-evidence-freshness-f22430feb45455c0",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": null,
+      "source": "review",
+      "review_round": 1,
+      "summary": "executor evidence must be refreshed in working phase for acceptance ids: acc-closed-request-authorization-schema,acc-host-derived-unique-confirm,acc-zero-write-authorization-failures,acc-skill-routes-to-request-authorization"
+    },
+    {
+      "id": "qa-evidence-freshness-412a0dbd6e0f7a4e",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": null,
+      "source": "review",
+      "review_round": 2,
+      "summary": "executor evidence must be refreshed in working phase for acceptance ids: acc-closed-request-authorization-schema,acc-host-derived-unique-confirm,acc-zero-write-authorization-failures,acc-skill-routes-to-request-authorization"
+    },
+    {
+      "id": "request_rework:2026-08-14-003-agent-requested-host-authorization:2026-08-14T09:18:32.734Z:user-decision",
+      "kind": "unresolved_user_decision",
+      "status": "resolved",
+      "acceptance_id": null,
+      "source": "kernel",
+      "review_round": 2,
+      "summary": "Review returned this acceptance boundary twice; a user decision is required."
+    }
+  ],
+  "approvals": [
+    {
+      "id": "approval-qa-ade34245",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:d96eb1fc5ccd63d835e3d76058934b722bfabe9692ea39b2ace03bcef6301f14",
+      "diff_hash": "sha256:4bbda45e7435f9cb7c8e69663949425ce72cd345c1f31dbb9497ad247d90e850",
+      "actor_id": "qa-host-1973e4e3",
+      "summary": "all 4 fixed verification descriptor(s) passed"
+    },
+    {
+      "id": "approval-qa-b3206d39",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:d96eb1fc5ccd63d835e3d76058934b722bfabe9692ea39b2ace03bcef6301f14",
+      "diff_hash": "sha256:49393a82fb95d59d7e6a8b736d49939d0f230e8f870e14c0d7c90565dfe7589c",
+      "actor_id": "qa-host-cf0e5e21",
+      "summary": "all 4 fixed verification descriptor(s) passed"
+    },
+    {
+      "id": "approval-qa-7ffcee78",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:d96eb1fc5ccd63d835e3d76058934b722bfabe9692ea39b2ace03bcef6301f14",
+      "diff_hash": "sha256:c6a79e6a5331841e679b168860ebf84d61cb669ccbe465b0d43d7eca371fe65e",
+      "actor_id": "qa-host-99612d2f",
+      "summary": "all 4 fixed verification descriptor(s) passed"
+    },
+    {
+      "id": "approval-review-19ca2067",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:d96eb1fc5ccd63d835e3d76058934b722bfabe9692ea39b2ace03bcef6301f14",
+      "diff_hash": "sha256:c6a79e6a5331841e679b168860ebf84d61cb669ccbe465b0d43d7eca371fe65e",
+      "actor_id": "native-review-c502f443-1bc2-4f6",
+      "summary": "Immutable bundle and base blobs verified; authorization race handling and zero-write failure coverage satisfy the stated acceptance assertions."
+    }
+  ],
+  "history": [
+    {
+      "id": "record_evidence:2026-08-14-003-agent-requested-host-authorization:2026-08-14T08:44:15.714Z",
+      "at": "2026-08-14T08:44:15.714Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-closed-request-authorization-schema\naction_v2_sha256:912c0392ed222fb04d029335a0fd592b181ab7c7fd7dc01f360303e915f12c43"
+    },
+    {
+      "id": "record_evidence:2026-08-14-003-agent-requested-host-authorization:2026-08-14T08:44:20.898Z",
+      "at": "2026-08-14T08:44:20.898Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-host-derived-unique-confirm\naction_v2_sha256:f2de99699a72da72166dae961a5fea5725d9e1a0e7ea5e04c30c6e56034e5d47"
+    },
+    {
+      "id": "record_evidence:2026-08-14-003-agent-requested-host-authorization:2026-08-14T08:44:26.741Z",
+      "at": "2026-08-14T08:44:26.741Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-zero-write-authorization-failures\naction_v2_sha256:32aad1a8676353c264cfaee3adc36d698bb961ae2aafa886a19ec29f16eda56b"
+    },
+    {
+      "id": "record_evidence:2026-08-14-003-agent-requested-host-authorization:2026-08-14T08:44:31.488Z",
+      "at": "2026-08-14T08:44:31.488Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-skill-routes-to-request-authorization\naction_v2_sha256:23593fd41a96b77174cacbefcec3a6106bc8e1a1c58f7e9485f1e9ab95d75a7c"
+    },
+    {
+      "id": "submit_review:2026-08-14-003-agent-requested-host-authorization:2026-08-14T08:45:17.981Z",
+      "at": "2026-08-14T08:45:17.981Z",
+      "type": "submit_review",
+      "from_phase": "working",
+      "to_phase": "review",
+      "reason": "action_v2_sha256:58996e9becbf0dbaa4981b57947e779c58aba6e439e4eea7b854f90a2c5e213e"
+    },
+    {
+      "id": "record_approval:2026-08-14-003-agent-requested-host-authorization:2026-08-14T08:45:36.352Z",
+      "at": "2026-08-14T08:45:36.352Z",
+      "type": "record_approval",
+      "from_phase": "review",
+      "to_phase": "review",
+      "reason": "approval-qa-ade34245\naction_v2_sha256:3588d104cd98112d2701afa8ab89282c9cb69a17909cd8c108a896b100351e6d",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "qa-host-1973e4e3",
+        "confirmation_ref": "pi-confirm-7e3df107e7ba5870",
+        "issued_at": "2026-08-14T08:45:36.353Z",
+        "expires_at": "2026-08-14T08:55:36.353Z"
+      }
+    },
+    {
+      "id": "request_rework:2026-08-14-003-agent-requested-host-authorization:2026-08-14T09:02:43.531Z",
+      "at": "2026-08-14T09:02:43.531Z",
+      "type": "request_rework",
+      "from_phase": "review",
+      "to_phase": "working",
+      "reason": "review_round_1\naction_v2_sha256:f85f02264a088b4c7fb3aeb235a4283858c156e8a305cac58f8ee4c00c4914bf",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "qa-host-d4b49f16",
+        "confirmation_ref": "pi-confirm-2c1e823bca5e90b7",
+        "issued_at": "2026-08-14T09:02:43.531Z",
+        "expires_at": "2026-08-14T09:12:43.531Z"
+      }
+    },
+    {
+      "id": "record_evidence:2026-08-14-003-agent-requested-host-authorization:2026-08-14T09:04:29.275Z",
+      "at": "2026-08-14T09:04:29.275Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-closed-request-authorization-schema\naction_v2_sha256:ef65ff54d65dfc8395657298843dd191d4fb7ef32afa8a189ca84727ce247a3e"
+    },
+    {
+      "id": "record_evidence:2026-08-14-003-agent-requested-host-authorization:2026-08-14T09:04:38.717Z",
+      "at": "2026-08-14T09:04:38.717Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-host-derived-unique-confirm\naction_v2_sha256:8abf48a24300715c04cdfae2b9dac3ca46520f5a0856ce25339c52862ce8d053"
+    },
+    {
+      "id": "record_evidence:2026-08-14-003-agent-requested-host-authorization:2026-08-14T09:04:45.876Z",
+      "at": "2026-08-14T09:04:45.876Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-zero-write-authorization-failures\naction_v2_sha256:e4de6a4ff999a058e6d38f994e33946445d299ce381b78b2b39c0d336008fe7b"
+    },
+    {
+      "id": "record_evidence:2026-08-14-003-agent-requested-host-authorization:2026-08-14T09:04:52.816Z",
+      "at": "2026-08-14T09:04:52.816Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-skill-routes-to-request-authorization\naction_v2_sha256:0b784b8dacd5eda826874ab09ccf862f01e8121ef1c9a067f6c064e19dea2daf"
+    },
+    {
+      "id": "submit_review:2026-08-14-003-agent-requested-host-authorization:2026-08-14T09:05:05.344Z",
+      "at": "2026-08-14T09:05:05.344Z",
+      "type": "submit_review",
+      "from_phase": "working",
+      "to_phase": "review",
+      "reason": "action_v2_sha256:b13067518c0386ee2ca88d051cda6d5f5d068dbd15d407464624de0c0ff79109"
+    },
+    {
+      "id": "record_approval:2026-08-14-003-agent-requested-host-authorization:2026-08-14T09:05:18.977Z",
+      "at": "2026-08-14T09:05:18.977Z",
+      "type": "record_approval",
+      "from_phase": "review",
+      "to_phase": "review",
+      "reason": "approval-qa-b3206d39\naction_v2_sha256:5220fd045663df0d376bfeb11257ca90b1b78d2148eab84bc821c6b3dc5e30fa",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "qa-host-cf0e5e21",
+        "confirmation_ref": "pi-confirm-f2c394918bea7a1c",
+        "issued_at": "2026-08-14T09:05:18.978Z",
+        "expires_at": "2026-08-14T09:15:18.978Z"
+      }
+    },
+    {
+      "id": "resolve_finding:2026-08-14-003-agent-requested-host-authorization:2026-08-14T09:06:05.503Z",
+      "at": "2026-08-14T09:06:05.503Z",
+      "type": "resolve_finding",
+      "from_phase": "review",
+      "to_phase": "review",
+      "reason": "qa-evidence-freshness-f22430feb45455c0\naction_v2_sha256:28a3545971e99aabf4486d42d82a6949e0edd8151eef6dc9949df906cd13b4ad"
+    },
+    {
+      "id": "request_rework:2026-08-14-003-agent-requested-host-authorization:2026-08-14T09:18:32.734Z",
+      "at": "2026-08-14T09:18:32.734Z",
+      "type": "request_rework",
+      "from_phase": "review",
+      "to_phase": "working",
+      "reason": "review_round_2\naction_v2_sha256:03a56c461c1d649534a7318838e0ce7f9698d683c7a5beb9fc1a44fd6b2cd852",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "qa-host-9dbcbaff",
+        "confirmation_ref": "pi-confirm-d1d4f98130d96058",
+        "issued_at": "2026-08-14T09:18:32.735Z",
+        "expires_at": "2026-08-14T09:28:32.735Z"
+      }
+    },
+    {
+      "id": "record_evidence:2026-08-14-003-agent-requested-host-authorization:2026-08-14T09:19:11.474Z",
+      "at": "2026-08-14T09:19:11.474Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-closed-request-authorization-schema\naction_v2_sha256:05e88444860124a76823a3d74a0f730d0cbe7d7f6667d2dd4e7f7f2046fbe7a9"
+    },
+    {
+      "id": "record_evidence:2026-08-14-003-agent-requested-host-authorization:2026-08-14T09:19:20.434Z",
+      "at": "2026-08-14T09:19:20.434Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-host-derived-unique-confirm\naction_v2_sha256:f8b0b2e89366845dce4b694119e552027f39f4ebb06267f76ff2ad7667529a03"
+    },
+    {
+      "id": "record_evidence:2026-08-14-003-agent-requested-host-authorization:2026-08-14T09:19:28.939Z",
+      "at": "2026-08-14T09:19:28.939Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-zero-write-authorization-failures\naction_v2_sha256:693d2be1e99765dd80eed67555c6161b73d18b54d88c12037574be7a0b0f62a8"
+    },
+    {
+      "id": "record_evidence:2026-08-14-003-agent-requested-host-authorization:2026-08-14T09:19:40.416Z",
+      "at": "2026-08-14T09:19:40.416Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-skill-routes-to-request-authorization\naction_v2_sha256:b57776ad1dd3d8005d48e38e418f3db853db575a6040c6e748dd04634298addf"
+    },
+    {
+      "id": "resolve_finding:2026-08-14-003-agent-requested-host-authorization:2026-08-14T09:19:50.417Z",
+      "at": "2026-08-14T09:19:50.417Z",
+      "type": "resolve_finding",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "qa-evidence-freshness-412a0dbd6e0f7a4e\naction_v2_sha256:d59f784ef858f90746d16e2e311964d316ad366bf1e95da685be1ffb2b02d4c7"
+    },
+    {
+      "id": "resolve_user_decision:2026-08-14-003-agent-requested-host-authorization:2026-08-14T09:20:20.401Z",
+      "at": "2026-08-14T09:20:20.401Z",
+      "type": "resolve_user_decision",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "request_rework:2026-08-14-003-agent-requested-host-authorization:2026-08-14T09:18:32.734Z:user-decision: continue after literal-user review of the rework limit\naction_v2_sha256:0c6ca1c83df9a99b32e76de56b17d291c92d12dd2d36b87353f2ce622a3b3ea8",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-757733cd28bc0a42",
+        "issued_at": "2026-08-14T09:20:20.401Z",
+        "expires_at": "2026-08-14T09:30:20.401Z"
+      }
+    },
+    {
+      "id": "submit_review:2026-08-14-003-agent-requested-host-authorization:2026-08-14T09:20:33.510Z",
+      "at": "2026-08-14T09:20:33.510Z",
+      "type": "submit_review",
+      "from_phase": "working",
+      "to_phase": "review",
+      "reason": "action_v2_sha256:d552440c5ea147b4181262d4e59cb6fa22bccfda66e48197e81a1ac5804c67ca"
+    },
+    {
+      "id": "record_approval:2026-08-14-003-agent-requested-host-authorization:2026-08-14T09:20:53.661Z",
+      "at": "2026-08-14T09:20:53.661Z",
+      "type": "record_approval",
+      "from_phase": "review",
+      "to_phase": "review",
+      "reason": "approval-qa-7ffcee78\naction_v2_sha256:5a0512ec0012a0918c72f82fdaeae28a547008a9e5fa0244a8a064dc052f4d24",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "qa-host-99612d2f",
+        "confirmation_ref": "pi-confirm-15a8c202b99e8bba",
+        "issued_at": "2026-08-14T09:20:53.662Z",
+        "expires_at": "2026-08-14T09:30:53.662Z"
+      }
+    },
+    {
+      "id": "record_approval:2026-08-14-003-agent-requested-host-authorization:2026-08-14T09:22:38.299Z",
+      "at": "2026-08-14T09:22:38.299Z",
+      "type": "record_approval",
+      "from_phase": "review",
+      "to_phase": "review",
+      "reason": "approval-review-19ca2067\naction_v2_sha256:fc897db31a0ca6e1673cff30cc5423b2691940028d7dabf63c2a4d7d5e0e9b55",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "native-review-c502f443-1bc2-4f6",
+        "confirmation_ref": "pi-confirm-9084ca82e8110ef1",
+        "issued_at": "2026-08-14T09:22:38.300Z",
+        "expires_at": "2026-08-14T09:32:38.300Z"
+      }
+    },
+    {
+      "id": "complete:2026-08-14-003-agent-requested-host-authorization:2026-08-14T09:22:46.964Z",
+      "at": "2026-08-14T09:22:46.964Z",
+      "type": "complete",
+      "from_phase": "review",
+      "to_phase": "done",
+      "reason": "action_v2_sha256:fd9ebc2bed13e8a0f6c13f261e7997322cceb7133f0f5bcf6ebd027ae0247475"
+    }
+  ]
+}

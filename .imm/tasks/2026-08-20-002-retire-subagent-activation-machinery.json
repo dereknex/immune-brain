@@ -1,0 +1,180 @@
+{
+  "contract": "assurance_kernel/task_record/v2",
+  "task_id": "2026-08-20-002-retire-subagent-activation-machinery",
+  "intent_revision": 1,
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "2026-08-20-002-retire-subagent-activation-machinery",
+    "goal": "Retire the unwired [subagent_activation] machinery while preserving the standing authorization wrapped around it. AGENTS.md tells every agent here that when [subagent_activation] resolves to auto and the CLI activation plan returns bounded advisory candidates, the project authorizes readonly advisory subagents. Both preconditions are absent: nothing resolves [subagent_activation], since runtime/agent_config.ts has zero production callers across runtime/ and .pi-extension/ and is referenced only by tests; and the named CLI was bin/imm-activation-plan, deleted by 2026-08-19-012. The conditional shell is false but the inner clause is not -- authorizing readonly advisory subagents unless the user asks for solo work is genuine guidance an agent can act on with no resolver. So neither wire the resolver nor drop the authorization: restate the authorization directly and delete the machinery beneath it. Rewrite the clause in AGENTS.md and the identical clause in the bootstrap AGENTS.md template as an unconditional authorization that still defers to host tool policy, strip the policy language from dist/imm-planner.md and dist/imm-brainstorm.md, and delete runtime/agent_config.ts. Documentation reach is deliberately limited to those four binding contracts; docs/reference/, docs/specs/, and docs/solutions/ keep their historical narrative and are out of scope. The deletion cascades through three earlier slices' artifacts, which must be reconciled rather than left asserting a module that no longer exists: the 005 symbol-to-module map in tests/imm-core-barrel-retirement.test.ts, the 006 rehome proof in tests/agent-config-rehome.test.ts, and the 008 surviving-module coverage table in tests/v3-island-deletion.test.ts. No test currently guards the AGENTS.md policy text, so the new focused test must establish that guard rather than inherit one.",
+    "acceptance": [
+      {
+        "id": "acc-machinery-absent",
+        "assertion": "runtime/agent_config.ts does not exist, no production or test code resolves a [subagent_activation] setting, and none of AGENTS.md, the bootstrap AGENTS.md template, dist/imm-planner.md, or dist/imm-brainstorm.md conditions behavior on [subagent_activation] or on the deleted activation-plan CLI.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/subagent-activation-contract-retirement.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 60000,\n  \"max_output_bytes\": 65536\n}\n"
+      },
+      {
+        "id": "acc-authorization-preserved",
+        "assertion": "AGENTS.md and the bootstrap AGENTS.md template still authorize readonly advisory subagents and parallel probes unless the user asks for solo work, stated without any precondition, and still record that the instruction does not override host tool policy.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/subagent-activation-contract-retirement.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 60000,\n  \"max_output_bytes\": 65536\n}\n"
+      },
+      {
+        "id": "acc-prior-slice-artifacts-reconciled",
+        "assertion": "The full suite passes, proving the 005 symbol map, the 006 rehome test, and the 008 surviving-module coverage table were reconciled with the deletion rather than left asserting a module that no longer exists.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 180000,\n  \"max_output_bytes\": 262144\n}"
+      }
+    ],
+    "scope_hint": [
+      "AGENTS.md",
+      "plugins/immune-brain/dist/imm-brainstorm.md",
+      "plugins/immune-brain/dist/imm-planner.md",
+      "plugins/immune-brain/runtime/agent_config.ts",
+      "plugins/immune-brain/runtime/bootstrap-templates/AGENTS.md",
+      "tests/advisory-dispatch-core.test.ts",
+      "tests/agent-config-rehome.test.ts",
+      "tests/imm-core-barrel-retirement.test.ts",
+      "tests/immune-brain-config-runtime.test.ts",
+      "tests/pi-only-runtime-host-contract.test.ts",
+      "tests/planner-ensemble-contract.test.ts",
+      "tests/skill-dist-consistency.test.ts",
+      "tests/subagent-activation-contract-retirement.test.ts",
+      "tests/v3-island-deletion.test.ts"
+    ],
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/2026-08-20-002-retire-subagent-activation-machinery.intent.json",
+    "revision": 1,
+    "content_hash": "sha256:4afcc1006206a60bec3e4e203c18d9aadeadeb2eae483b80a17adf3c834afd61"
+  },
+  "phase": "done",
+  "baseline": "sha256:4afcc1006206a60bec3e4e203c18d9aadeadeb2eae483b80a17adf3c834afd61",
+  "evidence": [
+    {
+      "id": "evidence-record_evidence:2026-08-20-002-retire-subagent-activation-machinery:2026-08-19T17:53:44.496Z",
+      "acceptance_id": "acc-machinery-absent",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:4afcc1006206a60bec3e4e203c18d9aadeadeb2eae483b80a17adf3c834afd61",
+      "diff_hash": "sha256:96a988f289f501e56210e5ba88db58fd7d913d3d1e5ec0f7461b43892421e138",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "Guard test tests/subagent-activation-contract-retirement.test.ts (3/3 pass): agent_config.ts absent, no live source resolves subagent_activation or runtime/agent_config, and the four binding contracts (AGENTS.md, bootstrap template, dist/imm-planner.md, dist/imm-brainstorm.md) no longer condition behavior on [subagent_activation] or the retired imm-activation-plan CLI."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-20-002-retire-subagent-activation-machinery:2026-08-19T17:53:44.695Z",
+      "acceptance_id": "acc-authorization-preserved",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:4afcc1006206a60bec3e4e203c18d9aadeadeb2eae483b80a17adf3c834afd61",
+      "diff_hash": "sha256:96a988f289f501e56210e5ba88db58fd7d913d3d1e5ec0f7461b43892421e138",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "Guard test tests/subagent-activation-contract-retirement.test.ts: AGENTS.md and bootstrap AGENTS.md template contain the unconditional sentence 'This project authorizes readonly advisory subagents and parallel probes unless the user asks for solo work.' plus host-policy deferral 'this project instruction does not override host tool policy', with no [subagent_activation] or 'resolves to' precondition."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-20-002-retire-subagent-activation-machinery:2026-08-19T17:56:14.622Z",
+      "acceptance_id": "acc-prior-slice-artifacts-reconciled",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:4afcc1006206a60bec3e4e203c18d9aadeadeb2eae483b80a17adf3c834afd61",
+      "diff_hash": "sha256:96a988f289f501e56210e5ba88db58fd7d913d3d1e5ec0f7461b43892421e138",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "Full suite green on committed state: 791 pass / 0 fail across 127 files. The 005 symbol map in tests/imm-core-barrel-retirement.test.ts, the 006 rehome proof (tests/agent-config-rehome.test.ts deleted), and the 008 surviving-module coverage table in tests/v3-island-deletion.test.ts were reconciled with the deletion: no test asserts a runtime/agent_config module that no longer exists."
+    }
+  ],
+  "findings": [],
+  "approvals": [
+    {
+      "id": "approval-qa-12cb9c49",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:4afcc1006206a60bec3e4e203c18d9aadeadeb2eae483b80a17adf3c834afd61",
+      "diff_hash": "sha256:96a988f289f501e56210e5ba88db58fd7d913d3d1e5ec0f7461b43892421e138",
+      "actor_id": "deterministic-qa",
+      "summary": "all 3 fixed verification descriptor(s) passed"
+    },
+    {
+      "id": "approval-review-80b69b74",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:4afcc1006206a60bec3e4e203c18d9aadeadeb2eae483b80a17adf3c834afd61",
+      "diff_hash": "sha256:96a988f289f501e56210e5ba88db58fd7d913d3d1e5ec0f7461b43892421e138",
+      "actor_id": "native-review-c51967d6-1e45-4a7",
+      "summary": "Provenance verified (HEAD==bundle head, all neighborhood base_oids match HEAD blobs); subagent-activation machinery fully removed with no surviving references, unconditional authorization preserved in AGENTS.md and bootstrap template, prior-slice tests reconciled; all three acceptances carry fresh Kernel QA outcomes with no findings."
+    }
+  ],
+  "history": [
+    {
+      "id": "record_evidence:2026-08-20-002-retire-subagent-activation-machinery:2026-08-19T17:53:44.496Z",
+      "at": "2026-08-19T17:53:44.496Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-machinery-absent\naction_v2_sha256:4a9fe9561829df159264e4fa7a2440be7bce24ef4accd61da342373a2683b1d0"
+    },
+    {
+      "id": "record_evidence:2026-08-20-002-retire-subagent-activation-machinery:2026-08-19T17:53:44.695Z",
+      "at": "2026-08-19T17:53:44.695Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-authorization-preserved\naction_v2_sha256:b140ba97f9a27c53b52fabae2b5b7feba18284d0db93a91c4bb44f78216893f7"
+    },
+    {
+      "id": "record_evidence:2026-08-20-002-retire-subagent-activation-machinery:2026-08-19T17:56:14.622Z",
+      "at": "2026-08-19T17:56:14.622Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-prior-slice-artifacts-reconciled\naction_v2_sha256:1f72aaf84364270f34de977844358222f6c67d72b4509dd1344a5b4eff80e9a8"
+    },
+    {
+      "id": "submit_review:2026-08-20-002-retire-subagent-activation-machinery:2026-08-19T17:56:24.396Z",
+      "at": "2026-08-19T17:56:24.396Z",
+      "type": "submit_review",
+      "from_phase": "working",
+      "to_phase": "review",
+      "reason": "action_v2_sha256:726601ab42f60fd3f2ed36021afacd62289918de14df9eedb723f6cf5429dbb1"
+    },
+    {
+      "id": "record_approval:2026-08-20-002-retire-subagent-activation-machinery:2026-08-19T17:57:56.416Z",
+      "at": "2026-08-19T17:57:56.416Z",
+      "type": "record_approval",
+      "from_phase": "review",
+      "to_phase": "review",
+      "reason": "approval-qa-12cb9c49\naction_v2_sha256:3d41510ddd15c3eaa23b1fd237b4e1449afd4dc44674026766161264ef893076",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-9abb4c7ede53ae88",
+        "issued_at": "2026-08-19T17:57:56.416Z",
+        "expires_at": "2026-08-19T18:07:56.416Z"
+      }
+    },
+    {
+      "id": "record_approval:2026-08-20-002-retire-subagent-activation-machinery:2026-08-20T00:42:48.981Z",
+      "at": "2026-08-20T00:42:48.981Z",
+      "type": "record_approval",
+      "from_phase": "review",
+      "to_phase": "review",
+      "reason": "approval-review-80b69b74\naction_v2_sha256:07d5d2b52a05d0f9bf53777b721ef6ff793bb05977f48560d022aa41ee774d6b",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "native-review-c51967d6-1e45-4a7",
+        "confirmation_ref": "pi-confirm-d4c0157fb4ed95d9",
+        "issued_at": "2026-08-20T00:42:48.981Z",
+        "expires_at": "2026-08-20T00:52:48.981Z"
+      }
+    },
+    {
+      "id": "complete:2026-08-20-002-retire-subagent-activation-machinery:2026-08-20T00:42:57.374Z",
+      "at": "2026-08-20T00:42:57.374Z",
+      "type": "complete",
+      "from_phase": "review",
+      "to_phase": "done",
+      "reason": "action_v2_sha256:0a6606b3d5a8264b7e37cbc5821fb78fb4c0993d3c396a15e423ef21aabe2732"
+    }
+  ]
+}

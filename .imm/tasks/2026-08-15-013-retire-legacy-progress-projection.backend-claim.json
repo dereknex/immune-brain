@@ -1,0 +1,9 @@
+{
+  "contract": "assurance_kernel/task_tombstone/v1",
+  "task_id": "2026-08-15-013-retire-legacy-progress-projection",
+  "lifecycle_status": "terminal",
+  "terminal_phase": "done",
+  "terminal_event_id": "complete:2026-08-15-013-retire-legacy-progress-projection:2026-08-15T06:19:24.934Z",
+  "final_record_hash": "sha256:794036f6942dd120e307a1d6ef3f26a539c7ff5cca2b661a6b5bf2caea00b55c",
+  "terminalized_at": "2026-08-15T06:19:24.934Z"
+}

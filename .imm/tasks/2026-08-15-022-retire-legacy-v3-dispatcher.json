@@ -1,0 +1,278 @@
+{
+  "contract": "assurance_kernel/task_record/v2",
+  "task_id": "2026-08-15-022-retire-legacy-v3-dispatcher",
+  "intent_revision": 1,
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "2026-08-15-022-retire-legacy-v3-dispatcher",
+    "goal": "Delete the retired v3 dispatcher immune_brain_runtime.ts and its five exclusively-owned v3 command modules (commands/plan, work, review, finish, autowork, command_types), flip the six remaining existence assertions to absence assertions, update benchmark fixture literals to v4_runtime.ts, and keep commands/kernel.ts plus all deep modules (imm_core, environment, state_ledger, project_migration, authority_commit_receipts, kernel/*) intact for library and test consumers, without changing the shipped npm package or v4 router behavior.",
+    "acceptance": [
+      {
+        "id": "acc-deleted-files",
+        "assertion": "immune_brain_runtime.ts and commands/{plan,work,review,finish,autowork,command_types}.ts are absent from source.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/roadmap-plan-host-acceptance.test.ts\",\n    \"tests/kernel-r2c1-boundary.test.ts\",\n    \"tests/python-reference-boundary.test.ts\",\n    \"tests/v4-storage-retirement-v3-writers.test.ts\",\n    \"tests/v4-runtime-launchers.test.ts\",\n    \"tests/pi-only-current-contracts.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 300000,\n  \"max_output_bytes\": 262144\n}\n"
+      },
+      {
+        "id": "acc-assertion-flips",
+        "assertion": "The 6 existence-assert test files pass with absence semantics and no test file references the deleted paths as imports or subprocess targets.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/roadmap-plan-host-acceptance.test.ts\",\n    \"tests/kernel-r2c1-boundary.test.ts\",\n    \"tests/python-reference-boundary.test.ts\",\n    \"tests/v4-storage-retirement-v3-writers.test.ts\",\n    \"tests/v4-runtime-launchers.test.ts\",\n    \"tests/pi-only-current-contracts.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 300000,\n  \"max_output_bytes\": 262144\n}\n"
+      },
+      {
+        "id": "acc-fixture-update",
+        "assertion": "Benchmark fixture workspace files (README, docs/plans/runtime-adapter-alignment, docs/specs/runtime-adapter-alignment, fixture-contract.test.ts) and immune-brain-benchmark.json reference runtime/v4_runtime.ts; the fixture contract test passes.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/fixtures/immune-brain-benchmark-workspace/tests/fixture-contract.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 300000,\n  \"max_output_bytes\": 262144\n}\n"
+      },
+      {
+        "id": "acc-no-imports",
+        "assertion": "No source or test file imports the deleted modules.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/plugin-package-runtime.test.ts\",\n    \"tests/host-runtime-cutover.test.ts\",\n    \"tests/wrapper-retirement.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 300000,\n  \"max_output_bytes\": 262144\n}\n"
+      },
+      {
+        "id": "acc-v4-surface-intact",
+        "assertion": "v4 router, package, wrapper, and kernel-intent focused suites pass unchanged (kernel-intent-authoring, plan-validation, kernel-r2a-boundary, plugin-package-runtime, host-runtime-cutover, wrapper-retirement, v4-plan-control-plane).",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/kernel-intent-authoring.test.ts\",\n    \"tests/plan-validation.test.ts\",\n    \"tests/kernel-r2a-boundary.test.ts\",\n    \"tests/plugin-package-runtime.test.ts\",\n    \"tests/host-runtime-cutover.test.ts\",\n    \"tests/wrapper-retirement.test.ts\",\n    \"tests/v4-plan-control-plane.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 300000,\n  \"max_output_bytes\": 262144\n}\n"
+      },
+      {
+        "id": "acc-retained-modules",
+        "assertion": "commands/kernel.ts, imm_core.ts, environment.ts, state_ledger.ts, project_migration.ts, authority_commit_receipts.ts, and kernel/* remain present and their library/test consumers still pass.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/kernel-shadow-cli.test.ts\",\n    \"tests/authority-commit-receipts.test.ts\",\n    \"tests/kernel-r2a-boundary.test.ts\",\n    \"tests/loop-child-output-contract.test.ts\",\n    \"tests/execution-evidence-runtime.test.ts\",\n    \"tests/fast-track-detection.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 300000,\n  \"max_output_bytes\": 262144\n}\n"
+      },
+      {
+        "id": "acc-full-regression",
+        "assertion": "The complete repository suite passes after the dispatcher deletion.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 300000,\n  \"max_output_bytes\": 262144\n}\n"
+      }
+    ],
+    "scope_hint": [
+      "docs/specs/host-native-lightweight-workflow-roadmap.spec.md",
+      "docs/specs/retire-legacy-v3-dispatcher.spec.md",
+      "plugins/immune-brain/runtime/commands/autowork.ts",
+      "plugins/immune-brain/runtime/commands/command_types.ts",
+      "plugins/immune-brain/runtime/commands/finish.ts",
+      "plugins/immune-brain/runtime/commands/plan.ts",
+      "plugins/immune-brain/runtime/commands/review.ts",
+      "plugins/immune-brain/runtime/commands/work.ts",
+      "plugins/immune-brain/runtime/immune_brain_runtime.ts",
+      "tests/fixtures/immune-brain-benchmark-workspace/README.md",
+      "tests/fixtures/immune-brain-benchmark-workspace/docs/plans/runtime-adapter-alignment.md",
+      "tests/fixtures/immune-brain-benchmark-workspace/docs/specs/runtime-adapter-alignment.md",
+      "tests/fixtures/immune-brain-benchmark-workspace/tests/fixture-contract.test.ts",
+      "tests/fixtures/immune-brain-benchmark.json",
+      "tests/kernel-r2c1-boundary.test.ts",
+      "tests/pi-only-current-contracts.test.ts",
+      "tests/python-reference-boundary.test.ts",
+      "tests/roadmap-plan-host-acceptance.test.ts",
+      "tests/v4-runtime-launchers.test.ts",
+      "tests/v4-storage-retirement-v3-writers.test.ts"
+    ],
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/2026-08-15-022-retire-legacy-v3-dispatcher.intent.json",
+    "revision": 1,
+    "content_hash": "sha256:e7a8f20cc45a8984b5d066f501ce28fae7d1ea5e2562984ef2a9c39a3e6410ae"
+  },
+  "phase": "done",
+  "baseline": "sha256:e7a8f20cc45a8984b5d066f501ce28fae7d1ea5e2562984ef2a9c39a3e6410ae",
+  "evidence": [
+    {
+      "id": "evidence-record_evidence:2026-08-15-022-retire-legacy-v3-dispatcher:2026-08-15T11:49:48.930Z",
+      "acceptance_id": "acc-deleted-files",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:e7a8f20cc45a8984b5d066f501ce28fae7d1ea5e2562984ef2a9c39a3e6410ae",
+      "diff_hash": "sha256:71b721ed4e316fad407767a99f89946e27cb0010db5613e88c14448f6551d92f",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "7 source files deleted (immune_brain_runtime.ts + commands/{plan,work,review,finish,autowork,command_types}.ts); 6 flip-file suite passes 34/34."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-15-022-retire-legacy-v3-dispatcher:2026-08-15T11:49:49.115Z",
+      "acceptance_id": "acc-assertion-flips",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:e7a8f20cc45a8984b5d066f501ce28fae7d1ea5e2562984ef2a9c39a3e6410ae",
+      "diff_hash": "sha256:71b721ed4e316fad407767a99f89946e27cb0010db5613e88c14448f6551d92f",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "6 test files flipped to absence semantics; no import/subprocess of deleted paths remains; suite passes."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-15-022-retire-legacy-v3-dispatcher:2026-08-15T11:49:49.303Z",
+      "acceptance_id": "acc-fixture-update",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:e7a8f20cc45a8984b5d066f501ce28fae7d1ea5e2562984ef2a9c39a3e6410ae",
+      "diff_hash": "sha256:71b721ed4e316fad407767a99f89946e27cb0010db5613e88c14448f6551d92f",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "Benchmark fixture README/plans/specs/fixture-contract/benchmark.json updated to v4_runtime.ts; fixture contract test passes 4/4."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-15-022-retire-legacy-v3-dispatcher:2026-08-15T11:49:49.485Z",
+      "acceptance_id": "acc-no-imports",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:e7a8f20cc45a8984b5d066f501ce28fae7d1ea5e2562984ef2a9c39a3e6410ae",
+      "diff_hash": "sha256:71b721ed4e316fad407767a99f89946e27cb0010db5613e88c14448f6551d92f",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "plugin-package-runtime + host-runtime-cutover + wrapper-retirement pass 22/22; rg confirms zero imports/subprocess of deleted modules."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-15-022-retire-legacy-v3-dispatcher:2026-08-15T11:49:49.670Z",
+      "acceptance_id": "acc-v4-surface-intact",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:e7a8f20cc45a8984b5d066f501ce28fae7d1ea5e2562984ef2a9c39a3e6410ae",
+      "diff_hash": "sha256:71b721ed4e316fad407767a99f89946e27cb0010db5613e88c14448f6551d92f",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "v4 router/package/wrapper focused suites pass 89/89 (kernel-intent-authoring, plan-validation, kernel-r2a-boundary, plugin-package-runtime, host-runtime-cutover, wrapper-retirement, v4-plan-control-plane)."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-15-022-retire-legacy-v3-dispatcher:2026-08-15T11:49:49.862Z",
+      "acceptance_id": "acc-retained-modules",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:e7a8f20cc45a8984b5d066f501ce28fae7d1ea5e2562984ef2a9c39a3e6410ae",
+      "diff_hash": "sha256:71b721ed4e316fad407767a99f89946e27cb0010db5613e88c14448f6551d92f",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "commands/kernel.ts + deep modules retained; library/test consumers pass 57/57 (kernel-shadow-cli, authority-commit-receipts, kernel-r2a-boundary, loop-child-output, execution-evidence, fast-track)."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-15-022-retire-legacy-v3-dispatcher:2026-08-15T11:49:50.052Z",
+      "acceptance_id": "acc-full-regression",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:e7a8f20cc45a8984b5d066f501ce28fae7d1ea5e2562984ef2a9c39a3e6410ae",
+      "diff_hash": "sha256:71b721ed4e316fad407767a99f89946e27cb0010db5613e88c14448f6551d92f",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "Full repository suite passes 897/0."
+    }
+  ],
+  "findings": [],
+  "approvals": [
+    {
+      "id": "approval-qa-3c7b3388",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:e7a8f20cc45a8984b5d066f501ce28fae7d1ea5e2562984ef2a9c39a3e6410ae",
+      "diff_hash": "sha256:71b721ed4e316fad407767a99f89946e27cb0010db5613e88c14448f6551d92f",
+      "actor_id": "qa-host-cd6a2dab",
+      "summary": "all 7 fixed verification descriptor(s) passed"
+    },
+    {
+      "id": "approval-review-6c24efe5",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:e7a8f20cc45a8984b5d066f501ce28fae7d1ea5e2562984ef2a9c39a3e6410ae",
+      "diff_hash": "sha256:71b721ed4e316fad407767a99f89946e27cb0010db5613e88c14448f6551d92f",
+      "actor_id": "native-review-47e7dcba-df32-4b6",
+      "summary": "Provenance verified (HEAD matches, clean worktree, empty dirty_files); all deleted paths absent, retained modules present, and executed suites confirm assertion flips, fixture contract, and intact v4 surface."
+    }
+  ],
+  "history": [
+    {
+      "id": "record_evidence:2026-08-15-022-retire-legacy-v3-dispatcher:2026-08-15T11:49:48.930Z",
+      "at": "2026-08-15T11:49:48.930Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-deleted-files\naction_v2_sha256:6532f3d2e8d53f58f80fe08114fe806042003d94f07f0eb5c16df301764268f7"
+    },
+    {
+      "id": "record_evidence:2026-08-15-022-retire-legacy-v3-dispatcher:2026-08-15T11:49:49.115Z",
+      "at": "2026-08-15T11:49:49.115Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-assertion-flips\naction_v2_sha256:1ca5fb54a11ad4d6743afd57f9a24220b963eea1fbafdc3e129d7e652b540412"
+    },
+    {
+      "id": "record_evidence:2026-08-15-022-retire-legacy-v3-dispatcher:2026-08-15T11:49:49.303Z",
+      "at": "2026-08-15T11:49:49.303Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-fixture-update\naction_v2_sha256:13a1bfe2886c5c864edcb144beb0cab0b89ac4e651aaad437d20e737e5953409"
+    },
+    {
+      "id": "record_evidence:2026-08-15-022-retire-legacy-v3-dispatcher:2026-08-15T11:49:49.485Z",
+      "at": "2026-08-15T11:49:49.485Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-no-imports\naction_v2_sha256:9d63324e98de72c5f75c553b7f541a636b55fa885d577ca754b9b3bec17e2422"
+    },
+    {
+      "id": "record_evidence:2026-08-15-022-retire-legacy-v3-dispatcher:2026-08-15T11:49:49.670Z",
+      "at": "2026-08-15T11:49:49.670Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-v4-surface-intact\naction_v2_sha256:2a54055cebfe6a1d55c9de54bd9ef88cfed607861bd07a39a96250f7d36ac7d4"
+    },
+    {
+      "id": "record_evidence:2026-08-15-022-retire-legacy-v3-dispatcher:2026-08-15T11:49:49.862Z",
+      "at": "2026-08-15T11:49:49.862Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-retained-modules\naction_v2_sha256:427bd20b4d296d8e5c0849de92ca5e12465b09c4a3a86fac7dedb3317e469d81"
+    },
+    {
+      "id": "record_evidence:2026-08-15-022-retire-legacy-v3-dispatcher:2026-08-15T11:49:50.052Z",
+      "at": "2026-08-15T11:49:50.052Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-full-regression\naction_v2_sha256:c5f1b5cfb60ff90de1f0130c59f8f4f51748b84f9e6e825cbe31909e4a94a9de"
+    },
+    {
+      "id": "submit_review:2026-08-15-022-retire-legacy-v3-dispatcher:2026-08-15T11:49:54.217Z",
+      "at": "2026-08-15T11:49:54.217Z",
+      "type": "submit_review",
+      "from_phase": "working",
+      "to_phase": "review",
+      "reason": "action_v2_sha256:4e473abf243ff013ebbd880dab7be4f940fa25665326a0d517098a366d5d9d69"
+    },
+    {
+      "id": "record_approval:2026-08-15-022-retire-legacy-v3-dispatcher:2026-08-15T11:50:53.360Z",
+      "at": "2026-08-15T11:50:53.360Z",
+      "type": "record_approval",
+      "from_phase": "review",
+      "to_phase": "review",
+      "reason": "approval-qa-3c7b3388\naction_v2_sha256:ece662a68fea4892e8330251a54a4ce79841c495160f6c808818987c8081df4f",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "qa-host-cd6a2dab",
+        "confirmation_ref": "pi-confirm-b56c6e4ac7f10d2d",
+        "issued_at": "2026-08-15T11:50:53.360Z",
+        "expires_at": "2026-08-15T12:00:53.360Z"
+      }
+    },
+    {
+      "id": "record_approval:2026-08-15-022-retire-legacy-v3-dispatcher:2026-08-15T11:51:49.370Z",
+      "at": "2026-08-15T11:51:49.370Z",
+      "type": "record_approval",
+      "from_phase": "review",
+      "to_phase": "review",
+      "reason": "approval-review-6c24efe5\naction_v2_sha256:28719d0eba04df2fdf51782ca615a1cd1d905d91d456a527f3da81eca01b99a3",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "native-review-47e7dcba-df32-4b6",
+        "confirmation_ref": "pi-confirm-9b741e70a43bf205",
+        "issued_at": "2026-08-15T11:51:49.370Z",
+        "expires_at": "2026-08-15T12:01:49.370Z"
+      }
+    },
+    {
+      "id": "complete:2026-08-15-022-retire-legacy-v3-dispatcher:2026-08-15T11:52:18.774Z",
+      "at": "2026-08-15T11:52:18.774Z",
+      "type": "complete",
+      "from_phase": "review",
+      "to_phase": "done",
+      "reason": "action_v2_sha256:ee3bc9dc0e3a2de3b5e16b1352fecc2f1dbc481f0d7f8e6694986fba43ae6674"
+    }
+  ]
+}

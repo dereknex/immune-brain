@@ -1,0 +1,283 @@
+{
+  "contract": "assurance_kernel/task_record/v2",
+  "task_id": "2026-08-19-005-retire-imm-core-barrel",
+  "intent_revision": 1,
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "2026-08-19-005-retire-imm-core-barrel",
+    "goal": "Delete the plugins/immune-brain/runtime/imm_core.ts re-export barrel and repoint every importer at the concrete module that defines each symbol. The barrel has no non-test importer, so no production path changes; the two scripts that match the string imm_core match the retired .imm/imm_core Python paths and are unrelated to this module. This slice exists on its own because it converts the v3 runtime island from referenced-through-a-barrel to referenced-by-nothing, which is the seam the island deletion in the next slice depends on. Import rewiring must preserve the exact symbol each test consumed, because a barrel removal is precisely where an accidental repoint to a same-named but different symbol would hide behind a still-green suite. Two files name the barrel by path string rather than importing it and must be corrected rather than weakened: python-reference-boundary.test.ts asserts the barrel exists, and pi-only-current-contracts.test.ts reads it to scan for forbidden progress-projection and host-selector tokens, so the barrel leaves those lists while the token scans stay intact. Deleting the seven v3 island modules, trimming partially live runtime, and the kernel v1 store question are deliberately out of scope for this slice.",
+    "acceptance": [
+      {
+        "id": "acc-barrel-absent",
+        "assertion": "plugins/immune-brain/runtime/imm_core.ts does not exist, no file in the repository imports it, and no test asserts its existence or reads it by path.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/imm-core-barrel-retirement.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 30000,\n  \"max_output_bytes\": 65536\n}\n"
+      },
+      {
+        "id": "acc-imports-repointed-faithfully",
+        "assertion": "Every module that previously imported through the barrel now imports the same symbol names directly from the module that defines them, with no symbol dropped, added, or substituted, and the token scans in pi-only-current-contracts.test.ts still cover every remaining live runtime source they covered before.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/imm-core-barrel-retirement.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 30000,\n  \"max_output_bytes\": 65536\n}\n"
+      }
+    ],
+    "scope_hint": [
+      "plugins/immune-brain/runtime/imm_core.ts",
+      "plugins/immune-brain/tests/review-gates.test.ts",
+      "tests/advisory-budget-contract.test.ts",
+      "tests/advisory-dispatch-core.test.ts",
+      "tests/fast-track-detection.test.ts",
+      "tests/handoff-projection.test.ts",
+      "tests/handoff-scope-exclusion.test.ts",
+      "tests/heal-activation.test.ts",
+      "tests/imm-core-barrel-retirement.test.ts",
+      "tests/imm-loop-review-lifecycle-state.test.ts",
+      "tests/immune-brain-config-runtime.test.ts",
+      "tests/loop-child-output-contract.test.ts",
+      "tests/loop-execution-routing.test.ts",
+      "tests/pi-brainstorm-agent-result-contract.test.ts",
+      "tests/pi-only-current-contracts.test.ts",
+      "tests/pi-only-runtime-host-contract.test.ts",
+      "tests/plan-validation.test.ts",
+      "tests/planner-ensemble-contract.test.ts",
+      "tests/python-reference-boundary.test.ts",
+      "tests/role-prompt-bridge.test.ts",
+      "tests/runtime-state.test.ts"
+    ],
+    "risk": "routine",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/2026-08-19-005-retire-imm-core-barrel.intent.json",
+    "revision": 1,
+    "content_hash": "sha256:daac86bb04bfdc367aa0ea4247b83577ebc03de0148b0df667727f17880a1f14"
+  },
+  "phase": "done",
+  "baseline": "sha256:daac86bb04bfdc367aa0ea4247b83577ebc03de0148b0df667727f17880a1f14",
+  "evidence": [
+    {
+      "id": "evidence-record_evidence:2026-08-19-005-retire-imm-core-barrel:2026-08-19T11:46:31.221Z",
+      "acceptance_id": "acc-barrel-absent",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:daac86bb04bfdc367aa0ea4247b83577ebc03de0148b0df667727f17880a1f14",
+      "diff_hash": "sha256:c997dc8991aaa0dcb01cf7cb3051a03c9325214ba3462cb9575ac36175da5eb7",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "bun test tests/imm-core-barrel-retirement.test.ts passed: plugins/immune-brain/runtime/imm_core.ts is gone, and no remaining TypeScript source imports or path-asserts the barrel."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-19-005-retire-imm-core-barrel:2026-08-19T11:46:38.376Z",
+      "acceptance_id": "acc-imports-repointed-faithfully",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:daac86bb04bfdc367aa0ea4247b83577ebc03de0148b0df667727f17880a1f14",
+      "diff_hash": "sha256:c997dc8991aaa0dcb01cf7cb3051a03c9325214ba3462cb9575ac36175da5eb7",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "bun test tests/imm-core-barrel-retirement.test.ts passed: every former barrel importer now takes the same symbols from the defining module, and pi-only-current-contracts token scans still cover the remaining live runtime sources they covered before."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-19-005-retire-imm-core-barrel:2026-08-19T12:04:39.916Z",
+      "acceptance_id": "acc-barrel-absent",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:daac86bb04bfdc367aa0ea4247b83577ebc03de0148b0df667727f17880a1f14",
+      "diff_hash": "sha256:ee307a46dce3e5de76686e0fefeb6470a0e6ad9fe131738499063d4f465856b4",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "bun test tests/imm-core-barrel-retirement.test.ts passed after rework: plugins/immune-brain/runtime/imm_core.ts is gone, and no remaining TypeScript source imports or path-asserts the barrel."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-19-005-retire-imm-core-barrel:2026-08-19T12:05:07.677Z",
+      "acceptance_id": "acc-imports-repointed-faithfully",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:daac86bb04bfdc367aa0ea4247b83577ebc03de0148b0df667727f17880a1f14",
+      "diff_hash": "sha256:ee307a46dce3e5de76686e0fefeb6470a0e6ad9fe131738499063d4f465856b4",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "bun test tests/imm-core-barrel-retirement.test.ts passed after rework: former barrel importers keep the same symbols, each owner file actually exports those symbols (config helpers now live in advisory_dispatch.ts), and pi-only token scans still cover remaining live runtime sources."
+    }
+  ],
+  "findings": [
+    {
+      "id": "review-2d1aca736fb3-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "acc-imports-repointed-faithfully",
+      "source": "review",
+      "review_round": 1,
+      "summary": "tests/immune-brain-config-runtime.test.ts: readImmuneBrainConfig, resolveImmuneBrainLocalRoot, and resolveImmuneBrainLocalPath are imported from advisory_dispatch.ts, but those symbols were defined only in the deleted plugins/immune-brain/runtime/imm_core.ts and were not moved."
+    },
+    {
+      "id": "review-2d1aca736fb3-2-review-2",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "acc-imports-repointed-faithfully",
+      "source": "review",
+      "review_round": 1,
+      "summary": "tests/imm-core-barrel-retirement.test.ts: EXPECTED_REPOINTS assigns the barrel-owned config helpers to advisory_dispatch.ts without checking that module exports them, so the acceptance scan can pass while the defining implementations are gone."
+    }
+  ],
+  "approvals": [
+    {
+      "id": "approval-qa-c28f214f",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:daac86bb04bfdc367aa0ea4247b83577ebc03de0148b0df667727f17880a1f14",
+      "diff_hash": "sha256:c997dc8991aaa0dcb01cf7cb3051a03c9325214ba3462cb9575ac36175da5eb7",
+      "actor_id": "deterministic-qa",
+      "summary": "all 2 fixed verification descriptor(s) passed"
+    },
+    {
+      "id": "approval-qa-08ef7223",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:daac86bb04bfdc367aa0ea4247b83577ebc03de0148b0df667727f17880a1f14",
+      "diff_hash": "sha256:ee307a46dce3e5de76686e0fefeb6470a0e6ad9fe131738499063d4f465856b4",
+      "actor_id": "deterministic-qa",
+      "summary": "all 2 fixed verification descriptor(s) passed"
+    },
+    {
+      "id": "approval-review-2c215a6c",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:daac86bb04bfdc367aa0ea4247b83577ebc03de0148b0df667727f17880a1f14",
+      "diff_hash": "sha256:ee307a46dce3e5de76686e0fefeb6470a0e6ad9fe131738499063d4f465856b4",
+      "actor_id": "native-review-541108f6-4b7d-4bf",
+      "summary": "Immutable provenance verified; barrel removal and faithful direct-import repointing satisfy both acceptance assertions."
+    }
+  ],
+  "history": [
+    {
+      "id": "record_evidence:2026-08-19-005-retire-imm-core-barrel:2026-08-19T11:46:31.221Z",
+      "at": "2026-08-19T11:46:31.221Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-barrel-absent\naction_v2_sha256:f4a53160893f9ed19dcf3c32fb39ab4fc7a8fde26df65fdfc53e1b914b9b76c6"
+    },
+    {
+      "id": "record_evidence:2026-08-19-005-retire-imm-core-barrel:2026-08-19T11:46:38.376Z",
+      "at": "2026-08-19T11:46:38.376Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-imports-repointed-faithfully\naction_v2_sha256:e3d24dbf0fcae2291f357ccccb2cf2ecd399076673bd9353c7111fc1267d1712"
+    },
+    {
+      "id": "submit_review:2026-08-19-005-retire-imm-core-barrel:2026-08-19T11:46:44.431Z",
+      "at": "2026-08-19T11:46:44.431Z",
+      "type": "submit_review",
+      "from_phase": "working",
+      "to_phase": "review",
+      "reason": "action_v2_sha256:e0af873412fada772083fd5ea1215edd27e3861ae6454adb9663cd3b064e0c24"
+    },
+    {
+      "id": "record_approval:2026-08-19-005-retire-imm-core-barrel:2026-08-19T11:46:46.631Z",
+      "at": "2026-08-19T11:46:46.631Z",
+      "type": "record_approval",
+      "from_phase": "review",
+      "to_phase": "review",
+      "reason": "approval-qa-c28f214f\naction_v2_sha256:1ff04f3f2ffa60c010ab0d35368262994a07c217e53ea10f23571e6d6a8acc65",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-84bb505cf147317b",
+        "issued_at": "2026-08-19T11:46:46.631Z",
+        "expires_at": "2026-08-19T11:56:46.631Z"
+      }
+    },
+    {
+      "id": "request_rework:2026-08-19-005-retire-imm-core-barrel:2026-08-19T12:00:27.667Z",
+      "at": "2026-08-19T12:00:27.667Z",
+      "type": "request_rework",
+      "from_phase": "review",
+      "to_phase": "working",
+      "reason": "review_round_1\naction_v2_sha256:d61d59f143c0db26ba830b0f7a80ce2b1c6b98915c9c69a8131b3b0e33846e55",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "native-review-661060a2-0807-4ee",
+        "confirmation_ref": "pi-confirm-e91085c234654710",
+        "issued_at": "2026-08-19T12:00:27.667Z",
+        "expires_at": "2026-08-19T12:10:27.667Z"
+      }
+    },
+    {
+      "id": "resolve_finding:2026-08-19-005-retire-imm-core-barrel:2026-08-19T12:04:00.166Z",
+      "at": "2026-08-19T12:04:00.166Z",
+      "type": "resolve_finding",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "review-2d1aca736fb3-1-review-1\naction_v2_sha256:c1a6e2edbdafe36366a41dfcdd99f145da1db6f45940c1f2d42cfee2b00a8d56"
+    },
+    {
+      "id": "resolve_finding:2026-08-19-005-retire-imm-core-barrel:2026-08-19T12:04:33.203Z",
+      "at": "2026-08-19T12:04:33.203Z",
+      "type": "resolve_finding",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "review-2d1aca736fb3-2-review-2\naction_v2_sha256:558e8cad1ac764c4fe2bbefb0671f818a2efd7e63eea6916e00e3688320f7536"
+    },
+    {
+      "id": "record_evidence:2026-08-19-005-retire-imm-core-barrel:2026-08-19T12:04:39.916Z",
+      "at": "2026-08-19T12:04:39.916Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-barrel-absent\naction_v2_sha256:186fae57117e1b3ae5b7f6e8456cb5aa2c7e9b2b3e18f2c5f915905be3aaf4ff"
+    },
+    {
+      "id": "record_evidence:2026-08-19-005-retire-imm-core-barrel:2026-08-19T12:05:07.677Z",
+      "at": "2026-08-19T12:05:07.677Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-imports-repointed-faithfully\naction_v2_sha256:19488a11410e7f44ce8ef8778772d38cd951ef803383e6124487a18c200371e6"
+    },
+    {
+      "id": "submit_review:2026-08-19-005-retire-imm-core-barrel:2026-08-19T12:05:13.588Z",
+      "at": "2026-08-19T12:05:13.588Z",
+      "type": "submit_review",
+      "from_phase": "working",
+      "to_phase": "review",
+      "reason": "action_v2_sha256:7767bb9250f2b5257cc1045bbf4acacef9e66d76ec3de4a892bb951efd23724e"
+    },
+    {
+      "id": "record_approval:2026-08-19-005-retire-imm-core-barrel:2026-08-19T12:05:15.824Z",
+      "at": "2026-08-19T12:05:15.824Z",
+      "type": "record_approval",
+      "from_phase": "review",
+      "to_phase": "review",
+      "reason": "approval-qa-08ef7223\naction_v2_sha256:b8a54a4dddbcf957a82cddeac77c70106b018c058a0a08b639c404b9626ed3eb",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-6966a0c446c688e3",
+        "issued_at": "2026-08-19T12:05:15.824Z",
+        "expires_at": "2026-08-19T12:15:15.824Z"
+      }
+    },
+    {
+      "id": "record_approval:2026-08-19-005-retire-imm-core-barrel:2026-08-19T12:27:48.938Z",
+      "at": "2026-08-19T12:27:48.938Z",
+      "type": "record_approval",
+      "from_phase": "review",
+      "to_phase": "review",
+      "reason": "approval-review-2c215a6c\naction_v2_sha256:5d705a147d01ea93fb81c168bfe6e553c193f7236a253a598377fc955b714539",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "native-review-541108f6-4b7d-4bf",
+        "confirmation_ref": "pi-confirm-742118973c2ffe5c",
+        "issued_at": "2026-08-19T12:27:48.939Z",
+        "expires_at": "2026-08-19T12:37:48.939Z"
+      }
+    },
+    {
+      "id": "complete:2026-08-19-005-retire-imm-core-barrel:2026-08-19T12:28:01.860Z",
+      "at": "2026-08-19T12:28:01.860Z",
+      "type": "complete",
+      "from_phase": "review",
+      "to_phase": "done",
+      "reason": "action_v2_sha256:ee753ef34181d85e4e0972dbe4b27a55398f766554da32ba86baf7efb1607899"
+    }
+  ]
+}

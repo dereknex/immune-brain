@@ -1,0 +1,634 @@
+{
+  "contract": "assurance_kernel/task_record/v2",
+  "task_id": "2026-08-16-001-phase-aware-assurance-deadlines",
+  "intent_revision": 1,
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "2026-08-16-001-phase-aware-assurance-deadlines",
+    "goal": "Replace fixed end-to-end Assurance timers with phase-aware Review and workload-derived QA budgets while preserving fail-closed native terminal ownership and literal-user Review authority.",
+    "acceptance": [
+      {
+        "id": "acc-phase-aware-review",
+        "assertion": "Native Review preparation, standard Agent dispatch, workload-classified execution, and verdict validation use independent budgets; quick, standard, and heavy profiles derive only from the frozen intent risk and immutable bundle; soft expiry remains nonterminal and accepts a later matching fresh verdict; the former 300-second end-to-end deadline and heartbeat-free stalled state are absent.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/pi-canary-assurance-progression.test.ts\",\n    \"tests/pi-canary-work-extension.test.ts\",\n    \"tests/pi-canary-assurance-observability.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 300000,\n  \"max_output_bytes\": 262144\n}\n"
+      },
+      {
+        "id": "acc-terminal-ownership",
+        "assertion": "Review stop thresholds and explicit cancellation enter nonterminal fail-closed settlement; time and stop acknowledgement cannot prove native terminal; late or conflicting results perform zero authority writes; and exactly one terminal follow-up wins for each task, operation, and role across completion, stop, cancel, failure, and same-tick races.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/pi-canary-assurance-progression.test.ts\",\n    \"tests/pi-canary-work-extension.test.ts\",\n    \"tests/pi-canary-assurance-continuation.test.ts\",\n    \"tests/pi-canary-assurance-authority.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 300000,\n  \"max_output_bytes\": 262144\n}\n"
+      },
+      {
+        "id": "acc-derived-qa-budget",
+        "assertion": "Deterministic QA derives one aggregate deadline from the sequential verification descriptor timeouts plus bounded overhead, retains the fifteen-minute floor and sixty-minute ceiling, rejects an impossible declared aggregate before the first verification, and projects the derived value consistently without weakening each descriptor timeout or authority-commit linearization.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/pi-canary-assurance-progression.test.ts\",\n    \"tests/pi-canary-assurance-advance.test.ts\",\n    \"tests/pi-canary-work-extension.test.ts\",\n    \"tests/kernel-verification-descriptor.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 300000,\n  \"max_output_bytes\": 262144\n}\n"
+      },
+      {
+        "id": "acc-contract-alignment",
+        "assertion": "Source, Pi extension exports, focused contracts, protocol documentation, source Skill, and packaged Skill describe the same phase-aware budgets, workload profiles, waiting-user semantics, terminal ownership, and deferred cross-session persistence boundary with no active five-second startup or 300-second end-to-end Review contract.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/imm-canary-work-contract.test.ts\",\n    \"tests/pi-subagent-dispatch-observability-contract.test.ts\",\n    \"tests/pi-canary-discovery-regression.test.ts\",\n    \"tests/pi-canary-packed-consumer.test.ts\",\n    \"tests/pi-canary-packed-loader.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 300000,\n  \"max_output_bytes\": 262144\n}\n"
+      },
+      {
+        "id": "acc-typecheck-and-regression",
+        "assertion": "The complete Pi extension graph passes strict TypeScript checking and the full repository test suite passes after the timing-policy cutover.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 600000,\n  \"max_output_bytes\": 262144\n}\n"
+      }
+    ],
+    "scope_hint": [
+      "docs/reference/subagent-dispatch-protocol.md",
+      "docs/specs/phase-aware-assurance-deadlines.spec.md",
+      "plugins/immune-brain/.pi-extension/imm-canary-work.ts",
+      "plugins/immune-brain/.pi-extension/pi-canary-assurance-progression.ts",
+      "plugins/immune-brain/.pi-extension/pi-canary-assurance.ts",
+      "plugins/immune-brain/.pi-extension/pi-canary-native-review.ts",
+      "plugins/immune-brain/dist/docs/reference/subagent-dispatch-protocol.md",
+      "plugins/immune-brain/dist/imm-canary-work.md",
+      "plugins/immune-brain/skills/imm-canary-work/SKILL.md",
+      "tests/imm-canary-work-contract.test.ts",
+      "tests/kernel-verification-descriptor.test.ts",
+      "tests/pi-canary-assurance-advance.test.ts",
+      "tests/pi-canary-assurance-authority.test.ts",
+      "tests/pi-canary-assurance-continuation.test.ts",
+      "tests/pi-canary-assurance-observability.test.ts",
+      "tests/pi-canary-assurance-progression.test.ts",
+      "tests/pi-canary-discovery-regression.test.ts",
+      "tests/pi-canary-packed-consumer.test.ts",
+      "tests/pi-canary-packed-loader.test.ts",
+      "tests/pi-canary-work-extension.test.ts",
+      "tests/pi-subagent-dispatch-observability-contract.test.ts"
+    ],
+    "risk": "critical",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/2026-08-16-001-phase-aware-assurance-deadlines.intent.json",
+    "revision": 1,
+    "content_hash": "sha256:38f4ca098dea37b8866dcad8d5c47011b31090fc2f7ab7d7a6cd0e38f211e503"
+  },
+  "phase": "stopped",
+  "baseline": "sha256:38f4ca098dea37b8866dcad8d5c47011b31090fc2f7ab7d7a6cd0e38f211e503",
+  "evidence": [
+    {
+      "id": "evidence-record_evidence:2026-08-16-001-phase-aware-assurance-deadlines:2026-08-16T03:56:58.394Z",
+      "acceptance_id": "acc-phase-aware-review",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:38f4ca098dea37b8866dcad8d5c47011b31090fc2f7ab7d7a6cd0e38f211e503",
+      "diff_hash": "sha256:803a572c5e513bffaa83f64c8b6c20cff0c66b3048c878caf3b4c8664ca4c1a7",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "Fresh verification passed: progression 18/18, work extension 33/33, observability tests, strict TypeScript, and full bun test 925/925 prove independent preparation/dispatch/validation budgets, frozen workload profiles, nonterminal soft expiry, and no Review stalled projection."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-16-001-phase-aware-assurance-deadlines:2026-08-16T03:57:05.939Z",
+      "acceptance_id": "acc-terminal-ownership",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:38f4ca098dea37b8866dcad8d5c47011b31090fc2f7ab7d7a6cd0e38f211e503",
+      "diff_hash": "sha256:803a572c5e513bffaa83f64c8b6c20cff0c66b3048c878caf3b4c8664ca4c1a7",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "Fresh race verification passed: soft/stop/cancel/same-tick tests prove stop thresholds retain ownership until native terminal, late results make zero authority writes, and one (task, operation, role) terminal follow-up wins."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-16-001-phase-aware-assurance-deadlines:2026-08-16T03:57:15.604Z",
+      "acceptance_id": "acc-derived-qa-budget",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:38f4ca098dea37b8866dcad8d5c47011b31090fc2f7ab7d7a6cd0e38f211e503",
+      "diff_hash": "sha256:803a572c5e513bffaa83f64c8b6c20cff0c66b3048c878caf3b4c8664ca4c1a7",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "Fresh QA budget tests prove max(15m, sequential descriptor sum + 2m), exact active/UI projection, 60m maximum rejection before runQa, preserved descriptor bounds, and exact injected millisecond timer semantics."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-16-001-phase-aware-assurance-deadlines:2026-08-16T03:57:24.396Z",
+      "acceptance_id": "acc-contract-alignment",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:38f4ca098dea37b8866dcad8d5c47011b31090fc2f7ab7d7a6cd0e38f211e503",
+      "diff_hash": "sha256:803a572c5e513bffaa83f64c8b6c20cff0c66b3048c878caf3b4c8664ca4c1a7",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "Fresh contract tests passed: canonical/packaged protocol byte parity, source/packaged Skill alignment, phase constants and workload profiles, awaiting_user revalidation semantics, and explicitly deferred cross-session persistence boundary."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-16-001-phase-aware-assurance-deadlines:2026-08-16T03:57:33.791Z",
+      "acceptance_id": "acc-typecheck-and-regression",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:38f4ca098dea37b8866dcad8d5c47011b31090fc2f7ab7d7a6cd0e38f211e503",
+      "diff_hash": "sha256:803a572c5e513bffaa83f64c8b6c20cff0c66b3048c878caf3b4c8664ca4c1a7",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "Fresh strict TypeScript check passed and full repository bun test completed with 925 passed, 0 failed, 3994 expectations across 121 files; staged diff check is clean."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-16-001-phase-aware-assurance-deadlines:2026-08-16T04:23:27.745Z",
+      "acceptance_id": "acc-phase-aware-review",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:38f4ca098dea37b8866dcad8d5c47011b31090fc2f7ab7d7a6cd0e38f211e503",
+      "diff_hash": "sha256:7ad3e8679681f0165fb7b09e1abf0e11dd3e38ed9b5b4ed6ccee26452953af7c",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "Fresh follow-up verification on diff sha256:7ad3e867 passed: independent Review phases/workload profiles remain intact, exact canonical tests pass, and full suite is 925/925."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-16-001-phase-aware-assurance-deadlines:2026-08-16T04:23:38.444Z",
+      "acceptance_id": "acc-terminal-ownership",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:38f4ca098dea37b8866dcad8d5c47011b31090fc2f7ab7d7a6cd0e38f211e503",
+      "diff_hash": "sha256:7ad3e8679681f0165fb7b09e1abf0e11dd3e38ed9b5b4ed6ccee26452953af7c",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "Fresh follow-up regression proves late spawn rejection retains unknown settlement, immutable evidence, and operation ownership with zero terminal follow-up; completion/stop/cancel race tests pass."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-16-001-phase-aware-assurance-deadlines:2026-08-16T04:23:47.744Z",
+      "acceptance_id": "acc-derived-qa-budget",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:38f4ca098dea37b8866dcad8d5c47011b31090fc2f7ab7d7a6cd0e38f211e503",
+      "diff_hash": "sha256:7ad3e8679681f0165fb7b09e1abf0e11dd3e38ed9b5b4ed6ccee26452953af7c",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "Fresh follow-up regression proves startQa parses frozen TaskRecord descriptors before returning and projects the exact aggregate deadline; floor, sum-plus-overhead, ceiling rejection, cancellation, and continuation tests pass."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-16-001-phase-aware-assurance-deadlines:2026-08-16T04:23:57.109Z",
+      "acceptance_id": "acc-contract-alignment",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:38f4ca098dea37b8866dcad8d5c47011b31090fc2f7ab7d7a6cd0e38f211e503",
+      "diff_hash": "sha256:7ad3e8679681f0165fb7b09e1abf0e11dd3e38ed9b5b4ed6ccee26452953af7c",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "Fresh follow-up check confirms source, extension, Skill/dist, protocol, and contract tests remain aligned; review fixes change settlement and initial QA projection without reintroducing old 5s/300s contracts."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-16-001-phase-aware-assurance-deadlines:2026-08-16T04:24:05.627Z",
+      "acceptance_id": "acc-typecheck-and-regression",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:38f4ca098dea37b8866dcad8d5c47011b31090fc2f7ab7d7a6cd0e38f211e503",
+      "diff_hash": "sha256:7ad3e8679681f0165fb7b09e1abf0e11dd3e38ed9b5b4ed6ccee26452953af7c",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "Fresh follow-up verification passed strict TypeScript and full repository bun test: 925 pass, 0 fail, 121 files, 3996 expectations; git diff --check is clean."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-16-001-phase-aware-assurance-deadlines:2026-08-16T04:34:05.619Z",
+      "acceptance_id": "acc-phase-aware-review",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:38f4ca098dea37b8866dcad8d5c47011b31090fc2f7ab7d7a6cd0e38f211e503",
+      "diff_hash": "sha256:10bdda2fa7eb2dc70845a07cb754b589926e553edf56811823bc8bf5f2bc0700",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "Fresh diagnostic follow-up on diff sha256:10bdda passed canonical phase-aware tests in four concurrent descriptor runs (4/4) plus the full 925-test suite; the load-sensitive authorization integration test now has a local 15s test budget."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-16-001-phase-aware-assurance-deadlines:2026-08-16T04:34:18.448Z",
+      "acceptance_id": "acc-terminal-ownership",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:38f4ca098dea37b8866dcad8d5c47011b31090fc2f7ab7d7a6cd0e38f211e503",
+      "diff_hash": "sha256:10bdda2fa7eb2dc70845a07cb754b589926e553edf56811823bc8bf5f2bc0700",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "Fresh diagnostic follow-up confirms terminal ownership and late spawn rejection regressions pass under four concurrent canonical runs and the complete suite, with no production behavior changes after the prior Review fix."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-16-001-phase-aware-assurance-deadlines:2026-08-16T04:34:28.322Z",
+      "acceptance_id": "acc-derived-qa-budget",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:38f4ca098dea37b8866dcad8d5c47011b31090fc2f7ab7d7a6cd0e38f211e503",
+      "diff_hash": "sha256:10bdda2fa7eb2dc70845a07cb754b589926e553edf56811823bc8bf5f2bc0700",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "Fresh diagnostic follow-up confirms exact frozen-descriptor QA projection, 15m floor, sum-plus-overhead, 60m rejection, cancellation, and continuation contracts pass under canonical and full-suite verification."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-16-001-phase-aware-assurance-deadlines:2026-08-16T04:34:38.287Z",
+      "acceptance_id": "acc-contract-alignment",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:38f4ca098dea37b8866dcad8d5c47011b31090fc2f7ab7d7a6cd0e38f211e503",
+      "diff_hash": "sha256:10bdda2fa7eb2dc70845a07cb754b589926e553edf56811823bc8bf5f2bc0700",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "Fresh diagnostic follow-up preserves source/Skill/dist/protocol parity and old-contract negative assertions; only one integration test receives a local Bun timeout appropriate to its Git/gitleaks round trips."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-16-001-phase-aware-assurance-deadlines:2026-08-16T04:34:47.605Z",
+      "acceptance_id": "acc-typecheck-and-regression",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:38f4ca098dea37b8866dcad8d5c47011b31090fc2f7ab7d7a6cd0e38f211e503",
+      "diff_hash": "sha256:10bdda2fa7eb2dc70845a07cb754b589926e553edf56811823bc8bf5f2bc0700",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "Fresh diagnostic follow-up passed strict TypeScript, git diff --check, four concurrent canonical runs, and full repository bun test: 925 pass, 0 fail, 121 files, 3996 expectations."
+    }
+  ],
+  "findings": [
+    {
+      "id": "qa-acc-phase-aware-review-36e3a728-17dd22",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "acc-phase-aware-review",
+      "source": "review",
+      "review_round": 1,
+      "summary": "verification failed (exit 1) stdout=28B stderr=15108B: tests/pi-canary-work-extension.test.ts:\n(pass) pi canary work extension surface > registers exactly one tool, two TUI commands, and one assurance renderer [172.20ms]\n(pass) pi canary work extension surface > tool schema is closed to ordinary operations; privileged kinds absent [0.73ms]\n\n    ○\n    │╲\n    │ ○\n    ○ ░\n    ░    gitleaks\n\n\u001b[90m11:57AM\u001b[0m \u001b[32mINF\u001b[0m \u001b[1m0 commits scanned.\u001b[0m\n\u001b[90m11:57AM\u001b[0m \u001b[32mINF\u001b[0m \u001b[1mscanned ~375 bytes (375 bytes) in 38.1ms\u001b[0m\n\u001b[90m11:57AM\u001b[0m \u001b[32mINF\u001b[0"
+    },
+    {
+      "id": "qa-acc-terminal-ownership-36e3a728-4e596a",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "acc-terminal-ownership",
+      "source": "review",
+      "review_round": 1,
+      "summary": "verification failed (exit 1) stdout=28B stderr=14656B: tests/pi-canary-work-extension.test.ts:\n(pass) pi canary work extension surface > registers exactly one tool, two TUI commands, and one assurance renderer [96.54ms]\n(pass) pi canary work extension surface > tool schema is closed to ordinary operations; privileged kinds absent [0.35ms]\n\n    ○\n    │╲\n    │ ○\n    ○ ░\n    ░    gitleaks\n\n\u001b[90m11:58AM\u001b[0m \u001b[32mINF\u001b[0m \u001b[1m0 commits scanned.\u001b[0m\n\u001b[90m11:58AM\u001b[0m \u001b[32mINF\u001b[0m \u001b[1mscanned ~375 bytes (375 bytes) in 33.7ms\u001b[0m\n\u001b[90m11:58AM\u001b[0m \u001b[32mINF\u001b[0m"
+    },
+    {
+      "id": "qa-acc-derived-qa-budget-36e3a728-bc0fb5",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "acc-derived-qa-budget",
+      "source": "review",
+      "review_round": 1,
+      "summary": "verification failed (exit 1) stdout=28B stderr=16328B: tests/pi-canary-work-extension.test.ts:\n(pass) pi canary work extension surface > registers exactly one tool, two TUI commands, and one assurance renderer [193.42ms]\n(pass) pi canary work extension surface > tool schema is closed to ordinary operations; privileged kinds absent [0.73ms]\n\n    ○\n    │╲\n    │ ○\n    ○ ░\n    ░    gitleaks\n\n\u001b[90m11:59AM\u001b[0m \u001b[32mINF\u001b[0m \u001b[1m0 commits scanned.\u001b[0m\n\u001b[90m11:59AM\u001b[0m \u001b[32mINF\u001b[0m \u001b[1mscanned ~375 bytes (375 bytes) in 41.4ms\u001b[0m\n\u001b[90m11:59AM\u001b[0m \u001b[32mINF\u001b[0"
+    },
+    {
+      "id": "review-75c38dbce6bb-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "acc-terminal-ownership",
+      "source": "review",
+      "review_round": 2,
+      "summary": "Dispatch timeout incorrectly treats any eventual spawn rejection as proven native terminal and emits timed_out, although a rejected standard Agent dispatch promise does not prove that no child was created or that it reached terminal settlement."
+    },
+    {
+      "id": "review-75c38dbce6bb-2-review-2",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "acc-derived-qa-budget",
+      "source": "review",
+      "review_round": 2,
+      "summary": "startQa returns the fixed 15-minute deadline before immutable descriptors are captured, so its public projection is inconsistent with a subsequently derived aggregate deadline."
+    },
+    {
+      "id": "qa-acc-phase-aware-review-238dcdd0-be3ab7",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "acc-phase-aware-review",
+      "source": "review",
+      "review_round": 3,
+      "summary": "verification failed (exit 1) stdout=28B stderr=14937B: tests/pi-canary-work-extension.test.ts:\n(pass) pi canary work extension surface > registers exactly one tool, two TUI commands, and one assurance renderer [106.83ms]\n(pass) pi canary work extension surface > tool schema is closed to ordinary operations; privileged kinds absent [0.21ms]\n\n    ○\n    │╲\n    │ ○\n    ○ ░\n    ░    gitleaks\n\n\u001b[90m12:24PM\u001b[0m \u001b[32mINF\u001b[0m \u001b[1m0 commits scanned.\u001b[0m\n\u001b[90m12:24PM\u001b[0m \u001b[32mINF\u001b[0m \u001b[1mscanned ~565 bytes (565 bytes) in 23ms\u001b[0m\n\u001b[90m12:24PM\u001b[0m \u001b[32mINF\u001b[0m "
+    },
+    {
+      "id": "review-398f6fbc3783-1-review-1",
+      "kind": "blocking",
+      "status": "open",
+      "acceptance_id": "acc-derived-qa-budget",
+      "source": "review",
+      "review_round": 4,
+      "summary": "QA preflight calls declaredQaJobTimeoutMs instead of the bounded deriveQaJobTimeoutMs, so an aggregate over 60 minutes is not rejected before snapshot capture and verification setup."
+    },
+    {
+      "id": "review-398f6fbc3783-2-review-2",
+      "kind": "blocking",
+      "status": "open",
+      "acceptance_id": "acc-terminal-ownership",
+      "source": "review",
+      "review_round": 4,
+      "summary": "Review cancellation treats stopReviewAndRemoveEvidence completion as native terminal settlement and emits cancelled even when stop only acknowledges a request, violating fail-closed terminal ownership."
+    },
+    {
+      "id": "request_rework:2026-08-16-001-phase-aware-assurance-deadlines:2026-08-16T04:42:19.425Z:replan-required",
+      "kind": "replan_required",
+      "status": "open",
+      "acceptance_id": "acc-derived-qa-budget",
+      "source": "kernel",
+      "review_round": 4,
+      "summary": "Review returned this acceptance boundary twice; a durable replan is required."
+    }
+  ],
+  "approvals": [
+    {
+      "id": "approval-qa-4f8c31eb",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:38f4ca098dea37b8866dcad8d5c47011b31090fc2f7ab7d7a6cd0e38f211e503",
+      "diff_hash": "sha256:803a572c5e513bffaa83f64c8b6c20cff0c66b3048c878caf3b4c8664ca4c1a7",
+      "actor_id": "qa-host-e10b41fb",
+      "summary": "all 5 fixed verification descriptor(s) passed"
+    },
+    {
+      "id": "approval-qa-8b074510",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:38f4ca098dea37b8866dcad8d5c47011b31090fc2f7ab7d7a6cd0e38f211e503",
+      "diff_hash": "sha256:10bdda2fa7eb2dc70845a07cb754b589926e553edf56811823bc8bf5f2bc0700",
+      "actor_id": "qa-host-f8dfe8e7",
+      "summary": "all 5 fixed verification descriptor(s) passed"
+    }
+  ],
+  "history": [
+    {
+      "id": "record_evidence:2026-08-16-001-phase-aware-assurance-deadlines:2026-08-16T03:56:58.394Z",
+      "at": "2026-08-16T03:56:58.394Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-phase-aware-review\naction_v2_sha256:1b4a4fb2c37b6e02ea22b395725f128e89ca421da8cc2337f6aedfa0e3cf45bf"
+    },
+    {
+      "id": "record_evidence:2026-08-16-001-phase-aware-assurance-deadlines:2026-08-16T03:57:05.939Z",
+      "at": "2026-08-16T03:57:05.939Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-terminal-ownership\naction_v2_sha256:5fe4139570a602079e46dad3e52f114115a6a586ead1220803655c160e024614"
+    },
+    {
+      "id": "record_evidence:2026-08-16-001-phase-aware-assurance-deadlines:2026-08-16T03:57:15.604Z",
+      "at": "2026-08-16T03:57:15.604Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-derived-qa-budget\naction_v2_sha256:60a9f775822b5b66f81b4b75545158944f26ed91726efddad9b2af7b475d84e9"
+    },
+    {
+      "id": "record_evidence:2026-08-16-001-phase-aware-assurance-deadlines:2026-08-16T03:57:24.396Z",
+      "at": "2026-08-16T03:57:24.396Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-contract-alignment\naction_v2_sha256:c5b70b0ae268d243e7607f4ad7b917ce306e0d8019d0f2f8fbe5194e00ff9838"
+    },
+    {
+      "id": "record_evidence:2026-08-16-001-phase-aware-assurance-deadlines:2026-08-16T03:57:33.791Z",
+      "at": "2026-08-16T03:57:33.791Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-typecheck-and-regression\naction_v2_sha256:6b8c15c3bcacbba8c7f68d43e436a6b9555f6a237f1955a25438d5430153a97c"
+    },
+    {
+      "id": "submit_review:2026-08-16-001-phase-aware-assurance-deadlines:2026-08-16T03:57:41.100Z",
+      "at": "2026-08-16T03:57:41.100Z",
+      "type": "submit_review",
+      "from_phase": "working",
+      "to_phase": "review",
+      "reason": "action_v2_sha256:a633bc7f29640b629f1c1795a0727dc718fa9228d98c943483028897de5fc91e"
+    },
+    {
+      "id": "request_rework:2026-08-16-001-phase-aware-assurance-deadlines:2026-08-16T04:01:52.672Z",
+      "at": "2026-08-16T04:01:52.672Z",
+      "type": "request_rework",
+      "from_phase": "review",
+      "to_phase": "working",
+      "reason": "review_round_1\naction_v2_sha256:a24533551e12d88a463dd451fb926d95459eb239fa82468b810a6508653ed802",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "qa-host-522061bb",
+        "confirmation_ref": "pi-confirm-154eeccbf2c6d8a3",
+        "issued_at": "2026-08-16T04:01:52.673Z",
+        "expires_at": "2026-08-16T04:11:52.672Z"
+      }
+    },
+    {
+      "id": "resolve_finding:2026-08-16-001-phase-aware-assurance-deadlines:2026-08-16T04:04:13.672Z",
+      "at": "2026-08-16T04:04:13.672Z",
+      "type": "resolve_finding",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "qa-acc-phase-aware-review-36e3a728-17dd22\naction_v2_sha256:3adc68b9eab92119b34af3c8fbeb0bdfdcc5f07107589936da096a3b362cdd1b"
+    },
+    {
+      "id": "resolve_finding:2026-08-16-001-phase-aware-assurance-deadlines:2026-08-16T04:04:21.908Z",
+      "at": "2026-08-16T04:04:21.908Z",
+      "type": "resolve_finding",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "qa-acc-terminal-ownership-36e3a728-4e596a\naction_v2_sha256:3022c6fdcf87e9355f93b77e38f6a3f581c25daae7def79559e8382379b6db15"
+    },
+    {
+      "id": "resolve_finding:2026-08-16-001-phase-aware-assurance-deadlines:2026-08-16T04:04:27.829Z",
+      "at": "2026-08-16T04:04:27.829Z",
+      "type": "resolve_finding",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "qa-acc-derived-qa-budget-36e3a728-bc0fb5\naction_v2_sha256:a0eab953c41b11289054259bda5762a7685018f093f0bf73b25c98d49ff3bcdc"
+    },
+    {
+      "id": "submit_review:2026-08-16-001-phase-aware-assurance-deadlines:2026-08-16T04:04:33.669Z",
+      "at": "2026-08-16T04:04:33.669Z",
+      "type": "submit_review",
+      "from_phase": "working",
+      "to_phase": "review",
+      "reason": "action_v2_sha256:1d5a78462aa786b63b4f09a231ddae28c6d6ce3c92305d4bc12f79d2819422e9"
+    },
+    {
+      "id": "record_approval:2026-08-16-001-phase-aware-assurance-deadlines:2026-08-16T04:07:47.047Z",
+      "at": "2026-08-16T04:07:47.047Z",
+      "type": "record_approval",
+      "from_phase": "review",
+      "to_phase": "review",
+      "reason": "approval-qa-4f8c31eb\naction_v2_sha256:edcef9cd27357f4f25c53a038934ec957a07d630970d7ecc582895998281fcc1",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "qa-host-e10b41fb",
+        "confirmation_ref": "pi-confirm-1c9f0209cb4a1bd8",
+        "issued_at": "2026-08-16T04:07:47.047Z",
+        "expires_at": "2026-08-16T04:17:47.047Z"
+      }
+    },
+    {
+      "id": "request_rework:2026-08-16-001-phase-aware-assurance-deadlines:2026-08-16T04:10:46.458Z",
+      "at": "2026-08-16T04:10:46.458Z",
+      "type": "request_rework",
+      "from_phase": "review",
+      "to_phase": "working",
+      "reason": "review_round_2\naction_v2_sha256:8c2df47b762068821046d4b926da4d208af57057b3e67f4ebd9ad21a875f3e7c",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "native-review-c5c1f260-de5c-437",
+        "confirmation_ref": "pi-confirm-26f266dbdf0c60e5",
+        "issued_at": "2026-08-16T04:10:46.459Z",
+        "expires_at": "2026-08-16T04:20:46.459Z"
+      }
+    },
+    {
+      "id": "record_evidence:2026-08-16-001-phase-aware-assurance-deadlines:2026-08-16T04:23:27.745Z",
+      "at": "2026-08-16T04:23:27.745Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-phase-aware-review\naction_v2_sha256:c8abaab7f7db37add3bf750aa6c94efdffb9ebc61600a37500584d39efbe8c06"
+    },
+    {
+      "id": "record_evidence:2026-08-16-001-phase-aware-assurance-deadlines:2026-08-16T04:23:38.444Z",
+      "at": "2026-08-16T04:23:38.444Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-terminal-ownership\naction_v2_sha256:afe188034ef5c927d41a7a55c0132528494831cc948fbacf7f79b04d9db6cbab"
+    },
+    {
+      "id": "record_evidence:2026-08-16-001-phase-aware-assurance-deadlines:2026-08-16T04:23:47.744Z",
+      "at": "2026-08-16T04:23:47.744Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-derived-qa-budget\naction_v2_sha256:fc59ad09755a6ac91336b82cd64bd568e4dcb7385a996c70d45608bda38b10d3"
+    },
+    {
+      "id": "record_evidence:2026-08-16-001-phase-aware-assurance-deadlines:2026-08-16T04:23:57.109Z",
+      "at": "2026-08-16T04:23:57.109Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-contract-alignment\naction_v2_sha256:bd8f493b0cd053461e16c3e2971cc52775f66ba14a65b699a7ccd6ecab6858aa"
+    },
+    {
+      "id": "record_evidence:2026-08-16-001-phase-aware-assurance-deadlines:2026-08-16T04:24:05.627Z",
+      "at": "2026-08-16T04:24:05.627Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-typecheck-and-regression\naction_v2_sha256:8318934c94f23ab02703b420058f5c33b6155c56c03163fd072f9dff106fcff5"
+    },
+    {
+      "id": "resolve_finding:2026-08-16-001-phase-aware-assurance-deadlines:2026-08-16T04:24:15.205Z",
+      "at": "2026-08-16T04:24:15.205Z",
+      "type": "resolve_finding",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "review-75c38dbce6bb-1-review-1\naction_v2_sha256:1b56a2e160281cdabd469e6046293cc6f43a65b2e7a70c06c284578f6f3e406a"
+    },
+    {
+      "id": "resolve_finding:2026-08-16-001-phase-aware-assurance-deadlines:2026-08-16T04:24:21.730Z",
+      "at": "2026-08-16T04:24:21.730Z",
+      "type": "resolve_finding",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "review-75c38dbce6bb-2-review-2\naction_v2_sha256:de914aa73bc79ca0cab8c9620c9cefdcef89a814703d2a71f9cf8b9d88353040"
+    },
+    {
+      "id": "submit_review:2026-08-16-001-phase-aware-assurance-deadlines:2026-08-16T04:24:29.277Z",
+      "at": "2026-08-16T04:24:29.277Z",
+      "type": "submit_review",
+      "from_phase": "working",
+      "to_phase": "review",
+      "reason": "action_v2_sha256:b7dc4d56ffe98753004424d1bdae899b7aa4e6a330dc810b090975f823d9e5b0"
+    },
+    {
+      "id": "request_rework:2026-08-16-001-phase-aware-assurance-deadlines:2026-08-16T04:27:52.634Z",
+      "at": "2026-08-16T04:27:52.634Z",
+      "type": "request_rework",
+      "from_phase": "review",
+      "to_phase": "working",
+      "reason": "review_round_3\naction_v2_sha256:91826a913fa3f739d3590d8df6594d8a448cde9137f9f0fbd110b44cc9cbc95b",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "qa-host-14c41f1c",
+        "confirmation_ref": "pi-confirm-4df6778297c3ef9e",
+        "issued_at": "2026-08-16T04:27:52.634Z",
+        "expires_at": "2026-08-16T04:37:52.634Z"
+      }
+    },
+    {
+      "id": "record_evidence:2026-08-16-001-phase-aware-assurance-deadlines:2026-08-16T04:34:05.619Z",
+      "at": "2026-08-16T04:34:05.619Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-phase-aware-review\naction_v2_sha256:686ec3f9809fb8b5e7fe6a38e660bc96b6d310b38d54adc8c20a1fcc97c2fcfd"
+    },
+    {
+      "id": "record_evidence:2026-08-16-001-phase-aware-assurance-deadlines:2026-08-16T04:34:18.448Z",
+      "at": "2026-08-16T04:34:18.448Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-terminal-ownership\naction_v2_sha256:8d7d0b2057f8b3dcd74fc0f6173a6a5bdad7d9e76d8d8544b2d98a146c7452aa"
+    },
+    {
+      "id": "record_evidence:2026-08-16-001-phase-aware-assurance-deadlines:2026-08-16T04:34:28.322Z",
+      "at": "2026-08-16T04:34:28.322Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-derived-qa-budget\naction_v2_sha256:957f3e076e2b9825628b305f9d6981a8d8920cd9706583a7b19953b65d17bc46"
+    },
+    {
+      "id": "record_evidence:2026-08-16-001-phase-aware-assurance-deadlines:2026-08-16T04:34:38.287Z",
+      "at": "2026-08-16T04:34:38.287Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-contract-alignment\naction_v2_sha256:db65d0705bc3b2f1a1a53b99c0a4b339443c2928c5c3f3d42fd37e5a319438f8"
+    },
+    {
+      "id": "record_evidence:2026-08-16-001-phase-aware-assurance-deadlines:2026-08-16T04:34:47.605Z",
+      "at": "2026-08-16T04:34:47.605Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-typecheck-and-regression\naction_v2_sha256:e815aaf326f5d15c97dddcb991b3e2a1bebbfada7ac15f1387e97d67528feb7f"
+    },
+    {
+      "id": "resolve_finding:2026-08-16-001-phase-aware-assurance-deadlines:2026-08-16T04:34:55.676Z",
+      "at": "2026-08-16T04:34:55.676Z",
+      "type": "resolve_finding",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "qa-acc-phase-aware-review-238dcdd0-be3ab7\naction_v2_sha256:8ea1dd4882f6bb4e2f89d26a3927ae8c17ed5732c7ae09e33cd6c46dd344140f"
+    },
+    {
+      "id": "submit_review:2026-08-16-001-phase-aware-assurance-deadlines:2026-08-16T04:35:03.263Z",
+      "at": "2026-08-16T04:35:03.263Z",
+      "type": "submit_review",
+      "from_phase": "working",
+      "to_phase": "review",
+      "reason": "action_v2_sha256:4d6cae912255fc281f80cddd2d128a5c965e2f8272ef21e0ecacd4d0854269d5"
+    },
+    {
+      "id": "record_approval:2026-08-16-001-phase-aware-assurance-deadlines:2026-08-16T04:39:37.354Z",
+      "at": "2026-08-16T04:39:37.354Z",
+      "type": "record_approval",
+      "from_phase": "review",
+      "to_phase": "review",
+      "reason": "approval-qa-8b074510\naction_v2_sha256:faf1bf67b992f7a902b3ab3f52cfe0cba41afc3fdf82875d11f23e68abcc936a",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "qa-host-f8dfe8e7",
+        "confirmation_ref": "pi-confirm-fc554995fca24c39",
+        "issued_at": "2026-08-16T04:39:37.354Z",
+        "expires_at": "2026-08-16T04:49:37.354Z"
+      }
+    },
+    {
+      "id": "request_rework:2026-08-16-001-phase-aware-assurance-deadlines:2026-08-16T04:42:19.425Z",
+      "at": "2026-08-16T04:42:19.425Z",
+      "type": "request_rework",
+      "from_phase": "review",
+      "to_phase": "review",
+      "reason": "review_round_4\naction_v2_sha256:68587eab03173f50256de4e03f6b9731005cb55dacdb090c04ba1ebc62803c95",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "native-review-97da415e-e637-4c7",
+        "confirmation_ref": "pi-confirm-eef3129fd37de592",
+        "issued_at": "2026-08-16T04:42:19.425Z",
+        "expires_at": "2026-08-16T04:52:19.425Z"
+      }
+    },
+    {
+      "id": "stop:2026-08-16-001-phase-aware-assurance-deadlines:2026-08-16T04:53:03.448Z",
+      "at": "2026-08-16T04:53:03.448Z",
+      "type": "stop",
+      "from_phase": "review",
+      "to_phase": "stopped",
+      "reason": "literal user stop\naction_v2_sha256:d1b9767892a41dcb54d7c3762e97148325fa42706eed3a85b6e4b92a417b8b2d",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-9ff23564e16ab324",
+        "issued_at": "2026-08-16T04:53:03.449Z",
+        "expires_at": "2026-08-16T05:03:03.449Z"
+      }
+    }
+  ]
+}

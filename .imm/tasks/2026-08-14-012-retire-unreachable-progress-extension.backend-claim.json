@@ -1,0 +1,9 @@
+{
+  "contract": "assurance_kernel/task_tombstone/v1",
+  "task_id": "2026-08-14-012-retire-unreachable-progress-extension",
+  "lifecycle_status": "terminal",
+  "terminal_phase": "done",
+  "terminal_event_id": "complete:2026-08-14-012-retire-unreachable-progress-extension:2026-08-15T06:00:36.338Z",
+  "final_record_hash": "sha256:1325c51a0e9f898bb34458b85184a920f167ae34bf4acbf609e7b089578fd609",
+  "terminalized_at": "2026-08-15T06:00:36.338Z"
+}

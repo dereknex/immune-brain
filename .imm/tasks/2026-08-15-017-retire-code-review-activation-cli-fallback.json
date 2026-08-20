@@ -1,0 +1,241 @@
+{
+  "contract": "assurance_kernel/task_record/v2",
+  "task_id": "2026-08-15-017-retire-code-review-activation-cli-fallback",
+  "intent_revision": 1,
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "2026-08-15-017-retire-code-review-activation-cli-fallback",
+    "goal": "Remove the retired imm-activation-plan CLI fallback from shipped imm-code-review contracts while preserving catalog-driven lens selection, shared dispatch/authorization, same-boundary follow_up, public Skill aliases, and the separately bounded legacy dispatcher.",
+    "acceptance": [
+      {
+        "id": "acc-code-review-contract",
+        "assertion": "Source and packaged imm-code-review contracts keep catalog-driven lenses and shared dispatch ownership, and advertise no imm-activation-plan, immune_brain_runtime.ts, or activation_runtime_unavailable CLI ladder.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/code-review-activation-contract.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 180000,\n  \"max_output_bytes\": 262144\n}\n"
+      },
+      {
+        "id": "acc-packaged-activation-spec",
+        "assertion": "The packaged automatic-subagent-activation spec no longer names the omitted dispatcher or retired imm-activation-plan command as the planner entrypoint.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/code-review-activation-contract.test.ts\",\n    \"tests/pi-packaged-legacy-fallbacks.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 180000,\n  \"max_output_bytes\": 262144\n}\n"
+      },
+      {
+        "id": "acc-wrapper-fail-closed",
+        "assertion": "The existing v4 wrapper continues to reject imm-activation-plan as an unknown command without restoring it as a production surface.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/activation-plan-runtime-surface.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 180000,\n  \"max_output_bytes\": 262144\n}\n"
+      },
+      {
+        "id": "acc-boundary-retained",
+        "assertion": "The legacy dispatcher, public Skill aliases, Pi factories, package surface, and host runtime remain outside this slice and pass their focused contracts.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/v4-runtime-launchers.test.ts\",\n    \"tests/dist-docs-sync-contract.test.ts\",\n    \"tests/pi-canary-discovery-regression.test.ts\",\n    \"tests/pi-canary-packed-loader.test.ts\",\n    \"tests/pi-only-package-surface.test.ts\",\n    \"tests/host-runtime-cutover.test.ts\",\n    \"plugins/immune-brain/tests/skill-registry-consistency.test.ts\",\n    \"plugins/immune-brain/tests/host-manifest-consistency.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 300000,\n  \"max_output_bytes\": 262144\n}\n"
+      },
+      {
+        "id": "acc-runtime-untouched",
+        "assertion": "This slice does not modify the legacy dispatcher, v4 runtime, or command modules.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/v4-runtime-launchers.test.ts\",\n    \"tests/activation-plan-runtime-surface.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 180000,\n  \"max_output_bytes\": 262144\n}\n"
+      },
+      {
+        "id": "acc-full-regression",
+        "assertion": "The full repository test suite passes after code-review activation CLI fallback retirement.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 300000,\n  \"max_output_bytes\": 262144\n}\n"
+      }
+    ],
+    "scope_hint": [
+      "docs/specs/host-native-lightweight-workflow-roadmap.spec.md",
+      "docs/specs/retire-code-review-activation-cli-fallback.spec.md",
+      "plugins/immune-brain/dist/docs/specs/automatic-subagent-activation.spec.md",
+      "plugins/immune-brain/dist/imm-code-review.md",
+      "plugins/immune-brain/skills/imm-code-review/SKILL.md",
+      "tests/code-review-activation-contract.test.ts"
+    ],
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/2026-08-15-017-retire-code-review-activation-cli-fallback.intent.json",
+    "revision": 1,
+    "content_hash": "sha256:c97cf76f3f09f597a13caa52975a81957d6e8d41f4c70d41b53bfa9e0e9534cc"
+  },
+  "phase": "done",
+  "baseline": "sha256:c97cf76f3f09f597a13caa52975a81957d6e8d41f4c70d41b53bfa9e0e9534cc",
+  "evidence": [
+    {
+      "id": "evidence-record_evidence:2026-08-15-017-retire-code-review-activation-cli-fallback:2026-08-15T07:40:14.728Z",
+      "acceptance_id": "acc-code-review-contract",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:c97cf76f3f09f597a13caa52975a81957d6e8d41f4c70d41b53bfa9e0e9534cc",
+      "diff_hash": "sha256:d9c5c6f5e6d246f3f4ddf97b2611ab9d10a7489dd44849de3b2d3e26c3f107cc",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "At HEAD 0904b07, bun test tests/code-review-activation-contract.test.ts passed 3/3. Source and packaged imm-code-review contracts keep catalog-driven lenses and shared dispatch ownership, with no imm-activation-plan, immune_brain_runtime.ts, or activation_runtime_unavailable CLI ladder."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-15-017-retire-code-review-activation-cli-fallback:2026-08-15T07:40:20.089Z",
+      "acceptance_id": "acc-packaged-activation-spec",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:c97cf76f3f09f597a13caa52975a81957d6e8d41f4c70d41b53bfa9e0e9534cc",
+      "diff_hash": "sha256:d9c5c6f5e6d246f3f4ddf97b2611ab9d10a7489dd44849de3b2d3e26c3f107cc",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "At HEAD 0904b07, bun test tests/code-review-activation-contract.test.ts tests/pi-packaged-legacy-fallbacks.test.ts passed 8/8. The packaged automatic-subagent-activation spec no longer names the omitted dispatcher or retired imm-activation-plan command as the planner entrypoint."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-15-017-retire-code-review-activation-cli-fallback:2026-08-15T07:40:24.483Z",
+      "acceptance_id": "acc-wrapper-fail-closed",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:c97cf76f3f09f597a13caa52975a81957d6e8d41f4c70d41b53bfa9e0e9534cc",
+      "diff_hash": "sha256:d9c5c6f5e6d246f3f4ddf97b2611ab9d10a7489dd44849de3b2d3e26c3f107cc",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "At HEAD 0904b07, bun test tests/activation-plan-runtime-surface.test.ts passed 2/2. The existing v4 wrapper still rejects imm-activation-plan as an unknown command and does not restore it as a production surface."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-15-017-retire-code-review-activation-cli-fallback:2026-08-15T07:40:27.852Z",
+      "acceptance_id": "acc-boundary-retained",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:c97cf76f3f09f597a13caa52975a81957d6e8d41f4c70d41b53bfa9e0e9534cc",
+      "diff_hash": "sha256:d9c5c6f5e6d246f3f4ddf97b2611ab9d10a7489dd44849de3b2d3e26c3f107cc",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "At HEAD 0904b07, focused launcher, packaging-sync, Pi discovery, packed loader, package surface, host runtime, skill-registry, and host-manifest tests passed 41/41. Public Skill aliases and later deletion boundaries remain intact."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-15-017-retire-code-review-activation-cli-fallback:2026-08-15T07:40:31.644Z",
+      "acceptance_id": "acc-runtime-untouched",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:c97cf76f3f09f597a13caa52975a81957d6e8d41f4c70d41b53bfa9e0e9534cc",
+      "diff_hash": "sha256:d9c5c6f5e6d246f3f4ddf97b2611ab9d10a7489dd44849de3b2d3e26c3f107cc",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "At HEAD 0904b07, git diff --exit-code against immune_brain_runtime.ts, runtime/commands, and v4_runtime.ts is clean. This slice did not modify the legacy dispatcher, v4 runtime, or command modules."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-15-017-retire-code-review-activation-cli-fallback:2026-08-15T07:40:34.889Z",
+      "acceptance_id": "acc-full-regression",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:c97cf76f3f09f597a13caa52975a81957d6e8d41f4c70d41b53bfa9e0e9534cc",
+      "diff_hash": "sha256:d9c5c6f5e6d246f3f4ddf97b2611ab9d10a7489dd44849de3b2d3e26c3f107cc",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "At HEAD 0904b07, bun test passed 1124 tests across 148 files with zero failures and 5634 expectations; git status is clean."
+    }
+  ],
+  "findings": [],
+  "approvals": [
+    {
+      "id": "approval-qa-55f1dd9f",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:c97cf76f3f09f597a13caa52975a81957d6e8d41f4c70d41b53bfa9e0e9534cc",
+      "diff_hash": "sha256:d9c5c6f5e6d246f3f4ddf97b2611ab9d10a7489dd44849de3b2d3e26c3f107cc",
+      "actor_id": "qa-host-a39f9c1b",
+      "summary": "all 6 fixed verification descriptor(s) passed"
+    },
+    {
+      "id": "approval-review-b386e5d3",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:c97cf76f3f09f597a13caa52975a81957d6e8d41f4c70d41b53bfa9e0e9534cc",
+      "diff_hash": "sha256:d9c5c6f5e6d246f3f4ddf97b2611ab9d10a7489dd44849de3b2d3e26c3f107cc",
+      "actor_id": "native-review-5f872056-1353-49d",
+      "summary": "Shipped code-review contracts and tests drop the retired activation CLI ladder while keeping catalog lenses, shared dispatch, follow_up, and the untouched fail-closed runtime boundary."
+    }
+  ],
+  "history": [
+    {
+      "id": "record_evidence:2026-08-15-017-retire-code-review-activation-cli-fallback:2026-08-15T07:40:14.728Z",
+      "at": "2026-08-15T07:40:14.728Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-code-review-contract\naction_v2_sha256:04dc25cff05cf374abb2f277f113c0e37002d30c79c267929c9c2dd17d05f812"
+    },
+    {
+      "id": "record_evidence:2026-08-15-017-retire-code-review-activation-cli-fallback:2026-08-15T07:40:20.089Z",
+      "at": "2026-08-15T07:40:20.089Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-packaged-activation-spec\naction_v2_sha256:47e965d534e046f2654b0d796f944f5cf9472d218a5b20ada1bf4eaa6701e7e1"
+    },
+    {
+      "id": "record_evidence:2026-08-15-017-retire-code-review-activation-cli-fallback:2026-08-15T07:40:24.483Z",
+      "at": "2026-08-15T07:40:24.483Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-wrapper-fail-closed\naction_v2_sha256:356aa0b9eddf56f4c2c8e898d086bcbd9c52496050404f385cf031ac36c503a5"
+    },
+    {
+      "id": "record_evidence:2026-08-15-017-retire-code-review-activation-cli-fallback:2026-08-15T07:40:27.852Z",
+      "at": "2026-08-15T07:40:27.852Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-boundary-retained\naction_v2_sha256:db53b2ed1821aa42ac893ff02c723f6c9945e38a7e2bfc09576328362f90ce5c"
+    },
+    {
+      "id": "record_evidence:2026-08-15-017-retire-code-review-activation-cli-fallback:2026-08-15T07:40:31.644Z",
+      "at": "2026-08-15T07:40:31.644Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-runtime-untouched\naction_v2_sha256:2fe52179cbdd3fad649688d3d40be4b0dde4d13e12c4e778c2896e38053675c9"
+    },
+    {
+      "id": "record_evidence:2026-08-15-017-retire-code-review-activation-cli-fallback:2026-08-15T07:40:34.889Z",
+      "at": "2026-08-15T07:40:34.889Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-full-regression\naction_v2_sha256:c255fb9bb9d241bc156f438758c9b020f2fee1c630914e1629b6ae9240802dc1"
+    },
+    {
+      "id": "submit_review:2026-08-15-017-retire-code-review-activation-cli-fallback:2026-08-15T07:40:40.309Z",
+      "at": "2026-08-15T07:40:40.309Z",
+      "type": "submit_review",
+      "from_phase": "working",
+      "to_phase": "review",
+      "reason": "action_v2_sha256:c0c21a69d63a1c7256c4423d6f76805dbe3cb1b1f5395cc169bbd518e6efe51a"
+    },
+    {
+      "id": "record_approval:2026-08-15-017-retire-code-review-activation-cli-fallback:2026-08-15T07:41:47.237Z",
+      "at": "2026-08-15T07:41:47.237Z",
+      "type": "record_approval",
+      "from_phase": "review",
+      "to_phase": "review",
+      "reason": "approval-qa-55f1dd9f\naction_v2_sha256:916a2fb0b261b2a956aeb1e7f21e104b6e565deee8e1fcbf067341dbce10b1f3",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "qa-host-a39f9c1b",
+        "confirmation_ref": "pi-confirm-40a30f4ca91ad797",
+        "issued_at": "2026-08-15T07:41:47.237Z",
+        "expires_at": "2026-08-15T07:51:47.237Z"
+      }
+    },
+    {
+      "id": "record_approval:2026-08-15-017-retire-code-review-activation-cli-fallback:2026-08-15T07:48:14.138Z",
+      "at": "2026-08-15T07:48:14.138Z",
+      "type": "record_approval",
+      "from_phase": "review",
+      "to_phase": "review",
+      "reason": "approval-review-b386e5d3\naction_v2_sha256:a8ce5b69469b11576220c10bc3e7799ea387a3d4fa81a73b6467f1e94b83684e",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "native-review-5f872056-1353-49d",
+        "confirmation_ref": "pi-confirm-2856da5d7ba92e96",
+        "issued_at": "2026-08-15T07:48:14.138Z",
+        "expires_at": "2026-08-15T07:58:14.138Z"
+      }
+    },
+    {
+      "id": "complete:2026-08-15-017-retire-code-review-activation-cli-fallback:2026-08-15T07:48:48.928Z",
+      "at": "2026-08-15T07:48:48.928Z",
+      "type": "complete",
+      "from_phase": "review",
+      "to_phase": "done",
+      "reason": "action_v2_sha256:60d8c4bc65bb4c15bce8befe2fa1fd3221d6429b9cbab06d0be1d8621bf30196"
+    }
+  ]
+}

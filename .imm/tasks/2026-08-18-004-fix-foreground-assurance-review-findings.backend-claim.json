@@ -1,0 +1,9 @@
+{
+  "contract": "assurance_kernel/task_tombstone/v1",
+  "task_id": "2026-08-18-004-fix-foreground-assurance-review-findings",
+  "lifecycle_status": "terminal",
+  "terminal_phase": "done",
+  "terminal_event_id": "complete:2026-08-18-004-fix-foreground-assurance-review-findings:2026-08-18T03:06:09.843Z",
+  "final_record_hash": "sha256:98c09885218ea20d49f2623377ef3a0518fe53ce570c1028937e0b72a469d8ab",
+  "terminalized_at": "2026-08-18T03:06:09.843Z"
+}

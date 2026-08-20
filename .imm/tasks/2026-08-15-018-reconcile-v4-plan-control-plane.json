@@ -1,0 +1,255 @@
+{
+  "contract": "assurance_kernel/task_record/v2",
+  "task_id": "2026-08-15-018-reconcile-v4-plan-control-plane",
+  "intent_revision": 1,
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "2026-08-15-018-reconcile-v4-plan-control-plane",
+    "goal": "Restore the shipped v4 imm-plan read-only control plane so routing-status returns the complete Git-owned policy projection, explicit Plan paths receive genuine parse, semantic, and dynamic origin-coverage validation, active-policy Managed authority remains separately bound to TaskIntent validation and Pi TUI enrollment, and all mutation paths remain retired without importing the legacy dispatcher.",
+    "acceptance": [
+      {
+        "id": "acc-routing-status",
+        "assertion": "The source and packed imm-plan --routing-status --json wrappers return the complete strict routing projection for absent, active, malformed, drifted, untracked, tracked-deleted, symlinked, oversize, and unreadable policies, preserving every route, v3_new_plan_sync, mode, hash, ownership, and reason field instead of substituting a legacy Ledger projection.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/imm-plan-routing-status-contract.test.ts\",\n    \"tests/v4-plan-control-plane.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 300000,\n  \"max_output_bytes\": 262144\n}\n"
+      },
+      {
+        "id": "acc-plan-validation",
+        "assertion": "The source and packed imm-plan wrappers genuinely parse and validate the explicit Plan path, preserve normalized fields and warnings, dynamically derive the seven-field closed-world origin_coverage projection, and fail non-zero for missing, malformed, or semantically invalid Plans.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/plan-validation.test.ts\",\n    \"tests/v4-plan-control-plane.test.ts\",\n    \"tests/host-runtime-cutover.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 300000,\n  \"max_output_bytes\": 262144\n}\n"
+      },
+      {
+        "id": "acc-read-only-retired-wall",
+        "assertion": "Accepted, invalid, and retired imm-plan forms preserve complete fixture-tree bytes and Git index/worktree state, create no .imm authority artifact, and keep every v3 mutation option fail-closed while permitting only the existing bounded Ledger read needed for drain-sensitive rejection reasons.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/v4-plan-control-plane.test.ts\",\n    \"tests/v4-runtime-launchers.test.ts\",\n    \"tests/v3-plan-creation-retirement.test.ts\",\n    \"tests/v4-storage-retirement-v3-writers.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 300000,\n  \"max_output_bytes\": 262144\n}\n"
+      },
+      {
+        "id": "acc-package-parity",
+        "assertion": "The npm package ships only the pure Plan validator closure required by v4, omits the legacy dispatcher and commands/plan.ts, and its extracted imm-plan wrapper matches source routing, validation, failure, authority-separation, and no-write behavior.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/v4-plan-control-plane.test.ts\",\n    \"tests/pi-only-package-surface.test.ts\",\n    \"tests/pi-canary-packed-loader.test.ts\",\n    \"tests/plugin-package-runtime.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 300000,\n  \"max_output_bytes\": 262144\n}\n"
+      },
+      {
+        "id": "acc-planner-authority",
+        "assertion": "Under active routing policy the shipped Planner requires an explicit Plan path for advisory validation and separately requires canonical TaskIntent validation before Pi TUI enrollment; source and packed behavior tests prove valid Plan validation creates no TaskIntent or TaskRecord and an invalid TaskIntent fails through the shipped Kernel validator.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/pi-packaged-legacy-fallbacks.test.ts\",\n    \"tests/dist-docs-sync-contract.test.ts\",\n    \"tests/v4-plan-control-plane.test.ts\",\n    \"tests/kernel-intent-authoring.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 300000,\n  \"max_output_bytes\": 262144\n}\n"
+      },
+      {
+        "id": "acc-full-regression",
+        "assertion": "The complete repository suite passes after v4 Plan control-plane reconciliation with Pi factories, Kernel canary behavior, bounded legacy audit, and enrolled scope isolation unchanged.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 300000,\n  \"max_output_bytes\": 262144\n}\n"
+      }
+    ],
+    "scope_hint": [
+      "CONTEXT.md",
+      "docs/specs/host-native-lightweight-workflow-roadmap.spec.md",
+      "docs/specs/reconcile-v4-plan-control-plane.spec.md",
+      "package.json",
+      "plugins/immune-brain/dist/imm-planner.md",
+      "plugins/immune-brain/runtime/plan_core.ts",
+      "plugins/immune-brain/runtime/v4_runtime.ts",
+      "tests/dist-docs-sync-contract.test.ts",
+      "tests/host-runtime-cutover.test.ts",
+      "tests/imm-plan-routing-status-contract.test.ts",
+      "tests/kernel-intent-authoring.test.ts",
+      "tests/pi-canary-packed-loader.test.ts",
+      "tests/pi-only-package-surface.test.ts",
+      "tests/pi-packaged-legacy-fallbacks.test.ts",
+      "tests/plan-validation.test.ts",
+      "tests/plugin-package-runtime.test.ts",
+      "tests/v3-plan-creation-retirement.test.ts",
+      "tests/v4-plan-control-plane.test.ts",
+      "tests/v4-runtime-launchers.test.ts",
+      "tests/v4-storage-retirement-v3-writers.test.ts"
+    ],
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/2026-08-15-018-reconcile-v4-plan-control-plane.intent.json",
+    "revision": 1,
+    "content_hash": "sha256:695bd31676fc9584dc6f6278135789724e487970cb290471dd728b8b5cd553bf"
+  },
+  "phase": "done",
+  "baseline": "sha256:695bd31676fc9584dc6f6278135789724e487970cb290471dd728b8b5cd553bf",
+  "evidence": [
+    {
+      "id": "evidence-record_evidence:2026-08-15-018-reconcile-v4-plan-control-plane:2026-08-15T08:58:47.332Z",
+      "acceptance_id": "acc-routing-status",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:695bd31676fc9584dc6f6278135789724e487970cb290471dd728b8b5cd553bf",
+      "diff_hash": "sha256:22ac84f75aa4e4534b59f2a7b10950374747b7077b2247f05001ae7701bedc5d",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "source+packed imm-plan --routing-status --json returns complete strict routing projection across absent/active/malformed/drifted/untracked/tracked-deleted/symlinked/oversize/unreadable policies; 22 focused tests pass"
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-15-018-reconcile-v4-plan-control-plane:2026-08-15T08:58:52.753Z",
+      "acceptance_id": "acc-plan-validation",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:695bd31676fc9584dc6f6278135789724e487970cb290471dd728b8b5cd553bf",
+      "diff_hash": "sha256:22ac84f75aa4e4534b59f2a7b10950374747b7077b2247f05001ae7701bedc5d",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "imm-plan <plan-path> --json validates explicit Plan with dynamic origin_coverage through pure plan_core; missing/malformed/semantically invalid Plans fail closed nonzero; 37 plan-validation tests pass"
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-15-018-reconcile-v4-plan-control-plane:2026-08-15T08:59:07.388Z",
+      "acceptance_id": "acc-read-only-retired-wall",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:695bd31676fc9584dc6f6278135789724e487970cb290471dd728b8b5cd553bf",
+      "diff_hash": "sha256:22ac84f75aa4e4534b59f2a7b10950374747b7077b2247f05001ae7701bedc5d",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "accepted/invalid/retired imm-plan forms preserve fixture-tree bytes and Git index/worktree state, create no .imm authority artifact, keep v3 mutation options fail-closed with bounded Ledger read for drain reasons; 14 retirement tests pass"
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-15-018-reconcile-v4-plan-control-plane:2026-08-15T08:59:12.760Z",
+      "acceptance_id": "acc-package-parity",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:695bd31676fc9584dc6f6278135789724e487970cb290471dd728b8b5cd553bf",
+      "diff_hash": "sha256:22ac84f75aa4e4534b59f2a7b10950374747b7077b2247f05001ae7701bedc5d",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "npm package ships only pure plan_core validator, omits legacy dispatcher and commands/plan.ts; extracted imm-plan wrapper matches source routing/validation/failure/authority/no-write behavior; 50 package+cutover tests pass"
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-15-018-reconcile-v4-plan-control-plane:2026-08-15T08:59:17.387Z",
+      "acceptance_id": "acc-planner-authority",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:695bd31676fc9584dc6f6278135789724e487970cb290471dd728b8b5cd553bf",
+      "diff_hash": "sha256:22ac84f75aa4e4534b59f2a7b10950374747b7077b2247f05001ae7701bedc5d",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "Planner requires explicit Plan path for advisory validation and separate canonical TaskIntent validation before Pi TUI enrollment; valid Plan creates no TaskIntent/TaskRecord and invalid TaskIntent fails via shipped Kernel validator; contract tests pass"
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-15-018-reconcile-v4-plan-control-plane:2026-08-15T08:59:21.926Z",
+      "acceptance_id": "acc-full-regression",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:695bd31676fc9584dc6f6278135789724e487970cb290471dd728b8b5cd553bf",
+      "diff_hash": "sha256:22ac84f75aa4e4534b59f2a7b10950374747b7077b2247f05001ae7701bedc5d",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "full repository suite 1142/0 pass after v4 Plan control-plane reconciliation with Pi factories, Kernel canary, bounded legacy audit, and enrolled scope isolation unchanged"
+    }
+  ],
+  "findings": [],
+  "approvals": [
+    {
+      "id": "approval-qa-cf01fb33",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:695bd31676fc9584dc6f6278135789724e487970cb290471dd728b8b5cd553bf",
+      "diff_hash": "sha256:22ac84f75aa4e4534b59f2a7b10950374747b7077b2247f05001ae7701bedc5d",
+      "actor_id": "qa-host-eeb25747",
+      "summary": "all 6 fixed verification descriptor(s) passed"
+    },
+    {
+      "id": "approval-review-75590c01",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:695bd31676fc9584dc6f6278135789724e487970cb290471dd728b8b5cd553bf",
+      "diff_hash": "sha256:22ac84f75aa4e4534b59f2a7b10950374747b7077b2247f05001ae7701bedc5d",
+      "actor_id": "native-review-2d2d1df1-6d90-45b",
+      "summary": "Provenance verified (HEAD==bundle.head, empty dirty_files, clean worktree); v4 imm-plan control plane genuinely implements strict routing projection, real Plan validation with 7-field origin_coverage, read-only retired wall, package parity, and advisory planner authority, all with source+packed test coverage."
+    }
+  ],
+  "history": [
+    {
+      "id": "record_evidence:2026-08-15-018-reconcile-v4-plan-control-plane:2026-08-15T08:58:47.332Z",
+      "at": "2026-08-15T08:58:47.332Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-routing-status\naction_v2_sha256:a7d9961cf3445659c7e10853462ceb100cdf2801dcacb6e6a4f296291fe697e5"
+    },
+    {
+      "id": "record_evidence:2026-08-15-018-reconcile-v4-plan-control-plane:2026-08-15T08:58:52.753Z",
+      "at": "2026-08-15T08:58:52.753Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-plan-validation\naction_v2_sha256:ec6b4be005e2f809770e77a1b7d22e1ebc3d9bf45573037c2fbf79a78e854d19"
+    },
+    {
+      "id": "record_evidence:2026-08-15-018-reconcile-v4-plan-control-plane:2026-08-15T08:59:07.388Z",
+      "at": "2026-08-15T08:59:07.388Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-read-only-retired-wall\naction_v2_sha256:2d0f50580b4fdd3c00cc063f2d5fd3756a1c7b554236cac77cd13b23a71a0334"
+    },
+    {
+      "id": "record_evidence:2026-08-15-018-reconcile-v4-plan-control-plane:2026-08-15T08:59:12.760Z",
+      "at": "2026-08-15T08:59:12.760Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-package-parity\naction_v2_sha256:2e7cc04e8f0832fd5aef61f4e3f70df2cb9041949271c4df41fc363698a2a79b"
+    },
+    {
+      "id": "record_evidence:2026-08-15-018-reconcile-v4-plan-control-plane:2026-08-15T08:59:17.387Z",
+      "at": "2026-08-15T08:59:17.387Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-planner-authority\naction_v2_sha256:c157e567a5cd8fb899dcaba67502fdce202ad3bc65671fa45a0c980557ff5d84"
+    },
+    {
+      "id": "record_evidence:2026-08-15-018-reconcile-v4-plan-control-plane:2026-08-15T08:59:21.926Z",
+      "at": "2026-08-15T08:59:21.926Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-full-regression\naction_v2_sha256:c0e0fc5546cc6f7a3dfd8e942db20ac048ae82dd99c476831d9e50312402f033"
+    },
+    {
+      "id": "submit_review:2026-08-15-018-reconcile-v4-plan-control-plane:2026-08-15T08:59:28.010Z",
+      "at": "2026-08-15T08:59:28.010Z",
+      "type": "submit_review",
+      "from_phase": "working",
+      "to_phase": "review",
+      "reason": "action_v2_sha256:d729707872e0b51807bba228435530e9c336ffc22a5e22dfdf7104f62b928ce0"
+    },
+    {
+      "id": "record_approval:2026-08-15-018-reconcile-v4-plan-control-plane:2026-08-15T09:00:58.131Z",
+      "at": "2026-08-15T09:00:58.131Z",
+      "type": "record_approval",
+      "from_phase": "review",
+      "to_phase": "review",
+      "reason": "approval-qa-cf01fb33\naction_v2_sha256:c10cce50b0d95e26e4997fd9cc50f3ba46eb5da64481c45101d0a6e0b7b7837f",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "qa-host-eeb25747",
+        "confirmation_ref": "pi-confirm-2cb8583c13efb2a6",
+        "issued_at": "2026-08-15T09:00:58.131Z",
+        "expires_at": "2026-08-15T09:10:58.131Z"
+      }
+    },
+    {
+      "id": "record_approval:2026-08-15-018-reconcile-v4-plan-control-plane:2026-08-15T09:02:01.156Z",
+      "at": "2026-08-15T09:02:01.156Z",
+      "type": "record_approval",
+      "from_phase": "review",
+      "to_phase": "review",
+      "reason": "approval-review-75590c01\naction_v2_sha256:f7f69d0c6713eea489f4ed15c467590e2000523137d43beaed0ba2e21ab4783c",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "native-review-2d2d1df1-6d90-45b",
+        "confirmation_ref": "pi-confirm-902bf75a0d682235",
+        "issued_at": "2026-08-15T09:02:01.156Z",
+        "expires_at": "2026-08-15T09:12:01.156Z"
+      }
+    },
+    {
+      "id": "complete:2026-08-15-018-reconcile-v4-plan-control-plane:2026-08-15T09:03:34.124Z",
+      "at": "2026-08-15T09:03:34.124Z",
+      "type": "complete",
+      "from_phase": "review",
+      "to_phase": "done",
+      "reason": "action_v2_sha256:d006cb3d04d1fa70028cd92e195260ad69d4737bbaa15f37510b4371fffb0d58"
+    }
+  ]
+}

@@ -1,0 +1,9 @@
+{
+  "contract": "assurance_kernel/task_tombstone/v1",
+  "task_id": "2026-08-14-004-bounded-native-review-completion",
+  "lifecycle_status": "terminal",
+  "terminal_phase": "done",
+  "terminal_event_id": "complete:2026-08-14-004-bounded-native-review-completion:2026-08-14T10:36:38.096Z",
+  "final_record_hash": "sha256:ed8054cb481a15e03b6bfe119fe170ffb0f5016e8dec448c90b46609d37afd91",
+  "terminalized_at": "2026-08-14T10:36:38.096Z"
+}

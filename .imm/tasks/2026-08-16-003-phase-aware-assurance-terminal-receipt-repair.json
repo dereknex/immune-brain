@@ -1,0 +1,404 @@
+{
+  "contract": "assurance_kernel/task_record/v2",
+  "task_id": "2026-08-16-003-phase-aware-assurance-terminal-receipt-repair",
+  "intent_revision": 1,
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "2026-08-16-003-phase-aware-assurance-terminal-receipt-repair",
+    "goal": "Close the phase-aware Assurance deadline cutover after the prior repair exhausted its Review follow-up limit, requiring terminal-status validation and eliminating injected-handle local-result fallback.",
+    "acceptance": [
+      {
+        "id": "acc-phase-aware-review",
+        "assertion": "Native Review preparation, standard Agent dispatch, workload-classified execution, and verdict validation use independent budgets; quick, standard, and heavy profiles derive only from the frozen intent risk and immutable bundle; soft expiry remains nonterminal and accepts a later matching fresh verdict; the former 300-second end-to-end deadline and heartbeat-free stalled state are absent.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/pi-canary-assurance-progression.test.ts\",\n    \"tests/pi-canary-work-extension.test.ts\",\n    \"tests/pi-canary-assurance-observability.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 300000,\n  \"max_output_bytes\": 262144\n}\n"
+      },
+      {
+        "id": "acc-terminal-ownership",
+        "assertion": "Review stop thresholds and explicit cancellation enter nonterminal fail-closed settlement; standard Agent and injected handles treat stop acknowledgement, local promise rejection, elapsed time, and nonterminal get_subagent_result payloads as non-authoritative; host receipt settlement requires a matching agent identity, reserved operation provenance, and validated native terminal status before evidence deletion or terminal follow-up; startup and dispatch-timeout late handles never fall back to local result; late or conflicting results perform zero authority writes; and exactly one terminal follow-up wins for each task, operation, and role across completion, startup stop, cancel, failure, and same-tick races.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/pi-canary-assurance-progression.test.ts\",\n    \"tests/pi-canary-work-extension.test.ts\",\n    \"tests/pi-canary-assurance-continuation.test.ts\",\n    \"tests/pi-canary-assurance-authority.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 300000,\n  \"max_output_bytes\": 262144\n}\n"
+      },
+      {
+        "id": "acc-derived-qa-budget",
+        "assertion": "Deterministic QA derives one aggregate deadline from the sequential verification descriptor timeouts plus bounded overhead, retains the fifteen-minute floor and sixty-minute ceiling, rejects an impossible declared aggregate before immutable snapshot capture or the first verification, and projects the derived value consistently without weakening each descriptor timeout or authority-commit linearization.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/pi-canary-assurance-progression.test.ts\",\n    \"tests/pi-canary-assurance-advance.test.ts\",\n    \"tests/pi-canary-work-extension.test.ts\",\n    \"tests/kernel-verification-descriptor.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 300000,\n  \"max_output_bytes\": 262144\n}\n"
+      },
+      {
+        "id": "acc-contract-alignment",
+        "assertion": "Source, Pi extension exports, focused contracts, protocol documentation, source Skill, and packaged Skill describe the same phase-aware budgets, workload profiles, waiting-user semantics, terminal ownership, and deferred cross-session persistence boundary with no active five-second startup or 300-second end-to-end Review contract.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/imm-canary-work-contract.test.ts\",\n    \"tests/pi-subagent-dispatch-observability-contract.test.ts\",\n    \"tests/pi-canary-discovery-regression.test.ts\",\n    \"tests/pi-canary-packed-consumer.test.ts\",\n    \"tests/pi-canary-packed-loader.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 300000,\n  \"max_output_bytes\": 262144\n}\n"
+      },
+      {
+        "id": "acc-typecheck-and-regression",
+        "assertion": "The complete Pi extension graph passes strict TypeScript checking and the full repository test suite passes after the timing-policy cutover.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 600000,\n  \"max_output_bytes\": 262144\n}\n"
+      }
+    ],
+    "scope_hint": [
+      "docs/reference/subagent-dispatch-protocol.md",
+      "docs/specs/phase-aware-assurance-deadlines.spec.md",
+      "plugins/immune-brain/.pi-extension/imm-canary-work.ts",
+      "plugins/immune-brain/.pi-extension/pi-canary-assurance-progression.ts",
+      "plugins/immune-brain/.pi-extension/pi-canary-assurance.ts",
+      "plugins/immune-brain/.pi-extension/pi-canary-native-review.ts",
+      "plugins/immune-brain/dist/docs/reference/subagent-dispatch-protocol.md",
+      "plugins/immune-brain/dist/imm-canary-work.md",
+      "plugins/immune-brain/skills/imm-canary-work/SKILL.md",
+      "tests/imm-canary-work-contract.test.ts",
+      "tests/kernel-verification-descriptor.test.ts",
+      "tests/pi-canary-assurance-advance.test.ts",
+      "tests/pi-canary-assurance-authority.test.ts",
+      "tests/pi-canary-assurance-continuation.test.ts",
+      "tests/pi-canary-assurance-observability.test.ts",
+      "tests/pi-canary-assurance-progression.test.ts",
+      "tests/pi-canary-discovery-regression.test.ts",
+      "tests/pi-canary-packed-consumer.test.ts",
+      "tests/pi-canary-packed-loader.test.ts",
+      "tests/pi-canary-work-extension.test.ts",
+      "tests/pi-subagent-dispatch-observability-contract.test.ts"
+    ],
+    "risk": "critical",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/2026-08-16-003-phase-aware-assurance-terminal-receipt-repair.intent.json",
+    "revision": 1,
+    "content_hash": "sha256:5828f38dd97832b4af4c4959e524f26a3411afc0b6d28de9dec5a0854c23ebf3"
+  },
+  "phase": "stopped",
+  "baseline": "sha256:5828f38dd97832b4af4c4959e524f26a3411afc0b6d28de9dec5a0854c23ebf3",
+  "evidence": [
+    {
+      "id": "evidence-record_evidence:2026-08-16-003-phase-aware-assurance-terminal-receipt-repair:2026-08-16T08:34:31.567Z",
+      "acceptance_id": "acc-phase-aware-review",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:5828f38dd97832b4af4c4959e524f26a3411afc0b6d28de9dec5a0854c23ebf3",
+      "diff_hash": "sha256:645af8562741522b1ec9448f1b71281a228a44d2ef5403229e58ca6bdda45c66",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "Final staged diff sha256:645af856: canonical phase-aware descriptor passed 62/62 tests with independent preparation, dispatch, workload execution, verdict validation, soft-expiry, and observability coverage."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-16-003-phase-aware-assurance-terminal-receipt-repair:2026-08-16T08:34:39.261Z",
+      "acceptance_id": "acc-terminal-ownership",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:5828f38dd97832b4af4c4959e524f26a3411afc0b6d28de9dec5a0854c23ebf3",
+      "diff_hash": "sha256:645af8562741522b1ec9448f1b71281a228a44d2ef5403229e58ca6bdda45c66",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "Final staged diff sha256:645af856: canonical terminal-ownership descriptor passed 60/60; matching nonterminal statuses running/queued/waiting/background/unknown retain settling and evidence, local result has no fallback, and only validated native terminal status settles exactly once."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-16-003-phase-aware-assurance-terminal-receipt-repair:2026-08-16T08:34:47.287Z",
+      "acceptance_id": "acc-derived-qa-budget",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:5828f38dd97832b4af4c4959e524f26a3411afc0b6d28de9dec5a0854c23ebf3",
+      "diff_hash": "sha256:645af8562741522b1ec9448f1b71281a228a44d2ef5403229e58ca6bdda45c66",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "Final staged diff sha256:645af856: canonical derived-QA-budget descriptor passed 64/64, preserving aggregate floor/ceiling, pre-snapshot rejection, per-descriptor limits, and authority commit linearization."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-16-003-phase-aware-assurance-terminal-receipt-repair:2026-08-16T08:34:55.275Z",
+      "acceptance_id": "acc-contract-alignment",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:5828f38dd97832b4af4c4959e524f26a3411afc0b6d28de9dec5a0854c23ebf3",
+      "diff_hash": "sha256:645af8562741522b1ec9448f1b71281a228a44d2ef5403229e58ca6bdda45c66",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "Final staged diff sha256:645af856: canonical source/package/protocol contract descriptor passed 21/21; all surfaces require terminal-status validation, reject local-result fallback, and retain phase-aware timing semantics."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-16-003-phase-aware-assurance-terminal-receipt-repair:2026-08-16T08:35:03.056Z",
+      "acceptance_id": "acc-typecheck-and-regression",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:5828f38dd97832b4af4c4959e524f26a3411afc0b6d28de9dec5a0854c23ebf3",
+      "diff_hash": "sha256:645af8562741522b1ec9448f1b71281a228a44d2ef5403229e58ca6bdda45c66",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "Final staged diff sha256:645af856: strict TypeScript extension graph passed; full repository bun test passed 928/928 across 121 files with 4043 assertions; cached diff check clean and zero unstaged drift."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-16-003-phase-aware-assurance-terminal-receipt-repair:2026-08-16T08:52:44.443Z",
+      "acceptance_id": "acc-phase-aware-review",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:5828f38dd97832b4af4c4959e524f26a3411afc0b6d28de9dec5a0854c23ebf3",
+      "diff_hash": "sha256:a3735973249874e6bca04b5ddcb65b1dc8fd240c4fe6347cb5c5a4420420571a",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "Final staged diff sha256:a3735973 canonical phase-aware descriptor passed 64/64; independent Review phases, workload profiles, soft/nonterminal deadlines, and branded native-terminal settlement remained green."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-16-003-phase-aware-assurance-terminal-receipt-repair:2026-08-16T08:52:55.207Z",
+      "acceptance_id": "acc-terminal-ownership",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:5828f38dd97832b4af4c4959e524f26a3411afc0b6d28de9dec5a0854c23ebf3",
+      "diff_hash": "sha256:a3735973249874e6bca04b5ddcb65b1dc8fd240c4fe6347cb5c5a4420420571a",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "Final staged diff sha256:a3735973 canonical terminal-ownership descriptor passed 62/62; tests prove cleanup errors require prior validated receipt, receipt-binding failure retains settlement/evidence, and no helper rejection publishes terminal."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-16-003-phase-aware-assurance-terminal-receipt-repair:2026-08-16T08:53:02.867Z",
+      "acceptance_id": "acc-derived-qa-budget",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:5828f38dd97832b4af4c4959e524f26a3411afc0b6d28de9dec5a0854c23ebf3",
+      "diff_hash": "sha256:a3735973249874e6bca04b5ddcb65b1dc8fd240c4fe6347cb5c5a4420420571a",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "Final staged diff sha256:a3735973 canonical QA-budget descriptor passed 66/66; derived floor/ceiling, pre-snapshot rejection, descriptor bounds, and authority linearization remained green."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-16-003-phase-aware-assurance-terminal-receipt-repair:2026-08-16T08:53:10.884Z",
+      "acceptance_id": "acc-contract-alignment",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:5828f38dd97832b4af4c4959e524f26a3411afc0b6d28de9dec5a0854c23ebf3",
+      "diff_hash": "sha256:a3735973249874e6bca04b5ddcb65b1dc8fd240c4fe6347cb5c5a4420420571a",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "Final staged diff sha256:a3735973 canonical contract descriptor passed 21/21; source, protocol, source/packaged Skill, and packaged docs align on branded native_terminal outcomes and fail-closed helper rejection."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-16-003-phase-aware-assurance-terminal-receipt-repair:2026-08-16T08:53:19.048Z",
+      "acceptance_id": "acc-typecheck-and-regression",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:5828f38dd97832b4af4c4959e524f26a3411afc0b6d28de9dec5a0854c23ebf3",
+      "diff_hash": "sha256:a3735973249874e6bca04b5ddcb65b1dc8fd240c4fe6347cb5c5a4420420571a",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "Final staged diff sha256:a3735973 strict Pi extension TypeScript project completed without diagnostics and full repository bun test passed 930/930 across 121 files; diff checks are clean."
+    }
+  ],
+  "findings": [
+    {
+      "id": "review-60cdf9a4da50-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "acc-terminal-ownership",
+      "source": "review",
+      "review_round": 1,
+      "summary": "Cancellation and stop-threshold paths publish terminal cancelled/timed_out after stopReviewAndRemoveEvidence resolves even when stop acknowledgement or cleanup, rather than a validated matching native terminal receipt, caused that resolution."
+    },
+    {
+      "id": "review-54e265efe3c5-1-review-1",
+      "kind": "blocking",
+      "status": "open",
+      "acceptance_id": "acc-terminal-ownership",
+      "source": "review",
+      "review_round": 2,
+      "summary": "Standard Agent settlement still assigns hostTerminalReceipt directly from handle.result, so local promise rejection can authorize evidence deletion and terminal follow-up without a validated get_subagent_result terminal receipt."
+    },
+    {
+      "id": "request_rework:2026-08-16-003-phase-aware-assurance-terminal-receipt-repair:2026-08-16T08:59:26.778Z:replan-required",
+      "kind": "replan_required",
+      "status": "open",
+      "acceptance_id": "acc-terminal-ownership",
+      "source": "kernel",
+      "review_round": 2,
+      "summary": "Review returned this acceptance boundary twice; a durable replan is required."
+    }
+  ],
+  "approvals": [
+    {
+      "id": "approval-qa-81993d4b",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:5828f38dd97832b4af4c4959e524f26a3411afc0b6d28de9dec5a0854c23ebf3",
+      "diff_hash": "sha256:645af8562741522b1ec9448f1b71281a228a44d2ef5403229e58ca6bdda45c66",
+      "actor_id": "qa-host-18145a17",
+      "summary": "all 5 fixed verification descriptor(s) passed"
+    },
+    {
+      "id": "approval-qa-86b290a4",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:5828f38dd97832b4af4c4959e524f26a3411afc0b6d28de9dec5a0854c23ebf3",
+      "diff_hash": "sha256:a3735973249874e6bca04b5ddcb65b1dc8fd240c4fe6347cb5c5a4420420571a",
+      "actor_id": "qa-host-0db8555c",
+      "summary": "all 5 fixed verification descriptor(s) passed"
+    }
+  ],
+  "history": [
+    {
+      "id": "record_evidence:2026-08-16-003-phase-aware-assurance-terminal-receipt-repair:2026-08-16T08:34:31.567Z",
+      "at": "2026-08-16T08:34:31.567Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-phase-aware-review\naction_v2_sha256:1c832d5564e575f9228b6c9b84300c82cc7a40822ef6ba1c9ca3797b3c1316dc"
+    },
+    {
+      "id": "record_evidence:2026-08-16-003-phase-aware-assurance-terminal-receipt-repair:2026-08-16T08:34:39.261Z",
+      "at": "2026-08-16T08:34:39.261Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-terminal-ownership\naction_v2_sha256:3b4606df44c827f035c9fd7de8955ca2e3c21e89c8e4324b91ecd60c1261a78a"
+    },
+    {
+      "id": "record_evidence:2026-08-16-003-phase-aware-assurance-terminal-receipt-repair:2026-08-16T08:34:47.287Z",
+      "at": "2026-08-16T08:34:47.287Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-derived-qa-budget\naction_v2_sha256:151b24a5656ee4756a4faa4f36a789093243c885b32ef39f21d8b726d25aaf38"
+    },
+    {
+      "id": "record_evidence:2026-08-16-003-phase-aware-assurance-terminal-receipt-repair:2026-08-16T08:34:55.275Z",
+      "at": "2026-08-16T08:34:55.275Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-contract-alignment\naction_v2_sha256:5c276cb1b44d54c80fb7a33593e95a1749158a7194566d5b8c101df25a448f09"
+    },
+    {
+      "id": "record_evidence:2026-08-16-003-phase-aware-assurance-terminal-receipt-repair:2026-08-16T08:35:03.056Z",
+      "at": "2026-08-16T08:35:03.056Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-typecheck-and-regression\naction_v2_sha256:12cec616f5b8de7c218075aaddc2e33534f0aad3535ca9b5e992cee169eaa71e"
+    },
+    {
+      "id": "submit_review:2026-08-16-003-phase-aware-assurance-terminal-receipt-repair:2026-08-16T08:35:10.673Z",
+      "at": "2026-08-16T08:35:10.673Z",
+      "type": "submit_review",
+      "from_phase": "working",
+      "to_phase": "review",
+      "reason": "action_v2_sha256:b098ae252368ffdc9d08a6e692d1a9d6758a039a917fb9e278331a23bbdcb57b"
+    },
+    {
+      "id": "record_approval:2026-08-16-003-phase-aware-assurance-terminal-receipt-repair:2026-08-16T08:37:51.496Z",
+      "at": "2026-08-16T08:37:51.496Z",
+      "type": "record_approval",
+      "from_phase": "review",
+      "to_phase": "review",
+      "reason": "approval-qa-81993d4b\naction_v2_sha256:8d302063dc488c93674bda51047b5f3c2afe5077ec2a2f097a1ffb29596278b7",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "qa-host-18145a17",
+        "confirmation_ref": "pi-confirm-9aa172d6cde42eaf",
+        "issued_at": "2026-08-16T08:37:51.496Z",
+        "expires_at": "2026-08-16T08:47:51.496Z"
+      }
+    },
+    {
+      "id": "request_rework:2026-08-16-003-phase-aware-assurance-terminal-receipt-repair:2026-08-16T08:39:52.677Z",
+      "at": "2026-08-16T08:39:52.677Z",
+      "type": "request_rework",
+      "from_phase": "review",
+      "to_phase": "working",
+      "reason": "review_round_1\naction_v2_sha256:6ba8a041607bafda18376e8ce0f8b79bbaca793512f57ab926cb9071af14d476",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "native-review-bbec5f74-ca10-43b",
+        "confirmation_ref": "pi-confirm-1ed96785a9ec11a1",
+        "issued_at": "2026-08-16T08:39:52.677Z",
+        "expires_at": "2026-08-16T08:49:52.677Z"
+      }
+    },
+    {
+      "id": "record_evidence:2026-08-16-003-phase-aware-assurance-terminal-receipt-repair:2026-08-16T08:52:44.443Z",
+      "at": "2026-08-16T08:52:44.443Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-phase-aware-review\naction_v2_sha256:52291c3362b9f296fffcdbc65a4391fe20c55cad2c90a5eb9a287c0ddfff7609"
+    },
+    {
+      "id": "record_evidence:2026-08-16-003-phase-aware-assurance-terminal-receipt-repair:2026-08-16T08:52:55.207Z",
+      "at": "2026-08-16T08:52:55.207Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-terminal-ownership\naction_v2_sha256:d3b0bc28a30336805adf8f64d7c91fbf8d1fa8bac948d5613768f4c9e216ead7"
+    },
+    {
+      "id": "record_evidence:2026-08-16-003-phase-aware-assurance-terminal-receipt-repair:2026-08-16T08:53:02.867Z",
+      "at": "2026-08-16T08:53:02.867Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-derived-qa-budget\naction_v2_sha256:c405a0b04aad007f89bf738221a065b7eb33f7b9c0477583acd12f61a7dfbcc3"
+    },
+    {
+      "id": "record_evidence:2026-08-16-003-phase-aware-assurance-terminal-receipt-repair:2026-08-16T08:53:10.884Z",
+      "at": "2026-08-16T08:53:10.884Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-contract-alignment\naction_v2_sha256:613cd1f5ba3212cc40dbb74bb9974995c86255d0715bf6d5eb68aaa007d2d597"
+    },
+    {
+      "id": "record_evidence:2026-08-16-003-phase-aware-assurance-terminal-receipt-repair:2026-08-16T08:53:19.048Z",
+      "at": "2026-08-16T08:53:19.048Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-typecheck-and-regression\naction_v2_sha256:70fd7400cd3f94c09ad39ddc6e62c6c9d9d17722dddbbc1cc35058fdae8b6a2c"
+    },
+    {
+      "id": "resolve_finding:2026-08-16-003-phase-aware-assurance-terminal-receipt-repair:2026-08-16T08:53:37.155Z",
+      "at": "2026-08-16T08:53:37.155Z",
+      "type": "resolve_finding",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "review-60cdf9a4da50-1-review-1\naction_v2_sha256:da5439d538d38fae508cc65a9101344a4ef280a0d113a4caa01278f3a5e59612"
+    },
+    {
+      "id": "submit_review:2026-08-16-003-phase-aware-assurance-terminal-receipt-repair:2026-08-16T08:53:44.969Z",
+      "at": "2026-08-16T08:53:44.969Z",
+      "type": "submit_review",
+      "from_phase": "working",
+      "to_phase": "review",
+      "reason": "action_v2_sha256:cb58524503e375cfc645ef04238d7983306b2ebe12047f6bd9d00ac94de0f4ac"
+    },
+    {
+      "id": "record_approval:2026-08-16-003-phase-aware-assurance-terminal-receipt-repair:2026-08-16T08:56:26.296Z",
+      "at": "2026-08-16T08:56:26.296Z",
+      "type": "record_approval",
+      "from_phase": "review",
+      "to_phase": "review",
+      "reason": "approval-qa-86b290a4\naction_v2_sha256:ee5fdaaeddb26d6d30160653473cea5843f8b3ab96dbb880ee2408fe3ce963fe",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "qa-host-0db8555c",
+        "confirmation_ref": "pi-confirm-c7bb304adb77d385",
+        "issued_at": "2026-08-16T08:56:26.296Z",
+        "expires_at": "2026-08-16T09:06:26.296Z"
+      }
+    },
+    {
+      "id": "request_rework:2026-08-16-003-phase-aware-assurance-terminal-receipt-repair:2026-08-16T08:59:26.778Z",
+      "at": "2026-08-16T08:59:26.778Z",
+      "type": "request_rework",
+      "from_phase": "review",
+      "to_phase": "review",
+      "reason": "review_round_2\naction_v2_sha256:c3c626a1e2bdde4ebee55605ad810456fde6b1a42aa1a707ddcafa5529519f26",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "native-review-cbc5ff36-3e73-481",
+        "confirmation_ref": "pi-confirm-ad8f5ffe3249581f",
+        "issued_at": "2026-08-16T08:59:26.778Z",
+        "expires_at": "2026-08-16T09:09:26.778Z"
+      }
+    },
+    {
+      "id": "stop:2026-08-16-003-phase-aware-assurance-terminal-receipt-repair:2026-08-16T09:03:52.975Z",
+      "at": "2026-08-16T09:03:52.975Z",
+      "type": "stop",
+      "from_phase": "review",
+      "to_phase": "stopped",
+      "reason": "literal user stop\naction_v2_sha256:d1af7dd2ecc2a9804906ee997d8fbb90d5a07aff4ecf21e402e27e30dd7c2cc8",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-2130e4e27aac9812",
+        "issued_at": "2026-08-16T09:03:52.976Z",
+        "expires_at": "2026-08-16T09:13:52.976Z"
+      }
+    }
+  ]
+}

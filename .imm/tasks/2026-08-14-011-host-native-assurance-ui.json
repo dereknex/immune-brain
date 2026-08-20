@@ -1,0 +1,248 @@
+{
+  "contract": "assurance_kernel/task_record/v2",
+  "task_id": "2026-08-14-011-host-native-assurance-ui",
+  "intent_revision": 1,
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "2026-08-14-011-host-native-assurance-ui",
+    "goal": "Delete Immune-Brain custom assurance Footer/Widget and render imm_kernel_canary natively with renderCall/renderResult while keeping followUp, notify, and privileged confirm.",
+    "acceptance": [
+      {
+        "id": "acc-no-custom-ui",
+        "assertion": "After advance_assurance starts Review or QA, no production or test path publishes imm-canary-assure status or imm-canary-assurance widget.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/pi-canary-assurance-observability.test.ts\",\n    \"tests/pi-canary-work-extension.test.ts\",\n    \"tests/pi-canary-assurance-advance.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 180000,\n  \"max_output_bytes\": 262144\n}\n"
+      },
+      {
+        "id": "acc-native-renderers",
+        "assertion": "imm_kernel_canary registers renderCall and renderResult that show task id and structured result state without inventing native activity telemetry.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/pi-canary-work-extension.test.ts\",\n    \"tests/imm-canary-work-contract.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 180000,\n  \"max_output_bytes\": 262144\n}\n"
+      },
+      {
+        "id": "acc-review-followup-confirm",
+        "assertion": "Review still dispatches through reserved standard Agent params; timeout, cancel, and verdict_ready still emit one correlated follow-up and still require literal-user confirmation before Kernel writes.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/pi-canary-native-review.test.ts\",\n    \"tests/pi-canary-work-extension.test.ts\",\n    \"tests/pi-canary-user-authority.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 180000,\n  \"max_output_bytes\": 262144\n}\n"
+      },
+      {
+        "id": "acc-qa-no-widget",
+        "assertion": "Deterministic QA still runs as a host batch, still notifies, and still emits one terminal follow-up without recreating Footer/Widget.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/pi-canary-assurance-advance.test.ts\",\n    \"tests/pi-canary-work-extension.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 180000,\n  \"max_output_bytes\": 262144\n}\n"
+      },
+      {
+        "id": "acc-privileged-confirm",
+        "assertion": "Privileged ctx.ui.confirm remains for record-review-verdict, record-user-approval, stop, begin-drain, and approve-breaking-intent-revision.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/pi-canary-user-authority.test.ts\",\n    \"tests/imm-canary-work-contract.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 180000,\n  \"max_output_bytes\": 262144\n}\n"
+      },
+      {
+        "id": "acc-full-regression",
+        "assertion": "The Immune-Brain suite stays green after Footer/Widget deletion.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 300000,\n  \"max_output_bytes\": 262144\n}\n"
+      }
+    ],
+    "scope_hint": [
+      "docs/plans/2026-08-14-011-host-native-assurance-ui.intent.json",
+      "docs/specs/host-native-assurance-ui.spec.md",
+      "docs/specs/host-native-lightweight-workflow-roadmap.spec.md",
+      "plugins/immune-brain/.pi-extension/imm-canary-work.ts",
+      "plugins/immune-brain/.pi-extension/pi-canary-assurance.ts",
+      "plugins/immune-brain/dist/imm-canary-work.md",
+      "plugins/immune-brain/skills/imm-canary-work/SKILL.md",
+      "tests/imm-canary-work-contract.test.ts",
+      "tests/pi-canary-assurance-advance.test.ts",
+      "tests/pi-canary-assurance-observability.test.ts",
+      "tests/pi-canary-native-review.test.ts",
+      "tests/pi-canary-user-authority.test.ts",
+      "tests/pi-canary-work-extension.test.ts"
+    ],
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/2026-08-14-011-host-native-assurance-ui.intent.json",
+    "revision": 1,
+    "content_hash": "sha256:82e1eedba15e9e5f16260900bebd0e9e4a09514f6a5cad95bdeb35a69ac6ba6d"
+  },
+  "phase": "done",
+  "baseline": "sha256:82e1eedba15e9e5f16260900bebd0e9e4a09514f6a5cad95bdeb35a69ac6ba6d",
+  "evidence": [
+    {
+      "id": "evidence-record_evidence:2026-08-14-011-host-native-assurance-ui:2026-08-15T05:33:51.535Z",
+      "acceptance_id": "acc-no-custom-ui",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:82e1eedba15e9e5f16260900bebd0e9e4a09514f6a5cad95bdeb35a69ac6ba6d",
+      "diff_hash": "sha256:bda06365f6079c098523842610d0ed9be5577870eda9e21c035df20249e60e6c",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "AssurancePresenter.publish no longer calls setStatus or setWidget. bun test tests/pi-canary-assurance-observability.test.ts tests/pi-canary-work-extension.test.ts tests/pi-canary-assurance-advance.test.ts passed."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-14-011-host-native-assurance-ui:2026-08-15T05:33:51.733Z",
+      "acceptance_id": "acc-native-renderers",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:82e1eedba15e9e5f16260900bebd0e9e4a09514f6a5cad95bdeb35a69ac6ba6d",
+      "diff_hash": "sha256:bda06365f6079c098523842610d0ed9be5577870eda9e21c035df20249e60e6c",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "imm_kernel_canary now registers renderCall/renderResult that show task id and structured state. bun test tests/pi-canary-work-extension.test.ts tests/imm-canary-work-contract.test.ts tests/pi-canary-assurance-observability.test.ts passed."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-14-011-host-native-assurance-ui:2026-08-15T05:33:51.941Z",
+      "acceptance_id": "acc-review-followup-confirm",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:82e1eedba15e9e5f16260900bebd0e9e4a09514f6a5cad95bdeb35a69ac6ba6d",
+      "diff_hash": "sha256:bda06365f6079c098523842610d0ed9be5577870eda9e21c035df20249e60e6c",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "Reserved standard Agent dispatch, one correlated follow-up, and literal-user record-review-verdict remain. bun test tests/pi-canary-native-review.test.ts tests/pi-canary-work-extension.test.ts tests/pi-canary-user-authority.test.ts passed."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-14-011-host-native-assurance-ui:2026-08-15T05:33:52.140Z",
+      "acceptance_id": "acc-qa-no-widget",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:82e1eedba15e9e5f16260900bebd0e9e4a09514f6a5cad95bdeb35a69ac6ba6d",
+      "diff_hash": "sha256:bda06365f6079c098523842610d0ed9be5577870eda9e21c035df20249e60e6c",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "Deterministic QA still runs as a host batch, notifies, and emits one terminal follow-up without recreating Footer/Widget. bun test tests/pi-canary-assurance-advance.test.ts tests/pi-canary-work-extension.test.ts passed."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-14-011-host-native-assurance-ui:2026-08-15T05:33:52.337Z",
+      "acceptance_id": "acc-privileged-confirm",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:82e1eedba15e9e5f16260900bebd0e9e4a09514f6a5cad95bdeb35a69ac6ba6d",
+      "diff_hash": "sha256:bda06365f6079c098523842610d0ed9be5577870eda9e21c035df20249e60e6c",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "Privileged ctx.ui.confirm remains for record-review-verdict, record-user-approval, stop, begin-drain, and approve-breaking-intent-revision. bun test tests/pi-canary-user-authority.test.ts tests/imm-canary-work-contract.test.ts passed."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-14-011-host-native-assurance-ui:2026-08-15T05:33:52.532Z",
+      "acceptance_id": "acc-full-regression",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:82e1eedba15e9e5f16260900bebd0e9e4a09514f6a5cad95bdeb35a69ac6ba6d",
+      "diff_hash": "sha256:bda06365f6079c098523842610d0ed9be5577870eda9e21c035df20249e60e6c",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "bun test passed 1147/0 across 148 files after Footer/Widget deletion."
+    }
+  ],
+  "findings": [],
+  "approvals": [
+    {
+      "id": "approval-qa-30931d08",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:82e1eedba15e9e5f16260900bebd0e9e4a09514f6a5cad95bdeb35a69ac6ba6d",
+      "diff_hash": "sha256:bda06365f6079c098523842610d0ed9be5577870eda9e21c035df20249e60e6c",
+      "actor_id": "qa-host-e25934dc",
+      "summary": "all 6 fixed verification descriptor(s) passed"
+    },
+    {
+      "id": "approval-review-2136b188",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:82e1eedba15e9e5f16260900bebd0e9e4a09514f6a5cad95bdeb35a69ac6ba6d",
+      "diff_hash": "sha256:bda06365f6079c098523842610d0ed9be5577870eda9e21c035df20249e60e6c",
+      "actor_id": "native-review-b29337bf-a0f9-40b",
+      "summary": "HEAD matches bundle; Footer/Widget publication is gone, native renderers and confirm/follow-up contracts hold."
+    }
+  ],
+  "history": [
+    {
+      "id": "record_evidence:2026-08-14-011-host-native-assurance-ui:2026-08-15T05:33:51.535Z",
+      "at": "2026-08-15T05:33:51.535Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-no-custom-ui\naction_v2_sha256:9f595675862fb6e25a347ae29ca6e11827417d8e319e5a235bd88ef1f7131293"
+    },
+    {
+      "id": "record_evidence:2026-08-14-011-host-native-assurance-ui:2026-08-15T05:33:51.733Z",
+      "at": "2026-08-15T05:33:51.733Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-native-renderers\naction_v2_sha256:15d4b778192f820930f34faf1f2c20a9128f73196453626d73e309efb2658327"
+    },
+    {
+      "id": "record_evidence:2026-08-14-011-host-native-assurance-ui:2026-08-15T05:33:51.941Z",
+      "at": "2026-08-15T05:33:51.941Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-review-followup-confirm\naction_v2_sha256:5ec610d59ff793d6b5b8d7731c903c93933731a1c437b7af07d9c38ec8754446"
+    },
+    {
+      "id": "record_evidence:2026-08-14-011-host-native-assurance-ui:2026-08-15T05:33:52.140Z",
+      "at": "2026-08-15T05:33:52.140Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-qa-no-widget\naction_v2_sha256:9e9b518c21af9b841c25cd81897764e079cdd28dab2f4d81da150ebfeeb51967"
+    },
+    {
+      "id": "record_evidence:2026-08-14-011-host-native-assurance-ui:2026-08-15T05:33:52.337Z",
+      "at": "2026-08-15T05:33:52.337Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-privileged-confirm\naction_v2_sha256:7da4a70f3cdf0f2353619c483511f2faf1d24d2a4038d144b449332e99b0f3a6"
+    },
+    {
+      "id": "record_evidence:2026-08-14-011-host-native-assurance-ui:2026-08-15T05:33:52.532Z",
+      "at": "2026-08-15T05:33:52.532Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-full-regression\naction_v2_sha256:e070c935ff31908b2cc5448c5726716a211d474f540dc92bea5e75b5321c60e0"
+    },
+    {
+      "id": "submit_review:2026-08-14-011-host-native-assurance-ui:2026-08-15T05:34:02.287Z",
+      "at": "2026-08-15T05:34:02.287Z",
+      "type": "submit_review",
+      "from_phase": "working",
+      "to_phase": "review",
+      "reason": "action_v2_sha256:ce5e80ce19c443e89f0e1bfb6fabf01f56d6a9fdf600496697d756dfcb077b10"
+    },
+    {
+      "id": "record_approval:2026-08-14-011-host-native-assurance-ui:2026-08-15T05:36:39.249Z",
+      "at": "2026-08-15T05:36:39.249Z",
+      "type": "record_approval",
+      "from_phase": "review",
+      "to_phase": "review",
+      "reason": "approval-qa-30931d08\naction_v2_sha256:401bf9be2530c6fdebfbc8296037fa29b482ad1f6d089bb8af2c3175baf17bec",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "qa-host-e25934dc",
+        "confirmation_ref": "pi-confirm-74cc5b07a867a4c6",
+        "issued_at": "2026-08-15T05:36:39.249Z",
+        "expires_at": "2026-08-15T05:46:39.249Z"
+      }
+    },
+    {
+      "id": "record_approval:2026-08-14-011-host-native-assurance-ui:2026-08-15T05:42:36.267Z",
+      "at": "2026-08-15T05:42:36.267Z",
+      "type": "record_approval",
+      "from_phase": "review",
+      "to_phase": "review",
+      "reason": "approval-review-2136b188\naction_v2_sha256:0c4b9ea8c0ad1d24fe72cbf957bba12129ceb55532ada7c698b2e61a16a419e2",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "native-review-b29337bf-a0f9-40b",
+        "confirmation_ref": "pi-confirm-a9a8d016c7a2aaa1",
+        "issued_at": "2026-08-15T05:42:36.267Z",
+        "expires_at": "2026-08-15T05:52:36.267Z"
+      }
+    },
+    {
+      "id": "complete:2026-08-14-011-host-native-assurance-ui:2026-08-15T05:42:59.791Z",
+      "at": "2026-08-15T05:42:59.791Z",
+      "type": "complete",
+      "from_phase": "review",
+      "to_phase": "done",
+      "reason": "action_v2_sha256:a838306b981173fd72ef21ab1331c3567c5b09966594ba5b1269650f5a0dfee5"
+    }
+  ]
+}

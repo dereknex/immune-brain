@@ -1,0 +1,158 @@
+{
+  "contract": "assurance_kernel/task_record/v2",
+  "task_id": "2026-08-17-004-interactive-advisory-foreground-r3",
+  "intent_revision": 1,
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "2026-08-17-004-interactive-advisory-foreground-r3",
+    "goal": "Move every interactive advisory and work-probe Agent envelope to direct foreground execution and replace background notification/retrieval guidance with sequential Parent-owned result consumption, without changing advisory authority, routing, budgets, or result normalization.",
+    "acceptance": [
+      {
+        "id": "acc-foreground-dispatch-and-authority",
+        "assertion": "An executable structural contract enumerates every interactive advisory, Brainstorm ensemble, and work-probe envelope producer/call site; every envelope requests foreground Agent execution with run_in_background false and exposes no background override, while advisory-only authority, no-tools prompts, model routing, candidate budgets, failed-attempt accounting, result normalization, solo fallback, and Parent synthesis ownership remain deterministic.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/advisory-dispatch-core.test.ts\",\n    \"tests/advisory-budget-contract.test.ts\",\n    \"tests/planner-ensemble-contract.test.ts\",\n    \"tests/pi-only-runtime-host-contract.test.ts\",\n    \"tests/work-probe-packaging-contract.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 300000,\n  \"max_output_bytes\": 262144\n}\n"
+      },
+      {
+        "id": "acc-sequential-protocol-package-and-regression",
+        "assertion": "The canonical protocol, superseded Spec clauses, packaged protocol and Brainstorm/Planner guidance require sequential foreground result consumption and Parent re-evaluation; contain no advisory acknowledgement deadline, background progress, completion push, get-result recovery, late-notification recovery, or Footer content; explicitly defer Kernel authority Review scheduling to Phase 3; remain byte-synchronized where generated; and the complete Bun repository regression passes.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 300000,\n  \"max_output_bytes\": 262144\n}\n"
+      }
+    ],
+    "scope_hint": [
+      "docs/plans/2026-08-17-004-interactive-advisory-foreground-r3.intent.json",
+      "docs/reference/subagent-dispatch-protocol.md",
+      "docs/specs/foreground-interactive-workflow-roadmap.spec.md",
+      "docs/specs/pi-brainstorm-ensemble-host-adapter.spec.md",
+      "docs/specs/pi-observable-assurance-orchestration-roadmap.spec.md",
+      "plugins/immune-brain/dist/docs/reference/subagent-dispatch-protocol.md",
+      "plugins/immune-brain/dist/imm-brainstorm.md",
+      "plugins/immune-brain/dist/imm-planner.md",
+      "plugins/immune-brain/runtime/advisory_dispatch.ts",
+      "plugins/immune-brain/runtime/work_probes.ts",
+      "tests/advisory-dispatch-core.test.ts",
+      "tests/host-runtime-cutover.test.ts",
+      "tests/pi-only-runtime-host-contract.test.ts",
+      "tests/pi-subagent-dispatch-observability-contract.test.ts",
+      "tests/planner-ensemble-contract.test.ts"
+    ],
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/2026-08-17-004-interactive-advisory-foreground-r3.intent.json",
+    "revision": 1,
+    "content_hash": "sha256:75c2869394c6325a17ed385185d44bda70d9891ab73c48e5bac45c4d9977a523"
+  },
+  "phase": "done",
+  "baseline": "sha256:75c2869394c6325a17ed385185d44bda70d9891ab73c48e5bac45c4d9977a523",
+  "evidence": [
+    {
+      "id": "evidence-record_evidence:2026-08-17-004-interactive-advisory-foreground-r3:2026-08-17T16:07:29.145Z",
+      "acceptance_id": "acc-foreground-dispatch-and-authority",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:75c2869394c6325a17ed385185d44bda70d9891ab73c48e5bac45c4d9977a523",
+      "diff_hash": "sha256:b6617cc0137c783b2921a04b9f0e7569e82c0434d3846703c83e10de6ea27cf7",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "Final staged snapshot sha256:b6617cc0137c783b2921a04b9f0e7569e82c0434d3846703c83e10de6ea27cf: exact Intent focused descriptor passed 26/26; extended producer/protocol suite passed 39/39. advisory_dispatch.ts and work_probes.ts each contain exactly one run_in_background field and it is false; generic and Brainstorm caller override attempts remain false; no setStatus/setWidget/notify/followUp/get_subagent_result/timer lifecycle primitives occur in either producer; model routing, budgets, no-tools authority, normalization, and solo fallback tests remain green."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-17-004-interactive-advisory-foreground-r3:2026-08-17T16:07:39.541Z",
+      "acceptance_id": "acc-sequential-protocol-package-and-regression",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:75c2869394c6325a17ed385185d44bda70d9891ab73c48e5bac45c4d9977a523",
+      "diff_hash": "sha256:b6617cc0137c783b2921a04b9f0e7569e82c0434d3846703c83e10de6ea27cf7",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "Final staged snapshot sha256:b6617cc0137c783b2921a04b9f0e7569e82c0434d3846703c83e10de6ea27cf: full bun test passed 996/996 across 130 files with 4588 assertions. Canonical protocol and generated dist mirror are byte-identical; sync-dist-docs --check and git diff --cached --check pass; older Brainstorm/observable Spec scheduling clauses are explicitly superseded; packaged Brainstorm/Planner guidance requires one foreground Agent, direct result consumption, and remaining-budget re-evaluation; Kernel authority Review is explicitly deferred to Phase 3; all 13 staged paths are inside scope_hint with zero unstaged diff."
+    }
+  ],
+  "findings": [],
+  "approvals": [
+    {
+      "id": "approval-qa-201da70e",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:75c2869394c6325a17ed385185d44bda70d9891ab73c48e5bac45c4d9977a523",
+      "diff_hash": "sha256:b6617cc0137c783b2921a04b9f0e7569e82c0434d3846703c83e10de6ea27cf7",
+      "actor_id": "qa-host-ad76cf8f",
+      "summary": "all 2 fixed verification descriptor(s) passed"
+    },
+    {
+      "id": "approval-review-8695833a",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:75c2869394c6325a17ed385185d44bda70d9891ab73c48e5bac45c4d9977a523",
+      "diff_hash": "sha256:b6617cc0137c783b2921a04b9f0e7569e82c0434d3846703c83e10de6ea27cf7",
+      "actor_id": "native-review-a1b0eacf-ae94-429",
+      "summary": "Immutable bundle provenance verified; scoped foreground dispatch, authority boundaries, sequential consumption contracts, and regression coverage are correct."
+    }
+  ],
+  "history": [
+    {
+      "id": "record_evidence:2026-08-17-004-interactive-advisory-foreground-r3:2026-08-17T16:07:29.145Z",
+      "at": "2026-08-17T16:07:29.145Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-foreground-dispatch-and-authority\naction_v2_sha256:76b4b7cb84f585bd337c6302fbf92dd356c1cf88c35a13b902d7714684289d6c"
+    },
+    {
+      "id": "record_evidence:2026-08-17-004-interactive-advisory-foreground-r3:2026-08-17T16:07:39.541Z",
+      "at": "2026-08-17T16:07:39.541Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-sequential-protocol-package-and-regression\naction_v2_sha256:cc4dc028c376f33f156a58e33afe61f2aba2cacb37351a56ed8110baeaa50da9"
+    },
+    {
+      "id": "submit_review:2026-08-17-004-interactive-advisory-foreground-r3:2026-08-17T16:07:46.400Z",
+      "at": "2026-08-17T16:07:46.400Z",
+      "type": "submit_review",
+      "from_phase": "working",
+      "to_phase": "review",
+      "reason": "action_v2_sha256:866cf0f23b96587109e14ad74c4b7a933ea08ff1fc95947cbf28b37adf1de926"
+    },
+    {
+      "id": "record_approval:2026-08-17-004-interactive-advisory-foreground-r3:2026-08-17T16:09:06.072Z",
+      "at": "2026-08-17T16:09:06.072Z",
+      "type": "record_approval",
+      "from_phase": "review",
+      "to_phase": "review",
+      "reason": "approval-qa-201da70e\naction_v2_sha256:77fa5f3245b3091633b6fc5aee67a06bcb7be29bbbe046e7345d080ea0bb0c77",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "qa-host-ad76cf8f",
+        "confirmation_ref": "pi-confirm-d3c3f9586666cfb7",
+        "issued_at": "2026-08-17T16:09:06.072Z",
+        "expires_at": "2026-08-17T16:19:06.072Z"
+      }
+    },
+    {
+      "id": "record_approval:2026-08-17-004-interactive-advisory-foreground-r3:2026-08-17T16:19:27.198Z",
+      "at": "2026-08-17T16:19:27.198Z",
+      "type": "record_approval",
+      "from_phase": "review",
+      "to_phase": "review",
+      "reason": "approval-review-8695833a\naction_v2_sha256:d65384de9675c410726c4ee80132f34f08eeac4f4478a6c6700e30ac9ae059c9",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "native-review-a1b0eacf-ae94-429",
+        "confirmation_ref": "pi-confirm-2acb0836e65788ca",
+        "issued_at": "2026-08-17T16:19:27.198Z",
+        "expires_at": "2026-08-17T16:29:27.198Z"
+      }
+    },
+    {
+      "id": "complete:2026-08-17-004-interactive-advisory-foreground-r3:2026-08-17T16:20:34.159Z",
+      "at": "2026-08-17T16:20:34.159Z",
+      "type": "complete",
+      "from_phase": "review",
+      "to_phase": "done",
+      "reason": "action_v2_sha256:0638d3285b62bf4d79e10bdc02294cbe5a3bee04e87dcae602bb64d19758ae92"
+    }
+  ]
+}

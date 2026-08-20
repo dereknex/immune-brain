@@ -1,0 +1,9 @@
+{
+  "contract": "assurance_kernel/task_tombstone/v1",
+  "task_id": "2026-08-20-002-retire-subagent-activation-machinery",
+  "lifecycle_status": "terminal",
+  "terminal_phase": "done",
+  "terminal_event_id": "complete:2026-08-20-002-retire-subagent-activation-machinery:2026-08-20T00:42:57.374Z",
+  "final_record_hash": "sha256:cef5406f4a5ef1d0f75461c7638a98e9e090620a46e79fde8bec85ccac4d42ed",
+  "terminalized_at": "2026-08-20T00:42:57.374Z"
+}

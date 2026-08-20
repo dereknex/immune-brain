@@ -1,0 +1,9 @@
+{
+  "contract": "assurance_kernel/task_tombstone/v1",
+  "task_id": "2026-08-20-003-archive-terminal-planning-artifacts",
+  "lifecycle_status": "terminal",
+  "terminal_phase": "done",
+  "terminal_event_id": "complete:2026-08-20-003-archive-terminal-planning-artifacts:2026-08-20T02:06:09.573Z",
+  "final_record_hash": "sha256:8e572ec4e0fb89866ef4201dd79aa0fed32c81c22985ae85eda17950081b3389",
+  "terminalized_at": "2026-08-20T02:06:09.573Z"
+}

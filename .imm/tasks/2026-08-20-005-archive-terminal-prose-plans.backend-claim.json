@@ -1,0 +1,9 @@
+{
+  "contract": "assurance_kernel/task_tombstone/v1",
+  "task_id": "2026-08-20-005-archive-terminal-prose-plans",
+  "lifecycle_status": "terminal",
+  "terminal_phase": "done",
+  "terminal_event_id": "complete:2026-08-20-005-archive-terminal-prose-plans:2026-08-20T02:55:24.111Z",
+  "final_record_hash": "sha256:fb20b51ad70c97710d6de15c1743b7ae0c3a0ad14099f789530f8d50d5f32eef",
+  "terminalized_at": "2026-08-20T02:55:24.111Z"
+}

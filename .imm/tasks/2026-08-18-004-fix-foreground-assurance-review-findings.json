@@ -1,0 +1,297 @@
+{
+  "contract": "assurance_kernel/task_record/v2",
+  "task_id": "2026-08-18-004-fix-foreground-assurance-review-findings",
+  "intent_revision": 1,
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "2026-08-18-004-fix-foreground-assurance-review-findings",
+    "goal": "Repair the foreground assurance review findings so the real Kernel mutation is the non-cancellable settlement boundary, pre-mutation cancellation remains a known zero-write outcome, reserved Agent envelopes are exact, review evidence is canonical and cleanup-owned from creation, and every currently staged foreground-assurance and succession change is covered by one immutable scope. Settlement design: trigger sources are QA completion, host cancellation, timeout, submit-review failure, Review provider failure, malformed/mismatched native events, session shutdown, and literal-user authorization; states are working, QA verifying, pre-commit, authority settling, review evidence allocated, reserved, native result observed, awaiting user, settlement_unknown, cancelled, and terminal; Kernel app.execute owns TaskRecord/workspace settlement, matching native tool_result plus tool_execution_end owns only Review receipt provenance, and literal-user request_authorization owns Review verdict application; promise resolution, elapsed time, hook execution, and child acknowledgement are non-authoritative. The scope lists all foreground assurance transition owners and all currently staged succession files for same-state-machine review.",
+    "acceptance": [
+      {
+        "id": "acc-real-authority-linearization",
+        "assertion": "QA cancellation is accepted only before the invocation wins settlement. Once preflight completes and invocation commit wins, Kernel app.execute is always awaited without further cancellation gates; success records the actual approval/rework, while an execution error is settlement_unknown. The working-to-review transition reports cancelled or failed for known zero-write outcomes and settlement_unknown only after mutation execution begins. Tests deterministically inject cancellation before invocation commit, immediately after invocation commit, and around working-to-review mutation, proving zero writes before the boundary and no abandoned settlement after it.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/pi-canary-assurance-progression.test.ts\",\n    \"tests/pi-canary-work-extension.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 300000,\n  \"max_output_bytes\": 262144\n}\n"
+      },
+      {
+        "id": "acc-exact-review-evidence-ownership",
+        "assertion": "Reserved Agent arguments use exact closed-key equality including exact model presence/value. Evidence creation fails closed if canonicalization or required permissions fail, retains least-privilege permissions compatible with the isolated same-user Agent, and transfers immediately into cleanup ownership so cancellation, construction failure, malformed events, and session shutdown remove the artifact exactly once. Matching foreground Review remains readable until its native result/end lifecycle is consumed.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/pi-canary-native-review.test.ts\",\n    \"tests/pi-canary-review-bundle.test.ts\",\n    \"tests/pi-canary-review-dispatch-resilience.test.ts\",\n    \"tests/pi-canary-assurance-progression.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 300000,\n  \"max_output_bytes\": 262144\n}\n"
+      },
+      {
+        "id": "acc-repair-provenance-regression",
+        "assertion": "The immutable repair scope covers every current staged foreground-assurance change plus the predecessor/successor TaskIntents and imm-canary-succeed review-phase ownership fix. Succession remains atomic, the foreground QA/Review package and dist copies remain consistent, git diff --check is clean, and the complete Bun repository regression passes.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 300000,\n  \"max_output_bytes\": 262144\n}\n"
+      }
+    ],
+    "scope_hint": [
+      "README.md",
+      "docs/plans/2026-08-18-002-foreground-canary-assurance-review-r2.intent.json",
+      "docs/plans/2026-08-18-003-foreground-canary-assurance-review-r2.intent.json",
+      "docs/reference/subagent-dispatch-protocol.md",
+      "docs/specs/foreground-interactive-workflow-roadmap.spec.md",
+      "docs/specs/pi-brainstorm-ensemble-host-adapter.spec.md",
+      "docs/specs/pi-observable-assurance-orchestration-roadmap.spec.md",
+      "docs/specs/standard-agent-review-dispatch.spec.md",
+      "plugins/immune-brain/.pi-extension/imm-canary-succeed.ts",
+      "plugins/immune-brain/.pi-extension/imm-canary-work.ts",
+      "plugins/immune-brain/.pi-extension/pi-canary-assurance-progression.ts",
+      "plugins/immune-brain/.pi-extension/pi-canary-assurance.ts",
+      "plugins/immune-brain/.pi-extension/pi-canary-invocations.ts",
+      "plugins/immune-brain/.pi-extension/pi-canary-native-review.ts",
+      "plugins/immune-brain/.pi-extension/pi-canary-qa-findings.ts",
+      "plugins/immune-brain/.pi-extension/pi-canary-review-bundle.ts",
+      "plugins/immune-brain/.pi-extension/pi-canary-user-authority.test.ts",
+      "plugins/immune-brain/.pi-extension/pi-canary-verification.ts",
+      "plugins/immune-brain/.pi-extension/pi-canary-work-extension.test.ts",
+      "plugins/immune-brain/.pi-extension/runtime-stub.ts",
+      "plugins/immune-brain/USER_GUIDE.md",
+      "plugins/immune-brain/dist/docs/reference/subagent-dispatch-protocol.md",
+      "plugins/immune-brain/dist/imm-canary-work.md",
+      "plugins/immune-brain/dist/imm-loop.md",
+      "plugins/immune-brain/dist/imm-work.md",
+      "plugins/immune-brain/skills/imm-canary-work/SKILL.md",
+      "plugins/immune-brain/skills/imm-loop/SKILL.md",
+      "plugins/immune-brain/skills/imm-work/SKILL.md",
+      "tests/active-runtime-docs-contract.test.ts",
+      "tests/direct-first-routing-contract.test.ts",
+      "tests/imm-canary-work-contract.test.ts",
+      "tests/pi-canary-assurance-advance.test.ts",
+      "tests/pi-canary-assurance-authority.test.ts",
+      "tests/pi-canary-assurance-continuation.test.ts",
+      "tests/pi-canary-assurance-observability.test.ts",
+      "tests/pi-canary-assurance-progression.test.ts",
+      "tests/pi-canary-confirm-cancel-decision.test.ts",
+      "tests/pi-canary-discovery-regression.test.ts",
+      "tests/pi-canary-lifecycle-package.test.ts",
+      "tests/pi-canary-native-review.test.ts",
+      "tests/pi-canary-notification-correlation.test.ts",
+      "tests/pi-canary-packed-consumer.test.ts",
+      "tests/pi-canary-packed-loader.test.ts",
+      "tests/pi-canary-review-bundle.test.ts",
+      "tests/pi-canary-review-dispatch-resilience.test.ts",
+      "tests/pi-canary-review-neighborhood.test.ts",
+      "tests/pi-canary-review-outcome-evidence.test.ts",
+      "tests/pi-canary-succeed-command.test.ts",
+      "tests/pi-canary-user-authority.test.ts",
+      "tests/pi-canary-work-extension.test.ts",
+      "tests/pi-subagent-dispatch-observability-contract.test.ts",
+      "tests/user-approval-authority.test.ts",
+      "tests/user-approval-critical-completion.test.ts",
+      "tests/user-approval-package-contract.test.ts",
+      "tests/user-approval-tui-wiring.test.ts"
+    ],
+    "risk": "critical",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/2026-08-18-004-fix-foreground-assurance-review-findings.intent.json",
+    "revision": 1,
+    "content_hash": "sha256:5a767653bb6f3a5d3dbae409743783a15ae0f318d4ed8683c08447000e0fda5c"
+  },
+  "phase": "done",
+  "baseline": "sha256:5a767653bb6f3a5d3dbae409743783a15ae0f318d4ed8683c08447000e0fda5c",
+  "evidence": [
+    {
+      "id": "evidence-record_evidence:2026-08-18-004-fix-foreground-assurance-review-findings:2026-08-18T02:39:37.341Z",
+      "acceptance_id": "acc-real-authority-linearization",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:5a767653bb6f3a5d3dbae409743783a15ae0f318d4ed8683c08447000e0fda5c",
+      "diff_hash": "sha256:3a4c31820fdfdc2c1d0daba1c779b4e2013d6ee1e17b247bb5b13b847f436202",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "Targeted authority linearization tests passed: bun test tests/pi-canary-assurance-progression.test.ts tests/pi-canary-work-extension.test.ts. Commit-after-invocation cancellation now awaits Kernel settlement and returns settlement_unknown while recording QA approval; pre-mutation cancellation remains zero-write cancelled/failed."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-18-004-fix-foreground-assurance-review-findings:2026-08-18T02:39:44.595Z",
+      "acceptance_id": "acc-exact-review-evidence-ownership",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:5a767653bb6f3a5d3dbae409743783a15ae0f318d4ed8683c08447000e0fda5c",
+      "diff_hash": "sha256:3a4c31820fdfdc2c1d0daba1c779b4e2013d6ee1e17b247bb5b13b847f436202",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "Targeted Review bridge/evidence tests passed: bun test tests/pi-canary-native-review.test.ts tests/pi-canary-review-bundle.test.ts tests/pi-canary-review-dispatch-resilience.test.ts tests/pi-canary-assurance-progression.test.ts tests/pi-canary-work-extension.test.ts. Agent args now use closed-key equality, evidence paths are canonical with required permissions, and construction cancellation removes the artifact."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-18-004-fix-foreground-assurance-review-findings:2026-08-18T02:39:52.510Z",
+      "acceptance_id": "acc-repair-provenance-regression",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:5a767653bb6f3a5d3dbae409743783a15ae0f318d4ed8683c08447000e0fda5c",
+      "diff_hash": "sha256:3a4c31820fdfdc2c1d0daba1c779b4e2013d6ee1e17b247bb5b13b847f436202",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "Repair provenance and regression passed: repair TaskIntent scope covers every staged file, including imm-canary-succeed and predecessor/successor intents; bun scripts/sync-dist-docs.ts --check passes; git diff --cached --check is clean; full bun test passes 935 tests across 130 files."
+    }
+  ],
+  "findings": [
+    {
+      "id": "runtime-extension-reload-gap",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "acc-repair-provenance-regression",
+      "source": "execution",
+      "review_round": null,
+      "summary": "Pi runtime did not execute the staged foreground bridge code after advance_assurance: the tool returned a legacy started shape instead of review_ready agent_params, and submit_review was routed to ordinary Kernel mutation (`cannot submit review while phase is review`) rather than progression.submitReview. Restart/reload the Pi extension host, then rerun/continue the review bridge from the current QA-approved state."
+    },
+    {
+      "id": "background-review-receipt-incompatible",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "acc-repair-provenance-regression",
+      "source": "execution",
+      "review_round": null,
+      "summary": "The explicitly requested Review Agent ran with run_in_background:true and was retrieved through get_subagent_result. It returned a PASS verdict for snapshot sha256:aaa6..., but the current foreground Review bridge contract requires a native foreground tool_result plus tool_execution_end with run_in_background:false; therefore this receipt is structurally unusable and no authority may be applied from it."
+    }
+  ],
+  "approvals": [
+    {
+      "id": "approval-qa-58e1270d",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:5a767653bb6f3a5d3dbae409743783a15ae0f318d4ed8683c08447000e0fda5c",
+      "diff_hash": "sha256:3a4c31820fdfdc2c1d0daba1c779b4e2013d6ee1e17b247bb5b13b847f436202",
+      "actor_id": "qa-host-53b41b18",
+      "summary": "all 3 fixed verification descriptor(s) passed"
+    },
+    {
+      "id": "approval-review-74db8777",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:5a767653bb6f3a5d3dbae409743783a15ae0f318d4ed8683c08447000e0fda5c",
+      "diff_hash": "sha256:3a4c31820fdfdc2c1d0daba1c779b4e2013d6ee1e17b247bb5b13b847f436202",
+      "actor_id": "native-review-62d64bef-2a6e-4c2",
+      "summary": "Bundle provenance verified; authority linearization, exact review evidence ownership, and repair provenance all satisfy their assertions with deterministic boundary tests."
+    },
+    {
+      "id": "approval-user-50cecf33",
+      "kind": "user",
+      "authority_role": "user",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:5a767653bb6f3a5d3dbae409743783a15ae0f318d4ed8683c08447000e0fda5c",
+      "diff_hash": "sha256:3a4c31820fdfdc2c1d0daba1c779b4e2013d6ee1e17b247bb5b13b847f436202",
+      "actor_id": "literal-user",
+      "summary": "literal user approval"
+    }
+  ],
+  "history": [
+    {
+      "id": "record_evidence:2026-08-18-004-fix-foreground-assurance-review-findings:2026-08-18T02:39:37.341Z",
+      "at": "2026-08-18T02:39:37.341Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-real-authority-linearization\naction_v2_sha256:f43351137674db8320b32a76980c513cf3f8ac45b3cda00762e5ec4a2cc039c9"
+    },
+    {
+      "id": "record_evidence:2026-08-18-004-fix-foreground-assurance-review-findings:2026-08-18T02:39:44.595Z",
+      "at": "2026-08-18T02:39:44.595Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-exact-review-evidence-ownership\naction_v2_sha256:8991b5d60a7fab6e02b76b967d156ab865d966f0f6d23d0ac6dca031e86c0510"
+    },
+    {
+      "id": "record_evidence:2026-08-18-004-fix-foreground-assurance-review-findings:2026-08-18T02:39:52.510Z",
+      "at": "2026-08-18T02:39:52.510Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-repair-provenance-regression\naction_v2_sha256:e9a8838d8a36cac6b05f952645de73a2fbd425f207cb639b41ce71a66acde92f"
+    },
+    {
+      "id": "submit_review:2026-08-18-004-fix-foreground-assurance-review-findings:2026-08-18T02:39:59.511Z",
+      "at": "2026-08-18T02:39:59.511Z",
+      "type": "submit_review",
+      "from_phase": "working",
+      "to_phase": "review",
+      "reason": "action_v2_sha256:a01d4aeb0fe556b33b922083028cf1337a10c5c06e5ef792b540893923141ee8"
+    },
+    {
+      "id": "record_approval:2026-08-18-004-fix-foreground-assurance-review-findings:2026-08-18T02:41:03.384Z",
+      "at": "2026-08-18T02:41:03.384Z",
+      "type": "record_approval",
+      "from_phase": "review",
+      "to_phase": "review",
+      "reason": "approval-qa-58e1270d\naction_v2_sha256:70857431526be606534d42d383b1354bd32080abc5bc0b0b06e3a066c9bb0d16",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "qa-host-53b41b18",
+        "confirmation_ref": "pi-confirm-87397ca6ada318d2",
+        "issued_at": "2026-08-18T02:41:03.384Z",
+        "expires_at": "2026-08-18T02:51:03.384Z"
+      }
+    },
+    {
+      "id": "record_finding:2026-08-18-004-fix-foreground-assurance-review-findings:2026-08-18T02:45:44.863Z",
+      "at": "2026-08-18T02:45:44.863Z",
+      "type": "record_finding",
+      "from_phase": "review",
+      "to_phase": "review",
+      "reason": "runtime-extension-reload-gap\naction_v2_sha256:3ab97c9fb1dfe6f05ac001282d59de10cb44187f1e8a39758b3c87a77b8db9af"
+    },
+    {
+      "id": "record_finding:2026-08-18-004-fix-foreground-assurance-review-findings:2026-08-18T02:49:08.924Z",
+      "at": "2026-08-18T02:49:08.924Z",
+      "type": "record_finding",
+      "from_phase": "review",
+      "to_phase": "review",
+      "reason": "background-review-receipt-incompatible\naction_v2_sha256:945dd733788ad3e59df9e9e22047bfbdf6e7d2777045e2516136017f62a9636d"
+    },
+    {
+      "id": "resolve_finding:2026-08-18-004-fix-foreground-assurance-review-findings:2026-08-18T02:53:27.526Z",
+      "at": "2026-08-18T02:53:27.526Z",
+      "type": "resolve_finding",
+      "from_phase": "review",
+      "to_phase": "review",
+      "reason": "runtime-extension-reload-gap\naction_v2_sha256:1aca8b044e6d1730f4cf0efaf5a0f9b936b3c3d61698a2439eaf811b190e7500"
+    },
+    {
+      "id": "resolve_finding:2026-08-18-004-fix-foreground-assurance-review-findings:2026-08-18T02:53:33.276Z",
+      "at": "2026-08-18T02:53:33.276Z",
+      "type": "resolve_finding",
+      "from_phase": "review",
+      "to_phase": "review",
+      "reason": "background-review-receipt-incompatible\naction_v2_sha256:2146c74771733cc791cb92fd643abb755aa89e83640f33832bafaaa3f613d6ed"
+    },
+    {
+      "id": "record_approval:2026-08-18-004-fix-foreground-assurance-review-findings:2026-08-18T02:59:38.955Z",
+      "at": "2026-08-18T02:59:38.955Z",
+      "type": "record_approval",
+      "from_phase": "review",
+      "to_phase": "review",
+      "reason": "approval-review-74db8777\naction_v2_sha256:aa6fb26cf149ef6778337cc2787e17f4650a48968e58895f082633db8fab0d37",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "native-review-62d64bef-2a6e-4c2",
+        "confirmation_ref": "pi-confirm-145f89a570b19f5e",
+        "issued_at": "2026-08-18T02:59:38.955Z",
+        "expires_at": "2026-08-18T03:09:38.955Z"
+      }
+    },
+    {
+      "id": "record_user_approval:2026-08-18-004-fix-foreground-assurance-review-findings:2026-08-18T03:05:56.208Z",
+      "at": "2026-08-18T03:05:56.208Z",
+      "type": "record_user_approval",
+      "from_phase": "review",
+      "to_phase": "review",
+      "reason": "approval-user-50cecf33\naction_v2_sha256:f107a932a08368186e9d06af475d33f538ffa14b9e3b7a51a936a9e09bdf6684",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-6614520155430211",
+        "issued_at": "2026-08-18T03:05:56.209Z",
+        "expires_at": "2026-08-18T03:15:56.209Z"
+      }
+    },
+    {
+      "id": "complete:2026-08-18-004-fix-foreground-assurance-review-findings:2026-08-18T03:06:09.843Z",
+      "at": "2026-08-18T03:06:09.843Z",
+      "type": "complete",
+      "from_phase": "review",
+      "to_phase": "done",
+      "reason": "action_v2_sha256:a04ad61233991ab5feea866479b31ff053a7ad8fa8e53d3af3e561187bc2fae8"
+    }
+  ]
+}

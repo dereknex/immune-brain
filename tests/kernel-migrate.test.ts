@@ -104,8 +104,9 @@ describe("imm-kernel migrate is retired", () => {
 describe("execution state stays out of git", () => {
 	it("keeps execution state out of git", () => {
 		const gitignore = readFileSync(join(process.cwd(), ".gitignore"), "utf8");
-		expect(gitignore).toContain(".imm/tasks/");
+		expect(gitignore).not.toMatch(/^\.imm\/tasks\/\s*$/m);
 		expect(gitignore).toContain(".imm/workspace.json");
 		expect(gitignore).toContain(".imm/journal.jsonl");
+		expect(gitignore).toContain(".imm/migrations/");
 	});
 });

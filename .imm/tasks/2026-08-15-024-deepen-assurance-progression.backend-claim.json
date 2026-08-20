@@ -1,0 +1,9 @@
+{
+  "contract": "assurance_kernel/task_tombstone/v1",
+  "task_id": "2026-08-15-024-deepen-assurance-progression",
+  "lifecycle_status": "terminal",
+  "terminal_phase": "stopped",
+  "terminal_event_id": "stop:2026-08-15-024-deepen-assurance-progression:2026-08-15T13:47:18.479Z",
+  "final_record_hash": "sha256:ebbea539d1c878043fe848fe41eba77fd1c1362485bd341380c67a1a38c10161",
+  "terminalized_at": "2026-08-15T13:47:18.479Z"
+}

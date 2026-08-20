@@ -1,0 +1,9 @@
+{
+  "contract": "assurance_kernel/task_tombstone/v1",
+  "task_id": "2026-08-15-023-retire-public-skill-aliases",
+  "lifecycle_status": "terminal",
+  "terminal_phase": "done",
+  "terminal_event_id": "complete:2026-08-15-023-retire-public-skill-aliases:2026-08-15T12:39:02.877Z",
+  "final_record_hash": "sha256:65a55a12148bb97260761c6cc626f490d0d7460be6d737ff0b45a7e1d4689e0b",
+  "terminalized_at": "2026-08-15T12:39:02.877Z"
+}

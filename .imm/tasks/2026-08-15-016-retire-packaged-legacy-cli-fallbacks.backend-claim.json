@@ -1,0 +1,9 @@
+{
+  "contract": "assurance_kernel/task_tombstone/v1",
+  "task_id": "2026-08-15-016-retire-packaged-legacy-cli-fallbacks",
+  "lifecycle_status": "terminal",
+  "terminal_phase": "done",
+  "terminal_event_id": "complete:2026-08-15-016-retire-packaged-legacy-cli-fallbacks:2026-08-15T07:22:00.006Z",
+  "final_record_hash": "sha256:f07d52e1d2ad505b662041ce3e4ef38365d875483b75116cae8ee8b4d7035659",
+  "terminalized_at": "2026-08-15T07:22:00.006Z"
+}

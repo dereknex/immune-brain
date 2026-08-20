@@ -1,0 +1,246 @@
+{
+  "contract": "assurance_kernel/task_record/v2",
+  "task_id": "2026-08-14-012-retire-unreachable-progress-extension",
+  "intent_revision": 1,
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "2026-08-14-012-retire-unreachable-progress-extension",
+    "goal": "Delete the unreachable legacy Pi Roadmap/Plan progress extension closure while preserving the three manifest-enrolled Kernel lifecycle factories and all retained legacy audit and Review authority boundaries.",
+    "acceptance": [
+      {
+        "id": "acc-retired-paths-absent",
+        "assertion": "The three unreachable progress extension source files and their dedicated test are absent, with no retained production/test imm-progress command or immune-brain-progress widget surface.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/pi-canary-discovery-regression.test.ts\",\n    \"tests/pi-only-package-surface.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 180000,\n  \"max_output_bytes\": 262144\n}\n"
+      },
+      {
+        "id": "acc-source-discovery",
+        "assertion": "The real Pi source-tree loader discovers exactly imm-canary-enroll, imm-canary-new, and imm-canary-work with zero errors, and the entry manifest remains load-bearing for helper exclusion.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/pi-canary-discovery-regression.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 180000,\n  \"max_output_bytes\": 262144\n}\n"
+      },
+      {
+        "id": "acc-packed-discovery",
+        "assertion": "npm pack excludes all retired progress paths and the real Pi loader still discovers exactly the three retained lifecycle factories from packed bytes.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/pi-canary-packed-loader.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 300000,\n  \"max_output_bytes\": 262144\n}\n"
+      },
+      {
+        "id": "acc-host-runtime-retained",
+        "assertion": "Host runtime cutover tests retain v4_runtime.ts and all shipped bin wrappers on Bun without treating the deleted progress index as a production path.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/host-runtime-cutover.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 180000,\n  \"max_output_bytes\": 262144\n}\n"
+      },
+      {
+        "id": "acc-retained-boundaries",
+        "assertion": "The deletion does not change the three canary factory files, legacy projection/parser runtime, explicit legacy audit, retired-command wall, Kernel snapshot/CAS, or Review confirmation machinery.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/v4-storage-retirement-legacy-audit.test.ts\",\n    \"tests/v4-storage-retirement-v3-writers.test.ts\",\n    \"tests/pi-canary-package-boundary.test.ts\",\n    \"tests/pi-canary-user-authority.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 240000,\n  \"max_output_bytes\": 262144\n}\n"
+      },
+      {
+        "id": "acc-full-regression",
+        "assertion": "The complete repository test suite passes after the unreachable progress extension deletion.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 300000,\n  \"max_output_bytes\": 262144\n}\n"
+      }
+    ],
+    "scope_hint": [
+      "docs/plans/2026-08-14-012-retire-unreachable-progress-extension.intent.json",
+      "docs/specs/host-native-lightweight-workflow-roadmap.spec.md",
+      "docs/specs/retire-unreachable-progress-extension.spec.md",
+      "plugins/immune-brain/.pi-extension/index.ts",
+      "plugins/immune-brain/.pi-extension/progress_client.ts",
+      "plugins/immune-brain/.pi-extension/progress_views.ts",
+      "tests/host-runtime-cutover.test.ts",
+      "tests/pi-canary-discovery-regression.test.ts",
+      "tests/pi-canary-packed-loader.test.ts",
+      "tests/pi-only-package-surface.test.ts",
+      "tests/pi-progress-extension.test.ts"
+    ],
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/2026-08-14-012-retire-unreachable-progress-extension.intent.json",
+    "revision": 1,
+    "content_hash": "sha256:c8de9ff16c0a787b0ad34d807643250631e0f09301c7d54e1fffd426c1bc1934"
+  },
+  "phase": "done",
+  "baseline": "sha256:c8de9ff16c0a787b0ad34d807643250631e0f09301c7d54e1fffd426c1bc1934",
+  "evidence": [
+    {
+      "id": "evidence-record_evidence:2026-08-14-012-retire-unreachable-progress-extension:2026-08-15T05:57:21.291Z",
+      "acceptance_id": "acc-retired-paths-absent",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:c8de9ff16c0a787b0ad34d807643250631e0f09301c7d54e1fffd426c1bc1934",
+      "diff_hash": "sha256:8b56cc4d0daabc997d89227da2a0f683ca613068b0ed31390521c24290c1614e",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "Commit 43aa839 deletes .pi-extension/index.ts, progress_client.ts, progress_views.ts, and tests/pi-progress-extension.test.ts. Fresh source/package-surface verification passed in the 15/15 focused suite."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-14-012-retire-unreachable-progress-extension:2026-08-15T05:57:29.787Z",
+      "acceptance_id": "acc-source-discovery",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:c8de9ff16c0a787b0ad34d807643250631e0f09301c7d54e1fffd426c1bc1934",
+      "diff_hash": "sha256:8b56cc4d0daabc997d89227da2a0f683ca613068b0ed31390521c24290c1614e",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "Fresh tests/pi-canary-discovery-regression.test.ts passed 2/2 using the real Pi source loader: exactly imm-canary-enroll.ts, imm-canary-new.ts, and imm-canary-work.ts loaded with zero errors; manifest-removal helper rejection remained proven."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-14-012-retire-unreachable-progress-extension:2026-08-15T05:57:39.583Z",
+      "acceptance_id": "acc-packed-discovery",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:c8de9ff16c0a787b0ad34d807643250631e0f09301c7d54e1fffd426c1bc1934",
+      "diff_hash": "sha256:8b56cc4d0daabc997d89227da2a0f683ca613068b0ed31390521c24290c1614e",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "Fresh tests/pi-canary-packed-loader.test.ts passed 4/4: npm pack omitted all three retired progress files and the real Pi loader discovered exactly the three retained canary factories from packed bytes."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-14-012-retire-unreachable-progress-extension:2026-08-15T05:57:47.838Z",
+      "acceptance_id": "acc-host-runtime-retained",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:c8de9ff16c0a787b0ad34d807643250631e0f09301c7d54e1fffd426c1bc1934",
+      "diff_hash": "sha256:8b56cc4d0daabc997d89227da2a0f683ca613068b0ed31390521c24290c1614e",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "Fresh tests/host-runtime-cutover.test.ts passed 8/8. v4_runtime.ts and every shipped imm-* wrapper remain Bun-backed; deleted progress index is no longer treated as a production runtime path."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-14-012-retire-unreachable-progress-extension:2026-08-15T05:57:57.812Z",
+      "acceptance_id": "acc-retained-boundaries",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:c8de9ff16c0a787b0ad34d807643250631e0f09301c7d54e1fffd426c1bc1934",
+      "diff_hash": "sha256:8b56cc4d0daabc997d89227da2a0f683ca613068b0ed31390521c24290c1614e",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "Fresh retained-boundary suite passed 27/27 across legacy audit, v3-writer retirement, Pi canary package boundary, and literal-user authority tests. No canary factory, Kernel, legacy projection/audit, retired-command wall, or Review confirmation file changed."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-14-012-retire-unreachable-progress-extension:2026-08-15T05:58:09.828Z",
+      "acceptance_id": "acc-full-regression",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:c8de9ff16c0a787b0ad34d807643250631e0f09301c7d54e1fffd426c1bc1934",
+      "diff_hash": "sha256:8b56cc4d0daabc997d89227da2a0f683ca613068b0ed31390521c24290c1614e",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "Fresh post-commit full repository suite passed: 1127 tests, 0 failures, 5653 expectations across 147 files on Bun 1.3.14. Git worktree is clean at 43aa839."
+    }
+  ],
+  "findings": [],
+  "approvals": [
+    {
+      "id": "approval-qa-abec8ff6",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:c8de9ff16c0a787b0ad34d807643250631e0f09301c7d54e1fffd426c1bc1934",
+      "diff_hash": "sha256:8b56cc4d0daabc997d89227da2a0f683ca613068b0ed31390521c24290c1614e",
+      "actor_id": "qa-host-c7f358b5",
+      "summary": "all 6 fixed verification descriptor(s) passed"
+    },
+    {
+      "id": "approval-review-9a0c809a",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:c8de9ff16c0a787b0ad34d807643250631e0f09301c7d54e1fffd426c1bc1934",
+      "diff_hash": "sha256:8b56cc4d0daabc997d89227da2a0f683ca613068b0ed31390521c24290c1614e",
+      "actor_id": "native-review-4d56b08d-e84c-4e6",
+      "summary": "Immutable bundle provenance verified; scoped deletion and regression coverage satisfy all acceptance assertions without identified correctness, security, or test gaps."
+    }
+  ],
+  "history": [
+    {
+      "id": "record_evidence:2026-08-14-012-retire-unreachable-progress-extension:2026-08-15T05:57:21.291Z",
+      "at": "2026-08-15T05:57:21.291Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-retired-paths-absent\naction_v2_sha256:d2da6d8fb32b91fb8e67bcbb5c0e16ca0187520facee8b0d664ba5f6a6b74cde"
+    },
+    {
+      "id": "record_evidence:2026-08-14-012-retire-unreachable-progress-extension:2026-08-15T05:57:29.787Z",
+      "at": "2026-08-15T05:57:29.787Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-source-discovery\naction_v2_sha256:bf8c9220a698bd5c61ee7a522404883d502b8d1fc5acaa67c8093a1270f4293c"
+    },
+    {
+      "id": "record_evidence:2026-08-14-012-retire-unreachable-progress-extension:2026-08-15T05:57:39.583Z",
+      "at": "2026-08-15T05:57:39.583Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-packed-discovery\naction_v2_sha256:36f0cfa879d011a514e861c098773186532dc3d2c2510a8f82139863e80e3bba"
+    },
+    {
+      "id": "record_evidence:2026-08-14-012-retire-unreachable-progress-extension:2026-08-15T05:57:47.838Z",
+      "at": "2026-08-15T05:57:47.838Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-host-runtime-retained\naction_v2_sha256:a6f99946a80a2653b69d062919c3be5b5c0f944e0483d749b00e09044c185821"
+    },
+    {
+      "id": "record_evidence:2026-08-14-012-retire-unreachable-progress-extension:2026-08-15T05:57:57.812Z",
+      "at": "2026-08-15T05:57:57.812Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-retained-boundaries\naction_v2_sha256:50308a677b127eff1cd8c81df6151842c388a4fdc68a28deb2ac2f9d4fde6ee1"
+    },
+    {
+      "id": "record_evidence:2026-08-14-012-retire-unreachable-progress-extension:2026-08-15T05:58:09.828Z",
+      "at": "2026-08-15T05:58:09.828Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-full-regression\naction_v2_sha256:67b3ed0145d37f86e88de227e4db0132b28ce859d5b399bd63ceb6c225392d1f"
+    },
+    {
+      "id": "submit_review:2026-08-14-012-retire-unreachable-progress-extension:2026-08-15T05:58:17.012Z",
+      "at": "2026-08-15T05:58:17.012Z",
+      "type": "submit_review",
+      "from_phase": "working",
+      "to_phase": "review",
+      "reason": "action_v2_sha256:b51932571e3cbede2727c294fe0c5bac70b2179a920e70f5fa33bca75ddd7b0e"
+    },
+    {
+      "id": "record_approval:2026-08-14-012-retire-unreachable-progress-extension:2026-08-15T05:59:32.359Z",
+      "at": "2026-08-15T05:59:32.359Z",
+      "type": "record_approval",
+      "from_phase": "review",
+      "to_phase": "review",
+      "reason": "approval-qa-abec8ff6\naction_v2_sha256:403d38aa3175617a3c7aa214ccb7c7d93debeb135a19ee446add25d0b43ad46a",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "qa-host-c7f358b5",
+        "confirmation_ref": "pi-confirm-a75ad4c7f3bfd7be",
+        "issued_at": "2026-08-15T05:59:32.359Z",
+        "expires_at": "2026-08-15T06:09:32.359Z"
+      }
+    },
+    {
+      "id": "record_approval:2026-08-14-012-retire-unreachable-progress-extension:2026-08-15T06:00:18.955Z",
+      "at": "2026-08-15T06:00:18.955Z",
+      "type": "record_approval",
+      "from_phase": "review",
+      "to_phase": "review",
+      "reason": "approval-review-9a0c809a\naction_v2_sha256:581e84ca55c538c297fbff550f1fa8eaa4060fd43e7191b813e4a2c2932e0368",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "native-review-4d56b08d-e84c-4e6",
+        "confirmation_ref": "pi-confirm-0a1cc9c74eac7885",
+        "issued_at": "2026-08-15T06:00:18.955Z",
+        "expires_at": "2026-08-15T06:10:18.955Z"
+      }
+    },
+    {
+      "id": "complete:2026-08-14-012-retire-unreachable-progress-extension:2026-08-15T06:00:36.338Z",
+      "at": "2026-08-15T06:00:36.338Z",
+      "type": "complete",
+      "from_phase": "review",
+      "to_phase": "done",
+      "reason": "action_v2_sha256:cc07e1b16437cff5af21844b037e9215fe1560048ed0e03d6c875f3492291f42"
+    }
+  ]
+}

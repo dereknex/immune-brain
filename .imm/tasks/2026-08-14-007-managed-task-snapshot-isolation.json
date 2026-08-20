@@ -1,0 +1,259 @@
+{
+  "contract": "assurance_kernel/task_record/v2",
+  "task_id": "2026-08-14-007-managed-task-snapshot-isolation",
+  "intent_revision": 1,
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "2026-08-14-007-managed-task-snapshot-isolation",
+    "goal": "Bind Managed evidence, QA, Review, authorization, and completion to one Git-owned scope envelope and index-backed task snapshot so unrelated dirty files cannot stale authority while in-scope byte drift fails closed.",
+    "acceptance": [
+      {
+        "id": "acc-task-snapshot-contract",
+        "assertion": "Managed snapshot identity is deterministically derived from the validated TaskIntent scope envelope, exact HEAD, and canonical staged index entries, with no session state or fallback to the repository-wide dirty snapshot.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/managed-task-snapshot-isolation.test.ts\",\n    \"tests/kernel-intent-authoring.test.ts\",\n    \"tests/kernel-intent-v2.test.ts\",\n    \"tests/kernel-r2c2-reducer.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 180000,\n  \"max_output_bytes\": 262144\n}\n"
+      },
+      {
+        "id": "acc-unrelated-dirty-isolation",
+        "assertion": "Adding, changing, or deleting dirty paths outside the TaskIntent scope envelope does not change the task digest or stale otherwise fresh evidence and approvals, and those paths are neither opened nor included in Review evidence.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/managed-task-snapshot-isolation.test.ts\",\n    \"tests/pi-canary-review-bundle.test.ts\",\n    \"tests/pi-canary-work-extension.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 180000,\n  \"max_output_bytes\": 262144\n}\n"
+      },
+      {
+        "id": "acc-in-scope-drift-fails-closed",
+        "assertion": "Invalid or empty scope, in-scope unstaged or untracked bytes, staged index mutation, HEAD change, root or path drift, unsupported Git object modes, and Review capture races fail before spawning Review or writing evidence or approval authority.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/managed-task-snapshot-isolation.test.ts\",\n    \"tests/pi-canary-review-bundle.test.ts\",\n    \"tests/kernel-r2c2-application.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 180000,\n  \"max_output_bytes\": 262144\n}\n"
+      },
+      {
+        "id": "acc-assurance-chain-consistency",
+        "assertion": "Executor evidence, deterministic QA, native Review bundle, rework or approval application, pending authorization, freshness projection, and completion all bind the same task-scoped digest and exact index bytes.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/kernel-r2c2-application.test.ts\",\n    \"tests/pi-canary-review-bundle.test.ts\",\n    \"tests/pi-canary-work-extension.test.ts\",\n    \"tests/pi-canary-user-authority.test.ts\",\n    \"tests/user-approval-tui-wiring.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 180000,\n  \"max_output_bytes\": 262144\n}\n"
+      },
+      {
+        "id": "acc-regression-compatibility",
+        "assertion": "Historical TaskIntent v1 and TaskRecord v2 data remain readable, the legacy global workspace snapshot retains its existing callers, user documentation states the explicit scope and staging contract, and the complete repository suite passes.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 300000,\n  \"max_output_bytes\": 262144\n}\n"
+      }
+    ],
+    "scope_hint": [
+      "README.md",
+      "docs/plans/2026-08-14-006-managed-task-snapshot-isolation.intent.json",
+      "docs/plans/2026-08-14-007-managed-task-snapshot-isolation.intent.json",
+      "docs/specs/host-native-lightweight-workflow-roadmap.spec.md",
+      "docs/specs/managed-task-snapshot-isolation.spec.md",
+      "plugins/immune-brain/.pi-extension/imm-canary-work.ts",
+      "plugins/immune-brain/.pi-extension/pi-canary-review-bundle.ts",
+      "plugins/immune-brain/USER_GUIDE.md",
+      "plugins/immune-brain/runtime/kernel/application_v2.ts",
+      "plugins/immune-brain/runtime/kernel/canary_application.ts",
+      "plugins/immune-brain/runtime/kernel/intent.ts",
+      "plugins/immune-brain/runtime/kernel/validation.ts",
+      "plugins/immune-brain/runtime/workspace_scope.ts",
+      "tests/kernel-intent-authoring.test.ts",
+      "tests/kernel-intent-v2.test.ts",
+      "tests/kernel-r2c2-application.test.ts",
+      "tests/kernel-r2c2-reducer.test.ts",
+      "tests/managed-task-snapshot-isolation.test.ts",
+      "tests/pi-canary-review-bundle.test.ts",
+      "tests/pi-canary-user-authority.test.ts",
+      "tests/pi-canary-work-extension.test.ts",
+      "tests/user-approval-tui-wiring.test.ts"
+    ],
+    "risk": "critical",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/2026-08-14-007-managed-task-snapshot-isolation.intent.json",
+    "revision": 1,
+    "content_hash": "sha256:d3ae14c0255a514e88f539316bf3cbf602c1e1db0dc7136641e7f839ddbb22a3"
+  },
+  "phase": "done",
+  "baseline": "sha256:d3ae14c0255a514e88f539316bf3cbf602c1e1db0dc7136641e7f839ddbb22a3",
+  "evidence": [
+    {
+      "id": "evidence-record_evidence:2026-08-14-007-managed-task-snapshot-isolation:2026-08-14T14:39:03.024Z",
+      "acceptance_id": "acc-task-snapshot-contract",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:d3ae14c0255a514e88f539316bf3cbf602c1e1db0dc7136641e7f839ddbb22a3",
+      "diff_hash": "sha256:b0c4de8a3c26ce47a7dc90d065e01f98a811624be802f303be206aa099575be2",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "Fresh descriptor passed 55/55 tests on scoped digest sha256:b0c4de8a3c26ce47a7dc90d065e01f98a811624be802f303be206aa099575be2, covering canonical scope parsing/revisions, reducer scope-expansion rejection, secure intent authoring, and index-backed task snapshot identity."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-14-007-managed-task-snapshot-isolation:2026-08-14T14:39:12.290Z",
+      "acceptance_id": "acc-unrelated-dirty-isolation",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:d3ae14c0255a514e88f539316bf3cbf602c1e1db0dc7136641e7f839ddbb22a3",
+      "diff_hash": "sha256:b0c4de8a3c26ce47a7dc90d065e01f98a811624be802f303be206aa099575be2",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "Fresh descriptor passed 46/46 tests: out-of-scope worktree/index changes preserve task digest, Review bundle includes only scoped staged Git blobs, and extension authorization rejects only in-scope snapshot drift."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-14-007-managed-task-snapshot-isolation:2026-08-14T14:39:21.087Z",
+      "acceptance_id": "acc-in-scope-drift-fails-closed",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:d3ae14c0255a514e88f539316bf3cbf602c1e1db0dc7136641e7f839ddbb22a3",
+      "diff_hash": "sha256:b0c4de8a3c26ce47a7dc90d065e01f98a811624be802f303be206aa099575be2",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "Fresh descriptor passed 24/24 tests: invalid scope, scoped unstaged/untracked bytes, hostile index modes, encoding/case collisions, HEAD/index races, and Review bundle digest mismatch fail before authority mutation."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-14-007-managed-task-snapshot-isolation:2026-08-14T14:39:30.372Z",
+      "acceptance_id": "acc-assurance-chain-consistency",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:d3ae14c0255a514e88f539316bf3cbf602c1e1db0dc7136641e7f839ddbb22a3",
+      "diff_hash": "sha256:b0c4de8a3c26ce47a7dc90d065e01f98a811624be802f303be206aa099575be2",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "Fresh descriptor passed 62/62 tests: application diff authority receives TaskRecord intent snapshot; evidence, QA, Review bundle, pending authorization, user authority, and replay/race guards bind one scoped digest."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-14-007-managed-task-snapshot-isolation:2026-08-14T14:39:40.817Z",
+      "acceptance_id": "acc-regression-compatibility",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:d3ae14c0255a514e88f539316bf3cbf602c1e1db0dc7136641e7f839ddbb22a3",
+      "diff_hash": "sha256:b0c4de8a3c26ce47a7dc90d065e01f98a811624be802f303be206aa099575be2",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "Fresh full repository suite passed 1137/1137 tests across 147 files on scoped digest sha256:b0c4de8a3c26ce47a7dc90d065e01f98a811624be802f303be206aa099575be2; staged scope audit found 20 task-owned paths, zero out-of-scope paths, and zero tracked unstaged paths."
+    }
+  ],
+  "findings": [],
+  "approvals": [
+    {
+      "id": "approval-qa-d7d02710",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:d3ae14c0255a514e88f539316bf3cbf602c1e1db0dc7136641e7f839ddbb22a3",
+      "diff_hash": "sha256:b0c4de8a3c26ce47a7dc90d065e01f98a811624be802f303be206aa099575be2",
+      "actor_id": "qa-host-86871218",
+      "summary": "all 5 fixed verification descriptor(s) passed"
+    },
+    {
+      "id": "approval-review-e3cd4fa0",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:d3ae14c0255a514e88f539316bf3cbf602c1e1db0dc7136641e7f839ddbb22a3",
+      "diff_hash": "sha256:b0c4de8a3c26ce47a7dc90d065e01f98a811624be802f303be206aa099575be2",
+      "actor_id": "native-review-698cd6a6-8093-44b",
+      "summary": "Immutable provenance verified; scoped index snapshot and assurance-chain changes satisfy the acceptance contract."
+    },
+    {
+      "id": "approval-user-538f69a2",
+      "kind": "user",
+      "authority_role": "user",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:d3ae14c0255a514e88f539316bf3cbf602c1e1db0dc7136641e7f839ddbb22a3",
+      "diff_hash": "sha256:b0c4de8a3c26ce47a7dc90d065e01f98a811624be802f303be206aa099575be2",
+      "actor_id": "literal-user",
+      "summary": "literal user approval"
+    }
+  ],
+  "history": [
+    {
+      "id": "record_evidence:2026-08-14-007-managed-task-snapshot-isolation:2026-08-14T14:39:03.024Z",
+      "at": "2026-08-14T14:39:03.024Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-task-snapshot-contract\naction_v2_sha256:a55ba497f5f796f5538eb7b3d415b24233e0e4ddc1202ed17fe3ec0a208fd09f"
+    },
+    {
+      "id": "record_evidence:2026-08-14-007-managed-task-snapshot-isolation:2026-08-14T14:39:12.290Z",
+      "at": "2026-08-14T14:39:12.290Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-unrelated-dirty-isolation\naction_v2_sha256:863b43bba5dc1dd890f1190115ff4c8f21abaa4ad1395221266d2547defcd948"
+    },
+    {
+      "id": "record_evidence:2026-08-14-007-managed-task-snapshot-isolation:2026-08-14T14:39:21.087Z",
+      "at": "2026-08-14T14:39:21.087Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-in-scope-drift-fails-closed\naction_v2_sha256:20b322a98e6ca4a9be3f1eb3cb5290fc7a61ccd4ca726d34a164173497792206"
+    },
+    {
+      "id": "record_evidence:2026-08-14-007-managed-task-snapshot-isolation:2026-08-14T14:39:30.372Z",
+      "at": "2026-08-14T14:39:30.372Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-assurance-chain-consistency\naction_v2_sha256:0e88815f74b0af4dfdad948053ed57c399969db29d6643e0f54b2d6f27732317"
+    },
+    {
+      "id": "record_evidence:2026-08-14-007-managed-task-snapshot-isolation:2026-08-14T14:39:40.817Z",
+      "at": "2026-08-14T14:39:40.817Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-regression-compatibility\naction_v2_sha256:6134d5ce4ac9bcfbdb46b27a347652a4461e89e9bc26d50368b3b4642084698c"
+    },
+    {
+      "id": "submit_review:2026-08-14-007-managed-task-snapshot-isolation:2026-08-14T14:40:03.067Z",
+      "at": "2026-08-14T14:40:03.067Z",
+      "type": "submit_review",
+      "from_phase": "working",
+      "to_phase": "review",
+      "reason": "action_v2_sha256:b1ca4ee5b4d5afc48c32959ea2e15ad684ac2bf6f30a16c67db1889e5e7a2d6f"
+    },
+    {
+      "id": "record_approval:2026-08-14-007-managed-task-snapshot-isolation:2026-08-14T14:42:24.209Z",
+      "at": "2026-08-14T14:42:24.209Z",
+      "type": "record_approval",
+      "from_phase": "review",
+      "to_phase": "review",
+      "reason": "approval-qa-d7d02710\naction_v2_sha256:6a0b48c5a777f1b9a70bae10f5cb764c275deea342dd8af4ab806622906ed593",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "qa-host-86871218",
+        "confirmation_ref": "pi-confirm-b044ed42c2b18d50",
+        "issued_at": "2026-08-14T14:42:24.209Z",
+        "expires_at": "2026-08-14T14:52:24.209Z"
+      }
+    },
+    {
+      "id": "record_approval:2026-08-14-007-managed-task-snapshot-isolation:2026-08-14T14:43:51.581Z",
+      "at": "2026-08-14T14:43:51.581Z",
+      "type": "record_approval",
+      "from_phase": "review",
+      "to_phase": "review",
+      "reason": "approval-review-e3cd4fa0\naction_v2_sha256:c614a3191c8321f7553324cb8a52baadef12540cc1e55ed4fff67e06bf419106",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "native-review-698cd6a6-8093-44b",
+        "confirmation_ref": "pi-confirm-581631ae075ac396",
+        "issued_at": "2026-08-14T14:43:51.581Z",
+        "expires_at": "2026-08-14T14:53:51.581Z"
+      }
+    },
+    {
+      "id": "record_user_approval:2026-08-14-007-managed-task-snapshot-isolation:2026-08-14T14:44:16.802Z",
+      "at": "2026-08-14T14:44:16.802Z",
+      "type": "record_user_approval",
+      "from_phase": "review",
+      "to_phase": "review",
+      "reason": "approval-user-538f69a2\naction_v2_sha256:44220433a09848e46ad2cdace6f3e0fdff34e0e00641c56cc99919592f9d9050",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-9482402014a9c861",
+        "issued_at": "2026-08-14T14:44:16.802Z",
+        "expires_at": "2026-08-14T14:54:16.802Z"
+      }
+    },
+    {
+      "id": "complete:2026-08-14-007-managed-task-snapshot-isolation:2026-08-14T14:44:28.872Z",
+      "at": "2026-08-14T14:44:28.872Z",
+      "type": "complete",
+      "from_phase": "review",
+      "to_phase": "done",
+      "reason": "action_v2_sha256:d991013861c386df0bf7b07c401d2e15b98c7532b1d571d73eaa73c43bc803ef"
+    }
+  ]
+}

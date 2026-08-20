@@ -1,0 +1,9 @@
+{
+  "contract": "assurance_kernel/task_tombstone/v1",
+  "task_id": "2026-08-20-010-reconcile-planning-artifact-retention-policy",
+  "lifecycle_status": "terminal",
+  "terminal_phase": "done",
+  "terminal_event_id": "complete:2026-08-20-010-reconcile-planning-artifact-retention-policy:2026-08-20T08:25:28.056Z",
+  "final_record_hash": "sha256:31809c14ba4073ba1af69e0b18dce0966045090bf5ca47e25a4f675dd54d5929",
+  "terminalized_at": "2026-08-20T08:25:28.056Z"
+}

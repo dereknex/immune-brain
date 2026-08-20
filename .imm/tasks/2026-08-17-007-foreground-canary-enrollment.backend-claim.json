@@ -1,0 +1,9 @@
+{
+  "contract": "assurance_kernel/task_tombstone/v1",
+  "task_id": "2026-08-17-007-foreground-canary-enrollment",
+  "lifecycle_status": "terminal",
+  "terminal_phase": "done",
+  "terminal_event_id": "complete:2026-08-17-007-foreground-canary-enrollment:2026-08-17T17:12:33.198Z",
+  "final_record_hash": "sha256:a40b6dac71d5d5b9f6937003b2e9cfb1ec40b4576e7be561e67d465cdd22339c",
+  "terminalized_at": "2026-08-17T17:12:33.198Z"
+}

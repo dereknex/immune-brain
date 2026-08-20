@@ -5,9 +5,15 @@ __pycache__/
 data/
 plugins/immune-brain/.plugin-eval/
 .imm/migrations/
-.imm/tasks/
 .imm/workspace.json
 .imm/journal.jsonl
+.imm/tasks/.backend-claim.json
+.imm/tasks/.workspace-transaction*.json
+.imm/tasks/.enrollment-marker.json
+.imm/tasks/.drain-transaction.json
+.imm/tasks/.terminal-transaction.json
+.imm/tasks/.workspace.lock
+.imm/tasks/.journal.lock
 .antigravitycli/
 
 # General

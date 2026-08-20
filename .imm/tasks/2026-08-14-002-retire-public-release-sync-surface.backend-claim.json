@@ -1,0 +1,9 @@
+{
+  "contract": "assurance_kernel/task_tombstone/v1",
+  "task_id": "2026-08-14-002-retire-public-release-sync-surface",
+  "lifecycle_status": "terminal",
+  "terminal_phase": "done",
+  "terminal_event_id": "complete:2026-08-14-002-retire-public-release-sync-surface:2026-08-14T08:00:52.633Z",
+  "final_record_hash": "sha256:635ab8c68355d611e8a3f5f72e147a72b38483225882c7b74b8d11fbe8397cf8",
+  "terminalized_at": "2026-08-14T08:00:52.633Z"
+}

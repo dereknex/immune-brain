@@ -1,0 +1,251 @@
+{
+  "contract": "assurance_kernel/task_record/v2",
+  "task_id": "2026-08-14-010-review-round-replan-boundary",
+  "intent_revision": 1,
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "2026-08-14-010-review-round-replan-boundary",
+    "goal": "Replace the second Review rework user-decision prompt with a durable review-phase replan_required finding that blocks submit_review, complete, and another assurance dispatch without asking the user to continue.",
+    "acceptance": [
+      {
+        "id": "acc-first-rework-unchanged",
+        "assertion": "The first Review-authority request_rework still transitions review to working, appends reviewer findings, and creates neither unresolved_user_decision nor replan_required.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/kernel-canary-rework-authority.test.ts\",\n    \"tests/kernel-r2c2-reducer.test.ts\",\n    \"tests/kernel-core.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 180000,\n  \"max_output_bytes\": 262144\n}\n"
+      },
+      {
+        "id": "acc-second-rework-parks",
+        "assertion": "The second Review-authority request_rework stays in review, appends one open replan_required finding, and creates no new unresolved_user_decision.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/kernel-canary-rework-authority.test.ts\",\n    \"tests/kernel-r2c2-reducer.test.ts\",\n    \"tests/kernel-core.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 180000,\n  \"max_output_bytes\": 262144\n}\n"
+      },
+      {
+        "id": "acc-qa-never-escalates",
+        "assertion": "QA-authority request_rework never writes replan_required, including after a prior Review rework, and critical QA approval remains required.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/kernel-canary-rework-authority.test.ts\",\n    \"tests/pi-canary-work-extension.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 180000,\n  \"max_output_bytes\": 262144\n}\n"
+      },
+      {
+        "id": "acc-parked-blocks-progress",
+        "assertion": "An open replan_required finding keeps phase review, sets next_action to revise_intent, and causes submit_review, complete, and advance_assurance to fail closed without spawning QA or Review.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/kernel-r2c2-reducer.test.ts\",\n    \"tests/kernel-core.test.ts\",\n    \"tests/pi-canary-work-extension.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 180000,\n  \"max_output_bytes\": 262144\n}\n"
+      },
+      {
+        "id": "acc-historical-user-decision",
+        "assertion": "Historical unresolved_user_decision findings still parse and still require resolve_user_decision; the Review round cap no longer creates that finding or a continue confirmation.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/pi-canary-user-authority.test.ts\",\n    \"tests/kernel-core.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 180000,\n  \"max_output_bytes\": 262144\n}\n"
+      },
+      {
+        "id": "acc-full-regression",
+        "assertion": "The four-phase lifecycle is unchanged, record-review-verdict confirmation remains, and the complete repository suite passes.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 300000,\n  \"max_output_bytes\": 262144\n}\n"
+      }
+    ],
+    "scope_hint": [
+      "docs/plans/2026-08-14-010-review-round-replan-boundary.intent.json",
+      "docs/specs/host-native-lightweight-workflow-roadmap.spec.md",
+      "docs/specs/review-round-replan-boundary.spec.md",
+      "plugins/immune-brain/.pi-extension/imm-canary-work.ts",
+      "plugins/immune-brain/dist/imm-canary-work.md",
+      "plugins/immune-brain/runtime/kernel/completion.ts",
+      "plugins/immune-brain/runtime/kernel/reducer.ts",
+      "plugins/immune-brain/runtime/kernel/reducer_v2.ts",
+      "plugins/immune-brain/runtime/kernel/types.ts",
+      "plugins/immune-brain/runtime/kernel/validation.ts",
+      "plugins/immune-brain/skills/imm-canary-work/SKILL.md",
+      "tests/kernel-canary-rework-authority.test.ts",
+      "tests/kernel-core.test.ts",
+      "tests/kernel-r2c2-reducer.test.ts",
+      "tests/pi-canary-user-authority.test.ts",
+      "tests/pi-canary-work-extension.test.ts"
+    ],
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/2026-08-14-010-review-round-replan-boundary.intent.json",
+    "revision": 1,
+    "content_hash": "sha256:1fc4d5c19e423e192fb6d696dc55bf50b1aaa707eb92f1b1356c3b3d210a84b8"
+  },
+  "phase": "done",
+  "baseline": "sha256:1fc4d5c19e423e192fb6d696dc55bf50b1aaa707eb92f1b1356c3b3d210a84b8",
+  "evidence": [
+    {
+      "id": "evidence-record_evidence:2026-08-14-010-review-round-replan-boundary:2026-08-15T03:36:23.009Z",
+      "acceptance_id": "acc-first-rework-unchanged",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:1fc4d5c19e423e192fb6d696dc55bf50b1aaa707eb92f1b1356c3b3d210a84b8",
+      "diff_hash": "sha256:4597e9777f571b59c6267987f313fa3cf1fa73b17692bf51c2692f48a6a236eb",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "First Review-authority request_rework still transitions review to working and creates neither unresolved_user_decision nor replan_required. bun test tests/kernel-canary-rework-authority.test.ts tests/kernel-r2c2-reducer.test.ts tests/kernel-core.test.ts passed."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-14-010-review-round-replan-boundary:2026-08-15T03:36:23.193Z",
+      "acceptance_id": "acc-second-rework-parks",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:1fc4d5c19e423e192fb6d696dc55bf50b1aaa707eb92f1b1356c3b3d210a84b8",
+      "diff_hash": "sha256:4597e9777f571b59c6267987f313fa3cf1fa73b17692bf51c2692f48a6a236eb",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "Second Review-authority request_rework stays in review, appends one open replan_required finding, and creates no new unresolved_user_decision. bun test tests/kernel-canary-rework-authority.test.ts tests/kernel-r2c2-reducer.test.ts tests/kernel-core.test.ts passed."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-14-010-review-round-replan-boundary:2026-08-15T03:36:23.377Z",
+      "acceptance_id": "acc-qa-never-escalates",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:1fc4d5c19e423e192fb6d696dc55bf50b1aaa707eb92f1b1356c3b3d210a84b8",
+      "diff_hash": "sha256:4597e9777f571b59c6267987f313fa3cf1fa73b17692bf51c2692f48a6a236eb",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "QA-authority request_rework never writes replan_required, including after a prior Review rework. Critical QA approval remains required. bun test tests/kernel-canary-rework-authority.test.ts tests/pi-canary-work-extension.test.ts passed."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-14-010-review-round-replan-boundary:2026-08-15T03:36:23.561Z",
+      "acceptance_id": "acc-parked-blocks-progress",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:1fc4d5c19e423e192fb6d696dc55bf50b1aaa707eb92f1b1356c3b3d210a84b8",
+      "diff_hash": "sha256:4597e9777f571b59c6267987f313fa3cf1fa73b17692bf51c2692f48a6a236eb",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "Open replan_required keeps phase review, sets next_action to revise_intent, and causes complete and advance_assurance to fail closed without spawning QA or Review. bun test tests/kernel-r2c2-reducer.test.ts tests/kernel-core.test.ts tests/pi-canary-work-extension.test.ts tests/kernel-record-v2.test.ts passed."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-14-010-review-round-replan-boundary:2026-08-15T03:36:23.746Z",
+      "acceptance_id": "acc-historical-user-decision",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:1fc4d5c19e423e192fb6d696dc55bf50b1aaa707eb92f1b1356c3b3d210a84b8",
+      "diff_hash": "sha256:4597e9777f571b59c6267987f313fa3cf1fa73b17692bf51c2692f48a6a236eb",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "Historical unresolved_user_decision findings still parse and still require resolve_user_decision. The Review round cap no longer creates that finding or a continue confirmation. bun test tests/pi-canary-user-authority.test.ts tests/kernel-core.test.ts passed."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-14-010-review-round-replan-boundary:2026-08-15T03:36:23.931Z",
+      "acceptance_id": "acc-full-regression",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:1fc4d5c19e423e192fb6d696dc55bf50b1aaa707eb92f1b1356c3b3d210a84b8",
+      "diff_hash": "sha256:4597e9777f571b59c6267987f313fa3cf1fa73b17692bf51c2692f48a6a236eb",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "Four-phase lifecycle is unchanged, record-review-verdict confirmation remains, and bun test passed 1148/0 across 148 files."
+    }
+  ],
+  "findings": [],
+  "approvals": [
+    {
+      "id": "approval-qa-6df63a01",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:1fc4d5c19e423e192fb6d696dc55bf50b1aaa707eb92f1b1356c3b3d210a84b8",
+      "diff_hash": "sha256:4597e9777f571b59c6267987f313fa3cf1fa73b17692bf51c2692f48a6a236eb",
+      "actor_id": "qa-host-583b2b84",
+      "summary": "all 6 fixed verification descriptor(s) passed"
+    },
+    {
+      "id": "approval-review-322e40ec",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:1fc4d5c19e423e192fb6d696dc55bf50b1aaa707eb92f1b1356c3b3d210a84b8",
+      "diff_hash": "sha256:4597e9777f571b59c6267987f313fa3cf1fa73b17692bf51c2692f48a6a236eb",
+      "actor_id": "native-review-de5f3a80-fddc-4f8",
+      "summary": "First Review rework stays review→working; the second parks on one open replan_required, and QA/historical user-decision paths remain fail-closed."
+    }
+  ],
+  "history": [
+    {
+      "id": "record_evidence:2026-08-14-010-review-round-replan-boundary:2026-08-15T03:36:23.009Z",
+      "at": "2026-08-15T03:36:23.009Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-first-rework-unchanged\naction_v2_sha256:8c86331e5388d53af4b013670d159d304b15b9c92fe274c00aa9e86526a64016"
+    },
+    {
+      "id": "record_evidence:2026-08-14-010-review-round-replan-boundary:2026-08-15T03:36:23.193Z",
+      "at": "2026-08-15T03:36:23.193Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-second-rework-parks\naction_v2_sha256:2726ead09804fcc859253e708ec583a5a1a50e2d1983829f83be0328a71e62ea"
+    },
+    {
+      "id": "record_evidence:2026-08-14-010-review-round-replan-boundary:2026-08-15T03:36:23.377Z",
+      "at": "2026-08-15T03:36:23.377Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-qa-never-escalates\naction_v2_sha256:e3403c4b501a4001b42fc664fe9e200b6ef0c83a67d67fe405efe421c599a416"
+    },
+    {
+      "id": "record_evidence:2026-08-14-010-review-round-replan-boundary:2026-08-15T03:36:23.561Z",
+      "at": "2026-08-15T03:36:23.561Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-parked-blocks-progress\naction_v2_sha256:c93d8afdb82d1e9be1d9835fbc119713421390acd293a7174270f3da092fa302"
+    },
+    {
+      "id": "record_evidence:2026-08-14-010-review-round-replan-boundary:2026-08-15T03:36:23.746Z",
+      "at": "2026-08-15T03:36:23.746Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-historical-user-decision\naction_v2_sha256:bbcede309b2fad391705e2653ba6623d2ce31da108fe952acdba17237b4f05d5"
+    },
+    {
+      "id": "record_evidence:2026-08-14-010-review-round-replan-boundary:2026-08-15T03:36:23.931Z",
+      "at": "2026-08-15T03:36:23.931Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-full-regression\naction_v2_sha256:befe1292ce10011df9f1370d6706a8161b090b3919d6340f7520773465e21d14"
+    },
+    {
+      "id": "submit_review:2026-08-14-010-review-round-replan-boundary:2026-08-15T03:36:34.612Z",
+      "at": "2026-08-15T03:36:34.612Z",
+      "type": "submit_review",
+      "from_phase": "working",
+      "to_phase": "review",
+      "reason": "action_v2_sha256:92099a43b57c92170bfaf6360284f70c105e8df5b5c7ef0a6efbcb67225f02d2"
+    },
+    {
+      "id": "record_approval:2026-08-14-010-review-round-replan-boundary:2026-08-15T03:38:15.237Z",
+      "at": "2026-08-15T03:38:15.237Z",
+      "type": "record_approval",
+      "from_phase": "review",
+      "to_phase": "review",
+      "reason": "approval-qa-6df63a01\naction_v2_sha256:78a496ca4d748543f1ac3d54795474156320599796ff212895666b9450623395",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "qa-host-583b2b84",
+        "confirmation_ref": "pi-confirm-5312682980a18916",
+        "issued_at": "2026-08-15T03:38:15.237Z",
+        "expires_at": "2026-08-15T03:48:15.237Z"
+      }
+    },
+    {
+      "id": "record_approval:2026-08-14-010-review-round-replan-boundary:2026-08-15T04:07:50.477Z",
+      "at": "2026-08-15T04:07:50.477Z",
+      "type": "record_approval",
+      "from_phase": "review",
+      "to_phase": "review",
+      "reason": "approval-review-322e40ec\naction_v2_sha256:a2dc5141448aaf4754a5ea345f563d9f8caf09df80a679ab9a605047e6fdd76e",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "native-review-de5f3a80-fddc-4f8",
+        "confirmation_ref": "pi-confirm-737c6f907e1127f6",
+        "issued_at": "2026-08-15T04:07:50.477Z",
+        "expires_at": "2026-08-15T04:17:50.477Z"
+      }
+    },
+    {
+      "id": "complete:2026-08-14-010-review-round-replan-boundary:2026-08-15T04:08:08.291Z",
+      "at": "2026-08-15T04:08:08.291Z",
+      "type": "complete",
+      "from_phase": "review",
+      "to_phase": "done",
+      "reason": "action_v2_sha256:d21074a4388ff1fbd7dc06525e8e507c5a6d4f406b6a14c87bd6797c5ecf7248"
+    }
+  ]
+}

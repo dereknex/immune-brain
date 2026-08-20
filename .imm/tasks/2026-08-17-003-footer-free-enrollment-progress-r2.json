@@ -1,0 +1,254 @@
+{
+  "contract": "assurance_kernel/task_record/v2",
+  "task_id": "2026-08-17-003-footer-free-enrollment-progress-r2",
+  "intent_revision": 1,
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "2026-08-17-003-footer-free-enrollment-progress-r2",
+    "goal": "Keep the Immune-Brain Footer empty in both runtime behavior and active documentation while presenting session-owned Enrollment preflight progress through one bounded aboveEditor Widget whose timer, cancellation, commit, and shutdown lifecycle cannot alter Kernel authority or the existing Host-native Assurance surfaces.",
+    "acceptance": [
+      {
+        "id": "acc-footer-free-widget-contract",
+        "assertion": "Enrollment and Assurance publish no defined-value ctx.ui.setStatus content at any lifecycle stage; both Enrollment commands remain non-blocking and share one bounded aboveEditor Widget that shows task, stage, elapsed time, and only the currently valid cancellation action, while cleanup-only setStatus(key, undefined) remains permitted solely for stale older-version UI.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/pi-enrollment-progress-widget.test.ts\",\n    \"tests/pi-canary-enroll-extension.test.ts\",\n    \"tests/pi-canary-new-extension.test.ts\",\n    \"tests/pi-canary-assurance-observability.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 180000,\n  \"max_output_bytes\": 262144\n}\n"
+      },
+      {
+        "id": "acc-widget-settlement-safety",
+        "assertion": "Normal completion, preflight failure, user cancellation, confirmation rejection, commit success or failure, UI exceptions, and session shutdown stop every refresh timer and clear only the owning Widget; repeated or concurrent shutdown is idempotent, stale callbacks cannot affect a later job, cross-command single-flight remains deterministic, and no presentation signal settles or changes enrollment authority.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/pi-enrollment-progress-widget.test.ts\",\n    \"tests/kernel-descriptor-rehearsal.test.ts\",\n    \"tests/pi-canary-enroll-extension.test.ts\",\n    \"tests/pi-canary-new-extension.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 180000,\n  \"max_output_bytes\": 262144\n}\n"
+      },
+      {
+        "id": "acc-assurance-host-native-nonregression",
+        "assertion": "Deterministic Assurance QA continues using bounded deduplicated notify updates without a custom Footer or Widget, Review remains visible through the standard Agent surface, cleanup-only stale UI removal remains best-effort, and Enrollment progress does not append Pi session entries, inject Chat messages, trigger model turns, or scan Session directories.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/pi-canary-assurance-observability.test.ts\",\n    \"tests/pi-canary-assurance-progression.test.ts\",\n    \"tests/pi-canary-work-extension.test.ts\",\n    \"tests/imm-canary-work-contract.test.ts\",\n    \"tests/pi-canary-packed-consumer.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 240000,\n  \"max_output_bytes\": 262144\n}\n"
+      },
+      {
+        "id": "acc-footer-free-documentation",
+        "assertion": "Active README guidance contains no Footer-based Immune-Brain progress claim and satisfies the current Bun plus TypeScript, v4 runtime, Pi-only host, and Pi package installation documentation contracts.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/python-reference-boundary.test.ts\",\n    \"tests/v4-runtime-launchers.test.ts\",\n    \"tests/pi-only-current-contracts.test.ts\",\n    \"tests/host-runtime-cutover.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 180000,\n  \"max_output_bytes\": 262144\n}\n"
+      },
+      {
+        "id": "acc-extension-type-contract",
+        "assertion": "The Pi extension remains type-correct after the coordinator, timer, Widget, and shared shutdown ownership changes.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"x\",\n    \"tsc\",\n    \"--noEmit\",\n    \"-p\",\n    \"plugins/immune-brain/.pi-extension/tsconfig.json\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 180000,\n  \"max_output_bytes\": 262144\n}\n"
+      },
+      {
+        "id": "acc-full-regression",
+        "assertion": "The complete repository regression passes with no change to descriptor execution, Kernel reducers, TaskIntent or TaskRecord schemas, capability binding, enrollment receipts, QA progress semantics, Review dispatch, or authorization flow.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 300000,\n  \"max_output_bytes\": 262144\n}\n"
+      }
+    ],
+    "scope_hint": [
+      "README.md",
+      "docs/plans/2026-08-17-003-footer-free-enrollment-progress-r2.intent.json",
+      "docs/specs/footer-free-enrollment-progress.spec.md",
+      "plugins/immune-brain/.pi-extension/imm-canary-enroll.ts",
+      "plugins/immune-brain/.pi-extension/imm-canary-new.ts",
+      "plugins/immune-brain/.pi-extension/pi-canary-assurance.ts",
+      "tests/host-runtime-cutover.test.ts",
+      "tests/imm-canary-work-contract.test.ts",
+      "tests/kernel-descriptor-rehearsal.test.ts",
+      "tests/pi-canary-assurance-observability.test.ts",
+      "tests/pi-canary-assurance-progression.test.ts",
+      "tests/pi-canary-enroll-extension.test.ts",
+      "tests/pi-canary-new-extension.test.ts",
+      "tests/pi-canary-packed-consumer.test.ts",
+      "tests/pi-canary-work-extension.test.ts",
+      "tests/pi-enrollment-progress-widget.test.ts",
+      "tests/pi-only-current-contracts.test.ts",
+      "tests/python-reference-boundary.test.ts",
+      "tests/v4-runtime-launchers.test.ts"
+    ],
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/2026-08-17-003-footer-free-enrollment-progress-r2.intent.json",
+    "revision": 1,
+    "content_hash": "sha256:5b160e9303f9c2aa78f58bdbe7d57557c40bc9a6c7afaf0cb15dc3eae0033d69"
+  },
+  "phase": "done",
+  "baseline": "sha256:5b160e9303f9c2aa78f58bdbe7d57557c40bc9a6c7afaf0cb15dc3eae0033d69",
+  "evidence": [
+    {
+      "id": "evidence-record_evidence:2026-08-17-003-footer-free-enrollment-progress-r2:2026-08-17T12:51:32.776Z",
+      "acceptance_id": "acc-footer-free-widget-contract",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:5b160e9303f9c2aa78f58bdbe7d57557c40bc9a6c7afaf0cb15dc3eae0033d69",
+      "diff_hash": "sha256:f98317e41fdcc731efca2e6d3df64a2b7a8404a924c7fcdb3069afb194b36d70",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "Staged snapshot verified with bun test tests/pi-enrollment-progress-widget.test.ts tests/pi-canary-enroll-extension.test.ts tests/pi-canary-new-extension.test.ts: 18 pass, 0 fail. Both commands return after background start; one aboveEditor Widget renders bounded task/stage/wall-clock elapsed and exact cancel command; Enrollment sources publish no defined Footer status."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-17-003-footer-free-enrollment-progress-r2:2026-08-17T12:51:39.729Z",
+      "acceptance_id": "acc-widget-settlement-safety",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:5b160e9303f9c2aa78f58bdbe7d57557c40bc9a6c7afaf0cb15dc3eae0033d69",
+      "diff_hash": "sha256:f98317e41fdcc731efca2e6d3df64a2b7a8404a924c7fcdb3069afb194b36d70",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "Staged snapshot verified with bun test tests/pi-enrollment-progress-widget.test.ts tests/kernel-descriptor-rehearsal.test.ts: 15 pass, 0 fail. Coverage proves cancellation action transition, commit cancellation rejection, concurrent/idempotent shutdown, one clear, post-terminal timer silence, long task-id layout, stale ownership protection, and setWidget throw isolation."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-17-003-footer-free-enrollment-progress-r2:2026-08-17T12:51:48.108Z",
+      "acceptance_id": "acc-assurance-host-native-nonregression",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:5b160e9303f9c2aa78f58bdbe7d57557c40bc9a6c7afaf0cb15dc3eae0033d69",
+      "diff_hash": "sha256:f98317e41fdcc731efca2e6d3df64a2b7a8404a924c7fcdb3069afb194b36d70",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "Staged snapshot verified with bun test plugins/immune-brain/.pi-extension/pi-canary-work-extension.test.ts tests/pi-canary-assurance-observability.test.ts tests/pi-canary-assurance-progression.test.ts tests/pi-canary-work-extension.test.ts: 73 pass, 0 fail. Assurance QA remains bounded notify-only, Review remains native Agent progress, and legacy setStatus/setWidget calls are cleanup-only undefined clears."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-17-003-footer-free-enrollment-progress-r2:2026-08-17T12:51:55.616Z",
+      "acceptance_id": "acc-footer-free-documentation",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:5b160e9303f9c2aa78f58bdbe7d57557c40bc9a6c7afaf0cb15dc3eae0033d69",
+      "diff_hash": "sha256:f98317e41fdcc731efca2e6d3df64a2b7a8404a924c7fcdb3069afb194b36d70",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "Staged snapshot verified with bun test tests/python-reference-boundary.test.ts tests/v4-runtime-launchers.test.ts tests/pi-only-current-contracts.test.ts tests/host-runtime-cutover.test.ts: 27 pass, 0 fail. README now documents Enrollment Widget plus terminal notification, Assurance notify/native Agent surfaces, Pi-only host, v4 Bun runtime, package loading, and no Footer progress claim."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-17-003-footer-free-enrollment-progress-r2:2026-08-17T12:52:02.676Z",
+      "acceptance_id": "acc-extension-type-contract",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:5b160e9303f9c2aa78f58bdbe7d57557c40bc9a6c7afaf0cb15dc3eae0033d69",
+      "diff_hash": "sha256:f98317e41fdcc731efca2e6d3df64a2b7a8404a924c7fcdb3069afb194b36d70",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "Staged snapshot verified with bun x tsc --noEmit -p plugins/immune-brain/.pi-extension/tsconfig.json: exit 0. ExtensionContext setWidget overload, timer handle, shared coordinator imports, and both command factories typecheck."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-17-003-footer-free-enrollment-progress-r2:2026-08-17T12:52:12.424Z",
+      "acceptance_id": "acc-full-regression",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:5b160e9303f9c2aa78f58bdbe7d57557c40bc9a6c7afaf0cb15dc3eae0033d69",
+      "diff_hash": "sha256:f98317e41fdcc731efca2e6d3df64a2b7a8404a924c7fcdb3069afb194b36d70",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "Staged task snapshot full regression: bun test completed with 993 pass, 0 fail across 130 files and 4541 assertions in 73.37s. git diff --cached --check also passed; working tree has no unstaged task or non-task drift."
+    }
+  ],
+  "findings": [],
+  "approvals": [
+    {
+      "id": "approval-qa-40d091e4",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:5b160e9303f9c2aa78f58bdbe7d57557c40bc9a6c7afaf0cb15dc3eae0033d69",
+      "diff_hash": "sha256:f98317e41fdcc731efca2e6d3df64a2b7a8404a924c7fcdb3069afb194b36d70",
+      "actor_id": "qa-host-2bb21798",
+      "summary": "all 6 fixed verification descriptor(s) passed"
+    },
+    {
+      "id": "approval-review-140ac971",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:5b160e9303f9c2aa78f58bdbe7d57557c40bc9a6c7afaf0cb15dc3eae0033d69",
+      "diff_hash": "sha256:f98317e41fdcc731efca2e6d3df64a2b7a8404a924c7fcdb3069afb194b36d70",
+      "actor_id": "native-review-5697576a-221e-4a5",
+      "summary": "Immutable bundle provenance verified; enrollment settlement, cancellation, timeout, shutdown, commit, UI-failure, and stale-callback paths satisfy the acceptance contracts with no blocking correctness, regression, security, or test-coverage findings."
+    }
+  ],
+  "history": [
+    {
+      "id": "record_evidence:2026-08-17-003-footer-free-enrollment-progress-r2:2026-08-17T12:51:32.776Z",
+      "at": "2026-08-17T12:51:32.776Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-footer-free-widget-contract\naction_v2_sha256:f815fe895f41d43621a63f2ed90a9c2d52371b96b1240b27a142fb9b28adb6ef"
+    },
+    {
+      "id": "record_evidence:2026-08-17-003-footer-free-enrollment-progress-r2:2026-08-17T12:51:39.729Z",
+      "at": "2026-08-17T12:51:39.729Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-widget-settlement-safety\naction_v2_sha256:5d78ba17ed9eda2f8f18b4fb898cbf584e04c88e062083d5ff41ac82f87b3544"
+    },
+    {
+      "id": "record_evidence:2026-08-17-003-footer-free-enrollment-progress-r2:2026-08-17T12:51:48.108Z",
+      "at": "2026-08-17T12:51:48.108Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-assurance-host-native-nonregression\naction_v2_sha256:e241641e92021999078242d69b41cf25d538d1b0c63a4fd534f38d26e9a9a3ec"
+    },
+    {
+      "id": "record_evidence:2026-08-17-003-footer-free-enrollment-progress-r2:2026-08-17T12:51:55.616Z",
+      "at": "2026-08-17T12:51:55.616Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-footer-free-documentation\naction_v2_sha256:82190d8f22984c128fdd1e63205fa3299bf8617bc5c9415fbbc592d1e7ebd3c4"
+    },
+    {
+      "id": "record_evidence:2026-08-17-003-footer-free-enrollment-progress-r2:2026-08-17T12:52:02.676Z",
+      "at": "2026-08-17T12:52:02.676Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-extension-type-contract\naction_v2_sha256:7b16cd92566442ca4b4f2351527fbe05677cf777f7a0692420bc137b43c3001f"
+    },
+    {
+      "id": "record_evidence:2026-08-17-003-footer-free-enrollment-progress-r2:2026-08-17T12:52:12.424Z",
+      "at": "2026-08-17T12:52:12.424Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-full-regression\naction_v2_sha256:901f6e62e863ffa786ee9c280a26d37551df40a0dc806effc87459b894aafb7a"
+    },
+    {
+      "id": "submit_review:2026-08-17-003-footer-free-enrollment-progress-r2:2026-08-17T12:52:29.314Z",
+      "at": "2026-08-17T12:52:29.314Z",
+      "type": "submit_review",
+      "from_phase": "working",
+      "to_phase": "review",
+      "reason": "action_v2_sha256:113446b9340414bc074b98097abdc61993bba815c9ff1fb2de615ea74c299089"
+    },
+    {
+      "id": "record_approval:2026-08-17-003-footer-free-enrollment-progress-r2:2026-08-17T12:55:24.061Z",
+      "at": "2026-08-17T12:55:24.061Z",
+      "type": "record_approval",
+      "from_phase": "review",
+      "to_phase": "review",
+      "reason": "approval-qa-40d091e4\naction_v2_sha256:0321bc88656e50b3c98365b96d0d5db3ac58ada0c95637eaf4b5308ca51d6c43",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "qa-host-2bb21798",
+        "confirmation_ref": "pi-confirm-b3adcb5df6e43a98",
+        "issued_at": "2026-08-17T12:55:24.062Z",
+        "expires_at": "2026-08-17T13:05:24.062Z"
+      }
+    },
+    {
+      "id": "record_approval:2026-08-17-003-footer-free-enrollment-progress-r2:2026-08-17T12:58:18.033Z",
+      "at": "2026-08-17T12:58:18.033Z",
+      "type": "record_approval",
+      "from_phase": "review",
+      "to_phase": "review",
+      "reason": "approval-review-140ac971\naction_v2_sha256:044b47577a6ecd4c53815e85294e20eac950b015406d3969c66e8b3e256eac76",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "native-review-5697576a-221e-4a5",
+        "confirmation_ref": "pi-confirm-a114cdc6278aaee9",
+        "issued_at": "2026-08-17T12:58:18.033Z",
+        "expires_at": "2026-08-17T13:08:18.033Z"
+      }
+    },
+    {
+      "id": "complete:2026-08-17-003-footer-free-enrollment-progress-r2:2026-08-17T12:58:41.742Z",
+      "at": "2026-08-17T12:58:41.742Z",
+      "type": "complete",
+      "from_phase": "review",
+      "to_phase": "done",
+      "reason": "action_v2_sha256:7b04d12e5ba80cec1c91daf7d56c6881ab95c0af3514cd195ff82b9446158f3f"
+    }
+  ]
+}

@@ -1,0 +1,9 @@
+{
+  "contract": "assurance_kernel/task_tombstone/v1",
+  "task_id": "2026-08-14-003-agent-requested-host-authorization",
+  "lifecycle_status": "terminal",
+  "terminal_phase": "done",
+  "terminal_event_id": "complete:2026-08-14-003-agent-requested-host-authorization:2026-08-14T09:22:46.964Z",
+  "final_record_hash": "sha256:dc000c5f58d827148a987a7e4bb2e39f7dfe81163f22ea72d33d8d0abeaf39fb",
+  "terminalized_at": "2026-08-14T09:22:46.964Z"
+}

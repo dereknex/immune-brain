@@ -1,0 +1,472 @@
+{
+  "contract": "assurance_kernel/task_record/v2",
+  "task_id": "2026-08-15-025-deepen-assurance-progression",
+  "intent_revision": 1,
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "2026-08-15-025-deepen-assurance-progression",
+    "goal": "Deepen Pi Assurance progression and Kernel Assurance projection while preserving all external behavior and authority boundaries.",
+    "acceptance": [
+      {
+        "id": "acc-kernel-projection",
+        "assertion": "The internal Kernel Assurance projection returns one host-neutral claim/Record/workspace correlation with fresh and stale evidence facts, fresh approval kinds, blockers, unresolved user decisions, and authorization readiness while existing projectTaskV2 and TaskProjectionV2 behavior remains compatible and the new module is not publicly exported.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/kernel-assurance-projection.test.ts\",\n    \"tests/kernel-record-v2.test.ts\",\n    \"tests/kernel-r2c1-boundary.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 300000,\n  \"max_output_bytes\": 262144\n}\n"
+      },
+      {
+        "id": "acc-progression-ownership",
+        "assertion": "The session-scoped Pi Assurance progression interface owns QA and Review jobs, reservations, timers, cancellation, shutdown, host-event observation, continuation, and exactly-once terminal settlement; imm-canary-work.ts contains no parallel lifecycle owner or evidence/approval freshness filtering.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/pi-canary-assurance-progression.test.ts\",\n    \"tests/pi-canary-assurance-advance.test.ts\",\n    \"tests/pi-canary-assurance-continuation.test.ts\",\n    \"tests/pi-canary-work-extension.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 300000,\n  \"max_output_bytes\": 262144\n}\n"
+      },
+      {
+        "id": "acc-authority-and-observability",
+        "assertion": "Command and tool schemas, TUI-only enforcement, exact timeout and status behavior, literal-user confirmation, cancellation linearization, invocation cleanup, advisory Review handling, UI rendering, and correlated follow-up delivery remain unchanged.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/pi-canary-assurance-authority.test.ts\",\n    \"tests/pi-canary-assurance-observability.test.ts\",\n    \"tests/pi-canary-user-authority.test.ts\",\n    \"tests/pi-canary-work-extension.test.ts\",\n    \"tests/pi-canary-assurance-advance.test.ts\",\n    \"tests/pi-canary-assurance-continuation.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 300000,\n  \"max_output_bytes\": 262144\n}\n"
+      },
+      {
+        "id": "acc-package-boundary",
+        "assertion": "Source and packed Pi discovery still load exactly three extension factories while shipping the new progression helper and internal Kernel projection, and package observability contracts retain their exact constants and native Agent boundary.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/pi-canary-discovery-regression.test.ts\",\n    \"tests/pi-canary-packed-consumer.test.ts\",\n    \"tests/pi-canary-packed-loader.test.ts\",\n    \"tests/pi-canary-lifecycle-package.test.ts\",\n    \"tests/pi-subagent-dispatch-observability-contract.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 300000,\n  \"max_output_bytes\": 262144\n}\n"
+      },
+      {
+        "id": "acc-extension-typecheck",
+        "assertion": "The complete Pi extension graph, including the new progression helper and structural Kernel projection adapter, passes strict TypeScript checking.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"x\",\n    \"tsc\",\n    \"--noEmit\",\n    \"-p\",\n    \"plugins/immune-brain/.pi-extension/tsconfig.json\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 300000,\n  \"max_output_bytes\": 262144\n}\n"
+      },
+      {
+        "id": "acc-full-regression",
+        "assertion": "The full repository test suite passes after the atomic cutover.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 300000,\n  \"max_output_bytes\": 262144\n}\n"
+      }
+    ],
+    "scope_hint": [
+      "CONTEXT.md",
+      "docs/specs/deepen-assurance-progression.spec.md",
+      "plugins/immune-brain/.pi-extension/imm-canary-work.ts",
+      "plugins/immune-brain/.pi-extension/package.json",
+      "plugins/immune-brain/.pi-extension/pi-canary-assurance-progression.ts",
+      "plugins/immune-brain/.pi-extension/pi-canary-verification.ts",
+      "plugins/immune-brain/.pi-extension/runtime-stub.ts",
+      "plugins/immune-brain/.pi-extension/tsconfig.json",
+      "plugins/immune-brain/runtime/kernel/assurance_projection.ts",
+      "plugins/immune-brain/runtime/workspace_scope.ts",
+      "tests/kernel-assurance-projection.test.ts",
+      "tests/kernel-r2c1-boundary.test.ts",
+      "tests/kernel-record-v2.test.ts",
+      "tests/pi-canary-assurance-advance.test.ts",
+      "tests/pi-canary-assurance-continuation.test.ts",
+      "tests/pi-canary-assurance-progression.test.ts",
+      "tests/pi-canary-discovery-regression.test.ts",
+      "tests/pi-canary-lifecycle-package.test.ts",
+      "tests/pi-canary-packed-consumer.test.ts",
+      "tests/pi-canary-packed-loader.test.ts",
+      "tests/pi-canary-user-authority.test.ts",
+      "tests/pi-canary-work-extension.test.ts",
+      "tests/pi-subagent-dispatch-observability-contract.test.ts"
+    ],
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/2026-08-15-025-deepen-assurance-progression.intent.json",
+    "revision": 1,
+    "content_hash": "sha256:05d52a9ea21e0a8359e69eb75ff2baafc532f2933fc041e7341cf5b94a83fb61"
+  },
+  "phase": "done",
+  "baseline": "sha256:05d52a9ea21e0a8359e69eb75ff2baafc532f2933fc041e7341cf5b94a83fb61",
+  "evidence": [
+    {
+      "id": "evidence-record_evidence:2026-08-15-025-deepen-assurance-progression:2026-08-15T14:02:02.665Z",
+      "acceptance_id": "acc-kernel-projection",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:05d52a9ea21e0a8359e69eb75ff2baafc532f2933fc041e7341cf5b94a83fb61",
+      "diff_hash": "sha256:e8b9cb138bd15fea146c09332bfc173df54ccfdfad55c79a83cba9ef62d1afc7",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "bun test tests/kernel-assurance-projection.test.ts tests/kernel-record-v2.test.ts tests/kernel-r2c1-boundary.test.ts — 8/8 kernel projection pass (claim/tombstone/record-mismatch fail-closed, one-correlation evidence/approval/finding facts, Kernel-owned authorization truth table, non-export boundary, completion-ready); plus record-v2/r2c1 contract files"
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-15-025-deepen-assurance-progression:2026-08-15T14:02:11.502Z",
+      "acceptance_id": "acc-progression-ownership",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:05d52a9ea21e0a8359e69eb75ff2baafc532f2933fc041e7341cf5b94a83fb61",
+      "diff_hash": "sha256:e8b9cb138bd15fea146c09332bfc173df54ccfdfad55c79a83cba9ef62d1afc7",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "bun test tests/pi-canary-assurance-progression.test.ts tests/pi-canary-assurance-advance.test.ts tests/pi-canary-assurance-continuation.test.ts tests/pi-canary-work-extension.test.ts — 13/13 progression matrix pass (advance continuation, pre-commit cancel zero-write, single-winner settlement, deadline race, shutdown bounded cleanup, tool observation) plus advance/continuation/work-extension adapter suites"
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-15-025-deepen-assurance-progression:2026-08-15T14:02:19.577Z",
+      "acceptance_id": "acc-authority-and-observability",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:05d52a9ea21e0a8359e69eb75ff2baafc532f2933fc041e7341cf5b94a83fb61",
+      "diff_hash": "sha256:e8b9cb138bd15fea146c09332bfc173df54ccfdfad55c79a83cba9ef62d1afc7",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "bun test tests/pi-canary-assurance-authority.test.ts tests/pi-canary-assurance-observability.test.ts tests/pi-canary-user-authority.test.ts tests/pi-canary-work-extension.test.ts tests/pi-canary-assurance-advance.test.ts tests/pi-canary-assurance-continuation.test.ts — authority, observability, user-authority, work-extension, advance, continuation all pass with unchanged schemas/text/confirm gates; deriveAuthorizationOperation composition verified"
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-15-025-deepen-assurance-progression:2026-08-15T14:02:27.334Z",
+      "acceptance_id": "acc-package-boundary",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:05d52a9ea21e0a8359e69eb75ff2baafc532f2933fc041e7341cf5b94a83fb61",
+      "diff_hash": "sha256:e8b9cb138bd15fea146c09332bfc173df54ccfdfad55c79a83cba9ef62d1afc7",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "bun test tests/pi-canary-discovery-regression.test.ts tests/pi-canary-packed-consumer.test.ts tests/pi-canary-packed-loader.test.ts tests/pi-canary-lifecycle-package.test.ts tests/pi-subagent-dispatch-observability-contract.test.ts — discovery still loads exactly three factories with the new helper module listed as non-factory; packed artifact ships both new modules; dispatch observability contract asserts constants owned by the progression module"
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-15-025-deepen-assurance-progression:2026-08-15T14:02:35.530Z",
+      "acceptance_id": "acc-extension-typecheck",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:05d52a9ea21e0a8359e69eb75ff2baafc532f2933fc041e7341cf5b94a83fb61",
+      "diff_hash": "sha256:e8b9cb138bd15fea146c09332bfc173df54ccfdfad55c79a83cba9ef62d1afc7",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "bun x tsc --noEmit -p plugins/immune-brain/.pi-extension/tsconfig.json — strict typecheck passes for the complete extension graph including pi-canary-assurance-progression.ts and runtime/kernel/assurance_projection.ts; baseline Buffer/mode type errors in pi-canary-verification.ts and workspace_scope.ts fixed in-scope (behavior-preserving annotations)"
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-15-025-deepen-assurance-progression:2026-08-15T14:02:43.429Z",
+      "acceptance_id": "acc-full-regression",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:05d52a9ea21e0a8359e69eb75ff2baafc532f2933fc041e7341cf5b94a83fb61",
+      "diff_hash": "sha256:e8b9cb138bd15fea146c09332bfc173df54ccfdfad55c79a83cba9ef62d1afc7",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "bun test (full repository) — 918 pass / 0 fail across 121 files (897 baseline + 21 new progression/projection tests); git diff --check clean; all task-owned files staged"
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-15-025-deepen-assurance-progression:2026-08-15T15:15:55.801Z",
+      "acceptance_id": "acc-kernel-projection",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:05d52a9ea21e0a8359e69eb75ff2baafc532f2933fc041e7341cf5b94a83fb61",
+      "diff_hash": "sha256:5247ec6667ceb89a2bf4199e7637b4175d2b906f5140f120fac7e0a236c0a6db",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "fresh: bun test tests/kernel-assurance-projection.test.ts tests/kernel-record-v2.test.ts tests/kernel-r2c1-boundary.test.ts — all pass"
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-15-025-deepen-assurance-progression:2026-08-15T15:16:01.516Z",
+      "acceptance_id": "acc-progression-ownership",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:05d52a9ea21e0a8359e69eb75ff2baafc532f2933fc041e7341cf5b94a83fb61",
+      "diff_hash": "sha256:5247ec6667ceb89a2bf4199e7637b4175d2b906f5140f120fac7e0a236c0a6db",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "fresh: bun test tests/pi-canary-assurance-progression.test.ts tests/pi-canary-assurance-advance.test.ts tests/pi-canary-assurance-continuation.test.ts tests/pi-canary-work-extension.test.ts — all pass"
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-15-025-deepen-assurance-progression:2026-08-15T15:16:07.081Z",
+      "acceptance_id": "acc-authority-and-observability",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:05d52a9ea21e0a8359e69eb75ff2baafc532f2933fc041e7341cf5b94a83fb61",
+      "diff_hash": "sha256:5247ec6667ceb89a2bf4199e7637b4175d2b906f5140f120fac7e0a236c0a6db",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "fresh: bun test tests/pi-canary-assurance-authority.test.ts tests/pi-canary-assurance-observability.test.ts tests/pi-canary-user-authority.test.ts tests/pi-canary-work-extension.test.ts tests/pi-canary-assurance-advance.test.ts tests/pi-canary-assurance-continuation.test.ts — all pass"
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-15-025-deepen-assurance-progression:2026-08-15T15:16:12.500Z",
+      "acceptance_id": "acc-package-boundary",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:05d52a9ea21e0a8359e69eb75ff2baafc532f2933fc041e7341cf5b94a83fb61",
+      "diff_hash": "sha256:5247ec6667ceb89a2bf4199e7637b4175d2b906f5140f120fac7e0a236c0a6db",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "fresh: bun test tests/pi-canary-discovery-regression.test.ts tests/pi-canary-packed-consumer.test.ts tests/pi-canary-packed-loader.test.ts tests/pi-canary-lifecycle-package.test.ts tests/pi-subagent-dispatch-observability-contract.test.ts — all pass"
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-15-025-deepen-assurance-progression:2026-08-15T15:16:17.892Z",
+      "acceptance_id": "acc-extension-typecheck",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:05d52a9ea21e0a8359e69eb75ff2baafc532f2933fc041e7341cf5b94a83fb61",
+      "diff_hash": "sha256:5247ec6667ceb89a2bf4199e7637b4175d2b906f5140f120fac7e0a236c0a6db",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "fresh: bun x tsc --noEmit -p plugins/immune-brain/.pi-extension/tsconfig.json — clean"
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-15-025-deepen-assurance-progression:2026-08-15T15:16:23.047Z",
+      "acceptance_id": "acc-full-regression",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:05d52a9ea21e0a8359e69eb75ff2baafc532f2933fc041e7341cf5b94a83fb61",
+      "diff_hash": "sha256:5247ec6667ceb89a2bf4199e7637b4175d2b906f5140f120fac7e0a236c0a6db",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "fresh: bun test (full suite) — 918 pass / 0 fail across 121 files"
+    }
+  ],
+  "findings": [
+    {
+      "id": "qa-evidence-freshness-43a7b3310d97d64c-43a7b331-635cc3",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": null,
+      "source": "review",
+      "review_round": 1,
+      "summary": "executor evidence must be refreshed in working phase for acceptance ids: acc-kernel-projection,acc-progression-ownership,acc-authority-and-observability,acc-package-boundary,acc-extension-typecheck,acc-full-regression"
+    },
+    {
+      "id": "review-572137a0c036-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": null,
+      "source": "review",
+      "review_round": 2,
+      "summary": "Provenance partially verified (HEAD matches bundle.head) but dirty_files are plain path strings lacking per-file base_oid/current_content evidence, so tracked-blob verification could not be completed from the immutable bundle; review incomplete and cannot confirm pass."
+    }
+  ],
+  "approvals": [
+    {
+      "id": "approval-qa-2a811fe5",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:05d52a9ea21e0a8359e69eb75ff2baafc532f2933fc041e7341cf5b94a83fb61",
+      "diff_hash": "sha256:e8b9cb138bd15fea146c09332bfc173df54ccfdfad55c79a83cba9ef62d1afc7",
+      "actor_id": "qa-host-2f9ef134",
+      "summary": "all 6 fixed verification descriptor(s) passed"
+    },
+    {
+      "id": "approval-qa-1c788453",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:05d52a9ea21e0a8359e69eb75ff2baafc532f2933fc041e7341cf5b94a83fb61",
+      "diff_hash": "sha256:5247ec6667ceb89a2bf4199e7637b4175d2b906f5140f120fac7e0a236c0a6db",
+      "actor_id": "qa-host-65f91d15",
+      "summary": "all 6 fixed verification descriptor(s) passed"
+    },
+    {
+      "id": "approval-review-529293f7",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:05d52a9ea21e0a8359e69eb75ff2baafc532f2933fc041e7341cf5b94a83fb61",
+      "diff_hash": "sha256:5247ec6667ceb89a2bf4199e7637b4175d2b906f5140f120fac7e0a236c0a6db",
+      "actor_id": "native-review-06fb8ea1-60dc-4a0",
+      "summary": "Bundle provenance fully verified against HEAD; Kernel projection and Pi progression modules preserve public contracts and authority boundaries with comprehensive tests and no regressions."
+    }
+  ],
+  "history": [
+    {
+      "id": "record_evidence:2026-08-15-025-deepen-assurance-progression:2026-08-15T14:02:02.665Z",
+      "at": "2026-08-15T14:02:02.665Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-kernel-projection\naction_v2_sha256:7b6bfc527a623c8fdbcc417c8329079d47c20ad9bc3515947f94866d7b0e3744"
+    },
+    {
+      "id": "record_evidence:2026-08-15-025-deepen-assurance-progression:2026-08-15T14:02:11.502Z",
+      "at": "2026-08-15T14:02:11.502Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-progression-ownership\naction_v2_sha256:9ac10a95d27e0f20e93a63defbdb3fee3649bbaf23404bc86a7e682bd0f9d9a3"
+    },
+    {
+      "id": "record_evidence:2026-08-15-025-deepen-assurance-progression:2026-08-15T14:02:19.577Z",
+      "at": "2026-08-15T14:02:19.577Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-authority-and-observability\naction_v2_sha256:d6c29962924758af7d693cb31807092a57a02ba6b139e4779fc25a1bfdd93271"
+    },
+    {
+      "id": "record_evidence:2026-08-15-025-deepen-assurance-progression:2026-08-15T14:02:27.334Z",
+      "at": "2026-08-15T14:02:27.334Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-package-boundary\naction_v2_sha256:040239f57322f0bfe1248e3ac614d9cf12b9f75cb3562011d506e581e24f7d3e"
+    },
+    {
+      "id": "record_evidence:2026-08-15-025-deepen-assurance-progression:2026-08-15T14:02:35.530Z",
+      "at": "2026-08-15T14:02:35.530Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-extension-typecheck\naction_v2_sha256:cc9bb7996f3b3db43c3f90d1f5b9911efab56e1f34bf8d76831b3b4c1319eafb"
+    },
+    {
+      "id": "record_evidence:2026-08-15-025-deepen-assurance-progression:2026-08-15T14:02:43.429Z",
+      "at": "2026-08-15T14:02:43.429Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-full-regression\naction_v2_sha256:6e88366cad416f343a47efd80ba2254404001628ec3cfefa50c9b25298b2d95d"
+    },
+    {
+      "id": "submit_review:2026-08-15-025-deepen-assurance-progression:2026-08-15T14:03:02.058Z",
+      "at": "2026-08-15T14:03:02.058Z",
+      "type": "submit_review",
+      "from_phase": "working",
+      "to_phase": "review",
+      "reason": "action_v2_sha256:d3fd177249b847dca2316bb095114f132f19a50f8f9ac24feaa7053365a6771f"
+    },
+    {
+      "id": "record_approval:2026-08-15-025-deepen-assurance-progression:2026-08-15T14:05:11.490Z",
+      "at": "2026-08-15T14:05:11.490Z",
+      "type": "record_approval",
+      "from_phase": "review",
+      "to_phase": "review",
+      "reason": "approval-qa-2a811fe5\naction_v2_sha256:3c3cc6db6f7c8eca5a174d61079164e98b02af38b7a706669553d560b4847589",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "qa-host-2f9ef134",
+        "confirmation_ref": "pi-confirm-2f700f2391c178c9",
+        "issued_at": "2026-08-15T14:05:11.490Z",
+        "expires_at": "2026-08-15T14:15:11.490Z"
+      }
+    },
+    {
+      "id": "request_rework:2026-08-15-025-deepen-assurance-progression:2026-08-15T15:15:30.582Z",
+      "at": "2026-08-15T15:15:30.582Z",
+      "type": "request_rework",
+      "from_phase": "review",
+      "to_phase": "working",
+      "reason": "review_round_1\naction_v2_sha256:d11cb73ba59b794f2a8972b558523a9916a998e591e1c8050c465e7b151ca584",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "qa-host-971d0cf0",
+        "confirmation_ref": "pi-confirm-51e88d83750d041d",
+        "issued_at": "2026-08-15T15:15:30.583Z",
+        "expires_at": "2026-08-15T15:25:30.583Z"
+      }
+    },
+    {
+      "id": "record_evidence:2026-08-15-025-deepen-assurance-progression:2026-08-15T15:15:55.801Z",
+      "at": "2026-08-15T15:15:55.801Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-kernel-projection\naction_v2_sha256:b2bfff624bd2cb1ae92d09622d84195072d862ee56b794bac026b27435d66e3d"
+    },
+    {
+      "id": "record_evidence:2026-08-15-025-deepen-assurance-progression:2026-08-15T15:16:01.516Z",
+      "at": "2026-08-15T15:16:01.516Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-progression-ownership\naction_v2_sha256:f99a6cd8fbb155f7e3c3f87be594a40f94f1ec7ddf9629f5a60d7e2adf88ad30"
+    },
+    {
+      "id": "record_evidence:2026-08-15-025-deepen-assurance-progression:2026-08-15T15:16:07.081Z",
+      "at": "2026-08-15T15:16:07.081Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-authority-and-observability\naction_v2_sha256:4e244e6a7fb67f27286b6288288c74af91dfe5fc801b6d0f8dc0feba9899cbc1"
+    },
+    {
+      "id": "record_evidence:2026-08-15-025-deepen-assurance-progression:2026-08-15T15:16:12.500Z",
+      "at": "2026-08-15T15:16:12.500Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-package-boundary\naction_v2_sha256:46e104065c417dfc853bff30d5a2944659e071885da6dff1750b5040f1b474c5"
+    },
+    {
+      "id": "record_evidence:2026-08-15-025-deepen-assurance-progression:2026-08-15T15:16:17.892Z",
+      "at": "2026-08-15T15:16:17.892Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-extension-typecheck\naction_v2_sha256:dfff28cb6ccfbc36f809a445a3e3ab9a1aed1f70cbc1919c159ff76f6e9cf138"
+    },
+    {
+      "id": "record_evidence:2026-08-15-025-deepen-assurance-progression:2026-08-15T15:16:23.047Z",
+      "at": "2026-08-15T15:16:23.047Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-full-regression\naction_v2_sha256:d55cc70bf61a6e0687e6ab3281806ee696828284fcf60819db1e4c08a4b98a10"
+    },
+    {
+      "id": "resolve_finding:2026-08-15-025-deepen-assurance-progression:2026-08-15T15:16:28.537Z",
+      "at": "2026-08-15T15:16:28.537Z",
+      "type": "resolve_finding",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "qa-evidence-freshness-43a7b3310d97d64c-43a7b331-635cc3\naction_v2_sha256:10539665adada33e1fbafdad12942ec7a31c5fca052e614830ddbfc3f162f880"
+    },
+    {
+      "id": "submit_review:2026-08-15-025-deepen-assurance-progression:2026-08-15T15:16:33.838Z",
+      "at": "2026-08-15T15:16:33.838Z",
+      "type": "submit_review",
+      "from_phase": "working",
+      "to_phase": "review",
+      "reason": "action_v2_sha256:de2e516d9fee90c2225b92d4fe6deac8700dbd31b8c485e94616dda7a5c5c06f"
+    },
+    {
+      "id": "record_approval:2026-08-15-025-deepen-assurance-progression:2026-08-15T15:18:44.118Z",
+      "at": "2026-08-15T15:18:44.118Z",
+      "type": "record_approval",
+      "from_phase": "review",
+      "to_phase": "review",
+      "reason": "approval-qa-1c788453\naction_v2_sha256:7ee8de7fd75515add3ad28db2202666038359313d04f66e2653387923284cd80",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "qa-host-65f91d15",
+        "confirmation_ref": "pi-confirm-48e48dc009b4a7e4",
+        "issued_at": "2026-08-15T15:18:44.118Z",
+        "expires_at": "2026-08-15T15:28:44.118Z"
+      }
+    },
+    {
+      "id": "request_rework:2026-08-15-025-deepen-assurance-progression:2026-08-15T15:39:58.973Z",
+      "at": "2026-08-15T15:39:58.973Z",
+      "type": "request_rework",
+      "from_phase": "review",
+      "to_phase": "working",
+      "reason": "review_round_2\naction_v2_sha256:cb4c135e992e31d478b2423d8a84e58ef6810d3e22938d9663f4458e74a69431",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "native-review-9eefd836-7fc2-4de",
+        "confirmation_ref": "pi-confirm-eb7bd49774a6ceb1",
+        "issued_at": "2026-08-15T15:39:58.973Z",
+        "expires_at": "2026-08-15T15:49:58.973Z"
+      }
+    },
+    {
+      "id": "resolve_finding:2026-08-15-025-deepen-assurance-progression:2026-08-15T15:40:16.450Z",
+      "at": "2026-08-15T15:40:16.450Z",
+      "type": "resolve_finding",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "review-572137a0c036-1-review-1\naction_v2_sha256:49bb9e698b2e17e8588f217bf03f7e2be79620fe7da6077e8ee6d29f17a6e3e2"
+    },
+    {
+      "id": "submit_review:2026-08-15-025-deepen-assurance-progression:2026-08-15T15:40:22.478Z",
+      "at": "2026-08-15T15:40:22.478Z",
+      "type": "submit_review",
+      "from_phase": "working",
+      "to_phase": "review",
+      "reason": "action_v2_sha256:f69e9863e30af8124d3abc867f0d8e7e6940498e30620245ca8af72413016828"
+    },
+    {
+      "id": "record_approval:2026-08-15-025-deepen-assurance-progression:2026-08-15T15:54:49.728Z",
+      "at": "2026-08-15T15:54:49.728Z",
+      "type": "record_approval",
+      "from_phase": "review",
+      "to_phase": "review",
+      "reason": "approval-review-529293f7\naction_v2_sha256:8caa68c452fcb0a5e69bb9304d76d8a591ba9e6393338e8f8ec54154912676f1",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "native-review-06fb8ea1-60dc-4a0",
+        "confirmation_ref": "pi-confirm-1831288dbdae268a",
+        "issued_at": "2026-08-15T15:54:49.729Z",
+        "expires_at": "2026-08-15T16:04:49.729Z"
+      }
+    },
+    {
+      "id": "complete:2026-08-15-025-deepen-assurance-progression:2026-08-15T15:55:09.875Z",
+      "at": "2026-08-15T15:55:09.875Z",
+      "type": "complete",
+      "from_phase": "review",
+      "to_phase": "done",
+      "reason": "action_v2_sha256:436d6ea26a2980479a451cab8b4f2ba869d19c777dc1314baecad9258be8754e"
+    }
+  ]
+}

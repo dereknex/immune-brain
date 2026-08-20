@@ -1,0 +1,9 @@
+{
+  "contract": "assurance_kernel/task_tombstone/v1",
+  "task_id": "2026-08-14-010-review-round-replan-boundary",
+  "lifecycle_status": "terminal",
+  "terminal_phase": "done",
+  "terminal_event_id": "complete:2026-08-14-010-review-round-replan-boundary:2026-08-15T04:08:08.291Z",
+  "final_record_hash": "sha256:1584491561f2a49350efe656a817ea01c3b723a0215f74342f7a812a77597c5b",
+  "terminalized_at": "2026-08-15T04:08:08.291Z"
+}

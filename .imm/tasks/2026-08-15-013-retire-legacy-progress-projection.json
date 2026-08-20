@@ -1,0 +1,246 @@
+{
+  "contract": "assurance_kernel/task_record/v2",
+  "task_id": "2026-08-15-013-retire-legacy-progress-projection",
+  "intent_revision": 1,
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "2026-08-15-013-retire-legacy-progress-projection",
+    "goal": "Retire the consumerless legacy v3 imm-work progress command and progress_projection/v1 implementation while preserving imm-work status, explicit read-only legacy audit, Pi canary loading, and all Kernel authority boundaries.",
+    "acceptance": [
+      {
+        "id": "acc-projection-absent",
+        "assertion": "The progress_projection implementation and dedicated test are absent, imm_core no longer exports it, and retained current-contract tests reject the retired path.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/pi-only-current-contracts.test.ts\",\n    \"tests/legacy-v3-projection.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 180000,\n  \"max_output_bytes\": 262144\n}\n"
+      },
+      {
+        "id": "acc-progress-command-retired",
+        "assertion": "The legacy manifest, examples, access classifier, usage, work handler, and runtime context expose no progress subcommand or buildWorkProgressProjection dependency; imm-work progress fails closed with zero project writes.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/legacy-v3-projection.test.ts\",\n    \"tests/v3-retirement-live-boundary.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 180000,\n  \"max_output_bytes\": 262144\n}\n"
+      },
+      {
+        "id": "acc-status-retained",
+        "assertion": "imm-work status --json remains successful and deterministic for the retained legacy v3 read boundary.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/legacy-v3-projection.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 180000,\n  \"max_output_bytes\": 262144\n}\n"
+      },
+      {
+        "id": "acc-legacy-audit-retained",
+        "assertion": "The explicit imm-kernel audit --legacy projection remains bounded, read-only, redacted, and independent of the retired progress projection.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/v4-storage-retirement-legacy-audit.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 180000,\n  \"max_output_bytes\": 262144\n}\n"
+      },
+      {
+        "id": "acc-host-package-retained",
+        "assertion": "Pi source discovery, packed loader, package surface, and host runtime remain unchanged after retiring the non-shipped progress projection.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/pi-canary-discovery-regression.test.ts\",\n    \"tests/pi-canary-packed-loader.test.ts\",\n    \"tests/pi-only-package-surface.test.ts\",\n    \"tests/host-runtime-cutover.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 300000,\n  \"max_output_bytes\": 262144\n}\n"
+      },
+      {
+        "id": "acc-full-regression",
+        "assertion": "The complete repository test suite passes after retirement of the legacy progress command and projection.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 300000,\n  \"max_output_bytes\": 262144\n}\n"
+      }
+    ],
+    "scope_hint": [
+      "docs/plans/2026-08-15-013-retire-legacy-progress-projection.intent.json",
+      "docs/specs/host-native-lightweight-workflow-roadmap.spec.md",
+      "docs/specs/retire-legacy-progress-projection.spec.md",
+      "plugins/immune-brain/runtime/commands/work.ts",
+      "plugins/immune-brain/runtime/imm_core.ts",
+      "plugins/immune-brain/runtime/immune_brain_runtime.ts",
+      "plugins/immune-brain/runtime/progress_projection.ts",
+      "tests/legacy-v3-projection.test.ts",
+      "tests/pi-only-current-contracts.test.ts",
+      "tests/progress-projection-runtime.test.ts",
+      "tests/v3-retirement-live-boundary.test.ts"
+    ],
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/2026-08-15-013-retire-legacy-progress-projection.intent.json",
+    "revision": 1,
+    "content_hash": "sha256:19deba5dcf42f26b449dabe8fe244779f256e2abdd11569e40494bc202ad4a16"
+  },
+  "phase": "done",
+  "baseline": "sha256:19deba5dcf42f26b449dabe8fe244779f256e2abdd11569e40494bc202ad4a16",
+  "evidence": [
+    {
+      "id": "evidence-record_evidence:2026-08-15-013-retire-legacy-progress-projection:2026-08-15T06:16:03.815Z",
+      "acceptance_id": "acc-projection-absent",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:19deba5dcf42f26b449dabe8fe244779f256e2abdd11569e40494bc202ad4a16",
+      "diff_hash": "sha256:812deccb48afaaa098b1eb4045313b9a0767c98aefc7b9d93b41ea00133d67d1",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "At HEAD d56c0c2, bun test tests/pi-only-current-contracts.test.ts tests/legacy-v3-projection.test.ts passed 12/12. The projection source and dedicated test are absent, the barrel export is removed, and current-contract tests reject retained source references."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-15-013-retire-legacy-progress-projection:2026-08-15T06:16:12.721Z",
+      "acceptance_id": "acc-progress-command-retired",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:19deba5dcf42f26b449dabe8fe244779f256e2abdd11569e40494bc202ad4a16",
+      "diff_hash": "sha256:812deccb48afaaa098b1eb4045313b9a0767c98aefc7b9d93b41ea00133d67d1",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "At HEAD d56c0c2, bun test tests/legacy-v3-projection.test.ts tests/v3-retirement-live-boundary.test.ts passed 11/11. The manifest/help/context contain no progress command, and a damaged Ledger fixture proves the retired command fails before state I/O while the complete project tree remains byte-identical."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-15-013-retire-legacy-progress-projection:2026-08-15T06:16:21.255Z",
+      "acceptance_id": "acc-status-retained",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:19deba5dcf42f26b449dabe8fe244779f256e2abdd11569e40494bc202ad4a16",
+      "diff_hash": "sha256:812deccb48afaaa098b1eb4045313b9a0767c98aefc7b9d93b41ea00133d67d1",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "At HEAD d56c0c2, bun test tests/legacy-v3-projection.test.ts passed 7/7, including active, finished, malformed, and archived Plan behavior through imm-work status."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-15-013-retire-legacy-progress-projection:2026-08-15T06:16:30.125Z",
+      "acceptance_id": "acc-legacy-audit-retained",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:19deba5dcf42f26b449dabe8fe244779f256e2abdd11569e40494bc202ad4a16",
+      "diff_hash": "sha256:812deccb48afaaa098b1eb4045313b9a0767c98aefc7b9d93b41ea00133d67d1",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "At HEAD d56c0c2, bun test tests/v4-storage-retirement-legacy-audit.test.ts passed 4/4, preserving bounded read-only redacted legacy audit behavior including symlink and size rejection."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-15-013-retire-legacy-progress-projection:2026-08-15T06:16:39.098Z",
+      "acceptance_id": "acc-host-package-retained",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:19deba5dcf42f26b449dabe8fe244779f256e2abdd11569e40494bc202ad4a16",
+      "diff_hash": "sha256:812deccb48afaaa098b1eb4045313b9a0767c98aefc7b9d93b41ea00133d67d1",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "At HEAD d56c0c2, source discovery, packed loader, package surface, and host runtime focused tests passed 15/15; Pi still discovers exactly the three retained canary factories."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-15-013-retire-legacy-progress-projection:2026-08-15T06:16:47.084Z",
+      "acceptance_id": "acc-full-regression",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:19deba5dcf42f26b449dabe8fe244779f256e2abdd11569e40494bc202ad4a16",
+      "diff_hash": "sha256:812deccb48afaaa098b1eb4045313b9a0767c98aefc7b9d93b41ea00133d67d1",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "At HEAD d56c0c2, bun test passed 1115 tests across 146 files with zero failures and 5575 expectations; git status and diff checks are clean."
+    }
+  ],
+  "findings": [],
+  "approvals": [
+    {
+      "id": "approval-qa-ad26c765",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:19deba5dcf42f26b449dabe8fe244779f256e2abdd11569e40494bc202ad4a16",
+      "diff_hash": "sha256:812deccb48afaaa098b1eb4045313b9a0767c98aefc7b9d93b41ea00133d67d1",
+      "actor_id": "qa-host-1712115a",
+      "summary": "all 6 fixed verification descriptor(s) passed"
+    },
+    {
+      "id": "approval-review-1b75abca",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:19deba5dcf42f26b449dabe8fe244779f256e2abdd11569e40494bc202ad4a16",
+      "diff_hash": "sha256:812deccb48afaaa098b1eb4045313b9a0767c98aefc7b9d93b41ea00133d67d1",
+      "actor_id": "native-review-812a4978-a7fc-4e5",
+      "summary": "Immutable bundle provenance verified; scoped retirement changes correctly fail closed, preserve status and legacy audit boundaries, and introduce no blocking findings."
+    }
+  ],
+  "history": [
+    {
+      "id": "record_evidence:2026-08-15-013-retire-legacy-progress-projection:2026-08-15T06:16:03.815Z",
+      "at": "2026-08-15T06:16:03.815Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-projection-absent\naction_v2_sha256:1b3456d5abf5a6e3782de32a2f171bae054369939e94c20fcce202122eecaadc"
+    },
+    {
+      "id": "record_evidence:2026-08-15-013-retire-legacy-progress-projection:2026-08-15T06:16:12.721Z",
+      "at": "2026-08-15T06:16:12.721Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-progress-command-retired\naction_v2_sha256:76b10e8de2bee9d9c9426a036f544bdcb2a68f5f383eb8cc2eb8dfe8f24c91bf"
+    },
+    {
+      "id": "record_evidence:2026-08-15-013-retire-legacy-progress-projection:2026-08-15T06:16:21.255Z",
+      "at": "2026-08-15T06:16:21.255Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-status-retained\naction_v2_sha256:013842152afccd73cfdff172991168da00cbaca4b7906bc5d648ec2c4c1df497"
+    },
+    {
+      "id": "record_evidence:2026-08-15-013-retire-legacy-progress-projection:2026-08-15T06:16:30.125Z",
+      "at": "2026-08-15T06:16:30.125Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-legacy-audit-retained\naction_v2_sha256:be1bb01300d6c256551e155da2923103dd6ac6ef92a786e78bcd5ca1c1fdcec8"
+    },
+    {
+      "id": "record_evidence:2026-08-15-013-retire-legacy-progress-projection:2026-08-15T06:16:39.098Z",
+      "at": "2026-08-15T06:16:39.098Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-host-package-retained\naction_v2_sha256:5446e753ea04726ef5d0d7da47855c4e154c0e82940c68c9394930e4c9f40448"
+    },
+    {
+      "id": "record_evidence:2026-08-15-013-retire-legacy-progress-projection:2026-08-15T06:16:47.084Z",
+      "at": "2026-08-15T06:16:47.084Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-full-regression\naction_v2_sha256:66e8c60f1ffc923bec745e68944a18d95081287aa06e169cb0d5379d299f1eab"
+    },
+    {
+      "id": "submit_review:2026-08-15-013-retire-legacy-progress-projection:2026-08-15T06:16:59.741Z",
+      "at": "2026-08-15T06:16:59.741Z",
+      "type": "submit_review",
+      "from_phase": "working",
+      "to_phase": "review",
+      "reason": "action_v2_sha256:fd9569b207e75bf1ddd4a5ebb1197e9b7f549fd491367ea9edbce5bca6894d9b"
+    },
+    {
+      "id": "record_approval:2026-08-15-013-retire-legacy-progress-projection:2026-08-15T06:18:15.487Z",
+      "at": "2026-08-15T06:18:15.487Z",
+      "type": "record_approval",
+      "from_phase": "review",
+      "to_phase": "review",
+      "reason": "approval-qa-ad26c765\naction_v2_sha256:9a124ddf88f51cfa502895da5a5eb210dff1f3791f5312ba90a46ceca1849e40",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "qa-host-1712115a",
+        "confirmation_ref": "pi-confirm-69f14c7db65f4bf5",
+        "issued_at": "2026-08-15T06:18:15.487Z",
+        "expires_at": "2026-08-15T06:28:15.487Z"
+      }
+    },
+    {
+      "id": "record_approval:2026-08-15-013-retire-legacy-progress-projection:2026-08-15T06:19:06.669Z",
+      "at": "2026-08-15T06:19:06.669Z",
+      "type": "record_approval",
+      "from_phase": "review",
+      "to_phase": "review",
+      "reason": "approval-review-1b75abca\naction_v2_sha256:80d578825d07d718509af5bcc169e96d311335301c4fca285f5fe5010bb8e162",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "native-review-812a4978-a7fc-4e5",
+        "confirmation_ref": "pi-confirm-32c415b27e174f44",
+        "issued_at": "2026-08-15T06:19:06.669Z",
+        "expires_at": "2026-08-15T06:29:06.669Z"
+      }
+    },
+    {
+      "id": "complete:2026-08-15-013-retire-legacy-progress-projection:2026-08-15T06:19:24.934Z",
+      "at": "2026-08-15T06:19:24.934Z",
+      "type": "complete",
+      "from_phase": "review",
+      "to_phase": "done",
+      "reason": "action_v2_sha256:f5d9ac3b7686a3f6be6e9c091e81b4d9a5dcaa867158cf6735d3817eef169d80"
+    }
+  ]
+}

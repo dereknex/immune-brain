@@ -1,0 +1,9 @@
+{
+  "contract": "assurance_kernel/task_tombstone/v1",
+  "task_id": "2026-08-16-005-phase-aware-assurance-receipt-rejection-repair",
+  "lifecycle_status": "terminal",
+  "terminal_phase": "done",
+  "terminal_event_id": "complete:2026-08-16-005-phase-aware-assurance-receipt-rejection-repair:2026-08-16T11:10:48.956Z",
+  "final_record_hash": "sha256:9b4499d63bccc051ec1b064c7e2ba78b0d78e1e230a8f342b531baa307957cf6",
+  "terminalized_at": "2026-08-16T11:10:48.956Z"
+}

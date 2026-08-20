@@ -1,0 +1,266 @@
+{
+  "contract": "assurance_kernel/task_record/v2",
+  "task_id": "2026-08-19-001-default-exhaustive-decision-tree",
+  "intent_revision": 1,
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "2026-08-19-001-default-exhaustive-decision-tree",
+    "goal": "Make exhaustive dependency-aware decision-tree clarification the default interaction protocol in both imm-brainstorm and imm-planner without adding a Skill, mode, runtime state machine, or UI. Brainstorm owns product framing decisions and Planner owns execution-design decisions; both investigate repository facts themselves, ask the complete currently unblocked frontier in rounds with numbered recommendations, allow a zero-question fast path, retain only final decisions, and require an explicit final summary confirmation. Planner returns product-level uncertainty to Brainstorm. Preserve roundtable and adversarial as orthogonal lenses, preserve direct Planner entry for clear requests, repair the repository's pre-existing Managed Path bootstrap markers/headings, and lock source plus packaged contracts with one focused test.",
+    "acceptance": [
+      {
+        "id": "acc-default-decision-tree-contract",
+        "assertion": "The source and packaged imm-brainstorm and imm-planner contracts define the default exhaustive decision-tree protocol, complete-frontier rounds, repository-fact self-resolution, phase-specific decision ownership, zero-question fast path, recommendation/bulk acceptance behavior, result-only persistence, explicit final confirmation, and Planner-to-Brainstorm return for product-level uncertainty; the root bootstrap files satisfy the Managed Path markers and Project Context heading.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/exhaustive-decision-tree-contract.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 30000,\n  \"max_output_bytes\": 65536\n}\n"
+      }
+    ],
+    "scope_hint": [
+      "AGENTS.md",
+      "CONTEXT.md",
+      "plugins/immune-brain/dist/imm-brainstorm.md",
+      "plugins/immune-brain/dist/imm-planner.md",
+      "plugins/immune-brain/skills/imm-brainstorm/SKILL.md",
+      "plugins/immune-brain/skills/imm-planner/SKILL.md",
+      "tests/exhaustive-decision-tree-contract.test.ts"
+    ],
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/2026-08-19-001-default-exhaustive-decision-tree.intent.json",
+    "revision": 1,
+    "content_hash": "sha256:81657950c34a67a929e12152aa9aa1db8471056a9ecef24156fbf784a5e14615"
+  },
+  "phase": "stopped",
+  "baseline": "sha256:81657950c34a67a929e12152aa9aa1db8471056a9ecef24156fbf784a5e14615",
+  "evidence": [
+    {
+      "id": "evidence-record_evidence:2026-08-19-001-default-exhaustive-decision-tree:2026-08-19T06:09:44.442Z",
+      "acceptance_id": "acc-default-decision-tree-contract",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:81657950c34a67a929e12152aa9aa1db8471056a9ecef24156fbf784a5e14615",
+      "diff_hash": "sha256:fcd026eb468787a2841362b498e13a2a9606ecf940bf12ebb1203bae0e127a10",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "Focused acceptance passed: bun test tests/exhaustive-decision-tree-contract.test.ts (4 passed, 0 failed). Canonical full bun test additionally ran: 954 passed, 2 failed because out-of-scope tests/brainstorm-decision-probing-contract.test.ts enforces the retired fixed probe budget; that regression requires successor scope and is not reported as passing."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-19-001-default-exhaustive-decision-tree:2026-08-19T06:48:55.852Z",
+      "acceptance_id": "acc-default-decision-tree-contract",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:81657950c34a67a929e12152aa9aa1db8471056a9ecef24156fbf784a5e14615",
+      "diff_hash": "sha256:d2d634adfb10fa56ac35b7c85765615da1dc8bf4b9ad295aa445b328b9157536",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "Enrolled revision 1 descriptor passed: bun test tests/exhaustive-decision-tree-contract.test.ts => 4 pass, 0 fail. Full bun test previously exposed tests/brainstorm-decision-probing-contract.test.ts still enforcing the removed fixed question budget; adding that test to scope/verification was attempted as revision 2 and Kernel correctly rejected it as breaking. Current acceptance passes, but repository-wide regression closure requires a successor TaskIntent covering the legacy contract test."
+    }
+  ],
+  "findings": [
+    {
+      "id": "qa-evidence-freshness-4a30ff7f17def45b-4a30ff7f-e2aed7",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": null,
+      "source": "review",
+      "review_round": 1,
+      "summary": "executor evidence must be refreshed in working phase for acceptance ids: acc-default-decision-tree-contract"
+    },
+    {
+      "id": "review-fb3256f0ce6a-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "acc-default-decision-tree-contract",
+      "source": "review",
+      "review_round": 2,
+      "summary": "tests/exhaustive-decision-tree-contract.test.ts: the focused acceptance passes, but embedded QA evidence reports that the repository-wide tests still fail because tests/brainstorm-decision-probing-contract.test.ts enforces the removed fixed question budget; the changed contract therefore leaves a known regression and requires updating the legacy contract test within an authorized successor scope."
+    },
+    {
+      "id": "review-27a261998a5e-1-review-1",
+      "kind": "blocking",
+      "status": "open",
+      "acceptance_id": "acc-default-decision-tree-contract",
+      "source": "review",
+      "review_round": 3,
+      "summary": "tests/exhaustive-decision-tree-contract.test.ts: the immutable QA outcome reports that repository-wide tests still fail because tests/brainstorm-decision-probing-contract.test.ts enforces the removed fixed question budget; update that legacy contract test within an authorized successor scope and verify the full test suite passes."
+    },
+    {
+      "id": "request_rework:2026-08-19-001-default-exhaustive-decision-tree:2026-08-19T06:58:35.306Z:replan-required",
+      "kind": "replan_required",
+      "status": "open",
+      "acceptance_id": "acc-default-decision-tree-contract",
+      "source": "kernel",
+      "review_round": 3,
+      "summary": "Review returned this acceptance boundary twice; a durable replan is required."
+    }
+  ],
+  "approvals": [
+    {
+      "id": "approval-qa-65d2819f",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:81657950c34a67a929e12152aa9aa1db8471056a9ecef24156fbf784a5e14615",
+      "diff_hash": "sha256:fcd026eb468787a2841362b498e13a2a9606ecf940bf12ebb1203bae0e127a10",
+      "actor_id": "deterministic-qa",
+      "summary": "all 1 fixed verification descriptor(s) passed"
+    },
+    {
+      "id": "approval-qa-3492291d",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:81657950c34a67a929e12152aa9aa1db8471056a9ecef24156fbf784a5e14615",
+      "diff_hash": "sha256:d2d634adfb10fa56ac35b7c85765615da1dc8bf4b9ad295aa445b328b9157536",
+      "actor_id": "deterministic-qa",
+      "summary": "all 1 fixed verification descriptor(s) passed"
+    }
+  ],
+  "history": [
+    {
+      "id": "record_evidence:2026-08-19-001-default-exhaustive-decision-tree:2026-08-19T06:09:44.442Z",
+      "at": "2026-08-19T06:09:44.442Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-default-decision-tree-contract\naction_v2_sha256:c63b0d6dbf80cc53ec64a1780632b4aa53386a51e51eb168c2966a68a7dbe545"
+    },
+    {
+      "id": "submit_review:2026-08-19-001-default-exhaustive-decision-tree:2026-08-19T06:09:53.551Z",
+      "at": "2026-08-19T06:09:53.551Z",
+      "type": "submit_review",
+      "from_phase": "working",
+      "to_phase": "review",
+      "reason": "action_v2_sha256:2f85bdddada0b78d00289f2c0e1da73b4c4cf9cb6f013c123f3ab2cb3b197f55"
+    },
+    {
+      "id": "record_approval:2026-08-19-001-default-exhaustive-decision-tree:2026-08-19T06:09:54.628Z",
+      "at": "2026-08-19T06:09:54.628Z",
+      "type": "record_approval",
+      "from_phase": "review",
+      "to_phase": "review",
+      "reason": "approval-qa-65d2819f\naction_v2_sha256:729b71b458ce5cabdc66e2738e0ea13995381a33f13cae29cd2cb3277955b942",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-b14b55afc9e0563f",
+        "issued_at": "2026-08-19T06:09:54.628Z",
+        "expires_at": "2026-08-19T06:19:54.628Z"
+      }
+    },
+    {
+      "id": "request_rework:2026-08-19-001-default-exhaustive-decision-tree:2026-08-19T06:29:37.013Z",
+      "at": "2026-08-19T06:29:37.013Z",
+      "type": "request_rework",
+      "from_phase": "review",
+      "to_phase": "working",
+      "reason": "review_round_1\naction_v2_sha256:60d4bb8f56f657205745ed307d72807f1a8ef1152591d3422d385342348bd227",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-b3c98dbac80a43cb",
+        "issued_at": "2026-08-19T06:29:37.013Z",
+        "expires_at": "2026-08-19T06:39:37.013Z"
+      }
+    },
+    {
+      "id": "record_evidence:2026-08-19-001-default-exhaustive-decision-tree:2026-08-19T06:48:55.852Z",
+      "at": "2026-08-19T06:48:55.852Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-default-decision-tree-contract\naction_v2_sha256:06906eac3b23dc06e87b49475516c75de03412c2459f48e3e6a8c205d20c5ef4"
+    },
+    {
+      "id": "resolve_finding:2026-08-19-001-default-exhaustive-decision-tree:2026-08-19T06:49:06.280Z",
+      "at": "2026-08-19T06:49:06.280Z",
+      "type": "resolve_finding",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "qa-evidence-freshness-4a30ff7f17def45b-4a30ff7f-e2aed7\naction_v2_sha256:c73ac59efcb33755e3494819fb9e7ce0c7c4995347bf194185e649162766e3f6"
+    },
+    {
+      "id": "submit_review:2026-08-19-001-default-exhaustive-decision-tree:2026-08-19T06:49:14.803Z",
+      "at": "2026-08-19T06:49:14.803Z",
+      "type": "submit_review",
+      "from_phase": "working",
+      "to_phase": "review",
+      "reason": "action_v2_sha256:28e67b61c56f19c9d0b01709cc8eab387dcad80692cc7af7c6b099bfb6fa1855"
+    },
+    {
+      "id": "record_approval:2026-08-19-001-default-exhaustive-decision-tree:2026-08-19T06:49:15.890Z",
+      "at": "2026-08-19T06:49:15.890Z",
+      "type": "record_approval",
+      "from_phase": "review",
+      "to_phase": "review",
+      "reason": "approval-qa-3492291d\naction_v2_sha256:a50a9c9ef9b3308c6c9ea937c715aa344df707692ed338cec04730353d40c1e5",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-d6d9da6e210f7e0e",
+        "issued_at": "2026-08-19T06:49:15.890Z",
+        "expires_at": "2026-08-19T06:59:15.890Z"
+      }
+    },
+    {
+      "id": "request_rework:2026-08-19-001-default-exhaustive-decision-tree:2026-08-19T06:54:47.637Z",
+      "at": "2026-08-19T06:54:47.637Z",
+      "type": "request_rework",
+      "from_phase": "review",
+      "to_phase": "working",
+      "reason": "review_round_2\naction_v2_sha256:6bb0502358753513e50f79f1f7f3652881dbad0263c5c3cd30f975c8fe0d5379",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "native-review-f80876af-1841-480",
+        "confirmation_ref": "pi-confirm-09f127d76534f28a",
+        "issued_at": "2026-08-19T06:54:47.637Z",
+        "expires_at": "2026-08-19T07:04:47.637Z"
+      }
+    },
+    {
+      "id": "resolve_finding:2026-08-19-001-default-exhaustive-decision-tree:2026-08-19T06:55:13.450Z",
+      "at": "2026-08-19T06:55:13.450Z",
+      "type": "resolve_finding",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "review-fb3256f0ce6a-1-review-1\naction_v2_sha256:b4d90a160c5dc74e56c13e4717bc12796c66864328c796a7be9fa74817cba29a"
+    },
+    {
+      "id": "submit_review:2026-08-19-001-default-exhaustive-decision-tree:2026-08-19T06:55:19.391Z",
+      "at": "2026-08-19T06:55:19.391Z",
+      "type": "submit_review",
+      "from_phase": "working",
+      "to_phase": "review",
+      "reason": "action_v2_sha256:d4eeb65399b0c163adc79b88e45c6435d05fe588ea37157c2a46644c95cbc693"
+    },
+    {
+      "id": "request_rework:2026-08-19-001-default-exhaustive-decision-tree:2026-08-19T06:58:35.306Z",
+      "at": "2026-08-19T06:58:35.306Z",
+      "type": "request_rework",
+      "from_phase": "review",
+      "to_phase": "review",
+      "reason": "review_round_3\naction_v2_sha256:4d3d602a4e032fc7929f5e58b8cebfe223c7a3994bd87b90f80fa12924a37095",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "native-review-298b9aca-181a-41d",
+        "confirmation_ref": "pi-confirm-ff60cb00481baa47",
+        "issued_at": "2026-08-19T06:58:35.306Z",
+        "expires_at": "2026-08-19T07:08:35.306Z"
+      }
+    },
+    {
+      "id": "stop:2026-08-19-001-default-exhaustive-decision-tree:2026-08-19T07:14:17.451Z",
+      "at": "2026-08-19T07:14:17.451Z",
+      "type": "stop",
+      "from_phase": "review",
+      "to_phase": "stopped",
+      "reason": "literal user stopped task parked for replan\naction_v2_sha256:bfa58625b812dc29caddbdf68bfafde5617d5d937588e09a427b9411d6302a75",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-e795bbf6036bd58a",
+        "issued_at": "2026-08-19T07:14:17.451Z",
+        "expires_at": "2026-08-19T07:24:17.451Z"
+      }
+    }
+  ]
+}

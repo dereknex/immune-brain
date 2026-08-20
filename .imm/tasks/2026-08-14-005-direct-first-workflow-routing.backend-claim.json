@@ -1,0 +1,9 @@
+{
+  "contract": "assurance_kernel/task_tombstone/v1",
+  "task_id": "2026-08-14-005-direct-first-workflow-routing",
+  "lifecycle_status": "terminal",
+  "terminal_phase": "done",
+  "terminal_event_id": "complete:2026-08-14-005-direct-first-workflow-routing:2026-08-14T12:59:20.695Z",
+  "final_record_hash": "sha256:7f9417bd0cbe7ba20bc9a73e6c6991877b4bcaf6d9e8ce05d1626f4cabea691e",
+  "terminalized_at": "2026-08-14T12:59:20.695Z"
+}

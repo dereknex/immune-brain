@@ -1,0 +1,9 @@
+{
+  "contract": "assurance_kernel/task_tombstone/v1",
+  "task_id": "2026-08-14-007-managed-task-snapshot-isolation",
+  "lifecycle_status": "terminal",
+  "terminal_phase": "done",
+  "terminal_event_id": "complete:2026-08-14-007-managed-task-snapshot-isolation:2026-08-14T14:44:28.872Z",
+  "final_record_hash": "sha256:8c5bbd4a727ff05983b43e29c92e4bce4e6ecdc19210c83c64cb52dac1126e3f",
+  "terminalized_at": "2026-08-14T14:44:28.872Z"
+}

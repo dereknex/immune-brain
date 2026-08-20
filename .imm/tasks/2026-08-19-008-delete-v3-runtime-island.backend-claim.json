@@ -1,0 +1,9 @@
+{
+  "contract": "assurance_kernel/task_tombstone/v1",
+  "task_id": "2026-08-19-008-delete-v3-runtime-island",
+  "lifecycle_status": "terminal",
+  "terminal_phase": "done",
+  "terminal_event_id": "complete:2026-08-19-008-delete-v3-runtime-island:2026-08-19T14:10:01.122Z",
+  "final_record_hash": "sha256:415e4c3dab71986353631cd61caf19f2b91486943d7f2a859a7220c55ada203f",
+  "terminalized_at": "2026-08-19T14:10:01.122Z"
+}

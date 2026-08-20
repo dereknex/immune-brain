@@ -1,0 +1,9 @@
+{
+  "contract": "assurance_kernel/task_tombstone/v1",
+  "task_id": "2026-08-19-004-realign-v4-contract-documents",
+  "lifecycle_status": "terminal",
+  "terminal_phase": "done",
+  "terminal_event_id": "complete:2026-08-19-004-realign-v4-contract-documents:2026-08-19T11:13:39.191Z",
+  "final_record_hash": "sha256:bd4aba40163303436a096d423f4c9ee62c2812b5b7ed27db61eae3f4d1eb4b10",
+  "terminalized_at": "2026-08-19T11:13:39.191Z"
+}

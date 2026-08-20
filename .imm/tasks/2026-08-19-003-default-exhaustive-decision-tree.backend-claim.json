@@ -1,0 +1,9 @@
+{
+  "contract": "assurance_kernel/task_tombstone/v1",
+  "task_id": "2026-08-19-003-default-exhaustive-decision-tree",
+  "lifecycle_status": "terminal",
+  "terminal_phase": "done",
+  "terminal_event_id": "complete:2026-08-19-003-default-exhaustive-decision-tree:2026-08-19T08:01:53.715Z",
+  "final_record_hash": "sha256:f2c765470168fc93108072939ad7b9633b2c216636c8424b7dc73181969cb2bc",
+  "terminalized_at": "2026-08-19T08:01:53.715Z"
+}

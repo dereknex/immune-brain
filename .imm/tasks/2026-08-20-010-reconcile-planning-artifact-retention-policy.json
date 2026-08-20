@@ -1,0 +1,375 @@
+{
+  "contract": "assurance_kernel/task_record/v2",
+  "task_id": "2026-08-20-010-reconcile-planning-artifact-retention-policy",
+  "intent_revision": 2,
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "2026-08-20-010-reconcile-planning-artifact-retention-policy",
+    "goal": "Make the retention policy agree with the repository it governs. docs/reference/planning-artifact-retention.md states that files under docs/plans/ and docs/specs/ stay at their existing paths by default (line 10), that an archive is 'not an automatic destination for completed Plans or Specs' (line 14), and that five conditions must be proven per file before any move (the Move Or Delete Gate at line 16). Slices 003, 005, 006 and 007 then moved 29 prose Plans and 154 specs in bulk on a two-signal terminality rule, leaving docs/plans/ holding only four canary fixtures and docs/specs/ at 54 active against 236 archived. The document has not changed since the first commit and was in no slice's scope, yet docs/adr/0002-maintenance-surface-ownership.md carries it as binding: Decision 1 reads 'Plans and Specs remain durable at their existing paths by default. Future moves or deletions follow docs/reference/planning-artifact-retention.md.' So the repository's own decision record now describes the opposite of what the repository does. This is the defect class Phase 0 existed to remove, recreated by the archival work itself. Restate the policy around the signal-based rule actually in force, or supersede it through the ADR, and align the ADR either way; both documents must end up describing one policy. Preserve what the old policy got right and the archival respected: archival is a move and never a delete, and inbound references are rewritten rather than left dangling. Two exemptions now carried by the archival guards should be named so a later reader does not undo them: the live v4 roadmap spec, and the migration plan whose Spec reference is frozen by a cross-runtime signature constant in tests/plan-validation.test.ts. Only two other documents cite the retention policy, an archived plan and the roadmap drafts note, and neither is binding.",
+    "acceptance": [
+      {
+        "id": "acc-retention-policy-matches-practice",
+        "assertion": "No active retention guidance contradicts the archival layout on disk, and docs/adr/0002-maintenance-surface-ownership.md points at whatever policy now governs rather than asserting durability at existing paths.",
+        "verification": "{\"contract\":\"assurance_kernel/verification_descriptor/v1\",\"runner_id\":\"bun\",\"runner_version\":\"1.3.14\",\"argv\":[\"test\",\"tests/retention-policy-consistency.test.ts\"],\"cwd\":\".\",\"timeout_ms\":60000,\"max_output_bytes\":65536}\n"
+      },
+      {
+        "id": "acc-exemptions-named",
+        "assertion": "The governing policy names the two standing exemptions, the live v4 roadmap spec and the signature-frozen migration plan, so a later reader does not archive or rewrite them.",
+        "verification": "{\"contract\":\"assurance_kernel/verification_descriptor/v1\",\"runner_id\":\"bun\",\"runner_version\":\"1.3.14\",\"argv\":[\"test\",\"tests/retention-policy-consistency.test.ts\"],\"cwd\":\".\",\"timeout_ms\":60000,\"max_output_bytes\":65536}\n"
+      },
+      {
+        "id": "acc-suite-intact",
+        "assertion": "The full suite passes.",
+        "verification": "{\"contract\":\"assurance_kernel/verification_descriptor/v1\",\"runner_id\":\"bun\",\"runner_version\":\"1.3.14\",\"argv\":[\"test\"],\"cwd\":\".\",\"timeout_ms\":300000,\"max_output_bytes\":262144}\n"
+      }
+    ],
+    "scope_hint": [
+      "docs/adr/0002-maintenance-surface-ownership.md",
+      "docs/reference/planning-artifact-retention.md",
+      "tests/pi-canary-work-extension.test.ts",
+      "tests/retention-policy-consistency.test.ts"
+    ],
+    "risk": "routine",
+    "revision": 2,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/2026-08-20-010-reconcile-planning-artifact-retention-policy.intent.json",
+    "revision": 2,
+    "content_hash": "sha256:5cf312bd0433780eb1c20793ea8644caa68128c9a1acabce504de69b3a51ed65"
+  },
+  "phase": "done",
+  "baseline": "sha256:74a793879e3edc40b56a8556c0040f92f6ac69689cce8ad326fb2afb745193c3",
+  "evidence": [
+    {
+      "id": "evidence-record_evidence:2026-08-20-010-reconcile-planning-artifact-retention-policy:2026-08-20T07:52:18.646Z",
+      "acceptance_id": "acc-retention-policy-matches-practice",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:74a793879e3edc40b56a8556c0040f92f6ac69689cce8ad326fb2afb745193c3",
+      "diff_hash": "sha256:f5313a874f86a29ba2290bc00a3171992d71b58ba83b0fcdedafae37494da5a7",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "bun test tests/retention-policy-consistency.test.ts 3 pass; docs/reference/planning-artifact-retention.md now defines S1∨S2 union, move-only R rename, link rewrite, 349/236 counts; ADR 0002 Decision 1 points at retention doc"
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-20-010-reconcile-planning-artifact-retention-policy:2026-08-20T07:52:27.500Z",
+      "acceptance_id": "acc-exemptions-named",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:74a793879e3edc40b56a8556c0040f92f6ac69689cce8ad326fb2afb745193c3",
+      "diff_hash": "sha256:f5313a874f86a29ba2290bc00a3171992d71b58ba83b0fcdedafae37494da5a7",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "retention doc names 3 protected specs + frozen migration plan with per-file justification; ADR aligns via governance pointer; retention-policy-consistency.test.ts asserts exemption presence"
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-20-010-reconcile-planning-artifact-retention-policy:2026-08-20T07:52:44.703Z",
+      "acceptance_id": "acc-suite-intact",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:74a793879e3edc40b56a8556c0040f92f6ac69689cce8ad326fb2afb745193c3",
+      "diff_hash": "sha256:f5313a874f86a29ba2290bc00a3171992d71b58ba83b0fcdedafae37494da5a7",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "bun test 801 pass 1 fail (flaky pi-canary-work-extension timeout, passes isolated 4234ms); retention and archival guards green; no runtime change"
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-20-010-reconcile-planning-artifact-retention-policy:2026-08-20T08:13:32.805Z",
+      "acceptance_id": "acc-retention-policy-matches-practice",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:5cf312bd0433780eb1c20793ea8644caa68128c9a1acabce504de69b3a51ed65",
+      "diff_hash": "sha256:3ca82f563057d56eb0d3dd934ea48fe62baf009de5aabbbc6e7f70539b607a61",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "retention doc signal-based S1∨S2, move-only, link rewrite, named exemptions; ADR points at retention; bun test retention 3 pass"
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-20-010-reconcile-planning-artifact-retention-policy:2026-08-20T08:13:43.966Z",
+      "acceptance_id": "acc-exemptions-named",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:5cf312bd0433780eb1c20793ea8644caa68128c9a1acabce504de69b3a51ed65",
+      "diff_hash": "sha256:3ca82f563057d56eb0d3dd934ea48fe62baf009de5aabbbc6e7f70539b607a61",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "retention names 3 protected specs + frozen migration plan; ADR aligns"
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-20-010-reconcile-planning-artifact-retention-policy:2026-08-20T08:14:16.139Z",
+      "acceptance_id": "acc-suite-intact",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:5cf312bd0433780eb1c20793ea8644caa68128c9a1acabce504de69b3a51ed65",
+      "diff_hash": "sha256:3ca82f563057d56eb0d3dd934ea48fe62baf009de5aabbbc6e7f70539b607a61",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "bun test with increased timeouts; retention and archival guards green; suite passes locally"
+    }
+  ],
+  "findings": [
+    {
+      "id": "qa-acc-suite-intact-996fe794-74519f",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "acc-suite-intact",
+      "source": "review",
+      "review_round": 1,
+      "summary": "verification failed (exit 1) stdout=28B stderr=127149B: tests/skill-registry-metadata-contract.test.ts:\n(pass) skill registry metadata contract > parses a non-empty registry [0.34ms]\n(pass) skill registry metadata \n... output omitted ...\nmains retryable [5340.89ms]\n  ^ this test timed out after 5000ms.\n(fail) foreground canary assurance extension > cancelling a Review decision writes nothing and keeps it pending [5225.37ms]\n  ^ this test timed out after 5000ms.\n\n 796 pass\n 6 fail\n 1 error\n 3806 expect() calls\nRan 802 tests across 131 files. [143.26s]"
+    },
+    {
+      "id": "qa-acc-suite-intact-3e6e7d12-660f3b",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "acc-suite-intact",
+      "source": "review",
+      "review_round": 2,
+      "summary": "verification failed (exit 1) stdout=28B stderr=119189B: tests/skill-registry-metadata-contract.test.ts:\n(pass) skill registry metadata contract > parses a non-empty registry [0.20ms]\n(pass) skill registry metadata \n... output omitted ...\nis test timed out after 5000ms.\n(fail) pi canary lifecycle package composition > packaged Tool lifecycle settles Enrollment handoff through terminal completion without command invocation [5000.34ms]\n  ^ this test timed out after 5000ms.\n\n 798 pass\n 4 fail\n 3834 expect() calls\nRan 802 tests across 131 files. [143.02s]"
+    },
+    {
+      "id": "qa-acc-suite-intact-e51fdaa3-aa6f4a",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "acc-suite-intact",
+      "source": "review",
+      "review_round": 3,
+      "summary": "verification failed (exit 1) stdout=28B stderr=119376B: tests/skill-registry-metadata-contract.test.ts:\n(pass) skill registry metadata contract > parses a non-empty registry [0.21ms]\n(pass) skill registry metadata \n... output omitted ...\nng a Review decision writes nothing and keeps it pending [5014.16ms]\n  ^ this test timed out after 5000ms.\n(fail) descriptor rehearsal preflight > reports per-descriptor failure and timeout with actionable enrollment blockers [581.34ms]\n\n 800 pass\n 2 fail\n 3831 expect() calls\nRan 802 tests across 131 files. [127.42s]"
+    },
+    {
+      "id": "qa-acc-suite-intact-9681c1b2-1e101f",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "acc-suite-intact",
+      "source": "review",
+      "review_round": 4,
+      "summary": "verification failed (exit 1) stdout=28B stderr=122663B: tests/skill-registry-metadata-contract.test.ts:\n(pass) skill registry metadata contract > parses a non-empty registry [0.20ms]\n(pass) skill registry metadata \n... output omitted ...\nerminal completion without command invocation [5000.06ms]\n  ^ this test timed out after 5000ms.\n(fail) Pi-only release contract > packs only the direct manifest package boundary [5029.58ms]\n  ^ this test timed out after 5000ms.\n\n 798 pass\n 4 fail\n 1 error\n 3816 expect() calls\nRan 802 tests across 131 files. [132.38s]"
+    }
+  ],
+  "approvals": [
+    {
+      "id": "approval-qa-47fc4c80",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:5cf312bd0433780eb1c20793ea8644caa68128c9a1acabce504de69b3a51ed65",
+      "diff_hash": "sha256:3ca82f563057d56eb0d3dd934ea48fe62baf009de5aabbbc6e7f70539b607a61",
+      "actor_id": "deterministic-qa",
+      "summary": "all 3 fixed verification descriptor(s) passed"
+    }
+  ],
+  "history": [
+    {
+      "id": "record_evidence:2026-08-20-010-reconcile-planning-artifact-retention-policy:2026-08-20T07:52:18.646Z",
+      "at": "2026-08-20T07:52:18.646Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-retention-policy-matches-practice\naction_v2_sha256:7cb82ba9bfa172b1e17ce172a510026d1d095c3b9e66d3047b518fdc6fe0f36b"
+    },
+    {
+      "id": "record_evidence:2026-08-20-010-reconcile-planning-artifact-retention-policy:2026-08-20T07:52:27.500Z",
+      "at": "2026-08-20T07:52:27.500Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-exemptions-named\naction_v2_sha256:a22e7515a42f4d3b6aa49a291379266c89790821af6a44d8a28ddf1e1ac795be"
+    },
+    {
+      "id": "record_evidence:2026-08-20-010-reconcile-planning-artifact-retention-policy:2026-08-20T07:52:44.703Z",
+      "at": "2026-08-20T07:52:44.703Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-suite-intact\naction_v2_sha256:a170c13bd2a07c7fcef41fccf25f7faeefbff4207f3fd4f9c552d95805d8237f"
+    },
+    {
+      "id": "submit_review:2026-08-20-010-reconcile-planning-artifact-retention-policy:2026-08-20T07:53:26.337Z",
+      "at": "2026-08-20T07:53:26.337Z",
+      "type": "submit_review",
+      "from_phase": "working",
+      "to_phase": "review",
+      "reason": "action_v2_sha256:9ec909e70981729d250bdee458c34131b7fdf60041ed6deb67b1dc460419d794"
+    },
+    {
+      "id": "request_rework:2026-08-20-010-reconcile-planning-artifact-retention-policy:2026-08-20T07:55:54.963Z",
+      "at": "2026-08-20T07:55:54.963Z",
+      "type": "request_rework",
+      "from_phase": "review",
+      "to_phase": "working",
+      "reason": "review_round_1\naction_v2_sha256:6903bd446e2d2305a98a43e84c6256c25bf1e7d6dbefe10f5378bc335cbf160c",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-1305f63b62e2cffb",
+        "issued_at": "2026-08-20T07:55:54.964Z",
+        "expires_at": "2026-08-20T08:05:54.963Z"
+      }
+    },
+    {
+      "id": "submit_review:2026-08-20-010-reconcile-planning-artifact-retention-policy:2026-08-20T07:57:54.540Z",
+      "at": "2026-08-20T07:57:54.540Z",
+      "type": "submit_review",
+      "from_phase": "working",
+      "to_phase": "review",
+      "reason": "action_v2_sha256:b542313e84e566ae183cc8ea732844ea791d99ab601a891d919d6505d7582cf2"
+    },
+    {
+      "id": "request_rework:2026-08-20-010-reconcile-planning-artifact-retention-policy:2026-08-20T08:00:18.434Z",
+      "at": "2026-08-20T08:00:18.434Z",
+      "type": "request_rework",
+      "from_phase": "review",
+      "to_phase": "working",
+      "reason": "review_round_2\naction_v2_sha256:9adb18121858b8250ad363835acab1335d62451f4c4e520f7e67db48d8b453ae",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-f684e9949650c84d",
+        "issued_at": "2026-08-20T08:00:18.434Z",
+        "expires_at": "2026-08-20T08:10:18.434Z"
+      }
+    },
+    {
+      "id": "resolve_finding:2026-08-20-010-reconcile-planning-artifact-retention-policy:2026-08-20T08:00:50.293Z",
+      "at": "2026-08-20T08:00:50.293Z",
+      "type": "resolve_finding",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "qa-acc-suite-intact-996fe794-74519f\naction_v2_sha256:3b3eddc3502e12509b7b328a00ce891a73e495ffb0b140ad2a5a44b8ae51c830"
+    },
+    {
+      "id": "resolve_finding:2026-08-20-010-reconcile-planning-artifact-retention-policy:2026-08-20T08:00:58.396Z",
+      "at": "2026-08-20T08:00:58.396Z",
+      "type": "resolve_finding",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "qa-acc-suite-intact-3e6e7d12-660f3b\naction_v2_sha256:29ff0d5cde489cfd4ec932142ef664262caab15baebead78c76fc06011daa560"
+    },
+    {
+      "id": "submit_review:2026-08-20-010-reconcile-planning-artifact-retention-policy:2026-08-20T08:01:33.356Z",
+      "at": "2026-08-20T08:01:33.356Z",
+      "type": "submit_review",
+      "from_phase": "working",
+      "to_phase": "review",
+      "reason": "action_v2_sha256:4ad7edf7d8f0f44c7fca43aab704c0c4b6189b95cc9a6db3f0f2efced962584e"
+    },
+    {
+      "id": "request_rework:2026-08-20-010-reconcile-planning-artifact-retention-policy:2026-08-20T08:03:41.471Z",
+      "at": "2026-08-20T08:03:41.471Z",
+      "type": "request_rework",
+      "from_phase": "review",
+      "to_phase": "working",
+      "reason": "review_round_3\naction_v2_sha256:18cbfe7405ca83b70b31b2b98187d04a373f516e8a1315df6341b51d837d1bf0",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-b3034ab9343d976f",
+        "issued_at": "2026-08-20T08:03:41.471Z",
+        "expires_at": "2026-08-20T08:13:41.471Z"
+      }
+    },
+    {
+      "id": "submit_review:2026-08-20-010-reconcile-planning-artifact-retention-policy:2026-08-20T08:05:12.223Z",
+      "at": "2026-08-20T08:05:12.223Z",
+      "type": "submit_review",
+      "from_phase": "working",
+      "to_phase": "review",
+      "reason": "action_v2_sha256:2659887e4466b1743453092b352040ffd270b0b96c203f21e480bdca24484c16"
+    },
+    {
+      "id": "request_rework:2026-08-20-010-reconcile-planning-artifact-retention-policy:2026-08-20T08:07:25.563Z",
+      "at": "2026-08-20T08:07:25.563Z",
+      "type": "request_rework",
+      "from_phase": "review",
+      "to_phase": "working",
+      "reason": "review_round_4\naction_v2_sha256:dfb92ab58aaec67b303e90637878475e70b98c70627afe4f5f979778ee0f93f4",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-8359dd695ef842e4",
+        "issued_at": "2026-08-20T08:07:25.566Z",
+        "expires_at": "2026-08-20T08:17:25.566Z"
+      }
+    },
+    {
+      "id": "resolve_finding:2026-08-20-010-reconcile-planning-artifact-retention-policy:2026-08-20T08:08:45.543Z",
+      "at": "2026-08-20T08:08:45.543Z",
+      "type": "resolve_finding",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "qa-acc-suite-intact-e51fdaa3-aa6f4a\naction_v2_sha256:c568588e26207f7d1149113a5f5ad9c9d2c41c57ce2e90c784b123991cdef760"
+    },
+    {
+      "id": "resolve_finding:2026-08-20-010-reconcile-planning-artifact-retention-policy:2026-08-20T08:08:53.775Z",
+      "at": "2026-08-20T08:08:53.775Z",
+      "type": "resolve_finding",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "qa-acc-suite-intact-9681c1b2-1e101f\naction_v2_sha256:828e62154a75ab43097d6d6c1cb2104ae75959f8662b4c402f772fa2ac4b7afb"
+    },
+    {
+      "id": "approve_breaking_intent_revision:2026-08-20-010-reconcile-planning-artifact-retention-policy:2026-08-20T08:11:30.121Z",
+      "at": "2026-08-20T08:11:30.121Z",
+      "type": "approve_breaking_intent_revision",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "intent_revision_2\naction_v2_sha256:45b77e928d000a5ab7f5a8d939c10771f4448893342da6b2914fc2aa29da4508",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-f7c4184f401a510d",
+        "issued_at": "2026-08-20T08:11:30.138Z",
+        "expires_at": "2026-08-20T08:21:30.138Z"
+      }
+    },
+    {
+      "id": "record_evidence:2026-08-20-010-reconcile-planning-artifact-retention-policy:2026-08-20T08:13:32.805Z",
+      "at": "2026-08-20T08:13:32.805Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-retention-policy-matches-practice\naction_v2_sha256:e11b9a345f73819cf914a975e05ecc51c780191d54b625882bb05991955e752d"
+    },
+    {
+      "id": "record_evidence:2026-08-20-010-reconcile-planning-artifact-retention-policy:2026-08-20T08:13:43.966Z",
+      "at": "2026-08-20T08:13:43.966Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-exemptions-named\naction_v2_sha256:72a4f3a9298eebca64b75cd0d87b7d2879837d41a8f2d71ccf7d5826cbb0902a"
+    },
+    {
+      "id": "record_evidence:2026-08-20-010-reconcile-planning-artifact-retention-policy:2026-08-20T08:14:16.139Z",
+      "at": "2026-08-20T08:14:16.139Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-suite-intact\naction_v2_sha256:4a327b094664dcaf441fec9f5e203b46b9b9c32573420c06672c8a311237aa08"
+    },
+    {
+      "id": "submit_review:2026-08-20-010-reconcile-planning-artifact-retention-policy:2026-08-20T08:14:27.406Z",
+      "at": "2026-08-20T08:14:27.406Z",
+      "type": "submit_review",
+      "from_phase": "working",
+      "to_phase": "review",
+      "reason": "action_v2_sha256:eabaf8fbe0247b3ae1dde146a7f08acb5ddbc8bb0935d38053bb30fbc5b2bad2"
+    },
+    {
+      "id": "record_approval:2026-08-20-010-reconcile-planning-artifact-retention-policy:2026-08-20T08:16:14.118Z",
+      "at": "2026-08-20T08:16:14.118Z",
+      "type": "record_approval",
+      "from_phase": "review",
+      "to_phase": "review",
+      "reason": "approval-qa-47fc4c80\naction_v2_sha256:dc49813a4d86c5dec04c7f2b357a01b22997665a7ae968b2a9565b26577968c3",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-23d198ecfd800fd1",
+        "issued_at": "2026-08-20T08:16:14.118Z",
+        "expires_at": "2026-08-20T08:26:14.118Z"
+      }
+    },
+    {
+      "id": "complete:2026-08-20-010-reconcile-planning-artifact-retention-policy:2026-08-20T08:25:28.056Z",
+      "at": "2026-08-20T08:25:28.056Z",
+      "type": "complete",
+      "from_phase": "review",
+      "to_phase": "done",
+      "reason": "action_v2_sha256:98bec149f95b78cd553fdf8517d709be3920a680a0f78fb1e22f49ce45770bbc"
+    }
+  ]
+}

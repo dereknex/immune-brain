@@ -1,0 +1,9 @@
+{
+  "contract": "assurance_kernel/task_tombstone/v1",
+  "task_id": "2026-08-18-002-foreground-canary-assurance-review-r2",
+  "lifecycle_status": "terminal",
+  "terminal_phase": "stopped",
+  "terminal_event_id": "succeed-2026-08-18-002-foreground-canary-assurance-review-r2-2026-08-18T02:01:24.370Z",
+  "final_record_hash": "sha256:b0e3445fdef60ef0a7a3a1b052b4d9b76653d25d56f34bc16250029a2ddf1802",
+  "terminalized_at": "2026-08-18T02:01:24.370Z"
+}

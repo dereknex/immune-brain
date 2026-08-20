@@ -1,0 +1,9 @@
+{
+  "contract": "assurance_kernel/task_tombstone/v1",
+  "task_id": "2026-08-15-022-retire-legacy-v3-dispatcher",
+  "lifecycle_status": "terminal",
+  "terminal_phase": "done",
+  "terminal_event_id": "complete:2026-08-15-022-retire-legacy-v3-dispatcher:2026-08-15T11:52:18.774Z",
+  "final_record_hash": "sha256:5148bf5e542e02c54e826458432a3a7b15172af8d97fe6d57b1f88c889fbe7bb",
+  "terminalized_at": "2026-08-15T11:52:18.774Z"
+}

@@ -1,0 +1,129 @@
+{
+  "contract": "assurance_kernel/task_record/v2",
+  "task_id": "2026-08-19-003-default-exhaustive-decision-tree",
+  "intent_revision": 1,
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "2026-08-19-003-default-exhaustive-decision-tree",
+    "goal": "Make exhaustive dependency-aware decision-tree clarification the default interaction protocol in both imm-brainstorm and imm-planner without adding a Skill, mode, runtime state machine, or UI. Brainstorm owns product framing decisions and Planner owns execution-design decisions; both investigate repository facts themselves, ask the complete currently unblocked frontier in rounds with numbered recommendations, allow a zero-question fast path, retain only final decisions, and require an explicit final summary confirmation. Planner returns product-level uncertainty to Brainstorm. Preserve roundtable and adversarial as orthogonal lenses, preserve direct Planner entry for clear requests, repair the repository's pre-existing Managed Path bootstrap markers/headings, and align source, packaged contracts, legacy contract tests, and the active Brainstorm behavior benchmark with the complete-frontier protocol.",
+    "acceptance": [
+      {
+        "id": "acc-default-decision-tree-contract",
+        "assertion": "The source and packaged imm-brainstorm and imm-planner contracts define the default exhaustive decision-tree protocol, complete-frontier rounds, repository-fact self-resolution, phase-specific decision ownership, zero-question fast path, recommendation/bulk acceptance behavior, result-only persistence, explicit final confirmation, and Planner-to-Brainstorm return for product-level uncertainty; the root bootstrap files satisfy the Managed Path markers and Project Context heading; the legacy Brainstorm probing contract and active behavior benchmark no longer enforce fixed question counts or one-at-a-time dependent probing.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/exhaustive-decision-tree-contract.test.ts\",\n    \"tests/brainstorm-decision-probing-contract.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 30000,\n  \"max_output_bytes\": 65536\n}\n"
+      }
+    ],
+    "scope_hint": [
+      "AGENTS.md",
+      "CONTEXT.md",
+      "plugins/immune-brain/dist/imm-brainstorm.md",
+      "plugins/immune-brain/dist/imm-planner.md",
+      "plugins/immune-brain/skills/imm-brainstorm/SKILL.md",
+      "plugins/immune-brain/skills/imm-planner/SKILL.md",
+      "tests/brainstorm-decision-probing-contract.test.ts",
+      "tests/exhaustive-decision-tree-contract.test.ts",
+      "tests/fixtures/imm-brainstorm-behavior-benchmark.json"
+    ],
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/2026-08-19-003-default-exhaustive-decision-tree.intent.json",
+    "revision": 1,
+    "content_hash": "sha256:042e13d8dc06f3dda3aa6fb9923a303fcac4228ea466007f95122481f5445751"
+  },
+  "phase": "done",
+  "baseline": "sha256:042e13d8dc06f3dda3aa6fb9923a303fcac4228ea466007f95122481f5445751",
+  "evidence": [
+    {
+      "id": "evidence-record_evidence:2026-08-19-003-default-exhaustive-decision-tree:2026-08-19T07:55:19.385Z",
+      "acceptance_id": "acc-default-decision-tree-contract",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:042e13d8dc06f3dda3aa6fb9923a303fcac4228ea466007f95122481f5445751",
+      "diff_hash": "sha256:d271b62aa411120a50aee5ea3dc924cfb1834574ca555c5510179d9f50de2dbf",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "Final expanded-scope implementation verified. Focused contract command `bun test tests/exhaustive-decision-tree-contract.test.ts tests/brainstorm-decision-probing-contract.test.ts` passed 10 tests, 142 assertions. Full canonical `bun test` passed 959 tests, 4326 assertions, 0 failures across 131 files. `bun scripts/sync-dist-docs.ts --check` reported all generated packaged docs in sync. Active benchmark fixture now uses dependency-aware complete-frontier scenario IDs/prompts/checklists and the legacy contract test rejects all prior fixed-budget/serial scenario tokens."
+    }
+  ],
+  "findings": [],
+  "approvals": [
+    {
+      "id": "approval-qa-c1aca68b",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:042e13d8dc06f3dda3aa6fb9923a303fcac4228ea466007f95122481f5445751",
+      "diff_hash": "sha256:d271b62aa411120a50aee5ea3dc924cfb1834574ca555c5510179d9f50de2dbf",
+      "actor_id": "deterministic-qa",
+      "summary": "all 1 fixed verification descriptor(s) passed"
+    },
+    {
+      "id": "approval-review-05b9bf55",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:042e13d8dc06f3dda3aa6fb9923a303fcac4228ea466007f95122481f5445751",
+      "diff_hash": "sha256:d271b62aa411120a50aee5ea3dc924cfb1834574ca555c5510179d9f50de2dbf",
+      "actor_id": "native-review-cdce6d1e-ec47-42d",
+      "summary": "Immutable bundle provenance is valid, and the bounded contract, bootstrap, test, and benchmark changes correctly implement the default exhaustive decision-tree behavior without identified regressions."
+    }
+  ],
+  "history": [
+    {
+      "id": "record_evidence:2026-08-19-003-default-exhaustive-decision-tree:2026-08-19T07:55:19.385Z",
+      "at": "2026-08-19T07:55:19.385Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-default-decision-tree-contract\naction_v2_sha256:504c8c5f22214736933d4611b376b561299e1da278a7dd16f8dfff62c1aa27fc"
+    },
+    {
+      "id": "submit_review:2026-08-19-003-default-exhaustive-decision-tree:2026-08-19T07:55:27.400Z",
+      "at": "2026-08-19T07:55:27.400Z",
+      "type": "submit_review",
+      "from_phase": "working",
+      "to_phase": "review",
+      "reason": "action_v2_sha256:8bf97e6ced2818e3eb27d24c58321fbbefa43ee5daf36463733c4499b419fa0e"
+    },
+    {
+      "id": "record_approval:2026-08-19-003-default-exhaustive-decision-tree:2026-08-19T07:55:28.658Z",
+      "at": "2026-08-19T07:55:28.658Z",
+      "type": "record_approval",
+      "from_phase": "review",
+      "to_phase": "review",
+      "reason": "approval-qa-c1aca68b\naction_v2_sha256:f80f4e1a6866803d67d1d41219747d98fae0455055d3d05532562c0de185238c",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-ee0cc381ae5744e7",
+        "issued_at": "2026-08-19T07:55:28.658Z",
+        "expires_at": "2026-08-19T08:05:28.658Z"
+      }
+    },
+    {
+      "id": "record_approval:2026-08-19-003-default-exhaustive-decision-tree:2026-08-19T08:01:44.645Z",
+      "at": "2026-08-19T08:01:44.645Z",
+      "type": "record_approval",
+      "from_phase": "review",
+      "to_phase": "review",
+      "reason": "approval-review-05b9bf55\naction_v2_sha256:1149f6f149a3e7f84460ea36660e2652f45748ed98b3f3c7bb3ebc0fc8293567",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "native-review-cdce6d1e-ec47-42d",
+        "confirmation_ref": "pi-confirm-444bd78ac085d4e4",
+        "issued_at": "2026-08-19T08:01:44.646Z",
+        "expires_at": "2026-08-19T08:11:44.646Z"
+      }
+    },
+    {
+      "id": "complete:2026-08-19-003-default-exhaustive-decision-tree:2026-08-19T08:01:53.715Z",
+      "at": "2026-08-19T08:01:53.715Z",
+      "type": "complete",
+      "from_phase": "review",
+      "to_phase": "done",
+      "reason": "action_v2_sha256:0fb7e3816e04cfc2c211b820a7adfbc1ba00069533069cb966764455e7dd9978"
+    }
+  ]
+}

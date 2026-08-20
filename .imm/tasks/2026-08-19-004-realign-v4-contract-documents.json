@@ -1,0 +1,205 @@
+{
+  "contract": "assurance_kernel/task_record/v2",
+  "task_id": "2026-08-19-004-realign-v4-contract-documents",
+  "intent_revision": 1,
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "2026-08-19-004-realign-v4-contract-documents",
+    "goal": "Remove the three agent-facing contract contradictions that make every Managed task reconcile a retired v3 playbook against the live v4 Assurance Kernel path, and add the missing consistency guard that allowed the largest one to drift. Rewrite the packaged imm-loop contract around the Kernel path (imm_loop_action route/dispatch_role and imm_kernel_canary advance_assurance/submit_review/request_authorization), deleting the retired imm-autowork checkpoint loop and the State Ledger authority section, and fix the self-contradicting review-gate paragraph in the plugin README. Delete the ctx_* tool usage mandate from AGENTS.md and drop the unused context-mode dependency, because no host provides those tools and no settings file activates the package. Delete the three CONTEXT.md vocabulary entries that have no live contract reference (State Ledger, promotion_criteria, Activation Plan), correct the two dead Python references to the shipped Bun runtime paths, and synchronize the BASELINE canonical-term list across its packaged copies. Add a consistency guard binding each public skills/*/SKILL.md to its packaged dist/imm-*.md, which is the only copy relationship in the repository without a sync check and therefore the one that drifted. Roadmap-family vocabulary, Fast-Track, Domain Mapper, Plan boundary, and Scope pressure stay in place because live contracts still reference them; the v3 runtime closure deletion, docs archival, and enrollment-flow redesign are deliberately out of scope for this slice.",
+    "acceptance": [
+      {
+        "id": "acc-loop-contract-v4-alignment",
+        "assertion": "The packaged imm-loop contract no longer instructs agents to run the retired imm-autowork command or to treat the State Ledger as checkpoint authority, and instead describes the live Kernel path through imm_loop_action and imm_kernel_canary consistently with skills/imm-loop/SKILL.md; the plugin README no longer both claims imm-loop consumes imm-autowork and lists that command as retired.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/loop-contract-v4-alignment.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 30000,\n  \"max_output_bytes\": 65536\n}\n"
+      },
+      {
+        "id": "acc-host-tool-policy-removal",
+        "assertion": "AGENTS.md no longer mandates a context-mode tool hierarchy or any ctx_* tool that no configured host provides, and the unused context-mode dependency is removed from the package manifest and lockfile.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/host-tool-policy-contract.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 30000,\n  \"max_output_bytes\": 65536\n}\n"
+      },
+      {
+        "id": "acc-vocabulary-dead-reference-removal",
+        "assertion": "CONTEXT.md defines no vocabulary entry for State Ledger, promotion_criteria, or Activation Plan, references no imm-plan.py or activation_plan.py path, and every BASELINE copy states the same canonical-term list with State Ledger removed; Roadmap-family terms, Fast-Track, Domain Mapper, Plan boundary, and Scope pressure remain defined because live contracts still reference them.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/vocabulary-dead-reference-contract.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 30000,\n  \"max_output_bytes\": 65536\n}\n"
+      },
+      {
+        "id": "acc-skill-dist-consistency-guard",
+        "assertion": "A consistency guard fails when a public skills/*/SKILL.md and its packaged dist/imm-*.md disagree about the runtime surface they instruct agents to use, and that guard passes for all three public skills.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/skill-dist-consistency.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 30000,\n  \"max_output_bytes\": 65536\n}\n"
+      }
+    ],
+    "scope_hint": [
+      "AGENTS.md",
+      "CONTEXT.md",
+      "bun.lock",
+      "package.json",
+      "plugins/immune-brain/BASELINE.md",
+      "plugins/immune-brain/README.md",
+      "plugins/immune-brain/dist/BASELINE.md",
+      "plugins/immune-brain/dist/imm-loop.md",
+      "plugins/immune-brain/skills/BASELINE.md",
+      "plugins/immune-brain/skills/imm-brainstorm/SKILL.md",
+      "plugins/immune-brain/skills/imm-loop/SKILL.md",
+      "plugins/immune-brain/skills/imm-planner/SKILL.md",
+      "tests/host-tool-policy-contract.test.ts",
+      "tests/loop-contract-v4-alignment.test.ts",
+      "tests/skill-dist-consistency.test.ts",
+      "tests/vocabulary-dead-reference-contract.test.ts"
+    ],
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/2026-08-19-004-realign-v4-contract-documents.intent.json",
+    "revision": 1,
+    "content_hash": "sha256:352c6931d95f28db933afcbefcf9ec19457c33d9e9c215c0cf890af041b8446e"
+  },
+  "phase": "done",
+  "baseline": "sha256:352c6931d95f28db933afcbefcf9ec19457c33d9e9c215c0cf890af041b8446e",
+  "evidence": [
+    {
+      "id": "evidence-record_evidence:2026-08-19-004-realign-v4-contract-documents:2026-08-19T11:06:00.578Z",
+      "acceptance_id": "acc-loop-contract-v4-alignment",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:352c6931d95f28db933afcbefcf9ec19457c33d9e9c215c0cf890af041b8446e",
+      "diff_hash": "sha256:afec4198582e8a187282338eb73284b4ab86a5d51642fb7b18aa5bdfe0b0aea0",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "bun test tests/loop-contract-v4-alignment.test.ts passed: packaged imm-loop.md now instructs imm_loop_action + imm_kernel_canary (advance_assurance/submit_review/request_authorization) with no imm-autowork playbook or State Ledger authority section; plugin README no longer claims imm-loop consumes imm-autowork while still listing that command as retired."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-19-004-realign-v4-contract-documents:2026-08-19T11:06:06.634Z",
+      "acceptance_id": "acc-host-tool-policy-removal",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:352c6931d95f28db933afcbefcf9ec19457c33d9e9c215c0cf890af041b8446e",
+      "diff_hash": "sha256:afec4198582e8a187282338eb73284b4ab86a5d51642fb7b18aa5bdfe0b0aea0",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "bun test tests/host-tool-policy-contract.test.ts passed: AGENTS.md no longer mandates a context-mode hierarchy or any ctx_* tool; package.json dropped the unused context-mode dependency and bun.lock no longer pins it."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-19-004-realign-v4-contract-documents:2026-08-19T11:06:12.655Z",
+      "acceptance_id": "acc-vocabulary-dead-reference-removal",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:352c6931d95f28db933afcbefcf9ec19457c33d9e9c215c0cf890af041b8446e",
+      "diff_hash": "sha256:afec4198582e8a187282338eb73284b4ab86a5d51642fb7b18aa5bdfe0b0aea0",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "bun test tests/vocabulary-dead-reference-contract.test.ts passed: CONTEXT.md no longer defines State Ledger, promotion_criteria, or Activation Plan and cites no imm-plan.py/activation_plan.py; all three BASELINE copies share the same canonical-term list with State Ledger removed; Roadmap-family terms, Fast-Track, Domain Mapper, Plan boundary, and Scope pressure remain."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-19-004-realign-v4-contract-documents:2026-08-19T11:06:19.054Z",
+      "acceptance_id": "acc-skill-dist-consistency-guard",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:352c6931d95f28db933afcbefcf9ec19457c33d9e9c215c0cf890af041b8446e",
+      "diff_hash": "sha256:afec4198582e8a187282338eb73284b4ab86a5d51642fb7b18aa5bdfe0b0aea0",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "bun test tests/skill-dist-consistency.test.ts passed: the guard fails when a public skills/*/SKILL.md and its packaged dist/imm-*.md disagree on the runtime surface they instruct, and it currently passes for imm-brainstorm, imm-planner, and imm-loop."
+    }
+  ],
+  "findings": [],
+  "approvals": [
+    {
+      "id": "approval-qa-c89becb1",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:352c6931d95f28db933afcbefcf9ec19457c33d9e9c215c0cf890af041b8446e",
+      "diff_hash": "sha256:afec4198582e8a187282338eb73284b4ab86a5d51642fb7b18aa5bdfe0b0aea0",
+      "actor_id": "deterministic-qa",
+      "summary": "all 4 fixed verification descriptor(s) passed"
+    },
+    {
+      "id": "approval-review-e44ca9a8",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:352c6931d95f28db933afcbefcf9ec19457c33d9e9c215c0cf890af041b8446e",
+      "diff_hash": "sha256:afec4198582e8a187282338eb73284b4ab86a5d51642fb7b18aa5bdfe0b0aea0",
+      "actor_id": "native-review-6c327122-f1c3-4fb",
+      "summary": "Provenance matched HEAD; v4 loop/docs/tests drop autowork, State Ledger authority, and context-mode without settlement-path regressions."
+    }
+  ],
+  "history": [
+    {
+      "id": "record_evidence:2026-08-19-004-realign-v4-contract-documents:2026-08-19T11:06:00.578Z",
+      "at": "2026-08-19T11:06:00.578Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-loop-contract-v4-alignment\naction_v2_sha256:d86ebcda6d9cc4e884962bc07a2236ef9aa6f4db5af7ea655518d2bbc6e7d142"
+    },
+    {
+      "id": "record_evidence:2026-08-19-004-realign-v4-contract-documents:2026-08-19T11:06:06.634Z",
+      "at": "2026-08-19T11:06:06.634Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-host-tool-policy-removal\naction_v2_sha256:421473a9b6ca1ead5bc1a29f9d4866b5017039d48426e3506720d485cb4f4f3a"
+    },
+    {
+      "id": "record_evidence:2026-08-19-004-realign-v4-contract-documents:2026-08-19T11:06:12.655Z",
+      "at": "2026-08-19T11:06:12.655Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-vocabulary-dead-reference-removal\naction_v2_sha256:cde848a818ea68ea3176b099d4fd2642dd95d7510dbee7095f362b2b1f3c0393"
+    },
+    {
+      "id": "record_evidence:2026-08-19-004-realign-v4-contract-documents:2026-08-19T11:06:19.054Z",
+      "at": "2026-08-19T11:06:19.054Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-skill-dist-consistency-guard\naction_v2_sha256:0fdefad53ef9670074db7cee2f86a99ad9220c0c0b401a800999b5657f6f8821"
+    },
+    {
+      "id": "submit_review:2026-08-19-004-realign-v4-contract-documents:2026-08-19T11:06:39.056Z",
+      "at": "2026-08-19T11:06:39.056Z",
+      "type": "submit_review",
+      "from_phase": "working",
+      "to_phase": "review",
+      "reason": "action_v2_sha256:d5d6dda4d7228a969eedae302743341623c948f2800f9eb464ddd51fe4fff09e"
+    },
+    {
+      "id": "record_approval:2026-08-19-004-realign-v4-contract-documents:2026-08-19T11:06:40.609Z",
+      "at": "2026-08-19T11:06:40.609Z",
+      "type": "record_approval",
+      "from_phase": "review",
+      "to_phase": "review",
+      "reason": "approval-qa-c89becb1\naction_v2_sha256:67c94b321e04989d01c367067d5c39bed07ba1e41a1534272162d089fd693a67",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-95da7546d2908fc4",
+        "issued_at": "2026-08-19T11:06:40.610Z",
+        "expires_at": "2026-08-19T11:16:40.610Z"
+      }
+    },
+    {
+      "id": "record_approval:2026-08-19-004-realign-v4-contract-documents:2026-08-19T11:13:30.455Z",
+      "at": "2026-08-19T11:13:30.455Z",
+      "type": "record_approval",
+      "from_phase": "review",
+      "to_phase": "review",
+      "reason": "approval-review-e44ca9a8\naction_v2_sha256:33d57550ea49f3a92a34592a234397d51fba1ca90c53eda369dce9e4ac410a36",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "native-review-6c327122-f1c3-4fb",
+        "confirmation_ref": "pi-confirm-05b38a38ed7e3cf8",
+        "issued_at": "2026-08-19T11:13:30.456Z",
+        "expires_at": "2026-08-19T11:23:30.455Z"
+      }
+    },
+    {
+      "id": "complete:2026-08-19-004-realign-v4-contract-documents:2026-08-19T11:13:39.191Z",
+      "at": "2026-08-19T11:13:39.191Z",
+      "type": "complete",
+      "from_phase": "review",
+      "to_phase": "done",
+      "reason": "action_v2_sha256:e3a29e4117fb06fec24a66c23fe23278e033c49121fd0003e474309053866d51"
+    }
+  ]
+}

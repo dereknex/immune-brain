@@ -1,0 +1,1083 @@
+{
+  "contract": "assurance_kernel/task_record/v2",
+  "task_id": "2026-08-14-001-pi-observable-assurance-dispatch",
+  "intent_revision": 1,
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "2026-08-14-001-pi-observable-assurance-dispatch",
+    "goal": "Deliver Phase 1 of the Pi Observable Assurance Orchestration Roadmap: the parent Agent can request one bounded assurance advance, QA and native Review run without blocking Pi input, required Immune-Brain status remains visibly honest throughout each background job, fresh QA pass starts one Review, and material terminal states wake the parent Agent, while native Review remains advisory and every existing literal-user authority boundary stays unchanged.",
+    "acceptance": [
+      {
+        "id": "acc-agent-callable-assurance-advance",
+        "assertion": "The closed imm_kernel_canary tool exposes only host-derived advance_assurance and cancel_assurance orchestration in addition to its existing ordinary actions; advance returns a structured started, blocked, awaiting_user, or completed result without waiting for background terminal settlement, duplicate advance reuses the active job, and neither operation accepts or mints privileged authority payloads.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/pi-canary-assurance-advance.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 262144\n}\n"
+      },
+      {
+        "id": "acc-assurance-visible-lifecycle",
+        "assertion": "Every deterministic QA and native Review job publishes starting before expensive preparation, keeps a one-second Footer and Immune-Brain Widget projection with stage, elapsed time, deadline, cancellation state, and honest telemetry availability, and publishes a bounded terminal result independently of the optional native subagent widget.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/pi-canary-assurance-observability.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 262144\n}\n"
+      },
+      {
+        "id": "acc-assurance-automatic-continuation",
+        "assertion": "A fresh deterministic QA pass starts exactly one Pi native background Review, while QA rework does not; QA rework and every Review terminal state emit exactly one task, operation, record, Intent, and diff-correlated Pi follow-up that triggers the parent Agent without a user continue message, and stale or replayed follow-ups cannot advance Kernel state.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/pi-canary-assurance-continuation.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 262144\n}\n"
+      },
+      {
+        "id": "acc-subagent-feedback-budget-contract",
+        "assertion": "Current Skill and dispatch contracts require a visible dispatch acknowledgement, a persistent status surface, background execution for unknown-duration planning, exploration, and review children, no result polling, no nested delegation, one Kernel Review child per immutable snapshot, and no more than two independently triggered advisory or discovery children.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/pi-subagent-dispatch-observability-contract.test.ts\",\n    \"tests/imm-canary-work-contract.test.ts\",\n    \"tests/dist-docs-sync-contract.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 262144\n}\n"
+      },
+      {
+        "id": "acc-assurance-authority-preserved",
+        "assertion": "Cancellation, timeout, session shutdown, stale snapshot, duplicate advance, late or duplicate native terminal events, and follow-up replay remain fail closed with no duplicate jobs or unauthorized TaskRecord writes; Review output remains advisory, record-review-verdict remains literal-user confirmed, every other privileged operation remains absent from Agent-callable schemas, and the full Pi package regression passes.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 300000,\n  \"max_output_bytes\": 262144\n}\n"
+      }
+    ],
+    "scope_hint": [
+      "docs/specs/pi-observable-assurance-orchestration-roadmap.spec.md",
+      "plugins/immune-brain/.pi-extension/imm-canary-work.ts",
+      "plugins/immune-brain/.pi-extension/pi-canary-assurance.ts",
+      "plugins/immune-brain/.pi-extension/runtime-stub.ts",
+      "plugins/immune-brain/.pi-extension/tsconfig.json",
+      "plugins/immune-brain/skills/imm-canary-work/SKILL.md",
+      "plugins/immune-brain/skills/imm-loop/SKILL.md",
+      "plugins/immune-brain/skills/imm-work/SKILL.md",
+      "plugins/immune-brain/dist/imm-canary-work.md",
+      "plugins/immune-brain/dist/imm-loop.md",
+      "plugins/immune-brain/dist/imm-work.md",
+      "plugins/immune-brain/dist/docs/reference/subagent-dispatch-protocol.md",
+      "docs/reference/subagent-dispatch-protocol.md",
+      "tests/pi-canary-assurance-advance.test.ts",
+      "tests/pi-canary-assurance-observability.test.ts",
+      "tests/pi-canary-assurance-continuation.test.ts",
+      "tests/pi-subagent-dispatch-observability-contract.test.ts",
+      "tests/pi-canary-work-extension.test.ts",
+      "tests/imm-canary-work-contract.test.ts",
+      "tests/dist-docs-sync-contract.test.ts",
+      "tests/pi-canary-package-boundary.test.ts",
+      "tests/plugin-package-runtime.test.ts"
+    ],
+    "risk": "critical",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/2026-08-14-001-pi-observable-assurance-dispatch.intent.json",
+    "revision": 1,
+    "content_hash": "sha256:5c6c37269016d3d7e77036a987b4f315ee6f85639494577fd0f7090c7bbe237c"
+  },
+  "phase": "stopped",
+  "baseline": "sha256:5c6c37269016d3d7e77036a987b4f315ee6f85639494577fd0f7090c7bbe237c",
+  "evidence": [
+    {
+      "id": "evidence-record_evidence:2026-08-14-001-pi-observable-assurance-dispatch:2026-08-14T04:25:31.940Z",
+      "acceptance_id": "acc-assurance-visible-lifecycle",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:5c6c37269016d3d7e77036a987b4f315ee6f85639494577fd0f7090c7bbe237c",
+      "diff_hash": "sha256:8274495c0efce7326134150be46c6cbb362fc255f2a17706a543047d30f06b8d",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "Fresh focused verification passed: pi-canary-assurance-observability.test.ts proves immediate Footer plus Immune-Brain Widget, deterministic QA progress, honest native telemetry-unavailable state, stalled and cancellation/terminal projections, and retry-safe correlated follow-up delivery."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-14-001-pi-observable-assurance-dispatch:2026-08-14T04:25:39.306Z",
+      "acceptance_id": "acc-agent-callable-assurance-advance",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:5c6c37269016d3d7e77036a987b4f315ee6f85639494577fd0f7090c7bbe237c",
+      "diff_hash": "sha256:8274495c0efce7326134150be46c6cbb362fc255f2a17706a543047d30f06b8d",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "Fresh focused verification passed: pi-canary-assurance-advance.test.ts proves the closed advance_assurance/cancel_assurance schema, immediate structured started response, duplicate operation-ID reuse, non-blocking QA dispatch, and cancellation without privileged authority fields."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-14-001-pi-observable-assurance-dispatch:2026-08-14T04:25:47.008Z",
+      "acceptance_id": "acc-assurance-automatic-continuation",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:5c6c37269016d3d7e77036a987b4f315ee6f85639494577fd0f7090c7bbe237c",
+      "diff_hash": "sha256:8274495c0efce7326134150be46c6cbb362fc255f2a17706a543047d30f06b8d",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "Fresh focused verification passed: pi-canary-assurance-continuation.test.ts proves QA pass automatically dispatches exactly one Pi-native reviewer and emits exactly one correlation-bound triggerTurn follow-up while review authority remains unwritten pending literal-user confirmation."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-14-001-pi-observable-assurance-dispatch:2026-08-14T04:25:55.328Z",
+      "acceptance_id": "acc-subagent-feedback-budget-contract",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:5c6c37269016d3d7e77036a987b4f315ee6f85639494577fd0f7090c7bbe237c",
+      "diff_hash": "sha256:8274495c0efce7326134150be46c6cbb362fc255f2a17706a543047d30f06b8d",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "Fresh contract verification passed: pi-subagent-dispatch-observability-contract.test.ts and imm-canary-work-contract.test.ts prove background visibility, 250ms acknowledgement, 1s Footer/Widget refresh, total 5s native spawn budget, 30s stalled state, no polling or nested delegation, one reviewer per snapshot, max 12 turns, and max two independent advisors."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-14-001-pi-observable-assurance-dispatch:2026-08-14T04:26:03.718Z",
+      "acceptance_id": "acc-assurance-authority-preserved",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:5c6c37269016d3d7e77036a987b4f315ee6f85639494577fd0f7090c7bbe237c",
+      "diff_hash": "sha256:8274495c0efce7326134150be46c6cbb362fc255f2a17706a543047d30f06b8d",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "Fresh full verification passed: bun test tests/ plugins/immune-brain/tests/ completed 1093 tests with 0 failures; package boundary tests, existing canary regressions, authority isolation, review advisory-only behavior, dist sync, and extension discovery remain intact."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-14-001-pi-observable-assurance-dispatch:2026-08-14T05:57:50.757Z",
+      "acceptance_id": "acc-agent-callable-assurance-advance",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:5c6c37269016d3d7e77036a987b4f315ee6f85639494577fd0f7090c7bbe237c",
+      "diff_hash": "sha256:77c337c3f08c521bbe1802d9f1373ae7bb571b381bbd6a61ef7ed7c2ee268049",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "Fresh rework verification passed: pi-canary-assurance-advance.test.ts completed 3/3, including an explicit mismatched backend claim case proving advance_assurance blocks before submit_review and leaves TaskRecord bytes unchanged."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-14-001-pi-observable-assurance-dispatch:2026-08-14T05:57:57.678Z",
+      "acceptance_id": "acc-assurance-visible-lifecycle",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:5c6c37269016d3d7e77036a987b4f315ee6f85639494577fd0f7090c7bbe237c",
+      "diff_hash": "sha256:77c337c3f08c521bbe1802d9f1373ae7bb571b381bbd6a61ef7ed7c2ee268049",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "Fresh rework verification passed: pi-canary-assurance-observability.test.ts completed 7/7; extension lifecycle regression additionally proves a preparation hang reaches a visible timed_out terminal within the total startup budget and never calls native spawn."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-14-001-pi-observable-assurance-dispatch:2026-08-14T05:58:06.525Z",
+      "acceptance_id": "acc-assurance-automatic-continuation",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:5c6c37269016d3d7e77036a987b4f315ee6f85639494577fd0f7090c7bbe237c",
+      "diff_hash": "sha256:77c337c3f08c521bbe1802d9f1373ae7bb571b381bbd6a61ef7ed7c2ee268049",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "Fresh rework verification passed: pi-canary-assurance-continuation.test.ts completed 1/1, proving QA pass dispatches exactly one reviewer and one correlation-bound follow-up while native Review remains advisory."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-14-001-pi-observable-assurance-dispatch:2026-08-14T05:58:17.527Z",
+      "acceptance_id": "acc-subagent-feedback-budget-contract",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:5c6c37269016d3d7e77036a987b4f315ee6f85639494577fd0f7090c7bbe237c",
+      "diff_hash": "sha256:77c337c3f08c521bbe1802d9f1373ae7bb571b381bbd6a61ef7ed7c2ee268049",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "Fresh rework contract verification passed: dispatch observability, imm-canary-work, and dist sync suites completed 16/16 with background visibility, no polling/nesting, bounded reviewer/advisor counts, and source/dist parity intact."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-14-001-pi-observable-assurance-dispatch:2026-08-14T05:58:26.794Z",
+      "acceptance_id": "acc-assurance-authority-preserved",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:5c6c37269016d3d7e77036a987b4f315ee6f85639494577fd0f7090c7bbe237c",
+      "diff_hash": "sha256:77c337c3f08c521bbe1802d9f1373ae7bb571b381bbd6a61ef7ed7c2ee268049",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "Fresh full rework verification passed: bun test tests/ plugins/immune-brain/tests/ completed 1095/1095. Mismatched-claim zero-write, total startup deadline, cancellation, advisory review, package boundary, and authority regressions all pass."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-14-001-pi-observable-assurance-dispatch:2026-08-14T06:19:17.544Z",
+      "acceptance_id": "acc-assurance-visible-lifecycle",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:5c6c37269016d3d7e77036a987b4f315ee6f85639494577fd0f7090c7bbe237c",
+      "diff_hash": "sha256:4ea0e2c033dc4eba97492ac692504294e9ae1357741633c6e456dd4fbf81695f",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "Fresh final recovery verification passed: observable lifecycle and extension suites cover immediate status, progress, stalled, cancellation, timeout, settlement ownership, terminal follow-up, and canonical finding IDs."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-14-001-pi-observable-assurance-dispatch:2026-08-14T06:19:24.850Z",
+      "acceptance_id": "acc-agent-callable-assurance-advance",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:5c6c37269016d3d7e77036a987b4f315ee6f85639494577fd0f7090c7bbe237c",
+      "diff_hash": "sha256:4ea0e2c033dc4eba97492ac692504294e9ae1357741633c6e456dd4fbf81695f",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "Fresh final recovery verification passed: advance/cancel contract tests prove immediate operation IDs, duplicate reuse, claim mismatch zero-write behavior, and phase-aware automatic QA recovery."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-14-001-pi-observable-assurance-dispatch:2026-08-14T06:19:33.449Z",
+      "acceptance_id": "acc-assurance-automatic-continuation",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:5c6c37269016d3d7e77036a987b4f315ee6f85639494577fd0f7090c7bbe237c",
+      "diff_hash": "sha256:4ea0e2c033dc4eba97492ac692504294e9ae1357741633c6e456dd4fbf81695f",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "Fresh final recovery verification passed: continuation suite proves QA pass dispatches exactly one reviewer and one correlation-bound push follow-up without automatic review authority."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-14-001-pi-observable-assurance-dispatch:2026-08-14T06:19:43.752Z",
+      "acceptance_id": "acc-subagent-feedback-budget-contract",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:5c6c37269016d3d7e77036a987b4f315ee6f85639494577fd0f7090c7bbe237c",
+      "diff_hash": "sha256:4ea0e2c033dc4eba97492ac692504294e9ae1357741633c6e456dd4fbf81695f",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "Fresh final recovery verification passed: protocol and dist contract suites enforce background visibility, no polling/nesting, bounded reviewer/advisor counts, snapshot-scoped settlement ownership, and canonical reviewer finding IDs."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-14-001-pi-observable-assurance-dispatch:2026-08-14T06:19:53.759Z",
+      "acceptance_id": "acc-assurance-authority-preserved",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:5c6c37269016d3d7e77036a987b4f315ee6f85639494577fd0f7090c7bbe237c",
+      "diff_hash": "sha256:4ea0e2c033dc4eba97492ac692504294e9ae1357741633c6e456dd4fbf81695f",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "Fresh final full verification passed: bun test tests/ plugins/immune-brain/tests/ completed 1096/1096; authority isolation, zero-write guards, settlement races, package boundary, and source/dist parity all pass."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-14-001-pi-observable-assurance-dispatch:2026-08-14T06:37:11.118Z",
+      "acceptance_id": "acc-agent-callable-assurance-advance",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:5c6c37269016d3d7e77036a987b4f315ee6f85639494577fd0f7090c7bbe237c",
+      "diff_hash": "sha256:4faf8756706fa63b46b9985a4846bc53572add89c2bc800035221b220f1b5267",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "Fresh contract repair verification passed: advance suite proves the public allowlist is exactly started/blocked/awaiting_user/completed, duplicate active jobs reuse the operation ID, review settlement maps read-only to blocked, and cancellation winning a delayed projection cannot leak cancel-only states."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-14-001-pi-observable-assurance-dispatch:2026-08-14T06:37:18.939Z",
+      "acceptance_id": "acc-assurance-visible-lifecycle",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:5c6c37269016d3d7e77036a987b4f315ee6f85639494577fd0f7090c7bbe237c",
+      "diff_hash": "sha256:4faf8756706fa63b46b9985a4846bc53572add89c2bc800035221b220f1b5267",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "Fresh final verification passed: lifecycle and extension suites preserve all visible starting/running/stalled/cancellation/timeout/terminal states while advance exposes only its four-state orchestration contract."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-14-001-pi-observable-assurance-dispatch:2026-08-14T06:37:27.085Z",
+      "acceptance_id": "acc-assurance-automatic-continuation",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:5c6c37269016d3d7e77036a987b4f315ee6f85639494577fd0f7090c7bbe237c",
+      "diff_hash": "sha256:4faf8756706fa63b46b9985a4846bc53572add89c2bc800035221b220f1b5267",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "Fresh final verification passed: continuation suite still proves one QA-to-Review dispatch and one correlation-bound push follow-up without automatic reviewer authority."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-14-001-pi-observable-assurance-dispatch:2026-08-14T06:37:39.972Z",
+      "acceptance_id": "acc-subagent-feedback-budget-contract",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:5c6c37269016d3d7e77036a987b4f315ee6f85639494577fd0f7090c7bbe237c",
+      "diff_hash": "sha256:4faf8756706fa63b46b9985a4846bc53572add89c2bc800035221b220f1b5267",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "Fresh final verification passed: protocol and packaged contract suites preserve background visibility, no polling/nesting, bounded children, settlement ownership, canonical finding IDs, and document the four-state advance result."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-14-001-pi-observable-assurance-dispatch:2026-08-14T06:37:49.671Z",
+      "acceptance_id": "acc-assurance-authority-preserved",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:5c6c37269016d3d7e77036a987b4f315ee6f85639494577fd0f7090c7bbe237c",
+      "diff_hash": "sha256:4faf8756706fa63b46b9985a4846bc53572add89c2bc800035221b220f1b5267",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "Fresh full verification passed: bun test tests/ plugins/immune-brain/tests/ completed 1097/1097; cancel/projection races and settlement duplicate advances perform no extra Kernel mutation or duplicate spawn."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-14-001-pi-observable-assurance-dispatch:2026-08-14T06:52:55.940Z",
+      "acceptance_id": "acc-assurance-automatic-continuation",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:5c6c37269016d3d7e77036a987b4f315ee6f85639494577fd0f7090c7bbe237c",
+      "diff_hash": "sha256:c273f15ada3393e0c3c5675456129f8bddd149f328413032f8aee83465799d35",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "Fresh terminal-continuation verification passed: pre-spawn Review cancellation waits for a correlation-capable projection/snapshot boundary, emits exactly one triggerTurn followUp with task/operation/record/Intent/diff identity, and performs zero native spawns."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-14-001-pi-observable-assurance-dispatch:2026-08-14T06:53:04.234Z",
+      "acceptance_id": "acc-assurance-visible-lifecycle",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:5c6c37269016d3d7e77036a987b4f315ee6f85639494577fd0f7090c7bbe237c",
+      "diff_hash": "sha256:c273f15ada3393e0c3c5675456129f8bddd149f328413032f8aee83465799d35",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "Fresh bounded-settlement verification passed: production startNativeReview ping/spawn/stop RPCs have a 5-second default deadline; a silent spawn rejects within the test deadline and removes reply/completed/failed listeners without unhandled rejection. Unknown injected settlement remains fail closed per protocol."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-14-001-pi-observable-assurance-dispatch:2026-08-14T06:53:14.607Z",
+      "acceptance_id": "acc-agent-callable-assurance-advance",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:5c6c37269016d3d7e77036a987b4f315ee6f85639494577fd0f7090c7bbe237c",
+      "diff_hash": "sha256:c273f15ada3393e0c3c5675456129f8bddd149f328413032f8aee83465799d35",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "Fresh regression verification passed: advance remains restricted to started/blocked/awaiting_user/completed and unknown Review settlement remains a read-only blocked state with no replacement spawn."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-14-001-pi-observable-assurance-dispatch:2026-08-14T06:53:22.665Z",
+      "acceptance_id": "acc-subagent-feedback-budget-contract",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:5c6c37269016d3d7e77036a987b4f315ee6f85639494577fd0f7090c7bbe237c",
+      "diff_hash": "sha256:c273f15ada3393e0c3c5675456129f8bddd149f328413032f8aee83465799d35",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "Fresh protocol verification passed: source/dist dispatch protocol documents the 5-second production RPC bound, listener cleanup, and fail-closed unknown-settlement ownership while preserving no polling, no nesting, and one reviewer per snapshot."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-14-001-pi-observable-assurance-dispatch:2026-08-14T06:53:31.466Z",
+      "acceptance_id": "acc-assurance-authority-preserved",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:5c6c37269016d3d7e77036a987b4f315ee6f85639494577fd0f7090c7bbe237c",
+      "diff_hash": "sha256:c273f15ada3393e0c3c5675456129f8bddd149f328413032f8aee83465799d35",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "Fresh full verification passed: bun test tests/ plugins/immune-brain/tests/ completed 1099/1099; cancellation follow-up, bounded RPC cleanup, unknown settlement ownership, duplicate prevention, and authority isolation regressions all pass."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-14-001-pi-observable-assurance-dispatch:2026-08-14T07:10:25.515Z",
+      "acceptance_id": "acc-agent-callable-assurance-advance",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:5c6c37269016d3d7e77036a987b4f315ee6f85639494577fd0f7090c7bbe237c",
+      "diff_hash": "sha256:e6719e077a31b626bb7d8d7b92aad21e2285f89d49743ed5ea70a30dd7ed7c0d",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "Fresh final-boundary verification: agent-callable advance/cancel contracts, strict four-state advance mapping, delayed-projection race, inherited correlation on immediate QA cancellation, duplicate reuse, and cancellation routing pass in focused suite; full bun test passes 1103/1103."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-14-001-pi-observable-assurance-dispatch:2026-08-14T07:11:14.803Z",
+      "acceptance_id": "acc-assurance-visible-lifecycle",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:5c6c37269016d3d7e77036a987b4f315ee6f85639494577fd0f7090c7bbe237c",
+      "diff_hash": "sha256:e6719e077a31b626bb7d8d7b92aad21e2285f89d49743ed5ea70a30dd7ed7c0d",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "Fresh final-boundary verification: Footer/Widget/transcript lifecycle tests pass, including human-readable timeout projection and cancellation terminal states; full bun test passes 1103/1103."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-14-001-pi-observable-assurance-dispatch:2026-08-14T07:11:30.324Z",
+      "acceptance_id": "acc-assurance-automatic-continuation",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:5c6c37269016d3d7e77036a987b4f315ee6f85639494577fd0f7090c7bbe237c",
+      "diff_hash": "sha256:e6719e077a31b626bb7d8d7b92aad21e2285f89d49743ed5ea70a30dd7ed7c0d",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "Fresh final-boundary verification: QA pass to exactly-one Review continuation, immediate QA cancellation correlation, pre-spawn cancellation follow-up, rejection-after-cancel classification, native spawn settlement, and operation-ID dedup tests pass; full bun test passes 1103/1103."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-14-001-pi-observable-assurance-dispatch:2026-08-14T07:11:41.407Z",
+      "acceptance_id": "acc-subagent-feedback-budget-contract",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:5c6c37269016d3d7e77036a987b4f315ee6f85639494577fd0f7090c7bbe237c",
+      "diff_hash": "sha256:e6719e077a31b626bb7d8d7b92aad21e2285f89d49743ed5ea70a30dd7ed7c0d",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "Fresh final-boundary verification: Skill/reference/dist contracts are synchronized and encode acknowledgement, silence/stall budgets, push follow-up, strict reviewer ownership, bounded production RPC settlement, inherited correlation, and invocation cleanup; sync-dist-docs --check and full suite pass."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-14-001-pi-observable-assurance-dispatch:2026-08-14T07:11:52.497Z",
+      "acceptance_id": "acc-assurance-authority-preserved",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:5c6c37269016d3d7e77036a987b4f315ee6f85639494577fd0f7090c7bbe237c",
+      "diff_hash": "sha256:e6719e077a31b626bb7d8d7b92aad21e2285f89d49743ed5ea70a30dd7ed7c0d",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "Fresh final-boundary verification: cancellation/timeout retain settlement ownership, late native handles are stopped before release, authorize invocations close on every exit, consecutive authorization shutdown is clean, no cancellation path writes review authority, and full bun test passes 1103/1103."
+    }
+  ],
+  "findings": [
+    {
+      "id": "review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "acc-assurance-authority-preserved",
+      "source": "review",
+      "review_round": 1,
+      "summary": "advance_assurance mutates Kernel state via submit_review before verifying an active claim belongs to the requested task, unlike ordinary mutations; a mismatched claim can therefore authorize a TaskRecord write for an unenrolled task."
+    },
+    {
+      "id": "review-2",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "acc-assurance-visible-lifecycle",
+      "source": "review",
+      "review_round": 1,
+      "summary": "Review startup has only a spawn timeout and no overall job deadline until after the native handle is created, so timeout during preparation publishes failed rather than timed_out and violates the bounded lifecycle deadline."
+    },
+    {
+      "id": "qa-evidence-freshness-5071082381315d9e",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": null,
+      "source": "review",
+      "review_round": 2,
+      "summary": "executor evidence must be refreshed in working phase for acceptance ids: acc-agent-callable-assurance-advance,acc-assurance-visible-lifecycle,acc-assurance-automatic-continuation,acc-subagent-feedback-budget-contract,acc-assurance-authority-preserved"
+    },
+    {
+      "id": "request_rework:2026-08-14-001-pi-observable-assurance-dispatch:2026-08-14T06:18:27.247Z:user-decision",
+      "kind": "unresolved_user_decision",
+      "status": "resolved",
+      "acceptance_id": null,
+      "source": "kernel",
+      "review_round": 2,
+      "summary": "Review returned this acceptance boundary twice; a user decision is required."
+    },
+    {
+      "id": "review-ea7e9f2ddb4c-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "acc-agent-callable-assurance-advance",
+      "source": "review",
+      "review_round": 3,
+      "summary": "advance_assurance can return cancellation_requested or cancelled via duplicate active-job reuse, although the accepted result contract permits only started, blocked, awaiting_user, or completed."
+    },
+    {
+      "id": "request_rework:2026-08-14-001-pi-observable-assurance-dispatch:2026-08-14T06:24:45.080Z:user-decision",
+      "kind": "unresolved_user_decision",
+      "status": "resolved",
+      "acceptance_id": "acc-agent-callable-assurance-advance",
+      "source": "kernel",
+      "review_round": 3,
+      "summary": "Review returned this acceptance boundary twice; a user decision is required."
+    },
+    {
+      "id": "review-9615d7d69b7b-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "acc-assurance-automatic-continuation",
+      "source": "review",
+      "review_round": 4,
+      "summary": "Review startup cancellation before native spawn never emits the required correlated terminal follow-up because cancellation clears the reservation and the startup path returns without calling deliverTerminal."
+    },
+    {
+      "id": "review-9615d7d69b7b-2-review-2",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "acc-assurance-visible-lifecycle",
+      "source": "review",
+      "review_round": 4,
+      "summary": "Review startup timeout can retain settlement ownership indefinitely when startReview never settles, so the operation lacks a bounded terminal settlement and future assurance advances remain permanently blocked."
+    },
+    {
+      "id": "request_rework:2026-08-14-001-pi-observable-assurance-dispatch:2026-08-14T06:46:22.655Z:user-decision",
+      "kind": "unresolved_user_decision",
+      "status": "resolved",
+      "acceptance_id": "acc-assurance-automatic-continuation",
+      "source": "kernel",
+      "review_round": 4,
+      "summary": "Review returned this acceptance boundary twice; a user decision is required."
+    }
+  ],
+  "approvals": [
+    {
+      "id": "approval-qa-677a6c1c",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:5c6c37269016d3d7e77036a987b4f315ee6f85639494577fd0f7090c7bbe237c",
+      "diff_hash": "sha256:8274495c0efce7326134150be46c6cbb362fc255f2a17706a543047d30f06b8d",
+      "actor_id": "qa-host-e40419bf",
+      "summary": "all 5 fixed verification descriptor(s) passed"
+    },
+    {
+      "id": "approval-qa-84bf5e63",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:5c6c37269016d3d7e77036a987b4f315ee6f85639494577fd0f7090c7bbe237c",
+      "diff_hash": "sha256:77c337c3f08c521bbe1802d9f1373ae7bb571b381bbd6a61ef7ed7c2ee268049",
+      "actor_id": "qa-host-7f2f06a0",
+      "summary": "all 5 fixed verification descriptor(s) passed"
+    },
+    {
+      "id": "approval-qa-287d0b02",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:5c6c37269016d3d7e77036a987b4f315ee6f85639494577fd0f7090c7bbe237c",
+      "diff_hash": "sha256:4ea0e2c033dc4eba97492ac692504294e9ae1357741633c6e456dd4fbf81695f",
+      "actor_id": "qa-host-81542e87",
+      "summary": "all 5 fixed verification descriptor(s) passed"
+    },
+    {
+      "id": "approval-qa-d9c4c795",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:5c6c37269016d3d7e77036a987b4f315ee6f85639494577fd0f7090c7bbe237c",
+      "diff_hash": "sha256:4faf8756706fa63b46b9985a4846bc53572add89c2bc800035221b220f1b5267",
+      "actor_id": "qa-host-254f1d4e",
+      "summary": "all 5 fixed verification descriptor(s) passed"
+    },
+    {
+      "id": "approval-qa-d023a349",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:5c6c37269016d3d7e77036a987b4f315ee6f85639494577fd0f7090c7bbe237c",
+      "diff_hash": "sha256:e6719e077a31b626bb7d8d7b92aad21e2285f89d49743ed5ea70a30dd7ed7c0d",
+      "actor_id": "qa-host-9e69ca74",
+      "summary": "all 5 fixed verification descriptor(s) passed"
+    },
+    {
+      "id": "approval-review-2f2283a8",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:5c6c37269016d3d7e77036a987b4f315ee6f85639494577fd0f7090c7bbe237c",
+      "diff_hash": "sha256:e6719e077a31b626bb7d8d7b92aad21e2285f89d49743ed5ea70a30dd7ed7c0d",
+      "actor_id": "native-review-5ca8cf1e-82ab-452",
+      "summary": "Immutable bundle integrity verified; observable assurance dispatch satisfies the reviewed correctness, authority, lifecycle, continuation, and test contracts."
+    },
+    {
+      "id": "approval-user-76e8bb97",
+      "kind": "user",
+      "authority_role": "user",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:5c6c37269016d3d7e77036a987b4f315ee6f85639494577fd0f7090c7bbe237c",
+      "diff_hash": "sha256:84fe8764d9c0b36ea2ab3034a986519e898664d0c8832383903a46c907fc879c",
+      "actor_id": "literal-user",
+      "summary": "literal user approval"
+    }
+  ],
+  "history": [
+    {
+      "id": "record_evidence:2026-08-14-001-pi-observable-assurance-dispatch:2026-08-14T04:25:31.940Z",
+      "at": "2026-08-14T04:25:31.940Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-assurance-visible-lifecycle\naction_v2_sha256:e9ceebb9ed8316a901034cbd490cf29f6219cc9ffcb2d649358f53379a8e0435"
+    },
+    {
+      "id": "record_evidence:2026-08-14-001-pi-observable-assurance-dispatch:2026-08-14T04:25:39.306Z",
+      "at": "2026-08-14T04:25:39.306Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-agent-callable-assurance-advance\naction_v2_sha256:c60e1bc2baf8228a2cd28d726a98dda35be9699f68085cff3a2a69ebaa9db9ba"
+    },
+    {
+      "id": "record_evidence:2026-08-14-001-pi-observable-assurance-dispatch:2026-08-14T04:25:47.008Z",
+      "at": "2026-08-14T04:25:47.008Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-assurance-automatic-continuation\naction_v2_sha256:1d0d816d09c7b737f328265d654155181a2a04a822a5c22530ba2a531f9be6b6"
+    },
+    {
+      "id": "record_evidence:2026-08-14-001-pi-observable-assurance-dispatch:2026-08-14T04:25:55.328Z",
+      "at": "2026-08-14T04:25:55.328Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-subagent-feedback-budget-contract\naction_v2_sha256:46d1921a70d5d30a1fdb9c61a733c4a4add08e507c360de6c2134989c8cace6e"
+    },
+    {
+      "id": "record_evidence:2026-08-14-001-pi-observable-assurance-dispatch:2026-08-14T04:26:03.718Z",
+      "at": "2026-08-14T04:26:03.718Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-assurance-authority-preserved\naction_v2_sha256:520b6df12a9ab6cb4bb0ed1a69dd78c6c79a63c47442c1634f02e8758988a12e"
+    },
+    {
+      "id": "submit_review:2026-08-14-001-pi-observable-assurance-dispatch:2026-08-14T05:47:17.398Z",
+      "at": "2026-08-14T05:47:17.398Z",
+      "type": "submit_review",
+      "from_phase": "working",
+      "to_phase": "review",
+      "reason": "action_v2_sha256:72cb519e707cdb7b86858df2c9d8735c9a5cfdba29d4dff29f8988a50ce50b86"
+    },
+    {
+      "id": "record_approval:2026-08-14-001-pi-observable-assurance-dispatch:2026-08-14T05:48:39.415Z",
+      "at": "2026-08-14T05:48:39.415Z",
+      "type": "record_approval",
+      "from_phase": "review",
+      "to_phase": "review",
+      "reason": "approval-qa-677a6c1c\naction_v2_sha256:153a264d7cdc688a3de27ebdfcafe780157a15227aba44fabedb2f3f0512411b",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "qa-host-e40419bf",
+        "confirmation_ref": "pi-confirm-280158fdc303a29c",
+        "issued_at": "2026-08-14T05:48:39.416Z",
+        "expires_at": "2026-08-14T05:58:39.416Z"
+      }
+    },
+    {
+      "id": "request_rework:2026-08-14-001-pi-observable-assurance-dispatch:2026-08-14T05:51:52.329Z",
+      "at": "2026-08-14T05:51:52.329Z",
+      "type": "request_rework",
+      "from_phase": "review",
+      "to_phase": "working",
+      "reason": "review_round_1\naction_v2_sha256:4d64e0dbfe65b34fcfd3e2261ae48ac31d75c569a9946dddb51d4a989aed9759",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "native-review-31d98ef0-2249-4b0",
+        "confirmation_ref": "pi-confirm-dea983a9434ae72e",
+        "issued_at": "2026-08-14T05:51:52.329Z",
+        "expires_at": "2026-08-14T06:01:52.329Z"
+      }
+    },
+    {
+      "id": "record_evidence:2026-08-14-001-pi-observable-assurance-dispatch:2026-08-14T05:57:50.757Z",
+      "at": "2026-08-14T05:57:50.757Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-agent-callable-assurance-advance\naction_v2_sha256:2e66aabb998a9a68f3ce1e10abda89babf3c41c6bf3765933be0e51071f55ab5"
+    },
+    {
+      "id": "record_evidence:2026-08-14-001-pi-observable-assurance-dispatch:2026-08-14T05:57:57.678Z",
+      "at": "2026-08-14T05:57:57.678Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-assurance-visible-lifecycle\naction_v2_sha256:bff3f47c206ac308f82d599ec7a3e7c72a96427e43d894f8bb79f01bfa7c2892"
+    },
+    {
+      "id": "record_evidence:2026-08-14-001-pi-observable-assurance-dispatch:2026-08-14T05:58:06.525Z",
+      "at": "2026-08-14T05:58:06.525Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-assurance-automatic-continuation\naction_v2_sha256:ccd621de77b78c77579f10af085d7f2c3891f133c4b651b3db0433c975ef2afa"
+    },
+    {
+      "id": "record_evidence:2026-08-14-001-pi-observable-assurance-dispatch:2026-08-14T05:58:17.527Z",
+      "at": "2026-08-14T05:58:17.527Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-subagent-feedback-budget-contract\naction_v2_sha256:861d9c92bfc9e53d88bcf73b525fea421d91a6af4e37c597e72f7adff2023177"
+    },
+    {
+      "id": "record_evidence:2026-08-14-001-pi-observable-assurance-dispatch:2026-08-14T05:58:26.794Z",
+      "at": "2026-08-14T05:58:26.794Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-assurance-authority-preserved\naction_v2_sha256:4c6186209d218fdbb066a20a78c2dc8c96b439c302e86b5ddaca9eded8ebd8d5"
+    },
+    {
+      "id": "resolve_finding:2026-08-14-001-pi-observable-assurance-dispatch:2026-08-14T05:58:36.166Z",
+      "at": "2026-08-14T05:58:36.166Z",
+      "type": "resolve_finding",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "review-1\naction_v2_sha256:0df18532eeb44eb8478e5646de220252e23efc7949ff214853c9c4de0219f52a"
+    },
+    {
+      "id": "resolve_finding:2026-08-14-001-pi-observable-assurance-dispatch:2026-08-14T05:58:42.067Z",
+      "at": "2026-08-14T05:58:42.067Z",
+      "type": "resolve_finding",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "review-2\naction_v2_sha256:58c2b9d1e2fb3a96101abc3feefd894b1738f587684b2b404e4cf0b74fce835f"
+    },
+    {
+      "id": "submit_review:2026-08-14-001-pi-observable-assurance-dispatch:2026-08-14T05:58:48.069Z",
+      "at": "2026-08-14T05:58:48.069Z",
+      "type": "submit_review",
+      "from_phase": "working",
+      "to_phase": "review",
+      "reason": "action_v2_sha256:e712d721e5eee0b8348be8c1d2304c1c634a9659098698cc946382b2087e5c0e"
+    },
+    {
+      "id": "record_approval:2026-08-14-001-pi-observable-assurance-dispatch:2026-08-14T06:00:41.811Z",
+      "at": "2026-08-14T06:00:41.811Z",
+      "type": "record_approval",
+      "from_phase": "review",
+      "to_phase": "review",
+      "reason": "approval-qa-84bf5e63\naction_v2_sha256:f6b50b44afc21fe9e2593bc8df958145751980907acf1fc35d463e0c637db8cc",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "qa-host-7f2f06a0",
+        "confirmation_ref": "pi-confirm-d48bfb0452a3d8f9",
+        "issued_at": "2026-08-14T06:00:41.811Z",
+        "expires_at": "2026-08-14T06:10:41.811Z"
+      }
+    },
+    {
+      "id": "request_rework:2026-08-14-001-pi-observable-assurance-dispatch:2026-08-14T06:18:27.247Z",
+      "at": "2026-08-14T06:18:27.247Z",
+      "type": "request_rework",
+      "from_phase": "review",
+      "to_phase": "working",
+      "reason": "review_round_2\naction_v2_sha256:14ab110baf556a612e77e8387c67ceef292fd8e1a4cee5140001146e7b8fb174",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "qa-host-d2b67594",
+        "confirmation_ref": "pi-confirm-047c61cb4ffdb233",
+        "issued_at": "2026-08-14T06:18:27.247Z",
+        "expires_at": "2026-08-14T06:28:27.247Z"
+      }
+    },
+    {
+      "id": "record_evidence:2026-08-14-001-pi-observable-assurance-dispatch:2026-08-14T06:19:17.544Z",
+      "at": "2026-08-14T06:19:17.544Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-assurance-visible-lifecycle\naction_v2_sha256:2c4c6b5b74253beb0bc63e1fd3cb2211cf41a29897f9794d1a5b25aef96e56d5"
+    },
+    {
+      "id": "record_evidence:2026-08-14-001-pi-observable-assurance-dispatch:2026-08-14T06:19:24.850Z",
+      "at": "2026-08-14T06:19:24.850Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-agent-callable-assurance-advance\naction_v2_sha256:b1127e3a9f16d4f91d30cb69de1d7d44e01cd3c2149900623838f2ca950b8ffb"
+    },
+    {
+      "id": "record_evidence:2026-08-14-001-pi-observable-assurance-dispatch:2026-08-14T06:19:33.449Z",
+      "at": "2026-08-14T06:19:33.449Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-assurance-automatic-continuation\naction_v2_sha256:6c90960aa14fe48c06f8f55fa5bdb81c909fa0ed65b2d6dd47c33c70308d69af"
+    },
+    {
+      "id": "record_evidence:2026-08-14-001-pi-observable-assurance-dispatch:2026-08-14T06:19:43.752Z",
+      "at": "2026-08-14T06:19:43.752Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-subagent-feedback-budget-contract\naction_v2_sha256:a6d6954496c904d4c051d712413938c2c6f1093c5cc25582c274b8795cb384e8"
+    },
+    {
+      "id": "record_evidence:2026-08-14-001-pi-observable-assurance-dispatch:2026-08-14T06:19:53.759Z",
+      "at": "2026-08-14T06:19:53.759Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-assurance-authority-preserved\naction_v2_sha256:07664c726344403f40c230440ba950f4eff4a5ef3d3527128336a4ffbed3155e"
+    },
+    {
+      "id": "resolve_finding:2026-08-14-001-pi-observable-assurance-dispatch:2026-08-14T06:19:59.329Z",
+      "at": "2026-08-14T06:19:59.329Z",
+      "type": "resolve_finding",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "qa-evidence-freshness-5071082381315d9e\naction_v2_sha256:97f214f89cd96089a98570ea1bbe3768ad268037b80c118558b7b4ef2f615694"
+    },
+    {
+      "id": "resolve_user_decision:2026-08-14-001-pi-observable-assurance-dispatch:2026-08-14T06:20:23.104Z",
+      "at": "2026-08-14T06:20:23.104Z",
+      "type": "resolve_user_decision",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "request_rework:2026-08-14-001-pi-observable-assurance-dispatch:2026-08-14T06:18:27.247Z:user-decision: continue after literal-user review of the rework limit\naction_v2_sha256:5410744b80787f81c2635782d670a42e9a4a59f3dc84936389ef09f517c597a7",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-78233927d8bc969f",
+        "issued_at": "2026-08-14T06:20:23.105Z",
+        "expires_at": "2026-08-14T06:30:23.105Z"
+      }
+    },
+    {
+      "id": "submit_review:2026-08-14-001-pi-observable-assurance-dispatch:2026-08-14T06:20:50.815Z",
+      "at": "2026-08-14T06:20:50.815Z",
+      "type": "submit_review",
+      "from_phase": "working",
+      "to_phase": "review",
+      "reason": "action_v2_sha256:8a568a940edfd9c9997f5c75234446c4ee6cb23b2a190213be19b55caa611867"
+    },
+    {
+      "id": "record_approval:2026-08-14-001-pi-observable-assurance-dispatch:2026-08-14T06:22:26.314Z",
+      "at": "2026-08-14T06:22:26.314Z",
+      "type": "record_approval",
+      "from_phase": "review",
+      "to_phase": "review",
+      "reason": "approval-qa-287d0b02\naction_v2_sha256:3730261df131415a12d569c9517623ccb951001bca57a774c9b6526328e28546",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "qa-host-81542e87",
+        "confirmation_ref": "pi-confirm-bf23d4330436d63e",
+        "issued_at": "2026-08-14T06:22:26.315Z",
+        "expires_at": "2026-08-14T06:32:26.315Z"
+      }
+    },
+    {
+      "id": "request_rework:2026-08-14-001-pi-observable-assurance-dispatch:2026-08-14T06:24:45.080Z",
+      "at": "2026-08-14T06:24:45.080Z",
+      "type": "request_rework",
+      "from_phase": "review",
+      "to_phase": "working",
+      "reason": "review_round_3\naction_v2_sha256:da227550dba4ed6aa42a1eaec4e1fcd349b6ddb0d475fe7d8b0039aefd2e85e7",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "native-review-c9ee3f26-4e40-44d",
+        "confirmation_ref": "pi-confirm-5921bb0950f3183f",
+        "issued_at": "2026-08-14T06:24:45.080Z",
+        "expires_at": "2026-08-14T06:34:45.080Z"
+      }
+    },
+    {
+      "id": "resolve_user_decision:2026-08-14-001-pi-observable-assurance-dispatch:2026-08-14T06:28:11.099Z",
+      "at": "2026-08-14T06:28:11.099Z",
+      "type": "resolve_user_decision",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "request_rework:2026-08-14-001-pi-observable-assurance-dispatch:2026-08-14T06:24:45.080Z:user-decision: continue after literal-user review of the rework limit\naction_v2_sha256:2b1e94236f5a7539afc44767de5fdf16d29a77e2eca9a9839fe263d7e3914457",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-77c9e9601ea919b8",
+        "issued_at": "2026-08-14T06:28:11.099Z",
+        "expires_at": "2026-08-14T06:38:11.099Z"
+      }
+    },
+    {
+      "id": "record_evidence:2026-08-14-001-pi-observable-assurance-dispatch:2026-08-14T06:37:11.118Z",
+      "at": "2026-08-14T06:37:11.118Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-agent-callable-assurance-advance\naction_v2_sha256:1f241f7f4a49655ad459ffe30175164e72557db0f16a57ea89d956feecd6de14"
+    },
+    {
+      "id": "record_evidence:2026-08-14-001-pi-observable-assurance-dispatch:2026-08-14T06:37:18.939Z",
+      "at": "2026-08-14T06:37:18.939Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-assurance-visible-lifecycle\naction_v2_sha256:58d35773aef1aa4d8b42c35f00f4ec9038b8b240099b6cfc8b922f621b8c62a7"
+    },
+    {
+      "id": "record_evidence:2026-08-14-001-pi-observable-assurance-dispatch:2026-08-14T06:37:27.085Z",
+      "at": "2026-08-14T06:37:27.085Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-assurance-automatic-continuation\naction_v2_sha256:c1d5d5a507d55fffb93820b815d05c0362066c575192dd0008895ea471a4bf52"
+    },
+    {
+      "id": "record_evidence:2026-08-14-001-pi-observable-assurance-dispatch:2026-08-14T06:37:39.972Z",
+      "at": "2026-08-14T06:37:39.972Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-subagent-feedback-budget-contract\naction_v2_sha256:95bf3d8cca7976baec3014dbdcc4d1b19c42bc2442e252321ccdb29433ff5805"
+    },
+    {
+      "id": "record_evidence:2026-08-14-001-pi-observable-assurance-dispatch:2026-08-14T06:37:49.671Z",
+      "at": "2026-08-14T06:37:49.671Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-assurance-authority-preserved\naction_v2_sha256:3fd8375e7862ec6e0603162f36f9d264c99eec2fb1a544b3943b0a0c6b6fdab4"
+    },
+    {
+      "id": "resolve_finding:2026-08-14-001-pi-observable-assurance-dispatch:2026-08-14T06:37:55.940Z",
+      "at": "2026-08-14T06:37:55.940Z",
+      "type": "resolve_finding",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "review-ea7e9f2ddb4c-1-review-1\naction_v2_sha256:0bd4743491377fae6a670d4e835ea55f848855bb2904dfda57cf385b132fc7f0"
+    },
+    {
+      "id": "submit_review:2026-08-14-001-pi-observable-assurance-dispatch:2026-08-14T06:39:15.822Z",
+      "at": "2026-08-14T06:39:15.822Z",
+      "type": "submit_review",
+      "from_phase": "working",
+      "to_phase": "review",
+      "reason": "action_v2_sha256:d9a106361c146f1c2f07a5d3b990962613fbfab06e5451b5c580ab992fc3970e"
+    },
+    {
+      "id": "record_approval:2026-08-14-001-pi-observable-assurance-dispatch:2026-08-14T06:40:41.393Z",
+      "at": "2026-08-14T06:40:41.393Z",
+      "type": "record_approval",
+      "from_phase": "review",
+      "to_phase": "review",
+      "reason": "approval-qa-d9c4c795\naction_v2_sha256:eff1d2f360baa5678a97fb3834a768fa77ace9b1eed1b091f22c068d1ef0124b",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "qa-host-254f1d4e",
+        "confirmation_ref": "pi-confirm-46bb79775d84ceb3",
+        "issued_at": "2026-08-14T06:40:41.393Z",
+        "expires_at": "2026-08-14T06:50:41.393Z"
+      }
+    },
+    {
+      "id": "request_rework:2026-08-14-001-pi-observable-assurance-dispatch:2026-08-14T06:46:22.655Z",
+      "at": "2026-08-14T06:46:22.655Z",
+      "type": "request_rework",
+      "from_phase": "review",
+      "to_phase": "working",
+      "reason": "review_round_4\naction_v2_sha256:154fb5f415ff92d587c4f13988cce227eefdab7bf8d28f3263e22a06427b4df8",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "native-review-2d4ce27f-ae74-473",
+        "confirmation_ref": "pi-confirm-774afcb140a5be28",
+        "issued_at": "2026-08-14T06:46:22.655Z",
+        "expires_at": "2026-08-14T06:56:22.655Z"
+      }
+    },
+    {
+      "id": "record_evidence:2026-08-14-001-pi-observable-assurance-dispatch:2026-08-14T06:52:55.940Z",
+      "at": "2026-08-14T06:52:55.940Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-assurance-automatic-continuation\naction_v2_sha256:f32274b5ed6572df3999ddb54d9fe5b037597557782a9254ca86d351e2970dbd"
+    },
+    {
+      "id": "record_evidence:2026-08-14-001-pi-observable-assurance-dispatch:2026-08-14T06:53:04.234Z",
+      "at": "2026-08-14T06:53:04.234Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-assurance-visible-lifecycle\naction_v2_sha256:01100febdec680ed4e2ffa9f8f15dab378571407c651e81ea2fd48d2101f066f"
+    },
+    {
+      "id": "record_evidence:2026-08-14-001-pi-observable-assurance-dispatch:2026-08-14T06:53:14.607Z",
+      "at": "2026-08-14T06:53:14.607Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-agent-callable-assurance-advance\naction_v2_sha256:c82c38ba18928639a6999b18c5784bcb5121238e07a6d4cc84c516e1725cf87b"
+    },
+    {
+      "id": "record_evidence:2026-08-14-001-pi-observable-assurance-dispatch:2026-08-14T06:53:22.665Z",
+      "at": "2026-08-14T06:53:22.665Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-subagent-feedback-budget-contract\naction_v2_sha256:8367832b09ca2fe9c6b6e246cc1c6486d1e685ca913cdfb459431c2703d8e098"
+    },
+    {
+      "id": "record_evidence:2026-08-14-001-pi-observable-assurance-dispatch:2026-08-14T06:53:31.466Z",
+      "at": "2026-08-14T06:53:31.466Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-assurance-authority-preserved\naction_v2_sha256:558055df58e9d3bd354555b8f703f48b1da2e80a99c6b9468f099b1b0804bd52"
+    },
+    {
+      "id": "resolve_finding:2026-08-14-001-pi-observable-assurance-dispatch:2026-08-14T06:53:37.943Z",
+      "at": "2026-08-14T06:53:37.943Z",
+      "type": "resolve_finding",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "review-9615d7d69b7b-1-review-1\naction_v2_sha256:e2693d5bb9cbb5a5173a4200dcd841e98dfb7d2576771ae7f513178e2e2cddd6"
+    },
+    {
+      "id": "resolve_finding:2026-08-14-001-pi-observable-assurance-dispatch:2026-08-14T06:53:44.924Z",
+      "at": "2026-08-14T06:53:44.924Z",
+      "type": "resolve_finding",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "review-9615d7d69b7b-2-review-2\naction_v2_sha256:41486dbd4ca387c2444fab5ee55713a06b0f715960ada001c2b0481c7918e9c6"
+    },
+    {
+      "id": "resolve_user_decision:2026-08-14-001-pi-observable-assurance-dispatch:2026-08-14T06:59:33.683Z",
+      "at": "2026-08-14T06:59:33.683Z",
+      "type": "resolve_user_decision",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "request_rework:2026-08-14-001-pi-observable-assurance-dispatch:2026-08-14T06:46:22.655Z:user-decision: continue after literal-user review of the rework limit\naction_v2_sha256:0789e3f517008f0c2b0f541274d41e23dee6b338d9648c7e50589ca9e01321bd",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-75b680e062a0902d",
+        "issued_at": "2026-08-14T06:59:33.684Z",
+        "expires_at": "2026-08-14T07:09:33.684Z"
+      }
+    },
+    {
+      "id": "record_evidence:2026-08-14-001-pi-observable-assurance-dispatch:2026-08-14T07:10:25.515Z",
+      "at": "2026-08-14T07:10:25.515Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-agent-callable-assurance-advance\naction_v2_sha256:e12b8ac50cad274f0886edf18fa90dc0d9ec24ab882e189e459490905dcaa3c5"
+    },
+    {
+      "id": "record_evidence:2026-08-14-001-pi-observable-assurance-dispatch:2026-08-14T07:11:14.803Z",
+      "at": "2026-08-14T07:11:14.803Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-assurance-visible-lifecycle\naction_v2_sha256:aac83552b6d8c60165524f016f8a8aa66d104f851d3c7a8b81ee7af1a04ff878"
+    },
+    {
+      "id": "record_evidence:2026-08-14-001-pi-observable-assurance-dispatch:2026-08-14T07:11:30.324Z",
+      "at": "2026-08-14T07:11:30.324Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-assurance-automatic-continuation\naction_v2_sha256:e5ec810610e05dd1802ce6253ad7fcf3d5b3b8a145078d10d392d05c0ddff8e3"
+    },
+    {
+      "id": "record_evidence:2026-08-14-001-pi-observable-assurance-dispatch:2026-08-14T07:11:41.407Z",
+      "at": "2026-08-14T07:11:41.407Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-subagent-feedback-budget-contract\naction_v2_sha256:ad5ad894e97b1360ef64ad954f4cf5161bae2a5b8a31711d9f23ff78b6d2467c"
+    },
+    {
+      "id": "record_evidence:2026-08-14-001-pi-observable-assurance-dispatch:2026-08-14T07:11:52.497Z",
+      "at": "2026-08-14T07:11:52.497Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-assurance-authority-preserved\naction_v2_sha256:5a8169f4badbb1cab79b4fbce7316141eed620c9b5cfd1a835e76e88f4c80ac5"
+    },
+    {
+      "id": "submit_review:2026-08-14-001-pi-observable-assurance-dispatch:2026-08-14T07:12:50.519Z",
+      "at": "2026-08-14T07:12:50.519Z",
+      "type": "submit_review",
+      "from_phase": "working",
+      "to_phase": "review",
+      "reason": "action_v2_sha256:b4bed15f7b712d6f1e15d9e46bac831843ea2c2b3ab742e13bd6ae9eb8c4c7e9"
+    },
+    {
+      "id": "record_approval:2026-08-14-001-pi-observable-assurance-dispatch:2026-08-14T07:14:26.531Z",
+      "at": "2026-08-14T07:14:26.531Z",
+      "type": "record_approval",
+      "from_phase": "review",
+      "to_phase": "review",
+      "reason": "approval-qa-d023a349\naction_v2_sha256:bc8999479819011ad4e45cb31a925d5ed2436c43ad59c38378e7bc3e2bb3ee3e",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "qa-host-9e69ca74",
+        "confirmation_ref": "pi-confirm-d04a9fefcc42525f",
+        "issued_at": "2026-08-14T07:14:26.531Z",
+        "expires_at": "2026-08-14T07:24:26.531Z"
+      }
+    },
+    {
+      "id": "record_approval:2026-08-14-001-pi-observable-assurance-dispatch:2026-08-14T07:18:06.520Z",
+      "at": "2026-08-14T07:18:06.520Z",
+      "type": "record_approval",
+      "from_phase": "review",
+      "to_phase": "review",
+      "reason": "approval-review-2f2283a8\naction_v2_sha256:d6370ddc4f664286bd34bf8a93c5e551b92516f5bde10d33423887335d81dbeb",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "native-review-5ca8cf1e-82ab-452",
+        "confirmation_ref": "pi-confirm-b8546e362c3b15a0",
+        "issued_at": "2026-08-14T07:18:06.520Z",
+        "expires_at": "2026-08-14T07:28:06.520Z"
+      }
+    },
+    {
+      "id": "record_user_approval:2026-08-14-001-pi-observable-assurance-dispatch:2026-08-14T07:24:13.694Z",
+      "at": "2026-08-14T07:24:13.694Z",
+      "type": "record_user_approval",
+      "from_phase": "review",
+      "to_phase": "review",
+      "reason": "approval-user-76e8bb97\naction_v2_sha256:36ea7d9679ea8dbf748f73c04c4defd9e9c6981c8a6fca1bb5a2464b51fc4bc6",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-28e2033b19230ea8",
+        "issued_at": "2026-08-14T07:24:13.694Z",
+        "expires_at": "2026-08-14T07:34:13.694Z"
+      }
+    },
+    {
+      "id": "stop:2026-08-14-001-pi-observable-assurance-dispatch:2026-08-14T07:27:34.491Z",
+      "at": "2026-08-14T07:27:34.491Z",
+      "type": "stop",
+      "from_phase": "review",
+      "to_phase": "stopped",
+      "reason": "literal user stop\naction_v2_sha256:92483c4eef539b3a23a0155607e791497dd81606d2416a9ec50cc544ecdc4b93",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-b4664da0c5407c3a",
+        "issued_at": "2026-08-14T07:27:34.491Z",
+        "expires_at": "2026-08-14T07:37:34.491Z"
+      }
+    }
+  ]
+}

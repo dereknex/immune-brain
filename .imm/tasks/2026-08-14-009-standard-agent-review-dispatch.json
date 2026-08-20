@@ -1,0 +1,251 @@
+{
+  "contract": "assurance_kernel/task_record/v2",
+  "task_id": "2026-08-14-009-standard-agent-review-dispatch",
+  "intent_revision": 1,
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "2026-08-14-009-standard-agent-review-dispatch",
+    "goal": "Replace package-RPC Review spawn with the parent Agent standard Agent tool while keeping Review JSON advisory and literal-user record-review-verdict confirmation unchanged.",
+    "acceptance": [
+      {
+        "id": "acc-no-provider-rpc",
+        "assertion": "Production Review dispatch neither emits subagents:rpc channels nor settles on shared subagents:completed or subagents:failed events, and Immune-Brain does not import a pi-subagents package.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/pi-canary-native-review.test.ts\",\n    \"tests/imm-canary-work-contract.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 180000,\n  \"max_output_bytes\": 262144\n}\n"
+      },
+      {
+        "id": "acc-standard-agent-params",
+        "assertion": "The reserved Review follow-up requests the parent Agent to call the standard Agent tool with isolated true, inherit_context false, isolation worktree, run_in_background true, max_turns 12, and the existing immutable review prompt.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/pi-canary-native-review.test.ts\",\n    \"tests/pi-canary-work-extension.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 180000,\n  \"max_output_bytes\": 262144\n}\n"
+      },
+      {
+        "id": "acc-spawn-receipt-not-verdict",
+        "assertion": "A background Agent tool_execution_end is treated only as a spawn receipt; a pending advisory verdict is created only from a reserved get_subagent_result after current snapshot revalidation.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/pi-canary-native-review.test.ts\",\n    \"tests/pi-canary-work-extension.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 180000,\n  \"max_output_bytes\": 262144\n}\n"
+      },
+      {
+        "id": "acc-zero-write-on-invalid-observation",
+        "assertion": "Forged bus events, unmatched tool results, stale snapshots, cancellation, timeout, shutdown, duplicate advance, and late retrieval perform zero Kernel writes and do not create a live pending verdict.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/pi-canary-native-review.test.ts\",\n    \"tests/pi-canary-work-extension.test.ts\",\n    \"tests/pi-canary-assurance-continuation.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 240000,\n  \"max_output_bytes\": 262144\n}\n"
+      },
+      {
+        "id": "acc-confirmation-retained",
+        "assertion": "record-review-verdict remains in the privileged authorization union, still requires ctx.ui.confirm, and is the only path that applies a Review verdict to Kernel.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/pi-canary-user-authority.test.ts\",\n    \"tests/pi-canary-work-extension.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 180000,\n  \"max_output_bytes\": 262144\n}\n"
+      },
+      {
+        "id": "acc-full-regression",
+        "assertion": "Historical Task 008 artifacts remain readable, Rule 1437 is unchanged, and the complete repository suite passes.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 300000,\n  \"max_output_bytes\": 262144\n}\n"
+      }
+    ],
+    "scope_hint": [
+      "docs/plans/2026-08-14-009-standard-agent-review-dispatch.intent.json",
+      "docs/reference/subagent-dispatch-protocol.md",
+      "docs/specs/host-attested-native-review-authority.spec.md",
+      "docs/specs/host-native-lightweight-workflow-roadmap.spec.md",
+      "docs/specs/standard-agent-review-dispatch.spec.md",
+      "plugins/immune-brain/.pi-extension/imm-canary-work.ts",
+      "plugins/immune-brain/.pi-extension/pi-canary-native-review.ts",
+      "plugins/immune-brain/dist/docs/reference/subagent-dispatch-protocol.md",
+      "plugins/immune-brain/dist/imm-canary-work.md",
+      "plugins/immune-brain/skills/imm-canary-work/SKILL.md",
+      "tests/imm-canary-work-contract.test.ts",
+      "tests/pi-canary-assurance-continuation.test.ts",
+      "tests/pi-canary-native-review.test.ts",
+      "tests/pi-canary-user-authority.test.ts",
+      "tests/pi-canary-work-extension.test.ts",
+      "tests/pi-subagent-dispatch-observability-contract.test.ts"
+    ],
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/2026-08-14-009-standard-agent-review-dispatch.intent.json",
+    "revision": 1,
+    "content_hash": "sha256:e7485200363e6cf8239182cb3c9464932c8e75ffdc2ff4adcc6cb0c98ee1f5d0"
+  },
+  "phase": "done",
+  "baseline": "sha256:e7485200363e6cf8239182cb3c9464932c8e75ffdc2ff4adcc6cb0c98ee1f5d0",
+  "evidence": [
+    {
+      "id": "evidence-record_evidence:2026-08-14-009-standard-agent-review-dispatch:2026-08-14T23:42:41.547Z",
+      "acceptance_id": "acc-no-provider-rpc",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:e7485200363e6cf8239182cb3c9464932c8e75ffdc2ff4adcc6cb0c98ee1f5d0",
+      "diff_hash": "sha256:ca21f05e62069e023339728d5ff1298a4ebfcabfc7b22905ff7bd365c9d77d2b",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "Production Review adapter no longer emits subagents:rpc or listens to shared subagents:* events; Immune-Brain does not import pi-subagents. bun test tests/pi-canary-native-review.test.ts tests/imm-canary-work-contract.test.ts passed."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-14-009-standard-agent-review-dispatch:2026-08-14T23:42:41.740Z",
+      "acceptance_id": "acc-standard-agent-params",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:e7485200363e6cf8239182cb3c9464932c8e75ffdc2ff4adcc6cb0c98ee1f5d0",
+      "diff_hash": "sha256:ca21f05e62069e023339728d5ff1298a4ebfcabfc7b22905ff7bd365c9d77d2b",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "Reserved Review follow-up asks the parent Agent to call Agent with isolated true, inherit_context false, isolation worktree, run_in_background true, max_turns 12, and the immutable review prompt. bun test tests/pi-canary-native-review.test.ts tests/pi-canary-work-extension.test.ts passed."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-14-009-standard-agent-review-dispatch:2026-08-14T23:42:41.926Z",
+      "acceptance_id": "acc-spawn-receipt-not-verdict",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:e7485200363e6cf8239182cb3c9464932c8e75ffdc2ff4adcc6cb0c98ee1f5d0",
+      "diff_hash": "sha256:ca21f05e62069e023339728d5ff1298a4ebfcabfc7b22905ff7bd365c9d77d2b",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "A background Agent tool_execution_end is a spawn receipt only. A pending advisory verdict is created only from a reserved get_subagent_result after current snapshot revalidation. bun test tests/pi-canary-native-review.test.ts tests/pi-canary-work-extension.test.ts passed."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-14-009-standard-agent-review-dispatch:2026-08-14T23:42:42.113Z",
+      "acceptance_id": "acc-zero-write-on-invalid-observation",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:e7485200363e6cf8239182cb3c9464932c8e75ffdc2ff4adcc6cb0c98ee1f5d0",
+      "diff_hash": "sha256:ca21f05e62069e023339728d5ff1298a4ebfcabfc7b22905ff7bd365c9d77d2b",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "Forged bus events, unmatched tool results, stale snapshots, cancellation, timeout, shutdown, duplicate advance, and late retrieval perform zero Kernel writes. bun test tests/pi-canary-native-review.test.ts tests/pi-canary-work-extension.test.ts tests/pi-canary-assurance-continuation.test.ts passed."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-14-009-standard-agent-review-dispatch:2026-08-14T23:42:42.296Z",
+      "acceptance_id": "acc-confirmation-retained",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:e7485200363e6cf8239182cb3c9464932c8e75ffdc2ff4adcc6cb0c98ee1f5d0",
+      "diff_hash": "sha256:ca21f05e62069e023339728d5ff1298a4ebfcabfc7b22905ff7bd365c9d77d2b",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "record-review-verdict remains in the privileged authorization union, still requires ctx.ui.confirm, and is the only path that applies a Review verdict. bun test tests/pi-canary-user-authority.test.ts tests/pi-canary-work-extension.test.ts passed."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-14-009-standard-agent-review-dispatch:2026-08-14T23:42:42.481Z",
+      "acceptance_id": "acc-full-regression",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:e7485200363e6cf8239182cb3c9464932c8e75ffdc2ff4adcc6cb0c98ee1f5d0",
+      "diff_hash": "sha256:ca21f05e62069e023339728d5ff1298a4ebfcabfc7b22905ff7bd365c9d77d2b",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "Historical Task 008 artifacts remain readable, Rule 1437 is unchanged, and bun test passed 1145/0 across 148 files."
+    }
+  ],
+  "findings": [],
+  "approvals": [
+    {
+      "id": "approval-qa-ffe86e4e",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:e7485200363e6cf8239182cb3c9464932c8e75ffdc2ff4adcc6cb0c98ee1f5d0",
+      "diff_hash": "sha256:ca21f05e62069e023339728d5ff1298a4ebfcabfc7b22905ff7bd365c9d77d2b",
+      "actor_id": "qa-host-793a81eb",
+      "summary": "all 6 fixed verification descriptor(s) passed"
+    },
+    {
+      "id": "approval-review-c90412bf",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:e7485200363e6cf8239182cb3c9464932c8e75ffdc2ff4adcc6cb0c98ee1f5d0",
+      "diff_hash": "sha256:ca21f05e62069e023339728d5ff1298a4ebfcabfc7b22905ff7bd365c9d77d2b",
+      "actor_id": "native-review-bbbc3188-2b1e-459",
+      "summary": "HEAD matches the immutable bundle with an empty dirty set; production Review now reserves standard Agent params, treats tool_execution_end as a spawn receipt, creates a pending verdict only from reserved get_subagent_result after snapshot revalidation, ignores RPC/shared-bus settlement, and still applies Review only through confirmed record-review-verdict."
+    }
+  ],
+  "history": [
+    {
+      "id": "record_evidence:2026-08-14-009-standard-agent-review-dispatch:2026-08-14T23:42:41.547Z",
+      "at": "2026-08-14T23:42:41.547Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-no-provider-rpc\naction_v2_sha256:cfccd1352a968e0c5bedbb0b6eea033929216e21549c3e548cfa2d70295f2040"
+    },
+    {
+      "id": "record_evidence:2026-08-14-009-standard-agent-review-dispatch:2026-08-14T23:42:41.740Z",
+      "at": "2026-08-14T23:42:41.740Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-standard-agent-params\naction_v2_sha256:9720ac3166bd0ebb9ae55e525f8de74cd846d7d9f1700064be3f6b474fca1a2d"
+    },
+    {
+      "id": "record_evidence:2026-08-14-009-standard-agent-review-dispatch:2026-08-14T23:42:41.926Z",
+      "at": "2026-08-14T23:42:41.926Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-spawn-receipt-not-verdict\naction_v2_sha256:61002558928cd21d40e9085a92aa07b44a68c7c5fe63df81615336ceb039202e"
+    },
+    {
+      "id": "record_evidence:2026-08-14-009-standard-agent-review-dispatch:2026-08-14T23:42:42.113Z",
+      "at": "2026-08-14T23:42:42.113Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-zero-write-on-invalid-observation\naction_v2_sha256:08adae162b2974b226380e11683f3d02a1d54f29530d769c0b163956a696d787"
+    },
+    {
+      "id": "record_evidence:2026-08-14-009-standard-agent-review-dispatch:2026-08-14T23:42:42.296Z",
+      "at": "2026-08-14T23:42:42.296Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-confirmation-retained\naction_v2_sha256:96d69e429dcb9fa4a018143e9069d4390a64d455d18e3d3d381214ac9bf92844"
+    },
+    {
+      "id": "record_evidence:2026-08-14-009-standard-agent-review-dispatch:2026-08-14T23:42:42.481Z",
+      "at": "2026-08-14T23:42:42.481Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-full-regression\naction_v2_sha256:906256ea84cfd5062c593fa7ea988aaae98f6de205f7ebe689e28f16c0bbdec2"
+    },
+    {
+      "id": "submit_review:2026-08-14-009-standard-agent-review-dispatch:2026-08-14T23:42:49.883Z",
+      "at": "2026-08-14T23:42:49.883Z",
+      "type": "submit_review",
+      "from_phase": "working",
+      "to_phase": "review",
+      "reason": "action_v2_sha256:74ba0c50f045f0eee72f1a697ce403c4b5925e3d595ecbb8cfb1d4e8c9ddcdf3"
+    },
+    {
+      "id": "record_approval:2026-08-14-009-standard-agent-review-dispatch:2026-08-14T23:45:02.406Z",
+      "at": "2026-08-14T23:45:02.406Z",
+      "type": "record_approval",
+      "from_phase": "review",
+      "to_phase": "review",
+      "reason": "approval-qa-ffe86e4e\naction_v2_sha256:e198a2e4358776f71675ac3e2912f44070efc9c832cfe2b1a6f88dd7e76153f7",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "qa-host-793a81eb",
+        "confirmation_ref": "pi-confirm-f5912362d3d41e27",
+        "issued_at": "2026-08-14T23:45:02.406Z",
+        "expires_at": "2026-08-14T23:55:02.406Z"
+      }
+    },
+    {
+      "id": "record_approval:2026-08-14-009-standard-agent-review-dispatch:2026-08-14T23:48:56.723Z",
+      "at": "2026-08-14T23:48:56.723Z",
+      "type": "record_approval",
+      "from_phase": "review",
+      "to_phase": "review",
+      "reason": "approval-review-c90412bf\naction_v2_sha256:5415f11573ba72bce8038c57a1d32f09401f58a51c024618fd73e8d1ea12f8e3",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "native-review-bbbc3188-2b1e-459",
+        "confirmation_ref": "pi-confirm-2b22d7efcfd97d07",
+        "issued_at": "2026-08-14T23:48:56.723Z",
+        "expires_at": "2026-08-14T23:58:56.723Z"
+      }
+    },
+    {
+      "id": "complete:2026-08-14-009-standard-agent-review-dispatch:2026-08-14T23:49:25.932Z",
+      "at": "2026-08-14T23:49:25.932Z",
+      "type": "complete",
+      "from_phase": "review",
+      "to_phase": "done",
+      "reason": "action_v2_sha256:f274dc727121faa22352d755b47c9ae8add394f957e4834bd836594c58a37a42"
+    }
+  ]
+}

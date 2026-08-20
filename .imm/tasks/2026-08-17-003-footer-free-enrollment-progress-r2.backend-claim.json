@@ -1,0 +1,9 @@
+{
+  "contract": "assurance_kernel/task_tombstone/v1",
+  "task_id": "2026-08-17-003-footer-free-enrollment-progress-r2",
+  "lifecycle_status": "terminal",
+  "terminal_phase": "done",
+  "terminal_event_id": "complete:2026-08-17-003-footer-free-enrollment-progress-r2:2026-08-17T12:58:41.742Z",
+  "final_record_hash": "sha256:04f9d3cd6682f9451739de472e6a1c4dc14df364b4cb432850cbb21bb7726313",
+  "terminalized_at": "2026-08-17T12:58:41.742Z"
+}

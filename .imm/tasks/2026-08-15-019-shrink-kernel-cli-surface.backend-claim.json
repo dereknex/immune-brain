@@ -1,0 +1,9 @@
+{
+  "contract": "assurance_kernel/task_tombstone/v1",
+  "task_id": "2026-08-15-019-shrink-kernel-cli-surface",
+  "lifecycle_status": "terminal",
+  "terminal_phase": "done",
+  "terminal_event_id": "complete:2026-08-15-019-shrink-kernel-cli-surface:2026-08-15T09:42:07.654Z",
+  "final_record_hash": "sha256:68886a466b535426aecef36f6bdbd7a8c75948899215cef968cb9303f7ecd422",
+  "terminalized_at": "2026-08-15T09:42:07.654Z"
+}

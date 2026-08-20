@@ -1,0 +1,175 @@
+{
+  "contract": "assurance_kernel/task_record/v2",
+  "task_id": "2026-08-19-008-delete-v3-runtime-island",
+  "intent_revision": 1,
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "2026-08-19-008-delete-v3-runtime-island",
+    "goal": "Delete the seven v3 runtime island modules -- activation.ts, advisory_dispatch.ts, environment.ts, handoff.ts, project_migration.ts, state_ledger.ts, and work_probes.ts, about 6364 lines -- completing the R4 deletion line that the predecessor roadmap declared finished while leaving the entire library closure in place. The preceding drain slice already reduced these modules to zero references from outside the island, so the deletion itself is mechanical. The one non-mechanical part is the drain slice's own guard: tests/v3-island-drain.test.ts asserts via statSync that all seven modules exist, which throws the moment they are removed, and it also holds the assertion that every surviving module kept its coverage. That guard is superseded rather than discarded -- tests/v3-island-deletion.test.ts replaces it by inverting the existence check to absence, keeping the zero-reference scan, and carrying the surviving-module coverage assertion forward unchanged, after which the drain test is deleted. Losing that coverage assertion would remove the only automated protection against a future slice quietly deleting a mixed test file. Beyond those two test files and the seven modules, this slice edits nothing; if any further edit appears necessary, that is evidence the drain was incomplete and the correct response is to stop and reopen the drain rather than widen this slice. Trimming the partially live loop_contract and plan_core halves, retiring the bin wrappers, the kernel v1 store question, and the [subagent_activation] contract decision are all out of scope.",
+    "acceptance": [
+      {
+        "id": "acc-island-absent",
+        "assertion": "None of the seven module files exists under plugins/immune-brain/runtime/, and no file in the repository imports any of them or names one by path string, excluding the checker itself.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/v3-island-deletion.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 30000,\n  \"max_output_bytes\": 65536\n}\n"
+      },
+      {
+        "id": "acc-drain-guard-superseded",
+        "assertion": "tests/v3-island-drain.test.ts no longer exists, and tests/v3-island-deletion.test.ts asserts the absence of all seven modules while still asserting that authority_commit_receipts, automatic_observations, plan_core, role_prompt_bridge, loop_contract, dist-sync-manifest, and agent_config each retain test coverage.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/v3-island-deletion.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 30000,\n  \"max_output_bytes\": 65536\n}\n"
+      },
+      {
+        "id": "acc-live-projections-unchanged",
+        "assertion": "imm-plan --routing-status --json still reports its ownership and policy projection and imm-kernel status --json still reports its shadow phase projection, both with the same shape they returned before the deletion, proving no live control-plane surface depended on the island.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/v3-island-deletion.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 30000,\n  \"max_output_bytes\": 65536\n}\n"
+      }
+    ],
+    "scope_hint": [
+      "plugins/immune-brain/runtime/activation.ts",
+      "plugins/immune-brain/runtime/advisory_dispatch.ts",
+      "plugins/immune-brain/runtime/environment.ts",
+      "plugins/immune-brain/runtime/handoff.ts",
+      "plugins/immune-brain/runtime/project_migration.ts",
+      "plugins/immune-brain/runtime/state_ledger.ts",
+      "plugins/immune-brain/runtime/work_probes.ts",
+      "tests/v3-island-deletion.test.ts",
+      "tests/v3-island-drain.test.ts"
+    ],
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/2026-08-19-008-delete-v3-runtime-island.intent.json",
+    "revision": 1,
+    "content_hash": "sha256:4a1729a0b5ffbd57dcb8d65f277809948353844fa5258d88a9c5ce306df9c828"
+  },
+  "phase": "done",
+  "baseline": "sha256:4a1729a0b5ffbd57dcb8d65f277809948353844fa5258d88a9c5ce306df9c828",
+  "evidence": [
+    {
+      "id": "evidence-record_evidence:2026-08-19-008-delete-v3-runtime-island:2026-08-19T14:06:02.162Z",
+      "acceptance_id": "acc-island-absent",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:4a1729a0b5ffbd57dcb8d65f277809948353844fa5258d88a9c5ce306df9c828",
+      "diff_hash": "sha256:e10c20f24475bd1e380576aa4ce274e119c95e0e49b9b1e5d4f75d9414dd796b",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "Focused descriptor passed: bun test tests/v3-island-deletion.test.ts; all seven runtime island paths are absent and the TypeScript source scan found no external imports or island path assertions."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-19-008-delete-v3-runtime-island:2026-08-19T14:06:08.323Z",
+      "acceptance_id": "acc-drain-guard-superseded",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:4a1729a0b5ffbd57dcb8d65f277809948353844fa5258d88a9c5ce306df9c828",
+      "diff_hash": "sha256:e10c20f24475bd1e380576aa4ce274e119c95e0e49b9b1e5d4f75d9414dd796b",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "Focused descriptor passed: bun test tests/v3-island-deletion.test.ts; the drain guard is gone, the deletion guard asserts all seven files are absent, and it preserves coverage checks for all seven surviving modules."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-19-008-delete-v3-runtime-island:2026-08-19T14:06:14.702Z",
+      "acceptance_id": "acc-live-projections-unchanged",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:4a1729a0b5ffbd57dcb8d65f277809948353844fa5258d88a9c5ce306df9c828",
+      "diff_hash": "sha256:e10c20f24475bd1e380576aa4ce274e119c95e0e49b9b1e5d4f75d9414dd796b",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "Focused descriptor passed: bun test tests/v3-island-deletion.test.ts; the deletion guard retains the survivor coverage contract, with no live projection implementation changes in the scoped diff."
+    }
+  ],
+  "findings": [],
+  "approvals": [
+    {
+      "id": "approval-qa-66e473bb",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:4a1729a0b5ffbd57dcb8d65f277809948353844fa5258d88a9c5ce306df9c828",
+      "diff_hash": "sha256:e10c20f24475bd1e380576aa4ce274e119c95e0e49b9b1e5d4f75d9414dd796b",
+      "actor_id": "deterministic-qa",
+      "summary": "all 3 fixed verification descriptor(s) passed"
+    },
+    {
+      "id": "approval-review-d827350d",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:4a1729a0b5ffbd57dcb8d65f277809948353844fa5258d88a9c5ce306df9c828",
+      "diff_hash": "sha256:e10c20f24475bd1e380576aa4ce274e119c95e0e49b9b1e5d4f75d9414dd796b",
+      "actor_id": "native-review-665c2f92-1672-4de",
+      "summary": "Immutable provenance verified; the seven runtime modules and drain test are deleted, deletion and survivor coverage assertions pass, and live projection coverage remains intact."
+    }
+  ],
+  "history": [
+    {
+      "id": "record_evidence:2026-08-19-008-delete-v3-runtime-island:2026-08-19T14:06:02.162Z",
+      "at": "2026-08-19T14:06:02.162Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-island-absent\naction_v2_sha256:8287111f826985854b13a8730ea0a0b6b1cc2f3336cddb33c7d891fb78547b0c"
+    },
+    {
+      "id": "record_evidence:2026-08-19-008-delete-v3-runtime-island:2026-08-19T14:06:08.323Z",
+      "at": "2026-08-19T14:06:08.323Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-drain-guard-superseded\naction_v2_sha256:ca397ce82192fb9a3002eccb8d3f63668e22774ec3ff861fba787f56177ac14c"
+    },
+    {
+      "id": "record_evidence:2026-08-19-008-delete-v3-runtime-island:2026-08-19T14:06:14.702Z",
+      "at": "2026-08-19T14:06:14.702Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-live-projections-unchanged\naction_v2_sha256:d197fb6abeb74be6f2c6bf53ccc6e7f82f9e3d96bac55dfac6990a13897d9bdd"
+    },
+    {
+      "id": "submit_review:2026-08-19-008-delete-v3-runtime-island:2026-08-19T14:06:38.913Z",
+      "at": "2026-08-19T14:06:38.913Z",
+      "type": "submit_review",
+      "from_phase": "working",
+      "to_phase": "review",
+      "reason": "action_v2_sha256:13633ba34778743d6abc8e42221df1df796178c4419cd4539bad4c7c727a6c89"
+    },
+    {
+      "id": "record_approval:2026-08-19-008-delete-v3-runtime-island:2026-08-19T14:06:40.408Z",
+      "at": "2026-08-19T14:06:40.408Z",
+      "type": "record_approval",
+      "from_phase": "review",
+      "to_phase": "review",
+      "reason": "approval-qa-66e473bb\naction_v2_sha256:b168bb575de70502b46bb49cc0ce4d23f6841825c378fdc72a3dd16000d3171a",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-9d9cd16dd9ccf1f5",
+        "issued_at": "2026-08-19T14:06:40.409Z",
+        "expires_at": "2026-08-19T14:16:40.409Z"
+      }
+    },
+    {
+      "id": "record_approval:2026-08-19-008-delete-v3-runtime-island:2026-08-19T14:09:41.317Z",
+      "at": "2026-08-19T14:09:41.317Z",
+      "type": "record_approval",
+      "from_phase": "review",
+      "to_phase": "review",
+      "reason": "approval-review-d827350d\naction_v2_sha256:d888293b6005b6349c5c7aedc6a308ca4eea1182d0f82e7205b8a4e321f0a11e",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "native-review-665c2f92-1672-4de",
+        "confirmation_ref": "pi-confirm-cc519652e33a1c62",
+        "issued_at": "2026-08-19T14:09:41.318Z",
+        "expires_at": "2026-08-19T14:19:41.318Z"
+      }
+    },
+    {
+      "id": "complete:2026-08-19-008-delete-v3-runtime-island:2026-08-19T14:10:01.122Z",
+      "at": "2026-08-19T14:10:01.122Z",
+      "type": "complete",
+      "from_phase": "review",
+      "to_phase": "done",
+      "reason": "action_v2_sha256:333d5e47b33a98d1c9813a865eeb25ab95b34445169a0ba5c27171f63c8000e4"
+    }
+  ]
+}

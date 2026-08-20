@@ -1,0 +1,173 @@
+{
+  "contract": "assurance_kernel/task_record/v2",
+  "task_id": "2026-08-20-006-archive-terminal-specs",
+  "intent_revision": 2,
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "2026-08-20-006-archive-terminal-specs",
+    "goal": "Archive terminal specs, the last unfinished part of the 2026-08-20-003 roadmap item. docs/specs/ still holds 206 active specs against 82 archived, unchanged by that slice. A spec counts as terminal when a Plan under docs/plans/archive/ implements it, established by either of two signals: the archived Plan's normalized filename matches the spec's, or the archived Plan cites the spec's docs/specs/<name>.spec.md path in its text. Neither signal alone suffices -- measured today filename matching resolves 113 and text citation 117, but their union resolves 150 of 206 because only 105 of 244 archived Plans cite a spec path at all. Whatever the union leaves undetermined must be listed explicitly in the slice output and left in place, never archived on a guess. That mirrors the two-signal-then-enumerate rule already used for intent sidecars. Run this after 2026-08-20-005. That slice archives 29 prose Plans, which converts their spec linkages from active to archived and shrinks the undetermined set before this slice measures it; several currently undetermined specs such as 2026-08-05-risk-tiered-workflow-execution resolve for exactly that reason. Archival is a move into docs/specs/archive/, never a delete. Two exposures are known. tests/python-reference-boundary.test.ts pins the active path docs/specs/opencode-native-plugin.spec.md and must be reconciled if that spec is archived. Cross-document links across a 206-file corpus are the larger one, which is why both link scripts are in scope. Do not touch the instructional-reference exemption list that 2026-08-20-003 established; specs citing retired tools as the subject of retirement stay active and exempt.",
+    "acceptance": [
+      {
+        "id": "acc-terminal-specs-archived",
+        "assertion": "Every spec resolved terminal by either linkage signal lives under docs/specs/archive/, each move preserves content and none was deleted, and specs left undetermined by both signals remain in docs/specs/ and are enumerated explicitly rather than archived on a guess.",
+        "verification": "{\"contract\": \"assurance_kernel/verification_descriptor/v1\", \"runner_id\": \"bun\", \"runner_version\": \"1.3.14\", \"argv\": [\"test\", \"tests/planning-artifact-archival.test.ts\"], \"cwd\": \".\", \"timeout_ms\": 60000, \"max_output_bytes\": 65536}\n"
+      },
+      {
+        "id": "acc-pinned-and-exempt-intact",
+        "assertion": "tests/python-reference-boundary.test.ts resolves whatever path docs/specs/opencode-native-plugin.spec.md now has, and the instructional-reference exemption list established by 2026-08-20-003 still passes unchanged.",
+        "verification": "{\"contract\": \"assurance_kernel/verification_descriptor/v1\", \"runner_id\": \"bun\", \"runner_version\": \"1.3.14\", \"argv\": [\"test\", \"tests/planning-artifact-archival.test.ts\"], \"cwd\": \".\", \"timeout_ms\": 60000, \"max_output_bytes\": 65536}\n"
+      },
+      {
+        "id": "acc-links-and-suite-intact",
+        "assertion": "The full suite passes and the link and stale-reference scripts report no new unresolved reference introduced by the move.",
+        "verification": "{\"contract\": \"assurance_kernel/verification_descriptor/v1\", \"runner_id\": \"bun\", \"runner_version\": \"1.3.14\", \"argv\": [\"test\"], \"cwd\": \".\", \"timeout_ms\": 300000, \"max_output_bytes\": 262144}\n"
+      }
+    ],
+    "scope_hint": [
+      "docs/specs",
+      "scripts/detect-stale-refs.ts",
+      "scripts/fix-broken-links.ts",
+      "tests/planning-artifact-archival.test.ts",
+      "tests/python-reference-boundary.test.ts"
+    ],
+    "risk": "routine",
+    "revision": 2,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/2026-08-20-006-archive-terminal-specs.intent.json",
+    "revision": 2,
+    "content_hash": "sha256:cefa8a3de7dce11eda5e9ffcb69add00799e050b03261ecc79e6fe94c550ecfa"
+  },
+  "phase": "done",
+  "baseline": "sha256:1bcc4535de49c8d23f77ebb8a1a08260f4d5fe3a201accc0a5165a6a0ed7c015",
+  "evidence": [
+    {
+      "id": "evidence-record_evidence:2026-08-20-006-archive-terminal-specs:2026-08-20T03:55:47.832Z",
+      "acceptance_id": "acc-terminal-specs-archived",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:1bcc4535de49c8d23f77ebb8a1a08260f4d5fe3a201accc0a5165a6a0ed7c015",
+      "diff_hash": "sha256:1f228b25c0a6403c31775be574169b9f687eddd5edb173a30c5b1fb4a8441baa",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "102 terminal specs moved via git mv to docs/specs/archive, 184 archived total, undetermined 54 remain, python dual-path handled"
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-20-006-archive-terminal-specs:2026-08-20T03:56:08.642Z",
+      "acceptance_id": "acc-pinned-and-exempt-intact",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:1bcc4535de49c8d23f77ebb8a1a08260f4d5fe3a201accc0a5165a6a0ed7c015",
+      "diff_hash": "sha256:1f228b25c0a6403c31775be574169b9f687eddd5edb173a30c5b1fb4a8441baa",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "python dual-path and exemption list 52+2 intact, archival test 4/4 pass"
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-20-006-archive-terminal-specs:2026-08-20T03:56:30.806Z",
+      "acceptance_id": "acc-links-and-suite-intact",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:1bcc4535de49c8d23f77ebb8a1a08260f4d5fe3a201accc0a5165a6a0ed7c015",
+      "diff_hash": "sha256:1f228b25c0a6403c31775be574169b9f687eddd5edb173a30c5b1fb4a8441baa",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "full suite 797 pass, link scripts 0 new"
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-20-006-archive-terminal-specs:2026-08-20T03:58:43.340Z",
+      "acceptance_id": "acc-terminal-specs-archived",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:cefa8a3de7dce11eda5e9ffcb69add00799e050b03261ecc79e6fe94c550ecfa",
+      "diff_hash": "sha256:1f228b25c0a6403c31775be574169b9f687eddd5edb173a30c5b1fb4a8441baa",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "102 terminal specs moved to archive, 184 archived, undetermined 52 + exempt 52 remain, python dual-path"
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-20-006-archive-terminal-specs:2026-08-20T03:59:07.076Z",
+      "acceptance_id": "acc-pinned-and-exempt-intact",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:cefa8a3de7dce11eda5e9ffcb69add00799e050b03261ecc79e6fe94c550ecfa",
+      "diff_hash": "sha256:1f228b25c0a6403c31775be574169b9f687eddd5edb173a30c5b1fb4a8441baa",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "python dual-path and exemption list intact"
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-20-006-archive-terminal-specs:2026-08-20T03:59:34.399Z",
+      "acceptance_id": "acc-links-and-suite-intact",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:cefa8a3de7dce11eda5e9ffcb69add00799e050b03261ecc79e6fe94c550ecfa",
+      "diff_hash": "sha256:1f228b25c0a6403c31775be574169b9f687eddd5edb173a30c5b1fb4a8441baa",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "full suite 797 pass, links 0 new"
+    }
+  ],
+  "findings": [],
+  "approvals": [],
+  "history": [
+    {
+      "id": "record_evidence:2026-08-20-006-archive-terminal-specs:2026-08-20T03:55:47.832Z",
+      "at": "2026-08-20T03:55:47.832Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-terminal-specs-archived\naction_v2_sha256:3b3d286130b764eb16d2385f1017a6c8cde69ed4986ae8b53727c36df0e812f9"
+    },
+    {
+      "id": "record_evidence:2026-08-20-006-archive-terminal-specs:2026-08-20T03:56:08.642Z",
+      "at": "2026-08-20T03:56:08.642Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-pinned-and-exempt-intact\naction_v2_sha256:0155374f27f43d57a74eae21a3dd76bcd07aff50352a1c7f4c0b17045d646860"
+    },
+    {
+      "id": "record_evidence:2026-08-20-006-archive-terminal-specs:2026-08-20T03:56:30.806Z",
+      "at": "2026-08-20T03:56:30.806Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-links-and-suite-intact\naction_v2_sha256:f6051fb2a0d6c43d9d64652076d40949ef32d2f8f1b5ebb8ef12777b280e4a2d"
+    },
+    {
+      "id": "approve_breaking_intent_revision:2026-08-20-006-archive-terminal-specs:2026-08-20T03:58:20.300Z",
+      "at": "2026-08-20T03:58:20.300Z",
+      "type": "approve_breaking_intent_revision",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "intent_revision_2\naction_v2_sha256:2cace872a78cac31c4d6bfc8731e1603144a9317775d92efee3f00650e2cbfd0",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-5f00792fa96cbdf4",
+        "issued_at": "2026-08-20T03:58:20.306Z",
+        "expires_at": "2026-08-20T04:08:20.306Z"
+      }
+    },
+    {
+      "id": "record_evidence:2026-08-20-006-archive-terminal-specs:2026-08-20T03:58:43.340Z",
+      "at": "2026-08-20T03:58:43.340Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-terminal-specs-archived\naction_v2_sha256:61dd8172310e059c54c4194f90cd0bcf75d620066bec0327d66b61557826dc12"
+    },
+    {
+      "id": "record_evidence:2026-08-20-006-archive-terminal-specs:2026-08-20T03:59:07.076Z",
+      "at": "2026-08-20T03:59:07.076Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-pinned-and-exempt-intact\naction_v2_sha256:e5a6bcdf3f89a9e91b92cdbf0b700bd0f588e0c71c5e8ad8844dbc3809565263"
+    },
+    {
+      "id": "record_evidence:2026-08-20-006-archive-terminal-specs:2026-08-20T03:59:34.399Z",
+      "at": "2026-08-20T03:59:34.399Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-links-and-suite-intact\naction_v2_sha256:2593df5b976e32bdc06eb4baf575c0f8e61fd70034d9ba1dad74f9c57a45f9a0"
+    }
+  ]
+}

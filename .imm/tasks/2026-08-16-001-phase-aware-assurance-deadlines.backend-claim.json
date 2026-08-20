@@ -1,0 +1,9 @@
+{
+  "contract": "assurance_kernel/task_tombstone/v1",
+  "task_id": "2026-08-16-001-phase-aware-assurance-deadlines",
+  "lifecycle_status": "terminal",
+  "terminal_phase": "stopped",
+  "terminal_event_id": "stop:2026-08-16-001-phase-aware-assurance-deadlines:2026-08-16T04:53:03.448Z",
+  "final_record_hash": "sha256:b08c91ea1aaa0e8ca7535217322bd31cacbc25132ffd88ae673d8ae7eb1a4ee5",
+  "terminalized_at": "2026-08-16T04:53:03.448Z"
+}

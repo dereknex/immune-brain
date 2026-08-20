@@ -1,0 +1,9 @@
+{
+  "contract": "assurance_kernel/task_tombstone/v1",
+  "task_id": "2026-08-19-007-drain-v3-island-test-surface",
+  "lifecycle_status": "terminal",
+  "terminal_phase": "done",
+  "terminal_event_id": "complete:2026-08-19-007-drain-v3-island-test-surface:2026-08-19T13:49:08.061Z",
+  "final_record_hash": "sha256:ec7a06e25e3c4f3cf5b5f0b165c0f4fa5c28c2e7ef4d745c6a3e6f6255228cff",
+  "terminalized_at": "2026-08-19T13:49:08.061Z"
+}

@@ -1,0 +1,9 @@
+{
+  "contract": "assurance_kernel/task_tombstone/v1",
+  "task_id": "2026-08-15-020-drain-legacy-runtime-test-callers",
+  "lifecycle_status": "terminal",
+  "terminal_phase": "stopped",
+  "terminal_event_id": "stop:2026-08-15-020-drain-legacy-runtime-test-callers:2026-08-15T11:04:52.791Z",
+  "final_record_hash": "sha256:7858e8730a7a92c99bd356fa532fcfb0f5f52f794ca4591b4a726c3e6f50add1",
+  "terminalized_at": "2026-08-15T11:04:52.791Z"
+}

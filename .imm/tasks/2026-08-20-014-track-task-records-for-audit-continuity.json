@@ -1,0 +1,293 @@
+{
+  "contract": "assurance_kernel/task_record/v2",
+  "task_id": "2026-08-20-014-track-task-records-for-audit-continuity",
+  "intent_revision": 1,
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "2026-08-20-014-track-task-records-for-audit-continuity",
+    "goal": "Stop discarding the evidence that Managed Path exists to produce. Five slices have now completed in parallel worktrees and merged with no surviving record: 008, 009, then 011, 012 and 013 together. Main holds zero TaskRecords for any of them. The cause is .gitignore lines 7-10, which exclude .imm/tasks/, .imm/journal.jsonl, .imm/workspace.json and .imm/migrations/. A task enrolled in a worktree writes its record into that worktree's ignored .imm/, so merging the branch returns the code and leaves the evidence behind to be deleted with the worktree. An earlier diagnosis blamed a stale workspace.json claim; that blocks enrollment but is not what erases the trail. The per-task record is the audit artifact and it is self-contained: each carries intent_snapshot, phase, baseline, evidence, findings, approvals and history. There are 54 records and 53 backend claims on disk today, 1.2MB in total, one file per task per kind, so parallel branches write disjoint filenames and tracking them cannot produce a merge conflict. Track .imm/tasks/ and add a check that a terminal task cannot be archived while its record is absent, which is the moment the loss has become visible each time. Two boundaries. Records are rewritten on every phase transition, so committing each intermediate state would bury real history in churn; persist the record when the task reaches terminal, alongside the sidecar archival step that already happens. And leave the other three entries ignored: workspace.json is per-machine occupancy, migrations/ is local backup, and journal.jsonl holds 7 stale legacy-task lines from 2026-08-14 rather than the audit trail, so it is a single append-only file with conflict risk and no present value.",
+    "acceptance": [
+      {
+        "id": "acc-records-tracked",
+        "assertion": "TaskRecords under .imm/tasks/ are tracked by Git rather than ignored, while workspace.json and migrations/ remain ignored.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/task-record-durability.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 65536\n}\n"
+      },
+      {
+        "id": "acc-archival-requires-record",
+        "assertion": "Archiving a terminal intent sidecar fails when the matching TaskRecord is absent, so a lost audit trail is caught at the point it becomes visible.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/task-record-durability.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 65536\n}\n"
+      },
+      {
+        "id": "acc-suite-intact",
+        "assertion": "The full suite passes.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 600000,\n  \"max_output_bytes\": 262144\n}\n"
+      }
+    ],
+    "scope_hint": [
+      ".gitignore",
+      ".imm/tasks",
+      "tests/task-record-durability.test.ts"
+    ],
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/2026-08-20-014-track-task-records-for-audit-continuity.intent.json",
+    "revision": 1,
+    "content_hash": "sha256:90eea9466d60e44a42d35e221c68d8305d4ffb8c541d5c639a860c63aba3bd92"
+  },
+  "phase": "done",
+  "baseline": "sha256:90eea9466d60e44a42d35e221c68d8305d4ffb8c541d5c639a860c63aba3bd92",
+  "evidence": [
+    {
+      "id": "evidence-record_evidence:2026-08-20-014-track-task-records-for-audit-continuity:2026-08-20T09:57:15.189Z",
+      "acceptance_id": "acc-records-tracked",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:90eea9466d60e44a42d35e221c68d8305d4ffb8c541d5c639a860c63aba3bd92",
+      "diff_hash": "sha256:fa29d2bc20c0b68b1d5baf42f6a6f96a99dca94cf96e270c8fc9e6662123f40b",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "TaskRecords tracked via .gitignore fix (removed .imm/tasks/ line, kept workspace/migrations/journal ignored, added active-claim transient ignores). Verified via bun test tests/task-record-durability.test.ts."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-20-014-track-task-records-for-audit-continuity:2026-08-20T09:58:02.273Z",
+      "acceptance_id": "acc-archival-requires-record",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:90eea9466d60e44a42d35e221c68d8305d4ffb8c541d5c639a860c63aba3bd92",
+      "diff_hash": "sha256:70fbe4e9a73fb47b1db5bb3022287c4e0cc2d50ff2e66ad4574028e8a20f700b",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "Archival gate verified via helper that detects missing TaskRecord for terminal task. Second acceptance passed, same verification as first."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-20-014-track-task-records-for-audit-continuity:2026-08-20T09:58:24.579Z",
+      "acceptance_id": "acc-suite-intact",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:90eea9466d60e44a42d35e221c68d8305d4ffb8c541d5c639a860c63aba3bd92",
+      "diff_hash": "sha256:b199701b49f863c913c40b804136eaa0c1639765397ef349afd76b99e0cc4666",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "Full suite passes (810 tests). Verified via bun test."
+    },
+    {
+      "id": "evidence-acc-records-tracked-1787220210350",
+      "acceptance_id": "acc-records-tracked",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:90eea9466d60e44a42d35e221c68d8305d4ffb8c541d5c639a860c63aba3bd92",
+      "diff_hash": "sha256:52a000ca3b6ebe4d1f3385600ab04f51999788d14124dd7db2ded9e500b733a9",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "TaskRecords tracked via .gitignore fix (removed .imm/tasks/ line, kept workspace/migrations/journal ignored, added transient ignores). Verified via bun test tests/task-record-durability.test.ts."
+    },
+    {
+      "id": "evidence-acc-archival-requires-record-1787220214847",
+      "acceptance_id": "acc-archival-requires-record",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:90eea9466d60e44a42d35e221c68d8305d4ffb8c541d5c639a860c63aba3bd92",
+      "diff_hash": "sha256:52a000ca3b6ebe4d1f3385600ab04f51999788d14124dd7db2ded9e500b733a9",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "Archival gate verified: helper detects missing TaskRecord for terminal task. Verified via same test."
+    },
+    {
+      "id": "evidence-acc-suite-intact-1787220222264",
+      "acceptance_id": "acc-suite-intact",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:90eea9466d60e44a42d35e221c68d8305d4ffb8c541d5c639a860c63aba3bd92",
+      "diff_hash": "sha256:52a000ca3b6ebe4d1f3385600ab04f51999788d14124dd7db2ded9e500b733a9",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "Full suite passes (810 tests). Verified via bun test."
+    },
+    {
+      "id": "evidence-acc-records-tracked-1787220433355-0.8769482692132163",
+      "acceptance_id": "acc-records-tracked",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:90eea9466d60e44a42d35e221c68d8305d4ffb8c541d5c639a860c63aba3bd92",
+      "diff_hash": "sha256:fb4b74fa741aa408084dc036b249e56cf0436ea45154357399a8659ea6042037",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "Fresh with staged 014: TaskRecords tracked"
+    },
+    {
+      "id": "evidence-acc-archival-requires-record-1787220438142-0.5166575090551138",
+      "acceptance_id": "acc-archival-requires-record",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:90eea9466d60e44a42d35e221c68d8305d4ffb8c541d5c639a860c63aba3bd92",
+      "diff_hash": "sha256:fb4b74fa741aa408084dc036b249e56cf0436ea45154357399a8659ea6042037",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "Fresh with staged 014: archival gate"
+    },
+    {
+      "id": "evidence-acc-suite-intact-1787220442904-0.8611712748747867",
+      "acceptance_id": "acc-suite-intact",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:90eea9466d60e44a42d35e221c68d8305d4ffb8c541d5c639a860c63aba3bd92",
+      "diff_hash": "sha256:fb4b74fa741aa408084dc036b249e56cf0436ea45154357399a8659ea6042037",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "Fresh with staged 014: suite passes"
+    }
+  ],
+  "findings": [
+    {
+      "id": "qa-evidence-freshness-ec95d4ad7167afb3-ec95d4ad-d0b9ba",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": null,
+      "source": "review",
+      "review_round": 1,
+      "summary": "executor evidence must be refreshed in working phase for acceptance ids: acc-records-tracked,acc-archival-requires-record,acc-suite-intact"
+    }
+  ],
+  "approvals": [
+    {
+      "id": "approval-review-bc254f8f-3b90-44cf-9377-88236c0c79c1",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:90eea9466d60e44a42d35e221c68d8305d4ffb8c541d5c639a860c63aba3bd92",
+      "diff_hash": "sha256:52a000ca3b6ebe4d1f3385600ab04f51999788d14124dd7db2ded9e500b733a9",
+      "actor_id": "reviewer-1",
+      "summary": "Review passed: .gitignore tracks .imm/tasks, other three remain ignored; archival gate works; suite passes."
+    }
+  ],
+  "history": [
+    {
+      "id": "record_evidence:2026-08-20-014-track-task-records-for-audit-continuity:2026-08-20T09:57:15.189Z",
+      "at": "2026-08-20T09:57:15.189Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-records-tracked\naction_v2_sha256:4eece12b4795d4df7b4ea095bfc79b4468e676f0616466c99bba48fe774289ea"
+    },
+    {
+      "id": "record_evidence:2026-08-20-014-track-task-records-for-audit-continuity:2026-08-20T09:58:02.273Z",
+      "at": "2026-08-20T09:58:02.273Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-archival-requires-record\naction_v2_sha256:24b834debd4be850e7232eba53bfaa5bcdc0da06c20be1d8cca1078675bffad9"
+    },
+    {
+      "id": "record_evidence:2026-08-20-014-track-task-records-for-audit-continuity:2026-08-20T09:58:24.579Z",
+      "at": "2026-08-20T09:58:24.579Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-suite-intact\naction_v2_sha256:c4f26529c3d38b05b179149904eff9dec2ed7db757570e042e8c52ec94c3cce2"
+    },
+    {
+      "id": "evidence-acc-records-tracked-c421d8ff-dd79-4efc-8093-bb5822d606af",
+      "at": "2026-08-20T10:03:30.350Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-records-tracked\naction_v2_sha256:efd03b7c42b7bb0e3ec8bda1d63462ca4f8645e1219aaa975eae09d761cde3ae"
+    },
+    {
+      "id": "evidence-acc-archival-requires-record-2eabb26e-7ae0-43d8-bcc9-f40b3e726e21",
+      "at": "2026-08-20T10:03:34.847Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-archival-requires-record\naction_v2_sha256:efb781f16b8cb935dd941b267fff12a1514cd0f85d54bc24739543b36e796875"
+    },
+    {
+      "id": "evidence-acc-suite-intact-053c5843-2888-49e4-8544-c4015d66ec39",
+      "at": "2026-08-20T10:03:42.264Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-suite-intact\naction_v2_sha256:851850b235bc7ad159e1a7de53cf7909a1b99e81dd3648392b36f1615ee10ce8"
+    },
+    {
+      "id": "submit_review:2026-08-20-014-track-task-records-for-audit-continuity:2026-08-20T10:04:02.965Z",
+      "at": "2026-08-20T10:04:02.965Z",
+      "type": "submit_review",
+      "from_phase": "working",
+      "to_phase": "review",
+      "reason": "action_v2_sha256:8bab833576e5159149a40ff703c0a565e2313ae31d45dd39235d0ce4354b9919"
+    },
+    {
+      "id": "request_rework:2026-08-20-014-track-task-records-for-audit-continuity:2026-08-20T10:05:42.703Z",
+      "at": "2026-08-20T10:05:42.703Z",
+      "type": "request_rework",
+      "from_phase": "review",
+      "to_phase": "working",
+      "reason": "review_round_1\naction_v2_sha256:ef36d110c35b7eab24978725ddf1c5da32a9163e2f0220f6b13fe3bdd0e0a544",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-d7e8ec8936f04d99",
+        "issued_at": "2026-08-20T10:05:42.705Z",
+        "expires_at": "2026-08-20T10:15:42.704Z"
+      }
+    },
+    {
+      "id": "evidence-acc-records-tracked-e074fe73-2235-4fd3-ad0e-0d47f33064db",
+      "at": "2026-08-20T10:07:13.354Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-records-tracked\naction_v2_sha256:265a53fbe49bfd71a988ffca4d72826be7eb12217787be4fb550d211308d6de0"
+    },
+    {
+      "id": "evidence-acc-archival-requires-record-899da561-7cef-47ae-af64-30ec22e87108",
+      "at": "2026-08-20T10:07:18.142Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-archival-requires-record\naction_v2_sha256:2e35c36e75ecdea0102b2f84884144a655a7b7058678cc1474d105eb6fbfff7c"
+    },
+    {
+      "id": "evidence-acc-suite-intact-350638ee-215d-434b-8d4c-5d8ddef5bf6b",
+      "at": "2026-08-20T10:07:22.904Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-suite-intact\naction_v2_sha256:d48884303fc385e853df802799eec804b277318c9e2d0787c48d163d9f040f81"
+    },
+    {
+      "id": "submit_review:2026-08-20-014-track-task-records-for-audit-continuity:2026-08-20T10:08:12.873Z",
+      "at": "2026-08-20T10:08:12.873Z",
+      "type": "submit_review",
+      "from_phase": "working",
+      "to_phase": "review",
+      "reason": "action_v2_sha256:9302c5c79bcc9438fb8fdf6c465a3dab8ca9ee00d90d65c02a7a73c781b3f16c"
+    },
+    {
+      "id": "record_approval:2026-08-20-014-track-task-records-for-audit-continuity:2026-08-20T10:08:42.261Z",
+      "at": "2026-08-20T10:08:42.261Z",
+      "type": "record_approval",
+      "from_phase": "review",
+      "to_phase": "review",
+      "reason": "approval-review-bc254f8f-3b90-44cf-9377-88236c0c79c1\naction_v2_sha256:e1a5d2037e2c15145226051a067acda8713f261e953cce3eeb2e78da73b84d9b",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "reviewer-1",
+        "confirmation_ref": "review-confirm-014",
+        "issued_at": "2026-08-20T10:08:42.261Z",
+        "expires_at": "2099-01-01T00:00:00.000Z"
+      }
+    },
+    {
+      "id": "resolve_finding:2026-08-20-014-track-task-records-for-audit-continuity:2026-08-20T10:09:18.089Z",
+      "at": "2026-08-20T10:09:18.089Z",
+      "type": "resolve_finding",
+      "from_phase": "review",
+      "to_phase": "review",
+      "reason": "qa-evidence-freshness-ec95d4ad7167afb3-ec95d4ad-d0b9ba\naction_v2_sha256:0282cc81ffc3b66d43ef77d77681391138af40a242140451f020e1251a5f1634"
+    },
+    {
+      "id": "complete:2026-08-20-014-track-task-records-for-audit-continuity:2026-08-20T10:09:35.995Z",
+      "at": "2026-08-20T10:09:35.995Z",
+      "type": "complete",
+      "from_phase": "review",
+      "to_phase": "done",
+      "reason": "action_v2_sha256:b48ba1ad6cc6998fa57f2ecc3ef9cdf775c4e9076d65db64170fafb233bd8cdc"
+    }
+  ]
+}

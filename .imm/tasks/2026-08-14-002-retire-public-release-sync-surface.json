@@ -1,0 +1,200 @@
+{
+  "contract": "assurance_kernel/task_record/v2",
+  "task_id": "2026-08-14-002-retire-public-release-sync-surface",
+  "intent_revision": 1,
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "2026-08-14-002-retire-public-release-sync-surface",
+    "goal": "Retire the obsolete public-repository sync script and templates as one coherent release-contract change: the root Pi package workspace and package.json manifest become the only artifact source, release adapters receive the repository root by default while preserving an explicit artifact-path override, active documentation and tests no longer depend on generated public-release files, and the direct package boundary remains fail-closed against development or retired host surfaces.",
+    "acceptance": [
+      {
+        "id": "acc-retired-public-sync-absent",
+        "assertion": "The tracked sync script and four public-release templates are absent, and active README and current-contract tests no longer instruct, open, execute, or recreate the retired public-release surface; historical Plans, Specs, archives, and solution evidence may retain explicitly historical references.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/pi-only-current-contracts.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 262144\n}\n"
+      },
+      {
+        "id": "acc-direct-package-artifact-boundary",
+        "assertion": "Root package.json remains the sole package and version authority, and focused release tests derive and inspect the direct package artifact boundary from its files, exports, and Pi metadata while rejecting repository-only development trees and retired host adapter surfaces without using a copied public repository.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/pi-only-release-contract.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 262144\n}\n"
+      },
+      {
+        "id": "acc-release-adapter-root-artifact",
+        "assertion": "plugin_release dry-run and configured-adapter flows use the canonical repository root as the default artifact_path, honor an explicit --artifact-path literally, never generate or probe a sibling immune-brain-public tree, and preserve package.json as manifest_path.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/pi-only-release-contract.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 262144\n}\n"
+      },
+      {
+        "id": "acc-direct-release-regression",
+        "assertion": "Root manifest validation and the complete repository test suite pass with the retired surface absent, with no real publish, Git tag, push, or external repository mutation during verification.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 300000,\n  \"max_output_bytes\": 262144\n}\n"
+      }
+    ],
+    "scope_hint": [
+      "docs/specs/direct-pi-package-release-surface.spec.md",
+      "README.md",
+      "package.json",
+      "scripts/plugin_release.ts",
+      "scripts/sync-to-public.sh",
+      "public-release/templates/CONTRIBUTING.md",
+      "public-release/templates/README.md",
+      "public-release/templates/SECURITY.md",
+      "public-release/templates/mise.toml",
+      "tests/pi-only-release-contract.test.ts",
+      "tests/pi-only-current-contracts.test.ts"
+    ],
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/2026-08-14-002-retire-public-release-sync-surface.intent.json",
+    "revision": 1,
+    "content_hash": "sha256:497ffa3d3812d90dd5e7ac504f50499828a6acb9756227227f8a62a8c647730a"
+  },
+  "phase": "done",
+  "baseline": "sha256:497ffa3d3812d90dd5e7ac504f50499828a6acb9756227227f8a62a8c647730a",
+  "evidence": [
+    {
+      "id": "evidence-record_evidence:2026-08-14-002-retire-public-release-sync-surface:2026-08-14T07:52:21.514Z",
+      "acceptance_id": "acc-retired-public-sync-absent",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:497ffa3d3812d90dd5e7ac504f50499828a6acb9756227227f8a62a8c647730a",
+      "diff_hash": "sha256:8a8ae6848b5f4321f0967ee57ee20fbf92a8cf43c4f7d55b66f256ec1d9bcd4c",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "Fresh focused run: bun test tests/pi-only-current-contracts.test.ts passed 4/4. The suite verifies the sync script and four templates are absent and active README/plugin_release contain no retired sync, template, or sibling-public-tree references."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-14-002-retire-public-release-sync-surface:2026-08-14T07:52:30.774Z",
+      "acceptance_id": "acc-direct-package-artifact-boundary",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:497ffa3d3812d90dd5e7ac504f50499828a6acb9756227227f8a62a8c647730a",
+      "diff_hash": "sha256:8a8ae6848b5f4321f0967ee57ee20fbf92a8cf43c4f7d55b66f256ec1d9bcd4c",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "Fresh focused release suite passed 4/4. npm pack --dry-run --json --ignore-scripts produced 118 package files with zero tests, docs, scripts, public-release, or retired host paths; package.json remains sole manifest/version authority and private remains true."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-14-002-retire-public-release-sync-surface:2026-08-14T07:52:39.897Z",
+      "acceptance_id": "acc-release-adapter-root-artifact",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:497ffa3d3812d90dd5e7ac504f50499828a6acb9756227227f8a62a8c647730a",
+      "diff_hash": "sha256:8a8ae6848b5f4321f0967ee57ee20fbf92a8cf43c4f7d55b66f256ec1d9bcd4c",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "Fresh release contract test executes plugin_release dry-runs and proves default artifact_path equals canonical repo root, manifest_path is package.json, no-adapter remains blocked, configured adapter substitutes root, and explicit --artifact-path is preserved literally."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-14-002-retire-public-release-sync-surface:2026-08-14T07:52:48.168Z",
+      "acceptance_id": "acc-direct-release-regression",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:497ffa3d3812d90dd5e7ac504f50499828a6acb9756227227f8a62a8c647730a",
+      "diff_hash": "sha256:8a8ae6848b5f4321f0967ee57ee20fbf92a8cf43c4f7d55b66f256ec1d9bcd4c",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "Fresh final verification: bun test passed 1103/1103; bun scripts/plugin_versioning.ts validate reports aligned package 1.5.0; mise check-plugin and check-dist-sync passed; git diff checks passed. No --apply, tag, push, publish, or external repository mutation was executed."
+    }
+  ],
+  "findings": [],
+  "approvals": [
+    {
+      "id": "approval-qa-e3882bfe",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:497ffa3d3812d90dd5e7ac504f50499828a6acb9756227227f8a62a8c647730a",
+      "diff_hash": "sha256:8a8ae6848b5f4321f0967ee57ee20fbf92a8cf43c4f7d55b66f256ec1d9bcd4c",
+      "actor_id": "qa-host-2a2458db",
+      "summary": "all 4 fixed verification descriptor(s) passed"
+    },
+    {
+      "id": "approval-review-bbad3ecc",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:497ffa3d3812d90dd5e7ac504f50499828a6acb9756227227f8a62a8c647730a",
+      "diff_hash": "sha256:8a8ae6848b5f4321f0967ee57ee20fbf92a8cf43c4f7d55b66f256ec1d9bcd4c",
+      "actor_id": "native-review-d5434ddb-9be2-40f",
+      "summary": "Immutable bundle provenance verified; the retired sync surface is coherently removed, release adapters use the direct root package artifact, and focused tests cover package boundaries and adapter-path behavior."
+    }
+  ],
+  "history": [
+    {
+      "id": "record_evidence:2026-08-14-002-retire-public-release-sync-surface:2026-08-14T07:52:21.514Z",
+      "at": "2026-08-14T07:52:21.514Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-retired-public-sync-absent\naction_v2_sha256:3be45aa0d82e0c0027b44418046a5a35b1f0f58421ae8a57a104272d553aa2f0"
+    },
+    {
+      "id": "record_evidence:2026-08-14-002-retire-public-release-sync-surface:2026-08-14T07:52:30.774Z",
+      "at": "2026-08-14T07:52:30.774Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-direct-package-artifact-boundary\naction_v2_sha256:69b3fa3bf7cfb570ff26ac61fae472c9b6ceaf93837e5b032d00bcef8a8bbabc"
+    },
+    {
+      "id": "record_evidence:2026-08-14-002-retire-public-release-sync-surface:2026-08-14T07:52:39.897Z",
+      "at": "2026-08-14T07:52:39.897Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-release-adapter-root-artifact\naction_v2_sha256:8641bfcf86d00d0bd296c7190f583b14614b4e2b2feadc4eececee292ff68532"
+    },
+    {
+      "id": "record_evidence:2026-08-14-002-retire-public-release-sync-surface:2026-08-14T07:52:48.168Z",
+      "at": "2026-08-14T07:52:48.168Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-direct-release-regression\naction_v2_sha256:108905739aa3ff8d41b6106d609b73df68a668f84a5d28374ca5cb27dd119afe"
+    },
+    {
+      "id": "submit_review:2026-08-14-002-retire-public-release-sync-surface:2026-08-14T07:52:56.531Z",
+      "at": "2026-08-14T07:52:56.531Z",
+      "type": "submit_review",
+      "from_phase": "working",
+      "to_phase": "review",
+      "reason": "action_v2_sha256:bde5745e2eb5e9652fb376614291a66c4e039e3cbf3af613944445f4d3cfabbe"
+    },
+    {
+      "id": "record_approval:2026-08-14-002-retire-public-release-sync-surface:2026-08-14T07:54:41.951Z",
+      "at": "2026-08-14T07:54:41.951Z",
+      "type": "record_approval",
+      "from_phase": "review",
+      "to_phase": "review",
+      "reason": "approval-qa-e3882bfe\naction_v2_sha256:c011cf869edaa984188b62bdd2ee30f7abce2d261937f91af4acda6a06990048",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "qa-host-2a2458db",
+        "confirmation_ref": "pi-confirm-24bb55e12ee473b4",
+        "issued_at": "2026-08-14T07:54:41.951Z",
+        "expires_at": "2026-08-14T08:04:41.951Z"
+      }
+    },
+    {
+      "id": "record_approval:2026-08-14-002-retire-public-release-sync-surface:2026-08-14T08:00:22.983Z",
+      "at": "2026-08-14T08:00:22.983Z",
+      "type": "record_approval",
+      "from_phase": "review",
+      "to_phase": "review",
+      "reason": "approval-review-bbad3ecc\naction_v2_sha256:7e319adede28b8a521b1d1fd81be42e7b460c6e4fff8193b027ffee0abde47c6",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "native-review-d5434ddb-9be2-40f",
+        "confirmation_ref": "pi-confirm-0b112d0228561c51",
+        "issued_at": "2026-08-14T08:00:22.983Z",
+        "expires_at": "2026-08-14T08:10:22.983Z"
+      }
+    },
+    {
+      "id": "complete:2026-08-14-002-retire-public-release-sync-surface:2026-08-14T08:00:52.633Z",
+      "at": "2026-08-14T08:00:52.633Z",
+      "type": "complete",
+      "from_phase": "review",
+      "to_phase": "done",
+      "reason": "action_v2_sha256:2b0f98d6eab3cb92bfc15bdcb22e310d856b422ff102a1d58765a3dfc34988a2"
+    }
+  ]
+}

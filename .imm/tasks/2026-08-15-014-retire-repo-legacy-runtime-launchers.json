@@ -1,0 +1,241 @@
+{
+  "contract": "assurance_kernel/task_record/v2",
+  "task_id": "2026-08-15-014-retire-repo-legacy-runtime-launchers",
+  "intent_revision": 1,
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "2026-08-15-014-retire-repo-legacy-runtime-launchers",
+    "goal": "Remove repository-owned launchers and current documentation that still select the legacy v3 dispatcher, routing operational tasks through the shipped v4 runtime without modifying the legacy dispatcher or packaged Skill fallback contracts.",
+    "acceptance": [
+      {
+        "id": "acc-launcher-config",
+        "assertion": "Repository task configuration contains no legacy dispatcher launcher or obsolete heal task, and retained runtime tasks select v4_runtime.ts.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/v4-runtime-launchers.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 180000,\n  \"max_output_bytes\": 262144\n}\n"
+      },
+      {
+        "id": "acc-list-runtime",
+        "assertion": "The real mise list-runtime-tools task succeeds through the v4-only command manifest.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/v4-runtime-launchers.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 180000,\n  \"max_output_bytes\": 262144\n}\n"
+      },
+      {
+        "id": "acc-check-plugin",
+        "assertion": "The real mise check-plugin task validates package metadata and the v4 runtime successfully.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/v4-runtime-launchers.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 180000,\n  \"max_output_bytes\": 262144\n}\n"
+      },
+      {
+        "id": "acc-current-docs",
+        "assertion": "README and the current CONTEXT architecture identify v4_runtime.ts as active while the legacy dispatcher remains present and outside this task scope.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/v4-runtime-launchers.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 180000,\n  \"max_output_bytes\": 262144\n}\n"
+      },
+      {
+        "id": "acc-package-retained",
+        "assertion": "Source and packed Pi discovery, package surface, and host runtime remain unchanged and load exactly the retained canary factories.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/pi-canary-discovery-regression.test.ts\",\n    \"tests/pi-canary-packed-loader.test.ts\",\n    \"tests/pi-only-package-surface.test.ts\",\n    \"tests/host-runtime-cutover.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 300000,\n  \"max_output_bytes\": 262144\n}\n"
+      },
+      {
+        "id": "acc-full-regression",
+        "assertion": "The full repository test suite passes after repository launcher retirement.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 300000,\n  \"max_output_bytes\": 262144\n}\n"
+      }
+    ],
+    "scope_hint": [
+      "CONTEXT.md",
+      "README.md",
+      "docs/specs/host-native-lightweight-workflow-roadmap.spec.md",
+      "docs/specs/retire-repo-legacy-runtime-launchers.spec.md",
+      "mise.toml",
+      "tests/v4-runtime-launchers.test.ts"
+    ],
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/2026-08-15-014-retire-repo-legacy-runtime-launchers.intent.json",
+    "revision": 1,
+    "content_hash": "sha256:07feef866079bc970fffed22708f85bb8a6d72507dabf7d7fc9b075790aaa50c"
+  },
+  "phase": "done",
+  "baseline": "sha256:07feef866079bc970fffed22708f85bb8a6d72507dabf7d7fc9b075790aaa50c",
+  "evidence": [
+    {
+      "id": "evidence-record_evidence:2026-08-15-014-retire-repo-legacy-runtime-launchers:2026-08-15T06:30:01.788Z",
+      "acceptance_id": "acc-launcher-config",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:07feef866079bc970fffed22708f85bb8a6d72507dabf7d7fc9b075790aaa50c",
+      "diff_hash": "sha256:5d4de3108b0a5bb23c2868ddddb25262b69ed71635db32f6679610be58bf9cb8",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "At HEAD 6b0a103, tests/v4-runtime-launchers.test.ts passed 4/4. mise.toml has no legacy dispatcher path or heal task and contains exactly two v4_runtime.ts list-commands launchers."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-15-014-retire-repo-legacy-runtime-launchers:2026-08-15T06:30:12.418Z",
+      "acceptance_id": "acc-list-runtime",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:07feef866079bc970fffed22708f85bb8a6d72507dabf7d7fc9b075790aaa50c",
+      "diff_hash": "sha256:5d4de3108b0a5bb23c2868ddddb25262b69ed71635db32f6679610be58bf9cb8",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "At HEAD 6b0a103, the focused contract executed real `mise run list-runtime-tools`; it exited 0 and returned the v4 manifest with only imm-kernel and imm-plan active commands."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-15-014-retire-repo-legacy-runtime-launchers:2026-08-15T06:30:21.941Z",
+      "acceptance_id": "acc-check-plugin",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:07feef866079bc970fffed22708f85bb8a6d72507dabf7d7fc9b075790aaa50c",
+      "diff_hash": "sha256:5d4de3108b0a5bb23c2868ddddb25262b69ed71635db32f6679610be58bf9cb8",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "At HEAD 6b0a103, the focused contract executed real `mise run check-plugin`; package metadata validation and the v4 command manifest both completed successfully."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-15-014-retire-repo-legacy-runtime-launchers:2026-08-15T06:30:30.038Z",
+      "acceptance_id": "acc-current-docs",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:07feef866079bc970fffed22708f85bb8a6d72507dabf7d7fc9b075790aaa50c",
+      "diff_hash": "sha256:5d4de3108b0a5bb23c2868ddddb25262b69ed71635db32f6679610be58bf9cb8",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "At HEAD 6b0a103, README.md and CONTEXT.md identify runtime/v4_runtime.ts as current and contain no runtime/immune_brain_runtime.ts reference. The focused contract also proves the legacy dispatcher and packaged fallback remain present for later boundaries."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-15-014-retire-repo-legacy-runtime-launchers:2026-08-15T06:30:37.886Z",
+      "acceptance_id": "acc-package-retained",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:07feef866079bc970fffed22708f85bb8a6d72507dabf7d7fc9b075790aaa50c",
+      "diff_hash": "sha256:5d4de3108b0a5bb23c2868ddddb25262b69ed71635db32f6679610be58bf9cb8",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "At HEAD 6b0a103, source discovery, packed loader, package surface, and host runtime focused tests passed 15/15; Pi still discovers exactly the three retained canary factories."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-15-014-retire-repo-legacy-runtime-launchers:2026-08-15T06:30:46.472Z",
+      "acceptance_id": "acc-full-regression",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:07feef866079bc970fffed22708f85bb8a6d72507dabf7d7fc9b075790aaa50c",
+      "diff_hash": "sha256:5d4de3108b0a5bb23c2868ddddb25262b69ed71635db32f6679610be58bf9cb8",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "At HEAD 6b0a103, bun test passed 1119 tests across 147 files with zero failures and 5592 expectations; git status and diff checks are clean."
+    }
+  ],
+  "findings": [],
+  "approvals": [
+    {
+      "id": "approval-qa-1eeaed21",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:07feef866079bc970fffed22708f85bb8a6d72507dabf7d7fc9b075790aaa50c",
+      "diff_hash": "sha256:5d4de3108b0a5bb23c2868ddddb25262b69ed71635db32f6679610be58bf9cb8",
+      "actor_id": "qa-host-b4731f1d",
+      "summary": "all 6 fixed verification descriptor(s) passed"
+    },
+    {
+      "id": "approval-review-4127247b",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:07feef866079bc970fffed22708f85bb8a6d72507dabf7d7fc9b075790aaa50c",
+      "diff_hash": "sha256:5d4de3108b0a5bb23c2868ddddb25262b69ed71635db32f6679610be58bf9cb8",
+      "actor_id": "native-review-1302819c-c730-47c",
+      "summary": "Immutable bundle provenance verified; scoped launcher, documentation, and regression changes are correct with no review findings."
+    }
+  ],
+  "history": [
+    {
+      "id": "record_evidence:2026-08-15-014-retire-repo-legacy-runtime-launchers:2026-08-15T06:30:01.788Z",
+      "at": "2026-08-15T06:30:01.788Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-launcher-config\naction_v2_sha256:d98727f62828bf1dda5c6a96245819de832c09d388f09a7a088519ce72226e60"
+    },
+    {
+      "id": "record_evidence:2026-08-15-014-retire-repo-legacy-runtime-launchers:2026-08-15T06:30:12.418Z",
+      "at": "2026-08-15T06:30:12.418Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-list-runtime\naction_v2_sha256:ce5c7d75a48fe8c71deb98ef4d61e530d10c5266b7e487b0ae448fb97e129947"
+    },
+    {
+      "id": "record_evidence:2026-08-15-014-retire-repo-legacy-runtime-launchers:2026-08-15T06:30:21.941Z",
+      "at": "2026-08-15T06:30:21.941Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-check-plugin\naction_v2_sha256:5f57c96183f9059684846f883d74389582e12bb5d8e7f7ba1a115999be23e1af"
+    },
+    {
+      "id": "record_evidence:2026-08-15-014-retire-repo-legacy-runtime-launchers:2026-08-15T06:30:30.038Z",
+      "at": "2026-08-15T06:30:30.038Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-current-docs\naction_v2_sha256:30d78a71884d389471de0b9b9dcb8c9a4fe4d8eb9d99f216d75a57ebc4ef2674"
+    },
+    {
+      "id": "record_evidence:2026-08-15-014-retire-repo-legacy-runtime-launchers:2026-08-15T06:30:37.886Z",
+      "at": "2026-08-15T06:30:37.886Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-package-retained\naction_v2_sha256:c0a2dcf4395de875c562c4e050caef10d8320a60a88c7b9e0bafe0cf7472657d"
+    },
+    {
+      "id": "record_evidence:2026-08-15-014-retire-repo-legacy-runtime-launchers:2026-08-15T06:30:46.472Z",
+      "at": "2026-08-15T06:30:46.472Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-full-regression\naction_v2_sha256:8736aef4862952189510c1e698b72d7fe0a697c70c74d3dde01baadd833587fb"
+    },
+    {
+      "id": "submit_review:2026-08-15-014-retire-repo-legacy-runtime-launchers:2026-08-15T06:30:59.436Z",
+      "at": "2026-08-15T06:30:59.436Z",
+      "type": "submit_review",
+      "from_phase": "working",
+      "to_phase": "review",
+      "reason": "action_v2_sha256:58e2b9890a41b3d62c8daaeee939f5d84655cc15aae2633b0fa3ec1d3fa1b623"
+    },
+    {
+      "id": "record_approval:2026-08-15-014-retire-repo-legacy-runtime-launchers:2026-08-15T06:32:11.250Z",
+      "at": "2026-08-15T06:32:11.250Z",
+      "type": "record_approval",
+      "from_phase": "review",
+      "to_phase": "review",
+      "reason": "approval-qa-1eeaed21\naction_v2_sha256:a17d88afe526df13bd228a69b06f73652448b9ccfb0a87206b365bccbbe2afd9",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "qa-host-b4731f1d",
+        "confirmation_ref": "pi-confirm-87d4077ea9df214d",
+        "issued_at": "2026-08-15T06:32:11.250Z",
+        "expires_at": "2026-08-15T06:42:11.250Z"
+      }
+    },
+    {
+      "id": "record_approval:2026-08-15-014-retire-repo-legacy-runtime-launchers:2026-08-15T06:36:11.985Z",
+      "at": "2026-08-15T06:36:11.985Z",
+      "type": "record_approval",
+      "from_phase": "review",
+      "to_phase": "review",
+      "reason": "approval-review-4127247b\naction_v2_sha256:701e91d86a0126499aca24cd71c25c5a0f75e9cff7057e5f924fe60e3733d36d",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "native-review-1302819c-c730-47c",
+        "confirmation_ref": "pi-confirm-46fe923675998a7a",
+        "issued_at": "2026-08-15T06:36:11.986Z",
+        "expires_at": "2026-08-15T06:46:11.986Z"
+      }
+    },
+    {
+      "id": "complete:2026-08-15-014-retire-repo-legacy-runtime-launchers:2026-08-15T06:36:27.980Z",
+      "at": "2026-08-15T06:36:27.980Z",
+      "type": "complete",
+      "from_phase": "review",
+      "to_phase": "done",
+      "reason": "action_v2_sha256:702d62649b7a300e50b8ba41d3b95f76caa4937c7f013c1c47f5b8e3e3ba8025"
+    }
+  ]
+}

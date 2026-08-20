@@ -1,0 +1,9 @@
+{
+  "contract": "assurance_kernel/task_tombstone/v1",
+  "task_id": "2026-08-14-011-host-native-assurance-ui",
+  "lifecycle_status": "terminal",
+  "terminal_phase": "done",
+  "terminal_event_id": "complete:2026-08-14-011-host-native-assurance-ui:2026-08-15T05:42:59.791Z",
+  "final_record_hash": "sha256:b796346f7423b91db1cc289ec44940e90a3aa9fd96dc23368f88dd3807987edb",
+  "terminalized_at": "2026-08-15T05:42:59.791Z"
+}

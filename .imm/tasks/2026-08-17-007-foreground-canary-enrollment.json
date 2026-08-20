@@ -1,0 +1,276 @@
+{
+  "contract": "assurance_kernel/task_record/v2",
+  "task_id": "2026-08-17-007-foreground-canary-enrollment",
+  "intent_revision": 1,
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "2026-08-17-007-foreground-canary-enrollment",
+    "goal": "Replace detached Enrollment command jobs with one Parent-invoked foreground imm_canary_enrollment Tool while preserving every Kernel enrollment authority invariant. Closed-world settlement inventory: trigger sources are the two TUI slash launchers, the foreground Tool invocation, host cancellation, and session shutdown; states are idle, preparing, snapshotting, rehearsing, awaiting_confirmation, revalidating, committing, and terminal; native Tool execution owns every pre-commit terminal and the Kernel enrollment commit receipt owns the non-cancellable commit terminal; outcomes are success, confirmation rejection, cancellation, timeout, setup/process/output/integrity/rehearsal failure, commit failure, and settlement_unknown. Every pre-commit terminal performs zero authority writes, every child process reaches close before copy cleanup, every path emits one bounded terminal Tool result, and no detached job, completion notification, Widget timer, Footer content, or cancel subcommand remains.",
+    "acceptance": [
+      {
+        "id": "acc-foreground-enrollment-lifecycle",
+        "assertion": "Exactly one TUI-only imm_canary_enrollment Tool accepts only action new|enroll plus a bounded task ID; /imm-canary-new and /imm-canary-enroll are thin visible Parent launchers with no long-running work or cancel subcommand. The Tool executes the complete preparation, frozen-index descriptor rehearsal, explicit confirmation or waiver, revalidation, rehearsal, and enrollment flow synchronously; forwards the host AbortSignal through every pre-commit stage and process tree; uses onUpdate plus renderCall/renderResult for bounded progress; preserves single-flight and session-shutdown cleanup; makes authority commit explicitly non-cancellable; and deterministically represents success, rejection, cancellation, timeout, setup/process/output/integrity/rehearsal failure, commit failure, and settlement_unknown with zero pre-commit authority writes and close-before-cleanup semantics.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/pi-canary-enroll-extension.test.ts\",\n    \"tests/pi-canary-new-extension.test.ts\",\n    \"tests/kernel-descriptor-rehearsal.test.ts\",\n    \"tests/pi-enrollment-progress-widget.test.ts\",\n    \"tests/pi-canary-package-boundary.test.ts\",\n    \"tests/imm-canary-work-contract.test.ts\",\n    \"tests/pi-canary-packed-consumer.test.ts\",\n    \"tests/kernel-enrollment-authority.test.ts\",\n    \"tests/kernel-enrollment-transaction.test.ts\",\n    \"tests/kernel-pi-canary-live-boundary.test.ts\",\n    \"tests/kernel-pi-canary-prepare.test.ts\",\n    \"tests/v4-storage-retirement-enrollment.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 300000,\n  \"max_output_bytes\": 262144\n}\n"
+      },
+      {
+        "id": "acc-enrollment-authority-package-and-regression",
+        "assertion": "The cutover preserves immutable index and scope binding, descriptor concurrency and budgets, waiver taxonomy, confirmation-derived capability, final-lock freshness, atomic TaskRecord/workspace/backend-claim commit, and unchanged schemas. Canonical roadmap, superseded Footer/Widget and command-owned Specs, README, USER_GUIDE, packaged boundary assertions, and executable structural contracts consistently require foreground Tool execution and an empty Footer; no stale background job, completion notification, polling, cancel-command, or Widget-progress guidance remains; and the complete Bun repository regression passes.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 300000,\n  \"max_output_bytes\": 262144\n}\n"
+      }
+    ],
+    "scope_hint": [
+      "README.md",
+      "docs/plans/2026-08-17-007-foreground-canary-enrollment.intent.json",
+      "docs/specs/assurance-kernel-v4-p2b1-pi-confirmed-enrollment.spec.md",
+      "docs/specs/assurance-kernel-v4-p2c-pi-default-routing.spec.md",
+      "docs/specs/footer-free-enrollment-progress.spec.md",
+      "docs/specs/foreground-interactive-workflow-roadmap.spec.md",
+      "plugins/immune-brain/.pi-extension/imm-canary-enroll.ts",
+      "plugins/immune-brain/.pi-extension/imm-canary-new.ts",
+      "plugins/immune-brain/.pi-extension/pi-canary-verification.ts",
+      "plugins/immune-brain/.pi-extension/runtime-stub.ts",
+      "plugins/immune-brain/USER_GUIDE.md",
+      "plugins/immune-brain/runtime/kernel/backend_claim.ts",
+      "plugins/immune-brain/runtime/kernel/canary_eligibility.ts",
+      "plugins/immune-brain/runtime/kernel/enrollment.ts",
+      "plugins/immune-brain/runtime/kernel/enrollment_authority.ts",
+      "plugins/immune-brain/runtime/kernel/intent.ts",
+      "plugins/immune-brain/runtime/kernel/pi_canary_prepare.ts",
+      "plugins/immune-brain/runtime/kernel/storage.ts",
+      "tests/fixtures/enrollment-capability-test-seam.ts",
+      "tests/imm-canary-work-contract.test.ts",
+      "tests/kernel-descriptor-rehearsal.test.ts",
+      "tests/kernel-enrollment-authority.test.ts",
+      "tests/kernel-enrollment-transaction.test.ts",
+      "tests/kernel-pi-canary-live-boundary.test.ts",
+      "tests/kernel-pi-canary-prepare.test.ts",
+      "tests/pi-canary-enroll-extension.test.ts",
+      "tests/pi-canary-new-extension.test.ts",
+      "tests/pi-canary-package-boundary.test.ts",
+      "tests/pi-canary-packed-consumer.test.ts",
+      "tests/pi-enrollment-progress-widget.test.ts",
+      "tests/v4-storage-retirement-enrollment.test.ts"
+    ],
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/2026-08-17-007-foreground-canary-enrollment.intent.json",
+    "revision": 1,
+    "content_hash": "sha256:b6cb1b5965f81291aaef48a4969a1833865bfc7e5ad68609aeccc7798eefd98b"
+  },
+  "phase": "done",
+  "baseline": "sha256:b6cb1b5965f81291aaef48a4969a1833865bfc7e5ad68609aeccc7798eefd98b",
+  "evidence": [
+    {
+      "id": "evidence-record_evidence:2026-08-17-007-foreground-canary-enrollment:2026-08-17T16:58:16.642Z",
+      "acceptance_id": "acc-foreground-enrollment-lifecycle",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:b6cb1b5965f81291aaef48a4969a1833865bfc7e5ad68609aeccc7798eefd98b",
+      "diff_hash": "sha256:34b400c6e7d39a4acca28ad68cbe0d9a6e7f70b28003cc1960c22d04123f0dbc",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "Staged snapshot diff_hash sha256:34b400c6e7d39a4acca28ad68cbe0d9a6e7f70b28003cc1960c22d04123f0dbc: immutable focused descriptor passed 76/76 tests across all 12 commanded files in 5.06s. Behavioral coverage proves one foreground imm_canary_enrollment Tool plus two visible launchers, bounded onUpdate stages and terminal rendering, real AbortSignal cancellation after child close-settlement with zero writes, exact confirmation/revalidation, single-flight and shutdown cleanup, non-cancellable commit linearization, integrity drift rejection, and zero detached coordinator/Widget/Footer/completion polling surface. git diff --quiet, cached diff check, package sync, and no out-of-scope staged paths all passed."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-17-007-foreground-canary-enrollment:2026-08-17T16:58:26.355Z",
+      "acceptance_id": "acc-enrollment-authority-package-and-regression",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:b6cb1b5965f81291aaef48a4969a1833865bfc7e5ad68609aeccc7798eefd98b",
+      "diff_hash": "sha256:34b400c6e7d39a4acca28ad68cbe0d9a6e7f70b28003cc1960c22d04123f0dbc",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "Same staged snapshot diff_hash sha256:34b400c6e7d39a4acca28ad68cbe0d9a6e7f70b28003cc1960c22d04123f0dbc: full `bun test` passed 995/995 tests with 4585 assertions across 130 files in 65.51s. Enrollment authority, transaction, capability, frozen-index rehearsal, package boundary/consumer host load, live boundary, secure intent preparation, v4 storage retirement, and all unrelated regressions passed. Canonical intent validation remains valid/eligible/tracked; `bun scripts/sync-dist-docs.ts --check` reports all generated packaged docs in sync; zero unstaged changes and zero staged paths outside the 17-path TaskIntent scope."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-17-007-foreground-canary-enrollment:2026-08-17T17:06:07.672Z",
+      "acceptance_id": "acc-foreground-enrollment-lifecycle",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:b6cb1b5965f81291aaef48a4969a1833865bfc7e5ad68609aeccc7798eefd98b",
+      "diff_hash": "sha256:89768a23072c240207a4daa399185cfa08739f74cc781a4434bd2aec2a82d1bb",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "Rework staged snapshot diff_hash sha256:89768a23072c240207a4daa399185cfa08739f74cc781a4434bd2aec2a82d1bb: immutable focused descriptor passed 76/76 with 461 assertions in 4.99s. The Review finding is fixed by binding relay, beginCommit, and finally cleanup to the exact ActiveForegroundEnrollment slot object rather than taskId. A same-task concurrent second call and a third call now both remain blocked without executing work while the original slot is active; only exact owner settlement clears the slot, after which a new call succeeds. Existing AbortSignal close-settlement, shutdown, commit linearization, progress, confirmation, integrity, and zero-background-surface coverage remains green."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-17-007-foreground-canary-enrollment:2026-08-17T17:06:15.701Z",
+      "acceptance_id": "acc-enrollment-authority-package-and-regression",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:b6cb1b5965f81291aaef48a4969a1833865bfc7e5ad68609aeccc7798eefd98b",
+      "diff_hash": "sha256:89768a23072c240207a4daa399185cfa08739f74cc781a4434bd2aec2a82d1bb",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "Same rework staged snapshot diff_hash sha256:89768a23072c240207a4daa399185cfa08739f74cc781a4434bd2aec2a82d1bb: full `bun test` passed 995/995 with 4589 assertions across 130 files in 66.42s. Package sync, cached diff check, zero unstaged state, and zero staged paths outside TaskIntent scope passed. Authority/capability/transaction schemas and owners remain unchanged."
+    }
+  ],
+  "findings": [
+    {
+      "id": "review-009f62c747cb-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "acc-foreground-enrollment-lifecycle",
+      "source": "review",
+      "review_round": 1,
+      "summary": "plugins/immune-brain/.pi-extension/imm-canary-enroll.ts: ForegroundEnrollmentCoordinator identifies the active operation only by taskId, so a concurrent same-task call can enter its finally block and clear the first call's active state; this breaks single-flight and shutdown/cancellation ownership, allowing a third enrollment to start while the original operation is still running."
+    }
+  ],
+  "approvals": [
+    {
+      "id": "approval-qa-492e843f",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:b6cb1b5965f81291aaef48a4969a1833865bfc7e5ad68609aeccc7798eefd98b",
+      "diff_hash": "sha256:34b400c6e7d39a4acca28ad68cbe0d9a6e7f70b28003cc1960c22d04123f0dbc",
+      "actor_id": "qa-host-e4387a83",
+      "summary": "all 2 fixed verification descriptor(s) passed"
+    },
+    {
+      "id": "approval-qa-29c8e4c9",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:b6cb1b5965f81291aaef48a4969a1833865bfc7e5ad68609aeccc7798eefd98b",
+      "diff_hash": "sha256:89768a23072c240207a4daa399185cfa08739f74cc781a4434bd2aec2a82d1bb",
+      "actor_id": "qa-host-ffaddca2",
+      "summary": "all 2 fixed verification descriptor(s) passed"
+    },
+    {
+      "id": "approval-review-df1b45cf",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:b6cb1b5965f81291aaef48a4969a1833865bfc7e5ad68609aeccc7798eefd98b",
+      "diff_hash": "sha256:89768a23072c240207a4daa399185cfa08739f74cc781a4434bd2aec2a82d1bb",
+      "actor_id": "native-review-d4a1e17f-9cfd-4d3",
+      "summary": "Immutable bundle provenance verified; foreground enrollment lifecycle, settlement paths, authority preservation, and regression coverage satisfy both acceptance assertions."
+    }
+  ],
+  "history": [
+    {
+      "id": "record_evidence:2026-08-17-007-foreground-canary-enrollment:2026-08-17T16:58:16.642Z",
+      "at": "2026-08-17T16:58:16.642Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-foreground-enrollment-lifecycle\naction_v2_sha256:5efccf14b2394c66a3f0d64a1f07a2dfcf53927740b05c621860c8ba0038b90f"
+    },
+    {
+      "id": "record_evidence:2026-08-17-007-foreground-canary-enrollment:2026-08-17T16:58:26.355Z",
+      "at": "2026-08-17T16:58:26.355Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-enrollment-authority-package-and-regression\naction_v2_sha256:a09433eeec17d1a84ab0657191040435da1633592a7fa6d11317831edd3dd53e"
+    },
+    {
+      "id": "submit_review:2026-08-17-007-foreground-canary-enrollment:2026-08-17T16:58:42.926Z",
+      "at": "2026-08-17T16:58:42.926Z",
+      "type": "submit_review",
+      "from_phase": "working",
+      "to_phase": "review",
+      "reason": "action_v2_sha256:e17eb9313a7cc7278ba947f3b6fb2a0013c61fa74cfc83920884b6de9fa691d0"
+    },
+    {
+      "id": "record_approval:2026-08-17-007-foreground-canary-enrollment:2026-08-17T17:00:11.073Z",
+      "at": "2026-08-17T17:00:11.073Z",
+      "type": "record_approval",
+      "from_phase": "review",
+      "to_phase": "review",
+      "reason": "approval-qa-492e843f\naction_v2_sha256:4fca61ed0866c411973ffbed2a249caeb51d5801ef127b9681499dc1159e8261",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "qa-host-e4387a83",
+        "confirmation_ref": "pi-confirm-59dcd530fd7a1607",
+        "issued_at": "2026-08-17T17:00:11.074Z",
+        "expires_at": "2026-08-17T17:10:11.074Z"
+      }
+    },
+    {
+      "id": "request_rework:2026-08-17-007-foreground-canary-enrollment:2026-08-17T17:02:54.327Z",
+      "at": "2026-08-17T17:02:54.327Z",
+      "type": "request_rework",
+      "from_phase": "review",
+      "to_phase": "working",
+      "reason": "review_round_1\naction_v2_sha256:dc1d9d16c333866b43b565e54d71dd6c6095283a56b9fc2325258ce9a730e927",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "native-review-0946bc94-6510-40a",
+        "confirmation_ref": "pi-confirm-93676dd197db6850",
+        "issued_at": "2026-08-17T17:02:54.327Z",
+        "expires_at": "2026-08-17T17:12:54.327Z"
+      }
+    },
+    {
+      "id": "record_evidence:2026-08-17-007-foreground-canary-enrollment:2026-08-17T17:06:07.672Z",
+      "at": "2026-08-17T17:06:07.672Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-foreground-enrollment-lifecycle\naction_v2_sha256:3a519d28239bccd49e847123cf8172f91176ef7e72dd738e865056ef4423c058"
+    },
+    {
+      "id": "record_evidence:2026-08-17-007-foreground-canary-enrollment:2026-08-17T17:06:15.701Z",
+      "at": "2026-08-17T17:06:15.701Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-enrollment-authority-package-and-regression\naction_v2_sha256:00f8efe59fea5108f12f2458b9560f5c99a22df76797ae43783a3d608d169b8a"
+    },
+    {
+      "id": "resolve_finding:2026-08-17-007-foreground-canary-enrollment:2026-08-17T17:06:24.926Z",
+      "at": "2026-08-17T17:06:24.926Z",
+      "type": "resolve_finding",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "review-009f62c747cb-1-review-1\naction_v2_sha256:8ae10936083571bc67cc589d2d8a47049ed4af4b78ae8eba09e6c7d5c8e95cde"
+    },
+    {
+      "id": "submit_review:2026-08-17-007-foreground-canary-enrollment:2026-08-17T17:06:33.370Z",
+      "at": "2026-08-17T17:06:33.370Z",
+      "type": "submit_review",
+      "from_phase": "working",
+      "to_phase": "review",
+      "reason": "action_v2_sha256:b52fafba0cadd72c5d7a4a05f6a3ab0b1a28960f2c85bd103cd0ef6fca569dab"
+    },
+    {
+      "id": "record_approval:2026-08-17-007-foreground-canary-enrollment:2026-08-17T17:08:01.243Z",
+      "at": "2026-08-17T17:08:01.243Z",
+      "type": "record_approval",
+      "from_phase": "review",
+      "to_phase": "review",
+      "reason": "approval-qa-29c8e4c9\naction_v2_sha256:42245bd86b3dc06ec42b11e87b25e6cba0c06b87e710009af6dfeec984cc21e4",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "qa-host-ffaddca2",
+        "confirmation_ref": "pi-confirm-5eb62176f7c925e2",
+        "issued_at": "2026-08-17T17:08:01.244Z",
+        "expires_at": "2026-08-17T17:18:01.243Z"
+      }
+    },
+    {
+      "id": "record_approval:2026-08-17-007-foreground-canary-enrollment:2026-08-17T17:12:08.415Z",
+      "at": "2026-08-17T17:12:08.415Z",
+      "type": "record_approval",
+      "from_phase": "review",
+      "to_phase": "review",
+      "reason": "approval-review-df1b45cf\naction_v2_sha256:3298fce1b82f60fb4cb4599c91e0ddd93ef9e8c19b0f86dbc30c3b4b5ce0fd4c",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "native-review-d4a1e17f-9cfd-4d3",
+        "confirmation_ref": "pi-confirm-28dfac66d77d7adc",
+        "issued_at": "2026-08-17T17:12:08.416Z",
+        "expires_at": "2026-08-17T17:22:08.416Z"
+      }
+    },
+    {
+      "id": "complete:2026-08-17-007-foreground-canary-enrollment:2026-08-17T17:12:33.198Z",
+      "at": "2026-08-17T17:12:33.198Z",
+      "type": "complete",
+      "from_phase": "review",
+      "to_phase": "done",
+      "reason": "action_v2_sha256:dfb744d4418fde156180e4096fb3ff2bb076d295dbf9ce234484f5999022c973"
+    }
+  ]
+}

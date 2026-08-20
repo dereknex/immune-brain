@@ -1,0 +1,9 @@
+{
+  "contract": "assurance_kernel/task_tombstone/v1",
+  "task_id": "2026-08-17-004-interactive-advisory-foreground-r3",
+  "lifecycle_status": "terminal",
+  "terminal_phase": "done",
+  "terminal_event_id": "complete:2026-08-17-004-interactive-advisory-foreground-r3:2026-08-17T16:20:34.159Z",
+  "final_record_hash": "sha256:e360084b40b7770724436398b76a532ca74ec3f786cb7eb1f6c7d08ddd8f9a11",
+  "terminalized_at": "2026-08-17T16:20:34.159Z"
+}

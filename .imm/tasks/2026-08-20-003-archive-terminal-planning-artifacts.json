@@ -1,0 +1,172 @@
+{
+  "contract": "assurance_kernel/task_record/v2",
+  "task_id": "2026-08-20-003-archive-terminal-planning-artifacts",
+  "intent_revision": 1,
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "2026-08-20-003-archive-terminal-planning-artifacts",
+    "goal": "Archive terminal planning artifacts so an agent browsing docs/specs/ and docs/plans/ reaches current work instead of completed slices. Archival is a move into the existing archive/ directories, never a delete. Moving a terminal intent sidecar is provably safe rather than merely conventional: the reducer gives done and stopped no outgoing transition, so such a task can never transition again and can never need its sidecar back at the docs/plans/<task-id>.intent.json location the validator requires. Terminality must be read from two signals, not one. docs/plans/ holds 73 sidecars: 33 done, 14 stopped, 1 working, and 25 with no task record. The record-less 25 are not one kind -- canary-001 through canary-004 are fixtures named only in comment and describe labels, seventeen are older sidecars whose records were pruned or never created, and 2026-08-19-009 through 012 are complete and merged but lost their records because they were enrolled inside git worktree copies whose .imm/tasks/ never merges back. So where a record is absent, an implementing commit in Git history is the second terminality signal; anything still unresolved by both is listed as pending rather than guessed. The drafted criterion that no active spec may reference a retired tool is too broad and must be narrowed. It conflates a spec that instructs an agent to run a retired command, which is the real defect, with a spec that documents that command's retirement, which is correct and necessary. 52 active specs cite these tools, including this roadmap itself with 8 references; archiving the document governing this work, or stripping its evidence base, would be absurd. Only instructional references are in scope, and any document exempted as retirement-subject must be enumerated explicitly so the exemption cannot grow silently. Note that tests/python-reference-boundary.test.ts pins the active path docs/specs/opencode-native-plugin.spec.md, which must be updated if that spec moves.",
+    "acceptance": [
+      {
+        "id": "acc-terminal-artifacts-archived",
+        "assertion": "Every intent sidecar whose task is terminal by record phase done or stopped, or where no record exists by an implementing commit in Git history, lives under an archive directory; docs/plans/ retains only non-terminal sidecars and the canary fixtures; every move is a move and no planning artifact was deleted.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/planning-artifact-archival.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 60000,\n  \"max_output_bytes\": 65536\n}\n"
+      },
+      {
+        "id": "acc-instructional-dead-references-absent",
+        "assertion": "No active spec instructs running imm-plan.py, activation_plan.py, or imm-autowork, and every active document that still references them as the subject of retirement appears on an explicit enumerated exemption list.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/planning-artifact-archival.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 60000,\n  \"max_output_bytes\": 65536\n}\n"
+      },
+      {
+        "id": "acc-pinned-references-intact",
+        "assertion": "The full suite passes, proving pinned documentation paths, notably docs/specs/opencode-native-plugin.spec.md in tests/python-reference-boundary.test.ts, were reconciled with any move rather than left dangling.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 180000,\n  \"max_output_bytes\": 262144\n}\n"
+      }
+    ],
+    "scope_hint": [
+      "docs/plans",
+      "docs/specs",
+      "scripts/detect-stale-refs.ts",
+      "scripts/fix-broken-links.ts",
+      "tests/planning-artifact-archival.test.ts",
+      "tests/python-reference-boundary.test.ts"
+    ],
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/2026-08-20-003-archive-terminal-planning-artifacts.intent.json",
+    "revision": 1,
+    "content_hash": "sha256:fccb0f07bc0aaea89d4db4c7945b5b7e2a67aaea36e2593681b66c168ff71ac9"
+  },
+  "phase": "done",
+  "baseline": "sha256:fccb0f07bc0aaea89d4db4c7945b5b7e2a67aaea36e2593681b66c168ff71ac9",
+  "evidence": [
+    {
+      "id": "evidence-record_evidence:2026-08-20-003-archive-terminal-planning-artifacts:2026-08-20T01:57:14.050Z",
+      "acceptance_id": "acc-terminal-artifacts-archived",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:fccb0f07bc0aaea89d4db4c7945b5b7e2a67aaea36e2593681b66c168ff71ac9",
+      "diff_hash": "sha256:110f19109f9f0f4d4a680737ae0abeebc63f65a2a0e944958387bd16fe57dcf9",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "bun test tests/planning-artifact-archival.test.ts -> 2 pass 0 fail; 70 terminal sidecars moved to docs/plans/archive, only 003 + 4 canary remain in docs/plans, every move is git mv"
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-20-003-archive-terminal-planning-artifacts:2026-08-20T01:57:29.614Z",
+      "acceptance_id": "acc-instructional-dead-references-absent",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:fccb0f07bc0aaea89d4db4c7945b5b7e2a67aaea36e2593681b66c168ff71ac9",
+      "diff_hash": "sha256:110f19109f9f0f4d4a680737ae0abeebc63f65a2a0e944958387bd16fe57dcf9",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "bun test tests/planning-artifact-archival.test.ts -> 2 pass 0 fail; no active spec instructs retired tools, 52 exemption list enumerated and validated"
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-20-003-archive-terminal-planning-artifacts:2026-08-20T02:02:25.494Z",
+      "acceptance_id": "acc-pinned-references-intact",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:fccb0f07bc0aaea89d4db4c7945b5b7e2a67aaea36e2593681b66c168ff71ac9",
+      "diff_hash": "sha256:110f19109f9f0f4d4a680737ae0abeebc63f65a2a0e944958387bd16fe57dcf9",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "bun test -> 795 pass 0 fail (55s); full suite passes, pinned docs/specs/opencode-native-plugin.spec.md reconciled, python-reference-boundary and code-review tests pass"
+    }
+  ],
+  "findings": [],
+  "approvals": [
+    {
+      "id": "approval-qa-0accfe69",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:fccb0f07bc0aaea89d4db4c7945b5b7e2a67aaea36e2593681b66c168ff71ac9",
+      "diff_hash": "sha256:110f19109f9f0f4d4a680737ae0abeebc63f65a2a0e944958387bd16fe57dcf9",
+      "actor_id": "deterministic-qa",
+      "summary": "all 3 fixed verification descriptor(s) passed"
+    },
+    {
+      "id": "approval-review-3f581020",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:fccb0f07bc0aaea89d4db4c7945b5b7e2a67aaea36e2593681b66c168ff71ac9",
+      "diff_hash": "sha256:110f19109f9f0f4d4a680737ae0abeebc63f65a2a0e944958387bd16fe57dcf9",
+      "actor_id": "reviewer",
+      "summary": "Terminal artifacts archived via git mv to docs/plans/archive, instructional dead refs on explicit exemption list, full suite passes"
+    }
+  ],
+  "history": [
+    {
+      "id": "record_evidence:2026-08-20-003-archive-terminal-planning-artifacts:2026-08-20T01:57:14.050Z",
+      "at": "2026-08-20T01:57:14.050Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-terminal-artifacts-archived\naction_v2_sha256:8220a4711e69b8ca28472da11dd62fe2be8648b19d8695e7e179d5c010a564b8"
+    },
+    {
+      "id": "record_evidence:2026-08-20-003-archive-terminal-planning-artifacts:2026-08-20T01:57:29.614Z",
+      "at": "2026-08-20T01:57:29.614Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-instructional-dead-references-absent\naction_v2_sha256:2d21aeb33014df13b70ee75b7aa74121a26ac60c32f2ed84784cbc9d9c92bfda"
+    },
+    {
+      "id": "record_evidence:2026-08-20-003-archive-terminal-planning-artifacts:2026-08-20T02:02:25.494Z",
+      "at": "2026-08-20T02:02:25.494Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-pinned-references-intact\naction_v2_sha256:1726a886f44d8ce246f1339528c79b34bdb415725292ab012b79e3215199dd41"
+    },
+    {
+      "id": "submit_review:2026-08-20-003-archive-terminal-planning-artifacts:2026-08-20T02:02:41.968Z",
+      "at": "2026-08-20T02:02:41.968Z",
+      "type": "submit_review",
+      "from_phase": "working",
+      "to_phase": "review",
+      "reason": "action_v2_sha256:75299ad2a05df4757c356eb0ef07534ed4d9da1e5109fae26b93b093ac9b8680"
+    },
+    {
+      "id": "record_approval:2026-08-20-003-archive-terminal-planning-artifacts:2026-08-20T02:04:08.188Z",
+      "at": "2026-08-20T02:04:08.188Z",
+      "type": "record_approval",
+      "from_phase": "review",
+      "to_phase": "review",
+      "reason": "approval-qa-0accfe69\naction_v2_sha256:65410cbf4eb3b7e1cf2c2cdfab89f0fe773e407d01a5249dc9307b50853b77b2",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-3c9abfb39403d6b2",
+        "issued_at": "2026-08-20T02:04:08.189Z",
+        "expires_at": "2026-08-20T02:14:08.189Z"
+      }
+    },
+    {
+      "id": "record_approval:2026-08-20-003-archive-terminal-planning-artifacts:2026-08-20T02:05:43.759Z",
+      "at": "2026-08-20T02:05:43.759Z",
+      "type": "record_approval",
+      "from_phase": "review",
+      "to_phase": "review",
+      "reason": "approval-review-3f581020\naction_v2_sha256:f8b8e5978794e42587f64b1269c1d8a468f83ea1e4f954f590f02fed00bb3bfa",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "reviewer",
+        "confirmation_ref": "pi-confirm-40e6f1f7e6a663e0",
+        "issued_at": "2026-08-20T02:05:43.759Z",
+        "expires_at": "2026-08-20T02:15:43.759Z"
+      }
+    },
+    {
+      "id": "complete:2026-08-20-003-archive-terminal-planning-artifacts:2026-08-20T02:06:09.573Z",
+      "at": "2026-08-20T02:06:09.573Z",
+      "type": "complete",
+      "from_phase": "review",
+      "to_phase": "done",
+      "reason": "action_v2_sha256:0cf8afefab98a636a77340fbf95fa4f7af2de57785170217781e97adf11625c9"
+    }
+  ]
+}

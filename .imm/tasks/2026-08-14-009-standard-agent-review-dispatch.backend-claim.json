@@ -1,0 +1,9 @@
+{
+  "contract": "assurance_kernel/task_tombstone/v1",
+  "task_id": "2026-08-14-009-standard-agent-review-dispatch",
+  "lifecycle_status": "terminal",
+  "terminal_phase": "done",
+  "terminal_event_id": "complete:2026-08-14-009-standard-agent-review-dispatch:2026-08-14T23:49:25.932Z",
+  "final_record_hash": "sha256:3bf175cf0601ef5c7bc0e90f8936a36234c4288d8b2b3cadbf80c46469623dcf",
+  "terminalized_at": "2026-08-14T23:49:25.932Z"
+}

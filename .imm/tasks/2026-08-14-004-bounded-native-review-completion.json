@@ -1,0 +1,516 @@
+{
+  "contract": "assurance_kernel/task_record/v2",
+  "task_id": "2026-08-14-004-bounded-native-review-completion",
+  "intent_revision": 1,
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "2026-08-14-004-bounded-native-review-completion",
+    "goal": "Make native Assurance Review reliably finish within one auditable 300-second total budget, with a bounded immutable-bundle prompt and exactly one terminal outcome, so near-complete reviewers are not repeatedly timed out without weakening reviewer authority or adding automatic retries.",
+    "acceptance": [
+      {
+        "id": "acc-review-deadline-consistent",
+        "assertion": "Every native Review operation uses one 300-second total deadline measured from initial dispatch, retains the existing 5-second spawn sub-budget and 12-turn cap, and projects the same deadline through advance results, Footer, Widget, timeout notification, and correlated terminal follow-up.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/pi-canary-work-extension.test.ts\",\n    \"tests/pi-canary-assurance-observability.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 240000,\n  \"max_output_bytes\": 262144\n}\n"
+      },
+      {
+        "id": "acc-review-prompt-bounded",
+        "assertion": "The native Review prompt requires immutable-bundle provenance first, limits analysis to acceptance assertions and immutable dirty-file contents, discourages unrelated repository exploration, reserves the final turn for exactly one strict JSON verdict, and still spawns with maxTurns 12.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/pi-canary-work-extension.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 240000,\n  \"max_output_bytes\": 262144\n}\n"
+      },
+      {
+        "id": "acc-review-single-terminal-winner",
+        "assertion": "Completion before timeout, timeout before completion, same-tick completion/timeout, explicit cancellation, and late terminal settlement each produce at most one winning terminal lifecycle and one correlated follow-up; timeout/cancel/partial/late output creates no pending verdict or Kernel write, and duplicate advance never spawns a second reviewer while ownership is unsettled.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/pi-canary-work-extension.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 240000,\n  \"max_output_bytes\": 262144\n}\n"
+      },
+      {
+        "id": "acc-review-budget-contract-regression",
+        "assertion": "Source and packaged Review dispatch contracts document the 300-second bounded ceiling, no automatic retry, one reviewer per immutable snapshot, settlement ownership, and unavailable fine-grained telemetry truthfully; all repository tests and generated-doc synchronization remain clean with no active 180-second Review contract.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 300000,\n  \"max_output_bytes\": 262144\n}\n"
+      }
+    ],
+    "scope_hint": [
+      "docs/specs/bounded-native-review-completion.spec.md",
+      "docs/plans/2026-08-14-004-bounded-native-review-completion.intent.json",
+      "plugins/immune-brain/.pi-extension/imm-canary-work.ts",
+      "plugins/immune-brain/skills/imm-canary-work/SKILL.md",
+      "plugins/immune-brain/dist/imm-canary-work.md",
+      "docs/reference/subagent-dispatch-protocol.md",
+      "plugins/immune-brain/dist/docs/reference/subagent-dispatch-protocol.md",
+      "tests/pi-canary-work-extension.test.ts",
+      "tests/pi-canary-assurance-observability.test.ts",
+      "tests/pi-subagent-dispatch-observability-contract.test.ts",
+      "tests/imm-canary-work-contract.test.ts"
+    ],
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/2026-08-14-004-bounded-native-review-completion.intent.json",
+    "revision": 1,
+    "content_hash": "sha256:f0ed7c6ac913d944e87fe040acdf27380dce939990f9b69da6c77b1647d92f46"
+  },
+  "phase": "done",
+  "baseline": "sha256:f0ed7c6ac913d944e87fe040acdf27380dce939990f9b69da6c77b1647d92f46",
+  "evidence": [
+    {
+      "id": "evidence-record_evidence:2026-08-14-004-bounded-native-review-completion:2026-08-14T09:55:35.932Z",
+      "acceptance_id": "acc-review-deadline-consistent",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:f0ed7c6ac913d944e87fe040acdf27380dce939990f9b69da6c77b1647d92f46",
+      "diff_hash": "sha256:e6a9e81813f908db922dc958bea3f78ef0eb99deee5aefca208796d8d7148467",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "Exact acceptance verification passed 37/37. Runtime projects one 300-second total Review deadline from initial dispatch through tool results, Footer/Widget, timeout notifications, and correlated terminal follow-up; remainingReviewDeadlineMs proves 119999ms remains after the former 180001ms boundary, and the scaled boundary test accepts a verdict after the old limit but before the new ceiling."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-14-004-bounded-native-review-completion:2026-08-14T09:55:42.868Z",
+      "acceptance_id": "acc-review-prompt-bounded",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:f0ed7c6ac913d944e87fe040acdf27380dce939990f9b69da6c77b1647d92f46",
+      "diff_hash": "sha256:e6a9e81813f908db922dc958bea3f78ef0eb99deee5aefca208796d8d7148467",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "Exact acceptance verification passed 34/34. The native Review prompt verifies immutable bundle provenance first, limits inspection to acceptance assertions and dirty_files, forbids unrelated repository exploration, reserves the final turn for exactly one strict JSON verdict, and retains maxTurns 12."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-14-004-bounded-native-review-completion:2026-08-14T09:55:50.735Z",
+      "acceptance_id": "acc-review-single-terminal-winner",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:f0ed7c6ac913d944e87fe040acdf27380dce939990f9b69da6c77b1647d92f46",
+      "diff_hash": "sha256:e6a9e81813f908db922dc958bea3f78ef0eb99deee5aefca208796d8d7148467",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "Exact acceptance verification passed 30/30. Completion-before-timeout, timeout-before-late-settlement, same-tick competition, cancellation settlement, duplicate advance, and immutable-evidence retention tests prove one job-identity winner, one correlated follow-up, no duplicate reviewer spawn, and no late pending verdict."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-14-004-bounded-native-review-completion:2026-08-14T09:55:58.800Z",
+      "acceptance_id": "acc-review-budget-contract-regression",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:f0ed7c6ac913d944e87fe040acdf27380dce939990f9b69da6c77b1647d92f46",
+      "diff_hash": "sha256:e6a9e81813f908db922dc958bea3f78ef0eb99deee5aefca208796d8d7148467",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "Full repository suite passed 1111/1111 across 145 files; focused contract suite passed 51/51; canonical and packaged dispatch docs are byte-identical; README, Roadmap, Skill and dist contracts use the 300-second ceiling with no active 180-second contract; intent validation, dist sync, git diff checks, and staged scope checks pass."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-14-004-bounded-native-review-completion:2026-08-14T10:07:43.242Z",
+      "acceptance_id": "acc-review-deadline-consistent",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:f0ed7c6ac913d944e87fe040acdf27380dce939990f9b69da6c77b1647d92f46",
+      "diff_hash": "sha256:e5872b803419de2d4b9084d3f2bd7a6d74d90c617e5052900869ab46a8aa05a2",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "Exact acceptance verification passed 38/38 after review follow-up. One total Review deadline now explicitly bounds startup as min(spawn budget, remaining total budget), post-spawn execution, UI projection, timeout notification, and terminal follow-up. A 20ms injected total budget with a 1000ms spawn budget fails closed during startup and never calls native spawn; the scaled former-boundary verdict remains accepted before 300s."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-14-004-bounded-native-review-completion:2026-08-14T10:07:51.566Z",
+      "acceptance_id": "acc-review-prompt-bounded",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:f0ed7c6ac913d944e87fe040acdf27380dce939990f9b69da6c77b1647d92f46",
+      "diff_hash": "sha256:e5872b803419de2d4b9084d3f2bd7a6d74d90c617e5052900869ab46a8aa05a2",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "Exact prompt/authority verification passed 35/35. The Pi-native reviewer prompt remains provenance-first, bounds analysis to acceptance assertions and immutable dirty files, preserves strict verdict schema and authority rules, and reserves the final turn for one JSON verdict."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-14-004-bounded-native-review-completion:2026-08-14T10:08:14.829Z",
+      "acceptance_id": "acc-review-single-terminal-winner",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:f0ed7c6ac913d944e87fe040acdf27380dce939990f9b69da6c77b1647d92f46",
+      "diff_hash": "sha256:e5872b803419de2d4b9084d3f2bd7a6d74d90c617e5052900869ab46a8aa05a2",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "Exact single-terminal verification passed 31/31. Result observation is registered before the remaining-deadline timer; a deterministic already-completed valid verdict wins before a queued timeout callback. Completion/timeout same-tick races still produce exactly one winner and one follow-up; timeout retains ownership until native settlement and late results cannot create pending authority."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-14-004-bounded-native-review-completion:2026-08-14T10:08:22.048Z",
+      "acceptance_id": "acc-review-budget-contract-regression",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:f0ed7c6ac913d944e87fe040acdf27380dce939990f9b69da6c77b1647d92f46",
+      "diff_hash": "sha256:e5872b803419de2d4b9084d3f2bd7a6d74d90c617e5052900869ab46a8aa05a2",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "Full repository regression passed 1112/1112 across 145 files with 5519 assertions. Focused contract suites passed 51/51 before follow-up and all updated deadline/prompt/race suites pass after follow-up; packaged docs are synchronized and git diff checks are clean."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-14-004-bounded-native-review-completion:2026-08-14T10:25:18.448Z",
+      "acceptance_id": "acc-review-deadline-consistent",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:f0ed7c6ac913d944e87fe040acdf27380dce939990f9b69da6c77b1647d92f46",
+      "diff_hash": "sha256:2fc719d5479a12228ef54881fa43a8586a84c7990834d513ab3ebd8940680f2a",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "Exact deadline verification passed 38/38. The effective Review total deadline is computed once from reviewJobTimeoutMs or the fixed 300-second production default and now drives startup enforcement, active results, Footer/Widget, timeout lifecycle/notification, and terminal follow-up. A 500ms test deadline consistently projects as 1s while production defaults remain 300s."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-14-004-bounded-native-review-completion:2026-08-14T10:25:26.832Z",
+      "acceptance_id": "acc-review-prompt-bounded",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:f0ed7c6ac913d944e87fe040acdf27380dce939990f9b69da6c77b1647d92f46",
+      "diff_hash": "sha256:2fc719d5479a12228ef54881fa43a8586a84c7990834d513ab3ebd8940680f2a",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "Exact extension verification passed 31/31 on the current snapshot. The Pi-native Review prompt remains provenance-first, acceptance/dirty-file bounded, and final-turn strict JSON constrained with maxTurns 12."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-14-004-bounded-native-review-completion:2026-08-14T10:25:36.480Z",
+      "acceptance_id": "acc-review-single-terminal-winner",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:f0ed7c6ac913d944e87fe040acdf27380dce939990f9b69da6c77b1647d92f46",
+      "diff_hash": "sha256:2fc719d5479a12228ef54881fa43a8586a84c7990834d513ab3ebd8940680f2a",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "Exact extension verification passed 31/31 on the current snapshot. Completion precedence, timeout-first settlement, same-tick single winner, cancellation, late settlement, duplicate dispatch prevention, one follow-up, and zero late pending authority remain covered."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-14-004-bounded-native-review-completion:2026-08-14T10:25:43.780Z",
+      "acceptance_id": "acc-review-budget-contract-regression",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:f0ed7c6ac913d944e87fe040acdf27380dce939990f9b69da6c77b1647d92f46",
+      "diff_hash": "sha256:2fc719d5479a12228ef54881fa43a8586a84c7990834d513ab3ebd8940680f2a",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "Full repository regression passed 1112/1112 across 145 files with 5521 assertions. Generated docs are synchronized and staged/unstaged diff checks are clean; production source and packaged contracts retain the fixed 300-second ceiling, no automatic retry, one reviewer ownership, and truthful telemetry."
+    }
+  ],
+  "findings": [
+    {
+      "id": "review-51ce8a83049b-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "acc-review-deadline-consistent",
+      "source": "review",
+      "review_round": 1,
+      "summary": "The 300-second deadline is not enforced during startup: only the 5-second startup timer exists before reviewJobs registration, so injected or future startup budgets exceeding 300 seconds could pass the total deadline and still spawn/run a reviewer."
+    },
+    {
+      "id": "review-51ce8a83049b-2-review-2",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "acc-review-single-terminal-winner",
+      "source": "review",
+      "review_round": 1,
+      "summary": "The same-tick race test does not prove completion-before-deadline ownership because it uses equal real timers and accepts either outcome; it can pass without verifying that an already-completed valid verdict wins over a queued timeout callback."
+    },
+    {
+      "id": "review-3c482553943a-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "acc-review-deadline-consistent",
+      "source": "review",
+      "review_round": 2,
+      "summary": "The timeout lifecycle and correlated follow-up report the constant 300-second deadline even when reviewJobTimeoutMs supplies a shorter effective total deadline, making deadline projection inconsistent and telemetry inaccurate."
+    },
+    {
+      "id": "request_rework:2026-08-14-004-bounded-native-review-completion:2026-08-14T10:18:23.411Z:user-decision",
+      "kind": "unresolved_user_decision",
+      "status": "resolved",
+      "acceptance_id": "acc-review-deadline-consistent",
+      "source": "kernel",
+      "review_round": 2,
+      "summary": "Review returned this acceptance boundary twice; a user decision is required."
+    }
+  ],
+  "approvals": [
+    {
+      "id": "approval-qa-3ced98fe",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:f0ed7c6ac913d944e87fe040acdf27380dce939990f9b69da6c77b1647d92f46",
+      "diff_hash": "sha256:e6a9e81813f908db922dc958bea3f78ef0eb99deee5aefca208796d8d7148467",
+      "actor_id": "qa-host-bd645024",
+      "summary": "all 4 fixed verification descriptor(s) passed"
+    },
+    {
+      "id": "approval-qa-069850a1",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:f0ed7c6ac913d944e87fe040acdf27380dce939990f9b69da6c77b1647d92f46",
+      "diff_hash": "sha256:e5872b803419de2d4b9084d3f2bd7a6d74d90c617e5052900869ab46a8aa05a2",
+      "actor_id": "qa-host-8b109ff7",
+      "summary": "all 4 fixed verification descriptor(s) passed"
+    },
+    {
+      "id": "approval-qa-dc4ee461",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:f0ed7c6ac913d944e87fe040acdf27380dce939990f9b69da6c77b1647d92f46",
+      "diff_hash": "sha256:2fc719d5479a12228ef54881fa43a8586a84c7990834d513ab3ebd8940680f2a",
+      "actor_id": "qa-host-7a51ed9a",
+      "summary": "all 4 fixed verification descriptor(s) passed"
+    },
+    {
+      "id": "approval-review-a803cca1",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:f0ed7c6ac913d944e87fe040acdf27380dce939990f9b69da6c77b1647d92f46",
+      "diff_hash": "sha256:2fc719d5479a12228ef54881fa43a8586a84c7990834d513ab3ebd8940680f2a",
+      "actor_id": "native-review-c302b863-5363-4c0",
+      "summary": "Immutable provenance verified; bounded Review deadline, prompt, terminal ownership, documentation, and regression coverage satisfy all acceptance assertions."
+    }
+  ],
+  "history": [
+    {
+      "id": "record_evidence:2026-08-14-004-bounded-native-review-completion:2026-08-14T09:55:35.932Z",
+      "at": "2026-08-14T09:55:35.932Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-review-deadline-consistent\naction_v2_sha256:454cffc7d6d03f7d8f637f6799adeffc366bd2c7c5126c42947f350d1555bd45"
+    },
+    {
+      "id": "record_evidence:2026-08-14-004-bounded-native-review-completion:2026-08-14T09:55:42.868Z",
+      "at": "2026-08-14T09:55:42.868Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-review-prompt-bounded\naction_v2_sha256:677cd2750f51e999be9eaabbfdf1b5afdb4991c99fa05606693f4e1d8a4881cf"
+    },
+    {
+      "id": "record_evidence:2026-08-14-004-bounded-native-review-completion:2026-08-14T09:55:50.735Z",
+      "at": "2026-08-14T09:55:50.735Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-review-single-terminal-winner\naction_v2_sha256:5e2d623c6750b9b4bdd843b02b1afadb498945970c4216ee8d41b8c1de945797"
+    },
+    {
+      "id": "record_evidence:2026-08-14-004-bounded-native-review-completion:2026-08-14T09:55:58.800Z",
+      "at": "2026-08-14T09:55:58.800Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-review-budget-contract-regression\naction_v2_sha256:348698744c15717a1f05a640d340136bb82fa996b576286fed44b8ab3b2ff87c"
+    },
+    {
+      "id": "submit_review:2026-08-14-004-bounded-native-review-completion:2026-08-14T09:56:51.237Z",
+      "at": "2026-08-14T09:56:51.237Z",
+      "type": "submit_review",
+      "from_phase": "working",
+      "to_phase": "review",
+      "reason": "action_v2_sha256:9936c5637f92e12dfc930994b06bf46513c1300ac0fb427f90f6c3bb29a93904"
+    },
+    {
+      "id": "record_approval:2026-08-14-004-bounded-native-review-completion:2026-08-14T09:58:34.681Z",
+      "at": "2026-08-14T09:58:34.681Z",
+      "type": "record_approval",
+      "from_phase": "review",
+      "to_phase": "review",
+      "reason": "approval-qa-3ced98fe\naction_v2_sha256:a2f3e9651a16d81fd7f61b270e82281f2c30f1f16d86a44c1884234484563bbd",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "qa-host-bd645024",
+        "confirmation_ref": "pi-confirm-0d41632f301a734e",
+        "issued_at": "2026-08-14T09:58:34.682Z",
+        "expires_at": "2026-08-14T10:08:34.682Z"
+      }
+    },
+    {
+      "id": "request_rework:2026-08-14-004-bounded-native-review-completion:2026-08-14T10:00:02.698Z",
+      "at": "2026-08-14T10:00:02.698Z",
+      "type": "request_rework",
+      "from_phase": "review",
+      "to_phase": "working",
+      "reason": "review_round_1\naction_v2_sha256:cf719cf42414b783e92d073e13f175e80852750ae2d04aa20b94fb9ab31b7bda",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "native-review-8018cc3d-0907-436",
+        "confirmation_ref": "pi-confirm-be10aabfc3d956dc",
+        "issued_at": "2026-08-14T10:00:02.699Z",
+        "expires_at": "2026-08-14T10:10:02.699Z"
+      }
+    },
+    {
+      "id": "record_evidence:2026-08-14-004-bounded-native-review-completion:2026-08-14T10:07:43.242Z",
+      "at": "2026-08-14T10:07:43.242Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-review-deadline-consistent\naction_v2_sha256:5c0b4baa8da23ccefa846ee1daa5cab763ee206f39d029d87a6adae18c9a616b"
+    },
+    {
+      "id": "record_evidence:2026-08-14-004-bounded-native-review-completion:2026-08-14T10:07:51.566Z",
+      "at": "2026-08-14T10:07:51.566Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-review-prompt-bounded\naction_v2_sha256:a2478b845b8f8507c55282fc33cbc0ac39acd330b4650da39525521a614c2961"
+    },
+    {
+      "id": "record_evidence:2026-08-14-004-bounded-native-review-completion:2026-08-14T10:08:14.829Z",
+      "at": "2026-08-14T10:08:14.829Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-review-single-terminal-winner\naction_v2_sha256:2d68b81527aea2a7214e570134bf127d3e3b1e20803a3dbaa38bbe8e81f7f8df"
+    },
+    {
+      "id": "record_evidence:2026-08-14-004-bounded-native-review-completion:2026-08-14T10:08:22.048Z",
+      "at": "2026-08-14T10:08:22.048Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-review-budget-contract-regression\naction_v2_sha256:d14a8a1b04060e2810633c8e1f4cbcec5858d6954549c5d57e5bf659ed0e4e64"
+    },
+    {
+      "id": "resolve_finding:2026-08-14-004-bounded-native-review-completion:2026-08-14T10:08:45.982Z",
+      "at": "2026-08-14T10:08:45.982Z",
+      "type": "resolve_finding",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "review-51ce8a83049b-1-review-1\naction_v2_sha256:a0f8fe42d5ca3d5de8a97c6cf73d405c4d61f28379bbaf11a8b5535742ace0e6"
+    },
+    {
+      "id": "resolve_finding:2026-08-14-004-bounded-native-review-completion:2026-08-14T10:08:52.914Z",
+      "at": "2026-08-14T10:08:52.914Z",
+      "type": "resolve_finding",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "review-51ce8a83049b-2-review-2\naction_v2_sha256:d043c5842210383fe634ffe80a610fcbd81ea8f180ce4505ee38dbae51f6e4e0"
+    },
+    {
+      "id": "submit_review:2026-08-14-004-bounded-native-review-completion:2026-08-14T10:12:24.478Z",
+      "at": "2026-08-14T10:12:24.478Z",
+      "type": "submit_review",
+      "from_phase": "working",
+      "to_phase": "review",
+      "reason": "action_v2_sha256:d0e3efe7c1e2c87e2b5c8db31529169fab8a8293e0b953695beadcee5058b80d"
+    },
+    {
+      "id": "record_approval:2026-08-14-004-bounded-native-review-completion:2026-08-14T10:14:23.509Z",
+      "at": "2026-08-14T10:14:23.509Z",
+      "type": "record_approval",
+      "from_phase": "review",
+      "to_phase": "review",
+      "reason": "approval-qa-069850a1\naction_v2_sha256:d0e4e6998ab9a4962fd85df7f09f418b0119374ef036f773093a7a1b72505147",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "qa-host-8b109ff7",
+        "confirmation_ref": "pi-confirm-749f12761b7e821d",
+        "issued_at": "2026-08-14T10:14:23.509Z",
+        "expires_at": "2026-08-14T10:24:23.509Z"
+      }
+    },
+    {
+      "id": "request_rework:2026-08-14-004-bounded-native-review-completion:2026-08-14T10:18:23.411Z",
+      "at": "2026-08-14T10:18:23.411Z",
+      "type": "request_rework",
+      "from_phase": "review",
+      "to_phase": "working",
+      "reason": "review_round_2\naction_v2_sha256:fb8b3976d9f46e65213fc1696abdbb886da3b59b44becb1fc30dc759b3dd41bd",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "native-review-10b59cf0-9891-4ed",
+        "confirmation_ref": "pi-confirm-28ff55341afd7024",
+        "issued_at": "2026-08-14T10:18:23.412Z",
+        "expires_at": "2026-08-14T10:28:23.412Z"
+      }
+    },
+    {
+      "id": "record_evidence:2026-08-14-004-bounded-native-review-completion:2026-08-14T10:25:18.448Z",
+      "at": "2026-08-14T10:25:18.448Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-review-deadline-consistent\naction_v2_sha256:6bdc362d47475eddf0fdc70a117aea755dc35f8b61804b99098ba0303f3ea039"
+    },
+    {
+      "id": "record_evidence:2026-08-14-004-bounded-native-review-completion:2026-08-14T10:25:26.832Z",
+      "at": "2026-08-14T10:25:26.832Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-review-prompt-bounded\naction_v2_sha256:ea17fc17c96a86c9409ce92bb6bbb17f9238c86bf9248788c103463142d65556"
+    },
+    {
+      "id": "record_evidence:2026-08-14-004-bounded-native-review-completion:2026-08-14T10:25:36.480Z",
+      "at": "2026-08-14T10:25:36.480Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-review-single-terminal-winner\naction_v2_sha256:bee8754aea54c4d999139c2ab80aa26dd9db08455751be474afa80e516cc305b"
+    },
+    {
+      "id": "record_evidence:2026-08-14-004-bounded-native-review-completion:2026-08-14T10:25:43.780Z",
+      "at": "2026-08-14T10:25:43.780Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-review-budget-contract-regression\naction_v2_sha256:622857db0f165b1722fb1fcf0d71f782fc4db54c776f42c6334b8e82491555d6"
+    },
+    {
+      "id": "resolve_finding:2026-08-14-004-bounded-native-review-completion:2026-08-14T10:25:52.509Z",
+      "at": "2026-08-14T10:25:52.509Z",
+      "type": "resolve_finding",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "review-3c482553943a-1-review-1\naction_v2_sha256:fc5b09c9ab86fc6a9bfcefdbd54afb550fd12a9decebc280beea1c52be894d64"
+    },
+    {
+      "id": "resolve_user_decision:2026-08-14-004-bounded-native-review-completion:2026-08-14T10:28:07.506Z",
+      "at": "2026-08-14T10:28:07.506Z",
+      "type": "resolve_user_decision",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "request_rework:2026-08-14-004-bounded-native-review-completion:2026-08-14T10:18:23.411Z:user-decision: continue after literal-user review of the rework limit\naction_v2_sha256:ddb6c699bfaf9c10768834f9f1c79553200e2d0f6091006869fc1325f2fc75b0",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-89c130ec854e57b0",
+        "issued_at": "2026-08-14T10:28:07.507Z",
+        "expires_at": "2026-08-14T10:38:07.507Z"
+      }
+    },
+    {
+      "id": "submit_review:2026-08-14-004-bounded-native-review-completion:2026-08-14T10:29:03.946Z",
+      "at": "2026-08-14T10:29:03.946Z",
+      "type": "submit_review",
+      "from_phase": "working",
+      "to_phase": "review",
+      "reason": "action_v2_sha256:def78a7ab1239267986979e7ecc41843756d32f017e84e329f26312cafa30225"
+    },
+    {
+      "id": "record_approval:2026-08-14-004-bounded-native-review-completion:2026-08-14T10:31:24.826Z",
+      "at": "2026-08-14T10:31:24.826Z",
+      "type": "record_approval",
+      "from_phase": "review",
+      "to_phase": "review",
+      "reason": "approval-qa-dc4ee461\naction_v2_sha256:0c9332624a6de8e689618bd4a56372bc09cf5a9aaae2b985f0c810b849afa156",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "qa-host-7a51ed9a",
+        "confirmation_ref": "pi-confirm-2c1a79f7d62af767",
+        "issued_at": "2026-08-14T10:31:24.826Z",
+        "expires_at": "2026-08-14T10:41:24.826Z"
+      }
+    },
+    {
+      "id": "record_approval:2026-08-14-004-bounded-native-review-completion:2026-08-14T10:36:24.919Z",
+      "at": "2026-08-14T10:36:24.919Z",
+      "type": "record_approval",
+      "from_phase": "review",
+      "to_phase": "review",
+      "reason": "approval-review-a803cca1\naction_v2_sha256:352d3adb12d57e4941e4e3c7067221685894d10baaf29da5f826aaf9f465cbfc",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "native-review-c302b863-5363-4c0",
+        "confirmation_ref": "pi-confirm-5c98093d5f5de830",
+        "issued_at": "2026-08-14T10:36:24.919Z",
+        "expires_at": "2026-08-14T10:46:24.919Z"
+      }
+    },
+    {
+      "id": "complete:2026-08-14-004-bounded-native-review-completion:2026-08-14T10:36:38.096Z",
+      "at": "2026-08-14T10:36:38.096Z",
+      "type": "complete",
+      "from_phase": "review",
+      "to_phase": "done",
+      "reason": "action_v2_sha256:0dad305e3dfb38a4146b960fad0ff72374bdbe850cc1426aa974d640aa23532e"
+    }
+  ]
+}

@@ -1,0 +1,9 @@
+{
+  "contract": "assurance_kernel/task_tombstone/v1",
+  "task_id": "2026-08-14-001-pi-observable-assurance-dispatch",
+  "lifecycle_status": "terminal",
+  "terminal_phase": "stopped",
+  "terminal_event_id": "stop:2026-08-14-001-pi-observable-assurance-dispatch:2026-08-14T07:27:34.491Z",
+  "final_record_hash": "sha256:6ad33b5dd0bc1197056728c8415a5a3439a7bf902b11e967591b6eb9b964ada3",
+  "terminalized_at": "2026-08-14T07:27:34.491Z"
+}

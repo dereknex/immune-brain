@@ -1,0 +1,244 @@
+{
+  "contract": "assurance_kernel/task_record/v2",
+  "task_id": "2026-08-15-016-retire-packaged-legacy-cli-fallbacks",
+  "intent_revision": 1,
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "2026-08-15-016-retire-packaged-legacy-cli-fallbacks",
+    "goal": "Remove shipped agent instructions that invoke retired v3 mutation commands or a legacy dispatcher absent from the Pi package, while preserving read-only Plan validation, Kernel TaskIntent handoff, Compounder learning capture, static catalog integrity, the adapted packaged activation-policy generator, and the separately bounded legacy runtime closure.",
+    "acceptance": [
+      {
+        "id": "acc-planner-contract",
+        "assertion": "The shipped Planner contract uses read-only v4 Plan validation and Kernel TaskIntent enrollment with no v3 sync or direct legacy runtime fallback.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/pi-packaged-legacy-fallbacks.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 180000,\n  \"max_output_bytes\": 262144\n}\n"
+      },
+      {
+        "id": "acc-compounder-contract",
+        "assertion": "The shipped Compounder contract treats workflow closure as complete and advertises no imm-finish, imm-heal, or direct legacy runtime mutation path.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/pi-packaged-legacy-fallbacks.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 180000,\n  \"max_output_bytes\": 262144\n}\n"
+      },
+      {
+        "id": "acc-activation-reference",
+        "assertion": "Source and packaged activation-policy references describe static catalog-reference integrity without a retired runtime command, and the packaged copy remains the generated adapted form of the source.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/pi-packaged-legacy-fallbacks.test.ts\",\n    \"tests/dist-docs-sync-contract.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 180000,\n  \"max_output_bytes\": 262144\n}\n"
+      },
+      {
+        "id": "acc-packed-bytes",
+        "assertion": "A real npm pack artifact contains the corrected contracts and no legacy dispatcher path or retired command guidance in those shipped files.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/pi-packaged-legacy-fallbacks.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 300000,\n  \"max_output_bytes\": 262144\n}\n"
+      },
+      {
+        "id": "acc-boundary-retained",
+        "assertion": "The legacy dispatcher, source Skill entries, Pi factories, package surface, and host runtime remain outside this slice and pass their focused contracts.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/v4-runtime-launchers.test.ts\",\n    \"tests/pi-canary-discovery-regression.test.ts\",\n    \"tests/pi-canary-packed-loader.test.ts\",\n    \"tests/pi-only-package-surface.test.ts\",\n    \"tests/host-runtime-cutover.test.ts\",\n    \"plugins/immune-brain/tests/skill-registry-consistency.test.ts\",\n    \"plugins/immune-brain/tests/host-manifest-consistency.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 300000,\n  \"max_output_bytes\": 262144\n}\n"
+      },
+      {
+        "id": "acc-full-regression",
+        "assertion": "The full repository test suite passes after packaged fallback retirement.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 300000,\n  \"max_output_bytes\": 262144\n}\n"
+      }
+    ],
+    "scope_hint": [
+      "docs/reference/automatic-subagent-activation-policy.md",
+      "docs/specs/host-native-lightweight-workflow-roadmap.spec.md",
+      "docs/specs/retire-packaged-legacy-cli-fallbacks-r2.spec.md",
+      "docs/specs/retire-packaged-legacy-cli-fallbacks.spec.md",
+      "plugins/immune-brain/dist/docs/reference/automatic-subagent-activation-policy.md",
+      "plugins/immune-brain/dist/imm-compounder.md",
+      "plugins/immune-brain/dist/imm-planner.md",
+      "tests/pi-packaged-legacy-fallbacks.test.ts",
+      "tests/v4-runtime-launchers.test.ts"
+    ],
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/2026-08-15-016-retire-packaged-legacy-cli-fallbacks.intent.json",
+    "revision": 1,
+    "content_hash": "sha256:ed6a9cb2d237f62671dd06d3595ba792f552ede845e006ae9ea1fcba98201388"
+  },
+  "phase": "done",
+  "baseline": "sha256:ed6a9cb2d237f62671dd06d3595ba792f552ede845e006ae9ea1fcba98201388",
+  "evidence": [
+    {
+      "id": "evidence-record_evidence:2026-08-15-016-retire-packaged-legacy-cli-fallbacks:2026-08-15T07:16:50.126Z",
+      "acceptance_id": "acc-planner-contract",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:ed6a9cb2d237f62671dd06d3595ba792f552ede845e006ae9ea1fcba98201388",
+      "diff_hash": "sha256:6c625d65b820d2acaf9a2cf0a21681a89488752b410d9b905350d584d0bdd64c",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "At HEAD 31feb05, bun test tests/pi-packaged-legacy-fallbacks.test.ts passed 5/5. The shipped Planner contract keeps read-only imm-plan --json validation and Kernel TaskIntent enrollment, with no imm-plan --sync, imm_plan_validate(sync=true), or immune_brain_runtime.ts fallback."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-15-016-retire-packaged-legacy-cli-fallbacks:2026-08-15T07:16:55.959Z",
+      "acceptance_id": "acc-compounder-contract",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:ed6a9cb2d237f62671dd06d3595ba792f552ede845e006ae9ea1fcba98201388",
+      "diff_hash": "sha256:6c625d65b820d2acaf9a2cf0a21681a89488752b410d9b905350d584d0bdd64c",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "At HEAD 31feb05, bun test tests/pi-packaged-legacy-fallbacks.test.ts passed 5/5. The shipped Compounder contract states workflow closure is already complete and advertises no imm-finish, imm-heal, or direct legacy runtime mutation path."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-15-016-retire-packaged-legacy-cli-fallbacks:2026-08-15T07:17:00.746Z",
+      "acceptance_id": "acc-activation-reference",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:ed6a9cb2d237f62671dd06d3595ba792f552ede845e006ae9ea1fcba98201388",
+      "diff_hash": "sha256:6c625d65b820d2acaf9a2cf0a21681a89488752b410d9b905350d584d0bdd64c",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "At HEAD 31feb05, bun test tests/pi-packaged-legacy-fallbacks.test.ts tests/dist-docs-sync-contract.test.ts passed 11/11. Source and packaged activation-policy copies describe static catalog-reference integrity without a retired runtime command, and the packaged copy remains the generated adapted form of the source."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-15-016-retire-packaged-legacy-cli-fallbacks:2026-08-15T07:17:05.057Z",
+      "acceptance_id": "acc-packed-bytes",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:ed6a9cb2d237f62671dd06d3595ba792f552ede845e006ae9ea1fcba98201388",
+      "diff_hash": "sha256:6c625d65b820d2acaf9a2cf0a21681a89488752b410d9b905350d584d0bdd64c",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "At HEAD 31feb05, bun test tests/pi-packaged-legacy-fallbacks.test.ts passed 5/5, including a real npm pack extract that contains the corrected Planner, Compounder, and activation-policy contracts with no legacy dispatcher path or retired command guidance."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-15-016-retire-packaged-legacy-cli-fallbacks:2026-08-15T07:17:08.994Z",
+      "acceptance_id": "acc-boundary-retained",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:ed6a9cb2d237f62671dd06d3595ba792f552ede845e006ae9ea1fcba98201388",
+      "diff_hash": "sha256:6c625d65b820d2acaf9a2cf0a21681a89488752b410d9b905350d584d0bdd64c",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "At HEAD 31feb05, focused launcher, Pi discovery, packed loader, package surface, host runtime, skill-registry, and host-manifest tests passed 36/36. Runtime and source Skill trees remain unchanged."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-15-016-retire-packaged-legacy-cli-fallbacks:2026-08-15T07:17:12.523Z",
+      "acceptance_id": "acc-full-regression",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:ed6a9cb2d237f62671dd06d3595ba792f552ede845e006ae9ea1fcba98201388",
+      "diff_hash": "sha256:6c625d65b820d2acaf9a2cf0a21681a89488752b410d9b905350d584d0bdd64c",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "At HEAD 31feb05, bun test passed 1124 tests across 148 files with zero failures and 5642 expectations; git status and runtime/skills diffs are clean."
+    }
+  ],
+  "findings": [],
+  "approvals": [
+    {
+      "id": "approval-qa-14f178af",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:ed6a9cb2d237f62671dd06d3595ba792f552ede845e006ae9ea1fcba98201388",
+      "diff_hash": "sha256:6c625d65b820d2acaf9a2cf0a21681a89488752b410d9b905350d584d0bdd64c",
+      "actor_id": "qa-host-a2213bc7",
+      "summary": "all 6 fixed verification descriptor(s) passed"
+    },
+    {
+      "id": "approval-review-2da7abe9",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:ed6a9cb2d237f62671dd06d3595ba792f552ede845e006ae9ea1fcba98201388",
+      "diff_hash": "sha256:6c625d65b820d2acaf9a2cf0a21681a89488752b410d9b905350d584d0bdd64c",
+      "actor_id": "native-review-73dd7498-b063-4eb",
+      "summary": "Shipped Planner, Compounder, and activation-policy contracts drop retired CLI fallbacks; pack and boundary tests cover the slice."
+    }
+  ],
+  "history": [
+    {
+      "id": "record_evidence:2026-08-15-016-retire-packaged-legacy-cli-fallbacks:2026-08-15T07:16:50.126Z",
+      "at": "2026-08-15T07:16:50.126Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-planner-contract\naction_v2_sha256:9ba3867bee28dc63c0c8617c5240a4632f7b07e7a046d3d450b916fcbc895a40"
+    },
+    {
+      "id": "record_evidence:2026-08-15-016-retire-packaged-legacy-cli-fallbacks:2026-08-15T07:16:55.959Z",
+      "at": "2026-08-15T07:16:55.959Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-compounder-contract\naction_v2_sha256:7cfff81947a2a8f0d171609d21483d756f27d75214e0d068813d8e5235b01015"
+    },
+    {
+      "id": "record_evidence:2026-08-15-016-retire-packaged-legacy-cli-fallbacks:2026-08-15T07:17:00.746Z",
+      "at": "2026-08-15T07:17:00.746Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-activation-reference\naction_v2_sha256:9da90555623e47a391ed66465846e32ce5ce0fc2165686bf3e1cd19b0e7a2418"
+    },
+    {
+      "id": "record_evidence:2026-08-15-016-retire-packaged-legacy-cli-fallbacks:2026-08-15T07:17:05.057Z",
+      "at": "2026-08-15T07:17:05.057Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-packed-bytes\naction_v2_sha256:d58f2d050946b7c616a399355865f19da15d966c58fa7ea3335a48b84c766541"
+    },
+    {
+      "id": "record_evidence:2026-08-15-016-retire-packaged-legacy-cli-fallbacks:2026-08-15T07:17:08.994Z",
+      "at": "2026-08-15T07:17:08.994Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-boundary-retained\naction_v2_sha256:450f77417faa68c5f854779fad5e24dec25dbde113f5b4560651304f184f5d41"
+    },
+    {
+      "id": "record_evidence:2026-08-15-016-retire-packaged-legacy-cli-fallbacks:2026-08-15T07:17:12.523Z",
+      "at": "2026-08-15T07:17:12.523Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-full-regression\naction_v2_sha256:1fde319760f810eb1bb8279be8d485b0e73149554a21824d29d2a8af09e67831"
+    },
+    {
+      "id": "submit_review:2026-08-15-016-retire-packaged-legacy-cli-fallbacks:2026-08-15T07:17:17.332Z",
+      "at": "2026-08-15T07:17:17.332Z",
+      "type": "submit_review",
+      "from_phase": "working",
+      "to_phase": "review",
+      "reason": "action_v2_sha256:2ff1813876dcd7b4a8317f0bbb58e9a0dcc049e7c6d52156974525c5cc774a2f"
+    },
+    {
+      "id": "record_approval:2026-08-15-016-retire-packaged-legacy-cli-fallbacks:2026-08-15T07:18:25.033Z",
+      "at": "2026-08-15T07:18:25.033Z",
+      "type": "record_approval",
+      "from_phase": "review",
+      "to_phase": "review",
+      "reason": "approval-qa-14f178af\naction_v2_sha256:e217eb3334e8cb68e02dfc6f3c0b26f0af399d1f91b7497582f57be81243fcc9",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "qa-host-a2213bc7",
+        "confirmation_ref": "pi-confirm-061306accd29acae",
+        "issued_at": "2026-08-15T07:18:25.033Z",
+        "expires_at": "2026-08-15T07:28:25.033Z"
+      }
+    },
+    {
+      "id": "record_approval:2026-08-15-016-retire-packaged-legacy-cli-fallbacks:2026-08-15T07:21:36.793Z",
+      "at": "2026-08-15T07:21:36.793Z",
+      "type": "record_approval",
+      "from_phase": "review",
+      "to_phase": "review",
+      "reason": "approval-review-2da7abe9\naction_v2_sha256:a847435894fa36c29706a8df1a6608f845dad29ef7689a1bf3ae82beae1a0012",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "native-review-73dd7498-b063-4eb",
+        "confirmation_ref": "pi-confirm-92f09afdf0945d53",
+        "issued_at": "2026-08-15T07:21:36.793Z",
+        "expires_at": "2026-08-15T07:31:36.793Z"
+      }
+    },
+    {
+      "id": "complete:2026-08-15-016-retire-packaged-legacy-cli-fallbacks:2026-08-15T07:22:00.006Z",
+      "at": "2026-08-15T07:22:00.006Z",
+      "type": "complete",
+      "from_phase": "review",
+      "to_phase": "done",
+      "reason": "action_v2_sha256:80d1c583dc42e418eec2debe5c5cfdd59151baa18643e637e4e7940c0ed39f2a"
+    }
+  ]
+}

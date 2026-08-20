@@ -1,0 +1,9 @@
+{
+  "contract": "assurance_kernel/task_tombstone/v1",
+  "task_id": "2026-08-20-014-track-task-records-for-audit-continuity",
+  "lifecycle_status": "terminal",
+  "terminal_phase": "done",
+  "terminal_event_id": "complete:2026-08-20-014-track-task-records-for-audit-continuity:2026-08-20T10:09:35.995Z",
+  "final_record_hash": "sha256:9a6256c0ac72f5849ec4dcce8ebe6ffa97654648ef702e0afd12f106251b5e4d",
+  "terminalized_at": "2026-08-20T10:13:21.003Z"
+}

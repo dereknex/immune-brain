@@ -1,0 +1,9 @@
+{
+  "contract": "assurance_kernel/task_tombstone/v1",
+  "task_id": "2026-08-15-018-reconcile-v4-plan-control-plane",
+  "lifecycle_status": "terminal",
+  "terminal_phase": "done",
+  "terminal_event_id": "complete:2026-08-15-018-reconcile-v4-plan-control-plane:2026-08-15T09:03:34.124Z",
+  "final_record_hash": "sha256:cfcdd623c542af4b9cb2b8255cde39799cd34abc6a0279ec3f357782dc55ac80",
+  "terminalized_at": "2026-08-15T09:03:34.124Z"
+}

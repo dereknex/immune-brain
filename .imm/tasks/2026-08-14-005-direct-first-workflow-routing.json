@@ -1,0 +1,415 @@
+{
+  "contract": "assurance_kernel/task_record/v2",
+  "task_id": "2026-08-14-005-direct-first-workflow-routing",
+  "intent_revision": 1,
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "2026-08-14-005-direct-first-workflow-routing",
+    "goal": "Make Direct Path the default for eligible low-risk work through one ordered ownership and risk matrix, while preserving fail-closed Managed routing for active workflow ownership and material risk without adding persisted route state or weakening Managed authority.",
+    "acceptance": [
+      {
+        "id": "acc-direct-default",
+        "assertion": "Eligible work defaults to Direct by absence of Managed triggers; file count, local verifier count, ordinary retries, optional read-only advice, and unrelated dirty files do not independently escalate it, and route selection writes no workflow state.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/direct-first-routing-contract.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 131072\n}\n"
+      },
+      {
+        "id": "acc-managed-risk-boundary",
+        "assertion": "Existing Managed ownership, explicit Managed intent, security, public compatibility or schema, concurrency or recovery, release or external writes, destructive or irreversible effects, multi-owner coordination, and unresolved material uncertainty route fail-closed to Managed and cannot be downgraded by Direct wording.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/direct-first-routing-contract.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 131072\n}\n"
+      },
+      {
+        "id": "acc-direct-completion-confirmation",
+        "assertion": "Direct completion requires passing task-scoped verification, a stable task-owned diff, and zero task-owned unresolved failures without requiring whole-worktree cleanliness; confirmations are reserved for privileged or irreversible effects and exact task-owned local commits need no extra workflow confirmation.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/direct-first-routing-contract.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 131072\n}\n"
+      },
+      {
+        "id": "acc-consumer-contracts",
+        "assertion": "Canonical and generated BASELINE copies, initialization templates and ready_for output, user and planner guidance, and behavior fixtures consistently expose Direct first while retaining Managed entrypoints and a hard-risk boundary scenario.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/direct-first-routing-contract.test.ts\",\n    \"plugins/immune-brain/tests/init-project.test.ts\",\n    \"tests/baseline-packaging-contract.test.ts\",\n    \"tests/immune-brain-behavior-eval-contract.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 131072\n}\n"
+      },
+      {
+        "id": "acc-regression-suite",
+        "assertion": "The complete repository test suite and generated documentation synchronization checks pass after the routing change.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 300000,\n  \"max_output_bytes\": 262144\n}\n"
+      }
+    ],
+    "scope_hint": [
+      "IMMUNE.md",
+      "plugins/immune-brain/BASELINE.md",
+      "plugins/immune-brain/skills/BASELINE.md",
+      "plugins/immune-brain/dist/BASELINE.md",
+      "plugins/immune-brain/skills/imm-init/templates/AGENTS.md",
+      "plugins/immune-brain/skills/imm-init/templates/IMMUNE.template.md",
+      "plugins/immune-brain/skills/imm-init/scripts/init_project.ts",
+      "plugins/immune-brain/tests/init-project.test.ts",
+      "plugins/immune-brain/README.md",
+      "plugins/immune-brain/USER_GUIDE.md",
+      "plugins/immune-brain/dist/imm-init.md",
+      "plugins/immune-brain/dist/imm-planner.md",
+      "plugins/immune-brain/EVALUATION.md",
+      "docs/reference/planning-quality-gate.md",
+      "plugins/immune-brain/dist/docs/reference/planning-quality-gate.md",
+      "tests/baseline-packaging-contract.test.ts",
+      "tests/direct-first-routing-contract.test.ts",
+      "tests/fixtures/immune-brain-benchmark.json",
+      "tests/immune-brain-behavior-eval-contract.test.ts",
+      "docs/specs/direct-first-workflow-routing.spec.md",
+      "docs/specs/host-native-lightweight-workflow-roadmap.spec.md",
+      "docs/plans/2026-08-14-005-direct-first-workflow-routing.intent.json"
+    ],
+    "risk": "critical",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/2026-08-14-005-direct-first-workflow-routing.intent.json",
+    "revision": 1,
+    "content_hash": "sha256:dc20ab139a67bb6ecee23fcc28f4602fa9dae02296d48982f00ceca22e44baaa"
+  },
+  "phase": "done",
+  "baseline": "sha256:dc20ab139a67bb6ecee23fcc28f4602fa9dae02296d48982f00ceca22e44baaa",
+  "evidence": [
+    {
+      "id": "evidence-record_evidence:2026-08-14-005-direct-first-workflow-routing:2026-08-14T12:48:27.590Z",
+      "acceptance_id": "acc-direct-default",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:dc20ab139a67bb6ecee23fcc28f4602fa9dae02296d48982f00ceca22e44baaa",
+      "diff_hash": "sha256:8ac2fc717304006a80687c424dc70e3fbc9785459b5c3d3934affa3a07b63f1f",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "Final staged snapshot: `bun test ././tests/direct-first-routing-contract.test.ts` passed 6/6, including ordered negative-trigger default routing and zero workflow-state contracts."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-14-005-direct-first-workflow-routing:2026-08-14T12:48:34.796Z",
+      "acceptance_id": "acc-managed-risk-boundary",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:dc20ab139a67bb6ecee23fcc28f4602fa9dae02296d48982f00ceca22e44baaa",
+      "diff_hash": "sha256:8ac2fc717304006a80687c424dc70e3fbc9785459b5c3d3934affa3a07b63f1f",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "Final staged snapshot: routing contract test passed 6/6 and proves explicit Managed hard triggers for security/authority, public contracts, persistence, concurrency/recovery, external effects, irreversibility, uncertainty, and multiple owners."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-14-005-direct-first-workflow-routing:2026-08-14T12:48:41.400Z",
+      "acceptance_id": "acc-direct-completion-confirmation",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:dc20ab139a67bb6ecee23fcc28f4602fa9dae02296d48982f00ceca22e44baaa",
+      "diff_hash": "sha256:8ac2fc717304006a80687c424dc70e3fbc9785459b5c3d3934affa3a07b63f1f",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "Final staged snapshot: routing contract test passed 6/6, proving task-scoped reproducible verification, stable task-owned diff, explicit path staging, unrelated dirty-file tolerance, and privilege-only confirmation."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-14-005-direct-first-workflow-routing:2026-08-14T12:48:48.839Z",
+      "acceptance_id": "acc-consumer-contracts",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:dc20ab139a67bb6ecee23fcc28f4602fa9dae02296d48982f00ceca22e44baaa",
+      "diff_hash": "sha256:8ac2fc717304006a80687c424dc70e3fbc9785459b5c3d3934affa3a07b63f1f",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "Final staged snapshot: consumer command passed 20/20 across BASELINE packaging, imm-init output/templates, five-scenario behavior benchmark, and Brainstorm benchmark isolation."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-14-005-direct-first-workflow-routing:2026-08-14T12:48:55.714Z",
+      "acceptance_id": "acc-regression-suite",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:dc20ab139a67bb6ecee23fcc28f4602fa9dae02296d48982f00ceca22e44baaa",
+      "diff_hash": "sha256:8ac2fc717304006a80687c424dc70e3fbc9785459b5c3d3934affa3a07b63f1f",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "Final staged snapshot: full `bun test` passed 1119/1119 with 5606 assertions across 146 files; generated docs sync and staged diff checks also passed."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-14-005-direct-first-workflow-routing:2026-08-14T12:54:54.002Z",
+      "acceptance_id": "acc-direct-default",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:dc20ab139a67bb6ecee23fcc28f4602fa9dae02296d48982f00ceca22e44baaa",
+      "diff_hash": "sha256:d9f8bf722f2162e14459d82f19da8a497ec1246292e849e0069170c467af80f6",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "Rework snapshot: Direct-first routing contract passed 7/7, including default negative-trigger routing and zero workflow-state behavior."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-14-005-direct-first-workflow-routing:2026-08-14T12:54:59.954Z",
+      "acceptance_id": "acc-managed-risk-boundary",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:dc20ab139a67bb6ecee23fcc28f4602fa9dae02296d48982f00ceca22e44baaa",
+      "diff_hash": "sha256:d9f8bf722f2162e14459d82f19da8a497ec1246292e849e0069170c467af80f6",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "Rework snapshot: routing contract passed 7/7 and keeps all hard-risk and existing-owner Managed triggers fail-closed."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-14-005-direct-first-workflow-routing:2026-08-14T12:55:06.230Z",
+      "acceptance_id": "acc-direct-completion-confirmation",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:dc20ab139a67bb6ecee23fcc28f4602fa9dae02296d48982f00ceca22e44baaa",
+      "diff_hash": "sha256:d9f8bf722f2162e14459d82f19da8a497ec1246292e849e0069170c467af80f6",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "Rework snapshot: routing contract passed 7/7 for scoped verification/diff completion and privilege-only confirmation."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-14-005-direct-first-workflow-routing:2026-08-14T12:55:13.256Z",
+      "acceptance_id": "acc-consumer-contracts",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:dc20ab139a67bb6ecee23fcc28f4602fa9dae02296d48982f00ceca22e44baaa",
+      "diff_hash": "sha256:d9f8bf722f2162e14459d82f19da8a497ec1246292e849e0069170c467af80f6",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "Rework snapshot: consumer suite passed 27/27; USER_GUIDE now documents current TaskIntent/TaskRecord Kernel authority, final-state assurance, read-only legacy audit, and explicitly rejects retired v3 mutation/migration claims."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-14-005-direct-first-workflow-routing:2026-08-14T12:55:18.957Z",
+      "acceptance_id": "acc-regression-suite",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:dc20ab139a67bb6ecee23fcc28f4602fa9dae02296d48982f00ceca22e44baaa",
+      "diff_hash": "sha256:d9f8bf722f2162e14459d82f19da8a497ec1246292e849e0069170c467af80f6",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "Rework snapshot: full `bun test` passed 1120/1120 with 5617 assertions across 146 files; generated docs and diff checks passed."
+    }
+  ],
+  "findings": [
+    {
+      "id": "review-364c81c87618-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "acc-consumer-contracts",
+      "source": "review",
+      "review_round": 1,
+      "summary": "USER_GUIDE still documents retired v3 commands, migration behavior, State Ledger storage, and automatic review gates that contradict the current v4/Kernel consumer contract described in the updated README."
+    }
+  ],
+  "approvals": [
+    {
+      "id": "approval-qa-f8476409",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:dc20ab139a67bb6ecee23fcc28f4602fa9dae02296d48982f00ceca22e44baaa",
+      "diff_hash": "sha256:8ac2fc717304006a80687c424dc70e3fbc9785459b5c3d3934affa3a07b63f1f",
+      "actor_id": "qa-host-1ac3d1fc",
+      "summary": "all 5 fixed verification descriptor(s) passed"
+    },
+    {
+      "id": "approval-qa-6cfb1491",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:dc20ab139a67bb6ecee23fcc28f4602fa9dae02296d48982f00ceca22e44baaa",
+      "diff_hash": "sha256:d9f8bf722f2162e14459d82f19da8a497ec1246292e849e0069170c467af80f6",
+      "actor_id": "qa-host-3043d045",
+      "summary": "all 5 fixed verification descriptor(s) passed"
+    },
+    {
+      "id": "approval-review-df0ef4e4",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:dc20ab139a67bb6ecee23fcc28f4602fa9dae02296d48982f00ceca22e44baaa",
+      "diff_hash": "sha256:d9f8bf722f2162e14459d82f19da8a497ec1246292e849e0069170c467af80f6",
+      "actor_id": "native-review-85f54b46-1d96-4dd",
+      "summary": "Immutable bundle provenance verified; scoped routing, completion, consumer, and regression evidence presents no blocking findings."
+    },
+    {
+      "id": "approval-user-b4d9c6b1",
+      "kind": "user",
+      "authority_role": "user",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:dc20ab139a67bb6ecee23fcc28f4602fa9dae02296d48982f00ceca22e44baaa",
+      "diff_hash": "sha256:d9f8bf722f2162e14459d82f19da8a497ec1246292e849e0069170c467af80f6",
+      "actor_id": "literal-user",
+      "summary": "literal user approval"
+    }
+  ],
+  "history": [
+    {
+      "id": "record_evidence:2026-08-14-005-direct-first-workflow-routing:2026-08-14T12:48:27.590Z",
+      "at": "2026-08-14T12:48:27.590Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-direct-default\naction_v2_sha256:989586522cf6c54267126edb5fca268b1e8156eed7162d811cc6c6233fe6e72d"
+    },
+    {
+      "id": "record_evidence:2026-08-14-005-direct-first-workflow-routing:2026-08-14T12:48:34.796Z",
+      "at": "2026-08-14T12:48:34.796Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-managed-risk-boundary\naction_v2_sha256:ace9bd6cccf4fccb88479c770e76483e34eb3a381a8cf7c7a7a9726fa791032f"
+    },
+    {
+      "id": "record_evidence:2026-08-14-005-direct-first-workflow-routing:2026-08-14T12:48:41.400Z",
+      "at": "2026-08-14T12:48:41.400Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-direct-completion-confirmation\naction_v2_sha256:a7af8618f2e2ac679dccdd6945644bbca2f68aa8931225bb7b076b19fe07fcae"
+    },
+    {
+      "id": "record_evidence:2026-08-14-005-direct-first-workflow-routing:2026-08-14T12:48:48.839Z",
+      "at": "2026-08-14T12:48:48.839Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-consumer-contracts\naction_v2_sha256:c1aa26a3e916d6e2a1571ba0109521798301380cc6e1c8e063be968869220fc9"
+    },
+    {
+      "id": "record_evidence:2026-08-14-005-direct-first-workflow-routing:2026-08-14T12:48:55.714Z",
+      "at": "2026-08-14T12:48:55.714Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-regression-suite\naction_v2_sha256:97456583700c315e0036e0f8fc78b909820fa1d8f0e0a5f2852aace91f6104d8"
+    },
+    {
+      "id": "submit_review:2026-08-14-005-direct-first-workflow-routing:2026-08-14T12:49:10.449Z",
+      "at": "2026-08-14T12:49:10.449Z",
+      "type": "submit_review",
+      "from_phase": "working",
+      "to_phase": "review",
+      "reason": "action_v2_sha256:287adf1bc82ed51e929923f98089fe8c5b29e24d63c888df15e703de204aac4e"
+    },
+    {
+      "id": "record_approval:2026-08-14-005-direct-first-workflow-routing:2026-08-14T12:50:16.787Z",
+      "at": "2026-08-14T12:50:16.787Z",
+      "type": "record_approval",
+      "from_phase": "review",
+      "to_phase": "review",
+      "reason": "approval-qa-f8476409\naction_v2_sha256:6da9957d13a4bae7f6786a00792795624fffd26c85fbcdc7c7bf9db2e75c0955",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "qa-host-1ac3d1fc",
+        "confirmation_ref": "pi-confirm-ba1f642392100682",
+        "issued_at": "2026-08-14T12:50:16.787Z",
+        "expires_at": "2026-08-14T13:00:16.787Z"
+      }
+    },
+    {
+      "id": "request_rework:2026-08-14-005-direct-first-workflow-routing:2026-08-14T12:51:22.054Z",
+      "at": "2026-08-14T12:51:22.054Z",
+      "type": "request_rework",
+      "from_phase": "review",
+      "to_phase": "working",
+      "reason": "review_round_1\naction_v2_sha256:3c33158e9a8333c6fdcaaba40e06810dd9d3c07a03912d377420272b00637c7f",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "native-review-c075fbd4-1ff9-414",
+        "confirmation_ref": "pi-confirm-8ae30ef037c1cbcb",
+        "issued_at": "2026-08-14T12:51:22.054Z",
+        "expires_at": "2026-08-14T13:01:22.054Z"
+      }
+    },
+    {
+      "id": "record_evidence:2026-08-14-005-direct-first-workflow-routing:2026-08-14T12:54:54.002Z",
+      "at": "2026-08-14T12:54:54.002Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-direct-default\naction_v2_sha256:00e58a752bd4d937762800614c27086e7620b3a445cd8ccec298be47107068b1"
+    },
+    {
+      "id": "record_evidence:2026-08-14-005-direct-first-workflow-routing:2026-08-14T12:54:59.954Z",
+      "at": "2026-08-14T12:54:59.954Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-managed-risk-boundary\naction_v2_sha256:807eb765c11f2c763fae7e2d4ff4b94c305afc55165d7bd94104f9007a4636c7"
+    },
+    {
+      "id": "record_evidence:2026-08-14-005-direct-first-workflow-routing:2026-08-14T12:55:06.230Z",
+      "at": "2026-08-14T12:55:06.230Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-direct-completion-confirmation\naction_v2_sha256:476f0706d529a7be570a4eb78af689d479f03b41ae12b8bd447f56d590201f77"
+    },
+    {
+      "id": "record_evidence:2026-08-14-005-direct-first-workflow-routing:2026-08-14T12:55:13.256Z",
+      "at": "2026-08-14T12:55:13.256Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-consumer-contracts\naction_v2_sha256:054db0d649dfed4741333d2bad7bab3379062ac6ad69132c73122a83150d4daa"
+    },
+    {
+      "id": "record_evidence:2026-08-14-005-direct-first-workflow-routing:2026-08-14T12:55:18.957Z",
+      "at": "2026-08-14T12:55:18.957Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-regression-suite\naction_v2_sha256:8b954136e74c3320f867ba3cba6f9fc4b57f10743e177b2cf705d7eed38a40b1"
+    },
+    {
+      "id": "resolve_finding:2026-08-14-005-direct-first-workflow-routing:2026-08-14T12:55:28.411Z",
+      "at": "2026-08-14T12:55:28.411Z",
+      "type": "resolve_finding",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "review-364c81c87618-1-review-1\naction_v2_sha256:571f5d1f39706ea0528bfc92df02c52ce48266140d4a265a4a259cd595e25b37"
+    },
+    {
+      "id": "submit_review:2026-08-14-005-direct-first-workflow-routing:2026-08-14T12:55:40.084Z",
+      "at": "2026-08-14T12:55:40.084Z",
+      "type": "submit_review",
+      "from_phase": "working",
+      "to_phase": "review",
+      "reason": "action_v2_sha256:5b82c93d68bfde5bf90262c03b602b334e70c70b5228e10441d82f19e1bc9364"
+    },
+    {
+      "id": "record_approval:2026-08-14-005-direct-first-workflow-routing:2026-08-14T12:56:43.238Z",
+      "at": "2026-08-14T12:56:43.238Z",
+      "type": "record_approval",
+      "from_phase": "review",
+      "to_phase": "review",
+      "reason": "approval-qa-6cfb1491\naction_v2_sha256:c76288fa5050bb368c88d91255312e7b35044e2043bcc94d2c32211254add863",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "qa-host-3043d045",
+        "confirmation_ref": "pi-confirm-713f40665abcc29d",
+        "issued_at": "2026-08-14T12:56:43.238Z",
+        "expires_at": "2026-08-14T13:06:43.238Z"
+      }
+    },
+    {
+      "id": "record_approval:2026-08-14-005-direct-first-workflow-routing:2026-08-14T12:58:47.602Z",
+      "at": "2026-08-14T12:58:47.602Z",
+      "type": "record_approval",
+      "from_phase": "review",
+      "to_phase": "review",
+      "reason": "approval-review-df0ef4e4\naction_v2_sha256:569550a63d1636e48bab5881ffa5f91e4f0bc216a5c2b9d8553f87605c2228d1",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "native-review-85f54b46-1d96-4dd",
+        "confirmation_ref": "pi-confirm-7242b7c669b44fd4",
+        "issued_at": "2026-08-14T12:58:47.603Z",
+        "expires_at": "2026-08-14T13:08:47.603Z"
+      }
+    },
+    {
+      "id": "record_user_approval:2026-08-14-005-direct-first-workflow-routing:2026-08-14T12:59:13.578Z",
+      "at": "2026-08-14T12:59:13.578Z",
+      "type": "record_user_approval",
+      "from_phase": "review",
+      "to_phase": "review",
+      "reason": "approval-user-b4d9c6b1\naction_v2_sha256:418c34250bf8e60d55a961727f56951785bcbaad2d334471ccadfc955567d5ff",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-fc1a74b3768a0c0b",
+        "issued_at": "2026-08-14T12:59:13.579Z",
+        "expires_at": "2026-08-14T13:09:13.579Z"
+      }
+    },
+    {
+      "id": "complete:2026-08-14-005-direct-first-workflow-routing:2026-08-14T12:59:20.695Z",
+      "at": "2026-08-14T12:59:20.695Z",
+      "type": "complete",
+      "from_phase": "review",
+      "to_phase": "done",
+      "reason": "action_v2_sha256:753f88a2f653b9ccd5d856ba08305e50cbffb56d8bd1ee9f452fd67c2bfbd67d"
+    }
+  ]
+}

@@ -1,0 +1,268 @@
+{
+  "contract": "assurance_kernel/task_record/v2",
+  "task_id": "2026-08-15-021-drain-legacy-runtime-test-callers",
+  "intent_revision": 1,
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "2026-08-15-021-drain-legacy-runtime-test-callers",
+    "goal": "Verify and record evidence for the shipped legacy-runtime test-caller drain state on main: 30 deleted test files, 3 files trimmed to live pure-unit blocks, 4 subprocess tests migrated to v4_runtime.ts (including python-reference-boundary), v4 manifest assertions, and zero imports or subprocesses of immune_brain_runtime.ts outside the enumerated out-of-scope and absence/string-assert files, without changing any production code.",
+    "acceptance": [
+      {
+        "id": "acc-deleted-files",
+        "assertion": "All 30 enumerated test files are absent from source, and no remaining test file imports them.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/kernel-intent-authoring.test.ts\",\n    \"tests/plan-validation.test.ts\",\n    \"tests/kernel-r2a-boundary.test.ts\",\n    \"tests/python-reference-boundary.test.ts\",\n    \"tests/loop-child-output-contract.test.ts\",\n    \"tests/execution-evidence-runtime.test.ts\",\n    \"tests/fast-track-detection.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 300000,\n  \"max_output_bytes\": 262144\n}\n"
+      },
+      {
+        "id": "acc-migrated-subprocesses",
+        "assertion": "kernel-intent-authoring, plan-validation, kernel-r2a-boundary, and python-reference-boundary execute runtime/v4_runtime.ts and never immune_brain_runtime.ts for CLI subprocesses; python-reference-boundary asserts the v4 retired-wall semantics for imm-work status, imm-activation-plan, and imm-heal.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/kernel-intent-authoring.test.ts\",\n    \"tests/plan-validation.test.ts\",\n    \"tests/kernel-r2a-boundary.test.ts\",\n    \"tests/python-reference-boundary.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 300000,\n  \"max_output_bytes\": 262144\n}\n"
+      },
+      {
+        "id": "acc-trimmed-files",
+        "assertion": "loop-child-output-contract, execution-evidence-runtime, and fast-track-detection keep their live pure-unit blocks (loop_contract validation, structured evidence/failure_exit enum validation, planSupportsFastTrack) and no longer import runImmCommand or immune_brain_runtime.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/loop-child-output-contract.test.ts\",\n    \"tests/execution-evidence-runtime.test.ts\",\n    \"tests/fast-track-detection.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 300000,\n  \"max_output_bytes\": 262144\n}\n"
+      },
+      {
+        "id": "acc-remaining-references",
+        "assertion": "rg -l immune_brain_runtime under tests/ and plugins/immune-brain/tests/ returns exactly the absence/string-assert files (v4-plan-control-plane, wrapper-retirement, pi-packaged-legacy-fallbacks, host-runtime-cutover, code-review-activation-contract, active-runtime-docs-contract, python-reference-boundary existence asserts), the 5 out-of-scope existence/absence-assert files (roadmap-plan-host-acceptance, kernel-r2c1-boundary, v4-storage-retirement-v3-writers, v4-runtime-launchers, pi-only-current-contracts), and the benchmark fixture workspace files, with zero import or subprocess of the legacy dispatcher in any other test file.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/host-runtime-cutover.test.ts\",\n    \"tests/wrapper-retirement.test.ts\",\n    \"tests/v4-plan-control-plane.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 300000,\n  \"max_output_bytes\": 262144\n}\n"
+      },
+      {
+        "id": "acc-contract-retention",
+        "assertion": "Live invariants remain covered: migrated and trimmed focused suites plus v4-owned suites (authority-commit-receipts, kernel-r2a-boundary, kernel-shadow-cli, plugin-package-runtime, v4-storage-retirement-v3-writers, host-runtime-cutover, wrapper-retirement, v4-plan-control-plane) all pass.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/authority-commit-receipts.test.ts\",\n    \"tests/kernel-r2a-boundary.test.ts\",\n    \"tests/kernel-shadow-cli.test.ts\",\n    \"tests/plugin-package-runtime.test.ts\",\n    \"tests/v4-storage-retirement-v3-writers.test.ts\",\n    \"tests/host-runtime-cutover.test.ts\",\n    \"tests/wrapper-retirement.test.ts\",\n    \"tests/v4-plan-control-plane.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 300000,\n  \"max_output_bytes\": 262144\n}\n"
+      },
+      {
+        "id": "acc-zero-production-changes",
+        "assertion": "git diff from the 020 implementation commit shows only this task plan/spec artifacts; no production runtime, package, skill, or dist file changes beyond the shipped 020 state.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/host-runtime-cutover.test.ts\",\n    \"tests/plugin-package-runtime.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 300000,\n  \"max_output_bytes\": 262144\n}\n"
+      },
+      {
+        "id": "acc-full-regression",
+        "assertion": "The complete repository suite passes on the shipped drain state.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 300000,\n  \"max_output_bytes\": 262144\n}\n"
+      }
+    ],
+    "scope_hint": [
+      "docs/specs/drain-legacy-runtime-test-callers-r2.spec.md",
+      "docs/specs/drain-legacy-runtime-test-callers.spec.md",
+      "docs/specs/host-native-lightweight-workflow-roadmap.spec.md",
+      "tests/execution-evidence-runtime.test.ts",
+      "tests/fast-track-detection.test.ts",
+      "tests/kernel-intent-authoring.test.ts",
+      "tests/kernel-r2a-boundary.test.ts",
+      "tests/loop-child-output-contract.test.ts",
+      "tests/plan-validation.test.ts",
+      "tests/python-reference-boundary.test.ts"
+    ],
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/2026-08-15-021-drain-legacy-runtime-test-callers.intent.json",
+    "revision": 1,
+    "content_hash": "sha256:6bf7233e6254aff63b70c0e7e405c85701efdc670509be2f797295eac684f7c3"
+  },
+  "phase": "done",
+  "baseline": "sha256:6bf7233e6254aff63b70c0e7e405c85701efdc670509be2f797295eac684f7c3",
+  "evidence": [
+    {
+      "id": "evidence-record_evidence:2026-08-15-021-drain-legacy-runtime-test-callers:2026-08-15T11:09:19.081Z",
+      "acceptance_id": "acc-deleted-files",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:6bf7233e6254aff63b70c0e7e405c85701efdc670509be2f797295eac684f7c3",
+      "diff_hash": "sha256:a84d512923d73bd839d9747fa13ee3cffcff3647775b08a82389b667958af8ed",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "30 enumerated test files absent from source; no remaining test file imports them; focused suites pass on clean HEAD"
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-15-021-drain-legacy-runtime-test-callers:2026-08-15T11:09:25.242Z",
+      "acceptance_id": "acc-migrated-subprocesses",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:6bf7233e6254aff63b70c0e7e405c85701efdc670509be2f797295eac684f7c3",
+      "diff_hash": "sha256:a84d512923d73bd839d9747fa13ee3cffcff3647775b08a82389b667958af8ed",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "kernel-intent-authoring, plan-validation, kernel-r2a-boundary, python-reference-boundary all execute runtime/v4_runtime.ts; python-reference-boundary asserts v4 retired-wall for imm-work status/imm-activation-plan/imm-heal"
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-15-021-drain-legacy-runtime-test-callers:2026-08-15T11:09:31.766Z",
+      "acceptance_id": "acc-trimmed-files",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:6bf7233e6254aff63b70c0e7e405c85701efdc670509be2f797295eac684f7c3",
+      "diff_hash": "sha256:a84d512923d73bd839d9747fa13ee3cffcff3647775b08a82389b667958af8ed",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "loop-child-output-contract, execution-evidence-runtime, fast-track-detection keep live pure-unit blocks; no runImmCommand/immune_brain_runtime imports"
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-15-021-drain-legacy-runtime-test-callers:2026-08-15T11:09:38.408Z",
+      "acceptance_id": "acc-remaining-references",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:6bf7233e6254aff63b70c0e7e405c85701efdc670509be2f797295eac684f7c3",
+      "diff_hash": "sha256:a84d512923d73bd839d9747fa13ee3cffcff3647775b08a82389b667958af8ed",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "rg -l immune_brain_runtime returns exactly 17 paths: 7 absence/string-assert + 5 out-of-scope existence/absence + 5 benchmark fixture; zero import or subprocess of legacy dispatcher"
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-15-021-drain-legacy-runtime-test-callers:2026-08-15T11:09:44.249Z",
+      "acceptance_id": "acc-contract-retention",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:6bf7233e6254aff63b70c0e7e405c85701efdc670509be2f797295eac684f7c3",
+      "diff_hash": "sha256:a84d512923d73bd839d9747fa13ee3cffcff3647775b08a82389b667958af8ed",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "migrated/trimmed focused suites (95 tests) plus 8 v4-owned suites (65 tests) pass on clean HEAD"
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-15-021-drain-legacy-runtime-test-callers:2026-08-15T11:09:50.237Z",
+      "acceptance_id": "acc-zero-production-changes",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:6bf7233e6254aff63b70c0e7e405c85701efdc670509be2f797295eac684f7c3",
+      "diff_hash": "sha256:a84d512923d73bd839d9747fa13ee3cffcff3647775b08a82389b667958af8ed",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "git diff from the 020 implementation commit shows only this task's Spec/roadmap/sidecar artifacts; zero production runtime/package/skill/dist changes beyond the shipped 020 state"
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-15-021-drain-legacy-runtime-test-callers:2026-08-15T11:09:56.299Z",
+      "acceptance_id": "acc-full-regression",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:6bf7233e6254aff63b70c0e7e405c85701efdc670509be2f797295eac684f7c3",
+      "diff_hash": "sha256:a84d512923d73bd839d9747fa13ee3cffcff3647775b08a82389b667958af8ed",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "full repository suite 897/0 pass on the shipped drain state"
+    }
+  ],
+  "findings": [],
+  "approvals": [
+    {
+      "id": "approval-qa-43967d10",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:6bf7233e6254aff63b70c0e7e405c85701efdc670509be2f797295eac684f7c3",
+      "diff_hash": "sha256:a84d512923d73bd839d9747fa13ee3cffcff3647775b08a82389b667958af8ed",
+      "actor_id": "qa-host-dfdfbeaf",
+      "summary": "all 7 fixed verification descriptor(s) passed"
+    },
+    {
+      "id": "approval-review-6de412db",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:6bf7233e6254aff63b70c0e7e405c85701efdc670509be2f797295eac684f7c3",
+      "diff_hash": "sha256:a84d512923d73bd839d9747fa13ee3cffcff3647775b08a82389b667958af8ed",
+      "actor_id": "native-review-1f6f69c0-fc04-475",
+      "summary": "Provenance verified; 30 test files drained with zero remaining imports, zero production changes vs 020, and legacy dispatcher references restricted to absence/out-of-scope asserts."
+    }
+  ],
+  "history": [
+    {
+      "id": "record_evidence:2026-08-15-021-drain-legacy-runtime-test-callers:2026-08-15T11:09:19.081Z",
+      "at": "2026-08-15T11:09:19.081Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-deleted-files\naction_v2_sha256:11385aeeea99a04d9b786c5f64d5735a1d7a02fdaf9353f325fc3d80405b7c43"
+    },
+    {
+      "id": "record_evidence:2026-08-15-021-drain-legacy-runtime-test-callers:2026-08-15T11:09:25.242Z",
+      "at": "2026-08-15T11:09:25.242Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-migrated-subprocesses\naction_v2_sha256:38cd3c7374a95db9fea5855742ac7255b5abd65b4d1b65504e4c8078cc63bd2b"
+    },
+    {
+      "id": "record_evidence:2026-08-15-021-drain-legacy-runtime-test-callers:2026-08-15T11:09:31.766Z",
+      "at": "2026-08-15T11:09:31.766Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-trimmed-files\naction_v2_sha256:e2835a58ff1a2b32a67bce1b61334ae7356e4a0538ec62ec8aeb7bbdc8387c9f"
+    },
+    {
+      "id": "record_evidence:2026-08-15-021-drain-legacy-runtime-test-callers:2026-08-15T11:09:38.408Z",
+      "at": "2026-08-15T11:09:38.408Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-remaining-references\naction_v2_sha256:4be80db5f666e907007f584d36aed3e0ad01bf5e408ecc46afb54a22c83e5b5a"
+    },
+    {
+      "id": "record_evidence:2026-08-15-021-drain-legacy-runtime-test-callers:2026-08-15T11:09:44.249Z",
+      "at": "2026-08-15T11:09:44.249Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-contract-retention\naction_v2_sha256:766d05ac58bacc8a94e3cc5f730a55ce055b915dde91d98ceb9454145c01ce3a"
+    },
+    {
+      "id": "record_evidence:2026-08-15-021-drain-legacy-runtime-test-callers:2026-08-15T11:09:50.237Z",
+      "at": "2026-08-15T11:09:50.237Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-zero-production-changes\naction_v2_sha256:29294f630d6b1d370d72f9545a98db778a714024bfb25916907eb42d3b983365"
+    },
+    {
+      "id": "record_evidence:2026-08-15-021-drain-legacy-runtime-test-callers:2026-08-15T11:09:56.299Z",
+      "at": "2026-08-15T11:09:56.299Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-full-regression\naction_v2_sha256:fd7e23f57074e353153cd387ada155e35cd8571e09954e3516d1804538df20d0"
+    },
+    {
+      "id": "submit_review:2026-08-15-021-drain-legacy-runtime-test-callers:2026-08-15T11:10:02.863Z",
+      "at": "2026-08-15T11:10:02.863Z",
+      "type": "submit_review",
+      "from_phase": "working",
+      "to_phase": "review",
+      "reason": "action_v2_sha256:07529347bddf5a94426aca2e2a60a1903bbf42930b92567f60609f7527fb18cf"
+    },
+    {
+      "id": "record_approval:2026-08-15-021-drain-legacy-runtime-test-callers:2026-08-15T11:11:05.770Z",
+      "at": "2026-08-15T11:11:05.770Z",
+      "type": "record_approval",
+      "from_phase": "review",
+      "to_phase": "review",
+      "reason": "approval-qa-43967d10\naction_v2_sha256:d6d2166f39fc6b84ccadd1213816139fa0faf3025af2636ef90d9b4ef694b3b4",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "qa-host-dfdfbeaf",
+        "confirmation_ref": "pi-confirm-bbebc18b3abf096d",
+        "issued_at": "2026-08-15T11:11:05.770Z",
+        "expires_at": "2026-08-15T11:21:05.770Z"
+      }
+    },
+    {
+      "id": "record_approval:2026-08-15-021-drain-legacy-runtime-test-callers:2026-08-15T11:12:01.112Z",
+      "at": "2026-08-15T11:12:01.112Z",
+      "type": "record_approval",
+      "from_phase": "review",
+      "to_phase": "review",
+      "reason": "approval-review-6de412db\naction_v2_sha256:2d8f62c2ca038fb3304e9cceeecfc6e796f556d35bb0059cffef03b4b878b4aa",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "native-review-1f6f69c0-fc04-475",
+        "confirmation_ref": "pi-confirm-6e73dbf37e5f5f36",
+        "issued_at": "2026-08-15T11:12:01.112Z",
+        "expires_at": "2026-08-15T11:22:01.112Z"
+      }
+    },
+    {
+      "id": "complete:2026-08-15-021-drain-legacy-runtime-test-callers:2026-08-15T11:12:50.666Z",
+      "at": "2026-08-15T11:12:50.666Z",
+      "type": "complete",
+      "from_phase": "review",
+      "to_phase": "done",
+      "reason": "action_v2_sha256:6761d604b85b2a81a68083c535a935aadb968eff9f216fd9a0bccc1157c07e5f"
+    }
+  ]
+}

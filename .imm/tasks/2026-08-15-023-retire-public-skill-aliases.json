@@ -1,0 +1,441 @@
+{
+  "contract": "assurance_kernel/task_record/v2",
+  "task_id": "2026-08-15-023-retire-public-skill-aliases",
+  "intent_revision": 1,
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "2026-08-15-023-retire-public-skill-aliases",
+    "goal": "Retire the four public Skill compatibility entries (debug-investigator, imm-page-design, imm-party, imm-preplan-review) by migrating their remaining behavior contracts into the canonical skills (imm-advisory-reviewer debug_hypothesis, imm-planner page_design, imm-brainstorm roundtable/adversarial), removing the registry entries, SKILL.md stub directories, and packaged dist/*.md alias copies, updating current-facing docs (including skills-guide deep-dive sections, mermaid nodes, counts, and the three reference contrast/borrow maps) and the three contract tests to canonical mode expressions, and regenerating dist/registry.yaml and the README role map via the sync script, without changing runtime, Kernel, or authority surface and without touching historical evidence.",
+    "acceptance": [
+      {
+        "id": "acc-alias-absence",
+        "assertion": "The four alias registry entries, SKILL.md stub directories, and packaged dist/*.md copies are gone.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/skill-mode-consolidation.test.ts\",\n    \"plugins/immune-brain/tests/skill-registry-consistency.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 300000,\n  \"max_output_bytes\": 262144\n}\n"
+      },
+      {
+        "id": "acc-canonical-migration",
+        "assertion": "dist/imm-brainstorm.md contains the adversarial question protocol (Ask one question at a time / provide a recommended answer); imm-advisory-reviewer.md, imm-planner.md, and imm-init.md use canonical mode expressions without alias entry references.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/brainstorm-decision-probing-contract.test.ts\",\n    \"tests/skill-mode-consolidation.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 300000,\n  \"max_output_bytes\": 262144\n}\n"
+      },
+      {
+        "id": "acc-current-docs",
+        "assertion": "user_manual, IMMUNE, USER_GUIDE, skills-guide (table, mermaid, deep-dive sections, counts), planning-quality-gate (source+dist), workflow-and-subagents, subagent-remaining-work, skill-details README, addy-agent-skills-contrast, mattpocock-skills-contrast, and upstream-pro-workflow-borrow-map use canonical mode expressions; no current-facing doc advertises an alias as an entry point.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/pi-only-current-contracts.test.ts\",\n    \"plugins/immune-brain/tests/authorization-phrase-consistency.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 300000,\n  \"max_output_bytes\": 262144\n}\n"
+      },
+      {
+        "id": "acc-contract-tests",
+        "assertion": "The 3 updated contract test files (skill-mode-consolidation, brainstorm-decision-probing, authorization-phrase-consistency) pass.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/skill-mode-consolidation.test.ts\",\n    \"tests/brainstorm-decision-probing-contract.test.ts\",\n    \"plugins/immune-brain/tests/authorization-phrase-consistency.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 300000,\n  \"max_output_bytes\": 262144\n}\n"
+      },
+      {
+        "id": "acc-dist-sync",
+        "assertion": "sync-dist-docs.ts --check passes; dist/registry.yaml has no alias entries; README role map regenerated without alias rows.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/pi-canary-discovery-regression.test.ts\",\n    \"tests/pi-canary-packed-loader.test.ts\",\n    \"tests/pi-only-package-surface.test.ts\",\n    \"plugins/immune-brain/tests/skill-registry-consistency.test.ts\",\n    \"plugins/immune-brain/tests/host-manifest-consistency.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 300000,\n  \"max_output_bytes\": 262144\n}\n"
+      },
+      {
+        "id": "acc-full-regression",
+        "assertion": "The complete repository suite passes after the alias retirement.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 300000,\n  \"max_output_bytes\": 262144\n}\n"
+      }
+    ],
+    "scope_hint": [
+      "IMMUNE.md",
+      "docs/reference/addy-agent-skills-contrast.md",
+      "docs/reference/immune-brain-skill-details/README.md",
+      "docs/reference/immune-brain-skills-guide.md",
+      "docs/reference/mattpocock-skills-contrast.md",
+      "docs/reference/planning-quality-gate.md",
+      "docs/reference/subagent-remaining-work.md",
+      "docs/reference/upstream-pro-workflow-borrow-map.md",
+      "docs/reference/workflow-and-subagents.md",
+      "docs/specs/host-native-lightweight-workflow-roadmap.spec.md",
+      "docs/specs/retire-public-skill-aliases.spec.md",
+      "docs/user_manual.md",
+      "plugins/immune-brain/README.md",
+      "plugins/immune-brain/USER_GUIDE.md",
+      "plugins/immune-brain/dist/debug-investigator.md",
+      "plugins/immune-brain/dist/imm-advisory-reviewer.md",
+      "plugins/immune-brain/dist/imm-brainstorm.md",
+      "plugins/immune-brain/dist/imm-init.md",
+      "plugins/immune-brain/dist/imm-page-design.md",
+      "plugins/immune-brain/dist/imm-party.md",
+      "plugins/immune-brain/dist/imm-planner.md",
+      "plugins/immune-brain/dist/imm-preplan-review.md",
+      "plugins/immune-brain/dist/registry.yaml",
+      "plugins/immune-brain/skills/debug-investigator",
+      "plugins/immune-brain/skills/imm-brainstorm/SKILL.md",
+      "plugins/immune-brain/skills/imm-page-design",
+      "plugins/immune-brain/skills/imm-party",
+      "plugins/immune-brain/skills/imm-preplan-review",
+      "plugins/immune-brain/skills/registry.yaml",
+      "plugins/immune-brain/tests/authorization-phrase-consistency.test.ts",
+      "tests/brainstorm-decision-probing-contract.test.ts",
+      "tests/skill-mode-consolidation.test.ts"
+    ],
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/2026-08-15-023-retire-public-skill-aliases.intent.json",
+    "revision": 1,
+    "content_hash": "sha256:e8fe83d2edc803622521af27edb4a8e87425a2c788f737ff0d1912791011bfce"
+  },
+  "phase": "done",
+  "baseline": "sha256:e8fe83d2edc803622521af27edb4a8e87425a2c788f737ff0d1912791011bfce",
+  "evidence": [
+    {
+      "id": "evidence-record_evidence:2026-08-15-023-retire-public-skill-aliases:2026-08-15T12:28:24.551Z",
+      "acceptance_id": "acc-alias-absence",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:e8fe83d2edc803622521af27edb4a8e87425a2c788f737ff0d1912791011bfce",
+      "diff_hash": "sha256:a886a3b361ccb025db62f95ce47e4458c49d7a07daffa61d5f15fb93e5c28e9a",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "4 alias registry entries, SKILL.md stub dirs, and dist/*.md copies deleted; skill-mode-consolidation (alias-absence) + skill-registry-consistency pass 9/9."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-15-023-retire-public-skill-aliases:2026-08-15T12:28:24.747Z",
+      "acceptance_id": "acc-canonical-migration",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:e8fe83d2edc803622521af27edb4a8e87425a2c788f737ff0d1912791011bfce",
+      "diff_hash": "sha256:a886a3b361ccb025db62f95ce47e4458c49d7a07daffa61d5f15fb93e5c28e9a",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "Adversarial question protocol (Ask one question at a time / provide a recommended answer) migrated into dist/imm-brainstorm.md; canonical docs drop alias entry references; brainstorm-decision-probing + skill-mode-consolidation pass 10/10."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-15-023-retire-public-skill-aliases:2026-08-15T12:28:24.937Z",
+      "acceptance_id": "acc-current-docs",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:e8fe83d2edc803622521af27edb4a8e87425a2c788f737ff0d1912791011bfce",
+      "diff_hash": "sha256:a886a3b361ccb025db62f95ce47e4458c49d7a07daffa61d5f15fb93e5c28e9a",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "11 current-facing docs updated to canonical mode expressions (user_manual, IMMUNE, USER_GUIDE, skills-guide table/mermaid/deep-dive/counts, planning-quality-gate source+dist, workflow-and-subagents, subagent-remaining-work, skill-details README, addy/mattpocock contrast, borrow map); pi-only-current-contracts + authorization-phrase-consistency pass 8/8."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-15-023-retire-public-skill-aliases:2026-08-15T12:28:25.131Z",
+      "acceptance_id": "acc-contract-tests",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:e8fe83d2edc803622521af27edb4a8e87425a2c788f737ff0d1912791011bfce",
+      "diff_hash": "sha256:a886a3b361ccb025db62f95ce47e4458c49d7a07daffa61d5f15fb93e5c28e9a",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "3 updated contract tests pass 13/13 (skill-mode-consolidation rewritten to alias-absence, brainstorm-decision-probing retargeted to canonical doc, imm-party dropped from authorization DISPATCH_HOSTS)."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-15-023-retire-public-skill-aliases:2026-08-15T12:28:25.325Z",
+      "acceptance_id": "acc-dist-sync",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:e8fe83d2edc803622521af27edb4a8e87425a2c788f737ff0d1912791011bfce",
+      "diff_hash": "sha256:a886a3b361ccb025db62f95ce47e4458c49d7a07daffa61d5f15fb93e5c28e9a",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "sync-dist-docs.ts --check passes; dist/registry.yaml regenerated without alias entries; README role map regenerated; registry/package surface tests pass 13/13."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-15-023-retire-public-skill-aliases:2026-08-15T12:28:25.515Z",
+      "acceptance_id": "acc-full-regression",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:e8fe83d2edc803622521af27edb4a8e87425a2c788f737ff0d1912791011bfce",
+      "diff_hash": "sha256:a886a3b361ccb025db62f95ce47e4458c49d7a07daffa61d5f15fb93e5c28e9a",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "Full repository suite passes 897/0 after alias retirement (includes REVIEW_SPAWN_TIMEOUT_MS assertion sync with 001ba95)."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-15-023-retire-public-skill-aliases:2026-08-15T12:36:23.904Z",
+      "acceptance_id": "acc-alias-absence",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:e8fe83d2edc803622521af27edb4a8e87425a2c788f737ff0d1912791011bfce",
+      "diff_hash": "sha256:82b6396b6bc9f143c2a40c47213507e5a49907c25f5ad997868eef428dd8f6fc",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "4 alias registry entries, SKILL.md stub dirs, and dist/*.md copies deleted; skill-mode-consolidation (alias-absence) + skill-registry-consistency pass 9/9."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-15-023-retire-public-skill-aliases:2026-08-15T12:36:24.109Z",
+      "acceptance_id": "acc-canonical-migration",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:e8fe83d2edc803622521af27edb4a8e87425a2c788f737ff0d1912791011bfce",
+      "diff_hash": "sha256:82b6396b6bc9f143c2a40c47213507e5a49907c25f5ad997868eef428dd8f6fc",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "Adversarial question protocol migrated into dist/imm-brainstorm.md; canonical docs drop alias entry references; brainstorm-decision-probing + skill-mode-consolidation pass 10/10."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-15-023-retire-public-skill-aliases:2026-08-15T12:36:24.307Z",
+      "acceptance_id": "acc-current-docs",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:e8fe83d2edc803622521af27edb4a8e87425a2c788f737ff0d1912791011bfce",
+      "diff_hash": "sha256:82b6396b6bc9f143c2a40c47213507e5a49907c25f5ad997868eef428dd8f6fc",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "11 current-facing docs + user_manual auxiliary lists/stage tables/section headers/slash table + IMMUNE optional-stage sequence use canonical mode expressions; pi-only-current-contracts + authorization-phrase-consistency pass 8/8 (rework review-1 resolved)."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-15-023-retire-public-skill-aliases:2026-08-15T12:36:24.517Z",
+      "acceptance_id": "acc-contract-tests",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:e8fe83d2edc803622521af27edb4a8e87425a2c788f737ff0d1912791011bfce",
+      "diff_hash": "sha256:82b6396b6bc9f143c2a40c47213507e5a49907c25f5ad997868eef428dd8f6fc",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "3 updated contract tests pass 13/13 (skill-mode-consolidation alias-absence, brainstorm-decision-probing canonical, authorization-phrase-consistency)."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-15-023-retire-public-skill-aliases:2026-08-15T12:36:24.720Z",
+      "acceptance_id": "acc-dist-sync",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:e8fe83d2edc803622521af27edb4a8e87425a2c788f737ff0d1912791011bfce",
+      "diff_hash": "sha256:82b6396b6bc9f143c2a40c47213507e5a49907c25f5ad997868eef428dd8f6fc",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "sync-dist-docs.ts --check passes; dist/registry.yaml without alias entries; README role map regenerated; registry/package surface tests pass 13/13."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-15-023-retire-public-skill-aliases:2026-08-15T12:36:24.916Z",
+      "acceptance_id": "acc-full-regression",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:e8fe83d2edc803622521af27edb4a8e87425a2c788f737ff0d1912791011bfce",
+      "diff_hash": "sha256:82b6396b6bc9f143c2a40c47213507e5a49907c25f5ad997868eef428dd8f6fc",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "Full repository suite passes 897/0 after alias retirement and rework fixes."
+    }
+  ],
+  "findings": [
+    {
+      "id": "review-c37e4ced8038-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "acc-current-docs",
+      "source": "review",
+      "review_round": 1,
+      "summary": "docs/user_manual.md still advertises retired aliases imm-party, imm-preplan-review, debug-investigator, and imm-page-design as active entry points (auxiliary skill list, stage table, per-alias section headers, and /imm-page-design, /imm-party, /debug-investigator slash-command table) at HEAD; commit 034aee4 migrated only the workflow tables, violating 'no current-facing doc advertises an alias as an entry point'."
+    }
+  ],
+  "approvals": [
+    {
+      "id": "approval-qa-7bd1cf40",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:e8fe83d2edc803622521af27edb4a8e87425a2c788f737ff0d1912791011bfce",
+      "diff_hash": "sha256:a886a3b361ccb025db62f95ce47e4458c49d7a07daffa61d5f15fb93e5c28e9a",
+      "actor_id": "qa-host-f953f5c4",
+      "summary": "all 6 fixed verification descriptor(s) passed"
+    },
+    {
+      "id": "approval-qa-c445ce2e",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:e8fe83d2edc803622521af27edb4a8e87425a2c788f737ff0d1912791011bfce",
+      "diff_hash": "sha256:82b6396b6bc9f143c2a40c47213507e5a49907c25f5ad997868eef428dd8f6fc",
+      "actor_id": "qa-host-9231a31f",
+      "summary": "all 6 fixed verification descriptor(s) passed"
+    },
+    {
+      "id": "approval-review-3fe4ee9c",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:e8fe83d2edc803622521af27edb4a8e87425a2c788f737ff0d1912791011bfce",
+      "diff_hash": "sha256:82b6396b6bc9f143c2a40c47213507e5a49907c25f5ad997868eef428dd8f6fc",
+      "actor_id": "native-review-3b8effb1-4196-407",
+      "summary": "Provenance verified (HEAD matches bundle.head, empty dirty_files); all six acceptance assertions satisfied by committed state."
+    }
+  ],
+  "history": [
+    {
+      "id": "record_evidence:2026-08-15-023-retire-public-skill-aliases:2026-08-15T12:28:24.551Z",
+      "at": "2026-08-15T12:28:24.551Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-alias-absence\naction_v2_sha256:1e47415b467afdffb53453ffdcd0224800777b72c031bf2a86f2cff743368024"
+    },
+    {
+      "id": "record_evidence:2026-08-15-023-retire-public-skill-aliases:2026-08-15T12:28:24.747Z",
+      "at": "2026-08-15T12:28:24.747Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-canonical-migration\naction_v2_sha256:b055d044abb750d12f78bec1393df045e88beae2fdc0a9aca481904ff393dfba"
+    },
+    {
+      "id": "record_evidence:2026-08-15-023-retire-public-skill-aliases:2026-08-15T12:28:24.937Z",
+      "at": "2026-08-15T12:28:24.937Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-current-docs\naction_v2_sha256:a6dc7e217c2f28f7be69b7464e1775305917c94ae6e076e8d22af3f61194e170"
+    },
+    {
+      "id": "record_evidence:2026-08-15-023-retire-public-skill-aliases:2026-08-15T12:28:25.131Z",
+      "at": "2026-08-15T12:28:25.131Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-contract-tests\naction_v2_sha256:4d320f2b12761bbe114ff09702545c343f26fce7c7a5e5914defcf48f95fbd70"
+    },
+    {
+      "id": "record_evidence:2026-08-15-023-retire-public-skill-aliases:2026-08-15T12:28:25.325Z",
+      "at": "2026-08-15T12:28:25.325Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-dist-sync\naction_v2_sha256:dbac46b34ddc92a6bb94ff0962de984ed40208bcac4c030477cf7b61e7c82fce"
+    },
+    {
+      "id": "record_evidence:2026-08-15-023-retire-public-skill-aliases:2026-08-15T12:28:25.515Z",
+      "at": "2026-08-15T12:28:25.515Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-full-regression\naction_v2_sha256:7e618a847a95ee07390d3332a91a4920a6ef6d187bd4a900370e1c1fd23ff6dd"
+    },
+    {
+      "id": "submit_review:2026-08-15-023-retire-public-skill-aliases:2026-08-15T12:28:31.948Z",
+      "at": "2026-08-15T12:28:31.948Z",
+      "type": "submit_review",
+      "from_phase": "working",
+      "to_phase": "review",
+      "reason": "action_v2_sha256:af409b31efde093ad70772dfb88f84e60395e6d5cc99f15890fe8108b6a9d724"
+    },
+    {
+      "id": "record_approval:2026-08-15-023-retire-public-skill-aliases:2026-08-15T12:29:39.253Z",
+      "at": "2026-08-15T12:29:39.253Z",
+      "type": "record_approval",
+      "from_phase": "review",
+      "to_phase": "review",
+      "reason": "approval-qa-7bd1cf40\naction_v2_sha256:6a3a366a8b8e62d0f9c961117104502d400a8fbcb128976473e4464338efe34d",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "qa-host-f953f5c4",
+        "confirmation_ref": "pi-confirm-357c5fa4379ad3ad",
+        "issued_at": "2026-08-15T12:29:39.254Z",
+        "expires_at": "2026-08-15T12:39:39.254Z"
+      }
+    },
+    {
+      "id": "request_rework:2026-08-15-023-retire-public-skill-aliases:2026-08-15T12:31:48.891Z",
+      "at": "2026-08-15T12:31:48.891Z",
+      "type": "request_rework",
+      "from_phase": "review",
+      "to_phase": "working",
+      "reason": "review_round_1\naction_v2_sha256:28268c41b82d2053fdde52ce4c062a1517bbc208730152da01ce5dcdd8bc4a28",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "native-review-537cf8fc-8ca9-4cc",
+        "confirmation_ref": "pi-confirm-a2cbe8d69f9f841f",
+        "issued_at": "2026-08-15T12:31:48.892Z",
+        "expires_at": "2026-08-15T12:41:48.892Z"
+      }
+    },
+    {
+      "id": "resolve_finding:2026-08-15-023-retire-public-skill-aliases:2026-08-15T12:35:09.130Z",
+      "at": "2026-08-15T12:35:09.130Z",
+      "type": "resolve_finding",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "review-c37e4ced8038-1-review-1\naction_v2_sha256:d9d5108cdd6ecb2fb7f7e646925581c89c9f800ea3f9218f42e0bc69a887b185"
+    },
+    {
+      "id": "record_evidence:2026-08-15-023-retire-public-skill-aliases:2026-08-15T12:36:23.904Z",
+      "at": "2026-08-15T12:36:23.904Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-alias-absence\naction_v2_sha256:5a2ff2e938c6ac968a9f956a71e11491bbe9e4f1c0f8a3eb1e5a4eab7312c813"
+    },
+    {
+      "id": "record_evidence:2026-08-15-023-retire-public-skill-aliases:2026-08-15T12:36:24.109Z",
+      "at": "2026-08-15T12:36:24.109Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-canonical-migration\naction_v2_sha256:55300481f40a32295fc0248f70401be5ea6baa7a63929d80266365f7f0355c02"
+    },
+    {
+      "id": "record_evidence:2026-08-15-023-retire-public-skill-aliases:2026-08-15T12:36:24.307Z",
+      "at": "2026-08-15T12:36:24.307Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-current-docs\naction_v2_sha256:38e8ecc5ad4707eb74ad03a8104b4e0f6c398561d5d86985566606f085b6ade9"
+    },
+    {
+      "id": "record_evidence:2026-08-15-023-retire-public-skill-aliases:2026-08-15T12:36:24.517Z",
+      "at": "2026-08-15T12:36:24.517Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-contract-tests\naction_v2_sha256:ba0805edf22205f64566ffd7a897d41124dc694e759931a0a52536f98f9a5601"
+    },
+    {
+      "id": "record_evidence:2026-08-15-023-retire-public-skill-aliases:2026-08-15T12:36:24.720Z",
+      "at": "2026-08-15T12:36:24.720Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-dist-sync\naction_v2_sha256:349c5fdf6ccab46b37acb4bc5c0b6e70906395beda59202c33536ddbba579d07"
+    },
+    {
+      "id": "record_evidence:2026-08-15-023-retire-public-skill-aliases:2026-08-15T12:36:24.916Z",
+      "at": "2026-08-15T12:36:24.916Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-full-regression\naction_v2_sha256:fddc38e966fcc27c3e2055f5f6ae736b7c2defd68d2bd456895d2bef5e5b2cf7"
+    },
+    {
+      "id": "submit_review:2026-08-15-023-retire-public-skill-aliases:2026-08-15T12:36:31.279Z",
+      "at": "2026-08-15T12:36:31.279Z",
+      "type": "submit_review",
+      "from_phase": "working",
+      "to_phase": "review",
+      "reason": "action_v2_sha256:efe1c9be7d06244a94eabe0d1d00db5a737e91cce5cf4d4f90114cefdf5f5ab2"
+    },
+    {
+      "id": "record_approval:2026-08-15-023-retire-public-skill-aliases:2026-08-15T12:37:32.391Z",
+      "at": "2026-08-15T12:37:32.391Z",
+      "type": "record_approval",
+      "from_phase": "review",
+      "to_phase": "review",
+      "reason": "approval-qa-c445ce2e\naction_v2_sha256:444d671bc2cce1bc4b2406cf0429f9f08b8cd04524681e5b79bc47b7fe9bbddc",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "qa-host-9231a31f",
+        "confirmation_ref": "pi-confirm-5d59e66383611e51",
+        "issued_at": "2026-08-15T12:37:32.392Z",
+        "expires_at": "2026-08-15T12:47:32.392Z"
+      }
+    },
+    {
+      "id": "record_approval:2026-08-15-023-retire-public-skill-aliases:2026-08-15T12:38:28.169Z",
+      "at": "2026-08-15T12:38:28.169Z",
+      "type": "record_approval",
+      "from_phase": "review",
+      "to_phase": "review",
+      "reason": "approval-review-3fe4ee9c\naction_v2_sha256:aba035a6a92b3e21f94c6be346674326afda611fee4f26aabb12c3bd10525969",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "native-review-3b8effb1-4196-407",
+        "confirmation_ref": "pi-confirm-a82c102501d71862",
+        "issued_at": "2026-08-15T12:38:28.169Z",
+        "expires_at": "2026-08-15T12:48:28.169Z"
+      }
+    },
+    {
+      "id": "complete:2026-08-15-023-retire-public-skill-aliases:2026-08-15T12:39:02.877Z",
+      "at": "2026-08-15T12:39:02.877Z",
+      "type": "complete",
+      "from_phase": "review",
+      "to_phase": "done",
+      "reason": "action_v2_sha256:a3fa99ece73334a4cc18fa0371c000135ed0183dd622d4b62d54f94a445266ff"
+    }
+  ]
+}

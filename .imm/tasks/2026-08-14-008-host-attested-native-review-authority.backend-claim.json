@@ -1,0 +1,9 @@
+{
+  "contract": "assurance_kernel/task_tombstone/v1",
+  "task_id": "2026-08-14-008-host-attested-native-review-authority",
+  "lifecycle_status": "terminal",
+  "terminal_phase": "stopped",
+  "terminal_event_id": "stop:2026-08-14-008-host-attested-native-review-authority:2026-08-14T16:04:52.625Z",
+  "final_record_hash": "sha256:df8a6e17c00c061e63c915791c5f3bef4aab45b833b532d1e32f36f1ea0aea63",
+  "terminalized_at": "2026-08-14T16:04:52.625Z"
+}

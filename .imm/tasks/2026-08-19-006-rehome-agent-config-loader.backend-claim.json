@@ -1,0 +1,9 @@
+{
+  "contract": "assurance_kernel/task_tombstone/v1",
+  "task_id": "2026-08-19-006-rehome-agent-config-loader",
+  "lifecycle_status": "terminal",
+  "terminal_phase": "done",
+  "terminal_event_id": "complete:2026-08-19-006-rehome-agent-config-loader:2026-08-19T13:04:43.195Z",
+  "final_record_hash": "sha256:b4fb7bdf155e72580d758220442913c168ccc9c8369f4d934422704180dd290d",
+  "terminalized_at": "2026-08-19T13:04:43.195Z"
+}

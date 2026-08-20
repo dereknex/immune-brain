@@ -1,0 +1,246 @@
+{
+  "contract": "assurance_kernel/task_record/v2",
+  "task_id": "2026-08-15-019-shrink-kernel-cli-surface",
+  "intent_revision": 1,
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "2026-08-15-019-shrink-kernel-cli-surface",
+    "goal": "Shrink the shipped Kernel CLI surface by removing the retired migrate/readiness/journal branches from commands/kernel.ts while keeping buildMigrationDryRunReport/migrationDryRunDigest as pure helpers, making status and audit strictly read-only with zero journal writes, extending the no-journal guard to all six kernel subcommands so retired rejection also writes zero journal entries, and preserving the shipped v4 router behavior and legacy dispatcher bytes.",
+    "acceptance": [
+      {
+        "id": "acc-retired-rejected",
+        "assertion": "runKernelCommand with first arg migrate, readiness, or journal returns invalid_command (returncode 2) with zero journal appends, and the shipped v4_runtime path returns invalid_kernel_command unchanged.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/kernel-migrate.test.ts\",\n    \"tests/kernel-shadow-cli.test.ts\",\n    \"tests/kernel-r2a-boundary.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 300000,\n  \"max_output_bytes\": 262144\n}\n"
+      },
+      {
+        "id": "acc-read-only-status-audit",
+        "assertion": "imm-kernel status --json and audit --legacy perform zero friction-journal appends and zero .imm writes with byte-identical Ledger, proven through focused contract tests.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/kernel-shadow-cli.test.ts\",\n    \"tests/plugin-package-runtime.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 300000,\n  \"max_output_bytes\": 262144\n}\n"
+      },
+      {
+        "id": "acc-kept-helpers",
+        "assertion": "buildMigrationDryRunReport and migrationDryRunDigest remain exported from commands/kernel.ts and tests/pi-canary-enroll-extension.test.ts continues to build enrollment readiness fixtures from them.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/pi-canary-enroll-extension.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 300000,\n  \"max_output_bytes\": 262144\n}\n"
+      },
+      {
+        "id": "acc-legacy-dispatcher-preserved",
+        "assertion": "immune_brain_runtime.ts bytes remain identical and the shipped v4 router behavior for retired kernel subcommands is unchanged (invalid_kernel_command).",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/v4-storage-retirement-v3-writers.test.ts\",\n    \"tests/host-runtime-cutover.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 300000,\n  \"max_output_bytes\": 262144\n}\n"
+      },
+      {
+        "id": "acc-help-surface",
+        "assertion": "imm-kernel --help and usage strings list only status --json | audit --legacy | intent author <path> --stdin --json | intent validate <path> --json, with no migrate/readiness/journal references in the shipped command manifest.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/plugin-package-runtime.test.ts\",\n    \"tests/host-runtime-cutover.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 300000,\n  \"max_output_bytes\": 262144\n}\n"
+      },
+      {
+        "id": "acc-full-regression",
+        "assertion": "The complete repository suite passes after the kernel CLI surface shrink.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 300000,\n  \"max_output_bytes\": 262144\n}\n"
+      }
+    ],
+    "scope_hint": [
+      "CONTEXT.md",
+      "docs/specs/host-native-lightweight-workflow-roadmap.spec.md",
+      "docs/specs/shrink-kernel-cli-surface.spec.md",
+      "plugins/immune-brain/runtime/commands/kernel.ts",
+      "tests/host-runtime-cutover.test.ts",
+      "tests/kernel-migrate.test.ts",
+      "tests/kernel-r2a-boundary.test.ts",
+      "tests/kernel-shadow-cli.test.ts",
+      "tests/pi-canary-enroll-extension.test.ts",
+      "tests/plugin-package-runtime.test.ts",
+      "tests/v4-storage-retirement-v3-writers.test.ts"
+    ],
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/2026-08-15-019-shrink-kernel-cli-surface.intent.json",
+    "revision": 1,
+    "content_hash": "sha256:43da54bb0adc537c7f5caae9ea51ca3b655fd88f7ed8af810b367a9588ee29f4"
+  },
+  "phase": "done",
+  "baseline": "sha256:43da54bb0adc537c7f5caae9ea51ca3b655fd88f7ed8af810b367a9588ee29f4",
+  "evidence": [
+    {
+      "id": "evidence-record_evidence:2026-08-15-019-shrink-kernel-cli-surface:2026-08-15T09:22:57.242Z",
+      "acceptance_id": "acc-retired-rejected",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:43da54bb0adc537c7f5caae9ea51ca3b655fd88f7ed8af810b367a9588ee29f4",
+      "diff_hash": "sha256:9836ec3ee664561e123f443eb212d14fd43bc911e14fc11a8eff1002a4db2ae2",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "runKernelCommand migrate/readiness/journal all return invalid_command returncode 2 with zero journal appends; shipped v4_runtime invalid_kernel_command unchanged; 26 focused tests pass"
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-15-019-shrink-kernel-cli-surface:2026-08-15T09:23:02.753Z",
+      "acceptance_id": "acc-read-only-status-audit",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:43da54bb0adc537c7f5caae9ea51ca3b655fd88f7ed8af810b367a9588ee29f4",
+      "diff_hash": "sha256:9836ec3ee664561e123f443eb212d14fd43bc911e14fc11a8eff1002a4db2ae2",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "status --json performs zero journal appends (symlinked journal untouched, no stderr warning) and audit remains read-only; Ledger bytes identical"
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-15-019-shrink-kernel-cli-surface:2026-08-15T09:23:08.971Z",
+      "acceptance_id": "acc-kept-helpers",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:43da54bb0adc537c7f5caae9ea51ca3b655fd88f7ed8af810b367a9588ee29f4",
+      "diff_hash": "sha256:9836ec3ee664561e123f443eb212d14fd43bc911e14fc11a8eff1002a4db2ae2",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "buildMigrationDryRunReport/migrationDryRunDigest remain exported from commands/kernel.ts; pi-canary-enroll-extension 8/8 tests build enrollment readiness fixtures from them"
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-15-019-shrink-kernel-cli-surface:2026-08-15T09:23:14.411Z",
+      "acceptance_id": "acc-legacy-dispatcher-preserved",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:43da54bb0adc537c7f5caae9ea51ca3b655fd88f7ed8af810b367a9588ee29f4",
+      "diff_hash": "sha256:9836ec3ee664561e123f443eb212d14fd43bc911e14fc11a8eff1002a4db2ae2",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "immune_brain_runtime.ts zero byte changes (git diff 0 lines); v4 router invalid_kernel_command behavior unchanged; 32 package/cutover/v3-writers tests pass"
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-15-019-shrink-kernel-cli-surface:2026-08-15T09:23:20.117Z",
+      "acceptance_id": "acc-help-surface",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:43da54bb0adc537c7f5caae9ea51ca3b655fd88f7ed8af810b367a9588ee29f4",
+      "diff_hash": "sha256:9836ec3ee664561e123f443eb212d14fd43bc911e14fc11a8eff1002a4db2ae2",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "imm-kernel help/usage lists only status --json | audit --legacy | intent author/validate; no migrate/readiness/journal in shipped command manifest (plugin-package-runtime + host-runtime-cutover pass)"
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-15-019-shrink-kernel-cli-surface:2026-08-15T09:23:26.933Z",
+      "acceptance_id": "acc-full-regression",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:43da54bb0adc537c7f5caae9ea51ca3b655fd88f7ed8af810b367a9588ee29f4",
+      "diff_hash": "sha256:9836ec3ee664561e123f443eb212d14fd43bc911e14fc11a8eff1002a4db2ae2",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "full repository suite 1140/0 pass after kernel CLI surface shrink"
+    }
+  ],
+  "findings": [],
+  "approvals": [
+    {
+      "id": "approval-qa-16189b56",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:43da54bb0adc537c7f5caae9ea51ca3b655fd88f7ed8af810b367a9588ee29f4",
+      "diff_hash": "sha256:9836ec3ee664561e123f443eb212d14fd43bc911e14fc11a8eff1002a4db2ae2",
+      "actor_id": "qa-host-7326fca0",
+      "summary": "all 6 fixed verification descriptor(s) passed"
+    },
+    {
+      "id": "approval-review-09791b49",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:43da54bb0adc537c7f5caae9ea51ca3b655fd88f7ed8af810b367a9588ee29f4",
+      "diff_hash": "sha256:9836ec3ee664561e123f443eb212d14fd43bc911e14fc11a8eff1002a4db2ae2",
+      "actor_id": "native-review-f1a82b1d-21d7-4d0",
+      "summary": "Retired migrate/readiness/journal branches removed with invalid_command(2) and zero journal writes; status/audit strict read-only; kept helpers exported; legacy dispatcher and v4 router byte-identical/unmodified; help surface lists only retained commands."
+    }
+  ],
+  "history": [
+    {
+      "id": "record_evidence:2026-08-15-019-shrink-kernel-cli-surface:2026-08-15T09:22:57.242Z",
+      "at": "2026-08-15T09:22:57.242Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-retired-rejected\naction_v2_sha256:27cf8d956a813042045b87a62e7895f24c60281c566de0f9b5f3cc4e2cc31be1"
+    },
+    {
+      "id": "record_evidence:2026-08-15-019-shrink-kernel-cli-surface:2026-08-15T09:23:02.753Z",
+      "at": "2026-08-15T09:23:02.753Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-read-only-status-audit\naction_v2_sha256:c568fede384496d40aa092ab4210675c33d9807b292faf31b6a8cc30aafb7489"
+    },
+    {
+      "id": "record_evidence:2026-08-15-019-shrink-kernel-cli-surface:2026-08-15T09:23:08.971Z",
+      "at": "2026-08-15T09:23:08.971Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-kept-helpers\naction_v2_sha256:5a22bb16d8ca6fe367e8baa3513d82098f6aba3c5abfd76b43692b508c621b0d"
+    },
+    {
+      "id": "record_evidence:2026-08-15-019-shrink-kernel-cli-surface:2026-08-15T09:23:14.411Z",
+      "at": "2026-08-15T09:23:14.411Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-legacy-dispatcher-preserved\naction_v2_sha256:8f075e7cf7b557195daa8314d4945d6da3ed3f9a9a61a080bc888f69e2ee3307"
+    },
+    {
+      "id": "record_evidence:2026-08-15-019-shrink-kernel-cli-surface:2026-08-15T09:23:20.117Z",
+      "at": "2026-08-15T09:23:20.117Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-help-surface\naction_v2_sha256:2ecf062372ab8db95f709990cb449c8934853d2b219e87bf68080f93d878fc95"
+    },
+    {
+      "id": "record_evidence:2026-08-15-019-shrink-kernel-cli-surface:2026-08-15T09:23:26.933Z",
+      "at": "2026-08-15T09:23:26.933Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-full-regression\naction_v2_sha256:f22338b54a00af388c0a503adcfde86ae3ed34af25b6aff397438c348029a1c1"
+    },
+    {
+      "id": "submit_review:2026-08-15-019-shrink-kernel-cli-surface:2026-08-15T09:23:33.846Z",
+      "at": "2026-08-15T09:23:33.846Z",
+      "type": "submit_review",
+      "from_phase": "working",
+      "to_phase": "review",
+      "reason": "action_v2_sha256:3c92849041e2bd9efd90867fa0d468305d949bcb3b8f2e2c8a09c0630dd7d80d"
+    },
+    {
+      "id": "record_approval:2026-08-15-019-shrink-kernel-cli-surface:2026-08-15T09:24:43.864Z",
+      "at": "2026-08-15T09:24:43.864Z",
+      "type": "record_approval",
+      "from_phase": "review",
+      "to_phase": "review",
+      "reason": "approval-qa-16189b56\naction_v2_sha256:85f14dbe7bce516afdc7769624ad639c83aa811df16ab54c99073fa545369511",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "qa-host-7326fca0",
+        "confirmation_ref": "pi-confirm-6f1e2a0ab7e3d32a",
+        "issued_at": "2026-08-15T09:24:43.864Z",
+        "expires_at": "2026-08-15T09:34:43.864Z"
+      }
+    },
+    {
+      "id": "record_approval:2026-08-15-019-shrink-kernel-cli-surface:2026-08-15T09:41:38.579Z",
+      "at": "2026-08-15T09:41:38.579Z",
+      "type": "record_approval",
+      "from_phase": "review",
+      "to_phase": "review",
+      "reason": "approval-review-09791b49\naction_v2_sha256:6ced494f1692fa7b3182fc596b71a357caec0c2bf10ed9989081c009e5115af2",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "native-review-f1a82b1d-21d7-4d0",
+        "confirmation_ref": "pi-confirm-f8fd2496c1a0bf31",
+        "issued_at": "2026-08-15T09:41:38.579Z",
+        "expires_at": "2026-08-15T09:51:38.579Z"
+      }
+    },
+    {
+      "id": "complete:2026-08-15-019-shrink-kernel-cli-surface:2026-08-15T09:42:07.654Z",
+      "at": "2026-08-15T09:42:07.654Z",
+      "type": "complete",
+      "from_phase": "review",
+      "to_phase": "done",
+      "reason": "action_v2_sha256:6cdf1c6a0f500148dbe71f7388338b0db95cc1f804fb059daf6fbd36016c672d"
+    }
+  ]
+}

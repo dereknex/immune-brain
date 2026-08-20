@@ -1,0 +1,371 @@
+{
+  "contract": "assurance_kernel/task_record/v2",
+  "task_id": "2026-08-18-002-foreground-canary-assurance-review-r2",
+  "intent_revision": 1,
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "2026-08-18-002-foreground-canary-assurance-review-r2",
+    "goal": "Cut Kernel deterministic QA and native Review from detached session jobs/follow-up retrieval to one foreground Tool pipeline plus one reserved foreground standard Agent receipt, while deleting the superseded interactive background continuation route and preserving every existing authority, freshness, single-terminal, unknown-settlement, cancellation, and literal-user authorization invariant.",
+    "acceptance": [
+      {
+        "id": "acc-foreground-qa-settlement",
+        "assertion": "imm_kernel_canary advance_assurance synchronously runs deterministic QA inside the foreground Tool call after fresh evidence: it captures the immutable snapshot, forwards the host AbortSignal through pre-verification and subprocess execution, applies exactly one QA approval/rework through revision CAS, emits bounded native progress/results, and returns one terminal state covering pass-to-review-ready, rework, cancellation, timeout, failure, or settlement_unknown. Cancellation before authority commit performs zero Kernel writes; cancellation after CAS cannot abandon settlement. Background QA jobs, heartbeats, timers, completion follow-ups, notify milestones, and cancel_assurance are deleted; host Escape/foreground Tool cancellation replaces command-owned cancel; Footer remains empty.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/pi-canary-assurance-progression.test.ts\",\n    \"tests/pi-canary-work-extension.test.ts\",\n    \"tests/pi-canary-assurance-advance.test.ts\",\n    \"tests/pi-canary-assurance-authority.test.ts\",\n    \"tests/pi-canary-assurance-observability.test.ts\",\n    \"tests/pi-canary-user-authority.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 300000,\n  \"max_output_bytes\": 262144\n}\n"
+      },
+      {
+        "id": "acc-foreground-native-review-bridge",
+        "assertion": "A session-local Review bridge owns one transient reservation per (task_id, operation_id, snapshot/bundle identity). Extension tool_call observation validates exact reserved foreground Agent arguments and native toolCallId; a matching tool_result supplies the result-content verdict and tool_execution_end only corroborates lifecycle without creating a second terminal. submit_review revalidates the fresh projection, parses the structured verdict, records a pending Review, and returns awaiting_user; request_authorization remains the sole literal-user confirmation that applies the verdict. Matching receipts are accepted exactly once; mismatched, duplicate, malformed, cancelled, provider-failed, stale, unreserved, crash-interrupted, or event-order-inverted results fail closed with zero writes; session shutdown garbage-collects transient reservations/receipts. Background spawn receipts, get_subagent_result, stop RPC, follow-up completion delivery, and late-notification deduplication are deleted. The extension-side package test copies remain byte-consistent with the same contract.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/pi-canary-work-extension.test.ts\",\n    \"tests/pi-canary-native-review.test.ts\",\n    \"tests/pi-canary-review-dispatch-resilience.test.ts\",\n    \"tests/pi-canary-assurance-progression.test.ts\",\n    \"tests/pi-canary-assurance-continuation.test.ts\",\n    \"tests/pi-canary-user-authority.test.ts\",\n    \"tests/pi-canary-notification-correlation.test.ts\",\n    \"tests/pi-canary-lifecycle-package.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 300000,\n  \"max_output_bytes\": 262144\n}\n"
+      },
+      {
+        "id": "acc-assurance-authority-package-and-regression",
+        "assertion": "The atomic cutover preserves TaskIntent, descriptor, enrollment receipt, TaskRecord, finding, approval, capability, and authorization schemas; immutable snapshot binding, review bundle provenance, descriptor concurrency/budgets, waiver taxonomy, final-lock freshness, atomic TaskRecord/workspace/backend-claim behavior, reviewer authority, and completion gates remain unchanged. Canonical roadmap, Pi assurance Specs, subagent dispatch protocol, README, USER_GUIDE, source skills, packaged dist docs, package boundary/consumer/loader assertions, active runtime docs contracts, and executable structural contracts consistently require foreground QA/Review and an empty Footer; no active interactive Canary path launches background work, sends required follow-up notifications, polls status/results, or retains command-owned cancel. The complete Bun repository regression passes. Manual Pi TUI assurance progress/cancel smoke is required before using this cutover for another production Enrollment.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 300000,\n  \"max_output_bytes\": 262144\n}\n"
+      }
+    ],
+    "scope_hint": [
+      "README.md",
+      "docs/reference/subagent-dispatch-protocol.md",
+      "docs/specs/foreground-interactive-workflow-roadmap.spec.md",
+      "docs/specs/pi-brainstorm-ensemble-host-adapter.spec.md",
+      "docs/specs/pi-observable-assurance-orchestration-roadmap.spec.md",
+      "docs/specs/standard-agent-review-dispatch.spec.md",
+      "plugins/immune-brain/.pi-extension/imm-canary-work.ts",
+      "plugins/immune-brain/.pi-extension/pi-canary-assurance-progression.ts",
+      "plugins/immune-brain/.pi-extension/pi-canary-assurance.ts",
+      "plugins/immune-brain/.pi-extension/pi-canary-invocations.ts",
+      "plugins/immune-brain/.pi-extension/pi-canary-native-review.ts",
+      "plugins/immune-brain/.pi-extension/pi-canary-qa-findings.ts",
+      "plugins/immune-brain/.pi-extension/pi-canary-review-bundle.ts",
+      "plugins/immune-brain/.pi-extension/pi-canary-user-authority.test.ts",
+      "plugins/immune-brain/.pi-extension/pi-canary-verification.ts",
+      "plugins/immune-brain/.pi-extension/pi-canary-work-extension.test.ts",
+      "plugins/immune-brain/.pi-extension/runtime-stub.ts",
+      "plugins/immune-brain/USER_GUIDE.md",
+      "plugins/immune-brain/dist/docs/reference/subagent-dispatch-protocol.md",
+      "plugins/immune-brain/dist/imm-canary-work.md",
+      "plugins/immune-brain/dist/imm-loop.md",
+      "plugins/immune-brain/dist/imm-work.md",
+      "plugins/immune-brain/skills/imm-canary-work/SKILL.md",
+      "plugins/immune-brain/skills/imm-loop/SKILL.md",
+      "plugins/immune-brain/skills/imm-work/SKILL.md",
+      "tests/active-runtime-docs-contract.test.ts",
+      "tests/direct-first-routing-contract.test.ts",
+      "tests/imm-canary-work-contract.test.ts",
+      "tests/pi-canary-assurance-advance.test.ts",
+      "tests/pi-canary-assurance-authority.test.ts",
+      "tests/pi-canary-assurance-continuation.test.ts",
+      "tests/pi-canary-assurance-observability.test.ts",
+      "tests/pi-canary-assurance-progression.test.ts",
+      "tests/pi-canary-confirm-cancel-decision.test.ts",
+      "tests/pi-canary-discovery-regression.test.ts",
+      "tests/pi-canary-lifecycle-package.test.ts",
+      "tests/pi-canary-native-review.test.ts",
+      "tests/pi-canary-notification-correlation.test.ts",
+      "tests/pi-canary-packed-consumer.test.ts",
+      "tests/pi-canary-packed-loader.test.ts",
+      "tests/pi-canary-review-bundle.test.ts",
+      "tests/pi-canary-review-dispatch-resilience.test.ts",
+      "tests/pi-canary-review-neighborhood.test.ts",
+      "tests/pi-canary-review-outcome-evidence.test.ts",
+      "tests/pi-canary-user-authority.test.ts",
+      "tests/pi-canary-work-extension.test.ts",
+      "tests/pi-subagent-dispatch-observability-contract.test.ts",
+      "tests/user-approval-authority.test.ts",
+      "tests/user-approval-critical-completion.test.ts",
+      "tests/user-approval-package-contract.test.ts",
+      "tests/user-approval-tui-wiring.test.ts"
+    ],
+    "risk": "critical",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/2026-08-18-002-foreground-canary-assurance-review-r2.intent.json",
+    "revision": 1,
+    "content_hash": "sha256:2b0d982cc858670ccd5e74c9a514e70baee50ea96cfe4a3b980a31f1b07e7b86"
+  },
+  "phase": "stopped",
+  "baseline": "sha256:2b0d982cc858670ccd5e74c9a514e70baee50ea96cfe4a3b980a31f1b07e7b86",
+  "evidence": [
+    {
+      "id": "evidence-record_evidence:2026-08-18-002-foreground-canary-assurance-review-r2:2026-08-18T01:31:56.610Z",
+      "acceptance_id": "acc-foreground-qa-settlement",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:2b0d982cc858670ccd5e74c9a514e70baee50ea96cfe4a3b980a31f1b07e7b86",
+      "diff_hash": "sha256:5b6b10bd61b9dbe9dd74a6beddd5f74ec24dc1164f586321df7f920136c23638",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "Frozen-index descriptor rehearsal passed. Receipt index_digest=sha256:5254db527a48e56febef887bba2a4e9fd6e66c63d8265d2e983b46a8e823b7f9; descriptor acc-foreground-qa-settlement passed in 19023ms. Focused Phase 3 suite covers synchronous QA, AbortSignal cancellation, revision-CAS settlement, bounded progress, terminal states, no background jobs/follow-ups/cancel path, and empty Footer."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-18-002-foreground-canary-assurance-review-r2:2026-08-18T01:32:06.430Z",
+      "acceptance_id": "acc-foreground-native-review-bridge",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:2b0d982cc858670ccd5e74c9a514e70baee50ea96cfe4a3b980a31f1b07e7b86",
+      "diff_hash": "sha256:5b6b10bd61b9dbe9dd74a6beddd5f74ec24dc1164f586321df7f920136c23638",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "Frozen-index descriptor rehearsal passed. Receipt index_digest=sha256:5254db527a48e56febef887bba2a4e9fd6e66c63d8265d2e983b46a8e823b7f9; descriptor acc-foreground-native-review-bridge passed in 17755ms. Focused suite covers exact foreground Agent argument reservation, tool_call/tool_result/tool_execution_end ordering, duplicate/mismatch/stale/provider-failure fail-closed behavior, submit_review awaiting_user bridge, and shutdown garbage collection."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-18-002-foreground-canary-assurance-review-r2:2026-08-18T01:32:15.400Z",
+      "acceptance_id": "acc-assurance-authority-package-and-regression",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:2b0d982cc858670ccd5e74c9a514e70baee50ea96cfe4a3b980a31f1b07e7b86",
+      "diff_hash": "sha256:5b6b10bd61b9dbe9dd74a6beddd5f74ec24dc1164f586321df7f920136c23638",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "Frozen-index descriptor rehearsal passed. Receipt index_digest=sha256:5254db527a48e56febef887bba2a4e9fd6e66c63d8265d2e983b46a8e823b7f9; full Bun regression descriptor passed in 66578ms. Package sync check and complete repository regression passed; authority schemas, immutable snapshots, freshness/CAS, review bundle provenance, authorization gates, foreground-only and empty Footer contracts remain green."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-18-002-foreground-canary-assurance-review-r2:2026-08-18T01:47:24.954Z",
+      "acceptance_id": "acc-foreground-qa-settlement",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:2b0d982cc858670ccd5e74c9a514e70baee50ea96cfe4a3b980a31f1b07e7b86",
+      "diff_hash": "sha256:df1e1b764f90cc422693c277997755c3a8a41eee2ce179090f9c0a31e4f44e8a",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "Rework repair frozen-index rehearsal passed. Receipt index_digest=sha256:c17fc6d5a138eb1cc72bf72be821275472818b8887f04d5981e3d77ccd924e0a; descriptor passed in 19122ms. Added regression coverage and implementation for per-operation AbortController/session-generation ownership, shutdown cancellation, pre-CAS cancellation, and exact authority settlement."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-18-002-foreground-canary-assurance-review-r2:2026-08-18T01:47:34.063Z",
+      "acceptance_id": "acc-foreground-native-review-bridge",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:2b0d982cc858670ccd5e74c9a514e70baee50ea96cfe4a3b980a31f1b07e7b86",
+      "diff_hash": "sha256:df1e1b764f90cc422693c277997755c3a8a41eee2ce179090f9c0a31e4f44e8a",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "Rework repair frozen-index rehearsal passed. Receipt index_digest=sha256:c17fc6d5a138eb1cc72bf72be821275472818b8887f04d5981e3d77ccd924e0a; descriptor passed in 17809ms. Added exact-once matching tool_call rejection and operation-scoped terminal rejection provenance while preserving result/end ordering and shutdown cleanup."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-18-002-foreground-canary-assurance-review-r2:2026-08-18T01:47:42.600Z",
+      "acceptance_id": "acc-assurance-authority-package-and-regression",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:2b0d982cc858670ccd5e74c9a514e70baee50ea96cfe4a3b980a31f1b07e7b86",
+      "diff_hash": "sha256:df1e1b764f90cc422693c277997755c3a8a41eee2ce179090f9c0a31e4f44e8a",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "Rework repair frozen-index rehearsal passed. Receipt index_digest=sha256:c17fc6d5a138eb1cc72bf72be821275472818b8887f04d5981e3d77ccd924e0a; full Bun regression descriptor passed in 65916ms. Package sync, forbidden-path audit, and staged scope checks passed."
+    }
+  ],
+  "findings": [
+    {
+      "id": "review-cb07ee107aef-1-review-1",
+      "kind": "blocking",
+      "status": "open",
+      "acceptance_id": "acc-foreground-native-review-bridge",
+      "source": "review",
+      "review_round": 1,
+      "summary": "plugins/immune-brain/.pi-extension/pi-canary-assurance-progression.ts: observeToolCall accepts a matching reserved Agent invocation without requiring the reservation to be the only eligible task context or rejecting a second matching call after the first terminal lifecycle has completed; the bridge's exact-once reservation contract is therefore not enforced at the tool-call observation boundary."
+    },
+    {
+      "id": "review-cb07ee107aef-2-review-2",
+      "kind": "blocking",
+      "status": "open",
+      "acceptance_id": "acc-foreground-qa-settlement",
+      "source": "review",
+      "review_round": 1,
+      "summary": "plugins/immune-brain/.pi-extension/pi-canary-assurance-progression.ts: onSessionShutdown clears activeOperations and transient maps but only calls closeSessionInvocation for sessionInvocations and then awaits a resolved promise; an in-flight advance can continue after shutdown and perform QA or authority writes because advance does not check sessionGeneration/sessionActive during its phases."
+    },
+    {
+      "id": "review-cb07ee107aef-3-review-3",
+      "kind": "blocking",
+      "status": "open",
+      "acceptance_id": "acc-foreground-qa-settlement",
+      "source": "review",
+      "review_round": 1,
+      "summary": "plugins/immune-brain/.pi-extension/pi-canary-assurance-progression.ts: cancellation after runQa returns but before openInvocation or before applyVerdict's commit boundary is handled as cancelled, while cancellation during the surrounding non-atomic gap can race with authority setup; the implementation lacks a session/operation ownership check at each write boundary, so a superseded foreground call can still settle."
+    },
+    {
+      "id": "review-cb07ee107aef-4-review-4",
+      "kind": "advisory",
+      "status": "open",
+      "acceptance_id": "acc-foreground-native-review-bridge",
+      "source": "review",
+      "review_round": 1,
+      "summary": "plugins/immune-brain/.pi-extension/pi-canary-assurance-progression.ts: submitReview releases the reservation and removes evidence on malformed, failed, stale, or snapshot-mismatched receipts, but does not persist a terminal rejection marker; repeated submissions become indistinguishable from unreserved results and lose the required fail-closed receipt outcome provenance."
+    },
+    {
+      "id": "review-a0b277825f7c-1-review-1",
+      "kind": "blocking",
+      "status": "open",
+      "acceptance_id": "acc-foreground-qa-settlement",
+      "source": "review",
+      "review_round": 2,
+      "summary": "bundle provenance could not be verified because the required immutable evidence JSON was not accessible in the isolated worktree execution environment; no code findings can be issued without reading evidence.json first"
+    },
+    {
+      "id": "request_rework:2026-08-18-002-foreground-canary-assurance-review-r2:2026-08-18T01:50:30.699Z:replan-required",
+      "kind": "replan_required",
+      "status": "open",
+      "acceptance_id": "acc-foreground-qa-settlement",
+      "source": "kernel",
+      "review_round": 2,
+      "summary": "Review returned this acceptance boundary twice; a durable replan is required."
+    }
+  ],
+  "approvals": [
+    {
+      "id": "approval-qa-17516dac",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:2b0d982cc858670ccd5e74c9a514e70baee50ea96cfe4a3b980a31f1b07e7b86",
+      "diff_hash": "sha256:5b6b10bd61b9dbe9dd74a6beddd5f74ec24dc1164f586321df7f920136c23638",
+      "actor_id": "qa-host-d7181c83",
+      "summary": "all 3 fixed verification descriptor(s) passed"
+    },
+    {
+      "id": "approval-qa-c5074ea6",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:2b0d982cc858670ccd5e74c9a514e70baee50ea96cfe4a3b980a31f1b07e7b86",
+      "diff_hash": "sha256:df1e1b764f90cc422693c277997755c3a8a41eee2ce179090f9c0a31e4f44e8a",
+      "actor_id": "qa-host-915a8acc",
+      "summary": "all 3 fixed verification descriptor(s) passed"
+    }
+  ],
+  "history": [
+    {
+      "id": "record_evidence:2026-08-18-002-foreground-canary-assurance-review-r2:2026-08-18T01:31:56.610Z",
+      "at": "2026-08-18T01:31:56.610Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-foreground-qa-settlement\naction_v2_sha256:ceb5abb976395a2b027e6b9a43d565f22d4ead9e3ed71d3ded019d29ecc8ce73"
+    },
+    {
+      "id": "record_evidence:2026-08-18-002-foreground-canary-assurance-review-r2:2026-08-18T01:32:06.430Z",
+      "at": "2026-08-18T01:32:06.430Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-foreground-native-review-bridge\naction_v2_sha256:5901c812f1ac2a22f053c027e24ec69883666ad752f8bd19177394933f5f7d45"
+    },
+    {
+      "id": "record_evidence:2026-08-18-002-foreground-canary-assurance-review-r2:2026-08-18T01:32:15.400Z",
+      "at": "2026-08-18T01:32:15.400Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-assurance-authority-package-and-regression\naction_v2_sha256:c7d53623603be90c00c9b96512912408b32252c6c1f9b503d0e6f88dc2d79700"
+    },
+    {
+      "id": "submit_review:2026-08-18-002-foreground-canary-assurance-review-r2:2026-08-18T01:32:22.356Z",
+      "at": "2026-08-18T01:32:22.356Z",
+      "type": "submit_review",
+      "from_phase": "working",
+      "to_phase": "review",
+      "reason": "action_v2_sha256:ae97f93e39a7a82b33cc9ff1c83f4d1fc2facd1ea417aa760252b5c969d14298"
+    },
+    {
+      "id": "record_approval:2026-08-18-002-foreground-canary-assurance-review-r2:2026-08-18T01:33:31.176Z",
+      "at": "2026-08-18T01:33:31.176Z",
+      "type": "record_approval",
+      "from_phase": "review",
+      "to_phase": "review",
+      "reason": "approval-qa-17516dac\naction_v2_sha256:d8160d63150a639b60f67c9eac706d5b544f88980f0f25630ced03987b15e330",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "qa-host-d7181c83",
+        "confirmation_ref": "pi-confirm-aaae6a9389030a0f",
+        "issued_at": "2026-08-18T01:33:31.176Z",
+        "expires_at": "2026-08-18T01:43:31.176Z"
+      }
+    },
+    {
+      "id": "request_rework:2026-08-18-002-foreground-canary-assurance-review-r2:2026-08-18T01:37:22.623Z",
+      "at": "2026-08-18T01:37:22.623Z",
+      "type": "request_rework",
+      "from_phase": "review",
+      "to_phase": "working",
+      "reason": "review_round_1\naction_v2_sha256:068565fe066cca2a55a1fad957c3bc831c17d94d9974601d54147c463bec06ef",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "native-review-4ed9c4b1-f342-49d",
+        "confirmation_ref": "pi-confirm-9f18bffc99ab67e2",
+        "issued_at": "2026-08-18T01:37:22.624Z",
+        "expires_at": "2026-08-18T01:47:22.623Z"
+      }
+    },
+    {
+      "id": "record_evidence:2026-08-18-002-foreground-canary-assurance-review-r2:2026-08-18T01:47:24.954Z",
+      "at": "2026-08-18T01:47:24.954Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-foreground-qa-settlement\naction_v2_sha256:413ac63bf4f6e3b7d0cbf9651491ca08dddde5fc8735a56470935ca87bd09a6f"
+    },
+    {
+      "id": "record_evidence:2026-08-18-002-foreground-canary-assurance-review-r2:2026-08-18T01:47:34.063Z",
+      "at": "2026-08-18T01:47:34.063Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-foreground-native-review-bridge\naction_v2_sha256:4c11d270eb5198d26644206b75ed7258485d8650a450b1698039adfab58b7f5a"
+    },
+    {
+      "id": "record_evidence:2026-08-18-002-foreground-canary-assurance-review-r2:2026-08-18T01:47:42.600Z",
+      "at": "2026-08-18T01:47:42.600Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-assurance-authority-package-and-regression\naction_v2_sha256:944d8f036d446ab18bed5fa5f933c50f17a02b416eba0066c701660e9255e060"
+    },
+    {
+      "id": "submit_review:2026-08-18-002-foreground-canary-assurance-review-r2:2026-08-18T01:47:50.216Z",
+      "at": "2026-08-18T01:47:50.216Z",
+      "type": "submit_review",
+      "from_phase": "working",
+      "to_phase": "review",
+      "reason": "action_v2_sha256:1b3488aaaef27a32698751572966c2fa1d5b534a8c34a8992efa6f5f86c48882"
+    },
+    {
+      "id": "record_approval:2026-08-18-002-foreground-canary-assurance-review-r2:2026-08-18T01:48:57.950Z",
+      "at": "2026-08-18T01:48:57.950Z",
+      "type": "record_approval",
+      "from_phase": "review",
+      "to_phase": "review",
+      "reason": "approval-qa-c5074ea6\naction_v2_sha256:3159600916c1645aa1430f559831fcd59c39a1a5095d8fe5201710b30730d85d",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "qa-host-915a8acc",
+        "confirmation_ref": "pi-confirm-2c5dbe7ba531859e",
+        "issued_at": "2026-08-18T01:48:57.951Z",
+        "expires_at": "2026-08-18T01:58:57.951Z"
+      }
+    },
+    {
+      "id": "request_rework:2026-08-18-002-foreground-canary-assurance-review-r2:2026-08-18T01:50:30.699Z",
+      "at": "2026-08-18T01:50:30.699Z",
+      "type": "request_rework",
+      "from_phase": "review",
+      "to_phase": "review",
+      "reason": "review_round_2\naction_v2_sha256:9581f330b8562bdcfecbae9a024f6330fa9af142514181724f8f8d66a1843835",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "native-review-6529056a-35b9-40e",
+        "confirmation_ref": "pi-confirm-13af214d8ddc5b99",
+        "issued_at": "2026-08-18T01:50:30.699Z",
+        "expires_at": "2026-08-18T02:00:30.699Z"
+      }
+    },
+    {
+      "id": "stop:2026-08-18-002-foreground-canary-assurance-review-r2:2026-08-18T02:01:24.370Z",
+      "at": "2026-08-18T02:01:24.370Z",
+      "type": "stop",
+      "from_phase": "review",
+      "to_phase": "stopped",
+      "reason": "succession to 2026-08-18-003-foreground-canary-assurance-review-r2 (replan_required)\naction_v2_sha256:c0061121b258d3b3c6d15108022861ee8e36931e463d3dd1617c584277b784b7",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "succeed-stop-8375a6fd",
+        "issued_at": "2026-08-18T02:01:24.774Z",
+        "expires_at": "2026-08-18T02:11:24.774Z"
+      }
+    }
+  ]
+}

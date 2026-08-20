@@ -1,0 +1,9 @@
+{
+  "contract": "assurance_kernel/task_tombstone/v1",
+  "task_id": "2026-08-17-005-track-packaged-baseline-source",
+  "lifecycle_status": "terminal",
+  "terminal_phase": "done",
+  "terminal_event_id": "complete:2026-08-17-005-track-packaged-baseline-source:2026-08-17T14:35:05.955Z",
+  "final_record_hash": "sha256:ed60bd33ca96760234522936c5a51413a7299b5d49f110d885adef92527162d0",
+  "terminalized_at": "2026-08-17T14:35:05.955Z"
+}

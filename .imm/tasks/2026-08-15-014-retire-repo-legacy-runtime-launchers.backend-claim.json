@@ -1,0 +1,9 @@
+{
+  "contract": "assurance_kernel/task_tombstone/v1",
+  "task_id": "2026-08-15-014-retire-repo-legacy-runtime-launchers",
+  "lifecycle_status": "terminal",
+  "terminal_phase": "done",
+  "terminal_event_id": "complete:2026-08-15-014-retire-repo-legacy-runtime-launchers:2026-08-15T06:36:27.980Z",
+  "final_record_hash": "sha256:3a99430bb40df191e3dbedb456ea911e03f8832a5b0536688879500ca2b50578",
+  "terminalized_at": "2026-08-15T06:36:27.980Z"
+}

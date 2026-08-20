@@ -1,0 +1,95 @@
+{
+  "contract": "assurance_kernel/task_record/v2",
+  "task_id": "2026-08-15-024-deepen-assurance-progression",
+  "intent_revision": 1,
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "2026-08-15-024-deepen-assurance-progression",
+    "goal": "Deepen Pi Assurance progression and Kernel Assurance projection while preserving all external behavior and authority boundaries.",
+    "acceptance": [
+      {
+        "id": "acc-kernel-projection",
+        "assertion": "The internal Kernel Assurance projection returns one host-neutral claim/Record/workspace correlation with fresh and stale evidence facts, fresh approval kinds, blockers, unresolved user decisions, and authorization readiness while existing projectTaskV2 and TaskProjectionV2 behavior remains compatible and the new module is not publicly exported.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/kernel-assurance-projection.test.ts\",\n    \"tests/kernel-record-v2.test.ts\",\n    \"tests/kernel-r2c1-boundary.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 300000,\n  \"max_output_bytes\": 262144\n}\n"
+      },
+      {
+        "id": "acc-progression-ownership",
+        "assertion": "The session-scoped Pi Assurance progression interface owns QA and Review jobs, reservations, timers, cancellation, shutdown, host-event observation, continuation, and exactly-once terminal settlement; imm-canary-work.ts contains no parallel lifecycle owner or evidence/approval freshness filtering.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/pi-canary-assurance-progression.test.ts\",\n    \"tests/pi-canary-assurance-advance.test.ts\",\n    \"tests/pi-canary-assurance-continuation.test.ts\",\n    \"tests/pi-canary-work-extension.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 300000,\n  \"max_output_bytes\": 262144\n}\n"
+      },
+      {
+        "id": "acc-authority-and-observability",
+        "assertion": "Command and tool schemas, TUI-only enforcement, exact timeout and status behavior, literal-user confirmation, cancellation linearization, invocation cleanup, advisory Review handling, UI rendering, and correlated follow-up delivery remain unchanged.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/pi-canary-assurance-authority.test.ts\",\n    \"tests/pi-canary-assurance-observability.test.ts\",\n    \"tests/pi-canary-user-authority.test.ts\",\n    \"tests/pi-canary-work-extension.test.ts\",\n    \"tests/pi-canary-assurance-advance.test.ts\",\n    \"tests/pi-canary-assurance-continuation.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 300000,\n  \"max_output_bytes\": 262144\n}\n"
+      },
+      {
+        "id": "acc-package-boundary",
+        "assertion": "Source and packed Pi discovery still load exactly three extension factories while shipping the new progression helper and internal Kernel projection, and package observability contracts retain their exact constants and native Agent boundary.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/pi-canary-discovery-regression.test.ts\",\n    \"tests/pi-canary-packed-consumer.test.ts\",\n    \"tests/pi-canary-packed-loader.test.ts\",\n    \"tests/pi-canary-lifecycle-package.test.ts\",\n    \"tests/pi-subagent-dispatch-observability-contract.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 300000,\n  \"max_output_bytes\": 262144\n}\n"
+      },
+      {
+        "id": "acc-extension-typecheck",
+        "assertion": "The complete Pi extension graph, including the new progression helper and structural Kernel projection adapter, passes strict TypeScript checking.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"x\",\n    \"tsc\",\n    \"--noEmit\",\n    \"-p\",\n    \"plugins/immune-brain/.pi-extension/tsconfig.json\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 300000,\n  \"max_output_bytes\": 262144\n}\n"
+      },
+      {
+        "id": "acc-full-regression",
+        "assertion": "The full repository test suite passes after the atomic cutover.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 300000,\n  \"max_output_bytes\": 262144\n}\n"
+      }
+    ],
+    "scope_hint": [
+      "CONTEXT.md",
+      "docs/specs/deepen-assurance-progression.spec.md",
+      "plugins/immune-brain/.pi-extension/imm-canary-work.ts",
+      "plugins/immune-brain/.pi-extension/package.json",
+      "plugins/immune-brain/.pi-extension/pi-canary-assurance-progression.ts",
+      "plugins/immune-brain/.pi-extension/runtime-stub.ts",
+      "plugins/immune-brain/.pi-extension/tsconfig.json",
+      "plugins/immune-brain/runtime/kernel/assurance_projection.ts",
+      "tests/kernel-assurance-projection.test.ts",
+      "tests/kernel-r2c1-boundary.test.ts",
+      "tests/kernel-record-v2.test.ts",
+      "tests/pi-canary-assurance-advance.test.ts",
+      "tests/pi-canary-assurance-continuation.test.ts",
+      "tests/pi-canary-assurance-progression.test.ts",
+      "tests/pi-canary-discovery-regression.test.ts",
+      "tests/pi-canary-lifecycle-package.test.ts",
+      "tests/pi-canary-packed-consumer.test.ts",
+      "tests/pi-canary-packed-loader.test.ts",
+      "tests/pi-canary-user-authority.test.ts",
+      "tests/pi-canary-work-extension.test.ts",
+      "tests/pi-subagent-dispatch-observability-contract.test.ts"
+    ],
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/2026-08-15-024-deepen-assurance-progression.intent.json",
+    "revision": 1,
+    "content_hash": "sha256:bb507e241be0d70749ba88492eb99a0ff9471ac124ea598d90067c90c17f0c03"
+  },
+  "phase": "stopped",
+  "baseline": "sha256:bb507e241be0d70749ba88492eb99a0ff9471ac124ea598d90067c90c17f0c03",
+  "evidence": [],
+  "findings": [],
+  "approvals": [],
+  "history": [
+    {
+      "id": "stop:2026-08-15-024-deepen-assurance-progression:2026-08-15T13:47:18.479Z",
+      "at": "2026-08-15T13:47:18.479Z",
+      "type": "stop",
+      "from_phase": "working",
+      "to_phase": "stopped",
+      "reason": "literal user stop\naction_v2_sha256:1b832fd6c7def57952488147c78d0b39042901db12a7736890bf39a8066e0abf",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-e1c1fc6f811d4453",
+        "issued_at": "2026-08-15T13:47:18.480Z",
+        "expires_at": "2026-08-15T13:57:18.480Z"
+      }
+    }
+  ]
+}

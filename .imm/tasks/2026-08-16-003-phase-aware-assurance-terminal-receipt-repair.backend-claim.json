@@ -1,0 +1,9 @@
+{
+  "contract": "assurance_kernel/task_tombstone/v1",
+  "task_id": "2026-08-16-003-phase-aware-assurance-terminal-receipt-repair",
+  "lifecycle_status": "terminal",
+  "terminal_phase": "stopped",
+  "terminal_event_id": "stop:2026-08-16-003-phase-aware-assurance-terminal-receipt-repair:2026-08-16T09:03:52.975Z",
+  "final_record_hash": "sha256:39f09538aa8339b5eb965f47b22f99cac932c5c500460fe2fa7fc4ea3b391abd",
+  "terminalized_at": "2026-08-16T09:03:52.975Z"
+}
