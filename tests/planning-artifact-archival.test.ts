@@ -161,4 +161,28 @@ describe("planning artifact archival", () => {
     expect(instructionalViolations).toEqual([]);
     expect(exemptionMissing).toEqual([]);
   });
+
+  test("prose Plans are archived, none remain in docs/plans", () => {
+    const plansDir = join(REPO_ROOT, "docs/plans");
+    // active prose Plans: any .md under docs/plans not in archive
+    const activeProse = listFiles(plansDir, ".md").filter((p) => !p.includes("/archive/"));
+    // docs/plans should contain zero prose Plans after archival (only .intent.json canaries + policy remain)
+    expect(activeProse).toEqual([]);
+    // sanity: archive actually holds the 29 moved prose Plans
+    const archived = listFiles(join(plansDir, "archive"), ".md");
+    const archivedBases = new Set(archived.map((p) => p.split("/").pop()!));
+    // spot-check a few of the 29 to ensure move (not delete) happened
+    const spotChecks = [
+      "2026-08-05-001-refactor-risk-tiered-workflow-execution-plan.md",
+      "2026-08-16-assurance-workflow-hardening.plan.md",
+      "architecture-deepening-wave-1.plan.md",
+      "discovery-navigation-layer.plan.md",
+    ];
+    for (const name of spotChecks) {
+      expect(archivedBases.has(name)).toBe(true);
+      const full = join(plansDir, "archive", name);
+      expect(statSync(full).size).toBeGreaterThan(0);
+    }
+    expect(archived.length).toBeGreaterThanOrEqual(29);
+  });
 });

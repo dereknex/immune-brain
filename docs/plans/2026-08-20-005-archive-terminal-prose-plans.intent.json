@@ -1,0 +1,31 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "2026-08-20-005-archive-terminal-prose-plans",
+  "owner": "user",
+  "goal": "Archive the 29 prose Plans still sitting in docs/plans/, completing the half of 2026-08-20-003 that its goal lost. That slice archived 71 terminal intent sidecars and left docs/plans/ holding only the four canary fixtures, which is what its acceptance asked for, but the roadmap item it came from also called for moving the prose Plans and the terminal specs, and neither happened. This slice takes the prose Plans; the spec corpus is deliberately left for separate treatment because classifying 206 specs needs a rule this slice does not have. Terminality cannot be read from the files. Twenty-five of the 29 carry no status marker at all, and of the four that do, one says active and two say pending. Those markers are stale rather than live claims: Phase 1 deleted the prose Plan execution path outright -- imm-autowork, the State Ledger, and the v3 dispatcher are gone -- and the surviving imm-plan can only read and validate a Plan, never advance one. No prose Plan can therefore transition again regardless of what its status line says, which makes the whole set terminal in the operative sense and makes the move safe by the same reasoning the reducer's absorbing states gave for intent sidecars. Archival is a move into docs/plans/archive/, never a delete. No test pins a real prose Plan path: every docs/plans/*.md reference under tests/ is a synthetic fixture written into a temporary directory, so the move breaks no test. Cross-document links are the real exposure, which is why scripts/fix-broken-links.ts and scripts/detect-stale-refs.ts are in scope. Extend tests/planning-artifact-archival.test.ts rather than adding a second archival guard, so one test owns the invariant for both artifact kinds.",
+  "acceptance": [
+    {
+      "id": "acc-prose-plans-archived",
+      "assertion": "docs/plans/ contains no prose Plan; all 29 live under docs/plans/archive/; every one is a move with its content preserved and none was deleted.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/planning-artifact-archival.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 60000,\n  \"max_output_bytes\": 65536\n}\n"
+    },
+    {
+      "id": "acc-archival-guard-extended",
+      "assertion": "tests/planning-artifact-archival.test.ts asserts the prose Plan invariant alongside the existing intent sidecar invariant, so a prose Plan reintroduced into docs/plans/ fails the guard.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/planning-artifact-archival.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 60000,\n  \"max_output_bytes\": 65536\n}\n"
+    },
+    {
+      "id": "acc-links-and-suite-intact",
+      "assertion": "The full suite passes and the link and stale-reference scripts report no new unresolved reference introduced by the move.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 300000,\n  \"max_output_bytes\": 262144\n}\n"
+    }
+  ],
+  "scope_hint": [
+    "docs/plans",
+    "scripts/detect-stale-refs.ts",
+    "scripts/fix-broken-links.ts",
+    "tests/planning-artifact-archival.test.ts"
+  ],
+  "risk": "routine",
+  "revision": 1
+}
