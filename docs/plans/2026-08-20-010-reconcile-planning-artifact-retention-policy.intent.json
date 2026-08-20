@@ -1,0 +1,30 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "2026-08-20-010-reconcile-planning-artifact-retention-policy",
+  "owner": "user",
+  "goal": "Make the retention policy agree with the repository it governs. docs/reference/planning-artifact-retention.md states that files under docs/plans/ and docs/specs/ stay at their existing paths by default (line 10), that an archive is 'not an automatic destination for completed Plans or Specs' (line 14), and that five conditions must be proven per file before any move (the Move Or Delete Gate at line 16). Slices 003, 005, 006 and 007 then moved 29 prose Plans and 154 specs in bulk on a two-signal terminality rule, leaving docs/plans/ holding only four canary fixtures and docs/specs/ at 54 active against 236 archived. The document has not changed since the first commit and was in no slice's scope, yet docs/adr/0002-maintenance-surface-ownership.md carries it as binding: Decision 1 reads 'Plans and Specs remain durable at their existing paths by default. Future moves or deletions follow docs/reference/planning-artifact-retention.md.' So the repository's own decision record now describes the opposite of what the repository does. This is the defect class Phase 0 existed to remove, recreated by the archival work itself. Restate the policy around the signal-based rule actually in force, or supersede it through the ADR, and align the ADR either way; both documents must end up describing one policy. Preserve what the old policy got right and the archival respected: archival is a move and never a delete, and inbound references are rewritten rather than left dangling. Two exemptions now carried by the archival guards should be named so a later reader does not undo them: the live v4 roadmap spec, and the migration plan whose Spec reference is frozen by a cross-runtime signature constant in tests/plan-validation.test.ts. Only two other documents cite the retention policy, an archived plan and the roadmap drafts note, and neither is binding.",
+  "acceptance": [
+    {
+      "id": "acc-retention-policy-matches-practice",
+      "assertion": "No active retention guidance contradicts the archival layout on disk, and docs/adr/0002-maintenance-surface-ownership.md points at whatever policy now governs rather than asserting durability at existing paths.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/retention-policy-consistency.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 60000,\n  \"max_output_bytes\": 65536\n}\n"
+    },
+    {
+      "id": "acc-exemptions-named",
+      "assertion": "The governing policy names the two standing exemptions, the live v4 roadmap spec and the signature-frozen migration plan, so a later reader does not archive or rewrite them.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/retention-policy-consistency.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 60000,\n  \"max_output_bytes\": 65536\n}\n"
+    },
+    {
+      "id": "acc-suite-intact",
+      "assertion": "The full suite passes.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 300000,\n  \"max_output_bytes\": 262144\n}\n"
+    }
+  ],
+  "scope_hint": [
+    "docs/adr/0002-maintenance-surface-ownership.md",
+    "docs/reference/planning-artifact-retention.md",
+    "tests/retention-policy-consistency.test.ts"
+  ],
+  "risk": "routine",
+  "revision": 1
+}

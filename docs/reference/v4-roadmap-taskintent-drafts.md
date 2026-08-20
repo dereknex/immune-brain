@@ -656,9 +656,37 @@ to that one file plus the three contract tests that read it.
 **scope_hint** — the three `BASELINE.md` paths, `AGENTS.md`, `IMMUNE.md`,
 `scripts/sync-dist-docs.ts`, plus `RE-VERIFY` affected contract tests.
 
-### 2.3 `retire-roadmap-family-vocabulary`
+### 2.3 `retire-roadmap-family-vocabulary` — DRAFT PREMISES FAILED RE-VERIFY
 
-**Risk**: `material` · **Gate**: `archive-terminal-planning-artifacts` closed
+Both halves of the draft below are wrong against the current tree. Do not
+promote it as written.
+
+**The Roadmap vocabulary is not dead.** `plan_core.ts` still validates it —
+`ROADMAP_SLICE_CONTRACT`, `ROADMAP_SLICE_REQUIRED_FIELDS` — and archived plans
+still use it: 8 declare `roadmap-slice/v1`, 13 carry `Successor candidate`, 12
+`Roadmap source`, 8 `Current phase`. `imm-plan` is still run against archived
+plans by live tests, so removing the parser's handling would break reading
+history. The draft assumed archiving the prose Plans made the fields
+irrelevant; archiving moved them, it did not retire them.
+
+**The role prompts are dispatchable.** The draft claims `ui-review` and `qa`
+cannot be dispatched because native review hardcodes `code-review`. In fact
+`.pi-extension/imm-canary-work.ts:108` declares
+`LOOP_DIRECT_ROLES = ["qa", "code-review", "ui-review"]`, and that constant types
+the `dispatch_role` operation, so both are valid targets in the live tool schema.
+Deleting the prompts would break the dispatch surface. Drop
+`acc-unreachable-prompts-absent` entirely.
+
+**What survives is narrower and still real.** v3 Plan mutation is retired, so no
+new prose Plan can be created, yet `dist/imm-planner.md` still instructs agents
+to produce Roadmap-backed Plans and to record `roadmap-slice/v1` fields (lines
+113, 190, 197, 232). Those are instructions that can never be followed — the same
+defect Phase 0 removed from `dist/imm-loop.md`. A re-scoped slice would trim the
+planner contract only, leave `plan_core.ts` parsing intact for backward
+compatibility, and decide whether `CONTEXT.md` keeps the terms marked historical
+rather than deleting definitions the parser still relies on.
+
+**Original draft, retained for provenance** — **Risk**: `material` · **Gate**: `archive-terminal-planning-artifacts` closed
 
 **goal**
 
