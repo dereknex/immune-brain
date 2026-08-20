@@ -187,6 +187,59 @@ which is how 006 completed with zero approvals.
 
 ## 1. Phase 1 slices
 
+### Standing rule: scope scans must include `.pi-extension/`
+
+Default `rg` skips dot-directories, so a plain search never sees
+`plugins/immune-brain/.pi-extension/` — ten TypeScript files that are the live
+Pi host integration layer, including `imm-canary-enroll.ts` and
+`imm-canary-work.ts`. Every "no live importers" or "unreachable" conclusion
+reached with a default scan carries that blind spot, and it is the worst
+possible place to have one because that directory is where live code lives.
+A concrete instance: the 2.3 draft called the `qa` and `ui-review` role prompts
+undispatchable, when `imm-canary-work.ts` lists both in `LOOP_DIRECT_ROLES`.
+
+Use `rg --hidden` for any reachability or deletion-scope question. The suite at
+799 pass covers what has already shipped, so this is a forward risk for
+remaining slices rather than a defect in landed work.
+
+### RE-VERIFY sweep of the remaining open drafts
+
+Run against the tree at `01fb945`, after three consecutive drafts failed on
+stale premises.
+
+**3.3 `relocate-enrollment-confirmation` — premises hold, scope stale.** The
+`ctx.ui.custom` host gate is real (`imm-canary-enroll.ts:115`) and is a genuine
+TUI select the model cannot fabricate, so the "reuse rather than invent an
+attestation primitive" instruction stands. Rehearsal does currently run before
+confirmation: `assertDescriptorRehearsalSnapshot` is called at lines 1047, 1099
+and 1132, bracketing the confirmation window, so the reordering this slice
+proposes is a real change. One scope correction — `runtime/pi_canary_prepare.ts`
+no longer exists, deleted during Phase 1; drop it from `scope_hint`.
+`runtime/kernel/enrollment.ts` still exists.
+
+**3.4 `retire-enrollment-confirmation-deadwood` — holds exactly as written.**
+`requiresEnrollmentConfirmation` at lines 91-95 returns
+`risk === "routine" || risk === "material" || risk === "critical"` over a closed
+three-value enum, so it is literally always true, and the unreachable
+`pi-plan-approved` branch is still at line 1112. Remains strictly downstream of
+3.3.
+
+**4.1 `retirement-completion-contract` — needs a recount and a scope decision.**
+The "roughly 193 absence assertions across 57 test files" figure predates the
+Phase 1 deletions and must be recounted with its original method before it goes
+into a goal. `BASELINE.md` is not one file: three byte-identical 7715-byte
+copies exist at `plugins/immune-brain/BASELINE.md`,
+`plugins/immune-brain/skills/BASELINE.md` and
+`plugins/immune-brain/dist/BASELINE.md`, so "the BASELINE authoring source" in
+`scope_hint` has to name which one is authoritative and how the other two stay
+in sync.
+
+**4.2 `packaged-contract-coverage-check` — smaller than drafted.** Phase 1 left
+only three `dist/imm-*.md` and three `skills/*/SKILL.md`. The three-way
+`BASELINE.md` copy is a second copy relationship and already has
+`tests/baseline-packaging-contract.test.ts`. Confirm what the Phase 0 guard
+already enumerates before sizing this slice.
+
 ### 1.1 `retire-imm-core-barrel` — CLOSED
 
 Promoted as `2026-08-19-005-retire-imm-core-barrel` and completed. Retained for
