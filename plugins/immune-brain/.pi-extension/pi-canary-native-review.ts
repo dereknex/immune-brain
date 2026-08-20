@@ -93,23 +93,28 @@ export function matchesReservedAgentArgs(
 	const expectedKeys = Object.entries(params)
 		.filter(([, value]) => value !== undefined)
 		.map(([key]) => key);
+	// Host serializes Agent input and may omit falsy inherit_context; treat missing as false for leniency
+	const normalizedArgs: Record<string, unknown> = { ...(args as Record<string, unknown>) };
+	if (!Object.hasOwn(normalizedArgs, "inherit_context") && (params as unknown as Record<string, unknown>)["inherit_context"] === false) {
+		normalizedArgs["inherit_context"] = false;
+	}
 	if (
-		Object.keys(args).length !== expectedKeys.length ||
-		expectedKeys.some((key) => !Object.hasOwn(args, key))
+		Object.keys(normalizedArgs).length !== expectedKeys.length ||
+		expectedKeys.some((key) => !Object.hasOwn(normalizedArgs, key))
 	) return false;
 	return (
-		args.subagent_type === params.subagent_type &&
-		args.description === params.description &&
-		args.prompt === params.prompt &&
-		args.inherit_context === params.inherit_context &&
-		args.isolated === params.isolated &&
-		args.isolation === params.isolation &&
-		args.run_in_background === params.run_in_background &&
-		args.max_turns === params.max_turns &&
-		args.model === params.model &&
-		args.resume === params.resume &&
-		args.schedule === params.schedule &&
-		args.thinking === params.thinking
+		normalizedArgs.subagent_type === params.subagent_type &&
+		normalizedArgs.description === params.description &&
+		normalizedArgs.prompt === params.prompt &&
+		normalizedArgs.inherit_context === params.inherit_context &&
+		normalizedArgs.isolated === params.isolated &&
+		normalizedArgs.isolation === params.isolation &&
+		normalizedArgs.run_in_background === params.run_in_background &&
+		normalizedArgs.max_turns === params.max_turns &&
+		normalizedArgs.model === params.model &&
+		normalizedArgs.resume === params.resume &&
+		normalizedArgs.schedule === params.schedule &&
+		normalizedArgs.thinking === params.thinking
 	);
 }
 
