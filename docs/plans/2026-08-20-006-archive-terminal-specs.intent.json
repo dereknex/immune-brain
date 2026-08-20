@@ -1,23 +1,22 @@
 {
   "contract": "assurance_kernel/task_intent/v1",
   "task_id": "2026-08-20-006-archive-terminal-specs",
-  "owner": "user",
   "goal": "Archive terminal specs, the last unfinished part of the 2026-08-20-003 roadmap item. docs/specs/ still holds 206 active specs against 82 archived, unchanged by that slice. A spec counts as terminal when a Plan under docs/plans/archive/ implements it, established by either of two signals: the archived Plan's normalized filename matches the spec's, or the archived Plan cites the spec's docs/specs/<name>.spec.md path in its text. Neither signal alone suffices -- measured today filename matching resolves 113 and text citation 117, but their union resolves 150 of 206 because only 105 of 244 archived Plans cite a spec path at all. Whatever the union leaves undetermined must be listed explicitly in the slice output and left in place, never archived on a guess. That mirrors the two-signal-then-enumerate rule already used for intent sidecars. Run this after 2026-08-20-005. That slice archives 29 prose Plans, which converts their spec linkages from active to archived and shrinks the undetermined set before this slice measures it; several currently undetermined specs such as 2026-08-05-risk-tiered-workflow-execution resolve for exactly that reason. Archival is a move into docs/specs/archive/, never a delete. Two exposures are known. tests/python-reference-boundary.test.ts pins the active path docs/specs/opencode-native-plugin.spec.md and must be reconciled if that spec is archived. Cross-document links across a 206-file corpus are the larger one, which is why both link scripts are in scope. Do not touch the instructional-reference exemption list that 2026-08-20-003 established; specs citing retired tools as the subject of retirement stay active and exempt.",
   "acceptance": [
     {
       "id": "acc-terminal-specs-archived",
       "assertion": "Every spec resolved terminal by either linkage signal lives under docs/specs/archive/, each move preserves content and none was deleted, and specs left undetermined by both signals remain in docs/specs/ and are enumerated explicitly rather than archived on a guess.",
-      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/planning-artifact-archival.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 60000,\n  \"max_output_bytes\": 65536\n}\n"
+      "verification": "{\"contract\": \"assurance_kernel/verification_descriptor/v1\", \"runner_id\": \"bun\", \"runner_version\": \"1.3.14\", \"argv\": [\"test\", \"tests/planning-artifact-archival.test.ts\"], \"cwd\": \".\", \"timeout_ms\": 60000, \"max_output_bytes\": 65536}\n"
     },
     {
       "id": "acc-pinned-and-exempt-intact",
       "assertion": "tests/python-reference-boundary.test.ts resolves whatever path docs/specs/opencode-native-plugin.spec.md now has, and the instructional-reference exemption list established by 2026-08-20-003 still passes unchanged.",
-      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/planning-artifact-archival.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 60000,\n  \"max_output_bytes\": 65536\n}\n"
+      "verification": "{\"contract\": \"assurance_kernel/verification_descriptor/v1\", \"runner_id\": \"bun\", \"runner_version\": \"1.3.14\", \"argv\": [\"test\", \"tests/planning-artifact-archival.test.ts\"], \"cwd\": \".\", \"timeout_ms\": 60000, \"max_output_bytes\": 65536}\n"
     },
     {
       "id": "acc-links-and-suite-intact",
       "assertion": "The full suite passes and the link and stale-reference scripts report no new unresolved reference introduced by the move.",
-      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 300000,\n  \"max_output_bytes\": 262144\n}\n"
+      "verification": "{\"contract\": \"assurance_kernel/verification_descriptor/v1\", \"runner_id\": \"bun\", \"runner_version\": \"1.3.14\", \"argv\": [\"test\"], \"cwd\": \".\", \"timeout_ms\": 300000, \"max_output_bytes\": 262144}\n"
     }
   ],
   "scope_hint": [
@@ -27,6 +26,7 @@
     "tests/planning-artifact-archival.test.ts",
     "tests/python-reference-boundary.test.ts"
   ],
-  "risk": "material",
-  "revision": 1
+  "risk": "routine",
+  "revision": 2,
+  "owner": "user"
 }
