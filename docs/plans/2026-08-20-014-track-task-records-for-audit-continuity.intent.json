@@ -1,0 +1,30 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "2026-08-20-014-track-task-records-for-audit-continuity",
+  "owner": "user",
+  "goal": "Stop discarding the evidence that Managed Path exists to produce. Five slices have now completed in parallel worktrees and merged with no surviving record: 008, 009, then 011, 012 and 013 together. Main holds zero TaskRecords for any of them. The cause is .gitignore lines 7-10, which exclude .imm/tasks/, .imm/journal.jsonl, .imm/workspace.json and .imm/migrations/. A task enrolled in a worktree writes its record into that worktree's ignored .imm/, so merging the branch returns the code and leaves the evidence behind to be deleted with the worktree. An earlier diagnosis blamed a stale workspace.json claim; that blocks enrollment but is not what erases the trail. The per-task record is the audit artifact and it is self-contained: each carries intent_snapshot, phase, baseline, evidence, findings, approvals and history. There are 54 records and 53 backend claims on disk today, 1.2MB in total, one file per task per kind, so parallel branches write disjoint filenames and tracking them cannot produce a merge conflict. Track .imm/tasks/ and add a check that a terminal task cannot be archived while its record is absent, which is the moment the loss has become visible each time. Two boundaries. Records are rewritten on every phase transition, so committing each intermediate state would bury real history in churn; persist the record when the task reaches terminal, alongside the sidecar archival step that already happens. And leave the other three entries ignored: workspace.json is per-machine occupancy, migrations/ is local backup, and journal.jsonl holds 7 stale legacy-task lines from 2026-08-14 rather than the audit trail, so it is a single append-only file with conflict risk and no present value.",
+  "acceptance": [
+    {
+      "id": "acc-records-tracked",
+      "assertion": "TaskRecords under .imm/tasks/ are tracked by Git rather than ignored, while workspace.json and migrations/ remain ignored.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/task-record-durability.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 65536\n}\n"
+    },
+    {
+      "id": "acc-archival-requires-record",
+      "assertion": "Archiving a terminal intent sidecar fails when the matching TaskRecord is absent, so a lost audit trail is caught at the point it becomes visible.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/task-record-durability.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 65536\n}\n"
+    },
+    {
+      "id": "acc-suite-intact",
+      "assertion": "The full suite passes.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 600000,\n  \"max_output_bytes\": 262144\n}\n"
+    }
+  ],
+  "scope_hint": [
+    ".gitignore",
+    ".imm/tasks",
+    "tests/task-record-durability.test.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}
