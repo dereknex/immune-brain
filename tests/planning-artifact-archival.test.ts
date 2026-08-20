@@ -240,6 +240,10 @@ describe("planning artifact archival", () => {
     const planTexts = archivedPlans.map((p) => {
       try { return readFileSync(p, "utf8"); } catch { return ""; }
     });
+    // intent sidecars: task-produced specs are identified by exact filename match (taskId == spec stem)
+    // ponytail: exact equality, not substring; generic specs share suffix with intent names but are not implementing
+    const archivedIntents = listFiles(plansDir, ".intent.json");
+    const intentNorms = archivedIntents.map((p) => p.split("/").pop()!.replace(/\.intent\.json$/, ""));
     function normSpec(path: string): string {
       let n = path.split("/").pop()!.replace(/\.spec\.md$/, "");
       // spec stem without .spec already handled, but keep for safety
@@ -254,8 +258,9 @@ describe("planning artifact archival", () => {
       const sNorm = normSpec(rel);
       const s1 = planNorms.some((pn) => pn.includes(sNorm));
       const s2 = planTexts.some((txt) => txt.includes(rel));
-      if (s1 || s2) {
-        violations.push(`${rel} is terminal (S1=${s1} S2=${s2}) but lives in docs/specs`);
+      const s3 = intentNorms.some((pn) => pn === sNorm);
+      if (s1 || s2 || s3) {
+        violations.push(`${rel} is terminal (S1=${s1} S2=${s2} S3=${s3}) but lives in docs/specs`);
         terminalActive.push(rel);
       }
     }

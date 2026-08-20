@@ -53,7 +53,7 @@ describe("stale-reference ratchet", () => {
     expect(real.status).toBe(0)
     expect(real.stdout).toContain("No stale references found.")
 
-    const spec = runDetect("docs/specs/2026-08-20-010-reconcile-planning-artifact-retention-policy.spec.md")
+    const spec = runDetect("docs/specs/archive/2026-08-20-010-reconcile-planning-artifact-retention-policy.spec.md")
     expect(spec.status).toBe(0)
     expect(spec.stdout).toContain("No stale references found.")
   })
