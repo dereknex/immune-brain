@@ -1,0 +1,29 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "2026-08-20-019-retire-enrollment-confirmation-deadwood",
+  "owner": "user",
+  "goal": "Remove code that describes a choice the system does not have. requiresEnrollmentConfirmation at imm-canary-enroll.ts:91-95 returns risk === 'routine' || risk === 'material' || risk === 'critical' over a closed three-value enum, so it is always true. Its single caller at line 1034 assigns that result to confirmationRequired, which makes the alternative branch of the confirmation_ref expression at line 1136 unreachable: no execution can ever mint a pi-plan-approved reference. Three assertions at tests/pi-canary-enroll-extension.test.ts:106-108 pin the tautology by checking that all three tiers return true, so they go with it. This slice was gated on the relocated confirmation gate being proven, and slice 015 has landed, so the precondition is met. Behavior must not change. Confirmation stays required for every risk tier; the function is equivalent to the constant true and should be inlined as such, and the dead branch deleted because it is then provably unreachable rather than because confirmation is being made optional. The reason to bother is that the current shape lies about the design. A predicate named requiresEnrollmentConfirmation taking a risk argument invites a future reader to conclude that confirmation is tunable by tier and that routine work could skip it, which would remove the one signal in the enrollment path that the model cannot fabricate. Deleting it makes the invariant legible: enrollment always passes through the host gate. Note that line numbers moved when 015 landed, so locate by symbol rather than by the positions recorded in the original draft, and keep the ctx.ui.custom gate itself untouched.",
+  "acceptance": [
+    {
+      "id": "acc-tautology-removed",
+      "assertion": "requiresEnrollmentConfirmation and the unreachable pi-plan-approved branch are absent from the enrollment path.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/pi-canary-enroll-extension.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 180000,\n  \"max_output_bytes\": 65536\n}\n"
+    },
+    {
+      "id": "acc-confirmation-still-mandatory",
+      "assertion": "Every risk tier still passes through the host confirmation gate and no confirmation_ref can be minted without it.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/enrollment-confirmation-relocation.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 180000,\n  \"max_output_bytes\": 65536\n}\n"
+    },
+    {
+      "id": "acc-suite-intact",
+      "assertion": "The full suite passes.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 600000,\n  \"max_output_bytes\": 262144\n}\n"
+    }
+  ],
+  "scope_hint": [
+    "plugins/immune-brain/.pi-extension/imm-canary-enroll.ts",
+    "tests/pi-canary-enroll-extension.test.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}
