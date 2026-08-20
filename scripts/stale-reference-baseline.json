@@ -1,0 +1,10 @@
+{
+  "active": 138,
+  "total": 846,
+  "scope": "active = docs files not under /archive/ (ratchet gate); total = all docs",
+  "filters": {
+    "placeholder": "refs containing '<', '>' or '*' are excluded (e.g. docs/specs/<name>.spec.md, docs/plans/*.md)",
+    "archiveAware": "docs/specs/<name> and docs/plans/<name> also check docs/<type>/archive/<name> so archiving does not spuriously trip the gate; legacy .imm/specs/* also checks archive"
+  },
+  "generated": "2026-08-20"
+}

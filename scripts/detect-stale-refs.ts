@@ -35,6 +35,36 @@ function loadRegistrySkills(root: string): Set<string> {
   }
   return skills
 }
+function isPlaceholderRef(ref: string): boolean {
+  return ref.includes("<") || ref.includes(">") || ref.includes("*")
+}
+
+function docExistsWithArchive(root: string, docPath: string): boolean {
+  if (existsSync(join(root, docPath))) return true
+  if (docPath.startsWith("docs/specs/")) {
+    const base = docPath.slice("docs/specs/".length)
+    if (!base.startsWith("archive/")) {
+      const archived = join(root, "docs/specs/archive", base)
+      if (existsSync(archived)) return true
+    }
+  }
+  if (docPath.startsWith("docs/plans/")) {
+    const base = docPath.slice("docs/plans/".length)
+    if (!base.startsWith("archive/")) {
+      const archived = join(root, "docs/plans/archive", base)
+      if (existsSync(archived)) return true
+    }
+  }
+  return false
+}
+
+function legacyExistsWithArchive(root: string, legacy: string): boolean {
+  if (existsSync(join(root, legacy))) return true
+  const migrated = legacy.replace(".imm/specs/", "docs/specs/")
+  if (docExistsWithArchive(root, migrated)) return true
+  return false
+}
+
 function scanFile(path: string, root: string, validSkills: Set<string>): any[] {
   let content = ""
   try { content = readFileSync(path, "utf8") } catch { return [] }
@@ -44,16 +74,18 @@ function scanFile(path: string, root: string, validSkills: Set<string>): any[] {
     const lineNo = idx + 1
     for (const match of line.matchAll(SKILL_REF_RE)) {
       const skillPath = `skills/${match[1]}`
+      if (isPlaceholderRef(skillPath)) continue
       if (!validSkills.has(skillPath) && !existsSync(join(root, skillPath))) findings.push({ file: rel, line: lineNo, type: "stale_skill_ref", ref: skillPath })
     }
     for (const match of line.matchAll(DOC_REF_RE)) {
       const docPath = match[1]
-      if (!existsSync(join(root, docPath))) findings.push({ file: rel, line: lineNo, type: "broken_doc_link", ref: docPath })
+      if (isPlaceholderRef(docPath)) continue
+      if (!docExistsWithArchive(root, docPath)) findings.push({ file: rel, line: lineNo, type: "broken_doc_link", ref: docPath })
     }
     for (const match of line.matchAll(LEGACY_SPEC_RE)) {
       const legacy = match[1]
-      const migrated = legacy.replace(".imm/specs/", "docs/specs/")
-      if (!existsSync(join(root, legacy)) && !existsSync(join(root, migrated))) findings.push({ file: rel, line: lineNo, type: "broken_legacy_spec", ref: legacy })
+      if (isPlaceholderRef(legacy)) continue
+      if (!legacyExistsWithArchive(root, legacy)) findings.push({ file: rel, line: lineNo, type: "broken_legacy_spec", ref: legacy })
     }
   }
   return findings
