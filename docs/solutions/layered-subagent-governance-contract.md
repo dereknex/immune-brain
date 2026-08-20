@@ -35,7 +35,7 @@
 - [README.md](README.md) 现已区分 `imm-party`、system subagents 和 `imm-*` authority roles，并把首版 authority class 限定为四类。
 - [README.md](README.md) 现已为核心 subagents 给出 manifest-style contract，并声明同一套 contract 适用于条件风险层和项目专用层。
 - [README.md](README.md) 现已把条件风险层与项目专用层拆开，给出 project-specific triggers 与 fallback。
-- [.imm/specs/system-subagents-design.spec.md](docs/specs/system-subagents-design.spec.md) 现已补齐 borrowed-versus-rejected upstream rationale、manifest minimum fields、layer boundaries 和 non-goals。
+- [.imm/specs/system-subagents-design.spec.md](docs/specs/archive/system-subagents-design.spec.md) 现已补齐 borrowed-versus-rejected upstream rationale、manifest minimum fields、layer boundaries 和 non-goals。
 - [docs/plans/2026-05-07-009-feat-system-subagents-design-plan.md](docs/plans/2026-05-07-009-feat-system-subagents-design-plan.md) 的 U1-U4 已全部 pass，分别闭环 authority/routing、manifest contract、layer boundary 和 README/spec/validator 对齐。
 - `imm-plan docs/plans/2026-05-07-009-feat-system-subagents-design-plan.md --json` 已通过，证明这套治理收敛可以被当前 planning contract 接受。
 

@@ -14,7 +14,7 @@ key_files:
   - plugins/immune-brain/runtime/plan_core.ts
   - tests/state-ledger-migration.test.ts
   - tests/project-migration-cli.test.ts
-  - docs/specs/legacy-project-migration.spec.md
+  - docs/specs/archive/legacy-project-migration.spec.md
 ---
 
 # Rejected: Perpetual Runtime Compatibility for Persisted Workflow State

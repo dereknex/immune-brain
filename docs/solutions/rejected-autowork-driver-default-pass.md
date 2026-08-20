@@ -7,7 +7,7 @@ rejection_reason: >
   破坏 authority 分离。都没有必要，也会让 `imm-autowork` 的职责变成“模型决策者”。
 reusability: medium
 key_files:
-  - docs/specs/autowork-skill-driver-simplification.spec.md
+  - docs/specs/archive/autowork-skill-driver-simplification.spec.md
   - docs/plans/2026-05-27-001-fix-autowork-skill-driver-simplification-plan.md
   - plugins/immune-brain/dist/imm-autowork.md
   - .imm/imm-autowork.py
@@ -41,7 +41,7 @@ next_reuse_scenarios:
 
 ## Evidence
 
-- `docs/specs/autowork-skill-driver-simplification.spec.md`
+- `docs/specs/archive/autowork-skill-driver-simplification.spec.md`
 - `docs/plans/2026-05-27-001-fix-autowork-skill-driver-simplification-plan.md`
 - `plugins/immune-brain/dist/imm-autowork.md`
 - `tests/test_imm_autowork.py`

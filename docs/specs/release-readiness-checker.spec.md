@@ -138,7 +138,7 @@ failure_mode:
 
 ## 6. 依赖项
 
-- 依赖 [system-subagents-design.spec.md](docs/specs/system-subagents-design.spec.md)
+- 依赖 [system-subagents-design.spec.md](docs/specs/archive/system-subagents-design.spec.md)
   对 project-specific 层、manifest vocabulary 和 authority boundary 的定义。
 - 依赖 [project-specific-reviewer-contract-slices.md](docs/solutions/project-specific-reviewer-contract-slices.md)
   作为 standalone contract + fallback + focused regression 的收敛模式。

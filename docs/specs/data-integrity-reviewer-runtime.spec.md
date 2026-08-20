@@ -83,7 +83,7 @@ contract tests 中沉淀了“先单条 host、再验证”的模式。`data-int
 
 ## 6. 依赖项
 
-- 依赖 [system-subagents-design.spec.md](docs/specs/system-subagents-design.spec.md)
+- 依赖 [system-subagents-design.spec.md](docs/specs/archive/system-subagents-design.spec.md)
   的 conditional-risk 分层与 roster 上下文。
 - 依赖 [remaining-first-batch-runtime-activation.spec.md](docs/specs/remaining-first-batch-runtime-activation.spec.md)
   的 runtime-host 进化规则。

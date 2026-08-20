@@ -32,7 +32,7 @@
 
 ## 验证依据
 
-- [.imm/specs/review-followup-handoff.spec.md](docs/specs/review-followup-handoff.spec.md)
+- [.imm/specs/review-followup-handoff.spec.md](docs/specs/archive/review-followup-handoff.spec.md)
   定义了 `direct_fix` / `new_slice` / `defer` 路由、required `follow_up` fields、planner ingestion 规则和 non-goals。
 - [skills/imm-code-review/SKILL.md](skills/imm-code-review/SKILL.md)
   现在要求 review 在 `needs_fix` / `block` 时输出 planner-ready `follow_up` packet，并显式说明当前边界可修还是需要新 follow-up slice。

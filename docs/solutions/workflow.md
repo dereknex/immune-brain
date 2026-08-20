@@ -77,7 +77,7 @@ When every Step closes, it reports the explicit `imm-compounder` handoff.
 Evidence basis:
 
 - `IMMUNE.md`
-- `docs/specs/l2s-workflow-pattern.spec.md`
+- `docs/specs/archive/l2s-workflow-pattern.spec.md`
 - `docs/plans/2026-05-15-009-feat-l2s-workflow-pattern-plan.md`
 - `docs/patterns/l2s-workflow.md` (stable compatibility pointer)
 
@@ -190,7 +190,7 @@ Host-specific rituals (Codex, Claude Code, Cursor) live in
 
 ### Evidence
 
-- `docs/specs/autowork-skill-driver-simplification.spec.md` 明确要求 checkpoint/runtime 与 host loop 分离。
+- `docs/specs/archive/autowork-skill-driver-simplification.spec.md` 明确要求 checkpoint/runtime 与 host loop 分离。
 - `docs/plans/2026-05-27-001-fix-autowork-skill-driver-simplification-plan.md`：`U1` 交付 `awaiting_execution_input` 与 `awaiting_qa_decision`。
 - `tests/test_imm_autowork.py` 覆盖未准备 execution/qa packet 的边界断言、snapshot handoff 字段和既有 stop 原语。
 - `tests/test_skill_contracts.py` 锁定 `imm-autowork` 合约边界与 `imm-autowork-driver`/默认 QA pass 的拒绝条款。
@@ -203,7 +203,7 @@ Host-specific rituals (Codex, Claude Code, Cursor) live in
 - Evidence trail: 证据来自 runtime schema contract、plan/spec 对齐、focused regression 和既有 code review，而非外部系统调度。
 - Entropy resistance: 追加到 workflow hub 而不是新建 architecture 模式，避免把单点边界修复误解为平台级 orchestrator 扩展。
 
-## 沉淀日期: 2026-05-27 | 来源: docs/specs/autowork-skill-driver-simplification.spec.md + step U1
+## 沉淀日期: 2026-05-27 | 来源: docs/specs/archive/autowork-skill-driver-simplification.spec.md + step U1
 
 ## Pattern: Run Completion Loop as Review-Follow-up Outer Coordinator
 
@@ -229,7 +229,7 @@ Host-specific rituals (Codex, Claude Code, Cursor) live in
 
 ### Evidence
 
-- [docs/specs/run-completion-loop.spec.md](docs/specs/run-completion-loop.spec.md) 定义 `imm-loop` 的 outer completion loop、review selection、same-boundary follow-up、stop conditions、run_status 和 no new driver boundary。
+- [docs/specs/archive/run-completion-loop.spec.md](docs/specs/archive/run-completion-loop.spec.md) 定义 `imm-loop` 的 outer completion loop、review selection、same-boundary follow-up、stop conditions、run_status 和 no new driver boundary。
 - [plugins/immune-brain/dist/imm-loop.md](plugins/immune-brain/dist/imm-loop.md) 记录 Run Completion Loop、code/UI review gates、explicit subagent activation intent、environment/cost/authorization gates 和 compounder handoff only after review closure。
 - [README.md](README.md) 在用户入口和推荐 workflow 中记录同一合同。
 - `tests/test_skill_contracts.py` 锁定 skill contract、README/workflow docs、Spec 三处合同表面，并防止 `must dispatch` / `always dispatch` 语义。
@@ -268,7 +268,7 @@ Host-specific rituals (Codex, Claude Code, Cursor) live in
 
 ### Evidence
 
-- [docs/specs/run-review-closure-runtime-gate.spec.md](docs/specs/run-review-closure-runtime-gate.spec.md) 定义 material/UI review gate、multi-round follow-up resurfacing、budget visibility 和 no authority expansion。
+- [docs/specs/archive/run-review-closure-runtime-gate.spec.md](docs/specs/archive/run-review-closure-runtime-gate.spec.md) 定义 material/UI review gate、multi-round follow-up resurfacing、budget visibility 和 no authority expansion。
 - `.imm/imm-autowork.py` 通过 `_review_gates_for_changed_files` 和 `_build_snapshot(..., stop_reason="review_required")` 在 completion boundary 上派生 gate。
 - [plugins/immune-brain/dist/imm-loop.md](plugins/immune-brain/dist/imm-loop.md) 与 [plugins/immune-brain/dist/registry.yaml](plugins/immune-brain/dist/registry.yaml) 暴露 executable review gate 与 `imm-code-review` / `imm-ui-review` routes。
 - `python3 -m unittest tests.test_imm_autowork.ImmAutoworkTests.test_completed_material_run_requires_code_review_gate tests.test_imm_autowork.ImmAutoworkTests.test_completed_ui_run_requires_ui_review_gate tests.test_imm_autowork.ImmAutoworkTests.test_follow_up_completion_requires_review_before_compounder tests.test_imm_autowork.ImmAutoworkTests.test_multi_round_follow_up_resurfaces_review_gate tests.test_skill_contracts.SkillContractTests.test_run_runtime_review_gate_contract tests.test_skill_contracts.SkillContractTests.test_run_registry_includes_review_gate_routes tests.test_immune_brain_plugin_package.PluginPackageTest.test_packaged_runtime_matches_repo_runtime_sources` 通过。

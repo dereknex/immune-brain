@@ -15,7 +15,7 @@ key_files:
 ## 场景
 
 The Immune-Brain host runtime migrated from Python to Bun + TypeScript
-(`docs/specs/bun-typescript-runtime-migration.spec.md`). The Python parity
+(`docs/specs/archive/bun-typescript-runtime-migration.spec.md`). The Python parity
 reference has been retired; production and developer command surfaces should use
 Bun/TypeScript.
 

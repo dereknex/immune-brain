@@ -38,7 +38,7 @@
 - [skills/imm-code-review/SKILL.md](skills/imm-code-review/SKILL.md) 现在把 `direct_fix` 降为 same-boundary follow-up candidate，不再把 `append_to_plan` 暴露成 `recommended_route`。
 - [skills/imm-ui-review/SKILL.md](skills/imm-ui-review/SKILL.md) 同样改为 reviewer 只保留 same-boundary guidance，由 planner 再决定是否 append。
 - [skills/imm-planner/SKILL.md](skills/imm-planner/SKILL.md) 现在明确：append legality 必须同时满足 current runtime plan、verification surface 和 closure fact 条件；证据不够时回 `new_slice`。
-- [.imm/specs/review-followup-handoff.spec.md](docs/specs/review-followup-handoff.spec.md) 与 [.imm/specs/review-task-handling-workflow.spec.md](docs/specs/review-task-handling-workflow.spec.md) 现在把 reviewer 侧 truth 与 planner-owned append 层级写成统一 contract。
+- [.imm/specs/review-followup-handoff.spec.md](docs/specs/archive/review-followup-handoff.spec.md) 与 [.imm/specs/review-task-handling-workflow.spec.md](docs/specs/review-task-handling-workflow.spec.md) 现在把 reviewer 侧 truth 与 planner-owned append 层级写成统一 contract。
 - [.imm/specs/completed-plan-followup-append.spec.md](docs/specs/completed-plan-followup-append.spec.md) 明确把 append proof 不足时的默认路径收回到 `new_slice`。
 - `.imm/imm-plan.py` 现在把 same-path signature change 标注为 append closure proof 失效信号。
 - `tests/test_imm_plan.py` 的 `test_sync_same_path_signature_change_resets_closure_and_append_proof` 通过。

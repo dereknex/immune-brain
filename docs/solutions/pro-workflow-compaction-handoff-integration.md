@@ -10,7 +10,7 @@ key_files:
   - docs/reference/upstream-pro-workflow-borrow-map.md
   - docs/reference/compaction-handoff-hosts.md
   - docs/reference/HANDOFF-template.md
-  - docs/specs/pro-workflow-compaction-handoff.spec.md
+  - docs/specs/archive/pro-workflow-compaction-handoff.spec.md
   - skills/imm-work/SKILL.md
   - .imm/imm-dehydrate.py
   - upstreams/pro-workflow

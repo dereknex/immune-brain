@@ -338,7 +338,7 @@ Superseded current-truth pattern: this entry is historical after the CLI-only ru
 ### 方案模板
 1. **内化**：`imm_core/review_arbitration.py` 为权威实现；根 `.imm/review_arbitration.py` 可保留 re-export shim。
 2. **接入点**：在 `code_review_subagents.build_code_review_synthesis_from_outcomes` 对 child findings 调用 `arbitrate_child_findings`，输出 ordered findings + conflicts + unresolved 语义。
-3. **测试**：`tests/test_imm_review.py` 覆盖仲裁与合成；spec：`docs/specs/subagent-telemetry-arbitration-integration.spec.md`。
+3. **测试**：`tests/test_imm_review.py` 覆盖仲裁与合成；spec：`docs/specs/archive/subagent-telemetry-arbitration-integration.spec.md`。
 
 ### Evidence
 - `.imm/imm_core/code_review_subagents.py` 导入并调用 `arbitrate_child_findings`；同一 `conflict_group` 分歧时合成含冲突报告。

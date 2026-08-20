@@ -2,13 +2,13 @@
 date: 2026-06-27
 topic: roadmap-example-notification-system
 scope: example-roadmap
-purpose: Validate the `acceptance_criteria` / `promotion_criteria` format from `docs/specs/roadmap-human-acceptance-gating.spec.md`
+purpose: Validate the `acceptance_criteria` / `promotion_criteria` format from `docs/specs/archive/roadmap-human-acceptance-gating.spec.md`
 ---
 
 # Example Roadmap: Notification System
 
 This is a worked example of the Roadmap format defined in
-`docs/specs/roadmap-human-acceptance-gating.spec.md`. It exercises a concrete,
+`docs/specs/archive/roadmap-human-acceptance-gating.spec.md`. It exercises a concrete,
 non-meta domain (an in-app notification system) across four phases so a
 developer can independently judge whether each phase's acceptance criteria are
 human-verifiable without reading implementation code.

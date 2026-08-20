@@ -76,7 +76,7 @@ const BASE_PLAN = `# Iteration Plan
 
 // Reference values captured from Python `imm_core.plan_runtime` against the same plan.
 const REFERENCE_SIGNATURE =
-	"eb32aa29a7868e20dd0b6aac53b69ab3845cd2a544ce353d25d46a98037747a0";
+	"e89bf7809875d215c2ca0275c8f6e86e024dd451934fdc04d8e4a422bbd03a6c";
 
 describe("plan validation parity", () => {
 	it("parses the migration plan with matching summary and step count", () => {

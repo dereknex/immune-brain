@@ -78,7 +78,7 @@ key_files:
   - tests/technical-design-conformance-contract.test.ts
   - docs/specs/2026-07-10-risk-tiered-technical-design-conformance.spec.md
   - docs/plans/2026-07-10-001-feat-risk-tiered-technical-design-conformance-plan.md
-  - docs/specs/planning-quality-gate-planner-contract.spec.md
+  - docs/specs/archive/planning-quality-gate-planner-contract.spec.md
   - docs/plans/2026-05-26-010-feat-planning-quality-gate-planner-contract-plan.md
   - plugins/immune-brain/skills/imm-page-design/SKILL.md
   - plugins/immune-brain/dist/imm-page-design.md
@@ -99,7 +99,7 @@ key_files:
   - .imm/templates/iteration-plan-template.md
   - docs/specs/user-configured-output-language.spec.md
   - docs/plans/2026-06-08-006-feat-user-configured-output-language-plan.md
-  - docs/specs/roadmap-human-acceptance-gating.spec.md
+  - docs/specs/archive/roadmap-human-acceptance-gating.spec.md
   - docs/plans/2026-06-27-001-feat-roadmap-human-acceptance-gating-phase1-plan.md
   - docs/brainstorms/roadmap-example-notification-system.md
   - docs/specs/2026-07-28-roadmap-plan-boundary-successor.spec.md
@@ -235,7 +235,7 @@ here when they cross multiple skills or tools.
 - [docs/reference/planning-quality-gate.md](docs/reference/planning-quality-gate.md) 定义 trigger signals、六项 required checks 和非全局 ceremony 边界。
 - [plugins/immune-brain/dist/imm-planner.md](plugins/immune-brain/dist/imm-planner.md) 在 Planning Rules 中要求 elevated-risk plans 先 consult 该 checklist。
 - `tests/test_skill_contracts.py` 覆盖 planner 引用、trigger signals、六项检查，以及非强制 ceremony 边界。
-- [docs/specs/planning-quality-gate-planner-contract.spec.md](docs/specs/planning-quality-gate-planner-contract.spec.md) 和 [docs/plans/2026-05-26-010-feat-planning-quality-gate-planner-contract-plan.md](docs/plans/2026-05-26-010-feat-planning-quality-gate-planner-contract-plan.md) 记录了先 planner-contract、后 validator enforcement 的分阶段决策。
+- [docs/specs/archive/planning-quality-gate-planner-contract.spec.md](docs/specs/archive/planning-quality-gate-planner-contract.spec.md) 和 [docs/plans/2026-05-26-010-feat-planning-quality-gate-planner-contract-plan.md](docs/plans/2026-05-26-010-feat-planning-quality-gate-planner-contract-plan.md) 记录了先 planner-contract、后 validator enforcement 的分阶段决策。
 - `python3 -m unittest tests.test_skill_contracts` 通过 140 tests；`python3 .imm/imm-plan.py docs/plans/2026-05-26-010-feat-planning-quality-gate-planner-contract-plan.md --json` 通过。
 
 ### reusability_critique_notes
@@ -325,7 +325,7 @@ here when they cross multiple skills or tools.
 
 ### 验证依据
 
-- [docs/specs/origin-coverage-closure.spec.md](docs/specs/origin-coverage-closure.spec.md) 定义了 manifest categories、closed-world mapping、coverage summary 和 QA closure gate。
+- [docs/specs/archive/origin-coverage-closure.spec.md](docs/specs/archive/origin-coverage-closure.spec.md) 定义了 manifest categories、closed-world mapping、coverage summary 和 QA closure gate。
 - [docs/plans/2026-05-15-002-feat-origin-coverage-closure-plan.md](docs/plans/2026-05-15-002-feat-origin-coverage-closure-plan.md) dogfood 了 `BR-*` manifest + `Brainstorm Trace`，并完成 3 个 Step。
 - [skills/imm-brainstorm/SKILL.md](skills/imm-brainstorm/SKILL.md) 明确 `BR-Q-*` 表示 open questions。
 - [skills/imm-planner/SKILL.md](skills/imm-planner/SKILL.md) 要求 `imm-plan --json` 报告 `origin_coverage` totals。
@@ -430,7 +430,7 @@ here when they cross multiple skills or tools.
 
 ### 验证依据
 
-- [.imm/specs/discovery-navigation-layer.spec.md](docs/specs/discovery-navigation-layer.spec.md) 定义 static / dynamic / pattern 三层导航与 `discovery_cache` 生命周期。
+- [.imm/specs/discovery-navigation-layer.spec.md](docs/specs/archive/discovery-navigation-layer.spec.md) 定义 static / dynamic / pattern 三层导航与 `discovery_cache` 生命周期。
 - [docs/plans/discovery-navigation-layer.plan.md](docs/plans/discovery-navigation-layer.plan.md) 将三层能力拆成 U101-U104，且 Brainstorm Trace 全部映射。
 - `.imm/imm-plan.py` 解析并同步 `discovery_cache`，同时兼容旧 snapshot。
 - `skills/imm-init/scripts/init_project.py` bootstrap `CONTEXT.md`、`CLAUDE.md` 与 `AGENTS.md` 导航入口。
@@ -1433,7 +1433,7 @@ here when they cross multiple skills or tools.
 
 ### 证据
 
-- [docs/specs/roadmap-human-acceptance-gating.spec.md](docs/specs/roadmap-human-acceptance-gating.spec.md) 定义了该合约规约、L1/L2 校验边界、双轨验证模式。
+- [docs/specs/archive/roadmap-human-acceptance-gating.spec.md](docs/specs/archive/roadmap-human-acceptance-gating.spec.md) 定义了该合约规约、L1/L2 校验边界、双轨验证模式。
 - [docs/plans/2026-06-27-001-feat-roadmap-human-acceptance-gating-phase1-plan.md](docs/plans/2026-06-27-001-feat-roadmap-human-acceptance-gating-phase1-plan.md) 闭合了 Phase 1 阶段定义（Step U1）。
 - [docs/brainstorms/roadmap-example-notification-system.md](docs/brainstorms/roadmap-example-notification-system.md) 作为通知系统的示例文档，成功行使并校验了该格式的可用性，证明模式是可填充且可验证的。
 - [CONTEXT.md](CONTEXT.md) 新增 `Phase`、`acceptance_criteria` 和 `promotion_criteria` 作为 canonical 术语并定义了它们在架构图上的关系。

@@ -33,7 +33,7 @@
 ## 验证依据
 
 - `tests/test_skill_contracts.py` 现在把检查拆成三类：contract fields、role boundaries、workflow guards。
-- [skill-contract-lint.spec.md](docs/specs/skill-contract-lint.spec.md) 现在明确 `tests/test_skill_contracts.py` 是首选验证入口，`focused fixtures` 只作为补充。
+- [skill-contract-lint.spec.md](docs/specs/archive/skill-contract-lint.spec.md) 现在明确 `tests/test_skill_contracts.py` 是首选验证入口，`focused fixtures` 只作为补充。
 - [imm-code-review](skills/imm-code-review/SKILL.md), [imm-compounder](skills/imm-compounder/SKILL.md), [imm-party](skills/imm-party/SKILL.md), [imm-pr-fix](skills/imm-pr-fix/SKILL.md), [imm-ui-review](skills/imm-ui-review/SKILL.md) 已补齐缺失的 `Next Action` / `Allowed` / `Blocked` / `Workflow guard` 字段。
 - `python3 -m unittest tests.test_skill_contracts` 通过，说明当前 contract 字段、边界和 guard 至少已经形成一个可运行的闭环。
 

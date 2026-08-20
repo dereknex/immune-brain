@@ -9,7 +9,7 @@ rejection_reason: >
 reusability: medium
 key_files:
   - docs/plans/2026-05-17-002-feat-imm-code-review-subagent-closure-plan.md
-  - docs/specs/imm-code-review-subagent-closure.spec.md
+  - docs/specs/archive/imm-code-review-subagent-closure.spec.md
   - skills/imm-code-review/SKILL.md
   - docs/reference/subagent-dispatch-protocol.md
   - docs/reference/automatic-subagent-activation-policy.md
@@ -51,7 +51,7 @@ lens，而不是让 host skill 按 activation plan 驱动专有执行路径。
 ## Evidence
 
 - [docs/plans/2026-05-17-002-feat-imm-code-review-subagent-closure-plan.md](docs/plans/2026-05-17-002-feat-imm-code-review-subagent-closure-plan.md)
-- [docs/specs/imm-code-review-subagent-closure.spec.md](docs/specs/imm-code-review-subagent-closure.spec.md)
+- [docs/specs/archive/imm-code-review-subagent-closure.spec.md](docs/specs/archive/imm-code-review-subagent-closure.spec.md)
 - [skills/imm-code-review/SKILL.md](skills/imm-code-review/SKILL.md)
 - [docs/reference/subagent-dispatch-protocol.md](docs/reference/subagent-dispatch-protocol.md)
 - [docs/reference/automatic-subagent-activation-policy.md](docs/reference/automatic-subagent-activation-policy.md)

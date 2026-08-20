@@ -42,7 +42,7 @@
 
 ## 验证依据
 
-- [append-safe-proof-snapshot.spec.md](docs/specs/append-safe-proof-snapshot.spec.md) 明确要求 `validated_plan_snapshot` 作为 append-safe proof source，并规定缺 proof 时 degrade-to-reset。
+- [append-safe-proof-snapshot.spec.md](docs/specs/archive/append-safe-proof-snapshot.spec.md) 明确要求 `validated_plan_snapshot` 作为 append-safe proof source，并规定缺 proof 时 degrade-to-reset。
 - `imm-plan.py` 现在会在 sync 成功时写入 `validated_plan_snapshot`，并在 same-path signature change 时只在 snapshot 证明 completed prefix 未变时记录 `sync_plan_preserve_completed_steps`。
 - `current_iteration_state.py` 现在把 `validated_plan_snapshot` 纳入 canonical runtime state。
 - `test_imm_plan.py` 覆盖 snapshot 写入、proof-backed preserve、以及 proof 不足时 reset 的路径。

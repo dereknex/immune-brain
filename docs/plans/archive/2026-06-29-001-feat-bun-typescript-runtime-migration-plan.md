@@ -4,7 +4,7 @@
 
 - Summary: Migrate Immune-Brain production host runtime from Python to Bun + TypeScript across OpenCode, Cursor, Codex, and Claude, using Python only as a temporary parity reference.
 - Origin: User confirmed the brainstorm direction: all host runtimes move off Python, the migration may be breaking, and Python may remain temporarily as a test reference.
-- Spec: `docs/specs/bun-typescript-runtime-migration.spec.md`
+- Spec: `docs/specs/archive/bun-typescript-runtime-migration.spec.md`
 - Brainstorm Manifest: BR-REQ-001; BR-REQ-002; BR-REQ-003; BR-DEC-001; BR-OUT-001; BR-DEFER-001
 - Scope Mode: Roadmap-backed full migration Plan. This Plan covers the executable migration through host cutover and reference quarantine; the Spec preserves promotion criteria for each phase.
 

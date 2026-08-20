@@ -140,7 +140,7 @@ failure_mode:
 
 ## 6. 依赖项
 
-- 依赖 [system-subagents-design.spec.md](docs/specs/system-subagents-design.spec.md)
+- 依赖 [system-subagents-design.spec.md](docs/specs/archive/system-subagents-design.spec.md)
   对 conditional-risk 层、manifest vocabulary 和 authority boundary 的定义。
 - 依赖 [conditional-risk-reviewer-activation-hosts.md](docs/solutions/conditional-risk-reviewer-activation-hosts.md)
   作为单 reviewer host 模式的最近收敛依据。
