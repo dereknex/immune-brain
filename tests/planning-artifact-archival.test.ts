@@ -116,7 +116,6 @@ describe("planning artifact archival", () => {
       "docs/specs/roadmap-executable-slice-contract.spec.md",
       "docs/specs/quality-fixes-round-1.spec.md",
       "docs/specs/detailed-design-hardening-phase1.spec.md",
-      "docs/specs/v4-deletion-completion-and-contract-realignment-roadmap.spec.md",
       "docs/specs/pro-workflow-compaction-handoff.spec.md",
       "docs/specs/bounded-autowork-skill.spec.md",
       "docs/specs/append-safe-proof-snapshot.spec.md",
@@ -220,10 +219,8 @@ describe("planning artifact archival", () => {
   test("terminal specs are archived, only undetermined and exempt remain in docs/specs", () => {
     const specsDir = join(REPO_ROOT, "docs/specs");
     const plansDir = join(REPO_ROOT, "docs/plans/archive");
-    // protected set: at most 3 entries, each with live justification (replaces prior 54-entry blanket exemptionList)
+    // protected set: at most 2 entries, each with live justification (replaces prior 54-entry blanket exemptionList)
     const protectedSpecs = new Set([
-      // live roadmap of the in-flight v4 program, referenced by docs/reference/v4-roadmap-taskintent-drafts.md; filename-or-citation heuristic misclassifies because a roadmap about deleting v3 necessarily discusses v3
-      "docs/specs/v4-deletion-completion-and-contract-realignment-roadmap.spec.md",
       // pinned by live planning artifacts: scripts/dist-sync-manifest.ts, tests/code-review-activation-contract.test.ts and dist copy plugins/immune-brain/dist/docs/specs/automatic-subagent-activation.spec.md
       "docs/specs/automatic-subagent-activation.spec.md",
       // archived and dual-path pinned: dual-path check below handles docs/specs/archive/opencode-native-plugin.spec.md via tests/python-reference-boundary.test.ts

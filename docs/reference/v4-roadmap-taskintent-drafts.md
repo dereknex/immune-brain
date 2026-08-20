@@ -1,7 +1,9 @@
 # TaskIntent Payload Drafts — v4 Deletion Completion Roadmap
 
 Companion to
-[`docs/specs/v4-deletion-completion-and-contract-realignment-roadmap.spec.md`](../specs/v4-deletion-completion-and-contract-realignment-roadmap.spec.md).
+[`docs/specs/archive/v4-deletion-completion-and-contract-realignment-roadmap.spec.md`](../specs/archive/v4-deletion-completion-and-contract-realignment-roadmap.spec.md).
+Both documents are now historical: the program they describe closed with slice
+019, and the spec was archived at that point.
 
 This file holds **draft payload content** for the 13 candidate slices defined in
 that roadmap's §5. It is planning memory, not authority. Nothing here is a

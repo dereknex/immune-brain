@@ -49,9 +49,8 @@ describe("retention policy consistency", () => {
 
   test("governing policy names the standing exemptions", () => {
     const retention = readFileSync(join(REPO_ROOT, "docs/reference/planning-artifact-retention.md"), "utf8");
-    // 3 protected specs + 1 frozen plan
+    // 2 protected specs + 1 frozen plan
     const exemptions = [
-      "docs/specs/v4-deletion-completion-and-contract-realignment-roadmap.spec.md",
       "docs/specs/automatic-subagent-activation.spec.md",
       "docs/specs/opencode-native-plugin.spec.md",
       "docs/plans/archive/2026-06-29-001-feat-bun-typescript-runtime-migration-plan.md",

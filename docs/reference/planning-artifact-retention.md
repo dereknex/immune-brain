@@ -56,11 +56,15 @@ the original measurement; union 148–150). Whatever the union leaves undetermin
 
 ## Named Exemptions
 
-At most three active specs plus one frozen plan reference are exempt from S1/S2
+At most two active specs plus one frozen plan reference are exempt from S1/S2
 even though the signals would otherwise mark them terminal. Each carries a live
 justification; a later bulk archival must not undo them.
 
-- `docs/specs/v4-deletion-completion-and-contract-realignment-roadmap.spec.md` — live v4 program roadmap referenced by `docs/reference/v4-roadmap-taskintent-drafts.md`; filename-or-citation misclassifies because a roadmap about deleting v3 necessarily discusses v3.
+An exemption is only as good as its stated reason. The v4 deletion roadmap was
+listed here while its program was in flight; when that program closed the
+justification expired, and the spec was archived rather than left protected by
+text that no longer described it.
+
 - `docs/specs/automatic-subagent-activation.spec.md` — pinned by live planning artifacts: `scripts/dist-sync-manifest.ts`, `tests/code-review-activation-contract.test.ts`, and packaged copy `plugins/immune-brain/dist/docs/specs/automatic-subagent-activation.spec.md`.
 - `docs/specs/opencode-native-plugin.spec.md` — dual-path pinned; `tests/python-reference-boundary.test.ts` resolves it at either `docs/specs/` or `docs/specs/archive/`.
 - `docs/plans/archive/2026-06-29-001-feat-bun-typescript-runtime-migration-plan.md` — frozen plan: its `docs/specs/opencode-native-plugin.spec.md` reference is exempt from archive-path rewriting because it is part of `REFERENCE_SIGNATURE = "e89bf7809875d215c2ca0275c8f6e86e024dd451934fdc04d8e4a422bbd03a6c"` in `tests/plan-validation.test.ts`; rewriting it changes the cross-runtime signature.
