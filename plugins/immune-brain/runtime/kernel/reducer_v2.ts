@@ -31,6 +31,12 @@ const TRANSITIONS: Record<TaskPhase, TaskPhase[]> = {
 	stopped: [],
 };
 
+const RISK_RANK: Record<TaskIntentV1["risk"], number> = {
+	routine: 0,
+	material: 1,
+	critical: 2,
+};
+
 function transition(record: TaskRecordV2, to: TaskPhase): void {
 	if (!TRANSITIONS[record.phase].includes(to))
 		throw new KernelInvariantError([
@@ -435,6 +441,10 @@ export function reduceTaskV2(
 			)
 				throw new KernelInvariantError([
 					"intent revision cannot change goal or owner",
+				]);
+			if (RISK_RANK[action.next_intent.risk] < RISK_RANK[record.intent_snapshot.risk])
+				throw new KernelInvariantError([
+					"intent revision cannot reduce risk",
 				]);
 			if (!intentRefMatches(action.next_intent, action.next_intent_ref))
 				throw new KernelInvariantError([
