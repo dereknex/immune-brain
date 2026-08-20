@@ -1,0 +1,28 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "2026-08-20-017-enforce-task-record-durability-on-the-repository",
+  "owner": "user",
+  "goal": "Make the audit-trail guard look at the repository it guards. Slice 014 tracked TaskRecords and shipped archivalRequiresRecord, but the test covering it only calls that function on synthetic inputs and, at line 107, asserts that it is a function. Nothing runs it against real state. The proof is direct: the repository is right now in exactly the condition the guard claims to forbid, and the test is green. Of 83 archived intent sidecars, 29 have no surviving TaskRecord under .imm/tasks/. The pattern is clean and shows the guard is needed rather than merely tidy: every task executed serially in the main worktree kept its record, including 005, 006, 010 and 014, while every task executed in a parallel worktree lost it, including 007 through 009, 011 through 013, and 015 and 016. So 014 made records able to survive a merge without making them required to, and the one check that would have noticed was aimed at fixtures. This is the same defect class as the stale-reference detector before slice 013: a working detector, exercised only against synthetic input, never pointed at reality. Point the check at the repository. Enumerate archived sidecars, resolve each to its TaskRecord, and fail when one lacks a record. The 29 existing gaps are unrecoverable, since the worktrees that held those records are gone, so admit them as an explicit committed baseline and do not attempt backfill. Record them as a named list rather than a count: a bare count lets a newly lost record hide behind a newly fixed one, which is the failure mode this whole slice exists to end. The baseline should only ever shrink.",
+  "acceptance": [
+    {
+      "id": "acc-guard-reads-repository",
+      "assertion": "The durability check enumerates the repository's archived intent sidecars and fails when one outside the baseline has no TaskRecord, rather than exercising the function on synthetic input only.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/task-record-durability.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 65536\n}\n"
+    },
+    {
+      "id": "acc-baseline-is-an-explicit-list",
+      "assertion": "The 29 pre-existing gaps are admitted as a named list of task ids, not a numeric threshold, so a new loss cannot be masked by an unrelated recovery.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/task-record-durability.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 65536\n}\n"
+    },
+    {
+      "id": "acc-suite-intact",
+      "assertion": "The full suite passes.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 600000,\n  \"max_output_bytes\": 262144\n}\n"
+    }
+  ],
+  "scope_hint": [
+    "tests/task-record-durability.test.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}
