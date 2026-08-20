@@ -74,7 +74,7 @@ Require exact host confirmation only for privileged effects:
   override; and
 - external writes whose target or impact cannot be safely reversed locally.
 
-Do not request confirmation for local in-scope edits, local verification, ordinary Direct rework, scoped diff review, or completion reporting. Managed evidence, QA, Review, and completion authority remain governed by their Managed contracts; R2 does not weaken them.
+Routine Managed enrollment uses one host confirmation bound to the TaskIntent content hash at the Planner's final `ctx.ui.custom` gate. Descriptor rehearsal is reordered after that confirmation; a post-confirmation rehearsal failure invalidates the authorization with zero authority writes, and the routine task then proceeds from that single confirmation through enrollment, execution and QA without a second human stop. Do not request confirmation for local in-scope edits, local verification, ordinary Direct rework, scoped diff review, or completion reporting. Managed evidence, QA, Review, and completion authority remain governed by their Managed contracts; R2 does not weaken them.
 
 ## Parallel Read-Only Dispatch
 

@@ -70,8 +70,13 @@ deterministically:
 
 Pi host identity is implicit and never a planning input. The production boundary
 that turns a Git-tracked TaskIntent draft into managed execution authority is the
-native host TUI: Parent invokes the `imm_canary_enrollment` foreground Tool for
-literal-user confirmation and optional descriptor waiver.
+native host TUI: the Planner's final `ctx.ui.custom` gate (via the
+`imm_canary_enrollment` foreground Tool) provides one literal-user confirmation
+bound to the TaskIntent content hash. Descriptor rehearsal is reordered after that
+confirmation; a post-confirmation rehearsal failure invalidates the authorization
+with zero authority writes, and a routine task proceeds through enrollment,
+execution and QA without a second human stop. Optional descriptor waiver remains a
+separate explicit route.
 
 The Planner never writes the `docs/plans/<task-id>.intent.json` artifact
 directly and never overwrites an existing TaskIntent. Under an active

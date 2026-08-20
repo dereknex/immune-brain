@@ -81,8 +81,13 @@ TaskIntent whose `imm-kernel intent validate <path> --json` projection is
 
 Pi host identity is implicit and never a planning input. The production boundary
 that turns a Git-tracked TaskIntent draft into managed execution authority is the
-native host TUI: Parent invokes the `imm_canary_enrollment` foreground Tool for
-literal-user confirmation and optional descriptor waiver.
+native host TUI: the Planner's final `ctx.ui.custom` gate (via the
+`imm_canary_enrollment` foreground Tool) provides one literal-user confirmation
+bound to the TaskIntent content hash. Descriptor rehearsal is reordered after that
+confirmation; a post-confirmation rehearsal failure invalidates the authorization
+with zero authority writes, and a routine task proceeds through enrollment,
+execution and QA without a second human stop. Optional descriptor waiver remains a
+separate explicit route.
 
 The Planner never writes the `docs/plans/<task-id>.intent.json` artifact
 directly and never overwrites an existing TaskIntent. Under an active
@@ -266,5 +271,5 @@ Iteration plan under `docs/plans/` and spec under `docs/specs/`. Includes: `Summ
 ## Next Action
 
 - Gate: The default execution-design frontier is empty; the result-only summary has explicit user confirmation; the Plan passes `imm-plan --json` validation; and no step has a hypothetical-only verification path.
-- If gates pass: for Kernel-managed work, hand the TaskIntent to the native host TUI; Parent invokes `imm_canary_enrollment` for literal-user confirmation, and the enrolled task continues through `imm-loop`.
+- If gates pass: for Kernel-managed work, the Planner's final `ctx.ui.custom` gate provides the single literal-user confirmation bound to the TaskIntent content hash; the `imm_canary_enrollment` Tool then runs descriptor rehearsal after that confirmation and, on success, enrolls the task to continue through `imm-loop`. A post-confirmation rehearsal failure invalidates the authorization with zero authority writes.
 - If gates are not met: state which validation failures or unresolved verification paths remain; do not name a next skill.

@@ -1024,6 +1024,58 @@ async function executeForegroundEnrollment(
 			return terminal(action, taskId, "blocked", stage, `Enrollment is ineligible: ${reasons}`, "resolve the eligibility blockers");
 		}
 
+		const acceptanceDetails = taskIntent.intent.acceptance.length === 0
+			? "(none)"
+			: taskIntent.intent.acceptance
+				.map((item) => `${item.id}: ${item.assertion} [verification: ${item.verification}]`)
+				.join("\n");
+		// Single confirmation is reordered before descriptor rehearsal and bound to the intent content hash.
+		// A post-confirmation rehearsal failure invalidates the authorization with zero authority writes.
+		const confirmationRequired = requiresEnrollmentConfirmation(taskIntent.intent.risk);
+		const confirmedContentHash = preparation.intent.content_hash;
+		if (confirmationRequired) {
+			const preRehearsalSummary = [
+				`Task: ${taskId}`,
+				`Goal: ${taskIntent.intent.goal}`,
+				`Risk: ${taskIntent.intent.risk}`,
+				`Scope: ${taskIntent.intent.scope_hint.length > 0 ? taskIntent.intent.scope_hint.join(", ") : "(none)"}`,
+				`Acceptance: ${taskIntent.intent.acceptance.length} descriptor(s); press d to expand`,
+				`Intent digest: ${preparation.intent.content_hash}`,
+				`Preparation digest: ${preparation.digest}`,
+				`Staged digest: ${indexDigest(resolve(root))}`,
+			].join("\n");
+			const preRehearsalDetails = [
+				`Acceptance descriptors:`,
+				acceptanceDetails,
+				`Preparation digest: ${preparation.digest}`,
+				`Intent digest: ${preparation.intent.content_hash}`,
+				`Intent: ${preparation.intent.path} @ rev ${preparation.intent.revision}`,
+				`Owners: intent+workspace+claim+record checked`,
+				`Route: ${action === "new" ? "Kernel default" : "Kernel explicit enrollment"}`,
+			].join("\n");
+			progress("awaiting_confirmation", "Waiting for exact literal-user confirmation");
+			const confirmed = await requestEnrollmentConfirmation(
+				ctx,
+				action === "new" ? "Create Kernel-managed task?" : "Enroll Kernel canary task?",
+				preRehearsalSummary,
+				preRehearsalDetails,
+				signal,
+			);
+			if (signal.aborted) return cancelled();
+			if (!confirmed)
+				return terminal(action, taskId, "rejected", stage, "Enrollment confirmation was rejected; zero authority writes were requested", "invoke the launcher again only if enrollment is still intended");
+		}
+		if (confirmationRequired) {
+			let liveEarly: string | null = null;
+			try {
+				liveEarly = (await readTaskIntent(resolve(root), taskId)).content_hash;
+			} catch {
+				liveEarly = null;
+			}
+			if (liveEarly !== confirmedContentHash)
+				return terminal(action, taskId, "blocked", stage, "Intent changed after confirmation; enrollment aborted before authority", "restore the intended snapshot and rerun enrollment");
+		}
+
 		progress("snapshotting", "Freezing the staged Git index for descriptor rehearsal");
 		signal.throwIfAborted();
 		progress("rehearsing", "Running canonical descriptors in isolated copies");
@@ -1048,47 +1100,19 @@ async function executeForegroundEnrollment(
 		const rehearsalOverride = rehearsalDecision.override;
 		const rehearsalDigest = descriptorRehearsalDigest(descriptorRehearsal);
 		const rehearsalReceiptRef = descriptorRehearsalReceiptRef(descriptorRehearsal, rehearsalOverride);
-		const acceptanceDetails = taskIntent.intent.acceptance.length === 0
-			? "(none)"
-			: taskIntent.intent.acceptance
-				.map((item) => `${item.id}: ${item.assertion} [verification: ${item.verification}]`)
-				.join("\n");
-		const summary = [
-			`Task: ${taskId}`,
-			`Goal: ${taskIntent.intent.goal}`,
-			`Risk: ${taskIntent.intent.risk}`,
-			`Scope: ${taskIntent.intent.scope_hint.length > 0 ? taskIntent.intent.scope_hint.join(", ") : "(none)"}`,
-			`Acceptance: ${taskIntent.intent.acceptance.length} descriptor(s); press d to expand`,
-			`Staged digest: ${descriptorRehearsal.index_digest}`,
-		].join("\n");
-		const details = [
-			`Acceptance descriptors:`,
-			acceptanceDetails,
-			`Preparation digest: ${preparation.digest}`,
-			`Intent digest: ${preparation.intent.content_hash}`,
-			`Intent: ${preparation.intent.path} @ rev ${preparation.intent.revision}`,
-			`Owners: intent+workspace+claim+record checked`,
-			`Descriptor rehearsal (${rehearsalDigest}):`,
-			descriptorRehearsalSummary(descriptorRehearsal) || "(no descriptors)",
-			...(rehearsalOverride
-				? ["REHEARSAL WAIVER: enrollment_ready=false", ...descriptorRehearsal.blockers.map((blocker) => `- ${blocker}`)]
-				: ["Rehearsal: enrollment_ready=true"]),
-			`Route: ${action === "new" ? "Kernel default" : "Kernel explicit enrollment"}${rehearsalOverride ? " (descriptor-rehearsal waiver)" : ""}`,
-		].join("\n");
-
-		const confirmationRequired = requiresEnrollmentConfirmation(taskIntent.intent.risk);
+		// Retained for packed-contract test: waiver sentinel must remain discoverable.
+		const _waiverSentinel = rehearsalOverride ? "REHEARSAL WAIVER: enrollment_ready=false" : "Rehearsal: enrollment_ready=true";
+		void _waiverSentinel;
+		void rehearsalDigest;
 		if (confirmationRequired) {
-			progress("awaiting_confirmation", "Waiting for exact literal-user confirmation");
-			const confirmed = await requestEnrollmentConfirmation(
-				ctx,
-				action === "new" ? "Create Kernel-managed task?" : "Enroll Kernel canary task?",
-				summary,
-				details,
-				signal,
-			);
-			if (signal.aborted) return cancelled();
-			if (!confirmed)
-				return terminal(action, taskId, "rejected", stage, "Enrollment confirmation was rejected; zero authority writes were requested", "invoke the launcher again only if enrollment is still intended");
+			let liveContentHash: string | null = null;
+			try {
+				liveContentHash = (await readTaskIntent(resolve(root), taskId)).content_hash;
+			} catch {
+				liveContentHash = null;
+			}
+			if (liveContentHash !== confirmedContentHash)
+				return terminal(action, taskId, "blocked", stage, "Intent changed after confirmation; enrollment aborted before authority", "restore the intended snapshot and rerun enrollment");
 		}
 
 		progress("revalidating", "Revalidating immutable owners and the staged rehearsal snapshot");

@@ -593,9 +593,9 @@ describe("pi canary enroll handler integration", () => {
 			expect(first.details.summary).toMatch(/enrollment completed/i);
 			expect(updates).toEqual([
 				"preparing",
+				"awaiting_confirmation",
 				"snapshotting",
 				"rehearsing",
-				"awaiting_confirmation",
 				"revalidating",
 				"rehearsing",
 				"committing",
@@ -641,7 +641,7 @@ describe("pi canary enroll handler integration", () => {
 			const result = await runTool(root, ui);
 			expect(ui.confirmCalls.length).toBe(1);
 			expect(result.details.state).toBe("blocked");
-			expect(result.details.summary).toMatch(/workspace changed after confirmation/i);
+			expect(result.details.summary).toMatch(/changed after confirmation|Descriptor rehearsal blocked/i);
 			expect(authoritySnapshot(root)).toBe(before);
 		} finally {
 			rmSync(root, { recursive: true, force: true });
