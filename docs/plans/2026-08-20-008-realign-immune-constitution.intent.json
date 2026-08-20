@@ -1,0 +1,32 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "2026-08-20-008-realign-immune-constitution",
+  "owner": "user",
+  "goal": "Bring IMMUNE.md to the v4 Kernel path. It is the constitution agents read before selecting a route, and it still presents retired v3 machinery as live: line 44 describes imm-autowork as a deterministic checkpoint runtime, lines 72 and 74 build the L2S-WF mainline and multi-step advancement on imm-loop consuming imm-autowork checkpoints, and line 52 lists State Ledger among the artifacts a route may create. imm-autowork sits in RETIRED_MUTATING_COMMANDS and fails on invocation, and the v3 runtime island carrying State Ledger was deleted by 2026-08-19-008. The version line still reads v1.1.0 / 2026-05-29, predating the Kernel path entirely. This is the same defect class Phase 0 removed from dist/imm-loop.md, left in the one document with the widest reach. Rewrite the affected passages so the described mainline is Planner to Enrollment to imm-loop over TaskIntent and TaskRecord, and bump the version. Two premises of the original 2.2 roadmap draft no longer hold and are deliberately dropped rather than silently carried: the three BASELINE.md copies are already byte-identical at sha 140a3fad and their identity is enforced by tests/baseline-packaging-contract.test.ts, so collapsing them to a generated single source buys no invariant that is not already guaranteed; and AGENTS.md is 18 lines after Phase 0 removed the ctx_* tool block, so there is no roughly 80 percent overlapping IMMUNE-BRAIN block left to shrink. Scope is therefore the constitution alone. IMMUNE.md is not dist-synced, so no packaged copy follows. Three contract tests read it and must keep passing: pi-only-release-contract, direct-first-routing-contract, and managed-default-routing-contract.",
+  "acceptance": [
+    {
+      "id": "acc-constitution-current",
+      "assertion": "IMMUNE.md names no retired command or retired artifact as a live component, describes the mainline in terms of the Kernel path, and records a version bumped past v1.1.0 / 2026-05-29.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/vocabulary-dead-reference-contract.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 60000,\n  \"max_output_bytes\": 65536\n}\n"
+    },
+    {
+      "id": "acc-routing-contracts-intact",
+      "assertion": "The three contract tests that read IMMUNE.md still pass: pi-only-release-contract, direct-first-routing-contract, and managed-default-routing-contract.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/direct-first-routing-contract.test.ts\",\n    \"tests/managed-default-routing-contract.test.ts\",\n    \"tests/pi-only-release-contract.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 60000,\n  \"max_output_bytes\": 65536\n}\n"
+    },
+    {
+      "id": "acc-suite-intact",
+      "assertion": "The full suite passes.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 300000,\n  \"max_output_bytes\": 262144\n}\n"
+    }
+  ],
+  "scope_hint": [
+    "IMMUNE.md",
+    "tests/direct-first-routing-contract.test.ts",
+    "tests/managed-default-routing-contract.test.ts",
+    "tests/pi-only-release-contract.test.ts",
+    "tests/vocabulary-dead-reference-contract.test.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}

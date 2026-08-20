@@ -1,0 +1,30 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "2026-08-20-009-forbid-risk-downgrade-on-revision",
+  "owner": "user",
+  "goal": "Stop an approved breaking intent revision from erasing the oversight its risk tier imposes. The revision path in reducer_v2.ts guards task identity at line 427 and goal and owner at lines 432 to 438, but never guards risk, and on success line 443 makes the incoming intent the governing snapshot. completion.ts line 70 then reads REQUIRED_APPROVALS from that current snapshot, where routine requires nothing and material requires a review. Lines 72 to 75 additionally stale every approval bound to the prior revision and content hash. So lowering risk during a revision both removes the requirement and invalidates any approval already satisfying it, and the task completes with zero approvals. 2026-08-20-006 took exactly this path: the archival work landed in cf3fafd, the intent was edited from material to revision 2 routine in fe222d6 with the message 'for direct complete', and completion followed in 959e68f. Note the edit was a direct file edit, since imm-kernel intent author is exclusive no-overwrite and never rewrites an existing sidecar. The user authority required at line 423 does not cover this: approving a breaking revision consents to the intent having changed, not to the task completing without the review its tier required, and those are different and unequally weighted consents. Add a risk guard symmetric with the existing goal and owner guard so a decrease is rejected while holding or raising stays free; a genuine downward re-scope then uses a successor task, which is the already documented escape hatch. A high-water-mark alternative, pinning completion to the highest tier the record ever held, was considered and is the fallback if a legitimate downgrade case appears. This does not overlap the 3.2 risk floor, which raises declared risk from scope paths at author time and was silent here because the scope was docs and tests.",
+  "acceptance": [
+    {
+      "id": "acc-downgrade-rejected",
+      "assertion": "approve_breaking_intent_revision rejects a next intent whose risk ranks below the current snapshot's risk, in the same shape as the existing goal and owner guard, while a revision holding or raising risk is still accepted.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/risk-downgrade-guard.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 60000,\n  \"max_output_bytes\": 65536\n}\n"
+    },
+    {
+      "id": "acc-completion-tier-preserved",
+      "assertion": "A record enrolled at material cannot reach a complete decision with zero review approvals by way of an intent revision.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/risk-downgrade-guard.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 60000,\n  \"max_output_bytes\": 65536\n}\n"
+    },
+    {
+      "id": "acc-suite-intact",
+      "assertion": "The full suite passes, including the existing breaking-intent-revision and risk-tier-floor tests.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 300000,\n  \"max_output_bytes\": 262144\n}\n"
+    }
+  ],
+  "scope_hint": [
+    "plugins/immune-brain/runtime/kernel/reducer_v2.ts",
+    "tests/breaking-intent-revision-gate.test.ts",
+    "tests/risk-downgrade-guard.test.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}

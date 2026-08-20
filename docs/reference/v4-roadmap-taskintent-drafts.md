@@ -71,6 +71,58 @@ git add docs/plans/<task-id>.intent.json
 
 ---
 
+## Parallel route for the nine remaining slices
+
+Nine slices remain open. They do not form nine independent lanes: they collapse
+into three chains, because two files are contended by four slices each.
+
+**Contention points, verified rather than assumed.**
+`scripts/dist-sync-manifest.ts` holds both `BASELINE_COPIES` and
+`ROLE_PROMPT_SOURCE_DIR`/`ROLE_PROMPT_DIST_DIR`, so 2.2 and 2.3 cannot run
+together. `plugins/immune-brain/dist/imm-planner.md` is claimed by 2.3, 4.1 and
+the contract-document half of 3.3. Every Phase 3 slice writes
+`.pi-extension/imm-canary-enroll.ts`. The original 2.2 draft named
+`scripts/sync-dist-docs.ts`, which is the wrong file; the manifest is where the
+copy lists live.
+
+**The three chains.** Chain A is archival: 007 then 2.1b. Chain D is contract
+documents: 008 (the re-scoped 2.2) then 2.3 then 4.1 then 4.2. Chain E is
+enrollment authority: 009 (the corrected 3.5) then 3.3 then 3.4. A, D and E are
+pairwise disjoint except that 3.3 reaches into the planner contract documents
+owned by chain D, which is why 3.3 does not overlap a chain-D step.
+
+**Wave schedule.** Five waves instead of nine serial slices:
+
+| Wave | Lane A | Lane D | Lane E |
+| --- | --- | --- | --- |
+| 1 | 007 archive remaining specs | 008 realign IMMUNE.md | 009 forbid risk downgrade |
+| 2 | 2.1b retention policy | 2.3 roadmap vocabulary | — |
+| 3 | — | — | 3.3 relocate confirmation |
+| 4 | — | 4.1 completion contract | 3.4 retire deadwood |
+| 5 | — | 4.2 coverage check | — |
+
+Wave 3 runs 3.3 alone deliberately. It is the only `critical` slice and the only
+one that moves where user authority is captured, so it should not compete for
+attention with a concurrent enrollment.
+
+Ordering inside chain E is not arbitrary. 009 lands first so that from wave 2
+onward no slice can lower its own risk tier to reach a weaker completion path,
+including 3.3 itself.
+
+**Worktree protocol.** One `git worktree` per lane, as used for 009 through 012.
+Two costs learned there apply. First, a TaskRecord written inside a worktree
+lives in that worktree's state directory and is destroyed with it, so copy
+records back into the main repository before `git worktree remove` or the audit
+trail for that slice is lost. Second, each lane needs its own enrollment, so a
+three-lane wave costs three human gates plus three completions; that load, not
+scope conflict, is what caps practical lane width.
+
+**Do not downgrade a declared tier to speed a merge.** Every wave-1 slice is
+`material` on purpose. Until 009 lands the reducer accepts a downgrade silently,
+which is how 006 completed with zero approvals.
+
+---
+
 ## 1. Phase 1 slices
 
 ### 1.1 `retire-imm-core-barrel` — CLOSED
@@ -437,9 +489,30 @@ suggests it.
 
 ## 2. Phase 2 slices
 
-### 2.1 `archive-terminal-planning-artifacts`
+### 2.1 `archive-terminal-planning-artifacts` — SPLIT, ONE SLICE OPEN
 
-**Risk**: `routine` · **Gate**: Phase 1 closed
+Shipped as three slices, with a fourth open:
+
+- `2026-08-20-003-archive-terminal-planning-artifacts` — CLOSED. Intent sidecars.
+- `2026-08-20-005-archive-terminal-prose-plans` — CLOSED. All 29 prose Plans
+  moved; `docs/plans/` now holds only the four canary fixtures.
+- `2026-08-20-006-archive-terminal-specs` — CLOSED but incomplete. Archived 102
+  specs as clean renames, then exempted 56 more via a hardcoded `exemptionList`
+  in its own guard test, commented "terminal but kept active". The check skips
+  exempt entries before evaluating, so the assertion passes by construction.
+- `2026-08-20-007-complete-terminal-spec-archival` — OPEN, authored, `material`.
+  Archives the 52 still-archivable specs and replaces the blanket list with a
+  3-entry protected set carrying per-file justifications.
+
+Two lessons worth carrying forward. First, "the implementing Plan is archived"
+does not by itself prove a spec is non-normative; the stronger argument is that
+a spec regulating machinery that no longer exists cannot constrain anything.
+Second, protect live artifacts by *reference from live planning artifacts*, not
+by heuristic: both the filename-or-citation rule and a retired-versus-live token
+scan independently misclassified the live v4 roadmap as terminal, because a
+roadmap about deleting v3 necessarily talks about v3 constantly.
+
+**Original draft, retained for provenance** — **Risk**: `routine` · **Gate**: Phase 1 closed
 
 **goal**
 
@@ -460,9 +533,48 @@ suggests it.
 Counts measured today (205 active specs, 79 with Python references, 92 with v3
 references, 29 prose Plans) are `RE-VERIFY` after Phase 1.
 
+### 2.1b `reconcile-planning-artifact-retention-policy`
+
+**Risk**: `routine` · **Gate**: 2.1 fully closed, including 007
+
+**goal**
+
+> `docs/reference/planning-artifact-retention.md` now contradicts the repository
+> it governs. It states that files under `docs/plans/` and `docs/specs/` stay at
+> their existing paths by default, that archives are "not an automatic
+> destination for completed Plans or Specs", and that five conditions must be
+> proven per file before any move. Slices 003, 005, 006 and 007 bulk-moved 29
+> prose Plans and roughly 154 specs on a two-signal rule. The document was in no
+> slice's scope and is unchanged since the first commit, yet
+> `docs/adr/0002-maintenance-surface-ownership.md` cites it as binding. Either
+> restate the policy around the signal-based rule actually in force or supersede
+> it through the ADR, then align the ADR either way. This is precisely the
+> class of defect Phase 0 existed to remove, recreated by the archival work.
+
+**acceptance**
+
+- `acc-retention-policy-matches-practice` — no active retention guidance
+  contradicts the archival layout, and ADR 0002 points at whatever now governs.
+
+**scope_hint** — `docs/reference/planning-artifact-retention.md`,
+`docs/adr/0002-maintenance-surface-ownership.md`. `RE-VERIFY` for other inbound
+citations before authoring.
+
 ### 2.2 `single-source-shared-contracts`
 
-**Risk**: `material` · **Gate**: Phase 1 closed
+**Superseded by `2026-08-20-008-realign-immune-constitution`, authored, `material`.**
+Two of the three premises below expired during Phase 0 and Phase 1, and were
+dropped rather than carried into the intent. The three `BASELINE.md` copies are
+already byte-identical at sha `140a3fad` and their identity is enforced by
+`tests/baseline-packaging-contract.test.ts`, so a generated single source buys no
+invariant that is not already held. `AGENTS.md` is 18 lines after Phase 0 removed
+the `ctx_*` block, so there is no 80% overlapping block left to shrink. What
+survives is the constitution itself: `IMMUNE.md` still presents `imm-autowork` as
+a live checkpoint runtime at lines 44, 72 and 74, lists `State Ledger` as a
+creatable artifact at line 52, and is stamped v1.1.0 / 2026-05-29. Scope narrowed
+to that one file plus the three contract tests that read it.
+
+**Original draft, retained for provenance** — **Risk**: `material` · **Gate**: Phase 1 closed
 
 **goal**
 
@@ -612,6 +724,37 @@ It must not share a slice with 3.4.
 
 **scope_hint** — `.pi-extension/imm-canary-enroll.ts`, plus `RE-VERIFY` tests
 touched by 3.3.
+
+### 3.5 `forbid-unapproved-risk-downgrade`
+
+**Authored as `2026-08-20-009-forbid-risk-downgrade-on-revision`, `material`.**
+
+The first draft of this entry assumed a downgrade was ungated. `RE-VERIFY`
+disproved that and produced a sharper mechanism, which the authored intent
+carries. `classifyIntentRevision` already ranks a downgrade as `breaking`
+(`kernel/intent.ts:351`), and the reducer already demands user authority for a
+breaking revision (`reducer_v2.ts:423`). The gate fires. The defect is what the
+gate lets through:
+
+- `reducer_v2.ts` guards task identity (427) and goal and owner (432–438) across
+  a revision, but never risk, and on success installs the incoming intent as the
+  governing snapshot (443).
+- `completion.ts:70` reads `REQUIRED_APPROVALS` from that current snapshot —
+  `routine: []`, `material: ["review"]`.
+- `completion.ts:72–75` stales every approval bound to the prior revision and
+  content hash.
+
+So a downgrade removes the requirement *and* invalidates the approval already
+satisfying it. Approving a breaking revision consents to the intent having
+changed, not to completing without the review the tier required; those are
+different and unequally weighted consents. Fix is a risk guard symmetric with
+the existing goal and owner guard. A high-water mark pinning completion to the
+highest tier ever held is the fallback if a legitimate downgrade appears.
+
+Also verified: `imm-kernel intent author` is exclusive no-overwrite, so 006's
+revision 2 was a direct file edit, not a CLI re-author. Pre-enrollment editing
+needs no new guard — enrollment is the binding moment — which is why scope stays
+on the reducer.
 
 ---
 

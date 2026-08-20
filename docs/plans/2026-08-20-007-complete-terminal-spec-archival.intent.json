@@ -1,0 +1,34 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "2026-08-20-007-complete-terminal-spec-archival",
+  "owner": "user",
+  "goal": "Finish what 2026-08-20-006 left undone and make its guard load-bearing. 006 archived 102 specs correctly as pure renames, then added a 56-entry exemptionList to the new terminal-spec test in tests/planning-artifact-archival.test.ts, commented 'terminal but kept active' for 'migration-plan signature parity'. The check does 'if (exemptionList.has(rel)) continue' before evaluating, so expect(violations).toEqual([]) passes by construction; drop the list and it fails with roughly 52 violations. The parity justification fails audit: in a 10-entry sample none is referenced under tests/, scripts/ or plugins/, and all 10 match an archived Plan by the rule's own filename signal. Auditing all 56 finds 3 that must stay and 52 archivable, of which 22 have no inbound reference at all and 30 only inbound doc links, in docs/specs (18), docs/solutions (18), docs/reference (1), docs/brainstorms (1). Archive the 52 as moves into docs/specs/archive/, never deletes, rewriting inbound links. Then replace the blanket exemptionList with a protected set of at most 3, each carrying its own justification comment, so the invariant constrains: (1) v4-deletion-completion-and-contract-realignment-roadmap.spec.md, the live roadmap of the in-flight program, referenced by docs/reference/v4-roadmap-taskintent-drafts.md; (2) automatic-subagent-activation.spec.md, pinned by scripts/dist-sync-manifest.ts, tests/code-review-activation-contract.test.ts and a dist copy; (3) opencode-native-plugin.spec.md, archived and dual-path pinned. Protect by reference from live planning artifacts, not by heuristic: both the filename-or-citation rule and a retired-versus-live token scan misclassify the live roadmap as terminal, since a roadmap about deleting v3 necessarily discusses v3. Leave the separate instructional-reference exemption list from 2026-08-20-003 untouched. Risk is material because inbound links span four directories; do not downgrade it to reach direct completion, which is how 006 shipped this gap.",
+  "acceptance": [
+    {
+      "id": "acc-exemption-list-retired",
+      "assertion": "The 56-entry exemptionList is gone from the terminal-spec test, replaced by a protected set of at most 3 entries each with its own justification comment, and the check evaluates every other active spec with no skip, so that leaving any unprotected terminal spec in docs/specs/ fails the test.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/planning-artifact-archival.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 60000,\n  \"max_output_bytes\": 65536\n}\n"
+    },
+    {
+      "id": "acc-remaining-terminal-specs-archived",
+      "assertion": "The 52 archivable specs live under docs/specs/archive/ as content-preserving moves with none deleted, inbound links from docs/specs, docs/solutions, docs/reference and docs/brainstorms resolve to their new paths, and the live roadmap plus automatic-subagent-activation.spec.md remain active in docs/specs/.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/planning-artifact-archival.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 60000,\n  \"max_output_bytes\": 65536\n}\n"
+    },
+    {
+      "id": "acc-links-and-suite-intact",
+      "assertion": "The full suite passes and the link and stale-reference scripts report no new unresolved reference introduced by the move.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 300000,\n  \"max_output_bytes\": 262144\n}\n"
+    }
+  ],
+  "scope_hint": [
+    "docs/brainstorms",
+    "docs/reference",
+    "docs/solutions",
+    "docs/specs",
+    "scripts/detect-stale-refs.ts",
+    "scripts/fix-broken-links.ts",
+    "tests/planning-artifact-archival.test.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}
