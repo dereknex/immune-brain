@@ -120,7 +120,8 @@ export const BASELINE_COPIES = [
 	"plugins/immune-brain/dist/BASELINE.md",
 ];
 
-export { REGISTRY_CANONICAL, REGISTRY_COPIES } from "./skill-registry.ts";
+import { REGISTRY_CANONICAL, REGISTRY_COPIES } from "./skill-registry.ts";
+export { REGISTRY_CANONICAL, REGISTRY_COPIES };
 
 export const DOCS_SOURCE_DIR = "docs";
 export const DIST_DOCS_DIR = "plugins/immune-brain/dist/docs";
@@ -150,6 +151,86 @@ export const GENERATED_ADAPTED_ENTRIES = ADAPTED_ENTRIES.filter(
 export const MANUAL_ADAPTED_ENTRIES = ADAPTED_ENTRIES.filter(
 	(e) => !e.replacements?.length,
 );
+
+// ── packaged-contract source-of-truth ───────────────────────────────────────
+// Every file under `plugins/immune-brain/dist/` must have a declared relationship.
+// The skill entry points (SKILL.md) are minimal loaders; the packaged contracts
+// (dist/imm-*.md) are the full agent instructions and are therefore their own
+// authoring source. Byte identity is intentionally NOT the invariant for these
+// pairs (skill ≈5KB vs dist ≈30KB is legitimate).
+export type PackagedContractKind = "mirror" | "adapted" | "owned";
+
+export interface PackagedContractEntry {
+	/** Path relative to `plugins/immune-brain/dist/` */
+	packaged: string;
+	/** Repo-relative source path, or null when the packaged file is its own source */
+	source: string | null;
+	kind: PackagedContractKind;
+	reason?: string;
+	/** For owned skill contracts, the owning skill name */
+	skill?: string;
+}
+
+export const SKILL_OWNED_ENTRIES: PackagedContractEntry[] = [
+	{
+		packaged: "imm-brainstorm.md",
+		source: null,
+		kind: "owned",
+		reason:
+			"Packaged contract is its own authoring source; plugins/immune-brain/skills/imm-brainstorm/SKILL.md is a minimal loader that references it. Legitimate size difference, no byte identity.",
+		skill: "imm-brainstorm",
+	},
+	{
+		packaged: "imm-loop.md",
+		source: null,
+		kind: "owned",
+		reason:
+			"Packaged contract is its own authoring source; plugins/immune-brain/skills/imm-loop/SKILL.md is a minimal loader that references it. Legitimate size difference, no byte identity.",
+		skill: "imm-loop",
+	},
+	{
+		packaged: "imm-planner.md",
+		source: null,
+		kind: "owned",
+		reason:
+			"Packaged contract is its own authoring source; plugins/immune-brain/skills/imm-planner/SKILL.md is a minimal loader that references it. Legitimate size difference, no byte identity.",
+		skill: "imm-planner",
+	},
+];
+
+export const PACKAGED_CONTRACT_ENTRIES: PackagedContractEntry[] = [
+	// dist/docs/* entries
+	...DIST_DOC_ENTRIES.map((e) => ({
+		packaged: `docs/${e.rel}`,
+		source: `${DOCS_SOURCE_DIR}/${e.rel}`,
+		kind: e.mode as PackagedContractKind,
+		reason: e.reason,
+	})),
+	// role prompts are exact mirrors of runtime prompts
+	...ROLE_PROMPT_FILES.map(
+		(file) =>
+			({
+				packaged: `role-prompts/${file}`,
+				source: `${ROLE_PROMPT_SOURCE_DIR}/${file}`,
+				kind: "mirror" as PackagedContractKind,
+			}) as PackagedContractEntry,
+	),
+	// top-level mirrors
+	{
+		packaged: "BASELINE.md",
+		source: BASELINE_CANONICAL,
+		kind: "mirror",
+		reason: "Mirrored canonical BASELINE.md.",
+	},
+	{
+		packaged: "registry.yaml",
+		source: REGISTRY_CANONICAL,
+		kind: "mirror",
+		reason: "Mirrored canonical registry.yaml.",
+	},
+	// owned skill contracts — self-sourced, loader references them
+	...SKILL_OWNED_ENTRIES,
+];
 
 export function renderDistDoc(entry: DistDocEntry, source: string): string {
 	let rendered = source;

@@ -7,8 +7,8 @@
 //   bun scripts/sync-dist-docs.ts            # write mirror copies + BASELINE
 //   bun scripts/sync-dist-docs.ts --check    # report drift, write nothing (exit 1 on drift)
 
-import { readFileSync, writeFileSync, existsSync } from "node:fs";
-import { resolve, dirname } from "node:path";
+import { readFileSync, writeFileSync, existsSync, readdirSync, statSync } from "node:fs";
+import { resolve, dirname, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { mkdirSync } from "node:fs";
 import {
@@ -19,6 +19,8 @@ import {
 	MIRROR_ENTRIES,
 	GENERATED_ADAPTED_ENTRIES,
 	MANUAL_ADAPTED_ENTRIES,
+	PACKAGED_CONTRACT_ENTRIES,
+	SKILL_OWNED_ENTRIES,
 	renderDistDoc,
 	REGISTRY_CANONICAL,
 	REGISTRY_COPIES,
@@ -140,6 +142,41 @@ if (MANUAL_ADAPTED_ENTRIES.length > 0) {
 	);
 	for (const entry of MANUAL_ADAPTED_ENTRIES)
 		console.log(`  dist/docs/${entry.rel}`);
+}
+
+if (SKILL_OWNED_ENTRIES.length > 0) {
+	console.log(
+		`\nSkipped ${SKILL_OWNED_ENTRIES.length} owned packaged contracts (self-sourced, loader references them):`,
+	);
+	for (const entry of SKILL_OWNED_ENTRIES)
+		console.log(`  dist/${entry.packaged} <- skills/${entry.skill}/SKILL.md (owned)`);
+}
+
+// ── enumeration guard: every file under dist/ must be declared ─────────────
+function listFiles(dir: string): string[] {
+	return readdirSync(dir, { recursive: true })
+		.map((p) => resolve(dir, typeof p === "string" ? p : p.toString()))
+		.filter((p) => statSync(p).isFile());
+}
+const DIST_ROOT_ABS = resolve(REPO_ROOT, "plugins/immune-brain/dist");
+const onDiskPackaged = listFiles(DIST_ROOT_ABS)
+	.map((p) => relative(DIST_ROOT_ABS, p).split(sep).join("/"))
+	.sort();
+const declaredPackaged = PACKAGED_CONTRACT_ENTRIES.map((e) => e.packaged).sort();
+const uncovered = onDiskPackaged.filter((p) => !declaredPackaged.includes(p));
+const missingDeclared = declaredPackaged.filter((p) => !onDiskPackaged.includes(p));
+if (uncovered.length > 0 || missingDeclared.length > 0) {
+	if (uncovered.length > 0)
+		console.error(`\nUndeclared packaged contract(s) under dist/:\n  ${uncovered.join("\n  ")}`);
+	if (missingDeclared.length > 0)
+		console.error(`\nDeclared packaged contract(s) missing on disk:\n  ${missingDeclared.join("\n  ")}`);
+	if (checkOnly) {
+		console.error("\nPackaged contract enumeration failed. Update scripts/dist-sync-manifest.ts.");
+		process.exit(1);
+	} else {
+		// fail even in write mode when enumeration is off — must be declared and present
+		process.exit(1);
+	}
 }
 
 if (checkOnly) {
