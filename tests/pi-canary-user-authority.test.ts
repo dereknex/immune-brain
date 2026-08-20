@@ -336,7 +336,9 @@ describe("pi canary user authority", () => {
 		} finally {
 			rmSync(root, { recursive: true, force: true });
 		}
-	});
+		// Drives five full authorization paths end to end; the 5s default tips over
+		// under whole-suite load even though the flow itself is unchanged.
+	}, 30_000);
 
 	test("request_authorization rejects a TaskRecord revision race before confirmation", async () => {
 		const root = makeEnrolledRoot();

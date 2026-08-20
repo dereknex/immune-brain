@@ -311,7 +311,9 @@ describe("descriptor rehearsal preflight", () => {
 		try {
 			const receipt = await runDescriptorRehearsalForDescriptors(root, "task-blocked", [
 				{ id: "acc-fail", verification: descriptor("fail.ts") },
-				{ id: "acc-timeout", verification: descriptor("timeout.ts", 100) },
+				// The budget covers isolated-copy setup as well as execution, so it must clear
+				// setup cost (~120ms here) or the descriptor reports setup_timed_out instead.
+				{ id: "acc-timeout", verification: descriptor("timeout.ts", 1_500) },
 			]);
 			expect(receipt.enrollment_ready).toBe(false);
 			expect(receipt.writes_performed).toBe(false);

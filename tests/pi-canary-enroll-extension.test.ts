@@ -608,7 +608,9 @@ describe("pi canary enroll handler integration", () => {
 		} finally {
 			rmSync(root, { recursive: true, force: true });
 		}
-	});
+		// Runs two complete enrollment attempts including descriptor rehearsal; the 5s
+		// default tips over under whole-suite load even though the flow itself is unchanged.
+	}, 30_000);
 
 	test("post-confirm same-revision intent content drift aborts before writes", async () => {
 		const root = mkdtempSync(join(tmpdir(), "p2b1-enroll-"));
