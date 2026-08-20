@@ -240,6 +240,32 @@ only three `dist/imm-*.md` and three `skills/*/SKILL.md`. The three-way
 `tests/baseline-packaging-contract.test.ts`. Confirm what the Phase 0 guard
 already enumerates before sizing this slice.
 
+### Worktree parallelism destroys the audit trail, and `.gitignore` is why
+
+Wave A ran three slices in parallel worktrees and merged all three. Main now
+holds zero TaskRecords for 011, 012 and 013. That is the third occurrence after
+008 and 009, and this time it was predicted before the run, so the mechanism is
+established rather than suspected.
+
+`.gitignore` excludes every piece of Kernel runtime state: `.imm/tasks/`,
+`.imm/journal.jsonl`, `.imm/workspace.json` and `.imm/migrations/`. Main carries
+107 TaskRecords on disk and only 8 tracked files under `.imm/`. A task enrolled
+in a worktree writes its record and journal into that worktree's ignored `.imm/`,
+so merging the branch returns the code and discards the evidence. The earlier
+diagnosis that blamed a stale `workspace.json` claim was incomplete: the claim
+blocks enrollment, but this is what erases the trail.
+
+The two kinds of state need opposite treatment. `.imm/tasks/` is one file per
+task, so parallel branches touch disjoint filenames and tracking it is safe and
+sufficient to make records merge back on their own. `.imm/journal.jsonl` is a
+single append-only file, so tracking it as-is guarantees a conflict on every
+parallel merge; it needs per-task journal shards before it can be tracked.
+`workspace.json` is per-machine occupancy and `migrations/` is local backup, so
+both should stay ignored.
+
+Until that lands, either run Managed work serially in the main worktree, or copy
+`.imm/tasks/<task-id>.json` back before deleting each worktree.
+
 ### Packaged contracts are 4-6x their authoring sources, guarded by 8 tokens
 
 Found while sizing Wave A, and it outranks every remaining draft. The documents
