@@ -4,7 +4,7 @@
 
 - Summary: Retire the remaining Python reference runtime after the Bun + TypeScript runtime migration, replacing Python parity with canonical Bun/TypeScript coverage and removing stale Python runtime references.
 - Origin: User chose option B from the Python dependency cleanup framing: create a complete Python reference runtime retirement plan.
-- Spec: `docs/specs/python-reference-retirement.spec.md`
+- Spec: `docs/specs/archive/python-reference-retirement.spec.md`
 - Scope Mode: New executable slice. This Plan does not execute the deletion yet; it defines the retirement path and verification gates.
 
 ## Output Language

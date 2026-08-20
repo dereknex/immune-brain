@@ -73,10 +73,13 @@ describe("python reference boundary", () => {
 	});
 
 	it("the superseded OpenCode spec is marked superseded", () => {
-		const spec = readFileSync(
+		const candidates = [
 			resolve(REPO_ROOT, "docs/specs/opencode-native-plugin.spec.md"),
-			"utf-8",
-		);
+			resolve(REPO_ROOT, "docs/specs/archive/opencode-native-plugin.spec.md"),
+		];
+		const specPath = candidates.find((p) => existsSync(p));
+		expect(specPath).toBeDefined();
+		const spec = readFileSync(specPath!, "utf-8");
 		expect(spec).toContain("SUPERSEDED");
 		expect(spec).toContain("bun-typescript-runtime-migration");
 	});
