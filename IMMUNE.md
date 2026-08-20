@@ -30,7 +30,7 @@
 - **只读阶段**：`imm-brainstorm`（含 `adversarial` mode）默认不改代码、不改测试、不改运行态；review/QA 等内部角色由 `imm-loop` 调度。
 - **会诊阶段**：`imm-brainstorm` 的 `roundtable` mode 只作为只读 advisory layer，用于暴露多角色观点、分歧和风险；不得写计划、执行代码、记录验收结论，且不拥有 `imm-planner` 或执行/QA角色的权限。
 - **规划阶段**：`imm-planner` 只写 `docs/specs/`、`docs/plans/` 与必要的 `.imm/memory/MEMORY.md` 规划记录。
-- **协调与执行阶段**：`imm-loop` 消费 runtime checkpoint，通过内部 executor、repair、QA、review 和 compounder roles 推进当前 owner。
+- **协调与执行阶段**：`imm-loop` 以 Kernel 上的 TaskIntent/TaskRecord 为权威，通过 `imm_loop_action` 投影分发内部 executor、repair、QA、review 和 compounder roles 推进当前 owner。
 
 ## 4. Agent 协作规约
 - **`imm-brainstorm`**：只在关键需求或风险仍含歧义时负责澄清；澄清后重新应用 Direct/Managed 矩阵，不默认创建计划。其 `roundtable` mode 负责在复杂取舍、需求分歧或可能 replan 的场景中提供多角色只读会诊；输出只能作为后续规划的研究材料，不直接决定 scope、计划、执行或验收。
@@ -41,7 +41,7 @@
 - **Internal QA role**：负责先判断当前小步是否闭合，再决定是通过、返工当前小步，还是回退重拆。
 - **Internal review roles**：负责 step 外的技术审查和界面质量复核，输出 blocker/fix/defer 并驱动后续修复或重排。
 - **Internal repair role**：负责 PR 阻塞修复（merge conflict、review feedback、CI failure），只做与阻塞项直接相关的最小改动。
-- **`imm-autowork`**：确定性 checkpoint runtime，不是用户可见强自动入口，也不是 LLM 驱动或新 authority。读取工作流状态，消费显式队列，报告下一个 host 边界。强自动推进由 `imm-loop` 消费 checkpoint 后进入执行、QA、review 或 handoff 边界。不得将 executor 验证结果转换为 QA `pass`。
+- **`imm-loop`（Kernel 执行闭环）**：以已 Enrollment 的 TaskIntent/TaskRecord 为权威，通过 `imm_loop_action` 投影决定下一个 authority（executor、QA、review、compounder、imm-kernel、imm-planner），在当前对话内推进 active Step 并经 Kernel 持久化执行证据与审查结论。不持有独立 checkpoint runtime，亦不得将 executor 验证结果转换为 QA `pass`。
 - **Managed 默认继续入口**：validated Managed target 之后，通过 Kernel 与 `imm-loop` owner 继续；内部 executor、QA、review 和 repair roles 保持 authority 分离，不应在正常成功路径中变成用户必须手动切换的显式入口。
 
 ## 5. 两条执行路径
@@ -49,7 +49,7 @@
 ### Host-native Path（非变更请求）
 
 只读、解释、仅审查、Plan-only 和明确 no-modification 请求由普通 host agent
-处理，不创建 Spec、Plan、TaskIntent、TaskRecord、State Ledger、QA、mandatory
+处理，不创建 Spec、Plan、TaskIntent、TaskRecord、QA、mandatory
 Review 或 Compounder 状态，也不写 `.imm/` workflow authority。
 
 ### Managed Path（仓库变更默认路径）
@@ -69,10 +69,10 @@ Assurance projection 通过 `imm-loop` 恢复；实质歧义进入 `imm-brainsto
 8. **Compound**: 任务结束后，只沉淀有证据支撑且可复用的经验到 `docs/solutions/`。
 
 补充入口约束：
-- `L2S-WF` 使用两步主线：`imm-planner` 完成必要澄清、Spec 和 validated plan；`imm-loop` 消费 `imm-autowork` checkpoint，并组合内部 executor、review、QA、repair 与 compounder roles 完成执行、复核和验收。重大歧义先进入 `imm-brainstorm`；主线不改变这些内部 authority 的分离。
+- `L2S-WF` 使用三段主线：`imm-planner` 完成必要澄清、Spec 与 validated TaskIntent；经 literal-user Enrollment 形成 Kernel 上的 TaskIntent/TaskRecord 权威记录；`imm-loop` 以 `imm_loop_action` 投影驱动内部 executor、QA、review、repair 与 compounder roles 完成执行、复核和验收。重大歧义先进入 `imm-brainstorm`；主线不改变这些内部 authority 的分离。
 - 普通单步继续默认走 `imm-loop`，而不是把内部 executor 或 QA role 当作 shell 入口暴露给用户。
-- 多 step 强自动推进只通过显式 opt-in 的 `imm-loop` 进入；`imm-autowork` 仅提供 checkpoint，不把自动推进回灌成另一个公开 Skill 的默认行为。
+- 多 step 推进通过显式 opt-in 的 `imm-loop` 在当前对话内完成，每个 Step 的执行证据与 QA/review 结论经 Kernel 持久化，不依赖独立 checkpoint runtime，亦不把推进回灌成另一个公开 Skill 的默认行为。
 - `imm-brainstorm`（`roundtable`/`adversarial` modes）只作为 attachable advisory layer；内部 reviewer roles 可以补 research 或 risk，不能替代 planner、executor 或 QA authority。
 
 ---
-*版本：v1.1.0 | 日期：2026-05-29*
+*版本：v4.0.0 | 日期：2026-08-20*
