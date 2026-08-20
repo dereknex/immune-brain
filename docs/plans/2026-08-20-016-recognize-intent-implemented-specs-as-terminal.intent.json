@@ -1,0 +1,34 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "2026-08-20-016-recognize-intent-implemented-specs-as-terminal",
+  "owner": "user",
+  "goal": "Teach the spec archival guard about the only kind of work this repository still does. The terminality rule in tests/planning-artifact-archival.test.ts decides a spec is finished using two signals, both drawn from archived prose Plans: an archived Plan filename containing the spec's normalized name, or an archived Plan's text citing the spec path. Both read listFiles(plansDir, '.md'), so archived TaskIntent sidecars, which are .intent.json, are invisible to the rule. Every v3 prose Plan is already archived and every new task is intent-driven, so the guard's detection rate is falling to zero on its own. Three task-produced specs have already accumulated unnoticed at the docs/specs root while their implementing intents sit archived: 2026-08-20-005-archive-terminal-prose-plans, 2026-08-20-006-archive-terminal-specs and 2026-08-20-010-reconcile-planning-artifact-retention-policy. Left alone, every future slice adds another, which is precisely the drift that slices 006 and 007 spent two rounds clearing. Extend the rule to treat an archived intent sidecar as an implementing artifact, archive the three specs it then identifies, and keep the existing three-entry protectedSpecs list and its per-entry justifications intact rather than reopening a blanket exemption. Moving specs rewrites inbound references, and the last time that happened it broke 132 Plan-to-Spec links and turned main red. The stale-reference ratchet landed in slice 013 now guards that class, so verify the finding count does not rise and rewrite any reference the move breaks. The guard's existing sanity assertion that the archive holds at least 184 specs must still hold afterwards.",
+  "acceptance": [
+    {
+      "id": "acc-intent-sidecars-count-as-implementers",
+      "assertion": "The spec terminality rule recognizes an archived TaskIntent sidecar as an implementing artifact, not only an archived prose Plan.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/planning-artifact-archival.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 65536\n}\n"
+    },
+    {
+      "id": "acc-task-produced-specs-archived",
+      "assertion": "No spec whose implementing intent is archived remains at the docs/specs root outside the three-entry protected list.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/planning-artifact-archival.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 65536\n}\n"
+    },
+    {
+      "id": "acc-no-new-reference-rot",
+      "assertion": "The stale-reference finding count does not rise above its committed baseline after the specs are moved.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/stale-reference-ratchet.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 65536\n}\n"
+    },
+    {
+      "id": "acc-suite-intact",
+      "assertion": "The full suite passes.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 600000,\n  \"max_output_bytes\": 262144\n}\n"
+    }
+  ],
+  "scope_hint": [
+    "docs/specs",
+    "tests/planning-artifact-archival.test.ts"
+  ],
+  "risk": "routine",
+  "revision": 1
+}

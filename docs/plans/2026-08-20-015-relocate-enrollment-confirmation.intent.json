@@ -1,0 +1,38 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "2026-08-20-015-relocate-enrollment-confirmation",
+  "owner": "user",
+  "goal": "Stop making the user wait on machine work before they can authorize. Enrollment today runs descriptor rehearsal first at imm-canary-enroll.ts:1030, asserts the snapshot at 1047, and only then asks for confirmation at 1079-1082, so every enrollment blocks a human behind isolated-copy setup and descriptor execution. Move the single confirmation to the end of Planner, bind it to the TaskIntent content hash, and reorder rehearsal to run after it, so a routine task proceeds from confirmed plan through enrollment, execution and QA without a second human stop. Reuse the existing ctx.ui.custom TUI gate at line 115: it presents a real select list the model cannot fabricate, and that property is the whole point of the gate. Do not introduce an attestation primitive. The reordering creates the one hazard that governs this slice. Today a rehearsal failure is discovered before any authority exists; afterwards it is discovered when a confirmation has already been given, so a failure must invalidate that authorization rather than be reported alongside authority that already exists. Authority writes on a failed rehearsal must be zero, not rolled back. Binding the confirmation to the intent content hash is what makes invalidation checkable: a confirmation for one digest cannot carry over to a revised intent. Two boundaries. Leave requiresEnrollmentConfirmation and the unreachable pi-plan-approved branch at line 1112 alone; they are tautological deadwood, but until the relocated gate is proven they are the only thing between a fabricated confirmation and Kernel authority, and retiring them is a separate downstream slice. And note that runtime/pi_canary_prepare.ts named in the original draft was deleted during Phase 1; runtime/kernel/enrollment.ts still exists. Contract text describing the confirmation lives in three packaged documents, and since slice 012 every dist file must keep its declared source relationship green.",
+  "acceptance": [
+    {
+      "id": "acc-single-confirmation-routine",
+      "assertion": "A routine task runs from confirmed plan through enrollment to QA completion with exactly one host confirmation.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/enrollment-confirmation-relocation.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 180000,\n  \"max_output_bytes\": 65536\n}\n"
+    },
+    {
+      "id": "acc-post-confirmation-rehearsal-invalidates",
+      "assertion": "A descriptor rehearsal failure occurring after confirmation blocks enrollment, invalidates the authorization, and leaves zero authority writes.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/enrollment-confirmation-relocation.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 180000,\n  \"max_output_bytes\": 65536\n}\n"
+    },
+    {
+      "id": "acc-digest-binding",
+      "assertion": "The confirmation is bound to the intent content hash and is rejected if the intent changes after it is given.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/enrollment-confirmation-relocation.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 180000,\n  \"max_output_bytes\": 65536\n}\n"
+    },
+    {
+      "id": "acc-suite-intact",
+      "assertion": "The full suite passes.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 600000,\n  \"max_output_bytes\": 262144\n}\n"
+    }
+  ],
+  "scope_hint": [
+    "plugins/immune-brain/.pi-extension/imm-canary-enroll.ts",
+    "plugins/immune-brain/dist/BASELINE.md",
+    "plugins/immune-brain/dist/imm-brainstorm.md",
+    "plugins/immune-brain/dist/imm-planner.md",
+    "plugins/immune-brain/runtime/kernel/enrollment.ts",
+    "tests/enrollment-confirmation-relocation.test.ts"
+  ],
+  "risk": "critical",
+  "revision": 1
+}
