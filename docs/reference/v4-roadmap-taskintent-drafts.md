@@ -91,19 +91,30 @@ enrollment authority: 009 (the corrected 3.5) then 3.3 then 3.4. A, D and E are
 pairwise disjoint except that 3.3 reaches into the planner contract documents
 owned by chain D, which is why 3.3 does not overlap a chain-D step.
 
-**Wave schedule.** Five waves instead of nine serial slices:
+**Wave schedule.** Five waves instead of nine serial slices. The route is now
+complete; the table records what actually ran, since execution regrouped the
+later waves and added five slices that the original plan did not foresee.
 
 | Wave | Lane A | Lane D | Lane E |
 | --- | --- | --- | --- |
-| 1 | ~~007 archive remaining specs~~ done | ~~008 realign IMMUNE.md~~ done | ~~009 forbid risk downgrade~~ done |
-| 2 | 2.1b retention policy | 2.3 roadmap vocabulary | — |
-| 3 | — | — | 3.3 relocate confirmation |
-| 4 | — | 4.1 completion contract | 3.4 retire deadwood |
-| 5 | — | 4.2 coverage check | — |
+| 1 | ~~007 archive remaining specs~~ | ~~008 realign IMMUNE.md~~ | ~~009 forbid risk downgrade~~ |
+| 2 | ~~2.1b retention policy → 010~~ | ~~2.3 roadmap vocabulary → 011~~ | — |
+| A | — | ~~4.2 coverage check → 012~~, ~~013 stale-ref ratchet~~ | — |
+| B | ~~014 track TaskRecords~~, ~~016 spec terminality~~, ~~017 durability on the repo~~ | — | ~~3.3 relocate confirmation → 015~~ |
+| C | — | ~~4.1 completion contract → 018~~ | ~~3.4 retire deadwood → 019~~ |
 
-Wave 3 runs 3.3 alone deliberately. It is the only `critical` slice and the only
-one that moves where user authority is captured, so it should not compete for
-attention with a concurrent enrollment.
+Wave 3 was to run 3.3 alone deliberately: it is the only `critical` slice and
+the only one that moves where user authority is captured, so it should not
+compete for attention with a concurrent enrollment. In execution it landed as
+015 beside lane-A archival work, which is disjoint from it.
+
+**Where the plan mispredicted itself.** 4.2 was drafted as the last, lowest
+-value slice and ran second, because sizing wave A exposed that the packaged
+planner had drifted to six times its authoring source with no guard able to see
+it. Five unplanned slices (013, 014, 016, 017, and the earlier 004) were all
+discovered the same way — by a landed slice failing in a manner its own
+acceptance criteria could not have caught. That is the load-bearing lesson for
+the next route: budget for discovery between waves, not just within them.
 
 Ordering inside chain E is not arbitrary. 009 lands first so that from wave 2
 onward no slice can lower its own risk tier to reach a weaker completion path,
