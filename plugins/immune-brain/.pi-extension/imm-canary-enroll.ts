@@ -88,12 +88,6 @@ export function assertTaskIntentPreparationStable(
 		throw new Error("TaskIntent changed during preparation; retry enrollment");
 }
 
-export function requiresEnrollmentConfirmation(
-	risk: "routine" | "material" | "critical",
-): boolean {
-	return risk === "routine" || risk === "material" || risk === "critical";
-}
-
 async function requestEnrollmentConfirmation(
 	ctx: ExtensionContext,
 	title: string,
@@ -1031,9 +1025,8 @@ async function executeForegroundEnrollment(
 				.join("\n");
 		// Single confirmation is reordered before descriptor rehearsal and bound to the intent content hash.
 		// A post-confirmation rehearsal failure invalidates the authorization with zero authority writes.
-		const confirmationRequired = requiresEnrollmentConfirmation(taskIntent.intent.risk);
 		const confirmedContentHash = preparation.intent.content_hash;
-		if (confirmationRequired) {
+		{
 			const preRehearsalSummary = [
 				`Task: ${taskId}`,
 				`Goal: ${taskIntent.intent.goal}`,
@@ -1065,7 +1058,7 @@ async function executeForegroundEnrollment(
 			if (!confirmed)
 				return terminal(action, taskId, "rejected", stage, "Enrollment confirmation was rejected; zero authority writes were requested", "invoke the launcher again only if enrollment is still intended");
 		}
-		if (confirmationRequired) {
+		{
 			let liveEarly: string | null = null;
 			try {
 				liveEarly = (await readTaskIntent(resolve(root), taskId)).content_hash;
@@ -1104,7 +1097,7 @@ async function executeForegroundEnrollment(
 		const _waiverSentinel = rehearsalOverride ? "REHEARSAL WAIVER: enrollment_ready=false" : "Rehearsal: enrollment_ready=true";
 		void _waiverSentinel;
 		void rehearsalDigest;
-		if (confirmationRequired) {
+		{
 			let liveContentHash: string | null = null;
 			try {
 				liveContentHash = (await readTaskIntent(resolve(root), taskId)).content_hash;
@@ -1133,7 +1126,7 @@ async function executeForegroundEnrollment(
 			evidence_digest: rehearsalReceiptRef,
 			waiver_gate: rehearsalOverride ? "descriptor_rehearsal" : "observation_window_days",
 			actor_id: "user",
-			confirmation_ref: `${confirmationRequired ? "pi-confirm" : "pi-plan-approved"}-${createHash("sha256").update(`${taskId}\0${now}\0${nonce}`).digest("hex").slice(0, 16)}`,
+			confirmation_ref: `pi-confirm-${createHash("sha256").update(`${taskId}\0${now}\0${nonce}`).digest("hex").slice(0, 16)}`,
 			expires_at: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
 			nonce,
 		};

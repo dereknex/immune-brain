@@ -1,0 +1,195 @@
+{
+  "contract": "assurance_kernel/task_record/v2",
+  "task_id": "2026-08-20-018-retirement-completion-contract",
+  "intent_revision": 1,
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "2026-08-20-018-retirement-completion-contract",
+    "goal": "Write down what finishing a retirement means, so the next one does not stop halfway. Every retirement in this repository's history stopped at the same place: route the command to a retirement wall, pin the absence with test assertions, and leave the source in the tree. That is why Phase 1 had to return and actually delete the v3 runtime island long after it was declared retired, and why absence assertions have accumulated to 225 across 68 test files today, counted as occurrences of not.toContain, existsSync(...).toBe(false), or the phrases 'is retired' and 'retirement wall'. The draft figure of 193 across 57 used an unstated method and is not directly comparable, but the order of magnitude has not fallen despite Phase 1 removing a large body of code. State in the Planner contract and in BASELINE.md that deletion of source and contract text is a completion condition for retirement-class work, and that an absence test is transitional scaffolding proving an in-progress deletion rather than a substitute for one. The distinction to make precise is between an absence assertion that guards something already gone, which is durable and correct, and one that stands in for a deletion still owed, which is a promise recorded as if it were a result. Two mechanical constraints. Since slice 012, BASELINE.md has a declared canonical source at plugins/immune-brain/BASELINE.md with two mirrors under skills/ and dist/ that the manifest requires to stay byte-identical, so all three move together. The packaged planner contract and its skill entry point are likewise both declared, and slice 011 established the convention of marking superseded contract text historical rather than deleting it outright, which this slice should follow where it touches existing wording.",
+    "acceptance": [
+      {
+        "id": "acc-deletion-is-completion",
+        "assertion": "The Planner contract and BASELINE.md name deletion of source and contract text as a completion condition for retirement-class work.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/retirement-completion-contract.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 65536\n}\n"
+      },
+      {
+        "id": "acc-absence-tests-scoped",
+        "assertion": "The contract states that an absence test is transitional evidence of an in-progress deletion and may not stand in place of one.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/retirement-completion-contract.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 65536\n}\n"
+      },
+      {
+        "id": "acc-baseline-mirrors-identical",
+        "assertion": "The canonical BASELINE.md and its two declared mirrors remain byte-identical and the packaged contract manifest stays green.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/baseline-packaging-contract.test.ts\",\n    \"tests/skill-dist-consistency.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 65536\n}\n"
+      },
+      {
+        "id": "acc-suite-intact",
+        "assertion": "The full suite passes.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 600000,\n  \"max_output_bytes\": 262144\n}\n"
+      }
+    ],
+    "scope_hint": [
+      "plugins/immune-brain/BASELINE.md",
+      "plugins/immune-brain/dist/BASELINE.md",
+      "plugins/immune-brain/dist/imm-planner.md",
+      "plugins/immune-brain/skills/BASELINE.md",
+      "plugins/immune-brain/skills/imm-planner/SKILL.md",
+      "tests/retirement-completion-contract.test.ts"
+    ],
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/2026-08-20-018-retirement-completion-contract.intent.json",
+    "revision": 1,
+    "content_hash": "sha256:6b41ff205e027603332e4958d46dd8922394411033ac6d712da458cbf71ebbe8"
+  },
+  "phase": "done",
+  "baseline": "sha256:6b41ff205e027603332e4958d46dd8922394411033ac6d712da458cbf71ebbe8",
+  "evidence": [
+    {
+      "id": "evidence-record_evidence:2026-08-20-018-retirement-completion-contract:2026-08-20T17:20:56.540Z",
+      "acceptance_id": "acc-deletion-is-completion",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:6b41ff205e027603332e4958d46dd8922394411033ac6d712da458cbf71ebbe8",
+      "diff_hash": "sha256:24de8ddaffb305de60389d716ae2589b36c04b8d09178cde2b261e9ffb4df96d",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "Planner contract and BASELINE.md name deletion of source and contract text as completion condition for retirement-class work: added Retirement Completion sections to canonical BASELINE.md + 2 mirrors (byte-identical 8143B) and to dist/imm-planner.md + skill entry; verified via bun test tests/retirement-completion-contract.test.ts (3 pass)"
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-20-018-retirement-completion-contract:2026-08-20T17:21:01.095Z",
+      "acceptance_id": "acc-absence-tests-scoped",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:6b41ff205e027603332e4958d46dd8922394411033ac6d712da458cbf71ebbe8",
+      "diff_hash": "sha256:24de8ddaffb305de60389d716ae2589b36c04b8d09178cde2b261e9ffb4df96d",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "Contract states absence test is transitional scaffolding/evidence and may not stand in place of deletion: same Retirement Completion sections distinguish durable guard (already gone) vs promise (deletion still owed); verified via same bun test file (3 pass)"
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-20-018-retirement-completion-contract:2026-08-20T17:21:04.609Z",
+      "acceptance_id": "acc-baseline-mirrors-identical",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:6b41ff205e027603332e4958d46dd8922394411033ac6d712da458cbf71ebbe8",
+      "diff_hash": "sha256:24de8ddaffb305de60389d716ae2589b36c04b8d09178cde2b261e9ffb4df96d",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "Canonical BASELINE.md and 2 mirrors byte-identical (8143B each) and packaged contract manifest green: bun test tests/baseline-packaging-contract.test.ts tests/skill-dist-consistency.test.ts 10 pass"
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-20-018-retirement-completion-contract:2026-08-20T17:21:07.947Z",
+      "acceptance_id": "acc-suite-intact",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:6b41ff205e027603332e4958d46dd8922394411033ac6d712da458cbf71ebbe8",
+      "diff_hash": "sha256:24de8ddaffb305de60389d716ae2589b36c04b8d09178cde2b261e9ffb4df96d",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "Full suite passes: bun test 817 pass / 0 fail across 135 files (69.80s), includes retirement-completion-contract 3 pass; acc-suite-intact satisfied"
+    }
+  ],
+  "findings": [],
+  "approvals": [
+    {
+      "id": "approval-qa-37986e48",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:6b41ff205e027603332e4958d46dd8922394411033ac6d712da458cbf71ebbe8",
+      "diff_hash": "sha256:24de8ddaffb305de60389d716ae2589b36c04b8d09178cde2b261e9ffb4df96d",
+      "actor_id": "deterministic-qa",
+      "summary": "all 4 fixed verification descriptor(s) passed"
+    },
+    {
+      "id": "approval-review-a150c5f6",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:6b41ff205e027603332e4958d46dd8922394411033ac6d712da458cbf71ebbe8",
+      "diff_hash": "sha256:24de8ddaffb305de60389d716ae2589b36c04b8d09178cde2b261e9ffb4df96d",
+      "actor_id": "native-review-7654c966-60de-4b7",
+      "summary": "Provenance verified (HEAD==bundle.head, base_oids match, bundle digest consistent); all 4 acceptance assertions pass: 3 BASELINE mirrors byte-identical (8748B) name deletion as retirement completion, absence test properly scoped as transitional not substitute, focused bun test covers assertions, full suite 817 pass."
+    }
+  ],
+  "history": [
+    {
+      "id": "record_evidence:2026-08-20-018-retirement-completion-contract:2026-08-20T17:20:56.540Z",
+      "at": "2026-08-20T17:20:56.540Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-deletion-is-completion\naction_v2_sha256:da1dbe08594a02fc9f9d8ef0d1d22b9d6fe7c277defc71e9674b9157552bddbc"
+    },
+    {
+      "id": "record_evidence:2026-08-20-018-retirement-completion-contract:2026-08-20T17:21:01.095Z",
+      "at": "2026-08-20T17:21:01.095Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-absence-tests-scoped\naction_v2_sha256:a564c04f43515ac2a0856c9d1870752a83aca6f2618684f536ef369b31cdd45f"
+    },
+    {
+      "id": "record_evidence:2026-08-20-018-retirement-completion-contract:2026-08-20T17:21:04.609Z",
+      "at": "2026-08-20T17:21:04.609Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-baseline-mirrors-identical\naction_v2_sha256:0baee2dd6b2f70a4f1f77ff1ccf453b6019dfcb3178a904434eb1e7cb9f59db0"
+    },
+    {
+      "id": "record_evidence:2026-08-20-018-retirement-completion-contract:2026-08-20T17:21:07.947Z",
+      "at": "2026-08-20T17:21:07.947Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-suite-intact\naction_v2_sha256:748c98fb5b127ccf3d5b236f578bc83dba51522a8cf675edf755fa97001ec160"
+    },
+    {
+      "id": "submit_review:2026-08-20-018-retirement-completion-contract:2026-08-20T17:21:12.136Z",
+      "at": "2026-08-20T17:21:12.136Z",
+      "type": "submit_review",
+      "from_phase": "working",
+      "to_phase": "review",
+      "reason": "action_v2_sha256:1296d0f93ee443da17163880eac87333e6868851bdc5d04e6bfd2edff29a1265"
+    },
+    {
+      "id": "record_approval:2026-08-20-018-retirement-completion-contract:2026-08-20T17:22:29.228Z",
+      "at": "2026-08-20T17:22:29.228Z",
+      "type": "record_approval",
+      "from_phase": "review",
+      "to_phase": "review",
+      "reason": "approval-qa-37986e48\naction_v2_sha256:321a4719a609e85a53bfee959b0d93a1475f63387aa701960429bfb6cfb06e80",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-a2ff2b74e9a7d59e",
+        "issued_at": "2026-08-20T17:22:29.228Z",
+        "expires_at": "2026-08-20T17:32:29.228Z"
+      }
+    },
+    {
+      "id": "record_approval:2026-08-20-018-retirement-completion-contract:2026-08-20T17:38:24.856Z",
+      "at": "2026-08-20T17:38:24.856Z",
+      "type": "record_approval",
+      "from_phase": "review",
+      "to_phase": "review",
+      "reason": "approval-review-a150c5f6\naction_v2_sha256:7aefad8d9fe9fa8f52039184145ac14f5f7ebc605c90bd992bd2bdeddbdcef59",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "native-review-7654c966-60de-4b7",
+        "confirmation_ref": "pi-confirm-2ebf4d551d99bf9e",
+        "issued_at": "2026-08-20T17:38:24.856Z",
+        "expires_at": "2026-08-20T17:48:24.856Z"
+      }
+    },
+    {
+      "id": "complete:2026-08-20-018-retirement-completion-contract:2026-08-20T17:38:32.325Z",
+      "at": "2026-08-20T17:38:32.325Z",
+      "type": "complete",
+      "from_phase": "review",
+      "to_phase": "done",
+      "reason": "action_v2_sha256:61e948c220bbabd835e5b9425bd5b89215418e93664f94a1658fb5ee8354bfb0"
+    }
+  ]
+}

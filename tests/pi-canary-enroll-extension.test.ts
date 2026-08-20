@@ -11,7 +11,7 @@ import {
 	AUTHORITY_OBSERVATION_GENERATION_V2,
 	AUTHORITY_OBSERVER_VERSION_V2,
 } from "../plugins/immune-brain/runtime/authority_commit_receipts";
-import { requiresEnrollmentConfirmation, assertTaskIntentPreparationStable } from "../plugins/immune-brain/.pi-extension/imm-canary-enroll";
+import { assertTaskIntentPreparationStable } from "../plugins/immune-brain/.pi-extension/imm-canary-enroll";
 import { readTaskIntent } from "../plugins/immune-brain/runtime/kernel/intent";
 import { preparePiCanary } from "../plugins/immune-brain/runtime/kernel/pi_canary_prepare";
 import {
@@ -102,10 +102,14 @@ function makeRoot(): string {
 }
 
 describe("pi canary enroll extension", () => {
-	test("every Enrollment risk requires literal confirmation", () => {
-		expect(requiresEnrollmentConfirmation("routine")).toBe(true);
-		expect(requiresEnrollmentConfirmation("material")).toBe(true);
-		expect(requiresEnrollmentConfirmation("critical")).toBe(true);
+	test("confirmation deadwood is removed: no tier predicate and no pi-plan-approved branch", () => {
+		const source = readFileSync(
+			new URL("../plugins/immune-brain/.pi-extension/imm-canary-enroll.ts", import.meta.url),
+			"utf8",
+		);
+		expect(source).not.toContain("requiresEnrollmentConfirmation");
+		expect(source).not.toContain("pi-plan-approved");
+		expect(source).toContain("pi-confirm-");
 	});
 
 	test("registers one foreground Tool and no Slash Command", async () => {
