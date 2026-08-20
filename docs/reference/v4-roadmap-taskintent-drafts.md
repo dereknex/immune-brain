@@ -240,6 +240,49 @@ only three `dist/imm-*.md` and three `skills/*/SKILL.md`. The three-way
 `tests/baseline-packaging-contract.test.ts`. Confirm what the Phase 0 guard
 already enumerates before sizing this slice.
 
+### Packaged contracts are 4-6x their authoring sources, guarded by 8 tokens
+
+Found while sizing Wave A, and it outranks every remaining draft. The documents
+agents load at runtime are the `dist` copies, and each dwarfs the skill that
+nominally sources it: `imm-planner` 5,570 bytes of skill against 34,155 of dist,
+`imm-brainstorm` 2,393 against 13,374, `imm-loop` 3,371 against 13,086. About
+60KB of binding instruction sits downstream of 11KB of source.
+
+The only guard, `tests/skill-dist-consistency.test.ts`, compares presence of an
+eight-entry `RUNTIME_SURFACE` token list, so it says nothing about the other
+~50KB. Demonstration: `dist/imm-planner.md` mentions Roadmap four times,
+`skills/imm-planner/SKILL.md` mentions it zero times, and the guard passes.
+Neither `sync-dist-docs.ts` nor `dist-sync-manifest.ts` names `imm-planner`, so
+no generation step binds the pair either.
+
+Phase 0 fixed one symptom of this — `dist/imm-loop.md` directing agents to a
+retired command. The mechanism that allowed it was never touched. This promotes
+4.2 from a routine cleanup gated behind 4.1 into the highest-value remaining
+slice, authored as 012.
+
+### Wave A — three slices in parallel, plus direct bookkeeping
+
+The one real contention point is `dist/imm-planner.md`, touched by 2.3, 3.3 and
+4.1, so those three serialize into a single lane. `imm-canary-enroll.ts` is
+shared by 3.3 and 3.4, and 3.4 was already downstream. Everything else is
+independent.
+
+| Wave | Parallel lanes |
+| --- | --- |
+| A | 011 planner roadmap instructions · 012 packaged contract coverage · 013 stale-reference ratchet |
+| B | 3.3 relocate enrollment confirmation (`critical`) |
+| C | 4.1 retirement completion contract · 3.4 enrollment confirmation deadwood |
+
+Merging 011 before 012 avoids one rebase, since 012 tightens the guard over the
+document 011 edits. Bookkeeping — marking 1.3, 1.6, 1.7, 2.2, 3.1, 3.2 and 3.5
+closed — was done directly rather than as a slice, matching how this memo has
+always been maintained and avoiding contention with all three intents.
+
+Before 4.1 is authored, two figures must be restated: its "193 absence
+assertions across 57 test files" predates the Phase 1 deletions, and
+`BASELINE.md` is three byte-identical copies whose authoritative one must be
+named.
+
 ### 1.1 `retire-imm-core-barrel` — CLOSED
 
 Promoted as `2026-08-19-005-retire-imm-core-barrel` and completed. Retained for
@@ -344,7 +387,7 @@ slice: if that type is itself island-bound, the loader needs its own config type
 or the slice must be re-scoped rather than importing a type out of the demolition
 zone.
 
-### 1.3 `resolve-subagent-activation-contract`
+### 1.3 `resolve-subagent-activation-contract` — CLOSED
 
 **Risk**: `material` · **Gate**: `rehome-agent-config-loader` closed · branches
 off the deletion chain rather than sitting in it
@@ -525,7 +568,7 @@ additionally covers `docs/reference/immune-brain-config.md`,
 `scripts/dist-sync-manifest.ts`, its `dist/docs` copy, and the documentation
 asserters `pi-only-current-contracts.test.ts` and `host-runtime-cutover.test.ts`.
 
-### 1.6 `trim-partially-live-runtime`
+### 1.6 `trim-partially-live-runtime` — CLOSED
 
 **Risk**: `material` · **Gate**: `delete-v3-runtime-island` closed
 
@@ -556,7 +599,7 @@ Note that this slice trims modules rather than deleting them, so `plan_core.ts`
 path asserters such as `v4-plan-control-plane.test.ts` keep passing; only tests
 covering the removed helpers need scope.
 
-### 1.7 `retire-kernel-v1-store` (conditional)
+### 1.7 `retire-kernel-v1-store` (conditional) — CLOSED
 
 **Risk**: `material` · **Gate**: a completed read-only reachability trace, **not**
 the preceding slices
@@ -675,7 +718,7 @@ references, 29 prose Plans) are `RE-VERIFY` after Phase 1.
 `docs/adr/0002-maintenance-surface-ownership.md`. `RE-VERIFY` for other inbound
 citations before authoring.
 
-### 2.2 `single-source-shared-contracts`
+### 2.2 `single-source-shared-contracts` — CLOSED, fully superseded by 008
 
 **Superseded by `2026-08-20-008-realign-immune-constitution`, authored, `material`.**
 Two of the three premises below expired during Phase 0 and Phase 1, and were
@@ -766,7 +809,7 @@ roadmap validation if the fields are removed from Plan parsing too.
 
 ## 3. Phase 3 slices
 
-### 3.1 `wire-breaking-intent-revision`
+### 3.1 `wire-breaking-intent-revision` — CLOSED
 
 **Risk**: `material` · **Gate**: Phase 0 complete only — **independent of Phases
 1 and 2**
@@ -791,7 +834,7 @@ roadmap validation if the fields are removed from Plan parsing too.
 **scope_hint** — `plugins/immune-brain/.pi-extension/imm-canary-work.ts`, plus a
 focused test.
 
-### 3.2 `deterministic-risk-tier-floor`
+### 3.2 `deterministic-risk-tier-floor` — CLOSED
 
 **Risk**: `material` · **Gate**: Phase 0 complete · **Order**: land before or
 with 3.3
@@ -868,7 +911,7 @@ It must not share a slice with 3.4.
 **scope_hint** — `.pi-extension/imm-canary-enroll.ts`, plus `RE-VERIFY` tests
 touched by 3.3.
 
-### 3.5 `forbid-unapproved-risk-downgrade`
+### 3.5 `forbid-unapproved-risk-downgrade` — CLOSED
 
 **Authored as `2026-08-20-009-forbid-risk-downgrade-on-revision`, `material`.**
 

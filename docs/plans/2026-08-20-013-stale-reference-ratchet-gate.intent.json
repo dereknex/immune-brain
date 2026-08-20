@@ -1,0 +1,29 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "2026-08-20-013-stale-reference-ratchet-gate",
+  "owner": "user",
+  "goal": "Make reference rot fail a check instead of reaching main. scripts/detect-stale-refs.ts already finds it, reporting 2,060 findings across docs today (859 broken_doc_link, 374 broken_legacy_spec, 826 stale_skill_ref), but nothing runs it against the repository. The one test that references it, tests/active-runtime-docs-contract.test.ts, invokes --runtime-truth against synthetic files in a temp directory, so it verifies the script's own behavior and never inspects real documents. That gap has already cost twice. Archiving specs in slices 006 and 007 broke 132 Plan-to-Spec references and turned main red, needing a 354-reference bulk rewrite to recover. Then slice 010 shipped docs/specs/2026-08-20-010-reconcile-planning-artifact-retention-policy.spec.md carrying 10 broken references of its own, and docs/reference/planning-artifact-retention.md, the very document 010 rewrote, still has 8. Clearing everything first is not a slice: 464 findings sit in active documents, concentrated in docs/solutions/ where contracts.md alone holds 122, and the remaining ~1,600 are in docs/plans/archive/ and docs/specs/archive/, frozen history that arguably should not be gated at all. So the mechanism is a ratchet rather than a cleanup: record the current count as a committed baseline and fail when it rises, which blocks new rot without demanding a mass fix. Two details decide whether the gate is trustworthy. Roughly 57 findings are template placeholders such as docs/specs/<name>.spec.md and docs/plans/*.md, which are legitimate prose and must not count as rot. And the baseline must be scoped so that archiving a document, a routine and encouraged operation, does not spuriously trip the gate.",
+  "acceptance": [
+    {
+      "id": "acc-gate-runs-on-repository",
+      "assertion": "A check runs the stale-reference detector against the repository's own documents, not synthetic fixtures, and fails when findings rise above the committed baseline.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/stale-reference-ratchet.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 65536\n}\n"
+    },
+    {
+      "id": "acc-placeholders-not-counted",
+      "assertion": "Template placeholder references such as docs/specs/<name>.spec.md and glob forms are excluded from the counted findings.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/stale-reference-ratchet.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 65536\n}\n"
+    },
+    {
+      "id": "acc-suite-intact",
+      "assertion": "The full suite passes.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 600000,\n  \"max_output_bytes\": 262144\n}\n"
+    }
+  ],
+  "scope_hint": [
+    "scripts/detect-stale-refs.ts",
+    "tests/stale-reference-ratchet.test.ts"
+  ],
+  "risk": "routine",
+  "revision": 1
+}

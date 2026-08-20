@@ -1,0 +1,36 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "2026-08-20-011-retire-unfollowable-planner-roadmap-instructions",
+  "owner": "user",
+  "goal": "Remove instructions the packaged planner contract gives that no agent can follow. plugins/immune-brain/dist/imm-planner.md tells agents to produce Roadmap-backed prose Plans and to record roadmap-slice/v1 fields at four places (lines 113, 190, 197 and 232), but v3 prose Plan mutation is retired: imm-plan is a read-only validator and no new prose Plan can be created. These are the same defect class Phase 0 removed from dist/imm-loop.md, a packaged contract directing agents down a path that no longer exists. Two boundaries must hold. First, do not touch plan_core.ts parsing. ROADMAP_SLICE_CONTRACT and ROADMAP_SLICE_REQUIRED_FIELDS still validate real artifacts: 8 archived plans declare roadmap-slice/v1, 13 carry Successor candidate, 12 Roadmap source, 8 Current phase, and live tests still run imm-plan against archived plans. Removing the parser would make history unreadable. Second, keep the CONTEXT.md Roadmap-family entries rather than deleting them, and mark them historical or read-only. The parser depends on these fields, so deleting the definitions would leave the vocabulary silent about terms the code still reads, which is the inverse of the same defect. The distinction this slice draws is between a contract instructing new production, which is dead, and a parser preserving backward compatibility, which is live. Expect test movement: tests/roadmap-plan-boundary-contract.test.ts reads dist/imm-planner.md directly at line 8, and tests/vocabulary-dead-reference-contract.test.ts asserts on the CONTEXT.md Roadmap entry. Four further roadmap test files exercise plan_core and should keep passing untouched; if any needs changing, that is a signal the parser boundary was crossed.",
+  "acceptance": [
+    {
+      "id": "acc-no-unfollowable-planner-instructions",
+      "assertion": "The packaged planner contract no longer instructs agents to produce Roadmap-backed prose Plans or to record roadmap-slice/v1 fields.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/roadmap-plan-boundary-contract.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 65536\n}\n"
+    },
+    {
+      "id": "acc-vocabulary-marked-historical",
+      "assertion": "CONTEXT.md still defines the Roadmap-family terms the parser reads, marked as historical or read-only rather than deleted.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/vocabulary-dead-reference-contract.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 65536\n}\n"
+    },
+    {
+      "id": "acc-parser-backward-compatible",
+      "assertion": "plan_core.ts parsing is unchanged and every archived roadmap-slice plan still validates.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/plan-validation.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 65536\n}\n"
+    },
+    {
+      "id": "acc-suite-intact",
+      "assertion": "The full suite passes.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 600000,\n  \"max_output_bytes\": 262144\n}\n"
+    }
+  ],
+  "scope_hint": [
+    "CONTEXT.md",
+    "plugins/immune-brain/dist/imm-planner.md",
+    "tests/roadmap-plan-boundary-contract.test.ts",
+    "tests/vocabulary-dead-reference-contract.test.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}

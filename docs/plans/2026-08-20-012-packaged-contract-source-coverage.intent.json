@@ -1,0 +1,30 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "2026-08-20-012-packaged-contract-source-coverage",
+  "owner": "user",
+  "goal": "Close the structural gap that let a packaged contract instruct agents to run a retired command. The documents agents actually load at runtime are the dist copies, and each is several times the size of the skill that nominally sources it: imm-planner 5,570 bytes of skill against 34,155 of dist, imm-brainstorm 2,393 against 13,374, imm-loop 3,371 against 13,086. Roughly 60KB of binding agent instruction sits downstream of 11KB of authoring source. The only guard, tests/skill-dist-consistency.test.ts, compares presence of an eight-token RUNTIME_SURFACE filter list, so it proves nothing about the other ~50KB. A concrete demonstration: dist/imm-planner.md mentions Roadmap four times while skills/imm-planner/SKILL.md mentions it zero times, and the guard passes. Neither scripts/sync-dist-docs.ts nor scripts/dist-sync-manifest.ts names imm-planner at all, so no generation step ties the pair together either. Phase 0 fixed one symptom of this, dist/imm-loop.md directing agents to a retired command; the mechanism that allowed it is still fully open. Byte identity is the wrong invariant, because a skill is an entry point and the packaged doc is the full contract, so a legitimate size difference exists. The invariant to establish is that every packaged contract document has a declared source-of-truth relationship and a check that enforces whatever that relationship claims, replacing the token filter with real coverage. Where a packaged document has no authoring source, that fact should be recorded explicitly and the document treated as its own source rather than left implicitly unowned. Enumerate the packaged set so a newly added document cannot join it uncovered.",
+  "acceptance": [
+    {
+      "id": "acc-coverage-enumerated",
+      "assertion": "A check enumerates every packaged contract document and fails when one has no declared source-of-truth relationship or no test enforcing it.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/skill-dist-consistency.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 65536\n}\n"
+    },
+    {
+      "id": "acc-token-filter-replaced",
+      "assertion": "The eight-token RUNTIME_SURFACE presence comparison no longer stands as the sole consistency evidence for the skill-to-dist pairs.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/skill-dist-consistency.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 65536\n}\n"
+    },
+    {
+      "id": "acc-suite-intact",
+      "assertion": "The full suite passes.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 600000,\n  \"max_output_bytes\": 262144\n}\n"
+    }
+  ],
+  "scope_hint": [
+    "scripts/dist-sync-manifest.ts",
+    "scripts/sync-dist-docs.ts",
+    "tests/skill-dist-consistency.test.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}
