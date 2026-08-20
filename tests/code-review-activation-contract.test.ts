@@ -39,7 +39,7 @@ describe("imm-code-review activation fallback contract", () => {
 		const review = read(INTERNAL_REVIEW)
 		expect(review).toContain("read-only code review")
 		expect(review).toContain("imm-code-review")
-		expect(review).toContain("follow_up")
+		expect(review).toContain("rework")
 		const dist = read(SKILL_DIST)
 		expect(dist).toContain("imm_loop_action")
 		expect(dist).toContain("subagent-dispatch-protocol.md")

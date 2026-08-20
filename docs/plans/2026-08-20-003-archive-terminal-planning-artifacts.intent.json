@@ -1,0 +1,33 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "2026-08-20-003-archive-terminal-planning-artifacts",
+  "owner": "user",
+  "goal": "Archive terminal planning artifacts so an agent browsing docs/specs/ and docs/plans/ reaches current work instead of completed slices. Archival is a move into the existing archive/ directories, never a delete. Moving a terminal intent sidecar is provably safe rather than merely conventional: the reducer gives done and stopped no outgoing transition, so such a task can never transition again and can never need its sidecar back at the docs/plans/<task-id>.intent.json location the validator requires. Terminality must be read from two signals, not one. docs/plans/ holds 73 sidecars: 33 done, 14 stopped, 1 working, and 25 with no task record. The record-less 25 are not one kind -- canary-001 through canary-004 are fixtures named only in comment and describe labels, seventeen are older sidecars whose records were pruned or never created, and 2026-08-19-009 through 012 are complete and merged but lost their records because they were enrolled inside git worktree copies whose .imm/tasks/ never merges back. So where a record is absent, an implementing commit in Git history is the second terminality signal; anything still unresolved by both is listed as pending rather than guessed. The drafted criterion that no active spec may reference a retired tool is too broad and must be narrowed. It conflates a spec that instructs an agent to run a retired command, which is the real defect, with a spec that documents that command's retirement, which is correct and necessary. 52 active specs cite these tools, including this roadmap itself with 8 references; archiving the document governing this work, or stripping its evidence base, would be absurd. Only instructional references are in scope, and any document exempted as retirement-subject must be enumerated explicitly so the exemption cannot grow silently. Note that tests/python-reference-boundary.test.ts pins the active path docs/specs/opencode-native-plugin.spec.md, which must be updated if that spec moves.",
+  "acceptance": [
+    {
+      "id": "acc-terminal-artifacts-archived",
+      "assertion": "Every intent sidecar whose task is terminal by record phase done or stopped, or where no record exists by an implementing commit in Git history, lives under an archive directory; docs/plans/ retains only non-terminal sidecars and the canary fixtures; every move is a move and no planning artifact was deleted.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/planning-artifact-archival.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 60000,\n  \"max_output_bytes\": 65536\n}\n"
+    },
+    {
+      "id": "acc-instructional-dead-references-absent",
+      "assertion": "No active spec instructs running imm-plan.py, activation_plan.py, or imm-autowork, and every active document that still references them as the subject of retirement appears on an explicit enumerated exemption list.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/planning-artifact-archival.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 60000,\n  \"max_output_bytes\": 65536\n}\n"
+    },
+    {
+      "id": "acc-pinned-references-intact",
+      "assertion": "The full suite passes, proving pinned documentation paths, notably docs/specs/opencode-native-plugin.spec.md in tests/python-reference-boundary.test.ts, were reconciled with any move rather than left dangling.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 180000,\n  \"max_output_bytes\": 262144\n}\n"
+    }
+  ],
+  "scope_hint": [
+    "docs/plans",
+    "docs/specs",
+    "scripts/detect-stale-refs.ts",
+    "scripts/fix-broken-links.ts",
+    "tests/planning-artifact-archival.test.ts",
+    "tests/python-reference-boundary.test.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}
