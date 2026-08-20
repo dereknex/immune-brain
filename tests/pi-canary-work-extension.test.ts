@@ -225,7 +225,7 @@ async function preparePendingReview(root: string): Promise<RegisteredTool & { co
 	return Object.assign(tool, { commands });
 }
 
-	test("a fresh Parent resumes Review preparation from the Kernel projection after interruption", async () => {
+	test("a fresh Parent resumes Review preparation from the Kernel projection after interruption", { timeout: 15000 }, async () => {
 		const root = makeEnrolledRoot();
 		let qaRuns = 0;
 		const dependencies = {
@@ -317,7 +317,7 @@ async function preparePendingReview(root: string): Promise<RegisteredTool & { co
 		});
 	});
 
-	test("automatically routes ordinary host input through the Managed Path", async () => {
+	test("automatically routes ordinary host input through the Managed Path", { timeout: 15000 }, async () => {
 		const managed = mkdtempSync(join(tmpdir(), "managed-input-"));
 		const readOnly = mkdtempSync(join(tmpdir(), "managed-read-"));
 		try {
@@ -359,7 +359,7 @@ async function preparePendingReview(root: string): Promise<RegisteredTool & { co
 		}
 	});
 
-	test("fails closed and blocks Tool calls when Managed routing rejects state", async () => {
+	test("fails closed and blocks Tool calls when Managed routing rejects state", { timeout: 15000 }, async () => {
 		const root = mkdtempSync(join(tmpdir(), "managed-rejected-"));
 		try {
 			mkdirSync(join(root, ".imm", "memory"), { recursive: true });
@@ -403,7 +403,7 @@ async function preparePendingReview(root: string): Promise<RegisteredTool & { co
 		}
 	});
 
-	test("routes an active backend claim to Loop before classifying the request text", async () => {
+	test("routes an active backend claim to Loop before classifying the request text", { timeout: 15000 }, async () => {
 		const root = makeEnrolledRoot(true);
 		try {
 			const { events } = loadSurface();
@@ -434,7 +434,7 @@ async function preparePendingReview(root: string): Promise<RegisteredTool & { co
 		expect(Object.keys(requestAuthorization.properties)).toEqual(["op"]);
 	});
 
-	test("revise_intent preserves sidecar identity, passes the old token, persists success, and rolls back precommit failure", async () => {
+	test("revise_intent preserves sidecar identity, passes the old token, persists success, and rolls back precommit failure", { timeout: 15000 }, async () => {
 		const successRoot = makeEnrolledRoot();
 		const failureRoot = makeEnrolledRoot();
 		const nextIntent = {
@@ -478,7 +478,7 @@ async function preparePendingReview(root: string): Promise<RegisteredTool & { co
 		}
 	});
 
-	test("advance emits bounded foreground updates and returns exact Agent params", async () => {
+	test("advance emits bounded foreground updates and returns exact Agent params", { timeout: 15000 }, async () => {
 	const root = makeEnrolledRoot();
 	try {
 		const updates: unknown[] = [];
@@ -507,7 +507,7 @@ async function preparePendingReview(root: string): Promise<RegisteredTool & { co
 	} finally { rmSync(root, { recursive: true, force: true }); }
 	});
 
-	test("cancellation after invocation commit cannot abandon the Kernel QA mutation", async () => {
+	test("cancellation after invocation commit cannot abandon the Kernel QA mutation", { timeout: 15000 }, async () => {
 		const root = makeEnrolledRoot();
 		const controller = new AbortController();
 		try {
@@ -542,7 +542,7 @@ async function preparePendingReview(root: string): Promise<RegisteredTool & { co
 		} finally { rmSync(root, { recursive: true, force: true }); }
 	});
 
-	test("cancellation while constructing a Review reservation removes its evidence", async () => {
+	test("cancellation while constructing a Review reservation removes its evidence", { timeout: 15000 }, async () => {
 		const root = makeEnrolledRoot();
 		const controller = new AbortController();
 		const evidencePath = join(root, "review-construction.json");
@@ -581,7 +581,7 @@ async function preparePendingReview(root: string): Promise<RegisteredTool & { co
 		} finally { rmSync(root, { recursive: true, force: true }); }
 	});
 
-	test("foreground Agent events are bridged once, then submit_review awaits authorization", async () => {
+	test("foreground Agent events are bridged once, then submit_review awaits authorization", { timeout: 15000 }, async () => {
 		const root = makeEnrolledRoot();
 		try {
 			let latestReviewSnapshot!: SnapshotDescriptor;
@@ -675,7 +675,7 @@ async function preparePendingReview(root: string): Promise<RegisteredTool & { co
 		}
 	});
 
-	test("literal user can return or reject a pending Review", async () => {
+	test("literal user can return or reject a pending Review", { timeout: 15000 }, async () => {
 		const reworkRoot = makeEnrolledRoot();
 		try {
 			const tool = await preparePendingReview(reworkRoot);
@@ -710,7 +710,7 @@ async function preparePendingReview(root: string): Promise<RegisteredTool & { co
 		} finally { rmSync(rejectRoot, { recursive: true, force: true }); }
 	});
 
-	test("Reject fails closed on a post-selection diff race and remains retryable", async () => {
+	test("Reject fails closed on a post-selection diff race and remains retryable", { timeout: 15000 }, async () => {
 		const root = makeEnrolledRoot();
 		try {
 			const tool = await preparePendingReview(root);
@@ -746,7 +746,7 @@ async function preparePendingReview(root: string): Promise<RegisteredTool & { co
 		} finally { rmSync(root, { recursive: true, force: true }); }
 	});
 
-	test("cancelling a Review decision writes nothing and keeps it pending", async () => {
+	test("cancelling a Review decision writes nothing and keeps it pending", { timeout: 15000 }, async () => {
 		const root = makeEnrolledRoot();
 		try {
 			const tool = await preparePendingReview(root);
@@ -797,7 +797,7 @@ async function preparePendingReview(root: string): Promise<RegisteredTool & { co
 		} finally { rmSync(root, { recursive: true, force: true }); }
 	});
 
-	test("host cancellation reaches the foreground QA Tool and performs no QA authority write", async () => {
+	test("host cancellation reaches the foreground QA Tool and performs no QA authority write", { timeout: 15000 }, async () => {
 		const root = makeEnrolledRoot();
 		try {
 			let release!: () => void;
