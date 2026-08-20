@@ -11,7 +11,7 @@ origin: user clarified that imm-ui-review stays read-only, missing DESIGN.md onl
 ## Task
 - Summary: Refine `imm-ui-review` so it enforces project-specific `DESIGN.md` contracts when present, reports missing contracts without writing files, and applies style-neutral anti-slop review guidance.
 - Origin: User clarified the previously approved slice: `imm-ui-review` remains a read-only reviewer; missing `DESIGN.md` only triggers a reminder; no default SaaS or substitute design language is allowed.
-- Spec: docs/specs/ui-review-design-contract-alignment.spec.md
+- Spec: docs/specs/archive/ui-review-design-contract-alignment.spec.md
 - Brainstorm manifest: BR-REQ-001, BR-REQ-002, BR-REQ-003, BR-REQ-004, BR-REQ-005, BR-DEC-001, BR-DEC-002, BR-DEC-003, BR-OUT-001, BR-Q-001
 
 ## Research
@@ -92,7 +92,7 @@ origin: user clarified that imm-ui-review stays read-only, missing DESIGN.md onl
 - Verification type: automated
 - Verification: `python3 -c "from pathlib import Path; text = Path('docs/reference/design-contract-review-checklist.md').read_text(); assert 'DESIGN.md' in text; assert 'missing design contract' in text.lower(); assert 'default SaaS' not in text; assert 'auto-generate' not in text and 'auto generate' not in text"`
 - Test scenarios: Confirm the checklist states `DESIGN.md` precedence, reminder-only missing-contract behavior, and style-neutral anti-slop criteria with no fallback style template language.
-- Discovery cache: docs/specs/ui-review-design-contract-alignment.spec.md (accepted contract); docs/reference/ux-heuristic-checklist.md (thin-index pattern precedent); docs/solutions/project-specific-reviewer-contract-slices.md (read-only reviewer precedent)
+- Discovery cache: docs/specs/archive/ui-review-design-contract-alignment.spec.md (accepted contract); docs/reference/ux-heuristic-checklist.md (thin-index pattern precedent); docs/solutions/project-specific-reviewer-contract-slices.md (read-only reviewer precedent)
 - failure_behavior: Remove the new checklist and keep the existing host contract unchanged.
 - security_considerations: None; this step only adds review guidance documentation.
 - Depends on: none

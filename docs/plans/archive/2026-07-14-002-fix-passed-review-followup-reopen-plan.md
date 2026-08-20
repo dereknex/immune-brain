@@ -1,7 +1,7 @@
 # Iteration Plan
 
 - Summary: Let `imm-work` atomically reopen an already-passed review gate only when a same-boundary finding carries the exact runtime checkpoint signature, without rewriting closed evidence or trusting Git state.
-- Spec: `docs/specs/2026-07-14-passed-review-followup-reopen.spec.md`
+- Spec: `docs/specs/archive/2026-07-14-passed-review-followup-reopen.spec.md`
 - Origin: The user confirmed the analysis of Pi session `019f60a0-ab05-7df8-922f-5c089c2c1832` and invoked `imm-planner` to plan the workflow repair.
 - Scope Mode: New one-Step correction Plan. It does not append to or rewrite the unrelated currently synced Plan.
 - Planner research dispatch: solo; this is one State Ledger transition with direct runtime and regression-test evidence.
@@ -13,7 +13,7 @@
 - `tests/imm-follow-up-runtime.test.ts` covers ordinary pending-gate follow-ups, concurrency rejection, repeated rounds, execution evidence, and QA closure, but not a reviewer finding after all required gates pass.
 - `docs/solutions/rejected-post-closure-ledger-rewrite.md` forbids rewriting closed Step evidence. This Plan preserves that decision and changes only current review-gate state plus append-only history.
 - `docs/solutions/state-ledger-heal-and-migration-safety.md` requires closed facts to remain immutable and destructive state transitions to remain auditable.
-- `docs/specs/completed-plan-followup-append.spec.md` concerns Planner-owned Step append after replan. It does not replace the lightweight same-boundary follow-up track addressed here.
+- `docs/specs/archive/completed-plan-followup-append.spec.md` concerns Planner-owned Step append after replan. It does not replace the lightweight same-boundary follow-up track addressed here.
 - The currently synced Plan is `docs/plans/2026-07-14-001-refactor-plan-core-idle-export-pruning-plan.md`, with U1 still pending. This new Plan may be validated now but must not be synced until the user explicitly chooses to switch or first completes the current Plan.
 
 ## Decisions
@@ -57,7 +57,7 @@
 - Verification type: automated
 - Verification: `bun test tests/imm-follow-up-runtime.test.ts tests/imm-loop-review-lifecycle-state.test.ts tests/imm-loop-review-orchestration-contract.test.ts tests/plugin-package-runtime.test.ts && plugins/immune-brain/bin/imm-plan docs/plans/2026-07-14-002-fix-passed-review-followup-reopen-plan.md --json && git diff --check`
 - Test scenarios: All required gates passed then exact-signature origin gate opens a follow-up; Missing and stale reopen signatures leave the Ledger byte-identical; Only the origin gate pass is invalidated; Prior pass and finding evidence plus follow-up ID are retained in history; Closed Step evidence remains unchanged; Non-required origin gate is rejected; Existing pending-gate calls remain compatible without a signature; Existing pending-gate mismatch is rejected; Concurrent Ledger mutation aborts without partial state change; Ordinary follow-up execution and QA closure still pass.
-- Files: `plugins/immune-brain/runtime/state_ledger.ts` (follow-up eligibility, signature validation, gate invalidation, and history); `plugins/immune-brain/runtime/immune_brain_runtime.ts` (CLI option and handoff wiring); `tests/imm-follow-up-runtime.test.ts` (end-to-end runtime regressions); `tests/imm-loop-review-lifecycle-state.test.ts` (review pass lookup regression if needed); `tests/imm-loop-review-orchestration-contract.test.ts` (host signature handoff contract); `plugins/immune-brain/dist/imm-code-review.md` (reviewer handoff contract); `plugins/immune-brain/dist/imm-work.md` (durable consumption contract); `plugins/immune-brain/dist/imm-loop.md` (checkpoint consumer contract); `docs/specs/2026-07-14-passed-review-followup-reopen.spec.md` (design authority)
+- Files: `plugins/immune-brain/runtime/state_ledger.ts` (follow-up eligibility, signature validation, gate invalidation, and history); `plugins/immune-brain/runtime/immune_brain_runtime.ts` (CLI option and handoff wiring); `tests/imm-follow-up-runtime.test.ts` (end-to-end runtime regressions); `tests/imm-loop-review-lifecycle-state.test.ts` (review pass lookup regression if needed); `tests/imm-loop-review-orchestration-contract.test.ts` (host signature handoff contract); `plugins/immune-brain/dist/imm-code-review.md` (reviewer handoff contract); `plugins/immune-brain/dist/imm-work.md` (durable consumption contract); `plugins/immune-brain/dist/imm-loop.md` (checkpoint consumer contract); `docs/specs/archive/2026-07-14-passed-review-followup-reopen.spec.md` (design authority)
 - Agent Hint: imm-executor
 - Depends on: none
 - failure_behavior: If reopening cannot preserve closed evidence, gate isolation, or compare-before-commit atomicity within the existing State Ledger shape, stop and return to Planner rather than adding Git authority or a migration.

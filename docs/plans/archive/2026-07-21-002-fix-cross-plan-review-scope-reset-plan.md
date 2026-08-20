@@ -4,7 +4,7 @@ type: fix
 status: proposed
 date: 2026-07-21
 origin: imm-code-review findings P2 and P3 after maintenance-surface simplification
-spec: docs/specs/2026-07-21-cross-plan-review-scope-reset.spec.md
+spec: docs/specs/archive/2026-07-21-cross-plan-review-scope-reset.spec.md
 ---
 
 # Iteration Plan
@@ -12,7 +12,7 @@ spec: docs/specs/2026-07-21-cross-plan-review-scope-reset.spec.md
 ## Task
 
 - Summary: Prevent prior Plan follow-up evidence and reviewer passes from contaminating a new Plan, then repair the canonical L2S Spec reference.
-- Spec: `docs/specs/2026-07-21-cross-plan-review-scope-reset.spec.md`
+- Spec: `docs/specs/archive/2026-07-21-cross-plan-review-scope-reset.spec.md`
 - Origin: `imm-code-review` found 12 prior-Plan paths inside the completed maintenance Plan's 17-file review signature and found one nonexistent canonical L2S evidence path.
 - Scope Mode: New two-Step repair slice. Runtime review-state compatibility is isolated from the one-line documentation repair.
 - Planner research dispatch: planner ensemble used because the repair spans persisted State Ledger behavior and durable documentation. Fast, mid, strong, and preplan reviewers agreed on a marker-based boundary, cross-Plan review-state reset, same-Plan preservation, full history retention, and an independent docs Step.
@@ -93,7 +93,7 @@ spec: docs/specs/2026-07-21-cross-plan-review-scope-reset.spec.md
 - Verification: `bun test tests/cross-plan-sync-reset.test.ts tests/imm-follow-up-runtime.test.ts tests/imm-loop-review-lifecycle-state.test.ts tests/imm-loop-completion-gate.test.ts tests/plugin-package-runtime.test.ts && plugins/immune-brain/bin/imm-plan docs/plans/2026-07-21-002-fix-cross-plan-review-scope-reset-plan.md --json && git diff --check`
 - Execution note: test-first
 - Test scenarios: Covers missing marker defaulting to zero; Covers valid marker round-trip; Covers invalid negative, fractional, non-numeric, and oversized markers failing closed; Covers cross-Plan marker equaling the pre-sync history length; Covers cross-Plan full follow-up history preservation; Covers cross-Plan review_state reset; Covers old identical-signature passes not satisfying a new Plan; Covers new checkpoints excluding marker-preceding follow-up files; Covers current closed Step files remaining included; Covers same-Plan marker and review pass preservation; Covers current-Plan follow-up files extending signatures and invalidating passes; Covers failed optimistic sync leaving marker, review state, and history unchanged.
-- Discovery cache: plugins/immune-brain/runtime/state_ledger.ts (follow-up records, normalization, changed-file collection, signatures); plugins/immune-brain/runtime/immune_brain_runtime.ts (cross-Plan and same-Plan sync); tests/cross-plan-sync-reset.test.ts (different-path reset fixture); tests/imm-follow-up-runtime.test.ts (same-Plan follow-up and review signature behavior); docs/specs/2026-07-21-cross-plan-review-scope-reset.spec.md (state invariants and rollout behavior)
+- Discovery cache: plugins/immune-brain/runtime/state_ledger.ts (follow-up records, normalization, changed-file collection, signatures); plugins/immune-brain/runtime/immune_brain_runtime.ts (cross-Plan and same-Plan sync); tests/cross-plan-sync-reset.test.ts (different-path reset fixture); tests/imm-follow-up-runtime.test.ts (same-Plan follow-up and review signature behavior); docs/specs/archive/2026-07-21-cross-plan-review-scope-reset.spec.md (state invariants and rollout behavior)
 - Scope: `plugins/immune-brain/runtime/state_ledger.ts`, `plugins/immune-brain/runtime/immune_brain_runtime.ts`, `tests/cross-plan-sync-reset.test.ts`, `tests/imm-follow-up-runtime.test.ts`, and only a focused existing review/package test if implementation reveals a directly affected assertion.
 - Agent Hint: imm-executor
 - Depends on: none
@@ -105,9 +105,9 @@ spec: docs/specs/2026-07-21-cross-plan-review-scope-reset.spec.md
 - Step ID: U2
 - Result: Canonical L2S evidence resolves to the tracked Spec
 - Verification type: automated
-- Verification: `test -e docs/specs/l2s-workflow-pattern.spec.md && ! rg -n '\.imm/specs/l2s-workflow-pattern\.spec\.md' docs/solutions/workflow.md && rg -n 'docs/specs/l2s-workflow-pattern\.spec\.md' docs/solutions/workflow.md && plugins/immune-brain/bin/imm-plan docs/plans/2026-07-21-002-fix-cross-plan-review-scope-reset-plan.md --json && git diff --check`
+- Verification: `test -e docs/specs/archive/l2s-workflow-pattern.spec.md && ! rg -n '\.imm/specs/l2s-workflow-pattern\.spec\.md' docs/solutions/workflow.md && rg -n 'docs/specs/l2s-workflow-pattern\.spec\.md' docs/solutions/workflow.md && plugins/immune-brain/bin/imm-plan docs/plans/2026-07-21-002-fix-cross-plan-review-scope-reset-plan.md --json && git diff --check`
 - Test scenarios: Covers the canonical solution referencing the existing tracked Spec; Covers the missing `.imm/specs/` path disappearing from current canonical guidance; Covers historical Plan and Spec evidence remaining unchanged.
-- Discovery cache: docs/solutions/workflow.md (canonical L2S evidence basis); docs/specs/l2s-workflow-pattern.spec.md (existing target); docs/specs/2026-07-21-cross-plan-review-scope-reset.spec.md (R5 boundary)
+- Discovery cache: docs/solutions/workflow.md (canonical L2S evidence basis); docs/specs/archive/l2s-workflow-pattern.spec.md (existing target); docs/specs/archive/2026-07-21-cross-plan-review-scope-reset.spec.md (R5 boundary)
 - Scope: `docs/solutions/workflow.md` only.
 - Agent Hint: imm-executor
 - Depends on: U1

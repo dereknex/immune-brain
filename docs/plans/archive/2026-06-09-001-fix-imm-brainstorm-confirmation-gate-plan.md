@@ -11,10 +11,10 @@ origin: imm-brainstorm framing - user confirmed explicit approval must precede p
 ## Task
 
 - Summary: 让 `imm-brainstorm` 只有在用户显式确认推荐方案后才建议进入 `imm-planner`。
-- Spec: docs/specs/imm-brainstorm-confirmation-gate.spec.md
+- Spec: docs/specs/archive/imm-brainstorm-confirmation-gate.spec.md
 - Origin: 用户指出 brainstorm 当前无论进展如何都推荐进入 planner。brainstorm 已确认新规则：必须等用户说“确认 / 可以 / 按这个来”，但允许先输出“我建议这样做，确认后进入 planner”。
 - Brainstorm manifest: BR-REQ-1; BR-REQ-2; BR-DEC-1; BR-OUT-1
-- Research: `CONTEXT.md` 定义 Brainstorm 是只读问题 framing 阶段，Plan 和 Spec 由 `imm-planner` 负责。`plugins/immune-brain/dist/imm-brainstorm.md` 当前 `Default Next Route` 强化默认 handoff 到 `imm-planner`，`Next Action` gate 只要求 framing stable 和 narrowing questions 已回复，缺少用户显式确认 proposed direction / scope 的硬门槛。`docs/specs/imm-brainstorm-natural-output.spec.md` 已允许默认输出保留最少必要的下一步和确认需求。`tests/test_skill_contracts.py` 已有 brainstorm terse handoff、inline clarification 和 gated Next Action contract，可补 focused assertion 防止回漂。
+- Research: `CONTEXT.md` 定义 Brainstorm 是只读问题 framing 阶段，Plan 和 Spec 由 `imm-planner` 负责。`plugins/immune-brain/dist/imm-brainstorm.md` 当前 `Default Next Route` 强化默认 handoff 到 `imm-planner`，`Next Action` gate 只要求 framing stable 和 narrowing questions 已回复，缺少用户显式确认 proposed direction / scope 的硬门槛。`docs/specs/archive/imm-brainstorm-natural-output.spec.md` 已允许默认输出保留最少必要的下一步和确认需求。`tests/test_skill_contracts.py` 已有 brainstorm terse handoff、inline clarification 和 gated Next Action contract，可补 focused assertion 防止回漂。
 - Decisions: D1 把“用户显式确认推荐方案”作为 planner handoff 的必备 gate。D2 保留 brainstorm 给推荐方案的能力，但未确认时 Next Action 只能请求确认。D3 不恢复 `imm-preplan-review` 默认阶段，也不让 brainstorm 写 Plan。D4 本切片只改 skill contract 和 focused contract test，不新增 runtime 状态。
 - Assumptions: 当前确认门槛可由 skill 文案和 contract test 约束，暂不需要机器可解析的 confirmation flag。`imm-planner` 仍可在用户直接点名 planner 且 scope 已确认时正常工作。
 - Scope Mode: Hold Scope
@@ -42,7 +42,7 @@ origin: imm-brainstorm framing - user confirmed explicit approval must precede p
 
 ## Planning Quality Gate
 
-- contract surface: `plugins/immune-brain/dist/imm-brainstorm.md`、`tests/test_skill_contracts.py`、`docs/specs/imm-brainstorm-confirmation-gate.spec.md`、本 Plan。
+- contract surface: `plugins/immune-brain/dist/imm-brainstorm.md`、`tests/test_skill_contracts.py`、`docs/specs/archive/imm-brainstorm-confirmation-gate.spec.md`、本 Plan。
 - compatibility: additive contract tightening；既有用户直接显式确认后仍可进入 planner，不引入文件格式或 runtime schema 迁移。
 - interruption recovery: 若执行中断，rerun focused unittest 能暴露文案和测试是否未对齐。
 - rollback path: 回退 skill contract、测试、Spec 和 Plan。无需修改 `.imm/memory/current_iteration.json` 之外的正常 Plan sync 状态。
@@ -59,7 +59,7 @@ origin: imm-brainstorm framing - user confirmed explicit approval must precede p
 - Verification type: automated
 - Execution note: test-first
 - Test scenarios: Covers BR-REQ-1 by asserting planner handoff requires explicit user confirmation of proposed direction or scope; Covers BR-REQ-2 by asserting brainstorm may recommend a direction before confirmation; Covers BR-DEC-1 by asserting unconfirmed output must request confirmation and must not name a next skill; Covers BR-OUT-1 by preserving read-only implementation boundary assertions.
-- Discovery cache: plugins/immune-brain/dist/imm-brainstorm.md (skill contract to tighten); tests/test_skill_contracts.py (focused contract assertions); docs/specs/imm-brainstorm-confirmation-gate.spec.md (accepted behavior); docs/specs/imm-brainstorm-natural-output.spec.md (natural output confirmation need); docs/specs/inline-clarification-preplan-demotion.spec.md (existing brainstorm to planner route model); CONTEXT.md (Brainstorm and Plan vocabulary)
+- Discovery cache: plugins/immune-brain/dist/imm-brainstorm.md (skill contract to tighten); tests/test_skill_contracts.py (focused contract assertions); docs/specs/archive/imm-brainstorm-confirmation-gate.spec.md (accepted behavior); docs/specs/archive/imm-brainstorm-natural-output.spec.md (natural output confirmation need); docs/specs/archive/inline-clarification-preplan-demotion.spec.md (existing brainstorm to planner route model); CONTEXT.md (Brainstorm and Plan vocabulary)
 - Agent Hint: imm-executor
 - Depends on: none
 - failure_behavior: 如果 focused assertion 与既有 inline clarification contract 冲突，优先保持“确认后进入 planner”的新 gate，并在同一 Step 内更新旧 wording，不能退回无条件 default route。

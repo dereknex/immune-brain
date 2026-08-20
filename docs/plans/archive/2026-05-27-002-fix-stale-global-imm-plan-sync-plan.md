@@ -10,7 +10,7 @@ origin: imm-brainstorm framing - global imm-plan lacks --sync while repo runtime
 
 ## Task
 - Summary: Make explicit Plan sync reachable through plugin runtime paths while stale global imm-plan wrappers are reported by health checks
-- Spec: docs/specs/stale-global-imm-plan-sync.spec.md
+- Spec: docs/specs/archive/stale-global-imm-plan-sync.spec.md
 - Origin: Brainstorm manifest from 2026-05-27 imm-plan --sync unavailable analysis
 - Brainstorm manifest: BR-REQ-001; BR-REQ-002; BR-DEC-001; BR-OUT-001; BR-Q-001
 - Research: `command -v imm-plan` resolves to `/Users/derek/.local/bin/imm-plan`, which launches `/Users/derek/.immune-brain/runtime/agent-skills/.imm/imm-plan.py`; that installed runtime only exposes `--json`. Repo `.imm/imm-plan.py`, `.imm/imm_core/plan_runtime.py`, `plugins/immune-brain/dist/.imm/imm-plan.py`, `plugins/immune-brain/bin/imm-plan`, and `plugins/immune-brain/dist/immune_brain_runtime.py cli imm-plan` already expose `--sync`. `plugins/immune-brain/dist/immune_brain_runtime.py` describes `imm_plan_validate` as validate and sync but currently only maps `plan_path` plus optional `--json`. `imm-heal` checks project files but not PATH shadowing.

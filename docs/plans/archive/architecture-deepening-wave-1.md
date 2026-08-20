@@ -2,7 +2,7 @@
 - Origin: Architecture Exploration
 
 ## Task
-- Spec: docs/specs/architecture-deepening-wave-1.spec.md
+- Spec: docs/specs/archive/architecture-deepening-wave-1.spec.md
 
 ## Steps
 

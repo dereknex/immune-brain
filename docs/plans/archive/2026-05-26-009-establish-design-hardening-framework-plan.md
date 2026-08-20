@@ -11,7 +11,7 @@ origin: BR-REQ-1, BR-REQ-2
 ## Task
 - Summary: Establish a repository-compatible Planning Quality Gate for elevated-risk Immune-Brain work.
 - Origin: User requested a better design-hardening approach after review showed the previous Master-Phase proposal conflicted with `IMMUNE.md` and failed the existing plan validator.
-- Spec: docs/specs/detailed-design-hardening-phase1.spec.md
+- Spec: docs/specs/archive/detailed-design-hardening-phase1.spec.md
 - Research: `IMMUNE.md` keeps `imm-preplan-review` optional and defines `.imm/memory/current_iteration.json` as the runtime continuity surface; `CONTEXT.md` defines Plan, Spec, Step, and HANDOFF.md vocabulary; `.imm/imm_core/plan_runtime.py` requires `Discovery cache` entries in `path (reason)` format.
 - Decisions:
     - D1: Treat detailed-design hardening as a Planning Quality Gate, not a replacement workflow.
@@ -21,7 +21,7 @@ origin: BR-REQ-1, BR-REQ-2
     - Guidance-level hardening is useful immediately, while stronger enforcement should wait until parser or skill contract changes are intentionally planned.
 - Scope Mode: Documentation-only planning quality gate.
 - Engineering Closure Check:
-  - architecture_surface: `docs/specs/detailed-design-hardening-master.spec.md`, `docs/specs/detailed-design-hardening-phase1.spec.md`, `docs/plans/2026-05-26-009-establish-design-hardening-framework-plan.md`
+  - architecture_surface: `docs/specs/archive/detailed-design-hardening-master.spec.md`, `docs/specs/archive/detailed-design-hardening-phase1.spec.md`, `docs/plans/2026-05-26-009-establish-design-hardening-framework-plan.md`
   - dependencies_known: yes; validation uses the existing `.imm/imm-plan.py` parser
   - verification_path: `python3 .imm/imm-plan.py docs/plans/2026-05-26-009-establish-design-hardening-framework-plan.md --json`
   - blockers: none
@@ -68,9 +68,9 @@ origin: BR-REQ-1, BR-REQ-2
 - Step ID: U1
 - Result: Planning Quality Gate reference established
 - Verification type: automated
-- Verification: `test -f docs/specs/detailed-design-hardening-master.spec.md && test -f docs/specs/detailed-design-hardening-phase1.spec.md && rg -q "Planning Quality Gate" docs/specs/detailed-design-hardening-master.spec.md && rg -q "does not introduce a new global workflow" docs/specs/detailed-design-hardening-master.spec.md && rg -q "documentation-only" docs/specs/detailed-design-hardening-phase1.spec.md && rg -q "existing plan validator" docs/specs/detailed-design-hardening-phase1.spec.md`
+- Verification: `test -f docs/specs/archive/detailed-design-hardening-master.spec.md && test -f docs/specs/archive/detailed-design-hardening-phase1.spec.md && rg -q "Planning Quality Gate" docs/specs/archive/detailed-design-hardening-master.spec.md && rg -q "does not introduce a new global workflow" docs/specs/archive/detailed-design-hardening-master.spec.md && rg -q "documentation-only" docs/specs/archive/detailed-design-hardening-phase1.spec.md && rg -q "existing plan validator" docs/specs/archive/detailed-design-hardening-phase1.spec.md`
 - Test scenarios: Confirm the specs describe guidance compatible with `IMMUNE.md`, avoid a mandatory Master-Phase workflow, and name existing validator-compatible fields.
-- Discovery cache: docs/specs/detailed-design-hardening-master.spec.md (quality gate reference); docs/specs/detailed-design-hardening-phase1.spec.md (phase contract); IMMUNE.md (workflow authority); CONTEXT.md (terminology authority)
+- Discovery cache: docs/specs/archive/detailed-design-hardening-master.spec.md (quality gate reference); docs/specs/archive/detailed-design-hardening-phase1.spec.md (phase contract); IMMUNE.md (workflow authority); CONTEXT.md (terminology authority)
 - Agent Hint: imm-executor
 - failure_behavior: Rework the specs until they describe guidance rather than runtime enforcement.
 - security_considerations: None; this step changes documentation only.

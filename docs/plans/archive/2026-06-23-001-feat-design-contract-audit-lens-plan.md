@@ -11,7 +11,7 @@ origin: imm-brainstorm framing - user confirmed lens + Geist rubric direction
 ## Task
 
 - Summary: Add a read-only `design_contract` advisory lens plus a style-neutral authoring/audit rubric so a project `DESIGN.md` can be audited for completeness, light/dark parity, accessibility specs, and machine-readability, using Vercel Geist as a structural reference rather than a mandated style.
-- Spec: docs/specs/design-contract-audit-lens.spec.md
+- Spec: docs/specs/archive/design-contract-audit-lens.spec.md
 - Origin: User asked to add review of `DESIGN.md` documents using `https://vercel.com/design.md` and `https://vercel.com/design.dark.md` as templates, and to evaluate whether a new skill is needed. Brainstorm recommended a lens + rubric over a new skill; user confirmed with `确认`.
 - Brainstorm manifest: BR-REQ-001; BR-DEC-001; BR-DEC-002; BR-DEC-003; BR-OUT-001; BR-OUT-002; BR-OUT-003; BR-DEFER-001
 - Research: `docs/reference/design-contract-review-checklist.md` (and its dist mirror) already encodes the consumer-side contract for `imm-ui-review` (use `DESIGN.md` as authority, remind when missing) but has no authoring/audit-side rubric. `plugins/immune-brain/dist/imm-advisory-reviewer.md` defines the lens vocabulary (`security`, `api_contract`, `data_integrity`, `reliability`, `ui_a11y`, `ui_responsive`, `ui_i18n`, `ux_heuristic`, `ui_visual`) in both `Required inputs` and `Lens Behavior`. The `ui_i18n` lens + `docs/reference/i18n-review-checklist.md` (plus dist mirror) is the closest precedent for shipping a lens together with a reference checklist. Skill full text lives in `plugins/immune-brain/dist/*.md`; `skills/*/SKILL.md` are thin loaders; `tests/test_skill_contracts.py` reads dist via `compiled_skill_content`. `README.md` lines 536-539 hold the advisory lens roster. `docs/solutions/rejected-ui-review-fallback-design-generation.md` rejects auto-generating `DESIGN.md` and default-SaaS fallback; `docs/solutions/project-specific-reviewer-contract-slices.md` prescribes docs-first, explicit-trigger, read-only, focused-regression reviewer slices. The 2026-06-22 document-language policy sets persisted document prose to English by default.
@@ -59,7 +59,7 @@ origin: imm-brainstorm framing - user confirmed lens + Geist rubric direction
 
 ## Planning Quality Gate
 
-- contract surface: `docs/reference/design-contract-audit-rubric.md`, `plugins/immune-brain/dist/docs/reference/design-contract-audit-rubric.md`, `plugins/immune-brain/dist/imm-advisory-reviewer.md`, `README.md`, `docs/specs/design-contract-audit-lens.spec.md`, this Plan, `tests/test_skill_contracts.py`.
+- contract surface: `docs/reference/design-contract-audit-rubric.md`, `plugins/immune-brain/dist/docs/reference/design-contract-audit-rubric.md`, `plugins/immune-brain/dist/imm-advisory-reviewer.md`, `README.md`, `docs/specs/archive/design-contract-audit-lens.spec.md`, this Plan, `tests/test_skill_contracts.py`.
 - compatibility: additive lens vocabulary entry and new reference doc; no change to Plan schema, State Ledger schema, MCP tool schema, automatic activation candidate set, or existing lens behavior.
 - interruption recovery: each Step is independently re-verifiable via focused unittest; partial application leaves prior lenses and the consumer-side checklist intact.
 - rollback path: revert the new rubric doc (both copies), the advisory-reviewer dist edit, the README roster line, and the new tests; no data migration.

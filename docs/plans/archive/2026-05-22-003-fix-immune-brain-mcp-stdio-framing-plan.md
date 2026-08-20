@@ -13,7 +13,7 @@ origin: "User reported that the published immune-brain plugin fails MCP startup 
   stdio clients can complete `initialize`.
 - Origin: User clarified that Codex and Claude Code both use standard MCP and
   the failure occurs from the published plugin directory.
-- Spec: docs/specs/immune-brain-mcp-stdio-framing.spec.md
+- Spec: docs/specs/archive/immune-brain-mcp-stdio-framing.spec.md
 - Brainstorm manifest: BR-REQ-1, BR-REQ-2, BR-REQ-3, BR-REQ-4, BR-DEC-1, BR-OUT-1
 - Research: `CONTEXT.md` defines the plugin-local runtime as
   `plugins/immune-brain/dist/immune_brain_runtime.py`; `.mcp.json` starts

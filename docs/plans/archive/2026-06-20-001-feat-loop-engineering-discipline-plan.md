@@ -11,11 +11,11 @@ origin: imm-brainstorm framing - user chose total design before executable slice
 ## Task
 
 - Summary: 将 loop engineering 中的 failure exit、structured feedback、loop trace、strategy change 和 budget stop 吸收到 Immune-Brain 的现有 workflow contract 中。
-- Spec: docs/specs/loop-engineering-discipline.spec.md
+- Spec: docs/specs/archive/loop-engineering-discipline.spec.md
 - Origin: 用户要求读取 MindStudio loop engineering 文章并分析 Immune-Brain 差异；随后选择“提炼可吸收改进点”，并确认先写总设计说明再拆执行切片。
 - Brainstorm manifest: BR-REQ-001; BR-REQ-002; BR-DEC-001; BR-DEC-002; BR-OUT-001; BR-DEFER-001; BR-Q-001
 - Research: `CONTEXT.md` 定义 `Step`、`Executor`、`QA`、`State Ledger` 和 `Compounder` 边界；`IMMUNE.md` 明确 authority 分离、host-bound evidence loops 和 `imm-autowork` deterministic checkpoint runtime；`docs/reference/workflow-and-subagents.md` 描述 `imm-executor`、`imm-qa`、`imm-autowork` 和 subagent 权限；`docs/reference/planning-quality-gate.md` 要求 elevated-risk plan 明确 contract surface、compatibility、interruption recovery、rollback path 和 verification strength；rejected learnings 已明确反对 `imm-autowork-driver`、runtime default QA pass、shared registry、generic dispatcher 和 SQLite/wiki memory authority。
-- Decisions: D1 总设计说明落地为 `docs/specs/loop-engineering-discipline.spec.md`，不额外写 `docs/brainstorms/`。D2 当前切片先做 contract adoption：更新 skill contract、repo-facing guidance 和 focused tests。D3 只吸收 failure exit、structured feedback、loop trace、strategy change 和 budget stop。D4 不新增 runtime authority、dispatcher、driver、registry 或 memory plane。D5 后续 machine-readable runtime fields 只作为 Phase 2，必须另开 Plan。
+- Decisions: D1 总设计说明落地为 `docs/specs/archive/loop-engineering-discipline.spec.md`，不额外写 `docs/brainstorms/`。D2 当前切片先做 contract adoption：更新 skill contract、repo-facing guidance 和 focused tests。D3 只吸收 failure exit、structured feedback、loop trace、strategy change 和 budget stop。D4 不新增 runtime authority、dispatcher、driver、registry 或 memory plane。D5 后续 machine-readable runtime fields 只作为 Phase 2，必须另开 Plan。
 - Assumptions: 现有 `tests/test_skill_contracts.py` 足以承载第一刀 focused contract coverage；当前无需修改 `.imm/imm-autowork.py` 或 State Ledger schema。用户确认 C 后，`BR-Q-001` 由 planner 决定为 “Spec first”。
 - Scope Mode: Hold Scope
 - Planner research dispatch: solo；这是 workflow contract 单域切片，本地文档和 rejected learnings 已足够拆步。
@@ -51,13 +51,13 @@ origin: imm-brainstorm framing - user chose total design before executable slice
 
 ## Devil's Advocate Audit
 
-1. **Rollback Resilience**: 当前切片只应触碰 `docs/specs/loop-engineering-discipline.spec.md`、repo-facing workflow guidance、skill contract 文本和 focused tests。若 contract 过重或测试误伤，回退这些文件即可恢复旧行为；不需要 State Ledger migration。
+1. **Rollback Resilience**: 当前切片只应触碰 `docs/specs/archive/loop-engineering-discipline.spec.md`、repo-facing workflow guidance、skill contract 文本和 focused tests。若 contract 过重或测试误伤，回退这些文件即可恢复旧行为；不需要 State Ledger migration。
 2. **Verification Vanity**: 只检查出现 “loop engineering” 或 “budget” 太弱。验证必须证明 contract 同时包含 failure exit、structured feedback、loop trace、strategy change、budget stop，并继续拒绝 default QA pass、generic dispatcher 和 shared registry。
 3. **Spec Dilution Detection**: 用户要求的是先做总设计再拆，不是直接实现 runtime 自动化。Plan 将当前 slice 限定为 contract adoption，并把 runtime signal tightening 明确 defer，避免把设计说明稀释成一组散落 wording tweaks。
 
 ## Planning Quality Gate
 
-- contract surface: `docs/specs/loop-engineering-discipline.spec.md`、`README.md`、`docs/reference/workflow-and-subagents.md`、`plugins/immune-brain/dist/imm-executor.md`、`plugins/immune-brain/dist/imm-qa.md`、`plugins/immune-brain/dist/imm-autowork.md`、`tests/test_skill_contracts.py`、本 Plan。
+- contract surface: `docs/specs/archive/loop-engineering-discipline.spec.md`、`README.md`、`docs/reference/workflow-and-subagents.md`、`plugins/immune-brain/dist/imm-executor.md`、`plugins/immune-brain/dist/imm-qa.md`、`plugins/immune-brain/dist/imm-autowork.md`、`tests/test_skill_contracts.py`、本 Plan。
 - compatibility: additive contract tightening；不改变 Plan file schema、State Ledger schema、MCP tool schema 或 existing queue behavior。
 - interruption recovery: 如果执行中断，已完成的 contract text 和 tests 可通过 focused unittest 重新校验；未同步 runtime state 不影响已有计划。
 - rollback path: 回退本 Spec、本 Plan、相关 skill contract/guidance 文案和 focused tests；无需数据迁移。
@@ -74,7 +74,7 @@ origin: imm-brainstorm framing - user chose total design before executable slice
 - Verification: `python3 -m unittest tests.test_skill_contracts.SkillContractTests.test_loop_engineering_executor_qa_contract && python3 .imm/imm-plan.py docs/plans/2026-06-20-001-feat-loop-engineering-discipline-plan.md --json`
 - Execution note: test-first
 - Test scenarios: Covers failure exit categories; Covers structured tool feedback summary; Covers minimal loop trace from Executor to QA; Covers repeated failure requiring strategy change; Covers repo-facing guidance saying this enhances existing `Step` evidence loop rather than adding a new platform.
-- Discovery cache: docs/specs/loop-engineering-discipline.spec.md (accepted design contract); plugins/immune-brain/dist/imm-executor.md (Executor evidence contract); plugins/immune-brain/dist/imm-qa.md (QA rework/replan gate); docs/reference/workflow-and-subagents.md (repo-facing Skill guidance); README.md (main workflow guidance); tests/test_skill_contracts.py (focused contract assertions)
+- Discovery cache: docs/specs/archive/loop-engineering-discipline.spec.md (accepted design contract); plugins/immune-brain/dist/imm-executor.md (Executor evidence contract); plugins/immune-brain/dist/imm-qa.md (QA rework/replan gate); docs/reference/workflow-and-subagents.md (repo-facing Skill guidance); README.md (main workflow guidance); tests/test_skill_contracts.py (focused contract assertions)
 - Agent Hint: imm-executor
 - Depends on: none
 - failure_behavior: 如果 required wording 与既有 concise output contract 冲突，保留 concise output，要求 loop trace 是 evidence 摘要而不是完整 transcript。
@@ -88,7 +88,7 @@ origin: imm-brainstorm framing - user chose total design before executable slice
 - Verification: `python3 -m unittest tests.test_skill_contracts.SkillContractTests.test_loop_engineering_autowork_budget_contract && python3 .imm/imm-plan.py docs/plans/2026-06-20-001-feat-loop-engineering-discipline-plan.md --json`
 - Execution note: test-first
 - Test scenarios: Covers explicit opt-in bounded autowork; Covers max Step budget and max rework budget wording; Covers no-progress, tool-failure, missing-input stop semantics; Covers contract preserving no default QA pass and no `imm-autowork-driver`.
-- Discovery cache: docs/specs/loop-engineering-discipline.spec.md (budget stop requirements); plugins/immune-brain/dist/imm-autowork.md (autowork skill contract); docs/solutions/rejected-autowork-driver-default-pass.md (rejected boundary); tests/test_skill_contracts.py (focused contract assertions)
+- Discovery cache: docs/specs/archive/loop-engineering-discipline.spec.md (budget stop requirements); plugins/immune-brain/dist/imm-autowork.md (autowork skill contract); docs/solutions/rejected-autowork-driver-default-pass.md (rejected boundary); tests/test_skill_contracts.py (focused contract assertions)
 - Agent Hint: imm-executor
 - Depends on: 1
 - failure_behavior: 如果 budget wording implies runtime-only enforcement, stop and reword it as host/skill contract guidance for this slice; do not edit `.imm/imm-autowork.py` in this Step.
@@ -102,7 +102,7 @@ origin: imm-brainstorm framing - user chose total design before executable slice
 - Verification: `python3 -m unittest tests.test_skill_contracts.SkillContractTests.test_loop_engineering_rejects_platform_expansion tests.test_skill_contracts.SkillContractTests.test_loop_engineering_executor_qa_contract tests.test_skill_contracts.SkillContractTests.test_loop_engineering_autowork_budget_contract && python3 .imm/imm-plan.py docs/plans/2026-06-20-001-feat-loop-engineering-discipline-plan.md --json`
 - Execution note: test-first
 - Test scenarios: Covers no shared registry; Covers no generic dispatcher; Covers no SQLite or wiki memory authority; Covers no runtime default QA pass; Covers Phase 2 runtime signal tightening staying deferred unless a future Plan promotes it.
-- Discovery cache: docs/specs/loop-engineering-discipline.spec.md (non-goals and roadmap); docs/solutions/rejected-shared-registry-generic-dispatcher.md (rejected dispatcher boundary); docs/solutions/rejected-pro-workflow-sqlite-wiki-authority.md (rejected memory boundary); docs/solutions/rejected-autowork-driver-default-pass.md (rejected QA bypass boundary); tests/test_skill_contracts.py (regression surface)
+- Discovery cache: docs/specs/archive/loop-engineering-discipline.spec.md (non-goals and roadmap); docs/solutions/rejected-shared-registry-generic-dispatcher.md (rejected dispatcher boundary); docs/solutions/rejected-pro-workflow-sqlite-wiki-authority.md (rejected memory boundary); docs/solutions/rejected-autowork-driver-default-pass.md (rejected QA bypass boundary); tests/test_skill_contracts.py (regression surface)
 - Agent Hint: imm-executor
 - Depends on: 2
 - failure_behavior: 如果 rejected boundary assertions require touching runtime files, return to planner; this Step should remain contract-test and guidance only.

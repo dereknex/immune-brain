@@ -11,14 +11,14 @@ origin: user asked how Immune-Brain should fully use multi-model capability duri
 ## Task
 - Summary: Add a Brainstorm ensemble dispatch contract that reuses Immune-Brain model tier resolution so multi-model Brainstorm can produce advisory framing evidence without taking Planner authority
 - Origin: User asked how to implement multi-model use in the Brainstorm stage after a framing discussion; planner ensemble candidates agreed on reusing the existing resolver while preserving Brainstorm boundaries
-- Spec: docs/specs/brainstorm-multi-model-ensemble.spec.md
+- Spec: docs/specs/archive/brainstorm-multi-model-ensemble.spec.md
 - Research: Existing `imm_core.ts` has `resolveWorkflowStageModels`, `buildPlannerEnsembleRequest`, `normalizePlannerEnsemblePacket`, and presets for `planner_ensemble`; current config already resolves `workflow_models.planner_ensemble` to four advisory candidates; `imm-brainstorm` is framing-only and may not write plans or edit files
 - Decisions: D1 use `brainstorm_ensemble` as a distinct workflow stage instead of overloading `brainstorm`; D2 runtime only returns deterministic dispatch JSON and never calls model providers; D3 host owns actual parallel model/subagent execution; D4 Brainstorm children are advisory-only and default to `tool_policy: no tools`; D5 Planner remains final Spec and Plan authority; D6 small-risk Brainstorm does not fan out by default
 - Assumptions: Existing `PlannerEnsembleCandidate` shape can be reused or renamed with no behavior change; model presets may add `brainstorm_ensemble` without migration because unknown config currently falls back to inherit; package build or dist sync follows the repo’s existing skill packaging process
 - Brainstorm manifest: BR-REQ-1; BR-REQ-2; BR-REQ-3; BR-DEC-1; BR-DEC-2; BR-OUT-1; BR-Q-1
 - Scope Mode: Hold Scope
 - Engineering Closure Check:
-  - architecture_surface: `plugins/immune-brain/runtime/imm_core.ts`, `plugins/immune-brain/runtime/immune_brain_runtime.ts`, `plugins/immune-brain/dist/imm-brainstorm.md`, `plugins/immune-brain/skills/imm-brainstorm/SKILL.md`, `tests/planner-ensemble-contract.test.ts`, `tests/advisory-dispatch-core.test.ts`, `docs/specs/brainstorm-multi-model-ensemble.spec.md`
+  - architecture_surface: `plugins/immune-brain/runtime/imm_core.ts`, `plugins/immune-brain/runtime/immune_brain_runtime.ts`, `plugins/immune-brain/dist/imm-brainstorm.md`, `plugins/immune-brain/skills/imm-brainstorm/SKILL.md`, `tests/planner-ensemble-contract.test.ts`, `tests/advisory-dispatch-core.test.ts`, `docs/specs/archive/brainstorm-multi-model-ensemble.spec.md`
   - dependencies_known: true
   - verification_path:
       - target: runtime helper returns deterministic Brainstorm ensemble candidates and prompt docs preserve authority boundaries
@@ -93,11 +93,11 @@ Spec and Plan prose language: zh-CN for user-facing explanations; preserve exact
 ### Step 5
 - Step ID: U5
 - Result: Brainstorm ensemble implementation is validated against Immune-Brain packaging contracts
-- Verification: `bun test tests/planner-ensemble-contract.test.ts tests/advisory-dispatch-core.test.ts tests/activation-plan-runtime-surface.test.ts` exits zero; `plugins/immune-brain/bin/imm-plan docs/plans/2026-07-07-001-feat-brainstorm-multi-model-ensemble-plan.md --json` exits zero; `git diff -- plugins/immune-brain/runtime plugins/immune-brain/dist/imm-brainstorm.md plugins/immune-brain/skills/imm-brainstorm/SKILL.md tests docs/specs/brainstorm-multi-model-ensemble.spec.md docs/plans/2026-07-07-001-feat-brainstorm-multi-model-ensemble-plan.md` shows no provider SDK or state mutation changes
+- Verification: `bun test tests/planner-ensemble-contract.test.ts tests/advisory-dispatch-core.test.ts tests/activation-plan-runtime-surface.test.ts` exits zero; `plugins/immune-brain/bin/imm-plan docs/plans/2026-07-07-001-feat-brainstorm-multi-model-ensemble-plan.md --json` exits zero; `git diff -- plugins/immune-brain/runtime plugins/immune-brain/dist/imm-brainstorm.md plugins/immune-brain/skills/imm-brainstorm/SKILL.md tests docs/specs/archive/brainstorm-multi-model-ensemble.spec.md docs/plans/2026-07-07-001-feat-brainstorm-multi-model-ensemble-plan.md` shows no provider SDK or state mutation changes
 - Agent Hint: imm-qa
 - Test scenarios: Covers runtime contracts; Covers CLI surface; Covers plan validation; Covers scope guard
 - Depends on: 4
-- Scope: `plugins/immune-brain/runtime/imm_core.ts`, `plugins/immune-brain/runtime/immune_brain_runtime.ts`, `plugins/immune-brain/dist/imm-brainstorm.md`, `plugins/immune-brain/skills/imm-brainstorm/SKILL.md`, `tests/planner-ensemble-contract.test.ts`, `tests/advisory-dispatch-core.test.ts`, `tests/activation-plan-runtime-surface.test.ts`, `docs/specs/brainstorm-multi-model-ensemble.spec.md`, `docs/plans/2026-07-07-001-feat-brainstorm-multi-model-ensemble-plan.md`
+- Scope: `plugins/immune-brain/runtime/imm_core.ts`, `plugins/immune-brain/runtime/immune_brain_runtime.ts`, `plugins/immune-brain/dist/imm-brainstorm.md`, `plugins/immune-brain/skills/imm-brainstorm/SKILL.md`, `tests/planner-ensemble-contract.test.ts`, `tests/advisory-dispatch-core.test.ts`, `tests/activation-plan-runtime-surface.test.ts`, `docs/specs/archive/brainstorm-multi-model-ensemble.spec.md`, `docs/plans/2026-07-07-001-feat-brainstorm-multi-model-ensemble-plan.md`
 - Replan condition: If validation reveals host-specific requirements beyond dispatch JSON split those into a later host adapter plan
 
 ## Notes

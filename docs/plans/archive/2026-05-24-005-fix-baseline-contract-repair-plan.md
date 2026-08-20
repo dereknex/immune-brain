@@ -11,7 +11,7 @@ origin: imm-autowork stopped because gstack P1 U3 full skill contract verificati
 ## Task
 - Summary: Restore the shared `skills/BASELINE.md` sections required by existing contract tests.
 - Origin: `docs/plans/2026-05-24-004-feat-gstack-borrow-p1-adoption-plan.md` U3 added and passed focused gstack drift guards, but `python3 -m unittest tests.test_skill_contracts` failed on existing `skills/BASELINE.md` expectations for Success Criteria, Collaboration Posture, Hub skill anatomy, and Shallow Discovery.
-- Spec: docs/specs/baseline-contract-repair.spec.md
+- Spec: docs/specs/archive/baseline-contract-repair.spec.md
 - Research: `tests/test_skill_contracts.py` already requires exact section phrases in `skills/BASELINE.md`. `docs/solutions/outcome-first-rule-framing-and-collaboration-posture.md` records the intended Success Criteria and Collaboration Posture pattern. `docs/solutions/addy-upstream-contrast-and-hub-anatomy-pattern.md` records the hub Skill anatomy contract. `docs/solutions/contracts.md` records the Shallow Discovery pattern. Current `skills/BASELINE.md` is a short bullet list and does not satisfy those existing guards.
 - Decisions:
     - D1: Use a new one-step repair slice rather than appending to the gstack P1 Plan, because the failing surface is shared baseline contract drift.

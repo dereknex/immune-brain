@@ -40,7 +40,7 @@ Declared items: BR-REQ-1, BR-REQ-2, BR-REQ-3, BR-DEC-1, BR-DEC-2, BR-OUT-1, BR-O
 
 ## Engineering Closure Check
 
-- architecture_surface: `.gitmodules`, `README.md`, `docs/reference/`, `docs/specs/pro-workflow-compaction-handoff.spec.md`, `HANDOFF.md` (template section in reference), `skills/imm-work/SKILL.md`, `.imm/imm-dehydrate.py`, `tests/`
+- architecture_surface: `.gitmodules`, `README.md`, `docs/reference/`, `docs/specs/archive/pro-workflow-compaction-handoff.spec.md`, `HANDOFF.md` (template section in reference), `skills/imm-work/SKILL.md`, `.imm/imm-dehydrate.py`, `tests/`
 - dependencies_known: true
 - verification_path:
   - target: plan validates; contract tests pass; dehydrate round-trips compaction_handoff
@@ -72,10 +72,10 @@ Declared items: BR-REQ-1, BR-REQ-2, BR-REQ-3, BR-DEC-1, BR-DEC-2, BR-OUT-1, BR-O
 
 - Step ID: U3
 - Result: The compaction handoff contract is published for Codex Claude Code Cursor hosts
-- Verification: `docs/specs/pro-workflow-compaction-handoff.spec.md` includes R2 field table; `docs/reference/compaction-handoff-hosts.md` documents per-host rituals; `docs/reference/HANDOFF-template.md` lists Compaction Handoff headings matching spec R2
+- Verification: `docs/specs/archive/pro-workflow-compaction-handoff.spec.md` includes R2 field table; `docs/reference/compaction-handoff-hosts.md` documents per-host rituals; `docs/reference/HANDOFF-template.md` lists Compaction Handoff headings matching spec R2
 - Test scenarios: Covers spec R2–R3; Covers BR-REQ-3 (contract)
 - Depends on: 2
-- Scope: `docs/specs/pro-workflow-compaction-handoff.spec.md`, `docs/reference/compaction-handoff-hosts.md`, `docs/reference/HANDOFF-template.md`
+- Scope: `docs/specs/archive/pro-workflow-compaction-handoff.spec.md`, `docs/reference/compaction-handoff-hosts.md`, `docs/reference/HANDOFF-template.md`
 
 ### Step 4
 

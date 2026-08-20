@@ -3,7 +3,7 @@
 ## Task
 
 - Summary: Replace Immune-Brain runtime compatibility branches with detection and one-time migration of legacy projects to the current format.
-- Spec: `docs/specs/legacy-project-migration.spec.md`
+- Spec: `docs/specs/archive/legacy-project-migration.spec.md`
 - Origin: The user explicitly rejected compatibility preservation and required legacy projects to be discovered and migrated to the latest version.
 - Research: Current State Ledger schema is v3. `normalizeCurrentIteration` currently defaults missing versions to v2, `validateTransitionState` accepts v2/v3, `normalizeExecutionEvidence` synthesizes structured evidence from legacy free text, `normalizeSpecReference` silently maps old Spec paths, and `LedgerStateMachine` remains only as a compatibility wrapper. Existing lock, atomic-write, revision, and focused runtime tests provide the primitives for a migration gateway.
 - Decisions: D1. Read-only commands detect and report without writing. D2. Stateful commands migrate before their first mutation. D3. Add explicit `imm-migrate` and `--check`. D4. Back up every changed project file and roll back failed replacement. D5. After migration, normal runtime accepts only schema v3 and structured evidence. D6. Unknown future versions fail closed. D7. Remove compatibility-only APIs and flags rather than retaining aliases.
@@ -50,7 +50,7 @@ activation, benchmark schemas, or historical documentation.
 - Verification type: automated
 - Agent Hint: imm-executor
 - Test scenarios: Covers absent state; current v3; v2; valid missing-version v2; legacy evidence in Steps and follow-ups; active Plan legacy Spec reference; missing target Spec; malformed JSON; invalid version; future version; repeated migration no-op; backup creation; injected replacement failure and restoration.
-- Discovery cache: plugins/immune-brain/runtime/state_ledger.ts (schema, evidence, lock and atomic write); plugins/immune-brain/runtime/plan_core.ts (legacy Spec mapping); plugins/immune-brain/runtime/imm_core.ts (heal); tests/runtime-state.test.ts (legacy fixtures); tests/roadmap-plan-transition-state.test.ts (v3 contract); docs/specs/legacy-project-migration.spec.md (migration authority)
+- Discovery cache: plugins/immune-brain/runtime/state_ledger.ts (schema, evidence, lock and atomic write); plugins/immune-brain/runtime/plan_core.ts (legacy Spec mapping); plugins/immune-brain/runtime/imm_core.ts (heal); tests/runtime-state.test.ts (legacy fixtures); tests/roadmap-plan-transition-state.test.ts (v3 contract); docs/specs/archive/legacy-project-migration.spec.md (migration authority)
 - Depends on: none
 - failure_behavior: Reject ambiguous legacy state and restore every replaced file on any migration failure. Never stamp an unsupported or partially converted project as current.
 - security_considerations: Reject symlinked migration targets, keep backups under project-local `.imm/migrations`, use content hashes for identity, and never execute data read from legacy files.

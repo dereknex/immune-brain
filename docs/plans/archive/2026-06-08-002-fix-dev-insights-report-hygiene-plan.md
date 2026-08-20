@@ -11,7 +11,7 @@ origin: imm-brainstorm framing - recurring automation reports exposed CLI and si
 ## Task
 
 - Summary: Make dev insights and telemetry summaries safe to run in recurring automation and clearer to interpret.
-- Spec: docs/specs/dev-insights-report-hygiene.spec.md
+- Spec: docs/specs/archive/dev-insights-report-hygiene.spec.md
 - Origin: Brainstorm manifest from 2026-06-08 dev insights / telemetry report hygiene analysis.
 - Brainstorm manifest: BR-REQ-1; BR-REQ-2; BR-REQ-3; BR-OUT-1; BR-OUT-2; BR-DEFER-1; BR-Q-1
 - Research: `CONTEXT.md` defines Brainstorm, Plan, Step, Spec, State Ledger, Skill, and Learning boundaries. `.imm/imm_core/telemetry.py` currently makes `summarize --out` required and groups telemetry by project fingerprint plus skill while preserving per-group `exact_source_rate`. The active trace has only `source=estimated` events, so `exact_source_rate=0.0` is an input-state fact rather than a summary calculation bug. `.imm/imm-dev-insights.py` groups raw `Suggested improvement` or `Friction` text directly; the live inbox contains placeholder records such as `Suggested improvement: 1` and `Suggested improvement: None.` that become noisy candidates. `tests/test_dev_insights_review.py` and `tests/test_telemetry_trace.py` already cover the focused report surfaces. `docs/solutions/manual-dev-insights-review-loop.md` keeps dev insights manual and read-only; `docs/solutions/workflow-entrypoint-telemetry-bridging.md` says exact usage capture requires explicit runtime metadata and should not be guessed.
@@ -57,7 +57,7 @@ origin: imm-brainstorm framing - recurring automation reports exposed CLI and si
 - Verification type: automated
 - Execution note: characterization-first
 - Test scenarios: `summarize` succeeds without `--out`; explicit `--out` and `--json` remain compatible; estimated-only trace reports a summary-level source-quality signal; placeholder suggested improvements do not create distinct candidate themes; useful friction is used when suggested improvement is placeholder; no formal Plan, Spec, State Ledger, or solution files are auto-created by report generation.
-- Discovery cache: .imm/imm_core/telemetry.py (summary command parser and payload); .imm/imm-telemetry.py (CLI wrapper); .imm/imm-dev-insights.py (inbox parser and grouping); tests/test_telemetry_trace.py (telemetry summary regression); tests/test_dev_insights_review.py (dev-insights report regression); docs/specs/dev-insights-report-hygiene.spec.md (accepted behavior)
+- Discovery cache: .imm/imm_core/telemetry.py (summary command parser and payload); .imm/imm-telemetry.py (CLI wrapper); .imm/imm-dev-insights.py (inbox parser and grouping); tests/test_telemetry_trace.py (telemetry summary regression); tests/test_dev_insights_review.py (dev-insights report regression); docs/specs/archive/dev-insights-report-hygiene.spec.md (accepted behavior)
 - Depends on: none
 - failure_behavior: If default output path compatibility risks writing unexpected user-global files, keep explicit `--out` as the only writing mode and return to planner to change the automation contract instead.
 - security_considerations: Report hygiene must not expose raw prompts, conversations, diffs, or provider metadata beyond existing structured telemetry and dev-insights fields.

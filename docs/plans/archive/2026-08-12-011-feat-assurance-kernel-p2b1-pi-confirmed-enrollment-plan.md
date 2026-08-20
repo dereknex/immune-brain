@@ -5,8 +5,8 @@ status: active
 date: 2026-08-12
 risk: high
 workflow_profile: strict
-spec: docs/specs/assurance-kernel-v4-p2b1-pi-confirmed-enrollment.spec.md
-parent_spec: docs/specs/assurance-kernel-v4-p2-managed-cutover.spec.md
+spec: docs/specs/archive/assurance-kernel-v4-p2b1-pi-confirmed-enrollment.spec.md
+parent_spec: docs/specs/archive/assurance-kernel-v4-p2-managed-cutover.spec.md
 predecessor: docs/plans/2026-08-12-010-feat-assurance-kernel-p2b0-canary-core-plan.md
 ---
 
@@ -73,7 +73,7 @@ The user explicitly accepted skipping only the natural 14-day observation window
 - Step ID: U1
 - Result: One immutable preparation identity governs the read-only canary preview.
 - Scope: plugins/immune-brain/runtime/kernel/pi_canary_prepare.ts; tests/kernel-pi-canary-prepare.test.ts; tests/kernel-pi-canary-live-boundary.test.ts
-- Discovery cache: plugins/immune-brain/runtime/kernel/canary_eligibility.ts (waiver policy); plugins/immune-brain/runtime/kernel/readiness.ts (readiness report); plugins/immune-brain/runtime/kernel/readiness_evidence.ts (tracked evidence); plugins/immune-brain/runtime/kernel/intent.ts (secure Intent reader); plugins/immune-brain/runtime/commands/kernel.ts (canonical migration digest); plugins/immune-brain/runtime/kernel/backend_claim.ts (backend claim); docs/specs/assurance-kernel-v4-p2b1-pi-confirmed-enrollment.spec.md (contract)
+- Discovery cache: plugins/immune-brain/runtime/kernel/canary_eligibility.ts (waiver policy); plugins/immune-brain/runtime/kernel/readiness.ts (readiness report); plugins/immune-brain/runtime/kernel/readiness_evidence.ts (tracked evidence); plugins/immune-brain/runtime/kernel/intent.ts (secure Intent reader); plugins/immune-brain/runtime/commands/kernel.ts (canonical migration digest); plugins/immune-brain/runtime/kernel/backend_claim.ts (backend claim); docs/specs/archive/assurance-kernel-v4-p2b1-pi-confirmed-enrollment.spec.md (contract)
 - Test scenarios: malformed task ID; missing live evidence rejects; blocked readiness rejects; synthetic candidate; synthetic time-only waiver; canonical root/state path; Ledger/receipt/observation/migration/readiness/evidence/Intent tuple; workspace/TaskRecord/backend/marker absence; immutable preview; deterministic digest; revalidation equality; each owner drift; direct import has no confirm/mint/rehearse/enroll function; live byte identity
 - Verification: `test -f plugins/immune-brain/runtime/kernel/pi_canary_prepare.ts && test -f tests/kernel-pi-canary-prepare.test.ts && test -f tests/kernel-pi-canary-live-boundary.test.ts && bun test tests/kernel-pi-canary-prepare.test.ts tests/kernel-pi-canary-live-boundary.test.ts tests/kernel-canary-eligibility.test.ts tests/kernel-readiness.test.ts tests/kernel-readiness-evidence.test.ts tests/kernel-intent-v2.test.ts && plugins/immune-brain/bin/imm-plan docs/plans/2026-08-12-011-feat-assurance-kernel-p2b1-pi-confirmed-enrollment-plan.md --json && git diff --check`
 - Test type: integration

@@ -11,7 +11,7 @@ origin: "User asked imm-planner for a complete plan after reviewing immature sub
 ## Task
 - Summary: Mature the currently immature subagent-capable hosts by adding result-oriented contracts, deterministic host paths, child evidence handling, and a local scorecard that proves whether subagent output improves downstream outcomes.
 - Origin: imm-brainstorm analysis concluded that `imm-code-review` and `imm-ui-review` are the mature baseline, while `imm-party`, `imm-arch-explorer`, `imm-brainstorm`, `imm-work`, and `imm-planner` need host-specific maturity work.
-- Spec: docs/specs/subagent-host-maturity-roadmap.spec.md
+- Spec: docs/specs/archive/subagent-host-maturity-roadmap.spec.md
 - Research: `CONTEXT.md` defines Activation Plan, Delegation Packet, Domain Mapper, State Ledger, and Brainstorm terminology. `docs/reference/subagent-dispatch-protocol.md` defines the dispatch lifecycle and fallback reasons. `docs/reference/automatic-subagent-activation-policy.md` keeps activation host-bound and advisory-only. `docs/reference/subagent-remaining-work.md` says `imm-party` catalog wiring is not started, while `imm-ui-review` and `imm-code-review` catalog paths are complete. `docs/solutions/rejected-shared-registry-generic-dispatcher.md` rejects generic dispatcher work until three or more hosts show real drift and maintenance evidence. `docs/solutions/rejected-rigid-patch-generation-in-reviewer-subagents.md` rejects exact patch output from restricted reviewers.
 - Decisions:
   - D1: Keep every maturity slice host-bound; do not introduce a shared registry or generic dispatcher.
@@ -91,7 +91,7 @@ origin: "User asked imm-planner for a complete plan after reviewing immature sub
 - Result: Full subagent host maturity regression passes
 - Verification: `python3 -m unittest tests.test_party_dispatch tests.test_domain_mapper_dispatch tests.test_brainstorm_research tests.test_work_probes tests.test_current_iteration_state tests.test_subagent_scorecard tests.test_telemetry_trace tests.test_skill_contracts` exits zero
 - Test scenarios: party, mapper, brainstorm, work, planner, and scorecard paths all preserve host-bound authority; mature `imm-code-review` and `imm-ui-review` contracts remain intact; fallback reasons are visible; no shared registry, generic dispatcher, background scheduler, or patch-generating advisory reviewer is introduced
-- Discovery cache: docs/specs/subagent-host-maturity-roadmap.spec.md (acceptance criteria); docs/plans/2026-05-24-001-feat-subagent-host-maturity-roadmap-plan.md (plan validation target); tests/test_skill_contracts.py (global contract regression)
+- Discovery cache: docs/specs/archive/subagent-host-maturity-roadmap.spec.md (acceptance criteria); docs/plans/2026-05-24-001-feat-subagent-host-maturity-roadmap-plan.md (plan validation target); tests/test_skill_contracts.py (global contract regression)
 - failure_behavior: If broad regression exposes unrelated failures, isolate them and close only after this plan's host-maturity regressions pass.
 - security_considerations: Final evidence must confirm all child paths remain bounded, advisory or active-Step constrained, and subject to host authorization.
 - Depends on: 5

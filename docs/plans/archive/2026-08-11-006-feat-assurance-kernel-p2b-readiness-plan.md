@@ -8,7 +8,7 @@
 **Created**: 2026-08-11
 **Status**: pending
 **Priority**: P1
-**Spec**: docs/specs/assurance-kernel-v4-p2b-readiness.spec.md
+**Spec**: docs/specs/archive/assurance-kernel-v4-p2b-readiness.spec.md
 **Predecessor**: docs/plans/2026-08-11-005-fix-assurance-kernel-p2a-exact-observation-plan.md (terminal: finish_reset)
 
 ## Goal
@@ -37,7 +37,7 @@ Deliver the read-only `assurance_kernel/readiness_report/v1` projection over R2A
 - Step ID: U1
 - Result: `imm-kernel readiness --json` emits a deterministic read-only `assurance_kernel/readiness_report/v1` whose status classification exactly follows the Spec promotion conditions for the supplied evidence.
 - Scope: `plugins/immune-brain/runtime/kernel/readiness.ts`; `plugins/immune-brain/runtime/kernel/readiness_evidence.ts`; `plugins/immune-brain/runtime/commands/kernel.ts`; `plugins/immune-brain/runtime/immune_brain_runtime.ts`; `tests/kernel-readiness.test.ts`; `tests/kernel-readiness-evidence.test.ts`; `tests/kernel-shadow-cli.test.ts`; `tests/kernel-r2a-boundary.test.ts`
-- Discovery cache: `plugins/immune-brain/runtime/authority_commit_receipts.ts` (receipt records and canonical lifecycle history action names); `plugins/immune-brain/runtime/kernel/automatic_observations.ts` (observation v2 schema and reader); `plugins/immune-brain/runtime/commands/kernel.ts` (kernel subcommand wiring, canonical migration dry-run report builder/serializer, and non-qualifying journal event); `plugins/immune-brain/runtime/immune_brain_runtime.ts` (canonical command manifest, help, migration preflight, and read-only project-access classification); `plugins/immune-brain/runtime/kernel/storage.ts` (path security patterns); `docs/specs/assurance-kernel-v4-p2-managed-cutover.spec.md` (D3 promotion conditions); `docs/specs/assurance-kernel-v4-p2a-observation-r2.spec.md` (evidence classification); `tests/kernel-r2a-boundary.test.ts` (boundary expectations to update)
+- Discovery cache: `plugins/immune-brain/runtime/authority_commit_receipts.ts` (receipt records and canonical lifecycle history action names); `plugins/immune-brain/runtime/kernel/automatic_observations.ts` (observation v2 schema and reader); `plugins/immune-brain/runtime/commands/kernel.ts` (kernel subcommand wiring, canonical migration dry-run report builder/serializer, and non-qualifying journal event); `plugins/immune-brain/runtime/immune_brain_runtime.ts` (canonical command manifest, help, migration preflight, and read-only project-access classification); `plugins/immune-brain/runtime/kernel/storage.ts` (path security patterns); `docs/specs/archive/assurance-kernel-v4-p2-managed-cutover.spec.md` (D3 promotion conditions); `docs/specs/archive/assurance-kernel-v4-p2a-observation-r2.spec.md` (evidence classification); `tests/kernel-r2a-boundary.test.ts` (boundary expectations to update)
 - Verification: `test -f plugins/immune-brain/runtime/kernel/readiness.ts && test -f plugins/immune-brain/runtime/kernel/readiness_evidence.ts && bun test tests/kernel-readiness.test.ts tests/kernel-readiness-evidence.test.ts tests/kernel-shadow-cli.test.ts tests/kernel-migrate.test.ts tests/kernel-r2a-boundary.test.ts tests/host-runtime-cutover.test.ts && bun test && plugins/immune-brain/bin/imm-plan docs/plans/2026-08-11-006-feat-assurance-kernel-p2b-readiness-plan.md --json && git diff --check`
 - Verification type: automated
 - Depends on: none

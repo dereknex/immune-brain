@@ -11,13 +11,13 @@ origin: user asked to continue after brainstorm_ensemble runtime closure; next s
 ## Task
 - Summary: Add a Pi host adapter contract that maps Brainstorm ensemble dispatch candidates into advisory-only Pi Agent envelopes without launching models from the runtime
 - Origin: Previous Brainstorm ensemble plan closed with host-facing dispatch JSON; user said continue and selected imm-planner for the next slice
-- Spec: docs/specs/pi-brainstorm-ensemble-host-adapter.spec.md
-- Research: `buildAdvisoryDispatchEnvelope("pi")` already emits `primitive: "Agent"` with `subagent_type: "general-purpose"`, optional `model`, `inherit_context: false`, and `run_in_background`; `docs/reference/subagent-dispatch-protocol.md` documents Pi Agent dispatch and no readonly parameter; `docs/specs/brainstorm-multi-model-ensemble.spec.md` says host owns parallel execution while runtime does not call providers; current `brainstorm_ensemble` work is complete but uncommitted
+- Spec: docs/specs/archive/pi-brainstorm-ensemble-host-adapter.spec.md
+- Research: `buildAdvisoryDispatchEnvelope("pi")` already emits `primitive: "Agent"` with `subagent_type: "general-purpose"`, optional `model`, `inherit_context: false`, and `run_in_background`; `docs/reference/subagent-dispatch-protocol.md` documents Pi Agent dispatch and no readonly parameter; `docs/specs/archive/brainstorm-multi-model-ensemble.spec.md` says host owns parallel execution while runtime does not call providers; current `brainstorm_ensemble` work is complete but uncommitted
 - Decisions: D1 add a Brainstorm-specific envelope helper instead of a generic dispatcher; D2 helper consumes an already gated request and never re-runs activation policy; D3 Pi only for this slice; D4 tests assert envelope shape rather than invoking Agent; D5 parent Brainstorm remains synthesis authority through `normalizeBrainstormEnsemblePacket`
 - Assumptions: The previous `brainstorm_ensemble` changes remain in the working tree or are committed before this plan executes; Pi harness continues to expose `Agent` with `model` and `run_in_background`; repository tests cannot call real host tools
 - Scope Mode: New Slice
 - Engineering Closure Check:
-  - architecture_surface: `plugins/immune-brain/runtime/imm_core.ts`, `tests/planner-ensemble-contract.test.ts`, `tests/advisory-dispatch-core.test.ts`, `plugins/immune-brain/dist/imm-brainstorm.md`, `plugins/immune-brain/skills/imm-brainstorm/SKILL.md`, `docs/specs/pi-brainstorm-ensemble-host-adapter.spec.md`, `docs/plans/2026-07-07-002-feat-pi-brainstorm-ensemble-host-adapter-plan.md`
+  - architecture_surface: `plugins/immune-brain/runtime/imm_core.ts`, `tests/planner-ensemble-contract.test.ts`, `tests/advisory-dispatch-core.test.ts`, `plugins/immune-brain/dist/imm-brainstorm.md`, `plugins/immune-brain/skills/imm-brainstorm/SKILL.md`, `docs/specs/archive/pi-brainstorm-ensemble-host-adapter.spec.md`, `docs/plans/2026-07-07-002-feat-pi-brainstorm-ensemble-host-adapter-plan.md`
   - dependencies_known: true
   - verification_path:
       - target: Pi adapter helper returns Agent envelopes for Brainstorm candidates and refuses dispatch-false requests
@@ -70,11 +70,11 @@ Spec and Plan prose language: zh-CN for user-facing explanations; preserve exact
 ### Step 4
 - Step ID: U4
 - Result: Pi Brainstorm adapter slice is validated against runtime contract boundaries
-- Verification: `bun test tests/planner-ensemble-contract.test.ts tests/advisory-dispatch-core.test.ts tests/activation-plan-runtime-surface.test.ts` exits zero; `plugins/immune-brain/bin/imm-plan docs/plans/2026-07-07-002-feat-pi-brainstorm-ensemble-host-adapter-plan.md --json` exits zero; `git diff -- plugins/immune-brain/runtime plugins/immune-brain/dist/imm-brainstorm.md plugins/immune-brain/skills/imm-brainstorm/SKILL.md tests docs/specs/pi-brainstorm-ensemble-host-adapter.spec.md docs/plans/2026-07-07-002-feat-pi-brainstorm-ensemble-host-adapter-plan.md` shows no provider SDK calls, no `Agent` tool invocation, no polling loop, and no workflow-state mutation
+- Verification: `bun test tests/planner-ensemble-contract.test.ts tests/advisory-dispatch-core.test.ts tests/activation-plan-runtime-surface.test.ts` exits zero; `plugins/immune-brain/bin/imm-plan docs/plans/2026-07-07-002-feat-pi-brainstorm-ensemble-host-adapter-plan.md --json` exits zero; `git diff -- plugins/immune-brain/runtime plugins/immune-brain/dist/imm-brainstorm.md plugins/immune-brain/skills/imm-brainstorm/SKILL.md tests docs/specs/archive/pi-brainstorm-ensemble-host-adapter.spec.md docs/plans/2026-07-07-002-feat-pi-brainstorm-ensemble-host-adapter-plan.md` shows no provider SDK calls, no `Agent` tool invocation, no polling loop, and no workflow-state mutation
 - Agent Hint: imm-qa
 - Test scenarios: Covers full focused runtime suite; Covers plan validation; Covers scope guard; Covers no real host invocation
 - Depends on: 3
-- Scope: `plugins/immune-brain/runtime/imm_core.ts`, `plugins/immune-brain/dist/imm-brainstorm.md`, `plugins/immune-brain/skills/imm-brainstorm/SKILL.md`, `tests/planner-ensemble-contract.test.ts`, `tests/advisory-dispatch-core.test.ts`, `tests/activation-plan-runtime-surface.test.ts`, `docs/specs/pi-brainstorm-ensemble-host-adapter.spec.md`, `docs/plans/2026-07-07-002-feat-pi-brainstorm-ensemble-host-adapter-plan.md`
+- Scope: `plugins/immune-brain/runtime/imm_core.ts`, `plugins/immune-brain/dist/imm-brainstorm.md`, `plugins/immune-brain/skills/imm-brainstorm/SKILL.md`, `tests/planner-ensemble-contract.test.ts`, `tests/advisory-dispatch-core.test.ts`, `tests/activation-plan-runtime-surface.test.ts`, `docs/specs/archive/pi-brainstorm-ensemble-host-adapter.spec.md`, `docs/plans/2026-07-07-002-feat-pi-brainstorm-ensemble-host-adapter-plan.md`
 - Replan condition: If validation needs live Pi `Agent` access stop and route to a manual host-integration plan
 
 ## Notes

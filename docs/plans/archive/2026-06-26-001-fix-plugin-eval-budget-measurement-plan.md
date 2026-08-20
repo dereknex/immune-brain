@@ -11,7 +11,7 @@ origin: plugin-eval observed usage analysis for immune-brain
 ## Task
 
 - Summary: Turn the Plugin Eval budget and coverage findings for `immune-brain` into documented, reproducible evidence.
-- Spec: docs/specs/plugin-eval-budget-measurement-followup.spec.md
+- Spec: docs/specs/archive/plugin-eval-budget-measurement-followup.spec.md
 - Origin: User asked for a solution based on the Plugin Eval report: score 81/100, `observed-usage-estimate-drift`, `deferred_cost_tokens-budget-high`, and missing coverage artifacts.
 - Brainstorm manifest: BR-REQ-001; BR-REQ-002; BR-REQ-003; BR-DEC-001; BR-DEC-002; BR-OUT-001; BR-Q-001; BR-Q-002
 - Research: `CONTEXT.md` identifies plugin-local runtime and Skill contracts as the relevant surfaces. The cached Plugin Eval budget code computes plugin active budget from `.codex-plugin/plugin.json` plus skill `SKILL.md` files and counts all other plugin text as deferred. The observed-usage check compares that active estimate with benchmark input tokens, which include task workspace context and runtime-expanded instruction text. Plugin Eval coverage detection recognizes `lcov.info`, `coverage.xml`, `coverage-final.json`, or `coverage-summary.json` under the evaluated plugin target. Local Python currently does not have `coverage.py`, so the coverage path must either use a repo-local generator or an existing dependency-free artifact writer.
@@ -76,7 +76,7 @@ origin: plugin-eval observed usage analysis for immune-brain
 - Verification: `python3 -m unittest tests.test_skill_contracts && python3 .imm/imm-plan.py docs/plans/2026-06-26-001-fix-plugin-eval-budget-measurement-plan.md --json`
 - Execution note: test-first
 - Test scenarios: Covers static active budget scope; Covers observed benchmark usage scope; Covers deferred budget remains a real monitoring signal; Covers no instruction to rewrite all compact `SKILL.md` files.
-- Discovery cache: plugins/immune-brain/.codex-plugin/plugin.json (plugin manifest budget source); plugins/immune-brain/skills (compact Skill entry files); plugins/immune-brain/dist (runtime-expanded instruction source); tests/test_skill_contracts.py (contract regression tests); docs/specs/plugin-eval-budget-measurement-followup.spec.md (accepted behavior)
+- Discovery cache: plugins/immune-brain/.codex-plugin/plugin.json (plugin manifest budget source); plugins/immune-brain/skills (compact Skill entry files); plugins/immune-brain/dist (runtime-expanded instruction source); tests/test_skill_contracts.py (contract regression tests); docs/specs/archive/plugin-eval-budget-measurement-followup.spec.md (accepted behavior)
 - Agent Hint: imm-executor
 - Depends on: none
 - failure_behavior: If the only way to reduce the failing check is to modify Plugin Eval scoring, stop and replan a separate upstream/tooling slice instead of misrepresenting the plugin budget.

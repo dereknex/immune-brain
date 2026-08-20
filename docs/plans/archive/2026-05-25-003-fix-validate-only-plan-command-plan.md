@@ -10,7 +10,7 @@ date: 2026-05-25
 ## Task
 - Summary: Make ordinary `imm-plan` validation safe to run without mutating State Ledger runtime state.
 - Origin: `imm-code-review` found that validating a historical plan with `imm-plan --json` switched `.imm/memory/current_iteration.json` back to that plan and cleared completed steps.
-- Spec: docs/specs/validate-only-plan-command.spec.md
+- Spec: docs/specs/archive/validate-only-plan-command.spec.md
 - Research: `.imm/imm_core/plan_runtime.py` owns validation parsing and runtime synchronization. `.imm/imm-plan.py` is the CLI entrypoint. `tests/test_imm_plan.py` covers plan sync behavior, and `tests/test_imm_work.py` covers activation requirements after sync.
 - Decisions:
     - D1: Make validate-only behavior the default for `imm-plan <plan> --json` so review and QA validation commands are safe against historical plans.

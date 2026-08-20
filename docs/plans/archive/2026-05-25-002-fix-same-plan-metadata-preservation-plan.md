@@ -10,7 +10,7 @@ date: 2026-05-25
 ## Task
 - Summary: Preserve completed State Ledger steps when the same plan receives planner-owned metadata-only updates that do not change executable step proof fields.
 - Origin: `imm-code-review` found that the adversarial mechanisms plan was completed, then a `Devil's Advocate Audit` metadata addition changed the plan signature and reset U1/U2/U3 to pending.
-- Spec: docs/specs/same-plan-metadata-preservation.spec.md
+- Spec: docs/specs/archive/same-plan-metadata-preservation.spec.md
 - Research: `.imm/imm_core/plan_runtime.py` already has append-safe preservation, but `resolve_append_safe_preservation` currently rejects same-length plans before checking whether completed step proof fields are unchanged. `tests/test_imm_plan.py` contains reset and append-preservation coverage.
 - Decisions:
     - D1: Fix the runtime preservation rule rather than hand-editing `.imm/memory/current_iteration.json`.

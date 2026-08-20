@@ -95,7 +95,7 @@ owned by chain D, which is why 3.3 does not overlap a chain-D step.
 
 | Wave | Lane A | Lane D | Lane E |
 | --- | --- | --- | --- |
-| 1 | 007 archive remaining specs | ~~008 realign IMMUNE.md~~ done | ~~009 forbid risk downgrade~~ done |
+| 1 | ~~007 archive remaining specs~~ done | ~~008 realign IMMUNE.md~~ done | ~~009 forbid risk downgrade~~ done |
 | 2 | 2.1b retention policy | 2.3 roadmap vocabulary | — |
 | 3 | — | — | 3.3 relocate confirmation |
 | 4 | — | 4.1 completion contract | 3.4 retire deadwood |
@@ -147,6 +147,37 @@ worktrees had no Kernel state to enrol into. The claim has been released to
 Releasing a claim is not currently reachable from the `imm-kernel` command
 surface, which offers only author, validate, status and audit. Worth a slice if
 this recurs.
+
+007 followed the same pattern: no record, and it merged with its third
+acceptance criterion unmet. `acc-links-and-suite-intact` promised a passing
+suite and no new unresolved reference, and neither held. Its primary deliverable
+was correct — 52 specs archived, the 56-entry blanket list replaced by a 3-entry
+protected set with per-file justifications — but every archived plan's Spec
+reference was left pointing at a path the archival had emptied.
+
+### Plan-to-Spec link rot, and the one real signature exemption
+
+Measured after the merge: 132 archived plans carried 354 Spec references to
+specs that had moved to `docs/specs/archive/`, and zero pointed at a spec that
+existed nowhere. The breakage was entirely caused by the archival program,
+starting with 006 and only becoming visible when 007 happened to archive the one
+spec a test pins. The link scripts do report this — `detect-stale-refs` finds
+751 broken doc links under `docs/plans/archive` alone — but nothing consumes
+their output, so the criterion citing them could pass while being false.
+
+All 354 were rewritten to their archive paths, with two deliberate exceptions:
+
+- `2026-06-29-001-feat-bun-typescript-runtime-migration-plan.md` keeps its
+  original reference. `tests/plan-validation.test.ts` compares its plan
+  signature against a frozen cross-runtime parity constant, and that payload
+  includes the Spec reference, so rewriting it would change the signature. This
+  is what 006's "migration-plan signature parity" note was reaching for — the
+  constraint is real, but it justifies exempting one plan, not 56 specs.
+- `assurance-kernel-v4-p2a-readiness-r2.spec.md` exists nowhere and was left
+  alone as genuine pre-existing rot.
+
+Worth a slice: make a link check consume `detect-stale-refs` output as a gate
+for the paths a slice declares, so `acc-links-*` criteria cannot pass vacuously.
 
 **Do not downgrade a declared tier to speed a merge.** Every wave-1 slice is
 `material` on purpose. Until 009 lands the reducer accepts a downgrade silently,

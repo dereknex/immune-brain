@@ -4,7 +4,7 @@
 
 - Summary: 执行 Assurance Kernel v4 程序的第一个可执行切片——修复 v3 replan 死锁（P0 止血），并以 additive-only 方式落地 v4 内核核心与 shadow 观测面（P1 内核基础），不切换任何生产行为。
 - Origin: 用户要求对 Immune-Brain 流程僵化进行根因分析与重大重构；本会话完成 runtime 静态勘察、3 天 Pi session 取证（79 sessions / 19 项目）、两次独立 advisory review（reliability 与 simplification-risk 双 `conditional_go`），并就「state 按所有权拆分存储」达成方向结论。
-- Spec: `docs/specs/assurance-kernel-v4.spec.md`
+- Spec: `docs/specs/archive/assurance-kernel-v4.spec.md`
 - Scope Mode: New Slice（roadmap-slice/v1）
 
 ## Output Language
@@ -15,7 +15,7 @@
 ## Roadmap Slice
 
 - Plan contract: roadmap-slice/v1
-- Roadmap source: `docs/specs/assurance-kernel-v4.spec.md` 第 5 节（P0–P4）
+- Roadmap source: `docs/specs/archive/assurance-kernel-v4.spec.md` 第 5 节（P0–P4）
 - Execution scope: P0（replan 死锁 hotfix）+ P1（kernel 核心、per-task 存储、journal、dry-run migrator、shadow CLI）
 - Deferred phases: P2 受管切换、P3 迁移执行与 routine 采纳、P4 清理退出——均为非 executable，需后续 Plan 晋升
 - Current phase: P0+P1 止血与内核基础
@@ -93,7 +93,7 @@
 - Verification type: automated
 - Depends on: none
 - Execution note: test-first
-- Discovery cache: `docs/specs/assurance-kernel-v4.spec.md` (4.1-4.5 权威模型、schema、phase 机、完成谓词、升级规则的唯一设计基线); `plugins/immune-brain/runtime/loop_contract.ts` (既有 decision payload 形状，供 Finding/Approval 类型对齐参考)
+- Discovery cache: `docs/specs/archive/assurance-kernel-v4.spec.md` (4.1-4.5 权威模型、schema、phase 机、完成谓词、升级规则的唯一设计基线); `plugins/immune-brain/runtime/loop_contract.ts` (既有 decision payload 形状，供 Finding/Approval 类型对齐参考)
 - failure_behavior: kernel 为纯函数无 IO；任何不变量违例必须抛出结构化错误，不得返回降级投影。
 - security_considerations: schema 校验拒绝未知字段与非法枚举，防止后续 CLI 层把未校验输入写入 record。
 

@@ -5,7 +5,7 @@
 - Summary: Repair the P2A authority-commit observation boundary, then complete production-readiness, intent identity, and reducer authority contracts while v3 remains the sole production workflow authority.
 - Origin: QA replan of `docs/plans/2026-08-11-003-feat-assurance-kernel-p2a-readiness-plan.md` Step U1. The predecessor assumed `commitStateMutation` covered every production Ledger commit, but canonical runtime preflight and explicit migration can commit `.imm/memory/current_iteration.json` through `project_migration.ts:migrateProject`.
 - Origin review: QA decision `replan` for predecessor Step 1; focused observer implementation passed 20 tests and diff hygiene but did not cover committed project migrations.
-- Spec: `docs/specs/assurance-kernel-v4-p2a-readiness-r1.spec.md`
+- Spec: `docs/specs/archive/assurance-kernel-v4-p2a-readiness-r1.spec.md`
 - Research: Runtime inspection proves two production authority commit classes plus one production-reachable projection-only writer. Existing business history and deterministic migration manifests cannot serve as durable commit receipts: archive append precedes Ledger rename, final-byte hashes can collapse distinct commits, migration manifest identity omits `after_sha256`, and rolled-back attempts can reuse a manifest directory. The previous observer code remains partial implementation only; no predecessor execution evidence carries forward.
 - Decisions: D1 introduce one append-only fsynced authority commit receipt protocol with unique attempt IDs, prepared/terminal records, a hash chain, and next-start/write recovery. D2 instrument both normal state mutations and Ledger-changing committed project migrations. D3 classify `commitStateIfUnchanged` as projection-only only while tests prove it preserves authority facts, and classify `saveStateLedger` outside production only while its call-site inventory remains empty. D4 derive observation from immutable committed receipts rather than live reread. D5 keep observation failure non-authoritative while receipt preparation remains a precondition to starting an authority commit. D6 retain the original P2A readiness, TaskIntent, TaskRecord v2, reducer, and authority-port outcomes. D7 keep P2B/P2C/P3 deferred.
 - Assumptions: The existing Ledger lock can serialize receipt recovery with all supported authority commits. A strict prepared receipt can bind exact before/after Ledger hashes before replacement. Project migration can bind the receipt attempt into its transaction metadata without changing successful rollback semantics. If any production Ledger writer bypasses the closed inventory, receipt recovery cannot classify an interrupted attempt, or migration cannot link one unique attempt without false commits, U1 must replan again.
@@ -16,7 +16,7 @@
 - Plan boundary: One corrected P2A readiness/contracts slice with no production Kernel routing.
 - Boundary rationale: The migration writer invalidates the predecessor observation boundary but does not change the remaining P2A outcomes or authorize P2B. A new Plan path preserves immutable execution history while reusing verified partial code as unclosed implementation.
 - Scope pressure: Durable receipt protocol/recovery, observation/readiness reconciliation, intent identity, and reducer authority span several contracts. Retained as one Plan because U1 is the prerequisite for U2, U3/U4 are production-unreachable pure contracts, and the shared rollback leaves v3 routing authoritative.
-- Roadmap source: `docs/specs/assurance-kernel-v4-p2-managed-cutover.spec.md`
+- Roadmap source: `docs/specs/archive/assurance-kernel-v4-p2-managed-cutover.spec.md`
 - Execution scope: P2A only.
 - Deferred phases: P2B Pi canary, P2C supported-host default, P3 legacy retirement and any separately justified terminal import.
 - Successor candidate: P2B, advisory only.
@@ -95,7 +95,7 @@ The current session and predecessor QA decision are the authoritative framing so
 - rollback path: P2A provides a tested protocol rollback/migration for receipt files while leaving v3 workflow routing unchanged.
 - verification strength: process interruption, fsync/hash-chain checks, A->B->A->B identity, exact-byte checks, writer inventory, receipt reconciliation, command lifecycle tests, migration transaction tests, CAS/restart checks, full repository suite, strict QA, final review.
 - design-depth classification: High risk due persisted authority, migration, concurrency, and future promotion decisions.
-- Technical Design baseline: `docs/specs/assurance-kernel-v4-p2a-readiness-r1.spec.md`.
+- Technical Design baseline: `docs/specs/archive/assurance-kernel-v4-p2a-readiness-r1.spec.md`.
 - Mermaid intent: clarify two commit paths and post-commit observation ordering.
 - Design Conformance: QA verifies P2A stays v3-only and exposes no issuer, routing, enrollment, or import.
 - roadmap preservation: P2B/P2C/P3 gates and non-goals remain explicit.
@@ -121,7 +121,7 @@ The current session and predecessor QA decision are the authoritative framing so
 - Step ID: U2
 - Result: P2 readiness is a deterministic fail-closed projection.
 - Scope: `plugins/immune-brain/runtime/kernel/readiness.ts`; `plugins/immune-brain/runtime/kernel/types.ts`; `plugins/immune-brain/runtime/commands/kernel.ts`; `plugins/immune-brain/runtime/immune_brain_runtime.ts`; `tests/kernel-readiness.test.ts`; `tests/kernel-shadow-cli.test.ts`; `tests/kernel-migrate.test.ts`.
-- Discovery cache: `plugins/immune-brain/runtime/authority_commit_receipts.ts` (durable denominator and recovery protocol); `plugins/immune-brain/runtime/kernel/observation.ts` (receipt-bound observation contract); `plugins/immune-brain/runtime/project_migration.ts` (migration attempt binding); `plugins/immune-brain/runtime/commands/kernel.ts` (read-only adapters); `docs/specs/assurance-kernel-v4-p2a-readiness-r1.spec.md` (promotion predicate)
+- Discovery cache: `plugins/immune-brain/runtime/authority_commit_receipts.ts` (durable denominator and recovery protocol); `plugins/immune-brain/runtime/kernel/observation.ts` (receipt-bound observation contract); `plugins/immune-brain/runtime/project_migration.ts` (migration attempt binding); `plugins/immune-brain/runtime/commands/kernel.ts` (read-only adapters); `docs/specs/archive/assurance-kernel-v4-p2a-readiness-r1.spec.md` (promotion predicate)
 - Verification: `bun test tests/kernel-readiness.test.ts tests/kernel-shadow-cli.test.ts tests/kernel-migrate.test.ts && plugins/immune-brain/bin/imm-kernel readiness --json && plugins/immune-brain/bin/imm-kernel migrate --dry-run --json && git diff --check`
 - Verification type: automated
 - Depends on: 1
@@ -135,7 +135,7 @@ The current session and predecessor QA decision are the authoritative framing so
 - Step ID: U3
 - Result: Every acceptance criterion has one stable evidence identity.
 - Scope: `plugins/immune-brain/runtime/kernel/types.ts`; `plugins/immune-brain/runtime/kernel/validation.ts`; `plugins/immune-brain/runtime/kernel/intent.ts`; `plugins/immune-brain/runtime/kernel/completion.ts`; `plugins/immune-brain/runtime/kernel/index.ts`; `tests/kernel-intent.test.ts`; `tests/kernel-core.test.ts`.
-- Discovery cache: `plugins/immune-brain/runtime/kernel/types.ts` (P1 schemas); `plugins/immune-brain/runtime/kernel/validation.ts` (strict parsing); `plugins/immune-brain/runtime/kernel/completion.ts` (current predicate); `plugins/immune-brain/runtime/progress_projection.ts` (secure path precedent); `docs/specs/assurance-kernel-v4-p2a-readiness-r1.spec.md` (intent identity contract)
+- Discovery cache: `plugins/immune-brain/runtime/kernel/types.ts` (P1 schemas); `plugins/immune-brain/runtime/kernel/validation.ts` (strict parsing); `plugins/immune-brain/runtime/kernel/completion.ts` (current predicate); `plugins/immune-brain/runtime/progress_projection.ts` (secure path precedent); `docs/specs/archive/assurance-kernel-v4-p2a-readiness-r1.spec.md` (intent identity contract)
 - Verification: `bun test tests/kernel-intent.test.ts tests/kernel-core.test.ts && git diff --check`
 - Verification type: automated
 - Depends on: none
@@ -149,7 +149,7 @@ The current session and predecessor QA decision are the authoritative framing so
 - Step ID: U4
 - Result: Every production TaskRecord fact mutation is reducer-owned.
 - Scope: `plugins/immune-brain/runtime/kernel/types.ts`; `plugins/immune-brain/runtime/kernel/validation.ts`; `plugins/immune-brain/runtime/kernel/reducer.ts`; `plugins/immune-brain/runtime/kernel/completion.ts`; `plugins/immune-brain/runtime/kernel/authority.ts`; `plugins/immune-brain/runtime/kernel/storage.ts`; `plugins/immune-brain/runtime/kernel/index.ts`; `tests/kernel-production-actions.test.ts`; `tests/kernel-core.test.ts`; `tests/kernel-migrate.test.ts`.
-- Discovery cache: `plugins/immune-brain/runtime/kernel/reducer.ts` (event fingerprint and authority descriptor); `plugins/immune-brain/runtime/kernel/storage.ts` (CAS transaction and creation guard); `plugins/immune-brain/runtime/kernel/intent.ts` (TaskIntent and acceptance identity); `docs/specs/assurance-kernel-v4-p2a-readiness-r1.spec.md` (closed actions and authority port); `plugins/immune-brain/.pi-extension/index.ts` (P2B host boundary only)
+- Discovery cache: `plugins/immune-brain/runtime/kernel/reducer.ts` (event fingerprint and authority descriptor); `plugins/immune-brain/runtime/kernel/storage.ts` (CAS transaction and creation guard); `plugins/immune-brain/runtime/kernel/intent.ts` (TaskIntent and acceptance identity); `docs/specs/archive/assurance-kernel-v4-p2a-readiness-r1.spec.md` (closed actions and authority port); `plugins/immune-brain/.pi-extension/index.ts` (P2B host boundary only)
 - Verification: `bun test tests/kernel-production-actions.test.ts tests/kernel-core.test.ts tests/kernel-migrate.test.ts && ! rg -n 'patch_record|hydrate|allowTerminal|user_confirmed|approved: true' plugins/immune-brain/runtime/kernel plugins/immune-brain/runtime/commands/kernel.ts && git diff --check`
 - Verification type: automated
 - Depends on: 3

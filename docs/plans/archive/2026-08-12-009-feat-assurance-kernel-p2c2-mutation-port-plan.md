@@ -8,7 +8,7 @@
 **Created**: 2026-08-12
 **Status**: pending
 **Priority**: P1
-**Spec**: docs/specs/assurance-kernel-v4-p2c2-mutation-port.spec.md
+**Spec**: docs/specs/archive/assurance-kernel-v4-p2c2-mutation-port.spec.md
 
 ## Goal
 
@@ -20,7 +20,7 @@ R2C1 closed TaskIntent identity, TaskRecord v2 exact wire, and all-acceptance co
 
 ## Research
 
-- `docs/specs/assurance-kernel-v4-p2-managed-cutover.spec.md` D5/D6 requires closed factual actions, authority consumption, event replay, and CAS tests.
+- `docs/specs/archive/assurance-kernel-v4-p2-managed-cutover.spec.md` D5/D6 requires closed factual actions, authority consumption, event replay, and CAS tests.
 - R2C1 `intent.ts`, `types.ts`, `validation.ts`, and `completion.ts` own secure Intent identity, TaskRecord v2 wire, and completion semantics.
 - P1 `reducer.ts`, `storage.ts`, and `tests/kernel-migrate.test.ts` provide v1 replay, authority audit, workspace ownership, and recoverable transaction precedents that must remain unchanged.
 - R2C1 boundary tests preserve v1 APIs and prevent new command, issuer, import, or routing surfaces.
@@ -67,7 +67,7 @@ Spec and Plan prose use English. Schema fields, file paths, contract identifiers
 - Step ID: U1
 - Result: Every TaskRecord v2 mutation is one identity-bound reducer result committed through one recoverable CAS transaction.
 - Scope: `plugins/immune-brain/runtime/kernel/types.ts`; `plugins/immune-brain/runtime/kernel/validation.ts`; `plugins/immune-brain/runtime/kernel/intent.ts`; `plugins/immune-brain/runtime/kernel/completion.ts`; `plugins/immune-brain/runtime/kernel/index.ts`; `plugins/immune-brain/runtime/kernel/storage.ts`; `plugins/immune-brain/runtime/kernel/reducer_v2.ts`; `plugins/immune-brain/runtime/kernel/authority_port.ts`; `plugins/immune-brain/runtime/kernel/application_v2.ts`; `tests/kernel-r2c2-reducer.test.ts`; `tests/kernel-r2c2-authority.test.ts`; `tests/kernel-r2c2-application.test.ts`; `tests/kernel-r2c2-transaction.test.ts`; `tests/kernel-r2c2-boundary.test.ts`
-- Discovery cache: `docs/specs/assurance-kernel-v4-p2c2-mutation-port.spec.md` (exact action, authority, transaction, and compatibility contract); `plugins/immune-brain/runtime/kernel/reducer.ts` (v1 replay and authority-audit precedent); `plugins/immune-brain/runtime/kernel/storage.ts` (store lock, workspace ownership, and recoverable transaction precedent); `plugins/immune-brain/runtime/kernel/intent.ts` (R2C1 opaque token producer and secure reread); `plugins/immune-brain/runtime/kernel/completion.ts` (v2 completion and projection owner); `tests/kernel-migrate.test.ts` (v1 storage/recovery compatibility owner); `tests/kernel-r2c1-boundary.test.ts` (public export and command-surface baseline); `tests/plugin-package-runtime.test.ts` (canonical command manifest exact-list owner); `tests/host-runtime-cutover.test.ts` (runtime dispatch boundary owner)
+- Discovery cache: `docs/specs/archive/assurance-kernel-v4-p2c2-mutation-port.spec.md` (exact action, authority, transaction, and compatibility contract); `plugins/immune-brain/runtime/kernel/reducer.ts` (v1 replay and authority-audit precedent); `plugins/immune-brain/runtime/kernel/storage.ts` (store lock, workspace ownership, and recoverable transaction precedent); `plugins/immune-brain/runtime/kernel/intent.ts` (R2C1 opaque token producer and secure reread); `plugins/immune-brain/runtime/kernel/completion.ts` (v2 completion and projection owner); `tests/kernel-migrate.test.ts` (v1 storage/recovery compatibility owner); `tests/kernel-r2c1-boundary.test.ts` (public export and command-surface baseline); `tests/plugin-package-runtime.test.ts` (canonical command manifest exact-list owner); `tests/host-runtime-cutover.test.ts` (runtime dispatch boundary owner)
 - Verification: `for f in tests/kernel-r2c2-reducer.test.ts tests/kernel-r2c2-authority.test.ts tests/kernel-r2c2-application.test.ts tests/kernel-r2c2-transaction.test.ts tests/kernel-r2c2-boundary.test.ts; do test -f "$f" || exit 1; done && bun test tests/kernel-r2c2-reducer.test.ts tests/kernel-r2c2-authority.test.ts tests/kernel-r2c2-application.test.ts tests/kernel-r2c2-transaction.test.ts tests/kernel-r2c2-boundary.test.ts tests/kernel-task-record-v2.test.ts tests/kernel-intent-reader.test.ts tests/kernel-r2c1-boundary.test.ts tests/kernel-migrate.test.ts tests/kernel-core.test.ts tests/plugin-package-runtime.test.ts tests/host-runtime-cutover.test.ts && bun test && plugins/immune-brain/bin/imm-plan docs/plans/2026-08-12-009-feat-assurance-kernel-p2c2-mutation-port-plan.md --json && git diff --check`
 - Verification type: automated
 - Depends on: none

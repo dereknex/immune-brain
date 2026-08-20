@@ -10,14 +10,14 @@ origin: user asked to evaluate the gstack borrow spec and then route the stable 
 
 ## Task
 - Summary: Produce an evidence-backed Learning that analyzes gstack Skill patterns and maps which ideas agent-skills should borrow, defer, or reject.
-- Origin: User asked whether `docs/specs/analyze-gstack-skills-borrow-insights.spec.md` and the current Plan were reasonable; brainstorm concluded the spec direction is useful but the existing Plan was too thin and the referenced data-integrity Plan was unrelated.
-- Spec: docs/specs/analyze-gstack-skills-borrow-insights.spec.md
+- Origin: User asked whether `docs/specs/archive/analyze-gstack-skills-borrow-insights.spec.md` and the current Plan were reasonable; brainstorm concluded the spec direction is useful but the existing Plan was too thin and the referenced data-integrity Plan was unrelated.
+- Spec: docs/specs/archive/analyze-gstack-skills-borrow-insights.spec.md
 - Research: `CONTEXT.md` defines Plan, Spec, Step, Skill, Learning, Activation Plan, and State Ledger. `upstreams/gstack/CLAUDE.md` documents generated `SKILL.md.tmpl` workflow and conflict handling. `upstreams/gstack/BROWSER.md` documents the persistent browser daemon, browser-skill codification, accessibility refs, staleness detection, and layered prompt-injection defense. `README.md` records current gstack borrowing posture. `docs/solutions/rejected-pro-workflow-sqlite-wiki-authority.md` rejects a third memory store that would duplicate gstack-style learnings. `docs/solutions/rejected-shared-registry-generic-dispatcher.md` rejects shared registry or generic dispatcher expansion without stronger host drift evidence.
 - Decisions: D1 keep this slice docs-only and produce one durable Learning under `docs/solutions/`; D2 use existing repository vocabulary and avoid adding root `CLAUDE.md`; D3 classify each gstack idea as P1 direct borrow, P2 design follow-up, P3 infrastructure-dependent, or rejected/deferred; D4 explicitly preserve the rejected boundaries around SQLite/FTS memory layers, shared registry, browser daemon implementation, and runtime prompt-injection infrastructure.
 - Assumptions: `upstreams/gstack` remains readable locally. The final Learning can cite source paths instead of importing gstack code. Mermaid text review is sufficient because this slice does not render a site or app.
 - Scope Mode: Scope Reduction
 - Engineering Closure Check:
-  - architecture_surface: docs/specs/analyze-gstack-skills-borrow-insights.spec.md, docs/plans/2026-05-24-003-analyze-gstack-skills-borrow-insights-plan.md, docs/solutions/gstack-skills-borrow-insights.md
+  - architecture_surface: docs/specs/archive/analyze-gstack-skills-borrow-insights.spec.md, docs/plans/2026-05-24-003-analyze-gstack-skills-borrow-insights-plan.md, docs/solutions/gstack-skills-borrow-insights.md
   - dependencies_known: true
   - verification_path:
       - target: `docs/solutions/gstack-skills-borrow-insights.md` is a durable Learning with evidence-backed sections and a phased borrow decision table.
@@ -52,7 +52,7 @@ origin: user asked to evaluate the gstack borrow spec and then route the stable 
 - Verification: `test -f docs/solutions/gstack-skills-borrow-insights.md && rg -n "Abstract|Mermaid Context Map|The Five Golden Ore|Action Roadmap|Evidence Index|Local Schema Sketches" docs/solutions/gstack-skills-borrow-insights.md && rg -n "BASELINE|allowed-tools|Preamble|Quirks|count\\(\\)|Deterministic BLOCK|L5" docs/solutions/gstack-skills-borrow-insights.md && rg -n '```mermaid' docs/solutions/gstack-skills-borrow-insights.md`
 - Verification type: automated
 - Test scenarios: Confirm the Learning has Abstract, Mermaid Context Map, five dimension sections, roadmap, evidence index, schema snippets, detailed mechanism coverage for BASELINE/allowed-tools, Preamble/Quirks, count() staleness, L5 Deterministic BLOCK, and clear "borrow/defer/reject" decisions.
-- Discovery cache: docs/specs/analyze-gstack-skills-borrow-insights.spec.md (accepted content contract); docs/solutions/gstack-skills-borrow-insights.md (Learning artifact)
+- Discovery cache: docs/specs/archive/analyze-gstack-skills-borrow-insights.spec.md (accepted content contract); docs/solutions/gstack-skills-borrow-insights.md (Learning artifact)
 - Depends on: 2
 
 ### Step 4
@@ -61,7 +61,7 @@ origin: user asked to evaluate the gstack borrow spec and then route the stable 
 - Verification: `python3 .imm/imm-plan.py docs/plans/2026-05-24-003-analyze-gstack-skills-borrow-insights-plan.md --json && test -f docs/solutions/gstack-skills-borrow-insights.md && rg -n "P1|P2|P3|Evidence Index|Mermaid Context Map|Local Schema Sketches" docs/solutions/gstack-skills-borrow-insights.md && rg -n "BASELINE|allowed-tools|Preamble|Quirks|count\\(\\)|Deterministic BLOCK|L5" docs/solutions/gstack-skills-borrow-insights.md`
 - Verification type: automated
 - Test scenarios: Confirm `imm-plan` parses the revised Plan, the final Learning exists, the roadmap is phased, the report covers the Accepted spec's detailed dimension requirements, and it does not claim implementation of non-goal runtime systems.
-- Discovery cache: .imm/imm-plan.py (Plan validator); docs/plans/2026-05-24-003-analyze-gstack-skills-borrow-insights-plan.md (validation target); docs/specs/analyze-gstack-skills-borrow-insights.spec.md (acceptance criteria)
+- Discovery cache: .imm/imm-plan.py (Plan validator); docs/plans/2026-05-24-003-analyze-gstack-skills-borrow-insights-plan.md (validation target); docs/specs/archive/analyze-gstack-skills-borrow-insights.spec.md (acceptance criteria)
 - Depends on: 3
 
 ## Notes

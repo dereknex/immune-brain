@@ -5,7 +5,7 @@ status: planned
 date: 2026-07-04
 origin:
   - imm-arch-explorer opportunity selection
-  - docs/specs/2026-07-04-runtime-architecture-simplification.spec.md
+  - docs/specs/archive/2026-07-04-runtime-architecture-simplification.spec.md
 ---
 
 # Iteration Plan
@@ -13,7 +13,7 @@ origin:
 ## Task
 
 - Summary: Plan one executable maintenance slice for simplifying the State Ledger helper shape, OpenCode command invocation contract, and Roadmap criteria validator feedback.
-- Spec: `docs/specs/2026-07-04-runtime-architecture-simplification.spec.md`
+- Spec: `docs/specs/archive/2026-07-04-runtime-architecture-simplification.spec.md`
 - Origin: The user selected all three `imm-arch-explorer` opportunities: simplify stateless `LedgerStateMachine`, reduce OpenCode CLI pass-through drift, and strengthen `acceptance_criteria` / `promotion_criteria` validation.
 - Scope Mode: New executable slice. The currently synced CLI-only runtime Plan is already closed, so this Plan is not an append.
 - Planner research dispatch: three readonly research subagents were dispatched because the request spans State Ledger runtime, OpenCode plugin integration, and Plan/Roadmap validation. Their evidence is summarized below.
@@ -112,7 +112,7 @@ origin:
 - Verification: `bun test tests/plan-validation.test.ts tests/plugin-package-runtime.test.ts tests/host-runtime-cutover.test.ts && plugins/immune-brain/bin/imm-plan docs/plans/2026-07-04-001-refactor-runtime-architecture-simplification-plan.md --json`
 - Execution note: test-first
 - Test scenarios: Three-plus phase Roadmaps warn on missing or empty `acceptance_criteria`; one-phase and two-phase Plans remain valid without criteria; recognizable non-behavioral acceptance entries produce warnings rather than fatal errors; `promotion_criteria` is reported or preserved independently from acceptance completion; `imm-plan --json` stays backwards-compatible while exposing warnings.
-- Discovery cache: CONTEXT.md (canonical criteria semantics); docs/specs/roadmap-human-acceptance-gating.spec.md (existing Roadmap requirements); docs/plans/2026-06-27-001-feat-roadmap-human-acceptance-gating-phase1-plan.md (Phase 1 boundary); plugins/immune-brain/runtime/imm_core.ts (validatePlan); plugins/immune-brain/runtime/immune_brain_runtime.ts (imm-plan JSON output); tests/plan-validation.test.ts (validator coverage); tests/host-runtime-cutover.test.ts (runtime output contract)
+- Discovery cache: CONTEXT.md (canonical criteria semantics); docs/specs/archive/roadmap-human-acceptance-gating.spec.md (existing Roadmap requirements); docs/plans/2026-06-27-001-feat-roadmap-human-acceptance-gating-phase1-plan.md (Phase 1 boundary); plugins/immune-brain/runtime/imm_core.ts (validatePlan); plugins/immune-brain/runtime/immune_brain_runtime.ts (imm-plan JSON output); tests/plan-validation.test.ts (validator coverage); tests/host-runtime-cutover.test.ts (runtime output contract)
 - Agent Hint: imm-executor
 - Depends on: none
 - failure_behavior: If Roadmap parsing is too ambiguous for reliable warnings, keep validation limited to explicit Roadmap headings and document unsupported formats before widening the parser.

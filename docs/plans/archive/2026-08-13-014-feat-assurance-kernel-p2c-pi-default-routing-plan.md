@@ -8,7 +8,7 @@
 **Created**: 2026-08-13
 **Status**: pending
 **Priority**: P1
-**Spec**: docs/specs/assurance-kernel-v4-p2c-pi-default-routing.spec.md
+**Spec**: docs/specs/archive/assurance-kernel-v4-p2c-pi-default-routing.spec.md
 **Predecessor**: docs/plans/2026-08-12-013-feat-assurance-kernel-p2b2-pi-canary-lifecycle-plan.md (closed and finished)
 
 ## Goal
@@ -53,7 +53,7 @@ P2B2 shipped and walked canary-001 end-to-end (enroll -> evidence -> submit_revi
 
 ## Roadmap Source
 
-`docs/specs/assurance-kernel-v4-p2-managed-cutover.spec.md`
+`docs/specs/archive/assurance-kernel-v4-p2-managed-cutover.spec.md`
 
 ## Execution Scope
 
@@ -80,8 +80,8 @@ Shipping the drill without the route would leave P2C at "evidence only" with no 
 ### Step 1
 
 - Result: The declared short observation window closes with a completed real drain drill.
-- Scope: `docs/specs/assurance-kernel-v4-p2c-pi-default-routing.spec.md`; `docs/evidence/assurance-kernel/p2c-drain-drill.md`; `plugins/immune-brain/runtime/kernel/readiness.ts`; `tests/kernel-readiness.test.ts`; `tests/kernel-pi-canary-live-boundary.test.ts`
-- Verification: `test -f docs/specs/assurance-kernel-v4-p2c-pi-default-routing.spec.md && test -f docs/evidence/assurance-kernel/p2c-drain-drill.md && bun test tests/kernel-readiness.test.ts tests/kernel-pi-canary-live-boundary.test.ts tests/kernel-readiness-evidence.test.ts tests/kernel-canary-eligibility.test.ts && plugins/immune-brain/bin/imm-kernel readiness --json | grep -q '"status": "candidate"' && grep -q 'canary-002' docs/evidence/assurance-kernel/p2c-drain-drill.md && grep -q 'draining' docs/evidence/assurance-kernel/p2c-drain-drill.md && grep -q 'terminal' docs/evidence/assurance-kernel/p2c-drain-drill.md && git diff --check`
+- Scope: `docs/specs/archive/assurance-kernel-v4-p2c-pi-default-routing.spec.md`; `docs/evidence/assurance-kernel/p2c-drain-drill.md`; `plugins/immune-brain/runtime/kernel/readiness.ts`; `tests/kernel-readiness.test.ts`; `tests/kernel-pi-canary-live-boundary.test.ts`
+- Verification: `test -f docs/specs/archive/assurance-kernel-v4-p2c-pi-default-routing.spec.md && test -f docs/evidence/assurance-kernel/p2c-drain-drill.md && bun test tests/kernel-readiness.test.ts tests/kernel-pi-canary-live-boundary.test.ts tests/kernel-readiness-evidence.test.ts tests/kernel-canary-eligibility.test.ts && plugins/immune-brain/bin/imm-kernel readiness --json | grep -q '"status": "candidate"' && grep -q 'canary-002' docs/evidence/assurance-kernel/p2c-drain-drill.md && grep -q 'draining' docs/evidence/assurance-kernel/p2c-drain-drill.md && grep -q 'terminal' docs/evidence/assurance-kernel/p2c-drain-drill.md && git diff --check`
 - Verification type: automated
 
 ### Step 2

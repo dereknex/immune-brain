@@ -4,7 +4,7 @@
 
 - Summary: Correct the Assurance Kernel legacy shadow projection so a normally finished v3 Plan maps to `done` while an all-closed Plan awaiting finish remains in `review`.
 - Origin: After Foundation Plan `2026-08-10-002` reached `terminal_plan_complete`, the user requested repair of the post-finish smoke finding: the real Ledger is `idle + intentional_reset` with a matching `finish_reset`, but `imm-kernel status --json` projects `review`.
-- Spec: `docs/specs/assurance-kernel-v4.spec.md`
+- Spec: `docs/specs/archive/assurance-kernel-v4.spec.md`
 - Research: `mapLegacyState()` currently maps every all-closed aggregate with a non-empty `plan_path` and null `plan_terminal` to `legacy-review`. The authoritative v3 predicate in `currentPlanAlreadyFinished()` additionally requires `runtime_status=idle`, `reset_reason=intentional_reset`, no active Step or pending follow-up, all Steps closed, and the latest `finish_reset.details.plan_path` to match the current Plan. The real post-finish Ledger satisfies these facts.
 - Decisions: D1 preserve `review` for all-closed active Plans without current finish evidence. D2 map to `done` only from the complete v3 finish evidence set. D3 inspect the latest `finish_reset` only, so a stale older matching entry cannot override a newer mismatched finish marker. D4 keep the mapper pure and shadow-only; do not import v3 runtime internals or change production routing. D5 map explicit `plan_terminal` records conservatively to the existing stopped result.
 - Assumptions: v3 remains production authority. `history` is ordered oldest to newest. A missing or malformed history value is unverified and therefore not terminal evidence.

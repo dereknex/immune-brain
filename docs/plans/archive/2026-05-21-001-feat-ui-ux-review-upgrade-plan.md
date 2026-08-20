@@ -2,7 +2,7 @@
 
 ## Task
 - Origin: Brainstorm session identifying UI/UX experience check upgrade opportunities.
-- Spec: docs/specs/ui-ux-review-upgrade.spec.md
+- Spec: docs/specs/archive/ui-ux-review-upgrade.spec.md
 - Brainstorm manifest: BR-REQ-001, BR-REQ-002, BR-REQ-003, BR-REQ-004, BR-DEC-001, BR-DEC-002, BR-DEC-003, BR-OUT-001
 
 ## Research

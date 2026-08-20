@@ -94,7 +94,7 @@
 - Result: Public surfaces describe Bun TypeScript as the only runtime path
 - Verification type: `automated`
 - Verification: `bun test tests/python-reference-boundary.test.ts && mise run check-plugin` passes, and targeted scans over `README.md`, `docs/specs/`, `docs/plans/`, `docs/solutions/`, `mise.toml`, and `public-release/templates/mise.toml` show no stale Python production-runtime guidance outside historical or explicitly superseded context.
-- Discovery cache: mise.toml (developer command surface); public-release/templates/mise.toml (public release template); README.md (runtime documentation); docs/specs/opencode-native-plugin.spec.md (superseded Python bridge spec); docs/solutions/python-reference-quarantine-boundary.md (quarantine learning to update or supersede); docs/specs/python-reference-retirement.spec.md (retirement contract)
+- Discovery cache: mise.toml (developer command surface); public-release/templates/mise.toml (public release template); README.md (runtime documentation); docs/specs/archive/opencode-native-plugin.spec.md (superseded Python bridge spec); docs/solutions/python-reference-quarantine-boundary.md (quarantine learning to update or supersede); docs/specs/archive/python-reference-retirement.spec.md (retirement contract)
 - failure_behavior: If historical docs need to keep Python mentions, label them as historical/superseded rather than deleting useful context.
 
 ## Test Scenarios

@@ -3,7 +3,7 @@ title: "feat: public release preparation and sync script"
 type: feat
 status: proposed
 date: 2026-05-18
-origin: "docs/specs/public-release-engine-sync.spec.md"
+origin: "docs/specs/archive/public-release-engine-sync.spec.md"
 ---
 
 # Iteration Plan

@@ -4,7 +4,7 @@ type: fix
 status: planned
 date: 2026-07-03
 origin:
-  - docs/specs/2026-07-03-agent-skills-session-friction-repair.spec.md
+  - docs/specs/archive/2026-07-03-agent-skills-session-friction-repair.spec.md
   - user request: 确保 session 发现的问题都被修复
   - session: /Users/derek/.pi/agent/sessions/--Users-derek-workspaces-refine--/2026-07-03T09-45-25-801Z_019f275e-6629-7db3-adfc-639aba56300a.jsonl
 ---
@@ -13,7 +13,7 @@ origin:
 ## Task
 
 - Summary: 修复 pi session 暴露出的 Immune-Brain workflow 摩擦，让 Plan 校验、execution evidence、QA/review gate、host 工具适配和 executor safety 在 runtime 与 skill 合同中保持一致。
-- Spec: docs/specs/2026-07-03-agent-skills-session-friction-repair.spec.md
+- Spec: docs/specs/archive/2026-07-03-agent-skills-session-friction-repair.spec.md
 - Origin: 用户要求基于 pi session 分析 agent-skills 存在的问题，并确保发现的问题都被修复。session 证据显示 MCP fallback、Plan parser、record-execution、QA/review gate、TaskUpdate 工具泄漏、destructive edit 与 untracked 收口都有实际摩擦。
 - Research: `CONTEXT.md` 将 workflow runtime、Plan validation and sync、Skill contracts 与 plugin-local runtime 定义为关键架构面。`docs/reference/planning-quality-gate.md` 要求 runtime state、cross-host behavior、reviewer contract 与 rollback-sensitive workflow 改动通过 quality gate。现有 tests 包括 `plan-validation.test.ts`、`plugin-package-runtime.test.ts`、`imm-autowork-continuation-runtime.test.ts`、`imm-loop-review-orchestration-contract.test.ts`、`imm-loop-review-lifecycle-state.test.ts`、`baseline-packaging-contract.test.ts` 与 `host-runtime-cutover.test.ts`，可承载本修复的 focused regression。
 - Decisions: D1 Runtime 是 Plan dependency、execution evidence 与 review gate 的唯一机器权威。D2 Skill docs 只能解释 runtime snapshot，不再追加隐藏 gate。D3 `record-execution` 输入统一归一到 `changed_files: string[]` 与 `verification_result: string`。D4 Pi-facing contracts 使用 Pi 当前 task tool `todo`，共享文档只能用 host abstraction。D5 保持 `imm-autowork` checkpoint-only，不新增 default QA pass。D6 修复 active contracts，不重写历史 archive 或 upstream reference。

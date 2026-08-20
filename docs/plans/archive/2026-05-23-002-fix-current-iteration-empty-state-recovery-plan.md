@@ -11,7 +11,7 @@ origin: i18n plan follow-up validation finding
 ## Task
 - Summary: Recover `.imm/memory/current_iteration.json` from durable `state.json` when it is accidentally emptied.
 - Origin: Runtime continuity gap observed after `current_iteration` reset while `state.json` still contains valid plan evidence.
-- Spec: docs/specs/current-iteration-empty-state-recovery.spec.md
+- Spec: docs/specs/archive/current-iteration-empty-state-recovery.spec.md
 - Research: CONTEXT.md defines `State Ledger` and `plan_path` contract.
   Current state runtime surfaces include `.imm/imm_core/current_iteration_state.py`.
 

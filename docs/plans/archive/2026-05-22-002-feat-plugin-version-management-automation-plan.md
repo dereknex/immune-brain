@@ -11,7 +11,7 @@ origin: imm-planner direct request
 ## Task
 - Summary: Add a repo-local release automation flow for the Immune-Brain plugin package so host manifests stay aligned and release owners can bump, validate, tag, push, and publish through guarded phases.
 - Origin: User requested an `imm-planner` plan for plugin version management automation after confirming the current project keeps plugin versions manually in host manifests.
-- Spec: docs/specs/plugin-version-management-automation.spec.md
+- Spec: docs/specs/archive/plugin-version-management-automation.spec.md
 - Research: CONTEXT.md defines Plan, Spec, Step, and State Ledger as the planning vocabulary. README documents the plugin-first package under `plugins/immune-brain/` and host adapters for Codex, Claude Code, and Cursor. The current version source is the three host `plugin.json` manifests. `mise.toml` exposes `check-plugin`, which validates JSON and the runtime adapter but does not check version consistency. `scripts/sync-to-public.sh` copies whitelisted plugin-first files and should stay a file-copy step.
 - Decisions: D1 use the three host manifests as the release version source of truth for this slice. D2 keep `skills/registry.yaml version: 1` as schema version only. D3 add guarded local release automation without introducing GitHub Actions. D4 make public release sync consume already-versioned files instead of rewriting versions. D5 use `immune-brain-vX.Y.Z` as the canonical release tag shape. D6 split release into plan, bump, validate, tag, push, and publish phases. D7 make marketplace publishing adapter-based because this repo has marketplace metadata but no concrete remote marketplace API.
 - Assumptions: The first target plugin is `plugins/immune-brain`. Python standard library is sufficient for JSON parsing and SemVer comparison. Git operations are local CLI phases with dry-run support. Marketplace publishing needs explicit adapter configuration before a real publish can be marked complete.
@@ -21,9 +21,9 @@ origin: imm-planner direct request
 ### Step 1
 - Step ID: U1
 - Result: Plugin version contract is documented
-- Verification: `rg -n "immune-brain-vX.Y.Z|skills/registry.yaml.*schema|version source of truth" README.md docs/specs/plugin-version-management-automation.spec.md` finds the documented contract
+- Verification: `rg -n "immune-brain-vX.Y.Z|skills/registry.yaml.*schema|version source of truth" README.md docs/specs/archive/plugin-version-management-automation.spec.md` finds the documented contract
 - Test scenarios: version source of truth names the three host manifests; registry schema version is not treated as release version; tag format is documented; public sync remains pre-versioned copy
-- Discovery cache: README.md (plugin package and check-plugin docs); docs/specs/plugin-version-management-automation.spec.md (acceptance criteria); plugins/immune-brain/.codex-plugin/plugin.json (host manifest version); plugins/immune-brain/.claude-plugin/plugin.json (host manifest version); plugins/immune-brain/.cursor-plugin/plugin.json (host manifest version)
+- Discovery cache: README.md (plugin package and check-plugin docs); docs/specs/archive/plugin-version-management-automation.spec.md (acceptance criteria); plugins/immune-brain/.codex-plugin/plugin.json (host manifest version); plugins/immune-brain/.claude-plugin/plugin.json (host manifest version); plugins/immune-brain/.cursor-plugin/plugin.json (host manifest version)
 - failure_behavior: If README becomes too noisy, put detailed release procedure in `docs/reference/` and keep README as a short pointer.
 - security_considerations: Documentation must not imply automatic network publishing or credential use.
 - Depends on: None
@@ -55,7 +55,7 @@ origin: imm-planner direct request
 - Result: Release tag phase is guarded
 - Verification: `python3 -m unittest tests.test_plugin_versioning tests.test_plugin_release_flow` exits zero
 - Test scenarios: dry-run release shows canonical tag; tag creation is blocked before validation; existing tag is detected before mutation; tag version must match manifests; annotated tag command is deterministic
-- Discovery cache: scripts/ (release flow command); tests/ (release flow tests); docs/specs/plugin-version-management-automation.spec.md (tag requirements); README.md (release procedure)
+- Discovery cache: scripts/ (release flow command); tests/ (release flow tests); docs/specs/archive/plugin-version-management-automation.spec.md (tag requirements); README.md (release procedure)
 - Execution note: test-first
 - failure_behavior: If git command execution is risky in tests, keep command construction pure and run tests against fake command runners.
 - security_considerations: Tag automation must not push or publish as a side effect.
@@ -66,7 +66,7 @@ origin: imm-planner direct request
 - Result: Release push phase is guarded
 - Verification: `python3 -m unittest tests.test_plugin_release_flow` exits zero
 - Test scenarios: dry-run shows branch and remote; push requires a created or existing matching tag; branch push and tag push are separate visible commands; failed branch push blocks tag push; duplicate pushed refs produce idempotent status
-- Discovery cache: scripts/ (release flow command); tests/ (fake git runner coverage); docs/specs/plugin-version-management-automation.spec.md (push requirements)
+- Discovery cache: scripts/ (release flow command); tests/ (fake git runner coverage); docs/specs/archive/plugin-version-management-automation.spec.md (push requirements)
 - Execution note: test-first
 - failure_behavior: If remote detection is ambiguous, require `--remote` and stop with a clear message instead of guessing.
 - security_considerations: Push automation must never run without an explicit apply flag.
@@ -88,7 +88,7 @@ origin: imm-planner direct request
 - Result: Release automation path is repeatable
 - Verification: `python3 -m unittest tests.test_plugin_versioning tests.test_plugin_release_flow && python3 -m unittest discover -s plugins/immune-brain/tests` exits zero
 - Test scenarios: dry-run release output is human-readable; applied release keeps manifests aligned; tag check accepts `immune-brain-vX.Y.Z`; public release sync contract is documented as consuming already-versioned files; rollback procedure covers local bump, pushed tag, and marketplace publish
-- Discovery cache: scripts/sync-to-public.sh (public artifact copy behavior); README.md (release procedure); docs/specs/plugin-version-management-automation.spec.md (non-goals); plugins/immune-brain/tests/test_plugin_package.py (existing plugin package tests)
+- Discovery cache: scripts/sync-to-public.sh (public artifact copy behavior); README.md (release procedure); docs/specs/archive/plugin-version-management-automation.spec.md (non-goals); plugins/immune-brain/tests/test_plugin_package.py (existing plugin package tests)
 - failure_behavior: If importing plugin package tests by dotted module is awkward because of the hyphenated path, keep the final verification as the existing unittest discovery command plus the focused versioning and release flow tests.
 - security_considerations: Release preparation must not create tags, push branches, or publish artifacts automatically.
 - Depends on: 6

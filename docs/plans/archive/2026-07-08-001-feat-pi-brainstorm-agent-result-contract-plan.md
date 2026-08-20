@@ -11,13 +11,13 @@ origin: user said continue after Pi Brainstorm envelope adapter closure; next sl
 ## Task
 - Summary: Add a pure runtime result contract for Pi Brainstorm subagent outputs without runtime agent invocation or polling
 - Origin: Previous Pi adapter plan closed with `buildBrainstormEnsembleDispatchEnvelopes`; user said continue
-- Spec: docs/specs/pi-brainstorm-agent-result-contract.spec.md
+- Spec: docs/specs/archive/pi-brainstorm-agent-result-contract.spec.md
 - Research: `buildBrainstormEnsembleDispatchEnvelopes("pi")` already preserves `candidate_id` and emits Pi subagent envelopes; `normalizeBrainstormEnsemblePacket` already performs parent-owned Brainstorm synthesis from child arrays; runtime policy forbids provider SDK calls and real agent/tool invocation
 - Decisions: D1 add a Brainstorm-specific result helper rather than a generic host result framework; D2 helper consumes completed host outputs only; D3 unknown, duplicate, or missing candidate results fail closed; D4 errored child results become blockers so parent Brainstorm keeps failure evidence; D5 docs describe host-owned launch/collect loop without transferring authority
 - Assumptions: Pi can retain `candidate_id` from each subagent envelope and pass final child output text or objects back to the helper; child outputs follow the prompt schema from the previous slice; partial failure should not erase other child evidence
 - Scope Mode: New Slice
 - Engineering Closure Check:
-  - architecture_surface: `plugins/immune-brain/runtime/imm_core.ts`, `tests/planner-ensemble-contract.test.ts`, `plugins/immune-brain/dist/imm-brainstorm.md`, `plugins/immune-brain/skills/imm-brainstorm/SKILL.md`, `docs/specs/pi-brainstorm-agent-result-contract.spec.md`, `docs/plans/2026-07-08-001-feat-pi-brainstorm-agent-result-contract-plan.md`
+  - architecture_surface: `plugins/immune-brain/runtime/imm_core.ts`, `tests/planner-ensemble-contract.test.ts`, `plugins/immune-brain/dist/imm-brainstorm.md`, `plugins/immune-brain/skills/imm-brainstorm/SKILL.md`, `docs/specs/archive/pi-brainstorm-agent-result-contract.spec.md`, `docs/plans/2026-07-08-001-feat-pi-brainstorm-agent-result-contract-plan.md`
   - dependencies_known: true
   - verification_path:
       - target: Pi Brainstorm subagent child outputs normalize into parent-owned Brainstorm packet without live agent calls
@@ -70,11 +70,11 @@ Spec and Plan prose language: English for durable planning artifacts; preserve e
 ### Step 4
 - Step ID: U4
 - Result: Pi Brainstorm subagent result contract is validated against runtime boundaries
-- Verification: `bun test tests/planner-ensemble-contract.test.ts tests/advisory-dispatch-core.test.ts tests/activation-plan-runtime-surface.test.ts` exits zero; `plugins/immune-brain/bin/imm-plan docs/plans/2026-07-08-001-feat-pi-brainstorm-agent-result-contract-plan.md --json` exits zero; `git diff -- plugins/immune-brain/runtime plugins/immune-brain/dist/imm-brainstorm.md plugins/immune-brain/skills/imm-brainstorm/SKILL.md tests docs/specs/pi-brainstorm-agent-result-contract.spec.md docs/plans/2026-07-08-001-feat-pi-brainstorm-agent-result-contract-plan.md` shows no provider SDK calls, no runtime agent invocation, no polling loop, and no workflow-state mutation
+- Verification: `bun test tests/planner-ensemble-contract.test.ts tests/advisory-dispatch-core.test.ts tests/activation-plan-runtime-surface.test.ts` exits zero; `plugins/immune-brain/bin/imm-plan docs/plans/2026-07-08-001-feat-pi-brainstorm-agent-result-contract-plan.md --json` exits zero; `git diff -- plugins/immune-brain/runtime plugins/immune-brain/dist/imm-brainstorm.md plugins/immune-brain/skills/imm-brainstorm/SKILL.md tests docs/specs/archive/pi-brainstorm-agent-result-contract.spec.md docs/plans/2026-07-08-001-feat-pi-brainstorm-agent-result-contract-plan.md` shows no provider SDK calls, no runtime agent invocation, no polling loop, and no workflow-state mutation
 - Agent Hint: imm-qa
 - Test scenarios: Covers full focused runtime suite; Covers plan validation; Covers scope guard; Covers no runtime agent invocation
 - Depends on: 3
-- Scope: `plugins/immune-brain/runtime/imm_core.ts`, `plugins/immune-brain/dist/imm-brainstorm.md`, `plugins/immune-brain/skills/imm-brainstorm/SKILL.md`, `tests/planner-ensemble-contract.test.ts`, `tests/advisory-dispatch-core.test.ts`, `tests/activation-plan-runtime-surface.test.ts`, `docs/specs/pi-brainstorm-agent-result-contract.spec.md`, `docs/plans/2026-07-08-001-feat-pi-brainstorm-agent-result-contract-plan.md`
+- Scope: `plugins/immune-brain/runtime/imm_core.ts`, `plugins/immune-brain/dist/imm-brainstorm.md`, `plugins/immune-brain/skills/imm-brainstorm/SKILL.md`, `tests/planner-ensemble-contract.test.ts`, `tests/advisory-dispatch-core.test.ts`, `tests/activation-plan-runtime-surface.test.ts`, `docs/specs/archive/pi-brainstorm-agent-result-contract.spec.md`, `docs/plans/2026-07-08-001-feat-pi-brainstorm-agent-result-contract-plan.md`
 - Replan condition: If validation needs runtime agent access stop and route to a manual Pi host-subagent plan
 
 ## Notes

@@ -12,8 +12,8 @@ origin: user clarified L2S-WF should be installable and run should compose autow
 
 - Summary: Make L2S-WF usable as real installable `prep` and `run` skills while preserving Immune-Brain authority separation.
 - Origin: User clarified that the completed L2S-WF pattern is not enough because `prep` and `run` are not installed skills; user also corrected `run` to compose `imm-autowork` with `imm-code-review`.
-- Spec: docs/specs/l2s-installable-alias-skills.spec.md
-- Research: `docs/plans/2026-05-15-009-feat-l2s-workflow-pattern-plan.md` explicitly chose not to create new skills; `docs/specs/l2s-workflow-pattern.spec.md` and `docs/patterns/l2s-workflow.md` define `/prep` and `/run` as instruction aliases; `skills/registry.yaml` has no `prep` or `run`; `scripts/legacy-installer.sh` discovers any `skills/*/SKILL.md` automatically; `tests/test_install_local.py` already checks that `--list` equals the live skill directories; `tests/test_skill_contracts.py` validates registry shape and skill contracts.
+- Spec: docs/specs/archive/l2s-installable-alias-skills.spec.md
+- Research: `docs/plans/2026-05-15-009-feat-l2s-workflow-pattern-plan.md` explicitly chose not to create new skills; `docs/specs/archive/l2s-workflow-pattern.spec.md` and `docs/patterns/l2s-workflow.md` define `/prep` and `/run` as instruction aliases; `skills/registry.yaml` has no `prep` or `run`; `scripts/legacy-installer.sh` discovers any `skills/*/SKILL.md` automatically; `tests/test_install_local.py` already checks that `--list` equals the live skill directories; `tests/test_skill_contracts.py` validates registry shape and skill contracts.
 - Decisions:
   - D1: Implement `prep` and `run` as thin installable Skill aliases instead of shell commands.
   - D2: Keep `prep` as orchestration over `imm-brainstorm` and `imm-planner`.
@@ -22,7 +22,7 @@ origin: user clarified L2S-WF should be installable and run should compose autow
 - Assumptions: Codex skill invocation through installed `SKILL.md` files is the target usage; terminal users should continue using `imm-*` CLI wrappers.
 - Scope Mode: Focused implementation
 - Engineering Closure Check:
-  - architecture_surface: `skills/prep/SKILL.md`, `skills/run/SKILL.md`, `skills/registry.yaml`, `docs/specs/l2s-workflow-pattern.spec.md`, `docs/patterns/l2s-workflow.md`, `IMMUNE.md`, `README.md`, `tests/test_skill_contracts.py`
+  - architecture_surface: `skills/prep/SKILL.md`, `skills/run/SKILL.md`, `skills/registry.yaml`, `docs/specs/archive/l2s-workflow-pattern.spec.md`, `docs/patterns/l2s-workflow.md`, `IMMUNE.md`, `README.md`, `tests/test_skill_contracts.py`
   - dependencies_known: true
   - verification_path: focused contract tests plus installer list check plus plan validation
   - blockers: none
@@ -33,11 +33,11 @@ origin: user clarified L2S-WF should be installable and run should compose autow
 ### Step 1
 - Step ID: U1
 - Result: Installable L2S contract
-- Verification: `rg -n "installable|skills/prep|skills/run|imm-autowork|imm-code-review" docs/specs/l2s-installable-alias-skills.spec.md docs/specs/l2s-workflow-pattern.spec.md docs/patterns/l2s-workflow.md IMMUNE.md README.md`
+- Verification: `rg -n "installable|skills/prep|skills/run|imm-autowork|imm-code-review" docs/specs/archive/l2s-installable-alias-skills.spec.md docs/specs/archive/l2s-workflow-pattern.spec.md docs/patterns/l2s-workflow.md IMMUNE.md README.md`
 - Verification type: automated
 - Depends on: none
-- Discovery cache: docs/specs/l2s-installable-alias-skills.spec.md (new behavioral contract); docs/patterns/l2s-workflow.md (existing alias pattern); IMMUNE.md (constitution wording)
-- Scope: `docs/specs/l2s-workflow-pattern.spec.md`, `docs/patterns/l2s-workflow.md`, `IMMUNE.md`, `README.md`
+- Discovery cache: docs/specs/archive/l2s-installable-alias-skills.spec.md (new behavioral contract); docs/patterns/l2s-workflow.md (existing alias pattern); IMMUNE.md (constitution wording)
+- Scope: `docs/specs/archive/l2s-workflow-pattern.spec.md`, `docs/patterns/l2s-workflow.md`, `IMMUNE.md`, `README.md`
 
 ### Step 2
 - Step ID: U2

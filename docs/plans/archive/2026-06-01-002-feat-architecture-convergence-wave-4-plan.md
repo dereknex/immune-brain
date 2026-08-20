@@ -11,7 +11,7 @@ origin: imm-arch-explorer candidate selection
 ## Task
 - Summary: Close the five selected architecture opportunities from the latest arch-explorer run.
 - Origin: User selected candidates 1,2,3,4,5 from the `imm-arch-explorer` output.
-- Spec: docs/specs/architecture-convergence-wave-4.spec.md
+- Spec: docs/specs/archive/architecture-convergence-wave-4.spec.md
 - Research: `CONTEXT.md` defines Activation Plan, Delegation Packet, Domain Mapper, State Ledger, Skill, Plan, Spec, and ADR vocabulary. `docs/solutions/rejected-shared-registry-generic-dispatcher.md` rejects shared registry and generic dispatcher work without stronger evidence. `docs/solutions/subagent-execution-truth-protocol.md` requires host-bound deterministic helpers. `docs/reference/planning-quality-gate.md` applies because this slice touches runtime helpers, plugin package parity, skill contracts, and compatibility. Current `.imm/memory/current_iteration.json` has no active Step or validated Plan.
 - Candidate mapping: AEX-1 -> U1; AEX-2 -> U5; AEX-3 -> U3; AEX-4 -> U2; AEX-5 -> U4
 - Decisions:

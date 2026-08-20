@@ -10,7 +10,7 @@ date: 2026-05-25
 ## Task
 - Summary: Make packaged `immune-brain` skill references resolvable after installation and add a regression gate for future package-reference drift.
 - Origin: User-requested installation analysis found missing packaged reference files and invalid `dist/*.md` links, including the `imm-ui-review` dependency on `docs/reference/ux-heuristic-checklist.md`.
-- Spec: docs/specs/plugin-package-reference-integrity.spec.md
+- Spec: docs/specs/archive/plugin-package-reference-integrity.spec.md
 - Research: `plugins/immune-brain/dist/*.md` contains the packaged skill bodies. `plugins/immune-brain/dist/docs/reference/` is the plugin-local reference bundle. `plugins/immune-brain/skills/*/SKILL.md` are thin shims that load `../../dist/*.md`. `tests/test_immune_brain_plugin_package.py` is the correct package contract test surface, while `tests/test_skill_contracts.py` already covers skill text contracts.
 - Decisions:
     - D1: Treat `docs/reference/*` references in packaged skill bodies as plugin-local package dependencies when they describe installed local reference material.

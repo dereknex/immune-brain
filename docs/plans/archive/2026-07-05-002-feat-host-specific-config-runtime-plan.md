@@ -7,7 +7,7 @@ origin:
   - user requested follow-up plan for config.toml taking real effect
   - user requested considering different coding agents using different config files
   - user requested moving all ~/.immune-brain contents into corresponding coding-agent directories
-  - docs/specs/2026-07-05-host-specific-config-runtime.spec.md
+  - docs/specs/archive/2026-07-05-host-specific-config-runtime.spec.md
 ---
 
 # Iteration Plan
@@ -15,7 +15,7 @@ origin:
 ## Task
 
 - Summary: Make local Immune-Brain runtime files real inputs under each coding agent's own config directory, without relying on a global `~/.immune-brain/` folder.
-- Spec: `docs/specs/2026-07-05-host-specific-config-runtime.spec.md`
+- Spec: `docs/specs/archive/2026-07-05-host-specific-config-runtime.spec.md`
 - Origin: A read-only `imm-code-review` check found that local config is currently documentation-only for the TypeScript CLI runtime. The user asked to append a plan that accounts for different coding agents using their own configuration directories, then clarified that all old `~/.immune-brain/` contents should move into the corresponding coding-agent directory to avoid cross-host influence.
 - Scope Mode: New follow-up slice. The previous multi-model advisory dispatch Plan is closed and intentionally reset, so this Plan does not append closed Step history.
 - Planner research dispatch: solo. The failure mode is local, bounded, and supported by direct runtime/code evidence.

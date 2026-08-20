@@ -4,12 +4,12 @@
 
 - Summary: Establish an opt-in successor-ready planning contract so Roadmap-backed Plans declare one coherent executable slice and one non-authoritative next Phase without changing runtime state.
 - Origin: User-confirmed `imm-brainstorm` framing for splitting large initiatives into multiple linear Plans while leaving session lifecycle entirely under user control.
-- Spec: `docs/specs/2026-07-28-roadmap-plan-boundary-successor.spec.md`
+- Spec: `docs/specs/archive/2026-07-28-roadmap-plan-boundary-successor.spec.md`
 - Research: The existing Roadmap/Executable Slice contract preserves deferred phases but does not require Plan-level boundary reasoning or static successor identity. `plan_core.ts` already parses arbitrary Task metadata and validates Steps, Brainstorm Trace, Spec design metadata, and Roadmap criteria. A representative 24-hour session used a three-Step Plan whose evidence covered 49 changed files; its audit foundation, read surface, and permission rollout crossed independent authority and review boundaries, and post-Plan review consumed more work than primary implementation. Planner ensemble agreement favored a static, opt-in Phase 1 and deferred State Ledger transitions. The strong advisory required explicit proof that declaration is not approval or activation.
 - Decisions: D1 use semantic authority, risk, verification, promotion, review, and rollback boundaries instead of fixed file/token/session limits. D2 keep Step outcome discipline but promote independent boundaries into successor Plans. D3 introduce opt-in `roadmap-slice/v1` Task metadata so legacy Plans remain unchanged. D4 use stable Roadmap Phase IDs rather than future Plan paths for successor candidates. D5 treat successor metadata as non-authoritative static planning data. D6 make Phase 1 contract plus pure validation only. D7 defer State Ledger transitions, user approval persistence, workflow routing, and end-to-end migration to later Plans. D8 preserve user ownership of session continuation.
 - Assumptions: Existing Task metadata remains a backwards-compatible extension point. `plugins/immune-brain/dist/imm-planner.md` is the detailed packaged Planner contract, while `docs/reference/planning-quality-gate.md` is canonical for its generated packaged mirror. Stable Phase IDs can use a conservative identifier syntax without introducing global Plan IDs. No open `BR-Q-*` item remains.
 - Plan contract: roadmap-slice/v1
-- Roadmap source: `docs/specs/2026-07-28-roadmap-plan-boundary-successor.spec.md` Roadmap
+- Roadmap source: `docs/specs/archive/2026-07-28-roadmap-plan-boundary-successor.spec.md` Roadmap
 - Current phase: P1
 - Plan boundary: Static Planner, template, vocabulary, quality-gate, and pure `imm-plan` validation contract for bounded Roadmap slices and one declared successor candidate.
 - Boundary rationale: The two Steps share one planning-authority outcome and one rollback boundary: authors first receive a canonical contract, then the pure validator makes that same contract durable. State Ledger, workflow routing, user approval persistence, and host behavior are separate authority and recovery boundaries deferred to successor Plans.
@@ -93,7 +93,7 @@
 
 ## Planning Quality Gate
 
-- contract surface: `docs/specs/2026-07-28-roadmap-plan-boundary-successor.spec.md`, `plugins/immune-brain/dist/imm-planner.md`, `docs/reference/planning-quality-gate.md`, its generated packaged mirror, `CONTEXT.md`, `.imm/templates/iteration-plan-template.md`, `plugins/immune-brain/runtime/plan_core.ts`, and focused tests.
+- contract surface: `docs/specs/archive/2026-07-28-roadmap-plan-boundary-successor.spec.md`, `plugins/immune-brain/dist/imm-planner.md`, `docs/reference/planning-quality-gate.md`, its generated packaged mirror, `CONTEXT.md`, `.imm/templates/iteration-plan-template.md`, `plugins/immune-brain/runtime/plan_core.ts`, and focused tests.
 - compatibility: `roadmap-slice/v1` is opt-in. Existing Plans, Specs, Plan signatures, State Ledger schema v2, HANDOFF files, and closed evidence require no migration or rewrite.
 - interruption recovery: U1 closes the human and template contract independently. U2 starts only after U1; if interrupted, legacy Plan validation remains available and no runtime state has changed.
 - rollback path: Revert U1 contract files as one unit or U2 parser/tests as one unit. No data migration or ledger repair is required.

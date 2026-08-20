@@ -5,7 +5,7 @@ status: planned
 date: 2026-07-07
 origin:
   - imm-brainstorm framing: give Immune-Brain doc cleanup/curation ability (Option 1, user-selected)
-  - docs/specs/2026-07-07-docs-hygiene-curation-capability.spec.md
+  - docs/specs/archive/2026-07-07-docs-hygiene-curation-capability.spec.md
 ---
 
 # Iteration Plan
@@ -15,7 +15,7 @@ origin:
 - Summary: Add a read-only doc-hygiene sweep to `docs-verifier` backed by a shared
   `doc-lifecycle-hygiene.md` reference, and a stale-decision retirement
   convention to `imm-compounder`, without adding a new skill or write authority.
-- Spec: `docs/specs/2026-07-07-docs-hygiene-curation-capability.spec.md`
+- Spec: `docs/specs/archive/2026-07-07-docs-hygiene-curation-capability.spec.md`
 - Origin: User selected Option 1 (enhance `docs-verifier` + reuse `imm-compounder`)
   after rejecting a full `imm-planner` -> `imm-work` -> `imm-compounder` cleanup
   pipeline as too heavy and a standalone `docs-curator` skill as not lightweight.

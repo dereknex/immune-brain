@@ -5,7 +5,7 @@ status: planned
 date: 2026-07-05
 origin:
   - user selected agent workflow efficiency as the target improvement area
-  - docs/specs/2026-07-05-adaptive-cache-first-agent-workflow.spec.md
+  - docs/specs/archive/2026-07-05-adaptive-cache-first-agent-workflow.spec.md
 ---
 
 # Iteration Plan
@@ -13,10 +13,10 @@ origin:
 ## Task
 
 - Summary: Plan one executable slice that turns the adaptive cache-first workflow into a shared contract and runtime route signal.
-- Spec: `docs/specs/2026-07-05-adaptive-cache-first-agent-workflow.spec.md`
+- Spec: `docs/specs/archive/2026-07-05-adaptive-cache-first-agent-workflow.spec.md`
 - Origin: The user chose agent workflow efficiency, asked for the best scheme, and invoked planner for an executable Plan.
 - Scope Mode: New executable slice. The older `docs/plans/2026-05-17-003-feat-cost-efficiency-r3-plan.md` is stale because it targets retired Python runtime files, so this Plan uses the current Bun TypeScript runtime surface.
-- Roadmap source: `docs/specs/2026-07-05-adaptive-cache-first-agent-workflow.spec.md` Roadmap.
+- Roadmap source: `docs/specs/archive/2026-07-05-adaptive-cache-first-agent-workflow.spec.md` Roadmap.
 - Execution scope: Phase 1 only: executable adaptive route.
 - Deferred phases: Phase 2 telemetry feedback tuning and Phase 3 optional DAG or semantic memory.
 - Roadmap note: This Plan is not the full roadmap implementation Plan.
@@ -31,12 +31,12 @@ origin:
 
 - `CONTEXT.md` defines the current architecture map: Bun TypeScript runtime, plugin-local `imm-*` wrappers, Plan validation and sync, skill contracts, bootstrap templates, durable learnings, and upstream references.
 - `.imm/memory/current_iteration.json` is idle after completing the previous runtime truth Plan. The active runtime plan can be replaced by a new synced Plan.
-- `docs/specs/discovery-navigation-layer.spec.md` already defines static `CONTEXT.md`, dynamic Step `discovery_cache`, and pattern-layer `docs/solutions/` `key_files` discovery.
+- `docs/specs/archive/discovery-navigation-layer.spec.md` already defines static `CONTEXT.md`, dynamic Step `discovery_cache`, and pattern-layer `docs/solutions/` `key_files` discovery.
 - `plugins/immune-brain/runtime/plan_core.ts` parses `Discovery cache` and `Parallel probes` fields. `plugins/immune-brain/runtime/state_ledger.ts` preserves those fields on synced Steps.
 - `docs/reference/subagent-dispatch-protocol.md` already defines lightweight short-circuiting, global activation mode handling, `cost_scope_mismatch`, and the `shared_context_summary` plus `focus_delta` packet.
 - `plugins/immune-brain/runtime/immune_brain_runtime.ts` exposes `imm-activation-plan`, but its command currently returns empty candidates and does not derive route evidence from `--task-summary` or `--changed-path`.
 - `tests/activation-plan-runtime-surface.test.ts` and `tests/code-review-activation-contract.test.ts` are the focused test surfaces for activation runtime behavior.
-- `docs/specs/cost-efficiency-r3.spec.md` and its 2026-05-17 Plan are useful historical evidence but reference retired Python runtime paths, so they should not be appended.
+- `docs/specs/archive/cost-efficiency-r3.spec.md` and its 2026-05-17 Plan are useful historical evidence but reference retired Python runtime paths, so they should not be appended.
 - `docs/reference/planning-quality-gate.md` applies because this slice touches workflow contracts, subagent routing, runtime JSON output, and cross-host skill behavior.
 
 ## Decisions
@@ -75,7 +75,7 @@ origin:
 
 ## Planning Quality Gate
 
-- **contract surface**: `docs/specs/2026-07-05-adaptive-cache-first-agent-workflow.spec.md`, `docs/reference/subagent-dispatch-protocol.md`, `plugins/immune-brain/runtime/immune_brain_runtime.ts`, `plugins/immune-brain/runtime/imm_core.ts`, `plugins/immune-brain/skills/imm-brainstorm/SKILL.md`, `plugins/immune-brain/skills/imm-planner/SKILL.md`, `plugins/immune-brain/skills/imm-work/SKILL.md`, packaged `plugins/immune-brain/dist/*.md`, and related Bun tests.
+- **contract surface**: `docs/specs/archive/2026-07-05-adaptive-cache-first-agent-workflow.spec.md`, `docs/reference/subagent-dispatch-protocol.md`, `plugins/immune-brain/runtime/immune_brain_runtime.ts`, `plugins/immune-brain/runtime/imm_core.ts`, `plugins/immune-brain/skills/imm-brainstorm/SKILL.md`, `plugins/immune-brain/skills/imm-planner/SKILL.md`, `plugins/immune-brain/skills/imm-work/SKILL.md`, packaged `plugins/immune-brain/dist/*.md`, and related Bun tests.
 - **compatibility**: Existing activation JSON fields remain present. Extra route fields are additive. No State Ledger schema migration is required.
 - **interruption recovery**: If a Step fails, revert that Step's touched files and rerun its focused verification. Syncing this Plan does not mutate implementation files beyond State Ledger plan metadata.
 - **rollback path**: Use git checkout or revert for the Step file group. Step 2 can revert runtime additions while keeping Step 1 docs as aspirational guidance if necessary.
@@ -89,9 +89,9 @@ origin:
 - Step ID: U1
 - Result: Adaptive route contract is authoritative.
 - Verification type: automated
-- Verification: `rg -n "Adaptive Cache-First|Task Classifier|Cost-Based Subagent Gate|cache-first discovery" docs/specs/2026-07-05-adaptive-cache-first-agent-workflow.spec.md docs/reference/subagent-dispatch-protocol.md plugins/immune-brain/skills plugins/immune-brain/dist && plugins/immune-brain/bin/imm-plan docs/plans/2026-07-05-001-feat-adaptive-cache-first-agent-workflow-plan.md --json`
+- Verification: `rg -n "Adaptive Cache-First|Task Classifier|Cost-Based Subagent Gate|cache-first discovery" docs/specs/archive/2026-07-05-adaptive-cache-first-agent-workflow.spec.md docs/reference/subagent-dispatch-protocol.md plugins/immune-brain/skills plugins/immune-brain/dist && plugins/immune-brain/bin/imm-plan docs/plans/2026-07-05-001-feat-adaptive-cache-first-agent-workflow-plan.md --json`
 - Test scenarios: The protocol names task classes, cache-first discovery order, subagent cost gate, shared briefing, and focused verification rules.
-- Discovery cache: docs/specs/2026-07-05-adaptive-cache-first-agent-workflow.spec.md (new route contract); docs/reference/subagent-dispatch-protocol.md (dispatch lifecycle); plugins/immune-brain/skills/imm-brainstorm/SKILL.md (framing route); plugins/immune-brain/skills/imm-planner/SKILL.md (planning route); plugins/immune-brain/skills/imm-work/SKILL.md (execution coordination route)
+- Discovery cache: docs/specs/archive/2026-07-05-adaptive-cache-first-agent-workflow.spec.md (new route contract); docs/reference/subagent-dispatch-protocol.md (dispatch lifecycle); plugins/immune-brain/skills/imm-brainstorm/SKILL.md (framing route); plugins/immune-brain/skills/imm-planner/SKILL.md (planning route); plugins/immune-brain/skills/imm-work/SKILL.md (execution coordination route)
 - Agent Hint: imm-executor
 - Depends on: none
 - failure_behavior: If existing protocol language already covers a rule, link to it instead of duplicating the text in every skill.

@@ -12,7 +12,7 @@ origin: repo evaluation after user requested current-project assessment and plan
 
 - Summary: Repair `imm-heal` so its required Skill inventory matches the real repo `skills/*/SKILL.md` surface, including `prep` and `run`.
 - Origin: Current-project evaluation on 2026-05-19.
-- Spec: docs/specs/heal-skill-inventory-parity.spec.md
+- Spec: docs/specs/archive/heal-skill-inventory-parity.spec.md
 - Research: `python3 -m unittest discover -s tests` fails only at `tests.test_workflow_loop.WorkflowLoopTests.test_heal_required_skills_match_repo_skills`; `.imm/imm-heal.py` still hardcodes `REQUIRED_SKILLS` and omits `prep/SKILL.md` plus `run/SKILL.md`; `docs/plans/2026-05-18-002-feat-l2s-installable-alias-skills-plan.md` already established those alias skills as installable repo surface.
 - Decisions:
   - D1: Prioritize this repo-health drift before opening a broader new feature slice, because the current test suite already marks it as broken truth.

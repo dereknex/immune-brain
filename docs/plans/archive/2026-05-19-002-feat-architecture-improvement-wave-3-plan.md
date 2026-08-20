@@ -37,7 +37,7 @@
 - Step ID: U003
 - Result: `build_code_review_synthesis_from_outcomes` uses `imm_core.review_arbitration` for priority-ordered conflict-grouped synthesis instead of plain concatenation
 - Verification: `python3 -m unittest discover -s tests`
-- Discovery cache: .imm/review_arbitration.py (module to relocate into imm_core); .imm/imm_core/code_review_subagents.py (synthesis integration point); tests/test_imm_review.py (arbitration tests); docs/specs/subagent-telemetry-arbitration-integration.spec.md (requirement source)
+- Discovery cache: .imm/review_arbitration.py (module to relocate into imm_core); .imm/imm_core/code_review_subagents.py (synthesis integration point); tests/test_imm_review.py (arbitration tests); docs/specs/archive/subagent-telemetry-arbitration-integration.spec.md (requirement source)
 
 ### Step 4
 - Step ID: U004

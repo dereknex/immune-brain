@@ -11,7 +11,7 @@ origin: BR-REQ-1, BR-REQ-2, BR-DEC-1, BR-OUT-1, BR-Q-1
 ## Task
 - Summary: Refactor `scripts/sync-to-public.sh` to support incremental continuous sync by default, and update `--force` logic to clean target directory while safely preserving its `.git/` folder and metadata.
 - Origin: User requested public release repository sync to support continuous synchronization without resetting the directory every time.
-- Spec: docs/specs/public-release-continuous-sync.spec.md
+- Spec: docs/specs/archive/public-release-continuous-sync.spec.md
 - Research: Checked `scripts/sync-to-public.sh`. It enforces a non-optional exit and requires `--force` when output directory already exists, and `--force` literally does `rm -rf "$OUTPUT_DIR"`, which wipes out `.git/` version control tracking and configs.
 - Decisions:
     - D1: Allow incremental overwrite synchronization by default if `$OUTPUT_DIR` exists and contains `$MARKER_FILE` (`.public-release-artifact`).

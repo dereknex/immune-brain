@@ -11,7 +11,7 @@ origin: BR-REQ-1, BR-REQ-2, BR-REQ-3
 ## Task
 - Summary: Refactor public repository synchronization logic to strictly include plugin packages and user manuals, remove private core implementation details and internal specs, and align README validation commands.
 - Origin: User requested to refactor the sync script to include only plugins and user guides, and explicitly requested to update README.md templates.
-- Spec: docs/specs/public-release-sync-refactor.spec.md
+- Spec: docs/specs/archive/public-release-sync-refactor.spec.md
 - Research: `CONTEXT.md` defines plugin-local runtimes and documents. `scripts/sync-to-public.sh` maps `KEEP_PATHS` and `PUBLIC_REFERENCE_PATHS`. `public-release/templates/README.md` serves as the template for public repository readme. The plugin's runtime self-contains in `plugins/immune-brain/dist/.imm`.
 - Decisions:
     - D1: Rely completely on the plugin's self-contained `plugins/immune-brain/dist/.imm` folder for the public release's runtime, discarding the root `.imm/` sync.

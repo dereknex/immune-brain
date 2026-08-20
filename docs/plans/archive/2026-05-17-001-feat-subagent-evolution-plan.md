@@ -11,7 +11,7 @@ origin: 2026-05-17 brainstorm analysis of subagent status
 ## Task
 - Summary: Extend the subagent architecture to support durable evidence persistence in the state ledger, introduce the first execution-bound subagent (test-fixer), and optimize dispatch efficiency via context sharding.
 - Origin: Brainstorm framing (2026-05-17) identified capability silos and evidence volatility as the primary bottlenecks for the current subagent implementation.
-- Spec: docs/specs/subagent-evolution.spec.md
+- Spec: docs/specs/archive/subagent-evolution.spec.md
 - Brainstorm manifest: BR-REQ-1; BR-REQ-2; BR-REQ-3; BR-DEC-1; BR-OUT-1
 - Research: Checked `imm_core/current_iteration_state.py` for v2 schema extensibility, `subagent-dispatch-protocol.md` for sharding hooks, and `skills/registry.yaml` for authority classes.
 - Decisions: D1 Extend v2 ledger schema to include `child_evidence`; D2 Introduce `test-fixer` as the first `active-step-bounded-executor`; D3 Implement context sharding in the delegation packet layer to minimize token waste.

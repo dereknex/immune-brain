@@ -10,7 +10,7 @@ date: 2026-05-25
 ## Task
 - Summary: Harden Planner, Executor, and Compounder phases in the Immune-Brain framework through three new adversarial mechanisms: Devil's Advocate preplan audit, YAGNI Red-Line Gate, and Debate & Evidence Critique.
 - Origin: User requested to add adversarial mechanisms to Planner, Executor, and Compounder phases.
-- Spec: docs/specs/imm-adversarial-mechanisms.spec.md
+- Spec: docs/specs/archive/imm-adversarial-mechanisms.spec.md
 - Research: `IMMUNE.md` defines the multi-phase workflow. The spec folders and `plugins/immune-brain/dist/` specify the skill instructions.
 - Decisions:
     - D1: Solidify adversarial checks directly into `plugins/immune-brain/dist/imm-planner.md`, `imm-executor.md`, and `imm-compounder.md` to force execution.

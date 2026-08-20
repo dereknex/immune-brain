@@ -11,7 +11,7 @@ origin: imm-brainstorm analysis of imm-work subagent concurrency
 ## Task
 - Summary: Complete the imm-work parallel_probes runtime path with plan annotation preservation, deterministic probe envelopes, State Ledger evidence, and contract regression coverage.
 - Origin: imm-brainstorm concluded that imm-work has a documented parallel_probes contract and State Ledger support but lacks runtime code that reads probes, dispatches child envelopes, collects outcomes, and passes evidence to the executor.
-- Spec: docs/specs/imm-work-parallel-probes-runtime.spec.md
+- Spec: docs/specs/archive/imm-work-parallel-probes-runtime.spec.md
 - Brainstorm manifest: BR-REQ-001, BR-REQ-002, BR-DEC-001, BR-DEC-002, BR-OUT-001, BR-OUT-002, BR-Q-001
 - Research: CONTEXT.md defines Step, State Ledger, Delegation Packet, and Domain Mapper as the relevant vocabulary. `plugins/immune-brain/dist/imm-work.md` documents Probe Dispatch. `.imm/imm-work.py` activates one Step and records execution evidence but does not inspect `parallel_probes`. `.imm/imm_core/state_machine.py` already has the `probing` state and `child_evidence` persistence. `.imm/imm_core/code_review_subagents.py` and `.imm/imm_core/domain_mapper_dispatch.py` provide host-bound envelope and outcome normalization precedents. `docs/solutions/rejected-shared-registry-generic-dispatcher.md` rejects shared registry or generic dispatcher work without readiness evidence from three or more hosts.
 - Decisions: D1 keep the slice host-bound to imm-work. D2 preserve the current single-active-Step policy. D3 represent provider calls with deterministic envelopes and fake outcomes in tests. D4 persist probe output as child_evidence rather than granting probe authority. D5 keep dispatch failure non-blocking by routing the executor to sequential inline investigation. D6 do not add a shared registry or generic dispatcher.
@@ -78,7 +78,7 @@ origin: imm-brainstorm analysis of imm-work subagent concurrency
 - Result: Full probe runtime regression passes
 - Verification: `python3 -m unittest tests.test_imm_plan tests.test_current_iteration_state tests.test_work_probes tests.test_workflow_loop tests.test_skill_contracts` exits zero
 - Test scenarios: end-to-end parser to ledger to helper to imm-work flow; degraded dispatch remains visible; existing review and mapper dispatch behavior remains unchanged
-- Discovery cache: docs/specs/imm-work-parallel-probes-runtime.spec.md (acceptance criteria); docs/plans/2026-05-22-001-feat-imm-work-parallel-probes-runtime-plan.md (plan validation target)
+- Discovery cache: docs/specs/archive/imm-work-parallel-probes-runtime.spec.md (acceptance criteria); docs/plans/2026-05-22-001-feat-imm-work-parallel-probes-runtime-plan.md (plan validation target)
 - failure_behavior: If broad regression fails outside the probe surface, isolate unrelated failures and close only after probe-owned regressions are fixed.
 - security_considerations: Final evidence must confirm no shared dispatcher or write-capable probe path was introduced.
 - Depends on: 4

@@ -4,7 +4,7 @@ type: chore
 status: proposed
 date: 2026-07-24
 origin: imm-compounder handoff after link-fix batch (483 rewritten, 228 dead links remained); imm-advisory-reviewer docs lens recommended one-step planner routing
-spec: docs/specs/2026-07-24-retired-python-link-disposition.spec.md
+spec: docs/specs/archive/2026-07-24-retired-python-link-disposition.spec.md
 ---
 
 # Iteration Plan
@@ -12,7 +12,7 @@ spec: docs/specs/2026-07-24-retired-python-link-disposition.spec.md
 ## Task
 
 - Summary: Dispose of 228 broken markdown links to retired Python files and prune the stale `key_files` frontmatter in `docs/solutions/contracts.md`, so `docs/` has no broken `[text](url)` link to a deleted file and historical artifacts are explicitly marked with paths preserved as inline code.
-- Spec: `docs/specs/2026-07-24-retired-python-link-disposition.spec.md`
+- Spec: `docs/specs/archive/2026-07-24-retired-python-link-disposition.spec.md`
 - Origin: `imm-compounder` handoff. The mechanical fixer (`scripts/fix-broken-links.ts`) rewrote 483 links whose targets exist; the remaining 228 point at deleted `.imm/*.py`, `tests/test_*.py`, and other retired files with no 1:1 successor. `docs/solutions/contracts.md` `key_files` frontmatter lists 70+ retired `.py` paths (TS successors already listed alongside).
 - Scope Mode: New single-Step docs-hygiene slice. No runtime, test, contract, or state change.
 - Planner research dispatch: none. Single-domain docs hygiene; no multi-domain or elevated-risk trigger. Solo planning.

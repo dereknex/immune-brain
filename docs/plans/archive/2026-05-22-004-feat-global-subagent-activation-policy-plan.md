@@ -11,7 +11,7 @@ origin: imm-brainstorm analysis of global subagent activation configuration
 ## Task
 - Summary: Add one global subagent activation policy that covers current review, research, probe, party, mapper, and project-specific subagent surfaces.
 - Origin: User clarified that the desired control is a global override and asked to include all current subagent usage so future subagents follow the same policy.
-- Spec: docs/specs/global-subagent-activation-policy.spec.md
+- Spec: docs/specs/archive/global-subagent-activation-policy.spec.md
 - Brainstorm manifest: BR-REQ-1, BR-REQ-2, BR-REQ-3, BR-DEC-1, BR-DEC-2, BR-DEC-3, BR-OUT-1, BR-OUT-2
 - Research: CONTEXT.md defines Activation Plan, Delegation Packet, Domain Mapper, and State Ledger as the relevant terms. Current runtime surfaces include `.imm/imm_core/activation_plan.py`, `.imm/imm_core/code_review_subagents.py`, `.imm/imm_core/work_probes.py`, and `.imm/imm_core/domain_mapper_dispatch.py`. Current docs define catalog review hosts, `imm-party` explicit delegation, brainstorm and planner research dispatch, work `parallel_probes`, architecture Domain Mapper, and project-specific trigger-only reviewers. `docs/solutions/rejected-shared-registry-generic-dispatcher.md` rejects shared registry or generic dispatcher work until real multi-host drift justifies platformization.
 - Decisions:

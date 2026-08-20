@@ -4,7 +4,7 @@ type: feat
 status: proposed
 date: 2026-07-27
 origin: user-confirmed follow-up to upstream grill-me comparison and imm-brainstorm improvement analysis
-spec: docs/specs/2026-07-27-imm-brainstorm-decision-probing.spec.md
+spec: docs/specs/archive/2026-07-27-imm-brainstorm-decision-probing.spec.md
 ---
 
 # Iteration Plan
@@ -12,8 +12,8 @@ spec: docs/specs/2026-07-27-imm-brainstorm-decision-probing.spec.md
 ## Task
 
 - Summary: Improve `imm-brainstorm` with dependency-aware question ordering, conditional budget-neutral scenario probes, and evidence-backed reconsideration of rejected decisions, while preserving Brainstorm read-only authority and Preplan ownership of full Grill Mode.
-- Spec: `docs/specs/2026-07-27-imm-brainstorm-decision-probing.spec.md`
-- Origin: The user accepted the narrowed recommendations from the `grill-me` comparison and invoked `imm-planner`. This is a follow-up to `docs/specs/grill-me-brainstorm-preplan-harden.spec.md`, not a replacement for its codebase-first and Preplan serial-question decisions.
+- Spec: `docs/specs/archive/2026-07-27-imm-brainstorm-decision-probing.spec.md`
+- Origin: The user accepted the narrowed recommendations from the `grill-me` comparison and invoked `imm-planner`. This is a follow-up to `docs/specs/archive/grill-me-brainstorm-preplan-harden.spec.md`, not a replacement for its codebase-first and Preplan serial-question decisions.
 - Brainstorm manifest: BR-REQ-001; BR-REQ-002; BR-REQ-003; BR-REQ-004; BR-DEC-001; BR-DEC-002; BR-DEC-003; BR-OUT-001; BR-OUT-002; BR-OUT-003
 - Scope Mode: Selective Expansion. Add only the producer metadata needed for rejected-decision reconsideration, the consumer prompt rules, focused deterministic contracts, and a separate Pi behavior benchmark.
 - Planner research dispatch: two readonly advisory probes under host-authorized `auto` policy. One reviewed Brainstorm interaction/evaluation boundaries; one reviewed rejected-decision metadata compatibility. No child wrote files or owned Plan decisions.
@@ -96,7 +96,7 @@ spec: docs/specs/2026-07-27-imm-brainstorm-decision-probing.spec.md
 - rollback path: Revert U1's Compounder/test/fixture changes or U2's Brainstorm changes independently. Revised U3 has no parent-workspace implementation edit beyond benchmark contract alignment and State Ledger evidence.
 - verification strength: Bun tests guard deterministic text/data contracts; five isolated Pi Agent scenarios guard model behavior. Plan validation and `git diff --check` guard artifact structure.
 - design-depth classification: Medium because two Skill contracts form a producer/consumer behavior pair and compatibility matters, but no runtime schema, security surface, or persisted-state migration changes.
-- Technical Design baseline: `docs/specs/2026-07-27-imm-brainstorm-decision-probing.spec.md` is the single authority for selection order, metadata shape, compatibility behavior, and evaluation boundaries. Steps reference D1–D8 and the Spec rather than redefining them.
+- Technical Design baseline: `docs/specs/archive/2026-07-27-imm-brainstorm-decision-probing.spec.md` is the single authority for selection order, metadata shape, compatibility behavior, and evaluation boundaries. Steps reference D1–D8 and the Spec rather than redefining them.
 - Mermaid intent: not required; the Spec decision table is the clearest representation.
 - Design Conformance: Final QA must compare the implementation with the Spec authority/routing invariants, probe-selection rules, metadata shape, and compatibility matrix. Structural deviation routes to replan.
 - Brainstorm traceability: all ten declared `BR-*` items are mapped above; there are no unresolved questions.

@@ -4,7 +4,7 @@ type: feat
 status: active
 date: 2026-07-29
 origin: imm-brainstorm confirmation on building full benchmark test baseline with pi antigravity/gemini-3.6-flash
-spec: docs/specs/pi-gemini-benchmark-baseline.spec.md
+spec: docs/specs/archive/pi-gemini-benchmark-baseline.spec.md
 ---
 
 # Iteration Plan

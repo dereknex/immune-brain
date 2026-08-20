@@ -8,7 +8,7 @@
 **Created**: 2026-08-11
 **Status**: pending
 **Priority**: P1
-**Spec**: docs/specs/assurance-kernel-v4-p2b-readiness.spec.md
+**Spec**: docs/specs/archive/assurance-kernel-v4-p2b-readiness.spec.md
 **Predecessor**: docs/plans/2026-08-11-006-feat-assurance-kernel-p2b-readiness-plan.md (QA replan; supersession required before sync)
 
 ## Goal

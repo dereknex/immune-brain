@@ -10,8 +10,8 @@ date: 2026-05-25
 ## Task
 - Summary: Turn `imm-autowork` into a real host-bound runtime surface that keeps the autowork loop moving through `activate`, `executor`, and `qa` phases instead of stopping at the QA boundary reminder.
 - Origin: User reported that autowork stopped with “进入 `imm-qa` 权限边界，imm-autowork 到这里应停”, while the intended contract is to keep driving QA and continue to the next Step.
-- Spec: docs/specs/autowork-runtime-host.spec.md
-- Research: `CONTEXT.md` defines Step, Plan, QA, State Ledger, and plugin-local runtime vocabulary. `docs/specs/bounded-autowork-skill.spec.md` and `docs/specs/autowork-workflow-refinement.spec.md` already define explicit opt-in autowork plus `can_auto_advance`, but `docs/specs/autowork-runtime-host.spec.md` identifies the remaining gap: no real runtime host consumes the signal across the QA boundary. `docs/solutions/opt-in-bounded-autowork-entry.md` explicitly warns that contract prose is not execution truth. `docs/solutions/shared-runtime-host-before-platform.md` and `docs/solutions/rejected-shared-registry-generic-dispatcher.md` together constrain this slice to a single host-bound runtime path instead of platform expansion.
+- Spec: docs/specs/archive/autowork-runtime-host.spec.md
+- Research: `CONTEXT.md` defines Step, Plan, QA, State Ledger, and plugin-local runtime vocabulary. `docs/specs/archive/bounded-autowork-skill.spec.md` and `docs/specs/archive/autowork-workflow-refinement.spec.md` already define explicit opt-in autowork plus `can_auto_advance`, but `docs/specs/archive/autowork-runtime-host.spec.md` identifies the remaining gap: no real runtime host consumes the signal across the QA boundary. `docs/solutions/opt-in-bounded-autowork-entry.md` explicitly warns that contract prose is not execution truth. `docs/solutions/shared-runtime-host-before-platform.md` and `docs/solutions/rejected-shared-registry-generic-dispatcher.md` together constrain this slice to a single host-bound runtime path instead of platform expansion.
 - Decisions:
     - D1: Promote only `imm-autowork` to a real shared workflow host; do not broaden `imm-work` or introduce a shared dispatcher.
     - D2: Treat `next_action.action == "qa"` with `can_auto_advance: true` as same-run continuation, not as a stop condition.
@@ -41,7 +41,7 @@ date: 2026-05-25
 - Execution note: test-first
 - Verification: `python3 -m unittest tests.test_imm_autowork tests.test_workflow_loop`
 - Test scenarios: Covers no-plan routing back to `imm-planner`; Covers an ordinary activate to executor to qa loop staying in one run; Covers `qa` with `can_auto_advance: true` continuing instead of stopping; Covers QA `pass` unlocking and entering the next Step; Covers `rework`, `replan`, and `budget_reached` as distinct stop reasons.
-- Discovery cache: .imm/imm-work.py (`next_action`, `can_auto_advance`, `continue_current_step`); .imm/imm-review.py (QA closure primitive); .imm/imm_core/current_iteration_state.py (State Ledger transitions); tests/test_workflow_loop.py (existing loop assertions); docs/specs/autowork-runtime-host.spec.md (runtime host acceptance)
+- Discovery cache: .imm/imm-work.py (`next_action`, `can_auto_advance`, `continue_current_step`); .imm/imm-review.py (QA closure primitive); .imm/imm_core/current_iteration_state.py (State Ledger transitions); tests/test_workflow_loop.py (existing loop assertions); docs/specs/archive/autowork-runtime-host.spec.md (runtime host acceptance)
 - Agent Hint: imm-executor
 - failure_behavior: If the new host cannot cross QA without inventing new hidden state, stop and keep the helper read-only rather than merging authority or bypassing evidence.
 - security_considerations: The runtime host must not create hidden pass paths or activate work from an unsynced or invalid plan.
@@ -67,7 +67,7 @@ date: 2026-05-25
 - Execution note: test-first
 - Verification: `python3 -m unittest tests.test_imm_autowork tests.test_skill_contracts`
 - Test scenarios: Covers completed Plan plus pending reviewer `follow_up` continuing through autowork until QA or safe stop; Covers explicit absence of shared registry, generic dispatcher, background scheduler, and multi-active-step semantics; Covers completed follow-up not being reported as finished before QA closure.
-- Discovery cache: docs/specs/autowork-followup-completion.spec.md (follow-up target contract); docs/solutions/rejected-shared-registry-generic-dispatcher.md (rejected platform boundary); plugins/immune-brain/skills/imm-autowork/SKILL.md (follow-up workflow guard); tests/test_skill_contracts.py (no-platform-expansion drift guard)
+- Discovery cache: docs/specs/archive/autowork-followup-completion.spec.md (follow-up target contract); docs/solutions/rejected-shared-registry-generic-dispatcher.md (rejected platform boundary); plugins/immune-brain/skills/imm-autowork/SKILL.md (follow-up workflow guard); tests/test_skill_contracts.py (no-platform-expansion drift guard)
 - Agent Hint: imm-executor
 - failure_behavior: If follow-up completion requires a new queue, persistent background state, or multi-host runtime abstraction, stop and replan instead of widening the host.
 - security_considerations: Pending `follow_up` must remain a bounded execution artifact and must not become a hidden route for scope expansion or bypassed QA.

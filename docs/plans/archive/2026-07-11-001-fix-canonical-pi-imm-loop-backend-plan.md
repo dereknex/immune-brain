@@ -4,7 +4,7 @@ type: fix
 status: active
 date: 2026-07-11
 origin: imm-code-review findings after the prior Pi autorun Plan had already closed
-spec: docs/specs/canonical-pi-imm-loop-backend.spec.md
+spec: docs/specs/archive/canonical-pi-imm-loop-backend.spec.md
 ---
 
 # Iteration Plan

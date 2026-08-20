@@ -11,7 +11,7 @@ origin: imm-brainstorm framing - add pi code agent packages support and configur
 ## Task
 
 - Summary: Configure the project as a local Pi package and define project-level settings to automatically load the local skills and `context-mode` package.
-- Spec: docs/specs/2026-06-29-003-feat-add-pi-code-agent-support.spec.md
+- Spec: docs/specs/archive/2026-06-29-003-feat-add-pi-code-agent-support.spec.md
 - Origin: User requested adding pi code agent packages support and activating `context-mode`.
 - Brainstorm manifest: BR-REQ-1; BR-REQ-2; BR-DEC-1; BR-OUT-1
 - Research: Reference docs at `https://pi.dev/docs/latest/packages` (indexed as `pi-packages-docs`). The root folder does not contain a `package.json` or `.pi/settings.json`. `skills` is a symlink pointing to `plugins/immune-brain/skills` containing the skill definitions.

@@ -8,7 +8,7 @@
 **Created**: 2026-08-11
 **Status**: pending
 **Priority**: P1
-**Spec**: docs/specs/assurance-kernel-v4-p2c1-intent-identity.spec.md
+**Spec**: docs/specs/archive/assurance-kernel-v4-p2c1-intent-identity.spec.md
 
 ## Goal
 
@@ -20,7 +20,7 @@ R2A delivered durable receipt-bound observations and R2B delivered deterministic
 
 ## Research
 
-- `docs/specs/assurance-kernel-v4-p2-managed-cutover.spec.md` D4 requires tracked intent sidecars, stable acceptance IDs, `intent_ref`, and evidence bound to acceptance/revision/intent/diff identity.
+- `docs/specs/archive/assurance-kernel-v4-p2-managed-cutover.spec.md` D4 requires tracked intent sidecars, stable acceptance IDs, `intent_ref`, and evidence bound to acceptance/revision/intent/diff identity.
 - `plugins/immune-brain/runtime/kernel/types.ts`, `validation.ts`, and `completion.ts` own the strict P1 v1 wire, invariants, and completion predicate.
 - `plugins/immune-brain/runtime/kernel/readiness_evidence.ts` proves reusable containment, symlink, Git tracking, bounded-read, and TOCTOU checks, but its clean-worktree requirement is intentionally not reused for editable intent input.
 - Existing P1 TaskIntent/TaskRecord v1 fixtures must remain readable with unchanged wire semantics.
@@ -60,7 +60,7 @@ Spec and Plan prose use English. Schema fields, file paths, contract identifiers
 - Step ID: U1
 - Result: One canonical intent snapshot determines task completion identity.
 - Scope: `plugins/immune-brain/runtime/kernel/intent.ts`; `plugins/immune-brain/runtime/kernel/types.ts`; `plugins/immune-brain/runtime/kernel/validation.ts`; `plugins/immune-brain/runtime/kernel/completion.ts`; `plugins/immune-brain/runtime/kernel/index.ts`; `tests/kernel-intent-v2.test.ts`; `tests/kernel-record-v2.test.ts`; `tests/kernel-core.test.ts`; `tests/kernel-r2c1-boundary.test.ts`
-- Discovery cache: `docs/specs/assurance-kernel-v4-p2c1-intent-identity.spec.md` (TaskIntent/TaskRecord v2 authority); `docs/specs/assurance-kernel-v4-p2-managed-cutover.spec.md` (P2 D4 compatibility contract); `plugins/immune-brain/runtime/kernel/types.ts` (P1 v1 wire owner); `plugins/immune-brain/runtime/kernel/validation.ts` (v1 parser signature and independent v2 parser owner); `plugins/immune-brain/runtime/kernel/completion.ts` (v1 completion/projection signatures); `plugins/immune-brain/runtime/kernel/readiness_evidence.ts` (tracked-file path security precedent); `plugins/immune-brain/runtime/kernel/storage.ts` (existing v1 production writer call sites); `plugins/immune-brain/runtime/kernel/reducer.ts` (existing v1 reducer call site); `plugins/immune-brain/runtime/kernel/index.ts` (existing public mutation/read exports); `plugins/immune-brain/runtime/commands/kernel.ts` (command surface owner); `plugins/immune-brain/runtime/immune_brain_runtime.ts` (manifest/routing owner); `docs/solutions/contracts.md` (positive evidence and reducer-owned mutation rules)
+- Discovery cache: `docs/specs/archive/assurance-kernel-v4-p2c1-intent-identity.spec.md` (TaskIntent/TaskRecord v2 authority); `docs/specs/archive/assurance-kernel-v4-p2-managed-cutover.spec.md` (P2 D4 compatibility contract); `plugins/immune-brain/runtime/kernel/types.ts` (P1 v1 wire owner); `plugins/immune-brain/runtime/kernel/validation.ts` (v1 parser signature and independent v2 parser owner); `plugins/immune-brain/runtime/kernel/completion.ts` (v1 completion/projection signatures); `plugins/immune-brain/runtime/kernel/readiness_evidence.ts` (tracked-file path security precedent); `plugins/immune-brain/runtime/kernel/storage.ts` (existing v1 production writer call sites); `plugins/immune-brain/runtime/kernel/reducer.ts` (existing v1 reducer call site); `plugins/immune-brain/runtime/kernel/index.ts` (existing public mutation/read exports); `plugins/immune-brain/runtime/commands/kernel.ts` (command surface owner); `plugins/immune-brain/runtime/immune_brain_runtime.ts` (manifest/routing owner); `docs/solutions/contracts.md` (positive evidence and reducer-owned mutation rules)
 - Verification: `for f in tests/kernel-intent-v2.test.ts tests/kernel-record-v2.test.ts tests/kernel-core.test.ts tests/kernel-r2c1-boundary.test.ts; do test -f "$f" || exit 1; done && bun test tests/kernel-intent-v2.test.ts tests/kernel-record-v2.test.ts tests/kernel-core.test.ts tests/kernel-r2c1-boundary.test.ts && bun test && plugins/immune-brain/bin/imm-plan docs/plans/2026-08-11-008-feat-assurance-kernel-p2c1-intent-identity-plan.md --json && git diff --check`
 - Verification type: automated
 - Depends on: none

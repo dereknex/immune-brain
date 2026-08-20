@@ -5,7 +5,7 @@ status: planned
 date: 2026-07-05
 origin:
   - imm-code-review same-boundary finding on host-specific local root runtime
-  - docs/specs/2026-07-05-host-activation-override-runtime.spec.md
+  - docs/specs/archive/2026-07-05-host-activation-override-runtime.spec.md
 ---
 
 # Iteration Plan
@@ -13,7 +13,7 @@ origin:
 ## Task
 
 - Summary: Make `imm-activation-plan` consume `[subagent_activation.hosts]` host overrides above `[subagent_activation].default`, so a host-specific `disabled` override returns `config_disabled`.
-- Spec: `docs/specs/2026-07-05-host-activation-override-runtime.spec.md`
+- Spec: `docs/specs/archive/2026-07-05-host-activation-override-runtime.spec.md`
 - Origin: A same-boundary `imm-code-review` found that docs promise host overrides but runtime only reads `default`. The prior host-specific local root Plan was already closed and finished, so this is a new follow-up slice.
 - Scope Mode: New follow-up slice. The previous Plan is closed and intentionally reset, so this Plan does not append closed Step history.
 - Planner research dispatch: solo. The failure mode is local, bounded, and supported by direct runtime/code evidence.

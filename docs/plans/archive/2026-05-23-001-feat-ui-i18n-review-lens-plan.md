@@ -2,7 +2,7 @@
 
 ## Task
 - Origin: Brainstorm session establishing i18n and Dark/Light theme usability audit gaps.
-- Spec: docs/specs/ui-i18n-review-lens.spec.md
+- Spec: docs/specs/archive/ui-i18n-review-lens.spec.md
 - Brainstorm manifest: BR-REQ-001, BR-REQ-002, BR-REQ-003, BR-REQ-004, BR-DEC-001, BR-DEC-002, BR-DEC-003, BR-OUT-001, BR-DEFER-001
 
 ## Research

@@ -4,7 +4,7 @@ type: refactor
 status: proposed
 date: 2026-07-21
 origin: user-selected architecture exploration opportunities 1 through 5
-spec: docs/specs/2026-07-21-maintenance-surface-simplification.spec.md
+spec: docs/specs/archive/2026-07-21-maintenance-surface-simplification.spec.md
 ---
 
 # Iteration Plan
@@ -12,7 +12,7 @@ spec: docs/specs/2026-07-21-maintenance-surface-simplification.spec.md
 ## Task
 
 - Summary: Clarify ownership and retention across planning artifacts, host manifests, packaged docs, Skill contracts, and L2S documentation while removing only the stale active ownership of `docs/patterns/`.
-- Spec: `docs/specs/2026-07-21-maintenance-surface-simplification.spec.md`
+- Spec: `docs/specs/archive/2026-07-21-maintenance-surface-simplification.spec.md`
 - Origin: The user selected all five `imm-arch-explorer` candidates for overall planning. Repository evidence and four advisory reviews narrowed the safe implementation to explicit ownership contracts plus one compatibility-preserving documentation migration.
 - Scope Mode: New two-Step executable slice. No historical Plan/Spec bulk migration and no host/package runtime redesign.
 - Planner research dispatch: planner ensemble used because the request spans historical evidence, cross-host manifests, packaged outputs, Skill discovery, and documentation ownership. Fast and mid candidates favored compatibility-preserving policy and generation boundaries; the strong candidate and `imm-preplan-review` blocked broad consolidation or deletion.
@@ -91,7 +91,7 @@ spec: docs/specs/2026-07-21-maintenance-surface-simplification.spec.md
 - Verification type: automated
 - Verification: `bun scripts/plugin_versioning.ts validate && bun scripts/sync-dist-docs.ts --check && bun test plugins/immune-brain/tests/host-manifest-consistency.test.ts tests/dist-docs-sync-contract.test.ts tests/skill-registry-metadata-contract.test.ts tests/planner-ensemble-contract.test.ts tests/plugin-package-runtime.test.ts && plugins/immune-brain/bin/imm-plan docs/plans/2026-07-21-001-refactor-maintenance-surface-simplification-plan.md --json && git diff --check`
 - Test scenarios: Covers all configured manifest versions remaining consistent; Covers deterministic packaged-doc output remaining in sync; Covers every packaged doc retaining a declared mirror or adapted classification; Covers host-discoverable Skill metadata and detailed packaged contracts remaining visible; Covers plugin-local package runtime loading; Covers retention policy prohibiting unproven bulk history movement; Covers architecture decision rejecting new manifest, dist, or Skill generation layers.
-- Discovery cache: CONTEXT.md (architecture map and canonical terms); README.md (FileSystem-as-Brain and docs/solutions policy); scripts/plugin_versioning.ts (existing shared version boundary); scripts/dist-sync-manifest.ts and scripts/sync-dist-docs.ts (packaged docs ownership); plugins/immune-brain/skills/*/SKILL.md and plugins/immune-brain/dist/*.md (two-level Skill contract); docs/specs/2026-07-21-maintenance-surface-simplification.spec.md (accepted invariants)
+- Discovery cache: CONTEXT.md (architecture map and canonical terms); README.md (FileSystem-as-Brain and docs/solutions policy); scripts/plugin_versioning.ts (existing shared version boundary); scripts/dist-sync-manifest.ts and scripts/sync-dist-docs.ts (packaged docs ownership); plugins/immune-brain/skills/*/SKILL.md and plugins/immune-brain/dist/*.md (two-level Skill contract); docs/specs/archive/2026-07-21-maintenance-surface-simplification.spec.md (accepted invariants)
 - Scope: `CONTEXT.md`, `docs/reference/planning-artifact-retention.md`, `docs/adr/0002-maintenance-surface-ownership.md`, and only focused existing tests if an assertion is required to make the documented contract executable.
 - Agent Hint: imm-executor
 - Depends on: none
@@ -105,7 +105,7 @@ spec: docs/specs/2026-07-21-maintenance-surface-simplification.spec.md
 - Verification type: automated
 - Verification: `bun -e 'import { readFileSync } from "node:fs"; const solution=readFileSync("docs/solutions/workflow.md","utf8"); const legacy=readFileSync("docs/patterns/l2s-workflow.md","utf8"); if (!solution.includes("imm-planner") || !solution.includes("imm-loop") || !solution.includes("State Ledger")) throw new Error("canonical L2S guidance incomplete"); if (!legacy.toLowerCase().includes("compatibility") || !legacy.includes("docs/solutions/workflow.md")) throw new Error("legacy path is not a compatibility pointer");' && ! rg -n 'docs/patterns/l2s-workflow\.md' README.md IMMUNE.md CONTEXT.md docs/reference docs/user_manual.md plugins/immune-brain/USER_GUIDE.md && bun test tests/skill-registry-metadata-contract.test.ts tests/imm-loop-review-orchestration-contract.test.ts && plugins/immune-brain/bin/imm-plan docs/plans/2026-07-21-001-refactor-maintenance-surface-simplification-plan.md --json && git diff --check`
 - Test scenarios: Covers the canonical solution retaining planner and completion-loop guidance; Covers State Ledger continuity guidance remaining present; Covers the old pattern path resolving to a compatibility notice; Covers current non-historical docs no longer treating the pattern path as authoritative; Covers historical Plan and Spec evidence remaining untouched; Covers Skill registry and loop orchestration contracts remaining unchanged.
-- Discovery cache: docs/solutions/workflow.md (current durable workflow guidance); docs/patterns/l2s-workflow.md (legacy full copy and compatibility path); README.md (no-new-patterns policy); historical docs/plans references (evidence paths intentionally preserved); docs/specs/2026-07-21-maintenance-surface-simplification.spec.md (R5 and compatibility invariant)
+- Discovery cache: docs/solutions/workflow.md (current durable workflow guidance); docs/patterns/l2s-workflow.md (legacy full copy and compatibility path); README.md (no-new-patterns policy); historical docs/plans references (evidence paths intentionally preserved); docs/specs/archive/2026-07-21-maintenance-surface-simplification.spec.md (R5 and compatibility invariant)
 - Scope: `docs/solutions/workflow.md`, `docs/patterns/l2s-workflow.md`, and current non-historical documentation only when it directly treats the legacy path as authoritative. Do not edit historical Plans or Specs.
 - Agent Hint: imm-executor
 - Depends on: U1

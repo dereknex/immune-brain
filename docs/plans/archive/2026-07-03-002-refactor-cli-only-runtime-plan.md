@@ -5,7 +5,7 @@ status: planned
 date: 2026-07-03
 origin:
   - user-requested CLI-only planning validation
-  - docs/specs/2026-07-03-cli-only-runtime.spec.md
+  - docs/specs/archive/2026-07-03-cli-only-runtime.spec.md
 ---
 
 # Iteration Plan
@@ -13,7 +13,7 @@ origin:
 ## Task
 
 - Summary: Remove the Immune-Brain MCP integration surface and make plugin-local CLI wrappers plus structured CLI discovery the only supported runtime integration path.
-- Spec: docs/specs/2026-07-03-cli-only-runtime.spec.md
+- Spec: docs/specs/archive/2026-07-03-cli-only-runtime.spec.md
 - Origin: The user asked whether MCP can be removed and then explicitly requested comparison and planning without considering historical decisions or breaking-change concerns. A worktree validation spike proved that core CLI commands still run after removing MCP server files and MCP JSON-RPC handling.
 - Research: `CONTEXT.md` defines the runtime architecture around `.imm/imm_core/`, State Ledger, Plan, Step, Skill, QA, and plugin-local runtime surfaces. `plugins/immune-brain/runtime/immune_brain_runtime.ts` currently has a direct `cli <command>` entry and `runImmCommand(...)` dispatch for `imm-plan`, `imm-work`, `imm-review`, `imm-heal`, `imm-autowork`, `imm-activation-plan`, `imm-finish`, and `imm-dehydrate`. `plugins/immune-brain/bin/imm-*` wrappers already delegate to the TypeScript runtime in `cli` mode. The worktree spike removed `plugins/immune-brain/.mcp.json`, `plugins/immune-brain/runtime/mcp-launcher.ts`, MCP server handling, and `list-tools`; CLI status, plan validation, activation plan, heal, wrapper tests, and autowork tests still passed. Full `bun test` then reported 82 pass and 9 fail, with failures concentrated in MCP and `list-tools` contract tests. `docs/reference/planning-quality-gate.md` applies because this changes cross-host packaged plugin contracts.
 - Decisions: D1 Treat CLI wrappers as the only host-facing runtime integration path. D2 Remove MCP server config, launcher, stdio JSON-RPC handling, `tools/list`, `tools/call`, and MCP tool-to-command adapter code. D3 Add or preserve a CLI-native JSON command manifest such as `list-commands --json` so agent hosts retain structured discovery without MCP. D4 Keep State Ledger, Plan validation, QA, review, Compounder, and workflow authority boundaries unchanged. D5 Rewrite current tests, docs, Skill contracts, and package templates to describe CLI-only integration.
@@ -51,7 +51,7 @@ origin:
 - Verification: `bun test tests/wrapper-retirement.test.ts tests/autowork-false-completion.test.ts tests/plugin-package-runtime.test.ts tests/activation-plan-runtime-surface.test.ts tests/host-runtime-cutover.test.ts && plugins/immune-brain/bin/imm-work status --json && plugins/immune-brain/bin/imm-plan docs/plans/2026-07-03-002-refactor-cli-only-runtime-plan.md --json && plugins/immune-brain/bin/imm-activation-plan && plugins/immune-brain/bin/imm-heal && echo cli-only-runtime-smoke-passed`
 - Execution note: characterization-first
 - Test scenarios: Covers plugin-local wrappers for status, plan validation, activation plan, heal, autowork, finish, and dehydrate; Covers runtime usage no longer advertising `mcp`; Covers deleted `.mcp.json` and `mcp-launcher.ts`; Covers removal or rewrite of MCP initialize, `tools/list`, and `tools/call` tests; Covers CLI-native command manifest JSON discovery.
-- Discovery cache: plugins/immune-brain/runtime/immune_brain_runtime.ts (`cli` mode and `runImmCommand` dispatch); plugins/immune-brain/bin/imm-plan (wrapper form); plugins/immune-brain/bin/imm-work (wrapper form); plugins/immune-brain/bin/imm-activation-plan (wrapper form); tests/plugin-package-runtime.test.ts (runtime parity surface); tests/activation-plan-runtime-surface.test.ts (activation runtime surface); tests/host-runtime-cutover.test.ts (host entrypoint surface); tests/wrapper-retirement.test.ts (wrapper behavior); docs/specs/2026-07-03-cli-only-runtime.spec.md (accepted CLI-only behavior)
+- Discovery cache: plugins/immune-brain/runtime/immune_brain_runtime.ts (`cli` mode and `runImmCommand` dispatch); plugins/immune-brain/bin/imm-plan (wrapper form); plugins/immune-brain/bin/imm-work (wrapper form); plugins/immune-brain/bin/imm-activation-plan (wrapper form); tests/plugin-package-runtime.test.ts (runtime parity surface); tests/activation-plan-runtime-surface.test.ts (activation runtime surface); tests/host-runtime-cutover.test.ts (host entrypoint surface); tests/wrapper-retirement.test.ts (wrapper behavior); docs/specs/archive/2026-07-03-cli-only-runtime.spec.md (accepted CLI-only behavior)
 - Agent Hint: imm-executor
 - Depends on: none
 - failure_behavior: If any CLI command requires MCP code to pass, stop and replan around the missing CLI command contract instead of keeping a hidden MCP dependency.

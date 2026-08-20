@@ -11,8 +11,8 @@ origin: user requested implementation path for the completed planning quality ga
 ## Task
 - Summary: Wire the Planning Quality Gate into the planner contract so elevated-risk plans consistently check design readiness.
 - Origin: User asked how to push the Planning Quality Gate from documentation into implementation, then invoked `imm-planner`.
-- Spec: docs/specs/planning-quality-gate-planner-contract.spec.md
-- Research: `docs/specs/detailed-design-hardening-master.spec.md` defines the guidance-level Planning Quality Gate; `docs/specs/detailed-design-hardening-phase1.spec.md` keeps Phase 1 documentation-only; `plugins/immune-brain/dist/imm-planner.md` is the compiled planner contract; `tests/test_skill_contracts.py` is the focused contract regression surface.
+- Spec: docs/specs/archive/planning-quality-gate-planner-contract.spec.md
+- Research: `docs/specs/archive/detailed-design-hardening-master.spec.md` defines the guidance-level Planning Quality Gate; `docs/specs/archive/detailed-design-hardening-phase1.spec.md` keeps Phase 1 documentation-only; `plugins/immune-brain/dist/imm-planner.md` is the compiled planner contract; `tests/test_skill_contracts.py` is the focused contract regression surface.
 - Decisions:
     - D1: Implement planner-contract adoption before validator enforcement.
     - D2: Extract a reusable checklist under `docs/reference/` so planner wording can stay concise.
@@ -49,7 +49,7 @@ origin: user requested implementation path for the completed planning quality ga
 - Verification type: automated
 - Verification: `python3 -c "from pathlib import Path; text = Path('docs/reference/planning-quality-gate.md').read_text(); required = ['contract surface', 'compatibility', 'interruption recovery', 'rollback path', 'verification strength', 'Brainstorm traceability']; missing = [item for item in required if item not in text]; assert not missing, missing; assert 'not mandatory ceremony' in text"`
 - Test scenarios: Confirm the reusable checklist captures the accepted gate checks and explicitly prevents mandatory planning ceremony.
-- Discovery cache: docs/specs/planning-quality-gate-planner-contract.spec.md (accepted contract); docs/specs/detailed-design-hardening-master.spec.md (quality gate source); docs/reference/ (reference docs location)
+- Discovery cache: docs/specs/archive/planning-quality-gate-planner-contract.spec.md (accepted contract); docs/specs/archive/detailed-design-hardening-master.spec.md (quality gate source); docs/reference/ (reference docs location)
 - Agent Hint: imm-executor
 - failure_behavior: Keep planner contract unchanged until the checklist has the complete gate surface.
 - security_considerations: None; this step adds planning guidance documentation only.

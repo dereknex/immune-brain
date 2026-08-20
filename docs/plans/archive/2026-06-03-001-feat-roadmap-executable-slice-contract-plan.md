@@ -4,7 +4,7 @@
 
 - Summary: Add a roadmap versus executable slice contract so large Immune-Brain tasks preserve full roadmap context while current Plans only promise the active executable slice.
 - Origin: User asked how Immune-Brain should handle large tasks without losing later-phase discussion content or misleading users about what the current Plan implements.
-- Spec: docs/specs/roadmap-executable-slice-contract.spec.md
+- Spec: docs/specs/archive/roadmap-executable-slice-contract.spec.md
 - Research: `IMMUNE.md` already defines Plan Steps as independently closable outcome units and allows fewer outcome Steps for larger stable capability boundaries. `docs/reference/workflow-and-subagents.md` says planner normally creates a small Step plan and `imm-work` advances only the current Step. `docs/reference/planning-quality-gate.md` already covers elevated-risk planning checks but does not mention roadmap information preservation. `plugins/immune-brain/dist/imm-planner.md` currently supports `covered_by_step`, `deferred`, and `out_of_scope` but has no `partially_covered` status or current-slice banner rule. `.imm/templates/iteration-plan-template.md` has no roadmap continuation fields.
 - Decisions: D1 keep this as a contract and validator-hardening slice rather than a new roadmap runtime. D2 add `partially_covered` as a truthful trace status instead of overloading `covered_by_step`. D3 make roadmap ceremony conditional for large or multi-phase work only. D4 update templates after the contract and parser behavior are in place.
 - Assumptions: Existing compiled skill text under `plugins/immune-brain/dist/` is the contract surface guarded by tests. Existing Plans remain valid because the new status is additive and optional.

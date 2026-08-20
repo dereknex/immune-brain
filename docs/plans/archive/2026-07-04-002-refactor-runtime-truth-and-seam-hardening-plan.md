@@ -5,7 +5,7 @@ status: planned
 date: 2026-07-04
 origin:
   - imm-arch-explorer candidate selection A,B,C,D
-  - docs/specs/2026-07-04-runtime-truth-and-seam-hardening.spec.md
+  - docs/specs/archive/2026-07-04-runtime-truth-and-seam-hardening.spec.md
 ---
 
 # Iteration Plan
@@ -13,7 +13,7 @@ origin:
 ## Task
 
 - Summary: Plan one executable maintenance slice for aligning active runtime truth, guarding against retired runtime-current references, splitting the largest runtime core seams, and hardening OpenCode command drift checks.
-- Spec: `docs/specs/2026-07-04-runtime-truth-and-seam-hardening.spec.md`
+- Spec: `docs/specs/archive/2026-07-04-runtime-truth-and-seam-hardening.spec.md`
 - Origin: The user selected all four architecture candidates: runtime truth cleanup, active docs stale-reference guard, `imm_core.ts` seam split, and OpenCode/CLI manifest de-duplication.
 - Scope Mode: New executable slice. The existing `docs/plans/2026-07-04-001-refactor-runtime-architecture-simplification-plan.md` is closed in the State Ledger and only overlaps part of this scope, so this Plan is not an append.
 - Planner research dispatch: no new research subagents were launched. Prior architecture Domain Mapper probes returned no output, and local read-only evidence was sufficient to decompose steps with concrete verification paths.

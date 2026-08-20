@@ -5,7 +5,7 @@ status: planned
 date: 2026-07-05
 origin:
   - imm-code-review post-closure finding on activation override docs-vs-runtime gap
-  - docs/specs/2026-07-05-activation-override-runtime-status-docs.spec.md
+  - docs/specs/archive/2026-07-05-activation-override-runtime-status-docs.spec.md
 ---
 
 # Iteration Plan
@@ -13,7 +13,7 @@ origin:
 ## Task
 
 - Summary: Mark `[subagent_activation.lenses]` and `[subagent_activation.subagents]` as documented-but-not-yet-runtime-backed in config and activation policy docs, and sync dist mirrors.
-- Spec: `docs/specs/2026-07-05-activation-override-runtime-status-docs.spec.md`
+- Spec: `docs/specs/archive/2026-07-05-activation-override-runtime-status-docs.spec.md`
 - Origin: A post-closure `imm-code-review` found that docs present `hosts`, `lenses`, and `subagents` override tables as equally supported, but runtime only consumes `hosts` and `default`.
 - Scope Mode: New docs-only follow-up slice. No runtime, test, or State Ledger changes.
 - Planner research dispatch: solo. The gap is local, docs-only, and supported by direct doc/runtime evidence.

@@ -11,7 +11,7 @@ origin: imm-brainstorm framing - user agreed to expand page-layout-design to pag
 ## Task
 
 - Summary: 将 `imm-page-layout-design` 升级扩展为 `imm-page-design`，包含有设计来源或用户明确要求时才定义视觉字段的页面设计契约、条件化动效/媒体规范，并重构测试套件与审计逻辑。
-- Spec: docs/specs/imm-page-design-expansion.spec.md
+- Spec: docs/specs/archive/imm-page-design-expansion.spec.md
 - Origin: 头脑风暴中用户提出将布局设计技能扩展为整体页面设计，摆脱 AI 生成界面时在配色、动效、质感层面的混乱。
 - Brainstorm manifest: BR-REQ-001; BR-REQ-002; BR-REQ-003; BR-REQ-004; BR-REQ-005; BR-DEC-001; BR-DEC-002; BR-DEC-003; BR-DEC-004; BR-OUT-001; BR-OUT-002; BR-DEFER-001
 - Research: `plugins/immune-brain/dist/imm-page-layout-design.md` 仅包含结构与表单拉伸限制。测试套件 `tests/test_skill_contracts.py` 对重命名和新字段缺失会报错。后置审计 `imm-ui-review.md` 缺少对视觉与动效参数的对照审计。需要更新的文档包括：`README.md`、`docs/user_manual.md`、`docs/solutions/contracts.md`、`docs/reference/immune-brain-skill-details/README.md`、`docs/reference/immune-brain-skills-guide.md`。

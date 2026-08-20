@@ -11,7 +11,7 @@ origin: imm-brainstorm framing - document language default regression
 ## Task
 
 - Summary: Restore English as the default language for generated persisted Immune-Brain documents unless document language is explicit.
-- Spec: docs/specs/document-language-default-policy.spec.md
+- Spec: docs/specs/archive/document-language-default-policy.spec.md
 - Origin: User reported that generated documents should default to English and that an `AGENTS.md` instruction to reply in Chinese was incorrectly expanded into document language.
 - Brainstorm manifest: BR-REQ-001; BR-REQ-002; BR-DEC-001; BR-OUT-001; BR-OUT-002; BR-DEFER-001
 - Research: Current README, baseline files, config docs, `imm-planner`, templates, `imm-init` templates, `imm-plan` warning tests, and the contracts Learning encode the old conflated behavior. `CONTEXT.md` identifies Plan validation and Skill contracts as the relevant surfaces. The previous loop-engineering Plan is closed, so this is a new slice rather than an append.
@@ -72,7 +72,7 @@ origin: imm-brainstorm framing - document language default regression
 - Verification: `python3 -m unittest tests.test_skill_contracts.SkillContractTests.test_output_language_policy_is_documented tests.test_skill_contracts.SkillContractTests.test_planner_output_language_gate_is_local_contract tests.test_imm_init.ImmInitTests && python3 .imm/imm-plan.py docs/plans/2026-06-22-001-fix-document-language-default-policy-plan.md --json`
 - Execution note: test-first
 - Test scenarios: Covers English default for persisted documents; Covers reply-only `AGENTS.md` scope; Covers explicit document-language override wording; Covers machine contract preservation; Covers mirrored template and packaged guidance surfaces.
-- Discovery cache: docs/specs/document-language-default-policy.spec.md (accepted behavior); README.md (main Output Language Policy); skills/BASELINE.md (shared Skill baseline); plugins/immune-brain/BASELINE.md (plugin baseline); plugins/immune-brain/skills/BASELINE.md (plugin Skill baseline); docs/reference/immune-brain-config.md (config guidance); plugins/immune-brain/dist/imm-planner.md (planner gate); .imm/templates/iteration-plan-template.md (Plan template); skills/imm-init/templates/AGENTS.md (bootstrap project instructions); tests/test_skill_contracts.py (contract regression tests); tests/test_imm_init.py (bootstrap template tests)
+- Discovery cache: docs/specs/archive/document-language-default-policy.spec.md (accepted behavior); README.md (main Output Language Policy); skills/BASELINE.md (shared Skill baseline); plugins/immune-brain/BASELINE.md (plugin baseline); plugins/immune-brain/skills/BASELINE.md (plugin Skill baseline); docs/reference/immune-brain-config.md (config guidance); plugins/immune-brain/dist/imm-planner.md (planner gate); .imm/templates/iteration-plan-template.md (Plan template); skills/imm-init/templates/AGENTS.md (bootstrap project instructions); tests/test_skill_contracts.py (contract regression tests); tests/test_imm_init.py (bootstrap template tests)
 - Agent Hint: imm-executor
 - Depends on: none
 - failure_behavior: If wording changes imply a new runtime field or config schema, stop and return to planner because that violates `BR-OUT-002`.
@@ -99,6 +99,6 @@ origin: imm-brainstorm framing - document language default regression
 
 ## Notes
 
-- The old `docs/specs/user-configured-output-language.spec.md` is superseded only for persisted document defaults; do not rewrite it in this Plan unless implementation needs a clear deprecation note.
+- The old `docs/specs/archive/user-configured-output-language.spec.md` is superseded only for persisted document defaults; do not rewrite it in this Plan unless implementation needs a clear deprecation note.
 - The old `docs/solutions/contracts.md` Learning should be superseded after closure by `imm-compounder`, not edited inside this planner slice.
 - After validation and sync, continue through `imm-work` before any executor edits.

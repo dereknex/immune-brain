@@ -11,7 +11,7 @@ origin: observed during closed risk-tiered Technical Design conformance workflow
 ## Task
 
 - Summary: Make `imm-review` and `imm-finish` help flags return usage without mutating the State Ledger
-- Spec: docs/specs/2026-07-10-cli-help-no-state-mutation.spec.md
+- Spec: docs/specs/archive/2026-07-10-cli-help-no-state-mutation.spec.md
 - Origin: During U1 closure, `imm-review pass --help` recorded a QA pass and `imm-finish --help` reset the iteration. The completed U1 evidence remains immutable; user said continue after the defect was recorded as a separate follow-up candidate.
 - Research: Plugin shell wrappers only delegate arguments to `plugins/immune-brain/runtime/immune_brain_runtime.ts`. `runWorkCommand` already handles `--help`/`-h` before state mutation for `record-execution`; `runReviewCommand(args, root)` and `runFinishCommand(root)` do not inspect help flags. `tests/plugin-package-runtime.test.ts` provides temporary roots, direct TypeScript CLI invocation, and existing help regression style.
 - Decisions: D1 add command-local help short circuits, not a new CLI framework; D2 accept help both before and after an `imm-review` decision word; D3 compare isolated State Ledger bytes before/after help; D4 preserve normal review, gate-pass, and finish mutation behavior as controls; D5 do not repair or rewrite the prior closed U1 `last_review` metadata.
@@ -47,7 +47,7 @@ origin: observed during closed risk-tiered Technical Design conformance workflow
 - Verification type: automated
 - Verification: `bun test tests/plugin-package-runtime.test.ts && plugins/immune-brain/bin/imm-plan docs/plans/2026-07-10-002-fix-cli-help-no-state-mutation-plan.md --json && git diff --check`
 - Test scenarios: Covers `imm-review --help` and `imm-review -h` without a State Ledger; Covers `imm-review pass --help` and `imm-review pass -h` with an active State Ledger; Covers `imm-finish --help` and `imm-finish -h` with a non-idle State Ledger; Covers each help output usage and zero exit; Covers normal review pass, review gate-pass, and finish reset behavior unchanged
-- Discovery cache: plugins/immune-brain/runtime/immune_brain_runtime.ts (review and finish handlers plus dispatch); tests/plugin-package-runtime.test.ts (isolated root and CLI fixture); docs/specs/2026-07-10-cli-help-no-state-mutation.spec.md (accepted boundary)
+- Discovery cache: plugins/immune-brain/runtime/immune_brain_runtime.ts (review and finish handlers plus dispatch); tests/plugin-package-runtime.test.ts (isolated root and CLI fixture); docs/specs/archive/2026-07-10-cli-help-no-state-mutation.spec.md (accepted boundary)
 - Agent Hint: imm-executor
 - Depends on: none
 - failure_behavior: If safely handling help requires a command-wide parser rewrite or changes normal action semantics, stop and return to Planner rather than widening this fix.

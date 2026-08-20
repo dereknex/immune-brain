@@ -10,7 +10,7 @@ origin: Project usage analysis (2026-05-29) — 10 improvement areas identified,
 
 ## Task
 - Summary: Fix test_imm_init.py AttributeError, add missing `check-install` mise task, and update IMMUNE.md to reflect workflow evolution since v1.0.0
-- Spec: docs/specs/quality-fixes-round-1.spec.md
+- Spec: docs/specs/archive/quality-fixes-round-1.spec.md
 - Origin: Project usage analysis — test suite shows 1 ERROR (523/1), README.md references undefined mise task, IMMUNE.md unchanged since 2026-05-05 despite six weeks of workflow additions
 - Research: `tests/test_imm_init.py:52` references `self.module.AGENTS_SECTION_START`; `skills/imm-init/scripts/init_project.py:10` exports `START`. `mise.toml` defines five tasks but lacks `check-install` which README.md:154 references. `IMMUNE.md` is at v1.0.0 (2026-05-05); post-v1.0.0 additions include autowork checkpoint boundaries (2026-05-27), parallel probes runtime (2026-05-22), validate-only plan command + --sync (2026-05-25), gstack quality ceiling protocol (2026-05-24), and host-bound evidence loops (2026-05-24). BASELINE.md dual-copy concern was checked — files are identical (md5 c7b36cf0).
 - Decisions: D1 fix test to use `START` rather than renaming the constant (START/END pair is the established pattern). D2 `check-install` task checks skill symlink + plugin manifests, not duplicating `check-plugin`. D3 IMMUNE.md update is additive — preserves all existing role boundaries while documenting new workflow states that already exist in runtime.
@@ -52,5 +52,5 @@ origin: Project usage analysis (2026-05-29) — 10 improvement areas identified,
 - Result: IMMUNE.md reflects the five workflow additions since v1.0.0 while preserving all existing role boundaries
 - Verification: `python3 -m unittest tests.test_skill_contracts` passes; manual review confirms the five new workflow concepts are present in IMMUNE.md
 - Test scenarios: tests.test_skill_contracts passes (no regression on existing contract guards); IMMUNE.md contains references to imm-autowork, parallel probes, validate-only, --sync, gstack quality ceiling, host-bound evidence loop; all existing role boundaries preserved; IMMUNE.md version bumped to v1.1.0
-- Discovery cache: IMMUNE.md (current v1.0.0 content); tests/test_skill_contracts.py (existing contract assertions on IMMUNE.md); docs/reference/gstack-quality-ceiling-protocol.md (quality ceiling protocol reference); plugins/immune-brain/dist/imm-autowork.md (autowork contract); docs/specs/imm-work-parallel-probes-runtime.spec.md (parallel probes spec)
+- Discovery cache: IMMUNE.md (current v1.0.0 content); tests/test_skill_contracts.py (existing contract assertions on IMMUNE.md); docs/reference/gstack-quality-ceiling-protocol.md (quality ceiling protocol reference); plugins/immune-brain/dist/imm-autowork.md (autowork contract); docs/specs/archive/imm-work-parallel-probes-runtime.spec.md (parallel probes spec)
 - Depends on: none

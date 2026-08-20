@@ -4,7 +4,7 @@
 
 - Summary: Establish Assurance Kernel P2 production-readiness evidence and freeze the production intent, acceptance, mutation, and authority-consumption contracts while v3 remains the sole workflow authority.
 - Origin: The user explicitly requested P2 planning after P1 foundation, P1 hardening, finished-shadow repair, and a clean 611-test repository baseline. Current P1 journal evidence spans only about five hours and 48 manual queries, so the parent two-week production-promotion gate is not met.
-- Spec: `docs/specs/assurance-kernel-v4-p2-managed-cutover.spec.md`
+- Spec: `docs/specs/archive/assurance-kernel-v4-p2-managed-cutover.spec.md`
 - Research: P1 code and Specs confirm that TaskRecord lifecycle/storage, complete legacy projection, canonical shadow CLI, and privilege separation exist, but automatic post-v3 observation, readiness qualification, TaskIntent sidecar loading, acceptance-complete evidence, production factual actions, and a host authority port do not. Pi Extension documentation confirms command invocation is not user authentication while `ctx.ui.confirm` is an independent interactive confirmation boundary. A fast/mid/strong Planner ensemble unanimously rejected immediate canary routing, OpenCode privilege, dual write, and terminal import in P2A.
 - Decisions: D1 divide P2 into P2A readiness/contracts, P2B Pi-only canary, P2C supported-host default, and P3 legacy retirement. D2 keep every P2A production command on v3. D3 observe immutable committed v3 snapshots only after commit. D4 qualify promotion from automatic commit coverage rather than manual query volume. D5 introduce TaskIntent v1 and production TaskRecord v2 with stable acceptance IDs. D6 require fresh accepted evidence for every current acceptance ID. D7 freeze a closed reducer action vocabulary and host authority consumption port without exposing a production issuer. D8 keep terminal import outside P2 and reject it permanently unless P3 proves concrete value.
 - Assumptions: `current_iteration_history.jsonl` or an equivalent canonical v3 commit receipt can provide a durable denominator for observation-gap detection; if implementation cannot establish that denominator without making telemetry authoritative, U1 must replan. P1 TaskRecord v1 has no approved production records and remains compatibility-read-only. The current root suite remains green before P2A execution. The trusted Pi process and its UI callback are inside the orchestration trust boundary; a malicious same-user process or workspace agent is outside it.
@@ -84,7 +84,7 @@ The current session is the authoritative framing source; no standalone brainstor
 
 ## Planning Quality Gate
 
-- contract surface: `docs/specs/assurance-kernel-v4-p2-managed-cutover.spec.md`, v3 central mutation/commit receipts, `runtime/kernel` contracts, canonical `imm-kernel` CLI, worktree-local journal, and focused P2A tests.
+- contract surface: `docs/specs/archive/assurance-kernel-v4-p2-managed-cutover.spec.md`, v3 central mutation/commit receipts, `runtime/kernel` contracts, canonical `imm-kernel` CLI, worktree-local journal, and focused P2A tests.
 - compatibility: P2A leaves all production routing on v3. TaskRecord v1 remains compatibility-readable but is not production-enrollable; no existing v3 Ledger or TaskRecord is rewritten.
 - interruption recovery: each closed Step is independently usable or removable. No Step can strand a Kernel-owned production task.
 - rollback path: disable observer, remove pure readiness/intent surfaces, or revert unreachable reducer contracts; no migration cleanup or cross-backend reconstruction.
@@ -118,7 +118,7 @@ The current session is the authoritative framing source; no standalone brainstor
 - Step ID: U2
 - Result: P2 readiness is a deterministic fail-closed projection.
 - Scope: `plugins/immune-brain/runtime/kernel/readiness.ts`; `plugins/immune-brain/runtime/kernel/types.ts`; `plugins/immune-brain/runtime/commands/kernel.ts`; `plugins/immune-brain/runtime/immune_brain_runtime.ts`; `tests/kernel-readiness.test.ts`; `tests/kernel-shadow-cli.test.ts`; `tests/kernel-migrate.test.ts`.
-- Discovery cache: `plugins/immune-brain/runtime/kernel/observation.ts` (U1 observation contract and commit identities); `plugins/immune-brain/runtime/commands/kernel.ts` (read-only status, journal, and migration shapes); `plugins/immune-brain/runtime/immune_brain_runtime.ts` (manifest and project access); `docs/specs/assurance-kernel-v4.spec.md` (parent P2 promotion rule)
+- Discovery cache: `plugins/immune-brain/runtime/kernel/observation.ts` (U1 observation contract and commit identities); `plugins/immune-brain/runtime/commands/kernel.ts` (read-only status, journal, and migration shapes); `plugins/immune-brain/runtime/immune_brain_runtime.ts` (manifest and project access); `docs/specs/archive/assurance-kernel-v4.spec.md` (parent P2 promotion rule)
 - Verification: `bun test tests/kernel-readiness.test.ts tests/kernel-shadow-cli.test.ts tests/kernel-migrate.test.ts && plugins/immune-brain/bin/imm-kernel readiness --json && plugins/immune-brain/bin/imm-kernel migrate --dry-run --json && git diff --check`
 - Verification type: automated
 - Depends on: 1
@@ -132,7 +132,7 @@ The current session is the authoritative framing source; no standalone brainstor
 - Step ID: U3
 - Result: Every acceptance criterion has one stable evidence identity.
 - Scope: `plugins/immune-brain/runtime/kernel/types.ts`; `plugins/immune-brain/runtime/kernel/validation.ts`; `plugins/immune-brain/runtime/kernel/intent.ts`; `plugins/immune-brain/runtime/kernel/completion.ts`; `plugins/immune-brain/runtime/kernel/index.ts`; `tests/kernel-intent.test.ts`; `tests/kernel-core.test.ts`.
-- Discovery cache: `plugins/immune-brain/runtime/kernel/types.ts` (P1 TaskIntent and TaskRecord v1 schema); `plugins/immune-brain/runtime/kernel/validation.ts` (strict parsers and intent update rules); `plugins/immune-brain/runtime/kernel/completion.ts` (current any-evidence predicate); `plugins/immune-brain/runtime/progress_projection.ts` (secure path precedent); `docs/specs/assurance-kernel-v4-p2-managed-cutover.spec.md` (D4 TaskIntent authority)
+- Discovery cache: `plugins/immune-brain/runtime/kernel/types.ts` (P1 TaskIntent and TaskRecord v1 schema); `plugins/immune-brain/runtime/kernel/validation.ts` (strict parsers and intent update rules); `plugins/immune-brain/runtime/kernel/completion.ts` (current any-evidence predicate); `plugins/immune-brain/runtime/progress_projection.ts` (secure path precedent); `docs/specs/archive/assurance-kernel-v4-p2-managed-cutover.spec.md` (D4 TaskIntent authority)
 - Verification: `bun test tests/kernel-intent.test.ts tests/kernel-core.test.ts && git diff --check`
 - Verification type: automated
 - Depends on: none
@@ -146,7 +146,7 @@ The current session is the authoritative framing source; no standalone brainstor
 - Step ID: U4
 - Result: Every production TaskRecord fact mutation is reducer-owned.
 - Scope: `plugins/immune-brain/runtime/kernel/types.ts`; `plugins/immune-brain/runtime/kernel/validation.ts`; `plugins/immune-brain/runtime/kernel/reducer.ts`; `plugins/immune-brain/runtime/kernel/completion.ts`; `plugins/immune-brain/runtime/kernel/authority.ts`; `plugins/immune-brain/runtime/kernel/storage.ts`; `plugins/immune-brain/runtime/kernel/index.ts`; `tests/kernel-production-actions.test.ts`; `tests/kernel-core.test.ts`; `tests/kernel-migrate.test.ts`.
-- Discovery cache: `plugins/immune-brain/runtime/kernel/reducer.ts` (P1 event fingerprint and authority descriptor); `plugins/immune-brain/runtime/kernel/storage.ts` (P1 working-only creation and CAS transaction); `plugins/immune-brain/runtime/kernel/intent.ts` (U3 TaskIntent v1 and TaskRecord v2 acceptance identity); `docs/specs/assurance-kernel-v4-p2-managed-cutover.spec.md` (D5-D6 production action and authority contracts); `plugins/immune-brain/.pi-extension/index.ts` (repo-local trusted-host adapter boundary deferred to P2B)
+- Discovery cache: `plugins/immune-brain/runtime/kernel/reducer.ts` (P1 event fingerprint and authority descriptor); `plugins/immune-brain/runtime/kernel/storage.ts` (P1 working-only creation and CAS transaction); `plugins/immune-brain/runtime/kernel/intent.ts` (U3 TaskIntent v1 and TaskRecord v2 acceptance identity); `docs/specs/archive/assurance-kernel-v4-p2-managed-cutover.spec.md` (D5-D6 production action and authority contracts); `plugins/immune-brain/.pi-extension/index.ts` (repo-local trusted-host adapter boundary deferred to P2B)
 - Verification: `bun test tests/kernel-production-actions.test.ts tests/kernel-core.test.ts tests/kernel-migrate.test.ts && ! rg -n 'patch_record|hydrate|allowTerminal|user_confirmed|approved: true' plugins/immune-brain/runtime/kernel plugins/immune-brain/runtime/commands/kernel.ts && git diff --check`
 - Verification type: automated
 - Depends on: 3

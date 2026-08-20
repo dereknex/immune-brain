@@ -27,6 +27,11 @@ import {
 } from "../plugins/immune-brain/runtime/plan_core";
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+// REFERENCE_SIGNATURE below is a frozen cross-runtime parity constant, and the
+// payload it covers includes this plan's Spec reference. The reference points at
+// docs/specs/opencode-native-plugin.spec.md, which now lives under
+// docs/specs/archive/. Leave it: rewriting it to the archive path changes the
+// signature. This plan is the one archived plan excluded from that rewrite.
 const MIGRATION_PLAN = resolve(
 	REPO_ROOT,
 	"docs/plans/archive/2026-06-29-001-feat-bun-typescript-runtime-migration-plan.md",

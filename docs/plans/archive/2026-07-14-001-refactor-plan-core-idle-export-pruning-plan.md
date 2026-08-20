@@ -4,7 +4,7 @@ type: refactor
 status: proposed
 date: 2026-07-14
 origin: user-confirmed architecture exploration and brainstorm framing
-spec: docs/specs/2026-07-14-plan-core-idle-export-pruning.spec.md
+spec: docs/specs/archive/2026-07-14-plan-core-idle-export-pruning.spec.md
 ---
 
 # Iteration Plan
@@ -12,7 +12,7 @@ spec: docs/specs/2026-07-14-plan-core-idle-export-pruning.spec.md
 ## Task
 
 - Summary: Remove three repository-unused exports from `plan_core.ts` while preserving active Plan parsing, normalization, signature, and validation behavior.
-- Spec: `docs/specs/2026-07-14-plan-core-idle-export-pruning.spec.md`
+- Spec: `docs/specs/archive/2026-07-14-plan-core-idle-export-pruning.spec.md`
 - Origin: Architecture exploration identified three declaration-only exports; Brainstorm rejected broader CLI wrapper and OpenCode execution changes; the user confirmed the minimal cleanup direction.
 - Brainstorm manifest: BR-REQ-1; BR-REQ-2; BR-DEC-1; BR-OUT-1; BR-OUT-2; BR-DEFER-1
 - Scope Mode: New one-Step executable slice. The currently synced 2026-07-12 Plan is closed, so this is not an append.
@@ -92,7 +92,7 @@ spec: docs/specs/2026-07-14-plan-core-idle-export-pruning.spec.md
 - Verification type: automated
 - Verification: `bun test tests/plan-validation.test.ts tests/plugin-package-runtime.test.ts && ! git grep -n -E 'resolveSpecPath|inferProjectRootFromPlanPath|buildProofStep' -- 'plugins/immune-brain/runtime/**' 'tests/**' 'plugins/immune-brain/tests/**' && plugins/immune-brain/bin/imm-plan docs/plans/2026-07-14-001-refactor-plan-core-idle-export-pruning-plan.md --json && git diff --check`
 - Test scenarios: Covers existing Plan parsing and normalized Step output; Covers stable Plan signature generation; Covers Plan validation warnings and errors; Covers plugin-local CLI Plan validation; Covers no active runtime or test reference remains for the three removed helpers; Covers `normalizeSpecReference` and `canonicalizePlanPath` remaining available through existing tests and runtime use.
-- Discovery cache: plugins/immune-brain/runtime/plan_core.ts (three declaration-only exports and affected path imports); tests/plan-validation.test.ts (parser, normalization, signature, and validator behavior); tests/plugin-package-runtime.test.ts (plugin-local CLI behavior); docs/specs/2026-07-14-plan-core-idle-export-pruning.spec.md (accepted cleanup boundary)
+- Discovery cache: plugins/immune-brain/runtime/plan_core.ts (three declaration-only exports and affected path imports); tests/plan-validation.test.ts (parser, normalization, signature, and validator behavior); tests/plugin-package-runtime.test.ts (plugin-local CLI behavior); docs/specs/archive/2026-07-14-plan-core-idle-export-pruning.spec.md (accepted cleanup boundary)
 - Agent Hint: imm-executor
 - Depends on: none
 - failure_behavior: If any runtime, focused test, or established package contract imports a removed helper, stop and return to Planner instead of adding a compatibility wrapper or widening the cleanup.

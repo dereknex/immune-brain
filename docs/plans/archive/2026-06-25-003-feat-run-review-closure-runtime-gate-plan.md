@@ -13,13 +13,13 @@ origin: imm-planner direct entry - user reported that manual code review still f
 - Summary: Add a minimal multi-round runtime review gate so `run` cannot treat
   material Plan or `follow_up` closure as final completion before all required
   `imm-code-review` or `imm-ui-review` rounds are surfaced and closed.
-- Spec: docs/specs/run-review-closure-runtime-gate.spec.md
+- Spec: docs/specs/archive/run-review-closure-runtime-gate.spec.md
 - Origin: The user reported that after executing `imm-run`, manually running
   code review still finds problems, then clarified that most cases need
   multiple review plus `imm-work` rounds before they are truly complete. This
   shows the current completion loop can hand off too early and must model
   repeated review/follow-up rounds.
-- Research: `docs/specs/run-completion-loop.spec.md` defines the desired outer
+- Research: `docs/specs/archive/run-completion-loop.spec.md` defines the desired outer
   loop but marks the adopted slice as contract-only; `.imm/imm-autowork.py`
   currently returns `finished` or `follow_up_complete` with `handoff_only` when
   Plan or `follow_up` closure completes; `plugins/immune-brain/dist/run.md`
@@ -73,7 +73,7 @@ origin: imm-planner direct entry - user reported that manual code review still f
 
 ## Planning Quality Gate
 
-- contract surface: `docs/specs/run-review-closure-runtime-gate.spec.md`,
+- contract surface: `docs/specs/archive/run-review-closure-runtime-gate.spec.md`,
   `plugins/immune-brain/dist/run.md`,
   `plugins/immune-brain/dist/registry.yaml`, `.imm/imm-autowork.py`,
   `plugins/immune-brain/dist/.imm/imm-autowork.py`,
@@ -114,7 +114,7 @@ origin: imm-planner direct entry - user reported that manual code review still f
 - Discovery cache: .imm/imm-autowork.py (runtime completion stop);
   plugins/immune-brain/dist/.imm/imm-autowork.py (packaged parity);
   tests/test_imm_autowork.py (focused runtime coverage);
-  docs/specs/run-review-closure-runtime-gate.spec.md (accepted behavior)
+  docs/specs/archive/run-review-closure-runtime-gate.spec.md (accepted behavior)
 - Agent Hint: imm-executor
 - Depends on: none
 - failure_behavior: If the gate needs durable review-pass state to distinguish
@@ -157,7 +157,7 @@ origin: imm-planner direct entry - user reported that manual code review still f
 ## Notes
 
 - This Plan intentionally promotes the deferred runtime wrapper concern from
-  `docs/specs/run-completion-loop.spec.md` R7 into a narrow executable slice.
+  `docs/specs/archive/run-completion-loop.spec.md` R7 into a narrow executable slice.
 - The key success condition is negative: a material `run` must not claim final
   completion while manual `imm-code-review` could still be the first or next
   required review gate.

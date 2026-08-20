@@ -3,7 +3,7 @@ title: "feat: rewrite public-release sync to file-level copy"
 type: feat
 status: proposed
 date: 2026-05-18
-origin: "docs/specs/public-release-engine-sync.spec.md"
+origin: "docs/specs/archive/public-release-engine-sync.spec.md"
 ---
 
 # Iteration Plan
@@ -11,7 +11,7 @@ origin: "docs/specs/public-release-engine-sync.spec.md"
 ## Task
 - Summary: Rewrite `scripts/sync-to-public.sh` to use pure file-level `cp` instead of `git-filter-repo`. Zero git operations. Output is a clean file tree containing install content + user docs + deploy scripts.
 - Origin: docs/brainstorms/2026-05-18-public-release-brainstorm.md (revised BR-DEC-1)
-- Spec: docs/specs/public-release-engine-sync.spec.md (IMM-RELEASE-002, supersedes IMM-RELEASE-001)
+- Spec: docs/specs/archive/public-release-engine-sync.spec.md (IMM-RELEASE-002, supersedes IMM-RELEASE-001)
 - Research: Existing script at `scripts/sync-to-public.sh` (79 lines) already defines `KEEP_PATHS`, `EXCLUDE_PATHS`, `PUBLIC_TEMPLATES` arrays — reuse these whitelists. `--dry-run`, `--output-dir`, `--force` flag contracts carry forward. Remove all git operations (`git clone`, `git filter-repo`, `git init`, `git commit`, `git add`).
 - Decisions:
     - D1: Use `cp` with whitelist arrays, no git operations at all

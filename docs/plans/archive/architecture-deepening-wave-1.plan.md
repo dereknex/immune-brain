@@ -13,7 +13,7 @@ Consolidate the reviewer framework, decouple the state engine, and introduce a s
 
 ## Origin
 - **Source**: `imm-arch-explorer` candidates
-- **Spec**: `docs/specs/architecture-deepening-wave-1.spec.md`
+- **Spec**: `docs/specs/archive/architecture-deepening-wave-1.spec.md`
 
 ## Research
 - `skills/*/SKILL.md` analyzed for metadata.

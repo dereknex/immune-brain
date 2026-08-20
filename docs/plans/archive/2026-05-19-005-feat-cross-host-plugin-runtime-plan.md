@@ -11,7 +11,7 @@ origin: "User requested a design plan for supporting Codex, Claude Code, and Cur
 ## Task
 - Summary: Move Immune-Brain distribution from a managed local installer to host-native plugin packaging for Codex, Claude Code, and Cursor, with plugin-local runtime tools replacing global `imm-*` shell wrappers.
 - Origin: Conversation framing after `imm-brainstorm`: Codex should use plugin Skills plus MCP rather than Claude-style `bin`; Claude Code can use plugin `bin`; Cursor should use MCP as the reliable baseline and plugin metadata where locally verified.
-- Spec: docs/specs/cross-host-plugin-runtime.spec.md
+- Spec: docs/specs/archive/cross-host-plugin-runtime.spec.md
 - Brainstorm manifest: BR-REQ-1, BR-REQ-2, BR-REQ-3, BR-REQ-4, BR-REQ-5, BR-DEC-1, BR-DEC-2, BR-OUT-1, BR-OUT-2, BR-OUT-3
 - Research: `CONTEXT.md` defines Skill, Plan, State Ledger, and Architecture Map; current runtime is `.imm/imm-work.py`, `.imm/imm_core/`, and `.imm/memory/current_iteration.json`; current Skill source is `skills -> plugins/immune-brain/skills`; existing Codex plugin manifest is `plugins/immune-brain/.codex-plugin/plugin.json`; current public sync still copies root `skills/` plus `scripts/legacy-installer.sh`; Claude Code plugin reference supports plugin `bin/`; Codex plugin public structure supports Skills, MCP, apps, and assets; Cursor support should treat MCP as the stable baseline.
 - Decisions:
@@ -100,7 +100,7 @@ origin: "User requested a design plan for supporting Codex, Claude Code, and Cur
 - Verification: `rm -rf /tmp/test-public-plugin && bash scripts/sync-to-public.sh --output-dir /tmp/test-public-plugin && test -d /tmp/test-public-plugin/plugins/immune-brain && test -f /tmp/test-public-plugin/plugins/immune-brain/.codex-plugin/plugin.json && find /tmp/test-public-plugin -name '.git' -o -name 'upstreams' -o -name 'IMMUNE.md' -o -name 'CONTEXT.md' | grep -q . && exit 1 || exit 0`
 - Depends on: 1, 2
 - Scope: `scripts/sync-to-public.sh`, `public-release/templates/`, `README.md`, `mise.toml`, public release tests
-- Discovery cache: scripts/sync-to-public.sh (current whitelist); docs/specs/public-release-engine-sync.spec.md (superseded installer-first release contract); public-release/templates/README.md (public install docs)
+- Discovery cache: scripts/sync-to-public.sh (current whitelist); docs/specs/archive/public-release-engine-sync.spec.md (superseded installer-first release contract); public-release/templates/README.md (public install docs)
 - Test scenarios: Output includes plugin package and host metadata; output excludes internal private paths; output no longer treats `scripts/legacy-installer.sh` as primary install material.
 
 ### Step 4

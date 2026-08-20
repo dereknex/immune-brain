@@ -11,7 +11,7 @@ origin: imm-brainstorm framing - user agreed on sync page-layout and ui-review c
 ## Task
 
 - Summary: 强化 `imm-page-layout-design` 与 `imm-ui-review` 契约，引入按钮分级折叠、表单宽度防御和图标混排等前置设计与后置审查双向约束。
-- Spec: docs/specs/imm-page-layout-design-enhancement.spec.md
+- Spec: docs/specs/archive/imm-page-layout-design-enhancement.spec.md
 - Origin: 截图 `bad-ui-layout.png` 暴露出的按钮平铺无主次、输入框无限横向拉伸、无图标等平庸 AI UI 痛点。需要从前置设计（imm-page-layout-design）和后置审查（imm-ui-review）同步强化，达成闭环约束。
 - Brainstorm manifest: BR-REQ-001; BR-REQ-002; BR-REQ-003; BR-REQ-004; BR-REQ-005; BR-DEC-001; BR-DEC-002; BR-DEC-003
 - Research: `plugins/immune-brain/dist/imm-page-layout-design.md` 当前对信息和操作分离的设计说明偏笼统，缺少高低频动作折叠、最大宽度硬性控制的指导。`plugins/immune-brain/dist/imm-ui-review.md` 是后置审查关卡，没有明确指出将前置 `layout_design` 作为核对标准，也没有明确指出平铺冗余按钮、表单过度拉伸为 UI 缺陷。`docs/reference/ux-heuristic-checklist.md` 缺少渐进呈现按钮和输入框高溢出防御的详细检查条目。`tests/test_skill_contracts.py` 包含 `test_imm_page_layout_design_defines_pre_implementation_layout_contract`，可通过添加针对折叠、宽度及图标等关键字断言来进行回归测试。

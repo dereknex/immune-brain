@@ -4,7 +4,7 @@
 
 - Summary: Implement OpenCode native plugin support for Immune-Brain, replacing the MCP-only approach with a first-class TypeScript plugin that exposes workflow tools directly inside OpenCode's plugin runtime.
 - Origin: User request to "目标设计为opencode原生插件，重新调整方案"
-- Spec: docs/specs/opencode-native-plugin.spec.md
+- Spec: docs/specs/archive/opencode-native-plugin.spec.md
 - Research: [@opencode-ai/plugin@1.17.11](https://www.npmjs.com/package/@opencode-ai/plugin) uses Zod-based tool args and tagged-template `$` shell. [OpenCode docs](https://opencode.ai/docs/plugins/) confirm Plugin type signature, session/compaction hooks, and `{ raw: string }` ShellExpression for raw commands.
 - Decisions: D1 Keep thin TS bridge to Python runtime (no logic rewrite). D2 Use `tool()` helper + Zod schemas for type-safe tool definitions. D3 Use `input.$` tagged template for subprocess execution instead of `Bun.spawnSync`. D4 Expose 8 tools matching existing MCP tool set. D5 Preserve `.mcp.json` as MCP fallback.
 - Assumptions: OpenCode's embedded JS runtime supports `node:*` imports and BunShell tagged templates.
@@ -89,7 +89,7 @@
 
 - Step ID: U2
 - Result: Spec, plan, README, and contract tests updated for native plugin
-- Scope: `docs/specs/opencode-native-plugin.spec.md`, `docs/plans/2026-06-27-003-feat-opencode-native-plugin-plan.md`, `README.md`, `tests/test_skill_contracts.py`
+- Scope: `docs/specs/archive/opencode-native-plugin.spec.md`, `docs/plans/2026-06-27-003-feat-opencode-native-plugin-plan.md`, `README.md`, `tests/test_skill_contracts.py`
 - Discovery cache: existing MCP spec, existing README, existing contract tests
 - Verification: `PYTHONPATH=.imm python3 -m unittest tests.test_skill_contracts -v`
 - Verification type: automated

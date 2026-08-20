@@ -11,7 +11,7 @@ origin: user request under imm-planner
 ## Task
 - Summary: Add Parallel Domain Survey capability to imm-arch-explorer via subagent dispatch protocol.
 - Origin: User requested extending subagents capability for imm-arch-explorer.
-- Spec: docs/specs/imm-arch-explorer-domain-survey.spec.md
+- Spec: docs/specs/archive/imm-arch-explorer-domain-survey.spec.md
 - Research: Checked `imm-arch-explorer` skill and discovered no python runtime components. Dispatch can be added purely at the prompt contract level, similar to `imm-brainstorm` and `imm-planner`.
 - Decisions: Use `generalPurpose` subagents with `readonly: true`. No new python shims. Add contract coverage to ensure the policy remains stable.
 - Assumptions: The runtime LLM orchestrator (Cursor/Codex) supports subagent dispatch natively.

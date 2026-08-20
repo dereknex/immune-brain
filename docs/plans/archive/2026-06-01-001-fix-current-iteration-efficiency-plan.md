@@ -12,8 +12,8 @@ origin: imm-brainstorm analysis of current_iteration.json efficiency
 - Summary: Keep `current_iteration.json` lightweight while preserving accidental-empty recovery and auditability.
 - Origin: User asked whether the current `current_iteration.json` design can be improved from an efficiency angle. Brainstorm analysis found that the current file is about 128KB, with about 121KB from `history`, and that `state.json.current_iteration` can restore a finished Plan after intentional reset.
 - Brainstorm manifest: BR-REQ-1; BR-REQ-2; BR-REQ-3; BR-REQ-4; BR-DEC-1; BR-DEC-2; BR-OUT-1
-- Spec: docs/specs/current-iteration-efficiency.spec.md
-- Research: `CONTEXT.md` defines State Ledger as the active runtime source of truth. `docs/solutions/canonical-runtime-state-paths.md` says `current_iteration` represents current active work, while `state.json` and `MEMORY.md` are durable sinks. `docs/specs/current-iteration-empty-state-recovery.spec.md` added accidental-empty recovery from `state.json`. Current measurements show `history` dominates the file size. `docs/solutions/rejected-pro-workflow-sqlite-wiki-authority.md` rejects SQLite or a third storage layer.
+- Spec: docs/specs/archive/current-iteration-efficiency.spec.md
+- Research: `CONTEXT.md` defines State Ledger as the active runtime source of truth. `docs/solutions/canonical-runtime-state-paths.md` says `current_iteration` represents current active work, while `state.json` and `MEMORY.md` are durable sinks. `docs/specs/archive/current-iteration-empty-state-recovery.spec.md` added accidental-empty recovery from `state.json`. Current measurements show `history` dominates the file size. `docs/solutions/rejected-pro-workflow-sqlite-wiki-authority.md` rejects SQLite or a third storage layer.
 - Decisions:
     - D1: Use a new slice rather than appending to the closed 2026-05-29 Plan because this changes runtime semantics.
     - D2: Keep filesystem-as-brain by using a bounded history tail plus JSONL archive rather than a database.
@@ -73,7 +73,7 @@ origin: imm-brainstorm analysis of current_iteration.json efficiency
 - Verification type: automated
 - Verification: `python3 -m unittest tests.test_current_iteration_state tests.test_workflow_loop`
 - Test scenarios: marked finish reset does not recover from `state.json.current_iteration`; unmarked accidental empty state still recovers; out-of-project and invalid snapshots remain rejected; finish closure still resets active runtime state
-- Discovery cache: .imm/imm_core/current_iteration_state.py (loader recovery gate); .imm/imm-finish.py (finish reset caller); .imm/imm-dehydrate.py (state snapshot producer); tests/test_current_iteration_state.py (recovery regression); tests/test_workflow_loop.py (finish reset regression); docs/specs/current-iteration-empty-state-recovery.spec.md (previous recovery contract)
+- Discovery cache: .imm/imm_core/current_iteration_state.py (loader recovery gate); .imm/imm-finish.py (finish reset caller); .imm/imm-dehydrate.py (state snapshot producer); tests/test_current_iteration_state.py (recovery regression); tests/test_workflow_loop.py (finish reset regression); docs/specs/archive/current-iteration-empty-state-recovery.spec.md (previous recovery contract)
 - Execution note: test-first
 - Failure behavior: If accidental recovery cannot be preserved, stop before changing history compaction.
 - Depends on: none

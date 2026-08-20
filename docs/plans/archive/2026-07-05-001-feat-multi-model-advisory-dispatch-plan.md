@@ -8,7 +8,7 @@ origin:
   - user requested multi-model planning synthesis
   - user allowed reassessing shared dispatcher boundaries
   - user requested Pi support
-  - docs/specs/2026-07-05-multi-model-advisory-dispatch.spec.md
+  - docs/specs/archive/2026-07-05-multi-model-advisory-dispatch.spec.md
 ---
 
 # Iteration Plan
@@ -16,7 +16,7 @@ origin:
 ## Task
 
 - Summary: Add Pi-aware dispatch documentation, define stage model selection, define a shared read-only advisory dispatch substrate, and make planner ensemble synthesis a planner-owned workflow.
-- Spec: `docs/specs/2026-07-05-multi-model-advisory-dispatch.spec.md`
+- Spec: `docs/specs/archive/2026-07-05-multi-model-advisory-dispatch.spec.md`
 - Origin: Conversation framing concluded that Immune-Brain should extend model tiering into mainline planning, use multiple models to produce candidate plans before planner synthesis, reassess the old generic dispatcher rejection as a narrower read-only advisory substrate, and include Pi `Agent` support.
 - Brainstorm manifest: BR-REQ-1; BR-REQ-2; BR-REQ-3; BR-REQ-4; BR-REQ-5; BR-REQ-6; BR-DEC-1; BR-DEC-2; BR-DEC-3; BR-OUT-1; BR-DEFER-1; BR-DEFER-2
 - Scope Mode: New executable slice. The current State Ledger Plan is closed, and the existing working tree contains candidate Pi dispatch protocol edits that this Plan treats as Step U1 scope.
@@ -140,7 +140,7 @@ origin:
 - Verification: `bun test tests/planner-ensemble-contract.test.ts tests/code-review-activation-contract.test.ts tests/host-runtime-cutover.test.ts && bun scripts/sync-dist-docs.ts --check && plugins/immune-brain/bin/imm-plan docs/plans/2026-07-05-001-feat-multi-model-advisory-dispatch-plan.md --json`
 - Execution note: test-first
 - Test scenarios: `imm-planner` can request candidates from `workflow_models.planner_ensemble`; child outputs normalize into one ensemble packet; agreement becomes evidence; disagreement becomes decision criteria; strong-model blockers become risk or verification requirements; final Spec and Plan remain planner-owned; small plans do not fan out by default.
-- Discovery cache: plugins/immune-brain/skills/imm-planner/SKILL.md (planner source contract); plugins/immune-brain/dist/imm-planner.md (packaged planner contract); docs/reference/planning-quality-gate.md (elevated planning gate); docs/reference/workflow-and-subagents.md (mainline subagent guidance); docs/specs/2026-07-05-multi-model-advisory-dispatch.spec.md (accepted behavior); docs/solutions/advisory-roundtable-layer.md (synthesis pattern)
+- Discovery cache: plugins/immune-brain/skills/imm-planner/SKILL.md (planner source contract); plugins/immune-brain/dist/imm-planner.md (packaged planner contract); docs/reference/planning-quality-gate.md (elevated planning gate); docs/reference/workflow-and-subagents.md (mainline subagent guidance); docs/specs/archive/2026-07-05-multi-model-advisory-dispatch.spec.md (accepted behavior); docs/solutions/advisory-roundtable-layer.md (synthesis pattern)
 - Agent Hint: imm-executor
 - Depends on: 2
 - failure_behavior: If planner ensemble creates too much ceremony, keep it explicit-only for high-impact planning and defer automatic complexity triggers.

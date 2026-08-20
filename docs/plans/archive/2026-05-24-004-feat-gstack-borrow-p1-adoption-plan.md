@@ -11,7 +11,7 @@ origin: user asked to create a plan from docs/solutions/gstack-skills-borrow-ins
 ## Task
 - Summary: Turn the P1 conclusions from the gstack borrow Learning into lightweight repository guidance and contract guards.
 - Origin: `docs/solutions/gstack-skills-borrow-insights.md` classifies template drift rules, preferred Skill routing, and evidence-backed Learning as P1, while deferring runtime-heavy browser and security infrastructure.
-- Spec: docs/specs/gstack-borrow-p1-adoption.spec.md
+- Spec: docs/specs/archive/gstack-borrow-p1-adoption.spec.md
 - Research: `CONTEXT.md` defines Plan, Spec, Step, Skill, Learning, and Activation Plan. `README.md` already states that long-term knowledge lives in `docs/solutions/` and that gstack patterns should be borrowed without importing the full team model. `docs/reference/immune-brain-skills-guide.md` and `docs/reference/workflow-and-subagents.md` are the current reference surfaces for Skill usage and workflow routing. `docs/solutions/rejected-pro-workflow-sqlite-wiki-authority.md` and `docs/solutions/rejected-shared-registry-generic-dispatcher.md` preserve the rejected memory-plane and routing-registry boundaries.
 - Decisions:
     - D1: Treat the evidence-backed Learning itself as already complete; this Plan only promotes its P1 conclusions into reference guidance and guards.
@@ -38,7 +38,7 @@ origin: user asked to create a plan from docs/solutions/gstack-skills-borrow-ins
 - Verification type: automated
 - Verification: `test -f docs/reference/gstack-borrow-p1-guidance.md && rg -n "Generated Skill Contract|source_template|generated_output|baseline_ref|allowed_tools|source template|regenerate" docs/reference/gstack-borrow-p1-guidance.md`
 - Test scenarios: Confirm future generated Skill artifacts have a source-template-first contract, narrow allowed-tools guidance, BASELINE alignment, and no compiler commitment.
-- Discovery cache: docs/solutions/gstack-skills-borrow-insights.md (P1 template drift rules); docs/specs/gstack-borrow-p1-adoption.spec.md (accepted behavior); skills/BASELINE.md (shared Skill behavior); skills/registry.yaml (current Skill metadata)
+- Discovery cache: docs/solutions/gstack-skills-borrow-insights.md (P1 template drift rules); docs/specs/archive/gstack-borrow-p1-adoption.spec.md (accepted behavior); skills/BASELINE.md (shared Skill behavior); skills/registry.yaml (current Skill metadata)
 - failure_behavior: If a better existing reference surface is found, place the contract there and keep `docs/reference/gstack-borrow-p1-guidance.md` as a redirect or omit it with the verification updated during replan.
 - security_considerations: Generated metadata must not broaden tool grants or hide prompt-injection-sensitive instructions.
 - Depends on: none

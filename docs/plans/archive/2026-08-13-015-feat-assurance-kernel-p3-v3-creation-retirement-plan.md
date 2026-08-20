@@ -8,7 +8,7 @@
 **Created**: 2026-08-13
 **Status**: pending
 **Priority**: P1
-**Spec**: docs/specs/assurance-kernel-v4-p3-v3-creation-retirement.spec.md
+**Spec**: docs/specs/archive/assurance-kernel-v4-p3-v3-creation-retirement.spec.md
 **Predecessor**: docs/plans/2026-08-13-014-feat-assurance-kernel-p2c-pi-default-routing-plan.md (closed and finished)
 
 ## Goal
@@ -63,7 +63,7 @@ P2C closed with Pi as the only qualified Kernel host and made `/imm-canary-new` 
 
 ## Roadmap Source
 
-`docs/specs/assurance-kernel-v4-p2-managed-cutover.spec.md`
+`docs/specs/archive/assurance-kernel-v4-p2-managed-cutover.spec.md`
 
 ## Execution Scope
 
@@ -126,7 +126,7 @@ The slice spans canonical pre-migration routing, Git index/worktree identity, a 
 
 - Step ID: U3
 - Result: Exact reviewed policy bytes are the sole staged active route for new managed authority.
-- Scope: `docs/plans/managed-task-routing-policy.json`; `docs/specs/assurance-kernel-v4-p3-v3-creation-retirement.spec.md`; `docs/plans/2026-08-13-015-feat-assurance-kernel-p3-v3-creation-retirement-plan.md`; `docs/specs/assurance-kernel-v4-p2-managed-cutover.spec.md`; `tests/v3-retirement-live-boundary.test.ts`; `tests/legacy-v3-projection.test.ts`; `HANDOFF.md`
+- Scope: `docs/plans/managed-task-routing-policy.json`; `docs/specs/archive/assurance-kernel-v4-p3-v3-creation-retirement.spec.md`; `docs/plans/2026-08-13-015-feat-assurance-kernel-p3-v3-creation-retirement-plan.md`; `docs/specs/archive/assurance-kernel-v4-p2-managed-cutover.spec.md`; `tests/v3-retirement-live-boundary.test.ts`; `tests/legacy-v3-projection.test.ts`; `HANDOFF.md`
 - Verification: `test -f docs/plans/managed-task-routing-policy.json && git ls-files --error-unmatch docs/plans/managed-task-routing-policy.json && test "$(git diff --cached --name-only)" = 'docs/plans/managed-task-routing-policy.json' && shasum -a 256 docs/plans/managed-task-routing-policy.json | grep -q '^43949f0ef456efb9ca7dccbe1c8bc2355d6acce66486213fb2750a87388ec71e ' && git show :docs/plans/managed-task-routing-policy.json | shasum -a 256 | grep -q '^43949f0ef456efb9ca7dccbe1c8bc2355d6acce66486213fb2750a87388ec71e ' && test -f tests/v3-retirement-live-boundary.test.ts && test -f tests/legacy-v3-projection.test.ts && bun test tests/v3-retirement-live-boundary.test.ts tests/legacy-v3-projection.test.ts tests/v3-plan-creation-retirement.test.ts tests/managed-task-routing-policy.test.ts tests/progress-projection-runtime.test.ts tests/plan-execution-boundary-runtime.test.ts tests/execution-evidence-runtime.test.ts tests/roadmap-plan-terminal-runtime.test.ts plugins/immune-brain/tests/plan-transition-termination.test.ts tests/project-migration-cli.test.ts && plugins/immune-brain/bin/imm-plan --routing-status --json | grep -q '"v3_new_plan_sync": "retired"' && plugins/immune-brain/bin/imm-plan docs/plans/2026-08-13-015-feat-assurance-kernel-p3-v3-creation-retirement-plan.md --json && bun test && git diff --check`
 - Execution note: Write exactly the canonical policy bytes from the Technical Design, verify the fixed SHA-256, then run only `git add -- docs/plans/managed-task-routing-policy.json`. Do not commit and do not stage the Spec, Plan, HANDOFF, source, or test paths. Before QA handoff, prove the cached diff contains exactly the policy path and both worktree/index hashes equal the fixed hash. The live-boundary test must install the same active policy in an isolated Git fixture, invoke canonical `runImmCommand("imm-finish", ...)` against a finish-eligible P3-shaped Ledger, prove `idle + intentional_reset`, and prove both policy hashes and staged bytes are unchanged; direct `runFinishCommand` alone is insufficient.
 - Test scenarios: Covers exact canonical policy serialization and fixed worktree/index hash; Covers sole staged-path invariant; Covers same-identity P3 work/QA/review before closure; Covers canonical dispatch `imm-finish` with active policy reaching intentional reset; Covers policy/index bytes unchanged across finish; Covers different-identity sync still retired after reset; Covers active, finished, malformed, and historical legacy projection; Covers explicit no terminal-import module, command, TaskRecord, or compatibility writer.

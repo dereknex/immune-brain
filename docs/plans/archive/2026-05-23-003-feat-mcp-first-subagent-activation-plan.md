@@ -11,7 +11,7 @@ origin: "User requested a plan to unify Codex, Cursor, and Claude Code around MC
 ## Task
 - Summary: Make Immune-Brain subagent activation MCP-first across Codex, Cursor, and Claude Code, then define a standing authorization contract that reduces repeated subagent confirmation without bypassing host tool policy.
 - Origin: User confirmed that unified MCP is cleaner than PATH-based CLI wrappers and asked whether AGENTS.md can define automatic subagent invocation.
-- Spec: docs/specs/mcp-first-subagent-activation.spec.md
+- Spec: docs/specs/archive/mcp-first-subagent-activation.spec.md
 - Research: `README.md` currently describes host-native plugin adapters and plugin-local runtime. `plugins/immune-brain/.mcp.json` exposes the shared runtime adapter, while `plugins/immune-brain/bin/imm-*` wrappers remain available but are not automatically added to PATH by Codex or Cursor. `docs/reference/automatic-subagent-activation-policy.md` keeps activation planning pure and host-bound. The current Codex `spawn_agent` tool policy requires explicit user authorization, so Skill text alone cannot safely promise unconditional automatic spawning. Upstream patterns from Compound Engineering, GSD, BMAD, and pro-workflow all separate framework eligibility from host capability or authorization gates.
 - Decisions:
     - D1: Treat MCP as the primary runtime path for Codex, Cursor, and Claude Code.
@@ -62,7 +62,7 @@ origin: "User requested a plan to unify Codex, Cursor, and Claude Code around MC
 - Verification Type: automated
 - Verification: `python3 -m unittest tests.test_skill_contracts tests.test_activation_plan`
 - Test scenarios: policy docs define authorization sources; `host_authorization_required` appears in fallback reason docs; `explicit_required` remains config-only; `trigger_not_hit` remains trigger-only; no docs claim AGENTS.md can override host tool policy
-- Discovery cache: docs/reference/automatic-subagent-activation-policy.md (fallback reasons and input contract); docs/reference/subagent-dispatch-protocol.md (dispatch lifecycle); docs/reference/immune-brain-config.md (local activation config); docs/specs/mcp-first-subagent-activation.spec.md (source spec)
+- Discovery cache: docs/reference/automatic-subagent-activation-policy.md (fallback reasons and input contract); docs/reference/subagent-dispatch-protocol.md (dispatch lifecycle); docs/reference/immune-brain-config.md (local activation config); docs/specs/archive/mcp-first-subagent-activation.spec.md (source spec)
 - Execution note: test-first
 - failure_behavior: If fallback reason expansion requires runtime schema changes, land docs and contract tests first, then defer runtime emission to a follow-up implementation slice.
 - security_considerations: Authorization wording must preserve user-requested solo as the highest priority.

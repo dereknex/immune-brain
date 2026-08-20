@@ -12,8 +12,8 @@ origin: imm-arch-explorer candidate 2
 
 - Summary: Add a safe explicit retirement path for stale global imm-plan wrappers.
 - Origin: User selected architecture exploration candidate 2 for stale global `imm-plan` wrapper cleanup.
-- Spec: docs/specs/stale-global-wrapper-retirement.spec.md
-- Research: `imm-heal` currently reports PATH `/Users/derek/.local/bin/imm-plan` as stale because it does not expose `--sync`, while `plugins/immune-brain/bin/imm-plan --help` exposes `--sync`. The stale wrapper contains managed-copy markers including `imm-install-mode: copy`, `imm-install-family: agent-skills`, and `imm-install-runtime-root`. The prior `docs/specs/stale-global-imm-plan-sync.spec.md` and `docs/plans/2026-05-27-002-fix-stale-global-imm-plan-sync-plan.md` completed warning and supported sync exposure, so this is a new follow-up slice rather than an append. `CONTEXT.md` defines Plan, Step, Spec, Skill, State Ledger, and plugin-local runtime vocabulary.
+- Spec: docs/specs/archive/stale-global-wrapper-retirement.spec.md
+- Research: `imm-heal` currently reports PATH `/Users/derek/.local/bin/imm-plan` as stale because it does not expose `--sync`, while `plugins/immune-brain/bin/imm-plan --help` exposes `--sync`. The stale wrapper contains managed-copy markers including `imm-install-mode: copy`, `imm-install-family: agent-skills`, and `imm-install-runtime-root`. The prior `docs/specs/archive/stale-global-imm-plan-sync.spec.md` and `docs/plans/2026-05-27-002-fix-stale-global-imm-plan-sync-plan.md` completed warning and supported sync exposure, so this is a new follow-up slice rather than an append. `CONTEXT.md` defines Plan, Step, Spec, Skill, State Ledger, and plugin-local runtime vocabulary.
 - Decisions: D1 use a new slice because the prior stale-wrapper plan is historically completed. D2 provide dry-run by default and require explicit apply for any user-file mutation. D3 only act on wrappers with known Immune-Brain managed-copy markers. D4 preserve plugin-local runtime and MCP as the supported source of truth. D5 keep health checks non-destructive.
 - Assumptions: The current global wrapper shape is representative of the stale managed-copy install family. Tests can simulate eligible and ineligible wrappers in temporary directories. The implementation can choose a script or runtime helper as long as the user-facing path is deterministic.
 - Scope Mode: Hold Scope
@@ -43,7 +43,7 @@ origin: imm-arch-explorer candidate 2
 - Verification: `python3 -m unittest tests.test_immune_brain_plugin_package tests.test_immune_brain_mcp_runtime && python3 .imm/imm-heal.py`
 - Verification type: automated
 - Test scenarios: Dry-run reports an eligible managed-copy wrapper; Apply mode requires explicit opt-in; Unmarked user wrapper is refused; Heal warning names the retirement path; Plugin-local imm-plan help still exposes sync.
-- Discovery cache: .imm/imm-heal.py (health warning surface); plugins/immune-brain/dist/.imm/imm-heal.py (packaged health warning surface); tests/test_immune_brain_plugin_package.py (wrapper and package contract tests); plugins/immune-brain/bin/imm-plan (supported CLI wrapper); docs/specs/stale-global-wrapper-retirement.spec.md (accepted behavior)
+- Discovery cache: .imm/imm-heal.py (health warning surface); plugins/immune-brain/dist/.imm/imm-heal.py (packaged health warning surface); tests/test_immune_brain_plugin_package.py (wrapper and package contract tests); plugins/immune-brain/bin/imm-plan (supported CLI wrapper); docs/specs/archive/stale-global-wrapper-retirement.spec.md (accepted behavior)
 - Depends on: none
 - failure_behavior: If apply behavior cannot be made safe for user-owned files, keep only dry-run reporting and return to planner for a narrower non-mutating cleanup slice.
 - security_considerations: The helper must avoid following unrelated user scripts or symlinks and must never mutate paths that lack Immune-Brain managed-copy markers.

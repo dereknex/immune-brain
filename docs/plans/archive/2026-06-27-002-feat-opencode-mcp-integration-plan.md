@@ -6,7 +6,7 @@
 
 - Summary: Implement OpenCode MCP support by adding its cache path to the bootstrap script in `.mcp.json`, updating skill contract tests, and documenting the configuration in `README.md`.
 - Origin: `imm-brainstorm` analysis of how to support the OpenCode coding agent without introducing Bun or TypeScript compile-time dependencies.
-- Spec: docs/specs/opencode-mcp-integration.spec.md
+- Spec: docs/specs/archive/opencode-mcp-integration.spec.md
 - Research: [README.md](README.md) contains the developer instructions for installing and running standard MCP servers. `test_skill_contracts.py` contains test coverage for local runtime surfaces and checks `.mcp.json` script arguments.
 - Decisions: D1 Do not write custom JS/TS plugins or commands, avoiding Bun/TS compile dependencies. D2 Expose standard stdio MCP instead.
 - Assumptions: The python stdio JSON-RPC MCP server is fully compatible with OpenCode's MCP host client.

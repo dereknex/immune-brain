@@ -4,7 +4,7 @@ type: refactor
 status: active
 date: 2026-07-12
 origin: user-confirmed imm-brainstorm framing that rejects the Pi child backend
-spec: docs/specs/2026-07-12-main-context-imm-loop.spec.md
+spec: docs/specs/archive/2026-07-12-main-context-imm-loop.spec.md
 ---
 
 # Iteration Plan
