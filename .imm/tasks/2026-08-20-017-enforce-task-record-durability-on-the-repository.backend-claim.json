@@ -1,0 +1,9 @@
+{
+  "contract": "assurance_kernel/task_tombstone/v1",
+  "task_id": "2026-08-20-017-enforce-task-record-durability-on-the-repository",
+  "lifecycle_status": "terminal",
+  "terminal_phase": "done",
+  "terminal_event_id": "complete:2026-08-20-017-enforce-task-record-durability-on-the-repository:2026-08-20T15:30:10.771Z",
+  "final_record_hash": "sha256:9949c52b6f153fe9b98a39aaa564057d04ca3ce366d7086241721c3206c2d04e",
+  "terminalized_at": "2026-08-20T15:30:10.771Z"
+}

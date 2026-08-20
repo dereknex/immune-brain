@@ -4,6 +4,9 @@ import { spawnSync } from "node:child_process";
 import { join, resolve } from "node:path";
 
 const REPO_ROOT = resolve(import.meta.dir, "..");
+const BASELINE_PATH = join(REPO_ROOT, "tests/task-record-durability-baseline.json");
+const ARCHIVE_DIR = join(REPO_ROOT, "docs/plans/archive");
+const TASKS_DIR = join(REPO_ROOT, ".imm/tasks");
 
 function isIgnored(relativePath: string): boolean {
   const result = spawnSync("git", ["check-ignore", "--quiet", relativePath], {
@@ -13,97 +16,110 @@ function isIgnored(relativePath: string): boolean {
   return result.status === 0;
 }
 
+function archivalRequiresRecord(taskId: string): { ok: boolean; reason?: string } {
+  const recordPath = join(TASKS_DIR, `${taskId}.json`);
+  if (!existsSync(recordPath)) {
+    return { ok: false, reason: `TaskRecord missing for archived terminal task ${taskId}` };
+  }
+  try {
+    const raw = readFileSync(recordPath, "utf8");
+    const parsed = JSON.parse(raw);
+    if (parsed.contract !== "assurance_kernel/task_record/v2") {
+      return { ok: false, reason: `TaskRecord contract mismatch for ${taskId}` };
+    }
+    if (parsed.task_id !== taskId) {
+      return { ok: false, reason: `TaskRecord task_id mismatch for ${taskId}` };
+    }
+  } catch (error) {
+    return { ok: false, reason: `TaskRecord unreadable for ${taskId}: ${error instanceof Error ? error.message : String(error)}` };
+  }
+  return { ok: true };
+}
+
 describe("task record durability", () => {
   test("TaskRecords under .imm/tasks/ are tracked by Git rather than ignored, while workspace.json and migrations/ remain ignored", () => {
     const gitignore = readFileSync(join(REPO_ROOT, ".gitignore"), "utf8");
 
-    // .imm/tasks/ must not be ignored — the directory itself should be trackable
     expect(gitignore).not.toMatch(/^\.imm\/tasks\/\s*$/m);
-    // Negated forms would also be acceptable but the canonical fix is removal;
-    // we verify the path is not ignored via git check-ignore as the source of truth.
 
-    // The other three must remain ignored
     expect(gitignore).toContain(".imm/workspace.json");
     expect(gitignore).toContain(".imm/migrations/");
     expect(gitignore).toContain(".imm/journal.jsonl");
 
-    // git check-ignore is the authority: sample task records must NOT be ignored
     expect(isIgnored(".imm/tasks/2026-08-14-001-pi-observable-assurance-dispatch.json")).toBe(false);
     expect(isIgnored(".imm/tasks/any-task.json")).toBe(false);
     expect(isIgnored(".imm/tasks/any-task.backend-claim.json")).toBe(false);
 
-    // while per-machine / local-backup state remains ignored
     expect(isIgnored(".imm/workspace.json")).toBe(true);
     expect(isIgnored(".imm/journal.jsonl")).toBe(true);
-    // migrations is a directory pattern; check a file inside it
     expect(isIgnored(".imm/migrations/foo/bar")).toBe(true);
     expect(isIgnored(".imm/migrations/")).toBe(true);
   });
 
-  test("Archiving a terminal intent sidecar fails when the matching TaskRecord is absent", () => {
-    // The audit artifact is the per-task record. It must be present on disk
-    // (and, after the .gitignore fix, tracked) when its sidecar is archived.
-    // This test validates the gate logic. Records are rewritten on every phase
-    // transition, so only the terminal archival moment is gated — the five
-    // worktree-parallel losses (008/009/011/012/013) are the motivation.
-
-    const tasksDir = join(REPO_ROOT, ".imm/tasks");
-
-    // Helper that mirrors the archival gate: terminal archival requires the
-    // record file to exist. In production the gate also checks git tracking,
-    // but existence is the durable prerequisite — a missing file can never be
-    // tracked.
-    function archivalRequiresRecord(taskId: string): { ok: boolean; reason?: string } {
-      const recordPath = join(tasksDir, `${taskId}.json`);
-      if (!existsSync(recordPath)) {
-        return { ok: false, reason: `TaskRecord missing for archived terminal task ${taskId}` };
-      }
-      try {
-        const raw = readFileSync(recordPath, "utf8");
-        const parsed = JSON.parse(raw);
-        if (parsed.contract !== "assurance_kernel/task_record/v2") {
-          return { ok: false, reason: `TaskRecord contract mismatch for ${taskId}` };
-        }
-        if (parsed.task_id !== taskId) {
-          return { ok: false, reason: `TaskRecord task_id mismatch for ${taskId}` };
-        }
-      } catch (error) {
-        return { ok: false, reason: `TaskRecord unreadable for ${taskId}: ${error instanceof Error ? error.message : String(error)}` };
-      }
-      return { ok: true };
-    }
-
-    // 1. A present record passes the gate — proves the helper works on real data.
-    const knownPresent = readdirSync(tasksDir)
+  test("Archiving a terminal intent sidecar fails when the matching TaskRecord is absent (synthetic guard)", () => {
+    // Unit coverage for the helper itself — proves fail-closed on missing.
+    const knownPresent = readdirSync(TASKS_DIR)
       .filter((f) => f.endsWith(".json") && !f.startsWith(".") && !f.includes(".backend-claim"))
       .map((f) => f.replace(/\.json$/, ""))[0];
     if (knownPresent) {
-      const result = archivalRequiresRecord(knownPresent);
-      expect(result.ok).toBe(true);
+      expect(archivalRequiresRecord(knownPresent).ok).toBe(true);
     } else {
-      // No records at all would be a setup failure, not a gate failure
-      expect(existsSync(tasksDir)).toBe(true);
+      expect(existsSync(TASKS_DIR)).toBe(true);
     }
 
-    // 2. A missing record fails the gate — this is the regression the
-    // worktree-parallel loss exposed (008, 009, 011, 012, 013 were archived
-    // while their worktree-local records were discarded). The gate must fail
-    // closed at the visible archival moment.
     const missingId = "2026-08-20-014-track-task-records-for-audit-continuity-missing-probe";
     const missingCheck = archivalRequiresRecord(missingId);
     expect(missingCheck.ok).toBe(false);
     expect(missingCheck.reason).toContain("TaskRecord missing");
+  });
 
-    // 3. The gate distinguishes terminal archival from non-terminal archival.
-    // Older archived sidecars that were archived via the implementing-commit
-    // fallback (no record but a later commit touched scope_hint) are not
-    // required to have a record — archival via S1/S2 or implementing-commit
-    // is a separate path from terminal archival. This test ensures the helper
-    // itself is sound; the historical drift is intentionally not re-checked
-    // here because the pre-gate archive decisions used the old two-signal
-    // rule. Future terminal archival without a record must be caught by the
-    // same helper, and the change to .gitignore ensures the record can be
-    // tracked when that happens.
-    expect(typeof archivalRequiresRecord).toBe("function");
+  test("Durability guard enumerates the repository's archived sidecars and fails outside the explicit baseline", () => {
+    // Baseline must be an explicit named list, not a count — a count lets a new loss hide behind a recovery.
+    const rawBaseline = JSON.parse(readFileSync(BASELINE_PATH, "utf8"));
+    const baseline: unknown = rawBaseline.baseline ?? rawBaseline;
+
+    expect(Array.isArray(baseline), "baseline must be an explicit array of task ids, not a numeric threshold").toBe(true);
+    const baselineList = baseline as string[];
+    expect(baselineList.length).toBeGreaterThan(0);
+    expect(baselineList.every((id) => typeof id === "string" && id.length > 0)).toBe(true);
+    // Hard gate: must not be a bare count file
+    expect(typeof rawBaseline).not.toBe("number");
+    if (typeof rawBaseline.count === "number") {
+      // If a count field exists, baseline array is still required — count alone is forbidden
+      expect(Array.isArray(baseline)).toBe(true);
+    }
+
+    // Enumerate archived sidecars — the repository it guards.
+    expect(existsSync(ARCHIVE_DIR)).toBe(true);
+    const archived = readdirSync(ARCHIVE_DIR)
+      .filter((f) => f.endsWith(".intent.json"))
+      .map((f) => f.replace(/\.intent\.json$/, ""))
+      .sort();
+
+    expect(archived.length).toBeGreaterThan(0);
+    expect(archived.length).toBeGreaterThanOrEqual(83); // snapshot at 017 authoring; may grow as new tasks archive with records
+
+    const missing = archived.filter((id) => !existsSync(join(TASKS_DIR, `${id}.json`))).sort();
+    const unexpectedMissing = missing.filter((id) => !baselineList.includes(id)).sort();
+
+    // Core ratchet: no new loss outside baseline
+    expect(
+      unexpectedMissing,
+      `New TaskRecord loss outside baseline: ${unexpectedMissing.join(", ") || "(none)"} — missing total ${missing.length}, baseline ${baselineList.length}`,
+    ).toEqual([]);
+
+    // Baseline may only shrink: every missing must be in baseline (equivalently unexpectedMissing === 0)
+    // Recovery (baseline id now present) is tolerated — indicates shrink opportunity, not failure.
+    for (const id of missing) {
+      expect(baselineList).toContain(id);
+    }
+
+    // Prove guard is not a vanity check: helper actually distinguishes present/missing
+    if (archived.length > 0) {
+      const probe = archivalRequiresRecord(archived.find((id) => baselineList.includes(id)) ?? archived[0]);
+      // baseline entries are missing, so probe should fail for at least one baseline id
+      const anyBaselineMissing = baselineList.some((id) => archived.includes(id) && !archivalRequiresRecord(id).ok);
+      expect(anyBaselineMissing).toBe(true);
+    }
   });
 });
