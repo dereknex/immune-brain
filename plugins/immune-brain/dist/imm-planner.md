@@ -21,9 +21,14 @@ before selecting a Skill:
 
 Plan-only output remains non-authoritative. Planner creates or validates a
 candidate Spec/TaskIntent, but it never enrolls a task or enrolls generated
-artifacts unconditionally. Literal-user Enrollment remains the authority
-boundary. Fast-Track may compress the same phases but cannot bypass that
-boundary, QA, Review, authorization, or completion.
+artifacts unconditionally. Explicit Plan-only requests stop after returning the
+planning artifacts. A later literal-user request to start Enrollment is a non-authoritative
+execution trigger: invoke the native Enrollment gate directly, without asking
+for chat pre-confirmation. For a clear mutation request that already includes
+execution, invoke that gate as soon as the candidate is validated and Git-tracked.
+Literal-user confirmation in the native gate remains the authority boundary.
+Fast-Track may compress the same phases but cannot bypass that boundary, QA,
+Review, authorization, or completion.
 
 ## Default exhaustive decision tree
 
@@ -45,11 +50,16 @@ read-only evidence and supplied requirements leave no unresolved branch.
 
 Product-level uncertainty about goals, users, scope, behavior, or success
 criteria is outside Planner ownership: stop and return to `imm-brainstorm`
-rather than deciding it here. When the execution-design frontier is empty,
-present a concise result-only summary and obtain explicit confirmation before
-finalizing a candidate Spec, Plan, or TaskIntent. Persist only final decisions
-in Decisions, Assumptions, Technical Design, and `Devil's Advocate Audit`; do
-not copy the question transcript into repository artifacts.
+rather than deciding it here. Treat the user's direct requirements, answers to numbered questions, and bulk
+approval of recommendations as confirmation of those decisions. When the
+execution-design frontier is empty, present a concise result-only summary as a
+non-blocking correction window. Do not ask the user to reconfirm decisions
+reflected without material change. If the summary introduces or changes a
+material decision affecting Result, Scope, behavior, Verification, or risk
+treatment, ask for explicit confirmation of only that decision delta and block
+finalizing a candidate Spec, Plan, or TaskIntent until it is answered. Persist
+only final decisions in Decisions, Assumptions, Technical Design, and `Devil's
+Advocate Audit`; do not copy the question transcript into repository artifacts.
 
 ## Kernel TaskIntent Routing
 
@@ -93,11 +103,12 @@ Pi host identity is implicit and never a planning input. The production boundary
 that turns a Git-tracked TaskIntent draft into managed execution authority is the
 native host TUI: the Planner's final `ctx.ui.custom` gate (via the
 `imm_canary_enrollment` foreground Tool) provides one literal-user confirmation
-bound to the TaskIntent content hash. Descriptor rehearsal is reordered after that
-confirmation; a post-confirmation rehearsal failure invalidates the authorization
-with zero authority writes, and a routine task proceeds through enrollment,
-execution and QA without a second human stop. Optional descriptor waiver remains a
-separate explicit route.
+bound to the TaskIntent content hash. Invoke the Tool directly when the route is
+ready; do not ask for a chat pre-confirmation. Descriptor rehearsal is reordered
+after that confirmation; a post-confirmation rehearsal failure invalidates the
+authorization with zero authority writes, and a routine task proceeds through
+enrollment, execution and QA without a second human stop. Optional descriptor
+waiver remains a separate explicit route.
 
 The Planner never writes the `docs/plans/<task-id>.intent.json` artifact
 directly and never overwrites an existing TaskIntent. Under an active
@@ -199,8 +210,8 @@ implementation-ready contract and routes it to normal planning or execution.
 
 - **Entry Contract**: Use when plan/spec work is actually needed. If a validated plan already exists and scope has not drifted, route forward to `imm-loop` rather than re-exposing planner as ceremony.
 - **Output Language Gate**: Before writing or revising any Spec or Plan, read the project output language policy from `AGENTS.md`, `IMMUNE.md`, or Immune-Brain plugin config. Default Spec and Plan prose to English unless the current user request, project instructions, or host/user preference contains an explicit document-language instruction. A reply-language instruction does not change document language. Keep schema fields, CLI commands, file paths, code identifiers, enum values, JSON keys, and canonical terms such as `Step`, `Plan`, `Spec`, `Verification`, `Discovery cache`, and `Devil's Advocate Audit` literal.
-- **Clarification Barrier**: Run the default exhaustive decision tree before finalizing planning artifacts. If an upstream `imm-brainstorm` document exists, verify that every `BR-Q-*` item is resolved and every confirmed framing decision is represented. Any unresolved product-level branch blocks planning and returns to `imm-brainstorm`; any unresolved execution-design branch remains on Planner's currently unblocked frontier. Finalization requires an empty frontier plus explicit confirmation of the result-only summary.
-- **Planning Bootstrap**: When no upstream `imm-brainstorm` document exists, preserve direct Planner entry by resolving repository facts and scanning the Planner decision dimensions. An already-empty frontier takes the zero-question fast path to final summary confirmation. Discovery of unresolved goals, users, scope, behavior, or success criteria returns to `imm-brainstorm`; Planner does not convert product uncertainty into silent assumptions.
+- **Clarification Barrier**: Run the default exhaustive decision tree before finalizing planning artifacts. If an upstream `imm-brainstorm` document exists, verify that every `BR-Q-*` item is resolved and every confirmed framing decision is represented. Any unresolved product-level branch blocks planning and returns to `imm-brainstorm`; any unresolved execution-design branch remains on Planner's currently unblocked frontier. Finalization requires an empty frontier and no unconfirmed material decision delta; direct requirements, answers, and bulk approval already confirm their decisions.
+- **Planning Bootstrap**: When no upstream `imm-brainstorm` document exists, preserve direct Planner entry by resolving repository facts and scanning the Planner decision dimensions. An already-empty frontier takes the zero-question fast path to a non-blocking correction summary. Discovery of unresolved goals, users, scope, behavior, or success criteria returns to `imm-brainstorm`; Planner does not convert product uncertainty into silent assumptions.
 - **Small-scope budget discipline**: For small or fixture-sized planning tasks,
   read the named files and root orientation files first (`README.md`,
   `CONTEXT.md`, `IMMUNE.md`, `HANDOFF.md`, active tests/docs). Avoid broad
@@ -295,6 +306,6 @@ Iteration plan under `docs/plans/` and spec under `docs/specs/`. Includes: `Summ
 
 ## Next Action
 
-- Gate: The default execution-design frontier is empty; the result-only summary has explicit user confirmation; the Plan passes `imm-plan --json` validation; and no step has a hypothetical-only verification path.
-- If gates pass: for Kernel-managed work, the Planner's final `ctx.ui.custom` gate provides the single literal-user confirmation bound to the TaskIntent content hash; the `imm_canary_enrollment` Tool then runs descriptor rehearsal after that confirmation and, on success, enrolls the task to continue through `imm-loop`. A post-confirmation rehearsal failure invalidates the authorization with zero authority writes.
-- If gates are not met: state which validation failures or unresolved verification paths remain; do not name a next skill.
+- Gate: The default execution-design frontier is empty; every material decision is confirmed by the user's direct requirements, answers, or bulk approval; the result-only summary introduces no unconfirmed material decision delta; the Plan passes `imm-plan --json` validation; and no step has a hypothetical-only verification path.
+- If gates pass: for Kernel-managed work, invoke the `imm_canary_enrollment` Tool directly without chat pre-confirmation. Its native `ctx.ui.custom` gate provides the single literal-user confirmation bound to the TaskIntent content hash, then runs descriptor rehearsal and, on success, enrolls the task to continue through `imm-loop`. A post-confirmation rehearsal failure invalidates the authorization with zero authority writes.
+- If gates are not met: state which validation failures, unresolved verification paths, or material decision deltas remain; do not name a next skill.

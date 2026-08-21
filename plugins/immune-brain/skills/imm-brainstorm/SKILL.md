@@ -24,9 +24,16 @@ boundaries, constraints, trade-offs, success criteria, and deferred items.
 Ask the complete currently unblocked frontier in dependency-aware rounds. Number
 each question, include a recommended answer, and accept bulk approval of all
 recommendations with explicit exceptions. A zero-question fast path is valid
-when the frontier is already empty. Then present a result-only summary for
-explicit confirmation and retain final decisions in the `BR-*` manifest rather
-than copying the question transcript.
+when the frontier is already empty. Treat the user's direct requirements,
+answers to numbered questions, and bulk approval of recommendations as
+confirmation of those decisions. Once the frontier is empty, present a
+result-only summary as a non-blocking correction window and retain final
+decisions in the `BR-*` manifest rather than copying the question transcript.
+Do not ask the user to reconfirm decisions reflected without material change.
+If the summary introduces or changes a material decision affecting Result,
+Scope, behavior, Verification, or risk treatment, ask for explicit confirmation
+of only that decision delta and block Planner handoff until it is answered.
+Agent judgment alone never confirms a proposed direction or scope.
 
 Brainstorm supports `default`, `roundtable`, and `adversarial` modes. The
 exhaustive decision tree remains the default clarification protocol in every

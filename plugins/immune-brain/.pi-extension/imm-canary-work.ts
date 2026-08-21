@@ -439,8 +439,9 @@ export default function (
 			"Only the exact enrolled canary task is routable; verify the active backend claim first via status.",
 			"After fresh acceptance evidence, call advance_assurance and consume its direct terminal result; do not poll or create a detached job.",
 			"When advance_assurance returns review_ready, invoke the exact foreground Agent parameters from agent_params once, then call submit_review.",
-			"To approve a breaking intent revision, provide the complete next_intent with approve_breaking_intent_revision; the host must confirm before it is applied.",
-			"After awaiting_user, call request_authorization so the host opens the exact confirmation; do not ask the user to copy or report a command.",
+			"For a complete breaking revision, call approve_breaking_intent_revision with the complete next_intent directly; do not ask for chat pre-confirmation because the host opens the single native confirmation before applying it.",
+			"For a proven stale authority claim, call repair_authority_state directly; do not ask for chat pre-confirmation because the host opens the single native confirmation.",
+			"After awaiting_user, call request_authorization directly so the host opens the single native confirmation; do not ask for chat pre-confirmation or ask the user to copy or report a command.",
 		],
 		parameters: Type.Object({
 			task_id: Type.String({ pattern: "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$" }),

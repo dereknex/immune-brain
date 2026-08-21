@@ -1365,52 +1365,43 @@ here when they cross multiple skills or tools.
 *更新日期: 2026-06-09 | 来源: planner Output Language Gate、Plan template section、imm-plan warning、per-artifact Spec regression、code review P2 fix*
 *更新日期: 2026-06-22 | 来源: document-language default policy Plan U1-U2、reply-vs-document language regression、HANDOFF.md literal fix、negative policy detector fix、code review follow-up closure*
 
-## Pattern: Confirmation Gate Before Planner Handoff
+## Pattern: Decision-Delta Confirmation Before Planner Handoff
 
-**领域**: Skill contract / framing-stage routing / planner handoff
-**描述**: 当一个只读 framing skill 会提出推荐方向并把用户送入 planner 时，不能只靠 agent 判断 framing stable 就自动 handoff。更稳的做法是把 planner handoff 拆成两段：先给推荐方案并请求用户确认；只有用户明确确认 proposed direction / scope 后，才把 `imm-planner` 作为当前 Next Action。这样保留低摩擦推荐路径，同时避免“讨论还没确认就进入规划”的 workflow 漂移。
+**Domain**: Skill contract / framing-stage routing / authority UX
+**Description**: A user decision should be confirmed at most once. Direct requirements, answers to numbered questions, and bulk approval of recommendations already confirm the corresponding decisions. The final result-only summary is a non-blocking correction window, not a second confirmation gate. Only a newly introduced or materially changed decision blocks handoff for explicit confirmation of that delta. Digest-bound execution authority remains exclusively in the native host UI.
 
 **reusability**: high
-**next_reuse_scenarios**: [`framing skill 会自动推荐 planner`, `用户抱怨还没确认方案就进入下一阶段`, `Next Action 既要给建议又不能伪装成人工授权`, `需要用 focused contract test 锁住 handoff gate`]
+**supersedes**: `Confirmation Gate Before Planner Handoff` (2026-06-09), only for redundant final-summary reconfirmation
+**next_reuse_scenarios**: [`a framing summary repeats decisions the user just answered`, `Planner is followed by native Enrollment`, `breaking revision or authority repair already owns a native gate`, `a proposed direction was never accepted by the user`]
 
-### 场景
+### Preserved invariant
 
-- `imm-brainstorm` 已支持内联收窄挑战，并能把稳定 framing 交给 `imm-planner`。
-- 用户期望先讨论方案，等明确说“确认 / 可以 / 按这个来”后再进入 planner。
-- 旧文案把 “framing stable” 和 “planner-ready” 混在一起，导致默认 Next Action 太容易写成 `imm-planner`。
+Agent judgment alone still cannot turn a proposed direction or scope into a planner handoff. If Brainstorm or Planner introduces a material decision not present in the user's request, answers, or bulk approval, it must ask the user to confirm that decision delta and must not route forward first.
 
-### 方案模板
+### Pattern
 
-1. **把 stable framing 和 confirmed handoff 分开**: stable framing 只代表问题边界清楚；planner handoff 还需要用户显式确认 proposed direction / scope。
-2. **允许推荐但不允许伪 handoff**: brainstorm 可以写“我建议这样做”，但未确认时 Next Action 只能请求确认，不把 `imm-planner` 写成当前 next skill。
-3. **manifest 只在确认后生成/交接**: `Brainstorm manifest` 是 planner 的 closed-world 输入；未确认时不要把建议 scope 包装成已确认 handoff。
-4. **focused regression 锁住门槛**: 测试要同时断言 explicit user confirmation、recommended direction before confirmation、do not name a next skill 和 confirmation missing fail path，避免后续文案回漂。
-5. **同步 Plan verification selector**: 如果新增 focused test，Plan 里的 Verification 必须使用真实可解析的 unittest selector；否则 runtime sync 会带着坏命令进入执行证据。
+1. Treat literal requirements, direct answers, and bulk recommendation approval as decision confirmation.
+2. Present an unchanged final summary for correction without asking the user to confirm it again.
+3. Confirm only newly introduced or changed material decisions; unresolved deltas block handoff.
+4. For clear execution requests, invoke native Enrollment directly after TaskIntent validation. A Plan-only user's later "start Enrollment" reply is a routing trigger, not authority.
+5. Invoke Review authorization, breaking intent revision, and stale-authority repair Tools directly when ready; their native host interaction is the single authority decision.
+6. Keep authority digest binding, snapshot revalidation, descriptor rehearsal, cancellation, and zero-write behavior unchanged.
 
-### 证据
+### Evidence
 
-- [docs/specs/imm-brainstorm-confirmation-gate.spec.md](docs/specs/imm-brainstorm-confirmation-gate.spec.md) 定义显式确认 gate、推荐方案能力、未确认时不命名 planner 和只读边界。
-- [docs/plans/2026-06-09-001-fix-imm-brainstorm-confirmation-gate-plan.md](docs/plans/2026-06-09-001-fix-imm-brainstorm-confirmation-gate-plan.md) 以 one-step Plan 闭合该 contract 行为，并记录 Brainstorm Trace。
-- [plugins/immune-brain/dist/imm-brainstorm.md](plugins/immune-brain/dist/imm-brainstorm.md) 将 `Default Next Route` 收紧为 confirmation-before-planner，未确认时要求请求确认而不是 skill route。
-- `tests/test_skill_contracts.py` 新增 `test_brainstorm_requires_explicit_confirmation_before_planner_handoff`，并保留 terse handoff 与 inline clarification regression。
-- `python3 -m unittest tests.test_skill_contracts.SkillContractTests.test_brainstorm_requires_explicit_confirmation_before_planner_handoff tests.test_skill_contracts.SkillContractTests.test_brainstorm_defines_terse_default_handoff tests.test_skill_contracts.ReviewFollowUpAppendContractTests.test_inline_clarification_and_preplan_demotion tests.test_skill_contracts.SkillContractTests.test_gated_handoff_discipline_in_workflow_skills && python3 .imm/imm-plan.py docs/plans/2026-06-09-001-fix-imm-brainstorm-confirmation-gate-plan.md --json` 通过。
-- `imm-autowork` 完成 Step U1，`imm-qa` 记录 pass；`imm-code-review` solo review 无 findings。activation plan 曾触发 `api_contract` lens，但当前 Codex subagent 工具要求用户显式请求 subagents，因此未派发。
+- [docs/specs/single-authority-confirmation-interaction.spec.md](docs/specs/single-authority-confirmation-interaction.spec.md) defines the decision-delta rule and native authority boundary.
+- [plugins/immune-brain/dist/imm-brainstorm.md](plugins/immune-brain/dist/imm-brainstorm.md) keeps unconfirmed proposed direction or scope blocked while making unchanged summaries non-blocking.
+- [plugins/immune-brain/dist/imm-planner.md](plugins/immune-brain/dist/imm-planner.md) distinguishes Plan-only execution triggers from native Enrollment authority.
+- `tests/exhaustive-decision-tree-contract.test.ts`, `tests/imm-planner-kernel-intent-contract.test.ts`, and `tests/imm-canary-work-contract.test.ts` pin the contract.
 
-### reusability_critique_notes
+### Constraints
 
-- Falsifiability: 如果用户直接点名 `imm-planner` 且 scope 已经明确，或 planner 自己的 bootstrap 入口正在处理直接规划请求，不应强制绕回 brainstorm 确认；该模式只约束已进入 framing skill 后的 handoff。
-- Evidence trail: 证据来自完成的 confirmation-gate Spec、Plan U1、test-first focused regression、Plan validation、autowork execution evidence、QA pass 和 code review pass。
-- Architecture entropy resistance: 追加到 contracts hub，因为这是 handoff contract 与 regression pattern；不更新 `CONTEXT.md` Architecture Map，因为没有新增 runtime、目录或长期导航入口。
-
-### 约束与建议
-
-- 不要把“确认后 planner”写成恢复 `imm-preplan-review` 默认阶段；preplan 仍是高风险可选 gate。
-- 不要在未确认时输出 `Brainstorm manifest`，否则 planner 可能把建议误读成 confirmed requirements。
-- 不要只改 skill prose；要配 focused contract test，最好还在 Plan verification 中跑到这条 test。
-- 如果后续要把确认状态机器化，先回到 planner 定义 schema；不要让 brainstorm 写运行态。
+- Do not replace the native host gate with free-form chat authorization.
+- Do not infer confirmation from agent-generated synthesis that changes a material decision.
+- Do not add confirmation tokens, compatibility layers, or persisted confirmation state for this interaction rule.
 
 ---
-*沉淀日期: 2026-06-09 | 来源: imm-brainstorm confirmation gate Plan U1、QA pass、code review pass*
+*Updated: 2026-08-21 | Source: single-authority-confirmation interaction contract*
 
 ## Pattern: Per-Phase Human Acceptance Criteria in Multi-Phase Roadmaps
 
