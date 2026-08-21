@@ -7,7 +7,7 @@
 import { describe, expect, test, beforeEach, afterEach } from "bun:test";
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -30,6 +30,8 @@ import {
 } from "../plugins/immune-brain/runtime/kernel/backend_claim";
 import {
 	readTaskRecordV2,
+	reconcileKernelAuthority,
+	repairKernelAuthority,
 	readWorkspaceStateRaw,
 	revisionForContent,
 	withKernelStoreLockV2,
@@ -162,6 +164,90 @@ function stopCapability(at: string, overrides: Record<string, unknown> = {}) {
 }
 
 describe("terminal ownership transfer", () => {
+	test("shared authority reconciliation classifies a live owner", () => {
+		expect(reconcileKernelAuthority(root, TASK)).toMatchObject({
+			state: "active_owner",
+			owner_task_id: TASK,
+			claim_lifecycle_status: "active",
+		});
+	});
+
+	test("shared authority reconciliation preserves terminal proof", () => {
+		completeTask();
+		expect(reconcileKernelAuthority(root, TASK)).toMatchObject({
+			state: "terminal_owner",
+			owner_task_id: TASK,
+			owner_phase: "done",
+			claim_lifecycle_status: null,
+		});
+	});
+
+	test("shared authority reconciliation proves only an exact stale terminal claim repairable", () => {
+		const claimBytes = readFileSync(join(root, ".imm/tasks/.backend-claim.json"), "utf8");
+		completeTask();
+		writeFileSync(join(root, ".imm/tasks/.backend-claim.json"), claimBytes);
+		expect(reconcileKernelAuthority(root, TASK)).toMatchObject({
+			state: "repairable_stale_claim",
+			owner_task_id: TASK,
+			owner_phase: "done",
+		});
+		expect(reconcileKernelAuthority(root, "other-task")).toMatchObject({
+			state: "repairable_stale_claim",
+			owner_task_id: TASK,
+		});
+	});
+
+	test("contradictory stale claim identity fails closed with zero writes", () => {
+		const claimPath = join(root, ".imm/tasks/.backend-claim.json");
+		const claim = JSON.parse(readFileSync(claimPath, "utf8"));
+		completeTask();
+		claim.intent_content_hash = "sha256:contradictory-intent";
+		const contradictoryBytes = `${JSON.stringify(claim, null, 2)}\n`;
+		writeFileSync(claimPath, contradictoryBytes);
+		const projection = reconcileKernelAuthority(root, TASK);
+		expect(projection).toMatchObject({
+			state: "authority_conflict",
+			owner_task_id: TASK,
+			diagnostic: expect.stringContaining("contradictory terminal ownership evidence"),
+		});
+		expect(() => repairKernelAuthority(root, TASK, projection.revision)).toThrow(
+			/exact stale terminal proof/,
+		);
+		expect(readFileSync(claimPath, "utf8")).toBe(contradictoryBytes);
+		expect(existsSync(join(root, ".imm/tasks/.authority-repair-transaction.json"))).toBe(false);
+	});
+
+	test("authorized repair removes only the exact proven stale terminal claim", () => {
+		const claimPath = join(root, ".imm/tasks/.backend-claim.json");
+		const claimBytes = readFileSync(claimPath, "utf8");
+		completeTask();
+		writeFileSync(claimPath, claimBytes);
+		const projection = reconcileKernelAuthority(root, TASK);
+		expect(projection.state).toBe("repairable_stale_claim");
+		expect(repairKernelAuthority(root, TASK, projection.revision)).toMatchObject({
+			state: "terminal_owner",
+			owner_task_id: TASK,
+		});
+		expect(existsSync(claimPath)).toBe(false);
+		expect(existsSync(join(root, ".imm/tasks/.authority-repair-transaction.json"))).toBe(false);
+	});
+
+	test("repair rejects changed claim bytes with zero repair writes", () => {
+		const claimPath = join(root, ".imm/tasks/.backend-claim.json");
+		const claimBytes = readFileSync(claimPath, "utf8");
+		completeTask();
+		writeFileSync(claimPath, claimBytes);
+		const projection = reconcileKernelAuthority(root, TASK);
+		const changed = JSON.parse(claimBytes);
+		changed.lifecycle_status = "draining";
+		writeFileSync(claimPath, `${JSON.stringify(changed, null, 2)}\n`);
+		expect(() => repairKernelAuthority(root, TASK, projection.revision)).toThrow(
+			/exact stale terminal proof/,
+		);
+		expect(readFileSync(claimPath, "utf8")).toBe(`${JSON.stringify(changed, null, 2)}\n`);
+		expect(existsSync(join(root, ".imm/tasks/.authority-repair-transaction.json"))).toBe(false);
+	});
+
 	test("complete converges all four paths through one transaction", () => {
 		const done = completeTask();
 		expect(done.record.phase).toBe("done");

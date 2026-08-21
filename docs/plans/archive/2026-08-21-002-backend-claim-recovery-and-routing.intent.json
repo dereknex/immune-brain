@@ -1,0 +1,42 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "2026-08-21-002-backend-claim-recovery-and-routing",
+  "owner": "user",
+  "goal": "Make Kernel backend-claim conflicts self-routing and narrowly self-repairing without manual .imm edits or repeated Enrollment. Reconcile durable Kernel transaction markers under the store lock, classify canonical owner state once for Kernel and host adapters, route consistent foreign active claims to the incumbent task through imm-loop, and expose a native-confirmed repair_authority_state operation only for a markerless terminal claim proven redundant by matching TaskRecord, immutable tombstone, terminal phase, final record hash, and null workspace owner. Preserve fail-closed behavior for malformed or contradictory authority state, return structured next actions, and prevent unchanged blocker retries.",
+  "acceptance": [
+    {
+      "id": "acc-kernel-owner-reconciliation",
+      "assertion": "Kernel reconciliation replays valid durable transaction markers, classifies consistent active, terminal, unowned, repairable, and contradictory owner states, and leaves unsupported contradictions byte-stable.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/kernel-canary-terminal-transaction.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 180000,\n  \"max_output_bytes\": 65536\n}\n"
+    },
+    {
+      "id": "acc-host-routing-and-repair",
+      "assertion": "Enrollment and Work consume the shared owner matrix, route a consistent incumbent to imm-loop, require native confirmation for narrow stale-claim repair, and do not recommend an unchanged Enrollment retry.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/pi-canary-enroll-extension.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 180000,\n  \"max_output_bytes\": 65536\n}\n"
+    }
+  ],
+  "scope_hint": [
+    "plugins/immune-brain/.pi-extension/imm-canary-enroll.ts",
+    "plugins/immune-brain/.pi-extension/imm-canary-work.ts",
+    "plugins/immune-brain/.pi-extension/pi-canary-assurance-progression.ts",
+    "plugins/immune-brain/.pi-extension/runtime-stub.ts",
+    "plugins/immune-brain/runtime/kernel/assurance_projection.ts",
+    "plugins/immune-brain/runtime/kernel/backend_claim.ts",
+    "plugins/immune-brain/runtime/kernel/canary_application.ts",
+    "plugins/immune-brain/runtime/kernel/enrollment.ts",
+    "plugins/immune-brain/runtime/kernel/pi_canary_prepare.ts",
+    "plugins/immune-brain/runtime/kernel/storage.ts",
+    "plugins/immune-brain/runtime/managed_path_router.ts",
+    "tests/kernel-assurance-projection.test.ts",
+    "tests/kernel-canary-claim-writer-boundary.test.ts",
+    "tests/kernel-canary-drain-transaction.test.ts",
+    "tests/kernel-canary-terminal-transaction.test.ts",
+    "tests/kernel-enrollment-transaction.test.ts",
+    "tests/kernel-pi-canary-prepare.test.ts",
+    "tests/managed-default-routing-contract.test.ts",
+    "tests/pi-canary-enroll-extension.test.ts",
+    "tests/pi-canary-work-extension.test.ts"
+  ],
+  "risk": "critical",
+  "revision": 1
+}

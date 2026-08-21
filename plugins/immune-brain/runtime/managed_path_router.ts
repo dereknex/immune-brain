@@ -324,7 +324,10 @@ function routeFromAssurance(
 	if (input.task_id && input.task_id !== assurance.task_id) {
 		throw new Error("Assurance projection task identity does not match request task identity");
 	}
-	if (TERMINAL_ASSURANCE_PHASES.has(assurance.phase)) return null;
+	if (
+		TERMINAL_ASSURANCE_PHASES.has(assurance.phase) &&
+		assurance.next_action !== "repair_authority_state"
+	) return null;
 	return {
 		contract: "immune_brain/managed_request_route/v1",
 		phase: "loop",

@@ -16,7 +16,9 @@ import {
 import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
 import {
 	parseBackendClaim,
+	readBackendClaim,
 	parseTaskTombstone,
+	readTaskTombstone,
 	type BackendClaim,
 	type TaskTombstone,
 } from "./backend_claim";
@@ -548,6 +550,7 @@ const TRANSACTION_PATH_V2 = ".imm/tasks/.workspace-transaction-v2.json";
 const ENROLLMENT_MARKER_PATH = ".imm/tasks/.enrollment-marker.json";
 const DRAIN_MARKER_PATH = ".imm/tasks/.drain-transaction.json";
 const TERMINAL_MARKER_PATH = ".imm/tasks/.terminal-transaction.json";
+const AUTHORITY_REPAIR_MARKER_PATH = ".imm/tasks/.authority-repair-transaction.json";
 
 interface WorkspaceTransactionV2 {
 	contract: "assurance_kernel/workspace_transaction/v2";
@@ -677,9 +680,11 @@ function recoverAnyPendingTransactionLocked(root: string): void {
 		currentRevision(root, ENROLLMENT_MARKER_PATH) !== MISSING_REVISION;
 	const hasDrain = currentRevision(root, DRAIN_MARKER_PATH) !== MISSING_REVISION;
 	const hasTerminal = currentRevision(root, TERMINAL_MARKER_PATH) !== MISSING_REVISION;
+	const hasAuthorityRepair =
+		currentRevision(root, AUTHORITY_REPAIR_MARKER_PATH) !== MISSING_REVISION;
 	if (hasV1)
 		throw new KernelStoreSecurityError(V1_TRANSACTION_RETIRED);
-	const markers = [hasV2, hasEnrollment, hasDrain, hasTerminal].filter(Boolean).length;
+	const markers = [hasV2, hasEnrollment, hasDrain, hasTerminal, hasAuthorityRepair].filter(Boolean).length;
 	if (markers > 1)
 		throw new KernelStoreSecurityError(
 			"simultaneous workspace transaction markers are forbidden",
@@ -688,6 +693,7 @@ function recoverAnyPendingTransactionLocked(root: string): void {
 	if (hasEnrollment) recoverPendingEnrollmentLocked(root);
 	if (hasDrain) recoverPendingDrainLocked(root);
 	if (hasTerminal) recoverPendingTerminalLocked(root);
+	if (hasAuthorityRepair) recoverPendingAuthorityRepairLocked(root);
 }
 
 export function readTaskRecordV2Raw(
@@ -757,7 +763,302 @@ export function withKernelStoreLockV2<T>(root: string, operation: () => T): T {
 	});
 }
 
-// ---------------------------------------------------------------------------
+export type KernelAuthorityState =
+	| "unowned"
+	| "active_owner"
+	| "terminal_owner"
+	| "repairable_stale_claim"
+	| "authority_conflict";
+
+export interface KernelAuthorityProjection {
+	contract: "assurance_kernel/authority_projection/v1";
+	requested_task_id: string;
+	state: KernelAuthorityState;
+	owner_task_id: string | null;
+	owner_phase: TaskPhase | null;
+	claim_lifecycle_status: BackendClaim["lifecycle_status"] | null;
+	diagnostic: string | null;
+	revision: string;
+}
+
+/**
+ * Recover durable Kernel transactions, then classify all ownership facts under
+ * one lock. This is the shared fact boundary for host adapters; it never
+ * invents terminality or removes a claim.
+ */
+function projectKernelAuthorityLocked(
+	root: string,
+	taskId: string,
+): KernelAuthorityProjection {
+	try {
+			const claim = readBackendClaim(root);
+			const ownerTaskId = claim?.task_id ?? null;
+			const inspectedTaskId = ownerTaskId ?? taskId;
+			const current = readTaskRecordV2Raw(root, inspectedTaskId);
+			const tombstone = readTaskTombstone(root, inspectedTaskId);
+			const workspace = readWorkspaceStateRaw(root).state;
+			const record = current.record;
+			const terminal = record?.phase === "done" || record?.phase === "stopped";
+			const matchingTerminalProof = Boolean(
+				record &&
+				tombstone &&
+				tombstone.task_id === inspectedTaskId &&
+				tombstone.terminal_phase === record.phase &&
+				tombstone.final_record_hash === current.revision &&
+				workspace.current_working === null,
+			);
+			const matchingClaimIdentity = Boolean(
+				claim &&
+				record &&
+				claim.task_id === record.task_id &&
+				claim.intent_revision === record.intent_revision &&
+				claim.intent_content_hash === record.intent_ref.content_hash,
+			);
+			const sameOwner = claim ? workspace.current_working === claim.task_id : workspace.current_working === null;
+			const revision = revisionForContent(JSON.stringify({ claim, current, tombstone, workspace }));
+
+			if (claim && !sameOwner && !matchingTerminalProof)
+				return {
+					contract: "assurance_kernel/authority_projection/v1",
+					requested_task_id: taskId,
+					state: "authority_conflict",
+					owner_task_id: claim.task_id,
+					owner_phase: record?.phase ?? null,
+					claim_lifecycle_status: claim.lifecycle_status,
+					diagnostic: `workspace owner ${workspace.current_working ?? "null"} contradicts claim ${claim.task_id}`,
+					revision,
+				};
+			if (claim && !record)
+				return {
+					contract: "assurance_kernel/authority_projection/v1",
+					requested_task_id: taskId,
+					state: "authority_conflict",
+					owner_task_id: claim.task_id,
+					owner_phase: null,
+					claim_lifecycle_status: claim.lifecycle_status,
+					diagnostic: `claim ${claim.task_id} has no TaskRecord v2`,
+					revision,
+				};
+			if (claim && tombstone && matchingTerminalProof && matchingClaimIdentity)
+				return {
+					contract: "assurance_kernel/authority_projection/v1",
+					requested_task_id: taskId,
+					state: "repairable_stale_claim",
+					owner_task_id: claim.task_id,
+					owner_phase: record?.phase ?? null,
+					claim_lifecycle_status: claim.lifecycle_status,
+					diagnostic: null,
+					revision,
+				};
+			if (claim && tombstone)
+				return {
+					contract: "assurance_kernel/authority_projection/v1",
+					requested_task_id: taskId,
+					state: "authority_conflict",
+					owner_task_id: claim.task_id,
+					owner_phase: record?.phase ?? null,
+					claim_lifecycle_status: claim.lifecycle_status,
+					diagnostic: `claim ${claim.task_id} has contradictory terminal ownership evidence`,
+					revision,
+				};
+			if (claim && terminal)
+				return {
+					contract: "assurance_kernel/authority_projection/v1",
+					requested_task_id: taskId,
+					state: "authority_conflict",
+					owner_task_id: claim.task_id,
+					owner_phase: record?.phase ?? null,
+					claim_lifecycle_status: claim.lifecycle_status,
+					diagnostic: `terminal task ${claim.task_id} has no matching tombstone proof`,
+					revision,
+				};
+			if (claim)
+				return {
+					contract: "assurance_kernel/authority_projection/v1",
+					requested_task_id: taskId,
+					state: "active_owner",
+					owner_task_id: claim.task_id,
+					owner_phase: record?.phase ?? null,
+					claim_lifecycle_status: claim.lifecycle_status,
+					diagnostic: null,
+					revision,
+				};
+			if (record && terminal && matchingTerminalProof)
+				return {
+					contract: "assurance_kernel/authority_projection/v1",
+					requested_task_id: taskId,
+					state: "terminal_owner",
+					owner_task_id: inspectedTaskId,
+					owner_phase: record.phase,
+					claim_lifecycle_status: null,
+					diagnostic: null,
+					revision,
+				};
+			if (record || tombstone || workspace.current_working !== null)
+				return {
+					contract: "assurance_kernel/authority_projection/v1",
+					requested_task_id: taskId,
+					state: "authority_conflict",
+					owner_task_id: workspace.current_working,
+					owner_phase: record?.phase ?? null,
+					claim_lifecycle_status: null,
+					diagnostic: "nonterminal owner state exists without a backend claim",
+					revision,
+				};
+			return {
+				contract: "assurance_kernel/authority_projection/v1",
+				requested_task_id: taskId,
+				state: "unowned",
+				owner_task_id: null,
+				owner_phase: null,
+				claim_lifecycle_status: null,
+				diagnostic: null,
+				revision,
+			};
+	} catch (error) {
+		return {
+			contract: "assurance_kernel/authority_projection/v1",
+			requested_task_id: taskId,
+			state: "authority_conflict",
+			owner_task_id: null,
+			owner_phase: null,
+			claim_lifecycle_status: null,
+			diagnostic: error instanceof Error ? error.message : String(error),
+			revision: "",
+		};
+	}
+}
+
+export function reconcileKernelAuthority(
+	root: string,
+	taskId: string,
+): KernelAuthorityProjection {
+	validateTaskId(taskId);
+	return withKernelStoreLockV2(root, () => projectKernelAuthorityLocked(root, taskId));
+}
+
+interface AuthorityRepairMarker {
+	contract: "assurance_kernel/authority_repair_transaction/v1";
+	task_id: string;
+	expected_projection_revision: string;
+	expected_claim_content: string;
+	at: string;
+}
+
+function readPendingAuthorityRepairMarker(root: string): AuthorityRepairMarker | null {
+	if (currentRevision(root, AUTHORITY_REPAIR_MARKER_PATH) === MISSING_REVISION) return null;
+	const raw = JSON.parse(
+		readSecureProjectFile(root, AUTHORITY_REPAIR_MARKER_PATH),
+	) as Record<string, unknown>;
+	const allowed = [
+		"contract",
+		"task_id",
+		"expected_projection_revision",
+		"expected_claim_content",
+		"at",
+	];
+	const unknown = Object.keys(raw).filter((key) => !allowed.includes(key));
+	if (unknown.length > 0)
+		throw new KernelStoreSecurityError(
+			`authority repair marker has unknown field: ${unknown[0]}`,
+		);
+	if (raw.contract !== "assurance_kernel/authority_repair_transaction/v1")
+		throw new KernelStoreSecurityError("authority repair marker contract is invalid");
+	for (const field of ["task_id", "expected_projection_revision", "expected_claim_content", "at"]) {
+		if (typeof raw[field] !== "string" || !String(raw[field]).trim())
+			throw new KernelStoreSecurityError(`authority repair marker ${field} is invalid`);
+	}
+	const marker = raw as unknown as AuthorityRepairMarker;
+	validateTaskId(marker.task_id);
+	const claim = parseBackendClaim(JSON.parse(marker.expected_claim_content));
+	if (claim.task_id !== marker.task_id)
+		throw new KernelStoreSecurityError("authority repair claim identity is inconsistent");
+	return marker;
+}
+
+function removeAuthorityRepairMarker(root: string): void {
+	const candidate = safeCandidate(root, AUTHORITY_REPAIR_MARKER_PATH);
+	assertNoSymlinkSegments(candidate.root, candidate.path);
+	const stat = pathStatOrNull(candidate.path);
+	if (!stat) return;
+	if (!stat.isFile())
+		throw new KernelStoreSecurityError("authority repair marker is not a regular file");
+	rmSync(candidate.path);
+	fsyncDirectory(dirname(candidate.path));
+}
+
+function recoverPendingAuthorityRepairLocked(root: string): void {
+	const marker = readPendingAuthorityRepairMarker(root);
+	if (!marker) return;
+	const projection = projectKernelAuthorityLocked(root, marker.task_id);
+	const claimRevision = currentRevision(root, CLAIM_RELATIVE_PATH);
+	if (claimRevision === MISSING_REVISION) {
+		if (
+			projection.state !== "terminal_owner" ||
+			projection.owner_task_id !== marker.task_id
+		)
+			throw new KernelStoreConflictError(
+				"authority repair committed claim removal but terminal proof changed",
+			);
+		removeAuthorityRepairMarker(root);
+		return;
+	}
+	if (
+		projection.state !== "repairable_stale_claim" ||
+		projection.owner_task_id !== marker.task_id ||
+		projection.revision !== marker.expected_projection_revision ||
+		claimRevision !== revisionFor(marker.expected_claim_content)
+	)
+		throw new KernelStoreConflictError(
+			"authority repair facts changed after confirmation",
+		);
+	const claimCandidate = safeCandidate(root, CLAIM_RELATIVE_PATH);
+	assertNoSymlinkSegments(claimCandidate.root, claimCandidate.path);
+	rmSync(claimCandidate.path);
+	fsyncDirectory(dirname(claimCandidate.path));
+	removeAuthorityRepairMarker(root);
+}
+
+/** Remove one exactly proven stale terminal claim through a replayable marker. */
+export function repairKernelAuthority(
+	root: string,
+	taskId: string,
+	expectedProjectionRevision: string,
+	at = new Date().toISOString(),
+): KernelAuthorityProjection {
+	validateTaskId(taskId);
+	return withKernelStoreLockV2(root, () => {
+		const projection = projectKernelAuthorityLocked(root, taskId);
+		if (
+			projection.state !== "repairable_stale_claim" ||
+			projection.owner_task_id !== taskId ||
+			projection.revision !== expectedProjectionRevision
+		)
+			throw new KernelStoreConflictError("authority repair requires exact stale terminal proof");
+		const marker: AuthorityRepairMarker = {
+			contract: "assurance_kernel/authority_repair_transaction/v1",
+			task_id: taskId,
+			expected_projection_revision: expectedProjectionRevision,
+			expected_claim_content: readSecureProjectFile(root, CLAIM_RELATIVE_PATH),
+			at,
+		};
+		atomicCasWrite(
+			root,
+			AUTHORITY_REPAIR_MARKER_PATH,
+			`${JSON.stringify(marker, null, 2)}\n`,
+			MISSING_REVISION,
+		);
+		try {
+			recoverPendingAuthorityRepairLocked(root);
+		} catch (error) {
+			throw new KernelStoreConflictError(
+				`authority repair failed and remains recoverable: ${error instanceof Error ? error.message : error}`,
+			);
+		}
+		return projectKernelAuthorityLocked(root, taskId);
+	});
+}
+
 // P2B0 enrollment marker. The enrollment transaction embeds the v2
 // task/workspace transaction plus the backend claim; recovery completes the
 // v2 convergence then re-writes the claim if it was not yet durable.

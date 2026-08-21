@@ -121,6 +121,16 @@ export interface BackendClaim {
 	created_at: string;
 	updated_at: string;
 }
+export interface KernelAuthorityProjection {
+	contract: "assurance_kernel/authority_projection/v1";
+	requested_task_id: string;
+	state: "unowned" | "active_owner" | "terminal_owner" | "repairable_stale_claim" | "authority_conflict";
+	owner_task_id: string | null;
+	owner_phase: string | null;
+	claim_lifecycle_status: "active" | "draining" | null;
+	diagnostic: string | null;
+	revision: string;
+}
 export interface TaskTombstone {
 	contract: string;
 	task_id: string;
@@ -291,6 +301,21 @@ export async function readTaskRecordV2(
 export async function readBackendClaim(root: string): Promise<BackendClaim | null> {
 	const mod = await import(/* @vite-ignore */ kernelPath("backend_claim"));
 	return mod.readBackendClaim(root);
+}
+export async function reconcileKernelAuthority(
+	root: string,
+	taskId: string,
+): Promise<KernelAuthorityProjection> {
+	const mod = await import(/* @vite-ignore */ kernelPath("storage"));
+	return mod.reconcileKernelAuthority(root, taskId);
+}
+export async function repairKernelAuthority(
+	root: string,
+	taskId: string,
+	expectedProjectionRevision: string,
+): Promise<KernelAuthorityProjection> {
+	const mod = await import(/* @vite-ignore */ kernelPath("storage"));
+	return mod.repairKernelAuthority(root, taskId, expectedProjectionRevision);
 }
 export async function readTaskTombstone(
 	root: string,

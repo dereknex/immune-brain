@@ -1,0 +1,387 @@
+{
+  "contract": "assurance_kernel/task_record/v2",
+  "task_id": "2026-08-21-002-backend-claim-recovery-and-routing",
+  "intent_revision": 1,
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "2026-08-21-002-backend-claim-recovery-and-routing",
+    "goal": "Make Kernel backend-claim conflicts self-routing and narrowly self-repairing without manual .imm edits or repeated Enrollment. Reconcile durable Kernel transaction markers under the store lock, classify canonical owner state once for Kernel and host adapters, route consistent foreign active claims to the incumbent task through imm-loop, and expose a native-confirmed repair_authority_state operation only for a markerless terminal claim proven redundant by matching TaskRecord, immutable tombstone, terminal phase, final record hash, and null workspace owner. Preserve fail-closed behavior for malformed or contradictory authority state, return structured next actions, and prevent unchanged blocker retries.",
+    "acceptance": [
+      {
+        "id": "acc-kernel-owner-reconciliation",
+        "assertion": "Kernel reconciliation replays valid durable transaction markers, classifies consistent active, terminal, unowned, repairable, and contradictory owner states, and leaves unsupported contradictions byte-stable.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/kernel-canary-terminal-transaction.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 180000,\n  \"max_output_bytes\": 65536\n}\n"
+      },
+      {
+        "id": "acc-host-routing-and-repair",
+        "assertion": "Enrollment and Work consume the shared owner matrix, route a consistent incumbent to imm-loop, require native confirmation for narrow stale-claim repair, and do not recommend an unchanged Enrollment retry.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/pi-canary-enroll-extension.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 180000,\n  \"max_output_bytes\": 65536\n}\n"
+      }
+    ],
+    "scope_hint": [
+      "plugins/immune-brain/.pi-extension/imm-canary-enroll.ts",
+      "plugins/immune-brain/.pi-extension/imm-canary-work.ts",
+      "plugins/immune-brain/.pi-extension/pi-canary-assurance-progression.ts",
+      "plugins/immune-brain/.pi-extension/runtime-stub.ts",
+      "plugins/immune-brain/runtime/kernel/assurance_projection.ts",
+      "plugins/immune-brain/runtime/kernel/backend_claim.ts",
+      "plugins/immune-brain/runtime/kernel/canary_application.ts",
+      "plugins/immune-brain/runtime/kernel/enrollment.ts",
+      "plugins/immune-brain/runtime/kernel/pi_canary_prepare.ts",
+      "plugins/immune-brain/runtime/kernel/storage.ts",
+      "plugins/immune-brain/runtime/managed_path_router.ts",
+      "tests/kernel-assurance-projection.test.ts",
+      "tests/kernel-canary-claim-writer-boundary.test.ts",
+      "tests/kernel-canary-drain-transaction.test.ts",
+      "tests/kernel-canary-terminal-transaction.test.ts",
+      "tests/kernel-enrollment-transaction.test.ts",
+      "tests/kernel-pi-canary-prepare.test.ts",
+      "tests/managed-default-routing-contract.test.ts",
+      "tests/pi-canary-enroll-extension.test.ts",
+      "tests/pi-canary-work-extension.test.ts"
+    ],
+    "risk": "critical",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/2026-08-21-002-backend-claim-recovery-and-routing.intent.json",
+    "revision": 1,
+    "content_hash": "sha256:4f0de73be4bc3ae2f6b7e37452b6b88f0434b08f93c534ddde78f0b7db863cc2"
+  },
+  "phase": "done",
+  "baseline": "sha256:4f0de73be4bc3ae2f6b7e37452b6b88f0434b08f93c534ddde78f0b7db863cc2",
+  "evidence": [
+    {
+      "id": "evidence-record_evidence:2026-08-21-002-backend-claim-recovery-and-routing:2026-08-21T02:44:27.844Z",
+      "acceptance_id": "acc-kernel-owner-reconciliation",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:4f0de73be4bc3ae2f6b7e37452b6b88f0434b08f93c534ddde78f0b7db863cc2",
+      "diff_hash": "sha256:7cf7c1d698b6bac4494120e9953dfc12007056591a4f06d776e26966bb4bd456",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "U1 focused verification passed: 42 tests across enrollment, drain, terminal, claim-writer, preparation, and authority-projection seams; staged shared reconciliation classifies live, terminal, exact stale-repairable, unowned, and fail-closed states while store lock replay remains intact."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-21-002-backend-claim-recovery-and-routing:2026-08-21T02:47:41.179Z",
+      "acceptance_id": "acc-kernel-owner-reconciliation",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:4f0de73be4bc3ae2f6b7e37452b6b88f0434b08f93c534ddde78f0b7db863cc2",
+      "diff_hash": "sha256:0682d4a2ede350de24a6fb336d92cf3b27335ce2c384f3a4139b8d801ed8de26",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "U1 final focused verification passed: 44 tests across five Kernel transaction/projection seams. Shared reconciliation now auto-replays all marker types and exposes exact-revision, lock-protected stale-claim repair with zero-write rejection on drift."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-21-002-backend-claim-recovery-and-routing:2026-08-21T02:55:33.081Z",
+      "acceptance_id": "acc-host-routing-and-repair",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:4f0de73be4bc3ae2f6b7e37452b6b88f0434b08f93c534ddde78f0b7db863cc2",
+      "diff_hash": "sha256:6a006a5ead98b934eec63a918891127223b61d1eeeaf2425c3e144b84347602d",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "U2 focused verification passed: 53 tests across Enrollment, Work Tool, Managed routing, and assurance projection. Active claims route to incumbent Loop; proven stale claims route to repair_authority_state; cancellation preserves bytes; confirmed exact-revision repair preserves terminal record/tombstone and returns recovered_retry."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-21-002-backend-claim-recovery-and-routing:2026-08-21T02:55:51.382Z",
+      "acceptance_id": "acc-kernel-owner-reconciliation",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:4f0de73be4bc3ae2f6b7e37452b6b88f0434b08f93c534ddde78f0b7db863cc2",
+      "diff_hash": "sha256:6a006a5ead98b934eec63a918891127223b61d1eeeaf2425c3e144b84347602d",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "Final U1 focused verification on the complete staged diff passed: 44 tests across five Kernel transaction/projection seams, including foreign stale-owner classification, exact repair, zero-write drift rejection, and existing marker recovery."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-21-002-backend-claim-recovery-and-routing:2026-08-21T02:58:23.543Z",
+      "acceptance_id": "acc-kernel-owner-reconciliation",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:4f0de73be4bc3ae2f6b7e37452b6b88f0434b08f93c534ddde78f0b7db863cc2",
+      "diff_hash": "sha256:6a006a5ead98b934eec63a918891127223b61d1eeeaf2425c3e144b84347602d",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "Final staged diff after prose-Plan cleanup: 44/44 U1 focused tests pass across enrollment, drain, terminal, claim-writer boundary, and preparation projection."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-21-002-backend-claim-recovery-and-routing:2026-08-21T02:58:33.338Z",
+      "acceptance_id": "acc-host-routing-and-repair",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:4f0de73be4bc3ae2f6b7e37452b6b88f0434b08f93c534ddde78f0b7db863cc2",
+      "diff_hash": "sha256:6a006a5ead98b934eec63a918891127223b61d1eeeaf2425c3e144b84347602d",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "Final staged diff after prose-Plan cleanup: 53/53 U2 focused tests pass across Enrollment, Work Tool, Managed routing, and assurance projection, including cancel/confirm repair behavior."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-21-002-backend-claim-recovery-and-routing:2026-08-21T03:16:23.577Z",
+      "acceptance_id": "acc-kernel-owner-reconciliation",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:4f0de73be4bc3ae2f6b7e37452b6b88f0434b08f93c534ddde78f0b7db863cc2",
+      "diff_hash": "sha256:fe15bca3a7f4ef1cae9ab5d34c83235c090d83bb38e30efbb84e074d399bd9fe",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "Review rework verified: 45/45 U1 tests pass. repairable_stale_claim now requires claim task_id, intent_revision, and intent_content_hash to match the terminal TaskRecord; mismatch stays authority_conflict and byte-stable."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-21-002-backend-claim-recovery-and-routing:2026-08-21T03:16:30.499Z",
+      "acceptance_id": "acc-host-routing-and-repair",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:4f0de73be4bc3ae2f6b7e37452b6b88f0434b08f93c534ddde78f0b7db863cc2",
+      "diff_hash": "sha256:fe15bca3a7f4ef1cae9ab5d34c83235c090d83bb38e30efbb84e074d399bd9fe",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "Review rework staged diff verified: 53/53 U2 tests pass across Enrollment, Work, Managed routing, and assurance projection."
+    }
+  ],
+  "findings": [
+    {
+      "id": "review-82d7dec485e1-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "acc-kernel-owner-reconciliation",
+      "source": "review",
+      "review_round": 1,
+      "summary": "plugins/immune-brain/runtime/kernel/storage.ts: projectKernelAuthorityLocked treats any claim with a matching terminal tombstone as repairable_stale_claim without verifying claim identity/lifecycle against the terminal proof; a stale claim for another task can therefore be classified as repairable and removed by repairKernelAuthority, despite the acceptance requiring contradictory owner states to remain byte-stable."
+    }
+  ],
+  "approvals": [
+    {
+      "id": "approval-qa-eeaaf129",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:4f0de73be4bc3ae2f6b7e37452b6b88f0434b08f93c534ddde78f0b7db863cc2",
+      "diff_hash": "sha256:6a006a5ead98b934eec63a918891127223b61d1eeeaf2425c3e144b84347602d",
+      "actor_id": "deterministic-qa",
+      "summary": "all 2 fixed verification descriptor(s) passed"
+    },
+    {
+      "id": "approval-qa-f909a848",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:4f0de73be4bc3ae2f6b7e37452b6b88f0434b08f93c534ddde78f0b7db863cc2",
+      "diff_hash": "sha256:fe15bca3a7f4ef1cae9ab5d34c83235c090d83bb38e30efbb84e074d399bd9fe",
+      "actor_id": "deterministic-qa",
+      "summary": "all 2 fixed verification descriptor(s) passed"
+    },
+    {
+      "id": "approval-review-c39c13aa",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:4f0de73be4bc3ae2f6b7e37452b6b88f0434b08f93c534ddde78f0b7db863cc2",
+      "diff_hash": "sha256:fe15bca3a7f4ef1cae9ab5d34c83235c090d83bb38e30efbb84e074d399bd9fe",
+      "actor_id": "native-review-98d8d79f-e77a-4cd",
+      "summary": "Immutable bundle provenance matches HEAD and all base blobs; owner reconciliation, terminal settlement, stale-claim repair, and Enrollment/Work routing satisfy both acceptance assertions with deterministic QA outcomes passed."
+    },
+    {
+      "id": "approval-review-81a31664",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:4f0de73be4bc3ae2f6b7e37452b6b88f0434b08f93c534ddde78f0b7db863cc2",
+      "diff_hash": "sha256:fe15bca3a7f4ef1cae9ab5d34c83235c090d83bb38e30efbb84e074d399bd9fe",
+      "actor_id": "native-review-8cd59c71-068b-40f",
+      "summary": "Immutable bundle provenance verified; owner reconciliation, crash-recoverable stale-claim repair, confirmation gating, routing, and affected terminal/cancellation/race paths are consistent with both acceptance assertions."
+    },
+    {
+      "id": "approval-user-4ad55a87",
+      "kind": "user",
+      "authority_role": "user",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:4f0de73be4bc3ae2f6b7e37452b6b88f0434b08f93c534ddde78f0b7db863cc2",
+      "diff_hash": "sha256:fe15bca3a7f4ef1cae9ab5d34c83235c090d83bb38e30efbb84e074d399bd9fe",
+      "actor_id": "literal-user",
+      "summary": "literal user approval"
+    }
+  ],
+  "history": [
+    {
+      "id": "record_evidence:2026-08-21-002-backend-claim-recovery-and-routing:2026-08-21T02:44:27.844Z",
+      "at": "2026-08-21T02:44:27.844Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-kernel-owner-reconciliation\naction_v2_sha256:bd56a55e95c438cf77212c2546ecb34936e5415ed479dc3415eb7a1c013e1f6e"
+    },
+    {
+      "id": "record_evidence:2026-08-21-002-backend-claim-recovery-and-routing:2026-08-21T02:47:41.179Z",
+      "at": "2026-08-21T02:47:41.179Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-kernel-owner-reconciliation\naction_v2_sha256:6439f24885a7c8722b0452377164d2c7c4479eaae5fb2221d919d24789a1b62c"
+    },
+    {
+      "id": "record_evidence:2026-08-21-002-backend-claim-recovery-and-routing:2026-08-21T02:55:33.081Z",
+      "at": "2026-08-21T02:55:33.081Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-host-routing-and-repair\naction_v2_sha256:f6a4216c5c6861a4f5f3496980d4108566854bd281a60a657227c16ded3d0b70"
+    },
+    {
+      "id": "record_evidence:2026-08-21-002-backend-claim-recovery-and-routing:2026-08-21T02:55:51.382Z",
+      "at": "2026-08-21T02:55:51.382Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-kernel-owner-reconciliation\naction_v2_sha256:951fbf6f51ac398082e2dcdc614ce5bf23c5297700aa90ebea711089eef70dbe"
+    },
+    {
+      "id": "record_evidence:2026-08-21-002-backend-claim-recovery-and-routing:2026-08-21T02:58:23.543Z",
+      "at": "2026-08-21T02:58:23.543Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-kernel-owner-reconciliation\naction_v2_sha256:dc7ed373278acf885d4413ca29f2e1154dfef2000daa30395930d83fbd771781"
+    },
+    {
+      "id": "record_evidence:2026-08-21-002-backend-claim-recovery-and-routing:2026-08-21T02:58:33.338Z",
+      "at": "2026-08-21T02:58:33.338Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-host-routing-and-repair\naction_v2_sha256:82db5300eb83461c0f20cd56705dfcc5b1de449b35d3a12800a5693c1b5e2d18"
+    },
+    {
+      "id": "submit_review:2026-08-21-002-backend-claim-recovery-and-routing:2026-08-21T03:00:18.128Z",
+      "at": "2026-08-21T03:00:18.128Z",
+      "type": "submit_review",
+      "from_phase": "working",
+      "to_phase": "review",
+      "reason": "action_v2_sha256:2f00f77824fd052db8e00460911ad1bf5198398dbdf24778eca21c942b52c19c"
+    },
+    {
+      "id": "record_approval:2026-08-21-002-backend-claim-recovery-and-routing:2026-08-21T03:00:23.231Z",
+      "at": "2026-08-21T03:00:23.231Z",
+      "type": "record_approval",
+      "from_phase": "review",
+      "to_phase": "review",
+      "reason": "approval-qa-eeaaf129\naction_v2_sha256:1ba25dd4b8e37ed263b4794f8c3fec4a3c499899a081ef6c5bf1c665ad74dbb1",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-928889a37c55236d",
+        "issued_at": "2026-08-21T03:00:23.231Z",
+        "expires_at": "2026-08-21T03:10:23.231Z"
+      }
+    },
+    {
+      "id": "request_rework:2026-08-21-002-backend-claim-recovery-and-routing:2026-08-21T03:14:19.670Z",
+      "at": "2026-08-21T03:14:19.670Z",
+      "type": "request_rework",
+      "from_phase": "review",
+      "to_phase": "working",
+      "reason": "review_round_1\naction_v2_sha256:eae52dae7f75bcc7fc4c19e5be7c2d9098d6c04d9b20fe04743db1090792869f",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "native-review-aa3f04e4-770a-432",
+        "confirmation_ref": "pi-confirm-2000ac4a25b27cd9",
+        "issued_at": "2026-08-21T03:14:19.671Z",
+        "expires_at": "2026-08-21T03:24:19.670Z"
+      }
+    },
+    {
+      "id": "record_evidence:2026-08-21-002-backend-claim-recovery-and-routing:2026-08-21T03:16:23.577Z",
+      "at": "2026-08-21T03:16:23.577Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-kernel-owner-reconciliation\naction_v2_sha256:f0bf93b898b8c31921c082c0b5ecc006a9604dbd192b8326e60bd0e3ecabfd4e"
+    },
+    {
+      "id": "record_evidence:2026-08-21-002-backend-claim-recovery-and-routing:2026-08-21T03:16:30.499Z",
+      "at": "2026-08-21T03:16:30.499Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-host-routing-and-repair\naction_v2_sha256:1af139fc6747ca520ac6ecd837d6804e0d3eec76eb30d5bec1e6321fda02da65"
+    },
+    {
+      "id": "resolve_finding:2026-08-21-002-backend-claim-recovery-and-routing:2026-08-21T03:16:36.809Z",
+      "at": "2026-08-21T03:16:36.809Z",
+      "type": "resolve_finding",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "review-82d7dec485e1-1-review-1\naction_v2_sha256:d7773a64747f3d732d5d7b828cb8b0f135a5a60d589c6081f57f930bdaee24b7"
+    },
+    {
+      "id": "submit_review:2026-08-21-002-backend-claim-recovery-and-routing:2026-08-21T03:17:51.751Z",
+      "at": "2026-08-21T03:17:51.751Z",
+      "type": "submit_review",
+      "from_phase": "working",
+      "to_phase": "review",
+      "reason": "action_v2_sha256:a4fc508edb9695753d30d2db592f10f1f8264ca279633823df6fe5c49698b79e"
+    },
+    {
+      "id": "record_approval:2026-08-21-002-backend-claim-recovery-and-routing:2026-08-21T03:17:56.945Z",
+      "at": "2026-08-21T03:17:56.945Z",
+      "type": "record_approval",
+      "from_phase": "review",
+      "to_phase": "review",
+      "reason": "approval-qa-f909a848\naction_v2_sha256:f9c7d517d60e5a6f39fd8cd3320e032428e0a13018b79bd194caf386b758b507",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-d2fce745b5033af5",
+        "issued_at": "2026-08-21T03:17:56.946Z",
+        "expires_at": "2026-08-21T03:27:56.946Z"
+      }
+    },
+    {
+      "id": "record_approval:2026-08-21-002-backend-claim-recovery-and-routing:2026-08-21T03:20:26.917Z",
+      "at": "2026-08-21T03:20:26.917Z",
+      "type": "record_approval",
+      "from_phase": "review",
+      "to_phase": "review",
+      "reason": "approval-review-c39c13aa\naction_v2_sha256:6b2af4a953c18eb1e5ad2cb2ccce31d7b6f89eb56981335729d0c047faed54c9",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "native-review-98d8d79f-e77a-4cd",
+        "confirmation_ref": "pi-confirm-9401c879bafb883b",
+        "issued_at": "2026-08-21T03:20:26.918Z",
+        "expires_at": "2026-08-21T03:30:26.918Z"
+      }
+    },
+    {
+      "id": "record_approval:2026-08-21-002-backend-claim-recovery-and-routing:2026-08-21T03:23:07.480Z",
+      "at": "2026-08-21T03:23:07.480Z",
+      "type": "record_approval",
+      "from_phase": "review",
+      "to_phase": "review",
+      "reason": "approval-review-81a31664\naction_v2_sha256:100afdadb960bd0404e52cee1fe0b680da1673be915b610045942f12d5594e57",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "native-review-8cd59c71-068b-40f",
+        "confirmation_ref": "pi-confirm-552b38b9731537bc",
+        "issued_at": "2026-08-21T03:23:07.480Z",
+        "expires_at": "2026-08-21T03:33:07.480Z"
+      }
+    },
+    {
+      "id": "record_user_approval:2026-08-21-002-backend-claim-recovery-and-routing:2026-08-21T03:26:59.491Z",
+      "at": "2026-08-21T03:26:59.491Z",
+      "type": "record_user_approval",
+      "from_phase": "review",
+      "to_phase": "review",
+      "reason": "approval-user-4ad55a87\naction_v2_sha256:9b0e5e04cfc3b07a4bf9444c77760f8105816cffa79208a510942ec0119d823a",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-8a37d8419f8b143a",
+        "issued_at": "2026-08-21T03:26:59.499Z",
+        "expires_at": "2026-08-21T03:36:59.499Z"
+      }
+    },
+    {
+      "id": "complete:2026-08-21-002-backend-claim-recovery-and-routing:2026-08-21T03:27:09.759Z",
+      "at": "2026-08-21T03:27:09.759Z",
+      "type": "complete",
+      "from_phase": "review",
+      "to_phase": "done",
+      "reason": "action_v2_sha256:55efc4c29a9d91c1a680a97278157bf0b92805139e83ed72858e23a34600ebe6"
+    }
+  ]
+}

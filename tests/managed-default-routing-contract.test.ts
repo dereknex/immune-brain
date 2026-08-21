@@ -164,6 +164,29 @@ describe("managed default request routing", () => {
 		}
 	});
 
+	it("routes terminal stale-claim repair projections back to incumbent Loop", () => {
+		const root = tempRoot();
+		try {
+			expect(routeManagedRequest({
+				root,
+				request: "Implement the next task",
+				task_id: "stale-owner",
+				assurance: {
+					task_id: "stale-owner",
+					phase: "done",
+					next_action: "repair_authority_state",
+				},
+			})).toMatchObject({
+				phase: "loop",
+				authority: "preserved",
+				task_id: "stale-owner",
+				assurance: { next_action: "repair_authority_state" },
+			});
+		} finally {
+			remove(root);
+		}
+	});
+
 	it("keeps Fast-Track inside Managed authority and never enrolls Planner output", () => {
 		const root = tempRoot();
 		try {

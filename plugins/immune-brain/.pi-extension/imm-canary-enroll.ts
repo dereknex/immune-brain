@@ -22,6 +22,7 @@ import {
 	preparePiCanary,
 	revalidatePiCanary,
 	evaluateCanaryEligibility,
+	reconcileKernelAuthority,
 	readTaskIntent,
 	runEnrollmentRehearsal,
 	enrollCanaryTask,
@@ -773,7 +774,10 @@ export type EnrollmentTerminalState =
 	| "rejected"
 	| "cancelled"
 	| "failed"
-	| "settlement_unknown";
+	| "settlement_unknown"
+	| "route_incumbent"
+	| "repair_authorization_required"
+	| "authority_conflict";
 
 export interface EnrollmentTerminal extends Record<string, unknown> {
 	contract: "assurance_kernel/enrollment_tool_result/v1";
@@ -987,6 +991,34 @@ async function executeForegroundEnrollment(
 				return terminal(action, taskId, "blocked", stage, "A Git-tracked TaskIntent is required for Kernel enrollment", "author and stage the canonical TaskIntent");
 			return terminal(action, taskId, "blocked", stage, `TaskIntent validation failed before rehearsal: ${message}`, "repair the reported TaskIntent schema errors");
 		}
+		const authority = await reconcileKernelAuthority(root, taskId);
+		if (authority.state === "active_owner")
+			return terminal(
+				action,
+				taskId,
+				"route_incumbent",
+				stage,
+				`Kernel task ${authority.owner_task_id} already owns this workspace`,
+				`continue ${authority.owner_task_id} through imm-loop without re-enrollment`,
+			);
+		if (authority.state === "repairable_stale_claim")
+			return terminal(
+				action,
+				taskId,
+				"repair_authorization_required",
+				stage,
+				`Terminal task ${authority.owner_task_id} retains an exactly proven stale backend claim`,
+				`invoke imm_kernel_canary repair_authority_state for ${authority.owner_task_id}`,
+			);
+		if (authority.state === "authority_conflict" || authority.state === "terminal_owner")
+			return terminal(
+				action,
+				taskId,
+				"authority_conflict",
+				stage,
+				authority.diagnostic ?? `Kernel authority state is ${authority.state}`,
+				"inspect authority state; do not retry enrollment",
+			);
 		const preparation = await preparePiCanary(root, { task_id: taskId, now });
 		signal.throwIfAborted();
 		if (!preparation.intent)

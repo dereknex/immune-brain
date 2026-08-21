@@ -13,6 +13,7 @@ import {
 	revalidatePiCanary,
 	type PiCanaryPreparation,
 } from "../plugins/immune-brain/runtime/kernel/pi_canary_prepare";
+import { reconcileKernelAuthority } from "../plugins/immune-brain/runtime/kernel/storage";
 import {
 	evaluateCanaryEligibility,
 	type CanaryWaiver,
@@ -100,6 +101,13 @@ function baseWaiver(): CanaryWaiver {
 }
 
 describe("pi canary prepare read-only identity", () => {
+	test("shared authority projection reports the empty workspace as unowned", () => {
+		expect(reconcileKernelAuthority(root, TASK)).toMatchObject({
+			state: "unowned",
+			owner_task_id: null,
+		});
+	});
+
 	test("malformed task id rejects", () => {
 		expect(() => preparePiCanary(root, { task_id: "../evil", now: "2026-08-12T00:00:00.000Z" })).toThrow(/task id/);
 		expect(() => preparePiCanary(root, { task_id: "a/b", now: "2026-08-12T00:00:00.000Z" })).toThrow(/task id/);

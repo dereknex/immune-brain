@@ -72,6 +72,8 @@ import {
 	buildLoopAction,
 	buildLoopRoleDispatch,
 	readBackendClaim,
+	reconcileKernelAuthority,
+	repairKernelAuthority,
 	readTaskRecordV2,
 	readTaskIntent,
 	parseTaskIntentV1,
@@ -226,6 +228,22 @@ type LoopToolAction =
 async function routeHostRequest(root: string, request: string) {
 	const claim = await readBackendClaim(root);
 	if (!claim) return routeManagedRequest({ root, request });
+	const authority = await reconcileKernelAuthority(root, claim.task_id);
+	if (authority.state === "authority_conflict")
+		throw new Error(authority.diagnostic ?? "Kernel authority state conflicts");
+	if (authority.state === "repairable_stale_claim")
+		return routeManagedRequest({
+			root,
+			request,
+			task_id: authority.owner_task_id ?? claim.task_id,
+			assurance: {
+				task_id: authority.owner_task_id ?? claim.task_id,
+				phase: authority.owner_phase ?? "done",
+				next_action: "repair_authority_state",
+			},
+		});
+	if (authority.state !== "active_owner")
+		return routeManagedRequest({ root, request });
 	const projected = await projectAssurance(root, claim.task_id, diffHashOf);
 	if (projected.error) throw new Error(projected.error);
 	return routeManagedRequest({
@@ -347,6 +365,7 @@ export default function (
 				Type.Object({ op: Type.Literal("status") }),
 				Type.Object({ op: Type.Literal("advance_assurance") }),
 				Type.Object({ op: Type.Literal("request_authorization") }),
+				Type.Object({ op: Type.Literal("repair_authority_state") }),
 				Type.Object({
 					op: Type.Literal("record_evidence"),
 					acceptance_id: Type.String(),
@@ -381,6 +400,60 @@ export default function (
 		}),
 		execute: async (toolCallId: string, params: { task_id: string; action: { op: string } }, signal: AbortSignal | undefined, onUpdate: ((update: ReturnType<typeof toolResult>) => void) | undefined, ctx: ExtensionContext) => {
 			const { task_id: taskId, action } = params;
+			if (action.op === "repair_authority_state") {
+				if (ctx.mode !== "tui") return toolResult("imm_kernel_canary mutation is TUI-only");
+				const authority = await reconcileKernelAuthority(ctx.cwd, taskId);
+				if (
+					authority.state !== "repairable_stale_claim" ||
+					authority.owner_task_id !== taskId
+				) {
+					const blocked = {
+						state: "authority_conflict",
+						operation: action.op,
+						result: authority.diagnostic ?? `Authority state is ${authority.state}`,
+						next_action: "inspect authority state",
+					};
+					return toolResult(JSON.stringify(blocked, null, 2), blocked);
+				}
+				const confirmed = await ctx.ui.confirm(
+					"Repair Kernel authority state?",
+					[
+						`Owner: ${taskId}`,
+						`Terminal phase: ${authority.owner_phase}`,
+						`Claim lifecycle: ${authority.claim_lifecycle_status}`,
+						`Projection revision: ${authority.revision}`,
+						"Action: remove only the stale global claim; preserve TaskRecord and tombstone.",
+					].join("\n"),
+				);
+				if (!confirmed) {
+					const cancelled = {
+						state: "cancelled",
+						operation: action.op,
+						result: "Authority repair cancelled with zero writes",
+						next_action: "request authorization again if repair is still intended",
+					};
+					return toolResult(JSON.stringify(cancelled, null, 2), cancelled);
+				}
+				try {
+					const repaired = await repairKernelAuthority(ctx.cwd, taskId, authority.revision);
+					const result = {
+						state: "recovered_retry",
+						operation: action.op,
+						authority: repaired,
+						result: `Stale authority claim repaired for ${taskId}`,
+						next_action: "retry the blocked managed request once",
+					};
+					return toolResult(JSON.stringify(result, null, 2), result);
+				} catch (error) {
+					const blocked = {
+						state: "authority_conflict",
+						operation: action.op,
+						result: error instanceof Error ? error.message : String(error),
+						next_action: "inspect authority state",
+					};
+					return toolResult(JSON.stringify(blocked, null, 2), blocked);
+				}
+			}
 			if (action.op === "advance_assurance" || action.op === "request_authorization" || action.op === "submit_review" || action.op === "approve_breaking_intent_revision") {
 				if (ctx.mode !== "tui") return toolResult("imm_kernel_canary mutation is TUI-only");
 				const result = action.op === "advance_assurance"

@@ -3,14 +3,19 @@
 import { describe, expect, test } from "bun:test";
 import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync, existsSync, statSync } from "node:fs";
 import { execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { createMutationAuthorityRegistry } from "../plugins/immune-brain/runtime/kernel/authority_port";
+import { createCanaryApplication } from "../plugins/immune-brain/runtime/kernel/canary_application";
 import { enrollCanaryTask } from "../plugins/immune-brain/runtime/kernel/enrollment";
 import { preparePiCanary } from "../plugins/immune-brain/runtime/kernel/pi_canary_prepare";
 import { createEnrollmentAuthorityRegistry, type EnrollmentCapabilityBinding } from "../plugins/immune-brain/runtime/kernel/enrollment_authority";
-import { canonicalIntentHash, parseTaskIntentV1 } from "../plugins/immune-brain/runtime/kernel/intent";
+import { canonicalIntentHash, parseTaskIntentV1, readTaskIntent } from "../plugins/immune-brain/runtime/kernel/intent";
 import { readBackendClaim } from "../plugins/immune-brain/runtime/kernel/backend_claim";
+import { createMutationAuthorityCapabilityForTest } from "./fixtures/mutation-authority-test-seam";
+import { readTaskRecordV2 } from "../plugins/immune-brain/runtime/kernel/storage";
 import { snapshotDigest, type SnapshotDescriptor } from "../plugins/immune-brain/.pi-extension/pi-canary-assurance-progression.ts";
 import { routeManagedRequest } from "../plugins/immune-brain/runtime/managed_path_router";
 
@@ -48,7 +53,7 @@ interface FakeUI {
 function makeUI(): FakeUI {
 	return { confirmCalls: [], selectCalls: [], inputCalls: [], notifyCalls: [] };
 }
-function makeCtx(root: string, ui: FakeUI, mode = "tui", decision: string | null = "Approve", note = "Address the requested changes") {
+function makeCtx(root: string, ui: FakeUI, mode = "tui", decision: string | null = "Approve", note = "Address the requested changes", confirmDecision = true) {
 	return {
 		mode,
 		cwd: root,
@@ -65,7 +70,7 @@ function makeCtx(root: string, ui: FakeUI, mode = "tui", decision: string | null
 				ui.inputCalls.push({ title, placeholder });
 				return note;
 			},
-			confirm: async (title: string, body: string) => { ui.confirmCalls.push({ title, body }); return true; },
+			confirm: async (title: string, body: string) => { ui.confirmCalls.push({ title, body }); return confirmDecision; },
 		},
 	};
 }
@@ -111,6 +116,47 @@ function makeEnrolledRoot(managedBootstrap = false): string {
 		capability_binding: binding,
 		now: "2026-08-12T10:00:00.000Z",
 	}, registry);
+	return root;
+}
+
+function makeStaleClaimRoot(): string {
+	const root = makeEnrolledRoot(true);
+	const claimPath = join(root, ".imm", "tasks", ".backend-claim.json");
+	const claimBytes = readFileSync(claimPath, "utf8");
+	const registry = createMutationAuthorityRegistry();
+	const app = createCanaryApplication(registry);
+	const at = "2026-08-12T10:00:01.000Z";
+	const diffHash = `sha256:${"a".repeat(64)}`;
+	const record = readTaskRecordV2(root, TASK);
+	const actionDigest = createHash("sha256").update(JSON.stringify({
+		type: "stop",
+		event_id: `stop:${TASK}:${at}`,
+		at,
+		actor_id: "user",
+		reason: "fixture",
+	})).digest("hex");
+	const capability = createMutationAuthorityCapabilityForTest(registry, {
+		authority_kind: "user",
+		task_id: TASK,
+		action_digest: actionDigest,
+		expected_record_hash: record.revision,
+		intent_revision: 1,
+		intent_content_hash: INTENT_HASH,
+		diff_hash: diffHash,
+		actor_id: "user-1",
+		confirmation_ref: "stale-fixture-confirmation",
+		expires_at: "2099-01-01T00:00:00.000Z",
+		findings_digest: null,
+	});
+	app.execute({
+		root,
+		task_id: TASK,
+		operation: { op: "stop", capability, reason: "fixture", actor_id: "user" },
+		prior_intent_token: readTaskIntent(root, TASK).token,
+		diffProvider: () => diffHash,
+		now: at,
+	});
+	writeFileSync(claimPath, claimBytes);
 	return root;
 }
 
@@ -420,6 +466,58 @@ async function preparePendingReview(root: string): Promise<RegisteredTool & { co
 		}
 	});
 
+	test("routes a proven stale claim to incumbent Loop and repairs only after native confirmation", { timeout: 15000 }, async () => {
+		const root = makeStaleClaimRoot();
+		const claimPath = join(root, ".imm", "tasks", ".backend-claim.json");
+		const recordPath = join(root, ".imm", "tasks", `${TASK}.json`);
+		const tombstonePath = join(root, ".imm", "tasks", `${TASK}.backend-claim.json`);
+		try {
+			const { tools, events } = loadSurface();
+			const routed = await events.input![0](
+				{ source: "interactive", text: "Implement the next task" },
+				makeCtx(root, makeUI()),
+			);
+			expect(routed).toEqual({
+				action: "transform",
+				text: "/skill:imm-loop Implement the next task",
+			});
+
+			const tool = tools.find((candidate) => candidate.name === "imm_kernel_canary")!;
+			const claimBefore = readFileSync(claimPath, "utf8");
+			const recordBefore = readFileSync(recordPath, "utf8");
+			const tombstoneBefore = readFileSync(tombstonePath, "utf8");
+			const cancelledUi = makeUI();
+			const cancelled = await tool.execute(
+				"repair-cancel",
+				{ task_id: TASK, action: { op: "repair_authority_state" } },
+				undefined,
+				undefined,
+				makeCtx(root, cancelledUi, "tui", "Approve", "note", false),
+			);
+			expect(cancelled.details.state).toBe("cancelled");
+			expect(readFileSync(claimPath, "utf8")).toBe(claimBefore);
+			expect(cancelledUi.confirmCalls[0].body).toContain("Projection revision: sha256:");
+
+			const repaired = await tool.execute(
+				"repair-confirm",
+				{ task_id: TASK, action: { op: "repair_authority_state" } },
+				undefined,
+				undefined,
+				makeCtx(root, makeUI()),
+			);
+			expect(repaired.details).toMatchObject({
+				state: "recovered_retry",
+				operation: "repair_authority_state",
+				authority: { state: "terminal_owner", owner_task_id: TASK },
+			});
+			expect(existsSync(claimPath)).toBe(false);
+			expect(readFileSync(recordPath, "utf8")).toBe(recordBefore);
+			expect(readFileSync(tombstonePath, "utf8")).toBe(tombstoneBefore);
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
 	test("schema removes command-owned cancellation and agent-supplied authority", () => {
 		const { tools } = loadSurface();
 		const schema = tools[0].parameters as unknown as Record<string, any>;
@@ -427,6 +525,7 @@ async function preparePendingReview(root: string): Promise<RegisteredTool & { co
 		walkOpKinds(schema, kinds);
 		expect(kinds).toContain("advance_assurance");
 		expect(kinds).toContain("submit_review");
+		expect(kinds).toContain("repair_authority_state");
 		expect(kinds).not.toContain("cancel_assurance");
 		const requestAuthorization = schema.properties.action.anyOf.find(
 			(item: Record<string, any>) => item.properties?.op?.const === "request_authorization",

@@ -606,8 +606,9 @@ describe("pi canary enroll handler integration", () => {
 			]);
 			expect(readdirSync(join(root, ".imm", "tasks")).sort()).toEqual([".backend-claim.json", `${TASK}.json`]);
 			const second = await runTool(root, makeFakeUI(true));
-			expect(second.details.state).toMatch(/failed|blocked/);
-			expect(second.details.summary).toMatch(/already exists|failed/i);
+			expect(second.details.state).toBe("route_incumbent");
+			expect(second.details.next_action).toContain("imm-loop");
+			expect(second.details.summary).toMatch(/already owns/i);
 			expect(readdirSync(join(root, ".imm", "tasks")).sort()).toEqual([".backend-claim.json", `${TASK}.json`]);
 		} finally {
 			rmSync(root, { recursive: true, force: true });

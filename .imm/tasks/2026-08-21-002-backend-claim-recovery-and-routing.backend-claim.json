@@ -1,0 +1,9 @@
+{
+  "contract": "assurance_kernel/task_tombstone/v1",
+  "task_id": "2026-08-21-002-backend-claim-recovery-and-routing",
+  "lifecycle_status": "terminal",
+  "terminal_phase": "done",
+  "terminal_event_id": "complete:2026-08-21-002-backend-claim-recovery-and-routing:2026-08-21T03:27:09.759Z",
+  "final_record_hash": "sha256:a6a087607f996309c24beaa6a793d23b0927415af6b42ce78dac75aba4eb7176",
+  "terminalized_at": "2026-08-21T03:27:09.759Z"
+}
