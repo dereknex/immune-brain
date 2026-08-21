@@ -16,8 +16,34 @@ const DIST_PATH = join(
 	REPO_ROOT,
 	"plugins/immune-brain/dist/imm-planner.md",
 );
+const PLANNER_CONTRACTS = [SKILL_PATH, DIST_PATH];
 
 describe("imm-planner kernel intent contract", () => {
+	test("Planner resolves packaged wrappers without assuming shell PATH", () => {
+		for (const path of PLANNER_CONTRACTS) {
+			const contract = readFileSync(path, "utf8").replace(/\s+/g, " ");
+			expect(contract).toContain("declared Skill location");
+			expect(contract).toContain("../../bin/imm-plan");
+			expect(contract).toContain("../../bin/imm-kernel");
+			expect(contract).toContain(
+				"Do not assume either bare command is available on shell `PATH`",
+			);
+		}
+	});
+
+	test("Planner keeps workflow facts on Kernel authority sources", () => {
+		for (const path of PLANNER_CONTRACTS) {
+			const contract = readFileSync(path, "utf8").replace(/\s+/g, " ");
+			expect(contract).toContain("Assurance projection and TaskRecord");
+			expect(contract).toContain(
+				"non-authoritative vocabulary and architecture navigation",
+			);
+			expect(contract).toContain("report stale documentation");
+			expect(contract).toContain("preserve projection-based routing");
+			expect(contract).toContain("do not automatically synchronize");
+		}
+	});
+
 	test("Skill teaches routing-status-first deterministic routing", () => {
 		const skill = readFileSync(SKILL_PATH, "utf8");
 		expect(skill).toContain("imm-plan --routing-status --json");

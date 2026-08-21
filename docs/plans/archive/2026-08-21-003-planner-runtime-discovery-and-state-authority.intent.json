@@ -1,0 +1,21 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "2026-08-21-003-planner-runtime-discovery-and-state-authority",
+  "owner": "user",
+  "goal": "Make the public Planner source and packaged contracts resolve canonical imm-plan and imm-kernel wrappers from the declared Skill location instead of assuming shell PATH, and explicitly bind current owner, phase, completion, and authority facts to the Assurance projection and TaskRecord while keeping CONTEXT.md non-authoritative vocabulary and architecture navigation. On conflict, require stale-documentation reporting, preserve projection-based routing, and prohibit automatic synchronization. Pin both invariants in the existing focused Planner Kernel contract test without adding a Tool, runtime behavior, Trace scaffolding, output handling, broad prompt deduplication, migration, or compatibility layer.",
+  "acceptance": [
+    {
+      "id": "acc-planner-discovery-and-authority-contract",
+      "assertion": "The public Planner source and packaged contracts resolve canonical CLI wrappers relative to the declared Skill location without assuming PATH, treat Assurance projection and TaskRecord as authoritative for current workflow facts while CONTEXT.md remains non-authoritative, and the focused contract test pins both behaviors including conflict reporting and zero automatic synchronization.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/imm-planner-kernel-intent-contract.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 65536\n}\n"
+    }
+  ],
+  "scope_hint": [
+    "docs/specs/planner-runtime-discovery-and-state-authority.spec.md",
+    "plugins/immune-brain/dist/imm-planner.md",
+    "plugins/immune-brain/skills/imm-planner/SKILL.md",
+    "tests/imm-planner-kernel-intent-contract.test.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}

@@ -1,0 +1,9 @@
+{
+  "contract": "assurance_kernel/task_tombstone/v1",
+  "task_id": "2026-08-21-003-planner-runtime-discovery-and-state-authority",
+  "lifecycle_status": "terminal",
+  "terminal_phase": "done",
+  "terminal_event_id": "complete:2026-08-21-003-planner-runtime-discovery-and-state-authority:2026-08-21T10:21:15.853Z",
+  "final_record_hash": "sha256:7850a68f9d5d166db0d0cefaeb0ab0311e1bea61c6d20b6601844a6753acef1b",
+  "terminalized_at": "2026-08-21T10:21:15.853Z"
+}

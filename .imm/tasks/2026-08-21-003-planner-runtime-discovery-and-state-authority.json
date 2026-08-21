@@ -1,0 +1,124 @@
+{
+  "contract": "assurance_kernel/task_record/v2",
+  "task_id": "2026-08-21-003-planner-runtime-discovery-and-state-authority",
+  "intent_revision": 1,
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "2026-08-21-003-planner-runtime-discovery-and-state-authority",
+    "goal": "Make the public Planner source and packaged contracts resolve canonical imm-plan and imm-kernel wrappers from the declared Skill location instead of assuming shell PATH, and explicitly bind current owner, phase, completion, and authority facts to the Assurance projection and TaskRecord while keeping CONTEXT.md non-authoritative vocabulary and architecture navigation. On conflict, require stale-documentation reporting, preserve projection-based routing, and prohibit automatic synchronization. Pin both invariants in the existing focused Planner Kernel contract test without adding a Tool, runtime behavior, Trace scaffolding, output handling, broad prompt deduplication, migration, or compatibility layer.",
+    "acceptance": [
+      {
+        "id": "acc-planner-discovery-and-authority-contract",
+        "assertion": "The public Planner source and packaged contracts resolve canonical CLI wrappers relative to the declared Skill location without assuming PATH, treat Assurance projection and TaskRecord as authoritative for current workflow facts while CONTEXT.md remains non-authoritative, and the focused contract test pins both behaviors including conflict reporting and zero automatic synchronization.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/imm-planner-kernel-intent-contract.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 65536\n}\n"
+      }
+    ],
+    "scope_hint": [
+      "docs/specs/planner-runtime-discovery-and-state-authority.spec.md",
+      "plugins/immune-brain/dist/imm-planner.md",
+      "plugins/immune-brain/skills/imm-planner/SKILL.md",
+      "tests/imm-planner-kernel-intent-contract.test.ts"
+    ],
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/2026-08-21-003-planner-runtime-discovery-and-state-authority.intent.json",
+    "revision": 1,
+    "content_hash": "sha256:b8543ab6a0c778b8be5a8849131feaef6b5e579bd3fd55187ed1edd92e1027e0"
+  },
+  "phase": "done",
+  "baseline": "sha256:b8543ab6a0c778b8be5a8849131feaef6b5e579bd3fd55187ed1edd92e1027e0",
+  "evidence": [
+    {
+      "id": "evidence-record_evidence:2026-08-21-003-planner-runtime-discovery-and-state-authority:2026-08-21T10:18:16.905Z",
+      "acceptance_id": "acc-planner-discovery-and-authority-contract",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:b8543ab6a0c778b8be5a8849131feaef6b5e579bd3fd55187ed1edd92e1027e0",
+      "diff_hash": "sha256:88bae5cf2730030043cdae297054cfddd0629d785bc51e6ad4a56872e1a231c7",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "Focused Planner Kernel contract verification passed 6/6 on the complete staged scope. Source and packaged contracts pin Skill-relative canonical wrappers, prohibit shell PATH assumptions, bind workflow facts to Assurance projection and TaskRecord, keep CONTEXT.md non-authoritative, and prohibit automatic synchronization."
+    }
+  ],
+  "findings": [],
+  "approvals": [
+    {
+      "id": "approval-qa-c6da1b76",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:b8543ab6a0c778b8be5a8849131feaef6b5e579bd3fd55187ed1edd92e1027e0",
+      "diff_hash": "sha256:88bae5cf2730030043cdae297054cfddd0629d785bc51e6ad4a56872e1a231c7",
+      "actor_id": "deterministic-qa",
+      "summary": "all 1 fixed verification descriptor(s) passed"
+    },
+    {
+      "id": "approval-review-86b27ca4",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:b8543ab6a0c778b8be5a8849131feaef6b5e579bd3fd55187ed1edd92e1027e0",
+      "diff_hash": "sha256:88bae5cf2730030043cdae297054cfddd0629d785bc51e6ad4a56872e1a231c7",
+      "actor_id": "native-review-cf40d13d-7dab-4b8",
+      "summary": "Immutable bundle provenance is valid, and the bounded Planner contract changes correctly pin Skill-relative wrapper discovery and projection/TaskRecord workflow authority with focused regression coverage."
+    }
+  ],
+  "history": [
+    {
+      "id": "record_evidence:2026-08-21-003-planner-runtime-discovery-and-state-authority:2026-08-21T10:18:16.905Z",
+      "at": "2026-08-21T10:18:16.905Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-planner-discovery-and-authority-contract\naction_v2_sha256:16c5dc9d7a7487f08ca569e8b6f363932d9631fde94bfc27aab334e69a87872c"
+    },
+    {
+      "id": "submit_review:2026-08-21-003-planner-runtime-discovery-and-state-authority:2026-08-21T10:18:35.168Z",
+      "at": "2026-08-21T10:18:35.168Z",
+      "type": "submit_review",
+      "from_phase": "working",
+      "to_phase": "review",
+      "reason": "action_v2_sha256:e8dc4c0cb7c1fb66383c1add616ed7dc8efcbdac1013f12b1bac9a21f85ca3f0"
+    },
+    {
+      "id": "record_approval:2026-08-21-003-planner-runtime-discovery-and-state-authority:2026-08-21T10:18:35.999Z",
+      "at": "2026-08-21T10:18:35.999Z",
+      "type": "record_approval",
+      "from_phase": "review",
+      "to_phase": "review",
+      "reason": "approval-qa-c6da1b76\naction_v2_sha256:2e29e716a357b29229c9d05a5eac502de40f14d1f09f58a8efd3f56f9f6c3efc",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-0a74c4181d94ee07",
+        "issued_at": "2026-08-21T10:18:35.999Z",
+        "expires_at": "2026-08-21T10:28:35.999Z"
+      }
+    },
+    {
+      "id": "record_approval:2026-08-21-003-planner-runtime-discovery-and-state-authority:2026-08-21T10:21:04.905Z",
+      "at": "2026-08-21T10:21:04.905Z",
+      "type": "record_approval",
+      "from_phase": "review",
+      "to_phase": "review",
+      "reason": "approval-review-86b27ca4\naction_v2_sha256:1bdaa1b9f74ac0f5f4abc333bea4946e05cf570f2bb730e032ca9baeec50e195",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "native-review-cf40d13d-7dab-4b8",
+        "confirmation_ref": "pi-confirm-d56a1ad065406252",
+        "issued_at": "2026-08-21T10:21:04.905Z",
+        "expires_at": "2026-08-21T10:31:04.905Z"
+      }
+    },
+    {
+      "id": "complete:2026-08-21-003-planner-runtime-discovery-and-state-authority:2026-08-21T10:21:15.853Z",
+      "at": "2026-08-21T10:21:15.853Z",
+      "type": "complete",
+      "from_phase": "review",
+      "to_phase": "done",
+      "reason": "action_v2_sha256:2780ba55c920862652a66b38f56e41e381ed90e50517c6efedb747d68c2244f1"
+    }
+  ]
+}

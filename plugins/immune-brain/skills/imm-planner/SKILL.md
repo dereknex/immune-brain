@@ -56,9 +56,12 @@ boundary, QA, Review, authorization, or completion.
 
 ## Kernel TaskIntent Routing
 
-Before producing a new managed planning artifact, read the Pi runtime
-routing-status projection with `imm-plan --routing-status --json` and route
-deterministically:
+Before producing a new managed planning artifact, resolve the canonical wrappers
+from the declared Skill location: `../../bin/imm-plan` and
+`../../bin/imm-kernel`. Invoke `imm-plan --routing-status --json` through that
+resolved wrapper and use the resolved `imm-kernel` wrapper for every Kernel
+command below. Do not assume either bare command is available on shell `PATH`.
+Then route deterministically:
 
 - an active Kernel claim routes to `imm-loop` for foreground Kernel Tool
   coordination, not new planning;
@@ -69,6 +72,13 @@ deterministically:
 - an invalid, unreadable, untracked, or tracked-deleted policy rejects new
   planning authority with `routing_policy_invalid`;
 - no Planner path enrolls a task or falls back to v3 after retirement.
+
+Current owner, phase, completion, and authority facts are authoritative only
+when read from the Assurance projection and TaskRecord. `CONTEXT.md` is
+non-authoritative vocabulary and architecture navigation, not a workflow-status
+source. If its prose conflicts with those authority facts, report stale
+documentation, preserve projection-based routing, and do not automatically
+synchronize either representation.
 
 Pi host identity is implicit and never a planning input. The production boundary
 that turns a Git-tracked TaskIntent draft into managed execution authority is the
