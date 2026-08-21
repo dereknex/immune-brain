@@ -294,6 +294,11 @@ describe("pi canary lifecycle package composition", () => {
 			expect(JSON.parse(authorized.content[0].text).next_action).toBe("complete task");
 			const completed = await surface.tool!.execute("complete", { task_id: TASK, action: { op: "complete" } }, undefined, undefined, ctx);
 			expect(JSON.parse(completed.content[0].text)).toMatchObject({ phase: "done", next_action: "none", task_state: { phase: "done" } });
+			const terminalStatus = await surface.tool!.execute("terminal-status", { task_id: TASK, action: { op: "status" } }, undefined, undefined, ctx);
+			expect(JSON.parse(terminalStatus.content[0].text)).toMatchObject({ phase: "done" });
+			expect(terminalStatus.details).toMatchObject({ phase: "done", next_action: "none" });
+			const terminalAdvance = await surface.tool!.execute("terminal-advance", { task_id: TASK, action: { op: "advance_assurance" } }, undefined, undefined, ctx);
+			expect(JSON.parse(terminalAdvance.content[0].text)).toMatchObject({ state: "completed", next_action: "none", task_state: { phase: "done" } });
 			expect(surface.commands).toEqual([]);
 		} finally {
 			rmSync(root, { recursive: true, force: true });

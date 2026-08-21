@@ -821,6 +821,27 @@ async function preparePendingReview(root: string): Promise<RegisteredTool & { co
 			);
 			const completedResult = JSON.parse(completed.content[0].text);
 			expect(completedResult).toMatchObject({ phase: "done", next_action: "none", task_state: { phase: "done" } });
+			const terminalStatus = await tool.execute(
+				"terminal-status",
+				{ task_id: TASK, action: { op: "status" } },
+				undefined,
+				undefined,
+				makeCtx(root, makeUI()),
+			);
+			expect(JSON.parse(terminalStatus.content[0].text)).toMatchObject({ phase: "done" });
+			expect(terminalStatus.details).toMatchObject({ phase: "done", next_action: "none" });
+			const terminalAdvance = await tool.execute(
+				"terminal-advance",
+				{ task_id: TASK, action: { op: "advance_assurance" } },
+				undefined,
+				undefined,
+				makeCtx(root, makeUI()),
+			);
+			expect(JSON.parse(terminalAdvance.content[0].text)).toMatchObject({
+				state: "completed",
+				next_action: "none",
+				task_state: { phase: "done" },
+			});
 			expect(ui.selectCalls).toHaveLength(1);
 			expect(ui.selectCalls[0].options).toEqual(["Approve", "Request rework", "Reject"]);
 			expect(ui.selectCalls[0].title).toContain(`Task: ${TASK}`);

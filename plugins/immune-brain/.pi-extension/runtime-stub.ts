@@ -218,6 +218,9 @@ function runtimePath(module: string): string {
 
 export interface ManagedRouteProjection {
 	phase: "none" | "brainstorm" | "planner" | "loop";
+	reason?: string;
+	task_id?: string;
+	assurance?: { task_id: string; phase: string; next_action?: string };
 }
 export async function routeManagedRequest(input: {
 	root: string;

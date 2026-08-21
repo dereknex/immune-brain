@@ -19,6 +19,7 @@ import {
 	type EnrollmentCapabilityBinding,
 } from "../plugins/immune-brain/runtime/kernel/enrollment_authority";
 import { canonicalIntentHash } from "../plugins/immune-brain/runtime/kernel/intent";
+import { revisionForContent } from "../plugins/immune-brain/runtime/kernel/storage";
 import { projectAssurance, deriveAssuranceAuthorization } from "../plugins/immune-brain/runtime/kernel/assurance_projection";
 import { taskDiffHash } from "../plugins/immune-brain/runtime/workspace_scope";
 import * as kernelIndex from "../plugins/immune-brain/runtime/kernel/index";
@@ -110,6 +111,29 @@ function seedRecord(root: string, mutate: (record: Record<string, unknown>) => v
 	writeFileSync(path, JSON.stringify(record, null, 2) + "\n");
 }
 
+function terminalizeFixture(root: string, phase: "done" | "stopped"): void {
+	seedRecord(root, (record) => { record.phase = phase; });
+	const recordPath = join(root, ".imm", "tasks", `${TASK}.json`);
+	const recordBytes = readFileSync(recordPath, "utf8");
+	writeFileSync(
+		join(root, ".imm", "tasks", `${TASK}.backend-claim.json`),
+		JSON.stringify({
+			contract: "assurance_kernel/task_tombstone/v1",
+			task_id: TASK,
+			lifecycle_status: "terminal",
+			terminal_phase: phase,
+			terminal_event_id: `${phase}:${TASK}:fixture`,
+			final_record_hash: revisionForContent(recordBytes),
+			terminalized_at: "2026-08-12T10:00:01.000Z",
+		}, null, 2) + "\n",
+	);
+	rmSync(join(root, ".imm", "tasks", ".backend-claim.json"));
+	writeFileSync(
+		join(root, ".imm", "workspace.json"),
+		JSON.stringify({ contract: "assurance_kernel/workspace/v1", current_working: null }, null, 2) + "\n",
+	);
+}
+
 function seedFreshEvidence(root: string, ...acceptanceIds: string[]): void {
 	const diff = diffOf(root);
 	seedRecord(root, (record) => {
@@ -187,38 +211,62 @@ describe("kernel assurance projection", () => {
 		}
 	});
 
-	test("tombstone, missing record, and claim mismatch fail closed with exact reasons", async () => {
+	test("missing records and mismatched claims fail closed", async () => {
 		const root = makeEnrolledRoot();
 		try {
 			const missing = await projectAssurance(root, "no-such-task", diffOf);
-			expect(missing.error).toMatch(/has no TaskRecord v2|no active backend claim/);
-			// Claim for a different task than the record: rewrite the backend claim.
+			expect(missing.error).toBe(`backend claim belongs to ${TASK}, not no-such-task`);
 			const claimPath = join(root, ".imm", "tasks", ".backend-claim.json");
 			const claim = JSON.parse(readFileSync(claimPath, "utf8"));
 			claim.task_id = "other-task";
 			writeFileSync(claimPath, JSON.stringify(claim, null, 2) + "\n");
 			const mismatch = await projectAssurance(root, TASK, diffOf);
-			expect(mismatch.error).toBe(`backend claim belongs to other-task, not ${TASK}`);
-			// Tombstone: remove the record file and plant a tombstone in the
-			// task-scoped claim file (the terminal state home).
-			rmSync(join(root, ".imm", "tasks", `${TASK}.json`));
-			writeFileSync(
-				join(root, ".imm", "tasks", `${TASK}.backend-claim.json`),
-				JSON.stringify({
-					contract: "assurance_kernel/task_tombstone/v1",
-					task_id: TASK,
-					lifecycle_status: "terminal",
-					terminal_phase: "stopped",
-					terminal_event_id: "e",
-					final_record_hash: "sha256:" + "f".repeat(64),
-					terminalized_at: "2026-08-12T10:00:00.000Z",
-				}, null, 2) + "\n",
-			);
-			const terminal = await projectAssurance(root, TASK, diffOf);
-			expect(terminal.error).toBe(`task ${TASK} is terminal (stopped); it is not reactivatable`);
-			expect(terminal.claim).not.toBeNull();
+			expect(mismatch.error).toMatch(/contradicts claim other-task|belongs to other-task/);
 		} finally {
 			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
+	test("matching claimless done and stopped facts project as terminal Assurance", async () => {
+		for (const phase of ["done", "stopped"] as const) {
+			const root = makeEnrolledRoot();
+			try {
+				terminalizeFixture(root, phase);
+				const terminal = await projectAssurance(root, TASK, diffOf);
+				expect(terminal.error).toBeNull();
+				expect(terminal.claim).toBeNull();
+				expect(terminal.task_id).toBe(TASK);
+				expect(terminal.projection.phase).toBe(phase);
+				expect(terminal.projection.record_revision).toMatch(/^sha256:/);
+			} finally {
+				rmSync(root, { recursive: true, force: true });
+			}
+		}
+	});
+
+	test("incomplete and contradictory terminal facts fail closed", async () => {
+		const incomplete = makeEnrolledRoot();
+		try {
+			rmSync(join(incomplete, ".imm", "tasks", ".backend-claim.json"));
+			writeFileSync(
+				join(incomplete, ".imm", "workspace.json"),
+				JSON.stringify({ contract: "assurance_kernel/workspace/v1", current_working: null }, null, 2) + "\n",
+			);
+			expect((await projectAssurance(incomplete, TASK, diffOf)).error).toMatch(/without a backend claim/);
+		} finally {
+			rmSync(incomplete, { recursive: true, force: true });
+		}
+
+		const contradictory = makeEnrolledRoot();
+		try {
+			terminalizeFixture(contradictory, "done");
+			const tombstonePath = join(contradictory, ".imm", "tasks", `${TASK}.backend-claim.json`);
+			const tombstone = JSON.parse(readFileSync(tombstonePath, "utf8"));
+			tombstone.final_record_hash = "sha256:" + "f".repeat(64);
+			writeFileSync(tombstonePath, JSON.stringify(tombstone, null, 2) + "\n");
+			expect((await projectAssurance(contradictory, TASK, diffOf)).error).toMatch(/without a backend claim/);
+		} finally {
+			rmSync(contradictory, { recursive: true, force: true });
 		}
 	});
 

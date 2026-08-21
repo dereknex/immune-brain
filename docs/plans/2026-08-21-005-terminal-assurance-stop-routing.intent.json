@@ -1,0 +1,49 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "2026-08-21-005-terminal-assurance-stop-routing",
+  "owner": "user",
+  "goal": "Make terminal Assurance and Managed routing consume one Kernel-owned settlement truth without changing mutation authority or schemas. A named task's matching TaskRecord+tombstone must project as authoritative done or stopped after its claim is removed; incomplete or contradictory proof fails closed, while an exact residual same-task claim remains repairable only through literal-user-authorized repair_authority_state. Pi progression must consume terminal projection before claim requirements and start no QA, Review, verifier, mutation, retry, Skill, Planner, Executor, Compounder, Loop action, or successor. Managed routing must return phase none, reason assurance_terminal, exact task identity, and next_action none instead of reclassifying the request; delete redundant host terminal inference. Triggers: complete; literal-user stop; terminal replay; named post-terminal status; subsequent Managed input; pre-commit interruption/provider failure; residual-claim repair; malformed or contradictory authority facts. Persisted states remain working, review, done, stopped; read outcomes are active_assurance, terminal_assurance, repairable_stale_claim, authority_conflict, assurance_terminal. Owners: Kernel reducer/application and terminal transaction settle; matching TaskRecord+tombstone prove terminal reads; literal-user confirmation authorizes stale-claim repair; projection and routing only consume. Promise/Tool settlement, Parent text, elapsed time, process absence, missing claim alone, provider failure, cancellation, and shutdown are non-authoritative. Same-state-machine review covers reducer/completion, application/storage, claim reconciliation, projection, runtime transport, Pi progression, Work Tool, Managed router, and focused source/packed tests. Preserve reducer transitions, completion eligibility, terminal writes, tombstone schema, Enrollment, QA, Review, user authorization, breaking revision authority, and public Skill surface; add no compatibility state.",
+  "acceptance": [
+    {
+      "id": "acc-terminal-projection-authority",
+      "assertion": "A matching done or stopped TaskRecord+tombstone pair yields a normal claimless terminal Assurance projection for the named task; no record/tombstone remains an ordinary empty projection; missing, malformed, mismatched, stale, or contradictory authority facts fail closed; and the existing exact stale-claim repair classification remains unchanged.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/kernel-assurance-projection.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 180000,\n  \"max_output_bytes\": 65536\n}\n"
+    },
+    {
+      "id": "acc-terminal-progression-stops",
+      "assertion": "Foreground Assurance progression consumes authoritative done and stopped before live-claim requirements and starts no QA, Review reservation, verifier, mutation, retry, or other continuation for either terminal phase.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/pi-canary-assurance-progression.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 180000,\n  \"max_output_bytes\": 65536\n}\n"
+    },
+    {
+      "id": "acc-terminal-managed-route-none",
+      "assertion": "Managed routing preserves a supplied terminal Assurance as phase none, reason assurance_terminal, exact task identity, and next_action none without emitting a Skill or action or reclassifying the original request; repair_authority_state remains the only terminal exception routed to incumbent Loop authority.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/managed-default-routing-contract.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 180000,\n  \"max_output_bytes\": 65536\n}\n"
+    },
+    {
+      "id": "acc-terminal-host-package-sequence",
+      "assertion": "Source and packed Pi extension tests execute complete or stop through terminal transaction, claim removal, status/progression, and Managed route to no action, while interruption, provider failure, cancellation, or shutdown before terminal mutation remains nonterminal and no second terminal inference is introduced.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/pi-canary-work-extension.test.ts\",\n    \"tests/pi-canary-lifecycle-package.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 240000,\n  \"max_output_bytes\": 65536\n}\n"
+    }
+  ],
+  "scope_hint": [
+    "docs/specs/terminal-assurance-stop-routing.spec.md",
+    "plugins/immune-brain/.pi-extension/imm-canary-work.ts",
+    "plugins/immune-brain/.pi-extension/pi-canary-assurance-progression.ts",
+    "plugins/immune-brain/.pi-extension/runtime-stub.ts",
+    "plugins/immune-brain/runtime/kernel/application_v2.ts",
+    "plugins/immune-brain/runtime/kernel/assurance_projection.ts",
+    "plugins/immune-brain/runtime/kernel/backend_claim.ts",
+    "plugins/immune-brain/runtime/kernel/completion.ts",
+    "plugins/immune-brain/runtime/kernel/reducer_v2.ts",
+    "plugins/immune-brain/runtime/kernel/storage.ts",
+    "plugins/immune-brain/runtime/managed_path_router.ts",
+    "tests/kernel-assurance-projection.test.ts",
+    "tests/kernel-canary-terminal-transaction.test.ts",
+    "tests/managed-default-routing-contract.test.ts",
+    "tests/pi-canary-assurance-progression.test.ts",
+    "tests/pi-canary-lifecycle-package.test.ts",
+    "tests/pi-canary-work-extension.test.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}

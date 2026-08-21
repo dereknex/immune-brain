@@ -613,10 +613,8 @@ export default function (
 					operation: toCanaryOperation(action, "executor") as { op: string; actor_id: string },
 				})) as unknown as { revision: string; record: { phase: string } };
 				const updated = await projectAssuranceState(ctx.cwd, taskId);
-				const taskState = updated.error || !updated.claim ? { phase: result.record.phase } : updated.projection;
-				const nextAction = result.record.phase === "done" || result.record.phase === "stopped"
-					? "none"
-					: updated.error || !updated.claim ? "inspect authority state" : statusNextAction(updated.projection);
+				const taskState = updated.error ? { phase: result.record.phase } : updated.projection;
+				const nextAction = updated.error ? "inspect authority state" : statusNextAction(updated.projection);
 				const details = {
 					state: "recorded",
 					operation: action.op,
@@ -1649,7 +1647,8 @@ function nextActionForAssuranceResult(result: Record<string, unknown>, taskState
 		case "review_ready": return "invoke the reserved foreground Agent";
 		case "awaiting_user": return "request_authorization";
 		case "applied": return taskState.completion_ready ? "complete task" : statusNextAction(taskState);
-		case "completed": return "none";
+		case "completed":
+		case "stopped": return "none";
 		case "rework": return "repair findings and record fresh evidence";
 		case "cancelled": return "retry the interrupted foreground operation";
 		case "settlement_unknown": return "inspect authority state";
