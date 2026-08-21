@@ -71,6 +71,24 @@ describe("default exhaustive decision-tree skill contract", () => {
 		]);
 	});
 
+	test("Brainstorm separates repository facts from user-owned decisions throughout clarification", () => {
+		expectAll(brainstormContracts, [
+			"At every round, classify each newly surfaced uncertainty as either a repository fact or a user-owned decision",
+			"Resolve repository facts with bounded read-only evidence",
+			"place only decisions that can change Result, Scope, behavior, Verification, or risk treatment on the user frontier",
+		]);
+	});
+
+	test("Planner reuses decision history and selects the highest sufficient behavioral test seam", () => {
+		expectAll(plannerContracts, [
+			"Direct Planner entry and Medium/High Design Risk work must inspect relevant ADRs and rejected Learnings",
+			"Reuse constraints already covered by an upstream Brainstorm manifest instead of repeating that discovery",
+			"Prefer the highest existing observable behavioral test seam and the fewest sufficient seams",
+			"Cite relevant test prior art and explain how the selected seam catches the intended regression",
+			"must not weaken acceptance-specific focused verification descriptors or add a mandatory user confirmation",
+		]);
+	});
+
 	test("Managed Path bootstrap files carry the current schema", () => {
 		const agents = read("AGENTS.md");
 		expect(agents).toContain("<!-- IMMUNE-BRAIN:START -->");

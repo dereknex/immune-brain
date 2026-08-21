@@ -1,0 +1,125 @@
+{
+  "contract": "assurance_kernel/task_record/v2",
+  "task_id": "2026-08-21-001-borrow-framing-planning-mechanics",
+  "intent_revision": 1,
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "2026-08-21-001-borrow-framing-planning-mechanics",
+    "goal": "Strengthen the existing public Brainstorm and Planner contracts with the three approved upstream mechanics without adding a Skill, mode, workflow stage, issue-tracker integration, or authority gate. In both the source entry point and packaged Brainstorm contract, classify every newly surfaced question as a repository fact or a user-owned decision throughout clarification: resolve facts from bounded read-only evidence and place only decisions that can change Result, Scope, behavior, Verification, or risk treatment on the user frontier. In both Planner contracts, require bounded consultation of relevant ADRs and rejected Learnings for direct entry and Medium/High design risk, while reusing an upstream Brainstorm manifest instead of repeating covered discovery. Also require Planner to prefer the highest existing observable behavioral test seam, use the fewest sufficient seams, cite relevant test prior art and explain how the selected seam catches the intended regression; keep this a heuristic that does not weaken acceptance-specific focused verification descriptors or create another mandatory user confirmation. Extend the existing exhaustive decision-tree contract test so all three mechanics are pinned across source and packaged copies.",
+    "acceptance": [
+      {
+        "id": "acc-borrowed-contract-mechanics",
+        "assertion": "The public Brainstorm and Planner source and packaged contracts encode the approved fact/decision, ADR/rejected-Learning discovery, and behavioral testing-seam mechanics, and the focused contract test proves all copies remain aligned.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/exhaustive-decision-tree-contract.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 180000,\n  \"max_output_bytes\": 65536\n}\n"
+      }
+    ],
+    "scope_hint": [
+      "plugins/immune-brain/dist/imm-brainstorm.md",
+      "plugins/immune-brain/dist/imm-planner.md",
+      "plugins/immune-brain/skills/imm-brainstorm/SKILL.md",
+      "plugins/immune-brain/skills/imm-planner/SKILL.md",
+      "tests/exhaustive-decision-tree-contract.test.ts"
+    ],
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/2026-08-21-001-borrow-framing-planning-mechanics.intent.json",
+    "revision": 1,
+    "content_hash": "sha256:abf3088175c33f4676d6b9e96030b65c2e98fc686520bfc746ebb3b6b964cb8a"
+  },
+  "phase": "done",
+  "baseline": "sha256:abf3088175c33f4676d6b9e96030b65c2e98fc686520bfc746ebb3b6b964cb8a",
+  "evidence": [
+    {
+      "id": "evidence-record_evidence:2026-08-21-001-borrow-framing-planning-mechanics:2026-08-21T02:09:31.200Z",
+      "acceptance_id": "acc-borrowed-contract-mechanics",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:abf3088175c33f4676d6b9e96030b65c2e98fc686520bfc746ebb3b6b964cb8a",
+      "diff_hash": "sha256:a24e88e8db5fe108c57ccff95fe30c6f97ceb09a8ea96c5f6bece93569f931c8",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "Focused contract test passed 6/6 after staging: bun test tests/exhaustive-decision-tree-contract.test.ts. It verifies Brainstorm fact/decision classification and Planner ADR/rejected-Learning plus highest existing behavioral test seam/prior-art guidance in both authoring and dist contracts. Full bun test also passed 819/819; sync-dist-docs --check and cached diff check passed."
+    }
+  ],
+  "findings": [],
+  "approvals": [
+    {
+      "id": "approval-qa-7a9eddfe",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:abf3088175c33f4676d6b9e96030b65c2e98fc686520bfc746ebb3b6b964cb8a",
+      "diff_hash": "sha256:a24e88e8db5fe108c57ccff95fe30c6f97ceb09a8ea96c5f6bece93569f931c8",
+      "actor_id": "deterministic-qa",
+      "summary": "all 1 fixed verification descriptor(s) passed"
+    },
+    {
+      "id": "approval-review-52ca9c90",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:abf3088175c33f4676d6b9e96030b65c2e98fc686520bfc746ebb3b6b964cb8a",
+      "diff_hash": "sha256:a24e88e8db5fe108c57ccff95fe30c6f97ceb09a8ea96c5f6bece93569f931c8",
+      "actor_id": "native-review-ddb00878-9221-4d0",
+      "summary": "Immutable provenance verified; source and packaged contracts encode the approved mechanics, and focused acceptance verification passed."
+    }
+  ],
+  "history": [
+    {
+      "id": "record_evidence:2026-08-21-001-borrow-framing-planning-mechanics:2026-08-21T02:09:31.200Z",
+      "at": "2026-08-21T02:09:31.200Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-borrowed-contract-mechanics\naction_v2_sha256:eec3be9a5363632793b29e35603b9ae2bf92d811dac805566b28094ba898a0fe"
+    },
+    {
+      "id": "submit_review:2026-08-21-001-borrow-framing-planning-mechanics:2026-08-21T02:09:36.435Z",
+      "at": "2026-08-21T02:09:36.435Z",
+      "type": "submit_review",
+      "from_phase": "working",
+      "to_phase": "review",
+      "reason": "action_v2_sha256:b1e23019c5ec7d2564e376b9cf11154b3745b4cb31dedcc512f8e9120bb59190"
+    },
+    {
+      "id": "record_approval:2026-08-21-001-borrow-framing-planning-mechanics:2026-08-21T02:09:37.231Z",
+      "at": "2026-08-21T02:09:37.231Z",
+      "type": "record_approval",
+      "from_phase": "review",
+      "to_phase": "review",
+      "reason": "approval-qa-7a9eddfe\naction_v2_sha256:4ffa68c13e20f5df46ec1d2d0126f1ef1e8654c2d4311564aa6fb97a5ed22ad6",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-8e5cc3b3f773d78c",
+        "issued_at": "2026-08-21T02:09:37.231Z",
+        "expires_at": "2026-08-21T02:19:37.231Z"
+      }
+    },
+    {
+      "id": "record_approval:2026-08-21-001-borrow-framing-planning-mechanics:2026-08-21T02:12:11.304Z",
+      "at": "2026-08-21T02:12:11.304Z",
+      "type": "record_approval",
+      "from_phase": "review",
+      "to_phase": "review",
+      "reason": "approval-review-52ca9c90\naction_v2_sha256:a1a0870f1a0eb8a71ba37420b1392466e4afec3e8f314b6404f3744bbdfe5444",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "native-review-ddb00878-9221-4d0",
+        "confirmation_ref": "pi-confirm-22ebe3defc8a14df",
+        "issued_at": "2026-08-21T02:12:11.304Z",
+        "expires_at": "2026-08-21T02:22:11.304Z"
+      }
+    },
+    {
+      "id": "complete:2026-08-21-001-borrow-framing-planning-mechanics:2026-08-21T02:12:20.511Z",
+      "at": "2026-08-21T02:12:20.511Z",
+      "type": "complete",
+      "from_phase": "review",
+      "to_phase": "done",
+      "reason": "action_v2_sha256:76a6a4bee36c6e51e02d0466b895f1bc51e9aef13e4c9cf3522ea2c3a3e0a694"
+    }
+  ]
+}

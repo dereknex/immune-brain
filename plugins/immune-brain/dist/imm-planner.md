@@ -196,6 +196,15 @@ implementation-ready contract and routes it to normal planning or execution.
   `CONTEXT.md`, `IMMUNE.md`, `HANDOFF.md`, active tests/docs). Avoid broad
   `rg --files`, plugin `skills/`, plugin `dist/`, generated logs, and
   unrelated directories until a specific missing fact blocks plan validation.
+- **Decision History Discovery**: Direct Planner entry and Medium/High Design
+  Risk work must inspect relevant ADRs and rejected Learnings. Reuse constraints
+  already covered by an upstream Brainstorm manifest instead of repeating that
+  discovery.
+- **Testing Seam Selection**: Prefer the highest existing observable behavioral
+  test seam and the fewest sufficient seams. Cite relevant test prior art and
+  explain how the selected seam catches the intended regression. This is a
+  planning heuristic: it must not weaken acceptance-specific focused
+  verification descriptors or add a mandatory user confirmation.
 - **Review Mapping**: If the source origin is a review follow-up packet, map it explicitly: `origin_review` -> `Origin`, findings -> `Research`. Planner processes only packets that cross the current boundary. Planner does not process same-boundary follow-ups; a direct same-boundary `follow_up` handoff returns to `imm-loop` as an execution artifact instead of becoming a Plan mutation. A `direct_fix` handoff should usually mean a same-boundary follow-up candidate, not a planner-owned Plan mutation.
 - **Brainstorm Manifest Mapping**: If the source includes a `Brainstorm manifest`, treat it as a closed-world input. Copy the manifest IDs into the Plan and add a `Brainstorm Trace` row for every `BR-*` item. Legal statuses are `covered_by_step`, `partially_covered`, `captured_as_decision`, `out_of_scope`, `deferred`, and `resolved_as_assumption`. `partially_covered`, `out_of_scope`, and `deferred` rows require a reason. `BR-Q-*` rows must be resolved before the Plan is execution-ready. The planner may narrow scope only by recording an explicit mapping; it must not silently omit confirmed brainstorm items. `imm-plan <plan-path> --json` reports an `origin_coverage` summary with `declared_items`, `mapped_items`, `unmapped_items`, reason-required trace counts, and completeness.
 - **Roadmap-Backed Planning (historical — read-only)**: v3 prose Plan mutation is retired; no new `roadmap-slice/v1` Plans are created. `plan_core.ts` retains `roadmap-slice/v1` parsing for archived plans (8 declare `roadmap-slice/v1`, 13 carry `Successor candidate`, etc.) for backward compatibility. Do not add `Roadmap source`, `Current phase`, or successor fields to new work.

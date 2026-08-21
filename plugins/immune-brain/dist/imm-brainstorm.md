@@ -41,11 +41,13 @@ lenses, not replacements for clarification.
 
 Exhaustive means every real unresolved decision, not a fixed question count.
 Build the stage-specific tree only after resolving repository facts through
-bounded read-only inspection. Ask the user only for decisions that can change
-Result, Scope, behavior, Verification, or risk treatment. Brainstorm owns the
-product-framing dimensions: goal, beneficiary and scenario, current state,
-scope, non-goals, behavior boundaries, constraints, trade-offs, success
-criteria, and deferred items.
+bounded read-only inspection. At every round, classify each newly surfaced
+uncertainty as either a repository fact or a user-owned decision. Resolve
+repository facts with bounded read-only evidence; place only decisions that can
+change Result, Scope, behavior, Verification, or risk treatment on the user
+frontier. Brainstorm owns the product-framing dimensions: goal, beneficiary and
+scenario, current state, scope, non-goals, behavior boundaries, constraints,
+trade-offs, success criteria, and deferred items.
 
 In each round, ask the complete currently unblocked frontier. Hold downstream
 questions until their prerequisites are decided, but ask independent frontier

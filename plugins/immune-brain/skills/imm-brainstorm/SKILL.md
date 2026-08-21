@@ -14,9 +14,12 @@ unknowns, readiness, and Next Action.
 Exhaustive clarification is the default protocol, not a separate mode. Resolve
 repository facts through read-only investigation, then exhaust every real
 product-framing decision that can change Result, Scope, behavior, Verification,
-or risk treatment. Scan goal, beneficiary and scenario, current state, scope,
-non-goals, behavior boundaries, constraints, trade-offs, success criteria, and
-deferred items.
+or risk treatment. At every round, classify each newly surfaced uncertainty as
+either a repository fact or a user-owned decision. Resolve repository facts
+with bounded read-only evidence; place only decisions that can change Result,
+Scope, behavior, Verification, or risk treatment on the user frontier. Scan
+goal, beneficiary and scenario, current state, scope, non-goals, behavior
+boundaries, constraints, trade-offs, success criteria, and deferred items.
 
 Ask the complete currently unblocked frontier in dependency-aware rounds. Number
 each question, include a recommended answer, and accept bulk approval of all

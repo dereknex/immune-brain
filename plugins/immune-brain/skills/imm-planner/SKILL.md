@@ -16,10 +16,12 @@ first step, verification approach, and Next Action.
 Exhaustive clarification is the default protocol, not a separate mode. Direct
 Planner entry remains valid for clear requests. Resolve repository facts through
 read-only investigation, then exhaust every real execution-design decision that
-can change Result, Scope, behavior, Verification, or risk treatment. Scan design
-decisions, component boundaries, failure behavior, compatibility, migration,
-recovery and rollback, verification, execution slices, dependencies, and
-delivery risks.
+can change Result, Scope, behavior, Verification, or risk treatment. Direct
+Planner entry and Medium/High Design Risk work must inspect relevant ADRs and
+rejected Learnings. Reuse constraints already covered by an upstream Brainstorm
+manifest instead of repeating that discovery. Scan design decisions, component
+boundaries, failure behavior, compatibility, migration, recovery and rollback,
+verification, execution slices, dependencies, and delivery risks.
 
 Ask the complete currently unblocked frontier in dependency-aware rounds. Number
 each question, include a recommended answer, and accept bulk approval of all
@@ -94,9 +96,13 @@ Every acceptance verification descriptor must be a focused, deterministic,
 repository-local check that exercises only its acceptance assertion. Prefer one
 small `bun test <focused-file>` or `bun run <focused-script>` per acceptance;
 never use the full test suite, a build, package installation, network access, or
-redundant heavyweight checks as rehearsal descriptors. Use the smallest
-`timeout_ms` and `max_output_bytes` that cover the check so isolated descriptor
-rehearsal stays within host setup and execution ceilings.
+redundant heavyweight checks as rehearsal descriptors. Prefer the highest
+existing observable behavioral test seam and the fewest sufficient seams. Cite
+relevant test prior art and explain how the selected seam catches the intended
+regression. This is a planning heuristic: it must not weaken acceptance-specific
+focused verification descriptors or add a mandatory user confirmation. Use the
+smallest `timeout_ms` and `max_output_bytes` that cover the check so isolated
+descriptor rehearsal stays within host setup and execution ceilings.
 
 planner ensemble is advisory-only and derives candidates from
 `workflow_models.planner_ensemble`; final Spec and Plan authority stays here.

@@ -36,7 +36,7 @@
     "revision": 1,
     "content_hash": "sha256:695b69279dd7684b72a591d38092c434277b4f080557d58fe5d69c5aee63c59c"
   },
-  "phase": "review",
+  "phase": "done",
   "baseline": "sha256:695b69279dd7684b72a591d38092c434277b4f080557d58fe5d69c5aee63c59c",
   "evidence": [
     {
@@ -68,9 +68,49 @@
       "status": "passed",
       "actor_id": "executor",
       "summary": "Full suite passes: bun test 817 pass / 0 fail across 135 files (53.4s), after archiving 018 terminal sidecar to satisfy planning artifact archival contract"
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-20-019-retire-enrollment-confirmation-deadwood:2026-08-21T01:57:24.070Z",
+      "acceptance_id": "acc-tautology-removed",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:695b69279dd7684b72a591d38092c434277b4f080557d58fe5d69c5aee63c59c",
+      "diff_hash": "sha256:410aa39a4db1d198505a8797845bafb1bd9182b9b308b9c090ef895df0150889",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "bun test tests/pi-canary-enroll-extension.test.ts passed: 16 tests, 0 failures."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-20-019-retire-enrollment-confirmation-deadwood:2026-08-21T01:57:31.145Z",
+      "acceptance_id": "acc-confirmation-still-mandatory",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:695b69279dd7684b72a591d38092c434277b4f080557d58fe5d69c5aee63c59c",
+      "diff_hash": "sha256:410aa39a4db1d198505a8797845bafb1bd9182b9b308b9c090ef895df0150889",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "bun test tests/enrollment-confirmation-relocation.test.ts passed: 3 tests, 0 failures."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-20-019-retire-enrollment-confirmation-deadwood:2026-08-21T01:57:40.199Z",
+      "acceptance_id": "acc-suite-intact",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:695b69279dd7684b72a591d38092c434277b4f080557d58fe5d69c5aee63c59c",
+      "diff_hash": "sha256:410aa39a4db1d198505a8797845bafb1bd9182b9b308b9c090ef895df0150889",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "Complete bun test suite passed: 817 tests across 135 files, 0 failures."
     }
   ],
-  "findings": [],
+  "findings": [
+    {
+      "id": "qa-evidence-freshness-4499a6e72be94aeb-4499a6e7-534329",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": null,
+      "source": "review",
+      "review_round": 1,
+      "summary": "executor evidence must be refreshed in working phase for acceptance ids: acc-tautology-removed,acc-confirmation-still-mandatory,acc-suite-intact"
+    }
+  ],
   "approvals": [
     {
       "id": "approval-qa-713e07b4",
@@ -81,6 +121,26 @@
       "diff_hash": "sha256:7469e7f787b2de98ede25e9c05c3313b8c71cb3e0cbd3e10a11a21cbe017a708",
       "actor_id": "deterministic-qa",
       "summary": "all 3 fixed verification descriptor(s) passed"
+    },
+    {
+      "id": "approval-qa-1b7eda1c",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:695b69279dd7684b72a591d38092c434277b4f080557d58fe5d69c5aee63c59c",
+      "diff_hash": "sha256:410aa39a4db1d198505a8797845bafb1bd9182b9b308b9c090ef895df0150889",
+      "actor_id": "deterministic-qa",
+      "summary": "all 3 fixed verification descriptor(s) passed"
+    },
+    {
+      "id": "approval-review-54135b4e",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:695b69279dd7684b72a591d38092c434277b4f080557d58fe5d69c5aee63c59c",
+      "diff_hash": "sha256:410aa39a4db1d198505a8797845bafb1bd9182b9b308b9c090ef895df0150889",
+      "actor_id": "native-review-7930485d-2d5c-4be",
+      "summary": "Immutable provenance verified; enrollment confirmation remains mandatory for all risk tiers, deadwood predicates are absent, and all acceptance checks passed."
     }
   ],
   "history": [
@@ -130,6 +190,99 @@
         "issued_at": "2026-08-20T17:53:02.147Z",
         "expires_at": "2026-08-20T18:03:02.147Z"
       }
+    },
+    {
+      "id": "request_rework:2026-08-20-019-retire-enrollment-confirmation-deadwood:2026-08-21T01:56:00.328Z",
+      "at": "2026-08-21T01:56:00.328Z",
+      "type": "request_rework",
+      "from_phase": "review",
+      "to_phase": "working",
+      "reason": "review_round_1\naction_v2_sha256:f6eaff39f8ce370f957bf535aea9814ba6896ca8db322125feca9cd9c277eec4",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-53bd72e4dcaad849",
+        "issued_at": "2026-08-21T01:56:00.329Z",
+        "expires_at": "2026-08-21T02:06:00.329Z"
+      }
+    },
+    {
+      "id": "record_evidence:2026-08-20-019-retire-enrollment-confirmation-deadwood:2026-08-21T01:57:24.070Z",
+      "at": "2026-08-21T01:57:24.070Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-tautology-removed\naction_v2_sha256:73877b2441b31746b811e43506482de056a0782df882d5ade75f999878314d5a"
+    },
+    {
+      "id": "record_evidence:2026-08-20-019-retire-enrollment-confirmation-deadwood:2026-08-21T01:57:31.145Z",
+      "at": "2026-08-21T01:57:31.145Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-confirmation-still-mandatory\naction_v2_sha256:fb1f4a3dce30dd59847c52a6dd92ff71c85ae98ac87730181c4d4e27a05af9de"
+    },
+    {
+      "id": "record_evidence:2026-08-20-019-retire-enrollment-confirmation-deadwood:2026-08-21T01:57:40.199Z",
+      "at": "2026-08-21T01:57:40.199Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-suite-intact\naction_v2_sha256:d87bbf51cf9d826e2f0c66aa41890070edf2ec7ea8ea69f0190b0717cc77d0c7"
+    },
+    {
+      "id": "resolve_finding:2026-08-20-019-retire-enrollment-confirmation-deadwood:2026-08-21T01:57:46.268Z",
+      "at": "2026-08-21T01:57:46.268Z",
+      "type": "resolve_finding",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "qa-evidence-freshness-4499a6e72be94aeb-4499a6e7-534329\naction_v2_sha256:37f73ad36eb939d210d16879c7cc4f6a94a5dad0a5d7d8d959a28dd76bdf3c34"
+    },
+    {
+      "id": "submit_review:2026-08-20-019-retire-enrollment-confirmation-deadwood:2026-08-21T01:57:54.070Z",
+      "at": "2026-08-21T01:57:54.070Z",
+      "type": "submit_review",
+      "from_phase": "working",
+      "to_phase": "review",
+      "reason": "action_v2_sha256:5c3a344a7c40f820256e1b90e15110b9083267e5decd77d382b59f5ad0382db6"
+    },
+    {
+      "id": "record_approval:2026-08-20-019-retire-enrollment-confirmation-deadwood:2026-08-21T01:59:06.412Z",
+      "at": "2026-08-21T01:59:06.412Z",
+      "type": "record_approval",
+      "from_phase": "review",
+      "to_phase": "review",
+      "reason": "approval-qa-1b7eda1c\naction_v2_sha256:06d57c5dba97cc80dd2b84500340b7645e89932781c2bc835bdb28b8f279ff4d",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-71609bcc4597dda6",
+        "issued_at": "2026-08-21T01:59:06.412Z",
+        "expires_at": "2026-08-21T02:09:06.412Z"
+      }
+    },
+    {
+      "id": "record_approval:2026-08-20-019-retire-enrollment-confirmation-deadwood:2026-08-21T02:03:20.159Z",
+      "at": "2026-08-21T02:03:20.159Z",
+      "type": "record_approval",
+      "from_phase": "review",
+      "to_phase": "review",
+      "reason": "approval-review-54135b4e\naction_v2_sha256:fdf0559808a1db1c70e462f7c7bc71908f392012149393bcee96a85d9b150d8d",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "native-review-7930485d-2d5c-4be",
+        "confirmation_ref": "pi-confirm-ccae433525bf8124",
+        "issued_at": "2026-08-21T02:03:20.160Z",
+        "expires_at": "2026-08-21T02:13:20.160Z"
+      }
+    },
+    {
+      "id": "complete:2026-08-20-019-retire-enrollment-confirmation-deadwood:2026-08-21T02:03:26.993Z",
+      "at": "2026-08-21T02:03:26.993Z",
+      "type": "complete",
+      "from_phase": "review",
+      "to_phase": "done",
+      "reason": "action_v2_sha256:9a2d5fd0dc3668f2d5ced37abe4b85406ba058e4e7ed40afe05cbcd948a14793"
     }
   ]
 }

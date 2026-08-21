@@ -1,0 +1,9 @@
+{
+  "contract": "assurance_kernel/task_tombstone/v1",
+  "task_id": "2026-08-21-001-borrow-framing-planning-mechanics",
+  "lifecycle_status": "terminal",
+  "terminal_phase": "done",
+  "terminal_event_id": "complete:2026-08-21-001-borrow-framing-planning-mechanics:2026-08-21T02:12:20.511Z",
+  "final_record_hash": "sha256:a38083b920464f0b293bf3539516a348d63de3ce22160844c0b9cc57f7fa0b57",
+  "terminalized_at": "2026-08-21T02:12:20.511Z"
+}

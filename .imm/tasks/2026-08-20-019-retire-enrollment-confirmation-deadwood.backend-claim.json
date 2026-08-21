@@ -1,0 +1,9 @@
+{
+  "contract": "assurance_kernel/task_tombstone/v1",
+  "task_id": "2026-08-20-019-retire-enrollment-confirmation-deadwood",
+  "lifecycle_status": "terminal",
+  "terminal_phase": "done",
+  "terminal_event_id": "complete:2026-08-20-019-retire-enrollment-confirmation-deadwood:2026-08-21T02:03:26.993Z",
+  "final_record_hash": "sha256:9b228d50adfc769b482e53df396b4069b78a1257bed3f50a10692338e55d4c3d",
+  "terminalized_at": "2026-08-21T02:03:26.993Z"
+}
