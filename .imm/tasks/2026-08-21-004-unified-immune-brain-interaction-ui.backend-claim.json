@@ -1,0 +1,9 @@
+{
+  "contract": "assurance_kernel/task_tombstone/v1",
+  "task_id": "2026-08-21-004-unified-immune-brain-interaction-ui",
+  "lifecycle_status": "terminal",
+  "terminal_phase": "done",
+  "terminal_event_id": "complete:2026-08-21-004-unified-immune-brain-interaction-ui:2026-08-21T14:04:23.384Z",
+  "final_record_hash": "sha256:b21c50836de68dc2478795bc67da730543d5f66afb37d01762dad226af8ae4b8",
+  "terminalized_at": "2026-08-21T14:04:23.384Z"
+}

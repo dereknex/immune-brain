@@ -25,13 +25,14 @@ interface FakeUI {
 	confirmCalls: Array<{ title: string; body: string }>;
 	customCalls: Array<{ body: string; collapsedBody: string }>;
 	notifyCalls: Array<{ text: string; kind: string }>;
+	widgetCalls: Array<{ key: string; content: string[] | undefined; options?: { placement?: string } }>;
 	confirmResult: boolean;
 	signal?: AbortSignal;
 	beforeConfirm?: () => void;
 }
 
 function makeFakeUI(confirmResult: boolean): FakeUI {
-	return { confirmCalls: [], customCalls: [], notifyCalls: [], confirmResult };
+	return { confirmCalls: [], customCalls: [], notifyCalls: [], widgetCalls: [], confirmResult };
 }
 
 function makeCtx(root: string, ui: FakeUI, mode: Mode, cwdOverride?: string) {
@@ -41,6 +42,9 @@ function makeCtx(root: string, ui: FakeUI, mode: Mode, cwdOverride?: string) {
 		cwd: cwdOverride ?? root,
 		isIdle: () => true,
 		ui: {
+			setWidget: (key: string, content: string[] | undefined, options?: { placement?: string }) => {
+				ui.widgetCalls.push({ key, content, options });
+			},
 			custom: async (
 				factory: (tui: unknown, theme: { fg: (_color: string, text: string) => string; bold: (text: string) => string }, keybindings: unknown, done: (result: boolean) => void) => { render: (width: number) => string[]; handleInput?: (data: string) => void },
 			) => {
@@ -425,12 +429,25 @@ describe("pi canary enroll handler integration", () => {
 		return parts.join("\n");
 	}
 
-	async function runTool(root: string, ui: FakeUI, updates: string[] = [], action: "enroll" | "new" = "enroll"): Promise<any> {
+	async function runTool(
+		root: string,
+		ui: FakeUI,
+		updates: string[] = [],
+		action: "enroll" | "new" = "enroll",
+		emitted: Array<{ name: string; payload: Record<string, unknown> }> = [],
+		sessionShutdown: Array<(event: unknown, ctx: ReturnType<typeof makeCtx>) => Promise<void>> = [],
+	): Promise<any> {
 		const factory = await loadExtension();
 		let tool: { execute: (...args: any[]) => Promise<any> } | undefined;
 		factory({
 			registerCommand: () => undefined,
 			registerTool: (candidate: { execute: (...args: any[]) => Promise<any> }) => { tool = candidate; },
+			on: (name: string, handler: (event: unknown, ctx: ReturnType<typeof makeCtx>) => Promise<void>) => {
+				if (name === "session_shutdown") sessionShutdown.push(handler);
+			},
+			events: {
+				emit: (name: string, payload: Record<string, unknown>) => emitted.push({ name, payload }),
+			},
 		} as never);
 		if (!tool) throw new Error("enrollment Tool not registered");
 		return tool.execute(
@@ -469,8 +486,10 @@ describe("pi canary enroll handler integration", () => {
 		try {
 			makeEligibleRepo(root, TASK);
 			const updates: string[] = [];
+			const emitted: Array<{ name: string; payload: Record<string, unknown> }> = [];
+			const shutdown: Array<(event: unknown, ctx: ReturnType<typeof makeCtx>) => Promise<void>> = [];
 			const ui = makeFakeUI(true);
-			const result = await runTool(root, ui, updates, "new");
+			const result = await runTool(root, ui, updates, "new", emitted, shutdown);
 			expect(result.details.state).toBe("completed");
 			expect(ui.confirmCalls).toHaveLength(1);
 			expect(ui.customCalls[0].collapsedBody).toContain("Details collapsed; press d to expand.");
@@ -482,6 +501,26 @@ describe("pi canary enroll handler integration", () => {
 			const stagedDigest = `sha256:${createHash("sha256").update(execFileSync("git", ["ls-files", "--stage", "-z"], { cwd: root })).digest("hex")}`;
 			expect(ui.confirmCalls[0].body).toContain(`Staged digest: ${stagedDigest}`);
 			expect(updates).toContain("awaiting_confirmation");
+			expect(emitted).toHaveLength(2);
+			expect(emitted[0]).toMatchObject({
+				name: "immune-brain:user-attention.v1",
+				payload: { active: true, task_id: TASK, reason: "enrollment" },
+			});
+			expect(emitted[1]).toEqual({
+				name: "immune-brain:user-attention.v1",
+				payload: {
+					active: false,
+					attention_id: emitted[0].payload.attention_id,
+					task_id: TASK,
+					reason: "enrollment",
+				},
+			});
+			expect(JSON.stringify(emitted)).not.toMatch(/digest|descriptor|scope|prompt/i);
+			expect(ui.widgetCalls.some((call) => call.options?.placement === "aboveEditor"
+				&& call.content?.join("\n").includes(`Task ${TASK} · Approval required`))).toBe(true);
+			expect(shutdown).toHaveLength(1);
+			await shutdown[0]({}, makeCtx(root, ui, "tui"));
+			expect(ui.widgetCalls.at(-1)).toMatchObject({ key: "immune-brain.task-rail", content: undefined });
 		} finally {
 			rmSync(root, { recursive: true, force: true });
 		}
@@ -527,10 +566,13 @@ describe("pi canary enroll handler integration", () => {
 			git(root, ["add", "scripts/accept.ts"]);
 			const before = authoritySnapshot(root);
 			const ui = makeFakeUI(false);
-			const result = await runTool(root, ui, [], "enroll");
+			const emitted: Array<{ name: string; payload: Record<string, unknown> }> = [];
+			const result = await runTool(root, ui, [], "enroll", emitted);
 			expect(ui.confirmCalls.length).toBe(1);
 			expect(result.details.state).toBe("rejected");
 			expect(result.details.summary).toMatch(/confirmation was rejected/i);
+			expect(emitted.map((event) => event.payload.reason)).toEqual(["descriptor_waiver", "descriptor_waiver"]);
+			expect(emitted.map((event) => event.payload.active)).toEqual([true, false]);
 			expect(authoritySnapshot(root)).toBe(before);
 		} finally {
 			rmSync(root, { recursive: true, force: true });
@@ -578,9 +620,12 @@ describe("pi canary enroll handler integration", () => {
 			const ui = makeFakeUI(true);
 			ui.signal = controller.signal;
 			ui.beforeConfirm = () => controller.abort(new Error("user aborted confirmation"));
-			const result = await runTool(root, ui);
+			const emitted: Array<{ name: string; payload: Record<string, unknown> }> = [];
+			const result = await runTool(root, ui, [], "enroll", emitted);
 			expect(ui.confirmCalls).toHaveLength(1);
 			expect(result.details.state).toBe("cancelled");
+			expect(emitted.map((event) => event.payload.active)).toEqual([true, false]);
+			expect(emitted[1].payload.attention_id).toBe(emitted[0].payload.attention_id);
 			expect(authoritySnapshot(root)).toBe(before);
 		} finally {
 			rmSync(root, { recursive: true, force: true });

@@ -1,0 +1,255 @@
+import type { ExtensionAPI, ExtensionContext, Theme } from "@earendil-works/pi-coding-agent";
+import { Text, type Component } from "@earendil-works/pi-tui";
+
+export const USER_ATTENTION_EVENT = "immune-brain:user-attention.v1" as const;
+export const TASK_RAIL_KEY = "immune-brain.task-rail" as const;
+
+export type UserAttentionReason =
+	| "enrollment"
+	| "descriptor_waiver"
+	| "breaking_intent_revision"
+	| "review_authorization";
+
+export interface UserAttentionEventV1 {
+	active: boolean;
+	attention_id: string;
+	task_id: string;
+	reason: UserAttentionReason;
+	label?: string;
+}
+
+export type TaskRailState =
+	| "Planning"
+	| "Approval required"
+	| "Working"
+	| "Verifying"
+	| "Reviewing"
+	| "Blocked"
+	| "Completed"
+	| "Stopped";
+
+export interface TaskRailView {
+	task_id: string;
+	state: TaskRailState;
+	result: string;
+	next: string;
+}
+
+type EventPublisher = Pick<ExtensionAPI, "events">;
+type UiContext = Pick<ExtensionContext, "ui">;
+
+const terminalRailUis = new WeakSet<object>();
+const deliveredNotifications = new WeakMap<object, Set<string>>();
+
+export function beginUserAttention(
+	pi: EventPublisher,
+	event: Omit<UserAttentionEventV1, "active">,
+): () => void {
+	let active = true;
+	emitAttention(pi, { ...event, active: true });
+	return () => {
+		if (!active) return;
+		active = false;
+		emitAttention(pi, {
+			active: false,
+			attention_id: event.attention_id,
+			task_id: event.task_id,
+			reason: event.reason,
+		});
+	};
+}
+
+export async function withUserAttention<T>(
+	pi: EventPublisher,
+	event: Omit<UserAttentionEventV1, "active">,
+	waitForUser: () => Promise<T>,
+): Promise<T> {
+	const endAttention = beginUserAttention(pi, event);
+	try {
+		return await waitForUser();
+	} finally {
+		endAttention();
+	}
+}
+
+export function presentTaskRail(ctx: UiContext, view: TaskRailView): void {
+	try {
+		ctx.ui.setWidget(TASK_RAIL_KEY, renderTaskRail(view), { placement: "aboveEditor" });
+		if (view.state === "Completed" || view.state === "Stopped") terminalRailUis.add(ctx.ui);
+		else terminalRailUis.delete(ctx.ui);
+	} catch {
+		notifyOnce(ctx, `task-rail:${view.task_id}`, "Task Rail is unavailable; Tool results remain authoritative.", "warning");
+	}
+}
+
+export function presentTaskRailResult(
+	ctx: UiContext,
+	taskId: string,
+	details: Record<string, unknown> | undefined,
+): void {
+	if (!details) return;
+	const taskState = record(details.task_state);
+	const phase = string(taskState?.phase) ?? string(details.phase) ?? string(details.stage);
+	const operation = string(details.operation);
+	const rawState = string(details.state);
+	const result = string(details.result) ?? string(details.reason) ?? operation ?? rawState ?? "Task state updated";
+	const next = string(details.next_action) ?? "Continue through the projected authority";
+	presentTaskRail(ctx, {
+		task_id: taskId,
+		state: railState({ phase, operation, state: rawState }),
+		result,
+		next,
+	});
+}
+
+export function clearTerminalTaskRailOnInput(ctx: UiContext): void {
+	if (!terminalRailUis.has(ctx.ui)) return;
+	clearTaskRail(ctx);
+}
+
+export function clearTaskRail(ctx: UiContext): void {
+	try {
+		ctx.ui.setWidget(TASK_RAIL_KEY, undefined);
+	} catch {
+		// Tool rows remain the fallback observation surface.
+	}
+	terminalRailUis.delete(ctx.ui);
+}
+
+export function resetInteractionPresentation(ctx?: UiContext): void {
+	if (!ctx) return;
+	clearTaskRail(ctx);
+	deliveredNotifications.delete(ctx.ui);
+}
+
+export function notifyOnce(
+	ctx: UiContext,
+	key: string,
+	message: string,
+	level: "warning" | "error",
+): void {
+	let delivered = deliveredNotifications.get(ctx.ui);
+	if (!delivered) {
+		delivered = new Set<string>();
+		deliveredNotifications.set(ctx.ui, delivered);
+	}
+	if (delivered.has(key)) return;
+	delivered.add(key);
+	try {
+		ctx.ui.notify(message, level);
+	} catch {
+		// Notifications never participate in workflow authority.
+	}
+}
+
+export function renderStructuredCall(
+	tool: string,
+	action: string,
+	subject: string | undefined,
+	theme: Theme,
+): Component {
+	return new Text(
+		[
+			theme.fg("toolTitle", theme.bold(tool)),
+			theme.fg("muted", action),
+			...(subject ? [theme.fg("accent", subject)] : []),
+		].join(" "),
+		0,
+		0,
+	);
+}
+
+export function renderStructuredResult(
+	result: { content?: Array<{ type?: string; text?: string }>; details?: Record<string, unknown> },
+	theme: Theme,
+): Component {
+	const details = result.details;
+	if (!details) return new Text(theme.fg("dim", "Result details unavailable"), 0, 0);
+	const taskState = record(details.task_state);
+	const phase = string(taskState?.phase) ?? string(details.phase) ?? string(details.stage);
+	const state = string(details.state) ?? "unknown";
+	const summary = string(details.result) ?? string(details.reason) ?? string(details.operation) ?? state;
+	const next = string(details.next_action) ?? "No action reported";
+	const terminal = phase === "done" || phase === "stopped";
+	const lines = [
+		`${theme.fg("muted", "State:")} ${theme.fg(state === "blocked" || state === "failed" ? "warning" : "accent", phase ?? state)}`,
+		`${theme.fg("muted", "Result:")} ${theme.fg(state === "blocked" || state === "failed" ? "warning" : "dim", summary)}`,
+		`${theme.fg("muted", "Next:")} ${theme.fg("dim", next)}`,
+	];
+	if (terminal && taskState) lines.push(...renderFinalLines(taskState, theme));
+	return new Text(lines.join("\n"), 0, 0);
+}
+
+export function loopResultDetails(result: unknown, operation: string): Record<string, unknown> {
+	const projected = record(result);
+	const next = string(projected?.next) ?? "none";
+	return {
+		state: "projected",
+		operation,
+		result: `Loop selected ${next} without state mutation`,
+		next_action: next === "none" ? "No action required" : `Follow ${next} authority`,
+	};
+}
+
+function emitAttention(pi: EventPublisher, event: UserAttentionEventV1): void {
+	try {
+		pi.events.emit(USER_ATTENTION_EVENT, event);
+	} catch {
+		// External attention adapters are optional and non-authoritative.
+	}
+}
+
+function renderTaskRail(view: TaskRailView): string[] {
+	return [
+		`Task ${bounded(view.task_id, 88)} · ${view.state}`,
+		`Result: ${bounded(view.result, 112)}`,
+		`Next: ${bounded(view.next, 112)}`,
+	];
+}
+
+function railState(input: { phase?: string; operation?: string; state?: string }): TaskRailState {
+	if (input.state === "blocked" || input.state === "failed" || input.state === "settlement_unknown") return "Blocked";
+	if (input.phase === "done") return "Completed";
+	if (input.phase === "stopped") return "Stopped";
+	if (input.state === "awaiting_user" || input.operation === "request_authorization") return "Approval required";
+	if (input.operation === "advance_assurance") return "Verifying";
+	if (input.operation === "submit_review" || input.phase === "review") return "Reviewing";
+	if (input.phase === "working") return "Working";
+	if (input.state === "running") return "Planning";
+	return "Working";
+}
+
+function renderFinalLines(taskState: Record<string, unknown>, theme: Theme): string[] {
+	const fresh = strings(taskState.fresh_acceptance_ids).length;
+	const missing = strings(taskState.missing_acceptance_ids).length;
+	const approvals = strings(taskState.fresh_approval_kinds);
+	const blockers = strings(taskState.blocking_finding_ids).length
+		+ strings(taskState.unresolved_user_decision_ids).length
+		+ strings(taskState.replan_required_ids).length;
+	const diffHash = string(taskState.diff_hash);
+	return [
+		`${theme.fg("muted", "Acceptance:")} ${theme.fg(missing === 0 ? "success" : "warning", `${fresh}/${fresh + missing} fresh`)}`,
+		`${theme.fg("muted", "QA / Review:")} ${theme.fg("dim", approvals.length > 0 ? approvals.join(", ") : "not recorded")}`,
+		`${theme.fg("muted", "Residual blockers:")} ${theme.fg(blockers === 0 ? "dim" : "warning", String(blockers))}`,
+		`${theme.fg("muted", "Repository health:")} ${theme.fg("dim", "not assessed")}`,
+		`${theme.fg("muted", "Git:")} ${theme.fg("dim", diffHash ? `task diff ${diffHash.slice(0, 15)}` : "not reported")}`,
+	];
+}
+
+function record(value: unknown): Record<string, unknown> | undefined {
+	return typeof value === "object" && value !== null && !Array.isArray(value)
+		? value as Record<string, unknown>
+		: undefined;
+}
+
+function string(value: unknown): string | undefined {
+	return typeof value === "string" && value.length > 0 ? value : undefined;
+}
+
+function strings(value: unknown): string[] {
+	return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
+}
+
+function bounded(value: string, max: number): string {
+	return value.length <= max ? value : `${value.slice(0, max - 3)}...`;
+}

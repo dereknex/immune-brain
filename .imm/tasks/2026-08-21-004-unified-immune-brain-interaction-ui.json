@@ -1,0 +1,273 @@
+{
+  "contract": "assurance_kernel/task_record/v2",
+  "task_id": "2026-08-21-004-unified-immune-brain-interaction-ui",
+  "intent_revision": 1,
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "2026-08-21-004-unified-immune-brain-interaction-ui",
+    "goal": "Unify Immune-Brain's host interaction surface without changing Kernel authority: add one bounded above-editor Task Rail driven only by existing Assurance projection and Tool/input lifecycle boundaries; publish a versioned process-local user-attention event around every literal-user Enrollment, waiver, breaking-revision, and Review authorization wait with finally-based cleanup; render Enrollment, Loop, Kernel, and terminal outcomes through a compact State / Result / Next hierarchy; deduplicate notifications so normal success, cancellation, and stage changes do not compete with persistent UI; and explicitly separate managed acceptance from unassessed repository health and best-effort Git state. Preserve the empty Footer, native Review, zero-write cancellation, no watcher/polling/timer/persistence invariants, and keep Herdr, pi-herdr-status, BEL, OS notifications, Pi core, and Kernel schemas out of scope.",
+    "acceptance": [
+      {
+        "id": "acc-work-interaction-surface",
+        "assertion": "Work and Assurance expose one bounded projection-fed Task Rail with terminal-until-next-input and shutdown cleanup, bracket Review and breaking-revision user waits with matching immune-brain:user-attention.v1 events across answer/cancel/abort/error paths, render Loop/Kernel/terminal outcomes as State / Result / Next, deduplicate warning/error notifications, separate acceptance from unassessed repository health and Git state, and leave Footer, polling, timers, persistence, native Review, and authority semantics unchanged.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/pi-canary-work-extension.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 65536\n}\n"
+      },
+      {
+        "id": "acc-enrollment-attention-surface",
+        "assertion": "Enrollment and explicit descriptor waiver display the same bounded task-level Rail and emit exactly one bounded immune-brain:user-attention.v1 open/close pair around validated literal-user UI, including decline, host abort, and UI failure cleanup, while event or Widget failures remain non-authoritative and no Herdr, BEL, external notification, Footer, watcher, polling, timer, or persisted UI path is introduced.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/pi-canary-enroll-extension.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 60000,\n  \"max_output_bytes\": 65536\n}\n"
+      }
+    ],
+    "scope_hint": [
+      "docs/specs/host-native-assurance-ui.spec.md",
+      "docs/specs/host-native-assurance-ux.spec.md",
+      "docs/specs/unified-immune-brain-interaction-ui.spec.md",
+      "plugins/immune-brain/.pi-extension/imm-canary-enroll.ts",
+      "plugins/immune-brain/.pi-extension/imm-canary-work.ts",
+      "plugins/immune-brain/.pi-extension/pi-canary-assurance.ts",
+      "plugins/immune-brain/.pi-extension/pi-canary-interaction.ts",
+      "tests/imm-canary-work-contract.test.ts",
+      "tests/pi-canary-enroll-extension.test.ts",
+      "tests/pi-canary-packed-consumer.test.ts",
+      "tests/pi-canary-work-extension.test.ts"
+    ],
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/2026-08-21-004-unified-immune-brain-interaction-ui.intent.json",
+    "revision": 1,
+    "content_hash": "sha256:c29b6afdb23ad1eab3adc9bfcb2d09c820ba3b0e445961ec33de3b90f818b876"
+  },
+  "phase": "done",
+  "baseline": "sha256:c29b6afdb23ad1eab3adc9bfcb2d09c820ba3b0e445961ec33de3b90f818b876",
+  "evidence": [
+    {
+      "id": "evidence-record_evidence:2026-08-21-004-unified-immune-brain-interaction-ui:2026-08-21T13:51:19.366Z",
+      "acceptance_id": "acc-work-interaction-surface",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:c29b6afdb23ad1eab3adc9bfcb2d09c820ba3b0e445961ec33de3b90f818b876",
+      "diff_hash": "sha256:6ff33da137117e3b6fd1d78c75bf0bb78500eebecab1c81376f5a8f2fec94b6e",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "Focused Work/Assurance interaction seam passed 19/19: one bounded above-editor Task Rail, terminal clearing, UI failure containment and notification deduplication, compact Loop/Kernel/Final Card renderers, matched Review attention events across success/cancel/error, and no Footer/polling/timer/Herdr/BEL path. Additional breaking-intent gate passed 3/3; full repository suite passed all implementation-related tests."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-21-004-unified-immune-brain-interaction-ui:2026-08-21T13:51:28.034Z",
+      "acceptance_id": "acc-enrollment-attention-surface",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:c29b6afdb23ad1eab3adc9bfcb2d09c820ba3b0e445961ec33de3b90f818b876",
+      "diff_hash": "sha256:6ff33da137117e3b6fd1d78c75bf0bb78500eebecab1c81376f5a8f2fec94b6e",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "Focused Enrollment interaction seam passed 16/16: enrollment and descriptor-waiver gates emit one bounded immune-brain:user-attention.v1 open/close pair, preserve the same attention_id through decline and host/UI abort cleanup, exclude prompt/digest/descriptor/scope payloads, and preserve zero-write authority behavior. Full repository suite found no implementation regression."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-21-004-unified-immune-brain-interaction-ui:2026-08-21T13:59:06.544Z",
+      "acceptance_id": "acc-work-interaction-surface",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:c29b6afdb23ad1eab3adc9bfcb2d09c820ba3b0e445961ec33de3b90f818b876",
+      "diff_hash": "sha256:60907dfc4f04ed1e2d4c479c2e412d141cb0ea728b7dc283341891948cf89dc7",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "Rework verification passed 19/19. Task Rail terminal and notification state are now scoped by ctx.ui via WeakSet/WeakMap; two concurrent host UI contexts retain and clear terminal Rails independently. Compact renderers, Review attention pairs, no-Footer/no-polling/no-Herdr invariants remain green."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-21-004-unified-immune-brain-interaction-ui:2026-08-21T13:59:20.118Z",
+      "acceptance_id": "acc-enrollment-attention-surface",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:c29b6afdb23ad1eab3adc9bfcb2d09c820ba3b0e445961ec33de3b90f818b876",
+      "diff_hash": "sha256:60907dfc4f04ed1e2d4c479c2e412d141cb0ea728b7dc283341891948cf89dc7",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "Rework verification passed 16/16. Enrollment directly presents the shared above-editor Task Rail during progress and literal-user attention, updates it from terminal Tool details, and clears it from its own session_shutdown handler; this works in an enrollment-only extension instance while event, Widget, cancel, abort, and zero-write behavior remain contained."
+    }
+  ],
+  "findings": [
+    {
+      "id": "review-b9f98458ee70-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "acc-enrollment-attention-surface",
+      "source": "review",
+      "review_round": 1,
+      "summary": "plugins/immune-brain/.pi-extension/imm-canary-enroll.ts: Enrollment only emits attention events; it never directly presents the shared Task Rail, so when the Work extension is absent or has no railContext before the first input/session_start, the validated enrollment/waiver UI opens without the required task-level Rail. Verify an enrollment-only extension instance calls setWidget with the shared key at preparation/attention and clears it on shutdown while preserving outcomes."
+    },
+    {
+      "id": "review-b9f98458ee70-2-review-2",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "acc-work-interaction-surface",
+      "source": "review",
+      "review_round": 1,
+      "summary": "plugins/immune-brain/.pi-extension/pi-canary-interaction.ts: terminalRailVisible is module-global rather than scoped per ExtensionContext/session, so a terminal result in one host instance can cause input or shutdown in another instance to clear the wrong Rail and lose terminal-until-next-input semantics. Verify two concurrent extension contexts retain and clear their terminal Rails independently."
+    }
+  ],
+  "approvals": [
+    {
+      "id": "approval-qa-0b41cde7",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:c29b6afdb23ad1eab3adc9bfcb2d09c820ba3b0e445961ec33de3b90f818b876",
+      "diff_hash": "sha256:6ff33da137117e3b6fd1d78c75bf0bb78500eebecab1c81376f5a8f2fec94b6e",
+      "actor_id": "deterministic-qa",
+      "summary": "all 2 fixed verification descriptor(s) passed"
+    },
+    {
+      "id": "approval-qa-c91595e0",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:c29b6afdb23ad1eab3adc9bfcb2d09c820ba3b0e445961ec33de3b90f818b876",
+      "diff_hash": "sha256:60907dfc4f04ed1e2d4c479c2e412d141cb0ea728b7dc283341891948cf89dc7",
+      "actor_id": "deterministic-qa",
+      "summary": "all 2 fixed verification descriptor(s) passed"
+    },
+    {
+      "id": "approval-review-af9c034b",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:c29b6afdb23ad1eab3adc9bfcb2d09c820ba3b0e445961ec33de3b90f818b876",
+      "diff_hash": "sha256:60907dfc4f04ed1e2d4c479c2e412d141cb0ea728b7dc283341891948cf89dc7",
+      "actor_id": "native-review-ce8c5c3b-46cf-4ca",
+      "summary": "Immutable bundle provenance verified; bounded interaction, attention cleanup, terminal settlement, cancellation, error, and race paths satisfy both acceptance assertions."
+    }
+  ],
+  "history": [
+    {
+      "id": "record_evidence:2026-08-21-004-unified-immune-brain-interaction-ui:2026-08-21T13:51:19.366Z",
+      "at": "2026-08-21T13:51:19.366Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-work-interaction-surface\naction_v2_sha256:6d894729c6e94075efe3c8c6334bab312b5fa7d8bf71b48e2aca5989fa43e9f5"
+    },
+    {
+      "id": "record_evidence:2026-08-21-004-unified-immune-brain-interaction-ui:2026-08-21T13:51:28.034Z",
+      "at": "2026-08-21T13:51:28.034Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-enrollment-attention-surface\naction_v2_sha256:7640a50a156154b3951f10d1f43947e2e00fb62043a389866bc0fb02ff49d6cb"
+    },
+    {
+      "id": "submit_review:2026-08-21-004-unified-immune-brain-interaction-ui:2026-08-21T13:51:44.780Z",
+      "at": "2026-08-21T13:51:44.780Z",
+      "type": "submit_review",
+      "from_phase": "working",
+      "to_phase": "review",
+      "reason": "action_v2_sha256:d2234d481bae9d1107f64a478f4d578abaa894a390da81215b3b27a50f73b6c0"
+    },
+    {
+      "id": "record_approval:2026-08-21-004-unified-immune-brain-interaction-ui:2026-08-21T13:52:22.720Z",
+      "at": "2026-08-21T13:52:22.720Z",
+      "type": "record_approval",
+      "from_phase": "review",
+      "to_phase": "review",
+      "reason": "approval-qa-0b41cde7\naction_v2_sha256:e63cbad07fe08f1edc85a07eec5d80c9207d1b995638005b688446bf72e75d66",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-f96a0f3375772b5e",
+        "issued_at": "2026-08-21T13:52:22.722Z",
+        "expires_at": "2026-08-21T14:02:22.720Z"
+      }
+    },
+    {
+      "id": "request_rework:2026-08-21-004-unified-immune-brain-interaction-ui:2026-08-21T13:55:21.025Z",
+      "at": "2026-08-21T13:55:21.025Z",
+      "type": "request_rework",
+      "from_phase": "review",
+      "to_phase": "working",
+      "reason": "review_round_1\naction_v2_sha256:afb47d622fc5a9efd7ababbb5b4d531f6997a2ac23de3e98ead54a60c00b958c",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "native-review-628add30-1d37-44f",
+        "confirmation_ref": "pi-confirm-09de4f6c2c8c5a59",
+        "issued_at": "2026-08-21T13:55:21.025Z",
+        "expires_at": "2026-08-21T14:05:21.025Z"
+      }
+    },
+    {
+      "id": "record_evidence:2026-08-21-004-unified-immune-brain-interaction-ui:2026-08-21T13:59:06.544Z",
+      "at": "2026-08-21T13:59:06.544Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-work-interaction-surface\naction_v2_sha256:6495318cc1bee62414faebe41b9fce8551bbd93dcb967c9467a6fb915c8ca5fa"
+    },
+    {
+      "id": "record_evidence:2026-08-21-004-unified-immune-brain-interaction-ui:2026-08-21T13:59:20.118Z",
+      "at": "2026-08-21T13:59:20.118Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-enrollment-attention-surface\naction_v2_sha256:4537a64e8835649e13dd732f1bce48d6d546b50fa2d2657ed8c8d98353308e05"
+    },
+    {
+      "id": "resolve_finding:2026-08-21-004-unified-immune-brain-interaction-ui:2026-08-21T13:59:29.111Z",
+      "at": "2026-08-21T13:59:29.111Z",
+      "type": "resolve_finding",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "review-b9f98458ee70-1-review-1\naction_v2_sha256:8f76edf0968788ad80512fab23e69e96bdd21eda1047c13e2f180f3cd737d076"
+    },
+    {
+      "id": "resolve_finding:2026-08-21-004-unified-immune-brain-interaction-ui:2026-08-21T13:59:38.444Z",
+      "at": "2026-08-21T13:59:38.444Z",
+      "type": "resolve_finding",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "review-b9f98458ee70-2-review-2\naction_v2_sha256:79e5cea155e0683a1396609b3b44cdceccf83035a3dc1483a9c4593dd391858f"
+    },
+    {
+      "id": "submit_review:2026-08-21-004-unified-immune-brain-interaction-ui:2026-08-21T13:59:59.066Z",
+      "at": "2026-08-21T13:59:59.066Z",
+      "type": "submit_review",
+      "from_phase": "working",
+      "to_phase": "review",
+      "reason": "action_v2_sha256:7b756b434e5c1f480ba743b2a3bdd23451cef06b610c49e13265be63fc239769"
+    },
+    {
+      "id": "record_approval:2026-08-21-004-unified-immune-brain-interaction-ui:2026-08-21T14:00:51.232Z",
+      "at": "2026-08-21T14:00:51.232Z",
+      "type": "record_approval",
+      "from_phase": "review",
+      "to_phase": "review",
+      "reason": "approval-qa-c91595e0\naction_v2_sha256:5726874b67ce1c79ae64a4dd31060c1af3ac6fc440d62333951b10677e8094d9",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-e45053a1cc1b953c",
+        "issued_at": "2026-08-21T14:00:51.232Z",
+        "expires_at": "2026-08-21T14:10:51.232Z"
+      }
+    },
+    {
+      "id": "record_approval:2026-08-21-004-unified-immune-brain-interaction-ui:2026-08-21T14:04:06.479Z",
+      "at": "2026-08-21T14:04:06.479Z",
+      "type": "record_approval",
+      "from_phase": "review",
+      "to_phase": "review",
+      "reason": "approval-review-af9c034b\naction_v2_sha256:d95c9ac89de3de220c80eaf9555aa4f55189fc4cd136a8cfb8ec24ac6483dbbd",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "native-review-ce8c5c3b-46cf-4ca",
+        "confirmation_ref": "pi-confirm-b215277680c73643",
+        "issued_at": "2026-08-21T14:04:06.480Z",
+        "expires_at": "2026-08-21T14:14:06.480Z"
+      }
+    },
+    {
+      "id": "complete:2026-08-21-004-unified-immune-brain-interaction-ui:2026-08-21T14:04:23.384Z",
+      "at": "2026-08-21T14:04:23.384Z",
+      "type": "complete",
+      "from_phase": "review",
+      "to_phase": "done",
+      "reason": "action_v2_sha256:2d8b0a3d7caff9b086dbb372a027c38159404c1dd80d5e7673d22c77355f3197"
+    }
+  ]
+}

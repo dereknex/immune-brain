@@ -17,6 +17,12 @@ import { readBackendClaim } from "../plugins/immune-brain/runtime/kernel/backend
 import { createMutationAuthorityCapabilityForTest } from "./fixtures/mutation-authority-test-seam";
 import { readTaskRecordV2 } from "../plugins/immune-brain/runtime/kernel/storage";
 import { snapshotDigest, type SnapshotDescriptor } from "../plugins/immune-brain/.pi-extension/pi-canary-assurance-progression.ts";
+import {
+	TASK_RAIL_KEY,
+	USER_ATTENTION_EVENT,
+	clearTerminalTaskRailOnInput,
+	presentTaskRail,
+} from "../plugins/immune-brain/.pi-extension/pi-canary-interaction";
 import { routeManagedRequest } from "../plugins/immune-brain/runtime/managed_path_router";
 
 const TASK = "canary-ext-task";
@@ -41,6 +47,8 @@ interface RegisteredTool {
 	name: string;
 	parameters: { type: string; properties?: Record<string, unknown>; anyOf?: unknown[] };
 	execute: (id: string, params: unknown, signal: unknown, onUpdate: unknown, ctx: unknown) => Promise<any>;
+	renderCall?: (args: unknown, theme: any) => { render: (width: number) => string[] };
+	renderResult?: (result: unknown, options: unknown, theme: any) => { render: (width: number) => string[] };
 }
 interface RegisteredCommand { handler: (args: string, ctx: unknown) => Promise<void> }
 interface FakeUI {
@@ -48,10 +56,11 @@ interface FakeUI {
 	selectCalls: Array<{ title: string; options: string[] }>;
 	inputCalls: Array<{ title: string; placeholder?: string }>;
 	notifyCalls: Array<{ text: string; kind: string }>;
+	widgetCalls: Array<{ key: string; content: string[] | undefined; options?: { placement?: string } }>;
 }
 
 function makeUI(): FakeUI {
-	return { confirmCalls: [], selectCalls: [], inputCalls: [], notifyCalls: [] };
+	return { confirmCalls: [], selectCalls: [], inputCalls: [], notifyCalls: [], widgetCalls: [] };
 }
 function makeCtx(root: string, ui: FakeUI, mode = "tui", decision: string | null = "Approve", note = "Address the requested changes", confirmDecision = true) {
 	return {
@@ -61,7 +70,9 @@ function makeCtx(root: string, ui: FakeUI, mode = "tui", decision: string | null
 		ui: {
 			notify: (text: string, kind: string) => ui.notifyCalls.push({ text, kind }),
 			setStatus: () => { throw new Error("Footer must remain untouched"); },
-			setWidget: () => { throw new Error("assurance Widget must remain untouched"); },
+			setWidget: (key: string, content: string[] | undefined, options?: { placement?: string }) => {
+				ui.widgetCalls.push({ key, content, options });
+			},
 			select: async (title: string, options: string[]) => {
 				ui.selectCalls.push({ title, options });
 				return decision ?? undefined;
@@ -164,17 +175,26 @@ function loadSurface(dependencies: Record<string, unknown> = {}) {
 	const tools: RegisteredTool[] = [];
 	const commands: Record<string, RegisteredCommand> = {};
 	const events: Record<string, Handler[]> = {};
+	const busEvents: Record<string, Handler[]> = {};
+	const emitted: Array<{ name: string; payload: Record<string, unknown> }> = [];
 	const mod = require("../plugins/immune-brain/.pi-extension/imm-canary-work.ts");
 	const factory = mod.default as (pi: ExtensionAPI, dependencies?: Record<string, unknown>) => void;
 	const pi = {
 		registerTool: (tool: RegisteredTool) => tools.push(tool),
 		registerCommand: (name: string, command: RegisteredCommand) => { commands[name] = command; },
 		on: (name: string, handler: Handler) => { (events[name] ??= []).push(handler); },
+		events: {
+			on: (name: string, handler: Handler) => { (busEvents[name] ??= []).push(handler); },
+			emit: (name: string, payload: Record<string, unknown>) => {
+				emitted.push({ name, payload });
+				for (const handler of busEvents[name] ?? []) handler(payload);
+			},
+		},
 		registerMessageRenderer: () => { throw new Error("follow-up renderer must not be registered"); },
 		sendMessage: () => { throw new Error("assurance follow-up must not be sent"); },
 	} as unknown as ExtensionAPI;
 	factory(pi, dependencies);
-	return { tools, commands, events };
+	return { tools, commands, events, emitted };
 }
 
 function minimalSnapshot(role: "qa" | "review", root: string, current?: { projection?: Record<string, any> }): SnapshotDescriptor {
@@ -215,9 +235,9 @@ async function recordEvidence(tool: RegisteredTool, root: string): Promise<void>
 	await tool.execute("evidence", { task_id: TASK, action: { op: "record_evidence", acceptance_id: "A1", status: "passed", summary: "fresh" } }, undefined, undefined, makeCtx(root, ui));
 }
 
-async function preparePendingReview(root: string): Promise<RegisteredTool & { commands: Record<string, RegisteredCommand> }> {
+async function preparePendingReview(root: string): Promise<RegisteredTool & { commands: Record<string, RegisteredCommand>; emitted: Array<{ name: string; payload: Record<string, unknown> }> }> {
 	let reviewSnapshot!: SnapshotDescriptor;
-	const { tools, commands, events } = loadSurface({
+	const { tools, commands, events, emitted } = loadSurface({
 		buildAssurance: async (rootPath: string, _task: string, role: "qa" | "review", current: { projection?: Record<string, any> }) => {
 			const snapshot = minimalSnapshot(role, rootPath, current);
 			if (role === "review") reviewSnapshot = snapshot;
@@ -268,7 +288,7 @@ async function preparePendingReview(root: string): Promise<RegisteredTool & { co
 		makeCtx(root, makeUI()),
 	);
 	expect(JSON.parse(submitted.content[0].text)).toMatchObject({ state: "awaiting_user" });
-	return Object.assign(tool, { commands });
+	return Object.assign(tool, { commands, emitted });
 }
 
 	test("a fresh Parent resumes Review preparation from the Kernel projection after interruption", { timeout: 15000 }, async () => {
@@ -309,6 +329,80 @@ async function preparePendingReview(root: string): Promise<RegisteredTool & { co
 		const { tools, commands } = loadSurface();
 		expect(tools.map((tool) => tool.name)).toEqual(["imm_kernel_canary", "imm_loop_action"]);
 		expect(Object.keys(commands)).toEqual([]);
+	});
+
+	test("renders compact Tool rows and keeps one bounded Task Rail lifecycle", async () => {
+		const { tools } = loadSurface();
+		const loop = tools.find((tool) => tool.name === "imm_loop_action")!;
+		const theme = {
+			fg: (_color: string, text: string) => text,
+			bold: (text: string) => text,
+		};
+		expect(loop.renderCall?.({ action: { op: "route", target: "step" } }, theme).render(120).join("\n"))
+			.toContain("imm_loop_action route step");
+		const result = await loop.execute(
+			"compact",
+			{ action: { op: "route", ownership: "plan", target: "step", context: { task_id: "task-1", target_id: "step-1" } } },
+			undefined,
+			undefined,
+			makeCtx(process.cwd(), makeUI()),
+		);
+		const rendered = loop.renderResult?.(result, {}, theme).render(120).join("\n") ?? "";
+		expect(rendered).toContain("State: projected");
+		expect(rendered).toContain("Result: Loop selected executor");
+		expect(rendered).toContain("Next: Follow executor authority");
+		expect(rendered).not.toContain("\"entry\"");
+
+		const kernel = tools.find((tool) => tool.name === "imm_kernel_canary")!;
+		const finalCard = kernel.renderResult?.({
+			content: [],
+			details: {
+				state: "applied",
+				task_state: {
+					phase: "done",
+					fresh_acceptance_ids: ["A1", "A2"],
+					missing_acceptance_ids: [],
+					fresh_approval_kinds: ["qa", "review"],
+					blocking_finding_ids: [],
+					unresolved_user_decision_ids: [],
+					replan_required_ids: [],
+					diff_hash: "sha256:1234567890abcdef",
+				},
+			},
+		}, {}, theme).render(120).join("\n") ?? "";
+		expect(finalCard).toContain("Acceptance: 2/2 fresh");
+		expect(finalCard).toContain("QA / Review: qa, review");
+		expect(finalCard).toContain("Residual blockers: 0");
+		expect(finalCard).toContain("Repository health: not assessed");
+		expect(finalCard).toContain("Git: task diff sha256:12345678");
+
+		const ui = makeUI();
+		const ctx = makeCtx(process.cwd(), ui);
+		const secondUi = makeUI();
+		const secondCtx = makeCtx(process.cwd(), secondUi);
+		presentTaskRail(ctx, { task_id: "task-rail", state: "Completed", result: "Acceptance complete", next: "No action required" });
+		presentTaskRail(secondCtx, { task_id: "task-rail-2", state: "Stopped", result: "Task stopped", next: "No action required" });
+		expect(ui.widgetCalls.at(-1)).toMatchObject({ key: TASK_RAIL_KEY, options: { placement: "aboveEditor" } });
+		expect(ui.widgetCalls.at(-1)?.content?.join("\n")).toContain("Task task-rail · Completed");
+		clearTerminalTaskRailOnInput(ctx);
+		expect(ui.widgetCalls.at(-1)).toEqual({ key: TASK_RAIL_KEY, content: undefined, options: undefined });
+		expect(secondUi.widgetCalls).toHaveLength(1);
+		clearTerminalTaskRailOnInput(secondCtx);
+		expect(secondUi.widgetCalls.at(-1)).toEqual({ key: TASK_RAIL_KEY, content: undefined, options: undefined });
+
+		const failedUi = makeUI();
+		const failedCtx = makeCtx(process.cwd(), failedUi);
+		failedCtx.ui.setWidget = () => { throw new Error("renderer unavailable"); };
+		presentTaskRail(failedCtx, { task_id: "task-rail-failure", state: "Blocked", result: "Renderer failed", next: "Use Tool result" });
+		presentTaskRail(failedCtx, { task_id: "task-rail-failure", state: "Blocked", result: "Renderer failed", next: "Use Tool result" });
+		expect(failedUi.notifyCalls).toEqual([{ text: "Task Rail is unavailable; Tool results remain authoritative.", kind: "warning" }]);
+
+		const source = readFileSync(
+			new URL("../plugins/immune-brain/.pi-extension/pi-canary-interaction.ts", import.meta.url),
+			"utf8",
+		);
+		for (const forbidden of ["setStatus(", "setTimeout(", "setInterval(", "HERDR_", "herdr:blocked", "process.stdout", "\\x07"])
+			expect(source).not.toContain(forbidden);
 	});
 
 	test("exposes Loop action and role dispatch builders through a read-only Tool", async () => {
@@ -893,6 +987,20 @@ async function preparePendingReview(root: string): Promise<RegisteredTool & { co
 				makeCtx(root, makeUI()),
 			);
 			expect(resumed.details).toMatchObject({ state: "applied", operation: "record-review-verdict" });
+			const attention = tool.emitted.filter((event) => event.name === USER_ATTENTION_EVENT);
+			expect(attention).toHaveLength(8);
+			for (let index = 0; index < attention.length; index += 2) {
+				const opened = attention[index].payload;
+				const closed = attention[index + 1].payload;
+				expect(opened).toMatchObject({ active: true, task_id: TASK, reason: "review_authorization" });
+				expect(closed).toEqual({
+					active: false,
+					attention_id: opened.attention_id,
+					task_id: TASK,
+					reason: "review_authorization",
+				});
+				expect(JSON.stringify(opened)).not.toMatch(/digest|findings|scope|prompt/i);
+			}
 		} finally { rmSync(root, { recursive: true, force: true }); }
 	});
 

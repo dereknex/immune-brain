@@ -5,6 +5,12 @@
 **Status**: Completed
 **Design risk**: Medium
 
+**Successor note (2026-08-21)**: `unified-immune-brain-interaction-ui.spec.md`
+supersedes this Spec's absolute ban on every custom Widget only for one bounded,
+projection-fed task-level `aboveEditor` Rail. The no-Footer, no timer/watcher,
+no custom Assurance progress engine, native Review, and literal-user authority
+invariants remain active.
+
 This R3-D1 slice deletes Immune-Brain's custom assurance Footer and Widget after
 R3-B1 made Review visible through the standard `Agent` tool. Long-running
 assurance progress moves to native Pi surfaces. Follow-up, notify, and

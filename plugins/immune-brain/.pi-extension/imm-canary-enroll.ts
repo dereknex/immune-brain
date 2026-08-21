@@ -33,6 +33,15 @@ import {
 	resolveBunRunner,
 	type VerificationDescriptor,
 } from "./pi-canary-verification";
+import {
+	presentTaskRail,
+	presentTaskRailResult,
+	renderStructuredCall,
+	renderStructuredResult,
+	resetInteractionPresentation,
+	withUserAttention,
+	type UserAttentionReason,
+} from "./pi-canary-interaction";
 
 const TASK_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 const REHEARSAL_OUTPUT_SUMMARY_LIMIT = 512;
@@ -90,7 +99,10 @@ export function assertTaskIntentPreparationStable(
 }
 
 async function requestEnrollmentConfirmation(
+	pi: Pick<ExtensionAPI, "events">,
 	ctx: ExtensionContext,
+	taskId: string,
+	reason: UserAttentionReason,
 	title: string,
 	summary: string,
 	details: string,
@@ -106,8 +118,19 @@ async function requestEnrollmentConfirmation(
 	const abort = () => complete(false);
 	if (signal.aborted) return false;
 	signal.addEventListener("abort", abort, { once: true });
+	presentTaskRail(ctx, {
+		task_id: taskId,
+		state: "Approval required",
+		result: title,
+		next: "Complete or cancel the native enrollment dialog",
+	});
 	try {
-		return await ctx.ui.custom<boolean>((tui, theme, _keybindings, done) => {
+		return await withUserAttention(pi, {
+			attention_id: randomUUID(),
+			task_id: taskId,
+			reason,
+			label: title,
+		}, () => ctx.ui.custom<boolean>((tui, theme, _keybindings, done) => {
 			finish = done;
 			if (signal.aborted) {
 				settled = true;
@@ -156,7 +179,7 @@ async function requestEnrollmentConfirmation(
 		}, {
 			overlay: true,
 			overlayOptions: { anchor: "center", width: "80%", maxHeight: "80%" },
-		});
+		}));
 	} finally {
 		signal.removeEventListener("abort", abort);
 	}
@@ -963,11 +986,14 @@ async function executeForegroundEnrollment(
 	onUpdate: ((update: ReturnType<typeof enrollmentToolResult>) => void) | undefined,
 	ctx: ExtensionContext,
 	registry: Awaited<ReturnType<typeof createEnrollmentAuthorityRegistry>>,
+	pi: Pick<ExtensionAPI, "events">,
 ): Promise<EnrollmentTerminal> {
 	let stage = "preparing";
 	const progress = (nextStage: string, summary: string) => {
 		stage = nextStage;
-		onUpdate?.(updateResult(action, taskId, nextStage, summary));
+		const update = updateResult(action, taskId, nextStage, summary);
+		onUpdate?.(update);
+		presentTaskRailResult(ctx, taskId, update.details);
 	};
 	const cancelled = () => terminal(
 		action,
@@ -1080,7 +1106,10 @@ async function executeForegroundEnrollment(
 			].join("\n");
 			progress("awaiting_confirmation", "Waiting for exact literal-user confirmation");
 			const confirmed = await requestEnrollmentConfirmation(
+				pi,
 				ctx,
+				taskId,
+				action === "new" ? "enrollment" : "descriptor_waiver",
 				action === "new" ? "Create Kernel-managed task?" : "Enroll Kernel canary task?",
 				preRehearsalSummary,
 				preRehearsalDetails,
@@ -1246,33 +1275,32 @@ export default function (pi: ExtensionAPI) {
 					onUpdate,
 					ctx,
 					authorityRegistry,
+					pi,
 				));
-			return enrollmentToolResult(result);
+			const rendered = enrollmentToolResult(result);
+			presentTaskRailResult(ctx, taskId, rendered.details);
+			return rendered;
 		},
 		renderCall(args, theme) {
 			const params = args as { action?: string; task_id?: string };
-			return new Text(
-				`${theme.fg("toolTitle", theme.bold("imm_canary_enrollment"))} ${theme.fg("muted", `${params.action ?? "?"} ${params.task_id ?? "?"}`)}`,
-				0,
-				0,
+			return renderStructuredCall(
+				"imm_canary_enrollment",
+				params.action ?? "unknown",
+				params.task_id,
+				theme,
 			);
 		},
 		renderResult(result, _options, theme) {
-			const details = result.details as Partial<EnrollmentTerminal> | undefined;
-			const state = String(details?.state ?? "unknown");
-			const stage = details?.stage ?? "unknown";
-			const textContent = result.content?.[0]?.type === "text"
-				? (result.content[0] as { text?: string }).text
-				: undefined;
-			const summary = details?.summary ?? textContent ?? "Enrollment result";
-			return new Text(
-				`${theme.fg(state === "completed" ? "success" : state === "running" ? "accent" : "warning", `${state} | ${stage}`)}\n${summary}`,
-				0,
-				0,
+			return renderStructuredResult(
+				result as Parameters<typeof renderStructuredResult>[0],
+				theme,
 			);
 		},
 	});
 
 	if (typeof pi.on === "function")
-		pi.on("session_shutdown", async () => coordinator.shutdown());
+		pi.on("session_shutdown", async (_event, ctx) => {
+			resetInteractionPresentation(ctx);
+			await coordinator.shutdown();
+		});
 }

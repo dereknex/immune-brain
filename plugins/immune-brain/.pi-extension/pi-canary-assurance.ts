@@ -1,5 +1,6 @@
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import { Text, type Component } from "@earendil-works/pi-tui";
+import { renderStructuredCall, renderStructuredResult } from "./pi-canary-interaction";
 
 export type AssuranceRole = "qa" | "review";
 
@@ -29,11 +30,11 @@ export interface CanaryToolArgs {
 }
 
 export function renderCanaryCall(args: CanaryToolArgs, theme: Theme): Component {
-	const op = args.action?.op ?? "unknown";
-	return new Text(
-		`${theme.fg("toolTitle", theme.bold("imm_kernel_canary"))} ${theme.fg("muted", op)} ${theme.fg("accent", args.task_id)}`,
-		0,
-		0,
+	return renderStructuredCall(
+		"imm_kernel_canary",
+		args.action?.op ?? "unknown",
+		args.task_id,
+		theme,
 	);
 }
 
@@ -41,25 +42,7 @@ export function renderCanaryResult(
 	result: { content?: Array<{ type?: string; text?: string }>; details?: Record<string, unknown> },
 	theme: Theme,
 ): Component {
-	const details = result.details ?? {};
-	const state = typeof details.state === "string" ? details.state : undefined;
-	const operation = typeof details.operation === "string" ? details.operation : undefined;
-	const phase = typeof details.phase === "string" ? details.phase : undefined;
-	const reason = typeof details.reason === "string" ? details.reason : undefined;
-	const resultSummary = typeof details.result === "string" ? details.result : undefined;
-	const nextAction = typeof details.next_action === "string" ? details.next_action : undefined;
-	if (state) {
-		const status = phase ?? state;
-		const result = resultSummary ?? reason ?? operation ?? state;
-		const lines = [
-			`${theme.fg("muted", "Status:")} ${theme.fg("accent", status)}`,
-			`${theme.fg("muted", "Result:")} ${theme.fg(reason ? "warning" : "dim", result)}`,
-		];
-		if (nextAction) lines.push(`${theme.fg("muted", "Next:")} ${theme.fg("dim", nextAction)}`);
-		return new Text(lines.join("\n"), 0, 0);
-	}
-	const text = result.content?.[0]?.type === "text" ? result.content[0].text ?? "" : "";
-	return new Text(theme.fg("dim", text), 0, 0);
+	return renderStructuredResult(result, theme);
 }
 
 export function renderAssuranceResultMessage(

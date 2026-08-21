@@ -2,8 +2,15 @@
 
 **Task ID**: `2026-08-17-001-host-native-assurance-ux`
 **Owner**: user
-**Status**: Proposed
+**Status**: Proposed; presentation portions partially superseded by
+`unified-immune-brain-interaction-ui.spec.md`
 **Design risk**: Medium
+
+**Successor note (2026-08-21)**: The successor replaces the absolute no-Widget
+presentation rule with one bounded task-level Rail and replaces duplicate
+success/cancel/stage notifications with the shared `State / Result / Next`
+hierarchy. This Spec's native Review, authoritative scope evidence,
+non-persistence, no-Footer, and no timer/polling requirements remain active.
 
 This change completes the user-facing Assurance path after the Host-native UI
 cutover. It adds no Kernel authority, persistence, or freshness semantics. It

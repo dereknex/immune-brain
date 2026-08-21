@@ -10,7 +10,9 @@
 // `pi-canary-assurance-progression.ts`. The adapter owns Tool schemas, TUI
 // authorization, Kernel capability creation, and translation of direct
 // progression results. No detached assurance job, completion follow-up,
-// result-polling path, Footer, or Widget is created here.
+// progression path, Footer content, polling, or secondary authority state is
+// created here. A bounded task-level Task Rail mirrors existing projections at
+// host input and Tool lifecycle boundaries.
 
 import { createHash, randomUUID } from "node:crypto";
 import { readFileSync, writeFileSync } from "node:fs";
@@ -40,6 +42,20 @@ import {
 	renderCanaryResult,
 	type AssuranceRole,
 } from "./pi-canary-assurance";
+import {
+	USER_ATTENTION_EVENT,
+	beginUserAttention,
+	clearTerminalTaskRailOnInput,
+	loopResultDetails,
+	notifyOnce,
+	presentTaskRail,
+	presentTaskRailResult,
+	renderStructuredCall,
+	renderStructuredResult,
+	resetInteractionPresentation,
+	type UserAttentionEventV1,
+	type UserAttentionReason,
+} from "./pi-canary-interaction";
 import { taskDiffHash, captureGitTaskSnapshot } from "../runtime/workspace_scope";
 import {
 	AssuranceProgression,
@@ -297,8 +313,54 @@ export default function (
 	} satisfies AssuranceProgressionPorts);
 
 	let managedRouteFailure: string | null = null;
+	let railContext: ExtensionContext | undefined;
+	const refreshTaskRail = async (ctx: ExtensionContext) => {
+		try {
+			const claim = await readBackendClaim(ctx.cwd);
+			if (!claim) return;
+			const projection = await projectAssuranceState(ctx.cwd, claim.task_id);
+			if (projection.error) {
+				presentTaskRail(ctx, {
+					task_id: claim.task_id,
+					state: "Blocked",
+					result: projection.error,
+					next: "Inspect authority state",
+				});
+				return;
+			}
+			presentTaskRailResult(ctx, claim.task_id, {
+				state: "status",
+				operation: "status",
+				task_state: projection.projection,
+				result: "Authoritative Assurance projection loaded",
+				next_action: statusNextAction(projection.projection),
+			});
+		} catch (error) {
+			notifyOnce(
+				ctx,
+				"task-rail:projection",
+				`Task Rail projection failed: ${error instanceof Error ? error.message : String(error)}`,
+				"warning",
+			);
+		}
+	};
+	const attentionEvents = pi.events as unknown as {
+		on?: (name: string, listener: (event: UserAttentionEventV1) => void) => void;
+	} | undefined;
+	attentionEvents?.on?.(USER_ATTENTION_EVENT, (event) => {
+		if (!event.active || !railContext) return;
+		presentTaskRail(railContext, {
+			task_id: event.task_id,
+			state: "Approval required",
+			result: event.label ?? "Literal-user decision required",
+			next: "Complete or cancel the native authorization dialog",
+		});
+	});
 	pi.on("input", async (event, ctx) => {
 		if (event.source === "extension") return { action: "continue" } as const;
+		railContext = ctx;
+		clearTerminalTaskRailOnInput(ctx);
+		await refreshTaskRail(ctx);
 		if (event.streamingBehavior === undefined) managedRouteFailure = null;
 		const text = event.text.trimStart();
 		if (/^\/skill:imm-(?:brainstorm|planner|loop)(?:\s|$)/.test(text)) {
@@ -327,22 +389,43 @@ export default function (
 		managedRouteFailure = null;
 	});
 
-	pi.on("session_start", () => {
+	pi.on("session_start", async (_event: unknown, ctx?: ExtensionContext) => {
 		progression.onSessionStart();
+		if (!ctx || ctx.mode !== "tui") return;
+		railContext = ctx;
+		await refreshTaskRail(ctx);
 	});
-	pi.on("tool_call", (event: { toolName?: string; input?: unknown; toolCallId?: string }) => {
+	pi.on("tool_call", (event: { toolName?: string; input?: unknown; toolCallId?: string }, ctx?: ExtensionContext) => {
+		if (ctx) railContext = ctx;
+		if (event.toolName === "imm_canary_enrollment" && ctx) {
+			const input = event.input as { task_id?: string } | undefined;
+			if (input?.task_id) presentTaskRail(ctx, {
+				task_id: input.task_id,
+				state: "Planning",
+				result: "Preparing enrollment",
+				next: "Review the native enrollment decision",
+			});
+		}
 		if (managedRouteFailure) {
 			return { block: true, reason: `Managed Path routing failed closed: ${managedRouteFailure}` };
 		}
 		return progression.observeToolCall(event);
 	});
-	pi.on("tool_result", (event: unknown) => {
+	pi.on("tool_result", (event: unknown, ctx?: ExtensionContext) => {
+		if (ctx) railContext = ctx;
+		const result = event as { toolName?: string; details?: Record<string, unknown> };
+		if (result.toolName === "imm_canary_enrollment" && ctx) {
+			const taskId = typeof result.details?.task_id === "string" ? result.details.task_id : undefined;
+			if (taskId) presentTaskRailResult(ctx, taskId, result.details);
+		}
 		progression.observeToolResult(event as Parameters<AssuranceProgression["observeToolResult"]>[0]);
 	});
 	pi.on("tool_execution_end", (event: unknown) => {
 		progression.observeToolEnd(event as Parameters<AssuranceProgression["observeToolEnd"]>[0]);
 	});
-	pi.on("session_shutdown", async () => {
+	pi.on("session_shutdown", async (_event: unknown, ctx?: ExtensionContext) => {
+		resetInteractionPresentation(ctx ?? railContext);
+		railContext = undefined;
 		await progression.onSessionShutdown();
 	});
 
@@ -400,6 +483,13 @@ export default function (
 		}),
 		execute: async (toolCallId: string, params: { task_id: string; action: { op: string } }, signal: AbortSignal | undefined, onUpdate: ((update: ReturnType<typeof toolResult>) => void) | undefined, ctx: ExtensionContext) => {
 			const { task_id: taskId, action } = params;
+			railContext = ctx;
+			presentTaskRailResult(ctx, taskId, {
+				state: "running",
+				operation: action.op,
+				result: `${action.op} started`,
+				next_action: "Wait for the foreground Tool result",
+			});
 			if (action.op === "repair_authority_state") {
 				if (ctx.mode !== "tui") return toolResult("imm_kernel_canary mutation is TUI-only");
 				const authority = await reconcileKernelAuthority(ctx.cwd, taskId);
@@ -415,6 +505,12 @@ export default function (
 					};
 					return toolResult(JSON.stringify(blocked, null, 2), blocked);
 				}
+				presentTaskRail(ctx, {
+					task_id: taskId,
+					state: "Approval required",
+					result: "Kernel authority repair requires literal-user approval",
+					next: "Complete or cancel the native confirmation",
+				});
 				const confirmed = await ctx.ui.confirm(
 					"Repair Kernel authority state?",
 					[
@@ -457,7 +553,10 @@ export default function (
 			if (action.op === "advance_assurance" || action.op === "request_authorization" || action.op === "submit_review" || action.op === "approve_breaking_intent_revision") {
 				if (ctx.mode !== "tui") return toolResult("imm_kernel_canary mutation is TUI-only");
 				const result = action.op === "advance_assurance"
-					? await progression.advance(taskId, ctx, signal, (update) => onUpdate?.(update))
+					? await progression.advance(taskId, ctx, signal, (update) => {
+						onUpdate?.(update);
+						presentTaskRailResult(ctx, taskId, update.details as Record<string, unknown> | undefined);
+					})
 					: action.op === "submit_review"
 						? await progression.submitReview(taskId, ctx)
 						: action.op === "approve_breaking_intent_revision"
@@ -469,6 +568,7 @@ export default function (
 							)
 							: await requestAuthorization(taskId, ctx);
 				const enriched = await enrichAssuranceResult(ctx, taskId, result as unknown as Record<string, unknown>);
+				presentTaskRailResult(ctx, taskId, enriched);
 				return toolResult(JSON.stringify(enriched, null, 2), enriched);
 			}
 			const projection = await projectAssuranceState(ctx.cwd, taskId);
@@ -487,14 +587,16 @@ export default function (
 				const blockers = state.blocking_finding_ids.length
 					+ state.unresolved_user_decision_ids.length
 					+ state.replan_required_ids.length;
-				return toolResult(JSON.stringify(state, null, 2), {
+				const details = {
 					state: "status",
 					operation: "status",
 					phase: state.phase,
 					task_state: state,
 					result: `${fresh}/${total} acceptance items fresh; ${blockers} blocker${blockers === 1 ? "" : "s"}`,
 					next_action: statusNextAction(state),
-				});
+				};
+				presentTaskRailResult(ctx, taskId, details);
+				return toolResult(JSON.stringify(state, null, 2), details);
 			}
 			// Production mutation requires the TUI host; RPC/JSON/print fail
 			// before any state read that could lead to mutation.
@@ -515,20 +617,22 @@ export default function (
 				const nextAction = result.record.phase === "done" || result.record.phase === "stopped"
 					? "none"
 					: updated.error || !updated.claim ? "inspect authority state" : statusNextAction(updated.projection);
+				const details = {
+					state: "recorded",
+					operation: action.op,
+					phase: result.record.phase,
+					task_state: taskState,
+					result: "Kernel executor fact recorded",
+					next_action: nextAction,
+				};
+				presentTaskRailResult(ctx, taskId, details);
 				return toolResult(
 					JSON.stringify(
 						{ revision: result.revision, phase: result.record.phase, task_state: taskState, next_action: nextAction },
 						null,
 						2,
 					),
-					{
-						state: "recorded",
-						operation: action.op,
-						phase: result.record.phase,
-						task_state: taskState,
-						result: "Kernel executor fact recorded",
-						next_action: nextAction,
-					},
+					details,
 				);
 			} catch (error) {
 				return toolResult(`kernel canary mutation failed: ${error instanceof Error ? error.message : String(error)}`);
@@ -590,12 +694,19 @@ export default function (
 					kernel_operation: action.kernel_operation,
 				})
 				: await buildLoopRoleDispatch({ role: action.role, context: action.context });
-			return toolResult(JSON.stringify(result, null, 2), {
-				state: "projected",
-				operation: action.op,
-				result: "Loop action projected without state mutation",
-				next_action: "follow the projected authority",
-			});
+			const details = loopResultDetails(result, action.op);
+			return toolResult(JSON.stringify(result, null, 2), details);
+		},
+		renderCall(args, theme) {
+			const action = (args as { action?: LoopToolAction }).action;
+			const subject = action?.op === "route" ? action.target : action?.role;
+			return renderStructuredCall("imm_loop_action", action?.op ?? "unknown", subject, theme);
+		},
+		renderResult(result, _options, theme) {
+			return renderStructuredResult(
+				result as Parameters<typeof renderStructuredResult>[0],
+				theme,
+			);
 		},
 	});
 
@@ -633,13 +744,13 @@ export default function (
 				invocation = progression.openInvocation(taskId);
 		} catch (error) {
 			const reason = error instanceof Error ? error.message : String(error);
-			ctx.ui.notify(`cannot authorize ${taskId}: ${reason}`, "error");
+			notifyOnce(ctx, `authorization-open:${taskId}:${reason}`, `cannot authorize ${taskId}: ${reason}`, "error");
 			return { state: "blocked", reason };
 		}
 		const projection = await projectAssuranceState(ctx.cwd, taskId);
 		if (projection.error || !projection.claim) {
 			const reason = projection.error ?? "no active backend claim";
-			ctx.ui.notify(`cannot authorize ${taskId}: ${reason}`, "error");
+			notifyOnce(ctx, `authorization-claim:${taskId}:${reason}`, `cannot authorize ${taskId}: ${reason}`, "error");
 			progression.closeInvocation(invocation);
 			return { state: "blocked", reason };
 		}
@@ -648,7 +759,7 @@ export default function (
 			pendingReview = progression.pendingReviewVerdict(taskId);
 			if (!pendingReview) {
 				const reason = "no pending native review verdict in this session";
-				ctx.ui.notify(`cannot authorize ${taskId}: ${reason}`, "error");
+				notifyOnce(ctx, `authorization-review:${taskId}`, `cannot authorize ${taskId}: ${reason}`, "error");
 				progression.closeInvocation(invocation);
 				return { state: "blocked", reason };
 			}
@@ -663,7 +774,7 @@ export default function (
 				userDecisionOperation = buildUserDecisionOperation(current.record);
 			} catch (error) {
 				const reason = error instanceof Error ? error.message : String(error);
-				ctx.ui.notify(`cannot authorize ${taskId}: ${reason}`, "error");
+				notifyOnce(ctx, `authorization-decision:${taskId}:${reason}`, `cannot authorize ${taskId}: ${reason}`, "error");
 				progression.closeInvocation(invocation);
 				return { state: "blocked", reason };
 			}
@@ -720,61 +831,77 @@ export default function (
 		const snapshotDigestRef = pendingReview
 			? snapshotDigest(pendingReview.snapshot)
 			: projection.projection.record_revision;
-		let confirmed: boolean;
+		let confirmed = false;
 		let reviewDecision: ReviewDecision | undefined;
 		let reviewNote: string | undefined;
-		if (pendingReview) {
-			let selected: keyof typeof REVIEW_DECISIONS | undefined;
-			try {
-				selected = await ctx.ui.select(summary, Object.keys(REVIEW_DECISIONS), {
-					signal: ctx.signal,
-				}) as keyof typeof REVIEW_DECISIONS | undefined;
-				if (selected === "Request rework" || selected === "Reject") {
-					reviewNote = (await ctx.ui.input(
-						selected === "Request rework" ? "Required rework" : "Reason for rejection",
-						"Required",
-						{ signal: ctx.signal },
-					))?.trim();
+		const attentionReason: UserAttentionReason = operation === "approve-breaking-intent-revision"
+			? "breaking_intent_revision"
+			: "review_authorization";
+		presentTaskRail(ctx, {
+			task_id: taskId,
+			state: "Approval required",
+			result: pendingReview ? "Independent Review verdict requires a literal-user decision" : `${operation} requires literal-user approval`,
+			next: "Complete or cancel the native authorization dialog",
+		});
+		const endAttention = beginUserAttention(pi, {
+			attention_id: randomUUID(),
+			task_id: taskId,
+			reason: attentionReason,
+			label: pendingReview ? "Review approval required" : `${operation} approval required`,
+		});
+		try {
+			if (pendingReview) {
+				let selected: keyof typeof REVIEW_DECISIONS | undefined;
+				try {
+					selected = await ctx.ui.select(summary, Object.keys(REVIEW_DECISIONS), {
+						signal: ctx.signal,
+					}) as keyof typeof REVIEW_DECISIONS | undefined;
+					if (selected === "Request rework" || selected === "Reject") {
+						reviewNote = (await ctx.ui.input(
+							selected === "Request rework" ? "Required rework" : "Reason for rejection",
+							"Required",
+							{ signal: ctx.signal },
+						))?.trim();
+					}
+				} catch (error) {
+					if (ctx.signal?.aborted !== true && (!(error instanceof DOMException) || error.name !== "AbortError")) {
+						const detail = error instanceof Error ? error.message : String(error);
+						const reason = `Review decision UI failed: ${detail}`;
+						notifyOnce(ctx, `authorization-ui:${taskId}:${operation}:${detail}`, reason, "error");
+						progression.closeInvocation(invocation);
+						return { state: "blocked", reason };
+					}
+					selected = undefined;
 				}
-			} catch (error) {
-				if (ctx.signal?.aborted !== true && (!(error instanceof DOMException) || error.name !== "AbortError")) {
-					const detail = error instanceof Error ? error.message : String(error);
-					const reason = `Review decision UI failed: ${detail}`;
-					ctx.ui.notify(reason, "error");
+				if (selected === undefined || ((selected === "Request rework" || selected === "Reject") && !reviewNote)) {
 					progression.closeInvocation(invocation);
-					return { state: "blocked", reason };
+					return { state: "cancelled", operation, reason: "cancelled" };
 				}
-				selected = undefined;
+				reviewDecision = REVIEW_DECISIONS[selected];
+				confirmed = true;
+			} else {
+				try {
+					confirmed = await ctx.ui.confirm(`Authorize ${operation} for canary ${taskId}?`, summary, {
+						signal: ctx.signal,
+					});
+				} catch {
+					if (operation !== "stop" && operation !== "approve-breaking-intent-revision")
+						await recordCancelledUserDecision(ctx, taskId, operation, snapshotDigestRef).catch(() => undefined);
+					progression.closeInvocation(invocation);
+					return { state: "cancelled", operation, reason: "confirmation aborted" };
+				}
 			}
-			if (selected === undefined || ((selected === "Request rework" || selected === "Reject") && !reviewNote)) {
-				ctx.ui.notify(`authorize ${operation}: cancelled`, "info");
-				progression.closeInvocation(invocation);
-				return { state: "cancelled", operation, reason: "cancelled" };
-			}
-			reviewDecision = REVIEW_DECISIONS[selected];
-			confirmed = true;
-		} else {
-			try {
-				confirmed = await ctx.ui.confirm(`Authorize ${operation} for canary ${taskId}?`, summary, {
-					signal: ctx.signal,
-				});
-			} catch {
-				ctx.ui.notify(`authorize ${operation}: confirmation aborted`, "info");
+			if (!confirmed) {
 				if (operation !== "stop" && operation !== "approve-breaking-intent-revision")
 					await recordCancelledUserDecision(ctx, taskId, operation, snapshotDigestRef).catch(() => undefined);
 				progression.closeInvocation(invocation);
-				return { state: "cancelled", operation, reason: "confirmation aborted" };
+				return { state: "cancelled", operation, reason: "cancelled" };
 			}
-		}
-		if (!confirmed) {
-			ctx.ui.notify(`authorize ${operation}: cancelled`, "info");
-			if (operation !== "stop" && operation !== "approve-breaking-intent-revision")
-				await recordCancelledUserDecision(ctx, taskId, operation, snapshotDigestRef).catch(() => undefined);
-			progression.closeInvocation(invocation);
-			return { state: "cancelled", operation, reason: "cancelled" };
+		} finally {
+			endAttention();
 		}
 		if (!progression.sessionActiveValue() || progression.sessionGenerationValue() !== authorizationGeneration || progression.invocationState(invocation) !== "open") {
-			ctx.ui.notify(`authorize ${operation}: session changed; confirmation discarded`, "warning");
+			notifyOnce(ctx, `authorization-session:${taskId}:${operation}`, `authorize ${operation}: session changed; confirmation discarded`, "warning");
 			progression.closeInvocation(invocation);
 			return { state: "blocked", reason: "session changed; confirmation discarded" };
 		}
@@ -833,7 +960,6 @@ export default function (
 						now,
 					})) as unknown as { record: { phase: string } };
 					progression.clearPendingReviewVerdict(taskId);
-					ctx.ui.notify(`authorize ${operation}: rejected, phase=${result.record.phase}`, "info");
 					return { state: "applied", operation, decision: "reject", phase: result.record.phase };
 				}
 				await applyAssuranceVerdict(
@@ -852,7 +978,7 @@ export default function (
 				progression.commitInvocation(invocation);
 			} catch (error) {
 				const reason = error instanceof Error ? error.message : String(error);
-				ctx.ui.notify(`authorize ${operation} aborted: ${reason}`, "error");
+				notifyOnce(ctx, `authorization-commit:${taskId}:${operation}:${reason}`, `authorize ${operation} aborted: ${reason}`, "error");
 				return { state: "blocked", reason };
 			}
 			const { registry, app } = await authorityPair();
@@ -924,7 +1050,6 @@ export default function (
 						diffProvider: (root: string, intent: { scope_hint: unknown }) => diffHashOf(root, intent),
 						now,
 					})) as unknown as { record: { phase: string } };
-					ctx.ui.notify(`authorize ${operation}: applied, phase=${result.record.phase}`, "info");
 					return { state: "applied", operation, phase: result.record.phase };
 				} catch (error) {
 					if (sidecar && priorBytes) {
@@ -942,7 +1067,7 @@ export default function (
 					reason === "assurance snapshot changed before authority application" &&
 					progression.pendingReviewVerdict(taskId)?.operationId === pendingReview.operationId
 				) progression.clearPendingReviewVerdict(taskId);
-				ctx.ui.notify(`authorize failed: ${reason}`, "error");
+				notifyOnce(ctx, `authorization-apply:${taskId}:${operation}:${reason}`, `authorize failed: ${reason}`, "error");
 				return { state: "blocked", reason };
 			} finally {
 				progression.closeInvocation(invocation);
@@ -1275,11 +1400,11 @@ async function applyAssuranceVerdict(
 		const parked = (result.record as { findings?: Array<{ kind: string; status: string }> }).findings?.some(
 			(finding) => finding.kind === "replan_required" && finding.status === "open",
 		);
-		ctx.ui.notify(
-			parked
-				? `rework applied: review parked for replan with ${findings.length} finding(s)`
-				: `rework applied: ${result.record.phase} with ${findings.length} finding(s)`,
-			parked ? "warning" : "info",
+		if (parked) notifyOnce(
+			ctx,
+			`rework-parked:${snapshot.task_id}`,
+			`rework applied: review parked for replan with ${findings.length} finding(s)`,
+			"warning",
 		);
 		return;
 	}
@@ -1307,15 +1432,14 @@ async function applyAssuranceVerdict(
 		now,
 	});
 	await hooks.beforeCommit?.();
-	const result = (await commitAndApply(async () => app.execute({
+	await commitAndApply(async () => app.execute({
 		root: ctx.cwd,
 		task_id: snapshot.task_id,
 		operation: { op: "record_approval", capability, approval, actor_id: actorId },
 		prior_intent_token: priorIntentToken,
 		diffProvider: (root: string, intent: { scope_hint: unknown }) => diffHashOf(root, intent),
 		now,
-	}))) as unknown as { record: { phase: string } };
-	ctx.ui.notify(`assurance applied: ${snapshot.role} approval recorded on ${result.record.phase}`, "info");
+	}));
 }
 
 async function buildAssuranceSnapshot(
