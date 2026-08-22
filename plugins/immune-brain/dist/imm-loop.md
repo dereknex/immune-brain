@@ -51,7 +51,7 @@ Repeat this sequence; do not silently stop while a valid action remains:
 1. Call `imm_loop_action` with `op: route` (or `dispatch_role` at a QA/review boundary) and follow the projected `next` authority.
 2. Emit one progress line: `[target][phase] result | next: action`.
 3. Execute exactly one allowed action:
-   - Kernel ownership: call `imm_kernel_canary` for that owned task. After fresh executor evidence, call `advance_assurance` and `submit_review`; `request_authorization` remains the user authorization boundary.
+   - Kernel ownership: call `imm_kernel_canary` for that owned task. After fresh executor evidence, call `advance_assurance` and `submit_review`; when the projection calls for `request_authorization`, `approve_breaking_intent_revision`, or `repair_authority_state`, invoke the exact Tool operation directly without asking the user for chat pre-confirmation. The native host interaction is the single authority decision.
    - Active Step / `rework_needed`: follow the returned `executor` context in the current conversation, implement only the active Step or pending same-boundary `follow_up`, verify, record structured execution evidence through the Loop runtime action, and continue. A bounded test-only repair may request internal `test-fixer` with `focus_delta.specific_changes`; PR review or CI repair may request internal `pr-fix` with the current `plan_id`, changed-file boundary, and verification. Both return child evidence to the Parent and cannot widen scope.
    - `awaiting_qa_decision`: call `imm_loop_action` with `op: dispatch_role`, role `qa`, the current projection, Plan verification, recorded evidence, and current target identity. Invoke the returned foreground Agent envelope exactly. A `rework` or `replan` must carry validated `notes`.
    - `review_required`: map the exact `pending_review_gate` (`imm-code-review` or `imm-ui-review`) to the internal `code-review` or `ui-review` role and call `imm_loop_action` with `op: dispatch_role`, passing `pending_review_gate`, `review_changed_files`, and `review_changed_files_signature`. Invoke the returned foreground Agent envelope exactly. Record a validated pass, or open a same-boundary follow-up through the Loop runtime action.
@@ -139,14 +139,18 @@ Default user-facing shape: checkpoint progress lines, then `Conclusion -> Eviden
 
 When the Kernel projection reports an active/draining backend claim, keep
 `imm-loop` as the user-facing entry and call the `imm_kernel_canary` Tool for
-that owned task. Enrollment uses the `imm_canary_enrollment` Tool and Review authorization remains
-a native TUI gate using the internal user-kind approval action `record-user-approval`. This action is
-not a public Skill or CLI route. Do not invoke the removed `imm-canary-work` Skill as a
-separate entry point. Invalid or contradictory projections fail closed. After fresh executor
+that owned task. Enrollment uses the `imm_canary_enrollment` Tool and Review
+authorization remains a native TUI gate using the internal user-kind approval
+action `record-user-approval`. When the projection calls for
+`request_authorization`, `approve_breaking_intent_revision`, or
+`repair_authority_state`, invoke the exact Tool operation directly without
+asking the user for chat pre-confirmation; the native host interaction is the
+single authority decision. This action is not a public Skill or CLI route. Do
+not invoke the removed `imm-canary-work` Skill as a separate entry point.
+Invalid or contradictory projections fail closed. After fresh executor
 evidence, call `imm_kernel_canary` `advance_assurance` and `submit_review`;
 `request_authorization` remains the user authorization boundary. Visible
 background state and push follow-up replace manual QA/Review sequencing and
-result polling. A terminal task leaves only an immutable task
-tombstone: it is never reactivated and never blocks unrelated v3 routing. The
-Kernel projection is advisory; every Kernel mutation re-enters Kernel
-store-lock validation.
+result polling. A terminal task leaves only an immutable task tombstone: it is
+never reactivated and never blocks unrelated v3 routing. The Kernel projection
+is advisory; every Kernel mutation re-enters Kernel store-lock validation.

@@ -1,0 +1,9 @@
+{
+  "contract": "assurance_kernel/task_tombstone/v1",
+  "task_id": "2026-08-21-006-single-authority-confirmation-interaction",
+  "lifecycle_status": "terminal",
+  "terminal_phase": "done",
+  "terminal_event_id": "complete:2026-08-21-006-single-authority-confirmation-interaction:2026-08-21T17:52:52.816Z",
+  "final_record_hash": "sha256:114cdc5df043c54bd3f4505654c0d78e34ebf51a75f25a4dbc5e1ef13a2bdaa1",
+  "terminalized_at": "2026-08-21T17:52:52.816Z"
+}

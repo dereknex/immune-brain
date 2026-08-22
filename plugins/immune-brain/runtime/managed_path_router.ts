@@ -324,10 +324,34 @@ function routeFromAssurance(
 	if (input.task_id && input.task_id !== assurance.task_id) {
 		throw new Error("Assurance projection task identity does not match request task identity");
 	}
-	if (
-		TERMINAL_ASSURANCE_PHASES.has(assurance.phase) &&
-		assurance.next_action !== "repair_authority_state"
-	) return null;
+	if (TERMINAL_ASSURANCE_PHASES.has(assurance.phase)) {
+		if (assurance.next_action === "repair_authority_state") {
+			return {
+				contract: "immune_brain/managed_request_route/v1",
+				phase: "loop",
+				intent: "implementation",
+				enrollment: "existing_authority",
+				reason: "resume_assurance_projection",
+				mode: input.fast_track ? "fast-track" : "standard",
+				bootstrap: "not_required",
+				authority: "preserved",
+				task_id: assurance.task_id,
+				assurance: { ...assurance },
+			};
+		}
+		return {
+			contract: "immune_brain/managed_request_route/v1",
+			phase: "none",
+			intent: "implementation",
+			enrollment: "none",
+			reason: "assurance_terminal",
+			mode: "standard",
+			bootstrap: "not_required",
+			authority: "none",
+			task_id: assurance.task_id,
+			assurance: { ...assurance, next_action: "none" },
+		};
+	}
 	return {
 		contract: "immune_brain/managed_request_route/v1",
 		phase: "loop",
@@ -347,7 +371,9 @@ export function routeManagedRequest(input: ManagedRequestInput): ManagedRequestR
 	if (assuranceRoute) {
 		return {
 			...assuranceRoute,
-			bootstrap: ensureManagedBootstrap(input.root),
+			bootstrap: assuranceRoute.phase === "none"
+				? "not_required"
+				: ensureManagedBootstrap(input.root),
 		};
 	}
 	const classification = classifyManagedRequest(input.request);

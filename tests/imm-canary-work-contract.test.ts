@@ -33,6 +33,29 @@ describe("imm-loop Kernel routing contract", () => {
 		expect(dist).toContain("native TUI gate");
 	});
 
+	test("native authority operations bypass chat pre-confirmation", () => {
+		const entry = read("plugins/immune-brain/skills/imm-loop/SKILL.md");
+		const dist = read("plugins/immune-brain/dist/imm-loop.md");
+		for (const text of [entry, dist]) {
+			expect(text).toContain("request_authorization");
+			expect(text).toContain("approve_breaking_intent_revision");
+			expect(text).toContain("repair_authority_state");
+			expect(text).toContain("chat pre-confirmation");
+			expect(text).toContain("single authority decision");
+		}
+
+		const extension = read("plugins/immune-brain/.pi-extension/imm-canary-work.ts");
+		for (const operation of [
+			"request_authorization",
+			"approve_breaking_intent_revision",
+			"repair_authority_state",
+		]) {
+			expect(extension).toContain(operation);
+		}
+		expect(extension).toContain("do not ask for chat pre-confirmation");
+		expect(extension).toContain("single native confirmation");
+	});
+
 	test("enrollment contracts require isolated descriptor rehearsal and one explicit waiver route", () => {
 		const guide = read("plugins/immune-brain/USER_GUIDE.md");
 		const kernelCommand = read("plugins/immune-brain/runtime/commands/kernel.ts");

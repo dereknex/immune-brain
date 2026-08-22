@@ -170,9 +170,21 @@ function ctxFor(root: string, ui: FakeUI, confirmResult: boolean | (() => Promis
 		signal: new AbortController().signal,
 		ui: {
 			notify: (text: string, kind: string) => ui.notifyCalls.push({ text, kind }),
-			confirm: async (title: string, body: string) => {
-				ui.confirmCalls.push({ title, body });
-				return typeof confirmResult === "function" ? confirmResult() : confirmResult;
+			custom: async (factory: any) => {
+				let selected: string | undefined;
+				const component = factory(
+					{ requestRender: () => undefined },
+					{ fg: (_color: string, text: string) => text, bold: (text: string) => text },
+					{},
+					(result: string | undefined) => { selected = result; },
+				);
+				component.handleInput?.("d");
+				const body = component.render(120).join("\n");
+				ui.confirmCalls.push({ title: body, body });
+				const approved = typeof confirmResult === "function" ? await confirmResult() : confirmResult;
+				if (!approved) component.handleInput?.("\u001b[B");
+				component.handleInput?.("\r");
+				return selected;
 			},
 		},
 	};

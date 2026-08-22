@@ -1,0 +1,178 @@
+{
+  "contract": "assurance_kernel/task_record/v2",
+  "task_id": "2026-08-21-006-single-authority-confirmation-interaction",
+  "intent_revision": 1,
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "2026-08-21-006-single-authority-confirmation-interaction",
+    "goal": "Make one user decision require at most one confirmation across Brainstorm, Planner, Enrollment, breaking intent revision, stale-claim repair, and Review authorization. Preserve native host UI as the only digest-bound authority gate. Treat direct requirements, answered questions, and bulk-approved recommendations as confirmed decisions; use an unchanged final summary only as a correction window; require explicit confirmation only for a newly introduced or changed material decision. For clear mutation requests, proceed from a validated TaskIntent directly to native Enrollment without chat pre-confirmation. For Plan-only requests, treat a later start Enrollment reply as a non-authoritative execution trigger. After awaiting_user, a complete breaking revision, or a proven stale claim, invoke the corresponding native authorization Tool directly. Keep all Kernel capabilities, snapshot revalidation, rehearsal, cancellation, zero-write, Review decision, and persisted-schema behavior unchanged; add no chat authority parser, token, compatibility layer, or runtime state.",
+    "acceptance": [
+      {
+        "id": "acc-decision-delta-confirmation",
+        "assertion": "Brainstorm and Planner contracts treat direct requirements, answered questions, and bulk approval as confirmation of those decisions; an unchanged result-only summary is a non-blocking correction window; only a newly introduced or changed material decision requires confirmation before handoff; and agent judgment alone still cannot hand off unconfirmed proposed direction or scope.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/exhaustive-decision-tree-contract.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 65536\n}\n"
+      },
+      {
+        "id": "acc-single-native-enrollment-confirmation",
+        "assertion": "Planner contracts route a clear mutation request from validated TaskIntent directly to the native digest-bound Enrollment gate without chat pre-confirmation, while an explicit Plan-only request stops and a later start Enrollment reply is described as a non-authoritative execution trigger rather than approval.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/imm-planner-kernel-intent-contract.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 65536\n}\n"
+      },
+      {
+        "id": "acc-direct-native-existing-authority",
+        "assertion": "Loop and Work Tool contracts direct the Parent to invoke request_authorization, approve_breaking_intent_revision, and repair_authority_state without asking for a chat pre-confirmation, leaving each existing native interaction as the only authority decision.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/imm-canary-work-contract.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 65536\n}\n"
+      }
+    ],
+    "scope_hint": [
+      "docs/solutions/contracts.md",
+      "docs/specs/single-authority-confirmation-interaction.spec.md",
+      "plugins/immune-brain/.pi-extension/imm-canary-work.ts",
+      "plugins/immune-brain/dist/imm-brainstorm.md",
+      "plugins/immune-brain/dist/imm-loop.md",
+      "plugins/immune-brain/dist/imm-planner.md",
+      "plugins/immune-brain/skills/imm-brainstorm/SKILL.md",
+      "plugins/immune-brain/skills/imm-loop/SKILL.md",
+      "plugins/immune-brain/skills/imm-planner/SKILL.md",
+      "tests/exhaustive-decision-tree-contract.test.ts",
+      "tests/imm-canary-work-contract.test.ts",
+      "tests/imm-planner-kernel-intent-contract.test.ts"
+    ],
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/2026-08-21-006-single-authority-confirmation-interaction.intent.json",
+    "revision": 1,
+    "content_hash": "sha256:b4ac274dbaba4205f371f5ce59dedd82b2e21941eeb28b53fe7f0962e0922fba"
+  },
+  "phase": "done",
+  "baseline": "sha256:b4ac274dbaba4205f371f5ce59dedd82b2e21941eeb28b53fe7f0962e0922fba",
+  "evidence": [
+    {
+      "id": "evidence-record_evidence:2026-08-21-006-single-authority-confirmation-interaction:2026-08-21T17:48:50.925Z",
+      "acceptance_id": "acc-decision-delta-confirmation",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:b4ac274dbaba4205f371f5ce59dedd82b2e21941eeb28b53fe7f0962e0922fba",
+      "diff_hash": "sha256:98168b1222870884f100c7e253634dd1fb0ec71b6d9a127bedb51ec34e68e9d3",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "bun test tests/exhaustive-decision-tree-contract.test.ts: 7 pass, 0 fail. Brainstorm and Planner source/dist contracts pin confirmed inputs, non-blocking correction summaries, and confirmation of only material decision deltas."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-21-006-single-authority-confirmation-interaction:2026-08-21T17:48:58.487Z",
+      "acceptance_id": "acc-single-native-enrollment-confirmation",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:b4ac274dbaba4205f371f5ce59dedd82b2e21941eeb28b53fe7f0962e0922fba",
+      "diff_hash": "sha256:98168b1222870884f100c7e253634dd1fb0ec71b6d9a127bedb51ec34e68e9d3",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "bun test tests/imm-planner-kernel-intent-contract.test.ts: 7 pass, 0 fail. Planner source/dist contracts pin Plan-only execution triggers and direct native digest-bound Enrollment without chat pre-confirmation."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-21-006-single-authority-confirmation-interaction:2026-08-21T17:49:16.800Z",
+      "acceptance_id": "acc-direct-native-existing-authority",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:b4ac274dbaba4205f371f5ce59dedd82b2e21941eeb28b53fe7f0962e0922fba",
+      "diff_hash": "sha256:98168b1222870884f100c7e253634dd1fb0ec71b6d9a127bedb51ec34e68e9d3",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "bun test tests/imm-canary-work-contract.test.ts: 7 pass, 0 fail. Loop source/dist and Work Tool guidance pin direct request_authorization, approve_breaking_intent_revision, and repair_authority_state invocation with one native confirmation."
+    }
+  ],
+  "findings": [],
+  "approvals": [
+    {
+      "id": "approval-qa-b0e54c85",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:b4ac274dbaba4205f371f5ce59dedd82b2e21941eeb28b53fe7f0962e0922fba",
+      "diff_hash": "sha256:98168b1222870884f100c7e253634dd1fb0ec71b6d9a127bedb51ec34e68e9d3",
+      "actor_id": "deterministic-qa",
+      "summary": "all 3 fixed verification descriptor(s) passed"
+    },
+    {
+      "id": "approval-review-e4979bf3",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:b4ac274dbaba4205f371f5ce59dedd82b2e21941eeb28b53fe7f0962e0922fba",
+      "diff_hash": "sha256:98168b1222870884f100c7e253634dd1fb0ec71b6d9a127bedb51ec34e68e9d3",
+      "actor_id": "native-review-44a4d75c-7496-496",
+      "summary": "Immutable bundle provenance verified; bounded contract, runtime guidance, mirrors, and tests consistently enforce decision-delta confirmation and one native authority interaction."
+    }
+  ],
+  "history": [
+    {
+      "id": "record_evidence:2026-08-21-006-single-authority-confirmation-interaction:2026-08-21T17:48:50.925Z",
+      "at": "2026-08-21T17:48:50.925Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-decision-delta-confirmation\naction_v2_sha256:2e7a56ed5dedd7c5b4b449cf6cca873933d48cb37c886218cf47870c3a016fef"
+    },
+    {
+      "id": "record_evidence:2026-08-21-006-single-authority-confirmation-interaction:2026-08-21T17:48:58.487Z",
+      "at": "2026-08-21T17:48:58.487Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-single-native-enrollment-confirmation\naction_v2_sha256:76495f44048b4ac1f780ad3f9482e17ddeb84b32b015ded5687ed1a020d5ff32"
+    },
+    {
+      "id": "record_evidence:2026-08-21-006-single-authority-confirmation-interaction:2026-08-21T17:49:16.800Z",
+      "at": "2026-08-21T17:49:16.800Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-direct-native-existing-authority\naction_v2_sha256:976932ef2a4dee7b21024dc250269e9cfd4fc5a1288c43318b793c0e12ddeac3"
+    },
+    {
+      "id": "submit_review:2026-08-21-006-single-authority-confirmation-interaction:2026-08-21T17:49:23.097Z",
+      "at": "2026-08-21T17:49:23.097Z",
+      "type": "submit_review",
+      "from_phase": "working",
+      "to_phase": "review",
+      "reason": "action_v2_sha256:95adee49702b4b15d57b8cd8505ae576e170beaa5f8d3925e1a5500917bfc2e8"
+    },
+    {
+      "id": "record_approval:2026-08-21-006-single-authority-confirmation-interaction:2026-08-21T17:49:24.821Z",
+      "at": "2026-08-21T17:49:24.821Z",
+      "type": "record_approval",
+      "from_phase": "review",
+      "to_phase": "review",
+      "reason": "approval-qa-b0e54c85\naction_v2_sha256:0365739ad36ff4ffa1bf090d0940ab0f577966e414ef5fa49ba216aa60d7bfb3",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-79ee2a1d52744a1f",
+        "issued_at": "2026-08-21T17:49:24.821Z",
+        "expires_at": "2026-08-21T17:59:24.821Z"
+      }
+    },
+    {
+      "id": "record_approval:2026-08-21-006-single-authority-confirmation-interaction:2026-08-21T17:52:46.624Z",
+      "at": "2026-08-21T17:52:46.624Z",
+      "type": "record_approval",
+      "from_phase": "review",
+      "to_phase": "review",
+      "reason": "approval-review-e4979bf3\naction_v2_sha256:98beb20ff7919a268dfd5083c0ae67b107639c517181c5880b80f1e87865cc25",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "native-review-44a4d75c-7496-496",
+        "confirmation_ref": "pi-confirm-2888f6bcbdd811dd",
+        "issued_at": "2026-08-21T17:52:46.624Z",
+        "expires_at": "2026-08-21T18:02:46.624Z"
+      }
+    },
+    {
+      "id": "complete:2026-08-21-006-single-authority-confirmation-interaction:2026-08-21T17:52:52.816Z",
+      "at": "2026-08-21T17:52:52.816Z",
+      "type": "complete",
+      "from_phase": "review",
+      "to_phase": "done",
+      "reason": "action_v2_sha256:1b13d13d38677136299ea2020f0187baa119c2344478c3a1264ec0dc1f106fed"
+    }
+  ]
+}

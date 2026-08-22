@@ -277,7 +277,21 @@ describe("pi canary lifecycle package composition", () => {
 				}),
 				writeReviewEvidence: () => ({ path: join(root, "review.json"), remove: () => undefined }),
 			});
-			const ui = { notify: () => undefined, select: async () => "Approve", input: async () => "" };
+			const ui = {
+				notify: () => undefined,
+				input: async () => "",
+				custom: async (factory: any) => {
+					let selected: string | undefined;
+					const component = factory(
+						{ requestRender: () => undefined },
+						{ fg: (_color: string, text: string) => text, bold: (text: string) => text },
+						{},
+						(result: string | undefined) => { selected = result; },
+					);
+					component.handleInput?.("\r");
+					return selected;
+				},
+			};
 			const ctx = { mode: "tui", cwd: root, ui };
 			const evidence = await surface.tool!.execute("evidence", { task_id: TASK, action: { op: "record_evidence", acceptance_id: "A1", status: "passed", summary: "fresh" } }, undefined, undefined, ctx);
 			expect(JSON.parse(evidence.content[0].text).task_state.phase).toBe("working");
@@ -294,6 +308,11 @@ describe("pi canary lifecycle package composition", () => {
 			expect(JSON.parse(authorized.content[0].text).next_action).toBe("complete task");
 			const completed = await surface.tool!.execute("complete", { task_id: TASK, action: { op: "complete" } }, undefined, undefined, ctx);
 			expect(JSON.parse(completed.content[0].text)).toMatchObject({ phase: "done", next_action: "none", task_state: { phase: "done" } });
+			const terminalStatus = await surface.tool!.execute("terminal-status", { task_id: TASK, action: { op: "status" } }, undefined, undefined, ctx);
+			expect(JSON.parse(terminalStatus.content[0].text)).toMatchObject({ phase: "done" });
+			expect(terminalStatus.details).toMatchObject({ phase: "done", next_action: "none" });
+			const terminalAdvance = await surface.tool!.execute("terminal-advance", { task_id: TASK, action: { op: "advance_assurance" } }, undefined, undefined, ctx);
+			expect(JSON.parse(terminalAdvance.content[0].text)).toMatchObject({ state: "completed", next_action: "none", task_state: { phase: "done" } });
 			expect(surface.commands).toEqual([]);
 		} finally {
 			rmSync(root, { recursive: true, force: true });

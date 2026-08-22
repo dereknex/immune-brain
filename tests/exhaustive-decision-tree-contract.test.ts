@@ -36,9 +36,21 @@ describe("default exhaustive decision-tree skill contract", () => {
 			"bulk approval of all recommendations",
 			"zero-question fast path",
 			"result-only summary",
-			"explicit confirmation",
+			"non-blocking correction window",
 			"final decisions",
 			"question transcript",
+		]);
+	});
+
+	test("confirmed decisions are not reconfirmed unless the summary changes them", () => {
+		expectAll([...brainstormContracts, ...plannerContracts], [
+			"Treat the user's direct requirements, answers to numbered questions, and bulk approval of recommendations as confirmation of those decisions",
+			"Do not ask the user to reconfirm decisions reflected without material change",
+			"introduces or changes a material decision affecting Result, Scope, behavior, Verification, or risk treatment",
+			"explicit confirmation of only that decision delta",
+		]);
+		expectAll(brainstormContracts, [
+			"Agent judgment alone never confirms a proposed direction or scope",
 		]);
 	});
 

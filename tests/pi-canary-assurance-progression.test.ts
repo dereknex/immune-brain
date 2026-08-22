@@ -152,6 +152,17 @@ describe("foreground assurance progression", () => {
 		expect(h.counts().applyCount).toBe(1);
 	});
 
+	test("claimless done and stopped projections terminate before QA or claim checks", async () => {
+		for (const [phase, state] of [["done", "completed"], ["stopped", "stopped"]] as const) {
+			const h = makeHarness({
+				project: async () => ({ ...projection(phase), claim: null }),
+				runQa: async () => { throw new Error("terminal projection must not start QA"); },
+			});
+			expect(await h.progression.advance(TASK, ctx)).toEqual({ state });
+			expect(h.counts().applyCount).toBe(0);
+		}
+	});
+
 	test("host cancellation before authority settlement performs zero QA writes", async () => {
 		let released!: () => void;
 		const gate = new Promise<void>((resolve) => { released = resolve; });

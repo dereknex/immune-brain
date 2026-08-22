@@ -164,6 +164,36 @@ describe("managed default request routing", () => {
 		}
 	});
 
+	it("stops terminal Assurance without bootstrap or request reclassification", () => {
+		for (const phase of ["done", "stopped"]) {
+			const root = tempRoot();
+			try {
+				const route = routeManagedRequest({
+					root,
+					request: "Implement the next task",
+					task_id: "terminal-owner",
+					assurance: {
+						task_id: "terminal-owner",
+						phase,
+						next_action: "advance assurance",
+					},
+				});
+				expect(route).toMatchObject({
+					phase: "none",
+					reason: "assurance_terminal",
+					enrollment: "none",
+					authority: "none",
+					bootstrap: "not_required",
+					task_id: "terminal-owner",
+					assurance: { task_id: "terminal-owner", phase, next_action: "none" },
+				});
+				expect(readdirSync(root)).toEqual([]);
+			} finally {
+				remove(root);
+			}
+		}
+	});
+
 	it("routes terminal stale-claim repair projections back to incumbent Loop", () => {
 		const root = tempRoot();
 		try {

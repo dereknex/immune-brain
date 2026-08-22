@@ -54,13 +54,14 @@ interface RegisteredCommand { handler: (args: string, ctx: unknown) => Promise<v
 interface FakeUI {
 	confirmCalls: Array<{ title: string; body: string }>;
 	selectCalls: Array<{ title: string; options: string[] }>;
+	customCalls: Array<{ body: string; collapsedBody: string }>;
 	inputCalls: Array<{ title: string; placeholder?: string }>;
 	notifyCalls: Array<{ text: string; kind: string }>;
 	widgetCalls: Array<{ key: string; content: string[] | undefined; options?: { placement?: string } }>;
 }
 
 function makeUI(): FakeUI {
-	return { confirmCalls: [], selectCalls: [], inputCalls: [], notifyCalls: [], widgetCalls: [] };
+	return { confirmCalls: [], selectCalls: [], customCalls: [], inputCalls: [], notifyCalls: [], widgetCalls: [] };
 }
 function makeCtx(root: string, ui: FakeUI, mode = "tui", decision: string | null = "Approve", note = "Address the requested changes", confirmDecision = true) {
 	return {
@@ -72,6 +73,26 @@ function makeCtx(root: string, ui: FakeUI, mode = "tui", decision: string | null
 			setStatus: () => { throw new Error("Footer must remain untouched"); },
 			setWidget: (key: string, content: string[] | undefined, options?: { placement?: string }) => {
 				ui.widgetCalls.push({ key, content, options });
+			},
+			custom: async (factory: any) => {
+				let selected: string | undefined;
+				const component = factory(
+					{ requestRender: () => undefined },
+					{ fg: (_color: string, text: string) => text, bold: (text: string) => text },
+					{},
+					(result: string | undefined) => { selected = result; },
+				);
+				const collapsedBody = component.render(120).join("\n");
+				component.handleInput?.("d");
+				const body = component.render(120).join("\n");
+				ui.customCalls.push({ body, collapsedBody });
+				if (decision === null) component.handleInput?.("\u001b");
+				else {
+					const downCount = decision === "Request rework" ? 1 : decision === "Reject" ? 2 : confirmDecision ? 0 : 1;
+					for (let index = 0; index < downCount; index += 1) component.handleInput?.("\u001b[B");
+					component.handleInput?.("\r");
+				}
+				return selected;
 			},
 			select: async (title: string, options: string[]) => {
 				ui.selectCalls.push({ title, options });
@@ -331,7 +352,7 @@ async function preparePendingReview(root: string): Promise<RegisteredTool & { co
 		expect(Object.keys(commands)).toEqual([]);
 	});
 
-	test("renders compact Tool rows and keeps one bounded Task Rail lifecycle", async () => {
+	test("compact-task-rail-hierarchy: renders compact Tool rows and keeps one bounded Task Rail lifecycle", async () => {
 		const { tools } = loadSurface();
 		const loop = tools.find((tool) => tool.name === "imm_loop_action")!;
 		const theme = {
@@ -384,6 +405,16 @@ async function preparePendingReview(root: string): Promise<RegisteredTool & { co
 		presentTaskRail(secondCtx, { task_id: "task-rail-2", state: "Stopped", result: "Task stopped", next: "No action required" });
 		expect(ui.widgetCalls.at(-1)).toMatchObject({ key: TASK_RAIL_KEY, options: { placement: "aboveEditor" } });
 		expect(ui.widgetCalls.at(-1)?.content?.join("\n")).toContain("Task task-rail · Completed");
+		const longUi = makeUI();
+		const longTaskId = `task-${"x".repeat(80)}-tail`;
+		presentTaskRail(makeCtx(process.cwd(), longUi), { task_id: longTaskId, state: "Working", result: "One result", next: "One action" });
+		const longRail = longUi.widgetCalls.at(-1)?.content ?? [];
+		expect(longRail).toHaveLength(3);
+		expect(longRail[0]).toContain("task-");
+		expect(longRail[0]).toContain("-tail · Working");
+		expect(longRail[0]).not.toContain(longTaskId);
+		expect(longRail[1]).toBe("Result: One result");
+		expect(longRail[2]).toBe("Next: One action");
 		clearTerminalTaskRailOnInput(ctx);
 		expect(ui.widgetCalls.at(-1)).toEqual({ key: TASK_RAIL_KEY, content: undefined, options: undefined });
 		expect(secondUi.widgetCalls).toHaveLength(1);
@@ -560,7 +591,7 @@ async function preparePendingReview(root: string): Promise<RegisteredTool & { co
 		}
 	});
 
-	test("routes a proven stale claim to incumbent Loop and repairs only after native confirmation", { timeout: 15000 }, async () => {
+	test("shared-authority-dialog-shell: routes a proven stale claim to incumbent Loop and repairs only after native confirmation", { timeout: 15000 }, async () => {
 		const root = makeStaleClaimRoot();
 		const claimPath = join(root, ".imm", "tasks", ".backend-claim.json");
 		const recordPath = join(root, ".imm", "tasks", `${TASK}.json`);
@@ -590,7 +621,8 @@ async function preparePendingReview(root: string): Promise<RegisteredTool & { co
 			);
 			expect(cancelled.details.state).toBe("cancelled");
 			expect(readFileSync(claimPath, "utf8")).toBe(claimBefore);
-			expect(cancelledUi.confirmCalls[0].body).toContain("Projection revision: sha256:");
+			expect(cancelledUi.customCalls[0].body).toContain("Projection revision: sha256:");
+			expect(cancelledUi.confirmCalls).toHaveLength(0);
 
 			const repaired = await tool.execute(
 				"repair-confirm",
@@ -774,7 +806,7 @@ async function preparePendingReview(root: string): Promise<RegisteredTool & { co
 		} finally { rmSync(root, { recursive: true, force: true }); }
 	});
 
-	test("foreground Agent events are bridged once, then submit_review awaits authorization", { timeout: 15000 }, async () => {
+	test("shared-authority-dialog-shell: foreground Agent events are bridged once, then submit_review awaits authorization", { timeout: 15000 }, async () => {
 		const root = makeEnrolledRoot();
 		try {
 			let latestReviewSnapshot!: SnapshotDescriptor;
@@ -821,14 +853,40 @@ async function preparePendingReview(root: string): Promise<RegisteredTool & { co
 			);
 			const completedResult = JSON.parse(completed.content[0].text);
 			expect(completedResult).toMatchObject({ phase: "done", next_action: "none", task_state: { phase: "done" } });
-			expect(ui.selectCalls).toHaveLength(1);
-			expect(ui.selectCalls[0].options).toEqual(["Approve", "Request rework", "Reject"]);
-			expect(ui.selectCalls[0].title).toContain(`Task: ${TASK}`);
-			expect(ui.selectCalls[0].title).toContain("Review: PASS");
-			expect(ui.selectCalls[0].title).toContain("QA: passed");
-			expect(ui.selectCalls[0].title).toContain("Scope: 1 scoped changed file(s)");
-			expect(ui.selectCalls[0].title).toContain("Evidence: sha256:bundle");
-			expect(ui.selectCalls[0].title).toContain("Pending operation: record-review-verdict");
+			const terminalStatus = await tool.execute(
+				"terminal-status",
+				{ task_id: TASK, action: { op: "status" } },
+				undefined,
+				undefined,
+				makeCtx(root, makeUI()),
+			);
+			expect(JSON.parse(terminalStatus.content[0].text)).toMatchObject({ phase: "done" });
+			expect(terminalStatus.details).toMatchObject({ phase: "done", next_action: "none" });
+			const terminalAdvance = await tool.execute(
+				"terminal-advance",
+				{ task_id: TASK, action: { op: "advance_assurance" } },
+				undefined,
+				undefined,
+				makeCtx(root, makeUI()),
+			);
+			expect(JSON.parse(terminalAdvance.content[0].text)).toMatchObject({
+				state: "completed",
+				next_action: "none",
+				task_state: { phase: "done" },
+			});
+			expect(ui.customCalls).toHaveLength(1);
+			expect(ui.customCalls[0].body).toContain("Approve");
+			expect(ui.customCalls[0].body).toContain("Request rework");
+			expect(ui.customCalls[0].body).toContain("Reject");
+			expect(ui.customCalls[0].body).toContain("Cancel");
+			expect(ui.customCalls[0].collapsedBody).toContain(`Task: ${TASK}`);
+			expect(ui.customCalls[0].collapsedBody).toContain("Review: PASS");
+			expect(ui.customCalls[0].collapsedBody).toContain("QA: passed");
+			expect(ui.customCalls[0].collapsedBody).toContain("Scope: 1 scoped changed file(s)");
+			expect(ui.customCalls[0].collapsedBody).toContain("Pending operation: record-review-verdict");
+			expect(ui.customCalls[0].collapsedBody).not.toContain("sha256:bundle");
+			expect(ui.customCalls[0].body).toContain("sha256:bundle");
+			expect(ui.selectCalls).toHaveLength(0);
 			expect(ui.confirmCalls).toHaveLength(0);
 		} finally { rmSync(root, { recursive: true, force: true }); }
 	});
@@ -909,11 +967,11 @@ async function preparePendingReview(root: string): Promise<RegisteredTool & { co
 			const tool = await preparePendingReview(root);
 			const ui = makeUI();
 			const ctx = makeCtx(root, ui, "tui", "Reject", "Reject stale changes");
-			ctx.ui.select = async (title: string, options: string[]) => {
-				ui.selectCalls.push({ title, options });
+			const originalCustom = ctx.ui.custom;
+			ctx.ui.custom = async (factory: any) => {
 				writeFileSync(join(root, "plugins", "immune-brain", ".pi-extension", "task.ts"), "export const task = 'raced';\n");
 				execFileSync("git", ["add", "plugins/immune-brain/.pi-extension/task.ts"], { cwd: root });
-				return "Reject";
+				return originalCustom(factory);
 			};
 			const raced = await tool.execute(
 				"reject-race",
@@ -939,7 +997,7 @@ async function preparePendingReview(root: string): Promise<RegisteredTool & { co
 		} finally { rmSync(root, { recursive: true, force: true }); }
 	});
 
-	test("cancelling a Review decision writes nothing and keeps it pending", { timeout: 15000 }, async () => {
+	test("authority-dialog-cancel-and-attention: cancelling a Review decision writes nothing and keeps it pending", { timeout: 15000 }, async () => {
 		const root = makeEnrolledRoot();
 		try {
 			const tool = await preparePendingReview(root);
@@ -948,7 +1006,7 @@ async function preparePendingReview(root: string): Promise<RegisteredTool & { co
 			const before = { record: readFileSync(recordPath, "utf8"), claim: readFileSync(claimPath, "utf8") };
 			const failedUi = makeUI();
 			const failedCtx = makeCtx(root, failedUi);
-			failedCtx.ui.select = async () => { throw new Error("renderer unavailable"); };
+			failedCtx.ui.custom = async () => { throw new Error("renderer unavailable"); };
 			const failed = await tool.execute(
 				"ui-failure",
 				{ task_id: TASK, action: { op: "request_authorization" } },

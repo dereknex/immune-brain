@@ -1,0 +1,191 @@
+{
+  "contract": "assurance_kernel/task_record/v2",
+  "task_id": "2026-08-22-001-authority-dialog-task-rail-refinement",
+  "intent_revision": 2,
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "2026-08-22-001-authority-dialog-task-rail-refinement",
+    "goal": "Standardize Enrollment, Review, breaking Intent revision, stale-authority repair, stop, user approval, and user-decision resolution on one bounded centered authority-dialog shell while preserving existing caller-owned attention, Review reason input, cancellation, freshness, capability, and Kernel semantics. Refine the existing three-row aboveEditor Task Rail to use a bounded short task identity and operation-specific next action without generic dialog instructions. Keep Footer content, timers, polling, watchers, percentage, ETA, persisted presentation state, embedded custom text editing, Tool schemas, Kernel operations, and persisted schemas unchanged.",
+    "acceptance": [
+      {
+        "id": "acc-enrollment-shared-dialog",
+        "assertion": "Enrollment and descriptor-waiver confirmation use the shared authority-dialog shell with bounded summary, collapsed details, described confirm and cancel actions, one-shot abort cleanup, and unchanged user-attention pairing and authority outcome.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/pi-canary-enroll-extension.test.ts\",\n    \"-t\",\n    \"shared-authority-dialog-shell\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 65536\n}\n"
+      },
+      {
+        "id": "acc-work-shared-dialog",
+        "assertion": "Review and every ordinary Work authorization use the same shared dialog shell; only Review rework and reject continue to native reason input; cancel, blank reason, abort, session drift, and UI error retain existing attention cleanup and zero-authority-write behavior.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/pi-canary-work-extension.test.ts\",\n    \"-t\",\n    \"shared-authority-dialog-shell\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 65536\n}\n"
+      },
+      {
+        "id": "acc-task-rail-refined",
+        "assertion": "The Task Rail remains one three-row aboveEditor Widget, middle-truncates long task identity, presents business result and operation-specific next action without generic dialog instructions, preserves terminal cleanup, and publishes no defined Footer content.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/pi-canary-work-extension.test.ts\",\n    \"-t\",\n    \"compact-task-rail-hierarchy\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 65536\n}\n"
+      }
+    ],
+    "scope_hint": [
+      "docs/specs/authority-dialog-task-rail-refinement.spec.md",
+      "plugins/immune-brain/.pi-extension/imm-canary-enroll.ts",
+      "plugins/immune-brain/.pi-extension/imm-canary-work.ts",
+      "plugins/immune-brain/.pi-extension/pi-canary-interaction.ts",
+      "tests/breaking-intent-revision-gate.test.ts",
+      "tests/pi-canary-enroll-extension.test.ts",
+      "tests/pi-canary-lifecycle-package.test.ts",
+      "tests/pi-canary-user-authority.test.ts",
+      "tests/pi-canary-work-extension.test.ts",
+      "tests/user-approval-package-contract.test.ts"
+    ],
+    "risk": "material",
+    "revision": 2,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/2026-08-22-001-authority-dialog-task-rail-refinement.intent.json",
+    "revision": 2,
+    "content_hash": "sha256:f75f62bf1641ba691dbe6aa9298166d8b8f940d310b86a32d7d0fcd73858eacf"
+  },
+  "phase": "done",
+  "baseline": "sha256:41bbcb4d7004072fea6c508bafa7b1354867c318451f900ea075315f9218be52",
+  "evidence": [
+    {
+      "id": "evidence-record_evidence:2026-08-22-001-authority-dialog-task-rail-refinement:2026-08-22T01:49:41.172Z",
+      "acceptance_id": "acc-enrollment-shared-dialog",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:f75f62bf1641ba691dbe6aa9298166d8b8f940d310b86a32d7d0fcd73858eacf",
+      "diff_hash": "sha256:26f6f4b72777da5170815ab701fe7a89818e95e5d8af6f4fe95cad3c868e6c02",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "Exact descriptor passed: bun test tests/pi-canary-enroll-extension.test.ts -t shared-authority-dialog-shell (1 pass, 0 fail). Full enrollment/work extension regression also passed 35/35, preserving risk-tier confirmation, abort cleanup, attention pairing, and zero-write cancellation."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-22-001-authority-dialog-task-rail-refinement:2026-08-22T01:49:50.979Z",
+      "acceptance_id": "acc-work-shared-dialog",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:f75f62bf1641ba691dbe6aa9298166d8b8f940d310b86a32d7d0fcd73858eacf",
+      "diff_hash": "sha256:26f6f4b72777da5170815ab701fe7a89818e95e5d8af6f4fe95cad3c868e6c02",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "Exact descriptor passed: bun test tests/pi-canary-work-extension.test.ts -t shared-authority-dialog-shell (2 pass, 0 fail). Four expanded package-contract files passed 22/22, covering breaking revision, resolve-user-decision, stop, cancellation/abort/timeout, single-flight, and full lifecycle through the shared custom dialog. Production extension grep has zero direct ctx.ui.confirm/select calls."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-22-001-authority-dialog-task-rail-refinement:2026-08-22T01:50:01.277Z",
+      "acceptance_id": "acc-task-rail-refined",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:f75f62bf1641ba691dbe6aa9298166d8b8f940d310b86a32d7d0fcd73858eacf",
+      "diff_hash": "sha256:26f6f4b72777da5170815ab701fe7a89818e95e5d8af6f4fe95cad3c868e6c02",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "Exact descriptor passed: bun test tests/pi-canary-work-extension.test.ts -t compact-task-rail-hierarchy (1 pass, 0 fail). It verifies exactly three aboveEditor rows, middle truncation retaining both task-id ends, one Result and one Next value, terminal cleanup, and Footer prohibition. git diff --cached --check and dist-doc sync also passed."
+    }
+  ],
+  "findings": [],
+  "approvals": [
+    {
+      "id": "approval-qa-1c206e63",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:f75f62bf1641ba691dbe6aa9298166d8b8f940d310b86a32d7d0fcd73858eacf",
+      "diff_hash": "sha256:26f6f4b72777da5170815ab701fe7a89818e95e5d8af6f4fe95cad3c868e6c02",
+      "actor_id": "deterministic-qa",
+      "summary": "all 3 fixed verification descriptor(s) passed"
+    },
+    {
+      "id": "approval-review-44004257",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:f75f62bf1641ba691dbe6aa9298166d8b8f940d310b86a32d7d0fcd73858eacf",
+      "diff_hash": "sha256:26f6f4b72777da5170815ab701fe7a89818e95e5d8af6f4fe95cad3c868e6c02",
+      "actor_id": "native-review-a7de4e10-320a-477",
+      "summary": "Immutable bundle provenance verified; shared authority dialogs and refined Task Rail preserve cancellation, abort, UI-error, session-race, attention-cleanup, and zero-write behavior across the scoped paths."
+    }
+  ],
+  "history": [
+    {
+      "id": "approve_breaking_intent_revision:2026-08-22-001-authority-dialog-task-rail-refinement:2026-08-22T01:45:30.075Z",
+      "at": "2026-08-22T01:45:30.075Z",
+      "type": "approve_breaking_intent_revision",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "intent_revision_2\naction_v2_sha256:8fac050a0de7ae4d6f67e2fb6bda18f3fe0503f4916bf79891abb2b1e2fab054",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-498f537b4efb24ef",
+        "issued_at": "2026-08-22T01:45:30.085Z",
+        "expires_at": "2026-08-22T01:55:30.085Z"
+      }
+    },
+    {
+      "id": "record_evidence:2026-08-22-001-authority-dialog-task-rail-refinement:2026-08-22T01:49:41.172Z",
+      "at": "2026-08-22T01:49:41.172Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-enrollment-shared-dialog\naction_v2_sha256:ab13d8698c6108f3d3ef91376d75b262793d39eb1d138ba7387770d5c72c4ebd"
+    },
+    {
+      "id": "record_evidence:2026-08-22-001-authority-dialog-task-rail-refinement:2026-08-22T01:49:50.979Z",
+      "at": "2026-08-22T01:49:50.979Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-work-shared-dialog\naction_v2_sha256:0bd6b8a220c4daf36f6ccd2a3c2241967d302a8eac378c727907814a072931d9"
+    },
+    {
+      "id": "record_evidence:2026-08-22-001-authority-dialog-task-rail-refinement:2026-08-22T01:50:01.277Z",
+      "at": "2026-08-22T01:50:01.277Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-task-rail-refined\naction_v2_sha256:d207e4f618880cc0a8c19f1312c9e322038c827057c29250c8445641a66e4226"
+    },
+    {
+      "id": "submit_review:2026-08-22-001-authority-dialog-task-rail-refinement:2026-08-22T01:50:08.259Z",
+      "at": "2026-08-22T01:50:08.259Z",
+      "type": "submit_review",
+      "from_phase": "working",
+      "to_phase": "review",
+      "reason": "action_v2_sha256:ea54ca806b0bef6a89d2dec20e340faca913653acc64d72168e95586767f3641"
+    },
+    {
+      "id": "record_approval:2026-08-22-001-authority-dialog-task-rail-refinement:2026-08-22T01:50:13.338Z",
+      "at": "2026-08-22T01:50:13.338Z",
+      "type": "record_approval",
+      "from_phase": "review",
+      "to_phase": "review",
+      "reason": "approval-qa-1c206e63\naction_v2_sha256:bcf11b6d747e10251fe68879c158baa176488987289bde8e537e4276c9e422ff",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-99cbe8555ade59ac",
+        "issued_at": "2026-08-22T01:50:13.338Z",
+        "expires_at": "2026-08-22T02:00:13.338Z"
+      }
+    },
+    {
+      "id": "record_approval:2026-08-22-001-authority-dialog-task-rail-refinement:2026-08-22T02:30:53.469Z",
+      "at": "2026-08-22T02:30:53.469Z",
+      "type": "record_approval",
+      "from_phase": "review",
+      "to_phase": "review",
+      "reason": "approval-review-44004257\naction_v2_sha256:f58bea93bc19b419d78dbc52fbdb9cfc08146383fb160b6c0a27c10eb756e278",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "native-review-a7de4e10-320a-477",
+        "confirmation_ref": "pi-confirm-74af412c727c8929",
+        "issued_at": "2026-08-22T02:30:53.469Z",
+        "expires_at": "2026-08-22T02:40:53.469Z"
+      }
+    },
+    {
+      "id": "complete:2026-08-22-001-authority-dialog-task-rail-refinement:2026-08-22T02:31:02.654Z",
+      "at": "2026-08-22T02:31:02.654Z",
+      "type": "complete",
+      "from_phase": "review",
+      "to_phase": "done",
+      "reason": "action_v2_sha256:79e65c5e570419c99a272e14f24fb96f3a88d11fb0f96066b65a0fa28d15f3fc"
+    }
+  ]
+}

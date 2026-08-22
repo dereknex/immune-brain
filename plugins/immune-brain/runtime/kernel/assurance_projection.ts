@@ -12,7 +12,7 @@
 // "start QA" or "start Review"; it returns Kernel-owned facts only.
 
 import { readBackendClaim, readTaskTombstone } from "./backend_claim";
-import { readTaskRecordV2, readWorkspaceStateRaw } from "./storage";
+import { readTaskRecordV2, readWorkspaceStateRaw, reconcileKernelAuthority } from "./storage";
 import { projectTaskV2 } from "./completion";
 import type { TaskIntentV1, TaskRecordV2 } from "./types";
 
@@ -172,12 +172,12 @@ function projectFromRecord(
  * this module free of git/worktree concerns; hosts supply it from their own
  * task-scope diff implementation.
  *
- * Error semantics (identical to the previous host reconstruction):
- * - no backend claim            -> error null, claim null, empty projection
- * - tombstone                   -> error "task X is terminal (...); it is not reactivatable"
- * - missing record              -> error "task X has no TaskRecord v2"
- * - record identity mismatch    -> error "task record identity is inconsistent for X"
- * - claim mismatch              -> error "backend claim belongs to Y, not X"
+ * Error semantics:
+ * - no authority facts          -> error null, claim null, empty projection
+ * - matching terminal proof     -> error null, claim null, done/stopped projection
+ * - repairable stale claim      -> error requiring repair_authority_state
+ * - authority conflict          -> fail-closed authority diagnostic
+ * - missing/mismatched record   -> fail-closed identity diagnostic
  * - any read failure            -> error message, claim null, empty projection
  */
 export async function projectAssurance(
@@ -185,44 +185,42 @@ export async function projectAssurance(
 	taskId: string,
 	diffProvider: (root: string, intent: { scope_hint?: unknown }) => string,
 ): Promise<AssuranceProjectionResult> {
+	const fail = (
+		error: string,
+		claim: AssuranceProjectionResult["claim"] = null,
+	): AssuranceProjectionResult => ({
+		contract: "assurance_kernel/assurance_projection/v1",
+		task_id: taskId,
+		error,
+		claim,
+		projection: emptyProjection(),
+	});
 	try {
-		const claim = await readBackendClaim(root);
-		if (!claim)
-			return { contract: "assurance_kernel/assurance_projection/v1", task_id: taskId, error: null, claim: null, projection: emptyProjection() };
+		const claim = readBackendClaim(root);
+		if (claim?.task_id !== undefined && claim.task_id !== taskId)
+			return fail(`backend claim belongs to ${claim.task_id}, not ${taskId}`, claim);
+		if (claim) {
+			const tombstone = readTaskTombstone(root, taskId);
+			if (tombstone) {
+				const authority = reconcileKernelAuthority(root, taskId);
+				if (authority.state === "repairable_stale_claim")
+					return fail(`task ${taskId} has a repairable stale backend claim`, claim);
+				return fail(authority.diagnostic ?? `authority state conflicts for ${taskId}`, claim);
+			}
+		} else {
+			const authority = reconcileKernelAuthority(root, taskId);
+			if (authority.state === "unowned")
+				return { contract: "assurance_kernel/assurance_projection/v1", task_id: taskId, error: null, claim: null, projection: emptyProjection() };
+			if (authority.state !== "terminal_owner")
+				return fail(authority.diagnostic ?? `authority state conflicts for ${taskId}`);
+			if (readBackendClaim(root)) return fail(`authority state changed while projecting ${taskId}`);
+		}
 		const read = await readTaskRecordV2(root, taskId);
-		const tombstone = await readTaskTombstone(root, taskId);
-		if (tombstone)
-			return {
-				contract: "assurance_kernel/assurance_projection/v1",
-				task_id: taskId,
-				error: `task ${taskId} is terminal (${tombstone.terminal_phase}); it is not reactivatable`,
-				claim,
-				projection: emptyProjection(),
-			};
-		if (!read.record)
-			return {
-				contract: "assurance_kernel/assurance_projection/v1",
-				task_id: taskId,
-				error: `task ${taskId} has no TaskRecord v2`,
-				claim,
-				projection: emptyProjection(),
-			};
+		if (!read.record) return fail(`task ${taskId} has no TaskRecord v2`, claim);
 		if (read.record.task_id !== taskId)
-			return {
-				contract: "assurance_kernel/assurance_projection/v1",
-				task_id: taskId,
-				error: `task record identity is inconsistent for ${taskId}`,
-				claim,
-				projection: emptyProjection(),
-			};
-		if (claim.task_id !== taskId)
-			return {
-				contract: "assurance_kernel/assurance_projection/v1",
-				task_id: taskId,
-				error: `backend claim belongs to ${claim.task_id}, not ${taskId}`,
-				claim,
-				projection: emptyProjection(),
-			};
+			return fail(`task record identity is inconsistent for ${taskId}`, claim);
+		if (claim && (read.record.phase === "done" || read.record.phase === "stopped"))
+			return fail(`terminal task ${taskId} has no matching tombstone proof`, claim);
 		const workspace = await readWorkspaceStateRaw(root);
 		const diffHash = diffProvider(root, read.record.intent_snapshot);
 		return {
@@ -233,12 +231,6 @@ export async function projectAssurance(
 			projection: projectFromRecord(read.record, read.revision, workspace.revision, diffHash),
 		};
 	} catch (error) {
-		return {
-			contract: "assurance_kernel/assurance_projection/v1",
-			task_id: taskId,
-			error: error instanceof Error ? error.message : String(error),
-			claim: null,
-			projection: emptyProjection(),
-		};
+		return fail(error instanceof Error ? error.message : String(error));
 	}
 }

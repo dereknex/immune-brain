@@ -1,0 +1,224 @@
+{
+  "contract": "assurance_kernel/task_record/v2",
+  "task_id": "2026-08-21-005-terminal-assurance-stop-routing",
+  "intent_revision": 1,
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "2026-08-21-005-terminal-assurance-stop-routing",
+    "goal": "Make terminal Assurance and Managed routing consume one Kernel-owned settlement truth without changing mutation authority or schemas. A named task's matching TaskRecord+tombstone must project as authoritative done or stopped after its claim is removed; incomplete or contradictory proof fails closed, while an exact residual same-task claim remains repairable only through literal-user-authorized repair_authority_state. Pi progression must consume terminal projection before claim requirements and start no QA, Review, verifier, mutation, retry, Skill, Planner, Executor, Compounder, Loop action, or successor. Managed routing must return phase none, reason assurance_terminal, exact task identity, and next_action none instead of reclassifying the request; delete redundant host terminal inference. Triggers: complete; literal-user stop; terminal replay; named post-terminal status; subsequent Managed input; pre-commit interruption/provider failure; residual-claim repair; malformed or contradictory authority facts. Persisted states remain working, review, done, stopped; read outcomes are active_assurance, terminal_assurance, repairable_stale_claim, authority_conflict, assurance_terminal. Owners: Kernel reducer/application and terminal transaction settle; matching TaskRecord+tombstone prove terminal reads; literal-user confirmation authorizes stale-claim repair; projection and routing only consume. Promise/Tool settlement, Parent text, elapsed time, process absence, missing claim alone, provider failure, cancellation, and shutdown are non-authoritative. Same-state-machine review covers reducer/completion, application/storage, claim reconciliation, projection, runtime transport, Pi progression, Work Tool, Managed router, and focused source/packed tests. Preserve reducer transitions, completion eligibility, terminal writes, tombstone schema, Enrollment, QA, Review, user authorization, breaking revision authority, and public Skill surface; add no compatibility state.",
+    "acceptance": [
+      {
+        "id": "acc-terminal-projection-authority",
+        "assertion": "A matching done or stopped TaskRecord+tombstone pair yields a normal claimless terminal Assurance projection for the named task; no record/tombstone remains an ordinary empty projection; missing, malformed, mismatched, stale, or contradictory authority facts fail closed; and the existing exact stale-claim repair classification remains unchanged.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/kernel-assurance-projection.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 180000,\n  \"max_output_bytes\": 65536\n}\n"
+      },
+      {
+        "id": "acc-terminal-progression-stops",
+        "assertion": "Foreground Assurance progression consumes authoritative done and stopped before live-claim requirements and starts no QA, Review reservation, verifier, mutation, retry, or other continuation for either terminal phase.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/pi-canary-assurance-progression.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 180000,\n  \"max_output_bytes\": 65536\n}\n"
+      },
+      {
+        "id": "acc-terminal-managed-route-none",
+        "assertion": "Managed routing preserves a supplied terminal Assurance as phase none, reason assurance_terminal, exact task identity, and next_action none without emitting a Skill or action or reclassifying the original request; repair_authority_state remains the only terminal exception routed to incumbent Loop authority.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/managed-default-routing-contract.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 180000,\n  \"max_output_bytes\": 65536\n}\n"
+      },
+      {
+        "id": "acc-terminal-host-package-sequence",
+        "assertion": "Source and packed Pi extension tests execute complete or stop through terminal transaction, claim removal, status/progression, and Managed route to no action, while interruption, provider failure, cancellation, or shutdown before terminal mutation remains nonterminal and no second terminal inference is introduced.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/pi-canary-work-extension.test.ts\",\n    \"tests/pi-canary-lifecycle-package.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 240000,\n  \"max_output_bytes\": 65536\n}\n"
+      }
+    ],
+    "scope_hint": [
+      "docs/specs/terminal-assurance-stop-routing.spec.md",
+      "plugins/immune-brain/.pi-extension/imm-canary-work.ts",
+      "plugins/immune-brain/.pi-extension/pi-canary-assurance-progression.ts",
+      "plugins/immune-brain/.pi-extension/runtime-stub.ts",
+      "plugins/immune-brain/runtime/kernel/application_v2.ts",
+      "plugins/immune-brain/runtime/kernel/assurance_projection.ts",
+      "plugins/immune-brain/runtime/kernel/backend_claim.ts",
+      "plugins/immune-brain/runtime/kernel/completion.ts",
+      "plugins/immune-brain/runtime/kernel/reducer_v2.ts",
+      "plugins/immune-brain/runtime/kernel/storage.ts",
+      "plugins/immune-brain/runtime/managed_path_router.ts",
+      "tests/kernel-assurance-projection.test.ts",
+      "tests/kernel-canary-terminal-transaction.test.ts",
+      "tests/managed-default-routing-contract.test.ts",
+      "tests/pi-canary-assurance-progression.test.ts",
+      "tests/pi-canary-lifecycle-package.test.ts",
+      "tests/pi-canary-work-extension.test.ts"
+    ],
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/2026-08-21-005-terminal-assurance-stop-routing.intent.json",
+    "revision": 1,
+    "content_hash": "sha256:139b7d3554263c33ceae18a1484036ef333caafaa9d5fcc1e9cc2b148aebf358"
+  },
+  "phase": "done",
+  "baseline": "sha256:139b7d3554263c33ceae18a1484036ef333caafaa9d5fcc1e9cc2b148aebf358",
+  "evidence": [
+    {
+      "id": "evidence-record_evidence:2026-08-21-005-terminal-assurance-stop-routing:2026-08-21T17:21:22.634Z",
+      "acceptance_id": "acc-terminal-projection-authority",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:139b7d3554263c33ceae18a1484036ef333caafaa9d5fcc1e9cc2b148aebf358",
+      "diff_hash": "sha256:60a60e0500ab9d9067800e10300e07fc487354008d01f4a35b29bd2f9c620ce7",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "Staged focused descriptor passed 10/10: matching claimless done/stopped projections are normal terminal Assurance, absent authority stays empty, contradictions fail closed, and stale-claim repair behavior remains covered."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-21-005-terminal-assurance-stop-routing:2026-08-21T17:21:30.195Z",
+      "acceptance_id": "acc-terminal-progression-stops",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:139b7d3554263c33ceae18a1484036ef333caafaa9d5fcc1e9cc2b148aebf358",
+      "diff_hash": "sha256:60a60e0500ab9d9067800e10300e07fc487354008d01f4a35b29bd2f9c620ce7",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "Staged focused descriptor passed 15/15: progression returns distinct completed/stopped terminal results before claim checks and invokes no QA or authority mutation."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-21-005-terminal-assurance-stop-routing:2026-08-21T17:21:37.724Z",
+      "acceptance_id": "acc-terminal-managed-route-none",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:139b7d3554263c33ceae18a1484036ef333caafaa9d5fcc1e9cc2b148aebf358",
+      "diff_hash": "sha256:60a60e0500ab9d9067800e10300e07fc487354008d01f4a35b29bd2f9c620ce7",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "Staged focused descriptor passed 12/12: terminal Assurance routes to phase none/reason assurance_terminal with exact task and next_action none; only repair_authority_state returns to incumbent Loop."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-21-005-terminal-assurance-stop-routing:2026-08-21T17:21:45.913Z",
+      "acceptance_id": "acc-terminal-host-package-sequence",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:139b7d3554263c33ceae18a1484036ef333caafaa9d5fcc1e9cc2b148aebf358",
+      "diff_hash": "sha256:60a60e0500ab9d9067800e10300e07fc487354008d01f4a35b29bd2f9c620ce7",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "Staged source/package descriptor passed 24/24: real completion transaction removes the claim, then status and progression preserve done with next_action none; active review, interruption, cancellation, stale repair, and package loading regressions remain covered."
+    }
+  ],
+  "findings": [
+    {
+      "id": "advisory-preexisting-plan-001-archival",
+      "kind": "advisory",
+      "status": "open",
+      "acceptance_id": null,
+      "source": "execution",
+      "review_round": null,
+      "summary": "Canonical full bun test reached 834 pass / 1 fail because pre-existing terminal task 2026-08-21-001-borrow-framing-planning-mechanics still has its TaskIntent under docs/plans; this task's scope does not authorize moving that unrelated artifact. All four enrolled focused descriptors pass."
+    }
+  ],
+  "approvals": [
+    {
+      "id": "approval-qa-4df2c56f",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:139b7d3554263c33ceae18a1484036ef333caafaa9d5fcc1e9cc2b148aebf358",
+      "diff_hash": "sha256:60a60e0500ab9d9067800e10300e07fc487354008d01f4a35b29bd2f9c620ce7",
+      "actor_id": "deterministic-qa",
+      "summary": "all 4 fixed verification descriptor(s) passed"
+    },
+    {
+      "id": "approval-review-0c2d469c",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:139b7d3554263c33ceae18a1484036ef333caafaa9d5fcc1e9cc2b148aebf358",
+      "diff_hash": "sha256:60a60e0500ab9d9067800e10300e07fc487354008d01f4a35b29bd2f9c620ce7",
+      "actor_id": "native-review-c2b2be4d-4f77-4fc",
+      "summary": "Immutable bundle provenance is valid and the bounded terminal, cancellation, interruption, recovery, and routing paths satisfy all acceptance assertions without an identified correctness, regression, security, or test-coverage defect."
+    }
+  ],
+  "history": [
+    {
+      "id": "record_evidence:2026-08-21-005-terminal-assurance-stop-routing:2026-08-21T17:21:22.634Z",
+      "at": "2026-08-21T17:21:22.634Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-terminal-projection-authority\naction_v2_sha256:ef36626e0bbc813727c9be1d38dc69b2b14dc21f64b6054a2f2508252fc2ba71"
+    },
+    {
+      "id": "record_evidence:2026-08-21-005-terminal-assurance-stop-routing:2026-08-21T17:21:30.195Z",
+      "at": "2026-08-21T17:21:30.195Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-terminal-progression-stops\naction_v2_sha256:3038600943d852b2797ee0f19f47250f27e0f682c302b2f4c898d8a5681eeb70"
+    },
+    {
+      "id": "record_evidence:2026-08-21-005-terminal-assurance-stop-routing:2026-08-21T17:21:37.724Z",
+      "at": "2026-08-21T17:21:37.724Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-terminal-managed-route-none\naction_v2_sha256:f76bb6d2ca62405ed98de3bee81819f7b2be4be026ffed7a6d45270aa8f75904"
+    },
+    {
+      "id": "record_evidence:2026-08-21-005-terminal-assurance-stop-routing:2026-08-21T17:21:45.913Z",
+      "at": "2026-08-21T17:21:45.913Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-terminal-host-package-sequence\naction_v2_sha256:43a68ed3f5b61f7d3d93a452bc9bd0fff282a1d744bb2d4b286dbb2fadf3cfbe"
+    },
+    {
+      "id": "record_finding:2026-08-21-005-terminal-assurance-stop-routing:2026-08-21T17:21:54.295Z",
+      "at": "2026-08-21T17:21:54.295Z",
+      "type": "record_finding",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "advisory-preexisting-plan-001-archival\naction_v2_sha256:16d6a4753a73b14504cf5ee60d811d78f0c58e81b65449b1c67fd56b0bb57ec3"
+    },
+    {
+      "id": "submit_review:2026-08-21-005-terminal-assurance-stop-routing:2026-08-21T17:22:10.544Z",
+      "at": "2026-08-21T17:22:10.544Z",
+      "type": "submit_review",
+      "from_phase": "working",
+      "to_phase": "review",
+      "reason": "action_v2_sha256:2bd0f176b410fd80d3bf03c3c0d1cffe0789a770b89785cc18a494f4c9c05cb2"
+    },
+    {
+      "id": "record_approval:2026-08-21-005-terminal-assurance-stop-routing:2026-08-21T17:22:38.350Z",
+      "at": "2026-08-21T17:22:38.350Z",
+      "type": "record_approval",
+      "from_phase": "review",
+      "to_phase": "review",
+      "reason": "approval-qa-4df2c56f\naction_v2_sha256:0ea9966d9df415593b2d059c041d71bb3ead85306ab1c3c542651116e894a8b0",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-5740ad8ec5330dd8",
+        "issued_at": "2026-08-21T17:22:38.351Z",
+        "expires_at": "2026-08-21T17:32:38.351Z"
+      }
+    },
+    {
+      "id": "record_approval:2026-08-21-005-terminal-assurance-stop-routing:2026-08-21T17:25:14.354Z",
+      "at": "2026-08-21T17:25:14.354Z",
+      "type": "record_approval",
+      "from_phase": "review",
+      "to_phase": "review",
+      "reason": "approval-review-0c2d469c\naction_v2_sha256:358612a218b84af175ff7451944104a9b29f673676c11c7704824a4540b16c55",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "native-review-c2b2be4d-4f77-4fc",
+        "confirmation_ref": "pi-confirm-33cb51f18ad6d606",
+        "issued_at": "2026-08-21T17:25:14.354Z",
+        "expires_at": "2026-08-21T17:35:14.354Z"
+      }
+    },
+    {
+      "id": "complete:2026-08-21-005-terminal-assurance-stop-routing:2026-08-21T17:25:20.905Z",
+      "at": "2026-08-21T17:25:20.905Z",
+      "type": "complete",
+      "from_phase": "review",
+      "to_phase": "done",
+      "reason": "action_v2_sha256:10c6a852882ea83fff80e162ffff68a1b67c391fea8cf1bd20808cbc11e8fb89"
+    }
+  ]
+}

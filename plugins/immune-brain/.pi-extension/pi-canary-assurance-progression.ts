@@ -95,7 +95,8 @@ export type AssuranceAdvanceResult =
 	| { state: "failed"; operation: "qa" | "review"; operation_id: string; reason: string }
 	| { state: "settlement_unknown"; operation: "qa" | "review"; operation_id: string; reason: string }
 	| { state: "blocked"; reason: string }
-	| { state: "completed" };
+	| { state: "completed" }
+	| { state: "stopped" };
 
 export type AssuranceSubmitReviewResult =
 	| { state: "awaiting_user"; operation: "record-review-verdict"; operation_id: string }
@@ -427,10 +428,11 @@ export class AssuranceProgression {
 			ensureOperationLive();
 			let projection = await this.ports.projectTask(ctx.cwd, taskId);
 			ensureOperationLive();
-			if (projection.error || !projection.claim) return { state: "blocked", reason: projection.error ?? "no active backend claim" };
-			if (projection.claim.task_id !== taskId) return { state: "blocked", reason: `backend claim belongs to ${projection.claim.task_id}, not ${taskId}` };
+			if (projection.error) return { state: "blocked", reason: projection.error };
 			if (projection.projection.phase === "done") return { state: "completed" };
-			if (projection.projection.phase === "stopped") return { state: "blocked", reason: "task is stopped" };
+			if (projection.projection.phase === "stopped") return { state: "stopped" };
+			if (!projection.claim) return { state: "blocked", reason: "no active backend claim" };
+			if (projection.claim.task_id !== taskId) return { state: "blocked", reason: `backend claim belongs to ${projection.claim.task_id}, not ${taskId}` };
 			const parked = await this.ports.readTaskRecordV2(ctx.cwd, taskId);
 			ensureOperationLive();
 			if (parked.record?.findings.some((finding) => finding.kind === "replan_required" && finding.status === "open")) return { state: "blocked", reason: "review rework limit reached; a durable replan is required" };

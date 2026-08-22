@@ -1,0 +1,9 @@
+{
+  "contract": "assurance_kernel/task_tombstone/v1",
+  "task_id": "2026-08-21-005-terminal-assurance-stop-routing",
+  "lifecycle_status": "terminal",
+  "terminal_phase": "done",
+  "terminal_event_id": "complete:2026-08-21-005-terminal-assurance-stop-routing:2026-08-21T17:25:20.905Z",
+  "final_record_hash": "sha256:808cbd257bbd8399de60a1e1fa55d58fcf8e18f9f78441904de405c0ff2a3bb3",
+  "terminalized_at": "2026-08-21T17:25:20.905Z"
+}

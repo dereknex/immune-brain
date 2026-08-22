@@ -31,10 +31,14 @@ authority is `executor`, `test-fixer`, `pr-fix`, `arch-explorer`,
 
 When the Kernel projection reports an active/draining backend claim, keep
 `imm-loop` as the user-facing entry and call the `imm_kernel_canary` Tool for
-that owned task. Enrollment uses the `imm_canary_enrollment` Tool and Review authorization remains
-a native TUI gate. Do not invoke the removed `imm-canary-work` Skill as a
-separate entry point. Invalid or contradictory projections fail closed. After fresh evidence,
-use `advance_assurance` and `submit_review`; `request_authorization` remains the
-user authorization boundary; visible background state and push follow-up replace
-internal QA/Review sequencing and polling. A terminal tombstone alone never blocks
-unrelated v3 routing.
+that owned task. Enrollment uses the `imm_canary_enrollment` Tool and Review
+authorization remains a native TUI gate. When the projection calls for
+`request_authorization`, `approve_breaking_intent_revision`, or
+`repair_authority_state`, invoke the exact Tool operation directly without
+asking the user for chat pre-confirmation; the native host interaction is the
+single authority decision. Do not invoke the removed `imm-canary-work` Skill as
+a separate entry point. Invalid or contradictory projections fail closed. After
+fresh evidence, use `advance_assurance` and `submit_review`;
+`request_authorization` remains the user authorization boundary; visible
+background state and push follow-up replace internal QA/Review sequencing and
+polling. A terminal tombstone alone never blocks unrelated v3 routing.

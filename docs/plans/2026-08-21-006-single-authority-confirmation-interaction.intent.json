@@ -1,0 +1,39 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "2026-08-21-006-single-authority-confirmation-interaction",
+  "owner": "user",
+  "goal": "Make one user decision require at most one confirmation across Brainstorm, Planner, Enrollment, breaking intent revision, stale-claim repair, and Review authorization. Preserve native host UI as the only digest-bound authority gate. Treat direct requirements, answered questions, and bulk-approved recommendations as confirmed decisions; use an unchanged final summary only as a correction window; require explicit confirmation only for a newly introduced or changed material decision. For clear mutation requests, proceed from a validated TaskIntent directly to native Enrollment without chat pre-confirmation. For Plan-only requests, treat a later start Enrollment reply as a non-authoritative execution trigger. After awaiting_user, a complete breaking revision, or a proven stale claim, invoke the corresponding native authorization Tool directly. Keep all Kernel capabilities, snapshot revalidation, rehearsal, cancellation, zero-write, Review decision, and persisted-schema behavior unchanged; add no chat authority parser, token, compatibility layer, or runtime state.",
+  "acceptance": [
+    {
+      "id": "acc-decision-delta-confirmation",
+      "assertion": "Brainstorm and Planner contracts treat direct requirements, answered questions, and bulk approval as confirmation of those decisions; an unchanged result-only summary is a non-blocking correction window; only a newly introduced or changed material decision requires confirmation before handoff; and agent judgment alone still cannot hand off unconfirmed proposed direction or scope.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/exhaustive-decision-tree-contract.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 65536\n}\n"
+    },
+    {
+      "id": "acc-single-native-enrollment-confirmation",
+      "assertion": "Planner contracts route a clear mutation request from validated TaskIntent directly to the native digest-bound Enrollment gate without chat pre-confirmation, while an explicit Plan-only request stops and a later start Enrollment reply is described as a non-authoritative execution trigger rather than approval.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/imm-planner-kernel-intent-contract.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 65536\n}\n"
+    },
+    {
+      "id": "acc-direct-native-existing-authority",
+      "assertion": "Loop and Work Tool contracts direct the Parent to invoke request_authorization, approve_breaking_intent_revision, and repair_authority_state without asking for a chat pre-confirmation, leaving each existing native interaction as the only authority decision.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/imm-canary-work-contract.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 65536\n}\n"
+    }
+  ],
+  "scope_hint": [
+    "docs/solutions/contracts.md",
+    "docs/specs/single-authority-confirmation-interaction.spec.md",
+    "plugins/immune-brain/.pi-extension/imm-canary-work.ts",
+    "plugins/immune-brain/dist/imm-brainstorm.md",
+    "plugins/immune-brain/dist/imm-loop.md",
+    "plugins/immune-brain/dist/imm-planner.md",
+    "plugins/immune-brain/skills/imm-brainstorm/SKILL.md",
+    "plugins/immune-brain/skills/imm-loop/SKILL.md",
+    "plugins/immune-brain/skills/imm-planner/SKILL.md",
+    "tests/exhaustive-decision-tree-contract.test.ts",
+    "tests/imm-canary-work-contract.test.ts",
+    "tests/imm-planner-kernel-intent-contract.test.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}
