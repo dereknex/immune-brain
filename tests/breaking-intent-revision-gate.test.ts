@@ -40,20 +40,35 @@ interface RegisteredTool {
 	execute: (id: string, params: unknown, signal: unknown, onUpdate: unknown, ctx: unknown) => Promise<any>;
 }
 interface FakeUI {
-	confirmCalls: Array<{ title: string; body: string }>;
+	dialogCalls: Array<{ body: string; collapsedBody: string }>;
 	notifyCalls: Array<{ text: string; kind: string }>;
 }
 function makeUI(): FakeUI {
-	return { confirmCalls: [], notifyCalls: [] };
+	return { dialogCalls: [], notifyCalls: [] };
 }
-function makeCtx(root: string, ui: FakeUI, mode = "tui") {
+function makeCtx(root: string, ui: FakeUI, mode = "tui", approve = true) {
 	return {
 		mode,
 		cwd: root,
 		signal: new AbortController().signal,
 		ui: {
 			notify: (text: string, kind: string) => ui.notifyCalls.push({ text, kind }),
-			confirm: async (title: string, body: string) => { ui.confirmCalls.push({ title, body }); return true; },
+			custom: async (factory: any) => {
+				let selected: string | undefined;
+				const component = factory(
+					{ requestRender: () => undefined },
+					{ fg: (_color: string, text: string) => text, bold: (text: string) => text },
+					{},
+					(result: string | undefined) => { selected = result; },
+				);
+				const collapsedBody = component.render(120).join("\n");
+				component.handleInput?.("d");
+				const body = component.render(120).join("\n");
+				ui.dialogCalls.push({ body, collapsedBody });
+				if (!approve) component.handleInput?.("\u001b[B");
+				component.handleInput?.("\r");
+				return selected;
+			},
 		},
 	};
 }
@@ -178,9 +193,9 @@ describe("breaking intent revision gate", () => {
 				operation: "approve-breaking-intent-revision",
 				phase: "working",
 			});
-			expect(ui.confirmCalls).toHaveLength(1);
-			expect(ui.confirmCalls[0].title).toContain("approve-breaking-intent-revision");
-			expect(ui.confirmCalls[0].body).toContain("Next Intent: rev 2");
+			expect(ui.dialogCalls).toHaveLength(1);
+			expect(ui.dialogCalls[0].body).toContain("approve-breaking-intent-revision");
+			expect(ui.dialogCalls[0].body).toContain("Next Intent: rev 2");
 			expect(statSync(intentPath).ino).toBe(beforeInode);
 			expect(JSON.parse(readFileSync(intentPath, "utf8"))).toMatchObject({ revision: 2, task_id: TASK });
 			const record = JSON.parse(readFileSync(join(root, ".imm", "tasks", `${TASK}.json`), "utf8"));
@@ -239,25 +254,15 @@ describe("breaking intent revision gate", () => {
 			const before = snapshot();
 
 			const cancelledUi = makeUI();
-			const cancelCtx = makeCtx(root, cancelledUi);
 			const cancelled = await tool.execute(
 				"break-cancel",
 				{ task_id: TASK, action: { op: "approve_breaking_intent_revision", next_intent: breakingIntent() } },
 				undefined,
 				undefined,
-				{
-					...cancelCtx,
-					ui: {
-						...cancelCtx.ui,
-						confirm: async (title: string, body: string) => {
-							cancelledUi.confirmCalls.push({ title, body });
-							return false;
-						},
-					},
-				},
+				makeCtx(root, cancelledUi, "tui", false),
 			);
 			expect(cancelled.details).toMatchObject({ state: "cancelled", operation: "approve-breaking-intent-revision" });
-			expect(cancelledUi.confirmCalls).toHaveLength(1);
+			expect(cancelledUi.dialogCalls).toHaveLength(1);
 			expect(snapshot()).toEqual(before);
 
 			const nonTuiUi = makeUI();
@@ -269,7 +274,7 @@ describe("breaking intent revision gate", () => {
 				makeCtx(root, nonTuiUi, "print"),
 			);
 			expect(String(nonTui.content[0].text)).toMatch(/TUI-only/i);
-			expect(nonTuiUi.confirmCalls).toHaveLength(0);
+			expect(nonTuiUi.dialogCalls).toHaveLength(0);
 			expect(snapshot()).toEqual(before);
 		} finally { rmSync(root, { recursive: true, force: true }); }
 	});

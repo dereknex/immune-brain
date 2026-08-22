@@ -277,7 +277,21 @@ describe("pi canary lifecycle package composition", () => {
 				}),
 				writeReviewEvidence: () => ({ path: join(root, "review.json"), remove: () => undefined }),
 			});
-			const ui = { notify: () => undefined, select: async () => "Approve", input: async () => "" };
+			const ui = {
+				notify: () => undefined,
+				input: async () => "",
+				custom: async (factory: any) => {
+					let selected: string | undefined;
+					const component = factory(
+						{ requestRender: () => undefined },
+						{ fg: (_color: string, text: string) => text, bold: (text: string) => text },
+						{},
+						(result: string | undefined) => { selected = result; },
+					);
+					component.handleInput?.("\r");
+					return selected;
+				},
+			};
 			const ctx = { mode: "tui", cwd: root, ui };
 			const evidence = await surface.tool!.execute("evidence", { task_id: TASK, action: { op: "record_evidence", acceptance_id: "A1", status: "passed", summary: "fresh" } }, undefined, undefined, ctx);
 			expect(JSON.parse(evidence.content[0].text).task_state.phase).toBe("working");

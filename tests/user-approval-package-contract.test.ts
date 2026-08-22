@@ -60,6 +60,8 @@ describe("user approval package contract", () => {
 		const schemaSection = source.slice(schemaStart, schemaEnd);
 		expect(schemaSection).not.toContain("record_user_approval");
 		expect(source).toContain("record-user-approval");
-		expect(source).toContain("ctx.ui.confirm");
+		expect(source).toContain("requestAuthorityDialog");
+		expect(source).not.toContain("ctx.ui.confirm");
+		expect(source).not.toContain("ctx.ui.select");
 	});
 });

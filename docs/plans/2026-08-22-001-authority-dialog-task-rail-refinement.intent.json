@@ -1,0 +1,37 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "2026-08-22-001-authority-dialog-task-rail-refinement",
+  "goal": "Standardize Enrollment, Review, breaking Intent revision, stale-authority repair, stop, user approval, and user-decision resolution on one bounded centered authority-dialog shell while preserving existing caller-owned attention, Review reason input, cancellation, freshness, capability, and Kernel semantics. Refine the existing three-row aboveEditor Task Rail to use a bounded short task identity and operation-specific next action without generic dialog instructions. Keep Footer content, timers, polling, watchers, percentage, ETA, persisted presentation state, embedded custom text editing, Tool schemas, Kernel operations, and persisted schemas unchanged.",
+  "acceptance": [
+    {
+      "id": "acc-enrollment-shared-dialog",
+      "assertion": "Enrollment and descriptor-waiver confirmation use the shared authority-dialog shell with bounded summary, collapsed details, described confirm and cancel actions, one-shot abort cleanup, and unchanged user-attention pairing and authority outcome.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/pi-canary-enroll-extension.test.ts\",\n    \"-t\",\n    \"shared-authority-dialog-shell\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 65536\n}\n"
+    },
+    {
+      "id": "acc-work-shared-dialog",
+      "assertion": "Review and every ordinary Work authorization use the same shared dialog shell; only Review rework and reject continue to native reason input; cancel, blank reason, abort, session drift, and UI error retain existing attention cleanup and zero-authority-write behavior.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/pi-canary-work-extension.test.ts\",\n    \"-t\",\n    \"shared-authority-dialog-shell\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 65536\n}\n"
+    },
+    {
+      "id": "acc-task-rail-refined",
+      "assertion": "The Task Rail remains one three-row aboveEditor Widget, middle-truncates long task identity, presents business result and operation-specific next action without generic dialog instructions, preserves terminal cleanup, and publishes no defined Footer content.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/pi-canary-work-extension.test.ts\",\n    \"-t\",\n    \"compact-task-rail-hierarchy\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 65536\n}\n"
+    }
+  ],
+  "scope_hint": [
+    "docs/specs/authority-dialog-task-rail-refinement.spec.md",
+    "plugins/immune-brain/.pi-extension/imm-canary-enroll.ts",
+    "plugins/immune-brain/.pi-extension/imm-canary-work.ts",
+    "plugins/immune-brain/.pi-extension/pi-canary-interaction.ts",
+    "tests/breaking-intent-revision-gate.test.ts",
+    "tests/pi-canary-enroll-extension.test.ts",
+    "tests/pi-canary-lifecycle-package.test.ts",
+    "tests/pi-canary-user-authority.test.ts",
+    "tests/pi-canary-work-extension.test.ts",
+    "tests/user-approval-package-contract.test.ts"
+  ],
+  "risk": "material",
+  "revision": 2,
+  "owner": "user"
+}

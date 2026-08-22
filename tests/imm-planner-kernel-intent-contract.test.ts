@@ -75,6 +75,17 @@ describe("imm-planner kernel intent contract", () => {
 		expect(skill).not.toContain("Other hosts");
 	});
 
+	test("Planner opens one native Enrollment gate without chat pre-confirmation", () => {
+		for (const path of PLANNER_CONTRACTS) {
+			const contract = readFileSync(path, "utf8").replace(/\s+/g, " ");
+			expect(contract).toContain("Explicit Plan-only requests stop");
+			expect(contract).toContain("non-authoritative execution trigger");
+			expect(contract).toContain("clear mutation request that already includes execution");
+			expect(contract).toContain("without asking for chat pre-confirmation");
+			expect(contract).toContain("Literal-user confirmation in the native gate remains the authority boundary");
+		}
+	});
+
 	test("dist mirror carries the same contract", () => {
 		const dist = readFileSync(DIST_PATH, "utf8");
 		expect(dist).toContain("imm-plan --routing-status --json");

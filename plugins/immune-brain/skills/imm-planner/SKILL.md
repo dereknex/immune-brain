@@ -27,10 +27,16 @@ Ask the complete currently unblocked frontier in dependency-aware rounds. Number
 each question, include a recommended answer, and accept bulk approval of all
 recommendations with explicit exceptions. A zero-question fast path is valid
 when the frontier is already empty. Product-level uncertainty is outside Planner
-ownership: stop and return to `imm-brainstorm`. Once the frontier is empty, present a
-result-only summary for explicit confirmation before finalizing a candidate
-Spec, Plan, or TaskIntent; retain final decisions in the planning artifacts
-rather than copying the question transcript.
+ownership: stop and return to `imm-brainstorm`. Treat the user's direct
+requirements, answers to numbered questions, and bulk approval of
+recommendations as confirmation of those decisions. Once the frontier is empty,
+present a result-only summary as a non-blocking correction window before
+finalizing a candidate Spec, Plan, or TaskIntent; retain final decisions in the
+planning artifacts rather than copying the question transcript. Do not ask the
+user to reconfirm decisions reflected without material change. If the summary
+introduces or changes a material decision affecting Result, Scope, behavior,
+Verification, or risk treatment, ask for explicit confirmation of only that
+decision delta and block finalization until it is answered.
 
 Settlement-class intents (terminal settlement, cancellation, timeout, race, or
 authority-lifecycle semantics) must embed the `Settlement-Design Contract`
@@ -50,9 +56,14 @@ before selecting a Skill:
 
 Plan-only output remains non-authoritative. Planner creates or validates a
 candidate Spec/TaskIntent, but it never enrolls a task or enrolls generated
-artifacts unconditionally. Literal-user Enrollment remains the authority
-boundary. Fast-Track may compress the same phases but cannot bypass that
-boundary, QA, Review, authorization, or completion.
+artifacts unconditionally. Explicit Plan-only requests stop after returning the
+planning artifacts. A later literal-user request to start Enrollment is a non-authoritative
+execution trigger: invoke the native Enrollment gate directly, without asking
+for chat pre-confirmation. For a clear mutation request that already includes
+execution, invoke that gate as soon as the candidate is validated and Git-tracked.
+Literal-user confirmation in the native gate remains the authority boundary.
+Fast-Track may compress the same phases but cannot bypass that boundary, QA,
+Review, authorization, or completion.
 
 ## Kernel TaskIntent Routing
 
@@ -84,11 +95,12 @@ Pi host identity is implicit and never a planning input. The production boundary
 that turns a Git-tracked TaskIntent draft into managed execution authority is the
 native host TUI: the Planner's final `ctx.ui.custom` gate (via the
 `imm_canary_enrollment` foreground Tool) provides one literal-user confirmation
-bound to the TaskIntent content hash. Descriptor rehearsal is reordered after that
-confirmation; a post-confirmation rehearsal failure invalidates the authorization
-with zero authority writes, and a routine task proceeds through enrollment,
-execution and QA without a second human stop. Optional descriptor waiver remains a
-separate explicit route.
+bound to the TaskIntent content hash. Invoke the Tool directly when the route is
+ready; do not ask for a chat pre-confirmation. Descriptor rehearsal is reordered
+after that confirmation; a post-confirmation rehearsal failure invalidates the
+authorization with zero authority writes, and a routine task proceeds through
+enrollment, execution and QA without a second human stop. Optional descriptor
+waiver remains a separate explicit route.
 
 The Planner never writes the `docs/plans/<task-id>.intent.json` artifact
 directly and never overwrites an existing TaskIntent. Under an active

@@ -52,6 +52,7 @@ import {
 	presentTaskRailResult,
 	renderStructuredCall,
 	renderStructuredResult,
+	requestAuthorityDialog,
 	resetInteractionPresentation,
 	type UserAttentionEventV1,
 	type UserAttentionReason,
@@ -442,8 +443,9 @@ export default function (
 			"Only the exact enrolled canary task is routable; verify the active backend claim first via status.",
 			"After fresh acceptance evidence, call advance_assurance and consume its direct terminal result; do not poll or create a detached job.",
 			"When advance_assurance returns review_ready, invoke the exact foreground Agent parameters from agent_params once, then call submit_review.",
-			"To approve a breaking intent revision, provide the complete next_intent with approve_breaking_intent_revision; the host must confirm before it is applied.",
-			"After awaiting_user, call request_authorization so the host opens the exact confirmation; do not ask the user to copy or report a command.",
+			"For a complete breaking revision, call approve_breaking_intent_revision with the complete next_intent directly; do not ask for chat pre-confirmation because the host opens the single native confirmation before applying it.",
+			"For a proven stale authority claim, call repair_authority_state directly; do not ask for chat pre-confirmation because the host opens the single native confirmation.",
+			"After awaiting_user, call request_authorization directly so the host opens the single native confirmation; do not ask for chat pre-confirmation or ask the user to copy or report a command.",
 		],
 		parameters: Type.Object({
 			task_id: Type.String({ pattern: "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$" }),
@@ -512,19 +514,26 @@ export default function (
 					task_id: taskId,
 					state: "Approval required",
 					result: "Kernel authority repair requires literal-user approval",
-					next: "Complete or cancel the native confirmation",
+					next: "Decide whether to repair the stale claim",
 				});
-				const confirmed = await ctx.ui.confirm(
-					"Repair Kernel authority state?",
-					[
+				const repairSelection = await requestAuthorityDialog(ctx, {
+					title: "Repair Kernel authority state?",
+					summary: [
 						`Owner: ${taskId}`,
 						`Terminal phase: ${authority.owner_phase}`,
 						`Claim lifecycle: ${authority.claim_lifecycle_status}`,
+					].join("\n"),
+					details: [
 						`Projection revision: ${authority.revision}`,
 						"Action: remove only the stale global claim; preserve TaskRecord and tombstone.",
 					].join("\n"),
-				);
-				if (!confirmed) {
+					signal: ctx.signal ?? signal,
+					actions: [
+						{ value: "repair", label: "Repair stale claim", description: "Remove only the stale global claim" },
+						{ value: "cancel", label: "Cancel", description: "Preserve all authority state unchanged" },
+					],
+				});
+				if (repairSelection !== "repair") {
 					const cancelled = {
 						state: "cancelled",
 						operation: action.op,
@@ -783,22 +792,22 @@ export default function (
 		const reviewFindings = pendingReview?.verdict.findings ?? [];
 		const reviewBlockers = reviewFindings.filter((finding) => finding.kind === "blocking").length;
 		const reviewWarnings = reviewFindings.filter((finding) => finding.kind === "advisory").length;
-		const summary = [
+		const dialogSummary = [
 			`Task: ${taskId}`,
 			...(pendingReview
 				? [
 						`Review: ${pendingReview.verdict.decision.toUpperCase()} | Blockers: ${reviewBlockers} | Warnings: ${reviewWarnings}`,
 						`QA: ${projection.projection.fresh_approval_kinds.includes("qa") ? "passed" : "missing"}`,
 						`Scope: ${pendingReview.snapshot.dirty_files.length} scoped changed file(s)`,
-						`Evidence: ${pendingReview.snapshot.review_bundle_digest ?? "unavailable"}`,
+						`Evidence: ${pendingReview.snapshot.review_bundle_digest ? "available" : "unavailable"}`,
 						`Pending operation: ${operation}`,
 					]
 				: [
 						`Decision: ${operation}`,
 						`State: ${projection.projection.phase} | Claim: ${projection.claim.lifecycle_status}`,
 					]),
-			"",
-			"Authority details",
+		].join("\n");
+		const dialogDetails = [
 			`Operation: ${operation}`,
 			...(userDecisionOperation
 				? [
@@ -808,6 +817,7 @@ export default function (
 				: []),
 			...(pendingReview
 				? [
+						`Review bundle: ${pendingReview.snapshot.review_bundle_digest ?? "unavailable"}`,
 						`Native agent: ${pendingReview.agentId}`,
 						`Verdict: ${pendingReview.verdict.decision}`,
 						`Summary: ${pendingReview.verdict.decision === "pass" ? pendingReview.verdict.approval!.summary : pendingReview.verdict.findings!.map((finding) => `${finding.id} ${finding.kind}: ${finding.summary}`).join("; ")}`,
@@ -842,7 +852,7 @@ export default function (
 			task_id: taskId,
 			state: "Approval required",
 			result: pendingReview ? "Independent Review verdict requires a literal-user decision" : `${operation} requires literal-user approval`,
-			next: "Complete or cancel the native authorization dialog",
+			next: pendingReview ? "Decide Review outcome" : `Decide ${operation}`,
 		});
 		const endAttention = beginUserAttention(pi, {
 			attention_id: randomUUID(),
@@ -852,11 +862,20 @@ export default function (
 		});
 		try {
 			if (pendingReview) {
-				let selected: keyof typeof REVIEW_DECISIONS | undefined;
+				let selected: keyof typeof REVIEW_DECISIONS | "Cancel" | undefined;
 				try {
-					selected = await ctx.ui.select(summary, Object.keys(REVIEW_DECISIONS), {
+					selected = await requestAuthorityDialog(ctx, {
+						title: "Review authorization",
+						summary: dialogSummary,
+						details: dialogDetails,
 						signal: ctx.signal,
-					}) as keyof typeof REVIEW_DECISIONS | undefined;
+						actions: [
+							{ value: "Approve", label: "Approve", description: "Accept the independent Review verdict" },
+							{ value: "Request rework", label: "Request rework", description: "Return the task to working with a required reason" },
+							{ value: "Reject", label: "Reject", description: "Stop the task with a required reason" },
+							{ value: "Cancel", label: "Cancel", description: "Keep the Review verdict pending with zero writes" },
+						],
+					});
 					if (selected === "Request rework" || selected === "Reject") {
 						reviewNote = (await ctx.ui.input(
 							selected === "Request rework" ? "Required rework" : "Reason for rejection",
@@ -874,7 +893,7 @@ export default function (
 					}
 					selected = undefined;
 				}
-				if (selected === undefined || ((selected === "Request rework" || selected === "Reject") && !reviewNote)) {
+				if (selected === undefined || selected === "Cancel" || ((selected === "Request rework" || selected === "Reject") && !reviewNote)) {
 					progression.closeInvocation(invocation);
 					return { state: "cancelled", operation, reason: "cancelled" };
 				}
@@ -882,9 +901,17 @@ export default function (
 				confirmed = true;
 			} else {
 				try {
-					confirmed = await ctx.ui.confirm(`Authorize ${operation} for canary ${taskId}?`, summary, {
+					const selected = await requestAuthorityDialog(ctx, {
+						title: `Authorize ${operation}?`,
+						summary: dialogSummary,
+						details: dialogDetails,
 						signal: ctx.signal,
+						actions: [
+							{ value: "authorize", label: "Authorize", description: `Apply ${operation} after freshness revalidation` },
+							{ value: "cancel", label: "Cancel", description: "Leave managed authority unchanged" },
+						],
 					});
+					confirmed = selected === "authorize";
 				} catch {
 					if (operation !== "stop" && operation !== "approve-breaking-intent-revision")
 						await recordCancelledUserDecision(ctx, taskId, operation, snapshotDigestRef).catch(() => undefined);
