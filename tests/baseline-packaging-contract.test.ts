@@ -45,15 +45,15 @@ describe("immune-brain BASELINE packaging contract", () => {
     expect(skillsText).toBe(rootText)
   })
 
-  it("defines one observable Managed-by-default contract without routine-breadth conflicts", () => {
+  it("defines one observable Skill-explicit Managed contract without routine-breadth conflicts", () => {
     const baseline = read(BASELINE_ROOT)
     expect(baseline).toContain("## Workflow Activation")
-    expect(baseline).toContain("Repository-mutating requests use Managed Path by default.")
-    expect(baseline).toContain("The canonical host applies the Managed Path routing contract for this decision.")
-    expect(baseline).toContain("read-only, explanation")
+    expect(baseline).toContain("Ordinary host input stays host-native")
+    expect(baseline).toContain("new Managed workflow starts only from explicit")
     expect(baseline).toContain("This path creates no Spec, Plan, TaskIntent, TaskRecord, State Ledger")
     expect(baseline).toContain("Planner output is a candidate for later literal-user")
     expect(baseline).toContain("Do not create or mutate workflow state while")
+    expect(baseline).not.toContain("Repository-mutating requests use Managed Path by default.")
     expect(baseline).not.toContain("Direct Path is the default when no Managed trigger applies.")
     expect(baseline).not.toContain("Use the Direct Path only when all of these are true")
     expect(baseline).not.toContain("one direct, non-destructive verification")

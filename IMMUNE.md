@@ -3,7 +3,7 @@
 这是 **Immune-Brain** 系统的核心规约文件。所有在此工作空间内运行的 Agent 必须严格遵守以下准则。
 
 ## 1. 核心哲学
-- **Managed-by-default**：仓库变更请求自动进入 Managed Path。用户不需要说 “Managed Path”；只有只读、解释、仅审查、Plan-only 和明确不修改请求保留在 host-native path，不 Enrollment。
+- **Skill-explicit Managed Path**：普通 host input 保持 host-native；只有用户显式进入 `imm-brainstorm`、`imm-planner` 或 `imm-loop` 才启动新的 Managed workflow。已有 active Assurance owner 始终通过 `imm-loop` 恢复。
 - **文件即 Managed 记忆**：Managed Path 的重要决策和工作流状态必须持久化到 Git-owned Spec/TaskIntent 或 `.imm/` authority；host-native path 不会创建或更新 `.imm/` 工作流状态，也不依赖对话记忆作为长期 authority。
 - **按请求类型使用规格**：清晰的新仓库变更进入 `imm-planner`，有实质歧义先进入 `imm-brainstorm`；已有 Assurance owner 通过 `imm-loop` 恢复。Planner 只产出候选 Spec/TaskIntent，不无条件 Enrollment。
 - **小步执行**：Managed Plan 必须按可独立闭合结果组织成果步。Direct 不因多文件、多条本地 verifier、普通重试或只读 subagent 自动升级为 Managed。
@@ -15,7 +15,9 @@
   3. Surgical changes：只改必要边界内的文件和行。
   4. Goal-driven execution：每一步都要能被命令、测试或人工检查验证。
 
-## 2. 目录结构指南
+## Managed Path 入口
+
+普通 host input 不执行自然语言 Managed 路由，也不初始化 bootstrap；显式 Immune-Brain Skill 负责启动新的 Managed workflow。已有 active Assurance owner 仍由 host 自动恢复。
 - `.imm/memory/`：存放运行态状态（`state.json`、`MEMORY.md`、`current_iteration.json`）。
 - `skills/`：只存放三个 user-facing Skill 定义；内部 role prompts 位于插件 `runtime/prompts/`。
 - `runtime/bootstrap.ts` 与 `runtime/bootstrap-templates/`：Managed Path 的内部 bootstrap 能力。
@@ -52,12 +54,12 @@
 处理，不创建 Spec、Plan、TaskIntent、TaskRecord、QA、mandatory
 Review 或 Compounder 状态，也不写 `.imm/` workflow authority。
 
-### Managed Path（仓库变更默认路径）
+### Managed Path（显式 Skill 入口）
 
-仓库变更请求自动进入 Managed Path：Host 在选择 Skill 前应用 routing contract。已有
-Assurance projection 通过 `imm-loop` 恢复；实质歧义进入 `imm-brainstorm`；清晰变更
-进入 `imm-planner`。Planner 输出只是后续 literal-user Enrollment 的候选，不能
-绕过 Enrollment、QA、Review、authorization 或 completion。
+Managed Path 只从显式 Immune Skill 入口启动：`imm-brainstorm`、`imm-planner` 或
+`imm-loop`。普通 host input 保持 host-native，不执行自然语言分类；已有 Assurance
+projection 仍通过 `imm-loop` 恢复。Planner 输出只是后续 literal-user Enrollment 的
+候选，不能绕过 Enrollment、QA、Review、authorization 或 completion。
 
 1. **Brainstorm（按需）**: 当问题陈述、约束或成功标准仍含关键歧义时，进入 `imm-brainstorm`，禁止在关键歧义上猜测。**若澄清信息未获得用户明确回复，必须停止推进，禁止进入规划阶段。**
 2. **Roundtable Advisory（可选）**: `imm-brainstorm` 的 `roundtable` mode 只在复杂取舍、跨角色分歧或 replan 判断前提供只读会诊材料；最终 scope 仍由 `imm-planner` 判断。

@@ -1,0 +1,46 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "2026-08-22-002-skill-explicit-managed-routing",
+  "owner": "user",
+  "goal": "Remove automatic Managed Path routing from ordinary Pi host input while preserving active Assurance recovery and explicit Immune-Brain Skill entry.",
+  "acceptance": [
+    {
+      "id": "A1",
+      "assertion": "Ordinary host input remains host-native without automatic Managed Path classification or Skill transformation.",
+      "verification": "{\"contract\":\"assurance_kernel/verification_descriptor/v1\",\"runner_id\":\"bun\",\"runner_version\":\"1.3.14\",\"argv\":[\"test\",\"tests/pi-canary-work-extension.test.ts\",\"tests/managed-default-routing-contract.test.ts\"],\"cwd\":\".\",\"timeout_ms\":120000,\"max_output_bytes\":262144}"
+    },
+    {
+      "id": "A2",
+      "assertion": "Active and repairable stale Assurance claims still resume through the incumbent Loop owner.",
+      "verification": "{\"contract\":\"assurance_kernel/verification_descriptor/v1\",\"runner_id\":\"bun\",\"runner_version\":\"1.3.14\",\"argv\":[\"test\",\"tests/pi-canary-work-extension.test.ts\",\"tests/managed-default-routing-contract.test.ts\"],\"cwd\":\".\",\"timeout_ms\":120000,\"max_output_bytes\":262144}"
+    },
+    {
+      "id": "A3",
+      "assertion": "Explicit Immune-Brain Skill entry and idempotent bootstrap remain available and documented.",
+      "verification": "{\"contract\":\"assurance_kernel/verification_descriptor/v1\",\"runner_id\":\"bun\",\"runner_version\":\"1.3.14\",\"argv\":[\"test\",\"plugins/immune-brain/tests/init-project.test.ts\",\"tests/direct-first-routing-contract.test.ts\",\"tests/plugin-package-runtime.test.ts\"],\"cwd\":\".\",\"timeout_ms\":120000,\"max_output_bytes\":262144}"
+    },
+    {
+      "id": "A4",
+      "assertion": "The complete repository regression suite passes with no whitespace errors.",
+      "verification": "{\"contract\":\"assurance_kernel/verification_descriptor/v1\",\"runner_id\":\"bun\",\"runner_version\":\"1.3.14\",\"argv\":[\"test\",\"tests/managed-default-routing-contract.test.ts\"],\"cwd\":\".\",\"timeout_ms\":120000,\"max_output_bytes\":262144}"
+    }
+  ],
+  "scope_hint": [
+    "plugins/immune-brain/.pi-extension/imm-canary-work.ts",
+    "plugins/immune-brain/runtime/managed_path_router.ts",
+    "plugins/immune-brain/runtime/bootstrap.ts",
+    "plugins/immune-brain/BASELINE.md",
+    "plugins/immune-brain/README.md",
+    "plugins/immune-brain/USER_GUIDE.md",
+    "IMMUNE.md",
+    "CONTEXT.md",
+    "plugins/immune-brain/runtime/bootstrap-templates/AGENTS.md",
+    "plugins/immune-brain/runtime/bootstrap-templates/IMMUNE.template.md",
+    "tests/managed-default-routing-contract.test.ts",
+    "tests/direct-first-routing-contract.test.ts",
+    "tests/pi-canary-work-extension.test.ts",
+    "plugins/immune-brain/dist"
+  ],
+  "risk": "material",
+  "revision": 1
+}

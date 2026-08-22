@@ -4,25 +4,14 @@ This project uses the Immune-Brain workflow when work needs managed authority.
 
 ## Route Selection
 
-Repository-mutating requests use Managed Path by default. Users do not need to
-name the route; the host applies the routing contract before selecting a Skill.
+Ordinary host input stays host-native. A new Managed workflow starts only when the user explicitly enters `imm-brainstorm`, `imm-planner`, or `imm-loop`.
 
-- An active Assurance projection, TaskIntent, TaskRecord, or reviewer follow-up
-  resumes through `imm-loop` and keeps its existing authority.
-- Read-only, explanation, review-only, Plan-only, and explicit no-modification
-  requests stay host-native and do not enroll or create task authority.
-- A materially ambiguous mutation goes to `imm-brainstorm` for clarification;
-  a clear new mutation goes to `imm-planner`.
-- Planner output is a candidate for later literal-user Enrollment. Generated
-  artifacts are never enrolled unconditionally.
-- Fast-Track remains Managed and preserves TaskIntent scope, Enrollment, QA,
-  Review, authorization, and completion boundaries.
-- A wholly absent bootstrap is initialized idempotently for Managed phases;
-  complete state remains byte-stable, and partial or incompatible state fails
-  closed before any write.
+- An active Assurance projection, TaskIntent, TaskRecord, or reviewer follow-up resumes through `imm-loop` and keeps its existing authority.
+- Explicit Skill entry owns bootstrap: absent state is initialized idempotently, complete state remains byte-stable, and partial or incompatible state fails closed.
+- Planner output is a candidate for later literal-user Enrollment. Generated artifacts are never enrolled unconditionally.
+- Fast-Track remains Managed and preserves TaskIntent scope, Enrollment, QA, Review, authorization, and completion boundaries.
 
-File count, local verifier count, ordinary retries, optional read-only advisors,
-and unrelated dirty files do not change this route or authority boundary.
+普通 host input 不执行自然语言 Managed 路由，也不创建 workflow authority。
 
 ## Non-Mutating Host Path
 

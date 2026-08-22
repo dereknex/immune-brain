@@ -4,7 +4,7 @@
 // Surface:
 //   1. `imm_kernel_canary` — foreground assurance and Review authority.
 //   2. `imm_loop_action` — read-only projection of internal Loop actions.
-//   3. `input` — automatic Managed Path routing to the three public Skills.
+//   3. `input` — active Assurance recovery; ordinary input stays host-native.
 //
 // Deterministic QA and native Review sequencing lives in
 // `pi-canary-assurance-progression.ts`. The adapter owns Tool schemas, TUI
@@ -250,7 +250,7 @@ type LoopToolAction =
 
 async function routeHostRequest(root: string, request: string) {
 	const claim = await readBackendClaim(root);
-	if (!claim) return routeManagedRequest({ root, request });
+	if (!claim) return null;
 	const authority = await reconcileKernelAuthority(root, claim.task_id);
 	if (authority.state === "authority_conflict")
 		throw new Error(authority.diagnostic ?? "Kernel authority state conflicts");
@@ -265,8 +265,7 @@ async function routeHostRequest(root: string, request: string) {
 				next_action: "repair_authority_state",
 			},
 		});
-	if (authority.state !== "active_owner")
-		return routeManagedRequest({ root, request });
+	if (authority.state !== "active_owner") return null;
 	const projected = await projectAssurance(root, claim.task_id, diffHashOf);
 	if (projected.error) throw new Error(projected.error);
 	return routeManagedRequest({
@@ -381,6 +380,10 @@ export default function (
 		}
 		try {
 			const route = await routeHostRequest(ctx.cwd, event.text);
+			if (!route) {
+				pendingOwnerInstruction = null;
+				return { action: "continue" } as const;
+			}
 			if (route.phase === "loop" && route.assurance) {
 				pendingOwnerInstruction = {
 					task_id: route.assurance.task_id,

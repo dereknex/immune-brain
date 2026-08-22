@@ -1,0 +1,366 @@
+{
+  "contract": "assurance_kernel/task_record/v2",
+  "task_id": "2026-08-22-002-skill-explicit-managed-routing",
+  "intent_revision": 1,
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "2026-08-22-002-skill-explicit-managed-routing",
+    "goal": "Remove automatic Managed Path routing from ordinary Pi host input while preserving active Assurance recovery and explicit Immune-Brain Skill entry.",
+    "acceptance": [
+      {
+        "id": "A1",
+        "assertion": "Ordinary host input remains host-native without automatic Managed Path classification or Skill transformation.",
+        "verification": "{\"contract\":\"assurance_kernel/verification_descriptor/v1\",\"runner_id\":\"bun\",\"runner_version\":\"1.3.14\",\"argv\":[\"test\",\"tests/pi-canary-work-extension.test.ts\",\"tests/managed-default-routing-contract.test.ts\"],\"cwd\":\".\",\"timeout_ms\":120000,\"max_output_bytes\":262144}"
+      },
+      {
+        "id": "A2",
+        "assertion": "Active and repairable stale Assurance claims still resume through the incumbent Loop owner.",
+        "verification": "{\"contract\":\"assurance_kernel/verification_descriptor/v1\",\"runner_id\":\"bun\",\"runner_version\":\"1.3.14\",\"argv\":[\"test\",\"tests/pi-canary-work-extension.test.ts\",\"tests/managed-default-routing-contract.test.ts\"],\"cwd\":\".\",\"timeout_ms\":120000,\"max_output_bytes\":262144}"
+      },
+      {
+        "id": "A3",
+        "assertion": "Explicit Immune-Brain Skill entry and idempotent bootstrap remain available and documented.",
+        "verification": "{\"contract\":\"assurance_kernel/verification_descriptor/v1\",\"runner_id\":\"bun\",\"runner_version\":\"1.3.14\",\"argv\":[\"test\",\"plugins/immune-brain/tests/init-project.test.ts\",\"tests/direct-first-routing-contract.test.ts\",\"tests/plugin-package-runtime.test.ts\"],\"cwd\":\".\",\"timeout_ms\":120000,\"max_output_bytes\":262144}"
+      },
+      {
+        "id": "A4",
+        "assertion": "The complete repository regression suite passes with no whitespace errors.",
+        "verification": "{\"contract\":\"assurance_kernel/verification_descriptor/v1\",\"runner_id\":\"bun\",\"runner_version\":\"1.3.14\",\"argv\":[\"test\",\"tests/managed-default-routing-contract.test.ts\"],\"cwd\":\".\",\"timeout_ms\":120000,\"max_output_bytes\":262144}"
+      }
+    ],
+    "scope_hint": [
+      "CONTEXT.md",
+      "IMMUNE.md",
+      "plugins/immune-brain/.pi-extension/imm-canary-work.ts",
+      "plugins/immune-brain/BASELINE.md",
+      "plugins/immune-brain/README.md",
+      "plugins/immune-brain/USER_GUIDE.md",
+      "plugins/immune-brain/dist",
+      "plugins/immune-brain/runtime/bootstrap-templates/AGENTS.md",
+      "plugins/immune-brain/runtime/bootstrap-templates/IMMUNE.template.md",
+      "plugins/immune-brain/runtime/bootstrap.ts",
+      "plugins/immune-brain/runtime/managed_path_router.ts",
+      "tests/direct-first-routing-contract.test.ts",
+      "tests/managed-default-routing-contract.test.ts",
+      "tests/pi-canary-work-extension.test.ts"
+    ],
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/2026-08-22-002-skill-explicit-managed-routing.intent.json",
+    "revision": 1,
+    "content_hash": "sha256:992027bc018c1e6c140cc52867fe164675145faeea4e7551f86e995d685e1097"
+  },
+  "phase": "done",
+  "baseline": "sha256:992027bc018c1e6c140cc52867fe164675145faeea4e7551f86e995d685e1097",
+  "evidence": [
+    {
+      "id": "evidence-record_evidence:2026-08-22-002-skill-explicit-managed-routing:2026-08-22T06:50:48.920Z",
+      "acceptance_id": "A1",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:992027bc018c1e6c140cc52867fe164675145faeea4e7551f86e995d685e1097",
+      "diff_hash": "sha256:a31416404dd42f1c8e2cbefaaa09b85ea17acefbceac1227986f28c5d6cc7b7f",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "Focused extension regression passed: ordinary host input returns host-native continuation without natural-language Managed classification or Skill transformation."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-22-002-skill-explicit-managed-routing:2026-08-22T06:50:55.798Z",
+      "acceptance_id": "A2",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:992027bc018c1e6c140cc52867fe164675145faeea4e7551f86e995d685e1097",
+      "diff_hash": "sha256:a31416404dd42f1c8e2cbefaaa09b85ea17acefbceac1227986f28c5d6cc7b7f",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "Focused extension regression passed: active backend claims and repairable stale claims continue through the incumbent Loop/Assurance recovery path."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-22-002-skill-explicit-managed-routing:2026-08-22T06:51:02.200Z",
+      "acceptance_id": "A3",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:992027bc018c1e6c140cc52867fe164675145faeea4e7551f86e995d685e1097",
+      "diff_hash": "sha256:a31416404dd42f1c8e2cbefaaa09b85ea17acefbceac1227986f28c5d6cc7b7f",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "Focused bootstrap, routing-contract, and package-runtime tests passed; explicit Skill entry remains documented and bootstrap remains idempotent."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-22-002-skill-explicit-managed-routing:2026-08-22T06:52:35.838Z",
+      "acceptance_id": "A4",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:992027bc018c1e6c140cc52867fe164675145faeea4e7551f86e995d685e1097",
+      "diff_hash": "sha256:a31416404dd42f1c8e2cbefaaa09b85ea17acefbceac1227986f28c5d6cc7b7f",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "Canonical regression passed: bun test reported 847 pass, 0 fail, 4574 expect() calls; git diff --check passed."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-22-002-skill-explicit-managed-routing:2026-08-22T07:23:43.140Z",
+      "acceptance_id": "A1",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:992027bc018c1e6c140cc52867fe164675145faeea4e7551f86e995d685e1097",
+      "diff_hash": "sha256:9ea2000d2948b7f0d5b43c60633e76e8bb096be164991057b96aeb341e541938",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "Focused extension and routing regression passed: ordinary host input remains host-native without automatic Managed Path classification or Skill transformation."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-22-002-skill-explicit-managed-routing:2026-08-22T07:23:46.531Z",
+      "acceptance_id": "A2",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:992027bc018c1e6c140cc52867fe164675145faeea4e7551f86e995d685e1097",
+      "diff_hash": "sha256:9ea2000d2948b7f0d5b43c60633e76e8bb096be164991057b96aeb341e541938",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "Focused extension and routing regression passed: active and repairable stale Assurance claims still resume through the incumbent Loop owner."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-22-002-skill-explicit-managed-routing:2026-08-22T07:23:52.933Z",
+      "acceptance_id": "A3",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:992027bc018c1e6c140cc52867fe164675145faeea4e7551f86e995d685e1097",
+      "diff_hash": "sha256:9ea2000d2948b7f0d5b43c60633e76e8bb096be164991057b96aeb341e541938",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "Focused bootstrap, routing-contract, and package-runtime tests passed; explicit Skill entry remains documented and bootstrap remains idempotent."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-22-002-skill-explicit-managed-routing:2026-08-22T07:23:58.981Z",
+      "acceptance_id": "A4",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:992027bc018c1e6c140cc52867fe164675145faeea4e7551f86e995d685e1097",
+      "diff_hash": "sha256:9ea2000d2948b7f0d5b43c60633e76e8bb096be164991057b96aeb341e541938",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "Canonical regression passed: bun test reported 847 pass, 0 fail; git diff --check passed with zero whitespace errors."
+    }
+  ],
+  "findings": [
+    {
+      "id": "review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "A1",
+      "source": "execution",
+      "review_round": null,
+      "summary": "plugins/immune-brain/.pi-extension/imm-canary-work.ts: routeHostRequest must return host-native for non-active claim states instead of falling back to request classification."
+    },
+    {
+      "id": "qa-evidence-freshness-1c85c67a377d537f-1c85c67a-b07682",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": null,
+      "source": "review",
+      "review_round": 1,
+      "summary": "executor evidence must be refreshed in working phase for acceptance ids: A1,A2,A3,A4"
+    }
+  ],
+  "approvals": [
+    {
+      "id": "approval-qa-a5d48e92",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:992027bc018c1e6c140cc52867fe164675145faeea4e7551f86e995d685e1097",
+      "diff_hash": "sha256:a31416404dd42f1c8e2cbefaaa09b85ea17acefbceac1227986f28c5d6cc7b7f",
+      "actor_id": "deterministic-qa",
+      "summary": "all 4 fixed verification descriptor(s) passed"
+    },
+    {
+      "id": "approval-qa-f53a6084",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:992027bc018c1e6c140cc52867fe164675145faeea4e7551f86e995d685e1097",
+      "diff_hash": "sha256:9ea2000d2948b7f0d5b43c60633e76e8bb096be164991057b96aeb341e541938",
+      "actor_id": "deterministic-qa",
+      "summary": "all 4 fixed verification descriptor(s) passed"
+    },
+    {
+      "id": "approval-review-64c2dd51",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:992027bc018c1e6c140cc52867fe164675145faeea4e7551f86e995d685e1097",
+      "diff_hash": "sha256:9ea2000d2948b7f0d5b43c60633e76e8bb096be164991057b96aeb341e541938",
+      "actor_id": "native-review-feb9763e-ed50-414",
+      "summary": "Explicit Skill routing contract aligns with constitutional specs, runtime hooks, and deterministic regression evidence."
+    }
+  ],
+  "history": [
+    {
+      "id": "record_evidence:2026-08-22-002-skill-explicit-managed-routing:2026-08-22T06:50:48.920Z",
+      "at": "2026-08-22T06:50:48.920Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "A1\naction_v2_sha256:86ee4916ff6ff4108df12a217213b5896cbbca799e78a2ceb3568fb4ed12438b"
+    },
+    {
+      "id": "record_evidence:2026-08-22-002-skill-explicit-managed-routing:2026-08-22T06:50:55.798Z",
+      "at": "2026-08-22T06:50:55.798Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "A2\naction_v2_sha256:ee0f0cfd27921fe92e269034744c527df5bcf435aa25f3c5e9837f21a5b05fa2"
+    },
+    {
+      "id": "record_evidence:2026-08-22-002-skill-explicit-managed-routing:2026-08-22T06:51:02.200Z",
+      "at": "2026-08-22T06:51:02.200Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "A3\naction_v2_sha256:5cbf22b3ba7ab42fd5b00f61e2bbc0bbe010c5ba0e689c73cb334406135e9178"
+    },
+    {
+      "id": "record_evidence:2026-08-22-002-skill-explicit-managed-routing:2026-08-22T06:52:35.838Z",
+      "at": "2026-08-22T06:52:35.838Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "A4\naction_v2_sha256:511a156f46a4ce8e5fe5c35fa07c4f67196475302f0796ac7f01a372bee3d7fd"
+    },
+    {
+      "id": "submit_review:2026-08-22-002-skill-explicit-managed-routing:2026-08-22T06:52:41.211Z",
+      "at": "2026-08-22T06:52:41.211Z",
+      "type": "submit_review",
+      "from_phase": "working",
+      "to_phase": "review",
+      "reason": "action_v2_sha256:96a5c9d1292899c1336cc8d0637c39f9227d48f1815a1305648665fa50326ac6"
+    },
+    {
+      "id": "record_approval:2026-08-22-002-skill-explicit-managed-routing:2026-08-22T06:54:10.084Z",
+      "at": "2026-08-22T06:54:10.084Z",
+      "type": "record_approval",
+      "from_phase": "review",
+      "to_phase": "review",
+      "reason": "approval-qa-a5d48e92\naction_v2_sha256:dca3831a38a909455e89c900e070763943dbf4e328d1818c1dc1d1333cfafbab",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-23c5e115dfec658c",
+        "issued_at": "2026-08-22T06:54:10.084Z",
+        "expires_at": "2026-08-22T07:04:10.084Z"
+      }
+    },
+    {
+      "id": "record_finding:2026-08-22-002-skill-explicit-managed-routing:2026-08-22T07:03:47.662Z",
+      "at": "2026-08-22T07:03:47.662Z",
+      "type": "record_finding",
+      "from_phase": "review",
+      "to_phase": "review",
+      "reason": "review-1\naction_v2_sha256:57d6b433ea415d87ae3002a514e692d9fdd065c386d810cf194a07158e70874b"
+    },
+    {
+      "id": "resolve_finding:2026-08-22-002-skill-explicit-managed-routing:2026-08-22T07:03:55.599Z",
+      "at": "2026-08-22T07:03:55.599Z",
+      "type": "resolve_finding",
+      "from_phase": "review",
+      "to_phase": "review",
+      "reason": "review-1\naction_v2_sha256:82cea20df9d030c1141f9441f693ed0a86ac52c9471824ae980fdde3ffb8c303"
+    },
+    {
+      "id": "request_rework:2026-08-22-002-skill-explicit-managed-routing:2026-08-22T07:23:05.530Z",
+      "at": "2026-08-22T07:23:05.530Z",
+      "type": "request_rework",
+      "from_phase": "review",
+      "to_phase": "working",
+      "reason": "review_round_1\naction_v2_sha256:d6abdd7e77241b4d436611466eff9a2179615c56a119c4e86a44c1b24573b054",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-b3a4547eb6c46b6a",
+        "issued_at": "2026-08-22T07:23:05.530Z",
+        "expires_at": "2026-08-22T07:33:05.530Z"
+      }
+    },
+    {
+      "id": "resolve_finding:2026-08-22-002-skill-explicit-managed-routing:2026-08-22T07:23:11.416Z",
+      "at": "2026-08-22T07:23:11.416Z",
+      "type": "resolve_finding",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "qa-evidence-freshness-1c85c67a377d537f-1c85c67a-b07682\naction_v2_sha256:d639855c25b742705f83d798a6c54525e38156730fdd668748c2bcf78d2105ae"
+    },
+    {
+      "id": "record_evidence:2026-08-22-002-skill-explicit-managed-routing:2026-08-22T07:23:43.140Z",
+      "at": "2026-08-22T07:23:43.140Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "A1\naction_v2_sha256:204873ab372aab139dc87eeb7e97290f43e8fc22fef8dcd9920c833921abd91a"
+    },
+    {
+      "id": "record_evidence:2026-08-22-002-skill-explicit-managed-routing:2026-08-22T07:23:46.531Z",
+      "at": "2026-08-22T07:23:46.531Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "A2\naction_v2_sha256:9814633cafb2ddf47b31bae215a6037c1325ae1001a3b1005940c1b25d56b86d"
+    },
+    {
+      "id": "record_evidence:2026-08-22-002-skill-explicit-managed-routing:2026-08-22T07:23:52.933Z",
+      "at": "2026-08-22T07:23:52.933Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "A3\naction_v2_sha256:603e7bf9a4e6a9c6d9e7f9eea8e48af810d949fbb65557ded849acda7b52de44"
+    },
+    {
+      "id": "record_evidence:2026-08-22-002-skill-explicit-managed-routing:2026-08-22T07:23:58.981Z",
+      "at": "2026-08-22T07:23:58.981Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "A4\naction_v2_sha256:28780e8117982f81074bab63cc5303e4dd16e61403f414e187a4a28fe8cce763"
+    },
+    {
+      "id": "submit_review:2026-08-22-002-skill-explicit-managed-routing:2026-08-22T07:24:02.750Z",
+      "at": "2026-08-22T07:24:02.750Z",
+      "type": "submit_review",
+      "from_phase": "working",
+      "to_phase": "review",
+      "reason": "action_v2_sha256:8fb81aaf03dfbcd5325cbd828665a819f71403098a1906a101cca53f8c8fe9bc"
+    },
+    {
+      "id": "record_approval:2026-08-22-002-skill-explicit-managed-routing:2026-08-22T07:25:18.506Z",
+      "at": "2026-08-22T07:25:18.506Z",
+      "type": "record_approval",
+      "from_phase": "review",
+      "to_phase": "review",
+      "reason": "approval-qa-f53a6084\naction_v2_sha256:d4465a0171dbf0ba4707134d8d894f1598bb6de48121cec8d8e528c7880b79d5",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-27d62158a6b304ac",
+        "issued_at": "2026-08-22T07:25:18.507Z",
+        "expires_at": "2026-08-22T07:35:18.507Z"
+      }
+    },
+    {
+      "id": "record_approval:2026-08-22-002-skill-explicit-managed-routing:2026-08-22T07:31:33.490Z",
+      "at": "2026-08-22T07:31:33.490Z",
+      "type": "record_approval",
+      "from_phase": "review",
+      "to_phase": "review",
+      "reason": "approval-review-64c2dd51\naction_v2_sha256:4c4bcc1c2ff67c948f44deebd06518a24570a6b18f541887447e5bac69340988",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "native-review-feb9763e-ed50-414",
+        "confirmation_ref": "pi-confirm-e389850e5dd46485",
+        "issued_at": "2026-08-22T07:31:33.490Z",
+        "expires_at": "2026-08-22T07:41:33.490Z"
+      }
+    },
+    {
+      "id": "complete:2026-08-22-002-skill-explicit-managed-routing:2026-08-22T07:31:40.168Z",
+      "at": "2026-08-22T07:31:40.168Z",
+      "type": "complete",
+      "from_phase": "review",
+      "to_phase": "done",
+      "reason": "action_v2_sha256:3811e65cf30cd1e7253bb945d0cece854e45c8e7ff8faad7021a1a5387de871f"
+    }
+  ]
+}

@@ -19,29 +19,21 @@ prompts under `dist/role-prompts/`; Loop never discovers them through Skill
 loading. Bootstrap is provided by `runtime/bootstrap.ts` and is not a public
 Skill.
 
-Repository-mutating requests enter Managed Path automatically; users do not
-need to say "Managed Path". The host applies the routing contract before
-selecting a Skill.
+Managed Path starts from an explicit Immune-Brain Skill entry; ordinary host input
+stays host-native and is not classified by natural-language routing.
 
 - An active Assurance projection resumes through `imm-loop`.
-- Read-only, explanation, review-only, Plan-only, and explicit no-modification
-  requests stay host-native and do not enroll.
-- Materially ambiguous mutations go to `imm-brainstorm`.
-- Clear new mutations go to `imm-planner`; Planner artifacts remain candidates
-  for later literal-user Enrollment and are never enrolled unconditionally.
-- Fast-Track compresses Managed Path without bypassing TaskIntent scope,
-  Enrollment, QA, Review, authorization, or completion.
+- Explicit `imm-brainstorm` frames ambiguity; explicit `imm-planner` plans clear work.
+- `imm-loop` consumes validated plans and active task recovery; Planner artifacts remain candidates for later literal-user Enrollment.
+- Fast-Track compresses Managed Path without bypassing TaskIntent scope, Enrollment, QA, Review, authorization, or completion.
 
 ```mermaid
 flowchart LR
-  request[request] --> owner{active Assurance owner?}
-  owner -->|yes| loop[imm-loop]
-  owner -->|no| classify{request classification}
-  classify -->|read-only / no-modification| host[host-native]
-  classify -->|materially ambiguous mutation| brainstorm[imm-brainstorm]
-  classify -->|clear mutation| planner[imm-planner]
-  brainstorm --> planner
-  planner --> enroll[literal-user Enrollment]
+  request[request] --> explicit{explicit Immune-Brain Skill?}
+  explicit -->|yes| skill[imm-brainstorm / imm-planner / imm-loop]
+  explicit -->|no| host[host-native]
+  owner[active Assurance owner] --> loop[imm-loop recovery]
+  skill --> enroll[literal-user Enrollment]
   enroll --> loop
 ```
 

@@ -4,12 +4,9 @@
 This project uses the Immune-Brain workflow.
 
 - Read `IMMUNE.md` before selecting a route.
-- Repository-mutating requests use Managed Path by default; users do not need to say "Managed Path". The host applies the routing contract before selecting a Skill.
-- Keep read-only, explanation, review-only, Plan-only, and explicit no-modification requests host-native. They do not enroll or create task authority.
-- Route materially ambiguous mutations to `imm-brainstorm`; route clear new mutations to `imm-planner`. Planner output is a candidate for later literal-user Enrollment and never enrolls generated artifacts unconditionally.
+- Ordinary host input stays host-native; only explicit `imm-brainstorm`, `imm-planner`, or `imm-loop` Skill entry starts a new Managed workflow.
 - Keep an active Assurance projection, TaskIntent, TaskRecord, or reviewer follow-up on its current owner and resume it through `imm-loop`.
-- Fast-Track is still Managed: compressed execution does not bypass TaskIntent scope, Enrollment, QA, Review, authorization, or completion.
-- Managed Path state is bootstrapped idempotently for Managed phases, left untouched when complete, and rejected when partial or incompatible.
+- Bootstrap is explicit to Skill entry, idempotent when absent, and rejected when partial or incompatible.
 - Navigation Protocol: check `CONTEXT.md` `## Architecture Map` before broad searching; inspect `.imm` discovery state only for an existing Managed owner.
 - Ask the minimum blocking question or use a bounded read-only probe when material ambiguity remains, then reapply the route matrix.
 - Use `imm-loop` only to continue the matching validated Managed owner.

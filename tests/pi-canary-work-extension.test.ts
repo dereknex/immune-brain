@@ -507,7 +507,7 @@ async function preparePendingReview(root: string): Promise<RegisteredTool & { co
 		});
 	});
 
-	test("automatically routes ordinary host input through the Managed Path", { timeout: 15000 }, async () => {
+	test("keeps ordinary host input host-native and preserves explicit Skill entry", { timeout: 15000 }, async () => {
 		const managed = mkdtempSync(join(tmpdir(), "managed-input-"));
 		const readOnly = mkdtempSync(join(tmpdir(), "managed-read-"));
 		try {
@@ -519,12 +519,8 @@ async function preparePendingReview(root: string): Promise<RegisteredTool & { co
 				{ source: "interactive", text: "Implement the login form", images },
 				makeCtx(managed, makeUI()),
 			);
-			expect(mutation).toEqual({
-				action: "transform",
-				text: "/skill:imm-planner Implement the login form",
-				images,
-			});
-			expect(existsSync(join(managed, "AGENTS.md"))).toBe(true);
+			expect(mutation).toEqual({ action: "continue" });
+			expect(existsSync(join(managed, "AGENTS.md"))).toBe(false);
 
 			const explanation = await handler!(
 				{ source: "interactive", text: "Explain the login flow" },
@@ -539,42 +535,32 @@ async function preparePendingReview(root: string): Promise<RegisteredTool & { co
 			expect(await handler!(
 				{ source: "interactive", text: "/implement #8" },
 				makeCtx(managed, makeUI()),
-			)).toEqual({
-				action: "transform",
-				text: "/skill:imm-planner /implement #8",
-			});
+			)).toEqual({ action: "continue" });
 		} finally {
 			rmSync(managed, { recursive: true, force: true });
 			rmSync(readOnly, { recursive: true, force: true });
 		}
 	});
 
-	test("fails closed and blocks Tool calls when Managed routing rejects state", { timeout: 15000 }, async () => {
+	test("does not inspect partial bootstrap state for ordinary host input", { timeout: 15000 }, async () => {
 		const root = mkdtempSync(join(tmpdir(), "managed-rejected-"));
 		try {
 			mkdirSync(join(root, ".imm", "memory"), { recursive: true });
 			const { events } = loadSurface();
 			const ctx = makeCtx(root, makeUI());
 			const images = [{ type: "image", data: "fixture", mimeType: "image/png" }];
-			const rejected = await events.input![0](
+			const result = await events.input![0](
 				{ source: "interactive", text: "Implement the login form", images },
 				ctx,
-			) as { action: string; text: string; images: unknown[] };
-			expect(rejected).toMatchObject({ action: "transform", images });
-			expect(rejected.text).toContain("Managed Path routing failed closed");
-			expect(await events.tool_call![0]({ toolName: "bash", input: { command: "true" } })).toMatchObject({
-				block: true,
-				reason: expect.stringContaining("failed closed"),
-			});
+			) as { action: string };
+			expect(result).toEqual({ action: "continue" });
+			expect(await events.tool_call![0]({ toolName: "bash", input: { command: "true" } })).not.toHaveProperty("block");
 
 			expect(await events.input![0](
 				{ source: "interactive", text: "/help", streamingBehavior: "steer" },
 				ctx,
 			)).toEqual({ action: "continue" });
-			expect(await events.tool_call![0]({ toolName: "read", input: { path: "README.md" } })).toMatchObject({
-				block: true,
-				reason: expect.stringContaining("failed closed"),
-			});
+			expect(await events.tool_call![0]({ toolName: "read", input: { path: "README.md" } })).not.toHaveProperty("block");
 
 			await events.agent_settled![0]({});
 			expect(await events.tool_call![0]({ toolName: "read", input: { path: "README.md" } })).toBeUndefined();

@@ -2,9 +2,9 @@
 
 ## 简介
 
-Immune-Brain 是一套 **Managed-by-default、按请求类型保留 host-native path** 的 AI 编码工作流。
+Immune-Brain 是一套 **Skill-explicit Managed Path** 的 Pi 工作流。
 
-仓库变更请求会自动进入 Managed Path，用户不需要说 “Managed Path”，也不需要先运行单独的 setup command。只读、解释、仅审查、仅规划和明确不修改请求停留在 host-native path，不会 Enrollment。已有 Assurance owner 通过 `imm-loop` 恢复；有实质歧义的变更先进入 `imm-brainstorm`，清晰的新变更进入 `imm-planner`。Planner 产物不会被无条件 Enrollment。
+普通 host input 保持 host-native，不执行自然语言 Managed 路由。只有显式进入 `imm-brainstorm`、`imm-planner` 或 `imm-loop` 才启动新的 Managed workflow；已有 Assurance owner 始终通过 `imm-loop` 恢复。
 
 核心目标有两个：
 
@@ -19,17 +19,19 @@ Immune-Brain 是一套 **Managed-by-default、按请求类型保留 host-native 
 
 ## 路由模型
 
-### Managed Path：仓库变更默认路径
+### Managed Path：显式 Skill 入口
 
-Host 先应用 Managed-by-default routing contract，再自动选择下列工作流入口：
+Host 不再按自然语言请求自动选择 Managed phase。用户显式调用 public Skill 后，Skill 负责进入对应 workflow；active Assurance projection 仍由 host 自动恢复到 `imm-loop`。
 
 1. 已有 Assurance projection、TaskIntent、TaskRecord 或 reviewer follow-up：通过 `imm-loop` 继续现有 owner。
-2. 只读、解释、仅审查、Plan-only、明确 no-modification：留在 host-native path，不 Enrollment、不创建 task authority。
-3. 有实质歧义的 mutation：进入 `imm-brainstorm`，澄清前不 Enrollment。
-4. 清晰的新 mutation：进入 `imm-planner`，Planner 只创建候选 Spec/TaskIntent；literal-user Enrollment 仍是 authority boundary。
+2. 普通 host input：保持 host-native，不扫描 `.imm`，不创建 task authority。
+3. 显式 `imm-brainstorm`：澄清实质歧义；显式 `imm-planner`：创建候选 Spec/TaskIntent。
+4. 显式 `imm-loop`：消费已验证 Plan 或恢复 active task；literal-user Enrollment 仍是 authority boundary。
 5. Fast-Track 只压缩 Managed Path，不绕过 TaskIntent scope、Enrollment、QA、Review、authorization 或 completion。
 
-首次 Managed 请求会自动幂等 bootstrap：完全不存在的 Immune-Brain state 才会创建；完整 state 保持 byte-stable；partial 或 schema-incompatible state 在写入前 fail closed。
+首次显式进入 Immune-Brain Skill 时，runtime 会通过 `runtime/bootstrap.ts` 和
+`runtime/bootstrap-templates/` 严格、幂等地建立最小项目状态。Bootstrap 不是 public Skill；
+partial、incompatible 或 symlinked state 会 fail closed。
 
 ### Host-native Path：非变更请求
 
@@ -48,15 +50,12 @@ Host 先应用 Managed-by-default routing contract，再自动选择下列工作
 
 ## 快速上手
 
-### 1. 自动 bootstrap
+### 1. 显式进入 Skill
 
-无需先运行 setup command。第一次仓库变更请求由 host 应用 routing contract，在
-Managed phase 开始前通过内部 runtime bootstrap 完成严格、幂等初始化；partial 或
-schema-incompatible state 会 fail closed。
+用户显式调用 `imm-brainstorm`、`imm-planner` 或 `imm-loop`。普通 host input
+不会扫描 `.imm`、不会初始化 bootstrap，也不会因为包含 mutation 词而自动改写为 Skill 调用。
 
-### 2. 先选择路径
-
-Host 先应用 Managed-by-default route：
+### 2. 继续当前 owner
 
 - 只读、解释、review-only、Plan-only、明确 no-modification：host-native，不 Enrollment；
 - 有实质歧义的 mutation：`imm-brainstorm`；

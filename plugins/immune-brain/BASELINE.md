@@ -13,38 +13,23 @@
 
 ## Workflow Activation
 
-Repository-mutating requests use Managed Path by default. Users do not need to
-say "Managed Path" or know phase names; the host applies the route contract to
-ordinary natural-language requests before selecting a Skill.
-
-Apply this ordered route before selecting an Immune-Brain Skill:
+Ordinary host input stays host-native and does not run natural-language Managed
+routing. A new Managed workflow starts only from explicit `imm-brainstorm`,
+`imm-planner`, or `imm-loop` Skill entry.
 
 1. **Continue an existing Managed owner**: an active Assurance projection,
    TaskIntent, TaskRecord, reviewer `follow_up`, or other nonterminal Managed
    owner keeps exclusive ownership and resumes through `imm-loop`.
-2. **Keep non-mutating requests host-native**: read-only, explanation,
-   review-only, Plan-only, and explicit no-modification requests do not enroll
-   or create task authority. Plan-only requests may use `imm-planner` to produce
-   planning material, but generated artifacts are never enrolled
-   unconditionally.
-3. **Route materially ambiguous mutations to `imm-brainstorm`**: clarify the
-   goal, constraints, and success criteria before planning. Do not enroll while
-   the mutation remains ambiguous.
-4. **Route clear new mutations to `imm-planner`**: create or revise the Spec and
-   TaskIntent contract. Planner output is a candidate for later literal-user
-   Enrollment, not an automatic Enrollment operation.
-5. **Fast-Track is compressed Managed Path**: it may combine planning and
-   execution for a small validated target, but it preserves TaskIntent scope,
-   Enrollment, QA, Review, authorization, and completion boundaries.
+2. **Start explicitly**: the selected Immune-Brain Skill owns bootstrap and
+   planning. Absent state is initialized idempotently; complete state is left
+   byte-for-byte untouched; partial or incompatible state fails closed.
+3. **Preserve authority**: Planner output is a candidate for later literal-user
+   Enrollment, and Fast-Track preserves TaskIntent scope, Enrollment, QA,
+   Review, authorization, and completion boundaries.
 
-The canonical host applies the Managed Path routing contract for this decision.
-A missing Immune-Brain bootstrap is created idempotently only for Managed phases;
-complete state is left byte-for-byte untouched, while partial or incompatible
-state fails closed before any write.
-
-Do not require a user to name the route. File count, local verifier count,
-ordinary retries, read-only advisors, and unrelated dirty files do not change
-these authority boundaries.
+Do not inspect or mutate Immune-Brain state merely because ordinary host input
+contains a mutation verb. File count, local verifier count, ordinary retries,
+read-only advisors, and unrelated dirty files do not change these boundaries.
 
 ### Non-Mutating Host Path
 

@@ -56,10 +56,10 @@ exhaustive filename guess.
 
 ## Managed Request Routing
 
-`imm-planner` is the default planning phase for a clear repository mutation; the
-user does not need to name Managed Path. The host applies the routing contract
-before selecting a Skill:
-
+`imm-planner` is entered explicitly by the user for a clear repository mutation.
+Ordinary host input does not invoke this Skill through natural-language routing.
+An active Assurance projection resumes through `imm-loop`; explicit Planner entry
+owns bootstrap, planning, and the later native Enrollment gate:
 - an active Assurance projection resumes through `imm-loop`;
 - read-only, explanation, review-only, Plan-only, and explicit no-modification
   requests do not enroll;

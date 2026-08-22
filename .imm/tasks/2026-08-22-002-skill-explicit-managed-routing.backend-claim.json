@@ -1,0 +1,9 @@
+{
+  "contract": "assurance_kernel/task_tombstone/v1",
+  "task_id": "2026-08-22-002-skill-explicit-managed-routing",
+  "lifecycle_status": "terminal",
+  "terminal_phase": "done",
+  "terminal_event_id": "complete:2026-08-22-002-skill-explicit-managed-routing:2026-08-22T07:31:40.168Z",
+  "final_record_hash": "sha256:f68e30b8b6938d50c2e206019cb1556f721fe708826b5fb7aaf008377d93c2f8",
+  "terminalized_at": "2026-08-22T07:31:40.168Z"
+}

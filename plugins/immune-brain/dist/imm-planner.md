@@ -9,26 +9,21 @@ This skill adheres to the **[BASELINE.md](BASELINE.md)**.
 
 ## Managed Request Routing
 
-`imm-planner` is the default planning phase for a clear repository mutation; the
-user does not need to name Managed Path. The host applies the routing contract
-before selecting a Skill:
-
-- an active Assurance projection resumes through `imm-loop`;
-- read-only, explanation, review-only, Plan-only, and explicit no-modification
-  requests do not enroll;
-- materially ambiguous mutations go to `imm-brainstorm` before planning; and
-- clear new mutations reach this Planner phase.
+`imm-planner` is entered explicitly by the user for a clear repository mutation.
+Ordinary host input does not invoke this Skill through natural-language routing.
+An active Assurance projection resumes through `imm-loop`; explicit Planner entry
+owns bootstrap, planning, and the later native Enrollment gate.
 
 Plan-only output remains non-authoritative. Planner creates or validates a
 candidate Spec/TaskIntent, but it never enrolls a task or enrolls generated
 artifacts unconditionally. Explicit Plan-only requests stop after returning the
-planning artifacts. A later literal-user request to start Enrollment is a non-authoritative
-execution trigger: invoke the native Enrollment gate directly, without asking
-for chat pre-confirmation. For a clear mutation request that already includes
-execution, invoke that gate as soon as the candidate is validated and Git-tracked.
-Literal-user confirmation in the native gate remains the authority boundary.
-Fast-Track may compress the same phases but cannot bypass that boundary, QA,
-Review, authorization, or completion.
+planning artifacts. A later literal-user request to start Enrollment is a
+non-authoritative execution trigger: invoke the native Enrollment gate directly,
+without asking for chat pre-confirmation. For a clear mutation request that
+already includes execution, invoke that gate as soon as the candidate is
+validated and Git-tracked. Literal-user confirmation in the native gate remains
+the authority boundary. Fast-Track may compress the same phases but cannot
+bypass that boundary, QA, Review, authorization, or completion.
 
 ## Default exhaustive decision tree
 
@@ -168,9 +163,9 @@ rehearsal stays within host setup and execution ceilings.
 - **Planning granularity**: Treat each step as one **outcome unit** versus **implementation batches** inside that unit. An executor may ship multiple commits or touch many files within a step when the recorded verification still closes that single outcome. When framing is stable and verification paths are concrete, prefer **fewer outcome steps** that each stay independently closable instead of inventing extra steps for perceived incrementality. **Narrow product scope** (Simplicity) is about what you commit to deliver; it is never permission to carve one outcome into read/edit/run micro-steps.
 - **Plan Boundary Discipline**: Step granularity and Plan granularity are separate decisions. A Step remains one independently closable outcome; a Plan remains one coherent executable slice. Independent authority, risk, verification, promotion, review, or rollback boundaries normally become successor Plans instead of larger Steps in the current Plan. Infrastructure that establishes an invariant should normally close and pass review before broad consumer rollout. Record `Plan boundary`, `Boundary rationale`, and advisory `Scope pressure`; file count, domain count, tokens, compactions, elapsed time, and review rounds are evidence for Planner reasoning, never universal workflow gates.
 - **Roadmap / Executable Slice Separation (historical — read-only)**: v3 prose Plan mutation is retired; `imm-plan` is a read-only validator and no new Roadmap-backed prose Plan is created. Archived `roadmap-slice/v1` Plans remain readable via `plan_core.ts` for backward compatibility. Do not produce new Roadmap-backed Plans.
-- **Risk-Triggered Exploration**: Before freezing a Managed Plan, resolve only the unknowns that could change Scope, design, or Verification — CI environment, third-party APIs, database behavior, cross-module interfaces — using targeted read-only probes. The internal `arch-explorer` and explicit-lens `advisory-reviewer` roles are the Loop bridge for these bounded probes; both return evidence and decision criteria without writing the Spec, Plan, or workflow state. Read-only and Plan-only work stays host-native without Enrollment; clear repository mutations default to this Planner phase. Independently owned domains and unresolved material risk remain Managed concerns. Stop probing once Result, Scope, and Verification are concrete.
+- **Risk-Triggered Exploration**: Before freezing a Managed Plan, resolve only the unknowns that could change Scope, design, or Verification — CI environment, third-party APIs, database behavior, cross-module interfaces — using targeted read-only probes. The internal `arch-explorer` and explicit-lens `advisory-reviewer` roles are the Loop bridge for these bounded probes; both return evidence and decision criteria without writing the Spec, Plan, or workflow state. Read-only and Plan-only work stays host-native without Enrollment; explicit Immune-Brain Skill entry starts Managed planning. Independently owned domains and unresolved material risk remain Managed concerns. Stop probing once Result, Scope, and Verification are concrete.
 - **Supersede Observability**: Every new `superseded` termination must record the runtime flags `--reason-code` (`exploration_gap` | `scope_pivot` | `boundary_error` | `contract_change` | `execution_failure`), `--stage`, `--invalidated-assumption`, and `--avoidable yes|no`; `cancelled` terminations may record the same classification but do not require it. Legacy terminal records without observability remain readable. Planning-quality metrics count only `avoidable: yes` terminations; `scope_pivot` must use `--avoidable no` because it is an external requirement change, never planner failure; `execution_failure` normally routes to `rework`/`follow_up` instead of supersede.
-- **Simplicity**: Apply the BASELINE Workflow Activation gate first. Non-mutating host-native work creates no Planner artifact. Clear repository mutations use this Planner phase without requiring a special phrase; create one coherent outcome instead of expanding ceremony.
+- **Simplicity**: Apply the BASELINE Workflow Activation gate first. Non-mutating host-native work creates no Planner artifact. Explicit Immune-Brain Skill entry starts this Planner phase; ordinary host input does not invoke it through natural-language routing. Create one coherent outcome instead of expanding ceremony.
 - **Design-Depth Classification**: Classify change design risk with the smallest sufficient tier: **Low risk** (copy, configuration, trivial rename, or contained local fix) may omit a separate Technical Design; **Medium risk** (non-trivial single-module behavior or internal contract) records affected components, decisions, invariants, failure behavior, and verification implications; **High risk** (cross-module/API/data-flow/state-machine, security, migration, concurrency, architecture ownership, cross-runtime/package-contract, or persisted-state work) records boundaries, interfaces or flow, alternatives, invariants, rollback/compatibility, and verification implications. Medium and High risk require Technical Design in the Spec. Do not classify a change as Low risk when it has a contract, ownership, security, persistence, compatibility, or multi-component concern. Every new or revised Spec records `**Design risk**: Low|Medium|High` with an adjacent rationale.
 - **Technical Design Authority**: The Spec is the single Technical Design baseline. Plan references the applicable design decisions or invariants without copying Technical Design prose. If discovery invalidates the baseline, stop execution and return to Planner to update the Spec and decide whether `replan` is required.
 - **Mermaid Use**: Mermaid is required only when a medium/high-risk design contains structure, sequence, data flow, or state transition relationships that a diagram materially clarifies. Mermaid is not a universal gate; a diagram supplements adjacent prose and never becomes a second design authority. Every new or revised Spec records `**Diagram decision**: required|not_required` and a non-empty `**Diagram reason**:`. A `required` decision must have a Mermaid block; `not_required` explains why prose is sufficient.

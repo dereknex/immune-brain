@@ -23,34 +23,26 @@ function expectAll(text: string, fragments: string[]): void {
   for (const fragment of fragments) expect(text).toContain(fragment);
 }
 
-describe("Managed-by-default workflow routing contract", () => {
-  it("routes repository mutations through Managed phases without a special phrase", () => {
+describe("Skill-explicit workflow routing contract", () => {
+  it("keeps ordinary mutations host-native until an Immune Skill is explicit", () => {
     expectAll(BASELINE, [
-      "Repository-mutating requests use Managed Path by default.",
-      "The canonical host applies the Managed Path routing contract for this decision.",
+      "Ordinary host input stays host-native",
+      "new Managed workflow starts only from explicit",
       "Continue an existing Managed owner",
-      "Keep non-mutating requests host-native",
-      "Route materially ambiguous mutations to `imm-brainstorm`",
-      "Route clear new mutations to `imm-planner`",
-      "Fast-Track is compressed Managed Path",
-      "Planner output is a candidate for later literal-user",
+      "explicit `imm-brainstorm`",
+      "imm-planner",
+      "imm-loop",
     ]);
-    expect(BASELINE).not.toContain(
-      "Direct Path is the default when no Managed trigger applies.",
-    );
+    expect(BASELINE).not.toContain("Repository-mutating requests use Managed Path by default");
   });
 
-  it("keeps non-mutating requests out of Enrollment and preserves routine breadth rules", () => {
+  it("keeps host-native work out of workflow authority", () => {
     expectAll(BASELINE, [
-      "read-only, explanation",
-      "Plan-only requests may use `imm-planner`",
+      "Ordinary host input stays host-native",
+      "Do not inspect or mutate Immune-Brain state",
       "This path creates no Spec, Plan, TaskIntent, TaskRecord, State Ledger",
-      "File count",
-      "ordinary retries, read-only advisors",
-      "Do not create or mutate workflow state while",
     ]);
-    expect(BASELINE).not.toContain("Use the Direct Path only when all of these are true");
-    expect(BASELINE).not.toContain("one direct, non-destructive verification");
+    expect(BASELINE).not.toContain("Repository-mutating requests use Managed Path by default");
   });
 
   it("retains authoritative evidence and privilege confirmation boundaries", () => {
@@ -69,20 +61,20 @@ describe("Managed-by-default workflow routing contract", () => {
   });
 
   it("aligns project constitutions, bootstrap, and packaged consumers", () => {
-    expectAll(ROOT_IMMUNE, ["Managed-by-default", "Host 在选择 Skill 前应用 routing contract", "literal-user Enrollment"]);
+    expectAll(ROOT_IMMUNE, ["Skill-explicit Managed Path", "显式 Immune-Brain Skill", "literal-user Enrollment"]);
     expectAll(INIT_AGENTS, [
-      "Repository-mutating requests use Managed Path by default",
-      "The host applies the routing contract before selecting a Skill",
-      "Planner output is a candidate for later literal-user Enrollment",
+      "Ordinary host input stays host-native",
+      "explicit `imm-brainstorm`",
+      "Bootstrap is explicit to Skill entry",
     ]);
-    expectAll(INIT_IMMUNE, ["Repository-mutating requests use Managed Path by default", "partial or incompatible state fails"]);
+    expectAll(INIT_IMMUNE, ["Ordinary host input stays host-native", "partial or incompatible state fails"]);
     expect(INIT_SCRIPT).toContain('ready_for: ["imm-brainstorm", "imm-planner", "imm-loop"]');
     expect(INIT_SCRIPT).toContain("bootstrap_rejected");
     expect(INIT_SCRIPT).toContain("ensureManagedBootstrap");
-    expectAll(README, ["Repository-mutating requests enter Managed Path automatically", "The host applies the routing contract before"]);
-    expectAll(USER_GUIDE, ["Managed Path：仓库变更默认路径", "第一次仓库变更请求由 host 应用 routing contract"]);
-    expectAll(PLANNER_SKILL, ["default planning phase for a clear repository mutation", "enrolls a task or enrolls generated", "artifacts unconditionally"]);
-    expectAll(QUALITY_GATE, ["clear repository mutations default to `imm-planner`", "literal-user Enrollment remains the authority boundary"]);
+    expectAll(README, ["Managed Path starts from an explicit Immune-Brain Skill entry", "ordinary host input"]);
+    expectAll(USER_GUIDE, ["Skill-explicit Managed Path", "普通 host input 保持 host-native"]);
+    expectAll(PLANNER_SKILL, ["entered explicitly by the user", "enrolls a task or enrolls generated", "artifacts unconditionally"]);
+    expectAll(QUALITY_GATE, ["explicit Immune-Brain Skill entry starts Managed planning", "literal-user Enrollment remains the authority boundary"]);
     expect(PACKAGED_QUALITY_GATE).toBe(QUALITY_GATE);
   });
 

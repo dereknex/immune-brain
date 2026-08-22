@@ -1,6 +1,6 @@
 # Immune-Brain 使用手册
 
-Immune-Brain 是一套 Managed-by-default 的 Pi 工作流。用户可发现的入口只有三个 public Skills：
+Immune-Brain 是一套 Skill-explicit Managed 的 Pi 工作流。用户可发现的入口只有三个 public Skills：
 
 - `imm-brainstorm`：澄清需求、约束、风险和非目标。
 - `imm-planner`：创建或修订 Spec、Plan 和候选 TaskIntent。
@@ -11,11 +11,11 @@ Executor、QA、Review、repair、learning、architecture exploration 和 bootst
 
 ## 路由模型
 
-Host 先按请求分类：
+Host 只在用户显式进入 Immune Skill 时启动 Managed Path；普通 host input 保持 host-native：
 
 - 只读、解释、review-only、Plan-only 和明确 no-modification 请求保持 host-native，不创建 workflow authority。
-- 清晰的仓库变更自动进入 Managed Path；用户不需要输入“Managed Path”。
-- 需求有重大歧义时先进入 `imm-brainstorm`，回答全部 `BR-Q-*` 后再进入 `imm-planner`。
+- 普通仓库变更不会被自然语言自动分类；用户显式进入 `imm-brainstorm`、`imm-planner` 或 `imm-loop` 后才启动 Managed Path。
+- 需求有重大歧义时进入 `imm-brainstorm`，回答全部 `BR-Q-*` 后再进入 `imm-planner`。
 - 有效的 active Assurance/Kernel projection 直接恢复到 `imm-loop`，不重新规划。
 - `imm-planner` 只产生候选计划和 TaskIntent，不自动 Enrollment。
 
