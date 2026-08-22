@@ -45,7 +45,7 @@
   },
   "notes": [
     "This config intentionally points at a small fixture workspace instead of the full repository.",
-    "The scenarios use five concrete Immune-Brain routing and lifecycle slices so benchmark cost reflects plugin behavior rather than repository exploration.",
+    "The scenarios use five concrete Immune-Brain explicit-entry and lifecycle slices so benchmark cost reflects plugin behavior rather than repository exploration.",
     "Benchmark means real codex exec runs now. There is no simulated dry-run mode.",
     "Keep plugin-eval run artifacts outside the plugin target when possible, and do not commit generated usage logs."
   ],
@@ -80,24 +80,24 @@
       ]
     },
     {
-      "id": "managed-default-mutation",
-      "title": "Managed-by-default local mutation contract",
-      "purpose": "Check whether a clear repository mutation routes to Planner and preserves Managed authority without requiring a special route phrase.",
-      "userInput": "Use the local Codex plugin \"immune-brain\" if it helps. In this small fixture workspace only, change the README Workflow Boundary wording from `Small one-off copy edits` to `Focused one-off copy edits`, update the focused fixture test expectation, run `bun test tests`, and verify `test ! -d upstreams`. Read only README.md and tests/fixture-contract.test.ts first. Do not run git commands or inspect the plugin implementation.",
+      "id": "host-native-mutation",
+      "title": "Host-native local mutation contract",
+      "purpose": "Check whether a clear repository mutation stays host-native when the user does not explicitly enter an Immune-Brain Skill.",
+      "userInput": "In this small fixture workspace only, change the README Workflow Boundary wording from `Small one-off copy edits` to `Focused one-off copy edits`, update the focused fixture test expectation, run `bun test tests`, and verify `test ! -d upstreams`. Read only README.md and tests/fixture-contract.test.ts first. Do not run git commands or inspect the plugin implementation.",
       "successChecklist": [
-        "The clear repository mutation routes to the Managed Planner without the user saying Managed Path.",
-        "Wholly absent Immune-Brain state is initialized idempotently before the Managed phase; generated Planner artifacts are not enrolled automatically.",
-        "The requested README and focused test change are completed inside the validated Managed boundary and both verifier commands pass."
+        "The clear repository mutation stays host-native because no Immune-Brain Skill was explicitly invoked.",
+        "The run does not create or inspect Immune-Brain workflow state, Planner artifacts, or bootstrap files.",
+        "The requested README and focused test change are completed directly and both verifier commands pass."
       ]
     },
     {
-      "id": "hard-risk-managed-boundary",
-      "title": "Managed boundary for a public runtime contract",
-      "purpose": "Check whether a public runtime contract and compatibility change routes fail-closed to Managed before implementation.",
-      "userInput": "Use the local Codex plugin \"immune-brain\" if it helps. The requested change would rename the packaged public runtime contract `plugins/immune-brain/runtime/v4_runtime.ts` and retain compatibility for existing consumers. Determine the correct route before implementation. In this fixture, do not mutate runtime code, do not invent a compatibility layer, do not run git commands, and keep any planning artifact under docs/specs or docs/plans.",
+      "id": "explicit-managed-boundary",
+      "title": "Explicit Managed boundary for a public runtime contract",
+      "purpose": "Check whether an explicit Planner entry handles a public runtime contract and compatibility decision before implementation.",
+      "userInput": "Use explicit `imm-planner` for this request. The requested change would rename the packaged public runtime contract `plugins/immune-brain/runtime/v4_runtime.ts` and retain compatibility for existing consumers. In this fixture, do not mutate runtime code, do not invent a compatibility layer, do not run git commands, and keep any planning artifact under docs/specs or docs/plans.",
       "successChecklist": [
-        "The public runtime contract and compatibility trigger selects Managed rather than Direct.",
-        "The run creates only the bounded Managed planning artifact needed for enrollment and does not implement before authority exists.",
+        "The explicit `imm-planner` entry selects Managed planning; request wording alone is not treated as a route trigger.",
+        "The run creates only the bounded Managed planning artifact needed for later enrollment and does not implement before authority exists.",
         "The response identifies compatibility and rollback verification instead of treating file count as the reason for Managed routing."
       ]
     },

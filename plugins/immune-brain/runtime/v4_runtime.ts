@@ -30,7 +30,6 @@ import {
 	PlanValidationError,
 	projectPlanValidation,
 } from "./plan_core";
-import { routeManagedRequest } from "./managed_path_router";
 import { runGithubTrackerCli } from "./github_issue_tracker";
 
 // Retired v3 mutating command wall. Read-only v3 commands that only project
@@ -173,74 +172,6 @@ function runPlanCli(args: string[], root: string): {
 	}
 }
 
-function runRouteCli(args: string[], root: string): {
-	stdout: string;
-	stderr: string;
-	returncode: number;
-} {
-	let json = false;
-	let fastTrack = false;
-	let taskId: string | undefined;
-	const request: string[] = [];
-	for (let index = 0; index < args.length; index += 1) {
-		const arg = args[index];
-		if (arg === "--json") {
-			json = true;
-			continue;
-		}
-		if (arg === "--fast-track") {
-			fastTrack = true;
-			continue;
-		}
-		if (arg === "--task-id") {
-			taskId = args[++index];
-			if (!taskId) {
-				return {
-					stdout: "",
-					stderr: "invalid_route_command: --task-id requires a value\n",
-					returncode: 2,
-				};
-			}
-			continue;
-		}
-		if (arg.startsWith("-")) {
-			return {
-				stdout: "",
-				stderr: "invalid_route_command: use imm-route [--json] [--fast-track] [--task-id <id>] <request>\n",
-				returncode: 2,
-			};
-		}
-		request.push(arg);
-	}
-	if (request.length === 0) {
-		return {
-			stdout: "",
-			stderr: "invalid_route_command: a natural-language request is required\n",
-			returncode: 2,
-		};
-	}
-	try {
-		const projection = routeManagedRequest({
-			root,
-			request: request.join(" "),
-			task_id: taskId,
-			fast_track: fastTrack,
-		});
-		if (json) return { stdout: jsonOutput(projection), stderr: "", returncode: 0 };
-		return {
-			stdout: `Route: ${projection.phase}\nIntent: ${projection.intent}\nNext: ${projection.reason}\n`,
-			stderr: "",
-			returncode: 0,
-		};
-	} catch (error) {
-		return {
-			stdout: "",
-			stderr: `managed_route_rejected: ${error instanceof Error ? error.message : String(error)}\n`,
-			returncode: 1,
-		};
-	}
-}
-
 async function runKernelCli(args: string[], root: string): Promise<{
 	stdout: string;
 	stderr: string;
@@ -285,7 +216,6 @@ async function runCli(command: string, args: string[], root: string): Promise<{
 }> {
 	if (command === "imm-kernel") return runKernelCli(args, root);
 	if (command === "imm-plan") return runPlanCli(args, root);
-	if (command === "imm-route") return runRouteCli(args, root);
 	if (command === "imm-tracker") return runGithubTrackerCli(args, root);
 	if (RETIRED_MUTATING_COMMANDS.has(command)) return retiredResponse(command, args, root);
 	return {
@@ -326,16 +256,6 @@ async function main(argv: string[]): Promise<number> {
 							],
 						},
 						{
-							name: "imm-route",
-							description:
-								"Natural-language request router for the Managed Path; bootstraps missing project state fail-closed.",
-							json_output: true,
-								examples: [
-									"imm-route --json Implement the login form",
-									"imm-route --json --fast-track Implement the login form",
-								],
-						},
-						{
 							name: "imm-tracker",
 							description:
 								"Opt-in, one-way GitHub Issue projection. Never grants or consumes Kernel authority.",
@@ -372,4 +292,4 @@ if (fileURLToPath(import.meta.url) === process.argv[1]) {
 	process.exit(code);
 }
 
-export { main, runCli, runKernelCli, runRouteCli, runGithubTrackerCli, RETIRED_MUTATING_COMMANDS };
+export { main, runCli, runKernelCli, runGithubTrackerCli, RETIRED_MUTATING_COMMANDS };

@@ -32,39 +32,39 @@ describe("Immune-Brain behavior eval contract", () => {
 		});
 	});
 
-	it("covers managed planning, managed execution, managed-by-default mutations, hard-risk routing, and weak matches", () => {
+	it("covers managed planning, managed execution, host-native mutations, explicit Managed routing, and weak matches", () => {
 		expect(
 			benchmark.scenarios.map((scenario: { id: string }) => scenario.id),
 		).toEqual([
 			"entrypoint-routing",
 			"multi-skill-follow-up",
-			"managed-default-mutation",
-			"hard-risk-managed-boundary",
+			"host-native-mutation",
+			"explicit-managed-boundary",
 			"plugin-boundary",
 		]);
 	});
 
-	it("makes the managed-by-default mutation contract observable", () => {
+	it("makes the host-native mutation contract observable", () => {
 		const scenario = benchmark.scenarios.find(
-			(item: { id: string }) => item.id === "managed-default-mutation",
+			(item: { id: string }) => item.id === "host-native-mutation",
 		);
 		const contract = [scenario.userInput, ...scenario.successChecklist].join(
 			"\n",
 		);
 
-		expect(contract).toContain("without the user saying Managed Path");
-		expect(contract).toContain("initialized idempotently");
-		expect(contract).toContain("generated Planner artifacts are not enrolled automatically");
+		expect(contract).toContain("stays host-native");
+		expect(contract).toContain("does not create or inspect Immune-Brain workflow state");
 		expect(contract).toContain("bun test tests");
 	});
 
-	it("makes the hard-risk Managed boundary observable", () => {
+	it("makes the explicit Managed boundary observable", () => {
 		const scenario = benchmark.scenarios.find(
-			(item: { id: string }) => item.id === "hard-risk-managed-boundary",
+			(item: { id: string }) => item.id === "explicit-managed-boundary",
 		);
 		const contract = [scenario.userInput, ...scenario.successChecklist].join(
 			"\n",
 		);
+		expect(contract).toContain("explicit `imm-planner`");
 		expect(contract).toContain("public runtime contract");
 		expect(contract).toContain("compatibility");
 		expect(contract).toContain("Managed");

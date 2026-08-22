@@ -5,8 +5,8 @@ learning capture, backed by a deterministic TypeScript workflow runtime.
 
 Each of the three public Skills is a compact `skills/<name>/SKILL.md`
 trigger shim that loads its full instructions from `dist/<name>.md` only on
-invocation. Execution, review, QA, repair, learning, and bootstrap capabilities
-are internal runtime roles or tools; they are not additional public Skills.
+invocation. Execution, review, QA, repair, and learning capabilities are
+internal runtime roles or tools; they are not additional public Skills.
 Shared rules live in [`BASELINE.md`](BASELINE.md); current workflow behavior
 lives in the focused modules under [`runtime/`](runtime/), while `imm_core.ts`
 is the public API barrel.
@@ -16,13 +16,13 @@ is the public API barrel.
 The package exposes exactly three Skills: `imm-brainstorm`, `imm-planner`, and
 `imm-loop`. Internal roles are dispatched by the runtime through packaged
 prompts under `dist/role-prompts/`; Loop never discovers them through Skill
-loading. Bootstrap is provided by `runtime/bootstrap.ts` and is not a public
-Skill.
+loading. Skills use the project's existing files and create only the artifacts
+the user explicitly requested.
 
 Managed Path starts from an explicit Immune-Brain Skill entry; ordinary host input
 stays host-native and is not classified by natural-language routing.
 
-- An active Assurance projection resumes through `imm-loop`.
+- An active Assurance projection remains authoritative and resumes only when the user explicitly enters `imm-loop`.
 - Explicit `imm-brainstorm` frames ambiguity; explicit `imm-planner` plans clear work.
 - `imm-loop` consumes validated plans and active task recovery; Planner artifacts remain candidates for later literal-user Enrollment.
 - Fast-Track compresses Managed Path without bypassing TaskIntent scope, Enrollment, QA, Review, authorization, or completion.

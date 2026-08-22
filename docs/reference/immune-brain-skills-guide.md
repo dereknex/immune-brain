@@ -62,11 +62,11 @@ Loop 是唯一的执行协调 public Skill。它通过 `buildLoopAction` 和
 packaged bytes 位于 `plugins/immune-brain/dist/role-prompts/`。Role bridge 直接读取
 这些内部 prompt，不扫描 `skills/`，因此 public Skill registry 不会重新暴露内部 role。
 
-## Bootstrap 与 Pi runtime
+## Project integration
 
-Managed Path 第一次需要状态时，由 `runtime/bootstrap.ts` 调用
-`runtime/bootstrap-templates/` 完成严格、幂等 bootstrap。它不是 `/imm-init` Skill；
-partial、incompatible、tracked-deleted 或 symlinked state 必须 fail closed。
+Managed Path uses the project's existing structure. Explicit Skills create only
+the artifacts and parent directories needed for the current request; runtime does
+not install or validate project-wide instruction files.
 
 Pi runtime 的 public loader 只应发现三个 Skill。Canary Enrollment、Kernel evidence、
 Review authorization 和 terminal settlement 通过 foreground Tools/TUI gates 完成：

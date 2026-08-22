@@ -14,24 +14,22 @@ Immune-Brain 是一套 **Skill-explicit Managed Path** 的 Pi 工作流。
 ## Public Skill surface
 
 用户可发现的 Skill 只有三个：`imm-brainstorm`、`imm-planner`、`imm-loop`。
-执行、QA、Review、repair、learning 和 bootstrap 都由 `imm-loop` 与 runtime
+执行、QA、Review、repair 和 learning 都由 `imm-loop` 与 runtime
 内部 roles/tools 完成；它们没有独立的 public Skill 或兼容 alias。
 
 ## 路由模型
 
 ### Managed Path：显式 Skill 入口
 
-Host 不再按自然语言请求自动选择 Managed phase。用户显式调用 public Skill 后，Skill 负责进入对应 workflow；active Assurance projection 仍由 host 自动恢复到 `imm-loop`。
+Host 不再按自然语言请求自动选择 Managed phase。用户显式调用 public Skill 后，Skill 负责进入对应 workflow；active Assurance projection 保持权威，但不会自动改写普通输入。
 
-1. 已有 Assurance projection、TaskIntent、TaskRecord 或 reviewer follow-up：通过 `imm-loop` 继续现有 owner。
+1. 已有 Assurance projection、TaskIntent、TaskRecord 或 reviewer follow-up：保持现有 owner，用户显式进入 `imm-loop` 后继续。
 2. 普通 host input：保持 host-native，不扫描 `.imm`，不创建 task authority。
 3. 显式 `imm-brainstorm`：澄清实质歧义；显式 `imm-planner`：创建候选 Spec/TaskIntent。
 4. 显式 `imm-loop`：消费已验证 Plan 或恢复 active task；literal-user Enrollment 仍是 authority boundary。
 5. Fast-Track 只压缩 Managed Path，不绕过 TaskIntent scope、Enrollment、QA、Review、authorization 或 completion。
 
-首次显式进入 Immune-Brain Skill 时，runtime 会通过 `runtime/bootstrap.ts` 和
-`runtime/bootstrap-templates/` 严格、幂等地建立最小项目状态。Bootstrap 不是 public Skill；
-partial、incompatible 或 symlinked state 会 fail closed。
+显式 Skill 直接使用项目现有结构，只创建当前 Spec、TaskIntent 或执行结果需要的目录和文件；不会安装、覆盖或校验项目级 `AGENTS.md`、`IMMUNE.md`、`CONTEXT.md` 契约。
 
 ### Host-native Path：非变更请求
 
@@ -53,7 +51,7 @@ partial、incompatible 或 symlinked state 会 fail closed。
 ### 1. 显式进入 Skill
 
 用户显式调用 `imm-brainstorm`、`imm-planner` 或 `imm-loop`。普通 host input
-不会扫描 `.imm`、不会初始化 bootstrap，也不会因为包含 mutation 词而自动改写为 Skill 调用。
+不会扫描 `.imm`、不会安装项目契约，也不会因为包含 mutation 词而自动改写为 Skill 调用。
 
 ### 2. 继续当前 owner
 
@@ -101,7 +99,6 @@ v3 mutating commands 已退出生产路径。历史 v3 State Ledger 只能通过
 
 | 入口 | 用途 |
 | --- | --- |
-| `Managed Path routing` | 按自然语言请求自动选择 host-native、Brainstorm、Planner 或 Loop，并在需要时幂等 bootstrap |
 | `imm-brainstorm` | 澄清关键需求、约束和风险；不写计划或代码 |
 | `imm-planner` | 为清晰的仓库变更创建或修订候选 Spec/TaskIntent；不自动 Enrollment |
 | `imm-loop` | 消费已验证计划并协调执行、QA、Review、repair 与 settlement；不绕过 Planner 或 authority gate |

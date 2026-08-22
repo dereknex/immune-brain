@@ -11,8 +11,9 @@ This skill adheres to the **[BASELINE.md](BASELINE.md)**.
 
 `imm-planner` is entered explicitly by the user for a clear repository mutation.
 Ordinary host input does not invoke this Skill through natural-language routing.
-An active Assurance projection resumes through `imm-loop`; explicit Planner entry
-owns bootstrap, planning, and the later native Enrollment gate.
+An active Assurance projection remains authoritative and is resumed only through
+an explicit `imm-loop` entry; explicit Planner entry owns planning and the later
+native Enrollment gate.
 
 Plan-only output remains non-authoritative. Planner creates or validates a
 candidate Spec/TaskIntent, but it never enrolls a task or enrolls generated

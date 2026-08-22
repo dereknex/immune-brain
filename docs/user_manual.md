@@ -6,7 +6,7 @@ Immune-Brain 是一套 Skill-explicit Managed 的 Pi 工作流。用户可发现
 - `imm-planner`：创建或修订 Spec、Plan 和候选 TaskIntent。
 - `imm-loop`：消费已验证的 Plan，协调执行、QA、Review、repair 和 settlement。
 
-Executor、QA、Review、repair、learning、architecture exploration 和 bootstrap 都是
+Executor、QA、Review、repair、learning 和 architecture exploration 都是
 `imm-loop` 使用的内部 runtime roles/tools，不是可发现的 Skill，也没有兼容 alias。
 
 ## 路由模型
@@ -16,7 +16,7 @@ Host 只在用户显式进入 Immune Skill 时启动 Managed Path；普通 host 
 - 只读、解释、review-only、Plan-only 和明确 no-modification 请求保持 host-native，不创建 workflow authority。
 - 普通仓库变更不会被自然语言自动分类；用户显式进入 `imm-brainstorm`、`imm-planner` 或 `imm-loop` 后才启动 Managed Path。
 - 需求有重大歧义时进入 `imm-brainstorm`，回答全部 `BR-Q-*` 后再进入 `imm-planner`。
-- 有效的 active Assurance/Kernel projection 直接恢复到 `imm-loop`，不重新规划。
+- 有效的 active Assurance/Kernel projection 保持权威；用户显式进入 `imm-loop` 后恢复，不自动改写普通输入。
 - `imm-planner` 只产生候选计划和 TaskIntent，不自动 Enrollment。
 
 ```text
@@ -27,9 +27,7 @@ request
   -> imm-loop                       validated Plan or active task recovery
 ```
 
-第一次进入 Managed Path 时，runtime 会通过 `runtime/bootstrap.ts` 和
-`runtime/bootstrap-templates/` 严格、幂等地建立最小项目状态。Bootstrap 不是 public Skill；
-partial、incompatible 或 symlinked state 会 fail closed。
+显式 Skill 使用项目现有结构，并只创建当前工作需要的 artifact 及其父目录。Runtime 不安装、覆盖或校验项目级 `AGENTS.md`、`IMMUNE.md` 或 `CONTEXT.md`。
 
 ## 三个 public Skills
 
@@ -72,8 +70,7 @@ Brainstorm Trace，并让每个 Step 有明确 Result、Scope 和 Verification�
 5. Tool result 必须返回持久化 projection 和 `next_action`，中断后从 Kernel state 恢复。
 6. 终态返回 `phase=done` 和 `next_action=none`；取消、失败和 settlement 不靠 promise resolution 推断。
 
-内部 runtime 操作包括 Managed Path routing、`imm_canary_enrollment`、
-`imm_kernel_canary` 和必要的 Kernel CLI。它们不是 public Skills，不构成第二套用户工作流。
+内部 runtime 操作包括 `imm_canary_enrollment`、`imm_kernel_canary` 和必要的 Kernel CLI。它们不是 public Skills，不构成第二套用户工作流。
 
 ## 验证与发布
 

@@ -3,9 +3,9 @@
 这是 **Immune-Brain** 系统的核心规约文件。所有在此工作空间内运行的 Agent 必须严格遵守以下准则。
 
 ## 1. 核心哲学
-- **Skill-explicit Managed Path**：普通 host input 保持 host-native；只有用户显式进入 `imm-brainstorm`、`imm-planner` 或 `imm-loop` 才启动新的 Managed workflow。已有 active Assurance owner 始终通过 `imm-loop` 恢复。
+- **Skill-explicit Managed Path**：普通 host input 保持 host-native；只有用户显式进入 `imm-brainstorm`、`imm-planner` 或 `imm-loop` 才启动或恢复 Managed workflow。active Assurance owner 保持权威，但不会改写普通输入。
 - **文件即 Managed 记忆**：Managed Path 的重要决策和工作流状态必须持久化到 Git-owned Spec/TaskIntent 或 `.imm/` authority；host-native path 不会创建或更新 `.imm/` 工作流状态，也不依赖对话记忆作为长期 authority。
-- **按请求类型使用规格**：清晰的新仓库变更进入 `imm-planner`，有实质歧义先进入 `imm-brainstorm`；已有 Assurance owner 通过 `imm-loop` 恢复。Planner 只产出候选 Spec/TaskIntent，不无条件 Enrollment。
+- **按请求类型使用规格**：用户显式进入 `imm-planner` 处理清晰的新仓库变更，有实质歧义时显式进入 `imm-brainstorm`；已有 Assurance owner 由用户显式进入 `imm-loop` 恢复。Planner 只产出候选 Spec/TaskIntent，不无条件 Enrollment。
 - **小步执行**：Managed Plan 必须按可独立闭合结果组织成果步。Direct 不因多文件、多条本地 verifier、普通重试或只读 subagent 自动升级为 Managed。
 - **按证据沉淀**：只有确有复用价值的已闭合工作才写入 `docs/solutions/`；Direct completion 不要求 Compounder。
 - **角色质量上限（gstack quality ceiling）**：Managed 核心 Skill 保持 `preferred bias`（最该坚持的质量目标）和 `prohibited drift`（绝不能越界的权力）。交互仪式压缩为真正的 authority/privilege gate；完备性只在有限输入源（Brainstorm manifest、review follow-up packet）上启用。
@@ -17,10 +17,9 @@
 
 ## Managed Path 入口
 
-普通 host input 不执行自然语言 Managed 路由，也不初始化 bootstrap；显式 Immune-Brain Skill 负责启动新的 Managed workflow。已有 active Assurance owner 仍由 host 自动恢复。
+普通 host input 不执行自然语言 Managed 路由，也不初始化项目契约；显式 Immune-Brain Skill 负责启动新的 Managed workflow。已有 active Assurance owner 保持权威，但只在用户显式进入 `imm-loop` 时恢复。
 - `.imm/memory/`：存放运行态状态（`state.json`、`MEMORY.md`、`current_iteration.json`）。
 - `skills/`：只存放三个 user-facing Skill 定义；内部 role prompts 位于插件 `runtime/prompts/`。
-- `runtime/bootstrap.ts` 与 `runtime/bootstrap-templates/`：Managed Path 的内部 bootstrap 能力。
 - `docs/specs/`：存放当前任务的功能规格与验收标准。
 - `docs/solutions/`：存放长期沉淀的工程模式、最佳实践与问题解法。
 - `CONTEXT.md`（仓库根）：共享领域词汇与术语约定；非运行态真源，与 `.imm/memory/` 互补。

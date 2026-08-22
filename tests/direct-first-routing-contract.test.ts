@@ -7,9 +7,6 @@ const read = (path: string): string => readFileSync(resolve(ROOT, path), "utf8")
 
 const BASELINE = read("plugins/immune-brain/BASELINE.md");
 const ROOT_IMMUNE = read("IMMUNE.md");
-const INIT_AGENTS = read("plugins/immune-brain/runtime/bootstrap-templates/AGENTS.md");
-const INIT_IMMUNE = read("plugins/immune-brain/runtime/bootstrap-templates/IMMUNE.template.md");
-const INIT_SCRIPT = read("plugins/immune-brain/runtime/bootstrap.ts");
 const README = read("plugins/immune-brain/README.md");
 const USER_GUIDE = read("plugins/immune-brain/USER_GUIDE.md");
 const PLANNER_SKILL = read("plugins/immune-brain/dist/imm-planner.md");
@@ -50,7 +47,7 @@ describe("Skill-explicit workflow routing contract", () => {
       "Record reproducible evidence before reporting closure",
       "active Managed step boundary",
       "Managed scope changes",
-      "return to `imm-planner`",
+      "routes scope changes to `imm-planner`",
     ]);
     expectAll(BASELINE, [
       "Record reproducible evidence before reporting closure",
@@ -60,17 +57,8 @@ describe("Skill-explicit workflow routing contract", () => {
     ]);
   });
 
-  it("aligns project constitutions, bootstrap, and packaged consumers", () => {
+  it("aligns project constitutions and packaged consumers", () => {
     expectAll(ROOT_IMMUNE, ["Skill-explicit Managed Path", "显式 Immune-Brain Skill", "literal-user Enrollment"]);
-    expectAll(INIT_AGENTS, [
-      "Ordinary host input stays host-native",
-      "explicit `imm-brainstorm`",
-      "Bootstrap is explicit to Skill entry",
-    ]);
-    expectAll(INIT_IMMUNE, ["Ordinary host input stays host-native", "partial or incompatible state fails"]);
-    expect(INIT_SCRIPT).toContain('ready_for: ["imm-brainstorm", "imm-planner", "imm-loop"]');
-    expect(INIT_SCRIPT).toContain("bootstrap_rejected");
-    expect(INIT_SCRIPT).toContain("ensureManagedBootstrap");
     expectAll(README, ["Managed Path starts from an explicit Immune-Brain Skill entry", "ordinary host input"]);
     expectAll(USER_GUIDE, ["Skill-explicit Managed Path", "普通 host input 保持 host-native"]);
     expectAll(PLANNER_SKILL, ["entered explicitly by the user", "enrolls a task or enrolls generated", "artifacts unconditionally"]);
@@ -98,23 +86,26 @@ describe("Skill-explicit workflow routing contract", () => {
     }
   });
 
-  it("benchmarks clear mutations, hard-risk boundaries, and weak matches", () => {
+  it("benchmarks host-native mutations, explicit Managed boundaries, and weak matches", () => {
     const ids = BENCHMARK.scenarios.map((scenario: { id: string }) => scenario.id);
-    expect(ids).toContain("managed-default-mutation");
-    expect(ids).toContain("hard-risk-managed-boundary");
+    expect(ids).toContain("host-native-mutation");
+    expect(ids).toContain("explicit-managed-boundary");
     expect(ids).toContain("plugin-boundary");
 
     const mutation = BENCHMARK.scenarios.find(
-      (scenario: { id: string }) => scenario.id === "managed-default-mutation",
+      (scenario: { id: string }) => scenario.id === "host-native-mutation",
     );
     const managed = BENCHMARK.scenarios.find(
-      (scenario: { id: string }) => scenario.id === "hard-risk-managed-boundary",
+      (scenario: { id: string }) => scenario.id === "explicit-managed-boundary",
     );
     expect([mutation.userInput, ...mutation.successChecklist].join("\n")).toContain(
-      "without the user saying Managed Path",
+      "stays host-native",
     );
     expect([mutation.userInput, ...mutation.successChecklist].join("\n")).toContain(
-      "initialized idempotently",
+      "does not create or inspect Immune-Brain workflow state",
+    );
+    expect([managed.userInput, ...managed.successChecklist].join("\n")).toContain(
+      "explicit `imm-planner`",
     );
     expect([managed.userInput, ...managed.successChecklist].join("\n")).toContain(
       "public runtime contract",

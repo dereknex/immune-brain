@@ -58,9 +58,8 @@ exhaustive filename guess.
 
 `imm-planner` is entered explicitly by the user for a clear repository mutation.
 Ordinary host input does not invoke this Skill through natural-language routing.
-An active Assurance projection resumes through `imm-loop`; explicit Planner entry
-owns bootstrap, planning, and the later native Enrollment gate:
-- an active Assurance projection resumes through `imm-loop`;
+An active Assurance projection remains authoritative and is resumed only through an explicit `imm-loop` entry; explicit Planner entry owns planning and the later native Enrollment gate:
+- an active Assurance projection remains on its current owner until the user explicitly enters `imm-loop`;
 - read-only, explanation, review-only, Plan-only, and explicit no-modification
   requests do not enroll;
 - materially ambiguous mutations go to `imm-brainstorm` before planning; and

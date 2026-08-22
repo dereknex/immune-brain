@@ -58,8 +58,6 @@ describe("packed artifact loader", () => {
 				"plugins/immune-brain/dist/imm-brainstorm.md",
 				"plugins/immune-brain/dist/imm-loop.md",
 				"plugins/immune-brain/dist/imm-planner.md",
-				"plugins/immune-brain/runtime/bootstrap.ts",
-				"plugins/immune-brain/runtime/bootstrap-templates/AGENTS.md",
 				"plugins/immune-brain/runtime/kernel/canary_application.ts",
 				"plugins/immune-brain/dist/role-prompts/code-review.md",
 			]) {

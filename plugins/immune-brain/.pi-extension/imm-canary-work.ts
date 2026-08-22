@@ -4,7 +4,7 @@
 // Surface:
 //   1. `imm_kernel_canary` — foreground assurance and Review authority.
 //   2. `imm_loop_action` — read-only projection of internal Loop actions.
-//   3. `input` — active Assurance recovery; ordinary input stays host-native.
+//   3. `input` — Task Rail refresh; ordinary input stays host-native.
 //
 // Deterministic QA and native Review sequencing lives in
 // `pi-canary-assurance-progression.ts`. The adapter owns Tool schemas, TUI
@@ -101,7 +101,6 @@ import {
 	parseTaskIntentV1,
 	canonicalIntentHash,
 	projectAssurance,
-	routeManagedRequest,
 	deriveAssuranceAuthorization,
 	findingsDigestV2,
 	capabilityActionFor,
@@ -248,43 +247,6 @@ type LoopToolAction =
 		context: Record<string, unknown>;
 	};
 
-async function routeHostRequest(root: string, request: string) {
-	const claim = await readBackendClaim(root);
-	if (!claim) return null;
-	const authority = await reconcileKernelAuthority(root, claim.task_id);
-	if (authority.state === "authority_conflict")
-		throw new Error(authority.diagnostic ?? "Kernel authority state conflicts");
-	if (authority.state === "repairable_stale_claim")
-		return routeManagedRequest({
-			root,
-			request,
-			task_id: authority.owner_task_id ?? claim.task_id,
-			assurance: {
-				task_id: authority.owner_task_id ?? claim.task_id,
-				phase: authority.owner_phase ?? "done",
-				next_action: "repair_authority_state",
-			},
-		});
-	if (authority.state !== "active_owner") return null;
-	const projected = await projectAssurance(root, claim.task_id, diffHashOf);
-	if (projected.error) throw new Error(projected.error);
-	return routeManagedRequest({
-		root,
-		request,
-		task_id: claim.task_id,
-		assurance: {
-			task_id: claim.task_id,
-			phase: projected.projection.phase,
-			next_action: statusNextAction(projected.projection),
-		},
-	});
-}
-
-function managedSkillCommand(phase: "none" | "brainstorm" | "planner" | "loop", request: string): string | null {
-	if (phase === "none") return null;
-	return `/skill:imm-${phase} ${request}`;
-}
-
 export default function (
 	pi: ExtensionAPI,
 	dependencies: CanaryWorkExtensionDependencies = {},
@@ -318,12 +280,6 @@ export default function (
 		qaJobTimeoutMs: dependencies.qaJobTimeoutMs,
 	} satisfies AssuranceProgressionPorts);
 
-	let managedRouteFailure: string | null = null;
-	let pendingOwnerInstruction: {
-		task_id: string;
-		phase: string;
-		next_action: string;
-	} | null = null;
 	let railContext: ExtensionContext | undefined;
 	const refreshTaskRail = async (ctx: ExtensionContext) => {
 		try {
@@ -372,56 +328,7 @@ export default function (
 		railContext = ctx;
 		clearTerminalTaskRailOnInput(ctx);
 		await refreshTaskRail(ctx);
-		if (event.streamingBehavior === undefined) managedRouteFailure = null;
-		const text = event.text.trimStart();
-		if (/^\/skill:imm-(?:brainstorm|planner|loop)(?:\s|$)/.test(text)) {
-			pendingOwnerInstruction = null;
-			return { action: "continue" } as const;
-		}
-		try {
-			const route = await routeHostRequest(ctx.cwd, event.text);
-			if (!route) {
-				pendingOwnerInstruction = null;
-				return { action: "continue" } as const;
-			}
-			if (route.phase === "loop" && route.assurance) {
-				pendingOwnerInstruction = {
-					task_id: route.assurance.task_id,
-					phase: route.assurance.phase,
-					next_action: route.assurance.next_action ?? "status",
-				};
-				return { action: "continue" } as const;
-			}
-			pendingOwnerInstruction = null;
-			const command = managedSkillCommand(route.phase, event.text);
-			return command
-				? {
-					action: "transform",
-					text: command,
-					...(event.images ? { images: event.images } : {}),
-				} as const
-				: { action: "continue" } as const;
-		} catch (error) {
-			pendingOwnerInstruction = null;
-			managedRouteFailure = error instanceof Error ? error.message : String(error);
-			return {
-				action: "transform",
-				text: `Managed Path routing failed closed: ${managedRouteFailure}\nDo not call tools or modify files. Report this routing error and stop.\nOriginal request: ${event.text}`,
-				...(event.images ? { images: event.images } : {}),
-			} as const;
-		}
-	});
-	pi.on("before_agent_start", (event: { systemPrompt: string }) => {
-		const owner = pendingOwnerInstruction;
-		pendingOwnerInstruction = null;
-		if (!owner) return;
-		const instruction = `Active Kernel Assurance owner: task ${owner.task_id}, phase ${owner.phase}, next action ${owner.next_action}. Resume through imm_loop_action and imm_kernel_canary using current projection; do not reload the imm-loop Skill or create new authority.`;
-		const existing = typeof event.systemPrompt === "string" ? event.systemPrompt : "";
-		return { systemPrompt: [existing, instruction].filter(Boolean).join("\n\n") };
-	});
-	pi.on("agent_settled", () => {
-		managedRouteFailure = null;
-		pendingOwnerInstruction = null;
+		return { action: "continue" } as const;
 	});
 
 	pi.on("session_start", async (_event: unknown, ctx?: ExtensionContext) => {
@@ -441,9 +348,6 @@ export default function (
 				next: "Review the native enrollment decision",
 			});
 		}
-		if (managedRouteFailure) {
-			return { block: true, reason: `Managed Path routing failed closed: ${managedRouteFailure}` };
-		}
 		return progression.observeToolCall(event);
 	});
 	pi.on("tool_result", (event: unknown, ctx?: ExtensionContext) => {
@@ -459,7 +363,6 @@ export default function (
 		progression.observeToolEnd(event as Parameters<AssuranceProgression["observeToolEnd"]>[0]);
 	});
 	pi.on("session_shutdown", async (_event: unknown, ctx?: ExtensionContext) => {
-		pendingOwnerInstruction = null;
 		resetInteractionPresentation(ctx ?? railContext);
 		railContext = undefined;
 		await progression.onSessionShutdown();

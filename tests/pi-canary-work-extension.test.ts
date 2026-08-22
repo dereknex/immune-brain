@@ -23,7 +23,6 @@ import {
 	clearTerminalTaskRailOnInput,
 	presentTaskRail,
 } from "../plugins/immune-brain/.pi-extension/pi-canary-interaction";
-import { routeManagedRequest } from "../plugins/immune-brain/runtime/managed_path_router";
 
 const TASK = "canary-ext-task";
 const INTENT = {
@@ -111,11 +110,8 @@ function makeCtx(root: string, ui: FakeUI, mode = "tui", decision: string | null
 	};
 }
 
-function makeEnrolledRoot(managedBootstrap = false): string {
+function makeEnrolledRoot(): string {
 	const root = mkdtempSync(join(tmpdir(), "phase3-ext-"));
-	if (managedBootstrap) {
-		routeManagedRequest({ root, request: "Implement the managed task" });
-	}
 	mkdirSync(join(root, "docs", "plans"), { recursive: true });
 	mkdirSync(join(root, "docs", "specs"), { recursive: true });
 	mkdirSync(join(root, "plugins", "immune-brain", ".pi-extension"), { recursive: true });
@@ -158,7 +154,7 @@ function makeEnrolledRoot(managedBootstrap = false): string {
 }
 
 function makeStaleClaimRoot(): string {
-	const root = makeEnrolledRoot(true);
+	const root = makeEnrolledRoot();
 	const claimPath = join(root, ".imm", "tasks", ".backend-claim.json");
 	const claimBytes = readFileSync(claimPath, "utf8");
 	const registry = createMutationAuthorityRegistry();
@@ -562,9 +558,6 @@ async function preparePendingReview(root: string): Promise<RegisteredTool & { co
 			)).toEqual({ action: "continue" });
 			expect(await events.tool_call![0]({ toolName: "read", input: { path: "README.md" } })).not.toHaveProperty("block");
 
-			await events.agent_settled![0]({});
-			expect(await events.tool_call![0]({ toolName: "read", input: { path: "README.md" } })).toBeUndefined();
-
 			await events.input![0](
 				{ source: "interactive", text: "Implement the login form" },
 				ctx,
@@ -579,8 +572,8 @@ async function preparePendingReview(root: string): Promise<RegisteredTool & { co
 		}
 	});
 
-	test("routes an active backend claim to Loop before classifying the request text", { timeout: 15000 }, async () => {
-		const root = makeEnrolledRoot(true);
+	test("keeps an active backend claim visible without rewriting user input", { timeout: 15000 }, async () => {
+		const root = makeEnrolledRoot();
 		try {
 			const { events } = loadSurface();
 			const result = await events.input![0](
@@ -588,31 +581,19 @@ async function preparePendingReview(root: string): Promise<RegisteredTool & { co
 				makeCtx(root, makeUI()),
 			);
 			expect(result).toEqual({ action: "continue" });
-			const injected = await events.before_agent_start![0]({}, makeCtx(root, makeUI())) as { systemPrompt: string };
-			expect(injected.systemPrompt).toContain(`task ${TASK}`);
-			expect(injected.systemPrompt).toContain("phase working");
-			expect(injected.systemPrompt).toContain("do not reload the imm-loop Skill");
-			expect(await events.before_agent_start![0]({}, makeCtx(root, makeUI()))).toBeUndefined();
+			expect(events.before_agent_start).toBeUndefined();
 		} finally {
 			rmSync(root, { recursive: true, force: true });
 		}
 	});
 
-	test("shared-authority-dialog-shell: routes a proven stale claim to incumbent Loop and repairs only after native confirmation", { timeout: 15000 }, async () => {
+	test("shared-authority-dialog-shell: repairs a proven stale claim only after native confirmation", { timeout: 15000 }, async () => {
 		const root = makeStaleClaimRoot();
 		const claimPath = join(root, ".imm", "tasks", ".backend-claim.json");
 		const recordPath = join(root, ".imm", "tasks", `${TASK}.json`);
 		const tombstonePath = join(root, ".imm", "tasks", `${TASK}.backend-claim.json`);
 		try {
-			const { tools, events } = loadSurface();
-			const routed = await events.input![0](
-				{ source: "interactive", text: "Implement the next task" },
-				makeCtx(root, makeUI()),
-			);
-			expect(routed).toEqual({ action: "continue" });
-			const injected = await events.before_agent_start![0]({}, makeCtx(root, makeUI())) as { systemPrompt: string };
-			expect(injected.systemPrompt).toContain(`task ${TASK}`);
-			expect(injected.systemPrompt).toContain("repair_authority_state");
+			const { tools } = loadSurface();
 
 			const tool = tools.find((candidate) => candidate.name === "imm_kernel_canary")!;
 			const claimBefore = readFileSync(claimPath, "utf8");

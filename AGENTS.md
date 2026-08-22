@@ -5,8 +5,8 @@ This project uses the Immune-Brain workflow.
 
 - Read `IMMUNE.md` before selecting a route.
 - Ordinary host input stays host-native; only explicit `imm-brainstorm`, `imm-planner`, or `imm-loop` Skill entry starts a new Managed workflow.
-- Keep an active Assurance projection, TaskIntent, TaskRecord, or reviewer follow-up on its current owner and resume it through `imm-loop`.
-- Bootstrap is explicit to Skill entry, idempotent when absent, and rejected when partial or incompatible.
+- Keep an active Assurance projection, TaskIntent, TaskRecord, or reviewer follow-up on its current owner; resume it only when the user explicitly enters `imm-loop`.
+- Immune-Brain does not install or validate project-wide `AGENTS.md`, `IMMUNE.md`, or `CONTEXT.md` contracts.
 - Navigation Protocol: check `CONTEXT.md` `## Architecture Map` before broad searching; inspect `.imm` discovery state only for an existing Managed owner.
 - Ask the minimum blocking question or use a bounded read-only probe when material ambiguity remains, then reapply the route matrix.
 - Use `imm-loop` only to continue the matching validated Managed owner.

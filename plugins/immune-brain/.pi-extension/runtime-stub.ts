@@ -226,21 +226,6 @@ export interface GithubTrackerResult {
 	message: string;
 }
 
-export interface ManagedRouteProjection {
-	phase: "none" | "brainstorm" | "planner" | "loop";
-	reason?: string;
-	task_id?: string;
-	assurance?: { task_id: string; phase: string; next_action?: string };
-}
-export async function routeManagedRequest(input: {
-	root: string;
-	request: string;
-	task_id?: string;
-	assurance?: { task_id: string; phase: string; next_action: string };
-}): Promise<ManagedRouteProjection> {
-	const mod = await import(/* @vite-ignore */ runtimePath("managed_path_router"));
-	return mod.routeManagedRequest(input) as ManagedRouteProjection;
-}
 export async function buildLoopAction(input: unknown): Promise<unknown> {
 	const mod = await import(/* @vite-ignore */ runtimePath("loop_contract"));
 	return mod.buildLoopAction(input);

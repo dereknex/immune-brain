@@ -101,7 +101,7 @@ describe("default exhaustive decision-tree skill contract", () => {
 		]);
 	});
 
-	test("Managed Path bootstrap files carry the current schema", () => {
+	test("project contract files carry the current schema", () => {
 		const agents = read("AGENTS.md");
 		expect(agents).toContain("<!-- IMMUNE-BRAIN:START -->");
 		expect(agents).toContain("<!-- IMMUNE-BRAIN:END -->");

@@ -27,7 +27,6 @@ const RETIRED_WRAPPERS = [
 	"imm-heal",
 	"imm-migrate",
 	"imm-review",
-	"imm-route",
 	"imm-work",
 ];
 

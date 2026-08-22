@@ -6,7 +6,6 @@ const ROOT = resolve(import.meta.dir, "..");
 
 const BINDING_CONTRACTS = [
 	"AGENTS.md",
-	"plugins/immune-brain/runtime/bootstrap-templates/AGENTS.md",
 	"plugins/immune-brain/dist/imm-planner.md",
 	"plugins/immune-brain/dist/imm-brainstorm.md",
 ] as const;
@@ -55,20 +54,15 @@ describe("subagent activation machinery retirement", () => {
 		}
 	});
 
-	test("the authorization is preserved unconditionally in AGENTS.md and its bootstrap template", () => {
-		for (const rel of [
-			"AGENTS.md",
-			"plugins/immune-brain/runtime/bootstrap-templates/AGENTS.md",
-		]) {
-			const content = read(rel);
-			expect(content).toContain(
-				"This project authorizes readonly advisory subagents and parallel probes unless the user asks for solo work.",
-			);
-			expect(content).toContain(
-				"this project instruction does not override host tool policy",
-			);
-			expect(content).not.toContain("[subagent_activation]");
-			expect(content).not.toContain("resolves to");
-		}
+	test("the authorization is preserved unconditionally in AGENTS.md", () => {
+		const content = read("AGENTS.md");
+		expect(content).toContain(
+			"This project authorizes readonly advisory subagents and parallel probes unless the user asks for solo work.",
+		);
+		expect(content).toContain(
+			"this project instruction does not override host tool policy",
+		);
+		expect(content).not.toContain("[subagent_activation]");
+		expect(content).not.toContain("resolves to");
 	});
 });

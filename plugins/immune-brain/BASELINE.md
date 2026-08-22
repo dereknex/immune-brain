@@ -9,7 +9,7 @@
 - Use shallow discovery first.
 - Lead with conclusion, evidence, and Next Action.
 - Advisory roles do not implement; Managed execution roles do not close QA.
-- A discovered Managed trigger stops Direct mutation and routes to `imm-planner`; Managed scope changes return to `imm-planner`.
+- An explicit Managed Skill entry stops host-native mutation and routes scope changes to `imm-planner`; Managed execution remains inside its accepted boundary.
 
 ## Workflow Activation
 
@@ -17,12 +17,12 @@ Ordinary host input stays host-native and does not run natural-language Managed
 routing. A new Managed workflow starts only from explicit `imm-brainstorm`,
 `imm-planner`, or `imm-loop` Skill entry.
 
-1. **Continue an existing Managed owner**: an active Assurance projection,
-   TaskIntent, TaskRecord, reviewer `follow_up`, or other nonterminal Managed
-   owner keeps exclusive ownership and resumes through `imm-loop`.
-2. **Start explicitly**: the selected Immune-Brain Skill owns bootstrap and
-   planning. Absent state is initialized idempotently; complete state is left
-   byte-for-byte untouched; partial or incompatible state fails closed.
+1. **Continue an existing Managed owner explicitly**: an active Assurance
+   projection, TaskIntent, TaskRecord, reviewer `follow_up`, or other nonterminal
+   Managed owner remains authoritative; the user resumes it with `imm-loop`.
+2. **Start explicitly**: the selected Immune-Brain Skill owns its planning or
+   coordination work. It creates only requested artifacts and their required
+   parent directories; it does not install project-wide contract files.
 3. **Preserve authority**: Planner output is a candidate for later literal-user
    Enrollment, and Fast-Track preserves TaskIntent scope, Enrollment, QA,
    Review, authorization, and completion boundaries.

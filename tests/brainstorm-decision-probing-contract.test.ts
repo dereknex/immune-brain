@@ -111,8 +111,8 @@ describe("Brainstorm decision probing contracts", () => {
 		expect(generalIds).toEqual([
 			"entrypoint-routing",
 			"multi-skill-follow-up",
-			"managed-default-mutation",
-			"hard-risk-managed-boundary",
+			"host-native-mutation",
+			"explicit-managed-boundary",
 			"plugin-boundary",
 		]);
 		expect(focusedIds).toEqual([
