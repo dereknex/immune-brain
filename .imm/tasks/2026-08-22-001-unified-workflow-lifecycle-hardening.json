@@ -1,0 +1,348 @@
+{
+  "contract": "assurance_kernel/task_record/v2",
+  "task_id": "2026-08-22-001-unified-workflow-lifecycle-hardening",
+  "intent_revision": 2,
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "2026-08-22-001-unified-workflow-lifecycle-hardening",
+    "goal": "Replace the fragmented Planner-to-terminal lifecycle with one authority-owned flow that closes all five approved post-mortem fixes. Add a recoverable pre-QA freeze operation that moves the immutable TaskIntent and the one exact Spec bound in scope_hint to archive paths and updates TaskRecord.intent_ref.path; securely reread actions from that path; atomically restore both artifacts before authorized rework; require completion to be frozen; and make stop archive before terminal settlement. Move the existing terminal 001, 005, and 006 sidecars and their completed Specs in the same migration. Require Planner reference closure across callers, focused tests, package copies, and same-state-machine owners before authoring, using ordinary module-directory scope but exact Kernel/security/migration paths. Make explicit Enrollment and Work Tool failures throw one parseable immune_brain/tool_failure/v1 error so Pi records isError=true while cancellation and awaiting-user remain ordinary outcomes. Resume an active Assurance owner with one bounded turn-local instruction that preserves original text/images instead of transforming every reply into /skill:imm-loop. Make Assurance projection and TaskRecord the sole dynamic status authority; keep prose for architecture and durable decisions only. Preserve foreground QA/Review, capability-bound user decisions, immutable byte/diff checks, terminal tombstones/claims, cancellation, and fail-closed recovery; add no background janitor, second writer, compatibility bridge, automatic commit, or successor TaskIntent.",
+    "acceptance": [
+      {
+        "id": "acc-artifact-lifecycle",
+        "assertion": "TaskIntent and its exact scope-bound Spec relocate through a recoverable freeze transaction; Kernel actions reread the current intent_ref.path; authorized rework restores both; complete requires frozen; stop always ends archived; and prior terminal 001, 005, and 006 planning artifacts are move-only archived without weakening terminal or archival invariants.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/kernel-canary-terminal-transaction.test.ts\",\n    \"tests/planning-artifact-archival.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 65536\n}\n"
+      },
+      {
+        "id": "acc-planner-reference-closure",
+        "assertion": "Source and packaged Planner contracts require bounded caller, test, package-copy, generated-mirror, and same-state-machine reference closure before TaskIntent authoring; ordinary modules use the smallest coherent directory scope while Kernel, authority, migration, secret, and security-sensitive paths remain exact.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/imm-planner-kernel-intent-contract.test.ts\",\n    \"tests/planner-settlement-contract.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 65536\n}\n"
+      },
+      {
+        "id": "acc-host-tool-failures",
+        "assertion": "Enrollment and Work Tools throw the same parseable immune_brain/tool_failure/v1 contract for explicit blocked, failed, authority-conflict, and settlement-unknown outcomes so Pi observes isError=true, while cancellation, waiver, review-ready, and awaiting-user control outcomes remain non-errors.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/pi-canary-enroll-extension.test.ts\",\n    \"tests/pi-canary-work-extension.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 65536\n}\n"
+      },
+      {
+        "id": "acc-active-owner-resume",
+        "assertion": "An input with an active Assurance owner preserves the user's original text and images and consumes one bounded turn-local owner instruction without /skill:imm-loop transformation or full Skill reinjection; terminal, repair, explicit Skill, Planner, Brainstorm, failure, settle, and shutdown paths clear or retain routing exactly as specified.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/managed-default-routing-contract.test.ts\",\n    \"tests/managed-task-routing-policy.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 65536\n}\n"
+      },
+      {
+        "id": "acc-status-and-package-truth",
+        "assertion": "Assurance projection and TaskRecord are the sole dynamic workflow status authority; prose carries architecture, vocabulary, accepted behavior, and durable decisions without duplicate current progress; retention and Planner contracts remain source/package synchronized and the packaged lifecycle exercises archived intent reads.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/pi-canary-lifecycle-package.test.ts\",\n    \"tests/dist-docs-sync-contract.test.ts\",\n    \"tests/retention-policy-consistency.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 65536\n}\n"
+      }
+    ],
+    "scope_hint": [
+      "CONTEXT.md",
+      "docs/plans/2026-08-21-001-borrow-framing-planning-mechanics.intent.json",
+      "docs/plans/2026-08-21-005-terminal-assurance-stop-routing.intent.json",
+      "docs/plans/2026-08-21-006-single-authority-confirmation-interaction.intent.json",
+      "docs/plans/2026-08-22-001-unified-workflow-lifecycle-hardening.intent.json",
+      "docs/plans/archive/2026-08-21-001-borrow-framing-planning-mechanics.intent.json",
+      "docs/plans/archive/2026-08-21-005-terminal-assurance-stop-routing.intent.json",
+      "docs/plans/archive/2026-08-21-006-single-authority-confirmation-interaction.intent.json",
+      "docs/plans/archive/2026-08-22-001-unified-workflow-lifecycle-hardening.intent.json",
+      "docs/reference/planning-artifact-retention.md",
+      "docs/reference/planning-quality-gate.md",
+      "docs/specs/archive/planner-runtime-discovery-and-state-authority.spec.md",
+      "docs/specs/archive/single-authority-confirmation-interaction.spec.md",
+      "docs/specs/archive/terminal-assurance-stop-routing.spec.md",
+      "docs/specs/archive/unified-workflow-lifecycle-hardening.spec.md",
+      "docs/specs/planner-runtime-discovery-and-state-authority.spec.md",
+      "docs/specs/single-authority-confirmation-interaction.spec.md",
+      "docs/specs/terminal-assurance-stop-routing.spec.md",
+      "docs/specs/unified-workflow-lifecycle-hardening.spec.md",
+      "plugins/immune-brain/.pi-extension/imm-canary-enroll.ts",
+      "plugins/immune-brain/.pi-extension/imm-canary-work.ts",
+      "plugins/immune-brain/.pi-extension/pi-canary-assurance-progression.ts",
+      "plugins/immune-brain/.pi-extension/pi-canary-tool-failure.ts",
+      "plugins/immune-brain/.pi-extension/runtime-stub.ts",
+      "plugins/immune-brain/dist/docs/reference/planning-artifact-retention.md",
+      "plugins/immune-brain/dist/docs/reference/planning-quality-gate.md",
+      "plugins/immune-brain/dist/imm-planner.md",
+      "plugins/immune-brain/runtime/kernel/application_v2.ts",
+      "plugins/immune-brain/runtime/kernel/canary_application.ts",
+      "plugins/immune-brain/runtime/kernel/completion.ts",
+      "plugins/immune-brain/runtime/kernel/intent.ts",
+      "plugins/immune-brain/runtime/kernel/reducer_v2.ts",
+      "plugins/immune-brain/runtime/kernel/storage.ts",
+      "plugins/immune-brain/runtime/kernel/types.ts",
+      "plugins/immune-brain/runtime/kernel/validation.ts",
+      "plugins/immune-brain/runtime/managed_path_router.ts",
+      "plugins/immune-brain/skills/imm-planner/SKILL.md",
+      "scripts/dist-sync-manifest.ts",
+      "tests/breaking-intent-revision-gate.test.ts",
+      "tests/dist-docs-sync-contract.test.ts",
+      "tests/enrollment-confirmation-relocation.test.ts",
+      "tests/imm-planner-kernel-intent-contract.test.ts",
+      "tests/kernel-canary-application.test.ts",
+      "tests/kernel-canary-authority.test.ts",
+      "tests/kernel-canary-rework-authority.test.ts",
+      "tests/kernel-canary-terminal-transaction.test.ts",
+      "tests/kernel-r2c2-reducer.test.ts",
+      "tests/kernel-task-artifact-relocation.test.ts",
+      "tests/managed-default-routing-contract.test.ts",
+      "tests/managed-task-routing-policy.test.ts",
+      "tests/pi-canary-enroll-extension.test.ts",
+      "tests/pi-canary-lifecycle-package.test.ts",
+      "tests/pi-canary-user-authority.test.ts",
+      "tests/pi-canary-work-extension.test.ts",
+      "tests/pi-tool-failure-contract.test.ts",
+      "tests/planner-settlement-contract.test.ts",
+      "tests/planning-artifact-archival.test.ts",
+      "tests/retention-policy-consistency.test.ts"
+    ],
+    "risk": "critical",
+    "revision": 2,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/archive/2026-08-22-001-unified-workflow-lifecycle-hardening.intent.json",
+    "revision": 2,
+    "content_hash": "sha256:ace5cfa295ddc434928b07d5c09addcf57f9228ae1e5776dd110e439bebc43e2"
+  },
+  "artifact_ref": {
+    "state": "frozen",
+    "spec_path": "docs/specs/unified-workflow-lifecycle-hardening.spec.md"
+  },
+  "phase": "done",
+  "baseline": "sha256:d953bb57c97bb84a8e288cec9f84cb4f56d3ec40b3e3353842f21175938d66ee",
+  "evidence": [
+    {
+      "id": "evidence-record_evidence:2026-08-22-001-unified-workflow-lifecycle-hardening:2026-08-22T05:24:08.547Z",
+      "acceptance_id": "acc-artifact-lifecycle",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:ace5cfa295ddc434928b07d5c09addcf57f9228ae1e5776dd110e439bebc43e2",
+      "diff_hash": "sha256:6b9085e68b654417442f60285860e68048ab7e86c38a8a795dc809fcc9ec4f43",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "Frozen staged snapshot: bun test tests/kernel-canary-terminal-transaction.test.ts tests/planning-artifact-archival.test.ts passed 17/17; covers recoverable freeze relocation, complete/stop terminal transactions, current archive layout, and terminal artifact archival."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-22-001-unified-workflow-lifecycle-hardening:2026-08-22T05:24:20.489Z",
+      "acceptance_id": "acc-planner-reference-closure",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:ace5cfa295ddc434928b07d5c09addcf57f9228ae1e5776dd110e439bebc43e2",
+      "diff_hash": "sha256:6b9085e68b654417442f60285860e68048ab7e86c38a8a795dc809fcc9ec4f43",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "Frozen staged snapshot: bun test tests/imm-planner-kernel-intent-contract.test.ts tests/planner-settlement-contract.test.ts passed 11/11; source and packaged Planner closure/settlement contracts agree."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-22-001-unified-workflow-lifecycle-hardening:2026-08-22T05:24:30.780Z",
+      "acceptance_id": "acc-host-tool-failures",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:ace5cfa295ddc434928b07d5c09addcf57f9228ae1e5776dd110e439bebc43e2",
+      "diff_hash": "sha256:6b9085e68b654417442f60285860e68048ab7e86c38a8a795dc809fcc9ec4f43",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "Frozen staged snapshot: bun test tests/pi-canary-enroll-extension.test.ts tests/pi-canary-work-extension.test.ts passed 35/35; explicit failures throw the shared parseable contract while cancellation and control outcomes remain ordinary."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-22-001-unified-workflow-lifecycle-hardening:2026-08-22T05:24:41.855Z",
+      "acceptance_id": "acc-active-owner-resume",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:ace5cfa295ddc434928b07d5c09addcf57f9228ae1e5776dd110e439bebc43e2",
+      "diff_hash": "sha256:6b9085e68b654417442f60285860e68048ab7e86c38a8a795dc809fcc9ec4f43",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "Frozen staged snapshot: bun test tests/managed-default-routing-contract.test.ts tests/managed-task-routing-policy.test.ts passed 26/26; active owners resume through bounded turn-local routing while terminal, repair, and bootstrap policies remain fail-closed."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-22-001-unified-workflow-lifecycle-hardening:2026-08-22T05:24:52.504Z",
+      "acceptance_id": "acc-status-and-package-truth",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:ace5cfa295ddc434928b07d5c09addcf57f9228ae1e5776dd110e439bebc43e2",
+      "diff_hash": "sha256:6b9085e68b654417442f60285860e68048ab7e86c38a8a795dc809fcc9ec4f43",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "Frozen staged snapshot: bun test tests/pi-canary-lifecycle-package.test.ts tests/dist-docs-sync-contract.test.ts tests/retention-policy-consistency.test.ts passed 14/14; package mirrors, archived-intent lifecycle, retention policy, and dynamic status ownership remain synchronized."
+    }
+  ],
+  "findings": [
+    {
+      "id": "user-decision-bootstrap-runtime-deployment",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "acc-artifact-lifecycle",
+      "source": "execution",
+      "review_round": null,
+      "summary": "The active Pi session loads Immune-Brain runtime from global checkout 3df9adf while the enrolled workspace is 6fc5df9. The newly implemented freeze action cannot govern this task's own QA/Review lifecycle until the package is deployed and Pi restarts; moving the live sidecar now would make the old host Tool lose authority state."
+    }
+  ],
+  "approvals": [
+    {
+      "id": "approval-qa-7abd547b",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:ace5cfa295ddc434928b07d5c09addcf57f9228ae1e5776dd110e439bebc43e2",
+      "diff_hash": "sha256:6b9085e68b654417442f60285860e68048ab7e86c38a8a795dc809fcc9ec4f43",
+      "actor_id": "deterministic-qa",
+      "summary": "all 5 fixed verification descriptor(s) passed"
+    },
+    {
+      "id": "approval-review-94c09777",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:ace5cfa295ddc434928b07d5c09addcf57f9228ae1e5776dd110e439bebc43e2",
+      "diff_hash": "sha256:6b9085e68b654417442f60285860e68048ab7e86c38a8a795dc809fcc9ec4f43",
+      "actor_id": "native-review-8c050a8d-ae4f-489",
+      "summary": "Immutable bundle provenance verified; scoped lifecycle, routing, failure-contract, package-sync, and settlement paths satisfy the acceptance assertions without blocking correctness, regression, security, or test gaps."
+    },
+    {
+      "id": "approval-user-5fbf32b4",
+      "kind": "user",
+      "authority_role": "user",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:ace5cfa295ddc434928b07d5c09addcf57f9228ae1e5776dd110e439bebc43e2",
+      "diff_hash": "sha256:6b9085e68b654417442f60285860e68048ab7e86c38a8a795dc809fcc9ec4f43",
+      "actor_id": "literal-user",
+      "summary": "literal user approval"
+    }
+  ],
+  "history": [
+    {
+      "id": "record_finding:2026-08-22-001-unified-workflow-lifecycle-hardening:2026-08-22T01:48:33.514Z",
+      "at": "2026-08-22T01:48:33.514Z",
+      "type": "record_finding",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "user-decision-bootstrap-runtime-deployment\naction_v2_sha256:ebc816ce2545cd3bca410326fb6e10d99a2f092074d2a3d7d89ae85e6b3bc68c"
+    },
+    {
+      "id": "resolve_finding:2026-08-22-001-unified-workflow-lifecycle-hardening:2026-08-22T01:49:32.864Z",
+      "at": "2026-08-22T01:49:32.864Z",
+      "type": "resolve_finding",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "user-decision-bootstrap-runtime-deployment\naction_v2_sha256:50ac28043516b1ab97b8766ba31544cd5fb4c76fade1fbf0eb2c6784c2acaefe"
+    },
+    {
+      "id": "approve_breaking_intent_revision:2026-08-22-001-unified-workflow-lifecycle-hardening:2026-08-22T05:16:08.238Z",
+      "at": "2026-08-22T05:16:08.238Z",
+      "type": "approve_breaking_intent_revision",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "intent_revision_2\naction_v2_sha256:5ebadd4ca8e7478bec0ddf68d50cb137bd16ab16f836a64c6e4e81ca6a50fed0",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-2f9b39d12552d8aa",
+        "issued_at": "2026-08-22T05:16:09.094Z",
+        "expires_at": "2026-08-22T05:26:09.094Z"
+      }
+    },
+    {
+      "id": "freeze_artifacts:2026-08-22-001-unified-workflow-lifecycle-hardening:2026-08-22T05:22:43.916Z",
+      "at": "2026-08-22T05:22:43.916Z",
+      "type": "freeze_artifacts",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "TaskIntent and Spec frozen at docs/plans/archive/2026-08-22-001-unified-workflow-lifecycle-hardening.intent.json"
+    },
+    {
+      "id": "record_evidence:2026-08-22-001-unified-workflow-lifecycle-hardening:2026-08-22T05:24:08.547Z",
+      "at": "2026-08-22T05:24:08.547Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-artifact-lifecycle\naction_v2_sha256:1eb28f810a12137a43e096ec0982476375063262d82711dddb2bb3ca5f81d4d6"
+    },
+    {
+      "id": "record_evidence:2026-08-22-001-unified-workflow-lifecycle-hardening:2026-08-22T05:24:20.489Z",
+      "at": "2026-08-22T05:24:20.489Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-planner-reference-closure\naction_v2_sha256:15cac20616ab98b84888e18325638f894f8bf8d2a0333cd69778df6e52ce9baa"
+    },
+    {
+      "id": "record_evidence:2026-08-22-001-unified-workflow-lifecycle-hardening:2026-08-22T05:24:30.780Z",
+      "at": "2026-08-22T05:24:30.780Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-host-tool-failures\naction_v2_sha256:1f89bbd5b104815a0978a9fa11ac255c051834bde4989e25392b468cc400240e"
+    },
+    {
+      "id": "record_evidence:2026-08-22-001-unified-workflow-lifecycle-hardening:2026-08-22T05:24:41.855Z",
+      "at": "2026-08-22T05:24:41.855Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-active-owner-resume\naction_v2_sha256:6a9c8a6e2b53661d47dbf5a0bade88fd5fa7524aeba70e24c03bf5d10409b78c"
+    },
+    {
+      "id": "record_evidence:2026-08-22-001-unified-workflow-lifecycle-hardening:2026-08-22T05:24:52.504Z",
+      "at": "2026-08-22T05:24:52.504Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-status-and-package-truth\naction_v2_sha256:7dcd585efe07d888bb5d2da69a68e8841cd34fb9f8e81bfbbc45148914ab49a1"
+    },
+    {
+      "id": "submit_review:2026-08-22-001-unified-workflow-lifecycle-hardening:2026-08-22T05:25:08.563Z",
+      "at": "2026-08-22T05:25:08.563Z",
+      "type": "submit_review",
+      "from_phase": "working",
+      "to_phase": "review",
+      "reason": "action_v2_sha256:aa44228e76649b2460a8e485b29d35d0fb9db0b18c6343773856272d1700b4c0"
+    },
+    {
+      "id": "record_approval:2026-08-22-001-unified-workflow-lifecycle-hardening:2026-08-22T05:25:59.572Z",
+      "at": "2026-08-22T05:25:59.572Z",
+      "type": "record_approval",
+      "from_phase": "review",
+      "to_phase": "review",
+      "reason": "approval-qa-7abd547b\naction_v2_sha256:95c7850622ffc4b11d28eedd52c739f49ffb8162c61e0d217d6ae8e89ec3d4f7",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-32e53ce6cb6a6bd1",
+        "issued_at": "2026-08-22T05:25:59.573Z",
+        "expires_at": "2026-08-22T05:35:59.573Z"
+      }
+    },
+    {
+      "id": "record_approval:2026-08-22-001-unified-workflow-lifecycle-hardening:2026-08-22T05:29:37.340Z",
+      "at": "2026-08-22T05:29:37.340Z",
+      "type": "record_approval",
+      "from_phase": "review",
+      "to_phase": "review",
+      "reason": "approval-review-94c09777\naction_v2_sha256:8fbefb35f5676db99b3cc95a2f7e63b95fe6d0dcb160a8e7149dab1ee8b48f94",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "native-review-8c050a8d-ae4f-489",
+        "confirmation_ref": "pi-confirm-bf3d08a89a7d5b00",
+        "issued_at": "2026-08-22T05:29:37.340Z",
+        "expires_at": "2026-08-22T05:39:37.340Z"
+      }
+    },
+    {
+      "id": "record_user_approval:2026-08-22-001-unified-workflow-lifecycle-hardening:2026-08-22T05:30:12.396Z",
+      "at": "2026-08-22T05:30:12.396Z",
+      "type": "record_user_approval",
+      "from_phase": "review",
+      "to_phase": "review",
+      "reason": "approval-user-5fbf32b4\naction_v2_sha256:b2d3b597d1a7c89986ad4f2da17f336c4c93578ccf40fd7cdf1a4b10a68ad29a",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-7f4a20acc960939e",
+        "issued_at": "2026-08-22T05:30:12.402Z",
+        "expires_at": "2026-08-22T05:40:12.402Z"
+      }
+    },
+    {
+      "id": "complete:2026-08-22-001-unified-workflow-lifecycle-hardening:2026-08-22T05:30:28.695Z",
+      "at": "2026-08-22T05:30:28.695Z",
+      "type": "complete",
+      "from_phase": "review",
+      "to_phase": "done",
+      "reason": "action_v2_sha256:11c28c18dbda64be18463accc3c23c2ceb8be8ffea73c54d7304e36803c61bd4"
+    }
+  ]
+}

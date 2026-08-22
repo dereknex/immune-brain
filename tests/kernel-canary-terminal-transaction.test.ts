@@ -22,7 +22,7 @@ import {
 	createEnrollmentAuthorityRegistry,
 	type EnrollmentCapabilityBinding,
 } from "../plugins/immune-brain/runtime/kernel/enrollment_authority";
-import { canonicalIntentHash, readTaskIntent } from "../plugins/immune-brain/runtime/kernel/intent";
+import { canonicalIntentHash, parseTaskIntentV1, readTaskIntent } from "../plugins/immune-brain/runtime/kernel/intent";
 import {
 	readBackendClaim,
 	readTaskTombstone,
@@ -34,6 +34,7 @@ import {
 	repairKernelAuthority,
 	readWorkspaceStateRaw,
 	revisionForContent,
+	setAfterTaskTransactionWriteForTest,
 	withKernelStoreLockV2,
 } from "../plugins/immune-brain/runtime/kernel/storage";
 
@@ -43,12 +44,16 @@ const INTENT = {
 	task_id: TASK,
 	goal: "terminal transfer",
 	acceptance: [{ id: "A1", assertion: "a1", verification: "v1" }],
-	scope_hint: ["docs/plans"],
+	scope_hint: [
+		"docs/plans",
+		"docs/specs/canary-terminal-task.spec.md",
+		"docs/specs/archive/canary-terminal-task.spec.md",
+	],
 	risk: "routine",
 	revision: 1,
 	owner: "user",
 } as const;
-const INTENT_HASH = canonicalIntentHash(INTENT);
+const INTENT_HASH = canonicalIntentHash(parseTaskIntentV1(INTENT));
 const DIFF = "sha256:" + "f".repeat(64);
 
 let root: string;
@@ -58,12 +63,14 @@ let app: ReturnType<typeof createCanaryApplication>;
 beforeEach(() => {
 	root = mkdtempSync(join(tmpdir(), "canary-terminal-"));
 	mkdirSync(join(root, "docs", "plans"), { recursive: true });
+	mkdirSync(join(root, "docs", "specs"), { recursive: true });
 	mkdirSync(join(root, ".imm", "tasks"), { recursive: true });
 	execFileSync("git", ["init", "-q"], { cwd: root });
 	writeFileSync(
 		join(root, "docs", "plans", `${TASK}.intent.json`),
 		JSON.stringify(INTENT, null, 2) + "\n",
 	);
+	writeFileSync(join(root, "docs", "specs", "canary-terminal-task.spec.md"), "# Canary terminal task\n");
 	execFileSync("git", ["add", "-A"], { cwd: root });
 	execFileSync("git", ["commit", "-qm", "intent"], { cwd: root });
 	writeFileSync(
@@ -110,11 +117,13 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+	setAfterTaskTransactionWriteForTest(null);
 	rmSync(root, { recursive: true, force: true });
 });
 
 function token() {
-	return readTaskIntent(root, TASK).token;
+	const record = readTaskRecordV2(root, TASK).record;
+	return readTaskIntent(root, TASK, record?.intent_ref.path).token;
 }
 
 function execute(op: Parameters<typeof app.execute>[0]["operation"], at: string) {
@@ -128,8 +137,14 @@ function execute(op: Parameters<typeof app.execute>[0]["operation"], at: string)
 	});
 }
 
+function freezeTask() {
+	execute({ op: "freeze_artifacts", actor_id: "executor-1" }, "2026-08-12T10:00:00.500Z");
+	execFileSync("git", ["add", "-A"], { cwd: root });
+}
+
 /** working -> review -> done through the terminal transaction. */
 function completeTask(at = "2026-08-12T10:00:04.000Z") {
+	freezeTask();
 	execute(
 		{ op: "record_evidence", acceptance_id: "A1", status: "passed", summary: "one", actor_id: "executor-1" },
 		"2026-08-12T10:00:01.000Z",
@@ -248,6 +263,27 @@ describe("terminal ownership transfer", () => {
 		expect(existsSync(join(root, ".imm/tasks/.authority-repair-transaction.json"))).toBe(false);
 	});
 
+	test("artifact freeze recovers relocation and record from the workspace marker", () => {
+		setAfterTaskTransactionWriteForTest(() => { throw new Error("simulated freeze crash"); });
+		const result = execute(
+			{ op: "freeze_artifacts", actor_id: "executor-1" },
+			"2026-08-12T10:00:00.500Z",
+		);
+		expect(result.record.artifact_ref?.state).toBe("frozen");
+		expect(existsSync(join(root, "docs/plans", `${TASK}.intent.json`))).toBe(false);
+		expect(existsSync(join(root, "docs/plans/archive", `${TASK}.intent.json`))).toBe(true);
+		expect(existsSync(join(root, "docs/specs", "canary-terminal-task.spec.md"))).toBe(false);
+		expect(existsSync(join(root, "docs/specs/archive", "canary-terminal-task.spec.md"))).toBe(true);
+		expect(existsSync(join(root, ".imm/tasks/.workspace-transaction.json"))).toBe(false);
+
+		const recovered = readTaskRecordV2(root, TASK);
+		expect(recovered.record).toMatchObject({
+			artifact_ref: { state: "frozen", spec_path: "docs/specs/canary-terminal-task.spec.md" },
+			intent_ref: { path: `docs/plans/archive/${TASK}.intent.json` },
+		});
+		expect(existsSync(join(root, ".imm/tasks/.workspace-transaction.json"))).toBe(false);
+	});
+
 	test("complete converges all four paths through one transaction", () => {
 		const done = completeTask();
 		expect(done.record.phase).toBe("done");
@@ -311,6 +347,7 @@ describe("terminal ownership transfer", () => {
 	test("crash after marker write recovers record/workspace/claim/tombstone", () => {
 		// Build the marker state as if the transaction crashed after the
 		// marker write but before completion: record done in memory only.
+		freezeTask();
 		execute(
 			{ op: "record_evidence", acceptance_id: "A1", status: "passed", summary: "one", actor_id: "executor-1" },
 			"2026-08-12T10:00:01.000Z",

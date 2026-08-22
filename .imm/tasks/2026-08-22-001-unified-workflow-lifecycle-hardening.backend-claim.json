@@ -1,0 +1,9 @@
+{
+  "contract": "assurance_kernel/task_tombstone/v1",
+  "task_id": "2026-08-22-001-unified-workflow-lifecycle-hardening",
+  "lifecycle_status": "terminal",
+  "terminal_phase": "done",
+  "terminal_event_id": "complete:2026-08-22-001-unified-workflow-lifecycle-hardening:2026-08-22T05:30:28.695Z",
+  "final_record_hash": "sha256:0285785df4c04d31bef3aa807e1649724e4fad443d02956f6a7e5d6545fb11af",
+  "terminalized_at": "2026-08-22T05:30:28.695Z"
+}

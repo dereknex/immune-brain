@@ -35,7 +35,11 @@ const INTENT = {
 		assertion: "a1",
 		verification: JSON.stringify({ contract: "assurance_kernel/verification_descriptor/v1", runner_id: "bun", runner_version: "1.3.14", argv: ["test"], cwd: ".", timeout_ms: 1_000, max_output_bytes: 1_024 }),
 	}],
-	scope_hint: ["plugins/immune-brain/.pi-extension"],
+	scope_hint: [
+		"plugins/immune-brain/.pi-extension",
+		"docs/specs/canary-ext-task.spec.md",
+		"docs/specs/archive/canary-ext-task.spec.md",
+	],
 	risk: "routine",
 	revision: 1,
 	owner: "user",
@@ -113,10 +117,12 @@ function makeEnrolledRoot(managedBootstrap = false): string {
 		routeManagedRequest({ root, request: "Implement the managed task" });
 	}
 	mkdirSync(join(root, "docs", "plans"), { recursive: true });
+	mkdirSync(join(root, "docs", "specs"), { recursive: true });
 	mkdirSync(join(root, "plugins", "immune-brain", ".pi-extension"), { recursive: true });
 	mkdirSync(join(root, ".imm", "tasks"), { recursive: true });
 	execFileSync("git", ["init", "-q"], { cwd: root });
 	writeFileSync(join(root, "docs", "plans", `${TASK}.intent.json`), JSON.stringify(INTENT, null, 2) + "\n");
+	writeFileSync(join(root, "docs", "specs", "canary-ext-task.spec.md"), "# Canary extension task\n");
 	writeFileSync(join(root, "plugins", "immune-brain", ".pi-extension", "task.ts"), "export const task = 'baseline';\n");
 	execFileSync("git", ["add", "-A"], { cwd: root });
 	execFileSync("git", ["commit", "-qm", "intent"], { cwd: root });
@@ -251,8 +257,21 @@ function walkOpKinds(schema: Record<string, unknown>, out: string[]): void {
 	}
 }
 
+async function capturedToolFailure(promise: Promise<unknown>): Promise<Record<string, unknown>> {
+	try {
+		await promise;
+		throw new Error("expected Tool failure");
+	} catch (error) {
+		const parsed = JSON.parse(error instanceof Error ? error.message : String(error));
+		expect(parsed.contract).toBe("immune_brain/tool_failure/v1");
+		return parsed;
+	}
+}
+
 async function recordEvidence(tool: RegisteredTool, root: string): Promise<void> {
 	const ui = makeUI();
+	await tool.execute("freeze", { task_id: TASK, action: { op: "freeze_artifacts" } }, undefined, undefined, makeCtx(root, ui));
+	execFileSync("git", ["add", "-A"], { cwd: root });
 	await tool.execute("evidence", { task_id: TASK, action: { op: "record_evidence", acceptance_id: "A1", status: "passed", summary: "fresh" } }, undefined, undefined, makeCtx(root, ui));
 }
 
@@ -582,10 +601,12 @@ async function preparePendingReview(root: string): Promise<RegisteredTool & { co
 				{ source: "interactive", text: "Explain what remains" },
 				makeCtx(root, makeUI()),
 			);
-			expect(result).toEqual({
-				action: "transform",
-				text: "/skill:imm-loop Explain what remains",
-			});
+			expect(result).toEqual({ action: "continue" });
+			const injected = await events.before_agent_start![0]({}, makeCtx(root, makeUI())) as { systemPrompt: string };
+			expect(injected.systemPrompt).toContain(`task ${TASK}`);
+			expect(injected.systemPrompt).toContain("phase working");
+			expect(injected.systemPrompt).toContain("do not reload the imm-loop Skill");
+			expect(await events.before_agent_start![0]({}, makeCtx(root, makeUI()))).toBeUndefined();
 		} finally {
 			rmSync(root, { recursive: true, force: true });
 		}
@@ -602,10 +623,10 @@ async function preparePendingReview(root: string): Promise<RegisteredTool & { co
 				{ source: "interactive", text: "Implement the next task" },
 				makeCtx(root, makeUI()),
 			);
-			expect(routed).toEqual({
-				action: "transform",
-				text: "/skill:imm-loop Implement the next task",
-			});
+			expect(routed).toEqual({ action: "continue" });
+			const injected = await events.before_agent_start![0]({}, makeCtx(root, makeUI())) as { systemPrompt: string };
+			expect(injected.systemPrompt).toContain(`task ${TASK}`);
+			expect(injected.systemPrompt).toContain("repair_authority_state");
 
 			const tool = tools.find((candidate) => candidate.name === "imm_kernel_canary")!;
 			const claimBefore = readFileSync(claimPath, "utf8");
@@ -652,6 +673,7 @@ async function preparePendingReview(root: string): Promise<RegisteredTool & { co
 		expect(kinds).toContain("advance_assurance");
 		expect(kinds).toContain("submit_review");
 		expect(kinds).toContain("repair_authority_state");
+		expect(kinds).toContain("freeze_artifacts");
 		expect(kinds).not.toContain("cancel_assurance");
 		const requestAuthorization = schema.properties.action.anyOf.find(
 			(item: Record<string, any>) => item.properties?.op?.const === "request_authorization",
@@ -665,10 +687,10 @@ async function preparePendingReview(root: string): Promise<RegisteredTool & { co
 		const nextIntent = {
 			...INTENT,
 			revision: 2,
-			scope_hint: ["plugins/immune-brain/.pi-extension/nested", "plugins/immune-brain/.pi-extension"],
+			scope_hint: [...INTENT.scope_hint, "plugins/immune-brain/.pi-extension/nested"],
 			acceptance: [...INTENT.acceptance, { id: "A2", assertion: "a2", verification: INTENT.acceptance[0].verification }],
 		};
-		const normalizedNextIntent = { ...nextIntent, scope_hint: ["plugins/immune-brain/.pi-extension"] };
+		const normalizedNextIntent = { ...nextIntent, scope_hint: [...INTENT.scope_hint] };
 		const revise = (tool: RegisteredTool, root: string, intent: unknown) => tool.execute(
 			"revise",
 			{ task_id: TASK, action: { op: "revise_intent", next_intent: intent } },
@@ -692,8 +714,14 @@ async function preparePendingReview(root: string): Promise<RegisteredTool & { co
 			const priorBytes = readFileSync(failurePath, "utf8");
 			const failureInode = statSync(failurePath).ino;
 			const incompatible = { ...nextIntent, goal: "breaking goal" };
-			const failed = await revise(loadSurface().tools[0], failureRoot, incompatible);
-			expect(failed.content[0].text).toContain("kernel canary mutation failed");
+			const failed = await capturedToolFailure(revise(loadSurface().tools[0], failureRoot, incompatible));
+			expect(failed).toMatchObject({
+				contract: "immune_brain/tool_failure/v1",
+				tool: "imm_kernel_canary",
+				operation: "revise_intent",
+				state: "failed",
+				code: "mutation_failed",
+			});
 			expect(statSync(failurePath).ino).toBe(failureInode);
 			expect(readFileSync(failurePath, "utf8")).toBe(priorBytes);
 			expect(JSON.parse(readFileSync(join(failureRoot, ".imm", "tasks", `${TASK}.json`), "utf8"))).toMatchObject({ intent_revision: 1 });
@@ -754,14 +782,14 @@ async function preparePendingReview(root: string): Promise<RegisteredTool & { co
 			});
 			const tool = tools[0];
 			await recordEvidence(tool, root);
-			const result = await tool.execute(
+			const result = await capturedToolFailure(tool.execute(
 				"advance",
 				{ task_id: TASK, action: { op: "advance_assurance" } },
 				controller.signal,
 				undefined,
 				makeCtx(root, makeUI()),
-			);
-			expect(JSON.parse(result.content[0].text).state).toBe("settlement_unknown");
+			));
+			expect(result.state).toBe("settlement_unknown");
 			const record = JSON.parse(readFileSync(join(root, ".imm", "tasks", `${TASK}.json`), "utf8"));
 			expect(record.approvals.some((approval: { kind: string }) => approval.kind === "qa")).toBe(true);
 		} finally { rmSync(root, { recursive: true, force: true }); }
@@ -794,14 +822,14 @@ async function preparePendingReview(root: string): Promise<RegisteredTool & { co
 			});
 			const tool = tools[0];
 			await recordEvidence(tool, root);
-			const result = await tool.execute(
+			const result = await capturedToolFailure(tool.execute(
 				"advance",
 				{ task_id: TASK, action: { op: "advance_assurance" } },
 				controller.signal,
 				undefined,
 				makeCtx(root, makeUI()),
-			);
-			expect(JSON.parse(result.content[0].text).state).toBe("settlement_unknown");
+			));
+			expect(result.state).toBe("settlement_unknown");
 			expect(removed).toBe(true);
 		} finally { rmSync(root, { recursive: true, force: true }); }
 	});
@@ -903,7 +931,7 @@ async function preparePendingReview(root: string): Promise<RegisteredTool & { co
 					return value
 						.replace(/sha256:[0-9a-f]+/g, "sha256:<digest>")
 						.replace(/approval-(qa|review)-[0-9a-f]+/g, "approval-$1:<id>")
-						.replace(/(evidence|record_evidence|submit_review|record_approval):[^:\s]+:[^\s]+/g, "$1:<id>")
+						.replace(/(evidence|record_evidence|submit_review|record_approval|freeze_artifacts):[^:\s]+:[^\s]+/g, "$1:<id>")
 						.replace(/pi-confirm-[0-9a-f]+/g, "pi-confirm:<ref>");
 				}
 				if (Array.isArray(value)) return value.map((item) => canonicalize(item));
@@ -942,6 +970,10 @@ async function preparePendingReview(root: string): Promise<RegisteredTool & { co
 			expect(ui.inputCalls).toHaveLength(1);
 			const record = JSON.parse(readFileSync(join(reworkRoot, ".imm", "tasks", `${TASK}.json`), "utf8"));
 			expect(record.findings.at(-1)).toMatchObject({ kind: "blocking", source: "review", summary: "Acceptance A1 needs stronger evidence" });
+			expect(record).toMatchObject({ artifact_ref: { state: "active", spec_path: "docs/specs/canary-ext-task.spec.md" }, intent_ref: { path: `docs/plans/${TASK}.intent.json` } });
+			expect(existsSync(join(reworkRoot, "docs", "plans", `${TASK}.intent.json`))).toBe(true);
+			expect(existsSync(join(reworkRoot, "docs", "specs", "canary-ext-task.spec.md"))).toBe(true);
+			expect(existsSync(join(reworkRoot, "docs", "plans", "archive", `${TASK}.intent.json`))).toBe(false);
 		} finally { rmSync(reworkRoot, { recursive: true, force: true }); }
 
 		const rejectRoot = makeEnrolledRoot();
@@ -958,6 +990,9 @@ async function preparePendingReview(root: string): Promise<RegisteredTool & { co
 			expect(readBackendClaim(rejectRoot)).toBeNull();
 			const record = JSON.parse(readFileSync(join(rejectRoot, ".imm", "tasks", `${TASK}.json`), "utf8"));
 			expect(record.history.at(-1)?.reason).toContain("The remaining risk is unacceptable");
+			expect(record).toMatchObject({ artifact_ref: { state: "frozen" }, intent_ref: { path: `docs/plans/archive/${TASK}.intent.json` } });
+			expect(existsSync(join(rejectRoot, "docs", "plans", "archive", `${TASK}.intent.json`))).toBe(true);
+			expect(existsSync(join(rejectRoot, "docs", "specs", "archive", "canary-ext-task.spec.md"))).toBe(true);
 		} finally { rmSync(rejectRoot, { recursive: true, force: true }); }
 	});
 
@@ -973,14 +1008,14 @@ async function preparePendingReview(root: string): Promise<RegisteredTool & { co
 				execFileSync("git", ["add", "plugins/immune-brain/.pi-extension/task.ts"], { cwd: root });
 				return originalCustom(factory);
 			};
-			const raced = await tool.execute(
+			const raced = await capturedToolFailure(tool.execute(
 				"reject-race",
 				{ task_id: TASK, action: { op: "request_authorization" } },
 				undefined,
 				undefined,
 				ctx,
-			);
-			expect(raced.details.state).toBe("blocked");
+			));
+			expect(raced.state).toBe("blocked");
 			expect(readBackendClaim(root)?.lifecycle_status).toBe("active");
 			expect(JSON.parse(readFileSync(join(root, ".imm", "tasks", `${TASK}.json`), "utf8")).phase).toBe("review");
 
@@ -1007,14 +1042,14 @@ async function preparePendingReview(root: string): Promise<RegisteredTool & { co
 			const failedUi = makeUI();
 			const failedCtx = makeCtx(root, failedUi);
 			failedCtx.ui.custom = async () => { throw new Error("renderer unavailable"); };
-			const failed = await tool.execute(
+			const failed = await capturedToolFailure(tool.execute(
 				"ui-failure",
 				{ task_id: TASK, action: { op: "request_authorization" } },
 				undefined,
 				undefined,
 				failedCtx,
-			);
-			expect(failed.details).toMatchObject({ state: "blocked", reason: "Review decision UI failed: renderer unavailable" });
+			));
+			expect(failed).toMatchObject({ state: "blocked", message: "Review decision UI failed: renderer unavailable" });
 			expect({ record: readFileSync(recordPath, "utf8"), claim: readFileSync(claimPath, "utf8") }).toEqual(before);
 
 			const blankRework = await tool.execute(

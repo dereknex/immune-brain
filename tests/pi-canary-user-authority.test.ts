@@ -156,6 +156,13 @@ function parseToolState(result: { content: Array<{ text: string }>; details?: Re
 	return JSON.parse(result.content[0].text) as Record<string, unknown>;
 }
 
+async function captureToolFailure(promise: Promise<unknown>): Promise<Record<string, unknown>> {
+	return promise.then(
+		() => { throw new Error("expected Tool failure"); },
+		(error: unknown) => JSON.parse(error instanceof Error ? error.message : String(error)),
+	);
+}
+
 function authorityBytes(root: string): { record: string; claim: string } {
 	return {
 		record: readFileSync(join(root, ".imm", "tasks", `${TASK}.json`), "utf8"),
@@ -280,26 +287,34 @@ describe("pi canary user authority", () => {
 			const { tool } = loadSurface();
 			const initial = authorityBytes(root);
 			const missing = makeUI();
-			const missingResult = await tool.execute(
+			const missingResult = await captureToolFailure(tool.execute(
 				"req-missing",
 				{ task_id: TASK, action: { op: "request_authorization" } },
 				undefined,
 				undefined,
 				ctxFor(root, missing, true),
-			);
-			expect(parseToolState(missingResult).state).toBe("blocked");
+			));
+			expect(missingResult).toMatchObject({
+				contract: "immune_brain/tool_failure/v1",
+				state: "blocked",
+				message: expect.stringMatching(/no unique host-derived authorization operation/i),
+			});
 			expect(missing.confirmCalls).toHaveLength(0);
 			expect(authorityBytes(root)).toEqual(initial);
 
 			const nonTui = makeUI();
-			const nonTuiResult = await tool.execute(
+			const nonTuiResult = await captureToolFailure(tool.execute(
 				"req-print",
 				{ task_id: TASK, action: { op: "request_authorization" } },
 				undefined,
 				undefined,
 				ctxFor(root, nonTui, true, "print"),
-			);
-			expect(String(nonTuiResult.content[0].text)).toMatch(/TUI-only/i);
+			));
+			expect(nonTuiResult).toMatchObject({
+				contract: "immune_brain/tool_failure/v1",
+				state: "blocked",
+				message: expect.stringMatching(/TUI-only/i),
+			});
 			expect(nonTui.confirmCalls).toHaveLength(0);
 			expect(authorityBytes(root)).toEqual(initial);
 
@@ -363,16 +378,17 @@ describe("pi canary user authority", () => {
 				},
 			});
 			const ui = makeUI();
-			const result = await tool.execute(
+			const result = await captureToolFailure(tool.execute(
 				"req-race",
 				{ task_id: TASK, action: { op: "request_authorization" } },
 				undefined,
 				undefined,
 				ctxFor(root, ui, true),
-			);
-			expect(parseToolState(result)).toMatchObject({
+			));
+			expect(result).toMatchObject({
+				contract: "immune_brain/tool_failure/v1",
 				state: "blocked",
-				reason: "TaskRecord changed while deriving authorization operation",
+				message: "TaskRecord changed while deriving authorization operation",
 			});
 			expect(ui.confirmCalls).toHaveLength(0);
 			expect(authorityBytes(root)).toEqual(raced!);
@@ -401,14 +417,18 @@ describe("pi canary user authority", () => {
 			);
 			await new Promise((resolve) => setTimeout(resolve, 0));
 			const secondUi = makeUI();
-			const second = await tool.execute(
+			const second = await captureToolFailure(tool.execute(
 				"req-dup",
 				{ task_id: TASK, action: { op: "request_authorization" } },
 				undefined,
 				undefined,
 				ctxFor(root, secondUi, true),
-			);
-			expect(parseToolState(second).state).toBe("blocked");
+			));
+			expect(second).toMatchObject({
+				contract: "immune_brain/tool_failure/v1",
+				state: "blocked",
+				message: expect.stringMatching(/already has an open invocation/i),
+			});
 			expect(secondUi.confirmCalls).toHaveLength(0);
 			expect(authorityBytes(root)).toEqual(baseline);
 			release(false);
@@ -471,14 +491,18 @@ describe("pi canary user authority", () => {
 		try {
 			const { tool } = loadSurface();
 			const ui = makeUI();
-			const result = await tool.execute(
+			const result = await captureToolFailure(tool.execute(
 				"req-stop",
 				{ task_id: TASK, action: { op: "request_authorization" } },
 				undefined,
 				undefined,
 				ctxFor(root, ui, true),
-			);
-			expect(parseToolState(result).state).toBe("blocked");
+			));
+			expect(result).toMatchObject({
+				contract: "immune_brain/tool_failure/v1",
+				state: "blocked",
+				message: expect.stringMatching(/no unique host-derived authorization operation/i),
+			});
 		} finally {
 			rmSync(root, { recursive: true, force: true });
 		}

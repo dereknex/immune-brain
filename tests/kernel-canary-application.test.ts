@@ -20,7 +20,7 @@ import {
 	createEnrollmentAuthorityRegistry,
 	type EnrollmentCapabilityBinding,
 } from "../plugins/immune-brain/runtime/kernel/enrollment_authority";
-import { canonicalIntentHash, readTaskIntent } from "../plugins/immune-brain/runtime/kernel/intent";
+import { canonicalIntentHash, parseTaskIntentV1, readTaskIntent } from "../plugins/immune-brain/runtime/kernel/intent";
 import { preparePiCanary } from "../plugins/immune-brain/runtime/kernel/pi_canary_prepare";
 import { readBackendClaim, readTaskTombstone } from "../plugins/immune-brain/runtime/kernel/backend_claim";
 import { readTaskRecordV2 } from "../plugins/immune-brain/runtime/kernel/storage";
@@ -35,12 +35,16 @@ const INTENT = {
 		{ id: "A1", assertion: "acceptance one", verification: "verify one" },
 		{ id: "A2", assertion: "acceptance two", verification: "verify two" },
 	],
-	scope_hint: ["docs/plans"],
+	scope_hint: [
+		"docs/plans",
+		"docs/specs/canary-app-task.spec.md",
+		"docs/specs/archive/canary-app-task.spec.md",
+	],
 	risk: "routine",
 	revision: 1,
 	owner: "user",
 } as const;
-const INTENT_HASH = canonicalIntentHash(INTENT);
+const INTENT_HASH = canonicalIntentHash(parseTaskIntentV1(INTENT));
 const DIFF = "sha256:" + "a".repeat(64);
 
 let root: string;
@@ -53,12 +57,14 @@ beforeEach(() => {
 	root = mkdtempSync(join(tmpdir(), "canary-app-"));
 	now = "2026-08-12T10:00:00.000Z";
 	mkdirSync(join(root, "docs", "plans"), { recursive: true });
+	mkdirSync(join(root, "docs", "specs"), { recursive: true });
 	mkdirSync(join(root, ".imm", "tasks"), { recursive: true });
 	execFileSync("git", ["init", "-q"], { cwd: root });
 	writeFileSync(
 		join(root, "docs", "plans", `${TASK}.intent.json`),
 		JSON.stringify(INTENT, null, 2) + "\n",
 	);
+	writeFileSync(join(root, "docs", "specs", "canary-app-task.spec.md"), "# Canary app task\n");
 	execFileSync("git", ["add", "-A"], { cwd: root });
 	execFileSync("git", ["commit", "-qm", "intent"], { cwd: root });
 	writeFileSync(
@@ -108,7 +114,8 @@ afterEach(() => {
 });
 
 function token() {
-	return readTaskIntent(root, TASK).token;
+	const record = readTaskRecordV2(root, TASK).record;
+	return readTaskIntent(root, TASK, record?.intent_ref.path).token;
 }
 
 function execute(operation: CanaryOperation, at = now) {
@@ -253,6 +260,8 @@ describe("canary application closed semantic operations", () => {
 	});
 
 	test("full routine journey working -> review -> done", () => {
+		execute({ op: "freeze_artifacts", actor_id: "executor-1" }, "2026-08-12T10:00:00.500Z");
+		execFileSync("git", ["add", "-A"], { cwd: root });
 		execute({ op: "record_evidence", acceptance_id: "A1", status: "passed", summary: "one", actor_id: "executor-1" }, "2026-08-12T10:00:01.000Z");
 		execute({ op: "record_evidence", acceptance_id: "A2", status: "passed", summary: "two", actor_id: "executor-1" }, "2026-08-12T10:00:02.000Z");
 		execute({ op: "submit_review", actor_id: "executor-1" }, "2026-08-12T10:00:03.000Z");

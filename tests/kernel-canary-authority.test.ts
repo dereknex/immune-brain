@@ -110,7 +110,9 @@ afterEach(() => {
 });
 
 function token() {
-	return readTaskIntent(root, TASK).token;
+	const record = readTaskRecordV2(root, TASK).record;
+	if (!record) throw new Error("missing TaskRecord");
+	return readTaskIntent(root, TASK, record.intent_ref.path).token;
 }
 
 function drainCapability(registry = mutationRegistryA, overrides: Record<string, unknown> = {}) {
@@ -232,6 +234,7 @@ describe("canary application authority pairing", () => {
 		});
 		expect(first.record.phase).toBe("stopped");
 		expect(mutationRegistryA.isConsumed(cap)).toBe(true);
+		execFileSync("git", ["add", "--", `docs/plans/archive/${TASK}.intent.json`], { cwd: root });
 		// A retry with the same single-use capability must fail closed.
 		expect(() =>
 			appA.execute({

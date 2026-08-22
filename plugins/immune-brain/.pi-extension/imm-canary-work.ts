@@ -14,8 +14,9 @@
 // created here. A bounded task-level Task Rail mirrors existing projections at
 // host input and Tool lifecycle boundaries.
 
+import { execFileSync } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
-import { readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
@@ -57,6 +58,7 @@ import {
 	type UserAttentionEventV1,
 	type UserAttentionReason,
 } from "./pi-canary-interaction";
+import { isToolFailureState, throwToolFailure } from "./pi-canary-tool-failure";
 import { taskDiffHash, captureGitTaskSnapshot } from "../runtime/workspace_scope";
 import {
 	AssuranceProgression,
@@ -130,6 +132,7 @@ const LOOP_TARGETS = [
 const LOOP_DIRECT_ROLES = ["qa", "code-review", "ui-review"] as const;
 const KERNEL_OPERATIONS = [
 	"status",
+	"freeze_artifacts",
 	"record_evidence",
 	"record_finding",
 	"resolve_finding",
@@ -317,6 +320,11 @@ export default function (
 	} satisfies AssuranceProgressionPorts);
 
 	let managedRouteFailure: string | null = null;
+	let pendingOwnerInstruction: {
+		task_id: string;
+		phase: string;
+		next_action: string;
+	} | null = null;
 	let railContext: ExtensionContext | undefined;
 	const refreshTaskRail = async (ctx: ExtensionContext) => {
 		try {
@@ -368,10 +376,20 @@ export default function (
 		if (event.streamingBehavior === undefined) managedRouteFailure = null;
 		const text = event.text.trimStart();
 		if (/^\/skill:imm-(?:brainstorm|planner|loop)(?:\s|$)/.test(text)) {
+			pendingOwnerInstruction = null;
 			return { action: "continue" } as const;
 		}
 		try {
 			const route = await routeHostRequest(ctx.cwd, event.text);
+			if (route.phase === "loop" && route.assurance) {
+				pendingOwnerInstruction = {
+					task_id: route.assurance.task_id,
+					phase: route.assurance.phase,
+					next_action: route.assurance.next_action ?? "status",
+				};
+				return { action: "continue" } as const;
+			}
+			pendingOwnerInstruction = null;
 			const command = managedSkillCommand(route.phase, event.text);
 			return command
 				? {
@@ -381,6 +399,7 @@ export default function (
 				} as const
 				: { action: "continue" } as const;
 		} catch (error) {
+			pendingOwnerInstruction = null;
 			managedRouteFailure = error instanceof Error ? error.message : String(error);
 			return {
 				action: "transform",
@@ -389,8 +408,17 @@ export default function (
 			} as const;
 		}
 	});
+	pi.on("before_agent_start", (event: { systemPrompt: string }) => {
+		const owner = pendingOwnerInstruction;
+		pendingOwnerInstruction = null;
+		if (!owner) return;
+		const instruction = `Active Kernel Assurance owner: task ${owner.task_id}, phase ${owner.phase}, next action ${owner.next_action}. Resume through imm_loop_action and imm_kernel_canary using current projection; do not reload the imm-loop Skill or create new authority.`;
+		const existing = typeof event.systemPrompt === "string" ? event.systemPrompt : "";
+		return { systemPrompt: [existing, instruction].filter(Boolean).join("\n\n") };
+	});
 	pi.on("agent_settled", () => {
 		managedRouteFailure = null;
+		pendingOwnerInstruction = null;
 	});
 
 	pi.on("session_start", async (_event: unknown, ctx?: ExtensionContext) => {
@@ -428,6 +456,7 @@ export default function (
 		progression.observeToolEnd(event as Parameters<AssuranceProgression["observeToolEnd"]>[0]);
 	});
 	pi.on("session_shutdown", async (_event: unknown, ctx?: ExtensionContext) => {
+		pendingOwnerInstruction = null;
 		resetInteractionPresentation(ctx ?? railContext);
 		railContext = undefined;
 		await progression.onSessionShutdown();
@@ -454,6 +483,7 @@ export default function (
 				Type.Object({ op: Type.Literal("advance_assurance") }),
 				Type.Object({ op: Type.Literal("request_authorization") }),
 				Type.Object({ op: Type.Literal("repair_authority_state") }),
+				Type.Object({ op: Type.Literal("freeze_artifacts") }),
 				Type.Object({
 					op: Type.Literal("record_evidence"),
 					acceptance_id: Type.String(),
@@ -496,7 +526,7 @@ export default function (
 				next_action: "Wait for the foreground Tool result",
 			});
 			if (action.op === "repair_authority_state") {
-				if (ctx.mode !== "tui") return toolResult("imm_kernel_canary mutation is TUI-only");
+				if (ctx.mode !== "tui") return failCanaryTool(taskId, action.op, "blocked", "tui_required", "imm_kernel_canary mutation is TUI-only", "invoke the TUI Tool");
 				const authority = await reconcileKernelAuthority(ctx.cwd, taskId);
 				if (
 					authority.state !== "repairable_stale_claim" ||
@@ -508,7 +538,8 @@ export default function (
 						result: authority.diagnostic ?? `Authority state is ${authority.state}`,
 						next_action: "inspect authority state",
 					};
-					return toolResult(JSON.stringify(blocked, null, 2), blocked);
+					presentTaskRailResult(ctx, taskId, blocked);
+					return failCanaryTool(taskId, action.op, "authority_conflict", "authority_conflict", blocked.result, blocked.next_action);
 				}
 				presentTaskRail(ctx, {
 					task_id: taskId,
@@ -553,17 +584,19 @@ export default function (
 					};
 					return toolResult(JSON.stringify(result, null, 2), result);
 				} catch (error) {
+					const message = error instanceof Error ? error.message : String(error);
 					const blocked = {
 						state: "authority_conflict",
 						operation: action.op,
-						result: error instanceof Error ? error.message : String(error),
+						result: message,
 						next_action: "inspect authority state",
 					};
-					return toolResult(JSON.stringify(blocked, null, 2), blocked);
+					presentTaskRailResult(ctx, taskId, blocked);
+					return failCanaryTool(taskId, action.op, "authority_conflict", "authority_repair_failed", message, blocked.next_action);
 				}
 			}
 			if (action.op === "advance_assurance" || action.op === "request_authorization" || action.op === "submit_review" || action.op === "approve_breaking_intent_revision") {
-				if (ctx.mode !== "tui") return toolResult("imm_kernel_canary mutation is TUI-only");
+				if (ctx.mode !== "tui") return failCanaryTool(taskId, action.op, "blocked", "tui_required", "imm_kernel_canary mutation is TUI-only", "invoke the TUI Tool");
 				const result = action.op === "advance_assurance"
 					? await progression.advance(taskId, ctx, signal, (update) => {
 						onUpdate?.(update);
@@ -581,16 +614,19 @@ export default function (
 							: await requestAuthorization(taskId, ctx);
 				const enriched = await enrichAssuranceResult(ctx, taskId, result as unknown as Record<string, unknown>);
 				presentTaskRailResult(ctx, taskId, enriched);
+				throwIfCanaryToolFailure(taskId, action.op, enriched);
 				return toolResult(JSON.stringify(enriched, null, 2), enriched);
 			}
 			const projection = await projectAssuranceState(ctx.cwd, taskId);
 			if (projection.error) {
-				return toolResult(`kernel canary unavailable: ${projection.error}`, {
+				const details = {
 					state: "blocked",
 					operation: action.op,
 					result: projection.error,
 					next_action: "inspect authority state",
-				});
+				};
+				presentTaskRailResult(ctx, taskId, details);
+				return failCanaryTool(taskId, action.op, "blocked", "projection_unavailable", projection.error, details.next_action);
 			}
 			if (action.op === "status") {
 				const state = projection.projection;
@@ -613,11 +649,11 @@ export default function (
 			// Production mutation requires the TUI host; RPC/JSON/print fail
 			// before any state read that could lead to mutation.
 			if (ctx.mode !== "tui") {
-				return toolResult("imm_kernel_canary mutation is TUI-only");
+				return failCanaryTool(taskId, action.op, "blocked", "tui_required", "imm_kernel_canary mutation is TUI-only", "invoke the TUI Tool");
 			}
 			const claim = projection.claim;
 			if (!claim || claim.task_id !== taskId) {
-				return toolResult(`no active backend claim for ${taskId}`);
+				return failCanaryTool(taskId, action.op, "blocked", "claim_missing", `no active backend claim for ${taskId}`, "inspect authority state");
 			}
 			try {
 				const result = (await executeOrdinaryOperation(ctx, {
@@ -645,7 +681,7 @@ export default function (
 					details,
 				);
 			} catch (error) {
-				return toolResult(`kernel canary mutation failed: ${error instanceof Error ? error.message : String(error)}`);
+				return failCanaryTool(taskId, action.op, "failed", "mutation_failed", error instanceof Error ? error.message : String(error), "correct the reported failure and retry");
 			}
 		},
 		renderCall(args, theme) {
@@ -986,7 +1022,8 @@ export default function (
 						prior_intent_token: (await readTaskIntent(ctx.cwd, taskId)).token,
 						diffProvider: (root: string, intent: { scope_hint: unknown }) => diffHashOf(root, intent),
 						now,
-					})) as unknown as { record: { phase: string } };
+					})) as unknown as { record: { phase: string; intent_ref: { path: string }; artifact_ref?: { spec_path?: string } } };
+					stagePlanningArtifactTransition(ctx.cwd, result.record);
 					progression.clearPendingReviewVerdict(taskId);
 					return { state: "applied", operation, decision: "reject", phase: result.record.phase };
 				}
@@ -1045,31 +1082,40 @@ export default function (
 							next_intent_ref: nextIntentRef!,
 						}
 					: userDecisionOperation ?? userOperationFor(operation, approval);
-			const capability = await mintCapability(registry, {
-				authority_kind: "user",
-				task_id: taskId,
-				action_kind: exactOperation.op,
-				expected_record_hash: projection.projection.record_revision,
-				intent_revision: nextIntent?.revision ?? projection.projection.intent_revision,
-				intent_content_hash: nextIntentHash ?? projection.projection.intent_content_hash,
-				diff_hash: projection.projection.diff_hash,
-				actor_id: "literal-user",
-				...(exactOperation.op === "record_user_approval" ? { approval: exactOperation.approval } : {}),
-				...(exactOperation.op === "approve_breaking_intent_revision"
-					? { next_intent: exactOperation.next_intent, next_intent_ref: exactOperation.next_intent_ref }
-					: {}),
-				...(exactOperation.op === "resolve_user_decision"
-					? { finding_id: exactOperation.finding_id, resolution: exactOperation.resolution }
-					: {}),
-				...(exactOperation.op === "stop" ? { reason: exactOperation.reason } : {}),
-				now,
-			});
 				// The exact host-built operation is shared by capability digest and
 				// application payload; command arguments cannot inject authority fields.
 				const sidecar = nextIntent ? join(ctx.cwd, priorIntent.intent_ref.path) : undefined;
 				const priorBytes = sidecar ? readFileSync(sidecar) : undefined;
 				try {
-					if (sidecar) writeFileSync(sidecar, `${JSON.stringify(nextIntent, null, 2)}\n`);
+					if (sidecar) {
+						writeFileSync(sidecar, `${JSON.stringify(nextIntent, null, 2)}\n`);
+						execFileSync("git", ["add", "--", priorIntent.intent_ref.path], {
+							cwd: ctx.cwd,
+							stdio: ["ignore", "pipe", "pipe"],
+						});
+					}
+					const operationDiffHash = nextIntent
+						? diffHashOf(ctx.cwd, priorIntent.intent)
+						: projection.projection.diff_hash;
+					const capability = await mintCapability(registry, {
+						authority_kind: "user",
+						task_id: taskId,
+						action_kind: exactOperation.op,
+						expected_record_hash: projection.projection.record_revision,
+						intent_revision: nextIntent?.revision ?? projection.projection.intent_revision,
+						intent_content_hash: nextIntentHash ?? projection.projection.intent_content_hash,
+						diff_hash: operationDiffHash,
+						actor_id: "literal-user",
+						...(exactOperation.op === "record_user_approval" ? { approval: exactOperation.approval } : {}),
+						...(exactOperation.op === "approve_breaking_intent_revision"
+							? { next_intent: exactOperation.next_intent, next_intent_ref: exactOperation.next_intent_ref }
+							: {}),
+						...(exactOperation.op === "resolve_user_decision"
+							? { finding_id: exactOperation.finding_id, resolution: exactOperation.resolution }
+							: {}),
+						...(exactOperation.op === "stop" ? { reason: exactOperation.reason } : {}),
+						now,
+					});
 					const result = (await app.execute({
 						root: ctx.cwd,
 						task_id: taskId,
@@ -1077,13 +1123,19 @@ export default function (
 						prior_intent_token: priorIntent.token,
 						diffProvider: (root: string, intent: { scope_hint: unknown }) => diffHashOf(root, intent),
 						now,
-					})) as unknown as { record: { phase: string } };
+					})) as unknown as { record: { phase: string; intent_ref: { path: string }; artifact_ref?: { spec_path?: string } } };
+					if (exactOperation.op === "stop") stagePlanningArtifactTransition(ctx.cwd, result.record);
 					return { state: "applied", operation, phase: result.record.phase };
 				} catch (error) {
 					if (sidecar && priorBytes) {
 						const current = await readTaskRecordV2(ctx.cwd, taskId);
-						if (current.record?.intent_revision === priorIntent.intent.revision)
+						if (current.record?.intent_revision === priorIntent.intent.revision) {
 							writeFileSync(sidecar, priorBytes);
+							execFileSync("git", ["add", "--", priorIntent.intent_ref.path], {
+								cwd: ctx.cwd,
+								stdio: ["ignore", "pipe", "pipe"],
+							});
+						}
 					}
 					throw error;
 				}
@@ -1153,6 +1205,8 @@ export function deriveAuthorizationOperation(input: {
 
 function toCanaryOperation(action: { op: string }, actorId: string) {
 	switch (action.op) {
+		case "freeze_artifacts":
+			return { op: "freeze_artifacts", actor_id: actorId };
 		case "record_evidence": {
 			const a = action as unknown as { acceptance_id: string; status: string; summary: string };
 			return {
@@ -1424,7 +1478,8 @@ async function applyAssuranceVerdict(
 			prior_intent_token: priorIntentToken,
 			diffProvider: (root: string, intent: { scope_hint: unknown }) => diffHashOf(root, intent),
 			now,
-		}))) as unknown as { record: { phase: string } };
+		}))) as unknown as { record: { phase: string; intent_ref: { path: string }; artifact_ref?: { spec_path?: string } } };
+		stagePlanningArtifactTransition(ctx.cwd, result.record);
 		const parked = (result.record as { findings?: Array<{ kind: string; status: string }> }).findings?.some(
 			(finding) => finding.kind === "replan_required" && finding.status === "open",
 		);
@@ -1635,7 +1690,7 @@ async function executeOrdinaryOperation(
 	const priorBytes = operation.op === "revise_intent" ? readFileSync(sidecar) : null;
 	try {
 		if (priorBytes) writeFileSync(sidecar, `${JSON.stringify(operation.next_intent, null, 2)}\n`);
-		return await app.execute({
+		const result = await app.execute({
 			root: ctx.cwd,
 			task_id: input.taskId,
 			operation: operation as never,
@@ -1643,6 +1698,9 @@ async function executeOrdinaryOperation(
 			diffProvider: (root: string, intent: { scope_hint: unknown }) => diffHashOf(root, intent),
 			now: new Date().toISOString(),
 		});
+		if (operation.op === "freeze_artifacts" || operation.op === "stop")
+			stagePlanningArtifactTransition(ctx.cwd, result.record);
+		return result;
 	} catch (error) {
 		if (priorBytes) {
 			const current = await readTaskRecordV2(ctx.cwd, input.taskId);
@@ -1729,6 +1787,72 @@ function statusNextAction(state: {
 
 function toolResult(text: string, details?: Record<string, unknown>) {
 	return { content: [{ type: "text" as const, text }], details };
+}
+
+function stagePlanningArtifactTransition(root: string, record: {
+	intent_ref: { path: string };
+	artifact_ref?: { spec_path?: string };
+}): void {
+	if (!record.artifact_ref) return;
+	const intentActive = record.intent_ref.path.replace("docs/plans/archive/", "docs/plans/");
+	const intentArchive = intentActive.replace("docs/plans/", "docs/plans/archive/");
+	const specActive = record.artifact_ref.spec_path;
+	const candidates = [
+		intentActive,
+		intentArchive,
+		...(specActive ? [specActive, specActive.replace("docs/specs/", "docs/specs/archive/")] : []),
+	];
+	const paths = candidates.filter((path) => existsSync(join(root, path)) || execFileSync(
+		"git",
+		["ls-files", "--cached", "--", path],
+		{ cwd: root, encoding: "utf8" },
+	).trim().length > 0);
+	if (paths.length === 0) return;
+	execFileSync("git", ["add", "--", ...paths], {
+		cwd: root,
+		stdio: ["ignore", "pipe", "pipe"],
+	});
+}
+
+function failCanaryTool(
+	taskId: string,
+	operation: string,
+	state: "blocked" | "failed" | "authority_conflict" | "settlement_unknown",
+	code: string,
+	message: string,
+	nextAction: string,
+): never {
+	return throwToolFailure({
+		tool: "imm_kernel_canary",
+		task_id: taskId,
+		operation,
+		state,
+		code,
+		message,
+		next_action: nextAction,
+	});
+}
+
+function throwIfCanaryToolFailure(
+	taskId: string,
+	operation: string,
+	result: Record<string, unknown>,
+): void {
+	if (!isToolFailureState(result.state)) return;
+	failCanaryTool(
+		taskId,
+		operation,
+		result.state,
+		`assurance_${result.state}`,
+		typeof result.reason === "string"
+			? result.reason
+			: typeof result.result === "string"
+				? result.result
+				: "Kernel assurance operation failed",
+		typeof result.next_action === "string"
+			? result.next_action
+			: "inspect authority state",
+	);
 }
 
 // Re-exported pure lifecycle helpers and types (single source of truth in the

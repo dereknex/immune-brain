@@ -319,6 +319,13 @@ function authoritySnapshot(root: string): string {
 	return parts.join("\n");
 }
 
+async function captureToolFailure(promise: Promise<unknown>): Promise<Record<string, unknown>> {
+	return promise.then(
+		() => { throw new Error("expected Tool failure"); },
+		(error: unknown) => JSON.parse(error instanceof Error ? error.message : String(error)),
+	);
+}
+
 async function runTool(root: string, ui: FakeUI, updates: string[] = [], action: "enroll" | "new" = "enroll", taskId = "enroll-task-001"): Promise<any> {
 	const factory = await loadExtension();
 	let tool: { execute: (...args: any[]) => Promise<any> } | undefined;
@@ -379,13 +386,16 @@ describe("enrollment confirmation relocation", () => {
 			makeEligibleRepo(root, TASK, "routine", { acceptShouldPass: false });
 			const before = authoritySnapshot(root);
 			const ui = makeFakeUI(true);
-			const result = await runTool(root, ui, [], "new", TASK);
+			const result = await captureToolFailure(runTool(root, ui, [], "new", TASK));
 			// Confirmation happened before rehearsal failure
 			expect(ui.confirmCalls.length).toBe(1);
 			expect(ui.customCalls.length).toBe(1);
-			// Rehearsal failure blocks enrollment
-			expect(result.details.state).toBe("blocked");
-			expect(result.details.summary).toMatch(/Descriptor rehearsal blocked/i);
+			// Rehearsal failure is a host-visible Tool error.
+			expect(result).toMatchObject({
+				contract: "immune_brain/tool_failure/v1",
+				state: "blocked",
+				message: expect.stringMatching(/Descriptor rehearsal blocked/i),
+			});
 			// Invalidates authorization: zero authority writes (not rolled back)
 			expect(authoritySnapshot(root)).toBe(before);
 			expect(readdirSync(join(root, ".imm", "tasks")).sort()).toEqual([]);
@@ -438,7 +448,7 @@ describe("enrollment confirmation relocation", () => {
 					)}\n`,
 				);
 			};
-			const result = await runTool(root, ui, [], "new", TASK);
+			const result = await captureToolFailure(runTool(root, ui, [], "new", TASK));
 			const intentAfter = (() => {
 				try {
 					return readTaskIntent(root, TASK).content_hash;
@@ -448,8 +458,11 @@ describe("enrollment confirmation relocation", () => {
 			})();
 			expect(intentAfter).not.toBe(intentBefore);
 			expect(ui.confirmCalls.length).toBe(1);
-			expect(result.details.state).toBe("blocked");
-			expect(result.details.summary).toMatch(/Intent changed after confirmation|Workspace changed after confirmation/i);
+			expect(result).toMatchObject({
+				contract: "immune_brain/tool_failure/v1",
+				state: "blocked",
+				message: expect.stringMatching(/Intent changed after confirmation|Workspace changed after confirmation/i),
+			});
 			// Zero writes
 			expect(authoritySnapshot(root)).toBe(before);
 			expect(readdirSync(join(root, ".imm", "tasks")).sort()).toEqual([]);

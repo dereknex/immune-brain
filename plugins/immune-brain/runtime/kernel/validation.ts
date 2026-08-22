@@ -327,7 +327,7 @@ export function parseTaskRecordV2(raw: unknown): TaskRecordV2 {
 	const value = objectAt(raw, "record", violations);
 	rejectUnknown(
 		value,
-		["contract", "task_id", "intent_revision", "intent_snapshot", "intent_ref", "phase", "baseline", "evidence", "findings", "approvals", "history"],
+		["contract", "task_id", "intent_revision", "intent_snapshot", "intent_ref", "artifact_ref", "phase", "baseline", "evidence", "findings", "approvals", "history"],
 		"record",
 		violations,
 	);
@@ -364,14 +364,33 @@ export function parseTaskRecordV2(raw: unknown): TaskRecordV2 {
 	if (!SHA256_HEX.test(refContentHash))
 		violations.push("record.intent_ref.content_hash must be sha256:<64 hex>");
 
+	let artifactRef: TaskRecordV2["artifact_ref"];
+	if (value.artifact_ref !== undefined) {
+		const artifactRaw = objectAt(value.artifact_ref, "record.artifact_ref", violations);
+		rejectUnknown(artifactRaw, ["state", "spec_path"], "record.artifact_ref", violations);
+		const state = enumAt(artifactRaw.state, ["active", "frozen"], "record.artifact_ref.state", violations) as "active" | "frozen";
+		const specPath = artifactRaw.spec_path === undefined
+			? undefined
+			: stringAt(artifactRaw.spec_path, "record.artifact_ref.spec_path", violations);
+		if (specPath !== undefined && (!/^docs\/specs\/(?!archive\/)[A-Za-z0-9._/-]+\.spec\.md$/.test(specPath) || specPath.includes("..")))
+			violations.push("record.artifact_ref.spec_path must be one canonical active Spec path");
+		artifactRef = { state, ...(specPath === undefined ? {} : { spec_path: specPath }) };
+	}
+
+	const activeIntentPath = `docs/plans/${taskId}.intent.json`;
+	const frozenIntentPath = `docs/plans/archive/${taskId}.intent.json`;
 	if (
 		snapshot &&
 		(snapshot.task_id !== taskId ||
 			snapshot.revision !== intentRevision ||
 			snapshot.revision !== refRevision ||
-			refPath !== `docs/plans/${taskId}.intent.json`)
+			(refPath !== activeIntentPath && refPath !== frozenIntentPath))
 	)
 		violations.push("intent_snapshot and intent_ref must match record identity");
+	if (artifactRef?.state === "active" && refPath !== activeIntentPath)
+		violations.push("active artifact_ref requires the active intent path");
+	if (artifactRef?.state === "frozen" && refPath !== frozenIntentPath)
+		violations.push("frozen artifact_ref requires the archived intent path");
 	if (
 		snapshot &&
 		refContentHash !== "" &&
@@ -416,6 +435,7 @@ export function parseTaskRecordV2(raw: unknown): TaskRecordV2 {
 			revision: refRevision,
 			content_hash: refContentHash,
 		},
+		...(artifactRef ? { artifact_ref: artifactRef } : {}),
 		phase,
 		baseline,
 		evidence,

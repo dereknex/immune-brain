@@ -36,6 +36,7 @@ export const DIST_DOC_ENTRIES: DistDocEntry[] = [
 	{ rel: "reference/design-contract-review-checklist.md", mode: "mirror" },
 	{ rel: "reference/subagent-dispatch-protocol.md", mode: "mirror" },
 	{ rel: "reference/i18n-review-checklist.md", mode: "mirror" },
+	{ rel: "reference/planning-artifact-retention.md", mode: "mirror" },
 	{ rel: "reference/planning-quality-gate.md", mode: "mirror" },
 	{ rel: "reference/review-host-dispatch-protocol.md", mode: "mirror" },
 	{ rel: "reference/subagent-trigger-catalog.yaml", mode: "mirror" },

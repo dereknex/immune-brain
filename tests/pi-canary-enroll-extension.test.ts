@@ -146,13 +146,24 @@ describe("pi canary enroll extension", () => {
 		);
 	}
 
+	async function capturedToolFailure(promise: Promise<unknown>) {
+		try {
+			await promise;
+			throw new Error("expected Tool failure");
+		} catch (error) {
+			const failure = JSON.parse(error instanceof Error ? error.message : String(error));
+			expect(failure.contract).toBe("immune_brain/tool_failure/v1");
+			return failure;
+		}
+	}
+
 	test("non-TUI modes reject before any readiness read or confirm", async () => {
 		const root = makeRoot();
 		const ui = makeFakeUI(true);
 		for (const mode of ["rpc", "json", "print"] as Mode[]) {
-			const result = await directTool(root, ui, mode, "task-001");
-			expect(result.details.state).toBe("blocked");
-			expect(result.details.summary).toMatch(/TUI-only/i);
+			const result = await capturedToolFailure(directTool(root, ui, mode, "task-001"));
+			expect(result.state).toBe("blocked");
+			expect(result.message).toMatch(/TUI-only/i);
 			expect(ui.confirmCalls.length).toBe(0);
 		}
 		expect(readdirSync(join(root, ".imm", "tasks"))).toEqual([]);
@@ -161,9 +172,9 @@ describe("pi canary enroll extension", () => {
 	test("missing intent sidecar rejects before any confirm", async () => {
 		const root = makeRoot();
 		const ui = makeFakeUI(true);
-		const result = await directTool(root, ui, "tui", "task-001");
-		expect(result.details.state).toBe("blocked");
-		expect(result.details.summary).toMatch(/TaskIntent is required/i);
+		const result = await capturedToolFailure(directTool(root, ui, "tui", "task-001"));
+		expect(result.state).toBe("blocked");
+		expect(result.message).toMatch(/TaskIntent is required/i);
 		expect(ui.confirmCalls.length).toBe(0);
 		expect(readdirSync(join(root, ".imm", "tasks"))).toEqual([]);
 	});
@@ -187,24 +198,35 @@ describe("pi canary enroll extension", () => {
 		);
 		execFileSync("git", ["add", "docs/plans/task-001.intent.json"], { cwd: root, stdio: "ignore" });
 		execFileSync("git", ["commit", "-qm", "malformed intent fixture"], { cwd: root, stdio: "ignore" });
-		const result = await directTool(root, makeFakeUI(true), "tui", "task-001");
-		expect(result.details.state).toBe("blocked");
-		expect(result.details.summary).toMatch(/TaskIntent validation failed/i);
-		expect(result.details.summary).toMatch(/intent\.goal/i);
-		expect(result.details.summary).not.toMatch(/TaskIntent is required/i);
+		const result = await capturedToolFailure(directTool(root, makeFakeUI(true), "tui", "task-001"));
+		expect(result.state).toBe("blocked");
+		expect(result.message).toMatch(/TaskIntent validation failed/i);
+		expect(result.message).toMatch(/intent\.goal/i);
+		expect(result.message).not.toMatch(/TaskIntent is required/i);
 	});
 
 	test("malformed task id rejects before any confirm", async () => {
 		const root = makeRoot();
 		const ui = makeFakeUI(true);
-		const result = await directTool(root, ui, "tui", "../evil");
-		expect(result.details.state).toBe("blocked");
-		expect(result.details.summary).toMatch(/invalid task id/i);
+		const result = await capturedToolFailure(directTool(root, ui, "tui", "../evil"));
+		expect(result.state).toBe("blocked");
+		expect(result.message).toMatch(/invalid task id/i);
 		expect(ui.confirmCalls.length).toBe(0);
 	});
 });
 
 describe("pi canary enroll handler integration", () => {
+	async function capturedToolFailure(promise: Promise<unknown>) {
+		try {
+			await promise;
+			throw new Error("expected Tool failure");
+		} catch (error) {
+			const failure = JSON.parse(error instanceof Error ? error.message : String(error));
+			expect(failure.contract).toBe("immune_brain/tool_failure/v1");
+			return failure;
+		}
+	}
+
 	const TASK = "enroll-task-001";
 
 	function git(root: string, args: string[]): void {
@@ -690,10 +712,10 @@ describe("pi canary enroll handler integration", () => {
 					)}\n`,
 				);
 			};
-			const result = await runTool(root, ui);
+			const result = await capturedToolFailure(runTool(root, ui));
 			expect(ui.confirmCalls.length).toBe(1);
-			expect(result.details.state).toBe("blocked");
-			expect(result.details.summary).toMatch(/changed after confirmation|Descriptor rehearsal blocked/i);
+			expect(result.state).toBe("blocked");
+			expect(result.message).toMatch(/changed after confirmation|Descriptor rehearsal blocked/i);
 			expect(authoritySnapshot(root)).toBe(before);
 		} finally {
 			rmSync(root, { recursive: true, force: true });

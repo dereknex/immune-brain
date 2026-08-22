@@ -42,6 +42,18 @@ Settlement-class intents (terminal settlement, cancellation, timeout, race, or
 authority-lifecycle semantics) must embed the `Settlement-Design Contract`
 enumeration required by the loaded contract before they are execution-ready.
 
+## Reference Closure Preflight
+
+Before authoring a TaskIntent, trace each expected behavior from its public or
+runtime entry point through existing imports and callers to the highest focused
+behavioral tests. Include generated or packaged mirrors and every owner of the
+same state machine. Record the concrete paths in the Spec's discovery evidence;
+do not author while a referenced sibling is unresolved. Use the smallest
+coherent module directory for ordinary implementation scope. Keep Kernel,
+authority, migration, secret, and security-sensitive scope exact to the files
+proved necessary by the trace. Scope is closed by reference evidence, not by an
+exhaustive filename guess.
+
 ## Managed Request Routing
 
 `imm-planner` is the default planning phase for a clear repository mutation; the

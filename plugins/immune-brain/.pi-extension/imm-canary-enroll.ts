@@ -43,6 +43,7 @@ import {
 	withUserAttention,
 	type UserAttentionReason,
 } from "./pi-canary-interaction";
+import { isToolFailureState, throwToolFailure } from "./pi-canary-tool-failure";
 
 const TASK_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 const REHEARSAL_OUTPUT_SUMMARY_LIMIT = 512;
@@ -1220,9 +1221,25 @@ export default function (pi: ExtensionAPI) {
 		) => {
 			const { action, task_id: taskId } = params;
 			if ((action !== "new" && action !== "enroll") || !TASK_ID_PATTERN.test(taskId))
-				return enrollmentToolResult(terminal(action, taskId, "blocked", "preparing", `invalid task id or enrollment action: ${taskId}`, "invoke the launcher with one canonical task id"));
+				throwToolFailure({
+					tool: "imm_canary_enrollment",
+					task_id: taskId,
+					operation: action,
+					state: "blocked",
+					code: "invalid_request",
+					message: `invalid task id or enrollment action: ${taskId}`,
+					next_action: "invoke the launcher with one canonical task id",
+				});
 			if (ctx.mode !== "tui")
-				return enrollmentToolResult(terminal(action, taskId, "blocked", "preparing", "imm_canary_enrollment is TUI-only", "invoke the TUI launcher"));
+				throwToolFailure({
+					tool: "imm_canary_enrollment",
+					task_id: taskId,
+					operation: action,
+					state: "blocked",
+					code: "tui_required",
+					message: "imm_canary_enrollment is TUI-only",
+					next_action: "invoke the TUI launcher",
+				});
 			const authorityRegistry = await registry();
 			const result = await coordinator.run(action, taskId, signal, (foregroundSignal, beginCommit) =>
 				executeForegroundEnrollment(
@@ -1238,6 +1255,16 @@ export default function (pi: ExtensionAPI) {
 				));
 			const rendered = enrollmentToolResult(result);
 			presentTaskRailResult(ctx, taskId, rendered.details);
+			if (isToolFailureState(result.state))
+				throwToolFailure({
+					tool: "imm_canary_enrollment",
+					task_id: taskId,
+					operation: action,
+					state: result.state,
+					code: `enrollment_${result.state}`,
+					message: result.summary,
+					next_action: result.next_action,
+				});
 			return rendered;
 		},
 		renderCall(args, theme) {

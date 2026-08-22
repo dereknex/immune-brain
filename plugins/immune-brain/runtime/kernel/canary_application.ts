@@ -12,17 +12,26 @@ import {
 	type MutationAuthorityRegistry,
 } from "./authority_port";
 import { applyTaskActionV2 } from "./application_v2";
+import { readTaskIntent } from "./intent";
+import {
+	inspectIntentTokenPair,
+	consumeIntentToken,
+} from "./intent_token_registry";
 import {
 	readBackendClaim,
 	serializeBackendClaim,
 	type BackendClaim,
 } from "./backend_claim";
 import { canonicalIntentHash } from "./intent";
+import { parseTaskRecordV2 } from "./validation";
 import type { TaskIntentIdentityToken } from "./intent_token_registry";
 import {
 	commitDrainLocked,
+	commitTaskRecordV2Locked,
+	readSecureProjectFile,
 	readTaskRecordV2Raw,
 	readWorkspaceStateRaw,
+	revisionForContent,
 	withKernelStoreLockV2,
 } from "./storage";
 import { KernelInvariantError } from "./validation";
@@ -30,12 +39,14 @@ import type {
 	EvidenceStatus,
 	StoredTaskMutationV2,
 	TaskActionV2,
+	TaskArtifactRefV1,
 	TaskApprovalV2,
 	TaskFinding,
 	TaskIntentV1,
 } from "./types";
 
 export type CanaryOperation =
+	| { op: "freeze_artifacts"; actor_id: string }
 	| { op: "record_evidence"; acceptance_id: string; status: EvidenceStatus; summary: string; actor_id: string }
 	| { op: "record_finding"; finding: Omit<TaskFinding, "status" | "source" | "review_round">; actor_id: string }
 	| { op: "resolve_finding"; finding_id: string; actor_id: string }
@@ -157,10 +168,135 @@ export function capabilityActionFor(input: {
 	}
 }
 
+function archivePath(path: string): string {
+	const matched = path.match(/^docs\/(plans|specs)\/([^/]+)$/);
+	if (!matched) throw new KernelInvariantError([`artifact path is not active: ${path}`]);
+	return `docs/${matched[1]}/archive/${matched[2]}`;
+}
+
+function readBoundActiveSpec(
+	root: string,
+	intent: TaskIntentV1,
+	required = true,
+): { path: string; content: string } | undefined {
+	const candidates: Array<{ path: string; content: string }> = [];
+	for (const path of intent.scope_hint) {
+		if (!/^docs\/specs\/(?!archive\/)[^/]+\.spec\.md$/.test(path)) continue;
+		if (!intent.scope_hint.includes(archivePath(path))) continue;
+		try {
+			candidates.push({ path, content: readSecureProjectFile(root, path) });
+		} catch (error) {
+			if (!(error instanceof Error) || !error.message.startsWith("source_missing:"))
+				throw error;
+		}
+	}
+	if (candidates.length === 0 && !required) return undefined;
+	if (candidates.length !== 1)
+		throw new KernelInvariantError([
+			`artifact freeze requires exactly one existing scope-bound active Spec; found ${candidates.length}`,
+		]);
+	return candidates[0];
+}
+
+function transitionFor(
+	root: string,
+	record: { intent_ref: { path: string }; intent_snapshot: TaskIntentV1; artifact_ref?: TaskArtifactRefV1 },
+	direction: "freeze" | "restore",
+	allowIntentOnly = false,
+) {
+	const activeIntent = `docs/plans/${record.intent_snapshot.task_id}.intent.json`;
+	const frozenIntent = archivePath(activeIntent);
+	if (direction === "freeze") {
+		if (record.intent_ref.path !== activeIntent)
+			throw new KernelInvariantError(["artifact freeze requires the active intent path"]);
+		const spec = record.artifact_ref?.spec_path
+			? { path: record.artifact_ref.spec_path, content: readSecureProjectFile(root, record.artifact_ref.spec_path) }
+			: readBoundActiveSpec(root, record.intent_snapshot, !allowIntentOnly);
+		const intentContent = readSecureProjectFile(root, activeIntent);
+		return {
+			relocations: [
+				{ from_path: activeIntent, to_path: frozenIntent, content_hash: revisionForContent(intentContent) },
+				...(spec ? [{ from_path: spec.path, to_path: archivePath(spec.path), content_hash: revisionForContent(spec.content) }] : []),
+			],
+			next_intent_path: frozenIntent,
+			next_artifact_ref: { state: "frozen" as const, ...(spec ? { spec_path: spec.path } : {}) },
+		};
+	}
+	if (record.intent_ref.path !== frozenIntent || record.artifact_ref?.state !== "frozen")
+		throw new KernelInvariantError(["artifact restore requires a frozen TaskRecord"]);
+	const specPath = record.artifact_ref.spec_path;
+	return {
+		relocations: [
+			{ from_path: frozenIntent, to_path: activeIntent, content_hash: revisionForContent(readSecureProjectFile(root, frozenIntent)) },
+			...(specPath ? [{ from_path: archivePath(specPath), to_path: specPath, content_hash: revisionForContent(readSecureProjectFile(root, archivePath(specPath))) }] : []),
+		],
+		next_intent_path: activeIntent,
+		next_artifact_ref: { state: "active" as const, ...(specPath ? { spec_path: specPath } : {}) },
+	};
+}
+
 export function createCanaryApplication(
 	registry: MutationAuthorityRegistry,
 ): CanaryApplication {
+	function freezeArtifacts(input: CanaryExecuteInput): StoredTaskMutationV2 {
+		return withKernelStoreLockV2(input.root, () => {
+			const current = readTaskRecordV2Raw(input.root, input.task_id);
+			if (!current.record)
+				throw new KernelInvariantError([`task ${input.task_id} has no TaskRecord v2`]);
+			const workspace = readWorkspaceStateRaw(input.root);
+			if (current.record.artifact_ref?.state === "frozen")
+				return { revision: current.revision, record: current.record, workspace };
+			if (current.record.phase !== "working")
+				throw new KernelInvariantError([`artifact freeze requires working phase, got ${current.record.phase}`]);
+			if (workspace.state.current_working !== input.task_id)
+				throw new KernelInvariantError([`workspace is not owned by task ${input.task_id}`]);
+			const fresh = readTaskIntent(input.root, input.task_id, current.record.intent_ref.path);
+			const pair = inspectIntentTokenPair(input.prior_intent_token, fresh.token);
+			if (
+				pair.prior.intent_content_hash !== current.record.intent_ref.content_hash
+				|| pair.current.intent_content_hash !== current.record.intent_ref.content_hash
+				|| pair.prior.sidecar_path !== current.record.intent_ref.path
+				|| pair.current.sidecar_path !== current.record.intent_ref.path
+				|| pair.prior.path_dev !== pair.current.path_dev
+				|| pair.prior.path_ino !== pair.current.path_ino
+				|| pair.prior.fd_dev !== pair.current.fd_dev
+				|| pair.prior.fd_ino !== pair.current.fd_ino
+			)
+				throw new KernelInvariantError(["intent token does not bind the active freeze artifact"]);
+			const transition = transitionFor(input.root, current.record, "freeze");
+			consumeIntentToken(input.prior_intent_token);
+			consumeIntentToken(fresh.token);
+			const at = input.now ?? new Date().toISOString();
+			const nextRecord = parseTaskRecordV2({
+				...current.record,
+				intent_ref: { ...current.record.intent_ref, path: transition.next_intent_path },
+				artifact_ref: transition.next_artifact_ref,
+				history: [
+					...current.record.history,
+					{
+						id: `freeze_artifacts:${input.task_id}:${at}`,
+						at,
+						type: "freeze_artifacts",
+						from_phase: current.record.phase,
+						to_phase: current.record.phase,
+						reason: `TaskIntent and Spec frozen at ${transition.next_intent_path}`,
+					},
+				],
+			});
+			return commitTaskRecordV2Locked(
+				input.root,
+				input.task_id,
+				current.revision,
+				nextRecord,
+				workspace.revision,
+				workspace.state,
+				transition.relocations,
+			);
+		});
+	}
+
 	function execute(input: CanaryExecuteInput): StoredTaskMutationV2 {
+		if (input.operation.op === "freeze_artifacts") return freezeArtifacts(input);
 		if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(input.task_id))
 			throw new KernelInvariantError(["task id is not a safe file identity"]);
 		const now = input.now ?? new Date().toISOString();
@@ -182,9 +318,23 @@ export function createCanaryApplication(
 				intent_revision: current.record.intent_revision,
 				intent_content_hash: current.record.intent_ref.content_hash,
 				intent_snapshot: current.record.intent_snapshot,
+				record: current.record,
 			};
 		});
 		const diffHash = input.diffProvider(input.root, snapshot.intent_snapshot);
+		if (operation.op === "stop" && !("capability" in operation))
+			throw new KernelInvariantError(["stop requires user authority capability"]);
+		const hasBoundSpec = snapshot.intent_snapshot.scope_hint.some(
+			(path) => /^docs\/specs\/(?!archive\/)[^/]+\.spec\.md$/.test(path)
+				&& snapshot.intent_snapshot.scope_hint.includes(archivePath(path)),
+		);
+		if (operation.op === "complete" && hasBoundSpec && snapshot.record.artifact_ref?.state !== "frozen")
+			throw new KernelInvariantError(["complete requires frozen planning artifacts"]);
+		const artifactTransition = operation.op === "request_rework" && snapshot.record.artifact_ref?.state === "frozen"
+			? transitionFor(input.root, snapshot.record, "restore")
+			: operation.op === "stop" && snapshot.record.artifact_ref?.state !== "frozen"
+				? transitionFor(input.root, snapshot.record, "freeze", true)
+				: undefined;
 		const event_id = `${operation.op}:${input.task_id}:${at}`;
 		const base = {
 			event_id,
@@ -303,6 +453,7 @@ export function createCanaryApplication(
 			...(operation.op === "complete" || operation.op === "stop"
 				? { terminal: { terminalized_at: now } }
 				: {}),
+			...(artifactTransition ? { artifact_transition: artifactTransition } : {}),
 		});
 	}
 

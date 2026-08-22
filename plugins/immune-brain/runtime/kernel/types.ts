@@ -149,12 +149,18 @@ export interface TaskHistoryEntryV2 {
 	authority?: AuthorityAuditDescriptorV2;
 }
 
+export interface TaskArtifactRefV1 {
+	state: "active" | "frozen";
+	spec_path?: string;
+}
+
 export interface TaskRecordV2 {
 	contract: typeof TASK_RECORD_CONTRACT_V2;
 	task_id: string;
 	intent_revision: number;
 	intent_snapshot: TaskIntentV1;
 	intent_ref: TaskIntentRefV1;
+	artifact_ref?: TaskArtifactRefV1;
 	phase: TaskPhase;
 	baseline: string;
 	evidence: TaskEvidenceV2[];

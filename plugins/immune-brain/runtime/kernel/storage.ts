@@ -552,6 +552,12 @@ const DRAIN_MARKER_PATH = ".imm/tasks/.drain-transaction.json";
 const TERMINAL_MARKER_PATH = ".imm/tasks/.terminal-transaction.json";
 const AUTHORITY_REPAIR_MARKER_PATH = ".imm/tasks/.authority-repair-transaction.json";
 
+export interface ArtifactRelocationV1 {
+	from_path: string;
+	to_path: string;
+	content_hash: string;
+}
+
 interface WorkspaceTransactionV2 {
 	contract: "assurance_kernel/workspace_transaction/v2";
 	task_id: string;
@@ -559,6 +565,7 @@ interface WorkspaceTransactionV2 {
 	next_record_content: string;
 	expected_workspace_hash: string;
 	next_workspace_content: string;
+	artifact_relocations?: ArtifactRelocationV1[];
 }
 
 export type { WorkspaceTransactionV2 };
@@ -575,6 +582,7 @@ function parseWorkspaceTransactionV2(raw: Record<string, unknown>): WorkspaceTra
 		"next_record_content",
 		"expected_workspace_hash",
 		"next_workspace_content",
+		"artifact_relocations",
 	];
 	const unknown = Object.keys(raw).filter((key) => !allowed.includes(key));
 	if (unknown.length > 0)
@@ -585,13 +593,33 @@ function parseWorkspaceTransactionV2(raw: Record<string, unknown>): WorkspaceTra
 		throw new KernelStoreSecurityError(
 			"workspace transaction v2 contract is invalid",
 		);
-	for (const field of allowed.slice(1)) {
+	for (const field of allowed.slice(1, 6)) {
 		if (typeof raw[field] !== "string" || !String(raw[field]).trim())
 			throw new KernelStoreSecurityError(
 				`workspace transaction v2 ${field} is invalid`,
 			);
 	}
-	const transaction = raw as unknown as WorkspaceTransactionV2;
+	const relocationRaw = raw.artifact_relocations;
+	if (relocationRaw !== undefined && !Array.isArray(relocationRaw))
+		throw new KernelStoreSecurityError("workspace transaction v2 artifact_relocations is invalid");
+	const artifactRelocations = (relocationRaw ?? []).map((item, index) => {
+		if (!item || typeof item !== "object" || Array.isArray(item))
+			throw new KernelStoreSecurityError(`artifact relocation ${index} is invalid`);
+		const value = item as Record<string, unknown>;
+		const unknownFields = Object.keys(value).filter((key) => !["from_path", "to_path", "content_hash"].includes(key));
+		if (unknownFields.length > 0)
+			throw new KernelStoreSecurityError(`artifact relocation has unknown field: ${unknownFields[0]}`);
+		for (const field of ["from_path", "to_path", "content_hash"])
+			if (typeof value[field] !== "string" || !String(value[field]).trim())
+				throw new KernelStoreSecurityError(`artifact relocation ${field} is invalid`);
+		const relocation = value as unknown as ArtifactRelocationV1;
+		assertArtifactRelocation(relocation);
+		return relocation;
+	});
+	const transaction = {
+		...(raw as unknown as WorkspaceTransactionV2),
+		...(artifactRelocations.length > 0 ? { artifact_relocations: artifactRelocations } : {}),
+	};
 	validateTaskId(transaction.task_id);
 	const record = parseTaskRecordV2(
 		JSON.parse(transaction.next_record_content),
@@ -625,11 +653,47 @@ function removeTransactionMarkerV2(root: string): void {
 	fsyncDirectory(dirname(candidate.path));
 }
 
+function archiveArtifactPath(path: string): string | null {
+	const matched = path.match(/^docs\/(plans|specs)\/([^/]+)$/);
+	return matched ? `docs/${matched[1]}/archive/${matched[2]}` : null;
+}
+
+function assertArtifactRelocation(relocation: ArtifactRelocationV1): void {
+	if (!/^sha256:[a-f0-9]{64}$/.test(relocation.content_hash))
+		throw new KernelStoreSecurityError("artifact relocation content_hash is invalid");
+	if (
+		archiveArtifactPath(relocation.from_path) !== relocation.to_path
+		&& archiveArtifactPath(relocation.to_path) !== relocation.from_path
+	)
+		throw new KernelStoreSecurityError("artifact relocation paths must be one active/archive pair");
+}
+
+function convergeArtifactRelocation(root: string, relocation: ArtifactRelocationV1): void {
+	assertArtifactRelocation(relocation);
+	const fromRevision = currentRevision(root, relocation.from_path);
+	const toRevision = currentRevision(root, relocation.to_path);
+	if (fromRevision === MISSING_REVISION && toRevision === relocation.content_hash) return;
+	if (fromRevision !== relocation.content_hash || toRevision !== MISSING_REVISION)
+		throw new KernelStoreConflictError(
+			`artifact relocation conflict for ${relocation.from_path} -> ${relocation.to_path}`,
+		);
+	const from = safeCandidate(root, relocation.from_path);
+	const to = safeCandidate(root, relocation.to_path);
+	ensureSecureDirectory(root, relative(to.root, dirname(to.path)));
+	assertNoSymlinkSegments(from.root, from.path);
+	assertNoSymlinkSegments(to.root, to.path);
+	renameSync(from.path, to.path);
+	fsyncDirectory(dirname(from.path));
+	if (dirname(from.path) !== dirname(to.path)) fsyncDirectory(dirname(to.path));
+}
+
 function completeTransactionV2Locked(
 	root: string,
 	transaction: WorkspaceTransactionV2,
 	invokeTestHook: boolean,
 ): StoredTaskMutationV2 {
+	for (const relocation of transaction.artifact_relocations ?? [])
+		convergeArtifactRelocation(root, relocation);
 	const taskPath = `.imm/tasks/${transaction.task_id}.json`;
 	const taskRevision = convergeFile(
 		root,
@@ -726,6 +790,7 @@ export function commitTaskRecordV2Locked(
 	nextRecord: TaskRecordV2,
 	expectedWorkspaceHash: string,
 	nextWorkspace: WorkspaceState,
+	artifactRelocations: ArtifactRelocationV1[] = [],
 ): StoredTaskMutationV2 {
 	const transaction: WorkspaceTransactionV2 = {
 		contract: "assurance_kernel/workspace_transaction/v2",
@@ -734,6 +799,7 @@ export function commitTaskRecordV2Locked(
 		next_record_content: `${JSON.stringify(nextRecord, null, 2)}\n`,
 		expected_workspace_hash: expectedWorkspaceHash,
 		next_workspace_content: serializeWorkspace(nextWorkspace),
+		...(artifactRelocations.length > 0 ? { artifact_relocations: artifactRelocations } : {}),
 	};
 	atomicCasWrite(
 		root,
@@ -1397,6 +1463,8 @@ function recoverPendingTerminalLocked(root: string): void {
 	const marker = readPendingTerminalMarker(root);
 	if (!marker) return;
 	const transaction = marker.transaction;
+	for (const relocation of transaction.artifact_relocations ?? [])
+		convergeArtifactRelocation(root, relocation);
 	const taskPath = `.imm/tasks/${transaction.task_id}.json`;
 	convergeFile(
 		root,

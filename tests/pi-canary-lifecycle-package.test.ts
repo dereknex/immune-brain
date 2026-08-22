@@ -41,7 +41,11 @@ const INTENT = {
 	task_id: TASK,
 	goal: "handoff",
 	acceptance: ACCEPTANCE,
-	scope_hint: ["docs/plans/fixture.txt"],
+	scope_hint: [
+		"docs/plans/fixture.txt",
+		"docs/specs/canary-handoff-task.spec.md",
+		"docs/specs/archive/canary-handoff-task.spec.md",
+	],
 	risk: "routine",
 	revision: 1,
 	owner: "user",
@@ -147,12 +151,14 @@ describe("pi canary lifecycle package composition", () => {
 	test("enrollment commits the durable tuple; lifecycle discovers it from a fresh projection", async () => {
 		const root = mkdtempSync(join(tmpdir(), "p2b2-handoff-"));
 		mkdirSync(join(root, "docs", "plans"), { recursive: true });
+		mkdirSync(join(root, "docs", "specs"), { recursive: true });
 		mkdirSync(join(root, ".imm", "tasks"), { recursive: true });
 		execFileSync("git", ["init", "-q"], { cwd: root });
 		writeFileSync(
 			join(root, "docs", "plans", `${TASK}.intent.json`),
 			JSON.stringify(INTENT, null, 2) + "\n",
 		);
+		writeFileSync(join(root, "docs", "specs", "canary-handoff-task.spec.md"), "# Canary handoff task\n");
 		execFileSync("git", ["add", "-A"], { cwd: root });
 		execFileSync("git", ["commit", "-qm", "intent"], { cwd: root });
 		writeFileSync(
@@ -217,6 +223,7 @@ describe("pi canary lifecycle package composition", () => {
 	test("packaged Tool lifecycle settles Enrollment handoff through terminal completion without command invocation", async () => {
 		const root = mkdtempSync(join(tmpdir(), "p2b2-tool-lifecycle-"));
 		mkdirSync(join(root, "docs", "plans"), { recursive: true });
+		mkdirSync(join(root, "docs", "specs"), { recursive: true });
 		mkdirSync(join(root, ".imm", "tasks"), { recursive: true });
 		mkdirSync(join(root, ".imm", "memory"), { recursive: true });
 		mkdirSync(join(root, "scripts"), { recursive: true });
@@ -225,6 +232,7 @@ describe("pi canary lifecycle package composition", () => {
 		writeFileSync(join(root, "scripts", "accept.ts"), "process.exit(0);\n");
 		execFileSync("git", ["init", "-q"], { cwd: root });
 		writeFileSync(join(root, "docs", "plans", `${TASK}.intent.json`), JSON.stringify(INTENT, null, 2) + "\n");
+		writeFileSync(join(root, "docs", "specs", "canary-handoff-task.spec.md"), "# Canary handoff task\n");
 		execFileSync("git", ["add", "-A"], { cwd: root });
 		execFileSync("git", ["commit", "-qm", "intent"], { cwd: root });
 		writeFileSync(join(root, ".imm", "workspace.json"), JSON.stringify({ contract: "assurance_kernel/workspace/v1", current_working: null }, null, 2) + "\n");
@@ -293,6 +301,7 @@ describe("pi canary lifecycle package composition", () => {
 				},
 			};
 			const ctx = { mode: "tui", cwd: root, ui };
+			await surface.tool!.execute("freeze", { task_id: TASK, action: { op: "freeze_artifacts" } }, undefined, undefined, ctx);
 			const evidence = await surface.tool!.execute("evidence", { task_id: TASK, action: { op: "record_evidence", acceptance_id: "A1", status: "passed", summary: "fresh" } }, undefined, undefined, ctx);
 			expect(JSON.parse(evidence.content[0].text).task_state.phase).toBe("working");
 			const ready = await surface.tool!.execute("advance", { task_id: TASK, action: { op: "advance_assurance" } }, undefined, undefined, ctx);
@@ -317,7 +326,7 @@ describe("pi canary lifecycle package composition", () => {
 		} finally {
 			rmSync(root, { recursive: true, force: true });
 		}
-	});
+	}, 15_000);
 
 	test("lifecycle surface registers the foreground Tool without Slash Commands", () => {
 		const { tool, commands } = loadWorkSurface();

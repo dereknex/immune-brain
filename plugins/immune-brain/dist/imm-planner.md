@@ -110,6 +110,16 @@ authorization with zero authority writes, and a routine task proceeds through
 enrollment, execution and QA without a second human stop. Optional descriptor
 waiver remains a separate explicit route.
 
+Before authoring a TaskIntent, trace each expected behavior from its public or
+runtime entry point through existing imports and callers to the highest focused
+behavioral tests. Include generated or packaged mirrors and every owner of the
+same state machine. Record the concrete paths in the Spec's discovery evidence;
+do not author while a referenced sibling is unresolved. Use the smallest
+coherent module directory for ordinary implementation scope. Keep Kernel,
+authority, migration, secret, and security-sensitive scope exact to the files
+proved necessary by the trace. Scope is closed by reference evidence, not by an
+exhaustive filename guess.
+
 The Planner never writes the `docs/plans/<task-id>.intent.json` artifact
 directly and never overwrites an existing TaskIntent. Under an active
 `kernel_task_intent` policy it supplies one complete candidate to the canonical

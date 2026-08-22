@@ -369,9 +369,13 @@ export interface WorkspaceRead {
 	revision: string;
 	state: { contract: string; current_working: string | null };
 }
-export async function readTaskIntent(root: string, taskId: string): Promise<TaskIntentRead> {
-	const mod = await import(/* @vite-ignore */ kernelPath("intent"));
-	return mod.readTaskIntent(root, taskId);
+export async function readTaskIntent(root: string, taskId: string, path?: string): Promise<TaskIntentRead> {
+	const [intent, storage] = await Promise.all([
+		import(/* @vite-ignore */ kernelPath("intent")),
+		import(/* @vite-ignore */ kernelPath("storage")),
+	]);
+	const currentPath = path ?? storage.readTaskRecordV2Raw(root, taskId).record?.intent_ref.path;
+	return intent.readTaskIntent(root, taskId, currentPath);
 }
 export async function parseTaskIntentV1(raw: unknown): Promise<TaskIntentV1> {
 	const mod = await import(/* @vite-ignore */ kernelPath("intent"));

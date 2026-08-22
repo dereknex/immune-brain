@@ -27,7 +27,10 @@ const INTENT = {
 		assertion: "a1",
 		verification: JSON.stringify({ contract: "assurance_kernel/verification_descriptor/v1", runner_id: "bun", runner_version: "1.3.14", argv: ["test"], cwd: ".", timeout_ms: 1_000, max_output_bytes: 1_024 }),
 	}],
-	scope_hint: ["plugins/immune-brain/.pi-extension"],
+	scope_hint: [
+		`docs/plans/${TASK}.intent.json`,
+		"plugins/immune-brain/.pi-extension",
+	],
 	risk: "routine",
 	revision: 1,
 	owner: "user",
@@ -71,6 +74,13 @@ function makeCtx(root: string, ui: FakeUI, mode = "tui", approve = true) {
 			},
 		},
 	};
+}
+
+async function captureToolFailure(promise: Promise<unknown>): Promise<Record<string, unknown>> {
+	return promise.then(
+		() => { throw new Error("expected Tool failure"); },
+		(error: unknown) => JSON.parse(error instanceof Error ? error.message : String(error)),
+	);
 }
 
 function makeEnrolledRoot(): string {
@@ -266,14 +276,18 @@ describe("breaking intent revision gate", () => {
 			expect(snapshot()).toEqual(before);
 
 			const nonTuiUi = makeUI();
-			const nonTui = await tool.execute(
+			const nonTui = await captureToolFailure(tool.execute(
 				"break-print",
 				{ task_id: TASK, action: { op: "approve_breaking_intent_revision", next_intent: breakingIntent() } },
 				undefined,
 				undefined,
 				makeCtx(root, nonTuiUi, "print"),
-			);
-			expect(String(nonTui.content[0].text)).toMatch(/TUI-only/i);
+			));
+			expect(nonTui).toMatchObject({
+				contract: "immune_brain/tool_failure/v1",
+				state: "blocked",
+				message: expect.stringMatching(/TUI-only/i),
+			});
 			expect(nonTuiUi.dialogCalls).toHaveLength(0);
 			expect(snapshot()).toEqual(before);
 		} finally { rmSync(root, { recursive: true, force: true }); }

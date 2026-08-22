@@ -468,11 +468,16 @@ function assertIdentitiesUnchanged(
 export function readTaskIntent(
 	root: string,
 	taskId: string,
+	requestedPath?: string,
 ): ReadTaskIntentResult {
 	validateTaskId(taskId);
 
 	const canonicalRoot = resolveCanonicalRoot(root);
-	const sidecarPath = `${INTENT_SIDECAR_RELATIVE_PREFIX}${taskId}.intent.json`;
+	const activePath = `${INTENT_SIDECAR_RELATIVE_PREFIX}${taskId}.intent.json`;
+	const archivedPath = `${INTENT_SIDECAR_RELATIVE_PREFIX}archive/${taskId}.intent.json`;
+	const sidecarPath = requestedPath ?? activePath;
+	if (sidecarPath !== activePath && sidecarPath !== archivedPath)
+		throw new Error("intent sidecar path is not the active or archived task path");
 	const target = join(canonicalRoot, sidecarPath);
 	if (!target.startsWith(canonicalRoot + sep))
 		throw new Error("intent sidecar escapes project root");

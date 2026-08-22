@@ -31,12 +31,14 @@ import {
 	withKernelStoreLockV2,
 	type WorkspaceState,
 	type WorkspaceTransactionV2,
+	type ArtifactRelocationV1,
 } from "./storage";
 import type {
 	AuthorityAuditDescriptorV2,
 	MutationAuthorityCapabilityV2,
 	StoredTaskMutationV2,
 	TaskActionV2,
+	TaskArtifactRefV1,
 	TaskIntentV1,
 } from "./types";
 import { TASK_TOMBSTONE_CONTRACT, type TaskTombstone } from "./backend_claim";
@@ -60,6 +62,11 @@ export interface ApplyTaskActionV2Input {
 	 */
 	terminal?: {
 		terminalized_at: string;
+	};
+	artifact_transition?: {
+		relocations: ArtifactRelocationV1[];
+		next_intent_path: string;
+		next_artifact_ref: TaskArtifactRefV1;
 	};
 }
 
@@ -91,7 +98,7 @@ export function applyTaskActionV2(
 			]);
 
 		// Fresh secure reread of the sidecar inside the same lock.
-		const freshRead = readTaskIntent(root, task_id);
+		const freshRead = readTaskIntent(root, task_id, current.record.intent_ref.path);
 		const { prior: priorIdentity, current: currentIdentity } =
 			inspectIntentTokenPair(prior_intent_token, freshRead.token);
 		if (
@@ -229,6 +236,16 @@ export function applyTaskActionV2(
 		}
 
 		const nextWorking = mutation.next_workspace_working;
+		const nextRecord = input.artifact_transition
+			? {
+					...mutation.record,
+					intent_ref: {
+						...mutation.record.intent_ref,
+						path: input.artifact_transition.next_intent_path,
+					},
+					artifact_ref: { ...input.artifact_transition.next_artifact_ref },
+				}
+			: mutation.record;
 		let nextWorkspaceState: WorkspaceState = workspace.state;
 		if (nextWorking !== null) {
 			nextWorkspaceState = {
@@ -247,23 +264,24 @@ export function applyTaskActionV2(
 				contract: TASK_TOMBSTONE_CONTRACT,
 				task_id,
 				lifecycle_status: "terminal",
-				terminal_phase: mutation.record.phase,
+				terminal_phase: nextRecord.phase,
 				terminal_event_id: action.event_id,
-				final_record_hash: canonicalRecordHashV2(mutation.record),
+				final_record_hash: canonicalRecordHashV2(nextRecord),
 				terminalized_at: input.terminal.terminalized_at,
 			};
 			const transaction: WorkspaceTransactionV2 = {
 				contract: "assurance_kernel/workspace_transaction/v2",
 				task_id,
 				expected_record_hash: current.revision,
-				next_record_content: `${JSON.stringify(mutation.record, null, 2)}\n`,
+				next_record_content: `${JSON.stringify(nextRecord, null, 2)}\n`,
 				expected_workspace_hash: workspace.revision,
 				next_workspace_content: serializeWorkspace(nextWorkspaceState),
+				...(input.artifact_transition ? { artifact_relocations: input.artifact_transition.relocations } : {}),
 			};
 			commitTerminalLocked(root, task_id, transaction, tombstone);
 			return {
-				revision: canonicalRecordHashV2(mutation.record),
-				record: mutation.record,
+				revision: canonicalRecordHashV2(nextRecord),
+				record: nextRecord,
 				workspace: {
 					revision: revisionForContent(serializeWorkspace(nextWorkspaceState)),
 					state: nextWorkspaceState,
@@ -275,9 +293,10 @@ export function applyTaskActionV2(
 			root,
 			task_id,
 			current.revision,
-			mutation.record,
+			nextRecord,
 			workspace.revision,
 			nextWorkspaceState,
+			input.artifact_transition?.relocations,
 		);
 	});
 }
