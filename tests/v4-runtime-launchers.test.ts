@@ -31,6 +31,7 @@ function expectV4Manifest(output: string): void {
 		"imm-kernel",
 		"imm-plan",
 		"imm-route",
+		"imm-tracker",
 	]);
 	expect(manifest.retired).toContain("imm-heal");
 }

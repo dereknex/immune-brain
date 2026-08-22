@@ -33,7 +33,7 @@
 | engineering | `tdd` | `imm-executor` TDD Execution Discipline | execution posture 由 planner 标注 |
 | engineering | `prototype` | `imm-planner` Prototype Step + `imm-executor` | 已借鉴：throwaway artifact + decision capture |
 | engineering | `improve-codebase-architecture` | `imm-code-review` + `ce-architecture-strategist` | 架构改进走 review 或独立规划 |
-| engineering | `to-issues` | 不映射 | IB 不做 issue tracker 集成 |
+| engineering | `to-issues` | `imm-planner` + opt-in `imm-tracker` | 仅 one-way GitHub Issues visibility；Kernel 仍是唯一 execution truth |
 | engineering | `to-prd` | `imm-planner` spec 产出 | spec 在 `.imm/specs/` 而非独立 PRD |
 | engineering | `triage` | 不映射 | IB 不做 triage 状态机 |
 | engineering | `zoom-out` | `imm-brainstorm` framing | framing 阶段 zoom-out 视角 |
@@ -56,11 +56,12 @@
 7. **Lightweight ADR** → compounder ADR suggestion with three-criteria gate
 8. **Codebase-first questioning (grill-me)** → `imm-brainstorm` Inline Narrowing Challenge now resolves probes via file inspection / `docs/solutions/` / `CONTEXT.md` before surfacing to the user
 9. **Serial single-question + recommended answer (grill-me)** → `imm-brainstorm` `adversarial` mode now asks one question at a time with a recommended answer, walking decision-tree dependencies one-by-one
+10. **Opt-in Issue visibility (to-issues)** → `imm-planner` publishes Initiative/Task summaries through `imm-tracker`; there is no reverse sync, triage authority, or Kernel dependency
 
 ## 明确拒绝的模式
 
 | pocock pattern | 拒绝原因 | Immune-Brain 替代 |
 |----------------|---------|-------------------|
-| Issue tracker 集成 (to-issues / triage) | 项目管理不是 IMM 的域 | 用户自行管理 issue tracker |
+| Issue triage 状态机 | GitHub 状态不能驱动 Kernel authority | Issue 仅作 one-way visibility；执行事实仍来自 TaskRecord / Assurance projection |
 | 内容创作 skills (fragments/beats/shape) | 面向写作场景，不匹配 engineering workflow | 无替代 |
 | 松耦合无状态模型 | 无法保证权限分离和跨 step 证据链 | 权限分离 + `.imm/memory/` 持久态 |

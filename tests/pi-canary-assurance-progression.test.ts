@@ -1,8 +1,11 @@
 import { describe, expect, test } from "bun:test";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import {
 	AssuranceProgression,
 	buildReviewPrompt,
+	deriveGithubTerminalProjectionInput,
 	parseAssuranceVerdict,
 	snapshotDigest,
 	type AssuranceProgressionPorts,
@@ -321,6 +324,42 @@ test("native Review reservations inject the internal Code Review role contract",
 	expect(prompt).toContain("imm-code-review");
 	expect(prompt).toContain("do not discover or load Pi Skills");
 });
+test("projects GitHub terminal state only from an exact claimless tombstone", () => {
+	const settled = projection("done");
+	settled.claim = null;
+	const tombstone = {
+		task_id: TASK,
+		lifecycle_status: "terminal",
+		terminal_phase: "done",
+		terminal_event_id: "complete:phase3-task:2099-01-01T02:00:00.000Z",
+	} as never;
+	expect(deriveGithubTerminalProjectionInput(TASK, settled, tombstone)).toEqual({
+		task_id: TASK,
+		phase: "done",
+		terminal_event_id: "complete:phase3-task:2099-01-01T02:00:00.000Z",
+	});
+	expect(deriveGithubTerminalProjectionInput(TASK, { ...settled, claim: { task_id: TASK } } as never, tombstone)).toBeNull();
+	expect(deriveGithubTerminalProjectionInput(TASK, settled, { ...tombstone, terminal_phase: "stopped" })).toBeNull();
+	expect(deriveGithubTerminalProjectionInput(TASK, projection("review"), tombstone)).toBeNull();
+});
+
+test("host hooks publish only after Enrollment commit and fresh terminal projection", () => {
+	const root = resolve(import.meta.dir, "..");
+	const enrollment = readFileSync(resolve(root, "plugins/immune-brain/.pi-extension/imm-canary-enroll.ts"), "utf8");
+	const work = readFileSync(resolve(root, "plugins/immune-brain/.pi-extension/imm-canary-work.ts"), "utf8");
+	const enrollmentCommit = enrollment.indexOf("const result = await enrollCanaryTask");
+	const activeProjection = enrollment.indexOf("await markGithubTaskActive", enrollmentCommit);
+	expect(enrollmentCommit).toBeGreaterThan(0);
+	expect(activeProjection).toBeGreaterThan(enrollmentCommit);
+	const enrichment = work.indexOf("async function enrichAssuranceResult");
+	const freshProjection = work.indexOf("await projectAssuranceState", enrichment);
+	const tombstoneRead = work.indexOf("await readTaskTombstone", freshProjection);
+	const terminalProjection = work.indexOf("await markGithubTaskTerminal", tombstoneRead);
+	expect(freshProjection).toBeGreaterThan(enrichment);
+	expect(tombstoneRead).toBeGreaterThan(freshProjection);
+	expect(terminalProjection).toBeGreaterThan(tombstoneRead);
+});
+
 test("parseAssuranceVerdict rejects a verdict bound to another snapshot", () => {
 	const s = snapshot("review");
 	expect(() => parseAssuranceVerdict(resultText({ ...s, diff_hash: "sha256:other" }), s)).toThrow(/snapshot digest/i);

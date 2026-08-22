@@ -155,7 +155,7 @@ describe("python reference boundary", () => {
 		expect(result.status).toBe(0);
 		const manifest = JSON.parse(result.stdout);
 		const commands = manifest.commands.map((command: any) => command.name).sort();
-		expect(commands).toEqual(["imm-kernel", "imm-plan", "imm-route"]);
+		expect(commands).toEqual(["imm-kernel", "imm-plan", "imm-route", "imm-tracker"]);
 		for (const retired of [
 			"imm-autowork",
 			"imm-check-child-output",

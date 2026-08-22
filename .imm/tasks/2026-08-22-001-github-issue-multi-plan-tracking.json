@@ -1,0 +1,286 @@
+{
+  "contract": "assurance_kernel/task_record/v2",
+  "task_id": "2026-08-22-001-github-issue-multi-plan-tracking",
+  "intent_revision": 2,
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "2026-08-22-001-github-issue-multi-plan-tracking",
+    "goal": "Add an initiative-specific opt-in one-way GitHub Issues projection for multi-Plan work while Kernel remains the sole execution authority. A narrow internal imm-tracker route must upsert one parent Initiative Issue and one proposed child only after canonical TaskIntent author+validate; successful literal-user Enrollment may mark it active; only a fresh exact named claimless done or stopped Assurance projection may close it as completed or not planned. Versioned repository-ID, immutable Initiative-slug, and task-ID markers plus one managed region must preserve human edits, converge after indeterminate gh outcomes, and reject duplicate or malformed associations without remote writes. Tracker failures affect only later GitHub writes for that association and never block or mutate planning, Enrollment, QA, Review, TaskRecord, claims, tombstones, or settlement. Triggers are validated publication, Enrollment commit, completion, literal-user stop, terminal replay, cancellation, shutdown, timeout, transport/provider failure, malformed output, and process termination. Kernel states remain working, review, done, stopped; tracker observations are non-authoritative. Kernel reducer/application and terminal transaction solely own settlement; literal-user confirmation owns Enrollment/stop; promise or gh status, Issue state, Parent text, elapsed time, process absence, Review pass, and completion_ready are non-authoritative. Review the reducer, application, completion, storage, backend-claim, Assurance-projection, Enrollment, progression, and Work consumption paths as one settlement machine. Preserve TaskIntent/TaskRecord schemas, parent manual closure, disabled-by-default compatibility, credential secrecy, publication allowlist, source/packed parity, three public Skills, and rejection of reverse sync, Projects v2, automatic successor authority, queues, DAGs, and backfill.",
+    "acceptance": [
+      {
+        "id": "acc-github-tracker-adapter",
+        "assertion": "The internal imm-tracker source and packed CLI implement versioned exact identity markers, human-preserving managed-region reconciliation, create-then-requery and indeterminate-result recovery, duplicate and malformed association rejection, bounded redacted closed result states, inherited gh authentication without token persistence, and zero Kernel or .imm writes across success and failure.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/plugin-package-runtime.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 180000,\n  \"max_output_bytes\": 65536\n}\n"
+      },
+      {
+        "id": "acc-github-tracker-lifecycle",
+        "assertion": "Planner publishes only explicitly opted-in canonically validated TaskIntents as proposed, Enrollment publishes active only after authority commit, and Work/Assurance publishes completed or not planned only after a fresh exact claimless done or stopped projection; GitHub failure never changes workflow outcome, source and packaged contracts remain aligned, the parent is not auto-closed, and the documented policy permits only this one-way non-authoritative exception without adding a public Skill or reverse authority.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/pi-canary-assurance-progression.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 180000,\n  \"max_output_bytes\": 65536\n}\n"
+      }
+    ],
+    "scope_hint": [
+      "CONTEXT.md",
+      "docs/reference/mattpocock-skills-contrast.md",
+      "docs/specs/github-issue-multi-plan-tracking.spec.md",
+      "package.json",
+      "plugins/immune-brain/.pi-extension/imm-canary-enroll.ts",
+      "plugins/immune-brain/.pi-extension/imm-canary-work.ts",
+      "plugins/immune-brain/.pi-extension/pi-canary-assurance-progression.ts",
+      "plugins/immune-brain/.pi-extension/runtime-stub.ts",
+      "plugins/immune-brain/bin/imm-tracker",
+      "plugins/immune-brain/dist/imm-loop.md",
+      "plugins/immune-brain/dist/imm-planner.md",
+      "plugins/immune-brain/runtime/github_issue_tracker.ts",
+      "plugins/immune-brain/runtime/kernel/application_v2.ts",
+      "plugins/immune-brain/runtime/kernel/assurance_projection.ts",
+      "plugins/immune-brain/runtime/kernel/backend_claim.ts",
+      "plugins/immune-brain/runtime/kernel/completion.ts",
+      "plugins/immune-brain/runtime/kernel/reducer_v2.ts",
+      "plugins/immune-brain/runtime/kernel/storage.ts",
+      "plugins/immune-brain/runtime/v4_runtime.ts",
+      "plugins/immune-brain/skills/imm-loop/SKILL.md",
+      "plugins/immune-brain/skills/imm-planner/SKILL.md",
+      "tests/host-runtime-cutover.test.ts",
+      "tests/pi-canary-assurance-progression.test.ts",
+      "tests/plugin-package-runtime.test.ts",
+      "tests/python-reference-boundary.test.ts",
+      "tests/v4-runtime-launchers.test.ts"
+    ],
+    "risk": "material",
+    "revision": 2,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/2026-08-22-001-github-issue-multi-plan-tracking.intent.json",
+    "revision": 2,
+    "content_hash": "sha256:0c821c303f833cf0f2289c75095bf0c1d6c766187b22dbe65447e0ae311a2c22"
+  },
+  "phase": "done",
+  "baseline": "sha256:70040eaaaca5495d7f4d6d14dfe6893de6f00d0e8271f105ea637dd2888a63cd",
+  "evidence": [
+    {
+      "id": "evidence-record_evidence:2026-08-22-001-github-issue-multi-plan-tracking:2026-08-22T01:45:55.117Z",
+      "acceptance_id": "acc-github-tracker-adapter",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:0c821c303f833cf0f2289c75095bf0c1d6c766187b22dbe65447e0ae311a2c22",
+      "diff_hash": "sha256:08d73621a25bf6af74fdabebd56b90ea33126b2842ba6567f1a89f4f05601b8c",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "bun test tests/plugin-package-runtime.test.ts: 15 passed, 0 failed, 97 assertions. Covered exact versioned repo/Initiative/task markers, human-preserving managed regions, lost create response re-query, duplicate/malformed fail-closed behavior with zero mutation, monotonic active/terminal replay including partial close recovery, credential redaction, canonical Git-tracked TaskIntent CLI publication, shipped wrapper and command manifest, and no .imm writes."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-22-001-github-issue-multi-plan-tracking:2026-08-22T01:46:04.115Z",
+      "acceptance_id": "acc-github-tracker-lifecycle",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:0c821c303f833cf0f2289c75095bf0c1d6c766187b22dbe65447e0ae311a2c22",
+      "diff_hash": "sha256:08d73621a25bf6af74fdabebd56b90ea33126b2842ba6567f1a89f4f05601b8c",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "bun test tests/pi-canary-assurance-progression.test.ts: 17 passed, 0 failed, 53 assertions. Verified exact claimless done/stopped plus matching terminal tombstone gate, post-authority Enrollment and terminal hook ordering, and non-authoritative failure isolation. Source/dist Planner and Loop contract parity plus package sync were verified separately; git diff --cached --check passed."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-22-001-github-issue-multi-plan-tracking:2026-08-22T01:52:45.911Z",
+      "acceptance_id": "acc-github-tracker-adapter",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:0c821c303f833cf0f2289c75095bf0c1d6c766187b22dbe65447e0ae311a2c22",
+      "diff_hash": "sha256:84e94e2a638388d3eaa1644b9bc9594d31a769f9eecce9178623e3dae2dc7e11",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "bun test tests/plugin-package-runtime.test.ts after review repair: 16 passed, 0 failed, 99 assertions. Added direct ENOENT spawn regression proving createGhTransport and runGithubTrackerOperation settle as a closed permanent_failure without throw/rejection; all marker, retry, redaction, canonical TaskIntent, wrapper, monotonic lifecycle, partial-close, and zero-.imm-write cases remain green."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-22-001-github-issue-multi-plan-tracking:2026-08-22T01:52:56.273Z",
+      "acceptance_id": "acc-github-tracker-lifecycle",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:0c821c303f833cf0f2289c75095bf0c1d6c766187b22dbe65447e0ae311a2c22",
+      "diff_hash": "sha256:84e94e2a638388d3eaa1644b9bc9594d31a769f9eecce9178623e3dae2dc7e11",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "bun test tests/pi-canary-assurance-progression.test.ts: 17 passed, 0 failed, 53 assertions on current repaired diff. Exact claimless terminal+tombstone gate and post-authority hook ordering remain green; sync-dist-docs --check and 16 command-manifest/fixture tests also passed."
+    }
+  ],
+  "findings": [
+    {
+      "id": "review-6668ba64058d-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "acc-github-tracker-adapter",
+      "source": "review",
+      "review_round": 1,
+      "summary": "plugins/immune-brain/runtime/github_issue_tracker.ts: createGhTransport can throw synchronously when spawning gh fails (for example ENOENT) because child.stdin.end() is unguarded after the child emits error, bypassing the bounded tracker result contract and allowing lifecycle hooks to reject instead of returning a redacted failure."
+    }
+  ],
+  "approvals": [
+    {
+      "id": "approval-qa-1b202956",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:0c821c303f833cf0f2289c75095bf0c1d6c766187b22dbe65447e0ae311a2c22",
+      "diff_hash": "sha256:08d73621a25bf6af74fdabebd56b90ea33126b2842ba6567f1a89f4f05601b8c",
+      "actor_id": "deterministic-qa",
+      "summary": "all 2 fixed verification descriptor(s) passed"
+    },
+    {
+      "id": "approval-qa-1ea77d9d",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:0c821c303f833cf0f2289c75095bf0c1d6c766187b22dbe65447e0ae311a2c22",
+      "diff_hash": "sha256:84e94e2a638388d3eaa1644b9bc9594d31a769f9eecce9178623e3dae2dc7e11",
+      "actor_id": "deterministic-qa",
+      "summary": "all 2 fixed verification descriptor(s) passed"
+    },
+    {
+      "id": "approval-review-bde1949f",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:0c821c303f833cf0f2289c75095bf0c1d6c766187b22dbe65447e0ae311a2c22",
+      "diff_hash": "sha256:84e94e2a638388d3eaa1644b9bc9594d31a769f9eecce9178623e3dae2dc7e11",
+      "actor_id": "native-review-c1bc76ca-3cc5-45a",
+      "summary": "Immutable bundle provenance verified; bounded tracker and lifecycle changes satisfy the supplied acceptance assertions without identified correctness, regression, security, or test-coverage blockers."
+    }
+  ],
+  "history": [
+    {
+      "id": "approve_breaking_intent_revision:2026-08-22-001-github-issue-multi-plan-tracking:2026-08-22T01:45:33.542Z",
+      "at": "2026-08-22T01:45:33.542Z",
+      "type": "approve_breaking_intent_revision",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "intent_revision_2\naction_v2_sha256:178d09580d528d4a90797453d635e511e7f4cb49af751bef3043dae0861c503d",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-137ba936207cfd94",
+        "issued_at": "2026-08-22T01:45:33.551Z",
+        "expires_at": "2026-08-22T01:55:33.551Z"
+      }
+    },
+    {
+      "id": "record_evidence:2026-08-22-001-github-issue-multi-plan-tracking:2026-08-22T01:45:55.117Z",
+      "at": "2026-08-22T01:45:55.117Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-github-tracker-adapter\naction_v2_sha256:8b8165c6bbbbd800a55cf558973df848da374dde8f4d6c2060444d6c22915dce"
+    },
+    {
+      "id": "record_evidence:2026-08-22-001-github-issue-multi-plan-tracking:2026-08-22T01:46:04.115Z",
+      "at": "2026-08-22T01:46:04.115Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-github-tracker-lifecycle\naction_v2_sha256:dc383b5a04bb356059891a66bb8146a1fb39492e30b56ccbd337d571a1d0b4ba"
+    },
+    {
+      "id": "submit_review:2026-08-22-001-github-issue-multi-plan-tracking:2026-08-22T01:46:18.687Z",
+      "at": "2026-08-22T01:46:18.687Z",
+      "type": "submit_review",
+      "from_phase": "working",
+      "to_phase": "review",
+      "reason": "action_v2_sha256:a05cdc999d1cbc7118a2fe1e5bba9e09191b7e00dda03c7cef3d785b593d2fc6"
+    },
+    {
+      "id": "record_approval:2026-08-22-001-github-issue-multi-plan-tracking:2026-08-22T01:46:21.348Z",
+      "at": "2026-08-22T01:46:21.348Z",
+      "type": "record_approval",
+      "from_phase": "review",
+      "to_phase": "review",
+      "reason": "approval-qa-1b202956\naction_v2_sha256:65d6b4742f28d04f0826403c5224144e7ea3ac55e3543fbe3b122be36bd1db60",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-548d7149f894f4f7",
+        "issued_at": "2026-08-22T01:46:21.348Z",
+        "expires_at": "2026-08-22T01:56:21.348Z"
+      }
+    },
+    {
+      "id": "request_rework:2026-08-22-001-github-issue-multi-plan-tracking:2026-08-22T01:50:55.112Z",
+      "at": "2026-08-22T01:50:55.112Z",
+      "type": "request_rework",
+      "from_phase": "review",
+      "to_phase": "working",
+      "reason": "review_round_1\naction_v2_sha256:a086ee34c8fe14d45d1505141e68e0145dbbc6ef75f8f67524c1589597ce26fa",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "native-review-fddf2b5c-1e5d-454",
+        "confirmation_ref": "pi-confirm-f2fc2cb01bc43244",
+        "issued_at": "2026-08-22T01:50:55.112Z",
+        "expires_at": "2026-08-22T02:00:55.112Z"
+      }
+    },
+    {
+      "id": "resolve_finding:2026-08-22-001-github-issue-multi-plan-tracking:2026-08-22T01:52:26.149Z",
+      "at": "2026-08-22T01:52:26.149Z",
+      "type": "resolve_finding",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "review-6668ba64058d-1-review-1\naction_v2_sha256:fc1237c0452b19c01180212cc473996794abec7a5a2de4920b2c39b5b01c8588"
+    },
+    {
+      "id": "record_evidence:2026-08-22-001-github-issue-multi-plan-tracking:2026-08-22T01:52:45.911Z",
+      "at": "2026-08-22T01:52:45.911Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-github-tracker-adapter\naction_v2_sha256:c00262f019ae8e0d9b07347a69b81f28ab1c994601f44743f78b6d5b130493dc"
+    },
+    {
+      "id": "record_evidence:2026-08-22-001-github-issue-multi-plan-tracking:2026-08-22T01:52:56.273Z",
+      "at": "2026-08-22T01:52:56.273Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "acc-github-tracker-lifecycle\naction_v2_sha256:136d81f3c4f0332b435935986680ce7725b67b6544967209a6cf68c2e4927679"
+    },
+    {
+      "id": "submit_review:2026-08-22-001-github-issue-multi-plan-tracking:2026-08-22T01:53:03.880Z",
+      "at": "2026-08-22T01:53:03.880Z",
+      "type": "submit_review",
+      "from_phase": "working",
+      "to_phase": "review",
+      "reason": "action_v2_sha256:cd8864c29f9e4c50753165f7930f9ec1f9947d7d6434ad6a9744adcfb2d2afc7"
+    },
+    {
+      "id": "record_approval:2026-08-22-001-github-issue-multi-plan-tracking:2026-08-22T01:53:07.133Z",
+      "at": "2026-08-22T01:53:07.133Z",
+      "type": "record_approval",
+      "from_phase": "review",
+      "to_phase": "review",
+      "reason": "approval-qa-1ea77d9d\naction_v2_sha256:0fcabdbc77977ea1760b8a78f392656e23c0cc17b49cc32e98de63e07f2280ac",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-f669924854a12ef7",
+        "issued_at": "2026-08-22T01:53:07.134Z",
+        "expires_at": "2026-08-22T02:03:07.134Z"
+      }
+    },
+    {
+      "id": "record_approval:2026-08-22-001-github-issue-multi-plan-tracking:2026-08-22T02:30:56.187Z",
+      "at": "2026-08-22T02:30:56.187Z",
+      "type": "record_approval",
+      "from_phase": "review",
+      "to_phase": "review",
+      "reason": "approval-review-bde1949f\naction_v2_sha256:2fe4ff5259c10e058f5a96a8b9088e424028d683a1b940811bd8bf6d20babfa4",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "native-review-c1bc76ca-3cc5-45a",
+        "confirmation_ref": "pi-confirm-74e9669d1fae97fb",
+        "issued_at": "2026-08-22T02:30:56.187Z",
+        "expires_at": "2026-08-22T02:40:56.187Z"
+      }
+    },
+    {
+      "id": "complete:2026-08-22-001-github-issue-multi-plan-tracking:2026-08-22T02:31:07.571Z",
+      "at": "2026-08-22T02:31:07.571Z",
+      "type": "complete",
+      "from_phase": "review",
+      "to_phase": "done",
+      "reason": "action_v2_sha256:6064a34b13091539af22cd13a5cdf4b307aa755735e01334340d9a6aa786aea2"
+    }
+  ]
+}

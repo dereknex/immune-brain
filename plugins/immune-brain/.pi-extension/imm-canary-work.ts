@@ -62,6 +62,7 @@ import {
 	buildReviewPrompt,
 	classifyReviewWorkload,
 	deriveQaJobTimeoutMs,
+	deriveGithubTerminalProjectionInput,
 	parseAssuranceVerdict,
 	snapshotDigest,
 	QA_JOB_TIMEOUT_SECONDS,
@@ -88,6 +89,8 @@ import {
 	buildLoopAction,
 	buildLoopRoleDispatch,
 	readBackendClaim,
+	readTaskTombstone,
+	markGithubTaskTerminal,
 	reconcileKernelAuthority,
 	repairKernelAuthority,
 	readTaskRecordV2,
@@ -1633,9 +1636,29 @@ async function enrichAssuranceResult(
 	const taskState: AssuranceTaskState = projection.error
 		? { error: projection.error }
 		: projection.projection;
+	let tracker: Awaited<ReturnType<typeof markGithubTaskTerminal>> | undefined;
+	if (!projection.error) {
+		try {
+			const terminalInput = deriveGithubTerminalProjectionInput(
+				taskId,
+				projection,
+				await readTaskTombstone(ctx.cwd, taskId),
+			);
+			if (terminalInput) tracker = await markGithubTaskTerminal(ctx.cwd, terminalInput);
+		} catch {
+			tracker = {
+				contract: "immune_brain/github_issue_tracker_result/v1",
+				operation: "mark-terminal",
+				status: "retryable_failure",
+				association_found: false,
+				message: "tracker observation failed after authoritative settlement",
+			};
+		}
+	}
 	return {
 		...result,
 		task_state: taskState,
+		...(tracker ? { tracker } : {}),
 		next_action: nextActionForAssuranceResult(result, taskState),
 	};
 }

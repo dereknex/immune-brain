@@ -33,7 +33,33 @@ import type { AssuranceCorrelation, AssuranceRole, AssuranceResultPresentation }
 import {
 	buildRoleDelegationPacket,
 } from "../runtime/role_prompt_bridge";
-import type { AssuranceProjectionResult, TaskIntentRead, TaskRecordV2Read } from "./runtime-stub";
+import type { AssuranceProjectionResult, TaskIntentRead, TaskRecordV2Read, TaskTombstoneRead } from "./runtime-stub";
+
+export interface GithubTerminalProjectionInput {
+	task_id: string;
+	phase: "done" | "stopped";
+	terminal_event_id: string;
+}
+
+export function deriveGithubTerminalProjectionInput(
+	taskId: string,
+	projection: AssuranceProjectionResult,
+	tombstone: TaskTombstoneRead | null,
+): GithubTerminalProjectionInput | null {
+	if (
+		projection.error
+		|| projection.claim !== null
+		|| (projection.projection.phase !== "done" && projection.projection.phase !== "stopped")
+		|| tombstone?.task_id !== taskId
+		|| tombstone.lifecycle_status !== "terminal"
+		|| tombstone.terminal_phase !== projection.projection.phase
+	) return null;
+	return {
+		task_id: taskId,
+		phase: projection.projection.phase,
+		terminal_event_id: tombstone.terminal_event_id,
+	};
+}
 
 export interface AssuranceVerdict {
 	contract: "assurance_kernel/assurance_verdict/v2";

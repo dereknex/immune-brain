@@ -1,4 +1,11 @@
 import { describe, expect, it } from "bun:test";
+import type { GhExecution, GhTransport } from "../plugins/immune-brain/runtime/github_issue_tracker.ts";
+import {
+	createGhTransport,
+	redactGithubDiagnostic,
+	runGithubTrackerCli,
+	runGithubTrackerOperation,
+} from "../plugins/immune-brain/runtime/github_issue_tracker.ts";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve, join } from "node:path";
 import { spawnSync } from "node:child_process";
@@ -29,6 +36,10 @@ const IMM_WORK_WRAPPER = resolve(
 const IMM_KERNEL_WRAPPER = resolve(
 	REPO_ROOT,
 	"plugins/immune-brain/bin/imm-kernel",
+);
+const IMM_TRACKER_WRAPPER = resolve(
+	REPO_ROOT,
+	"plugins/immune-brain/bin/imm-tracker",
 );
 
 const PLAN = `---
@@ -154,6 +165,16 @@ function withIsolatedRoot<T>(fn: (root: string) => T, plan = PLAN): T {
 	}
 }
 
+async function withIsolatedRootAsync<T>(fn: (root: string) => Promise<T>): Promise<T> {
+	const root = mkdtempSync(join(tmpdir(), "imm-plugin-runtime-"));
+	mkdirSync(join(root, ".imm", "memory"), { recursive: true });
+	try {
+		return await fn(root);
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
+}
+
 function passedEvidence(
 	changedFiles: string | string[],
 	summary: string,
@@ -195,6 +216,77 @@ function immKernel(root: string, args: string[]) {
 	});
 }
 
+type FakeIssue = {
+	number: number;
+	html_url: string;
+	body: string;
+	state: "open" | "closed";
+	state_reason: string | null;
+};
+
+class FakeGh implements GhTransport {
+	issues: FakeIssue[] = [];
+	mutations = 0;
+	loseNextCreateResponse = false;
+
+	async run(args: string[], options: { cwd?: string; stdin?: string } = {}): Promise<GhExecution> {
+		const ok = (stdout = ""): GhExecution => ({ exit_code: 0, stdout, stderr: "", timed_out: false, output_exceeded: false });
+		if (args[0] === "api" && args[1] === "repos/{owner}/{repo}")
+			return ok(JSON.stringify({ id: 4242, full_name: "example/project" }));
+		if (args[0] === "api" && args.includes("--paginate"))
+			return ok(JSON.stringify([this.issues]));
+		if (args[0] === "issue" && args[1] === "create") {
+			this.mutations += 1;
+			const number = this.issues.length + 1;
+			this.issues.push({
+				number,
+				html_url: `https://github.com/example/project/issues/${number}`,
+				body: options.stdin ?? "",
+				state: "open",
+				state_reason: null,
+			});
+			if (this.loseNextCreateResponse) {
+				this.loseNextCreateResponse = false;
+				return { exit_code: 1, stdout: "", stderr: "gho_secret timeout", timed_out: true, output_exceeded: false };
+			}
+			return ok(this.issues.at(-1)?.html_url);
+		}
+		if (args[0] === "issue" && args[1] === "edit") {
+			this.mutations += 1;
+			const issue = this.issues.find((candidate) => candidate.number === Number(args[2]));
+			if (!issue) return { ...ok(), exit_code: 1, stderr: "not found" };
+			issue.body = options.stdin ?? "";
+			return ok();
+		}
+		if (args[0] === "issue" && args[1] === "close") {
+			this.mutations += 1;
+			const issue = this.issues.find((candidate) => candidate.number === Number(args[2]));
+			if (!issue) return { ...ok(), exit_code: 1, stderr: "not found" };
+			issue.state = "closed";
+			issue.state_reason = args.at(-1) === "not planned" ? "not_planned" : "completed";
+			return ok();
+		}
+		return { ...ok(), exit_code: 1, stderr: `unexpected fake gh call: ${args.join(" ")}` };
+	}
+}
+
+const INITIATIVE = {
+	op: "upsert-initiative" as const,
+	initiative_id: "tracking-v1",
+	goal: "Track a large delivery",
+	slices: [{ id: "P1", goal: "Ship the first bounded Task" }],
+};
+
+const TRACKED_TASK = {
+	op: "upsert-task" as const,
+	initiative_id: "tracking-v1",
+	task_id: "2026-08-22-001-task",
+	goal: "Ship the first bounded Task",
+	risk: "material" as const,
+	intent_path: "docs/plans/2026-08-22-001-task.intent.json",
+	acceptance: [{ id: "acc-task", summary: "The bounded Task is verified" }],
+};
+
 describe("plugin package runtime cutover parity", () => {
 	it("list-commands exposes the CLI command manifest", () => {
 		const ts = spawnSync("bun", [TS_RUNTIME, "list-commands", "--json"], {
@@ -204,7 +296,7 @@ describe("plugin package runtime cutover parity", () => {
 		expect(ts.status).toBe(0);
 		const commands = JSON.parse(ts.stdout).commands;
 		const names = commands.map((command: any) => command.name).sort();
-		expect(names).toEqual(["imm-kernel", "imm-plan", "imm-route"]);
+		expect(names).toEqual(["imm-kernel", "imm-plan", "imm-route", "imm-tracker"]);
 		const retired = JSON.parse(ts.stdout).retired as string[];
 		expect(retired).toContain("imm-work");
 		expect(retired).toContain("imm-review");
@@ -222,6 +314,30 @@ describe("plugin package runtime cutover parity", () => {
 		]);
 		expect(JSON.stringify(commands)).not.toContain("tools/list");
 		expect(JSON.stringify(commands)).not.toContain("tools/call");
+		const tracker = commands.find((command: any) => command.name === "imm-tracker");
+		expect(tracker.description).toContain("Never grants or consumes Kernel authority");
+		expect(tracker.examples).toHaveLength(2);
+	});
+
+	it("ships matching Planner and Loop tracker authority contracts", () => {
+		const plannerSource = readFileSync(join(REPO_ROOT, "plugins/immune-brain/skills/imm-planner/SKILL.md"), "utf8");
+		const plannerPacked = readFileSync(join(REPO_ROOT, "plugins/immune-brain/dist/imm-planner.md"), "utf8");
+		const loopSource = readFileSync(join(REPO_ROOT, "plugins/immune-brain/skills/imm-loop/SKILL.md"), "utf8");
+		const loopPacked = readFileSync(join(REPO_ROOT, "plugins/immune-brain/dist/imm-loop.md"), "utf8");
+		for (const contract of [plannerSource, plannerPacked]) {
+			expect(contract).toContain("upsert-initiative --stdin --json");
+			expect(contract).toContain("upsert-task --initiative-id <slug> --intent <path> --json");
+			expect(contract).toContain("Tracker output is observation, never authority");
+			expect(contract).toContain("do not block planning, Enrollment, execution, QA, Review, settlement");
+		}
+		for (const contract of [loopSource, loopPacked]) {
+			expect(contract).toContain("fresh claimless");
+			expect(contract).toContain("completed");
+			expect(contract).toContain("not planned");
+			expect(contract).toMatch(/never (use it|treat (it|them)) as evidence/);
+		}
+		expect(existsSync(join(REPO_ROOT, "plugins/immune-brain/runtime/github_issue_tracker.ts"))).toBe(true);
+		expect(existsSync(IMM_TRACKER_WRAPPER)).toBe(true);
 	});
 
 	it("cli imm-plan validates the current migration plan and returns matching summary", () => {
@@ -371,6 +487,128 @@ describe("plugin package runtime cutover parity", () => {
 				expect(r.stderr).toMatch(/v3_storage_retired|drain_required/);
 			}
 		});
+	});
+
+	it("projects opt-in Initiative and Task state idempotently without touching Kernel state", async () => {
+		await withIsolatedRootAsync(async (root) => {
+			const gh = new FakeGh();
+			gh.loseNextCreateResponse = true;
+			const initiative = await runGithubTrackerOperation(root, INITIATIVE, gh);
+			expect(initiative).toMatchObject({ status: "created", association_found: true, issue_number: 1 });
+			expect(initiative.message).not.toContain("gho_secret");
+
+			gh.issues[0].body = `Human preface\n${gh.issues[0].body}\nHuman notes`;
+			const updated = await runGithubTrackerOperation(root, {
+				...INITIATIVE,
+				goal: "Track a large delivery with gho_supersecret removed",
+				slices: [...INITIATIVE.slices, { id: "P2", goal: "Ship the successor Task" }],
+			}, gh);
+			expect(updated.status).toBe("updated");
+			expect(gh.issues[0].body.startsWith("Human preface")).toBe(true);
+			expect(gh.issues[0].body.endsWith("Human notes")).toBe(true);
+			expect(gh.issues[0].body).toContain("[REDACTED_GITHUB_TOKEN]");
+			expect(gh.issues[0].body).not.toContain("gho_supersecret");
+
+			expect(await runGithubTrackerOperation(root, TRACKED_TASK, gh)).toMatchObject({ status: "created", issue_number: 2 });
+			expect(await runGithubTrackerOperation(root, { op: "mark-active", task_id: TRACKED_TASK.task_id }, gh)).toMatchObject({ status: "updated" });
+			expect(gh.issues[1].body).toContain("tracker-state=active");
+			const terminalEvent = "complete:2026-08-22-001-task:2099-01-01T02:00:00.000Z";
+			expect(await runGithubTrackerOperation(root, {
+				op: "mark-terminal",
+				task_id: TRACKED_TASK.task_id,
+				phase: "done",
+				terminal_event_id: terminalEvent,
+			}, gh)).toMatchObject({ status: "updated" });
+			expect(gh.issues[1]).toMatchObject({ state: "closed", state_reason: "completed" });
+			expect(await runGithubTrackerOperation(root, {
+				op: "mark-terminal",
+				task_id: TRACKED_TASK.task_id,
+				phase: "done",
+				terminal_event_id: terminalEvent,
+			}, gh)).toMatchObject({ status: "already_current" });
+			gh.issues[1].state = "open";
+			gh.issues[1].state_reason = null;
+			expect(await runGithubTrackerOperation(root, {
+				op: "mark-terminal",
+				task_id: TRACKED_TASK.task_id,
+				phase: "done",
+				terminal_event_id: terminalEvent,
+			}, gh)).toMatchObject({ status: "updated" });
+			expect(gh.issues[1]).toMatchObject({ state: "closed", state_reason: "completed" });
+			expect(existsSync(join(root, ".imm", "tasks"))).toBe(false);
+		});
+	});
+
+	it("publishes only a canonical Git-tracked TaskIntent through the CLI", async () => {
+		await withIsolatedRootAsync(async (root) => {
+			const gh = new FakeGh();
+			expect((await runGithubTrackerOperation(root, INITIATIVE, gh)).status).toBe("created");
+			mkdirSync(join(root, "docs", "plans"), { recursive: true });
+			const intentPath = `docs/plans/${TRACKED_TASK.task_id}.intent.json`;
+			writeFileSync(join(root, intentPath), `${JSON.stringify({
+				contract: "assurance_kernel/task_intent/v1",
+				task_id: TRACKED_TASK.task_id,
+				goal: TRACKED_TASK.goal,
+				acceptance: [{ id: "acc-task", assertion: "The bounded Task is verified", verification: "{}" }],
+				scope_hint: ["tests/**"],
+				risk: "material",
+				revision: 1,
+				owner: "user",
+			}, null, 2)}\n`);
+			spawnSync("git", ["init", "-q"], { cwd: root });
+			spawnSync("git", ["add", intentPath], { cwd: root });
+			const published = await runGithubTrackerCli([
+				"upsert-task", "--initiative-id", INITIATIVE.initiative_id,
+				"--intent", intentPath, "--json",
+			], root, { gh });
+			expect(published.returncode).toBe(0);
+			expect(JSON.parse(published.stdout)).toMatchObject({ status: "created", issue_number: 2 });
+			const untrackedPath = `docs/plans/untracked-task.intent.json`;
+			writeFileSync(join(root, untrackedPath), readFileSync(join(root, intentPath)));
+			const rejected = await runGithubTrackerCli([
+				"upsert-task", "--initiative-id", INITIATIVE.initiative_id,
+				"--intent", untrackedPath, "--json",
+			], root, { gh });
+			expect(rejected.returncode).toBe(2);
+			expect(rejected.stderr).toContain("not Git-tracked");
+		});
+	});
+
+	it("fails closed on duplicate identities and damaged managed regions", async () => {
+		await withIsolatedRootAsync(async (root) => {
+			const gh = new FakeGh();
+			expect((await runGithubTrackerOperation(root, INITIATIVE, gh)).status).toBe("created");
+			gh.issues.push({ ...gh.issues[0], number: 2, html_url: "https://github.com/example/project/issues/2" });
+			const before = gh.mutations;
+			expect(await runGithubTrackerOperation(root, INITIATIVE, gh)).toMatchObject({ status: "ambiguous_remote_state" });
+			expect(gh.mutations).toBe(before);
+			gh.issues.pop();
+			gh.issues[0].body = gh.issues[0].body.replace("<!-- immune-brain:managed:end -->", "");
+			expect(await runGithubTrackerOperation(root, { ...INITIATIVE, goal: "Changed" }, gh)).toMatchObject({ status: "ambiguous_remote_state" });
+			expect(gh.mutations).toBe(before);
+		});
+	});
+
+	it("returns a closed result when gh cannot spawn", async () => {
+		const result = await runGithubTrackerOperation(
+			process.cwd(),
+			INITIATIVE,
+			createGhTransport("/definitely/missing/gh"),
+		);
+		expect(result).toMatchObject({
+			status: "permanent_failure",
+			association_found: false,
+		});
+		expect(result.message).toMatch(/ENOENT|no such file/i);
+	});
+
+	it("redacts credentials and routes the shipped tracker wrapper", () => {
+		expect(redactGithubDiagnostic("token=abc gho_supersecret Bearer raw")).toBe(
+			"credential=[REDACTED] [REDACTED_GITHUB_TOKEN] Bearer [REDACTED]",
+		);
+		const invalid = spawnSync(IMM_TRACKER_WRAPPER, ["--json"], { encoding: "utf8", cwd: REPO_ROOT });
+		expect(invalid.status).toBe(2);
+		expect(invalid.stderr).toContain("invalid_tracker_command");
 	});
 
 });
