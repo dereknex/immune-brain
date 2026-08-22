@@ -1,0 +1,9 @@
+{
+  "contract": "assurance_kernel/task_tombstone/v1",
+  "task_id": "2026-08-22-001-authority-dialog-task-rail-refinement",
+  "lifecycle_status": "terminal",
+  "terminal_phase": "done",
+  "terminal_event_id": "complete:2026-08-22-001-authority-dialog-task-rail-refinement:2026-08-22T02:31:02.654Z",
+  "final_record_hash": "sha256:0c31f599979f6d55ab13277ee8acaa624d8d411a726894993e3c7114736895d0",
+  "terminalized_at": "2026-08-22T02:31:02.654Z"
+}

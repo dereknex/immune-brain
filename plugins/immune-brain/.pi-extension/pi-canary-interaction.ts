@@ -1,5 +1,5 @@
-import type { ExtensionAPI, ExtensionContext, Theme } from "@earendil-works/pi-coding-agent";
-import { Text, type Component } from "@earendil-works/pi-tui";
+import { DynamicBorder, type ExtensionAPI, type ExtensionContext, type Theme } from "@earendil-works/pi-coding-agent";
+import { Container, SelectList, Text, type Component, type SelectItem } from "@earendil-works/pi-tui";
 
 export const USER_ATTENTION_EVENT = "immune-brain:user-attention.v1" as const;
 export const TASK_RAIL_KEY = "immune-brain.task-rail" as const;
@@ -33,6 +33,20 @@ export interface TaskRailView {
 	state: TaskRailState;
 	result: string;
 	next: string;
+}
+
+export interface AuthorityDialogAction<T extends string> {
+	value: T;
+	label: string;
+	description: string;
+}
+
+export interface AuthorityDialogOptions<T extends string> {
+	title: string;
+	summary: string;
+	details: string;
+	actions: readonly AuthorityDialogAction<T>[];
+	signal?: AbortSignal;
 }
 
 type EventPublisher = Pick<ExtensionAPI, "events">;
@@ -69,6 +83,70 @@ export async function withUserAttention<T>(
 		return await waitForUser();
 	} finally {
 		endAttention();
+	}
+}
+
+export async function requestAuthorityDialog<T extends string>(
+	ctx: UiContext,
+	options: AuthorityDialogOptions<T>,
+): Promise<T | undefined> {
+	let finish: ((result: T | undefined) => void) | undefined;
+	let settled = false;
+	const complete = (result: T | undefined) => {
+		if (settled) return;
+		settled = true;
+		finish?.(result);
+	};
+	const abort = () => complete(undefined);
+	if (options.signal?.aborted) return undefined;
+	options.signal?.addEventListener("abort", abort, { once: true });
+	try {
+		return await ctx.ui.custom<T | undefined>((tui, theme, _keybindings, done) => {
+			finish = done;
+			if (settled || options.signal?.aborted) done(undefined);
+			let expanded = false;
+			const detailText = new Text(theme.fg("muted", "Details collapsed; press d to expand."), 1, 0);
+			const selectList = new SelectList(
+				options.actions.map((action): SelectItem => ({ ...action })),
+				options.actions.length,
+				{
+					selectedPrefix: (text) => theme.fg("accent", text),
+					selectedText: (text) => theme.fg("accent", text),
+					description: (text) => theme.fg("muted", text),
+					scrollInfo: (text) => theme.fg("dim", text),
+					noMatch: (text) => theme.fg("warning", text),
+				},
+			);
+			selectList.onSelect = (item) => complete(item.value as T);
+			selectList.onCancel = () => complete(undefined);
+			const container = new Container();
+			container.addChild(new DynamicBorder((text: string) => theme.fg("accent", text)));
+			container.addChild(new Text(theme.fg("accent", theme.bold(options.title)), 1, 0));
+			container.addChild(new Text(options.summary, 1, 0));
+			container.addChild(detailText);
+			container.addChild(selectList);
+			container.addChild(new Text(theme.fg("dim", "d: toggle details | enter: choose | esc: cancel"), 1, 0));
+			container.addChild(new DynamicBorder((text: string) => theme.fg("accent", text)));
+			return {
+				render: (width) => container.render(width),
+				invalidate: () => container.invalidate(),
+				handleInput: (data) => {
+					if (data === "d" || data === "D") {
+						expanded = !expanded;
+						detailText.setText(expanded ? options.details : theme.fg("muted", "Details collapsed; press d to expand."));
+						tui.requestRender();
+						return;
+					}
+					selectList.handleInput(data);
+					tui.requestRender();
+				},
+			};
+		}, {
+			overlay: true,
+			overlayOptions: { anchor: "center", width: "80%", maxHeight: "80%" },
+		});
+	} finally {
+		options.signal?.removeEventListener("abort", abort);
 	}
 }
 
@@ -201,7 +279,7 @@ function emitAttention(pi: EventPublisher, event: UserAttentionEventV1): void {
 
 function renderTaskRail(view: TaskRailView): string[] {
 	return [
-		`Task ${bounded(view.task_id, 88)} · ${view.state}`,
+		`Task ${boundedMiddle(view.task_id, 52)} · ${view.state}`,
 		`Result: ${bounded(view.result, 112)}`,
 		`Next: ${bounded(view.next, 112)}`,
 	];
@@ -252,4 +330,11 @@ function strings(value: unknown): string[] {
 
 function bounded(value: string, max: number): string {
 	return value.length <= max ? value : `${value.slice(0, max - 3)}...`;
+}
+
+function boundedMiddle(value: string, max: number): string {
+	if (value.length <= max) return value;
+	const visible = max - 3;
+	const start = Math.ceil(visible / 2);
+	return `${value.slice(0, start)}...${value.slice(-(visible - start))}`;
 }

@@ -481,7 +481,7 @@ describe("pi canary enroll handler integration", () => {
 		}
 	});
 
-	test("routine new waits for confirmation and displays the immutable staged intent", async () => {
+	test("shared-authority-dialog-shell: routine new waits for confirmation and displays the immutable staged intent", async () => {
 		const root = mkdtempSync(join(tmpdir(), "p2b1-enroll-"));
 		try {
 			makeEligibleRepo(root, TASK);

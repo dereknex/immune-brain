@@ -5,8 +5,7 @@
 // after the explicit commit linearization point, Kernel settlement is
 // non-cancellable.
 
-import { DynamicBorder, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { Container, SelectList, Text, type SelectItem } from "@earendil-works/pi-tui";
+import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { execFileSync, spawn } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
@@ -38,6 +37,7 @@ import {
 	presentTaskRailResult,
 	renderStructuredCall,
 	renderStructuredResult,
+	requestAuthorityDialog,
 	resetInteractionPresentation,
 	withUserAttention,
 	type UserAttentionReason,
@@ -108,81 +108,28 @@ async function requestEnrollmentConfirmation(
 	details: string,
 	signal: AbortSignal,
 ): Promise<boolean> {
-	let finish: ((result: boolean) => void) | undefined;
-	let settled = false;
-	const complete = (result: boolean) => {
-		if (settled) return;
-		settled = true;
-		finish?.(result);
-	};
-	const abort = () => complete(false);
-	if (signal.aborted) return false;
-	signal.addEventListener("abort", abort, { once: true });
 	presentTaskRail(ctx, {
 		task_id: taskId,
 		state: "Approval required",
 		result: title,
-		next: "Complete or cancel the native enrollment dialog",
+		next: "Review enrollment evidence",
 	});
-	try {
-		return await withUserAttention(pi, {
-			attention_id: randomUUID(),
-			task_id: taskId,
-			reason,
-			label: title,
-		}, () => ctx.ui.custom<boolean>((tui, theme, _keybindings, done) => {
-			finish = done;
-			if (signal.aborted) {
-				settled = true;
-				done(false);
-			}
-			let expanded = false;
-			const detailText = new Text(theme.fg("muted", "Details collapsed; press d to expand."), 1, 0);
-			const actions: SelectItem[] = [
-				{ value: "confirm", label: "Confirm enrollment", description: "Create the Kernel-managed task" },
-				{ value: "cancel", label: "Cancel", description: "Leave planning artifacts and authority unchanged" },
-			];
-			const selectList = new SelectList(actions, actions.length, {
-				selectedPrefix: (text) => theme.fg("accent", text),
-				selectedText: (text) => theme.fg("accent", text),
-				description: (text) => theme.fg("muted", text),
-				scrollInfo: (text) => theme.fg("dim", text),
-				noMatch: (text) => theme.fg("warning", text),
-			});
-			selectList.onSelect = (item) => complete(item.value === "confirm");
-			selectList.onCancel = () => complete(false);
-			const container = new Container();
-			container.addChild(new DynamicBorder((text: string) => theme.fg("accent", text)));
-			container.addChild(new Text(theme.fg("accent", theme.bold(title)), 1, 0));
-			container.addChild(new Text(summary, 1, 0));
-			container.addChild(detailText);
-			container.addChild(selectList);
-			container.addChild(new Text(theme.fg("dim", "d: toggle details | enter: choose | esc: cancel"), 1, 0));
-			container.addChild(new DynamicBorder((text: string) => theme.fg("accent", text)));
-			const renderDetails = () => {
-				detailText.setText(expanded ? details : theme.fg("muted", "Details collapsed; press d to expand."));
-				tui.requestRender();
-			};
-			return {
-				render: (width) => container.render(width),
-				invalidate: () => container.invalidate(),
-				handleInput: (data) => {
-					if (data === "d" || data === "D") {
-						expanded = !expanded;
-						renderDetails();
-						return;
-					}
-					selectList.handleInput(data);
-					tui.requestRender();
-				},
-			};
-		}, {
-			overlay: true,
-			overlayOptions: { anchor: "center", width: "80%", maxHeight: "80%" },
-		}));
-	} finally {
-		signal.removeEventListener("abort", abort);
-	}
+	const selected = await withUserAttention(pi, {
+		attention_id: randomUUID(),
+		task_id: taskId,
+		reason,
+		label: title,
+	}, () => requestAuthorityDialog(ctx, {
+		title,
+		summary,
+		details,
+		signal,
+		actions: [
+			{ value: "confirm", label: "Confirm enrollment", description: "Create the Kernel-managed task" },
+			{ value: "cancel", label: "Cancel", description: "Leave planning artifacts and authority unchanged" },
+		],
+	}));
+	return selected === "confirm";
 }
 
 function gitBytes(root: string, args: string[], extraEnv: NodeJS.ProcessEnv = {}): Buffer {
