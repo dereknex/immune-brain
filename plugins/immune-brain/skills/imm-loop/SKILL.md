@@ -41,4 +41,10 @@ a separate entry point. Invalid or contradictory projections fail closed. After
 fresh evidence, use `advance_assurance` and `submit_review`;
 `request_authorization` remains the user authorization boundary; visible
 background state and push follow-up replace internal QA/Review sequencing and
-polling. A terminal tombstone alone never blocks unrelated v3 routing.
+polling. The host performs any opted-in GitHub
+Issue projection only after the corresponding authority mutation: Enrollment
+projects `active`, while a fresh claimless `done`/`stopped` projection with its
+exact terminal tombstone projects `completed`/`not planned`. Treat the attached
+tracker result as non-authoritative observation. Report its failure separately,
+but never use it as evidence, a stop condition, or a reason to repeat a Kernel
+mutation. A terminal tombstone alone never blocks unrelated v3 routing.

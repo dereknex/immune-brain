@@ -1,0 +1,9 @@
+{
+  "contract": "assurance_kernel/task_tombstone/v1",
+  "task_id": "2026-08-22-001-github-issue-multi-plan-tracking",
+  "lifecycle_status": "terminal",
+  "terminal_phase": "done",
+  "terminal_event_id": "complete:2026-08-22-001-github-issue-multi-plan-tracking:2026-08-22T02:31:07.571Z",
+  "final_record_hash": "sha256:bca1217b2a9ccfa3689bcffcbb2479a8750a42bdfae4dbc388103a28bef5b626",
+  "terminalized_at": "2026-08-22T02:31:07.571Z"
+}

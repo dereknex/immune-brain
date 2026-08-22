@@ -216,6 +216,16 @@ function runtimePath(module: string): string {
 	return `../runtime/${module}.ts`;
 }
 
+export interface GithubTrackerResult {
+	contract: "immune_brain/github_issue_tracker_result/v1";
+	operation: "upsert-initiative" | "upsert-task" | "mark-active" | "mark-terminal";
+	status: "created" | "updated" | "already_current" | "retryable_failure" | "permanent_failure" | "ambiguous_remote_state";
+	association_found: boolean;
+	issue_number?: number;
+	issue_url?: string;
+	message: string;
+}
+
 export interface ManagedRouteProjection {
 	phase: "none" | "brainstorm" | "planner" | "loop";
 	reason?: string;
@@ -238,6 +248,17 @@ export async function buildLoopAction(input: unknown): Promise<unknown> {
 export async function buildLoopRoleDispatch(input: unknown): Promise<unknown> {
 	const mod = await import(/* @vite-ignore */ runtimePath("loop_contract"));
 	return mod.buildLoopRoleDispatch(input);
+}
+export async function markGithubTaskActive(root: string, taskId: string): Promise<GithubTrackerResult> {
+	const mod = await import(/* @vite-ignore */ runtimePath("github_issue_tracker"));
+	return mod.runGithubTrackerOperation(root, { op: "mark-active", task_id: taskId }) as Promise<GithubTrackerResult>;
+}
+export async function markGithubTaskTerminal(
+	root: string,
+	input: { task_id: string; phase: "done" | "stopped"; terminal_event_id: string },
+): Promise<GithubTrackerResult> {
+	const mod = await import(/* @vite-ignore */ runtimePath("github_issue_tracker"));
+	return mod.runGithubTrackerOperation(root, { op: "mark-terminal", ...input }) as Promise<GithubTrackerResult>;
 }
 export async function createEnrollmentAuthorityRegistry(): Promise<EnrollmentAuthorityRegistry> {
 	const mod = await import(/* @vite-ignore */ kernelPath("enrollment_authority"));

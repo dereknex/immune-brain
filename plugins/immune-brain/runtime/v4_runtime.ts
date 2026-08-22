@@ -8,6 +8,7 @@
  *   - `imm-kernel audit --legacy` (explicit read-only legacy audit)
  *   - `imm-plan --routing-status --json` (strict Git-owned route projection)
  *   - `imm-plan <plan-path> [--json]` (read-only Plan validation)
+ *   - `imm-tracker` (opt-in, one-way, non-authoritative GitHub Issue projection)
  *   - a stable `drain_required` / `v3_storage_retired` wall for every v3
  *     mutating command (work/review/migrate/finish/autowork/heal/...).
  *
@@ -30,6 +31,7 @@ import {
 	projectPlanValidation,
 } from "./plan_core";
 import { routeManagedRequest } from "./managed_path_router";
+import { runGithubTrackerCli } from "./github_issue_tracker";
 
 // Retired v3 mutating command wall. Read-only v3 commands that only project
 // state (imm-plan validate) stay available; every writer is retired.
@@ -284,6 +286,7 @@ async function runCli(command: string, args: string[], root: string): Promise<{
 	if (command === "imm-kernel") return runKernelCli(args, root);
 	if (command === "imm-plan") return runPlanCli(args, root);
 	if (command === "imm-route") return runRouteCli(args, root);
+	if (command === "imm-tracker") return runGithubTrackerCli(args, root);
 	if (RETIRED_MUTATING_COMMANDS.has(command)) return retiredResponse(command, args, root);
 	return {
 		stdout: "",
@@ -332,6 +335,16 @@ async function main(argv: string[]): Promise<number> {
 									"imm-route --json --fast-track Implement the login form",
 								],
 						},
+						{
+							name: "imm-tracker",
+							description:
+								"Opt-in, one-way GitHub Issue projection. Never grants or consumes Kernel authority.",
+							json_output: true,
+							examples: [
+								"imm-tracker upsert-initiative --stdin --json",
+								"imm-tracker upsert-task --initiative-id <id> --intent docs/plans/<task-id>.intent.json --json",
+							],
+						},
 					],
 					retired: [...RETIRED_MUTATING_COMMANDS].sort(),
 				},
@@ -359,4 +372,4 @@ if (fileURLToPath(import.meta.url) === process.argv[1]) {
 	process.exit(code);
 }
 
-export { main, runCli, runKernelCli, runRouteCli, RETIRED_MUTATING_COMMANDS };
+export { main, runCli, runKernelCli, runRouteCli, runGithubTrackerCli, RETIRED_MUTATING_COMMANDS };

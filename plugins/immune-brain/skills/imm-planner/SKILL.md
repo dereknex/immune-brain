@@ -112,6 +112,27 @@ file creation; then it validates the created artifact with
 continue through Kernel `revise_intent` authority and are not a Planner
 overwrite path.
 
+### Opt-in GitHub Initiative Projection
+
+For a large proposal split across multiple TaskIntents, GitHub Issues may provide
+one-way visibility only when the literal user explicitly opts a named Initiative
+in and confirms its immutable slug. Resolve `../../bin/imm-tracker` from this
+Skill location; do not assume a bare command is on `PATH`. After the first
+TaskIntent has been authored, staged, and validated with `valid: true` and
+`enrollment_ready: true`, call `imm-tracker upsert-initiative --stdin --json`
+with only the confirmed Initiative goal and known stable Slice ID/goal summaries,
+then call `imm-tracker upsert-task --initiative-id <slug> --intent <path> --json`.
+A future Slice remains a parent checklist item until its own TaskIntent is
+canonically authored and validated.
+
+Tracker output is observation, never authority. Report `retryable_failure`,
+`permanent_failure`, or `ambiguous_remote_state` and the exact retry action, but
+do not block planning, Enrollment, execution, QA, Review, settlement, or another
+association. Do not infer opt-in, auto-close the parent, import Issue state,
+create a TaskIntent from an Issue, or store Issue identity in TaskIntent or
+TaskRecord. Existing Issue markers grant permission only for later one-way
+projection updates to that same Initiative; they never grant execution authority.
+
 ### Descriptor Rehearsal Discipline
 
 Every acceptance verification descriptor must be a focused, deterministic,
