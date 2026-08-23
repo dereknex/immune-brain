@@ -1,0 +1,150 @@
+{
+  "contract": "assurance_kernel/task_record/v2",
+  "task_id": "2026-08-23-001-authority-dialog-attention-ownership",
+  "intent_revision": 1,
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "2026-08-23-001-authority-dialog-attention-ownership",
+    "goal": "Make every extension-owned authority dialog emit exactly one externally observable user-attention lifecycle from the shared interaction boundary.",
+    "acceptance": [
+      {
+        "id": "A1",
+        "assertion": "The shared authority-dialog boundary owns exactly one matching attention open/close pair for Enrollment and descriptor-waiver decisions across confirmation, cancellation, abort, and exceptional cleanup without changing authority outcomes.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/pi-canary-enroll-extension.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 65536\n}\n"
+      },
+      {
+        "id": "A2",
+        "assertion": "Every Work authority dialog emits exactly one matching attention pair, stale-authority repair uses authority_repair, and Review reason input remains inside the pair across success, cancellation, abort, and UI or input failure with zero unauthorized writes.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/pi-canary-work-extension.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 65536\n}\n"
+      }
+    ],
+    "scope_hint": [
+      "docs/plans/2026-08-23-001-authority-dialog-attention-ownership-plan.md",
+      "docs/specs/2026-08-23-authority-dialog-attention-ownership.spec.md",
+      "plugins/immune-brain/.pi-extension/imm-canary-enroll.ts",
+      "plugins/immune-brain/.pi-extension/imm-canary-work.ts",
+      "plugins/immune-brain/.pi-extension/pi-canary-interaction.ts",
+      "tests/pi-canary-enroll-extension.test.ts",
+      "tests/pi-canary-work-extension.test.ts"
+    ],
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/2026-08-23-001-authority-dialog-attention-ownership.intent.json",
+    "revision": 1,
+    "content_hash": "sha256:b7fa5d1a651b45873be39f2174a6fb9ef021cf439aaa171908c5ccb9a93834fd"
+  },
+  "phase": "done",
+  "baseline": "sha256:b7fa5d1a651b45873be39f2174a6fb9ef021cf439aaa171908c5ccb9a93834fd",
+  "evidence": [
+    {
+      "id": "evidence-record_evidence:2026-08-23-001-authority-dialog-attention-ownership:2026-08-23T14:16:25.577Z",
+      "acceptance_id": "A1",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:b7fa5d1a651b45873be39f2174a6fb9ef021cf439aaa171908c5ccb9a93834fd",
+      "diff_hash": "sha256:dd00ba4cc3b6447f12cd7463282cd181c2f8b0932dbfc858c429de8266237061",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "Focused Enrollment integration suite passed: 17 tests, 0 failures. Coverage verifies requestAuthorityDialog-owned paired immune-brain:user-attention.v1 events across success, decline, in-flight UI abort, and renderer exception, with stable attention_id and zero authority writes on cancellation/failure. Full regression suite passed: 833 tests, 0 failures."
+    },
+    {
+      "id": "evidence-record_evidence:2026-08-23-001-authority-dialog-attention-ownership:2026-08-23T14:16:32.811Z",
+      "acceptance_id": "A2",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:b7fa5d1a651b45873be39f2174a6fb9ef021cf439aaa171908c5ccb9a93834fd",
+      "diff_hash": "sha256:dd00ba4cc3b6447f12cd7463282cd181c2f8b0932dbfc858c429de8266237061",
+      "status": "passed",
+      "actor_id": "executor",
+      "summary": "Focused Work integration suite passed: 19 tests, 0 failures. Coverage verifies Enrollment, Review authorization including input failure, breaking-intent authorization, ordinary Work authorization, and stale-authority repair all route through requestAuthorityDialog; repair emits reason authority_repair; each opened decision has one matched active true/false pair and caller-side wrappers are absent. Full regression suite passed: 833 tests, 0 failures."
+    }
+  ],
+  "findings": [],
+  "approvals": [
+    {
+      "id": "approval-qa-0f520217",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:b7fa5d1a651b45873be39f2174a6fb9ef021cf439aaa171908c5ccb9a93834fd",
+      "diff_hash": "sha256:dd00ba4cc3b6447f12cd7463282cd181c2f8b0932dbfc858c429de8266237061",
+      "actor_id": "deterministic-qa",
+      "summary": "all 2 fixed verification descriptor(s) passed"
+    },
+    {
+      "id": "approval-review-3774aaaa",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:b7fa5d1a651b45873be39f2174a6fb9ef021cf439aaa171908c5ccb9a93834fd",
+      "diff_hash": "sha256:dd00ba4cc3b6447f12cd7463282cd181c2f8b0932dbfc858c429de8266237061",
+      "actor_id": "native-review-284c52f7-0a0e-403",
+      "summary": "Immutable bundle provenance is valid; the shared dialog boundary pairs attention lifecycle events across enrollment and Work authority paths, including cancellation, abort, input/UI failure, and cleanup."
+    }
+  ],
+  "history": [
+    {
+      "id": "record_evidence:2026-08-23-001-authority-dialog-attention-ownership:2026-08-23T14:16:25.577Z",
+      "at": "2026-08-23T14:16:25.577Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "A1\naction_v2_sha256:007e1a8c4322dc0df3758495a8cec2547c2d7f055eb8930a257593c91be336c6"
+    },
+    {
+      "id": "record_evidence:2026-08-23-001-authority-dialog-attention-ownership:2026-08-23T14:16:32.811Z",
+      "at": "2026-08-23T14:16:32.811Z",
+      "type": "record_evidence",
+      "from_phase": "working",
+      "to_phase": "working",
+      "reason": "A2\naction_v2_sha256:9d8c4e2b96727980a58c0df63783cbe8611af4119843ed5992b97cb3a448ff2d"
+    },
+    {
+      "id": "submit_review:2026-08-23-001-authority-dialog-attention-ownership:2026-08-23T14:16:40.286Z",
+      "at": "2026-08-23T14:16:40.286Z",
+      "type": "submit_review",
+      "from_phase": "working",
+      "to_phase": "review",
+      "reason": "action_v2_sha256:e9f98dee89c4d6ef51c0595899d2b68fd1c8c6eca53ac8015a9f7690f7e4b767"
+    },
+    {
+      "id": "record_approval:2026-08-23-001-authority-dialog-attention-ownership:2026-08-23T14:17:24.173Z",
+      "at": "2026-08-23T14:17:24.173Z",
+      "type": "record_approval",
+      "from_phase": "review",
+      "to_phase": "review",
+      "reason": "approval-qa-0f520217\naction_v2_sha256:85ac3a8fc46cd7459947fccd8dbfda03c13cd4e6bed36f938f0796a2680b8278",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-e5ebe14a855988fa",
+        "issued_at": "2026-08-23T14:17:24.173Z",
+        "expires_at": "2026-08-23T14:27:24.173Z"
+      }
+    },
+    {
+      "id": "record_approval:2026-08-23-001-authority-dialog-attention-ownership:2026-08-23T14:21:48.278Z",
+      "at": "2026-08-23T14:21:48.278Z",
+      "type": "record_approval",
+      "from_phase": "review",
+      "to_phase": "review",
+      "reason": "approval-review-3774aaaa\naction_v2_sha256:e3846b1d5724986262761dcd6375edfdaae97072135171f1992656efc908895f",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "native-review-284c52f7-0a0e-403",
+        "confirmation_ref": "pi-confirm-85da992f4811cc77",
+        "issued_at": "2026-08-23T14:21:48.278Z",
+        "expires_at": "2026-08-23T14:31:48.278Z"
+      }
+    },
+    {
+      "id": "complete:2026-08-23-001-authority-dialog-attention-ownership:2026-08-23T14:22:01.566Z",
+      "at": "2026-08-23T14:22:01.566Z",
+      "type": "complete",
+      "from_phase": "review",
+      "to_phase": "done",
+      "reason": "action_v2_sha256:3fdccdf99dbfc5f637d144c9b82489b556207afddcf31ce87992092916bb568a"
+    }
+  ]
+}

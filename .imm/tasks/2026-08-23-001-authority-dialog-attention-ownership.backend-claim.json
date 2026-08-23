@@ -1,0 +1,9 @@
+{
+  "contract": "assurance_kernel/task_tombstone/v1",
+  "task_id": "2026-08-23-001-authority-dialog-attention-ownership",
+  "lifecycle_status": "terminal",
+  "terminal_phase": "done",
+  "terminal_event_id": "complete:2026-08-23-001-authority-dialog-attention-ownership:2026-08-23T14:22:01.566Z",
+  "final_record_hash": "sha256:914135a32c163f4aff27a3f53a212b59dfd173e177f11cecfe8766ef37b4089a",
+  "terminalized_at": "2026-08-23T14:22:01.566Z"
+}

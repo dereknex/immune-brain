@@ -8,7 +8,8 @@ export type UserAttentionReason =
 	| "enrollment"
 	| "descriptor_waiver"
 	| "breaking_intent_revision"
-	| "review_authorization";
+	| "review_authorization"
+	| "authority_repair";
 
 export interface UserAttentionEventV1 {
 	active: boolean;
@@ -55,7 +56,7 @@ type UiContext = Pick<ExtensionContext, "ui">;
 const terminalRailUis = new WeakSet<object>();
 const deliveredNotifications = new WeakMap<object, Set<string>>();
 
-export function beginUserAttention(
+function beginUserAttention(
 	pi: EventPublisher,
 	event: Omit<UserAttentionEventV1, "active">,
 ): () => void {
@@ -73,7 +74,7 @@ export function beginUserAttention(
 	};
 }
 
-export async function withUserAttention<T>(
+async function withUserAttention<T>(
 	pi: EventPublisher,
 	event: Omit<UserAttentionEventV1, "active">,
 	waitForUser: () => Promise<T>,
@@ -86,68 +87,76 @@ export async function withUserAttention<T>(
 	}
 }
 
-export async function requestAuthorityDialog<T extends string>(
+export async function requestAuthorityDialog<T extends string, R = T | undefined>(
+	pi: EventPublisher,
 	ctx: UiContext,
+	event: Omit<UserAttentionEventV1, "active">,
 	options: AuthorityDialogOptions<T>,
-): Promise<T | undefined> {
-	let finish: ((result: T | undefined) => void) | undefined;
-	let settled = false;
-	const complete = (result: T | undefined) => {
-		if (settled) return;
-		settled = true;
-		finish?.(result);
-	};
-	const abort = () => complete(undefined);
-	if (options.signal?.aborted) return undefined;
-	options.signal?.addEventListener("abort", abort, { once: true });
-	try {
-		return await ctx.ui.custom<T | undefined>((tui, theme, _keybindings, done) => {
-			finish = done;
-			if (settled || options.signal?.aborted) done(undefined);
-			let expanded = false;
-			const detailText = new Text(theme.fg("muted", "Details collapsed; press d to expand."), 1, 0);
-			const selectList = new SelectList(
-				options.actions.map((action): SelectItem => ({ ...action })),
-				options.actions.length,
-				{
-					selectedPrefix: (text) => theme.fg("accent", text),
-					selectedText: (text) => theme.fg("accent", text),
-					description: (text) => theme.fg("muted", text),
-					scrollInfo: (text) => theme.fg("dim", text),
-					noMatch: (text) => theme.fg("warning", text),
-				},
-			);
-			selectList.onSelect = (item) => complete(item.value as T);
-			selectList.onCancel = () => complete(undefined);
-			const container = new Container();
-			container.addChild(new DynamicBorder((text: string) => theme.fg("accent", text)));
-			container.addChild(new Text(theme.fg("accent", theme.bold(options.title)), 1, 0));
-			container.addChild(new Text(options.summary, 1, 0));
-			container.addChild(detailText);
-			container.addChild(selectList);
-			container.addChild(new Text(theme.fg("dim", "d: toggle details | enter: choose | esc: cancel"), 1, 0));
-			container.addChild(new DynamicBorder((text: string) => theme.fg("accent", text)));
-			return {
-				render: (width) => container.render(width),
-				invalidate: () => container.invalidate(),
-				handleInput: (data) => {
-					if (data === "d" || data === "D") {
-						expanded = !expanded;
-						detailText.setText(expanded ? options.details : theme.fg("muted", "Details collapsed; press d to expand."));
-						tui.requestRender();
-						return;
-					}
-					selectList.handleInput(data);
-					tui.requestRender();
-				},
-			};
-		}, {
-			overlay: true,
-			overlayOptions: { anchor: "center", width: "80%", maxHeight: "80%" },
-		});
-	} finally {
-		options.signal?.removeEventListener("abort", abort);
-	}
+	completeDecision?: (selection: T | undefined) => Promise<R>,
+): Promise<R> {
+	return withUserAttention(pi, event, async () => {
+		let selected: T | undefined;
+		let finish: ((result: T | undefined) => void) | undefined;
+		let settled = false;
+		const complete = (result: T | undefined) => {
+			if (settled) return;
+			settled = true;
+			finish?.(result);
+		};
+		const abort = () => complete(undefined);
+		if (!options.signal?.aborted) {
+			options.signal?.addEventListener("abort", abort, { once: true });
+			try {
+				selected = await ctx.ui.custom<T | undefined>((tui, theme, _keybindings, done) => {
+					finish = done;
+					if (settled || options.signal?.aborted) done(undefined);
+					let expanded = false;
+					const detailText = new Text(theme.fg("muted", "Details collapsed; press d to expand."), 1, 0);
+					const selectList = new SelectList(
+						options.actions.map((action): SelectItem => ({ ...action })),
+						options.actions.length,
+						{
+							selectedPrefix: (text) => theme.fg("accent", text),
+							selectedText: (text) => theme.fg("accent", text),
+							description: (text) => theme.fg("muted", text),
+							scrollInfo: (text) => theme.fg("dim", text),
+							noMatch: (text) => theme.fg("warning", text),
+						},
+					);
+					selectList.onSelect = (item) => complete(item.value as T);
+					selectList.onCancel = () => complete(undefined);
+					const container = new Container();
+					container.addChild(new DynamicBorder((text: string) => theme.fg("accent", text)));
+					container.addChild(new Text(theme.fg("accent", theme.bold(options.title)), 1, 0));
+					container.addChild(new Text(options.summary, 1, 0));
+					container.addChild(detailText);
+					container.addChild(selectList);
+					container.addChild(new Text(theme.fg("dim", "d: toggle details | enter: choose | esc: cancel"), 1, 0));
+					container.addChild(new DynamicBorder((text: string) => theme.fg("accent", text)));
+					return {
+						render: (width) => container.render(width),
+						invalidate: () => container.invalidate(),
+						handleInput: (data) => {
+							if (data === "d" || data === "D") {
+								expanded = !expanded;
+								detailText.setText(expanded ? options.details : theme.fg("muted", "Details collapsed; press d to expand."));
+								tui.requestRender();
+								return;
+							}
+							selectList.handleInput(data);
+							tui.requestRender();
+						},
+					};
+				}, {
+					overlay: true,
+					overlayOptions: { anchor: "center", width: "80%", maxHeight: "80%" },
+				});
+			} finally {
+				options.signal?.removeEventListener("abort", abort);
+			}
+		}
+		return completeDecision ? await completeDecision(selected) : selected as R;
+	});
 }
 
 export function presentTaskRail(ctx: UiContext, view: TaskRailView): void {

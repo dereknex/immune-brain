@@ -40,7 +40,6 @@ import {
 	renderStructuredResult,
 	requestAuthorityDialog,
 	resetInteractionPresentation,
-	withUserAttention,
 	type UserAttentionReason,
 } from "./pi-canary-interaction";
 import { isToolFailureState, throwToolFailure } from "./pi-canary-tool-failure";
@@ -116,12 +115,12 @@ async function requestEnrollmentConfirmation(
 		result: title,
 		next: "Review enrollment evidence",
 	});
-	const selected = await withUserAttention(pi, {
+	const selected = await requestAuthorityDialog(pi, ctx, {
 		attention_id: randomUUID(),
 		task_id: taskId,
 		reason,
 		label: title,
-	}, () => requestAuthorityDialog(ctx, {
+	}, {
 		title,
 		summary,
 		details,
@@ -130,7 +129,7 @@ async function requestEnrollmentConfirmation(
 			{ value: "confirm", label: "Confirm enrollment", description: "Create the Kernel-managed task" },
 			{ value: "cancel", label: "Cancel", description: "Leave planning artifacts and authority unchanged" },
 		],
-	}));
+	});
 	return selected === "confirm";
 }
 

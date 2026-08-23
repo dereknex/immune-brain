@@ -29,6 +29,7 @@ interface FakeUI {
 	confirmResult: boolean;
 	signal?: AbortSignal;
 	beforeConfirm?: () => void;
+	customError?: Error;
 }
 
 function makeFakeUI(confirmResult: boolean): FakeUI {
@@ -48,6 +49,7 @@ function makeCtx(root: string, ui: FakeUI, mode: Mode, cwdOverride?: string) {
 			custom: async (
 				factory: (tui: unknown, theme: { fg: (_color: string, text: string) => string; bold: (text: string) => string }, keybindings: unknown, done: (result: boolean) => void) => { render: (width: number) => string[]; handleInput?: (data: string) => void },
 			) => {
+				if (ui.customError) throw ui.customError;
 				let selected: boolean | undefined;
 				const component = factory(
 					{ requestRender: () => undefined },
@@ -624,9 +626,11 @@ describe("pi canary enroll handler integration", () => {
 			const before = authoritySnapshot(root);
 			const ui = makeFakeUI(true);
 			ui.signal = AbortSignal.abort(new Error("host cancelled"));
-			const result = await runTool(root, ui);
+			const emitted: Array<{ name: string; payload: Record<string, unknown> }> = [];
+			const result = await runTool(root, ui, [], "enroll", emitted);
 			expect(result.details.state).toBe("cancelled");
 			expect(ui.confirmCalls.length).toBe(0);
+			expect(emitted).toEqual([]);
 			expect(authoritySnapshot(root)).toBe(before);
 		} finally {
 			rmSync(root, { recursive: true, force: true });
@@ -646,6 +650,25 @@ describe("pi canary enroll handler integration", () => {
 			const result = await runTool(root, ui, [], "enroll", emitted);
 			expect(ui.confirmCalls).toHaveLength(1);
 			expect(result.details.state).toBe("cancelled");
+			expect(emitted.map((event) => event.payload.active)).toEqual([true, false]);
+			expect(emitted[1].payload.attention_id).toBe(emitted[0].payload.attention_id);
+			expect(authoritySnapshot(root)).toBe(before);
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
+	test("authority dialog failure closes attention with zero authority writes", async () => {
+		const root = mkdtempSync(join(tmpdir(), "p2b1-enroll-"));
+		try {
+			makeEligibleRepo(root, TASK);
+			const before = authoritySnapshot(root);
+			const ui = makeFakeUI(true);
+			ui.customError = new Error("renderer unavailable");
+			const emitted: Array<{ name: string; payload: Record<string, unknown> }> = [];
+			const failure = await capturedToolFailure(runTool(root, ui, [], "enroll", emitted));
+			expect(failure.state).toBe("failed");
+			expect(failure.message).toContain("renderer unavailable");
 			expect(emitted.map((event) => event.payload.active)).toEqual([true, false]);
 			expect(emitted[1].payload.attention_id).toBe(emitted[0].payload.attention_id);
 			expect(authoritySnapshot(root)).toBe(before);

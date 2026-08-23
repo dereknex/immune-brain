@@ -45,7 +45,6 @@ import {
 } from "./pi-canary-assurance";
 import {
 	USER_ATTENTION_EVENT,
-	beginUserAttention,
 	clearTerminalTaskRailOnInput,
 	loopResultDetails,
 	notifyOnce,
@@ -453,7 +452,12 @@ export default function (
 					result: "Kernel authority repair requires literal-user approval",
 					next: "Decide whether to repair the stale claim",
 				});
-				const repairSelection = await requestAuthorityDialog(ctx, {
+				const repairSelection = await requestAuthorityDialog(pi, ctx, {
+					attention_id: randomUUID(),
+					task_id: taskId,
+					reason: "authority_repair",
+					label: "Kernel authority repair required",
+				}, {
 					title: "Repair Kernel authority state?",
 					summary: [
 						`Owner: ${taskId}`,
@@ -796,79 +800,77 @@ export default function (
 			result: pendingReview ? "Independent Review verdict requires a literal-user decision" : `${operation} requires literal-user approval`,
 			next: pendingReview ? "Decide Review outcome" : `Decide ${operation}`,
 		});
-		const endAttention = beginUserAttention(pi, {
+		const attention = {
 			attention_id: randomUUID(),
 			task_id: taskId,
 			reason: attentionReason,
 			label: pendingReview ? "Review approval required" : `${operation} approval required`,
-		});
-		try {
-			if (pendingReview) {
-				let selected: keyof typeof REVIEW_DECISIONS | "Cancel" | undefined;
-				try {
-					selected = await requestAuthorityDialog(ctx, {
-						title: "Review authorization",
-						summary: dialogSummary,
-						details: dialogDetails,
-						signal: ctx.signal,
-						actions: [
-							{ value: "Approve", label: "Approve", description: "Accept the independent Review verdict" },
-							{ value: "Request rework", label: "Request rework", description: "Return the task to working with a required reason" },
-							{ value: "Reject", label: "Reject", description: "Stop the task with a required reason" },
-							{ value: "Cancel", label: "Cancel", description: "Keep the Review verdict pending with zero writes" },
-						],
-					});
-					if (selected === "Request rework" || selected === "Reject") {
+		};
+		if (pendingReview) {
+			let selected: keyof typeof REVIEW_DECISIONS | "Cancel" | undefined;
+			try {
+				selected = await requestAuthorityDialog(pi, ctx, attention, {
+					title: "Review authorization",
+					summary: dialogSummary,
+					details: dialogDetails,
+					signal: ctx.signal,
+					actions: [
+						{ value: "Approve", label: "Approve", description: "Accept the independent Review verdict" },
+						{ value: "Request rework", label: "Request rework", description: "Return the task to working with a required reason" },
+						{ value: "Reject", label: "Reject", description: "Stop the task with a required reason" },
+						{ value: "Cancel", label: "Cancel", description: "Keep the Review verdict pending with zero writes" },
+					],
+				}, async (selection) => {
+					if (selection === "Request rework" || selection === "Reject") {
 						reviewNote = (await ctx.ui.input(
-							selected === "Request rework" ? "Required rework" : "Reason for rejection",
+							selection === "Request rework" ? "Required rework" : "Reason for rejection",
 							"Required",
 							{ signal: ctx.signal },
 						))?.trim();
 					}
-				} catch (error) {
-					if (ctx.signal?.aborted !== true && (!(error instanceof DOMException) || error.name !== "AbortError")) {
-						const detail = error instanceof Error ? error.message : String(error);
-						const reason = `Review decision UI failed: ${detail}`;
-						notifyOnce(ctx, `authorization-ui:${taskId}:${operation}:${detail}`, reason, "error");
-						progression.closeInvocation(invocation);
-						return { state: "blocked", reason };
-					}
-					selected = undefined;
-				}
-				if (selected === undefined || selected === "Cancel" || ((selected === "Request rework" || selected === "Reject") && !reviewNote)) {
+					return selection;
+				});
+			} catch (error) {
+				if (ctx.signal?.aborted !== true && (!(error instanceof DOMException) || error.name !== "AbortError")) {
+					const detail = error instanceof Error ? error.message : String(error);
+					const reason = `Review decision UI failed: ${detail}`;
+					notifyOnce(ctx, `authorization-ui:${taskId}:${operation}:${detail}`, reason, "error");
 					progression.closeInvocation(invocation);
-					return { state: "cancelled", operation, reason: "cancelled" };
+					return { state: "blocked", reason };
 				}
-				reviewDecision = REVIEW_DECISIONS[selected];
-				confirmed = true;
-			} else {
-				try {
-					const selected = await requestAuthorityDialog(ctx, {
-						title: `Authorize ${operation}?`,
-						summary: dialogSummary,
-						details: dialogDetails,
-						signal: ctx.signal,
-						actions: [
-							{ value: "authorize", label: "Authorize", description: `Apply ${operation} after freshness revalidation` },
-							{ value: "cancel", label: "Cancel", description: "Leave managed authority unchanged" },
-						],
-					});
-					confirmed = selected === "authorize";
-				} catch {
-					if (operation !== "stop" && operation !== "approve-breaking-intent-revision")
-						await recordCancelledUserDecision(ctx, taskId, operation, snapshotDigestRef).catch(() => undefined);
-					progression.closeInvocation(invocation);
-					return { state: "cancelled", operation, reason: "confirmation aborted" };
-				}
+				selected = undefined;
 			}
-			if (!confirmed) {
-				if (operation !== "stop" && operation !== "approve-breaking-intent-revision")
-					await recordCancelledUserDecision(ctx, taskId, operation, snapshotDigestRef).catch(() => undefined);
+			if (selected === undefined || selected === "Cancel" || ((selected === "Request rework" || selected === "Reject") && !reviewNote)) {
 				progression.closeInvocation(invocation);
 				return { state: "cancelled", operation, reason: "cancelled" };
 			}
-		} finally {
-			endAttention();
+			reviewDecision = REVIEW_DECISIONS[selected];
+			confirmed = true;
+		} else {
+			try {
+				const selected = await requestAuthorityDialog(pi, ctx, attention, {
+					title: `Authorize ${operation}?`,
+					summary: dialogSummary,
+					details: dialogDetails,
+					signal: ctx.signal,
+					actions: [
+						{ value: "authorize", label: "Authorize", description: `Apply ${operation} after freshness revalidation` },
+						{ value: "cancel", label: "Cancel", description: "Leave managed authority unchanged" },
+					],
+				});
+				confirmed = selected === "authorize";
+			} catch {
+				if (operation !== "stop" && operation !== "approve-breaking-intent-revision")
+					await recordCancelledUserDecision(ctx, taskId, operation, snapshotDigestRef).catch(() => undefined);
+				progression.closeInvocation(invocation);
+				return { state: "cancelled", operation, reason: "confirmation aborted" };
+			}
+		}
+		if (!confirmed) {
+			if (operation !== "stop" && operation !== "approve-breaking-intent-revision")
+				await recordCancelledUserDecision(ctx, taskId, operation, snapshotDigestRef).catch(() => undefined);
+			progression.closeInvocation(invocation);
+			return { state: "cancelled", operation, reason: "cancelled" };
 		}
 		if (!progression.sessionActiveValue() || progression.sessionGenerationValue() !== authorizationGeneration || progression.invocationState(invocation) !== "open") {
 			notifyOnce(ctx, `authorization-session:${taskId}:${operation}`, `authorize ${operation}: session changed; confirmation discarded`, "warning");

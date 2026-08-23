@@ -593,7 +593,7 @@ async function preparePendingReview(root: string): Promise<RegisteredTool & { co
 		const recordPath = join(root, ".imm", "tasks", `${TASK}.json`);
 		const tombstonePath = join(root, ".imm", "tasks", `${TASK}.backend-claim.json`);
 		try {
-			const { tools } = loadSurface();
+			const { tools, emitted } = loadSurface();
 
 			const tool = tools.find((candidate) => candidate.name === "imm_kernel_canary")!;
 			const claimBefore = readFileSync(claimPath, "utf8");
@@ -627,6 +627,18 @@ async function preparePendingReview(root: string): Promise<RegisteredTool & { co
 			expect(existsSync(claimPath)).toBe(false);
 			expect(readFileSync(recordPath, "utf8")).toBe(recordBefore);
 			expect(readFileSync(tombstonePath, "utf8")).toBe(tombstoneBefore);
+			const attention = emitted.filter((event) => event.name === USER_ATTENTION_EVENT);
+			expect(attention).toHaveLength(4);
+			for (let index = 0; index < attention.length; index += 2) {
+				const opened = attention[index].payload;
+				expect(opened).toMatchObject({ active: true, task_id: TASK, reason: "authority_repair" });
+				expect(attention[index + 1].payload).toEqual({
+					active: false,
+					attention_id: opened.attention_id,
+					task_id: TASK,
+					reason: "authority_repair",
+				});
+			}
 		} finally {
 			rmSync(root, { recursive: true, force: true });
 		}
@@ -1019,6 +1031,22 @@ async function preparePendingReview(root: string): Promise<RegisteredTool & { co
 			expect(failed).toMatchObject({ state: "blocked", message: "Review decision UI failed: renderer unavailable" });
 			expect({ record: readFileSync(recordPath, "utf8"), claim: readFileSync(claimPath, "utf8") }).toEqual(before);
 
+			const inputFailureCtx = makeCtx(root, makeUI(), "tui", "Request rework");
+			inputFailureCtx.ui.input = async () => {
+				const attention = tool.emitted.filter((event) => event.name === USER_ATTENTION_EVENT);
+				expect(attention.at(-1)?.payload.active).toBe(true);
+				throw new Error("input unavailable");
+			};
+			const inputFailure = await capturedToolFailure(tool.execute(
+				"input-failure",
+				{ task_id: TASK, action: { op: "request_authorization" } },
+				undefined,
+				undefined,
+				inputFailureCtx,
+			));
+			expect(inputFailure).toMatchObject({ state: "blocked", message: "Review decision UI failed: input unavailable" });
+			expect({ record: readFileSync(recordPath, "utf8"), claim: readFileSync(claimPath, "utf8") }).toEqual(before);
+
 			const blankRework = await tool.execute(
 				"blank-rework",
 				{ task_id: TASK, action: { op: "request_authorization" } },
@@ -1048,7 +1076,7 @@ async function preparePendingReview(root: string): Promise<RegisteredTool & { co
 			);
 			expect(resumed.details).toMatchObject({ state: "applied", operation: "record-review-verdict" });
 			const attention = tool.emitted.filter((event) => event.name === USER_ATTENTION_EVENT);
-			expect(attention).toHaveLength(8);
+			expect(attention).toHaveLength(10);
 			for (let index = 0; index < attention.length; index += 2) {
 				const opened = attention[index].payload;
 				const closed = attention[index + 1].payload;
