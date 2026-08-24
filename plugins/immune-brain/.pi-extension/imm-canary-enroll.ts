@@ -25,7 +25,6 @@ import {
 	readTaskIntent,
 	runEnrollmentRehearsal,
 	enrollCanaryTask,
-	markGithubTaskActive,
 } from "./runtime-stub";
 import {
 	assertRunnerCompatible,
@@ -1162,23 +1161,12 @@ async function executeForegroundEnrollment(
 		onUpdate?.(updateResult(action, taskId, stage, "Kernel enrollment commit owns settlement and is no longer cancellable"));
 		try {
 			const result = await enrollCanaryTask(root, input, registry);
-			let tracker = "disabled";
-			try {
-				const projected = await markGithubTaskActive(root, taskId);
-				tracker = projected.association_found
-					? `${projected.status}: ${projected.message}`
-					: projected.status === "already_current"
-						? "disabled"
-						: `${projected.status}: ${projected.message}`;
-			} catch {
-				tracker = "retryable_failure";
-			}
 			return terminal(
 				action,
 				taskId,
 				"completed",
 				stage,
-				`Kernel enrollment completed: task ${result.record.task_id} phase=${result.record.phase} backend=${result.backend_claim.backend} rehearsal=${descriptorRehearsal.enrollment_ready ? "passed" : "waived"} tracker=${tracker}`,
+				`Kernel enrollment completed: task ${result.record.task_id} phase=${result.record.phase} backend=${result.backend_claim.backend} rehearsal=${descriptorRehearsal.enrollment_ready ? "passed" : "waived"}`,
 				"continue with imm-loop",
 			);
 		} catch (error) {

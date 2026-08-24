@@ -125,16 +125,23 @@ overwrite path.
 
 ### Opt-in GitHub Initiative Projection
 
-For a large proposal split across multiple TaskIntents, GitHub Issues may provide
+For a large proposal split across multiple TaskIntents, exactly one planning
+carrier is chosen per Initiative: a Local Markdown file at
+`docs/initiatives/<slug>.md` or one GitHub Parent Issue. GitHub Issues provide
 one-way visibility only when the literal user explicitly opts a named Initiative
 in and confirms its immutable slug. Resolve `../../bin/imm-tracker` from this
 Skill location; do not assume a bare command is on `PATH`. After the first
 TaskIntent has been authored, staged, and validated with `valid: true` and
-`enrollment_ready: true`, call `imm-tracker upsert-initiative --stdin --json`
-with only the confirmed Initiative goal and known stable Slice ID/goal summaries,
-then call `imm-tracker upsert-task --initiative-id <slug> --intent <path> --json`.
-A future Slice remains a parent checklist item until its own TaskIntent is
-canonically authored and validated.
+`enrollment_ready: true`, call `imm-tracker create-initiative --stdin --json`
+once with the confirmed goal and known stable Slice ID/result summaries; the
+tracker creates the Parent once and never rewrites it later planning changes are
+direct user edits to that Issue. Then call
+`imm-tracker upsert-task --initiative-id <slug> --slice-id <id> --intent <path> --json`
+to create one neutral open Child Issue and attach it to the Parent as a native
+Sub-issue. If `docs/initiatives/<slug>.md` exists, the tracker fails with a
+carrier conflict; Local mode performs zero GitHub operations. A future Slice
+remains a parent checklist entry until its own TaskIntent is canonically
+authored and validated.
 
 Tracker output is observation, never authority. Report `retryable_failure`,
 `permanent_failure`, or `ambiguous_remote_state` and the exact retry action, but

@@ -32,10 +32,11 @@ independently closable Steps.
 _Avoid_: treating roadmap phases as completed Plan coverage
 
 **Initiative tracking Issue**:
-An optional GitHub parent Issue that gives humans one-way visibility across a
-large proposal's known Slice goals and finalized TaskIntents. It is identified
-by repository ID plus a user-confirmed stable Initiative slug in hidden markers.
-It never creates execution work, imports GitHub state, grants authority, or
+An optional GitHub parent Issue that is the single GitHub-mode planning source
+for one Initiative: known Slice goals and finalized TaskIntents. It is created
+once and identified by repository ID plus a user-confirmed stable Initiative
+slug in hidden markers; all later planning changes are direct user edits. It
+never creates execution work, imports GitHub state, grants authority, or
 replaces a Spec, TaskIntent, TaskRecord, Plan, or Assurance projection.
 _Avoid_: executable roadmap, source of truth, parent TaskIntent
 
@@ -122,7 +123,7 @@ _Avoid_: status file, state dump
 ## Architecture Map
 
 - Workflow runtime: `plugins/immune-brain/` is packaged exclusively for Pi through the root `package.json`; `plugins/immune-brain/.pi-extension/` owns TUI enrollment, automated assurance coordination, native subagent Review dispatch, and literal-user confirmation. `plugins/immune-brain/runtime/v4_runtime.ts` is the only shipped Bun + TypeScript CLI router, `plugins/immune-brain/runtime/kernel/` owns TaskIntent/TaskRecord reducers and storage, and `plugins/immune-brain/runtime/advisory_dispatch.ts` plus `work_probes.ts` build Pi `Agent` dispatch envelopes. `plugins/immune-brain/bin/imm-*` remains the stable wrapper surface; legacy v3 mutation routes are retired while explicit audit/validation projections remain read-only.
-- External Initiative tracking: `plugins/immune-brain/runtime/github_issue_tracker.ts` and `plugins/immune-brain/bin/imm-tracker` own the opt-in, one-way GitHub Issues projection. Hidden markers bind repository ID + Initiative slug and repository ID + Task ID; human prose outside managed body delimiters is preserved. Planner publishes `proposed` only after canonical TaskIntent validation, Enrollment projects `active` only after authority commit, and the Work extension projects terminal state only from a fresh claimless projection plus exact tombstone. This adapter never reads or writes Kernel authority state.
+- External Initiative tracking: `plugins/immune-brain/runtime/github_issue_tracker.ts` and `plugins/immune-brain/bin/imm-tracker` own the opt-in, one-way GitHub Issues projection with exactly one carrier per Initiative (Local Markdown at `docs/initiatives/<slug>.md` or a create-once Parent Issue; the tracker fails on carrier conflicts and never rewrites or closes a Parent). Hidden markers bind repository ID + Initiative slug + Slice ID and repository ID + Task ID; canonical TaskIntent validation creates one neutral open Child Issue attached as a native Sub-issue, and the Work extension projects terminal state (`completed`/`not planned`) only from a fresh claimless projection plus exact tombstone — Enrollment performs no GitHub projection. This adapter never reads or writes Kernel authority state.
 - Assurance Kernel: Git-tracked TaskIntent sidecars define task authority, worktree-local TaskRecords hold execution state, and the Pi canary extension owns enrollment, evidence progression, QA/Review orchestration, confirmation, and completion. `plugins/immune-brain/runtime/commands/kernel.ts` is registered by `v4_runtime.ts` for intent author/validate, status, and explicit bounded legacy audit; `status`/`audit` are strictly read-only (zero journal writes) and the retired `migrate`/`readiness`/`journal` subcommands are rejected with zero writes.
 - Kernel mutation authority: `kernel/reducer_v2.ts`, `kernel/authority_port.ts`, `kernel/intent_token_registry.ts`, `kernel/application_v2.ts`, and `kernel/storage.ts` enforce the closed action vocabulary, opaque single-use authority, same-lock Intent reread, content-hash CAS, and recoverable transactions used by the Pi host integration.
 - Project format migration: historical v3 migration modules remain inside the separately bounded legacy runtime closure. The shipped v4 CLI rejects `imm-migrate`; current operation uses TaskIntent/TaskRecord storage and exposes historical state only through explicit bounded `imm-kernel audit --legacy`.

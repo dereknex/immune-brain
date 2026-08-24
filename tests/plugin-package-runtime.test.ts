@@ -226,6 +226,7 @@ type FakeIssue = {
 
 class FakeGh implements GhTransport {
 	issues: FakeIssue[] = [];
+	subIssues = new Map<number, number[]>();
 	mutations = 0;
 	loseNextCreateResponse = false;
 
@@ -235,6 +236,26 @@ class FakeGh implements GhTransport {
 			return ok(JSON.stringify({ id: 4242, full_name: "example/project" }));
 		if (args[0] === "api" && args.includes("--paginate"))
 			return ok(JSON.stringify([this.issues]));
+		if (args[0] === "api") {
+			const endpoint = args.at(-1) as string;
+			const subIssueList = endpoint.match(/issues\/(\d+)\/sub_issues/);
+			if (subIssueList && !args.some((flag) => flag === "-F" || flag === "-f")) {
+				const numbers = this.subIssues.get(Number(subIssueList[1])) ?? [];
+				return ok(JSON.stringify(numbers.map((number) => ({ number }))));
+			}
+			if (subIssueList) {
+				this.mutations += 1;
+				const parent = Number(subIssueList[1]);
+				const child = Number(args.find((value) => value.startsWith("sub_issue_id="))!.split("=")[1]);
+				const existingParent = [...this.subIssues.entries()].find(([, children]) => children.includes(child));
+				if (existingParent && existingParent[0] !== parent)
+					return { ...ok(), exit_code: 1, stderr: `HTTP 422: Issue #${child} already has a parent (#${existingParent[0]})` };
+				const current = this.subIssues.get(parent) ?? [];
+				if (!current.includes(child)) current.push(child);
+				this.subIssues.set(parent, current);
+				return ok();
+			}
+		}
 		if (args[0] === "issue" && args[1] === "create") {
 			this.mutations += 1;
 			const number = this.issues.length + 1;
@@ -271,19 +292,19 @@ class FakeGh implements GhTransport {
 }
 
 const INITIATIVE = {
-	op: "upsert-initiative" as const,
+	op: "create-initiative" as const,
 	initiative_id: "tracking-v1",
 	goal: "Track a large delivery",
-	slices: [{ id: "P1", goal: "Ship the first bounded Task" }],
+	slices: [{ id: "S1", goal: "Ship the first bounded Task" }],
 };
 
 const TRACKED_TASK = {
 	op: "upsert-task" as const,
 	initiative_id: "tracking-v1",
 	task_id: "2026-08-22-001-task",
+	slice_id: "S1",
 	goal: "Ship the first bounded Task",
 	risk: "material" as const,
-	intent_path: "docs/plans/2026-08-22-001-task.intent.json",
 	acceptance: [{ id: "acc-task", summary: "The bounded Task is verified" }],
 };
 
@@ -325,16 +346,19 @@ describe("plugin package runtime cutover parity", () => {
 		const loopSource = readFileSync(join(REPO_ROOT, "plugins/immune-brain/skills/imm-loop/SKILL.md"), "utf8");
 		const loopPacked = readFileSync(join(REPO_ROOT, "plugins/immune-brain/dist/imm-loop.md"), "utf8");
 		for (const contract of [plannerSource, plannerPacked]) {
-			expect(contract).toContain("upsert-initiative --stdin --json");
-			expect(contract).toContain("upsert-task --initiative-id <slug> --intent <path> --json");
+			expect(contract).toContain("create-initiative --stdin --json");
+			expect(contract).toContain("upsert-task --initiative-id <slug> --slice-id <id> --intent <path> --json");
 			expect(contract).toContain("Tracker output is observation, never authority");
 			expect(contract).toContain("do not block planning, Enrollment, execution, QA, Review, settlement");
+			expect(contract).not.toContain("upsert-initiative");
+			expect(contract).not.toContain("mark-active");
 		}
 		for (const contract of [loopSource, loopPacked]) {
 			expect(contract).toContain("fresh claimless");
 			expect(contract).toContain("completed");
 			expect(contract).toContain("not planned");
 			expect(contract).toMatch(/never (use it|treat (it|them)) as evidence/);
+			expect(contract).not.toContain("Enrollment projects `active`");
 		}
 		expect(existsSync(join(REPO_ROOT, "plugins/immune-brain/runtime/github_issue_tracker.ts"))).toBe(true);
 		expect(existsSync(IMM_TRACKER_WRAPPER)).toBe(true);
@@ -489,52 +513,81 @@ describe("plugin package runtime cutover parity", () => {
 		});
 	});
 
-	it("projects opt-in Initiative and Task state idempotently without touching Kernel state", async () => {
+	it("creates the Parent once, refuses carrier conflicts, and never rewrites it", async () => {
 		await withIsolatedRootAsync(async (root) => {
 			const gh = new FakeGh();
 			gh.loseNextCreateResponse = true;
-			const initiative = await runGithubTrackerOperation(root, INITIATIVE, gh);
+			const requested = { ...INITIATIVE, goal: "Track a large delivery for gho_supersecret" };
+			const initiative = await runGithubTrackerOperation(root, requested, gh);
 			expect(initiative).toMatchObject({ status: "created", association_found: true, issue_number: 1 });
 			expect(initiative.message).not.toContain("gho_secret");
-
-			gh.issues[0].body = `Human preface\n${gh.issues[0].body}\nHuman notes`;
-			const updated = await runGithubTrackerOperation(root, {
-				...INITIATIVE,
-				goal: "Track a large delivery with gho_supersecret removed",
-				slices: [...INITIATIVE.slices, { id: "P2", goal: "Ship the successor Task" }],
-			}, gh);
-			expect(updated.status).toBe("updated");
-			expect(gh.issues[0].body.startsWith("Human preface")).toBe(true);
-			expect(gh.issues[0].body.endsWith("Human notes")).toBe(true);
 			expect(gh.issues[0].body).toContain("[REDACTED_GITHUB_TOKEN]");
-			expect(gh.issues[0].body).not.toContain("gho_supersecret");
+			expect(gh.issues[0].body).toContain("<!-- immune-brain:slice-id=S1 -->");
 
-			expect(await runGithubTrackerOperation(root, TRACKED_TASK, gh)).toMatchObject({ status: "created", issue_number: 2 });
-			expect(await runGithubTrackerOperation(root, { op: "mark-active", task_id: TRACKED_TASK.task_id }, gh)).toMatchObject({ status: "updated" });
-			expect(gh.issues[1].body).toContain("tracker-state=active");
-			const terminalEvent = "complete:2026-08-22-001-task:2099-01-01T02:00:00.000Z";
-			expect(await runGithubTrackerOperation(root, {
-				op: "mark-terminal",
-				task_id: TRACKED_TASK.task_id,
-				phase: "done",
-				terminal_event_id: terminalEvent,
-			}, gh)).toMatchObject({ status: "updated" });
-			expect(gh.issues[1]).toMatchObject({ state: "closed", state_reason: "completed" });
-			expect(await runGithubTrackerOperation(root, {
-				op: "mark-terminal",
-				task_id: TRACKED_TASK.task_id,
-				phase: "done",
-				terminal_event_id: terminalEvent,
-			}, gh)).toMatchObject({ status: "already_current" });
-			gh.issues[1].state = "open";
-			gh.issues[1].state_reason = null;
-			expect(await runGithubTrackerOperation(root, {
-				op: "mark-terminal",
-				task_id: TRACKED_TASK.task_id,
-				phase: "done",
-				terminal_event_id: terminalEvent,
-			}, gh)).toMatchObject({ status: "updated" });
-			expect(gh.issues[1]).toMatchObject({ state: "closed", state_reason: "completed" });
+			expect(await runGithubTrackerOperation(root, requested, gh)).toMatchObject({ status: "already_current" });
+
+			const before = gh.mutations;
+			const refused = await runGithubTrackerOperation(root, { ...INITIATIVE, goal: "Changed after creation" }, gh);
+			expect(refused).toMatchObject({ status: "permanent_failure", association_found: true });
+			expect(gh.mutations).toBe(before);
+
+			mkdirSync(join(root, "docs", "initiatives"), { recursive: true });
+			writeFileSync(join(root, "docs", "initiatives", `${INITIATIVE.initiative_id}.md`), "# Local source\n");
+			const conflict = await runGithubTrackerOperation(root, INITIATIVE, gh);
+			expect(conflict.status).toBe("permanent_failure");
+			expect(conflict.message).toContain("carrier conflict");
+			expect(gh.mutations).toBe(before);
+		});
+	});
+
+	it("publishes one neutral open Child per Task and converges the native Sub-issue relation idempotently", async () => {
+		await withIsolatedRootAsync(async (root) => {
+			const gh = new FakeGh();
+			const missingParent = await runGithubTrackerOperation(root, TRACKED_TASK, gh);
+			expect(missingParent.status).toBe("permanent_failure");
+			expect((await runGithubTrackerOperation(root, INITIATIVE, gh)).status).toBe("created");
+
+			const beforeMutations = gh.mutations;
+			const pristineParentBody = gh.issues[0].body;
+			gh.issues[0].body = pristineParentBody.replace(
+				"## Slices",
+				"## Slices\n- [ ] <!-- immune-brain:slice-id=S1 --> `S1`: duplicated entry",
+			);
+			const duplicateSlice = await runGithubTrackerOperation(root, TRACKED_TASK, gh);
+			expect(duplicateSlice.status).toBe("ambiguous_remote_state");
+			expect(gh.mutations).toBe(beforeMutations);
+			gh.issues[0].body = pristineParentBody.replace("<!-- immune-brain:slice-id=S1 -->", "");
+			const missingSlice = await runGithubTrackerOperation(root, TRACKED_TASK, gh);
+			expect(missingSlice.status).toBe("ambiguous_remote_state");
+			expect(gh.mutations).toBe(beforeMutations);
+			gh.issues[0].body = pristineParentBody;
+
+			const published = await runGithubTrackerOperation(root, TRACKED_TASK, gh);
+			expect(published).toMatchObject({ status: "created", association_found: true, issue_number: 2 });
+			expect(gh.issues[1].state).toBe("open");
+			expect(gh.subIssues.get(1)).toEqual([2]);
+			expect(gh.issues[1].body).toContain("<!-- immune-brain:initiative-id=tracking-v1 -->");
+			expect(gh.issues[1].body).toContain("<!-- immune-brain:slice-id=S1 -->");
+			expect(gh.issues[1].body).toContain("<!-- immune-brain:task-id=2026-08-22-001-task -->");
+			expect(gh.issues[1].body).not.toContain("tracker-state");
+			expect(gh.issues[1].body).not.toContain(".intent.json");
+
+			expect(await runGithubTrackerOperation(root, TRACKED_TASK, gh)).toMatchObject({ status: "already_current" });
+
+			gh.subIssues.delete(1);
+			expect(await runGithubTrackerOperation(root, TRACKED_TASK, gh)).toMatchObject({ status: "updated" });
+			expect(gh.subIssues.get(1)).toEqual([2]);
+
+			gh.subIssues.delete(1);
+			gh.subIssues.set(999, [2]);
+			const foreign = await runGithubTrackerOperation(root, TRACKED_TASK, gh);
+			expect(foreign.status).toBe("permanent_failure");
+			expect(foreign.message).toContain("already has a parent");
+			expect(gh.subIssues.has(1)).toBe(false);
+			gh.subIssues.set(1, [2]);
+
+			const wrongSlice = await runGithubTrackerOperation(root, { ...TRACKED_TASK, slice_id: "S2" }, gh);
+			expect(wrongSlice.status).toBe("ambiguous_remote_state");
 			expect(existsSync(join(root, ".imm", "tasks"))).toBe(false);
 		});
 	});
@@ -559,7 +612,7 @@ describe("plugin package runtime cutover parity", () => {
 			spawnSync("git", ["add", intentPath], { cwd: root });
 			const published = await runGithubTrackerCli([
 				"upsert-task", "--initiative-id", INITIATIVE.initiative_id,
-				"--intent", intentPath, "--json",
+				"--slice-id", TRACKED_TASK.slice_id, "--intent", intentPath, "--json",
 			], root, { gh });
 			expect(published.returncode).toBe(0);
 			expect(JSON.parse(published.stdout)).toMatchObject({ status: "created", issue_number: 2 });
@@ -567,14 +620,48 @@ describe("plugin package runtime cutover parity", () => {
 			writeFileSync(join(root, untrackedPath), readFileSync(join(root, intentPath)));
 			const rejected = await runGithubTrackerCli([
 				"upsert-task", "--initiative-id", INITIATIVE.initiative_id,
-				"--intent", untrackedPath, "--json",
+				"--slice-id", TRACKED_TASK.slice_id, "--intent", untrackedPath, "--json",
 			], root, { gh });
 			expect(rejected.returncode).toBe(2);
 			expect(rejected.stderr).toContain("not Git-tracked");
 		});
 	});
 
-	it("fails closed on duplicate identities and damaged managed regions", async () => {
+	it("closes a Child only from an exact terminal event and preserves manual ambiguity", async () => {
+		await withIsolatedRootAsync(async (root) => {
+			const gh = new FakeGh();
+			expect((await runGithubTrackerOperation(root, INITIATIVE, gh)).status).toBe("created");
+			expect((await runGithubTrackerOperation(root, TRACKED_TASK, gh)).status).toBe("created");
+			const event = "complete:2026-08-22-001-task:2099-01-01T02:00:00.000Z";
+			const terminalOp = { op: "mark-terminal" as const, task_id: TRACKED_TASK.task_id, phase: "done" as const, terminal_event_id: event };
+
+			expect(await runGithubTrackerOperation(root, { ...terminalOp, task_id: "unpublished-task" }, gh)).toMatchObject({ status: "already_current" });
+
+			gh.issues[1].state = "closed";
+			gh.issues[1].state_reason = "completed";
+			const before = gh.mutations;
+			const manual = await runGithubTrackerOperation(root, terminalOp, gh);
+			expect(manual.status).toBe("ambiguous_remote_state");
+			expect(gh.mutations).toBe(before);
+			gh.issues[1].state = "open";
+			gh.issues[1].state_reason = null;
+
+			expect(await runGithubTrackerOperation(root, terminalOp, gh)).toMatchObject({ status: "updated" });
+			expect(gh.issues[1]).toMatchObject({ state: "closed", state_reason: "completed" });
+			expect(gh.issues[1].body).toContain(`<!-- immune-brain:terminal-event=${event} -->`);
+
+			expect(await runGithubTrackerOperation(root, terminalOp, gh)).toMatchObject({ status: "already_current" });
+			expect(await runGithubTrackerOperation(root, { ...terminalOp, terminal_event_id: "complete:other:1" }, gh)).toMatchObject({ status: "ambiguous_remote_state" });
+			expect(await runGithubTrackerOperation(root, { ...terminalOp, phase: "stopped" }, gh)).toMatchObject({ status: "ambiguous_remote_state" });
+
+			gh.issues[1].state = "open";
+			gh.issues[1].state_reason = null;
+			expect(await runGithubTrackerOperation(root, terminalOp, gh)).toMatchObject({ status: "updated" });
+			expect(gh.issues[1]).toMatchObject({ state: "closed", state_reason: "completed" });
+		});
+	});
+
+	it("fails closed on duplicate identities without mutating", async () => {
 		await withIsolatedRootAsync(async (root) => {
 			const gh = new FakeGh();
 			expect((await runGithubTrackerOperation(root, INITIATIVE, gh)).status).toBe("created");
@@ -583,8 +670,9 @@ describe("plugin package runtime cutover parity", () => {
 			expect(await runGithubTrackerOperation(root, INITIATIVE, gh)).toMatchObject({ status: "ambiguous_remote_state" });
 			expect(gh.mutations).toBe(before);
 			gh.issues.pop();
-			gh.issues[0].body = gh.issues[0].body.replace("<!-- immune-brain:managed:end -->", "");
-			expect(await runGithubTrackerOperation(root, { ...INITIATIVE, goal: "Changed" }, gh)).toMatchObject({ status: "ambiguous_remote_state" });
+			gh.issues[0].body = gh.issues[0].body.replace("<!-- immune-brain-tracker:v1 -->", "damaged body");
+			const damaged = await runGithubTrackerOperation(root, TRACKED_TASK, gh);
+			expect(damaged.status).toBe("ambiguous_remote_state");
 			expect(gh.mutations).toBe(before);
 		});
 	});

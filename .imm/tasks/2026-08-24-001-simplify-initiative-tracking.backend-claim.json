@@ -1,0 +1,9 @@
+{
+  "contract": "assurance_kernel/task_tombstone/v1",
+  "task_id": "2026-08-24-001-simplify-initiative-tracking",
+  "lifecycle_status": "terminal",
+  "terminal_phase": "done",
+  "terminal_event_id": "complete:2026-08-24-001-simplify-initiative-tracking:2026-08-24T01:07:57.973Z",
+  "final_record_hash": "sha256:bb866f55706d888f8bb953e7c5e3edeb22c4d899892d267acf300ae7ce7b3e1d",
+  "terminalized_at": "2026-08-24T01:07:57.973Z"
+}

@@ -343,18 +343,22 @@ test("projects GitHub terminal state only from an exact claimless tombstone", ()
 	expect(deriveGithubTerminalProjectionInput(TASK, projection("review"), tombstone)).toBeNull();
 });
 
-test("host hooks publish only after Enrollment commit and fresh terminal projection", () => {
+test("host hooks never project active state and publish terminal projection only from fresh claimless evidence", () => {
 	const root = resolve(import.meta.dir, "..");
 	const enrollment = readFileSync(resolve(root, "plugins/immune-brain/.pi-extension/imm-canary-enroll.ts"), "utf8");
 	const work = readFileSync(resolve(root, "plugins/immune-brain/.pi-extension/imm-canary-work.ts"), "utf8");
-	const enrollmentCommit = enrollment.indexOf("const result = await enrollCanaryTask");
-	const activeProjection = enrollment.indexOf("await markGithubTaskActive", enrollmentCommit);
-	expect(enrollmentCommit).toBeGreaterThan(0);
-	expect(activeProjection).toBeGreaterThan(enrollmentCommit);
+	const stub = readFileSync(resolve(root, "plugins/immune-brain/.pi-extension/runtime-stub.ts"), "utf8");
+	// Durable absence guards: the retired mark-active projection is fully deleted.
+	expect(enrollment).not.toContain("markGithubTaskActive");
+	expect(enrollment).not.toContain("github_issue_tracker");
+	expect(stub).not.toContain("markGithubTaskActive");
+	expect(stub).not.toContain("mark-active");
+	// Terminal projection stays gated behind fresh Assurance plus exact tombstone reads.
 	const enrichment = work.indexOf("async function enrichAssuranceResult");
 	const freshProjection = work.indexOf("await projectAssuranceState", enrichment);
 	const tombstoneRead = work.indexOf("await readTaskTombstone", freshProjection);
 	const terminalProjection = work.indexOf("await markGithubTaskTerminal", tombstoneRead);
+	expect(enrichment).toBeGreaterThan(-1);
 	expect(freshProjection).toBeGreaterThan(enrichment);
 	expect(tombstoneRead).toBeGreaterThan(freshProjection);
 	expect(terminalProjection).toBeGreaterThan(tombstoneRead);

@@ -258,11 +258,11 @@ async function main(argv: string[]): Promise<number> {
 						{
 							name: "imm-tracker",
 							description:
-								"Opt-in, one-way GitHub Issue projection. Never grants or consumes Kernel authority.",
+								"Opt-in, one-way GitHub Issue projection. Creates a Parent once, never rewrites or closes it. Never grants or consumes Kernel authority.",
 							json_output: true,
 							examples: [
-								"imm-tracker upsert-initiative --stdin --json",
-								"imm-tracker upsert-task --initiative-id <id> --intent docs/plans/<task-id>.intent.json --json",
+								"imm-tracker create-initiative --stdin --json",
+								"imm-tracker upsert-task --initiative-id <id> --slice-id <id> --intent docs/plans/<task-id>.intent.json --json",
 							],
 						},
 					],

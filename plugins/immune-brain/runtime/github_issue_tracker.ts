@@ -1,12 +1,12 @@
 import { spawn } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { basename, relative, resolve, sep } from "node:path";
 import { readTaskIntent } from "./kernel/intent";
 
 const CONTRACT = "immune_brain/github_issue_tracker_result/v1" as const;
 const PROTOCOL_MARKER = "<!-- immune-brain-tracker:v1 -->";
-const MANAGED_START = "<!-- immune-brain:managed:start -->";
-const MANAGED_END = "<!-- immune-brain:managed:end -->";
+const KIND_INITIATIVE_MARKER = "<!-- immune-brain:kind=initiative -->";
+const KIND_TASK_MARKER = "<!-- immune-brain:kind=task -->";
 const ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 const MAX_GH_OUTPUT = 1024 * 1024;
 const MAX_DIAGNOSTIC = 512;
@@ -19,8 +19,6 @@ type TrackerStatus =
 	| "retryable_failure"
 	| "permanent_failure"
 	| "ambiguous_remote_state";
-
-type TrackerState = "proposed" | "active" | "completed" | "not_planned";
 
 export interface GithubTrackerResult {
 	contract: typeof CONTRACT;
@@ -39,7 +37,7 @@ export interface InitiativeSlice {
 
 export type TrackerOperation =
 	| {
-		op: "upsert-initiative";
+		op: "create-initiative";
 		initiative_id: string;
 		goal: string;
 		slices: InitiativeSlice[];
@@ -48,12 +46,11 @@ export type TrackerOperation =
 		op: "upsert-task";
 		initiative_id: string;
 		task_id: string;
+		slice_id: string;
 		goal: string;
 		risk: "routine" | "material" | "critical";
-		intent_path: string;
 		acceptance: Array<{ id: string; summary: string }>;
 	}
-	| { op: "mark-active"; task_id: string }
 	| {
 		op: "mark-terminal";
 		task_id: string;
@@ -118,12 +115,8 @@ function countLiteral(value: string, needle: string): number {
 	return count;
 }
 
-function marker(name: "repo-id" | "initiative-id" | "task-id", value: string | number): string {
+function marker(name: "repo-id" | "initiative-id" | "task-id" | "slice-id", value: string | number): string {
 	return `<!-- immune-brain:${name}=${value} -->`;
-}
-
-function stateMarker(state: TrackerState): string {
-	return `<!-- immune-brain:tracker-state=${state} -->`;
 }
 
 function terminalMarker(eventId: string): string {
@@ -291,6 +284,17 @@ function parseIssues(raw: string): GithubIssue[] {
 		});
 }
 
+function parseSubIssueNumbers(raw: string): number[] {
+	const parsed = JSON.parse(raw) as unknown;
+	const pages = Array.isArray(parsed) && parsed.every(Array.isArray) ? parsed.flat() : parsed;
+	if (!Array.isArray(pages)) throw new Error("gh returned malformed Sub-issue list");
+	return pages.map((item, index) => {
+		const number = (item as { number?: unknown })?.number;
+		if (!Number.isSafeInteger(number)) throw new Error(`gh returned a malformed Sub-issue entry at ${index}`);
+		return number;
+	});
+}
+
 async function snapshot(root: string, gh: GhTransport, operation: TrackerOperation["op"]): Promise<RepositorySnapshot | GithubTrackerResult> {
 	const repositoryExecution = await gh.run(["api", "repos/{owner}/{repo}"], { cwd: root });
 	if (repositoryExecution.exit_code !== 0 || repositoryExecution.output_exceeded)
@@ -316,11 +320,11 @@ async function snapshot(root: string, gh: GhTransport, operation: TrackerOperati
 	}
 }
 
-function findIssue(issues: GithubIssue[], primary: string, required: string[]): IssueLookup {
-	const candidates = issues.filter((issue) => issue.body.includes(primary));
+function findIssue(issues: GithubIssue[], primary: string[], required: string[]): IssueLookup {
+	const candidates = issues.filter((issue) => primary.every((needle) => issue.body.includes(needle)));
 	if (candidates.length === 0) return { kind: "missing" };
 	if (candidates.length !== 1)
-		return { kind: "ambiguous", message: `multiple Issues contain identity marker ${primary}` };
+		return { kind: "ambiguous", message: `multiple Issues contain identity marker ${primary[0]}` };
 	const issue = candidates[0];
 	for (const expected of [PROTOCOL_MARKER, ...required]) {
 		if (countLiteral(issue.body, expected) !== 1)
@@ -331,158 +335,283 @@ function findIssue(issues: GithubIssue[], primary: string, required: string[]): 
 
 function initiativeLookup(issues: GithubIssue[], repositoryId: number, initiativeId: string): IssueLookup {
 	const initiative = marker("initiative-id", initiativeId);
-	return findIssue(issues, initiative, [marker("repo-id", repositoryId), initiative]);
+	return findIssue(issues, [initiative, KIND_INITIATIVE_MARKER], [marker("repo-id", repositoryId), initiative]);
 }
 
 function taskLookup(issues: GithubIssue[], repositoryId: number, taskId: string): IssueLookup {
 	const task = marker("task-id", taskId);
-	const lookup = findIssue(issues, task, [marker("repo-id", repositoryId), task]);
-	if (lookup.kind !== "found") return lookup;
-	const initiativeMarkers = lookup.issue.body.match(/<!-- immune-brain:initiative-id=[A-Za-z0-9][A-Za-z0-9._-]{0,127} -->/g) ?? [];
-	return initiativeMarkers.length === 1
-		? lookup
-		: { kind: "ambiguous", message: `Issue #${lookup.issue.number} has missing or duplicate Initiative markers` };
+	const base = findIssue(issues, [task, KIND_TASK_MARKER], [marker("repo-id", repositoryId), task]);
+	if (base.kind !== "found") return base;
+	for (const name of ["initiative-id", "slice-id"] as const) {
+		const values = [...base.issue.body.matchAll(new RegExp(`<!-- immune-brain:${name}=([A-Za-z0-9][A-Za-z0-9._-]{0,127}) -->`, "g"))];
+		if (values.length !== 1)
+			return { kind: "ambiguous", message: `Issue #${base.issue.number} has missing or duplicate ${name} ownership markers` };
+	}
+	return base;
 }
 
-function managedRegion(contents: string): string {
-	return `${MANAGED_START}\n${contents.trim()}\n${MANAGED_END}`;
+function ownedTaskLookup(
+	issues: GithubIssue[],
+	repositoryId: number,
+	taskId: string,
+	initiativeId: string,
+	sliceId: string,
+): IssueLookup {
+	const base = taskLookup(issues, repositoryId, taskId);
+	if (base.kind !== "found") return base;
+	return base.issue.body.includes(marker("initiative-id", initiativeId))
+		&& base.issue.body.includes(marker("slice-id", sliceId))
+		? base
+		: { kind: "ambiguous", message: `Issue #${base.issue.number} belongs to another Initiative or Slice; Task ownership is immutable` };
 }
 
-function reconcileManagedBody(existing: string, desiredRegion: string): { body?: string; error?: string } {
-	if (countLiteral(existing, MANAGED_START) !== 1 || countLiteral(existing, MANAGED_END) !== 1)
-		return { error: "managed region delimiters are missing or duplicated" };
-	const start = existing.indexOf(MANAGED_START);
-	const end = existing.indexOf(MANAGED_END, start);
-	if (end < start) return { error: "managed region delimiters are reversed" };
-	return { body: `${existing.slice(0, start)}${desiredRegion}${existing.slice(end + MANAGED_END.length)}` };
+function sliceCount(parentBody: string, sliceId: string): number {
+	return countLiteral(parentBody, marker("slice-id", sliceId));
 }
 
-function initiativeRegion(goal: string, slices: InitiativeSlice[]): string {
-	const rows = slices.length === 0
-		? "No future Slices recorded."
-		: slices.map((slice) => `- [ ] \`${slice.id}\`: ${slice.goal}`).join("\n");
-	return managedRegion(`## Initiative\n\n${goal}\n\n## Planned Slices\n\n${rows}`);
+async function confirmAttachment(
+	root: string,
+	gh: GhTransport,
+	operation: TrackerOperation["op"],
+	repository: RepositoryInfo,
+	parentNumber: number,
+	childNumber: number,
+): Promise<GithubTrackerResult | { attached: boolean }> {
+	const listed = await gh.run(["api", `repos/${repository.name_with_owner}/issues/${parentNumber}/sub_issues?per_page=100`], { cwd: root });
+	if (listed.exit_code !== 0 || listed.output_exceeded)
+		return ghFailure(operation, listed, "cannot read native Sub-issue relations");
+	let numbers: number[];
+	try {
+		numbers = parseSubIssueNumbers(listed.stdout);
+	} catch (error) {
+		return result(operation, "permanent_failure", error instanceof Error ? error.message : String(error));
+	}
+	const matches = numbers.filter((candidate) => candidate === childNumber).length;
+	if (matches > 1) return result(operation, "ambiguous_remote_state", `Issue #${parentNumber} lists the Task Issue more than once`);
+	return { attached: matches === 1 };
 }
 
-function taskRegion(operation: Extract<TrackerOperation, { op: "upsert-task" }>, state: TrackerState): string {
+async function attachSubIssue(
+	root: string,
+	gh: GhTransport,
+	operation: TrackerOperation["op"],
+	repository: RepositoryInfo,
+	parentNumber: number,
+	childNumber: number,
+): Promise<GithubTrackerResult | { attached: true }> {
+	const mutation = await gh.run([
+		"api",
+		"-F",
+		`sub_issue_id=${childNumber}`,
+		`repos/${repository.name_with_owner}/issues/${parentNumber}/sub_issues`,
+	], { cwd: root });
+	if (mutation.exit_code !== 0 || mutation.output_exceeded)
+		return ghFailure(operation, mutation, "native Sub-issue attachment failed");
+	const confirmed = await confirmAttachment(root, gh, operation, repository, parentNumber, childNumber);
+	if ("attached" in confirmed) return { attached: true };
+	return confirmed;
+}
+
+function carrierConflict(root: string, operation: TrackerOperation["op"], initiativeId: string): GithubTrackerResult | null {
+	if (!existsSync(resolve(root, "docs", "initiatives", `${initiativeId}.md`))) return null;
+	return result(
+		operation,
+		"permanent_failure",
+		`Initiative carrier conflict: docs/initiatives/${initiativeId}.md already owns this slug locally; remove the duplicate carrier before using the GitHub projection`,
+	);
+}
+
+async function createInitiative(
+	root: string,
+	gh: GhTransport,
+	operation: Extract<TrackerOperation, { op: "create-initiative" }>,
+	source: RepositorySnapshot,
+): Promise<GithubTrackerResult> {
+	const lookup = (issues: GithubIssue[]) => initiativeLookup(issues, source.repository.id, operation.initiative_id);
+	const found = lookup(source.issues);
+	if (found.kind === "ambiguous") return result(operation.op, "ambiguous_remote_state", found.message);
+	const body = `${[
+		PROTOCOL_MARKER,
+		KIND_INITIATIVE_MARKER,
+		marker("repo-id", source.repository.id),
+		marker("initiative-id", operation.initiative_id),
+	].join("\n")}\n\nOpt-in, non-authoritative Immune-Brain Initiative source. Created once; edit this Issue directly for all later planning changes.\n\n## Initiative\n\n${operation.goal}\n\n## Slices\n\n${
+		operation.slices.length === 0
+			? "No Slices recorded yet."
+			: operation.slices.map((slice) => `- [ ] ${marker("slice-id", slice.id)} \`${slice.id}\`: ${slice.goal}`).join("\n")
+	}\n`;
+	if (found.kind === "missing") {
+		const mutation = await gh.run([
+			"issue", "create", "--repo", source.repository.name_with_owner,
+			"--title", `[IB] ${titleText(operation.initiative_id)}: ${titleText(operation.goal)}`,
+			"--body-file", "-",
+		], { cwd: root, stdin: body });
+		const refreshed = await snapshot(root, gh, operation.op);
+		if ("contract" in refreshed) return refreshed;
+		const confirmed = lookup(refreshed.issues);
+		if (confirmed.kind === "ambiguous") return result(operation.op, "ambiguous_remote_state", confirmed.message);
+		if (confirmed.kind === "missing") {
+			return mutation.exit_code !== 0 && !mutation.timed_out && !mutation.output_exceeded
+				? ghFailure(operation.op, mutation, "Initiative Issue creation failed")
+				: result(operation.op, "retryable_failure", "Initiative creation could not be confirmed");
+		}
+		return confirmed.issue.body === body
+			? result(operation.op, "created", "Initiative Issue created as the single GitHub source", confirmed.issue)
+			: result(operation.op, "retryable_failure", "Initiative Issue did not converge to the requested initial body", confirmed.issue);
+	}
+	if (found.issue.body === body)
+		return result(operation.op, "already_current", "Initiative Issue already carries the requested initial source", found.issue);
+	return result(
+		operation.op,
+		"permanent_failure",
+		"Initiative Issue already exists and the tracker never rewrites it; edit the GitHub source directly for later planning changes",
+		found.issue,
+	);
+}
+
+function childBody(repository: RepositoryInfo, operation: Extract<TrackerOperation, { op: "upsert-task" }>): string {
 	const acceptance = operation.acceptance
 		.map((item) => `- \`${item.id}\`: ${item.summary}`)
 		.join("\n");
-	return managedRegion([
-		stateMarker(state),
-		`State: \`${state}\``,
-		`Risk: \`${operation.risk}\``,
-		`TaskIntent: \`${operation.intent_path}\``,
-		"",
-		"## Goal",
-		"",
-		operation.goal,
-		"",
-		"## Acceptance",
-		"",
-		acceptance,
-	].join("\n"));
+	return `${[
+		PROTOCOL_MARKER,
+		KIND_TASK_MARKER,
+		marker("repo-id", repository.id),
+		marker("initiative-id", operation.initiative_id),
+		marker("slice-id", operation.slice_id),
+		marker("task-id", operation.task_id),
+	].join("\n")}\n\nOpt-in, non-authoritative Immune-Brain Task observation. Open means this Task still needs attention.\n\nRisk: \`${operation.risk}\`\n\n## Goal\n\n${operation.goal}\n\n## Acceptance\n\n${acceptance}\n`;
 }
 
-function issueBody(markers: string[], introduction: string, region: string): string {
-	return `${[PROTOCOL_MARKER, ...markers].join("\n")}\n\n${introduction}\n\n${region}\n`;
-}
-
-function trackerState(body: string): TrackerState | null {
-	const values = [...body.matchAll(/<!-- immune-brain:tracker-state=(proposed|active|completed|not_planned) -->/g)];
-	return values.length === 1 ? values[0][1] as TrackerState : null;
-}
-
-function transitionBody(body: string, next: TrackerState, terminalEventId?: string): { body?: string; error?: string } {
-	const current = trackerState(body);
-	if (!current) return { error: "tracker state marker is missing or duplicated" };
-	const visible = `State: \`${current}\``;
-	if (countLiteral(body, visible) !== 1)
-		return { error: "visible tracker state is missing or duplicated" };
-	let updated = body
-		.replace(stateMarker(current), stateMarker(next))
-		.replace(visible, `State: \`${next}\``);
-	if (terminalEventId) {
-		const existing = [...updated.matchAll(/<!-- immune-brain:terminal-event=([A-Za-z0-9._:-]+) -->/g)];
-		if (existing.length > 1 || (existing.length === 1 && existing[0][1] !== terminalEventId))
-			return { error: "terminal event marker conflicts with authoritative settlement" };
-		if (existing.length === 0) {
-			const terminal = `${terminalMarker(terminalEventId)}\nTerminal event: \`${terminalEventId}\`\n`;
-			updated = updated.replace(MANAGED_END, `${terminal}${MANAGED_END}`);
+async function upsertTask(
+	root: string,
+	gh: GhTransport,
+	operation: Extract<TrackerOperation, { op: "upsert-task" }>,
+	source: RepositorySnapshot,
+): Promise<GithubTrackerResult> {
+	const parent = initiativeLookup(source.issues, source.repository.id, operation.initiative_id);
+	if (parent.kind === "ambiguous") return result(operation.op, "ambiguous_remote_state", parent.message);
+	if (parent.kind === "missing")
+		return result(operation.op, "permanent_failure", "the Initiative Parent Issue must exist before publishing a Task");
+	if (sliceCount(parent.issue.body, operation.slice_id) !== 1)
+		return result(
+			operation.op,
+			"ambiguous_remote_state",
+			`Parent Issue #${parent.issue.number} has missing or duplicate Slice marker ${operation.slice_id}; restore exactly one stable Slice entry in the GitHub source`,
+			parent.issue,
+		);
+	const lookup = (issues: GithubIssue[]) => taskLookup(issues, source.repository.id, operation.task_id);
+	const found = lookup(source.issues);
+	if (found.kind === "ambiguous") return result(operation.op, "ambiguous_remote_state", found.message);
+	const body = childBody(source.repository, operation);
+	let child: GithubIssue;
+	let createdChild = false;
+	if (found.kind === "missing") {
+		const mutation = await gh.run([
+			"issue", "create", "--repo", source.repository.name_with_owner,
+			"--title", `[IB:${titleText(operation.initiative_id)}/S:${titleText(operation.slice_id)}] ${titleText(operation.task_id)}: ${titleText(operation.goal)}`,
+			"--body-file", "-",
+		], { cwd: root, stdin: body });
+		const refreshed = await snapshot(root, gh, operation.op);
+		if ("contract" in refreshed) return refreshed;
+		const created = lookup(refreshed.issues);
+		if (created.kind === "ambiguous") return result(operation.op, "ambiguous_remote_state", created.message);
+		if (created.kind === "missing") {
+			return mutation.exit_code !== 0 && !mutation.timed_out && !mutation.output_exceeded
+				? ghFailure(operation.op, mutation, "Task Issue creation failed")
+				: result(operation.op, "retryable_failure", "Task creation could not be confirmed");
 		}
+		if (created.issue.body !== body)
+			return result(operation.op, "retryable_failure", "Task Issue did not converge to the requested neutral body", created.issue);
+		child = created.issue;
+		createdChild = true;
+	} else {
+		const owned = ownedTaskLookup(source.issues, source.repository.id, operation.task_id, operation.initiative_id, operation.slice_id);
+		if (owned.kind === "ambiguous") return result(operation.op, "ambiguous_remote_state", owned.message);
+		child = owned.issue;
 	}
-	return { body: updated };
+	const attachment = await confirmAttachment(root, gh, operation.op, source.repository, parent.issue.number, child.number);
+	if (!("attached" in attachment)) return attachment;
+	if (attachment.attached)
+		return createdChild
+			? result(operation.op, "created", "Task Issue created and attached as a native Sub-issue", child)
+			: result(operation.op, "already_current", "Task Issue and its native Sub-issue relation are current", child);
+	const attach = await attachSubIssue(root, gh, operation.op, source.repository, parent.issue.number, child.number);
+	if (!("attached" in attach)) return attach;
+	return createdChild
+		? result(operation.op, "created", "Task Issue created and attached as a native Sub-issue", child)
+		: result(operation.op, "updated", "existing Task Issue attached as a native Sub-issue", child);
 }
 
-async function confirmBody(
+async function closeTerminalIssue(
 	root: string,
 	gh: GhTransport,
-	operation: TrackerOperation["op"],
-	repository: RepositoryInfo,
-	lookup: (issues: GithubIssue[]) => IssueLookup,
-	desiredBody: string,
-	created: boolean,
-): Promise<GithubTrackerResult> {
-	const refreshed = await snapshot(root, gh, operation);
-	if ("contract" in refreshed) return refreshed;
-	if (refreshed.repository.id !== repository.id)
-		return result(operation, "ambiguous_remote_state", "repository identity changed during GitHub mutation");
-	const observed = lookup(refreshed.issues);
-	if (observed.kind === "ambiguous") return result(operation, "ambiguous_remote_state", observed.message);
-	if (observed.kind === "missing") return result(operation, "retryable_failure", "GitHub mutation outcome could not be confirmed");
-	return observed.issue.body === desiredBody
-		? result(operation, created ? "created" : "updated", "GitHub Issue projection confirmed", observed.issue)
-		: result(operation, "retryable_failure", "GitHub Issue did not converge to the requested body", observed.issue);
-}
-
-async function createIssue(
-	root: string,
-	gh: GhTransport,
-	operation: TrackerOperation["op"],
-	repository: RepositoryInfo,
-	title: string,
-	body: string,
-	lookup: (issues: GithubIssue[]) => IssueLookup,
-): Promise<GithubTrackerResult> {
-	const mutation = await gh.run([
-		"issue", "create", "--repo", repository.name_with_owner,
-		"--title", title, "--body-file", "-",
-	], { cwd: root, stdin: body });
-	const confirmed = await confirmBody(root, gh, operation, repository, lookup, body, true);
-	if (
-		confirmed.status === "retryable_failure"
-		&& mutation.exit_code !== 0
-		&& !mutation.timed_out
-		&& !mutation.output_exceeded
-	) return ghFailure(operation, mutation, "GitHub Issue creation failed");
-	return confirmed;
-}
-
-async function editIssue(
-	root: string,
-	gh: GhTransport,
-	operation: TrackerOperation["op"],
-	repository: RepositoryInfo,
+	operation: Extract<TrackerOperation, { op: "mark-terminal" }>,
+	source: RepositorySnapshot,
 	issue: GithubIssue,
-	body: string,
 	lookup: (issues: GithubIssue[]) => IssueLookup,
 ): Promise<GithubTrackerResult> {
-	const mutation = await gh.run([
-		"issue", "edit", String(issue.number), "--repo", repository.name_with_owner,
+	const desiredReason = operation.phase === "done" ? "completed" : "not_planned";
+	const close = await gh.run([
+		"issue", "close", String(issue.number), "--repo", source.repository.name_with_owner,
+		"--reason", operation.phase === "done" ? "completed" : "not planned",
+	], { cwd: root });
+	const refreshed = await snapshot(root, gh, operation.op);
+	if ("contract" in refreshed) return refreshed;
+	const found = lookup(refreshed.issues);
+	if (found.kind === "ambiguous") return result(operation.op, "ambiguous_remote_state", found.message);
+	if (found.kind === "missing") return result(operation.op, "retryable_failure", "terminal Issue closure could not be confirmed");
+	if (countLiteral(found.issue.body, terminalMarker(operation.terminal_event_id)) !== 1)
+		return result(operation.op, "ambiguous_remote_state", "terminal Issue body changed during closure", found.issue);
+	if (found.issue.state === "closed" && found.issue.state_reason === desiredReason)
+		return result(operation.op, "updated", "terminal Task Issue closure confirmed", found.issue);
+	return close.exit_code !== 0
+		? ghFailure(operation.op, close, "terminal Issue closure failed")
+		: result(operation.op, "retryable_failure", "terminal Issue closure did not converge", found.issue);
+}
+
+async function markTerminal(
+	root: string,
+	gh: GhTransport,
+	operation: Extract<TrackerOperation, { op: "mark-terminal" }>,
+	source: RepositorySnapshot,
+): Promise<GithubTrackerResult> {
+	const lookup = (issues: GithubIssue[]) => taskLookup(issues, source.repository.id, operation.task_id);
+	const found = lookup(source.issues);
+	if (found.kind === "missing") return result(operation.op, "already_current", "Task has no opted-in tracker association");
+	if (found.kind === "ambiguous") return result(operation.op, "ambiguous_remote_state", found.message);
+	const issue = found.issue;
+	const existingEvents = [...issue.body.matchAll(/<!-- immune-brain:terminal-event=([A-Za-z0-9._:-]+) -->/g)];
+	if (existingEvents.length > 1 || (existingEvents.length === 1 && existingEvents[0][1] !== operation.terminal_event_id))
+		return result(operation.op, "ambiguous_remote_state", "terminal Issue conflicts with authoritative settlement", issue);
+	const desiredReason = operation.phase === "done" ? "completed" : "not_planned";
+	if (existingEvents.length === 1) {
+		if (issue.state === "closed")
+			return issue.state_reason === desiredReason
+				? result(operation.op, "already_current", "terminal Task Issue is current", issue)
+				: result(operation.op, "ambiguous_remote_state", "closed Issue reason conflicts with authoritative settlement", issue);
+		return closeTerminalIssue(root, gh, operation, source, issue, lookup);
+	}
+	if (issue.state === "closed")
+		return result(operation.op, "ambiguous_remote_state", "a manually closed nonterminal Task Issue is preserved and never reopened automatically", issue);
+	const updated = `${issue.body.trimEnd()}\n\n${terminalMarker(operation.terminal_event_id)}\nTerminal event: \`${operation.terminal_event_id}\`\n`;
+	const edited = await gh.run([
+		"issue", "edit", String(issue.number), "--repo", source.repository.name_with_owner,
 		"--body-file", "-",
-	], { cwd: root, stdin: body });
-	const confirmed = await confirmBody(root, gh, operation, repository, lookup, body, false);
-	if (
-		confirmed.status === "retryable_failure"
-		&& mutation.exit_code !== 0
-		&& !mutation.timed_out
-		&& !mutation.output_exceeded
-	) return ghFailure(operation, mutation, "GitHub Issue update failed");
-	return confirmed;
+	], { cwd: root, stdin: updated });
+	if (edited.exit_code !== 0 || edited.output_exceeded)
+		return ghFailure(operation.op, edited, "terminal marker publication failed");
+	const refreshed = await snapshot(root, gh, operation.op);
+	if ("contract" in refreshed) return refreshed;
+	const reread = lookup(refreshed.issues);
+	if (reread.kind === "ambiguous") return result(operation.op, "ambiguous_remote_state", reread.message);
+	if (reread.kind === "missing" || countLiteral(reread.issue.body, terminalMarker(operation.terminal_event_id)) !== 1)
+		return result(operation.op, "retryable_failure", "terminal marker publication could not be confirmed");
+	return closeTerminalIssue(root, gh, operation, source, reread.issue, lookup);
 }
 
 function validateOperation(operation: TrackerOperation): TrackerOperation {
-	if (operation.op === "upsert-initiative") {
+	if (operation.op === "create-initiative") {
 		const seen = new Set<string>();
 		return {
 			...operation,
@@ -501,164 +630,19 @@ function validateOperation(operation: TrackerOperation): TrackerOperation {
 			...operation,
 			initiative_id: identifier(operation.initiative_id, "initiative_id"),
 			task_id: identifier(operation.task_id, "task_id"),
+			slice_id: identifier(operation.slice_id, "slice_id"),
 			goal: publicText(operation.goal, "goal"),
-			intent_path: publicText(operation.intent_path, "intent_path", 500),
 			acceptance: operation.acceptance.map((item, index) => ({
 				id: identifier(item.id, `acceptance[${index}].id`),
 				summary: publicText(item.summary, `acceptance[${index}].summary`, 500),
 			})),
 		};
 	}
-	if (operation.op === "mark-active")
-		return { ...operation, task_id: identifier(operation.task_id, "task_id") };
 	return {
 		...operation,
 		task_id: identifier(operation.task_id, "task_id"),
 		terminal_event_id: terminalEvent(operation.terminal_event_id),
 	};
-}
-
-async function upsertInitiative(
-	root: string,
-	gh: GhTransport,
-	operation: Extract<TrackerOperation, { op: "upsert-initiative" }>,
-	source: RepositorySnapshot,
-): Promise<GithubTrackerResult> {
-	const lookup = (issues: GithubIssue[]) => initiativeLookup(issues, source.repository.id, operation.initiative_id);
-	const found = lookup(source.issues);
-	if (found.kind === "ambiguous") return result(operation.op, "ambiguous_remote_state", found.message);
-	const region = initiativeRegion(operation.goal, operation.slices);
-	const body = issueBody([
-		marker("repo-id", source.repository.id),
-		marker("initiative-id", operation.initiative_id),
-	], "Opt-in, non-authoritative Immune-Brain Initiative projection.", region);
-	if (found.kind === "missing")
-		return createIssue(root, gh, operation.op, source.repository, `[IB] ${titleText(operation.initiative_id)}: ${titleText(operation.goal)}`, body, lookup);
-	const reconciled = reconcileManagedBody(found.issue.body, region);
-	if (reconciled.error) return result(operation.op, "ambiguous_remote_state", reconciled.error, found.issue);
-	if (reconciled.body === found.issue.body)
-		return result(operation.op, "already_current", "Initiative Issue is current", found.issue);
-	return editIssue(root, gh, operation.op, source.repository, found.issue, reconciled.body!, lookup);
-}
-
-async function upsertTask(
-	root: string,
-	gh: GhTransport,
-	operation: Extract<TrackerOperation, { op: "upsert-task" }>,
-	source: RepositorySnapshot,
-): Promise<GithubTrackerResult> {
-	const parent = initiativeLookup(source.issues, source.repository.id, operation.initiative_id);
-	if (parent.kind === "ambiguous") return result(operation.op, "ambiguous_remote_state", parent.message);
-	if (parent.kind === "missing") return result(operation.op, "permanent_failure", "Initiative Issue must exist before publishing a Task");
-	const lookup = (issues: GithubIssue[]) => taskLookup(issues, source.repository.id, operation.task_id);
-	const found = lookup(source.issues);
-	if (found.kind === "ambiguous") return result(operation.op, "ambiguous_remote_state", found.message);
-	const region = taskRegion(operation, "proposed");
-	const body = issueBody([
-		marker("repo-id", source.repository.id),
-		marker("initiative-id", operation.initiative_id),
-		marker("task-id", operation.task_id),
-	], `Parent Initiative: #${parent.issue.number}`, region);
-	if (found.kind === "missing")
-		return createIssue(root, gh, operation.op, source.repository, `[IB:${titleText(operation.initiative_id)}] ${titleText(operation.task_id)}: ${titleText(operation.goal)}`, body, lookup);
-	const state = trackerState(found.issue.body);
-	if (!state) return result(operation.op, "ambiguous_remote_state", "tracker state marker is missing or duplicated", found.issue);
-	if (state !== "proposed")
-		return result(operation.op, "already_current", `Task Issue is already ${state}; proposed publication cannot downgrade it`, found.issue);
-	if (found.issue.state !== "open")
-		return result(operation.op, "ambiguous_remote_state", "a proposed Task Issue is unexpectedly closed", found.issue);
-	const reconciled = reconcileManagedBody(found.issue.body, region);
-	if (reconciled.error) return result(operation.op, "ambiguous_remote_state", reconciled.error, found.issue);
-	if (reconciled.body === found.issue.body)
-		return result(operation.op, "already_current", "Task Issue is current", found.issue);
-	return editIssue(root, gh, operation.op, source.repository, found.issue, reconciled.body!, lookup);
-}
-
-async function markActive(
-	root: string,
-	gh: GhTransport,
-	operation: Extract<TrackerOperation, { op: "mark-active" }>,
-	source: RepositorySnapshot,
-): Promise<GithubTrackerResult> {
-	const lookup = (issues: GithubIssue[]) => taskLookup(issues, source.repository.id, operation.task_id);
-	const found = lookup(source.issues);
-	if (found.kind === "missing") return result(operation.op, "already_current", "Task has no opted-in tracker association");
-	if (found.kind === "ambiguous") return result(operation.op, "ambiguous_remote_state", found.message);
-	const state = trackerState(found.issue.body);
-	if (!state) return result(operation.op, "ambiguous_remote_state", "tracker state marker is missing or duplicated", found.issue);
-	if (state === "active")
-		return found.issue.state === "open"
-			? result(operation.op, "already_current", "Task Issue is already active", found.issue)
-			: result(operation.op, "ambiguous_remote_state", "the active Task Issue is unexpectedly closed", found.issue);
-	if (state === "completed" || state === "not_planned")
-		return result(operation.op, "already_current", `Task Issue is already ${state}`, found.issue);
-	if (found.issue.state !== "open")
-		return result(operation.op, "permanent_failure", "a closed proposed Issue cannot be activated automatically", found.issue);
-	const transitioned = transitionBody(found.issue.body, "active");
-	if (transitioned.error) return result(operation.op, "ambiguous_remote_state", transitioned.error, found.issue);
-	return editIssue(root, gh, operation.op, source.repository, found.issue, transitioned.body!, lookup);
-}
-
-async function closeTerminalIssue(
-	root: string,
-	gh: GhTransport,
-	operation: Extract<TrackerOperation, { op: "mark-terminal" }>,
-	source: RepositorySnapshot,
-	issue: GithubIssue,
-	lookup: (issues: GithubIssue[]) => IssueLookup,
-): Promise<GithubTrackerResult> {
-	const desiredState: TrackerState = operation.phase === "done" ? "completed" : "not_planned";
-	const desiredReason = operation.phase === "done" ? "completed" : "not_planned";
-	const close = await gh.run([
-		"issue", "close", String(issue.number), "--repo", source.repository.name_with_owner,
-		"--reason", operation.phase === "done" ? "completed" : "not planned",
-	], { cwd: root });
-	const refreshed = await snapshot(root, gh, operation.op);
-	if ("contract" in refreshed) return refreshed;
-	const found = lookup(refreshed.issues);
-	if (found.kind === "ambiguous") return result(operation.op, "ambiguous_remote_state", found.message);
-	if (found.kind === "missing") return result(operation.op, "retryable_failure", "terminal Issue closure could not be confirmed");
-	const exactBody = trackerState(found.issue.body) === desiredState
-		&& countLiteral(found.issue.body, terminalMarker(operation.terminal_event_id)) === 1;
-	if (!exactBody) return result(operation.op, "ambiguous_remote_state", "terminal Issue body changed during closure", found.issue);
-	if (found.issue.state === "closed" && found.issue.state_reason === desiredReason)
-		return result(operation.op, "updated", "terminal Task Issue closure confirmed", found.issue);
-	return close.exit_code !== 0
-		? ghFailure(operation.op, close, "terminal Issue closure failed")
-		: result(operation.op, "retryable_failure", "terminal Issue closure did not converge", found.issue);
-}
-
-async function markTerminal(
-	root: string,
-	gh: GhTransport,
-	operation: Extract<TrackerOperation, { op: "mark-terminal" }>,
-	source: RepositorySnapshot,
-): Promise<GithubTrackerResult> {
-	const lookup = (issues: GithubIssue[]) => taskLookup(issues, source.repository.id, operation.task_id);
-	let found = lookup(source.issues);
-	if (found.kind === "missing") return result(operation.op, "already_current", "Task has no opted-in tracker association");
-	if (found.kind === "ambiguous") return result(operation.op, "ambiguous_remote_state", found.message);
-	const desiredState: TrackerState = operation.phase === "done" ? "completed" : "not_planned";
-	const desiredReason = operation.phase === "done" ? "completed" : "not_planned";
-	const current = trackerState(found.issue.body);
-	if (!current) return result(operation.op, "ambiguous_remote_state", "tracker state marker is missing or duplicated", found.issue);
-	if (current === "completed" || current === "not_planned") {
-		const exactEvent = countLiteral(found.issue.body, terminalMarker(operation.terminal_event_id)) === 1;
-		if (current !== desiredState || !exactEvent)
-			return result(operation.op, "ambiguous_remote_state", "terminal Issue conflicts with authoritative settlement", found.issue);
-		if (found.issue.state === "closed")
-			return found.issue.state_reason === desiredReason
-				? result(operation.op, "already_current", "terminal Task Issue is current", found.issue)
-				: result(operation.op, "ambiguous_remote_state", "closed Issue reason conflicts with authoritative settlement", found.issue);
-		return closeTerminalIssue(root, gh, operation, source, found.issue, lookup);
-	}
-	if (found.issue.state !== "open")
-		return result(operation.op, "permanent_failure", "a manually closed nonterminal Issue is not reopened automatically", found.issue);
-	const transitioned = transitionBody(found.issue.body, desiredState, operation.terminal_event_id);
-	if (transitioned.error) return result(operation.op, "ambiguous_remote_state", transitioned.error, found.issue);
-	const edited = await editIssue(root, gh, operation.op, source.repository, found.issue, transitioned.body!, lookup);
-	if (edited.status !== "updated" && edited.status !== "already_current") return edited;
-	return closeTerminalIssue(root, gh, operation, source, found.issue, lookup);
 }
 
 export async function runGithubTrackerOperation(
@@ -672,13 +656,17 @@ export async function runGithubTrackerOperation(
 	} catch (error) {
 		return result(input.op, "permanent_failure", error instanceof Error ? error.message : String(error));
 	}
-	const source = await snapshot(resolve(root), gh, operation.op);
+	const absoluteRoot = resolve(root);
+	if (operation.op !== "mark-terminal") {
+		const conflict = carrierConflict(absoluteRoot, operation.op, operation.initiative_id);
+		if (conflict) return conflict;
+	}
+	const source = await snapshot(absoluteRoot, gh, operation.op);
 	if ("contract" in source) return source;
 	switch (operation.op) {
-		case "upsert-initiative": return upsertInitiative(root, gh, operation, source);
-		case "upsert-task": return upsertTask(root, gh, operation, source);
-		case "mark-active": return markActive(root, gh, operation, source);
-		case "mark-terminal": return markTerminal(root, gh, operation, source);
+		case "create-initiative": return createInitiative(absoluteRoot, gh, operation, source);
+		case "upsert-task": return upsertTask(absoluteRoot, gh, operation, source);
+		case "mark-terminal": return markTerminal(absoluteRoot, gh, operation, source);
 	}
 }
 
@@ -687,7 +675,7 @@ function valueAfter(args: string[], name: string): string | undefined {
 	return index === -1 ? undefined : args[index + 1];
 }
 
-function taskPublication(root: string, initiativeId: string, intentPath: string): Extract<TrackerOperation, { op: "upsert-task" }> {
+function taskPublication(root: string, initiativeId: string, sliceId: string, intentPath: string): Extract<TrackerOperation, { op: "upsert-task" }> {
 	const absoluteRoot = resolve(root);
 	const absolutePath = resolve(absoluteRoot, intentPath);
 	const rel = relative(absoluteRoot, absolutePath);
@@ -702,9 +690,9 @@ function taskPublication(root: string, initiativeId: string, intentPath: string)
 		op: "upsert-task",
 		initiative_id: initiativeId,
 		task_id: intent.task_id,
+		slice_id: sliceId,
 		goal: intent.goal,
 		risk: intent.risk,
-		intent_path: rel,
 		acceptance: intent.acceptance.map((item) => ({ id: item.id, summary: item.assertion })),
 	};
 }
@@ -719,21 +707,23 @@ export async function runGithubTrackerCli(
 		return { stdout: "", stderr: "invalid_tracker_command: --json is required\n", returncode: 2 };
 	let operation: TrackerOperation;
 	try {
-		if (op === "upsert-initiative" && args.length === 3 && args[1] === "--stdin") {
+		if (op === "create-initiative" && args.length === 3 && args[1] === "--stdin") {
 			const raw = JSON.parse((options.stdin ?? (() => readFileSync(0, "utf8")))()) as Record<string, unknown>;
 			operation = {
-				op: "upsert-initiative",
+				op: "create-initiative",
 				initiative_id: raw.initiative_id as string,
 				goal: raw.goal as string,
 				slices: raw.slices as InitiativeSlice[],
 			};
-		} else if (op === "upsert-task" && args.length === 6) {
+		} else if (op === "upsert-task" && args.length === 8) {
 			const initiative = valueAfter(args, "--initiative-id");
+			const slice = valueAfter(args, "--slice-id");
 			const intent = valueAfter(args, "--intent");
-			if (!initiative || !intent) throw new Error("upsert-task requires --initiative-id and --intent");
-			operation = taskPublication(root, initiative, intent);
+			if (!initiative || !slice || !intent)
+				throw new Error("upsert-task requires --initiative-id, --slice-id, and --intent");
+			operation = taskPublication(root, initiative, slice, intent);
 		} else {
-			throw new Error("use upsert-initiative --stdin --json or upsert-task --initiative-id <id> --intent <path> --json");
+			throw new Error("use create-initiative --stdin --json or upsert-task --initiative-id <id> --slice-id <id> --intent <path> --json");
 		}
 	} catch (error) {
 		return {
