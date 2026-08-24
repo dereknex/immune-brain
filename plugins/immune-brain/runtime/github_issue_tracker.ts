@@ -439,11 +439,11 @@ async function createInitiative(
 		KIND_INITIATIVE_MARKER,
 		marker("repo-id", source.repository.id),
 		marker("initiative-id", operation.initiative_id),
-	].join("\n")}\n\nOpt-in, non-authoritative Immune-Brain Initiative source. Created once; edit this Issue directly for all later planning changes.\n\n## Initiative\n\n${operation.goal}\n\n## Slices\n\n${
+	].join("\n")}\n\nOpt-in, non-authoritative Immune-Brain Initiative index. This Issue is the human-facing planning carrier for one Initiative; Kernel TaskIntent, TaskRecord, and Assurance remain the execution authority.\n\n## How to use this Issue\n\n- Edit the goal, Slice descriptions, ordering, and planning notes directly here after creation.\n- Keep each Slice marker attached to exactly one stable Slice entry.\n- Add or remove Slice entries manually; creating a Child Issue happens only after its TaskIntent is canonically authored and validated.\n- Keep this Parent open or closed according to the team's planning needs; the tracker never changes or closes it automatically.\n\n## Initiative\n\n${operation.goal}\n\n## Slices\n\n${
 		operation.slices.length === 0
 			? "No Slices recorded yet."
-			: operation.slices.map((slice) => `- [ ] ${marker("slice-id", slice.id)} \`${slice.id}\`: ${slice.goal}`).join("\n")
-	}\n`;
+			: operation.slices.map((slice) => `- [ ] ${marker("slice-id", slice.id)} **${slice.id}**: ${slice.goal}`).join("\n")
+	}\n\n## Authority boundary\n\nThis Issue is outbound visibility only. GitHub state never starts, authorizes, reprioritizes, or settles work. Native Sub-issues identify published Tasks; their open or closed state is only an observation of attention and terminal projection.\n`;
 	if (found.kind === "missing") {
 		const mutation = await gh.run([
 			"issue", "create", "--repo", source.repository.name_with_owner,
@@ -484,7 +484,7 @@ function childBody(repository: RepositoryInfo, operation: Extract<TrackerOperati
 		marker("initiative-id", operation.initiative_id),
 		marker("slice-id", operation.slice_id),
 		marker("task-id", operation.task_id),
-	].join("\n")}\n\nOpt-in, non-authoritative Immune-Brain Task observation. Open means this Task still needs attention.\n\nRisk: \`${operation.risk}\`\n\n## Goal\n\n${operation.goal}\n\n## Acceptance\n\n${acceptance}\n`;
+	].join("\n")}\n\nOpt-in, non-authoritative Immune-Brain Task Issue. This Child makes one validated Task visible in GitHub; Kernel TaskIntent, TaskRecord, and Assurance remain the execution authority.\n\n| Field | Value |\n| --- | --- |\n| Initiative | \`${operation.initiative_id}\` |\n| Slice | \`${operation.slice_id}\` |\n| Task | \`${operation.task_id}\` |\n| Risk | \`${operation.risk}\` |\n\n## Goal\n\n${operation.goal}\n\n## Acceptance\n\n${acceptance}\n\n## Lifecycle\n\n- **Open** means this Task still needs attention; it does not mean the Task is authorized or currently executing.\n- The tracker never imports GitHub state into Kernel and never changes TaskIntent, TaskRecord, QA, Review, or authorization.\n- Only a fresh claimless terminal projection can close this Issue: \`done\` becomes **Completed**, and \`stopped\` becomes **Not planned**.\n- Keep the identity markers intact. Manual changes to the goal or acceptance text are visible to humans but are not execution authority.\n`;
 }
 
 async function upsertTask(

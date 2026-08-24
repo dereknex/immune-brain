@@ -523,6 +523,10 @@ describe("plugin package runtime cutover parity", () => {
 			expect(initiative.message).not.toContain("gho_secret");
 			expect(gh.issues[0].body).toContain("[REDACTED_GITHUB_TOKEN]");
 			expect(gh.issues[0].body).toContain("<!-- immune-brain:slice-id=S1 -->");
+			expect(gh.issues[0].body).toContain("## How to use this Issue");
+			expect(gh.issues[0].body).toContain("Kernel TaskIntent, TaskRecord, and Assurance remain the execution authority");
+			expect(gh.issues[0].body).toContain("the tracker never changes or closes it automatically");
+			expect(gh.issues[0].body).toContain("**S1**: Ship the first bounded Task");
 
 			expect(await runGithubTrackerOperation(root, requested, gh)).toMatchObject({ status: "already_current" });
 
@@ -568,7 +572,9 @@ describe("plugin package runtime cutover parity", () => {
 			expect(gh.subIssues.get(1)).toEqual([2]);
 			expect(gh.issues[1].body).toContain("<!-- immune-brain:initiative-id=tracking-v1 -->");
 			expect(gh.issues[1].body).toContain("<!-- immune-brain:slice-id=S1 -->");
-			expect(gh.issues[1].body).toContain("<!-- immune-brain:task-id=2026-08-22-001-task -->");
+			expect(gh.issues[1].body).toContain("| Initiative | `tracking-v1` |");
+			expect(gh.issues[1].body).toContain("## Lifecycle");
+			expect(gh.issues[1].body).toContain("Only a fresh claimless terminal projection can close this Issue");
 			expect(gh.issues[1].body).not.toContain("tracker-state");
 			expect(gh.issues[1].body).not.toContain(".intent.json");
 
