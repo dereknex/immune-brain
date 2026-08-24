@@ -108,20 +108,19 @@ stable `drain_required` / `v3_storage_retired` diagnostic. Common entry points:
 | `bin/imm-migrate [--check] [--json]` | Retired after v4 storage retirement; legacy v3 projects must drain with the prior runtime first. |
 | `bin/imm-finish` | Retired after v4 storage retirement. |
 
-Workflow state lives under `.imm/` (Kernel TaskRecord v2 / workspace v2
-become the sole production authority); `HANDOFF.md`, `docs/plans/`,
-`docs/specs/`, and `docs/solutions/` hold human-readable artifacts.
+The table above describes the legacy CLI surface. Current Managed execution
+runs through the Pi host extension and `runtime/kernel`: TaskRecord v3 is the
+sole production workflow authority, using `lifecycle`, `artifact_state`, and a
+single `attestations[]` collection. `workspace_transaction/v2` remains the
+recoverable persistence envelope; its version identifies the transaction wire
+format, not the TaskRecord schema.
 
-The v4 runtime accepts only Kernel TaskRecord v2 + `workspace_transaction/v2`
-as production storage. Historical v3 State Ledger artifacts remain readable
-only through the explicit read-only `imm-kernel audit --legacy` projection;
-v3 writers, automatic migration, authority receipts, and automatic
-observation journals are outside production mutation authority. Critical-risk Kernel tasks require qa, review, and user approvals to complete;
-user-kind approval is recorded only through the `imm_kernel_canary`
-`request_authorization` foreground Tool action and its exact TUI confirmation.
-If a project still has a nonterminal v3 owner, the v4 runtime rejects writes with
-`drain_required` and instructs the operator to drain or terminate it using the
-prior runtime before upgrading.
+Active TaskRecord v2 owners are upgraded once, only when their backend claim,
+workspace ownership, record snapshot, and Git-tracked TaskIntent sidecar agree.
+Terminal v2 records remain read-only historical evidence. Every risk tier runs
+host-attested deterministic QA; `material` and `critical` add native Review,
+and only `critical` requires final literal-user authorization through the
+`imm_kernel_canary` `request_authorization` foreground Tool action.
 
 ## Development
 

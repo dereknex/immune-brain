@@ -5,9 +5,9 @@ import {
 	canonicalIntentHash,
 	readTaskIntent,
 } from "../plugins/immune-brain/runtime/kernel/intent";
-import type { TaskActionV2, TaskRecordV2 } from "../plugins/immune-brain/runtime/kernel/types";
-import { applyTaskActionV2 } from "../plugins/immune-brain/runtime/kernel/application_v2";
-import * as applicationV2 from "../plugins/immune-brain/runtime/kernel/application_v2";
+import type { TaskAction, TaskRecordV2 } from "../plugins/immune-brain/runtime/kernel/types";
+import { applyTaskAction } from "../plugins/immune-brain/runtime/kernel/application";
+import * as applicationV2 from "../plugins/immune-brain/runtime/kernel/application";
 
 const INTENT = {
 	contract: "assurance_kernel/task_intent/v1",
@@ -44,12 +44,12 @@ function recordFixture(): TaskRecordV2 {
 
 describe("R2C2 boundary and compatibility", () => {
 	test("index exports the pure reducer and application port but no issuer", () => {
-		expect(typeof kernel.reduceTaskV2).toBe("function");
-		expect(typeof kernel.canonicalRecordHashV2).toBe("function");
+		expect(typeof kernel.reduceTask).toBe("function");
+		expect(typeof kernel.canonicalRecordHash).toBe("function");
 		// The mutation port is exported from its own module for future trusted
 		// host integration, but the public index stays mutation-surface-free.
-		expect(typeof applicationV2.applyTaskActionV2).toBe("function");
-		expect((kernel as Record<string, unknown>).applyTaskActionV2).toBeUndefined();
+		expect(typeof applicationV2.applyTaskAction).toBe("function");
+		expect((kernel as Record<string, unknown>).applyTaskAction).toBeUndefined();
 		// No authority issuer, capability constructor, token consumer, or
 		// token unwrap may leak through the public index.
 		expect((kernel as Record<string, unknown>).createMutationAuthorityCapabilityForTest).toBeUndefined();
@@ -60,10 +60,10 @@ describe("R2C2 boundary and compatibility", () => {
 		expect((kernel as Record<string, unknown>).mintToken).toBeUndefined();
 	});
 
-	test("v1 reducer and v1 storage entry points are retired", () => {
-		expect((kernel as Record<string, unknown>).reduceTask).toBeUndefined();
-		expect(typeof storage.readTaskRecordV2).toBe("function");
-		expect(typeof storage.withKernelStoreLockV2).toBe("function");
+	test("legacy reducer and storage entry points are retired", () => {
+		expect((kernel as Record<string, unknown>).reduceTaskV1).toBeUndefined();
+		expect(typeof storage.readTaskRecord).toBe("function");
+		expect(typeof storage.withKernelStoreLock).toBe("function");
 		expect(typeof storage.setAfterTaskTransactionWriteForTest).toBe("function");
 		expect(typeof storage.readWorkspaceStateRaw).toBe("function");
 	});
@@ -76,11 +76,11 @@ describe("R2C2 boundary and compatibility", () => {
 		expect(storageNames.some((name) => /create|write|enroll/.test(name))).toBe(false);
 	});
 
-	test("applyTaskActionV2 input does not expose authority minting", () => {
+	test("applyTaskAction input does not expose authority minting", () => {
 		// The port's public surface is the function; capability creation stays
 		// module-private. Calling the port with a plain object fails.
 		expect(() =>
-			applyTaskActionV2({
+			applyTaskAction({
 				root: "/nonexistent",
 				task_id: "x",
 				action: { type: "stop" },
@@ -93,7 +93,7 @@ describe("R2C2 boundary and compatibility", () => {
 	test("reducer v2 result is branded and non-constructible", () => {
 		// A caller-built plain object cannot pass the brand check.
 		expect(
-			kernel.isReducedMutationV2({ record: recordFixture(), next_workspace_working: null }),
+			kernel.isReducedMutation({ record: recordFixture(), next_workspace_working: null }),
 		).toBe(false);
 	});
 });

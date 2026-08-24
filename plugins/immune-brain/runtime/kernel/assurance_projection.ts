@@ -1,6 +1,6 @@
 // Assurance projection: the single host-neutral, read-only current-facts
-// projection that binds a task's backend claim, TaskRecord v2, workspace,
-// evidence, approvals, findings, and completion facts into one closed result.
+// projection that binds a task's backend claim, TaskRecord v3, workspace,
+// attestations, findings, and completion facts into one closed result.
 //
 // This module is deliberately INTERNAL to the Kernel runtime: it is imported
 // by the Pi extension only through the structural runtime-stub adapter and is
@@ -12,16 +12,16 @@
 // "start QA" or "start Review"; it returns Kernel-owned facts only.
 
 import { readBackendClaim, readTaskTombstone } from "./backend_claim";
-import { readTaskRecordV2, readWorkspaceStateRaw, reconcileKernelAuthority } from "./storage";
-import { projectTaskV2 } from "./completion";
-import type { TaskIntentV1, TaskRecordV2 } from "./types";
+import { readTaskRecord, readHistoricalTaskRecordV2Raw, readWorkspaceStateRaw, reconcileKernelAuthority } from "./storage";
+import { projectTask } from "./completion";
+import type { AssuranceObligation, TaskIntentV1, TaskRecordV2, TaskRecordV3 } from "./types";
 
 export interface AssuranceAuthorizationReadiness {
 	/**
 	 * Kernel-decidable authorization readiness:
 	 * - "resolve_user_decision": exactly one open unresolved-user-decision finding;
-	 * - "record_user_approval": critical task in review phase with fresh qa and
-	 *   review approvals and no fresh user approval;
+	 * - "record_user_approval": Kernel projects authorize_user after fresh QA
+	 *   and Review attestations for a critical task;
 	 * - "none": nothing uniquely decidable from Kernel facts.
 	 * A pending Pi native Review verdict is a session fact and is NOT visible
 	 * here; the host composes it before this readiness.
@@ -37,10 +37,13 @@ export interface AssuranceProjection {
 	intent_revision: number;
 	intent_content_hash: string;
 	diff_hash: string;
-	phase: string;
+	lifecycle: string;
+	artifact_state: string;
+	risk: TaskIntentV1["risk"] | "";
+	next_obligation: AssuranceObligation;
 	fresh_acceptance_ids: string[];
 	missing_acceptance_ids: string[];
-	stale_evidence_ids: string[];
+	stale_attestation_ids: string[];
 	fresh_approval_kinds: string[];
 	missing_approval_kinds: string[];
 	blocking_finding_ids: string[];
@@ -61,9 +64,7 @@ export interface AssuranceProjectionResult {
 }
 
 export function deriveAssuranceAuthorization(input: {
-	risk: string;
-	phase: string;
-	fresh_approval_kinds: readonly string[];
+	next_obligation: AssuranceObligation;
 	open_user_decision_count: number;
 }): AssuranceAuthorizationReadiness {
 	if (input.open_user_decision_count === 1)
@@ -73,13 +74,7 @@ export function deriveAssuranceAuthorization(input: {
 			state: "none",
 			blocked: `resolve-user-decision requires exactly one open user decision; found ${input.open_user_decision_count}`,
 		};
-	if (
-		input.risk === "critical" &&
-		input.phase === "review" &&
-		input.fresh_approval_kinds.includes("qa") &&
-		input.fresh_approval_kinds.includes("review") &&
-		!input.fresh_approval_kinds.includes("user")
-	)
+	if (input.next_obligation === "authorize_user")
 		return { state: "record_user_approval", blocked: null };
 	return { state: "none", blocked: null };
 }
@@ -91,10 +86,13 @@ function emptyProjection(): AssuranceProjection {
 		intent_revision: 0,
 		intent_content_hash: "",
 		diff_hash: "",
-		phase: "",
+		lifecycle: "",
+		artifact_state: "",
+		risk: "",
+		next_obligation: "none",
 		fresh_acceptance_ids: [],
 		missing_acceptance_ids: [],
-		stale_evidence_ids: [],
+		stale_attestation_ids: [],
 		fresh_approval_kinds: [],
 		missing_approval_kinds: [],
 		blocking_finding_ids: [],
@@ -107,16 +105,37 @@ function emptyProjection(): AssuranceProjection {
 	};
 }
 
-function freshApprovalKinds(
+function projectHistoricalTerminal(
 	record: TaskRecordV2,
+	recordRevision: string,
+	workspaceRevision: string,
+): AssuranceProjection {
+	const approvalKinds = [...new Set(record.approvals.map((item) => item.kind))];
+	return {
+		...emptyProjection(),
+		record_revision: recordRevision,
+		workspace_revision: workspaceRevision,
+		intent_revision: record.intent_revision,
+		intent_content_hash: record.intent_ref.content_hash,
+		lifecycle: record.phase,
+		artifact_state: "frozen",
+		risk: record.intent_snapshot.risk,
+		fresh_acceptance_ids: [...new Set(record.evidence.filter((item) => item.status === "passed").map((item) => item.acceptance_id))],
+		fresh_approval_kinds: approvalKinds,
+		completion_ready: record.phase === "done",
+	};
+}
+
+function freshApprovalKinds(
+	record: TaskRecordV3,
 	currentIntentContentHash: string,
 	diffHash: string,
 ): string[] {
 	const kinds: string[] = [];
 	const seen = new Set<string>();
-	for (const approval of record.approvals) {
+	for (const approval of record.attestations) {
 		if (
-			approval.task_revision !== record.intent_revision ||
+			approval.task_revision !== record.intent_snapshot.revision ||
 			approval.intent_content_hash !== currentIntentContentHash ||
 			approval.diff_hash !== diffHash
 		)
@@ -129,13 +148,13 @@ function freshApprovalKinds(
 }
 
 function projectFromRecord(
-	record: TaskRecordV2,
+	record: TaskRecordV3,
 	recordRevision: string,
 	workspaceRevision: string,
 	diffHash: string,
 ): AssuranceProjection {
 	const intent: TaskIntentV1 = record.intent_snapshot;
-	const decision = projectTaskV2(intent, record, diffHash, record.intent_ref.content_hash);
+	const decision = projectTask(intent, record, diffHash, record.intent_ref.content_hash);
 	const approvalKinds = freshApprovalKinds(record, record.intent_ref.content_hash, diffHash);
 	const openUserDecisionCount = record.findings.filter(
 		(finding) => finding.kind === "unresolved_user_decision" && finding.status === "open",
@@ -143,13 +162,16 @@ function projectFromRecord(
 	return {
 		record_revision: recordRevision,
 		workspace_revision: workspaceRevision,
-		intent_revision: record.intent_revision,
+		intent_revision: record.intent_snapshot.revision,
 		intent_content_hash: record.intent_ref.content_hash,
 		diff_hash: diffHash,
-		phase: record.phase,
+		lifecycle: record.lifecycle,
+		artifact_state: record.artifact_state,
+		risk: intent.risk,
+		next_obligation: decision.next_obligation,
 		fresh_acceptance_ids: decision.fresh_acceptance_ids,
 		missing_acceptance_ids: decision.missing_acceptance_ids,
-		stale_evidence_ids: decision.stale_evidence_ids,
+		stale_attestation_ids: decision.stale_attestation_ids,
 		fresh_approval_kinds: approvalKinds,
 		missing_approval_kinds: decision.missing_approval_kinds,
 		blocking_finding_ids: decision.blocking_finding_ids,
@@ -159,9 +181,7 @@ function projectFromRecord(
 		open_user_decision_count: openUserDecisionCount,
 		completion_ready: decision.complete,
 		authorization: deriveAssuranceAuthorization({
-			risk: intent.risk,
-			phase: record.phase,
-			fresh_approval_kinds: approvalKinds,
+			next_obligation: decision.next_obligation,
 			open_user_decision_count: openUserDecisionCount,
 		}),
 	};
@@ -197,6 +217,7 @@ export async function projectAssurance(
 	});
 	try {
 		const claim = readBackendClaim(root);
+		let terminalOwner = false;
 		if (claim?.task_id !== undefined && claim.task_id !== taskId)
 			return fail(`backend claim belongs to ${claim.task_id}, not ${taskId}`, claim);
 		if (claim) {
@@ -213,13 +234,29 @@ export async function projectAssurance(
 				return { contract: "assurance_kernel/assurance_projection/v1", task_id: taskId, error: null, claim: null, projection: emptyProjection() };
 			if (authority.state !== "terminal_owner")
 				return fail(authority.diagnostic ?? `authority state conflicts for ${taskId}`);
+			terminalOwner = true;
 			if (readBackendClaim(root)) return fail(`authority state changed while projecting ${taskId}`);
 		}
-		const read = await readTaskRecordV2(root, taskId);
-		if (!read.record) return fail(`task ${taskId} has no TaskRecord v2`, claim);
+		let read;
+		try {
+			read = await readTaskRecord(root, taskId);
+		} catch (error) {
+			if (!terminalOwner || !(error instanceof Error) || !error.message.startsWith("terminal TaskRecord v2")) throw error;
+			const historical = readHistoricalTaskRecordV2Raw(root, taskId);
+			if (!historical.record) return fail(`task ${taskId} has no historical TaskRecord`);
+			const workspace = await readWorkspaceStateRaw(root);
+			return {
+				contract: "assurance_kernel/assurance_projection/v1",
+				task_id: taskId,
+				error: null,
+				claim: null,
+				projection: projectHistoricalTerminal(historical.record, historical.revision, workspace.revision),
+			};
+		}
+		if (!read.record) return fail(`task ${taskId} has no TaskRecord v3`, claim);
 		if (read.record.task_id !== taskId)
 			return fail(`task record identity is inconsistent for ${taskId}`, claim);
-		if (claim && (read.record.phase === "done" || read.record.phase === "stopped"))
+		if (claim && read.record.lifecycle !== "active")
 			return fail(`terminal task ${taskId} has no matching tombstone proof`, claim);
 		const workspace = await readWorkspaceStateRaw(root);
 		const diffHash = diffProvider(root, read.record.intent_snapshot);

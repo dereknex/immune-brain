@@ -1,8 +1,5 @@
-// 2026-08-13-018 acc-critical-completion-reachable.
-// A critical-risk task with fresh evidence for every acceptance id and fresh
-// qa+review+user approvals is eligible: completionDecisionV2 reports
-// complete=true and the complete action transitions review -> done with the
-// task tombstone, released workspace pointer, and removed active claim.
+// A critical-risk task with host-attested QA, Review, and user approval is
+// eligible for terminal completion with a tombstone and released ownership.
 
 import { describe, expect, test } from "bun:test";
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
@@ -16,10 +13,10 @@ import { createMutationAuthorityCapabilityForTest } from "./fixtures/mutation-au
 import { enrollCanaryTask } from "../plugins/immune-brain/runtime/kernel/enrollment";
 import { preparePiCanary } from "../plugins/immune-brain/runtime/kernel/pi_canary_prepare";
 import { createEnrollmentAuthorityRegistry, type EnrollmentCapabilityBinding } from "../plugins/immune-brain/runtime/kernel/enrollment_authority";
-import { canonicalIntentHash, readTaskIntent } from "../plugins/immune-brain/runtime/kernel/intent";
-import { readTaskRecordV2 } from "../plugins/immune-brain/runtime/kernel/storage";
+import { canonicalIntentHash, parseTaskIntentV1, readTaskIntent } from "../plugins/immune-brain/runtime/kernel/intent";
+import { readTaskRecord } from "../plugins/immune-brain/runtime/kernel/storage";
 import { readBackendClaim, readTaskTombstone } from "../plugins/immune-brain/runtime/kernel/backend_claim";
-import { completionDecisionV2 } from "../plugins/immune-brain/runtime/kernel/completion";
+import { completionDecision } from "../plugins/immune-brain/runtime/kernel/completion";
 import type { TaskApprovalV2 } from "../plugins/immune-brain/runtime/kernel/types";
 
 const TASK = "canary-critical-completion-task";
@@ -31,23 +28,29 @@ const INTENT = {
 		{ id: "A1", assertion: "a1", verification: "true" },
 		{ id: "A2", assertion: "a2", verification: "true" },
 	],
-	scope_hint: ["plugins/immune-brain/.pi-extension"],
+	scope_hint: [
+		"plugins/immune-brain/.pi-extension",
+		"docs/specs/canary-critical-completion-task.spec.md",
+		"docs/specs/archive/canary-critical-completion-task.spec.md",
+	],
 	risk: "critical",
 	revision: 1,
 	owner: "user",
 } as const;
-const INTENT_HASH = canonicalIntentHash(INTENT);
+const INTENT_HASH = canonicalIntentHash(parseTaskIntentV1(INTENT));
 const DIFF = "sha256:" + "d".repeat(64);
 
 function makeRoot(): { root: string; mutationRegistry: ReturnType<typeof createMutationAuthorityRegistry>; app: ReturnType<typeof createCanaryApplication> } {
 	const root = mkdtempSync(join(tmpdir(), "uaw-complete-"));
 	mkdirSync(join(root, "docs", "plans"), { recursive: true });
+	mkdirSync(join(root, "docs", "specs"), { recursive: true });
 	mkdirSync(join(root, ".imm", "tasks"), { recursive: true });
 	execFileSync("git", ["init", "-q"], { cwd: root });
 	writeFileSync(
 		join(root, "docs", "plans", `${TASK}.intent.json`),
 		JSON.stringify(INTENT, null, 2) + "\n",
 	);
+	writeFileSync(join(root, "docs", "specs", `${TASK}.spec.md`), "# Critical completion\n");
 	execFileSync("git", ["add", "-A"], { cwd: root });
 	execFileSync("git", ["commit", "-qm", "intent"], { cwd: root });
 	writeFileSync(
@@ -66,9 +69,6 @@ function makeRoot(): { root: string; mutationRegistry: ReturnType<typeof createM
 		intent_revision: 1,
 		intent_content_hash: INTENT_HASH,
 		preparation_digest: prep.digest,
-		readiness_digest: "sha256:none",
-		evidence_digest: "sha256:none",
-		waiver_gate: "observation_window_days",
 		actor_id: "user",
 		confirmation_ref: "c",
 		expires_at: "2099-01-01T00:00:00.000Z",
@@ -124,7 +124,7 @@ function capabilityFor(
 		authority_kind: authorityKind,
 		task_id: TASK,
 		action_digest: digestOfAction(action as never),
-		expected_record_hash: readTaskRecordV2(root, TASK).revision,
+		expected_record_hash: readTaskRecord(root, TASK).revision,
 		intent_revision: 1,
 		intent_content_hash: INTENT_HASH,
 		diff_hash: DIFF,
@@ -139,32 +139,16 @@ describe("critical completion is reachable with qa+review+user approvals", () =>
 	test("full journey working -> review -> done with tombstone and released ownership", () => {
 		const { root, mutationRegistry, app } = makeRoot();
 		try {
-			const token = () => readTaskIntent(root, TASK).token;
-			// Evidence for both acceptance ids (fresh against DIFF).
+			const token = () => readTaskIntent(root, TASK, readTaskRecord(root, TASK).record!.intent_ref.path).token;
 			app.execute({
 				root,
 				task_id: TASK,
-				operation: { op: "record_evidence", acceptance_id: "A1", status: "passed", summary: "one", actor_id: "executor-1" },
-				prior_intent_token: token(),
-				diffProvider: () => DIFF,
-				now: "2026-08-12T10:00:01.000Z",
-			});
-			app.execute({
-				root,
-				task_id: TASK,
-				operation: { op: "record_evidence", acceptance_id: "A2", status: "passed", summary: "two", actor_id: "executor-1" },
-				prior_intent_token: token(),
-				diffProvider: () => DIFF,
-				now: "2026-08-12T10:00:02.000Z",
-			});
-			app.execute({
-				root,
-				task_id: TASK,
-				operation: { op: "submit_review", actor_id: "executor-1" },
+				operation: { op: "freeze_artifacts", actor_id: "executor-1" },
 				prior_intent_token: token(),
 				diffProvider: () => DIFF,
 				now: "2026-08-12T10:00:03.000Z",
 			});
+			execFileSync("git", ["add", "-A"], { cwd: root });
 
 			// Without the user approval the task is not eligible.
 			const qaApproval = approvalFixture("qa", "approval-qa", "qa-child-1", "qa");
@@ -188,8 +172,8 @@ describe("critical completion is reachable with qa+review+user approvals", () =>
 				now: "2026-08-12T10:00:05.000Z",
 			});
 
-			const intentRead = readTaskIntent(root, TASK);
-			const before = completionDecisionV2(intentRead.intent, readTaskRecordV2(root, TASK).record!, DIFF, INTENT_HASH);
+			const intentRead = { intent: INTENT };
+			const before = completionDecision(intentRead.intent, readTaskRecord(root, TASK).record!, DIFF, INTENT_HASH);
 			expect(before.missing_approval_kinds).toEqual(["user"]);
 			expect(before.complete).toBe(false);
 			expect(() =>
@@ -215,7 +199,7 @@ describe("critical completion is reachable with qa+review+user approvals", () =>
 				now: "2026-08-12T10:00:07.000Z",
 			});
 
-			const after = completionDecisionV2(readTaskIntent(root, TASK).intent, readTaskRecordV2(root, TASK).record!, DIFF, INTENT_HASH);
+			const after = completionDecision(INTENT, readTaskRecord(root, TASK).record!, DIFF, INTENT_HASH);
 			expect(after.complete).toBe(true);
 			expect(after.missing_approval_kinds).toEqual([]);
 
@@ -227,12 +211,12 @@ describe("critical completion is reachable with qa+review+user approvals", () =>
 				diffProvider: () => DIFF,
 				now: "2026-08-12T10:00:08.000Z",
 			});
-			expect(done.record.phase).toBe("done");
+			expect(done.record.lifecycle).toBe("done");
 			// Terminal ownership transfer: claim removed, tombstone created,
 			// workspace pointer released.
 			expect(readBackendClaim(root)).toBeNull();
 			const tombstone = readTaskTombstone(root, TASK);
-			expect(tombstone?.terminal_phase).toBe("done");
+			expect(tombstone?.terminal_lifecycle).toBe("done");
 			expect(tombstone?.final_record_hash).toBe(done.revision);
 		} finally {
 			rmSync(root, { recursive: true, force: true });

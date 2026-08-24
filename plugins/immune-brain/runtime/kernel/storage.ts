@@ -22,11 +22,15 @@ import {
 	type BackendClaim,
 	type TaskTombstone,
 } from "./backend_claim";
-import { parseTaskRecordV2 } from "./validation";
+import { canonicalIntentHash, readTaskIntent } from "./intent";
+import { consumeIntentToken } from "./intent_token_registry";
+import { parseTaskRecordV2, parseTaskRecordV3 } from "./validation";
 import type {
+	TaskLifecycle,
 	TaskPhase,
 	TaskRecordV2,
-	StoredTaskMutationV2,
+	TaskRecordV3,
+	StoredTaskMutationV3,
 	V3AuthorityObservation,
 } from "./types";
 
@@ -394,7 +398,7 @@ const TRANSACTION_PATH = ".imm/tasks/.workspace-transaction.json";
 // v4 storage retirement: the v1 transaction marker is a permanently retired
 // contract. Any production store operation must fail closed when it is
 // present; recovery of v1 markers is never performed by the v4 runtime.
-const V1_TRANSACTION_RETIRED = "workspace_transaction/v1 is retired after v4 storage retirement; use TaskRecord v2 + workspace_transaction/v2";
+const V1_TRANSACTION_RETIRED = "workspace_transaction/v1 is retired after v4 storage retirement; use TaskRecord v3 + workspace_transaction/v2";
 
 let afterTaskTransactionWriteForTest: (() => void) | null = null;
 
@@ -542,7 +546,7 @@ export function appendObservationJournalEntry(
 }
 
 // ---------------------------------------------------------------------------
-// R2C2 dedicated TaskRecord v2 transaction path.
+// R2C2 dedicated TaskRecord v3 transaction path.
 // Uses the existing exclusive store lock and rejects the retired v1 marker.
 // ---------------------------------------------------------------------------
 
@@ -621,7 +625,7 @@ function parseWorkspaceTransactionV2(raw: Record<string, unknown>): WorkspaceTra
 		...(artifactRelocations.length > 0 ? { artifact_relocations: artifactRelocations } : {}),
 	};
 	validateTaskId(transaction.task_id);
-	const record = parseTaskRecordV2(
+	const record = parseTaskRecordV3(
 		JSON.parse(transaction.next_record_content),
 	);
 	if (record.task_id !== transaction.task_id)
@@ -691,7 +695,7 @@ function completeTransactionV2Locked(
 	root: string,
 	transaction: WorkspaceTransactionV2,
 	invokeTestHook: boolean,
-): StoredTaskMutationV2 {
+): StoredTaskMutationV3 {
 	for (const relocation of transaction.artifact_relocations ?? [])
 		convergeArtifactRelocation(root, relocation);
 	const taskPath = `.imm/tasks/${transaction.task_id}.json`;
@@ -708,7 +712,7 @@ function completeTransactionV2Locked(
 		transaction.expected_workspace_hash,
 		transaction.next_workspace_content,
 	);
-	const record = parseTaskRecordV2(
+	const record = parseTaskRecordV3(
 		JSON.parse(transaction.next_record_content),
 	);
 	const workspace = parseWorkspaceContent(transaction.next_workspace_content);
@@ -760,7 +764,29 @@ function recoverAnyPendingTransactionLocked(root: string): void {
 	if (hasAuthorityRepair) recoverPendingAuthorityRepairLocked(root);
 }
 
-export function readTaskRecordV2Raw(
+export function readTaskRecordRaw(
+	root: string,
+	taskId: string,
+): { revision: string; record: TaskRecordV3 | null } {
+	validateTaskId(taskId);
+	const relativePath = `.imm/tasks/${taskId}.json`;
+	if (currentRevision(root, relativePath) === MISSING_REVISION)
+		return { revision: MISSING_REVISION, record: null };
+	const content = readSecureProjectFile(root, relativePath);
+	const raw = JSON.parse(content) as { contract?: unknown };
+	if (raw.contract === "assurance_kernel/task_record/v2") {
+		const legacy = parseTaskRecordV2(raw);
+		if (legacy.phase === "done" || legacy.phase === "stopped")
+			throw new KernelStoreSecurityError("terminal TaskRecord v2 is historical and cannot be mutated");
+		throw new KernelStoreSecurityError("active TaskRecord v2 requires one-time migration before mutation");
+	}
+	const record = parseTaskRecordV3(raw);
+	if (record.task_id !== taskId)
+		throw new KernelStoreSecurityError("task record v3 identity is inconsistent");
+	return { revision: revisionFor(content), record };
+}
+
+export function readHistoricalTaskRecordV2Raw(
 	root: string,
 	taskId: string,
 ): { revision: string; record: TaskRecordV2 | null } {
@@ -770,28 +796,174 @@ export function readTaskRecordV2Raw(
 		return { revision: MISSING_REVISION, record: null };
 	const content = readSecureProjectFile(root, relativePath);
 	const record = parseTaskRecordV2(JSON.parse(content));
-	if (record.task_id !== taskId)
-		throw new KernelStoreSecurityError("task record v2 identity is inconsistent");
+	if (record.task_id !== taskId || (record.phase !== "done" && record.phase !== "stopped"))
+		throw new KernelStoreSecurityError("historical TaskRecord v2 must be terminal and identity-consistent");
 	return { revision: revisionFor(content), record };
 }
 
-export function readTaskRecordV2(
+export function readTaskRecord(
 	root: string,
 	taskId: string,
-): { revision: string; record: TaskRecordV2 | null } {
-	return withKernelStoreLockV2(root, () => readTaskRecordV2Raw(root, taskId));
+): { revision: string; record: TaskRecordV3 | null } {
+	return withKernelStoreLock(root, () => readTaskRecordRaw(root, taskId));
 }
 
-/** Commit a v2 reducer result through the dedicated recoverable transaction. */
-export function commitTaskRecordV2Locked(
+/**
+ * One-time active TaskRecord v2 -> v3 migration. Transitional compatibility
+ * layer with an explicit exit plan:
+ * - Expiry condition: no active v2 TaskRecords remain on disk (all historical
+ *   records are terminal `done`/`stopped`, read via readHistoricalTaskRecordV2Raw).
+ * - Removal milestone: the release after the first production cohort confirms
+ *   zero `migrateActiveTaskRecord` invocations across a full audit cycle.
+ * - Owner: Kernel/runtime maintainers (plugins/immune-brain/runtime/kernel).
+ * Once the milestone is reached, delete this function, its call site in
+ * projectAssuranceState, and the v2 ownership-invariant branch below.
+ */
+export function migrateActiveTaskRecord(
+	root: string,
+	taskId: string,
+): { revision: string; record: TaskRecordV3; migrated: boolean } {
+	validateTaskId(taskId);
+	return withKernelStoreLock(root, () => {
+		const path = `.imm/tasks/${taskId}.json`;
+		const content = readSecureProjectFile(root, path);
+		const raw = JSON.parse(content) as Record<string, unknown>;
+		if (raw.contract === "assurance_kernel/task_record/v3") {
+			const record = parseTaskRecordV3(raw);
+			return { revision: revisionFor(content), record, migrated: false };
+		}
+		const legacy = parseTaskRecordV2(raw);
+		if (legacy.phase === "done" || legacy.phase === "stopped")
+			throw new KernelStoreSecurityError("terminal TaskRecord v2 is historical and cannot be migrated");
+		const claim = readBackendClaim(root);
+		const workspace = readWorkspaceStateRaw(root);
+		// v2 ownership invariant: the working phase held the workspace claim
+		// (current_working === taskId), while the review phase released it
+		// (current_working === null) because the v2 reducer cleared the slot
+		// on every transition out of working. Accept either shape as long as
+		// the backend claim still binds this exact task and intent.
+		const expectedWorking = legacy.phase === "working" ? taskId : null;
+		if (
+			!claim ||
+			claim.task_id !== taskId ||
+			claim.intent_revision !== legacy.intent_revision ||
+			claim.intent_content_hash !== legacy.intent_ref.content_hash ||
+			workspace.state.current_working !== expectedWorking
+		) throw new KernelStoreSecurityError("active TaskRecord v2 ownership facts are inconsistent");
+
+		const activeIntentPath = `docs/plans/${taskId}.intent.json`;
+		const archivedIntentPath = `docs/plans/archive/${taskId}.intent.json`;
+		const activeIntentExists = currentRevision(root, activeIntentPath) !== MISSING_REVISION;
+		const archivedIntentExists = currentRevision(root, archivedIntentPath) !== MISSING_REVISION;
+		if (activeIntentExists === archivedIntentExists)
+			throw new KernelStoreSecurityError(
+				"active TaskRecord v2 requires exactly one active or archived TaskIntent sidecar",
+			);
+		const migratedIntentPath = activeIntentExists ? activeIntentPath : archivedIntentPath;
+		if (legacy.intent_ref.path !== migratedIntentPath)
+			throw new KernelStoreSecurityError("active TaskRecord v2 intent path does not match its sidecar");
+		let currentIntent: ReturnType<typeof readTaskIntent>;
+		try {
+			currentIntent = readTaskIntent(root, taskId, migratedIntentPath);
+		} catch (error) {
+			throw new KernelStoreSecurityError(
+				`active TaskRecord v2 intent sidecar is invalid: ${error instanceof Error ? error.message : String(error)}`,
+			);
+		}
+		try {
+			if (
+				currentIntent.content_hash !== legacy.intent_ref.content_hash ||
+				currentIntent.intent.revision !== legacy.intent_revision ||
+				canonicalIntentHash(legacy.intent_snapshot) !== legacy.intent_ref.content_hash
+			) throw new KernelStoreSecurityError("active TaskRecord v2 intent identities are inconsistent");
+		} finally {
+			consumeIntentToken(currentIntent.token);
+		}
+
+		// The real sidecar location is the old runtime's durable artifact fact.
+		// A pre-freeze review record safely returns to active execution; a staged
+		// archived sidecar remains frozen without inventing a file relocation.
+		const artifactState = archivedIntentExists ? "frozen" : "active";
+		const nextWorkspace = {
+			...workspace.state,
+			current_working: artifactState === "active" ? taskId : null,
+		};
+		const qaResults = legacy.intent_snapshot.acceptance.map((acceptance) => {
+			const evidence = legacy.evidence.find((item) =>
+				item.acceptance_id === acceptance.id &&
+				item.task_revision === legacy.intent_revision &&
+				item.intent_content_hash === legacy.intent_ref.content_hash,
+			);
+			return evidence ? {
+				acceptance_id: acceptance.id,
+				status: evidence.status,
+				summary: evidence.summary,
+			} : {
+				acceptance_id: acceptance.id,
+				status: "blocked" as const,
+				summary: "legacy QA approval has no bound acceptance evidence; QA must run again",
+			};
+		});
+		const stateOfPhase = (phase: TaskPhase) =>
+			phase === "working" ? "active:active" : phase === "review" ? "active:frozen" : `${phase}:frozen`;
+		const record = parseTaskRecordV3({
+			contract: "assurance_kernel/task_record/v3",
+			task_id: legacy.task_id,
+			intent_snapshot: legacy.intent_snapshot,
+			intent_ref: {
+				path: migratedIntentPath,
+				content_hash: legacy.intent_ref.content_hash,
+			},
+			lifecycle: "active",
+			artifact_state: artifactState,
+			baseline: legacy.baseline,
+			attestations: legacy.approvals.map((approval) => ({
+				...approval,
+				acceptance_results: approval.kind === "qa" ? qaResults : [],
+			})),
+			findings: legacy.findings,
+			history: [
+				...legacy.history.map((entry) => ({
+					id: entry.id,
+					at: entry.at,
+					type: entry.type,
+					from_state: stateOfPhase(entry.from_phase),
+					to_state: stateOfPhase(entry.to_phase),
+					reason: entry.reason,
+					...(entry.authority ? { authority: entry.authority } : {}),
+				})),
+				{
+					id: `migrate_task_record_v3:${taskId}`,
+					at: claim.updated_at,
+					type: "migrate_task_record_v3",
+					from_state: stateOfPhase(legacy.phase),
+					to_state: `active:${artifactState}`,
+					reason: "one-time active TaskRecord v2 migration",
+				},
+			],
+		});
+		const stored = commitTaskRecordLocked(
+			root,
+			taskId,
+			revisionFor(content),
+			record,
+			workspace.revision,
+			nextWorkspace,
+		);
+		return { revision: stored.revision, record: stored.record, migrated: true };
+	});
+}
+
+/** Commit a TaskRecord v3 reducer result through the recoverable transaction. */
+export function commitTaskRecordLocked(
 	root: string,
 	taskId: string,
 	expectedRecordHash: string,
-	nextRecord: TaskRecordV2,
+	nextRecord: TaskRecordV3,
 	expectedWorkspaceHash: string,
 	nextWorkspace: WorkspaceState,
 	artifactRelocations: ArtifactRelocationV1[] = [],
-): StoredTaskMutationV2 {
+): StoredTaskMutationV3 {
 	const transaction: WorkspaceTransactionV2 = {
 		contract: "assurance_kernel/workspace_transaction/v2",
 		task_id: taskId,
@@ -820,7 +992,7 @@ export function commitTaskRecordV2Locked(
 	}
 }
 
-export function withKernelStoreLockV2<T>(root: string, operation: () => T): T {
+export function withKernelStoreLock<T>(root: string, operation: () => T): T {
 	const tasksDirectory = ensureSecureDirectory(root, ".imm/tasks");
 	return withExclusiveLock(resolve(tasksDirectory, STORE_LOCK_NAME), () => {
 		assertNoRetiredV1Marker(root);
@@ -841,7 +1013,7 @@ export interface KernelAuthorityProjection {
 	requested_task_id: string;
 	state: KernelAuthorityState;
 	owner_task_id: string | null;
-	owner_phase: TaskPhase | null;
+	owner_lifecycle: TaskLifecycle | null;
 	claim_lifecycle_status: BackendClaim["lifecycle_status"] | null;
 	diagnostic: string | null;
 	revision: string;
@@ -860,28 +1032,48 @@ function projectKernelAuthorityLocked(
 			const claim = readBackendClaim(root);
 			const ownerTaskId = claim?.task_id ?? null;
 			const inspectedTaskId = ownerTaskId ?? taskId;
-			const current = readTaskRecordV2Raw(root, inspectedTaskId);
+			let current: { revision: string; record: TaskRecordV3 | null };
+			let legacyTerminal: TaskRecordV2 | null = null;
+			try {
+				current = readTaskRecordRaw(root, inspectedTaskId);
+			} catch (error) {
+				if (!(error instanceof KernelStoreSecurityError) || !error.message.startsWith("terminal TaskRecord v2")) throw error;
+				const historical = readHistoricalTaskRecordV2Raw(root, inspectedTaskId);
+				current = { revision: historical.revision, record: null };
+				legacyTerminal = historical.record;
+			}
 			const tombstone = readTaskTombstone(root, inspectedTaskId);
 			const workspace = readWorkspaceStateRaw(root).state;
 			const record = current.record;
-			const terminal = record?.phase === "done" || record?.phase === "stopped";
+			const authorityRecord = record ? {
+				task_id: record.task_id,
+				lifecycle: record.lifecycle,
+				intent_revision: record.intent_snapshot.revision,
+				intent_content_hash: record.intent_ref.content_hash,
+			} : legacyTerminal ? {
+				task_id: legacyTerminal.task_id,
+				lifecycle: legacyTerminal.phase as "done" | "stopped",
+				intent_revision: legacyTerminal.intent_revision,
+				intent_content_hash: legacyTerminal.intent_ref.content_hash,
+			} : null;
+			const terminal = authorityRecord?.lifecycle === "done" || authorityRecord?.lifecycle === "stopped";
 			const matchingTerminalProof = Boolean(
-				record &&
+				authorityRecord &&
 				tombstone &&
 				tombstone.task_id === inspectedTaskId &&
-				tombstone.terminal_phase === record.phase &&
+				tombstone.terminal_lifecycle === authorityRecord.lifecycle &&
 				tombstone.final_record_hash === current.revision &&
 				workspace.current_working === null,
 			);
 			const matchingClaimIdentity = Boolean(
 				claim &&
-				record &&
-				claim.task_id === record.task_id &&
-				claim.intent_revision === record.intent_revision &&
-				claim.intent_content_hash === record.intent_ref.content_hash,
+				authorityRecord &&
+				claim.task_id === authorityRecord.task_id &&
+				claim.intent_revision === authorityRecord.intent_revision &&
+				claim.intent_content_hash === authorityRecord.intent_content_hash,
 			);
 			const sameOwner = claim ? workspace.current_working === claim.task_id : workspace.current_working === null;
-			const revision = revisionForContent(JSON.stringify({ claim, current, tombstone, workspace }));
+			const revision = revisionForContent(JSON.stringify({ claim, current, legacyTerminal, tombstone, workspace }));
 
 			if (claim && !sameOwner && !matchingTerminalProof)
 				return {
@@ -889,20 +1081,20 @@ function projectKernelAuthorityLocked(
 					requested_task_id: taskId,
 					state: "authority_conflict",
 					owner_task_id: claim.task_id,
-					owner_phase: record?.phase ?? null,
+					owner_lifecycle: authorityRecord?.lifecycle ?? null,
 					claim_lifecycle_status: claim.lifecycle_status,
 					diagnostic: `workspace owner ${workspace.current_working ?? "null"} contradicts claim ${claim.task_id}`,
 					revision,
 				};
-			if (claim && !record)
+			if (claim && !authorityRecord)
 				return {
 					contract: "assurance_kernel/authority_projection/v1",
 					requested_task_id: taskId,
 					state: "authority_conflict",
 					owner_task_id: claim.task_id,
-					owner_phase: null,
+					owner_lifecycle: null,
 					claim_lifecycle_status: claim.lifecycle_status,
-					diagnostic: `claim ${claim.task_id} has no TaskRecord v2`,
+					diagnostic: `claim ${claim.task_id} has no TaskRecord v3`,
 					revision,
 				};
 			if (claim && tombstone && matchingTerminalProof && matchingClaimIdentity)
@@ -911,7 +1103,7 @@ function projectKernelAuthorityLocked(
 					requested_task_id: taskId,
 					state: "repairable_stale_claim",
 					owner_task_id: claim.task_id,
-					owner_phase: record?.phase ?? null,
+					owner_lifecycle: authorityRecord?.lifecycle ?? null,
 					claim_lifecycle_status: claim.lifecycle_status,
 					diagnostic: null,
 					revision,
@@ -922,7 +1114,7 @@ function projectKernelAuthorityLocked(
 					requested_task_id: taskId,
 					state: "authority_conflict",
 					owner_task_id: claim.task_id,
-					owner_phase: record?.phase ?? null,
+					owner_lifecycle: authorityRecord?.lifecycle ?? null,
 					claim_lifecycle_status: claim.lifecycle_status,
 					diagnostic: `claim ${claim.task_id} has contradictory terminal ownership evidence`,
 					revision,
@@ -933,7 +1125,7 @@ function projectKernelAuthorityLocked(
 					requested_task_id: taskId,
 					state: "authority_conflict",
 					owner_task_id: claim.task_id,
-					owner_phase: record?.phase ?? null,
+					owner_lifecycle: authorityRecord?.lifecycle ?? null,
 					claim_lifecycle_status: claim.lifecycle_status,
 					diagnostic: `terminal task ${claim.task_id} has no matching tombstone proof`,
 					revision,
@@ -944,29 +1136,29 @@ function projectKernelAuthorityLocked(
 					requested_task_id: taskId,
 					state: "active_owner",
 					owner_task_id: claim.task_id,
-					owner_phase: record?.phase ?? null,
+					owner_lifecycle: authorityRecord?.lifecycle ?? null,
 					claim_lifecycle_status: claim.lifecycle_status,
 					diagnostic: null,
 					revision,
 				};
-			if (record && terminal && matchingTerminalProof)
+			if (authorityRecord && terminal && matchingTerminalProof)
 				return {
 					contract: "assurance_kernel/authority_projection/v1",
 					requested_task_id: taskId,
 					state: "terminal_owner",
 					owner_task_id: inspectedTaskId,
-					owner_phase: record.phase,
+					owner_lifecycle: authorityRecord.lifecycle,
 					claim_lifecycle_status: null,
 					diagnostic: null,
 					revision,
 				};
-			if (record || tombstone || workspace.current_working !== null)
+			if (authorityRecord || tombstone || workspace.current_working !== null)
 				return {
 					contract: "assurance_kernel/authority_projection/v1",
 					requested_task_id: taskId,
 					state: "authority_conflict",
 					owner_task_id: workspace.current_working,
-					owner_phase: record?.phase ?? null,
+					owner_lifecycle: authorityRecord?.lifecycle ?? null,
 					claim_lifecycle_status: null,
 					diagnostic: "nonterminal owner state exists without a backend claim",
 					revision,
@@ -976,7 +1168,7 @@ function projectKernelAuthorityLocked(
 				requested_task_id: taskId,
 				state: "unowned",
 				owner_task_id: null,
-				owner_phase: null,
+				owner_lifecycle: null,
 				claim_lifecycle_status: null,
 				diagnostic: null,
 				revision,
@@ -987,7 +1179,7 @@ function projectKernelAuthorityLocked(
 			requested_task_id: taskId,
 			state: "authority_conflict",
 			owner_task_id: null,
-			owner_phase: null,
+			owner_lifecycle: null,
 			claim_lifecycle_status: null,
 			diagnostic: error instanceof Error ? error.message : String(error),
 			revision: "",
@@ -1000,7 +1192,7 @@ export function reconcileKernelAuthority(
 	taskId: string,
 ): KernelAuthorityProjection {
 	validateTaskId(taskId);
-	return withKernelStoreLockV2(root, () => projectKernelAuthorityLocked(root, taskId));
+	return withKernelStoreLock(root, () => projectKernelAuthorityLocked(root, taskId));
 }
 
 interface AuthorityRepairMarker {
@@ -1093,7 +1285,7 @@ export function repairKernelAuthority(
 	at = new Date().toISOString(),
 ): KernelAuthorityProjection {
 	validateTaskId(taskId);
-	return withKernelStoreLockV2(root, () => {
+	return withKernelStoreLock(root, () => {
 		const projection = projectKernelAuthorityLocked(root, taskId);
 		if (
 			projection.state !== "repairable_stale_claim" ||
@@ -1242,7 +1434,7 @@ export function commitEnrollmentLocked(
 		);
 	}
 	return {
-		record: parseTaskRecordV2(JSON.parse(transaction.next_record_content)),
+		record: parseTaskRecordV3(JSON.parse(transaction.next_record_content)),
 		workspace: parseWorkspaceContent(transaction.next_workspace_content),
 	};
 }
@@ -1542,7 +1734,7 @@ export function commitTerminalLocked(
 		);
 	}
 	return {
-		record: parseTaskRecordV2(JSON.parse(transaction.next_record_content)),
+		record: parseTaskRecordV3(JSON.parse(transaction.next_record_content)),
 		workspace: parseWorkspaceContent(transaction.next_workspace_content),
 	};
 }

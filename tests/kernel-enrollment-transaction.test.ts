@@ -14,7 +14,7 @@ import {
 	createEnrollmentAuthorityRegistry,
 	type EnrollmentCapabilityBinding,
 } from "../plugins/immune-brain/runtime/kernel/enrollment_authority";
-import { readTaskRecordV2 } from "../plugins/immune-brain/runtime/kernel/storage";
+import { readTaskRecord } from "../plugins/immune-brain/runtime/kernel/storage";
 
 function makeRoot(): string {
 	const root = mkdtempSync(join(tmpdir(), "p2b0-enroll-"));
@@ -74,9 +74,6 @@ function bindingFor(root: string, taskId: string): EnrollmentCapabilityBinding {
 		intent_revision: 1,
 		intent_content_hash: prep.intent?.content_hash ?? "sha256:any",
 		preparation_digest: prep.digest,
-		readiness_digest: "sha256:readiness",
-		evidence_digest: "sha256:evidence",
-		waiver_gate: "observation_window_days",
 		actor_id: "user",
 		confirmation_ref: "pi-confirm-001",
 		expires_at: "2099-01-01T00:00:00.000Z",
@@ -93,14 +90,12 @@ describe("backend claim", () => {
 	test("serialize then read round-trips through the canonical bytes", () => {
 		const root = makeRoot();
 		const claim: BackendClaim = {
-			contract: "assurance_kernel/backend_claim/v1",
+			contract: "assurance_kernel/backend_claim/v2",
 			backend: "kernel",
 			task_id: "task-001",
 			intent_revision: 1,
 			intent_content_hash: "sha256:intent",
 			enrollment_event_id: "evt-1",
-			readiness_digest: "sha256:readiness",
-			evidence_digest: "sha256:evidence",
 			lifecycle_status: "active",
 			created_at: "2026-08-12T00:00:00.000Z",
 			updated_at: "2026-08-12T00:00:00.000Z",
@@ -112,7 +107,7 @@ describe("backend claim", () => {
 
 	test("malformed claim fails closed", () => {
 		const root = makeRoot();
-		writeFileSync(join(root, CLAIM_PATH), `{"contract":"assurance_kernel/backend_claim/v1","backend":"v3"}\n`);
+		writeFileSync(join(root, CLAIM_PATH), `{"contract":"assurance_kernel/backend_claim/v2","backend":"v3"}\n`);
 		expect(() => readBackendClaim(root)).toThrow();
 	});
 
@@ -125,7 +120,7 @@ describe("backend claim", () => {
 
 describe("enrollment transaction", () => {
 	const registry = createEnrollmentAuthorityRegistry();
-	test("enrolls TaskRecord v2 + workspace + backend claim atomically", () => {
+	test("enrolls TaskRecord v3 + workspace + backend claim atomically", () => {
 		const root = makeRoot();
 		const taskId = "task-001";
 		const intentPath = writeIntent(root, taskId);
@@ -140,11 +135,11 @@ describe("enrollment transaction", () => {
 			capability_binding: binding,
 			now: "2026-08-12T00:00:00.000Z",
 		}, registry);
-		expect(result.record.phase).toBe("working");
+		expect(result.record).toMatchObject({ lifecycle: "active", artifact_state: "active" });
 		expect(result.record.task_id).toBe(taskId);
-		expect(result.record.intent_ref.revision).toBe(1);
-		const read = readTaskRecordV2(root, taskId);
-		expect(read.record?.phase).toBe("working");
+		expect(result.record.intent_snapshot.revision).toBe(1);
+		const read = readTaskRecord(root, taskId);
+		expect(read.record).toMatchObject({ lifecycle: "active", artifact_state: "active" });
 		const claim = readBackendClaim(root);
 		expect(claim?.task_id).toBe(taskId);
 		expect(claim?.lifecycle_status).toBe("active");
@@ -153,8 +148,6 @@ describe("enrollment transaction", () => {
 			task_id: taskId,
 			intent_path: `docs/plans/${taskId}.intent.json`,
 			intent_revision: 1,
-			readiness_digest: "sha256:readiness",
-			evidence_digest: "sha256:evidence",
 			capability: cap,
 			capability_binding: bindingFor(root, taskId),
 			now: "2026-08-12T00:00:00.000Z",
@@ -171,8 +164,6 @@ describe("enrollment transaction", () => {
 				task_id: taskId,
 				intent_path: `docs/plans/${taskId}.intent.json`,
 				intent_revision: 1,
-				readiness_digest: "sha256:readiness",
-				evidence_digest: "sha256:evidence",
 				capability: cap,
 				capability_binding: bindingFor(root, taskId),
 				now: "2026-08-12T00:00:00.000Z",
@@ -189,8 +180,6 @@ describe("enrollment transaction", () => {
 				task_id: taskId,
 				intent_path: `docs/plans/${taskId}.intent.json`,
 				intent_revision: 1,
-				readiness_digest: "sha256:readiness",
-				evidence_digest: "sha256:evidence",
 				capability: cap,
 				capability_binding: bindingFor(root, taskId),
 				now: "2026-08-12T00:00:00.000Z",

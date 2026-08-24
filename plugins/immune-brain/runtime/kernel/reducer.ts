@@ -1,35 +1,27 @@
-// R2C2 pure TaskRecord v2 reducer with a closed factual action vocabulary.
+// Pure TaskRecord v3 reducer with a closed factual action vocabulary.
 // Never reads files, Git, workspace, or host context. Returns a branded
-// ReducedTaskMutationV2; the caller cannot construct or serialize it.
+// ReducedTaskMutation; the caller cannot construct or serialize it.
 
 import { createHash } from "node:crypto";
-import { completionDecisionV2 } from "./completion";
+import { completionDecision } from "./completion";
 import {
 	REDUCED_MUTATION_BRAND,
-	type AuthorityAuditDescriptorV2,
-	type ReducedTaskMutationV2,
-	type TaskActionV2,
+	type AuthorityAuditDescriptor,
+	type ReducedTaskMutation,
+	type TaskAction,
 	type TaskFinding,
-	type TaskIntentRefV1,
+	type TaskIntentRefV3,
 	type TaskIntentV1,
-	type TaskPhase,
-	type TaskRecordV2,
+	type TaskRecordV3,
 } from "./types";
 import {
 	KernelInvariantError,
-	assertKernelInvariantsV2,
-	assertTaskRecordUpdateV2,
-	parseTaskActionV2,
-	parseTaskRecordV2,
+	assertKernelInvariantsV3,
+	assertTaskRecordUpdateV3,
+	parseTaskAction,
+	parseTaskRecordV3,
 } from "./validation";
 import { classifyIntentRevision, canonicalIntentHash } from "./intent";
-
-const TRANSITIONS: Record<TaskPhase, TaskPhase[]> = {
-	working: ["review", "stopped"],
-	review: ["working", "done", "stopped"],
-	done: [],
-	stopped: [],
-};
 
 const RISK_RANK: Record<TaskIntentV1["risk"], number> = {
 	routine: 0,
@@ -37,12 +29,16 @@ const RISK_RANK: Record<TaskIntentV1["risk"], number> = {
 	critical: 2,
 };
 
-function transition(record: TaskRecordV2, to: TaskPhase): void {
-	if (!TRANSITIONS[record.phase].includes(to))
+function transitionLifecycle(record: TaskRecordV3, to: "done" | "stopped"): void {
+	if (record.lifecycle !== "active")
 		throw new KernelInvariantError([
-			`illegal phase transition: ${record.phase} -> ${to}`,
+			`illegal lifecycle transition: ${record.lifecycle} -> ${to}`,
 		]);
-	record.phase = to;
+	record.lifecycle = to;
+}
+
+function stateOf(record: TaskRecordV3): string {
+	return `${record.lifecycle}:${record.artifact_state}`;
 }
 
 function stableJson(value: unknown): string {
@@ -58,18 +54,18 @@ function stableJson(value: unknown): string {
 	return primitive === undefined ? "null" : primitive;
 }
 
-export function canonicalRecordHashV2(record: TaskRecordV2): string {
+export function canonicalRecordHash(record: TaskRecordV3): string {
 	// Must equal the storage CAS revision: the exact serialized file bytes.
 	return `sha256:${createHash("sha256")
 		.update(`${JSON.stringify(record, null, 2)}\n`)
 		.digest("hex")}`;
 }
 
-export function actionFingerprintV2(
-	action: TaskActionV2,
+export function actionFingerprint(
+	action: TaskAction,
 	intentRevision: number,
 	intentContentHash: string,
-	audit: AuthorityAuditDescriptorV2 | null,
+	audit: AuthorityAuditDescriptor | null,
 ): string {
 	// The fingerprint binds the semantic payload, not the caller-supplied CAS
 	// expectations, so an exact replay retried against an advanced record
@@ -83,13 +79,13 @@ export function actionFingerprintV2(
 }
 
 function historyReason(
-	action: TaskActionV2,
+	action: TaskAction,
 	intentRevision: number,
 	intentContentHash: string,
-	audit: AuthorityAuditDescriptorV2 | null,
+	audit: AuthorityAuditDescriptor | null,
 	detail: string | null,
 ): string {
-	const fingerprint = `action_v2_sha256:${actionFingerprintV2(
+	const fingerprint = `action_v2_sha256:${actionFingerprint(
 		action,
 		intentRevision,
 		intentContentHash,
@@ -98,24 +94,26 @@ function historyReason(
 	return detail ? `${detail}\n${fingerprint}` : fingerprint;
 }
 
-export function recordedActionFingerprintV2(reason: string | null): string | null {
+export function recordedActionFingerprint(reason: string | null): string | null {
 	const matched = reason?.match(/(?:^|\n)action_v2_sha256:([a-f0-9]{64})$/);
 	return matched?.[1] ?? null;
 }
 
-function copyRecord(record: TaskRecordV2): TaskRecordV2 {
+function copyRecord(record: TaskRecordV3): TaskRecordV3 {
 	return {
 		...record,
 		intent_snapshot: { ...record.intent_snapshot },
 		intent_ref: { ...record.intent_ref },
-		evidence: record.evidence.map((item) => ({ ...item })),
+		attestations: record.attestations.map((item) => ({
+			...item,
+			acceptance_results: item.acceptance_results.map((result) => ({ ...result })),
+		})),
 		findings: record.findings.map((item) => ({ ...item })),
-		approvals: record.approvals.map((item) => ({ ...item })),
 		history: record.history.map((item) => ({ ...item })),
 	};
 }
 
-function reviewRound(record: TaskRecordV2): number {
+function reviewRound(record: TaskRecordV3): number {
 	return (
 		Math.max(
 			0,
@@ -127,11 +125,11 @@ function reviewRound(record: TaskRecordV2): number {
 }
 
 function appendHistory(
-	record: TaskRecordV2,
-	action: TaskActionV2,
-	from: TaskPhase,
+	record: TaskRecordV3,
+	action: TaskAction,
+	from: string,
 	detail: string | null,
-	audit: AuthorityAuditDescriptorV2 | null,
+	audit: AuthorityAuditDescriptor | null,
 ): void {
 	if (record.history.some((entry) => entry.id === action.event_id))
 		throw new KernelInvariantError([
@@ -141,19 +139,19 @@ function appendHistory(
 		id: string;
 		at: string;
 		type: string;
-		from_phase: TaskPhase;
-		to_phase: TaskPhase;
+		from_state: string;
+		to_state: string;
 		reason: string;
-		authority?: AuthorityAuditDescriptorV2;
+		authority?: AuthorityAuditDescriptor;
 	} = {
 		id: action.event_id,
 		at: action.at,
 		type: action.type,
-		from_phase: from,
-		to_phase: record.phase,
+		from_state: from,
+		to_state: stateOf(record),
 		reason: historyReason(
 			action,
-			record.intent_revision,
+			record.intent_snapshot.revision,
 			record.intent_ref.content_hash,
 			audit,
 			detail,
@@ -167,15 +165,14 @@ function sha256Hex(value: string): string {
 	return createHash("sha256").update(value).digest("hex");
 }
 
-function intentRefMatches(intent: TaskIntentV1, ref: TaskIntentRefV1): boolean {
+function intentRefMatches(intent: TaskIntentV1, ref: TaskIntentRefV3): boolean {
 	return (
 		ref.path === `docs/plans/${intent.task_id}.intent.json` &&
-		ref.revision === intent.revision &&
 		ref.content_hash === canonicalIntentHash(intent)
 	);
 }
 
-function hasPrivilegedKind(action: TaskActionV2): boolean {
+function hasPrivilegedKind(action: TaskAction): boolean {
 	return (
 		action.type === "record_approval" ||
 		action.type === "record_user_approval" ||
@@ -202,16 +199,16 @@ export function findingsDigestV2(findings: TaskFinding[]): string {
 	return `sha256:${createHash("sha256").update(stableJson(normalized)).digest("hex")}`;
 }
 
-export function reduceTaskV2(
-	recordRaw: TaskRecordV2,
-	actionRaw: TaskActionV2,
-	authorityAudit: AuthorityAuditDescriptorV2 | null = null,
-): ReducedTaskMutationV2 {
-	const previous = parseTaskRecordV2(recordRaw);
-	assertKernelInvariantsV2(previous.intent_snapshot, previous);
-	const action = parseTaskActionV2(actionRaw);
+export function reduceTask(
+	recordRaw: TaskRecordV3,
+	actionRaw: TaskAction,
+	authorityAudit: AuthorityAuditDescriptor | null = null,
+): ReducedTaskMutation {
+	const previous = parseTaskRecordV3(recordRaw);
+	assertKernelInvariantsV3(previous.intent_snapshot, previous);
+	const action = parseTaskAction(actionRaw);
 	const record = copyRecord(previous);
-	const from = record.phase;
+	const from = stateOf(record);
 
 	if (!action.event_id.trim())
 		throw new KernelInvariantError(["event_id must be a non-empty string"]);
@@ -228,8 +225,8 @@ export function reduceTaskV2(
 			`${action.type} does not accept an authority audit descriptor`,
 		]);
 
-	const recordHash = canonicalRecordHashV2(previous);
-	const intentRevision = previous.intent_revision;
+	const recordHash = canonicalRecordHash(previous);
+	const intentRevision = previous.intent_snapshot.revision;
 	const intentContentHash = previous.intent_ref.content_hash;
 
 	// Exact committed replay or conflicting event reuse. Replay is detected
@@ -240,8 +237,8 @@ export function reduceTaskV2(
 		if (
 			existingEvent.type === action.type &&
 			existingEvent.at === action.at &&
-			recordedActionFingerprintV2(existingEvent.reason) ===
-				actionFingerprintV2(action, intentRevision, intentContentHash, authorityAudit)
+			recordedActionFingerprint(existingEvent.reason) ===
+				actionFingerprint(action, intentRevision, intentContentHash, authorityAudit)
 		)
 			return brandResult(previous, null);
 		throw new KernelInvariantError([
@@ -260,40 +257,10 @@ export function reduceTaskV2(
 		throw new KernelInvariantError(["diff_hash must be a canonical sha256 hash"]);
 
 	switch (action.type) {
-		case "record_evidence": {
-			if (record.phase !== "working")
-				throw new KernelInvariantError([
-					`cannot record evidence while phase is ${record.phase}`,
-				]);
-			const evidence = action.evidence;
-			if (record.evidence.some((item) => item.id === evidence.id))
-				throw new KernelInvariantError([
-					`evidence contains duplicate id ${evidence.id}`,
-				]);
-			if (
-				!record.intent_snapshot.acceptance.some(
-					(item) => item.id === evidence.acceptance_id,
-				)
-			)
-				throw new KernelInvariantError([
-					`evidence acceptance_id ${evidence.acceptance_id} does not exist in the current intent`,
-				]);
-			if (evidence.status !== "passed" && evidence.status !== "failed" && evidence.status !== "blocked")
-				throw new KernelInvariantError(["evidence status is invalid"]);
-			if (evidence.task_revision !== record.intent_revision)
-				throw new KernelInvariantError(["evidence task_revision must equal the current intent revision"]);
-			if (evidence.intent_content_hash !== record.intent_ref.content_hash)
-				throw new KernelInvariantError(["evidence intent_content_hash must equal the current intent hash"]);
-			if (evidence.diff_hash !== diffHash)
-				throw new KernelInvariantError(["evidence diff_hash must equal the action diff hash"]);
-			record.evidence.push({ ...evidence });
-			appendHistory(record, action, from, evidence.acceptance_id, authorityAudit);
-			break;
-		}
 		case "record_finding": {
-			if (record.phase !== "working" && record.phase !== "review")
+			if (record.lifecycle !== "active")
 				throw new KernelInvariantError([
-					`cannot record findings while phase is ${record.phase}`,
+					`cannot record findings while lifecycle is ${record.lifecycle}`,
 				]);
 			const finding = action.finding;
 			if (record.findings.some((item) => item.id === finding.id))
@@ -321,9 +288,9 @@ export function reduceTaskV2(
 			break;
 		}
 		case "resolve_finding": {
-			if (record.phase !== "working" && record.phase !== "review")
+			if (record.lifecycle !== "active")
 				throw new KernelInvariantError([
-					`cannot resolve findings while phase is ${record.phase}`,
+					`cannot resolve findings while lifecycle is ${record.lifecycle}`,
 				]);
 			const finding = record.findings.find(
 				(item) => item.id === action.finding_id,
@@ -345,9 +312,9 @@ export function reduceTaskV2(
 			break;
 		}
 		case "record_approval": {
-			if (record.phase !== "review")
+			if (record.lifecycle !== "active" || record.artifact_state !== "frozen")
 				throw new KernelInvariantError([
-					`cannot record approval while phase is ${record.phase}`,
+					`cannot record approval while state is ${stateOf(record)}`,
 				]);
 			const approval = action.approval;
 			if (approval.kind !== "review" && approval.kind !== "qa")
@@ -366,24 +333,33 @@ export function reduceTaskV2(
 				throw new KernelInvariantError([
 					"approval authority_role must match the consumed capability kind",
 				]);
-			if (approval.task_revision !== record.intent_revision)
+			if (approval.task_revision !== record.intent_snapshot.revision)
 				throw new KernelInvariantError(["approval task_revision must equal the current intent revision"]);
 			if (approval.intent_content_hash !== record.intent_ref.content_hash)
 				throw new KernelInvariantError(["approval intent_content_hash must equal the current intent hash"]);
 			if (approval.diff_hash !== diffHash)
 				throw new KernelInvariantError(["approval diff_hash must equal the action diff hash"]);
-			if (record.approvals.some((item) => item.id === approval.id))
+			if (record.attestations.some((item) => item.id === approval.id))
 				throw new KernelInvariantError([
-					`approvals contains duplicate id ${approval.id}`,
+					`attestations contains duplicate id ${approval.id}`,
 				]);
-			record.approvals.push({ ...approval });
+			record.attestations.push({
+				...approval,
+				acceptance_results: approval.kind === "qa"
+					? record.intent_snapshot.acceptance.map((item) => ({
+						acceptance_id: item.id,
+						status: "passed" as const,
+						summary: `host-attested QA: ${approval.summary}`,
+					}))
+					: [],
+			});
 			appendHistory(record, action, from, approval.id, authorityAudit);
 			break;
 		}
 		case "record_user_approval": {
-			if (record.phase !== "review")
+			if (record.lifecycle !== "active" || record.artifact_state !== "frozen")
 				throw new KernelInvariantError([
-					`cannot record user approval while phase is ${record.phase}`,
+					`cannot record user approval while state is ${stateOf(record)}`,
 				]);
 			const approval = action.approval;
 			if (approval.kind !== "user")
@@ -394,25 +370,25 @@ export function reduceTaskV2(
 				throw new KernelInvariantError([
 					"record_user_approval requires user authority",
 				]);
-			if (approval.task_revision !== record.intent_revision)
+			if (approval.task_revision !== record.intent_snapshot.revision)
 				throw new KernelInvariantError(["approval task_revision must equal the current intent revision"]);
 			if (approval.intent_content_hash !== record.intent_ref.content_hash)
 				throw new KernelInvariantError(["approval intent_content_hash must equal the current intent hash"]);
 			if (approval.diff_hash !== diffHash)
 				throw new KernelInvariantError(["approval diff_hash must equal the action diff hash"]);
-			if (record.approvals.some((item) => item.id === approval.id))
+			if (record.attestations.some((item) => item.id === approval.id))
 				throw new KernelInvariantError([
-					`approvals contains duplicate id ${approval.id}`,
+					`attestations contains duplicate id ${approval.id}`,
 				]);
-			record.approvals.push({ ...approval });
+			record.attestations.push({ ...approval, acceptance_results: [] });
 			appendHistory(record, action, from, approval.id, authorityAudit);
 			break;
 		}
 		case "revise_intent":
 		case "approve_breaking_intent_revision": {
-			if (record.phase !== "working" && record.phase !== "review")
+			if (record.lifecycle !== "active")
 				throw new KernelInvariantError([
-					`cannot revise intent while phase is ${record.phase}`,
+					`cannot revise intent while lifecycle is ${record.lifecycle}`,
 				]);
 			const revisionClass = classifyIntentRevision(
 				record.intent_snapshot,
@@ -452,34 +428,20 @@ export function reduceTaskV2(
 				]);
 			record.intent_snapshot = { ...action.next_intent };
 			record.intent_ref = { ...action.next_intent_ref };
-			record.intent_revision = action.next_intent.revision;
 			if (action.type === "approve_breaking_intent_revision") {
 				for (const finding of record.findings) {
 					if (finding.kind === "replan_required" && finding.status === "open")
 						finding.status = "resolved";
 				}
-				if (record.phase === "review") transition(record, "working");
+				if (record.artifact_state === "frozen") record.artifact_state = "active";
 			}
-			appendHistory(record, action, from, `intent_revision_${record.intent_revision}`, authorityAudit);
-			break;
-		}
-		case "submit_review": {
-			if (record.phase !== "working")
-				throw new KernelInvariantError([
-					`cannot submit review while phase is ${record.phase}`,
-				]);
-			if (record.findings.some((item) => item.status === "open" && item.kind === "replan_required"))
-				throw new KernelInvariantError([
-					"cannot submit review while a replan boundary is open",
-				]);
-			transition(record, "review");
-			appendHistory(record, action, from, null, authorityAudit);
+			appendHistory(record, action, from, `intent_revision_${record.intent_snapshot.revision}`, authorityAudit);
 			break;
 		}
 		case "request_rework": {
-			if (record.phase !== "review")
+			if (record.lifecycle !== "active" || record.artifact_state !== "frozen")
 				throw new KernelInvariantError([
-					`cannot request rework while phase is ${record.phase}`,
+					`cannot request rework while state is ${stateOf(record)}`,
 				]);
 			if (action.findings.length === 0)
 				throw new KernelInvariantError([
@@ -505,7 +467,10 @@ export function reduceTaskV2(
 			).length;
 			const parkForReplan =
 				authorityAudit.authority_kind === "review" && reviewAuthorityReworks >= 1;
-			if (!parkForReplan) transition(record, "working");
+			if (!parkForReplan) {
+				record.artifact_state = "active";
+				record.intent_ref.path = `docs/plans/${record.task_id}.intent.json`;
+			}
 			const findingIds = new Set(record.findings.map((item) => item.id));
 			for (const finding of action.findings) {
 				if (findingIds.has(finding.id))
@@ -549,11 +514,11 @@ export function reduceTaskV2(
 			break;
 		}
 		case "complete": {
-			if (record.phase !== "review")
+			if (record.lifecycle !== "active" || record.artifact_state !== "frozen")
 				throw new KernelInvariantError([
-					`cannot complete while phase is ${record.phase}`,
+					`cannot complete while state is ${stateOf(record)}`,
 				]);
-			const decision = completionDecisionV2(
+			const decision = completionDecision(
 				record.intent_snapshot,
 				record,
 				diffHash,
@@ -563,21 +528,23 @@ export function reduceTaskV2(
 				throw new KernelInvariantError([
 					"task is not eligible for completion",
 				]);
-			transition(record, "done");
+			transitionLifecycle(record, "done");
 			appendHistory(record, action, from, null, authorityAudit);
 			break;
 		}
 		case "stop": {
 			if (!action.reason.trim())
 				throw new KernelInvariantError(["stop requires a reason"]);
-			transition(record, "stopped");
+			transitionLifecycle(record, "stopped");
+			record.artifact_state = "frozen";
+			record.intent_ref.path = `docs/plans/archive/${record.task_id}.intent.json`;
 			appendHistory(record, action, from, action.reason, authorityAudit);
 			break;
 		}
 		case "resolve_user_decision": {
-			if (record.phase !== "working" && record.phase !== "review")
+			if (record.lifecycle !== "active")
 				throw new KernelInvariantError([
-					`cannot resolve user decisions while phase is ${record.phase}`,
+					`cannot resolve user decisions while lifecycle is ${record.lifecycle}`,
 				]);
 			if (!action.resolution.trim())
 				throw new KernelInvariantError([
@@ -611,24 +578,24 @@ export function reduceTaskV2(
 		default: {
 			const unreachable: never = action as never;
 			throw new KernelInvariantError([
-				`unsupported task action: ${String((unreachable as TaskActionV2).type)}`,
+				`unsupported task action: ${String((unreachable as TaskAction).type)}`,
 			]);
 		}
 	}
 
-	assertTaskRecordUpdateV2(previous, record, action);
+	assertTaskRecordUpdateV3(previous, record, action);
 	return brandResult(record, nextWorkingFor(record));
 }
 
-function nextWorkingFor(record: TaskRecordV2): string | null {
-	return record.phase === "working" ? record.task_id : null;
+function nextWorkingFor(record: TaskRecordV3): string | null {
+	return record.lifecycle === "active" ? record.task_id : null;
 }
 
 function brandResult(
-	record: TaskRecordV2,
+	record: TaskRecordV3,
 	nextWorking: string | null,
-): ReducedTaskMutationV2 {
-	const target = {} as ReducedTaskMutationV2;
+): ReducedTaskMutation {
+	const target = {} as ReducedTaskMutation;
 	Object.defineProperty(target, REDUCED_MUTATION_BRAND, {
 		value: true,
 		enumerable: false,
@@ -648,10 +615,10 @@ function brandResult(
 	return Object.freeze(target);
 }
 
-export function isReducedMutationV2(value: unknown): value is ReducedTaskMutationV2 {
+export function isReducedMutation(value: unknown): value is ReducedTaskMutation {
 	return (
 		!!value &&
 		typeof value === "object" &&
-		(value as ReducedTaskMutationV2)[REDUCED_MUTATION_BRAND] === true
+		(value as ReducedTaskMutation)[REDUCED_MUTATION_BRAND] === true
 	);
 }

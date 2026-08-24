@@ -7,7 +7,7 @@ import {
 import {
 	createMutationAuthorityCapabilityForTest,
 } from "./fixtures/mutation-authority-test-seam";
-import type { TaskActionV2 } from "../plugins/immune-brain/runtime/kernel/types";
+import type { TaskAction } from "../plugins/immune-brain/runtime/kernel/types";
 
 const INTENT_HASH = "sha256:" + "1".repeat(64);
 const RECORD_HASH = "sha256:" + "2".repeat(64);
@@ -15,7 +15,7 @@ const DIFF = "sha256:" + "3".repeat(64);
 const FUTURE = "2099-01-01T00:00:00.000Z";
 const PAST = "2020-01-01T00:00:00.000Z";
 
-function action(type: TaskActionV2["type"], eventId = "ev-a-1"): TaskActionV2 {
+function action(type: TaskAction["type"], eventId = "ev-a-1"): TaskAction {
 	return {
 		type,
 		event_id: eventId,
@@ -24,10 +24,10 @@ function action(type: TaskActionV2["type"], eventId = "ev-a-1"): TaskActionV2 {
 		expected_record_hash: RECORD_HASH,
 		expected_workspace_hash: "sha256:" + "4".repeat(64),
 		diff_hash: DIFF,
-	} as TaskActionV2;
+	} as TaskAction;
 }
 
-function digestOf(a: TaskActionV2): string {
+function digestOf(a: TaskAction): string {
 	const { expected_record_hash: _r, expected_workspace_hash: _w, diff_hash: _d, ...rest } = a;
 	return createHash("sha256").update(JSON.stringify(rest)).digest("hex");
 }
@@ -193,7 +193,7 @@ describe("R2C2 authority port", () => {
 					summary: "broken",
 				},
 			],
-		} as TaskActionV2;
+		} as TaskAction;
 		const digest = `sha256:${createHash("sha256")
 			.update(
 				JSON.stringify([

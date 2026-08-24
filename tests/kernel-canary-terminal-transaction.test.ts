@@ -12,10 +12,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import {
+	capabilityActionFor,
 	createCanaryApplication,
 } from "../plugins/immune-brain/runtime/kernel/canary_application";
 import { preparePiCanary } from "../plugins/immune-brain/runtime/kernel/pi_canary_prepare";
-import { createMutationAuthorityRegistry } from "../plugins/immune-brain/runtime/kernel/authority_port";
+import { digestOfAction, createMutationAuthorityRegistry } from "../plugins/immune-brain/runtime/kernel/authority_port";
 import { createMutationAuthorityCapabilityForTest } from "./fixtures/mutation-authority-test-seam";
 import { enrollCanaryTask } from "../plugins/immune-brain/runtime/kernel/enrollment";
 import {
@@ -29,13 +30,13 @@ import {
 	serializeTaskTombstone,
 } from "../plugins/immune-brain/runtime/kernel/backend_claim";
 import {
-	readTaskRecordV2,
+	readTaskRecord,
 	reconcileKernelAuthority,
 	repairKernelAuthority,
 	readWorkspaceStateRaw,
 	revisionForContent,
 	setAfterTaskTransactionWriteForTest,
-	withKernelStoreLockV2,
+	withKernelStoreLock,
 } from "../plugins/immune-brain/runtime/kernel/storage";
 
 const TASK = "canary-terminal-task";
@@ -89,9 +90,6 @@ beforeEach(() => {
 		intent_revision: 1,
 		intent_content_hash: INTENT_HASH,
 		preparation_digest: prep.digest,
-		readiness_digest: "sha256:readiness",
-		evidence_digest: "sha256:evidence",
-		waiver_gate: "observation_window_days",
 		actor_id: "user",
 		confirmation_ref: "pi-confirm-enroll",
 		expires_at: "2099-01-01T00:00:00.000Z",
@@ -104,8 +102,6 @@ beforeEach(() => {
 			intent_path: `docs/plans/${TASK}.intent.json`,
 			intent_revision: 1,
 			preparation_digest: binding.preparation_digest,
-			readiness_digest: "sha256:readiness",
-			evidence_digest: "sha256:evidence",
 			capability: enrollmentRegistry.issue(binding),
 			capability_binding: binding,
 			now: "2026-08-12T10:00:00.000Z",
@@ -122,7 +118,7 @@ afterEach(() => {
 });
 
 function token() {
-	const record = readTaskRecordV2(root, TASK).record;
+	const record = readTaskRecord(root, TASK).record;
 	return readTaskIntent(root, TASK, record?.intent_ref.path).token;
 }
 
@@ -142,19 +138,50 @@ function freezeTask() {
 	execFileSync("git", ["add", "-A"], { cwd: root });
 }
 
-/** working -> review -> done through the terminal transaction. */
+function approveQa() {
+	const approval = {
+		id: "qa-terminal",
+		kind: "qa",
+		authority_role: "qa",
+		task_revision: 1,
+		intent_content_hash: INTENT_HASH,
+		diff_hash: DIFF,
+		actor_id: "qa-1",
+		summary: "descriptor passed",
+	};
+	const approvalAt = "2026-08-12T10:00:01.000Z";
+	const action = capabilityActionFor({
+		op: "record_approval",
+		task_id: TASK,
+		at: approvalAt,
+		actor_id: "qa-1",
+		approval,
+	});
+	const capability = createMutationAuthorityCapabilityForTest(mutationRegistry, {
+		authority_kind: "qa",
+		task_id: TASK,
+		action_digest: digestOfAction(action),
+		expected_record_hash: readTaskRecord(root, TASK).revision,
+		intent_revision: 1,
+		intent_content_hash: INTENT_HASH,
+		diff_hash: DIFF,
+		actor_id: "qa-1",
+		confirmation_ref: "qa-terminal",
+		expires_at: "2099-01-01T00:00:00.000Z",
+		findings_digest: null,
+	});
+	execute({ op: "record_approval", approval, capability, actor_id: "qa-1" }, approvalAt);
+}
+
+/** active:frozen -> done through host-attested QA and the terminal transaction. */
 function completeTask(at = "2026-08-12T10:00:04.000Z") {
 	freezeTask();
-	execute(
-		{ op: "record_evidence", acceptance_id: "A1", status: "passed", summary: "one", actor_id: "executor-1" },
-		"2026-08-12T10:00:01.000Z",
-	);
-	execute({ op: "submit_review", actor_id: "executor-1" }, "2026-08-12T10:00:02.000Z");
+	approveQa();
 	return execute({ op: "complete", actor_id: "executor-1" }, at);
 }
 
 function stopCapability(at: string, overrides: Record<string, unknown> = {}) {
-	const record = readTaskRecordV2(root, TASK);
+	const record = readTaskRecord(root, TASK);
 	const digest = (a: Record<string, unknown>) => createHash("sha256").update(JSON.stringify(a)).digest("hex");
 	return createMutationAuthorityCapabilityForTest(mutationRegistry, {
 		authority_kind: "user",
@@ -192,7 +219,7 @@ describe("terminal ownership transfer", () => {
 		expect(reconcileKernelAuthority(root, TASK)).toMatchObject({
 			state: "terminal_owner",
 			owner_task_id: TASK,
-			owner_phase: "done",
+			owner_lifecycle: "done",
 			claim_lifecycle_status: null,
 		});
 	});
@@ -204,7 +231,7 @@ describe("terminal ownership transfer", () => {
 		expect(reconcileKernelAuthority(root, TASK)).toMatchObject({
 			state: "repairable_stale_claim",
 			owner_task_id: TASK,
-			owner_phase: "done",
+			owner_lifecycle: "done",
 		});
 		expect(reconcileKernelAuthority(root, "other-task")).toMatchObject({
 			state: "repairable_stale_claim",
@@ -269,16 +296,16 @@ describe("terminal ownership transfer", () => {
 			{ op: "freeze_artifacts", actor_id: "executor-1" },
 			"2026-08-12T10:00:00.500Z",
 		);
-		expect(result.record.artifact_ref?.state).toBe("frozen");
+		expect(result.record.artifact_state).toBe("frozen");
 		expect(existsSync(join(root, "docs/plans", `${TASK}.intent.json`))).toBe(false);
 		expect(existsSync(join(root, "docs/plans/archive", `${TASK}.intent.json`))).toBe(true);
 		expect(existsSync(join(root, "docs/specs", "canary-terminal-task.spec.md"))).toBe(false);
 		expect(existsSync(join(root, "docs/specs/archive", "canary-terminal-task.spec.md"))).toBe(true);
 		expect(existsSync(join(root, ".imm/tasks/.workspace-transaction.json"))).toBe(false);
 
-		const recovered = readTaskRecordV2(root, TASK);
+		const recovered = readTaskRecord(root, TASK);
 		expect(recovered.record).toMatchObject({
-			artifact_ref: { state: "frozen", spec_path: "docs/specs/canary-terminal-task.spec.md" },
+			artifact_state: "frozen",
 			intent_ref: { path: `docs/plans/archive/${TASK}.intent.json` },
 		});
 		expect(existsSync(join(root, ".imm/tasks/.workspace-transaction.json"))).toBe(false);
@@ -286,12 +313,12 @@ describe("terminal ownership transfer", () => {
 
 	test("complete converges all four paths through one transaction", () => {
 		const done = completeTask();
-		expect(done.record.phase).toBe("done");
+		expect(done.record.lifecycle).toBe("done");
 		expect(done.workspace.state.current_working).toBeNull();
 		expect(readBackendClaim(root)).toBeNull();
 		expect(existsSync(join(root, ".imm", "tasks", ".terminal-transaction.json"))).toBe(false);
 		const tombstone = readTaskTombstone(root, TASK);
-		expect(tombstone?.terminal_phase).toBe("done");
+		expect(tombstone?.terminal_lifecycle).toBe("done");
 		expect(tombstone?.terminal_event_id).toBe(`complete:${TASK}:2026-08-12T10:00:04.000Z`);
 		expect(tombstone?.final_record_hash).toBe(done.revision);
 		// Record on disk matches the tombstone's final hash exactly.
@@ -304,9 +331,9 @@ describe("terminal ownership transfer", () => {
 			{ op: "stop", capability: cap, reason: "halt", actor_id: "user" },
 			"2026-08-12T10:00:01.000Z",
 		);
-		expect(result.record.phase).toBe("stopped");
+		expect(result.record.lifecycle).toBe("stopped");
 		expect(readBackendClaim(root)).toBeNull();
-		expect(readTaskTombstone(root, TASK)?.terminal_phase).toBe("stopped");
+		expect(readTaskTombstone(root, TASK)?.terminal_lifecycle).toBe("stopped");
 	});
 
 	test("terminalized task cannot be re-enrolled", () => {
@@ -319,9 +346,6 @@ describe("terminal ownership transfer", () => {
 			intent_revision: 1,
 			intent_content_hash: INTENT_HASH,
 			preparation_digest: prep.digest,
-			readiness_digest: "sha256:readiness",
-			evidence_digest: "sha256:evidence",
-			waiver_gate: "observation_window_days",
 			actor_id: "user",
 			confirmation_ref: "pi-confirm-enroll",
 			expires_at: "2099-01-01T00:00:00.000Z",
@@ -348,33 +372,29 @@ describe("terminal ownership transfer", () => {
 		// Build the marker state as if the transaction crashed after the
 		// marker write but before completion: record done in memory only.
 		freezeTask();
-		execute(
-			{ op: "record_evidence", acceptance_id: "A1", status: "passed", summary: "one", actor_id: "executor-1" },
-			"2026-08-12T10:00:01.000Z",
-		);
-		execute({ op: "submit_review", actor_id: "executor-1" }, "2026-08-12T10:00:02.000Z");
-		const pre = readTaskRecordV2(root, TASK);
+		approveQa();
+		const pre = readTaskRecord(root, TASK);
 		const workspace = readWorkspaceStateRaw(root);
 		const nextRecord = {
 			...pre.record!,
-			phase: "done",
+			lifecycle: "done",
 			history: [
 				...(pre.record!.history as unknown[]),
 				{
 					id: `complete:${TASK}:2026-08-12T10:00:04.000Z`,
 					at: "2026-08-12T10:00:04.000Z",
 					type: "complete",
-					from_phase: "review",
-					to_phase: "done",
+					from_state: "active:frozen",
+					to_state: "done:frozen",
 					reason: `action_v2_sha256:${"1".repeat(64)}`,
 				},
 			],
 		};
 		const tombstone = {
-			contract: "assurance_kernel/task_tombstone/v1",
+			contract: "assurance_kernel/task_tombstone/v2",
 			task_id: TASK,
 			lifecycle_status: "terminal",
-			terminal_phase: "done",
+			terminal_lifecycle: "done",
 			terminal_event_id: `complete:${TASK}:2026-08-12T10:00:04.000Z`,
 			final_record_hash: revisionForContent(`${JSON.stringify(nextRecord, null, 2)}\n`),
 			terminalized_at: "2026-08-12T10:00:04.000Z",
@@ -404,11 +424,11 @@ describe("terminal ownership transfer", () => {
 			)}\n`,
 		);
 		// Simulated restart replays the terminal marker.
-		withKernelStoreLockV2(root, () => undefined);
-		const record = readTaskRecordV2(root, TASK);
-		expect(record.record?.phase).toBe("done");
+		withKernelStoreLock(root, () => undefined);
+		const record = readTaskRecord(root, TASK);
+		expect(record.record?.lifecycle).toBe("done");
 		expect(readBackendClaim(root)).toBeNull();
-		expect(readTaskTombstone(root, TASK)?.terminal_phase).toBe("done");
+		expect(readTaskTombstone(root, TASK)?.terminal_lifecycle).toBe("done");
 		expect(existsSync(join(root, ".imm/tasks/.terminal-transaction.json"))).toBe(false);
 	});
 
@@ -416,7 +436,7 @@ describe("terminal ownership transfer", () => {
 		completeTask();
 		// Re-plant the marker (crash before marker removal): recovery must
 		// converge idempotently without failing.
-		const record = readTaskRecordV2(root, TASK);
+		const record = readTaskRecord(root, TASK);
 		const workspace = readWorkspaceStateRaw(root);
 		const tombstone = readTaskTombstone(root, TASK)!;
 		writeFileSync(
@@ -443,20 +463,20 @@ describe("terminal ownership transfer", () => {
 				2,
 			)}\n`,
 		);
-		withKernelStoreLockV2(root, () => undefined);
-		expect(readTaskRecordV2(root, TASK).record?.phase).toBe("done");
-		expect(readTaskTombstone(root, TASK)?.terminal_phase).toBe("done");
+		withKernelStoreLock(root, () => undefined);
+		expect(readTaskRecord(root, TASK).record?.lifecycle).toBe("done");
+		expect(readTaskTombstone(root, TASK)?.terminal_lifecycle).toBe("done");
 	});
 
 	test("contradictory tombstone conflict fails closed and remains recoverable", () => {
 		completeTask();
-		const record = readTaskRecordV2(root, TASK);
+		const record = readTaskRecord(root, TASK);
 		const workspace = readWorkspaceStateRaw(root);
 		const conflictingTombstone = {
-			contract: "assurance_kernel/task_tombstone/v1",
+			contract: "assurance_kernel/task_tombstone/v2",
 			task_id: TASK,
 			lifecycle_status: "terminal",
-			terminal_phase: "stopped",
+			terminal_lifecycle: "stopped",
 			terminal_event_id: "stop:x",
 			final_record_hash: "sha256:" + "9".repeat(64),
 			terminalized_at: "2026-08-12T10:00:04.000Z",
@@ -485,9 +505,9 @@ describe("terminal ownership transfer", () => {
 				2,
 			)}\n`,
 		);
-		expect(() => withKernelStoreLockV2(root, () => undefined)).toThrow(/conflict/i);
+		expect(() => withKernelStoreLock(root, () => undefined)).toThrow(/conflict/i);
 		expect(existsSync(join(root, ".imm/tasks/.terminal-transaction.json"))).toBe(true);
 		// The committed tombstone stays intact.
-		expect(readTaskTombstone(root, TASK)?.terminal_phase).toBe("done");
+		expect(readTaskTombstone(root, TASK)?.terminal_lifecycle).toBe("done");
 	});
 });

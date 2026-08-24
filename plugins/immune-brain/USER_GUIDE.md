@@ -70,13 +70,12 @@ Host agent 直接完成 explanation、inspection 或 review，不创建 workflow
 
 1. `imm-planner` 定义目标、acceptance、risk 与 canonical scope envelope；后续任何 scope 扩展都是 breaking revision，需要重新 enrollment。
 2. canonical `imm-kernel intent author/validate` 生成并验证 TaskIntent；`intent validate` 输出 `descriptor_rehearsal.status=pending_tui_enrollment` 时，表示 structural eligibility 已通过，但最终 `enrollment_ready` 仍须由 TUI enrollment preflight 决定。
-3. Parent 在前台调用一次 `imm_canary_enrollment` Tool，并直接消费 terminal result。Tool 冻结 Git index snapshot，把 `index_digest` 绑定进 enrollment receipt，并通过 host-native `onUpdate`/`renderResult` 展示有界 stage，不写 Footer、不创建 Widget、不发送 completion notification，也不要求轮询或 `get-result` recovery。`scope_hint`（含 TaskIntent sidecar）存在 unstaged/untracked bytes、确认后 index drift 或 snapshot integrity drift 时一律 non-waivable fail closed。每个 canonical verification descriptor 从同一个 frozen index 创建独立 copy，copy/setup 与 argv execution 从同一起点并行且共同受该 descriptor timeout 和 Tool `AbortSignal` 约束，并报告逐项耗时；live integrity monitor 比较 index、scope 与含 tracked dirty/untracked content bytes 的 parent fingerprint，漂移时立即 abort 全部 descriptor。timeout/cancel/output-limit/integrity-drift 先终止 process group，发起终止后 child `error` 只记录诊断，必须等待 child `close` terminal receipt 后才 cleanup copy。`setup_timed_out`、`cancelled`、`integrity_drift`、`output_exceeded` 与 `setup_failed` 是不可 waiver 的终态；只有 descriptor validation、nonzero exit 或 descriptor execution timeout 能产生可 waiver 的 `enrollment_ready=false`。Escape/host cancellation 是唯一的 pre-commit cancellation path；commit owner 建立后 settlement 不可取消，Tool 必须返回 success、known failure 或 `settlement_unknown`。
-4. 需要 explicit descriptor waiver 时，Parent 仍调用同一个 foreground Tool 的 waiver action；它只可覆盖 descriptor validation/nonzero/descriptor-execution-timeout。同一个 literal-user confirmation 必须展示全部失败项和 `REHEARSAL WAIVER`，确认后的 backend claim receipt ref 记录 `descriptor-rehearsal/v1:waived:<digest>`，其中 digest 同时绑定 frozen `index_digest` 与 scope paths。scope/index snapshot integrity、live integrity drift、setup timeout、cancellation、output-limit 与 setup failure 不可 waiver；拒绝或取消确认保持零 authority writes。
+3. Parent 在前台调用一次 `imm_canary_enrollment` Tool，并直接消费 terminal result。Tool 冻结 Git index snapshot，通过 host-native `onUpdate`/`renderResult` 展示有界 stage，不写 Footer、不创建 Widget，也不要求轮询。每个 canonical verification descriptor 从同一个 frozen index 创建独立 copy；结果仅作为 enrollment baseline observation，`failed` 与 execution `timed_out` 不阻止新功能任务建立。descriptor 语法、runner/setup、取消、输出上限、scope/index drift 与 integrity drift 仍 fail closed。Escape/host cancellation 是唯一的 pre-commit cancellation path；commit owner 建立后 settlement 不可取消。
+4. Enrollment 没有 waiver action 或兼容字段。无法证明 runner、隔离或 snapshot integrity 时必须修复根因后重试。
 5. Agent 在当前 owner 内连续实现，并用 `git add -- <exact task paths>` 显式声明 task-owned `HEAD -> index` snapshot；禁止在 dirty worktree 使用 bulk staging。
-6. Agent 针对该 staged snapshot 运行 acceptance verification，并把 evidence 记录到 Kernel。
-7. `advance_assurance` 运行 deterministic host QA；通过后启动单一 Pi native Review。
-8. 需要 literal-user authority 时，Agent 调用 `request_authorization` 打开 exact host confirmation。
-9. completion predicate 满足后，Kernel 将任务转为 `done` 并释放 owner。
+6. `advance_assurance` 冻结 planning artifacts，并由 host deterministic QA 运行 acceptance descriptors；Kernel 在一个 mutation 内写入 QA attestation 与全部 acceptance results。
+7. `routine` 在 QA 后完成；`material` 追加单一 Pi native Review 后自动完成；`critical` 在 QA 与 Review 后通过 `request_authorization` 要求 literal-user final authorization。
+8. completion predicate 满足后，Kernel 将 `lifecycle` 转为 `done` 并释放 owner。
 
 Managed freshness、QA、Review、authorization 与 completion 都绑定同一个 TaskRecord scope envelope 和 index-backed digest。范围外 unstaged、untracked 或 staged paths 不会进入 task snapshot，也不会使 evidence stale；范围内 unstaged/untracked bytes、index mutation、unsupported object mode、path ambiguity 或 `HEAD` 变化均在 authority write 或 Review spawn 前 fail closed。Review current bytes 由已捕获的 Git blob OID 提供，不读取 parent live worktree。
 
@@ -85,7 +84,7 @@ Managed freshness、QA、Review、authorization 与 completion 都绑定同一�
 新的 Managed 生产路径使用 Assurance Kernel v4：
 
 - `docs/plans/*.intent.json`：Git-tracked TaskIntent，保存目标、acceptance、scope hint、risk 与 revision；
-- `.imm/tasks/<task-id>.json`：worktree-local TaskRecord，保存 phase、evidence、findings、approvals 与 history；
+- `.imm/tasks/<task-id>.json`：worktree-local TaskRecord v3，以 `lifecycle`、`artifact_state`、`attestations`、`findings` 与 `history` 保存唯一 durable workflow state；
 - `.imm/workspace.json`：当前 worktree 的 Managed ownership；
 - Kernel content-hash CAS、锁与 transaction marker：保证 mutation 失败关闭并可恢复。
 
@@ -110,7 +109,7 @@ The following are runtime tools or TUI operations, not public Skills:
 | 入口 | 用途 |
 | --- | --- |
 | `imm_canary_enrollment` | Parent 调用的 foreground Enrollment Tool；直接返回 bounded progress 与唯一 terminal result，不使用 background recovery |
-| `imm_kernel_canary` | Parent 调用的 evidence、assurance、authorization 与 completion Tool |
+| `imm_kernel_canary` | Parent 调用的 artifact freeze、assurance、authorization 与 completion Tool |
 
 
 
@@ -119,8 +118,8 @@ The following are runtime tools or TUI operations, not public Skills:
 | 角色 | 负责 | 不负责 |
 | --- | --- | --- |
 | Planner | 定义 Managed Spec/TaskIntent | 实现代码、QA closure |
-| Executor/host agent | 在当前 owner 范围内实现并记录事实证据 | 改写 authority、给自己签发 QA/Review approval |
-| Deterministic QA | 重验 acceptance descriptors 与 freshness | 编辑实现、接受 stale evidence |
+| Executor/host agent | 在当前 owner 范围内实现并运行 focused verification | 改写 authority、手写 acceptance evidence、给自己签发 QA/Review approval |
+| Deterministic QA | 执行 acceptance descriptors 并原子写入 host-attested QA attestation | 编辑实现、接受 stale attestation |
 | Native Reviewer | 对锁定 snapshot 提供 advisory verdict | 直接写 Kernel authority、修改文件 |
 | Host authorization | 展示 exact operation 并绑定 literal-user confirmation | 推断或扩大用户批准内容 |
 | Compounder | 对已闭合工作按需沉淀可复用知识 | 阻塞普通 host-native completion、处理未闭合工作 |

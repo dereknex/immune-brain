@@ -14,11 +14,6 @@ export interface EnrollmentCapabilityBinding {
 	intent_revision: number;
 	intent_content_hash: string;
 	preparation_digest: string;
-	// Compatibility mirror fields: retained for claim schema continuity but
-	// never read as authority after v4 storage retirement.
-	readiness_digest: string;
-	evidence_digest: string;
-	waiver_gate: string;
 	actor_id: string;
 	confirmation_ref: string;
 	expires_at: string;
@@ -36,9 +31,6 @@ export interface ValidatedEnrollment {
 	intent_revision: number;
 	intent_content_hash: string;
 	preparation_digest: string;
-	readiness_digest: string;
-	evidence_digest: string;
-	waiver_gate: string;
 	actor_id: string;
 	confirmation_ref: string;
 	issued_at: string;
@@ -112,9 +104,6 @@ export function createEnrollmentAuthorityRegistry(): EnrollmentAuthorityRegistry
 				intent_revision: state.intent_revision,
 				intent_content_hash: state.intent_content_hash,
 				preparation_digest: state.preparation_digest,
-				readiness_digest: state.readiness_digest,
-				evidence_digest: state.evidence_digest,
-				waiver_gate: state.waiver_gate,
 				actor_id: state.actor_id,
 				confirmation_ref: state.confirmation_ref,
 				issued_at: state.issued_at,

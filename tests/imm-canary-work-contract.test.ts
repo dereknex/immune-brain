@@ -56,31 +56,22 @@ describe("imm-loop Kernel routing contract", () => {
 		expect(extension).toContain("single native confirmation");
 	});
 
-	test("enrollment contracts require isolated descriptor rehearsal and one explicit waiver route", () => {
+	test("enrollment contracts isolate descriptors without a waiver path", () => {
 		const guide = read("plugins/immune-brain/USER_GUIDE.md");
 		const kernelCommand = read("plugins/immune-brain/runtime/commands/kernel.ts");
-		const waiverRoute = read("plugins/immune-brain/.pi-extension/imm-canary-enroll.ts");
-		expect(guide).toContain("foreground");
-		expect(guide).toContain("descriptor-rehearsal/v1:waived:<digest>");
-		expect(guide).toContain("frozen `index_digest`");
-		expect(guide).toContain("scope/index snapshot integrity");
+		const enrollment = read("plugins/immune-brain/.pi-extension/imm-canary-enroll.ts");
+		expect(guide).toContain("baseline observation");
+		expect(guide).toContain("没有 waiver action");
 		expect(kernelCommand).toContain('status: enrollmentReady ? "pending_tui_enrollment"');
-		expect(kernelCommand).toContain('waiver_route: "explicit_tui_waiver"');
+		expect(kernelCommand).toContain('acceptance_failure: "baseline_observation"');
+		expect(kernelCommand).not.toContain("waiver_route");
 		expect(kernelCommand).toContain('snapshot_binding: "frozen_git_index_digest"');
-		expect(kernelCommand).toContain('scope_drift: "non_waivable"');
-		expect(kernelCommand).toContain('timeout_budget: "isolated_copy_setup_and_execution"');
-		expect(kernelCommand).toContain('setup_timeout: "non_waivable_close_settled"');
-		expect(kernelCommand).toContain('cancellation: "non_waivable_close_settled"');
-		expect(kernelCommand).toContain('output_limit: "non_waivable_close_settled"');
-		expect(kernelCommand).toContain('setup_failure: "non_waivable"');
-		expect(kernelCommand).toContain('live_integrity_drift: "abort_all_non_waivable_close_settled"');
-		expect(waiverRoute).toContain('name: "imm_canary_enrollment"');
-		expect(waiverRoute).toContain('const route = action === "new" ? "default" : "explicit_waiver"');
-		expect(waiverRoute).toContain("assertDescriptorRehearsalSnapshot");
-		expect(waiverRoute).toContain("onUpdate");
-		expect(waiverRoute).not.toContain("EnrollmentJobCoordinator");
-		expect(waiverRoute).not.toContain("setWidget(");
-		expect(waiverRoute).not.toContain("setStatus(");
+		expect(enrollment).toContain('name: "imm_canary_enrollment"');
+		expect(enrollment).toContain("assertDescriptorRehearsalSnapshot");
+		expect(enrollment).not.toContain("explicit_waiver");
+		expect(enrollment).not.toContain("waiver_gate");
+		expect(enrollment).not.toContain("setWidget(");
+		expect(enrollment).not.toContain("setStatus(");
 	});
 
 	test("the public registry exposes Loop instead of the former canary Skill", () => {

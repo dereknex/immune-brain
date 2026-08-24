@@ -139,7 +139,7 @@ describe("pi canary prepare read-only identity", () => {
 		expect(first.intent?.path).toBe("docs/plans/123-short-goal.intent.json");
 		expect(first.intent?.revision).toBe(1);
 		expect(first.backend_claim.present).toBe(false);
-		expect(first.task_record_v2?.present).toBe(false);
+		expect(first.task_record_v3?.present).toBe(false);
 		expect(first.workspace.current_working).toBeNull();
 	});
 

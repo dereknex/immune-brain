@@ -5,20 +5,17 @@ import * as kernel from "../plugins/immune-brain/runtime/kernel/index";
 
 const REPO_ROOT = join(__dirname, "..");
 
-describe("v1 API retirement", () => {
-	test("v1 kernel entry points are absent from the public index", () => {
+describe("legacy API retirement", () => {
+	test("versioned mutation entry points are absent from the public index", () => {
 		const exported = new Set<string>(Object.keys(kernel));
-		for (const v1 of [
-			"completionDecision",
-			"projectTask",
+		for (const legacy of [
 			"parseTaskIntent",
 			"parseTaskRecord",
-			"reduceTask",
+			"reduceTaskV2",
 			"writeTaskRecord",
-			"applyTaskAction",
-			"readTaskRecord",
+			"applyTaskActionV2",
 		]) {
-			expect(exported.has(v1)).toBe(false);
+			expect(exported.has(legacy)).toBe(false);
 		}
 	});
 });
@@ -30,8 +27,8 @@ describe("additive export surface", () => {
 		expect(typeof kernel.canonicalIntentHash).toBe("function");
 		expect(typeof kernel.classifyIntentRevision).toBe("function");
 		expect(typeof kernel.parseTaskRecordV2).toBe("function");
-		expect(typeof kernel.completionDecisionV2).toBe("function");
-		expect(typeof kernel.projectTaskV2).toBe("function");
+		expect(typeof kernel.completionDecision).toBe("function");
+		expect(typeof kernel.projectTask).toBe("function");
 		expect(typeof kernel.assertKernelInvariantsV2).toBe("function");
 	});
 
@@ -46,7 +43,7 @@ describe("additive export surface", () => {
 			"consumeTaskIntentToken",
 			"importTaskRecord",
 			"importLegacyTask",
-			"applyTaskActionV2",
+			"applyTaskAction",
 			"writeTaskRecordV2",
 			"dispatchTaskAction",
 			"routeTaskAction",
@@ -95,11 +92,11 @@ describe("canonical command surface", () => {
 });
 
 describe("P2C1 boundary invariants", () => {
-	test("index exports are v4-only: v1 mutation helpers are absent", () => {
+	test("index exports the current pure reducer and record reader", () => {
 		expect(typeof (kernel as Record<string, unknown>).writeTaskRecord).toBe("undefined");
 		expect(typeof (kernel as Record<string, unknown>).applyTaskAction).toBe("undefined");
-		expect(typeof (kernel as Record<string, unknown>).reduceTask).toBe("undefined");
-		expect(typeof kernel.readTaskRecordV2).toBe("function");
+		expect(typeof (kernel as Record<string, unknown>).reduceTask).toBe("function");
+		expect(typeof kernel.readTaskRecord).toBe("function");
 	});
 
 	test("v3 routing, readiness, receipt, and observation files untouched by intent module", () => {

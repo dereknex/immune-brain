@@ -26,10 +26,12 @@ function snapshot(overrides: Partial<SnapshotDescriptor> = {}): SnapshotDescript
 		intent_revision: 1,
 		intent_content_hash: "sha256:" + "c".repeat(64),
 		diff_hash: "sha256:" + "d".repeat(64),
-		phase: "review",
+		lifecycle: "active",
+		artifact_state: "frozen",
+		risk: "material",
 		fresh_acceptance_ids: ["A1"],
 		missing_acceptance_ids: [],
-		stale_evidence_ids: [],
+		stale_attestation_ids: [],
 		acceptance: [{ id: "A1", assertion: "artifact exists", verification: "descriptor" }],
 		dirty_files: ["src/new.ts"],
 		review_bundle_digest: "sha256:" + "e".repeat(64),
@@ -71,7 +73,7 @@ describe("canary assurance authority", () => {
 	test("snapshot and review prompt bind all authority owners", () => {
 		const s = snapshot();
 		expect(snapshotDigest(s)).toMatch(/^sha256:[a-f0-9]{64}$/);
-		expect(snapshotDigest(buildSnapshot({ ...s, phase: "working" }))).not.toBe(snapshotDigest(s));
+		expect(snapshotDigest(buildSnapshot({ ...s, artifact_state: "active" }))).not.toBe(snapshotDigest(s));
 		expect(snapshotDigest(buildSnapshot({ ...s, dirty_files: ["src/other.ts"] }))).not.toBe(snapshotDigest(s));
 		expect(snapshotDigest(buildSnapshot({ ...s, review_bundle_digest: "sha256:" + "f".repeat(64) }))).not.toBe(snapshotDigest(s));
 		const prompt = buildReviewPrompt(s);
@@ -112,33 +114,19 @@ describe("canary assurance authority", () => {
 		expect(() => parseAssuranceVerdict(rework.replace('"summary":"broken"', '"summary":"broken","findings_digest":"forged"'), s)).toThrow(/unknown field/i);
 	});
 
-	test("deterministic QA passes fixed descriptors and requests rework for missing fresh evidence", async () => {
+	test("deterministic QA runs fixed descriptors without executor-authored evidence", async () => {
 		const root = mkdtempSync(join(tmpdir(), "canary-qa-"));
 		try {
 			const runner = resolveBunRunner();
 			const s = snapshot({ root, role: "qa", acceptance: [{ id: "A1", assertion: "passes", verification: "descriptor" }] });
 			const passed = await runDeterministicQa(s, new Map([["A1", descriptor(["-e", "1"])]]), runner);
 			expect(passed.decision).toBe("pass");
-			const staleSnapshot = snapshot({ ...s, missing_acceptance_ids: ["A1"], fresh_acceptance_ids: [] });
-			const stale = await runDeterministicQa(
-				staleSnapshot,
+			const withoutExecutorEvidence = await runDeterministicQa(
+				snapshot({ ...s, missing_acceptance_ids: ["A1"], fresh_acceptance_ids: [] }),
 				new Map([["A1", descriptor(["-e", "1"])]]),
 				runner,
 			);
-			expect(stale.decision).toBe("rework");
-			expect(stale.findings?.[0].id).toMatch(/^qa-evidence-freshness-[a-f0-9]{16}-[a-f0-9]{8}-[a-f0-9]{6}$/);
-			const nextStale = await runDeterministicQa(
-				snapshot({ ...staleSnapshot, diff_hash: "sha256:" + "f".repeat(64) }),
-				new Map([["A1", descriptor(["-e", "1"])]]),
-				runner,
-			);
-			expect(nextStale.findings?.[0].id).not.toBe(stale.findings?.[0].id);
-			const historicalOnly = await runDeterministicQa(
-				snapshot({ ...s, stale_evidence_ids: ["old-evidence"] }),
-				new Map([["A1", descriptor(["-e", "1"])]]),
-				runner,
-			);
-			expect(historicalOnly.decision).toBe("pass");
+			expect(withoutExecutorEvidence.decision).toBe("pass");
 		} finally {
 			rmSync(root, { recursive: true, force: true });
 		}

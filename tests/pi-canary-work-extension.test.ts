@@ -15,7 +15,7 @@ import { createEnrollmentAuthorityRegistry, type EnrollmentCapabilityBinding } f
 import { canonicalIntentHash, parseTaskIntentV1, readTaskIntent } from "../plugins/immune-brain/runtime/kernel/intent";
 import { readBackendClaim } from "../plugins/immune-brain/runtime/kernel/backend_claim";
 import { createMutationAuthorityCapabilityForTest } from "./fixtures/mutation-authority-test-seam";
-import { readTaskRecordV2 } from "../plugins/immune-brain/runtime/kernel/storage";
+import { readTaskRecord } from "../plugins/immune-brain/runtime/kernel/storage";
 import { snapshotDigest, type SnapshotDescriptor } from "../plugins/immune-brain/.pi-extension/pi-canary-assurance-progression.ts";
 import {
 	TASK_RAIL_KEY,
@@ -131,9 +131,6 @@ function makeEnrolledRoot(): string {
 		intent_revision: 1,
 		intent_content_hash: INTENT_HASH,
 		preparation_digest: prep.digest,
-		readiness_digest: "sha256:r",
-		evidence_digest: "sha256:e",
-		waiver_gate: "observation_window_days",
 		actor_id: "user",
 		confirmation_ref: "c",
 		expires_at: "2099-01-01T00:00:00.000Z",
@@ -144,8 +141,6 @@ function makeEnrolledRoot(): string {
 		intent_path: binding.intent_path,
 		intent_revision: 1,
 		preparation_digest: binding.preparation_digest,
-		readiness_digest: binding.readiness_digest,
-		evidence_digest: binding.evidence_digest,
 		capability: registry.issue(binding),
 		capability_binding: binding,
 		now: "2026-08-12T10:00:00.000Z",
@@ -161,7 +156,7 @@ function makeStaleClaimRoot(): string {
 	const app = createCanaryApplication(registry);
 	const at = "2026-08-12T10:00:01.000Z";
 	const diffHash = `sha256:${"a".repeat(64)}`;
-	const record = readTaskRecordV2(root, TASK);
+	const record = readTaskRecord(root, TASK);
 	const actionDigest = createHash("sha256").update(JSON.stringify({
 		type: "stop",
 		event_id: `stop:${TASK}:${at}`,
@@ -223,7 +218,7 @@ function loadSurface(dependencies: Record<string, unknown> = {}) {
 function minimalSnapshot(role: "qa" | "review", root: string, current?: { projection?: Record<string, any> }): SnapshotDescriptor {
 	const state = current?.projection ?? {};
 	return {
-		contract: "assurance_kernel/assurance_snapshot/v1",
+		contract: "assurance_kernel/assurance_snapshot/v2",
 		task_id: TASK,
 		role,
 		record_revision: state.record_revision ?? "record-1",
@@ -231,11 +226,12 @@ function minimalSnapshot(role: "qa" | "review", root: string, current?: { projec
 		intent_revision: state.intent_revision ?? 1,
 		intent_content_hash: state.intent_content_hash ?? "sha256:intent",
 		diff_hash: state.diff_hash ?? "sha256:diff",
-		phase: state.phase ?? "review",
+		lifecycle: state.lifecycle ?? "active",
+		artifact_state: state.artifact_state ?? "frozen",
 		risk: "routine",
 		fresh_acceptance_ids: ["A1"],
 		missing_acceptance_ids: [],
-		stale_evidence_ids: [],
+		stale_attestation_ids: [],
 		acceptance: [{ id: "A1", assertion: "a1", verification: "{}" }],
 		dirty_files: ["plugins/immune-brain/.pi-extension/task.ts"],
 		review_bundle_digest: role === "review" ? "sha256:bundle" : null,
@@ -264,68 +260,7 @@ async function capturedToolFailure(promise: Promise<unknown>): Promise<Record<st
 	}
 }
 
-async function recordEvidence(tool: RegisteredTool, root: string): Promise<void> {
-	const ui = makeUI();
-	await tool.execute("freeze", { task_id: TASK, action: { op: "freeze_artifacts" } }, undefined, undefined, makeCtx(root, ui));
-	execFileSync("git", ["add", "-A"], { cwd: root });
-	await tool.execute("evidence", { task_id: TASK, action: { op: "record_evidence", acceptance_id: "A1", status: "passed", summary: "fresh" } }, undefined, undefined, makeCtx(root, ui));
-}
 
-async function preparePendingReview(root: string): Promise<RegisteredTool & { commands: Record<string, RegisteredCommand>; emitted: Array<{ name: string; payload: Record<string, unknown> }> }> {
-	let reviewSnapshot!: SnapshotDescriptor;
-	const { tools, commands, events, emitted } = loadSurface({
-		buildAssurance: async (rootPath: string, _task: string, role: "qa" | "review", current: { projection?: Record<string, any> }) => {
-			const snapshot = minimalSnapshot(role, rootPath, current);
-			if (role === "review") reviewSnapshot = snapshot;
-			return {
-				snapshot,
-				descriptors: new Map(),
-				reviewBundle: role === "review" ? ({ dirty_files: {}, outcomes: {}, bundle_digest: "sha256:bundle" } as never) : null,
-			};
-		},
-		runQa: async (snapshot: SnapshotDescriptor) => ({
-			contract: "assurance_kernel/assurance_verdict/v2",
-			role: "qa",
-			task_id: TASK,
-			snapshot_digest: snapshotDigest(snapshot),
-			decision: "pass",
-			approval: { kind: "qa", authority_role: "qa", summary: "passed" },
-		}),
-		writeReviewEvidence: () => ({ path: join(root, "review.json"), remove: () => {} }),
-	});
-	const tool = tools[0];
-	await recordEvidence(tool, root);
-	const ready = JSON.parse((await tool.execute(
-		"advance",
-		{ task_id: TASK, action: { op: "advance_assurance" } },
-		undefined,
-		undefined,
-		makeCtx(root, makeUI()),
-	)).content[0].text);
-	for (const handler of events.tool_call ?? [])
-		handler({ toolName: "Agent", toolCallId: "agent-call", input: ready.agent_params });
-	const verdict = JSON.stringify({
-		contract: "assurance_kernel/assurance_verdict/v2",
-		role: "review",
-		task_id: TASK,
-		snapshot_digest: snapshotDigest(reviewSnapshot),
-		decision: "pass",
-		approval: { kind: "review", authority_role: "reviewer", summary: "passed" },
-	});
-	for (const handler of events.tool_result ?? [])
-		handler({ toolName: "Agent", toolCallId: "agent-call", input: ready.agent_params, details: { status: "completed", agentId: "agent-1" }, content: [{ type: "text", text: verdict }] });
-	for (const handler of events.tool_execution_end ?? [])
-		handler({ toolName: "Agent", toolCallId: "agent-call", args: ready.agent_params, isError: false });
-	const submitted = await tool.execute(
-		"submit",
-		{ task_id: TASK, action: { op: "submit_review" } },
-		undefined,
-		undefined,
-		makeCtx(root, makeUI()),
-	);
-	expect(JSON.parse(submitted.content[0].text)).toMatchObject({ state: "awaiting_user" });
-	return Object.assign(tool, { commands, emitted });
-}
 
 	test("a fresh Parent resumes Review preparation from the Kernel projection after interruption", { timeout: 15000 }, async () => {
 		const root = makeEnrolledRoot();
@@ -344,7 +279,6 @@ async function preparePendingReview(root: string): Promise<RegisteredTool & { co
 		};
 		try {
 			const first = loadSurface(dependencies);
-			await recordEvidence(first.tools[0], root);
 			const firstResult = await first.tools[0].execute("first", { task_id: TASK, action: { op: "advance_assurance" } }, undefined, undefined, makeCtx(root, makeUI()));
 			expect(JSON.parse(firstResult.content[0].text).state).toBe("review_ready");
 			expect(qaRuns).toBe(1);
@@ -356,7 +290,7 @@ async function preparePendingReview(root: string): Promise<RegisteredTool & { co
 			expect(JSON.parse(resumed.content[0].text).state).toBe("review_ready");
 			expect(qaRuns).toBe(1);
 			const record = JSON.parse(readFileSync(join(root, ".imm", "tasks", `${TASK}.json`), "utf8"));
-			expect(record.approvals.filter((approval: { kind: string }) => approval.kind === "qa")).toHaveLength(1);
+			expect(record.attestations.filter((attestation: { kind: string }) => attestation.kind === "qa")).toHaveLength(1);
 		} finally { rmSync(root, { recursive: true, force: true }); }
 	});
 
@@ -395,7 +329,8 @@ async function preparePendingReview(root: string): Promise<RegisteredTool & { co
 			details: {
 				state: "applied",
 				task_state: {
-					phase: "done",
+					lifecycle: "done",
+					artifact_state: "frozen",
 					fresh_acceptance_ids: ["A1", "A2"],
 					missing_acceptance_ids: [],
 					fresh_approval_kinds: ["qa", "review"],
@@ -685,7 +620,7 @@ async function preparePendingReview(root: string): Promise<RegisteredTool & { co
 			expect(statSync(successPath).ino).toBe(successInode);
 			expect(JSON.parse(readFileSync(successPath, "utf8"))).toEqual(parseTaskIntentV1(normalizedNextIntent));
 			expect(JSON.parse(readFileSync(join(successRoot, ".imm", "tasks", `${TASK}.json`), "utf8"))).toMatchObject({
-				intent_revision: 2,
+				intent_snapshot: { revision: 2 },
 				intent_ref: { content_hash: canonicalIntentHash(parseTaskIntentV1(normalizedNextIntent)) },
 			});
 
@@ -703,7 +638,7 @@ async function preparePendingReview(root: string): Promise<RegisteredTool & { co
 			});
 			expect(statSync(failurePath).ino).toBe(failureInode);
 			expect(readFileSync(failurePath, "utf8")).toBe(priorBytes);
-			expect(JSON.parse(readFileSync(join(failureRoot, ".imm", "tasks", `${TASK}.json`), "utf8"))).toMatchObject({ intent_revision: 1 });
+			expect(JSON.parse(readFileSync(join(failureRoot, ".imm", "tasks", `${TASK}.json`), "utf8"))).toMatchObject({ intent_snapshot: { revision: 1 } });
 		} finally {
 			rmSync(successRoot, { recursive: true, force: true });
 			rmSync(failureRoot, { recursive: true, force: true });
@@ -728,12 +663,11 @@ async function preparePendingReview(root: string): Promise<RegisteredTool & { co
 			applyVerdict: async (_ctx: unknown, input: { hooks?: { onCommit?: () => void } }) => input.hooks?.onCommit?.(),
 		});
 		const tool = tools[0];
-		await recordEvidence(tool, root);
 		const result = await tool.execute("advance", { task_id: TASK, action: { op: "advance_assurance" } }, undefined, (update: unknown) => updates.push(update), makeCtx(root, makeUI()));
 		const parsed = JSON.parse(result.content[0].text);
 		expect(parsed.state).toBe("review_ready");
 		expect(parsed.next_action).toBe("invoke the reserved foreground Agent");
-		expect(parsed.task_state).toMatchObject({ phase: "review", record_revision: expect.any(String) });
+		expect(parsed.task_state).toMatchObject({ lifecycle: "active", artifact_state: "frozen", record_revision: expect.any(String) });
 		expect(parsed.agent_params.run_in_background).toBe(false);
 		expect(updates.some((item) => JSON.stringify(item).includes("verifying"))).toBe(true);
 	} finally { rmSync(root, { recursive: true, force: true }); }
@@ -760,7 +694,6 @@ async function preparePendingReview(root: string): Promise<RegisteredTool & { co
 				qaOnAuthorityCommit: () => controller.abort(),
 			});
 			const tool = tools[0];
-			await recordEvidence(tool, root);
 			const result = await capturedToolFailure(tool.execute(
 				"advance",
 				{ task_id: TASK, action: { op: "advance_assurance" } },
@@ -770,7 +703,7 @@ async function preparePendingReview(root: string): Promise<RegisteredTool & { co
 			));
 			expect(result.state).toBe("settlement_unknown");
 			const record = JSON.parse(readFileSync(join(root, ".imm", "tasks", `${TASK}.json`), "utf8"));
-			expect(record.approvals.some((approval: { kind: string }) => approval.kind === "qa")).toBe(true);
+			expect(record.attestations.some((attestation: { kind: string }) => attestation.kind === "qa")).toBe(true);
 		} finally { rmSync(root, { recursive: true, force: true }); }
 	});
 
@@ -800,7 +733,6 @@ async function preparePendingReview(root: string): Promise<RegisteredTool & { co
 				},
 			});
 			const tool = tools[0];
-			await recordEvidence(tool, root);
 			const result = await capturedToolFailure(tool.execute(
 				"advance",
 				{ task_id: TASK, action: { op: "advance_assurance" } },
@@ -813,7 +745,7 @@ async function preparePendingReview(root: string): Promise<RegisteredTool & { co
 		} finally { rmSync(root, { recursive: true, force: true }); }
 	});
 
-	test("shared-authority-dialog-shell: foreground Agent events are bridged once, then submit_review awaits authorization", { timeout: 15000 }, async () => {
+	test("foreground Agent result is host-attested and material Review auto-completes", { timeout: 15000 }, async () => {
 		const root = makeEnrolledRoot();
 		try {
 			let latestReviewSnapshot!: SnapshotDescriptor;
@@ -825,10 +757,8 @@ async function preparePendingReview(root: string): Promise<RegisteredTool & { co
 				},
 				runQa: async (snapshot: SnapshotDescriptor) => ({ contract: "assurance_kernel/assurance_verdict/v2", role: "qa", task_id: TASK, snapshot_digest: snapshotDigest(snapshot), decision: "pass", approval: { kind: "qa", authority_role: "qa", summary: "passed" } }),
 				writeReviewEvidence: () => ({ path: join(root, "review.json"), remove: () => {} }),
-				applyVerdict: async (_ctx: unknown, input: { hooks?: { onCommit?: () => void } }) => input.hooks?.onCommit?.(),
 			});
 			const tool = tools[0];
-			await recordEvidence(tool, root);
 			const ready = JSON.parse((await tool.execute("advance", { task_id: TASK, action: { op: "advance_assurance" } }, undefined, undefined, makeCtx(root, makeUI()))).content[0].text);
 			const params = ready.agent_params;
 			for (const handler of events.tool_call ?? []) handler({ toolName: "Agent", toolCallId: "agent-call", input: params });
@@ -836,261 +766,14 @@ async function preparePendingReview(root: string): Promise<RegisteredTool & { co
 			for (const handler of events.tool_result ?? []) handler({ toolName: "Agent", toolCallId: "agent-call", input: params, details: { status: "completed", agentId: "agent-1" }, content: [{ type: "text", text: verdict }] });
 			for (const handler of events.tool_execution_end ?? []) handler({ toolName: "Agent", toolCallId: "agent-call", args: params, isError: false });
 			const submitted = await tool.execute("submit", { task_id: TASK, action: { op: "submit_review" } }, undefined, undefined, makeCtx(root, makeUI()));
-			const submittedResult = JSON.parse(submitted.content[0].text);
-			expect(submittedResult).toMatchObject({ state: "awaiting_user", next_action: "request_authorization", task_state: { phase: "review" } });
-
-			const ui = makeUI();
-			const authorized = await tool.execute(
-				"authorize",
-				{ task_id: TASK, action: { op: "request_authorization" } },
-				undefined,
-				undefined,
-				makeCtx(root, ui),
-			);
-			expect(authorized.details).toMatchObject({ state: "applied", operation: "record-review-verdict" });
-			const authorizedResult = JSON.parse(authorized.content[0].text);
-			expect(authorizedResult).toMatchObject({ state: "applied", task_state: { phase: "review" } });
-			expect(authorizedResult.next_action).toMatch(/complete task|advance assurance/);
-			const completed = await tool.execute(
-				"complete",
-				{ task_id: TASK, action: { op: "complete" } },
-				undefined,
-				undefined,
-				makeCtx(root, makeUI()),
-			);
-			const completedResult = JSON.parse(completed.content[0].text);
-			expect(completedResult).toMatchObject({ phase: "done", next_action: "none", task_state: { phase: "done" } });
-			const terminalStatus = await tool.execute(
-				"terminal-status",
-				{ task_id: TASK, action: { op: "status" } },
-				undefined,
-				undefined,
-				makeCtx(root, makeUI()),
-			);
-			expect(JSON.parse(terminalStatus.content[0].text)).toMatchObject({ phase: "done" });
-			expect(terminalStatus.details).toMatchObject({ phase: "done", next_action: "none" });
-			const terminalAdvance = await tool.execute(
-				"terminal-advance",
-				{ task_id: TASK, action: { op: "advance_assurance" } },
-				undefined,
-				undefined,
-				makeCtx(root, makeUI()),
-			);
-			expect(JSON.parse(terminalAdvance.content[0].text)).toMatchObject({
+			expect(JSON.parse(submitted.content[0].text)).toMatchObject({
 				state: "completed",
 				next_action: "none",
-				task_state: { phase: "done" },
+				task_state: { lifecycle: "done", artifact_state: "frozen" },
 			});
-			expect(ui.customCalls).toHaveLength(1);
-			expect(ui.customCalls[0].body).toContain("Approve");
-			expect(ui.customCalls[0].body).toContain("Request rework");
-			expect(ui.customCalls[0].body).toContain("Reject");
-			expect(ui.customCalls[0].body).toContain("Cancel");
-			expect(ui.customCalls[0].collapsedBody).toContain(`Task: ${TASK}`);
-			expect(ui.customCalls[0].collapsedBody).toContain("Review: PASS");
-			expect(ui.customCalls[0].collapsedBody).toContain("QA: passed");
-			expect(ui.customCalls[0].collapsedBody).toContain("Scope: 1 scoped changed file(s)");
-			expect(ui.customCalls[0].collapsedBody).toContain("Pending operation: record-review-verdict");
-			expect(ui.customCalls[0].collapsedBody).not.toContain("sha256:bundle");
-			expect(ui.customCalls[0].body).toContain("sha256:bundle");
-			expect(ui.selectCalls).toHaveLength(0);
-			expect(ui.confirmCalls).toHaveLength(0);
 		} finally { rmSync(root, { recursive: true, force: true }); }
 	});
 
-	test("repeated foreground Tool authorization produces the same Kernel transition", { timeout: 30_000 }, async () => {
-		const firstRoot = makeEnrolledRoot();
-		const secondRoot = makeEnrolledRoot();
-		const semanticRecord = (root: string) => {
-			const record = JSON.parse(readFileSync(join(root, ".imm", "tasks", `${TASK}.json`), "utf8"));
-			const volatileKeys = new Set(["record_revision", "revision", "recorded_at", "created_at", "updated_at", "timestamp", "at", "issued_at", "expires_at"]);
-			const canonicalize = (value: unknown, key = ""): unknown => {
-				if (volatileKeys.has(key)) return "<volatile>";
-				if (typeof value === "string") {
-					return value
-						.replace(/sha256:[0-9a-f]+/g, "sha256:<digest>")
-						.replace(/approval-(qa|review)-[0-9a-f]+/g, "approval-$1:<id>")
-						.replace(/(evidence|record_evidence|submit_review|record_approval|freeze_artifacts):[^:\s]+:[^\s]+/g, "$1:<id>")
-						.replace(/pi-confirm-[0-9a-f]+/g, "pi-confirm:<ref>");
-				}
-				if (Array.isArray(value)) return value.map((item) => canonicalize(item));
-				if (value && typeof value === "object") {
-					return Object.fromEntries(Object.entries(value as Record<string, unknown>).sort(([left], [right]) => left.localeCompare(right)).map(([name, item]) => [name, canonicalize(item, name)]));
-				}
-				return value;
-			};
-			return canonicalize(record);
-		};
-		try {
-			const first = await preparePendingReview(firstRoot);
-			const second = await preparePendingReview(secondRoot);
-			await first.execute("first-tool-authorize", { task_id: TASK, action: { op: "request_authorization" } }, undefined, undefined, makeCtx(firstRoot, makeUI()));
-			await second.execute("second-tool-authorize", { task_id: TASK, action: { op: "request_authorization" } }, undefined, undefined, makeCtx(secondRoot, makeUI()));
-			expect(semanticRecord(firstRoot)).toEqual(semanticRecord(secondRoot));
-		} finally {
-			rmSync(firstRoot, { recursive: true, force: true });
-			rmSync(secondRoot, { recursive: true, force: true });
-		}
-	});
-
-	test("literal user can return or reject a pending Review", { timeout: 15000 }, async () => {
-		const reworkRoot = makeEnrolledRoot();
-		try {
-			const tool = await preparePendingReview(reworkRoot);
-			const ui = makeUI();
-			const result = await tool.execute(
-				"rework",
-				{ task_id: TASK, action: { op: "request_authorization" } },
-				undefined,
-				undefined,
-				makeCtx(reworkRoot, ui, "tui", "Request rework", "Acceptance A1 needs stronger evidence"),
-			);
-			expect(result.details).toMatchObject({ state: "applied", operation: "record-review-verdict", decision: "rework", phase: "working" });
-			expect(ui.inputCalls).toHaveLength(1);
-			const record = JSON.parse(readFileSync(join(reworkRoot, ".imm", "tasks", `${TASK}.json`), "utf8"));
-			expect(record.findings.at(-1)).toMatchObject({ kind: "blocking", source: "review", summary: "Acceptance A1 needs stronger evidence" });
-			expect(record).toMatchObject({ artifact_ref: { state: "active", spec_path: "docs/specs/canary-ext-task.spec.md" }, intent_ref: { path: `docs/plans/${TASK}.intent.json` } });
-			expect(existsSync(join(reworkRoot, "docs", "plans", `${TASK}.intent.json`))).toBe(true);
-			expect(existsSync(join(reworkRoot, "docs", "specs", "canary-ext-task.spec.md"))).toBe(true);
-			expect(existsSync(join(reworkRoot, "docs", "plans", "archive", `${TASK}.intent.json`))).toBe(false);
-		} finally { rmSync(reworkRoot, { recursive: true, force: true }); }
-
-		const rejectRoot = makeEnrolledRoot();
-		try {
-			const tool = await preparePendingReview(rejectRoot);
-			const result = await tool.execute(
-				"reject",
-				{ task_id: TASK, action: { op: "request_authorization" } },
-				undefined,
-				undefined,
-				makeCtx(rejectRoot, makeUI(), "tui", "Reject", "The remaining risk is unacceptable"),
-			);
-			expect(result.details).toMatchObject({ state: "applied", operation: "record-review-verdict", decision: "reject", phase: "stopped" });
-			expect(readBackendClaim(rejectRoot)).toBeNull();
-			const record = JSON.parse(readFileSync(join(rejectRoot, ".imm", "tasks", `${TASK}.json`), "utf8"));
-			expect(record.history.at(-1)?.reason).toContain("The remaining risk is unacceptable");
-			expect(record).toMatchObject({ artifact_ref: { state: "frozen" }, intent_ref: { path: `docs/plans/archive/${TASK}.intent.json` } });
-			expect(existsSync(join(rejectRoot, "docs", "plans", "archive", `${TASK}.intent.json`))).toBe(true);
-			expect(existsSync(join(rejectRoot, "docs", "specs", "archive", "canary-ext-task.spec.md"))).toBe(true);
-		} finally { rmSync(rejectRoot, { recursive: true, force: true }); }
-	});
-
-	test("Reject fails closed on a post-selection diff race and remains retryable", { timeout: 15000 }, async () => {
-		const root = makeEnrolledRoot();
-		try {
-			const tool = await preparePendingReview(root);
-			const ui = makeUI();
-			const ctx = makeCtx(root, ui, "tui", "Reject", "Reject stale changes");
-			const originalCustom = ctx.ui.custom;
-			ctx.ui.custom = async (factory: any) => {
-				writeFileSync(join(root, "plugins", "immune-brain", ".pi-extension", "task.ts"), "export const task = 'raced';\n");
-				execFileSync("git", ["add", "plugins/immune-brain/.pi-extension/task.ts"], { cwd: root });
-				return originalCustom(factory);
-			};
-			const raced = await capturedToolFailure(tool.execute(
-				"reject-race",
-				{ task_id: TASK, action: { op: "request_authorization" } },
-				undefined,
-				undefined,
-				ctx,
-			));
-			expect(raced.state).toBe("blocked");
-			expect(readBackendClaim(root)?.lifecycle_status).toBe("active");
-			expect(JSON.parse(readFileSync(join(root, ".imm", "tasks", `${TASK}.json`), "utf8")).phase).toBe("review");
-
-			writeFileSync(join(root, "plugins", "immune-brain", ".pi-extension", "task.ts"), "export const task = 'baseline';\n");
-			execFileSync("git", ["add", "plugins/immune-brain/.pi-extension/task.ts"], { cwd: root });
-			const resumed = await tool.execute(
-				"approve-after-race",
-				{ task_id: TASK, action: { op: "request_authorization" } },
-				undefined,
-				undefined,
-				makeCtx(root, makeUI()),
-			);
-			expect(resumed.details).toMatchObject({ state: "applied", decision: "approve" });
-		} finally { rmSync(root, { recursive: true, force: true }); }
-	});
-
-	test("authority-dialog-cancel-and-attention: cancelling a Review decision writes nothing and keeps it pending", { timeout: 15000 }, async () => {
-		const root = makeEnrolledRoot();
-		try {
-			const tool = await preparePendingReview(root);
-			const recordPath = join(root, ".imm", "tasks", `${TASK}.json`);
-			const claimPath = join(root, ".imm", "tasks", ".backend-claim.json");
-			const before = { record: readFileSync(recordPath, "utf8"), claim: readFileSync(claimPath, "utf8") };
-			const failedUi = makeUI();
-			const failedCtx = makeCtx(root, failedUi);
-			failedCtx.ui.custom = async () => { throw new Error("renderer unavailable"); };
-			const failed = await capturedToolFailure(tool.execute(
-				"ui-failure",
-				{ task_id: TASK, action: { op: "request_authorization" } },
-				undefined,
-				undefined,
-				failedCtx,
-			));
-			expect(failed).toMatchObject({ state: "blocked", message: "Review decision UI failed: renderer unavailable" });
-			expect({ record: readFileSync(recordPath, "utf8"), claim: readFileSync(claimPath, "utf8") }).toEqual(before);
-
-			const inputFailureCtx = makeCtx(root, makeUI(), "tui", "Request rework");
-			inputFailureCtx.ui.input = async () => {
-				const attention = tool.emitted.filter((event) => event.name === USER_ATTENTION_EVENT);
-				expect(attention.at(-1)?.payload.active).toBe(true);
-				throw new Error("input unavailable");
-			};
-			const inputFailure = await capturedToolFailure(tool.execute(
-				"input-failure",
-				{ task_id: TASK, action: { op: "request_authorization" } },
-				undefined,
-				undefined,
-				inputFailureCtx,
-			));
-			expect(inputFailure).toMatchObject({ state: "blocked", message: "Review decision UI failed: input unavailable" });
-			expect({ record: readFileSync(recordPath, "utf8"), claim: readFileSync(claimPath, "utf8") }).toEqual(before);
-
-			const blankRework = await tool.execute(
-				"blank-rework",
-				{ task_id: TASK, action: { op: "request_authorization" } },
-				undefined,
-				undefined,
-				makeCtx(root, makeUI(), "tui", "Request rework", "   "),
-			);
-			expect(blankRework.details).toMatchObject({ state: "cancelled", operation: "record-review-verdict" });
-			expect({ record: readFileSync(recordPath, "utf8"), claim: readFileSync(claimPath, "utf8") }).toEqual(before);
-
-			const cancelled = await tool.execute(
-				"cancel",
-				{ task_id: TASK, action: { op: "request_authorization" } },
-				undefined,
-				undefined,
-				makeCtx(root, makeUI(), "tui", null),
-			);
-			expect(cancelled.details).toMatchObject({ state: "cancelled", operation: "record-review-verdict" });
-			expect({ record: readFileSync(recordPath, "utf8"), claim: readFileSync(claimPath, "utf8") }).toEqual(before);
-
-			const resumed = await tool.execute(
-				"resume",
-				{ task_id: TASK, action: { op: "request_authorization" } },
-				undefined,
-				undefined,
-				makeCtx(root, makeUI()),
-			);
-			expect(resumed.details).toMatchObject({ state: "applied", operation: "record-review-verdict" });
-			const attention = tool.emitted.filter((event) => event.name === USER_ATTENTION_EVENT);
-			expect(attention).toHaveLength(10);
-			for (let index = 0; index < attention.length; index += 2) {
-				const opened = attention[index].payload;
-				const closed = attention[index + 1].payload;
-				expect(opened).toMatchObject({ active: true, task_id: TASK, reason: "review_authorization" });
-				expect(closed).toEqual({
-					active: false,
-					attention_id: opened.attention_id,
-					task_id: TASK,
-					reason: "review_authorization",
-				});
-				expect(JSON.stringify(opened)).not.toMatch(/digest|findings|scope|prompt/i);
-			}
-		} finally { rmSync(root, { recursive: true, force: true }); }
-	});
 
 	test("host cancellation reaches the foreground QA Tool and performs no QA authority write", { timeout: 15000 }, async () => {
 		const root = makeEnrolledRoot();
@@ -1106,7 +789,6 @@ async function preparePendingReview(root: string): Promise<RegisteredTool & { co
 				applyVerdict: async () => { applyCount += 1; },
 			});
 			const tool = tools[0];
-			await recordEvidence(tool, root);
 			const pending = tool.execute("cancel", { task_id: TASK, action: { op: "advance_assurance" } }, controller.signal, undefined, makeCtx(root, makeUI()));
 			controller.abort();
 			release();

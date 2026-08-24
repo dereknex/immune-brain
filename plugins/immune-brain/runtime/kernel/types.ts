@@ -1,6 +1,11 @@
 export const TASK_PHASES = ["working", "review", "done", "stopped"] as const;
 export type TaskPhase = (typeof TASK_PHASES)[number];
 
+export const TASK_LIFECYCLES = ["active", "done", "stopped"] as const;
+export type TaskLifecycle = (typeof TASK_LIFECYCLES)[number];
+export const TASK_ARTIFACT_STATES = ["active", "frozen"] as const;
+export type TaskArtifactState = (typeof TASK_ARTIFACT_STATES)[number];
+
 export const TASK_RISKS = ["routine", "material", "critical"] as const;
 export type TaskRisk = (typeof TASK_RISKS)[number];
 
@@ -37,7 +42,7 @@ export interface CompletionDecision {
 	complete: boolean;
 	fresh_acceptance_ids: string[];
 	missing_acceptance_ids: string[];
-	stale_evidence_ids: string[];
+	stale_attestation_ids: string[];
 	missing_approval_kinds: ApprovalKind[];
 	blocking_finding_ids: string[];
 	unresolved_user_decision_ids: string[];
@@ -45,16 +50,16 @@ export interface CompletionDecision {
 	independence_violations: string[];
 }
 
-export type KernelNextAction =
-	| "submit_review"
+export type AssuranceObligation =
 	| "resolve_findings"
 	| "resolve_user_decision"
 	| "revise_intent"
-	| "request_rework"
-	| "record_evidence"
-	| "record_approval"
+	| "submit_assurance"
+	| "run_qa"
+	| "run_review"
+	| "authorize_user"
 	| "complete"
-	| null;
+	| "none";
 
 export interface LegacyMapping {
 	phase: TaskPhase | null;
@@ -93,6 +98,7 @@ export interface V3AuthorityObservation {
 
 export const TASK_INTENT_CONTRACT_V1 = "assurance_kernel/task_intent/v1" as const;
 export const TASK_RECORD_CONTRACT_V2 = "assurance_kernel/task_record/v2" as const;
+export const TASK_RECORD_CONTRACT_V3 = "assurance_kernel/task_record/v3" as const;
 
 export interface TaskIntentAcceptanceItemV1 {
 	id: string;
@@ -114,6 +120,11 @@ export interface TaskIntentV1 {
 export interface TaskIntentRefV1 {
 	path: string;
 	revision: number;
+	content_hash: string;
+}
+
+export interface TaskIntentRefV3 {
+	path: string;
 	content_hash: string;
 }
 
@@ -146,12 +157,25 @@ export interface TaskHistoryEntryV2 {
 	from_phase: TaskPhase;
 	to_phase: TaskPhase;
 	reason: string;
-	authority?: AuthorityAuditDescriptorV2;
+	authority?: AuthorityAuditDescriptor;
 }
 
-export interface TaskArtifactRefV1 {
-	state: "active" | "frozen";
-	spec_path?: string;
+export interface TaskAttestationV3 extends TaskApprovalV2 {
+	acceptance_results: Array<{
+		acceptance_id: string;
+		status: EvidenceStatus;
+		summary: string;
+	}>;
+}
+
+export interface TaskHistoryEntryV3 {
+	id: string;
+	at: string;
+	type: string;
+	from_state: string;
+	to_state: string;
+	reason: string;
+	authority?: AuthorityAuditDescriptor;
 }
 
 export interface TaskRecordV2 {
@@ -160,7 +184,7 @@ export interface TaskRecordV2 {
 	intent_revision: number;
 	intent_snapshot: TaskIntentV1;
 	intent_ref: TaskIntentRefV1;
-	artifact_ref?: TaskArtifactRefV1;
+	artifact_ref?: { state: "active" | "frozen"; spec_path?: string };
 	phase: TaskPhase;
 	baseline: string;
 	evidence: TaskEvidenceV2[];
@@ -169,13 +193,27 @@ export interface TaskRecordV2 {
 	history: TaskHistoryEntryV2[];
 }
 
-export interface TaskProjectionV2 extends CompletionDecision {
-	contract: "assurance_kernel/projection/v2";
+export interface TaskRecordV3 {
+	contract: typeof TASK_RECORD_CONTRACT_V3;
+	task_id: string;
+	intent_snapshot: TaskIntentV1;
+	intent_ref: TaskIntentRefV3;
+	lifecycle: TaskLifecycle;
+	artifact_state: TaskArtifactState;
+	baseline: string;
+	attestations: TaskAttestationV3[];
+	findings: TaskFinding[];
+	history: TaskHistoryEntryV3[];
+}
+
+export interface TaskProjectionV3 extends CompletionDecision {
+	contract: "assurance_kernel/projection/v3";
 	task_id: string;
 	intent_revision: number;
-	phase: TaskPhase;
+	lifecycle: TaskLifecycle;
+	artifact_state: TaskArtifactState;
 	blocked: boolean;
-	next_action: KernelNextAction;
+	next_obligation: AssuranceObligation;
 }
 
 export type IntentRevisionClass =
@@ -183,19 +221,19 @@ export type IntentRevisionClass =
 	| "compatible"
 	| "breaking";
 
-export const TASK_RECORD_CONTRACT_V2_MUTATION = "assurance_kernel/task_action/v2" as const;
+export const TASK_ACTION_CONTRACT = "assurance_kernel/task_action/v2" as const;
 
-export type MutationAuthorityKindV2 = "review" | "qa" | "user";
+export type MutationAuthorityKind = "review" | "qa" | "user";
 
-export interface AuthorityAuditDescriptorV2 {
-	authority_kind: MutationAuthorityKindV2;
+export interface AuthorityAuditDescriptor {
+	authority_kind: MutationAuthorityKind;
 	actor_id: string;
 	confirmation_ref: string;
 	issued_at: string;
 	expires_at: string;
 }
 
-export interface TaskActionV2Base {
+export interface TaskActionBase {
 	event_id: string;
 	at: string;
 	actor_id: string;
@@ -204,54 +242,39 @@ export interface TaskActionV2Base {
 	diff_hash: string;
 }
 
-export type TaskActionV2 =
-	| (TaskActionV2Base & { type: "record_evidence"; evidence: TaskEvidenceV2 })
-	| (TaskActionV2Base & { type: "record_finding"; finding: TaskFinding })
-	| (TaskActionV2Base & { type: "resolve_finding"; finding_id: string })
-	| (TaskActionV2Base & { type: "record_approval"; approval: TaskApprovalV2 })
-	| (TaskActionV2Base & { type: "record_user_approval"; approval: TaskApprovalV2 })
-	| (TaskActionV2Base & {
+export type TaskAction =
+	| (TaskActionBase & { type: "record_finding"; finding: TaskFinding })
+	| (TaskActionBase & { type: "resolve_finding"; finding_id: string })
+	| (TaskActionBase & { type: "record_approval"; approval: TaskApprovalV2 })
+	| (TaskActionBase & { type: "record_user_approval"; approval: TaskApprovalV2 })
+	| (TaskActionBase & {
 			type: "revise_intent";
 			next_intent: TaskIntentV1;
-			next_intent_ref: TaskIntentRefV1;
+			next_intent_ref: TaskIntentRefV3;
 	  })
-	| (TaskActionV2Base & {
+	| (TaskActionBase & {
 			type: "approve_breaking_intent_revision";
 			next_intent: TaskIntentV1;
-			next_intent_ref: TaskIntentRefV1;
+			next_intent_ref: TaskIntentRefV3;
 	  })
-	| (TaskActionV2Base & { type: "submit_review" })
-	| (TaskActionV2Base & { type: "request_rework"; findings: TaskFinding[] })
-	| (TaskActionV2Base & { type: "complete" })
-	| (TaskActionV2Base & { type: "stop"; reason: string })
-	| (TaskActionV2Base & { type: "resolve_user_decision"; finding_id: string; resolution: string });
+	| (TaskActionBase & { type: "request_rework"; findings: TaskFinding[] })
+	| (TaskActionBase & { type: "complete" })
+	| (TaskActionBase & { type: "stop"; reason: string })
+	| (TaskActionBase & { type: "resolve_user_decision"; finding_id: string; resolution: string });
 
-export const PRIVILEGED_ACTION_V2_KINDS: Record<
-	MutationAuthorityKindV2,
-	ReadonlySet<TaskActionV2["type"]>
-> = {
-	review: new Set<TaskActionV2["type"]>(["record_approval"]),
-	qa: new Set<TaskActionV2["type"]>(["record_approval"]),
-	user: new Set<TaskActionV2["type"]>([
-		"record_user_approval",
-		"approve_breaking_intent_revision",
-		"stop",
-		"resolve_user_decision",
-	]),
-};
 
-/** Branded, non-serializable reducer v2 result. */
+/** Branded, non-serializable reducer result. */
 export const REDUCED_MUTATION_BRAND = Symbol("assurance-kernel-reduced-mutation-v2");
 
-export interface ReducedTaskMutationV2 {
+export interface ReducedTaskMutation {
 	readonly [REDUCED_MUTATION_BRAND]: true;
-	readonly record: TaskRecordV2;
+	readonly record: TaskRecordV3;
 	readonly next_workspace_working: string | null;
 }
 
-export interface StoredTaskMutationV2 {
+export interface StoredTaskMutationV3 {
 	revision: string;
-	record: TaskRecordV2;
+	record: TaskRecordV3;
 	workspace: {
 		revision: string;
 		state: WorkspaceStateLike;

@@ -68,7 +68,6 @@ export interface DescriptorRehearsalReceipt {
 	index_digest: string;
 	scope_paths: string[];
 	enrollment_ready: boolean;
-	waiver_allowed: boolean;
 	writes_performed: false;
 	descriptors: DescriptorRehearsalResult[];
 	blockers: string[];
@@ -76,18 +75,12 @@ export interface DescriptorRehearsalReceipt {
 
 export interface DescriptorRehearsalDecision {
 	proceed_to_confirmation: boolean;
-	override: boolean;
 }
 
 export function decideDescriptorRehearsalRoute(
 	receipt: DescriptorRehearsalReceipt,
-	route: "default" | "explicit_waiver",
 ): DescriptorRehearsalDecision {
-	if (receipt.enrollment_ready)
-		return { proceed_to_confirmation: true, override: false };
-	if (route === "explicit_waiver" && receipt.waiver_allowed)
-		return { proceed_to_confirmation: true, override: true };
-	return { proceed_to_confirmation: false, override: false };
+	return { proceed_to_confirmation: receipt.enrollment_ready };
 }
 
 export function assertTaskIntentPreparationStable(
@@ -475,7 +468,6 @@ function blockedReceipt(
 	indexDigestValue: string,
 	scopePaths: string[],
 	blockers: string[],
-	waiverAllowed = false,
 ): DescriptorRehearsalReceipt {
 	return {
 		contract: "assurance_kernel/descriptor_rehearsal/v1",
@@ -483,7 +475,6 @@ function blockedReceipt(
 		index_digest: indexDigestValue,
 		scope_paths: scopePaths,
 		enrollment_ready: false,
-		waiver_allowed: waiverAllowed,
 		writes_performed: false,
 		descriptors: [],
 		blockers,
@@ -519,7 +510,6 @@ export async function runDescriptorRehearsalForDescriptors(
 			initialIndexDigest,
 			scopePaths,
 			[`descriptor validation failed: ${message}`],
-			true,
 		);
 	}
 
@@ -657,25 +647,19 @@ export async function runDescriptorRehearsalForDescriptors(
 			}
 			const integrityBlockers = [...new Set([...observedIntegrityBlockers, ...finalIntegrityBlockers])];
 			const descriptorBlockers = descriptors
-				.filter((result) => result.status !== "passed")
-				.map((result) => `${result.acceptance_id}: ${result.status} after ${result.duration_ms}ms - ${result.summary}`);
-			const blockers = [...integrityBlockers, ...descriptorBlockers];
-			const hasNonWaivableDescriptorFailure = descriptors.some(
-				(result) => result.status === "setup_timed_out"
+				.filter((result) => result.status === "setup_timed_out"
 					|| result.status === "cancelled"
 					|| result.status === "integrity_drift"
 					|| result.status === "output_exceeded"
-					|| result.status === "setup_failed",
-			);
+					|| result.status === "setup_failed")
+				.map((result) => `${result.acceptance_id}: ${result.status} after ${result.duration_ms}ms - ${result.summary}`);
+			const blockers = [...integrityBlockers, ...descriptorBlockers];
 			return {
 				contract: "assurance_kernel/descriptor_rehearsal/v1",
 				task_id: taskId,
 				index_digest: frozenIndex.digest,
 				scope_paths: scopePaths,
 				enrollment_ready: blockers.length === 0,
-				waiver_allowed: integrityBlockers.length === 0
-					&& descriptorBlockers.length > 0
-					&& !hasNonWaivableDescriptorFailure,
 				writes_performed: false,
 				descriptors,
 				blockers,
@@ -719,9 +703,8 @@ export function descriptorRehearsalDigest(receipt: DescriptorRehearsalReceipt): 
 
 export function descriptorRehearsalReceiptRef(
 	receipt: DescriptorRehearsalReceipt,
-	overridden: boolean,
 ): string {
-	return `descriptor-rehearsal/v1:${overridden ? "waived" : "passed"}:${descriptorRehearsalDigest(receipt)}`;
+	return `descriptor-preflight/v2:ready:${descriptorRehearsalDigest(receipt)}`;
 }
 
 export function descriptorRehearsalSummary(receipt: DescriptorRehearsalReceipt): string {
@@ -737,7 +720,7 @@ interface ActiveForegroundEnrollment {
 	completion: Promise<EnrollmentTerminal>;
 }
 
-export type EnrollmentAction = "new" | "enroll";
+export type EnrollmentAction = "new";
 export type EnrollmentTerminalState =
 	| "completed"
 	| "blocked"
@@ -885,7 +868,7 @@ async function classifyCommitFailure(
 		if (
 			current.backend_claim.present
 			&& current.backend_claim.task_id === taskId
-			&& current.task_record_v2?.present
+			&& current.task_record_v3?.present
 			&& current.workspace.current_working === taskId
 		) {
 			return terminal(
@@ -899,7 +882,7 @@ async function classifyCommitFailure(
 		}
 		if (
 			!current.backend_claim.present
-			&& !current.task_record_v2?.present
+			&& !current.task_record_v3?.present
 			&& current.workspace.current_working === null
 		) {
 			return terminal(
@@ -1003,7 +986,7 @@ async function executeForegroundEnrollment(
 		}
 		if (
 			action === "new"
-			&& (preparation.backend_claim.present || preparation.task_record_v2?.present)
+			&& (preparation.backend_claim.present || preparation.task_record_v3?.present)
 		)
 			return terminal(action, taskId, "blocked", stage, `Task ${taskId} is already owned by the Kernel backend`, "continue the existing Kernel task");
 		if (action === "new" && preparation.workspace.current_working !== null)
@@ -1028,8 +1011,9 @@ async function executeForegroundEnrollment(
 			: taskIntent.intent.acceptance
 				.map((item) => `${item.id}: ${item.assertion} [verification: ${item.verification}]`)
 				.join("\n");
-		// Single confirmation is reordered before descriptor rehearsal and bound to the intent content hash.
-		// A post-confirmation rehearsal failure invalidates the authorization with zero authority writes.
+		// Confirmation precedes descriptor rehearsal and binds the intent content hash.
+		// Acceptance failures are baseline observations; infrastructure and integrity
+		// failures still invalidate authorization with zero authority writes.
 		const confirmedContentHash = preparation.intent.content_hash;
 		{
 			const preRehearsalSummary = [
@@ -1049,15 +1033,15 @@ async function executeForegroundEnrollment(
 				`Intent digest: ${preparation.intent.content_hash}`,
 				`Intent: ${preparation.intent.path} @ rev ${preparation.intent.revision}`,
 				`Owners: intent+workspace+claim+record checked`,
-				`Route: ${action === "new" ? "Kernel default" : "Kernel explicit enrollment"}`,
+				`Route: Kernel enrollment`,
 			].join("\n");
 			progress("awaiting_confirmation", "Waiting for exact literal-user confirmation");
 			const confirmed = await requestEnrollmentConfirmation(
 				pi,
 				ctx,
 				taskId,
-				action === "new" ? "enrollment" : "descriptor_waiver",
-				action === "new" ? "Create Kernel-managed task?" : "Enroll Kernel canary task?",
+				"enrollment",
+				"Create Kernel-managed task?",
 				preRehearsalSummary,
 				preRehearsalDetails,
 				signal,
@@ -1082,28 +1066,19 @@ async function executeForegroundEnrollment(
 		progress("rehearsing", "Running canonical descriptors in isolated copies");
 		const descriptorRehearsal = await runDescriptorRehearsal(root, taskId, { signal });
 		if (signal.aborted) return cancelled();
-		const route = action === "new" ? "default" : "explicit_waiver";
-		const rehearsalDecision = decideDescriptorRehearsalRoute(descriptorRehearsal, route);
+		const rehearsalDecision = decideDescriptorRehearsalRoute(descriptorRehearsal);
 		if (!rehearsalDecision.proceed_to_confirmation) {
-			const hint = descriptorRehearsal.waiver_allowed && action === "new"
-				? "describe the waiver need in ordinary language and let the Parent invoke Enrollment"
-				: "correct the non-waivable rehearsal blockers";
 			return terminal(
 				action,
 				taskId,
 				"blocked",
 				stage,
-				`Descriptor rehearsal blocked enrollment: ${descriptorRehearsal.blockers.join("; ")}`,
-				hint,
+				`Descriptor preflight blocked enrollment: ${descriptorRehearsal.blockers.join("; ")}`,
+				"correct the descriptor, runner, isolation, or integrity blocker",
 			);
 		}
 		assertDescriptorRehearsalSnapshot(root, descriptorRehearsal);
-		const rehearsalOverride = rehearsalDecision.override;
 		const rehearsalDigest = descriptorRehearsalDigest(descriptorRehearsal);
-		const rehearsalReceiptRef = descriptorRehearsalReceiptRef(descriptorRehearsal, rehearsalOverride);
-		// Retained for packed-contract test: waiver sentinel must remain discoverable.
-		const _waiverSentinel = rehearsalOverride ? "REHEARSAL WAIVER: enrollment_ready=false" : "Rehearsal: enrollment_ready=true";
-		void _waiverSentinel;
 		void rehearsalDigest;
 		{
 			let liveContentHash: string | null = null;
@@ -1130,9 +1105,6 @@ async function executeForegroundEnrollment(
 			intent_revision: preparation.intent.revision,
 			intent_content_hash: preparation.intent.content_hash,
 			preparation_digest: preparation.digest,
-			readiness_digest: rehearsalReceiptRef,
-			evidence_digest: rehearsalReceiptRef,
-			waiver_gate: rehearsalOverride ? "descriptor_rehearsal" : "observation_window_days",
 			actor_id: "user",
 			confirmation_ref: `pi-confirm-${createHash("sha256").update(`${taskId}\0${now}\0${nonce}`).digest("hex").slice(0, 16)}`,
 			expires_at: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
@@ -1166,7 +1138,7 @@ async function executeForegroundEnrollment(
 				taskId,
 				"completed",
 				stage,
-				`Kernel enrollment completed: task ${result.record.task_id} phase=${result.record.phase} backend=${result.backend_claim.backend} rehearsal=${descriptorRehearsal.enrollment_ready ? "passed" : "waived"}`,
+				`Kernel enrollment completed: task ${result.record.task_id} state=${result.record.lifecycle}:${result.record.artifact_state} backend=${result.backend_claim.backend} preflight=ready`,
 				"continue with imm-loop",
 			);
 		} catch (error) {
@@ -1186,7 +1158,7 @@ export default function (pi: ExtensionAPI) {
 	pi.registerTool({
 		name: "imm_canary_enrollment",
 		label: "Foreground Kernel enrollment",
-		description: "Run one exact Kernel new-task or explicit-waiver enrollment synchronously in the foreground with host cancellation before authority commit.",
+		description: "Run one exact Kernel new-task enrollment synchronously in the foreground with host cancellation before authority commit.",
 		promptSnippet: "Kernel enrollment: invoke once in foreground and consume the direct terminal result.",
 		promptGuidelines: [
 			"Call from the Parent after natural-language routing selects Enrollment; execute once in the foreground and consume the terminal Tool result.",
@@ -1194,7 +1166,7 @@ export default function (pi: ExtensionAPI) {
 		],
 		parameters: Type.Object(
 			{
-				action: Type.Union([Type.Literal("new"), Type.Literal("enroll")]),
+				action: Type.Literal("new"),
 				task_id: Type.String({ pattern: "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$" }),
 			},
 			{ additionalProperties: false },
@@ -1207,7 +1179,7 @@ export default function (pi: ExtensionAPI) {
 			ctx: ExtensionContext,
 		) => {
 			const { action, task_id: taskId } = params;
-			if ((action !== "new" && action !== "enroll") || !TASK_ID_PATTERN.test(taskId))
+			if (action !== "new" || !TASK_ID_PATTERN.test(taskId))
 				throwToolFailure({
 					tool: "imm_canary_enrollment",
 					task_id: taskId,

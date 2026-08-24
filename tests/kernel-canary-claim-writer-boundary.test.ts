@@ -25,7 +25,7 @@ import {
 	type EnrollmentCapabilityBinding,
 } from "../plugins/immune-brain/runtime/kernel/enrollment_authority";
 import { canonicalIntentHash, readTaskIntent } from "../plugins/immune-brain/runtime/kernel/intent";
-import { readTaskRecordV2, withKernelStoreLockV2 } from "../plugins/immune-brain/runtime/kernel/storage";
+import { readTaskRecord, withKernelStoreLock } from "../plugins/immune-brain/runtime/kernel/storage";
 import { createHash } from "node:crypto";
 
 const TASK = "canary-writer-task";
@@ -75,9 +75,6 @@ beforeEach(() => {
 		intent_revision: 1,
 		intent_content_hash: INTENT_HASH,
 		preparation_digest: prep.digest,
-		readiness_digest: "sha256:readiness",
-		evidence_digest: "sha256:evidence",
-		waiver_gate: "observation_window_days",
 		actor_id: "user",
 		confirmation_ref: "pi-confirm-enroll",
 		expires_at: "2099-01-01T00:00:00.000Z",
@@ -90,8 +87,6 @@ beforeEach(() => {
 			intent_path: `docs/plans/${TASK}.intent.json`,
 			intent_revision: 1,
 			preparation_digest: binding.preparation_digest,
-			readiness_digest: "sha256:readiness",
-			evidence_digest: "sha256:evidence",
 			capability: enrollmentRegistry.issue(binding),
 			capability_binding: binding,
 			now,
@@ -118,7 +113,7 @@ describe("backend claim writer boundary", () => {
 	test("claim transitions flow through the recoverable transaction owner", () => {
 		// Enrollment created the active claim; the drain transaction converges it.
 		expect(readBackendClaim(root)?.lifecycle_status).toBe("active");
-		const record = readTaskRecordV2(root, TASK);
+		const record = readTaskRecord(root, TASK);
 		const drainAction = {
 			type: "stop",
 			event_id: `begin_drain:${TASK}:${now}`,
@@ -158,7 +153,7 @@ describe("backend claim writer boundary", () => {
 			authority_kind: "user",
 			task_id: TASK,
 			action_digest: digest(stopAction),
-			expected_record_hash: readTaskRecordV2(root, TASK).revision,
+			expected_record_hash: readTaskRecord(root, TASK).revision,
 			intent_revision: 1,
 			intent_content_hash: INTENT_HASH,
 			diff_hash: DIFF,
@@ -176,20 +171,18 @@ describe("backend claim writer boundary", () => {
 			now: "2026-08-12T10:00:01.000Z",
 		});
 		expect(readBackendClaim(root)).toBeNull();
-		expect(readTaskTombstone(root, TASK)?.terminal_phase).toBe("stopped");
+		expect(readTaskTombstone(root, TASK)?.terminal_lifecycle).toBe("stopped");
 	});
 
 	test("workspace claim parse rejects terminal; global terminal stays malformed", () => {
 		expect(() =>
 			parseBackendClaim({
-				contract: "assurance_kernel/backend_claim/v1",
+				contract: "assurance_kernel/backend_claim/v2",
 				backend: "kernel",
 				task_id: TASK,
 				intent_revision: 1,
 				intent_content_hash: "sha256:h",
 				enrollment_event_id: "e",
-				readiness_digest: "sha256:r",
-				evidence_digest: "sha256:e",
 				lifecycle_status: "terminal",
 				created_at: now,
 				updated_at: now,
@@ -226,7 +219,7 @@ describe("backend claim writer boundary", () => {
 			join(root, ".imm/tasks/.terminal-transaction.json"),
 			'{"contract":"assurance_kernel/terminal_transaction/v1","task_id":"x","transaction":{},"tombstone":{}}\n',
 		);
-		expect(() => withKernelStoreLockV2(root, () => undefined)).toThrow(/markers are forbidden/i);
+		expect(() => withKernelStoreLock(root, () => undefined)).toThrow(/markers are forbidden/i);
 	});
 
 	test("malformed drain marker fails closed and remains recoverable", () => {
@@ -234,7 +227,7 @@ describe("backend claim writer boundary", () => {
 			join(root, ".imm/tasks/.drain-transaction.json"),
 			'{"contract":"assurance_kernel/drain_transaction/v1","task_id":"x","expected_claim_content":"{}","next_claim_content":"{}","at":"t"}\n',
 		);
-		expect(() => withKernelStoreLockV2(root, () => undefined)).toThrow();
+		expect(() => withKernelStoreLock(root, () => undefined)).toThrow();
 		// Nothing was mutated by the failed recovery.
 		expect(readBackendClaim(root)?.lifecycle_status).toBe("active");
 	});

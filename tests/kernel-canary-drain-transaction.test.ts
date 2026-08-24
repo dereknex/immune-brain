@@ -30,9 +30,9 @@ import {
 	serializeBackendClaim,
 } from "../plugins/immune-brain/runtime/kernel/backend_claim";
 import {
-	readTaskRecordV2,
+	readTaskRecord,
 	readWorkspaceStateRaw,
-	withKernelStoreLockV2,
+	withKernelStoreLock,
 } from "../plugins/immune-brain/runtime/kernel/storage";
 
 const TASK = "canary-drain-task";
@@ -83,9 +83,6 @@ beforeEach(() => {
 		intent_revision: 1,
 		intent_content_hash: INTENT_HASH,
 		preparation_digest: prep.digest,
-		readiness_digest: "sha256:readiness",
-		evidence_digest: "sha256:evidence",
-		waiver_gate: "observation_window_days",
 		actor_id: "user",
 		confirmation_ref: "pi-confirm-enroll",
 		expires_at: "2099-01-01T00:00:00.000Z",
@@ -98,8 +95,6 @@ beforeEach(() => {
 			intent_path: `docs/plans/${TASK}.intent.json`,
 			intent_revision: 1,
 			preparation_digest: binding.preparation_digest,
-			readiness_digest: "sha256:readiness",
-			evidence_digest: "sha256:evidence",
 			capability: enrollmentRegistry.issue(binding),
 			capability_binding: binding,
 			now,
@@ -115,7 +110,7 @@ afterEach(() => {
 });
 
 function drainCapability(overrides: Record<string, unknown> = {}) {
-	const record = readTaskRecordV2(root, TASK);
+	const record = readTaskRecord(root, TASK);
 	const digest = (a: Record<string, unknown>) => createHash("sha256").update(JSON.stringify(a)).digest("hex");
 	const { expected_record_hash: _r, expected_workspace_hash: _w, diff_hash: _d, ...rest } =
 		beginDrainCapabilityAction(TASK, now) as unknown as Record<string, unknown>;
@@ -195,7 +190,7 @@ describe("drain transaction", () => {
 				2,
 			)}\n`,
 		);
-		expect(() => withKernelStoreLockV2(root, () => undefined)).toThrow(/active -> draining/i);
+		expect(() => withKernelStoreLock(root, () => undefined)).toThrow(/active -> draining/i);
 		expect(readBackendClaim(root)?.lifecycle_status).toBe("draining");
 	});
 
@@ -206,12 +201,12 @@ describe("drain transaction", () => {
 		const ev = app.execute({
 			root,
 			task_id: TASK,
-			operation: { op: "record_evidence", acceptance_id: "A1", status: "passed", summary: "s", actor_id: "executor-1" },
+			operation: { op: "record_finding", finding: { id: "advanced", kind: "advisory", acceptance_id: "A1", summary: "advance snapshot" }, actor_id: "executor-1" },
 			prior_intent_token: readTaskIntent(root, TASK).token,
 			diffProvider: () => DIFF,
 			now: "2026-08-12T10:00:02.000Z",
 		});
-		expect(ev.record.evidence).toHaveLength(1);
+		expect(ev.record.findings).toHaveLength(1);
 	});
 
 	test("draining rejects same-task re-enrollment and v3-style mutation is impossible", () => {
@@ -221,12 +216,12 @@ describe("drain transaction", () => {
 		const result = app.execute({
 			root,
 			task_id: TASK,
-			operation: { op: "record_evidence", acceptance_id: "A1", status: "passed", summary: "drain ok", actor_id: "executor-1" },
+			operation: { op: "record_finding", finding: { id: "during-drain", kind: "advisory", acceptance_id: "A1", summary: "drain ok" }, actor_id: "executor-1" },
 			prior_intent_token: readTaskIntent(root, TASK).token,
 			diffProvider: () => DIFF,
 			now: "2026-08-12T10:00:01.000Z",
 		});
-		expect(result.record.phase).toBe("working");
+		expect(result.record).toMatchObject({ lifecycle: "active", artifact_state: "active" });
 		// Re-enrollment of the same task is blocked by the existing record.
 		const enrollmentRegistry = createEnrollmentAuthorityRegistry();
 		const prep = preparePiCanary(root, { task_id: TASK, now: "2026-08-12T10:00:00.000Z" });
@@ -236,9 +231,6 @@ describe("drain transaction", () => {
 			intent_revision: 1,
 			intent_content_hash: INTENT_HASH,
 			preparation_digest: prep.digest,
-			readiness_digest: "sha256:readiness",
-			evidence_digest: "sha256:evidence",
-			waiver_gate: "observation_window_days",
 			actor_id: "user",
 			confirmation_ref: "pi-confirm-enroll",
 			expires_at: "2099-01-01T00:00:00.000Z",
@@ -279,7 +271,7 @@ describe("drain transaction", () => {
 			)}\n`,
 		);
 		// Simulated restart: any store-lock acquisition replays the marker.
-		withKernelStoreLockV2(root, () => undefined);
+		withKernelStoreLock(root, () => undefined);
 		expect(readBackendClaim(root)?.lifecycle_status).toBe("draining");
 		expect(existsSync(join(root, ".imm/tasks/.drain-transaction.json"))).toBe(false);
 	});
@@ -303,7 +295,7 @@ describe("drain transaction", () => {
 				2,
 			)}\n`,
 		);
-		withKernelStoreLockV2(root, () => undefined);
+		withKernelStoreLock(root, () => undefined);
 		expect(readBackendClaim(root)?.lifecycle_status).toBe("draining");
 	});
 
@@ -329,7 +321,7 @@ describe("drain transaction", () => {
 				2,
 			)}\n`,
 		);
-		expect(() => withKernelStoreLockV2(root, () => undefined)).toThrow(/conflict/i);
+		expect(() => withKernelStoreLock(root, () => undefined)).toThrow(/conflict/i);
 		expect(existsSync(join(root, ".imm/tasks/.drain-transaction.json"))).toBe(true);
 	});
 

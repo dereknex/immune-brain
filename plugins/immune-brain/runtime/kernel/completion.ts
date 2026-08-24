@@ -1,64 +1,60 @@
 import type {
 	ApprovalKind,
 	CompletionDecision,
+	TaskAttestationV3,
 	TaskIntentV1,
-	TaskProjectionV2,
-	TaskRecordV2,
+	TaskProjectionV3,
+	TaskRecordV3,
 } from "./types";
-import { assertKernelInvariantsV2 } from "./validation";
+import { assertKernelInvariantsV3 } from "./validation";
 
-const REQUIRED_APPROVALS: Record<TaskIntentV1["risk"], ApprovalKind[]> = {
-	routine: [],
-	material: ["review"],
+const REQUIRED_ATTESTATIONS: Record<TaskIntentV1["risk"], ApprovalKind[]> = {
+	routine: ["qa"],
+	material: ["qa", "review"],
 	critical: ["qa", "review", "user"],
 };
 
 function hasDistinctAuthorityAssignment(
 	required: ApprovalKind[],
-	candidates: TaskRecordV2["approvals"],
+	candidates: TaskAttestationV3[],
 	index = 0,
 	usedActors = new Set<string>(),
 ): boolean {
 	if (index >= required.length) return true;
-	for (const approval of candidates.filter(
-		(item) => item.kind === required[index],
-	)) {
-		if (usedActors.has(approval.actor_id)) continue;
+	for (const attestation of candidates.filter((item) => item.kind === required[index])) {
+		if (usedActors.has(attestation.actor_id)) continue;
 		const nextActors = new Set(usedActors);
-		nextActors.add(approval.actor_id);
-		if (hasDistinctAuthorityAssignment(required, candidates, index + 1, nextActors))
-			return true;
+		nextActors.add(attestation.actor_id);
+		if (hasDistinctAuthorityAssignment(required, candidates, index + 1, nextActors)) return true;
 	}
 	return false;
 }
 
-// ---------------------------------------------------------------------------
-// TaskRecord v2 completion/projection APIs.
-// ---------------------------------------------------------------------------
-
-
-export function completionDecisionV2(
+export function completionDecision(
 	intent: TaskIntentV1,
-	record: TaskRecordV2,
+	record: TaskRecordV3,
 	currentDiffHash: string,
 	currentIntentContentHash: string,
 ): CompletionDecision {
-	assertKernelInvariantsV2(intent, record);
-	const freshEvidence = record.evidence.filter(
+	assertKernelInvariantsV3(intent, record);
+	const freshAttestations = record.attestations.filter(
 		(item) =>
-			item.status === "passed" &&
 			item.task_revision === intent.revision &&
 			item.intent_content_hash === currentIntentContentHash &&
 			item.diff_hash === currentDiffHash,
 	);
+	const freshQaResults = freshAttestations
+		.filter((item) => item.kind === "qa")
+		.flatMap((item) => item.acceptance_results)
+		.filter((item) => item.status === "passed");
 	const freshAcceptanceIds = intent.acceptance
 		.map((item) => item.id)
-		.filter((id) => freshEvidence.some((evidence) => evidence.acceptance_id === id));
+		.filter((id) => freshQaResults.some((result) => result.acceptance_id === id));
 	const freshAcceptanceSet = new Set(freshAcceptanceIds);
 	const missingAcceptanceIds = intent.acceptance
 		.map((item) => item.id)
 		.filter((id) => !freshAcceptanceSet.has(id));
-	const staleEvidenceIds = record.evidence
+	const staleAttestationIds = record.attestations
 		.filter(
 			(item) =>
 				item.task_revision !== intent.revision ||
@@ -67,59 +63,34 @@ export function completionDecisionV2(
 		)
 		.map((item) => item.id);
 
-	const requiredApprovalKinds = REQUIRED_APPROVALS[intent.risk];
-	const executorIds = new Set(freshEvidence.map((item) => item.actor_id));
-	const freshApprovalContext = record.approvals.filter(
-		(item) =>
-			item.task_revision === intent.revision &&
-			item.intent_content_hash === currentIntentContentHash &&
-			item.diff_hash === currentDiffHash &&
-			requiredApprovalKinds.includes(item.kind),
-	);
-	const selfApprovalIds = new Set(
-		freshApprovalContext
-			.filter((item) => executorIds.has(item.actor_id))
-			.map((item) => item.id),
-	);
-	const independentCandidates = freshApprovalContext.filter(
-		(item) => !selfApprovalIds.has(item.id),
-	);
-	const missingApprovalKinds = requiredApprovalKinds.filter(
-		(kind) => !independentCandidates.some((approval) => approval.kind === kind),
+	const requiredKinds = REQUIRED_ATTESTATIONS[intent.risk];
+	const candidates = freshAttestations.filter((item) => requiredKinds.includes(item.kind));
+	const missingApprovalKinds = requiredKinds.filter(
+		(kind) => !candidates.some((attestation) => attestation.kind === kind),
 	);
 	const separationFailure =
 		missingApprovalKinds.length === 0 &&
-		!hasDistinctAuthorityAssignment(
-			requiredApprovalKinds,
-			independentCandidates,
-		);
-	const repeatedAuthorityActors = new Set<string>();
+		!hasDistinctAuthorityAssignment(requiredKinds, candidates);
+	const repeatedActors = new Set<string>();
 	if (separationFailure) {
-		for (const approval of independentCandidates) {
-			const actorKinds = new Set(
-				independentCandidates
-					.filter((candidate) => candidate.actor_id === approval.actor_id)
+		for (const attestation of candidates) {
+			const kinds = new Set(
+				candidates
+					.filter((candidate) => candidate.actor_id === attestation.actor_id)
 					.map((candidate) => candidate.kind),
 			);
-			if (actorKinds.size > 1) repeatedAuthorityActors.add(approval.actor_id);
+			if (kinds.size > 1) repeatedActors.add(attestation.actor_id);
 		}
 	}
-	const independenceViolations = freshApprovalContext
-		.filter(
-			(item) =>
-				selfApprovalIds.has(item.id) ||
-				repeatedAuthorityActors.has(item.actor_id),
-		)
+	const independenceViolations = candidates
+		.filter((item) => repeatedActors.has(item.actor_id))
 		.map((item) => item.id);
 
 	const blockingFindingIds = record.findings
 		.filter((item) => item.status === "open" && item.kind === "blocking")
 		.map((item) => item.id);
 	const unresolvedUserDecisionIds = record.findings
-		.filter(
-			(item) =>
-				item.status === "open" && item.kind === "unresolved_user_decision",
-		)
+		.filter((item) => item.status === "open" && item.kind === "unresolved_user_decision")
 		.map((item) => item.id);
 	const replanRequiredIds = record.findings
 		.filter((item) => item.status === "open" && item.kind === "replan_required")
@@ -135,7 +106,7 @@ export function completionDecisionV2(
 			independenceViolations.length === 0,
 		fresh_acceptance_ids: freshAcceptanceIds,
 		missing_acceptance_ids: missingAcceptanceIds,
-		stale_evidence_ids: staleEvidenceIds,
+		stale_attestation_ids: staleAttestationIds,
 		missing_approval_kinds: missingApprovalKinds,
 		blocking_finding_ids: blockingFindingIds,
 		unresolved_user_decision_ids: unresolvedUserDecisionIds,
@@ -144,52 +115,46 @@ export function completionDecisionV2(
 	};
 }
 
-export function projectTaskV2(
+export function projectTask(
 	intent: TaskIntentV1,
-	record: TaskRecordV2,
+	record: TaskRecordV3,
 	currentDiffHash: string,
 	currentIntentContentHash: string,
-): TaskProjectionV2 {
-	const decision = completionDecisionV2(
-		intent,
-		record,
-		currentDiffHash,
-		currentIntentContentHash,
-	);
+): TaskProjectionV3 {
+	const decision = completionDecision(intent, record, currentDiffHash, currentIntentContentHash);
 	const blocked =
 		decision.blocking_finding_ids.length > 0 ||
 		decision.unresolved_user_decision_ids.length > 0 ||
-		decision.replan_required_ids.length > 0;
-	let nextAction: TaskProjectionV2["next_action"] = null;
-	if (record.phase === "working") {
-		if (decision.unresolved_user_decision_ids.length > 0)
-			nextAction = "resolve_user_decision";
-		else if (decision.blocking_finding_ids.length > 0)
-			nextAction = "resolve_findings";
-		else nextAction = "submit_review";
-	} else if (record.phase === "review") {
-		if (decision.replan_required_ids.length > 0)
-			nextAction = "revise_intent";
-		else if (decision.unresolved_user_decision_ids.length > 0)
-			nextAction = "resolve_user_decision";
-		else if (decision.blocking_finding_ids.length > 0)
-			nextAction = "request_rework";
-		else if (decision.missing_acceptance_ids.length > 0)
-			nextAction = "record_evidence";
-		else if (
-			decision.missing_approval_kinds.length > 0 ||
-			decision.independence_violations.length > 0
-		)
-			nextAction = "record_approval";
-		else if (decision.complete) nextAction = "complete";
+		decision.replan_required_ids.length > 0 ||
+		decision.independence_violations.length > 0;
+	let nextObligation: TaskProjectionV3["next_obligation"] = "none";
+	if (record.lifecycle === "active") {
+		if (decision.unresolved_user_decision_ids.length > 0) {
+			nextObligation = "resolve_user_decision";
+		} else if (decision.replan_required_ids.length > 0) {
+			nextObligation = "revise_intent";
+		} else if (decision.blocking_finding_ids.length > 0 || decision.independence_violations.length > 0) {
+			nextObligation = "resolve_findings";
+		} else if (record.artifact_state === "active") {
+			nextObligation = "submit_assurance";
+		} else if (decision.missing_acceptance_ids.length > 0 || decision.missing_approval_kinds.includes("qa")) {
+			nextObligation = "run_qa";
+		} else if (decision.missing_approval_kinds.includes("review")) {
+			nextObligation = "run_review";
+		} else if (decision.missing_approval_kinds.includes("user")) {
+			nextObligation = "authorize_user";
+		} else if (decision.complete) {
+			nextObligation = "complete";
+		}
 	}
 	return {
-		contract: "assurance_kernel/projection/v2",
+		contract: "assurance_kernel/projection/v3",
 		task_id: record.task_id,
-		intent_revision: record.intent_revision,
-		phase: record.phase,
+		intent_revision: record.intent_snapshot.revision,
+		lifecycle: record.lifecycle,
+		artifact_state: record.artifact_state,
 		blocked,
-		next_action: nextAction,
+		next_obligation: nextObligation,
 		...decision,
 	};
 }

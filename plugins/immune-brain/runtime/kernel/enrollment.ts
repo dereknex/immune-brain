@@ -1,5 +1,5 @@
 // P2B0 canary enrollment core. NOT exported from kernel/index.ts.
-// Atomically creates TaskRecord v2 + workspace working claim + backend claim
+// Atomically creates TaskRecord v3 + workspace working claim + backend claim
 // for one confirmed canary task. Requires a valid EnrollmentCapability.
 // No CLI, runtime route, or production issuer exists in P2B0.
 
@@ -12,11 +12,11 @@ import { readTaskTombstone, type BackendClaim } from "./backend_claim";
 import { preparePiCanary } from "./pi_canary_prepare";
 import {
 	commitEnrollmentLocked,
-	readTaskRecordV2Raw,
+	readTaskRecordRaw,
 	readWorkspaceStateRaw,
-	withKernelStoreLockV2,
+	withKernelStoreLock,
 } from "./storage";
-import type { TaskRecordV2, WorkspaceStateLike } from "./types";
+import type { TaskRecordV3, WorkspaceStateLike } from "./types";
 
 export interface EnrollCanaryInput {
 	task_id: string;
@@ -29,30 +29,28 @@ export interface EnrollCanaryInput {
 }
 
 export interface EnrollCanaryResult {
-	record: TaskRecordV2;
+	record: TaskRecordV3;
 	backend_claim: BackendClaim;
 	workspace: { revision: string; state: WorkspaceStateLike };
 }
 
-function buildTaskRecordV2(
+function buildTaskRecordV3(
 	input: EnrollCanaryInput,
 	intent: Awaited<ReturnType<typeof readTaskIntent>>,
-): TaskRecordV2 {
+): TaskRecordV3 {
 	return {
-		contract: "assurance_kernel/task_record/v2",
+		contract: "assurance_kernel/task_record/v3",
 		task_id: input.task_id,
-		intent_revision: input.intent_revision,
 		intent_snapshot: intent.intent,
 		intent_ref: {
 			path: input.intent_path,
-			revision: input.intent_revision,
 			content_hash: intent.content_hash,
 		},
-		phase: "working",
+		lifecycle: "active",
+		artifact_state: "active",
 		baseline: intent.content_hash,
-		evidence: [],
+		attestations: [],
 		findings: [],
-		approvals: [],
 		history: [],
 	};
 }
@@ -95,11 +93,14 @@ export function runEnrollmentRehearsal(
 	} catch (error) {
 		blockers.push(`capability: ${error instanceof Error ? error.message : String(error)}`);
 	}
-	withKernelStoreLockV2(root, () => {
-		const current = readTaskRecordV2Raw(root, input.task_id);
-		if (current.record) blockers.push("task record already exists");
+	withKernelStoreLock(root, () => {
 		const tombstone = readTaskTombstone(root, input.task_id);
-		if (tombstone) blockers.push("task tombstone exists; same-task re-enrollment is forbidden");
+		if (tombstone) {
+			blockers.push("task tombstone exists; same-task re-enrollment is forbidden");
+		} else {
+			const current = readTaskRecordRaw(root, input.task_id);
+			if (current.record) blockers.push("task record already exists");
+		}
 		const workspace = readWorkspaceStateRaw(root);
 		if (workspace.state.current_working !== null)
 			blockers.push(`workspace already owned by ${workspace.state.current_working}`);
@@ -134,18 +135,15 @@ export function enrollCanaryTask(
 	if (recomputed.digest !== input.preparation_digest)
 		throw new Error("enrollment preparation digest mismatch");
 
-	return withKernelStoreLockV2(root, () => {
-		const current = readTaskRecordV2Raw(root, input.task_id);
-		if (current.record)
-			throw new Error(`task ${input.task_id} already has a TaskRecord v2`);
-		// A terminal tombstone (plus terminal TaskRecord) makes the same task
-		// immutable: re-enrollment or v3 reconstruction of that task is
-		// rejected, while unrelated tasks remain enrollable.
+	return withKernelStoreLock(root, () => {
 		const tombstone = readTaskTombstone(root, input.task_id);
 		if (tombstone)
 			throw new Error(
 				`task ${input.task_id} is terminal; same-task re-enrollment is forbidden`,
 			);
+		const current = readTaskRecordRaw(root, input.task_id);
+		if (current.record)
+			throw new Error(`task ${input.task_id} already has a TaskRecord`);
 		const workspace = readWorkspaceStateRaw(root);
 		if (workspace.state.current_working !== null)
 			throw new Error(`workspace is already owned by ${workspace.state.current_working}`);
@@ -158,20 +156,18 @@ export function enrollCanaryTask(
 		// consume immediately before the marker write
 		registry.consume(input.capability, input.capability_binding);
 
-		const record = buildTaskRecordV2(input, intent);
+		const record = buildTaskRecordV3(input, intent);
 		const nextWorkspace: WorkspaceStateLike = {
 			...workspace.state,
 			current_working: input.task_id,
 		};
 		const claim: BackendClaim = {
-			contract: "assurance_kernel/backend_claim/v1",
+			contract: "assurance_kernel/backend_claim/v2",
 			backend: "kernel",
 			task_id: input.task_id,
 			intent_revision: input.intent_revision,
 			intent_content_hash: intent.content_hash,
 			enrollment_event_id: `enroll-${input.task_id}-${input.now}`,
-			readiness_digest: input.capability_binding.readiness_digest,
-			evidence_digest: input.capability_binding.evidence_digest,
 			lifecycle_status: "active",
 			created_at: input.now,
 			updated_at: input.now,

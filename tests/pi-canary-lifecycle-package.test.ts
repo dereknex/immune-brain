@@ -10,7 +10,6 @@ import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, existsSync
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
-import { createHash } from "node:crypto";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { enrollCanaryTask } from "../plugins/immune-brain/runtime/kernel/enrollment";
 import { preparePiCanary } from "../plugins/immune-brain/runtime/kernel/pi_canary_prepare";
@@ -123,7 +122,7 @@ describe("pi canary lifecycle package composition", () => {
 			"#kernel/backend_claim",
 			"#kernel/storage",
 			"#kernel/intent",
-			"#kernel/reducer_v2",
+			"#kernel/reducer",
 		]) {
 			expect(pkg.imports[key]).toBeDefined();
 		}
@@ -178,9 +177,6 @@ describe("pi canary lifecycle package composition", () => {
 				intent_revision: 1,
 				intent_content_hash: INTENT_HASH,
 				preparation_digest: prep.digest,
-				readiness_digest: "sha256:r",
-				evidence_digest: "sha256:e",
-				waiver_gate: "observation_window_days",
 				actor_id: "user",
 				confirmation_ref: "c",
 				expires_at: "2099-01-01T00:00:00.000Z",
@@ -211,7 +207,7 @@ describe("pi canary lifecycle package composition", () => {
 			};
 			const result = await tool!.execute("c1", { task_id: TASK, action: { op: "status" } }, undefined, undefined, ctx);
 			const parsed = JSON.parse(result.content[0].text);
-			expect(parsed.phase).toBe("working");
+			expect(parsed).toMatchObject({ lifecycle: "active", artifact_state: "active" });
 			expect(parsed.intent_revision).toBe(1);
 			expect(parsed.intent_content_hash).toBe(INTENT_HASH);
 			expect(readBackendClaim(root)?.task_id).toBe(TASK);
@@ -248,80 +244,47 @@ describe("pi canary lifecycle package composition", () => {
 			expect(enrollment.details).toMatchObject({ state: "completed" });
 			expect(readBackendClaim(root)?.task_id).toBe(TASK);
 
-			let reviewSnapshot: Record<string, unknown> | undefined;
-			const digest = (value: unknown) => `sha256:${createHash("sha256").update(JSON.stringify(value)).digest("hex")}`;
 			const surface = loadWorkSurface({
-				buildAssurance: async (rootPath: string, _task: string, role: "qa" | "review", current: { projection: Record<string, any> }) => {
-					const state = current.projection;
-					const snapshot = {
-						contract: "assurance_kernel/assurance_snapshot/v1",
+				buildAssurance: async (rootPath: string, _task: string, role: "qa" | "review", current: { projection: Record<string, any> }) => ({
+					snapshot: {
+						contract: "assurance_kernel/assurance_snapshot/v2",
 						task_id: TASK,
 						role,
-						record_revision: state.record_revision,
-						workspace_revision: state.workspace_revision,
-						intent_revision: state.intent_revision,
-						intent_content_hash: state.intent_content_hash,
-						diff_hash: state.diff_hash,
-						phase: state.phase,
+						record_revision: current.projection.record_revision,
+						workspace_revision: current.projection.workspace_revision,
+						intent_revision: current.projection.intent_revision,
+						intent_content_hash: current.projection.intent_content_hash,
+						diff_hash: current.projection.diff_hash,
+						lifecycle: current.projection.lifecycle,
+						artifact_state: current.projection.artifact_state,
 						risk: "routine",
-						fresh_acceptance_ids: state.fresh_acceptance_ids,
-						missing_acceptance_ids: state.missing_acceptance_ids,
-						stale_evidence_ids: state.stale_evidence_ids,
+						fresh_acceptance_ids: current.projection.fresh_acceptance_ids,
+						missing_acceptance_ids: current.projection.missing_acceptance_ids,
+						stale_attestation_ids: current.projection.stale_attestation_ids,
 						acceptance: ACCEPTANCE,
 						dirty_files: [],
-						review_bundle_digest: role === "review" ? "sha256:bundle" : null,
+						review_bundle_digest: null,
 						root: rootPath,
-					};
-					if (role === "review") reviewSnapshot = snapshot;
-					return { snapshot, descriptors: new Map(), reviewBundle: role === "review" ? { dirty_files: {}, outcomes: {}, bundle_digest: "sha256:bundle" } : null };
-				},
+					},
+					descriptors: new Map(),
+					reviewBundle: null,
+				}),
 				runQa: async (snapshot: Record<string, unknown>) => ({
 					contract: "assurance_kernel/assurance_verdict/v2",
 					role: "qa",
 					task_id: TASK,
-					snapshot_digest: digest(snapshot),
+					snapshot_digest: require("../plugins/immune-brain/.pi-extension/imm-canary-work.ts").snapshotDigest(snapshot),
 					decision: "pass",
 					approval: { kind: "qa", authority_role: "qa", summary: "passed" },
 				}),
-				writeReviewEvidence: () => ({ path: join(root, "review.json"), remove: () => undefined }),
 			});
-			const ui = {
-				notify: () => undefined,
-				input: async () => "",
-				custom: async (factory: any) => {
-					let selected: string | undefined;
-					const component = factory(
-						{ requestRender: () => undefined },
-						{ fg: (_color: string, text: string) => text, bold: (text: string) => text },
-						{},
-						(result: string | undefined) => { selected = result; },
-					);
-					component.handleInput?.("\r");
-					return selected;
-				},
-			};
-			const ctx = { mode: "tui", cwd: root, ui };
+			const ctx = { mode: "tui", cwd: root, ui: { notify: () => undefined } };
 			await surface.tool!.execute("freeze", { task_id: TASK, action: { op: "freeze_artifacts" } }, undefined, undefined, ctx);
-			const evidence = await surface.tool!.execute("evidence", { task_id: TASK, action: { op: "record_evidence", acceptance_id: "A1", status: "passed", summary: "fresh" } }, undefined, undefined, ctx);
-			expect(JSON.parse(evidence.content[0].text).task_state.phase).toBe("working");
-			const ready = await surface.tool!.execute("advance", { task_id: TASK, action: { op: "advance_assurance" } }, undefined, undefined, ctx);
-			const readyResult = JSON.parse(ready.content[0].text);
-			expect(readyResult).toMatchObject({ state: "review_ready", next_action: "invoke the reserved foreground Agent", task_state: { phase: "review" } });
-			for (const handler of surface.events.tool_call ?? []) handler({ toolName: "Agent", toolCallId: "package-agent", input: readyResult.agent_params });
-			const verdict = JSON.stringify({ contract: "assurance_kernel/assurance_verdict/v2", role: "review", task_id: TASK, snapshot_digest: digest(reviewSnapshot), decision: "pass", approval: { kind: "review", authority_role: "reviewer", summary: "passed" } });
-			for (const handler of surface.events.tool_result ?? []) handler({ toolName: "Agent", toolCallId: "package-agent", input: readyResult.agent_params, details: { status: "completed", agentId: "package-agent" }, content: [{ type: "text", text: verdict }] });
-			for (const handler of surface.events.tool_execution_end ?? []) handler({ toolName: "Agent", toolCallId: "package-agent", args: readyResult.agent_params, isError: false });
-			const awaiting = await surface.tool!.execute("submit", { task_id: TASK, action: { op: "submit_review" } }, undefined, undefined, ctx);
-			expect(JSON.parse(awaiting.content[0].text)).toMatchObject({ state: "awaiting_user", next_action: "request_authorization" });
-			const authorized = await surface.tool!.execute("authorize", { task_id: TASK, action: { op: "request_authorization" } }, undefined, undefined, ctx);
-			expect(JSON.parse(authorized.content[0].text).next_action).toBe("complete task");
-			const completed = await surface.tool!.execute("complete", { task_id: TASK, action: { op: "complete" } }, undefined, undefined, ctx);
-			expect(JSON.parse(completed.content[0].text)).toMatchObject({ phase: "done", next_action: "none", task_state: { phase: "done" } });
+			const completed = await surface.tool!.execute("advance", { task_id: TASK, action: { op: "advance_assurance" } }, undefined, undefined, ctx);
+			expect(JSON.parse(completed.content[0].text)).toMatchObject({ state: "completed", next_action: "none", task_state: { lifecycle: "done" } });
 			const terminalStatus = await surface.tool!.execute("terminal-status", { task_id: TASK, action: { op: "status" } }, undefined, undefined, ctx);
-			expect(JSON.parse(terminalStatus.content[0].text)).toMatchObject({ phase: "done" });
-			expect(terminalStatus.details).toMatchObject({ phase: "done", next_action: "none" });
-			const terminalAdvance = await surface.tool!.execute("terminal-advance", { task_id: TASK, action: { op: "advance_assurance" } }, undefined, undefined, ctx);
-			expect(JSON.parse(terminalAdvance.content[0].text)).toMatchObject({ state: "completed", next_action: "none", task_state: { phase: "done" } });
+			expect(JSON.parse(terminalStatus.content[0].text)).toMatchObject({ lifecycle: "done", next_obligation: "none" });
+			expect(terminalStatus.details).toMatchObject({ lifecycle: "done", next_action: "none" });
 			expect(surface.commands).toEqual([]);
 		} finally {
 			rmSync(root, { recursive: true, force: true });

@@ -100,7 +100,6 @@ describe("descriptor rehearsal preflight", () => {
 			expect(receipt.enrollment_ready).toBe(true);
 			expect(receipt.index_digest).toMatch(/^sha256:[a-f0-9]{64}$/);
 			expect(receipt.scope_paths).toEqual(["snapshot.ts"]);
-			expect(receipt.waiver_allowed).toBe(false);
 			expect(() => assertDescriptorRehearsalSnapshot(root, receipt)).not.toThrow();
 
 			writeFileSync(join(root, "snapshot.ts"), "process.exit(8);\n");
@@ -111,12 +110,8 @@ describe("descriptor rehearsal preflight", () => {
 				{ scopePaths: ["snapshot.ts"] },
 			);
 			expect(unstaged.enrollment_ready).toBe(false);
-			expect(unstaged.waiver_allowed).toBe(false);
 			expect(unstaged.blockers.join("\n")).toContain("unstaged tracked bytes");
-			expect(decideDescriptorRehearsalRoute(unstaged, "explicit_waiver")).toEqual({
-				proceed_to_confirmation: false,
-				override: false,
-			});
+			expect(decideDescriptorRehearsalRoute(unstaged)).toEqual({ proceed_to_confirmation: false });
 
 			git(root, ["add", "snapshot.ts"]);
 			expect(() => assertDescriptorRehearsalSnapshot(root, receipt)).toThrow(/index drift/);
@@ -125,7 +120,7 @@ describe("descriptor rehearsal preflight", () => {
 		}
 	});
 
-	test("bounds setup and makes setup or execution cancellation non-waivable and close-settled", async () => {
+	test("bounds setup and makes setup or execution cancellation block enrollment and close-settled", async () => {
 		const root = repo({ "pass.ts": "console.log('pass');\n" });
 		const pidFile = `${root}.descriptor.pid`;
 		try {
@@ -135,11 +130,7 @@ describe("descriptor rehearsal preflight", () => {
 			expect(timed.descriptors[0].status).toBe("setup_timed_out");
 			expect(timed.descriptors[0].summary).toContain("isolated-copy setup timed out");
 			expect(timed.descriptors[0].duration_ms).toBeLessThan(500);
-			expect(timed.waiver_allowed).toBe(false);
-			expect(decideDescriptorRehearsalRoute(timed, "explicit_waiver")).toEqual({
-				proceed_to_confirmation: false,
-				override: false,
-			});
+			expect(decideDescriptorRehearsalRoute(timed)).toEqual({ proceed_to_confirmation: false });
 
 			const setupController = new AbortController();
 			setupController.abort(new Error("cancel during setup"));
@@ -152,11 +143,7 @@ describe("descriptor rehearsal preflight", () => {
 			);
 			expect(setupCancelled.descriptors[0].status).toBe("cancelled");
 			expect(setupCancelled.descriptors[0].summary).toContain("closed before cleanup");
-			expect(setupCancelled.waiver_allowed).toBe(false);
-			expect(decideDescriptorRehearsalRoute(setupCancelled, "explicit_waiver")).toEqual({
-				proceed_to_confirmation: false,
-				override: false,
-			});
+			expect(decideDescriptorRehearsalRoute(setupCancelled)).toEqual({ proceed_to_confirmation: false });
 			expect(performance.now() - started).toBeLessThan(500);
 
 			writeFileSync(
@@ -179,11 +166,7 @@ describe("descriptor rehearsal preflight", () => {
 			const executionCancelled = await pending;
 			const descriptorPid = Number(readFileSync(pidFile, "utf8"));
 			expect(executionCancelled.descriptors[0].status).toBe("cancelled");
-			expect(executionCancelled.waiver_allowed).toBe(false);
-			expect(decideDescriptorRehearsalRoute(executionCancelled, "explicit_waiver")).toEqual({
-				proceed_to_confirmation: false,
-				override: false,
-			});
+			expect(decideDescriptorRehearsalRoute(executionCancelled)).toEqual({ proceed_to_confirmation: false });
 			expect(() => process.kill(descriptorPid, 0)).toThrow();
 		} finally {
 			rmSync(pidFile, { force: true });
@@ -227,11 +210,7 @@ describe("descriptor rehearsal preflight", () => {
 			expect(receipt.descriptors[0].summary).toContain("process tree closed before cleanup");
 			expect(receipt.blockers.join("\n")).toContain("parent Git-visible content bytes");
 			expect(receipt.blockers.join("\n")).toContain("current Git index no longer matches");
-			expect(receipt.waiver_allowed).toBe(false);
-			expect(decideDescriptorRehearsalRoute(receipt, "explicit_waiver")).toEqual({
-				proceed_to_confirmation: false,
-				override: false,
-			});
+			expect(decideDescriptorRehearsalRoute(receipt)).toEqual({ proceed_to_confirmation: false });
 			expect(() => process.kill(descriptorPid, 0)).toThrow();
 		} finally {
 			rmSync(pidFile, { force: true });
@@ -264,7 +243,6 @@ describe("descriptor rehearsal preflight", () => {
 			const descriptorPid = Number(readFileSync(pidFile, "utf8"));
 			expect(receipt.descriptors[0].status).toBe("integrity_drift");
 			expect(receipt.blockers.join("\n")).toContain("parent Git-visible content bytes");
-			expect(receipt.waiver_allowed).toBe(false);
 			expect(() => process.kill(descriptorPid, 0)).toThrow();
 		} finally {
 			rmSync(pidFile, { force: true });
@@ -272,7 +250,7 @@ describe("descriptor rehearsal preflight", () => {
 		}
 	});
 
-	test("makes output-limit and setup failures non-waivable", async () => {
+	test("makes output-limit and setup failures block enrollment", async () => {
 		const root = repo({
 			"output.ts": "console.log('x'.repeat(100_000));\n",
 			"pass.ts": "console.log('pass');\n",
@@ -283,27 +261,19 @@ describe("descriptor rehearsal preflight", () => {
 			]);
 			expect(outputLimited.descriptors[0].status).toBe("output_exceeded");
 			expect(outputLimited.descriptors[0].summary).toContain("process tree closed before cleanup");
-			expect(outputLimited.waiver_allowed).toBe(false);
-			expect(decideDescriptorRehearsalRoute(outputLimited, "explicit_waiver")).toEqual({
-				proceed_to_confirmation: false,
-				override: false,
-			});
+			expect(decideDescriptorRehearsalRoute(outputLimited)).toEqual({ proceed_to_confirmation: false });
 
 			const setupFailed = await runDescriptorRehearsalForDescriptors(root, "task-setup-failure", [
 				{ id: "acc-setup", verification: descriptor("pass.ts", 5_000, 16_384, "missing-directory") },
 			]);
 			expect(setupFailed.descriptors[0].status).toBe("setup_failed");
-			expect(setupFailed.waiver_allowed).toBe(false);
-			expect(decideDescriptorRehearsalRoute(setupFailed, "explicit_waiver")).toEqual({
-				proceed_to_confirmation: false,
-				override: false,
-			});
+			expect(decideDescriptorRehearsalRoute(setupFailed)).toEqual({ proceed_to_confirmation: false });
 		} finally {
 			rmSync(root, { recursive: true, force: true });
 		}
 	});
 
-	test("reports per-descriptor failure and timeout with actionable enrollment blockers", async () => {
+	test("records per-descriptor failure and timeout as non-blocking baseline observations", async () => {
 		const root = repo({
 			"fail.ts": "console.error('fixture leak detected'); process.exit(7);\n",
 			"timeout.ts": "await Bun.sleep(5_000);\n",
@@ -315,7 +285,7 @@ describe("descriptor rehearsal preflight", () => {
 				// setup cost (~120ms here) or the descriptor reports setup_timed_out instead.
 				{ id: "acc-timeout", verification: descriptor("timeout.ts", 1_500) },
 			]);
-			expect(receipt.enrollment_ready).toBe(false);
+			expect(receipt.enrollment_ready).toBe(true);
 			expect(receipt.writes_performed).toBe(false);
 			expect(receipt.descriptors).toHaveLength(2);
 			expect(receipt.descriptors[0]).toMatchObject({
@@ -328,46 +298,27 @@ describe("descriptor rehearsal preflight", () => {
 				acceptance_id: "acc-timeout",
 				status: "timed_out",
 			});
-			expect(receipt.blockers.join("\n")).toContain("acc-fail: failed");
-			expect(receipt.blockers.join("\n")).toContain("acc-timeout: timed_out");
-			expect(receipt.blockers.join("\n")).toContain("concurrent rehearsal");
+			expect(receipt.blockers).toEqual([]);
+			expect(decideDescriptorRehearsalRoute(receipt)).toEqual({ proceed_to_confirmation: true });
 		} finally {
 			rmSync(root, { recursive: true, force: true });
 		}
 	});
 
-	test("permits failure override only on the explicit waiver route", () => {
-		const failed = {
+	test("has no descriptor-failure waiver route", () => {
+		const blocked = {
 			contract: "assurance_kernel/descriptor_rehearsal/v1" as const,
 			task_id: "task-route",
 			index_digest: "sha256:index",
 			scope_paths: [],
 			enrollment_ready: false,
-			waiver_allowed: true,
 			writes_performed: false as const,
 			descriptors: [],
-			blockers: ["acc-one: failed"],
+			blockers: ["descriptor validation failed"],
 		};
-		expect(decideDescriptorRehearsalRoute(failed, "default")).toEqual({
-			proceed_to_confirmation: false,
-			override: false,
-		});
-		expect(decideDescriptorRehearsalRoute(failed, "explicit_waiver")).toEqual({
-			proceed_to_confirmation: true,
-			override: true,
-		});
-		expect(
-			decideDescriptorRehearsalRoute({ ...failed, waiver_allowed: false }, "explicit_waiver"),
-		).toEqual({ proceed_to_confirmation: false, override: false });
-		expect(
-			descriptorRehearsalReceiptRef(failed, true),
-		).toMatch(/^descriptor-rehearsal\/v1:waived:sha256:[a-f0-9]{64}$/);
-		expect(
-			descriptorRehearsalReceiptRef({ ...failed, enrollment_ready: true }, false),
-		).toMatch(/^descriptor-rehearsal\/v1:passed:sha256:[a-f0-9]{64}$/);
-		expect(
-			decideDescriptorRehearsalRoute({ ...failed, enrollment_ready: true }, "default"),
-		).toEqual({ proceed_to_confirmation: true, override: false });
+		expect(decideDescriptorRehearsalRoute(blocked)).toEqual({ proceed_to_confirmation: false });
+		expect(descriptorRehearsalReceiptRef({ ...blocked, enrollment_ready: true }))
+			.toMatch(/^descriptor-preflight\/v2:ready:sha256:[a-f0-9]{64}$/);
 	});
 
 	test("fails closed before execution for a non-canonical or incompatible descriptor", async () => {

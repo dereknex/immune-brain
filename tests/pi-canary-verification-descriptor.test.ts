@@ -198,7 +198,7 @@ describe("findings digest algorithm parity", () => {
 			"../plugins/immune-brain/.pi-extension/pi-canary-verification"
 		);
 		const { findingsDigestV2 } = await import(
-			"../plugins/immune-brain/runtime/kernel/reducer_v2"
+			"../plugins/immune-brain/runtime/kernel/reducer"
 		);
 		const findings = [
 			{ id: "f-1", kind: "blocking", acceptance_id: "A1", summary: "broken gate" },

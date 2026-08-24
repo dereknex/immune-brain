@@ -1,7 +1,7 @@
 // P2B2 canary application service. NOT exported from kernel/index.ts.
-// The only production caller of applyTaskActionV2 and the only production
+// The only production caller of applyTaskAction and the only production
 // owner of the active -> draining claim transition. Accepts a closed semantic
-// operation union; callers can never supply raw TaskActionV2, CAS identities,
+// operation union; callers can never supply raw TaskAction, CAS identities,
 // authority descriptors, or generic patches. Event identity, timestamps,
 // expected hashes, and Intent-derived facts are derived inside the trusted
 // application boundary. The paired mutation-authority registry is created
@@ -11,7 +11,7 @@
 import {
 	type MutationAuthorityRegistry,
 } from "./authority_port";
-import { applyTaskActionV2 } from "./application_v2";
+import { applyTaskAction } from "./application";
 import { readTaskIntent } from "./intent";
 import {
 	inspectIntentTokenPair,
@@ -23,23 +23,21 @@ import {
 	type BackendClaim,
 } from "./backend_claim";
 import { canonicalIntentHash } from "./intent";
-import { parseTaskRecordV2 } from "./validation";
+import { parseTaskRecordV3 } from "./validation";
 import type { TaskIntentIdentityToken } from "./intent_token_registry";
 import {
 	commitDrainLocked,
-	commitTaskRecordV2Locked,
+	commitTaskRecordLocked,
 	readSecureProjectFile,
-	readTaskRecordV2Raw,
+	readTaskRecordRaw,
 	readWorkspaceStateRaw,
 	revisionForContent,
-	withKernelStoreLockV2,
+	withKernelStoreLock,
 } from "./storage";
 import { KernelInvariantError } from "./validation";
 import type {
-	EvidenceStatus,
-	StoredTaskMutationV2,
-	TaskActionV2,
-	TaskArtifactRefV1,
+	StoredTaskMutationV3,
+	TaskAction,
 	TaskApprovalV2,
 	TaskFinding,
 	TaskIntentV1,
@@ -47,10 +45,8 @@ import type {
 
 export type CanaryOperation =
 	| { op: "freeze_artifacts"; actor_id: string }
-	| { op: "record_evidence"; acceptance_id: string; status: EvidenceStatus; summary: string; actor_id: string }
 	| { op: "record_finding"; finding: Omit<TaskFinding, "status" | "source" | "review_round">; actor_id: string }
 	| { op: "resolve_finding"; finding_id: string; actor_id: string }
-	| { op: "submit_review"; actor_id: string }
 	| { op: "request_rework"; capability: object; findings: TaskFinding[]; actor_id: string }
 	| { op: "record_approval"; capability: object; approval: TaskApprovalV2; actor_id: string }
 	| { op: "record_user_approval"; capability: object; approval: TaskApprovalV2; actor_id: string }
@@ -73,7 +69,7 @@ export interface CanaryExecuteInput {
 export interface CanaryApplication {
 	readonly registry: MutationAuthorityRegistry;
 	/** Execute a closed semantic operation through the paired reducer port. */
-	execute(input: CanaryExecuteInput): StoredTaskMutationV2;
+	execute(input: CanaryExecuteInput): StoredTaskMutationV3;
 	/**
 	 * User-confirmed routing-only operation: converges the workspace-active
 	 * claim unidirectionally active -> draining under the Kernel store lock.
@@ -92,7 +88,7 @@ export interface CanaryApplication {
  * issuer (Pi TUI confirm) and the consuming application so the action digest
  * binds the exact drain request.
  */
-export function beginDrainCapabilityAction(taskId: string, at: string): TaskActionV2 {
+export function beginDrainCapabilityAction(taskId: string, at: string): TaskAction {
 	return {
 		type: "stop",
 		event_id: `begin_drain:${taskId}:${at}`,
@@ -108,7 +104,7 @@ export function beginDrainCapabilityAction(taskId: string, at: string): TaskActi
 /**
  * Canonical privileged action builder shared by capability issuance and the
  * consuming application. Returns the exact action object (field order and
- * payload shape) that execute()/applyTaskActionV2() will inspect, so a
+ * payload shape) that execute()/applyTaskAction() will inspect, so a
  * capability minted against this action's digest always validates.
  * "begin-drain" delegates to the canonical begin_drain action.
  */
@@ -124,7 +120,7 @@ export function capabilityActionFor(input: {
 	next_intent_ref?: unknown;
 	finding_id?: string;
 	resolution?: unknown;
-}): TaskActionV2 {
+}): TaskAction {
 	if (input.op === "begin-drain") {
 		return beginDrainCapabilityAction(input.task_id, input.at);
 	}
@@ -142,25 +138,25 @@ export function capabilityActionFor(input: {
 	};
 	switch (input.op) {
 		case "record_approval":
-			return { ...base, approval: input.approval } as TaskActionV2;
+			return { ...base, approval: input.approval } as TaskAction;
 		case "record_user_approval":
-			return { ...base, approval: input.approval } as TaskActionV2;
+			return { ...base, approval: input.approval } as TaskAction;
 		case "request_rework":
-			return { ...base, findings: input.findings } as TaskActionV2;
+			return { ...base, findings: input.findings } as TaskAction;
 		case "stop":
-			return { ...base, reason: input.reason } as TaskActionV2;
+			return { ...base, reason: input.reason } as TaskAction;
 		case "approve_breaking_intent_revision":
 			return {
 				...base,
 				next_intent: input.next_intent,
 				next_intent_ref: input.next_intent_ref,
-			} as TaskActionV2;
+			} as TaskAction;
 		case "resolve_user_decision":
 			return {
 				...base,
 				finding_id: input.finding_id,
 				resolution: input.resolution,
-			} as TaskActionV2;
+			} as TaskAction;
 		default:
 			throw new KernelInvariantError([
 				`unsupported capability action: ${input.op}`,
@@ -174,33 +170,36 @@ function archivePath(path: string): string {
 	return `docs/${matched[1]}/archive/${matched[2]}`;
 }
 
+function boundSpecPath(intent: TaskIntentV1): string | undefined {
+	const candidates = intent.scope_hint.filter(
+		(path) => /^docs\/specs\/(?!archive\/)[^/]+\.spec\.md$/.test(path) && intent.scope_hint.includes(archivePath(path)),
+	);
+	if (candidates.length > 1)
+		throw new KernelInvariantError([`artifact transition requires at most one scope-bound Spec; found ${candidates.length}`]);
+	return candidates[0];
+}
+
 function readBoundActiveSpec(
 	root: string,
 	intent: TaskIntentV1,
 	required = true,
 ): { path: string; content: string } | undefined {
-	const candidates: Array<{ path: string; content: string }> = [];
-	for (const path of intent.scope_hint) {
-		if (!/^docs\/specs\/(?!archive\/)[^/]+\.spec\.md$/.test(path)) continue;
-		if (!intent.scope_hint.includes(archivePath(path))) continue;
-		try {
-			candidates.push({ path, content: readSecureProjectFile(root, path) });
-		} catch (error) {
-			if (!(error instanceof Error) || !error.message.startsWith("source_missing:"))
-				throw error;
-		}
+	const specPath = boundSpecPath(intent);
+	if (!specPath) {
+		if (required) throw new KernelInvariantError(["artifact freeze requires one scope-bound active Spec"]);
+		return undefined;
 	}
-	if (candidates.length === 0 && !required) return undefined;
-	if (candidates.length !== 1)
-		throw new KernelInvariantError([
-			`artifact freeze requires exactly one existing scope-bound active Spec; found ${candidates.length}`,
-		]);
-	return candidates[0];
+	try {
+		return { path: specPath, content: readSecureProjectFile(root, specPath) };
+	} catch (error) {
+		if (error instanceof Error && error.message.startsWith("source_missing:") && !required) return undefined;
+		throw error;
+	}
 }
 
 function transitionFor(
 	root: string,
-	record: { intent_ref: { path: string }; intent_snapshot: TaskIntentV1; artifact_ref?: TaskArtifactRefV1 },
+	record: { intent_ref: { path: string }; intent_snapshot: TaskIntentV1; artifact_state: "active" | "frozen" },
 	direction: "freeze" | "restore",
 	allowIntentOnly = false,
 ) {
@@ -209,9 +208,7 @@ function transitionFor(
 	if (direction === "freeze") {
 		if (record.intent_ref.path !== activeIntent)
 			throw new KernelInvariantError(["artifact freeze requires the active intent path"]);
-		const spec = record.artifact_ref?.spec_path
-			? { path: record.artifact_ref.spec_path, content: readSecureProjectFile(root, record.artifact_ref.spec_path) }
-			: readBoundActiveSpec(root, record.intent_snapshot, !allowIntentOnly);
+		const spec = readBoundActiveSpec(root, record.intent_snapshot, !allowIntentOnly);
 		const intentContent = readSecureProjectFile(root, activeIntent);
 		return {
 			relocations: [
@@ -219,35 +216,35 @@ function transitionFor(
 				...(spec ? [{ from_path: spec.path, to_path: archivePath(spec.path), content_hash: revisionForContent(spec.content) }] : []),
 			],
 			next_intent_path: frozenIntent,
-			next_artifact_ref: { state: "frozen" as const, ...(spec ? { spec_path: spec.path } : {}) },
+			next_artifact_state: "frozen" as const,
 		};
 	}
-	if (record.intent_ref.path !== frozenIntent || record.artifact_ref?.state !== "frozen")
+	if (record.intent_ref.path !== frozenIntent || record.artifact_state !== "frozen")
 		throw new KernelInvariantError(["artifact restore requires a frozen TaskRecord"]);
-	const specPath = record.artifact_ref.spec_path;
+	const specPath = boundSpecPath(record.intent_snapshot);
 	return {
 		relocations: [
 			{ from_path: frozenIntent, to_path: activeIntent, content_hash: revisionForContent(readSecureProjectFile(root, frozenIntent)) },
 			...(specPath ? [{ from_path: archivePath(specPath), to_path: specPath, content_hash: revisionForContent(readSecureProjectFile(root, archivePath(specPath))) }] : []),
 		],
 		next_intent_path: activeIntent,
-		next_artifact_ref: { state: "active" as const, ...(specPath ? { spec_path: specPath } : {}) },
+		next_artifact_state: "active" as const,
 	};
 }
 
 export function createCanaryApplication(
 	registry: MutationAuthorityRegistry,
 ): CanaryApplication {
-	function freezeArtifacts(input: CanaryExecuteInput): StoredTaskMutationV2 {
-		return withKernelStoreLockV2(input.root, () => {
-			const current = readTaskRecordV2Raw(input.root, input.task_id);
+	function freezeArtifacts(input: CanaryExecuteInput): StoredTaskMutationV3 {
+		return withKernelStoreLock(input.root, () => {
+			const current = readTaskRecordRaw(input.root, input.task_id);
 			if (!current.record)
-				throw new KernelInvariantError([`task ${input.task_id} has no TaskRecord v2`]);
+				throw new KernelInvariantError([`task ${input.task_id} has no TaskRecord v3`]);
 			const workspace = readWorkspaceStateRaw(input.root);
-			if (current.record.artifact_ref?.state === "frozen")
+			if (current.record.artifact_state === "frozen")
 				return { revision: current.revision, record: current.record, workspace };
-			if (current.record.phase !== "working")
-				throw new KernelInvariantError([`artifact freeze requires working phase, got ${current.record.phase}`]);
+			if (current.record.lifecycle !== "active")
+				throw new KernelInvariantError([`artifact freeze requires active lifecycle, got ${current.record.lifecycle}`]);
 			if (workspace.state.current_working !== input.task_id)
 				throw new KernelInvariantError([`workspace is not owned by task ${input.task_id}`]);
 			const fresh = readTaskIntent(input.root, input.task_id, current.record.intent_ref.path);
@@ -267,23 +264,23 @@ export function createCanaryApplication(
 			consumeIntentToken(input.prior_intent_token);
 			consumeIntentToken(fresh.token);
 			const at = input.now ?? new Date().toISOString();
-			const nextRecord = parseTaskRecordV2({
+			const nextRecord = parseTaskRecordV3({
 				...current.record,
 				intent_ref: { ...current.record.intent_ref, path: transition.next_intent_path },
-				artifact_ref: transition.next_artifact_ref,
+				artifact_state: transition.next_artifact_state,
 				history: [
 					...current.record.history,
 					{
 						id: `freeze_artifacts:${input.task_id}:${at}`,
 						at,
 						type: "freeze_artifacts",
-						from_phase: current.record.phase,
-						to_phase: current.record.phase,
+						from_state: "active:active",
+						to_state: "active:frozen",
 						reason: `TaskIntent and Spec frozen at ${transition.next_intent_path}`,
 					},
 				],
 			});
-			return commitTaskRecordV2Locked(
+			return commitTaskRecordLocked(
 				input.root,
 				input.task_id,
 				current.revision,
@@ -295,7 +292,7 @@ export function createCanaryApplication(
 		});
 	}
 
-	function execute(input: CanaryExecuteInput): StoredTaskMutationV2 {
+	function execute(input: CanaryExecuteInput): StoredTaskMutationV3 {
 		if (input.operation.op === "freeze_artifacts") return freezeArtifacts(input);
 		if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(input.task_id))
 			throw new KernelInvariantError(["task id is not a safe file identity"]);
@@ -305,8 +302,8 @@ export function createCanaryApplication(
 		// Preflight snapshot inside the store lock derives the exact current
 		// identities; authoritative CAS revalidation still happens inside the
 		// locked application port, so any concurrent change fails closed.
-		const snapshot = withKernelStoreLockV2(input.root, () => {
-			const current = readTaskRecordV2Raw(input.root, input.task_id);
+		const snapshot = withKernelStoreLock(input.root, () => {
+			const current = readTaskRecordRaw(input.root, input.task_id);
 			if (!current.record)
 				throw new KernelInvariantError([
 					`task ${input.task_id} has no TaskRecord v2`,
@@ -315,7 +312,7 @@ export function createCanaryApplication(
 			return {
 				record_revision: current.revision,
 				workspace_revision: workspace.revision,
-				intent_revision: current.record.intent_revision,
+				intent_revision: current.record.intent_snapshot.revision,
 				intent_content_hash: current.record.intent_ref.content_hash,
 				intent_snapshot: current.record.intent_snapshot,
 				record: current.record,
@@ -328,11 +325,11 @@ export function createCanaryApplication(
 			(path) => /^docs\/specs\/(?!archive\/)[^/]+\.spec\.md$/.test(path)
 				&& snapshot.intent_snapshot.scope_hint.includes(archivePath(path)),
 		);
-		if (operation.op === "complete" && hasBoundSpec && snapshot.record.artifact_ref?.state !== "frozen")
+		if (operation.op === "complete" && hasBoundSpec && snapshot.record.artifact_state !== "frozen")
 			throw new KernelInvariantError(["complete requires frozen planning artifacts"]);
-		const artifactTransition = operation.op === "request_rework" && snapshot.record.artifact_ref?.state === "frozen"
+		const artifactTransition = operation.op === "request_rework" && snapshot.record.artifact_state === "frozen"
 			? transitionFor(input.root, snapshot.record, "restore")
-			: operation.op === "stop" && snapshot.record.artifact_ref?.state !== "frozen"
+			: operation.op === "stop" && snapshot.record.artifact_state !== "frozen"
 				? transitionFor(input.root, snapshot.record, "freeze", true)
 				: undefined;
 		const event_id = `${operation.op}:${input.task_id}:${at}`;
@@ -347,22 +344,6 @@ export function createCanaryApplication(
 		let action: unknown;
 		let capability: object | undefined;
 		switch (operation.op) {
-			case "record_evidence":
-				action = {
-					...base,
-					type: "record_evidence",
-					evidence: {
-						id: `evidence-${event_id}`,
-						acceptance_id: operation.acceptance_id,
-						task_revision: snapshot.intent_revision,
-						intent_content_hash: snapshot.intent_content_hash,
-						diff_hash: diffHash,
-						status: operation.status,
-						actor_id: operation.actor_id,
-						summary: operation.summary,
-					},
-				};
-				break;
 			case "record_finding":
 				action = {
 					...base,
@@ -377,9 +358,6 @@ export function createCanaryApplication(
 				break;
 			case "resolve_finding":
 				action = { ...base, type: "resolve_finding", finding_id: operation.finding_id };
-				break;
-			case "submit_review":
-				action = { ...base, type: "submit_review" };
 				break;
 			case "request_rework":
 				capability = operation.capability;
@@ -400,7 +378,6 @@ export function createCanaryApplication(
 					next_intent: operation.next_intent,
 					next_intent_ref: {
 						path: `docs/plans/${operation.next_intent.task_id}.intent.json`,
-						revision: operation.next_intent.revision,
 						content_hash: canonicalIntentHash(operation.next_intent),
 					},
 				};
@@ -413,7 +390,6 @@ export function createCanaryApplication(
 					next_intent: operation.next_intent,
 					next_intent_ref: {
 						path: `docs/plans/${operation.next_intent.task_id}.intent.json`,
-						revision: operation.next_intent.revision,
 						content_hash: canonicalIntentHash(operation.next_intent),
 					},
 				};
@@ -441,7 +417,7 @@ export function createCanaryApplication(
 				]);
 			}
 		}
-		return applyTaskActionV2({
+		return applyTaskAction({
 			root: input.root,
 			task_id: input.task_id,
 			action,
@@ -466,8 +442,8 @@ export function createCanaryApplication(
 		if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(input.task_id))
 			throw new KernelInvariantError(["task id is not a safe file identity"]);
 		const now = input.now ?? new Date().toISOString();
-		return withKernelStoreLockV2(input.root, () => {
-			const current = readTaskRecordV2Raw(input.root, input.task_id);
+		return withKernelStoreLock(input.root, () => {
+			const current = readTaskRecordRaw(input.root, input.task_id);
 			if (!current.record)
 				throw new KernelInvariantError([
 					`task ${input.task_id} has no TaskRecord v2`,
@@ -491,7 +467,7 @@ export function createCanaryApplication(
 				throw new KernelInvariantError([
 					`backend claim is not active for task ${input.task_id}`,
 				]);
-			if (current.record.phase === "done" || current.record.phase === "stopped")
+			if (current.record.lifecycle !== "active")
 				throw new KernelInvariantError([
 					`task ${input.task_id} is already terminal; drain is not permitted`,
 				]);
@@ -504,7 +480,7 @@ export function createCanaryApplication(
 				task_id: input.task_id,
 				action: beginDrainCapabilityAction(input.task_id, now),
 				expected_record_hash: current.revision,
-				intent_revision: current.record.intent_revision,
+				intent_revision: current.record.intent_snapshot.revision,
 				intent_content_hash: current.record.intent_ref.content_hash,
 				diff_hash: "sha256:" + "0".repeat(64),
 			}, Date.parse(now));

@@ -22,14 +22,12 @@ const CLAIM_PATH = ".imm/tasks/.backend-claim.json";
 
 function claim(overrides: Partial<BackendClaim> = {}): BackendClaim {
 	return {
-		contract: "assurance_kernel/backend_claim/v1",
+		contract: "assurance_kernel/backend_claim/v2",
 		backend: "kernel",
 		task_id: "task-001",
 		intent_revision: 1,
 		intent_content_hash: "sha256:intent",
 		enrollment_event_id: "evt-1",
-		readiness_digest: "sha256:r",
-		evidence_digest: "sha256:e",
 		lifecycle_status: "active",
 		created_at: "2026-08-12T00:00:00.000Z",
 		updated_at: "2026-08-12T00:00:00.000Z",
@@ -39,10 +37,10 @@ function claim(overrides: Partial<BackendClaim> = {}): BackendClaim {
 
 function tombstone(overrides: Partial<TaskTombstone> = {}): TaskTombstone {
 	return {
-		contract: "assurance_kernel/task_tombstone/v1",
+		contract: "assurance_kernel/task_tombstone/v2",
 		task_id: "task-001",
 		lifecycle_status: "terminal",
-		terminal_phase: "done",
+		terminal_lifecycle: "done",
 		terminal_event_id: "complete:task-001:2026-08-12T00:00:00.000Z",
 		final_record_hash: "sha256:" + "a".repeat(64),
 		terminalized_at: "2026-08-12T00:00:00.000Z",
@@ -92,12 +90,12 @@ describe("backend claim guard", () => {
 		// No workspace-active claim remains; v3 routing is released.
 		expect(() => assertNoKernelBackendForV3(root, "task-001")).not.toThrow();
 		const read = readTaskTombstone(root, "task-001");
-		expect(read?.terminal_phase).toBe("done");
+		expect(read?.terminal_lifecycle).toBe("done");
 	});
 
 	test("malformed claim fails closed", () => {
 		const root = makeRoot();
-		writeFileSync(join(root, CLAIM_PATH), `{"contract":"assurance_kernel/backend_claim/v1","backend":"v3"}\n`);
+		writeFileSync(join(root, CLAIM_PATH), `{"contract":"assurance_kernel/backend_claim/v2","backend":"v3"}\n`);
 		expect(() => assertNoKernelBackendForV3(root, "task-001")).toThrow();
 	});
 
@@ -117,14 +115,27 @@ describe("backend claim guard", () => {
 			`${JSON.stringify(tombstone({ task_id: "task-other" }), null, 2)}\n`,
 		);
 		expect(() => readTaskTombstone(root, "task-001")).toThrow(/identity is inconsistent/i);
-		// malformed phase fails closed
+		// malformed lifecycle fails closed
 		expect(() =>
-			parseTaskTombstone(tombstone({ terminal_phase: "working" }) as unknown as Record<string, unknown>),
+			parseTaskTombstone(tombstone({ terminal_lifecycle: "active" as never }) as unknown as Record<string, unknown>),
 		).toThrow(/done or stopped/i);
 		// wrong contract fails closed
 		expect(() =>
-			parseTaskTombstone({ ...tombstone(), contract: "assurance_kernel/backend_claim/v1" } as unknown as Record<string, unknown>),
+			parseTaskTombstone({ ...tombstone(), contract: "assurance_kernel/backend_claim/v2" } as unknown as Record<string, unknown>),
 		).toThrow(/tombstone contract/i);
+	});
+
+	test("legacy v1 tombstones remain read-only and normalize to v2", () => {
+		const { terminal_lifecycle: _terminalLifecycle, ...current } = tombstone();
+		const parsed = parseTaskTombstone({
+			...current,
+			contract: "assurance_kernel/task_tombstone/v1",
+			terminal_phase: "done",
+		} as unknown as Record<string, unknown>);
+		expect(parsed).toMatchObject({
+			contract: "assurance_kernel/task_tombstone/v2",
+			terminal_lifecycle: "done",
+		});
 	});
 
 	test("tombstone with bad hash or lifecycle fails closed", () => {

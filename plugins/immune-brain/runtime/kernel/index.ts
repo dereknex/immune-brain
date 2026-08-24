@@ -9,11 +9,11 @@ export * from "./legacy";
 // ./storage; the v1 writer/reader names are absent.
 export {
 	readWorkspaceStateRaw,
-	readTaskRecordV2Raw,
-	readTaskRecordV2,
+	readTaskRecordRaw,
+	readTaskRecord,
 	readSecureProjectFile,
-	commitTaskRecordV2Locked,
-	withKernelStoreLockV2,
+	commitTaskRecordLocked,
+	withKernelStoreLock,
 	serializeWorkspace,
 	revisionForContent,
 	appendJournalEntry,
@@ -21,9 +21,9 @@ export {
 	setAfterTaskTransactionWriteForTest,
 } from "./storage";
 export {
-	reduceTaskV2,
-	canonicalRecordHashV2,
-	actionFingerprintV2,
-	recordedActionFingerprintV2,
-	isReducedMutationV2,
-} from "./reducer_v2";
+	reduceTask,
+	canonicalRecordHash,
+	actionFingerprint,
+	recordedActionFingerprint,
+	isReducedMutation,
+} from "./reducer";

@@ -34,7 +34,7 @@
     "#kernel/backend_claim": "./plugins/immune-brain/runtime/kernel/backend_claim.ts",
     "#kernel/storage": "./plugins/immune-brain/runtime/kernel/storage.ts",
     "#kernel/intent": "./plugins/immune-brain/runtime/kernel/intent.ts",
-    "#kernel/reducer_v2": "./plugins/immune-brain/runtime/kernel/reducer_v2.ts"
+    "#kernel/reducer": "./plugins/immune-brain/runtime/kernel/reducer.ts"
   },
   "exports": {
     ".": "./README.md",

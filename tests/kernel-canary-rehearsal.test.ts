@@ -22,9 +22,6 @@ function bindingFor(root: string, taskId: string): EnrollmentCapabilityBinding {
 		intent_path: `docs/plans/${taskId}.intent.json`,
 		intent_revision: 1,
 		intent_content_hash: "sha256:intent",
-		readiness_digest: "sha256:readiness",
-		evidence_digest: "sha256:evidence",
-		waiver_gate: "observation_window_days",
 		actor_id: "user",
 		confirmation_ref: "pi-confirm-001",
 		expires_at: "2099-01-01T00:00:00.000Z",
@@ -67,8 +64,6 @@ function inputFor(root: string, taskId: string): EnrollCanaryInput {
 		task_id: taskId,
 		intent_path: `docs/plans/${taskId}.intent.json`,
 		intent_revision: 1,
-		readiness_digest: "sha256:readiness",
-		evidence_digest: "sha256:evidence",
 		capability_binding: bindingFor(root, taskId),
 		now: "2026-08-12T00:00:00.000Z",
 	};

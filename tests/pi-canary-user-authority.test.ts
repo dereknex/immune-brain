@@ -17,7 +17,7 @@ import {
 	type EnrollmentCapabilityBinding,
 } from "../plugins/immune-brain/runtime/kernel/enrollment_authority";
 import { canonicalIntentHash, parseTaskIntentV1 } from "../plugins/immune-brain/runtime/kernel/intent";
-import { readTaskRecordV2 } from "../plugins/immune-brain/runtime/kernel/storage";
+import { readTaskRecord } from "../plugins/immune-brain/runtime/kernel/storage";
 import { readBackendClaim } from "../plugins/immune-brain/runtime/kernel/backend_claim";
 
 const TASK = "canary-user-task";
@@ -70,9 +70,6 @@ function makeEnrolledRoot(): string {
 		intent_revision: 1,
 		intent_content_hash: INTENT_HASH,
 		preparation_digest: prep.digest,
-		readiness_digest: "sha256:r",
-		evidence_digest: "sha256:e",
-		waiver_gate: "observation_window_days",
 		actor_id: "user",
 		confirmation_ref: "c",
 		expires_at: "2099-01-01T00:00:00.000Z",
@@ -85,8 +82,6 @@ function makeEnrolledRoot(): string {
 			intent_path: `docs/plans/${TASK}.intent.json`,
 			intent_revision: 1,
 			preparation_digest: binding.preparation_digest,
-			readiness_digest: "sha256:r",
-			evidence_digest: "sha256:e",
 			capability: registry.issue(binding),
 			capability_binding: binding,
 			now: "2026-08-12T10:00:00.000Z",
@@ -118,7 +113,7 @@ function seedOpenUserDecision(root: string): string {
 function seedOpenReplanRequired(root: string): void {
 	const path = join(root, ".imm", "tasks", `${TASK}.json`);
 	const record = JSON.parse(readFileSync(path, "utf8"));
-	record.phase = "review";
+	record.artifact_state = "active";
 	record.findings.push({
 		id: "rework:review-limit:replan-required",
 		kind: "replan_required",
@@ -216,42 +211,21 @@ describe("pi canary user authority", () => {
 		);
 	});
 
-	test("deriveAuthorizationOperation prefers pending review then Kernel readiness", () => {
-		// The Kernel-facts truth table moved to tests/kernel-assurance-projection.test.ts;
-		// the adapter composes only the Pi-session pending-verdict fact with the
-		// projection's Kernel readiness.
+	test("deriveAuthorizationOperation follows Kernel readiness", () => {
 		expect(deriveAuthorizationOperation({
-			hasPendingReviewVerdict: true,
-			readiness: { state: "resolve_user_decision", blocked: null },
-		})).toEqual({ operation: "record-review-verdict" });
-		expect(deriveAuthorizationOperation({
-			hasPendingReviewVerdict: true,
-			readiness: { state: "record_user_approval", blocked: null },
-		})).toEqual({ operation: "record-review-verdict" });
-		expect(deriveAuthorizationOperation({
-			hasPendingReviewVerdict: false,
 			readiness: { state: "resolve_user_decision", blocked: null },
 		})).toEqual({ operation: "resolve-user-decision" });
 		expect(deriveAuthorizationOperation({
-			hasPendingReviewVerdict: false,
 			readiness: { state: "record_user_approval", blocked: null },
 		})).toEqual({ operation: "record-user-approval" });
 		expect(deriveAuthorizationOperation({
-			hasPendingReviewVerdict: true,
-			readiness: { state: "none", blocked: null },
-			hasOpenReplanRequired: true,
-		})).toEqual({ operation: "record-review-verdict" });
-		expect(deriveAuthorizationOperation({
-			hasPendingReviewVerdict: false,
 			readiness: { state: "none", blocked: null },
 			hasOpenReplanRequired: true,
 		})).toEqual({ operation: "stop" });
 		expect(deriveAuthorizationOperation({
-			hasPendingReviewVerdict: false,
 			readiness: { state: "none", blocked: "resolve-user-decision requires exactly one open user decision; found 2" },
 		}).blocked).toMatch(/exactly one open user decision/);
 		expect(deriveAuthorizationOperation({
-			hasPendingReviewVerdict: false,
 			readiness: { state: "none", blocked: null },
 		}).blocked).toMatch(/no unique host-derived authorization operation/);
 	});
@@ -454,10 +428,10 @@ describe("pi canary user authority", () => {
 				undefined,
 				ctxFor(root, ui, true),
 			);
-			expect(parseToolState(result)).toMatchObject({ state: "applied", operation: "stop", phase: "stopped" });
+			expect(parseToolState(result)).toMatchObject({ state: "applied", operation: "stop", lifecycle: "stopped" });
 			expect(ui.confirmCalls).toHaveLength(1);
 			expect(ui.confirmCalls[0].title).toContain("stop");
-			expect(readTaskRecordV2(root, TASK).record?.phase).toBe("stopped");
+			expect(readTaskRecord(root, TASK).record?.lifecycle).toBe("stopped");
 			expect(readBackendClaim(root)).toBeNull();
 		} finally {
 			rmSync(root, { recursive: true, force: true });

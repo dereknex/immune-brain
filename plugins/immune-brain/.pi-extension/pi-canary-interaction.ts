@@ -176,14 +176,14 @@ export function presentTaskRailResult(
 ): void {
 	if (!details) return;
 	const taskState = record(details.task_state);
-	const phase = string(taskState?.phase) ?? string(details.phase) ?? string(details.stage);
+	const lifecycle = string(taskState?.lifecycle) ?? string(details.lifecycle) ?? string(details.stage);
 	const operation = string(details.operation);
 	const rawState = string(details.state);
 	const result = string(details.result) ?? string(details.reason) ?? operation ?? rawState ?? "Task state updated";
 	const next = string(details.next_action) ?? "Continue through the projected authority";
 	presentTaskRail(ctx, {
 		task_id: taskId,
-		state: railState({ phase, operation, state: rawState }),
+		state: railState({ lifecycle, obligation: string(taskState?.next_obligation), operation, state: rawState }),
 		result,
 		next,
 	});
@@ -253,13 +253,13 @@ export function renderStructuredResult(
 	const details = result.details;
 	if (!details) return new Text(theme.fg("dim", "Result details unavailable"), 0, 0);
 	const taskState = record(details.task_state);
-	const phase = string(taskState?.phase) ?? string(details.phase) ?? string(details.stage);
+	const lifecycle = string(taskState?.lifecycle) ?? string(details.lifecycle) ?? string(details.stage);
 	const state = string(details.state) ?? "unknown";
 	const summary = string(details.result) ?? string(details.reason) ?? string(details.operation) ?? state;
 	const next = string(details.next_action) ?? "No action reported";
-	const terminal = phase === "done" || phase === "stopped";
+	const terminal = lifecycle === "done" || lifecycle === "stopped";
 	const lines = [
-		`${theme.fg("muted", "State:")} ${theme.fg(state === "blocked" || state === "failed" ? "warning" : "accent", phase ?? state)}`,
+		`${theme.fg("muted", "State:")} ${theme.fg(state === "blocked" || state === "failed" ? "warning" : "accent", lifecycle ?? state)}`,
 		`${theme.fg("muted", "Result:")} ${theme.fg(state === "blocked" || state === "failed" ? "warning" : "dim", summary)}`,
 		`${theme.fg("muted", "Next:")} ${theme.fg("dim", next)}`,
 	];
@@ -294,14 +294,14 @@ function renderTaskRail(view: TaskRailView): string[] {
 	];
 }
 
-function railState(input: { phase?: string; operation?: string; state?: string }): TaskRailState {
+function railState(input: { lifecycle?: string; obligation?: string; operation?: string; state?: string }): TaskRailState {
 	if (input.state === "blocked" || input.state === "failed" || input.state === "settlement_unknown") return "Blocked";
-	if (input.phase === "done") return "Completed";
-	if (input.phase === "stopped") return "Stopped";
+	if (input.lifecycle === "done") return "Completed";
+	if (input.lifecycle === "stopped") return "Stopped";
 	if (input.state === "awaiting_user" || input.operation === "request_authorization") return "Approval required";
 	if (input.operation === "advance_assurance") return "Verifying";
-	if (input.operation === "submit_review" || input.phase === "review") return "Reviewing";
-	if (input.phase === "working") return "Working";
+	if (input.operation === "submit_review" || input.obligation === "run_review") return "Reviewing";
+	if (input.lifecycle === "active") return "Working";
 	if (input.state === "running") return "Planning";
 	return "Working";
 }

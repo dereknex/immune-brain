@@ -102,9 +102,6 @@ function makeEnrolledRoot(): string {
 		intent_revision: 1,
 		intent_content_hash: INTENT_HASH,
 		preparation_digest: prep.digest,
-		readiness_digest: "sha256:r",
-		evidence_digest: "sha256:e",
-		waiver_gate: "observation_window_days",
 		actor_id: "user",
 		confirmation_ref: "c",
 		expires_at: "2099-01-01T00:00:00.000Z",
@@ -115,8 +112,6 @@ function makeEnrolledRoot(): string {
 		intent_path: binding.intent_path,
 		intent_revision: 1,
 		preparation_digest: binding.preparation_digest,
-		readiness_digest: binding.readiness_digest,
-		evidence_digest: binding.evidence_digest,
 		capability: registry.issue(binding),
 		capability_binding: binding,
 		now: "2026-08-12T10:00:00.000Z",
@@ -129,7 +124,7 @@ function makeEnrolledRoot(): string {
 function seedParkedReplanRequired(root: string): string {
 	const path = join(root, ".imm", "tasks", `${TASK}.json`);
 	const record = JSON.parse(readFileSync(path, "utf8"));
-	record.phase = "review";
+	record.artifact_state = "active";
 	const findingId = "rework:review-limit:replan-required";
 	record.findings.push({
 		id: findingId,
@@ -201,7 +196,7 @@ describe("breaking intent revision gate", () => {
 			expect(result.details).toMatchObject({
 				state: "applied",
 				operation: "approve-breaking-intent-revision",
-				phase: "working",
+				lifecycle: "active",
 			});
 			expect(ui.dialogCalls).toHaveLength(1);
 			expect(ui.dialogCalls[0].body).toContain("approve-breaking-intent-revision");
@@ -209,7 +204,7 @@ describe("breaking intent revision gate", () => {
 			expect(statSync(intentPath).ino).toBe(beforeInode);
 			expect(JSON.parse(readFileSync(intentPath, "utf8"))).toMatchObject({ revision: 2, task_id: TASK });
 			const record = JSON.parse(readFileSync(join(root, ".imm", "tasks", `${TASK}.json`), "utf8"));
-			expect(record).toMatchObject({ intent_revision: 2 });
+			expect(record.intent_snapshot.revision).toBe(2);
 			expect(record.intent_ref.content_hash).toBe(
 				canonicalIntentHash(parseTaskIntentV1({
 					...INTENT,
@@ -236,11 +231,11 @@ describe("breaking intent revision gate", () => {
 			expect(result.details).toMatchObject({
 				state: "applied",
 				operation: "approve-breaking-intent-revision",
-				phase: "working",
+				lifecycle: "active",
 			});
 			const record = JSON.parse(readFileSync(join(root, ".imm", "tasks", `${TASK}.json`), "utf8"));
-			expect(record.phase).toBe("working");
-			expect(record.intent_revision).toBe(2);
+			expect(record).toMatchObject({ lifecycle: "active", artifact_state: "active" });
+			expect(record.intent_snapshot.revision).toBe(2);
 			expect(record.findings.find((finding: { id: string }) => finding.id === findingId)?.status).toBe("resolved");
 			// Same enrollment: claim remains active on the same task, no successor
 			// TaskRecord or second backend claim exists.

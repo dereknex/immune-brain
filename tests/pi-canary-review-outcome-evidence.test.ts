@@ -35,7 +35,7 @@ function snapshot(overrides: Partial<SnapshotDescriptor> = {}): SnapshotDescript
 		risk: "material",
 		fresh_acceptance_ids: ["acc-1"],
 		missing_acceptance_ids: [],
-		stale_evidence_ids: [],
+		stale_attestation_ids: [],
 		acceptance: [{ id: "acc-1", assertion: "suite passes", verification: "{}" }],
 		dirty_files: ["tracked.ts"],
 		review_bundle_digest: "sha256:" + "e".repeat(64),

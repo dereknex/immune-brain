@@ -1,5 +1,13 @@
 # Spec: Managed Task Snapshot Isolation
 
+> **SUPERSEDED (2026-08-22):** The TaskRecord v2 storage shape, `evidence[]`/`approvals[]`
+> arrays, and "schema changes prohibited" constraints below are historical. The
+> current architecture uses TaskRecord v3 (`lifecycle`/`artifact_state`, single
+> `attestations[]` with atomic QA descriptor results). Active v2 records migrate
+> one-time under exact ownership match; terminal v2 records remain read-only for
+> auditability. Retain this document for historical task auditability; do not
+> enforce its non-current storage contracts on the v3 production path.
+
 **Task ID**: `2026-08-14-007-managed-task-snapshot-isolation`
 **Owner**: user
 **Status**: Completed by Task `2026-08-14-007-managed-task-snapshot-isolation`
@@ -320,7 +328,7 @@ Expected implementation paths:
 - `plugins/immune-brain/runtime/workspace_scope.ts`
 - `plugins/immune-brain/runtime/kernel/intent.ts`
 - `plugins/immune-brain/runtime/kernel/validation.ts`
-- `plugins/immune-brain/runtime/kernel/application_v2.ts`
+- `plugins/immune-brain/runtime/kernel/application.ts`
 - `plugins/immune-brain/runtime/kernel/canary_application.ts`
 - `plugins/immune-brain/.pi-extension/imm-canary-work.ts`
 - `plugins/immune-brain/.pi-extension/pi-canary-review-bundle.ts`

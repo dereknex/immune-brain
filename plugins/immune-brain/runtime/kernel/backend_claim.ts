@@ -9,21 +9,19 @@
 import { lstatSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 
-import type { TaskPhase } from "./types";
+import type { TaskLifecycle } from "./types";
 
 const CLAIM_PATH = ".imm/tasks/.backend-claim.json";
 
 export type BackendLifecycleStatus = "active" | "draining";
 
 export interface BackendClaim {
-	contract: "assurance_kernel/backend_claim/v1";
+	contract: "assurance_kernel/backend_claim/v2";
 	backend: "kernel";
 	task_id: string;
 	intent_revision: number;
 	intent_content_hash: string;
 	enrollment_event_id: string;
-	readiness_digest: string;
-	evidence_digest: string;
 	lifecycle_status: BackendLifecycleStatus;
 	created_at: string;
 	updated_at: string;
@@ -36,20 +34,19 @@ const ALLOWED = [
 	"intent_revision",
 	"intent_content_hash",
 	"enrollment_event_id",
-	"readiness_digest",
-	"evidence_digest",
 	"lifecycle_status",
 	"created_at",
 	"updated_at",
 ];
 
-export const TASK_TOMBSTONE_CONTRACT = "assurance_kernel/task_tombstone/v1" as const;
+export const TASK_TOMBSTONE_CONTRACT = "assurance_kernel/task_tombstone/v2" as const;
+const LEGACY_TASK_TOMBSTONE_CONTRACT = "assurance_kernel/task_tombstone/v1" as const;
 
 export interface TaskTombstone {
 	contract: typeof TASK_TOMBSTONE_CONTRACT;
 	task_id: string;
 	lifecycle_status: "terminal";
-	terminal_phase: TaskPhase;
+	terminal_lifecycle: Exclude<TaskLifecycle, "active">;
 	terminal_event_id: string;
 	final_record_hash: string;
 	terminalized_at: string;
@@ -59,7 +56,7 @@ const TOMBSTONE_ALLOWED = [
 	"contract",
 	"task_id",
 	"lifecycle_status",
-	"terminal_phase",
+	"terminal_lifecycle",
 	"terminal_event_id",
 	"final_record_hash",
 	"terminalized_at",
@@ -95,7 +92,7 @@ export function parseBackendClaim(raw: Record<string, unknown>): BackendClaim {
 	const unknown = Object.keys(raw).filter((key) => !ALLOWED.includes(key));
 	if (unknown.length > 0)
 		throw new KernelBackendClaimError(`backend claim has unknown field: ${unknown[0]}`);
-	if (raw.contract !== "assurance_kernel/backend_claim/v1")
+	if (raw.contract !== "assurance_kernel/backend_claim/v2")
 		throw new KernelBackendClaimError("backend claim contract is invalid");
 	if (raw.backend !== "kernel")
 		throw new KernelBackendClaimError("backend claim backend must be kernel");
@@ -104,7 +101,7 @@ export function parseBackendClaim(raw: Record<string, unknown>): BackendClaim {
 	validateTaskId(raw.task_id);
 	if (typeof raw.intent_revision !== "number" || !Number.isInteger(raw.intent_revision) || raw.intent_revision < 1)
 		throw new KernelBackendClaimError("backend claim intent_revision is invalid");
-	for (const field of ["intent_content_hash", "enrollment_event_id", "readiness_digest", "evidence_digest", "created_at", "updated_at"]) {
+	for (const field of ["intent_content_hash", "enrollment_event_id", "created_at", "updated_at"]) {
 		if (typeof raw[field] !== "string" || !String(raw[field]).trim())
 			throw new KernelBackendClaimError(`backend claim ${field} is invalid`);
 	}
@@ -128,25 +125,38 @@ export function serializeBackendClaim(claim: BackendClaim): string {
 }
 
 export function parseTaskTombstone(raw: Record<string, unknown>): TaskTombstone {
-	const unknown = Object.keys(raw).filter((key) => !TOMBSTONE_ALLOWED.includes(key));
+	const legacy = raw.contract === LEGACY_TASK_TOMBSTONE_CONTRACT;
+	const allowed = legacy
+		? TOMBSTONE_ALLOWED.map((field) => field === "terminal_lifecycle" ? "terminal_phase" : field)
+		: TOMBSTONE_ALLOWED;
+	const unknown = Object.keys(raw).filter((key) => !allowed.includes(key));
 	if (unknown.length > 0)
 		throw new KernelBackendClaimError(`task tombstone has unknown field: ${unknown[0]}`);
-	if (raw.contract !== TASK_TOMBSTONE_CONTRACT)
+	if (!legacy && raw.contract !== TASK_TOMBSTONE_CONTRACT)
 		throw new KernelBackendClaimError("task tombstone contract is invalid");
 	if (typeof raw.task_id !== "string" || !raw.task_id.trim())
 		throw new KernelBackendClaimError("task tombstone task_id is invalid");
 	validateTaskId(raw.task_id);
 	if (raw.lifecycle_status !== "terminal")
 		throw new KernelBackendClaimError("task tombstone lifecycle_status must be terminal");
-	if (raw.terminal_phase !== "done" && raw.terminal_phase !== "stopped")
-		throw new KernelBackendClaimError("task tombstone terminal_phase must be done or stopped");
+	const terminalLifecycle = legacy ? raw.terminal_phase : raw.terminal_lifecycle;
+	if (terminalLifecycle !== "done" && terminalLifecycle !== "stopped")
+		throw new KernelBackendClaimError("task tombstone terminal_lifecycle must be done or stopped");
 	for (const field of ["terminal_event_id", "final_record_hash", "terminalized_at"]) {
 		if (typeof raw[field] !== "string" || !String(raw[field]).trim())
 			throw new KernelBackendClaimError(`task tombstone ${field} is invalid`);
 	}
 	if (!/^sha256:[a-f0-9]{64}$/.test(raw.final_record_hash as string))
 		throw new KernelBackendClaimError("task tombstone final_record_hash must be a canonical sha256 hash");
-	return raw as unknown as TaskTombstone;
+	return {
+		contract: TASK_TOMBSTONE_CONTRACT,
+		task_id: raw.task_id,
+		lifecycle_status: "terminal",
+		terminal_lifecycle: terminalLifecycle,
+		terminal_event_id: raw.terminal_event_id as string,
+		final_record_hash: raw.final_record_hash as string,
+		terminalized_at: raw.terminalized_at as string,
+	};
 }
 
 /** Fail-closed task-scoped tombstone read. Malformed/unreadable/symlinked state throws; only ENOENT means absent. */

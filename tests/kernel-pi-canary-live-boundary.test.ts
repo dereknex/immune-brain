@@ -85,8 +85,8 @@ describe("isolated repository preparation boundary", () => {
     expect(snapshot()).toBe(before);
     expect(preparation.intent).not.toBeNull();
     expect(preparation.backend_claim).toEqual({ present: false, task_id: null, lifecycle_status: null });
-    expect(preparation.task_tombstone).toEqual({ present: false, terminal_phase: null });
-    expect(preparation.task_record_v2).toEqual({ present: false, phase: null });
+    expect(preparation.task_tombstone).toEqual({ present: false, terminal_lifecycle: null });
+    expect(preparation.task_record_v3).toEqual({ present: false, lifecycle: null, artifact_state: null });
     expect(preparation.workspace).toEqual({ current_working: null });
 
     const eligibility = evaluateCanaryEligibility({

@@ -24,7 +24,7 @@ import {
 } from "../plugins/immune-brain/runtime/kernel/enrollment_authority";
 import { canonicalIntentHash, readTaskIntent } from "../plugins/immune-brain/runtime/kernel/intent";
 import { readBackendClaim } from "../plugins/immune-brain/runtime/kernel/backend_claim";
-import { readTaskRecordV2, withKernelStoreLockV2 } from "../plugins/immune-brain/runtime/kernel/storage";
+import { readTaskRecord, withKernelStoreLock } from "../plugins/immune-brain/runtime/kernel/storage";
 
 const TASK = "canary-auth-task";
 const INTENT = {
@@ -76,9 +76,6 @@ beforeEach(() => {
 		intent_revision: 1,
 		intent_content_hash: INTENT_HASH,
 		preparation_digest: prep.digest,
-		readiness_digest: "sha256:readiness",
-		evidence_digest: "sha256:evidence",
-		waiver_gate: "observation_window_days",
 		actor_id: "user",
 		confirmation_ref: "pi-confirm-enroll",
 		expires_at: "2099-01-01T00:00:00.000Z",
@@ -91,8 +88,6 @@ beforeEach(() => {
 			intent_path: `docs/plans/${TASK}.intent.json`,
 			intent_revision: 1,
 			preparation_digest: binding.preparation_digest,
-			readiness_digest: "sha256:readiness",
-			evidence_digest: "sha256:evidence",
 			capability: enrollmentRegistry.issue(binding),
 			capability_binding: binding,
 			now,
@@ -110,13 +105,13 @@ afterEach(() => {
 });
 
 function token() {
-	const record = readTaskRecordV2(root, TASK).record;
+	const record = readTaskRecord(root, TASK).record;
 	if (!record) throw new Error("missing TaskRecord");
 	return readTaskIntent(root, TASK, record.intent_ref.path).token;
 }
 
 function drainCapability(registry = mutationRegistryA, overrides: Record<string, unknown> = {}) {
-	const record = readTaskRecordV2(root, TASK);
+	const record = readTaskRecord(root, TASK);
 	const digest = (a: Record<string, unknown>) => createHash("sha256").update(JSON.stringify(a)).digest("hex");
 	const { expected_record_hash: _r, expected_workspace_hash: _w, diff_hash: _d, ...rest } =
 		beginDrainCapabilityAction(TASK, now) as unknown as Record<string, unknown>;
@@ -137,7 +132,7 @@ function drainCapability(registry = mutationRegistryA, overrides: Record<string,
 }
 
 function stopActionCapability(registry = mutationRegistryA, overrides: Record<string, unknown> = {}) {
-	const record = readTaskRecordV2(root, TASK);
+	const record = readTaskRecord(root, TASK);
 	const digest = (a: Record<string, unknown>) => createHash("sha256").update(JSON.stringify(a)).digest("hex");
 	return createMutationAuthorityCapabilityForTest(registry, {
 		authority_kind: "user",
@@ -174,7 +169,7 @@ describe("canary application authority pairing", () => {
 				now,
 			}),
 		).toThrow(/capability|authority/i);
-		expect(readTaskRecordV2(root, TASK).record?.phase).toBe("working");
+		expect(readTaskRecord(root, TASK).record).toMatchObject({ lifecycle: "active", artifact_state: "active" });
 		expect(mutationRegistryB.isConsumed(foreign)).toBe(false);
 	});
 
@@ -193,7 +188,7 @@ describe("canary application authority pairing", () => {
 				now: afterExpiry,
 			}),
 		).toThrow(/expired/i);
-		expect(readTaskRecordV2(root, TASK).record?.phase).toBe("working");
+		expect(readTaskRecord(root, TASK).record).toMatchObject({ lifecycle: "active", artifact_state: "active" });
 	});
 
 	test("stale snapshot capability (record advanced) is rejected", () => {
@@ -204,7 +199,7 @@ describe("canary application authority pairing", () => {
 			{
 				root,
 				task_id: TASK,
-				operation: { op: "record_evidence", acceptance_id: "A1", status: "passed", summary: "s", actor_id: "executor-1" },
+				operation: { op: "record_finding", finding: { id: "advance", kind: "advisory", acceptance_id: "A1", summary: "advance revision" }, actor_id: "executor-1" },
 				prior_intent_token: token(),
 				diffProvider: () => DIFF,
 				now: "2026-08-12T10:00:01.000Z",
@@ -232,7 +227,7 @@ describe("canary application authority pairing", () => {
 			diffProvider: () => DIFF,
 			now,
 		});
-		expect(first.record.phase).toBe("stopped");
+		expect(first.record.lifecycle).toBe("stopped");
 		expect(mutationRegistryA.isConsumed(cap)).toBe(true);
 		execFileSync("git", ["add", "--", `docs/plans/archive/${TASK}.intent.json`], { cwd: root });
 		// A retry with the same single-use capability must fail closed.
@@ -321,7 +316,7 @@ describe("canary application authority pairing", () => {
 			join(root, ".imm/tasks/.workspace-transaction-v2.json"),
 			'{"contract":"assurance_kernel/workspace_transaction/v2","task_id":"x","expected_record_hash":"h","next_record_content":"{}","expected_workspace_hash":"w","next_workspace_content":"{}"}\n',
 		);
-		expect(() => withKernelStoreLockV2(root, () => undefined)).toThrow(/markers are forbidden/i);
+		expect(() => withKernelStoreLock(root, () => undefined)).toThrow(/markers are forbidden/i);
 		expect(existsSync(join(root, ".imm/tasks/.drain-transaction.json"))).toBe(true);
 	});
 });
@@ -334,7 +329,7 @@ describe("capability action digest single-source", () => {
 		const { digestOfAction } = await import(
 			"../plugins/immune-brain/runtime/kernel/authority_port"
 		);
-		const { parseTaskActionV2 } = await import(
+		const { parseTaskAction } = await import(
 			"../plugins/immune-brain/runtime/kernel/validation"
 		);
 		const at = "2026-08-12T10:00:00.000Z";
@@ -357,7 +352,7 @@ describe("capability action digest single-source", () => {
 			actor_id: "qa-child-00000000",
 			approval,
 		});
-		const parsed = parseTaskActionV2({
+		const parsed = parseTaskAction({
 			...minted,
 			expected_record_hash: "sha256:" + "3".repeat(64),
 			expected_workspace_hash: "sha256:" + "4".repeat(64),
@@ -373,7 +368,7 @@ describe("capability action digest single-source", () => {
 		const { digestOfAction } = await import(
 			"../plugins/immune-brain/runtime/kernel/authority_port"
 		);
-		const { parseTaskActionV2 } = await import(
+		const { parseTaskAction } = await import(
 			"../plugins/immune-brain/runtime/kernel/validation"
 		);
 		const at = "2026-08-12T10:00:00.000Z";
@@ -395,7 +390,7 @@ describe("capability action digest single-source", () => {
 					? { finding_id: "f-1", resolution: "accepted" }
 					: {}),
 			});
-			const parsed = parseTaskActionV2({
+			const parsed = parseTaskAction({
 				...minted,
 				expected_record_hash: real("3"),
 				expected_workspace_hash: real("4"),

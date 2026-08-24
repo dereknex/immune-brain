@@ -11,11 +11,6 @@ export interface EnrollmentCapabilityBinding {
 	intent_revision: number;
 	intent_content_hash: string;
 	preparation_digest: string;
-	// Compatibility mirror fields: retained for claim schema continuity but
-	// never read as authority after v4 storage retirement.
-	readiness_digest: string;
-	evidence_digest: string;
-	waiver_gate: string;
 	actor_id: string;
 	confirmation_ref: string;
 	expires_at: string;
@@ -47,8 +42,8 @@ export interface PiCanaryPreparation {
 	root_state_path: string;
 	intent: { path: string; revision: number; content_hash: string } | null;
 	backend_claim: { present: boolean; task_id: string | null; lifecycle_status: string | null };
-	task_tombstone: { present: boolean; terminal_phase: string | null };
-	task_record_v2: { present: boolean; phase: string | null } | null;
+	task_tombstone: { present: boolean; terminal_lifecycle: string | null };
+	task_record_v3: { present: boolean; lifecycle: string | null; artifact_state: string | null } | null;
 	workspace: { current_working: string | null };
 	digest: string;
 }
@@ -96,14 +91,14 @@ export interface CanaryApplication {
 export interface StoredTaskMutation {
 	revision: string;
 	record: {
-		contract: string;
+		contract: "assurance_kernel/task_record/v3";
 		task_id: string;
-		intent_revision: number;
-		intent_ref: { path: string; revision: number; content_hash: string };
-		phase: string;
-		evidence: unknown[];
+		intent_snapshot: { revision: number; [key: string]: unknown };
+		intent_ref: { path: string; content_hash: string };
+		lifecycle: "active" | "done" | "stopped";
+		artifact_state: "active" | "frozen";
+		attestations: unknown[];
 		findings: unknown[];
-		approvals: unknown[];
 		history: unknown[];
 	};
 	workspace: { revision: string; state: { contract: string; current_working: string | null } };
@@ -115,8 +110,6 @@ export interface BackendClaim {
 	intent_revision: number;
 	intent_content_hash: string;
 	enrollment_event_id: string;
-	readiness_digest: string;
-	evidence_digest: string;
 	lifecycle_status: "active" | "draining";
 	created_at: string;
 	updated_at: string;
@@ -126,7 +119,7 @@ export interface KernelAuthorityProjection {
 	requested_task_id: string;
 	state: "unowned" | "active_owner" | "terminal_owner" | "repairable_stale_claim" | "authority_conflict";
 	owner_task_id: string | null;
-	owner_phase: string | null;
+	owner_lifecycle: string | null;
 	claim_lifecycle_status: "active" | "draining" | null;
 	diagnostic: string | null;
 	revision: string;
@@ -135,17 +128,16 @@ export interface TaskTombstone {
 	contract: string;
 	task_id: string;
 	lifecycle_status: "terminal";
-	terminal_phase: string;
+	terminal_lifecycle: string;
 	terminal_event_id: string;
 	final_record_hash: string;
 	terminalized_at: string;
 }
-export interface TaskRecordV2Read {
+export interface TaskRecordRead {
 	revision: string;
 	record: {
-		contract: string;
+		contract: "assurance_kernel/task_record/v3";
 		task_id: string;
-		intent_revision: number;
 		intent_snapshot: {
 			task_id: string;
 			revision: number;
@@ -153,24 +145,19 @@ export interface TaskRecordV2Read {
 			acceptance: Array<{ id: string; assertion: string; verification: string }>;
 			scope_hint: string[];
 		};
-		intent_ref: { path: string; revision: number; content_hash: string };
-		phase: string;
-		evidence: Array<{
+		intent_ref: { path: string; content_hash: string };
+		lifecycle: "active" | "done" | "stopped";
+		artifact_state: "active" | "frozen";
+		attestations: Array<{
 			id: string;
-			acceptance_id: string;
+			kind: "qa" | "review" | "user";
 			task_revision: number;
 			intent_content_hash: string;
 			diff_hash: string;
-			status: "passed" | "failed" | "blocked";
-			summary: string;
+			actor_id: string;
+			acceptance_results: Array<{ acceptance_id: string; status: "passed" | "failed" | "blocked"; summary: string }>;
 		}>;
 		findings: Array<{ id: string; kind: string; status: string; summary?: string }>;
-		approvals: Array<{
-			kind: string;
-			task_revision: number;
-			intent_content_hash: string;
-			diff_hash: string;
-		}>;
 	} | null;
 }
 
@@ -186,10 +173,13 @@ export interface AssuranceProjection {
 	intent_revision: number;
 	intent_content_hash: string;
 	diff_hash: string;
-	phase: string;
+	lifecycle: "active" | "done" | "stopped" | "";
+	artifact_state: "active" | "frozen" | "";
+	risk: "routine" | "material" | "critical" | "";
+	next_obligation: "resolve_findings" | "resolve_user_decision" | "revise_intent" | "submit_assurance" | "run_qa" | "run_review" | "authorize_user" | "complete" | "none";
 	fresh_acceptance_ids: string[];
 	missing_acceptance_ids: string[];
-	stale_evidence_ids: string[];
+	stale_attestation_ids: string[];
 	fresh_approval_kinds: string[];
 	missing_approval_kinds: string[];
 	blocking_finding_ids: string[];
@@ -281,7 +271,7 @@ export async function enrollCanaryTask(
 	root: string,
 	input: EnrollCanaryInput,
 	registry: EnrollmentAuthorityRegistry,
-): Promise<{ record: { task_id: string; phase: string }; backend_claim: { backend: string } }> {
+): Promise<{ record: { task_id: string; lifecycle: string; artifact_state: string }; backend_claim: { backend: string } }> {
 	const mod = await import(/* @vite-ignore */ kernelPath("enrollment"));
 	return mod.enrollCanaryTask(root, input as never, registry as never);
 }
@@ -296,12 +286,20 @@ export async function createCanaryApplication(
 	const mod = await import(/* @vite-ignore */ kernelPath("canary_application"));
 	return mod.createCanaryApplication(registry as never);
 }
-export async function readTaskRecordV2(
+export async function migrateActiveTaskRecord(
 	root: string,
 	taskId: string,
-): Promise<TaskRecordV2Read> {
+): Promise<{ revision: string; record: TaskRecordRead["record"]; migrated: boolean }> {
 	const mod = await import(/* @vite-ignore */ kernelPath("storage"));
-	return mod.readTaskRecordV2(root, taskId);
+	return mod.migrateActiveTaskRecord(root, taskId);
+}
+
+export async function readTaskRecord(
+	root: string,
+	taskId: string,
+): Promise<TaskRecordRead> {
+	const mod = await import(/* @vite-ignore */ kernelPath("storage"));
+	return mod.readTaskRecord(root, taskId);
 }
 export async function readBackendClaim(root: string): Promise<BackendClaim | null> {
 	const mod = await import(/* @vite-ignore */ kernelPath("backend_claim"));
@@ -355,7 +353,7 @@ export async function readTaskIntent(root: string, taskId: string, path?: string
 		import(/* @vite-ignore */ kernelPath("intent")),
 		import(/* @vite-ignore */ kernelPath("storage")),
 	]);
-	const currentPath = path ?? storage.readTaskRecordV2Raw(root, taskId).record?.intent_ref.path;
+	const currentPath = path ?? storage.readTaskRecordRaw(root, taskId).record?.intent_ref.path;
 	return intent.readTaskIntent(root, taskId, currentPath);
 }
 export async function parseTaskIntentV1(raw: unknown): Promise<TaskIntentV1> {
@@ -390,7 +388,7 @@ export async function digestOfAction(action: unknown): Promise<string> {
 }
 
 export async function findingsDigestV2(findings: unknown[]): Promise<string> {
-	const mod = await import(/* @vite-ignore */ kernelPath("reducer_v2"));
+	const mod = await import(/* @vite-ignore */ kernelPath("reducer"));
 	return mod.findingsDigestV2(findings);
 }
 
@@ -404,9 +402,7 @@ export async function projectAssurance(
 }
 
 export async function deriveAssuranceAuthorization(input: {
-	risk: string;
-	phase: string;
-	fresh_approval_kinds: readonly string[];
+	next_obligation: AssuranceProjectionResult["projection"]["next_obligation"];
 	open_user_decision_count: number;
 }): Promise<AssuranceAuthorizationReadiness> {
 	const mod = await import(/* @vite-ignore */ kernelPath("assurance_projection"));

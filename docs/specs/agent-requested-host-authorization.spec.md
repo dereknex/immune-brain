@@ -1,5 +1,14 @@
 # Spec: Agent-Requested Host Authorization
 
+> **SUPERSEDED (2026-08-22):** This spec's TaskRecord schema, `record-review-verdict`,
+> and material-risk literal-user Review confirmation constraints are historical.
+> The current architecture is Kernel-obligation driven (TaskRecord v3,
+> `lifecycle`/`artifact_state`, single `attestations[]`). Material tasks complete
+> automatically after host-attested QA and native Review; only `critical` tasks
+> require final literal-user authorization via `request_authorization`. Retain
+> this document for historical task auditability; do not enforce its
+> non-current contracts on the v3 production path.
+
 **Task ID**: `2026-08-14-003-agent-requested-host-authorization`
 **Owner**: user
 **Status**: Proposed
@@ -104,25 +113,22 @@ host-derived confirmation; it must not say the tool itself is privileged.
 
 ### 3.2 Host-derived unique operation
 
-The host selects exactly one of these existing authorize operations, in this
-priority:
+The host selects exactly one operation from the Kernel projection:
 
-1. `record-review-verdict` when this session has a pending native Review
-   verdict for the task;
-2. `resolve-user-decision` when the authoritative TaskRecord has exactly one
+1. `resolve-user-decision` when the authoritative TaskRecord has exactly one
    open `unresolved_user_decision`;
-3. `record-user-approval` when the task is `critical`, phase is `review`,
-   QA and Review approvals are fresh, and user approval is missing;
-4. `stop` is never auto-selected. A later slice may add an explicit
-   caller-free stop request; this slice does not.
+2. `record-user-approval` when `next_obligation` is `record-user-approval`
+   (critical risk after fresh QA and Review attestations);
+3. `stop` when an open `replan_required` finding parks the task.
 
-Zero matching operations or more than one equally required operation after
-priority resolution returns `blocked`. The host never asks the model to choose
+Zero matching operations or contradictory readiness returns `blocked`. Review
+verdicts are submitted directly from the exact foreground Agent receipt and do
+not enter this user-authorization path. The host never asks the model to choose
 among operations.
 
-`begin-drain` and `approve-breaking-intent-revision` stay on the existing
-slash command. They are not part of the automatic unique-operation set
-because they are not the remaining Phase 1 continuation wait.
+`approve-breaking-intent-revision` and authority repair retain their dedicated
+exact-operation host gates because their payloads are not derivable from the
+ordinary authorization projection.
 
 ### 3.3 Shared authorize path
 

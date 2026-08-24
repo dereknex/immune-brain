@@ -19,12 +19,20 @@ const TASK = "phase3-task";
 const ROOT = "/tmp/phase3-assurance";
 const ctx = { cwd: ROOT, mode: "tui", ui: {} } as unknown as ExtensionContext;
 
-function projection(phase: string = "review"): AssuranceProjectionResult {
+function projection(
+	lifecycle: "active" | "done" | "stopped" = "active",
+	nextObligation: AssuranceProjectionResult["projection"]["next_obligation"] = "run_qa",
+	risk: AssuranceProjectionResult["projection"]["risk"] = "material",
+	artifactState: "active" | "frozen" = "frozen",
+): AssuranceProjectionResult {
 	return {
 		error: null,
-		claim: { task_id: TASK, lifecycle_status: "working" } as never,
+		claim: { task_id: TASK, lifecycle_status: lifecycle === "active" ? "active" : "terminal" } as never,
 		projection: {
-			phase,
+			lifecycle,
+			artifact_state: artifactState,
+			risk,
+			next_obligation: nextObligation,
 			record_revision: "record-1",
 			workspace_revision: "workspace-1",
 			intent_revision: 1,
@@ -32,7 +40,7 @@ function projection(phase: string = "review"): AssuranceProjectionResult {
 			diff_hash: "sha256:diff",
 			fresh_acceptance_ids: ["A1"],
 			missing_acceptance_ids: [],
-			stale_evidence_ids: [],
+			stale_attestation_ids: [],
 			blocking_finding_ids: [],
 			unresolved_user_decision_ids: [],
 			replan_required_ids: [],
@@ -44,7 +52,7 @@ function projection(phase: string = "review"): AssuranceProjectionResult {
 
 function snapshot(role: "qa" | "review"): SnapshotDescriptor {
 	return {
-		contract: "assurance_kernel/assurance_snapshot/v1",
+		contract: "assurance_kernel/assurance_snapshot/v2",
 		task_id: TASK,
 		role,
 		record_revision: "record-1",
@@ -52,11 +60,12 @@ function snapshot(role: "qa" | "review"): SnapshotDescriptor {
 		intent_revision: 1,
 		intent_content_hash: "sha256:intent",
 		diff_hash: "sha256:diff",
-		phase: "review",
+		lifecycle: "active",
+		artifact_state: "frozen",
 		risk: "material",
 		fresh_acceptance_ids: ["A1"],
 		missing_acceptance_ids: [],
-		stale_evidence_ids: [],
+		stale_attestation_ids: [],
 		acceptance: [{ id: "A1", assertion: "the contract holds", verification: "{}" }],
 		dirty_files: ["src/change.ts"],
 		review_bundle_digest: role === "review" ? "sha256:bundle" : null,
@@ -90,6 +99,7 @@ function passVerdict(s: SnapshotDescriptor): AssuranceVerdict {
 
 function makeHarness(overrides: Partial<{
 	phase: string;
+	risk: "routine" | "material" | "critical";
 	runQa: AssuranceProgressionPorts["runQa"];
 	project: AssuranceProgressionPorts["projectTask"];
 	writeReviewEvidence: AssuranceProgressionPorts["writeReviewEvidence"];
@@ -99,9 +109,13 @@ function makeHarness(overrides: Partial<{
 	let applyCount = 0;
 	let removeCount = 0;
 	let evidenceCount = 0;
+	let currentLifecycle: "active" | "done" | "stopped" = "active";
+	let artifactState: "active" | "frozen" = overrides.phase === "working" ? "active" : "frozen";
+	const risk = overrides.risk ?? "material";
+	let nextObligation: AssuranceProjectionResult["projection"]["next_obligation"] = artifactState === "active" ? "submit_assurance" : "run_qa";
 	const ports: AssuranceProgressionPorts = {
-		projectTask: overrides.project ?? (async () => projection(overrides.phase ?? "review")),
-		readTaskRecordV2: async () => ({ record: { findings: [] } } as never),
+		projectTask: overrides.project ?? (async () => projection(currentLifecycle, nextObligation, risk, artifactState)),
+		readTaskRecord: async () => ({ record: { findings: [] } } as never),
 		readTaskIntent: async () => ({ token: "intent-token" } as never),
 		frozenRunner: async () => ({ id: "bun", version: "1.3.14" } as never),
 		buildAssurance: async (_root, _task, role) => ({
@@ -124,9 +138,25 @@ function makeHarness(overrides: Partial<{
 			applyCount += 1;
 			await input.hooks?.beforeCommit?.();
 			input.hooks?.onCommit?.();
+			if (input.verdict.decision === "rework") {
+				artifactState = "active";
+				nextObligation = "resolve_findings";
+			} else if (input.snapshot.role === "qa") {
+				nextObligation = risk === "routine" ? "complete" : "run_review";
+			} else {
+				nextObligation = risk === "critical" ? "authorize_user" : "complete";
+			}
 			await input.hooks?.afterCommit?.();
 		}),
-		applyOrdinaryOperation: overrides.applyOrdinaryOperation ?? (async () => undefined),
+		applyOrdinaryOperation: overrides.applyOrdinaryOperation ?? (async (_ctx, input) => {
+			if (input.operation.op === "freeze_artifacts") {
+				artifactState = "frozen";
+				nextObligation = "run_qa";
+			} else if (input.operation.op === "complete") {
+				currentLifecycle = "done";
+				nextObligation = "none";
+			}
+		}),
 	};
 	return { progression: new AssuranceProgression(ports), ports, counts: () => ({ applyCount, removeCount, evidenceCount }) };
 }
@@ -155,10 +185,17 @@ describe("foreground assurance progression", () => {
 		expect(h.counts().applyCount).toBe(1);
 	});
 
+	test("routine completes after deterministic QA without reserving Review", async () => {
+		const h = makeHarness({ risk: "routine" });
+		expect(await h.progression.advance(TASK, ctx)).toEqual({ state: "completed" });
+		expect(h.progression.active(TASK)).toBeNull();
+		expect(h.counts()).toEqual({ applyCount: 1, removeCount: 0, evidenceCount: 0 });
+	});
+
 	test("claimless done and stopped projections terminate before QA or claim checks", async () => {
-		for (const [phase, state] of [["done", "completed"], ["stopped", "stopped"]] as const) {
+		for (const [lifecycle, state] of [["done", "completed"], ["stopped", "stopped"]] as const) {
 			const h = makeHarness({
-				project: async () => ({ ...projection(phase), claim: null }),
+				project: async () => ({ ...projection(lifecycle, "none"), claim: null }),
 				runQa: async () => { throw new Error("terminal projection must not start QA"); },
 			});
 			expect(await h.progression.advance(TASK, ctx)).toEqual({ state });
@@ -242,7 +279,7 @@ describe("foreground assurance progression", () => {
 		// registry across tests and cannot reset it without weakening isolation.
 	});
 
-	test("accepts one exact foreground receipt and leaves authority to request_authorization", async () => {
+	test("accepts one exact foreground receipt and settles material Review without user authorization", async () => {
 		const h = makeHarness();
 		const ready = await h.progression.advance(TASK, ctx);
 		expect(ready.state).toBe("review_ready");
@@ -251,11 +288,25 @@ describe("foreground assurance progression", () => {
 		h.progression.observeToolResult({ toolName: "Agent", toolCallId: "call-1", input: params, details: { status: "completed", agentId: "agent-1" }, content: [{ type: "text", text: resultText(snapshot("review")) }] });
 		h.progression.observeToolEnd({ toolName: "Agent", toolCallId: "call-1", args: params, isError: false });
 		const submitted = await h.progression.submitReview(TASK, ctx);
-		expect(submitted).toMatchObject({ state: "awaiting_user", operation: "record-review-verdict" });
-		expect(h.progression.hasPendingReviewVerdict(TASK)).toBe(true);
-		expect(h.counts().applyCount).toBe(1);
+		expect(submitted).toEqual({ state: "completed" });
+		expect(h.counts().applyCount).toBe(2);
 		const duplicate = await h.progression.submitReview(TASK, ctx);
-		expect(duplicate).toMatchObject({ state: "awaiting_user" });
+		expect(duplicate).toMatchObject({ state: "blocked" });
+	});
+
+	test("critical Review settles reviewer authority and leaves only user approval", async () => {
+		const h = makeHarness({ risk: "critical" });
+		const ready = await h.progression.advance(TASK, ctx);
+		expect(ready.state).toBe("review_ready");
+		const params = (ready as Extract<typeof ready, { state: "review_ready" }>).agent_params;
+		h.progression.observeToolCall({ toolName: "Agent", toolCallId: "critical-call", input: params });
+		h.progression.observeToolResult({ toolName: "Agent", toolCallId: "critical-call", input: params, details: { status: "completed", agentId: "critical-agent" }, content: [{ type: "text", text: resultText(snapshot("review")) }] });
+		h.progression.observeToolEnd({ toolName: "Agent", toolCallId: "critical-call", args: params, isError: false });
+		expect(await h.progression.submitReview(TASK, ctx)).toMatchObject({
+			state: "awaiting_user",
+			operation: "record-user-approval",
+		});
+		expect(h.counts().applyCount).toBe(2);
 	});
 
 	test("rejects a duplicate matching tool call after reservation ownership is set", async () => {
@@ -277,7 +328,6 @@ describe("foreground assurance progression", () => {
 		h.progression.observeToolResult({ toolName: "Agent", toolCallId: "call-1", input: params, details: { status: "completed" }, content: [{ type: "text", text: resultText(snapshot("review")) }] });
 		const submitted = await h.progression.submitReview(TASK, ctx);
 		expect(submitted.state).toBe("blocked");
-		expect(h.progression.hasPendingReviewVerdict(TASK)).toBe(false);
 		expect(h.counts().applyCount).toBe(1);
 		const repeat = await h.progression.submitReview(TASK, ctx);
 		expect(repeat).toMatchObject({ state: "blocked", reason: "foreground Agent terminal event arrived before its result" });
@@ -303,7 +353,13 @@ describe("foreground assurance progression", () => {
 
 	test("stale Review correlation and session shutdown discard the transient receipt", async () => {
 		let stale = false;
-		const h = makeHarness({ project: async () => stale ? { ...projection(), projection: { ...projection().projection, record_revision: "record-new" } } as never : projection() });
+		let projectionReads = 0;
+		const h = makeHarness({ project: async () => {
+			projectionReads += 1;
+			return stale
+				? { ...projection("review", "run_review"), projection: { ...projection("review", "run_review").projection, record_revision: "record-new" } } as never
+				: projection("review", projectionReads === 1 ? "run_qa" : "run_review");
+		} });
 		const ready = await h.progression.advance(TASK, ctx);
 		const params = (ready as Extract<typeof ready, { state: "review_ready" }>).agent_params;
 		h.progression.observeToolCall({ toolName: "Agent", toolCallId: "call-1", input: params });
@@ -311,7 +367,6 @@ describe("foreground assurance progression", () => {
 		h.progression.observeToolEnd({ toolName: "Agent", toolCallId: "call-1" });
 		stale = true;
 		expect((await h.progression.submitReview(TASK, ctx)).state).toBe("blocked");
-		expect(h.progression.hasPendingReviewVerdict(TASK)).toBe(false);
 		expect(h.counts().removeCount).toBe(1);
 		await h.progression.onSessionShutdown();
 		expect(h.progression.active(TASK)).toBeNull();
@@ -328,9 +383,10 @@ test("projects GitHub terminal state only from an exact claimless tombstone", ()
 	const settled = projection("done");
 	settled.claim = null;
 	const tombstone = {
+		contract: "assurance_kernel/task_tombstone/v2",
 		task_id: TASK,
 		lifecycle_status: "terminal",
-		terminal_phase: "done",
+		terminal_lifecycle: "done",
 		terminal_event_id: "complete:phase3-task:2099-01-01T02:00:00.000Z",
 	} as never;
 	expect(deriveGithubTerminalProjectionInput(TASK, settled, tombstone)).toEqual({
@@ -339,8 +395,8 @@ test("projects GitHub terminal state only from an exact claimless tombstone", ()
 		terminal_event_id: "complete:phase3-task:2099-01-01T02:00:00.000Z",
 	});
 	expect(deriveGithubTerminalProjectionInput(TASK, { ...settled, claim: { task_id: TASK } } as never, tombstone)).toBeNull();
-	expect(deriveGithubTerminalProjectionInput(TASK, settled, { ...tombstone, terminal_phase: "stopped" })).toBeNull();
-	expect(deriveGithubTerminalProjectionInput(TASK, projection("review"), tombstone)).toBeNull();
+	expect(deriveGithubTerminalProjectionInput(TASK, settled, { ...tombstone, terminal_lifecycle: "stopped" })).toBeNull();
+	expect(deriveGithubTerminalProjectionInput(TASK, projection("active"), tombstone)).toBeNull();
 });
 
 test("host hooks never project active state and publish terminal projection only from fresh claimless evidence", () => {

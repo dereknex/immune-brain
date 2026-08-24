@@ -33,7 +33,7 @@ import {
 } from "./pi-canary-verification";
 import { captureReviewBundle, writeNativeReviewEvidence, type ReviewBundle } from "./pi-canary-review-bundle";
 import type { InvocationToken } from "./pi-canary-invocations";
-import { qaEvidenceFreshnessId, qaFindingId } from "./pi-canary-qa-findings";
+import { qaFindingId } from "./pi-canary-qa-findings";
 import {
 	reservedAgentParams,
 	type ReservedAgentParams,
@@ -76,7 +76,6 @@ import {
 	type AssuranceProgressionPorts,
 	type AssuranceSubmitReviewResult,
 	type AssuranceVerdict,
-	type PendingReviewVerdict,
 	type QaVerificationProgress,
 	type SnapshotDescriptor,
 } from "./pi-canary-assurance-progression";
@@ -95,7 +94,8 @@ import {
 	markGithubTaskTerminal,
 	reconcileKernelAuthority,
 	repairKernelAuthority,
-	readTaskRecordV2,
+	migrateActiveTaskRecord,
+	readTaskRecord,
 	readTaskIntent,
 	parseTaskIntentV1,
 	canonicalIntentHash,
@@ -113,11 +113,6 @@ import {
 import { invocationRegistry } from "./pi-canary-assurance-progression";
 
 const TASK_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
-const REVIEW_DECISIONS = {
-	Approve: "approve",
-	"Request rework": "rework",
-	Reject: "reject",
-} as const;
 const LOOP_OWNERS = ["plan", "kernel", "brainstorm", "planner", "loop"] as const;
 const LOOP_TARGETS = [
 	"step",
@@ -131,7 +126,6 @@ const LOOP_DIRECT_ROLES = ["qa", "code-review", "ui-review"] as const;
 const KERNEL_OPERATIONS = [
 	"status",
 	"freeze_artifacts",
-	"record_evidence",
 	"record_finding",
 	"resolve_finding",
 	"revise_intent",
@@ -163,11 +157,8 @@ const TASK_INTENT_SCHEMA = Type.Object({
 	owner: Type.Literal("user"),
 });
 
-type ReviewDecision = (typeof REVIEW_DECISIONS)[keyof typeof REVIEW_DECISIONS];
-
 export type { AssuranceRole } from "./pi-canary-assurance";
 export type AuthorizeOperation =
-	| "record-review-verdict"
 	| "record-user-approval"
 	| "approve-breaking-intent-revision"
 	| "resolve-user-decision"
@@ -182,11 +173,12 @@ export interface SnapshotDescriptorInput {
 	intent_revision: number;
 	intent_content_hash: string;
 	diff_hash: string;
-	phase: string;
+	lifecycle: string;
+	artifact_state: string;
 	risk?: "routine" | "material" | "critical";
 	fresh_acceptance_ids: string[];
 	missing_acceptance_ids: string[];
-	stale_evidence_ids: string[];
+	stale_attestation_ids: string[];
 	acceptance: Array<{ id: string; assertion: string; verification: string }>;
 	dirty_files?: string[];
 	review_bundle_digest?: string | null;
@@ -194,7 +186,7 @@ export interface SnapshotDescriptorInput {
 
 export function buildSnapshot(input: SnapshotDescriptorInput): SnapshotDescriptor {
 	return {
-		contract: "assurance_kernel/assurance_snapshot/v1",
+		contract: "assurance_kernel/assurance_snapshot/v2",
 		task_id: input.task_id,
 		role: input.role,
 		record_revision: input.record_revision,
@@ -202,11 +194,12 @@ export function buildSnapshot(input: SnapshotDescriptorInput): SnapshotDescripto
 		intent_revision: input.intent_revision,
 		intent_content_hash: input.intent_content_hash,
 		diff_hash: input.diff_hash,
-		phase: input.phase,
+		lifecycle: input.lifecycle,
+		artifact_state: input.artifact_state,
 		risk: input.risk ?? "material",
 		fresh_acceptance_ids: input.fresh_acceptance_ids,
 		missing_acceptance_ids: input.missing_acceptance_ids,
-		stale_evidence_ids: input.stale_evidence_ids,
+		stale_attestation_ids: input.stale_attestation_ids,
 		acceptance: input.acceptance,
 		dirty_files: [...(input.dirty_files ?? [])].sort(),
 		review_bundle_digest: input.review_bundle_digest ?? null,
@@ -252,7 +245,7 @@ export default function (
 ) {
 	const progression = new AssuranceProgression({
 		projectTask: (root, taskId) => projectAssuranceState(root, taskId),
-		readTaskRecordV2: (root, taskId) => readTaskRecordV2(root, taskId),
+		readTaskRecord: (root, taskId) => readTaskRecord(root, taskId),
 		readTaskIntent: (root, taskId) => readTaskIntent(root, taskId),
 		frozenRunner: () => frozenRunner(),
 		buildAssurance: (root, taskId, role, projection, runner) =>
@@ -299,7 +292,7 @@ export default function (
 				operation: "status",
 				task_state: projection.projection,
 				result: "Authoritative Assurance projection loaded",
-				next_action: statusNextAction(projection.projection),
+				next_action: projection.projection.next_obligation,
 			});
 		} catch (error) {
 			notifyOnce(
@@ -375,7 +368,7 @@ export default function (
 		promptSnippet: "Kernel canary: record facts, run foreground QA, then submit one native Review receipt without polling.",
 		promptGuidelines: [
 			"Only the exact enrolled canary task is routable; verify the active backend claim first via status.",
-			"After fresh acceptance evidence, call advance_assurance and consume its direct terminal result; do not poll or create a detached job.",
+			"After implementation and focused verification, freeze the artifacts, call advance_assurance, and consume its direct terminal result; do not poll or create a detached job.",
 			"When advance_assurance returns review_ready, invoke the exact foreground Agent parameters from agent_params once, then call submit_review.",
 			"For a complete breaking revision, call approve_breaking_intent_revision with the complete next_intent directly; do not ask for chat pre-confirmation because the host opens the single native confirmation before applying it.",
 			"For a proven stale authority claim, call repair_authority_state directly; do not ask for chat pre-confirmation because the host opens the single native confirmation.",
@@ -386,19 +379,10 @@ export default function (
 			action: Type.Union([
 				Type.Object({ op: Type.Literal("status") }),
 				Type.Object({ op: Type.Literal("advance_assurance") }),
+				Type.Object({ op: Type.Literal("submit_review") }),
 				Type.Object({ op: Type.Literal("request_authorization") }),
 				Type.Object({ op: Type.Literal("repair_authority_state") }),
 				Type.Object({ op: Type.Literal("freeze_artifacts") }),
-				Type.Object({
-					op: Type.Literal("record_evidence"),
-					acceptance_id: Type.String(),
-					status: Type.Union([
-						Type.Literal("passed"),
-						Type.Literal("failed"),
-						Type.Literal("blocked"),
-					]),
-					summary: Type.String(),
-				}),
 				Type.Object({
 					op: Type.Literal("record_finding"),
 					finding: Type.Object({
@@ -409,7 +393,6 @@ export default function (
 					}),
 				}),
 				Type.Object({ op: Type.Literal("resolve_finding"), finding_id: Type.String() }),
-				Type.Object({ op: Type.Literal("submit_review") }),
 				Type.Object({
 					op: Type.Literal("revise_intent"),
 					next_intent: TASK_INTENT_SCHEMA,
@@ -461,7 +444,7 @@ export default function (
 					title: "Repair Kernel authority state?",
 					summary: [
 						`Owner: ${taskId}`,
-						`Terminal phase: ${authority.owner_phase}`,
+						`Terminal lifecycle: ${authority.owner_lifecycle}`,
 						`Claim lifecycle: ${authority.claim_lifecycle_status}`,
 					].join("\n"),
 					details: [
@@ -506,7 +489,8 @@ export default function (
 				}
 			}
 			if (action.op === "advance_assurance" || action.op === "request_authorization" || action.op === "submit_review" || action.op === "approve_breaking_intent_revision") {
-				if (ctx.mode !== "tui") return failCanaryTool(taskId, action.op, "blocked", "tui_required", "imm_kernel_canary mutation is TUI-only", "invoke the TUI Tool");
+				if ((action.op === "request_authorization" || action.op === "approve_breaking_intent_revision") && ctx.mode !== "tui")
+					return failCanaryTool(taskId, action.op, "blocked", "tui_required", "literal-user authorization is TUI-only", "invoke the TUI Tool");
 				const result = action.op === "advance_assurance"
 					? await progression.advance(taskId, ctx, signal, (update) => {
 						onUpdate?.(update);
@@ -548,18 +532,14 @@ export default function (
 				const details = {
 					state: "status",
 					operation: "status",
-					phase: state.phase,
+					lifecycle: state.lifecycle,
+					artifact_state: state.artifact_state,
 					task_state: state,
 					result: `${fresh}/${total} acceptance items fresh; ${blockers} blocker${blockers === 1 ? "" : "s"}`,
-					next_action: statusNextAction(state),
+					next_action: state.next_obligation,
 				};
 				presentTaskRailResult(ctx, taskId, details);
 				return toolResult(JSON.stringify(state, null, 2), details);
-			}
-			// Production mutation requires the TUI host; RPC/JSON/print fail
-			// before any state read that could lead to mutation.
-			if (ctx.mode !== "tui") {
-				return failCanaryTool(taskId, action.op, "blocked", "tui_required", "imm_kernel_canary mutation is TUI-only", "invoke the TUI Tool");
 			}
 			const claim = projection.claim;
 			if (!claim || claim.task_id !== taskId) {
@@ -569,14 +549,17 @@ export default function (
 				const result = (await executeOrdinaryOperation(ctx, {
 					taskId,
 					operation: toCanaryOperation(action, "executor") as { op: string; actor_id: string },
-				})) as unknown as { revision: string; record: { phase: string } };
+				})) as unknown as { revision: string; record: { lifecycle: string; artifact_state: string } };
 				const updated = await projectAssuranceState(ctx.cwd, taskId);
-				const taskState = updated.error ? { phase: result.record.phase } : updated.projection;
-				const nextAction = updated.error ? "inspect authority state" : statusNextAction(updated.projection);
+				const taskState = updated.error
+					? { lifecycle: result.record.lifecycle, artifact_state: result.record.artifact_state }
+					: updated.projection;
+				const nextAction = updated.error ? "inspect authority state" : updated.projection.next_obligation;
 				const details = {
 					state: "recorded",
 					operation: action.op,
-					phase: result.record.phase,
+					lifecycle: result.record.lifecycle,
+					artifact_state: result.record.artifact_state,
 					task_state: taskState,
 					result: "Kernel executor fact recorded",
 					next_action: nextAction,
@@ -584,7 +567,7 @@ export default function (
 				presentTaskRailResult(ctx, taskId, details);
 				return toolResult(
 					JSON.stringify(
-						{ revision: result.revision, phase: result.record.phase, task_state: taskState, next_action: nextAction },
+						{ revision: result.revision, lifecycle: result.record.lifecycle, artifact_state: result.record.artifact_state, task_state: taskState, next_action: nextAction },
 						null,
 						2,
 					),
@@ -667,7 +650,7 @@ export default function (
 	});
 
 	type AuthorizationOutcome =
-		| { state: "applied"; operation: AuthorizeOperation; phase?: string; decision?: ReviewDecision }
+		| { state: "applied"; operation: AuthorizeOperation; lifecycle?: string }
 		| { state: "cancelled"; operation: AuthorizeOperation; reason: string }
 		| { state: "blocked"; reason: string };
 
@@ -680,7 +663,7 @@ export default function (
 		if (ctx.mode !== "tui") return { state: "blocked", reason: "imm_kernel_canary mutation is TUI-only" };
 		let nextIntent: Awaited<ReturnType<typeof parseTaskIntentV1>> | undefined;
 		let nextIntentHash: string | undefined;
-		let nextIntentRef: { path: string; revision: number; content_hash: string } | undefined;
+		let nextIntentRef: { path: string; content_hash: string } | undefined;
 		if (operation === "approve-breaking-intent-revision") {
 			try {
 				nextIntent = await parseTaskIntentV1(nextIntentInput);
@@ -710,20 +693,10 @@ export default function (
 			progression.closeInvocation(invocation);
 			return { state: "blocked", reason };
 		}
-		let pendingReview: PendingReviewVerdict | undefined;
-		if (operation === "record-review-verdict") {
-			pendingReview = progression.pendingReviewVerdict(taskId);
-			if (!pendingReview) {
-				const reason = "no pending native review verdict in this session";
-				notifyOnce(ctx, `authorization-review:${taskId}`, `cannot authorize ${taskId}: ${reason}`, "error");
-				progression.closeInvocation(invocation);
-				return { state: "blocked", reason };
-			}
-		}
 		let userDecisionOperation: ReturnType<typeof buildUserDecisionOperation> | undefined;
 		if (operation === "resolve-user-decision") {
 			try {
-				const current = await readTaskRecordV2(ctx.cwd, taskId);
+				const current = await readTaskRecord(ctx.cwd, taskId);
 				if (!current.record) throw new Error(`task ${taskId} has no TaskRecord v2`);
 				if (current.revision !== projection.projection.record_revision)
 					throw new Error("task record changed while preparing user decision");
@@ -735,23 +708,10 @@ export default function (
 				return { state: "blocked", reason };
 			}
 		}
-		const reviewFindings = pendingReview?.verdict.findings ?? [];
-		const reviewBlockers = reviewFindings.filter((finding) => finding.kind === "blocking").length;
-		const reviewWarnings = reviewFindings.filter((finding) => finding.kind === "advisory").length;
 		const dialogSummary = [
 			`Task: ${taskId}`,
-			...(pendingReview
-				? [
-						`Review: ${pendingReview.verdict.decision.toUpperCase()} | Blockers: ${reviewBlockers} | Warnings: ${reviewWarnings}`,
-						`QA: ${projection.projection.fresh_approval_kinds.includes("qa") ? "passed" : "missing"}`,
-						`Scope: ${pendingReview.snapshot.dirty_files.length} scoped changed file(s)`,
-						`Evidence: ${pendingReview.snapshot.review_bundle_digest ? "available" : "unavailable"}`,
-						`Pending operation: ${operation}`,
-					]
-				: [
-						`Decision: ${operation}`,
-						`State: ${projection.projection.phase} | Claim: ${projection.claim.lifecycle_status}`,
-					]),
+			`Decision: ${operation}`,
+			`State: ${projection.projection.lifecycle}:${projection.projection.artifact_state} | Claim: ${projection.claim.lifecycle_status}`,
 		].join("\n");
 		const dialogDetails = [
 			`Operation: ${operation}`,
@@ -759,16 +719,6 @@ export default function (
 				? [
 						`Finding: ${userDecisionOperation.finding_id}`,
 						`Resolution: ${userDecisionOperation.resolution}`,
-					]
-				: []),
-			...(pendingReview
-				? [
-						`Review bundle: ${pendingReview.snapshot.review_bundle_digest ?? "unavailable"}`,
-						`Native agent: ${pendingReview.agentId}`,
-						`Verdict: ${pendingReview.verdict.decision}`,
-						`Summary: ${pendingReview.verdict.decision === "pass" ? pendingReview.verdict.approval!.summary : pendingReview.verdict.findings!.map((finding) => `${finding.id} ${finding.kind}: ${finding.summary}`).join("; ")}`,
-						...(pendingReview.durationMs !== undefined ? [`Duration: ${Math.round(pendingReview.durationMs / 1000)}s`] : []),
-						...(pendingReview.tokens ? [`Tokens: ${pendingReview.tokens.total}`] : []),
 					]
 				: []),
 			...(nextIntent
@@ -781,90 +731,44 @@ export default function (
 				: []),
 			`Claim: ${projection.claim.lifecycle_status}`,
 			`Record revision: ${projection.projection.record_revision}`,
-			`Phase: ${projection.projection.phase}`,
+			`State: ${projection.projection.lifecycle}:${projection.projection.artifact_state}`,
 			`Intent: rev ${projection.projection.intent_revision} (${projection.projection.intent_content_hash})`,
 			`Diff: ${projection.projection.diff_hash}`,
 		].join("\n");
-		const snapshotDigestRef = pendingReview
-			? snapshotDigest(pendingReview.snapshot)
-			: projection.projection.record_revision;
+		const snapshotDigestRef = projection.projection.record_revision;
 		let confirmed = false;
-		let reviewDecision: ReviewDecision | undefined;
-		let reviewNote: string | undefined;
 		const attentionReason: UserAttentionReason = operation === "approve-breaking-intent-revision"
 			? "breaking_intent_revision"
 			: "review_authorization";
 		presentTaskRail(ctx, {
 			task_id: taskId,
 			state: "Approval required",
-			result: pendingReview ? "Independent Review verdict requires a literal-user decision" : `${operation} requires literal-user approval`,
-			next: pendingReview ? "Decide Review outcome" : `Decide ${operation}`,
+			result: `${operation} requires literal-user approval`,
+			next: `Decide ${operation}`,
 		});
 		const attention = {
 			attention_id: randomUUID(),
 			task_id: taskId,
 			reason: attentionReason,
-			label: pendingReview ? "Review approval required" : `${operation} approval required`,
+			label: `${operation} approval required`,
 		};
-		if (pendingReview) {
-			let selected: keyof typeof REVIEW_DECISIONS | "Cancel" | undefined;
-			try {
-				selected = await requestAuthorityDialog(pi, ctx, attention, {
-					title: "Review authorization",
-					summary: dialogSummary,
-					details: dialogDetails,
-					signal: ctx.signal,
-					actions: [
-						{ value: "Approve", label: "Approve", description: "Accept the independent Review verdict" },
-						{ value: "Request rework", label: "Request rework", description: "Return the task to working with a required reason" },
-						{ value: "Reject", label: "Reject", description: "Stop the task with a required reason" },
-						{ value: "Cancel", label: "Cancel", description: "Keep the Review verdict pending with zero writes" },
-					],
-				}, async (selection) => {
-					if (selection === "Request rework" || selection === "Reject") {
-						reviewNote = (await ctx.ui.input(
-							selection === "Request rework" ? "Required rework" : "Reason for rejection",
-							"Required",
-							{ signal: ctx.signal },
-						))?.trim();
-					}
-					return selection;
-				});
-			} catch (error) {
-				if (ctx.signal?.aborted !== true && (!(error instanceof DOMException) || error.name !== "AbortError")) {
-					const detail = error instanceof Error ? error.message : String(error);
-					const reason = `Review decision UI failed: ${detail}`;
-					notifyOnce(ctx, `authorization-ui:${taskId}:${operation}:${detail}`, reason, "error");
-					progression.closeInvocation(invocation);
-					return { state: "blocked", reason };
-				}
-				selected = undefined;
-			}
-			if (selected === undefined || selected === "Cancel" || ((selected === "Request rework" || selected === "Reject") && !reviewNote)) {
-				progression.closeInvocation(invocation);
-				return { state: "cancelled", operation, reason: "cancelled" };
-			}
-			reviewDecision = REVIEW_DECISIONS[selected];
-			confirmed = true;
-		} else {
-			try {
-				const selected = await requestAuthorityDialog(pi, ctx, attention, {
-					title: `Authorize ${operation}?`,
-					summary: dialogSummary,
-					details: dialogDetails,
-					signal: ctx.signal,
-					actions: [
-						{ value: "authorize", label: "Authorize", description: `Apply ${operation} after freshness revalidation` },
-						{ value: "cancel", label: "Cancel", description: "Leave managed authority unchanged" },
-					],
-				});
-				confirmed = selected === "authorize";
-			} catch {
-				if (operation !== "stop" && operation !== "approve-breaking-intent-revision")
-					await recordCancelledUserDecision(ctx, taskId, operation, snapshotDigestRef).catch(() => undefined);
-				progression.closeInvocation(invocation);
-				return { state: "cancelled", operation, reason: "confirmation aborted" };
-			}
+		try {
+			const selected = await requestAuthorityDialog(pi, ctx, attention, {
+				title: `Authorize ${operation}?`,
+				summary: dialogSummary,
+				details: dialogDetails,
+				signal: ctx.signal,
+				actions: [
+					{ value: "authorize", label: "Authorize", description: `Apply ${operation} after freshness revalidation` },
+					{ value: "cancel", label: "Cancel", description: "Leave managed authority unchanged" },
+				],
+			});
+			confirmed = selected === "authorize";
+		} catch {
+			if (operation !== "stop" && operation !== "approve-breaking-intent-revision")
+				await recordCancelledUserDecision(ctx, taskId, operation, snapshotDigestRef).catch(() => undefined);
+			progression.closeInvocation(invocation);
+			return { state: "cancelled", operation, reason: "confirmation aborted" };
 		}
 		if (!confirmed) {
 			if (operation !== "stop" && operation !== "approve-breaking-intent-revision")
@@ -878,75 +782,8 @@ export default function (
 			return { state: "blocked", reason: "session changed; confirmation discarded" };
 		}
 		try {
-			if (operation === "record-review-verdict") {
-				if (!pendingReview || !reviewDecision) throw new Error("pending native review verdict disappeared");
-				if (reviewDecision === "rework") {
-					await applyAssuranceVerdict(
-						ctx,
-						pendingReview.snapshot,
-						{
-							contract: "assurance_kernel/assurance_verdict/v2",
-							role: "review",
-							task_id: taskId,
-							snapshot_digest: snapshotDigest(pendingReview.snapshot),
-							decision: "rework",
-							findings: [{
-								id: `user-rework-${randomUUID().slice(0, 8)}`,
-								kind: "blocking",
-								acceptance_id: null,
-								summary: reviewNote!,
-								findings_digest: "",
-							}],
-						},
-						invocation,
-						"literal-user",
-						{},
-						"user",
-					);
-					progression.clearPendingReviewVerdict(taskId);
-					return { state: "applied", operation, decision: "rework", phase: "working" };
-				}
-				if (reviewDecision === "reject") {
-					progression.commitInvocation(invocation);
-					const { registry, app } = await authorityPair();
-					const now = new Date().toISOString();
-					const reason = `literal user rejected Review: ${reviewNote}`;
-					const capability = await mintCapability(registry, {
-						authority_kind: "user",
-						task_id: taskId,
-						action_kind: "stop",
-						expected_record_hash: projection.projection.record_revision,
-						intent_revision: projection.projection.intent_revision,
-						intent_content_hash: projection.projection.intent_content_hash,
-						diff_hash: projection.projection.diff_hash,
-						actor_id: "literal-user",
-						reason,
-						now,
-					});
-					const result = (await app.execute({
-						root: ctx.cwd,
-						task_id: taskId,
-						operation: { op: "stop", capability, reason, actor_id: "literal-user" },
-						prior_intent_token: (await readTaskIntent(ctx.cwd, taskId)).token,
-						diffProvider: (root: string, intent: { scope_hint: unknown }) => diffHashOf(root, intent),
-						now,
-					})) as unknown as { record: { phase: string; intent_ref: { path: string }; artifact_ref?: { spec_path?: string } } };
-					stagePlanningArtifactTransition(ctx.cwd, result.record);
-					progression.clearPendingReviewVerdict(taskId);
-					return { state: "applied", operation, decision: "reject", phase: result.record.phase };
-				}
-				await applyAssuranceVerdict(
-					ctx,
-					pendingReview.snapshot,
-					pendingReview.verdict,
-					invocation,
-					`native-review-${pendingReview.agentId}`,
-				);
-				progression.clearPendingReviewVerdict(taskId);
-				return { state: "applied", operation, decision: "approve", phase: pendingReview.verdict.decision === "rework" ? "working" : "review" };
-			}
-				// Linearization point: only this fresh affirmative continuation
-				// may mint/apply; timeout/cancel already won open -> cancelled.
+			// Linearization point: only this fresh affirmative continuation
+			// may mint/apply; timeout/cancel already won open -> cancelled.
 			try {
 				progression.commitInvocation(invocation);
 			} catch (error) {
@@ -960,14 +797,13 @@ export default function (
 			if (nextIntent) {
 				nextIntentRef = {
 					path: priorIntent.intent_ref.path,
-					revision: nextIntent.revision,
 					content_hash: nextIntentHash!,
 				};
 			}
 			// record-user-approval: literal-user approval for critical-task-completion. The approval payload is bound to the fresh
 			// projection (task revision, intent content hash, diff hash) and
 			// applied through the same exact-action capability path; the
-			// reducer requires kind user, user authority, and phase review.
+			// The reducer requires kind user, user authority, and active:frozen state.
 			const isUserApproval = operation === "record-user-approval";
 			const approval = isUserApproval
 				? {
@@ -1031,13 +867,13 @@ export default function (
 						prior_intent_token: priorIntent.token,
 						diffProvider: (root: string, intent: { scope_hint: unknown }) => diffHashOf(root, intent),
 						now,
-					})) as unknown as { record: { phase: string; intent_ref: { path: string }; artifact_ref?: { spec_path?: string } } };
+					})) as unknown as { record: { lifecycle: string; artifact_state: string; intent_ref: { path: string }; intent_snapshot: { scope_hint: string[] } } };
 					if (exactOperation.op === "stop") stagePlanningArtifactTransition(ctx.cwd, result.record);
-					return { state: "applied", operation, phase: result.record.phase };
+					return { state: "applied", operation, lifecycle: result.record.lifecycle };
 				} catch (error) {
 					if (sidecar && priorBytes) {
-						const current = await readTaskRecordV2(ctx.cwd, taskId);
-						if (current.record?.intent_revision === priorIntent.intent.revision) {
+						const current = await readTaskRecord(ctx.cwd, taskId);
+						if (current.record?.intent_snapshot.revision === priorIntent.intent.revision) {
 							writeFileSync(sidecar, priorBytes);
 							execFileSync("git", ["add", "--", priorIntent.intent_ref.path], {
 								cwd: ctx.cwd,
@@ -1049,12 +885,6 @@ export default function (
 				}
 			} catch (error) {
 				const reason = error instanceof Error ? error.message : String(error);
-				if (
-					operation === "record-review-verdict" &&
-					pendingReview &&
-					reason === "assurance snapshot changed before authority application" &&
-					progression.pendingReviewVerdict(taskId)?.operationId === pendingReview.operationId
-				) progression.clearPendingReviewVerdict(taskId);
 				notifyOnce(ctx, `authorization-apply:${taskId}:${operation}:${reason}`, `authorize failed: ${reason}`, "error");
 				return { state: "blocked", reason };
 			} finally {
@@ -1070,12 +900,11 @@ export default function (
 		if (projection.error || !projection.claim)
 			return { state: "blocked", reason: projection.error ?? "no active backend claim" };
 		await dependencies.authorizationBeforeRecordRead?.();
-		const read = await readTaskRecordV2(ctx.cwd, taskId);
-		if (!read.record) return { state: "blocked", reason: `task ${taskId} has no TaskRecord v2` };
+		const read = await readTaskRecord(ctx.cwd, taskId);
+		if (!read.record) return { state: "blocked", reason: `task ${taskId} has no TaskRecord v3` };
 		if (read.revision !== projection.projection.record_revision)
 			return { state: "blocked", reason: "TaskRecord changed while deriving authorization operation" };
 		const derived = deriveAuthorizationOperation({
-			hasPendingReviewVerdict: progression.hasPendingReviewVerdict(taskId),
 			readiness: projection.projection.authorization,
 			hasOpenReplanRequired: read.record.findings.some(
 				(finding) => finding.kind === "replan_required" && finding.status === "open",
@@ -1091,19 +920,15 @@ export default function (
 // ---------------------------------------------------------------------------
 
 export type DerivedAuthorizationOperation =
-	| "record-review-verdict"
 	| "resolve-user-decision"
 	| "record-user-approval"
 	| "stop";
 
-// Kernel-facts authorization readiness comes from the assurance projection;
-// only the Pi-session pending native Review verdict is composed here.
+// Kernel projection is the sole source of authorization readiness.
 export function deriveAuthorizationOperation(input: {
-	hasPendingReviewVerdict: boolean;
 	readiness: AssuranceAuthorizationReadiness;
 	hasOpenReplanRequired?: boolean;
 }): { operation: DerivedAuthorizationOperation } | { blocked: string } {
-	if (input.hasPendingReviewVerdict) return { operation: "record-review-verdict" };
 	if (input.hasOpenReplanRequired) return { operation: "stop" };
 	if (input.readiness.state === "resolve_user_decision") return { operation: "resolve-user-decision" };
 	if (input.readiness.state === "record_user_approval") return { operation: "record-user-approval" };
@@ -1115,16 +940,6 @@ function toCanaryOperation(action: { op: string }, actorId: string) {
 	switch (action.op) {
 		case "freeze_artifacts":
 			return { op: "freeze_artifacts", actor_id: actorId };
-		case "record_evidence": {
-			const a = action as unknown as { acceptance_id: string; status: string; summary: string };
-			return {
-				op: "record_evidence",
-				acceptance_id: a.acceptance_id,
-				status: a.status,
-				summary: a.summary,
-				actor_id: actorId,
-			};
-		}
 		case "record_finding":
 			return {
 				op: "record_finding",
@@ -1133,8 +948,6 @@ function toCanaryOperation(action: { op: string }, actorId: string) {
 			};
 		case "resolve_finding":
 			return { op: "resolve_finding", finding_id: (action as unknown as { finding_id: string }).finding_id, actor_id: actorId };
-		case "submit_review":
-			return { op: "submit_review", actor_id: actorId };
 		case "revise_intent":
 			return { op: "revise_intent", next_intent: (action as unknown as { next_intent: unknown }).next_intent, actor_id: actorId };
 		case "complete":
@@ -1151,7 +964,7 @@ export async function recordCancelledUserDecision(
 	snapshotDigestRef: string,
 ): Promise<{ recorded: boolean; finding_id: string }> {
 	const findingId = `user-decision-${operation}`;
-	const current = await readTaskRecordV2(ctx.cwd, taskId);
+	const current = await readTaskRecord(ctx.cwd, taskId);
 	const openDecision = current.record?.findings.find(
 		(finding) =>
 			finding.kind === "unresolved_user_decision" && finding.status === "open",
@@ -1211,8 +1024,13 @@ function diffHashOf(root: string, intent: { scope_hint?: unknown }): string {
 // Translation-only adapter for the internal Kernel assurance projection. All
 // freshness, approval, finding, claim, and authorization facts come from the
 // Kernel module; this wrapper only binds the host diff provider.
-function projectAssuranceState(root: string, taskId: string): Promise<AssuranceProjectionResult> {
-	return projectAssurance(root, taskId, diffHashOf);
+async function projectAssuranceState(root: string, taskId: string): Promise<AssuranceProjectionResult> {
+	let projection = await projectAssurance(root, taskId, diffHashOf);
+	if (projection.error?.startsWith("active TaskRecord v2 requires one-time migration")) {
+		await migrateActiveTaskRecord(root, taskId);
+		projection = await projectAssurance(root, taskId, diffHashOf);
+	}
+	return projection;
 }
 
 export interface QaVerificationProgressInput {
@@ -1247,49 +1065,39 @@ export async function runDeterministicQa(
 	if (snapshot.role !== "qa") throw new Error("deterministic QA requires qa role");
 	if (options.signal?.aborted) throw new VerificationAbortedError();
 	const findings: NonNullable<AssuranceVerdict["findings"]> = [];
-	if (snapshot.missing_acceptance_ids.length > 0) {
-		findings.push({
-			id: qaEvidenceFreshnessId(snapshotDigest(snapshot)),
-			kind: "blocking",
-			acceptance_id: null,
-			summary: `executor evidence must be refreshed in working phase for acceptance ids: ${snapshot.missing_acceptance_ids.join(",")}`,
-			findings_digest: "",
+	const runVerification = options.runVerification ?? runFixedVerification;
+	for (const [offset, item] of snapshot.acceptance.entries()) {
+		if (options.signal?.aborted) throw new VerificationAbortedError();
+		const descriptor = descriptors.get(item.id);
+		if (!descriptor) throw new Error(`verification descriptor missing for ${item.id}`);
+		const startedAt = Date.now();
+		options.onProgress?.({
+			index: offset + 1,
+			total: snapshot.acceptance.length,
+			acceptance_id: item.id,
+			phase: "running",
+			elapsed_ms: 0,
 		});
-	} else {
-		const runVerification = options.runVerification ?? runFixedVerification;
-		for (const [offset, item] of snapshot.acceptance.entries()) {
-			if (options.signal?.aborted) throw new VerificationAbortedError();
-			const descriptor = descriptors.get(item.id);
-			if (!descriptor) throw new Error(`verification descriptor missing for ${item.id}`);
-			const startedAt = Date.now();
-			options.onProgress?.({
-				index: offset + 1,
-				total: snapshot.acceptance.length,
+		const result = await runVerification(snapshot.root, descriptor, runner, {
+			signal: options.signal,
+		});
+		const failed = result.exit_code !== 0 || result.timed_out;
+		options.onProgress?.({
+			index: offset + 1,
+			total: snapshot.acceptance.length,
+			acceptance_id: item.id,
+			phase: failed ? "failed" : "passed",
+			elapsed_ms: Date.now() - startedAt,
+		});
+		if (failed) {
+			const detail = boundedVerificationFailureDetail(result.stdout, result.stderr);
+			findings.push({
+				id: qaFindingId(item.id, snapshotDigest(snapshot)),
+				kind: "blocking",
 				acceptance_id: item.id,
-				phase: "running",
-				elapsed_ms: 0,
+				summary: `verification failed (exit ${result.exit_code}${result.timed_out ? ", timed out" : ""}) stdout=${result.stdout.length}B stderr=${result.stderr.length}B${detail ? `: ${detail}` : ""}`,
+				findings_digest: "",
 			});
-			const result = await runVerification(snapshot.root, descriptor, runner, {
-				signal: options.signal,
-			});
-			const failed = result.exit_code !== 0 || result.timed_out;
-			options.onProgress?.({
-				index: offset + 1,
-				total: snapshot.acceptance.length,
-				acceptance_id: item.id,
-				phase: failed ? "failed" : "passed",
-				elapsed_ms: Date.now() - startedAt,
-			});
-			if (failed) {
-				const detail = boundedVerificationFailureDetail(result.stdout, result.stderr);
-				findings.push({
-					id: qaFindingId(item.id, snapshotDigest(snapshot)),
-					kind: "blocking",
-					acceptance_id: item.id,
-					summary: `verification failed (exit ${result.exit_code}${result.timed_out ? ", timed out" : ""}) stdout=${result.stdout.length}B stderr=${result.stderr.length}B${detail ? `: ${detail}` : ""}`,
-					findings_digest: "",
-				});
-			}
 		}
 	}
 	if (findings.length > 0) {
@@ -1334,9 +1142,20 @@ async function applyAssuranceVerdict(
 		fresh.projection.intent_revision !== snapshot.intent_revision ||
 		fresh.projection.intent_content_hash !== snapshot.intent_content_hash ||
 		fresh.projection.diff_hash !== snapshot.diff_hash ||
-		fresh.projection.phase !== snapshot.phase
+		fresh.projection.lifecycle !== snapshot.lifecycle ||
+		fresh.projection.artifact_state !== snapshot.artifact_state
 	) {
-		throw new Error("assurance snapshot changed before authority application");
+		throw new Error(`assurance snapshot changed before authority application: ${[
+			fresh.error,
+			fresh.claim?.task_id !== snapshot.task_id ? "claim" : null,
+			fresh.projection.record_revision !== snapshot.record_revision ? "record_revision" : null,
+			fresh.projection.workspace_revision !== snapshot.workspace_revision ? "workspace_revision" : null,
+			fresh.projection.intent_revision !== snapshot.intent_revision ? "intent_revision" : null,
+			fresh.projection.intent_content_hash !== snapshot.intent_content_hash ? "intent_content_hash" : null,
+			fresh.projection.diff_hash !== snapshot.diff_hash ? "diff_hash" : null,
+			fresh.projection.lifecycle !== snapshot.lifecycle ? `lifecycle(${snapshot.lifecycle}->${fresh.projection.lifecycle})` : null,
+			fresh.projection.artifact_state !== snapshot.artifact_state ? `artifact_state(${snapshot.artifact_state}->${fresh.projection.artifact_state})` : null,
+		].filter(Boolean).join(", ")}`);
 	}
 	const { registry, app } = await authorityPair();
 	const priorIntentToken = (await readTaskIntent(ctx.cwd, snapshot.task_id)).token;
@@ -1386,7 +1205,7 @@ async function applyAssuranceVerdict(
 			prior_intent_token: priorIntentToken,
 			diffProvider: (root: string, intent: { scope_hint: unknown }) => diffHashOf(root, intent),
 			now,
-		}))) as unknown as { record: { phase: string; intent_ref: { path: string }; artifact_ref?: { spec_path?: string } } };
+		}))) as unknown as { record: { lifecycle: string; artifact_state: string; intent_ref: { path: string }; intent_snapshot: { scope_hint: string[] }; findings?: Array<{ kind: string; status: string }> } };
 		stagePlanningArtifactTransition(ctx.cwd, result.record);
 		const parked = (result.record as { findings?: Array<{ kind: string; status: string }> }).findings?.some(
 			(finding) => finding.kind === "replan_required" && finding.status === "open",
@@ -1440,11 +1259,11 @@ async function buildAssuranceSnapshot(
 	projection: AssuranceProjectionResult,
 	runner: FrozenRunner,
 ): Promise<{ snapshot: SnapshotDescriptor; descriptors: Map<string, VerificationDescriptor>; reviewBundle: ReviewBundle | null }> {
-	const record = await readTaskRecordV2(root, taskId);
+	const record = await readTaskRecord(root, taskId);
 	if (
 		!record.record ||
 		record.revision !== projection.projection.record_revision ||
-		record.record.intent_revision !== projection.projection.intent_revision ||
+		record.record.intent_snapshot.revision !== projection.projection.intent_revision ||
 		record.record.intent_ref.content_hash !== projection.projection.intent_content_hash
 	) {
 		throw new Error("TaskRecord changed before assurance snapshot capture");
@@ -1466,7 +1285,10 @@ async function buildAssuranceSnapshot(
 				intent.scope_hint,
 				projection.projection.diff_hash,
 				Object.fromEntries(
-					record.record.evidence.map((ev) => [ev.acceptance_id, { status: ev.status, summary: ev.summary }]),
+					record.record.attestations
+						.filter((item) => item.kind === "qa")
+						.flatMap((item) => item.acceptance_results)
+						.map((result) => [result.acceptance_id, { status: result.status, summary: result.summary }]),
 				),
 			)
 		: null;
@@ -1484,11 +1306,12 @@ async function buildAssuranceSnapshot(
 				intent_revision: projection.projection.intent_revision,
 				intent_content_hash: projection.projection.intent_content_hash,
 				diff_hash: projection.projection.diff_hash,
-				phase: projection.projection.phase,
+				lifecycle: projection.projection.lifecycle,
+				artifact_state: projection.projection.artifact_state,
 				risk: intent.risk,
 				fresh_acceptance_ids: projection.projection.fresh_acceptance_ids,
 				missing_acceptance_ids: projection.projection.missing_acceptance_ids,
-				stale_evidence_ids: projection.projection.stale_evidence_ids,
+				stale_attestation_ids: projection.projection.stale_attestation_ids,
 				acceptance,
 				dirty_files: dirtyFiles,
 				review_bundle_digest: reviewBundle?.bundle_digest ?? null,
@@ -1611,8 +1434,8 @@ async function executeOrdinaryOperation(
 		return result;
 	} catch (error) {
 		if (priorBytes) {
-			const current = await readTaskRecordV2(ctx.cwd, input.taskId);
-			if (current.record?.intent_revision === priorIntent.intent.revision) writeFileSync(sidecar, priorBytes);
+			const current = await readTaskRecord(ctx.cwd, input.taskId);
+			if (current.record?.intent_snapshot.revision === priorIntent.intent.revision) writeFileSync(sidecar, priorBytes);
 		}
 		throw error;
 	}
@@ -1658,39 +1481,20 @@ async function enrichAssuranceResult(
 
 function nextActionForAssuranceResult(result: Record<string, unknown>, taskState: AssuranceTaskState): string {
 	if ("error" in taskState) return "inspect authority state";
-	if (taskState.phase === "done" || taskState.phase === "stopped") return "none";
+	if (taskState.lifecycle === "done" || taskState.lifecycle === "stopped") return "none";
 	switch (result.state) {
 		case "review_ready": return "invoke the reserved foreground Agent";
 		case "awaiting_user": return "request_authorization";
-		case "applied": return taskState.completion_ready ? "complete task" : statusNextAction(taskState);
+		case "applied": return taskState.completion_ready ? "complete task" : taskState.next_obligation;
 		case "completed":
 		case "stopped": return "none";
-		case "rework": return "repair findings and record fresh evidence";
+		case "rework": return "repair findings, then advance assurance";
 		case "cancelled": return "retry the interrupted foreground operation";
 		case "settlement_unknown": return "inspect authority state";
 		case "blocked":
 		case "failed":
-		default: return statusNextAction(taskState);
+		default: return taskState.next_obligation;
 	}
-}
-
-function statusNextAction(state: {
-	phase: string;
-	missing_acceptance_ids: string[];
-	blocking_finding_ids: string[];
-	unresolved_user_decision_ids: string[];
-	replan_required_ids: string[];
-	completion_ready: boolean;
-}): string {
-	if (state.phase === "done" || state.phase === "stopped") return "none";
-	if (state.missing_acceptance_ids.length > 0) return "record remaining acceptance evidence";
-	if (
-		state.blocking_finding_ids.length > 0
-		|| state.unresolved_user_decision_ids.length > 0
-		|| state.replan_required_ids.length > 0
-	) return "resolve blocking assurance state";
-	if (state.completion_ready) return "complete task";
-	return "advance assurance";
 }
 
 function toolResult(text: string, details?: Record<string, unknown>) {
@@ -1699,12 +1503,14 @@ function toolResult(text: string, details?: Record<string, unknown>) {
 
 function stagePlanningArtifactTransition(root: string, record: {
 	intent_ref: { path: string };
-	artifact_ref?: { spec_path?: string };
+	intent_snapshot: { scope_hint: string[] };
 }): void {
-	if (!record.artifact_ref) return;
 	const intentActive = record.intent_ref.path.replace("docs/plans/archive/", "docs/plans/");
 	const intentArchive = intentActive.replace("docs/plans/", "docs/plans/archive/");
-	const specActive = record.artifact_ref.spec_path;
+	const specActive = record.intent_snapshot.scope_hint.find((path) =>
+		/^docs\/specs\/(?!archive\/)[^/]+\.spec\.md$/.test(path)
+		&& record.intent_snapshot.scope_hint.includes(path.replace("docs/specs/", "docs/specs/archive/")),
+	);
 	const candidates = [
 		intentActive,
 		intentArchive,
@@ -1783,7 +1589,6 @@ export type {
 	AssuranceProgressionPorts,
 	AssuranceSubmitReviewResult,
 	AssuranceVerdict,
-	PendingReviewVerdict,
 	QaVerificationProgress,
 	SnapshotDescriptor,
 } from "./pi-canary-assurance-progression";

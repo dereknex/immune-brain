@@ -11,20 +11,21 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import {
+	capabilityActionFor,
 	createCanaryApplication,
 	type CanaryOperation,
 } from "../plugins/immune-brain/runtime/kernel/canary_application";
 import { preparePiCanary } from "../plugins/immune-brain/runtime/kernel/pi_canary_prepare";
-import { createMutationAuthorityRegistry } from "../plugins/immune-brain/runtime/kernel/authority_port";
+import { createMutationAuthorityRegistry, digestOfAction } from "../plugins/immune-brain/runtime/kernel/authority_port";
 import { createMutationAuthorityCapabilityForTest } from "./fixtures/mutation-authority-test-seam";
-import { findingsDigestV2 } from "../plugins/immune-brain/runtime/kernel/reducer_v2";
+import { findingsDigestV2 } from "../plugins/immune-brain/runtime/kernel/reducer";
 import { enrollCanaryTask } from "../plugins/immune-brain/runtime/kernel/enrollment";
 import {
 	createEnrollmentAuthorityRegistry,
 	type EnrollmentCapabilityBinding,
 } from "../plugins/immune-brain/runtime/kernel/enrollment_authority";
 import { canonicalIntentHash, readTaskIntent } from "../plugins/immune-brain/runtime/kernel/intent";
-import { readTaskRecordV2 } from "../plugins/immune-brain/runtime/kernel/storage";
+import { readTaskRecord } from "../plugins/immune-brain/runtime/kernel/storage";
 
 const TASK = "canary-rework-task";
 const INTENT = {
@@ -32,7 +33,11 @@ const INTENT = {
 	task_id: TASK,
 	goal: "rework authority",
 	acceptance: [{ id: "A1", assertion: "a1", verification: "v1" }],
-	scope_hint: ["plugins/immune-brain/runtime/kernel"],
+	scope_hint: [
+		"src/task.ts",
+		`docs/specs/${TASK}.spec.md`,
+		`docs/specs/archive/${TASK}.spec.md`,
+	],
 	risk: "material",
 	revision: 1,
 	owner: "user",
@@ -49,6 +54,10 @@ beforeEach(() => {
 	mkdirSync(join(root, "docs", "plans"), { recursive: true });
 	mkdirSync(join(root, ".imm", "tasks"), { recursive: true });
 	execFileSync("git", ["init", "-q"], { cwd: root });
+	mkdirSync(join(root, "src"), { recursive: true });
+	mkdirSync(join(root, "docs", "specs", "archive"), { recursive: true });
+	writeFileSync(join(root, "src", "task.ts"), "export {};\n");
+	writeFileSync(join(root, "docs", "specs", `${TASK}.spec.md`), "# Rework authority\n");
 	writeFileSync(
 		join(root, "docs", "plans", `${TASK}.intent.json`),
 		JSON.stringify(INTENT, null, 2) + "\n",
@@ -71,9 +80,6 @@ beforeEach(() => {
 		intent_revision: 1,
 		intent_content_hash: INTENT_HASH,
 		preparation_digest: prep.digest,
-		readiness_digest: "sha256:readiness",
-		evidence_digest: "sha256:evidence",
-		waiver_gate: "observation_window_days",
 		actor_id: "user",
 		confirmation_ref: "pi-confirm-enroll",
 		expires_at: "2099-01-01T00:00:00.000Z",
@@ -101,7 +107,12 @@ afterEach(() => {
 });
 
 function token() {
-	return readTaskIntent(root, TASK).token;
+	const record = readTaskRecord(root, TASK).record;
+	return readTaskIntent(root, TASK, record?.intent_ref.path).token;
+}
+
+function currentIntentHash() {
+	return readTaskRecord(root, TASK).record!.intent_ref.content_hash;
 }
 
 function execute(op: CanaryOperation, at: string) {
@@ -115,13 +126,36 @@ function execute(op: CanaryOperation, at: string) {
 	});
 }
 
-/** Bring the task into review phase with one recorded evidence item. */
-function toReview() {
-	execute(
-		{ op: "record_evidence", acceptance_id: "A1", status: "passed", summary: "one", actor_id: "executor-1" },
-		"2026-08-12T10:00:01.000Z",
-	);
-	execute({ op: "submit_review", actor_id: "executor-1" }, "2026-08-12T10:00:02.000Z");
+/** Freeze the artifact snapshot and atomically settle QA. */
+function toReview(at = "2026-08-12T10:00:02.000Z") {
+	execFileSync("git", ["add", "-A"], { cwd: root });
+	execute({ op: "freeze_artifacts", actor_id: "executor-1" }, at);
+	execFileSync("git", ["add", "-A"], { cwd: root });
+	const approval = {
+		id: `ap-qa-${at}`,
+		kind: "qa",
+		authority_role: "qa",
+		task_revision: 1,
+		intent_content_hash: currentIntentHash(),
+		diff_hash: DIFF,
+		actor_id: "qa-1",
+		summary: "descriptor passed",
+	};
+	const action = capabilityActionFor({ op: "record_approval", task_id: TASK, at, actor_id: "qa-1", approval });
+	const capability = createMutationAuthorityCapabilityForTest(mutationRegistry, {
+		authority_kind: "qa",
+		task_id: TASK,
+		action_digest: digestOfAction(action),
+		expected_record_hash: readTaskRecord(root, TASK).revision,
+		intent_revision: 1,
+		intent_content_hash: currentIntentHash(),
+		diff_hash: DIFF,
+		actor_id: "qa-1",
+		confirmation_ref: "conf-qa",
+		expires_at: "2099-01-01T00:00:00.000Z",
+		findings_digest: null,
+	});
+	return execute({ op: "record_approval", approval, capability, actor_id: "qa-1" }, at);
 }
 
 const FINDINGS = [
@@ -137,7 +171,7 @@ const FINDINGS = [
 ] as const;
 
 function reworkCapability(kind: "review" | "qa" | "user", overrides: Record<string, unknown> = {}) {
-	const record = readTaskRecordV2(root, TASK);
+	const record = readTaskRecord(root, TASK);
 	const findings = [...FINDINGS] as never[];
 	const actorId = kind === "user" ? "literal-user" : "reviewer-1";
 	const action = {
@@ -157,7 +191,7 @@ function reworkCapability(kind: "review" | "qa" | "user", overrides: Record<stri
 		action_digest: digest(action),
 		expected_record_hash: record.revision,
 		intent_revision: 1,
-		intent_content_hash: INTENT_HASH,
+		intent_content_hash: currentIntentHash(),
 		diff_hash: DIFF,
 		actor_id: actorId,
 		confirmation_ref: "conf-rework",
@@ -176,8 +210,8 @@ describe("request_rework authority", () => {
 				"2026-08-12T10:00:03.000Z",
 			),
 		).toThrow(/capability|authority/i);
-		const record = readTaskRecordV2(root, TASK);
-		expect(record.record?.phase).toBe("review");
+		const record = readTaskRecord(root, TASK);
+		expect(record.record).toMatchObject({ lifecycle: "active", artifact_state: "frozen" });
 		expect(record.record?.findings).toHaveLength(0);
 	});
 
@@ -188,7 +222,7 @@ describe("request_rework authority", () => {
 			{ op: "request_rework", capability: cap, findings: [...FINDINGS] as never[], actor_id: "literal-user" },
 			"2026-08-12T10:00:03.000Z",
 		);
-		expect(result.record.phase).toBe("working");
+		expect(result.record).toMatchObject({ lifecycle: "active", artifact_state: "active" });
 		expect(result.record.findings[0].summary).toBe(FINDINGS[0].summary);
 		expect(result.record.history.at(-1)?.authority?.authority_kind).toBe("user");
 		expect(mutationRegistry.isConsumed(cap)).toBe(true);
@@ -201,7 +235,7 @@ describe("request_rework authority", () => {
 			{ op: "request_rework", capability: cap, findings: [...FINDINGS] as never[], actor_id: "reviewer-1" },
 			"2026-08-12T10:00:03.000Z",
 		);
-		expect(result.record.phase).toBe("working");
+		expect(result.record).toMatchObject({ lifecycle: "active", artifact_state: "active" });
 		expect(result.record.findings).toHaveLength(1);
 		expect(result.record.findings[0].source).toBe("review");
 		expect(result.record.findings[0].review_round).toBe(1);
@@ -215,7 +249,7 @@ describe("request_rework authority", () => {
 			{ op: "request_rework", capability: cap, findings: [...FINDINGS] as never[], actor_id: "reviewer-1" },
 			"2026-08-12T10:00:03.000Z",
 		);
-		expect(result.record.phase).toBe("working");
+		expect(result.record).toMatchObject({ lifecycle: "active", artifact_state: "active" });
 		expect(result.record.findings[0].id).toBe("rw-1");
 	});
 
@@ -256,7 +290,7 @@ describe("request_rework authority", () => {
 			"2026-08-12T10:00:03.000Z",
 		);
 		// Re-submit and re-review: round 2 escalates.
-		execute({ op: "submit_review", actor_id: "executor-1" }, "2026-08-12T10:00:04.000Z");
+		toReview("2026-08-12T10:00:04.000Z");
 		const secondFindings = [
 			{
 				id: "rw-2",
@@ -286,7 +320,7 @@ describe("request_rework authority", () => {
 			{ op: "request_rework", capability: cap2, findings: secondFindings as never[], actor_id: "reviewer-1" },
 			"2026-08-12T10:00:05.000Z",
 		);
-		expect(result.record.phase).toBe("review");
+		expect(result.record).toMatchObject({ lifecycle: "active", artifact_state: "active" });
 		const boundary = result.record.findings.find(
 			(f) => f.kind === "replan_required",
 		);
@@ -301,7 +335,7 @@ describe("request_rework authority", () => {
 			{ op: "request_rework", capability: reworkCapability("review"), findings: [...FINDINGS] as never[], actor_id: "reviewer-1" },
 			"2026-08-12T10:00:03.000Z",
 		);
-		execute({ op: "submit_review", actor_id: "executor-1" }, "2026-08-12T10:00:04.000Z");
+		toReview("2026-08-12T10:00:04.000Z");
 		const qaFindings = [
 			{
 				id: "qa-2",
@@ -331,7 +365,7 @@ describe("request_rework authority", () => {
 			{ op: "request_rework", capability: cap, findings: qaFindings as never[], actor_id: "reviewer-1" },
 			"2026-08-12T10:00:05.000Z",
 		);
-		expect(result.record.phase).toBe("working");
+		expect(result.record).toMatchObject({ lifecycle: "active", artifact_state: "active" });
 		expect(result.record.findings.some((f) => f.kind === "replan_required")).toBe(false);
 	});
 });

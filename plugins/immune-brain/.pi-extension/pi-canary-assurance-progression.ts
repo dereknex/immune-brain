@@ -33,7 +33,7 @@ import type { AssuranceCorrelation, AssuranceRole, AssuranceResultPresentation }
 import {
 	buildRoleDelegationPacket,
 } from "../runtime/role_prompt_bridge";
-import type { AssuranceProjectionResult, TaskIntentRead, TaskRecordV2Read, TaskTombstoneRead } from "./runtime-stub";
+import type { AssuranceProjectionResult, TaskIntentRead, TaskRecordRead, TaskTombstoneRead } from "./runtime-stub";
 
 export interface GithubTerminalProjectionInput {
 	task_id: string;
@@ -49,14 +49,14 @@ export function deriveGithubTerminalProjectionInput(
 	if (
 		projection.error
 		|| projection.claim !== null
-		|| (projection.projection.phase !== "done" && projection.projection.phase !== "stopped")
+		|| (projection.projection.lifecycle !== "done" && projection.projection.lifecycle !== "stopped")
 		|| tombstone?.task_id !== taskId
 		|| tombstone.lifecycle_status !== "terminal"
-		|| tombstone.terminal_phase !== projection.projection.phase
+		|| tombstone.terminal_lifecycle !== projection.projection.lifecycle
 	) return null;
 	return {
 		task_id: taskId,
-		phase: projection.projection.phase,
+		phase: projection.projection.lifecycle,
 		terminal_event_id: tombstone.terminal_event_id,
 	};
 }
@@ -82,7 +82,7 @@ export interface AssuranceVerdict {
 }
 
 export interface SnapshotDescriptor {
-	contract: "assurance_kernel/assurance_snapshot/v1";
+	contract: "assurance_kernel/assurance_snapshot/v2";
 	task_id: string;
 	role: AssuranceRole;
 	record_revision: string;
@@ -90,11 +90,12 @@ export interface SnapshotDescriptor {
 	intent_revision: number;
 	intent_content_hash: string;
 	diff_hash: string;
-	phase: string;
+	lifecycle: string;
+	artifact_state: string;
 	risk: "routine" | "material" | "critical";
 	fresh_acceptance_ids: string[];
 	missing_acceptance_ids: string[];
-	stale_evidence_ids: string[];
+	stale_attestation_ids: string[];
 	acceptance: Array<{ id: string; assertion: string; verification: string }>;
 	dirty_files: string[];
 	review_bundle_digest: string | null;
@@ -116,6 +117,7 @@ export interface ForegroundToolUpdate {
 
 export type AssuranceAdvanceResult =
 	| { state: "review_ready"; operation: "review"; operation_id: string; snapshot_digest: string; review_bundle_digest: string; agent_params: ReservedAgentParams }
+	| { state: "awaiting_user"; operation: "record-user-approval"; operation_id: string }
 	| { state: "rework"; operation: "qa"; operation_id: string; summary: string }
 	| { state: "cancelled"; operation: "qa" | "review"; operation_id: string; reason: string }
 	| { state: "failed"; operation: "qa" | "review"; operation_id: string; reason: string }
@@ -125,19 +127,20 @@ export type AssuranceAdvanceResult =
 	| { state: "stopped" };
 
 export type AssuranceSubmitReviewResult =
-	| { state: "awaiting_user"; operation: "record-review-verdict"; operation_id: string }
+	| { state: "rework"; operation: "review"; operation_id: string; summary: string }
+	| { state: "awaiting_user"; operation: "record-user-approval"; operation_id: string }
+	| { state: "completed" }
 	| { state: "settlement_unknown"; operation: "qa" | "review"; operation_id: string; reason: string }
 	| { state: "blocked"; reason: string };
 
 export type ActiveAssuranceState =
 	| { state: "running"; operation: "qa"; operation_id: string; deadline_seconds: number }
 	| { state: "review_ready"; operation: "review"; operation_id: string }
-	| { state: "awaiting_user"; operation: "review"; operation_id: string }
 	| { state: "settlement_unknown"; operation: "qa" | "review"; operation_id: string; reason: string };
 
 export interface AssuranceProgressionPorts {
 	projectTask(root: string, taskId: string): Promise<AssuranceProjectionResult>;
-	readTaskRecordV2(root: string, taskId: string): Promise<TaskRecordV2Read>;
+	readTaskRecord(root: string, taskId: string): Promise<TaskRecordRead>;
 	readTaskIntent(root: string, taskId: string): Promise<TaskIntentRead>;
 	frozenRunner(): Promise<FrozenRunner>;
 	buildAssurance(
@@ -256,7 +259,7 @@ export function buildReviewPrompt(snapshot: SnapshotDescriptor, evidencePath?: s
 		`Execution outcomes for every acceptance were verified deterministically by the Kernel QA layer before this review and are embedded in this bundle under outcomes (acceptance_id -> {status, summary}); do not re-execute descriptors and do not treat the absence of local test runs as a finding. Your review covers bundle provenance, code correctness, regressions, security, and missing tests against the embedded assertions and code bytes.`,
 		`Snapshot digest: ${digest}`,
 		`TaskRecord revision: ${snapshot.record_revision}`,
-		`Intent revision ${snapshot.intent_revision} (hash ${snapshot.intent_content_hash}), diff ${snapshot.diff_hash}, review bundle ${snapshot.review_bundle_digest}, phase ${snapshot.phase}.`,
+		`Intent revision ${snapshot.intent_revision} (hash ${snapshot.intent_content_hash}), diff ${snapshot.diff_hash}, review bundle ${snapshot.review_bundle_digest}, state ${snapshot.lifecycle}:${snapshot.artifact_state}.`,
 		"Acceptance assertions:", acceptance,
 		"Reserve the final turn for exactly one strict JSON verdict. Reply with ONLY that object, without markdown fences or commentary.",
 		`PASS shape: {"contract":"assurance_kernel/assurance_verdict/v2","role":"review","task_id":"${snapshot.task_id}","snapshot_digest":"${digest}","decision":"pass","approval":{"kind":"review","authority_role":"reviewer","summary":"<one line>"}}`,
@@ -320,7 +323,6 @@ export class AssuranceProgression {
 	private readonly operationControllers = new Map<string, { operationId: string; controller: AbortController }>();
 	private readonly reviewReservations = new Map<string, ReviewReservation>();
 	private readonly rejectedReviewOperations = new Map<string, { operationId: string; reason: string }>();
-	private readonly pendingReviewVerdicts = new Map<string, PendingReviewVerdict>();
 	private readonly unknownOperations = new Map<string, { operation: "qa" | "review"; operationId: string; reason: string }>();
 	private readonly sessionInvocations = new Set<InvocationToken>();
 	private sessionActive = true;
@@ -341,7 +343,6 @@ export class AssuranceProgression {
 		}
 		this.operationControllers.clear();
 		this.activeOperations.clear();
-		this.pendingReviewVerdicts.clear();
 		this.rejectedReviewOperations.clear();
 		for (const reservation of this.reviewReservations.values()) this.removeEvidence(reservation);
 		this.reviewReservations.clear();
@@ -388,16 +389,10 @@ export class AssuranceProgression {
 		if (operationId) return { state: "running", operation: "qa", operation_id: operationId, deadline_seconds: QA_JOB_TIMEOUT_SECONDS };
 		const reservation = this.reviewReservations.get(taskId);
 		if (reservation) return { state: "review_ready", operation: "review", operation_id: reservation.operationId };
-		const pending = this.pendingReviewVerdicts.get(taskId);
-		if (pending) return { state: "awaiting_user", operation: "review", operation_id: pending.operationId };
 		const unknown = this.unknownOperations.get(taskId);
 		if (unknown) return { state: "settlement_unknown", operation: unknown.operation, operation_id: unknown.operationId, reason: unknown.reason };
 		return null;
 	}
-
-	hasPendingReviewVerdict(taskId: string): boolean { return this.pendingReviewVerdicts.has(taskId); }
-	pendingReviewVerdict(taskId: string): PendingReviewVerdict | undefined { return this.pendingReviewVerdicts.get(taskId); }
-	clearPendingReviewVerdict(taskId: string): void { this.pendingReviewVerdicts.delete(taskId); }
 
 	openInvocation(taskId: string): InvocationToken {
 		const invocation = invocationRegistry.open(taskId);
@@ -418,7 +413,6 @@ export class AssuranceProgression {
 	async advance(taskId: string, ctx: ExtensionContext, signal?: AbortSignal, onUpdate?: (update: ForegroundToolUpdate) => void): Promise<AssuranceAdvanceResult> {
 		const active = this.active(taskId);
 		if (active?.state === "review_ready") return this.reviewReadyResult(taskId);
-		if (active?.state === "awaiting_user") return { state: "blocked", reason: "native Review verdict already awaits authorization" };
 		if (active?.state === "settlement_unknown") return active;
 		if (active?.state === "running") return { state: "blocked", reason: `assurance operation ${active.operation_id} is already running` };
 		const operationId = randomUUID();
@@ -455,28 +449,42 @@ export class AssuranceProgression {
 			let projection = await this.ports.projectTask(ctx.cwd, taskId);
 			ensureOperationLive();
 			if (projection.error) return { state: "blocked", reason: projection.error };
-			if (projection.projection.phase === "done") return { state: "completed" };
-			if (projection.projection.phase === "stopped") return { state: "stopped" };
+			if (projection.projection.lifecycle === "done") return { state: "completed" };
+			if (projection.projection.lifecycle === "stopped") return { state: "stopped" };
 			if (!projection.claim) return { state: "blocked", reason: "no active backend claim" };
 			if (projection.claim.task_id !== taskId) return { state: "blocked", reason: `backend claim belongs to ${projection.claim.task_id}, not ${taskId}` };
-			const parked = await this.ports.readTaskRecordV2(ctx.cwd, taskId);
+			const parked = await this.ports.readTaskRecord(ctx.cwd, taskId);
 			ensureOperationLive();
 			if (parked.record?.findings.some((finding) => finding.kind === "replan_required" && finding.status === "open")) return { state: "blocked", reason: "review rework limit reached; a durable replan is required" };
-			if (projection.projection.phase === "working") {
-				if (projection.projection.missing_acceptance_ids.length > 0) return { state: "blocked", reason: `fresh evidence is missing for: ${projection.projection.missing_acceptance_ids.join(",")}` };
-				if (aborted()) return this.cancelled("qa", operationId, "host cancellation before review transition");
-				progress("submitting_review", "Submitting the fresh evidence for deterministic QA");
-				const reviewTransition = this.ports.applyOrdinaryOperation(ctx, { taskId, operation: { op: "submit_review", actor_id: "executor" } });
+			if (projection.projection.artifact_state === "active") {
+				if (projection.projection.next_obligation !== "submit_assurance")
+					return { state: "blocked", reason: `Kernel requires ${projection.projection.next_obligation}` };
+				if (aborted()) return this.cancelled("qa", operationId, "host cancellation before artifact freeze");
+				progress("freezing_artifacts", "Freezing planning artifacts for deterministic assurance");
+				const freeze = this.ports.applyOrdinaryOperation(ctx, { taskId, operation: { op: "freeze_artifacts", actor_id: "executor" } });
 				authorityBoundaryStarted = true;
-				await reviewTransition;
+				await freeze;
 				authorityCommitted = true;
 				ensureOperationLive();
 				projection = await this.ports.projectTask(ctx.cwd, taskId);
 				ensureOperationLive();
-				if (projection.error || projection.projection.phase !== "review") return this.unknownAfterCommit(taskId, "qa", operationId, projection.error ?? "review transition did not settle");
+				if (projection.error || projection.projection.lifecycle !== "active" || projection.projection.artifact_state !== "frozen")
+					return this.unknownAfterCommit(taskId, "qa", operationId, projection.error ?? "artifact freeze did not settle");
 			}
-			const qaAlreadySettled = projection.projection.phase === "review"
-				&& (projection.projection.fresh_approval_kinds?.includes("qa") ?? false);
+			if (projection.projection.next_obligation === "complete") {
+				progress("completing", "Completing the routine task after deterministic QA");
+				try {
+					await this.ports.applyOrdinaryOperation(ctx, { taskId, operation: { op: "complete", actor_id: "kernel-assurance" } });
+					return { state: "completed" };
+				} catch (error) {
+					return this.unknownAfterCommit(taskId, "qa", operationId, boundedAssuranceError(error));
+				}
+			}
+			if (projection.projection.next_obligation === "authorize_user")
+				return { state: "awaiting_user", operation: "record-user-approval", operation_id: operationId };
+			if (projection.projection.next_obligation !== "run_qa" && projection.projection.next_obligation !== "run_review")
+				return { state: "blocked", reason: `Kernel requires ${projection.projection.next_obligation}` };
+			const qaAlreadySettled = projection.projection.next_obligation === "run_review";
 			const runner = await this.ports.frozenRunner();
 			ensureOperationLive();
 			let qaVerdict: AssuranceVerdict | undefined;
@@ -531,6 +539,19 @@ export class AssuranceProgression {
 			const fresh = await this.ports.projectTask(ctx.cwd, taskId);
 			ensureOperationLive();
 			if (fresh.error || !fresh.claim) return this.unknownAfterCommit(taskId, "qa", operationId, fresh.error ?? "claim disappeared after QA settlement");
+			if (fresh.projection.next_obligation === "complete") {
+				progress("completing", "Deterministic QA passed; completing the routine task");
+				try {
+					await this.ports.applyOrdinaryOperation(ctx, { taskId, operation: { op: "complete", actor_id: "kernel-assurance" } });
+					return { state: "completed" };
+				} catch (error) {
+					return this.unknownAfterCommit(taskId, "qa", operationId, boundedAssuranceError(error));
+				}
+			}
+			if (fresh.projection.next_obligation === "authorize_user")
+				return { state: "awaiting_user", operation: "record-user-approval", operation_id: operationId };
+			if (fresh.projection.next_obligation !== "run_review")
+				return { state: "blocked", reason: `Kernel requires ${fresh.projection.next_obligation} after QA` };
 			const review = await this.ports.buildAssurance(ctx.cwd, taskId, "review", fresh, runner);
 			ensureOperationLive();
 			if (!review.reviewBundle) return this.unknownAfterCommit(taskId, "qa", operationId, "review bundle is missing after QA settlement");
@@ -571,8 +592,6 @@ export class AssuranceProgression {
 	}
 
 	async submitReview(taskId: string, ctx: ExtensionContext): Promise<AssuranceSubmitReviewResult> {
-		const pending = this.pendingReviewVerdicts.get(taskId);
-		if (pending) return { state: "awaiting_user", operation: "record-review-verdict", operation_id: pending.operationId };
 		const unknown = this.unknownOperations.get(taskId);
 		if (unknown) { this.unknownOperations.delete(taskId); return { state: "settlement_unknown", operation: unknown.operation, operation_id: unknown.operationId, reason: unknown.reason }; }
 		const rejected = this.rejectedReviewOperations.get(taskId);
@@ -599,7 +618,7 @@ export class AssuranceProgression {
 			this.releaseReviewReservation(taskId, reservation, reason);
 			return { state: "blocked", reason };
 		}
-		if (fresh.error || !fresh.claim || fresh.claim.task_id !== taskId || fresh.projection.record_revision !== reservation.snapshot.record_revision || fresh.projection.workspace_revision !== reservation.snapshot.workspace_revision || fresh.projection.intent_revision !== reservation.snapshot.intent_revision || fresh.projection.intent_content_hash !== reservation.snapshot.intent_content_hash || fresh.projection.diff_hash !== reservation.snapshot.diff_hash || fresh.projection.phase !== reservation.snapshot.phase) {
+		if (fresh.error || !fresh.claim || fresh.claim.task_id !== taskId || fresh.projection.record_revision !== reservation.snapshot.record_revision || fresh.projection.workspace_revision !== reservation.snapshot.workspace_revision || fresh.projection.intent_revision !== reservation.snapshot.intent_revision || fresh.projection.intent_content_hash !== reservation.snapshot.intent_content_hash || fresh.projection.diff_hash !== reservation.snapshot.diff_hash || fresh.projection.lifecycle !== reservation.snapshot.lifecycle || fresh.projection.artifact_state !== reservation.snapshot.artifact_state) {
 			const reason = fresh.error ?? "assurance snapshot changed before Review submission";
 			this.releaseReviewReservation(taskId, reservation, reason);
 			return { state: "blocked", reason };
@@ -611,16 +630,46 @@ export class AssuranceProgression {
 			this.releaseReviewReservation(taskId, reservation, reason);
 			return { state: "blocked", reason };
 		}
-		this.pendingReviewVerdicts.set(taskId, {
-			operationId: reservation.operationId,
-			snapshot: reservation.snapshot,
-			verdict,
-			agentId: reservation.receipt.agentId,
-			durationMs: reservation.receipt.durationMs,
-			tokens: reservation.receipt.tokens,
-		});
+		const invocation = this.openInvocation(taskId);
 		this.releaseReviewReservation(taskId, reservation);
-		return { state: "awaiting_user", operation: "record-review-verdict", operation_id: reservation.operationId };
+		try {
+			await this.ports.applyVerdict(ctx, {
+				taskId,
+				snapshot: reservation.snapshot,
+				verdict,
+				invocation,
+				actorId: `native-review-${reservation.receipt.agentId}`,
+			});
+		} catch (error) {
+			const reason = boundedAssuranceError(error);
+			return this.invocationState(invocation) === "committed"
+				? this.unknownAfterCommit(taskId, "review", reservation.operationId, reason)
+				: { state: "blocked", reason };
+		} finally {
+			this.closeInvocation(invocation);
+		}
+		if (verdict.decision === "rework") {
+			return {
+				state: "rework",
+				operation: "review",
+				operation_id: reservation.operationId,
+				summary: verdict.findings?.map((finding) => finding.summary).join("; ") ?? "independent Review requested rework",
+			};
+		}
+		const settled = await this.ports.projectTask(ctx.cwd, taskId);
+		if (settled.error || !settled.claim)
+			return this.unknownAfterCommit(taskId, "review", reservation.operationId, settled.error ?? "claim disappeared after Review settlement");
+		if (settled.projection.next_obligation === "complete") {
+			try {
+				await this.ports.applyOrdinaryOperation(ctx, { taskId, operation: { op: "complete", actor_id: "kernel-assurance" } });
+				return { state: "completed" };
+			} catch (error) {
+				return this.unknownAfterCommit(taskId, "review", reservation.operationId, boundedAssuranceError(error));
+			}
+		}
+		if (settled.projection.next_obligation === "authorize_user")
+			return { state: "awaiting_user", operation: "record-user-approval", operation_id: reservation.operationId };
+		return { state: "blocked", reason: `Kernel requires ${settled.projection.next_obligation} after Review` };
 	}
 
 	private reviewReadyResult(taskId: string): AssuranceAdvanceResult {
@@ -653,15 +702,6 @@ export class AssuranceProgression {
 		this.unknownOperations.set(taskId, { operation, operationId, reason });
 		return { state: "settlement_unknown", operation, operation_id: operationId, reason };
 	}
-}
-
-export interface PendingReviewVerdict {
-	operationId: string;
-	snapshot: SnapshotDescriptor;
-	verdict: AssuranceVerdict;
-	agentId: string;
-	durationMs?: number;
-	tokens?: { input: number; output: number; total: number };
 }
 
 function boundedAssuranceError(error: unknown): string {

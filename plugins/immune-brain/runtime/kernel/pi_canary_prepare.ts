@@ -8,7 +8,7 @@ import { resolve } from "node:path";
 import { readBackendClaim, readTaskTombstone } from "./backend_claim";
 import { readTaskIntent } from "./intent";
 import {
-	readTaskRecordV2Raw,
+	readTaskRecordRaw,
 	readWorkspaceStateRaw,
 } from "./storage";
 
@@ -36,11 +36,12 @@ export interface PiCanaryPreparation {
 	};
 	task_tombstone: {
 		present: boolean;
-		terminal_phase: string | null;
+		terminal_lifecycle: string | null;
 	};
-	task_record_v2: {
+	task_record_v3: {
 		present: boolean;
-		phase: string | null;
+		lifecycle: string | null;
+		artifact_state: string | null;
 	} | null;
 	workspace: {
 		current_working: string | null;
@@ -104,21 +105,21 @@ export function preparePiCanary(root: string, input: PiCanaryPrepareInput): PiCa
 	const taskTombstone: PiCanaryPreparation["task_tombstone"] = tombstone
 		? {
 				present: true,
-				terminal_phase: tombstone.terminal_phase,
+				terminal_lifecycle: tombstone.terminal_lifecycle,
 			}
-		: { present: false, terminal_phase: null };
+		: { present: false, terminal_lifecycle: null };
 	if (tombstone && claim)
 		throw new Error(
 			`task ${input.task_id} has both an active backend claim and a terminal tombstone`,
 		);
 
-	const current = readTaskRecordV2Raw(canonicalRoot, input.task_id);
-	const record: PiCanaryPreparation["task_record_v2"] = current.record
-		? { present: true, phase: current.record.phase }
-		: { present: false, phase: null };
+	const current = readTaskRecordRaw(canonicalRoot, input.task_id);
+	const record: PiCanaryPreparation["task_record_v3"] = current.record
+		? { present: true, lifecycle: current.record.lifecycle, artifact_state: current.record.artifact_state }
+		: { present: false, lifecycle: null, artifact_state: null };
 	if (claim && !current.record)
 		throw new Error(
-			`backend claim exists for task ${input.task_id} but its TaskRecord v2 is absent`,
+			`backend claim exists for task ${input.task_id} but its TaskRecord v3 is absent`,
 		);
 	if (claim && !intent)
 		throw new Error(
@@ -146,7 +147,7 @@ export function preparePiCanary(root: string, input: PiCanaryPrepareInput): PiCa
 		intent,
 		backend_claim: backend,
 		task_tombstone: taskTombstone,
-		task_record_v2: record,
+		task_record_v3: record,
 		workspace,
 		digest: "",
 	};

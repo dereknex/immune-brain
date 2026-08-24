@@ -38,10 +38,11 @@ authorization remains a native TUI gate. When the projection calls for
 asking the user for chat pre-confirmation; the native host interaction is the
 single authority decision. Do not invoke the removed `imm-canary-work` Skill as
 a separate entry point. Invalid or contradictory projections fail closed. After
-fresh evidence, use `advance_assurance` and `submit_review`;
-`request_authorization` remains the user authorization boundary; visible
-background state and push follow-up replace internal QA/Review sequencing and
-polling. The host performs any opted-in GitHub Issue projection only after the
+implementation and focused verification, freeze the artifacts and call
+`advance_assurance`. If it returns `review_ready`, invoke the exact reserved
+foreground Agent and call `submit_review`; `request_authorization` remains the
+critical-risk user authorization boundary. Every QA/Review operation stays
+foreground and returns its next projected obligation directly to the Parent. The host performs any opted-in GitHub Issue projection only after the
 corresponding authority mutation: only a fresh claimless `done`/`stopped`
 projection with its exact terminal tombstone projects terminal closure
 (`completed`/`not planned`); Enrollment performs no GitHub projection. Treat the

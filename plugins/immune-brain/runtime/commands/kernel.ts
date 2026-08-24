@@ -930,8 +930,8 @@ function runIntentValidate(args: string[], root: string): KernelExecution {
 				descriptor_rehearsal: {
 					required: true,
 					status: enrollmentReady ? "pending_tui_enrollment" : "blocked_by_intent_validation",
-					default_route: "fail_closed",
-					waiver_route: "explicit_tui_waiver",
+					default_route: "fail_closed_on_infrastructure_or_integrity",
+					acceptance_failure: "baseline_observation",
 					snapshot_binding: "frozen_git_index_digest",
 					scope_drift: "non_waivable",
 					timeout_budget: "isolated_copy_setup_and_execution",

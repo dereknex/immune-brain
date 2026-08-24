@@ -141,7 +141,7 @@ describe("pi canary enroll extension", () => {
 		if (!tool) throw new Error("enrollment Tool not registered");
 		return tool.execute(
 			"tool-call",
-			{ action: "enroll", task_id: taskId },
+			{ action: "new", task_id: taskId },
 			ui.signal,
 			undefined,
 			makeCtx(root, ui, mode),
@@ -457,7 +457,7 @@ describe("pi canary enroll handler integration", () => {
 		root: string,
 		ui: FakeUI,
 		updates: string[] = [],
-		action: "enroll" | "new" = "enroll",
+		action: "new" = "new",
 		emitted: Array<{ name: string; payload: Record<string, unknown> }> = [],
 		sessionShutdown: Array<(event: unknown, ctx: ReturnType<typeof makeCtx>) => Promise<void>> = [],
 	): Promise<any> {
@@ -582,27 +582,6 @@ describe("pi canary enroll handler integration", () => {
 		}
 	});
 
-	test("routine explicit rehearsal waiver retains confirmation and zero writes", async () => {
-		const root = mkdtempSync(join(tmpdir(), "p2b1-enroll-"));
-		try {
-			makeEligibleRepo(root, TASK);
-			writeFileSync(join(root, "scripts", "accept.ts"), "process.exit(1);\n");
-			git(root, ["add", "scripts/accept.ts"]);
-			const before = authoritySnapshot(root);
-			const ui = makeFakeUI(false);
-			const emitted: Array<{ name: string; payload: Record<string, unknown> }> = [];
-			const result = await runTool(root, ui, [], "enroll", emitted);
-			expect(ui.confirmCalls.length).toBe(1);
-			expect(result.details.state).toBe("rejected");
-			expect(result.details.summary).toMatch(/confirmation was rejected/i);
-			expect(emitted.map((event) => event.payload.reason)).toEqual(["descriptor_waiver", "descriptor_waiver"]);
-			expect(emitted.map((event) => event.payload.active)).toEqual([true, false]);
-			expect(authoritySnapshot(root)).toBe(before);
-		} finally {
-			rmSync(root, { recursive: true, force: true });
-		}
-	});
-
 	test("declined confirmation returns rejection with zero writes", async () => {
 		const root = mkdtempSync(join(tmpdir(), "p2b1-enroll-"));
 		try {
@@ -627,7 +606,7 @@ describe("pi canary enroll handler integration", () => {
 			const ui = makeFakeUI(true);
 			ui.signal = AbortSignal.abort(new Error("host cancelled"));
 			const emitted: Array<{ name: string; payload: Record<string, unknown> }> = [];
-			const result = await runTool(root, ui, [], "enroll", emitted);
+			const result = await runTool(root, ui, [], "new", emitted);
 			expect(result.details.state).toBe("cancelled");
 			expect(ui.confirmCalls.length).toBe(0);
 			expect(emitted).toEqual([]);
@@ -647,7 +626,7 @@ describe("pi canary enroll handler integration", () => {
 			ui.signal = controller.signal;
 			ui.beforeConfirm = () => controller.abort(new Error("user aborted confirmation"));
 			const emitted: Array<{ name: string; payload: Record<string, unknown> }> = [];
-			const result = await runTool(root, ui, [], "enroll", emitted);
+			const result = await runTool(root, ui, [], "new", emitted);
 			expect(ui.confirmCalls).toHaveLength(1);
 			expect(result.details.state).toBe("cancelled");
 			expect(emitted.map((event) => event.payload.active)).toEqual([true, false]);
@@ -666,7 +645,7 @@ describe("pi canary enroll handler integration", () => {
 			const ui = makeFakeUI(true);
 			ui.customError = new Error("renderer unavailable");
 			const emitted: Array<{ name: string; payload: Record<string, unknown> }> = [];
-			const failure = await capturedToolFailure(runTool(root, ui, [], "enroll", emitted));
+			const failure = await capturedToolFailure(runTool(root, ui, [], "new", emitted));
 			expect(failure.state).toBe("failed");
 			expect(failure.message).toContain("renderer unavailable");
 			expect(emitted.map((event) => event.payload.active)).toEqual([true, false]);

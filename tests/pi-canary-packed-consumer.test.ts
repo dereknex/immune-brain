@@ -26,13 +26,13 @@ describe("packed consumer surface", () => {
 		expect(values.some((v) => v.includes("fixtures/"))).toBe(false);
 		expect(values.some((v) => v.includes("bin/"))).toBe(false);
 		// No Kernel internal is exposed: authority_port, canary_application,
-		// backend_claim, storage, reducer_v2 are absent.
+		// backend_claim, storage, reducer are absent.
 		const joined = values.join("\n");
 		expect(joined).not.toContain("authority_port");
 		expect(joined).not.toContain("canary_application");
 		expect(joined).not.toContain("backend_claim");
 		expect(joined).not.toContain("storage");
-		expect(joined).not.toContain("reducer_v2");
+		expect(joined).not.toContain("reducer");
 		expect(joined).not.toContain("enrollment");
 	});
 
@@ -88,37 +88,27 @@ describe("packed consumer surface", () => {
 		}
 	});
 
-	test("packed enrollment contract exposes descriptor rehearsal and the single explicit waiver route", () => {
+	test("packed enrollment contract exposes descriptor rehearsal without waiver", () => {
 		const guide = readFileSync(join(ROOT, "plugins/immune-brain/USER_GUIDE.md"), "utf8");
-		const waiverRoute = readFileSync(
+		const enrollment = readFileSync(
 			join(ROOT, "plugins/immune-brain/.pi-extension/imm-canary-enroll.ts"),
 			"utf8",
 		);
-		expect(guide).toContain("foreground");
-		expect(guide).toContain("descriptor-rehearsal/v1:waived:<digest>");
-		expect(guide).toContain("frozen `index_digest`");
-		expect(guide).toContain("scope/index snapshot integrity");
-		expect(waiverRoute).toContain('name: "imm_canary_enrollment"');
-		expect(waiverRoute).toContain('const route = action === "new" ? "default" : "explicit_waiver"');
-		expect(waiverRoute).toContain("if (!rehearsalDecision.proceed_to_confirmation)");
-		expect(waiverRoute).toContain("REHEARSAL WAIVER: enrollment_ready=false");
-		expect(waiverRoute).toContain('waiver_gate: rehearsalOverride ? "descriptor_rehearsal"');
-		expect(waiverRoute).toContain("waiver_allowed");
-		expect(waiverRoute).toContain('| "cancelled"');
-		expect(waiverRoute).toContain('| "output_exceeded"');
-		expect(waiverRoute).toContain('| "setup_timed_out"');
-		expect(waiverRoute).toContain('| "integrity_drift"');
-		expect(waiverRoute).toContain('child.once("close"');
-		expect(waiverRoute).toContain('gitBytes(root, ["diff", "--binary"');
-		expect(waiverRoute).toContain("setInterval(monitorIntegrity, 250)");
-		expect(waiverRoute).toContain('pi.on("session_shutdown"');
-		expect(waiverRoute).toContain("class ForegroundEnrollmentCoordinator");
-		expect(waiverRoute).toContain("hostSignal?.addEventListener");
-		expect(waiverRoute).toContain("onUpdate");
-		expect(waiverRoute).toContain('"settlement_unknown"');
-		expect(waiverRoute).not.toContain("EnrollmentJobCoordinator");
-		expect(waiverRoute).not.toContain("setWidget(");
-		expect(waiverRoute).not.toContain("setStatus(");
+		expect(guide).toContain("baseline observation");
+		expect(guide).toContain("没有 waiver action");
+		expect(enrollment).toContain('name: "imm_canary_enrollment"');
+		expect(enrollment).toContain("if (!rehearsalDecision.proceed_to_confirmation)");
+		expect(enrollment).not.toContain("explicit_waiver");
+		expect(enrollment).not.toContain("waiver_gate");
+		expect(enrollment).toContain('| "cancelled"');
+		expect(enrollment).toContain('| "output_exceeded"');
+		expect(enrollment).toContain('| "setup_timed_out"');
+		expect(enrollment).toContain('| "integrity_drift"');
+		expect(enrollment).toContain('child.once("close"');
+		expect(enrollment).toContain('pi.on("session_shutdown"');
+		expect(enrollment).toContain("class ForegroundEnrollmentCoordinator");
+		expect(enrollment).not.toContain("setWidget(");
+		expect(enrollment).not.toContain("setStatus(");
 	});
 
 	test("host registry inspection after real loading registers only the specified surface", async () => {

@@ -10,14 +10,14 @@ import { createHash } from "node:crypto";
 
 import {
 	MUTATION_AUTHORITY_CAPABILITY_BRAND,
-	type AuthorityAuditDescriptorV2,
+	type AuthorityAuditDescriptor,
 	type MutationAuthorityCapabilityV2,
-	type MutationAuthorityKindV2,
-	type TaskActionV2,
+	type MutationAuthorityKind,
+	type TaskAction,
 } from "./types";
 
 export interface CapabilityBindingV2 {
-	authority_kind: MutationAuthorityKindV2;
+	authority_kind: MutationAuthorityKind;
 	task_id: string;
 	action_digest: string;
 	expected_record_hash: string;
@@ -37,7 +37,7 @@ interface CapabilityState extends CapabilityBindingV2 {
 }
 
 export interface ValidatedAuthorityV2 {
-	audit: AuthorityAuditDescriptorV2;
+	audit: AuthorityAuditDescriptor;
 	action_digest: string;
 	expected_record_hash: string;
 	intent_revision: number;
@@ -48,7 +48,7 @@ export interface ValidatedAuthorityV2 {
 
 export interface MutationAuthorityInspection {
 	task_id: string;
-	action: TaskActionV2;
+	action: TaskAction;
 	expected_record_hash: string;
 	intent_revision: number;
 	intent_content_hash: string;
@@ -76,7 +76,7 @@ export interface MutationAuthorityRegistry {
 	isConsumed(capability: MutationAuthorityCapabilityV2): boolean;
 }
 
-export function digestOfAction(action: TaskActionV2): string {
+export function digestOfAction(action: TaskAction): string {
 	const { expected_record_hash: _r, expected_workspace_hash: _w, diff_hash: _d, ...rest } = action;
 	return createHash("sha256")
 		.update(JSON.stringify(rest))

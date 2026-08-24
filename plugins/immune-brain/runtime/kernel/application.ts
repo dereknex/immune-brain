@@ -1,9 +1,8 @@
-// R2C2 TaskRecord v2 mutation port. The single locked application path that
+// TaskRecord v3 mutation port. The single locked application path that
 // rereads and consumes Intent identity, validates action/record/diff/CAS
 // identity, consumes authority when privileged, reduces, and commits through
-// the dedicated recoverable v2 transaction. Exposed as a library function for
-// later trusted-host integration; not reachable from any CLI, runtime
-// manifest, RPC, or host adapter in R2C2.
+// the dedicated recoverable workspace transaction. Consumed by the Pi canary
+// host adapter via canary_application.
 
 import {
 	type MutationAuthorityRegistry,
@@ -16,35 +15,34 @@ import {
 	type TaskIntentIdentityToken,
 } from "./intent_token_registry";
 import {
-	reduceTaskV2,
-	canonicalRecordHashV2,
+	reduceTask,
+	canonicalRecordHash,
 	findingsDigestV2,
-	isReducedMutationV2,
-} from "./reducer_v2";
+	isReducedMutation,
+} from "./reducer";
 import {
-	commitTaskRecordV2Locked,
+	commitTaskRecordLocked,
 	commitTerminalLocked,
-	readTaskRecordV2Raw,
+	readTaskRecordRaw,
 	readWorkspaceStateRaw,
 	revisionForContent,
 	serializeWorkspace,
-	withKernelStoreLockV2,
+	withKernelStoreLock,
 	type WorkspaceState,
 	type WorkspaceTransactionV2,
 	type ArtifactRelocationV1,
 } from "./storage";
 import type {
-	AuthorityAuditDescriptorV2,
+	AuthorityAuditDescriptor,
 	MutationAuthorityCapabilityV2,
-	StoredTaskMutationV2,
-	TaskActionV2,
-	TaskArtifactRefV1,
+	StoredTaskMutationV3,
+	TaskAction,
 	TaskIntentV1,
 } from "./types";
 import { TASK_TOMBSTONE_CONTRACT, type TaskTombstone } from "./backend_claim";
-import { KernelInvariantError, parseTaskActionV2 } from "./validation";
+import { KernelInvariantError, parseTaskAction } from "./validation";
 
-export interface ApplyTaskActionV2Input {
+export interface ApplyTaskActionInput {
 	root: string;
 	task_id: string;
 	action: unknown;
@@ -66,23 +64,23 @@ export interface ApplyTaskActionV2Input {
 	artifact_transition?: {
 		relocations: ArtifactRelocationV1[];
 		next_intent_path: string;
-		next_artifact_ref: TaskArtifactRefV1;
+		next_artifact_state: "active" | "frozen";
 	};
 }
 
-export function applyTaskActionV2(
-	input: ApplyTaskActionV2Input,
-): StoredTaskMutationV2 {
+export function applyTaskAction(
+	input: ApplyTaskActionInput,
+): StoredTaskMutationV3 {
 	const { root, task_id, prior_intent_token, registry, capability, diffProvider, now } =
 		input;
-	return withKernelStoreLockV2(root, () => {
-		const current = readTaskRecordV2Raw(root, task_id);
+	return withKernelStoreLock(root, () => {
+		const current = readTaskRecordRaw(root, task_id);
 		if (!current.record)
 			throw new KernelInvariantError([
-				`task ${task_id} has no TaskRecord v2`,
+				`task ${task_id} has no TaskRecord v3`,
 			]);
 		const workspace = readWorkspaceStateRaw(root);
-		const action = parseTaskActionV2(input.action);
+		const action = parseTaskAction(input.action);
 
 		// Expected-hash CAS and workspace ownership are validated after the
 		// preflight reduction: exact committed replay returns before these
@@ -171,7 +169,7 @@ export function applyTaskActionV2(
 					expected_record_hash: current.revision,
 					intent_revision: isRevisionAction
 						? action.next_intent.revision
-						: current.record.intent_revision,
+						: current.record.intent_snapshot.revision,
 					intent_content_hash: isRevisionAction
 						? freshRead.content_hash
 						: current.record.intent_ref.content_hash,
@@ -183,23 +181,23 @@ export function applyTaskActionV2(
 			: null;
 
 		// Preflight reduction with inspected (not consumed) authority. The pure
-		// reducer enforces expected-hash equality for new events, phase rules,
+		// reducer enforces expected-hash equality for new events, lifecycle rules,
 		// replay identity, and conflicting reuse, so any throw is a zero-write
 		// failure (including stale record/workspace CAS).
 		const inspectedAudit = expectedAuthority
 			? registry.inspect(capability, expectedAuthority, now)
 			: null;
-		const mutation = reduceTaskV2(
+		const mutation = reduceTask(
 			current.record,
 			action,
-			inspectedAudit ? (inspectedAudit.audit as AuthorityAuditDescriptorV2) : null,
+			inspectedAudit ? (inspectedAudit.audit as AuthorityAuditDescriptor) : null,
 		);
-		if (!isReducedMutationV2(mutation))
+		if (!isReducedMutation(mutation))
 			throw new KernelInvariantError(["reducer returned an invalid mutation"]);
 
 		// Exact committed replay: identical record -> return committed snapshot
 		// without consuming tokens or authority.
-		if (canonicalRecordHashV2(mutation.record) === current.revision)
+		if (canonicalRecordHash(mutation.record) === current.revision)
 			return {
 				revision: current.revision,
 				record: current.record,
@@ -243,7 +241,7 @@ export function applyTaskActionV2(
 						...mutation.record.intent_ref,
 						path: input.artifact_transition.next_intent_path,
 					},
-					artifact_ref: { ...input.artifact_transition.next_artifact_ref },
+					artifact_state: input.artifact_transition.next_artifact_state,
 				}
 			: mutation.record;
 		let nextWorkspaceState: WorkspaceState = workspace.state;
@@ -264,9 +262,9 @@ export function applyTaskActionV2(
 				contract: TASK_TOMBSTONE_CONTRACT,
 				task_id,
 				lifecycle_status: "terminal",
-				terminal_phase: nextRecord.phase,
+				terminal_lifecycle: nextRecord.lifecycle,
 				terminal_event_id: action.event_id,
-				final_record_hash: canonicalRecordHashV2(nextRecord),
+				final_record_hash: canonicalRecordHash(nextRecord),
 				terminalized_at: input.terminal.terminalized_at,
 			};
 			const transaction: WorkspaceTransactionV2 = {
@@ -280,7 +278,7 @@ export function applyTaskActionV2(
 			};
 			commitTerminalLocked(root, task_id, transaction, tombstone);
 			return {
-				revision: canonicalRecordHashV2(nextRecord),
+				revision: canonicalRecordHash(nextRecord),
 				record: nextRecord,
 				workspace: {
 					revision: revisionForContent(serializeWorkspace(nextWorkspaceState)),
@@ -289,7 +287,7 @@ export function applyTaskActionV2(
 			};
 		}
 
-		return commitTaskRecordV2Locked(
+		return commitTaskRecordLocked(
 			root,
 			task_id,
 			current.revision,
