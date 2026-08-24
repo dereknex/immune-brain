@@ -338,13 +338,17 @@ function initiativeLookup(issues: GithubIssue[], repositoryId: number, initiativ
 	return findIssue(issues, [initiative, KIND_INITIATIVE_MARKER], [marker("repo-id", repositoryId), initiative]);
 }
 
+function ownershipMarkerValue(body: string, name: "initiative-id" | "slice-id"): string | null {
+	const values = [...body.matchAll(new RegExp(`<!-- immune-brain:${name}=([A-Za-z0-9][A-Za-z0-9._-]{0,127}) -->`, "g"))];
+	return values.length === 1 ? values[0][1] : null;
+}
+
 function taskLookup(issues: GithubIssue[], repositoryId: number, taskId: string): IssueLookup {
 	const task = marker("task-id", taskId);
 	const base = findIssue(issues, [task, KIND_TASK_MARKER], [marker("repo-id", repositoryId), task]);
 	if (base.kind !== "found") return base;
 	for (const name of ["initiative-id", "slice-id"] as const) {
-		const values = [...base.issue.body.matchAll(new RegExp(`<!-- immune-brain:${name}=([A-Za-z0-9][A-Za-z0-9._-]{0,127}) -->`, "g"))];
-		if (values.length !== 1)
+		if (!ownershipMarkerValue(base.issue.body, name))
 			return { kind: "ambiguous", message: `Issue #${base.issue.number} has missing or duplicate ${name} ownership markers` };
 	}
 	return base;
@@ -543,6 +547,29 @@ async function upsertTask(
 		: result(operation.op, "updated", "existing Task Issue attached as a native Sub-issue", child);
 }
 
+async function confirmTerminalOwnership(
+	root: string,
+	gh: GhTransport,
+	operation: "mark-terminal",
+	source: RepositorySnapshot,
+	child: GithubIssue,
+): Promise<GithubTrackerResult | { owned: true }> {
+	const initiativeId = ownershipMarkerValue(child.body, "initiative-id");
+	const sliceId = ownershipMarkerValue(child.body, "slice-id");
+	if (!initiativeId || !sliceId)
+		return result(operation, "ambiguous_remote_state", `Issue #${child.number} has invalid ownership markers`, child);
+	const parent = initiativeLookup(source.issues, source.repository.id, initiativeId);
+	if (parent.kind !== "found")
+		return result(operation, "ambiguous_remote_state", parent.kind === "ambiguous" ? parent.message : `Issue #${child.number} has no exact Initiative Parent`, child);
+	if (sliceCount(parent.issue.body, sliceId) !== 1)
+		return result(operation, "ambiguous_remote_state", `Issue #${child.number} has no exact Slice in Parent #${parent.issue.number}`, child);
+	const attachment = await confirmAttachment(root, gh, operation, source.repository, parent.issue.number, child.number);
+	if (!("attached" in attachment)) return attachment;
+	return attachment.attached
+		? { owned: true }
+		: result(operation, "ambiguous_remote_state", `Issue #${child.number} is not attached to its marker-bound Parent #${parent.issue.number}`, child);
+}
+
 async function closeTerminalIssue(
 	root: string,
 	gh: GhTransport,
@@ -581,6 +608,8 @@ async function markTerminal(
 	if (found.kind === "missing") return result(operation.op, "already_current", "Task has no opted-in tracker association");
 	if (found.kind === "ambiguous") return result(operation.op, "ambiguous_remote_state", found.message);
 	const issue = found.issue;
+	const ownership = await confirmTerminalOwnership(root, gh, operation.op, source, issue);
+	if (!("owned" in ownership)) return ownership;
 	const existingEvents = [...issue.body.matchAll(/<!-- immune-brain:terminal-event=([A-Za-z0-9._:-]+) -->/g)];
 	if (existingEvents.length > 1 || (existingEvents.length === 1 && existingEvents[0][1] !== operation.terminal_event_id))
 		return result(operation.op, "ambiguous_remote_state", "terminal Issue conflicts with authoritative settlement", issue);
@@ -607,7 +636,9 @@ async function markTerminal(
 	if (reread.kind === "ambiguous") return result(operation.op, "ambiguous_remote_state", reread.message);
 	if (reread.kind === "missing" || countLiteral(reread.issue.body, terminalMarker(operation.terminal_event_id)) !== 1)
 		return result(operation.op, "retryable_failure", "terminal marker publication could not be confirmed");
-	return closeTerminalIssue(root, gh, operation, source, reread.issue, lookup);
+	const refreshedOwnership = await confirmTerminalOwnership(root, gh, operation.op, refreshed, reread.issue);
+	if (!("owned" in refreshedOwnership)) return refreshedOwnership;
+	return closeTerminalIssue(root, gh, operation, refreshed, reread.issue, lookup);
 }
 
 function validateOperation(operation: TrackerOperation): TrackerOperation {

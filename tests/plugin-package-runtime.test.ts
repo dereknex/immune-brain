@@ -646,6 +646,21 @@ describe("plugin package runtime cutover parity", () => {
 			gh.issues[1].state = "open";
 			gh.issues[1].state_reason = null;
 
+			const childBody = gh.issues[1].body;
+			gh.issues[1].body = childBody.replace("<!-- immune-brain:slice-id=S1 -->", "<!-- immune-brain:slice-id=S2 -->");
+			const beforeWrongSlice = gh.mutations;
+			expect(await runGithubTrackerOperation(root, terminalOp, gh)).toMatchObject({ status: "ambiguous_remote_state" });
+			expect(gh.mutations).toBe(beforeWrongSlice);
+			gh.issues[1].body = childBody;
+
+			gh.subIssues.delete(1);
+			gh.subIssues.set(999, [2]);
+			const beforeWrongParent = gh.mutations;
+			expect(await runGithubTrackerOperation(root, terminalOp, gh)).toMatchObject({ status: "ambiguous_remote_state" });
+			expect(gh.mutations).toBe(beforeWrongParent);
+			gh.subIssues.delete(999);
+			gh.subIssues.set(1, [2]);
+
 			expect(await runGithubTrackerOperation(root, terminalOp, gh)).toMatchObject({ status: "updated" });
 			expect(gh.issues[1]).toMatchObject({ state: "closed", state_reason: "completed" });
 			expect(gh.issues[1].body).toContain(`<!-- immune-brain:terminal-event=${event} -->`);
