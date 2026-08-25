@@ -1,139 +1,198 @@
 # Project Context
 
-An agent skill system that decomposes work into validated plans, executes one step at a time through authority-separated roles, and compounds reusable learnings from completed work.
+Immune-Brain separates ordinary host work from an explicitly entered Managed Path whose scope, evidence, and completion are governed by the Assurance Kernel.
 
 ## Language
 
-**Step**:
-One independently closable outcome unit in a plan. A step has a single Result, a Verification path, and optional annotations. An executor may touch many files within a step.
-_Avoid_: task, ticket, issue
+### Entry And Ownership
 
-**Plan**:
-An ordered sequence of Steps decomposed from a spec by `imm-planner`. Lives under `docs/plans/`. Validated by `imm-plan`. A Plan covers one coherent executable slice; independent authority, risk, verification, promotion, review, or rollback boundaries normally belong in successor Plans rather than oversized Steps.
-_Avoid_: roadmap, backlog
+**Host-native Path**:
+Ordinary host work that does not create or mutate Managed authority. It includes explanation, inspection, review-only work, plan-only discussion, and ordinary repository changes unless the user explicitly enters a Managed Skill.
+_Avoid_: Direct Path, unmanaged fallback
 
-**Plan boundary**:
-(historical — read-only: archived `roadmap-slice/v1` only; `plan_core.ts` retains parsing for backward compatibility) The semantic boundary that explains why one Plan's Steps belong in the same executable slice. The rationale considers outcome cohesion plus authority, risk, verification, review, and rollback boundaries; it is not a fixed file, token, Step, compaction, or session limit.
-_Avoid_: size cap, session budget
-
-**Scope pressure**:
-(historical — read-only: archived `roadmap-slice/v1` only; `plan_core.ts` retains parsing for backward compatibility) Advisory evidence that a proposed Plan may cross independent boundaries, such as broad domain, dependency, verification, or review surfaces. Planner records the evidence and a semantic retain-or-split rationale. Scope pressure never creates an automatic workflow or session gate.
-_Avoid_: hard file limit, context cutoff
-
-**Successor candidate**:
-(historical — read-only: archived `roadmap-slice/v1` only; `plan_core.ts` retains parsing for backward compatibility) Zero or one stable Roadmap Phase declared as the likely next planning target. It is non-authoritative metadata: declaration does not create or validate a Plan, record user approval, queue work, activate a Plan, or execute anything. Multiple sequential Plans may implement the same current Phase; each retains that Phase's same future `Successor candidate` until a later Plan advances to it.
-_Avoid_: next active plan, automatic continuation, self-successor
-
-**Roadmap**:
-(historical — read-only: archived `roadmap-slice/v1` prose Plans only; `plan_core.ts` retains parsing for backward compatibility) A durable phase map for large or multi-phase work that preserves future scope,
-deferred decisions, open questions, and promotion criteria. A Roadmap is not an
-executable Plan; each executable slice still needs its own Plan with
-independently closable Steps.
-_Avoid_: treating roadmap phases as completed Plan coverage
-
-**Initiative tracking Issue**:
-An optional GitHub parent Issue that is the single GitHub-mode planning source
-for one Initiative: known Slice goals and finalized TaskIntents. It is created
-once and identified by repository ID plus a user-confirmed stable Initiative
-slug in hidden markers; all later planning changes are direct user edits. It
-never creates execution work, imports GitHub state, grants authority, or
-replaces a Spec, TaskIntent, TaskRecord, Plan, or Assurance projection.
-_Avoid_: executable roadmap, source of truth, parent TaskIntent
-
-**Phase**:
-(historical — read-only: archived `roadmap-slice/v1` prose Plans only; `plan_core.ts` retains parsing for backward compatibility) A labeled segment within a Roadmap representing one promotable unit of future or current work. A Phase is not a Step; it carries its own goal, deferred scope, and gates. A Phase may require multiple sequential Plans when independent executable boundaries exist; only the currently promoted slice gets Steps, and final Phase review covers the explicit same-Phase continuation chain.
-_Avoid_: one Plan per Phase, treating a Phase as a Step
-_Avoid_: milestone, stage, iteration
-
-**acceptance_criteria**:
-(historical — read-only: archived `roadmap-slice/v1` prose Plans only; `plan_core.ts` retains parsing for backward compatibility) The per-phase behavior assertions that let a developer judge whether a Roadmap phase is done, without reading implementation code. Each entry describes observable behavior (e.g., "the export button produces a CSV with all visible columns"), not internal signals. Validation depth: L1 errors on a missing/empty field, L2 warns on recognizable non-behavioral patterns. Dual-track: `observable` (visual/interactive) or `verifiable` (named command + output). Required for 3+ phase Roadmaps; optional for single-phase or 2-phase work.
-_Avoid_: definition of done, checklist, test plan
-
-**Spec**:
-A behavioral contract defining accepted behaviors for a feature or change. Lives under `docs/specs/`.
-_Avoid_: requirements doc, PRD
-
-**Assurance progression**:
-The session-scoped coordination of an enrolled Task from fresh evidence through QA, Review, required user authority, and terminal settlement. It owns operation lifecycle, not Task facts or mutation authority.
-_Avoid_: assurance orchestration, workflow engine
-
-**Assurance projection**:
-The host-neutral, read-only current facts that bind a Task's Intent, Record, workspace, evidence, approvals, findings, and backend claim. Hosts consume it without reconstructing freshness or authorization readiness.
-_Avoid_: host status object, Pi projection
-
-**Skill**:
-One role-scoped SKILL.md file under `skills/`. Each skill has a boundary (allowed/blocked), output artifact, and next-action gate.
-_Avoid_: plugin, module, tool
+**Managed Path**:
+The authority-governed workflow entered only through `imm-brainstorm`, `imm-planner`, or `imm-loop`. Existing Managed ownership remains authoritative but resumes only through explicit `imm-loop` entry.
+_Avoid_: automatic routing, default mutation path
 
 **Brainstorm**:
-Problem-framing phase that clarifies constraints and produces a task framing for the planner. Read-only; does not write plans or implement.
-_Avoid_: ideation, discovery
+A read-only framing activity that resolves material ambiguity before planning. It produces constraints and decisions, not execution authority.
+_Avoid_: ideation, planning, implementation
 
-**Executor**:
-The role that implements exactly one active step. Every changed line must map to the step's Result. Hands off to QA after recording evidence.
-_Avoid_: implementer, coder, worker
+**Planner**:
+The owner of a candidate Spec and TaskIntent. Planner output remains non-authoritative until Enrollment succeeds.
+_Avoid_: executor, task owner
 
-**QA**:
-The closure gate that judges pass vs rework vs replan based on recorded evidence. Does not implement.
-_Avoid_: reviewer, tester
+**Loop**:
+The user-facing continuation entry for an enrolled task. It projects the current owner to the next bounded internal role or Kernel operation without becoming a second authority source.
+_Avoid_: workflow engine, checkpoint store
 
-**Compounder**:
-The role that extracts reusable learnings from completed work into `docs/solutions/` after closure.
-_Avoid_: documenter, archivist
+**Internal Role**:
+A bounded, non-public responsibility dispatched by Loop, such as Executor, QA, Review, repair, architecture exploration, or Compounder. Internal roles cannot widen their own scope or grant themselves authority.
+_Avoid_: public Skill, autonomous agent
+
+### Planning And Authority
+
+**Spec**:
+The behavioral contract for a Managed change. It states accepted behavior and remains subordinate to the enrolled TaskIntent for execution authority.
+_Avoid_: PRD, prose Plan, status document
+
+**TaskIntent**:
+The Git-tracked authority proposal for one Managed task: goal, acceptance descriptors, scope hint, risk, revision, and user ownership. Its canonical content hash binds Enrollment and later assurance.
+_Avoid_: Plan, ticket, mutable checklist
+
+**Acceptance Descriptor**:
+One TaskIntent acceptance item combining an observable assertion with a focused verification command. Enrollment validates its structure; deterministic QA executes it after implementation.
+_Avoid_: implementation step, enrollment rehearsal
+
+**Enrollment**:
+The single native user-authority gate that atomically turns a validated, Git-tracked TaskIntent into an active TaskRecord and workspace claim. It does not execute acceptance descriptors.
+_Avoid_: task creation, planning confirmation, QA
+
+**Task**:
+One enrolled TaskIntent together with its TaskRecord, workspace claim, and Assurance projection. A candidate TaskIntent alone is not a Task.
+_Avoid_: issue, Plan, session
+
+**Scope Envelope**:
+The files matched by an enrolled TaskIntent's `scope_hint`, evaluated against the task's index-backed snapshot. Expanding it requires an Intent revision rather than silent execution drift.
+_Avoid_: suggested files, advisory scope
+
+**Intent Revision**:
+A replacement TaskIntent revision classified as unchanged, compatible, or breaking. Breaking revisions require literal-user authority before replacing the enrolled intent.
+_Avoid_: scope patch, in-place Plan edit
+
+### Kernel State
+
+**TaskRecord**:
+The worktree-local durable record of one Task's intent snapshot, lifecycle, artifact state, attestations, findings, and history. It is the workflow state source of truth.
+_Avoid_: HANDOFF, conversation memory, State Ledger
+
+**Lifecycle**:
+The TaskRecord's terminality dimension: `active`, `done`, or `stopped`. It is independent of whether planning artifacts are active or frozen.
+_Avoid_: phase, stage, status prose
+
+**Artifact State**:
+The planning-artifact mutability dimension: `active` or `frozen`. Freezing binds the assurance snapshot and relocates the scope-bound Spec and TaskIntent to their archive paths.
+_Avoid_: review phase, lifecycle
+
+**Workspace Claim**:
+The worktree-local exclusive ownership binding between one active Managed task and the workspace. It persists through implementation, QA, and Review until terminal settlement.
+_Avoid_: lock file, session ownership
+
+**Backend Claim**:
+The Kernel's active or draining ownership proof for the claimed Task identity. Terminal ownership is represented by an immutable task-scoped tombstone, not a terminal backend claim.
+_Avoid_: workspace claim, completion marker
+
+**Attestation**:
+Fresh authority evidence bound to the TaskIntent revision, content hash, and scoped diff hash. QA attestations include all acceptance results atomically; Review and user attestations carry authority metadata.
+_Avoid_: self-reported evidence, approval note
+
+**Finding**:
+A durable condition requiring resolution or explicit disposition, classified as blocking, advisory, unresolved user decision, or replan required.
+_Avoid_: log message, review comment
+
+**Assurance Projection**:
+The host-neutral read-only view that combines claim, TaskRecord, workspace, freshness, findings, completion facts, and the next Kernel obligation. Hosts consume it instead of reconstructing authority state.
+_Avoid_: UI status, cached workflow state
+
+**Obligation**:
+The single next Kernel-required action projected from current facts, such as submit assurance, run QA, run Review, authorize the user, resolve findings, revise intent, or complete.
+_Avoid_: recommendation, workflow phase
+
+**Assurance**:
+The foreground progression from frozen artifacts through fresh QA, any required Review and user authority, to terminal settlement. Routine tasks require QA; material tasks require QA and Review; critical tasks also require final user authority.
+_Avoid_: testing, generic review, background orchestration
+
+**Settlement**:
+The atomic terminal transition that writes the final TaskRecord and tombstone, clears active ownership, and leaves the Task `done` or `stopped`.
+_Avoid_: chat completion, archive-only operation
+
+### Supporting Concepts
 
 **Learning**:
-A reusable pattern or insight stored in `docs/solutions/` with reusability tags. Evidence-backed only.
-_Avoid_: note, finding
+An evidence-backed reusable engineering pattern stored in `docs/solutions/` after task closure. Routine completion does not require one.
+_Avoid_: note, finding, task summary
+
+**Compounder**:
+The post-settlement internal role that records a Learning only when closed work contains explicit reusable evidence.
+_Avoid_: mandatory documentation phase, archivist
 
 **ADR**:
-An architecture decision record in `docs/adr/` capturing a hard-to-reverse decision with context and reasoning. Created only when all three criteria are met: hard to reverse, surprising without context, result of a real trade-off.
-_Avoid_: design doc, RFC
+A record in `docs/adr/` for a hard-to-reverse, surprising decision produced by a real trade-off.
+_Avoid_: design note, RFC, implementation summary
 
-**Delegation Packet**:
-The structured context bundle sent to a subagent: `shared_context_summary`, `focus_delta` (optionally containing context-sharded fragments in `specific_changes`), `tool_policy`, `fallback_reasons`.
-_Avoid_: prompt, brief
+**Initiative**:
+An optional planning grouping for multiple future or authored TaskIntents. It may use one local Markdown carrier or one GitHub parent Issue, but never grants execution authority.
+_Avoid_: Roadmap authority, parent Task
 
-**Domain Mapper**:
-A read-only `generalPurpose` subagent mode used by `imm-arch-explorer` to map one bounded directory or domain shard during a Parallel Domain Survey. It returns structural evidence for the explorer host; it does not write code, plans, or workflow state.
-_Avoid_: autonomous refactoring agent, architecture executor
+**Slice**:
+One stable result within an Initiative that may later become its own TaskIntent. Until authored and enrolled, it is planning metadata only.
+_Avoid_: active task, Phase, Step
 
 **Fast-Track**:
-A compressed ceremony mode for plans with two or fewer steps where plan-execute-QA can complete within a single interaction.
-_Avoid_: shortcut, bypass
+A presentation-level compression of the Managed Path for small tasks. It may reduce ceremony but never bypasses TaskIntent scope, Enrollment, QA, Review, authorization, or settlement.
+_Avoid_: bypass, reduced assurance
 
-**HANDOFF.md**:
-A human-readable convenience document at the repo root summarizing current plan progress for cross-session continuity. Not the source of truth (`.imm/memory/` is).
-_Avoid_: status file, state dump
+**Domain Mapper**:
+A read-only bounded architecture probe that returns structural evidence for its host. It is an advisory Internal Role pattern, not an execution or planning authority.
+_Avoid_: autonomous refactoring agent, Planner
+
+### Historical Compatibility
+
+**Plan boundary**:
+Historical, read-only `plan_core.ts` metadata explaining why archived prose Plan Steps formed one coherent executable slice.
+_Avoid_: current authority boundary, size cap
+
+**Scope pressure**:
+Historical, read-only `plan_core.ts` advisory evidence behind an archived Plan's semantic retain-or-split rationale.
+_Avoid_: workflow gate, context cutoff
+
+**Successor candidate**:
+Zero or one stable Roadmap Phase retained as historical, read-only `plan_core.ts` metadata. It does not create or validate a Plan, approve work, or activate a Task.
+_Avoid_: next Task, automatic continuation
+
+**Roadmap**:
+Historical, read-only `plan_core.ts` metadata describing deferred work across archived prose Plans.
+_Avoid_: current Initiative, execution authority
+
+**Phase**:
+Historical, read-only `plan_core.ts` segment within an archived Roadmap. It is not a current Lifecycle, Artifact State, or Task.
+_Avoid_: current workflow stage, lifecycle
+
+**acceptance_criteria**:
+Historical, read-only `plan_core.ts` per-Phase behavior assertions in archived Roadmaps. Current authority uses TaskIntent Acceptance Descriptors.
+_Avoid_: current acceptance field, QA attestation
 
 ## Relationships
 
-- A **Plan** contains one or more **Steps**
-- A **Plan boundary** explains why those Steps share one executable authority, risk, verification, review, and rollback boundary
-- **Scope pressure** informs Planner's semantic retain-or-split decision but never forces a workflow or session transition
-- A Roadmap-backed **Plan** may declare zero or one **Successor candidate** without creating, approving, or activating it
-- Multiple sequential **Plans** may implement one **Phase** when each has an independent executable boundary; approved same-Phase transitions retain the same future **Successor candidate** and accumulate closed changed-file evidence for fresh final review
-- A **Spec** is the behavioral source for one **Plan**
-- An **Executor** implements exactly one active **Step** at a time
-- **QA** judges closure of one **Step** based on evidence
-- A **Compounder** produces **Learnings** from closed **Steps**
-- A **Delegation Packet** is sent from a host **Skill** to one subagent
-- A **Roadmap** contains one or more **Phases**, each carrying `acceptance_criteria`
-- A **Phase** is promoted to a **Plan** when it is ready to execute; its `acceptance_criteria` survive as executable acceptance criteria in the Plan
+- A Planner authors a candidate Spec and TaskIntent; Enrollment creates the TaskRecord and claims the workspace.
+- A TaskIntent owns acceptance, scope, risk, and revision; a TaskRecord owns lifecycle, artifact state, attestations, findings, and history.
+- Freezing artifacts changes `artifact_state` from `active` to `frozen`; it does not change the Task lifecycle or release ownership.
+- The Assurance Projection derives one next Obligation from Kernel facts.
+- QA executes every Acceptance Descriptor and records one atomic QA Attestation.
+- Risk determines further authority: `routine` stops at QA, `material` adds Review, and `critical` adds final user authority.
+- Settlement changes lifecycle to `done` or `stopped`, clears active ownership, and creates terminal proof.
+- Loop dispatches Internal Roles, but Kernel remains the mutation and completion authority.
+- An Initiative may group Slices and TaskIntents, but it never replaces a Spec, TaskIntent, TaskRecord, or Assurance Projection.
 
 ## Architecture Map
 
-- Workflow runtime: `plugins/immune-brain/` is packaged exclusively for Pi through the root `package.json`; `plugins/immune-brain/.pi-extension/` owns TUI enrollment, automated assurance coordination, native subagent Review dispatch, and literal-user confirmation. `plugins/immune-brain/runtime/v4_runtime.ts` is the only shipped Bun + TypeScript CLI router, `plugins/immune-brain/runtime/kernel/` owns TaskIntent/TaskRecord reducers and storage, and `plugins/immune-brain/runtime/advisory_dispatch.ts` plus `work_probes.ts` build Pi `Agent` dispatch envelopes. `plugins/immune-brain/bin/imm-*` remains the stable wrapper surface; legacy v3 mutation routes are retired while explicit audit/validation projections remain read-only.
-- External Initiative tracking: `plugins/immune-brain/runtime/github_issue_tracker.ts` and `plugins/immune-brain/bin/imm-tracker` own the opt-in, one-way GitHub Issues projection with exactly one carrier per Initiative (Local Markdown at `docs/initiatives/<slug>.md` or a create-once Parent Issue; the tracker fails on carrier conflicts and never rewrites or closes a Parent). Hidden markers bind repository ID + Initiative slug + Slice ID and repository ID + Task ID; canonical TaskIntent validation creates one neutral open Child Issue attached as a native Sub-issue, and the Work extension projects terminal state (`completed`/`not planned`) only from a fresh claimless projection plus exact tombstone — Enrollment performs no GitHub projection. This adapter never reads or writes Kernel authority state.
-- Assurance Kernel: Git-tracked TaskIntent sidecars define task authority, worktree-local TaskRecords hold execution state, and the Pi canary extension owns enrollment, evidence progression, QA/Review orchestration, confirmation, and completion. `plugins/immune-brain/runtime/commands/kernel.ts` is registered by `v4_runtime.ts` for intent author/validate, status, and explicit bounded legacy audit; `status`/`audit` are strictly read-only (zero journal writes) and the retired `migrate`/`readiness`/`journal` subcommands are rejected with zero writes.
-- Kernel mutation authority: `kernel/reducer.ts`, `kernel/authority_port.ts`, `kernel/intent_token_registry.ts`, `kernel/application.ts`, and `kernel/storage.ts` enforce the closed action vocabulary, opaque single-use authority, same-lock Intent reread, content-hash CAS, and recoverable transactions used by the Pi host integration.
-- Project format migration: historical v3 migration modules remain inside the separately bounded legacy runtime closure. The shipped v4 CLI rejects `imm-migrate`; current operation uses TaskIntent/TaskRecord storage and exposes historical state only through explicit bounded `imm-kernel audit --legacy`.
-- Plan validation: `plugins/immune-brain/bin/imm-plan` routes through `v4_runtime.ts`; `--routing-status --json` returns the strict Git-owned routing-policy projection, while `<plan-path> [--json]` parses and semantically validates that explicit Plan with dynamic origin coverage. Both paths are read-only and advisory: Managed authority still requires a Git-tracked TaskIntent that passes `imm-kernel intent validate` plus Pi TUI enrollment. v3 Plan mutation remains retired.
-- Package ownership: root `package.json` is the sole Pi package/version manifest; repository docs are authoring sources while checked-in `plugins/immune-brain/dist/` is self-contained packaged output guarded by deterministic sync checks.
-- Skill contracts: `plugins/immune-brain/skills/*/SKILL.md` provides host-discoverable entries; `plugins/immune-brain/dist/*.md` provides detailed packaged instructions; the root `skills` symlink, `plugins/immune-brain/skills/registry.yaml`, `plugins/immune-brain/tests/skill-registry-consistency.test.ts`, and `docs/reference/planning-quality-gate.md` preserve role boundaries, registry metadata, and contract regression coverage.
-- Durable learnings: `docs/solutions/`, `.imm/memory/MEMORY.md` (reusable patterns, `key_files`, and memory index)
-- Upstream references: `upstreams/` retains borrowed context-engineering sources as provenance; current Pi workflow guidance lives in `docs/reference/HANDOFF-template.md` and `docs/reference/upstream-pro-workflow-borrow-map.md`.
+- Public entries: `plugins/immune-brain/skills/imm-brainstorm/`, `imm-planner/`, and `imm-loop/` are the only user-facing Skills.
+- Planning artifacts: `docs/specs/` stores active Specs; `docs/plans/*.intent.json` stores active TaskIntents despite the historical directory name. Frozen artifacts move under the corresponding `archive/` directories.
+- Kernel authority: `plugins/immune-brain/runtime/kernel/` owns TaskIntent parsing, Enrollment, TaskRecord reduction/storage, claims, projections, and completion.
+- Worktree state: `.imm/tasks/<task-id>.json` stores TaskRecord v3, `.imm/workspace.json` stores workspace ownership, and `.imm/tasks/` stores active-claim and task-tombstone proofs.
+- Host integration: `plugins/immune-brain/.pi-extension/` owns native Enrollment, deterministic QA, foreground Review dispatch, authorization dialogs, and Task Rail presentation.
+- Loop dispatch: `plugins/immune-brain/runtime/loop_contract.ts`, `role_prompt_bridge.ts`, and `runtime/prompts/` define internal role routing and bounded delegation contracts.
+- CLI surface: `plugins/immune-brain/runtime/v4_runtime.ts` routes the stable wrappers in `plugins/immune-brain/bin/`; `imm-kernel` owns current Kernel commands, while `imm-plan` retains routing-policy and historical Plan validation surfaces.
+- Initiative projection: `plugins/immune-brain/runtime/github_issue_tracker.ts` and `plugins/immune-brain/bin/imm-tracker` own the optional one-way GitHub Issues adapter without reading or writing Kernel authority.
+- Packaging: root `package.json` is the Pi package manifest; `plugins/immune-brain/dist/` is checked-in generated output guarded by `bun scripts/sync-dist-docs.ts --check`.
+- Durable knowledge: `docs/solutions/` stores Learnings and `docs/adr/` stores qualifying architecture decisions. `CONTEXT.md` is vocabulary and navigation only, never runtime state.
 
-## Flagged ambiguities
+## Legacy Boundary
 
-- "step" was previously used informally for both a plan unit and a workflow phase — resolved: **Step** means a plan outcome unit only; workflow phases are named by skill role (brainstorm, plan, execute, QA, compound).
-- "review" is overloaded between QA closure review (`imm-qa`) and code review (`imm-code-review`) — context disambiguates; prefer the skill name when precision matters.
+Roadmap, Phase, prose Plan, Plan boundary, Scope pressure, Successor candidate, and the v3 State Ledger are historical compatibility concepts, not current authority. `runtime/plan_core.ts`, `imm-plan`, archived planning documents, and bounded legacy audit paths may still parse or describe them; new Managed authority uses Spec + TaskIntent + TaskRecord + Assurance Projection.
+
+## Flagged Ambiguities
+
+- `docs/plans/` now stores TaskIntent sidecars and legacy planning artifacts; the directory name does not make a current TaskIntent a prose Plan.
+- Runtime dispatch may use `step` as a bounded execution target; it is ephemeral coordination, not a durable planning or authority object.
+- `Review` means the independent assurance authority required for material and critical risk; QA is the deterministic acceptance authority.
