@@ -117,10 +117,18 @@ describe("Brainstorm decision probing contracts", () => {
 	});
 
 	it("records the retired Preplan mechanics as migrated to Brainstorm", () => {
-		expect(HISTORY).toContain("## Retirement update");
+		expect(HISTORY).toContain("## Historical origin");
 		expect(flat(HISTORY)).toContain(
 			"These interaction mechanics now belong to `imm-brainstorm`",
 		);
+		for (const retiredInstruction of [
+			"Ask one question at a time",
+			"Spend, do not expand, the probe budget",
+			"Keep high-pressure mechanics in Preplan",
+			"1-2 / 3-4 scale-adjusted budget",
+		]) {
+			expect(HISTORY).not.toContain(retiredInstruction);
+		}
 		expect(CONTRAST).toContain(
 			"exhaustive clarification owner; `adversarial` is an explicit analysis lens",
 		);
