@@ -1,0 +1,166 @@
+{
+  "contract": "assurance_kernel/task_record/v3",
+  "task_id": "2026-08-25-002-brainstorm-owned-exhaustive-clarification",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "2026-08-25-002-brainstorm-owned-exhaustive-clarification",
+    "goal": "Make imm-brainstorm the sole exhaustive user-clarification owner using a provenance-bounded grill-me design tree, while reducing imm-planner to technical design plus focused omission/conflict supplements.",
+    "acceptance": [
+      {
+        "id": "A1",
+        "assertion": "Both Brainstorm contract surfaces implement fixed-root, provenance-bounded exhaustive traversal with fact-versus-decision handling, complete dependency-aware frontier rounds, recommendation-adoption continuation, delta reopening, defer/blocked handling, explicit analysis lenses, and frontier-empty completion without the prior materiality filter or mandatory global rejected-decision preflight; focused fixtures and current grill-me ownership text match that behavior.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/brainstorm-decision-probing-contract.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 65536\n}\n"
+      },
+      {
+        "id": "A2",
+        "assertion": "Both Planner contract surfaces preserve direct clear-request entry, reference closure, technical-design authority, and focused evidence-backed omission/conflict/invalidated-assumption supplements while no longer running a second exhaustive user interview or silently changing confirmed Brainstorm decisions.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/exhaustive-decision-tree-contract.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 65536\n}\n"
+      },
+      {
+        "id": "A3",
+        "assertion": "Generated packaged documentation remains synchronized after the current-reference ownership update.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"scripts/sync-dist-docs.ts\",\n    \"--check\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 65536\n}\n"
+      }
+    ],
+    "scope_hint": [
+      "docs/plans/2026-08-25-002-brainstorm-owned-exhaustive-clarification.intent.json",
+      "docs/plans/archive/2026-08-25-002-brainstorm-owned-exhaustive-clarification.intent.json",
+      "docs/reference/mattpocock-skills-contrast.md",
+      "docs/solutions/grill-me-interaction-mechanics-borrow.md",
+      "docs/specs/archive/brainstorm-owned-exhaustive-clarification.spec.md",
+      "docs/specs/brainstorm-owned-exhaustive-clarification.spec.md",
+      "plugins/immune-brain/dist/imm-brainstorm.md",
+      "plugins/immune-brain/dist/imm-planner.md",
+      "plugins/immune-brain/skills/imm-brainstorm/SKILL.md",
+      "plugins/immune-brain/skills/imm-planner/SKILL.md",
+      "tests/brainstorm-decision-probing-contract.test.ts",
+      "tests/exhaustive-decision-tree-contract.test.ts",
+      "tests/fixtures/imm-brainstorm-behavior-benchmark.json"
+    ],
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/archive/2026-08-25-002-brainstorm-owned-exhaustive-clarification.intent.json",
+    "content_hash": "sha256:ab13f292fd9526c09695af478ea533e009943dfdf09a5c50718df51fbeb5049e"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:ab13f292fd9526c09695af478ea533e009943dfdf09a5c50718df51fbeb5049e",
+  "attestations": [
+    {
+      "id": "approval-qa-804ab2a9",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:ab13f292fd9526c09695af478ea533e009943dfdf09a5c50718df51fbeb5049e",
+      "diff_hash": "sha256:eeb5ed143c537160ebcca50c198e0c23f8cadc84f37816fd8f0945e0bfbc9c2c",
+      "actor_id": "deterministic-qa",
+      "summary": "all 3 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "A2",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "A3",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-2f55949e",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:ab13f292fd9526c09695af478ea533e009943dfdf09a5c50718df51fbeb5049e",
+      "diff_hash": "sha256:eeb5ed143c537160ebcca50c198e0c23f8cadc84f37816fd8f0945e0bfbc9c2c",
+      "actor_id": "native-review-67c1a9ad-e278-4ce",
+      "summary": "Immutable bundle provenance is valid, and the bounded Brainstorm, Planner, fixture, test, and packaged-document changes satisfy A1-A3 without identified correctness, regression, security, or coverage defects.",
+      "acceptance_results": []
+    }
+  ],
+  "findings": [
+    {
+      "id": "review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "A1",
+      "source": "execution",
+      "review_round": null,
+      "summary": "docs/solutions/grill-me-interaction-mechanics-borrow.md: the new retirement notice says the later sections are historical, but those sections still present obsolete one-question-at-a-time, fixed probe-budget, materiality-filter, and Preplan-ownership rules as reusable current guidance; revise or clearly quarantine the stale guidance so the current grill-me ownership text consistently matches the exhaustive Brainstorm contract."
+    }
+  ],
+  "history": [
+    {
+      "id": "freeze_artifacts:2026-08-25-002-brainstorm-owned-exhaustive-clarification:2026-08-25T06:55:46.048Z",
+      "at": "2026-08-25T06:55:46.048Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent and Spec frozen at docs/plans/archive/2026-08-25-002-brainstorm-owned-exhaustive-clarification.intent.json"
+    },
+    {
+      "id": "record_approval:2026-08-25-002-brainstorm-owned-exhaustive-clarification:2026-08-25T06:55:55.353Z",
+      "at": "2026-08-25T06:55:55.353Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-804ab2a9\naction_v2_sha256:e5c275a2d7c70621f964370dcf774a1e737e28ff8fe0ce770d0f539c85271c52",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-7147c62b7145cee0",
+        "issued_at": "2026-08-25T06:55:55.354Z",
+        "expires_at": "2026-08-25T07:05:55.354Z"
+      }
+    },
+    {
+      "id": "record_finding:2026-08-25-002-brainstorm-owned-exhaustive-clarification:2026-08-25T07:23:13.698Z",
+      "at": "2026-08-25T07:23:13.698Z",
+      "type": "record_finding",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "review-1\naction_v2_sha256:46b8f76b48a1d4658eb46b6e7461a86db63bb7b30fe24d551b116c0044952176"
+    },
+    {
+      "id": "resolve_finding:2026-08-25-002-brainstorm-owned-exhaustive-clarification:2026-08-25T07:49:00.450Z",
+      "at": "2026-08-25T07:49:00.450Z",
+      "type": "resolve_finding",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "review-1\naction_v2_sha256:7bbc83e61af18c59a269c8c7ee02e96d3389de581f29bf8c45ada781e805057a"
+    },
+    {
+      "id": "record_approval:2026-08-25-002-brainstorm-owned-exhaustive-clarification:2026-08-25T07:53:29.283Z",
+      "at": "2026-08-25T07:53:29.283Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-2f55949e\naction_v2_sha256:5576f15ec2d2f8c5ea672905e063d7385a9a1d1b9fd42761cdab8178bb01ba3c",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "native-review-67c1a9ad-e278-4ce",
+        "confirmation_ref": "pi-confirm-2a25d50d77837307",
+        "issued_at": "2026-08-25T07:53:29.284Z",
+        "expires_at": "2026-08-25T08:03:29.284Z"
+      }
+    },
+    {
+      "id": "complete:2026-08-25-002-brainstorm-owned-exhaustive-clarification:2026-08-25T07:53:30.176Z",
+      "at": "2026-08-25T07:53:30.176Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:9186b089fed54604122c8fd88d34b04c6e5fe562fc36d5fcd6c181cb5265a785"
+    }
+  ]
+}
