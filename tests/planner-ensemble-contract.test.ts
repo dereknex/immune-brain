@@ -10,48 +10,46 @@ function read(rel: string): string {
 }
 
 describe("planner ensemble contract", () => {
-	it("documents planner-owned ensemble boundaries in source and packaged planner contracts", () => {
-		for (const rel of [
-			"plugins/immune-brain/skills/imm-planner/SKILL.md",
-			"plugins/immune-brain/dist/imm-planner.md",
-		]) {
-			const content = read(rel);
-			expect(content).toContain("planner ensemble");
-			expect(content).toContain("workflow_models.planner_ensemble");
-			expect(content).toContain("advisory-only");
-			expect(content).toContain("final Spec and Plan");
-			expect(content).toContain("Agreement becomes evidence");
-			expect(content).toContain("Disagreement becomes decision criteria");
-			expect(content).toContain("strong-model blockers");
-		}
+	it("keeps planner ensemble authority in the packaged contract without local model config", () => {
+		const source = read("plugins/immune-brain/skills/imm-planner/SKILL.md");
+		expect(source).toContain("internal Loop bridge's");
+		expect(source).toContain("advisory-reviewer");
+		expect(source).not.toContain("workflow_models.planner_ensemble");
+
+		const content = read("plugins/immune-brain/dist/imm-planner.md");
+		expect(content).toContain("planner ensemble");
+		expect(content).not.toContain("workflow_models.planner_ensemble");
+		expect(content).toContain("advisory-only");
+		expect(content).toContain("final Spec and Plan");
+		expect(content).toContain("Agreement becomes evidence");
+		expect(content).toContain("Disagreement becomes decision criteria");
+		expect(content).toContain("strong-model blockers");
 	});
 
-	it("documents brainstorm-owned ensemble boundaries in source and packaged brainstorm contracts", () => {
-		for (const rel of [
-			"plugins/immune-brain/skills/imm-brainstorm/SKILL.md",
-			"plugins/immune-brain/dist/imm-brainstorm.md",
-		]) {
-			const content = read(rel);
-			expect(content).toContain("Brainstorm ensemble");
-			expect(content).toContain("workflow_models.brainstorm_ensemble");
-			expect(content).toContain("advisory-only");
-			expect(content).toContain(
-				"Final Spec and Plan authority stays with `imm-planner`",
-			);
-			expect(content).toContain(
-				"Pi's adapter may consume `brainstorm_ensemble` dispatch JSON",
-			);
-			expect(content).not.toContain("Pi host adapters");
-			expect(content).toContain("does not transfer framing authority");
-			expect(content).toContain(
-				"mutate state, or own final Spec/Plan authority",
-			);
-			expect(content).toContain("Agreement becomes framing evidence");
-			expect(content).toContain("Disagreement becomes decision criteria");
-			expect(content).toContain("strong-model blockers");
-		}
+	it("keeps Brainstorm ensemble authority in the packaged contract without local model config", () => {
+		const source = read("plugins/immune-brain/skills/imm-brainstorm/SKILL.md");
+		expect(source).toContain("brainstorm_ensemble");
+		expect(source).toContain("does not transfer framing authority");
+		expect(source).not.toContain("workflow_models.brainstorm_ensemble");
 
-		const packaged = read("plugins/immune-brain/dist/imm-brainstorm.md");
+		const content = read("plugins/immune-brain/dist/imm-brainstorm.md");
+		expect(content).toContain("Brainstorm ensemble");
+		expect(content).not.toContain("workflow_models.brainstorm_ensemble");
+		expect(content).toContain("advisory-only");
+		expect(content).toContain(
+			"Final Spec and Plan authority stays with `imm-planner`",
+		);
+		expect(content).toContain(
+			"Pi's adapter may consume `brainstorm_ensemble` dispatch JSON",
+		);
+		expect(content).not.toContain("Pi host adapters");
+		expect(content).toContain("does not transfer framing authority");
+		expect(content).toContain("mutate state, or own final Spec/Plan authority");
+		expect(content).toContain("Agreement becomes framing evidence");
+		expect(content).toContain("Disagreement becomes decision criteria");
+		expect(content).toContain("strong-model blockers");
+
+		const packaged = content;
 		expect(packaged).toContain("one foreground Agent at a time");
 		expect(packaged).toContain("direct result");
 		expect(packaged).toContain("remaining dispatch budget");

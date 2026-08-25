@@ -5,6 +5,8 @@ import { resolve } from "node:path"
 const PLUGIN_ROOT = resolve(import.meta.dir, "..")
 
 const CANONICAL_PHRASE =
+  "This project authorizes bounded read-only advisory subagents and parallel probes unless the user asks for solo work."
+const RETIRED_PHRASE =
   "This session authorizes Immune-Brain to auto-use bounded read-only subagents/parallel probes when the mode is auto and boundaries are clear."
 const AUTHORITY = "dist/docs/reference/subagent-dispatch-protocol.md"
 const AUTHORITY_LINK = "subagent-dispatch-protocol.md#authorization-authority"
@@ -27,9 +29,11 @@ describe("dispatch authorization source of truth", () => {
     expect(offenders).toEqual([])
   })
 
-  it("does not reintroduce the retired hardcoded Chinese phrase", () => {
-    const offenders = [AUTHORITY, ...DISPATCH_HOSTS].filter((rel) =>
-      readFileSync(resolve(PLUGIN_ROOT, rel), "utf-8").includes("本会话允许"))
+  it("does not reintroduce retired authorization phrases", () => {
+    const offenders = [AUTHORITY, ...DISPATCH_HOSTS].filter((rel) => {
+      const content = readFileSync(resolve(PLUGIN_ROOT, rel), "utf-8")
+      return content.includes("本会话允许") || content.includes(RETIRED_PHRASE)
+    })
     expect(offenders).toEqual([])
   })
 })

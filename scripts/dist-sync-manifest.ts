@@ -38,8 +38,6 @@ export const DIST_DOC_ENTRIES: DistDocEntry[] = [
 	{ rel: "reference/i18n-review-checklist.md", mode: "mirror" },
 	{ rel: "reference/planning-artifact-retention.md", mode: "mirror" },
 	{ rel: "reference/planning-quality-gate.md", mode: "mirror" },
-	{ rel: "reference/review-host-dispatch-protocol.md", mode: "mirror" },
-	{ rel: "reference/subagent-trigger-catalog.yaml", mode: "mirror" },
 
 	// ── adapted: intentionally divergent packaged copies ──
 	{
@@ -89,24 +87,6 @@ export const DIST_DOC_ENTRIES: DistDocEntry[] = [
 | 范围解析 + 三 reviewer 协议 + 验证合同 | compound-engineering simplify-code skill in the source repository upstreams |`,
 			},
 		],
-	},
-	{
-		rel: "reference/automatic-subagent-activation-policy.md",
-		mode: "adapted",
-		reason:
-			"Packaged copy strips repo-relative `docs/specs/` path references so the reference resolves inside the shipped package.",
-		replacements: [
-			{
-				from: "The policy inherits the split gate from\n`docs/specs/workflow-skill-subagent-orchestration.spec.md`:",
-				to: "The policy inherits the split gate from the workflow skill subagent\norchestration spec in the source repository:",
-			},
-		],
-	},
-	{
-		rel: "specs/automatic-subagent-activation.spec.md",
-		mode: "adapted",
-		reason:
-			"Deliberately narrower packaged runtime-contract copy; the canonical development spec lives in `docs/specs/automatic-subagent-activation.spec.md`.",
 	},
 ];
 

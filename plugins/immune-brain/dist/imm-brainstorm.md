@@ -101,13 +101,13 @@ Runtime helpers: `imm_core.buildBrainstormEnsembleRequest`, `imm_core.buildBrain
 
 ### Brainstorm Ensemble Advisory
 
-A Brainstorm ensemble is optional advisory-only framing input, not a vote and not a child-owned decision. When risk gates or an explicit user request justify it, derive candidates from `workflow_models.brainstorm_ensemble`. The default roles are clarify scope, divergent options, minimal solution, and risk review.
+A Brainstorm ensemble is optional advisory-only framing input, not a vote and not a child-owned decision. The default roles are clarify scope, divergent options, minimal solution, and risk review.
 
 All Brainstorm ensemble children are advisory-only with `tool_policy: no tools`; they do not edit code, write Specs, write Plans, mutate workflow state, or close QA. The parent `imm-brainstorm` owns final framing synthesis, Brainstorm manifest IDs, and decision-delta confirmation. Final Spec and Plan authority stays with `imm-planner`. Routine Managed enrollment uses the Planner's final `ctx.ui.custom` confirmation bound to the TaskIntent content hash as the single authority gate; Enrollment validates descriptor structure without executing acceptance descriptors, deterministic QA executes them after implementation, and the routine task proceeds without a second human stop.
 
 Pi's adapter may consume `brainstorm_ensemble` dispatch JSON to prepare advisory Pi subagent envelopes, but envelope construction is not child execution and does not transfer framing authority. Pi launches one foreground Agent at a time, consumes its direct result, and re-evaluates the remaining dispatch budget before launching another candidate. Runtime does not call any agent, poll or recover background work, mutate state, or own final Spec/Plan authority. Pi subagent children remain no-tools advisory candidates; the parent `imm-brainstorm` collects outputs before synthesis.
 
-Agreement becomes framing evidence. Disagreement becomes decision criteria or an open `BR-Q-*`. strong-model blockers become explicit risks or verification requirements for the planner handoff. Small framing tasks do not fan out by default even when an ensemble preset is configured; use solo Brainstorm unless the task has elevated framing risk or an explicit ensemble request.
+Agreement becomes framing evidence. Disagreement becomes decision criteria or an open `BR-Q-*`. strong-model blockers become explicit risks or verification requirements for the planner handoff. Small framing tasks do not fan out by default; use solo Brainstorm unless the task has elevated framing risk or an explicit ensemble request.
 
 **Trigger condition:** Only dispatch when the task spans multiple domains (`multi_domain >= 2`) or the user explicitly requests parallel research. Do not dispatch for single-domain or lightweight framing tasks.
 

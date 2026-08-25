@@ -247,7 +247,6 @@ Immune-Brain 的系统级 subagents 按三层设计，避免把上游的大型 a
 - `id` / `version` / `role`
 - `host`
 - `mode`
-- `activation_default`
 - `trigger`
 - `trigger_surface`
 - `invocation_stage`
@@ -259,7 +258,6 @@ Immune-Brain 的系统级 subagents 按三层设计，避免把上游的大型 a
 - `output_schema`
 - `failure_mode`
 - `fallback_reason`
-- `model_tier`（当 model resolution 适用时）
 
 如果后续要把文档契约升级成 runtime registry，可以再补充 `state_access`、`timeout_ms` 和 `max_retries`；但首版文档契约不要求为了这些字段引入新的运行时层。
 
@@ -275,23 +273,13 @@ Immune-Brain 的系统级 subagents 按三层设计，避免把上游的大型 a
 - 条件风险层至少要先声明 trigger、authority class、write/tool boundary 和输出摘要，避免被默认拉进流程。
 - 项目专用层只有在项目类型明确需要时才补充 manifest entry；未启用时必须有清晰 fallback，而不是把它们伪装成核心层成员。
 
-#### Agent-local Activation Policy
+#### Authorization Policy
 
-所有 subagent-capable workflow host、lens 和项目专用 reviewer 都必须遵循 Pi
-local root `~/.pi/agent/immune-brain/config.toml` 下的 `[subagent_activation]` 策略。
-该策略只决定是否允许 dispatch，不改变任何权限边界。
-
-允许的 mode 只有三种：
-
-- `auto`：trigger、bounded、environment、cost gate 都通过时允许自动 dispatch。
-- `explicit_only`：只有用户明确要求 subagents、parallel research、specialist review、party advisory 或等价委派时才允许 dispatch。
-- `disabled`：即使命中 trigger 也不 dispatch。
-
-解析优先级固定为：用户显式 solo、lens/subagent override、host override、global
-default、repo default。配置要求显式调用但用户没有明确请求时，fallback reason
-是 `explicit_required`；配置禁用 dispatch 时，fallback reason 是
-`config_disabled`。后续新增 subagent 不得绕过这套策略自定义 ad hoc dispatch
-规则。
+Bounded advisory subagents follow literal-user intent, repository `AGENTS.md`
+standing authorization, and Pi host policy. An explicit solo/no-subagent request
+always prevents dispatch. Without host authorization or reliable dispatch,
+Parent stays solo and reports the fallback instead of claiming child work.
+No agent-local activation mode or override table exists.
 
 所有核心 subagent 的最小输出契约至少包含：
 
@@ -342,16 +330,12 @@ default、repo default。配置要求显式调用但用户没有明确请求时�
 
 旧的 `security-reviewer`、`api-contract-reviewer`、`data-integrity-reviewer` 与 `reliability-reviewer` skill surface 已删除；自动 routing 的当前事实以 `imm-advisory-reviewer` 加具体 lens 为准。
 
-#### Subagent 模型分层（model tier）
+#### Subagent Model Selection
 
-条件风险层 lens 在 `docs/reference/subagent-trigger-catalog.yaml` 中可声明
-`model_tier`（`fast` / `mid` / `strong` / `inherit`）。`imm-activation-plan` 产出的
-JSON 中带 `lens_model_tiers` 字段，与 `lenses` 对齐，并保留 candidate 级 `model_tiers` fallback。具体模型由 Pi
-local root 下 `config.toml` 的 `[subagent_models]` 段（可选）把 tier 映射为 model
-ID；未配置或值为 `inherit` 时子代理继承 Pi session 模型。解析与 Pi `Agent` 的
-`model` 参数约定见 [`subagent-dispatch-protocol.md`](subagent-dispatch-protocol.md) Phase 4 与
-[`automatic-subagent-activation-policy.md`](automatic-subagent-activation-policy.md)。本机配置文件字段级说明见
-[`immune-brain-config.md`](immune-brain-config.md)。
+Subagents inherit the current Pi session model by default. A Parent may select
+another Pi-configured model through the host-native `Agent.model` parameter when
+a bounded role has a concrete model need. Immune-Brain does not maintain a
+separate model-tier mapping or provider configuration.
 
 #### 项目专用 Subagents（首版最小集合）
 

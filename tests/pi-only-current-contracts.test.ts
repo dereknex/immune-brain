@@ -9,7 +9,6 @@ const CURRENT_CONTRACTS = [
   "docs/adr/0002-maintenance-surface-ownership.md",
   "docs/reference/immune-brain-config.md",
   "docs/reference/subagent-dispatch-protocol.md",
-  "docs/reference/automatic-subagent-activation-policy.md",
   "docs/reference/workflow-and-subagents.md",
   "docs/reference/HANDOFF-template.md",
   "docs/reference/immune-brain-skills-guide.md",
@@ -68,9 +67,12 @@ describe("current Pi-only contracts", () => {
       });
     }
     expect(readFileSync(resolve(ROOT, "README.md"), "utf8")).toContain("Pi 是唯一支持的 code-agent host");
-    const configDoc = readFileSync(resolve(ROOT, "docs/reference/immune-brain-config.md"), "utf8");
-    expect(configDoc).toContain("覆盖优先级由高到低");
-    expect(configDoc.indexOf("`IMMUNE_BRAIN_AGENT_CONFIG`")).toBeLessThan(configDoc.indexOf("`IMMUNE_BRAIN_CONFIG`"));
+    const preferencesDoc = readFileSync(resolve(ROOT, "docs/reference/immune-brain-config.md"), "utf8");
+    expect(preferencesDoc).toContain("Initiative carrier default: local");
+    expect(preferencesDoc).toContain("Initiative carrier default: github");
+    expect(preferencesDoc).toContain("does not load an\nagent-local TOML file");
+    for (const token of ["IMMUNE_BRAIN_AGENT_CONFIG", "IMMUNE_BRAIN_CONFIG", "[subagent_activation]", "[workflow_models]", "[subagent_models]"])
+      expect(preferencesDoc).not.toContain(token);
   });
 
   it("documents valid Pi native research subagent invocations", () => {

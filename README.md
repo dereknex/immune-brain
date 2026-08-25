@@ -64,15 +64,11 @@ git add -- <task-owned-file-1> <task-owned-file-2>
 
 ---
 
-## ⚙️ 配置文件说明
+## ⚙️ Agent 偏好
 
-本地配置文件固定位于：`~/.pi/agent/immune-brain/config.toml`
+Immune-Brain 不读取独立的本机 TOML 配置。回复语言、bounded advisory subagent 授权与 Planner Initiative carrier 等偏好由 Pi 注入的 `AGENTS.md` 指令提供；当前请求的 literal-user 指令优先。
 
 Pi package 安装负责把 Skills 和 extensions 加入 Pi settings；Immune-Brain runtime 不再需要额外 server 配置。生产 CLI 入口是 `plugins/immune-brain/bin/imm-kernel`，已安装 package 的路径可从 Pi 已加载 Skill 的绝对路径反推。
-
-支持的核心配置选项：
-- `advisory_model`: 推荐使用的模型 ID（只要 Pi 自身已配置该模型即可使用）。
-- `subagent_activation`: Subagent 触发策略（如 `auto` / `manual`）。
 
 详细说明请参阅 [`docs/reference/immune-brain-config.md`](docs/reference/immune-brain-config.md)。
 

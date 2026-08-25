@@ -133,25 +133,9 @@ Legacy v3 mutation entrypoints are retired and are not new-task operation paths�
 
 ## 配置
 
-Immune-Brain 读取 Pi 本机配置：`~/.pi/agent/immune-brain/config.toml`。可通过 `IMMUNE_BRAIN_CONFIG` 和 `IMMUNE_BRAIN_AGENT_CONFIG` 指定附加配置，后者优先级更高。
+Immune-Brain 不维护独立的本机 TOML 配置或模型路由层。回复语言、bounded advisory subagent 授权与 Planner Initiative carrier 等偏好由 Pi 注入的全局或项目 `AGENTS.md` 指令提供；当前请求中的 literal-user 指令优先。Agent 默认继承当前 Pi session model，只有 host-native `Agent` 调用可以显式选择另一个 Pi 已配置模型。
 
-```toml
-[output_language]
-default = "zh-CN"
-
-[subagent_activation]
-default = "auto"  # auto | explicit_only | disabled
-
-[workflow]
-model_preset = "balanced"  # off | budget | balanced | quality | ensemble
-
-[subagent_models]
-fast = "deepseek/deepseek-v4-flash"
-mid = "deepseek/deepseek-v4-pro"
-strong = "inherit"
-```
-
-Pi native subagent 负责可见的 agent UI 与模型执行。Interactive advisory、Enrollment 与 Assurance lifecycle 均按 foreground contract 运行；只有显式配置的 offline sidecar 可以后台执行。Immune-Brain 不维护其他 code-agent host adapter、私有模型 runtime 或独立 credential injection 路径。
+详见 [`dist/docs/reference/immune-brain-config.md`](dist/docs/reference/immune-brain-config.md)。
 
 ## 适用边界
 

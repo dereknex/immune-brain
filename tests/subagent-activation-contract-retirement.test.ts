@@ -6,8 +6,25 @@ const ROOT = resolve(import.meta.dir, "..");
 
 const BINDING_CONTRACTS = [
 	"AGENTS.md",
+	"README.md",
+	"docs/reference/immune-brain-config.md",
+	"docs/reference/subagent-dispatch-protocol.md",
+	"docs/reference/workflow-and-subagents.md",
+	"plugins/immune-brain/USER_GUIDE.md",
+	"plugins/immune-brain/skills/imm-planner/SKILL.md",
+	"plugins/immune-brain/skills/imm-brainstorm/SKILL.md",
 	"plugins/immune-brain/dist/imm-planner.md",
 	"plugins/immune-brain/dist/imm-brainstorm.md",
+] as const;
+
+const RETIRED_CONFIG_TOKENS = [
+	"IMMUNE_BRAIN_AGENT_CONFIG",
+	"IMMUNE_BRAIN_CONFIG",
+	"[subagent_activation]",
+	"[workflow_models]",
+	"[subagent_models]",
+	"[output_language]",
+	"[dev_insights]",
 ] as const;
 
 function read(rel: string): string {
@@ -24,8 +41,7 @@ function liveSourceFiles(): string[] {
 	return [
 		...listTypeScriptFiles(resolve(ROOT, "plugins/immune-brain/runtime")),
 		...listTypeScriptFiles(resolve(ROOT, "plugins/immune-brain/.pi-extension")),
-		...listTypeScriptFiles(resolve(ROOT, "tests")),
-	].filter((abs) => !abs.endsWith("subagent-activation-contract-retirement.test.ts"));
+	];
 }
 
 describe("subagent activation machinery retirement", () => {
@@ -45,10 +61,15 @@ describe("subagent activation machinery retirement", () => {
 		expect(offenders).toEqual([]);
 	});
 
-	test("the four binding contracts no longer condition behavior on the machinery", () => {
+	test("current binding contracts no longer condition behavior on retired config", () => {
 		for (const rel of BINDING_CONTRACTS) {
 			const content = read(rel);
-			expect(content).not.toContain("subagent_activation");
+			for (const token of RETIRED_CONFIG_TOKENS)
+				expect({ rel, token, present: content.includes(token) }).toEqual({
+					rel,
+					token,
+					present: false,
+				});
 			expect(content).not.toContain("imm-activation-plan");
 			expect(content).not.toContain("CLI activation plan");
 		}

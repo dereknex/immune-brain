@@ -1,13 +1,17 @@
 import { describe, expect, it } from "bun:test"
-import { readFileSync } from "node:fs"
+import { existsSync, readFileSync } from "node:fs"
 import { fileURLToPath } from "node:url"
 import { dirname, resolve } from "node:path"
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..")
 const SKILL_DIST = "plugins/immune-brain/dist/imm-loop.md"
 const INTERNAL_REVIEW = "plugins/immune-brain/dist/role-prompts/code-review.md"
-const PACKAGED_SPEC =
-	"plugins/immune-brain/dist/docs/specs/automatic-subagent-activation.spec.md"
+const RETIRED_PACKAGED_ACTIVATION = [
+	"plugins/immune-brain/dist/docs/specs/automatic-subagent-activation.spec.md",
+	"plugins/immune-brain/dist/docs/reference/automatic-subagent-activation-policy.md",
+	"plugins/immune-brain/dist/docs/reference/review-host-dispatch-protocol.md",
+	"plugins/immune-brain/dist/docs/reference/subagent-trigger-catalog.yaml",
+]
 const RETIRED_CLI = [
 	"imm-activation-plan",
 	"immune_brain_runtime.ts",
@@ -45,10 +49,12 @@ describe("imm-code-review activation fallback contract", () => {
 		expect(dist).toContain("subagent-dispatch-protocol.md")
 	})
 
-	it("stops naming a packaged CLI planner entrypoint", () => {
-		expectRetiredCliAbsent(read(PACKAGED_SPEC), PACKAGED_SPEC)
-		expect(read(PACKAGED_SPEC)).toContain("subagent-trigger-catalog.yaml")
-		expect(read(PACKAGED_SPEC)).toContain("automatic-subagent-activation-policy.md")
+	it("does not ship the retired activation planner contracts", () => {
+		for (const rel of RETIRED_PACKAGED_ACTIVATION)
+			expect({ rel, present: existsSync(resolve(REPO_ROOT, rel)) }).toEqual({
+				rel,
+				present: false,
+			})
 	})
 
 	it("keeps same-boundary findings on the follow_up execution route", () => {

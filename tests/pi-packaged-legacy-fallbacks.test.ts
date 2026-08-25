@@ -1,18 +1,16 @@
 import { describe, expect, it } from "bun:test";
 import { execFileSync, spawnSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
 const ROOT = resolve(import.meta.dir, "..");
-const SOURCE_POLICY = resolve(
-	ROOT,
-	"docs/reference/automatic-subagent-activation-policy.md",
-);
-const DIST_POLICY = resolve(
-	ROOT,
+const RETIRED_PACKAGED_ACTIVATION = [
+	"plugins/immune-brain/dist/docs/specs/automatic-subagent-activation.spec.md",
 	"plugins/immune-brain/dist/docs/reference/automatic-subagent-activation-policy.md",
-);
+	"plugins/immune-brain/dist/docs/reference/review-host-dispatch-protocol.md",
+	"plugins/immune-brain/dist/docs/reference/subagent-trigger-catalog.yaml",
+] as const;
 const DIST_PLANNER = resolve(ROOT, "plugins/immune-brain/dist/imm-planner.md");
 const DIST_COMPOUNDER = resolve(
 	ROOT,
@@ -63,15 +61,15 @@ function expectRetiredGuidanceAbsent(content: string, path: string): void {
 }
 
 describe("packaged legacy CLI fallbacks", () => {
-	it("keeps the packaged activation reference generated from the source", () => {
-		const source = readFileSync(SOURCE_POLICY, "utf8");
-		const packaged = readFileSync(DIST_POLICY, "utf8");
-		expect(source).toContain(
-			"The policy inherits the split gate from\n`docs/specs/workflow-skill-subagent-orchestration.spec.md`:",
-		);
-		expect(packaged).toContain(
-			"The policy inherits the split gate from the workflow skill subagent\norchestration spec in the source repository:",
-		);
+	it("keeps retired activation references out of the current package surface", () => {
+		expect(
+			existsSync(resolve(ROOT, "docs/archives/automatic-subagent-activation-policy.md")),
+		).toBe(true);
+		for (const rel of RETIRED_PACKAGED_ACTIVATION)
+			expect({ rel, present: existsSync(resolve(ROOT, rel)) }).toEqual({
+				rel,
+				present: false,
+			});
 	});
 
 	it("removes retired planner mutation and dispatcher fallbacks", () => {
@@ -92,17 +90,6 @@ describe("packaged legacy CLI fallbacks", () => {
 		);
 	});
 
-	it("describes static catalog-reference integrity", () => {
-		const policy = readFileSync(SOURCE_POLICY, "utf8");
-		expectRetiredGuidanceAbsent(
-			policy,
-			"automatic-subagent-activation-policy.md",
-		);
-		expect(policy).toContain(
-			"Catalog `policy_ref`/`spec_ref` integrity is enforced by build and",
-		);
-	});
-
 	it("ships the corrected contracts in a real npm pack artifact", () => {
 		const { dir, pkgDir } = extractTarball();
 		try {
@@ -114,27 +101,18 @@ describe("packaged legacy CLI fallbacks", () => {
 				join(pkgDir, "plugins/immune-brain/dist/role-prompts/compounder.md"),
 				"utf8",
 			);
-			const policy = readFileSync(
-				join(
-					pkgDir,
-					"plugins/immune-brain/dist/docs/reference/automatic-subagent-activation-policy.md",
-				),
-				"utf8",
-			);
+			for (const rel of RETIRED_PACKAGED_ACTIVATION)
+				expect({ rel, present: existsSync(join(pkgDir, rel)) }).toEqual({
+					rel,
+					present: false,
+				});
 			expectRetiredGuidanceAbsent(planner, "packed/imm-planner.md");
 			expectRetiredGuidanceAbsent(compounder, "packed/imm-compounder.md");
-			expectRetiredGuidanceAbsent(
-				policy,
-				"packed/automatic-subagent-activation-policy.md",
-			);
 			expect(planner).toContain("imm_canary_enrollment");
 			expect(planner).not.toContain("/imm-canary-new");
 			expect(planner).not.toContain("/imm-canary-enroll");
 			expect(compounder).toContain(
 				"# Internal Compounder",
-			);
-			expect(policy).toContain(
-				"Catalog `policy_ref`/`spec_ref` integrity is enforced by build and",
 			);
 		} finally {
 			rmSync(dir, { recursive: true, force: true });

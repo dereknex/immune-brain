@@ -8,17 +8,16 @@
 
 1. 从任务摘要、changed paths 和显式请求分类为 `trivial`、`single_domain`、`multi_domain` 或 `high_risk`。
 2. 优先读取 `CONTEXT.md` Architecture Map、当前任务证据和相关 `docs/solutions/`，避免每个 child 重复探索。
-3. 低风险单领域任务可在一次直接验证可关闭时走 solo；多领域、高风险、显式 subagent 请求或有明确 parallel probe 时才派发。
-4. 从 `~/.pi/agent/immune-brain/config.toml` 解析 `auto|explicit_only|disabled`。
-5. 只有边界清晰、Pi 暴露 `Agent` 工具且满足 authorization 时才派发。
+3. 低风险单领域任务可在一次直接验证可关闭时走 solo；多领域、高风险、显式 subagent 请求或有明确 bounded probe 时才派发。
+4. 只有边界清晰、Pi 暴露 `Agent` 工具且满足 authorization 时才派发。
 
-常用 fallback reason：`cost_scope_mismatch`、`explicit_required`、`config_disabled`、`unavailable_environment`、`host_authorization_required`、`trigger_not_hit`、`unclear_boundary`。
+常用 fallback reason：`cost_scope_mismatch`、`unavailable_environment`、`host_authorization_required`、`trigger_not_hit`、`unclear_boundary`。
 
 ## Authorization
 
-Canonical session grant:
+Canonical project grant:
 
-> This session authorizes Immune-Brain to auto-use bounded read-only subagents/parallel probes when the mode is auto and boundaries are clear.
+> This project authorizes bounded read-only advisory subagents and parallel probes unless the user asks for solo work.
 
 Eligibility 与 authorization 是不同门槛：
 
@@ -32,7 +31,7 @@ Eligibility 与 authorization 是不同门槛：
 
 ## Trigger Matching
 
-根据 `docs/reference/subagent-trigger-catalog.yaml` 匹配 lens。只有明确命中才派发；每个 child 只获得与其 lens 相关的 path shard。未匹配文件只进入共享摘要，不复制整份 diff。
+Parent 根据任务目标、changed paths 与显式请求选择 bounded advisory role。只有明确命中才派发；每个 child 只获得与其 role 相关的 path shard。未匹配文件只进入共享摘要，不复制整份 diff。
 
 Delegation packet：
 
@@ -51,16 +50,11 @@ focus_delta:
   boundary: advisory-only; no code edits; no plan writes; no workflow-state mutation; no QA closure
 ```
 
-## Model Resolution
+## Model Selection
 
-按以下顺序取第一个非 `inherit` 值：
-
-1. `[subagent_models.lens_overrides][lens]`
-2. activation plan 的 `lens_model_tiers[lens]`
-3. `model_tiers[candidate]`
-4. 当前 Pi session model
-
-Model ID 可以来自任意 Pi 已配置 provider。未解析到具体 ID 时省略 `model`。
+Agent 默认继承当前 Pi session model。只有 Parent 有明确需求时，才通过
+host-native `Agent.model` 选择另一个 Pi 已配置模型；Immune-Brain 不维护独立的
+model tier 或 provider mapping。
 
 ## Pi Agent Invocation
 
@@ -69,7 +63,7 @@ Agent:
   subagent_type: "general-purpose"
   description: "<role>/<lens> review"
   prompt: <delegation packet>
-  model: <resolved model id; omit for inherit>
+  model: <optional Pi-configured model id; omit to inherit>
   inherit_context: false
   run_in_background: false
 ```

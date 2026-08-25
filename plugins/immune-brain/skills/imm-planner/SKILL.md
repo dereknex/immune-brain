@@ -120,31 +120,43 @@ file creation; then it validates the created artifact with
 continue through Kernel `revise_intent` authority and are not a Planner
 overwrite path.
 
-### Opt-in GitHub Initiative Projection
+### Initiative Carrier Preference
 
 For a large proposal split across multiple TaskIntents, exactly one planning
 carrier is chosen per Initiative: a Local Markdown file at
-`docs/initiatives/<slug>.md` or one GitHub Parent Issue. GitHub Issues provide
-one-way visibility only when the literal user explicitly opts a named Initiative
-in and confirms its immutable slug. Resolve `../../bin/imm-tracker` from this
-Skill location; do not assume a bare command is on `PATH`. After the first
-TaskIntent has been authored, staged, and validated with `valid: true` and
-`enrollment_ready: true`, call `imm-tracker create-initiative --stdin --json`
-once with the confirmed goal and known stable Slice ID/result summaries; the
-tracker creates the Parent once and never rewrites it later planning changes are
-direct user edits to that Issue. Then call
+`docs/initiatives/<slug>.md` or one GitHub Parent Issue. This preference applies
+only to Initiatives; ordinary TaskIntents remain tracked by Kernel TaskRecords.
+Resolve the carrier in this order:
+
+1. a literal user instruction for the current request;
+2. `Initiative carrier default: local` or `Initiative carrier default: github`
+   in the repository root `AGENTS.md`;
+3. the same directive in `~/.pi/agent/AGENTS.md`; or
+4. ask the user when no valid directive exists.
+
+A repository directive overrides the global directive. Report an invalid value
+and ask instead of guessing. After resolving it, display one non-blocking line
+with the selected carrier and its source. A configured `github` default is
+standing opt-in for GitHub projection, but the literal user must still confirm
+the named Initiative and its immutable slug before the first remote mutation.
+Resolve `../../bin/imm-tracker` from this Skill location; do not assume a bare
+command is on `PATH`. After the first TaskIntent has been authored, staged, and
+validated with `valid: true` and `enrollment_ready: true`, call
+`imm-tracker create-initiative --stdin --json` once with the confirmed goal and
+known stable Slice ID/result summaries; the tracker creates the Parent once and
+never rewrites it later planning changes are direct user edits to that Issue.
+Then call
 `imm-tracker upsert-task --initiative-id <slug> --slice-id <id> --intent <path> --json`
 to create one neutral open Child Issue and attach it to the Parent as a native
 Sub-issue. If `docs/initiatives/<slug>.md` exists, the tracker fails with a
-carrier conflict; Local mode performs zero GitHub operations. A future Slice
-remains a parent checklist entry until its own TaskIntent is canonically
-authored and validated.
+carrier conflict; Local mode performs zero GitHub operations. A future Slice remains a parent checklist entry until its own TaskIntent is
+canonically authored and validated.
 
 Tracker output is observation, never authority. Report `retryable_failure`,
 `permanent_failure`, or `ambiguous_remote_state` and the exact retry action, but
 do not block planning, Enrollment, execution, QA, Review, settlement, or another
-association. Do not infer opt-in, auto-close the parent, import Issue state,
-create a TaskIntent from an Issue, or store Issue identity in TaskIntent or
+association. Do not infer opt-in from tracker output or Issue state,
+auto-close the parent, import Issue state, create a TaskIntent from an Issue, or store Issue identity in TaskIntent or
 TaskRecord. Existing Issue markers grant permission only for later one-way
 projection updates to that same Initiative; they never grant execution authority.
 
@@ -160,9 +172,6 @@ explain how the selected seam catches the intended regression. This is a
 planning heuristic: it must not weaken acceptance-specific focused verification
 descriptors or add a mandatory user confirmation. Use the smallest `timeout_ms` and
 `max_output_bytes` that cover deterministic post-implementation QA.
-
-planner ensemble is advisory-only and derives candidates from
-`workflow_models.planner_ensemble`; final Spec and Plan authority stays here.
 
 ## Retirement Completion Contract
 

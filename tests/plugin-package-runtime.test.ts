@@ -346,6 +346,12 @@ describe("plugin package runtime cutover parity", () => {
 		const loopSource = readFileSync(join(REPO_ROOT, "plugins/immune-brain/skills/imm-loop/SKILL.md"), "utf8");
 		const loopPacked = readFileSync(join(REPO_ROOT, "plugins/immune-brain/dist/imm-loop.md"), "utf8");
 		for (const contract of [plannerSource, plannerPacked]) {
+			expect(contract).toContain("Initiative carrier default: local");
+			expect(contract).toContain("Initiative carrier default: github");
+			expect(contract).toContain("A repository directive overrides the global directive");
+			expect(contract).toContain("standing opt-in for GitHub projection");
+			expect(contract).toContain("ordinary TaskIntents remain tracked by Kernel TaskRecords");
+			expect(contract).toContain("display one non-blocking line");
 			expect(contract).toContain("create-initiative --stdin --json");
 			expect(contract).toContain("upsert-task --initiative-id <slug> --slice-id <id> --intent <path> --json");
 			expect(contract).toContain("Tracker output is observation, never authority");

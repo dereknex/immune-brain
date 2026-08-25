@@ -122,31 +122,43 @@ file creation; then it validates the created artifact with
 continue through Kernel `revise_intent` authority and are not a Planner
 overwrite path.
 
-### Opt-in GitHub Initiative Projection
+### Initiative Carrier Preference
 
 For a large proposal split across multiple TaskIntents, exactly one planning
 carrier is chosen per Initiative: a Local Markdown file at
-`docs/initiatives/<slug>.md` or one GitHub Parent Issue. GitHub Issues provide
-one-way visibility only when the literal user explicitly opts a named Initiative
-in and confirms its immutable slug. Resolve `../bin/imm-tracker` from this
-packaged contract; do not assume a bare command is on `PATH`. After the first
-TaskIntent has been authored, staged, and validated with `valid: true` and
-`enrollment_ready: true`, call `imm-tracker create-initiative --stdin --json`
-once with the confirmed goal and known stable Slice ID/result summaries; the
-tracker creates the Parent once and never rewrites it later planning changes are
-direct user edits to that Issue. Then call
+`docs/initiatives/<slug>.md` or one GitHub Parent Issue. This preference applies
+only to Initiatives; ordinary TaskIntents remain tracked by Kernel TaskRecords.
+Resolve the carrier in this order:
+
+1. a literal user instruction for the current request;
+2. `Initiative carrier default: local` or `Initiative carrier default: github`
+   in the repository root `AGENTS.md`;
+3. the same directive in `~/.pi/agent/AGENTS.md`; or
+4. ask the user when no valid directive exists.
+
+A repository directive overrides the global directive. Report an invalid value
+and ask instead of guessing. After resolving it, display one non-blocking line
+with the selected carrier and its source. A configured `github` default is
+standing opt-in for GitHub projection, but the literal user must still confirm
+the named Initiative and its immutable slug before the first remote mutation.
+Resolve `../bin/imm-tracker` from this packaged contract; do not assume a bare
+command is on `PATH`. After the first TaskIntent has been authored, staged, and
+validated with `valid: true` and `enrollment_ready: true`, call
+`imm-tracker create-initiative --stdin --json` once with the confirmed goal and
+known stable Slice ID/result summaries; the tracker creates the Parent once and
+never rewrites it later planning changes are direct user edits to that Issue.
+Then call
 `imm-tracker upsert-task --initiative-id <slug> --slice-id <id> --intent <path> --json`
 to create one neutral open Child Issue and attach it to the Parent as a native
 Sub-issue. If `docs/initiatives/<slug>.md` exists, the tracker fails with a
-carrier conflict; Local mode performs zero GitHub operations. A future Slice
-remains a parent checklist entry until its own TaskIntent is canonically
-authored and validated.
+carrier conflict; Local mode performs zero GitHub operations. A future Slice remains a parent checklist entry until its own TaskIntent is
+canonically authored and validated.
 
 Tracker output is observation, never authority. Report `retryable_failure`,
 `permanent_failure`, or `ambiguous_remote_state` and the exact retry action, but
 do not block planning, Enrollment, execution, QA, Review, settlement, or another
-association. Do not infer opt-in, auto-close the parent, import Issue state,
-create a TaskIntent from an Issue, or store Issue identity in TaskIntent or
+association. Do not infer opt-in from tracker output or Issue state,
+auto-close the parent, import Issue state, create a TaskIntent from an Issue, or store Issue identity in TaskIntent or
 TaskRecord. Existing Issue markers grant permission only for later one-way
 projection updates to that same Initiative; they never grant execution authority.
 
@@ -279,11 +291,11 @@ Runtime helpers: `imm_core.planner_research`, `imm_core.buildPlannerEnsembleRequ
 
 ### Planner Ensemble Advisory
 
-A planner ensemble is optional advisory input for elevated-risk planning, not a vote and not a child-owned Plan draft. When risk gates or an explicit user request justify it, derive candidates from `workflow_models.planner_ensemble`. The default roles are: fast candidate for divergent options and simpler alternatives, mid candidate for repo-grounded executable slice, and strong candidate for adversarial risk and verification strength review.
+A planner ensemble is optional advisory input for elevated-risk planning, not a vote and not a child-owned Plan draft. The default roles are: fast candidate for divergent options and simpler alternatives, mid candidate for repo-grounded executable slice, and strong candidate for adversarial risk and verification strength review.
 
 All planner ensemble children are advisory-only with `tool_policy: no tools`; they do not edit code, write Specs, write Plans, mutate workflow state, or close QA. The parent `imm-planner` owns final Spec and Plan synthesis, Brainstorm Trace mapping, Step Results, and Verification paths. Pi launches one foreground Agent at a time, consumes its direct result, and re-evaluates the remaining dispatch budget before launching another candidate.
 
-Agreement becomes evidence. Disagreement becomes decision criteria. strong-model blockers become explicit risks or verification requirements in the planner-owned output. Small plans do not fan out by default even when the `ensemble` preset is configured; use solo planning unless the task has elevated planning risk or an explicit ensemble request.
+Agreement becomes evidence. Disagreement becomes decision criteria. strong-model blockers become explicit risks or verification requirements in the planner-owned output. Small plans do not fan out by default; use solo planning unless the task has elevated planning risk or an explicit ensemble request.
 
 **Trigger condition:** Only dispatch when the task spans multiple domains (`multi_domain >= 2`) or the user explicitly requests parallel research during planning. Do not dispatch for single-domain tasks or small-scope plans.
 

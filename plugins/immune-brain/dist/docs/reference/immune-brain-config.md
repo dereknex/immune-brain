@@ -1,119 +1,52 @@
-# Immune-Brain Pi Configuration
+# Immune-Brain Pi Preferences
 
-Pi 是 Immune-Brain 唯一支持的 code-agent host。本机配置固定在：
-
-```text
-~/.pi/agent/immune-brain/config.toml
-```
-
-配置属于本机偏好，不提交到 Git。旧的 `~/.immune-brain/` 不参与默认发现；需要保留旧配置时，显式移动到 Pi root，runtime 不猜测来源也不复制多份。
+Pi is the only supported code-agent host. Immune-Brain does not load an
+agent-local TOML file or Immune-Brain-specific environment overrides. User and
+project preferences belong in Pi-injected `AGENTS.md` instructions.
 
 ## Precedence
 
-覆盖优先级由高到低：
+Planner preferences resolve in this order:
 
-1. CLI 的显式行为参数
-2. `IMMUNE_BRAIN_AGENT_CONFIG`
-3. `IMMUNE_BRAIN_CONFIG`
-4. `~/.pi/agent/immune-brain/config.toml`
-5. 内建默认值
+1. a literal instruction in the current request;
+2. the repository root `AGENTS.md`;
+3. `~/.pi/agent/AGENTS.md`; or
+4. the Skill's documented default or an explicit user question.
 
-Runtime 按相反顺序加载配置文件，使后加载的 `IMMUNE_BRAIN_AGENT_CONFIG` 覆盖前两层文件配置。
+Invalid values are reported rather than guessed.
 
-Runtime 不暴露 coding-agent ID 或 host root selector；配置来源固定为 Pi。
+## Initiative Carrier
 
-## Dev Insights
+The Initiative carrier preference applies only to proposals split across
+multiple TaskIntents. Ordinary TaskIntents remain tracked by Kernel
+TaskRecords. Set one of these fixed directives in `AGENTS.md`:
 
-```toml
-[dev_insights]
-enabled = true
-inbox_path = "~/.pi/agent/immune-brain/insights/workflow-improvement-inbox.md"
+```md
+## Immune-Brain Preferences
+
+- Initiative carrier default: local
 ```
 
-`inbox_path` 必须是绝对路径或 `~/` 路径。`IMM_DEV_INSIGHTS=1|0` 可覆盖 `enabled`；其他显式值会被拒绝。
+```md
+## Immune-Brain Preferences
 
-## Output Language
-
-```toml
-[output_language]
-default = "zh-CN"
+- Initiative carrier default: github
 ```
 
-该设置只影响面向用户的自然语言，不修改 machine contract、schema、路径、API 或代码 identifier。
+A repository directive overrides the global directive. A configured `github`
+default is standing opt-in for GitHub projection, but the literal user still
+confirms the Initiative name and immutable slug before the first remote
+mutation. Planner reports the selected carrier and its source. Projection
+failure is reported with a retry action; it does not silently switch carrier or
+block TaskIntent authoring, Enrollment, or execution.
 
-## Subagent Activation
+## Other Preferences
 
-```toml
-[subagent_activation]
-default = "auto" # auto | explicit_only | disabled
-
-[subagent_activation.hosts]
-imm-code-review = "auto"
-imm-ui-review = "auto"
-imm-brainstorm = "auto"
-imm-planner = "auto"
-imm-loop = "auto"
-```
-
-这里的 `hosts` 是工作流 review/coordination role，不是 code-agent host。优先级为：用户显式 solo、lens/subagent override、workflow role override、global default、repo default。
-
-稳定 fallback reason：
-
-- `explicit_required`
-- `config_disabled`
-- `host_authorization_required`
-- `unavailable_environment`
-- `trigger_not_hit`
-- `unclear_boundary`
-- `cost_scope_mismatch`
-- `dispatch_failed`
-- `child_timeout`
-
-## Workflow Models
-
-Pi 可使用任意已配置 model provider 的模型 ID。
-
-```toml
-[workflow]
-model_preset = "balanced" # off | budget | balanced | quality | ensemble
-
-[workflow_models]
-planner = ["mid"]
-planner_ensemble = ["fast", "mid", "strong"]
-executor = ["inherit"]
-qa_high_risk = ["strong"]
-
-[workflow_model_options.planner]
-reasoning_effort = "medium" # low | medium | high | xhigh | max
-verbosity = "low"           # low | medium | high
-```
-
-`inherit` 表示不传 `model`，由当前 Pi session 继承。多模型 stage 会按解析后的 model ID 去重；少于两个不同模型时转为 single-model fallback。
-
-## Model Tiers
-
-```toml
-[subagent_models]
-fast   = "inherit"
-mid    = "anthropic/claude-sonnet"
-strong = "openai/gpt-5"
-local  = "local/qwen"
-
-[subagent_models.lens_overrides]
-security = "google/gemini-pro"
-api_contract = "inherit"
-```
-
-解析顺序：
-
-1. lens override
-2. activation plan 的 lens tier
-3. candidate tier fallback
-4. Pi session model inheritance
-
-解析出的非 `inherit` model ID 作为 Pi `Agent` 的 `model` 参数传递。Provider 名称不等于宿主支持；Pi-only 不限制模型 provider。
-
-## Related Contracts
-
-- [`subagent-dispatch-protocol.md`](subagent-dispatch-protocol.md)
-- [`automatic-subagent-activation-policy.md`](automatic-subagent-activation-policy.md)
+- Set reply-language preferences as ordinary `AGENTS.md` communication
+  instructions. Machine contracts, schema fields, paths, API names, and code
+  identifiers remain literal.
+- Project `AGENTS.md` owns standing authorization for bounded advisory
+  subagents. Explicit solo instructions and Pi host policy still take
+  precedence.
+- Agent model selection uses the active Pi session model unless a Pi `Agent`
+  invocation explicitly selects another Pi-configured model.
