@@ -18,6 +18,7 @@ test("reserved native review parameters are foreground-only and deterministic", 
 		subagent_type: "general-purpose",
 		inherit_context: false,
 		isolated: true,
+		isolation: "worktree",
 		run_in_background: false,
 		max_turns: 16,
 		model: "",
@@ -25,7 +26,6 @@ test("reserved native review parameters are foreground-only and deterministic", 
 		schedule: "",
 		thinking: "",
 	});
-	expect(params).not.toHaveProperty("isolation");
 	expect(params.prompt).toContain("immutable bundle");
 	expect(params.description).toContain("12345678");
 	expect(promptDigest(params.prompt)).toMatch(/^sha256:[0-9a-f]{64}$/);
@@ -40,7 +40,7 @@ test("exact Agent args are required", () => {
 	expect(matchesReservedAgentArgs({ ...params, resume: "agent-1" }, params)).toBe(false);
 	expect(matchesReservedAgentArgs({ ...params, schedule: "+1m" }, params)).toBe(false);
 	expect(matchesReservedAgentArgs({ ...params, thinking: "high" }, params)).toBe(false);
-	expect(matchesReservedAgentArgs({ ...params, isolation: "worktree" }, params)).toBe(false);
+	expect(matchesReservedAgentArgs({ ...params, isolation: "none" }, params)).toBe(false);
 	expect(matchesReservedAgentArgs({ ...params, extra: true }, params)).toBe(false);
 	expect(matchesReservedAgentArgs({ subagent_type: params.subagent_type }, params)).toBe(false);
 	const modeled = { ...params, model: "review-model" };

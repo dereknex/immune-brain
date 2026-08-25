@@ -5,7 +5,7 @@ test("QA continuation hands one exact foreground Agent envelope to the Parent tu
 	const params = reservedAgentParams({ taskId: "continuation-task", operationId: "operation-1", prompt: "review immutable bundle" });
 	expect(params.run_in_background).toBe(false);
 	expect(params.isolated).toBe(true);
-	expect(params).not.toHaveProperty("isolation");
+	expect(params.isolation).toBe("worktree");
 	expect(matchesReservedAgentArgs({ ...params, run_in_background: true }, params)).toBe(false);
 });
 

@@ -84,7 +84,7 @@ describe("canary assurance authority", () => {
 	expect(prompt).toContain("Limit repository inspection to the acceptance assertions and dirty_files contents in the immutable bundle");
 	expect(prompt).toContain("Do not explore unrelated repository paths");
 	expect(prompt).toContain("Reserve the final turn for exactly one strict JSON verdict");
-		expect(prompt).toContain("verify that git rev-parse HEAD equals bundle.head");
+		expect(prompt).toContain("verify that git rev-parse HEAD in the isolated reviewer worktree equals bundle.head");
 		expect(prompt).toContain("base_oid");
 		expect(prompt).toContain("Do not inspect or depend on live task bytes outside the immutable bundle");
 		expect(prompt).toContain('"authority_role":"reviewer"');

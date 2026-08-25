@@ -88,7 +88,7 @@ describe("review contract outcome evidence", () => {
 		expect(prompt).toContain("do not re-execute descriptors");
 		expect(prompt).toContain("do not treat the absence of local test runs as a finding");
 		expect(prompt).toContain("Analyze code exclusively from those bundle bytes");
-		expect(prompt).toContain("review authority is bound only to the bundle dirty_files current_content bytes");
+		expect(prompt).toContain("Review authority is bound only to the bundle dirty_files current_content bytes");
 		expect(prompt).toContain("Focus on correctness, regressions, security, and missing tests");
 	});
 

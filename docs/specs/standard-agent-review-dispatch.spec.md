@@ -11,7 +11,7 @@ advisory. Literal-user `record-review-verdict` confirmation, snapshot isolation,
 CAS, and reviewer independence remain load-bearing.
 
 The change is High, not Low: it crosses the reviewer dispatch boundary,
-current-worktree read-only policy, foreground completion observation, and
+isolated-worktree tool policy, foreground completion observation, and
 cancellation races. It is not Critical because it does not mint reviewer
 capability or remove confirmation.
 
@@ -49,16 +49,16 @@ sequenceDiagram
     participant P as Parent Agent
     participant H as Assurance Host
     participant A as Standard Agent tool
-    participant R as Read-only reviewer
+    participant R as Isolated reviewer
     participant K as Kernel
 
     P->>H: advance_assurance(task_id)
     H->>H: Reserve one snapshot-scoped Review operation
     H->>H: Write immutable evidence bundle
     H-->>P: follow-up: call Agent with reserved params
-    P->>A: Agent(isolated tools, foreground, max_turns=32)
+    P->>A: Agent(isolated tools, isolated worktree, foreground, max_turns=32)
     A-->>H: tool_execution_end spawn receipt + agent_id
-    A->>R: reviewer runs in current user-selected worktree
+    A->>R: reviewer runs at the bundle's committed HEAD
     Note over H,K: Spawn receipt is not a verdict
     R-->>P: native completion notice
     P->>A: get_subagent_result(agent_id)
@@ -79,7 +79,8 @@ the standard `Agent` tool with exact reserved parameters:
 - `description`: short reserved label that includes the operation id
 - `prompt`: existing `buildReviewPrompt` over the immutable evidence path
 - `inherit_context`: `false`
-- `isolated`: `true` (resource/tool isolation only; no worktree creation)
+- `isolated`: `true` (resource/tool isolation)
+- `isolation`: `worktree` (same committed HEAD; task bytes come only from the immutable bundle)
 - `run_in_background`: `false`
 - `max_turns`: workload-derived, bounded at `32`
 - `model`: the existing Review model override when present
@@ -173,7 +174,7 @@ user approval stay as they are. Rule #1437 is not revised.
 | Failure | Host behavior |
 | --- | --- |
 | Parent does not call `Agent` before the remaining Review deadline | `timed_out`; reservation released |
-| `Agent` call errors, requests worktree isolation, or is not foreground/read-only | Reject; no reservation promotion |
+| `Agent` call errors, omits worktree isolation, or is not foreground/read-only | Reject; no reservation promotion |
 | Cancel before or after spawn | Invalidate reservation; ignore later result; no RPC stop |
 | Total deadline before retrieval | `timed_out`; later result discarded |
 | Snapshot drift before parse | Discard result; zero pending verdict |
@@ -194,8 +195,8 @@ user approval stay as they are. Rule #1437 is not revised.
 1. Adapter tests prove production Review no longer emits `subagents:rpc:*` or
    listens to `subagents:completed` / `subagents:failed`.
 2. Dispatch tests prove the follow-up requests the exact reserved `Agent`
-   parameters, including `isolated`, `inherit_context: false`, no automatic
-   worktree isolation field, `run_in_background: false`, and `max_turns: 32`.
+   parameters, including `isolated`, `inherit_context: false`,
+   `isolation: "worktree"`, `run_in_background: false`, and `max_turns: 32`.
 3. Observation tests prove a spawn receipt cannot create a pending verdict, and
    only a reserved `get_subagent_result` after snapshot revalidation can.
 4. Adversarial tests prove forged bus events, unmatched tool results, stale
