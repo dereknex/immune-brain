@@ -11,32 +11,30 @@ design-contract mode formerly exposed as `imm-page-design`. Keep scope
 explicit, including the Devil's Advocate preplan audit and `Devil's Advocate Audit` output. Return plan path, decisions,
 first step, verification approach, and Next Action.
 
-## Default exhaustive decision tree
+## Clarification supplement
 
-Exhaustive clarification is the default protocol, not a separate mode. Direct
-Planner entry remains valid for clear requests. Resolve repository facts through
-read-only investigation, then exhaust every real execution-design decision that
-can change Result, Scope, behavior, Verification, or risk treatment. Direct
-Planner entry and Medium/High Design Risk work must inspect relevant ADRs and
-rejected Learnings. Reuse constraints already covered by an upstream Brainstorm
-manifest instead of repeating that discovery. Scan design decisions, component
-boundaries, failure behavior, compatibility, migration, recovery and rollback,
-verification, execution slices, dependencies, and delivery risks.
+Planner consumes an upstream Brainstorm manifest as a closed-world input and
+must not repeat, reopen, or rewrite confirmed decisions. Direct Planner entry
+and Medium/High Design Risk work must inspect relevant ADRs and rejected
+Learnings. It resolves repository facts and owns ordinary technical choices: design and component boundaries, failure behavior, compatibility, migration, recovery and
+rollback, Verification, execution slices, dependencies, scope, and delivery
+risk. It then authors the candidate Spec, Plan, or TaskIntent.
 
-Ask the complete currently unblocked frontier in dependency-aware rounds. Number
-each question, include a recommended answer, and accept bulk approval of all
-recommendations with explicit exceptions. A zero-question fast path is valid
-when the frontier is already empty. Product-level uncertainty is outside Planner
-ownership: stop and return to `imm-brainstorm`. Treat the user's direct
-requirements, answers to numbered questions, and bulk approval of
-recommendations as confirmation of those decisions. Once the frontier is empty,
-present a result-only summary as a non-blocking correction window before
-finalizing a candidate Spec, Plan, or TaskIntent; retain final decisions in the
-planning artifacts rather than copying the question transcript. Do not ask the
-user to reconfirm decisions reflected without material change. If the summary
-introduces or changes a material decision affecting Result, Scope, behavior,
-Verification, or risk treatment, ask for explicit confirmation of only that
-decision delta and block finalization until it is answered.
+Planner may ask only when concrete new evidence exposes an omission, repository
+conflict, or invalidated assumption. Ask the focused decision delta, cite the
+upstream `BR-*` item and new evidence when available, and preserve every
+unaffected decision. Resolve a local delta here; if its answer reopens multiple
+product branches or changes the overall goal or Scope, stop and return to
+`imm-brainstorm`.
+
+Direct Planner entry remains valid for clear requests. Resolve facts and derive
+technical design without a Brainstorm pass; if an unresolved user-owned product
+decision appears, return to `imm-brainstorm` instead of silently choosing it or
+starting a second exhaustive interview. A zero-question fast path is valid when
+no supplement is required. Present an unchanged result summary as a
+non-blocking correction window and do not ask the user to reconfirm existing
+decisions. If the summary itself introduces or changes a user decision, confirm
+only that decision delta before finalizing.
 
 Settlement-class intents (terminal settlement, cancellation, timeout, race, or
 authority-lifecycle semantics) must embed the `Settlement-Design Contract`

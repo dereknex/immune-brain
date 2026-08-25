@@ -26,75 +26,87 @@ const expectAll = (paths: string[], phrases: string[]) => {
 	}
 };
 
-describe("default exhaustive decision-tree skill contract", () => {
-	test("both stages use dependency-aware complete-frontier rounds", () => {
-		expectAll([...brainstormContracts, ...plannerContracts], [
+describe("Brainstorm-owned clarification contract", () => {
+	test("Brainstorm exhausts every sourced current-goal branch", () => {
+		expectAll(brainstormContracts, [
 			"Default exhaustive decision tree",
-			"repository facts",
-			"currently unblocked frontier",
+			"current-goal branch",
+			"user request, repository evidence, or a settled parent decision",
+			"fixed framing roots",
+			"repository fact or a user-owned decision",
+			"complete currently unblocked frontier",
 			"recommended answer",
 			"bulk approval of all recommendations",
-			"zero-question fast path",
-			"result-only summary",
-			"non-blocking correction window",
-			"final decisions",
-			"question transcript",
+			"settle only the current nodes",
+			"Recompute the tree after every response",
+			"frontier is empty",
+			"BR-DEFER-*",
+			"BR-Q-*",
 		]);
+		for (const path of brainstormContracts) {
+			const contract = read(path);
+			expect(contract).not.toContain(
+				"place only decisions that can change Result, Scope, behavior, Verification, or risk treatment on the user frontier",
+			);
+			expect(contract).not.toContain(
+				"Before framing, scan `docs/solutions/` for entries with `rejected: true` frontmatter",
+			);
+		}
 	});
 
-	test("confirmed decisions are not reconfirmed unless the summary changes them", () => {
-		expectAll([...brainstormContracts, ...plannerContracts], [
-			"Treat the user's direct requirements, answers to numbered questions, and bulk approval of recommendations as confirmation of those decisions",
-			"Do not ask the user to reconfirm decisions reflected without material change",
-			"introduces or changes a material decision affecting Result, Scope, behavior, Verification, or risk treatment",
+	test("recommendation adoption advances rather than ends traversal", () => {
+		expectAll(brainstormContracts, [
+			"Direct requirements and adopted recommendations settle only the current nodes",
+			"never complete the Brainstorm session by themselves",
+			"newly unlocked downstream branches",
+			"zero-question fast path",
+			"complete seeded and dynamically expanded tree",
+			"Do not ask the user to reconfirm decisions reflected without change",
 			"explicit confirmation of only that decision delta",
 		]);
-		expectAll(brainstormContracts, [
-			"Agent judgment alone never confirms a proposed direction or scope",
-		]);
 	});
 
-	test("Brainstorm owns product framing without a fixed question budget", () => {
+	test("Brainstorm modes share one protocol and require explicit lens selection", () => {
 		expectAll(brainstormContracts, [
-			"product-framing",
-			"goal, beneficiary and scenario",
-			"scope, non-goals, behavior boundaries",
-			"success criteria",
-			"deferred items",
-			"orthogonal analysis lenses",
+			"goal, beneficiary and scenario, current state, desired behavior",
+			"failure and edge behavior, compatibility and migration",
+			"same exhaustive frontier protocol",
+			"explicitly selected by the user",
+			"on-demand rejected-decision evidence",
 		]);
 		const packaged = read(brainstormContracts[1]);
 		expect(packaged).not.toContain("lightweight tasks get 1-2 probes");
 		expect(packaged).not.toContain("larger tasks may need 3-4");
 		expect(packaged).not.toContain("one question at a time");
+		expect(packaged).not.toContain(
+			"Only use the `adversarial` mode when high-risk signals are present",
+		);
 	});
 
-	test("Planner owns execution design and returns product uncertainty", () => {
+	test("Planner supplements Brainstorm without repeating its interview", () => {
 		expectAll(plannerContracts, [
+			"Clarification supplement",
+			"omission, repository conflict, or invalidated assumption",
+			"focused decision delta",
+			"reopens multiple product branches",
 			"Direct Planner entry",
-			"execution-design",
-			"component boundaries",
-			"failure behavior",
-			"compatibility, migration",
-			"recovery and rollback",
-			"Product-level uncertainty",
+			"ordinary technical choices",
 			"return to `imm-brainstorm`",
 			"Spec, Plan, or TaskIntent",
 		]);
+		for (const path of plannerContracts) {
+			const contract = read(path);
+			expect(contract).not.toContain("## Default exhaustive decision tree");
+			expect(contract).not.toContain(
+				"Ask the complete currently unblocked frontier",
+			);
+		}
 	});
 
-	test("Brainstorm separates repository facts from user-owned decisions throughout clarification", () => {
-		expectAll(brainstormContracts, [
-			"At every round, classify each newly surfaced uncertainty as either a repository fact or a user-owned decision",
-			"Resolve repository facts with bounded read-only evidence",
-			"place only decisions that can change Result, Scope, behavior, Verification, or risk treatment on the user frontier",
-		]);
-	});
-
-	test("Planner reuses decision history and selects the highest sufficient behavioral test seam", () => {
+	test("Planner preserves upstream decisions and focused verification authority", () => {
 		expectAll(plannerContracts, [
+			"must not repeat, reopen, or rewrite confirmed decisions",
 			"Direct Planner entry and Medium/High Design Risk work must inspect relevant ADRs and rejected Learnings",
-			"Reuse constraints already covered by an upstream Brainstorm manifest instead of repeating that discovery",
 			"Prefer the highest existing observable behavioral test seam and the fewest sufficient seams",
 			"Cite relevant test prior art and explain how the selected seam catches the intended regression",
 			"must not weaken acceptance-specific focused verification descriptors or add a mandatory user confirmation",

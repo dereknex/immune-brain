@@ -3,8 +3,7 @@ title: Grill-Me Interaction Mechanics Borrow
 reusability: high
 key_files:
   - plugins/immune-brain/dist/imm-brainstorm.md
-  - plugins/immune-brain/dist/imm-preplan-review.md
-  - plugins/immune-brain/dist/imm-compounder.md
+  - plugins/immune-brain/dist/role-prompts/compounder.md
   - plugins/immune-brain/EVALUATION.md
   - tests/brainstorm-decision-probing-contract.test.ts
   - tests/fixtures/imm-brainstorm-behavior-benchmark.json
@@ -14,11 +13,20 @@ key_files:
 next_reuse_scenarios:
   - Borrowing interaction-discipline patterns from a terse upstream skill without importing the whole skill
   - Hardening framing-stage probes with codebase-first self-resolution
-  - Adding recommended-answer + one-at-a-time mechanics to a high-pressure review gate
+  - Adding recommended-answer + complete-frontier mechanics to Brainstorm
   - Ordering clarification probes when one answer determines whether downstream questions remain relevant
   - Reopening rejected decisions only from recorded evidence-backed conditions
   - Verifying prompt-contract changes with deterministic guards plus bounded model-behavior scenarios
 ---
+
+## Retirement update
+
+`imm-preplan-review` has been retired. These interaction mechanics now belong to
+`imm-brainstorm`: the default mode owns exhaustive current-goal clarification,
+and `adversarial` is an explicit analysis lens over the same frontier protocol.
+`imm-planner` only supplements a concrete omission, repository conflict, or
+invalidated assumption. The sections below preserve the original historical
+account and must not be interpreted as current routing authority.
 
 ## Pattern: Borrowing terse upstream interaction mechanics into existing skills
 

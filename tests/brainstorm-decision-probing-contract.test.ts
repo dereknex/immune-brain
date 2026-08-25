@@ -5,11 +5,16 @@ import { fileURLToPath } from "node:url";
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const read = (path: string) => readFileSync(resolve(REPO_ROOT, path), "utf-8");
+const flat = (text: string) => text.replace(/\s+/g, " ");
 
 const BRAINSTORM = read("plugins/immune-brain/dist/imm-brainstorm.md");
+const COMPACT_BRAINSTORM = read(
+	"plugins/immune-brain/skills/imm-brainstorm/SKILL.md",
+);
 const COMPOUNDER = read("plugins/immune-brain/dist/role-prompts/compounder.md");
 const PLANNER = read("plugins/immune-brain/dist/imm-planner.md");
-const PREPLAN = read("plugins/immune-brain/dist/imm-brainstorm.md");
+const HISTORY = read("docs/solutions/grill-me-interaction-mechanics-borrow.md");
+const CONTRAST = read("docs/reference/mattpocock-skills-contrast.md");
 const GENERAL_BENCHMARK = JSON.parse(
 	read("tests/fixtures/immune-brain-benchmark.json"),
 );
@@ -54,24 +59,31 @@ describe("Brainstorm decision probing contracts", () => {
 		expect(metadata.match(/^ {2}- /gm)).toHaveLength(4);
 	});
 
-	it("orders dependent probes through dependency-aware frontiers", () => {
+	it("orders sourced probes through dependency-aware frontiers", () => {
+		const brainstorm = flat(BRAINSTORM);
 		for (const fragment of [
-			"A concrete scenario is a question only when it distinguishes behavior, ownership, lifecycle, or scope",
-			"ask the complete currently unblocked frontier",
-			"questions until their prerequisites are decided",
-			"questions together. Number every question, include a recommended answer",
-			"zero-question fast path is valid",
+			"Every branch must trace to the current user request, repository evidence, or a settled parent decision",
+			"Ask every independent question on the complete currently unblocked frontier together",
+			"Hold downstream questions until their prerequisites are decided",
+			"Number every question, include grounded options and one recommended answer",
+			"Direct requirements and adopted recommendations settle only the current nodes",
+			"Recompute the tree after every response",
 			"Ask fewer questions only because dependencies keep downstream branches blocked",
 			"never because of an arbitrary question budget",
 		]) {
-			expect(BRAINSTORM).toContain(fragment);
+			expect(brainstorm).toContain(fragment);
 		}
+		expect(COMPACT_BRAINSTORM).toContain("current-goal branch");
+		expect(COMPACT_BRAINSTORM).toContain(
+			"never complete the Brainstorm session by themselves",
+		);
 		expect(BRAINSTORM).not.toContain("lightweight tasks get 1-2 probes");
 		expect(BRAINSTORM).not.toContain("larger tasks may need 3-4");
 	});
 
-	it("consumes rejected-decision metadata through explicit compatibility branches", () => {
+	it("consumes rejected-decision metadata only when a live branch reaches it", () => {
 		for (const fragment of [
+			"When a live branch resembles a rejected decision",
 			"resolve its recorded reason and optional `reconsider_if` conditions through code/docs inspection before asking the user",
 			"available evidence satisfies none",
 			"if evidence satisfies one",
@@ -83,21 +95,36 @@ describe("Brainstorm decision probing contracts", () => {
 		]) {
 			expect(BRAINSTORM).toContain(fragment);
 		}
+		expect(BRAINSTORM).toContain("on-demand rejected-decision evidence");
+		expect(BRAINSTORM).not.toContain(
+			"Before framing, scan `docs/solutions/` for entries with `rejected: true` frontmatter",
+		);
 	});
 
-	it("preserves Brainstorm, Planner, and Preplan authority boundaries", () => {
+	it("preserves Brainstorm and Planner authority boundaries", () => {
 		expect(BRAINSTORM).toContain("**Read-only by default**");
 		expect(BRAINSTORM).toContain("complete currently unblocked frontier");
 		expect(BRAINSTORM).toContain("zero-question fast path");
-		expect(BRAINSTORM).not.toContain("lightweight tasks get 1-2 probes");
-		expect(BRAINSTORM).not.toContain("larger tasks may need 3-4");
+		expect(BRAINSTORM).toContain(
+			"Ask every independent question on the complete currently unblocked frontier together",
+		);
+		expect(BRAINSTORM).toContain("recommended answer");
+		expect(BRAINSTORM).not.toContain("Ask one question at a time");
 		expect(PLANNER).toContain("Allowed");
 		expect(PLANNER).toContain("`CONTEXT.md` at the repo root");
-		expect(PREPLAN).toContain(
-			"Ask every independent question on the currently unblocked frontier together",
+		expect(PLANNER).toContain("## Clarification supplement");
+		expect(PLANNER).not.toContain("## Default exhaustive decision tree");
+	});
+
+	it("records the retired Preplan mechanics as migrated to Brainstorm", () => {
+		expect(HISTORY).toContain("## Retirement update");
+		expect(flat(HISTORY)).toContain(
+			"These interaction mechanics now belong to `imm-brainstorm`",
 		);
-		expect(PREPLAN).toContain("recommended answer");
-		expect(PREPLAN).not.toContain("Ask one question at a time");
+		expect(CONTRAST).toContain(
+			"exhaustive clarification owner; `adversarial` is an explicit analysis lens",
+		);
+		expect(CONTRAST).not.toContain("IB 拆为 framing 和高压 gate");
 	});
 
 	it("keeps focused Brainstorm behavior scenarios separate from the general baseline", () => {
@@ -119,7 +146,7 @@ describe("Brainstorm decision probing contracts", () => {
 			"dependent-frontier-blocks-downstream",
 			"independent-complete-frontier",
 			"scenario-qualified-frontier",
-			"clear-frame-no-forced-scenario",
+			"recommendation-adoption-continues",
 			"rejected-decision-unmet-condition",
 		]);
 		expect(new Set(focusedIds).size).toBe(focusedIds.length);
@@ -136,6 +163,9 @@ describe("Brainstorm decision probing contracts", () => {
 		]) {
 			expect(FOCUSED_BENCHMARK_TEXT).not.toContain(legacyFragment);
 		}
+		expect(FOCUSED_BENCHMARK_TEXT).toContain(
+			"Adopting recommendations closes only the current frontier nodes",
+		);
 		expect(FOCUSED_BENCHMARK.kind).toBe("pi-agent-benchmark");
 		expect(FOCUSED_BENCHMARK.runner.type).toBe("pi-agent");
 		expect(FOCUSED_BENCHMARK.runner.model).toBe("antigravity/gemini-3.6-flash");

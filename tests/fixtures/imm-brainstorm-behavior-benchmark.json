@@ -1,7 +1,7 @@
 {
   "kind": "pi-agent-benchmark",
   "schemaVersion": 1,
-  "version": 2,
+  "version": 3,
   "targetKind": "skill",
   "targetName": "imm-brainstorm",
   "runner": {
@@ -39,7 +39,7 @@
     ]
   },
   "notes": [
-    "This focused config measures Brainstorm narrowing behavior separately from the four-route plugin baseline.",
+    "This focused config measures Brainstorm exhaustive frontier behavior separately from the four-route plugin baseline.",
     "Every scenario runs through a read-only isolated Pi Agent and should leave no Spec, Plan, CONTEXT.md, or implementation edit.",
     "Launch all five scenarios in one parallel batch with antigravity/gemini-3.6-flash.",
     "Record provider billing cost as unavailable_by_host; do not estimate it."
@@ -73,7 +73,7 @@
       "id": "scenario-qualified-frontier",
       "title": "Use a scenario only when it distinguishes behavior",
       "purpose": "Verify that a concrete scenario qualifies as an unresolved frontier branch when it distinguishes a lifecycle boundary.",
-      "userInput": "Use the local Pi Skill `imm-brainstorm` to frame a `pause workspace` feature. It is unclear whether people with an already-open session may keep working after an admin pauses the workspace. Inspect only CONTEXT.md and README.md first. Include a concrete user scenario in the currently unblocked frontier because it materially distinguishes the lifecycle boundary. Do not create or edit any files.",
+      "userInput": "Use the local Pi Skill `imm-brainstorm` to frame a `pause workspace` feature. It is unclear whether people with an already-open session may keep working after an admin pauses the workspace. Inspect only CONTEXT.md and README.md first. Include a concrete user scenario in the currently unblocked frontier because it distinguishes the lifecycle boundary. Do not create or edit any files.",
       "successChecklist": [
         "The response asks a concrete scenario question involving an already-open session and an admin pause.",
         "The scenario distinguishes the lifecycle or scope boundary instead of requesting generic implementation detail.",
@@ -82,15 +82,15 @@
       ]
     },
     {
-      "id": "clear-frame-no-forced-scenario",
-      "title": "Do not invent a scenario for a complete frame",
-      "purpose": "Verify that the new scenario-gap option does not create ceremony when the request already defines behavior, scope, and success.",
-      "userInput": "Use the local Pi Skill `imm-brainstorm` to frame this already-specific request: add an admin-only CSV export button that downloads exactly the rows visible on the current page; no background jobs, no hidden columns, and success means the downloaded CSV matches the visible table order. Summarize the direction and request confirmation without inventing additional narrowing or scenario questions. Do not create or edit any files.",
+      "id": "recommendation-adoption-continues",
+      "title": "Continue traversal after recommendations are adopted",
+      "purpose": "Verify that adopting the current recommendations settles those nodes but does not prematurely complete Brainstorm while downstream branches remain.",
+      "userInput": "Continue the local Pi Skill `imm-brainstorm` session for an admin-only CSV export. In the prior round you asked who can export and which rows are included; I adopted both recommendations: admins only, current visible rows only. Adopting recommendations closes only the current frontier nodes. Continue traversing any newly unlocked current-goal branches, including failure behavior and verification, with numbered recommendations. Do not create or edit any files.",
       "successChecklist": [
-        "The response summarizes the specified direction without a new scenario probe.",
-        "The only question is the required confirmation request, not an invented narrowing question.",
-        "The response does not route to Planner before confirmation.",
-        "No workspace file is created or changed."
+        "The response treats the adopted audience and row-scope recommendations as settled without asking them again.",
+        "The response continues with newly unlocked current-goal questions such as download failure behavior or observable verification.",
+        "Each newly surfaced question is numbered and includes a recommended answer.",
+        "The response does not declare the Brainstorm complete or route to Planner while those branches remain open, and no workspace file is created or changed."
       ]
     },
     {

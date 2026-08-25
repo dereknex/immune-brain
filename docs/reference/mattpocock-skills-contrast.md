@@ -39,7 +39,7 @@
 | engineering | `zoom-out` | `imm-brainstorm` framing | framing 阶段 zoom-out 视角 |
 | engineering | `setup-matt-pocock-skills` | 不映射 | IB 用 `install-local.sh` |
 | productivity | `caveman` | `imm-work` Preamble | 已借鉴：进度可见的 user-facing update |
-| productivity | `grill-me` | `imm-brainstorm`（含 `adversarial` mode） | IB 拆为 framing 和高压 gate |
+| productivity | `grill-me` | `imm-brainstorm`（exhaustive clarification owner; `adversarial` is an explicit analysis lens） | 单一 framing owner 遍历全部有来源的当前目标分支 |
 | productivity | `handoff` | `imm-work` HANDOFF.md | 已借鉴：cross-session handoff document |
 | productivity | `write-a-skill` | `create-skill` (Cursor skill) | 不在 IB 本体 |
 
@@ -55,7 +55,7 @@
 6. **Rejected decisions (grill-me)** → compounder `rejected: true` tag + brainstorm re-litigation guard
 7. **Lightweight ADR** → compounder ADR suggestion with three-criteria gate
 8. **Codebase-first questioning (grill-me)** → `imm-brainstorm` Inline Narrowing Challenge now resolves probes via file inspection / `docs/solutions/` / `CONTEXT.md` before surfacing to the user
-9. **Serial single-question + recommended answer (grill-me)** → `imm-brainstorm` `adversarial` mode now asks one question at a time with a recommended answer, walking decision-tree dependencies one-by-one
+9. **Exhaustive frontier + recommended answer (grill-me)** → `imm-brainstorm` default protocol asks the complete dependency-aware frontier, continues after recommendations are adopted, and keeps `roundtable` / `adversarial` as explicit analysis lenses
 10. **Opt-in Issue visibility (to-issues)** → `imm-planner` publishes Initiative/Task summaries through `imm-tracker`; there is no reverse sync, triage authority, or Kernel dependency
 
 ## 明确拒绝的模式
