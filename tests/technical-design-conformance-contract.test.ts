@@ -6,6 +6,7 @@ const REPO_ROOT = resolve(import.meta.dir, "..")
 const read = (path: string) => readFileSync(resolve(REPO_ROOT, path), "utf-8")
 
 const PLANNER = read("plugins/immune-brain/dist/imm-planner.md")
+const SKILL = read("plugins/immune-brain/skills/imm-planner/SKILL.md")
 const QA = read("plugins/immune-brain/dist/role-prompts/qa.md")
 const QUALITY_GATE = read("docs/reference/planning-quality-gate.md")
 
@@ -23,7 +24,7 @@ describe("risk-tiered Technical Design conformance contract", () => {
       "High risk",
       "Technical Design in the Spec",
       "Spec is the single Technical Design baseline",
-      "Plan references the applicable design decisions or invariants without copying Technical Design prose",
+      "TaskIntent acceptance and scope reference the applicable design decisions or invariants without copying Technical Design prose",
       "contract, ownership, security, persistence, compatibility, or multi-component",
     ])
   })
@@ -60,6 +61,70 @@ describe("risk-tiered Technical Design conformance contract", () => {
       "Spec-to-implementation evidence",
       "local implementation mismatch",
       "structural or intended design change",
+    ])
+  })
+
+  it("requires materially relevant technical-design views on both Planner surfaces", () => {
+    for (const text of [SKILL, PLANNER]) {
+      expectAll(text, [
+        "materially relevant",
+        "architecture layers",
+        "service/component interfaces",
+        "data flow",
+        "state transitions",
+        "temporal sequence",
+        "Design views",
+        "The Spec is the single Technical Design baseline",
+        "Low risk remains concise",
+      ])
+    }
+  })
+
+  it("uses Technical Design as a TaskIntent retain/split dimension without count-based splitting or prose Plan revival", () => {
+    for (const text of [SKILL, PLANNER]) {
+      expectAll(text, [
+        "TaskIntent decomposition",
+        "Split a successor TaskIntent",
+        "coherent executable slice",
+        "risk treatment",
+        "Do not split merely because the design names several layers, files, or services",
+        "revive prose Plan",
+      ])
+    }
+  })
+
+  it("requires view-specific decision content in the packaged Planner contract", () => {
+    expectAll(PLANNER, [
+      "required decision content",
+      "layer responsibilities",
+      "dependency direction",
+      "ownership, and prohibited coupling",
+      "inputs, outputs, errors",
+      "compatibility/versioning",
+      "caller/callee ownership",
+      "source",
+      "transformations, validation",
+      "destination",
+      "failure handling",
+      "legal transitions",
+      "trigger",
+      "invariant",
+      "terminal ownership",
+      "recovery",
+      "ordered interactions",
+      "authority at each point",
+      "interruption behavior",
+      "idempotency",
+    ])
+  })
+
+  it("makes elevated-risk quality guidance cover design-view selection and TaskIntent decomposition", () => {
+    expectAll(QUALITY_GATE, [
+      "design-view selection",
+      "materially relevant",
+      "architecture layers",
+      "TaskIntent decomposition",
+      "Do not split merely because the design names several layers, files, or services",
     ])
   })
 })

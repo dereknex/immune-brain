@@ -40,6 +40,12 @@ Settlement-class intents (terminal settlement, cancellation, timeout, race, or
 authority-lifecycle semantics) must embed the `Settlement-Design Contract`
 enumeration required by the loaded contract before they are execution-ready.
 
+## Technical Design Views And Decomposition
+
+For Medium and High Design Risk, select every materially relevant technical-design view from architecture layers, service/component interfaces, data flow, state transitions, and temporal sequence. Record a short `Design views` statement naming the selected views and why any omitted view cannot affect the design. The Spec is the single Technical Design baseline. Persist those decisions there; do not copy them into a TaskIntent or revive prose Plan authority. Low risk remains concise and is not forced to produce empty architecture, interface, data-flow, state, or sequence sections.
+
+Use the selected design boundaries as one TaskIntent decomposition dimension alongside outcome, Verification, dependency, risk, rollback, compatibility, and authority. Keep one TaskIntent when the selected views describe one coherent executable slice with shared acceptance, risk treatment, rollback, and authority. Split a successor TaskIntent only when a service, state-machine owner, migration, independently promotable layer, or sequence dependency needs independent verification, rollback, authorization, or settlement. Do not split merely because the design names several layers, files, or services.
+
 ## Reference Closure Preflight
 
 Before authoring a TaskIntent, trace each expected behavior from its public or
