@@ -88,23 +88,16 @@ describe("packed consumer surface", () => {
 		}
 	});
 
-	test("packed enrollment contract exposes descriptor rehearsal without waiver", () => {
+	test("packed enrollment does not create or execute an isolated descriptor environment", () => {
 		const guide = readFileSync(join(ROOT, "plugins/immune-brain/USER_GUIDE.md"), "utf8");
 		const enrollment = readFileSync(
 			join(ROOT, "plugins/immune-brain/.pi-extension/imm-canary-enroll.ts"),
 			"utf8",
 		);
-		expect(guide).toContain("baseline observation");
-		expect(guide).toContain("没有 waiver action");
+		expect(guide).toContain("只在后置 QA");
 		expect(enrollment).toContain('name: "imm_canary_enrollment"');
-		expect(enrollment).toContain("if (!rehearsalDecision.proceed_to_confirmation)");
-		expect(enrollment).not.toContain("explicit_waiver");
-		expect(enrollment).not.toContain("waiver_gate");
-		expect(enrollment).toContain('| "cancelled"');
-		expect(enrollment).toContain('| "output_exceeded"');
-		expect(enrollment).toContain('| "setup_timed_out"');
-		expect(enrollment).toContain('| "integrity_drift"');
-		expect(enrollment).toContain('child.once("close"');
+		expect(enrollment).not.toContain("runDescriptorRehearsal");
+		expect(enrollment).not.toContain("checkout-index");
 		expect(enrollment).toContain('pi.on("session_shutdown"');
 		expect(enrollment).toContain("class ForegroundEnrollmentCoordinator");
 		expect(enrollment).not.toContain("setWidget(");

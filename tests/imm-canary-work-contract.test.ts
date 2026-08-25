@@ -56,20 +56,16 @@ describe("imm-loop Kernel routing contract", () => {
 		expect(extension).toContain("single native confirmation");
 	});
 
-	test("enrollment contracts isolate descriptors without a waiver path", () => {
+	test("enrollment validates descriptors without executing them", () => {
 		const guide = read("plugins/immune-brain/USER_GUIDE.md");
 		const kernelCommand = read("plugins/immune-brain/runtime/commands/kernel.ts");
 		const enrollment = read("plugins/immune-brain/.pi-extension/imm-canary-enroll.ts");
-		expect(guide).toContain("baseline observation");
-		expect(guide).toContain("没有 waiver action");
-		expect(kernelCommand).toContain('status: enrollmentReady ? "pending_tui_enrollment"');
-		expect(kernelCommand).toContain('acceptance_failure: "baseline_observation"');
-		expect(kernelCommand).not.toContain("waiver_route");
-		expect(kernelCommand).toContain('snapshot_binding: "frozen_git_index_digest"');
+		expect(guide).toContain("只在后置 QA");
+		expect(kernelCommand).toContain("parseVerificationDescriptor(item.verification)");
+		expect(kernelCommand).not.toContain("descriptor_rehearsal");
 		expect(enrollment).toContain('name: "imm_canary_enrollment"');
-		expect(enrollment).toContain("assertDescriptorRehearsalSnapshot");
-		expect(enrollment).not.toContain("explicit_waiver");
-		expect(enrollment).not.toContain("waiver_gate");
+		expect(enrollment).not.toContain("runDescriptorRehearsal");
+		expect(enrollment).not.toContain("checkout-index");
 		expect(enrollment).not.toContain("setWidget(");
 		expect(enrollment).not.toContain("setStatus(");
 	});

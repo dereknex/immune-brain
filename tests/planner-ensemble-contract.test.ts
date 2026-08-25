@@ -57,5 +57,9 @@ describe("planner ensemble contract", () => {
 		expect(packaged).toContain("remaining dispatch budget");
 		expect(packaged).not.toContain("Pi itself may launch those subagents");
 		expect(packaged).not.toContain("poll background work");
+		expect(packaged).toContain(
+			"Enrollment validates descriptor structure without executing acceptance descriptors",
+		);
+		expect(packaged).not.toContain("descriptor rehearsal is reordered");
 	});
 });

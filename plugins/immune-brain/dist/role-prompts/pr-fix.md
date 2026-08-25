@@ -47,13 +47,13 @@ category exists, repair solo. File-level partition: no two shards should write
 the same file. If file overlap exists between shards, merge those shards into
 one.
 
-Use Pi native `Agent` subagents with `isolation: worktree` for independent
-shards. Dispatch independent shards in one parallel tool call, with a maximum
-of 3 concurrent shards. State each shard's owned files explicitly.
+Use Pi native `Agent` subagents inside the current user-selected worktree for
+independent shards. Dispatch independent shards in one parallel tool call, with
+a maximum of 3 concurrent shards. State each shard's owned files explicitly.
 
-Collect repair results from branched workspaces. Merge file changes back into
-the repair branch. Detect cross-shard conflicts and resolve manually if found.
-Retry once per shard on failure; on second failure, fall back to solo repair.
+After all shards settle, inspect their direct results and the current worktree
+diff. Detect cross-shard conflicts and resolve manually if found. Retry once per
+shard on failure; on second failure, fall back to solo repair.
 
 ### Validation
 

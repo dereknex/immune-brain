@@ -1385,7 +1385,7 @@ Agent judgment alone still cannot turn a proposed direction or scope into a plan
 3. Confirm only newly introduced or changed material decisions; unresolved deltas block handoff.
 4. For clear execution requests, invoke native Enrollment directly after TaskIntent validation. A Plan-only user's later "start Enrollment" reply is a routing trigger, not authority.
 5. Invoke Review authorization, breaking intent revision, and stale-authority repair Tools directly when ready; their native host interaction is the single authority decision.
-6. Keep authority digest binding, snapshot revalidation, descriptor rehearsal, cancellation, and zero-write behavior unchanged.
+6. Keep authority digest binding, snapshot revalidation, cancellation, and zero-write behavior unchanged.
 
 ### Evidence
 

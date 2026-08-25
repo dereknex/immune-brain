@@ -252,9 +252,9 @@ export function buildReviewPrompt(snapshot: SnapshotDescriptor, evidencePath?: s
 	return [
 		rolePacket.prompt,
 
-		`Verify immutable bundle provenance before analyzing findings. Review the immutable evidence JSON at ${evidencePath ?? "<evidence-path>"}. Read that file first; verify that git rev-parse HEAD equals bundle.head in the isolated worktree. For every tracked dirty_files entry, verify git rev-parse HEAD:<path> equals base_oid, then compare that immutable HEAD blob with current_content. A null base_oid denotes an untracked current file; a null current_content denotes a deletion. Do not inspect or depend on live bytes from the parent worktree.`,
+		`Verify immutable bundle provenance before analyzing findings. Review the immutable evidence JSON at ${evidencePath ?? "<evidence-path>"}. Read that file first; verify that git rev-parse HEAD equals bundle.head in the current user-selected worktree. For every tracked dirty_files entry, verify git rev-parse HEAD:<path> equals base_oid, then compare that immutable HEAD blob with current_content. A null base_oid denotes an untracked current file; a null current_content denotes a deletion. Do not inspect or depend on live task bytes outside the immutable bundle.`,
 		`Limit repository inspection to the acceptance assertions and dirty_files contents in the immutable bundle. Do not explore unrelated repository paths.`,
-		`The isolated worktree contains the committed HEAD snapshot only; staged task changes exist solely in the bundle dirty_files entries as current_content bytes. Analyze code exclusively from those bundle bytes; repository file reads are permitted only for the provenance git commands above. A symbol missing from the worktree but present in current_content is the task change, not an absence.`,
+		`The current worktree may contain staged task changes, but review authority is bound only to the bundle dirty_files current_content bytes and committed HEAD provenance. Analyze code exclusively from those bundle bytes; repository file reads are permitted only for the provenance git commands above. A symbol present in current_content but absent from HEAD is the task change, not an absence.`,
 		`Do not edit files, create files, run mutating commands, or change Git state. Focus on correctness, regressions, security, and missing tests.`,
 		`Execution outcomes for every acceptance were verified deterministically by the Kernel QA layer before this review and are embedded in this bundle under outcomes (acceptance_id -> {status, summary}); do not re-execute descriptors and do not treat the absence of local test runs as a finding. Your review covers bundle provenance, code correctness, regressions, security, and missing tests against the embedded assertions and code bytes.`,
 		`Snapshot digest: ${digest}`,
@@ -561,7 +561,7 @@ export class AssuranceProgression {
 				operationId,
 				correlation: { record_revision: review.snapshot.record_revision, intent_content_hash: review.snapshot.intent_content_hash, diff_hash: review.snapshot.diff_hash },
 				snapshot: review.snapshot,
-				params: { subagent_type: "general-purpose", description: "", prompt: "", inherit_context: false, isolated: true, isolation: "worktree", run_in_background: false, max_turns: 0 },
+				params: { subagent_type: "general-purpose", description: "", prompt: "", inherit_context: false, isolated: true, run_in_background: false, max_turns: 0 },
 				evidence,
 				resultObserved: false,
 				ended: false,

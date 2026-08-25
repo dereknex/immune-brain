@@ -54,9 +54,9 @@ imm-kernel intent validate docs/plans/<task-id>.intent.json --json
 git add docs/plans/<task-id>.intent.json
 ```
 
-6. Enroll through the Pi TUI. Under test-first execution the descriptor rehearsal
-   will report `failed` because the test file does not exist yet; that failure is
-   waivable and requires the explicit waiver route.
+6. Enroll through the Pi TUI. Enrollment validates the descriptor structure but
+   does not execute it; under test-first execution the test file may be created
+   during implementation before QA runs the descriptor.
 
 **Descriptor template** — the `verification` field is a canonical JSON string:
 
@@ -904,20 +904,18 @@ review
 **goal**
 
 > Move the single enrollment confirmation to the end of Planner and bind it to
-> the TaskIntent digest, then reorder descriptor rehearsal to run after
-> confirmation so the user is not blocked waiting on it. Enrollment, execution,
-> and QA then proceed unattended for a routine task. This reuses the existing
-> `ctx.ui.custom` host gate rather than introducing an attestation primitive:
-> the confirmation must remain a signal the model cannot fabricate. Because
-> rehearsal now runs after confirmation, a rehearsal failure must invalidate the
-> authorization rather than being reported after authority already exists.
+> the TaskIntent digest. Enrollment validates authority preconditions without
+> executing acceptance descriptors; execution and QA then proceed unattended
+> for a routine task. This reuses the existing `ctx.ui.custom` host gate rather
+> than introducing an attestation primitive: the confirmation must remain a
+> signal the model cannot fabricate.
 
 **acceptance**
 
 - `acc-single-confirmation-routine` — a routine task runs from confirmed plan to
   QA completion with exactly one host confirmation.
-- `acc-post-confirmation-rehearsal-invalidates` — a rehearsal failure after
-  confirmation blocks enrollment and leaves zero authority writes.
+- `acc-enrollment-defers-descriptors` — Enrollment performs no acceptance
+  descriptor execution; deterministic QA remains the sole execution owner.
 - `acc-digest-binding` — the confirmation is bound to the intent content hash and
   is rejected if the intent changes afterward.
 

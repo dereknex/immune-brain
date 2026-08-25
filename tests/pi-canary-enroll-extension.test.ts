@@ -108,13 +108,15 @@ function makeRoot(): string {
 }
 
 describe("pi canary enroll extension", () => {
-	test("confirmation deadwood is removed: no tier predicate and no pi-plan-approved branch", () => {
+	test("Enrollment delegates descriptor execution exclusively to QA", () => {
 		const source = readFileSync(
 			new URL("../plugins/immune-brain/.pi-extension/imm-canary-enroll.ts", import.meta.url),
 			"utf8",
 		);
 		expect(source).not.toContain("requiresEnrollmentConfirmation");
 		expect(source).not.toContain("pi-plan-approved");
+		expect(source).not.toContain("runDescriptorRehearsal");
+		expect(source).not.toContain("checkout-index");
 		expect(source).toContain("pi-confirm-");
 	});
 
@@ -181,7 +183,7 @@ describe("pi canary enroll extension", () => {
 		expect(readdirSync(join(root, ".imm", "tasks"))).toEqual([]);
 	});
 
-	test("tracked malformed intent reports canonical validation before rehearsal", async () => {
+	test("tracked malformed intent reports canonical validation before confirmation", async () => {
 		const root = makeRoot();
 		execFileSync("git", ["init", "-q"], { cwd: root, stdio: "ignore" });
 		execFileSync("git", ["config", "user.email", "test@example.com"], { cwd: root, stdio: "ignore" });
@@ -522,8 +524,7 @@ describe("pi canary enroll handler integration", () => {
 			expect(ui.confirmCalls[0].body).toContain("Risk: routine");
 			expect(ui.confirmCalls[0].body).toContain("Scope: publish");
 			expect(ui.confirmCalls[0].body).toContain("A1: artifact exists");
-			const stagedDigest = `sha256:${createHash("sha256").update(execFileSync("git", ["ls-files", "--stage", "-z"], { cwd: root })).digest("hex")}`;
-			expect(ui.confirmCalls[0].body).toContain(`Staged digest: ${stagedDigest}`);
+			expect(ui.confirmCalls[0].body).toContain("Preparation digest: sha256:");
 			expect(updates).toContain("awaiting_confirmation");
 			expect(emitted).toHaveLength(2);
 			expect(emitted[0]).toMatchObject({
@@ -598,7 +599,7 @@ describe("pi canary enroll handler integration", () => {
 		}
 	});
 
-	test("AbortSignal cancellation returns only after child settlement with zero writes", async () => {
+	test("AbortSignal cancellation returns with zero writes", async () => {
 		const root = mkdtempSync(join(tmpdir(), "p2b1-enroll-"));
 		try {
 			makeEligibleRepo(root, TASK);
@@ -667,8 +668,6 @@ describe("pi canary enroll handler integration", () => {
 			expect(updates).toEqual([
 				"preparing",
 				"awaiting_confirmation",
-				"snapshotting",
-				"rehearsing",
 				"revalidating",
 				"rehearsing",
 				"committing",
@@ -682,9 +681,7 @@ describe("pi canary enroll handler integration", () => {
 		} finally {
 			rmSync(root, { recursive: true, force: true });
 		}
-		// Runs two complete enrollment attempts including descriptor rehearsal; the 5s
-		// default tips over under whole-suite load even though the flow itself is unchanged.
-	}, 30_000);
+	});
 
 	test("post-confirm same-revision intent content drift aborts before writes", async () => {
 		const root = mkdtempSync(join(tmpdir(), "p2b1-enroll-"));
@@ -717,7 +714,7 @@ describe("pi canary enroll handler integration", () => {
 			const result = await capturedToolFailure(runTool(root, ui));
 			expect(ui.confirmCalls.length).toBe(1);
 			expect(result.state).toBe("blocked");
-			expect(result.message).toMatch(/changed after confirmation|Descriptor rehearsal blocked/i);
+			expect(result.message).toMatch(/changed after confirmation/i);
 			expect(authoritySnapshot(root)).toBe(before);
 		} finally {
 			rmSync(root, { recursive: true, force: true });

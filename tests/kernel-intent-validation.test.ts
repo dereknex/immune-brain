@@ -123,6 +123,7 @@ describe("imm-kernel intent validate", () => {
 			expect(output.valid).toBe(true);
 			expect(output.git_ownership).toBe("tracked");
 			expect(output.enrollment_ready).toBe(true);
+			expect(output).not.toHaveProperty("descriptor_rehearsal");
 		});
 	});
 

@@ -84,9 +84,12 @@ describe("Loop execution and repair routing", () => {
 		expect(prFix.packet.authority).toBe("pr-repair");
 		expect(prFix.call.prompt).toContain("plan-6");
 		expect(prFix.call.prompt).toContain("CI");
+		expect(prFix.call.prompt).toContain("current worktree");
+		expect(prFix.call.prompt).not.toContain("branched workspaces");
 		for (const dispatch of [testFix, prFix]) {
 			expect(dispatch.call.run_in_background).toBe(false);
-			expect(dispatch.call.isolation).toBe("worktree");
+			expect(dispatch.call.isolated).toBe(true);
+			expect(dispatch.call).not.toHaveProperty("isolation");
 		}
 	});
 

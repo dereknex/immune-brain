@@ -1,5 +1,5 @@
 // Validates 2026-08-20-015 relocate-enrollment-confirmation.
-// Three acceptances: single confirmation for routine, post-confirmation rehearsal invalidates with zero writes, digest binding.
+// Three acceptances: single confirmation for routine, Enrollment defers descriptor execution to QA, digest binding.
 
 import { describe, expect, test } from "bun:test";
 import { execFileSync } from "node:child_process";
@@ -365,12 +365,14 @@ describe("enrollment confirmation relocation", () => {
 			// Enrollment completes without second human stop; routine proceeds through QA in real flow, here we verify enrollment completed
 			expect(result.details.state).toBe("completed");
 			expect(result.details.summary).toMatch(/enrollment completed/i);
-			// Progress shows awaiting_confirmation before snapshotting/rehearsing (relocated before machine work)
+			// Confirmation precedes TaskIntent revalidation and Kernel's final zero-write owner rehearsal.
 			const confirmIdx = updates.indexOf("awaiting_confirmation");
+			const revalidateIdx = updates.indexOf("revalidating");
 			const rehearseIdx = updates.indexOf("rehearsing");
 			expect(confirmIdx).toBeGreaterThanOrEqual(0);
-			expect(rehearseIdx).toBeGreaterThanOrEqual(0);
-			expect(confirmIdx).toBeLessThan(rehearseIdx);
+			expect(revalidateIdx).toBeGreaterThan(confirmIdx);
+			expect(rehearseIdx).toBeGreaterThan(revalidateIdx);
+			expect(updates).not.toContain("snapshotting");
 			// Authority was written exactly once
 			expect(readdirSync(join(root, ".imm", "tasks")).sort()).toEqual([".backend-claim.json", `${TASK}.json`]);
 			expect(existsSync(join(root, ".imm", "workspace.json"))).toBe(true);
@@ -379,7 +381,7 @@ describe("enrollment confirmation relocation", () => {
 		}
 	});
 
-	test("acc-post-confirmation-rehearsal-baseline: descriptor failure does not block enrollment", async () => {
+	test("acc-enrollment-defers-descriptors: a failing descriptor does not execute before QA", async () => {
 		const TASK = "enroll-task-001";
 		const root = makeRoot();
 		try {

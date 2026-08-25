@@ -13,7 +13,7 @@
 
 ## Problem
 
-Immune-Brain currently treats several Parent-dependent operations as background jobs. Advisory dispatch emits `run_in_background: true`; Enrollment starts a session-owned detached rehearsal job; Kernel Assurance runs QA and native Review through background operation correlation, push follow-ups, and later result retrieval.
+Immune-Brain currently treats several Parent-dependent operations as background jobs. Advisory dispatch emits `run_in_background: true`; Enrollment starts a session-owned detached job; Kernel Assurance runs QA and native Review through background operation correlation, push follow-ups, and later result retrieval.
 
 This behavior keeps the Parent from blocking, but it also creates a second continuation channel. The Parent can return before required evidence exists, terminal notifications can arrive after an operation is superseded, and users can encounter work that continues without an active foreground Tool row.
 
@@ -149,18 +149,19 @@ Promotion criteria for Phase 2:
 
 **Candidate successor TaskIntent:** `foreground-canary-enrollment`
 
-Replace the detached Enrollment coordinator with an Agent-callable foreground Tool. Existing slash command names become explicit launchers that send a visible user request for the Parent to call the Tool; they do not execute rehearsal in an idle command callback.
+Replace the detached Enrollment coordinator with an Agent-callable foreground Tool. Existing slash command names become explicit launchers that send a visible user request for the Parent to call the Tool; they do not execute Enrollment in an idle command callback.
 
 Required behavior:
 
 - register one foreground Enrollment Tool with `new` and explicit-waiver `enroll` actions;
-- pass the Tool `signal` through snapshot freeze, isolated-copy setup, descriptor execution, confirmation, and commit preparation;
+- pass the Tool `signal` through preparation, confirmation, revalidation, and commit preparation;
 - emit bounded progress through `onUpdate` and native Tool rendering;
-- keep descriptor timeout, output limit, process-tree termination, snapshot fingerprinting, integrity drift, single-flight, waiver rules, and non-cancellable commit settlement;
+- validate descriptors structurally without executing them before QA;
+- keep single-flight, authority revalidation, and non-cancellable commit settlement;
 - preserve literal-user confirmation and the exact waiver evidence contract;
 - return one terminal Tool result: completed, cancelled, failed, integrity-invalidated, or settlement-unknown;
 - remove detached Promises, session-owned background jobs, completion notifications, background Widget timers, and the old command-level `cancel <task-id>` job-control path;
-- retain shutdown cleanup for an active foreground Tool and all temporary resources;
+- retain shutdown cleanup for an active foreground Tool;
 - keep Footer status empty.
 
 The launcher-to-Tool change is a product-interface replacement, not an indefinite compatibility layer. The old background coordinator and cancel command are deleted in the same TaskIntent. User cancellation moves to Pi's foreground Tool cancellation control.
@@ -171,9 +172,9 @@ Rollback:
 
 Promotion criteria for Phase 3:
 
-- foreground Tool cancellation kills the full rehearsal process tree;
-- Tool completion leaves no active coordinator, timer, Widget, or temporary copy;
-- pass, waiver, integrity-drift, setup-timeout, output-limit, cancellation, and commit-settlement tests pass;
+- foreground Tool cancellation stops pre-commit work;
+- Tool completion leaves no active coordinator, timer, or Widget;
+- preparation, confirmation, revalidation, cancellation, and commit-settlement tests pass;
 - manual TUI smoke evidence confirms visible native progress and Escape cancellation with an empty Footer.
 
 Phase 2 was completed by TaskIntent `2026-08-17-007-foreground-canary-enrollment`.
@@ -305,9 +306,9 @@ A promotion criterion never creates, enrolls, approves, or activates its success
 
 Each phase receives its own TaskIntent and closes independently.
 
-Phase 1 uses exactly two rehearsal descriptors to avoid isolated-copy setup contention: one focused dispatch/authority suite and one complete `bun test` regression. The focused suite must enumerate every interactive advisory/work-probe envelope producer and reject `run_in_background: true` plus caller overrides. The complete suite must directly assert canonical protocol semantics, the two superseded Spec clauses, packaged Brainstorm/Planner foreground guidance, Kernel Review's temporary exclusion, Footer emptiness, and canonical/package byte parity. Bun's test runner supplies the repository's TypeScript transpilation check; there is no separate typecheck command.
+Phase 1 uses exactly two focused verification checks: one dispatch/authority suite and one complete `bun test` regression. The focused suite must enumerate every interactive advisory/work-probe envelope producer and reject `run_in_background: true` plus caller overrides. The complete suite must directly assert canonical protocol semantics, the two superseded Spec clauses, packaged Brainstorm/Planner foreground guidance, Kernel Review's temporary exclusion, Footer emptiness, and canonical/package byte parity. Bun's test runner supplies the repository's TypeScript transpilation check; there is no separate typecheck command.
 
-Phase 2 requires focused Enrollment unit and integration tests with fake cancellation, process-tree cleanup, all terminal outcomes, source/package parity, and a manual Pi TUI cancellation/progress smoke test.
+Phase 2 requires focused Enrollment unit and integration tests with fake cancellation, all terminal outcomes, source/package parity, and a manual Pi TUI cancellation/progress smoke test.
 
 Phase 3 requires focused QA and native Review correlation tests, adversarial receipt mismatch/duplicate/staleness tests, cancellation and unknown-settlement tests, source/package parity, full repository tests, and a manual end-to-end TUI assurance run.
 

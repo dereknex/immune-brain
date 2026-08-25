@@ -222,7 +222,6 @@ export interface LoopRoleDispatch {
 		prompt: string;
 		inherit_context: false;
 		isolated: true;
-		isolation: "worktree";
 		run_in_background: false;
 	};
 }
@@ -241,7 +240,6 @@ export function buildLoopRoleDispatch(input: {
 			prompt: packet.prompt,
 			inherit_context: false,
 			isolated: true,
-			isolation: "worktree",
 			run_in_background: false,
 		},
 	};

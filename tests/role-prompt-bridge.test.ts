@@ -219,7 +219,8 @@ describe("internal role-prompt bridge", () => {
 			expect(dispatch.call.prompt).toBe(dispatch.packet.prompt);
 			expect(dispatch.call.run_in_background).toBe(false);
 			expect(dispatch.call.inherit_context).toBe(false);
-			expect(dispatch.call.isolation).toBe("worktree");
+			expect(dispatch.call.isolated).toBe(true);
+			expect(dispatch.call).not.toHaveProperty("isolation");
 		}
 	});
 	it("supersedes the standalone explorer decision with the internal routing ADR", () => {

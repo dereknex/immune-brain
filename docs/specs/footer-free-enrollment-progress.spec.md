@@ -117,7 +117,7 @@ notification, timer, or UI work.
 `setWidget`, Widget refresh, and Widget cleanup are best-effort presentation
 operations. A thrown or unavailable UI call cannot:
 
-- fail descriptor rehearsal;
+- fail enrollment preparation or revalidation;
 - authorize or cancel enrollment;
 - change whether commit settlement proceeds;
 - suppress the handler's business terminal notification; or
@@ -137,8 +137,7 @@ or elapsed time.
 - preflight reaching literal-user confirmation changes the displayed stage;
 - user confirmation, rejection, or confirmation abort resumes or cancels work;
 - `/imm-canary-new cancel` and `/imm-canary-enroll cancel` request cancellation;
-- descriptor setup failure, descriptor failure, descriptor timeout, integrity
-  drift, preparation failure, and unexpected provider/runtime failure return
+- preparation, revalidation, or unexpected provider/runtime failure returns
   through the existing handler outcome paths;
 - `markCommitting` transfers cancellation behavior to commit settlement;
 - Kernel enrollment completion or failure settles committing work;
@@ -146,8 +145,8 @@ or elapsed time.
 
 ### State inventory
 
-- `active`: background preparation, descriptor rehearsal, revalidation, or
-  other cancellable pre-commit work;
+- `active`: background preparation, revalidation, or other cancellable
+  pre-commit work;
 - `awaiting_confirmation`: literal-user confirmation is visible and the job has
   not crossed the commit boundary;
 - `cancelling`: an AbortSignal has been issued and no new authority work may
@@ -170,15 +169,15 @@ or reconstructed after session replacement.
   cancellation signalling, Widget projection, timer disposal, and removal of
   the in-memory job.
 - Promise resolution/rejection, elapsed time, Widget success/failure, timer
-  callbacks, AbortSignal acknowledgement, and child-process closure are not
-  Kernel authority and cannot prove enrollment success.
+  callbacks, and AbortSignal acknowledgement are not Kernel authority and
+  cannot prove enrollment success.
 
 ### Same-state-machine coverage
 
 The review boundary includes both command factories, their shared coordinator,
-the descriptor-rehearsal integration tests, command integration tests, and the
-Assurance no-Footer/no-Widget regression test. Descriptor process execution and
-Kernel reducers are reviewed as unchanged dependencies, not modified owners.
+command integration tests, and the Assurance no-Footer/no-Widget regression
+test. Kernel reducers are reviewed as unchanged dependencies, not modified
+owners.
 
 ## Technical Design Decisions
 
@@ -221,7 +220,6 @@ lifecycle guarantee covered by an executable regression test.
 - `plugins/immune-brain/.pi-extension/imm-canary-enroll.ts`
 - `plugins/immune-brain/.pi-extension/imm-canary-new.ts`
 - `tests/pi-enrollment-progress-widget.test.ts`
-- `tests/kernel-descriptor-rehearsal.test.ts`
 - `tests/pi-canary-enroll-extension.test.ts`
 - `tests/pi-canary-new-extension.test.ts`
 - `tests/pi-canary-assurance-observability.test.ts`
@@ -236,10 +234,10 @@ lifecycle guarantee covered by an executable regression test.
 
 1. Enrollment and Assurance publish no defined-value Footer status at any
    lifecycle stage; cleanup-only `setStatus(key, undefined)` remains permitted.
-2. Both Enrollment commands return without waiting for descriptor rehearsal and
-   share one bounded `aboveEditor` Widget showing stage, elapsed time, and only
-   the currently valid action.
-3. Normal completion, preparation or rehearsal failure, user cancellation,
+2. Enrollment performs no acceptance descriptor execution and reports bounded
+   progress through the foreground Tool surface without creating a Widget or
+   Footer status.
+3. Normal completion, preparation or revalidation failure, user cancellation,
    confirmation rejection, commit success/failure, UI exceptions, and session
    shutdown stop all refresh timers and clear the owning Widget without
    changing existing authority or business-notification outcomes.

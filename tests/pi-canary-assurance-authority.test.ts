@@ -86,7 +86,7 @@ describe("canary assurance authority", () => {
 	expect(prompt).toContain("Reserve the final turn for exactly one strict JSON verdict");
 		expect(prompt).toContain("verify that git rev-parse HEAD equals bundle.head");
 		expect(prompt).toContain("base_oid");
-		expect(prompt).toContain("Do not inspect or depend on live bytes from the parent worktree");
+		expect(prompt).toContain("Do not inspect or depend on live task bytes outside the immutable bundle");
 		expect(prompt).toContain('"authority_role":"reviewer"');
 		expect(() => buildReviewPrompt(snapshot({ role: "qa" }))).toThrow(/review role/i);
 	});

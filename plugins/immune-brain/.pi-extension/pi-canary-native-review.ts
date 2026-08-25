@@ -28,7 +28,6 @@ export interface ReservedAgentParams {
 	prompt: string;
 	inherit_context: false;
 	isolated: true;
-	isolation: "worktree";
 	run_in_background: false;
 	max_turns: number;
 	model: string;
@@ -75,7 +74,6 @@ export function reservedAgentParams(input: {
 		prompt: semanticNeighborhoodReviewPrompt(input.prompt),
 		inherit_context: false,
 		isolated: true,
-		isolation: "worktree",
 		run_in_background: false,
 		max_turns: input.max_turns ?? 16,
 		model: input.model ?? "",
@@ -108,7 +106,6 @@ export function matchesReservedAgentArgs(
 		normalizedArgs.prompt === params.prompt &&
 		normalizedArgs.inherit_context === params.inherit_context &&
 		normalizedArgs.isolated === params.isolated &&
-		normalizedArgs.isolation === params.isolation &&
 		normalizedArgs.run_in_background === params.run_in_background &&
 		normalizedArgs.max_turns === params.max_turns &&
 		normalizedArgs.model === params.model &&

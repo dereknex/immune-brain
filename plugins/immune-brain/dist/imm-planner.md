@@ -100,11 +100,10 @@ that turns a Git-tracked TaskIntent draft into managed execution authority is th
 native host TUI: the Planner's final `ctx.ui.custom` gate (via the
 `imm_canary_enrollment` foreground Tool) provides one literal-user confirmation
 bound to the TaskIntent content hash. Invoke the Tool directly when the route is
-ready; do not ask for a chat pre-confirmation. Descriptor rehearsal is reordered
-after that confirmation; a post-confirmation rehearsal failure invalidates the
-authorization with zero authority writes, and a routine task proceeds through
-enrollment, execution and QA without a second human stop. Optional descriptor
-waiver remains a separate explicit route.
+ready; do not ask for a chat pre-confirmation. Enrollment validates the intent,
+Git ownership, scope, workspace claim, and final authority preconditions without
+executing acceptance descriptors. A routine task proceeds from that single
+confirmation through enrollment, execution and QA without a second human stop.
 
 Before authoring a TaskIntent, trace each expected behavior from its public or
 runtime entry point through existing imports and callers to the highest focused
@@ -154,15 +153,18 @@ create a TaskIntent from an Issue, or store Issue identity in TaskIntent or
 TaskRecord. Existing Issue markers grant permission only for later one-way
 projection updates to that same Initiative; they never grant execution authority.
 
-### Descriptor Rehearsal Discipline
+### Verification Descriptor Discipline
 
 Every acceptance verification descriptor must be a focused, deterministic,
 repository-local check that exercises only its acceptance assertion. Prefer one
 small `bun test <focused-file>` or `bun run <focused-script>` per acceptance;
 never use the full test suite, a build, package installation, network access, or
-redundant heavyweight checks as rehearsal descriptors. Use the smallest
-`timeout_ms` and `max_output_bytes` that cover the check so isolated descriptor
-rehearsal stays within host setup and execution ceilings.
+redundant heavyweight checks. Prefer the highest existing observable behavioral
+test seam and the fewest sufficient seams. Cite relevant test prior art and
+explain how the selected seam catches the intended regression. This is a
+planning heuristic: it must not weaken acceptance-specific focused verification
+descriptors or add a mandatory user confirmation. Use the smallest `timeout_ms` and
+`max_output_bytes` that cover deterministic post-implementation QA.
 
 ## Core Responsibilities
 
@@ -341,5 +343,5 @@ Iteration plan under `docs/plans/` and spec under `docs/specs/`. Includes: `Summ
 ## Next Action
 
 - Gate: The default execution-design frontier is empty; every material decision is confirmed by the user's direct requirements, answers, or bulk approval; the result-only summary introduces no unconfirmed material decision delta; the Plan passes `imm-plan --json` validation; and no step has a hypothetical-only verification path.
-- If gates pass: for Kernel-managed work, invoke the `imm_canary_enrollment` Tool directly without chat pre-confirmation. Its native `ctx.ui.custom` gate provides the single literal-user confirmation bound to the TaskIntent content hash, then runs descriptor rehearsal and, on success, enrolls the task to continue through `imm-loop`. A post-confirmation rehearsal failure invalidates the authorization with zero authority writes.
+- If gates pass: for Kernel-managed work, invoke the `imm_canary_enrollment` Tool directly without chat pre-confirmation. Its native `ctx.ui.custom` gate provides the single literal-user confirmation bound to the TaskIntent content hash, validates Enrollment preconditions without executing acceptance descriptors, and enrolls the task to continue through `imm-loop`.
 - If gates are not met: state which validation failures, unresolved verification paths, or material decision deltas remain; do not name a next skill.
