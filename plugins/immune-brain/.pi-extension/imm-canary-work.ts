@@ -217,6 +217,7 @@ export interface CanaryWorkExtensionDependencies {
 	qaOnAuthorityCommit?: () => void;
 	qaAfterAuthorityCommit?: () => Promise<void>;
 	authorizationBeforeRecordRead?: () => Promise<void>;
+	authorizationAfterSidecarStage?: () => Promise<void>;
 	qaJobTimeoutMs?: number;
 	reviewJobTimeoutMs?: number;
 	reviewSoftDeadlineMs?: number;
@@ -796,7 +797,7 @@ export default function (
 			const priorIntent = await readTaskIntent(ctx.cwd, taskId);
 			if (nextIntent) {
 				nextIntentRef = {
-					path: priorIntent.intent_ref.path,
+					path: `docs/plans/${nextIntent.task_id}.intent.json`,
 					content_hash: nextIntentHash!,
 				};
 			}
@@ -837,6 +838,7 @@ export default function (
 							cwd: ctx.cwd,
 							stdio: ["ignore", "pipe", "pipe"],
 						});
+						await dependencies.authorizationAfterSidecarStage?.();
 					}
 					const operationDiffHash = nextIntent
 						? diffHashOf(ctx.cwd, priorIntent.intent)
@@ -868,7 +870,10 @@ export default function (
 						diffProvider: (root: string, intent: { scope_hint: unknown }) => diffHashOf(root, intent),
 						now,
 					})) as unknown as { record: { lifecycle: string; artifact_state: string; intent_ref: { path: string }; intent_snapshot: { scope_hint: string[] } } };
-					if (exactOperation.op === "stop") stagePlanningArtifactTransition(ctx.cwd, result.record);
+					if (
+						exactOperation.op === "stop"
+						|| exactOperation.op === "approve_breaking_intent_revision"
+					) stagePlanningArtifactTransition(ctx.cwd, result.record);
 					return { state: "applied", operation, lifecycle: result.record.lifecycle };
 				} catch (error) {
 					if (sidecar && priorBytes) {

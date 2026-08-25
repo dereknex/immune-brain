@@ -21,7 +21,6 @@ import {
 } from "../runtime/workspace_scope";
 
 const MAX_REVIEW_BUNDLE_BYTES = 2 * 1024 * 1024;
-const MAX_FILE_BYTES = 256 * 1024;
 
 export interface ReviewOutcome {
 	status: "passed" | "failed" | "blocked";
@@ -83,13 +82,13 @@ function readIndexBlob(
 		timeout: 10_000,
 	}).trim();
 	const size = Number(sizeText);
-	if (!Number.isSafeInteger(size) || size < 0 || size > MAX_FILE_BYTES)
+	if (!Number.isSafeInteger(size) || size < 0 || size > MAX_REVIEW_BUNDLE_BYTES)
 		throw new Error(`review file exceeds bounded size: ${path}`);
 	const bytes = execFileSync("git", ["cat-file", "blob", entry.oid], {
 		cwd: root,
 		encoding: "buffer",
 		stdio: ["ignore", "pipe", "ignore"],
-		maxBuffer: MAX_FILE_BYTES + 1,
+		maxBuffer: MAX_REVIEW_BUNDLE_BYTES + 1,
 		timeout: 10_000,
 	}) as Buffer;
 	if (bytes.length !== size) throw new Error(`index blob size changed during capture: ${path}`);

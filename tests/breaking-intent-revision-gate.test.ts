@@ -16,6 +16,7 @@ import { preparePiCanary } from "../plugins/immune-brain/runtime/kernel/pi_canar
 import { createEnrollmentAuthorityRegistry, type EnrollmentCapabilityBinding } from "../plugins/immune-brain/runtime/kernel/enrollment_authority";
 import { canonicalIntentHash, parseTaskIntentV1 } from "../plugins/immune-brain/runtime/kernel/intent";
 import { readBackendClaim } from "../plugins/immune-brain/runtime/kernel/backend_claim";
+import { taskDiffHash } from "../plugins/immune-brain/runtime/workspace_scope";
 
 const TASK = "canary-breaking-task";
 const INTENT = {
@@ -29,6 +30,9 @@ const INTENT = {
 	}],
 	scope_hint: [
 		`docs/plans/${TASK}.intent.json`,
+		`docs/plans/archive/${TASK}.intent.json`,
+		`docs/specs/${TASK}.spec.md`,
+		`docs/specs/archive/${TASK}.spec.md`,
 		"plugins/immune-brain/.pi-extension",
 	],
 	risk: "routine",
@@ -86,10 +90,12 @@ async function captureToolFailure(promise: Promise<unknown>): Promise<Record<str
 function makeEnrolledRoot(): string {
 	const root = mkdtempSync(join(tmpdir(), "breaking-gate-"));
 	mkdirSync(join(root, "docs", "plans"), { recursive: true });
+	mkdirSync(join(root, "docs", "specs"), { recursive: true });
 	mkdirSync(join(root, "plugins", "immune-brain", ".pi-extension"), { recursive: true });
 	mkdirSync(join(root, ".imm", "tasks"), { recursive: true });
 	execFileSync("git", ["init", "-q"], { cwd: root });
 	writeFileSync(join(root, "docs", "plans", `${TASK}.intent.json`), JSON.stringify(INTENT, null, 2) + "\n");
+	writeFileSync(join(root, "docs", "specs", `${TASK}.spec.md`), "# Breaking revision fixture\n");
 	writeFileSync(join(root, "plugins", "immune-brain", ".pi-extension", "task.ts"), "export const task = 'baseline';\n");
 	execFileSync("git", ["add", "-A"], { cwd: root });
 	execFileSync("git", ["commit", "-qm", "intent"], { cwd: root });
@@ -149,9 +155,9 @@ function walkOpKinds(schema: Record<string, unknown>, out: string[]): void {
 	}
 }
 
-function loadSurface(): { tool: RegisteredTool } {
+function loadSurface(dependencies: { authorizationAfterSidecarStage?: () => Promise<void> } = {}): { tool: RegisteredTool } {
 	const mod = require("../plugins/immune-brain/.pi-extension/imm-canary-work.ts");
-	const factory = mod.default as (pi: ExtensionAPI) => void;
+	const factory = mod.default as (pi: ExtensionAPI, dependencies?: typeof dependencies) => void;
 	let tool: RegisteredTool | undefined;
 	const pi = {
 		on: () => {},
@@ -160,7 +166,7 @@ function loadSurface(): { tool: RegisteredTool } {
 			if (registered.name === "imm_kernel_canary") tool = registered;
 		},
 	} as unknown as ExtensionAPI;
-	factory(pi);
+	factory(pi, dependencies);
 	if (!tool) throw new Error("imm_kernel_canary tool not registered");
 	return { tool };
 }
@@ -241,6 +247,124 @@ describe("breaking intent revision gate", () => {
 			// TaskRecord or second backend claim exists.
 			expect(readBackendClaim(root)).toMatchObject({ task_id: TASK, lifecycle_status: "active" });
 			expect(existsSync(join(root, ".imm", "tasks", `${TASK}.backend-claim.json`))).toBe(false);
+		} finally { rmSync(root, { recursive: true, force: true }); }
+	});
+
+	test("frozen approval uses one active-path digest and atomically restores bound artifacts", async () => {
+		const root = makeEnrolledRoot();
+		try {
+			const { tool } = loadSurface();
+			const frozen = await tool.execute(
+				"break-freeze",
+				{ task_id: TASK, action: { op: "freeze_artifacts" } },
+				undefined,
+				undefined,
+				makeCtx(root, makeUI()),
+			);
+			expect(frozen.details).toMatchObject({ state: "recorded", artifact_state: "frozen" });
+
+			const activeIntent = join(root, "docs", "plans", `${TASK}.intent.json`);
+			const archivedIntent = join(root, "docs", "plans", "archive", `${TASK}.intent.json`);
+			const activeSpec = join(root, "docs", "specs", `${TASK}.spec.md`);
+			const archivedSpec = join(root, "docs", "specs", "archive", `${TASK}.spec.md`);
+			expect(existsSync(activeIntent)).toBe(false);
+			expect(existsSync(activeSpec)).toBe(false);
+			expect(existsSync(archivedIntent)).toBe(true);
+			expect(existsSync(archivedSpec)).toBe(true);
+
+			const recordPath = join(root, ".imm", "tasks", `${TASK}.json`);
+			const claimPath = join(root, ".imm", "tasks", ".backend-claim.json");
+			const frozenSnapshot = () => ({
+				intent: readFileSync(archivedIntent, "utf8"),
+				spec: readFileSync(archivedSpec, "utf8"),
+				record: readFileSync(recordPath, "utf8"),
+				claim: readFileSync(claimPath, "utf8"),
+				status: execFileSync("git", ["status", "--short"], { cwd: root, encoding: "utf8" }),
+			});
+			const beforeCancel = frozenSnapshot();
+			const cancelled = await tool.execute(
+				"break-frozen-cancel",
+				{ task_id: TASK, action: { op: "approve_breaking_intent_revision", next_intent: breakingIntent() } },
+				undefined,
+				undefined,
+				makeCtx(root, makeUI(), "tui", false),
+			);
+			expect(cancelled.details).toMatchObject({ state: "cancelled" });
+			expect(frozenSnapshot()).toEqual(beforeCancel);
+
+			const result = await tool.execute(
+				"break-frozen-approve",
+				{ task_id: TASK, action: { op: "approve_breaking_intent_revision", next_intent: breakingIntent() } },
+				undefined,
+				undefined,
+				makeCtx(root, makeUI()),
+			);
+			expect(result.details).toMatchObject({
+				state: "applied",
+				operation: "approve-breaking-intent-revision",
+				lifecycle: "active",
+			});
+			expect(existsSync(activeIntent)).toBe(true);
+			expect(existsSync(activeSpec)).toBe(true);
+			expect(existsSync(archivedIntent)).toBe(false);
+			expect(existsSync(archivedSpec)).toBe(false);
+			expect(JSON.parse(readFileSync(activeIntent, "utf8"))).toMatchObject({ task_id: TASK, revision: 2 });
+			const record = JSON.parse(readFileSync(recordPath, "utf8"));
+			expect(record).toMatchObject({
+				lifecycle: "active",
+				artifact_state: "active",
+				intent_ref: { path: `docs/plans/${TASK}.intent.json` },
+			});
+			expect(taskDiffHash(root, record.intent_snapshot.scope_hint)).toMatch(/^sha256:[a-f0-9]{64}$/);
+			expect(execFileSync("git", ["status", "--short"], { cwd: root, encoding: "utf8" }))
+				.not.toContain("archive/");
+		} finally { rmSync(root, { recursive: true, force: true }); }
+	});
+
+	test("frozen precommit failure restores exact artifact and index state", async () => {
+		const root = makeEnrolledRoot();
+		try {
+			const { tool } = loadSurface({
+				authorizationAfterSidecarStage: async () => {
+					throw new Error("simulated precommit failure");
+				},
+			});
+			await tool.execute(
+				"break-failure-freeze",
+				{ task_id: TASK, action: { op: "freeze_artifacts" } },
+				undefined,
+				undefined,
+				makeCtx(root, makeUI()),
+			);
+			const archivedIntent = join(root, "docs", "plans", "archive", `${TASK}.intent.json`);
+			const archivedSpec = join(root, "docs", "specs", "archive", `${TASK}.spec.md`);
+			const recordPath = join(root, ".imm", "tasks", `${TASK}.json`);
+			const claimPath = join(root, ".imm", "tasks", ".backend-claim.json");
+			const snapshot = () => {
+				const record = readFileSync(recordPath, "utf8");
+				return {
+					intent: readFileSync(archivedIntent, "utf8"),
+					spec: readFileSync(archivedSpec, "utf8"),
+					record,
+					claim: readFileSync(claimPath, "utf8"),
+					status: execFileSync("git", ["status", "--short"], { cwd: root, encoding: "utf8" }),
+					diff: taskDiffHash(root, JSON.parse(record).intent_snapshot.scope_hint),
+				};
+			};
+			const before = snapshot();
+			const failure = await captureToolFailure(tool.execute(
+				"break-frozen-failure",
+				{ task_id: TASK, action: { op: "approve_breaking_intent_revision", next_intent: breakingIntent() } },
+				undefined,
+				undefined,
+				makeCtx(root, makeUI()),
+			));
+			expect(failure).toMatchObject({
+				contract: "immune_brain/tool_failure/v1",
+				state: "blocked",
+				message: "simulated precommit failure",
+			});
+			expect(snapshot()).toEqual(before);
 		} finally { rmSync(root, { recursive: true, force: true }); }
 	});
 

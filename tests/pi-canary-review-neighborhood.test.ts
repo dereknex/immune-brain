@@ -89,10 +89,27 @@ describe("review semantic neighborhood", () => {
 		}
 	});
 
-	test("fails closed when a neighborhood file exceeds 256 KiB", () => {
+	test("captures an openapi file over 256 KiB below the total limit", () => {
+		const openapi = "x".repeat(320 * 1024);
 		const root = repo({
 			"state/change.ts": "export const change = 1;\n",
-			"state/large.ts": "x".repeat(256 * 1024 + 1),
+			"state/openapi.yaml": openapi,
+		});
+		try {
+			writeFileSync(join(root, "state/change.ts"), "export const change = 2;\n");
+			git(root, ["add", "state/change.ts"]);
+			const scope = ["state"];
+			const bundle = captureReviewBundle(root, scope, taskDiffHash(root, scope), outcomes);
+			expect(bundle.neighborhood_files?.["state/openapi.yaml"].current_content).toBe(openapi);
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
+	test("fails closed when one file exceeds the total bundle ceiling", () => {
+		const root = repo({
+			"state/change.ts": "export const change = 1;\n",
+			"state/openapi.yaml": "x".repeat(2 * 1024 * 1024 + 1),
 		});
 		try {
 			writeFileSync(join(root, "state/change.ts"), "export const change = 2;\n");

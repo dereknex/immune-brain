@@ -327,7 +327,11 @@ export function createCanaryApplication(
 		);
 		if (operation.op === "complete" && hasBoundSpec && snapshot.record.artifact_state !== "frozen")
 			throw new KernelInvariantError(["complete requires frozen planning artifacts"]);
-		const artifactTransition = operation.op === "request_rework" && snapshot.record.artifact_state === "frozen"
+		const artifactTransition = snapshot.record.artifact_state === "frozen"
+			&& (
+				operation.op === "request_rework"
+				|| operation.op === "approve_breaking_intent_revision"
+			)
 			? transitionFor(input.root, snapshot.record, "restore")
 			: operation.op === "stop" && snapshot.record.artifact_state !== "frozen"
 				? transitionFor(input.root, snapshot.record, "freeze", true)
