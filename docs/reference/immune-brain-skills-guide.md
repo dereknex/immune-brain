@@ -1,12 +1,13 @@
 # Immune-Brain public Skills 与内部 roles 指南
 
-Immune-Brain 的 shipped public Skill surface 固定为三个入口：
+Immune-Brain 的 shipped public Skill surface 固定为四个入口：三个 Managed Path Skill 与一个 host-native `imm-pr-fix`：
 
 | Public Skill | 责任 | 下一步 |
 | --- | --- | --- |
 | `imm-brainstorm` | 澄清需求、范围、假设和风险；`adversarial`/`roundtable` 是内部模式 | `imm-planner` |
 | `imm-planner` | 创建或修订 Spec、Plan 和候选 TaskIntent；不自动 Enrollment | `imm-loop` |
 | `imm-loop` | 消费 validated Plan，协调执行、QA、Review、repair、learning 和恢复 | Kernel Tool / Planner / terminal |
+| `imm-pr-fix` | 独立 host-native PR repair；不进入 Managed Path | GitHub PR / host-native |
 
 旧的 Executor、QA、Review、repair、explorer、advisory、Compounder 和 Init entry
 不再是可发现的 Skill。它们分别是 `imm-loop` 的内部 role、runtime capability 或 TUI/Tool

@@ -11,6 +11,8 @@ const ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 const MAX_GH_OUTPUT = 1024 * 1024;
 const MAX_DIAGNOSTIC = 512;
 const GH_TIMEOUT_MS = 20_000;
+const GITHUB_ISSUE_BODY_LIMIT = 65_536;
+const MAX_TERMINAL_EVENT_ID = 500;
 
 type TrackerStatus =
 	| "created"
@@ -147,6 +149,12 @@ function marker(name: "repo-id" | "initiative-id" | "task-id" | "slice-id", valu
 function terminalMarker(eventId: string): string {
 	return `<!-- immune-brain:terminal-event=${eventId} -->`;
 }
+
+function terminalSuffix(eventId: string): string {
+	return `\n\n${terminalMarker(eventId)}\nTerminal event: \`${eventId}\`\n`;
+}
+
+const MAX_TERMINAL_SUFFIX_BYTES = Buffer.byteLength(terminalSuffix("x".repeat(MAX_TERMINAL_EVENT_ID)), "utf8");
 
 function terminalEvent(value: unknown): string {
 	if (typeof value !== "string" || !/^[A-Za-z0-9._:-]{1,500}$/.test(value))
@@ -529,8 +537,8 @@ function listText(values: string[] | undefined, fallback: string): string {
 	return values?.length ? values.map((value) => `- ${value}`).join("\n") : fallback;
 }
 
-function bodyLimitFailure(operation: TrackerOperation["op"], body: string): GithubTrackerResult | null {
-	return Buffer.byteLength(body, "utf8") <= 65_536
+function bodyLimitFailure(operation: TrackerOperation["op"], body: string, reserve = 0): GithubTrackerResult | null {
+	return Buffer.byteLength(body, "utf8") + reserve <= GITHUB_ISSUE_BODY_LIMIT
 		? null
 		: result(operation, "permanent_failure", "rendered GitHub Issue body exceeds 65,536 UTF-8 bytes");
 }
@@ -633,7 +641,7 @@ async function upsertTask(
 		blockers.push(blocker.issue);
 	}
 	const body = childBody(source.repository, operation);
-	const oversized = bodyLimitFailure(operation.op, body);
+	const oversized = bodyLimitFailure(operation.op, body, MAX_TERMINAL_SUFFIX_BYTES);
 	if (oversized) return oversized;
 	const title = issueTitle(`${operation.initiative_id}/${operation.slice_id}`, operation.projection?.result ?? operation.goal);
 	let child: GithubIssue;
@@ -780,7 +788,9 @@ async function markTerminal(
 	}
 	if (issue.state === "closed")
 		return result(operation.op, "ambiguous_remote_state", "a manually closed nonterminal Task Issue is preserved and never reopened automatically", issue);
-	const updated = `${issue.body.trimEnd()}\n\n${terminalMarker(operation.terminal_event_id)}\nTerminal event: \`${operation.terminal_event_id}\`\n`;
+	const updated = `${issue.body.trimEnd()}${terminalSuffix(operation.terminal_event_id)}`;
+	const oversized = bodyLimitFailure(operation.op, updated);
+	if (oversized) return oversized;
 	const edited = await gh.run([
 		"issue", "edit", String(issue.number), "--repo", source.repository.name_with_owner,
 		"--body-file", "-",
