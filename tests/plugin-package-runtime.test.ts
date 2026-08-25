@@ -217,11 +217,14 @@ function immKernel(root: string, args: string[]) {
 }
 
 type FakeIssue = {
+	id: number;
 	number: number;
 	html_url: string;
+	title: string;
 	body: string;
 	state: "open" | "closed";
 	state_reason: string | null;
+	blockedBy?: number[];
 };
 
 class FakeGh implements GhTransport {
@@ -229,29 +232,66 @@ class FakeGh implements GhTransport {
 	subIssues = new Map<number, number[]>();
 	mutations = 0;
 	loseNextCreateResponse = false;
+	detachBlockerAfterDependencyMutation = false;
+	mutateChildAfterDependencyMutation = false;
+	dropNextSubIssueMutation = false;
 
 	async run(args: string[], options: { cwd?: string; stdin?: string } = {}): Promise<GhExecution> {
 		const ok = (stdout = ""): GhExecution => ({ exit_code: 0, stdout, stderr: "", timed_out: false, output_exceeded: false });
 		if (args[0] === "api" && args[1] === "repos/{owner}/{repo}")
 			return ok(JSON.stringify({ id: 4242, full_name: "example/project" }));
-		if (args[0] === "api" && args.includes("--paginate"))
-			return ok(JSON.stringify([this.issues]));
 		if (args[0] === "api") {
 			const endpoint = args.at(-1) as string;
-			const subIssueList = endpoint.match(/issues\/(\d+)\/sub_issues/);
+			if (args.includes("--paginate") && endpoint.includes("/issues?state=all"))
+				return ok(JSON.stringify([this.issues]));
+			const dependencyList = endpoint.match(/issues\/(\d+)\/dependencies\/blocked_by/);
+			if (dependencyList && args.includes("--paginate")) {
+				const child = this.issues.find((issue) => issue.number === Number(dependencyList[1]));
+				const blockers = child ? [...(child as any).blockedBy ?? []] : [];
+				return ok(JSON.stringify(blockers.length ? blockers.map((id: number) => [{ issue_id: id }]) : [[]]));
+			}
+				if (dependencyList) {
+					this.mutations += 1;
+					const child = this.issues.find((issue) => issue.number === Number(dependencyList[1]));
+					if (!child) return { ...ok(), exit_code: 1, stderr: "not found" };
+					const blocker = Number(args.find((value) => value.startsWith("issue_id="))!.split("=")[1]);
+					const current = ((child as any).blockedBy ??= []) as number[];
+					if (!current.includes(blocker)) current.push(blocker);
+					if (this.detachBlockerAfterDependencyMutation) {
+						this.detachBlockerAfterDependencyMutation = false;
+						const blockerNumber = this.issues.find((issue) => issue.id === blocker)?.number;
+						if (blockerNumber !== undefined) {
+							for (const [parent, children] of this.subIssues)
+								this.subIssues.set(parent, children.filter((number) => number !== blockerNumber));
+						}
+					}
+					if (this.mutateChildAfterDependencyMutation) {
+						this.mutateChildAfterDependencyMutation = false;
+						child.body += "\nconcurrent edit";
+					}
+					return ok();
+				}
+				const subIssueList = endpoint.match(/issues\/(\d+)\/sub_issues/);
 			if (subIssueList && !args.some((flag) => flag === "-F" || flag === "-f")) {
 				const numbers = this.subIssues.get(Number(subIssueList[1])) ?? [];
-				return ok(JSON.stringify(numbers.map((number) => ({ number }))));
+				const pages = Array.from({ length: Math.ceil(numbers.length / 100) }, (_, index) => numbers.slice(index * 100, (index + 1) * 100).map((number) => ({ number })));
+				return ok(JSON.stringify(args.includes("--slurp") ? pages : (pages[0] ?? [])));
 			}
 			if (subIssueList) {
 				this.mutations += 1;
 				const parent = Number(subIssueList[1]);
-				const child = Number(args.find((value) => value.startsWith("sub_issue_id="))!.split("=")[1]);
-				const existingParent = [...this.subIssues.entries()].find(([, children]) => children.includes(child));
+				const childId = Number(args.find((value) => value.startsWith("sub_issue_id="))!.split("=")[1]);
+				const child = this.issues.find((issue) => issue.id === childId);
+				if (!child) return { ...ok(), exit_code: 1, stderr: "unknown sub_issue_id" };
+				if (this.dropNextSubIssueMutation) {
+					this.dropNextSubIssueMutation = false;
+					return ok();
+				}
+				const existingParent = [...this.subIssues.entries()].find(([, children]) => children.includes(child.number));
 				if (existingParent && existingParent[0] !== parent)
-					return { ...ok(), exit_code: 1, stderr: `HTTP 422: Issue #${child} already has a parent (#${existingParent[0]})` };
+					return { ...ok(), exit_code: 1, stderr: `HTTP 422: Issue #${child.number} already has a parent (#${existingParent[0]})` };
 				const current = this.subIssues.get(parent) ?? [];
-				if (!current.includes(child)) current.push(child);
+				if (!current.includes(child.number)) current.push(child.number);
 				this.subIssues.set(parent, current);
 				return ok();
 			}
@@ -260,8 +300,10 @@ class FakeGh implements GhTransport {
 			this.mutations += 1;
 			const number = this.issues.length + 1;
 			this.issues.push({
+				id: number + 1000,
 				number,
 				html_url: `https://github.com/example/project/issues/${number}`,
+				title: args[args.indexOf("--title") + 1],
 				body: options.stdin ?? "",
 				state: "open",
 				state_reason: null,
@@ -353,7 +395,7 @@ describe("plugin package runtime cutover parity", () => {
 			expect(contract).toContain("ordinary TaskIntents remain tracked by Kernel TaskRecords");
 			expect(contract).toContain("display one non-blocking line");
 			expect(contract).toContain("create-initiative --stdin --json");
-			expect(contract).toContain("upsert-task --initiative-id <slug> --slice-id <id> --intent <path> --json");
+			expect(contract).toContain("upsert-task --initiative-id <slug> --slice-id <id> --intent <path> --projection-json <json> --json");
 			expect(contract).toContain("Tracker output is observation, never authority");
 			expect(contract).toContain("do not block planning, Enrollment, execution, QA, Review, settlement");
 			expect(contract).not.toContain("upsert-initiative");
@@ -527,6 +569,7 @@ describe("plugin package runtime cutover parity", () => {
 			const initiative = await runGithubTrackerOperation(root, requested, gh);
 			expect(initiative).toMatchObject({ status: "created", association_found: true, issue_number: 1 });
 			expect(initiative.message).not.toContain("gho_secret");
+			expect(gh.issues[0].title).toBe("[tracking-v1] Track a large delivery for [REDACTED_GITHUB_TOKEN]");
 			expect(gh.issues[0].body).toContain("[REDACTED_GITHUB_TOKEN]");
 			expect(gh.issues[0].body).toContain("<!-- immune-brain:slice-id=S1 -->");
 			expect(gh.issues[0].body).toContain("## How to use this Issue");
@@ -535,6 +578,12 @@ describe("plugin package runtime cutover parity", () => {
 			expect(gh.issues[0].body).toContain("**S1**: Ship the first bounded Task");
 
 			expect(await runGithubTrackerOperation(root, requested, gh)).toMatchObject({ status: "already_current" });
+			const originalTitle = gh.issues[0].title;
+			gh.issues[0].title = "manually changed title";
+			const beforeTitleDrift = gh.mutations;
+			expect(await runGithubTrackerOperation(root, requested, gh)).toMatchObject({ status: "permanent_failure" });
+			expect(gh.mutations).toBe(beforeTitleDrift);
+			gh.issues[0].title = originalTitle;
 
 			const before = gh.mutations;
 			const refused = await runGithubTrackerOperation(root, { ...INITIATIVE, goal: "Changed after creation" }, gh);
@@ -585,6 +634,11 @@ describe("plugin package runtime cutover parity", () => {
 			expect(gh.issues[1].body).not.toContain(".intent.json");
 
 			expect(await runGithubTrackerOperation(root, TRACKED_TASK, gh)).toMatchObject({ status: "already_current" });
+			gh.issues[1].blockedBy = [9999];
+			const beforeUnexpectedEdge = gh.mutations;
+			expect(await runGithubTrackerOperation(root, TRACKED_TASK, gh)).toMatchObject({ status: "ambiguous_remote_state" });
+			expect(gh.mutations).toBe(beforeUnexpectedEdge);
+			gh.issues[1].blockedBy = [];
 
 			gh.subIssues.delete(1);
 			expect(await runGithubTrackerOperation(root, TRACKED_TASK, gh)).toMatchObject({ status: "updated" });
@@ -601,6 +655,120 @@ describe("plugin package runtime cutover parity", () => {
 			const wrongSlice = await runGithubTrackerOperation(root, { ...TRACKED_TASK, slice_id: "S2" }, gh);
 			expect(wrongSlice.status).toBe("ambiguous_remote_state");
 			expect(existsSync(join(root, ".imm", "tasks"))).toBe(false);
+		});
+	});
+
+	it("renders result-oriented Agent Briefs and converges native blocked_by edges", async () => {
+		await withIsolatedRootAsync(async (root) => {
+			const gh = new FakeGh();
+			expect((await runGithubTrackerOperation(root, INITIATIVE, gh)).status).toBe("created");
+			const blocker = { ...TRACKED_TASK, task_id: "blocker-task", projection: { result: "Publish the prerequisite contract" } };
+			expect((await runGithubTrackerOperation(root, blocker, gh)).status).toBe("created");
+			const target = {
+				...TRACKED_TASK,
+				task_id: "agent-ready-task",
+				projection: {
+					result: "Publish an Agent-ready Task",
+					current_behavior: "The projection is sparse.",
+					desired_behavior: "The projection is self-contained.",
+					key_interfaces: ["TaskIntent", "GitHub Issue API"],
+					verification: "bun test tests/plugin-package-runtime.test.ts",
+					blocked_by: ["blocker-task"],
+					out_of_scope: ["GitHub authority"],
+					agent_handoff: "Implement the bounded result only.",
+				},
+			};
+			const published = await runGithubTrackerOperation(root, target, gh);
+			expect(published).toMatchObject({ status: "created", issue_number: 3 });
+			const child = gh.issues.find((issue) => issue.number === 3)!;
+			expect(child.title).toBe("[tracking-v1/S1] Publish an Agent-ready Task");
+			expect(child.title).not.toContain("agent-ready-task");
+			expect(child.title).not.toContain("IB:");
+			expect(child.body).toContain("## What to build");
+			expect(child.body).toContain("## Current behavior");
+			expect(child.body).toContain("## Desired behavior");
+			expect(child.body).toContain("## Key interfaces");
+			expect(child.body).toContain("## Blocked by");
+			expect(child.body).toContain("`blocker-task`");
+			expect(child.body).toContain("## Agent handoff");
+			expect(child.body).toContain("## Authority boundary");
+			expect(child.body).not.toContain("[IB:");
+			expect(child.body).not.toContain(".intent.json");
+			const originalChildTitle = child.title;
+			child.title = "manually changed Child title";
+			const beforeChildTitleDrift = gh.mutations;
+			expect(await runGithubTrackerOperation(root, target, gh)).toMatchObject({ status: "permanent_failure" });
+			expect(gh.mutations).toBe(beforeChildTitleDrift);
+			child.title = originalChildTitle;
+			expect(gh.subIssues.get(1)).toEqual([2, 3]);
+		expect((child.blockedBy ?? [])).toEqual([1002]);
+		const retryTarget = { ...TRACKED_TASK, task_id: "partial-retry-target", projection: { blocked_by: ["blocker-task", "second-blocker"] } };
+		expect((await runGithubTrackerOperation(root, { ...TRACKED_TASK, task_id: "second-blocker", projection: { result: "Publish the second prerequisite" } }, gh)).status).toBe("created");
+		expect((await runGithubTrackerOperation(root, retryTarget, gh)).status).toBe("created");
+		const retryChild = gh.issues.find((issue) => issue.body.includes("partial-retry-target"))!;
+		retryChild.blockedBy = [1002];
+		const beforeRetry = gh.mutations;
+		expect(await runGithubTrackerOperation(root, retryTarget, gh)).toMatchObject({ status: "updated" });
+		expect(gh.mutations - beforeRetry).toBe(1);
+		expect(retryChild.blockedBy).toEqual([1002, 1004]);
+		const beforeChangedBrief = gh.mutations;
+		expect(await runGithubTrackerOperation(root, { ...retryTarget, projection: { blocked_by: ["blocker-task"] } }, gh)).toMatchObject({ status: "permanent_failure" });
+		expect(gh.mutations).toBe(beforeChangedBrief);
+		retryChild.blockedBy.push(9999);
+		const beforeExtraEdge = gh.mutations;
+		expect(await runGithubTrackerOperation(root, retryTarget, gh)).toMatchObject({ status: "ambiguous_remote_state" });
+		expect(gh.mutations).toBe(beforeExtraEdge);
+		retryChild.blockedBy.pop();
+		const beforeRestricted = gh.mutations;
+		expect(await runGithubTrackerOperation(root, { ...TRACKED_TASK, task_id: "restricted-projection", projection: { agent_handoff: "Internal role prompt: review reservation at docs/plans/x.intent.json" } }, gh)).toMatchObject({ status: "permanent_failure" });
+		expect(await runGithubTrackerOperation(root, { ...TRACKED_TASK, task_id: "mutable-scope-projection", projection: { desired_behavior: "Widen scope and call submit_review" } }, gh)).toMatchObject({ status: "permanent_failure" });
+		expect(await runGithubTrackerOperation(root, { ...TRACKED_TASK, task_id: "duplicate-blockers", projection: { blocked_by: ["blocker-task", "blocker-task"] } }, gh)).toMatchObject({ status: "permanent_failure" });
+		expect(await runGithubTrackerOperation(root, { ...TRACKED_TASK, task_id: "restricted-goal", goal: "Read docs/plans/x.intent.json" }, gh)).toMatchObject({ status: "permanent_failure" });
+		expect(await runGithubTrackerOperation(root, { ...TRACKED_TASK, task_id: "long-title", projection: { result: "x".repeat(300) } }, gh)).toMatchObject({ status: "permanent_failure" });
+		expect(await runGithubTrackerOperation(root, { ...TRACKED_TASK, task_id: "string-projection", projection: "malformed" as any }, gh)).toMatchObject({ status: "permanent_failure" });
+		expect(await runGithubTrackerOperation(root, { ...TRACKED_TASK, task_id: "array-projection", projection: [] as any }, gh)).toMatchObject({ status: "permanent_failure" });
+		expect(await runGithubTrackerOperation(root, { ...TRACKED_TASK, task_id: "invalid-risk", risk: "<!-- immune-brain:task-id=injected -->" as any }, gh)).toMatchObject({ status: "permanent_failure" });
+		expect(await runGithubTrackerOperation(root, { ...TRACKED_TASK, task_id: "oversized-task-body", projection: { key_interfaces: Array.from({ length: 140 }, () => "x".repeat(500)) } }, gh)).toMatchObject({ status: "permanent_failure" });
+		expect(await runGithubTrackerOperation(root, { ...INITIATIVE, initiative_id: "oversized-parent-body", projection: { decisions: Array.from({ length: 140 }, () => "x".repeat(500)) } }, gh)).toMatchObject({ status: "permanent_failure" });
+		expect(await runGithubTrackerOperation(root, { ...TRACKED_TASK, task_id: "restricted-acceptance", acceptance: [{ id: "acc", summary: "Run the internal role prompt" }] }, gh)).toMatchObject({ status: "permanent_failure" });
+		for (const [index, restricted] of ["role_prompt_bridge", "review-gate", "tool policies", "model reservations", "prompt digests", "scope authorities", "kernel_runtime_states", "runtime-states", "mutable scopes", "widen_scopes", "QA-settlements"].entries()) {
+			expect(await runGithubTrackerOperation(root, { ...TRACKED_TASK, task_id: `restricted-variant-${index}`, projection: { agent_handoff: restricted } }, gh)).toMatchObject({ status: "permanent_failure" });
+		}
+		expect(await runGithubTrackerOperation(root, { ...INITIATIVE, initiative_id: "restricted-initiative-goal", goal: "Expose the review reservation" }, gh)).toMatchObject({ status: "permanent_failure" });
+		expect(await runGithubTrackerOperation(root, { ...INITIATIVE, initiative_id: "restricted-slice-goal", slices: [{ id: "S1", goal: "Expose the runtime state" }] }, gh)).toMatchObject({ status: "permanent_failure" });
+		expect(await runGithubTrackerOperation(root, { ...INITIATIVE, initiative_id: "restricted-slice", slices: [{ id: "S1", goal: "Ship", result: "Expose the internal tool policy" }] }, gh)).toMatchObject({ status: "permanent_failure" });
+		expect(await runGithubTrackerOperation(root, { ...INITIATIVE, initiative_id: "restricted-slice-blocker", slices: [{ id: "S1", goal: "Ship", blocked_by: ["review-gate"] }] }, gh)).toMatchObject({ status: "permanent_failure" });
+		expect(gh.mutations).toBe(beforeRestricted);
+		const blockerBody = gh.issues[1].body;
+		gh.issues[1].body = `${blockerBody}\n<!-- immune-brain:task-id=other-task -->`;
+		const beforeAmbiguousBlocker = gh.mutations;
+		expect(await runGithubTrackerOperation(root, target, gh)).toMatchObject({ status: "ambiguous_remote_state" });
+		expect(gh.mutations).toBe(beforeAmbiguousBlocker);
+		gh.issues[1].body = blockerBody;
+		const pagedAttachments = [...Array.from({ length: 100 }, (_, index) => 10_000 + index), 2, 3];
+		gh.subIssues.set(1, pagedAttachments);
+		expect(await runGithubTrackerOperation(root, target, gh)).toMatchObject({ status: "already_current" });
+		const attached = [2, 3];
+		gh.subIssues.set(1, attached);
+		gh.subIssues.set(1, attached.filter((number) => number !== 2));
+		const beforeDetached = gh.mutations;
+		expect(await runGithubTrackerOperation(root, { ...TRACKED_TASK, task_id: "detached-blocker-target", projection: { blocked_by: ["blocker-task"] } }, gh)).toMatchObject({ status: "ambiguous_remote_state" });
+		expect(gh.mutations).toBe(beforeDetached);
+		gh.subIssues.set(1, attached);
+		gh.detachBlockerAfterDependencyMutation = true;
+		expect(await runGithubTrackerOperation(root, { ...TRACKED_TASK, task_id: "raced-blocker-target", projection: { blocked_by: ["blocker-task"] } }, gh)).toMatchObject({ status: "ambiguous_remote_state" });
+		gh.subIssues.set(1, attached);
+		gh.mutateChildAfterDependencyMutation = true;
+		expect(await runGithubTrackerOperation(root, { ...TRACKED_TASK, task_id: "raced-child-target", projection: { blocked_by: ["blocker-task"] } }, gh)).toMatchObject({ status: "ambiguous_remote_state" });
+		gh.subIssues.set(1, attached);
+		gh.dropNextSubIssueMutation = true;
+		const nonConverging = { ...TRACKED_TASK, task_id: "non-converging-sub-issue" };
+		expect(await runGithubTrackerOperation(root, nonConverging, gh)).toMatchObject({ status: "retryable_failure" });
+		expect(await runGithubTrackerOperation(root, nonConverging, gh)).toMatchObject({ status: "updated" });
+		const before = gh.mutations;
+		const missing = await runGithubTrackerOperation(root, { ...target, task_id: "missing-blocker-target", projection: { blocked_by: ["not-published"] } }, gh);
+		expect(missing.status).toBe("permanent_failure");
+		expect(gh.mutations).toBe(before);
 		});
 	});
 

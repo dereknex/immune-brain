@@ -1,0 +1,33 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "2026-08-25-003-agent-ready-github-issue-projection",
+  "goal": "Make the GitHub Initiative and Task projection durable and Agent-ready without changing authority: use result-oriented [initiative/slice] titles without the IB prefix or Task IDs, render Parent and Child behavior contracts with explicit boundaries and handoff context, project exact native blocked_by edges with idempotent observation, and keep Kernel TaskIntent, TaskRecord, Assurance, and terminal settlement as the only execution authority.",
+  "acceptance": [
+    {
+      "id": "acc-1",
+      "assertion": "The tracker validates projection objects, risk enums, Parent Slice blocker IDs, exact bounded GitHub titles, and rendered Parent/Child bodies within the 65,536 UTF-8 byte platform limit before mutation, then renders and observably verifies exact remote title and body convergence for a create-once Parent with the confirmed Initiative sections (Problem, Result, Decisions, Testing strategy, Out of scope, and stable Slice summaries), and a Child title exactly as [initiative/slice] result without an IB prefix or Task ID plus the complete Agent Brief sections (Parent, What to build, Current behavior, Desired behavior, Key interfaces, Acceptance criteria, Verification, Blocked by, Out of scope, Agent handoff, and Authority boundary). Every rendered dynamic field rejects restricted authority context including documented separator and singular/plural variants, and final convergence after relation mutations revalidates the Child database ID, exact title/body, unique ownership markers, and native Parent attachment, so the projection contains identity markers but no TaskIntent path, mutable scope authority, internal role prompt, review reservation, or Kernel runtime state.",
+      "verification": "{\"contract\":\"assurance_kernel/verification_descriptor/v1\",\"runner_id\":\"bun\",\"runner_version\":\"1.3.14\",\"argv\":[\"test\",\"tests/plugin-package-runtime.test.ts\"],\"cwd\":\".\",\"timeout_ms\":180000,\"max_output_bytes\":262144}"
+    },
+    {
+      "id": "acc-2",
+      "assertion": "The tracker resolves immutable blocker Task IDs to exactly one marker-owned Child Issue with exactly one total task-id marker, reads every page of native Sub-issue relations, attaches native Sub-issues using the GitHub Issue database ID rather than its display number and confirms the relation after a successful mutation response, reads every page of native blocked_by relations even when the expected set is empty, creates and confirms the exact flattened relation set without duplicate edges on retry, revalidates each blocker's exact marker ownership and native Parent attachment after dependency mutation, lists the same blockers in readable Child text, and fails closed with the existing non-authoritative result classes for missing, duplicate, foreign, raced, extra, or ambiguous blockers without changing Kernel artifacts or rewriting the Parent.",
+      "verification": "{\"contract\":\"assurance_kernel/verification_descriptor/v1\",\"runner_id\":\"bun\",\"runner_version\":\"1.3.14\",\"argv\":[\"test\",\"tests/plugin-package-runtime.test.ts\"],\"cwd\":\".\",\"timeout_ms\":180000,\"max_output_bytes\":262144}"
+    },
+    {
+      "id": "acc-3",
+      "assertion": "The Planner source and packaged dist contract describe the confirmed Parent and Child projection format, the non-authoritative Agent handoff, native blocking edges, title format, and GitHub authority boundary byte-for-byte through the repository dist synchronization contract, while existing canonical TaskIntent authoring, validation, Enrollment, and terminal projection behavior remains unchanged.",
+      "verification": "{\"contract\":\"assurance_kernel/verification_descriptor/v1\",\"runner_id\":\"bun\",\"runner_version\":\"1.3.14\",\"argv\":[\"run\",\"scripts/sync-dist-docs.ts\",\"--check\"],\"cwd\":\".\",\"timeout_ms\":180000,\"max_output_bytes\":131072}"
+    }
+  ],
+  "scope_hint": [
+    "docs/specs/2026-08-25-003-agent-ready-github-issue-projection.spec.md",
+    "docs/specs/archive/2026-08-25-003-agent-ready-github-issue-projection.spec.md",
+    "plugins/immune-brain/dist/imm-planner.md",
+    "plugins/immune-brain/runtime/github_issue_tracker.ts",
+    "plugins/immune-brain/skills/imm-planner/SKILL.md",
+    "tests/plugin-package-runtime.test.ts"
+  ],
+  "risk": "material",
+  "revision": 14,
+  "owner": "user"
+}

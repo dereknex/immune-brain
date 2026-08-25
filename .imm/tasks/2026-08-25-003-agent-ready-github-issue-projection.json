@@ -1,0 +1,1765 @@
+{
+  "contract": "assurance_kernel/task_record/v3",
+  "task_id": "2026-08-25-003-agent-ready-github-issue-projection",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "2026-08-25-003-agent-ready-github-issue-projection",
+    "goal": "Make the GitHub Initiative and Task projection durable and Agent-ready without changing authority: use result-oriented [initiative/slice] titles without the IB prefix or Task IDs, render Parent and Child behavior contracts with explicit boundaries and handoff context, project exact native blocked_by edges with idempotent observation, and keep Kernel TaskIntent, TaskRecord, Assurance, and terminal settlement as the only execution authority.",
+    "acceptance": [
+      {
+        "id": "acc-1",
+        "assertion": "The tracker validates projection objects, risk enums, Parent Slice blocker IDs, exact bounded GitHub titles, and rendered Parent/Child bodies within the 65,536 UTF-8 byte platform limit before mutation, then renders and observably verifies exact remote title and body convergence for a create-once Parent with the confirmed Initiative sections (Problem, Result, Decisions, Testing strategy, Out of scope, and stable Slice summaries), and a Child title exactly as [initiative/slice] result without an IB prefix or Task ID plus the complete Agent Brief sections (Parent, What to build, Current behavior, Desired behavior, Key interfaces, Acceptance criteria, Verification, Blocked by, Out of scope, Agent handoff, and Authority boundary). Every rendered dynamic field rejects restricted authority context including documented separator and singular/plural variants, and final convergence after relation mutations revalidates the Child database ID, exact title/body, unique ownership markers, and native Parent attachment, so the projection contains identity markers but no TaskIntent path, mutable scope authority, internal role prompt, review reservation, or Kernel runtime state.",
+        "verification": "{\"contract\":\"assurance_kernel/verification_descriptor/v1\",\"runner_id\":\"bun\",\"runner_version\":\"1.3.14\",\"argv\":[\"test\",\"tests/plugin-package-runtime.test.ts\"],\"cwd\":\".\",\"timeout_ms\":180000,\"max_output_bytes\":262144}"
+      },
+      {
+        "id": "acc-2",
+        "assertion": "The tracker resolves immutable blocker Task IDs to exactly one marker-owned Child Issue with exactly one total task-id marker, reads every page of native Sub-issue relations, attaches native Sub-issues using the GitHub Issue database ID rather than its display number and confirms the relation after a successful mutation response, reads every page of native blocked_by relations even when the expected set is empty, creates and confirms the exact flattened relation set without duplicate edges on retry, revalidates each blocker's exact marker ownership and native Parent attachment after dependency mutation, lists the same blockers in readable Child text, and fails closed with the existing non-authoritative result classes for missing, duplicate, foreign, raced, extra, or ambiguous blockers without changing Kernel artifacts or rewriting the Parent.",
+        "verification": "{\"contract\":\"assurance_kernel/verification_descriptor/v1\",\"runner_id\":\"bun\",\"runner_version\":\"1.3.14\",\"argv\":[\"test\",\"tests/plugin-package-runtime.test.ts\"],\"cwd\":\".\",\"timeout_ms\":180000,\"max_output_bytes\":262144}"
+      },
+      {
+        "id": "acc-3",
+        "assertion": "The Planner source and packaged dist contract describe the confirmed Parent and Child projection format, the non-authoritative Agent handoff, native blocking edges, title format, and GitHub authority boundary byte-for-byte through the repository dist synchronization contract, while existing canonical TaskIntent authoring, validation, Enrollment, and terminal projection behavior remains unchanged.",
+        "verification": "{\"contract\":\"assurance_kernel/verification_descriptor/v1\",\"runner_id\":\"bun\",\"runner_version\":\"1.3.14\",\"argv\":[\"run\",\"scripts/sync-dist-docs.ts\",\"--check\"],\"cwd\":\".\",\"timeout_ms\":180000,\"max_output_bytes\":131072}"
+      }
+    ],
+    "scope_hint": [
+      "docs/specs/2026-08-25-003-agent-ready-github-issue-projection.spec.md",
+      "docs/specs/archive/2026-08-25-003-agent-ready-github-issue-projection.spec.md",
+      "plugins/immune-brain/dist/imm-planner.md",
+      "plugins/immune-brain/runtime/github_issue_tracker.ts",
+      "plugins/immune-brain/skills/imm-planner/SKILL.md",
+      "tests/plugin-package-runtime.test.ts"
+    ],
+    "risk": "material",
+    "revision": 14,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/archive/2026-08-25-003-agent-ready-github-issue-projection.intent.json",
+    "content_hash": "sha256:06e63759e9909d1549e830dbedbf3c89ec93fc7ecb1df872cb80d76f910ccb5b"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:20a1efc02d394184b6c8053fc3ee39696aa103d83e83a7c1dc1d3fafdf672923",
+  "attestations": [
+    {
+      "id": "approval-qa-e034d923",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:c7858ef9d54f80f21918026a88a84d82512955ae1f10386b60b40df8865642f9",
+      "diff_hash": "sha256:ef880d1d5d5a6533d1885ca5b4530be5321bc4f5696cddc0f920d95374e9c3f1",
+      "actor_id": "deterministic-qa",
+      "summary": "all 3 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "acc-1",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-2",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-3",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-086daaab",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:c7858ef9d54f80f21918026a88a84d82512955ae1f10386b60b40df8865642f9",
+      "diff_hash": "sha256:650e4a7b216736a031eb91dacc5c81caeac3910229429edca2d21663846e62c7",
+      "actor_id": "deterministic-qa",
+      "summary": "all 3 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "acc-1",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-2",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-3",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-f64669e9",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:c7858ef9d54f80f21918026a88a84d82512955ae1f10386b60b40df8865642f9",
+      "diff_hash": "sha256:f4a9a1aaed242aa144919c1e3a8148a496ab9df90ee1f6c77e1fa0afb0bff6e6",
+      "actor_id": "deterministic-qa",
+      "summary": "all 3 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "acc-1",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-2",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-3",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-aef50668",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 3,
+      "intent_content_hash": "sha256:425a882f3b169ab00f064994e99761102daa990d80af09cfae98e14aec565df0",
+      "diff_hash": "sha256:e310349f4b8d0e55625c7459e7fcc2c44c86b003e2e6d9eed589f1635e794622",
+      "actor_id": "deterministic-qa",
+      "summary": "all 3 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "acc-1",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-2",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-3",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-0bb3d680",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 4,
+      "intent_content_hash": "sha256:f9e5c235358a13a2a4e35e260b7c9bbb9637fff5db35f353a6a436aee3675073",
+      "diff_hash": "sha256:250a681d002e0fa295b573c7f24e1fedd7c9cac774c24fdb70c9bfc9bc33dfbe",
+      "actor_id": "deterministic-qa",
+      "summary": "all 3 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "acc-1",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-2",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-3",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-e8cec036",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 5,
+      "intent_content_hash": "sha256:9362c4aafaa730f0200d129f9bce1b625b25ab759d30408a018514ed159518d0",
+      "diff_hash": "sha256:eefceaee6b07b68ff73f5b313f782763dc30055b9ce585f5e07284417a962810",
+      "actor_id": "deterministic-qa",
+      "summary": "all 3 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "acc-1",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-2",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-3",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-dc4772eb",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 6,
+      "intent_content_hash": "sha256:4ed9eafc76851fb86d042840fa344853e36569b6d204339eedd5b267805cfaaa",
+      "diff_hash": "sha256:ba3c1654ffea9c9963f32653c73fe16b6ed67152c6d5778aad135e0307deced2",
+      "actor_id": "deterministic-qa",
+      "summary": "all 3 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "acc-1",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-2",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-3",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-62cf9ea1",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 7,
+      "intent_content_hash": "sha256:fc9fb18b0ff05c982249eedad16e27aa8840892c579cbca0e6b2b333efb70279",
+      "diff_hash": "sha256:531bfff4a6103e9ca72c5463d5e576a7c1c132c267ae4bb7b22f8bf1aab60a79",
+      "actor_id": "deterministic-qa",
+      "summary": "all 3 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "acc-1",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-2",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-3",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-acc9280a",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 8,
+      "intent_content_hash": "sha256:8bb31ea1971fd60ffc07b2bdf06887604b1e6289d64cbc0dd4caf292bfc2d88b",
+      "diff_hash": "sha256:fd700449b04672d314816b90e657f9bf0504edc1e45106a0a374742bafa5b4fd",
+      "actor_id": "deterministic-qa",
+      "summary": "all 3 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "acc-1",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-2",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-3",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-11cb0da9",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 9,
+      "intent_content_hash": "sha256:40b16b1a54aa6485bd3579ee0af2e71c385453bf1c0e6c8bc7a2db7615a4f066",
+      "diff_hash": "sha256:699e0ea371c3693c4f50d0045ffe57ee9162a029b2a0679db7f307e5c35a63ae",
+      "actor_id": "deterministic-qa",
+      "summary": "all 3 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "acc-1",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-2",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-3",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-5ff2e32f",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 10,
+      "intent_content_hash": "sha256:005b62fb9d7130dc3ebdca3c3d3e4d703fe3d7bfc10825a2734d2cafa26a1db1",
+      "diff_hash": "sha256:6456649b7a99e64bbfec7765bdbeaf9c5de19fc3c3f8f5a510fb1b2efab58538",
+      "actor_id": "deterministic-qa",
+      "summary": "all 3 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "acc-1",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-2",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-3",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-ac137c87",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 11,
+      "intent_content_hash": "sha256:a71ffba464154396a2a44905f3c01fff9afed544c1e46f15a10ff48b70019fae",
+      "diff_hash": "sha256:9ff12557728ef578c0d75d6662ff9f7d7dfe67a463487d5a9be70fdc4a6de63a",
+      "actor_id": "deterministic-qa",
+      "summary": "all 3 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "acc-1",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-2",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-3",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-b841c9e3",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 12,
+      "intent_content_hash": "sha256:cb53f9a631477fcee4e636f200e006d7c848d14bf5fcba9ef6622c5ed1cc75f4",
+      "diff_hash": "sha256:45d39bf183bc3942582083ce4eea2d4fed7b38a31fd617174ac7005f8cc00eaa",
+      "actor_id": "deterministic-qa",
+      "summary": "all 3 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "acc-1",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-2",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-3",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-2a4c3f84",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 13,
+      "intent_content_hash": "sha256:cfa72d603731985174445b8e048eea533cc3516a33ba8a60ebe3aca9466d03cd",
+      "diff_hash": "sha256:b2564686095b092f9f62bcd332e61efd68249d151b9cc01faa1f78f7dc253d91",
+      "actor_id": "deterministic-qa",
+      "summary": "all 3 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "acc-1",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-2",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-3",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-9e8889f3",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 14,
+      "intent_content_hash": "sha256:06e63759e9909d1549e830dbedbf3c89ec93fc7ecb1df872cb80d76f910ccb5b",
+      "diff_hash": "sha256:e889110e2057f2184782c3b0d81af51352a2426cddaab89c91ded54a821049c2",
+      "actor_id": "deterministic-qa",
+      "summary": "all 3 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "acc-1",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-2",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-3",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-91407bc4",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 14,
+      "intent_content_hash": "sha256:06e63759e9909d1549e830dbedbf3c89ec93fc7ecb1df872cb80d76f910ccb5b",
+      "diff_hash": "sha256:e889110e2057f2184782c3b0d81af51352a2426cddaab89c91ded54a821049c2",
+      "actor_id": "native-review-0b5bc1be-1bcc-4a4",
+      "summary": "Immutable bundle provenance is valid, and the bounded changes satisfy the projection, relation convergence, authority-boundary, and synchronized Planner contract assertions without blocking defects.",
+      "acceptance_results": []
+    }
+  ],
+  "findings": [
+    {
+      "id": "review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "acc-2",
+      "source": "execution",
+      "review_round": null,
+      "summary": "plugins/immune-brain/runtime/github_issue_tracker.ts: retrying a partially applied blocker set re-adds every blocker, so an existing edge can fail as a duplicate before missing edges are created; verify that with A already attached and B missing, only B is mutated and both edges are confirmed."
+    },
+    {
+      "id": "review-2",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "acc-1",
+      "source": "execution",
+      "review_round": null,
+      "summary": "plugins/immune-brain/runtime/github_issue_tracker.ts: public projection validation accepts and renders TaskIntent paths, internal role prompts, review reservations, and Kernel runtime state verbatim; verify these prohibited payloads are rejected before any GitHub mutation."
+    },
+    {
+      "id": "review-3",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "acc-2",
+      "source": "execution",
+      "review_round": null,
+      "summary": "plugins/immune-brain/runtime/github_issue_tracker.ts: blocker resolution accepts Task marker text without confirming that the blocker belongs to its exact marker-bound Parent and native Sub-issue relation; detached or foreign blockers must fail closed before dependency mutation."
+    },
+    {
+      "id": "review-1dbbf4fa93d5-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "acc-2",
+      "source": "review",
+      "review_round": 1,
+      "summary": "plugins/immune-brain/runtime/github_issue_tracker.ts: retrying an existing Child with a new blocked_by projection adds native relations without reconciling or rejecting the unchanged body, so readable blockers and native edges diverge; verify the retry either converges both representations or fails before mutation."
+    },
+    {
+      "id": "review-1dbbf4fa93d5-2-review-2",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "acc-2",
+      "source": "review",
+      "review_round": 1,
+      "summary": "plugins/immune-brain/runtime/github_issue_tracker.ts: blocked_by validation permits duplicate requested Task IDs and confirmation accepts unrequested existing edges, so the readable blocker list need not exactly match native relations; reject duplicates and require an exact observed relation set."
+    },
+    {
+      "id": "review-1dbbf4fa93d5-3-review-3",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "acc-1",
+      "source": "review",
+      "review_round": 1,
+      "summary": "plugins/immune-brain/runtime/github_issue_tracker.ts: public projection validation does not reject mutable scope or QA-settlement instructions, review-gate/tool-policy content, or restricted data placed in Slice result text; verify every rendered public field fails before mutation when it contains authority-widening or internal runtime context."
+    },
+    {
+      "id": "review-e5d79f83412b-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "acc-2",
+      "source": "review",
+      "review_round": 2,
+      "summary": "plugins/immune-brain/runtime/github_issue_tracker.ts: readBlockedByIds reads only the dependency endpoint's first page, so Tasks with more than the default page size of blockers cannot confirm all existing relations and may retry forever or attempt duplicate attachment; paginate and flatten every page before comparison."
+    },
+    {
+      "id": "request_rework:2026-08-25-003-agent-ready-github-issue-projection:2026-08-25T12:03:06.712Z:replan-required",
+      "kind": "replan_required",
+      "status": "resolved",
+      "acceptance_id": "acc-2",
+      "source": "kernel",
+      "review_round": 2,
+      "summary": "Review returned this acceptance boundary twice; a durable replan is required."
+    },
+    {
+      "id": "review-8c2fda9bcf8e-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "acc-2",
+      "source": "review",
+      "review_round": 3,
+      "summary": "plugins/immune-brain/runtime/github_issue_tracker.ts: confirmBlockedBy returns complete without reading GitHub when the expected blocker set is empty, so an existing unrequested blocked_by edge is accepted instead of failing closed; verify an empty projection against one remote edge returns ambiguous_remote_state with zero mutations."
+    },
+    {
+      "id": "review-8c2fda9bcf8e-2-review-2",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "acc-1",
+      "source": "review",
+      "review_round": 3,
+      "summary": "plugins/immune-brain/runtime/github_issue_tracker.ts: restricted-authority filtering applies only to optional projection fields, while fallback goal, Slice goal, and canonical acceptance text are rendered through publicText and can expose a TaskIntent path or internal authority context; verify every rendered dynamic field rejects the prohibited context before mutation."
+    },
+    {
+      "id": "review-8c2fda9bcf8e-3-review-3",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "acc-3",
+      "source": "review",
+      "review_round": 3,
+      "summary": "tests/plugin-package-runtime.test.ts: FakeIssue removes state_reason from its type while object literals and terminal tests still write and read that property, leaving the changed test surface TypeScript-invalid despite Bun's transpile-only execution; restore the property and verify static type checking."
+    },
+    {
+      "id": "review-8c2fda9bcf8e-4-review-4",
+      "kind": "advisory",
+      "status": "open",
+      "acceptance_id": "acc-1",
+      "source": "review",
+      "review_round": 3,
+      "summary": "tests/plugin-package-runtime.test.ts: FakeGh discards issue-create titles, so the required exact Parent and Child title formats are not observably tested; retain titles in the fake and assert the complete strings, including absence of IB and Task ID text."
+    },
+    {
+      "id": "request_rework:2026-08-25-003-agent-ready-github-issue-projection:2026-08-25T12:56:22.305Z:replan-required",
+      "kind": "replan_required",
+      "status": "resolved",
+      "acceptance_id": "acc-2",
+      "source": "kernel",
+      "review_round": 3,
+      "summary": "Review returned this acceptance boundary twice; a durable replan is required."
+    },
+    {
+      "id": "review-9eefba535f18-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "acc-1",
+      "source": "review",
+      "review_round": 4,
+      "summary": "plugins/immune-brain/runtime/github_issue_tracker.ts: projection.result is accepted up to 2,000 characters but titleText silently truncates it to 180, so the rendered Parent and Child titles are not exactly the requested result; verify a result longer than 180 characters is rejected before mutation or rendered without silent truncation within an explicitly validated title bound."
+    },
+    {
+      "id": "review-9eefba535f18-2-review-2",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "acc-1",
+      "source": "review",
+      "review_round": 4,
+      "summary": "plugins/immune-brain/runtime/github_issue_tracker.ts: normalizeProjection and normalizeInitiativeProjection accept truthy non-object JSON values such as strings or arrays and silently produce fallback projections, allowing malformed --projection-json input to mutate GitHub; verify malformed projection shapes return permanent_failure with zero mutations."
+    },
+    {
+      "id": "review-9eefba535f18-3-review-3",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "acc-2",
+      "source": "review",
+      "review_round": 4,
+      "summary": "plugins/immune-brain/runtime/github_issue_tracker.ts: blocker ownership is checked only against the initial snapshot, while post-mutation confirmation checks relation IDs alone, so a blocker detached or made foreign between ownership validation and attachment can still produce success; verify ownership is revalidated after relation mutation and such a race cannot return created, updated, or already_current."
+    },
+    {
+      "id": "request_rework:2026-08-25-003-agent-ready-github-issue-projection:2026-08-25T13:07:26.848Z:replan-required",
+      "kind": "replan_required",
+      "status": "resolved",
+      "acceptance_id": "acc-1",
+      "source": "kernel",
+      "review_round": 4,
+      "summary": "Review returned this acceptance boundary twice; a durable replan is required."
+    },
+    {
+      "id": "review-e00559a46479-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "acc-2",
+      "source": "review",
+      "review_round": 5,
+      "summary": "plugins/immune-brain/runtime/github_issue_tracker.ts: attachSubIssue sends the Issue number as sub_issue_id, but GitHub requires the Issue database ID; use child.id and verify attachment when id differs from number, otherwise blocker ownership attachment fails against real GitHub."
+    },
+    {
+      "id": "request_rework:2026-08-25-003-agent-ready-github-issue-projection:2026-08-25T13:18:01.794Z:replan-required",
+      "kind": "replan_required",
+      "status": "resolved",
+      "acceptance_id": "acc-2",
+      "source": "kernel",
+      "review_round": 5,
+      "summary": "Review returned this acceptance boundary twice; a durable replan is required."
+    },
+    {
+      "id": "review-fcf0c8779290-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "acc-1",
+      "source": "review",
+      "review_round": 6,
+      "summary": "plugins/immune-brain/runtime/github_issue_tracker.ts: repository snapshots discard Issue titles, so existing and post-create Parent/Child lookups accept an exact body with any remote title; parse and compare the title against the validated expected title before reporting convergence."
+    },
+    {
+      "id": "review-fcf0c8779290-2-review-2",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "acc-2",
+      "source": "review",
+      "review_round": 6,
+      "summary": "plugins/immune-brain/runtime/github_issue_tracker.ts: attachSubIssue converts both {attached:true} and {attached:false} follow-up results into success, allowing created/updated results when the native Sub-issue edge never appeared; preserve false as a retryable non-convergence result and cover that response path."
+    },
+    {
+      "id": "request_rework:2026-08-25-003-agent-ready-github-issue-projection:2026-08-25T13:25:27.922Z:replan-required",
+      "kind": "replan_required",
+      "status": "resolved",
+      "acceptance_id": "acc-1",
+      "source": "kernel",
+      "review_round": 6,
+      "summary": "Review returned this acceptance boundary twice; a durable replan is required."
+    },
+    {
+      "id": "review-af037157423d-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "acc-2",
+      "source": "review",
+      "review_round": 7,
+      "summary": "plugins/immune-brain/runtime/github_issue_tracker.ts: taskLookup verifies only the requested task-id marker, so a blocker Issue containing a second distinct task-id marker is accepted as exact ownership and may trigger relation mutations; reject any blocker body without exactly one total task-id marker before mutation and cover that case."
+    },
+    {
+      "id": "request_rework:2026-08-25-003-agent-ready-github-issue-projection:2026-08-25T13:32:32.012Z:replan-required",
+      "kind": "replan_required",
+      "status": "resolved",
+      "acceptance_id": "acc-2",
+      "source": "kernel",
+      "review_round": 7,
+      "summary": "Review returned this acceptance boundary twice; a durable replan is required."
+    },
+    {
+      "id": "review-d8898945c957-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "acc-1",
+      "source": "review",
+      "review_round": 8,
+      "summary": "plugins/immune-brain/runtime/github_issue_tracker.ts: validateOperation renders operation.risk verbatim without runtime enum validation, so an untyped caller can inject arbitrary Markdown, restricted authority text, or identity markers before mutation; reject any risk other than routine, material, or critical before snapshot or mutation and cover the malformed-input path."
+    },
+    {
+      "id": "request_rework:2026-08-25-003-agent-ready-github-issue-projection:2026-08-25T13:39:17.396Z:replan-required",
+      "kind": "replan_required",
+      "status": "resolved",
+      "acceptance_id": "acc-1",
+      "source": "kernel",
+      "review_round": 8,
+      "summary": "Review returned this acceptance boundary twice; a durable replan is required."
+    },
+    {
+      "id": "review-869681c495e6-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "acc-2",
+      "source": "review",
+      "review_round": 9,
+      "summary": "plugins/immune-brain/runtime/github_issue_tracker.ts: confirmAttachment reads only the first 100 Sub-issues, so a valid blocker attached beyond page one is misclassified as foreign; paginate every page and verify a blocker beyond the first page is accepted."
+    },
+    {
+      "id": "review-869681c495e6-2-review-2",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "acc-1",
+      "source": "review",
+      "review_round": 9,
+      "summary": "plugins/immune-brain/runtime/github_issue_tracker.ts: projection arrays bound each item but not item count or aggregate rendered body size, allowing an oversized GitHub body to reach mutation; reject or cap payloads before mutation and verify an over-limit projection performs zero mutations."
+    },
+    {
+      "id": "request_rework:2026-08-25-003-agent-ready-github-issue-projection:2026-08-25T13:48:12.518Z:replan-required",
+      "kind": "replan_required",
+      "status": "resolved",
+      "acceptance_id": "acc-2",
+      "source": "kernel",
+      "review_round": 9,
+      "summary": "Review returned this acceptance boundary twice; a durable replan is required."
+    },
+    {
+      "id": "review-d76a9ce978ec-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "acc-1",
+      "source": "review",
+      "review_round": 10,
+      "summary": "plugins/immune-brain/runtime/github_issue_tracker.ts: projectionText blocks only space-separated singular phrases, so explicitly forbidden forms such as role_prompt_bridge, review-gate, tool policies, model reservations, and prompt digests pass validation and are rendered into the external Agent Brief; verification must show these documented variants fail before any mutation."
+    },
+    {
+      "id": "request_rework:2026-08-25-003-agent-ready-github-issue-projection:2026-08-25T13:57:08.819Z:replan-required",
+      "kind": "replan_required",
+      "status": "resolved",
+      "acceptance_id": "acc-1",
+      "source": "kernel",
+      "review_round": 10,
+      "summary": "Review returned this acceptance boundary twice; a durable replan is required."
+    },
+    {
+      "id": "review-90fc8316f497-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "acc-1",
+      "source": "review",
+      "review_round": 11,
+      "summary": "plugins/immune-brain/runtime/github_issue_tracker.ts: after Sub-issue/dependency mutations, the final snapshot revalidates blockers but never revalidates the Child's exact title, body, or marker ownership, so a concurrent Child edit can still produce a successful result without observable final convergence; verify the Child from finalSource against the rendered title/body and exact ownership before returning success, with a focused race test."
+    },
+    {
+      "id": "request_rework:2026-08-25-003-agent-ready-github-issue-projection:2026-08-25T14:06:24.023Z:replan-required",
+      "kind": "replan_required",
+      "status": "resolved",
+      "acceptance_id": "acc-1",
+      "source": "kernel",
+      "review_round": 11,
+      "summary": "Review returned this acceptance boundary twice; a durable replan is required."
+    },
+    {
+      "id": "review-8c3461c4508d-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "acc-1",
+      "source": "review",
+      "review_round": 12,
+      "summary": "plugins/immune-brain/runtime/github_issue_tracker.ts: projectionText rejects singular `scope authority` but not the documented plural variant `scope authorities`; require that phrase in every dynamic projection field to return permanent_failure before any GitHub mutation, with a focused regression assertion."
+    },
+    {
+      "id": "request_rework:2026-08-25-003-agent-ready-github-issue-projection:2026-08-25T14:14:18.065Z:replan-required",
+      "kind": "replan_required",
+      "status": "resolved",
+      "acceptance_id": "acc-1",
+      "source": "kernel",
+      "review_round": 12,
+      "summary": "Review returned this acceptance boundary twice; a durable replan is required."
+    },
+    {
+      "id": "review-2ec74cb51d2c-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "acc-1",
+      "source": "review",
+      "review_round": 13,
+      "summary": "plugins/immune-brain/runtime/github_issue_tracker.ts: slices[].blocked_by is rendered into the Parent body but validated with normalizedList instead of the restricted-context validator, so values such as review-gate or tool-policy bypass the required separator-aware authority-context rejection."
+    },
+    {
+      "id": "request_rework:2026-08-25-003-agent-ready-github-issue-projection:2026-08-25T14:20:09.769Z:replan-required",
+      "kind": "replan_required",
+      "status": "resolved",
+      "acceptance_id": "acc-1",
+      "source": "kernel",
+      "review_round": 13,
+      "summary": "Review returned this acceptance boundary twice; a durable replan is required."
+    }
+  ],
+  "history": [
+    {
+      "id": "approve_breaking_intent_revision:2026-08-25-003-agent-ready-github-issue-projection:2026-08-25T11:02:19.798Z",
+      "at": "2026-08-25T11:02:19.798Z",
+      "type": "approve_breaking_intent_revision",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "intent_revision_2\naction_v2_sha256:aff2f1ae8b653fc386c9277fb9ae4a054c325ae4dfbeb22373e73cd5bf0dd65f",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-68acf9ab7e5a2d25",
+        "issued_at": "2026-08-25T11:02:19.995Z",
+        "expires_at": "2026-08-25T11:12:19.995Z"
+      }
+    },
+    {
+      "id": "freeze_artifacts:2026-08-25-003-agent-ready-github-issue-projection:2026-08-25T11:02:40.934Z",
+      "at": "2026-08-25T11:02:40.934Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent and Spec frozen at docs/plans/archive/2026-08-25-003-agent-ready-github-issue-projection.intent.json"
+    },
+    {
+      "id": "record_approval:2026-08-25-003-agent-ready-github-issue-projection:2026-08-25T11:02:51.686Z",
+      "at": "2026-08-25T11:02:51.686Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-e034d923\naction_v2_sha256:34c1dcd1f103c83c600ccf8e05a394c3d947dbce093a17c231f1b36dddf02113",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-a064ceb5fd0b5aaa",
+        "issued_at": "2026-08-25T11:02:51.687Z",
+        "expires_at": "2026-08-25T11:12:51.687Z"
+      }
+    },
+    {
+      "id": "record_finding:2026-08-25-003-agent-ready-github-issue-projection:2026-08-25T11:34:28.878Z",
+      "at": "2026-08-25T11:34:28.878Z",
+      "type": "record_finding",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "review-1\naction_v2_sha256:b1532695c21be85387eafd37f95bb6a7d46713391229b5c6f13da8c775951b0e"
+    },
+    {
+      "id": "record_finding:2026-08-25-003-agent-ready-github-issue-projection:2026-08-25T11:34:36.830Z",
+      "at": "2026-08-25T11:34:36.830Z",
+      "type": "record_finding",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "review-2\naction_v2_sha256:e0a2fa7cac3cc198ed296afdc24bc5f01781b950f1fd90f583da2bf8e9638120"
+    },
+    {
+      "id": "resolve_finding:2026-08-25-003-agent-ready-github-issue-projection:2026-08-25T11:38:30.427Z",
+      "at": "2026-08-25T11:38:30.427Z",
+      "type": "resolve_finding",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "review-1\naction_v2_sha256:6e6a4e33203573297dfebcdfe141f7b6fa96d9a050775f496209fbfa7ce35971"
+    },
+    {
+      "id": "resolve_finding:2026-08-25-003-agent-ready-github-issue-projection:2026-08-25T11:38:38.517Z",
+      "at": "2026-08-25T11:38:38.517Z",
+      "type": "resolve_finding",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "review-2\naction_v2_sha256:7caed686d45dbdca6d0d3ee329425d1a4d4c9bed8f515894c3e7029d752abe12"
+    },
+    {
+      "id": "record_finding:2026-08-25-003-agent-ready-github-issue-projection:2026-08-25T11:43:24.697Z",
+      "at": "2026-08-25T11:43:24.697Z",
+      "type": "record_finding",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "review-3\naction_v2_sha256:e79b87aaa70660d71a0e803508bc6a6e56b1baf7438e2f65c9d61f8649bca71d"
+    },
+    {
+      "id": "resolve_finding:2026-08-25-003-agent-ready-github-issue-projection:2026-08-25T11:44:14.102Z",
+      "at": "2026-08-25T11:44:14.102Z",
+      "type": "resolve_finding",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "review-3\naction_v2_sha256:bd9fd1542f771ab3b0d1999f631aa4ec2347beccce71e66c7633dca8634c9f0d"
+    },
+    {
+      "id": "record_approval:2026-08-25-003-agent-ready-github-issue-projection:2026-08-25T11:52:15.049Z",
+      "at": "2026-08-25T11:52:15.049Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-086daaab\naction_v2_sha256:f23be5bff4fd615f98096040481dd28a5146ead2008bbf48b77fe7e3c9331fa5",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-a0cf59de71e8627c",
+        "issued_at": "2026-08-25T11:52:15.049Z",
+        "expires_at": "2026-08-25T12:02:15.049Z"
+      }
+    },
+    {
+      "id": "request_rework:2026-08-25-003-agent-ready-github-issue-projection:2026-08-25T11:56:29.461Z",
+      "at": "2026-08-25T11:56:29.461Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_1\naction_v2_sha256:5b3d3b8ee957270ecd3dc6f0a6bf9087911be67d7230b434452267350b34d1a6",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "native-review-960628ef-53df-406",
+        "confirmation_ref": "pi-confirm-0cae8865ca5048b0",
+        "issued_at": "2026-08-25T11:56:29.461Z",
+        "expires_at": "2026-08-25T12:06:29.461Z"
+      }
+    },
+    {
+      "id": "resolve_finding:2026-08-25-003-agent-ready-github-issue-projection:2026-08-25T11:58:45.611Z",
+      "at": "2026-08-25T11:58:45.611Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-1dbbf4fa93d5-1-review-1\naction_v2_sha256:ec3cf9c0120a67922e436f2aef4eb653ab0fcaca6688e006205da69724a57576"
+    },
+    {
+      "id": "resolve_finding:2026-08-25-003-agent-ready-github-issue-projection:2026-08-25T11:58:55.391Z",
+      "at": "2026-08-25T11:58:55.391Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-1dbbf4fa93d5-2-review-2\naction_v2_sha256:a704b5ebc9bfc3764cbc63eeb9e0e003fa219e16b6a9e40eaa262bb89f2602a1"
+    },
+    {
+      "id": "resolve_finding:2026-08-25-003-agent-ready-github-issue-projection:2026-08-25T11:59:04.383Z",
+      "at": "2026-08-25T11:59:04.383Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-1dbbf4fa93d5-3-review-3\naction_v2_sha256:db565a70024971a11358895bbcb0d69afb9fe719f287211f6f0adf9b030bcc78"
+    },
+    {
+      "id": "freeze_artifacts:2026-08-25-003-agent-ready-github-issue-projection:2026-08-25T11:59:32.098Z",
+      "at": "2026-08-25T11:59:32.098Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent and Spec frozen at docs/plans/archive/2026-08-25-003-agent-ready-github-issue-projection.intent.json"
+    },
+    {
+      "id": "record_approval:2026-08-25-003-agent-ready-github-issue-projection:2026-08-25T11:59:45.331Z",
+      "at": "2026-08-25T11:59:45.331Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-f64669e9\naction_v2_sha256:876a2d9a413ef6887dbe95a2f511bcecd922db4798fddcd481739e3283317a5f",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-54d51c8b270c268e",
+        "issued_at": "2026-08-25T11:59:45.332Z",
+        "expires_at": "2026-08-25T12:09:45.332Z"
+      }
+    },
+    {
+      "id": "request_rework:2026-08-25-003-agent-ready-github-issue-projection:2026-08-25T12:03:06.712Z",
+      "at": "2026-08-25T12:03:06.712Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "review_round_2\naction_v2_sha256:524f5dfea86f7a3917666d9594aacf90397716d372d646dc2b9a0d03ce2eb6c8",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "native-review-ee8fcf7a-1cc0-4d5",
+        "confirmation_ref": "pi-confirm-aa8b35cde6699682",
+        "issued_at": "2026-08-25T12:03:06.713Z",
+        "expires_at": "2026-08-25T12:13:06.713Z"
+      }
+    },
+    {
+      "id": "approve_breaking_intent_revision:2026-08-25-003-agent-ready-github-issue-projection:2026-08-25T12:51:04.878Z",
+      "at": "2026-08-25T12:51:04.878Z",
+      "type": "approve_breaking_intent_revision",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "intent_revision_3\naction_v2_sha256:5fc84d69a64969993a2ea667d0904c0c719360e18dbd4f1a7416827c7e3f2368",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-e09a4a9c9e801131",
+        "issued_at": "2026-08-25T12:51:05.068Z",
+        "expires_at": "2026-08-25T13:01:05.068Z"
+      }
+    },
+    {
+      "id": "resolve_finding:2026-08-25-003-agent-ready-github-issue-projection:2026-08-25T12:51:23.028Z",
+      "at": "2026-08-25T12:51:23.028Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-e5d79f83412b-1-review-1\naction_v2_sha256:60afcccd962fa540dd2ecddb9ef99d52b7ec27b3acd1f31be70d3c61bef1172b"
+    },
+    {
+      "id": "freeze_artifacts:2026-08-25-003-agent-ready-github-issue-projection:2026-08-25T12:51:55.257Z",
+      "at": "2026-08-25T12:51:55.257Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent and Spec frozen at docs/plans/archive/2026-08-25-003-agent-ready-github-issue-projection.intent.json"
+    },
+    {
+      "id": "record_approval:2026-08-25-003-agent-ready-github-issue-projection:2026-08-25T12:52:06.315Z",
+      "at": "2026-08-25T12:52:06.315Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-aef50668\naction_v2_sha256:b2d986edffc57aabe2332c74d03f6cec81eaca74097347ed6e7eee2ff5cf9392",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-9a85014957d86788",
+        "issued_at": "2026-08-25T12:52:06.315Z",
+        "expires_at": "2026-08-25T13:02:06.315Z"
+      }
+    },
+    {
+      "id": "request_rework:2026-08-25-003-agent-ready-github-issue-projection:2026-08-25T12:56:22.305Z",
+      "at": "2026-08-25T12:56:22.305Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "review_round_3\naction_v2_sha256:4c41b30063dcd8613ad7d9baa69470fa518ee240ccd2b992ea52e2d4831062e1",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "native-review-f63de361-553b-496",
+        "confirmation_ref": "pi-confirm-f9db8d6ae8817199",
+        "issued_at": "2026-08-25T12:56:22.305Z",
+        "expires_at": "2026-08-25T13:06:22.305Z"
+      }
+    },
+    {
+      "id": "approve_breaking_intent_revision:2026-08-25-003-agent-ready-github-issue-projection:2026-08-25T13:01:47.362Z",
+      "at": "2026-08-25T13:01:47.362Z",
+      "type": "approve_breaking_intent_revision",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "intent_revision_4\naction_v2_sha256:ba00412516d9cd3fd1d9fcfc82476862c2133f29f545c4c0451dd85eb7e7860e",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-ee4f36e70380da22",
+        "issued_at": "2026-08-25T13:01:47.540Z",
+        "expires_at": "2026-08-25T13:11:47.540Z"
+      }
+    },
+    {
+      "id": "resolve_finding:2026-08-25-003-agent-ready-github-issue-projection:2026-08-25T13:01:59.523Z",
+      "at": "2026-08-25T13:01:59.523Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-8c2fda9bcf8e-1-review-1\naction_v2_sha256:fd3647ba400f8db8ade23e531d935d75c5d814eeaf6bc903bde43eed29b78057"
+    },
+    {
+      "id": "resolve_finding:2026-08-25-003-agent-ready-github-issue-projection:2026-08-25T13:02:10.222Z",
+      "at": "2026-08-25T13:02:10.222Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-8c2fda9bcf8e-2-review-2\naction_v2_sha256:627dd043ec8bdb4e9c1d09bcef914303f5dd4e079c9832f111a8a09788e8239a"
+    },
+    {
+      "id": "resolve_finding:2026-08-25-003-agent-ready-github-issue-projection:2026-08-25T13:02:18.137Z",
+      "at": "2026-08-25T13:02:18.137Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-8c2fda9bcf8e-3-review-3\naction_v2_sha256:2e89c80c0240f3536dbb5a6519447aae6a6bf2dcbc2c93353a9f339a7d672c3b"
+    },
+    {
+      "id": "freeze_artifacts:2026-08-25-003-agent-ready-github-issue-projection:2026-08-25T13:02:38.087Z",
+      "at": "2026-08-25T13:02:38.087Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent and Spec frozen at docs/plans/archive/2026-08-25-003-agent-ready-github-issue-projection.intent.json"
+    },
+    {
+      "id": "record_approval:2026-08-25-003-agent-ready-github-issue-projection:2026-08-25T13:02:48.881Z",
+      "at": "2026-08-25T13:02:48.881Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-0bb3d680\naction_v2_sha256:d6e91f1bdfe7e8d8efd51c002b5f5ee097f731c71a39ce7f23da4057b1ea4f12",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-b0c86130ead18366",
+        "issued_at": "2026-08-25T13:02:48.881Z",
+        "expires_at": "2026-08-25T13:12:48.881Z"
+      }
+    },
+    {
+      "id": "request_rework:2026-08-25-003-agent-ready-github-issue-projection:2026-08-25T13:07:26.848Z",
+      "at": "2026-08-25T13:07:26.848Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "review_round_4\naction_v2_sha256:9d855e85cd843e3a3994912eadda05c26b63f01c54f7400aa8fbcad66244e4bf",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "native-review-e5c05216-dda4-4f5",
+        "confirmation_ref": "pi-confirm-15c0ab81499fad5e",
+        "issued_at": "2026-08-25T13:07:26.848Z",
+        "expires_at": "2026-08-25T13:17:26.848Z"
+      }
+    },
+    {
+      "id": "approve_breaking_intent_revision:2026-08-25-003-agent-ready-github-issue-projection:2026-08-25T13:13:21.672Z",
+      "at": "2026-08-25T13:13:21.672Z",
+      "type": "approve_breaking_intent_revision",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "intent_revision_5\naction_v2_sha256:b0a862323d4a2c7b6a58ed8cb9ec0a2c47f7ae9f426149a7434a1fe52de73ed8",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-22e3ca1635ed39d3",
+        "issued_at": "2026-08-25T13:13:21.847Z",
+        "expires_at": "2026-08-25T13:23:21.847Z"
+      }
+    },
+    {
+      "id": "resolve_finding:2026-08-25-003-agent-ready-github-issue-projection:2026-08-25T13:13:42.958Z",
+      "at": "2026-08-25T13:13:42.958Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-9eefba535f18-1-review-1\naction_v2_sha256:8bbaaa5c2a49d09427683c56a30b3adb8b0a4778ffdb3ce126149b5c53a92701"
+    },
+    {
+      "id": "resolve_finding:2026-08-25-003-agent-ready-github-issue-projection:2026-08-25T13:13:51.570Z",
+      "at": "2026-08-25T13:13:51.570Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-9eefba535f18-2-review-2\naction_v2_sha256:7b0dcd022c019052f893c0ee62a500157008503a2a59f768ff9247a6331fb922"
+    },
+    {
+      "id": "resolve_finding:2026-08-25-003-agent-ready-github-issue-projection:2026-08-25T13:14:00.232Z",
+      "at": "2026-08-25T13:14:00.232Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-9eefba535f18-3-review-3\naction_v2_sha256:7e7c8305e5236b88882b99d38d51e929e4fc67ea8bb7681a0e2c28977d23cc08"
+    },
+    {
+      "id": "freeze_artifacts:2026-08-25-003-agent-ready-github-issue-projection:2026-08-25T13:14:20.837Z",
+      "at": "2026-08-25T13:14:20.837Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent and Spec frozen at docs/plans/archive/2026-08-25-003-agent-ready-github-issue-projection.intent.json"
+    },
+    {
+      "id": "record_approval:2026-08-25-003-agent-ready-github-issue-projection:2026-08-25T13:14:29.802Z",
+      "at": "2026-08-25T13:14:29.802Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-e8cec036\naction_v2_sha256:5aa67768bc7ae0bd8a49eb82ba3421de27d5bc19daf0db06c332f0f8a29bbc9c",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-ce8f0477155b7c3c",
+        "issued_at": "2026-08-25T13:14:29.802Z",
+        "expires_at": "2026-08-25T13:24:29.802Z"
+      }
+    },
+    {
+      "id": "request_rework:2026-08-25-003-agent-ready-github-issue-projection:2026-08-25T13:18:01.794Z",
+      "at": "2026-08-25T13:18:01.794Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "review_round_5\naction_v2_sha256:116f775832287833cd46e77b9a857aa47369a028391b221da4465f088995b4be",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "native-review-4e1b7b88-5cc3-441",
+        "confirmation_ref": "pi-confirm-b3d8f96542385c23",
+        "issued_at": "2026-08-25T13:18:01.794Z",
+        "expires_at": "2026-08-25T13:28:01.794Z"
+      }
+    },
+    {
+      "id": "approve_breaking_intent_revision:2026-08-25-003-agent-ready-github-issue-projection:2026-08-25T13:19:49.707Z",
+      "at": "2026-08-25T13:19:49.707Z",
+      "type": "approve_breaking_intent_revision",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "intent_revision_6\naction_v2_sha256:ff642b81e20aabb34736b9efe0e02a51e6516a3b085d88fad69b32e456e239ec",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-693e784f65d64752",
+        "issued_at": "2026-08-25T13:19:49.880Z",
+        "expires_at": "2026-08-25T13:29:49.880Z"
+      }
+    },
+    {
+      "id": "resolve_finding:2026-08-25-003-agent-ready-github-issue-projection:2026-08-25T13:19:59.249Z",
+      "at": "2026-08-25T13:19:59.249Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-e00559a46479-1-review-1\naction_v2_sha256:2a04d6ecde02972aa9d121b8843643c8579511d57f01c04c8e7da8152cb28da1"
+    },
+    {
+      "id": "freeze_artifacts:2026-08-25-003-agent-ready-github-issue-projection:2026-08-25T13:20:20.666Z",
+      "at": "2026-08-25T13:20:20.666Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent and Spec frozen at docs/plans/archive/2026-08-25-003-agent-ready-github-issue-projection.intent.json"
+    },
+    {
+      "id": "record_approval:2026-08-25-003-agent-ready-github-issue-projection:2026-08-25T13:20:29.469Z",
+      "at": "2026-08-25T13:20:29.469Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-dc4772eb\naction_v2_sha256:fa866f19a79425bb23b26fcbd36336eaf39ee4f2df1169a9d137e37e53d92c21",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-abc8efa39d5f995c",
+        "issued_at": "2026-08-25T13:20:29.470Z",
+        "expires_at": "2026-08-25T13:30:29.470Z"
+      }
+    },
+    {
+      "id": "request_rework:2026-08-25-003-agent-ready-github-issue-projection:2026-08-25T13:25:27.922Z",
+      "at": "2026-08-25T13:25:27.922Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "review_round_6\naction_v2_sha256:131a10a1351fc27b541c25106ee01e8061c7cbd64b6284f6698bdacac484f192",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "native-review-81eb0df7-e15e-475",
+        "confirmation_ref": "pi-confirm-ebed3586e7aa4af2",
+        "issued_at": "2026-08-25T13:25:27.922Z",
+        "expires_at": "2026-08-25T13:35:27.922Z"
+      }
+    },
+    {
+      "id": "approve_breaking_intent_revision:2026-08-25-003-agent-ready-github-issue-projection:2026-08-25T13:27:57.845Z",
+      "at": "2026-08-25T13:27:57.845Z",
+      "type": "approve_breaking_intent_revision",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "intent_revision_7\naction_v2_sha256:df00bf401fe29b39f99ddb433d256059ecc3b816c5b20f57f34f23fc33770650",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-a25e8497e2acaadf",
+        "issued_at": "2026-08-25T13:27:58.366Z",
+        "expires_at": "2026-08-25T13:37:58.366Z"
+      }
+    },
+    {
+      "id": "resolve_finding:2026-08-25-003-agent-ready-github-issue-projection:2026-08-25T13:28:10.054Z",
+      "at": "2026-08-25T13:28:10.054Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-fcf0c8779290-1-review-1\naction_v2_sha256:6917559dd45acb4d10b81274d4b23afb2085fa2f5a8bf0a03ab897d8c6e75748"
+    },
+    {
+      "id": "resolve_finding:2026-08-25-003-agent-ready-github-issue-projection:2026-08-25T13:28:17.769Z",
+      "at": "2026-08-25T13:28:17.769Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-fcf0c8779290-2-review-2\naction_v2_sha256:1d6462973a6247c312a90851142f3656b58d171ccd21444943b2239a413dc405"
+    },
+    {
+      "id": "freeze_artifacts:2026-08-25-003-agent-ready-github-issue-projection:2026-08-25T13:28:35.143Z",
+      "at": "2026-08-25T13:28:35.143Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent and Spec frozen at docs/plans/archive/2026-08-25-003-agent-ready-github-issue-projection.intent.json"
+    },
+    {
+      "id": "record_approval:2026-08-25-003-agent-ready-github-issue-projection:2026-08-25T13:28:44.572Z",
+      "at": "2026-08-25T13:28:44.572Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-62cf9ea1\naction_v2_sha256:512665bde5beaca4675dc245f660f57d6c3713189c39cc23652fc0089022bcb6",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-b14aa66bbce02408",
+        "issued_at": "2026-08-25T13:28:44.572Z",
+        "expires_at": "2026-08-25T13:38:44.572Z"
+      }
+    },
+    {
+      "id": "request_rework:2026-08-25-003-agent-ready-github-issue-projection:2026-08-25T13:32:32.012Z",
+      "at": "2026-08-25T13:32:32.012Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "review_round_7\naction_v2_sha256:97406412616014e762b338667a4ba9376db852d1ae707dbb3c873c651b0a0394",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "native-review-f348cf0e-499e-4c8",
+        "confirmation_ref": "pi-confirm-364d3c21b823b64b",
+        "issued_at": "2026-08-25T13:32:32.013Z",
+        "expires_at": "2026-08-25T13:42:32.012Z"
+      }
+    },
+    {
+      "id": "approve_breaking_intent_revision:2026-08-25-003-agent-ready-github-issue-projection:2026-08-25T13:34:32.629Z",
+      "at": "2026-08-25T13:34:32.629Z",
+      "type": "approve_breaking_intent_revision",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "intent_revision_8\naction_v2_sha256:57be3d3d564da986481492d040e5e84ab0e5b75d50c1a15d5590a10e9aedf08c",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-11e5348a10902816",
+        "issued_at": "2026-08-25T13:34:32.808Z",
+        "expires_at": "2026-08-25T13:44:32.808Z"
+      }
+    },
+    {
+      "id": "resolve_finding:2026-08-25-003-agent-ready-github-issue-projection:2026-08-25T13:34:49.301Z",
+      "at": "2026-08-25T13:34:49.301Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-af037157423d-1-review-1\naction_v2_sha256:2edd5d76938cd21e820a8ddf602c3c6c8504105acbd6b544f02b104a86285153"
+    },
+    {
+      "id": "freeze_artifacts:2026-08-25-003-agent-ready-github-issue-projection:2026-08-25T13:35:04.584Z",
+      "at": "2026-08-25T13:35:04.584Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent and Spec frozen at docs/plans/archive/2026-08-25-003-agent-ready-github-issue-projection.intent.json"
+    },
+    {
+      "id": "record_approval:2026-08-25-003-agent-ready-github-issue-projection:2026-08-25T13:35:13.761Z",
+      "at": "2026-08-25T13:35:13.761Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-acc9280a\naction_v2_sha256:373144d331a85926df343ccfc3f3c34088e6e958df06744ebf5db9fd7f163951",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-c0bc2fe66f4597ac",
+        "issued_at": "2026-08-25T13:35:13.761Z",
+        "expires_at": "2026-08-25T13:45:13.761Z"
+      }
+    },
+    {
+      "id": "request_rework:2026-08-25-003-agent-ready-github-issue-projection:2026-08-25T13:39:17.396Z",
+      "at": "2026-08-25T13:39:17.396Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "review_round_8\naction_v2_sha256:85d78830296bf3ba2394e16cab9d203865e3bb9b90e988a28278d02b9ffdbac1",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "native-review-ce75121a-c312-4d0",
+        "confirmation_ref": "pi-confirm-4087262a230fa651",
+        "issued_at": "2026-08-25T13:39:17.396Z",
+        "expires_at": "2026-08-25T13:49:17.396Z"
+      }
+    },
+    {
+      "id": "approve_breaking_intent_revision:2026-08-25-003-agent-ready-github-issue-projection:2026-08-25T13:43:10.090Z",
+      "at": "2026-08-25T13:43:10.090Z",
+      "type": "approve_breaking_intent_revision",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "intent_revision_9\naction_v2_sha256:8ca9817585fa6c720ff6faa12fcc4e4b73439785bf111cfb6fa50af2b83d1a11",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-d0c6ae114328f085",
+        "issued_at": "2026-08-25T13:43:10.281Z",
+        "expires_at": "2026-08-25T13:53:10.281Z"
+      }
+    },
+    {
+      "id": "resolve_finding:2026-08-25-003-agent-ready-github-issue-projection:2026-08-25T13:43:20.018Z",
+      "at": "2026-08-25T13:43:20.018Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-d8898945c957-1-review-1\naction_v2_sha256:e6b8db7f95843707a1e89842013973e1924c931619ab703842091a7efe1dd220"
+    },
+    {
+      "id": "freeze_artifacts:2026-08-25-003-agent-ready-github-issue-projection:2026-08-25T13:43:38.092Z",
+      "at": "2026-08-25T13:43:38.092Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent and Spec frozen at docs/plans/archive/2026-08-25-003-agent-ready-github-issue-projection.intent.json"
+    },
+    {
+      "id": "record_approval:2026-08-25-003-agent-ready-github-issue-projection:2026-08-25T13:43:49.213Z",
+      "at": "2026-08-25T13:43:49.213Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-11cb0da9\naction_v2_sha256:caa91ce23bc97f38d03f5d2178807c55fbe8c9d66d53797f5c8b87c8c9768b04",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-b70acee393dea10e",
+        "issued_at": "2026-08-25T13:43:49.213Z",
+        "expires_at": "2026-08-25T13:53:49.213Z"
+      }
+    },
+    {
+      "id": "request_rework:2026-08-25-003-agent-ready-github-issue-projection:2026-08-25T13:48:12.518Z",
+      "at": "2026-08-25T13:48:12.518Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "review_round_9\naction_v2_sha256:ebccb0630596ec416ff5e242ec4b263d7c869a38b813c915647cf002ecb03d1a",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "native-review-1e146c4e-0faf-484",
+        "confirmation_ref": "pi-confirm-b53446407d88d5a2",
+        "issued_at": "2026-08-25T13:48:12.518Z",
+        "expires_at": "2026-08-25T13:58:12.518Z"
+      }
+    },
+    {
+      "id": "approve_breaking_intent_revision:2026-08-25-003-agent-ready-github-issue-projection:2026-08-25T13:50:36.874Z",
+      "at": "2026-08-25T13:50:36.874Z",
+      "type": "approve_breaking_intent_revision",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "intent_revision_10\naction_v2_sha256:fb3ef5b46c6d8019e008db8136557b001cd2c774f118bc619ea6f835c585f427",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-69d08075e50e5f63",
+        "issued_at": "2026-08-25T13:50:37.052Z",
+        "expires_at": "2026-08-25T14:00:37.052Z"
+      }
+    },
+    {
+      "id": "resolve_finding:2026-08-25-003-agent-ready-github-issue-projection:2026-08-25T13:50:45.974Z",
+      "at": "2026-08-25T13:50:45.974Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-869681c495e6-1-review-1\naction_v2_sha256:d33cee3ff180cb8555f15e3b269b8414b576dc29e7e149821269ba9d69c5d1bf"
+    },
+    {
+      "id": "resolve_finding:2026-08-25-003-agent-ready-github-issue-projection:2026-08-25T13:50:53.071Z",
+      "at": "2026-08-25T13:50:53.071Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-869681c495e6-2-review-2\naction_v2_sha256:b08e136ac2393cf40c1dc5c3a7405736497654ba45aebcb6c709b9f0af0fd89d"
+    },
+    {
+      "id": "freeze_artifacts:2026-08-25-003-agent-ready-github-issue-projection:2026-08-25T13:51:09.844Z",
+      "at": "2026-08-25T13:51:09.844Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent and Spec frozen at docs/plans/archive/2026-08-25-003-agent-ready-github-issue-projection.intent.json"
+    },
+    {
+      "id": "record_approval:2026-08-25-003-agent-ready-github-issue-projection:2026-08-25T13:51:20.715Z",
+      "at": "2026-08-25T13:51:20.715Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-5ff2e32f\naction_v2_sha256:6c03ca4a72974fcbaacd1c3c37a141e5eb30790c688769cebf058a0e02d555b1",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-45bcea2208fdd641",
+        "issued_at": "2026-08-25T13:51:20.716Z",
+        "expires_at": "2026-08-25T14:01:20.716Z"
+      }
+    },
+    {
+      "id": "request_rework:2026-08-25-003-agent-ready-github-issue-projection:2026-08-25T13:57:08.819Z",
+      "at": "2026-08-25T13:57:08.819Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "review_round_10\naction_v2_sha256:4c59c61d79053dddc42754e7f99470f7f2ef16a53d494ab8bfc40c76b7077e36",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "native-review-e2b6a956-0e46-4cc",
+        "confirmation_ref": "pi-confirm-9823cd2f688e1053",
+        "issued_at": "2026-08-25T13:57:08.820Z",
+        "expires_at": "2026-08-25T14:07:08.820Z"
+      }
+    },
+    {
+      "id": "approve_breaking_intent_revision:2026-08-25-003-agent-ready-github-issue-projection:2026-08-25T14:00:16.493Z",
+      "at": "2026-08-25T14:00:16.493Z",
+      "type": "approve_breaking_intent_revision",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "intent_revision_11\naction_v2_sha256:c09b2d22147e13d50802188da79a1bb7c1d1b6c25bb14d9537d2cb95dd8f6433",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-9841742242287990",
+        "issued_at": "2026-08-25T14:00:16.674Z",
+        "expires_at": "2026-08-25T14:10:16.674Z"
+      }
+    },
+    {
+      "id": "resolve_finding:2026-08-25-003-agent-ready-github-issue-projection:2026-08-25T14:00:37.898Z",
+      "at": "2026-08-25T14:00:37.898Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-d76a9ce978ec-1-review-1\naction_v2_sha256:34b530913ee728fbfb5f5405a91435720cad1f4f4a70f6625415e65a0d51a813"
+    },
+    {
+      "id": "freeze_artifacts:2026-08-25-003-agent-ready-github-issue-projection:2026-08-25T14:00:58.463Z",
+      "at": "2026-08-25T14:00:58.463Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent and Spec frozen at docs/plans/archive/2026-08-25-003-agent-ready-github-issue-projection.intent.json"
+    },
+    {
+      "id": "record_approval:2026-08-25-003-agent-ready-github-issue-projection:2026-08-25T14:01:08.405Z",
+      "at": "2026-08-25T14:01:08.405Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-ac137c87\naction_v2_sha256:2a6b74136d87b5ebe1ce6442926cc7d5967724717c224e6848c404d328bce8ec",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-4821ad0cf4a8dd8c",
+        "issued_at": "2026-08-25T14:01:08.405Z",
+        "expires_at": "2026-08-25T14:11:08.405Z"
+      }
+    },
+    {
+      "id": "request_rework:2026-08-25-003-agent-ready-github-issue-projection:2026-08-25T14:06:24.023Z",
+      "at": "2026-08-25T14:06:24.023Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "review_round_11\naction_v2_sha256:c9551b9c4a51f02ce62e4d9a9396333f0ea3dd386d55e9c2c274ff7932d873aa",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "native-review-dd8b40da-ca19-4b4",
+        "confirmation_ref": "pi-confirm-7f666c760a99b230",
+        "issued_at": "2026-08-25T14:06:24.023Z",
+        "expires_at": "2026-08-25T14:16:24.023Z"
+      }
+    },
+    {
+      "id": "approve_breaking_intent_revision:2026-08-25-003-agent-ready-github-issue-projection:2026-08-25T14:08:43.760Z",
+      "at": "2026-08-25T14:08:43.760Z",
+      "type": "approve_breaking_intent_revision",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "intent_revision_12\naction_v2_sha256:6107df8b5264a116771898bb59d6301ac121640308bd749bd559adac7996c627",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-70f7b57570f34f95",
+        "issued_at": "2026-08-25T14:08:43.947Z",
+        "expires_at": "2026-08-25T14:18:43.947Z"
+      }
+    },
+    {
+      "id": "resolve_finding:2026-08-25-003-agent-ready-github-issue-projection:2026-08-25T14:08:51.520Z",
+      "at": "2026-08-25T14:08:51.520Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-90fc8316f497-1-review-1\naction_v2_sha256:e046a5bd7f4528cc6e4d4e6a5987614a3b2961037b7b4bf5479db4297d7b2dce"
+    },
+    {
+      "id": "freeze_artifacts:2026-08-25-003-agent-ready-github-issue-projection:2026-08-25T14:09:11.311Z",
+      "at": "2026-08-25T14:09:11.311Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent and Spec frozen at docs/plans/archive/2026-08-25-003-agent-ready-github-issue-projection.intent.json"
+    },
+    {
+      "id": "record_approval:2026-08-25-003-agent-ready-github-issue-projection:2026-08-25T14:09:18.910Z",
+      "at": "2026-08-25T14:09:18.910Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-b841c9e3\naction_v2_sha256:cf7f560c9d7e470d44f3fd46169a0540fd9295622af7bb370380459a41a0beda",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-d955c8ad5303d6a9",
+        "issued_at": "2026-08-25T14:09:18.910Z",
+        "expires_at": "2026-08-25T14:19:18.910Z"
+      }
+    },
+    {
+      "id": "request_rework:2026-08-25-003-agent-ready-github-issue-projection:2026-08-25T14:14:18.065Z",
+      "at": "2026-08-25T14:14:18.065Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "review_round_12\naction_v2_sha256:99c3360b9602d16d71c61c49bc9014bf29f0f7c51d3088020963776805da5fbb",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "native-review-25739197-342d-430",
+        "confirmation_ref": "pi-confirm-997cd53b6cdc43ec",
+        "issued_at": "2026-08-25T14:14:18.065Z",
+        "expires_at": "2026-08-25T14:24:18.065Z"
+      }
+    },
+    {
+      "id": "approve_breaking_intent_revision:2026-08-25-003-agent-ready-github-issue-projection:2026-08-25T14:15:58.307Z",
+      "at": "2026-08-25T14:15:58.307Z",
+      "type": "approve_breaking_intent_revision",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "intent_revision_13\naction_v2_sha256:e08fa545c8a1f705d7770682d4d78994c7d42249120044849ef937a4a183e13f",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-16817cc5bd44131d",
+        "issued_at": "2026-08-25T14:15:58.499Z",
+        "expires_at": "2026-08-25T14:25:58.499Z"
+      }
+    },
+    {
+      "id": "resolve_finding:2026-08-25-003-agent-ready-github-issue-projection:2026-08-25T14:16:05.524Z",
+      "at": "2026-08-25T14:16:05.524Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-8c3461c4508d-1-review-1\naction_v2_sha256:23e9884b2412ba70f7364f7c25a13f5e2bd788713d42a95eca57c0a58180244d"
+    },
+    {
+      "id": "freeze_artifacts:2026-08-25-003-agent-ready-github-issue-projection:2026-08-25T14:16:23.172Z",
+      "at": "2026-08-25T14:16:23.172Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent and Spec frozen at docs/plans/archive/2026-08-25-003-agent-ready-github-issue-projection.intent.json"
+    },
+    {
+      "id": "record_approval:2026-08-25-003-agent-ready-github-issue-projection:2026-08-25T14:16:31.817Z",
+      "at": "2026-08-25T14:16:31.817Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-2a4c3f84\naction_v2_sha256:e6fce210bb3926f1e1966f89bf672dd3274ae3e0e176eb22db03782028cb6028",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-066fb29cb8cf38de",
+        "issued_at": "2026-08-25T14:16:31.817Z",
+        "expires_at": "2026-08-25T14:26:31.817Z"
+      }
+    },
+    {
+      "id": "request_rework:2026-08-25-003-agent-ready-github-issue-projection:2026-08-25T14:20:09.769Z",
+      "at": "2026-08-25T14:20:09.769Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "review_round_13\naction_v2_sha256:60ea666a1aace1b44b480e8ba93bc985eed5983bc4c37996485bebeea6f026ed",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "native-review-bab64905-c32d-40b",
+        "confirmation_ref": "pi-confirm-6fedc4e62cbc93ab",
+        "issued_at": "2026-08-25T14:20:09.769Z",
+        "expires_at": "2026-08-25T14:30:09.769Z"
+      }
+    },
+    {
+      "id": "approve_breaking_intent_revision:2026-08-25-003-agent-ready-github-issue-projection:2026-08-25T14:22:07.778Z",
+      "at": "2026-08-25T14:22:07.778Z",
+      "type": "approve_breaking_intent_revision",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "intent_revision_14\naction_v2_sha256:fddf5f0dec0ffa73b4d74f09b52ccc36ace406f7d2547b483daee161698cced7",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-252d8b94b7b353cc",
+        "issued_at": "2026-08-25T14:22:07.957Z",
+        "expires_at": "2026-08-25T14:32:07.957Z"
+      }
+    },
+    {
+      "id": "resolve_finding:2026-08-25-003-agent-ready-github-issue-projection:2026-08-25T14:22:16.475Z",
+      "at": "2026-08-25T14:22:16.475Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-2ec74cb51d2c-1-review-1\naction_v2_sha256:b1c4cff80676ab6a588a6781c81342a00045468c40350559a10547574dc888a2"
+    },
+    {
+      "id": "freeze_artifacts:2026-08-25-003-agent-ready-github-issue-projection:2026-08-25T14:22:34.408Z",
+      "at": "2026-08-25T14:22:34.408Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent and Spec frozen at docs/plans/archive/2026-08-25-003-agent-ready-github-issue-projection.intent.json"
+    },
+    {
+      "id": "record_approval:2026-08-25-003-agent-ready-github-issue-projection:2026-08-25T14:22:42.948Z",
+      "at": "2026-08-25T14:22:42.948Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-9e8889f3\naction_v2_sha256:007fe6aa897affeb553a57075554d9938d5ad09ca815ba6f5d385120d2bc6ad0",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-bf9a3d08b8a06351",
+        "issued_at": "2026-08-25T14:22:42.948Z",
+        "expires_at": "2026-08-25T14:32:42.948Z"
+      }
+    },
+    {
+      "id": "record_approval:2026-08-25-003-agent-ready-github-issue-projection:2026-08-25T14:27:07.009Z",
+      "at": "2026-08-25T14:27:07.009Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-91407bc4\naction_v2_sha256:4c6420d4b13f40c5e53e43498ab908caccc7f5f97a5d02f4b76f702f05d01afc",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "native-review-0b5bc1be-1bcc-4a4",
+        "confirmation_ref": "pi-confirm-511921a6595af920",
+        "issued_at": "2026-08-25T14:27:07.009Z",
+        "expires_at": "2026-08-25T14:37:07.009Z"
+      }
+    },
+    {
+      "id": "complete:2026-08-25-003-agent-ready-github-issue-projection:2026-08-25T14:27:07.538Z",
+      "at": "2026-08-25T14:27:07.538Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:b79d8a5949b17cc387a68f2c6c905bfef8a25063e9d32c14a418b2ee3e497698"
+    }
+  ]
+}

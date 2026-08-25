@@ -142,13 +142,29 @@ the named Initiative and its immutable slug before the first remote mutation.
 Resolve `../../bin/imm-tracker` from this Skill location; do not assume a bare
 command is on `PATH`. After the first TaskIntent has been authored, staged, and
 validated with `valid: true` and `enrollment_ready: true`, call
-`imm-tracker create-initiative --stdin --json` once with the confirmed goal and
-known stable Slice ID/result summaries; the tracker creates the Parent once and
-never rewrites it later planning changes are direct user edits to that Issue.
+`imm-tracker create-initiative --stdin --json` once with the confirmed goal,
+stable Slice summaries, and the public Parent projection fields. `create-initiative`
+receives the stable Initiative goal and Slice summaries plus the
+public Parent projection fields `problem`, `result`, `decisions`,
+`testing_strategy`, and `out_of_scope`. It creates a result-oriented Parent title
+`[<initiative>] <result>` and never rewrites an existing Parent.
+
 Then call
-`imm-tracker upsert-task --initiative-id <slug> --slice-id <id> --intent <path> --json`
+`imm-tracker upsert-task --initiative-id <slug> --slice-id <id> --intent <path> --projection-json <json> --json`
 to create one neutral open Child Issue and attach it to the Parent as a native
-Sub-issue. If `docs/initiatives/<slug>.md` exists, the tracker fails with a
+Sub-issue. The projection JSON is public planning context only and may contain
+`result`, `current_behavior`, `desired_behavior`, `key_interfaces`,
+`verification`, `blocked_by` Task IDs, `out_of_scope`, and `agent_handoff`.
+The tracker rereads the canonical TaskIntent for identity, risk, and acceptance;
+projection fields never widen TaskIntent scope or authority. The Child title is
+`[<initiative>/<slice>] <result>` with no `IB:` prefix or Task ID. Its body is an
+Agent Brief with Parent, What to build, Current behavior, Desired behavior, Key
+interfaces, Acceptance criteria, Verification, Blocked by, Out of scope, Agent
+handoff, and Authority boundary sections. Native `blocked_by` relations are
+created only for exact marker-owned Task Issues and are idempotently observed.
+Internal role prompts, tool policies, review gates, model reservations, and
+prompt digests never belong in this external handoff.
+If `docs/initiatives/<slug>.md` exists, the tracker fails with a
 carrier conflict; Local mode performs zero GitHub operations. A future Slice remains a parent checklist entry until its own TaskIntent is
 canonically authored and validated.
 

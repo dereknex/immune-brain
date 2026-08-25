@@ -33,6 +33,27 @@ export interface GithubTrackerResult {
 export interface InitiativeSlice {
 	id: string;
 	goal: string;
+	result?: string;
+	blocked_by?: string[];
+}
+
+export interface InitiativeProjection {
+	problem?: string;
+	result?: string;
+	decisions?: string[];
+	testing_strategy?: string;
+	out_of_scope?: string[];
+}
+
+export interface TaskProjection {
+	result?: string;
+	current_behavior?: string;
+	desired_behavior?: string;
+	key_interfaces?: string[];
+	verification?: string;
+	blocked_by?: string[];
+	out_of_scope?: string[];
+	agent_handoff?: string;
 }
 
 export type TrackerOperation =
@@ -41,6 +62,7 @@ export type TrackerOperation =
 		initiative_id: string;
 		goal: string;
 		slices: InitiativeSlice[];
+		projection?: InitiativeProjection;
 	}
 	| {
 		op: "upsert-task";
@@ -50,6 +72,7 @@ export type TrackerOperation =
 		goal: string;
 		risk: "routine" | "material" | "critical";
 		acceptance: Array<{ id: string; summary: string }>;
+		projection?: TaskProjection;
 	}
 	| {
 		op: "mark-terminal";
@@ -76,8 +99,10 @@ interface RepositoryInfo {
 }
 
 interface GithubIssue {
+	id: number;
 	number: number;
 	url: string;
+	title: string;
 	body: string;
 	state: "open" | "closed";
 	state_reason: string | null;
@@ -154,7 +179,13 @@ function identifier(value: unknown, name: string): string {
 }
 
 function titleText(value: string): string {
-	return redactSecrets(value).replace(/\s+/g, " ").slice(0, 180);
+	return redactSecrets(value).replace(/\s+/g, " ");
+}
+
+function issueTitle(owner: string, result: string): string {
+	const title = `[${owner}] ${titleText(result)}`;
+	if (title.length > 256) throw new Error("GitHub Issue title must not exceed 256 characters");
+	return title;
 }
 
 export function redactGithubDiagnostic(value: string): string {
@@ -269,14 +300,18 @@ function parseIssues(raw: string): GithubIssue[] {
 		.filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === "object" && !("pull_request" in (item as object)))
 		.map((item) => {
 			if (
-				!Number.isSafeInteger(item.number)
+				!Number.isSafeInteger(item.id)
+				|| !Number.isSafeInteger(item.number)
 				|| typeof item.html_url !== "string"
+				|| typeof item.title !== "string"
 				|| typeof item.body !== "string"
 				|| (item.state !== "open" && item.state !== "closed")
 			) throw new Error("gh returned a malformed Issue");
 			return {
+				id: item.id as number,
 				number: item.number as number,
 				url: item.html_url,
+				title: item.title,
 				body: item.body,
 				state: item.state,
 				state_reason: typeof item.state_reason === "string" ? item.state_reason.toLowerCase() : null,
@@ -338,7 +373,7 @@ function initiativeLookup(issues: GithubIssue[], repositoryId: number, initiativ
 	return findIssue(issues, [initiative, KIND_INITIATIVE_MARKER], [marker("repo-id", repositoryId), initiative]);
 }
 
-function ownershipMarkerValue(body: string, name: "initiative-id" | "slice-id"): string | null {
+function ownershipMarkerValue(body: string, name: "initiative-id" | "slice-id" | "task-id"): string | null {
 	const values = [...body.matchAll(new RegExp(`<!-- immune-brain:${name}=([A-Za-z0-9][A-Za-z0-9._-]{0,127}) -->`, "g"))];
 	return values.length === 1 ? values[0][1] : null;
 }
@@ -347,7 +382,7 @@ function taskLookup(issues: GithubIssue[], repositoryId: number, taskId: string)
 	const task = marker("task-id", taskId);
 	const base = findIssue(issues, [task, KIND_TASK_MARKER], [marker("repo-id", repositoryId), task]);
 	if (base.kind !== "found") return base;
-	for (const name of ["initiative-id", "slice-id"] as const) {
+	for (const name of ["task-id", "initiative-id", "slice-id"] as const) {
 		if (!ownershipMarkerValue(base.issue.body, name))
 			return { kind: "ambiguous", message: `Issue #${base.issue.number} has missing or duplicate ${name} ownership markers` };
 	}
@@ -381,7 +416,7 @@ async function confirmAttachment(
 	parentNumber: number,
 	childNumber: number,
 ): Promise<GithubTrackerResult | { attached: boolean }> {
-	const listed = await gh.run(["api", `repos/${repository.name_with_owner}/issues/${parentNumber}/sub_issues?per_page=100`], { cwd: root });
+	const listed = await gh.run(["api", "--paginate", "--slurp", `repos/${repository.name_with_owner}/issues/${parentNumber}/sub_issues?per_page=100`], { cwd: root });
 	if (listed.exit_code !== 0 || listed.output_exceeded)
 		return ghFailure(operation, listed, "cannot read native Sub-issue relations");
 	let numbers: number[];
@@ -401,21 +436,86 @@ async function attachSubIssue(
 	operation: TrackerOperation["op"],
 	repository: RepositoryInfo,
 	parentNumber: number,
-	childNumber: number,
+	child: GithubIssue,
 ): Promise<GithubTrackerResult | { attached: true }> {
 	const mutation = await gh.run([
 		"api",
 		"-F",
-		`sub_issue_id=${childNumber}`,
+		`sub_issue_id=${child.id}`,
 		`repos/${repository.name_with_owner}/issues/${parentNumber}/sub_issues`,
 	], { cwd: root });
 	if (mutation.exit_code !== 0 || mutation.output_exceeded)
 		return ghFailure(operation, mutation, "native Sub-issue attachment failed");
-	const confirmed = await confirmAttachment(root, gh, operation, repository, parentNumber, childNumber);
-	if ("attached" in confirmed) return { attached: true };
-	return confirmed;
+	const confirmed = await confirmAttachment(root, gh, operation, repository, parentNumber, child.number);
+	if (!("attached" in confirmed)) return confirmed;
+	return confirmed.attached
+		? { attached: true }
+		: result(operation, "retryable_failure", "native Sub-issue relation did not converge", child);
 }
 
+async function readBlockedByIds(
+	root: string,
+	gh: GhTransport,
+	operation: TrackerOperation["op"],
+	repository: RepositoryInfo,
+	childNumber: number,
+): Promise<GithubTrackerResult | number[]> {
+	const listed = await gh.run(["api", "--paginate", "--slurp", `repos/${repository.name_with_owner}/issues/${childNumber}/dependencies/blocked_by?per_page=100`], { cwd: root });
+	if (listed.exit_code !== 0 || listed.output_exceeded) return ghFailure(operation, listed, "cannot read native blocked_by relations");
+	try {
+		const pages = JSON.parse(listed.stdout) as unknown;
+		if (!Array.isArray(pages) || pages.some((page) => !Array.isArray(page))) throw new Error("gh returned malformed blocked_by pages");
+		const ids = pages.flat().map((item, index) => {
+			const id = (item as { id?: unknown; issue_id?: unknown })?.issue_id ?? (item as { id?: unknown })?.id;
+			if (!Number.isSafeInteger(id)) throw new Error(`gh returned malformed blocked_by entry at ${index}`);
+			return id as number;
+		});
+		if (new Set(ids).size !== ids.length) return result(operation, "ambiguous_remote_state", `Issue #${childNumber} has duplicate native blocked_by relations`);
+		return ids;
+	} catch (error) {
+		return result(operation, "permanent_failure", error instanceof Error ? error.message : String(error));
+	}
+}
+
+async function confirmBlockedBy(
+	root: string,
+	gh: GhTransport,
+	operation: TrackerOperation["op"],
+	repository: RepositoryInfo,
+	childNumber: number,
+	blockers: GithubIssue[],
+): Promise<GithubTrackerResult | { complete: boolean }> {
+	const ids = await readBlockedByIds(root, gh, operation, repository, childNumber);
+	if (!Array.isArray(ids)) return ids;
+	const expected = blockers.map((blocker) => blocker.id);
+	if (ids.some((id) => !expected.includes(id)))
+		return result(operation, "ambiguous_remote_state", `Issue #${childNumber} has unrequested native blocked_by relations`);
+	return { complete: ids.length === expected.length && expected.every((id) => ids.includes(id)) };
+}
+
+async function attachBlockedBy(
+	root: string,
+	gh: GhTransport,
+	operation: TrackerOperation["op"],
+	repository: RepositoryInfo,
+	childNumber: number,
+	blockers: GithubIssue[],
+): Promise<GithubTrackerResult | { complete: true }> {
+	const existing = await readBlockedByIds(root, gh, operation, repository, childNumber);
+	if (!Array.isArray(existing)) return existing;
+	for (const blocker of blockers) {
+		if (existing.includes(blocker.id)) continue;
+		const mutation = await gh.run([
+			"api", "-F", `issue_id=${blocker.id}`,
+			`repos/${repository.name_with_owner}/issues/${childNumber}/dependencies/blocked_by`,
+		], { cwd: root });
+		if (mutation.exit_code !== 0 || mutation.output_exceeded) return ghFailure(operation, mutation, `native blocked_by attachment failed for Issue #${blocker.number}`);
+		existing.push(blocker.id);
+	}
+	const confirmed = await confirmBlockedBy(root, gh, operation, repository, childNumber, blockers);
+	if ("complete" in confirmed) return confirmed.complete ? { complete: true } : result(operation, "retryable_failure", "native blocked_by relations did not converge");
+	return confirmed;
+}
 function carrierConflict(root: string, operation: TrackerOperation["op"], initiativeId: string): GithubTrackerResult | null {
 	if (!existsSync(resolve(root, "docs", "initiatives", `${initiativeId}.md`))) return null;
 	return result(
@@ -423,6 +523,26 @@ function carrierConflict(root: string, operation: TrackerOperation["op"], initia
 		"permanent_failure",
 		`Initiative carrier conflict: docs/initiatives/${initiativeId}.md already owns this slug locally; remove the duplicate carrier before using the GitHub projection`,
 	);
+}
+
+function listText(values: string[] | undefined, fallback: string): string {
+	return values?.length ? values.map((value) => `- ${value}`).join("\n") : fallback;
+}
+
+function bodyLimitFailure(operation: TrackerOperation["op"], body: string): GithubTrackerResult | null {
+	return Buffer.byteLength(body, "utf8") <= 65_536
+		? null
+		: result(operation, "permanent_failure", "rendered GitHub Issue body exceeds 65,536 UTF-8 bytes");
+}
+
+function createInitiativeBody(repository: RepositoryInfo, operation: Extract<TrackerOperation, { op: "create-initiative" }>): string {
+	const projection = operation.projection ?? {};
+	return `${[
+		PROTOCOL_MARKER,
+		KIND_INITIATIVE_MARKER,
+		marker("repo-id", repository.id),
+		marker("initiative-id", operation.initiative_id),
+	].join("\n")}\n\n# ${titleText(projection.result ?? operation.goal)}\n\nOpt-in, non-authoritative Immune-Brain Initiative planning carrier. Kernel TaskIntent, TaskRecord, and Assurance remain the execution authority.\n\n## How to use this Issue\n\n- Edit planning prose and Slice ordering directly after creation.\n- Keep each Slice marker attached to exactly one stable Slice entry.\n- The tracker never rewrites or closes this Parent after creation; the tracker never changes or closes it automatically.\n\n## Problem\n\n${publicText(projection.problem ?? "The Initiative addresses the bounded delivery described below.", "projection.problem")}\n\n## Result\n\n${publicText(projection.result ?? operation.goal, "projection.result")}\n\n## Decisions\n\n${listText(projection.decisions, "- No additional Initiative decisions recorded.")}\n\n## Testing strategy\n\n${publicText(projection.testing_strategy ?? "Each Child closes from its focused acceptance verification.", "projection.testing_strategy")}\n\n## Out of scope\n\n${listText(projection.out_of_scope, "- Unrelated work outside this Initiative.")}\n\n## Slices\n\n${operation.slices.length === 0 ? "No Slices recorded yet." : operation.slices.map((slice) => `- [ ] ${marker("slice-id", slice.id)} **${slice.id}**: ${slice.result ?? slice.goal}${slice.blocked_by?.length ? ` (blocked by: ${slice.blocked_by.join(", ")})` : ""}`).join("\n")}\n\n## Authority boundary\n\nThis Issue is outbound visibility only. GitHub state never starts, authorizes, reprioritizes, or settles work. Native Sub-issues identify published Tasks; their state is only an observation.\n`;
 }
 
 async function createInitiative(
@@ -434,20 +554,14 @@ async function createInitiative(
 	const lookup = (issues: GithubIssue[]) => initiativeLookup(issues, source.repository.id, operation.initiative_id);
 	const found = lookup(source.issues);
 	if (found.kind === "ambiguous") return result(operation.op, "ambiguous_remote_state", found.message);
-	const body = `${[
-		PROTOCOL_MARKER,
-		KIND_INITIATIVE_MARKER,
-		marker("repo-id", source.repository.id),
-		marker("initiative-id", operation.initiative_id),
-	].join("\n")}\n\nOpt-in, non-authoritative Immune-Brain Initiative index. This Issue is the human-facing planning carrier for one Initiative; Kernel TaskIntent, TaskRecord, and Assurance remain the execution authority.\n\n## How to use this Issue\n\n- Edit the goal, Slice descriptions, ordering, and planning notes directly here after creation.\n- Keep each Slice marker attached to exactly one stable Slice entry.\n- Add or remove Slice entries manually; creating a Child Issue happens only after its TaskIntent is canonically authored and validated.\n- Keep this Parent open or closed according to the team's planning needs; the tracker never changes or closes it automatically.\n\n## Initiative\n\n${operation.goal}\n\n## Slices\n\n${
-		operation.slices.length === 0
-			? "No Slices recorded yet."
-			: operation.slices.map((slice) => `- [ ] ${marker("slice-id", slice.id)} **${slice.id}**: ${slice.goal}`).join("\n")
-	}\n\n## Authority boundary\n\nThis Issue is outbound visibility only. GitHub state never starts, authorizes, reprioritizes, or settles work. Native Sub-issues identify published Tasks; their open or closed state is only an observation of attention and terminal projection.\n`;
+	const body = createInitiativeBody(source.repository, operation);
+	const oversized = bodyLimitFailure(operation.op, body);
+	if (oversized) return oversized;
+	const title = issueTitle(operation.initiative_id, operation.projection?.result ?? operation.goal);
 	if (found.kind === "missing") {
 		const mutation = await gh.run([
 			"issue", "create", "--repo", source.repository.name_with_owner,
-			"--title", `[IB] ${titleText(operation.initiative_id)}: ${titleText(operation.goal)}`,
+			"--title", title,
 			"--body-file", "-",
 		], { cwd: root, stdin: body });
 		const refreshed = await snapshot(root, gh, operation.op);
@@ -459,11 +573,11 @@ async function createInitiative(
 				? ghFailure(operation.op, mutation, "Initiative Issue creation failed")
 				: result(operation.op, "retryable_failure", "Initiative creation could not be confirmed");
 		}
-		return confirmed.issue.body === body
+		return confirmed.issue.body === body && confirmed.issue.title === title
 			? result(operation.op, "created", "Initiative Issue created as the single GitHub source", confirmed.issue)
-			: result(operation.op, "retryable_failure", "Initiative Issue did not converge to the requested initial body", confirmed.issue);
+			: result(operation.op, "retryable_failure", "Initiative Issue did not converge to the requested initial title and body", confirmed.issue);
 	}
-	if (found.issue.body === body)
+	if (found.issue.body === body && found.issue.title === title)
 		return result(operation.op, "already_current", "Initiative Issue already carries the requested initial source", found.issue);
 	return result(
 		operation.op,
@@ -474,9 +588,8 @@ async function createInitiative(
 }
 
 function childBody(repository: RepositoryInfo, operation: Extract<TrackerOperation, { op: "upsert-task" }>): string {
-	const acceptance = operation.acceptance
-		.map((item) => `- \`${item.id}\`: ${item.summary}`)
-		.join("\n");
+	const projection = operation.projection ?? {};
+	const acceptance = operation.acceptance.map((item) => `- \`${item.id}\`: ${item.summary}`).join("\n");
 	return `${[
 		PROTOCOL_MARKER,
 		KIND_TASK_MARKER,
@@ -484,7 +597,7 @@ function childBody(repository: RepositoryInfo, operation: Extract<TrackerOperati
 		marker("initiative-id", operation.initiative_id),
 		marker("slice-id", operation.slice_id),
 		marker("task-id", operation.task_id),
-	].join("\n")}\n\nOpt-in, non-authoritative Immune-Brain Task Issue. This Child makes one validated Task visible in GitHub; Kernel TaskIntent, TaskRecord, and Assurance remain the execution authority.\n\n| Field | Value |\n| --- | --- |\n| Initiative | \`${operation.initiative_id}\` |\n| Slice | \`${operation.slice_id}\` |\n| Task | \`${operation.task_id}\` |\n| Risk | \`${operation.risk}\` |\n\n## Goal\n\n${operation.goal}\n\n## Acceptance\n\n${acceptance}\n\n## Lifecycle\n\n- **Open** means this Task still needs attention; it does not mean the Task is authorized or currently executing.\n- The tracker never imports GitHub state into Kernel and never changes TaskIntent, TaskRecord, QA, Review, or authorization.\n- Only a fresh claimless terminal projection can close this Issue: \`done\` becomes **Completed**, and \`stopped\` becomes **Not planned**.\n- Keep the identity markers intact. Manual changes to the goal or acceptance text are visible to humans but are not execution authority.\n`;
+	].join("\n")}\n\n# ${titleText(projection.result ?? operation.goal)}\n\nOpt-in, non-authoritative Immune-Brain Task Issue. Kernel TaskIntent, TaskRecord, and Assurance remain the execution authority.\n\n## Parent\n\n| Initiative | \`${operation.initiative_id}\` |\n| Slice | \`${operation.slice_id}\` |\n| Risk | \`${operation.risk}\` |\n\n## What to build\n\n${publicText(projection.result ?? operation.goal, "projection.result")}\n\n## Current behavior\n\n${publicText(projection.current_behavior ?? "The current behavior is defined by the repository's existing contract.", "projection.current_behavior")}\n\n## Desired behavior\n\n${publicText(projection.desired_behavior ?? operation.goal, "projection.desired_behavior")}\n\n## Key interfaces\n\n${listText(projection.key_interfaces, "- Canonical TaskIntent acceptance and Kernel lifecycle remain authoritative.")}\n\n## Acceptance criteria\n\n${acceptance}\n\n## Verification\n\n${publicText(projection.verification ?? "Run the focused acceptance verification declared by the TaskIntent.", "projection.verification")}\n\n## Blocked by\n\n${projection.blocked_by?.length ? projection.blocked_by.map((id) => `- \`${identifier(id, "blocked_by task_id")}\``).join("\n") : "None"}\n\n## Out of scope\n\n${listText(projection.out_of_scope, "- Scope not declared by the validated TaskIntent.")}\n\n## Agent handoff\n\n${publicText(projection.agent_handoff ?? "Implement only the bounded TaskIntent result and run the focused checks. Do not widen scope or treat GitHub as authorization.", "projection.agent_handoff")}\n\n## Lifecycle\n\n- **Open** means this Task still needs attention; it does not mean the Task is authorized or executing.\n- Only a fresh claimless terminal projection can close this Issue: \`done\` becomes **Completed**, and \`stopped\` becomes **Not planned**.\n\n## Authority boundary\n\nThis Issue is outbound visibility only. GitHub state never changes TaskIntent, TaskRecord, QA, Review, authorization, or Kernel settlement. Internal role prompts, tool policies, review gates, model reservations, and prompt digests are not part of this external handoff.\n`;
 }
 
 async function upsertTask(
@@ -507,13 +620,28 @@ async function upsertTask(
 	const lookup = (issues: GithubIssue[]) => taskLookup(issues, source.repository.id, operation.task_id);
 	const found = lookup(source.issues);
 	if (found.kind === "ambiguous") return result(operation.op, "ambiguous_remote_state", found.message);
+	const blockerIds = operation.projection?.blocked_by ?? [];
+	const blockers: GithubIssue[] = [];
+	for (const blockerId of blockerIds) {
+		if (blockerId === operation.task_id)
+			return result(operation.op, "ambiguous_remote_state", "a Task cannot block itself", parent.issue);
+		const blocker = taskLookup(source.issues, source.repository.id, blockerId);
+		if (blocker.kind === "missing") return result(operation.op, "permanent_failure", `blocking Task ${blockerId} has not been published`, parent.issue);
+		if (blocker.kind === "ambiguous") return result(operation.op, "ambiguous_remote_state", blocker.message, parent.issue);
+		const ownership = await confirmTerminalOwnership(root, gh, operation.op, source, blocker.issue);
+		if (!("owned" in ownership)) return ownership;
+		blockers.push(blocker.issue);
+	}
 	const body = childBody(source.repository, operation);
+	const oversized = bodyLimitFailure(operation.op, body);
+	if (oversized) return oversized;
+	const title = issueTitle(`${operation.initiative_id}/${operation.slice_id}`, operation.projection?.result ?? operation.goal);
 	let child: GithubIssue;
 	let createdChild = false;
 	if (found.kind === "missing") {
 		const mutation = await gh.run([
 			"issue", "create", "--repo", source.repository.name_with_owner,
-			"--title", `[IB:${titleText(operation.initiative_id)}/S:${titleText(operation.slice_id)}] ${titleText(operation.task_id)}: ${titleText(operation.goal)}`,
+			"--title", title,
 			"--body-file", "-",
 		], { cwd: root, stdin: body });
 		const refreshed = await snapshot(root, gh, operation.op);
@@ -525,23 +653,52 @@ async function upsertTask(
 				? ghFailure(operation.op, mutation, "Task Issue creation failed")
 				: result(operation.op, "retryable_failure", "Task creation could not be confirmed");
 		}
-		if (created.issue.body !== body)
-			return result(operation.op, "retryable_failure", "Task Issue did not converge to the requested neutral body", created.issue);
+		if (created.issue.body !== body || created.issue.title !== title)
+			return result(operation.op, "retryable_failure", "Task Issue did not converge to the requested title and body", created.issue);
 		child = created.issue;
 		createdChild = true;
 	} else {
+		if (found.issue.body !== body || found.issue.title !== title)
+			return result(operation.op, "permanent_failure", "Task Issue already exists with a different title or Agent Brief; edit the GitHub source or retry the original projection before changing native relations", found.issue);
 		const owned = ownedTaskLookup(source.issues, source.repository.id, operation.task_id, operation.initiative_id, operation.slice_id);
-		if (owned.kind === "ambiguous") return result(operation.op, "ambiguous_remote_state", owned.message);
+		if (owned.kind !== "found") return result(operation.op, "ambiguous_remote_state", owned.kind === "ambiguous" ? owned.message : "Task Issue ownership changed during publication", found.issue);
 		child = owned.issue;
 	}
 	const attachment = await confirmAttachment(root, gh, operation.op, source.repository, parent.issue.number, child.number);
 	if (!("attached" in attachment)) return attachment;
-	if (attachment.attached)
+	if (!attachment.attached) {
+		const attach = await attachSubIssue(root, gh, operation.op, source.repository, parent.issue.number, child);
+		if (!("attached" in attach)) return attach;
+	}
+	const dependencies = await confirmBlockedBy(root, gh, operation.op, source.repository, child.number, blockers);
+	if (!("complete" in dependencies)) return dependencies;
+	if (!dependencies.complete) {
+		const attached = await attachBlockedBy(root, gh, operation.op, source.repository, child.number, blockers);
+		if (!("complete" in attached)) return attached;
+	}
+	const finalSource = await snapshot(root, gh, operation.op);
+	if ("contract" in finalSource) return finalSource;
+	const finalChild = ownedTaskLookup(finalSource.issues, finalSource.repository.id, operation.task_id, operation.initiative_id, operation.slice_id);
+	if (finalChild.kind !== "found" || finalChild.issue.id !== child.id || finalChild.issue.title !== title || finalChild.issue.body !== body)
+		return result(operation.op, "ambiguous_remote_state", "Task Issue changed identity, title, or body during dependency publication", child);
+	const finalChildOwnership = await confirmTerminalOwnership(root, gh, operation.op, finalSource, finalChild.issue);
+	if (!("owned" in finalChildOwnership)) return finalChildOwnership;
+	child = finalChild.issue;
+	for (let index = 0; index < blockerIds.length; index += 1) {
+		const current = taskLookup(finalSource.issues, finalSource.repository.id, blockerIds[index]);
+		if (current.kind !== "found" || current.issue.id !== blockers[index].id)
+			return result(operation.op, "ambiguous_remote_state", `blocking Task ${blockerIds[index]} changed ownership during dependency publication`, child);
+		const ownership = await confirmTerminalOwnership(root, gh, operation.op, finalSource, current.issue);
+		if (!("owned" in ownership)) return ownership;
+	}
+	const finalDependencies = await confirmBlockedBy(root, gh, operation.op, finalSource.repository, child.number, blockers);
+	if (!("complete" in finalDependencies)) return finalDependencies;
+	if (!finalDependencies.complete)
+		return result(operation.op, "ambiguous_remote_state", "native blocked_by relations changed during dependency publication", child);
+	if (attachment.attached && dependencies.complete)
 		return createdChild
-			? result(operation.op, "created", "Task Issue created and attached as a native Sub-issue", child)
-			: result(operation.op, "already_current", "Task Issue and its native Sub-issue relation are current", child);
-	const attach = await attachSubIssue(root, gh, operation.op, source.repository, parent.issue.number, child.number);
-	if (!("attached" in attach)) return attach;
+			? result(operation.op, "created", "Task Issue created and attached with native blocking relations", child)
+			: result(operation.op, "already_current", "Task Issue, native Sub-issue relation, and blocking relations are current", child);
 	return createdChild
 		? result(operation.op, "created", "Task Issue created and attached as a native Sub-issue", child)
 		: result(operation.op, "updated", "existing Task Issue attached as a native Sub-issue", child);
@@ -550,7 +707,7 @@ async function upsertTask(
 async function confirmTerminalOwnership(
 	root: string,
 	gh: GhTransport,
-	operation: "mark-terminal",
+	operation: TrackerOperation["op"],
 	source: RepositorySnapshot,
 	child: GithubIssue,
 ): Promise<GithubTrackerResult | { owned: true }> {
@@ -641,33 +798,99 @@ async function markTerminal(
 	return closeTerminalIssue(root, gh, operation, refreshed, reread.issue, lookup);
 }
 
+function normalizedList(value: unknown, name: string, max = 2_000): string[] | undefined {
+	if (value === undefined) return undefined;
+	if (!Array.isArray(value)) throw new Error(`${name} must be an array`);
+	return value.map((item, index) => publicText(item, `${name}[${index}]`, max));
+}
+
+function projectionText(value: unknown, name: string, max = 2_000): string {
+	const text = publicText(value, name, max);
+	if (/(?:docs\/plans\/|\.intent\.json\b|internal[\s_-]+roles?|role[\s_-]+prompts?|review[\s_-]+reservations?|model[\s_-]+reservations?|prompt[\s_-]+digests?|kernel[\s_-]+runtimes?(?:[\s_-]+states?)?|runtime[\s_-]+states?|review[\s_-]+gates?|tool[\s_-]+polic(?:y|ies)|mutable[\s_-]+scopes?|scope[\s_-]+authorit(?:y|ies)|widen[\s_-]+scopes?|QA[\s_-]+settlements?|record_approval|submit_review|advance_assurance|request_authorization)/i.test(text))
+		throw new Error(`${name} contains restricted authority context`);
+	return text;
+}
+
+function normalizedProjectionList(value: unknown, name: string, max = 2_000): string[] | undefined {
+	if (value === undefined) return undefined;
+	if (!Array.isArray(value)) throw new Error(`${name} must be an array`);
+	return value.map((item, index) => projectionText(item, `${name}[${index}]`, max));
+}
+
+function projectionRisk(value: unknown): "routine" | "material" | "critical" {
+	if (value === "routine" || value === "material" || value === "critical") return value;
+	throw new Error("risk must be routine, material, or critical");
+}
+
+function normalizeProjection(value: TaskProjection | undefined): TaskProjection | undefined {
+	if (value === undefined) return undefined;
+	if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("projection must be an object");
+	const blockedBy = normalizedProjectionList(value.blocked_by, "projection.blocked_by", 128)?.map((id) => identifier(id, "projection.blocked_by task_id"));
+	if (blockedBy && new Set(blockedBy).size !== blockedBy.length) throw new Error("projection.blocked_by must not contain duplicate Task IDs");
+	return {
+		result: value.result === undefined ? undefined : projectionText(value.result, "projection.result"),
+		current_behavior: value.current_behavior === undefined ? undefined : projectionText(value.current_behavior, "projection.current_behavior"),
+		desired_behavior: value.desired_behavior === undefined ? undefined : projectionText(value.desired_behavior, "projection.desired_behavior"),
+		key_interfaces: normalizedProjectionList(value.key_interfaces, "projection.key_interfaces", 500),
+		verification: value.verification === undefined ? undefined : projectionText(value.verification, "projection.verification"),
+		blocked_by: blockedBy,
+		out_of_scope: normalizedProjectionList(value.out_of_scope, "projection.out_of_scope", 500),
+		agent_handoff: value.agent_handoff === undefined ? undefined : projectionText(value.agent_handoff, "projection.agent_handoff"),
+	};
+}
+
+function normalizeInitiativeProjection(value: InitiativeProjection | undefined): InitiativeProjection | undefined {
+	if (value === undefined) return undefined;
+	if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("projection must be an object");
+	return {
+		problem: value.problem === undefined ? undefined : projectionText(value.problem, "projection.problem"),
+		result: value.result === undefined ? undefined : projectionText(value.result, "projection.result"),
+		decisions: normalizedProjectionList(value.decisions, "projection.decisions", 500),
+		testing_strategy: value.testing_strategy === undefined ? undefined : projectionText(value.testing_strategy, "projection.testing_strategy"),
+		out_of_scope: normalizedProjectionList(value.out_of_scope, "projection.out_of_scope", 500),
+	};
+}
+
 function validateOperation(operation: TrackerOperation): TrackerOperation {
 	if (operation.op === "create-initiative") {
 		const seen = new Set<string>();
-		return {
+		const normalized: Extract<TrackerOperation, { op: "create-initiative" }> = {
 			...operation,
 			initiative_id: identifier(operation.initiative_id, "initiative_id"),
-			goal: publicText(operation.goal, "goal"),
+			goal: projectionText(operation.goal, "goal"),
+			projection: normalizeInitiativeProjection(operation.projection),
 			slices: operation.slices.map((slice, index) => {
 				const id = identifier(slice.id, `slices[${index}].id`);
 				if (seen.has(id)) throw new Error(`duplicate Slice id: ${id}`);
 				seen.add(id);
-				return { id, goal: publicText(slice.goal, `slices[${index}].goal`, 1_000) };
+				return {
+				id,
+				goal: projectionText(slice.goal, `slices[${index}].goal`, 1_000),
+				result: slice.result === undefined ? undefined : projectionText(slice.result, `slices[${index}].result`, 1_000),
+				blocked_by: normalizedList(slice.blocked_by, `slices[${index}].blocked_by`, 128)?.map((taskId, blockerIndex) =>
+					identifier(projectionText(taskId, `slices[${index}].blocked_by[${blockerIndex}]`, 128), `slices[${index}].blocked_by task_id`)),
+			};
 			}),
 		};
+		issueTitle(normalized.initiative_id, normalized.projection?.result ?? normalized.goal);
+		return normalized;
 	}
 	if (operation.op === "upsert-task") {
-		return {
+		const normalized: Extract<TrackerOperation, { op: "upsert-task" }> = {
 			...operation,
 			initiative_id: identifier(operation.initiative_id, "initiative_id"),
 			task_id: identifier(operation.task_id, "task_id"),
 			slice_id: identifier(operation.slice_id, "slice_id"),
-			goal: publicText(operation.goal, "goal"),
+			risk: projectionRisk(operation.risk),
+			goal: projectionText(operation.goal, "goal"),
+			projection: normalizeProjection(operation.projection),
 			acceptance: operation.acceptance.map((item, index) => ({
 				id: identifier(item.id, `acceptance[${index}].id`),
-				summary: publicText(item.summary, `acceptance[${index}].summary`, 500),
+				summary: projectionText(item.summary, `acceptance[${index}].summary`, 500),
 			})),
 		};
+		issueTitle(`${normalized.initiative_id}/${normalized.slice_id}`, normalized.projection?.result ?? normalized.goal);
+		return normalized;
 	}
 	return {
 		...operation,
@@ -706,7 +929,7 @@ function valueAfter(args: string[], name: string): string | undefined {
 	return index === -1 ? undefined : args[index + 1];
 }
 
-function taskPublication(root: string, initiativeId: string, sliceId: string, intentPath: string): Extract<TrackerOperation, { op: "upsert-task" }> {
+function taskPublication(root: string, initiativeId: string, sliceId: string, intentPath: string, projection?: TaskProjection): Extract<TrackerOperation, { op: "upsert-task" }> {
 	const absoluteRoot = resolve(root);
 	const absolutePath = resolve(absoluteRoot, intentPath);
 	const rel = relative(absoluteRoot, absolutePath);
@@ -725,6 +948,7 @@ function taskPublication(root: string, initiativeId: string, sliceId: string, in
 		goal: intent.goal,
 		risk: intent.risk,
 		acceptance: intent.acceptance.map((item) => ({ id: item.id, summary: item.assertion })),
+		projection,
 	};
 }
 
@@ -745,16 +969,19 @@ export async function runGithubTrackerCli(
 				initiative_id: raw.initiative_id as string,
 				goal: raw.goal as string,
 				slices: raw.slices as InitiativeSlice[],
+				projection: raw.projection as InitiativeProjection | undefined,
 			};
-		} else if (op === "upsert-task" && args.length === 8) {
+		} else if (op === "upsert-task" && (args.length === 8 || args.length === 10)) {
 			const initiative = valueAfter(args, "--initiative-id");
 			const slice = valueAfter(args, "--slice-id");
 			const intent = valueAfter(args, "--intent");
 			if (!initiative || !slice || !intent)
 				throw new Error("upsert-task requires --initiative-id, --slice-id, and --intent");
-			operation = taskPublication(root, initiative, slice, intent);
+			const rawProjection = valueAfter(args, "--projection-json");
+			const projection = rawProjection ? JSON.parse(rawProjection) as TaskProjection : undefined;
+			operation = taskPublication(root, initiative, slice, intent, projection);
 		} else {
-			throw new Error("use create-initiative --stdin --json or upsert-task --initiative-id <id> --slice-id <id> --intent <path> --json");
+			throw new Error("use create-initiative --stdin --json or upsert-task --initiative-id <id> --slice-id <id> --intent <path> [--projection-json <json>] --json");
 		}
 	} catch (error) {
 		return {
