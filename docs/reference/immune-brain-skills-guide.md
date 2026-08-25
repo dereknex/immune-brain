@@ -68,7 +68,8 @@ Managed Path uses the project's existing structure. Explicit Skills create only
 the artifacts and parent directories needed for the current request; runtime does
 not install or validate project-wide instruction files.
 
-Pi runtime 的 public loader 只应发现三个 Skill。Canary Enrollment、Kernel evidence、
+Pi runtime 的 public loader 应发现四个 Skill，其中三个 Managed Path 入口与一个
+host-native `imm-pr-fix`。Canary Enrollment、Kernel evidence、
 Review authorization 和 terminal settlement 通过 foreground Tools/TUI gates 完成：
 
 - `imm_canary_enrollment`：准备、rehearsal、literal-user confirmation、revalidation、commit。
@@ -80,9 +81,9 @@ Canary Work 和 Work 不再是用户工作流入口。相关 extension/tool sour
 
 ## Surface 与验证
 
-`plugins/immune-brain/skills/registry.yaml`、`dist/registry.yaml`、三个 `SKILL.md`、
-三个 `dist/imm-*.md` 和 package manifest 必须保持一致。旧 `imm-*.md` entry files、旧
-Skill directories 和兼容 aliases 必须不存在。
+`plugins/immune-brain/skills/registry.yaml`、`dist/registry.yaml`、四个 `SKILL.md`、
+四个 `dist/imm-*.md` 和 package manifest 必须保持一致。未注册的旧 `imm-*.md`
+entry files、旧 Skill directories 和兼容 aliases 必须不存在。
 
 建议验证：
 

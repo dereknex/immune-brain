@@ -29,3 +29,12 @@ skills:
     output_artifacts: [run_status]
     next_actions: [imm-planner]
     boundary: Coordinate the validated plan through execution, review, and settlement; no planning bypass.
+  - name: imm-pr-fix
+    path: skills/imm-pr-fix/SKILL.md
+    role: execute
+    title: PR Fix
+    role_class: repair
+    canonical: true
+    output_artifacts: [repair_report]
+    next_actions: []
+    boundary: Repair one GitHub PR directly; no Managed authority mutation or scope expansion.

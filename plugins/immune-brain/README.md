@@ -3,24 +3,27 @@
 Lifecycle skills for agentic engineering: planning, execution, review, QA, and
 learning capture, backed by a deterministic TypeScript workflow runtime.
 
-Each of the three public Skills is a compact `skills/<name>/SKILL.md`
+Each of the four public Skills is a compact `skills/<name>/SKILL.md`
 trigger shim that loads its full instructions from `dist/<name>.md` only on
-invocation. Execution, review, QA, repair, and learning capabilities are
-internal runtime roles or tools; they are not additional public Skills.
+invocation. Execution, review, QA, and learning capabilities remain internal
+runtime roles or tools. `imm-pr-fix` is the standalone host-native repair
+entry; Loop's repair role remains internal.
 Shared rules live in [`BASELINE.md`](BASELINE.md); current workflow behavior
 lives in the focused modules under [`runtime/`](runtime/), while `imm_core.ts`
 is the public API barrel.
 
 ## Public Skill surface
 
-The package exposes exactly three Skills: `imm-brainstorm`, `imm-planner`, and
-`imm-loop`. Internal roles are dispatched by the runtime through packaged
-prompts under `dist/role-prompts/`; Loop never discovers them through Skill
-loading. Skills use the project's existing files and create only the artifacts
+The package exposes four Skills: `imm-brainstorm`, `imm-planner`, `imm-loop`,
+and `imm-pr-fix`. The first three enter or continue the Managed Path;
+`imm-pr-fix` repairs one PR directly without Managed authority. Internal roles
+are dispatched by the runtime through packaged prompts under
+`dist/role-prompts/`; Loop never discovers them through Skill loading. Skills use the project's existing files and create only the artifacts
 the user explicitly requested.
 
-Managed Path starts from an explicit Immune-Brain Skill entry; ordinary host input
-stays host-native and is not classified by natural-language routing.
+Managed Path starts only from explicit `imm-brainstorm`, `imm-planner`, or
+`imm-loop` entry; ordinary host input and standalone `imm-pr-fix` stay
+host-native and are not classified by natural-language routing.
 
 - An active Assurance projection remains authoritative and resumes only when the user explicitly enters `imm-loop`.
 - Explicit `imm-brainstorm` frames ambiguity; explicit `imm-planner` plans clear work.
@@ -29,7 +32,7 @@ stays host-native and is not classified by natural-language routing.
 
 ```mermaid
 flowchart LR
-  request[request] --> explicit{explicit Immune-Brain Skill?}
+  request[request] --> explicit{explicit Managed Skill?}
   explicit -->|yes| skill[imm-brainstorm / imm-planner / imm-loop]
   explicit -->|no| host[host-native]
   owner[active Assurance owner] --> loop[imm-loop recovery]
@@ -70,10 +73,11 @@ Managed invariants (see `BASELINE.md`):
 | `imm-brainstorm` | brainstorm; framing; canonical | Problem framing only; no implementation or QA closure. |
 | `imm-planner` | plan; authority; canonical | Owns plan creation and revision; no executor edits. |
 | `imm-loop` | coordinate; coordinator; canonical | Coordinate the validated plan through execution, review, and settlement; no planning bypass. |
+| `imm-pr-fix` | execute; repair; canonical | Repair one GitHub PR directly; no Managed authority mutation or scope expansion. |
 <!-- END GENERATED: skill-registry-role-map -->
 
 The authoritative public role manifest is [`skills/registry.yaml`](skills/registry.yaml).
-It contains only the three user-facing Skill entries; internal role authority
+It contains the four user-facing Skill entries; internal role authority
 and transitions live in the runtime bridge.
 
 ## Review gates

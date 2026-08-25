@@ -239,19 +239,20 @@ describe("internal role-prompt bridge", () => {
 		expect(pkg.files).toContain("plugins/immune-brain/runtime/prompts");
 		expect(pkg.files).toContain("plugins/immune-brain/dist");
 	});
-	it("keeps Loop role dispatch on the internal bridge and the public surface closed", () => {
+	it("keeps Loop role dispatch on the internal bridge", () => {
 		for (const path of [
 			"plugins/immune-brain/skills/imm-loop/SKILL.md",
 			"plugins/immune-brain/dist/imm-loop.md",
 		]) {
 			const content = read(path);
 			expect(content).toContain("imm_loop_action");
-			expect(content).toContain("three-entry public Skill surface");
+			expect(content).toContain("standalone `imm-pr-fix` is host-native");
+			expect(content).toContain("never dispatched as the Loop role");
 			expect(content).not.toMatch(/public\s+Skills\s+remain available as rollback shims/);
 			expect(content).not.toContain("dispatch an isolated read-only `imm-qa`");
 		}
 	});
-	it("loads internal role prompts without public Skill shims", () => {
+	it("loads internal role prompts independently from public Skill entries", () => {
 		for (const role of [
 			"qa",
 			"code-review",
@@ -266,7 +267,10 @@ describe("internal role-prompt bridge", () => {
 			expect(read(`plugins/immune-brain/runtime/prompts/${role}.md`)).toContain(
 				"Internal role",
 			);
-			expect(existsSync(resolve(ROOT, `plugins/immune-brain/skills/imm-${role}/SKILL.md`))).toBe(false);
+			if (role !== "pr-fix") {
+				expect(existsSync(resolve(ROOT, `plugins/immune-brain/skills/imm-${role}/SKILL.md`))).toBe(false);
+			}
 		}
+		expect(existsSync(resolve(ROOT, "plugins/immune-brain/skills/imm-pr-fix/SKILL.md"))).toBe(true);
 	});
 });

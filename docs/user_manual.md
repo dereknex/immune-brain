@@ -1,13 +1,15 @@
 # Immune-Brain 使用手册
 
-Immune-Brain 是一套 Skill-explicit Managed 的 Pi 工作流。用户可发现的入口只有三个 public Skills：
+Immune-Brain 是一套 Skill-explicit Managed 的 Pi 工作流，并提供一个独立 PR repair Skill。用户可发现四个 public Skills：
 
 - `imm-brainstorm`：澄清需求、约束、风险和非目标。
 - `imm-planner`：创建或修订 Spec、Plan 和候选 TaskIntent。
 - `imm-loop`：消费已验证的 Plan，协调执行、QA、Review、repair 和 settlement。
+- `imm-pr-fix`：直接诊断并修复一个 GitHub PR，不创建 Managed authority。
 
-Executor、QA、Review、repair、learning 和 architecture exploration 都是
-`imm-loop` 使用的内部 runtime roles/tools，不是可发现的 Skill，也没有兼容 alias。
+Executor、QA、Review、learning 和 architecture exploration 都是
+`imm-loop` 使用的内部 runtime roles/tools。Loop 内部 `pr-fix` role 与独立
+`imm-pr-fix` Skill 共享诊断语义，但 authority boundary 不同。
 
 ## 路由模型
 
@@ -29,7 +31,7 @@ request
 
 显式 Skill 使用项目现有结构，并只创建当前工作需要的 artifact 及其父目录。Runtime 不安装、覆盖或校验项目级 `AGENTS.md`、`IMMUNE.md` 或 `CONTEXT.md`。
 
-## 三个 public Skills
+## 四个 public Skills
 
 ### `imm-brainstorm`
 
@@ -59,6 +61,13 @@ Brainstorm Trace，并让每个 Step 有明确 Result、Scope 和 Verification�
 这些 roles 由 `runtime/role_prompt_bridge.ts` 从 `runtime/prompts/` 或 packaged
 `dist/role-prompts/` 加载，不经过 public Skill discovery。
 
+### `imm-pr-fix`
+
+独立处理 GitHub PR review feedback、merge conflict 和 CI failure。它以远端 PR
+metadata 和 `imm-pr-diag` 快照为真源，只修改 blocker 相关文件，验证后推送 PR branch。
+它不创建或修改 Spec、TaskIntent、TaskRecord 或 Kernel state；已由 Managed task 拥有的
+PR 仍通过 `imm-loop` 继续。
+
 ## 执行边界
 
 `imm-loop` 保持以下边界：
@@ -74,9 +83,9 @@ Brainstorm Trace，并让每个 Step 有明确 Result、Scope 和 Verification�
 
 ## 验证与发布
 
-公共 surface 由 `skills/registry.yaml` 声明，必须与三个 `skills/*/SKILL.md`、对应
-`dist/imm-*.md`、package manifest 和实际 Pi loader 结果一致。旧 Skill 目录、旧 dist
-entry files 和兼容 alias 不应重新加入 registry。
+公共 surface 由 `skills/registry.yaml` 声明，必须与四个 `skills/*/SKILL.md`、对应
+`dist/imm-*.md`、package manifest 和实际 Pi loader 结果一致。未注册的旧 Skill 目录、
+旧 dist entry files 和兼容 alias 不应重新加入 registry。
 
 验证时至少运行：
 

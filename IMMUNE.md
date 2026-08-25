@@ -19,7 +19,7 @@
 
 普通 host input 不执行自然语言 Managed 路由，也不初始化项目契约；显式 Immune-Brain Skill 负责启动新的 Managed workflow。已有 active Assurance owner 保持权威，但只在用户显式进入 `imm-loop` 时恢复。
 - `.imm/memory/`：存放运行态状态（`state.json`、`MEMORY.md`、`current_iteration.json`）。
-- `skills/`：只存放三个 user-facing Skill 定义；内部 role prompts 位于插件 `runtime/prompts/`。
+- `skills/`：存放四个 user-facing Skill 定义；`imm-brainstorm`、`imm-planner` 和 `imm-loop` 是 Managed Path 入口，`imm-pr-fix` 是 host-native PR repair 入口；内部 role prompts 位于插件 `runtime/prompts/`。
 - `docs/specs/`：存放当前任务的功能规格与验收标准。
 - `docs/solutions/`：存放长期沉淀的工程模式、最佳实践与问题解法。
 - `CONTEXT.md`（仓库根）：共享领域词汇与术语约定；非运行态真源，与 `.imm/memory/` 互补。

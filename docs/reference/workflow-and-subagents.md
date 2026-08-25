@@ -1,15 +1,15 @@
 # Public Skill 目录与系统 Subagent 参考
 
-本页描述 Immune-Brain 的三个 user-facing Skill 入口及其内部 role/runtime 合同。
-用户可发现的 Skill 只有 `imm-brainstorm`、`imm-planner` 和 `imm-loop`；下文的
-executor、QA、Review、repair、explorer、advisory、Compounder 名称都是 Loop
-内部 role 或稳定 gate identifier，不是可安装 Skill，也没有兼容 alias。
+本页描述 Immune-Brain 的四个 user-facing Skill 入口及其内部 role/runtime 合同。
+Managed Path 入口是 `imm-brainstorm`、`imm-planner` 和 `imm-loop`；`imm-pr-fix`
+是独立 host-native PR repair Skill。下文的 executor、QA、Review、explorer、advisory、
+Compounder 以及 Loop 内部 repair role 都不是额外可安装 Skill。
 
 本页从主 [README.md](../../README.md) 拆出，便于单独阅读与打印。内容与仓库契约测试中的「用户文档表面」一致：**契约测试会将本文与 README 合并后做断言**。
 
 ---
 
-## 三个 public Skill 入口与内部 role 合同
+## 四个 public Skill 入口与内部 role 合同
 
 ### `imm-brainstorm`
 对问题先做结构化头脑风暴，明确范围、边界和假设，并把任务转换成可规划状态。

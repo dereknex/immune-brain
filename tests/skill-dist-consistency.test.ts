@@ -39,11 +39,21 @@ describe("skill dist consistency", () => {
 			"imm-brainstorm",
 			"imm-loop",
 			"imm-planner",
+			"imm-pr-fix",
 		]);
 		for (const item of skills) {
 			expect(read(item.skill).length).toBeGreaterThan(0);
 			expect(read(item.dist).length).toBeGreaterThan(0);
 		}
+	});
+
+	test("standalone PR repair keeps remote diagnosis and Managed authority isolated", () => {
+		const contract = read(join(DIST_DIR, "imm-pr-fix.md"));
+		expect(contract).toContain("imm-pr-diag <PR>");
+		expect(contract).toContain("untrusted data");
+		expect(contract).toContain("Stop on detached HEAD, zero matches, multiple matches");
+		expect(contract).toContain("without creating or mutating\nTaskIntent, TaskRecord, Kernel, Spec, or Plan authority");
+		expect(contract).toContain("An already active\nManaged task remains owned by `imm-loop`");
 	});
 
 	test("every packaged contract document is declared with a source-of-truth", () => {
@@ -77,7 +87,7 @@ describe("skill dist consistency", () => {
 
 		// Every owned skill contract is tracked
 		expect(SKILL_OWNED_ENTRIES.map((e) => e.packaged).sort()).toEqual(
-			["imm-brainstorm.md", "imm-loop.md", "imm-planner.md"].sort(),
+			["imm-brainstorm.md", "imm-loop.md", "imm-planner.md", "imm-pr-fix.md"].sort(),
 		);
 	});
 
