@@ -30,7 +30,6 @@ function withRepo<T>(fn: (root: string) => T): T {
 	const root = mkdtempSync(join(tmpdir(), "imm-intent-validate-"));
 	roots.push(root);
 	mkdirSync(join(root, "docs", "plans"), { recursive: true });
-	mkdirSync(join(root, ".imm", "memory"), { recursive: true });
 	writeFileSync(join(root, ".gitignore"), ".imm/\n");
 	git(root, ["init", "-q"]);
 	git(root, ["config", "user.email", "fixture@example.com"]);

@@ -200,7 +200,14 @@ function convergeRelocation(root: string, entry: MigrationManifestEntry): void {
 		return;
 	}
 	if (sourceBytes === null) return; // already relocated
-	if (targetBytes !== null && targetBytes.length === entry.size) return; // already complete
+	if (targetBytes !== null && targetBytes.length === entry.size) {
+		// Complete relocation replayed after target creation: the verified
+		// source duplicate must be removed so recovery never leaves legacy
+		// authority bytes behind (review-1).
+		rmSync(source);
+		fsyncDirectory(dirname(source));
+		return;
+	}
 	if (target) {
 		mkdirSync(dirname(target), { recursive: true });
 		const temp = `${target}.${process.pid}.mig-tmp`;
@@ -299,6 +306,72 @@ function legacyKnownNames(): Record<string, string> {
 	return LEGACY_KNOWN_FILES as unknown as Record<string, string>;
 }
 
+const LEGACY_SOURCE_PREFIXES = [
+	LEGACY_CLAIM_RELATIVE,
+	LEGACY_WORKSPACE_RELATIVE,
+	`${LEGACY_TASKS_RELATIVE}/`,
+	`${LEGACY_MEMORY_RELATIVE}/`,
+	`${LEGACY_TEMPLATES_RELATIVE}/`,
+	LEGACY_JOURNAL_RELATIVE,
+	`${LEGACY_AUTHORITY_RELATIVE}/`,
+];
+const LEGACY_TARGET_PREFIXES = [
+	`${AUDIT_RELATIVE}/`,
+	`${LEGACY_V3_RELATIVE}/`,
+];
+
+function canonicalProjectRelative(root: string, candidate: string, label: string): string {
+	if (
+		typeof candidate !== "string" ||
+		!candidate ||
+		candidate.includes("\0") ||
+		candidate.includes("\\") ||
+		candidate.startsWith("/") ||
+		/^[A-Za-z]:\//.test(candidate) ||
+		candidate.split("/").some((part) => !part || part === "." || part === "..")
+	)
+		throw new Error(`migration marker ${label} is not a canonical project-relative path: ${candidate}`);
+	return candidate;
+}
+
+/** Directories of a canonical relative path must not contain symlink segments (review-3). */
+function assertNoSymlinkParentSegments(root: string, relativePath: string): void {
+	let cursor = resolve(root);
+	for (const segment of relativePath.split("/").slice(0, -1)) {
+		cursor = resolve(cursor, segment);
+		let stat;
+		try {
+			stat = lstatSync(cursor);
+		} catch {
+			continue;
+		}
+		if (stat.isSymbolicLink())
+			throw new Error(`migration marker path traverses a symlink parent: ${relativePath}`);
+	}
+}
+
+function validateMarkerEntry(
+	root: string,
+	entry: MigrationManifestEntry,
+	index: number,
+): void {
+	if (!entry || typeof entry !== "object" || Array.isArray(entry))
+		throw new Error(`migration marker entry ${index} is invalid`);
+	const source = canonicalProjectRelative(root, entry.source, `entry ${index} source`);
+	if (typeof entry.sha256 !== "string" || !/^[a-f0-9]{64}$/.test(entry.sha256))
+		throw new Error(`migration marker entry ${index} sha256 is invalid`);
+	if (typeof entry.size !== "number" || !Number.isInteger(entry.size) || entry.size < 0)
+		throw new Error(`migration marker entry ${index} size is invalid`);
+	if (!LEGACY_SOURCE_PREFIXES.some((prefix) => source === prefix || source.startsWith(prefix)))
+		throw new Error(`migration marker entry ${index} source is outside the legacy layout: ${source}`);
+	assertNoSymlinkParentSegments(root, source);
+	if (entry.target === null) return;
+	const target = canonicalProjectRelative(root, entry.target, `entry ${index} target`);
+	if (!LEGACY_TARGET_PREFIXES.some((prefix) => target === prefix || target.startsWith(prefix)))
+		throw new Error(`migration marker entry ${index} target is outside the audit layout: ${target}`);
+	assertNoSymlinkParentSegments(root, target);
+}
+
 function readPendingMigrationMarker(root: string): MigrationManifest | null {
 	const path = resolve(root, MIGRATION_MARKER_RELATIVE);
 	const bytes = readRegularFileOrNull(path);
@@ -308,12 +381,8 @@ function readPendingMigrationMarker(root: string): MigrationManifest | null {
 		throw new Error("migration marker contract is invalid");
 	if (!Array.isArray(raw.entries))
 		throw new Error("migration marker entries are invalid");
-	for (const entry of raw.entries) {
-		if (!entry || typeof entry.source !== "string" || typeof entry.sha256 !== "string")
-			throw new Error("migration marker entry is invalid");
-		if (!/^[a-f0-9]{64}$/.test(entry.sha256))
-			throw new Error("migration marker entry sha256 is invalid");
-	}
+	for (const [index, entry] of raw.entries.entries())
+		validateMarkerEntry(root, entry as MigrationManifestEntry, index);
 	return raw;
 }
 
@@ -328,6 +397,34 @@ function writeMigrationMarker(root: string, manifest: MigrationManifest): void {
 		closeSync(fd);
 	}
 	fsyncDirectory(dirname(path));
+}
+
+/** Remove legacy directories that migration emptied; empty legacy dirs must
+ *  not keep inspectStorageLayout reporting an old layout (review-2). */
+function removeEmptyLegacyDirectories(root: string): void {
+	for (const relative of [LEGACY_TASKS_RELATIVE, LEGACY_MEMORY_RELATIVE, LEGACY_TEMPLATES_RELATIVE, LEGACY_AUTHORITY_RELATIVE]) {
+		const path = resolve(root, relative);
+		let stat;
+		try {
+			stat = lstatSync(path);
+		} catch {
+			continue;
+		}
+		if (stat.isSymbolicLink()) {
+			rmSync(path);
+			fsyncDirectory(dirname(path));
+			continue;
+		}
+		if (!stat.isDirectory()) continue;
+		try {
+			if (readdirSync(path).length === 0) {
+				rmSync(path);
+				fsyncDirectory(dirname(path));
+			}
+		} catch {
+			// raced or unreadable: leave for the next recovery attempt
+		}
+	}
 }
 
 function removeMigrationMarker(root: string): void {
@@ -380,6 +477,7 @@ export function migrateLegacyLayout(root: string): MigrationOutcome {
 		withExclusiveFileLock(oldLock, () => {
 			withExclusiveFileLock(newLock, () => {
 				for (const entry of marker.entries) convergeRelocation(root, entry);
+				removeEmptyLegacyDirectories(root);
 				removeMigrationMarker(root);
 			});
 		});
@@ -419,6 +517,7 @@ export function migrateLegacyLayout(root: string): MigrationOutcome {
 			writeMigrationMarker(root, manifest);
 			try {
 				for (const entry of manifest.entries) convergeRelocation(root, entry);
+				removeEmptyLegacyDirectories(root);
 				removeMigrationMarker(root);
 			} catch (error) {
 				throw new Error(

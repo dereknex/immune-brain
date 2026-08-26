@@ -741,6 +741,27 @@ function runIntentValidate(args: string[], root: string): KernelExecution {
 		};
 	const pathArg = nonFlags[0];
 
+	// Shared zero-write gate (review-4): validation reports the layout
+	// condition instead of reading authority bytes while migration/recovery
+	// is pending.
+	const layout = inspectStorageLayout(root);
+	if (!["ready", "migration_uncommitted"].includes(layout.layout))
+		return {
+			result: errorResult(
+				"layout_not_ready",
+				`intent validate blocked by storage layout (${layout.layout}): ${layout.reason ?? ""}`,
+				1,
+			),
+			journal: journalFor(
+				"intent",
+				null,
+				"rejected",
+				"source_invalid",
+				null,
+				layout.reason,
+			),
+		};
+
 	// Canonical-root containment, no symlink components.
 	let canonicalRoot: string;
 	try {
@@ -1018,6 +1039,42 @@ function executeKernelCommand(args: string[], root: string): KernelExecution {
 					"invalid_command",
 					null,
 					"Run imm-kernel audit --legacy.",
+				),
+			};
+		// Shared zero-write gate (review-4): the audit reports the layout
+		// condition instead of reading legacy authority while a migration or
+		// recovery is pending.
+		const layout = inspectStorageLayout(root);
+		if (!["ready", "migration_uncommitted"].includes(layout.layout))
+			return {
+				result: jsonResult({
+					contract: "assurance_kernel/legacy_audit/v1",
+					source: null,
+					read_only: true,
+					writes_performed: false,
+					plan_path: null,
+					runtime_status: null,
+					active_step: null,
+					step_count: 0,
+					phase: null,
+					digest: "sha256:none",
+					redacted: true,
+					layout: {
+						layout: layout.layout,
+						reason: layout.reason,
+						next_action:
+							layout.layout === "migration_required"
+								? "run the one-release migration through the next stateful mutation and commit the affected diff"
+								: "resolve the reported layout condition before legacy audit",
+					},
+				}),
+				journal: journalFor(
+					"audit",
+					null,
+					"escalated",
+					"source_invalid",
+					null,
+					layout.reason,
 				),
 			};
 		try {

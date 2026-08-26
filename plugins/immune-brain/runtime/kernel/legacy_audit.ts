@@ -15,7 +15,6 @@ import { lstatSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { LEGACY_V3_RELATIVE, legacyV3Path } from "./storage_paths";
 
-const LEGACY_SOURCE_RELATIVE = ".imm/memory/current_iteration.json";
 const MAX_BYTES = 2 * 1024 * 1024;
 
 export interface LegacyAuditProjection {
@@ -44,19 +43,23 @@ function sha256Hex(bytes: string | Buffer): string {
  * repository has migrated.
  */
 export function legacyLedgerSourceRelative(canonicalRoot: string): string {
+	// review-5: the explicit legacy audit reads ONLY the archived audit
+	// layout. A live old-layout Ledger (pre-migration) is reported as a
+	// layout condition by the shared gate; this module never falls back to
+	// the old authority path again. Absence keeps the empty-projection
+	// semantics (ENOENT propagates to readLegacyLedgerBounded -> null).
+	let stat;
 	try {
-		const archived = lstatSync(resolve(canonicalRoot, legacyV3Path("current_iteration.json")));
-		if (archived.isSymbolicLink())
-			throw new Error("legacy audit rejected: archived v3 Ledger must not be a symlink");
-		if (archived.isFile()) return legacyV3Path("current_iteration.json");
-		if (archived.isDirectory())
-			throw new Error("legacy audit rejected: archived v3 Ledger is not a regular file");
+		stat = lstatSync(resolve(canonicalRoot, legacyV3Path("current_iteration.json")));
 	} catch (error) {
-		if (error instanceof Error && error.message.startsWith("legacy audit rejected"))
-			throw error;
-		// archived ledger absent: pre-migration state
+		const code = (error as NodeJS.ErrnoException).code;
+		if (code === "ENOENT" || code === "ENOTDIR") return legacyV3Path("current_iteration.json");
+		throw error;
 	}
-	return LEGACY_SOURCE_RELATIVE;
+	if (stat.isSymbolicLink())
+		throw new Error("legacy audit rejected: archived v3 Ledger must not be a symlink");
+	if (stat.isFile()) return legacyV3Path("current_iteration.json");
+	throw new Error("legacy audit rejected: archived v3 Ledger is not a regular file");
 }
 
 /**

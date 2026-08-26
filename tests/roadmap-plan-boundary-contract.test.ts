@@ -15,7 +15,21 @@ const CONTEXT = read("CONTEXT.md");
 // archived plans remain readable only through Git history and the parser.
 // The template-vocabulary assertions below verify the parser compatibility
 // fields live in the canonical contract instead of a deleted template.
-const PLAN_TEMPLATE = read("docs/specs/archive/imm-storage-layout-cutover.spec.md");
+// The storage-layout spec is the canonical contract owner; Kernel rework
+// restores it to the active path and freeze archives it, so both locations
+// must resolve.
+const SPEC_ACTIVE = "docs/specs/imm-storage-layout-cutover.spec.md";
+const SPEC_ARCHIVE = "docs/specs/archive/imm-storage-layout-cutover.spec.md";
+const PLAN_TEMPLATE = (() => {
+	for (const candidate of [SPEC_ACTIVE, SPEC_ARCHIVE]) {
+		try {
+			return read(candidate);
+		} catch {
+			// try next location
+		}
+	}
+	throw new Error(`storage-layout spec missing at both ${SPEC_ACTIVE} and ${SPEC_ARCHIVE}`);
+})();
 
 function expectAll(text: string, fragments: string[]) {
 	for (const fragment of fragments) expect(text).toContain(fragment);
