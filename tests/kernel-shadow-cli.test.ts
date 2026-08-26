@@ -83,7 +83,7 @@ describe("imm-kernel shadow status", () => {
 		});
 		expect(output.divergence).toEqual({ detected: false, fields: [] });
 		expect(readFileSync(statePath(root), "utf8")).toBe(before);
-		expect(existsSync(join(root, ".imm", "tasks"))).toBe(false);
+		expect(existsSync(join(root, ".imm/state"))).toBe(false);
 		expect(existsSync(join(root, ".imm", "workspace.json"))).toBe(false);
 	});
 
@@ -119,7 +119,7 @@ describe("imm-kernel shadow status", () => {
 			source_states: ["closed"],
 		});
 		expect(readFileSync(statePath(root), "utf8")).toBe(before);
-		expect(existsSync(join(root, ".imm", "tasks"))).toBe(false);
+		expect(existsSync(join(root, ".imm/state"))).toBe(false);
 		expect(existsSync(join(root, ".imm", "workspace.json"))).toBe(false);
 	});
 
@@ -247,7 +247,7 @@ describe("imm-kernel shadow status", () => {
 			error: { code: "invalid_command" },
 		});
 		expect(readFileSync(statePath(root), "utf8")).toBe(ledgerBefore);
-		expect(existsSync(join(root, ".imm", "tasks"))).toBe(false);
+		expect(existsSync(join(root, ".imm/state"))).toBe(false);
 		expect(existsSync(join(root, ".imm", "workspace.json"))).toBe(false);
 	});
 
@@ -256,7 +256,7 @@ describe("imm-kernel shadow status", () => {
 		const before = writeState(root, activeState());
 		const result = runKernelCommand(["delete-everything", "--json"], root);
 		expect(result.returncode).toBe(2);
-		const journalPath = join(root, ".imm", "journal.jsonl");
+		const journalPath = join(root, ".imm/state/journal.jsonl");
 		expect(existsSync(journalPath)).toBe(true);
 		const entries = readFileSync(journalPath, "utf8")
 			.trim()
@@ -282,7 +282,8 @@ describe("imm-kernel shadow status", () => {
 		roots.push(outside);
 		const outsideJournal = join(outside, "journal.jsonl");
 		writeFileSync(outsideJournal, "outside\n");
-		symlinkSync(outsideJournal, join(root, ".imm", "journal.jsonl"));
+		mkdirSync(join(root, ".imm/state"), { recursive: true });
+		symlinkSync(outsideJournal, join(root, ".imm/state/journal.jsonl"));
 		const result = runKernelCommand(["status", "--json"], root);
 		expect(result.returncode).toBe(0);
 		// Read-only status never appends the friction journal: no warning and

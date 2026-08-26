@@ -115,7 +115,7 @@ function makeEnrolledRoot(): string {
 	mkdirSync(join(root, "docs", "plans"), { recursive: true });
 	mkdirSync(join(root, "docs", "specs"), { recursive: true });
 	mkdirSync(join(root, "plugins", "immune-brain", ".pi-extension"), { recursive: true });
-	mkdirSync(join(root, ".imm", "tasks"), { recursive: true });
+	mkdirSync(join(root, ".imm/state"), { recursive: true });
 	execFileSync("git", ["init", "-q"], { cwd: root });
 	writeFileSync(join(root, "docs", "plans", `${TASK}.intent.json`), JSON.stringify(INTENT, null, 2) + "\n");
 	writeFileSync(join(root, "docs", "specs", "canary-ext-task.spec.md"), "# Canary extension task\n");
@@ -150,7 +150,7 @@ function makeEnrolledRoot(): string {
 
 function makeStaleClaimRoot(): string {
 	const root = makeEnrolledRoot();
-	const claimPath = join(root, ".imm", "tasks", ".backend-claim.json");
+	const claimPath = join(root, ".imm/state/active-claim.json");
 	const claimBytes = readFileSync(claimPath, "utf8");
 	const registry = createMutationAuthorityRegistry();
 	const app = createCanaryApplication(registry);
@@ -289,7 +289,7 @@ async function capturedToolFailure(promise: Promise<unknown>): Promise<Record<st
 			const resumed = await freshParent.tools[0].execute("resume", { task_id: TASK, action: { op: "advance_assurance" } }, undefined, undefined, makeCtx(root, makeUI()));
 			expect(JSON.parse(resumed.content[0].text).state).toBe("review_ready");
 			expect(qaRuns).toBe(1);
-			const record = JSON.parse(readFileSync(join(root, ".imm", "tasks", `${TASK}.json`), "utf8"));
+			const record = JSON.parse(readFileSync(join(root, `.imm/state/tasks/${TASK}.json`), "utf8"));
 			expect(record.attestations.filter((attestation: { kind: string }) => attestation.kind === "qa")).toHaveLength(1);
 		} finally { rmSync(root, { recursive: true, force: true }); }
 	});
@@ -524,9 +524,9 @@ async function capturedToolFailure(promise: Promise<unknown>): Promise<Record<st
 
 	test("shared-authority-dialog-shell: repairs a proven stale claim only after native confirmation", { timeout: 15000 }, async () => {
 		const root = makeStaleClaimRoot();
-		const claimPath = join(root, ".imm", "tasks", ".backend-claim.json");
-		const recordPath = join(root, ".imm", "tasks", `${TASK}.json`);
-		const tombstonePath = join(root, ".imm", "tasks", `${TASK}.backend-claim.json`);
+		const claimPath = join(root, ".imm/state/active-claim.json");
+		const recordPath = join(root, `.imm/audit/${TASK}/task-record.json`);
+		const tombstonePath = join(root, `.imm/audit/${TASK}/terminal-proof.json`);
 		try {
 			const { tools, emitted } = loadSurface();
 
@@ -619,7 +619,7 @@ async function capturedToolFailure(promise: Promise<unknown>): Promise<Record<st
 			expect(success.details).toMatchObject({ state: "recorded", operation: "revise_intent" });
 			expect(statSync(successPath).ino).toBe(successInode);
 			expect(JSON.parse(readFileSync(successPath, "utf8"))).toEqual(parseTaskIntentV1(normalizedNextIntent));
-			expect(JSON.parse(readFileSync(join(successRoot, ".imm", "tasks", `${TASK}.json`), "utf8"))).toMatchObject({
+			expect(JSON.parse(readFileSync(join(successRoot, ".imm/state/tasks", `${TASK}.json`), "utf8"))).toMatchObject({
 				intent_snapshot: { revision: 2 },
 				intent_ref: { content_hash: canonicalIntentHash(parseTaskIntentV1(normalizedNextIntent)) },
 			});
@@ -638,7 +638,7 @@ async function capturedToolFailure(promise: Promise<unknown>): Promise<Record<st
 			});
 			expect(statSync(failurePath).ino).toBe(failureInode);
 			expect(readFileSync(failurePath, "utf8")).toBe(priorBytes);
-			expect(JSON.parse(readFileSync(join(failureRoot, ".imm", "tasks", `${TASK}.json`), "utf8"))).toMatchObject({ intent_snapshot: { revision: 1 } });
+			expect(JSON.parse(readFileSync(join(failureRoot, ".imm/state/tasks", `${TASK}.json`), "utf8"))).toMatchObject({ intent_snapshot: { revision: 1 } });
 		} finally {
 			rmSync(successRoot, { recursive: true, force: true });
 			rmSync(failureRoot, { recursive: true, force: true });
@@ -702,7 +702,7 @@ async function capturedToolFailure(promise: Promise<unknown>): Promise<Record<st
 				makeCtx(root, makeUI()),
 			));
 			expect(result.state).toBe("settlement_unknown");
-			const record = JSON.parse(readFileSync(join(root, ".imm", "tasks", `${TASK}.json`), "utf8"));
+			const record = JSON.parse(readFileSync(join(root, `.imm/state/tasks/${TASK}.json`), "utf8"));
 			expect(record.attestations.some((attestation: { kind: string }) => attestation.kind === "qa")).toBe(true);
 		} finally { rmSync(root, { recursive: true, force: true }); }
 	});

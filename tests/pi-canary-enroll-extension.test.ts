@@ -85,7 +85,7 @@ async function loadExtension() {
 
 function makeRoot(): string {
 	const root = mkdtempSync(join(tmpdir(), "p2b1-ext-"));
-	mkdirSync(join(root, ".imm", "tasks"), { recursive: true });
+	mkdirSync(join(root, ".imm/state"), { recursive: true });
 	mkdirSync(join(root, "docs", "plans"), { recursive: true });
 	mkdirSync(join(root, ".imm", "memory"), { recursive: true });
 	writeFileSync(
@@ -170,7 +170,7 @@ describe("pi canary enroll extension", () => {
 			expect(result.message).toMatch(/TUI-only/i);
 			expect(ui.confirmCalls.length).toBe(0);
 		}
-		expect(readdirSync(join(root, ".imm", "tasks"))).toEqual([]);
+		expect(readdirSync(join(root, ".imm/state"))).toEqual([]);
 	});
 
 	test("missing intent sidecar rejects before any confirm", async () => {
@@ -180,7 +180,7 @@ describe("pi canary enroll extension", () => {
 		expect(result.state).toBe("blocked");
 		expect(result.message).toMatch(/TaskIntent is required/i);
 		expect(ui.confirmCalls.length).toBe(0);
-		expect(readdirSync(join(root, ".imm", "tasks"))).toEqual([]);
+		expect(readdirSync(join(root, ".imm/state"))).toEqual([]);
 	});
 
 	test("tracked malformed intent reports canonical validation before confirmation", async () => {
@@ -266,7 +266,7 @@ describe("pi canary enroll handler integration", () => {
 		mkdirSync(join(root, "scripts"), { recursive: true });
 		writeFileSync(join(root, "scripts", "accept.ts"), "process.exit(0);\n");
 		mkdirSync(join(root, ".imm", "memory"), { recursive: true });
-		mkdirSync(join(root, ".imm", "tasks"), { recursive: true });
+		mkdirSync(join(root, ".imm/state"), { recursive: true });
 		writeFileSync(
 			join(root, ".imm", "memory", "current_iteration.json"),
 			JSON.stringify(
@@ -449,9 +449,15 @@ describe("pi canary enroll handler integration", () => {
 				parts.push(`${path}:ENOENT`);
 			}
 		}
-		parts.push(`tasks:${readdirSync(join(root, ".imm", "tasks")).sort().join(",")}`);
-		parts.push(`workspace:${existsSync(join(root, ".imm", "workspace.json"))}`);
-		parts.push(`backend:${existsSync(join(root, ".imm", "backend_claim.json"))}`);
+		try {
+			parts.push(`tasks:${readdirSync(join(root, ".imm/state/tasks")).sort().join(",")}`);
+		} catch (error) {
+			if ((error as NodeJS.ErrnoException).code === "ENOENT") parts.push("tasks:ENOENT");
+			else throw error;
+		}
+		parts.push(`workspace:${existsSync(join(root, ".imm/state/workspace.json"))}`);
+		parts.push(`backend:${existsSync(join(root, ".imm/state/active-claim.json"))}`);
+		parts.push(`transactions:${existsSync(join(root, ".imm/state/transactions"))}`);
 		return parts.join("\n");
 	}
 
@@ -672,12 +678,14 @@ describe("pi canary enroll handler integration", () => {
 				"rehearsing",
 				"committing",
 			]);
-			expect(readdirSync(join(root, ".imm", "tasks")).sort()).toEqual([".backend-claim.json", `${TASK}.json`]);
+			expect(readdirSync(join(root, ".imm/state")).sort()).toEqual(["active-claim.json", "locks", "tasks", "transactions", "workspace.json"]);
+			expect(readdirSync(join(root, ".imm/state/tasks")).sort()).toEqual([`${TASK}.json`]);
 			const second = await runTool(root, makeFakeUI(true));
 			expect(second.details.state).toBe("route_incumbent");
 			expect(second.details.next_action).toContain("imm-loop");
 			expect(second.details.summary).toMatch(/already owns/i);
-			expect(readdirSync(join(root, ".imm", "tasks")).sort()).toEqual([".backend-claim.json", `${TASK}.json`]);
+			expect(readdirSync(join(root, ".imm/state")).sort()).toEqual(["active-claim.json", "locks", "tasks", "transactions", "workspace.json"]);
+			expect(readdirSync(join(root, ".imm/state/tasks")).sort()).toEqual([`${TASK}.json`]);
 		} finally {
 			rmSync(root, { recursive: true, force: true });
 		}

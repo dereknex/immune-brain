@@ -35,14 +35,14 @@ function diffOf(root: string): string {
 function makeEnrolledRoot(): string {
 	const root = mkdtempSync(join(tmpdir(), "assurance-projection-"));
 	mkdirSync(join(root, "docs", "plans"), { recursive: true });
-	mkdirSync(join(root, ".imm", "tasks"), { recursive: true });
+	mkdirSync(join(root, ".imm/state"), { recursive: true });
 	mkdirSync(join(root, "plugins", "immune-brain", ".pi-extension"), { recursive: true });
 	execFileSync("git", ["init", "-q"], { cwd: root });
 	writeFileSync(join(root, "plugins", "immune-brain", ".pi-extension", "owned.ts"), "baseline\n");
 	writeFileSync(join(root, "docs", "plans", `${TASK}.intent.json`), `${JSON.stringify(INTENT, null, 2)}\n`);
 	execFileSync("git", ["add", "-A"], { cwd: root });
 	execFileSync("git", ["commit", "-qm", "intent"], { cwd: root });
-	writeFileSync(join(root, ".imm", "workspace.json"), `${JSON.stringify({
+	writeFileSync(join(root, ".imm/state/workspace.json"), `${JSON.stringify({
 		contract: "assurance_kernel/workspace/v1",
 		current_working: null,
 	}, null, 2)}\n`);
@@ -72,7 +72,7 @@ function makeEnrolledRoot(): string {
 }
 
 function mutateRecord(root: string, mutate: (record: Record<string, any>) => void): void {
-	const path = join(root, ".imm", "tasks", `${TASK}.json`);
+	const path = join(root, `.imm/state/tasks/${TASK}.json`);
 	const record = JSON.parse(readFileSync(path, "utf8"));
 	mutate(record);
 	writeFileSync(path, `${JSON.stringify(record, null, 2)}\n`);
@@ -122,9 +122,14 @@ function terminalize(root: string, lifecycle: "done" | "stopped"): void {
 		record.artifact_state = "frozen";
 		record.intent_ref.path = `docs/plans/archive/${TASK}.intent.json`;
 	});
-	const recordPath = join(root, ".imm", "tasks", `${TASK}.json`);
+	const recordPath = join(root, `.imm/state/tasks/${TASK}.json`);
 	const bytes = readFileSync(recordPath, "utf8");
-	writeFileSync(join(root, ".imm", "tasks", `${TASK}.backend-claim.json`), `${JSON.stringify({
+	const auditDir = join(root, `.imm/audit/${TASK}`);
+	mkdirSync(auditDir, { recursive: true });
+	// Terminal evidence moves to the immutable audit pair; the state record is
+	// removed once the pair is durable.
+	writeFileSync(join(auditDir, "task-record.json"), bytes);
+	writeFileSync(join(auditDir, "terminal-proof.json"), `${JSON.stringify({
 		contract: "assurance_kernel/task_tombstone/v2",
 		task_id: TASK,
 		lifecycle_status: "terminal",
@@ -133,8 +138,9 @@ function terminalize(root: string, lifecycle: "done" | "stopped"): void {
 		final_record_hash: revisionForContent(bytes),
 		terminalized_at: "2026-08-12T10:00:01.000Z",
 	}, null, 2)}\n`);
-	rmSync(join(root, ".imm", "tasks", ".backend-claim.json"));
-	writeFileSync(join(root, ".imm", "workspace.json"), `${JSON.stringify({
+	rmSync(recordPath);
+	rmSync(join(root, ".imm/state/active-claim.json"));
+	writeFileSync(join(root, ".imm/state/workspace.json"), `${JSON.stringify({
 		contract: "assurance_kernel/workspace/v1",
 		current_working: null,
 	}, null, 2)}\n`);
@@ -144,7 +150,7 @@ describe("kernel assurance projection v3", () => {
 	test("unowned task returns an empty correlated projection", async () => {
 		const root = mkdtempSync(join(tmpdir(), "assurance-projection-empty-"));
 		try {
-			mkdirSync(join(root, ".imm", "tasks"), { recursive: true });
+			mkdirSync(join(root, ".imm/state"), { recursive: true });
 			execFileSync("git", ["init", "-q"], { cwd: root });
 			const result = await projectAssurance(root, TASK, diffOf);
 			expect(result).toMatchObject({ error: null, claim: null });
@@ -158,7 +164,7 @@ describe("kernel assurance projection v3", () => {
 		const root = makeEnrolledRoot();
 		try {
 			expect((await projectAssurance(root, "no-such-task", diffOf)).error).toBe(`backend claim belongs to ${TASK}, not no-such-task`);
-			const claimPath = join(root, ".imm", "tasks", ".backend-claim.json");
+			const claimPath = join(root, ".imm/state/active-claim.json");
 			const claim = JSON.parse(readFileSync(claimPath, "utf8"));
 			claim.task_id = "other-task";
 			writeFileSync(claimPath, `${JSON.stringify(claim, null, 2)}\n`);
@@ -186,8 +192,8 @@ describe("kernel assurance projection v3", () => {
 	test("incomplete or contradictory terminal proof fails closed", async () => {
 		const root = makeEnrolledRoot();
 		try {
-			rmSync(join(root, ".imm", "tasks", ".backend-claim.json"));
-			writeFileSync(join(root, ".imm", "workspace.json"), `${JSON.stringify({ contract: "assurance_kernel/workspace/v1", current_working: null }, null, 2)}\n`);
+			rmSync(join(root, ".imm/state/active-claim.json"));
+			writeFileSync(join(root, ".imm/state/workspace.json"), `${JSON.stringify({ contract: "assurance_kernel/workspace/v1", current_working: null }, null, 2)}\n`);
 			expect((await projectAssurance(root, TASK, diffOf)).error).toMatch(/without a backend claim/);
 		} finally {
 			rmSync(root, { recursive: true, force: true });
@@ -196,7 +202,7 @@ describe("kernel assurance projection v3", () => {
 		const contradictory = makeEnrolledRoot();
 		try {
 			terminalize(contradictory, "done");
-			const path = join(contradictory, ".imm", "tasks", `${TASK}.backend-claim.json`);
+			const path = join(contradictory, ".imm/audit", TASK, "terminal-proof.json");
 			const tombstone = JSON.parse(readFileSync(path, "utf8"));
 			tombstone.final_record_hash = `sha256:${"f".repeat(64)}`;
 			writeFileSync(path, `${JSON.stringify(tombstone, null, 2)}\n`);

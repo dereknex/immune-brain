@@ -44,7 +44,7 @@ function makeRoot(): { root: string; mutationRegistry: ReturnType<typeof createM
 	const root = mkdtempSync(join(tmpdir(), "uaw-complete-"));
 	mkdirSync(join(root, "docs", "plans"), { recursive: true });
 	mkdirSync(join(root, "docs", "specs"), { recursive: true });
-	mkdirSync(join(root, ".imm", "tasks"), { recursive: true });
+	mkdirSync(join(root, ".imm/state"), { recursive: true });
 	execFileSync("git", ["init", "-q"], { cwd: root });
 	writeFileSync(
 		join(root, "docs", "plans", `${TASK}.intent.json`),

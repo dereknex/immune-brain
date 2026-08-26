@@ -21,6 +21,7 @@
     "2026-08-19-010-deterministic-risk-tier-floor",
     "2026-08-19-011-retire-kernel-v1-store",
     "2026-08-19-012-trim-partially-live-runtime",
+    "2026-08-20-006-archive-terminal-specs",
     "2026-08-20-007-complete-terminal-spec-archival",
     "2026-08-20-008-realign-immune-constitution",
     "2026-08-20-009-forbid-risk-downgrade-on-revision",

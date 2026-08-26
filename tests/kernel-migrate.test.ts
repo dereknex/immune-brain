@@ -63,7 +63,7 @@ describe("imm-kernel migrate is retired", () => {
 			error: { code: "invalid_command" },
 		});
 		expect(readFileSync(statePath(root), "utf8")).toBe(before);
-		expect(existsSync(join(root, ".imm", "tasks"))).toBe(false);
+		expect(existsSync(join(root, ".imm/state"))).toBe(false);
 		expect(existsSync(join(root, ".imm", "workspace.json"))).toBe(false);
 	});
 
@@ -84,7 +84,7 @@ describe("imm-kernel migrate is retired", () => {
 		});
 		expect(readFileSync(statePath(root), "utf8")).toBe(before);
 		expect(existsSync(join(root, ".imm", "journal.jsonl"))).toBe(false);
-		expect(existsSync(join(root, ".imm", "tasks"))).toBe(false);
+		expect(existsSync(join(root, ".imm/state"))).toBe(false);
 	});
 
 	it("rejects migrate without --dry-run through the same retired path", () => {
@@ -96,7 +96,7 @@ describe("imm-kernel migrate is retired", () => {
 			error: { code: "invalid_command" },
 		});
 		expect(readFileSync(statePath(root), "utf8")).toBe(before);
-		expect(existsSync(join(root, ".imm", "tasks"))).toBe(false);
+		expect(existsSync(join(root, ".imm/state"))).toBe(false);
 	});
 });
 
@@ -104,9 +104,8 @@ describe("imm-kernel migrate is retired", () => {
 describe("execution state stays out of git", () => {
 	it("keeps execution state out of git", () => {
 		const gitignore = readFileSync(join(process.cwd(), ".gitignore"), "utf8");
-		expect(gitignore).not.toMatch(/^\.imm\/tasks\/\s*$/m);
-		expect(gitignore).toContain(".imm/workspace.json");
-		expect(gitignore).toContain(".imm/journal.jsonl");
+		expect(gitignore).toMatch(/^\.imm\/state\/\s*$/m);
+		expect(gitignore).not.toMatch(/^\.imm\/audit\/\s*$/m);
 		expect(gitignore).toContain(".imm/migrations/");
 	});
 });

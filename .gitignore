@@ -5,6 +5,12 @@ __pycache__/
 data/
 plugins/immune-brain/.plugin-eval/
 .imm/migrations/
+# Storage-layout cutover: .imm/state/ is wholly ignored worktree-local
+# mutable authority; .imm/audit/ is tracked terminal evidence and is never
+# ignored here. The legacy runtime-path rules below are a temporary
+# pre-migration branch (Slice 2 deletes them once this repository has
+# migrated to the state/audit layout).
+.imm/state/
 .imm/workspace.json
 .imm/journal.jsonl
 .imm/tasks/.backend-claim.json

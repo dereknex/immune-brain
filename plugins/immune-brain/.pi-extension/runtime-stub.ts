@@ -286,14 +286,6 @@ export async function createCanaryApplication(
 	const mod = await import(/* @vite-ignore */ kernelPath("canary_application"));
 	return mod.createCanaryApplication(registry as never);
 }
-export async function migrateActiveTaskRecord(
-	root: string,
-	taskId: string,
-): Promise<{ revision: string; record: TaskRecordRead["record"]; migrated: boolean }> {
-	const mod = await import(/* @vite-ignore */ kernelPath("storage"));
-	return mod.migrateActiveTaskRecord(root, taskId);
-}
-
 export async function readTaskRecord(
 	root: string,
 	taskId: string,

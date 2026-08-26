@@ -20,7 +20,7 @@ const AUTHORITY_PATHS = [
   ".imm/memory/.current_iteration.authority_commit_receipts.jsonl",
   ".imm/memory/.current_iteration.automatic_observations.jsonl",
   ".imm/journal.jsonl",
-  ".imm/workspace.json",
+  ".imm/state/workspace.json",
 ];
 let root: string;
 
@@ -42,7 +42,7 @@ function snapshot(): string {
     }
   }
   try {
-    parts.push(`tasks:${readdirSync(resolve(root, ".imm/tasks")).sort().join(",")}`);
+    parts.push(`tasks:${readdirSync(resolve(root, ".imm/state/tasks")).sort().join(",")}`);
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") parts.push("tasks:ENOENT");
     else throw error;

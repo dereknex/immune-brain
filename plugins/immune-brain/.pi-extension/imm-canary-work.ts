@@ -94,7 +94,6 @@ import {
 	markGithubTaskTerminal,
 	reconcileKernelAuthority,
 	repairKernelAuthority,
-	migrateActiveTaskRecord,
 	readTaskRecord,
 	readTaskIntent,
 	parseTaskIntentV1,
@@ -1028,14 +1027,11 @@ function diffHashOf(root: string, intent: { scope_hint?: unknown }): string {
 
 // Translation-only adapter for the internal Kernel assurance projection. All
 // freshness, approval, finding, claim, and authorization facts come from the
-// Kernel module; this wrapper only binds the host diff provider.
+// Kernel module; this wrapper only binds the host diff provider. The retired
+// active-v2 migrator is gone: a v2 TaskRecord in the state layout is a
+// fail-closed projection error, never an automatic migration trigger.
 async function projectAssuranceState(root: string, taskId: string): Promise<AssuranceProjectionResult> {
-	let projection = await projectAssurance(root, taskId, diffHashOf);
-	if (projection.error?.startsWith("active TaskRecord v2 requires one-time migration")) {
-		await migrateActiveTaskRecord(root, taskId);
-		projection = await projectAssurance(root, taskId, diffHashOf);
-	}
-	return projection;
+	return projectAssurance(root, taskId, diffHashOf);
 }
 
 export interface QaVerificationProgressInput {

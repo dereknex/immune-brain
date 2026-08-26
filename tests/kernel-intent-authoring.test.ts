@@ -168,7 +168,7 @@ describe("imm-kernel intent author", () => {
 			);
 			// No journal, no workflow state, no Git mutation.
 			expect(existsSync(join(root, ".imm", "journal.jsonl"))).toBe(false);
-			expect(existsSync(join(root, ".imm", "tasks"))).toBe(false);
+			expect(existsSync(join(root, ".imm/state"))).toBe(false);
 			expect(
 				readFileSync(
 					join(root, ".imm", "memory", "current_iteration.json"),

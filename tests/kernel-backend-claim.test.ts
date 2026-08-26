@@ -14,11 +14,13 @@ import {
 
 function makeRoot(): string {
 	const root = mkdtempSync(join(tmpdir(), "p2b0-claim-"));
-	mkdirSync(join(root, ".imm", "tasks"), { recursive: true });
+	mkdirSync(join(root, ".imm/state"), { recursive: true });
+	mkdirSync(join(root, ".imm/audit/task-001"), { recursive: true });
+	mkdirSync(join(root, ".imm/audit/task-other"), { recursive: true });
 	return root;
 }
 
-const CLAIM_PATH = ".imm/tasks/.backend-claim.json";
+const CLAIM_PATH = ".imm/state/active-claim.json";
 
 function claim(overrides: Partial<BackendClaim> = {}): BackendClaim {
 	return {
@@ -84,7 +86,7 @@ describe("backend claim guard", () => {
 	test("terminal tombstone alone does not block v3 routing for any task", () => {
 		const root = makeRoot();
 		writeFileSync(
-			join(root, ".imm/tasks/task-001.backend-claim.json"),
+			join(root, ".imm/audit/task-001/terminal-proof.json"),
 			`${JSON.stringify(tombstone(), null, 2)}\n`,
 		);
 		// No workspace-active claim remains; v3 routing is released.
@@ -103,7 +105,7 @@ describe("backend claim guard", () => {
 		const root = makeRoot();
 		expect(readTaskTombstone(root, "task-001")).toBeNull();
 		writeFileSync(
-			join(root, ".imm/tasks/task-001.backend-claim.json"),
+			join(root, ".imm/audit/task-001/terminal-proof.json"),
 			`${JSON.stringify(tombstone(), null, 2)}\n`,
 		);
 		const read = readTaskTombstone(root, "task-001");
@@ -111,7 +113,7 @@ describe("backend claim guard", () => {
 		expect(read?.lifecycle_status).toBe("terminal");
 		// identity inconsistency fails closed
 		writeFileSync(
-			join(root, ".imm/tasks/task-001.backend-claim.json"),
+			join(root, ".imm/audit/task-001/terminal-proof.json"),
 			`${JSON.stringify(tombstone({ task_id: "task-other" }), null, 2)}\n`,
 		);
 		expect(() => readTaskTombstone(root, "task-001")).toThrow(/identity is inconsistent/i);
@@ -151,14 +153,14 @@ describe("backend claim guard", () => {
 		const root = makeRoot();
 		// A directory entry that is a symlink is not a regular file.
 		const { symlinkSync } = require("node:fs") as typeof import("node:fs");
-		const target = join(root, ".imm/tasks/task-other.backend-claim.json");
+		const target = join(root, ".imm/audit/task-other/terminal-proof.json");
 		writeFileSync(target, `${JSON.stringify(tombstone(), null, 2)}\n`);
 		try {
-			symlinkSync(target, join(root, ".imm/tasks/task-001.backend-claim.json"));
+			symlinkSync(target, join(root, ".imm/audit/task-001/terminal-proof.json"));
 		} catch {
 			// platform without symlink support: fall back to non-regular file
 			rmSync(target);
-			mkdirSync(join(root, ".imm/tasks/task-001.backend-claim.json"));
+			mkdirSync(join(root, ".imm/audit/task-001/terminal-proof.json"));
 		}
 		expect(() => readTaskTombstone(root, "task-001")).toThrow(/symlink|regular file/i);
 	});

@@ -73,7 +73,7 @@ async function loadExtension() {
 
 function makeRoot(): string {
 	const root = mkdtempSync(join(tmpdir(), "enroll-reloc-"));
-	mkdirSync(join(root, ".imm", "tasks"), { recursive: true });
+	mkdirSync(join(root, ".imm/state"), { recursive: true });
 	mkdirSync(join(root, "docs", "plans"), { recursive: true });
 	mkdirSync(join(root, ".imm", "memory"), { recursive: true });
 	writeFileSync(
@@ -126,7 +126,7 @@ function makeEligibleRepo(
 	mkdirSync(join(root, "scripts"), { recursive: true });
 	writeFileSync(join(root, "scripts", "accept.ts"), shouldPass ? "process.exit(0);\n" : "process.exit(7);\n");
 	mkdirSync(join(root, ".imm", "memory"), { recursive: true });
-	mkdirSync(join(root, ".imm", "tasks"), { recursive: true });
+	mkdirSync(join(root, ".imm/state"), { recursive: true });
 	writeFileSync(
 		join(root, ".imm", "memory", "current_iteration.json"),
 		JSON.stringify(
@@ -313,9 +313,10 @@ function authoritySnapshot(root: string): string {
 			parts.push(`${path}:ENOENT`);
 		}
 	}
-	parts.push(`tasks:${readdirSync(join(root, ".imm", "tasks")).sort().join(",")}`);
-	parts.push(`workspace:${existsSync(join(root, ".imm", "workspace.json"))}`);
-	parts.push(`backend:${existsSync(join(root, ".imm", "backend_claim.json"))}`);
+	try { parts.push(`tasks:${readdirSync(join(root, ".imm/state/tasks")).sort().join(",")}`); }
+		catch (error) { if ((error as NodeJS.ErrnoException).code === "ENOENT") parts.push("tasks:ENOENT"); else throw error; }
+	parts.push(`workspace:${existsSync(join(root, ".imm/state/workspace.json"))}`);
+	parts.push(`backend:${existsSync(join(root, ".imm/state/active-claim.json"))}`);
 	return parts.join("\n");
 }
 
@@ -374,8 +375,9 @@ describe("enrollment confirmation relocation", () => {
 			expect(rehearseIdx).toBeGreaterThan(revalidateIdx);
 			expect(updates).not.toContain("snapshotting");
 			// Authority was written exactly once
-			expect(readdirSync(join(root, ".imm", "tasks")).sort()).toEqual([".backend-claim.json", `${TASK}.json`]);
-			expect(existsSync(join(root, ".imm", "workspace.json"))).toBe(true);
+			expect(readdirSync(join(root, ".imm/state")).sort()).toEqual(["active-claim.json", "locks", "tasks", "transactions", "workspace.json"]);
+			expect(readdirSync(join(root, ".imm/state/tasks")).sort()).toEqual([`${TASK}.json`]);
+			expect(existsSync(join(root, ".imm/state/workspace.json"))).toBe(true);
 		} finally {
 			rmSync(root, { recursive: true, force: true });
 		}
@@ -391,8 +393,9 @@ describe("enrollment confirmation relocation", () => {
 			expect(ui.confirmCalls.length).toBe(1);
 			expect(ui.customCalls.length).toBe(1);
 			expect(result.details).toMatchObject({ state: "completed" });
-			expect(readdirSync(join(root, ".imm", "tasks")).sort()).toEqual([".backend-claim.json", `${TASK}.json`]);
-			expect(existsSync(join(root, ".imm", "workspace.json"))).toBe(true);
+			expect(readdirSync(join(root, ".imm/state")).sort()).toEqual(["active-claim.json", "locks", "tasks", "transactions", "workspace.json"]);
+			expect(readdirSync(join(root, ".imm/state/tasks")).sort()).toEqual([`${TASK}.json`]);
+			expect(existsSync(join(root, ".imm/state/workspace.json"))).toBe(true);
 		} finally {
 			rmSync(root, { recursive: true, force: true });
 		}
@@ -457,7 +460,7 @@ describe("enrollment confirmation relocation", () => {
 			});
 			// Zero writes
 			expect(authoritySnapshot(root)).toBe(before);
-			expect(readdirSync(join(root, ".imm", "tasks")).sort()).toEqual([]);
+			expect(readdirSync(join(root, ".imm/state")).sort()).toEqual(["locks"]);
 		} finally {
 			rmSync(root, { recursive: true, force: true });
 		}

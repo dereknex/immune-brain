@@ -51,7 +51,7 @@ beforeEach(() => {
 	root = mkdtempSync(join(tmpdir(), "canary-writer-"));
 	now = "2026-08-12T10:00:00.000Z";
 	mkdirSync(join(root, "docs", "plans"), { recursive: true });
-	mkdirSync(join(root, ".imm", "tasks"), { recursive: true });
+	mkdirSync(join(root, ".imm/state"), { recursive: true });
 	execFileSync("git", ["init", "-q"], { cwd: root });
 	writeFileSync(
 		join(root, "docs", "plans", `${TASK}.intent.json`),
@@ -193,7 +193,7 @@ describe("backend claim writer boundary", () => {
 	test("unknown claim fields fail closed", () => {
 		const claim = readBackendClaim(root)!;
 		writeFileSync(
-			join(root, ".imm/tasks/.backend-claim.json"),
+			join(root, ".imm/state/active-claim.json"),
 			`${JSON.stringify({ ...claim, forged: true }, null, 2)}\n`,
 		);
 		expect(() => readBackendClaim(root)).toThrow(/unknown field/i);
@@ -202,7 +202,7 @@ describe("backend claim writer boundary", () => {
 	test("lock acquisition refuses simultaneous markers of any kind", () => {
 		const claim = readBackendClaim(root)!;
 		writeFileSync(
-			join(root, ".imm/tasks/.drain-transaction.json"),
+			join(root, ".imm/state/transactions/drain-transaction.json"),
 			`${JSON.stringify(
 				{
 					contract: "assurance_kernel/drain_transaction/v1",
@@ -216,7 +216,7 @@ describe("backend claim writer boundary", () => {
 			)}\n`,
 		);
 		writeFileSync(
-			join(root, ".imm/tasks/.terminal-transaction.json"),
+			join(root, ".imm/state/transactions/terminal-transaction.json"),
 			'{"contract":"assurance_kernel/terminal_transaction/v1","task_id":"x","transaction":{},"tombstone":{}}\n',
 		);
 		expect(() => withKernelStoreLock(root, () => undefined)).toThrow(/markers are forbidden/i);
@@ -224,7 +224,7 @@ describe("backend claim writer boundary", () => {
 
 	test("malformed drain marker fails closed and remains recoverable", () => {
 		writeFileSync(
-			join(root, ".imm/tasks/.drain-transaction.json"),
+			join(root, ".imm/state/transactions/drain-transaction.json"),
 			'{"contract":"assurance_kernel/drain_transaction/v1","task_id":"x","expected_claim_content":"{}","next_claim_content":"{}","at":"t"}\n',
 		);
 		expect(() => withKernelStoreLock(root, () => undefined)).toThrow();

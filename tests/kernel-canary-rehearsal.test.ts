@@ -11,7 +11,7 @@ import {
 
 function makeRoot(): string {
 	const root = mkdtempSync(join(tmpdir(), "p2b0-rehearsal-"));
-	mkdirSync(join(root, ".imm", "tasks"), { recursive: true });
+	mkdirSync(join(root, ".imm/state"), { recursive: true });
 	mkdirSync(join(root, "docs", "plans"), { recursive: true });
 	return root;
 }
@@ -83,7 +83,9 @@ describe("enrollment rehearsal", () => {
 		expect(result.evidence.task_id).toBe(taskId);
 		expect(result.evidence.outcome).toBe("ready");
 		// no TaskRecord / workspace / backend claim written
-		expect(readdirSync(join(root, ".imm", "tasks"))).toEqual([]);
+		// Only the ignored locks directory may exist; zero authority bytes are written.
+		const stateEntries = readdirSync(join(root, ".imm/state")).filter((entry) => entry !== "locks");
+		expect(stateEntries).toEqual([]);
 	});
 
 	test("rehearsal with missing intent reports not-ready without throwing", () => {

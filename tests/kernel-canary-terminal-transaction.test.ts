@@ -31,6 +31,7 @@ import {
 } from "../plugins/immune-brain/runtime/kernel/backend_claim";
 import {
 	readTaskRecord,
+	readAuditTaskPair,
 	reconcileKernelAuthority,
 	repairKernelAuthority,
 	readWorkspaceStateRaw,
@@ -65,7 +66,7 @@ beforeEach(() => {
 	root = mkdtempSync(join(tmpdir(), "canary-terminal-"));
 	mkdirSync(join(root, "docs", "plans"), { recursive: true });
 	mkdirSync(join(root, "docs", "specs"), { recursive: true });
-	mkdirSync(join(root, ".imm", "tasks"), { recursive: true });
+	mkdirSync(join(root, ".imm/state"), { recursive: true });
 	execFileSync("git", ["init", "-q"], { cwd: root });
 	writeFileSync(
 		join(root, "docs", "plans", `${TASK}.intent.json`),
@@ -225,9 +226,9 @@ describe("terminal ownership transfer", () => {
 	});
 
 	test("shared authority reconciliation proves only an exact stale terminal claim repairable", () => {
-		const claimBytes = readFileSync(join(root, ".imm/tasks/.backend-claim.json"), "utf8");
+		const claimBytes = readFileSync(join(root, ".imm/state/active-claim.json"), "utf8");
 		completeTask();
-		writeFileSync(join(root, ".imm/tasks/.backend-claim.json"), claimBytes);
+		writeFileSync(join(root, ".imm/state/active-claim.json"), claimBytes);
 		expect(reconcileKernelAuthority(root, TASK)).toMatchObject({
 			state: "repairable_stale_claim",
 			owner_task_id: TASK,
@@ -240,7 +241,7 @@ describe("terminal ownership transfer", () => {
 	});
 
 	test("contradictory stale claim identity fails closed with zero writes", () => {
-		const claimPath = join(root, ".imm/tasks/.backend-claim.json");
+		const claimPath = join(root, ".imm/state/active-claim.json");
 		const claim = JSON.parse(readFileSync(claimPath, "utf8"));
 		completeTask();
 		claim.intent_content_hash = "sha256:contradictory-intent";
@@ -256,11 +257,11 @@ describe("terminal ownership transfer", () => {
 			/exact stale terminal proof/,
 		);
 		expect(readFileSync(claimPath, "utf8")).toBe(contradictoryBytes);
-		expect(existsSync(join(root, ".imm/tasks/.authority-repair-transaction.json"))).toBe(false);
+		expect(existsSync(join(root, ".imm/state/transactions/authority-repair-transaction.json"))).toBe(false);
 	});
 
 	test("authorized repair removes only the exact proven stale terminal claim", () => {
-		const claimPath = join(root, ".imm/tasks/.backend-claim.json");
+		const claimPath = join(root, ".imm/state/active-claim.json");
 		const claimBytes = readFileSync(claimPath, "utf8");
 		completeTask();
 		writeFileSync(claimPath, claimBytes);
@@ -271,11 +272,11 @@ describe("terminal ownership transfer", () => {
 			owner_task_id: TASK,
 		});
 		expect(existsSync(claimPath)).toBe(false);
-		expect(existsSync(join(root, ".imm/tasks/.authority-repair-transaction.json"))).toBe(false);
+		expect(existsSync(join(root, ".imm/state/transactions/authority-repair-transaction.json"))).toBe(false);
 	});
 
 	test("repair rejects changed claim bytes with zero repair writes", () => {
-		const claimPath = join(root, ".imm/tasks/.backend-claim.json");
+		const claimPath = join(root, ".imm/state/active-claim.json");
 		const claimBytes = readFileSync(claimPath, "utf8");
 		completeTask();
 		writeFileSync(claimPath, claimBytes);
@@ -287,7 +288,7 @@ describe("terminal ownership transfer", () => {
 			/exact stale terminal proof/,
 		);
 		expect(readFileSync(claimPath, "utf8")).toBe(`${JSON.stringify(changed, null, 2)}\n`);
-		expect(existsSync(join(root, ".imm/tasks/.authority-repair-transaction.json"))).toBe(false);
+		expect(existsSync(join(root, ".imm/state/transactions/authority-repair-transaction.json"))).toBe(false);
 	});
 
 	test("artifact freeze recovers relocation and record from the workspace marker", () => {
@@ -316,7 +317,7 @@ describe("terminal ownership transfer", () => {
 		expect(done.record.lifecycle).toBe("done");
 		expect(done.workspace.state.current_working).toBeNull();
 		expect(readBackendClaim(root)).toBeNull();
-		expect(existsSync(join(root, ".imm", "tasks", ".terminal-transaction.json"))).toBe(false);
+		expect(existsSync(join(root, ".imm/state/transactions/terminal-transaction.json"))).toBe(false);
 		const tombstone = readTaskTombstone(root, TASK);
 		expect(tombstone?.terminal_lifecycle).toBe("done");
 		expect(tombstone?.terminal_event_id).toBe(`complete:${TASK}:2026-08-12T10:00:04.000Z`);
@@ -400,77 +401,80 @@ describe("terminal ownership transfer", () => {
 			terminalized_at: "2026-08-12T10:00:04.000Z",
 		};
 		writeFileSync(
-			join(root, ".imm/tasks/.terminal-transaction.json"),
+			join(root, ".imm/state/transactions/terminal-transaction.json"),
 			`${JSON.stringify(
 				{
-					contract: "assurance_kernel/terminal_transaction/v1",
+					contract: "assurance_kernel/terminal_transaction/v2",
 					task_id: TASK,
-					transaction: {
-						contract: "assurance_kernel/workspace_transaction/v2",
-						task_id: TASK,
-						expected_record_hash: pre.revision,
-						next_record_content: `${JSON.stringify(nextRecord, null, 2)}\n`,
-						expected_workspace_hash: workspace.revision,
-						next_workspace_content: `${JSON.stringify(
-							{ contract: "assurance_kernel/workspace/v1", current_working: null },
-							null,
-							2,
-						)}\n`,
-					},
-					tombstone,
+					expected_state_record_hash: pre.revision,
+					audit_record_content: `${JSON.stringify(nextRecord, null, 2)}\n`,
+					proof_content: `${JSON.stringify(tombstone, null, 2)}\n`,
+					expected_workspace_hash: workspace.revision,
+					next_workspace_content: `${JSON.stringify(
+						{ contract: "assurance_kernel/workspace/v1", current_working: null },
+						null,
+						2,
+					)}\n`,
+					at: tombstone.terminalized_at,
 				},
 				null,
 				2,
 			)}\n`,
 		);
-		// Simulated restart replays the terminal marker.
+		// Simulated restart replays the terminal marker. The state record is
+		// removed; terminal evidence lives only in the immutable audit pair.
 		withKernelStoreLock(root, () => undefined);
-		const record = readTaskRecord(root, TASK);
-		expect(record.record?.lifecycle).toBe("done");
+		expect(readTaskRecord(root, TASK).record).toBeNull();
+		const auditPair = readAuditTaskPair(root, TASK);
+		expect(auditPair?.record.lifecycle).toBe("done");
+		expect(auditPair?.proof.terminal_lifecycle).toBe("done");
+		expect(existsSync(join(root, ".imm/audit", TASK, "task-record.json"))).toBe(true);
+		expect(existsSync(join(root, ".imm/audit", TASK, "terminal-proof.json"))).toBe(true);
+		expect(existsSync(join(root, ".imm/state", "tasks", `${TASK}.json`))).toBe(false);
 		expect(readBackendClaim(root)).toBeNull();
-		expect(readTaskTombstone(root, TASK)?.terminal_lifecycle).toBe("done");
-		expect(existsSync(join(root, ".imm/tasks/.terminal-transaction.json"))).toBe(false);
+		expect(existsSync(join(root, ".imm/state/transactions/terminal-transaction.json"))).toBe(false);
 	});
 
 	test("crash recovery is idempotent when the terminal state already converged", () => {
 		completeTask();
 		// Re-plant the marker (crash before marker removal): recovery must
-		// converge idempotently without failing.
-		const record = readTaskRecord(root, TASK);
+		// converge idempotently without failing. Terminal evidence lives in
+		// the audit pair after settlement, so the marker replays those bytes.
+		const auditPair = readAuditTaskPair(root, TASK)!;
+		const record = auditPair.record;
 		const workspace = readWorkspaceStateRaw(root);
-		const tombstone = readTaskTombstone(root, TASK)!;
+		const tombstone = auditPair.proof;
 		writeFileSync(
-			join(root, ".imm/tasks/.terminal-transaction.json"),
+			join(root, ".imm/state/transactions/terminal-transaction.json"),
 			`${JSON.stringify(
 				{
-					contract: "assurance_kernel/terminal_transaction/v1",
+					contract: "assurance_kernel/terminal_transaction/v2",
 					task_id: TASK,
-					transaction: {
-						contract: "assurance_kernel/workspace_transaction/v2",
-						task_id: TASK,
-						expected_record_hash: "sha256:stale",
-						next_record_content: `${JSON.stringify(record.record, null, 2)}\n`,
-						expected_workspace_hash: "sha256:stale-w",
-						next_workspace_content: `${JSON.stringify(
-							{ contract: "assurance_kernel/workspace/v1", current_working: null },
-							null,
-							2,
-						)}\n`,
-					},
-					tombstone: JSON.parse(serializeTaskTombstone(tombstone)),
+					expected_state_record_hash: "sha256:stale",
+					audit_record_content: `${JSON.stringify(record, null, 2)}\n`,
+					proof_content: serializeTaskTombstone(tombstone),
+					expected_workspace_hash: "sha256:stale-w",
+					next_workspace_content: `${JSON.stringify(
+						{ contract: "assurance_kernel/workspace/v1", current_working: null },
+						null,
+						2,
+					)}\n`,
+					at: tombstone.terminalized_at,
 				},
 				null,
 				2,
 			)}\n`,
 		);
 		withKernelStoreLock(root, () => undefined);
-		expect(readTaskRecord(root, TASK).record?.lifecycle).toBe("done");
-		expect(readTaskTombstone(root, TASK)?.terminal_lifecycle).toBe("done");
+		expect(readTaskRecord(root, TASK).record).toBeNull();
+		expect(readAuditTaskPair(root, TASK)?.record.lifecycle).toBe("done");
+		expect(readAuditTaskPair(root, TASK)?.proof.terminal_lifecycle).toBe("done");
 	});
 
 	test("contradictory tombstone conflict fails closed and remains recoverable", () => {
 		completeTask();
-		const record = readTaskRecord(root, TASK);
+		const auditPair = readAuditTaskPair(root, TASK)!;
+		const record = auditPair.record;
 		const workspace = readWorkspaceStateRaw(root);
 		const conflictingTombstone = {
 			contract: "assurance_kernel/task_tombstone/v2",
@@ -482,31 +486,28 @@ describe("terminal ownership transfer", () => {
 			terminalized_at: "2026-08-12T10:00:04.000Z",
 		};
 		writeFileSync(
-			join(root, ".imm/tasks/.terminal-transaction.json"),
+			join(root, ".imm/state/transactions/terminal-transaction.json"),
 			`${JSON.stringify(
 				{
-					contract: "assurance_kernel/terminal_transaction/v1",
+					contract: "assurance_kernel/terminal_transaction/v2",
 					task_id: TASK,
-					transaction: {
-						contract: "assurance_kernel/workspace_transaction/v2",
-						task_id: TASK,
-						expected_record_hash: "sha256:stale",
-						next_record_content: `${JSON.stringify(record.record, null, 2)}\n`,
-						expected_workspace_hash: "sha256:stale-w",
-						next_workspace_content: `${JSON.stringify(
-							{ contract: "assurance_kernel/workspace/v1", current_working: null },
-							null,
-							2,
-						)}\n`,
-					},
-					tombstone: conflictingTombstone,
+					expected_state_record_hash: "sha256:stale",
+					audit_record_content: `${JSON.stringify(record, null, 2)}\n`,
+					proof_content: `${JSON.stringify(conflictingTombstone, null, 2)}\n`,
+					expected_workspace_hash: "sha256:stale-w",
+					next_workspace_content: `${JSON.stringify(
+						{ contract: "assurance_kernel/workspace/v1", current_working: null },
+						null,
+						2,
+					)}\n`,
+					at: conflictingTombstone.terminalized_at,
 				},
 				null,
 				2,
 			)}\n`,
 		);
-		expect(() => withKernelStoreLock(root, () => undefined)).toThrow(/conflict/i);
-		expect(existsSync(join(root, ".imm/tasks/.terminal-transaction.json"))).toBe(true);
+		expect(() => withKernelStoreLock(root, () => undefined)).toThrow(/does not match|conflict/i);
+		expect(existsSync(join(root, ".imm/state/transactions/terminal-transaction.json"))).toBe(true);
 		// The committed tombstone stays intact.
 		expect(readTaskTombstone(root, TASK)?.terminal_lifecycle).toBe("done");
 	});

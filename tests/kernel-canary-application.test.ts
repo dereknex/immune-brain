@@ -52,7 +52,7 @@ beforeEach(() => {
 	root = mkdtempSync(join(tmpdir(), "canary-app-"));
 	mkdirSync(join(root, "docs", "plans"), { recursive: true });
 	mkdirSync(join(root, "docs", "specs"), { recursive: true });
-	mkdirSync(join(root, ".imm", "tasks"), { recursive: true });
+	mkdirSync(join(root, ".imm/state"), { recursive: true });
 	execFileSync("git", ["init", "-q"], { cwd: root });
 	writeFileSync(join(root, "docs", "plans", `${TASK}.intent.json`), `${JSON.stringify(INTENT, null, 2)}\n`);
 	writeFileSync(join(root, "docs", "specs", `${TASK}.spec.md`), "# Canary app task\n");

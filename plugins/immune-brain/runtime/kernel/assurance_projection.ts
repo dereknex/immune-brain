@@ -12,7 +12,7 @@
 // "start QA" or "start Review"; it returns Kernel-owned facts only.
 
 import { readBackendClaim, readTaskTombstone } from "./backend_claim";
-import { readTaskRecord, readHistoricalTaskRecordV2Raw, readWorkspaceStateRaw, reconcileKernelAuthority } from "./storage";
+import { readTaskRecord, readAuditTaskPair, readWorkspaceStateRaw, reconcileKernelAuthority } from "./storage";
 import { projectTask } from "./completion";
 import type { AssuranceObligation, TaskIntentV1, TaskRecordV2, TaskRecordV3 } from "./types";
 
@@ -241,19 +241,30 @@ export async function projectAssurance(
 		try {
 			read = await readTaskRecord(root, taskId);
 		} catch (error) {
-			if (!terminalOwner || !(error instanceof Error) || !error.message.startsWith("terminal TaskRecord v2")) throw error;
-			const historical = readHistoricalTaskRecordV2Raw(root, taskId);
-			if (!historical.record) return fail(`task ${taskId} has no historical TaskRecord`);
+			if (!terminalOwner || !(error instanceof Error) || !error.message.startsWith("TaskRecord v2")) throw error;
+			return fail(error instanceof Error ? error.message : String(error));
+		}
+		if (!read.record) {
+			if (!terminalOwner) return fail(`task ${taskId} has no TaskRecord v3`, claim);
+			const auditPair = await readAuditTaskPair(root, taskId);
+			if (!auditPair) return fail(`task ${taskId} has no terminal audit pair`, claim);
 			const workspace = await readWorkspaceStateRaw(root);
+			if (auditPair.record.contract === "assurance_kernel/task_record/v2")
+				return {
+					contract: "assurance_kernel/assurance_projection/v1",
+					task_id: taskId,
+					error: null,
+					claim: null,
+					projection: projectHistoricalTerminal(auditPair.record, auditPair.recordRevision, workspace.revision),
+				};
 			return {
 				contract: "assurance_kernel/assurance_projection/v1",
 				task_id: taskId,
 				error: null,
 				claim: null,
-				projection: projectHistoricalTerminal(historical.record, historical.revision, workspace.revision),
+				projection: projectFromRecord(auditPair.record, auditPair.recordRevision, workspace.revision, diffProvider(root, auditPair.record.intent_snapshot)),
 			};
 		}
-		if (!read.record) return fail(`task ${taskId} has no TaskRecord v3`, claim);
 		if (read.record.task_id !== taskId)
 			return fail(`task record identity is inconsistent for ${taskId}`, claim);
 		if (claim && read.record.lifecycle !== "active")

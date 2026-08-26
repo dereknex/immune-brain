@@ -59,7 +59,7 @@ beforeEach(() => {
 	root = mkdtempSync(join(tmpdir(), "canary-drain-"));
 	now = "2026-08-12T10:00:00.000Z";
 	mkdirSync(join(root, "docs", "plans"), { recursive: true });
-	mkdirSync(join(root, ".imm", "tasks"), { recursive: true });
+	mkdirSync(join(root, ".imm/state"), { recursive: true });
 	execFileSync("git", ["init", "-q"], { cwd: root });
 	writeFileSync(
 		join(root, "docs", "plans", `${TASK}.intent.json`),
@@ -132,15 +132,15 @@ function drainCapability(overrides: Record<string, unknown> = {}) {
 
 describe("drain transaction", () => {
 	test("begin_drain converges active -> draining with record/workspace bytes preserved", () => {
-		const recordBefore = readFileSync(join(root, ".imm", "tasks", `${TASK}.json`), "utf8");
+		const recordBefore = readFileSync(join(root, `.imm/state/tasks/${TASK}.json`), "utf8");
 		const workspaceBefore = readFileSync(join(root, ".imm", "workspace.json"), "utf8");
 		const cap = drainCapability();
 		const claim = app.beginDrain({ root, task_id: TASK, capability: cap, now });
 		expect(claim.lifecycle_status).toBe("draining");
 		expect(readBackendClaim(root)?.lifecycle_status).toBe("draining");
-		expect(readFileSync(join(root, ".imm", "tasks", `${TASK}.json`), "utf8")).toBe(recordBefore);
+		expect(readFileSync(join(root, `.imm/state/tasks/${TASK}.json`), "utf8")).toBe(recordBefore);
 		expect(readFileSync(join(root, ".imm", "workspace.json"), "utf8")).toBe(workspaceBefore);
-		expect(existsSync(join(root, ".imm", "tasks", ".drain-transaction.json"))).toBe(false);
+		expect(existsSync(join(root, ".imm/state/transactions/.drain-transaction.json"))).toBe(false);
 		expect(mutationRegistry.isConsumed(cap)).toBe(true);
 	});
 
@@ -177,7 +177,7 @@ describe("drain transaction", () => {
 			),
 		);
 		writeFileSync(
-			join(root, ".imm/tasks/.drain-transaction.json"),
+			join(root, ".imm/state/transactions/drain-transaction.json"),
 			`${JSON.stringify(
 				{
 					contract: "assurance_kernel/drain_transaction/v1",
@@ -257,7 +257,7 @@ describe("drain transaction", () => {
 		const claim = readBackendClaim(root)!;
 		const nextClaim = { ...claim, lifecycle_status: "draining", updated_at: now };
 		writeFileSync(
-			join(root, ".imm/tasks/.drain-transaction.json"),
+			join(root, ".imm/state/transactions/drain-transaction.json"),
 			`${JSON.stringify(
 				{
 					contract: "assurance_kernel/drain_transaction/v1",
@@ -273,7 +273,7 @@ describe("drain transaction", () => {
 		// Simulated restart: any store-lock acquisition replays the marker.
 		withKernelStoreLock(root, () => undefined);
 		expect(readBackendClaim(root)?.lifecycle_status).toBe("draining");
-		expect(existsSync(join(root, ".imm/tasks/.drain-transaction.json"))).toBe(false);
+		expect(existsSync(join(root, ".imm/state/transactions/drain-transaction.json"))).toBe(false);
 	});
 
 	test("crash recovery replays an already-committed drain idempotently", () => {
@@ -282,7 +282,7 @@ describe("drain transaction", () => {
 		// Re-plant the marker after the commit (crash before marker removal).
 		const claim = readBackendClaim(root)!;
 		writeFileSync(
-			join(root, ".imm/tasks/.drain-transaction.json"),
+			join(root, ".imm/state/transactions/drain-transaction.json"),
 			`${JSON.stringify(
 				{
 					contract: "assurance_kernel/drain_transaction/v1",
@@ -304,11 +304,11 @@ describe("drain transaction", () => {
 		const claim = readBackendClaim(root)!;
 		const foreign = { ...claim, task_id: "some-other-task", lifecycle_status: "active" };
 		writeFileSync(
-			join(root, ".imm/tasks/.backend-claim.json"),
+			join(root, ".imm/state/active-claim.json"),
 			serializeBackendClaim(foreign),
 		);
 		writeFileSync(
-			join(root, ".imm/tasks/.drain-transaction.json"),
+			join(root, ".imm/state/transactions/drain-transaction.json"),
 			`${JSON.stringify(
 				{
 					contract: "assurance_kernel/drain_transaction/v1",
@@ -322,7 +322,7 @@ describe("drain transaction", () => {
 			)}\n`,
 		);
 		expect(() => withKernelStoreLock(root, () => undefined)).toThrow(/conflict/i);
-		expect(existsSync(join(root, ".imm/tasks/.drain-transaction.json"))).toBe(true);
+		expect(existsSync(join(root, ".imm/state/transactions/drain-transaction.json"))).toBe(true);
 	});
 
 	test("drain does not create a tombstone and tombstone does not block other tasks", () => {

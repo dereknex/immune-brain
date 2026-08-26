@@ -248,7 +248,7 @@ describe("R2A exact automatic observations", () => {
 			error: { code: "invalid_command" },
 		});
 		expect(readFileSync(ledgerPath, "utf8")).toBe(before);
-		expect(existsSync(join(root, ".imm", "tasks"))).toBe(false);
+		expect(existsSync(join(root, ".imm/state"))).toBe(false);
 		expect(existsSync(join(root, ".imm", "workspace.json"))).toBe(false);
 		expect(existsSync(join(root, ".imm", "journal.jsonl"))).toBe(false);
 	});

@@ -52,7 +52,7 @@ beforeEach(() => {
 	root = mkdtempSync(join(tmpdir(), "canary-auth-"));
 	now = "2026-08-12T10:00:00.000Z";
 	mkdirSync(join(root, "docs", "plans"), { recursive: true });
-	mkdirSync(join(root, ".imm", "tasks"), { recursive: true });
+	mkdirSync(join(root, ".imm/state"), { recursive: true });
 	execFileSync("git", ["init", "-q"], { cwd: root });
 	writeFileSync(
 		join(root, "docs", "plans", `${TASK}.intent.json`),
@@ -240,7 +240,7 @@ describe("canary application authority pairing", () => {
 				diffProvider: () => DIFF,
 				now,
 			}),
-		).toThrow(/consumed/i);
+		).toThrow(/consumed|missing TaskRecord|no TaskRecord/i);
 	});
 
 	test("failed operation consumes nothing", () => {
@@ -292,7 +292,7 @@ describe("canary application authority pairing", () => {
 		});
 		const drain = drainCapability();
 		expect(() => appA.beginDrain({ root, task_id: TASK, capability: drain, now })).toThrow(
-			/no active backend claim|terminal/i,
+			/no active backend claim|terminal|no TaskRecord|missing TaskRecord/i,
 		);
 	});
 
@@ -303,7 +303,7 @@ describe("canary application authority pairing", () => {
 		const expectedClaim = readBackendClaim(root)!;
 		const nextClaim = { ...expectedClaim, lifecycle_status: "draining", updated_at: now };
 		write(
-			join(root, ".imm/tasks/.drain-transaction.json"),
+			join(root, ".imm/state/transactions/drain-transaction.json"),
 			`${JSON.stringify({
 				contract: "assurance_kernel/drain_transaction/v1",
 				task_id: TASK,
@@ -313,11 +313,11 @@ describe("canary application authority pairing", () => {
 			}, null, 2)}\n`,
 		);
 		write(
-			join(root, ".imm/tasks/.workspace-transaction-v2.json"),
+			join(root, ".imm/state/transactions/workspace-transaction-v2.json"),
 			'{"contract":"assurance_kernel/workspace_transaction/v2","task_id":"x","expected_record_hash":"h","next_record_content":"{}","expected_workspace_hash":"w","next_workspace_content":"{}"}\n',
 		);
 		expect(() => withKernelStoreLock(root, () => undefined)).toThrow(/markers are forbidden/i);
-		expect(existsSync(join(root, ".imm/tasks/.drain-transaction.json"))).toBe(true);
+		expect(existsSync(join(root, ".imm/state/transactions/drain-transaction.json"))).toBe(true);
 	});
 });
 

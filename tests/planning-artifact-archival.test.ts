@@ -20,12 +20,21 @@ function listFiles(dir: string, suffix: string): string[] {
 }
 
 function taskPhase(taskId: string): string | null {
-  const p = join(REPO_ROOT, ".imm/tasks", `${taskId}.json`);
-  if (!existsSync(p)) return null;
-  try {
-    const j = JSON.parse(readFileSync(p, "utf8"));
-    return j.phase ?? j.record?.phase ?? null;
-  } catch { return null; }
+  // Cutover layout: terminal evidence lives under .imm/audit/<task-id>/.
+  // Pre-activation legacy .imm/tasks/ fallback is an expiring branch that
+  // Slice 2 deletes after this repository migrates.
+  const candidates = [
+    join(REPO_ROOT, ".imm/audit", taskId, "task-record.json"),
+    join(REPO_ROOT, ".imm/tasks", `${taskId}.json`),
+  ];
+  for (const p of candidates) {
+    if (!existsSync(p)) continue;
+    try {
+      const j = JSON.parse(readFileSync(p, "utf8"));
+      return j.lifecycle ?? j.phase ?? j.record?.phase ?? null;
+    } catch { return null; }
+  }
+  return null;
 }
 
 // Bookkeeping for the archival system itself. A commit touching only these is

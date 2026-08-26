@@ -17,7 +17,7 @@ import {
 	type EnrollmentCapabilityBinding,
 } from "../plugins/immune-brain/runtime/kernel/enrollment_authority";
 import { canonicalIntentHash, parseTaskIntentV1 } from "../plugins/immune-brain/runtime/kernel/intent";
-import { readTaskRecord } from "../plugins/immune-brain/runtime/kernel/storage";
+import { readTaskRecord, readAuditTaskPair } from "../plugins/immune-brain/runtime/kernel/storage";
 import { readBackendClaim } from "../plugins/immune-brain/runtime/kernel/backend_claim";
 
 const TASK = "canary-user-task";
@@ -44,7 +44,7 @@ function makeUI(): FakeUI {
 function makeEnrolledRoot(): string {
 	const root = mkdtempSync(join(tmpdir(), "p2b2-user-"));
 	mkdirSync(join(root, "docs", "plans"), { recursive: true });
-	mkdirSync(join(root, ".imm", "tasks"), { recursive: true });
+	mkdirSync(join(root, ".imm/state"), { recursive: true });
 	mkdirSync(join(root, "plugins", "immune-brain", ".pi-extension"), { recursive: true });
 	execFileSync("git", ["init", "-q"], { cwd: root });
 	writeFileSync(join(root, "plugins", "immune-brain", ".pi-extension", "owned.ts"), "baseline\n");
@@ -94,7 +94,7 @@ function makeEnrolledRoot(): string {
 }
 
 function seedOpenUserDecision(root: string): string {
-	const path = join(root, ".imm", "tasks", `${TASK}.json`);
+	const path = join(root, ".imm/state/tasks", `${TASK}.json`);
 	const record = JSON.parse(readFileSync(path, "utf8"));
 	const id = "decision-review-limit";
 	record.findings.push({
@@ -111,7 +111,7 @@ function seedOpenUserDecision(root: string): string {
 }
 
 function seedOpenReplanRequired(root: string): void {
-	const path = join(root, ".imm", "tasks", `${TASK}.json`);
+	const path = join(root, ".imm/state/tasks", `${TASK}.json`);
 	const record = JSON.parse(readFileSync(path, "utf8"));
 	record.artifact_state = "active";
 	record.findings.push({
@@ -160,8 +160,8 @@ async function captureToolFailure(promise: Promise<unknown>): Promise<Record<str
 
 function authorityBytes(root: string): { record: string; claim: string } {
 	return {
-		record: readFileSync(join(root, ".imm", "tasks", `${TASK}.json`), "utf8"),
-		claim: readFileSync(join(root, ".imm", "tasks", ".backend-claim.json"), "utf8"),
+		record: readFileSync(join(root, ".imm/state/tasks", `${TASK}.json`), "utf8"),
+		claim: readFileSync(join(root, ".imm/state/active-claim.json"), "utf8"),
 	};
 }
 
@@ -248,7 +248,7 @@ describe("pi canary user authority", () => {
 			expect(ui.confirmCalls).toHaveLength(1);
 			expect(ui.confirmCalls[0].title).toContain("resolve-user-decision");
 			expect(ui.confirmCalls[0].body).toContain(`Finding: ${findingId}`);
-			const record = JSON.parse(readFileSync(join(root, ".imm", "tasks", `${TASK}.json`), "utf8"));
+			const record = JSON.parse(readFileSync(join(root, ".imm/state/tasks", `${TASK}.json`), "utf8"));
 			expect(record.findings.find((finding: { id: string }) => finding.id === findingId)?.status).toBe("resolved");
 		} finally {
 			rmSync(root, { recursive: true, force: true });
@@ -431,7 +431,8 @@ describe("pi canary user authority", () => {
 			expect(parseToolState(result)).toMatchObject({ state: "applied", operation: "stop", lifecycle: "stopped" });
 			expect(ui.confirmCalls).toHaveLength(1);
 			expect(ui.confirmCalls[0].title).toContain("stop");
-			expect(readTaskRecord(root, TASK).record?.lifecycle).toBe("stopped");
+			expect(readTaskRecord(root, TASK).record).toBeNull();
+			expect(readAuditTaskPair(root, TASK)?.record.lifecycle).toBe("stopped");
 			expect(readBackendClaim(root)).toBeNull();
 		} finally {
 			rmSync(root, { recursive: true, force: true });

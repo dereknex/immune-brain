@@ -18,12 +18,12 @@ import { readTaskRecord } from "../plugins/immune-brain/runtime/kernel/storage";
 
 function makeRoot(): string {
 	const root = mkdtempSync(join(tmpdir(), "p2b0-enroll-"));
-	mkdirSync(join(root, ".imm", "tasks"), { recursive: true });
+	mkdirSync(join(root, ".imm/state"), { recursive: true });
 	mkdirSync(join(root, "docs", "plans"), { recursive: true });
 	return root;
 }
 
-const CLAIM_PATH = ".imm/tasks/.backend-claim.json";
+const CLAIM_PATH = ".imm/state/active-claim.json";
 
 function baseIntent(taskId: string, revision = 1) {
 	return {
@@ -221,7 +221,7 @@ describe("enrollment transaction", () => {
 		const taskId = "task-005";
 		writeIntent(root, taskId);
 		writeFileSync(
-			join(root, ".imm", "workspace.json"),
+			join(root, ".imm/state/workspace.json"),
 			`{"contract":"assurance_kernel/workspace/v1","current_working":"other-task"}\n`,
 		);
 		// Binding after the workspace is owned: preparation digest reflects the

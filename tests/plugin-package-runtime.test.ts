@@ -524,7 +524,7 @@ describe("plugin package runtime cutover parity", () => {
 			expect(invalid.status).toBe(2);
 			expect(invalid.stderr).toContain("invalid_kernel_command");
 			expect(readFileSync(statePath, "utf8")).toBe(beforeState);
-			expect(existsSync(join(root, ".imm", "tasks"))).toBe(false);
+			expect(existsSync(join(root, ".imm/state"))).toBe(false);
 			expect(existsSync(join(root, ".imm", "workspace.json"))).toBe(false);
 		});
 	});
@@ -680,7 +680,7 @@ describe("plugin package runtime cutover parity", () => {
 
 			const wrongSlice = await runGithubTrackerOperation(root, { ...TRACKED_TASK, slice_id: "S2" }, gh);
 			expect(wrongSlice.status).toBe("ambiguous_remote_state");
-			expect(existsSync(join(root, ".imm", "tasks"))).toBe(false);
+			expect(existsSync(join(root, ".imm/state"))).toBe(false);
 		});
 	});
 

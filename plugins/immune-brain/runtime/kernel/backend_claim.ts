@@ -1,17 +1,18 @@
 // P2B2 backend claim ownership. NOT exported from kernel/index.ts.
-// The workspace-wide `.imm/tasks/.backend-claim.json` is the unique
+// The ignored state-layout `.imm/state/active-claim.json` is the unique
 // workspace-active claim and may be `active | draining` only; terminal state
-// lives exclusively in the immutable task-scoped tombstone
-// `.imm/tasks/<task-id>.backend-claim.json`. No writer is exported from this
+// lives exclusively in the immutable tracked audit proof
+// `.imm/audit/<task-id>/terminal-proof.json`. No writer is exported from this
 // module: every claim change goes through the recoverable Kernel store
 // transactions owned by storage.ts (enrollment, drain, terminalization).
 
 import { lstatSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 
+import { auditTerminalProofPath, stateClaimPath } from "./storage_paths";
 import type { TaskLifecycle } from "./types";
 
-const CLAIM_PATH = ".imm/tasks/.backend-claim.json";
+const CLAIM_PATH = stateClaimPath();
 
 export type BackendLifecycleStatus = "active" | "draining";
 
@@ -162,7 +163,7 @@ export function parseTaskTombstone(raw: Record<string, unknown>): TaskTombstone 
 /** Fail-closed task-scoped tombstone read. Malformed/unreadable/symlinked state throws; only ENOENT means absent. */
 export function readTaskTombstone(root: string, taskId: string): TaskTombstone | null {
 	validateTaskId(taskId);
-	const raw = readJsonOrNull(join(root, ".imm", "tasks", `${taskId}.backend-claim.json`));
+	const raw = readJsonOrNull(join(resolve(root), auditTerminalProofPath(taskId)));
 	if (!raw) return null;
 	const tombstone = parseTaskTombstone(raw);
 	if (tombstone.task_id !== taskId)
@@ -192,5 +193,5 @@ export function assertNoKernelBackendForV3(root: string, _commandTask?: string):
 }
 
 export function backendClaimPath(root: string): string {
-	return join(resolve(root), CLAIM_PATH);
+	return join(resolve(root), stateClaimPath());
 }

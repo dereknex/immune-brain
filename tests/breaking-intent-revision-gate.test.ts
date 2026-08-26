@@ -92,14 +92,14 @@ function makeEnrolledRoot(): string {
 	mkdirSync(join(root, "docs", "plans"), { recursive: true });
 	mkdirSync(join(root, "docs", "specs"), { recursive: true });
 	mkdirSync(join(root, "plugins", "immune-brain", ".pi-extension"), { recursive: true });
-	mkdirSync(join(root, ".imm", "tasks"), { recursive: true });
+	mkdirSync(join(root, ".imm/state"), { recursive: true });
 	execFileSync("git", ["init", "-q"], { cwd: root });
 	writeFileSync(join(root, "docs", "plans", `${TASK}.intent.json`), JSON.stringify(INTENT, null, 2) + "\n");
 	writeFileSync(join(root, "docs", "specs", `${TASK}.spec.md`), "# Breaking revision fixture\n");
 	writeFileSync(join(root, "plugins", "immune-brain", ".pi-extension", "task.ts"), "export const task = 'baseline';\n");
 	execFileSync("git", ["add", "-A"], { cwd: root });
 	execFileSync("git", ["commit", "-qm", "intent"], { cwd: root });
-	writeFileSync(join(root, ".imm", "workspace.json"), JSON.stringify({ contract: "assurance_kernel/workspace/v1", current_working: null }, null, 2) + "\n");
+	writeFileSync(join(root, ".imm/state/workspace.json"), JSON.stringify({ contract: "assurance_kernel/workspace/v1", current_working: null }, null, 2) + "\n");
 	const registry = createEnrollmentAuthorityRegistry();
 	const prep = preparePiCanary(root, { task_id: TASK, now: "2026-08-12T10:00:00.000Z" });
 	const binding: EnrollmentCapabilityBinding = {
@@ -128,7 +128,7 @@ function makeEnrolledRoot(): string {
 }
 
 function seedParkedReplanRequired(root: string): string {
-	const path = join(root, ".imm", "tasks", `${TASK}.json`);
+	const path = join(root, ".imm/state/tasks", `${TASK}.json`);
 	const record = JSON.parse(readFileSync(path, "utf8"));
 	record.artifact_state = "active";
 	const findingId = "rework:review-limit:replan-required";
@@ -209,7 +209,7 @@ describe("breaking intent revision gate", () => {
 			expect(ui.dialogCalls[0].body).toContain("Next Intent: rev 2");
 			expect(statSync(intentPath).ino).toBe(beforeInode);
 			expect(JSON.parse(readFileSync(intentPath, "utf8"))).toMatchObject({ revision: 2, task_id: TASK });
-			const record = JSON.parse(readFileSync(join(root, ".imm", "tasks", `${TASK}.json`), "utf8"));
+			const record = JSON.parse(readFileSync(join(root, ".imm/state/tasks", `${TASK}.json`), "utf8"));
 			expect(record.intent_snapshot.revision).toBe(2);
 			expect(record.intent_ref.content_hash).toBe(
 				canonicalIntentHash(parseTaskIntentV1({
@@ -239,14 +239,14 @@ describe("breaking intent revision gate", () => {
 				operation: "approve-breaking-intent-revision",
 				lifecycle: "active",
 			});
-			const record = JSON.parse(readFileSync(join(root, ".imm", "tasks", `${TASK}.json`), "utf8"));
+			const record = JSON.parse(readFileSync(join(root, ".imm/state/tasks", `${TASK}.json`), "utf8"));
 			expect(record).toMatchObject({ lifecycle: "active", artifact_state: "active" });
 			expect(record.intent_snapshot.revision).toBe(2);
 			expect(record.findings.find((finding: { id: string }) => finding.id === findingId)?.status).toBe("resolved");
 			// Same enrollment: claim remains active on the same task, no successor
 			// TaskRecord or second backend claim exists.
 			expect(readBackendClaim(root)).toMatchObject({ task_id: TASK, lifecycle_status: "active" });
-			expect(existsSync(join(root, ".imm", "tasks", `${TASK}.backend-claim.json`))).toBe(false);
+			expect(existsSync(join(root, ".imm/audit", TASK, "terminal-proof.json"))).toBe(false);
 		} finally { rmSync(root, { recursive: true, force: true }); }
 	});
 
@@ -272,8 +272,8 @@ describe("breaking intent revision gate", () => {
 			expect(existsSync(archivedIntent)).toBe(true);
 			expect(existsSync(archivedSpec)).toBe(true);
 
-			const recordPath = join(root, ".imm", "tasks", `${TASK}.json`);
-			const claimPath = join(root, ".imm", "tasks", ".backend-claim.json");
+			const recordPath = join(root, ".imm/state/tasks", `${TASK}.json`);
+			const claimPath = join(root, ".imm/state/active-claim.json");
 			const frozenSnapshot = () => ({
 				intent: readFileSync(archivedIntent, "utf8"),
 				spec: readFileSync(archivedSpec, "utf8"),
@@ -338,8 +338,8 @@ describe("breaking intent revision gate", () => {
 			);
 			const archivedIntent = join(root, "docs", "plans", "archive", `${TASK}.intent.json`);
 			const archivedSpec = join(root, "docs", "specs", "archive", `${TASK}.spec.md`);
-			const recordPath = join(root, ".imm", "tasks", `${TASK}.json`);
-			const claimPath = join(root, ".imm", "tasks", ".backend-claim.json");
+			const recordPath = join(root, ".imm/state/tasks", `${TASK}.json`);
+			const claimPath = join(root, ".imm/state/active-claim.json");
 			const snapshot = () => {
 				const record = readFileSync(recordPath, "utf8");
 				return {
@@ -373,8 +373,8 @@ describe("breaking intent revision gate", () => {
 		try {
 			const { tool } = loadSurface();
 			const intentPath = join(root, "docs", "plans", `${TASK}.intent.json`);
-			const recordPath = join(root, ".imm", "tasks", `${TASK}.json`);
-			const claimPath = join(root, ".imm", "tasks", ".backend-claim.json");
+			const recordPath = join(root, ".imm/state/tasks", `${TASK}.json`);
+			const claimPath = join(root, ".imm/state/active-claim.json");
 			const snapshot = () => ({
 				intent: readFileSync(intentPath, "utf8"),
 				record: readFileSync(recordPath, "utf8"),
