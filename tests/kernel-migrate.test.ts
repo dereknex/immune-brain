@@ -64,7 +64,7 @@ describe("imm-kernel migrate is retired", () => {
 		});
 		expect(readFileSync(statePath(root), "utf8")).toBe(before);
 		expect(existsSync(join(root, ".imm/state"))).toBe(false);
-		expect(existsSync(join(root, ".imm", "workspace.json"))).toBe(false);
+		expect(existsSync(join(root, ".imm/state/workspace.json"))).toBe(false);
 	});
 
 	it("rejects migrate regardless of ledger shape with zero journal writes", () => {

@@ -107,7 +107,7 @@ describe("partially live runtime trim", () => {
 		);
 		expect(kernel.status).toBe(0);
 		expect(JSON.parse(kernel.stdout).contract).toBe(
-			"assurance_kernel/shadow_status/v1",
+			"assurance_kernel/status/v1",
 		);
 
 		const retireStale = spawnWrapper("imm-retire-stale-wrapper", [

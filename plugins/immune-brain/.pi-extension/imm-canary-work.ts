@@ -95,6 +95,9 @@ import {
 	reconcileKernelAuthority,
 	repairKernelAuthority,
 	readTaskRecord,
+	withKernelStoreLock,
+	inspectStorageLayout,
+	migrateLegacyLayout,
 	readTaskIntent,
 	parseTaskIntentV1,
 	canonicalIntentHash,
@@ -413,6 +416,30 @@ export default function (
 				result: `${action.op} started`,
 				next_action: "Wait for the foreground Tool result",
 			});
+			// Storage-layout gate (BR-REQ-005/006): only `status` is read-only
+			// and may inspect a non-ready layout. Every mutation recovers
+			// Kernel transaction markers first, then runs the one-release
+			// migration and STOPS until the affected diff is committed.
+			if (action.op !== "status") {
+				if (ctx.mode !== "tui")
+					return failCanaryTool(taskId, action.op, "blocked", "tui_required", "Kernel mutation is TUI-only", "invoke the TUI Tool");
+				try {
+					await withKernelStoreLock(ctx.cwd, () => undefined);
+				} catch (error) {
+					return failCanaryTool(taskId, action.op, "blocked", "layout_recovery_failed", `Kernel transaction recovery failed: ${error instanceof Error ? error.message : String(error)}`, "resolve the pending marker and retry");
+				}
+				const inspection = await inspectStorageLayout(ctx.cwd);
+				if (inspection.layout === "migration_required" || inspection.layout === "recovery_required") {
+					const migration = await migrateLegacyLayout(ctx.cwd);
+					const summary = migration.outcome === "migrated"
+						? `Legacy storage migrated (${migration.affected_paths.length} paths); commit the affected migration diff and retry ${action.op}`
+						: `Mutation blocked by storage layout (${migration.outcome}): ${migration.reason ?? inspection.reason ?? ""}`;
+					return failCanaryTool(taskId, action.op, "blocked", "layout_migration_required", summary, "commit the migration diff and retry");
+				}
+				if (inspection.layout !== "ready") {
+					return failCanaryTool(taskId, action.op, "blocked", "layout_not_ready", `Mutation blocked by storage layout (${inspection.layout}): ${inspection.reason ?? ""}`, "resolve the layout condition and retry");
+				}
+			}
 			if (action.op === "repair_authority_state") {
 				if (ctx.mode !== "tui") return failCanaryTool(taskId, action.op, "blocked", "tui_required", "imm_kernel_canary mutation is TUI-only", "invoke the TUI Tool");
 				const authority = await reconcileKernelAuthority(ctx.cwd, taskId);

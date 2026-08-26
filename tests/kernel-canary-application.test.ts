@@ -58,7 +58,7 @@ beforeEach(() => {
 	writeFileSync(join(root, "docs", "specs", `${TASK}.spec.md`), "# Canary app task\n");
 	execFileSync("git", ["add", "-A"], { cwd: root });
 	execFileSync("git", ["commit", "-qm", "intent"], { cwd: root });
-	writeFileSync(join(root, ".imm", "workspace.json"), `${JSON.stringify({
+	writeFileSync(join(root, ".imm/state/workspace.json"), `${JSON.stringify({
 		contract: "assurance_kernel/workspace/v1",
 		current_working: null,
 	}, null, 2)}\n`);

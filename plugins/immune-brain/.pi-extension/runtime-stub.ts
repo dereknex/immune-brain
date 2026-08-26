@@ -293,6 +293,10 @@ export async function readTaskRecord(
 	const mod = await import(/* @vite-ignore */ kernelPath("storage"));
 	return mod.readTaskRecord(root, taskId);
 }
+export async function withKernelStoreLock<T>(root: string, operation: () => T): Promise<T> {
+	const mod = await import(/* @vite-ignore */ kernelPath("storage"));
+	return mod.withKernelStoreLock(root, operation);
+}
 export async function readBackendClaim(root: string): Promise<BackendClaim | null> {
 	const mod = await import(/* @vite-ignore */ kernelPath("backend_claim"));
 	return mod.readBackendClaim(root);
@@ -360,6 +364,14 @@ export async function canonicalIntentHash(intent: unknown): Promise<string> {
 export async function readWorkspaceState(root: string): Promise<WorkspaceRead> {
 	const mod = await import(/* @vite-ignore */ kernelPath("storage"));
 	return mod.readWorkspaceStateRaw(root);
+}
+export async function inspectStorageLayout(root: string): Promise<import("../runtime/kernel/storage_paths").StorageLayoutInspection> {
+	const mod = await import(/* @vite-ignore */ kernelPath("storage_paths"));
+	return mod.inspectStorageLayout(root);
+}
+export async function migrateLegacyLayout(root: string): Promise<import("../runtime/kernel/storage_layout_migration").MigrationOutcome> {
+	const mod = await import(/* @vite-ignore */ kernelPath("storage_layout_migration"));
+	return mod.migrateLegacyLayout(root);
 }
 export async function beginDrainCapabilityAction(
 	taskId: string,

@@ -12,7 +12,7 @@ import {
 	readWorkspaceStateRaw,
 } from "./storage";
 
-const SOURCE_PATH = ".imm/memory/current_iteration.json";
+const SOURCE_PATH = ".imm/state/workspace.json";
 
 export interface PiCanaryPrepareInput {
 	task_id: string;

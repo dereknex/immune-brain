@@ -12,6 +12,7 @@ import {
 	mkdirSync,
 	mkdtempSync,
 	readFileSync,
+	readdirSync,
 	rmSync,
 	writeFileSync,
 } from "node:fs";
@@ -34,7 +35,6 @@ function withRepo<T>(fn: (root: string) => T): T {
 	const root = mkdtempSync(join(tmpdir(), "imm-intent-author-"));
 	roots.push(root);
 	mkdirSync(join(root, "docs", "plans"), { recursive: true });
-	mkdirSync(join(root, ".imm", "memory"), { recursive: true });
 	writeFileSync(join(root, ".gitignore"), ".imm/\n");
 	git(root, ["init", "-q"]);
 	git(root, ["config", "user.email", "fixture@example.com"]);
@@ -53,25 +53,6 @@ function activateRetiredPolicy(root: string): void {
 		"add",
 		"docs/plans/managed-task-routing-policy.json",
 	]);
-}
-
-function writeEmptyLedger(root: string): void {
-	writeFileSync(
-		join(root, ".imm", "memory", "current_iteration.json"),
-		JSON.stringify(
-			{
-				schema_version: 3,
-				plan_path: null,
-				runtime_status: "idle",
-				steps: {},
-				history: [],
-				closed_plan_history: [],
-				plan_transition_history: [],
-			},
-			null,
-			2,
-		) + "\n",
-	);
 }
 
 const GOOD_DESCRIPTOR = JSON.stringify({
@@ -148,7 +129,6 @@ afterEach(() => {
 describe("imm-kernel intent author", () => {
 	it("creates exactly one untracked draft with deterministic canonical bytes", () => {
 		withRepo((root) => {
-			writeEmptyLedger(root);
 			activateRetiredPolicy(root);
 			const path = "docs/plans/task-001-intent-author.intent.json";
 			const result = author(root, path, candidate());
@@ -168,13 +148,13 @@ describe("imm-kernel intent author", () => {
 			);
 			// No journal, no workflow state, no Git mutation.
 			expect(existsSync(join(root, ".imm", "journal.jsonl"))).toBe(false);
-			expect(existsSync(join(root, ".imm/state"))).toBe(false);
-			expect(
-				readFileSync(
-					join(root, ".imm", "memory", "current_iteration.json"),
-					"utf8",
-				),
-			).toContain('"plan_path": null');
+			// The layout gate creates only the ignored locks directory; zero
+			// authority bytes are written by authoring.
+			if (existsSync(join(root, ".imm/state"))) {
+				expect(readdirSync(join(root, ".imm/state"))).toEqual(["locks"]);
+			}
+			// The legacy v3 Ledger is no longer created or read by authoring.
+			expect(existsSync(join(root, ".imm/memory/current_iteration.json"))).toBe(false);
 			const gitStatus = spawnSync(
 				"git",
 				["status", "--porcelain"],
@@ -193,7 +173,6 @@ describe("imm-kernel intent author", () => {
 
 	it("rejects authoring without an active kernel_task_intent policy", () => {
 		withRepo((root) => {
-			writeEmptyLedger(root);
 			const result = author(
 				root,
 				"docs/plans/task-001-intent-author.intent.json",
@@ -213,7 +192,6 @@ describe("imm-kernel intent author", () => {
 
 	it("rejects invalid routing policy with routing_policy_invalid", () => {
 		withRepo((root) => {
-			writeEmptyLedger(root);
 			writeFileSync(
 				join(root, "docs", "plans", "managed-task-routing-policy.json"),
 				"{ not json\n",
@@ -234,6 +212,7 @@ describe("imm-kernel intent author", () => {
 	it("rejects a nonterminal v3 owner before opening the destination", () => {
 		withRepo((root) => {
 			activateRetiredPolicy(root);
+			mkdirSync(join(root, ".imm", "memory"), { recursive: true });
 			writeFileSync(
 				join(root, ".imm", "memory", "current_iteration.json"),
 				JSON.stringify(
@@ -257,14 +236,13 @@ describe("imm-kernel intent author", () => {
 			);
 			expect(result.returncode).toBe(1);
 			expect(JSON.parse(result.stdout).error.code).toBe(
-				"v3_owner_nonterminal",
+				"layout_migration_blocked",
 			);
 		});
 	});
 
 	it("rejects strict parser violations", () => {
 		withRepo((root) => {
-			writeEmptyLedger(root);
 			activateRetiredPolicy(root);
 			const result = author(
 				root,
@@ -278,7 +256,6 @@ describe("imm-kernel intent author", () => {
 
 	it("rejects task/path mismatch", () => {
 		withRepo((root) => {
-			writeEmptyLedger(root);
 			activateRetiredPolicy(root);
 			const result = author(
 				root,
@@ -294,7 +271,6 @@ describe("imm-kernel intent author", () => {
 
 	it("rejects non-canonical verification descriptors", () => {
 		withRepo((root) => {
-			writeEmptyLedger(root);
 			activateRetiredPolicy(root);
 			const bad = candidate({
 				acceptance: [
@@ -323,7 +299,6 @@ describe("imm-kernel intent author", () => {
 
 	it("never overwrites an existing destination", () => {
 		withRepo((root) => {
-			writeEmptyLedger(root);
 			activateRetiredPolicy(root);
 			const path = "docs/plans/task-001-intent-author.intent.json";
 			writeFileSync(join(root, path), "original bytes\n");
@@ -340,7 +315,6 @@ describe("imm-kernel intent author", () => {
 
 	it("rejects stdin oversize before JSON parsing or destination access", () => {
 		withRepo((root) => {
-			writeEmptyLedger(root);
 			activateRetiredPolicy(root);
 			const big = JSON.stringify(
 				candidate({ goal: "x".repeat(80 * 1024) }),
@@ -359,7 +333,6 @@ describe("imm-kernel intent author", () => {
 
 	it("does not read stdin for help or other subcommands", () => {
 		withRepo((root) => {
-			writeEmptyLedger(root);
 			activateRetiredPolicy(root);
 			// Non-author commands must be stdin-independent: an empty stdin
 			// pipe must not hang or fail them. The v4 router rejects unknown

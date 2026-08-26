@@ -160,8 +160,9 @@ describe("pi canary lifecycle package composition", () => {
 		writeFileSync(join(root, "docs", "specs", "canary-handoff-task.spec.md"), "# Canary handoff task\n");
 		execFileSync("git", ["add", "-A"], { cwd: root });
 		execFileSync("git", ["commit", "-qm", "intent"], { cwd: root });
+		mkdirSync(join(root, ".imm/state"), { recursive: true });
 		writeFileSync(
-			join(root, ".imm", "workspace.json"),
+			join(root, ".imm/state/workspace.json"),
 			JSON.stringify(
 				{ contract: "assurance_kernel/workspace/v1", current_working: null },
 				null,
@@ -220,10 +221,8 @@ describe("pi canary lifecycle package composition", () => {
 		const root = mkdtempSync(join(tmpdir(), "p2b2-tool-lifecycle-"));
 		mkdirSync(join(root, "docs", "plans"), { recursive: true });
 		mkdirSync(join(root, "docs", "specs"), { recursive: true });
-		mkdirSync(join(root, ".imm", "tasks"), { recursive: true });
-		mkdirSync(join(root, ".imm", "memory"), { recursive: true });
+		mkdirSync(join(root, ".imm/state"), { recursive: true });
 		mkdirSync(join(root, "scripts"), { recursive: true });
-		writeFileSync(join(root, ".imm", "memory", "current_iteration.json"), JSON.stringify({ runtime_status: "idle", active_step: null }, null, 2) + "\n");
 		writeFileSync(join(root, "docs", "plans", "fixture.txt"), "fixture\n");
 		writeFileSync(join(root, "scripts", "accept.ts"), "process.exit(0);\n");
 		execFileSync("git", ["init", "-q"], { cwd: root });
@@ -231,7 +230,7 @@ describe("pi canary lifecycle package composition", () => {
 		writeFileSync(join(root, "docs", "specs", "canary-handoff-task.spec.md"), "# Canary handoff task\n");
 		execFileSync("git", ["add", "-A"], { cwd: root });
 		execFileSync("git", ["commit", "-qm", "intent"], { cwd: root });
-		writeFileSync(join(root, ".imm", "workspace.json"), JSON.stringify({ contract: "assurance_kernel/workspace/v1", current_working: null }, null, 2) + "\n");
+		writeFileSync(join(root, ".imm/state/workspace.json"), JSON.stringify({ contract: "assurance_kernel/workspace/v1", current_working: null }, null, 2) + "\n");
 		try {
 			const enrollmentTool = loadEnrollmentTool();
 			const enrollment = await enrollmentTool.execute(

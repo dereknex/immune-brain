@@ -203,6 +203,7 @@ describe("R2A exact automatic observations", () => {
 		const root = tempRoot();
 		const outside = tempRoot();
 		const path = automaticObservationJournalPath(root);
+		mkdirSync(join(root, ".imm/state/observations"), { recursive: true });
 		writeFileSync(join(outside, "journal.jsonl"), "");
 		symlinkSync(join(outside, "journal.jsonl"), path);
 		expect(() => readAutomaticObservationsV2(root)).toThrow(
@@ -249,7 +250,7 @@ describe("R2A exact automatic observations", () => {
 		});
 		expect(readFileSync(ledgerPath, "utf8")).toBe(before);
 		expect(existsSync(join(root, ".imm/state"))).toBe(false);
-		expect(existsSync(join(root, ".imm", "workspace.json"))).toBe(false);
+		expect(existsSync(join(root, ".imm/state/workspace.json"))).toBe(false);
 		expect(existsSync(join(root, ".imm", "journal.jsonl"))).toBe(false);
 	});
 });

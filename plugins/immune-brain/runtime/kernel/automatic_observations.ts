@@ -22,9 +22,9 @@ import {
 import type { LegacyMapping, V3CommitSourceEvent } from "./types";
 
 const JOURNAL_RELATIVE_PATH =
-	".imm/memory/.current_iteration.automatic_observations.jsonl";
+	".imm/state/observations/automatic_observations.jsonl";
 const LOCK_RELATIVE_PATH =
-	".imm/memory/.current_iteration.automatic_observations.lock";
+	".imm/state/observations/automatic_observations.lock";
 const MAX_JOURNAL_BYTES = 64 * 1024 * 1024;
 
 export interface V3AuthorityObservationV2 {
@@ -237,9 +237,11 @@ function insideRoot(root: string, candidate: string): boolean {
 }
 
 function ensureMemoryDirectory(root: string): { root: string; memory: string } {
+	// Storage-layout cutover: automatic observations are active runtime state
+	// and live under the ignored .imm/state/observations/ directory.
 	const canonical = canonicalRoot(root);
 	let cursor = canonical;
-	for (const segment of [".imm", "memory"]) {
+	for (const segment of [".imm", "state", "observations"]) {
 		cursor = resolve(cursor, segment);
 		if (!existsSync(cursor)) mkdirSync(cursor, { mode: 0o700 });
 		const stat = lstatSync(cursor);
@@ -421,8 +423,8 @@ export function appendAutomaticObservationV2(
 				`automatic observation receipt identity conflict: ${observation.receipt_record_id}`,
 			);
 		}
-		const { memory } = ensureMemoryDirectory(root);
-		const path = resolve(memory, JOURNAL_RELATIVE_PATH.split("/").at(-1)!);
+		ensureMemoryDirectory(root);
+		const path = resolve(root, JOURNAL_RELATIVE_PATH);
 		assertRegularPathOrMissing(path);
 		const fd = openSync(
 			path,

@@ -13,8 +13,9 @@
 import { createHash } from "node:crypto";
 import { lstatSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
+import { LEGACY_V3_RELATIVE, legacyV3Path } from "./storage_paths";
 
-const SOURCE_RELATIVE = ".imm/memory/current_iteration.json";
+const LEGACY_SOURCE_RELATIVE = ".imm/memory/current_iteration.json";
 const MAX_BYTES = 2 * 1024 * 1024;
 
 export interface LegacyAuditProjection {
@@ -36,6 +37,23 @@ function sha256Hex(bytes: string | Buffer): string {
 }
 
 /**
+ * The archived v3 Ledger lives at `.imm/audit/legacy-v3/` after the
+ * one-release migration; before migration it is still read from the legacy
+ * `.imm/memory/` path. This is the ONLY production caller of the legacy path
+ * after the cutover; Slice 2 deletes the fallback branch once every target
+ * repository has migrated.
+ */
+export function legacyLedgerSourceRelative(canonicalRoot: string): string {
+	try {
+		const archived = lstatSync(resolve(canonicalRoot, legacyV3Path("current_iteration.json")));
+		if (archived.isFile() && !archived.isSymbolicLink()) return legacyV3Path("current_iteration.json");
+	} catch {
+		// archived ledger absent: pre-migration state
+	}
+	return LEGACY_SOURCE_RELATIVE;
+}
+
+/**
  * Read a bounded regular file with no symlink segments, returning canonical
  * content bytes. Throws KernelStoreSecurityError-compatible errors; only
  * ENOENT returns null.
@@ -45,7 +63,8 @@ export function readLegacyLedgerBounded(root: string): {
 	path: string;
 } | null {
 	const canonicalRoot = resolve(root);
-	const target = join(canonicalRoot, SOURCE_RELATIVE);
+	const sourceRelative = legacyLedgerSourceRelative(canonicalRoot);
+	const target = join(canonicalRoot, sourceRelative);
 	let stat;
 	try {
 		stat = lstatSync(target);
@@ -64,7 +83,7 @@ export function readLegacyLedgerBounded(root: string): {
 	const after = lstatSync(target);
 	if (after.isSymbolicLink() || after.dev !== stat.dev || after.ino !== stat.ino)
 		throw new Error("legacy audit rejected: v3 Ledger identity changed during read");
-	return { content, path: SOURCE_RELATIVE };
+	return { content, path: sourceRelative };
 }
 
 /**
@@ -74,11 +93,13 @@ export function readLegacyLedgerBounded(root: string): {
 export function projectLegacyAudit(
 	root: string,
 ): LegacyAuditProjection {
+	const canonicalRoot = resolve(root);
 	const read = readLegacyLedgerBounded(root);
+	const source = legacyLedgerSourceRelative(canonicalRoot);
 	if (!read) {
 		return {
 			contract: "assurance_kernel/legacy_audit/v1",
-			source: SOURCE_RELATIVE,
+			source,
 			read_only: true,
 			writes_performed: false,
 			plan_path: null,
@@ -109,7 +130,7 @@ export function projectLegacyAudit(
 				: "idle";
 	return {
 		contract: "assurance_kernel/legacy_audit/v1",
-		source: SOURCE_RELATIVE,
+		source,
 		read_only: true,
 		writes_performed: false,
 		plan_path: typeof raw.plan_path === "string" ? raw.plan_path : null,

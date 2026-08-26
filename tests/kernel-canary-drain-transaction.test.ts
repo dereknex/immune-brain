@@ -68,7 +68,7 @@ beforeEach(() => {
 	execFileSync("git", ["add", "-A"], { cwd: root });
 	execFileSync("git", ["commit", "-qm", "intent"], { cwd: root });
 	writeFileSync(
-		join(root, ".imm", "workspace.json"),
+		join(root, ".imm/state/workspace.json"),
 		JSON.stringify(
 			{ contract: "assurance_kernel/workspace/v1", current_working: null },
 			null,
@@ -133,13 +133,13 @@ function drainCapability(overrides: Record<string, unknown> = {}) {
 describe("drain transaction", () => {
 	test("begin_drain converges active -> draining with record/workspace bytes preserved", () => {
 		const recordBefore = readFileSync(join(root, `.imm/state/tasks/${TASK}.json`), "utf8");
-		const workspaceBefore = readFileSync(join(root, ".imm", "workspace.json"), "utf8");
+		const workspaceBefore = readFileSync(join(root, ".imm/state/workspace.json"), "utf8");
 		const cap = drainCapability();
 		const claim = app.beginDrain({ root, task_id: TASK, capability: cap, now });
 		expect(claim.lifecycle_status).toBe("draining");
 		expect(readBackendClaim(root)?.lifecycle_status).toBe("draining");
 		expect(readFileSync(join(root, `.imm/state/tasks/${TASK}.json`), "utf8")).toBe(recordBefore);
-		expect(readFileSync(join(root, ".imm", "workspace.json"), "utf8")).toBe(workspaceBefore);
+		expect(readFileSync(join(root, ".imm/state/workspace.json"), "utf8")).toBe(workspaceBefore);
 		expect(existsSync(join(root, ".imm/state/transactions/.drain-transaction.json"))).toBe(false);
 		expect(mutationRegistry.isConsumed(cap)).toBe(true);
 	});

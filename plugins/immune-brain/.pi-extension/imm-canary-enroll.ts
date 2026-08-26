@@ -22,6 +22,9 @@ import {
 	readTaskIntent,
 	runEnrollmentRehearsal,
 	enrollCanaryTask,
+	withKernelStoreLock,
+	inspectStorageLayout,
+	migrateLegacyLayout,
 } from "./runtime-stub";
 import {
 	presentTaskRail,
@@ -304,6 +307,76 @@ async function executeForegroundEnrollment(
 		progress("preparing", `Preparing immutable Kernel owners for ${taskId}`);
 		const now = new Date().toISOString();
 		let taskIntent: Awaited<ReturnType<typeof readTaskIntent>>;
+
+		// Storage-layout gate (BR-REQ-005/006): enrollment is the stateful
+		// mutation boundary. Kernel transaction markers recover under the
+		// store lock; the one-release migrator relocates an owner-free legacy
+		// layout and stops, and the literal user retries after committing the
+		// affected migration diff. Repreparation never proceeds on a dirty
+		// or blocked layout.
+		{
+			const recoverLayout = async (): Promise<
+				EnrollmentTerminal | undefined
+			> => {
+				try {
+					await withKernelStoreLock(root, () => undefined);
+				} catch (error) {
+					return terminal(
+						action,
+						taskId,
+						"blocked",
+						stage,
+						`Kernel transaction recovery failed before enrollment: ${errorMessage(error)}`,
+						"resolve the pending Kernel transaction marker and retry",
+					);
+				}
+				const inspection = await inspectStorageLayout(root);
+				if (inspection.layout === "ready") return undefined;
+				if (
+					inspection.layout === "migration_required" ||
+					inspection.layout === "recovery_required"
+				) {
+					const migration = await migrateLegacyLayout(root);
+					if (migration.outcome === "migrated")
+						return terminal(
+							action,
+							taskId,
+							"blocked",
+							stage,
+							`Legacy storage migrated (${migration.affected_paths.length} paths); commit the affected migration diff and retry enrollment`,
+							"commit .imm/audit/** and .imm/legacy paths, then retry",
+						);
+					if (migration.outcome === "migration_uncommitted")
+						return terminal(
+							action,
+							taskId,
+							"blocked",
+							stage,
+							`Migration completed but affected paths are uncommitted: ${migration.affected_paths.join(", ")}`,
+							"commit the affected migration diff, then retry",
+						);
+					return terminal(
+						action,
+							taskId,
+						"blocked",
+						stage,
+						`Enrollment blocked by storage layout (${migration.outcome}): ${migration.reason ?? inspection.reason ?? ""}`,
+						"resolve the reported layout condition and retry",
+					);
+				}
+				return terminal(
+					action,
+					taskId,
+					"blocked",
+					stage,
+					`Enrollment blocked by storage layout (${inspection.layout}): ${inspection.reason ?? ""}`,
+					"resolve the reported layout condition and retry",
+				);
+			};
+			const blocked = await recoverLayout();
+			if (blocked) return blocked;
+		}
+
 		try {
 			taskIntent = await readTaskIntent(root, taskId);
 		} catch (error) {

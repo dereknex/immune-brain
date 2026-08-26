@@ -75,23 +75,6 @@ function makeRoot(): string {
 	const root = mkdtempSync(join(tmpdir(), "enroll-reloc-"));
 	mkdirSync(join(root, ".imm/state"), { recursive: true });
 	mkdirSync(join(root, "docs", "plans"), { recursive: true });
-	mkdirSync(join(root, ".imm", "memory"), { recursive: true });
-	writeFileSync(
-		join(root, ".imm", "memory", "current_iteration.json"),
-		JSON.stringify(
-			{
-				plan_path: "docs/plans/example.md",
-				plan_signature: "sig",
-				steps: {},
-				runtime_status: "idle",
-				requires_replan: false,
-				active_step: null,
-				plan_terminal: null,
-			},
-			null,
-			2,
-		),
-	);
 	return root;
 }
 
@@ -125,24 +108,7 @@ function makeEligibleRepo(
 	mkdirSync(join(root, "docs", "evidence", "assurance-kernel"), { recursive: true });
 	mkdirSync(join(root, "scripts"), { recursive: true });
 	writeFileSync(join(root, "scripts", "accept.ts"), shouldPass ? "process.exit(0);\n" : "process.exit(7);\n");
-	mkdirSync(join(root, ".imm", "memory"), { recursive: true });
-	mkdirSync(join(root, ".imm/state"), { recursive: true });
-	writeFileSync(
-		join(root, ".imm", "memory", "current_iteration.json"),
-		JSON.stringify(
-			{
-				plan_path: "docs/plans/example.md",
-				plan_signature: "sig",
-				steps: {},
-				runtime_status: "idle",
-				requires_replan: false,
-				active_step: null,
-				plan_terminal: null,
-			},
-			null,
-			2,
-		),
-	);
+	mkdirSync(join(root, ".imm/state/observations"), { recursive: true });
 	writeFileSync(
 		join(root, "docs", "plans", `${taskId}.intent.json`),
 		`${JSON.stringify(
@@ -214,7 +180,7 @@ function makeEligibleRepo(
 			source_kind: "state_mutation",
 			status,
 			state_path_identity: pathIdentity,
-			targets: [{ path: ".imm/memory/current_iteration.json", before_sha256: null, after_sha256: after }],
+			targets: [{ path: ".imm/state/workspace.json", before_sha256: null, after_sha256: after }],
 			before_sha256: null,
 			after_sha256: after,
 			ledger_revision: ledgerRevision,
@@ -262,19 +228,19 @@ function makeEligibleRepo(
 		);
 	}
 	writeFileSync(
-		join(root, ".imm", "memory", ".current_iteration.authority_commit_receipts.jsonl"),
+		join(root, ".imm/state/observations/authority_commit_receipts.jsonl"),
 		`${receiptLines.join("\n")}\n`,
 	);
 	writeFileSync(
-		join(root, ".imm", "memory", ".current_iteration.automatic_observations.jsonl"),
+		join(root, ".imm/state/observations/automatic_observations.jsonl"),
 		`${observationLines.join("\n")}\n`,
 	);
 	git(root, ["add", "-A"]);
 	git(root, ["commit", "-qm", "fixture state"]);
 
-	// readiness evidence
-	const { buildMigrationDryRunReport, migrationDryRunDigest } = require("../plugins/immune-brain/runtime/commands/kernel") as typeof import("../plugins/immune-brain/runtime/commands/kernel");
-	const digest = migrationDryRunDigest(buildMigrationDryRunReport(root));
+	// readiness evidence: the retired migration dry-run report is a stable
+	// fixture digest; the report builder no longer exists.
+	const digest = "sha256:" + "a".repeat(64);
 	writeFileSync(
 		join(root, "docs", "evidence", "assurance-kernel", "readiness.json"),
 		`${JSON.stringify(
@@ -302,9 +268,9 @@ function makeEligibleRepo(
 function authoritySnapshot(root: string): string {
 	const parts: string[] = [];
 	for (const path of [
-		".imm/memory/current_iteration.json",
-		".imm/memory/.current_iteration.authority_commit_receipts.jsonl",
-		".imm/memory/.current_iteration.automatic_observations.jsonl",
+		".imm/state/observations/authority_commit_receipts.jsonl",
+		".imm/state/observations/automatic_observations.jsonl",
+		".imm/state/tasks/",
 	]) {
 		const full = join(root, path);
 		try {
@@ -375,7 +341,7 @@ describe("enrollment confirmation relocation", () => {
 			expect(rehearseIdx).toBeGreaterThan(revalidateIdx);
 			expect(updates).not.toContain("snapshotting");
 			// Authority was written exactly once
-			expect(readdirSync(join(root, ".imm/state")).sort()).toEqual(["active-claim.json", "locks", "tasks", "transactions", "workspace.json"]);
+			expect(readdirSync(join(root, ".imm/state")).sort()).toEqual(["active-claim.json", "locks", "observations", "tasks", "transactions", "workspace.json"]);
 			expect(readdirSync(join(root, ".imm/state/tasks")).sort()).toEqual([`${TASK}.json`]);
 			expect(existsSync(join(root, ".imm/state/workspace.json"))).toBe(true);
 		} finally {
@@ -393,7 +359,7 @@ describe("enrollment confirmation relocation", () => {
 			expect(ui.confirmCalls.length).toBe(1);
 			expect(ui.customCalls.length).toBe(1);
 			expect(result.details).toMatchObject({ state: "completed" });
-			expect(readdirSync(join(root, ".imm/state")).sort()).toEqual(["active-claim.json", "locks", "tasks", "transactions", "workspace.json"]);
+			expect(readdirSync(join(root, ".imm/state")).sort()).toEqual(["active-claim.json", "locks", "observations", "tasks", "transactions", "workspace.json"]);
 			expect(readdirSync(join(root, ".imm/state/tasks")).sort()).toEqual([`${TASK}.json`]);
 			expect(existsSync(join(root, ".imm/state/workspace.json"))).toBe(true);
 		} finally {
@@ -460,7 +426,7 @@ describe("enrollment confirmation relocation", () => {
 			});
 			// Zero writes
 			expect(authoritySnapshot(root)).toBe(before);
-			expect(readdirSync(join(root, ".imm/state")).sort()).toEqual(["locks"]);
+			expect(readdirSync(join(root, ".imm/state")).sort()).toEqual(["locks", "observations"]);
 		} finally {
 			rmSync(root, { recursive: true, force: true });
 		}

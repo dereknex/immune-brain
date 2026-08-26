@@ -11,15 +11,12 @@ import { execFileSync } from "node:child_process";
 import { join, resolve } from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
-import { stableStringify } from "../canonical_json";
 import {
 	KernelStoreSecurityError,
 	appendJournalEntry,
-	mapLegacyState,
 	readSecureProjectFile,
 	type JournalEntry,
 	type JournalReasonCode,
-	type LegacyMapping,
 	type TaskPhase,
 } from "../kernel";
 import {
@@ -32,8 +29,11 @@ import {
 	parseVerificationDescriptor,
 } from "../verification_descriptor";
 import { inspectRoutingPolicy } from "../managed_task_routing_policy"
-import { inspectLegacyAggregate } from "../kernel/legacy";
 import { projectLegacyAudit } from "../kernel/legacy_audit";
+import { inspectStorageLayout } from "../kernel/storage_paths";
+import { migrateLegacyLayout } from "../kernel/storage_layout_migration";
+import { readBackendClaim } from "../kernel/backend_claim";
+import { withKernelStoreLock } from "../kernel";
 
 export interface KernelCommandResult {
 	stdout: string;
@@ -45,8 +45,6 @@ interface KernelExecution {
 	result: KernelCommandResult;
 	journal: Omit<JournalEntry, "contract" | "timestamp">;
 }
-
-const SOURCE_PATH = ".imm/memory/current_iteration.json";
 
 function jsonResult(payload: unknown, returncode = 0): KernelCommandResult {
 	return {
@@ -64,61 +62,6 @@ function asRecord(value: unknown): Record<string, unknown> {
 	return value && typeof value === "object" && !Array.isArray(value)
 		? (value as Record<string, unknown>)
 		: {};
-}
-
-function readLegacyState(root: string): Record<string, unknown> {
-	let parsed: unknown;
-	try {
-		const content = readSecureProjectFile(root, SOURCE_PATH);
-		if (Buffer.byteLength(content, "utf8") > 2 * 1024 * 1024)
-			throw new KernelStoreSecurityError("v3 Ledger exceeds the shadow read limit");
-		parsed = JSON.parse(content);
-	} catch (error) {
-		if (error instanceof KernelStoreSecurityError) throw error;
-		if (error instanceof SyntaxError)
-			throw new KernelStoreSecurityError("v3 Ledger is not valid JSON");
-		throw error;
-	}
-	if (!parsed || typeof parsed !== "object" || Array.isArray(parsed))
-		throw new KernelStoreSecurityError("v3 Ledger root must be an object");
-	const state = parsed as Record<string, unknown>;
-	if (Object.keys(asRecord(state.steps)).length > 1024)
-		throw new KernelStoreSecurityError("v3 Ledger exceeds the step limit");
-	return state;
-}
-
-function legacyTaskId(state: Record<string, unknown>): string {
-	const identity = [state.plan_path, state.plan_signature]
-		.map((value) => (typeof value === "string" ? value : ""))
-		.join("\0");
-	return `legacy-${createHash("sha256").update(identity).digest("hex").slice(0, 16)}`;
-}
-
-function detectDivergence(state: Record<string, unknown>): {
-	detected: boolean;
-	fields: string[];
-} {
-	const aggregate = inspectLegacyAggregate(state);
-	const fields: string[] = [];
-	if (aggregate.replan_mismatch || aggregate.replan_type_invalid)
-		fields.push("requires_replan");
-	if (aggregate.active_step_mismatch) fields.push("active_step");
-	if (aggregate.ownership_conflict) fields.push("ownership");
-	if (aggregate.follow_up_malformed || aggregate.follow_up_state === "closed")
-		fields.push("pending_follow_up");
-	if (aggregate.steps_malformed) fields.push("steps");
-	if (["invalid", "conflict"].includes(aggregate.terminal))
-		fields.push("plan_terminal");
-
-	const nextAction = asRecord(state.next_action);
-	if (
-		aggregate.replan_signal &&
-		(nextAction.action === "activate" ||
-			(typeof nextAction.command === "string" &&
-				nextAction.command.includes("imm-work activate")))
-	)
-		fields.push("next_action");
-	return { detected: fields.length > 0, fields };
 }
 
 function journalFor(
@@ -157,79 +100,56 @@ function sourceFailure(command: string, error: unknown): KernelExecution {
 			"rejected",
 			code,
 			null,
-			"Repair or restore the v3 State Ledger before retrying.",
+			"Resolve the reported storage or legacy-reader condition before retrying.",
 		),
 	};
 }
 
+/**
+ * `status --json` is strictly read-only and reports layout facts plus Kernel
+ * ownership facts. It never projects the archived v3 Ledger as current
+ * authority; `audit --legacy` is the only legacy reader.
+ */
 function runStatus(root: string): KernelExecution {
 	try {
-		const state = readLegacyState(root);
-		const shadow = mapLegacyState(state);
-		const divergence = detectDivergence(state);
-		const taskId = legacyTaskId(state);
+		const layout = inspectStorageLayout(root);
+		const claim = readBackendClaim(root);
+		const workspace = (() => {
+			try {
+				const raw = JSON.parse(readSecureProjectFile(root, ".imm/state/workspace.json")) as {
+					current_working?: unknown;
+				};
+				return typeof raw.current_working === "string" ? raw.current_working : null;
+			} catch {
+				return null;
+			}
+		})();
 		return {
 			result: jsonResult({
-				contract: "assurance_kernel/shadow_status/v1",
-				source: SOURCE_PATH,
-				v3: {
-					schema_version: state.schema_version ?? null,
-					plan_path: state.plan_path ?? null,
-					runtime_status: state.runtime_status ?? null,
-					requires_replan: state.requires_replan === true,
-					active_step: state.active_step ?? null,
+				contract: "assurance_kernel/status/v1",
+				layout,
+				kernel: {
+					claim: claim
+						? {
+								task_id: claim.task_id,
+								lifecycle_status: claim.lifecycle_status,
+							}
+						: null,
+					workspace: { current_working: workspace },
 				},
-				shadow,
-				divergence,
 			}),
 			journal: journalFor(
 				"status",
-				shadow.phase,
-				divergence.detected ? "escalated" : "ok",
-				divergence.detected ? "shadow_divergence" : "command_ok",
-				taskId,
-				divergence.detected
-					? "Inspect the reported v3 authority fields; shadow never repairs them."
-					: null,
+				null,
+				layout.layout === "ready" || layout.layout === "migration_uncommitted" ? "ok" : "escalated",
+				layout.layout === "ready" ? "command_ok" : "source_invalid",
+				null,
+				layout.reason,
 			),
 		};
 	} catch (error) {
 		return sourceFailure("status", error);
 	}
-}
-
-export interface MigrationDryRunReport {
-	contract: "assurance_kernel/migration_report/v1";
-	dry_run: true;
-	writes_performed: false;
-	source: typeof SOURCE_PATH;
-	ambiguous: boolean;
-	records: Array<{
-		legacy_plan_path: string | null;
-		candidate_task_id: string;
-		mapping: LegacyMapping;
-	}>;
-}
-
-export function buildMigrationDryRunReport(root: string): MigrationDryRunReport {
-	const state = readLegacyState(root);
-	const mapping = mapLegacyState(state);
-	return {
-		contract: "assurance_kernel/migration_report/v1",
-		dry_run: true,
-		writes_performed: false,
-		source: SOURCE_PATH,
-		ambiguous: mapping.ambiguous,
-		records: [{
-			legacy_plan_path: typeof state.plan_path === "string" ? state.plan_path : null,
-			candidate_task_id: legacyTaskId(state),
-			mapping,
-		}],
-	};
-}
-
-export function migrationDryRunDigest(report: MigrationDryRunReport): string {
-	return `sha256:${createHash("sha256").update(`assurance_kernel/migration_report/v1\0${stableStringify(report)}`).digest("hex")}`;
 }
 
 const INTENT_SIDECAR_PREFIX = "docs/plans/";
@@ -257,6 +177,12 @@ function intentActiveOwner(root: string): { kernel: boolean; v3: boolean } {
 	let kernelOwner = false;
 	let v3Owner = false;
 	try {
+		const claim = readBackendClaim(root);
+		kernelOwner = claim !== null;
+	} catch {
+		kernelOwner = false;
+	}
+	try {
 		const state = JSON.parse(
 			readSecureProjectFile(root, ".imm/memory/current_iteration.json"),
 		) as Record<string, unknown>;
@@ -264,21 +190,6 @@ function intentActiveOwner(root: string): { kernel: boolean; v3: boolean } {
 			v3Owner = true;
 	} catch {
 		// No readable v3 Ledger means no v3 owner.
-	}
-	const backend = join(
-		resolve(root),
-		".imm",
-		"kernel",
-		"backend_claim.json",
-	);
-	try {
-		const raw = JSON.parse(readFileSync(backend, "utf8")) as Record<string, unknown>;
-		const status = raw.lifecycle_status;
-		kernelOwner =
-			typeof status === "string" &&
-			(status === "active" || status === "draining" || status === "probing" || status === "executing");
-	} catch {
-		kernelOwner = false;
 	}
 	return { kernel: kernelOwner, v3: v3Owner };
 }
@@ -373,6 +284,119 @@ function runIntentAuthor(args: string[], root: string): KernelExecution {
 				"routing_unavailable",
 				null,
 				"Activate the Git-owned managed-task routing policy before authoring.",
+			),
+		};
+	}
+
+	// Storage-layout gate (BR-REQ-005/006): a stateful mutation recovers or
+	// migrates first and then STOPS without authoring. Kernel transaction
+	// markers recover under the store lock; the one-release migrator replays
+	// its frozen manifest under both locks. The original authoring is retried
+	// only after the affected migration diff is committed.
+	try {
+		withKernelStoreLock(root, () => undefined);
+	} catch (error) {
+		return {
+			result: errorResult(
+				"layout_recovery_failed",
+				`Kernel transaction recovery failed before authoring: ${error instanceof Error ? error.message : String(error)}`,
+				1,
+			),
+			journal: journalFor(
+				"intent",
+				null,
+				"rejected",
+				"source_invalid",
+				null,
+				"Resolve the pending Kernel transaction marker before retrying.",
+			),
+		};
+	}
+	const layout = inspectStorageLayout(root);
+	if (layout.layout === "migration_blocked_active") {
+		return {
+			result: errorResult(
+				"layout_migration_blocked",
+				layout.reason ?? "an active old-layout owner blocks migration",
+				1,
+			),
+			journal: journalFor(
+				"intent",
+				null,
+				"rejected",
+				"source_invalid",
+				null,
+				"Settle or stop the active old-layout owner with the prior runtime before authoring.",
+			),
+		};
+	}
+	if (layout.layout === "recovery_required" || layout.layout === "migration_required") {
+		const migration = migrateLegacyLayout(root);
+		if (migration.outcome === "migrated") {
+			return {
+				result: jsonResult({
+					contract: "assurance_kernel/migration_completed/v1",
+					operation: "intent author",
+					affected_paths: migration.affected_paths,
+					next_action: "commit the affected migration paths, then retry intent author",
+				}),
+				journal: journalFor(
+					"intent",
+					null,
+					"escalated",
+					"migration_ambiguous",
+					null,
+					"Legacy evidence was relocated without Git index writes; commit and retry.",
+				),
+			};
+		}
+		if (migration.outcome === "migration_uncommitted") {
+			return {
+				result: errorResult(
+					"migration_uncommitted",
+					`affected storage paths differ from HEAD: ${migration.affected_paths.join(", ") || "(none)"}`,
+					1,
+				),
+				journal: journalFor(
+					"intent",
+					null,
+					"rejected",
+					"migration_ambiguous",
+					null,
+					"Commit or restore the affected paths before retrying.",
+				),
+			};
+		}
+		return {
+			result: errorResult(
+				layout.layout === "recovery_required" ? "layout_recovery_required" : "layout_migration_blocked",
+				migration.reason ?? layout.reason ?? "storage layout is not ready",
+				1,
+			),
+			journal: journalFor(
+				"intent",
+				null,
+				"rejected",
+				"source_invalid",
+				null,
+				"Resolve the reported storage layout condition before authoring.",
+			),
+		};
+	}
+	if (layout.layout !== "ready") {
+		return {
+			result: errorResult(
+				"layout_not_ready",
+				layout.reason ?? `storage layout is ${layout.layout}`,
+				1,
+			),
+			journal: journalFor(
+				"intent",
+				null,
+				"rejected",
+				"source_invalid",
+				null,
+				"Commit the migration diff or resolve the layout condition before authoring.",
 			),
 		};
 	}

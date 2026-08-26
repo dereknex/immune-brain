@@ -55,7 +55,7 @@ function makeEnrolledRoot(): string {
 	execFileSync("git", ["add", "-A"], { cwd: root });
 	execFileSync("git", ["commit", "-qm", "intent"], { cwd: root });
 	writeFileSync(
-		join(root, ".imm", "workspace.json"),
+		join(root, ".imm/state/workspace.json"),
 		JSON.stringify(
 			{ contract: "assurance_kernel/workspace/v1", current_working: null },
 			null,

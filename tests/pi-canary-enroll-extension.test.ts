@@ -15,8 +15,6 @@ import { assertTaskIntentPreparationStable } from "../plugins/immune-brain/.pi-e
 import { readTaskIntent } from "../plugins/immune-brain/runtime/kernel/intent";
 import { preparePiCanary } from "../plugins/immune-brain/runtime/kernel/pi_canary_prepare";
 import {
-	buildMigrationDryRunReport,
-	migrationDryRunDigest,
 } from "../plugins/immune-brain/runtime/commands/kernel";
 
 type Mode = "tui" | "rpc" | "json" | "print";
@@ -84,26 +82,11 @@ async function loadExtension() {
 }
 
 function makeRoot(): string {
+	// Storage-layout cutover: fixture roots start in the ready state layout;
+	// a legacy .imm/memory ledger would trigger the one-release migration.
 	const root = mkdtempSync(join(tmpdir(), "p2b1-ext-"));
 	mkdirSync(join(root, ".imm/state"), { recursive: true });
 	mkdirSync(join(root, "docs", "plans"), { recursive: true });
-	mkdirSync(join(root, ".imm", "memory"), { recursive: true });
-	writeFileSync(
-		join(root, ".imm", "memory", "current_iteration.json"),
-		JSON.stringify(
-			{
-				plan_path: "docs/plans/example.md",
-				plan_signature: "sig",
-				steps: {},
-				runtime_status: "idle",
-				requires_replan: false,
-				active_step: null,
-				plan_terminal: null,
-			},
-			null,
-			2,
-		),
-	);
 	return root;
 }
 
@@ -180,7 +163,7 @@ describe("pi canary enroll extension", () => {
 		expect(result.state).toBe("blocked");
 		expect(result.message).toMatch(/TaskIntent is required/i);
 		expect(ui.confirmCalls.length).toBe(0);
-		expect(readdirSync(join(root, ".imm/state"))).toEqual([]);
+		expect(readdirSync(join(root, ".imm/state"))).toEqual(["locks"]);
 	});
 
 	test("tracked malformed intent reports canonical validation before confirmation", async () => {
@@ -265,24 +248,7 @@ describe("pi canary enroll handler integration", () => {
 		mkdirSync(join(root, "docs", "evidence", "assurance-kernel"), { recursive: true });
 		mkdirSync(join(root, "scripts"), { recursive: true });
 		writeFileSync(join(root, "scripts", "accept.ts"), "process.exit(0);\n");
-		mkdirSync(join(root, ".imm", "memory"), { recursive: true });
-		mkdirSync(join(root, ".imm/state"), { recursive: true });
-		writeFileSync(
-			join(root, ".imm", "memory", "current_iteration.json"),
-			JSON.stringify(
-				{
-					plan_path: "docs/plans/example.md",
-					plan_signature: "sig",
-					steps: {},
-					runtime_status: "idle",
-					requires_replan: false,
-					active_step: null,
-					plan_terminal: null,
-				},
-				null,
-				2,
-			),
-		);
+		mkdirSync(join(root, ".imm/state/observations"), { recursive: true });
 		writeFileSync(
 			join(root, "docs", "plans", `${taskId}.intent.json`),
 			`${JSON.stringify(
@@ -351,7 +317,7 @@ describe("pi canary enroll handler integration", () => {
 				status,
 				state_path_identity: pathIdentity,
 				targets: [
-					{ path: ".imm/memory/current_iteration.json", before_sha256: null, after_sha256: after },
+					{ path: ".imm/state/workspace.json", before_sha256: null, after_sha256: after },
 				],
 				before_sha256: null,
 				after_sha256: after,
@@ -400,17 +366,17 @@ describe("pi canary enroll handler integration", () => {
 			);
 		}
 		writeFileSync(
-			join(root, ".imm", "memory", ".current_iteration.authority_commit_receipts.jsonl"),
+			join(root, ".imm/state/observations/authority_commit_receipts.jsonl"),
 			`${receiptLines.join("\n")}\n`,
 		);
 		writeFileSync(
-			join(root, ".imm", "memory", ".current_iteration.automatic_observations.jsonl"),
+			join(root, ".imm/state/observations/automatic_observations.jsonl"),
 			`${observationLines.join("\n")}\n`,
 		);
 		git(root, ["add", "-A"]);
 		git(root, ["commit", "-qm", "fixture state"]);
 
-		const digest = migrationDryRunDigest(buildMigrationDryRunReport(root));
+		const digest = "sha256:" + "a".repeat(64);
 		writeFileSync(
 			join(root, "docs", "evidence", "assurance-kernel", "readiness.json"),
 			`${JSON.stringify(
@@ -438,9 +404,9 @@ describe("pi canary enroll handler integration", () => {
 	function authoritySnapshot(root: string): string {
 		const parts: string[] = [];
 		for (const path of [
-			".imm/memory/current_iteration.json",
-			".imm/memory/.current_iteration.authority_commit_receipts.jsonl",
-			".imm/memory/.current_iteration.automatic_observations.jsonl",
+			".imm/state/observations/authority_commit_receipts.jsonl",
+			".imm/state/observations/automatic_observations.jsonl",
+			".imm/state/tasks/",
 		]) {
 			const full = join(root, path);
 			try {
@@ -678,13 +644,13 @@ describe("pi canary enroll handler integration", () => {
 				"rehearsing",
 				"committing",
 			]);
-			expect(readdirSync(join(root, ".imm/state")).sort()).toEqual(["active-claim.json", "locks", "tasks", "transactions", "workspace.json"]);
+			expect(readdirSync(join(root, ".imm/state")).sort()).toEqual(["active-claim.json", "locks", "observations", "tasks", "transactions", "workspace.json"]);
 			expect(readdirSync(join(root, ".imm/state/tasks")).sort()).toEqual([`${TASK}.json`]);
 			const second = await runTool(root, makeFakeUI(true));
 			expect(second.details.state).toBe("route_incumbent");
 			expect(second.details.next_action).toContain("imm-loop");
 			expect(second.details.summary).toMatch(/already owns/i);
-			expect(readdirSync(join(root, ".imm/state")).sort()).toEqual(["active-claim.json", "locks", "tasks", "transactions", "workspace.json"]);
+			expect(readdirSync(join(root, ".imm/state")).sort()).toEqual(["active-claim.json", "locks", "observations", "tasks", "transactions", "workspace.json"]);
 			expect(readdirSync(join(root, ".imm/state/tasks")).sort()).toEqual([`${TASK}.json`]);
 		} finally {
 			rmSync(root, { recursive: true, force: true });

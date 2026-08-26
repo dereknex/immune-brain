@@ -38,9 +38,14 @@ function isRuntimeAuthorityPath(path: string): boolean {
 	return (
 		// Kernel v2 task state, workspace coordination, and authority journals are
 		// runtime-owned and must not change the code/workspace diff identity.
+		// State-layout cutover: .imm/state/ is wholly ignored runtime state;
+		// .imm/audit/ is tracked evidence and must NEVER be excluded here.
+		// The legacy .imm/tasks/.imm/memory/ paths remain excluded until the
+		// one-release migration relocates them (Slice 2 deletes those arms).
 		path === ".imm/workspace.json" ||
 		path.startsWith(".imm/tasks/") ||
 		path.startsWith(".imm/memory/") ||
+		path.startsWith(".imm/state/") ||
 		path.startsWith(".imm/authority/") ||
 		path.startsWith(".imm/journal") ||
 		path === "HANDOFF.md"

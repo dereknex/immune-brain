@@ -506,7 +506,11 @@ describe("plugin package runtime cutover parity", () => {
 			const status = immKernel(root, ["status", "--json"]);
 			expect(status.status).toBe(0);
 			expect(JSON.parse(status.stdout)).toMatchObject({
-				contract: "assurance_kernel/shadow_status/v1",
+				contract: "assurance_kernel/status/v1",
+				// Pre-migration fixture: the owner-free legacy layout is
+				// reported as migration_required; status never projects it
+				// as current authority.
+				layout: { layout: "migration_required" },
 			});
 
 			const audit = immKernel(root, ["audit", "--legacy"]);
@@ -525,7 +529,7 @@ describe("plugin package runtime cutover parity", () => {
 			expect(invalid.stderr).toContain("invalid_kernel_command");
 			expect(readFileSync(statePath, "utf8")).toBe(beforeState);
 			expect(existsSync(join(root, ".imm/state"))).toBe(false);
-			expect(existsSync(join(root, ".imm", "workspace.json"))).toBe(false);
+			expect(existsSync(join(root, ".imm/state/workspace.json"))).toBe(false);
 		});
 	});
 

@@ -122,7 +122,7 @@ function makeEnrolledRoot(): string {
 	writeFileSync(join(root, "plugins", "immune-brain", ".pi-extension", "task.ts"), "export const task = 'baseline';\n");
 	execFileSync("git", ["add", "-A"], { cwd: root });
 	execFileSync("git", ["commit", "-qm", "intent"], { cwd: root });
-	writeFileSync(join(root, ".imm", "workspace.json"), JSON.stringify({ contract: "assurance_kernel/workspace/v1", current_working: null }, null, 2) + "\n");
+	writeFileSync(join(root, ".imm/state/workspace.json"), JSON.stringify({ contract: "assurance_kernel/workspace/v1", current_working: null }, null, 2) + "\n");
 	const registry = createEnrollmentAuthorityRegistry();
 	const prep = preparePiCanary(root, { task_id: TASK, now: "2026-08-12T10:00:00.000Z" });
 	const binding: EnrollmentCapabilityBinding = {
@@ -185,6 +185,9 @@ function makeStaleClaimRoot(): string {
 		diffProvider: () => diffHash,
 		now: at,
 	});
+	// Terminal audit evidence is tracked; commit it so the layout is ready.
+	execFileSync("git", ["add", "--", ".imm/audit/", "docs/plans/archive/"], { cwd: root });
+	execFileSync("git", ["-c", "user.email=test@example.com", "-c", "user.name=Test", "commit", "-qm", "fixture terminal"], { cwd: root });
 	writeFileSync(claimPath, claimBytes);
 	return root;
 }
