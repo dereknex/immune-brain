@@ -235,8 +235,10 @@ function inspectOldLayout(root: string): OldLayoutFacts {
 			if (kind === "old-marker") {
 				// review-1: legacy Kernel transaction markers require the
 				// prior runtime to settle/recover; they never auto-recover
-				// through the new runtime or the migrator.
-				facts.pending_marker ??= path;
+				// through the new runtime or the migrator. They block
+				// migration (migration_blocked_active) and never set
+				// pending_marker, which is reserved for new-layout markers
+				// the new runtime CAN recover.
 				facts.blocked_active = true;
 				continue;
 			}

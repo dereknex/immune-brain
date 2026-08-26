@@ -6,7 +6,7 @@
     {
       "id": "acc-state-audit-settlement",
       "assertion": "Kernel Enrollment and active execution use only `.imm/state/`, while completion and stop recoverably converge a create-once matching `.imm/audit/<task-id>/task-record.json` plus `terminal-proof.json`, clear workspace/claim/active state only after the audit pair is durable, and classify every marker/duplicate/stale-claim combination with the Spec's fail-closed precedence.",
-      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\"test\", \"tests/kernel-canary-terminal-transaction.test.ts\"],\n  \"cwd\": \".\", \"timeout_ms\": 90000, \"max_output_bytes\": 196608\n}\n"
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\"test\", \"tests/kernel-canary-terminal-transaction.test.ts\"],\n  \"cwd\": \".\", \"timeout_ms\": 120000, \"max_output_bytes\": 196608\n}\n"
     },
     {
       "id": "acc-automatic-layout-migration",
@@ -71,6 +71,7 @@
     "plugins/immune-brain/runtime/kernel/storage.ts",
     "plugins/immune-brain/runtime/kernel/storage_layout_migration.ts",
     "plugins/immune-brain/runtime/kernel/storage_paths.ts",
+    "plugins/immune-brain/runtime/kernel/types.ts",
     "plugins/immune-brain/runtime/v4_runtime.ts",
     "plugins/immune-brain/runtime/workspace_scope.ts",
     "tests/authority-commit-receipts.test.ts",
@@ -111,6 +112,6 @@
     "tests/v4-storage-retirement-legacy-audit.test.ts"
   ],
   "risk": "critical",
-  "revision": 4,
+  "revision": 7,
   "owner": "user"
 }

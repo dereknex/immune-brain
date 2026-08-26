@@ -9,7 +9,7 @@
       {
         "id": "acc-state-audit-settlement",
         "assertion": "Kernel Enrollment and active execution use only `.imm/state/`, while completion and stop recoverably converge a create-once matching `.imm/audit/<task-id>/task-record.json` plus `terminal-proof.json`, clear workspace/claim/active state only after the audit pair is durable, and classify every marker/duplicate/stale-claim combination with the Spec's fail-closed precedence.",
-        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\"test\", \"tests/kernel-canary-terminal-transaction.test.ts\"],\n  \"cwd\": \".\", \"timeout_ms\": 90000, \"max_output_bytes\": 196608\n}\n"
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\"test\", \"tests/kernel-canary-terminal-transaction.test.ts\"],\n  \"cwd\": \".\", \"timeout_ms\": 120000, \"max_output_bytes\": 196608\n}\n"
       },
       {
         "id": "acc-automatic-layout-migration",
@@ -74,6 +74,7 @@
       "plugins/immune-brain/runtime/kernel/storage.ts",
       "plugins/immune-brain/runtime/kernel/storage_layout_migration.ts",
       "plugins/immune-brain/runtime/kernel/storage_paths.ts",
+      "plugins/immune-brain/runtime/kernel/types.ts",
       "plugins/immune-brain/runtime/v4_runtime.ts",
       "plugins/immune-brain/runtime/workspace_scope.ts",
       "tests/authority-commit-receipts.test.ts",
@@ -114,12 +115,12 @@
       "tests/v4-storage-retirement-legacy-audit.test.ts"
     ],
     "risk": "critical",
-    "revision": 4,
+    "revision": 7,
     "owner": "user"
   },
   "intent_ref": {
     "path": "docs/plans/2026-08-26-002-imm-storage-layout-cutover.intent.json",
-    "content_hash": "sha256:b40f85d003ef9222b41b0605e19bfee140f1bab2c54224df3bd0bd5abb84d453"
+    "content_hash": "sha256:8ca66ec662870b2316967b6e170b4350abcf135cf94034ccaa87ba0b4123c18b"
   },
   "lifecycle": "active",
   "artifact_state": "active",
@@ -376,6 +377,48 @@
           "summary": "host-attested QA: all 6 fixed verification descriptor(s) passed"
         }
       ]
+    },
+    {
+      "id": "approval-qa-5a77ecad",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 7,
+      "intent_content_hash": "sha256:8ca66ec662870b2316967b6e170b4350abcf135cf94034ccaa87ba0b4123c18b",
+      "diff_hash": "sha256:fa5bd9c912135486b90758507de61ef8c32de680e74a9482e13f1a0919687f36",
+      "actor_id": "deterministic-qa",
+      "summary": "all 6 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "acc-state-audit-settlement",
+          "status": "passed",
+          "summary": "host-attested QA: all 6 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-automatic-layout-migration",
+          "status": "passed",
+          "summary": "host-attested QA: all 6 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-shared-entrypoint-gate",
+          "status": "passed",
+          "summary": "host-attested QA: all 6 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-historical-audit-is-nonauthoritative",
+          "status": "passed",
+          "summary": "host-attested QA: all 6 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-git-durability-and-retirement",
+          "status": "passed",
+          "summary": "host-attested QA: all 6 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-package-and-reference-sync",
+          "status": "passed",
+          "summary": "host-attested QA: all 6 fixed verification descriptor(s) passed"
+        }
+      ]
     }
   ],
   "findings": [
@@ -526,7 +569,7 @@
     {
       "id": "review-82fdc3ca499d-1-review-1",
       "kind": "blocking",
-      "status": "open",
+      "status": "resolved",
       "acceptance_id": "acc-automatic-layout-migration",
       "source": "review",
       "review_round": 4,
@@ -535,7 +578,7 @@
     {
       "id": "review-82fdc3ca499d-2-review-2",
       "kind": "blocking",
-      "status": "open",
+      "status": "resolved",
       "acceptance_id": "acc-automatic-layout-migration",
       "source": "review",
       "review_round": 4,
@@ -544,7 +587,7 @@
     {
       "id": "review-82fdc3ca499d-3-review-3",
       "kind": "blocking",
-      "status": "open",
+      "status": "resolved",
       "acceptance_id": "acc-automatic-layout-migration",
       "source": "review",
       "review_round": 4,
@@ -553,10 +596,28 @@
     {
       "id": "request_rework:2026-08-26-002-imm-storage-layout-cutover:2026-08-26T12:24:28.889Z:replan-required",
       "kind": "replan_required",
-      "status": "open",
+      "status": "resolved",
       "acceptance_id": "acc-automatic-layout-migration",
       "source": "kernel",
       "review_round": 4,
+      "summary": "Review returned this acceptance boundary twice; a durable replan is required."
+    },
+    {
+      "id": "review-2360638c23dc-1-review-1",
+      "kind": "blocking",
+      "status": "open",
+      "acceptance_id": "acc-automatic-layout-migration",
+      "source": "review",
+      "review_round": 5,
+      "summary": "plugins/immune-brain/runtime/kernel/storage_paths.ts: legacy Kernel transaction markers set both pending_marker and blocked_active, but inspectStorageLayout prioritizes pending_marker and reports recovery_required even though the new runtime cannot recover them; return migration_blocked_active with prior-runtime guidance for old markers and update the focused assertion."
+    },
+    {
+      "id": "request_rework:2026-08-26-002-imm-storage-layout-cutover:2026-08-26T13:15:21.944Z:replan-required",
+      "kind": "replan_required",
+      "status": "open",
+      "acceptance_id": "acc-automatic-layout-migration",
+      "source": "kernel",
+      "review_round": 5,
       "summary": "Review returned this acceptance boundary twice; a durable replan is required."
     }
   ],
@@ -906,6 +967,91 @@
         "confirmation_ref": "pi-confirm-b91c79168c08f39a",
         "issued_at": "2026-08-26T12:24:28.890Z",
         "expires_at": "2026-08-26T12:34:28.890Z"
+      }
+    },
+    {
+      "id": "resolve_finding:2026-08-26-002-imm-storage-layout-cutover:2026-08-26T12:32:24.333Z",
+      "at": "2026-08-26T12:32:24.333Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-82fdc3ca499d-1-review-1\naction_v2_sha256:8b796b92bb4af9d76faeaad8b0c9bf0cc926aac1d7e5366292014cd8b534f862"
+    },
+    {
+      "id": "resolve_finding:2026-08-26-002-imm-storage-layout-cutover:2026-08-26T12:32:28.589Z",
+      "at": "2026-08-26T12:32:28.589Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-82fdc3ca499d-2-review-2\naction_v2_sha256:864c1be65f292f79859fec62fcb1283588b1c76c4260e97d9d962f8ae152f76f"
+    },
+    {
+      "id": "resolve_finding:2026-08-26-002-imm-storage-layout-cutover:2026-08-26T12:32:32.251Z",
+      "at": "2026-08-26T12:32:32.251Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-82fdc3ca499d-3-review-3\naction_v2_sha256:f74a7fdcec890c9e57ae25e1316a4fbf873a92b76df98b8c519226129d012c14"
+    },
+    {
+      "id": "freeze_artifacts:2026-08-26-002-imm-storage-layout-cutover:2026-08-26T12:33:07.542Z",
+      "at": "2026-08-26T12:33:07.542Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent and Spec frozen at docs/plans/archive/2026-08-26-002-imm-storage-layout-cutover.intent.json"
+    },
+    {
+      "id": "approve_breaking_intent_revision:2026-08-26-002-imm-storage-layout-cutover:2026-08-26T13:10:56.538Z",
+      "at": "2026-08-26T13:10:56.538Z",
+      "type": "approve_breaking_intent_revision",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "intent_revision_7\naction_v2_sha256:f937302dfad049ec9ed684d2294588759f3b7147199d62eaa98f1f6f8eca0da9",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-6a86a0e82ed5c429",
+        "issued_at": "2026-08-26T13:10:56.667Z",
+        "expires_at": "2026-08-26T13:20:56.667Z"
+      }
+    },
+    {
+      "id": "freeze_artifacts:2026-08-26-002-imm-storage-layout-cutover:2026-08-26T13:11:31.293Z",
+      "at": "2026-08-26T13:11:31.293Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent and Spec frozen at docs/plans/archive/2026-08-26-002-imm-storage-layout-cutover.intent.json"
+    },
+    {
+      "id": "record_approval:2026-08-26-002-imm-storage-layout-cutover:2026-08-26T13:11:48.891Z",
+      "at": "2026-08-26T13:11:48.891Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-5a77ecad\naction_v2_sha256:3be793cb4b83c9583be349ab2711581bd1b58a20b9eed7aecde03202c8b69efd",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-3e8e7eb90b5416b0",
+        "issued_at": "2026-08-26T13:11:48.891Z",
+        "expires_at": "2026-08-26T13:21:48.891Z"
+      }
+    },
+    {
+      "id": "request_rework:2026-08-26-002-imm-storage-layout-cutover:2026-08-26T13:15:21.944Z",
+      "at": "2026-08-26T13:15:21.944Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "review_round_5\naction_v2_sha256:c57470fda92c77aa928a05209dcb6c98ebab523d49fa3e1d42dce169e3af6be0",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "native-review-4e51b764-3233-4f2",
+        "confirmation_ref": "pi-confirm-cf9429cde8609dba",
+        "issued_at": "2026-08-26T13:15:21.944Z",
+        "expires_at": "2026-08-26T13:25:21.944Z"
       }
     }
   ]

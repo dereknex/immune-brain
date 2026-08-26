@@ -175,13 +175,13 @@ describe("inspectStorageLayout failure branches", () => {
 		expect(inspectStorageLayout(root).layout).toBe("migration_blocked_active");
 	});
 
-	it("reports recovery_required when any kernel transaction marker exists", () => {
+	it("reports migration_blocked_active when a legacy kernel transaction marker exists", () => {
 		const root = tempRoot();
 		mkdirSync(join(root, ".imm", "tasks"), { recursive: true });
 		writeFileSync(join(root, ".imm", "tasks", ".terminal-transaction.json"), "{\"contract\":\"assurance_kernel/terminal_transaction/v1\"}\n");
 		const inspection = inspectStorageLayout(root);
-		expect(inspection.layout).toBe("recovery_required");
-		expect(inspection.pending_marker).toContain(".terminal-transaction.json");
+		expect(inspection.layout).toBe("migration_blocked_active");
+		expect(inspection.reason).toContain("prior runtime");
 	});
 
 	it("reports recovery_required for a new-layout migration marker", () => {
