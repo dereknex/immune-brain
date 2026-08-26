@@ -8,15 +8,19 @@ test("canonical and packaged dispatch protocol remain synchronized", () => {
 });
 
 test("dispatch contracts keep Role-only execution configuration ownership", () => {
+	const required = [
+		"Immune-Brain owns Role, evidence, authority, tool policy, and output contracts.",
+		"Pi Host owns model, provider, and thinking defaults.",
+		"Immune-Brain does not define\nmodel tiers, provider mapping, cost routing, or provider fallback.",
+		"exact reserved authority parameters",
+		"reservation 不生成也不匹配 `model`/`thinking`",
+	];
 	for (const path of [
 		"docs/reference/subagent-dispatch-protocol.md",
 		"plugins/immune-brain/dist/docs/reference/subagent-dispatch-protocol.md",
 	]) {
 		const contract = read(path);
-		expect(contract).toContain("exact reserved authority parameters");
-		expect(contract).toContain("reservation 不生成也不匹配");
-		expect(contract).toContain("model tier 或 provider mapping");
-		expect(contract).toContain("`model`/`thinking`");
+		for (const statement of required) expect(contract).toContain(statement);
 	}
 });
 

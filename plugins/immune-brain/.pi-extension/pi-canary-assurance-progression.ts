@@ -561,7 +561,7 @@ export class AssuranceProgression {
 				operationId,
 				correlation: { record_revision: review.snapshot.record_revision, intent_content_hash: review.snapshot.intent_content_hash, diff_hash: review.snapshot.diff_hash },
 				snapshot: review.snapshot,
-				params: { subagent_type: "general-purpose", description: "", prompt: "", inherit_context: false, isolated: true, isolation: "worktree", run_in_background: false, max_turns: 0 },
+				params: { subagent_type: "Review", description: "", prompt: "", inherit_context: false, isolated: true, isolation: "worktree", run_in_background: false, max_turns: 0 },
 				evidence,
 				resultObserved: false,
 				ended: false,

@@ -75,7 +75,7 @@ After deterministic QA and a fresh snapshot, the host reserves one Review
 operation and asks the parent Agent, through a correlated follow-up, to call
 the standard `Agent` tool with exact reserved parameters:
 
-- `subagent_type`: `general-purpose`
+- `subagent_type`: `Review`
 - `description`: short reserved label that includes the operation id
 - `prompt`: existing `buildReviewPrompt` over the immutable evidence path
 - `inherit_context`: `false`

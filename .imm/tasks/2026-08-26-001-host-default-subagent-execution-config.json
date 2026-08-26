@@ -1,0 +1,140 @@
+{
+  "contract": "assurance_kernel/task_record/v3",
+  "task_id": "2026-08-26-001-host-default-subagent-execution-config",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "2026-08-26-001-host-default-subagent-execution-config",
+    "goal": "Make Immune-Brain define Subagent Role contracts while Pi supplies model, provider, and thinking defaults, without weakening Kernel Review reservation and receipt authority.",
+    "acceptance": [
+      {
+        "id": "acc-host-owned-execution-config",
+        "assertion": "Kernel Review reservation parameters omit model and thinking policy; receipt matching accepts Host-omitted or Host-reported model and thinking values while continuing to reject any changed reserved authority field or unknown extra Agent argument.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/pi-canary-native-review.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 131072\n}\n"
+      },
+      {
+        "id": "acc-review-authority-retained",
+        "assertion": "Kernel Review still reserves one foreground isolated Agent invocation with exact role description, immutable prompt, inherit-context policy, filesystem isolation, workload-derived max_turns, prohibited resume and schedule, matching tool-call identity, terminal result ordering, snapshot revalidation, and fail-closed settlement.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/pi-canary-assurance-continuation.test.ts\",\n    \"tests/pi-canary-review-dispatch-resilience.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 131072\n}\n"
+      },
+      {
+        "id": "acc-role-only-contract-alignment",
+        "assertion": "Canonical and packaged Subagent dispatch contracts state that Immune-Brain owns Role, evidence, authority, tool policy, and output contracts; Pi owns model, provider, and thinking defaults; exact Review receipt matching applies only to reserved authority parameters; and no Immune-Brain model tier, provider map, cost router, or fallback is introduced.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/pi-subagent-dispatch-observability-contract.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 131072\n}\n"
+      }
+    ],
+    "scope_hint": [
+      "docs/plans/2026-08-26-001-host-default-subagent-execution-config.intent.json",
+      "docs/plans/archive/2026-08-26-001-host-default-subagent-execution-config.intent.json",
+      "docs/reference/subagent-dispatch-protocol.md",
+      "docs/specs/archive/host-default-subagent-execution-config.spec.md",
+      "docs/specs/host-default-subagent-execution-config.spec.md",
+      "plugins/immune-brain/.pi-extension/imm-canary-work.ts",
+      "plugins/immune-brain/.pi-extension/pi-canary-assurance-progression.ts",
+      "plugins/immune-brain/.pi-extension/pi-canary-native-review.ts",
+      "plugins/immune-brain/dist/docs/reference/subagent-dispatch-protocol.md",
+      "tests/pi-canary-assurance-continuation.test.ts",
+      "tests/pi-canary-native-review.test.ts",
+      "tests/pi-canary-review-dispatch-resilience.test.ts",
+      "tests/pi-subagent-dispatch-observability-contract.test.ts"
+    ],
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/archive/2026-08-26-001-host-default-subagent-execution-config.intent.json",
+    "content_hash": "sha256:82d986ad691d6ce4c7098b481bf5186902f1f60843e1ad229b3d4594a4fdd707"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:82d986ad691d6ce4c7098b481bf5186902f1f60843e1ad229b3d4594a4fdd707",
+  "attestations": [
+    {
+      "id": "approval-qa-57961790",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:82d986ad691d6ce4c7098b481bf5186902f1f60843e1ad229b3d4594a4fdd707",
+      "diff_hash": "sha256:49e52729b02eedac8141ede45557c6a9e4e379f7ad5ab84be94d30a124e8d6ad",
+      "actor_id": "deterministic-qa",
+      "summary": "all 3 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "acc-host-owned-execution-config",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-review-authority-retained",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-role-only-contract-alignment",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-b7707acd",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:82d986ad691d6ce4c7098b481bf5186902f1f60843e1ad229b3d4594a4fdd707",
+      "diff_hash": "sha256:49e52729b02eedac8141ede45557c6a9e4e379f7ad5ab84be94d30a124e8d6ad",
+      "actor_id": "native-review-4ee45c91-050c-49c",
+      "summary": "Archival diff is two byte-identical provenance-verified moves; reservation/receipt and contract-ownership assertions hold in the unchanged neighbor code and bundled tests.",
+      "acceptance_results": []
+    }
+  ],
+  "findings": [],
+  "history": [
+    {
+      "id": "freeze_artifacts:2026-08-26-001-host-default-subagent-execution-config:2026-08-26T03:12:44.571Z",
+      "at": "2026-08-26T03:12:44.571Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent and Spec frozen at docs/plans/archive/2026-08-26-001-host-default-subagent-execution-config.intent.json"
+    },
+    {
+      "id": "record_approval:2026-08-26-001-host-default-subagent-execution-config:2026-08-26T03:12:48.948Z",
+      "at": "2026-08-26T03:12:48.948Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-57961790\naction_v2_sha256:dc7e4067c5ce25af37758f3db36c7950abd255af766a85c1c9dab23a08109f30",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-61e375fd75f471cd",
+        "issued_at": "2026-08-26T03:12:48.948Z",
+        "expires_at": "2026-08-26T03:22:48.948Z"
+      }
+    },
+    {
+      "id": "record_approval:2026-08-26-001-host-default-subagent-execution-config:2026-08-26T03:15:42.983Z",
+      "at": "2026-08-26T03:15:42.983Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-b7707acd\naction_v2_sha256:a27a513ed4e06a844e5bd092f269b6caaffc0cc99db6f44636ceeb33a944e14f",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "native-review-4ee45c91-050c-49c",
+        "confirmation_ref": "pi-confirm-1fab6006465b5d4f",
+        "issued_at": "2026-08-26T03:15:42.983Z",
+        "expires_at": "2026-08-26T03:25:42.983Z"
+      }
+    },
+    {
+      "id": "complete:2026-08-26-001-host-default-subagent-execution-config:2026-08-26T03:15:43.459Z",
+      "at": "2026-08-26T03:15:43.459Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:d287c9d9315a573805dbe59ac293a15241531bd7362ecbd3f12bbf992fa2a233"
+    }
+  ]
+}

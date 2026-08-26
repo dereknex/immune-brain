@@ -23,7 +23,7 @@ export function nativeReviewResultIsFailure(result: NativeReviewResult): boolean
 }
 
 export interface ReservedAgentParams {
-	subagent_type: "general-purpose";
+	subagent_type: "Review";
 	description: string;
 	prompt: string;
 	inherit_context: false;
@@ -67,7 +67,7 @@ export function reservedAgentParams(input: {
 	max_turns?: number;
 }): ReservedAgentParams {
 	return {
-		subagent_type: "general-purpose",
+		subagent_type: "Review",
 		description: reservedAgentDescription(input.taskId, input.operationId),
 		prompt: semanticNeighborhoodReviewPrompt(input.prompt),
 		inherit_context: false,

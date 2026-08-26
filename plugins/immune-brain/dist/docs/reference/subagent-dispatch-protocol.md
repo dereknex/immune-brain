@@ -52,11 +52,15 @@ focus_delta:
 
 ## Model Selection
 
+Immune-Brain owns Role, evidence, authority, tool policy, and output contracts.
+Pi Host owns model, provider, and thinking defaults. Immune-Brain does not define
+model tiers, provider mapping, cost routing, or provider fallback.
+
 Agent 默认继承当前 Pi session model。只有 Parent 有明确需求时，才通过
-host-native `Agent.model` 选择另一个 Pi 已配置模型；Immune-Brain 不维护独立的
-model tier 或 provider mapping。Kernel authority Review 的 reservation 不生成也不匹配
-`model`/`thinking`：Pi Host 解析的 execution configuration 不是 Review authority
-身份，receipt matching 只对 reserved authority parameters 要求 exact 一致。
+host-native `Agent.model` 选择另一个 Pi 已配置模型。Kernel authority Review 的
+reservation 不生成也不匹配 `model`/`thinking`：Pi Host 解析的 execution
+configuration 不是 Review authority 身份，receipt matching 只对 reserved
+authority parameters 要求 exact 一致。
 
 ## Pi Agent Invocation
 
@@ -70,7 +74,7 @@ Agent:
   run_in_background: false
 ```
 
-Pi `Agent` 没有 `readonly` 参数；只读边界由空工具策略、child 类型和 prompt contract 共同保证。Parent 每次只启动一个 foreground Agent，等待其 direct terminal result 后再决定是否需要下一个 child。普通 advisory/discovery 不调用 `get_subagent_result`，不依赖 completion notification 或 host `followUp`。
+Pi `Agent` 没有 `readonly` 参数；只读边界由空工具策略、child 类型和 prompt contract 共同保证。Parent 每次只启动一个 foreground Agent，等待其 direct terminal result 后再决定是否需要下一个 child。普通 advisory/discovery 不调用 `get_subagent_result`，不依赖 completion notification 或 host `followUp`。Kernel authority Review 使用专属类型：`advance_assurance` 返回的保留参数使用 `subagent_type: "Review"`（Pi 原生只读 Review 类型），仍遵循本文档的 foreground、单 child、退火匹配与 receipt 校验规则；advisory/discovery 与 Loop 内部 roles 继续使用 `general-purpose`。
 
 ## Scheduling And Visibility
 

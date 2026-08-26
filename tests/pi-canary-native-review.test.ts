@@ -15,7 +15,7 @@ const params = reservedAgentParams({
 
 test("reserved native review parameters are foreground-only and deterministic", () => {
 	expect(params).toMatchObject({
-		subagent_type: "general-purpose",
+		subagent_type: "Review",
 		inherit_context: false,
 		isolated: true,
 		isolation: "worktree",
@@ -33,12 +33,20 @@ test("reserved native review parameters are foreground-only and deterministic", 
 
 test("reserved authority args are exact while host-owned execution config is non-authoritative", () => {
 	expect(matchesReservedAgentArgs(params, params)).toBe(true);
-	expect(matchesReservedAgentArgs({ ...params, run_in_background: true }, params)).toBe(false);
-	expect(matchesReservedAgentArgs({ ...params, max_turns: 12 }, params)).toBe(false);
-	expect(matchesReservedAgentArgs({ ...params, prompt: `${params.prompt}!` }, params)).toBe(false);
-	expect(matchesReservedAgentArgs({ ...params, resume: "agent-1" }, params)).toBe(false);
-	expect(matchesReservedAgentArgs({ ...params, schedule: "+1m" }, params)).toBe(false);
-	expect(matchesReservedAgentArgs({ ...params, isolation: "none" }, params)).toBe(false);
+	for (const [field, value] of [
+		["subagent_type", "other"],
+		["description", "other"],
+		["prompt", `${params.prompt}!`],
+		["inherit_context", true],
+		["isolated", false],
+		["isolation", "none"],
+		["run_in_background", true],
+		["max_turns", 12],
+		["resume", "agent-1"],
+		["schedule", "+1m"],
+	] as const) {
+		expect(matchesReservedAgentArgs({ ...params, [field]: value }, params), field).toBe(false);
+	}
 	expect(matchesReservedAgentArgs({ ...params, extra: true }, params)).toBe(false);
 	expect(matchesReservedAgentArgs({ subagent_type: params.subagent_type }, params)).toBe(false);
 	expect(matchesReservedAgentArgs({ ...params, model: "host/review-model" }, params)).toBe(true);
