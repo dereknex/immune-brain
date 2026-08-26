@@ -151,7 +151,7 @@ describe("packed artifact loader", () => {
 					)
 					.map((s: { name: string }) => s.name)
 					.sort();
-				expect(skills).toEqual(["imm-brainstorm", "imm-loop", "imm-planner", "imm-pr-fix"]);
+				expect(skills).toEqual(["imm-brainstorm", "imm-doc-prune", "imm-loop", "imm-planner", "imm-pr-fix"]);
 
 				const work = extensions.find((extension: { path?: string }) =>
 					extension.path?.endsWith("imm-canary-work.ts"),

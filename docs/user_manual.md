@@ -1,11 +1,16 @@
 # Immune-Brain 使用手册
 
-Immune-Brain 是一套 Skill-explicit Managed 的 Pi 工作流，并提供一个独立 PR repair Skill。用户可发现四个 public Skills：
+Immune-Brain 是一套 Skill-explicit Managed 的 Pi 工作流，并提供两个独立 host-native 维护 Skill。用户可发现五个 public Skills：
 
 - `imm-brainstorm`：澄清需求、约束、风险和非目标。
 - `imm-planner`：创建或修订 Spec、Plan 和候选 TaskIntent。
 - `imm-loop`：消费已验证的 Plan，协调执行、QA、Review、repair 和 settlement。
 - `imm-pr-fix`：直接诊断并修复一个 GitHub PR，不创建 Managed authority。
+- `imm-doc-prune`：在显式 manifest 批准后清理过期当前文档，不创建 Managed authority。
+
+### `imm-doc-prune`
+
+独立处理过期当前文档的清理。它盘点仓库全部 tracked 当前文档，机械筛选候选，输出精确 manifest，用户显式批准后才执行删除或编辑。Git history 是非权威文档的唯一历史档案；它不维护 `retired`/`superseded` 文档墓地。它不创建或修改 Spec、TaskIntent、TaskRecord 或 Kernel state；不删除 active/frozen Spec、TaskIntent、TaskRecord、tombstone 或其他 `.imm` authority；已由 Managed task 拥有的文档仍通过 `imm-loop` 继续。
 
 Executor、QA、Review、learning 和 architecture exploration 都是
 `imm-loop` 使用的内部 runtime roles/tools。Loop 内部 `pr-fix` role 与独立
@@ -31,7 +36,7 @@ request
 
 显式 Skill 使用项目现有结构，并只创建当前工作需要的 artifact 及其父目录。Runtime 不安装、覆盖或校验项目级 `AGENTS.md`、`IMMUNE.md` 或 `CONTEXT.md`。
 
-## 四个 public Skills
+## 五个 public Skills
 
 ### `imm-brainstorm`
 
@@ -83,7 +88,7 @@ PR 仍通过 `imm-loop` 继续。
 
 ## 验证与发布
 
-公共 surface 由 `skills/registry.yaml` 声明，必须与四个 `skills/*/SKILL.md`、对应
+公共 surface 由 `skills/registry.yaml` 声明，必须与五个 `skills/*/SKILL.md`、对应
 `dist/imm-*.md`、package manifest 和实际 Pi loader 结果一致。未注册的旧 Skill 目录、
 旧 dist entry files 和兼容 alias 不应重新加入 registry。
 

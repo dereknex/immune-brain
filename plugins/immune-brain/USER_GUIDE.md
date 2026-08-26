@@ -13,9 +13,9 @@ Immune-Brain 是一套 **Skill-explicit Managed Path** 的 Pi 工作流。
 
 ## Public Skill surface
 
-用户可发现的 Skill 只有三个：`imm-brainstorm`、`imm-planner`、`imm-loop`。
+用户可发现的 Skill 有五个：`imm-brainstorm`、`imm-planner`、`imm-loop`、`imm-pr-fix` 和 `imm-doc-prune`。
 执行、QA、Review、repair 和 learning 都由 `imm-loop` 与 runtime
-内部 roles/tools 完成；它们没有独立的 public Skill 或兼容 alias。
+内部 roles/tools 完成；它们没有独立的 public Skill 或兼容 alias。`imm-pr-fix` 和 `imm-doc-prune` 是 host-native 维护入口，不进入 Managed Path。
 
 ## 路由模型
 

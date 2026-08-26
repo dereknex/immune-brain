@@ -38,3 +38,12 @@ skills:
     output_artifacts: [repair_report]
     next_actions: []
     boundary: Repair one GitHub PR directly; no Managed authority mutation or scope expansion.
+  - name: imm-doc-prune
+    path: skills/imm-doc-prune/SKILL.md
+    role: execute
+    title: Doc Prune
+    role_class: repair
+    canonical: true
+    output_artifacts: [prune_report]
+    next_actions: []
+    boundary: Prune stale current documentation after explicit manifest approval; no Managed authority mutation or authority-artifact deletion.

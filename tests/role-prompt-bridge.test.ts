@@ -246,7 +246,7 @@ describe("internal role-prompt bridge", () => {
 		]) {
 			const content = read(path);
 			expect(content).toContain("imm_loop_action");
-			expect(content).toContain("standalone `imm-pr-fix` is host-native");
+			expect(content).toContain("standalone `imm-pr-fix` and `imm-doc-prune` are host-native");
 			expect(content).toContain("never dispatched as the Loop role");
 			expect(content).not.toMatch(/public\s+Skills\s+remain available as rollback shims/);
 			expect(content).not.toContain("dispatch an isolated read-only `imm-qa`");

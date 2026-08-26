@@ -37,6 +37,7 @@ describe("skill dist consistency", () => {
 		const skills = publicSkills();
 		expect(skills.map((item) => item.name).sort()).toEqual([
 			"imm-brainstorm",
+			"imm-doc-prune",
 			"imm-loop",
 			"imm-planner",
 			"imm-pr-fix",
@@ -87,7 +88,7 @@ describe("skill dist consistency", () => {
 
 		// Every owned skill contract is tracked
 		expect(SKILL_OWNED_ENTRIES.map((e) => e.packaged).sort()).toEqual(
-			["imm-brainstorm.md", "imm-loop.md", "imm-planner.md", "imm-pr-fix.md"].sort(),
+			["imm-brainstorm.md", "imm-doc-prune.md", "imm-loop.md", "imm-planner.md", "imm-pr-fix.md"].sort(),
 		);
 	});
 
