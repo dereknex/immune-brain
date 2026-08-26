@@ -138,24 +138,59 @@ function affectedGitDirty(root: string): string[] {
 	return [...dirty].sort();
 }
 
+function processIsAlive(pid: number): boolean {
+	try {
+		process.kill(pid, 0);
+		return true;
+	} catch (error) {
+		return (error as NodeJS.ErrnoException).code !== "ESRCH";
+	}
+}
+
+/** Remove a lock whose recorded owner process is dead (review-3). */
+function clearStaleMigrationLock(path: string, holder: string): boolean {
+	let stale = false;
+	try {
+		const record = JSON.parse(holder) as { pid?: unknown };
+		stale = typeof record.pid === "number" && record.pid > 0 && !processIsAlive(record.pid);
+	} catch {
+		stale = Date.now() - Number(lstatSync(path).mtimeMs) > 30_000;
+	}
+	if (!stale) return false;
+	rmSync(path, { force: true });
+	return true;
+}
+
 function withExclusiveFileLock(path: string, operation: () => void): void {
 	let fd: number | null = null;
 	mkdirSync(dirname(path), { recursive: true });
-	try {
-		fd = openSync(path, FS_CONSTANTS.O_WRONLY | FS_CONSTANTS.O_CREAT | FS_CONSTANTS.O_EXCL, 0o600);
-		writeFileSync(fd, `${JSON.stringify({ pid: process.pid, at: new Date().toISOString() })}\n`, "utf8");
-		fsyncSync(fd);
-	} catch (error) {
-		if ((error as NodeJS.ErrnoException).code === "EEXIST") {
-			throw new Error(`migration lock is busy: ${path}; retry after the concurrent operation settles`);
+	for (let attempt = 0; attempt < 2; attempt += 1) {
+		try {
+			fd = openSync(path, FS_CONSTANTS.O_WRONLY | FS_CONSTANTS.O_CREAT | FS_CONSTANTS.O_EXCL, 0o600);
+			writeFileSync(fd, `${JSON.stringify({ pid: process.pid, at: new Date().toISOString() })}\n`, "utf8");
+			fsyncSync(fd);
+			break;
+		} catch (error) {
+			if ((error as NodeJS.ErrnoException).code === "EEXIST") {
+				if (attempt === 0) {
+					let holder = "";
+					try {
+						holder = readFileSync(path, "utf8");
+					} catch {
+						// unreadable holder: leave the lock busy
+					}
+					if (holder && clearStaleMigrationLock(path, holder)) continue;
+				}
+				throw new Error(`migration lock is busy: ${path}; retry after the concurrent operation settles`);
+			}
+			throw new Error(`migration lock failed: ${error instanceof Error ? error.message : String(error)}`);
 		}
-		throw new Error(`migration lock failed: ${error instanceof Error ? error.message : String(error)}`);
-	} finally {
-		if (fd !== null) closeSync(fd);
 	}
+	if (fd === null) throw new Error(`migration lock could not be acquired: ${path}`);
 	try {
 		operation();
 	} finally {
+		closeSync(fd);
 		rmSync(path, { force: true });
 	}
 }
@@ -306,19 +341,28 @@ function legacyKnownNames(): Record<string, string> {
 	return LEGACY_KNOWN_FILES as unknown as Record<string, string>;
 }
 
-const LEGACY_SOURCE_PREFIXES = [
+const LEGACY_SOURCE_SINGLETONS = new Set([
 	LEGACY_CLAIM_RELATIVE,
 	LEGACY_WORKSPACE_RELATIVE,
+	LEGACY_JOURNAL_RELATIVE,
+]);
+const LEGACY_SOURCE_DIRECTORIES = [
 	`${LEGACY_TASKS_RELATIVE}/`,
 	`${LEGACY_MEMORY_RELATIVE}/`,
 	`${LEGACY_TEMPLATES_RELATIVE}/`,
-	LEGACY_JOURNAL_RELATIVE,
 	`${LEGACY_AUTHORITY_RELATIVE}/`,
 ];
 const LEGACY_TARGET_PREFIXES = [
 	`${AUDIT_RELATIVE}/`,
 	`${LEGACY_V3_RELATIVE}/`,
 ];
+
+/** Exact-match allowlist identical to buildManifest's emitted sources (review-4). */
+function isLegacySourcePath(source: string): boolean {
+	if (LEGACY_SOURCE_SINGLETONS.has(source))
+		return source === LEGACY_CLAIM_RELATIVE || source === LEGACY_WORKSPACE_RELATIVE || source === LEGACY_JOURNAL_RELATIVE;
+	return LEGACY_SOURCE_DIRECTORIES.some((prefix) => source.startsWith(prefix));
+}
 
 function canonicalProjectRelative(root: string, candidate: string, label: string): string {
 	if (
@@ -362,7 +406,7 @@ function validateMarkerEntry(
 		throw new Error(`migration marker entry ${index} sha256 is invalid`);
 	if (typeof entry.size !== "number" || !Number.isInteger(entry.size) || entry.size < 0)
 		throw new Error(`migration marker entry ${index} size is invalid`);
-	if (!LEGACY_SOURCE_PREFIXES.some((prefix) => source === prefix || source.startsWith(prefix)))
+	if (!isLegacySourcePath(source))
 		throw new Error(`migration marker entry ${index} source is outside the legacy layout: ${source}`);
 	assertNoSymlinkParentSegments(root, source);
 	if (entry.target === null) return;
@@ -439,41 +483,36 @@ function removeMigrationMarker(root: string): void {
  * until the affected diff is committed.
  */
 export function migrateLegacyLayout(root: string): MigrationOutcome {
-	const inspection = inspectStorageLayout(root);
-	if (inspection.layout === "ready" || inspection.layout === "migration_uncommitted")
+	const initial = inspectStorageLayout(root);
+	if (["ready", "migration_uncommitted"].includes(initial.layout))
 		return {
 			contract: "immune_brain/storage_layout_migration_result/v1",
-			outcome: inspection.layout === "ready" ? "already_migrated" : "migration_uncommitted",
-			affected_paths: inspection.dirty_affected_paths,
-			reason: inspection.reason,
+			outcome: initial.layout === "ready" ? "already_migrated" : "migration_uncommitted",
+			affected_paths: initial.dirty_affected_paths,
+			reason: initial.reason,
 		};
-	if (inspection.layout === "migration_blocked_active")
+	if (["migration_blocked_active", "invalid"].includes(initial.layout))
 		return {
 			contract: "immune_brain/storage_layout_migration_result/v1",
-			outcome: "migration_blocked_active",
+			outcome: initial.layout,
 			affected_paths: [],
-			reason: inspection.reason,
+			reason: initial.reason,
 		};
-	if (inspection.layout === "invalid")
-		return {
-			contract: "immune_brain/storage_layout_migration_result/v1",
-			outcome: "invalid",
-			affected_paths: [],
-			reason: inspection.reason,
-		};
-	if (inspection.layout === "recovery_required") {
-		// A Kernel transaction marker must be recovered by the Kernel runtime;
-		// a migration marker is replayed here under the dual lock.
+
+	const oldLock = resolve(root, LEGACY_TASKS_RELATIVE, ".workspace.lock");
+	const newLock = resolve(root, ".imm/state/locks/kernel-store.lock");
+
+	// recovery_required: a migration marker is replayed under the dual lock;
+	// a Kernel transaction marker must be recovered by the Kernel runtime.
+	if (initial.layout === "recovery_required") {
 		const marker = readPendingMigrationMarker(root);
 		if (!marker)
 			return {
 				contract: "immune_brain/storage_layout_migration_result/v1",
 				outcome: "recovery_required",
 				affected_paths: [],
-				reason: inspection.reason,
+				reason: initial.reason,
 			};
-		const oldLock = resolve(root, LEGACY_TASKS_RELATIVE, ".workspace.lock");
-		const newLock = resolve(root, ".imm/state/locks/kernel-store.lock");
 		withExclusiveFileLock(oldLock, () => {
 			withExclusiveFileLock(newLock, () => {
 				for (const entry of marker.entries) convergeRelocation(root, entry);
@@ -489,31 +528,35 @@ export function migrateLegacyLayout(root: string): MigrationOutcome {
 		};
 	}
 
-	// migration_required: eligibility is the inspection's fail-closed verdict.
-	const dirty = affectedGitDirty(root);
-	if (dirty.length > 0)
-		return {
-			contract: "immune_brain/storage_layout_migration_result/v1",
-			outcome: "migration_uncommitted",
-			affected_paths: dirty,
-			reason: "affected legacy/audit paths differ from HEAD; commit or restore them before migration",
-		};
-	const { manifest, affected } = buildManifest(root);
-	if (manifest.entries.length === 0)
-		return {
-			contract: "immune_brain/storage_layout_migration_result/v1",
-			outcome: "already_migrated",
-			affected_paths: [],
-			reason: "no legacy evidence remains to relocate",
-		};
-
-	// Acquire the old task lock then the new store lock; hold both through
-	// convergence. The new store lock is the same one storage.ts uses, so no
-	// Kernel mutation can interleave with the relocation.
-	const oldLock = resolve(root, LEGACY_TASKS_RELATIVE, ".workspace.lock");
-	const newLock = resolve(root, ".imm/state/locks/kernel-store.lock");
-	withExclusiveFileLock(oldLock, () => {
-		withExclusiveFileLock(newLock, () => {
+	// migration_required: eligibility checks, Git cleanliness, and the frozen
+	// manifest build ALL happen under the dual lock so no old-runtime
+	// mutation can slip into the check-to-lock window (review-2).
+	const outcome = withExclusiveFileLock(oldLock, () => {
+		return withExclusiveFileLock(newLock, () => {
+			const inspection = inspectStorageLayout(root);
+			if (inspection.layout !== "migration_required")
+				return {
+					contract: "immune_brain/storage_layout_migration_result/v1",
+					outcome: inspection.layout === "ready" ? "already_migrated" : inspection.layout as MigrationOutcome["outcome"],
+					affected_paths: inspection.dirty_affected_paths,
+					reason: inspection.reason,
+				} as MigrationOutcome;
+			const dirty = affectedGitDirty(root);
+			if (dirty.length > 0)
+				return {
+					contract: "immune_brain/storage_layout_migration_result/v1",
+					outcome: "migration_uncommitted",
+					affected_paths: dirty,
+					reason: "affected legacy/audit paths differ from HEAD; commit or restore them before migration",
+				} as MigrationOutcome;
+			const { manifest, affected } = buildManifest(root);
+			if (manifest.entries.length === 0)
+				return {
+					contract: "immune_brain/storage_layout_migration_result/v1",
+					outcome: "already_migrated",
+					affected_paths: [],
+					reason: "no legacy evidence remains to relocate",
+				} as MigrationOutcome;
 			writeMigrationMarker(root, manifest);
 			try {
 				for (const entry of manifest.entries) convergeRelocation(root, entry);
@@ -524,12 +567,13 @@ export function migrateLegacyLayout(root: string): MigrationOutcome {
 					`migration failed and remains recoverable from the frozen manifest: ${error instanceof Error ? error.message : String(error)}`,
 				);
 			}
+			return {
+				contract: "immune_brain/storage_layout_migration_result/v1",
+				outcome: "migrated",
+				affected_paths: affected,
+				reason: "relocated legacy evidence without mutating the Git index; commit the affected paths and retry the original operation",
+			} as MigrationOutcome;
 		});
 	});
-	return {
-		contract: "immune_brain/storage_layout_migration_result/v1",
-		outcome: "migrated",
-		affected_paths: affected,
-		reason: "relocated legacy evidence without mutating the Git index; commit the affected paths and retry the original operation",
-	};
+	return outcome;
 }

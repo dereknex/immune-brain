@@ -1352,6 +1352,7 @@ interface TerminalMarker {
 	expected_workspace_hash: string;
 	next_workspace_content: string;
 	artifact_relocations?: ArtifactRelocationV1[];
+	expected_claim_sha256: string | null;
 	at: string;
 }
 
@@ -1505,6 +1506,7 @@ function parseTerminalMarker(raw: Record<string, unknown>): TerminalMarker {
 		"expected_workspace_hash",
 		"next_workspace_content",
 		"artifact_relocations",
+		"expected_claim_sha256",
 		"at",
 	];
 	const unknown = Object.keys(raw).filter((key) => !allowed.includes(key));
@@ -1521,6 +1523,13 @@ function parseTerminalMarker(raw: Record<string, unknown>): TerminalMarker {
 		if (typeof raw[field] !== "string" || !String(raw[field]).trim())
 			throw new KernelStoreSecurityError(`terminal marker ${field} is invalid`);
 	}
+	const expectedClaim = raw.expected_claim_sha256;
+	if (
+		expectedClaim !== null &&
+		expectedClaim !== undefined &&
+		(typeof expectedClaim !== "string" || !/^sha256:[a-f0-9]{64}$/.test(expectedClaim))
+	)
+		throw new KernelStoreSecurityError("terminal marker expected_claim_sha256 is invalid");
 	const marker = {
 		contract: "assurance_kernel/terminal_transaction/v2" as const,
 		task_id: raw.task_id,
@@ -1530,6 +1539,7 @@ function parseTerminalMarker(raw: Record<string, unknown>): TerminalMarker {
 		expected_workspace_hash: raw.expected_workspace_hash as string,
 		next_workspace_content: raw.next_workspace_content as string,
 		artifact_relocations: parseArtifactRelocationsV1(raw.artifact_relocations),
+		expected_claim_sha256: (expectedClaim ?? null) as string | null,
 		at: raw.at as string,
 	};
 	const record = parseTaskRecordV3(JSON.parse(marker.audit_record_content));
@@ -1621,7 +1631,10 @@ function recoverPendingTerminalLocked(root: string): void {
 		marker.expected_workspace_hash,
 		marker.next_workspace_content,
 	);
-	// Active-claim removal: absence is the committed outcome; presence is removed.
+	// Active-claim removal: absence is the committed outcome. A present
+	// claim is removed only after its bytes match the marker's frozen
+	// expected hash; a foreign or changed claim fails closed and keeps the
+	// marker recoverable (review-1).
 	const claimCandidate = safeCandidate(root, stateClaimPath());
 	assertNoSymlinkSegments(claimCandidate.root, claimCandidate.path);
 	const claimStat = pathStatOrNull(claimCandidate.path);
@@ -1630,6 +1643,13 @@ function recoverPendingTerminalLocked(root: string): void {
 			throw new KernelStoreSecurityError(
 				"backend claim is not a regular file",
 			);
+		const claimBytes = readSecureProjectFile(root, stateClaimPath());
+		if (marker.expected_claim_sha256 !== null) {
+			if (revisionFor(claimBytes) !== marker.expected_claim_sha256)
+				throw new KernelStoreConflictError(
+					`backend claim changed during terminal settlement: expected ${marker.expected_claim_sha256}, got ${revisionFor(claimBytes)}`,
+				);
+		}
 		rmSync(claimCandidate.path);
 		fsyncDirectory(dirname(claimCandidate.path));
 	}
@@ -1662,6 +1682,9 @@ export function commitTerminalLocked(
 		throw new KernelStoreSecurityError(
 			"terminal proof must match the terminal record bytes",
 		);
+	let expectedClaimSha256: string | null = null;
+	if (currentRevision(root, stateClaimPath()) !== MISSING_REVISION)
+		expectedClaimSha256 = revisionFor(readSecureProjectFile(root, stateClaimPath()));
 	const marker: TerminalMarker = {
 		contract: "assurance_kernel/terminal_transaction/v2",
 		task_id: taskId,
@@ -1673,6 +1696,7 @@ export function commitTerminalLocked(
 		...(transaction.artifact_relocations
 			? { artifact_relocations: transaction.artifact_relocations }
 			: {}),
+		expected_claim_sha256: expectedClaimSha256,
 		at: tombstone.terminalized_at,
 	};
 	atomicCasWrite(
