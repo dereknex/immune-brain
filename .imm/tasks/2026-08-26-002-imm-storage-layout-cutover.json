@@ -64,6 +64,7 @@
       "plugins/immune-brain/runtime/kernel/automatic_observations.ts",
       "plugins/immune-brain/runtime/kernel/backend_claim.ts",
       "plugins/immune-brain/runtime/kernel/canary_application.ts",
+      "plugins/immune-brain/runtime/kernel/canary_eligibility.ts",
       "plugins/immune-brain/runtime/kernel/completion.ts",
       "plugins/immune-brain/runtime/kernel/enrollment.ts",
       "plugins/immune-brain/runtime/kernel/index.ts",
@@ -115,12 +116,12 @@
       "tests/v4-storage-retirement-legacy-audit.test.ts"
     ],
     "risk": "critical",
-    "revision": 7,
+    "revision": 8,
     "owner": "user"
   },
   "intent_ref": {
     "path": "docs/plans/2026-08-26-002-imm-storage-layout-cutover.intent.json",
-    "content_hash": "sha256:8ca66ec662870b2316967b6e170b4350abcf135cf94034ccaa87ba0b4123c18b"
+    "content_hash": "sha256:6b27a536af7e74e56a068e9db383ea52afce46dd2e63d5c8bb3592c903f59e00"
   },
   "lifecycle": "active",
   "artifact_state": "active",
@@ -419,6 +420,48 @@
           "summary": "host-attested QA: all 6 fixed verification descriptor(s) passed"
         }
       ]
+    },
+    {
+      "id": "approval-qa-514934d6",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 8,
+      "intent_content_hash": "sha256:6b27a536af7e74e56a068e9db383ea52afce46dd2e63d5c8bb3592c903f59e00",
+      "diff_hash": "sha256:097a6fd8b37e0611e471374703e4d4519ece5be053cd18bb57f2f8e78dbea2f6",
+      "actor_id": "deterministic-qa",
+      "summary": "all 6 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "acc-state-audit-settlement",
+          "status": "passed",
+          "summary": "host-attested QA: all 6 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-automatic-layout-migration",
+          "status": "passed",
+          "summary": "host-attested QA: all 6 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-shared-entrypoint-gate",
+          "status": "passed",
+          "summary": "host-attested QA: all 6 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-historical-audit-is-nonauthoritative",
+          "status": "passed",
+          "summary": "host-attested QA: all 6 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-git-durability-and-retirement",
+          "status": "passed",
+          "summary": "host-attested QA: all 6 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-package-and-reference-sync",
+          "status": "passed",
+          "summary": "host-attested QA: all 6 fixed verification descriptor(s) passed"
+        }
+      ]
     }
   ],
   "findings": [
@@ -605,7 +648,7 @@
     {
       "id": "review-2360638c23dc-1-review-1",
       "kind": "blocking",
-      "status": "open",
+      "status": "resolved",
       "acceptance_id": "acc-automatic-layout-migration",
       "source": "review",
       "review_round": 5,
@@ -614,10 +657,46 @@
     {
       "id": "request_rework:2026-08-26-002-imm-storage-layout-cutover:2026-08-26T13:15:21.944Z:replan-required",
       "kind": "replan_required",
-      "status": "open",
+      "status": "resolved",
       "acceptance_id": "acc-automatic-layout-migration",
       "source": "kernel",
       "review_round": 5,
+      "summary": "Review returned this acceptance boundary twice; a durable replan is required."
+    },
+    {
+      "id": "review-382a908dc636-1-review-1",
+      "kind": "blocking",
+      "status": "open",
+      "acceptance_id": "acc-automatic-layout-migration",
+      "source": "review",
+      "review_round": 6,
+      "summary": "plugins/immune-brain/runtime/kernel/storage_layout_migration.ts: validateMarkerEntry accepts any project-root *.json basename as a legacy task source and any .imm/memory child as historical evidence, so a forged recovery marker can move package.json or expose unknown memory bytes under tracked audit; require the exact .imm/tasks prefix and MEMORY_FILES allowlist before relocation."
+    },
+    {
+      "id": "review-382a908dc636-2-review-2",
+      "kind": "blocking",
+      "status": "open",
+      "acceptance_id": "acc-automatic-layout-migration",
+      "source": "review",
+      "review_round": 6,
+      "summary": "plugins/immune-brain/runtime/kernel/storage_layout_migration.ts: validateMarkerEntrySet never adds sources to its Set and permits repeated identical targets, so duplicate or conflicting frozen-manifest entries are not rejected before writes; record each normalized source and reject every duplicate source or target."
+    },
+    {
+      "id": "review-382a908dc636-3-review-3",
+      "kind": "blocking",
+      "status": "open",
+      "acceptance_id": "acc-shared-entrypoint-gate",
+      "source": "review",
+      "review_round": 6,
+      "summary": "plugins/immune-brain/runtime/kernel/storage_paths.ts: inspectOldLayout exempts README.md as known in every legacy directory although buildManifest rejects it, causing read-only entrypoints to report migration_required instead of invalid and the later mutating gate to throw; classify the same exact allowlist in inspection and migration."
+    },
+    {
+      "id": "request_rework:2026-08-26-002-imm-storage-layout-cutover:2026-08-26T13:25:37.476Z:replan-required",
+      "kind": "replan_required",
+      "status": "open",
+      "acceptance_id": "acc-automatic-layout-migration",
+      "source": "kernel",
+      "review_round": 6,
       "summary": "Review returned this acceptance boundary twice; a durable replan is required."
     }
   ],
@@ -1052,6 +1131,75 @@
         "confirmation_ref": "pi-confirm-cf9429cde8609dba",
         "issued_at": "2026-08-26T13:15:21.944Z",
         "expires_at": "2026-08-26T13:25:21.944Z"
+      }
+    },
+    {
+      "id": "resolve_finding:2026-08-26-002-imm-storage-layout-cutover:2026-08-26T13:19:21.350Z",
+      "at": "2026-08-26T13:19:21.350Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-2360638c23dc-1-review-1\naction_v2_sha256:59181286477f50f0a038bbe19fc4704851d5c4f946faf1a2e19cfbe34ab5aae8"
+    },
+    {
+      "id": "freeze_artifacts:2026-08-26-002-imm-storage-layout-cutover:2026-08-26T13:19:38.942Z",
+      "at": "2026-08-26T13:19:38.942Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent and Spec frozen at docs/plans/archive/2026-08-26-002-imm-storage-layout-cutover.intent.json"
+    },
+    {
+      "id": "approve_breaking_intent_revision:2026-08-26-002-imm-storage-layout-cutover:2026-08-26T13:21:21.631Z",
+      "at": "2026-08-26T13:21:21.631Z",
+      "type": "approve_breaking_intent_revision",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "intent_revision_8\naction_v2_sha256:c6ef196c8f690a497496376b54f8684ae7a3821582189a3ee6af37b209449d6e",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-edd52f105f14d1ff",
+        "issued_at": "2026-08-26T13:21:21.823Z",
+        "expires_at": "2026-08-26T13:31:21.823Z"
+      }
+    },
+    {
+      "id": "freeze_artifacts:2026-08-26-002-imm-storage-layout-cutover:2026-08-26T13:21:28.023Z",
+      "at": "2026-08-26T13:21:28.023Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent and Spec frozen at docs/plans/archive/2026-08-26-002-imm-storage-layout-cutover.intent.json"
+    },
+    {
+      "id": "record_approval:2026-08-26-002-imm-storage-layout-cutover:2026-08-26T13:21:42.249Z",
+      "at": "2026-08-26T13:21:42.249Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-514934d6\naction_v2_sha256:136a1979913e3ccc37a7642abdf83b5b7aa447448db08df2ee5757453350bf4e",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-df9e1b5277d96720",
+        "issued_at": "2026-08-26T13:21:42.249Z",
+        "expires_at": "2026-08-26T13:31:42.249Z"
+      }
+    },
+    {
+      "id": "request_rework:2026-08-26-002-imm-storage-layout-cutover:2026-08-26T13:25:37.476Z",
+      "at": "2026-08-26T13:25:37.476Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "review_round_6\naction_v2_sha256:b20e164fedd13689f5b568f3cf08022289db46cfe01df2bd2cec945b0840fd03",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "native-review-e7a6c2f1-18ba-4d5",
+        "confirmation_ref": "pi-confirm-693f33bcf4ffad31",
+        "issued_at": "2026-08-26T13:25:37.476Z",
+        "expires_at": "2026-08-26T13:35:37.476Z"
       }
     }
   ]

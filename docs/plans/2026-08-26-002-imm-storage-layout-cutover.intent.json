@@ -61,6 +61,7 @@
     "plugins/immune-brain/runtime/kernel/automatic_observations.ts",
     "plugins/immune-brain/runtime/kernel/backend_claim.ts",
     "plugins/immune-brain/runtime/kernel/canary_application.ts",
+    "plugins/immune-brain/runtime/kernel/canary_eligibility.ts",
     "plugins/immune-brain/runtime/kernel/completion.ts",
     "plugins/immune-brain/runtime/kernel/enrollment.ts",
     "plugins/immune-brain/runtime/kernel/index.ts",
@@ -112,6 +113,6 @@
     "tests/v4-storage-retirement-legacy-audit.test.ts"
   ],
   "risk": "critical",
-  "revision": 7,
+  "revision": 8,
   "owner": "user"
 }

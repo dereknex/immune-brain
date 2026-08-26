@@ -307,7 +307,7 @@ function inspectOldLayout(root: string): OldLayoutFacts {
 			for (const entry of listEntries(root, dir) ?? []) {
 				const full = `${dir}/${entry}`;
 				const known = LEGACY_KNOWN_FILES[full as keyof typeof LEGACY_KNOWN_FILES];
-				if (known === undefined && entry !== "README.md")
+				if (known === undefined)
 					throw new Error(`unknown file under ${dir}: ${entry}`);
 			}
 		}

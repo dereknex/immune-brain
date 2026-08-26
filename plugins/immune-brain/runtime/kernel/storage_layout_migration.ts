@@ -554,9 +554,12 @@ function validateMarkerEntry(
 	assertNoSymlinkParentSegments(root, source);
 
 	const sourceBase = source.split("/").at(-1) ?? "";
-	const taskId = taskIdFromOwnerFile(sourceBase);
-	if (taskId !== null) {
-		// Task owner files map deterministically to the audit pair.
+	// review-1: task owner sources must live under the exact .imm/tasks/
+	// prefix; a bare project-root *.json basename must never be accepted.
+	if (taskIdFromOwnerFile(sourceBase) !== null) {
+		if (!source.startsWith(`${LEGACY_TASKS_RELATIVE}/`))
+			throw new Error(`migration marker entry ${index} task source is outside .imm/tasks: ${source}`);
+		const taskId = taskIdFromOwnerFile(sourceBase)!;
 		const isTombstone = sourceBase.endsWith(".backend-claim.json");
 		const expectedTarget = isTombstone
 			? auditTerminalProofPath(taskId)
@@ -577,15 +580,27 @@ function validateMarkerEntry(
 		return;
 	}
 	// Known `.imm/memory/` evidence relocates byte-for-byte to legacy-v3.
-	if (
-		source.startsWith(`${LEGACY_MEMORY_RELATIVE}/`) &&
-		entry.target !== null &&
-		entry.target.startsWith(`${LEGACY_V3_RELATIVE}/`) &&
-		entry.target.split("/").length === LEGACY_V3_RELATIVE.split("/").length + 1 &&
-		entry.target.endsWith(`/${sourceBase}`)
-	) {
-		assertNoSymlinkParentSegments(root, entry.target);
-		return;
+	// review-1: only the exact MEMORY_FILES allowlist is accepted; an
+	// unknown .imm/memory child is never exposed under tracked audit.
+	const MEMORY_FILES = new Set([
+		".imm/memory/current_iteration.json",
+		".imm/memory/current_iteration_history.jsonl",
+		".imm/memory/dispatch_telemetry.jsonl",
+		".imm/memory/.current_iteration.authority_commit_receipts.jsonl",
+		".imm/memory/.current_iteration.automatic_observations.jsonl",
+	]);
+	if (source.startsWith(`${LEGACY_MEMORY_RELATIVE}/`)) {
+		if (!MEMORY_FILES.has(source))
+			throw new Error(`migration marker entry ${index} memory source is not in the allowlist: ${source}`);
+		if (
+			entry.target !== null &&
+			entry.target.startsWith(`${LEGACY_V3_RELATIVE}/`) &&
+			entry.target.split("/").length === LEGACY_V3_RELATIVE.split("/").length + 1 &&
+			entry.target.endsWith(`/${sourceBase}`)
+		) {
+			assertNoSymlinkParentSegments(root, entry.target);
+			return;
+		}
 	}
 	throw new Error(`migration marker entry ${index} is not an emitted mapping: ${source} -> ${String(entry.target)}`);
 }
@@ -595,14 +610,16 @@ function validateMarkerEntrySet(entries: MigrationManifestEntry[]): void {
 	const sources = new Set<string>();
 	const targets = new Map<string, string>();
 	for (const entry of entries) {
-		const srcKey = entry.source.toLowerCase();
+		// review-2: record each normalized source and reject any duplicate
+		// source or target (exact or case-fold).
 		if (sources.has(entry.source))
 			throw new Error(`migration marker contains a duplicate source: ${entry.source}`);
+		sources.add(entry.source);
 		if (entry.target === null) continue;
 		const tgtKey = entry.target.toLowerCase();
 		const priorTarget = targets.get(tgtKey);
-		if (priorTarget !== undefined && priorTarget !== entry.target)
-			throw new Error(`migration marker case-fold target collision: ${priorTarget} and ${entry.target}`);
+		if (priorTarget !== undefined)
+			throw new Error(`migration marker contains a duplicate or case-colliding target: ${priorTarget} and ${entry.target}`);
 		targets.set(tgtKey, entry.target);
 	}
 }
