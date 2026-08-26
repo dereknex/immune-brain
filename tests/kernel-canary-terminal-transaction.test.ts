@@ -373,6 +373,7 @@ describe("terminal ownership transfer", () => {
 	test("crash after marker write recovers record/workspace/claim/tombstone", () => {
 		// Build the marker state as if the transaction crashed after the
 		// marker write but before completion: record done in memory only.
+		const enrolledClaimHash = revisionForContent(readFileSync(join(root, ".imm/state/active-claim.json"), "utf8"));
 		freezeTask();
 		approveQa();
 		const pre = readTaskRecord(root, TASK);
@@ -416,6 +417,7 @@ describe("terminal ownership transfer", () => {
 						null,
 						2,
 					)}\n`,
+					expected_claim_sha256: enrolledClaimHash,
 					at: tombstone.terminalized_at,
 				},
 				null,
@@ -437,6 +439,8 @@ describe("terminal ownership transfer", () => {
 	});
 
 	test("crash recovery is idempotent when the terminal state already converged", () => {
+		const enrolledClaim = readFileSync(join(root, ".imm/state/active-claim.json"), "utf8");
+		const enrolledClaimHash = revisionForContent(enrolledClaim);
 		completeTask();
 		// Re-plant the marker (crash before marker removal): recovery must
 		// converge idempotently without failing. Terminal evidence lives in
@@ -460,6 +464,7 @@ describe("terminal ownership transfer", () => {
 						null,
 						2,
 					)}\n`,
+					expected_claim_sha256: enrolledClaimHash,
 					at: tombstone.terminalized_at,
 				},
 				null,
@@ -473,6 +478,8 @@ describe("terminal ownership transfer", () => {
 	});
 
 	test("contradictory tombstone conflict fails closed and remains recoverable", () => {
+		const enrolledClaim = readFileSync(join(root, ".imm/state/active-claim.json"), "utf8");
+		const enrolledClaimHash = revisionForContent(enrolledClaim);
 		completeTask();
 		const auditPair = readAuditTaskPair(root, TASK)!;
 		const record = auditPair.record;
@@ -501,6 +508,7 @@ describe("terminal ownership transfer", () => {
 						null,
 						2,
 					)}\n`,
+					expected_claim_sha256: enrolledClaimHash,
 					at: conflictingTombstone.terminalized_at,
 				},
 				null,

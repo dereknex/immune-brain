@@ -6,55 +6,40 @@
     {
       "id": "acc-state-audit-settlement",
       "assertion": "Kernel Enrollment and active execution use only `.imm/state/`, while completion and stop recoverably converge a create-once matching `.imm/audit/<task-id>/task-record.json` plus `terminal-proof.json`, clear workspace/claim/active state only after the audit pair is durable, and classify every marker/duplicate/stale-claim combination with the Spec's fail-closed precedence.",
-      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/kernel-canary-terminal-transaction.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 90000,\n  \"max_output_bytes\": 196608\n}\n"
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\"test\", \"tests/kernel-canary-terminal-transaction.test.ts\"],\n  \"cwd\": \".\", \"timeout_ms\": 90000, \"max_output_bytes\": 196608\n}\n"
     },
     {
       "id": "acc-automatic-layout-migration",
       "assertion": "The one-release migrator accepts only owner-free, transaction-free, affected-path-clean legacy layouts; holds old and new locks; freezes a hash manifest; relocates terminal and v3 machine evidence byte-for-byte; rejects unknown, symlinked, escaped, case-colliding, dirty, active, or conflicting inputs; recovers every interruption exactly; never mutates the Git index; stops the original mutation; and blocks retry until affected paths are committed.",
-      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/kernel-storage-layout-migration.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 262144\n}\n"
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\"test\", \"tests/kernel-storage-layout-migration.test.ts\"],\n  \"cwd\": \".\", \"timeout_ms\": 120000, \"max_output_bytes\": 262144\n}\n"
     },
     {
       "id": "acc-shared-entrypoint-gate",
       "assertion": "Every stateful `imm-kernel` and native Pi entrypoint uses one layout inspection contract: status, audit, validation, and preparation remain zero-write and report migration/recovery requirements without interpreting old authority, while explicit mutation performs eligible migration or recovery and returns before TaskIntent authoring or Enrollment authority commit.",
-      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/kernel-shadow-cli.test.ts\",\n    \"tests/pi-canary-enroll-extension.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 262144\n}\n"
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\"test\", \"tests/kernel-shadow-cli.test.ts\", \"tests/pi-canary-enroll-extension.test.ts\"],\n  \"cwd\": \".\", \"timeout_ms\": 120000, \"max_output_bytes\": 262144\n}\n"
     },
     {
       "id": "acc-historical-audit-is-nonauthoritative",
       "assertion": "Known legacy v3 machine evidence is preserved under `.imm/audit/legacy-v3/` and remains securely readable through explicit bounded audit, but status, preparation, projection, mutation, and terminal settlement cannot treat it as current authority or synthesize a TaskRecord from it.",
-      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/v4-storage-retirement-legacy-audit.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 90000,\n  \"max_output_bytes\": 196608\n}\n"
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\"test\", \"tests/v4-storage-retirement-legacy-audit.test.ts\"],\n  \"cwd\": \".\", \"timeout_ms\": 90000, \"max_output_bytes\": 196608\n}\n"
     },
     {
       "id": "acc-git-durability-and-retirement",
       "assertion": "`.imm/state/` is wholly ignored and excluded from task diff identity, `.imm/audit/` is wholly trackable and task-ID-isolated, every terminal archived TaskIntent has matching durable audit evidence, and retired `.imm/templates/`, `.imm/memory/MEMORY.md`, active-v2 migrator source, and current contract/test ownership are deleted while historical archived references remain factual.",
-      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/task-record-durability.test.ts\",\n    \"tests/roadmap-plan-boundary-contract.test.ts\",\n    \"tests/direct-first-routing-contract.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 262144\n}\n"
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\"test\", \"tests/task-record-durability.test.ts\", \"tests/roadmap-plan-boundary-contract.test.ts\", \"tests/direct-first-routing-contract.test.ts\"],\n  \"cwd\": \".\", \"timeout_ms\": 120000, \"max_output_bytes\": 262144\n}\n"
     },
     {
       "id": "acc-package-and-reference-sync",
       "assertion": "Current architecture, operator guidance, package runtime smoke, and generated reference mirrors describe the state/audit layout, automatic migrate-and-stop release sequence, Git-only pre-Enrollment rollback boundary, historical-audit isolation, and immediate-successor migrator deletion without stale current old-layout contracts.",
-      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"scripts/sync-dist-docs.ts\",\n    \"--check\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 30000,\n  \"max_output_bytes\": 65536\n}\n"
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\"scripts/sync-dist-docs.ts\", \"--check\"],\n  \"cwd\": \".\", \"timeout_ms\": 30000, \"max_output_bytes\": 65536\n}\n"
     }
   ],
   "scope_hint": [
-    ".gitignore",
-    ".imm/memory/MEMORY.md",
-    ".imm/templates/iteration-plan-template.md",
-    ".imm/templates/review-report-template.md",
-    "CONTEXT.md",
-    "IMMUNE.md",
-    "docs/reference/planning-artifact-retention.md",
-    "docs/solutions/contracts.md",
-    "docs/solutions/imm-workspace-pollution-control-pattern.md",
-    "docs/solutions/minimal-imm-init-bootstrap-pattern.md",
-    "docs/solutions/outcome-based-planning-steps.md",
     "docs/specs/archive/imm-storage-layout-cutover.spec.md",
     "docs/specs/imm-storage-layout-cutover.spec.md",
-    "docs/user_manual.md",
     "plugins/immune-brain/.pi-extension/imm-canary-enroll.ts",
     "plugins/immune-brain/.pi-extension/imm-canary-work.ts",
     "plugins/immune-brain/.pi-extension/runtime-stub.ts",
-    "plugins/immune-brain/README.md",
-    "plugins/immune-brain/USER_GUIDE.md",
-    "plugins/immune-brain/dist/docs/reference/planning-artifact-retention.md",
     "plugins/immune-brain/runtime/commands/kernel.ts",
     "plugins/immune-brain/runtime/kernel/application.ts",
     "plugins/immune-brain/runtime/kernel/assurance_projection.ts",
@@ -73,44 +58,18 @@
     "plugins/immune-brain/runtime/kernel/storage_paths.ts",
     "plugins/immune-brain/runtime/v4_runtime.ts",
     "plugins/immune-brain/runtime/workspace_scope.ts",
-    "tests/authority-commit-receipts.test.ts",
     "tests/direct-first-routing-contract.test.ts",
-    "tests/enrollment-confirmation-relocation.test.ts",
-    "tests/helpers/roadmap-e2e-harness.ts",
-    "tests/kernel-assurance-projection.test.ts",
-    "tests/kernel-backend-claim.test.ts",
-    "tests/kernel-canary-application.test.ts",
-    "tests/kernel-canary-authority.test.ts",
-    "tests/kernel-canary-claim-writer-boundary.test.ts",
-    "tests/kernel-canary-drain-transaction.test.ts",
     "tests/kernel-canary-terminal-transaction.test.ts",
-    "tests/kernel-enrollment-transaction.test.ts",
-    "tests/kernel-migrate.test.ts",
-    "tests/kernel-pi-canary-live-boundary.test.ts",
-    "tests/kernel-pi-canary-prepare.test.ts",
-    "tests/kernel-r2a-boundary.test.ts",
-    "tests/kernel-readiness.test.ts",
+    "tests/kernel-intent-validation.test.ts",
     "tests/kernel-shadow-cli.test.ts",
     "tests/kernel-storage-layout-migration.test.ts",
-    "tests/kernel-task-record-migration.test.ts",
-    "tests/pi-canary-assurance-progression.test.ts",
     "tests/pi-canary-enroll-extension.test.ts",
-    "tests/pi-canary-lifecycle-package.test.ts",
-    "tests/pi-canary-packed-loader.test.ts",
-    "tests/pi-canary-user-authority.test.ts",
-    "tests/pi-canary-work-extension.test.ts",
     "tests/planning-artifact-archival.test.ts",
-    "tests/plugin-package-runtime.test.ts",
     "tests/roadmap-plan-boundary-contract.test.ts",
-    "tests/roadmap-plan-host-acceptance.test.ts",
-    "tests/state-ledger-migration.test.ts",
-    "tests/task-record-durability-baseline.json",
     "tests/task-record-durability.test.ts",
-    "tests/user-approval-authority.test.ts",
-    "tests/user-approval-critical-completion.test.ts",
     "tests/v4-storage-retirement-legacy-audit.test.ts"
   ],
   "risk": "critical",
-  "revision": 2,
+  "revision": 3,
   "owner": "user"
 }

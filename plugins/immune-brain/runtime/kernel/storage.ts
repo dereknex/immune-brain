@@ -984,6 +984,10 @@ function projectKernelAuthorityLocked(
 						}
 				: null;
 		const terminal = auditPair !== null;
+		// review-1: a state record must never coexist with a terminal audit
+		// pair; only the settlement marker may hold them transiently, and a
+		// present marker routes to recovery/conflict before this projection.
+		const duplicateStateAndAudit = Boolean(stateRecord.record && auditPair);
 		const matchingTerminalProof = Boolean(auditPair && workspace.current_working === null);
 		const matchingClaimIdentity = Boolean(
 			claim &&
@@ -995,6 +999,17 @@ function projectKernelAuthorityLocked(
 		const sameOwner = claim ? workspace.current_working === claim.task_id : workspace.current_working === null;
 		const revision = revisionForContent(JSON.stringify({ claim, stateRecord, auditPair, workspace }));
 
+		if (duplicateStateAndAudit)
+			return {
+				contract: "assurance_kernel/authority_projection/v1",
+				requested_task_id: taskId,
+				state: "authority_conflict",
+				owner_task_id: claim?.task_id ?? null,
+				owner_lifecycle: authorityRecord?.lifecycle ?? null,
+				claim_lifecycle_status: claim?.lifecycle_status ?? null,
+				diagnostic: `simultaneous state record and terminal audit pair for ${inspectedTaskId}; resolve or recover before authority interpretation`,
+				revision,
+			};
 		if (claim && !sameOwner && !matchingTerminalProof)
 			return {
 				contract: "assurance_kernel/authority_projection/v1",
@@ -1371,7 +1386,7 @@ interface TerminalMarker {
 	expected_workspace_hash: string;
 	next_workspace_content: string;
 	artifact_relocations?: ArtifactRelocationV1[];
-	expected_claim_sha256: string | null;
+	expected_claim_sha256: string;
 	at: string;
 }
 
@@ -1543,12 +1558,8 @@ function parseTerminalMarker(raw: Record<string, unknown>): TerminalMarker {
 			throw new KernelStoreSecurityError(`terminal marker ${field} is invalid`);
 	}
 	const expectedClaim = raw.expected_claim_sha256;
-	if (
-		expectedClaim !== null &&
-		expectedClaim !== undefined &&
-		(typeof expectedClaim !== "string" || !/^sha256:[a-f0-9]{64}$/.test(expectedClaim))
-	)
-		throw new KernelStoreSecurityError("terminal marker expected_claim_sha256 is invalid");
+	if (typeof expectedClaim !== "string" || !/^sha256:[a-f0-9]{64}$/.test(expectedClaim))
+		throw new KernelStoreSecurityError("terminal marker expected_claim_sha256 is required");
 	const marker = {
 		contract: "assurance_kernel/terminal_transaction/v2" as const,
 		task_id: raw.task_id,
@@ -1558,7 +1569,7 @@ function parseTerminalMarker(raw: Record<string, unknown>): TerminalMarker {
 		expected_workspace_hash: raw.expected_workspace_hash as string,
 		next_workspace_content: raw.next_workspace_content as string,
 		artifact_relocations: parseArtifactRelocationsV1(raw.artifact_relocations),
-		expected_claim_sha256: (expectedClaim ?? null) as string | null,
+		expected_claim_sha256: expectedClaim,
 		at: raw.at as string,
 	};
 	const record = parseTaskRecordV3(JSON.parse(marker.audit_record_content));
@@ -1665,17 +1676,18 @@ function recoverPendingTerminalLocked(root: string, invokeStepHook = false): voi
 	assertNoSymlinkSegments(claimCandidate.root, claimCandidate.path);
 	const claimStat = pathStatOrNull(claimCandidate.path);
 	if (claimStat) {
+		// review-2: a present claim at replay must byte-match the frozen
+		// claim hash; absence is the already-converged step, a foreign or
+		// changed claim fails closed instead of being destroyed.
 		if (!claimStat.isFile())
 			throw new KernelStoreSecurityError(
 				"backend claim is not a regular file",
 			);
 		const claimBytes = readSecureProjectFile(root, stateClaimPath());
-		if (marker.expected_claim_sha256 !== null) {
-			if (revisionFor(claimBytes) !== marker.expected_claim_sha256)
-				throw new KernelStoreConflictError(
-					`backend claim changed during terminal settlement: expected ${marker.expected_claim_sha256}, got ${revisionFor(claimBytes)}`,
-				);
-		}
+		if (revisionFor(claimBytes) !== marker.expected_claim_sha256)
+			throw new KernelStoreConflictError(
+				`backend claim changed during terminal settlement: expected ${marker.expected_claim_sha256}, got ${revisionFor(claimBytes)}`,
+			);
 		rmSync(claimCandidate.path);
 		fsyncDirectory(dirname(claimCandidate.path));
 	}
@@ -1723,20 +1735,17 @@ export function commitTerminalLocked(
 		throw new KernelStoreSecurityError(
 			"terminal proof lifecycle contradicts the terminal TaskRecord",
 		);
-	let expectedClaimSha256: string | null = null;
-	if (currentRevision(root, stateClaimPath()) !== MISSING_REVISION) {
-		const claimBytes = readSecureProjectFile(root, stateClaimPath());
-		const claim = parseBackendClaim(JSON.parse(claimBytes) as Record<string, unknown>);
-		if (claim.task_id !== taskId)
-			throw new KernelStoreSecurityError(
-				`terminal settlement claim belongs to ${claim.task_id}, not ${taskId}`,
-			);
-		if (claim.lifecycle_status !== "active" && claim.lifecycle_status !== "draining")
-			throw new KernelStoreSecurityError(
-				"terminal settlement claim must be active or draining",
-			);
-		expectedClaimSha256 = revisionFor(claimBytes);
-	}
+	const claimBytes = readSecureProjectFile(root, stateClaimPath());
+	const claim = parseBackendClaim(JSON.parse(claimBytes) as Record<string, unknown>);
+	if (claim.task_id !== taskId)
+		throw new KernelStoreSecurityError(
+			`terminal settlement claim belongs to ${claim.task_id}, not ${taskId}`,
+		);
+	if (claim.lifecycle_status !== "active" && claim.lifecycle_status !== "draining")
+		throw new KernelStoreSecurityError(
+			"terminal settlement claim must be active or draining",
+		);
+	const expectedClaimSha256 = revisionFor(claimBytes);
 	const marker: TerminalMarker = {
 		contract: "assurance_kernel/terminal_transaction/v2",
 		task_id: taskId,
