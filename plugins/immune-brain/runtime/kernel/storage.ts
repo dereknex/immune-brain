@@ -420,6 +420,25 @@ function runAfterTaskTransactionWriteHook(): void {
 	hook?.();
 }
 
+let terminalSettlementStepHookForTest: ((stepIndex: number) => void) | null = null;
+
+/** Test-only seam: fail deterministically after each terminal settlement step. */
+export function setTerminalSettlementStepHookForTest(
+	hook: ((stepIndex: number) => void) | null,
+): void {
+	terminalSettlementStepHookForTest = hook;
+}
+
+function runTerminalSettlementStepHook(stepIndex: number): void {
+	const hook = terminalSettlementStepHookForTest;
+	if (!hook) return;
+	hook(stepIndex);
+	// A hook that did not interrupt keeps observing later steps; a thrown
+	// interruption propagates before this line and is consumed by the caller
+	// clearing the hook.
+}
+
+
 function parseWorkspaceContent(content: string): WorkspaceState {
 	const raw = JSON.parse(content) as Record<string, unknown>;
 	const unknown = Object.keys(raw).filter(
@@ -765,7 +784,7 @@ function recoverAnyPendingTransactionLocked(root: string): void {
 	if (hasV2) recoverPendingTransactionV2Locked(root);
 	if (hasEnrollment) recoverPendingEnrollmentLocked(root);
 	if (hasDrain) recoverPendingDrainLocked(root);
-	if (hasTerminal) recoverPendingTerminalLocked(root);
+	if (hasTerminal) recoverPendingTerminalLocked(root, false);
 	if (hasAuthorityRepair) recoverPendingAuthorityRepairLocked(root);
 }
 
@@ -1552,7 +1571,11 @@ function parseTerminalMarker(raw: Record<string, unknown>): TerminalMarker {
 		throw new KernelStoreSecurityError("terminal marker proof identity is inconsistent");
 	if (proof.final_record_hash !== revisionFor(marker.audit_record_content))
 		throw new KernelStoreSecurityError("terminal marker proof does not match the terminal record bytes");
-	parseWorkspaceContent(marker.next_workspace_content);
+	if (proof.terminal_lifecycle !== record.lifecycle)
+		throw new KernelStoreSecurityError("terminal marker proof lifecycle contradicts the terminal record");
+	const workspaceState = parseWorkspaceContent(marker.next_workspace_content);
+	if (workspaceState.current_working !== null)
+		throw new KernelStoreSecurityError("terminal marker requires a cleared workspace owner");
 	return marker;
 }
 
@@ -1606,11 +1629,12 @@ function convergeStateRecordRemoval(root: string, taskId: string, expectedHash: 
  * fails closed on contradictory partial bytes. The state record is removed
  * only after the complete audit pair is durable.
  */
-function recoverPendingTerminalLocked(root: string): void {
+function recoverPendingTerminalLocked(root: string, invokeStepHook = false): void {
 	const marker = readPendingTerminalMarker(root);
 	if (!marker) return;
 	for (const relocation of marker.artifact_relocations ?? [])
 		convergeArtifactRelocation(root, relocation);
+	if (invokeStepHook) runTerminalSettlementStepHook(0);
 	// Audit record: create-once; identical committed bytes are idempotent.
 	convergeFile(
 		root,
@@ -1625,12 +1649,14 @@ function recoverPendingTerminalLocked(root: string): void {
 		MISSING_REVISION,
 		marker.proof_content,
 	);
+	if (invokeStepHook) runTerminalSettlementStepHook(1);
 	convergeFile(
 		root,
 		stateWorkspacePath(),
 		marker.expected_workspace_hash,
 		marker.next_workspace_content,
 	);
+	if (invokeStepHook) runTerminalSettlementStepHook(2);
 	// Active-claim removal: absence is the committed outcome. A present
 	// claim is removed only after its bytes match the marker's frozen
 	// expected hash; a foreign or changed claim fails closed and keeps the
@@ -1653,8 +1679,11 @@ function recoverPendingTerminalLocked(root: string): void {
 		rmSync(claimCandidate.path);
 		fsyncDirectory(dirname(claimCandidate.path));
 	}
+	if (invokeStepHook) runTerminalSettlementStepHook(3);
 	// Active state record removal: only after the audit pair is verified.
 	convergeStateRecordRemoval(root, marker.task_id, marker.expected_state_record_hash);
+	if (invokeStepHook) runTerminalSettlementStepHook(4);
+	terminalSettlementStepHookForTest = null;
 	removeTerminalMarker(root);
 }
 /**
@@ -1678,13 +1707,36 @@ export function commitTerminalLocked(
 		throw new KernelStoreSecurityError(
 			"terminal tombstone task identity is inconsistent",
 		);
+	const nextWorkspaceState = parseWorkspaceContent(transaction.next_workspace_content);
+	if (nextWorkspaceState.current_working !== null)
+		throw new KernelStoreSecurityError(
+			"terminal settlement requires a cleared workspace owner",
+		);
 	if (tombstone.final_record_hash !== revisionFor(transaction.next_record_content))
 		throw new KernelStoreSecurityError(
 			"terminal proof must match the terminal record bytes",
 		);
+	const terminalRecord = parseTaskRecordV3(
+		JSON.parse(transaction.next_record_content) as Record<string, unknown>,
+	);
+	if (tombstone.terminal_lifecycle !== terminalRecord.lifecycle)
+		throw new KernelStoreSecurityError(
+			"terminal proof lifecycle contradicts the terminal TaskRecord",
+		);
 	let expectedClaimSha256: string | null = null;
-	if (currentRevision(root, stateClaimPath()) !== MISSING_REVISION)
-		expectedClaimSha256 = revisionFor(readSecureProjectFile(root, stateClaimPath()));
+	if (currentRevision(root, stateClaimPath()) !== MISSING_REVISION) {
+		const claimBytes = readSecureProjectFile(root, stateClaimPath());
+		const claim = parseBackendClaim(JSON.parse(claimBytes) as Record<string, unknown>);
+		if (claim.task_id !== taskId)
+			throw new KernelStoreSecurityError(
+				`terminal settlement claim belongs to ${claim.task_id}, not ${taskId}`,
+			);
+		if (claim.lifecycle_status !== "active" && claim.lifecycle_status !== "draining")
+			throw new KernelStoreSecurityError(
+				"terminal settlement claim must be active or draining",
+			);
+		expectedClaimSha256 = revisionFor(claimBytes);
+	}
 	const marker: TerminalMarker = {
 		contract: "assurance_kernel/terminal_transaction/v2",
 		task_id: taskId,
@@ -1706,7 +1758,7 @@ export function commitTerminalLocked(
 		MISSING_REVISION,
 	);
 	try {
-		recoverPendingTerminalLocked(root);
+		recoverPendingTerminalLocked(root, true);
 	} catch (error) {
 		throw new KernelStoreConflictError(
 			`terminal transaction failed and remains recoverable: ${error instanceof Error ? error.message : error}`,

@@ -118,11 +118,11 @@
     "owner": "user"
   },
   "intent_ref": {
-    "path": "docs/plans/archive/2026-08-26-002-imm-storage-layout-cutover.intent.json",
+    "path": "docs/plans/2026-08-26-002-imm-storage-layout-cutover.intent.json",
     "content_hash": "sha256:ee1ee1e011af0c03c2d12d0d9460ee5a0c3b3d5643d56afc03c3ca6297de11ba"
   },
   "lifecycle": "active",
-  "artifact_state": "frozen",
+  "artifact_state": "active",
   "baseline": "sha256:c6db70e543f6e0334b4b115af86af18c551bdcbbb8da4b83958b3424666f6a7e",
   "attestations": [
     {
@@ -208,6 +208,48 @@
           "summary": "host-attested QA: all 6 fixed verification descriptor(s) passed"
         }
       ]
+    },
+    {
+      "id": "approval-qa-9c9c38c1",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:ee1ee1e011af0c03c2d12d0d9460ee5a0c3b3d5643d56afc03c3ca6297de11ba",
+      "diff_hash": "sha256:dc6d274b334a6410ed32f84c2e694166332f611e1cdcf7847efa344ee184c540",
+      "actor_id": "deterministic-qa",
+      "summary": "all 6 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "acc-state-audit-settlement",
+          "status": "passed",
+          "summary": "host-attested QA: all 6 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-automatic-layout-migration",
+          "status": "passed",
+          "summary": "host-attested QA: all 6 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-shared-entrypoint-gate",
+          "status": "passed",
+          "summary": "host-attested QA: all 6 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-historical-audit-is-nonauthoritative",
+          "status": "passed",
+          "summary": "host-attested QA: all 6 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-git-durability-and-retirement",
+          "status": "passed",
+          "summary": "host-attested QA: all 6 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-package-and-reference-sync",
+          "status": "passed",
+          "summary": "host-attested QA: all 6 fixed verification descriptor(s) passed"
+        }
+      ]
     }
   ],
   "findings": [
@@ -255,6 +297,78 @@
       "source": "review",
       "review_round": 1,
       "summary": "plugins/immune-brain/runtime/kernel/legacy_audit.ts: legacyLedgerSourceRelative falls back to the live old-authority .imm/memory/current_iteration.json path, contrary to the audit-only archived source contract; verify explicit legacy audit reads only .imm/audit/legacy-v3 and an unmigrated old Ledger is reported solely as a layout condition."
+    },
+    {
+      "id": "review-e861b1f952e8-1-review-1",
+      "kind": "blocking",
+      "status": "open",
+      "acceptance_id": "acc-automatic-layout-migration",
+      "source": "review",
+      "review_round": 2,
+      "summary": "plugins/immune-brain/runtime/kernel/storage_paths.ts: legacy Kernel transaction markers are classified as recovery_required, but the Spec requires migration_blocked_active and prior-runtime settlement; distinguish old markers from recoverable new-layout markers."
+    },
+    {
+      "id": "review-e861b1f952e8-2-review-2",
+      "kind": "blocking",
+      "status": "open",
+      "acceptance_id": "acc-automatic-layout-migration",
+      "source": "review",
+      "review_round": 2,
+      "summary": "plugins/immune-brain/runtime/kernel/storage_paths.ts: migration_uncommitted is only returned when .imm/audit exists, so cleanup-only migrations that delete MEMORY.md, templates, or an owner-free workspace can immediately return ready before their affected diff is committed; classify any dirty affected path as migration_uncommitted."
+    },
+    {
+      "id": "review-e861b1f952e8-3-review-3",
+      "kind": "blocking",
+      "status": "open",
+      "acceptance_id": "acc-automatic-layout-migration",
+      "source": "review",
+      "review_round": 2,
+      "summary": "plugins/immune-brain/runtime/kernel/storage_layout_migration.ts: fresh migration does not reject symlinked target parent segments, allowing .imm/audit/<task-id> or legacy-v3 parent symlinks to redirect writes outside the repository; validate every frozen source and target path before marker creation and relocation."
+    },
+    {
+      "id": "review-e861b1f952e8-4-review-4",
+      "kind": "blocking",
+      "status": "open",
+      "acceptance_id": "acc-state-audit-settlement",
+      "source": "review",
+      "review_round": 2,
+      "summary": "plugins/immune-brain/runtime/kernel/storage.ts: terminal commit hashes and later deletes any present active-claim without proving it belongs to the settling task, while a null/omitted expected_claim_sha256 permits recovery to delete a newly present foreign claim; require an identity-matching claim and fail closed on absence or replacement."
+    },
+    {
+      "id": "review-e861b1f952e8-5-review-5",
+      "kind": "blocking",
+      "status": "open",
+      "acceptance_id": "acc-state-audit-settlement",
+      "source": "review",
+      "review_round": 2,
+      "summary": "plugins/immune-brain/runtime/kernel/storage.ts: terminal marker and audit-pair validation accept a proof whose terminal_lifecycle contradicts the TaskRecord and accept non-null next workspace ownership, allowing contradictory evidence to become terminal authority; validate lifecycle equality and the required cleared workspace before convergence."
+    },
+    {
+      "id": "review-e861b1f952e8-6-review-6",
+      "kind": "blocking",
+      "status": "open",
+      "acceptance_id": "acc-automatic-layout-migration",
+      "source": "review",
+      "review_round": 2,
+      "summary": "tests/kernel-storage-layout-migration.test.ts: the acceptance test never invokes migrateLegacyLayout, leaving dual-lock relocation, manifest replay, interruption recovery, collision handling, symlinked destinations, index preservation, and commit-before-retry behavior unverified; add direct migration and recovery cases."
+    },
+    {
+      "id": "review-e861b1f952e8-7-review-7",
+      "kind": "blocking",
+      "status": "open",
+      "acceptance_id": "acc-state-audit-settlement",
+      "source": "review",
+      "review_round": 2,
+      "summary": "tests/kernel-canary-terminal-transaction.test.ts: terminal tests cover marker-before-write and fully converged replay but do not interrupt after artifact relocation, audit record, proof, workspace clear, claim removal, or state-record removal; add deterministic failure injection at each settlement boundary and verify exact recovery."
+    },
+    {
+      "id": "request_rework:2026-08-26-002-imm-storage-layout-cutover:2026-08-26T11:29:11.603Z:replan-required",
+      "kind": "replan_required",
+      "status": "open",
+      "acceptance_id": "acc-automatic-layout-migration",
+      "source": "kernel",
+      "review_round": 2,
+      "summary": "Review returned this acceptance boundary twice; a durable replan is required."
     }
   ],
   "history": [
@@ -372,6 +486,36 @@
         "confirmation_ref": "pi-confirm-b0105e61991866dd",
         "issued_at": "2026-08-26T11:15:00.631Z",
         "expires_at": "2026-08-26T11:25:00.631Z"
+      }
+    },
+    {
+      "id": "record_approval:2026-08-26-002-imm-storage-layout-cutover:2026-08-26T11:23:51.675Z",
+      "at": "2026-08-26T11:23:51.675Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-9c9c38c1\naction_v2_sha256:5d3f0c9e72c80e70153346ed7c410b2ad8cc2f3555e3a02e94a7e75416e72f45",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-3a6fde8578e2ed3f",
+        "issued_at": "2026-08-26T11:23:51.675Z",
+        "expires_at": "2026-08-26T11:33:51.675Z"
+      }
+    },
+    {
+      "id": "request_rework:2026-08-26-002-imm-storage-layout-cutover:2026-08-26T11:29:11.603Z",
+      "at": "2026-08-26T11:29:11.603Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "review_round_2\naction_v2_sha256:feca0723acbe60d51bbdd295e07113b9b107f6eba4dd3acf03c289261f9d0c7e",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "native-review-514fad2e-c575-485",
+        "confirmation_ref": "pi-confirm-fabf63807cd2478c",
+        "issued_at": "2026-08-26T11:29:11.603Z",
+        "expires_at": "2026-08-26T11:39:11.603Z"
       }
     }
   ]

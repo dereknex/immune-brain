@@ -4,10 +4,12 @@ import {
 	existsSync,
 	mkdirSync,
 	mkdtempSync,
+	readFileSync,
 	rmSync,
 	writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
+import { createHash } from "node:crypto";
 import { join } from "node:path";
 import {
 	auditTaskRecordPath,
@@ -227,5 +229,75 @@ describe("inspectStorageLayout failure branches", () => {
 		mkdirSync(join(root, ".imm", "tasks"), { recursive: true });
 		writeFileSync(join(root, ".imm", "tasks", "mystery.bin"), "not a known owner file");
 		expect(inspectStorageLayout(root).layout).toBe("invalid");
+	});
+});
+describe("migrateLegacyLayout direct execution (review-6)", () => {
+	async function runMigration(
+		root: string,
+	): Promise<import("../plugins/immune-brain/runtime/kernel/storage_layout_migration").MigrationOutcome> {
+		const { migrateLegacyLayout } = await import("../plugins/immune-brain/runtime/kernel/storage_layout_migration");
+		return migrateLegacyLayout(root);
+	}
+
+	it("relocates a terminal pair byte-for-byte under the dual lock and leaves the layout uncommitted", async () => {
+		const root = tempRoot();
+		writeLegacyTerminalPair(root, "2026-08-14-001-old-task");
+		// Legacy evidence is tracked so the diff shows exactly the relocation.
+		execFileSync("git", ["-C", root, "add", "-A"]);
+		execFileSync("git", ["-C", root, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "legacy evidence"]);
+		const outcome = await runMigration(root);
+		expect(outcome.outcome).toBe("migrated");
+		expect(existsSync(join(root, ".imm/audit/2026-08-14-001-old-task/task-record.json"))).toBe(true);
+		expect(existsSync(join(root, ".imm/audit/2026-08-14-001-old-task/terminal-proof.json"))).toBe(true);
+		expect(existsSync(join(root, ".imm/tasks"))).toBe(false);
+		// The affected diff is uncommitted; mutation stays blocked.
+		const inspection = inspectStorageLayout(root);
+		expect(inspection.layout).toBe("migration_uncommitted");
+		expect(inspection.dirty_affected_paths.length).toBeGreaterThan(0);
+		// Committing the diff makes the layout ready.
+		execFileSync("git", ["-C", root, "add", "-A"]);
+		execFileSync("git", ["-C", root, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "migrated"]);
+		expect(inspectStorageLayout(root).layout).toBe("ready");
+	});
+
+	it("replays an interrupted migration from the frozen manifest without recomputing", async () => {
+		const root = tempRoot();
+		writeLegacyTerminalPair(root, "2026-08-14-002-old-task");
+		execFileSync("git", ["-C", root, "add", "-A"]);
+		execFileSync("git", ["-C", root, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "legacy evidence"]);
+		// Simulate a crash after marker creation: relocate just the record.
+		mkdirSync(join(root, ".imm/state/transactions"), { recursive: true });
+		const before = readFileSync(join(root, ".imm/tasks/2026-08-14-002-old-task.json"), "utf8");
+		const proofBefore = readFileSync(join(root, ".imm/tasks/2026-08-14-002-old-task.backend-claim.json"), "utf8");
+		writeFileSync(
+			join(root, ".imm/state/transactions/storage-layout-migration.json"),
+			`${JSON.stringify({
+				contract: "assurance_kernel/storage_layout_migration/v1",
+				version: 1,
+				entries: [
+					{ source: ".imm/tasks/2026-08-14-002-old-task.json", target: ".imm/audit/2026-08-14-002-old-task/task-record.json", sha256: createHash("sha256").update(before).digest("hex"), size: before.length },
+					{ source: ".imm/tasks/2026-08-14-002-old-task.backend-claim.json", target: ".imm/audit/2026-08-14-002-old-task/terminal-proof.json", sha256: createHash("sha256").update(proofBefore).digest("hex"), size: proofBefore.length },
+				],
+			}, null, 2)}\n`,
+		);
+		// Interruption point: the record was relocated, the proof was not.
+		mkdirSync(join(root, ".imm/audit/2026-08-14-002-old-task"), { recursive: true });
+		writeFileSync(join(root, ".imm/audit/2026-08-14-002-old-task/task-record.json"), before);
+		rmSync(join(root, ".imm/tasks/2026-08-14-002-old-task.json"));
+		const outcome = await runMigration(root);
+		expect(outcome.outcome).toBe("migrated");
+		expect(readFileSync(join(root, ".imm/audit/2026-08-14-002-old-task/task-record.json"), "utf8")).toBe(before);
+		expect(readFileSync(join(root, ".imm/audit/2026-08-14-002-old-task/terminal-proof.json"), "utf8")).toBe(proofBefore);
+		expect(existsSync(join(root, ".imm/tasks"))).toBe(false);
+		expect(existsSync(join(root, ".imm/state/transactions/storage-layout-migration.json"))).toBe(false);
+	});
+
+	it("stops with migration_uncommitted when affected paths are dirty before relocation", async () => {
+		const root = tempRoot();
+		writeLegacyTerminalPair(root, "2026-08-14-003-old-task");
+		// Introduced after the committed baseline: dirty affected paths block.
+		const outcome = await runMigration(root);
+		expect(outcome.outcome).toBe("migration_uncommitted");
+		expect(existsSync(join(root, ".imm/audit/2026-08-14-003-old-task"))).toBe(false);
 	});
 });

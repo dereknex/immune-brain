@@ -37,6 +37,7 @@ import {
 	readWorkspaceStateRaw,
 	revisionForContent,
 	setAfterTaskTransactionWriteForTest,
+	setTerminalSettlementStepHookForTest,
 	withKernelStoreLock,
 } from "../plugins/immune-brain/runtime/kernel/storage";
 
@@ -511,4 +512,28 @@ describe("terminal ownership transfer", () => {
 		// The committed tombstone stays intact.
 		expect(readTaskTombstone(root, TASK)?.terminal_lifecycle).toBe("done");
 	});
+
+	for (let step = 0; step <= 4; step += 1) {
+		test(`interruption after terminal settlement step ${step} recovers exactly`, () => {
+			setTerminalSettlementStepHookForTest((at) => {
+				if (at === step) throw new Error(`injected interruption at step ${step}`);
+			});
+			try {
+				expect(() => completeTask()).toThrow(/remains recoverable/i);
+			} finally {
+				setTerminalSettlementStepHookForTest(null);
+			}
+			// The marker survives and the store-lock replay converges the
+			// settlement exactly without re-running the hook.
+			expect(existsSync(join(root, ".imm/state/transactions/terminal-transaction.json"))).toBe(true);
+			withKernelStoreLock(root, () => undefined);
+			expect(readTaskRecord(root, TASK).record).toBeNull();
+			const auditPair = readAuditTaskPair(root, TASK);
+			expect(auditPair?.record.lifecycle).toBe("done");
+			expect(auditPair?.proof.terminal_lifecycle).toBe("done");
+			expect(readBackendClaim(root)).toBeNull();
+			expect(readWorkspaceStateRaw(root).state.current_working).toBeNull();
+			expect(existsSync(join(root, ".imm/state/transactions/terminal-transaction.json"))).toBe(false);
+		});
+	}
 });

@@ -111,12 +111,12 @@ export const LEGACY_AUTHORITY_RELATIVE = ".imm/authority";
 export const LEGACY_KNOWN_FILES = {
 	".imm/tasks/.workspace.lock": "lock",
 	".imm/tasks/.journal.lock": "lock",
-	".imm/tasks/.workspace-transaction.json": "marker",
-	".imm/tasks/.workspace-transaction-v2.json": "marker",
-	".imm/tasks/.enrollment-marker.json": "marker",
-	".imm/tasks/.drain-transaction.json": "marker",
-	".imm/tasks/.terminal-transaction.json": "marker",
-	".imm/tasks/.authority-repair-transaction.json": "marker",
+	".imm/tasks/.workspace-transaction.json": "old-marker",
+	".imm/tasks/.workspace-transaction-v2.json": "old-marker",
+	".imm/tasks/.enrollment-marker.json": "old-marker",
+	".imm/tasks/.drain-transaction.json": "old-marker",
+	".imm/tasks/.terminal-transaction.json": "old-marker",
+	".imm/tasks/.authority-repair-transaction.json": "old-marker",
 	".imm/tasks/.backend-claim.json": "claim",
 	".imm/memory/current_iteration.json": "memory",
 	".imm/memory/current_iteration_history.jsonl": "memory",
@@ -232,6 +232,14 @@ function inspectOldLayout(root: string): OldLayoutFacts {
 			if (status !== "file") throw new Error(`${path} is not a regular file`);
 			facts.old_authority_present = true;
 			if (kind === "lock") continue;
+			if (kind === "old-marker") {
+				// review-1: legacy Kernel transaction markers require the
+				// prior runtime to settle/recover; they never auto-recover
+				// through the new runtime or the migrator.
+				facts.pending_marker ??= path;
+				facts.blocked_active = true;
+				continue;
+			}
 			if (kind === "marker") {
 				facts.pending_marker ??= path;
 				continue;
@@ -406,14 +414,17 @@ export function inspectStorageLayout(root: string): StorageLayoutInspection {
 			reason: "an owner-free legacy layout exists; the next eligible stateful mutation runs the one-release migration and stops",
 		};
 	}
-	if (auditPresent && dirty !== null && dirty.length > 0) {
+	if (dirty !== null && dirty.length > 0) {
+		// review-2: cleanup-only migrations (deleted templates, MEMORY.md,
+		// owner-free workspace) still leave an affected diff that must be
+		// committed before the layout can be ready.
 		return {
 			contract: "assurance_kernel/storage_layout_inspection/v1",
 			layout: "migration_uncommitted",
 			old_authority_present: false,
 			pending_marker: null,
 			dirty_affected_paths: dirty,
-			reason: "relocated audit paths differ from HEAD; commit the migration diff before any managed mutation",
+			reason: "affected audit or retired legacy paths differ from HEAD; commit the migration diff before any managed mutation",
 		};
 	}
 	if (auditPresent && dirty === null) {

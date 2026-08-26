@@ -77,7 +77,16 @@ export interface MigrationOutcome {
 	reason: string | null;
 }
 
-const TASK_OWNER_FILE = /^([A-Za-z0-9][A-Za-z0-9._-]{0,127})\.(json|backend-claim\.json)$/;
+const TASK_OWNER_FILE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}(\.json|\.backend-claim\.json)$/;
+
+/** Strip the owner suffix without greedy-capture ambiguity. */
+function taskIdFromOwnerFile(entry: string): string | null {
+	if (!TASK_OWNER_FILE.test(entry)) return null;
+	const id = entry.endsWith(".backend-claim.json")
+		? entry.slice(0, -".backend-claim.json".length)
+		: entry.slice(0, -".json".length);
+	return /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(id) ? id : null;
+}
 const MEMORY_FILES = new Set([
 	"current_iteration.json",
 	"current_iteration_history.jsonl",
@@ -122,6 +131,12 @@ const AFFECTED_GIT_PREFIXES = [
 	".imm/journal.jsonl",
 ];
 
+/** Runtime lock files created by the migration itself are not evidence. */
+const MIGRATION_RUNTIME_LOCKS = new Set([
+	".imm/tasks/.workspace.lock",
+	".imm/tasks/.journal.lock",
+]);
+
 /** BR-DEC-003: exact affected paths must be clean; unrelated dirt is allowed. */
 function affectedGitDirty(root: string): string[] {
 	const dirty = new Set<string>();
@@ -131,6 +146,7 @@ function affectedGitDirty(root: string): string[] {
 	for (const list of [staged, unstaged, untracked]) {
 		if (list === null) throw new Error("Git workspace is unavailable for migration eligibility");
 		for (const path of list) {
+			if (MIGRATION_RUNTIME_LOCKS.has(path)) continue;
 			if (AFFECTED_GIT_PREFIXES.some((prefix) => path === prefix || path.startsWith(prefix)))
 				dirty.add(path);
 		}
@@ -161,7 +177,7 @@ function clearStaleMigrationLock(path: string, holder: string): boolean {
 	return true;
 }
 
-function withExclusiveFileLock(path: string, operation: () => void): void {
+function withExclusiveFileLock<T>(path: string, operation: () => T): T {
 	let fd: number | null = null;
 	mkdirSync(dirname(path), { recursive: true });
 	for (let attempt = 0; attempt < 2; attempt += 1) {
@@ -188,7 +204,7 @@ function withExclusiveFileLock(path: string, operation: () => void): void {
 	}
 	if (fd === null) throw new Error(`migration lock could not be acquired: ${path}`);
 	try {
-		operation();
+		return operation();
 	} finally {
 		closeSync(fd);
 		rmSync(path, { force: true });
@@ -217,7 +233,24 @@ function readRegularFileOrNull(path: string): Buffer | null {
 }
 
 /** Source-only moves, target-only with matching hash is complete, matching source+target removes source only after verification. */
+function assertNoSymlinkParents(root: string, relativePath: string): void {
+	let cursor = resolve(root);
+	for (const segment of relativePath.split("/").slice(0, -1)) {
+		cursor = resolve(cursor, segment);
+		let stat;
+		try {
+			stat = lstatSync(cursor);
+		} catch {
+			continue;
+		}
+		if (stat.isSymbolicLink())
+			throw new Error(`migration path traverses a symlink parent: ${relativePath}`);
+	}
+}
+
 function convergeRelocation(root: string, entry: MigrationManifestEntry): void {
+	assertNoSymlinkParents(root, entry.source);
+	if (entry.target) assertNoSymlinkParents(root, entry.target);
 	const source = resolve(root, entry.source);
 	const target = entry.target ? resolve(root, entry.target) : null;
 	const sourceBytes = readRegularFileOrNull(source);
@@ -264,6 +297,8 @@ function buildManifest(root: string): { manifest: MigrationManifest; affected: s
 	const entries: MigrationManifestEntry[] = [];
 	const affected: string[] = [];
 	const addFile = (source: string, target: string | null): void => {
+		assertNoSymlinkParents(root, source);
+		if (target) assertNoSymlinkParents(root, target);
 		const bytes = readRegularFileOrNull(resolve(root, source));
 		if (bytes === null) return;
 		affected.push(source);
@@ -276,9 +311,8 @@ function buildManifest(root: string): { manifest: MigrationManifest; affected: s
 	if (pathExists(taskDir)) {
 		for (const entry of readdirSync(taskDir).sort()) {
 			if (entry in legacyKnownNames()) continue;
-			const matched = TASK_OWNER_FILE.exec(entry);
-			if (!matched) throw new Error(`unknown file under ${LEGACY_TASKS_RELATIVE}: ${entry}`);
-			const taskId = matched[1];
+			const taskId = taskIdFromOwnerFile(entry);
+			if (taskId === null) throw new Error(`unknown file under ${LEGACY_TASKS_RELATIVE}: ${entry}`);
 			if (entry.endsWith(".backend-claim.json")) {
 				addFile(`${LEGACY_TASKS_RELATIVE}/${entry}`, auditTerminalProofPath(taskId));
 			} else {
@@ -338,7 +372,13 @@ function buildManifest(root: string): { manifest: MigrationManifest; affected: s
 }
 
 function legacyKnownNames(): Record<string, string> {
-	return LEGACY_KNOWN_FILES as unknown as Record<string, string>;
+	// The migration's own runtime lock files are never evidence and are
+	// skipped by manifest construction.
+	return {
+		...LEGACY_KNOWN_FILES as unknown as Record<string, string>,
+		".workspace.lock": "lock",
+		".journal.lock": "lock",
+	};
 }
 
 const LEGACY_SOURCE_SINGLETONS = new Set([
@@ -462,7 +502,7 @@ function removeEmptyLegacyDirectories(root: string): void {
 		if (!stat.isDirectory()) continue;
 		try {
 			if (readdirSync(path).length === 0) {
-				rmSync(path);
+				rmSync(path, { recursive: true, force: true });
 				fsyncDirectory(dirname(path));
 			}
 		} catch {
@@ -516,10 +556,12 @@ export function migrateLegacyLayout(root: string): MigrationOutcome {
 		withExclusiveFileLock(oldLock, () => {
 			withExclusiveFileLock(newLock, () => {
 				for (const entry of marker.entries) convergeRelocation(root, entry);
-				removeEmptyLegacyDirectories(root);
 				removeMigrationMarker(root);
 			});
 		});
+		// Lock files were removed by the lock holders; now the emptied legacy
+		// directories can disappear too.
+		removeEmptyLegacyDirectories(root);
 		return {
 			contract: "immune_brain/storage_layout_migration_result/v1",
 			outcome: "migrated",
@@ -560,13 +602,13 @@ export function migrateLegacyLayout(root: string): MigrationOutcome {
 			writeMigrationMarker(root, manifest);
 			try {
 				for (const entry of manifest.entries) convergeRelocation(root, entry);
-				removeEmptyLegacyDirectories(root);
 				removeMigrationMarker(root);
 			} catch (error) {
 				throw new Error(
 					`migration failed and remains recoverable from the frozen manifest: ${error instanceof Error ? error.message : String(error)}`,
 				);
 			}
+			removeEmptyLegacyDirectories(root);
 			return {
 				contract: "immune_brain/storage_layout_migration_result/v1",
 				outcome: "migrated",
@@ -575,5 +617,6 @@ export function migrateLegacyLayout(root: string): MigrationOutcome {
 			} as MigrationOutcome;
 		});
 	});
+	removeEmptyLegacyDirectories(root);
 	return outcome;
 }
