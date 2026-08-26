@@ -15,7 +15,7 @@ const CONTEXT = read("CONTEXT.md");
 // archived plans remain readable only through Git history and the parser.
 // The template-vocabulary assertions below verify the parser compatibility
 // fields live in the canonical contract instead of a deleted template.
-const PLAN_TEMPLATE = read("docs/specs/imm-storage-layout-cutover.spec.md");
+const PLAN_TEMPLATE = read("docs/specs/archive/imm-storage-layout-cutover.spec.md");
 
 function expectAll(text: string, fragments: string[]) {
 	for (const fragment of fragments) expect(text).toContain(fragment);

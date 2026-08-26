@@ -118,11 +118,11 @@
     "owner": "user"
   },
   "intent_ref": {
-    "path": "docs/plans/2026-08-26-002-imm-storage-layout-cutover.intent.json",
+    "path": "docs/plans/archive/2026-08-26-002-imm-storage-layout-cutover.intent.json",
     "content_hash": "sha256:ee1ee1e011af0c03c2d12d0d9460ee5a0c3b3d5643d56afc03c3ca6297de11ba"
   },
   "lifecycle": "active",
-  "artifact_state": "active",
+  "artifact_state": "frozen",
   "baseline": "sha256:c6db70e543f6e0334b4b115af86af18c551bdcbbb8da4b83958b3424666f6a7e",
   "attestations": [],
   "findings": [],
@@ -141,6 +141,14 @@
         "issued_at": "2026-08-26T09:28:03.370Z",
         "expires_at": "2026-08-26T09:38:03.370Z"
       }
+    },
+    {
+      "id": "freeze_artifacts:2026-08-26-002-imm-storage-layout-cutover:2026-08-26T10:48:38.592Z",
+      "at": "2026-08-26T10:48:38.592Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent and Spec frozen at docs/plans/archive/2026-08-26-002-imm-storage-layout-cutover.intent.json"
     }
   ]
 }

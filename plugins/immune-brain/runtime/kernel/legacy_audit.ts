@@ -46,8 +46,14 @@ function sha256Hex(bytes: string | Buffer): string {
 export function legacyLedgerSourceRelative(canonicalRoot: string): string {
 	try {
 		const archived = lstatSync(resolve(canonicalRoot, legacyV3Path("current_iteration.json")));
-		if (archived.isFile() && !archived.isSymbolicLink()) return legacyV3Path("current_iteration.json");
-	} catch {
+		if (archived.isSymbolicLink())
+			throw new Error("legacy audit rejected: archived v3 Ledger must not be a symlink");
+		if (archived.isFile()) return legacyV3Path("current_iteration.json");
+		if (archived.isDirectory())
+			throw new Error("legacy audit rejected: archived v3 Ledger is not a regular file");
+	} catch (error) {
+		if (error instanceof Error && error.message.startsWith("legacy audit rejected"))
+			throw error;
 		// archived ledger absent: pre-migration state
 	}
 	return LEGACY_SOURCE_RELATIVE;
