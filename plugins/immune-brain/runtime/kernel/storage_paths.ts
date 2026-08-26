@@ -369,7 +369,49 @@ function pendingNewMarker(root: string): string | null {
 		: null;
 }
 
+/** Validate that the new-layout roots are not symlinked outside the
+ *  repository (review-10). Called before any lock acquisition or write. */
+function assertNewLayoutRootsSafe(root: string): string | null {
+	for (const relative of [STATE_RELATIVE, AUDIT_RELATIVE]) {
+		const path = resolve(root, relative);
+		let stat;
+		try {
+			stat = lstatSync(path);
+		} catch (error) {
+			const code = (error as NodeJS.ErrnoException).code;
+			if (code === "ENOENT" || code === "ENOTDIR") continue;
+			return `${relative} is unreadable`;
+		}
+		if (stat.isSymbolicLink())
+			return `${relative} is a symlink`;
+		// Walk parent segments to detect symlinked ancestors.
+		let cursor = resolve(root);
+		for (const segment of relative.split("/")) {
+			cursor = resolve(cursor, segment);
+			try {
+				const parentStat = lstatSync(cursor);
+				if (parentStat.isSymbolicLink())
+					return `${relative} traverses a symlink parent`;
+			} catch {
+				continue;
+			}
+		}
+	}
+	return null;
+}
+
 export function inspectStorageLayout(root: string): StorageLayoutInspection {
+	const rootFailure = assertNewLayoutRootsSafe(root);
+	if (rootFailure) {
+		return {
+			contract: "assurance_kernel/storage_layout_inspection/v1",
+			layout: "invalid",
+			old_authority_present: false,
+			pending_marker: null,
+			dirty_affected_paths: [],
+			reason: rootFailure,
+		};
+	}
 	const oldFacts = inspectOldLayout(root);
 	if (oldFacts.fail_reason) {
 		return {

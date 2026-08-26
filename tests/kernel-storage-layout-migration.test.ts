@@ -372,3 +372,33 @@ describe("migrateLegacyLayout case-fold and target preflight (review round 6)", 
 		expect(existsSync(join(root, ".imm/state/transactions/storage-layout-migration.json"))).toBe(false);
 	});
 });
+
+describe("inspectStorageLayout new-layout root safety (review round 10)", () => {
+	it("reports invalid when .imm/state is a symlink outside the repository", () => {
+		const root = tempRoot();
+		mkdirSync(join(root, ".imm"), { recursive: true });
+		const outside = mkdtempSync(join(tmpdir(), "imm-outside-"));
+		try {
+			execFileSync("ln", ["-s", outside, join(root, ".imm", "state")]);
+			const inspection = inspectStorageLayout(root);
+			expect(inspection.layout).toBe("invalid");
+			expect(inspection.reason).toContain("state");
+		} finally {
+			rmSync(outside, { recursive: true, force: true });
+		}
+	});
+
+	it("reports invalid when .imm/audit is a symlink outside the repository", () => {
+		const root = tempRoot();
+		mkdirSync(join(root, ".imm"), { recursive: true });
+		const outside = mkdtempSync(join(tmpdir(), "imm-outside-"));
+		try {
+			execFileSync("ln", ["-s", outside, join(root, ".imm", "audit")]);
+			const inspection = inspectStorageLayout(root);
+			expect(inspection.layout).toBe("invalid");
+			expect(inspection.reason).toContain("audit");
+		} finally {
+			rmSync(outside, { recursive: true, force: true });
+		}
+	});
+});
