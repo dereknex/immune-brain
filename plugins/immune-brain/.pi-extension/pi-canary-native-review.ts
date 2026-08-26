@@ -31,10 +31,8 @@ export interface ReservedAgentParams {
 	isolation: "worktree";
 	run_in_background: false;
 	max_turns: number;
-	model: string;
 	resume: "";
 	schedule: "";
-	thinking: "";
 }
 
 export interface ToolExecutionEndLike {
@@ -66,7 +64,6 @@ export function reservedAgentParams(input: {
 	taskId: string;
 	operationId: string;
 	prompt: string;
-	model?: string;
 	max_turns?: number;
 }): ReservedAgentParams {
 	return {
@@ -78,10 +75,8 @@ export function reservedAgentParams(input: {
 		isolation: "worktree",
 		run_in_background: false,
 		max_turns: input.max_turns ?? 16,
-		model: input.model ?? "",
 		resume: "",
 		schedule: "",
-		thinking: "",
 	};
 }
 
@@ -93,8 +88,13 @@ export function matchesReservedAgentArgs(
 	const expectedKeys = Object.entries(params)
 		.filter(([, value]) => value !== undefined)
 		.map(([key]) => key);
-	// Host serializes Agent input and may omit falsy inherit_context; treat missing as false for leniency
+	// Host serializes Agent input, may omit falsy inherit_context, and resolves
+	// model/thinking execution configuration. model/thinking are host-owned and
+	// not Review authority identity: strip them, then require the exact reserved
+	// field set.
 	const normalizedArgs: Record<string, unknown> = { ...(args as Record<string, unknown>) };
+	delete normalizedArgs["model"];
+	delete normalizedArgs["thinking"];
 	if (!Object.hasOwn(normalizedArgs, "inherit_context") && (params as unknown as Record<string, unknown>)["inherit_context"] === false) {
 		normalizedArgs["inherit_context"] = false;
 	}
@@ -111,10 +111,8 @@ export function matchesReservedAgentArgs(
 		normalizedArgs.isolation === params.isolation &&
 		normalizedArgs.run_in_background === params.run_in_background &&
 		normalizedArgs.max_turns === params.max_turns &&
-		normalizedArgs.model === params.model &&
 		normalizedArgs.resume === params.resume &&
-		normalizedArgs.schedule === params.schedule &&
-		normalizedArgs.thinking === params.thinking
+		normalizedArgs.schedule === params.schedule
 	);
 }
 

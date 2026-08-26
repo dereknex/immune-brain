@@ -7,6 +7,19 @@ test("canonical and packaged dispatch protocol remain synchronized", () => {
 	expect(read("plugins/immune-brain/dist/docs/reference/subagent-dispatch-protocol.md")).toBe(read("docs/reference/subagent-dispatch-protocol.md"));
 });
 
+test("dispatch contracts keep Role-only execution configuration ownership", () => {
+	for (const path of [
+		"docs/reference/subagent-dispatch-protocol.md",
+		"plugins/immune-brain/dist/docs/reference/subagent-dispatch-protocol.md",
+	]) {
+		const contract = read(path);
+		expect(contract).toContain("exact reserved authority parameters");
+		expect(contract).toContain("reservation 不生成也不匹配");
+		expect(contract).toContain("model tier 或 provider mapping");
+		expect(contract).toContain("`model`/`thinking`");
+	}
+});
+
 test("interactive dispatch contracts are foreground-only and do not poll", () => {
 	for (const path of [
 		"plugins/immune-brain/.pi-extension/pi-canary-assurance-progression.ts",

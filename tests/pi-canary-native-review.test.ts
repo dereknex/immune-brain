@@ -21,31 +21,31 @@ test("reserved native review parameters are foreground-only and deterministic", 
 		isolation: "worktree",
 		run_in_background: false,
 		max_turns: 16,
-		model: "",
 		resume: "",
 		schedule: "",
-		thinking: "",
 	});
+	expect(params).not.toHaveProperty("model");
+	expect(params).not.toHaveProperty("thinking");
 	expect(params.prompt).toContain("immutable bundle");
 	expect(params.description).toContain("12345678");
 	expect(promptDigest(params.prompt)).toMatch(/^sha256:[0-9a-f]{64}$/);
 });
 
-test("exact Agent args are required", () => {
+test("reserved authority args are exact while host-owned execution config is non-authoritative", () => {
 	expect(matchesReservedAgentArgs(params, params)).toBe(true);
 	expect(matchesReservedAgentArgs({ ...params, run_in_background: true }, params)).toBe(false);
 	expect(matchesReservedAgentArgs({ ...params, max_turns: 12 }, params)).toBe(false);
 	expect(matchesReservedAgentArgs({ ...params, prompt: `${params.prompt}!` }, params)).toBe(false);
-	expect(matchesReservedAgentArgs({ ...params, model: "other" }, params)).toBe(false);
 	expect(matchesReservedAgentArgs({ ...params, resume: "agent-1" }, params)).toBe(false);
 	expect(matchesReservedAgentArgs({ ...params, schedule: "+1m" }, params)).toBe(false);
-	expect(matchesReservedAgentArgs({ ...params, thinking: "high" }, params)).toBe(false);
 	expect(matchesReservedAgentArgs({ ...params, isolation: "none" }, params)).toBe(false);
 	expect(matchesReservedAgentArgs({ ...params, extra: true }, params)).toBe(false);
 	expect(matchesReservedAgentArgs({ subagent_type: params.subagent_type }, params)).toBe(false);
-	const modeled = { ...params, model: "review-model" };
-	expect(matchesReservedAgentArgs(modeled, modeled)).toBe(true);
-	expect(matchesReservedAgentArgs({ ...modeled, model: "other" }, modeled)).toBe(false);
+	expect(matchesReservedAgentArgs({ ...params, model: "host/review-model" }, params)).toBe(true);
+	expect(matchesReservedAgentArgs({ ...params, thinking: "high" }, params)).toBe(true);
+	expect(matchesReservedAgentArgs({ ...params, model: "host/review-model", thinking: "low" }, params)).toBe(true);
+	expect(matchesReservedAgentArgs({ ...params, model: "", thinking: "" }, params)).toBe(true);
+	expect(matchesReservedAgentArgs({ ...params, model: "x", resume: "agent-1" }, params)).toBe(false);
 });
 
 test("foreground tool_result is the only result parser input", () => {
