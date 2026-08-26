@@ -118,11 +118,11 @@
     "owner": "user"
   },
   "intent_ref": {
-    "path": "docs/plans/archive/2026-08-26-002-imm-storage-layout-cutover.intent.json",
+    "path": "docs/plans/2026-08-26-002-imm-storage-layout-cutover.intent.json",
     "content_hash": "sha256:b40f85d003ef9222b41b0605e19bfee140f1bab2c54224df3bd0bd5abb84d453"
   },
   "lifecycle": "active",
-  "artifact_state": "frozen",
+  "artifact_state": "active",
   "baseline": "sha256:c6db70e543f6e0334b4b115af86af18c551bdcbbb8da4b83958b3424666f6a7e",
   "attestations": [
     {
@@ -334,6 +334,48 @@
           "summary": "host-attested QA: all 6 fixed verification descriptor(s) passed"
         }
       ]
+    },
+    {
+      "id": "approval-qa-34f487bd",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 4,
+      "intent_content_hash": "sha256:b40f85d003ef9222b41b0605e19bfee140f1bab2c54224df3bd0bd5abb84d453",
+      "diff_hash": "sha256:b4727cfbd3b9af61e8cc3b7fdfcbc8e552d42524651a91730518a2c982a794aa",
+      "actor_id": "deterministic-qa",
+      "summary": "all 6 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "acc-state-audit-settlement",
+          "status": "passed",
+          "summary": "host-attested QA: all 6 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-automatic-layout-migration",
+          "status": "passed",
+          "summary": "host-attested QA: all 6 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-shared-entrypoint-gate",
+          "status": "passed",
+          "summary": "host-attested QA: all 6 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-historical-audit-is-nonauthoritative",
+          "status": "passed",
+          "summary": "host-attested QA: all 6 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-git-durability-and-retirement",
+          "status": "passed",
+          "summary": "host-attested QA: all 6 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-package-and-reference-sync",
+          "status": "passed",
+          "summary": "host-attested QA: all 6 fixed verification descriptor(s) passed"
+        }
+      ]
     }
   ],
   "findings": [
@@ -479,6 +521,42 @@
       "acceptance_id": "acc-state-audit-settlement",
       "source": "kernel",
       "review_round": 3,
+      "summary": "Review returned this acceptance boundary twice; a durable replan is required."
+    },
+    {
+      "id": "review-82fdc3ca499d-1-review-1",
+      "kind": "blocking",
+      "status": "open",
+      "acceptance_id": "acc-automatic-layout-migration",
+      "source": "review",
+      "review_round": 4,
+      "summary": "plugins/immune-brain/runtime/kernel/storage_layout_migration.ts: readPendingMigrationMarker accepts any source below broad legacy prefixes and permits target:null, so a forged or corrupted ignored marker can delete unknown files during recovery; validate every entry against the exact emitted source-to-target mapping, including duplicate and case-collision checks, before relocation."
+    },
+    {
+      "id": "review-82fdc3ca499d-2-review-2",
+      "kind": "blocking",
+      "status": "open",
+      "acceptance_id": "acc-automatic-layout-migration",
+      "source": "review",
+      "review_round": 4,
+      "summary": "plugins/immune-brain/runtime/kernel/storage_layout_migration.ts: buildManifest relocates records and proofs independently and explicitly accepts record-only terminal records, allowing partial or contradictory legacy evidence to become an incomplete audit pair and eventually report ready; require a matching proof with task, lifecycle, and final-record-hash identity before writing the marker."
+    },
+    {
+      "id": "review-82fdc3ca499d-3-review-3",
+      "kind": "blocking",
+      "status": "open",
+      "acceptance_id": "acc-automatic-layout-migration",
+      "source": "review",
+      "review_round": 4,
+      "summary": "plugins/immune-brain/runtime/kernel/storage_layout_migration.ts: case-fold collision detection covers only generated entries while existing audit targets are checked by exact spelling, so committed .imm/audit/foo evidence does not block migrating Foo on a case-sensitive filesystem; compare generated targets against existing audit paths case-insensitively before any write."
+    },
+    {
+      "id": "request_rework:2026-08-26-002-imm-storage-layout-cutover:2026-08-26T12:24:28.889Z:replan-required",
+      "kind": "replan_required",
+      "status": "open",
+      "acceptance_id": "acc-automatic-layout-migration",
+      "source": "kernel",
+      "review_round": 4,
       "summary": "Review returned this acceptance boundary twice; a durable replan is required."
     }
   ],
@@ -798,6 +876,36 @@
         "confirmation_ref": "pi-confirm-37462b1e63f9ec03",
         "issued_at": "2026-08-26T12:11:05.079Z",
         "expires_at": "2026-08-26T12:21:05.079Z"
+      }
+    },
+    {
+      "id": "record_approval:2026-08-26-002-imm-storage-layout-cutover:2026-08-26T12:20:39.449Z",
+      "at": "2026-08-26T12:20:39.449Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-34f487bd\naction_v2_sha256:7ad1b9a220902a04d6d2d12f337d3623de73e487f343bfe9fff5cc67aef6ff3c",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-7accf4679a5eba3a",
+        "issued_at": "2026-08-26T12:20:39.449Z",
+        "expires_at": "2026-08-26T12:30:39.449Z"
+      }
+    },
+    {
+      "id": "request_rework:2026-08-26-002-imm-storage-layout-cutover:2026-08-26T12:24:28.889Z",
+      "at": "2026-08-26T12:24:28.889Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "review_round_4\naction_v2_sha256:86692b781f138ce54e4476359221b40edf93f58d217f3d9eeba634278c20b454",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "native-review-e47d7e2f-fd1d-4af",
+        "confirmation_ref": "pi-confirm-b91c79168c08f39a",
+        "issued_at": "2026-08-26T12:24:28.890Z",
+        "expires_at": "2026-08-26T12:34:28.890Z"
       }
     }
   ]

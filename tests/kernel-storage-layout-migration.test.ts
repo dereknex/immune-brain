@@ -45,21 +45,20 @@ function gitDirty(root: string): string[] {
 
 function writeLegacyTerminalPair(root: string, taskId: string): void {
 	mkdirSync(join(root, ".imm", "tasks"), { recursive: true });
-	writeFileSync(
-		join(root, ".imm", "tasks", `${taskId}.json`),
-		`${JSON.stringify({
-			contract: "assurance_kernel/task_record/v3",
-			task_id: taskId,
-			intent_snapshot: { revision: 1, risk: "routine" },
-			intent_ref: { path: `docs/plans/${taskId}.intent.json`, content_hash: "sha256:" + "0".repeat(64) },
-			lifecycle: "done",
-			artifact_state: "frozen",
-			baseline: "sha256:" + "0".repeat(64),
-			attestations: [],
-			findings: [],
-			history: [],
-		}, null, 2)}\n`,
-	);
+	const record = {
+		contract: "assurance_kernel/task_record/v3",
+		task_id: taskId,
+		intent_snapshot: { revision: 1, risk: "routine" },
+		intent_ref: { path: `docs/plans/${taskId}.intent.json`, content_hash: "sha256:" + "0".repeat(64) },
+		lifecycle: "done",
+		artifact_state: "frozen",
+		baseline: "sha256:" + "0".repeat(64),
+		attestations: [],
+		findings: [],
+		history: [],
+	};
+	const recordBytes = `${JSON.stringify(record, null, 2)}\n`;
+	writeFileSync(join(root, ".imm", "tasks", `${taskId}.json`), recordBytes);
 	writeFileSync(
 		join(root, ".imm", "tasks", `${taskId}.backend-claim.json`),
 		`${JSON.stringify({
@@ -68,7 +67,7 @@ function writeLegacyTerminalPair(root: string, taskId: string): void {
 			lifecycle_status: "terminal",
 			terminal_lifecycle: "done",
 			terminal_event_id: `stop-${taskId}`,
-			final_record_hash: "sha256:" + "0".repeat(64),
+			final_record_hash: `sha256:${createHash("sha256").update(recordBytes).digest("hex")}`,
 			terminalized_at: "2026-08-26T00:00:00.000Z",
 		}, null, 2)}\n`,
 	);
@@ -352,6 +351,16 @@ describe("migrateLegacyLayout case-fold and target preflight (review round 6)", 
 	it("rejects an already-existing audit target as invalid with zero writes", async () => {
 		const root = tempRoot();
 		writeLegacyTerminalPair(root, "task-001");
+		// Bind the legacy proof to the record bytes so the pair passes the
+		// proof-binding check and the preflight is what rejects it.
+		{
+			const recordPath = join(root, ".imm/tasks/task-001.json");
+			const recordBytes = readFileSync(recordPath, "utf8");
+			const proofPath = join(root, ".imm/tasks/task-001.backend-claim.json");
+			const proof = JSON.parse(readFileSync(proofPath, "utf8"));
+			proof.final_record_hash = `sha256:${createHash("sha256").update(recordBytes).digest("hex")}`;
+			writeFileSync(proofPath, `${JSON.stringify(proof, null, 2)}\n`);
+		}
 		mkdirSync(join(root, ".imm/audit/task-001"), { recursive: true });
 		writeFileSync(join(root, ".imm/audit/task-001/task-record.json"), "{\"contract\":\"assurance_kernel/task_record/v3\",\"task_id\":\"task-001\",\"lifecycle\":\"done\"}\n");
 		execFileSync("git", ["-C", root, "add", "-A"]);

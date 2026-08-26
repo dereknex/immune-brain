@@ -316,18 +316,56 @@ function buildManifest(root: string): { manifest: MigrationManifest; affected: s
 		entries.push({ source, target, sha256: sha256Hex(bytes), size: bytes.length });
 	};
 
-	// Terminal task pairs and record-only terminal records.
+	// Terminal task pairs: a task record is migrated ONLY with its matching
+	// terminal proof (review-7). The proof must bind the task identity, the
+	// record lifecycle, and the final record hash; a record-only or
+	// proof-only legacy file is partial evidence and fails the migration
+	// with zero writes instead of producing an incomplete audit pair.
 	const taskDir = resolve(root, LEGACY_TASKS_RELATIVE);
 	if (pathExists(taskDir)) {
+		const byTask = new Map<string, { record: string | null; proof: string | null }>();
 		for (const entry of readdirSync(taskDir).sort()) {
 			if (entry in legacyKnownNames()) continue;
 			const taskId = taskIdFromOwnerFile(entry);
 			if (taskId === null) throw new Error(`unknown file under ${LEGACY_TASKS_RELATIVE}: ${entry}`);
-			if (entry.endsWith(".backend-claim.json")) {
-				addFile(`${LEGACY_TASKS_RELATIVE}/${entry}`, auditTerminalProofPath(taskId));
-			} else {
-				addFile(`${LEGACY_TASKS_RELATIVE}/${entry}`, auditTaskRecordPath(taskId));
-			}
+			const slot = byTask.get(taskId) ?? { record: null, proof: null };
+			if (entry.endsWith(".backend-claim.json")) slot.proof = entry;
+			else slot.record = entry;
+			byTask.set(taskId, slot);
+		}
+		for (const [taskId, slot] of [...byTask.entries()].sort((a, b) => a[0].localeCompare(b[0]))) {
+			if (slot.record === null || slot.proof === null)
+				throw new Error(
+					`legacy task ${taskId} has partial terminal evidence (record=${slot.record !== null}, proof=${slot.proof !== null}); resolve before migration`,
+				);
+			const recordRelative = `${LEGACY_TASKS_RELATIVE}/${slot.record}`;
+			const proofRelative = `${LEGACY_TASKS_RELATIVE}/${slot.proof}`;
+			const recordBytes = readRegularFileOrNull(resolve(root, recordRelative));
+			const proofBytes = readRegularFileOrNull(resolve(root, proofRelative));
+			if (recordBytes === null || proofBytes === null)
+				throw new Error(`legacy task ${taskId} terminal evidence is unreadable`);
+			const recordRaw = JSON.parse(recordBytes.toString("utf8")) as {
+				contract?: unknown;
+				lifecycle?: unknown;
+				phase?: unknown;
+				task_id?: unknown;
+			};
+			const proofRaw = JSON.parse(proofBytes.toString("utf8")) as {
+				task_id?: unknown;
+				terminal_lifecycle?: unknown;
+				terminal_phase?: unknown;
+				final_record_hash?: unknown;
+			};
+			const lifecycle = recordRaw.lifecycle ?? recordRaw.phase;
+			const terminalLifecycle = proofRaw.terminal_lifecycle ?? proofRaw.terminal_phase;
+			if (recordRaw.task_id !== taskId || proofRaw.task_id !== taskId)
+				throw new Error(`legacy task ${taskId} terminal identity is inconsistent`);
+			if (lifecycle !== terminalLifecycle || (lifecycle !== "done" && lifecycle !== "stopped"))
+				throw new Error(`legacy task ${taskId} terminal lifecycle is inconsistent`);
+			if (proofRaw.final_record_hash !== `sha256:${sha256Hex(recordBytes)}`)
+				throw new Error(`legacy task ${taskId} terminal proof does not bind its record bytes`);
+			addFile(recordRelative, auditTaskRecordPath(taskId));
+			addFile(proofRelative, auditTerminalProofPath(taskId));
 		}
 	}
 
@@ -393,7 +431,24 @@ function buildManifest(root: string): { manifest: MigrationManifest; affected: s
 	// exact duplicate) is never adopted by a fresh migration; it is an
 	// invalid repository state that must be resolved manually with zero
 	// writes. Recovery replays are the only path that accepts a present
-	// target (with matching hash).
+	// target (with matching hash). review-3: the comparison is
+	// case-insensitive per directory level, so committed `.imm/audit/foo`
+	// evidence blocks migrating `Foo` on case-sensitive filesystems too.
+	const existingAuditEntries = new Map<string, string>();
+	{
+		const auditRoot = resolve(root, AUDIT_RELATIVE);
+		if (pathExists(auditRoot)) {
+			for (const top of readdirSync(auditRoot)) {
+				const lower = top.toLowerCase();
+				const prior = existingAuditEntries.get(lower);
+				if (prior !== undefined && prior !== top)
+					throw new Error(
+						`existing audit evidence has a case-fold collision: ${prior} and ${top}`,
+					);
+				existingAuditEntries.set(lower, top);
+			}
+		}
+	}
 	for (const entry of entries) {
 		if (entry.target === null) continue;
 		const stat = pathStatOrNull(resolve(root, entry.target));
@@ -401,6 +456,15 @@ function buildManifest(root: string): { manifest: MigrationManifest; affected: s
 			throw new Error(
 				`migration target already exists before relocation: ${entry.target}; resolve the duplicate or conflicting audit evidence manually`,
 			);
+		const targetSegments = entry.target.split("/");
+		if (targetSegments[1] !== undefined) {
+			const lowered = targetSegments[1].toLowerCase();
+			const existingTop = existingAuditEntries.get(lowered);
+			if (existingTop !== undefined && existingTop !== targetSegments[1])
+				throw new Error(
+					`migration target case-collides with existing audit evidence: ${entry.target} conflicts with .imm/audit/${existingTop}`,
+				);
+		}
 	}
 
 	return { manifest: { contract: "assurance_kernel/storage_layout_migration/v1", version: 1, entries }, affected };
@@ -416,28 +480,31 @@ function legacyKnownNames(): Record<string, string> {
 	};
 }
 
-const LEGACY_SOURCE_SINGLETONS = new Set([
-	LEGACY_CLAIM_RELATIVE,
-	LEGACY_WORKSPACE_RELATIVE,
-	LEGACY_JOURNAL_RELATIVE,
-]);
-const LEGACY_SOURCE_DIRECTORIES = [
-	`${LEGACY_TASKS_RELATIVE}/`,
-	`${LEGACY_MEMORY_RELATIVE}/`,
-	`${LEGACY_TEMPLATES_RELATIVE}/`,
-	`${LEGACY_AUTHORITY_RELATIVE}/`,
-];
+/**
+ * Exact emitted-mapping validation (review round 7): a recovery marker may
+ * only reference the exact source/target/deletion shapes buildManifest
+ * emits. Anything else -- broad prefixes, unknown subpaths, duplicate
+ * sources, case-colliding targets -- is rejected before any relocation.
+ */
 const LEGACY_TARGET_PREFIXES = [
 	`${AUDIT_RELATIVE}/`,
 	`${LEGACY_V3_RELATIVE}/`,
 ];
 
-/** Exact-match allowlist identical to buildManifest's emitted sources (review-4). */
-function isLegacySourcePath(source: string): boolean {
-	if (LEGACY_SOURCE_SINGLETONS.has(source))
-		return source === LEGACY_CLAIM_RELATIVE || source === LEGACY_WORKSPACE_RELATIVE || source === LEGACY_JOURNAL_RELATIVE;
-	return LEGACY_SOURCE_DIRECTORIES.some((prefix) => source.startsWith(prefix));
-}
+/** Sources that are delete-only entries (history is the retention source). */
+const LEGACY_DELETE_SOURCES = new Set([
+	LEGACY_CLAIM_RELATIVE,
+	LEGACY_WORKSPACE_RELATIVE,
+	".imm/memory/MEMORY.md",
+	".imm/memory/.current_iteration.automatic_observations.lock",
+	".imm/templates/iteration-plan-template.md",
+	".imm/templates/review-report-template.md",
+]);
+
+/** Singleton sources whose migration target is a fixed file (not per-task). */
+const LEGACY_FIXED_TARGETS = new Map<string, string>([
+	[LEGACY_JOURNAL_RELATIVE, legacyV3Path("journal.jsonl")],
+]);
 
 function canonicalProjectRelative(root: string, candidate: string, label: string): string {
 	if (
@@ -469,6 +536,9 @@ function assertNoSymlinkParentSegments(root: string, relativePath: string): void
 	}
 }
 
+const TASK_OWNER_FILE_STRICT =
+	/^([A-Za-z0-9][A-Za-z0-9._-]{0,127})\.(json|backend-claim\.json)$/;
+
 function validateMarkerEntry(
 	root: string,
 	entry: MigrationManifestEntry,
@@ -481,14 +551,60 @@ function validateMarkerEntry(
 		throw new Error(`migration marker entry ${index} sha256 is invalid`);
 	if (typeof entry.size !== "number" || !Number.isInteger(entry.size) || entry.size < 0)
 		throw new Error(`migration marker entry ${index} size is invalid`);
-	if (!isLegacySourcePath(source))
-		throw new Error(`migration marker entry ${index} source is outside the legacy layout: ${source}`);
 	assertNoSymlinkParentSegments(root, source);
-	if (entry.target === null) return;
-	const target = canonicalProjectRelative(root, entry.target, `entry ${index} target`);
-	if (!LEGACY_TARGET_PREFIXES.some((prefix) => target === prefix || target.startsWith(prefix)))
-		throw new Error(`migration marker entry ${index} target is outside the audit layout: ${target}`);
-	assertNoSymlinkParentSegments(root, target);
+
+	const sourceBase = source.split("/").at(-1) ?? "";
+	const taskId = taskIdFromOwnerFile(sourceBase);
+	if (taskId !== null) {
+		// Task owner files map deterministically to the audit pair.
+		const isTombstone = sourceBase.endsWith(".backend-claim.json");
+		const expectedTarget = isTombstone
+			? auditTerminalProofPath(taskId)
+			: auditTaskRecordPath(taskId);
+		if (entry.target !== expectedTarget)
+			throw new Error(`migration marker entry ${index} target does not match task mapping: ${source} -> ${String(entry.target)}`);
+		return;
+	}
+	if (LEGACY_DELETE_SOURCES.has(source)) {
+		if (entry.target !== null)
+			throw new Error(`migration marker entry ${index} delete source must have a null target: ${source}`);
+		return;
+	}
+	const fixedTarget = LEGACY_FIXED_TARGETS.get(source);
+	if (fixedTarget !== undefined) {
+		if (entry.target !== fixedTarget)
+			throw new Error(`migration marker entry ${index} target does not match the fixed mapping: ${source}`);
+		return;
+	}
+	// Known `.imm/memory/` evidence relocates byte-for-byte to legacy-v3.
+	if (
+		source.startsWith(`${LEGACY_MEMORY_RELATIVE}/`) &&
+		entry.target !== null &&
+		entry.target.startsWith(`${LEGACY_V3_RELATIVE}/`) &&
+		entry.target.split("/").length === LEGACY_V3_RELATIVE.split("/").length + 1 &&
+		entry.target.endsWith(`/${sourceBase}`)
+	) {
+		assertNoSymlinkParentSegments(root, entry.target);
+		return;
+	}
+	throw new Error(`migration marker entry ${index} is not an emitted mapping: ${source} -> ${String(entry.target)}`);
+}
+
+/** Duplicate and case-collision checks across the whole recovered marker. */
+function validateMarkerEntrySet(entries: MigrationManifestEntry[]): void {
+	const sources = new Set<string>();
+	const targets = new Map<string, string>();
+	for (const entry of entries) {
+		const srcKey = entry.source.toLowerCase();
+		if (sources.has(entry.source))
+			throw new Error(`migration marker contains a duplicate source: ${entry.source}`);
+		if (entry.target === null) continue;
+		const tgtKey = entry.target.toLowerCase();
+		const priorTarget = targets.get(tgtKey);
+		if (priorTarget !== undefined && priorTarget !== entry.target)
+			throw new Error(`migration marker case-fold target collision: ${priorTarget} and ${entry.target}`);
+		targets.set(tgtKey, entry.target);
+	}
 }
 
 function readPendingMigrationMarker(root: string): MigrationManifest | null {
@@ -502,6 +618,7 @@ function readPendingMigrationMarker(root: string): MigrationManifest | null {
 		throw new Error("migration marker entries are invalid");
 	for (const [index, entry] of raw.entries.entries())
 		validateMarkerEntry(root, entry as MigrationManifestEntry, index);
+	validateMarkerEntrySet(raw.entries as MigrationManifestEntry[]);
 	return raw;
 }
 
