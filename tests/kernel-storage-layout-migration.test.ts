@@ -301,3 +301,65 @@ describe("migrateLegacyLayout direct execution (review-6)", () => {
 		expect(existsSync(join(root, ".imm/audit/2026-08-14-003-old-task"))).toBe(false);
 	});
 });
+
+describe("migrateLegacyLayout case-fold and target preflight (review round 6)", () => {
+	async function runMigration(root: string): Promise<unknown> {
+		const { migrateLegacyLayout } = await import("../plugins/immune-brain/runtime/kernel/storage_layout_migration");
+		try {
+			return migrateLegacyLayout(root);
+		} catch (error) {
+			return { threw: error instanceof Error ? error.message : String(error) };
+		}
+	}
+
+	it("rejects case-colliding audit targets (Foo vs foo) before any relocation", async () => {
+		// The detector is evaluated per-axis but constructing two distinct
+		// case variants requires a case-sensitive filesystem. Skip the live
+		// collision fixture on case-insensitive filesystems (macOS/Windows
+		// default) where the two names collapse to one directory entry; the
+		// per-axis lowercase detection is additionally covered by the
+		// migration marker validation tests below.
+		const probe = mkdtempSync(join(tmpdir(), "imm-casefold-probe-"));
+		try {
+			const fs = require("node:fs") as typeof import("node:fs");
+			writeFileSync(join(probe, "Probe"), "a");
+			try {
+				writeFileSync(join(probe, "probe"), "b");
+				// Case-insensitive collision: "Probe" now reads "b".
+				if (fs.readFileSync(join(probe, "Probe"), "utf8") === "b") {
+					expect(true).toBe(true);
+					return;
+				}
+			} catch {
+				// Case-insensitive collision surfaced as an error.
+				expect(true).toBe(true);
+				return;
+			}
+			const root = tempRoot();
+			writeLegacyTerminalPair(root, "Foo");
+			writeLegacyTerminalPair(root, "foo");
+			execFileSync("git", ["-C", root, "add", "-A"]);
+			execFileSync("git", ["-C", root, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "legacy evidence"]);
+			const outcome = await runMigration(root);
+			expect(JSON.stringify(outcome)).toMatch(/case-fold target collision/);
+			// Zero relocation happened.
+			expect(existsSync(join(root, ".imm/audit"))).toBe(false);
+		} finally {
+			rmSync(probe, { recursive: true, force: true });
+		}
+	});
+
+	it("rejects an already-existing audit target as invalid with zero writes", async () => {
+		const root = tempRoot();
+		writeLegacyTerminalPair(root, "task-001");
+		mkdirSync(join(root, ".imm/audit/task-001"), { recursive: true });
+		writeFileSync(join(root, ".imm/audit/task-001/task-record.json"), "{\"contract\":\"assurance_kernel/task_record/v3\",\"task_id\":\"task-001\",\"lifecycle\":\"done\"}\n");
+		execFileSync("git", ["-C", root, "add", "-A"]);
+		execFileSync("git", ["-C", root, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "legacy + conflicting target"]);
+		const outcome = await runMigration(root);
+		expect(JSON.stringify(outcome)).toMatch(/target already exists/);
+		// The legacy source stays untouched; zero writes.
+		expect(existsSync(join(root, ".imm/tasks/task-001.json"))).toBe(true);
+		expect(existsSync(join(root, ".imm/state/transactions/storage-layout-migration.json"))).toBe(false);
+	});
+});

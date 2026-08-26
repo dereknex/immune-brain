@@ -38,11 +38,26 @@
       }
     ],
     "scope_hint": [
+      ".gitignore",
+      ".imm/memory/MEMORY.md",
+      ".imm/templates/iteration-plan-template.md",
+      ".imm/templates/review-report-template.md",
+      "CONTEXT.md",
+      "IMMUNE.md",
+      "docs/reference/planning-artifact-retention.md",
+      "docs/solutions/contracts.md",
+      "docs/solutions/imm-workspace-pollution-control-pattern.md",
+      "docs/solutions/minimal-imm-init-bootstrap-pattern.md",
+      "docs/solutions/outcome-based-planning-steps.md",
       "docs/specs/archive/imm-storage-layout-cutover.spec.md",
       "docs/specs/imm-storage-layout-cutover.spec.md",
+      "docs/user_manual.md",
       "plugins/immune-brain/.pi-extension/imm-canary-enroll.ts",
       "plugins/immune-brain/.pi-extension/imm-canary-work.ts",
       "plugins/immune-brain/.pi-extension/runtime-stub.ts",
+      "plugins/immune-brain/README.md",
+      "plugins/immune-brain/USER_GUIDE.md",
+      "plugins/immune-brain/dist/docs/reference/planning-artifact-retention.md",
       "plugins/immune-brain/runtime/commands/kernel.ts",
       "plugins/immune-brain/runtime/kernel/application.ts",
       "plugins/immune-brain/runtime/kernel/assurance_projection.ts",
@@ -61,27 +76,53 @@
       "plugins/immune-brain/runtime/kernel/storage_paths.ts",
       "plugins/immune-brain/runtime/v4_runtime.ts",
       "plugins/immune-brain/runtime/workspace_scope.ts",
+      "tests/authority-commit-receipts.test.ts",
       "tests/direct-first-routing-contract.test.ts",
+      "tests/enrollment-confirmation-relocation.test.ts",
+      "tests/kernel-assurance-projection.test.ts",
+      "tests/kernel-backend-claim.test.ts",
+      "tests/kernel-canary-application.test.ts",
+      "tests/kernel-canary-authority.test.ts",
+      "tests/kernel-canary-claim-writer-boundary.test.ts",
+      "tests/kernel-canary-drain-transaction.test.ts",
       "tests/kernel-canary-terminal-transaction.test.ts",
+      "tests/kernel-enrollment-transaction.test.ts",
       "tests/kernel-intent-validation.test.ts",
+      "tests/kernel-migrate.test.ts",
+      "tests/kernel-pi-canary-live-boundary.test.ts",
+      "tests/kernel-pi-canary-prepare.test.ts",
+      "tests/kernel-r2a-boundary.test.ts",
+      "tests/kernel-readiness.test.ts",
       "tests/kernel-shadow-cli.test.ts",
       "tests/kernel-storage-layout-migration.test.ts",
+      "tests/kernel-task-record-migration.test.ts",
+      "tests/pi-canary-assurance-progression.test.ts",
       "tests/pi-canary-enroll-extension.test.ts",
+      "tests/pi-canary-lifecycle-package.test.ts",
+      "tests/pi-canary-packed-loader.test.ts",
+      "tests/pi-canary-user-authority.test.ts",
+      "tests/pi-canary-work-extension.test.ts",
       "tests/planning-artifact-archival.test.ts",
+      "tests/plugin-package-runtime.test.ts",
       "tests/roadmap-plan-boundary-contract.test.ts",
+      "tests/roadmap-plan-host-acceptance.test.ts",
+      "tests/state-ledger-migration.test.ts",
+      "tests/task-record-durability-baseline.json",
       "tests/task-record-durability.test.ts",
+      "tests/user-approval-authority.test.ts",
+      "tests/user-approval-critical-completion.test.ts",
       "tests/v4-storage-retirement-legacy-audit.test.ts"
     ],
     "risk": "critical",
-    "revision": 3,
+    "revision": 4,
     "owner": "user"
   },
   "intent_ref": {
-    "path": "docs/plans/2026-08-26-002-imm-storage-layout-cutover.intent.json",
-    "content_hash": "sha256:5fefc2ba8b988fff16f726d301b91548ffcc8e3c32c1f291670b6ff40d13282e"
+    "path": "docs/plans/archive/2026-08-26-002-imm-storage-layout-cutover.intent.json",
+    "content_hash": "sha256:b40f85d003ef9222b41b0605e19bfee140f1bab2c54224df3bd0bd5abb84d453"
   },
   "lifecycle": "active",
-  "artifact_state": "active",
+  "artifact_state": "frozen",
   "baseline": "sha256:c6db70e543f6e0334b4b115af86af18c551bdcbbb8da4b83958b3424666f6a7e",
   "attestations": [
     {
@@ -251,6 +292,48 @@
           "summary": "host-attested QA: all 6 fixed verification descriptor(s) passed"
         }
       ]
+    },
+    {
+      "id": "approval-qa-94b95128",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 4,
+      "intent_content_hash": "sha256:b40f85d003ef9222b41b0605e19bfee140f1bab2c54224df3bd0bd5abb84d453",
+      "diff_hash": "sha256:7a8505b6cf5d8e92e47c8398370e8a8e3434dbedda26000c90d4d71fbe5650ec",
+      "actor_id": "deterministic-qa",
+      "summary": "all 6 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "acc-state-audit-settlement",
+          "status": "passed",
+          "summary": "host-attested QA: all 6 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-automatic-layout-migration",
+          "status": "passed",
+          "summary": "host-attested QA: all 6 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-shared-entrypoint-gate",
+          "status": "passed",
+          "summary": "host-attested QA: all 6 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-historical-audit-is-nonauthoritative",
+          "status": "passed",
+          "summary": "host-attested QA: all 6 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-git-durability-and-retirement",
+          "status": "passed",
+          "summary": "host-attested QA: all 6 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-package-and-reference-sync",
+          "status": "passed",
+          "summary": "host-attested QA: all 6 fixed verification descriptor(s) passed"
+        }
+      ]
     }
   ],
   "findings": [
@@ -374,7 +457,7 @@
     {
       "id": "review-37092c7fee0f-1-review-1",
       "kind": "blocking",
-      "status": "open",
+      "status": "resolved",
       "acceptance_id": "acc-state-audit-settlement",
       "source": "review",
       "review_round": 3,
@@ -383,7 +466,7 @@
     {
       "id": "review-37092c7fee0f-2-review-2",
       "kind": "blocking",
-      "status": "open",
+      "status": "resolved",
       "acceptance_id": "acc-state-audit-settlement",
       "source": "review",
       "review_round": 3,
@@ -392,7 +475,7 @@
     {
       "id": "request_rework:2026-08-26-002-imm-storage-layout-cutover:2026-08-26T12:03:11.702Z:replan-required",
       "kind": "replan_required",
-      "status": "open",
+      "status": "resolved",
       "acceptance_id": "acc-state-audit-settlement",
       "source": "kernel",
       "review_round": 3,
@@ -661,6 +744,60 @@
         "confirmation_ref": "pi-confirm-0b8c81c096424b13",
         "issued_at": "2026-08-26T12:03:11.703Z",
         "expires_at": "2026-08-26T12:13:11.702Z"
+      }
+    },
+    {
+      "id": "resolve_finding:2026-08-26-002-imm-storage-layout-cutover:2026-08-26T12:07:56.122Z",
+      "at": "2026-08-26T12:07:56.122Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-37092c7fee0f-1-review-1\naction_v2_sha256:18f240a2a793938093869a54fbd7cb1003caec93a2b46776a8ab5dd79ddad538"
+    },
+    {
+      "id": "resolve_finding:2026-08-26-002-imm-storage-layout-cutover:2026-08-26T12:08:02.401Z",
+      "at": "2026-08-26T12:08:02.401Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-37092c7fee0f-2-review-2\naction_v2_sha256:dae203f44f74a9ce19fe5369acd37ad06fce626f912fbae5738e9604df207a3e"
+    },
+    {
+      "id": "approve_breaking_intent_revision:2026-08-26-002-imm-storage-layout-cutover:2026-08-26T12:10:46.029Z",
+      "at": "2026-08-26T12:10:46.029Z",
+      "type": "approve_breaking_intent_revision",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "intent_revision_4\naction_v2_sha256:56015d88c2ff9af509e20ba4814f6e4e61f006cb78377142df5e53685c58ceda",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-4a8303e401695c12",
+        "issued_at": "2026-08-26T12:10:46.118Z",
+        "expires_at": "2026-08-26T12:20:46.118Z"
+      }
+    },
+    {
+      "id": "freeze_artifacts:2026-08-26-002-imm-storage-layout-cutover:2026-08-26T12:10:51.924Z",
+      "at": "2026-08-26T12:10:51.924Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent and Spec frozen at docs/plans/archive/2026-08-26-002-imm-storage-layout-cutover.intent.json"
+    },
+    {
+      "id": "record_approval:2026-08-26-002-imm-storage-layout-cutover:2026-08-26T12:11:05.079Z",
+      "at": "2026-08-26T12:11:05.079Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-94b95128\naction_v2_sha256:f060cea0d73a8b300edf915d83b1c938977e7c8065db9f2ac71c764eee06334a",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-37462b1e63f9ec03",
+        "issued_at": "2026-08-26T12:11:05.079Z",
+        "expires_at": "2026-08-26T12:21:05.079Z"
       }
     }
   ]

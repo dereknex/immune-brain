@@ -105,6 +105,16 @@ function sha256Hex(bytes: Buffer): string {
 	return createHash("sha256").update(bytes).digest("hex");
 }
 
+function pathStatOrNull(path: string): ReturnType<typeof lstatSync> | null {
+	try {
+		return lstatSync(path);
+	} catch (error) {
+		const code = (error as NodeJS.ErrnoException).code;
+		if (code === "ENOENT" || code === "ENOTDIR") return null;
+		throw error;
+	}
+}
+
 function pathExists(path: string): boolean {
 	try {
 		return lstatSync(path).isFile() || lstatSync(path).isDirectory();
@@ -358,14 +368,39 @@ function buildManifest(root: string): { manifest: MigrationManifest; affected: s
 	addFile(LEGACY_WORKSPACE_RELATIVE, null);
 	addFile(LEGACY_CLAIM_RELATIVE, null);
 
-	// Case-fold collisions fail closed (portable filesystems).
-	const byLower = new Map<string, string>();
+	// Case-fold collisions fail closed per axis (portable filesystems):
+	// distinct task IDs such as `Foo` and `foo` produce distinct sources but
+	// case-colliding audit directories, and must be rejected before any
+	// relocation (review-1).
+	const sourceLower = new Map<string, string>();
+	const targetLower = new Map<string, string>();
 	for (const entry of entries) {
-		const key = `${entry.source}\0${entry.target ?? ""}`.toLowerCase();
-		const prior = byLower.get(key);
-		if (prior !== undefined)
-			throw new Error(`migration case-fold collision: ${prior} and ${entry.source}`);
-		byLower.set(key, entry.source);
+		const srcKey = entry.source.toLowerCase();
+		const priorSource = sourceLower.get(srcKey);
+		if (priorSource !== undefined)
+			throw new Error(`migration case-fold source collision: ${priorSource} and ${entry.source}`);
+		sourceLower.set(srcKey, entry.source);
+		if (entry.target !== null) {
+			const tgtKey = entry.target.toLowerCase();
+			const priorTarget = targetLower.get(tgtKey);
+			if (priorTarget !== undefined)
+				throw new Error(`migration case-fold target collision: ${priorTarget} and ${entry.target}`);
+			targetLower.set(tgtKey, entry.target);
+		}
+	}
+
+	// review-2 preflight: an existing audit target (committed conflicting or
+	// exact duplicate) is never adopted by a fresh migration; it is an
+	// invalid repository state that must be resolved manually with zero
+	// writes. Recovery replays are the only path that accepts a present
+	// target (with matching hash).
+	for (const entry of entries) {
+		if (entry.target === null) continue;
+		const stat = pathStatOrNull(resolve(root, entry.target));
+		if (stat && stat.isFile())
+			throw new Error(
+				`migration target already exists before relocation: ${entry.target}; resolve the duplicate or conflicting audit evidence manually`,
+			);
 	}
 
 	return { manifest: { contract: "assurance_kernel/storage_layout_migration/v1", version: 1, entries }, affected };
