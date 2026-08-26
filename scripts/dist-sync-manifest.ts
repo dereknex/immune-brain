@@ -40,54 +40,7 @@ export const DIST_DOC_ENTRIES: DistDocEntry[] = [
 	{ rel: "reference/planning-quality-gate.md", mode: "mirror" },
 
 	// ── adapted: intentionally divergent packaged copies ──
-	{
-		rel: "reference/agent-quality-checklists.md",
-		mode: "adapted",
-		reason:
-			"Packaged copy replaces repo-relative `upstreams/` paths with source-repository references; the plugin package does not ship submodules.",
-		replacements: [
-			{
-				from: "本文件是 **索引**：深度条目以 submodule 中的 upstream 全文为准，避免在本仓库重复维护。",
-				to: "本文件是 **索引**：深度条目以 source repository 的 upstream submodules 为准，插件包不随附这些 upstream 全文，避免在本仓库重复维护。",
-			},
-			{
-				from: `| 主题 | 深度参考（相对仓库根） |
-|------|------------------------|
-| Security | \`upstreams/addy-agent-skills/references/security-checklist.md\` |
-| Testing patterns | \`upstreams/addy-agent-skills/references/testing-patterns.md\` |
-| Performance | \`upstreams/addy-agent-skills/references/performance-checklist.md\` |
-| Accessibility | \`upstreams/addy-agent-skills/references/accessibility-checklist.md\` |`,
-				to: `| 主题 | 深度参考 |
-|------|----------|
-| Security | addy-agent-skills security checklist in the source repository upstreams |
-| Testing patterns | addy-agent-skills testing patterns in the source repository upstreams |
-| Performance | addy-agent-skills performance checklist in the source repository upstreams |
-| Accessibility | addy-agent-skills accessibility checklist in the source repository upstreams |`,
-			},
-		],
-	},
-	{
-		rel: "reference/code-simplification-checklist.md",
-		mode: "adapted",
-		reason:
-			"Packaged copy replaces repo-relative `upstreams/` paths with source-repository references; the plugin package does not ship submodules.",
-		replacements: [
-			{
-				from: "本文件是 **索引**：原则全文以 submodule 中的 upstream 为准，避免在本仓库重复维护。",
-				to: "本文件是 **索引**：原则全文以 source repository 的 upstream submodules 为准，插件包不随附这些 upstream 全文，避免在本仓库重复维护。",
-			},
-			{
-				from: `| 主题 | 深度参考（相对仓库根） |
-|------|------------------------|
-| 五原则 + 模式表 + Chesterton's Fence + Rule of 500 | \`upstreams/addy-agent-skills/skills/code-simplification/SKILL.md\` |
-| 范围解析 + 三 reviewer 协议 + 验证合同 | \`upstreams/compound-engineering/plugins/compound-engineering/skills/ce-simplify-code/SKILL.md\` |`,
-				to: `| 主题 | 深度参考 |
-|------|----------|
-| 五原则 + 模式表 + Chesterton's Fence + Rule of 500 | addy-agent-skills code simplification skill in the source repository upstreams |
-| 范围解析 + 三 reviewer 协议 + 验证合同 | compound-engineering simplify-code skill in the source repository upstreams |`,
-			},
-		],
-	},
+	// (none currently; empty by design until a packaged doc needs divergence)
 ];
 
 /**

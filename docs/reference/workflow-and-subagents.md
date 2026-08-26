@@ -50,28 +50,6 @@ Compounder 以及 Loop 内部 repair role 都不是额外可安装 Skill。
 
 内嵌原则：Goal-driven execution。每次只围绕当前可验收目标协调状态。
 
-### `imm-autowork`（runtime/CLI 命令原语，非可安装 Skill）
-`imm-autowork` 已下沉为确定性 checkpoint runtime 命令原语（`bin/imm-autowork --json`），由 `imm-loop` 在已有 validated plan 或 pending reviewer `follow_up` 时消费；它本身不再是可安装 Skill，也不自行调用 executor / QA / reviewer / compounder。
-
-职责：
-- 按计划自动推进多个 step，并可在 completed Plan 后继续消费 pending reviewer `follow_up`
-- 只到安全阻塞点、计划和 follow-up 完成点，或小预算上限
-- 复用 `imm-loop -> executor -> qa` 的权限边界
-- 在 `pass` 后可以继续下一个已解锁 step，但遇到 `rework`、`replan`、缺证据或依赖缺口就停止
-- 每次 autowork 改变 workflow 状态后，Pi 协调器重新读取 Loop runtime projection
-  并刷新当前任务投影；该同步只是 `.imm` 到 Pi UI 的只读展示
-- `imm-loop` 不把 runtime checkpoint 默认改造成 full-plan autowork
-
-*   **特色**：机器可读的高安全度推进引擎，支持 validated 计划及 follow-up 自动推进。
-*   **优势**：在保障“安全第一”的前提下，遇到任何执行红灯（断言失败、rework/replan）立即原地刹车退回，不污染本地状态。
-*   **解决场景**：执行 3-5 步确定性重构或常规测试修复时，免除用户反复敲击命令与交互授权的低效打扰。
-
-输出建议：
-- 默认只说这轮推进了哪些 step、为什么停、下一步该回哪个 skill。
-- 不要把完整 loop transcript 倒给用户，除非用户明确要看。
-
-内嵌原则：Goal-driven execution + Surgical changes。自动推进不等于放宽 step 边界。
-
 ### `imm-planner`
 负责定义边界和拆解任务。
 

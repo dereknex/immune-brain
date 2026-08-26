@@ -39,6 +39,6 @@ Apply the gate when the task touches one or more of these surfaces:
 
 ## Boundaries
 
-- This gate does not replace `IMMUNE.md`, `imm-plan.py`, or the `imm-brainstorm` `adversarial` high-pressure gate.
+- This gate does not replace `IMMUNE.md` or the `imm-brainstorm` `adversarial` high-pressure gate.
 - `imm-plan` enforces declared design metadata, Medium/High Technical Design sections, and required Mermaid blocks. Untouched legacy Specs without metadata receive a compatibility warning instead of failing.
 - Do not require all plans to cite this document; use it when the trigger signals are present.
