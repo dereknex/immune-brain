@@ -29,7 +29,8 @@
     "2026-08-20-012-packaged-contract-source-coverage",
     "2026-08-20-013-stale-reference-ratchet-gate",
     "2026-08-20-015-relocate-enrollment-confirmation",
-    "2026-08-20-016-recognize-intent-implemented-specs-as-terminal"
+    "2026-08-20-016-recognize-intent-implemented-specs-as-terminal",
+    "2026-08-26-002-imm-storage-layout-cutover"
   ],
   "scope": "docs/plans/archive/*.intent.json",
   "generated": "2026-08-20",
