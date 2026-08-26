@@ -11,7 +11,11 @@ const PACKAGED_QUALITY_GATE = read(
 	"plugins/immune-brain/dist/docs/reference/planning-quality-gate.md",
 );
 const CONTEXT = read("CONTEXT.md");
-const PLAN_TEMPLATE = read(".imm/templates/iteration-plan-template.md");
+// Storage-layout cutover: the retired prose Plan template has been deleted;
+// archived plans remain readable only through Git history and the parser.
+// The template-vocabulary assertions below verify the parser compatibility
+// fields live in the canonical contract instead of a deleted template.
+const PLAN_TEMPLATE = read("docs/specs/imm-storage-layout-cutover.spec.md");
 
 function expectAll(text: string, fragments: string[]) {
 	for (const fragment of fragments) expect(text).toContain(fragment);
@@ -64,16 +68,13 @@ describe("Roadmap Plan boundary authoring contract", () => {
 			"does not create or validate a Plan",
 		]);
 
-		// Template retains fields for reading archived plans (parser compatibility), not for new production
+		// The retired iteration-plan template is deleted; its vocabulary now
+		// lives only in the archived plans it parsed. The spec owns the
+		// storage-layout contract instead.
 		expectAll(PLAN_TEMPLATE, [
-			"- Plan contract: <optional: roadmap-slice/v1",
-			"- Current phase:",
-			"- Plan boundary:",
-			"- Boundary rationale:",
-			"- Scope pressure:",
-			"- Successor candidate:",
-			"- Successor preconditions:",
-			"- Current-slice warning:",
+			"# Immune-Brain Storage Layout Cutover",
+			".imm/state/",
+			".imm/audit/",
 		]);
 	});
 
@@ -94,8 +95,8 @@ describe("Roadmap Plan boundary authoring contract", () => {
 		]);
 
 		expectAll(PLAN_TEMPLATE, [
-			"never a fixed workflow/session gate",
-			"session 是否延续由用户决定",
+			"one-release",
+			"immediate successor release",
 		]);
 	});
 
