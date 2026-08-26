@@ -74,6 +74,7 @@
     "plugins/immune-brain/runtime/kernel/storage_layout_migration.ts",
     "plugins/immune-brain/runtime/kernel/storage_paths.ts",
     "plugins/immune-brain/runtime/kernel/types.ts",
+    "plugins/immune-brain/runtime/kernel/validation.ts",
     "plugins/immune-brain/runtime/v4_runtime.ts",
     "plugins/immune-brain/runtime/workspace_scope.ts",
     "tests/authority-commit-receipts.test.ts",
@@ -114,6 +115,6 @@
     "tests/v4-storage-retirement-legacy-audit.test.ts"
   ],
   "risk": "critical",
-  "revision": 9,
+  "revision": 10,
   "owner": "user"
 }

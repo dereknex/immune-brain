@@ -77,6 +77,7 @@
       "plugins/immune-brain/runtime/kernel/storage_layout_migration.ts",
       "plugins/immune-brain/runtime/kernel/storage_paths.ts",
       "plugins/immune-brain/runtime/kernel/types.ts",
+      "plugins/immune-brain/runtime/kernel/validation.ts",
       "plugins/immune-brain/runtime/v4_runtime.ts",
       "plugins/immune-brain/runtime/workspace_scope.ts",
       "tests/authority-commit-receipts.test.ts",
@@ -117,15 +118,15 @@
       "tests/v4-storage-retirement-legacy-audit.test.ts"
     ],
     "risk": "critical",
-    "revision": 9,
+    "revision": 10,
     "owner": "user"
   },
   "intent_ref": {
-    "path": "docs/plans/2026-08-26-002-imm-storage-layout-cutover.intent.json",
-    "content_hash": "sha256:ec277bd611b31462e7b6bd30ef5ad965d910543a88d096db82abc0fdfbc9478c"
+    "path": "docs/plans/archive/2026-08-26-002-imm-storage-layout-cutover.intent.json",
+    "content_hash": "sha256:7b9329c610b1fdfea495301b367aefa75d0024642ab062e525fcbffccca1866e"
   },
-  "lifecycle": "active",
-  "artifact_state": "active",
+  "lifecycle": "done",
+  "artifact_state": "frozen",
   "baseline": "sha256:c6db70e543f6e0334b4b115af86af18c551bdcbbb8da4b83958b3424666f6a7e",
   "attestations": [
     {
@@ -505,6 +506,70 @@
           "summary": "host-attested QA: all 6 fixed verification descriptor(s) passed"
         }
       ]
+    },
+    {
+      "id": "approval-qa-696a4e97",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 10,
+      "intent_content_hash": "sha256:7b9329c610b1fdfea495301b367aefa75d0024642ab062e525fcbffccca1866e",
+      "diff_hash": "sha256:81c56a43b6872c390e402aef11fe45b1e29069ed46915377d119ed0df50158c6",
+      "actor_id": "deterministic-qa",
+      "summary": "all 6 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "acc-state-audit-settlement",
+          "status": "passed",
+          "summary": "host-attested QA: all 6 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-automatic-layout-migration",
+          "status": "passed",
+          "summary": "host-attested QA: all 6 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-shared-entrypoint-gate",
+          "status": "passed",
+          "summary": "host-attested QA: all 6 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-historical-audit-is-nonauthoritative",
+          "status": "passed",
+          "summary": "host-attested QA: all 6 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-git-durability-and-retirement",
+          "status": "passed",
+          "summary": "host-attested QA: all 6 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-package-and-reference-sync",
+          "status": "passed",
+          "summary": "host-attested QA: all 6 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-ca709e7f",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 10,
+      "intent_content_hash": "sha256:7b9329c610b1fdfea495301b367aefa75d0024642ab062e525fcbffccca1866e",
+      "diff_hash": "sha256:81c56a43b6872c390e402aef11fe45b1e29069ed46915377d119ed0df50158c6",
+      "actor_id": "native-review-44a72506-de76-48a",
+      "summary": "Immutable provenance is valid; the Spec is archived byte-for-byte, and terminal, stop, cancellation, timeout, interruption, recovery, and race paths preserve fail-closed authority settlement.",
+      "acceptance_results": []
+    },
+    {
+      "id": "approval-user-ec4b7933",
+      "kind": "user",
+      "authority_role": "user",
+      "task_revision": 10,
+      "intent_content_hash": "sha256:7b9329c610b1fdfea495301b367aefa75d0024642ab062e525fcbffccca1866e",
+      "diff_hash": "sha256:81c56a43b6872c390e402aef11fe45b1e29069ed46915377d119ed0df50158c6",
+      "actor_id": "literal-user",
+      "summary": "literal user approval",
+      "acceptance_results": []
     }
   ],
   "findings": [
@@ -745,7 +810,7 @@
     {
       "id": "review-1814077d1851-1-review-1",
       "kind": "blocking",
-      "status": "open",
+      "status": "resolved",
       "acceptance_id": "acc-automatic-layout-migration",
       "source": "review",
       "review_round": 7,
@@ -754,7 +819,7 @@
     {
       "id": "request_rework:2026-08-26-002-imm-storage-layout-cutover:2026-08-26T13:35:46.685Z:replan-required",
       "kind": "replan_required",
-      "status": "open",
+      "status": "resolved",
       "acceptance_id": "acc-automatic-layout-migration",
       "source": "kernel",
       "review_round": 7,
@@ -1347,6 +1412,98 @@
         "issued_at": "2026-08-26T13:35:46.686Z",
         "expires_at": "2026-08-26T13:45:46.686Z"
       }
+    },
+    {
+      "id": "resolve_finding:2026-08-26-002-imm-storage-layout-cutover:2026-08-26T13:38:01.286Z",
+      "at": "2026-08-26T13:38:01.286Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-1814077d1851-1-review-1\naction_v2_sha256:a61a1026e4e5bb2ac0d070448a1b7bd9e88ded13fa6898e1d94f640effd1427b"
+    },
+    {
+      "id": "freeze_artifacts:2026-08-26-002-imm-storage-layout-cutover:2026-08-26T13:38:20.151Z",
+      "at": "2026-08-26T13:38:20.151Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent and Spec frozen at docs/plans/archive/2026-08-26-002-imm-storage-layout-cutover.intent.json"
+    },
+    {
+      "id": "approve_breaking_intent_revision:2026-08-26-002-imm-storage-layout-cutover:2026-08-26T13:38:53.711Z",
+      "at": "2026-08-26T13:38:53.711Z",
+      "type": "approve_breaking_intent_revision",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "intent_revision_10\naction_v2_sha256:aeea5786d7911bb442b9538a0a8afac482ba4eeb27d48573268720105d0558d8",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-68bd6d2af3d5add4",
+        "issued_at": "2026-08-26T13:38:53.842Z",
+        "expires_at": "2026-08-26T13:48:53.842Z"
+      }
+    },
+    {
+      "id": "freeze_artifacts:2026-08-26-002-imm-storage-layout-cutover:2026-08-26T13:38:59.185Z",
+      "at": "2026-08-26T13:38:59.185Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent and Spec frozen at docs/plans/archive/2026-08-26-002-imm-storage-layout-cutover.intent.json"
+    },
+    {
+      "id": "record_approval:2026-08-26-002-imm-storage-layout-cutover:2026-08-26T13:39:12.884Z",
+      "at": "2026-08-26T13:39:12.884Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-696a4e97\naction_v2_sha256:f6517c3993e62ca826703e020ac559b6416d16ba3733f9f886b6094bb4594b23",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-f06480836b0e4ede",
+        "issued_at": "2026-08-26T13:39:12.885Z",
+        "expires_at": "2026-08-26T13:49:12.885Z"
+      }
+    },
+    {
+      "id": "record_approval:2026-08-26-002-imm-storage-layout-cutover:2026-08-26T13:53:27.956Z",
+      "at": "2026-08-26T13:53:27.956Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-ca709e7f\naction_v2_sha256:aa2307b3d8582a42a6aa9d6a71c1908b53beffb3a96bf4544a98354c7c227410",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "native-review-44a72506-de76-48a",
+        "confirmation_ref": "pi-confirm-c3173517ed8be530",
+        "issued_at": "2026-08-26T13:53:27.956Z",
+        "expires_at": "2026-08-26T14:03:27.956Z"
+      }
+    },
+    {
+      "id": "record_user_approval:2026-08-26-002-imm-storage-layout-cutover:2026-08-26T13:53:49.322Z",
+      "at": "2026-08-26T13:53:49.322Z",
+      "type": "record_user_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-user-ec4b7933\naction_v2_sha256:4f45742162930df8b646d20a17f7251f109f444ebc1056025ec62f5e863e7015",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-45b593e1d21a47c4",
+        "issued_at": "2026-08-26T13:53:49.331Z",
+        "expires_at": "2026-08-26T14:03:49.331Z"
+      }
+    },
+    {
+      "id": "complete:2026-08-26-002-imm-storage-layout-cutover:2026-08-26T13:54:09.630Z",
+      "at": "2026-08-26T13:54:09.630Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:4d591c7c848b7e4cecf42f5b59bbb24083006ddd778f60e2a69a4c37d5d6a5e1"
     }
   ]
 }
