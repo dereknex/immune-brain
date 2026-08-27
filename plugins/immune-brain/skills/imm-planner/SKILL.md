@@ -145,9 +145,15 @@ and ask instead of guessing. After resolving it, display one non-blocking line
 with the selected carrier and its source. A configured `github` default is
 standing opt-in for GitHub projection, but the literal user must still confirm
 the named Initiative and its immutable slug before the first remote mutation.
+Surface that name, slug, and the proposed Parent/Child creation together as soon
+as decomposition establishes multiple TaskIntents. Recommend one answer so the
+user may adopt the complete current decision frontier in bulk. A prior bulk
+approval cannot confirm a name or slug that had not yet been shown.
 Resolve `../../bin/imm-tracker` from this Skill location; do not assume a bare
 command is on `PATH`. After the first TaskIntent has been authored, staged, and
-validated with `valid: true` and `enrollment_ready: true`, call
+validated with `valid: true` and `enrollment_ready: true`, and both the named
+Initiative and its immutable slug are confirmed, attempt the GitHub projection
+before returning the final Planner result or invoking Enrollment: call
 `imm-tracker create-initiative --stdin --json` once with the confirmed goal,
 stable Slice summaries, and the public Parent projection fields. `create-initiative`
 receives the stable Initiative goal and Slice summaries plus the
@@ -174,7 +180,14 @@ If `docs/initiatives/<slug>.md` exists, the tracker fails with a
 carrier conflict; Local mode performs zero GitHub operations. A future Slice remains a parent checklist entry until its own TaskIntent is
 canonically authored and validated.
 
-Tracker output is observation, never authority. Report `retryable_failure`,
+Tracker output is observation, never authority. Before the Planner returns, its
+GitHub carrier outcome must be exactly one of: `tracker_associated` after both
+operations return `created`, `updated`, or `already_current`;
+`awaiting_user_initiative_confirmation` with the single pending Initiative
+name-and-slug decision; or `tracker_projection_failed` with the returned failure
+and exact retry action.
+A candidate Initiative name or slug recorded only in the Spec or final summary
+is neither user confirmation nor a completed carrier outcome. Report `retryable_failure`,
 `permanent_failure`, or `ambiguous_remote_state` and the exact retry action, but
 do not block planning, Enrollment, execution, QA, Review, settlement, or another
 association. Do not infer opt-in from tracker output or Issue state,

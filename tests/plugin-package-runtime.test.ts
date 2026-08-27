@@ -413,11 +413,44 @@ describe("plugin package runtime cutover parity", () => {
 		const plannerPacked = readFileSync(join(REPO_ROOT, "plugins/immune-brain/dist/imm-planner.md"), "utf8");
 		const loopSource = readFileSync(join(REPO_ROOT, "plugins/immune-brain/skills/imm-loop/SKILL.md"), "utf8");
 		const loopPacked = readFileSync(join(REPO_ROOT, "plugins/immune-brain/dist/imm-loop.md"), "utf8");
-		for (const contract of [plannerSource, plannerPacked]) {
+		const carrierSection = (contract: string) => {
+			const section = contract.match(
+				/### Initiative Carrier Preference\n\n[\s\S]*?(?=\n### Verification Descriptor Discipline)/,
+			)?.[0];
+			expect(section).toBeDefined();
+			return section!
+				.replace(
+					/Resolve `(?:\.\.\/){1,2}bin\/imm-tracker` from this (?:Skill location|packaged contract)/,
+					"Resolve `<imm-tracker>`",
+				)
+				.replace(/\s+/g, " ")
+				.trim();
+		};
+		const sourceCarrier = carrierSection(plannerSource);
+		const packedCarrier = carrierSection(plannerPacked);
+		expect(packedCarrier).toBe(sourceCarrier);
+		for (const contract of [sourceCarrier, packedCarrier]) {
 			expect(contract).toContain("Initiative carrier default: local");
 			expect(contract).toContain("Initiative carrier default: github");
 			expect(contract).toContain("A repository directive overrides the global directive");
 			expect(contract).toContain("standing opt-in for GitHub projection");
+			expect(contract).toContain(
+				"the literal user must still confirm the named Initiative and its immutable slug before the first remote mutation",
+			);
+			expect(contract).toContain(
+				"A prior bulk approval cannot confirm a name or slug that had not yet been shown",
+			);
+			expect(contract).toContain(
+				"validated with `valid: true` and `enrollment_ready: true`, and both the named Initiative and its immutable slug are confirmed, attempt the GitHub projection before returning the final Planner result or invoking Enrollment",
+			);
+			expect(contract).toContain(
+				"GitHub carrier outcome must be exactly one of: `tracker_associated` after both operations return `created`, `updated`, or `already_current`; `awaiting_user_initiative_confirmation` with the single pending Initiative name-and-slug decision; or `tracker_projection_failed` with the returned failure and exact retry action",
+			);
+			expect(contract).toContain(
+				"A candidate Initiative name or slug recorded only in the Spec or final summary is neither user confirmation nor a completed carrier outcome",
+			);
+			expect(contract).not.toContain("and the slug is confirmed");
+			expect(contract).not.toContain("awaiting_user_slug_confirmation");
 			expect(contract).toContain("ordinary TaskIntents remain tracked by Kernel TaskRecords");
 			expect(contract).toContain("display one non-blocking line");
 			expect(contract).toContain("create-initiative --stdin --json");
