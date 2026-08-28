@@ -89,10 +89,10 @@ export function matchesReservedAgentArgs(
 		.filter(([, value]) => value !== undefined)
 		.map(([key]) => key);
 	// Host serializes Agent input, may omit falsy inherit_context, and resolves
-	// model/thinking execution configuration. model/thinking are host-owned and
-	// not Review authority identity: strip them, then require the exact reserved
-	// field set.
+	// execution metadata. name/model/thinking are host-owned and not Review
+	// authority identity: strip them, then require the exact reserved field set.
 	const normalizedArgs: Record<string, unknown> = { ...(args as Record<string, unknown>) };
+	delete normalizedArgs["name"];
 	delete normalizedArgs["model"];
 	delete normalizedArgs["thinking"];
 	if (!Object.hasOwn(normalizedArgs, "inherit_context") && (params as unknown as Record<string, unknown>)["inherit_context"] === false) {

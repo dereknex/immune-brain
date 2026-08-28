@@ -49,6 +49,8 @@ test("reserved authority args are exact while host-owned execution config is non
 	}
 	expect(matchesReservedAgentArgs({ ...params, extra: true }, params)).toBe(false);
 	expect(matchesReservedAgentArgs({ subagent_type: params.subagent_type }, params)).toBe(false);
+	expect(matchesReservedAgentArgs({ ...params, name: "" }, params)).toBe(true);
+	expect(matchesReservedAgentArgs({ ...params, name: "kernel-review" }, params)).toBe(true);
 	expect(matchesReservedAgentArgs({ ...params, model: "host/review-model" }, params)).toBe(true);
 	expect(matchesReservedAgentArgs({ ...params, thinking: "high" }, params)).toBe(true);
 	expect(matchesReservedAgentArgs({ ...params, model: "host/review-model", thinking: "low" }, params)).toBe(true);
