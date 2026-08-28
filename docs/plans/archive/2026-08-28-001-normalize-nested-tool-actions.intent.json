@@ -1,0 +1,22 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "2026-08-28-001-normalize-nested-tool-actions",
+  "owner": "user",
+  "goal": "Recover exactly the observed JSON-string encoding of top-level action arguments for imm_loop_action and imm_kernel_canary before Pi schema validation while preserving strict schemas, bounded coercion, deterministic tests, and patch release metadata.",
+  "acceptance": [
+    {
+      "id": "A1",
+      "assertion": "Both production Tool registrations use one pre-validation argument normalizer that recovers only a JSON-string action parsing to a non-null, non-array object; native object input remains unchanged, nested strings remain untouched, and invalid JSON, arrays, null, primitives, unknown operations, and invalid nested fields remain rejected by the existing schemas. The same focused contract test proves a patch changeset exists and the temporary source contract references GitHub Issue #14 with its maintainer-owned, two-upgrade-cycle, minimum-30-day removal milestone.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/pi-canary-work-extension.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 65536\n}\n"
+    }
+  ],
+  "scope_hint": [
+    ".changeset/nested-tool-action-normalization.md",
+    "docs/specs/archive/normalize-nested-tool-actions.spec.md",
+    "docs/specs/normalize-nested-tool-actions.spec.md",
+    "plugins/immune-brain/.pi-extension/imm-canary-work.ts",
+    "tests/pi-canary-work-extension.test.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}

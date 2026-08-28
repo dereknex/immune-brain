@@ -407,6 +407,7 @@ export default function (
 				Type.Object({ op: Type.Literal("complete") }),
 			]),
 		}),
+		prepareArguments: prepareActionArgs,
 		execute: async (toolCallId: string, params: { task_id: string; action: { op: string } }, signal: AbortSignal | undefined, onUpdate: ((update: ReturnType<typeof toolResult>) => void) | undefined, ctx: ExtensionContext) => {
 			const { task_id: taskId, action } = params;
 			railContext = ctx;
@@ -643,6 +644,7 @@ export default function (
 				}),
 			]),
 		}),
+		prepareArguments: prepareActionArgs,
 		execute: async (
 			_toolCallId: string,
 			params: { action: LoopToolAction },
@@ -1527,6 +1529,37 @@ function nextActionForAssuranceResult(result: Record<string, unknown>, taskState
 
 function toolResult(text: string, details?: Record<string, unknown>) {
 	return { content: [{ type: "text" as const, text }], details };
+}
+
+/**
+ * Pre-validation compatibility recovery for providers that encode the
+ * object-valued Tool `action` as a JSON string (observed with
+ * `hyper/qwen3.8-flash`: `{ "action": "{\"op\":\"status\"}" }`).
+ *
+ * Only the top-level `action` field is parsed, and only when it parses to a
+ * non-null, non-array object. Native object input, invalid JSON, arrays,
+ * `null`, primitives, and every other shape are returned unchanged so the
+ * strict TypeBox schemas remain the authoritative boundary. Nested string
+ * fields (`context`, `next_intent`, `finding`) are deliberately never
+ * touched; this helper does not validate schemas, mutate inputs, or throw.
+ *
+ * Temporary compatibility layer owned by GitHub Issue #14
+ * (github.com/dereknex/immune-brain/issues/14): remove after two consecutive
+ * Pi or Hyper adapter upgrade cycles pass a live nested-object Tool-call
+ * probe at least 30 days apart.
+ */
+function prepareActionArgs(args: unknown): unknown {
+	if (args === null || typeof args !== "object" || Array.isArray(args)) return args;
+	const input = args as Record<string, unknown>;
+	if (typeof input.action !== "string") return input;
+	try {
+		const parsed: unknown = JSON.parse(input.action);
+		if (parsed !== null && typeof parsed === "object" && !Array.isArray(parsed))
+			return { ...input, action: parsed };
+	} catch {
+		// Unchanged input keeps the normal host schema error authoritative.
+	}
+	return input;
 }
 
 function stagePlanningArtifactTransition(root: string, record: {

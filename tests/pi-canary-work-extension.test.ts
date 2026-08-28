@@ -49,6 +49,7 @@ type Handler = (event: unknown, ctx?: unknown) => unknown;
 interface RegisteredTool {
 	name: string;
 	parameters: { type: string; properties?: Record<string, unknown>; anyOf?: unknown[] };
+	prepareArguments?: (args: unknown) => unknown;
 	execute: (id: string, params: unknown, signal: unknown, onUpdate: unknown, ctx: unknown) => Promise<any>;
 	renderCall?: (args: unknown, theme: any) => { render: (width: number) => string[] };
 	renderResult?: (result: unknown, options: unknown, theme: any) => { render: (width: number) => string[] };
@@ -439,6 +440,50 @@ async function capturedToolFailure(promise: Promise<unknown>): Promise<Record<st
 			packet: { role: "qa", tool_policy: "no tools" },
 			call: { run_in_background: false },
 		});
+	});
+
+	test("prepareArguments recovers only JSON-string non-array object actions and keeps strict schemas", async () => {
+		const { tools } = loadSurface();
+		const loop = tools.find((candidate) => candidate.name === "imm_loop_action")!;
+		const kernel = tools.find((candidate) => candidate.name === "imm_kernel_canary")!;
+		for (const tool of [loop, kernel]) {
+			expect(tool.prepareArguments).toBeDefined();
+			const recover = (action: string) => tool.prepareArguments!({ action });
+			expect(recover(JSON.stringify({ op: "status" }))).toEqual({ action: { op: "status" } });
+			expect(recover(JSON.stringify({ op: "route", target: "step" }))).toEqual({ action: { op: "route", target: "step" } });
+			expect(tool.prepareArguments!({ action: { op: "status" } })).toEqual({ action: { op: "status" } });
+			expect(tool.prepareArguments!({ action: "not-json", extra: 1 })).toEqual({ action: "not-json", extra: 1 });
+			expect(tool.prepareArguments!({ action: "[1,2]" })).toEqual({ action: "[1,2]" });
+			expect(tool.prepareArguments!({ action: "null" })).toEqual({ action: "null" });
+			expect(tool.prepareArguments!({ action: "42" })).toEqual({ action: "42" });
+			expect(tool.prepareArguments!({ action: '"str"' })).toEqual({ action: '"str"' });
+			expect(tool.prepareArguments!({})).toEqual({});
+			expect(tool.prepareArguments!(null)).toBeNull();
+			expect(tool.prepareArguments!("x")).toBe("x");
+			expect(tool.prepareArguments!({ action: { op: "status" }, context: "{\"a\":1}" })).toEqual({
+				action: { op: "status" },
+				context: '{"a":1}',
+			});
+		}
+		// Real schema remains authoritative after preparation for the loop Tool.
+		const loopSchema = loop.parameters as Record<string, any>;
+		expect(loopSchema.properties.action.anyOf.some(
+			(item: Record<string, any>) => item.properties?.op?.const === "route",
+		)).toBe(true);
+	});
+
+	test("patch changeset and cleanup Issue contract reference", () => {
+		const sourcePath = join(process.cwd(), "plugins", "immune-brain", ".pi-extension", "imm-canary-work.ts");
+		const changesetPath = join(process.cwd(), ".changeset", "nested-tool-action-normalization.md");
+		expect(existsSync(sourcePath)).toBe(true);
+		expect(existsSync(changesetPath)).toBe(true);
+		const source = readFileSync(sourcePath, "utf8");
+		const changeset = readFileSync(changesetPath, "utf8");
+		expect(source).toContain("github.com/dereknex/immune-brain/issues/14");
+		expect(source).toContain("two consecutive");
+		expect(source).toContain("30 days");
+		expect(changeset).toContain('"immune-brain": patch');
+		expect(changeset.toLowerCase()).toContain("tool action");
 	});
 
 	test("keeps ordinary host input host-native and preserves explicit Skill entry", { timeout: 15000 }, async () => {

@@ -1,0 +1,112 @@
+{
+  "contract": "assurance_kernel/task_record/v3",
+  "task_id": "2026-08-28-001-normalize-nested-tool-actions",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "2026-08-28-001-normalize-nested-tool-actions",
+    "goal": "Recover exactly the observed JSON-string encoding of top-level action arguments for imm_loop_action and imm_kernel_canary before Pi schema validation while preserving strict schemas, bounded coercion, deterministic tests, and patch release metadata.",
+    "acceptance": [
+      {
+        "id": "A1",
+        "assertion": "Both production Tool registrations use one pre-validation argument normalizer that recovers only a JSON-string action parsing to a non-null, non-array object; native object input remains unchanged, nested strings remain untouched, and invalid JSON, arrays, null, primitives, unknown operations, and invalid nested fields remain rejected by the existing schemas. The same focused contract test proves a patch changeset exists and the temporary source contract references GitHub Issue #14 with its maintainer-owned, two-upgrade-cycle, minimum-30-day removal milestone.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/pi-canary-work-extension.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 65536\n}\n"
+      }
+    ],
+    "scope_hint": [
+      ".changeset/nested-tool-action-normalization.md",
+      "docs/specs/archive/normalize-nested-tool-actions.spec.md",
+      "docs/specs/normalize-nested-tool-actions.spec.md",
+      "plugins/immune-brain/.pi-extension/imm-canary-work.ts",
+      "tests/pi-canary-work-extension.test.ts"
+    ],
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/archive/2026-08-28-001-normalize-nested-tool-actions.intent.json",
+    "content_hash": "sha256:7fe60f4526acec61d832c41203a608e700da95b157a8fdd1a052885d7821d7c2"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:7fe60f4526acec61d832c41203a608e700da95b157a8fdd1a052885d7821d7c2",
+  "attestations": [
+    {
+      "id": "approval-qa-443c77e7",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:7fe60f4526acec61d832c41203a608e700da95b157a8fdd1a052885d7821d7c2",
+      "diff_hash": "sha256:444e88399d794948fb16dc6146e2070418f14952f0580d6251e1012b3955e033",
+      "actor_id": "deterministic-qa",
+      "summary": "all 1 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 1 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-737158c9",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:7fe60f4526acec61d832c41203a608e700da95b157a8fdd1a052885d7821d7c2",
+      "diff_hash": "sha256:444e88399d794948fb16dc6146e2070418f14952f0580d6251e1012b3955e033",
+      "actor_id": "native-review-cfaf71cd-1d9f-46d",
+      "summary": "Verified bundle provenance and confirmed the shared normalizer is applied to both production Tools without weakening schema or execution boundaries.",
+      "acceptance_results": []
+    }
+  ],
+  "findings": [],
+  "history": [
+    {
+      "id": "freeze_artifacts:2026-08-28-001-normalize-nested-tool-actions:2026-08-28T12:31:45.306Z",
+      "at": "2026-08-28T12:31:45.306Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent and Spec frozen at docs/plans/archive/2026-08-28-001-normalize-nested-tool-actions.intent.json"
+    },
+    {
+      "id": "record_approval:2026-08-28-001-normalize-nested-tool-actions:2026-08-28T12:31:56.927Z",
+      "at": "2026-08-28T12:31:56.927Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-443c77e7\naction_v2_sha256:203e54d13aaf2471e5dd3e030485f08b40c030872cd161f204397dac722912e9",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-bf71abb38569ad67",
+        "issued_at": "2026-08-28T12:31:56.928Z",
+        "expires_at": "2026-08-28T12:41:56.928Z"
+      }
+    },
+    {
+      "id": "record_approval:2026-08-28-001-normalize-nested-tool-actions:2026-08-28T12:33:23.736Z",
+      "at": "2026-08-28T12:33:23.736Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-737158c9\naction_v2_sha256:a8d6f381c7cdac07fe2b1bcd16ec7bc9dd312894cf0eae543862f7bbf1ef53ea",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "native-review-cfaf71cd-1d9f-46d",
+        "confirmation_ref": "pi-confirm-ff5dbb037e4dd175",
+        "issued_at": "2026-08-28T12:33:23.736Z",
+        "expires_at": "2026-08-28T12:43:23.736Z"
+      }
+    },
+    {
+      "id": "complete:2026-08-28-001-normalize-nested-tool-actions:2026-08-28T12:33:24.268Z",
+      "at": "2026-08-28T12:33:24.268Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:01085425b9cae903c09f264212a481dfde3b07b1fae2ea7cf427fa2c51222263"
+    }
+  ]
+}
