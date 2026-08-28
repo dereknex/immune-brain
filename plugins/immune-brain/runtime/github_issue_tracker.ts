@@ -8,9 +8,10 @@ const PROTOCOL_MARKER = "<!-- immune-brain-tracker:v1 -->";
 const KIND_INITIATIVE_MARKER = "<!-- immune-brain:kind=initiative -->";
 const KIND_TASK_MARKER = "<!-- immune-brain:kind=task -->";
 const ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
-const MAX_GH_OUTPUT = 1024 * 1024;
+const MAX_GH_OUTPUT = 8 * 1024 * 1024;
 const MAX_DIAGNOSTIC = 512;
 const GH_TIMEOUT_MS = 20_000;
+const MAX_SNAPSHOT_PAGES = 100;
 const GITHUB_ISSUE_BODY_LIMIT = 65_536;
 const MAX_TERMINAL_EVENT_ID = 500;
 
@@ -348,19 +349,33 @@ async function snapshot(root: string, gh: GhTransport, operation: TrackerOperati
 	} catch (error) {
 		return result(operation, "permanent_failure", error instanceof Error ? error.message : String(error));
 	}
-	const issuesExecution = await gh.run([
-		"api",
-		"--paginate",
-		"--slurp",
-		`repos/${repository.name_with_owner}/issues?state=all&per_page=100`,
-	], { cwd: root });
-	if (issuesExecution.exit_code !== 0 || issuesExecution.output_exceeded)
-		return ghFailure(operation, issuesExecution, "cannot query GitHub Issues");
-	try {
-		return { repository, issues: parseIssues(issuesExecution.stdout) };
-	} catch (error) {
-		return result(operation, "permanent_failure", error instanceof Error ? error.message : String(error));
+	// ponytail: paginated fetch avoids single 1MiB slurp blob; 100 issues/page * 8MiB handles 65KB bodies without hitting limit
+	const issues: GithubIssue[] = [];
+	for (let page = 1; page <= MAX_SNAPSHOT_PAGES; page += 1) {
+		const issuesExecution = await gh.run(
+			["api", `repos/${repository.name_with_owner}/issues?state=all&per_page=100&page=${page}`],
+			{ cwd: root },
+		);
+		if (issuesExecution.exit_code !== 0 || issuesExecution.output_exceeded)
+			return ghFailure(operation, issuesExecution, "cannot query GitHub Issues");
+		let raw: unknown;
+		try {
+			raw = JSON.parse(issuesExecution.stdout);
+		} catch (error) {
+			return result(operation, "permanent_failure", error instanceof Error ? error.message : String(error));
+		}
+		if (!Array.isArray(raw)) return result(operation, "permanent_failure", "gh returned malformed Issue list");
+		const pageCount = raw.length;
+		try {
+			issues.push(...parseIssues(issuesExecution.stdout));
+		} catch (error) {
+			return result(operation, "permanent_failure", error instanceof Error ? error.message : String(error));
+		}
+		if (pageCount < 100) break;
+		if (page === MAX_SNAPSHOT_PAGES)
+			return result(operation, "permanent_failure", "too many GitHub Issues to snapshot");
 	}
+	return { repository, issues };
 }
 
 function findIssue(issues: GithubIssue[], primary: string[], required: string[]): IssueLookup {

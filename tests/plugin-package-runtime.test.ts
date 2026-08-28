@@ -242,8 +242,15 @@ class FakeGh implements GhTransport {
 			return ok(JSON.stringify({ id: 4242, full_name: "example/project" }));
 		if (args[0] === "api") {
 			const endpoint = args.at(-1) as string;
-			if (args.includes("--paginate") && endpoint.includes("/issues?state=all"))
-				return ok(JSON.stringify([this.issues]));
+			if (endpoint.includes("/issues?state=all")) {
+				if (args.includes("--paginate") && args.includes("--slurp"))
+					return ok(JSON.stringify([this.issues]));
+				const pageMatch = endpoint.match(/[?&]page=(\d+)/);
+				const page = pageMatch ? Number(pageMatch[1]) : 1;
+				const perPage = 100;
+				const slice = this.issues.slice((page - 1) * perPage, page * perPage);
+				return ok(JSON.stringify(slice));
+			}
 			const dependencyList = endpoint.match(/issues\/(\d+)\/dependencies\/blocked_by/);
 			if (dependencyList && args.includes("--paginate")) {
 				const child = this.issues.find((issue) => issue.number === Number(dependencyList[1]));
