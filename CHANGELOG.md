@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.8.3
+
+### Patch Changes
+
+- [`61ccc29`](https://github.com/dereknex/immune-brain/commit/61ccc29c175edc29af7c485f795c8c33e4be8c1f) Thanks [@dereknex](https://github.com/dereknex)! - fix(tracker): avoid gh output limit exceeded by paginating snapshot and raising MAX_GH_OUTPUT
+
+  - paginate GitHub Issues snapshot (100/page, up to 100 pages) instead of single --paginate --slurp blob
+  - raise MAX_GH_OUTPUT 1MiB -> 8MiB to handle 65KB bodies without per-page overflow
+
 ## 2.2.0
 
 ### Removed
