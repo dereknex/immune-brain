@@ -1,6 +1,7 @@
 // Phase 3 foreground Tool and native Review bridge contract.
 
 import { describe, expect, test } from "bun:test";
+import { Check } from "typebox/value";
 import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync, existsSync, statSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -448,9 +449,6 @@ async function capturedToolFailure(promise: Promise<unknown>): Promise<Record<st
 		const kernel = tools.find((candidate) => candidate.name === "imm_kernel_canary")!;
 		for (const tool of [loop, kernel]) {
 			expect(tool.prepareArguments).toBeDefined();
-			const recover = (action: string) => tool.prepareArguments!({ action });
-			expect(recover(JSON.stringify({ op: "status" }))).toEqual({ action: { op: "status" } });
-			expect(recover(JSON.stringify({ op: "route", target: "step" }))).toEqual({ action: { op: "route", target: "step" } });
 			expect(tool.prepareArguments!({ action: { op: "status" } })).toEqual({ action: { op: "status" } });
 			expect(tool.prepareArguments!({ action: "not-json", extra: 1 })).toEqual({ action: "not-json", extra: 1 });
 			expect(tool.prepareArguments!({ action: "[1,2]" })).toEqual({ action: "[1,2]" });
@@ -465,11 +463,32 @@ async function capturedToolFailure(promise: Promise<unknown>): Promise<Record<st
 				context: '{"a":1}',
 			});
 		}
-		// Real schema remains authoritative after preparation for the loop Tool.
-		const loopSchema = loop.parameters as Record<string, any>;
-		expect(loopSchema.properties.action.anyOf.some(
-			(item: Record<string, any>) => item.properties?.op?.const === "route",
-		)).toBe(true);
+
+		const loopArgs = (action: string) => loop.prepareArguments!({ action });
+		const kernelArgs = (action: string) => kernel.prepareArguments!({ task_id: "task-1", action });
+		const validLoop = loopArgs(JSON.stringify({ op: "route", ownership: "loop", target: "step" }));
+		const validKernel = kernelArgs(JSON.stringify({ op: "status" }));
+		expect(validLoop).toEqual({ action: { op: "route", ownership: "loop", target: "step" } });
+		expect(validKernel).toEqual({ task_id: "task-1", action: { op: "status" } });
+		expect(Check(loop.parameters as any, validLoop)).toBe(true);
+		expect(Check(kernel.parameters as any, validKernel)).toBe(true);
+
+		for (const action of ["not-json", "[1,2]", "null", "42", '"str"']) {
+			expect(Check(loop.parameters as any, loopArgs(action))).toBe(false);
+			expect(Check(kernel.parameters as any, kernelArgs(action))).toBe(false);
+		}
+		expect(Check(loop.parameters as any, loopArgs(JSON.stringify({ op: "unknown" })))).toBe(false);
+		expect(Check(kernel.parameters as any, kernelArgs(JSON.stringify({ op: "unknown" })))).toBe(false);
+		expect(Check(loop.parameters as any, loopArgs(JSON.stringify({
+			op: "route",
+			ownership: "loop",
+			target: "step",
+			context: "nested-string",
+		})))).toBe(false);
+		expect(Check(kernel.parameters as any, kernelArgs(JSON.stringify({
+			op: "record_finding",
+			finding: { id: "f-1", kind: "invalid", acceptance_id: null, summary: "bad kind" },
+		})))).toBe(false);
 	});
 
 	test("patch changeset and cleanup Issue contract reference", () => {
