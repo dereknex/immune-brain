@@ -1,8 +1,19 @@
 {
   "name": "@immune-brain/agent-skills",
   "version": "2.8.1",
-  "private": true,
   "description": "Immune-Brain agent skill system",
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/dereknex/immune-brain.git"
+  },
+  "homepage": "https://github.com/dereknex/immune-brain#readme",
+  "bugs": {
+    "url": "https://github.com/dereknex/immune-brain/issues"
+  },
   "author": "Immune-Brain Team",
   "license": "MIT",
   "keywords": [
@@ -16,7 +27,15 @@
       "./plugins/immune-brain/.pi-extension"
     ]
   },
+   "scripts": {
+    "changeset": "changeset",
+    "changeset:version": "changeset version",
+    "changeset:publish": "changeset publish",
+    "release": "bun run changeset:publish"
+  },
   "devDependencies": {
+    "@changesets/changelog-github": "^0.5.2",
+    "@changesets/cli": "^2.29.8",
     "zod": "^4.1.8"
   },
   "peerDependencies": {

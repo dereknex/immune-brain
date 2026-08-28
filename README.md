@@ -1,102 +1,239 @@
 # Immune-Brain
 
-> 面向 Pi (Coding Agent) 的工程工作流与质量保障引擎。
+> Deterministic workflow & quality engine for [Pi](https://github.com/badlogic/pi) — turn vague ideas into shipped code with planning, execution, QA, and review.
 
-Immune-Brain 为 Pi 提供确定性的任务意图、自动化 QA 验证、隔离式代码审查 (Subagent Code Review) 以及严谨的用户安全授权。通过将任务意图（Git-tracked `TaskIntent`）与执行状态（Worktree-local Kernel `TaskRecord`）解耦持久化，确保工程工作流不依赖对话记忆或 Session ID，实现跨 Session 状态与证据的零丢失。
-
-> **注**：Pi 是唯一支持的 code-agent host。Pi 可通过自身配置使用任意模型 Provider（如 Anthropic、OpenAI、Google 等）。
+**Language:** **English** | [中文](./README.zh-CN.md)
 
 ---
 
-## 💡 核心特性
+## What Is This?
 
-- **跨 Session 状态持久化**：工作流状态统一存于 Kernel/State Ledger，脱离 Pi Session Tree 限制。
-- **确定性任务边界 (`scope_hint`)**：明确隔离任务改动，排除无关 dirty 文件的干扰与撕裂。
-- **确定性后台 QA 验证**：在宿主后台确定性运行测试与脚本，非阻塞 TUI 操作，通过有界 `ctx.ui.notify` 里程碑展示进度。
-- **隔离式 Subagent Review**：冻结 `HEAD -> index` 快照并基于 Git Blob OID 读取，避免工作区状态竞争。
-- **安全优先的用户授权**：关键风险操作（如 Stop、Resolve Decision、特权操作）均需显式 TUI 二次确认。
+Immune-Brain adds a structured engineering workflow on top of Pi:
+
+- **You describe what you want** in natural language — the agent figures out whether to clarify, plan, or execute.
+- **Plans become trackable tasks** (`TaskIntent` + `TaskRecord`) so progress survives across sessions, not just chat history.
+- **Quality is enforced by code, not promises** — automated QA and isolated review must pass before a task is marked done.
+
+Pi remains the only host. It can use any model provider (Anthropic / OpenAI / Google) — Immune-Brain works on top of whichever you configure in Pi.
 
 ---
 
+## Table of Contents
 
-## 🚀 快速上手 (使用工作流)
+- [Installation](#installation)
+- [Quick Start](#quick-start)
+- [How to Use](#how-to-use)
+- [The 5 Skills](#the-5-skills)
+- [Lifecycle](#lifecycle)
+- [Configuration](#configuration)
+- [Project Layout](#project-layout)
+- [FAQ](#faq)
+- [Development](#development)
 
-Immune-Brain 通过自然语言请求启动工作流。对仓库提出修改请求时，Managed Path 会自动判断进入 `imm-brainstorm`、`imm-planner` 或恢复中的 `imm-loop`；只读、解释、评审和明确不修改仓库的请求保持 host-native，不会 Enrollment。
+---
 
-标准生命周期为：
+## Installation
 
-```text
-自然语言请求 ➔ Managed Path 路由 ➔ TaskIntent Enrollment ➔ imm-loop 执行、QA、Review ➔ foreground Tool 授权与收尾
+**Prerequisites:** [Pi](https://github.com/badlogic/pi) installed, Node.js 20+, `bun` for tests.
+
+This repo is a Pi package — Pi discovers Skills and extensions from `package.json`:
+
+```json
+// package.json → pi.skills / pi.extensions
+"pi": {
+  "skills": ["./plugins/immune-brain/skills"],
+  "extensions": ["./plugins/immune-brain/.pi-extension"]
+}
 ```
 
-### 任务开始
-
-直接描述要完成的仓库修改。需求存在实质歧义时先进入 `imm-brainstorm`，目标明确时进入 `imm-planner`。Planner 生成的 TaskIntent 仍需由用户通过 `imm_canary_enrollment` foreground Tool 明确确认；routine、material、critical 风险都要求 literal-user confirmation，并展示完整意图和冻结的 staged digest。
-
-已存在 `TaskIntent` 文件时，继续使用同一个 `imm_canary_enrollment` Tool 进行 rehearsal、必要的 descriptor waiver 和 Enrollment。失败、取消和 host interruption 在 authority commit 前保持零写入。
-
-### 执行与保证
-
-完成代码后，将任务范围内受信任的文件暂存至 Git Index：
+No extra server config is needed. Installing the package via Pi makes all 5 Skills available automatically. Verify with:
 
 ```bash
-git add -- <task-owned-file-1> <task-owned-file-2>
+bun test                          # run all tests
+mise run check-plugin              # verify package structure
+mise run check-dist-sync           # verify generated docs are in sync
 ```
 
-随后 Parent 通过 `imm-loop` 调用 `imm_kernel_canary` foreground Tool：先记录 acceptance evidence，再运行确定性 QA；QA 通过后由保留的 foreground Agent 完成 Review，并把 verdict 提交回 Kernel。Tool 结果始终返回新的 Kernel projection 与 `next_action`，Parent 不依赖隐藏的会话状态，也不轮询后台任务。
+---
 
-当 `next_action` 指向授权时，Parent 再次调用 `imm_kernel_canary` 的 `request_authorization` action。宿主显示 native TUI confirmation；用户取消、超时或 host abort 都保持零 authority writes。任务结束由 Tool 返回 `phase=done` 与 `next_action=none`。
+## Quick Start
+
+**1. Describe the change you want** — just talk to Pi in natural language:
+
+> "Add dark mode to the settings page"
+
+Pi routes it automatically: vague requests go to clarification, clear requests go to planning.
+
+**2. Confirm the plan** — Planner writes a `TaskIntent` (scope, risk, acceptance checks). Review it, then confirm enrollment in the TUI dialog (required for all risk levels). No writes happen before you confirm.
+
+**3. Let it run** — `imm-loop` executes the plan, runs QA, and triggers review. Stage your owned files when prompted:
+
+```bash
+git add -- <file-owned-by-task> <another-file>
+```
+
+QA and review run as foreground tools and report back to the host. When the tool returns `phase=done`, the task is complete.
 
 ---
 
-## 🛠️ 公开操作面
+## How to Use
 
-| 操作 | 责任 |
-| :--- | :--- |
-| 自然语言仓库请求 | 自动进入 Managed Path；无需记忆入口名称或命令 |
-| `imm-brainstorm` | 澄清实质歧义，不执行仓库修改 |
-| `imm-planner` | 创建和修订 TaskIntent，不自动 Enrollment |
-| `imm-loop` | 通过 foreground Tools 协调执行、QA、Review、恢复与收尾 |
-| `imm_canary_enrollment` | TUI-only Enrollment、rehearsal、确认与中断恢复 |
-| `imm_kernel_canary` | 记录 evidence、推进 assurance、提交 Review、请求授权与完成任务 |
+You rarely need to remember skill names — **just describe your intent**:
 
-上述为唯一的用户工作流入口。Enrollment、assurance、authorization 和 successor 状态转换没有 Slash Command fallback 或替代 alias。
+| Your situation | What to say / do | What happens |
+|---|---|---|
+| Idea is fuzzy, needs scoping | "Help me think through a notification system" | → `imm-brainstorm` clarifies questions, no code changes |
+| Goal is clear, needs a plan | "Plan the dark-mode feature" or let Pi route there | → `imm-planner` writes `TaskIntent` + specs in `docs/plans/` |
+| Plan is approved, ready to build | "Start building" / `imm-loop` | → Executor builds, QA verifies, Review checks |
+| PR needs fixes after review | `imm-pr-fix` on that PR | → Standalone repair, no new managed task |
+| Docs are stale after changes | `imm-doc-prune` with manifest | → Prunes only approved stale docs |
 
----
-
-## ⚙️ Agent 偏好
-
-Immune-Brain 不读取独立的本机 TOML 配置。回复语言、bounded advisory subagent 授权与 Planner Initiative carrier 等偏好由 Pi 注入的 `AGENTS.md` 指令提供；当前请求的 literal-user 指令优先。
-
-Pi package 安装负责把 Skills 和 extensions 加入 Pi settings；Immune-Brain runtime 不再需要额外 server 配置。生产 CLI 入口是 `plugins/immune-brain/bin/imm-kernel`，已安装 package 的路径可从 Pi 已加载 Skill 的绝对路径反推。
-
-详细说明请参阅 [`docs/reference/immune-brain-config.md`](docs/reference/immune-brain-config.md)。
+> **Rule:** Managed work (brainstorm → plan → loop) starts only from explicit `imm-brainstorm`, `imm-planner`, or `imm-loop`. Ordinary Q&A or read-only requests stay host-native and never enroll a task.
 
 ---
 
-## 📂 项目包结构 (Package Surface)
+## The 5 Skills
+
+| Skill | Type | When to use | What it does |
+|---|---|---|---|
+| `imm-brainstorm` | Managed entry | Requirements are ambiguous | Frames the problem, surfaces open questions, no code edits |
+| `imm-planner` | Managed entry | Goal is clear | Authors / revises `TaskIntent` and specs; does not enroll or build |
+| `imm-loop` | Managed coordinator | Plan is validated | Drives execution → QA → Review → completion via foreground tools |
+| `imm-pr-fix` | Standalone | CI failed / review comments on a PR | Repairs one PR in place, no managed authority |
+| `imm-doc-prune` | Standalone | Stale current docs | Deletes only the hash-approved manifest entries |
+
+Internal roles (Executor, QA, Review, Compounder) are dispatched by `imm-loop` — you never invoke them directly.
+
+**Recommended default:** let natural-language routing pick brainstorm vs. planner for you. Explicitly invoke a skill only when you want to force that phase.
+
+---
+
+## Lifecycle
+
+```
+You: natural language request
+        │
+        ├─── vague ──→ imm-brainstorm (clarify, no edits)
+        │
+        └─── clear ──→ imm-planner ──→ TaskIntent (Git-tracked)
+                              │
+                         TUI confirm (enrollment)
+                              │
+                          imm-loop
+                              ├── Executor (edits inside scope)
+                              ├── QA (deterministic checks must pass)
+                              ├── Review (material/critical: isolated subagent)
+                              └── done
+```
+
+Key invariants:
+
+- **One active step at a time**, edits only inside that step's boundary.
+- **Scope (`scope_hint`) is frozen at enrollment** — out-of-scope files are ignored.
+- **Evidence before closure** — QA is the only authority that can close a step.
+- **Advisory never implements**, execution never self-approves.
+
+---
+
+## Configuration
+
+Immune-Brain has **no separate config file**. Preferences live in `AGENTS.md` (repo root or `~/.pi/agent/AGENTS.md`):
+
+```md
+## Immune-Brain Preferences
+
+- Initiative carrier default: github   # or: local
+```
+
+| Preference | Options | Default | Notes |
+|---|---|---|---|
+| Reply language | any natural language | repo `AGENTS.md` | Machine contracts / paths stay literal |
+| Initiative carrier | `local` / `github` | `github` | Only matters when a proposal splits across multiple TaskIntents |
+| Advisory subagents | allowed / solo | allowed | Respects Pi host policy + explicit user instruction |
+
+Precedence: **current message > repo `AGENTS.md` > `~/.pi/agent/AGENTS.md` > skill default**.
+
+See [`docs/reference/immune-brain-config.md`](docs/reference/immune-brain-config.md) for details.
+
+---
+
+## Project Layout
 
 ```text
-package.json
+package.json                          # Pi package manifest (skills + extensions)
 plugins/immune-brain/
-├── .pi-extension/   # Pi TUI 交互、Kernel 注册与 Authority 扩展入口
-├── skills/          # Pi 可自动发现的 Skill 入口
-├── dist/            # 打包发布的 Skill 契约与 Reference
-├── runtime/         # Bun + TypeScript 核心运行时与 Kernel 引擎
-└── bin/             # 命令行 CLI Wrapper 工具
+├── .pi-extension/                    # Pi TUI + Kernel authority extension
+├── skills/                           # 5 public Skills (trigger shims)
+├── dist/                             # Built skill contracts & references
+├── runtime/                          # Bun + TypeScript runtime & Kernel
+└── bin/                              # CLI wrappers (→ runtime/v4_runtime.ts)
+
+.imm/                                 # Task state (worktree-local, git-ignored)
+docs/plans/                           # Active TaskIntents (*.intent.json)
+docs/specs/                           # Living specs (updated in place)
 ```
+
+- `.imm/state/` — active work; `.imm/audit/<task-id>/` — settled evidence (tracked).
+- `docs/plans/*.intent.json` must be **Git-tracked** before enrollment.
+- `CONTEXT.md` is vocabulary / navigation only — not a runtime state source.
 
 ---
 
-## 🧪 开发者验证与构建
+## FAQ
 
-如果您正在针对本项目进行开发或维护，可以使用以下命令：
+**Do I need to learn all 5 skills?** No. Just describe what you want — Pi routes to the right skill. Learn `imm-planner` and `imm-loop` first; the other two are occasional.
+
+**What if I interrupt or close Pi mid-task?** State is on disk (`.imm/` + TaskIntent). Re-enter `imm-loop` to resume — the Kernel projection is authoritative.
+
+**Why does enrollment show a TUI dialog?** All risk levels (`routine`/`material`/`critical`) require explicit confirmation. It binds the staged digest so you see exactly what will be tracked.
+
+**QA failed — what now?** QA returns `rework` or `replan_required`. `imm-loop` routes back to the executor or to `imm-planner` for scope changes. No manual reset needed.
+
+**Can I use it outside Pi?** No — Pi is the only supported host.
+
+---
+
+## Release
+
+This repo uses [Changesets](https://github.com/changesets/changesets) for versioning and publishing.
+
+| Task | Command |
+|------|---------|
+| Add a changeset | `bunx changeset` — pick bump (patch/minor/major) and write summary |
+| Bump version | `bun run changeset:version` — updates `package.json` + `CHANGELOG.md` |
+| Publish (local) | `bun run changeset:publish` — publishes to npm (needs `NPM_TOKEN` or `npm login`) |
+
+**Automated flow (recommended):**
+1. Push changesets to `main` → workflow opens a “Version Packages” PR.
+2. Merge that PR → workflow publishes to npm, creates GitHub Release, and tags `immune-brain-vX.Y.Z`.
+
+Setup: add `NPM_TOKEN` (npm access token with publish permission) to GitHub repo secrets. Workflow is `.github/workflows/release.yml` using `changesets/action@v1`.
+
+**Initial publish (2.8.1):**
+```bash
+npm publish --access public   # one-time, requires npm login / NPM_TOKEN
+# or
+bun run changeset:publish
+```
+The package is scoped `@immune-brain/agent-skills` — `publishConfig.access=public` is already set. After initial publish, all future releases go through changesets.
+
+See `CHANGELOG.md` and `.changeset/config.json` (changelog: `@changesets/changelog-github`, repo: `dereknex/immune-brain`).
+
+---
+
+## Development
+
+For contributors working on Immune-Brain itself:
 
 ```bash
-bun test                    # 运行全量单元测试与集成测试
-mise run check-plugin       # 验证插件结构与版本一致性
-mise run check-dist-sync    # 校验同步生成的分发文档
+bun test                    # full test suite (canonical check is bun test, not tsc)
+mise run check-plugin       # plugin structure + version
+mise run check-dist-sync    # generated dist docs sync
 ```
 
+- Runtime is `runtime/v4_runtime.ts` (Bun + TypeScript). Python under `scripts/` is reference-only.
+- Production CLI: `plugins/immune-brain/bin/imm-kernel` — see [`plugins/immune-brain/README.md`](plugins/immune-brain/README.md) for the full command table.
+
 ---
-*注：Immune-Brain 生产路径使用 `runtime/v4_runtime.ts` 的 Bun + TypeScript 运行时，不依赖 Python；仓库中的 Python 材料仅作为 reference-only 历史参考。*
+
+*License: MIT*
