@@ -94,6 +94,10 @@ _Avoid_: log message, review comment
 The host-neutral read-only view that combines claim, TaskRecord, workspace, freshness, findings, completion facts, and the next Kernel obligation. Hosts consume it instead of reconstructing authority state.
 _Avoid_: UI status, cached workflow state
 
+**Inspect Projection**:
+The host-neutral read-only CLI view from `imm-kernel inspect --json`. It copies current layout, claim, workspace, Assurance Projection, and risk-floor facts and labels process-local Capability, rehearsal, and CAS holder state as unobservable. It is not authority.
+_Avoid_: progress projection, second TaskRecord, live Capability dump
+
 **Obligation**:
 The single next Kernel-required action projected from current facts, such as submit assurance, run QA, run Review, authorize the user, resolve findings, revise intent, or complete.
 _Avoid_: recommendation, workflow phase
@@ -168,6 +172,7 @@ _Avoid_: current acceptance field, QA attestation
 - A TaskIntent owns acceptance, scope, risk, and revision; a TaskRecord owns lifecycle, artifact state, attestations, findings, and history.
 - Freezing artifacts changes `artifact_state` from `active` to `frozen`; it does not change the Task lifecycle or release ownership.
 - The Assurance Projection derives one next Obligation from Kernel facts.
+- The Inspect Projection reads those same facts for authors; it never becomes a second authority.
 - QA executes every Acceptance Descriptor and records one atomic QA Attestation.
 - Risk determines further authority: `routine` stops at QA, `material` adds Review, and `critical` adds final user authority.
 - Settlement changes lifecycle to `done` or `stopped`, clears active ownership, and creates terminal proof.

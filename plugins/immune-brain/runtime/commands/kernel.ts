@@ -15,6 +15,8 @@ import {
 	KernelStoreSecurityError,
 	appendJournalEntry,
 	readSecureProjectFile,
+	readTaskRecordRaw,
+	readWorkspaceStateRaw,
 	type JournalEntry,
 	type JournalReasonCode,
 	type TaskPhase,
@@ -23,7 +25,12 @@ import {
 	INTENT_MAX_BYTES,
 	canonicalIntentHash,
 	parseTaskIntentV1,
+	RISK_FLOOR_SCOPE_PREFIXES,
 } from "../kernel/intent";
+import { projectTask } from "../kernel/completion";
+import { deriveAssuranceAuthorization } from "../kernel/assurance_projection";
+import { taskDiffHash } from "../workspace_scope";
+import type { TaskIntentV1, TaskRisk } from "../kernel/types";
 import {
 	canonicalDescriptorBytes,
 	parseVerificationDescriptor,
@@ -149,6 +156,197 @@ function runStatus(root: string): KernelExecution {
 		};
 	} catch (error) {
 		return sourceFailure("status", error);
+	}
+}
+
+const UNOBSERVABLE = {
+	capability: "unobservable",
+	rehearsal: "unobservable",
+	cas_holder: "unobservable",
+} as const;
+
+const RISK_ORDER: Record<TaskRisk, number> = {
+	routine: 0,
+	material: 1,
+	critical: 2,
+};
+
+function matchingFloorEntries(intent: TaskIntentV1): string[] {
+	return intent.scope_hint.filter((entry) => {
+		try {
+			const trial = parseTaskIntentV1({
+				contract: intent.contract,
+				task_id: intent.task_id,
+				goal: intent.goal,
+				acceptance: intent.acceptance,
+				scope_hint: [entry],
+				risk: "routine",
+				revision: intent.revision,
+				owner: "user",
+			});
+			return trial.risk !== "routine";
+		} catch {
+			return false;
+		}
+	});
+}
+
+function readWorkspaceOwner(root: string): string | null {
+	try {
+		const raw = JSON.parse(readSecureProjectFile(root, ".imm/state/workspace.json")) as {
+			current_working?: unknown;
+		};
+		return typeof raw.current_working === "string" ? raw.current_working : null;
+	} catch {
+		return null;
+	}
+}
+
+/**
+ * `inspect --json` is a read-only Inspect Projection. It never journals,
+ * never takes a Kernel store lock, and never becomes authority.
+ */
+function runInspect(root: string): KernelExecution {
+	try {
+		const layout = inspectStorageLayout(root);
+		const claim = readBackendClaim(root);
+		const workspace = readWorkspaceOwner(root);
+		const kernel = {
+			claim: claim
+				? {
+						task_id: claim.task_id,
+						lifecycle_status: claim.lifecycle_status,
+					}
+				: null,
+			workspace: { current_working: workspace },
+		};
+		const idleRisk = {
+			declared: null as TaskRisk | null,
+			resolved: null as TaskRisk | null,
+			floor_prefixes: [...RISK_FLOOR_SCOPE_PREFIXES],
+			floor_applied: false,
+			matching_scope_entries: [] as string[],
+		};
+		const ok = layout.layout === "ready" || layout.layout === "migration_uncommitted";
+		if (!claim || !ok || layout.layout !== "ready") {
+			return {
+				result: jsonResult({
+					contract: "assurance_kernel/inspect/v1",
+					layout,
+					kernel,
+					assurance: null,
+					risk: idleRisk,
+					unobservable: UNOBSERVABLE,
+				}),
+				journal: journalFor(
+					"inspect",
+					null,
+					ok ? "ok" : "escalated",
+					layout.layout === "ready" ? "command_ok" : "source_invalid",
+					null,
+					layout.reason,
+				),
+			};
+		}
+		let declared: TaskRisk;
+		let intent: TaskIntentV1;
+		try {
+			const raw = JSON.parse(
+				readSecureProjectFile(root, `docs/plans/${claim.task_id}.intent.json`),
+			) as { risk?: unknown };
+			if (raw.risk !== "routine" && raw.risk !== "material" && raw.risk !== "critical")
+				throw new Error(`intent.risk is unreadable for ${claim.task_id}`);
+			declared = raw.risk;
+			intent = parseTaskIntentV1(raw);
+		} catch (error) {
+			return sourceFailure("inspect", error);
+		}
+		let recordRead: ReturnType<typeof readTaskRecordRaw>;
+		try {
+			recordRead = readTaskRecordRaw(root, claim.task_id);
+		} catch (error) {
+			return sourceFailure("inspect", error);
+		}
+		if (!recordRead.record) {
+			return {
+				result: errorResult(
+					"source_read_failed",
+					`task ${claim.task_id} has no TaskRecord`,
+					1,
+				),
+				journal: journalFor(
+					"inspect",
+					null,
+					"rejected",
+					"source_read_failed",
+					claim.task_id,
+					"Resolve the claimed TaskRecord before retrying inspect.",
+				),
+			};
+		}
+		const record = recordRead.record;
+		const workspaceState = readWorkspaceStateRaw(root);
+		let diffHash = `sha256:${"0".repeat(64)}`;
+		try {
+			diffHash = taskDiffHash(root, intent.scope_hint);
+		} catch {
+			// Keep a stable placeholder when Git is absent; record/intent remain the fail-closed sources.
+		}
+		const decision = projectTask(intent, record, diffHash, record.intent_ref.content_hash);
+		const openUserDecisionCount = record.findings.filter(
+			(finding) => finding.kind === "unresolved_user_decision" && finding.status === "open",
+		).length;
+		const resolved = intent.risk;
+		return {
+			result: jsonResult({
+				contract: "assurance_kernel/inspect/v1",
+				layout,
+				kernel,
+				assurance: {
+					contract: "assurance_kernel/assurance_projection/v1",
+					task_id: claim.task_id,
+					error: null,
+					claim: kernel.claim,
+					projection: {
+						record_revision: recordRead.revision,
+						workspace_revision: workspaceState.revision,
+						intent_revision: intent.revision,
+						intent_content_hash: record.intent_ref.content_hash,
+						diff_hash: diffHash,
+						lifecycle: record.lifecycle,
+						artifact_state: record.artifact_state,
+						risk: intent.risk,
+						next_obligation: decision.next_obligation,
+						fresh_acceptance_ids: decision.fresh_acceptance_ids,
+						missing_acceptance_ids: decision.missing_acceptance_ids,
+						stale_attestation_ids: decision.stale_attestation_ids,
+						fresh_approval_kinds: [],
+						missing_approval_kinds: decision.missing_approval_kinds,
+						blocking_finding_ids: decision.blocking_finding_ids,
+						unresolved_user_decision_ids: decision.unresolved_user_decision_ids,
+						replan_required_ids: decision.replan_required_ids,
+						independence_violations: decision.independence_violations,
+						open_user_decision_count: openUserDecisionCount,
+						completion_ready: decision.complete,
+						authorization: deriveAssuranceAuthorization({
+							next_obligation: decision.next_obligation,
+							open_user_decision_count: openUserDecisionCount,
+						}),
+					},
+				},
+				risk: {
+					declared,
+					resolved,
+					floor_prefixes: [...RISK_FLOOR_SCOPE_PREFIXES],
+					floor_applied: RISK_ORDER[resolved] > RISK_ORDER[declared],
+					matching_scope_entries: matchingFloorEntries(intent),
+				},
+				unobservable: UNOBSERVABLE,
+			}),
+			journal: journalFor("inspect", null, "ok", "command_ok", claim.task_id, null),
+		};
+	} catch (error) {
+		return sourceFailure("inspect", error);
 	}
 }
 
@@ -1024,6 +1222,21 @@ function executeKernelCommand(args: string[], root: string): KernelExecution {
 			};
 		return runStatus(root);
 	}
+	if (command === "inspect") {
+		if (flags.length !== 1 || flags[0] !== "--json")
+			return {
+				result: errorResult("invalid_command", "inspect accepts only --json", 2),
+				journal: journalFor(
+					command,
+					null,
+					"rejected",
+					"invalid_command",
+					null,
+					"Run imm-kernel inspect --json.",
+				),
+			};
+		return runInspect(root);
+	}
 	if (command === "audit") {
 		if (args.length !== 2 || args[1] !== "--legacy")
 			return {
@@ -1097,7 +1310,7 @@ function executeKernelCommand(args: string[], root: string): KernelExecution {
 		return {
 			result: {
 				stdout:
-					"usage: imm-kernel status --json\n       imm-kernel audit --legacy\n       imm-kernel intent author <path> --stdin --json\n       imm-kernel intent validate <path> --json\n",
+					"usage: imm-kernel status --json\n       imm-kernel inspect --json\n       imm-kernel audit --legacy\n       imm-kernel intent author <path> --stdin --json\n       imm-kernel intent validate <path> --json\n",
 				stderr: "",
 				returncode: 0,
 			},
@@ -1106,7 +1319,7 @@ function executeKernelCommand(args: string[], root: string): KernelExecution {
 	return {
 		result: errorResult(
 			"invalid_command",
-			"usage: imm-kernel status --json | audit --legacy | intent author <path> --stdin --json | intent validate <path> --json",
+			"usage: imm-kernel status --json | inspect --json | audit --legacy | intent author <path> --stdin --json | intent validate <path> --json",
 
 			2,
 		),
@@ -1130,7 +1343,7 @@ export function runKernelCommand(
 	// subcommands (migrate/readiness/journal) are no-journal: they never
 	// append the friction journal. Only the fallback unknown-command path
 	// keeps journaling.
-	if (["intent", "status", "audit", "migrate", "readiness", "journal"].includes(args[0] ?? ""))
+	if (["intent", "status", "inspect", "audit", "migrate", "readiness", "journal"].includes(args[0] ?? ""))
 		return execution.result;
 	let warning = "";
 	try {

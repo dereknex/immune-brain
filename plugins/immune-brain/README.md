@@ -98,14 +98,15 @@ follow-up that alters the signature reopens the gate.
 
 `bin/*` wrappers shell into the v4-only CLI entrypoint
 `runtime/v4_runtime.ts` via Bun. The v4 runtime keeps the Kernel
-`imm-kernel` surface (intent author/validate, status, explicit legacy audit)
+`imm-kernel` surface (intent author/validate, status, inspect, explicit legacy audit)
 and read-only legacy validation, and rejects every v3 mutating command with a
 stable `drain_required` / `v3_storage_retired` diagnostic. Common entry points:
 
 | Command | Purpose |
 | --------- | --------- |
 | `bin/imm-kernel intent author/validate` | Author or validate host-neutral TaskIntent drafts (sole new-managed-work surface). |
-| `bin/imm-kernel status --json` | Read-only legacy shadow status. |
+| `bin/imm-kernel status --json` | Read-only layout and claim status. |
+| `bin/imm-kernel inspect --json` | Read-only Inspect Projection of current Kernel facts. |
 | `bin/imm-kernel audit --legacy` | Explicit read-only legacy audit projection. |
 | `bin/imm-plan <plan> [--json]` | Read-only legacy validation (mutation `--sync` is retired). |
 | `bin/imm-work` | Retired after v4 storage retirement; returns `drain_required`/`v3_storage_retired`. |

@@ -5,6 +5,7 @@
  * retirement. It exposes:
  *   - `imm-kernel` intent author/validate (host-neutral TaskIntent drafts)
  *   - `imm-kernel status --json` (read-only v3 legacy shadow status)
+ *   - `imm-kernel inspect --json` (read-only Inspect Projection)
  *   - `imm-kernel audit --legacy` (explicit read-only legacy audit)
  *   - `imm-plan --routing-status --json` (strict Git-owned route projection)
  *   - `imm-plan <plan-path> [--json]` (read-only Plan validation)
@@ -183,6 +184,7 @@ async function runKernelCli(args: string[], root: string): Promise<{
 	const sub = args[0] ?? "";
 	if (sub === "intent") return runKernelCommand(args, root);
 	if (sub === "status" && args.includes("--json")) return runKernelCommand(args, root);
+	if (sub === "inspect" && args.includes("--json")) return runKernelCommand(args, root);
 	if (sub === "audit") {
 		// Explicit read-only legacy audit: bounded, no symlink, deterministic
 		// redacted projection. Never writes journal or workflow state.
@@ -204,7 +206,7 @@ async function runKernelCli(args: string[], root: string): Promise<{
 	}
 	return {
 		stdout: "",
-		stderr: "invalid_kernel_command: imm-kernel supports intent author|validate, status --json, and audit --legacy only\n",
+		stderr: "invalid_kernel_command: imm-kernel supports intent author|validate, status --json, inspect --json, and audit --legacy only\n",
 		returncode: 2,
 	};
 }
@@ -236,12 +238,13 @@ async function main(argv: string[]): Promise<number> {
 						{
 							name: "imm-kernel",
 							description:
-								"v4-only Kernel surface: intent author/validate, status, and explicit legacy audit.",
+								"v4-only Kernel surface: intent author/validate, status, inspect, and explicit legacy audit.",
 							json_output: true,
 							examples: [
 								"imm-kernel intent author docs/plans/<task-id>.intent.json --stdin --json",
 								"imm-kernel intent validate docs/plans/<task-id>.intent.json --json",
 								"imm-kernel status --json",
+								"imm-kernel inspect --json",
 								"imm-kernel audit --legacy",
 							],
 						},
