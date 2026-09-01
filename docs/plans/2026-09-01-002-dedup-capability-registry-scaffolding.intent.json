@@ -1,7 +1,6 @@
 {
   "contract": "assurance_kernel/task_intent/v1",
   "task_id": "2026-09-01-002-dedup-capability-registry-scaffolding",
-  "owner": "user",
   "goal": "Extract the duplicated opaque capability registry scaffolding from enrollment_authority.ts and authority_port.ts into one internal generic capability-registry factory while preserving both public constructor type shapes, domain-specific binding validation, registry-local branding, and single-use behavior, and reducing the combined adapter line count below 331 lines.",
   "acceptance": [
     {
@@ -26,11 +25,14 @@
     }
   ],
   "scope_hint": [
+    "docs/specs/archive/dedup-capability-registry-scaffolding.spec.md",
+    "docs/specs/dedup-capability-registry-scaffolding.spec.md",
     "plugins/immune-brain/runtime/kernel/authority_port.ts",
     "plugins/immune-brain/runtime/kernel/capability_registry.ts",
     "plugins/immune-brain/runtime/kernel/enrollment_authority.ts",
     "tests/kernel-capability-registry-contract.test.ts"
   ],
   "risk": "material",
-  "revision": 1
+  "revision": 1,
+  "owner": "user"
 }
