@@ -17,8 +17,7 @@ a reusable Learning; routine work without that evidence returns `next: none`
 and creates no Learning. Do not discover or load a Pi Skill for these roles. The Managed Path public entries remain `imm-brainstorm`, `imm-planner`, and `imm-loop`; standalone `imm-pr-fix` and `imm-doc-prune` are host-native and are never dispatched as the Loop role.
 Subagent Dispatch Protocol](../../dist/docs/reference/subagent-dispatch-protocol.md#authorization-authority).
 All internal Agent dispatch envelopes use `run_in_background: false` and
-return `tool_call`, `tool_result`, and `tool_execution_end` evidence to the
-Parent before any workflow mutation.
+return a direct result to the Parent before any workflow mutation.
 
 At `terminal_plan_complete`, stop with no next skill, authority, or action. At `awaiting_user_successor_decision`, stop with `recommended_authority: user`. This boundary follows the explicit internal Compounder handoff and runtime terminal settlement; it must not dispatch Planner, Compounder, transition, or a new Pi session/subagent. Only a literal user may approve a successor through the native authority gate; the internal runtime token is `--approve-successor`, never a public Skill or user-facing entry.
 
@@ -39,8 +38,8 @@ asking the user for chat pre-confirmation; the native host interaction is the
 single authority decision. Do not invoke the removed `imm-canary-work` Skill as
 a separate entry point. Invalid or contradictory projections fail closed. After
 implementation and focused verification, freeze the artifacts and call
-`advance_assurance`. If it returns `review_ready`, invoke the exact reserved
-foreground Agent and call `submit_review`; `request_authorization` remains the
+`advance_assurance`. If it returns `review_ready`, invoke the foreground
+reviewer and pass its structured verdict to `submit_review`; `request_authorization` remains the
 critical-risk user authorization boundary. Every QA/Review operation stays
 foreground and returns its next projected obligation directly to the Parent. The host performs any opted-in GitHub Issue projection only after the
 corresponding authority mutation: only a fresh claimless `done`/`stopped`

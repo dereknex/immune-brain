@@ -354,7 +354,7 @@ export default function (
 		if (ctx.mode !== "tui") return;
 		await refreshTaskRail(ctx);
 	});
-	pi.on("tool_call", (event: { toolName?: string; input?: unknown; toolCallId?: string }, ctx?: ExtensionContext) => {
+	pi.on("tool_call", (event: { toolName?: string; input?: unknown }, ctx?: ExtensionContext) => {
 		if (ctx) railContext = ctx;
 		if (event.toolName === "imm_canary_enrollment" && ctx) {
 			const input = event.input as { task_id?: string } | undefined;
@@ -365,7 +365,6 @@ export default function (
 				next: "Review the native enrollment decision",
 			});
 		}
-		return progression.observeToolCall(event);
 	});
 	pi.on("tool_result", (event: unknown, ctx?: ExtensionContext) => {
 		if (ctx) railContext = ctx;
@@ -374,10 +373,6 @@ export default function (
 			const taskId = typeof result.details?.task_id === "string" ? result.details.task_id : undefined;
 			if (taskId) presentTaskRailResult(ctx, taskId, result.details);
 		}
-		progression.observeToolResult(event as Parameters<AssuranceProgression["observeToolResult"]>[0]);
-	});
-	pi.on("tool_execution_end", (event: unknown) => {
-		progression.observeToolEnd(event as Parameters<AssuranceProgression["observeToolEnd"]>[0]);
 	});
 	pi.on("session_shutdown", async (_event: unknown, ctx?: ExtensionContext) => {
 		resetInteractionPresentation(ctx ?? railContext);
@@ -390,11 +385,11 @@ export default function (
 		label: "Kernel canary assurance and executor operations",
 		description:
 			"Advance observable QA/Review orchestration, record executor facts, or request host confirmation for one enrolled Kernel canary task.",
-		promptSnippet: "Kernel canary: record facts, run foreground QA, then submit one native Review receipt without polling.",
+		promptSnippet: "Kernel canary: record facts, run foreground QA, then submit one structured Review verdict without polling.",
 		promptGuidelines: [
 			"Only the exact enrolled canary task is routable; verify the active backend claim first via status.",
 			"After implementation and focused verification, freeze the artifacts, call advance_assurance, and consume its direct terminal result; do not poll or create a detached job.",
-			"When advance_assurance returns review_ready, invoke the exact foreground Agent parameters from agent_params once, then call submit_review.",
+			"When advance_assurance returns review_ready, invoke the foreground Agent from agent_params once, then pass its structured verdict to submit_review.",
 			"For a complete breaking revision, call approve_breaking_intent_revision with the complete next_intent directly; do not ask for chat pre-confirmation because the host opens the single native confirmation before applying it.",
 			"For a proven stale authority claim, call repair_authority_state directly; do not ask for chat pre-confirmation because the host opens the single native confirmation.",
 			"After awaiting_user, call request_authorization directly so the host opens the single native confirmation; do not ask for chat pre-confirmation or ask the user to copy or report a command.",
@@ -404,7 +399,7 @@ export default function (
 			action: Type.Union([
 				Type.Object({ op: Type.Literal("status") }),
 				Type.Object({ op: Type.Literal("advance_assurance") }),
-				Type.Object({ op: Type.Literal("submit_review") }),
+				Type.Object({ op: Type.Literal("submit_review"), verdict: Type.Unknown() }),
 				Type.Object({ op: Type.Literal("request_authorization") }),
 				Type.Object({ op: Type.Literal("repair_authority_state") }),
 				Type.Object({ op: Type.Literal("freeze_artifacts") }),
@@ -430,7 +425,7 @@ export default function (
 			]),
 		}),
 		prepareArguments: prepareActionArgs,
-		execute: async (toolCallId: string, params: { task_id: string; action: { op: string } }, signal: AbortSignal | undefined, onUpdate: ((update: ReturnType<typeof toolResult>) => void) | undefined, ctx: ExtensionContext) => {
+		execute: async (toolCallId: string, params: { task_id: string; action: { op: string; verdict?: unknown } }, signal: AbortSignal | undefined, onUpdate: ((update: ReturnType<typeof toolResult>) => void) | undefined, ctx: ExtensionContext) => {
 			const { task_id: taskId, action } = params;
 			railContext = ctx;
 			presentTaskRailResult(ctx, taskId, {
@@ -547,7 +542,7 @@ export default function (
 						presentTaskRailResult(ctx, taskId, update.details as Record<string, unknown> | undefined);
 					})
 					: action.op === "submit_review"
-						? await progression.submitReview(taskId, ctx)
+						? await progression.submitReview(taskId, ctx, action.verdict)
 						: action.op === "approve_breaking_intent_revision"
 							? await authorizeExactOperation(
 								taskId,
@@ -1703,7 +1698,7 @@ function nextActionForAssuranceResult(result: Record<string, unknown>, taskState
 	if (result.state === "review_preparation_failed") return "retry advance_assurance";
 	if (taskState.lifecycle === "done" || taskState.lifecycle === "stopped") return "none";
 	switch (result.state) {
-		case "review_ready": return "invoke the reserved foreground Agent";
+		case "review_ready": return "invoke the foreground reviewer and submit its verdict";
 		case "awaiting_user": return "request_authorization";
 		case "applied": return taskState.completion_ready ? "complete task" : taskState.next_obligation;
 		case "completed":

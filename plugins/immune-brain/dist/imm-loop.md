@@ -19,8 +19,8 @@ Dispatch authorization follows the [shared Subagent Dispatch
 Protocol](docs/reference/subagent-dispatch-protocol.md#authorization-authority).
 Same-boundary `follow_up` is not a Plan mutation; it repeats the current
 execution, QA, and originating review gate. All internal Agent dispatch
-envelopes use `run_in_background: false` and return `tool_call`, `tool_result`,
-and `tool_execution_end` evidence to the Parent before any workflow mutation.
+envelopes use `run_in_background: false` and return a direct result to the Parent
+before any workflow mutation.
 
 ## Workflow Profiles
 
@@ -52,7 +52,7 @@ Repeat this sequence; do not silently stop while a valid action remains:
 1. Call `imm_loop_action` with `op: route` (or `dispatch_role` at a QA/review boundary) and follow the projected `next` authority.
 2. Emit one progress line: `[target][phase] result | next: action`.
 3. Execute exactly one allowed action:
-   - Kernel ownership: call `imm_kernel_canary` for that owned task. Freeze the completed artifacts, then call `advance_assurance`; when it returns `review_ready`, invoke the exact reserved foreground Agent and call `submit_review`. When the projection calls for `request_authorization`, `approve_breaking_intent_revision`, or `repair_authority_state`, invoke the exact Tool operation directly without asking the user for chat pre-confirmation. The native host interaction is the single authority decision.
+   - Kernel ownership: call `imm_kernel_canary` for that owned task. Freeze the completed artifacts, then call `advance_assurance`; when it returns `review_ready`, invoke the foreground reviewer and pass its structured verdict to `submit_review`. When the projection calls for `request_authorization`, `approve_breaking_intent_revision`, or `repair_authority_state`, invoke the exact Tool operation directly without asking the user for chat pre-confirmation. The native host interaction is the single authority decision.
    - Active Step / `rework_needed`: follow the returned `executor` context in the current conversation, implement only the active Step or pending same-boundary `follow_up`, verify, record structured execution evidence through the Loop runtime action, and continue. A bounded test-only repair may request internal `test-fixer` with `focus_delta.specific_changes`; PR review or CI repair may request internal `pr-fix` with the current `plan_id`, changed-file boundary, and verification. Both return child evidence to the Parent and cannot widen scope.
    - `awaiting_qa_decision`: call `imm_loop_action` with `op: dispatch_role`, role `qa`, the current projection, Plan verification, recorded evidence, and current target identity. Invoke the returned foreground Agent envelope exactly. A `rework` or `replan` must carry validated `notes`.
    - `review_required`: map the exact `pending_review_gate` (`imm-code-review` or `imm-ui-review`) to the internal `code-review` or `ui-review` role and call `imm_loop_action` with `op: dispatch_role`, passing `pending_review_gate`, `review_changed_files`, and `review_changed_files_signature`. Invoke the returned foreground Agent envelope exactly. Record a validated pass, or open a same-boundary follow-up through the Loop runtime action.
@@ -150,9 +150,8 @@ single authority decision. This action is not a public Skill or CLI route. Do
 not invoke the removed `imm-canary-work` Skill as a separate entry point.
 Invalid or contradictory projections fail closed. After implementation and focused verification, freeze the artifacts and call
 `imm_kernel_canary` `advance_assurance`. If it returns `review_ready`, invoke
-the exact reserved foreground Agent and call `submit_review`;
-`request_authorization` remains the user authorization boundary. Visible
-background state and push follow-up replace manual QA/Review sequencing and
-result polling. A terminal task leaves only an immutable task tombstone: it is
+the foreground reviewer and pass its structured verdict to `submit_review`;
+`request_authorization` remains the user authorization boundary. Foreground
+results replace background continuation and result polling. A terminal task leaves only an immutable task tombstone: it is
 never reactivated and never blocks unrelated v3 routing. The Kernel projection
 is advisory; every Kernel mutation re-enters Kernel store-lock validation.

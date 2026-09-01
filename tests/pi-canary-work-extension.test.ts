@@ -688,6 +688,11 @@ async function capturedToolFailure(promise: Promise<unknown>): Promise<Record<st
 		expect(kinds).toContain("repair_authority_state");
 		expect(kinds).toContain("freeze_artifacts");
 		expect(kinds).not.toContain("cancel_assurance");
+		const submitReview = schema.properties.action.anyOf.find(
+			(item: Record<string, any>) => item.properties?.op?.const === "submit_review",
+		);
+		expect(Object.keys(submitReview.properties)).toEqual(["op", "verdict"]);
+		expect(submitReview.required).toContain("verdict");
 		const requestAuthorization = schema.properties.action.anyOf.find(
 			(item: Record<string, any>) => item.properties?.op?.const === "request_authorization",
 		);
@@ -765,7 +770,7 @@ async function capturedToolFailure(promise: Promise<unknown>): Promise<Record<st
 		const result = await tool.execute("advance", { task_id: TASK, action: { op: "advance_assurance" } }, undefined, (update: unknown) => updates.push(update), makeCtx(root, makeUI()));
 		const parsed = JSON.parse(result.content[0].text);
 		expect(parsed.state).toBe("review_ready");
-		expect(parsed.next_action).toBe("invoke the reserved foreground Agent");
+		expect(parsed.next_action).toBe("invoke the foreground reviewer and submit its verdict");
 		expect(parsed.task_state).toMatchObject({ lifecycle: "active", artifact_state: "frozen", record_revision: expect.any(String) });
 		expect(parsed.agent_params.run_in_background).toBe(false);
 		expect(updates.some((item) => JSON.stringify(item).includes("verifying"))).toBe(true);
@@ -844,11 +849,11 @@ async function capturedToolFailure(promise: Promise<unknown>): Promise<Record<st
 		} finally { rmSync(root, { recursive: true, force: true }); }
 	});
 
-	test("foreground Agent result is host-attested and material Review auto-completes", { timeout: 15000 }, async () => {
+	test("Parent-submitted Review verdict material Review auto-completes", { timeout: 15000 }, async () => {
 		const root = makeEnrolledRoot();
 		try {
 			let latestReviewSnapshot!: SnapshotDescriptor;
-			const { tools, events } = loadSurface({
+			const { tools } = loadSurface({
 				buildAssurance: async (rootPath: string, _task: string, role: "qa" | "review", current: { projection?: Record<string, any> }) => {
 					const built = { snapshot: minimalSnapshot(role, rootPath, current), descriptors: new Map(), reviewBundle: role === "review" ? ({ dirty_files: {}, outcomes: {}, bundle_digest: "sha256:bundle" } as never) : null };
 					if (role === "review") latestReviewSnapshot = built.snapshot;
@@ -858,13 +863,9 @@ async function capturedToolFailure(promise: Promise<unknown>): Promise<Record<st
 				writeReviewEvidence: () => ({ path: join(root, "review.json"), remove: () => {} }),
 			});
 			const tool = tools[0];
-			const ready = JSON.parse((await tool.execute("advance", { task_id: TASK, action: { op: "advance_assurance" } }, undefined, undefined, makeCtx(root, makeUI()))).content[0].text);
-			const params = ready.agent_params;
-			for (const handler of events.tool_call ?? []) handler({ toolName: "Agent", toolCallId: "agent-call", input: params });
-			const verdict = JSON.stringify({ contract: "assurance_kernel/assurance_verdict/v2", role: "review", task_id: TASK, snapshot_digest: snapshotDigest(latestReviewSnapshot), decision: "pass", approval: { kind: "review", authority_role: "reviewer", summary: "passed" } });
-			for (const handler of events.tool_result ?? []) handler({ toolName: "Agent", toolCallId: "agent-call", input: params, details: { status: "completed", agentId: "agent-1" }, content: [{ type: "text", text: verdict }] });
-			for (const handler of events.tool_execution_end ?? []) handler({ toolName: "Agent", toolCallId: "agent-call", args: params, isError: false });
-			const submitted = await tool.execute("submit", { task_id: TASK, action: { op: "submit_review" } }, undefined, undefined, makeCtx(root, makeUI()));
+			await tool.execute("advance", { task_id: TASK, action: { op: "advance_assurance" } }, undefined, undefined, makeCtx(root, makeUI()));
+			const verdict = { contract: "assurance_kernel/assurance_verdict/v2", role: "review", task_id: TASK, snapshot_digest: snapshotDigest(latestReviewSnapshot), decision: "pass", approval: { kind: "review", authority_role: "reviewer", summary: "passed" } };
+			const submitted = await tool.execute("submit", { task_id: TASK, action: { op: "submit_review", verdict } }, undefined, undefined, makeCtx(root, makeUI()));
 			expect(JSON.parse(submitted.content[0].text)).toMatchObject({
 				state: "completed",
 				next_action: "none",

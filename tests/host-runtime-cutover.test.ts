@@ -127,7 +127,8 @@ describe("host runtime cutover", () => {
 			expect(content).toContain("run_in_background: false");
 			expect(content).toContain("direct terminal result");
 			expect(content).toContain("one child at a time");
-			expect(content).toContain("没有 `readonly` 参数");
+			expect(content).toContain("has no `readonly` parameter");
+			expect(content).toContain("structured verdict");
 		}
 
 		const config = readFileSync(

@@ -23,7 +23,7 @@ function operations(value: unknown, out: string[] = []): string[] {
 	return out;
 }
 
-test("assurance Tool exposes direct advance and receipt submission, without cancel action", () => {
+test("assurance Tool exposes direct advance and verdict submission, without cancel action", () => {
 	const { tool } = surface();
 	const actions = operations(tool.parameters);
 	expect(actions).toContain("advance_assurance");
@@ -32,9 +32,10 @@ test("assurance Tool exposes direct advance and receipt submission, without canc
 	expect(actions).not.toContain("cancel_assurance");
 });
 
-test("assurance registers the three host event observations needed for a foreground receipt", () => {
+test("assurance does not depend on a terminal Agent lifecycle event", () => {
 	const { events } = surface();
-	expect(events).toEqual(expect.arrayContaining(["tool_call", "tool_result", "tool_execution_end", "session_shutdown"]));
+	expect(events).toContain("session_shutdown");
+	expect(events).not.toContain("tool_execution_end");
 });
 
 test("assurance source contains no detached UI or result-polling path", () => {

@@ -12,8 +12,8 @@ test("dispatch contracts keep Role-only execution configuration ownership", () =
 		"Immune-Brain owns Role, evidence, authority, tool policy, and output contracts.",
 		"Pi Host owns model, provider, and thinking defaults.",
 		"Immune-Brain does not define\nmodel tiers, provider mapping, cost routing, or provider fallback.",
-		"exact reserved authority parameters",
-		"reservation 返回完整的 host-normalized Agent envelope",
+		"complete foreground `Agent` envelope",
+		"submits the resulting structured verdict directly",
 	];
 	for (const path of [
 		"docs/reference/subagent-dispatch-protocol.md",
@@ -34,7 +34,7 @@ test("interactive dispatch contracts are foreground-only and do not poll", () =>
 	}
 });
 
-test("assurance role guidance describes direct QA and native Review receipt flow", () => {
+test("assurance role guidance describes direct QA and Parent-mediated Review verdict flow", () => {
 	for (const path of [
 		"plugins/immune-brain/skills/imm-loop/SKILL.md",
 		"plugins/immune-brain/dist/imm-loop.md",
@@ -42,6 +42,6 @@ test("assurance role guidance describes direct QA and native Review receipt flow
 		const contract = read(path);
 		expect(contract).toContain("advance_assurance");
 		expect(contract).toMatch(/foreground|前台/i);
-		expect(contract).toMatch(/submit_review|Review receipt/);
+		expect(contract).toMatch(/submit_review|structured verdict/);
 	}
 });

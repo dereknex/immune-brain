@@ -1,10 +1,9 @@
 // Foreground Assurance progression for one Pi session.
 //
 // Deterministic QA runs to completion inside the caller's Tool execution. A
-// successful QA pass creates one short-lived native Review reservation; the
-// Parent then invokes the exact foreground Agent arguments returned by the
-// Tool and explicitly calls submit_review. No lifecycle work survives a Tool
-// call except that reservation and its uncommitted native receipt.
+// successful QA pass creates one short-lived Review reservation; the Parent
+// invokes a foreground reviewer and explicitly submits its structured verdict.
+// No lifecycle work survives a Tool call except the evidence reservation.
 
 import { createHash, randomUUID } from "node:crypto";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
@@ -19,17 +18,10 @@ import { createInvocationRegistry, type InvocationState, type InvocationToken } 
 import { describeQaFailure } from "./pi-canary-qa-findings";
 import type { ReviewBundle, ReviewManifestV5, ReviewRevision } from "./pi-canary-review-bundle";
 import {
-	matchesReservedAgentArgs,
-	parseForegroundAgentResult,
 	reservedAgentParams,
-	STANDARD_AGENT_TOOL,
-	nativeReviewResultIsFailure,
-	type NativeReviewResult,
 	type ReservedAgentParams,
-	type ToolResultLike,
-	type ToolExecutionEndLike,
 } from "./pi-canary-native-review";
-import type { AssuranceCorrelation, AssuranceRole, AssuranceResultPresentation } from "./pi-canary-assurance";
+import type { AssuranceRole, AssuranceResultPresentation } from "./pi-canary-assurance";
 import {
 	buildRoleDelegationPacket,
 } from "../runtime/role_prompt_bridge";
@@ -309,11 +301,17 @@ export function buildReviewPrompt(snapshot: SnapshotDescriptor, evidencePath?: s
 	].join("\n");
 }
 
-export function parseAssuranceVerdict(text: string, snapshot: SnapshotDescriptor): AssuranceVerdict {
-	const cleaned = text.split("\n").map((line) => line.trim()).filter((line) => line.startsWith("{") && line.endsWith("}")).join("");
-	if (!cleaned) throw new Error("child returned no strict JSON verdict");
+export function parseAssuranceVerdict(input: unknown, snapshot: SnapshotDescriptor): AssuranceVerdict {
 	let raw: Record<string, unknown>;
-	try { raw = JSON.parse(cleaned) as Record<string, unknown>; } catch { throw new Error("child verdict is not valid JSON"); }
+	if (typeof input === "string") {
+		const cleaned = input.split("\n").map((line) => line.trim()).filter((line) => line.startsWith("{") && line.endsWith("}")).join("");
+		if (!cleaned) throw new Error("reviewer returned no strict JSON verdict");
+		try { raw = JSON.parse(cleaned) as Record<string, unknown>; } catch { throw new Error("reviewer verdict is not valid JSON"); }
+	} else if (typeof input === "object" && input !== null && !Array.isArray(input)) {
+		raw = input as Record<string, unknown>;
+	} else {
+		throw new Error("reviewer verdict must be a JSON object");
+	}
 	const allowed = ["contract", "role", "task_id", "snapshot_digest", "decision", "approval", "findings"];
 	const unknown = Object.keys(raw).find((key) => !allowed.includes(key));
 	if (unknown) throw new Error(`child verdict has unknown field: ${unknown}`);
@@ -348,16 +346,9 @@ export function parseAssuranceVerdict(text: string, snapshot: SnapshotDescriptor
 interface ReviewReservation {
 	taskId: string;
 	operationId: string;
-	correlation: AssuranceCorrelation;
 	snapshot: SnapshotDescriptor;
 	params: ReservedAgentParams;
 	evidence: { path: string; remove(): void };
-	toolCallId?: string;
-	resultObserved: boolean;
-	ended: boolean;
-	endedBeforeResult: boolean;
-	receipt?: NativeReviewResult;
-	receiptError?: string;
 }
 
 export const invocationRegistry = createInvocationRegistry();
@@ -391,41 +382,6 @@ export class AssuranceProgression {
 		for (const reservation of this.reviewReservations.values()) this.removeEvidence(reservation);
 		this.reviewReservations.clear();
 		for (const invocation of [...this.sessionInvocations]) this.closeSessionInvocation(invocation);
-	}
-
-	observeToolCall(event: { toolName?: string; input?: unknown; toolCallId?: string }): { block: boolean; reason?: string } | undefined {
-		if (event.toolName !== STANDARD_AGENT_TOOL || !event.toolCallId) return undefined;
-		for (const reservation of this.reviewReservations.values()) {
-			if (!matchesReservedAgentArgs(event.input, reservation.params)) continue;
-			if (reservation.toolCallId || reservation.ended || reservation.resultObserved) {
-				return { block: true, reason: "reserved Review already has a native tool call" };
-			}
-			reservation.toolCallId = event.toolCallId;
-			return undefined;
-		}
-		return undefined;
-	}
-
-	observeToolResult(event: ToolResultLike): void {
-		if (event.toolName !== STANDARD_AGENT_TOOL || !event.toolCallId) return;
-		const reservation = this.reservationForCall(event.toolCallId);
-		if (!reservation || reservation.endedBeforeResult || reservation.resultObserved) return;
-		if (!matchesReservedAgentArgs(event.input ?? event.args, reservation.params)) return;
-		reservation.resultObserved = true;
-		try {
-			reservation.receipt = parseForegroundAgentResult(event, event.toolCallId);
-			if (nativeReviewResultIsFailure(reservation.receipt)) reservation.receiptError = `native Agent returned ${reservation.receipt.status}`;
-		} catch (error) {
-			reservation.receiptError = boundedAssuranceError(error);
-		}
-	}
-
-	observeToolEnd(event: ToolExecutionEndLike): void {
-		if (event.toolName !== STANDARD_AGENT_TOOL || !event.toolCallId) return;
-		const reservation = this.reservationForCall(event.toolCallId);
-		if (!reservation) return;
-		if (!reservation.resultObserved) reservation.endedBeforeResult = true;
-		reservation.ended = true;
 	}
 
 	active(taskId: string): ActiveAssuranceState | null {
@@ -677,13 +633,9 @@ export class AssuranceProgression {
 			const reservation: ReviewReservation = {
 				taskId,
 				operationId,
-				correlation: { record_revision: review.snapshot.record_revision, intent_content_hash: review.snapshot.intent_content_hash, diff_hash: review.snapshot.diff_hash },
 				snapshot: review.snapshot,
 				params: { subagent_type: "Review", description: "", prompt: "", name: "", model: "", thinking: "", inherit_context: false, isolated: true, isolation: "worktree", run_in_background: false, max_turns: 0, resume: "", schedule: "" },
 				evidence,
-				resultObserved: false,
-				ended: false,
-				endedBeforeResult: false,
 			};
 			this.reviewReservations.set(taskId, reservation);
 			try {
@@ -695,7 +647,7 @@ export class AssuranceProgression {
 				this.releaseReviewReservation(taskId, reservation);
 				return this.reviewPreparationFailed(taskId, operationId, boundedAssuranceError(error));
 			}
-			progress("review_ready", "QA passed; invoke the reserved foreground Agent, then call submit_review", { snapshot_digest: snapshotDigest(review.snapshot), review_bundle_digest: review.snapshot.review_bundle_digest ?? "", agent_params: reservation.params });
+			progress("review_ready", "QA passed; invoke the foreground reviewer, then submit its verdict", { snapshot_digest: snapshotDigest(review.snapshot), review_bundle_digest: review.snapshot.review_bundle_digest ?? "", agent_params: reservation.params });
 			return { state: "review_ready", operation: "review", operation_id: operationId, snapshot_digest: snapshotDigest(review.snapshot), review_bundle_digest: review.snapshot.review_bundle_digest ?? "", agent_params: reservation.params };
 		} catch (error) {
 			if (reviewPreparationStarted) {
@@ -715,25 +667,13 @@ export class AssuranceProgression {
 		}
 	}
 
-	async submitReview(taskId: string, ctx: ExtensionContext): Promise<AssuranceSubmitReviewResult> {
+	async submitReview(taskId: string, ctx: ExtensionContext, verdictInput: unknown): Promise<AssuranceSubmitReviewResult> {
 		const unknown = this.unknownOperations.get(taskId);
 		if (unknown) { this.unknownOperations.delete(taskId); return { state: "settlement_unknown", operation: unknown.operation, operation_id: unknown.operationId, reason: unknown.reason }; }
 		const rejected = this.rejectedReviewOperations.get(taskId);
 		if (rejected) return { state: "blocked", reason: rejected.reason };
 		const reservation = this.reviewReservations.get(taskId);
-		if (!reservation) return { state: "blocked", reason: "no reserved foreground Review operation" };
-		if (!reservation.toolCallId) return { state: "blocked", reason: "reserved foreground Agent was not observed" };
-		if (reservation.endedBeforeResult) {
-			const reason = "foreground Agent terminal event arrived before its result";
-			this.releaseReviewReservation(taskId, reservation, reason);
-			return { state: "blocked", reason };
-		}
-		if (!reservation.ended) return { state: "blocked", reason: "foreground Agent terminal event order is incomplete" };
-		if (reservation.receiptError || !reservation.receipt) {
-			const reason = reservation.receiptError ?? "foreground Agent result is missing";
-			this.releaseReviewReservation(taskId, reservation, reason);
-			return { state: "blocked", reason };
-		}
+		if (!reservation) return { state: "blocked", reason: "no active Review operation" };
 		let fresh: AssuranceProjectionResult;
 		try {
 			fresh = await this.ports.projectTask(ctx.cwd, taskId);
@@ -759,11 +699,9 @@ export class AssuranceProgression {
 			}
 		}
 		let verdict: AssuranceVerdict;
-		try { verdict = parseAssuranceVerdict(reservation.receipt.result, reservation.snapshot); }
+		try { verdict = parseAssuranceVerdict(verdictInput, reservation.snapshot); }
 		catch (error) {
-			const reason = boundedAssuranceError(error);
-			this.releaseReviewReservation(taskId, reservation, reason);
-			return { state: "blocked", reason };
+			return { state: "blocked", reason: boundedAssuranceError(error) };
 		}
 		const invocation = this.openInvocation(taskId);
 		this.releaseReviewReservation(taskId, reservation);
@@ -773,7 +711,7 @@ export class AssuranceProgression {
 				snapshot: reservation.snapshot,
 				verdict,
 				invocation,
-				actorId: `native-review-${reservation.receipt.agentId}`,
+				actorId: "parent-mediated-review",
 			});
 		} catch (error) {
 			const reason = boundedAssuranceError(error);
@@ -816,11 +754,6 @@ export class AssuranceProgression {
 		const reservation = this.reviewReservations.get(taskId);
 		if (!reservation) return { state: "blocked", reason: "Review reservation disappeared" };
 		return { state: "review_ready", operation: "review", operation_id: reservation.operationId, snapshot_digest: snapshotDigest(reservation.snapshot), review_bundle_digest: reservation.snapshot.review_bundle_digest ?? "", agent_params: reservation.params };
-	}
-
-	private reservationForCall(toolCallId: string): ReviewReservation | undefined {
-		for (const reservation of this.reviewReservations.values()) if (reservation.toolCallId === toolCallId) return reservation;
-		return undefined;
 	}
 
 	private releaseReviewReservation(taskId: string, reservation: ReviewReservation, rejectionReason?: string): void {

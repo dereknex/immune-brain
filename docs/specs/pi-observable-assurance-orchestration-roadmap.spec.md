@@ -214,7 +214,7 @@ The default allocation is:
 
 Interactive planning, exploration, specialist advisory Review, and work-probe children use `run_in_background: false`. The parent launches one foreground child at a time, consumes the direct result, and re-evaluates the remaining dispatch budget before another launch. These calls rely on Pi's native foreground Tool row, cancellation, and steer; they do not create acknowledgement timers, Footer/Widget progress, completion push, `get_subagent_result` retrieval, or late-notification recovery.
 
-Kernel Assurance uses the foreground Tool pipeline: `advance_assurance` awaits deterministic QA and returns `review_ready`; the Parent invokes the exact foreground Agent parameters once; `submit_review` validates the three host events; and `request_authorization` opens the literal-user confirmation. There is no detached coordinator, completion wake-up, result retrieval, or Footer/Widget lifecycle. Native output remains advisory until the existing authority application revalidates the immutable snapshot.
+Kernel Assurance uses the foreground Tool pipeline: `advance_assurance` awaits deterministic QA and returns `review_ready`; the Parent invokes a foreground reviewer and passes its structured verdict to `submit_review`; `submit_review` validates the verdict contract and immutable snapshot freshness; and `request_authorization` opens the literal-user confirmation. There is no detached coordinator, lifecycle-event receipt bridge, completion wake-up, result retrieval, or Footer/Widget lifecycle.
 
 ### 3.5 Authority preservation
 
@@ -333,29 +333,25 @@ classify interrupted jobs as reconnectable, terminal, consumed, or abandoned.
 
 ### Phase 4: Authority and confirmation simplification
 
-**Goal**: Automatically consume host-attested Review receipts and let the Agent
-request only genuine literal-user decisions through exact host-derived TUI
-confirmation.
+**Goal**: Let the local Parent submit a structured Review verdict while reserving
+literal-user confirmation for genuine critical-risk decisions.
 
 **Acceptance criteria**:
 
-- Native Review completion carries host-verifiable spawn, agent, model,
-  snapshot, result, and terminal provenance before reviewer authority is minted.
-- `record-review-verdict` no longer requires a user confirmation after the
-  replacement trust chain passes adversarial review.
-- The Agent can trigger an exact host-derived confirmation for user approval,
-  drain, stop, breaking revision, or unresolved user decision but cannot supply
-  authority fields.
+- `submit_review` validates the verdict contract, task identity, immutable
+  snapshot digest, and fresh record/Intent/workspace/diff revisions.
+- Agent lifecycle events and host-normalized parameter matching are not Review
+  authority requirements.
+- Malformed verdicts are retryable; stale verdicts perform zero authority writes.
 - Routine/material normal flow requires only task-creation confirmation;
   critical normal flow adds exactly one fresh final user approval.
 
 **Promotion criteria**:
 
-- Pi exposes an opaque or otherwise host-authenticated native completion handle.
-- Project rule requiring literal-user confirmation of native Review output is
-  explicitly revised through a new TaskIntent and security review.
-- Replay, forged event, stale snapshot, prompt injection, and extension event
-  spoofing tests have concrete failure oracles.
+- Focused tests cover direct pass/rework submission, malformed retry, stale
+  rejection, and critical final authorization.
+- Current Skill, reference documentation, and packaged mirrors describe the
+  Parent-mediated verdict contract.
 
 ## 7. Verification Strategy
 

@@ -1,59 +1,51 @@
 import { expect, test } from "bun:test";
-import { matchesReservedAgentArgs, reservedAgentParams, parseForegroundAgentResult } from "../plugins/immune-brain/.pi-extension/pi-canary-native-review.ts";
+import { reservedAgentParams } from "../plugins/immune-brain/.pi-extension/pi-canary-native-review.ts";
 import {
 	TASK,
 	ctx,
 	makeAssuranceHarness,
+	passVerdict,
 	projection,
-	resultText,
 	snapshot,
 } from "./helpers/pi-canary-assurance-harness.ts";
 
-test("QA continuation hands one exact foreground Agent envelope to the Parent turn", () => {
+test("QA continuation hands one foreground Review envelope to the Parent turn", () => {
 	const params = reservedAgentParams({ taskId: "continuation-task", operationId: "operation-1", prompt: "review immutable bundle" });
 	expect(params.run_in_background).toBe(false);
 	expect(params.isolated).toBe(true);
 	expect(params.isolation).toBe("worktree");
-	expect(matchesReservedAgentArgs({ ...params, run_in_background: true }, params)).toBe(false);
 });
 
-test("native result parser accepts only Agent tool results", () => {
-	const event = { toolName: "Agent", toolCallId: "call-1", details: { status: "completed", agentId: "reviewer" }, content: [{ type: "text", text: "{\"decision\":\"pass\"}" }] };
-	expect(parseForegroundAgentResult(event, "call-1").result).toContain("decision");
-	expect(() => parseForegroundAgentResult({ ...event, toolName: "Other" }, "call-1")).toThrow(/foreground Agent result/i);
-});
-
-test("AssuranceProgression binds one exact call id and ordered receipt", async () => {
+test("Parent submits a structured reviewer verdict without host event receipts", async () => {
 	const h = makeAssuranceHarness();
-	const ready = await h.progression.advance(TASK, ctx);
-	const params = (ready as Extract<typeof ready, { state: "review_ready" }>).agent_params;
-
-	expect(h.progression.observeToolCall({ toolName: "Agent", toolCallId: "call-1", input: params })).toBeUndefined();
-	expect(h.progression.observeToolCall({ toolName: "Agent", toolCallId: "call-2", input: params })).toMatchObject({ block: true });
-	h.progression.observeToolResult({ toolName: "Agent", toolCallId: "foreign", input: params, details: { status: "completed" }, content: [{ type: "text", text: resultText(snapshot("review")) }] });
-	h.progression.observeToolEnd({ toolName: "Agent", toolCallId: "foreign", args: params });
-	expect(await h.progression.submitReview(TASK, ctx)).toMatchObject({ state: "blocked", reason: "foreground Agent terminal event order is incomplete" });
-
-	h.progression.observeToolResult({ toolName: "Agent", toolCallId: "call-1", input: params, details: { status: "completed", agentId: "reviewer" }, content: [{ type: "text", text: resultText(snapshot("review")) }] });
-	h.progression.observeToolEnd({ toolName: "Agent", toolCallId: "call-1", args: params });
-	expect(await h.progression.submitReview(TASK, ctx)).toEqual({ state: "completed" });
+	expect((await h.progression.advance(TASK, ctx)).state).toBe("review_ready");
+	expect(await h.progression.submitReview(TASK, ctx, passVerdict(snapshot("review")))).toEqual({ state: "completed" });
 	expect(h.counts().applyCount).toBe(2);
 });
 
-test("inverted or repeated terminal events fail closed without Review authority writes", async () => {
+test("Parent-submitted rework verdict restores execution", async () => {
 	const h = makeAssuranceHarness();
-	const ready = await h.progression.advance(TASK, ctx);
-	const params = (ready as Extract<typeof ready, { state: "review_ready" }>).agent_params;
-
-	h.progression.observeToolCall({ toolName: "Agent", toolCallId: "call-1", input: params });
-	h.progression.observeToolEnd({ toolName: "Agent", toolCallId: "call-1", args: params });
-	h.progression.observeToolResult({ toolName: "Agent", toolCallId: "call-1", input: params, details: { status: "completed" }, content: [{ type: "text", text: resultText(snapshot("review")) }] });
-	expect(await h.progression.submitReview(TASK, ctx)).toMatchObject({ state: "blocked", reason: "foreground Agent terminal event arrived before its result" });
-	expect(await h.progression.submitReview(TASK, ctx)).toMatchObject({ state: "blocked", reason: "foreground Agent terminal event arrived before its result" });
-	expect(h.counts().applyCount).toBe(1);
+	expect((await h.progression.advance(TASK, ctx)).state).toBe("review_ready");
+	const reviewSnapshot = snapshot("review");
+	const verdict = {
+		...passVerdict(reviewSnapshot),
+		decision: "rework" as const,
+		approval: undefined,
+		findings: [{ id: "review-1", kind: "blocking" as const, acceptance_id: "A1", summary: "repair the regression" }],
+	};
+	expect(await h.progression.submitReview(TASK, ctx, verdict)).toMatchObject({ state: "rework", summary: "repair the regression" });
+	expect(h.counts().applyCount).toBe(2);
 });
 
-test("snapshot drift discards the receipt without Review authority writes", async () => {
+test("malformed verdict can be corrected without rebuilding Review evidence", async () => {
+	const h = makeAssuranceHarness();
+	expect((await h.progression.advance(TASK, ctx)).state).toBe("review_ready");
+	expect(await h.progression.submitReview(TASK, ctx, { decision: "pass" })).toMatchObject({ state: "blocked" });
+	expect(h.progression.active(TASK)?.state).toBe("review_ready");
+	expect(await h.progression.submitReview(TASK, ctx, passVerdict(snapshot("review")))).toEqual({ state: "completed" });
+});
+
+test("snapshot drift discards the verdict without Review authority writes", async () => {
 	let stale = false;
 	let projectionReads = 0;
 	const h = makeAssuranceHarness({ project: async () => {
@@ -61,13 +53,8 @@ test("snapshot drift discards the receipt without Review authority writes", asyn
 		const current = projection("active", projectionReads === 1 ? "run_qa" : "run_review");
 		return stale ? { ...current, projection: { ...current.projection, record_revision: "record-new" } } as never : current;
 	} });
-	const ready = await h.progression.advance(TASK, ctx);
-	const params = (ready as Extract<typeof ready, { state: "review_ready" }>).agent_params;
-	h.progression.observeToolCall({ toolName: "Agent", toolCallId: "call-1", input: params });
-	h.progression.observeToolResult({ toolName: "Agent", toolCallId: "call-1", input: params, details: { status: "completed" }, content: [{ type: "text", text: resultText(snapshot("review")) }] });
-	h.progression.observeToolEnd({ toolName: "Agent", toolCallId: "call-1", args: params });
-
+	expect((await h.progression.advance(TASK, ctx)).state).toBe("review_ready");
 	stale = true;
-	expect(await h.progression.submitReview(TASK, ctx)).toMatchObject({ state: "blocked", reason: "assurance snapshot changed before Review submission" });
+	expect(await h.progression.submitReview(TASK, ctx, passVerdict(snapshot("review")))).toMatchObject({ state: "blocked", reason: "assurance snapshot changed before Review submission" });
 	expect(h.counts()).toMatchObject({ applyCount: 1, removeCount: 1 });
 });

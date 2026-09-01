@@ -21,9 +21,9 @@ describe("imm-loop Kernel routing contract", () => {
 			expect(text).toContain("submit_review");
 			expect(text).toContain("request_authorization");
 			expect(text).toContain("run_in_background: false");
-			expect(text).toContain("tool_call");
-			expect(text).toContain("tool_result");
-			expect(text).toContain("tool_execution_end");
+			expect(text).toContain("structured verdict");
+			expect(text).toContain("direct result");
+			expect(text).not.toContain("tool_execution_end");
 			expect(text).not.toContain("get_subagent_result");
 			expect(text).not.toContain("cancel_assurance");
 			expect(text).not.toContain("followUp");

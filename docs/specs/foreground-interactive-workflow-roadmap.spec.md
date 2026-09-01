@@ -7,7 +7,7 @@
 - Owner: user
 - Status: Phase 1 completed; Phase 2 completed; Phase 3 implementation active
 - Design risk: High
-- Design risk reason: The roadmap changes cancellation, dispatch result transport, Enrollment commit settlement, QA execution, and native Review receipt authority across multiple Pi extension boundaries.
+- Design risk reason: The roadmap changes cancellation, dispatch result transport, Enrollment commit settlement, QA execution, and Review verdict authority across multiple Pi extension boundaries.
 - Diagram decision: required
 - Diagram reason: The foreground Tool, native Agent, Parent sequencing, and Kernel authority boundaries cannot be reviewed reliably from prose alone.
 
@@ -72,7 +72,7 @@ The baseline has four contract surfaces:
 | Advisory dispatch | runtime envelopes request background Agent execution and Parent later retrieves results | one foreground Agent at a time returns a direct result | Parent owns selection and synthesis; child remains advisory-only |
 | Enrollment | slash command starts a detached coordinator and returns | slash command visibly launches an Agent turn that calls one cancellable foreground Enrollment Tool | Tool owns local cleanup; Kernel owns enrollment commit/receipt |
 | Deterministic QA | `advance_assurance` starts a session job | `advance_assurance` performs QA in its own foreground Tool call | Kernel owns evidence and QA settlement |
-| Native Review | background Agent plus follow-up and result retrieval | reserved foreground Agent receipt plus explicit `submit_review` | Host owns native terminal fact; Kernel owns verdict settlement |
+| Native Review | background Agent plus follow-up and result retrieval | foreground reviewer result plus Parent-mediated `submit_review` | Kernel owns verdict validation and settlement |
 
 No phase changes TaskIntent, descriptor, receipt, TaskRecord, finding, or authorization schemas by default. Every production cutover deletes the replaced interactive path in the same TaskIntent; no dual-mode compatibility switch is permitted.
 
@@ -183,22 +183,19 @@ Phase 2 was completed by TaskIntent `2026-08-17-007-foreground-canary-enrollment
 
 **TaskIntent:** `2026-08-18-002-foreground-canary-assurance-review-r2`
 
-Cut deterministic QA and the primary Kernel Review over as one atomic authority change. The foreground native Agent receipt bridge and production cutover belong to the same TaskIntent so the repository never contains a dormant compatibility path or a partially unusable assurance workflow.
+Cut deterministic QA and the primary Kernel Review over as one atomic authority change. The foreground Review dispatch and production cutover belong to the same TaskIntent so the repository never contains a dormant compatibility path or a partially unusable assurance workflow.
 
 Required behavior:
 
 - `advance_assurance` runs deterministic QA inside the foreground Tool call and returns either a QA terminal result or `review_ready` with immutable operation and bundle identity;
-- Parent invokes exactly one foreground standard `Agent` reviewer with the frozen Review arguments;
-- extension `tool_call` observation validates the Agent arguments and reserves the native `toolCallId` against `(task_id, operation_id, bundle_digest)`;
-- one session-local Review bridge owns transient reservation and receipt capture only: `tool_result` is the result-content authority, while `tool_execution_end` may corroborate lifecycle but cannot create a second terminal;
-- the bridge releases a reservation after successful `submit_review` or a proven terminal cancellation/failure, ignores unmatched events, and garbage-collects stale transient entries on session shutdown;
-- a crash after native receipt capture but before `submit_review` loses the transient receipt and moves the reserved operation to fail-closed unknown settlement on the next explicit Kernel call; it never auto-reviews or auto-retries;
-- `submit_review` reads and validates the matching native receipt and structured verdict; it does not accept a Parent-authored success summary as evidence;
+- Parent invokes one foreground reviewer with the supplied Review arguments, reads its direct result, and passes the structured verdict to `submit_review`;
+- `submit_review` validates the verdict contract, task identity, snapshot digest, and fresh record/Intent/workspace/diff identity before applying Review authority;
+- malformed verdicts preserve the reservation and evidence for a corrected submission, while stale verdicts perform zero authority writes and release stale evidence;
 - deterministic QA accumulates subprocess evidence without authority mutation, then enters one revision-CAS settlement boundary; cancellation is honored before that boundary, while cancellation during/after the CAS cannot abandon settlement and must return the known result or `settlement_unknown`;
 - authorization and completion remain separate explicit Kernel calls;
-- cancellation/provider failure before a trustworthy Agent terminal result settles fail-closed and requires an explicit new operation under Kernel rules;
-- delete background QA jobs, Review follow-ups, `get_subagent_result`, background spawn receipts, background heartbeat/progress, superseded completion delivery, and late-notification deduplication that no longer has a producer;
-- retain operation correlation, snapshot ownership, single-terminal CAS, unknown settlement handling, verdict freshness, integrity revalidation, and authorization.
+- Agent lifecycle events, host-normalized argument matching, receipt capture, and provider-specific retry state are not authority requirements for local execution;
+- delete background QA jobs, Review follow-ups, `get_subagent_result`, background spawn receipts, background heartbeat/progress, superseded completion delivery, late-notification deduplication, and lifecycle-event Review observation;
+- retain operation correlation, snapshot ownership, single-terminal CAS, unknown settlement handling for authority commits, verdict freshness, integrity revalidation, and authorization.
 
 Rollback:
 
@@ -208,9 +205,9 @@ Completion criteria:
 
 - QA pass/fail/cancel/timeout all settle in the foreground Tool result;
 - QA cancellation tests cover pre-verification, subprocess execution, pre-CAS persistence, CAS-in-progress, and post-persistence/pre-return boundaries;
-- matching foreground Agent results are accepted exactly once;
-- mismatched, duplicate, malformed, cancelled, provider-failed, stale, unreserved, crash-interrupted, or event-order-inverted Agent results fail closed;
-- reservation release and shutdown garbage collection leave no receipt that can settle a later operation;
+- Parent-submitted pass and rework verdicts are accepted exactly once against the current frozen snapshot;
+- malformed verdicts are retryable without rebuilding evidence, while stale verdicts fail with zero Review authority writes;
+- reservation release and session shutdown garbage collection leave no verdict that can settle a later operation;
 - no interactive Canary path launches background work or depends on follow-up notification;
 - full Bun tests, package-parity contracts, and manual TUI flow pass. A later phase may add a standalone typecheck only if the repository first introduces a canonical TypeScript project configuration.
 
@@ -273,7 +270,7 @@ authorization_pending -> authorized | declined
 
 ### Unknown-State Rule
 
-If the host cannot prove whether an authority-changing commit or Review terminal receipt occurred, the operation settles as unknown and blocks automatic retry. Foreground execution removes notification races but does not justify guessing authority state.
+If the host cannot prove whether an authority-changing commit occurred, the operation settles as unknown and blocks automatic retry. Foreground execution removes notification races but does not justify guessing authority state. Reviewer dispatch itself creates no authority; a missing result leaves the Review reservation available for an explicit retry.
 
 ## Compatibility And Cleanup
 
@@ -310,6 +307,6 @@ Phase 1 uses exactly two focused verification checks: one dispatch/authority sui
 
 Phase 2 requires focused Enrollment unit and integration tests with fake cancellation, all terminal outcomes, source/package parity, and a manual Pi TUI cancellation/progress smoke test.
 
-Phase 3 requires focused QA and native Review correlation tests, adversarial receipt mismatch/duplicate/staleness tests, cancellation and unknown-settlement tests, source/package parity, full repository tests, and a manual end-to-end TUI assurance run.
+Phase 3 requires focused QA and Parent-mediated Review verdict tests, malformed/stale verdict tests, cancellation and unknown-settlement tests, source/package parity, full repository tests, and a manual end-to-end TUI assurance run.
 
 No phase is complete based only on documentation assertions or mocked success paths.

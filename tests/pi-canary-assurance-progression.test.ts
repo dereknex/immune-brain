@@ -159,7 +159,7 @@ describe("foreground assurance progression", () => {
 		const advanced = await h.progression.advance(TASK, ctx, controller.signal);
 		expect(advanced.state).toBe("settlement_unknown");
 		expect(await h.progression.advance(TASK, ctx)).toEqual(advanced);
-		expect(await h.progression.submitReview(TASK, ctx)).toEqual({
+		expect(await h.progression.submitReview(TASK, ctx, {})).toEqual({
 			state: "settlement_unknown",
 			operation: "qa",
 			operation_id: (advanced as { operation_id: string }).operation_id,
@@ -253,11 +253,7 @@ describe("foreground assurance progression", () => {
 		const ready = await h.progression.advance(TASK, ctx);
 		expect(ready.state).toBe("review_ready");
 		failAfterCommit = true;
-		const params = (ready as Extract<typeof ready, { state: "review_ready" }>).agent_params;
-		h.progression.observeToolCall({ toolName: "Agent", toolCallId: "post-commit-read-failure", input: params });
-		h.progression.observeToolResult({ toolName: "Agent", toolCallId: "post-commit-read-failure", input: params, details: { status: "completed", agentId: "post-commit-agent" }, content: [{ type: "text", text: resultText(snapshot("review")) }] });
-		h.progression.observeToolEnd({ toolName: "Agent", toolCallId: "post-commit-read-failure", args: params, isError: false });
-		expect(await h.progression.submitReview(TASK, ctx)).toMatchObject({
+		expect(await h.progression.submitReview(TASK, ctx, passVerdict(snapshot("review")))).toMatchObject({
 			state: "settlement_unknown",
 			operation: "review",
 			reason: "projection unavailable after Review settlement",
@@ -270,18 +266,14 @@ describe("foreground assurance progression", () => {
 		// registry across tests and cannot reset it without weakening isolation.
 	});
 
-	test("accepts one exact foreground receipt and settles material Review without user authorization", async () => {
+	test("accepts one Parent-submitted verdict and settles material Review without user authorization", async () => {
 		const h = makeHarness();
 		const ready = await h.progression.advance(TASK, ctx);
 		expect(ready.state).toBe("review_ready");
-		const params = (ready as Extract<typeof ready, { state: "review_ready" }>).agent_params;
-		h.progression.observeToolCall({ toolName: "Agent", toolCallId: "call-1", input: params });
-		h.progression.observeToolResult({ toolName: "Agent", toolCallId: "call-1", input: params, details: { status: "completed", agentId: "agent-1" }, content: [{ type: "text", text: resultText(snapshot("review")) }] });
-		h.progression.observeToolEnd({ toolName: "Agent", toolCallId: "call-1", args: params, isError: false });
-		const submitted = await h.progression.submitReview(TASK, ctx);
+		const submitted = await h.progression.submitReview(TASK, ctx, passVerdict(snapshot("review")));
 		expect(submitted).toEqual({ state: "completed" });
 		expect(h.counts().applyCount).toBe(2);
-		const duplicate = await h.progression.submitReview(TASK, ctx);
+		const duplicate = await h.progression.submitReview(TASK, ctx, passVerdict(snapshot("review")));
 		expect(duplicate).toMatchObject({ state: "blocked" });
 	});
 
@@ -289,39 +281,20 @@ describe("foreground assurance progression", () => {
 		const h = makeHarness({ risk: "critical" });
 		const ready = await h.progression.advance(TASK, ctx);
 		expect(ready.state).toBe("review_ready");
-		const params = (ready as Extract<typeof ready, { state: "review_ready" }>).agent_params;
-		h.progression.observeToolCall({ toolName: "Agent", toolCallId: "critical-call", input: params });
-		h.progression.observeToolResult({ toolName: "Agent", toolCallId: "critical-call", input: params, details: { status: "completed", agentId: "critical-agent" }, content: [{ type: "text", text: resultText(snapshot("review")) }] });
-		h.progression.observeToolEnd({ toolName: "Agent", toolCallId: "critical-call", args: params, isError: false });
-		expect(await h.progression.submitReview(TASK, ctx)).toMatchObject({
+		expect(await h.progression.submitReview(TASK, ctx, passVerdict(snapshot("review")))).toMatchObject({
 			state: "awaiting_user",
 			operation: "record-user-approval",
 		});
 		expect(h.counts().applyCount).toBe(2);
 	});
 
-	test("rejects a duplicate matching tool call after reservation ownership is set", async () => {
+	test("malformed Parent verdict is retryable without a Review authority write", async () => {
 		const h = makeHarness();
-		const ready = await h.progression.advance(TASK, ctx);
-		const params = (ready as Extract<typeof ready, { state: "review_ready" }>).agent_params;
-		expect(h.progression.observeToolCall({ toolName: "Agent", toolCallId: "call-1", input: params })).toBeUndefined();
-		expect(h.progression.observeToolCall({ toolName: "Agent", toolCallId: "call-1", input: params })).toMatchObject({ block: true });
-		expect(h.progression.observeToolCall({ toolName: "Agent", toolCallId: "call-2", input: params })).toMatchObject({ block: true });
-	});
-
-	test("mismatched and inverted native events fail closed without a pending verdict", async () => {
-		const h = makeHarness();
-		const ready = await h.progression.advance(TASK, ctx);
-		const params = (ready as Extract<typeof ready, { state: "review_ready" }>).agent_params;
-		h.progression.observeToolCall({ toolName: "Agent", toolCallId: "unreserved", input: { ...params, run_in_background: true } });
-		h.progression.observeToolCall({ toolName: "Agent", toolCallId: "call-1", input: params });
-		h.progression.observeToolEnd({ toolName: "Agent", toolCallId: "call-1", args: params, isError: false });
-		h.progression.observeToolResult({ toolName: "Agent", toolCallId: "call-1", input: params, details: { status: "completed" }, content: [{ type: "text", text: resultText(snapshot("review")) }] });
-		const submitted = await h.progression.submitReview(TASK, ctx);
-		expect(submitted.state).toBe("blocked");
+		expect((await h.progression.advance(TASK, ctx)).state).toBe("review_ready");
+		expect(await h.progression.submitReview(TASK, ctx, { decision: "pass" })).toMatchObject({ state: "blocked" });
 		expect(h.counts().applyCount).toBe(1);
-		const repeat = await h.progression.submitReview(TASK, ctx);
-		expect(repeat).toMatchObject({ state: "blocked", reason: "foreground Agent terminal event arrived before its result" });
+		expect(h.progression.active(TASK)?.state).toBe("review_ready");
+		expect(await h.progression.submitReview(TASK, ctx, passVerdict(snapshot("review")))).toEqual({ state: "completed" });
 	});
 	test("discards a stale Review reservation when Kernel no longer requires Review", async () => {
 		let qaSettled = false;
@@ -360,7 +333,7 @@ describe("foreground assurance progression", () => {
 		expect(h.counts().applyCount).toBe(0);
 	});
 
-	test("stale Review correlation and session shutdown discard the transient receipt", async () => {
+	test("stale Review correlation and session shutdown discard the transient verdict", async () => {
 		let stale = false;
 		let projectionReads = 0;
 		const h = makeHarness({ project: async () => {
@@ -369,13 +342,9 @@ describe("foreground assurance progression", () => {
 				? { ...projection("review", "run_review"), projection: { ...projection("review", "run_review").projection, record_revision: "record-new" } } as never
 				: projection("review", projectionReads === 1 ? "run_qa" : "run_review");
 		} });
-		const ready = await h.progression.advance(TASK, ctx);
-		const params = (ready as Extract<typeof ready, { state: "review_ready" }>).agent_params;
-		h.progression.observeToolCall({ toolName: "Agent", toolCallId: "call-1", input: params });
-		h.progression.observeToolResult({ toolName: "Agent", toolCallId: "call-1", input: params, details: { status: "completed" }, content: [{ type: "text", text: resultText(snapshot("review")) }] });
-		h.progression.observeToolEnd({ toolName: "Agent", toolCallId: "call-1" });
+		expect((await h.progression.advance(TASK, ctx)).state).toBe("review_ready");
 		stale = true;
-		expect((await h.progression.submitReview(TASK, ctx)).state).toBe("blocked");
+		expect((await h.progression.submitReview(TASK, ctx, passVerdict(snapshot("review")))).state).toBe("blocked");
 		expect(h.counts().removeCount).toBe(1);
 		await h.progression.onSessionShutdown();
 		expect(h.progression.active(TASK)).toBeNull();

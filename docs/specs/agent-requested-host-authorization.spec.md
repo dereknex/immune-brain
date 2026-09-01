@@ -122,8 +122,8 @@ The host selects exactly one operation from the Kernel projection:
 3. `stop` when an open `replan_required` finding parks the task.
 
 Zero matching operations or contradictory readiness returns `blocked`. Review
-verdicts are submitted directly from the exact foreground Agent receipt and do
-not enter this user-authorization path. The host never asks the model to choose
+verdicts are submitted directly by the Parent from the foreground reviewer result
+and do not enter this user-authorization path. The host never asks the model to choose
 among operations.
 
 `approve-breaking-intent-revision` and authority repair retain their dedicated
