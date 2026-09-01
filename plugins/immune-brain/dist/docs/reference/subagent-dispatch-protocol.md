@@ -58,9 +58,9 @@ model tiers, provider mapping, cost routing, or provider fallback.
 
 Agent 默认继承当前 Pi session model。只有 Parent 有明确需求时，才通过
 host-native `Agent.model` 选择另一个 Pi 已配置模型。Kernel authority Review 的
-reservation 不生成也不匹配 `model`/`thinking`：Pi Host 解析的 execution
-configuration 不是 Review authority 身份，receipt matching 只对 reserved
-authority parameters 要求 exact 一致。
+reservation 返回完整的 host-normalized Agent envelope：`name`、`model`、
+`thinking`、`resume` 和 `schedule` 使用空值，交由 Pi Host 解析 Review agent
+配置；receipt matching 对整个 envelope 要求 exact 一致。
 
 ## Pi Agent Invocation
 
@@ -69,9 +69,13 @@ Agent:
   subagent_type: "general-purpose"
   description: "<role>/<lens> review"
   prompt: <delegation packet>
-  model: <optional Pi-configured model id; omit to inherit>
+  name: <optional; empty for Kernel authority Review>
+  model: <optional Pi-configured model id; empty to inherit the Review agent config>
+  thinking: <optional; empty to inherit the Review agent config>
   inherit_context: false
   run_in_background: false
+  resume: ""
+  schedule: ""
 ```
 
 Pi `Agent` 没有 `readonly` 参数；只读边界由空工具策略、child 类型和 prompt contract 共同保证。Parent 每次只启动一个 foreground Agent，等待其 direct terminal result 后再决定是否需要下一个 child。普通 advisory/discovery 不调用 `get_subagent_result`，不依赖 completion notification 或 host `followUp`。Kernel authority Review 使用专属类型：`advance_assurance` 返回的保留参数使用 `subagent_type: "Review"`（Pi 原生只读 Review 类型），仍遵循本文档的 foreground、单 child、退火匹配与 receipt 校验规则；advisory/discovery 与 Loop 内部 roles 继续使用 `general-purpose`。
@@ -83,9 +87,9 @@ Pi `Agent` 没有 `readonly` 参数；只读边界由空工具策略、child 类
 3. Kernel Assurance runs in the foreground Tool call. `advance_assurance` awaits deterministic QA, emits bounded native updates, and returns a direct `review_ready` result containing exact `Agent` parameters with `run_in_background: false`. The Parent invokes that Agent once, then calls `submit_review` after the `tool_call`/`tool_result`/`tool_execution_end` bridge validates the receipt. `request_authorization` is the only literal-user confirmation path. AbortSignal cancellation is honored before the authority commit boundary; snapshot/CAS revalidation remains mandatory.
 4. Kernel Assurance chat uses native Tool rendering only. It does not publish completion messages or wake a later parent turn; the direct Tool result is the continuation boundary. `awaiting_user` remains valid until the host-built authorization operation is confirmed and the immutable snapshot is revalidated.
 5. Child 不得再次派发 child，nested delegation 一律禁止。Parent 保留综合与最终判断责任。
-6. Kernel authority Review 对每个 immutable snapshot 恰好一个 primary reviewer，turn 预算按 workload 缩放（Quick 12 / Standard 16 / Heavy 24），并使用该 snapshot 对应的 Quick/Standard/Heavy 执行档位；不存在从 initial dispatch 起算的单一端到端总预算。Reviewer 必须先验证 immutable bundle provenance，只围绕 acceptance assertions 与 bundle 中的 `dirty_files`（diff payload）和 `neighborhood_files`（同状态机 context）内容审查，不探索无关 repository paths，并预留最后一轮输出唯一 strict JSON verdict。`path_provenance` 明确标记每个 bundled path 为 `diff` 或 `neighborhood`；所有 neighborhood context 只能从 canonical `scope_hint` 内的 Git index 选择，继续受单文件 256 KiB 与总包 2 MiB 上限约束，Reviewer 仍只能读取 bundle bytes。对 settlement-class change，Reviewer 必须先枚举 bundle 内每条 terminal、cancellation、timeout 与 race path，再对全部路径给出判断；finding summary 必须以受影响的 bundle path 开头，以便 verdict v2 引用 neighborhood context。每个 acceptance 的执行结果已由 deterministic QA 在 review 前验证并内嵌于 immutable bundle 的 `outcomes` 字段（acceptance_id -> {status, summary}）；Reviewer 不得重跑 descriptor，也不得把本地没有测试运行当作 finding——Review 只审 bundle provenance、代码正确性、回归、安全与缺失测试。除该 reviewer 外，同一触发点最多两个相互独立的 advisory/discovery children；它们只能并行读，不能写 workflow state、关闭 QA 或产生 authority。
+6. Kernel authority Review 对每个 immutable snapshot 恰好一个 primary reviewer，turn 预算按 workload 缩放（Quick 12 / Standard 16 / Heavy 24），并使用该 snapshot 对应的 Quick/Standard/Heavy 执行档位；不存在从 initial dispatch 起算的单一端到端总预算。Reviewer 必须先验证 immutable v5 manifest 的 `base_head`、`review_commit`、单一 parent、`review_tree` 与 `manifest_digest`，再用只读 Git 命令从 synthetic revision 获取源码；manifest 只有 metadata，不复制 source bytes，也不枚举 neighborhood files。审查只围绕 acceptance assertions 与 `changed_paths`，未变更路径只有在 acceptance、changed caller 或同一 state machine 直接需要时按需读取并注明理由；Reviewer 不探索无关 repository paths。对 settlement-class change，Reviewer 必须先枚举 immutable revision 内每条 terminal、cancellation、timeout 与 race path，再对全部路径给出判断；finding summary 必须以受影响路径开头。每个 acceptance 的执行结果已由 deterministic QA 在 review 前验证并内嵌于 manifest 的 `outcomes` 字段（acceptance_id -> {status, summary}）；Reviewer 不得重跑 descriptor，也不得把本地没有测试运行当作 finding——Review 只审 revision provenance、代码正确性、回归、安全与缺失测试。除该 reviewer 外，同一触发点最多两个相互独立的 advisory/discovery children；它们只能并行读，不能写 workflow state、关闭 QA 或产生 authority。
 7. Foreground assurance never sleeps, polls, or schedules a completion callback. One Tool call owns QA preparation and execution; one explicit Parent turn owns the native Agent receipt; one explicit authorization operation owns the user decision. Duplicate or stale event sequences fail closed and cannot create a second reviewer or authority write.
-8. Review receipt validation requires the reserved operation, immutable snapshot digest, exact reserved authority parameters, matching tool-call ID, terminal tool result, and terminal execution event. Agent output is advisory and cannot apply Kernel authority. A malformed, cancelled, inverted, duplicate, or stale receipt leaves the TaskRecord unchanged; the user authorization operation revalidates record revision, Intent hash, workspace revision, and diff hash before applying the verdict.
+8. Review receipt validation requires the reserved operation, immutable snapshot digest, exact reserved authority parameters from the full host-normalized envelope, matching tool-call ID, terminal tool result, and terminal execution event. Agent output is advisory and cannot apply Kernel authority. A malformed, cancelled, inverted, duplicate, or stale receipt leaves the TaskRecord unchanged; the user authorization operation revalidates record revision, Intent hash, workspace revision, and diff hash before applying the verdict.
 9. The assurance Tool checks the immutable snapshot before each phase and returns a terminal structured state directly: `cancelled`, `rework`, `review_ready`, `awaiting_user`, `blocked`, or `settlement_unknown`. The commit boundary is non-cancellable. No silent task, status timer, completion notification, or result retrieval path is permitted.
 
 ## Result Synthesis

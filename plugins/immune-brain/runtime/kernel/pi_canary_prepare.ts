@@ -4,6 +4,7 @@
 // enrollment call, or writer. Direct import cannot authorize or mutate.
 
 import { createHash } from "node:crypto";
+import { spawnSync } from "node:child_process";
 import { resolve } from "node:path";
 import { readBackendClaim, readTaskTombstone } from "./backend_claim";
 import { readTaskIntent } from "./intent";
@@ -13,6 +14,21 @@ import {
 } from "./storage";
 
 const SOURCE_PATH = ".imm/state/workspace.json";
+const GIT_OBJECT_ID = /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/;
+
+/**
+ * The Enrollment base commit. v4 TaskRecords bind this exact commit so QA,
+ * Review, authorization, and completion can all derive one scoped revision.
+ */
+export function readGitHead(root: string): string {
+	const result = spawnSync("git", ["-C", root, "rev-parse", "--verify", "HEAD^{commit}"], {
+		encoding: "utf8",
+	});
+	const head = typeof result.stdout === "string" ? result.stdout.trim() : "";
+	if (result.status !== 0 || !GIT_OBJECT_ID.test(head))
+		throw new Error("enrollment requires a committed Git HEAD in the project root");
+	return head.toLowerCase();
+}
 
 export interface PiCanaryPrepareInput {
 	task_id: string;
@@ -43,6 +59,9 @@ export interface PiCanaryPreparation {
 		lifecycle: string | null;
 		artifact_state: string | null;
 	} | null;
+	/** Commit the confirmation is bound to; becomes TaskRecord v4 `git_base_head`. */
+	git_base_head: string | null;
+	git_error: string | null;
 	workspace: {
 		current_working: string | null;
 	};
@@ -139,6 +158,16 @@ export function preparePiCanary(root: string, input: PiCanaryPrepareInput): PiCa
 			`workspace owner ${state.state.current_working} contradicts backend claim task ${claim.task_id}`,
 		);
 
+	// A missing HEAD is a readiness blocker, not a crash: the rehearsal and the
+	// native gate must be able to report it while still binding the digest.
+	let gitBaseHead: string | null = null;
+	let gitError: string | null = null;
+	try {
+		gitBaseHead = readGitHead(canonicalRoot);
+	} catch (error) {
+		gitError = error instanceof Error ? error.message : String(error);
+	}
+
 	const preparation: PiCanaryPreparation = {
 		contract: "assurance_kernel/pi_canary_preparation/v1",
 		task_id: input.task_id,
@@ -148,6 +177,8 @@ export function preparePiCanary(root: string, input: PiCanaryPrepareInput): PiCa
 		backend_claim: backend,
 		task_tombstone: taskTombstone,
 		task_record_v3: record,
+		git_base_head: gitBaseHead,
+		git_error: gitError,
 		workspace,
 		digest: "",
 	};

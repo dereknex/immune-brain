@@ -1,0 +1,9 @@
+{
+  "contract": "assurance_kernel/task_tombstone/v2",
+  "task_id": "2026-08-31-001-immutable-git-review-revisions",
+  "lifecycle_status": "terminal",
+  "terminal_lifecycle": "done",
+  "terminal_event_id": "complete:2026-08-31-001-immutable-git-review-revisions:2026-09-01T03:00:58.416Z",
+  "final_record_hash": "sha256:f5cb168f67325e7180342b9756dc9d423dcf3d2b21edb14f9b3b786bfdffccba",
+  "terminalized_at": "2026-09-01T03:00:58.416Z"
+}

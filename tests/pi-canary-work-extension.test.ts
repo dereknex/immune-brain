@@ -17,6 +17,7 @@ import { canonicalIntentHash, parseTaskIntentV1, readTaskIntent } from "../plugi
 import { readBackendClaim } from "../plugins/immune-brain/runtime/kernel/backend_claim";
 import { createMutationAuthorityCapabilityForTest } from "./fixtures/mutation-authority-test-seam";
 import { readTaskRecord } from "../plugins/immune-brain/runtime/kernel/storage";
+import { captureReviewManifest } from "../plugins/immune-brain/.pi-extension/pi-canary-review-bundle";
 import { snapshotDigest, type SnapshotDescriptor } from "../plugins/immune-brain/.pi-extension/pi-canary-assurance-progression.ts";
 import {
 	TASK_RAIL_KEY,
@@ -222,6 +223,36 @@ function loadSurface(dependencies: Record<string, unknown> = {}) {
 
 function minimalSnapshot(role: "qa" | "review", root: string, current?: { projection?: Record<string, any> }): SnapshotDescriptor {
 	const state = current?.projection ?? {};
+	const record = readTaskRecord(root, TASK).record;
+	const reviewRevision = role === "review" && record?.contract === "assurance_kernel/task_record/v4"
+		? (() => {
+				const acceptance = record.intent_snapshot.acceptance;
+				const manifest = captureReviewManifest(root, {
+					taskId: TASK,
+					baseHead: record.git_base_head,
+					scopeHint: record.intent_snapshot.scope_hint,
+					expectedDiffHash: state.diff_hash ?? "sha256:diff",
+					intentRevision: state.intent_revision ?? record.intent_snapshot.revision,
+					intentContentHash: state.intent_content_hash ?? record.intent_ref.content_hash,
+					recordRevision: state.record_revision ?? "record-1",
+					workspaceRevision: state.workspace_revision ?? "workspace-1",
+					lifecycle: state.lifecycle ?? "active",
+					artifactState: state.artifact_state ?? "frozen",
+					risk: record.intent_snapshot.risk,
+					outcomes: Object.fromEntries(acceptance.map((item: { id: string }) => [
+						item.id,
+						{ status: "passed" as const, summary: `host-attested QA: all ${acceptance.length} fixed verification descriptor(s) passed` },
+					])),
+				});
+				return {
+					contract: "assurance_kernel/review_revision_identity/v1" as const,
+					base_head: manifest.base_head,
+					review_commit: manifest.review_commit,
+					review_tree: manifest.review_tree,
+					manifest_digest: manifest.manifest_digest,
+				};
+			})()
+		: undefined;
 	return {
 		contract: "assurance_kernel/assurance_snapshot/v2",
 		task_id: TASK,
@@ -240,6 +271,7 @@ function minimalSnapshot(role: "qa" | "review", root: string, current?: { projec
 		acceptance: [{ id: "A1", assertion: "a1", verification: "{}" }],
 		dirty_files: ["plugins/immune-brain/.pi-extension/task.ts"],
 		review_bundle_digest: role === "review" ? "sha256:bundle" : null,
+		...(reviewRevision ? { review_revision: reviewRevision } : {}),
 		root,
 	};
 }
@@ -768,7 +800,7 @@ async function capturedToolFailure(promise: Promise<unknown>): Promise<Record<st
 				undefined,
 				makeCtx(root, makeUI()),
 			));
-			expect(result.state).toBe("settlement_unknown");
+			expect(result.state).toBe("review_preparation_failed");
 			const record = JSON.parse(readFileSync(join(root, `.imm/state/tasks/${TASK}.json`), "utf8"));
 			expect(record.attestations.some((attestation: { kind: string }) => attestation.kind === "qa")).toBe(true);
 		} finally { rmSync(root, { recursive: true, force: true }); }
@@ -807,7 +839,7 @@ async function capturedToolFailure(promise: Promise<unknown>): Promise<Record<st
 				undefined,
 				makeCtx(root, makeUI()),
 			));
-			expect(result.state).toBe("settlement_unknown");
+			expect(result.state).toBe("review_preparation_failed");
 			expect(removed).toBe(true);
 		} finally { rmSync(root, { recursive: true, force: true }); }
 	});

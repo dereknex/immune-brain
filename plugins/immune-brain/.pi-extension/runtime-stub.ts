@@ -91,8 +91,10 @@ export interface CanaryApplication {
 export interface StoredTaskMutation {
 	revision: string;
 	record: {
-		contract: "assurance_kernel/task_record/v3";
+		contract: "assurance_kernel/task_record/v3" | "assurance_kernel/task_record/v4";
 		task_id: string;
+		/** Present only on TaskRecord v4: the immutable Enrollment commit. */
+		git_base_head?: string;
 		intent_snapshot: { revision: number; [key: string]: unknown };
 		intent_ref: { path: string; content_hash: string };
 		lifecycle: "active" | "done" | "stopped";
@@ -133,11 +135,17 @@ export interface TaskTombstone {
 	final_record_hash: string;
 	terminalized_at: string;
 }
+export type TaskRecordContract =
+	| "assurance_kernel/task_record/v3"
+	| "assurance_kernel/task_record/v4";
+
 export interface TaskRecordRead {
 	revision: string;
 	record: {
-		contract: "assurance_kernel/task_record/v3";
+		contract: TaskRecordContract;
 		task_id: string;
+		/** Present only on TaskRecord v4: the immutable Enrollment commit. */
+		git_base_head?: string;
 		intent_snapshot: {
 			task_id: string;
 			revision: number;
@@ -156,6 +164,13 @@ export interface TaskRecordRead {
 			diff_hash: string;
 			actor_id: string;
 			acceptance_results: Array<{ acceptance_id: string; status: "passed" | "failed" | "blocked"; summary: string }>;
+			review_revision?: {
+				contract: "assurance_kernel/review_revision_identity/v1";
+				base_head: string;
+				review_commit: string;
+				review_tree: string;
+				manifest_digest: string;
+			};
 		}>;
 		findings: Array<{ id: string; kind: string; status: string; summary?: string }>;
 	} | null;
@@ -399,7 +414,7 @@ export async function findingsDigestV2(findings: unknown[]): Promise<string> {
 export async function projectAssurance(
 	root: string,
 	taskId: string,
-	diffProvider: (root: string, intent: { scope_hint?: unknown }) => string,
+	diffProvider: (root: string, record: NonNullable<TaskRecordRead["record"]>) => string,
 ): Promise<AssuranceProjectionResult> {
 	const mod = await import(/* @vite-ignore */ kernelPath("assurance_projection"));
 	return mod.projectAssurance(root, taskId, diffProvider) as unknown as AssuranceProjectionResult;

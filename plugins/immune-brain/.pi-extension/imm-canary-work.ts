@@ -31,7 +31,16 @@ import {
 	type FrozenRunner,
 	type VerificationDescriptor,
 } from "./pi-canary-verification";
-import { captureReviewBundle, writeNativeReviewEvidence, type ReviewBundle } from "./pi-canary-review-bundle";
+import {
+	captureReviewBundle,
+	captureReviewManifest,
+	listReviewRefs,
+	reconcileReviewRefs,
+	writeNativeReviewEvidence,
+	type ReviewBundle,
+	type ReviewManifestV5,
+	type ReviewRevision,
+} from "./pi-canary-review-bundle";
 import type { InvocationToken } from "./pi-canary-invocations";
 import { qaFindingId } from "./pi-canary-qa-findings";
 import {
@@ -58,7 +67,7 @@ import {
 	type UserAttentionReason,
 } from "./pi-canary-interaction";
 import { isToolFailureState, throwToolFailure } from "./pi-canary-tool-failure";
-import { taskDiffHash, captureGitTaskSnapshot } from "../runtime/workspace_scope";
+import { taskDiffHash, taskRevisionDiffHash, captureGitTaskSnapshot } from "../runtime/workspace_scope";
 import {
 	AssuranceProgression,
 	buildReviewPrompt,
@@ -108,6 +117,7 @@ import {
 	digestOfAction,
 	type AssuranceAuthorizationReadiness,
 	type AssuranceProjectionResult,
+	type TaskRecordRead,
 	type CanaryApplication,
 	type MutationAuthorityRegistry,
 	type CapabilityBindingV2,
@@ -184,6 +194,14 @@ export interface SnapshotDescriptorInput {
 	acceptance: Array<{ id: string; assertion: string; verification: string }>;
 	dirty_files?: string[];
 	review_bundle_digest?: string | null;
+	/** Present only when Review authority binds an immutable Git revision (v4). */
+	review_revision?: {
+		contract: "assurance_kernel/review_revision_identity/v1";
+		base_head: string;
+		review_commit: string;
+		review_tree: string;
+		manifest_digest: string;
+	};
 }
 
 export function buildSnapshot(input: SnapshotDescriptorInput): SnapshotDescriptor {
@@ -205,6 +223,7 @@ export function buildSnapshot(input: SnapshotDescriptorInput): SnapshotDescripto
 		acceptance: input.acceptance,
 		dirty_files: [...(input.dirty_files ?? [])].sort(),
 		review_bundle_digest: input.review_bundle_digest ?? null,
+		...(input.review_revision ? { review_revision: input.review_revision } : {}),
 		root: resolve(input.root),
 	};
 }
@@ -253,6 +272,7 @@ export default function (
 		frozenRunner: () => frozenRunner(),
 		buildAssurance: (root, taskId, role, projection, runner) =>
 			(dependencies.buildAssurance ?? buildAssuranceSnapshot)(root, taskId, role, projection, runner),
+		ensureReviewRevision: (root, taskId, projection) => ensureTaskReviewRevision(root, taskId, projection),
 		runQa: (snapshot, descriptors, runner, options) =>
 			(dependencies.runQa ?? runDeterministicQa)(snapshot, descriptors, runner, options),
 		writeReviewEvidence: (input) =>
@@ -328,8 +348,10 @@ export default function (
 
 	pi.on("session_start", async (_event: unknown, ctx?: ExtensionContext) => {
 		progression.onSessionStart();
-		if (!ctx || ctx.mode !== "tui") return;
+		if (!ctx) return;
 		railContext = ctx;
+		await reconcileRefsQuietly(ctx.cwd);
+		if (ctx.mode !== "tui") return;
 		await refreshTaskRail(ctx);
 	});
 	pi.on("tool_call", (event: { toolName?: string; input?: unknown; toolCallId?: string }, ctx?: ExtensionContext) => {
@@ -592,6 +614,7 @@ export default function (
 					result: "Kernel executor fact recorded",
 					next_action: nextAction,
 				};
+				await reconcileRefsQuietly(ctx.cwd);
 				presentTaskRailResult(ctx, taskId, details);
 				return toolResult(
 					JSON.stringify(
@@ -868,8 +891,13 @@ export default function (
 						});
 						await dependencies.authorizationAfterSidecarStage?.();
 					}
-					const operationDiffHash = nextIntent
-						? diffHashOf(ctx.cwd, priorIntent.intent)
+					// A breaking revision changes scope, but the Kernel still derives the
+					// authority digest from the pre-mutation record; read that exact owner.
+					const liveRecord = nextIntent ? await readTaskRecord(ctx.cwd, taskId) : null;
+					if (nextIntent && !liveRecord?.record)
+						throw new Error("TaskRecord changed before the breaking revision digest");
+					const operationDiffHash = liveRecord?.record
+						? diffHashOf(ctx.cwd, liveRecord.record)
 						: projection.projection.diff_hash;
 					const capability = await mintCapability(registry, {
 						authority_kind: "user",
@@ -895,7 +923,7 @@ export default function (
 						task_id: taskId,
 						operation: { ...exactOperation, capability, actor_id: "literal-user" } as never,
 						prior_intent_token: priorIntent.token,
-						diffProvider: (root: string, intent: { scope_hint: unknown }) => diffHashOf(root, intent),
+						diffProvider: (root: string, record: NonNullable<TaskRecordRead["record"]>) => diffHashOf(root, record),
 						now,
 					})) as unknown as { record: { lifecycle: string; artifact_state: string; intent_ref: { path: string }; intent_snapshot: { scope_hint: string[] } } };
 					if (
@@ -1020,7 +1048,7 @@ export async function recordCancelledUserDecision(
 			actor_id: "literal-user",
 		} as never,
 		prior_intent_token: (await readTaskIntent(ctx.cwd, taskId)).token,
-		diffProvider: (root: string, intent: { scope_hint: unknown }) => diffHashOf(root, intent),
+		diffProvider: (root: string, record: NonNullable<TaskRecordRead["record"]>) => diffHashOf(root, record),
 		now: new Date().toISOString(),
 	});
 	return { recorded: true, finding_id: findingId };
@@ -1050,8 +1078,18 @@ export function userOperationFor(operation: AuthorizeOperation, approval?: unkno
 	return { op: "record_user_approval" as const, approval };
 }
 
-function diffHashOf(root: string, intent: { scope_hint?: unknown }): string {
-	return taskDiffHash(root, intent.scope_hint);
+/**
+ * One record-aware freshness identity. v4 derives the scoped revision digest
+ * from the immutable Enrollment base so committed and staged task work share a
+ * single diff_hash with Review; v3 keeps the legacy HEAD -> index digest.
+ */
+function diffHashOf(root: string, record: NonNullable<TaskRecordRead["record"]>): string {
+	if (record.contract === "assurance_kernel/task_record/v4") {
+		if (!record.git_base_head)
+			throw new Error("TaskRecord v4 is missing git_base_head");
+		return taskRevisionDiffHash(root, record.intent_snapshot.scope_hint, record.git_base_head);
+	}
+	return taskDiffHash(root, record.intent_snapshot.scope_hint);
 }
 
 // Translation-only adapter for the internal Kernel assurance projection. All
@@ -1061,6 +1099,80 @@ function diffHashOf(root: string, intent: { scope_hint?: unknown }): string {
 // fail-closed projection error, never an automatic migration trigger.
 async function projectAssuranceState(root: string, taskId: string): Promise<AssuranceProjectionResult> {
 	return projectAssurance(root, taskId, diffHashOf);
+}
+
+/**
+ * Publish and prove the task-scoped synthetic revision for a v4 record. v3
+ * records keep the legacy full-source bundle and return null here.
+ */
+async function ensureTaskReviewRevision(
+	root: string,
+	taskId: string,
+	projection: AssuranceProjectionResult,
+): Promise<ReviewRevision | null> {
+	const current = await readTaskRecord(root, taskId);
+	const record = current.record;
+	if (!record) throw new Error(`task ${taskId} has no TaskRecord before Review preparation`);
+	if (current.revision !== projection.projection.record_revision)
+		throw new Error("TaskRecord changed before Review preparation");
+	if (record.contract !== "assurance_kernel/task_record/v4") return null;
+	if (!record.git_base_head)
+		throw new Error("Review revision requires a TaskRecord v4 git_base_head");
+	const manifest = captureReviewManifest(root, {
+		taskId,
+		baseHead: record.git_base_head,
+		scopeHint: record.intent_snapshot.scope_hint,
+		expectedDiffHash: projection.projection.diff_hash,
+		intentRevision: projection.projection.intent_revision,
+		intentContentHash: projection.projection.intent_content_hash,
+		recordRevision: projection.projection.record_revision,
+		workspaceRevision: projection.projection.workspace_revision,
+		lifecycle: projection.projection.lifecycle,
+		artifactState: projection.projection.artifact_state,
+		risk: record.intent_snapshot.risk,
+		outcomes: reviewPreflightOutcomes(record.intent_snapshot.acceptance),
+	});
+	return {
+		contract: "assurance_kernel/review_revision/v1",
+		base_head: manifest.base_head,
+		review_tree: manifest.review_tree,
+		review_commit: manifest.review_commit,
+		review_ref: manifest.review_ref,
+		diff_hash: manifest.diff_hash,
+		manifest_digest: manifest.manifest_digest,
+	};
+}
+
+/**
+ * Review refs are reconstructible evidence transport, never workflow authority.
+ * A ref survives only while its task owns a nonterminal TaskRecord.
+ */
+async function reconcileReviewRevisionRefs(root: string): Promise<{ removed: string[]; failed: string[] }> {
+	let listed: ReturnType<typeof listReviewRefs>;
+	try {
+		listed = listReviewRefs(root);
+	} catch {
+		return { removed: [], failed: [] };
+	}
+	const live = new Set<string>();
+	try {
+		const claim = await readBackendClaim(root);
+		for (const entry of listed) {
+			if (live.has(entry.taskId)) continue;
+			try {
+				const record = await readTaskRecord(root, entry.taskId);
+				if (record.record && record.record.lifecycle === "active" && claim?.task_id === entry.taskId)
+					live.add(entry.taskId);
+			} catch {
+				// An unreadable owner is never proof of life, but deleting evidence on
+				// a transient read failure is worse: leave it for the next pass.
+				live.add(entry.taskId);
+			}
+		}
+	} catch {
+		for (const entry of listed) live.add(entry.taskId);
+	}
+	return reconcileReviewRefs(root, live);
 }
 
 export interface QaVerificationProgressInput {
@@ -1233,7 +1345,7 @@ async function applyAssuranceVerdict(
 				actor_id: actorId,
 			},
 			prior_intent_token: priorIntentToken,
-			diffProvider: (root: string, intent: { scope_hint: unknown }) => diffHashOf(root, intent),
+			diffProvider: (root: string, record: NonNullable<TaskRecordRead["record"]>) => diffHashOf(root, record),
 			now,
 		}))) as unknown as { record: { lifecycle: string; artifact_state: string; intent_ref: { path: string }; intent_snapshot: { scope_hint: string[] }; findings?: Array<{ kind: string; status: string }> } };
 		stagePlanningArtifactTransition(ctx.cwd, result.record);
@@ -1258,6 +1370,11 @@ async function applyAssuranceVerdict(
 		diff_hash: snapshot.diff_hash,
 		actor_id: actorId,
 		summary: verdict.approval!.summary,
+		// Trusted revision identity comes from the host-verified snapshot, never
+		// from the reviewer payload.
+		...(snapshot.role === "review" && snapshot.review_revision
+			? { review_revision: snapshot.review_revision }
+			: {}),
 	};
 	const capability = await mintCapability(registry, {
 		authority_kind: snapshot.role,
@@ -1277,7 +1394,7 @@ async function applyAssuranceVerdict(
 		task_id: snapshot.task_id,
 		operation: { op: "record_approval", capability, approval, actor_id: actorId },
 		prior_intent_token: priorIntentToken,
-		diffProvider: (root: string, intent: { scope_hint: unknown }) => diffHashOf(root, intent),
+		diffProvider: (root: string, record: NonNullable<TaskRecordRead["record"]>) => diffHashOf(root, record),
 		now,
 	}));
 }
@@ -1288,7 +1405,12 @@ async function buildAssuranceSnapshot(
 	role: AssuranceRole,
 	projection: AssuranceProjectionResult,
 	runner: FrozenRunner,
-): Promise<{ snapshot: SnapshotDescriptor; descriptors: Map<string, VerificationDescriptor>; reviewBundle: ReviewBundle | null }> {
+): Promise<{
+	snapshot: SnapshotDescriptor;
+	descriptors: Map<string, VerificationDescriptor>;
+	reviewBundle: ReviewBundle | null;
+	reviewManifest: ReviewManifestV5 | null;
+}> {
 	const record = await readTaskRecord(root, taskId);
 	if (
 		!record.record ||
@@ -1309,23 +1431,47 @@ async function buildAssuranceSnapshot(
 		assertRunnerCompatible(descriptor, runner);
 		descriptors.set(item.id, descriptor);
 	}
-	const reviewBundle = role === "review"
+	const reviewRevision = record.record.contract === "assurance_kernel/task_record/v4"
+		? {
+			contract: "assurance_kernel/review_revision_identity/v1" as const,
+			base_head: record.record.git_base_head,
+			review_commit: "",
+			review_tree: "",
+			manifest_digest: "",
+		}
+		: null;
+	const reviewBundle = role === "review" && !reviewRevision
 		? captureReviewBundle(
 				root,
 				intent.scope_hint,
 				projection.projection.diff_hash,
-				Object.fromEntries(
-					record.record.attestations
-						.filter((item) => item.kind === "qa")
-						.flatMap((item) => item.acceptance_results)
-						.map((result) => [result.acceptance_id, { status: result.status, summary: result.summary }]),
-				),
+				qaOutcomes(record.record),
 			)
 		: null;
-	const taskSnapshot = reviewBundle ? null : captureGitTaskSnapshot(root, intent.scope_hint);
-	const dirtyFiles = reviewBundle
-		? Object.keys(reviewBundle.dirty_files)
-		: Object.keys(taskSnapshot!.staged_files);
+	const reviewManifest = role === "review" && reviewRevision
+		? captureReviewManifest(root, {
+				taskId,
+				baseHead: reviewRevision.base_head,
+				scopeHint: intent.scope_hint,
+				expectedDiffHash: projection.projection.diff_hash,
+				intentRevision: projection.projection.intent_revision,
+				intentContentHash: projection.projection.intent_content_hash,
+				recordRevision: projection.projection.record_revision,
+				workspaceRevision: projection.projection.workspace_revision,
+				lifecycle: projection.projection.lifecycle,
+				artifactState: projection.projection.artifact_state,
+				risk: intent.risk,
+				outcomes: qaOutcomes(record.record),
+			})
+		: null;
+	const taskSnapshot = !reviewBundle && !reviewManifest
+		? captureGitTaskSnapshot(root, intent.scope_hint)
+		: null;
+	const dirtyFiles = reviewManifest
+		? Object.keys(reviewManifest.changed_paths)
+		: reviewBundle
+			? Object.keys(reviewBundle.dirty_files)
+			: Object.keys(taskSnapshot!.staged_files);
 	return {
 		snapshot: buildSnapshot({
 				root,
@@ -1344,11 +1490,41 @@ async function buildAssuranceSnapshot(
 				stale_attestation_ids: projection.projection.stale_attestation_ids,
 				acceptance,
 				dirty_files: dirtyFiles,
-				review_bundle_digest: reviewBundle?.bundle_digest ?? null,
+				review_bundle_digest: reviewManifest?.manifest_digest ?? reviewBundle?.bundle_digest ?? null,
+				review_revision: reviewManifest
+					? {
+							contract: "assurance_kernel/review_revision_identity/v1",
+							base_head: reviewManifest.base_head,
+							review_commit: reviewManifest.review_commit,
+							review_tree: reviewManifest.review_tree,
+							manifest_digest: reviewManifest.manifest_digest,
+						}
+						: undefined,
 		}),
 		descriptors,
 		reviewBundle,
+		reviewManifest,
 	};
+}
+
+function reviewPreflightOutcomes(
+	acceptance: Array<{ id: string }>,
+): Record<string, { status: "passed"; summary: string }> {
+	const summary = `host-attested QA: all ${acceptance.length} fixed verification descriptor(s) passed`;
+	return Object.fromEntries(
+		acceptance.map((item) => [item.id, { status: "passed" as const, summary }]),
+	);
+}
+
+function qaOutcomes(
+	record: NonNullable<TaskRecordRead["record"]>,
+): Record<string, { status: "passed" | "failed" | "blocked"; summary: string }> {
+	return Object.fromEntries(
+		record.attestations
+			.filter((item) => item.kind === "qa")
+			.flatMap((item) => item.acceptance_results)
+			.map((result) => [result.acceptance_id, { status: result.status, summary: result.summary }]),
+	);
 }
 
 let frozenRunnerValue: FrozenRunner | undefined;
@@ -1456,7 +1632,7 @@ async function executeOrdinaryOperation(
 			task_id: input.taskId,
 			operation: operation as never,
 			prior_intent_token: priorIntent.token,
-			diffProvider: (root: string, intent: { scope_hint: unknown }) => diffHashOf(root, intent),
+			diffProvider: (root: string, record: NonNullable<TaskRecordRead["record"]>) => diffHashOf(root, record),
 			now: new Date().toISOString(),
 		});
 		if (operation.op === "freeze_artifacts" || operation.op === "stop")
@@ -1473,6 +1649,18 @@ async function executeOrdinaryOperation(
 
 type AssuranceTaskState = AssuranceProjectionResult["projection"] | { error: string };
 
+/**
+ * Ref cleanup is transport hygiene, never workflow authority: a failure is
+ * swallowed here and retried by the next startup or terminal reconciliation.
+ */
+async function reconcileRefsQuietly(root: string): Promise<void> {
+	try {
+		await reconcileReviewRevisionRefs(root);
+	} catch {
+		/* non-authoritative */
+	}
+}
+
 async function enrichAssuranceResult(
 	ctx: ExtensionContext,
 	taskId: string,
@@ -1483,6 +1671,7 @@ async function enrichAssuranceResult(
 		? { error: projection.error }
 		: projection.projection;
 	let tracker: Awaited<ReturnType<typeof markGithubTaskTerminal>> | undefined;
+	await reconcileRefsQuietly(ctx.cwd);
 	if (!projection.error) {
 		try {
 			const terminalInput = deriveGithubTerminalProjectionInput(
@@ -1511,6 +1700,7 @@ async function enrichAssuranceResult(
 
 function nextActionForAssuranceResult(result: Record<string, unknown>, taskState: AssuranceTaskState): string {
 	if ("error" in taskState) return "inspect authority state";
+	if (result.state === "review_preparation_failed") return "retry advance_assurance";
 	if (taskState.lifecycle === "done" || taskState.lifecycle === "stopped") return "none";
 	switch (result.state) {
 		case "review_ready": return "invoke the reserved foreground Agent";

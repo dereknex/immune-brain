@@ -26,6 +26,9 @@ export interface ReservedAgentParams {
 	subagent_type: "Review";
 	description: string;
 	prompt: string;
+	name: "";
+	model: "";
+	thinking: "";
 	inherit_context: false;
 	isolated: true;
 	isolation: "worktree";
@@ -53,6 +56,13 @@ export function reservedAgentDescription(taskId: string, operationId: string): s
 }
 
 export function semanticNeighborhoodReviewPrompt(prompt: string): string {
+	if (prompt.includes("assurance_kernel/review_manifest/v5")) {
+		return [
+			prompt,
+			`For every changed_paths entry, inspect the immutable Git objects with git diff and git show against the supplied base_head and review_commit. Verify the review_commit parent and tree before analyzing it; do not read live worktree files or expect source bytes in the manifest.`,
+			`Unchanged files are outside mutation authority. Read an unchanged path only when directly required by an acceptance assertion, a changed caller, or the same state machine, and cite the path and reason in the finding. Do not enumerate neighborhood files or explore the repository broadly.`,
+		].join("\n");
+	}
 	return [
 		prompt,
 		`For every neighborhood_files entry, verify git rev-parse HEAD:<path> equals base_oid, then analyze current_content exclusively from the immutable bundle. path_provenance is authoritative: diff marks task changes and neighborhood marks unchanged same-state-machine context selected only from scope_hint.`,
@@ -70,6 +80,9 @@ export function reservedAgentParams(input: {
 		subagent_type: "Review",
 		description: reservedAgentDescription(input.taskId, input.operationId),
 		prompt: semanticNeighborhoodReviewPrompt(input.prompt),
+		name: "",
+		model: "",
+		thinking: "",
 		inherit_context: false,
 		isolated: true,
 		isolation: "worktree",
@@ -88,13 +101,11 @@ export function matchesReservedAgentArgs(
 	const expectedKeys = Object.entries(params)
 		.filter(([, value]) => value !== undefined)
 		.map(([key]) => key);
-	// Host serializes Agent input, may omit falsy inherit_context, and resolves
-	// execution metadata. name/model/thinking are host-owned and not Review
-	// authority identity: strip them, then require the exact reserved field set.
+	// Pi host normalizes optional Agent fields before the extension observes the
+	// call. Keep the complete envelope in the reservation, including empty
+	// host-owned fields: empty model/thinking values still let the selected
+	// Review agent config resolve without allowing a different call to match.
 	const normalizedArgs: Record<string, unknown> = { ...(args as Record<string, unknown>) };
-	delete normalizedArgs["name"];
-	delete normalizedArgs["model"];
-	delete normalizedArgs["thinking"];
 	if (!Object.hasOwn(normalizedArgs, "inherit_context") && (params as unknown as Record<string, unknown>)["inherit_context"] === false) {
 		normalizedArgs["inherit_context"] = false;
 	}
@@ -106,6 +117,9 @@ export function matchesReservedAgentArgs(
 		normalizedArgs.subagent_type === params.subagent_type &&
 		normalizedArgs.description === params.description &&
 		normalizedArgs.prompt === params.prompt &&
+		normalizedArgs.name === params.name &&
+		normalizedArgs.model === params.model &&
+		normalizedArgs.thinking === params.thinking &&
 		normalizedArgs.inherit_context === params.inherit_context &&
 		normalizedArgs.isolated === params.isolated &&
 		normalizedArgs.isolation === params.isolation &&

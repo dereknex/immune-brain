@@ -6,20 +6,21 @@ import { createHash } from "node:crypto";
 import { completionDecision } from "./completion";
 import {
 	REDUCED_MUTATION_BRAND,
+	TASK_RECORD_CONTRACT_V4,
 	type AuthorityAuditDescriptor,
 	type ReducedTaskMutation,
 	type TaskAction,
 	type TaskFinding,
 	type TaskIntentRefV3,
 	type TaskIntentV1,
-	type TaskRecordV3,
+	type TaskRecord,
 } from "./types";
 import {
 	KernelInvariantError,
 	assertKernelInvariantsV3,
 	assertTaskRecordUpdateV3,
 	parseTaskAction,
-	parseTaskRecordV3,
+	parseTaskRecord,
 } from "./validation";
 import { classifyIntentRevision, canonicalIntentHash } from "./intent";
 
@@ -29,7 +30,7 @@ const RISK_RANK: Record<TaskIntentV1["risk"], number> = {
 	critical: 2,
 };
 
-function transitionLifecycle(record: TaskRecordV3, to: "done" | "stopped"): void {
+function transitionLifecycle(record: TaskRecord, to: "done" | "stopped"): void {
 	if (record.lifecycle !== "active")
 		throw new KernelInvariantError([
 			`illegal lifecycle transition: ${record.lifecycle} -> ${to}`,
@@ -37,7 +38,7 @@ function transitionLifecycle(record: TaskRecordV3, to: "done" | "stopped"): void
 	record.lifecycle = to;
 }
 
-function stateOf(record: TaskRecordV3): string {
+function stateOf(record: TaskRecord): string {
 	return `${record.lifecycle}:${record.artifact_state}`;
 }
 
@@ -54,7 +55,7 @@ function stableJson(value: unknown): string {
 	return primitive === undefined ? "null" : primitive;
 }
 
-export function canonicalRecordHash(record: TaskRecordV3): string {
+export function canonicalRecordHash(record: TaskRecord): string {
 	// Must equal the storage CAS revision: the exact serialized file bytes.
 	return `sha256:${createHash("sha256")
 		.update(`${JSON.stringify(record, null, 2)}\n`)
@@ -99,7 +100,7 @@ export function recordedActionFingerprint(reason: string | null): string | null 
 	return matched?.[1] ?? null;
 }
 
-function copyRecord(record: TaskRecordV3): TaskRecordV3 {
+function copyRecord(record: TaskRecord): TaskRecord {
 	return {
 		...record,
 		intent_snapshot: { ...record.intent_snapshot },
@@ -113,7 +114,7 @@ function copyRecord(record: TaskRecordV3): TaskRecordV3 {
 	};
 }
 
-function reviewRound(record: TaskRecordV3): number {
+function reviewRound(record: TaskRecord): number {
 	return (
 		Math.max(
 			0,
@@ -125,7 +126,7 @@ function reviewRound(record: TaskRecordV3): number {
 }
 
 function appendHistory(
-	record: TaskRecordV3,
+	record: TaskRecord,
 	action: TaskAction,
 	from: string,
 	detail: string | null,
@@ -200,11 +201,11 @@ export function findingsDigestV2(findings: TaskFinding[]): string {
 }
 
 export function reduceTask(
-	recordRaw: TaskRecordV3,
+	recordRaw: TaskRecord,
 	actionRaw: TaskAction,
 	authorityAudit: AuthorityAuditDescriptor | null = null,
 ): ReducedTaskMutation {
-	const previous = parseTaskRecordV3(recordRaw);
+	const previous = parseTaskRecord(recordRaw);
 	assertKernelInvariantsV3(previous.intent_snapshot, previous);
 	const action = parseTaskAction(actionRaw);
 	const record = copyRecord(previous);
@@ -343,8 +344,23 @@ export function reduceTask(
 				throw new KernelInvariantError([
 					`attestations contains duplicate id ${approval.id}`,
 				]);
+			// A v4 review attestation must pin the exact immutable revision the
+			// reviewer analyzed; nothing else may carry that identity.
+			const reviewRevision = approval.review_revision;
+			if (reviewRevision && approval.kind !== "review")
+				throw new KernelInvariantError(["review_revision is only valid on review approvals"]);
+			if (record.contract !== TASK_RECORD_CONTRACT_V4) {
+				if (reviewRevision)
+					throw new KernelInvariantError(["review_revision requires a TaskRecord v4"]);
+			} else if (approval.kind === "review") {
+				if (!reviewRevision)
+					throw new KernelInvariantError(["v4 review approval requires review_revision"]);
+				if (reviewRevision.base_head !== record.git_base_head)
+					throw new KernelInvariantError(["review_revision.base_head must equal the Enrollment git_base_head"]);
+			}
+			const { review_revision: storedReviewRevision, ...approvalWithoutRevision } = approval;
 			record.attestations.push({
-				...approval,
+				...approvalWithoutRevision,
 				acceptance_results: approval.kind === "qa"
 					? record.intent_snapshot.acceptance.map((item) => ({
 						acceptance_id: item.id,
@@ -352,6 +368,7 @@ export function reduceTask(
 						summary: `host-attested QA: ${approval.summary}`,
 					}))
 					: [],
+				...(storedReviewRevision ? { review_revision: storedReviewRevision } : {}),
 			});
 			appendHistory(record, action, from, approval.id, authorityAudit);
 			break;
@@ -380,6 +397,8 @@ export function reduceTask(
 				throw new KernelInvariantError([
 					`attestations contains duplicate id ${approval.id}`,
 				]);
+			if (approval.review_revision)
+				throw new KernelInvariantError(["review_revision is only valid on review approvals"]);
 			record.attestations.push({ ...approval, acceptance_results: [] });
 			appendHistory(record, action, from, approval.id, authorityAudit);
 			break;
@@ -587,12 +606,12 @@ export function reduceTask(
 	return brandResult(record, nextWorkingFor(record));
 }
 
-function nextWorkingFor(record: TaskRecordV3): string | null {
+function nextWorkingFor(record: TaskRecord): string | null {
 	return record.lifecycle === "active" ? record.task_id : null;
 }
 
 function brandResult(
-	record: TaskRecordV3,
+	record: TaskRecord,
 	nextWorking: string | null,
 ): ReducedTaskMutation {
 	const target = {} as ReducedTaskMutation;

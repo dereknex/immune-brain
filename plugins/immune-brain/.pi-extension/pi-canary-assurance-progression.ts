@@ -17,7 +17,7 @@ import {
 } from "./pi-canary-verification";
 import { createInvocationRegistry, type InvocationState, type InvocationToken } from "./pi-canary-invocations";
 import { describeQaFailure } from "./pi-canary-qa-findings";
-import type { ReviewBundle } from "./pi-canary-review-bundle";
+import type { ReviewBundle, ReviewManifestV5, ReviewRevision } from "./pi-canary-review-bundle";
 import {
 	matchesReservedAgentArgs,
 	parseForegroundAgentResult,
@@ -33,7 +33,7 @@ import type { AssuranceCorrelation, AssuranceRole, AssuranceResultPresentation }
 import {
 	buildRoleDelegationPacket,
 } from "../runtime/role_prompt_bridge";
-import type { AssuranceProjectionResult, TaskIntentRead, TaskRecordRead, TaskTombstoneRead } from "./runtime-stub";
+import type { AssuranceProjectionResult, TaskIntentRead, TaskRecordRead, TaskTombstone } from "./runtime-stub";
 
 export interface GithubTerminalProjectionInput {
 	task_id: string;
@@ -44,7 +44,7 @@ export interface GithubTerminalProjectionInput {
 export function deriveGithubTerminalProjectionInput(
 	taskId: string,
 	projection: AssuranceProjectionResult,
-	tombstone: TaskTombstoneRead | null,
+	tombstone: TaskTombstone | null,
 ): GithubTerminalProjectionInput | null {
 	if (
 		projection.error
@@ -81,6 +81,14 @@ export interface AssuranceVerdict {
 	}>;
 }
 
+export interface ReviewRevisionIdentity {
+	contract: "assurance_kernel/review_revision_identity/v1";
+	base_head: string;
+	review_commit: string;
+	review_tree: string;
+	manifest_digest: string;
+}
+
 export interface SnapshotDescriptor {
 	contract: "assurance_kernel/assurance_snapshot/v2";
 	task_id: string;
@@ -99,6 +107,8 @@ export interface SnapshotDescriptor {
 	acceptance: Array<{ id: string; assertion: string; verification: string }>;
 	dirty_files: string[];
 	review_bundle_digest: string | null;
+	/** Present only when Review authority binds an immutable Git revision (v4). */
+	review_revision?: ReviewRevisionIdentity;
 	root: string;
 }
 
@@ -121,6 +131,12 @@ export type AssuranceAdvanceResult =
 	| { state: "rework"; operation: "qa"; operation_id: string; summary: string }
 	| { state: "cancelled"; operation: "qa" | "review"; operation_id: string; reason: string }
 	| { state: "failed"; operation: "qa" | "review"; operation_id: string; reason: string }
+	/**
+	 * Read-only Review evidence preparation failed after QA authority settled.
+	 * The Kernel obligation stays `run_review`, nothing was lost, and the same
+	 * deterministic revision can be rebuilt on the next advance.
+	 */
+	| { state: "review_preparation_failed"; operation: "review"; operation_id: string; reason: string }
 	| { state: "settlement_unknown"; operation: "qa" | "review"; operation_id: string; reason: string }
 	| { state: "blocked"; reason: string }
 	| { state: "completed" }
@@ -129,6 +145,7 @@ export type AssuranceAdvanceResult =
 export type AssuranceSubmitReviewResult =
 	| { state: "rework"; operation: "review"; operation_id: string; summary: string }
 	| { state: "awaiting_user"; operation: "record-user-approval"; operation_id: string }
+	| { state: "review_preparation_failed"; operation: "review"; operation_id: string; reason: string }
 	| { state: "completed" }
 	| { state: "settlement_unknown"; operation: "qa" | "review"; operation_id: string; reason: string }
 	| { state: "blocked"; reason: string };
@@ -153,14 +170,25 @@ export interface AssuranceProgressionPorts {
 		snapshot: SnapshotDescriptor;
 		descriptors: Map<string, VerificationDescriptor>;
 		reviewBundle: ReviewBundle | null;
+		reviewManifest?: ReviewManifestV5 | null;
 	}>;
+	/**
+	 * Publish and prove the deterministic task-scoped revision before QA runs, so
+	 * a preparation failure can never consume or fake a settled QA attestation.
+	 * Returns null for records still on the legacy v3 bundle path.
+	 */
+	ensureReviewRevision?(
+		root: string,
+		taskId: string,
+		projection: AssuranceProjectionResult,
+	): Promise<ReviewRevision | null>;
 	runQa(
 		snapshot: SnapshotDescriptor,
 		descriptors: Map<string, VerificationDescriptor>,
 		runner: FrozenRunner,
 		options: { signal?: AbortSignal; onProgress?: (progress: QaVerificationProgress) => void },
 	): Promise<AssuranceVerdict>;
-	writeReviewEvidence(input: { snapshot: SnapshotDescriptor; review_bundle: ReviewBundle }): { path: string; remove(): void };
+	writeReviewEvidence(input: { snapshot: SnapshotDescriptor; evidence: ReviewBundle | ReviewManifestV5 }): { path: string; remove(): void };
 	applyVerdict(
 		ctx: ExtensionContext,
 		input: {
@@ -221,10 +249,11 @@ const QUICK_REVIEW_MAX_BYTES = 64 * 1024;
 const HEAVY_REVIEW_MIN_ACCEPTANCE = 9;
 const HEAVY_REVIEW_MIN_BYTES = 512 * 1024 + 1;
 
-export function classifyReviewWorkload(snapshot: Pick<SnapshotDescriptor, "risk" | "acceptance">, bundle: ReviewBundle): ReviewWorkload {
-	const bytes = Buffer.byteLength(JSON.stringify(bundle));
+export function classifyReviewWorkload(snapshot: Pick<SnapshotDescriptor, "risk" | "acceptance">, evidence: ReviewBundle | ReviewManifestV5): ReviewWorkload {
+	const bytes = Buffer.byteLength(JSON.stringify(evidence));
+	const paths = "changed_paths" in evidence ? Object.keys(evidence.changed_paths) : Object.keys(evidence.dirty_files);
 	if (snapshot.risk === "critical" || snapshot.acceptance.length >= HEAVY_REVIEW_MIN_ACCEPTANCE || bytes >= HEAVY_REVIEW_MIN_BYTES) return "heavy";
-	if (snapshot.risk === "routine" && snapshot.acceptance.length <= QUICK_REVIEW_MAX_ACCEPTANCE && Object.keys(bundle.dirty_files).length <= QUICK_REVIEW_MAX_FILES && bytes <= QUICK_REVIEW_MAX_BYTES) return "quick";
+	if (snapshot.risk === "routine" && snapshot.acceptance.length <= QUICK_REVIEW_MAX_ACCEPTANCE && paths.length <= QUICK_REVIEW_MAX_FILES && bytes <= QUICK_REVIEW_MAX_BYTES) return "quick";
 	return "standard";
 }
 
@@ -249,17 +278,30 @@ export function buildReviewPrompt(snapshot: SnapshotDescriptor, evidencePath?: s
 			snapshot_digest: digest,
 		},
 	});
+	const revision = snapshot.review_revision;
+	const evidenceContract = revision
+		? [
+				`Review evidence contract: assurance_kernel/review_manifest/v5. The manifest is metadata only; source is read from immutable Git objects.`,
+				`Review one immutable Git revision, not live workspace bytes. Read the metadata manifest at ${evidencePath ?? "<evidence-path>"} first; it carries no source. Verify that git rev-parse ${revision.base_head} and git rev-parse ${revision.review_commit} both resolve, that ${revision.review_commit}^{} is a commit whose only parent is ${revision.base_head}, and that its tree is ${revision.review_tree}.`,
+				`Analyze the change with git diff ${revision.base_head} ${revision.review_commit} (and git show ${revision.review_commit}:<path> for full files). Every path in changed_paths is the task's work: added, modified, or deleted since Enrollment. Deleted paths have a null oid. Never treat a path that is absent from ${revision.base_head} as pre-existing, and never review files outside the revision.`,
+				`Unchanged files are not part of the mutation authority. Read one only when it is directly required by an acceptance assertion, a changed caller, or the same state machine, and cite the path plus the reason in your finding. Repository-wide exploration is out of scope.`,
+				`The user-selected worktree may contain staged or committed work that is not in this revision, and revision objects may not be checked out anywhere. Do not read working-tree files as evidence; git object reads against the shared object database are the only source of truth.`,
+			]
+		: [
+				`Verify immutable bundle provenance before analyzing findings. Review the immutable evidence JSON at ${evidencePath ?? "<evidence-path>"}. Read that file first; verify that git rev-parse HEAD in the isolated reviewer worktree equals bundle.head. For every tracked dirty_files entry, verify git rev-parse HEAD:<path> equals base_oid, then compare that immutable HEAD blob with current_content. A null base_oid denotes an untracked current file; a null current_content denotes a deletion. Do not inspect or depend on live task bytes outside the immutable bundle.`,
+				`Limit repository inspection to the acceptance assertions and dirty_files contents in the immutable bundle. Do not explore unrelated repository paths.`,
+				`The user-selected worktree may contain staged task changes that are absent from the isolated reviewer worktree. Review authority is bound only to the bundle dirty_files current_content bytes and committed HEAD provenance. Analyze code exclusively from those bundle bytes; repository file reads are permitted only for the provenance git commands above. A symbol present in current_content but absent from HEAD is the task change, not an absence.`,
+			];
 	return [
 		rolePacket.prompt,
-
-		`Verify immutable bundle provenance before analyzing findings. Review the immutable evidence JSON at ${evidencePath ?? "<evidence-path>"}. Read that file first; verify that git rev-parse HEAD in the isolated reviewer worktree equals bundle.head. For every tracked dirty_files entry, verify git rev-parse HEAD:<path> equals base_oid, then compare that immutable HEAD blob with current_content. A null base_oid denotes an untracked current file; a null current_content denotes a deletion. Do not inspect or depend on live task bytes outside the immutable bundle.`,
-		`Limit repository inspection to the acceptance assertions and dirty_files contents in the immutable bundle. Do not explore unrelated repository paths.`,
-		`The user-selected worktree may contain staged task changes that are absent from the isolated reviewer worktree. Review authority is bound only to the bundle dirty_files current_content bytes and committed HEAD provenance. Analyze code exclusively from those bundle bytes; repository file reads are permitted only for the provenance git commands above. A symbol present in current_content but absent from HEAD is the task change, not an absence.`,
+		...evidenceContract,
 		`Do not edit files, create files, run mutating commands, or change Git state. Focus on correctness, regressions, security, and missing tests.`,
-		`Execution outcomes for every acceptance were verified deterministically by the Kernel QA layer before this review and are embedded in this bundle under outcomes (acceptance_id -> {status, summary}); do not re-execute descriptors and do not treat the absence of local test runs as a finding. Your review covers bundle provenance, code correctness, regressions, security, and missing tests against the embedded assertions and code bytes.`,
+		`Execution outcomes for every acceptance were verified deterministically by the Kernel QA layer before this review and are embedded in this bundle under outcomes (the immutable evidence file, acceptance_id -> {status, summary}); do not re-execute descriptors and do not treat the absence of local test runs as a finding. Your review covers evidence provenance, code correctness, regressions, security, and missing tests against the embedded assertions and code.`,
 		`Snapshot digest: ${digest}`,
 		`TaskRecord revision: ${snapshot.record_revision}`,
-		`Intent revision ${snapshot.intent_revision} (hash ${snapshot.intent_content_hash}), diff ${snapshot.diff_hash}, review bundle ${snapshot.review_bundle_digest}, state ${snapshot.lifecycle}:${snapshot.artifact_state}.`,
+		revision
+			? `Intent revision ${snapshot.intent_revision} (hash ${snapshot.intent_content_hash}), diff ${snapshot.diff_hash}, review revision ${revision.review_commit} (base ${revision.base_head}, tree ${revision.review_tree}, manifest ${revision.manifest_digest}), state ${snapshot.lifecycle}:${snapshot.artifact_state}.`
+			: `Intent revision ${snapshot.intent_revision} (hash ${snapshot.intent_content_hash}), diff ${snapshot.diff_hash}, review bundle ${snapshot.review_bundle_digest}, state ${snapshot.lifecycle}:${snapshot.artifact_state}.`,
 		"Acceptance assertions:", acceptance,
 		"Reserve the final turn for exactly one strict JSON verdict. Reply with ONLY that object, without markdown fences or commentary.",
 		`PASS shape: {"contract":"assurance_kernel/assurance_verdict/v2","role":"review","task_id":"${snapshot.task_id}","snapshot_digest":"${digest}","decision":"pass","approval":{"kind":"review","authority_role":"reviewer","summary":"<one line>"}}`,
@@ -285,6 +327,8 @@ export function parseAssuranceVerdict(text: string, snapshot: SnapshotDescriptor
 		const expectedKind = snapshot.role === "qa" ? "qa" : "review";
 		const expectedRole = snapshot.role === "qa" ? "qa" : "reviewer";
 		if (!approval || approval.kind !== expectedKind || approval.authority_role !== expectedRole || typeof approval.summary !== "string" || !approval.summary.trim()) throw new Error("pass verdict approval is invalid");
+		const unknownApproval = Object.keys(approval).find((key) => !["kind", "authority_role", "summary"].includes(key));
+		if (unknownApproval) throw new Error(`pass verdict approval has unknown field: ${unknownApproval}`);
 		if (raw.findings !== undefined) throw new Error("pass verdict must omit findings");
 		return { contract: "assurance_kernel/assurance_verdict/v2", role: snapshot.role, task_id: snapshot.task_id, snapshot_digest: snapshotDigest(snapshot), decision: "pass", approval: { kind: expectedKind, authority_role: expectedRole, summary: approval.summary } };
 	}
@@ -412,9 +456,32 @@ export class AssuranceProgression {
 
 	async advance(taskId: string, ctx: ExtensionContext, signal?: AbortSignal, onUpdate?: (update: ForegroundToolUpdate) => void): Promise<AssuranceAdvanceResult> {
 		const active = this.active(taskId);
-		if (active?.state === "review_ready") return this.reviewReadyResult(taskId);
-		if (active?.state === "settlement_unknown") return active;
-		if (active?.state === "running") return { state: "blocked", reason: `assurance operation ${active.operation_id} is already running` };
+		if (active?.state === "review_ready") {
+			const reservation = this.reviewReservations.get(taskId);
+			let projection: AssuranceProjectionResult;
+			try {
+				projection = await this.ports.projectTask(ctx.cwd, taskId);
+			} catch (error) {
+				return { state: "blocked", reason: `cannot validate Review reservation: ${boundedAssuranceError(error)}` };
+			}
+			const current = projection.projection;
+			const matches = !projection.error
+				&& projection.claim?.task_id === taskId
+				&& current.lifecycle === "active"
+				&& current.next_obligation === "run_review"
+				&& reservation !== undefined
+				&& reservation.snapshot.record_revision === current.record_revision
+				&& reservation.snapshot.workspace_revision === current.workspace_revision
+				&& reservation.snapshot.intent_revision === current.intent_revision
+				&& reservation.snapshot.intent_content_hash === current.intent_content_hash
+				&& reservation.snapshot.diff_hash === current.diff_hash;
+			if (matches) return this.reviewReadyResult(taskId);
+			if (reservation) this.releaseReviewReservation(taskId, reservation);
+			this.rejectedReviewOperations.delete(taskId);
+		}
+		const refreshed = this.active(taskId);
+		if (refreshed?.state === "settlement_unknown") return refreshed;
+		if (refreshed?.state === "running") return { state: "blocked", reason: `assurance operation ${refreshed.operation_id} is already running` };
 		const operationId = randomUUID();
 		const operationGeneration = this.sessionGeneration;
 		const operationController = new AbortController();
@@ -428,6 +495,7 @@ export class AssuranceProgression {
 		this.rejectedReviewOperations.delete(taskId);
 		let authorityCommitted = false;
 		let authorityBoundaryStarted = false;
+		let reviewPreparationStarted = false;
 		let phase = "preparing";
 		const operationLive = () => this.sessionActive
 			&& this.sessionGeneration === operationGeneration
@@ -464,12 +532,14 @@ export class AssuranceProgression {
 				const freeze = this.ports.applyOrdinaryOperation(ctx, { taskId, operation: { op: "freeze_artifacts", actor_id: "executor" } });
 				authorityBoundaryStarted = true;
 				await freeze;
-				authorityCommitted = true;
 				ensureOperationLive();
 				projection = await this.ports.projectTask(ctx.cwd, taskId);
 				ensureOperationLive();
 				if (projection.error || projection.projection.lifecycle !== "active" || projection.projection.artifact_state !== "frozen")
 					return this.unknownAfterCommit(taskId, "qa", operationId, projection.error ?? "artifact freeze did not settle");
+				// The freeze outcome is proven by the re-projection above, so later
+				// read-only preparation failures are never a committed-authority mystery.
+				authorityBoundaryStarted = false;
 			}
 			if (projection.projection.next_obligation === "complete") {
 				progress("completing", "Completing the routine task after deterministic QA");
@@ -485,8 +555,25 @@ export class AssuranceProgression {
 			if (projection.projection.next_obligation !== "run_qa" && projection.projection.next_obligation !== "run_review")
 				return { state: "blocked", reason: `Kernel requires ${projection.projection.next_obligation}` };
 			const qaAlreadySettled = projection.projection.next_obligation === "run_review";
+			if (qaAlreadySettled) reviewPreparationStarted = true;
 			const runner = await this.ports.frozenRunner();
 			ensureOperationLive();
+			// Prove the immutable Review revision before any descriptor runs. A task
+			// that cannot publish its revision must stop with zero QA attestation
+			// rather than approving bytes nobody can review.
+			if (!qaAlreadySettled && projection.projection.risk !== "routine") {
+				progress("preparing_review_revision", "Proving the immutable Review revision before QA");
+				try {
+					if (parked.record?.contract === "assurance_kernel/task_record/v4") {
+						if (!this.ports.ensureReviewRevision)
+							throw new Error("v4 Review revision preparation is unavailable");
+						await this.ports.ensureReviewRevision(ctx.cwd, taskId, projection);
+					}
+				} catch (error) {
+					return { state: "blocked", reason: `review revision preparation failed: ${boundedAssuranceError(error)}` };
+				}
+				ensureOperationLive();
+			}
 			let qaVerdict: AssuranceVerdict | undefined;
 			if (qaAlreadySettled) {
 				progress("resuming_review", "Resuming Review preparation from the Kernel assurance projection");
@@ -523,7 +610,10 @@ export class AssuranceProgression {
 							},
 						},
 					});
-					ensureOperationLive();
+					if (!(authorityCommitted && aborted())) {
+						ensureOperationLive();
+						authorityBoundaryStarted = false;
+					}
 				} catch (error) {
 					if (!authorityCommitted && (aborted() || error instanceof VerificationAbortedError)) return this.cancelled("qa", operationId, "host cancellation before QA authority commit");
 					return authorityCommitted
@@ -534,11 +624,18 @@ export class AssuranceProgression {
 				}
 			}
 			if (qaVerdict?.decision === "rework") return { state: "rework", operation: "qa", operation_id: operationId, summary: qaVerdict.findings?.map((finding) => finding.summary).join("; ") ?? "deterministic QA requested rework" };
-			ensureOperationLive();
+			if (!(authorityCommitted && aborted())) ensureOperationLive();
 			progress("preparing_review", "Preparing the reserved foreground Review bundle");
-			const fresh = await this.ports.projectTask(ctx.cwd, taskId);
-			ensureOperationLive();
-			if (fresh.error || !fresh.claim) return this.unknownAfterCommit(taskId, "qa", operationId, fresh.error ?? "claim disappeared after QA settlement");
+			let fresh: AssuranceProjectionResult;
+			try {
+				fresh = await this.ports.projectTask(ctx.cwd, taskId);
+			} catch (error) {
+				return this.reviewPreparationFailed(taskId, operationId, boundedAssuranceError(error));
+			}
+			if (fresh.error || !fresh.claim) {
+				if (qaAlreadySettled) return this.reviewPreparationFailed(taskId, operationId, fresh.error ?? "claim disappeared after QA settlement");
+				return this.unknownAfterCommit(taskId, "qa", operationId, fresh.error ?? "claim disappeared after QA settlement");
+			}
 			if (fresh.projection.next_obligation === "complete") {
 				progress("completing", "Deterministic QA passed; completing the routine task");
 				try {
@@ -550,18 +647,39 @@ export class AssuranceProgression {
 			}
 			if (fresh.projection.next_obligation === "authorize_user")
 				return { state: "awaiting_user", operation: "record-user-approval", operation_id: operationId };
-			if (fresh.projection.next_obligation !== "run_review")
+			if (fresh.projection.next_obligation !== "run_review") {
+				if (authorityCommitted && aborted()) return this.unknownAfterCommit(taskId, "qa", operationId, "QA settlement projection did not require Review after cancellation");
 				return { state: "blocked", reason: `Kernel requires ${fresh.projection.next_obligation} after QA` };
-			const review = await this.ports.buildAssurance(ctx.cwd, taskId, "review", fresh, runner);
-			ensureOperationLive();
-			if (!review.reviewBundle) return this.unknownAfterCommit(taskId, "qa", operationId, "review bundle is missing after QA settlement");
-			const evidence = this.ports.writeReviewEvidence({ snapshot: review.snapshot, review_bundle: review.reviewBundle });
+			}
+			reviewPreparationStarted = true;
+			authorityCommitted = false;
+			authorityBoundaryStarted = false;
+			if (aborted()) return this.reviewPreparationFailed(taskId, operationId, "host cancellation after QA authority settlement");
+			progress("preparing_review", "Preparing the reserved foreground Review evidence");
+			let review: Awaited<ReturnType<AssuranceProgressionPorts["buildAssurance"]>>;
+			let evidence: { path: string; remove(): void };
+			try {
+				review = await this.ports.buildAssurance(ctx.cwd, taskId, "review", fresh, runner);
+				const payload = review.reviewManifest ?? review.reviewBundle;
+				if (!payload) throw new Error("review evidence is missing after QA settlement");
+				evidence = this.ports.writeReviewEvidence({ snapshot: review.snapshot, evidence: payload });
+			} catch (error) {
+				// QA authority is already settled and durable; only the read-only
+				// evidence transport failed. Keep run_review and allow a retry.
+				return this.reviewPreparationFailed(taskId, operationId, boundedAssuranceError(error));
+			}
+			try {
+				ensureOperationLive();
+			} catch (error) {
+				try { evidence.remove(); } catch { /* cleanup cannot create authority */ }
+				throw error;
+			}
 			const reservation: ReviewReservation = {
 				taskId,
 				operationId,
 				correlation: { record_revision: review.snapshot.record_revision, intent_content_hash: review.snapshot.intent_content_hash, diff_hash: review.snapshot.diff_hash },
 				snapshot: review.snapshot,
-				params: { subagent_type: "Review", description: "", prompt: "", inherit_context: false, isolated: true, isolation: "worktree", run_in_background: false, max_turns: 0 },
+				params: { subagent_type: "Review", description: "", prompt: "", name: "", model: "", thinking: "", inherit_context: false, isolated: true, isolation: "worktree", run_in_background: false, max_turns: 0, resume: "", schedule: "" },
 				evidence,
 				resultObserved: false,
 				ended: false,
@@ -570,17 +688,23 @@ export class AssuranceProgression {
 			this.reviewReservations.set(taskId, reservation);
 			try {
 				ensureOperationLive();
-				const workload = classifyReviewWorkload(review.snapshot, review.reviewBundle);
+				const workload = classifyReviewWorkload(review.snapshot, review.reviewManifest ?? review.reviewBundle!);
 				reservation.params = reservedAgentParams({ taskId, operationId, prompt: buildReviewPrompt(review.snapshot, evidence.path), max_turns: reviewTurnBudget(workload) });
 				ensureOperationLive();
 			} catch (error) {
 				this.releaseReviewReservation(taskId, reservation);
-				throw error;
+				return this.reviewPreparationFailed(taskId, operationId, boundedAssuranceError(error));
 			}
 			progress("review_ready", "QA passed; invoke the reserved foreground Agent, then call submit_review", { snapshot_digest: snapshotDigest(review.snapshot), review_bundle_digest: review.snapshot.review_bundle_digest ?? "", agent_params: reservation.params });
 			return { state: "review_ready", operation: "review", operation_id: operationId, snapshot_digest: snapshotDigest(review.snapshot), review_bundle_digest: review.snapshot.review_bundle_digest ?? "", agent_params: reservation.params };
 		} catch (error) {
-			if (authorityCommitted || (authorityBoundaryStarted && aborted())) return this.unknownAfterCommit(taskId, "qa", operationId, `${phase}: ${boundedAssuranceError(error)}`);
+			if (reviewPreparationStarted) {
+				const reason = aborted() || error instanceof VerificationAbortedError
+					? `${phase}: host cancellation`
+					: `${phase}: ${boundedAssuranceError(error)}`;
+				return this.reviewPreparationFailed(taskId, operationId, reason);
+			}
+			if (authorityCommitted || authorityBoundaryStarted) return this.unknownAfterCommit(taskId, "qa", operationId, `${phase}: ${boundedAssuranceError(error)}`);
 			if (aborted() || error instanceof VerificationAbortedError) return this.cancelled("qa", operationId, `${phase}: host cancellation`);
 			return { state: "failed", operation: "qa", operation_id: operationId, reason: `${phase}: ${boundedAssuranceError(error)}` };
 		} finally {
@@ -623,6 +747,17 @@ export class AssuranceProgression {
 			this.releaseReviewReservation(taskId, reservation, reason);
 			return { state: "blocked", reason };
 		}
+		if (reservation.snapshot.review_revision) {
+			try {
+				if (!this.ports.ensureReviewRevision)
+					throw new Error("v4 Review revision verification is unavailable");
+				const revision = await this.ports.ensureReviewRevision(ctx.cwd, taskId, fresh);
+				if (!revision || revision.base_head !== reservation.snapshot.review_revision.base_head || revision.review_commit !== reservation.snapshot.review_revision.review_commit || revision.review_tree !== reservation.snapshot.review_revision.review_tree || revision.manifest_digest !== reservation.snapshot.review_revision.manifest_digest)
+					throw new Error("Review revision changed before submission");
+			} catch (error) {
+				return this.reviewPreparationFailed(taskId, reservation.operationId, boundedAssuranceError(error));
+			}
+		}
 		let verdict: AssuranceVerdict;
 		try { verdict = parseAssuranceVerdict(reservation.receipt.result, reservation.snapshot); }
 		catch (error) {
@@ -656,7 +791,12 @@ export class AssuranceProgression {
 				summary: verdict.findings?.map((finding) => finding.summary).join("; ") ?? "independent Review requested rework",
 			};
 		}
-		const settled = await this.ports.projectTask(ctx.cwd, taskId);
+		let settled: AssuranceProjectionResult;
+		try {
+			settled = await this.ports.projectTask(ctx.cwd, taskId);
+		} catch (error) {
+			return this.unknownAfterCommit(taskId, "review", reservation.operationId, boundedAssuranceError(error));
+		}
 		if (settled.error || !settled.claim)
 			return this.unknownAfterCommit(taskId, "review", reservation.operationId, settled.error ?? "claim disappeared after Review settlement");
 		if (settled.projection.next_obligation === "complete") {
@@ -696,6 +836,17 @@ export class AssuranceProgression {
 
 	private cancelled(operation: "qa" | "review", operationId: string, reason: string): AssuranceAdvanceResult {
 		return { state: "cancelled", operation, operation_id: operationId, reason };
+	}
+
+	private reviewPreparationFailed(
+		taskId: string,
+		operationId: string,
+		reason: string,
+	): Extract<AssuranceAdvanceResult, { state: "review_preparation_failed" }> {
+		const reservation = this.reviewReservations.get(taskId);
+		if (reservation) this.releaseReviewReservation(taskId, reservation);
+		this.rejectedReviewOperations.delete(taskId);
+		return { state: "review_preparation_failed", operation: "review", operation_id: operationId, reason };
 	}
 
 	private unknownAfterCommit(taskId: string, operation: "qa" | "review", operationId: string, reason: string): AssuranceAdvanceResult {

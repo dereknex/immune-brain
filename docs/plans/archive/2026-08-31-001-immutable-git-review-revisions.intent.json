@@ -1,0 +1,73 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "2026-08-31-001-immutable-git-review-revisions",
+  "goal": "Replace source-embedded Review bundles with TaskRecord v4 Enrollment bases and deterministic task-scoped Git revisions so QA, Review, authorization, and completion bind one immutable delta; route authoritative code review through the configured Review Agent; preserve a bounded v3 drain path; and make Review preparation, retry, interruption, and terminal ref cleanup fail closed without creating a second workflow state.",
+  "acceptance": [
+    {
+      "id": "A1",
+      "assertion": "New Enrollment atomically writes strict TaskRecord v4 with the confirmation-bound git_base_head; v3 remains exact and progressable only as the bounded drain format, malformed cross-version records fail closed, and terminal Review attestations persist exact base, commit, tree, and manifest identity without adding those fields to QA or user attestations.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/kernel-record-v4.test.ts\",\n    \"tests/kernel-enrollment-transaction.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 65536\n}\n"
+    },
+    {
+      "id": "A2",
+      "assertion": "One canonical v4 scoped revision digest covers committed and staged add, modify, delete, mode, and symlink changes since Enrollment, ignores current out-of-scope workspace changes, rejects in-scope drift and rewritten or missing base history, and constructs a deterministic synthetic commit and ref whose binary, non-UTF-8, single-file, or aggregate source size never counts against the 2 MiB metadata limit.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/pi-canary-review-bundle.test.ts\",\n    \"tests/managed-task-snapshot-isolation.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 65536\n}\n"
+    },
+    {
+      "id": "A3",
+      "assertion": "Material and critical Assurance proves the revision before QA, records no QA attestation on preparation failure, returns retryable review_preparation_failed while preserving run_review after post-QA preparation or reservation failure, reconstructs the same revision across restart and rework, accepts only the exact native receipt and rejects unknown approval fields, revalidates base, commit, tree, and manifest digest on Review submission, and idempotently removes terminal and orphan refs with non-throwing cleanup that is never workflow authority.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/pi-canary-assurance-progression.test.ts\",\n    \"tests/pi-canary-work-extension.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 65536\n}\n"
+    },
+    {
+      "id": "A4",
+      "assertion": "Kernel Review and internal code-review dispatch use subagent_type Review and the v5 Git-read prompt while advisory-reviewer remains general-purpose; a generic or parameter-mismatched Agent cannot satisfy the reservation, v5 contains no source or neighborhood fields, and source and packaged documentation mirrors remain byte-equal.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/loop-execution-routing.test.ts\",\n    \"tests/role-prompt-bridge.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 65536\n}\n"
+    }
+  ],
+  "scope_hint": [
+    "docs/plans/2026-08-31-001-immutable-git-review-revisions.intent.json",
+    "docs/plans/archive/2026-08-31-001-immutable-git-review-revisions.intent.json",
+    "docs/reference/subagent-dispatch-protocol.md",
+    "docs/specs/archive/immutable-git-review-revisions.spec.md",
+    "docs/specs/immutable-git-review-revisions.spec.md",
+    "plugins/immune-brain/.pi-extension/imm-canary-enroll.ts",
+    "plugins/immune-brain/.pi-extension/imm-canary-work.ts",
+    "plugins/immune-brain/.pi-extension/pi-canary-assurance-progression.ts",
+    "plugins/immune-brain/.pi-extension/pi-canary-review-bundle.ts",
+    "plugins/immune-brain/.pi-extension/runtime-stub.ts",
+    "plugins/immune-brain/dist/docs/reference/subagent-dispatch-protocol.md",
+    "plugins/immune-brain/dist/role-prompts/code-review.md",
+    "plugins/immune-brain/runtime/kernel/application.ts",
+    "plugins/immune-brain/runtime/kernel/assurance_projection.ts",
+    "plugins/immune-brain/runtime/kernel/authority_port.ts",
+    "plugins/immune-brain/runtime/kernel/canary_application.ts",
+    "plugins/immune-brain/runtime/kernel/completion.ts",
+    "plugins/immune-brain/runtime/kernel/enrollment.ts",
+    "plugins/immune-brain/runtime/kernel/pi_canary_prepare.ts",
+    "plugins/immune-brain/runtime/kernel/types.ts",
+    "plugins/immune-brain/runtime/kernel/validation.ts",
+    "plugins/immune-brain/runtime/loop_contract.ts",
+    "plugins/immune-brain/runtime/prompts/code-review.md",
+    "plugins/immune-brain/runtime/workspace_scope.ts",
+    "tests/kernel-assurance-projection.test.ts",
+    "tests/kernel-canary-application.test.ts",
+    "tests/kernel-canary-terminal-transaction.test.ts",
+    "tests/kernel-enrollment-transaction.test.ts",
+    "tests/kernel-record-v3.test.ts",
+    "tests/kernel-record-v4.test.ts",
+    "tests/loop-execution-routing.test.ts",
+    "tests/managed-task-snapshot-isolation.test.ts",
+    "tests/pi-canary-assurance-progression.test.ts",
+    "tests/pi-canary-enroll-extension.test.ts",
+    "tests/pi-canary-review-bundle.test.ts",
+    "tests/pi-canary-review-neighborhood.test.ts",
+    "tests/pi-canary-review-outcome-evidence.test.ts",
+    "tests/pi-canary-work-extension.test.ts",
+    "tests/pi-subagent-dispatch-observability-contract.test.ts",
+    "tests/role-prompt-bridge.test.ts",
+    "tests/user-approval-critical-completion.test.ts"
+  ],
+  "risk": "critical",
+  "revision": 4,
+  "owner": "user"
+}

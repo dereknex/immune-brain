@@ -33,12 +33,12 @@ import {
 	stateTransactionPath,
 	stateWorkspacePath,
 } from "./storage_paths";
-import { parseTaskRecordV2, parseTaskRecordV3 } from "./validation";
+import { parseTaskRecord, parseTaskRecordV2 } from "./validation";
 import type {
 	TaskLifecycle,
 	TaskPhase,
 	TaskRecordV2,
-	TaskRecordV3,
+	TaskRecord,
 	StoredTaskMutationV3,
 	V3AuthorityObservation,
 } from "./types";
@@ -649,7 +649,7 @@ function parseWorkspaceTransactionV2(raw: Record<string, unknown>): WorkspaceTra
 		...(artifactRelocations.length > 0 ? { artifact_relocations: artifactRelocations } : {}),
 	};
 	validateTaskId(transaction.task_id);
-	const record = parseTaskRecordV3(
+	const record = parseTaskRecord(
 		JSON.parse(transaction.next_record_content),
 	);
 	if (record.task_id !== transaction.task_id)
@@ -736,7 +736,7 @@ function completeTransactionV2Locked(
 		transaction.expected_workspace_hash,
 		transaction.next_workspace_content,
 	);
-	const record = parseTaskRecordV3(
+	const record = parseTaskRecord(
 		JSON.parse(transaction.next_record_content),
 	);
 	const workspace = parseWorkspaceContent(transaction.next_workspace_content);
@@ -791,7 +791,7 @@ function recoverAnyPendingTransactionLocked(root: string): void {
 export function readTaskRecordRaw(
 	root: string,
 	taskId: string,
-): { revision: string; record: TaskRecordV3 | null } {
+): { revision: string; record: TaskRecord | null } {
 	validateTaskId(taskId);
 	const relativePath = stateTaskRecordPath(taskId);
 	if (currentRevision(root, relativePath) === MISSING_REVISION)
@@ -802,7 +802,7 @@ export function readTaskRecordRaw(
 		throw new KernelStoreSecurityError(
 			"TaskRecord v2 is not supported in the state layout; v2 records belong to the historical audit layout",
 		);
-	const record = parseTaskRecordV3(raw);
+	const record = parseTaskRecord(raw);
 	if (record.task_id !== taskId)
 		throw new KernelStoreSecurityError("task record v3 identity is inconsistent");
 	return { revision: revisionFor(content), record };
@@ -821,7 +821,7 @@ export function readAuditTaskPair(
 	taskId: string,
 ): {
 	recordRevision: string;
-	record: TaskRecordV3 | TaskRecordV2;
+	record: TaskRecord | TaskRecordV2;
 	proof: TaskTombstone;
 } | null {
 	validateTaskId(taskId);
@@ -846,7 +846,7 @@ export function readAuditTaskPair(
 			"terminal audit proof does not match its task record",
 		);
 	const raw = JSON.parse(recordContent) as { contract?: unknown };
-	let record: TaskRecordV3 | TaskRecordV2;
+	let record: TaskRecord | TaskRecordV2;
 	if (raw.contract === "assurance_kernel/task_record/v2") {
 		const legacy = parseTaskRecordV2(raw);
 		if (
@@ -858,7 +858,7 @@ export function readAuditTaskPair(
 			);
 		record = legacy;
 	} else {
-		const current = parseTaskRecordV3(raw);
+		const current = parseTaskRecord(raw);
 		if (
 			current.task_id !== taskId ||
 			(current.lifecycle !== "done" && current.lifecycle !== "stopped")
@@ -874,7 +874,7 @@ export function readAuditTaskPair(
 export function readTaskRecord(
 	root: string,
 	taskId: string,
-): { revision: string; record: TaskRecordV3 | null } {
+): { revision: string; record: TaskRecord | null } {
 	return withKernelStoreLock(root, () => readTaskRecordRaw(root, taskId));
 }
 
@@ -883,7 +883,7 @@ export function commitTaskRecordLocked(
 	root: string,
 	taskId: string,
 	expectedRecordHash: string,
-	nextRecord: TaskRecordV3,
+	nextRecord: TaskRecord,
 	expectedWorkspaceHash: string,
 	nextWorkspace: WorkspaceState,
 	artifactRelocations: ArtifactRelocationV1[] = [],
@@ -1358,7 +1358,7 @@ export function commitEnrollmentLocked(
 		);
 	}
 	return {
-		record: parseTaskRecordV3(JSON.parse(transaction.next_record_content)),
+		record: parseTaskRecord(JSON.parse(transaction.next_record_content)),
 		workspace: parseWorkspaceContent(transaction.next_workspace_content),
 	};
 }
@@ -1572,7 +1572,7 @@ function parseTerminalMarker(raw: Record<string, unknown>): TerminalMarker {
 		expected_claim_sha256: expectedClaim,
 		at: raw.at as string,
 	};
-	const record = parseTaskRecordV3(JSON.parse(marker.audit_record_content));
+	const record = parseTaskRecord(JSON.parse(marker.audit_record_content));
 	if (record.task_id !== marker.task_id)
 		throw new KernelStoreSecurityError("terminal marker task identity is inconsistent");
 	if (record.lifecycle !== "done" && record.lifecycle !== "stopped")
@@ -1709,7 +1709,7 @@ export function commitTerminalLocked(
 	taskId: string,
 	transaction: WorkspaceTransactionV2,
 	tombstone: TaskTombstone,
-): { record: TaskRecordV3; workspace: WorkspaceState } {
+): { record: TaskRecord; workspace: WorkspaceState } {
 	validateTaskId(taskId);
 	if (transaction.task_id !== taskId)
 		throw new KernelStoreSecurityError(
@@ -1728,7 +1728,7 @@ export function commitTerminalLocked(
 		throw new KernelStoreSecurityError(
 			"terminal proof must match the terminal record bytes",
 		);
-	const terminalRecord = parseTaskRecordV3(
+	const terminalRecord = parseTaskRecord(
 		JSON.parse(transaction.next_record_content) as Record<string, unknown>,
 	);
 	if (tombstone.terminal_lifecycle !== terminalRecord.lifecycle)
@@ -1774,7 +1774,7 @@ export function commitTerminalLocked(
 		);
 	}
 	return {
-		record: parseTaskRecordV3(JSON.parse(transaction.next_record_content)),
+		record: parseTaskRecord(JSON.parse(transaction.next_record_content)),
 		workspace: parseWorkspaceContent(transaction.next_workspace_content),
 	};
 }

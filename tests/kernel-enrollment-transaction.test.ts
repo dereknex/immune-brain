@@ -120,7 +120,7 @@ describe("backend claim", () => {
 
 describe("enrollment transaction", () => {
 	const registry = createEnrollmentAuthorityRegistry();
-	test("enrolls TaskRecord v3 + workspace + backend claim atomically", () => {
+	test("enrolls TaskRecord v4 with immutable Git base + workspace + backend claim atomically", () => {
 		const root = makeRoot();
 		const taskId = "task-001";
 		const intentPath = writeIntent(root, taskId);
@@ -135,7 +135,8 @@ describe("enrollment transaction", () => {
 			capability_binding: binding,
 			now: "2026-08-12T00:00:00.000Z",
 		}, registry);
-		expect(result.record).toMatchObject({ lifecycle: "active", artifact_state: "active" });
+		expect(result.record).toMatchObject({ contract: "assurance_kernel/task_record/v4", lifecycle: "active", artifact_state: "active" });
+		expect(result.record).toHaveProperty("git_base_head");
 		expect(result.record.task_id).toBe(taskId);
 		expect(result.record.intent_snapshot.revision).toBe(1);
 		const read = readTaskRecord(root, taskId);
@@ -240,5 +241,29 @@ describe("enrollment transaction", () => {
 				now: "2026-08-12T00:00:00.000Z",
 			}, registry),
 		).toThrow(/owned/i);
+	});
+
+	test("rejects same-revision intent content drift without authority writes", () => {
+		const root = makeRoot();
+		const taskId = "task-006";
+		const intentPath = writeIntent(root, taskId);
+		const binding = bindingFor(root, taskId);
+		const capability = registry.issue(binding);
+		const changedIntent = { ...baseIntent(taskId), goal: "changed after confirmation" };
+		writeFileSync(intentPath, `${JSON.stringify(changedIntent, null, 2)}\n`);
+		const changedPreparation = preparePiCanary(root, { task_id: taskId, now: "2026-08-12T00:00:00.000Z" });
+
+		expect(() => enrollCanaryTask(root, {
+			task_id: taskId,
+			intent_path: `docs/plans/${taskId}.intent.json`,
+			intent_revision: 1,
+			preparation_digest: changedPreparation.digest,
+			capability,
+			capability_binding: binding,
+			now: "2026-08-12T00:00:00.000Z",
+		}, registry)).toThrow(/content hash/i);
+		expect(readTaskRecord(root, taskId).record).toBeNull();
+		expect(readBackendClaim(root)).toBeNull();
+		expect(registry.isConsumed(capability)).toBe(false);
 	});
 });

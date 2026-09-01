@@ -13,7 +13,7 @@ test("dispatch contracts keep Role-only execution configuration ownership", () =
 		"Pi Host owns model, provider, and thinking defaults.",
 		"Immune-Brain does not define\nmodel tiers, provider mapping, cost routing, or provider fallback.",
 		"exact reserved authority parameters",
-		"reservation 不生成也不匹配 `model`/`thinking`",
+		"reservation 返回完整的 host-normalized Agent envelope",
 	];
 	for (const path of [
 		"docs/reference/subagent-dispatch-protocol.md",

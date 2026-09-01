@@ -96,6 +96,58 @@ describe("foreground assurance progression", () => {
 		expect(h.counts().applyCount).toBe(0);
 	});
 
+	test("projection failure after artifact freeze remains settlement-unknown", async () => {
+		let projectReads = 0;
+		const h = makeHarness({
+			phase: "working",
+			project: async () => {
+				projectReads += 1;
+				if (projectReads === 1) return projection("active", "submit_assurance", "material", "active");
+				throw new Error("projection unavailable after artifact freeze");
+			},
+		});
+		const result = await h.progression.advance(TASK, ctx);
+		expect(result).toMatchObject({ state: "settlement_unknown", operation: "qa" });
+		expect((result as { reason: string }).reason).toContain("projection unavailable after artifact freeze");
+	});
+
+	test("cancellation between QA settlement and Review preparation is retryable", async () => {
+		const controller = new AbortController();
+		let projectReads = 0;
+		const h = makeHarness({
+			project: async () => {
+				projectReads += 1;
+				if (projectReads === 2) {
+					controller.abort();
+					throw new Error("Review projection cancelled after QA settlement");
+				}
+				return projection("active", projectReads === 1 ? "run_qa" : "run_review");
+			},
+		});
+		const result = await h.progression.advance(TASK, ctx, controller.signal);
+		expect(result).toMatchObject({ state: "review_preparation_failed", operation: "review" });
+		expect(h.counts().applyCount).toBe(1);
+		expect((await h.ports.projectTask(ctx.cwd, TASK)).projection.next_obligation).toBe("run_review");
+	});
+
+	test("cancellation after QA authority commit reconciles run_review and remains retryable", async () => {
+		const controller = new AbortController();
+		let projectReads = 0;
+		const h = makeHarness({
+			project: async () => projection("active", projectReads++ === 0 ? "run_qa" : "run_review"),
+			applyVerdict: async (_ctx, input) => {
+				await input.hooks?.beforeCommit?.();
+				input.hooks?.onCommit?.();
+				controller.abort();
+				await input.hooks?.afterCommit?.();
+			},
+		});
+		const result = await h.progression.advance(TASK, ctx, controller.signal);
+		expect(result).toMatchObject({ state: "review_preparation_failed", operation: "review" });
+		expect(h.counts().evidenceCount).toBe(0);
+		expect((await h.ports.projectTask(ctx.cwd, TASK)).projection.next_obligation).toBe("run_review");
+	});
+
 	test("submit_review preserves the operation for an unknown QA settlement", async () => {
 		const controller = new AbortController();
 		const h = makeHarness({ applyVerdict: async (_ctx, input) => {
@@ -123,6 +175,95 @@ describe("foreground assurance progression", () => {
 		expect(h.counts().applyCount).toBe(1);
 	});
 
+	test("v4 revision preparation blocks before QA and leaves authority untouched", async () => {
+		const h = makeHarness();
+		let attempts = 0;
+		h.ports.readTaskRecord = async () => ({ record: { contract: "assurance_kernel/task_record/v4", git_base_head: "a".repeat(40), findings: [] } } as never);
+		h.ports.ensureReviewRevision = async () => {
+			attempts += 1;
+			throw new Error("synthetic revision unavailable");
+		};
+		const result = await h.progression.advance(TASK, ctx);
+		expect(result).toMatchObject({ state: "blocked", reason: expect.stringContaining("revision preparation failed") });
+		expect(attempts).toBe(1);
+		expect(h.counts().applyCount).toBe(0);
+	});
+
+	test("post-QA Review preparation is retryable and preserves run_review", async () => {
+		const h = makeHarness();
+		const originalBuild = h.ports.buildAssurance;
+		h.ports.buildAssurance = async (root, taskId, role, current, runner) => {
+			if (role === "review") throw new Error("manifest unavailable");
+			return originalBuild(root, taskId, role, current, runner);
+		};
+		const result = await h.progression.advance(TASK, ctx);
+		expect(result).toMatchObject({ state: "review_preparation_failed", operation: "review", reason: "manifest unavailable" });
+		expect(h.counts().applyCount).toBe(1);
+		expect((await h.ports.projectTask(ctx.cwd, TASK)).projection.next_obligation).toBe("run_review");
+	});
+
+	test("already-settled Review frozenRunner failure is retryable and preserves run_review", async () => {
+		const h = makeHarness({ project: async () => projection("active", "run_review") });
+		h.ports.frozenRunner = async () => { throw new Error("runner unavailable"); };
+		const result = await h.progression.advance(TASK, ctx);
+		expect(result).toMatchObject({ state: "review_preparation_failed", operation: "review" });
+		expect(h.counts().applyCount).toBe(0);
+		expect((await h.ports.projectTask(ctx.cwd, TASK)).projection.next_obligation).toBe("run_review");
+	});
+
+	test("already-settled Review cancellation before reservation is retryable", async () => {
+		const controller = new AbortController();
+		const h = makeHarness({ project: async () => projection("active", "run_review") });
+		h.ports.frozenRunner = async () => {
+			controller.abort();
+			return { id: "bun", version: "1.3.14" } as never;
+		};
+		const result = await h.progression.advance(TASK, ctx, controller.signal);
+		expect(result).toMatchObject({ state: "review_preparation_failed", operation: "review" });
+		expect(h.counts().applyCount).toBe(0);
+		expect((await h.ports.projectTask(ctx.cwd, TASK)).projection.next_obligation).toBe("run_review");
+	});
+
+	test("already-settled Review returned projection error is retryable", async () => {
+		let reads = 0;
+		const h = makeHarness({
+			project: async () => {
+				reads += 1;
+				if (reads === 1) return projection("active", "run_review");
+				return { ...projection("active", "run_review"), error: "projection unavailable" };
+			},
+		});
+		const result = await h.progression.advance(TASK, ctx);
+		expect(result).toMatchObject({ state: "review_preparation_failed", operation: "review" });
+		expect(result.state).not.toBe("settlement_unknown");
+		expect(h.counts().applyCount).toBe(0);
+	});
+	test("post-Review projection failure is settlement-unknown after authority commit", async () => {
+		const h = makeHarness();
+		const originalProject = h.ports.projectTask;
+		let failAfterCommit = false;
+		let postReadyReads = 0;
+		h.ports.projectTask = async (root, taskId) => {
+			if (failAfterCommit) {
+				postReadyReads += 1;
+				if (postReadyReads > 1) throw new Error("projection unavailable after Review settlement");
+			}
+			return originalProject(root, taskId);
+		};
+		const ready = await h.progression.advance(TASK, ctx);
+		expect(ready.state).toBe("review_ready");
+		failAfterCommit = true;
+		const params = (ready as Extract<typeof ready, { state: "review_ready" }>).agent_params;
+		h.progression.observeToolCall({ toolName: "Agent", toolCallId: "post-commit-read-failure", input: params });
+		h.progression.observeToolResult({ toolName: "Agent", toolCallId: "post-commit-read-failure", input: params, details: { status: "completed", agentId: "post-commit-agent" }, content: [{ type: "text", text: resultText(snapshot("review")) }] });
+		h.progression.observeToolEnd({ toolName: "Agent", toolCallId: "post-commit-read-failure", args: params, isError: false });
+		expect(await h.progression.submitReview(TASK, ctx)).toMatchObject({
+			state: "settlement_unknown",
+			operation: "review",
+			reason: "projection unavailable after Review settlement",
+		});
+		expect(h.counts().applyCount).toBe(2);
+	});
 	test("cancelling Review reservation construction removes its evidence", async () => {
 		// Covered in tests/pi-canary-work-extension.test.ts against the real
 		// extension surface; this in-process harness shares the static invocation
@@ -182,6 +323,24 @@ describe("foreground assurance progression", () => {
 		const repeat = await h.progression.submitReview(TASK, ctx);
 		expect(repeat).toMatchObject({ state: "blocked", reason: "foreground Agent terminal event arrived before its result" });
 	});
+	test("discards a stale Review reservation when Kernel no longer requires Review", async () => {
+		let qaSettled = false;
+		const h = makeHarness();
+		h.ports.projectTask = async () => projection("active", qaSettled ? "run_review" : "run_qa");
+		const applyVerdict = h.ports.applyVerdict;
+		h.ports.applyVerdict = async (applyCtx, input) => {
+			await applyVerdict(applyCtx, input);
+			if (input.snapshot.role === "qa") qaSettled = true;
+		};
+		const first = await h.progression.advance(TASK, ctx);
+		expect(first.state).toBe("review_ready");
+		qaSettled = false;
+		const second = await h.progression.advance(TASK, ctx);
+		expect(second.state).toBe("review_ready");
+		expect((second as { operation_id: string }).operation_id).not.toBe((first as { operation_id: string }).operation_id);
+		expect(h.counts().applyCount).toBe(2);
+	});
+
 	test("session shutdown aborts in-flight QA and prevents authority writes", async () => {
 		let release!: () => void;
 		const gate = new Promise<void>((resolve) => { release = resolve; });
@@ -229,6 +388,25 @@ test("native Review reservations inject the internal Code Review role contract",
 	expect(prompt).toContain("imm-code-review");
 	expect(prompt).toContain("do not discover or load Pi Skills");
 });
+
+test("native v4 Review prompt reads the synthetic Git revision", () => {
+	const s = {
+		...snapshot("review"),
+		review_revision: {
+			contract: "assurance_kernel/review_revision_identity/v1" as const,
+			base_head: "a".repeat(40),
+			review_commit: "b".repeat(40),
+			review_tree: "c".repeat(40),
+			manifest_digest: `sha256:${"d".repeat(64)}`,
+		},
+	};
+	const prompt = buildReviewPrompt(s, "/tmp/evidence.json");
+	expect(prompt).toContain("assurance_kernel/review_manifest/v5");
+	expect(prompt).toContain("git diff");
+	expect(prompt).toContain("immutable Git objects");
+	expect(prompt).not.toContain("neighborhood_files");
+	expect(prompt).not.toContain("current_content");
+});
 test("projects GitHub terminal state only from an exact claimless tombstone", () => {
 	const settled = projection("done");
 	settled.claim = null;
@@ -273,4 +451,11 @@ test("host hooks never project active state and publish terminal projection only
 test("parseAssuranceVerdict rejects a verdict bound to another snapshot", () => {
 	const s = snapshot("review");
 	expect(() => parseAssuranceVerdict(resultText({ ...s, diff_hash: "sha256:other" }), s)).toThrow(/snapshot digest/i);
+});
+
+test("parseAssuranceVerdict rejects unknown approval fields", () => {
+	const s = snapshot("review");
+	const pass = JSON.parse(resultText(s)) as { approval: Record<string, unknown> };
+	pass.approval.extra = "nope";
+	expect(() => parseAssuranceVerdict(JSON.stringify(pass), s)).toThrow(/unknown field/i);
 });

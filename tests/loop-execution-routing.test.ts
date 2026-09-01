@@ -78,6 +78,14 @@ describe("Loop execution and repair routing", () => {
 				verification: ["bun test"],
 			},
 		});
+		const codeReview = buildLoopRoleDispatch({
+			role: "code-review",
+			context: { task_id: "task-6", focus_delta: { specific_changes: ["src/a.ts"] } },
+		});
+		const advisoryReview = buildLoopRoleDispatch({
+			role: "advisory-reviewer",
+			context: { task_id: "task-6", lens: "API compatibility", focus_delta: { specific_changes: ["src/a.ts"] } },
+		});
 		expect(testFix.packet.tool_policy).toBe("delegated test files");
 		expect(testFix.call.prompt).toContain("tests/a.test.ts");
 		expect(testFix.call.prompt).toContain("only the delegated test files");
@@ -86,7 +94,11 @@ describe("Loop execution and repair routing", () => {
 		expect(prFix.call.prompt).toContain("CI");
 		expect(prFix.call.prompt).toContain("current worktree");
 		expect(prFix.call.prompt).not.toContain("branched workspaces");
-		for (const dispatch of [testFix, prFix]) {
+		expect(codeReview.call.subagent_type).toBe("Review");
+		expect(advisoryReview.call.subagent_type).toBe("general-purpose");
+		expect(read("plugins/immune-brain/runtime/prompts/code-review.md")).toContain("review_manifest/v5");
+		expect(read("plugins/immune-brain/dist/role-prompts/code-review.md")).toBe(read("plugins/immune-brain/runtime/prompts/code-review.md"));
+		for (const dispatch of [testFix, prFix, codeReview, advisoryReview]) {
 			expect(dispatch.call.run_in_background).toBe(false);
 			expect(dispatch.call.isolated).toBe(true);
 			expect(dispatch.call).not.toHaveProperty("isolation");

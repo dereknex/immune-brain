@@ -126,7 +126,7 @@ export interface GitTaskSnapshot {
 	staged_files: Record<string, GitTaskIndexEntry>;
 }
 
-const GIT_OBJECT_ID = /^[a-f0-9]{40,64}$/;
+const GIT_OBJECT_ID = /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/;
 const TASK_GIT_MODES = new Set(["100644", "100755", "120000"] as const);
 const fatalUtf8 = new TextDecoder("utf-8", { fatal: true });
 const portablePathCollator = new Intl.Collator("und", {
@@ -193,6 +193,34 @@ function decodeNullPaths(bytes: Buffer, label: string): string[] {
 		start = index + 1;
 	}
 	return paths;
+}
+
+function decodeIndexFlaggedPaths(bytes: Buffer, label: string): Array<{ path: string; flag: "assume-unchanged" | "skip-worktree" }> {
+	if (bytes.length === 0) return [];
+	if (bytes[bytes.length - 1] !== 0) throw new Error(`${label} is not NUL-terminated`);
+	const flagged: Array<{ path: string; flag: "assume-unchanged" | "skip-worktree" }> = [];
+	let start = 0;
+	for (let index = 0; index < bytes.length; index += 1) {
+		if (bytes[index] !== 0) continue;
+		const record = bytes.subarray(start, index);
+		if (record.length < 3 || record[1] !== 0x20) throw new Error(`${label} contains a malformed entry`);
+		const tag = String.fromCharCode(record[0]);
+		if (tag === "h" || tag === "S") {
+			flagged.push({
+				path: decodeCanonicalGitPath(record.subarray(2), label),
+				flag: tag === "h" ? "assume-unchanged" : "skip-worktree",
+			});
+		}
+		start = index + 1;
+	}
+	return flagged;
+}
+
+function assertNoScopedIndexFlags(root: string, scope: string[], label: string): void {
+	const flagged = decodeIndexFlaggedPaths(gitBytes(root, ["ls-files", "-v", "-z", "--"]), "Git index flags")
+		.filter(({ path }) => taskPathMatchesScope(path, scope));
+	if (flagged.length > 0)
+		throw new Error(`${label} contains unsupported index flags: ${flagged.map(({ path, flag }) => `${path} (${flag})`).join(", ")}`);
 }
 
 function assertNoCaseFoldCollisions(paths: string[], label: string): void {
@@ -300,6 +328,7 @@ function taskSnapshotOnce(root: string, scope: string[]): GitTaskSnapshot {
 		throw new Error("task snapshot does not support sparse checkout or sparse index");
 	if (gitBytes(root, ["ls-files", "--unmerged", "-z"]).length > 0)
 		throw new Error("task snapshot does not support unmerged index entries");
+	assertNoScopedIndexFlags(root, scope, "task snapshot");
 
 	const stagedPaths = decodeNullPaths(
 		gitBytes(root, ["diff", "--cached", "--no-renames", "--name-only", "-z", head, "--"]),
@@ -368,6 +397,135 @@ export function taskDiffHash(projectRoot: string, scopeHint: unknown): string {
 	return `sha256:${createHash("sha256")
 		.update(JSON.stringify(snapshot))
 		.digest("hex")}`;
+}
+
+function gitRequired(root: string, args: string[], failure: string): string {
+	const output = git(root, args);
+	if (output === null) throw new Error(failure);
+	return output.trim();
+}
+
+/**
+ * The v4 scoped revision snapshot: the exact delta between the Enrollment base
+ * commit and the current index, restricted to the TaskIntent mutation envelope.
+ * It deliberately omits the current HEAD so an out-of-scope commit never
+ * invalidates task identity, and it never reads unchanged scope matches.
+ */
+export interface GitTaskRevisionSnapshot {
+	kind: "git-task-revision-v1";
+	repository_root: string;
+	base_head: string;
+	base_tree: string;
+	scope: string[];
+	changed_paths: Record<string, GitTaskIndexEntry>;
+}
+
+function taskRevisionSnapshotOnce(
+	root: string,
+	scope: string[],
+	baseHead: string,
+): GitTaskRevisionSnapshot {
+	const repositoryRoot = git(root, ["rev-parse", "--show-toplevel"])?.trim();
+	const head = git(root, ["rev-parse", "--verify", "HEAD^{commit}"])?.trim();
+	if (!repositoryRoot || !head || !GIT_OBJECT_ID.test(head))
+		throw new Error("cannot derive a task revision outside a committed Git workspace");
+	if (realpathSync(resolve(repositoryRoot)) !== root)
+		throw new Error("task revision repository root does not match the project root");
+	if (gitRequired(root, ["cat-file", "-t", baseHead], `task revision base is unreadable: ${baseHead}`) !== "commit")
+		throw new Error(`task revision base is not a commit: ${baseHead}`);
+	if (git(root, ["merge-base", "--is-ancestor", baseHead, head]) === null)
+		throw new Error(
+			`task revision base ${baseHead} is no longer an ancestor of HEAD; rewrite the task history or re-enroll`,
+		);
+	const baseTree = gitRequired(root, ["rev-parse", `${baseHead}^{tree}`], "task revision base tree is unreadable");
+	if (!GIT_OBJECT_ID.test(baseTree)) throw new Error("task revision base tree has invalid identity");
+	const sparseCheckout = git(root, ["config", "--bool", "core.sparseCheckout"])?.trim();
+	const sparseIndex = git(root, ["config", "--bool", "index.sparse"])?.trim();
+	if (sparseCheckout === "true" || sparseIndex === "true")
+		throw new Error("task revision does not support sparse checkout or sparse index");
+	if (gitBytes(root, ["ls-files", "--unmerged", "-z"]).length > 0)
+		throw new Error("task revision does not support unmerged index entries");
+	assertNoScopedIndexFlags(root, scope, "task revision");
+
+	const stagedPaths = decodeNullPaths(
+		gitBytes(root, ["diff", "--cached", "--no-renames", "--name-only", "-z", baseHead, "--"]),
+		"task revision paths",
+	);
+	const unstagedPaths = decodeNullPaths(
+		gitBytes(root, ["diff", "--no-renames", "--name-only", "-z", "--"]),
+		"unstaged task revision paths",
+	);
+	const untrackedPaths = decodeNullPaths(
+		gitBytes(root, ["ls-files", "--others", "--exclude-standard", "-z", "--"]),
+		"untracked task revision paths",
+	);
+	const scopedStagedPaths = stagedPaths.filter((path) => taskPathMatchesScope(path, scope));
+	const scopedUnstagedPaths = unstagedPaths.filter((path) => taskPathMatchesScope(path, scope));
+	const scopedUntrackedPaths = untrackedPaths.filter((path) => taskPathMatchesScope(path, scope));
+	assertNoCaseFoldCollisions(
+		[...scopedStagedPaths, ...scopedUnstagedPaths, ...scopedUntrackedPaths],
+		"Git task revision paths",
+	);
+	const drift = [...new Set([...scopedUnstagedPaths, ...scopedUntrackedPaths])].sort(comparePaths);
+	if (drift.length > 0)
+		throw new Error(`task scope contains unstaged or untracked changes: ${drift.join(", ")}`);
+
+	const changed = [...new Set(scopedStagedPaths)].sort(comparePaths);
+	const changedPaths: Record<string, GitTaskIndexEntry> = {};
+	for (const path of changed) {
+		const current = indexEntry(root, path);
+		const base = headEntry(root, baseHead, path);
+		if (!current && !base) throw new Error(`task revision path has no index or base identity: ${path}`);
+		if (current && base && current.oid === base.oid && current.mode === base.mode)
+			throw new Error(`task revision path is not actually changed: ${path}`);
+		changedPaths[path] = {
+			status: !base ? "added" : !current ? "deleted" : "modified",
+			mode: current?.mode ?? null,
+			oid: current?.oid ?? null,
+			base_mode: base?.mode ?? null,
+			base_oid: base?.oid ?? null,
+		};
+	}
+	return {
+		kind: "git-task-revision-v1",
+		repository_root: root,
+		base_head: baseHead,
+		base_tree: baseTree,
+		scope,
+		changed_paths: changedPaths,
+	};
+}
+
+export function captureGitTaskRevisionSnapshot(
+	projectRoot: string,
+	scopeHint: unknown,
+	baseHead: unknown,
+): GitTaskRevisionSnapshot {
+	const requestedRoot = resolve(projectRoot);
+	const requestedStat = lstatSync(requestedRoot);
+	if (requestedStat.isSymbolicLink() || !requestedStat.isDirectory())
+		throw new Error("task revision root must be a real directory");
+	const root = realpathSync(requestedRoot);
+	if (typeof baseHead !== "string" || !GIT_OBJECT_ID.test(baseHead.toLowerCase()))
+		throw new Error("task revision base must be a Git commit id");
+	const scope = assertCanonicalTaskScope(scopeHint);
+	const normalizedBase = baseHead.toLowerCase();
+	const before = taskRevisionSnapshotOnce(root, scope, normalizedBase);
+	gitTaskSnapshotTestHook?.();
+	const after = taskRevisionSnapshotOnce(root, scope, normalizedBase);
+	if (JSON.stringify(after) !== JSON.stringify(before))
+		throw new Error("Git task revision changed while being captured");
+	return before;
+}
+
+/** The single v4 freshness identity shared by QA, Review, authorization, and completion. */
+export function taskRevisionDiffHash(
+	projectRoot: string,
+	scopeHint: unknown,
+	baseHead: string,
+): string {
+	const snapshot = captureGitTaskRevisionSnapshot(projectRoot, scopeHint, baseHead);
+	return `sha256:${createHash("sha256").update(JSON.stringify(snapshot)).digest("hex")}`;
 }
 
 function isGitWorkspaceSnapshot(value: unknown): value is GitWorkspaceSnapshot {

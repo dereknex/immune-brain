@@ -105,6 +105,23 @@ function approvalFixture(kind: "qa" | "review" | "user", id: string, actorId: st
 	};
 }
 
+function bindReviewApproval(root: string, approval: TaskApprovalV2): TaskApprovalV2 {
+	const record = readTaskRecord(root, TASK).record;
+	if (!record || record.contract !== "assurance_kernel/task_record/v4")
+		throw new Error("review fixture requires TaskRecord v4");
+	const tree = execFileSync("git", ["rev-parse", `${record.git_base_head}^{tree}`], { cwd: root, encoding: "utf8" }).trim();
+	return {
+		...approval,
+		review_revision: {
+			contract: "assurance_kernel/review_revision_identity/v1",
+			base_head: record.git_base_head,
+			review_commit: record.git_base_head,
+			review_tree: tree,
+			manifest_digest: `sha256:${"e".repeat(64)}`,
+		},
+	};
+}
+
 function capabilityFor(
 	mutationRegistry: ReturnType<typeof createMutationAuthorityRegistry>,
 	root: string,
@@ -152,7 +169,7 @@ describe("critical completion is reachable with qa+review+user approvals", () =>
 
 			// Without the user approval the task is not eligible.
 			const qaApproval = approvalFixture("qa", "approval-qa", "qa-child-1", "qa");
-			const reviewApproval = approvalFixture("review", "approval-review", "review-child-1", "reviewer");
+			const reviewApproval = bindReviewApproval(root, approvalFixture("review", "approval-review", "review-child-1", "reviewer"));
 			const qaCap = capabilityFor(mutationRegistry, root, "qa", "record_approval", qaApproval, "2026-08-12T10:00:04.000Z");
 			app.execute({
 				root,

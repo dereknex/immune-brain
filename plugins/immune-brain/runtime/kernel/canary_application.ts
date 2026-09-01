@@ -23,7 +23,7 @@ import {
 	type BackendClaim,
 } from "./backend_claim";
 import { canonicalIntentHash } from "./intent";
-import { parseTaskRecordV3 } from "./validation";
+import { parseTaskRecord } from "./validation";
 import type { TaskIntentIdentityToken } from "./intent_token_registry";
 import {
 	commitDrainLocked,
@@ -41,6 +41,7 @@ import type {
 	TaskApprovalV2,
 	TaskFinding,
 	TaskIntentV1,
+	TaskRecord,
 } from "./types";
 
 export type CanaryOperation =
@@ -62,7 +63,7 @@ export interface CanaryExecuteInput {
 	operation: CanaryOperation;
 	prior_intent_token: TaskIntentIdentityToken;
 	/** Trusted injected diff provider; the application derives the diff identity. */
-	diffProvider: (root: string, intent: TaskIntentV1) => string;
+	diffProvider: (root: string, record: TaskRecord) => string;
 	now?: string;
 }
 
@@ -264,7 +265,7 @@ export function createCanaryApplication(
 			consumeIntentToken(input.prior_intent_token);
 			consumeIntentToken(fresh.token);
 			const at = input.now ?? new Date().toISOString();
-			const nextRecord = parseTaskRecordV3({
+			const nextRecord = parseTaskRecord({
 				...current.record,
 				intent_ref: { ...current.record.intent_ref, path: transition.next_intent_path },
 				artifact_state: transition.next_artifact_state,
@@ -318,7 +319,7 @@ export function createCanaryApplication(
 				record: current.record,
 			};
 		});
-		const diffHash = input.diffProvider(input.root, snapshot.intent_snapshot);
+		const diffHash = input.diffProvider(input.root, snapshot.record);
 		if (operation.op === "stop" && !("capability" in operation))
 			throw new KernelInvariantError(["stop requires user authority capability"]);
 		const hasBoundSpec = snapshot.intent_snapshot.scope_hint.some(

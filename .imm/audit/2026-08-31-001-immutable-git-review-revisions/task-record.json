@@ -1,0 +1,876 @@
+{
+  "contract": "assurance_kernel/task_record/v3",
+  "task_id": "2026-08-31-001-immutable-git-review-revisions",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "2026-08-31-001-immutable-git-review-revisions",
+    "goal": "Replace source-embedded Review bundles with TaskRecord v4 Enrollment bases and deterministic task-scoped Git revisions so QA, Review, authorization, and completion bind one immutable delta; route authoritative code review through the configured Review Agent; preserve a bounded v3 drain path; and make Review preparation, retry, interruption, and terminal ref cleanup fail closed without creating a second workflow state.",
+    "acceptance": [
+      {
+        "id": "A1",
+        "assertion": "New Enrollment atomically writes strict TaskRecord v4 with the confirmation-bound git_base_head; v3 remains exact and progressable only as the bounded drain format, malformed cross-version records fail closed, and terminal Review attestations persist exact base, commit, tree, and manifest identity without adding those fields to QA or user attestations.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/kernel-record-v4.test.ts\",\n    \"tests/kernel-enrollment-transaction.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 65536\n}\n"
+      },
+      {
+        "id": "A2",
+        "assertion": "One canonical v4 scoped revision digest covers committed and staged add, modify, delete, mode, and symlink changes since Enrollment, ignores current out-of-scope workspace changes, rejects in-scope drift and rewritten or missing base history, and constructs a deterministic synthetic commit and ref whose binary, non-UTF-8, single-file, or aggregate source size never counts against the 2 MiB metadata limit.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/pi-canary-review-bundle.test.ts\",\n    \"tests/managed-task-snapshot-isolation.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 65536\n}\n"
+      },
+      {
+        "id": "A3",
+        "assertion": "Material and critical Assurance proves the revision before QA, records no QA attestation on preparation failure, returns retryable review_preparation_failed while preserving run_review after post-QA preparation or reservation failure, reconstructs the same revision across restart and rework, accepts only the exact native receipt and rejects unknown approval fields, revalidates base, commit, tree, and manifest digest on Review submission, and idempotently removes terminal and orphan refs with non-throwing cleanup that is never workflow authority.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/pi-canary-assurance-progression.test.ts\",\n    \"tests/pi-canary-work-extension.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 65536\n}\n"
+      },
+      {
+        "id": "A4",
+        "assertion": "Kernel Review and internal code-review dispatch use subagent_type Review and the v5 Git-read prompt while advisory-reviewer remains general-purpose; a generic or parameter-mismatched Agent cannot satisfy the reservation, v5 contains no source or neighborhood fields, and source and packaged documentation mirrors remain byte-equal.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/loop-execution-routing.test.ts\",\n    \"tests/role-prompt-bridge.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 65536\n}\n"
+      }
+    ],
+    "scope_hint": [
+      "docs/plans/2026-08-31-001-immutable-git-review-revisions.intent.json",
+      "docs/plans/archive/2026-08-31-001-immutable-git-review-revisions.intent.json",
+      "docs/reference/subagent-dispatch-protocol.md",
+      "docs/specs/archive/immutable-git-review-revisions.spec.md",
+      "docs/specs/immutable-git-review-revisions.spec.md",
+      "plugins/immune-brain/.pi-extension/imm-canary-enroll.ts",
+      "plugins/immune-brain/.pi-extension/imm-canary-work.ts",
+      "plugins/immune-brain/.pi-extension/pi-canary-assurance-progression.ts",
+      "plugins/immune-brain/.pi-extension/pi-canary-review-bundle.ts",
+      "plugins/immune-brain/.pi-extension/runtime-stub.ts",
+      "plugins/immune-brain/dist/docs/reference/subagent-dispatch-protocol.md",
+      "plugins/immune-brain/dist/role-prompts/code-review.md",
+      "plugins/immune-brain/runtime/kernel/application.ts",
+      "plugins/immune-brain/runtime/kernel/assurance_projection.ts",
+      "plugins/immune-brain/runtime/kernel/authority_port.ts",
+      "plugins/immune-brain/runtime/kernel/canary_application.ts",
+      "plugins/immune-brain/runtime/kernel/completion.ts",
+      "plugins/immune-brain/runtime/kernel/enrollment.ts",
+      "plugins/immune-brain/runtime/kernel/pi_canary_prepare.ts",
+      "plugins/immune-brain/runtime/kernel/types.ts",
+      "plugins/immune-brain/runtime/kernel/validation.ts",
+      "plugins/immune-brain/runtime/loop_contract.ts",
+      "plugins/immune-brain/runtime/prompts/code-review.md",
+      "plugins/immune-brain/runtime/workspace_scope.ts",
+      "tests/kernel-assurance-projection.test.ts",
+      "tests/kernel-canary-application.test.ts",
+      "tests/kernel-canary-terminal-transaction.test.ts",
+      "tests/kernel-enrollment-transaction.test.ts",
+      "tests/kernel-record-v3.test.ts",
+      "tests/kernel-record-v4.test.ts",
+      "tests/loop-execution-routing.test.ts",
+      "tests/managed-task-snapshot-isolation.test.ts",
+      "tests/pi-canary-assurance-progression.test.ts",
+      "tests/pi-canary-enroll-extension.test.ts",
+      "tests/pi-canary-review-bundle.test.ts",
+      "tests/pi-canary-review-neighborhood.test.ts",
+      "tests/pi-canary-review-outcome-evidence.test.ts",
+      "tests/pi-canary-work-extension.test.ts",
+      "tests/pi-subagent-dispatch-observability-contract.test.ts",
+      "tests/role-prompt-bridge.test.ts",
+      "tests/user-approval-critical-completion.test.ts"
+    ],
+    "risk": "critical",
+    "revision": 4,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/archive/2026-08-31-001-immutable-git-review-revisions.intent.json",
+    "content_hash": "sha256:d870321cb8deab6214dff5a2f8445abaa995f024cb7fd455e02238bf3a299cad"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:f6ac3606763a5e7b8ae00be002c40baa36a293504462bccb5eaad1ba37deb5c4",
+  "attestations": [
+    {
+      "id": "approval-qa-f392a0c5",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 3,
+      "intent_content_hash": "sha256:2f66ee5992ee3983043cf9fc83e413a0a15ea2bc01446e3126fb988309cdb8b1",
+      "diff_hash": "sha256:8de0e3bc0ac0decf2fc361768737a25b6a94e6edaac93c921a67eec10a865ead",
+      "actor_id": "deterministic-qa",
+      "summary": "all 4 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "A2",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "A3",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "A4",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-505130df",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 3,
+      "intent_content_hash": "sha256:2f66ee5992ee3983043cf9fc83e413a0a15ea2bc01446e3126fb988309cdb8b1",
+      "diff_hash": "sha256:b5970e8e57c7f507dd6b7935d1177be8a88ccbcc1d5f1892c3874e965153348c",
+      "actor_id": "deterministic-qa",
+      "summary": "all 4 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "A2",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "A3",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "A4",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-b44e7e34",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 3,
+      "intent_content_hash": "sha256:2f66ee5992ee3983043cf9fc83e413a0a15ea2bc01446e3126fb988309cdb8b1",
+      "diff_hash": "sha256:3b9fe4cc6eebb1c26a477c2db0a0434371552434179acd66d188bfea5fa7c079",
+      "actor_id": "deterministic-qa",
+      "summary": "all 4 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "A2",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "A3",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "A4",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-e139bbcd",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 3,
+      "intent_content_hash": "sha256:2f66ee5992ee3983043cf9fc83e413a0a15ea2bc01446e3126fb988309cdb8b1",
+      "diff_hash": "sha256:c456a708cc6033300350579fdec6bb557efc0fc0969e7d2ecdcf86ead20c72d4",
+      "actor_id": "deterministic-qa",
+      "summary": "all 4 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "A2",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "A3",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "A4",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-8f9a6242",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 4,
+      "intent_content_hash": "sha256:d870321cb8deab6214dff5a2f8445abaa995f024cb7fd455e02238bf3a299cad",
+      "diff_hash": "sha256:ed8b90c65993f4ba867973aa85733febe81210f3e109137224268e4310a7316b",
+      "actor_id": "deterministic-qa",
+      "summary": "all 4 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "A2",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "A3",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "A4",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-fc11c9b1",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 4,
+      "intent_content_hash": "sha256:d870321cb8deab6214dff5a2f8445abaa995f024cb7fd455e02238bf3a299cad",
+      "diff_hash": "sha256:ed8b90c65993f4ba867973aa85733febe81210f3e109137224268e4310a7316b",
+      "actor_id": "native-review-43a398e5-baf5-480",
+      "summary": "Immutable bundle provenance and bounded implementation satisfy A1-A4 without identified correctness, regression, security, or settlement-path defects.",
+      "acceptance_results": []
+    },
+    {
+      "id": "approval-user-9d71eb58",
+      "kind": "user",
+      "authority_role": "user",
+      "task_revision": 4,
+      "intent_content_hash": "sha256:d870321cb8deab6214dff5a2f8445abaa995f024cb7fd455e02238bf3a299cad",
+      "diff_hash": "sha256:ed8b90c65993f4ba867973aa85733febe81210f3e109137224268e4310a7316b",
+      "actor_id": "literal-user",
+      "summary": "literal user approval",
+      "acceptance_results": []
+    }
+  ],
+  "findings": [
+    {
+      "id": "review-host-a3-cancel",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "A3",
+      "source": "execution",
+      "review_round": null,
+      "summary": "plugins/immune-brain/.pi-extension/pi-canary-assurance-progression.ts: cancellation after a proven QA commit but before Review reservation can be converted into settlement_unknown instead of preserving the retryable run_review obligation; route post-QA cancellation through review_preparation_failed or reconcile the projection and verify retry."
+    },
+    {
+      "id": "review-host-a2-scope",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "A2",
+      "source": "execution",
+      "review_round": null,
+      "summary": "plugins/immune-brain/runtime/workspace_scope.ts: taskRevisionSnapshotOnce validates case-fold collisions across every staged, unstaged, and untracked path before scope filtering, so unrelated out-of-scope paths such as Case.ts and case.ts make v4 revision preparation fail instead of being ignored; restrict collision validation to scope-matching paths and verify the scoped digest remains unchanged."
+    },
+    {
+      "id": "review-host-a2-manifest",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "A2",
+      "source": "execution",
+      "review_round": null,
+      "summary": "plugins/immune-brain/.pi-extension/pi-canary-review-bundle.ts: captureReviewManifest checks the 2 MiB limit against unsigned metadata before appending manifest_digest, so the final canonical manifest can exceed the promised limit; measure JSON.stringify of the completed manifest and add an exact boundary test."
+    },
+    {
+      "id": "review-host-a3-preparation",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "A3",
+      "source": "execution",
+      "review_round": null,
+      "summary": "plugins/immune-brain/.pi-extension/pi-canary-assurance-progression.ts: when Review reservation construction fails after QA has durably projected run_review, the error is rethrown into settlement_unknown rather than retryable review_preparation_failed; clean evidence, preserve run_review, and verify retrying advance_assurance reconstructs the reservation."
+    },
+    {
+      "id": "review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "A1",
+      "source": "execution",
+      "review_round": null,
+      "summary": "plugins/immune-brain/runtime/kernel/enrollment.ts: preparePiCanary runs before the store lock, while the locked intent reread checks only revision, so a same-revision content change in that gap can enroll bytes different from the confirmation-bound hash; compare the locked intent.content_hash with the validated capability binding and verify the race produces zero authority writes."
+    },
+    {
+      "id": "review-a3-manifest-preflight",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "A3",
+      "source": "execution",
+      "review_round": null,
+      "summary": "The complete v5 Review manifest metadata budget must be checked before deterministic QA; oversized metadata must leave QA attestations unwritten."
+    },
+    {
+      "id": "review-a3-submit-contract",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "A3",
+      "source": "execution",
+      "review_round": null,
+      "summary": "plugins/immune-brain/.pi-extension/pi-canary-assurance-progression.ts: submitReview returns reviewPreparationFailed, but AssuranceSubmitReviewResult excludes review_preparation_failed and the helper is typed as the broader AssuranceAdvanceResult; add the retryable variant to the submit contract and narrow the helper return type so TypeScript consumers can compile and handle the documented post-QA retry path."
+    },
+    {
+      "id": "review-a3-post-commit-projection",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "A3",
+      "source": "execution",
+      "review_round": null,
+      "summary": "plugins/immune-brain/.pi-extension/pi-canary-assurance-progression.ts: a projection read after Review authority commits can throw outside settlement handling; catch the post-commit read failure as settlement_unknown while preserving the committed Review authority and retry state."
+    },
+    {
+      "id": "review-a2-nul-diff-paths",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "A2",
+      "source": "execution",
+      "review_round": null,
+      "summary": "plugins/immune-brain/.pi-extension/pi-canary-review-bundle.ts: synthetic review delta verification must decode Git --name-only output with NUL delimiters so valid scoped paths containing newlines remain one path and reproduce the captured revision."
+    },
+    {
+      "id": "review-a3-freeze-projection-failure",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "A3",
+      "source": "execution",
+      "review_round": null,
+      "summary": "plugins/immune-brain/.pi-extension/pi-canary-assurance-progression.ts: a projection error after freeze_artifacts has an unresolved authority boundary and must return settlement_unknown until a successful post-freeze projection proves the mutation settled."
+    },
+    {
+      "id": "review-a2-index-flags",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "A2",
+      "source": "execution",
+      "review_round": null,
+      "summary": "plugins/immune-brain/runtime/workspace_scope.ts: scoped tracked paths marked assume-unchanged or skip-worktree can hide worktree drift from git diff; the v3/v4 snapshot paths now reject both flags before diff capture, with regression coverage."
+    },
+    {
+      "id": "qa-A2-73af180c-a95caa",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "A2",
+      "source": "review",
+      "review_round": 1,
+      "summary": "verification failed (exit 1) stdout=28B stderr=4280B: tests/pi-canary-review-bundle.test.ts:\n\n    ○\n    │╲\n    │ ○\n    ○ ░\n    ░    gitleaks\n\n\u001b[90m9:57AM\u001b[0m \u001b[32mINF\u001b[0m \u001b[1m0 commits scanned.\u001b[0m\n\u001b[90m9:57AM\u001b[0\n... output omitted ...\nture and revalidation [443.01ms]\n(pass) managed task snapshot isolation > rejects unmerged stages and case-fold index collisions [806.51ms]\n(pass) managed task snapshot isolation > rejects invalid UTF-8 path bytes from the Git index [268.09ms]\n\n 19 pass\n 1 fail\n 79 expect() calls\nRan 20 tests across 2 files. [18.18s]"
+    },
+    {
+      "id": "review-1e1479ca98ea-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "A3",
+      "source": "review",
+      "review_round": 2,
+      "summary": "plugins/immune-brain/.pi-extension/pi-canary-assurance-progression.ts: when projection already requires run_review, frozenRunner failure or cancellation occurs before reviewPreparationStarted and returns failed/cancelled QA, while a returned fresh projection error becomes settlement_unknown; classify these post-QA preparation paths as retryable review_preparation_failed while preserving run_review."
+    },
+    {
+      "id": "review-e294655e7121-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "A3",
+      "source": "review",
+      "review_round": 3,
+      "summary": "plugins/immune-brain/.pi-extension/imm-canary-work.ts:1167 can throw from the fallback listReviewRefs call after the initial cleanup read fails, so orphan-ref cleanup can escape instead of remaining non-fatal; cache the already-read refs or catch the fallback call and return failed cleanup results."
+    },
+    {
+      "id": "review-e294655e7121-2-review-2",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "A3",
+      "source": "review",
+      "review_round": 3,
+      "summary": "plugins/immune-brain/.pi-extension/imm-canary-work.ts:326-331 accepts extra fields inside a passing approval object, violating the exact native receipt contract; reject unknown approval fields before constructing the verdict."
+    },
+    {
+      "id": "review-e294655e7121-3-review-3",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "A3",
+      "source": "review",
+      "review_round": 3,
+      "summary": "plugins/immune-brain/.pi-extension/imm-canary-work.ts:748-754 revalidates base_head, review_commit, and review_tree but omits manifest_digest, allowing a changed manifest identity to pass Review submission; return and compare the regenerated manifest digest as well."
+    },
+    {
+      "id": "request_rework:2026-08-31-001-immutable-git-review-revisions:2026-09-01T02:29:14.477Z:replan-required",
+      "kind": "replan_required",
+      "status": "resolved",
+      "acceptance_id": "A3",
+      "source": "kernel",
+      "review_round": 3,
+      "summary": "Review returned this acceptance boundary twice; a durable replan is required."
+    }
+  ],
+  "history": [
+    {
+      "id": "approve_breaking_intent_revision:2026-08-31-001-immutable-git-review-revisions:2026-08-31T15:38:18.727Z",
+      "at": "2026-08-31T15:38:18.727Z",
+      "type": "approve_breaking_intent_revision",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "intent_revision_2\naction_v2_sha256:7d1add969e7f50b7441317602424c2d16e80df6c6f7d31636696bd1c0cd94cc9",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-8c6efa41854d5801",
+        "issued_at": "2026-08-31T15:38:19.729Z",
+        "expires_at": "2026-08-31T15:48:19.729Z"
+      }
+    },
+    {
+      "id": "approve_breaking_intent_revision:2026-08-31-001-immutable-git-review-revisions:2026-08-31T15:52:34.551Z",
+      "at": "2026-08-31T15:52:34.551Z",
+      "type": "approve_breaking_intent_revision",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "intent_revision_3\naction_v2_sha256:798e967ff61342a6a12095300d86edb8cf5b07f5be2bde2e4cdc919db4af4a0d",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-ad3fe84566a7246e",
+        "issued_at": "2026-08-31T15:52:35.334Z",
+        "expires_at": "2026-08-31T16:02:35.334Z"
+      }
+    },
+    {
+      "id": "freeze_artifacts:2026-08-31-001-immutable-git-review-revisions:2026-08-31T15:54:16.016Z",
+      "at": "2026-08-31T15:54:16.016Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent and Spec frozen at docs/plans/archive/2026-08-31-001-immutable-git-review-revisions.intent.json"
+    },
+    {
+      "id": "record_approval:2026-08-31-001-immutable-git-review-revisions:2026-08-31T15:55:20.353Z",
+      "at": "2026-08-31T15:55:20.353Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-f392a0c5\naction_v2_sha256:5ec2cea89be71a4f581c2979d64ec925bf269659395f203bb5751caad4eb94d9",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-fcae202c071bd827",
+        "issued_at": "2026-08-31T15:55:20.354Z",
+        "expires_at": "2026-08-31T16:05:20.354Z"
+      }
+    },
+    {
+      "id": "record_finding:2026-08-31-001-immutable-git-review-revisions:2026-08-31T16:43:26.035Z",
+      "at": "2026-08-31T16:43:26.035Z",
+      "type": "record_finding",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "review-host-a3-cancel\naction_v2_sha256:37e9f7b382e5ef108ce650d7d128c870be1a3b0bb7b8ff3fa947d1dadaa48001"
+    },
+    {
+      "id": "record_finding:2026-08-31-001-immutable-git-review-revisions:2026-08-31T16:43:37.983Z",
+      "at": "2026-08-31T16:43:37.983Z",
+      "type": "record_finding",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "review-host-a2-scope\naction_v2_sha256:c933a04de8a231e363ca1c3afc857722109d887db4ded198e5c9ffc379e6afee"
+    },
+    {
+      "id": "record_finding:2026-08-31-001-immutable-git-review-revisions:2026-08-31T16:43:48.849Z",
+      "at": "2026-08-31T16:43:48.849Z",
+      "type": "record_finding",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "review-host-a2-manifest\naction_v2_sha256:973afb96ee2ac89a813a53057c7511213e1ea802c294a7b3bd4a076494f5e7fe"
+    },
+    {
+      "id": "record_finding:2026-08-31-001-immutable-git-review-revisions:2026-08-31T16:44:00.687Z",
+      "at": "2026-08-31T16:44:00.687Z",
+      "type": "record_finding",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "review-host-a3-preparation\naction_v2_sha256:59be00f37fdbbc6dd43bf854ca8d5502a0c0be4a4f94f71176a28b36eb95f731"
+    },
+    {
+      "id": "resolve_finding:2026-08-31-001-immutable-git-review-revisions:2026-08-31T16:54:11.600Z",
+      "at": "2026-08-31T16:54:11.600Z",
+      "type": "resolve_finding",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "review-host-a3-cancel\naction_v2_sha256:a05e8334c8803b9adbf969154bd15e3b9916c55e685a024fe6399fe30f04971e"
+    },
+    {
+      "id": "resolve_finding:2026-08-31-001-immutable-git-review-revisions:2026-08-31T16:54:22.438Z",
+      "at": "2026-08-31T16:54:22.438Z",
+      "type": "resolve_finding",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "review-host-a2-scope\naction_v2_sha256:a28c1ded456167257c8863fd1177e5fdfe87381d14db1de8beb77d0804229f04"
+    },
+    {
+      "id": "resolve_finding:2026-08-31-001-immutable-git-review-revisions:2026-08-31T16:54:35.477Z",
+      "at": "2026-08-31T16:54:35.477Z",
+      "type": "resolve_finding",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "review-host-a2-manifest\naction_v2_sha256:a7340f133931f63dff02760956a37eb546d36dcaf82ff052b81959a8da122e56"
+    },
+    {
+      "id": "resolve_finding:2026-08-31-001-immutable-git-review-revisions:2026-08-31T16:54:44.323Z",
+      "at": "2026-08-31T16:54:44.323Z",
+      "type": "resolve_finding",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "review-host-a3-preparation\naction_v2_sha256:8c0398cc1316935423093a96210d85595237dc3fa160f04a1450acc9497756cc"
+    },
+    {
+      "id": "record_finding:2026-08-31-001-immutable-git-review-revisions:2026-08-31T17:04:18.320Z",
+      "at": "2026-08-31T17:04:18.320Z",
+      "type": "record_finding",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "review-1\naction_v2_sha256:fd821d6161382d723bfa4fc494aa1a6a8b1e0a77674b0b0e69320a97edff618b"
+    },
+    {
+      "id": "resolve_finding:2026-08-31-001-immutable-git-review-revisions:2026-08-31T17:06:04.089Z",
+      "at": "2026-08-31T17:06:04.089Z",
+      "type": "resolve_finding",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "review-1\naction_v2_sha256:dcd1e87d711b76dee1ed4cd950bc844038b2721c28f7623c67e861e097b87137"
+    },
+    {
+      "id": "record_finding:2026-08-31-001-immutable-git-review-revisions:2026-08-31T17:18:57.269Z",
+      "at": "2026-08-31T17:18:57.269Z",
+      "type": "record_finding",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "review-a3-manifest-preflight\naction_v2_sha256:6fc2ac9a6be21917c877e6fb83687f30cfed68d06b7df0217cacce5d18ec1d35"
+    },
+    {
+      "id": "resolve_finding:2026-08-31-001-immutable-git-review-revisions:2026-08-31T17:20:05.457Z",
+      "at": "2026-08-31T17:20:05.457Z",
+      "type": "resolve_finding",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "review-a3-manifest-preflight\naction_v2_sha256:a3221148795c441b5ba5ecc6e314ec92e2205ce0ae5bd45796f04dc2bc06a875"
+    },
+    {
+      "id": "record_finding:2026-08-31-001-immutable-git-review-revisions:2026-08-31T17:35:12.205Z",
+      "at": "2026-08-31T17:35:12.205Z",
+      "type": "record_finding",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "review-a3-submit-contract\naction_v2_sha256:a40eca9d0822c1ff11ebce974091b846493542b8142c46ca761561ea773ebae4"
+    },
+    {
+      "id": "resolve_finding:2026-08-31-001-immutable-git-review-revisions:2026-08-31T17:35:31.315Z",
+      "at": "2026-08-31T17:35:31.315Z",
+      "type": "resolve_finding",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "review-a3-submit-contract\naction_v2_sha256:282096fbefbff62a2eb4f0924235aed71b8b1b6a095374d6066e2e0abaefec0d"
+    },
+    {
+      "id": "record_finding:2026-08-31-001-immutable-git-review-revisions:2026-08-31T17:57:32.242Z",
+      "at": "2026-08-31T17:57:32.242Z",
+      "type": "record_finding",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "review-a3-post-commit-projection\naction_v2_sha256:3a915646a7e1e9a902ae060961d1109aa68204695c67773bba6a53665c1bce23"
+    },
+    {
+      "id": "resolve_finding:2026-08-31-001-immutable-git-review-revisions:2026-08-31T17:57:55.750Z",
+      "at": "2026-08-31T17:57:55.750Z",
+      "type": "resolve_finding",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "review-a3-post-commit-projection\naction_v2_sha256:96dddb6d3046381ed1ca409dc59d877dc05042cfca4db589bf43dd67b7dfb2a1"
+    },
+    {
+      "id": "record_finding:2026-08-31-001-immutable-git-review-revisions:2026-08-31T18:28:46.644Z",
+      "at": "2026-08-31T18:28:46.644Z",
+      "type": "record_finding",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "review-a2-nul-diff-paths\naction_v2_sha256:ee17d553782538cbd6818817149885a3bebe5803ec4ec753a0c7c5dd04e6e889"
+    },
+    {
+      "id": "record_finding:2026-08-31-001-immutable-git-review-revisions:2026-08-31T18:29:13.803Z",
+      "at": "2026-08-31T18:29:13.803Z",
+      "type": "record_finding",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "review-a3-freeze-projection-failure\naction_v2_sha256:3d2c305d898bd9641173f3ee0bd7dde4f50f3e8d2f681131cf8fe222afa81e7c"
+    },
+    {
+      "id": "resolve_finding:2026-08-31-001-immutable-git-review-revisions:2026-08-31T18:29:38.459Z",
+      "at": "2026-08-31T18:29:38.459Z",
+      "type": "resolve_finding",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "review-a2-nul-diff-paths\naction_v2_sha256:492127469160fba2871670bc990b8e2a2d71a52d68d669d47fb4b211b1043583"
+    },
+    {
+      "id": "resolve_finding:2026-08-31-001-immutable-git-review-revisions:2026-08-31T18:30:11.066Z",
+      "at": "2026-08-31T18:30:11.066Z",
+      "type": "resolve_finding",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "review-a3-freeze-projection-failure\naction_v2_sha256:b0f92032099788750641e44ce7618c19ed35bf969f0ad94fd0697706d8d69e95"
+    },
+    {
+      "id": "record_approval:2026-08-31-001-immutable-git-review-revisions:2026-09-01T01:24:23.240Z",
+      "at": "2026-09-01T01:24:23.240Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-505130df\naction_v2_sha256:f84d944451dc55305d167bdabe78febc7d5142cfe1fbfdc54622a0844d78e408",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-6bd38aed4075cb7b",
+        "issued_at": "2026-09-01T01:24:23.240Z",
+        "expires_at": "2026-09-01T01:34:23.240Z"
+      }
+    },
+    {
+      "id": "record_finding:2026-08-31-001-immutable-git-review-revisions:2026-09-01T01:51:12.847Z",
+      "at": "2026-09-01T01:51:12.847Z",
+      "type": "record_finding",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "review-a2-index-flags\naction_v2_sha256:a45d6dbb5f7afc404f31e770dd595f6008945a6c538cfb69b6682451a7c49d13"
+    },
+    {
+      "id": "resolve_finding:2026-08-31-001-immutable-git-review-revisions:2026-09-01T01:51:44.941Z",
+      "at": "2026-09-01T01:51:44.941Z",
+      "type": "resolve_finding",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "review-a2-index-flags\naction_v2_sha256:f0f653b15373a9d0d6769afcf21a42ac6196eaf7075278ce8dfb1ec9f9d8f933"
+    },
+    {
+      "id": "request_rework:2026-08-31-001-immutable-git-review-revisions:2026-09-01T01:58:38.519Z",
+      "at": "2026-09-01T01:58:38.519Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_1\naction_v2_sha256:9882563d6af8bbae62e9360d06f432c6087085f25bfb171ef6a9369be258ff2c",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-9ec2416b356713e3",
+        "issued_at": "2026-09-01T01:58:38.520Z",
+        "expires_at": "2026-09-01T02:08:38.519Z"
+      }
+    },
+    {
+      "id": "resolve_finding:2026-08-31-001-immutable-git-review-revisions:2026-09-01T02:05:04.615Z",
+      "at": "2026-09-01T02:05:04.615Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "qa-A2-73af180c-a95caa\naction_v2_sha256:49be2290b7feb337f9baa4db6fc0366914627efa2d6b354035c313b7396aa111"
+    },
+    {
+      "id": "freeze_artifacts:2026-08-31-001-immutable-git-review-revisions:2026-09-01T02:05:31.657Z",
+      "at": "2026-09-01T02:05:31.657Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent and Spec frozen at docs/plans/archive/2026-08-31-001-immutable-git-review-revisions.intent.json"
+    },
+    {
+      "id": "record_approval:2026-08-31-001-immutable-git-review-revisions:2026-09-01T02:06:52.101Z",
+      "at": "2026-09-01T02:06:52.101Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-b44e7e34\naction_v2_sha256:bef692f8b45a4c053a51020bb8e45b09838441e58de7076749ad38cbbaf3042c",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-6f7506968a62b66d",
+        "issued_at": "2026-09-01T02:06:52.101Z",
+        "expires_at": "2026-09-01T02:16:52.101Z"
+      }
+    },
+    {
+      "id": "request_rework:2026-08-31-001-immutable-git-review-revisions:2026-09-01T02:14:17.378Z",
+      "at": "2026-09-01T02:14:17.378Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_2\naction_v2_sha256:7ff6e90abc75d99df475e39fdab886e6c3241a706b7c77cde51ae6cacf56f349",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "native-review-0bb69952-918e-49f",
+        "confirmation_ref": "pi-confirm-2c4f520dbc5138e7",
+        "issued_at": "2026-09-01T02:14:17.379Z",
+        "expires_at": "2026-09-01T02:24:17.379Z"
+      }
+    },
+    {
+      "id": "resolve_finding:2026-08-31-001-immutable-git-review-revisions:2026-09-01T02:18:26.104Z",
+      "at": "2026-09-01T02:18:26.104Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-1e1479ca98ea-1-review-1\naction_v2_sha256:7264a2b0c3d72233bff7aed2b3f03e530191e933b62f319d06f2f90c79998bbe"
+    },
+    {
+      "id": "freeze_artifacts:2026-08-31-001-immutable-git-review-revisions:2026-09-01T02:18:44.743Z",
+      "at": "2026-09-01T02:18:44.743Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent and Spec frozen at docs/plans/archive/2026-08-31-001-immutable-git-review-revisions.intent.json"
+    },
+    {
+      "id": "record_approval:2026-08-31-001-immutable-git-review-revisions:2026-09-01T02:19:52.167Z",
+      "at": "2026-09-01T02:19:52.167Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-e139bbcd\naction_v2_sha256:c162e8b2ff92bf0b7e07c5048df8f7b919d35fa74f7638b0865444eb16618f5e",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-7cb65162a3746e0c",
+        "issued_at": "2026-09-01T02:19:52.167Z",
+        "expires_at": "2026-09-01T02:29:52.167Z"
+      }
+    },
+    {
+      "id": "request_rework:2026-08-31-001-immutable-git-review-revisions:2026-09-01T02:29:14.477Z",
+      "at": "2026-09-01T02:29:14.477Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "review_round_3\naction_v2_sha256:8d3460523ee697edacf116e659ee2e93fe0604b920bc63094c6dd5cc1ca8d0db",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "native-review-f33236df-f806-416",
+        "confirmation_ref": "pi-confirm-90839a0bf377670e",
+        "issued_at": "2026-09-01T02:29:14.478Z",
+        "expires_at": "2026-09-01T02:39:14.478Z"
+      }
+    },
+    {
+      "id": "approve_breaking_intent_revision:2026-08-31-001-immutable-git-review-revisions:2026-09-01T02:42:44.491Z",
+      "at": "2026-09-01T02:42:44.491Z",
+      "type": "approve_breaking_intent_revision",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "intent_revision_4\naction_v2_sha256:e0d3ac394177e562390fe4a0f7b84f3b4f017a2fd419aec8f9f8ec845d6cb949",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-c428c5939a8b355a",
+        "issued_at": "2026-09-01T02:42:45.645Z",
+        "expires_at": "2026-09-01T02:52:45.645Z"
+      }
+    },
+    {
+      "id": "resolve_finding:2026-08-31-001-immutable-git-review-revisions:2026-09-01T02:43:06.034Z",
+      "at": "2026-09-01T02:43:06.034Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-e294655e7121-1-review-1\naction_v2_sha256:db4186ed725848646976edb2f1dd06b9dc0ea011a009e66c047033c5299fcef7"
+    },
+    {
+      "id": "resolve_finding:2026-08-31-001-immutable-git-review-revisions:2026-09-01T02:43:50.425Z",
+      "at": "2026-09-01T02:43:50.425Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-e294655e7121-2-review-2\naction_v2_sha256:3ebdc81e1b5e82b04fd2352b261c484e2608a629f42b74c293a13ef85825162c"
+    },
+    {
+      "id": "resolve_finding:2026-08-31-001-immutable-git-review-revisions:2026-09-01T02:44:00.136Z",
+      "at": "2026-09-01T02:44:00.136Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-e294655e7121-3-review-3\naction_v2_sha256:3ed25801134b194b6e8360c6139aac10ed9a36863877733a84df95351f6c9521"
+    },
+    {
+      "id": "freeze_artifacts:2026-08-31-001-immutable-git-review-revisions:2026-09-01T02:44:16.276Z",
+      "at": "2026-09-01T02:44:16.276Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent and Spec frozen at docs/plans/archive/2026-08-31-001-immutable-git-review-revisions.intent.json"
+    },
+    {
+      "id": "record_approval:2026-08-31-001-immutable-git-review-revisions:2026-09-01T02:45:10.178Z",
+      "at": "2026-09-01T02:45:10.178Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-8f9a6242\naction_v2_sha256:242b636bcf134cd2e7c063cfd88cf08dc085e1ee107d4ae87991ae60a262cf7e",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-028c1c7eb5b92ec3",
+        "issued_at": "2026-09-01T02:45:10.178Z",
+        "expires_at": "2026-09-01T02:55:10.178Z"
+      }
+    },
+    {
+      "id": "record_approval:2026-08-31-001-immutable-git-review-revisions:2026-09-01T02:51:12.737Z",
+      "at": "2026-09-01T02:51:12.737Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-fc11c9b1\naction_v2_sha256:e0bf1bb8ca7e4bd8bf47c334c7bbe5aec5b77225563070e07088196039f0e826",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "native-review-43a398e5-baf5-480",
+        "confirmation_ref": "pi-confirm-67744b58ba08910e",
+        "issued_at": "2026-09-01T02:51:12.737Z",
+        "expires_at": "2026-09-01T03:01:12.737Z"
+      }
+    },
+    {
+      "id": "record_user_approval:2026-08-31-001-immutable-git-review-revisions:2026-09-01T03:00:38.794Z",
+      "at": "2026-09-01T03:00:38.794Z",
+      "type": "record_user_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-user-9d71eb58\naction_v2_sha256:b72f9b8ee5b1a5c509ab4bbfc37f0bda90cddf9e0f3740381ff6c2b0b9525d3f",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-81a2b4e2055d4e23",
+        "issued_at": "2026-09-01T03:00:38.805Z",
+        "expires_at": "2026-09-01T03:10:38.805Z"
+      }
+    },
+    {
+      "id": "complete:2026-08-31-001-immutable-git-review-revisions:2026-09-01T03:00:58.416Z",
+      "at": "2026-09-01T03:00:58.416Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:41ce284e8df7acd939e43a429c26f60f90c1835f740716bfe964c2de37591059"
+    }
+  ]
+}

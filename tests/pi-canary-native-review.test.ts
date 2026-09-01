@@ -24,19 +24,21 @@ test("reserved native review parameters are foreground-only and deterministic", 
 		resume: "",
 		schedule: "",
 	});
-	expect(params).not.toHaveProperty("model");
-	expect(params).not.toHaveProperty("thinking");
+	expect(params).toMatchObject({ name: "", model: "", thinking: "" });
 	expect(params.prompt).toContain("immutable bundle");
 	expect(params.description).toContain("12345678");
 	expect(promptDigest(params.prompt)).toMatch(/^sha256:[0-9a-f]{64}$/);
 });
 
-test("reserved authority args are exact while host-owned execution config is non-authoritative", () => {
+test("reserved authority args use the exact host-normalized envelope", () => {
 	expect(matchesReservedAgentArgs(params, params)).toBe(true);
 	for (const [field, value] of [
 		["subagent_type", "other"],
 		["description", "other"],
 		["prompt", `${params.prompt}!`],
+		["name", "kernel-review"],
+		["model", "host/review-model"],
+		["thinking", "high"],
 		["inherit_context", true],
 		["isolated", false],
 		["isolation", "none"],
@@ -49,13 +51,9 @@ test("reserved authority args are exact while host-owned execution config is non
 	}
 	expect(matchesReservedAgentArgs({ ...params, extra: true }, params)).toBe(false);
 	expect(matchesReservedAgentArgs({ subagent_type: params.subagent_type }, params)).toBe(false);
-	expect(matchesReservedAgentArgs({ ...params, name: "" }, params)).toBe(true);
-	expect(matchesReservedAgentArgs({ ...params, name: "kernel-review" }, params)).toBe(true);
-	expect(matchesReservedAgentArgs({ ...params, model: "host/review-model" }, params)).toBe(true);
-	expect(matchesReservedAgentArgs({ ...params, thinking: "high" }, params)).toBe(true);
-	expect(matchesReservedAgentArgs({ ...params, model: "host/review-model", thinking: "low" }, params)).toBe(true);
-	expect(matchesReservedAgentArgs({ ...params, model: "", thinking: "" }, params)).toBe(true);
-	expect(matchesReservedAgentArgs({ ...params, model: "x", resume: "agent-1" }, params)).toBe(false);
+	const hostOmittedInheritance = { ...params };
+	delete (hostOmittedInheritance as Partial<typeof params>).inherit_context;
+	expect(matchesReservedAgentArgs(hostOmittedInheritance, params)).toBe(true);
 });
 
 test("foreground tool_result is the only result parser input", () => {

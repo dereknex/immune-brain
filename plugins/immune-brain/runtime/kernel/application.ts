@@ -38,6 +38,7 @@ import type {
 	StoredTaskMutationV3,
 	TaskAction,
 	TaskIntentV1,
+	TaskRecord,
 } from "./types";
 import { TASK_TOMBSTONE_CONTRACT, type TaskTombstone } from "./backend_claim";
 import { KernelInvariantError, parseTaskAction } from "./validation";
@@ -51,7 +52,7 @@ export interface ApplyTaskActionInput {
 	registry: MutationAuthorityRegistry;
 	capability?: MutationAuthorityCapabilityV2;
 	/** Trusted injected diff provider; the action's diff_hash is only an expectation. */
-	diffProvider: (root: string, intent: TaskIntentV1) => string;
+	diffProvider: (root: string, record: TaskRecord) => string;
 	now?: number;
 	/**
 	 * Terminal commit mode: record + workspace + active-claim removal + task
@@ -89,7 +90,7 @@ export function applyTaskAction(
 		// closed before any token or capability is consumed.
 
 		// Trusted diff provider is the only diff authority.
-		const diffHash = diffProvider(root, current.record.intent_snapshot);
+		const diffHash = diffProvider(root, current.record);
 		if (diffHash !== action.diff_hash)
 			throw new KernelInvariantError([
 				`action diff_hash ${action.diff_hash} does not match the trusted diff ${diffHash}`,

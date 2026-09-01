@@ -4,6 +4,8 @@ import {
 	TASK_PHASES,
 	TASK_RECORD_CONTRACT_V2,
 	TASK_RECORD_CONTRACT_V3,
+	TASK_RECORD_CONTRACT_V4,
+	REVIEW_REVISION_IDENTITY_CONTRACT,
 	type ApprovalAuthorityRole,
 	type ApprovalKind,
 	type EvidenceStatus,
@@ -19,10 +21,15 @@ import {
 	type TaskHistoryEntryV2,
 	type TaskHistoryEntryV3,
 	type TaskIntentV1,
+	type ReviewRevisionIdentityV1,
+	type TaskRecord,
 	type TaskRecordV2,
 	type TaskRecordV3,
+	type TaskRecordV4,
 } from "./types";
 import { canonicalIntentHash, parseTaskIntentV1 } from "./intent";
+
+const GIT_OBJECT_ID = /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/;
 
 export class KernelValidationError extends Error {
 	readonly code = "kernel_schema_invalid";
@@ -320,11 +327,13 @@ function parseApprovalV2(
 	value: unknown,
 	index: number,
 	violations: string[],
+	allowReviewRevision = false,
 ): TaskApprovalV2 {
 	const item = objectAt(value, `record.approvals[${index}]`, violations);
 	rejectUnknown(
 		item,
-		["id", "kind", "authority_role", "task_revision", "intent_content_hash", "diff_hash", "actor_id", "summary"],
+		["id", "kind", "authority_role", "task_revision", "intent_content_hash", "diff_hash", "actor_id", "summary",
+			...(allowReviewRevision ? ["review_revision"] : [])],
 		`record.approvals[${index}]`,
 		violations,
 	);
@@ -356,7 +365,34 @@ function parseApprovalV2(
 		diff_hash: diffHash,
 		actor_id: stringAt(item.actor_id, `record.approvals[${index}].actor_id`, violations),
 		summary: stringAt(item.summary, `record.approvals[${index}].summary`, violations),
+		...(allowReviewRevision && item.review_revision !== undefined
+			? { review_revision: parseReviewRevisionIdentity(item.review_revision, `record.approvals[${index}].review_revision`, violations) }
+			: {}),
 	};
+}
+
+function parseReviewRevisionIdentity(
+	value: unknown,
+	path: string,
+	violations: string[],
+): ReviewRevisionIdentityV1 {
+	const item = objectAt(value, path, violations);
+	rejectUnknown(item, ["contract", "base_head", "review_commit", "review_tree", "manifest_digest"], path, violations);
+	if (item.contract !== REVIEW_REVISION_IDENTITY_CONTRACT)
+		violations.push(`${path}.contract must equal ${REVIEW_REVISION_IDENTITY_CONTRACT}`);
+	const identity = {
+		contract: REVIEW_REVISION_IDENTITY_CONTRACT,
+		base_head: stringAt(item.base_head, `${path}.base_head`, violations),
+		review_commit: stringAt(item.review_commit, `${path}.review_commit`, violations),
+		review_tree: stringAt(item.review_tree, `${path}.review_tree`, violations),
+		manifest_digest: stringAt(item.manifest_digest, `${path}.manifest_digest`, violations),
+	};
+	for (const field of ["base_head", "review_commit", "review_tree"] as const)
+		if (!GIT_OBJECT_ID.test(identity[field]))
+			violations.push(`${path}.${field} must be a lowercase Git object id`);
+	if (!SHA256_HEX.test(identity.manifest_digest))
+		violations.push(`${path}.manifest_digest must be sha256:<64 hex>`);
+	return identity;
 }
 
 function parseAttestationV3(
@@ -364,10 +400,17 @@ function parseAttestationV3(
 	index: number,
 	acceptanceIds: Set<string>,
 	violations: string[],
+	allowReviewRevision = false,
 ): TaskAttestationV3 {
 	const path = `record.attestations[${index}]`;
 	const item = objectAt(value, path, violations);
-	rejectUnknown(item, ["id", "kind", "authority_role", "task_revision", "intent_content_hash", "diff_hash", "actor_id", "summary", "acceptance_results"], path, violations);
+	rejectUnknown(
+		item,
+		["id", "kind", "authority_role", "task_revision", "intent_content_hash", "diff_hash", "actor_id", "summary", "acceptance_results",
+			...(allowReviewRevision ? ["review_revision"] : [])],
+		path,
+		violations,
+	);
 	const kind = enumAt(item.kind, APPROVAL_KINDS, `${path}.kind`, violations);
 	const intentContentHash = stringAt(item.intent_content_hash, `${path}.intent_content_hash`, violations);
 	const diffHash = stringAt(item.diff_hash, `${path}.diff_hash`, violations);
@@ -392,6 +435,13 @@ function parseAttestationV3(
 		if (resultIds.length !== acceptanceIds.size || new Set(resultIds).size !== acceptanceIds.size)
 			violations.push(`${path}.acceptance_results must cover every acceptance exactly once`);
 	}
+	const reviewRevision = item.review_revision === undefined
+		? undefined
+		: parseReviewRevisionIdentity(item.review_revision, `${path}.review_revision`, violations);
+	if (reviewRevision && kind !== "review")
+		violations.push(`${path}.review_revision is only valid on review attestations`);
+	if (allowReviewRevision && kind === "review" && !reviewRevision)
+		violations.push(`${path}.review_revision is required for v4 review attestations`);
 	return {
 		id: stringAt(item.id, `${path}.id`, violations),
 		kind,
@@ -402,6 +452,7 @@ function parseAttestationV3(
 		actor_id: stringAt(item.actor_id, `${path}.actor_id`, violations),
 		summary: stringAt(item.summary, `${path}.summary`, violations),
 		acceptance_results: acceptanceResults,
+		...(reviewRevision ? { review_revision: reviewRevision } : {}),
 	};
 }
 
@@ -528,17 +579,19 @@ export function parseTaskRecordV2(raw: unknown): TaskRecordV2 {
 	};
 }
 
-export function parseTaskRecordV3(raw: unknown): TaskRecordV3 {
+function parseTaskRecordAtVersion(raw: unknown, version: 3 | 4): TaskRecordV3 | TaskRecordV4 {
 	const violations: string[] = [];
 	const value = objectAt(raw, "record", violations);
 	rejectUnknown(
 		value,
-		["contract", "task_id", "intent_snapshot", "intent_ref", "lifecycle", "artifact_state", "baseline", "attestations", "findings", "history"],
+		["contract", "task_id", "intent_snapshot", "intent_ref", "lifecycle", "artifact_state", "baseline", "attestations", "findings", "history",
+			...(version === 4 ? ["git_base_head"] : [])],
 		"record",
 		violations,
 	);
-	if (value.contract !== TASK_RECORD_CONTRACT_V3)
-		violations.push(`contract must equal ${TASK_RECORD_CONTRACT_V3}`);
+	const expectedContract = version === 4 ? TASK_RECORD_CONTRACT_V4 : TASK_RECORD_CONTRACT_V3;
+	if (value.contract !== expectedContract)
+		violations.push(`contract must equal ${expectedContract}`);
 
 	let snapshot: TaskIntentV1 | null = null;
 	try {
@@ -570,31 +623,65 @@ export function parseTaskRecordV3(raw: unknown): TaskRecordV3 {
 
 	const baseline = stringAt(value.baseline, "record.baseline", violations);
 	if (!SHA256_HEX.test(baseline)) violations.push("record.baseline must be sha256:<64 hex>");
+	let gitBaseHead = "";
+	if (version === 4) {
+		const rawGitBaseHead = stringAt(value.git_base_head, "record.git_base_head", violations);
+		if (rawGitBaseHead !== rawGitBaseHead.toLowerCase())
+			violations.push("record.git_base_head must be lowercase");
+		gitBaseHead = rawGitBaseHead;
+		if (!GIT_OBJECT_ID.test(gitBaseHead))
+			violations.push("record.git_base_head must be a lowercase Git commit id");
+	}
 	const acceptanceIds = new Set(snapshot ? snapshot.acceptance.map((item) => item.id) : []);
-	const attestations = arrayAt(value.attestations, "record.attestations", violations).map((item, index) => parseAttestationV3(item, index, acceptanceIds, violations));
+	const attestations = arrayAt(value.attestations, "record.attestations", violations).map((item, index) => parseAttestationV3(item, index, acceptanceIds, violations, version === 4));
+	if (version === 4) {
+		for (const [index, attestation] of attestations.entries()) {
+			if (attestation.kind === "review" && attestation.review_revision && attestation.review_revision.base_head !== gitBaseHead)
+				violations.push(`record.attestations[${index}].review_revision.base_head must equal record.git_base_head`);
+		}
+	}
 	const findings = arrayAt(value.findings, "record.findings", violations).map((item, index) => parseFinding(item, index, violations));
 	const history = arrayAt(value.history, "record.history", violations).map((item, index) => parseHistoryV3(item, index, violations));
 	uniqueIds(attestations, "record.attestations", violations);
 	uniqueIds(findings, "record.findings", violations);
 	uniqueIds(history, "record.history", violations);
 	if (violations.length > 0) throw new KernelValidationError(violations);
-	return {
-		contract: TASK_RECORD_CONTRACT_V3,
+	const record = {
+		contract: expectedContract,
 		task_id: taskId,
 		intent_snapshot: snapshot as TaskIntentV1,
 		intent_ref: { path: refPath, content_hash: refContentHash },
 		lifecycle: lifecycle as TaskRecordV3["lifecycle"],
 		artifact_state: artifactState as TaskRecordV3["artifact_state"],
 		baseline,
+		...(version === 4 ? { git_base_head: gitBaseHead } : {}),
 		attestations,
 		findings,
 		history,
 	};
+	return record as TaskRecordV3 | TaskRecordV4;
 }
 
-export function assertKernelInvariantsV3(intentRaw: TaskIntentV1, recordRaw: TaskRecordV3): void {
+/** Strict v3 drain parser: unknown fields and revision identity stay illegal. */
+export function parseTaskRecordV3(raw: unknown): TaskRecordV3 {
+	return parseTaskRecordAtVersion(raw, 3) as TaskRecordV3;
+}
+
+/** Strict v4 parser: the Enrollment base commit is mandatory. */
+export function parseTaskRecordV4(raw: unknown): TaskRecordV4 {
+	return parseTaskRecordAtVersion(raw, 4) as TaskRecordV4;
+}
+
+/** Version-dispatched parser used by every durable Kernel owner. */
+export function parseTaskRecord(raw: unknown): TaskRecord {
+	const contract = (raw as { contract?: unknown } | null)?.contract;
+	if (contract === TASK_RECORD_CONTRACT_V4) return parseTaskRecordV4(raw);
+	return parseTaskRecordV3(raw);
+}
+
+export function assertKernelInvariantsV3(intentRaw: TaskIntentV1, recordRaw: TaskRecord): void {
 	const intent = parseTaskIntentV1(intentRaw);
-	const record = parseTaskRecordV3(recordRaw);
+	const record = parseTaskRecord(recordRaw);
 	const violations: string[] = [];
 	if (intent.task_id !== record.task_id) violations.push("intent and record task_id must match");
 	if (intent.revision !== record.intent_snapshot.revision) violations.push("intent revision must match record snapshot");
@@ -752,7 +839,9 @@ export function parseTaskAction(raw: unknown): TaskAction {
 				"action",
 				violations,
 			);
-			const approval = parseApprovalV2(value.approval, 0, violations);
+			const approval = parseApprovalV2(value.approval, 0, violations, true);
+			if (approval.review_revision && approval.kind !== "review")
+				violations.push("action.approval.review_revision is only valid on review approvals");
 			action = {
 				...base,
 				type: base.type,
@@ -871,12 +960,12 @@ export function parseTaskAction(raw: unknown): TaskAction {
 }
 
 export function assertTaskRecordUpdateV3(
-	previousRaw: TaskRecordV3,
-	nextRaw: TaskRecordV3,
+	previousRaw: TaskRecord,
+	nextRaw: TaskRecord,
 	action: TaskAction,
 ): void {
-	const previous = parseTaskRecordV3(previousRaw);
-	const next = parseTaskRecordV3(nextRaw);
+	const previous = parseTaskRecord(previousRaw);
+	const next = parseTaskRecord(nextRaw);
 	const violations: string[] = [];
 
 	if (next.contract !== previous.contract)
@@ -885,6 +974,8 @@ export function assertTaskRecordUpdateV3(
 		violations.push("record task_id must remain immutable");
 	if (next.baseline !== previous.baseline)
 		violations.push("record baseline must remain immutable");
+	if (previous.contract === TASK_RECORD_CONTRACT_V4 && next.contract === TASK_RECORD_CONTRACT_V4 && next.git_base_head !== previous.git_base_head)
+		violations.push("record git_base_head must remain immutable");
 
 	const isIntentAction =
 		action.type === "revise_intent" ||

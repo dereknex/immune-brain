@@ -14,7 +14,7 @@
 import { readBackendClaim, readTaskTombstone } from "./backend_claim";
 import { readTaskRecord, readAuditTaskPair, readWorkspaceStateRaw, reconcileKernelAuthority } from "./storage";
 import { projectTask } from "./completion";
-import type { AssuranceObligation, TaskIntentV1, TaskRecordV2, TaskRecordV3 } from "./types";
+import type { AssuranceObligation, TaskIntentV1, TaskRecord, TaskRecordV2 } from "./types";
 
 export interface AssuranceAuthorizationReadiness {
 	/**
@@ -127,7 +127,7 @@ function projectHistoricalTerminal(
 }
 
 function freshApprovalKinds(
-	record: TaskRecordV3,
+	record: TaskRecord,
 	currentIntentContentHash: string,
 	diffHash: string,
 ): string[] {
@@ -148,7 +148,7 @@ function freshApprovalKinds(
 }
 
 function projectFromRecord(
-	record: TaskRecordV3,
+	record: TaskRecord,
 	recordRevision: string,
 	workspaceRevision: string,
 	diffHash: string,
@@ -203,7 +203,7 @@ function projectFromRecord(
 export async function projectAssurance(
 	root: string,
 	taskId: string,
-	diffProvider: (root: string, intent: { scope_hint?: unknown }) => string,
+	diffProvider: (root: string, record: TaskRecord) => string,
 ): Promise<AssuranceProjectionResult> {
 	const fail = (
 		error: string,
@@ -262,7 +262,7 @@ export async function projectAssurance(
 				task_id: taskId,
 				error: null,
 				claim: null,
-				projection: projectFromRecord(auditPair.record, auditPair.recordRevision, workspace.revision, diffProvider(root, auditPair.record.intent_snapshot)),
+				projection: projectFromRecord(auditPair.record, auditPair.recordRevision, workspace.revision, diffProvider(root, auditPair.record)),
 			};
 		}
 		if (read.record.task_id !== taskId)
@@ -270,7 +270,7 @@ export async function projectAssurance(
 		if (claim && read.record.lifecycle !== "active")
 			return fail(`terminal task ${taskId} has no matching tombstone proof`, claim);
 		const workspace = await readWorkspaceStateRaw(root);
-		const diffHash = diffProvider(root, read.record.intent_snapshot);
+		const diffHash = diffProvider(root, read.record);
 		return {
 			contract: "assurance_kernel/assurance_projection/v1",
 			task_id: taskId,

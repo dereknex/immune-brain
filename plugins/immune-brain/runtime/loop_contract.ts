@@ -217,13 +217,25 @@ export function buildLoopAction(input: {
 export interface LoopRoleDispatch {
 	packet: RoleDelegationPacket;
 	call: {
-		subagent_type: "general-purpose";
+		subagent_type: LoopRoleSubagent;
 		description: string;
 		prompt: string;
 		inherit_context: false;
 		isolated: true;
 		run_in_background: false;
 	};
+}
+
+/**
+ * Authoritative code review runs on the host's configured `Review` agent so the
+ * user's own model/provider selection applies. Every other internal role, and
+ * especially the tool-less planning `advisory-reviewer`, stays on the generic
+ * agent and never inherits review authority.
+ */
+export type LoopRoleSubagent = "Review" | "general-purpose";
+
+export function loopRoleSubagentFor(role: LoopRole): LoopRoleSubagent {
+	return role === "code-review" ? "Review" : "general-purpose";
 }
 
 export function buildLoopRoleDispatch(input: {
@@ -235,7 +247,7 @@ export function buildLoopRoleDispatch(input: {
 	return {
 		packet,
 		call: {
-			subagent_type: "general-purpose",
+			subagent_type: loopRoleSubagentFor(input.role),
 			description: input.description ?? `${input.role} internal role`,
 			prompt: packet.prompt,
 			inherit_context: false,

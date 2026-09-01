@@ -99,6 +99,9 @@ export interface V3AuthorityObservation {
 export const TASK_INTENT_CONTRACT_V1 = "assurance_kernel/task_intent/v1" as const;
 export const TASK_RECORD_CONTRACT_V2 = "assurance_kernel/task_record/v2" as const;
 export const TASK_RECORD_CONTRACT_V3 = "assurance_kernel/task_record/v3" as const;
+export const TASK_RECORD_CONTRACT_V4 = "assurance_kernel/task_record/v4" as const;
+export const REVIEW_REVISION_IDENTITY_CONTRACT =
+	"assurance_kernel/review_revision_identity/v1" as const;
 
 export interface TaskIntentAcceptanceItemV1 {
 	id: string;
@@ -148,6 +151,20 @@ export interface TaskApprovalV2 {
 	diff_hash: string;
 	actor_id: string;
 	summary: string;
+	/**
+	 * Immutable Git revision identity the reviewer actually analyzed. Legal only
+	 * on a review attestation of a TaskRecord v4; the strict parser rejects it
+	 * anywhere else, so QA and user attestations never carry revision bytes.
+	 */
+	review_revision?: ReviewRevisionIdentityV1;
+}
+
+export interface ReviewRevisionIdentityV1 {
+	contract: typeof REVIEW_REVISION_IDENTITY_CONTRACT;
+	base_head: string;
+	review_commit: string;
+	review_tree: string;
+	manifest_digest: string;
 }
 
 export interface TaskHistoryEntryV2 {
@@ -205,6 +222,19 @@ export interface TaskRecordV3 {
 	findings: TaskFinding[];
 	history: TaskHistoryEntryV3[];
 }
+
+/**
+ * TaskRecord v4 binds the Enrollment commit so Review, QA, authorization, and
+ * completion can all derive one scoped revision from base to final index tree.
+ * `git_base_head` is immutable from Enrollment through terminal settlement.
+ */
+export interface TaskRecordV4 extends Omit<TaskRecordV3, "contract"> {
+	contract: typeof TASK_RECORD_CONTRACT_V4;
+	git_base_head: string;
+}
+
+/** The record shape every Kernel owner passes around during the v3 drain window. */
+export type TaskRecord = TaskRecordV3 | TaskRecordV4;
 
 export interface TaskProjectionV3 extends CompletionDecision {
 	contract: "assurance_kernel/projection/v3";
@@ -268,13 +298,13 @@ export const REDUCED_MUTATION_BRAND = Symbol("assurance-kernel-reduced-mutation-
 
 export interface ReducedTaskMutation {
 	readonly [REDUCED_MUTATION_BRAND]: true;
-	readonly record: TaskRecordV3;
+	readonly record: TaskRecord;
 	readonly next_workspace_working: string | null;
 }
 
 export interface StoredTaskMutationV3 {
 	revision: string;
-	record: TaskRecordV3;
+	record: TaskRecord;
 	workspace: {
 		revision: string;
 		state: WorkspaceStateLike;

@@ -4,7 +4,7 @@ import type {
 	TaskAttestationV3,
 	TaskIntentV1,
 	TaskProjectionV3,
-	TaskRecordV3,
+	TaskRecord,
 } from "./types";
 import { assertKernelInvariantsV3 } from "./validation";
 
@@ -32,7 +32,7 @@ function hasDistinctAuthorityAssignment(
 
 export function completionDecision(
 	intent: TaskIntentV1,
-	record: TaskRecordV3,
+	record: TaskRecord,
 	currentDiffHash: string,
 	currentIntentContentHash: string,
 ): CompletionDecision {
@@ -117,7 +117,7 @@ export function completionDecision(
 
 export function projectTask(
 	intent: TaskIntentV1,
-	record: TaskRecordV3,
+	record: TaskRecord,
 	currentDiffHash: string,
 	currentIntentContentHash: string,
 ): TaskProjectionV3 {

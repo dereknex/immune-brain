@@ -9,14 +9,14 @@ import {
 	type EnrollmentCapabilityBinding,
 } from "./enrollment_authority";
 import { readTaskTombstone, type BackendClaim } from "./backend_claim";
-import { preparePiCanary } from "./pi_canary_prepare";
+import { preparePiCanary, readGitHead } from "./pi_canary_prepare";
 import {
 	commitEnrollmentLocked,
 	readTaskRecordRaw,
 	readWorkspaceStateRaw,
 	withKernelStoreLock,
 } from "./storage";
-import type { TaskRecordV3, WorkspaceStateLike } from "./types";
+import type { TaskRecord, TaskRecordV4, WorkspaceStateLike } from "./types";
 
 export interface EnrollCanaryInput {
 	task_id: string;
@@ -29,17 +29,18 @@ export interface EnrollCanaryInput {
 }
 
 export interface EnrollCanaryResult {
-	record: TaskRecordV3;
+	record: TaskRecord;
 	backend_claim: BackendClaim;
 	workspace: { revision: string; state: WorkspaceStateLike };
 }
 
-function buildTaskRecordV3(
+function buildTaskRecordV4(
 	input: EnrollCanaryInput,
 	intent: Awaited<ReturnType<typeof readTaskIntent>>,
-): TaskRecordV3 {
+	gitBaseHead: string,
+): TaskRecordV4 {
 	return {
-		contract: "assurance_kernel/task_record/v3",
+		contract: "assurance_kernel/task_record/v4",
 		task_id: input.task_id,
 		intent_snapshot: intent.intent,
 		intent_ref: {
@@ -49,6 +50,7 @@ function buildTaskRecordV3(
 		lifecycle: "active",
 		artifact_state: "active",
 		baseline: intent.content_hash,
+		git_base_head: gitBaseHead,
 		attestations: [],
 		findings: [],
 		history: [],
@@ -110,6 +112,11 @@ export function runEnrollmentRehearsal(
 	} catch (error) {
 		blockers.push(`intent: ${error instanceof Error ? error.message : String(error)}`);
 	}
+	try {
+		readGitHead(root);
+	} catch (error) {
+		blockers.push(`git base: ${error instanceof Error ? error.message : String(error)}`);
+	}
 	result.evidence.outcome = blockers.length === 0 ? "ready" : "not_ready";
 	return result;
 }
@@ -134,6 +141,9 @@ export function enrollCanaryTask(
 	const recomputed = preparePiCanary(root, { task_id: input.task_id, now: input.now });
 	if (recomputed.digest !== input.preparation_digest)
 		throw new Error("enrollment preparation digest mismatch");
+	const gitBaseHead = recomputed.git_base_head;
+	if (!gitBaseHead)
+		throw new Error(recomputed.git_error ?? "enrollment requires a committed Git HEAD");
 
 	return withKernelStoreLock(root, () => {
 		const tombstone = readTaskTombstone(root, input.task_id);
@@ -152,11 +162,17 @@ export function enrollCanaryTask(
 		const intent = readTaskIntent(root, input.task_id);
 		if (intent.intent.revision !== input.intent_revision)
 			throw new Error("intent revision mismatch");
+		if (intent.content_hash !== validated.intent_content_hash)
+			throw new Error("intent content hash mismatch");
+		// The confirmation is bound to this exact commit; a moved HEAD means the
+		// operator approved a different base than the one being recorded.
+		if (readGitHead(root) !== gitBaseHead)
+			throw new Error("Git HEAD moved after the enrollment confirmation");
 
 		// consume immediately before the marker write
 		registry.consume(input.capability, input.capability_binding);
 
-		const record = buildTaskRecordV3(input, intent);
+		const record = buildTaskRecordV4(input, intent, gitBaseHead);
 		const nextWorkspace: WorkspaceStateLike = {
 			...workspace.state,
 			current_working: input.task_id,
