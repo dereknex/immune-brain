@@ -67,6 +67,7 @@ describe("internal role-prompt bridge", () => {
 		expect(archAction.next).toBe("arch-explorer");
 		if (archAction.next === "arch-explorer") {
 			expect(archAction.dispatch.packet.tool_policy).toBe("read-only tools");
+			expect(archAction.dispatch.call.subagent_type).toBe("Explore");
 		}
 		const architectureEvidence = normalizeArchitectureExplorerOutput({
 			candidates: [{ path: "runtime/loop_contract.ts" }],

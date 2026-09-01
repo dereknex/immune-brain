@@ -78,7 +78,7 @@ Agent:
   schedule: ""
 ```
 
-Pi `Agent` 没有 `readonly` 参数；只读边界由空工具策略、child 类型和 prompt contract 共同保证。Parent 每次只启动一个 foreground Agent，等待其 direct terminal result 后再决定是否需要下一个 child。普通 advisory/discovery 不调用 `get_subagent_result`，不依赖 completion notification 或 host `followUp`。Kernel authority Review 使用专属类型：`advance_assurance` 返回的保留参数使用 `subagent_type: "Review"`（Pi 原生只读 Review 类型），仍遵循本文档的 foreground、单 child、退火匹配与 receipt 校验规则；advisory/discovery 与 Loop 内部 roles 继续使用 `general-purpose`。
+Pi `Agent` 没有 `readonly` 参数；只读边界由空工具策略、child 类型和 prompt contract 共同保证。Parent 每次只启动一个 foreground Agent，等待其 direct terminal result 后再决定是否需要下一个 child。普通 advisory/discovery 不调用 `get_subagent_result`，不依赖 completion notification 或 host `followUp`。Kernel authority Review 使用专属类型：`advance_assurance` 返回的保留参数使用 `subagent_type: "Review"`（Pi 原生只读 Review 类型），仍遵循本文档的 foreground、单 child、退火匹配与 receipt 校验规则。Loop `arch-explorer` 使用 `subagent_type: "Explore"`；普通 advisory/discovery 与其余 Loop 内部 roles 继续使用 `general-purpose`。
 
 ## Scheduling And Visibility
 

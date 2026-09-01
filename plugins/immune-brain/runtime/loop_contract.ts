@@ -228,14 +228,17 @@ export interface LoopRoleDispatch {
 
 /**
  * Authoritative code review runs on the host's configured `Review` agent so the
- * user's own model/provider selection applies. Every other internal role, and
- * especially the tool-less planning `advisory-reviewer`, stays on the generic
- * agent and never inherits review authority.
+ * user's own model/provider selection applies. Architecture exploration uses
+ * the host `Explore` agent. Every other internal role, and especially the
+ * tool-less planning `advisory-reviewer`, stays on the generic agent and never
+ * inherits review authority.
  */
-export type LoopRoleSubagent = "Review" | "general-purpose";
+export type LoopRoleSubagent = "Review" | "Explore" | "general-purpose";
 
 export function loopRoleSubagentFor(role: LoopRole): LoopRoleSubagent {
-	return role === "code-review" ? "Review" : "general-purpose";
+	if (role === "code-review") return "Review";
+	if (role === "arch-explorer") return "Explore";
+	return "general-purpose";
 }
 
 export function buildLoopRoleDispatch(input: {
