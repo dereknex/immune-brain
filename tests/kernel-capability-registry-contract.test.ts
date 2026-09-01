@@ -1,6 +1,11 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, test } from "bun:test";
 import { createCapabilityRegistry } from "../plugins/immune-brain/runtime/kernel/capability_registry";
+import {
+	createMutationAuthorityRegistry,
+	type MutationAuthorityCapabilityV2,
+	type MutationAuthorityInspection,
+} from "../plugins/immune-brain/runtime/kernel/authority_port";
 
 const enrollmentSrc = readFileSync("plugins/immune-brain/runtime/kernel/enrollment_authority.ts", "utf8");
 const authorityPortSrc = readFileSync("plugins/immune-brain/runtime/kernel/authority_port.ts", "utf8");
@@ -27,6 +32,14 @@ describe("capability registry contract", () => {
 		const capability = registry.issue(binding);
 		binding.value = "mutated";
 		expect(registry.inspect(capability, { value: "issued" })).toBe("issued");
+	});
+
+	test("mutation adapter normalizes fabricated consume failures", () => {
+		const registry = createMutationAuthorityRegistry();
+		expect(() => registry.consume(
+			{} as MutationAuthorityCapabilityV2,
+			{} as MutationAuthorityInspection,
+		)).toThrow(/opaque authority capability/i);
 	});
 
 	test("neither adapter retains its own WeakMap scaffolding", () => {

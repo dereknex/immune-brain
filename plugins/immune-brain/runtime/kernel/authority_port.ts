@@ -153,7 +153,19 @@ export function createMutationAuthorityRegistry(): MutationAuthorityRegistry {
 				throw err;
 			}
 		},
-		consume: inner.consume.bind(inner),
+		consume(
+			capability: MutationAuthorityCapabilityV2,
+			expected: MutationAuthorityInspection,
+			now = Date.now(),
+		): ValidatedAuthorityV2 {
+			try {
+				return inner.consume(capability, expected, now);
+			} catch (err) {
+				if (err instanceof Error && err.message.includes("not recognized by this registry"))
+					throw new Error("privileged action requires an opaque authority capability");
+				throw err;
+			}
+		},
 		isConsumed: inner.isConsumed.bind(inner),
 	};
 }
