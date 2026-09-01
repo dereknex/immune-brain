@@ -1,0 +1,36 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "2026-09-01-002-dedup-capability-registry-scaffolding",
+  "owner": "user",
+  "goal": "Extract the duplicated opaque capability registry scaffolding from enrollment_authority.ts and authority_port.ts into one internal generic capability-registry factory while preserving both public constructor type shapes, domain-specific binding validation, registry-local branding, and single-use behavior, and reducing the combined adapter line count below 331 lines.",
+  "acceptance": [
+    {
+      "id": "acc-1",
+      "assertion": "A shared generic capability-registry factory exists at plugins/immune-brain/runtime/kernel/capability_registry.ts and both createEnrollmentAuthorityRegistry() and createMutationAuthorityRegistry() use it without retaining separate WeakMap-backed registry scaffolding.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/kernel-capability-registry-contract.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 60000,\n  \"max_output_bytes\": 65536\n}\n"
+    },
+    {
+      "id": "acc-2",
+      "assertion": "Enrollment and mutation registry behavior remains unchanged, including issue validation, expiry, complete binding mismatch rejection, opaque and cross-registry recognition, non-consuming inspect, and irreversible single-use consume semantics.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/kernel-enrollment-authority.test.ts\",\n    \"tests/kernel-r2c2-authority.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 131072\n}\n"
+    },
+    {
+      "id": "acc-3",
+      "assertion": "The existing exported constructor and registry type shapes remain compatible with all current Kernel, Pi extension, and test fixture callers, and the shared factory remains internal to runtime/kernel.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/kernel-p2b0-boundary.test.ts\",\n    \"tests/kernel-canary-authority.test.ts\",\n    \"tests/kernel-canary-application.test.ts\",\n    \"tests/kernel-canary-rework-authority.test.ts\",\n    \"tests/kernel-canary-eligibility.test.ts\",\n    \"tests/kernel-enrollment-transaction.test.ts\",\n    \"tests/kernel-canary-terminal-transaction.test.ts\",\n    \"tests/kernel-canary-drain-transaction.test.ts\",\n    \"tests/kernel-canary-claim-writer-boundary.test.ts\",\n    \"tests/kernel-canary-rehearsal.test.ts\",\n    \"tests/pi-canary-work-extension.test.ts\",\n    \"tests/pi-canary-user-authority.test.ts\",\n    \"tests/user-approval-critical-completion.test.ts\",\n    \"tests/breaking-intent-revision-gate.test.ts\",\n    \"tests/pi-canary-lifecycle-package.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 180000,\n  \"max_output_bytes\": 262144\n}\n"
+    },
+    {
+      "id": "acc-4",
+      "assertion": "The combined line count of enrollment_authority.ts and authority_port.ts is less than 332 lines after extraction, while enrollment-specific validation and mutation-specific validation including nullable findings_digest and action digest hashing remain in their respective modules.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/kernel-capability-registry-contract.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 60000,\n  \"max_output_bytes\": 65536\n}\n"
+    }
+  ],
+  "scope_hint": [
+    "plugins/immune-brain/runtime/kernel/authority_port.ts",
+    "plugins/immune-brain/runtime/kernel/capability_registry.ts",
+    "plugins/immune-brain/runtime/kernel/enrollment_authority.ts",
+    "tests/kernel-capability-registry-contract.test.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}
