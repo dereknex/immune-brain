@@ -6,6 +6,8 @@
 
 import { describe, expect, it } from "bun:test";
 import {
+	classifyTaskRisk,
+	CHANGED_PATH_RISK_FLOOR_PREFIXES,
 	parseTaskIntentV1,
 	RISK_FLOOR_SCOPE_PREFIXES,
 } from "../plugins/immune-brain/runtime/kernel/intent";
@@ -105,5 +107,25 @@ describe("deterministic risk-tier floor", () => {
 		expect(RISK_FLOOR_SCOPE_PREFIXES).toContain(
 			"plugins/immune-brain/.pi-extension",
 		);
+	});
+});
+
+describe("changed-path task-tier classification", () => {
+	it("forces configured prefixes and descendants to material without near-prefix matches", () => {
+		for (const prefix of CHANGED_PATH_RISK_FLOOR_PREFIXES) {
+			expect(classifyTaskRisk([prefix], "routine")).toBe("material");
+			expect(classifyTaskRisk([`${prefix}/nested/file.ts`], "routine")).toBe("material");
+			expect(classifyTaskRisk([`${prefix}-old/file.ts`], "routine")).toBe("routine");
+		}
+	});
+
+	it("keeps ordinary routine paths routine and allows declared critical to escalate", () => {
+		expect(classifyTaskRisk(["src/feature.ts"], "routine")).toBe("routine");
+		expect(classifyTaskRisk(["src/feature.ts"], "critical")).toBe("critical");
+	});
+
+	it("does not allow declared routine to de-escalate a material path", () => {
+		expect(classifyTaskRisk(["docs/plans/other-task.intent.json"], "routine")).toBe("material");
+		expect(classifyTaskRisk(["docs/specs/other-task.spec.md"], "material")).toBe("material");
 	});
 });

@@ -46,6 +46,16 @@ export const RISK_FLOOR_SCOPE_PREFIXES = [
 	"plugins/immune-brain/.pi-extension",
 ] as const;
 
+// Concrete changed paths use a narrower, segment-safe prefix policy. Keep this
+// separate from the glob-aware scope_hint policy above: the two inputs have
+// different contracts and docs-only scope remains routine today.
+export const CHANGED_PATH_RISK_FLOOR_PREFIXES = [
+	"plugins/immune-brain/runtime/kernel",
+	"plugins/immune-brain/.pi-extension",
+	"docs/specs",
+	"docs/plans",
+] as const;
+
 function segmentMatches(e: string, s: string): boolean {
 	if (e === "*") return true;
 	if (!e.includes("*") && !e.includes("?")) return e === s;
@@ -329,6 +339,20 @@ export function canonicalIntentHash(intent: unknown): string {
 }
 
 const RISK_RANK: Record<TaskRisk, number> = { routine: 0, material: 1, critical: 2 };
+
+export function classifyTaskRisk(
+	changedPaths: readonly string[],
+	declaredRisk: TaskRisk,
+): TaskRisk {
+	const pathFloor = changedPaths.some((path) =>
+		CHANGED_PATH_RISK_FLOOR_PREFIXES.some(
+			(prefix) => path === prefix || path.startsWith(`${prefix}/`),
+		),
+	)
+		? "material"
+		: "routine";
+	return RISK_RANK[declaredRisk] >= RISK_RANK[pathFloor] ? declaredRisk : pathFloor;
+}
 
 function contentHashWithoutRevision(intent: TaskIntentV1): string {
 	const { revision: _revision, ...rest } = intent;
