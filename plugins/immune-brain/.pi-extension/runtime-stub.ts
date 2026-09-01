@@ -254,7 +254,7 @@ export async function preparePiCanary(
 	root: string,
 	input: PiCanaryPrepareInput,
 ): Promise<PiCanaryPreparation> {
-	const mod = await import(/* @vite-ignore */ kernelPath("pi_canary_prepare"));
+	const mod = await import(/* @vite-ignore */ runtimePath("assurance/enrollment"));
 	return mod.preparePiCanary(root, input) as unknown as PiCanaryPreparation;
 }
 export async function revalidatePiCanary(
@@ -262,7 +262,7 @@ export async function revalidatePiCanary(
 	input: PiCanaryPrepareInput,
 	previous: PiCanaryPreparation,
 ): Promise<{ unchanged: boolean; current: PiCanaryPreparation }> {
-	const mod = await import(/* @vite-ignore */ kernelPath("pi_canary_prepare"));
+	const mod = await import(/* @vite-ignore */ runtimePath("assurance/enrollment"));
 	return mod.revalidatePiCanary(root, input, previous as never) as unknown as { unchanged: boolean; current: PiCanaryPreparation };
 }
 export async function evaluateCanaryEligibility(input: {

@@ -76,6 +76,7 @@
     "plugins/immune-brain/runtime/verification_descriptor.ts",
     "plugins/immune-brain/runtime/role_prompt_bridge.ts",
     "plugins/immune-brain/runtime/loop_contract.ts",
+    "plugins/immune-brain/runtime/assurance",
     "plugins/immune-brain/runtime/prompts",
     "plugins/immune-brain/skills",
     "plugins/immune-brain/dist",

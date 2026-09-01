@@ -1,0 +1,288 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "2026-09-01-001-shared-assurance-host-boundary",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "2026-09-01-001-shared-assurance-host-boundary",
+    "goal": "Extract the narrow host-neutral Enrollment and Assurance coordination boundary defined by docs/specs/dual-host-assurance.spec.md, exercise it through a fake Host and the real Pi adapter, and preserve Pi preparation identifiers and digests, persisted authority bytes, public Tool result contracts, foreground cancellation linearization, Review receipt ordering, and settlement behavior.",
+    "acceptance": [
+      {
+        "id": "acc-host-port",
+        "assertion": "A fake non-Pi Host drives routine, material, and critical progression through the shared Assurance coordinator, while missing, stale, replayed, wrong-task, wrong-revision, or incomplete Review and user authority evidence fails before Kernel mutation and shared modules import no Host SDK or adapter.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/host-neutral-assurance-coordinator.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 60000,\n  \"max_output_bytes\": 65536\n}\n"
+      },
+      {
+        "id": "acc-pi-assurance",
+        "assertion": "The real Pi adapter preserves deterministic QA, routine completion, immutable material and critical Review preparation, exact native receipt correlation and event ordering, freshness rejection, retryable post-QA Review preparation, rework, precommit cancellation, and postcommit settlement-unknown semantics while delegating host-neutral sequencing to the shared boundary.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/pi-canary-assurance-progression.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 90000,\n  \"max_output_bytes\": 65536\n}\n"
+      },
+      {
+        "id": "acc-pi-enrollment",
+        "assertion": "Pi Enrollment keeps the existing preparation contract identifier and digest, exact TaskIntent binding, TUI-only literal-user gate, zero-write rejection and cancellation behavior, opaque capability consumption, and atomic v4 Enrollment transaction through the shared Enrollment boundary.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/pi-canary-enroll-extension.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 65536\n}\n"
+      },
+      {
+        "id": "acc-package-boundary",
+        "assertion": "The accepted dual-Host ADR supersedes only ADR-0002's Pi-only assumption, the root package ships the host-neutral Assurance modules required by the unchanged Pi extension, compatibility re-exports remain bounded with an exit milestone, and Kernel/shared modules do not import Pi or Claude adapter APIs or a generic registry/dispatcher.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/pi-canary-package-boundary.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 60000,\n  \"max_output_bytes\": 65536\n}\n"
+      }
+    ],
+    "scope_hint": [
+      "docs/adr/0004-dual-host-assurance-adapters.md",
+      "docs/specs/archive/dual-host-assurance.spec.md",
+      "docs/specs/dual-host-assurance.spec.md",
+      "package.json",
+      "plugins/immune-brain/.pi-extension/imm-canary-enroll.ts",
+      "plugins/immune-brain/.pi-extension/imm-canary-work.ts",
+      "plugins/immune-brain/.pi-extension/pi-canary-assurance-progression.ts",
+      "plugins/immune-brain/.pi-extension/pi-canary-invocations.ts",
+      "plugins/immune-brain/.pi-extension/pi-canary-native-review.ts",
+      "plugins/immune-brain/.pi-extension/pi-canary-qa-findings.ts",
+      "plugins/immune-brain/.pi-extension/pi-canary-review-bundle.ts",
+      "plugins/immune-brain/.pi-extension/pi-canary-verification.ts",
+      "plugins/immune-brain/.pi-extension/runtime-stub.ts",
+      "plugins/immune-brain/runtime/assurance",
+      "plugins/immune-brain/runtime/kernel/assurance_projection.ts",
+      "plugins/immune-brain/runtime/kernel/authority_port.ts",
+      "plugins/immune-brain/runtime/kernel/canary_application.ts",
+      "plugins/immune-brain/runtime/kernel/completion.ts",
+      "plugins/immune-brain/runtime/kernel/enrollment.ts",
+      "plugins/immune-brain/runtime/kernel/enrollment_authority.ts",
+      "plugins/immune-brain/runtime/kernel/pi_canary_prepare.ts",
+      "tests/helpers/pi-canary-assurance-harness.ts",
+      "tests/host-neutral-assurance-coordinator.test.ts",
+      "tests/kernel-enrollment-transaction.test.ts",
+      "tests/pi-canary-assurance-continuation.test.ts",
+      "tests/pi-canary-assurance-progression.test.ts",
+      "tests/pi-canary-enroll-extension.test.ts",
+      "tests/pi-canary-package-boundary.test.ts",
+      "tests/pi-only-release-contract.test.ts"
+    ],
+    "risk": "critical",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/archive/2026-09-01-001-shared-assurance-host-boundary.intent.json",
+    "content_hash": "sha256:958b7ff90d8ed3c001261f988ce9aec8fa780f1b033720c75335c4c94fd62d63"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:958b7ff90d8ed3c001261f988ce9aec8fa780f1b033720c75335c4c94fd62d63",
+  "git_base_head": "c58aa5606a2dde7dbd0170dadacb0c20716ccbbc",
+  "attestations": [
+    {
+      "id": "approval-qa-5210216e",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:958b7ff90d8ed3c001261f988ce9aec8fa780f1b033720c75335c4c94fd62d63",
+      "diff_hash": "sha256:67b7fdb2df7e2d9c045742b06d656316ffee00b00cc0aa33fa7baefff0b5b846",
+      "actor_id": "deterministic-qa",
+      "summary": "all 4 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "acc-host-port",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-pi-assurance",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-pi-enrollment",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-package-boundary",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-80e4c6e9",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:958b7ff90d8ed3c001261f988ce9aec8fa780f1b033720c75335c4c94fd62d63",
+      "diff_hash": "sha256:ee1a6dc9f51bd541286b0c0eba2c329a41f424b3e02c4407df886c9455b00d19",
+      "actor_id": "deterministic-qa",
+      "summary": "all 4 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "acc-host-port",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-pi-assurance",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-pi-enrollment",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-package-boundary",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-425f712c",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:958b7ff90d8ed3c001261f988ce9aec8fa780f1b033720c75335c4c94fd62d63",
+      "diff_hash": "sha256:ee1a6dc9f51bd541286b0c0eba2c329a41f424b3e02c4407df886c9455b00d19",
+      "actor_id": "parent-mediated-review",
+      "summary": "Immutable revision provenance and manifest digest are valid, and the shared Assurance boundary preserves the reviewed authority, sequencing, enrollment, and package contracts.",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "c58aa5606a2dde7dbd0170dadacb0c20716ccbbc",
+        "review_commit": "fb324296191dec00461359267d36dac7a6e5579d",
+        "review_tree": "bb62dcb58bb8968fcb527e40d4ff035202965103",
+        "manifest_digest": "sha256:f90782fd6198f990b4f941eda131056c537f2c1403f76e8b5e91eadcd525a999"
+      }
+    },
+    {
+      "id": "approval-user-14241433",
+      "kind": "user",
+      "authority_role": "user",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:958b7ff90d8ed3c001261f988ce9aec8fa780f1b033720c75335c4c94fd62d63",
+      "diff_hash": "sha256:ee1a6dc9f51bd541286b0c0eba2c329a41f424b3e02c4407df886c9455b00d19",
+      "actor_id": "literal-user",
+      "summary": "literal user approval",
+      "acceptance_results": []
+    }
+  ],
+  "findings": [
+    {
+      "id": "review-867eb341a307-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "acc-pi-enrollment",
+      "source": "review",
+      "review_round": 1,
+      "summary": "plugins/immune-brain/runtime/assurance/enrollment.ts is an unused re-export: unchanged plugins/immune-brain/.pi-extension/imm-canary-enroll.ts still obtains preparePiCanary/revalidatePiCanary through runtime-stub.ts, which dynamically imports runtime/kernel/pi_canary_prepare directly, so real Pi Enrollment does not run through the required shared Enrollment boundary; route the runtime-stub/adapter imports through runtime/assurance/enrollment and add a behavioral or import-boundary assertion."
+    }
+  ],
+  "history": [
+    {
+      "id": "freeze_artifacts:2026-09-01-001-shared-assurance-host-boundary:2026-09-01T09:23:15.661Z",
+      "at": "2026-09-01T09:23:15.661Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent and Spec frozen at docs/plans/archive/2026-09-01-001-shared-assurance-host-boundary.intent.json"
+    },
+    {
+      "id": "record_approval:2026-09-01-001-shared-assurance-host-boundary:2026-09-01T09:23:24.799Z",
+      "at": "2026-09-01T09:23:24.799Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-5210216e\naction_v2_sha256:0c895a7e53dcd8b6bafd7208a5c0049dfac1300cc5c70771c5e9d9fcaf38e65a",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-1e47d3dbf9a39cc7",
+        "issued_at": "2026-09-01T09:23:24.800Z",
+        "expires_at": "2026-09-01T09:33:24.799Z"
+      }
+    },
+    {
+      "id": "request_rework:2026-09-01-001-shared-assurance-host-boundary:2026-09-01T11:40:30.167Z",
+      "at": "2026-09-01T11:40:30.167Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_1\naction_v2_sha256:110fd27c66162329ef15ce281b644e9bcde3ce6b071efd8b850b52f18589d9b1",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-adc5a99d523b455a",
+        "issued_at": "2026-09-01T11:40:30.168Z",
+        "expires_at": "2026-09-01T11:50:30.168Z"
+      }
+    },
+    {
+      "id": "resolve_finding:2026-09-01-001-shared-assurance-host-boundary:2026-09-01T11:42:19.185Z",
+      "at": "2026-09-01T11:42:19.185Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-867eb341a307-1-review-1\naction_v2_sha256:ad6d503c3d477341aea1ffecf7fe8b93525b4b4ae9207fa56410c95ae0a70a73"
+    },
+    {
+      "id": "freeze_artifacts:2026-09-01-001-shared-assurance-host-boundary:2026-09-01T11:42:24.502Z",
+      "at": "2026-09-01T11:42:24.502Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent and Spec frozen at docs/plans/archive/2026-09-01-001-shared-assurance-host-boundary.intent.json"
+    },
+    {
+      "id": "record_approval:2026-09-01-001-shared-assurance-host-boundary:2026-09-01T11:42:36.452Z",
+      "at": "2026-09-01T11:42:36.452Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-80e4c6e9\naction_v2_sha256:c79c89d03fb4f757618cc516b7917d1628175407b2b88fc17345b12a5f8f5135",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-0fccd58035b34e29",
+        "issued_at": "2026-09-01T11:42:36.452Z",
+        "expires_at": "2026-09-01T11:52:36.452Z"
+      }
+    },
+    {
+      "id": "record_approval:2026-09-01-001-shared-assurance-host-boundary:2026-09-01T11:45:39.140Z",
+      "at": "2026-09-01T11:45:39.140Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-425f712c\naction_v2_sha256:2f9548b77ed4d0e47b637adbe6309b90299763d693df2ca821daf9d7dbe41833",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-7ac7c7ec17a39cc6",
+        "issued_at": "2026-09-01T11:45:39.141Z",
+        "expires_at": "2026-09-01T11:55:39.141Z"
+      }
+    },
+    {
+      "id": "record_user_approval:2026-09-01-001-shared-assurance-host-boundary:2026-09-01T12:20:05.476Z",
+      "at": "2026-09-01T12:20:05.476Z",
+      "type": "record_user_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-user-14241433\naction_v2_sha256:941a1a020a1b8f8203c147df032554c7fd0c7a3663bbe4167f2a23bb81bb2cb6",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-444568c094f762b1",
+        "issued_at": "2026-09-01T12:20:05.485Z",
+        "expires_at": "2026-09-01T12:30:05.485Z"
+      }
+    },
+    {
+      "id": "complete:2026-09-01-001-shared-assurance-host-boundary:2026-09-01T12:20:15.521Z",
+      "at": "2026-09-01T12:20:15.521Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:d5e8bb604a34bffe2cb3d9bf9421b309492d985573d6ecd7d7222b4df1af3c6a"
+    }
+  ]
+}
