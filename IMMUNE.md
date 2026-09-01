@@ -8,7 +8,7 @@
 - **按请求类型使用规格**：用户显式进入 `imm-planner` 处理清晰的新仓库变更，有实质歧义时显式进入 `imm-brainstorm`；已有 Assurance owner 由用户显式进入 `imm-loop` 恢复。Planner 只产出候选 Spec/TaskIntent，不无条件 Enrollment。
 - **小步执行**：Managed Plan 必须按可独立闭合结果组织成果步。Direct 不因多文件、多条本地 verifier、普通重试或只读 subagent 自动升级为 Managed。
 - **按证据沉淀**：只有确有复用价值的已闭合工作才写入 `docs/solutions/`；Direct completion 不要求 Compounder。
-- **角色质量上限（gstack quality ceiling）**：Managed 核心 Skill 保持 `preferred bias`（最该坚持的质量目标）和 `prohibited drift`（绝不能越界的权力）。交互仪式压缩为真正的 authority/privilege gate；完备性只在有限输入源（Brainstorm manifest、review follow-up packet）上启用。
+- **角色权限边界（role authority boundary）**：Managed 核心 Skill 保持 `preferred bias`（最该坚持的质量目标）和 `prohibited drift`（绝不能越界的权力）；交互仪式压缩为 `role_prompt_bridge.ts` 按角色分配的工具策略与 Kernel authority/capability gate。完备性只在有限输入源（Brainstorm manifest、review follow-up packet）上启用。
 - **四项执行原则内嵌到流程**：
   1. Think before coding：先澄清假设、歧义和取舍。
   2. Simplicity first：只做当前目标需要的最小方案。
@@ -35,9 +35,9 @@
 
 ## 4. Agent 协作规约
 - **`imm-brainstorm`**：只在关键需求或风险仍含歧义时负责澄清；澄清后重新应用 Direct/Managed 矩阵，不默认创建计划。其 `roundtable` mode 负责在复杂取舍、需求分歧或可能 replan 的场景中提供多角色只读会诊；输出只能作为后续规划的研究材料，不直接决定 scope、计划、执行或验收。
-- **`imm-brainstorm`（`adversarial` mode）**：可选高压闸门，仅在 scope 不稳且存在显著多方分歧、或需要结构化审计记录（安全、数据迁移、跨边界合约）时触发；大多数任务从 `imm-brainstorm` 直接到 `imm-planner`，不经过此阶段。可调用只读 adversarial helper（`preplan_adversary`）产出风险、争议假设和验证关注点，但最终 scope posture 仍由 preplan host 判断。
-- **Host-bound evidence loops**：当 planner 或 preplan 需要子代理帮助时，每个 host 使用专用 readonly helper（`planner_research`、`preplan_adversary`），不抽 shared registry。子代理只产出 evidence（constraints、risks、unknowns、file_pointers），不写 Plan、Spec、scope posture 或 QA 结论。内部 `compounder` role 通过 `subagent_scorecard` 汇总子代理结果价值判断是否值得平台化推广。
-- **规划阶段**：`imm-planner` 负责清晰仓库变更的候选 Spec/TaskIntent；它不自动 Enrollment，也不把生成的 artifact 当作已授权任务。
+- **`imm-brainstorm`（`adversarial` mode）**：可选高压闸门，仅在 scope 不稳且存在显著多方分歧、或需要结构化审计记录（安全、数据迁移、跨边界合约）时触发；大多数任务从 `imm-brainstorm` 直接到 `imm-planner`，不经过此阶段。可调用内部只读 `advisory-reviewer` role（经 `imm-loop` 内部角色路由分发，见 ADR-0003）产出风险、争议假设和验证关注点，但最终 scope posture 仍由 preplan host 判断。
+- **Host-bound evidence loops**：当 planner 或 preplan 需要子代理帮助时，每个 host 使用内部只读 role（`arch-explorer`、`advisory-reviewer`，经 `imm-loop` 内部角色路由分发，见 ADR-0003），不抽 shared registry。子代理只产出 evidence（constraints、risks、unknowns、file_pointers），不写 Plan、Spec、scope posture 或 QA 结论。内部 `compounder` role 只在已闭合 Step 的证据证明存在可复用 Learning 时才被分发，判断是否值得沉淀到 `docs/solutions/`。
+- **规划阶段**：`imm-planner` 负责清晰仓库变更的候选 Spec/TaskIntent；它不自动 Enrollment，也不把生成的 artifact 当作已授权任务——只有 literal-user Enrollment 才能把候选提升为 Kernel 上的 TaskIntent/TaskRecord 权威记录。
 - **Internal executor role**：负责一次只消费当前小步，不得默认扩张到相邻小步。当 Step 带有 `parallel_probes` 时，`imm-loop` 在进入执行前先分发只读并行探针（`active → probing → executing`），探针结果作为 executor 上下文输入；探针失败不阻断步骤，回退到顺序内联调查并记录 fallback reason。
 - **Internal QA role**：负责先判断当前小步是否闭合，再决定是通过、返工当前小步，还是回退重拆。
 - **Internal review roles**：负责 step 外的技术审查和界面质量复核，输出 blocker/fix/defer 并驱动后续修复或重排。
@@ -47,33 +47,11 @@
 
 ## 5. 两条执行路径
 
-### Host-native Path（非变更请求）
+Host-native Path 与 Managed Path 的定义、入口条件和角色分工见 §1（核心哲学）、
+§3（写入边界）与 §4（Agent 协作规约）；本节不重复展开。
 
-只读、解释、仅审查、Plan-only 和明确 no-modification 请求由普通 host agent
-处理，不创建 Spec、Plan、TaskIntent、TaskRecord、QA、mandatory
-Review 或 Compounder 状态，也不写 `.imm/` workflow authority。
-
-### Managed Path（显式 Skill 入口）
-
-Managed Path 只从显式 Immune Skill 入口启动：`imm-brainstorm`、`imm-planner` 或
-`imm-loop`。普通 host input 保持 host-native，不执行自然语言分类；已有 Assurance
-projection 仍通过 `imm-loop` 恢复。Planner 输出只是后续 literal-user Enrollment 的
-候选，不能绕过 Enrollment、QA、Review、authorization 或 completion。
-
-1. **Brainstorm（按需）**: 当问题陈述、约束或成功标准仍含关键歧义时，进入 `imm-brainstorm`，禁止在关键歧义上猜测。**若澄清信息未获得用户明确回复，必须停止推进，禁止进入规划阶段。**
-2. **Roundtable Advisory（可选）**: `imm-brainstorm` 的 `roundtable` mode 只在复杂取舍、跨角色分歧或 replan 判断前提供只读会诊材料；最终 scope 仍由 `imm-planner` 判断。
-3. **Adversarial Review（可选高压闸门）**: 仅在 scope 不稳且存在显著多方分歧、或需要结构化审计记录时使用 `imm-brainstorm` 的 `adversarial` mode；大多数任务由 `imm-brainstorm` 内联挑战后直接进入 `imm-planner`。
-4. **Plan / Spec（Managed）**: `imm-planner` 定义验收标准并产出当前 Managed TaskIntent/Plan contract。
-5. **Continue Current Step**: validated plan 之后，默认通过 `imm-loop` 激活或定位当前 step，并只推进当前 step 的下一段闭环。
-6. **Act**: 执行者只实施当前小步对应的单一可验证结果，不吸收相邻清理或未来扩展。
-7. **Verify**: 审计员先判断当前小步是否闭合，再决定通过、返工当前小步或回退到 Plan。
-8. **Compound**: 任务结束后，只沉淀有证据支撑且可复用的经验到 `docs/solutions/`。
-
-补充入口约束：
-- `L2S-WF` 使用三段主线：`imm-planner` 完成必要澄清、Spec 与 validated TaskIntent；经 literal-user Enrollment 形成 Kernel 上的 TaskIntent/TaskRecord 权威记录；`imm-loop` 以 `imm_loop_action` 投影驱动内部 executor、QA、review、repair 与 compounder roles 完成执行、复核和验收。重大歧义先进入 `imm-brainstorm`；主线不改变这些内部 authority 的分离。
-- 普通单步继续默认走 `imm-loop`，而不是把内部 executor 或 QA role 当作 shell 入口暴露给用户。
-- 多 step 推进通过显式 opt-in 的 `imm-loop` 在当前对话内完成，每个 Step 的执行证据与 QA/review 结论经 Kernel 持久化，不依赖独立 checkpoint runtime，亦不把推进回灌成另一个公开 Skill 的默认行为。
-- `imm-brainstorm`（`roundtable`/`adversarial` modes）只作为 attachable advisory layer；内部 reviewer roles 可以补 research 或 risk，不能替代 planner、executor 或 QA authority。
+补充约束（不在别处出现）：
+- **若 Brainstorm 阶段的澄清信息未获得用户明确回复，必须停止推进，禁止进入规划阶段。**
 
 ---
-*版本：v4.0.0 | 日期：2026-08-20*
+*版本：v4.0.1 | 日期：2026-09-01*
