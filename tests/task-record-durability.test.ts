@@ -55,7 +55,11 @@ function archivalRequiresRecord(taskId: string): { ok: boolean; reason?: string 
       lifecycle?: unknown;
       phase?: unknown;
     };
-    if (raw.contract !== "assurance_kernel/task_record/v3" && raw.contract !== "assurance_kernel/task_record/v2") {
+    if (
+      raw.contract !== "assurance_kernel/task_record/v4" &&
+      raw.contract !== "assurance_kernel/task_record/v3" &&
+      raw.contract !== "assurance_kernel/task_record/v2"
+    ) {
       return { ok: false, reason: `TaskRecord contract mismatch for ${taskId}` };
     }
     if (raw.task_id !== taskId) {

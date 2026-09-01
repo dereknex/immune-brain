@@ -406,6 +406,7 @@ describe("plugin package runtime cutover parity", () => {
 			"imm-kernel intent author docs/plans/<task-id>.intent.json --stdin --json",
 			"imm-kernel intent validate docs/plans/<task-id>.intent.json --json",
 			"imm-kernel status --json",
+			"imm-kernel inspect --json",
 			"imm-kernel audit --legacy",
 		]);
 		expect(JSON.stringify(commands)).not.toContain("tools/list");
