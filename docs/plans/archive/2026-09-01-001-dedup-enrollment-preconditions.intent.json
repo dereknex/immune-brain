@@ -1,0 +1,35 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "2026-09-01-001-dedup-enrollment-preconditions",
+  "owner": "user",
+  "goal": "Refactor plugins/immune-brain/runtime/kernel/enrollment.ts so runEnrollmentRehearsal and enrollCanaryTask use one private definition of their shared capability, owner-state, Intent, and Git HEAD precondition checks while preserving both public signatures and all observable behavior. Rehearsal must remain report-only, perform zero authority writes, and never consume its capability. Real enrollment must preserve first-blocker failure ordering, final-lock freshness, and capability consumption immediately before the existing atomic enrollment commit. The implementation must not alter CAS locking, persisted schemas, capability semantics, host UX, or existing tests. Same-state-machine sibling files are review-only reference owners; any required mutation outside enrollment.ts requires Planner revision.",
+  "acceptance": [
+    {
+      "id": "acc-shared-behavior",
+      "assertion": "Both public enrollment functions retain their signatures and observable results while routing the duplicated precondition definitions through one private implementation.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/kernel-canary-rehearsal.test.ts\",\n    \"tests/kernel-enrollment-transaction.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 65536\n}\n"
+    },
+    {
+      "id": "acc-rehearsal-purity",
+      "assertion": "runEnrollmentRehearsal reports readiness blockers with zero authority writes and without consuming the capability.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/kernel-canary-rehearsal.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 65536\n}\n"
+    },
+    {
+      "id": "acc-enrollment-ordering",
+      "assertion": "enrollCanaryTask rejects the first blocking precondition before writes, preserves final-lock freshness, and consumes authority only immediately before atomic commit.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/kernel-enrollment-transaction.test.ts\",\n    \"tests/kernel-canary-rework-authority.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 65536\n}\n"
+    }
+  ],
+  "scope_hint": [
+    "docs/specs/archive/dedup-enrollment-preconditions.spec.md",
+    "docs/specs/dedup-enrollment-preconditions.spec.md",
+    "plugins/immune-brain/.pi-extension/imm-canary-enroll.ts",
+    "plugins/immune-brain/.pi-extension/runtime-stub.ts",
+    "plugins/immune-brain/runtime/kernel/enrollment.ts",
+    "plugins/immune-brain/runtime/kernel/enrollment_authority.ts",
+    "plugins/immune-brain/runtime/kernel/pi_canary_prepare.ts",
+    "plugins/immune-brain/runtime/kernel/storage.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}

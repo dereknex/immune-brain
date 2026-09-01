@@ -34,6 +34,109 @@ export interface EnrollCanaryResult {
 	workspace: { revision: string; state: WorkspaceStateLike };
 }
 
+type EnrollmentPreconditionState = {
+	validated: ReturnType<EnrollmentAuthorityRegistry["inspect"]> | null;
+	current: ReturnType<typeof readTaskRecordRaw> | null;
+	workspace: ReturnType<typeof readWorkspaceStateRaw> | null;
+	intent: Awaited<ReturnType<typeof readTaskIntent>> | null;
+	gitBaseHead: string | null;
+};
+
+type EnrollmentPreconditionResult = EnrollmentPreconditionState & {
+	blockers: string[];
+};
+
+function runEnrollmentPreconditionChecks<T>(
+	root: string,
+	input: EnrollCanaryInput,
+	capability: object,
+	registry: EnrollmentAuthorityRegistry,
+	mode: "report" | "fail_fast",
+	beforeLock: (validated: EnrollmentPreconditionState["validated"]) => void,
+	onReady: (state: EnrollmentPreconditionState) => T,
+): T;
+function runEnrollmentPreconditionChecks(
+	root: string,
+	input: EnrollCanaryInput,
+	capability: object,
+	registry: EnrollmentAuthorityRegistry,
+	mode: "report" | "fail_fast",
+	beforeLock: (validated: EnrollmentPreconditionState["validated"]) => void,
+): EnrollmentPreconditionResult;
+function runEnrollmentPreconditionChecks<T>(
+	root: string,
+	input: EnrollCanaryInput,
+	capability: object,
+	registry: EnrollmentAuthorityRegistry,
+	mode: "report" | "fail_fast",
+	beforeLock: (validated: EnrollmentPreconditionState["validated"]) => void,
+	onReady?: (state: EnrollmentPreconditionState) => T,
+): T | EnrollmentPreconditionResult {
+	const blockers: string[] = [];
+	let validated: EnrollmentPreconditionState["validated"] = null;
+	try {
+		validated = registry.inspect(capability, input.capability_binding);
+		if (mode === "fail_fast" && validated.task_id !== input.task_id)
+			throw new Error("enrollment capability task mismatch");
+	} catch (error) {
+		if (mode === "fail_fast") throw error;
+		blockers.push(`capability: ${error instanceof Error ? error.message : String(error)}`);
+	}
+	beforeLock(validated);
+
+	return withKernelStoreLock(root, () => {
+		let current: EnrollmentPreconditionState["current"] = null;
+		let workspace: EnrollmentPreconditionState["workspace"] = null;
+		let intent: EnrollmentPreconditionState["intent"] = null;
+		let gitBaseHead: string | null = null;
+		const fail = (report: string, error: unknown) => {
+			if (mode === "fail_fast")
+				throw error instanceof Error ? error : new Error(String(error));
+			blockers.push(report);
+		};
+
+		const tombstone = readTaskTombstone(root, input.task_id);
+		if (tombstone) {
+			fail(
+				"task tombstone exists; same-task re-enrollment is forbidden",
+				new Error(`task ${input.task_id} is terminal; same-task re-enrollment is forbidden`),
+			);
+		} else {
+			current = readTaskRecordRaw(root, input.task_id);
+			if (current.record)
+				fail(
+					"task record already exists",
+					new Error(`task ${input.task_id} already has a TaskRecord`),
+				);
+		}
+		workspace = readWorkspaceStateRaw(root);
+		if (workspace.state.current_working !== null)
+			fail(
+				`workspace already owned by ${workspace.state.current_working}`,
+				new Error(`workspace is already owned by ${workspace.state.current_working}`),
+			);
+		try {
+			intent = readTaskIntent(root, input.task_id);
+		} catch (error) {
+			fail(`intent: ${error instanceof Error ? error.message : String(error)}`, error);
+		}
+		try {
+			gitBaseHead = readGitHead(root);
+		} catch (error) {
+			fail(`git base: ${error instanceof Error ? error.message : String(error)}`, error);
+		}
+
+		const state: EnrollmentPreconditionState = {
+			validated,
+			current,
+			workspace,
+			intent,
+			gitBaseHead,
+		};
+		return onReady ? onReady(state) : { ...state, blockers };
+	});
+}
+
 function buildTaskRecordV4(
 	input: EnrollCanaryInput,
 	intent: Awaited<ReturnType<typeof readTaskIntent>>,
@@ -77,48 +180,25 @@ export function runEnrollmentRehearsal(
 		generated_at: string;
 	};
 } {
-	const blockers: string[] = [];
-	const result = {
+	const preconditions = runEnrollmentPreconditionChecks(
+		root,
+		input,
+		capability,
+		registry,
+		"report",
+		() => undefined,
+	);
+	return {
 		rehearsed: true,
 		writes_performed: false,
 		evidence: {
-			contract: "assurance_kernel/enrollment_rehearsal/v1" as const,
+			contract: "assurance_kernel/enrollment_rehearsal/v1",
 			task_id: input.task_id,
-			outcome: "ready" as "ready" | "not_ready",
-			blockers,
+			outcome: preconditions.blockers.length === 0 ? "ready" : "not_ready",
+			blockers: preconditions.blockers,
 			generated_at: input.now,
 		},
 	};
-	try {
-		// capability inspect (does not consume)
-		registry.inspect(capability, input.capability_binding);
-	} catch (error) {
-		blockers.push(`capability: ${error instanceof Error ? error.message : String(error)}`);
-	}
-	withKernelStoreLock(root, () => {
-		const tombstone = readTaskTombstone(root, input.task_id);
-		if (tombstone) {
-			blockers.push("task tombstone exists; same-task re-enrollment is forbidden");
-		} else {
-			const current = readTaskRecordRaw(root, input.task_id);
-			if (current.record) blockers.push("task record already exists");
-		}
-		const workspace = readWorkspaceStateRaw(root);
-		if (workspace.state.current_working !== null)
-			blockers.push(`workspace already owned by ${workspace.state.current_working}`);
-	});
-	try {
-		readTaskIntent(root, input.task_id);
-	} catch (error) {
-		blockers.push(`intent: ${error instanceof Error ? error.message : String(error)}`);
-	}
-	try {
-		readGitHead(root);
-	} catch (error) {
-		blockers.push(`git base: ${error instanceof Error ? error.message : String(error)}`);
-	}
-	result.evidence.outcome = blockers.length === 0 ? "ready" : "not_ready";
-	return result;
 }
 
 /**
@@ -131,80 +211,73 @@ export function enrollCanaryTask(
 	input: EnrollCanaryInput,
 	registry: EnrollmentAuthorityRegistry,
 ): EnrollCanaryResult {
-	const validated = registry.inspect(input.capability, input.capability_binding);
-	if (validated.task_id !== input.task_id)
-		throw new Error("enrollment capability task mismatch");
+	let gitBaseHead: string | null = null;
+	return runEnrollmentPreconditionChecks(
+		root,
+		input,
+		input.capability,
+		registry,
+		"fail_fast",
+		() => {
+			// v4 storage retirement: the capability is bound to the preparation
+			// digest computed from Kernel owners only. Recompute it before the
+			// locked owner reads and reject if the owner set changed.
+			const recomputed = preparePiCanary(root, { task_id: input.task_id, now: input.now });
+			if (recomputed.digest !== input.preparation_digest)
+				throw new Error("enrollment preparation digest mismatch");
+			gitBaseHead = recomputed.git_base_head;
+			if (!gitBaseHead)
+				throw new Error(recomputed.git_error ?? "enrollment requires a committed Git HEAD");
+		},
+		(checks) => {
+			if (!checks.validated || !checks.intent || !checks.workspace || !checks.current)
+				throw new Error("enrollment precondition state incomplete");
+			if (checks.intent.intent.revision !== input.intent_revision)
+				throw new Error("intent revision mismatch");
+			if (checks.intent.content_hash !== checks.validated.intent_content_hash)
+				throw new Error("intent content hash mismatch");
+			// The confirmation is bound to this exact commit; a moved HEAD means the
+			// operator approved a different base than the one being recorded.
+			if (checks.gitBaseHead !== gitBaseHead)
+				throw new Error("Git HEAD moved after the enrollment confirmation");
 
-	// v4 storage retirement: the capability is bound to the preparation
-	// digest computed from Kernel owners only. Recompute it inside the store
-	// lock and reject if the owner set changed since the confirmation.
-	const recomputed = preparePiCanary(root, { task_id: input.task_id, now: input.now });
-	if (recomputed.digest !== input.preparation_digest)
-		throw new Error("enrollment preparation digest mismatch");
-	const gitBaseHead = recomputed.git_base_head;
-	if (!gitBaseHead)
-		throw new Error(recomputed.git_error ?? "enrollment requires a committed Git HEAD");
+			// consume immediately before the marker write
+			registry.consume(input.capability, input.capability_binding);
 
-	return withKernelStoreLock(root, () => {
-		const tombstone = readTaskTombstone(root, input.task_id);
-		if (tombstone)
-			throw new Error(
-				`task ${input.task_id} is terminal; same-task re-enrollment is forbidden`,
-			);
-		const current = readTaskRecordRaw(root, input.task_id);
-		if (current.record)
-			throw new Error(`task ${input.task_id} already has a TaskRecord`);
-		const workspace = readWorkspaceStateRaw(root);
-		if (workspace.state.current_working !== null)
-			throw new Error(`workspace is already owned by ${workspace.state.current_working}`);
-
-		// fresh secure intent reread inside the lock
-		const intent = readTaskIntent(root, input.task_id);
-		if (intent.intent.revision !== input.intent_revision)
-			throw new Error("intent revision mismatch");
-		if (intent.content_hash !== validated.intent_content_hash)
-			throw new Error("intent content hash mismatch");
-		// The confirmation is bound to this exact commit; a moved HEAD means the
-		// operator approved a different base than the one being recorded.
-		if (readGitHead(root) !== gitBaseHead)
-			throw new Error("Git HEAD moved after the enrollment confirmation");
-
-		// consume immediately before the marker write
-		registry.consume(input.capability, input.capability_binding);
-
-		const record = buildTaskRecordV4(input, intent, gitBaseHead);
-		const nextWorkspace: WorkspaceStateLike = {
-			...workspace.state,
-			current_working: input.task_id,
-		};
-		const claim: BackendClaim = {
-			contract: "assurance_kernel/backend_claim/v2",
-			backend: "kernel",
-			task_id: input.task_id,
-			intent_revision: input.intent_revision,
-			intent_content_hash: intent.content_hash,
-			enrollment_event_id: `enroll-${input.task_id}-${input.now}`,
-			lifecycle_status: "active",
-			created_at: input.now,
-			updated_at: input.now,
-		};
-		const mutation = commitEnrollmentLocked(
-			root,
-			input.task_id,
-			{
-				contract: "assurance_kernel/workspace_transaction/v2",
+			const record = buildTaskRecordV4(input, checks.intent, gitBaseHead);
+			const nextWorkspace: WorkspaceStateLike = {
+				...checks.workspace.state,
+				current_working: input.task_id,
+			};
+			const claim: BackendClaim = {
+				contract: "assurance_kernel/backend_claim/v2",
+				backend: "kernel",
 				task_id: input.task_id,
-				expected_record_hash: current.revision,
-				next_record_content: `${JSON.stringify(record, null, 2)}\n`,
-				expected_workspace_hash: workspace.revision,
-				next_workspace_content: `${JSON.stringify(nextWorkspace, null, 2)}\n`,
-			},
-			claim as unknown as Record<string, unknown>,
-		);
-		return {
-			record: mutation.record,
-			backend_claim: claim,
-			workspace: { revision: "", state: mutation.workspace },
-		};
-	});
+				intent_revision: input.intent_revision,
+				intent_content_hash: checks.intent.content_hash,
+				enrollment_event_id: `enroll-${input.task_id}-${input.now}`,
+				lifecycle_status: "active",
+				created_at: input.now,
+				updated_at: input.now,
+			};
+			const mutation = commitEnrollmentLocked(
+				root,
+				input.task_id,
+				{
+					contract: "assurance_kernel/workspace_transaction/v2",
+					task_id: input.task_id,
+					expected_record_hash: checks.current.revision,
+					next_record_content: `${JSON.stringify(record, null, 2)}\n`,
+					expected_workspace_hash: checks.workspace.revision,
+					next_workspace_content: `${JSON.stringify(nextWorkspace, null, 2)}\n`,
+				},
+				claim as unknown as Record<string, unknown>,
+			);
+			return {
+				record: mutation.record,
+				backend_claim: claim,
+				workspace: { revision: "", state: mutation.workspace },
+			};
+		},
+	);
 }
