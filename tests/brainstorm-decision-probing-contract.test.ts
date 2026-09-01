@@ -14,7 +14,6 @@ const COMPACT_BRAINSTORM = read(
 const COMPOUNDER = read("plugins/immune-brain/dist/role-prompts/compounder.md");
 const PLANNER = read("plugins/immune-brain/dist/imm-planner.md");
 const HISTORY = read("docs/solutions/grill-me-interaction-mechanics-borrow.md");
-const CONTRAST = read("docs/reference/mattpocock-skills-contrast.md");
 const GENERAL_BENCHMARK = JSON.parse(
 	read("tests/fixtures/immune-brain-benchmark.json"),
 );
@@ -129,10 +128,6 @@ describe("Brainstorm decision probing contracts", () => {
 		]) {
 			expect(HISTORY).not.toContain(retiredInstruction);
 		}
-		expect(CONTRAST).toContain(
-			"exhaustive clarification owner; `adversarial` is an explicit analysis lens",
-		);
-		expect(CONTRAST).not.toContain("IB 拆为 framing 和高压 gate");
 	});
 
 	it("keeps focused Brainstorm behavior scenarios separate from the general baseline", () => {

@@ -66,7 +66,8 @@ describe("current Pi-only contracts", () => {
         unsupported: undefined,
       });
     }
-    expect(readFileSync(resolve(ROOT, "README.md"), "utf8")).toContain("Pi 是唯一支持的 code-agent host");
+    expect(readFileSync(resolve(ROOT, "README.md"), "utf8")).toContain("Pi remains the only host");
+    expect(readFileSync(resolve(ROOT, "README.zh-CN.md"), "utf8")).toContain("Pi 是唯一支持的宿主");
     const preferencesDoc = readFileSync(resolve(ROOT, "docs/reference/immune-brain-config.md"), "utf8");
     expect(preferencesDoc).toContain("Initiative carrier default: local");
     expect(preferencesDoc).toContain("Initiative carrier default: github");

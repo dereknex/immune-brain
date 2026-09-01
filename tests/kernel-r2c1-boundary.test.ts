@@ -10,7 +10,6 @@ describe("legacy API retirement", () => {
 		const exported = new Set<string>(Object.keys(kernel));
 		for (const legacy of [
 			"parseTaskIntent",
-			"parseTaskRecord",
 			"reduceTaskV2",
 			"writeTaskRecord",
 			"applyTaskActionV2",

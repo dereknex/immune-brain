@@ -85,8 +85,17 @@ function freezeRecord(root: string): void {
 	});
 }
 
+function gitHeadOf(root: string): string {
+	return execFileSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).trim();
+}
+
+function gitTreeOf(root: string): string {
+	return execFileSync("git", ["rev-parse", "HEAD^{tree}"], { cwd: root, encoding: "utf8" }).trim();
+}
+
 function seedAttestation(root: string, kind: "qa" | "review" | "user", overrides: Record<string, unknown> = {}): void {
 	const diff = diffOf(root);
+	const head = gitHeadOf(root);
 	mutateRecord(root, (record) => record.attestations.push({
 		id: `attestation-${kind}`,
 		kind,
@@ -100,6 +109,15 @@ function seedAttestation(root: string, kind: "qa" | "review" | "user", overrides
 			{ acceptance_id: "A1", status: "passed", summary: "A1 passed" },
 			{ acceptance_id: "A2", status: "passed", summary: "A2 passed" },
 		] : [],
+		...(kind === "review" ? {
+			review_revision: {
+				contract: "assurance_kernel/review_revision_identity/v1",
+				base_head: head,
+				review_commit: head,
+				review_tree: gitTreeOf(root),
+				manifest_digest: `sha256:${"a".repeat(64)}`,
+			},
+		} : {}),
 		...overrides,
 	}));
 }

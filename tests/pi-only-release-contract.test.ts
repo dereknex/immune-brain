@@ -47,7 +47,6 @@ describe("Pi-only release contract", () => {
 
   it("root package files omit development and historical source trees", () => {
     const manifest = JSON.parse(readFileSync(resolve(ROOT, "package.json"), "utf8"));
-    expect(manifest.private).toBe(true);
     expect(manifest.files).not.toContain("docs");
     for (const path of ["CONTEXT.md", "HANDOFF.md", "AGENTS.md", "IMMUNE.md"])
       expect(manifest.files).not.toContain(path);

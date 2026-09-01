@@ -16,7 +16,7 @@ const REMOVED_HOST_SURFACES = [
 describe("Pi package manifest consistency", () => {
   it("keeps the root Pi manifest as the sole host package authority", () => {
     const manifest = JSON.parse(readFileSync(resolve(ROOT, "package.json"), "utf8"));
-    expect(manifest.name).toBe("@immune-brain/agent-skills");
+    expect(manifest.name).toBe("immune-brain");
     expect(manifest.pi.skills).toEqual(["./plugins/immune-brain/skills"]);
     expect(manifest.pi.extensions).toEqual(["./plugins/immune-brain/.pi-extension"]);
     expect(existsSync(resolve(ROOT, "plugins/immune-brain/skills"))).toBe(true);

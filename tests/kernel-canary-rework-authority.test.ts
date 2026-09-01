@@ -24,7 +24,7 @@ import {
 	createEnrollmentAuthorityRegistry,
 	type EnrollmentCapabilityBinding,
 } from "../plugins/immune-brain/runtime/kernel/enrollment_authority";
-import { canonicalIntentHash, readTaskIntent } from "../plugins/immune-brain/runtime/kernel/intent";
+import { readTaskIntent } from "../plugins/immune-brain/runtime/kernel/intent";
 import { readTaskRecord } from "../plugins/immune-brain/runtime/kernel/storage";
 
 const TASK = "canary-rework-task";
@@ -42,7 +42,6 @@ const INTENT = {
 	revision: 1,
 	owner: "user",
 } as const;
-const INTENT_HASH = canonicalIntentHash(INTENT);
 const DIFF = "sha256:" + "c".repeat(64);
 
 let root: string;
@@ -64,6 +63,10 @@ beforeEach(() => {
 	);
 	execFileSync("git", ["add", "-A"], { cwd: root });
 	execFileSync("git", ["commit", "-qm", "intent"], { cwd: root });
+	// The Kernel hashes the parsed (deduped, sorted) scope_hint, not the raw
+	// fixture literal, so the capability binding must use the same
+	// content_hash enrollment recomputes inside the store lock.
+	const intentHash = readTaskIntent(root, TASK).content_hash;
 	writeFileSync(
 		join(root, ".imm", "workspace.json"),
 		JSON.stringify(
@@ -78,7 +81,7 @@ beforeEach(() => {
 		task_id: TASK,
 		intent_path: `docs/plans/${TASK}.intent.json`,
 		intent_revision: 1,
-		intent_content_hash: INTENT_HASH,
+		intent_content_hash: intentHash,
 		preparation_digest: prep.digest,
 		actor_id: "user",
 		confirmation_ref: "pi-confirm-enroll",

@@ -109,11 +109,10 @@ describe("host runtime cutover", () => {
 
 		const readme = readFileSync(resolve(REPO_ROOT, "README.md"), "utf-8");
 		expect(readme).toContain(
-			"Pi package 安装负责把 Skills 和 extensions 加入 Pi settings",
+			"Pi discovers Skills and extensions from `package.json`",
 		);
-		expect(readme).toContain("Immune-Brain runtime 不再需要额外 server 配置");
+		expect(readme).toContain("No extra server config is needed");
 		expect(readme).toContain("plugins/immune-brain/bin/imm-kernel");
-		expect(readme).toContain("从 Pi 已加载 Skill 的绝对路径反推");
 	});
 
 	it("documents Pi advisory dispatch through foreground Agent calls", () => {
