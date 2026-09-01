@@ -101,7 +101,7 @@ function execute(operation: CanaryOperation, at = now) {
 		task_id: TASK,
 		operation,
 		prior_intent_token: token(),
-		diffProvider: () => DIFF,
+		diffProvider: () => ({ diff_hash: DIFF, changed_paths: [] as const }),
 		now: at,
 	});
 }

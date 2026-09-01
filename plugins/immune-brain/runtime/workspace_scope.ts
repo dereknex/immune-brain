@@ -392,11 +392,28 @@ export function captureGitTaskSnapshot(
 	return before;
 }
 
-export function taskDiffHash(projectRoot: string, scopeHint: unknown): string {
+export interface GitTaskDiffIdentity {
+	diff_hash: string;
+	changed_paths: string[];
+}
+
+function hashTaskSnapshot(snapshot: object): string {
+	return `sha256:${createHash("sha256").update(JSON.stringify(snapshot)).digest("hex")}`;
+}
+
+export function taskDiffIdentity(
+	projectRoot: string,
+	scopeHint: unknown,
+): GitTaskDiffIdentity {
 	const snapshot = captureGitTaskSnapshot(projectRoot, scopeHint);
-	return `sha256:${createHash("sha256")
-		.update(JSON.stringify(snapshot))
-		.digest("hex")}`;
+	return {
+		diff_hash: hashTaskSnapshot(snapshot),
+		changed_paths: Object.keys(snapshot.staged_files).sort(comparePaths),
+	};
+}
+
+export function taskDiffHash(projectRoot: string, scopeHint: unknown): string {
+	return taskDiffIdentity(projectRoot, scopeHint).diff_hash;
 }
 
 function gitRequired(root: string, args: string[], failure: string): string {
@@ -518,14 +535,25 @@ export function captureGitTaskRevisionSnapshot(
 	return before;
 }
 
+export function taskRevisionIdentity(
+	projectRoot: string,
+	scopeHint: unknown,
+	baseHead: string,
+): GitTaskDiffIdentity {
+	const snapshot = captureGitTaskRevisionSnapshot(projectRoot, scopeHint, baseHead);
+	return {
+		diff_hash: hashTaskSnapshot(snapshot),
+		changed_paths: Object.keys(snapshot.changed_paths).sort(comparePaths),
+	};
+}
+
 /** The single v4 freshness identity shared by QA, Review, authorization, and completion. */
 export function taskRevisionDiffHash(
 	projectRoot: string,
 	scopeHint: unknown,
 	baseHead: string,
 ): string {
-	const snapshot = captureGitTaskRevisionSnapshot(projectRoot, scopeHint, baseHead);
-	return `sha256:${createHash("sha256").update(JSON.stringify(snapshot)).digest("hex")}`;
+	return taskRevisionIdentity(projectRoot, scopeHint, baseHead).diff_hash;
 }
 
 function isGitWorkspaceSnapshot(value: unknown): value is GitWorkspaceSnapshot {

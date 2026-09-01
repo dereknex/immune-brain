@@ -27,9 +27,9 @@ import {
 	parseTaskIntentV1,
 	RISK_FLOOR_SCOPE_PREFIXES,
 } from "../kernel/intent";
-import { projectTask } from "../kernel/completion";
+import { projectTask, resolveProjectedRisk } from "../kernel/completion";
 import { deriveAssuranceAuthorization } from "../kernel/assurance_projection";
-import { taskDiffHash } from "../workspace_scope";
+import { taskDiffIdentity, taskRevisionIdentity } from "../workspace_scope";
 import type { TaskIntentV1, TaskRisk } from "../kernel/types";
 import {
 	canonicalDescriptorBytes,
@@ -286,17 +286,22 @@ function runInspect(root: string): KernelExecution {
 		}
 		const record = recordRead.record;
 		const workspaceState = readWorkspaceStateRaw(root);
-		let diffHash = `sha256:${"0".repeat(64)}`;
+		let identity;
 		try {
-			diffHash = taskDiffHash(root, intent.scope_hint);
-		} catch {
-			// Keep a stable placeholder when Git is absent; record/intent remain the fail-closed sources.
+			identity =
+				record.contract === "assurance_kernel/task_record/v4"
+					? taskRevisionIdentity(root, intent.scope_hint, record.git_base_head)
+					: taskDiffIdentity(root, intent.scope_hint);
+		} catch (error) {
+			return sourceFailure("inspect", error);
 		}
-		const decision = projectTask(intent, record, diffHash, record.intent_ref.content_hash);
+		const diffHash = identity.diff_hash;
+		const changedPaths = identity.changed_paths;
+		const decision = projectTask(intent, record, diffHash, record.intent_ref.content_hash, changedPaths);
 		const openUserDecisionCount = record.findings.filter(
 			(finding) => finding.kind === "unresolved_user_decision" && finding.status === "open",
 		).length;
-		const resolved = intent.risk;
+		const resolved = resolveProjectedRisk(intent, changedPaths);
 		return {
 			result: jsonResult({
 				contract: "assurance_kernel/inspect/v1",
@@ -315,7 +320,7 @@ function runInspect(root: string): KernelExecution {
 						diff_hash: diffHash,
 						lifecycle: record.lifecycle,
 						artifact_state: record.artifact_state,
-						risk: intent.risk,
+						risk: resolveProjectedRisk(intent, changedPaths),
 						next_obligation: decision.next_obligation,
 						fresh_acceptance_ids: decision.fresh_acceptance_ids,
 						missing_acceptance_ids: decision.missing_acceptance_ids,

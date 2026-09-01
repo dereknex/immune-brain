@@ -1,0 +1,42 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "2026-09-01-004-wire-task-tier-review-gate",
+  "goal": "Implement GitHub Issue #20 on the current Kernel v4 authority path. Derive each Assurance projection resolved tier by calling the completed #19 changed-path classifier with declared TaskIntent risk and concrete paths from the same stable task snapshot used for diff_hash. Exclude only this task own active/archive Intent and scope-bound Spec paths from classification; keep them and every other changed path in freshness and Review transport. Preserve universal QA, skip Review only for resolved Routine, require Review for Material/Critical, preserve critical user authority, and re-evaluate accumulated paths before completion without changing persisted schemas or Compounder policy.",
+  "acceptance": [
+    {
+      "id": "acc-dynamic-review-obligation",
+      "assertion": "One stable task snapshot supplies both diff_hash and concrete changed paths to Kernel projection; exact current-task planning sidecars are excluded only from classification, another task planning artifact remains Material, declared risk can escalate but not suppress the path floor, every tier requires fresh QA, Routine completes after QA without Review, Material/Critical require Review, Critical still requires user authority, and adding a floored path mid-lifecycle invalidates stale attestations and projects Review after fresh QA before completion.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/kernel-assurance-obligation.test.ts\",\n    \"tests/kernel-assurance-projection.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 60000,\n  \"max_output_bytes\": 131072\n}\n"
+    },
+    {
+      "id": "acc-review-transport-unchanged",
+      "assertion": "When resolved Material or Critical work reaches Review, the existing synthetic revision, diff_hash, scope, and manifest changed_paths still represent the complete unfiltered task delta; this change does not slim or rewrite Review input.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/pi-canary-review-bundle.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 60000,\n  \"max_output_bytes\": 131072\n}\n"
+    }
+  ],
+  "scope_hint": [
+    "docs/plans/2026-09-01-004-wire-task-tier-review-gate.intent.json",
+    "docs/plans/archive/2026-09-01-004-wire-task-tier-review-gate.intent.json",
+    "docs/specs/archive/task-tier-review-gate.spec.md",
+    "docs/specs/task-tier-review-gate.spec.md",
+    "plugins/immune-brain/.pi-extension/imm-canary-work.ts",
+    "plugins/immune-brain/.pi-extension/runtime-stub.ts",
+    "plugins/immune-brain/runtime/commands/kernel.ts",
+    "plugins/immune-brain/runtime/kernel/application.ts",
+    "plugins/immune-brain/runtime/kernel/assurance_projection.ts",
+    "plugins/immune-brain/runtime/kernel/canary_application.ts",
+    "plugins/immune-brain/runtime/kernel/completion.ts",
+    "plugins/immune-brain/runtime/kernel/reducer.ts",
+    "plugins/immune-brain/runtime/workspace_scope.ts",
+    "tests/kernel-assurance-obligation.test.ts",
+    "tests/kernel-assurance-projection.test.ts",
+    "tests/kernel-canary-application.test.ts",
+    "tests/kernel-canary-terminal-transaction.test.ts",
+    "tests/kernel-inspect.test.ts",
+    "tests/kernel-r2c2-reducer.test.ts",
+    "tests/user-approval-critical-completion.test.ts"
+  ],
+  "risk": "material",
+  "revision": 4,
+  "owner": "user"
+}

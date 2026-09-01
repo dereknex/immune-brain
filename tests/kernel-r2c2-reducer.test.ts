@@ -85,7 +85,7 @@ function reduce(record: TaskRecordV3, action: TaskAction, authority: AuthorityAu
 	return reduceTask(record, {
 		...action,
 		expected_record_hash: canonicalRecordHash(record),
-	} as TaskAction, authority);
+	} as TaskAction, authority, action.type === "complete" ? [] : undefined);
 }
 
 function approval(kind: "qa" | "review" | "user", id = `ap-${kind}`) {

@@ -12,6 +12,7 @@ import {
 	type MutationAuthorityRegistry,
 } from "./authority_port";
 import { applyTaskAction } from "./application";
+import { asTaskDiffSnapshot } from "./completion";
 import { readTaskIntent } from "./intent";
 import {
 	inspectIntentTokenPair,
@@ -63,7 +64,7 @@ export interface CanaryExecuteInput {
 	operation: CanaryOperation;
 	prior_intent_token: TaskIntentIdentityToken;
 	/** Trusted injected diff provider; the application derives the diff identity. */
-	diffProvider: (root: string, record: TaskRecord) => string;
+	diffProvider: (root: string, record: TaskRecord) => string | { diff_hash: string; changed_paths?: readonly string[] };
 	now?: string;
 }
 
@@ -319,7 +320,7 @@ export function createCanaryApplication(
 				record: current.record,
 			};
 		});
-		const diffHash = input.diffProvider(input.root, snapshot.record);
+		const diffHash = asTaskDiffSnapshot(input.diffProvider(input.root, snapshot.record)).diff_hash;
 		if (operation.op === "stop" && !("capability" in operation))
 			throw new KernelInvariantError(["stop requires user authority capability"]);
 		const hasBoundSpec = snapshot.intent_snapshot.scope_hint.some(

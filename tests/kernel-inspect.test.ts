@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it } from "bun:test";
+import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -75,6 +76,9 @@ function writeClaimedTask(root: string, taskId: string, scope_hint: string[], ri
 			history: [],
 		}, null, 2)}\n`,
 	);
+	execFileSync("git", ["init", "-q"], { cwd: root });
+	execFileSync("git", ["add", "-A"], { cwd: root });
+	execFileSync("git", ["commit", "-qm", "inspect"], { cwd: root });
 	return parsed;
 }
 

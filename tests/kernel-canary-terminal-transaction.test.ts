@@ -130,7 +130,7 @@ function execute(op: Parameters<typeof app.execute>[0]["operation"], at: string)
 		task_id: TASK,
 		operation: op,
 		prior_intent_token: token(),
-		diffProvider: () => DIFF,
+		diffProvider: () => ({ diff_hash: DIFF, changed_paths: [] as const }),
 		now: at,
 	});
 }

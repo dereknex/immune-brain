@@ -13,8 +13,13 @@
 
 import { readBackendClaim, readTaskTombstone } from "./backend_claim";
 import { readTaskRecord, readAuditTaskPair, readWorkspaceStateRaw, reconcileKernelAuthority } from "./storage";
-import { projectTask } from "./completion";
+import { projectTask, resolveProjectedRisk } from "./completion";
 import type { AssuranceObligation, TaskIntentV1, TaskRecord, TaskRecordV2 } from "./types";
+
+export interface TaskDiffSnapshot {
+	diff_hash: string;
+	changed_paths: readonly string[];
+}
 
 export interface AssuranceAuthorizationReadiness {
 	/**
@@ -151,11 +156,17 @@ function projectFromRecord(
 	record: TaskRecord,
 	recordRevision: string,
 	workspaceRevision: string,
-	diffHash: string,
+	snapshot: TaskDiffSnapshot,
 ): AssuranceProjection {
 	const intent: TaskIntentV1 = record.intent_snapshot;
-	const decision = projectTask(intent, record, diffHash, record.intent_ref.content_hash);
-	const approvalKinds = freshApprovalKinds(record, record.intent_ref.content_hash, diffHash);
+	const decision = projectTask(
+		intent,
+		record,
+		snapshot.diff_hash,
+		record.intent_ref.content_hash,
+		snapshot.changed_paths,
+	);
+	const approvalKinds = freshApprovalKinds(record, record.intent_ref.content_hash, snapshot.diff_hash);
 	const openUserDecisionCount = record.findings.filter(
 		(finding) => finding.kind === "unresolved_user_decision" && finding.status === "open",
 	).length;
@@ -164,10 +175,10 @@ function projectFromRecord(
 		workspace_revision: workspaceRevision,
 		intent_revision: record.intent_snapshot.revision,
 		intent_content_hash: record.intent_ref.content_hash,
-		diff_hash: diffHash,
+		diff_hash: snapshot.diff_hash,
 		lifecycle: record.lifecycle,
 		artifact_state: record.artifact_state,
-		risk: intent.risk,
+		risk: resolveProjectedRisk(intent, snapshot.changed_paths),
 		next_obligation: decision.next_obligation,
 		fresh_acceptance_ids: decision.fresh_acceptance_ids,
 		missing_acceptance_ids: decision.missing_acceptance_ids,
@@ -203,7 +214,7 @@ function projectFromRecord(
 export async function projectAssurance(
 	root: string,
 	taskId: string,
-	diffProvider: (root: string, record: TaskRecord) => string,
+	diffProvider: (root: string, record: TaskRecord) => TaskDiffSnapshot,
 ): Promise<AssuranceProjectionResult> {
 	const fail = (
 		error: string,
@@ -270,13 +281,13 @@ export async function projectAssurance(
 		if (claim && read.record.lifecycle !== "active")
 			return fail(`terminal task ${taskId} has no matching tombstone proof`, claim);
 		const workspace = await readWorkspaceStateRaw(root);
-		const diffHash = diffProvider(root, read.record);
+		const snapshot = diffProvider(root, read.record);
 		return {
 			contract: "assurance_kernel/assurance_projection/v1",
 			task_id: taskId,
 			error: null,
 			claim,
-			projection: projectFromRecord(read.record, read.revision, workspace.revision, diffHash),
+			projection: projectFromRecord(read.record, read.revision, workspace.revision, snapshot),
 		};
 	} catch (error) {
 		return fail(error instanceof Error ? error.message : String(error));

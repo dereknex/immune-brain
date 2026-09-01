@@ -8,6 +8,7 @@ import {
 	type MutationAuthorityRegistry,
 	type ValidatedAuthorityV2,
 } from "./authority_port";
+import { asTaskDiffSnapshot } from "./completion";
 import { canonicalIntentHash, readTaskIntent } from "./intent";
 import {
 	inspectIntentTokenPair,
@@ -52,7 +53,7 @@ export interface ApplyTaskActionInput {
 	registry: MutationAuthorityRegistry;
 	capability?: MutationAuthorityCapabilityV2;
 	/** Trusted injected diff provider; the action's diff_hash is only an expectation. */
-	diffProvider: (root: string, record: TaskRecord) => string;
+	diffProvider: (root: string, record: TaskRecord) => string | { diff_hash: string; changed_paths?: readonly string[] };
 	now?: number;
 	/**
 	 * Terminal commit mode: record + workspace + active-claim removal + task
@@ -90,10 +91,10 @@ export function applyTaskAction(
 		// closed before any token or capability is consumed.
 
 		// Trusted diff provider is the only diff authority.
-		const diffHash = diffProvider(root, current.record);
-		if (diffHash !== action.diff_hash)
+		const trustedDiff = asTaskDiffSnapshot(diffProvider(root, current.record));
+		if (trustedDiff.diff_hash !== action.diff_hash)
 			throw new KernelInvariantError([
-				`action diff_hash ${action.diff_hash} does not match the trusted diff ${diffHash}`,
+				`action diff_hash ${action.diff_hash} does not match the trusted diff ${trustedDiff.diff_hash}`,
 			]);
 
 		// Fresh secure reread of the sidecar inside the same lock.
@@ -174,7 +175,7 @@ export function applyTaskAction(
 					intent_content_hash: isRevisionAction
 						? freshRead.content_hash
 						: current.record.intent_ref.content_hash,
-					diff_hash: diffHash,
+					diff_hash: trustedDiff.diff_hash,
 					...(action.type === "request_rework"
 						? { findings_digest: findingsDigestV2(action.findings) }
 						: {}),
@@ -192,6 +193,7 @@ export function applyTaskAction(
 			current.record,
 			action,
 			inspectedAudit ? (inspectedAudit.audit as AuthorityAuditDescriptor) : null,
+			trustedDiff.changed_paths,
 		);
 		if (!isReducedMutation(mutation))
 			throw new KernelInvariantError(["reducer returned an invalid mutation"]);

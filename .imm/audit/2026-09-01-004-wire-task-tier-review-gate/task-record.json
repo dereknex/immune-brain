@@ -1,0 +1,457 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "2026-09-01-004-wire-task-tier-review-gate",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "2026-09-01-004-wire-task-tier-review-gate",
+    "goal": "Implement GitHub Issue #20 on the current Kernel v4 authority path. Derive each Assurance projection resolved tier by calling the completed #19 changed-path classifier with declared TaskIntent risk and concrete paths from the same stable task snapshot used for diff_hash. Exclude only this task own active/archive Intent and scope-bound Spec paths from classification; keep them and every other changed path in freshness and Review transport. Preserve universal QA, skip Review only for resolved Routine, require Review for Material/Critical, preserve critical user authority, and re-evaluate accumulated paths before completion without changing persisted schemas or Compounder policy.",
+    "acceptance": [
+      {
+        "id": "acc-dynamic-review-obligation",
+        "assertion": "One stable task snapshot supplies both diff_hash and concrete changed paths to Kernel projection; exact current-task planning sidecars are excluded only from classification, another task planning artifact remains Material, declared risk can escalate but not suppress the path floor, every tier requires fresh QA, Routine completes after QA without Review, Material/Critical require Review, Critical still requires user authority, and adding a floored path mid-lifecycle invalidates stale attestations and projects Review after fresh QA before completion.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/kernel-assurance-obligation.test.ts\",\n    \"tests/kernel-assurance-projection.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 60000,\n  \"max_output_bytes\": 131072\n}\n"
+      },
+      {
+        "id": "acc-review-transport-unchanged",
+        "assertion": "When resolved Material or Critical work reaches Review, the existing synthetic revision, diff_hash, scope, and manifest changed_paths still represent the complete unfiltered task delta; this change does not slim or rewrite Review input.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/pi-canary-review-bundle.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 60000,\n  \"max_output_bytes\": 131072\n}\n"
+      }
+    ],
+    "scope_hint": [
+      "docs/plans/2026-09-01-004-wire-task-tier-review-gate.intent.json",
+      "docs/plans/archive/2026-09-01-004-wire-task-tier-review-gate.intent.json",
+      "docs/specs/archive/task-tier-review-gate.spec.md",
+      "docs/specs/task-tier-review-gate.spec.md",
+      "plugins/immune-brain/.pi-extension/imm-canary-work.ts",
+      "plugins/immune-brain/.pi-extension/runtime-stub.ts",
+      "plugins/immune-brain/runtime/commands/kernel.ts",
+      "plugins/immune-brain/runtime/kernel/application.ts",
+      "plugins/immune-brain/runtime/kernel/assurance_projection.ts",
+      "plugins/immune-brain/runtime/kernel/canary_application.ts",
+      "plugins/immune-brain/runtime/kernel/completion.ts",
+      "plugins/immune-brain/runtime/kernel/reducer.ts",
+      "plugins/immune-brain/runtime/workspace_scope.ts",
+      "tests/kernel-assurance-obligation.test.ts",
+      "tests/kernel-assurance-projection.test.ts",
+      "tests/kernel-canary-application.test.ts",
+      "tests/kernel-canary-terminal-transaction.test.ts",
+      "tests/kernel-inspect.test.ts",
+      "tests/kernel-r2c2-reducer.test.ts",
+      "tests/user-approval-critical-completion.test.ts"
+    ],
+    "risk": "material",
+    "revision": 4,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/archive/2026-09-01-004-wire-task-tier-review-gate.intent.json",
+    "content_hash": "sha256:bc4a2698ed02bc4c5768491759822f9376042b60e4f88d1d80db4cc0a8190323"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:9d468e7e3b0cf943bb24f5bdd9e425d5063a9de6eda293da2a704a9a76b30b98",
+  "git_base_head": "c8fa20587e70d16c2a75d79fb45b648785198f9c",
+  "attestations": [
+    {
+      "id": "approval-qa-be636990",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:9d468e7e3b0cf943bb24f5bdd9e425d5063a9de6eda293da2a704a9a76b30b98",
+      "diff_hash": "sha256:56878e26a9440d40c312a23e0538ed3d34064861d1a2469a774483e2a3addb57",
+      "actor_id": "deterministic-qa",
+      "summary": "all 2 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "acc-dynamic-review-obligation",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-review-transport-unchanged",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-5b76992d",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:2c65dbc7624502d5387309efd88ad843dafd835b47e4231aa1a005ba437e9cea",
+      "diff_hash": "sha256:c39eec5287eb5ed17462988192597c127f8d905d445c45c837c6cf2388e43970",
+      "actor_id": "deterministic-qa",
+      "summary": "all 2 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "acc-dynamic-review-obligation",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-review-transport-unchanged",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-11c188bb",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 3,
+      "intent_content_hash": "sha256:339ece60ed250b196566350274b4dce04c1b8bee8db81ead9753ae90d8ebf84d",
+      "diff_hash": "sha256:3db901b865e0eebd58e979e8bc08e51009196ac8f25e25f64ca7698a2aa14760",
+      "actor_id": "deterministic-qa",
+      "summary": "all 2 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "acc-dynamic-review-obligation",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-review-transport-unchanged",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-8639a7eb",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 4,
+      "intent_content_hash": "sha256:bc4a2698ed02bc4c5768491759822f9376042b60e4f88d1d80db4cc0a8190323",
+      "diff_hash": "sha256:f427b6507aaeef084d9613b81e9e9c49501b95f2a4049015b6163ed63e7df8b6",
+      "actor_id": "deterministic-qa",
+      "summary": "all 2 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "acc-dynamic-review-obligation",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-review-transport-unchanged",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-230267c8",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 4,
+      "intent_content_hash": "sha256:bc4a2698ed02bc4c5768491759822f9376042b60e4f88d1d80db4cc0a8190323",
+      "diff_hash": "sha256:f427b6507aaeef084d9613b81e9e9c49501b95f2a4049015b6163ed63e7df8b6",
+      "actor_id": "parent-mediated-review",
+      "summary": "Immutable revision provenance and manifest digest are valid; dynamic tier projection, completion enforcement, sidecar filtering, freshness behavior, and unchanged full Review transport satisfy both acceptances.",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "c8fa20587e70d16c2a75d79fb45b648785198f9c",
+        "review_commit": "5c6663b3df2654686d7810512444d3239fe3d12c",
+        "review_tree": "591a3a551130d6737f967da546634b7d0b587298",
+        "manifest_digest": "sha256:491b4ab301a7633062c4c05907d09b00b2faded765479634ae3b3b5bf34e99a0"
+      }
+    }
+  ],
+  "findings": [
+    {
+      "id": "review-ce7bf7d020bc-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "acc-dynamic-review-obligation",
+      "source": "review",
+      "review_round": 1,
+      "summary": "plugins/immune-brain/runtime/kernel/reducer.ts:540 calls completionDecision without changed_paths, so a routine-declared task with floored paths can bypass Review when the complete action is reduced; carry the trusted snapshot paths through completion mutation and add a reducer-level regression test."
+    },
+    {
+      "id": "review-ce7bf7d020bc-2-review-2",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "acc-dynamic-review-obligation",
+      "source": "review",
+      "review_round": 1,
+      "summary": "plugins/immune-brain/runtime/commands/kernel.ts:305 leaves inspect risk.resolved equal to declared intent.risk, making it disagree with assurance.projection.risk and report floor_applied=false for dynamically Material work; derive this value with resolveProjectedRisk(intent, changedPaths)."
+    },
+    {
+      "id": "review-1b9771653e6f-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "acc-dynamic-review-obligation",
+      "source": "review",
+      "review_round": 2,
+      "summary": "plugins/immune-brain/runtime/kernel/completion.ts:46-53 accepts hash-only or omitted changed_paths and silently substitutes [], allowing a trusted Routine completion caller to suppress the changed-path risk floor; require changed_paths in the mutation contract and reject missing path evidence."
+    },
+    {
+      "id": "request_rework:2026-09-01-004-wire-task-tier-review-gate:2026-09-01T15:11:03.108Z:replan-required",
+      "kind": "replan_required",
+      "status": "resolved",
+      "acceptance_id": "acc-dynamic-review-obligation",
+      "source": "kernel",
+      "review_round": 2,
+      "summary": "Review returned this acceptance boundary twice; a durable replan is required."
+    },
+    {
+      "id": "review-d1c032dc3665-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "acc-dynamic-review-obligation",
+      "source": "review",
+      "review_round": 3,
+      "summary": "plugins/immune-brain/runtime/commands/kernel.ts:289-301 silently substitutes a zero diff and empty changed-path set when Git snapshot capture fails, allowing inspect to underclassify Material work as Routine and report completion readiness; return a source failure instead of projecting from fallback evidence."
+    },
+    {
+      "id": "request_rework:2026-09-01-004-wire-task-tier-review-gate:2026-09-01T15:28:33.123Z:replan-required",
+      "kind": "replan_required",
+      "status": "resolved",
+      "acceptance_id": "acc-dynamic-review-obligation",
+      "source": "kernel",
+      "review_round": 3,
+      "summary": "Review returned this acceptance boundary twice; a durable replan is required."
+    }
+  ],
+  "history": [
+    {
+      "id": "freeze_artifacts:2026-09-01-004-wire-task-tier-review-gate:2026-09-01T14:31:18.512Z",
+      "at": "2026-09-01T14:31:18.512Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent and Spec frozen at docs/plans/archive/2026-09-01-004-wire-task-tier-review-gate.intent.json"
+    },
+    {
+      "id": "record_approval:2026-09-01-004-wire-task-tier-review-gate:2026-09-01T14:31:35.442Z",
+      "at": "2026-09-01T14:31:35.442Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-be636990\naction_v2_sha256:5de015658bb9a61f9e8219f24036fbda3de77bb9ff3696794a9f0388807d2cf6",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-f3f3481952a62c90",
+        "issued_at": "2026-09-01T14:31:35.442Z",
+        "expires_at": "2026-09-01T14:41:35.442Z"
+      }
+    },
+    {
+      "id": "request_rework:2026-09-01-004-wire-task-tier-review-gate:2026-09-01T14:35:01.659Z",
+      "at": "2026-09-01T14:35:01.659Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_1\naction_v2_sha256:de0a6bfd71afab67bf9048417399d802db3d5d23e1832298d3710db15351d686",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-ab682f275c024bda",
+        "issued_at": "2026-09-01T14:35:01.660Z",
+        "expires_at": "2026-09-01T14:45:01.660Z"
+      }
+    },
+    {
+      "id": "approve_breaking_intent_revision:2026-09-01-004-wire-task-tier-review-gate:2026-09-01T15:07:40.316Z",
+      "at": "2026-09-01T15:07:40.316Z",
+      "type": "approve_breaking_intent_revision",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "intent_revision_2\naction_v2_sha256:02c530e1c7c45641d5e9ecda87b3306886e1787ff2353fb67e202773ddcd011c",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-85a04cedf46495ad",
+        "issued_at": "2026-09-01T15:07:40.621Z",
+        "expires_at": "2026-09-01T15:17:40.621Z"
+      }
+    },
+    {
+      "id": "resolve_finding:2026-09-01-004-wire-task-tier-review-gate:2026-09-01T15:07:52.427Z",
+      "at": "2026-09-01T15:07:52.427Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-ce7bf7d020bc-1-review-1\naction_v2_sha256:c5d3f58101f61f91b8cedcc4701182d589468632275a9a720b2f9358a64ca42d"
+    },
+    {
+      "id": "resolve_finding:2026-09-01-004-wire-task-tier-review-gate:2026-09-01T15:08:05.346Z",
+      "at": "2026-09-01T15:08:05.346Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-ce7bf7d020bc-2-review-2\naction_v2_sha256:803af5466f11c59d74cb6e8b50e6835309a940e7fecc58ec458bcb5edc4cd31c"
+    },
+    {
+      "id": "freeze_artifacts:2026-09-01-004-wire-task-tier-review-gate:2026-09-01T15:08:11.235Z",
+      "at": "2026-09-01T15:08:11.235Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent and Spec frozen at docs/plans/archive/2026-09-01-004-wire-task-tier-review-gate.intent.json"
+    },
+    {
+      "id": "record_approval:2026-09-01-004-wire-task-tier-review-gate:2026-09-01T15:08:24.607Z",
+      "at": "2026-09-01T15:08:24.607Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-5b76992d\naction_v2_sha256:da61d06ce256ea62999accec99032abfcc72c8354a470778262ffa13d49941b6",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-9f3c7f8d461351d1",
+        "issued_at": "2026-09-01T15:08:24.608Z",
+        "expires_at": "2026-09-01T15:18:24.608Z"
+      }
+    },
+    {
+      "id": "request_rework:2026-09-01-004-wire-task-tier-review-gate:2026-09-01T15:11:03.108Z",
+      "at": "2026-09-01T15:11:03.108Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "review_round_2\naction_v2_sha256:06487e1c716518ebb7cf88cca96539071799a9a38eb8211a2ef1db8ea90ed230",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-54b11485322336c1",
+        "issued_at": "2026-09-01T15:11:03.108Z",
+        "expires_at": "2026-09-01T15:21:03.108Z"
+      }
+    },
+    {
+      "id": "approve_breaking_intent_revision:2026-09-01-004-wire-task-tier-review-gate:2026-09-01T15:24:42.695Z",
+      "at": "2026-09-01T15:24:42.695Z",
+      "type": "approve_breaking_intent_revision",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "intent_revision_3\naction_v2_sha256:67c8ba4f6d1d23b28592710e341683e1ad9e34ffe33162cdc1348653cd8faa62",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-15b2f607be2185fb",
+        "issued_at": "2026-09-01T15:24:43.084Z",
+        "expires_at": "2026-09-01T15:34:43.084Z"
+      }
+    },
+    {
+      "id": "resolve_finding:2026-09-01-004-wire-task-tier-review-gate:2026-09-01T15:24:50.479Z",
+      "at": "2026-09-01T15:24:50.479Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-1b9771653e6f-1-review-1\naction_v2_sha256:9f8a1e34f9164fa918838f0f89d2d1ad12f9f9cb0949813f1e6c3a40459e3542"
+    },
+    {
+      "id": "freeze_artifacts:2026-09-01-004-wire-task-tier-review-gate:2026-09-01T15:24:58.614Z",
+      "at": "2026-09-01T15:24:58.614Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent and Spec frozen at docs/plans/archive/2026-09-01-004-wire-task-tier-review-gate.intent.json"
+    },
+    {
+      "id": "record_approval:2026-09-01-004-wire-task-tier-review-gate:2026-09-01T15:25:26.239Z",
+      "at": "2026-09-01T15:25:26.239Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-11c188bb\naction_v2_sha256:d27941584a026ad8c7be084f02dac3d4da296ff47a10fa1302e528d25a5f6bd8",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-f9f3680536a32a7b",
+        "issued_at": "2026-09-01T15:25:26.239Z",
+        "expires_at": "2026-09-01T15:35:26.239Z"
+      }
+    },
+    {
+      "id": "request_rework:2026-09-01-004-wire-task-tier-review-gate:2026-09-01T15:28:33.123Z",
+      "at": "2026-09-01T15:28:33.123Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "review_round_3\naction_v2_sha256:eb49690d782634b9aa74ab12efc328383921ea7fc562525b2ff48a3bcac679ba",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-8d00c457b88e07fc",
+        "issued_at": "2026-09-01T15:28:33.123Z",
+        "expires_at": "2026-09-01T15:38:33.123Z"
+      }
+    },
+    {
+      "id": "approve_breaking_intent_revision:2026-09-01-004-wire-task-tier-review-gate:2026-09-01T15:30:11.992Z",
+      "at": "2026-09-01T15:30:11.992Z",
+      "type": "approve_breaking_intent_revision",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "intent_revision_4\naction_v2_sha256:751cb3d3f6944927a3e7b43310237802f9ae5f0ee4cf79fc460d6f9eb682640a",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-da1841bed68e4fd1",
+        "issued_at": "2026-09-01T15:30:12.432Z",
+        "expires_at": "2026-09-01T15:40:12.432Z"
+      }
+    },
+    {
+      "id": "resolve_finding:2026-09-01-004-wire-task-tier-review-gate:2026-09-01T15:30:28.475Z",
+      "at": "2026-09-01T15:30:28.475Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-d1c032dc3665-1-review-1\naction_v2_sha256:1ff7225eba0f30aadb5a1df0285842ce6be3250fa01c395687aa655efc084420"
+    },
+    {
+      "id": "freeze_artifacts:2026-09-01-004-wire-task-tier-review-gate:2026-09-01T15:31:00.114Z",
+      "at": "2026-09-01T15:31:00.114Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent and Spec frozen at docs/plans/archive/2026-09-01-004-wire-task-tier-review-gate.intent.json"
+    },
+    {
+      "id": "record_approval:2026-09-01-004-wire-task-tier-review-gate:2026-09-01T15:31:18.927Z",
+      "at": "2026-09-01T15:31:18.927Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-8639a7eb\naction_v2_sha256:eaec404b9c58778b1257d8d51354775909fce41e06385f9525ebdc6df3a42f60",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-6239295139054072",
+        "issued_at": "2026-09-01T15:31:18.927Z",
+        "expires_at": "2026-09-01T15:41:18.927Z"
+      }
+    },
+    {
+      "id": "record_approval:2026-09-01-004-wire-task-tier-review-gate:2026-09-01T15:34:14.987Z",
+      "at": "2026-09-01T15:34:14.987Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-230267c8\naction_v2_sha256:035f5676f790dbd083c831a3d1631f63a46eeaf00d32d78d3d245c305af0a72c",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-e7312bf842aaa6ba",
+        "issued_at": "2026-09-01T15:34:14.988Z",
+        "expires_at": "2026-09-01T15:44:14.988Z"
+      }
+    },
+    {
+      "id": "complete:2026-09-01-004-wire-task-tier-review-gate:2026-09-01T15:34:16.365Z",
+      "at": "2026-09-01T15:34:16.365Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:4e897161e72eb3d518abe7d3a498e9b994078c8374169248bbc7d96dc308740b"
+    }
+  ]
+}

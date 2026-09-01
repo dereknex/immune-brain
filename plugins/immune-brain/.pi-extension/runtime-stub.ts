@@ -414,7 +414,10 @@ export async function findingsDigestV2(findings: unknown[]): Promise<string> {
 export async function projectAssurance(
 	root: string,
 	taskId: string,
-	diffProvider: (root: string, record: NonNullable<TaskRecordRead["record"]>) => string,
+	diffProvider: (root: string, record: NonNullable<TaskRecordRead["record"]>) => {
+		diff_hash: string;
+		changed_paths: readonly string[];
+	},
 ): Promise<AssuranceProjectionResult> {
 	const mod = await import(/* @vite-ignore */ kernelPath("assurance_projection"));
 	return mod.projectAssurance(root, taskId, diffProvider) as unknown as AssuranceProjectionResult;

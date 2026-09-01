@@ -10,7 +10,7 @@ import { canonicalIntentHash } from "../plugins/immune-brain/runtime/kernel/inte
 import * as kernelIndex from "../plugins/immune-brain/runtime/kernel/index";
 import { preparePiCanary } from "../plugins/immune-brain/runtime/kernel/pi_canary_prepare";
 import { revisionForContent } from "../plugins/immune-brain/runtime/kernel/storage";
-import { taskDiffHash } from "../plugins/immune-brain/runtime/workspace_scope";
+import { taskDiffIdentity } from "../plugins/immune-brain/runtime/workspace_scope";
 
 const TASK = "canary-projection-task";
 const INTENT = {
@@ -28,8 +28,8 @@ const INTENT = {
 } as const;
 const INTENT_HASH = canonicalIntentHash(INTENT);
 
-function diffOf(root: string): string {
-	return taskDiffHash(root, INTENT.scope_hint);
+function diffOf(root: string) {
+	return taskDiffIdentity(root, INTENT.scope_hint);
 }
 
 function makeEnrolledRoot(): string {
@@ -94,7 +94,7 @@ function gitTreeOf(root: string): string {
 }
 
 function seedAttestation(root: string, kind: "qa" | "review" | "user", overrides: Record<string, unknown> = {}): void {
-	const diff = diffOf(root);
+	const diff = diffOf(root).diff_hash;
 	const head = gitHeadOf(root);
 	mutateRecord(root, (record) => record.attestations.push({
 		id: `attestation-${kind}`,
@@ -287,5 +287,162 @@ describe("kernel assurance projection v3", () => {
 		expect((index as Record<string, unknown>).projectAssurance).toBeUndefined();
 		expect((index as Record<string, unknown>).deriveAssuranceAuthorization).toBeUndefined();
 		expect("projectTask" in kernelIndex).toBe(true);
+	});
+});
+
+describe("dynamic changed-path review gate", () => {
+	const TIER_TASK = "tier-review-gate";
+	const TIER_SCOPE = [
+		`docs/plans/archive/${TIER_TASK}.intent.json`,
+		`docs/plans/${TIER_TASK}.intent.json`,
+		`docs/specs/archive/${TIER_TASK}.spec.md`,
+		"docs/specs/other.spec.md",
+		`docs/specs/${TIER_TASK}.spec.md`,
+		"src/app.ts",
+	];
+	const TIER_INTENT = {
+		contract: "assurance_kernel/task_intent/v1",
+		task_id: TIER_TASK,
+		goal: "tier",
+		acceptance: [{ id: "A1", assertion: "a1", verification: "true" }],
+		scope_hint: TIER_SCOPE,
+		risk: "routine",
+		revision: 1,
+		owner: "user",
+	} as const;
+	const TIER_HASH = canonicalIntentHash(TIER_INTENT);
+
+	function tierDiff(root: string) {
+		return taskDiffIdentity(root, TIER_SCOPE);
+	}
+
+	function enrollTier(): string {
+		const root = mkdtempSync(join(tmpdir(), "tier-review-gate-"));
+		mkdirSync(join(root, "docs", "plans", "archive"), { recursive: true });
+		mkdirSync(join(root, "docs", "specs", "archive"), { recursive: true });
+		mkdirSync(join(root, ".imm/state"), { recursive: true });
+		mkdirSync(join(root, "src"), { recursive: true });
+		execFileSync("git", ["init", "-q"], { cwd: root });
+		writeFileSync(join(root, "src", "app.ts"), "export const value = 1;\n");
+		writeFileSync(join(root, "docs", "specs", `${TIER_TASK}.spec.md`), "# spec\n");
+		writeFileSync(join(root, "docs", "specs", "archive", `${TIER_TASK}.spec.md`), "# spec\n");
+		writeFileSync(join(root, "docs", "specs", "other.spec.md"), "# other\n");
+		writeFileSync(join(root, "docs", "plans", `${TIER_TASK}.intent.json`), `${JSON.stringify(TIER_INTENT, null, 2)}\n`);
+		writeFileSync(join(root, "docs", "plans", "archive", `${TIER_TASK}.intent.json`), `${JSON.stringify(TIER_INTENT, null, 2)}\n`);
+		execFileSync("git", ["add", "-A"], { cwd: root });
+		execFileSync("git", ["commit", "-qm", "intent"], { cwd: root });
+		writeFileSync(join(root, ".imm/state/workspace.json"), `${JSON.stringify({
+			contract: "assurance_kernel/workspace/v1",
+			current_working: null,
+		}, null, 2)}\n`);
+		const registry = createEnrollmentAuthorityRegistry();
+		const preparation = preparePiCanary(root, { task_id: TIER_TASK, now: "2026-08-12T10:00:00.000Z" });
+		const binding: EnrollmentCapabilityBinding = {
+			task_id: TIER_TASK,
+			intent_path: `docs/plans/${TIER_TASK}.intent.json`,
+			intent_revision: 1,
+			intent_content_hash: TIER_HASH,
+			preparation_digest: preparation.digest,
+			actor_id: "user",
+			confirmation_ref: "c",
+			expires_at: "2099-01-01T00:00:00.000Z",
+			nonce: "n",
+		};
+		enrollCanaryTask(root, {
+			task_id: TIER_TASK,
+			intent_path: binding.intent_path,
+			intent_revision: 1,
+			preparation_digest: binding.preparation_digest,
+			capability: registry.issue(binding),
+			capability_binding: binding,
+			now: "2026-08-12T10:00:00.000Z",
+		}, registry);
+		return root;
+	}
+
+	function mutateTier(root: string, mutate: (record: Record<string, any>) => void): void {
+		const path = join(root, `.imm/state/tasks/${TIER_TASK}.json`);
+		const record = JSON.parse(readFileSync(path, "utf8"));
+		mutate(record);
+		writeFileSync(path, `${JSON.stringify(record, null, 2)}\n`);
+	}
+
+	function freezeTier(root: string): void {
+		mutateTier(root, (record) => {
+			record.artifact_state = "frozen";
+			record.intent_ref.path = `docs/plans/archive/${TIER_TASK}.intent.json`;
+		});
+	}
+
+	function seedTierQa(root: string): void {
+		const diff = tierDiff(root).diff_hash;
+		mutateTier(root, (record) => record.attestations.push({
+			id: `attestation-qa-${diff.slice(-8)}`,
+			kind: "qa",
+			authority_role: "qa",
+			task_revision: 1,
+			intent_content_hash: TIER_HASH,
+			diff_hash: diff,
+			actor_id: "qa-host",
+			summary: "qa approved",
+			acceptance_results: [{ acceptance_id: "A1", status: "passed", summary: "A1 passed" }],
+		}));
+	}
+
+	function stage(root: string, relative: string, content: string): void {
+		writeFileSync(join(root, relative), content);
+		execFileSync("git", ["add", "--", relative], { cwd: root });
+	}
+
+	test("routine-path-only work completes after QA without Review", async () => {
+		const root = enrollTier();
+		try {
+			stage(root, "src/app.ts", "export const value = 2;\n");
+			stage(root, `docs/specs/${TIER_TASK}.spec.md`, "# spec updated\n");
+			freezeTier(root);
+			seedTierQa(root);
+			const projection = (await projectAssurance(root, TIER_TASK, tierDiff)).projection;
+			expect(projection.risk).toBe("routine");
+			expect(projection.next_obligation).toBe("complete");
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
+	test("a listed path raises Review even when declared risk is routine", async () => {
+		const root = enrollTier();
+		try {
+			stage(root, "docs/specs/other.spec.md", "# other changed\n");
+			freezeTier(root);
+			seedTierQa(root);
+			const projection = (await projectAssurance(root, TIER_TASK, tierDiff)).projection;
+			expect(projection.risk).toBe("material");
+			expect(projection.next_obligation).toBe("run_review");
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
+	test("mid-lifecycle listed path invalidates QA and raises Review before completion", async () => {
+		const root = enrollTier();
+		try {
+			stage(root, "src/app.ts", "export const value = 2;\n");
+			freezeTier(root);
+			seedTierQa(root);
+			let projection = (await projectAssurance(root, TIER_TASK, tierDiff)).projection;
+			expect(projection.risk).toBe("routine");
+			expect(projection.next_obligation).toBe("complete");
+			stage(root, "docs/specs/other.spec.md", "# other changed\n");
+			projection = (await projectAssurance(root, TIER_TASK, tierDiff)).projection;
+			expect(projection.risk).toBe("material");
+			expect(projection.next_obligation).toBe("run_qa");
+			expect(projection.stale_attestation_ids.length).toBeGreaterThan(0);
+			seedTierQa(root);
+			projection = (await projectAssurance(root, TIER_TASK, tierDiff)).projection;
+			expect(projection.risk).toBe("material");
+			expect(projection.next_obligation).toBe("run_review");
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
 	});
 });

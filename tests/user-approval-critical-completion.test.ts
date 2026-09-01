@@ -162,7 +162,7 @@ describe("critical completion is reachable with qa+review+user approvals", () =>
 				task_id: TASK,
 				operation: { op: "freeze_artifacts", actor_id: "executor-1" },
 				prior_intent_token: token(),
-				diffProvider: () => DIFF,
+				diffProvider: () => ({ diff_hash: DIFF, changed_paths: [] as const }),
 				now: "2026-08-12T10:00:03.000Z",
 			});
 			execFileSync("git", ["add", "-A"], { cwd: root });
@@ -176,7 +176,7 @@ describe("critical completion is reachable with qa+review+user approvals", () =>
 				task_id: TASK,
 				operation: { op: "record_approval", capability: qaCap, approval: qaApproval, actor_id: qaApproval.actor_id },
 				prior_intent_token: token(),
-				diffProvider: () => DIFF,
+				diffProvider: () => ({ diff_hash: DIFF, changed_paths: [] as const }),
 				now: "2026-08-12T10:00:04.000Z",
 			});
 			const reviewCap = capabilityFor(mutationRegistry, root, "review", "record_approval", reviewApproval, "2026-08-12T10:00:05.000Z");
@@ -185,7 +185,7 @@ describe("critical completion is reachable with qa+review+user approvals", () =>
 				task_id: TASK,
 				operation: { op: "record_approval", capability: reviewCap, approval: reviewApproval, actor_id: reviewApproval.actor_id },
 				prior_intent_token: token(),
-				diffProvider: () => DIFF,
+				diffProvider: () => ({ diff_hash: DIFF, changed_paths: [] as const }),
 				now: "2026-08-12T10:00:05.000Z",
 			});
 
@@ -199,7 +199,7 @@ describe("critical completion is reachable with qa+review+user approvals", () =>
 					task_id: TASK,
 					operation: { op: "complete", actor_id: "executor-1" },
 					prior_intent_token: token(),
-					diffProvider: () => DIFF,
+					diffProvider: () => ({ diff_hash: DIFF, changed_paths: [] as const }),
 					now: "2026-08-12T10:00:06.000Z",
 				}),
 			).toThrow(/not eligible/);
@@ -212,7 +212,7 @@ describe("critical completion is reachable with qa+review+user approvals", () =>
 				task_id: TASK,
 				operation: { op: "record_user_approval", capability: userCap, approval: userApproval, actor_id: userApproval.actor_id },
 				prior_intent_token: token(),
-				diffProvider: () => DIFF,
+				diffProvider: () => ({ diff_hash: DIFF, changed_paths: [] as const }),
 				now: "2026-08-12T10:00:07.000Z",
 			});
 
@@ -225,7 +225,7 @@ describe("critical completion is reachable with qa+review+user approvals", () =>
 				task_id: TASK,
 				operation: { op: "complete", actor_id: "executor-1" },
 				prior_intent_token: token(),
-				diffProvider: () => DIFF,
+				diffProvider: () => ({ diff_hash: DIFF, changed_paths: [] as const }),
 				now: "2026-08-12T10:00:08.000Z",
 			});
 			expect(done.record.lifecycle).toBe("done");

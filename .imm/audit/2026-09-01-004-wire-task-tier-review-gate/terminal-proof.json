@@ -1,0 +1,9 @@
+{
+  "contract": "assurance_kernel/task_tombstone/v2",
+  "task_id": "2026-09-01-004-wire-task-tier-review-gate",
+  "lifecycle_status": "terminal",
+  "terminal_lifecycle": "done",
+  "terminal_event_id": "complete:2026-09-01-004-wire-task-tier-review-gate:2026-09-01T15:34:16.365Z",
+  "final_record_hash": "sha256:068adc4815a42ead93233516d2a495822634cc8328b1e8779270dc4c204dae4d",
+  "terminalized_at": "2026-09-01T15:34:16.365Z"
+}

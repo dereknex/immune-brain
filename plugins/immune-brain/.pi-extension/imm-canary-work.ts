@@ -67,7 +67,7 @@ import {
 	type UserAttentionReason,
 } from "./pi-canary-interaction";
 import { isToolFailureState, throwToolFailure } from "./pi-canary-tool-failure";
-import { taskDiffHash, taskRevisionDiffHash, captureGitTaskSnapshot } from "../runtime/workspace_scope";
+import { taskDiffIdentity, taskRevisionIdentity, captureGitTaskSnapshot } from "../runtime/workspace_scope";
 import {
 	AssuranceProgression,
 	buildReviewPrompt,
@@ -918,7 +918,7 @@ export default function (
 						task_id: taskId,
 						operation: { ...exactOperation, capability, actor_id: "literal-user" } as never,
 						prior_intent_token: priorIntent.token,
-						diffProvider: (root: string, record: NonNullable<TaskRecordRead["record"]>) => diffHashOf(root, record),
+						diffProvider: (root: string, record: NonNullable<TaskRecordRead["record"]>) => diffSnapshotOf(root, record),
 						now,
 					})) as unknown as { record: { lifecycle: string; artifact_state: string; intent_ref: { path: string }; intent_snapshot: { scope_hint: string[] } } };
 					if (
@@ -1043,7 +1043,7 @@ export async function recordCancelledUserDecision(
 			actor_id: "literal-user",
 		} as never,
 		prior_intent_token: (await readTaskIntent(ctx.cwd, taskId)).token,
-		diffProvider: (root: string, record: NonNullable<TaskRecordRead["record"]>) => diffHashOf(root, record),
+		diffProvider: (root: string, record: NonNullable<TaskRecordRead["record"]>) => diffSnapshotOf(root, record),
 		now: new Date().toISOString(),
 	});
 	return { recorded: true, finding_id: findingId };
@@ -1078,13 +1078,20 @@ export function userOperationFor(operation: AuthorizeOperation, approval?: unkno
  * from the immutable Enrollment base so committed and staged task work share a
  * single diff_hash with Review; v3 keeps the legacy HEAD -> index digest.
  */
-function diffHashOf(root: string, record: NonNullable<TaskRecordRead["record"]>): string {
+function diffSnapshotOf(root: string, record: NonNullable<TaskRecordRead["record"]>): {
+	diff_hash: string;
+	changed_paths: string[];
+} {
 	if (record.contract === "assurance_kernel/task_record/v4") {
 		if (!record.git_base_head)
 			throw new Error("TaskRecord v4 is missing git_base_head");
-		return taskRevisionDiffHash(root, record.intent_snapshot.scope_hint, record.git_base_head);
+		return taskRevisionIdentity(root, record.intent_snapshot.scope_hint, record.git_base_head);
 	}
-	return taskDiffHash(root, record.intent_snapshot.scope_hint);
+	return taskDiffIdentity(root, record.intent_snapshot.scope_hint);
+}
+
+function diffHashOf(root: string, record: NonNullable<TaskRecordRead["record"]>): string {
+	return diffSnapshotOf(root, record).diff_hash;
 }
 
 // Translation-only adapter for the internal Kernel assurance projection. All
@@ -1093,7 +1100,7 @@ function diffHashOf(root: string, record: NonNullable<TaskRecordRead["record"]>)
 // active-v2 migrator is gone: a v2 TaskRecord in the state layout is a
 // fail-closed projection error, never an automatic migration trigger.
 async function projectAssuranceState(root: string, taskId: string): Promise<AssuranceProjectionResult> {
-	return projectAssurance(root, taskId, diffHashOf);
+	return projectAssurance(root, taskId, diffSnapshotOf);
 }
 
 /**
@@ -1340,7 +1347,7 @@ async function applyAssuranceVerdict(
 				actor_id: actorId,
 			},
 			prior_intent_token: priorIntentToken,
-			diffProvider: (root: string, record: NonNullable<TaskRecordRead["record"]>) => diffHashOf(root, record),
+			diffProvider: (root: string, record: NonNullable<TaskRecordRead["record"]>) => diffSnapshotOf(root, record),
 			now,
 		}))) as unknown as { record: { lifecycle: string; artifact_state: string; intent_ref: { path: string }; intent_snapshot: { scope_hint: string[] }; findings?: Array<{ kind: string; status: string }> } };
 		stagePlanningArtifactTransition(ctx.cwd, result.record);
@@ -1389,7 +1396,7 @@ async function applyAssuranceVerdict(
 		task_id: snapshot.task_id,
 		operation: { op: "record_approval", capability, approval, actor_id: actorId },
 		prior_intent_token: priorIntentToken,
-		diffProvider: (root: string, record: NonNullable<TaskRecordRead["record"]>) => diffHashOf(root, record),
+		diffProvider: (root: string, record: NonNullable<TaskRecordRead["record"]>) => diffSnapshotOf(root, record),
 		now,
 	}));
 }
@@ -1627,7 +1634,7 @@ async function executeOrdinaryOperation(
 			task_id: input.taskId,
 			operation: operation as never,
 			prior_intent_token: priorIntent.token,
-			diffProvider: (root: string, record: NonNullable<TaskRecordRead["record"]>) => diffHashOf(root, record),
+			diffProvider: (root: string, record: NonNullable<TaskRecordRead["record"]>) => diffSnapshotOf(root, record),
 			now: new Date().toISOString(),
 		});
 		if (operation.op === "freeze_artifacts" || operation.op === "stop")

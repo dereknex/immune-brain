@@ -1,3 +1,4 @@
+import { classifyTaskRisk } from "./intent";
 import type {
 	ApprovalKind,
 	CompletionDecision,
@@ -6,13 +7,62 @@ import type {
 	TaskProjectionV3,
 	TaskRecord,
 } from "./types";
-import { assertKernelInvariantsV3 } from "./validation";
+import { assertKernelInvariantsV3, KernelInvariantError } from "./validation";
 
 const REQUIRED_ATTESTATIONS: Record<TaskIntentV1["risk"], ApprovalKind[]> = {
 	routine: ["qa"],
 	material: ["qa", "review"],
 	critical: ["qa", "review", "user"],
 };
+
+function archiveActivePlanningPath(path: string): string | null {
+	const matched = path.match(/^docs\/(plans|specs)\/([^/]+)$/);
+	return matched ? `docs/${matched[1]}/archive/${matched[2]}` : null;
+}
+
+function ownSidecarPaths(intent: TaskIntentV1): Set<string> {
+	const activeIntent = `docs/plans/${intent.task_id}.intent.json`;
+	const archivedIntent = archiveActivePlanningPath(activeIntent);
+	const excluded = new Set<string>([activeIntent]);
+	if (archivedIntent) excluded.add(archivedIntent);
+	const specs = intent.scope_hint.filter((path) => {
+		const archived = archiveActivePlanningPath(path);
+		return archived !== null && /^docs\/specs\/[^/]+\.spec\.md$/.test(path) && intent.scope_hint.includes(archived);
+	});
+	if (specs.length > 1) {
+		throw new KernelInvariantError([
+			`artifact transition requires at most one scope-bound Spec; found ${specs.length}`,
+		]);
+	}
+	const spec = specs[0];
+	if (spec) {
+		excluded.add(spec);
+		const archived = archiveActivePlanningPath(spec);
+		if (archived) excluded.add(archived);
+	}
+	return excluded;
+}
+
+export type TaskDiffInput = string | { diff_hash: string; changed_paths?: readonly string[] };
+
+export function asTaskDiffSnapshot(value: TaskDiffInput): {
+	diff_hash: string;
+	changed_paths?: readonly string[];
+} {
+	if (typeof value === "string") return { diff_hash: value };
+	return { diff_hash: value.diff_hash, changed_paths: value.changed_paths };
+}
+
+export function resolveProjectedRisk(
+	intent: TaskIntentV1,
+	changedPaths: readonly string[] = [],
+): TaskIntentV1["risk"] {
+	const excluded = ownSidecarPaths(intent);
+	return classifyTaskRisk(
+		changedPaths.filter((path) => !excluded.has(path)),
+		intent.risk,
+	);
+}
 
 function hasDistinctAuthorityAssignment(
 	required: ApprovalKind[],
@@ -35,6 +85,7 @@ export function completionDecision(
 	record: TaskRecord,
 	currentDiffHash: string,
 	currentIntentContentHash: string,
+	changedPaths: readonly string[] = [],
 ): CompletionDecision {
 	assertKernelInvariantsV3(intent, record);
 	const freshAttestations = record.attestations.filter(
@@ -63,7 +114,7 @@ export function completionDecision(
 		)
 		.map((item) => item.id);
 
-	const requiredKinds = REQUIRED_ATTESTATIONS[intent.risk];
+	const requiredKinds = REQUIRED_ATTESTATIONS[resolveProjectedRisk(intent, changedPaths)];
 	const candidates = freshAttestations.filter((item) => requiredKinds.includes(item.kind));
 	const missingApprovalKinds = requiredKinds.filter(
 		(kind) => !candidates.some((attestation) => attestation.kind === kind),
@@ -120,8 +171,15 @@ export function projectTask(
 	record: TaskRecord,
 	currentDiffHash: string,
 	currentIntentContentHash: string,
+	changedPaths: readonly string[] = [],
 ): TaskProjectionV3 {
-	const decision = completionDecision(intent, record, currentDiffHash, currentIntentContentHash);
+	const decision = completionDecision(
+		intent,
+		record,
+		currentDiffHash,
+		currentIntentContentHash,
+		changedPaths,
+	);
 	const blocked =
 		decision.blocking_finding_ids.length > 0 ||
 		decision.unresolved_user_decision_ids.length > 0 ||

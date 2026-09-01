@@ -204,6 +204,7 @@ export function reduceTask(
 	recordRaw: TaskRecord,
 	actionRaw: TaskAction,
 	authorityAudit: AuthorityAuditDescriptor | null = null,
+	changedPaths?: readonly string[],
 ): ReducedTaskMutation {
 	const previous = parseTaskRecord(recordRaw);
 	assertKernelInvariantsV3(previous.intent_snapshot, previous);
@@ -537,11 +538,14 @@ export function reduceTask(
 				throw new KernelInvariantError([
 					`cannot complete while state is ${stateOf(record)}`,
 				]);
+			if (!Array.isArray(changedPaths))
+				throw new KernelInvariantError(["complete requires trusted changed paths"]);
 			const decision = completionDecision(
 				record.intent_snapshot,
 				record,
 				diffHash,
 				record.intent_ref.content_hash,
+				changedPaths,
 			);
 			if (!decision.complete)
 				throw new KernelInvariantError([
