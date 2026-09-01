@@ -63,7 +63,7 @@ export function createCapabilityRegistry<TBinding, TExpected, TValidated, TCapab
 					},
 				),
 			) as TCapability;
-			states.set(capability as object, { binding, issued_at: issuedAt, consumed: false });
+			states.set(capability as object, { binding: { ...binding }, issued_at: issuedAt, consumed: false });
 			return capability;
 		},
 		inspect(capability: TCapability, expected: TExpected, now = Date.now()): TValidated {

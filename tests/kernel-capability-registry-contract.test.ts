@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, test } from "bun:test";
+import { createCapabilityRegistry } from "../plugins/immune-brain/runtime/kernel/capability_registry";
 
 const enrollmentSrc = readFileSync("plugins/immune-brain/runtime/kernel/enrollment_authority.ts", "utf8");
 const authorityPortSrc = readFileSync("plugins/immune-brain/runtime/kernel/authority_port.ts", "utf8");
@@ -11,6 +12,21 @@ describe("capability registry contract", () => {
 		expect(exists).toBe(true);
 		expect(enrollmentSrc).toContain("capability_registry");
 		expect(authorityPortSrc).toContain("capability_registry");
+	});
+
+	test("issue snapshots the binding before caller mutation", () => {
+		const brand = Symbol("contract-test-capability");
+		const registry = createCapabilityRegistry<{ value: string }, { value: string }, string>(brand, {
+			validateBinding: () => {},
+			validateAndProject: (state, expected) => {
+				if (state.value !== expected.value) throw new Error("binding changed");
+				return state.value;
+			},
+		}, "contract-test");
+		const binding = { value: "issued" };
+		const capability = registry.issue(binding);
+		binding.value = "mutated";
+		expect(registry.inspect(capability, { value: "issued" })).toBe("issued");
 	});
 
 	test("neither adapter retains its own WeakMap scaffolding", () => {
