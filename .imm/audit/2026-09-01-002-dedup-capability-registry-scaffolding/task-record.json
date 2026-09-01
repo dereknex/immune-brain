@@ -1,0 +1,311 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "2026-09-01-002-dedup-capability-registry-scaffolding",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "2026-09-01-002-dedup-capability-registry-scaffolding",
+    "goal": "Extract the duplicated opaque capability registry scaffolding from enrollment_authority.ts and authority_port.ts into one internal generic capability-registry factory while preserving both public constructor type shapes, domain-specific binding validation, registry-local branding, and single-use behavior, and reducing the combined adapter line count below 331 lines.",
+    "acceptance": [
+      {
+        "id": "acc-1",
+        "assertion": "A shared generic capability-registry factory exists at plugins/immune-brain/runtime/kernel/capability_registry.ts and both createEnrollmentAuthorityRegistry() and createMutationAuthorityRegistry() use it without retaining separate WeakMap-backed registry scaffolding.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/kernel-capability-registry-contract.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 60000,\n  \"max_output_bytes\": 65536\n}\n"
+      },
+      {
+        "id": "acc-2",
+        "assertion": "Enrollment and mutation registry behavior remains unchanged, including issue validation, expiry, complete binding mismatch rejection, opaque and cross-registry recognition, non-consuming inspect, and irreversible single-use consume semantics.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/kernel-enrollment-authority.test.ts\",\n    \"tests/kernel-r2c2-authority.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 131072\n}\n"
+      },
+      {
+        "id": "acc-3",
+        "assertion": "The existing exported constructor and registry type shapes remain compatible with all current Kernel, Pi extension, and test fixture callers, and the shared factory remains internal to runtime/kernel.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/kernel-p2b0-boundary.test.ts\",\n    \"tests/kernel-canary-authority.test.ts\",\n    \"tests/kernel-canary-application.test.ts\",\n    \"tests/kernel-canary-rework-authority.test.ts\",\n    \"tests/kernel-canary-eligibility.test.ts\",\n    \"tests/kernel-enrollment-transaction.test.ts\",\n    \"tests/kernel-canary-terminal-transaction.test.ts\",\n    \"tests/kernel-canary-drain-transaction.test.ts\",\n    \"tests/kernel-canary-claim-writer-boundary.test.ts\",\n    \"tests/kernel-canary-rehearsal.test.ts\",\n    \"tests/pi-canary-work-extension.test.ts\",\n    \"tests/pi-canary-user-authority.test.ts\",\n    \"tests/user-approval-critical-completion.test.ts\",\n    \"tests/breaking-intent-revision-gate.test.ts\",\n    \"tests/pi-canary-lifecycle-package.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 180000,\n  \"max_output_bytes\": 262144\n}\n"
+      },
+      {
+        "id": "acc-4",
+        "assertion": "The combined line count of enrollment_authority.ts and authority_port.ts is less than 332 lines after extraction, while enrollment-specific validation and mutation-specific validation including nullable findings_digest and action digest hashing remain in their respective modules.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/kernel-capability-registry-contract.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 60000,\n  \"max_output_bytes\": 65536\n}\n"
+      }
+    ],
+    "scope_hint": [
+      "docs/specs/archive/dedup-capability-registry-scaffolding.spec.md",
+      "docs/specs/dedup-capability-registry-scaffolding.spec.md",
+      "plugins/immune-brain/runtime/kernel/authority_port.ts",
+      "plugins/immune-brain/runtime/kernel/capability_registry.ts",
+      "plugins/immune-brain/runtime/kernel/enrollment_authority.ts",
+      "tests/kernel-capability-registry-contract.test.ts"
+    ],
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/archive/2026-09-01-002-dedup-capability-registry-scaffolding.intent.json",
+    "content_hash": "sha256:13967fbb0a57afb56d9e94e777c26ca470ebf2ef1779bd15c3213bba8c43df85"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:e1e39f72262149c588c9f41ad45e3fb3831fd5ffda83037b21d47368dcd21d2d",
+  "git_base_head": "2ce54afbc256bc1a0db9f4df58f66aba018ea8db",
+  "attestations": [
+    {
+      "id": "approval-qa-ce1cd966",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:13967fbb0a57afb56d9e94e777c26ca470ebf2ef1779bd15c3213bba8c43df85",
+      "diff_hash": "sha256:6fb20d4556b668cd7072037e4e2f004858662811a6b9b802ce8650358004adbb",
+      "actor_id": "deterministic-qa",
+      "summary": "all 4 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "acc-1",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-2",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-3",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-4",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-14f715ad",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:13967fbb0a57afb56d9e94e777c26ca470ebf2ef1779bd15c3213bba8c43df85",
+      "diff_hash": "sha256:9e3a16fb249b543565d678b46e0b4b2b067bd8562ea03f807ae326469b11e4ad",
+      "actor_id": "deterministic-qa",
+      "summary": "all 4 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "acc-1",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-2",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-3",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-4",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-4d72a41d",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:13967fbb0a57afb56d9e94e777c26ca470ebf2ef1779bd15c3213bba8c43df85",
+      "diff_hash": "sha256:2e8bc42fa8987658a91daa32d5a51f44180db58d93056e24e237a2faba54a562",
+      "actor_id": "deterministic-qa",
+      "summary": "all 4 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "acc-1",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-2",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-3",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-4",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-b3a0fcdf",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:13967fbb0a57afb56d9e94e777c26ca470ebf2ef1779bd15c3213bba8c43df85",
+      "diff_hash": "sha256:2e8bc42fa8987658a91daa32d5a51f44180db58d93056e24e237a2faba54a562",
+      "actor_id": "parent-mediated-review",
+      "summary": "Immutable revision provenance is valid, and the shared registry extraction preserves the required capability lifecycle, adapter APIs, domain validation, and internal module boundary.",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "2ce54afbc256bc1a0db9f4df58f66aba018ea8db",
+        "review_commit": "417024007934c1b743fa49b7ee3c2445f99762a7",
+        "review_tree": "54eade2268270a2f8d00c2499e6011a3610a8cb7",
+        "manifest_digest": "sha256:220d974bbcad1235136aa88be15f82d58c906762580678d66e6442aa53fe62b7"
+      }
+    }
+  ],
+  "findings": [
+    {
+      "id": "review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "acc-2",
+      "source": "execution",
+      "review_round": null,
+      "summary": "plugins/immune-brain/runtime/kernel/capability_registry.ts:66 stores the caller's mutable binding object by reference, whereas both prior registries snapshotted it; mutating task, digest, expiry, or other fields after issue can rebind an existing capability, so store a shallow copy of the validated binding."
+    },
+    {
+      "id": "review-2",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "acc-2",
+      "source": "execution",
+      "review_round": null,
+      "summary": "plugins/immune-brain/runtime/kernel/authority_port.ts:156 binds consume directly to the inner registry, bypassing the adapter's opaque-capability error normalization, so fabricated or cross-registry consume calls expose a different error than before; wrap or normalize consume through the mutation adapter."
+    }
+  ],
+  "history": [
+    {
+      "id": "approve_breaking_intent_revision:2026-09-01-002-dedup-capability-registry-scaffolding:2026-09-01T09:03:48.189Z",
+      "at": "2026-09-01T09:03:48.189Z",
+      "type": "approve_breaking_intent_revision",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "intent_revision_1\naction_v2_sha256:3d79aeb646ee892436348c7a1bcd31eff2433eb29b9c471c16735fdebc35eb90",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-edd15186799c00aa",
+        "issued_at": "2026-09-01T09:03:48.393Z",
+        "expires_at": "2026-09-01T09:13:48.393Z"
+      }
+    },
+    {
+      "id": "freeze_artifacts:2026-09-01-002-dedup-capability-registry-scaffolding:2026-09-01T09:09:13.244Z",
+      "at": "2026-09-01T09:09:13.244Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent and Spec frozen at docs/plans/archive/2026-09-01-002-dedup-capability-registry-scaffolding.intent.json"
+    },
+    {
+      "id": "record_approval:2026-09-01-002-dedup-capability-registry-scaffolding:2026-09-01T09:10:07.026Z",
+      "at": "2026-09-01T09:10:07.026Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-ce1cd966\naction_v2_sha256:f63dc21d57d0be0e8ca76af7681d19aac5947d2053c7a9c73e249266457302b0",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-ceba7edc577df02a",
+        "issued_at": "2026-09-01T09:10:07.027Z",
+        "expires_at": "2026-09-01T09:20:07.027Z"
+      }
+    },
+    {
+      "id": "record_finding:2026-09-01-002-dedup-capability-registry-scaffolding:2026-09-01T09:12:43.123Z",
+      "at": "2026-09-01T09:12:43.123Z",
+      "type": "record_finding",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "review-1\naction_v2_sha256:e1708c5ba491827d35d39794c2cd53f1ab2c3d6f3bb265914b92422691b122d4"
+    },
+    {
+      "id": "resolve_finding:2026-09-01-002-dedup-capability-registry-scaffolding:2026-09-01T09:16:43.750Z",
+      "at": "2026-09-01T09:16:43.750Z",
+      "type": "resolve_finding",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "review-1\naction_v2_sha256:fc992f49f17d9fd1dc5432cb875de4d1fcda3f668ab04e424d2dbe79b8a310eb"
+    },
+    {
+      "id": "record_approval:2026-09-01-002-dedup-capability-registry-scaffolding:2026-09-01T09:17:31.696Z",
+      "at": "2026-09-01T09:17:31.696Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-14f715ad\naction_v2_sha256:f5992dc5fb03aeb6b9a0b741c5ffcf982c01a7b3f85bda9f200bc73998af2ea5",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-1531405bbf756fbb",
+        "issued_at": "2026-09-01T09:17:31.696Z",
+        "expires_at": "2026-09-01T09:27:31.696Z"
+      }
+    },
+    {
+      "id": "record_finding:2026-09-01-002-dedup-capability-registry-scaffolding:2026-09-01T09:21:29.366Z",
+      "at": "2026-09-01T09:21:29.366Z",
+      "type": "record_finding",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "review-2\naction_v2_sha256:b12e128629cdc6aaa348a693af2f3f70215bd1e825c0713a007c0e2dfb9f9eae"
+    },
+    {
+      "id": "resolve_finding:2026-09-01-002-dedup-capability-registry-scaffolding:2026-09-01T09:24:14.739Z",
+      "at": "2026-09-01T09:24:14.739Z",
+      "type": "resolve_finding",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "review-2\naction_v2_sha256:4d57a2e5a074d64a4cf62c1ce6ca130e655aeb511981b41337b0df907777877b"
+    },
+    {
+      "id": "record_approval:2026-09-01-002-dedup-capability-registry-scaffolding:2026-09-01T09:25:03.227Z",
+      "at": "2026-09-01T09:25:03.227Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-4d72a41d\naction_v2_sha256:35f9a5ff757c22a377cc08d3e1246b428e4be050c33533430ebae19a26c1b0d3",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-4003c9ba6c985b6d",
+        "issued_at": "2026-09-01T09:25:03.227Z",
+        "expires_at": "2026-09-01T09:35:03.227Z"
+      }
+    },
+    {
+      "id": "record_approval:2026-09-01-002-dedup-capability-registry-scaffolding:2026-09-01T11:27:53.010Z",
+      "at": "2026-09-01T11:27:53.010Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-b3a0fcdf\naction_v2_sha256:db2ec17edf697a199735beeccb3de600f78e9475b101ca68e63ebd16e7940831",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-d0c025fe6ea30e40",
+        "issued_at": "2026-09-01T11:27:53.010Z",
+        "expires_at": "2026-09-01T11:37:53.010Z"
+      }
+    },
+    {
+      "id": "complete:2026-09-01-002-dedup-capability-registry-scaffolding:2026-09-01T11:27:53.669Z",
+      "at": "2026-09-01T11:27:53.669Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:3c8a626f9b10955392ebbc2b1859feb369e63bcbca2c27013cb3d366a9acda0b"
+    }
+  ]
+}

@@ -1,0 +1,9 @@
+{
+  "contract": "assurance_kernel/task_tombstone/v2",
+  "task_id": "2026-09-01-002-dedup-capability-registry-scaffolding",
+  "lifecycle_status": "terminal",
+  "terminal_lifecycle": "done",
+  "terminal_event_id": "complete:2026-09-01-002-dedup-capability-registry-scaffolding:2026-09-01T11:27:53.669Z",
+  "final_record_hash": "sha256:92522e945c6bf48435045132f67650ac1998cdd187bcac80126917d0b05630c4",
+  "terminalized_at": "2026-09-01T11:27:53.669Z"
+}
