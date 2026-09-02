@@ -60,6 +60,15 @@ shard on failure; on second failure, fall back to solo repair.
 Re-run project checks and PR-related conflict checks. Compare local HEAD
 against PR head expectation before push.
 
+## Code Quality Guard
+
+Apply the same integrity boundary while repairing a blocker. Do not clear CI or
+review feedback by swallowing unexpected errors, fabricating success, or using
+a repair that would weaken tests, invent an unavailable API or dependency,
+change unrelated behavior, or widen the PR beyond the named blocker. Preserve
+the PR's observable intent. If the correct repair needs new scope or a product
+decision, stop and report it to the Parent.
+
 ## Boundary
 
 Work only inside the supplied Plan, `plan_id`, changed-file boundary, review

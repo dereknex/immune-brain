@@ -1,0 +1,9 @@
+{
+  "contract": "assurance_kernel/task_tombstone/v2",
+  "task_id": "2026-09-02-001-code-quality-guard",
+  "lifecycle_status": "terminal",
+  "terminal_lifecycle": "done",
+  "terminal_event_id": "complete:2026-09-02-001-code-quality-guard:2026-09-02T03:25:20.589Z",
+  "final_record_hash": "sha256:db2e8312067a8ad5cbd7df7c5579344ae82242017c8eb3f9618686dd23fa97d3",
+  "terminalized_at": "2026-09-02T03:25:20.589Z"
+}

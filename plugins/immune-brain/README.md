@@ -11,7 +11,9 @@ entry and `imm-doc-prune` is the standalone host-native document maintenance
 entry; Loop's repair role remains internal.
 Shared rules live in [`BASELINE.md`](BASELINE.md); current workflow behavior
 lives in the focused modules under [`runtime/`](runtime/), while `imm_core.ts`
-is the public API barrel.
+is the public API barrel. The Code Quality Guard reference documents
+correctness invariants and evidence-based Review boundaries for implementation
+and repair roles; it is not a QA or style-only gate.
 
 ## Public Skill surface
 

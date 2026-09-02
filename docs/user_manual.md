@@ -14,7 +14,9 @@ Immune-Brain 是一套 Skill-explicit Managed 的 Pi 工作流，并提供两个
 
 Executor、QA、Review、learning 和 architecture exploration 都是
 `imm-loop` 使用的内部 runtime roles/tools。Loop 内部 `pr-fix` role 与独立
-`imm-pr-fix` Skill 共享诊断语义，但 authority boundary 不同。
+`imm-pr-fix` Skill 共享诊断语义，但 authority boundary 不同。Executor、Review、
+PR repair 和 test repair 同时遵守 Code Quality Guard 的正确性约束；QA 只判断
+记录的 acceptance evidence，不执行风格门禁。
 
 ## 路由模型
 

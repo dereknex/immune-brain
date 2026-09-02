@@ -1,0 +1,255 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "2026-09-02-001-code-quality-guard",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "2026-09-02-001-code-quality-guard",
+    "goal": "Publish one Immune-Brain-native Code Quality Guard contract that distinguishes blocking LLM correctness failures from contextual maintainability heuristics, applies concise integrity rules to internal Executor, code-review, PR-repair, and test-repair prompts plus standalone imm-pr-fix, preserves QA and Kernel authority boundaries, keeps source and packaged mirrors deterministic, and synchronizes current README and user documentation without adding hard style thresholds, a new role, runtime injection, schema changes, dependencies, or model-dependent gates.",
+    "acceptance": [
+      {
+        "id": "acc-quality-contract",
+        "assertion": "The canonical Code Quality Guard defines correctness invariants, contextual maintainability heuristics, and evidence-based Review decisions; applicable internal roles and standalone imm-pr-fix enforce their bounded portions, QA and unrelated roles remain excluded, style-only concerns cannot force rework, and current README/user guidance describes the shipped contract consistently.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/code-quality-guard-contract.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 30000,\n  \"max_output_bytes\": 65536\n}\n"
+      },
+      {
+        "id": "acc-role-dispatch",
+        "assertion": "The actual packaged prompts delivered through Loop carry the role-specific guard instructions while internal role authority, tool policies, foreground dispatch, packaged-byte identity, and stable Review Gate identifiers remain unchanged.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/role-prompt-bridge.test.ts\",\n    \"tests/loop-execution-routing.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 60000,\n  \"max_output_bytes\": 131072\n}\n"
+      },
+      {
+        "id": "acc-reference-packaging",
+        "assertion": "The Code Quality Guard reference is declared by the dist sync manifest and its packaged copy is byte-identical to the canonical docs source without introducing an undeclared packaged contract.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/dist-docs-sync-contract.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 30000,\n  \"max_output_bytes\": 65536\n}\n"
+      },
+      {
+        "id": "acc-generated-sync",
+        "assertion": "Canonical references, packaged references, internal role prompts, packaged role prompts, owned packaged contracts, and generated README bytes have no source/package drift after regeneration.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"scripts/sync-dist-docs.ts\",\n    \"--check\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 30000,\n  \"max_output_bytes\": 65536\n}\n"
+      }
+    ],
+    "scope_hint": [
+      "docs/reference/code-quality-guard.md",
+      "docs/reference/immune-brain-skills-guide.md",
+      "docs/specs/archive/code-quality-guard.spec.md",
+      "docs/specs/code-quality-guard.spec.md",
+      "docs/user_manual.md",
+      "plugins/immune-brain/README.md",
+      "plugins/immune-brain/USER_GUIDE.md",
+      "plugins/immune-brain/dist/docs/reference/code-quality-guard.md",
+      "plugins/immune-brain/dist/imm-pr-fix.md",
+      "plugins/immune-brain/dist/role-prompts/code-review.md",
+      "plugins/immune-brain/dist/role-prompts/executor.md",
+      "plugins/immune-brain/dist/role-prompts/pr-fix.md",
+      "plugins/immune-brain/dist/role-prompts/test-fixer.md",
+      "plugins/immune-brain/runtime/prompts/code-review.md",
+      "plugins/immune-brain/runtime/prompts/executor.md",
+      "plugins/immune-brain/runtime/prompts/pr-fix.md",
+      "plugins/immune-brain/runtime/prompts/test-fixer.md",
+      "scripts/dist-sync-manifest.ts",
+      "tests/code-quality-guard-contract.test.ts",
+      "tests/dist-docs-sync-contract.test.ts",
+      "tests/loop-execution-routing.test.ts",
+      "tests/role-prompt-bridge.test.ts"
+    ],
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/archive/2026-09-02-001-code-quality-guard.intent.json",
+    "content_hash": "sha256:9fef364051d118d1eecb7f019fe938a98d7c0c6314e95358a53f29f210c4d502"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:9fef364051d118d1eecb7f019fe938a98d7c0c6314e95358a53f29f210c4d502",
+  "git_base_head": "e1fd4424eadc818ff9c04f103512691d688043b6",
+  "attestations": [
+    {
+      "id": "approval-qa-4e231f2a",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:9fef364051d118d1eecb7f019fe938a98d7c0c6314e95358a53f29f210c4d502",
+      "diff_hash": "sha256:cdd6e5547761f3fdb4606ffcece7db30d3b48edd94e07d7e6754293fe886ead4",
+      "actor_id": "deterministic-qa",
+      "summary": "all 4 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "acc-quality-contract",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-role-dispatch",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-reference-packaging",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-generated-sync",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-09a7ffff",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:9fef364051d118d1eecb7f019fe938a98d7c0c6314e95358a53f29f210c4d502",
+      "diff_hash": "sha256:b0adf73c469d8da981a99c6b000372e01e56bb16a7f75857991d3ef44e70aec5",
+      "actor_id": "deterministic-qa",
+      "summary": "all 4 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "acc-quality-contract",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-role-dispatch",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-reference-packaging",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-generated-sync",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-f1b7af73",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:9fef364051d118d1eecb7f019fe938a98d7c0c6314e95358a53f29f210c4d502",
+      "diff_hash": "sha256:b0adf73c469d8da981a99c6b000372e01e56bb16a7f75857991d3ef44e70aec5",
+      "actor_id": "parent-mediated-review",
+      "summary": "Immutable revision identity and manifest digest verify, and the scoped changes consistently implement and package the Code Quality Guard without correctness, security, regression, or material maintenance defects.",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "e1fd4424eadc818ff9c04f103512691d688043b6",
+        "review_commit": "2caedc472b6910a581ba732725b3a1ed6913178c",
+        "review_tree": "4bef6431f17c319f2d7cba461e913e1db70ef1d3",
+        "manifest_digest": "sha256:9b68727f989ff6dd77dff32773478034f783705d89f55d97d21dcf830a6735f2"
+      }
+    }
+  ],
+  "findings": [
+    {
+      "id": "review-e6af6fdfa9c0-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "acc-quality-contract",
+      "source": "review",
+      "review_round": 1,
+      "summary": "plugins/immune-brain/dist/imm-pr-fix.md:60 points the loaded packaged contract at `dist/docs/reference/code-quality-guard.md`, but from `dist/imm-pr-fix.md` the packaged-relative reference is `docs/reference/code-quality-guard.md`; use that path and explicitly load it so standalone imm-pr-fix can consume the shipped guard outside the source repository."
+    }
+  ],
+  "history": [
+    {
+      "id": "freeze_artifacts:2026-09-02-001-code-quality-guard:2026-09-02T03:12:48.578Z",
+      "at": "2026-09-02T03:12:48.578Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent and Spec frozen at docs/plans/archive/2026-09-02-001-code-quality-guard.intent.json"
+    },
+    {
+      "id": "record_approval:2026-09-02-001-code-quality-guard:2026-09-02T03:13:51.154Z",
+      "at": "2026-09-02T03:13:51.154Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-4e231f2a\naction_v2_sha256:958dd301602ce3264be4227595ce8648c0fa56d1468b663918b6071ffc440dfa",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-96f29ec0d6ea9fed",
+        "issued_at": "2026-09-02T03:13:51.154Z",
+        "expires_at": "2026-09-02T03:23:51.154Z"
+      }
+    },
+    {
+      "id": "request_rework:2026-09-02-001-code-quality-guard:2026-09-02T03:18:43.864Z",
+      "at": "2026-09-02T03:18:43.864Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_1\naction_v2_sha256:545831a897df9ecbff1909c5fce452a3b94eb75af6d6b12fe65f67b2fef60dde",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-b3bcfd3655ab4e2b",
+        "issued_at": "2026-09-02T03:18:43.864Z",
+        "expires_at": "2026-09-02T03:28:43.864Z"
+      }
+    },
+    {
+      "id": "resolve_finding:2026-09-02-001-code-quality-guard:2026-09-02T03:20:11.395Z",
+      "at": "2026-09-02T03:20:11.395Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-e6af6fdfa9c0-1-review-1\naction_v2_sha256:2e85ab51d5cda739e722245a87e2e098633bf4943a947a6ba9ed71dcc847f57a"
+    },
+    {
+      "id": "freeze_artifacts:2026-09-02-001-code-quality-guard:2026-09-02T03:20:29.571Z",
+      "at": "2026-09-02T03:20:29.571Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent and Spec frozen at docs/plans/archive/2026-09-02-001-code-quality-guard.intent.json"
+    },
+    {
+      "id": "record_approval:2026-09-02-001-code-quality-guard:2026-09-02T03:20:50.050Z",
+      "at": "2026-09-02T03:20:50.050Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-09a7ffff\naction_v2_sha256:b34c3a88e52a877622a83834858ce302cdcb4cbaed8b0c7dee34e36dc23edb83",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-0525e5a2aa1b183e",
+        "issued_at": "2026-09-02T03:20:50.050Z",
+        "expires_at": "2026-09-02T03:30:50.050Z"
+      }
+    },
+    {
+      "id": "record_approval:2026-09-02-001-code-quality-guard:2026-09-02T03:25:19.152Z",
+      "at": "2026-09-02T03:25:19.152Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-f1b7af73\naction_v2_sha256:45d4028d20834efb847b1a553cd57bc800ffb6715d73974d91e26bddfa9f03e0",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-4a1c373b2c63748a",
+        "issued_at": "2026-09-02T03:25:19.152Z",
+        "expires_at": "2026-09-02T03:35:19.152Z"
+      }
+    },
+    {
+      "id": "complete:2026-09-02-001-code-quality-guard:2026-09-02T03:25:20.589Z",
+      "at": "2026-09-02T03:25:20.589Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:954d2148d30eb659857f0716fe4db75cc19af202f27aaa73e8f818c6f13329fd"
+    }
+  ]
+}

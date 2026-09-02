@@ -60,9 +60,12 @@ Loop 是唯一的执行协调 public Skill。它通过 `buildLoopAction` 和
 - `arch-explorer` / `advisory-reviewer`：只读探索、lens evidence 和 decision criteria。
 - `compounder`：任务 closure、assurance 和 required reviews 完成后才捕获 reusable Learning。
 
-所有 role prompt 的 canonical bytes 位于 `plugins/immune-brain/runtime/prompts/`，
+这些 role prompt 的 canonical bytes 位于 `plugins/immune-brain/runtime/prompts/`，
 packaged bytes 位于 `plugins/immune-brain/dist/role-prompts/`。Role bridge 直接读取
 这些内部 prompt，不扫描 `skills/`，因此 public Skill registry 不会重新暴露内部 role。
+Code Quality Guard 的详细维护者规范位于
+`docs/reference/code-quality-guard.md`，并同步到 packaged `dist/docs/reference/`；
+它约束 Executor、Review 和 repair 的正确性判断，不改变 QA authority，也不把风格偏好变成自动 rework。
 
 ## Project integration
 

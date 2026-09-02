@@ -55,6 +55,15 @@ uncertain. Never delegate push, merge, approval, or scope decisions.
 When a blocker requires a product decision or work outside the PR's intended
 scope, stop and report the exact decision or scope expansion needed.
 
+## Code Quality Guard
+
+Apply the packaged Code Quality Guard reference at
+`docs/reference/code-quality-guard.md` when repairing implementation
+blockers. Do not make a PR appear healthy by swallowing unexpected errors,
+fabricating success, weakening tests, inventing APIs or dependencies, changing
+unrelated behavior, or widening the blocker scope. Style-only preferences are
+not repair blockers.
+
 ### 4. Verify and close out
 
 Run the smallest checks that reproduce each blocker, then any repository check
