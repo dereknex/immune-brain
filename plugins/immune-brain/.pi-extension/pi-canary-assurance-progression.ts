@@ -130,7 +130,7 @@ export type AssuranceAdvanceResult =
 	 */
 	| { state: "review_preparation_failed"; operation: "review"; operation_id: string; reason: string }
 	| { state: "settlement_unknown"; operation: "qa" | "review"; operation_id: string; reason: string }
-	| { state: "blocked"; reason: string }
+	| { state: "blocked"; reason: string; code?: "verdict_invalid" }
 	| { state: "completed" }
 	| { state: "stopped" };
 
@@ -140,7 +140,7 @@ export type AssuranceSubmitReviewResult =
 	| { state: "review_preparation_failed"; operation: "review"; operation_id: string; reason: string }
 	| { state: "completed" }
 	| { state: "settlement_unknown"; operation: "qa" | "review"; operation_id: string; reason: string }
-	| { state: "blocked"; reason: string };
+	| { state: "blocked"; reason: string; code?: "verdict_invalid" };
 
 export type ActiveAssuranceState =
 	| { state: "running"; operation: "qa"; operation_id: string; deadline_seconds: number }
@@ -298,6 +298,7 @@ export function buildReviewPrompt(snapshot: SnapshotDescriptor, evidencePath?: s
 		"Reserve the final turn for exactly one strict JSON verdict. Reply with ONLY that object, without markdown fences or commentary.",
 		`PASS shape: {"contract":"assurance_kernel/assurance_verdict/v2","role":"review","task_id":"${snapshot.task_id}","snapshot_digest":"${digest}","decision":"pass","approval":{"kind":"review","authority_role":"reviewer","summary":"<one line>"}}`,
 		`REWORK shape: {"contract":"assurance_kernel/assurance_verdict/v2","role":"review","task_id":"${snapshot.task_id}","snapshot_digest":"${digest}","decision":"rework","findings":[{"id":"review-1","kind":"blocking|advisory","acceptance_id":"<id|null>","summary":"<one line>"}]}`,
+		`REWORK verdicts must omit the approval field entirely; do not emit "approval": null.`,
 	].join("\n");
 }
 
@@ -330,7 +331,8 @@ export function parseAssuranceVerdict(input: unknown, snapshot: SnapshotDescript
 		if (raw.findings !== undefined) throw new Error("pass verdict must omit findings");
 		return { contract: "assurance_kernel/assurance_verdict/v2", role: snapshot.role, task_id: snapshot.task_id, snapshot_digest: snapshotDigest(snapshot), decision: "pass", approval: { kind: expectedKind, authority_role: expectedRole, summary: approval.summary } };
 	}
-	if (!Array.isArray(raw.findings) || raw.findings.length === 0 || raw.approval !== undefined) throw new Error("rework verdict findings are invalid");
+	if (!Array.isArray(raw.findings) || raw.findings.length === 0) throw new Error("rework verdict findings are invalid");
+	if (raw.approval !== undefined && raw.approval !== null) throw new Error("rework verdict must omit approval");
 	const findings = raw.findings.map((item, index) => {
 		const finding = item as Record<string, unknown>;
 		const unknownFinding = Object.keys(finding).find((key) => !["id", "kind", "acceptance_id", "summary"].includes(key));
@@ -348,6 +350,7 @@ interface ReviewReservation {
 	operationId: string;
 	snapshot: SnapshotDescriptor;
 	params: ReservedAgentParams;
+	verdictCorrectionRequired: boolean;
 	evidence: { path: string; remove(): void };
 }
 
@@ -635,6 +638,7 @@ export class AssuranceProgression {
 				operationId,
 				snapshot: review.snapshot,
 				params: { subagent_type: "Review", description: "", prompt: "", name: "", model: "", thinking: "", inherit_context: false, isolated: true, isolation: "worktree", run_in_background: false, max_turns: 0, resume: "", schedule: "" },
+				verdictCorrectionRequired: false,
 				evidence,
 			};
 			this.reviewReservations.set(taskId, reservation);
@@ -701,7 +705,8 @@ export class AssuranceProgression {
 		let verdict: AssuranceVerdict;
 		try { verdict = parseAssuranceVerdict(verdictInput, reservation.snapshot); }
 		catch (error) {
-			return { state: "blocked", reason: boundedAssuranceError(error) };
+			reservation.verdictCorrectionRequired = true;
+			return { state: "blocked", code: "verdict_invalid", reason: boundedAssuranceError(error) };
 		}
 		const invocation = this.openInvocation(taskId);
 		this.releaseReviewReservation(taskId, reservation);
@@ -753,6 +758,7 @@ export class AssuranceProgression {
 	private reviewReadyResult(taskId: string): AssuranceAdvanceResult {
 		const reservation = this.reviewReservations.get(taskId);
 		if (!reservation) return { state: "blocked", reason: "Review reservation disappeared" };
+		if (reservation.verdictCorrectionRequired) return { state: "blocked", code: "verdict_invalid", reason: "Review verdict correction is required before advancing" };
 		return { state: "review_ready", operation: "review", operation_id: reservation.operationId, snapshot_digest: snapshotDigest(reservation.snapshot), review_bundle_digest: reservation.snapshot.review_bundle_digest ?? "", agent_params: reservation.params };
 	}
 

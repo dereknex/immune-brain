@@ -88,6 +88,7 @@ describe("canary assurance authority", () => {
 		expect(prompt).toContain("base_oid");
 		expect(prompt).toContain("Do not inspect or depend on live task bytes outside the immutable bundle");
 		expect(prompt).toContain('"authority_role":"reviewer"');
+		expect(prompt).toContain('do not emit "approval": null');
 		expect(() => buildReviewPrompt(snapshot({ role: "qa" }))).toThrow(/review role/i);
 	});
 
@@ -106,6 +107,9 @@ describe("canary assurance authority", () => {
 		const first = parseAssuranceVerdict(rework, s);
 		expect(first.findings?.[0].id).toBe(`review-${snapshotDigest(s).slice(7, 19)}-1-r-1`);
 		expect(first.findings?.[0].findings_digest).toMatch(/^sha256:/);
+		const reworkObject = JSON.parse(rework);
+		expect(parseAssuranceVerdict({ ...reworkObject, approval: null }, s).decision).toBe("rework");
+		expect(() => parseAssuranceVerdict({ ...reworkObject, approval: { kind: "review" } }, s)).toThrow("rework verdict must omit approval");
 		const nextSnapshot = snapshot({ record_revision: "sha256:" + "f".repeat(64) });
 		const nextRework = rework.replaceAll(snapshotDigest(s), snapshotDigest(nextSnapshot));
 		expect(parseAssuranceVerdict(nextRework, nextSnapshot).findings?.[0].id).not.toBe(first.findings?.[0].id);

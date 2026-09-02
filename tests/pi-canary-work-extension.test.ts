@@ -774,6 +774,10 @@ async function capturedToolFailure(promise: Promise<unknown>): Promise<Record<st
 		expect(parsed.task_state).toMatchObject({ lifecycle: "active", artifact_state: "frozen", record_revision: expect.any(String) });
 		expect(parsed.agent_params.run_in_background).toBe(false);
 		expect(updates.some((item) => JSON.stringify(item).includes("verifying"))).toBe(true);
+		const invalid = await capturedToolFailure(tool.execute("submit-invalid", { task_id: TASK, action: { op: "submit_review", verdict: { decision: "pass" } } }, undefined, undefined, makeCtx(root, makeUI())));
+		expect(invalid).toMatchObject({ code: "verdict_invalid", next_action: "fix the verdict payload and resubmit submit_review; the Review reservation remains active; do not re-dispatch the reviewer" });
+		const repeatedAdvance = await capturedToolFailure(tool.execute("advance-again", { task_id: TASK, action: { op: "advance_assurance" } }, undefined, undefined, makeCtx(root, makeUI())));
+		expect(repeatedAdvance).toMatchObject({ code: "verdict_invalid", next_action: "fix the verdict payload and resubmit submit_review; the Review reservation remains active; do not re-dispatch the reviewer" });
 	} finally { rmSync(root, { recursive: true, force: true }); }
 	});
 

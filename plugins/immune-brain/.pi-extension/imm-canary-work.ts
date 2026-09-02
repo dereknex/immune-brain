@@ -1703,6 +1703,7 @@ async function enrichAssuranceResult(
 function nextActionForAssuranceResult(result: Record<string, unknown>, taskState: AssuranceTaskState): string {
 	if ("error" in taskState) return "inspect authority state";
 	if (result.state === "review_preparation_failed") return "retry advance_assurance";
+	if (result.code === "verdict_invalid") return "fix the verdict payload and resubmit submit_review; the Review reservation remains active; do not re-dispatch the reviewer";
 	if (taskState.lifecycle === "done" || taskState.lifecycle === "stopped") return "none";
 	switch (result.state) {
 		case "review_ready": return "invoke the foreground reviewer and submit its verdict";
@@ -1810,7 +1811,7 @@ function throwIfCanaryToolFailure(
 		taskId,
 		operation,
 		result.state,
-		`assurance_${result.state}`,
+		typeof result.code === "string" ? result.code : `assurance_${result.state}`,
 		typeof result.reason === "string"
 			? result.reason
 			: typeof result.result === "string"

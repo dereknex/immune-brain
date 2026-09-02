@@ -291,9 +291,13 @@ describe("foreground assurance progression", () => {
 	test("malformed Parent verdict is retryable without a Review authority write", async () => {
 		const h = makeHarness();
 		expect((await h.progression.advance(TASK, ctx)).state).toBe("review_ready");
-		expect(await h.progression.submitReview(TASK, ctx, { decision: "pass" })).toMatchObject({ state: "blocked" });
+		const invalid = await h.progression.submitReview(TASK, ctx, { decision: "pass" });
+		expect(invalid).toMatchObject({ state: "blocked", code: "verdict_invalid" });
 		expect(h.counts().applyCount).toBe(1);
 		expect(h.progression.active(TASK)?.state).toBe("review_ready");
+		const repeatedAdvance = await h.progression.advance(TASK, ctx);
+		expect(repeatedAdvance).toMatchObject({ state: "blocked", code: "verdict_invalid" });
+		expect(repeatedAdvance).not.toHaveProperty("agent_params");
 		expect(await h.progression.submitReview(TASK, ctx, passVerdict(snapshot("review")))).toEqual({ state: "completed" });
 	});
 	test("discards a stale Review reservation when Kernel no longer requires Review", async () => {
