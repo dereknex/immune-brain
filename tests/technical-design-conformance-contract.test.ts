@@ -93,6 +93,19 @@ describe("risk-tiered Technical Design conformance contract", () => {
     }
   })
 
+  it("treats one primary trust-boundary invariant as a Planner default with an atomic-outcome exception", () => {
+    for (const text of [SKILL, PLANNER, QUALITY_GATE]) {
+      expectAll(text, [
+        "one primary trust-boundary invariant",
+        "traversing several boundaries",
+        "one atomic security outcome",
+        "unsafe or unusable intermediate state",
+        "Planner judgment",
+        "Enrollment counting rule",
+      ])
+    }
+  })
+
   it("requires view-specific decision content in the packaged Planner contract", () => {
     expectAll(PLANNER, [
       "required decision content",

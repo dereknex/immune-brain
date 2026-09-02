@@ -46,6 +46,8 @@ For Medium and High Design Risk, select every materially relevant technical-desi
 
 Use the selected design boundaries as one TaskIntent decomposition dimension alongside outcome, Verification, dependency, risk, rollback, compatibility, and authority. Keep one TaskIntent when the selected views describe one coherent executable slice with shared acceptance, risk treatment, rollback, and authority. Split a successor TaskIntent only when a service, state-machine owner, migration, independently promotable layer, or sequence dependency needs independent verification, rollback, authorization, or settlement. Do not split merely because the design names several layers, files, or services.
 
+Treat trust-boundary changes as the same kind of decomposition evidence. A TaskIntent should normally change one primary trust-boundary invariant; merely traversing several boundaries or updating both sides of one end-to-end authority chain does not require a split. Split separate trust invariants when they can be independently verified, rolled back, authorized, migrated, or settled. Keep multiple trust-boundary changes together only when they form one atomic security outcome and splitting would create an unsafe or unusable intermediate state; record that reason in the Spec. This is Planner judgment, not a TaskIntent schema field or an Enrollment counting rule.
+
 ## Reference Closure Preflight
 
 Before authoring a TaskIntent, trace each expected behavior from its public or
