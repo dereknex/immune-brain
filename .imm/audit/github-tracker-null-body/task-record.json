@@ -1,0 +1,134 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "github-tracker-null-body",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "github-tracker-null-body",
+    "goal": "Allow the GitHub tracker to process repositories containing legitimate bodyless Issues by normalizing API body:null to an empty internal string while preserving strict rejection of other malformed body values and existing pre-mutation safety.",
+    "acceptance": [
+      {
+        "id": "GTNB-1",
+        "assertion": "A pre-existing GitHub Issue with body:null no longer makes the repository snapshot malformed, so Initiative creation reaches the existing mutation and convergence path; missing or non-string/non-null body values still fail before mutation.",
+        "verification": "{\"contract\":\"assurance_kernel/verification_descriptor/v1\",\"runner_id\":\"bun\",\"runner_version\":\"1.3.14\",\"argv\":[\"test\",\"tests/plugin-package-runtime.test.ts\"],\"cwd\":\".\",\"timeout_ms\":120000,\"max_output_bytes\":20000}"
+      }
+    ],
+    "scope_hint": [
+      "docs/specs/archive/github-tracker-null-body.spec.md",
+      "docs/specs/github-tracker-null-body.spec.md",
+      "plugins/immune-brain/runtime/github_issue_tracker.ts",
+      "tests/plugin-package-runtime.test.ts"
+    ],
+    "risk": "material",
+    "revision": 2,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/archive/github-tracker-null-body.intent.json",
+    "content_hash": "sha256:e36e00b8f0b0a133e61521b996d1e2b94d4c62230b307e14884b7511010fc02b"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:4cf75facf1e56d56abbaf0a789119956962cf747f2ca2898f49e5c10eeda5d71",
+  "git_base_head": "dea3801a2b0e483e064c7af4427afd9897852516",
+  "attestations": [
+    {
+      "id": "approval-qa-cc1eb49e",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:e36e00b8f0b0a133e61521b996d1e2b94d4c62230b307e14884b7511010fc02b",
+      "diff_hash": "sha256:73bc502eee83e16f7465463a6a3cd266b828b590fbb5de1229e94dbd7b14234b",
+      "actor_id": "deterministic-qa",
+      "summary": "all 1 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "GTNB-1",
+          "status": "passed",
+          "summary": "host-attested QA: all 1 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-9efe5439",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:e36e00b8f0b0a133e61521b996d1e2b94d4c62230b307e14884b7511010fc02b",
+      "diff_hash": "sha256:73bc502eee83e16f7465463a6a3cd266b828b590fbb5de1229e94dbd7b14234b",
+      "actor_id": "parent-mediated-review",
+      "summary": "Immutable revision provenance is valid, and the parser narrowly normalizes null Issue bodies while preserving fail-closed validation for missing and other malformed values.",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "dea3801a2b0e483e064c7af4427afd9897852516",
+        "review_commit": "bb49146684791ae6093c736068bbe7f03ada89d2",
+        "review_tree": "907585a65498002a71904e33ea3f58bf44410251",
+        "manifest_digest": "sha256:7bea141f191c3c5f3d1b79ca5fccce271a444ced06837c35d5f3069c989a1a56"
+      }
+    }
+  ],
+  "findings": [],
+  "history": [
+    {
+      "id": "approve_breaking_intent_revision:github-tracker-null-body:2026-09-03T07:49:59.229Z",
+      "at": "2026-09-03T07:49:59.229Z",
+      "type": "approve_breaking_intent_revision",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "intent_revision_2\naction_v2_sha256:f7641e447ad250a66dcd9c7877899ec38fbe15d7ea70c68e7438b33b22324590",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-be8d74985677c236",
+        "issued_at": "2026-09-03T07:49:59.425Z",
+        "expires_at": "2026-09-03T07:59:59.425Z"
+      }
+    },
+    {
+      "id": "freeze_artifacts:github-tracker-null-body:2026-09-03T07:50:09.233Z",
+      "at": "2026-09-03T07:50:09.233Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent and Spec frozen at docs/plans/archive/github-tracker-null-body.intent.json"
+    },
+    {
+      "id": "record_approval:github-tracker-null-body:2026-09-03T07:50:13.354Z",
+      "at": "2026-09-03T07:50:13.354Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-cc1eb49e\naction_v2_sha256:1de42d8b84bfda4ae3d6aff1f8045e44bf94baf2505cfb6b8c7da7848128a50c",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-5ff1948e07960132",
+        "issued_at": "2026-09-03T07:50:13.354Z",
+        "expires_at": "2026-09-03T08:00:13.354Z"
+      }
+    },
+    {
+      "id": "record_approval:github-tracker-null-body:2026-09-03T07:51:55.595Z",
+      "at": "2026-09-03T07:51:55.595Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-9efe5439\naction_v2_sha256:b7867169ce3a507bfce8dccb5e96af28c64a5faab6946dff316a50d02f6b5567",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-34f1f76fd305dd8a",
+        "issued_at": "2026-09-03T07:51:55.596Z",
+        "expires_at": "2026-09-03T08:01:55.596Z"
+      }
+    },
+    {
+      "id": "complete:github-tracker-null-body:2026-09-03T07:51:56.102Z",
+      "at": "2026-09-03T07:51:56.102Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:67655b17570772fc051f05ad80ff1bdf91a04c9803089e3e5914d3bd93d957ab"
+    }
+  ]
+}

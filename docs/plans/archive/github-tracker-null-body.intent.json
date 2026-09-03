@@ -1,0 +1,21 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "github-tracker-null-body",
+  "goal": "Allow the GitHub tracker to process repositories containing legitimate bodyless Issues by normalizing API body:null to an empty internal string while preserving strict rejection of other malformed body values and existing pre-mutation safety.",
+  "acceptance": [
+    {
+      "id": "GTNB-1",
+      "assertion": "A pre-existing GitHub Issue with body:null no longer makes the repository snapshot malformed, so Initiative creation reaches the existing mutation and convergence path; missing or non-string/non-null body values still fail before mutation.",
+      "verification": "{\"contract\":\"assurance_kernel/verification_descriptor/v1\",\"runner_id\":\"bun\",\"runner_version\":\"1.3.14\",\"argv\":[\"test\",\"tests/plugin-package-runtime.test.ts\"],\"cwd\":\".\",\"timeout_ms\":120000,\"max_output_bytes\":20000}"
+    }
+  ],
+  "scope_hint": [
+    "docs/specs/archive/github-tracker-null-body.spec.md",
+    "docs/specs/github-tracker-null-body.spec.md",
+    "plugins/immune-brain/runtime/github_issue_tracker.ts",
+    "tests/plugin-package-runtime.test.ts"
+  ],
+  "risk": "material",
+  "revision": 2,
+  "owner": "user"
+}

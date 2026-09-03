@@ -313,7 +313,7 @@ function parseIssues(raw: string): GithubIssue[] {
 				|| !Number.isSafeInteger(item.number)
 				|| typeof item.html_url !== "string"
 				|| typeof item.title !== "string"
-				|| typeof item.body !== "string"
+				|| (typeof item.body !== "string" && item.body !== null)
 				|| (item.state !== "open" && item.state !== "closed")
 			) throw new Error("gh returned a malformed Issue");
 			return {
@@ -321,7 +321,7 @@ function parseIssues(raw: string): GithubIssue[] {
 				number: item.number as number,
 				url: item.html_url,
 				title: item.title,
-				body: item.body,
+				body: typeof item.body === "string" ? item.body : "",
 				state: item.state,
 				state_reason: typeof item.state_reason === "string" ? item.state_reason.toLowerCase() : null,
 			};

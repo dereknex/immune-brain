@@ -221,7 +221,7 @@ type FakeIssue = {
 	number: number;
 	html_url: string;
 	title: string;
-	body: string;
+	body: string | null;
 	state: "open" | "closed";
 	state_reason: string | null;
 	blockedBy?: number[];
@@ -667,6 +667,41 @@ describe("plugin package runtime cutover parity", () => {
 			expect(conflict.status).toBe("permanent_failure");
 			expect(conflict.message).toContain("carrier conflict");
 			expect(gh.mutations).toBe(before);
+		});
+	});
+
+	it("accepts legal GitHub Issues with null body and rejects non-null malformed body before mutation", async () => {
+		await withIsolatedRootAsync(async (root) => {
+			const gh = new FakeGh();
+			gh.issues.push({
+				id: 9001,
+				number: 472,
+				html_url: "https://github.com/example/project/issues/472",
+				title: "Issue with null body",
+				body: null,
+				state: "open",
+				state_reason: null,
+			});
+
+			const created = await runGithubTrackerOperation(root, INITIATIVE, gh);
+			expect(created).toMatchObject({ status: "created", association_found: true, issue_number: 2 });
+			expect(gh.mutations).toBe(1);
+
+			const beforeMalformed = gh.mutations;
+			gh.issues.push({
+				id: 9002,
+				number: 473,
+				html_url: "https://github.com/example/project/issues/473",
+				title: "Issue with non-string non-null body",
+				body: 12345 as any,
+				state: "open",
+				state_reason: null,
+			});
+
+			const malformed = await runGithubTrackerOperation(root, INITIATIVE, gh);
+			expect(malformed).toMatchObject({ status: "permanent_failure", association_found: false });
+			expect(malformed.message).toContain("malformed Issue");
+			expect(gh.mutations).toBe(beforeMalformed);
 		});
 	});
 
