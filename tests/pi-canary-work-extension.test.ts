@@ -63,7 +63,11 @@ interface FakeUI {
 	customCalls: Array<{ body: string; collapsedBody: string }>;
 	inputCalls: Array<{ title: string; placeholder?: string }>;
 	notifyCalls: Array<{ text: string; kind: string }>;
-	widgetCalls: Array<{ key: string; content: string[] | undefined; options?: { placement?: string } }>;
+	widgetCalls: Array<{
+		key: string;
+		content: string[] | ((tui: unknown, theme: unknown) => { render(width: number): string[] }) | undefined;
+		options?: { placement?: string };
+	}>;
 }
 
 function makeUI(): FakeUI {
@@ -77,7 +81,11 @@ function makeCtx(root: string, ui: FakeUI, mode = "tui", decision: string | null
 		ui: {
 			notify: (text: string, kind: string) => ui.notifyCalls.push({ text, kind }),
 			setStatus: () => { throw new Error("Footer must remain untouched"); },
-			setWidget: (key: string, content: string[] | undefined, options?: { placement?: string }) => {
+			setWidget: (
+				key: string,
+				content: string[] | ((tui: unknown, theme: unknown) => { render(width: number): string[] }) | undefined,
+				options?: { placement?: string },
+			) => {
 				ui.widgetCalls.push({ key, content, options });
 			},
 			custom: async (factory: any) => {
@@ -384,6 +392,17 @@ async function capturedToolFailure(promise: Promise<unknown>): Promise<Record<st
 		expect(finalCard).toContain("Repository health: not assessed");
 		expect(finalCard).toContain("Git: task diff sha256:12345678");
 
+		const fakeTheme = { fg: (_color: string, text: string) => text, bold: (text: string) => text };
+		const extractWidgetLines = (callContent: unknown, width = 120): string[] | undefined => {
+			if (!callContent) return undefined;
+			if (Array.isArray(callContent)) return callContent;
+			if (typeof callContent === "function") {
+				const comp = callContent({}, fakeTheme);
+				return comp?.render ? comp.render(width) : undefined;
+			}
+			return undefined;
+		};
+
 		const ui = makeUI();
 		const ctx = makeCtx(process.cwd(), ui);
 		const secondUi = makeUI();
@@ -391,14 +410,14 @@ async function capturedToolFailure(promise: Promise<unknown>): Promise<Record<st
 		presentTaskRail(ctx, { task_id: "task-rail", state: "Completed", result: "Acceptance complete", next: "No action required" });
 		presentTaskRail(secondCtx, { task_id: "task-rail-2", state: "Stopped", result: "Task stopped", next: "No action required" });
 		expect(ui.widgetCalls.at(-1)).toMatchObject({ key: TASK_RAIL_KEY, options: { placement: "aboveEditor" } });
-		expect(ui.widgetCalls.at(-1)?.content?.join("\n")).toContain("Task task-rail · Completed");
+		expect(extractWidgetLines(ui.widgetCalls.at(-1)?.content)?.join("\n")).toContain("Task task-rail · ✓ Completed");
 		const longUi = makeUI();
 		const longTaskId = `task-${"x".repeat(80)}-tail`;
 		presentTaskRail(makeCtx(process.cwd(), longUi), { task_id: longTaskId, state: "Working", result: "One result", next: "One action" });
-		const longRail = longUi.widgetCalls.at(-1)?.content ?? [];
+		const longRail = extractWidgetLines(longUi.widgetCalls.at(-1)?.content) ?? [];
 		expect(longRail).toHaveLength(3);
 		expect(longRail[0]).toContain("task-");
-		expect(longRail[0]).toContain("-tail · Working");
+		expect(longRail[0]).toContain("-tail · ● Working");
 		expect(longRail[0]).not.toContain(longTaskId);
 		expect(longRail[1]).toBe("Result: One result");
 		expect(longRail[2]).toBe("Next: One action");

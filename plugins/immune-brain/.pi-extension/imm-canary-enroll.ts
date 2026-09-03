@@ -458,9 +458,7 @@ async function executeForegroundEnrollment(
 				`Goal: ${taskIntent.intent.goal}`,
 				`Risk: ${taskIntent.intent.risk}`,
 				`Scope: ${taskIntent.intent.scope_hint.length > 0 ? taskIntent.intent.scope_hint.join(", ") : "(none)"}`,
-				`Acceptance: ${taskIntent.intent.acceptance.length} descriptor(s); press d to expand`,
-				`Intent digest: ${preparation.intent.content_hash}`,
-				`Preparation digest: ${preparation.digest}`,
+				`Acceptance: ${taskIntent.intent.acceptance.length} descriptor(s)`,
 			].join("\n");
 			const confirmationDetails = [
 				`Acceptance descriptors:`,

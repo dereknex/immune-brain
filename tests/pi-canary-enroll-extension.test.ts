@@ -23,7 +23,11 @@ interface FakeUI {
 	confirmCalls: Array<{ title: string; body: string }>;
 	customCalls: Array<{ body: string; collapsedBody: string }>;
 	notifyCalls: Array<{ text: string; kind: string }>;
-	widgetCalls: Array<{ key: string; content: string[] | undefined; options?: { placement?: string } }>;
+	widgetCalls: Array<{
+		key: string;
+		content: string[] | ((tui: unknown, theme: unknown) => { render(width: number): string[] }) | undefined;
+		options?: { placement?: string };
+	}>;
 	confirmResult: boolean;
 	signal?: AbortSignal;
 	beforeConfirm?: () => void;
@@ -41,7 +45,11 @@ function makeCtx(root: string, ui: FakeUI, mode: Mode, cwdOverride?: string) {
 		cwd: cwdOverride ?? root,
 		isIdle: () => true,
 		ui: {
-			setWidget: (key: string, content: string[] | undefined, options?: { placement?: string }) => {
+			setWidget: (
+				key: string,
+				content: string[] | ((tui: unknown, theme: unknown) => { render(width: number): string[] }) | undefined,
+				options?: { placement?: string },
+			) => {
 				ui.widgetCalls.push({ key, content, options });
 			},
 			custom: async (
@@ -513,8 +521,15 @@ describe("pi canary enroll handler integration", () => {
 				},
 			});
 			expect(JSON.stringify(emitted)).not.toMatch(/digest|descriptor|scope|prompt/i);
-			expect(ui.widgetCalls.some((call) => call.options?.placement === "aboveEditor"
-				&& call.content?.join("\n").includes(`Task ${TASK} · Approval required`))).toBe(true);
+			const fakeTheme = { fg: (_color: string, text: string) => text, bold: (text: string) => text };
+			const hasApprovalRail = ui.widgetCalls.some((call) => {
+				if (call.options?.placement !== "aboveEditor") return false;
+				const lines = typeof call.content === "function"
+					? call.content({}, fakeTheme).render(120)
+					: call.content;
+				return lines?.join("\n").includes(`Task ${TASK} · ▲ Approval required`);
+			});
+			expect(hasApprovalRail).toBe(true);
 			expect(shutdown).toHaveLength(1);
 			await shutdown[0]({}, makeCtx(root, ui, "tui"));
 			expect(ui.widgetCalls.at(-1)).toMatchObject({ key: "immune-brain.task-rail", content: undefined });
