@@ -117,6 +117,6 @@ kept for historical reference only.
 
 ## Notes
 
-- `imm-work` owns HANDOFF.md writes (boundary exception documented in skill)
-- `.imm/memory/` is the source of truth; HANDOFF.md is a convenience artifact
+- Historical: `imm-work` previously owned HANDOFF.md writes (v3 boundary exception); that writer was removed with the v3 State Ledger retirement and no current runtime code rewrites the generated block.
+- Historical: `.imm/memory/` was the v3 source of truth; it is retired. The current durable source of truth is the TaskRecord v4 under `.imm/state/tasks/`, with HANDOFF.md as a convenience artifact only.
 - Priority files list is advisory (max 5) and exists only to make Pi session continuation faster

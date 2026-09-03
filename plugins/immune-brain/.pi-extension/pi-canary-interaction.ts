@@ -161,7 +161,14 @@ export async function requestAuthorityDialog<T extends string, R = T | undefined
 
 export function presentTaskRail(ctx: UiContext, view: TaskRailView): void {
 	try {
-		ctx.ui.setWidget(TASK_RAIL_KEY, renderTaskRail(view), { placement: "aboveEditor" });
+		ctx.ui.setWidget(TASK_RAIL_KEY, (_tui, theme) => {
+			return {
+				render(width: number): string[] {
+					return renderTaskRail(view, width, theme);
+				},
+				invalidate(): void {},
+			};
+		}, { placement: "aboveEditor" });
 		if (view.state === "Completed" || view.state === "Stopped") terminalRailUis.add(ctx.ui);
 		else terminalRailUis.delete(ctx.ui);
 	} catch {
@@ -180,7 +187,7 @@ export function presentTaskRailResult(
 	const operation = string(details.operation);
 	const rawState = string(details.state);
 	const result = string(details.result) ?? string(details.reason) ?? operation ?? rawState ?? "Task state updated";
-	const next = string(details.next_action) ?? "Continue through the projected authority";
+	const next = string(details.next_action) ?? "Follow the projected Obligation";
 	presentTaskRail(ctx, {
 		task_id: taskId,
 		state: railState({ lifecycle, obligation: string(taskState?.next_obligation), operation, state: rawState }),
@@ -286,11 +293,34 @@ function emitAttention(pi: EventPublisher, event: UserAttentionEventV1): void {
 	}
 }
 
-function renderTaskRail(view: TaskRailView): string[] {
+function formatTaskRailState(state: TaskRailState, theme?: Theme): string {
+	const symbolAndColor: Record<TaskRailState, { symbol: string; color: string }> = {
+		Planning: { symbol: "●", color: "muted" },
+		"Approval required": { symbol: "▲", color: "accent" },
+		Working: { symbol: "●", color: "accent" },
+		Verifying: { symbol: "●", color: "accent" },
+		Reviewing: { symbol: "●", color: "accent" },
+		Blocked: { symbol: "⚠", color: "warning" },
+		Completed: { symbol: "✓", color: "success" },
+		Stopped: { symbol: "■", color: "muted" },
+	};
+	const cfg = symbolAndColor[state] ?? { symbol: "●", color: "dim" };
+	if (!theme) return `${cfg.symbol} ${state}`;
+	return `${theme.fg(cfg.color, cfg.symbol)} ${theme.fg(cfg.color, state)}`;
+}
+
+function renderTaskRail(view: TaskRailView, width = 120, theme?: Theme): string[] {
+	const prefixWidth = 8; // "Result: " or "Next: "
+	const availableContentWidth = Math.max(20, width - prefixWidth);
+	const taskIdWidth = Math.max(16, Math.min(52, width - 26));
+	const stateFormatted = formatTaskRailState(view.state, theme);
+	const label = (text: string) => (theme ? theme.fg("muted", text) : text);
+	const body = (text: string) => (theme ? theme.fg("dim", text) : text);
+
 	return [
-		`Task ${boundedMiddle(view.task_id, 52)} · ${view.state}`,
-		`Result: ${bounded(view.result, 112)}`,
-		`Next: ${bounded(view.next, 112)}`,
+		`Task ${boundedMiddle(view.task_id, taskIdWidth)} · ${stateFormatted}`,
+		`${label("Result:")} ${body(bounded(view.result, availableContentWidth))}`,
+		`${label("Next:")} ${body(bounded(view.next, availableContentWidth))}`,
 	];
 }
 
@@ -338,12 +368,12 @@ function strings(value: unknown): string[] {
 }
 
 function bounded(value: string, max: number): string {
-	return value.length <= max ? value : `${value.slice(0, max - 3)}...`;
+	return value.length <= max ? value : `${value.slice(0, max - 1)}…`;
 }
 
 function boundedMiddle(value: string, max: number): string {
 	if (value.length <= max) return value;
-	const visible = max - 3;
+	const visible = max - 1;
 	const start = Math.ceil(visible / 2);
-	return `${value.slice(0, start)}...${value.slice(-(visible - start))}`;
+	return `${value.slice(0, start)}…${value.slice(-(visible - start))}`;
 }

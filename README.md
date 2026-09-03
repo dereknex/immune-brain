@@ -46,7 +46,7 @@ This repo is a Pi package — Pi discovers Skills and extensions from `package.j
 }
 ```
 
-No extra server config is needed. Installing the package via Pi makes all 5 Skills available automatically. Verify with:
+No extra server config is needed. Installing the package via Pi makes all 6 Skills available automatically. Verify with:
 
 ```bash
 bun test                          # run all tests
@@ -165,7 +165,7 @@ See [`docs/reference/immune-brain-config.md`](docs/reference/immune-brain-config
 package.json                          # Pi package manifest (skills + extensions)
 plugins/immune-brain/
 ├── .pi-extension/                    # Pi TUI + Kernel authority extension
-├── skills/                           # 5 public Skills (trigger shims)
+├── skills/                           # 6 public Skills (trigger shims)
 ├── dist/                             # Built skill contracts & references
 ├── runtime/                          # Bun + TypeScript runtime & Kernel
 └── bin/                              # CLI wrappers (→ runtime/v4_runtime.ts)
@@ -183,7 +183,7 @@ docs/specs/                           # Living specs (updated in place)
 
 ## FAQ
 
-**Do I need to learn all 5 skills?** No. Just describe what you want — Pi routes to the right skill. Learn `imm-planner` and `imm-loop` first; the other two are occasional.
+**Do I need to learn all 6 skills?** No. Just describe what you want — Pi routes to the right skill. Learn `imm-planner` and `imm-loop` first; the other four are occasional.
 
 **What if I interrupt or close Pi mid-task?** State is on disk (`.imm/` + TaskIntent). Re-enter `imm-loop` to resume — the Kernel projection is authoritative.
 
