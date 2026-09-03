@@ -46,7 +46,7 @@ Pi 与 Claude Code 是支持的宿主。未声明的适配器仍不受支持。C
 }
 ```
 
-无需额外 server 配置，通过 Pi 安装本 package 后 5 个 Skill 即自动可用。验证：
+无需额外 server 配置，通过 Pi 安装本 package 后 6 个 Skill 即自动可用。验证：
 
 ```bash
 bun test                    # 全量测试
@@ -165,7 +165,7 @@ Immune-Brain **没有独立配置文件**，偏好设置写在 `AGENTS.md`（仓
 package.json                          # Pi package manifest（skills + extensions）
 plugins/immune-brain/
 ├── .pi-extension/                    # Pi TUI + Kernel 扩展
-├── skills/                           # 5 个公开 Skills（触发 shim）
+├── skills/                           # 6 个公开 Skills（触发 shim）
 ├── dist/                             # 构建后的 skill 契约与参考文档
 ├── runtime/                          # Bun + TypeScript 运行时与 Kernel
 └── bin/                              # CLI wrappers（→ runtime/v4_runtime.ts）
@@ -183,7 +183,7 @@ docs/specs/                           # Living specs（原地更新）
 
 ## 常见问题
 
-**需要记住所有 Skill 吗？** 不需要，直接描述需求即可，Pi 会自动路由。先掌握 `imm-planner` 和 `imm-loop`，另外两个按需使用。
+**需要记住所有 Skill 吗？** 不需要，直接描述需求即可，Pi 会自动路由。先掌握 `imm-planner` 和 `imm-loop`，另外四个按需使用。
 
 **中途关闭 Pi 会怎样？** 状态已落盘（`.imm/` + TaskIntent），重新进入 `imm-loop` 即可恢复，以 Kernel projection 为准。
 

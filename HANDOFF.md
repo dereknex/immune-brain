@@ -3,7 +3,11 @@
 <!-- GENERATED: immune-brain-handoff-state -->
 ## Current state
 
-- Plan: `docs/plans/2026-08-13-016-fix-assurance-kernel-p3-v3-creation-retirement-scope-plan.md`
+> Historical v3 output: the runtime writer for this block was removed with the
+> v3 State Ledger retirement; the durable source of truth is the TaskRecord v4
+> under `.imm/state/tasks/`. Content below is retained for reference only.
+
+- Plan: `docs/plans/archive/2026-08-13-016-fix-assurance-kernel-p3-v3-creation-retirement-scope-plan.md`
 - Summary: none
 
 ### Completed steps

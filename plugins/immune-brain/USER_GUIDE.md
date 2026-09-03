@@ -87,8 +87,8 @@ Managed freshness、QA、Review、authorization 与 completion 都绑定同一�
 新的 Managed 生产路径使用 Assurance Kernel v4：
 
 - `docs/plans/*.intent.json`：Git-tracked TaskIntent，保存目标、acceptance、scope hint、risk 与 revision；
-- `.imm/tasks/<task-id>.json`：worktree-local TaskRecord v4（当前生产 authority），以 `lifecycle`、`artifact_state`、`attestations`、`findings` 与 `history` 保存唯一 durable workflow state；v3 记录只读保留、仅作 drain，新 enrollment 一律写 v4；
-- `.imm/workspace.json`：当前 worktree 的 Managed ownership；
+- `.imm/state/tasks/<task-id>.json`：worktree-local TaskRecord v4（当前生产 authority），以 `lifecycle`、`artifact_state`、`attestations`、`findings` 与 `history` 保存唯一 durable workflow state；v3 记录只读保留、仅作 drain，新 enrollment 一律写 v4；
+- `.imm/state/workspace.json`：当前 worktree 的 Managed ownership（`.imm/state/` 整体为 Git-ignored 运行态，terminal evidence 归 `.imm/audit/<task-id>/` tracked 存储）；
 - Kernel content-hash CAS、锁与 transaction marker：保证 mutation 失败关闭并可恢复。
 
 TaskIntent 与 TaskRecord 是独立 authority。对话 memory、session ID、HANDOFF 文本或 reviewer 自报结果都不能替代 Kernel record。

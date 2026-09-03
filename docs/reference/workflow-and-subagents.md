@@ -148,7 +148,6 @@ internal executor 执行，
 
 职责：
 - 提炼经验写入 `docs/solutions/`
-- 更新 `.imm/memory/MEMORY.md`
 - 为下一次任务减少重复设计和重复试错
 
 *   **特色**：自动进行庞杂执行日志与 focus delta 的“脱水归档”（Dehydrate），提炼极简架构决策记录（ADR）。
@@ -283,7 +282,7 @@ No agent-local activation mode or override table exists.
 | `qa-verifier` | 判断当前 step 是否 pass、rework 或 replan | step 有 execution evidence 后 | `review` | `review-evidence-producer` | 只读验证；只通过 runtime review action 记录结论 | decision、evidence、artifacts、notes | internal QA |
 | `code-reviewer` | 做跨 step 或 PR 级技术审查 | PR review、CI 阻塞、宽 diff 或 review feedback | `review` | `advisory` | 只读；不直接修复；修复回到 executor 或 pr-fix | findings、blockers、deferred items、next actions | `imm-code-review` |
 | `ui-reviewer` | 复核 UI/UX、可访问性、响应式和视觉一致性 | 前端、设计或交互变更完成后 | `review` | `advisory` | 只读评审；不直接改 UI；修复回到 executor | UI findings、severity、proof、fix/defer/replan suggestion | `imm-ui-review` |
-| `knowledge-compounder` | 把已验证经验沉淀为可复用知识 | plan 完成并有可复用证据后 | `compound` | `review-evidence-producer` | 只写 `docs/solutions/` 和 `.imm/memory/MEMORY.md` | solution doc、reuse conditions、evidence、memory update | internal Compounder |
+| `knowledge-compounder` | 把已验证经验沉淀为可复用知识 | plan 完成并有可复用证据后 | `compound` | `review-evidence-producer` | 只写 `docs/solutions/`（`.imm/memory/` v3 存储已 retired） | solution doc、reuse conditions、evidence | internal Compounder |
 
 #### 条件风险 Advisory Lenses
 

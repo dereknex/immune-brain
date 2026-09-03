@@ -18,12 +18,12 @@
 ## Managed Path 入口
 
 普通 host input 不执行自然语言 Managed 路由，也不初始化项目契约；显式 Immune-Brain Skill 负责启动新的 Managed workflow。已有 active Assurance owner 保持权威，但只在用户显式进入 `imm-loop` 时恢复。
-- `.imm/memory/`：存放运行态状态（`state.json`、`MEMORY.md`、`current_iteration.json`）。
+- `.imm/state/`：worktree-local 运行态（TaskRecord v4、workspace ownership、锁与 transaction marker），整体 Git-ignored；terminal evidence 归 `.imm/audit/<task-id>/` tracked 存储。旧 v3 布局 `.imm/memory/`（state.json、MEMORY.md、current_iteration.json）已 retired：runtime 只作 drain-only 读取，新写入一律走 v4 布局。
 - `skills/`：存放六个 user-facing Skill 定义；`imm-brainstorm`、`imm-planner` 和 `imm-loop` 是 Managed Path 入口，`imm-pr-fix`、`imm-doc-prune` 和 `imm-agent-doc-maintain` 是 host-native 维护入口；内部 role prompts 位于插件 `runtime/prompts/`。
 - `docs/specs/`：存放当前任务的功能规格与验收标准。
 - `docs/solutions/`：存放长期沉淀的工程模式、最佳实践与问题解法。
 - `CONTEXT.md`（仓库根）：共享领域词汇与术语约定；非运行态真源，与 `.imm/memory/` 互补。
-- `HANDOFF.md`（仓库根）：跨会话人类可读进度摘要，真源仍以 `.imm/memory/` 为准。标记区 `<!-- GENERATED: immune-brain-handoff-state -->` 之内由 runtime 在 QA pass 时写入，agent 不要手改；标记区之外的叙述（本次会话的判断、重点文件）由 agent 维护，runtime 不会覆盖。
+- `HANDOFF.md`（仓库根）：跨会话人类可读进度摘要，真源以 `.imm/state/` 的 TaskRecord 为准。标记区 `<!-- GENERATED: immune-brain-handoff-state -->` 之内是 v3 runtime 的历史输出（该 writer 已随 v3 移除，当前 runtime 不再写入），内容仅作历史参考；标记区之外的叙述由 agent 维护。
 - `docs/adr/`：轻量架构决策记录（ADR）；目录按需创建，由内部 `compounder` role 在符合 ADR 门槛时写入。
 
 ## 3. 写入边界
