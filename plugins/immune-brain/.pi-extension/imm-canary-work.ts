@@ -477,7 +477,7 @@ export default function (
 				presentTaskRail(ctx, {
 					task_id: taskId,
 					state: "Approval required",
-					result: "Kernel authority repair requires literal-user approval",
+					result: "Authority repair needs your approval",
 					next: "Decide whether to repair the stale claim",
 				});
 				const repairSelection = await requestAuthorityDialog(pi, ctx, {
@@ -854,7 +854,7 @@ export default function (
 		presentTaskRail(ctx, {
 			task_id: taskId,
 			state: "Approval required",
-			result: `${operation} requires literal-user approval`,
+			result: `${operation} requires your confirmation`,
 			next: `Decide ${operation}`,
 		});
 		const attention = {
@@ -870,7 +870,7 @@ export default function (
 				details: dialogDetails,
 				signal: ctx.signal,
 				actions: [
-					{ value: "authorize", label: "Authorize", description: `Apply ${operation} after freshness revalidation` },
+					{ value: "authorize", label: "Authorize", description: `Apply ${operation} after re-checking state` },
 					{ value: "cancel", label: "Cancel", description: "Leave managed authority unchanged" },
 				],
 			});
