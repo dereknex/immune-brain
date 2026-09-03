@@ -6,6 +6,18 @@ Issues and specs for this repo live as GitHub issues. Use the `gh` CLI for all o
 
 - **Create an issue**: `gh issue create --title "..." --body "..."`. Use a heredoc for multi-line bodies.
 - **Read an issue**: `gh issue view <number> --comments`, filtering comments by `jq` and also fetching labels.
+  When the body contains `<!-- immune-brain:kind=task -->`, also call
+  `gh api repos/{owner}/{repo}/issues/<number>` to read `parent_issue_url`, then
+  fetch that Parent body and comments before planning or implementation. Verify
+  that the Child and Parent carry the same single `initiative-id`, that the
+  native relation points to that Parent, and that the Parent contains exactly
+  one matching `slice-id`. Stop on missing, duplicate, or conflicting ownership;
+  do not implement from the Child alone. Parent Problem, Result, Initiative
+  design, Decisions, Testing strategy, and Out of scope are required context.
+  TaskIntent remains the execution authority: reconcile a pre-Enrollment conflict
+  in Planner, or use Intent revision after Enrollment. Material decisions from
+  Parent comments must be folded into the Parent body rather than left as hidden
+  comment-only requirements.
 - **List issues**: `gh issue list --state open --json number,title,body,labels,comments --jq '[.[] | {number, title, body, labels: [.labels[].name], comments: [.comments[].body]}]'` with appropriate `--label` and `--state` filters.
 - **Comment on an issue**: `gh issue comment <number> --body "..."`
 - **Apply / remove labels**: `gh issue edit <number> --add-label "..."` / `--remove-label "..."`
@@ -31,7 +43,9 @@ Create a GitHub issue.
 
 ## When a skill says "fetch the relevant ticket"
 
-Run `gh issue view <number> --comments`.
+Run `gh issue view <number> --comments`. For an Immune-Brain Task Issue, complete
+the Parent lookup and ownership checks from **Read an issue** before returning
+the ticket context.
 
 ## Wayfinding operations
 

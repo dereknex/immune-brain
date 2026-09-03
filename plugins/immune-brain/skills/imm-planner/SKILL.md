@@ -146,56 +146,65 @@ A repository directive overrides the global directive. Report an invalid value
 and ask instead of guessing. After resolving it, display one non-blocking line
 with the selected carrier and its source. A configured `github` default is
 standing opt-in for GitHub projection, but the literal user must still confirm
-the named Initiative and its immutable slug before the first remote mutation.
-Surface that name, slug, and the proposed Parent/Child creation together as soon
-as decomposition establishes multiple TaskIntents. Recommend one answer so the
-user may adopt the complete current decision frontier in bulk. A prior bulk
-approval cannot confirm a name or slug that had not yet been shown.
-Resolve `../../bin/imm-tracker` from this Skill location; do not assume a bare
-command is on `PATH`. After the first TaskIntent has been authored, staged, and
-validated with `valid: true` and `enrollment_ready: true`, and both the named
-Initiative and its immutable slug are confirmed, attempt the GitHub projection
-before returning the final Planner result or invoking Enrollment: call
-`imm-tracker create-initiative --stdin --json` once with the confirmed goal,
-stable Slice summaries, and the public Parent projection fields. `create-initiative`
-receives the stable Initiative goal and Slice summaries plus the
-public Parent projection fields `problem`, `result`, `decisions`,
-`testing_strategy`, and `out_of_scope`. It creates a result-oriented Parent title
-`[<initiative>] <result>` and never rewrites an existing Parent.
+the named Initiative, its immutable slug, and the complete Parent/Child
+decomposition before the first remote mutation. A prior bulk approval cannot
+confirm a name, slug, Child, or dependency that had not yet been shown.
 
-Then call
-`imm-tracker upsert-task --initiative-id <slug> --slice-id <id> --intent <path> --projection-json <json> --json`
-to create one neutral open Child Issue and attach it to the Parent as a native
-Sub-issue. The projection JSON is public planning context only and may contain
-`result`, `current_behavior`, `desired_behavior`, `key_interfaces`,
-`verification`, `blocked_by` Task IDs, `out_of_scope`, and `agent_handoff`.
-The tracker rereads the canonical TaskIntent for identity, risk, and acceptance;
-projection fields never widen TaskIntent scope or authority. The Child title is
-`[<initiative>/<slice>] <result>` with no `IB:` prefix or Task ID. Its body is an
-Agent Brief with Parent, What to build, Current behavior, Desired behavior, Key
-interfaces, Acceptance criteria, Verification, Blocked by, Out of scope, Agent
-handoff, and Authority boundary sections. Native `blocked_by` relations are
-created only for exact marker-owned Task Issues and are idempotently observed.
+Once decomposition is complete, present one review table containing the Parent
+result and every Child's stable Slice ID, result, scope boundary, risk, blockers,
+and proposed execution order. Ask one focused question: whether the coverage,
+granularity, and dependencies are correct. Recommend the complete current
+frontier so the user can approve it in one response. Before that approval,
+perform zero GitHub mutations. A partial or progressively disclosed issue set is
+not eligible for publication.
+
+After approval, author, stage, and validate every TaskIntent in the decomposition
+with `valid: true` and `enrollment_ready: true`. Resolve `../../bin/imm-tracker` from this Skill location; do not assume a bare command is on `PATH`. Submit the entire approved set once through
+`imm-tracker publish-initiative --stdin --json`. Its input contains the confirmed
+Initiative slug and goal, Parent projection, and every Child's `slice_id`,
+canonical TaskIntent path, and public projection. The Parent projection requires
+`problem`, `result`, and `design`, and may include `decisions`,
+`testing_strategy`, and `out_of_scope`. `design` records Initiative-level
+invariants, Slice boundaries and ordering, shared interfaces or state flow, and
+material compatibility decisions. Every Parent Slice must correspond to one
+published Child; future checklist-only Slices are not allowed in the batch.
+
+Each Child projection may contain `result`, `current_behavior`,
+`desired_behavior`, `key_interfaces`, `verification`, `blocked_by` Task IDs,
+`out_of_scope`, and `agent_handoff`. The tracker rereads every canonical
+TaskIntent for identity, risk, and acceptance; projection fields never widen
+TaskIntent scope or authority. It validates the complete dependency graph before
+remote writes, creates the Parent once, creates all Children, attaches every
+Child as a native Sub-issue, creates native `blocked_by` relations, and rereads
+the complete topology. The Child Agent Brief includes a direct Parent Issue link.
 Internal role prompts, tool policies, review gates, model reservations, and
-prompt digests never belong in this external handoff.
-If `docs/initiatives/<slug>.md` exists, the tracker fails with a
-carrier conflict; Local mode performs zero GitHub operations. A future Slice remains a parent checklist entry until its own TaskIntent is
-canonically authored and validated.
+prompt digests never belong in this external handoff. If
+`docs/initiatives/<slug>.md` exists, publication fails with a carrier conflict;
+Local mode performs zero GitHub operations.
+
+The batch result includes an execution recommendation: the first unblocked Task,
+a stable dependency order, and parallel groups. For a plan-only request, report
+that recommendation and stop. For a request that includes execution, invoke the
+native Enrollment gate for the recommended first TaskIntent after successful
+publication; do not ask for another chat confirmation. GitHub selection never
+bypasses Enrollment.
 
 Tracker output is observation, never authority. Before the Planner returns, its
-GitHub carrier outcome must be exactly one of: `tracker_associated` after both
-operations return `created`, `updated`, or `already_current`;
-`awaiting_user_initiative_confirmation` with the single pending Initiative
-name-and-slug decision; or `tracker_projection_failed` with the returned failure
-and exact retry action.
-A candidate Initiative name or slug recorded only in the Spec or final summary
-is neither user confirmation nor a completed carrier outcome. Report `retryable_failure`,
-`permanent_failure`, or `ambiguous_remote_state` and the exact retry action, but
-do not block planning, Enrollment, execution, QA, Review, settlement, or another
-association. Do not infer opt-in from tracker output or Issue state,
-auto-close the parent, import Issue state, create a TaskIntent from an Issue, or store Issue identity in TaskIntent or
-TaskRecord. Existing Issue markers grant permission only for later one-way
-projection updates to that same Initiative; they never grant execution authority.
+GitHub carrier outcome must be exactly one of: `tracker_associated` after the
+complete batch returns `created`, `updated`, or `already_current`;
+`awaiting_user_initiative_confirmation` with the single pending name, slug, and
+complete-decomposition decision; or `tracker_projection_failed` with the returned
+failure and exact retry action. A candidate Initiative or partial Issue set
+recorded only in the Spec or final summary is neither user confirmation nor a
+completed carrier outcome. Report `retryable_failure`, `permanent_failure`, or
+`ambiguous_remote_state` and the exact batch retry action. This does not invalidate
+already-authored planning files, but it blocks `tracker_associated` and every
+Enrollment or execution handoff for that Initiative until the same complete
+batch succeeds. Do not infer opt-in from tracker output or Issue state, auto-close the Parent,
+import Issue state, create a TaskIntent from an Issue, or store Issue identity in
+TaskIntent or TaskRecord. Existing Issue markers grant permission only for
+idempotent retry of that same approved Initiative; they never grant execution
+authority.
 
 ### Verification Descriptor Discipline
 

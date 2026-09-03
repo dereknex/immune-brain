@@ -35,10 +35,14 @@ TaskRecords. Set one of these fixed directives in `AGENTS.md`:
 
 A repository directive overrides the global directive. A configured `github`
 default is standing opt-in for GitHub projection, but the literal user still
-confirms the Initiative name and immutable slug before the first remote
-mutation. Planner reports the selected carrier and its source. Projection
-failure is reported with a retry action; it does not silently switch carrier or
-block TaskIntent authoring, Enrollment, or execution.
+confirms the Initiative name, immutable slug, complete Parent/Child decomposition,
+granularity, and dependencies before the first remote mutation. Planner reports
+the selected carrier and its source. After confirmation it publishes the complete
+Issue graph in one idempotent batch and reports the recommended first unblocked
+Task, stable dependency order, and parallel groups. Projection failure is reported
+with a batch retry action and does not invalidate the authored planning files,
+but it blocks Enrollment and execution handoff for that Initiative until the same
+complete batch succeeds. It never silently switches carrier.
 
 ## Other Preferences
 

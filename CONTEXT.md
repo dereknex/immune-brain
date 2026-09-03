@@ -132,6 +132,10 @@ _Avoid_: Roadmap authority, parent Task
 One stable result within an Initiative that may later become its own TaskIntent. Until authored and enrolled, it is planning metadata only.
 _Avoid_: active task, Phase, Step
 
+**Initiative Publication**:
+One user-confirmed projection of a complete Initiative decomposition into one Parent and all planned Child Issues, including dependencies and execution recommendations. It is planning visibility, not execution authority.
+_Avoid_: progressive ticket creation, Enrollment, task activation
+
 **Fast-Track**:
 A presentation-level compression of the Managed Path for small tasks. It may reduce ceremony but never bypasses TaskIntent scope, Enrollment, QA, Review, authorization, or settlement.
 _Avoid_: bypass, reduced assurance
@@ -178,6 +182,7 @@ _Avoid_: current acceptance field, QA attestation
 - Settlement changes lifecycle to `done` or `stopped`, clears active ownership, and creates terminal proof.
 - Loop dispatches Internal Roles, but Kernel remains the mutation and completion authority.
 - An Initiative may group Slices and TaskIntents, but it never replaces a Spec, TaskIntent, TaskRecord, or Assurance Projection.
+- An Initiative Publication exposes the complete Parent/Child decomposition for one granularity decision before any tracker mutation; its execution recommendation selects no authority action by itself.
 
 ## Architecture Map
 
@@ -188,7 +193,7 @@ _Avoid_: current acceptance field, QA attestation
 - Host integration: `plugins/immune-brain/.pi-extension/` owns Pi native Enrollment, deterministic QA, foreground Review dispatch, authorization dialogs, and Task Rail presentation. `plugins/immune-brain/runtime/claude/` owns the Claude Code MCP/Hook adapter; the plugin manifests live under `plugins/immune-brain/.claude-plugin/`, `.mcp.json`, `hooks/`, and `agents/`.
 - Loop dispatch: `plugins/immune-brain/runtime/loop_contract.ts`, `role_prompt_bridge.ts`, and `runtime/prompts/` define internal role routing and bounded delegation contracts.
 - CLI surface: `plugins/immune-brain/runtime/v4_runtime.ts` routes the stable wrappers in `plugins/immune-brain/bin/`; `imm-kernel` owns current Kernel commands, while `imm-plan` retains routing-policy and historical Plan validation surfaces.
-- Initiative projection: `plugins/immune-brain/runtime/github_issue_tracker.ts` and `plugins/immune-brain/bin/imm-tracker` own the optional one-way GitHub Issues adapter without reading or writing Kernel authority.
+- Initiative projection: `plugins/immune-brain/runtime/github_issue_tracker.ts` and `plugins/immune-brain/bin/imm-tracker` own the optional one-way GitHub Issues adapter, complete batch publication, Parent/Child relationship verification, and execution recommendations without reading or writing Kernel authority.
 - Packaging: root `package.json` is the Pi package manifest; `plugins/immune-brain/dist/` is checked-in generated output guarded by `bun scripts/sync-dist-docs.ts --check`.
 - Durable knowledge: `docs/solutions/` stores Learnings and `docs/adr/` stores qualifying architecture decisions. `CONTEXT.md` is vocabulary and navigation only, never runtime state.
 

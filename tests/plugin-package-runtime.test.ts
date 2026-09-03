@@ -3,6 +3,7 @@ import type { GhExecution, GhTransport } from "../plugins/immune-brain/runtime/g
 import {
 	createGhTransport,
 	redactGithubDiagnostic,
+	runGithubInitiativePublication,
 	runGithubTrackerCli,
 	runGithubTrackerOperation,
 } from "../plugins/immune-brain/runtime/github_issue_tracker.ts";
@@ -235,6 +236,7 @@ class FakeGh implements GhTransport {
 	detachBlockerAfterDependencyMutation = false;
 	mutateChildAfterDependencyMutation = false;
 	dropNextSubIssueMutation = false;
+	afterIssueCreate?: (issueNumber: number, cwd: string) => void;
 
 	async run(args: string[], options: { cwd?: string; stdin?: string } = {}): Promise<GhExecution> {
 		const ok = (stdout = ""): GhExecution => ({ exit_code: 0, stdout, stderr: "", timed_out: false, output_exceeded: false });
@@ -317,6 +319,7 @@ class FakeGh implements GhTransport {
 				state: "open",
 				state_reason: null,
 			});
+			this.afterIssueCreate?.(number, options.cwd ?? "");
 			if (this.loseNextCreateResponse) {
 				this.loseNextCreateResponse = false;
 				return { exit_code: 1, stdout: "", stderr: "gho_secret timeout", timed_out: true, output_exceeded: false };
@@ -375,6 +378,30 @@ const AGENT_READY_TASK = {
 		agent_handoff: "Implement the bounded result only.",
 	},
 };
+
+function writeTrackedIntent(root: string, taskId: string, goal: string, risk: "routine" | "material" | "critical" = "material") {
+	const intentPath = `docs/plans/${taskId}.intent.json`;
+	mkdirSync(join(root, "docs", "plans"), { recursive: true });
+	writeFileSync(join(root, intentPath), `${JSON.stringify({
+		contract: "assurance_kernel/task_intent/v1",
+		task_id: taskId,
+		goal,
+		acceptance: [{ id: `acc-${taskId}`, assertion: `${goal} is verified`, verification: "{}" }],
+		scope_hint: ["tests/**"],
+		risk,
+		revision: 1,
+		owner: "user",
+	}, null, 2)}\n`);
+	return intentPath;
+}
+
+function initializeTrackedIntents(root: string, tasks: Array<{ task_id: string; goal: string; risk?: "routine" | "material" | "critical" }>) {
+	spawnSync("git", ["init", "-q"], { cwd: root });
+	const paths = tasks.map((task) => writeTrackedIntent(root, task.task_id, task.goal, task.risk));
+	spawnSync("git", ["add", ...paths], { cwd: root });
+	return paths;
+}
+
 async function withPublishedParent(fn: (root: string, gh: FakeGh) => Promise<void>) {
 	await withIsolatedRootAsync(async (root) => {
 		const gh = new FakeGh();
@@ -413,7 +440,9 @@ describe("plugin package runtime cutover parity", () => {
 		expect(JSON.stringify(commands)).not.toContain("tools/call");
 		const tracker = commands.find((command: any) => command.name === "imm-tracker");
 		expect(tracker.description).toContain("Never grants or consumes Kernel authority");
-		expect(tracker.examples).toHaveLength(2);
+		expect(tracker.examples).toEqual([
+			"imm-tracker publish-initiative --stdin --json",
+		]);
 	});
 
 	it("ships matching Planner and Loop tracker authority contracts", () => {
@@ -443,28 +472,32 @@ describe("plugin package runtime cutover parity", () => {
 			expect(contract).toContain("A repository directive overrides the global directive");
 			expect(contract).toContain("standing opt-in for GitHub projection");
 			expect(contract).toContain(
-				"the literal user must still confirm the named Initiative and its immutable slug before the first remote mutation",
+				"the literal user must still confirm the named Initiative, its immutable slug, and the complete Parent/Child decomposition before the first remote mutation",
 			);
 			expect(contract).toContain(
-				"A prior bulk approval cannot confirm a name or slug that had not yet been shown",
+				"A prior bulk approval cannot confirm a name, slug, Child, or dependency that had not yet been shown",
 			);
 			expect(contract).toContain(
-				"validated with `valid: true` and `enrollment_ready: true`, and both the named Initiative and its immutable slug are confirmed, attempt the GitHub projection before returning the final Planner result or invoking Enrollment",
+				"After approval, author, stage, and validate every TaskIntent in the decomposition with `valid: true` and `enrollment_ready: true`",
 			);
 			expect(contract).toContain(
-				"GitHub carrier outcome must be exactly one of: `tracker_associated` after both operations return `created`, `updated`, or `already_current`; `awaiting_user_initiative_confirmation` with the single pending Initiative name-and-slug decision; or `tracker_projection_failed` with the returned failure and exact retry action",
+				"GitHub carrier outcome must be exactly one of: `tracker_associated` after the complete batch returns `created`, `updated`, or `already_current`",
 			);
 			expect(contract).toContain(
-				"A candidate Initiative name or slug recorded only in the Spec or final summary is neither user confirmation nor a completed carrier outcome",
+				"A candidate Initiative or partial Issue set recorded only in the Spec or final summary is neither user confirmation nor a completed carrier outcome",
 			);
 			expect(contract).not.toContain("and the slug is confirmed");
 			expect(contract).not.toContain("awaiting_user_slug_confirmation");
 			expect(contract).toContain("ordinary TaskIntents remain tracked by Kernel TaskRecords");
 			expect(contract).toContain("display one non-blocking line");
-			expect(contract).toContain("create-initiative --stdin --json");
-			expect(contract).toContain("upsert-task --initiative-id <slug> --slice-id <id> --intent <path> --projection-json <json> --json");
+			expect(contract).toContain("publish-initiative --stdin --json");
+			expect(contract).toContain("complete Parent/Child decomposition");
+			expect(contract).toContain("granularity");
+			expect(contract).toContain("execution recommendation");
+			expect(contract).not.toContain("create-initiative --stdin --json");
+			expect(contract).not.toContain("upsert-task --initiative-id");
 			expect(contract).toContain("Tracker output is observation, never authority");
-			expect(contract).toContain("do not block planning, Enrollment, execution, QA, Review, settlement");
+			expect(contract).toContain("blocks `tracker_associated` and every Enrollment or execution handoff");
 			expect(contract).not.toContain("upsert-initiative");
 			expect(contract).not.toContain("mark-active");
 		}
@@ -773,6 +806,8 @@ describe("plugin package runtime cutover parity", () => {
 			expect(child.title).toBe("[tracking-v1/S1] Publish an Agent-ready Task");
 			expect(child.title).not.toContain("agent-ready-task");
 			expect(child.title).not.toContain("IB:");
+			expect(child.body).toContain("## Parent");
+			expect(child.body).toContain("[#1](https://github.com/example/project/issues/1)");
 			expect(child.body).toContain("## What to build");
 			expect(child.body).toContain("## Current behavior");
 			expect(child.body).toContain("## Desired behavior");
@@ -791,6 +826,207 @@ describe("plugin package runtime cutover parity", () => {
 			child.title = originalChildTitle;
 			expect(gh.subIssues.get(1)).toEqual([2, 3]);
 			expect(child.blockedBy ?? []).toEqual([1002]);
+		});
+	});
+
+	it("publishes a complete Initiative batch and returns a deterministic execution recommendation", async () => {
+		await withIsolatedRootAsync(async (root) => {
+			const gh = new FakeGh();
+			const tasks = [
+				{ task_id: "foundation-task", goal: "Establish the shared contract", slice_id: "foundation" },
+				{ task_id: "api-task", goal: "Expose the API", slice_id: "api", blocked_by: ["foundation-task"] },
+				{ task_id: "docs-task", goal: "Document the contract", slice_id: "docs", blocked_by: ["foundation-task"] },
+			];
+			const paths = initializeTrackedIntents(root, tasks);
+			const input = {
+				initiative_id: "complete-batch",
+				goal: "Ship one complete Initiative",
+				projection: {
+					problem: "Incremental ticket publication hides the full decomposition.",
+					result: "The complete delivery is reviewable before publication.",
+					design: "The foundation contract lands first; API and documentation then proceed independently.",
+					decisions: ["Publish the complete issue graph in one batch."],
+				},
+				tasks: tasks.map((task, index) => ({
+					slice_id: task.slice_id,
+					intent: paths[index],
+					projection: { result: task.goal, blocked_by: task.blocked_by },
+				})),
+			};
+
+			const published = await runGithubInitiativePublication(root, input, gh);
+			expect(published).toMatchObject({
+				status: "created",
+				initiative: { issue_number: 1 },
+				execution: {
+					recommended_first_task_id: "foundation-task",
+					recommended_first_issue_number: 2,
+					order: ["foundation-task", "api-task", "docs-task"],
+					issue_order: [2, 3, 4],
+					parallel_groups: [["foundation-task"], ["api-task", "docs-task"]],
+					parallel_issue_groups: [[2], [3, 4]],
+				},
+			});
+			expect(published.tasks.map((task) => task.issue_number)).toEqual([2, 3, 4]);
+			expect(gh.subIssues.get(1)).toEqual([2, 3, 4]);
+			expect(gh.issues[0].body).toContain("## Initiative design");
+			expect(gh.issues[1].body).toContain("[#1](https://github.com/example/project/issues/1)");
+			expect(gh.issues[2].blockedBy).toEqual([1002]);
+			expect(gh.issues[3].blockedBy).toEqual([1002]);
+
+			const retried = await runGithubInitiativePublication(root, input, gh);
+			expect(retried.status).toBe("already_current");
+		});
+	});
+
+	it("rejects incomplete or cyclic Initiative batches before any GitHub mutation", async () => {
+		await withIsolatedRootAsync(async (root) => {
+			const gh = new FakeGh();
+			const paths = initializeTrackedIntents(root, [
+				{ task_id: "task-a", goal: "Ship A" },
+				{ task_id: "task-b", goal: "Ship B" },
+			]);
+			const base = {
+				initiative_id: "invalid-batch",
+				goal: "Reject invalid batches",
+				projection: {
+					problem: "An invalid graph must not reach GitHub.",
+					result: "Reject invalid batches",
+					design: "A and B must not form a cycle.",
+				},
+				tasks: [
+					{ slice_id: "a", intent: paths[0], projection: { blocked_by: ["task-b"] } },
+					{ slice_id: "b", intent: paths[1], projection: { blocked_by: ["task-a"] } },
+				],
+			};
+			expect(await runGithubInitiativePublication(root, base, gh)).toMatchObject({ status: "permanent_failure" });
+			expect(gh.mutations).toBe(0);
+			expect(await runGithubInitiativePublication(root, { ...base, tasks: base.tasks.slice(0, 1) }, gh)).toMatchObject({ status: "permanent_failure" });
+			expect(gh.mutations).toBe(0);
+		});
+	});
+
+	it("resumes a partially published Initiative batch without duplicate Issues", async () => {
+		await withIsolatedRootAsync(async (root) => {
+			const gh = new FakeGh();
+			const paths = initializeTrackedIntents(root, [
+				{ task_id: "retry-a", goal: "Ship retry A" },
+				{ task_id: "retry-b", goal: "Ship retry B" },
+			]);
+			const input = {
+				initiative_id: "retry-batch",
+				goal: "Resume one publication batch",
+				projection: {
+					problem: "A failed relation may leave a partial remote batch.",
+					result: "Resume one publication batch",
+					design: "Retry A precedes retry B.",
+				},
+				tasks: [
+					{ slice_id: "a", intent: paths[0], projection: { result: "Ship retry A" } },
+					{ slice_id: "b", intent: paths[1], projection: { result: "Ship retry B", blocked_by: ["retry-a"] } },
+				],
+			};
+			gh.dropNextSubIssueMutation = true;
+			const partial = await runGithubInitiativePublication(root, input, gh);
+			expect(partial).toMatchObject({ status: "retryable_failure", initiative: { issue_number: 1 } });
+			expect(gh.issues).toHaveLength(2);
+
+			const resumed = await runGithubInitiativePublication(root, input, gh);
+			expect(resumed.status).toBe("updated");
+			expect(gh.issues).toHaveLength(3);
+			expect(gh.subIssues.get(1)).toEqual([2, 3]);
+		});
+	});
+
+	it("fails closed when an early Child drifts before final topology verification", async () => {
+		await withIsolatedRootAsync(async (root) => {
+			const gh = new FakeGh();
+			const paths = initializeTrackedIntents(root, [
+				{ task_id: "issue-drift-a", goal: "Ship issue drift A" },
+				{ task_id: "issue-drift-b", goal: "Ship issue drift B" },
+			]);
+			gh.afterIssueCreate = (issueNumber) => {
+				if (issueNumber === 3) gh.issues[1].body += "\nconcurrent edit";
+			};
+			const published = await runGithubInitiativePublication(root, {
+				initiative_id: "issue-drift",
+				goal: "Detect Issue drift",
+				projection: {
+					problem: "An early Child can drift during a long publication.",
+					result: "Detect Issue drift",
+					design: "Both Children must remain exact and open.",
+				},
+				tasks: [
+					{ slice_id: "a", intent: paths[0] },
+					{ slice_id: "b", intent: paths[1] },
+				],
+			}, gh);
+			expect(published).toMatchObject({ status: "ambiguous_remote_state" });
+			expect(published.message).toContain("content changed during Initiative publication");
+			expect(published.execution).toBeUndefined();
+		});
+	});
+
+	it("fails closed when a TaskIntent changes during publication", async () => {
+		await withIsolatedRootAsync(async (root) => {
+			const gh = new FakeGh();
+			const paths = initializeTrackedIntents(root, [
+				{ task_id: "intent-drift-a", goal: "Ship intent drift A" },
+				{ task_id: "intent-drift-b", goal: "Ship intent drift B" },
+			]);
+			gh.afterIssueCreate = (issueNumber, cwd) => {
+				if (issueNumber !== 2) return;
+				const path = join(cwd, paths[1]);
+				writeFileSync(path, readFileSync(path, "utf8").replaceAll("Ship intent drift B", "Ship changed intent B"));
+			};
+			const published = await runGithubInitiativePublication(root, {
+				initiative_id: "intent-drift",
+				goal: "Detect TaskIntent drift",
+				projection: {
+					problem: "TaskIntent can change during a long publication.",
+					result: "Detect TaskIntent drift",
+					design: "Every remote write remains bound to the reviewed intent hashes.",
+				},
+				tasks: [
+					{ slice_id: "a", intent: paths[0] },
+					{ slice_id: "b", intent: paths[1] },
+				],
+			}, gh);
+			expect(published).toMatchObject({ status: "ambiguous_remote_state" });
+			expect(published.message).toContain("TaskIntent intent-drift-b changed");
+			expect(gh.issues).toHaveLength(2);
+			expect(published.execution).toBeUndefined();
+		});
+	});
+
+	it("exposes only the complete batch publication command through the tracker CLI", async () => {
+		await withIsolatedRootAsync(async (root) => {
+			const gh = new FakeGh();
+			const paths = initializeTrackedIntents(root, [
+				{ task_id: "cli-a", goal: "Ship CLI A" },
+				{ task_id: "cli-b", goal: "Ship CLI B" },
+			]);
+			const input = {
+				initiative_id: "cli-batch",
+				goal: "Publish through one CLI call",
+				projection: {
+					problem: "The CLI needs one complete publication input.",
+					result: "Publish through one CLI call",
+					design: "CLI A establishes the contract before CLI B consumes it.",
+				},
+				tasks: [
+					{ slice_id: "a", intent: paths[0], projection: { result: "Ship CLI A" } },
+					{ slice_id: "b", intent: paths[1], projection: { result: "Ship CLI B", blocked_by: ["cli-a"] } },
+				],
+			};
+			const published = await runGithubTrackerCli(["publish-initiative", "--stdin", "--json"], root, { gh, stdin: () => JSON.stringify(input) });
+			expect(published.returncode).toBe(0);
+			expect(JSON.parse(published.stdout)).toMatchObject({ status: "created", execution: { recommended_first_task_id: "cli-a" } });
+			for (const legacy of ["create-initiative", "upsert-task"]) {
+				const rejected = await runGithubTrackerCli([legacy, "--stdin", "--json"], root, { gh, stdin: () => JSON.stringify(input) });
+				expect(rejected.returncode).toBe(2);
+				expect(rejected.stderr).toContain("publish-initiative");
+			}
 		});
 	});
 
@@ -879,38 +1115,51 @@ describe("plugin package runtime cutover parity", () => {
 		});
 	});
 
-	it("publishes only a canonical Git-tracked TaskIntent through the CLI", async () => {
+	it("publishes only complete batches of canonical Git-tracked TaskIntents through the CLI", async () => {
 		await withIsolatedRootAsync(async (root) => {
 			const gh = new FakeGh();
-			expect((await runGithubTrackerOperation(root, INITIATIVE, gh)).status).toBe("created");
-			mkdirSync(join(root, "docs", "plans"), { recursive: true });
-			const intentPath = `docs/plans/${TRACKED_TASK.task_id}.intent.json`;
-			writeFileSync(join(root, intentPath), `${JSON.stringify({
-				contract: "assurance_kernel/task_intent/v1",
-				task_id: TRACKED_TASK.task_id,
-				goal: TRACKED_TASK.goal,
-				acceptance: [{ id: "acc-task", assertion: "The bounded Task is verified", verification: "{}" }],
-				scope_hint: ["tests/**"],
-				risk: "material",
-				revision: 1,
-				owner: "user",
-			}, null, 2)}\n`);
-			spawnSync("git", ["init", "-q"], { cwd: root });
-			spawnSync("git", ["add", intentPath], { cwd: root });
-			const published = await runGithubTrackerCli([
-				"upsert-task", "--initiative-id", INITIATIVE.initiative_id,
-				"--slice-id", TRACKED_TASK.slice_id, "--intent", intentPath, "--json",
-			], root, { gh });
+			const tracked = initializeTrackedIntents(root, [
+				{ task_id: "tracked-a", goal: "Ship tracked A" },
+				{ task_id: "tracked-b", goal: "Ship tracked B" },
+			]);
+			const untracked = writeTrackedIntent(root, "untracked-task", "Ship untracked work");
+			const base = {
+				initiative_id: "tracked-batch",
+				goal: "Publish only canonical tracked work",
+				projection: {
+					problem: "Untracked intent files must never be projected.",
+					result: "Publish only canonical tracked work",
+					design: "Tracked A precedes tracked B.",
+				},
+			};
+			const rejected = await runGithubTrackerCli(
+				["publish-initiative", "--stdin", "--json"],
+				root,
+				{
+					gh,
+					stdin: () => JSON.stringify({ ...base, tasks: [
+						{ slice_id: "a", intent: tracked[0] },
+						{ slice_id: "untracked", intent: untracked },
+					] }),
+				},
+			);
+			expect(rejected.returncode).toBe(1);
+			expect(JSON.parse(rejected.stdout).message).toContain("not Git-tracked");
+			expect(gh.mutations).toBe(0);
+
+			const published = await runGithubTrackerCli(
+				["publish-initiative", "--stdin", "--json"],
+				root,
+				{
+					gh,
+					stdin: () => JSON.stringify({ ...base, tasks: [
+						{ slice_id: "a", intent: tracked[0] },
+						{ slice_id: "b", intent: tracked[1], projection: { blocked_by: ["tracked-a"] } },
+					] }),
+				},
+			);
 			expect(published.returncode).toBe(0);
-			expect(JSON.parse(published.stdout)).toMatchObject({ status: "created", issue_number: 2 });
-			const untrackedPath = `docs/plans/untracked-task.intent.json`;
-			writeFileSync(join(root, untrackedPath), readFileSync(join(root, intentPath)));
-			const rejected = await runGithubTrackerCli([
-				"upsert-task", "--initiative-id", INITIATIVE.initiative_id,
-				"--slice-id", TRACKED_TASK.slice_id, "--intent", untrackedPath, "--json",
-			], root, { gh });
-			expect(rejected.returncode).toBe(2);
-			expect(rejected.stderr).toContain("not Git-tracked");
+			expect(JSON.parse(published.stdout)).toMatchObject({ status: "created", execution: { recommended_first_task_id: "tracked-a" } });
 		});
 	});
 
