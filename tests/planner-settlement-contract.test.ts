@@ -5,7 +5,6 @@ import { dirname, resolve } from "node:path"
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..")
 const DIST_PLANNER = resolve(REPO_ROOT, "plugins/immune-brain/dist/imm-planner.md")
-const SKILL_PLANNER = resolve(REPO_ROOT, "plugins/immune-brain/skills/imm-planner/SKILL.md")
 const CONTRACTS_HUB = resolve(REPO_ROOT, "docs/solutions/contracts.md")
 
 // Settlement-class intent surface: the requirement keywords the packaged
@@ -22,11 +21,6 @@ const REQUIRED_SURFACE = [
   "not execution-ready",
 ]
 
-const REQUIRED_SKILL_REFERENCE = [
-  "Settlement-Design Contract",
-  "terminal settlement, cancellation, timeout, race, or authority-lifecycle semantics",
-]
-
 describe("planner settlement-design contract", () => {
   it("packaged planner contract mandates the settlement enumeration", () => {
     const dist = readFileSync(DIST_PLANNER, "utf-8").replace(/\s+/g, " ")
@@ -35,17 +29,13 @@ describe("planner settlement-design contract", () => {
     }
   })
 
-  it("source skill entry point references the settlement contract", () => {
-    const skill = readFileSync(SKILL_PLANNER, "utf-8").replace(/\s+/g, " ")
-    for (const phrase of REQUIRED_SKILL_REFERENCE) {
-      expect(skill, `imm-planner/SKILL.md must reference ${JSON.stringify(phrase)}`).toContain(phrase)
-    }
-  })
-
-  it("source skill entry point still loads the packaged contract", () => {
-    const skill = readFileSync(SKILL_PLANNER, "utf-8")
+  it("source skill entry point loads the canonical packaged contract", () => {
+    const skill = readFileSync(
+      resolve(REPO_ROOT, "plugins/immune-brain/skills/imm-planner/SKILL.md"),
+      "utf-8",
+    )
     expect(skill).toContain("dist/imm-planner.md")
-    expect(skill).toContain("Settlement-Design Contract")
+    expect(skill).toContain("canonical contract")
   })
 
   it("contracts hub records the settlement-enumeration pattern with retro evidence", () => {

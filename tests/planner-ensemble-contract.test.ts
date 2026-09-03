@@ -11,11 +11,6 @@ function read(rel: string): string {
 
 describe("planner ensemble contract", () => {
 	it("keeps planner ensemble authority in the packaged contract without local model config", () => {
-		const source = read("plugins/immune-brain/skills/imm-planner/SKILL.md");
-		expect(source).toContain("internal Loop bridge's");
-		expect(source).toContain("advisory-reviewer");
-		expect(source).not.toContain("workflow_models.planner_ensemble");
-
 		const content = read("plugins/immune-brain/dist/imm-planner.md");
 		expect(content).toContain("planner ensemble");
 		expect(content).not.toContain("workflow_models.planner_ensemble");

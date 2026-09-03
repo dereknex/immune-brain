@@ -445,10 +445,8 @@ describe("plugin package runtime cutover parity", () => {
 		]);
 	});
 
-	it("ships matching Planner and Loop tracker authority contracts", () => {
-		const plannerSource = readFileSync(join(REPO_ROOT, "plugins/immune-brain/skills/imm-planner/SKILL.md"), "utf8");
+	it("ships canonical Planner and Loop tracker authority contracts", () => {
 		const plannerPacked = readFileSync(join(REPO_ROOT, "plugins/immune-brain/dist/imm-planner.md"), "utf8");
-		const loopSource = readFileSync(join(REPO_ROOT, "plugins/immune-brain/skills/imm-loop/SKILL.md"), "utf8");
 		const loopPacked = readFileSync(join(REPO_ROOT, "plugins/immune-brain/dist/imm-loop.md"), "utf8");
 		const carrierSection = (contract: string) => {
 			const section = contract.match(
@@ -463,10 +461,8 @@ describe("plugin package runtime cutover parity", () => {
 				.replace(/\s+/g, " ")
 				.trim();
 		};
-		const sourceCarrier = carrierSection(plannerSource);
 		const packedCarrier = carrierSection(plannerPacked);
-		expect(packedCarrier).toBe(sourceCarrier);
-		for (const contract of [sourceCarrier, packedCarrier]) {
+		for (const contract of [packedCarrier]) {
 			expect(contract).toContain("Initiative carrier default: local");
 			expect(contract).toContain("Initiative carrier default: github");
 			expect(contract).toContain("A repository directive overrides the global directive");
@@ -501,7 +497,7 @@ describe("plugin package runtime cutover parity", () => {
 			expect(contract).not.toContain("upsert-initiative");
 			expect(contract).not.toContain("mark-active");
 		}
-		for (const contract of [loopSource, loopPacked]) {
+		for (const contract of [loopPacked]) {
 			expect(contract).toContain("fresh claimless");
 			expect(contract).toContain("completed");
 			expect(contract).toContain("not planned");

@@ -12,37 +12,38 @@ function read(rel: string): string {
 }
 
 describe("imm-loop Kernel routing contract", () => {
-	test("public Loop entry and packaged copy describe the foreground assurance route", () => {
+	test("canonical Loop contract describes the foreground assurance route", () => {
 		const entry = read("plugins/immune-brain/skills/imm-loop/SKILL.md");
 		const dist = read("plugins/immune-brain/dist/imm-loop.md");
-		for (const text of [entry, dist]) {
-			expect(text).toContain("imm_kernel_canary");
-			expect(text).toContain("advance_assurance");
-			expect(text).toContain("submit_review");
-			expect(text).toContain("request_authorization");
-			expect(text).toContain("run_in_background: false");
-			expect(text).toContain("structured verdict");
-			expect(text).toContain("direct result");
-			expect(text).not.toContain("tool_execution_end");
-			expect(text).not.toContain("get_subagent_result");
-			expect(text).not.toContain("cancel_assurance");
-			expect(text).not.toContain("followUp");
-		}
+		for (const expected of [
+			"imm_kernel_canary",
+			"advance_assurance",
+			"submit_review",
+			"request_authorization",
+			"run_in_background: false",
+			"structured verdict",
+			"direct result",
+		]) expect(dist).toContain(expected);
+		for (const forbidden of [
+			"tool_execution_end",
+			"get_subagent_result",
+			"cancel_assurance",
+			"followUp",
+		]) expect(dist).not.toContain(forbidden);
 		expect(entry).toContain("Load");
-		expect(dist).toContain("record-user-approval");
+		expect(entry).toContain("dist/imm-loop.md");
 		expect(dist).toContain("native TUI gate");
 	});
 
 	test("native authority operations bypass chat pre-confirmation", () => {
-		const entry = read("plugins/immune-brain/skills/imm-loop/SKILL.md");
 		const dist = read("plugins/immune-brain/dist/imm-loop.md");
-		for (const text of [entry, dist]) {
-			expect(text).toContain("request_authorization");
-			expect(text).toContain("approve_breaking_intent_revision");
-			expect(text).toContain("repair_authority_state");
-			expect(text).toContain("chat pre-confirmation");
-			expect(text).toContain("single authority decision");
-		}
+		for (const expected of [
+			"request_authorization",
+			"approve_breaking_intent_revision",
+			"repair_authority_state",
+			"chat pre-confirmation",
+			"single authority decision",
+		]) expect(dist).toContain(expected);
 
 		const extension = read("plugins/immune-brain/.pi-extension/imm-canary-work.ts");
 		for (const operation of [
@@ -88,10 +89,11 @@ describe("imm-loop Kernel routing contract", () => {
 		);
 	});
 
-	test("public Loop carries the Kernel routing clause", () => {
+	test("public Loop loader points to the canonical Kernel contract", () => {
 		const entry = read("plugins/immune-brain/skills/imm-loop/SKILL.md");
 		const dist = read("plugins/immune-brain/dist/imm-loop.md");
-		expect(entry).toMatch(/imm-canary-work|Kernel projection/i);
+		expect(entry).toContain("dist/imm-loop.md");
+		expect(entry).toContain("canonical contract");
 		expect(dist).toMatch(/Kernel Canary Routing/i);
 		expect(dist).toMatch(/task tombstone|terminal/i);
 		expect(dist).toMatch(/fail(s)?\s+closed/i);

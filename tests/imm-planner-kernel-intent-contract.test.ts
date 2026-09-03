@@ -8,15 +8,11 @@ import { join } from "node:path";
 
 const REPO_ROOT = join(__dirname, "..");
 
-const SKILL_PATH = join(
-	REPO_ROOT,
-	"plugins/immune-brain/skills/imm-planner/SKILL.md",
-);
 const DIST_PATH = join(
 	REPO_ROOT,
 	"plugins/immune-brain/dist/imm-planner.md",
 );
-const PLANNER_CONTRACTS = [SKILL_PATH, DIST_PATH];
+const PLANNER_CONTRACTS = [DIST_PATH];
 
 describe("imm-planner kernel intent contract", () => {
 	test("Planner resolves packaged wrappers without assuming shell PATH", () => {
@@ -44,8 +40,8 @@ describe("imm-planner kernel intent contract", () => {
 		}
 	});
 
-	test("Skill teaches routing-status-first deterministic routing", () => {
-		const skill = readFileSync(SKILL_PATH, "utf8");
+	test("canonical contract teaches routing-status-first deterministic routing", () => {
+		const skill = readFileSync(DIST_PATH, "utf8");
 		expect(skill).toContain("imm-plan --routing-status --json");
 		expect(skill).toContain("kernel_task_intent");
 		expect(skill).toContain("routing_policy_invalid");
@@ -54,8 +50,8 @@ describe("imm-planner kernel intent contract", () => {
 		expect(skill).toContain("no Planner path enrolls a task");
 	});
 
-	test("Skill forbids direct artifact writes and names the canonical author command", () => {
-		const skill = readFileSync(SKILL_PATH, "utf8");
+	test("canonical contract forbids direct artifact writes and names the canonical author command", () => {
+		const skill = readFileSync(DIST_PATH, "utf8");
 		expect(skill).toContain("never writes");
 		expect(skill).toContain("docs/plans/<task-id>.intent.json");
 		expect(skill).toContain("imm-kernel intent author");
@@ -65,7 +61,7 @@ describe("imm-planner kernel intent contract", () => {
 	});
 
 	test("Planner enrollment authority stays Pi TUI-only", () => {
-		const skill = readFileSync(SKILL_PATH, "utf8");
+		const skill = readFileSync(DIST_PATH, "utf8");
 		expect(skill).toContain("imm_canary_enrollment");
 		expect(skill).toContain("literal-user confirmation");
 		expect(skill).not.toContain("/imm-canary-new");

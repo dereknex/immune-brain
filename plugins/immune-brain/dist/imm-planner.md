@@ -1,6 +1,6 @@
 ---
 name: imm-planner
-description: Use when planning work.
+description: Use to create or revise a spec and TaskIntent from requirements; owns scope and decomposition, not implementation or Enrollment.
 ---
 
 # Immune-Brain: Planner

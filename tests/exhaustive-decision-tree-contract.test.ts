@@ -11,7 +11,6 @@ const brainstormContracts = [
 	"plugins/immune-brain/dist/imm-brainstorm.md",
 ];
 const plannerContracts = [
-	"plugins/immune-brain/skills/imm-planner/SKILL.md",
 	"plugins/immune-brain/dist/imm-planner.md",
 ];
 

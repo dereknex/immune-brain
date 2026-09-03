@@ -6,7 +6,6 @@ const REPO_ROOT = resolve(import.meta.dir, "..")
 const read = (path: string) => readFileSync(resolve(REPO_ROOT, path), "utf-8")
 
 const PLANNER = read("plugins/immune-brain/dist/imm-planner.md")
-const SKILL = read("plugins/immune-brain/skills/imm-planner/SKILL.md")
 const QA = read("plugins/immune-brain/dist/role-prompts/qa.md")
 const QUALITY_GATE = read("docs/reference/planning-quality-gate.md")
 
@@ -64,37 +63,33 @@ describe("risk-tiered Technical Design conformance contract", () => {
     ])
   })
 
-  it("requires materially relevant technical-design views on both Planner surfaces", () => {
-    for (const text of [SKILL, PLANNER]) {
-      expectAll(text, [
-        "materially relevant",
-        "architecture layers",
-        "service/component interfaces",
-        "data flow",
-        "state transitions",
-        "temporal sequence",
-        "Design views",
-        "The Spec is the single Technical Design baseline",
-        "Low risk remains concise",
-      ])
-    }
+  it("requires materially relevant technical-design views in the canonical Planner contract", () => {
+    expectAll(PLANNER, [
+      "materially relevant",
+      "architecture layers",
+      "service/component interfaces",
+      "data flow",
+      "state transitions",
+      "temporal sequence",
+      "Design views",
+      "The Spec is the single Technical Design baseline",
+      "Low risk remains concise",
+    ])
   })
 
   it("uses Technical Design as a TaskIntent retain/split dimension without count-based splitting or prose Plan revival", () => {
-    for (const text of [SKILL, PLANNER]) {
-      expectAll(text, [
-        "TaskIntent decomposition",
-        "Split a successor TaskIntent",
-        "coherent executable slice",
-        "risk treatment",
-        "Do not split merely because the design names several layers, files, or services",
-        "revive prose Plan",
-      ])
-    }
+    expectAll(PLANNER, [
+      "TaskIntent decomposition",
+      "Split a successor TaskIntent",
+      "coherent executable slice",
+      "risk treatment",
+      "Do not split merely because the design names several layers, files, or services",
+      "revive prose Plan",
+    ])
   })
 
   it("treats one primary trust-boundary invariant as a Planner default with an atomic-outcome exception", () => {
-    for (const text of [SKILL, PLANNER, QUALITY_GATE]) {
+    for (const text of [PLANNER, QUALITY_GATE]) {
       expectAll(text, [
         "one primary trust-boundary invariant",
         "traversing several boundaries",

@@ -68,7 +68,7 @@ describe("Skill-explicit workflow routing contract", () => {
 
   it("keeps the user guide on current Kernel authority instead of retired v3 operations", () => {
     expectAll(USER_GUIDE, [
-      "`.imm/tasks/<task-id>.json`",
+      "`.imm/state/tasks/<task-id>.json`",
       "TaskIntent 与 TaskRecord 是独立 authority",
       "v3 mutating commands 已退出生产路径",
       "v4 不自动迁移",

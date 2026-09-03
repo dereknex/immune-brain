@@ -1,6 +1,6 @@
 ---
 name: imm-loop
-description: Use when running validated Plans to completion.
+description: Use to run an enrolled TaskIntent to completion through Kernel-governed execution, QA, and Review.
 ---
 
 # Immune-Brain: Loop
@@ -141,17 +141,22 @@ Default user-facing shape: checkpoint progress lines, then `Conclusion -> Eviden
 When the Kernel projection reports an active/draining backend claim, keep
 `imm-loop` as the user-facing entry and call the `imm_kernel_canary` Tool for
 that owned task. Enrollment uses the `imm_canary_enrollment` Tool and Review
-authorization remains a native TUI gate using the internal user-kind approval
-action `record-user-approval`. When the projection calls for
+authorization remains a native TUI gate. When the projection calls for
 `request_authorization`, `approve_breaking_intent_revision`, or
 `repair_authority_state`, invoke the exact Tool operation directly without
 asking the user for chat pre-confirmation; the native host interaction is the
-single authority decision. This action is not a public Skill or CLI route. Do
-not invoke the removed `imm-canary-work` Skill as a separate entry point.
-Invalid or contradictory projections fail closed. After implementation and focused verification, freeze the artifacts and call
-`imm_kernel_canary` `advance_assurance`. If it returns `review_ready`, invoke
-the foreground reviewer and pass its structured verdict to `submit_review`;
-`request_authorization` remains the user authorization boundary. Foreground
-results replace background continuation and result polling. A terminal task leaves only an immutable task tombstone: it is
-never reactivated and never blocks unrelated v3 routing. The Kernel projection
-is advisory; every Kernel mutation re-enters Kernel store-lock validation.
+single authority decision. Do not invoke the removed `imm-canary-work` Skill as
+a separate entry point. Invalid or contradictory projections fail closed. After
+implementation and focused verification, freeze the artifacts and call
+`advance_assurance`. If it returns `review_ready`, invoke the foreground
+reviewer and pass its structured verdict to `submit_review`;
+`request_authorization` remains the critical-risk user authorization boundary.
+Every QA/Review operation stays foreground and returns its next projected
+obligation directly to the Parent. The host performs any opted-in GitHub Issue
+projection only after the corresponding authority mutation: only a fresh
+claimless `done`/`stopped` projection with its exact terminal tombstone projects
+terminal closure (`completed`/`not planned`); Enrollment performs no GitHub
+projection. Treat the attached tracker result as non-authoritative observation.
+Report its failure separately, but never use it as evidence, a stop condition,
+or a reason to repeat a Kernel mutation. A terminal tombstone alone never
+blocks unrelated v3 routing.

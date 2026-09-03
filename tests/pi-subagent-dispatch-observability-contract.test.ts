@@ -34,14 +34,9 @@ test("interactive dispatch contracts are foreground-only and do not poll", () =>
 	}
 });
 
-test("assurance role guidance describes direct QA and Parent-mediated Review verdict flow", () => {
-	for (const path of [
-		"plugins/immune-brain/skills/imm-loop/SKILL.md",
-		"plugins/immune-brain/dist/imm-loop.md",
-	]) {
-		const contract = read(path);
-		expect(contract).toContain("advance_assurance");
-		expect(contract).toMatch(/foreground|前台/i);
-		expect(contract).toMatch(/submit_review|structured verdict/);
-	}
+test("canonical Loop contract describes direct QA and Parent-mediated Review verdict flow", () => {
+	const contract = read("plugins/immune-brain/dist/imm-loop.md");
+	expect(contract).toContain("advance_assurance");
+	expect(contract).toMatch(/foreground|前台/i);
+	expect(contract).toMatch(/submit_review|structured verdict/);
 });

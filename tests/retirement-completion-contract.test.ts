@@ -9,10 +9,8 @@ const BASELINE_CANONICAL = read("plugins/immune-brain/BASELINE.md");
 const BASELINE_DIST = read("plugins/immune-brain/dist/BASELINE.md");
 const BASELINE_SKILLS = read("plugins/immune-brain/skills/BASELINE.md");
 const PLANNER_DIST = read("plugins/immune-brain/dist/imm-planner.md");
-const PLANNER_SKILL = read("plugins/immune-brain/skills/imm-planner/SKILL.md");
-
 const BASELINES = [BASELINE_CANONICAL, BASELINE_DIST, BASELINE_SKILLS];
-const PLANNERS = [PLANNER_DIST, PLANNER_SKILL];
+const PLANNERS = [PLANNER_DIST];
 
 function expectDeletionIsCompletion(text: string) {
   // acceptance: deletion of source and contract text as a completion condition for retirement-class work

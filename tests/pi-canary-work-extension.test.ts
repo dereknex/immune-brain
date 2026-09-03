@@ -542,18 +542,18 @@ async function capturedToolFailure(promise: Promise<unknown>): Promise<Record<st
 		})))).toBe(false);
 	});
 
-	test("patch changeset and cleanup Issue contract reference", () => {
+	test("keeps the shipped Tool action fix and cleanup Issue contract reference", () => {
 		const sourcePath = join(process.cwd(), "plugins", "immune-brain", ".pi-extension", "imm-canary-work.ts");
-		const changesetPath = join(process.cwd(), ".changeset", "nested-tool-action-normalization.md");
+		const changelogPath = join(process.cwd(), "CHANGELOG.md");
 		expect(existsSync(sourcePath)).toBe(true);
-		expect(existsSync(changesetPath)).toBe(true);
+		expect(existsSync(changelogPath)).toBe(true);
 		const source = readFileSync(sourcePath, "utf8");
-		const changeset = readFileSync(changesetPath, "utf8");
+		const changelog = readFileSync(changelogPath, "utf8");
 		expect(source).toContain("github.com/dereknex/immune-brain/issues/14");
 		expect(source).toContain("two consecutive");
 		expect(source).toContain("30 days");
-		expect(changeset).toContain('"immune-brain": patch');
-		expect(changeset.toLowerCase()).toContain("tool action");
+		expect(changelog).toContain("Normalize JSON-string Tool action arguments before schema validation");
+		expect(changelog).toContain("f0b99a0");
 	});
 
 	test("keeps ordinary host input host-native and preserves explicit Skill entry", { timeout: 15000 }, async () => {

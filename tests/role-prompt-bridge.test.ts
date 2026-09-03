@@ -240,18 +240,13 @@ describe("internal role-prompt bridge", () => {
 		expect(pkg.files).toContain("plugins/immune-brain/runtime/prompts");
 		expect(pkg.files).toContain("plugins/immune-brain/dist");
 	});
-	it("keeps Loop role dispatch on the internal bridge", () => {
-		for (const path of [
-			"plugins/immune-brain/skills/imm-loop/SKILL.md",
-			"plugins/immune-brain/dist/imm-loop.md",
-		]) {
-			const content = read(path);
-			expect(content).toContain("imm_loop_action");
-			expect(content).toContain("standalone `imm-pr-fix`, `imm-doc-prune`, and `imm-agent-doc-maintain` are host-native");
-			expect(content).toContain("never dispatched as the Loop role");
-			expect(content).not.toMatch(/public\s+Skills\s+remain available as rollback shims/);
-			expect(content).not.toContain("dispatch an isolated read-only `imm-qa`");
-		}
+	it("keeps canonical Loop role dispatch on the internal bridge", () => {
+		const content = read("plugins/immune-brain/dist/imm-loop.md");
+		expect(content).toContain("imm_loop_action");
+		expect(content).toContain("standalone `imm-pr-fix`, `imm-doc-prune`, and `imm-agent-doc-maintain` are host-native");
+		expect(content).toContain("never dispatched as the Loop role");
+		expect(content).not.toMatch(/public\s+Skills\s+remain available as rollback shims/);
+		expect(content).not.toContain("dispatch an isolated read-only `imm-qa`");
 	});
 	it("loads internal role prompts independently from public Skill entries", () => {
 		for (const role of [

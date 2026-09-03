@@ -1,8 +1,6 @@
-// 2026-08-13-018 acc-user-approval-package-contract.
-// dist/skill/README document the record-user-approval wiring and its TUI-only
-// exact-action confirmation semantics; package.json and the extension entry
-// manifest stay unchanged; the ordinary tool schema stays closed to
-// record_user_approval; no new privileged CLI/RPC/JSON/print route exists.
+// The extension documents the internal record-user-approval wiring while the
+// canonical Loop contract keeps the public authority surface at the native TUI
+// gate. No new privileged CLI/RPC/JSON/print route exists.
 
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
@@ -15,16 +13,16 @@ function read(p: string): string {
 }
 
 describe("user approval package contract", () => {
-	test("dist imm-loop documents record-user-approval wiring", () => {
+	test("canonical Loop contract documents the native user authority gate", () => {
 		const dist = read("plugins/immune-brain/dist/imm-loop.md");
-		expect(dist).toContain("record-user-approval");
-		expect(dist).toMatch(/user-kind approval|user approval/i);
-		expect(dist).toContain("TUI");
+		expect(dist).toContain("native TUI gate");
+		expect(dist).toContain("request_authorization");
+		expect(dist).not.toContain("record-user-approval");
 	});
 
-	test("public Loop shim documents the authorize surface", () => {
+	test("public Loop shim loads the canonical contract", () => {
 		const skill = read("plugins/immune-brain/skills/imm-loop/SKILL.md");
-		expect(skill).toContain("native TUI gate");
+		expect(skill).toContain("dist/imm-loop.md");
 	});
 
 	test("package.json surface is unchanged (no new privileged route)", () => {

@@ -92,7 +92,7 @@ export const MANUAL_ADAPTED_ENTRIES = ADAPTED_ENTRIES.filter(
 // The skill entry points (SKILL.md) are minimal loaders; the packaged contracts
 // (dist/imm-*.md) are the full agent instructions and are therefore their own
 // authoring source. Byte identity is intentionally NOT the invariant for these
-// pairs (skill ≈5KB vs dist ≈30KB is legitimate).
+// pairs: the loader only identifies and loads its substantially larger contract.
 export type PackagedContractKind = "mirror" | "adapted" | "owned";
 
 export interface PackagedContractEntry {

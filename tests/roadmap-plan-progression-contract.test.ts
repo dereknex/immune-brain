@@ -11,10 +11,6 @@ function read(path: string): string {
 
 const ROLE_PAIRS = [
 	[
-		"plugins/immune-brain/skills/imm-loop/SKILL.md",
-		"plugins/immune-brain/dist/imm-loop.md",
-	],
-	[
 		"plugins/immune-brain/runtime/prompts/qa.md",
 		"plugins/immune-brain/dist/role-prompts/qa.md",
 	],
@@ -25,7 +21,7 @@ const ROLE_PAIRS = [
 ] as const;
 
 describe("Roadmap successor workflow role contracts", () => {
-	it("keeps source loaders and packaged role contracts aligned on user authority", () => {
+	it("keeps canonical role contracts aligned on user authority", () => {
 		for (const [sourcePath, distPath] of ROLE_PAIRS) {
 			const source = read(sourcePath);
 			const packaged = read(distPath);
@@ -38,6 +34,9 @@ describe("Roadmap successor workflow role contracts", () => {
 				expect(packaged).toContain(contract);
 			}
 		}
+		const loader = read("plugins/immune-brain/skills/imm-loop/SKILL.md");
+		expect(loader).toContain("dist/imm-loop.md");
+		expect(loader).toContain("canonical contract");
 	});
 
 	it("orders Compounder and finish before the terminal user decision stop", () => {

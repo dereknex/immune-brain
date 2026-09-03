@@ -11,9 +11,6 @@ const BASELINE_SKILLS = resolve(REPO_ROOT, BASELINE_SKILLS_REL)
 const BASELINE_DIST = resolve(REPO_ROOT, "plugins/immune-brain/dist/BASELINE.md")
 const DIST_DIR = resolve(REPO_ROOT, "plugins/immune-brain/dist")
 const PLANNER = resolve(DIST_DIR, "imm-planner.md")
-const PROFILE_ROLE_PAIRS = [
-  ["plugins/immune-brain/skills/imm-loop/SKILL.md", "plugins/immune-brain/dist/imm-loop.md"],
-] as const
 
 function read(abs: string): string {
   return readFileSync(abs, "utf-8")
@@ -67,19 +64,11 @@ describe("immune-brain BASELINE packaging contract", () => {
     }
   })
 
-  it("keeps risk-tier routing aligned across loaders and packaged roles", () => {
-    for (const [sourcePath, distPath] of PROFILE_ROLE_PAIRS) {
-      for (const content of [
-        read(resolve(REPO_ROOT, sourcePath)),
-        read(resolve(REPO_ROOT, distPath)),
-      ]) {
-        expect(content).toContain("Standard")
-        expect(content).toContain("Strict")
-      }
-    }
-    expect(read(resolve(DIST_DIR, "imm-loop.md"))).toContain(
-      "review_budget_state.budget_stop",
-    )
+  it("keeps risk-tier routing in the canonical Loop contract", () => {
+    const loop = read(resolve(DIST_DIR, "imm-loop.md"))
+    expect(loop).toContain("Standard")
+    expect(loop).toContain("Strict")
+    expect(loop).toContain("review_budget_state.budget_stop")
     expect(read(resolve(DIST_DIR, "role-prompts/compounder.md"))).toContain(
       "# Internal role: compounder",
     )

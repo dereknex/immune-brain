@@ -74,6 +74,43 @@ describe("imm-agent-doc-maintain contract", () => {
     expect(contract).toContain("costly to violate");
   });
 
+  test("deduplicates meanings only when ownership evidence is explicit", () => {
+    expect(contract).toContain("semantic duplication within and across candidates");
+    expect(contract).toContain("one instruction owner");
+    expect(contract).toContain("duplicate copies are not all `KEEP`");
+    expect(contract).toContain("unresolved ownership remains `UNVERIFIED` or `BLOCKED`");
+  });
+
+  test("removes rules already enforced by deterministic mechanisms", () => {
+    for (const mechanism of [
+      "formatter",
+      "linter",
+      "schema",
+      "permission policy",
+      "Git hook",
+      "runtime",
+    ]) expect(contract).toContain(mechanism);
+    expect(contract).toContain("non-discoverable recovery action");
+    expect(contract).toContain("shortest `REWRITE` or `POINTER`");
+  });
+
+  test("routes conditional content without assuming host-specific markup", () => {
+    expect(contract).toContain("globally relevant retained rules inline");
+    expect(contract).toContain("branch-specific rule");
+    expect(contract).toContain("concrete trigger condition");
+    expect(contract).toContain("when no owner exists, use `MISSING_OWNER`");
+    expect(contract).toContain("host-specific conditional markup");
+    expect(contract).toContain("`<important if>`");
+    expect(contract).toContain("explicit current host contract");
+  });
+
+  test("treats discoverable examples and commands as repository caches", () => {
+    expect(contract).toContain("code snippets, examples, and command tables");
+    expect(contract).toContain("repository caches");
+    expect(contract).toContain("stable pointer");
+    expect(contract).toContain("non-discoverable exception or recovery action");
+  });
+
   test("preserves native host file structure", () => {
     expect(contract).toContain("Preserve each file's native organization");
     expect(contract).toContain("Do not normalize files to a shared");

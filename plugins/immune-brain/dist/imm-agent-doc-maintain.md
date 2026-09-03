@@ -55,9 +55,12 @@ commit.
    routing owner or scope cannot be read reliably, fail closed for mutation.
 
 3. **Inventory instruction relationships.** Determine nesting, explicit
-   precedence statements, inbound references, and existing authority pointers.
-   Preserve each file's native organization. Do not normalize files to a shared
-   template and do not infer unsupported cross-host inheritance semantics.
+   precedence statements, inbound references, existing authority pointers, and
+   semantic duplication within and across candidates. Preserve each file's
+   native organization. Do not normalize files to a shared template and do not
+   infer unsupported cross-host inheritance semantics. Resolve duplicate
+   ownership only from explicit precedence, authority, and inbound-reference
+   evidence; unresolved ownership remains `UNVERIFIED` or `BLOCKED`.
 
 4. **Build repository facts.** Resolve current truth in this order:
    executable/public registries, package exports, CLI/runtime entrypoints;
@@ -77,14 +80,25 @@ commit.
 6. **Classify exact actions.** Classify entries as `REMOVE`, `REWRITE`,
    `POINTER`, `KEEP`, `BLOCKED`, `BLOCKED_ACTIVE_SCOPE`, `UNVERIFIED`, or
    `MISSING_OWNER`. Every mutation entry identifies exact file/section bytes,
-   preserved meaning, evidence, candidate hash, and resulting text. `POINTER`
-   may target only an existing current authority and must include a concrete
-   trigger condition. Missing reference ownership is `MISSING_OWNER`; this Skill
-   does not create a reference document. Unknown or one-off-looking rules remain
-   `UNVERIFIED` and are not deleted by default. Unresolved precedence or
-   semantic conflicts that cannot be decided from explicit repository scope or
-   declared precedence are `BLOCKED`. Filename convention, nesting, or guessed
-   host behavior alone may not resolve a conflict.
+   preserved meaning, evidence, candidate hash, and resulting text. A retained
+   meaning has one instruction owner; duplicate copies are not all `KEEP` by
+   default. Rules already enforced deterministically by a formatter, linter,
+   schema, permission policy, Git hook, or runtime are `REMOVE` unless the agent
+   still needs a non-discoverable recovery action, in which case use the shortest
+   `REWRITE` or `POINTER`. Keep globally relevant retained rules inline. For a
+   branch-specific rule, prefer `POINTER` to an existing current authority with
+   a concrete trigger condition; when no owner exists, use `MISSING_OWNER`
+   rather than creating one. This Skill does not create a reference document.
+   Do not introduce host-specific conditional markup,
+   including `<important if>`, without an explicit current host contract and
+   repository evidence that the target file uses those semantics. Discoverable
+   code snippets, examples, and command tables are repository caches and are
+   removed or replaced with a stable pointer unless they encode a necessary
+   non-discoverable exception or recovery action. Unknown or one-off-looking
+   rules remain `UNVERIFIED` and are not deleted by default. Unresolved
+   precedence or semantic conflicts that cannot be decided from explicit
+   repository scope or declared precedence are `BLOCKED`. Filename convention,
+   nesting, or guessed host behavior alone may not resolve a conflict.
 
 7. **Produce one exact manifest.** `audit` mode stops after the manifest.
    Mutation mode also stops until the literal user approves exact manifest
@@ -103,8 +117,9 @@ commit.
    brevity.
 
 9. **Verify and report.** Re-scan modified instruction relationships, local
-   pointer targets, unresolved conflicts, source/package public-surface parity,
-   existing focused documentation contracts, and `git diff --check`. This Skill
+   pointer targets, duplicate retained meanings, unresolved conflicts,
+   source/package public-surface parity, existing focused documentation
+   contracts, and `git diff --check`. This Skill
    does not execute arbitrary documented commands, real-model success-rate
    benchmarks, or Token measurements unless the user literally requests a
    benchmark. This Skill does not commit. Report only `Removed`, `Rewritten`,

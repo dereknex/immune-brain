@@ -121,6 +121,15 @@ describe("skill dist consistency", () => {
 		}
 	});
 
+	test("Planner and Loop entry points remain section-free loaders", () => {
+		for (const skill of ["imm-planner", "imm-loop"]) {
+			const text = read(join(SKILLS_DIR, skill, "SKILL.md"));
+			expect(text).toContain(`../../dist/${skill}.md`);
+			expect(text).toContain("canonical contract");
+			expect(text).not.toMatch(/^## /m);
+		}
+	});
+
 	test("every declared packaged contract has a check enforcing its source relationship", () => {
 		for (const entry of PACKAGED_CONTRACT_ENTRIES) {
 			const packagedAbs = join(DIST_DIR, entry.packaged);

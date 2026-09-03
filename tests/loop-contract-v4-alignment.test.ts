@@ -35,12 +35,9 @@ describe("loop contract v4 alignment", () => {
 		expect(readme).toMatch(/Retired after v4 storage retirement/);
 	});
 
-	test("public Loop skill and packaged copy share the Kernel surface", () => {
+	test("public Loop loader points to the packaged Kernel surface", () => {
 		const skill = read("plugins/immune-brain/skills/imm-loop/SKILL.md");
-		const dist = read("plugins/immune-brain/dist/imm-loop.md");
-		for (const token of KERNEL_SURFACE) {
-			expect(skill).toContain(token);
-			expect(dist).toContain(token);
-		}
+		expect(skill).toContain("dist/imm-loop.md");
+		expect(skill).toContain("canonical contract");
 	});
 });
