@@ -11,7 +11,7 @@ verification.
 ## Decision
 
 1. Planning artifact lifecycle (archival vs active) is governed by `docs/reference/planning-artifact-retention.md`, which defines terminality signals (S1 filename substring ∨ S2 citation over `docs/plans/archive/`), move-only archival with byte-preserving `R` rename, link rewrite, and named exemptions. Non-terminal artifacts remain durable at their existing paths by default.
-2. Root `package.json` is the sole Pi package and version manifest. Non-Pi code-agent consumers were retired after their adapter directories, install routes, and release contracts ceased to be supported; `scripts/plugin_versioning.ts` now validates and mutates only this authority.
+2. Root `package.json` is the sole version manifest. It may ship the Pi package and one self-contained Claude Code plugin at that version. Undeclared adapters remain rejected. ADR-0004 supersedes the earlier Pi-only package conclusion; this ADR still owns self-contained distribution and distinct consumer paths. `scripts/plugin_versioning.ts` validates and mutates this authority and stamps the Claude plugin version copy.
 3. Repository docs remain authoring sources for classified packaged references. Checked-in `plugins/immune-brain/dist/` remains self-contained package output, verified by `scripts/sync-dist-docs.ts --check` and the dist sync contract tests.
 4. `plugins/immune-brain/skills/*/SKILL.md` remains the host-discoverable entry surface. `plugins/immune-brain/dist/*.md` remains the detailed packaged instruction surface.
 5. Current workflow guidance belongs in `docs/solutions/`. Legacy documentation paths may remain as compatibility pointers when current or historical links depend on them.

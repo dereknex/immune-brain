@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "immune-brain": {
+      "command": "node",
+      "args": ["${CLAUDE_PLUGIN_ROOT}/dist/claude/mcp-server.mjs"]
+    }
+  }
+}

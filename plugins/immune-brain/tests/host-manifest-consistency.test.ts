@@ -5,12 +5,15 @@ import { resolve } from "node:path";
 const ROOT = resolve(import.meta.dir, "../../..");
 const REMOVED_HOST_SURFACES = [
   ".agents/plugins/marketplace.json",
-  ".claude-plugin",
   ".cursor-plugin",
   "plugins/immune-brain/.codex-plugin",
-  "plugins/immune-brain/.claude-plugin",
   "plugins/immune-brain/.cursor-plugin",
   "plugins/immune-brain/.opencode-plugin",
+];
+const REQUIRED_CLAUDE_SURFACES = [
+  ".claude-plugin/marketplace.json",
+  "plugins/immune-brain/.claude-plugin/plugin.json",
+  "plugins/immune-brain/.mcp.json",
 ];
 
 describe("Pi package manifest consistency", () => {
@@ -23,6 +26,9 @@ describe("Pi package manifest consistency", () => {
     expect(existsSync(resolve(ROOT, "plugins/immune-brain/.pi-extension"))).toBe(true);
     for (const path of REMOVED_HOST_SURFACES) {
       expect(existsSync(resolve(ROOT, path))).toBe(false);
+    }
+    for (const path of REQUIRED_CLAUDE_SURFACES) {
+      expect(existsSync(resolve(ROOT, path))).toBe(true);
     }
   });
 });

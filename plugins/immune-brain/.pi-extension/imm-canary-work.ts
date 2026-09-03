@@ -740,6 +740,69 @@ export default function (
 			progression.closeInvocation(invocation);
 			return { state: "blocked", reason };
 		}
+		const priorIntent = await readTaskIntent(ctx.cwd, taskId);
+		const sidecar = nextIntent ? join(ctx.cwd, priorIntent.intent_ref.path) : undefined;
+		const priorBytes = sidecar ? readFileSync(sidecar) : undefined;
+		const priorIndexState = sidecar
+			? execFileSync("git", ["ls-files", "--stage", "-z", "--", priorIntent.intent_ref.path], {
+					cwd: ctx.cwd,
+					stdio: ["ignore", "pipe", "pipe"],
+				})
+			: undefined;
+		let stagedNextDiffHash: string | undefined;
+		const restoreStagedIntent = (): void => {
+			if (!sidecar || !priorBytes || !priorIndexState) return;
+			writeFileSync(sidecar, priorBytes);
+			execFileSync("git", ["update-index", "--force-remove", "--", priorIntent.intent_ref.path], {
+				cwd: ctx.cwd,
+				stdio: ["ignore", "pipe", "pipe"],
+			});
+			if (priorIndexState.length > 0) {
+				execFileSync("git", ["update-index", "-z", "--index-info"], {
+					cwd: ctx.cwd,
+					input: priorIndexState,
+					stdio: ["pipe", "ignore", "pipe"],
+				});
+			}
+			const restoredBytes = readFileSync(sidecar);
+			if (!restoredBytes.equals(priorBytes)) {
+				throw new Error("failed to restore prior intent bytes");
+			}
+			const restoredIndex = execFileSync("git", ["ls-files", "--stage", "-z", "--", priorIntent.intent_ref.path], {
+				cwd: ctx.cwd,
+				stdio: ["ignore", "pipe", "pipe"],
+			});
+			if (!restoredIndex.equals(priorIndexState)) {
+				throw new Error("failed to restore prior intent git index entry");
+			}
+		};
+		if (nextIntent) {
+			try {
+				if (!sidecar || !priorBytes) throw new Error("breaking revision sidecar is missing");
+				if (
+					priorIntent.intent.revision !== projection.projection.intent_revision
+					|| priorIntent.content_hash !== projection.projection.intent_content_hash
+				) throw new Error("Intent changed while preparing the breaking revision");
+				writeFileSync(sidecar, `${JSON.stringify(nextIntent, null, 2)}\n`);
+				execFileSync("git", ["add", "--", priorIntent.intent_ref.path], {
+					cwd: ctx.cwd,
+					stdio: ["ignore", "pipe", "pipe"],
+				});
+				const stagedRecord = await readTaskRecord(ctx.cwd, taskId);
+				if (!stagedRecord.record || stagedRecord.revision !== projection.projection.record_revision)
+					throw new Error("TaskRecord changed while preparing the breaking revision");
+				stagedNextDiffHash = diffHashOf(ctx.cwd, stagedRecord.record);
+			} catch (error) {
+				let restoreError: unknown;
+				try { restoreStagedIntent(); } catch (err) { restoreError = err; }
+				const primaryReason = error instanceof Error ? error.message : String(error);
+				const reason = restoreError
+					? `${primaryReason}; additionally, ${restoreError instanceof Error ? restoreError.message : String(restoreError)}`
+					: primaryReason;
+				progression.closeInvocation(invocation);
+				return { state: "blocked", reason };
+			}
+		}
 		let userDecisionOperation: ReturnType<typeof buildUserDecisionOperation> | undefined;
 		if (operation === "resolve-user-decision") {
 			try {
@@ -774,6 +837,7 @@ export default function (
 						`Next Goal: ${nextIntent.goal}`,
 						`Next Scope: ${nextIntent.scope_hint.join(", ")}`,
 						`Next Acceptance Items: ${nextIntent.acceptance.length}`,
+						`Next staged diff: ${stagedNextDiffHash}`,
 					]
 				: []),
 			`Claim: ${projection.claim.lifecycle_status}`,
@@ -811,19 +875,28 @@ export default function (
 				],
 			});
 			confirmed = selected === "authorize";
-		} catch {
+		} catch (error) {
+			if (nextIntent) {
+				restoreStagedIntent();
+			}
 			if (operation !== "stop" && operation !== "approve-breaking-intent-revision")
 				await recordCancelledUserDecision(ctx, taskId, operation, snapshotDigestRef).catch(() => undefined);
 			progression.closeInvocation(invocation);
 			return { state: "cancelled", operation, reason: "confirmation aborted" };
 		}
 		if (!confirmed) {
+			if (nextIntent) {
+				restoreStagedIntent();
+			}
 			if (operation !== "stop" && operation !== "approve-breaking-intent-revision")
 				await recordCancelledUserDecision(ctx, taskId, operation, snapshotDigestRef).catch(() => undefined);
 			progression.closeInvocation(invocation);
 			return { state: "cancelled", operation, reason: "cancelled" };
 		}
 		if (!progression.sessionActiveValue() || progression.sessionGenerationValue() !== authorizationGeneration || progression.invocationState(invocation) !== "open") {
+			if (nextIntent) {
+				restoreStagedIntent();
+			}
 			notifyOnce(ctx, `authorization-session:${taskId}:${operation}`, `authorize ${operation}: session changed; confirmation discarded`, "warning");
 			progression.closeInvocation(invocation);
 			return { state: "blocked", reason: "session changed; confirmation discarded" };
@@ -834,13 +907,15 @@ export default function (
 			try {
 				progression.commitInvocation(invocation);
 			} catch (error) {
+				if (nextIntent) {
+					restoreStagedIntent();
+				}
 				const reason = error instanceof Error ? error.message : String(error);
 				notifyOnce(ctx, `authorization-commit:${taskId}:${operation}:${reason}`, `authorize ${operation} aborted: ${reason}`, "error");
 				return { state: "blocked", reason };
 			}
 			const { registry, app } = await authorityPair();
 			const now = new Date().toISOString();
-			const priorIntent = await readTaskIntent(ctx.cwd, taskId);
 			if (nextIntent) {
 				nextIntentRef = {
 					path: `docs/plans/${nextIntent.task_id}.intent.json`,
@@ -875,25 +950,18 @@ export default function (
 					: userDecisionOperation ?? userOperationFor(operation, approval);
 				// The exact host-built operation is shared by capability digest and
 				// application payload; command arguments cannot inject authority fields.
-				const sidecar = nextIntent ? join(ctx.cwd, priorIntent.intent_ref.path) : undefined;
-				const priorBytes = sidecar ? readFileSync(sidecar) : undefined;
 				try {
-					if (sidecar) {
-						writeFileSync(sidecar, `${JSON.stringify(nextIntent, null, 2)}\n`);
-						execFileSync("git", ["add", "--", priorIntent.intent_ref.path], {
-							cwd: ctx.cwd,
-							stdio: ["ignore", "pipe", "pipe"],
-						});
-						await dependencies.authorizationAfterSidecarStage?.();
-					}
-					// A breaking revision changes scope, but the Kernel still derives the
-					// authority digest from the pre-mutation record; read that exact owner.
+					if (nextIntent) await dependencies.authorizationAfterSidecarStage?.();
+					// Re-read the owner record after confirmation and compare the staged
+					// candidate digest immediately before capability issuance.
 					const liveRecord = nextIntent ? await readTaskRecord(ctx.cwd, taskId) : null;
-					if (nextIntent && !liveRecord?.record)
+					if (nextIntent && (!liveRecord?.record || liveRecord.revision !== projection.projection.record_revision || !stagedNextDiffHash))
 						throw new Error("TaskRecord changed before the breaking revision digest");
 					const operationDiffHash = liveRecord?.record
 						? diffHashOf(ctx.cwd, liveRecord.record)
 						: projection.projection.diff_hash;
+					if (nextIntent && operationDiffHash !== stagedNextDiffHash)
+						throw new Error("staged next-state diff changed after native confirmation");
 					const capability = await mintCapability(registry, {
 						authority_kind: "user",
 						task_id: taskId,
@@ -926,19 +994,13 @@ export default function (
 						|| exactOperation.op === "approve_breaking_intent_revision"
 					) stagePlanningArtifactTransition(ctx.cwd, result.record);
 					return { state: "applied", operation, lifecycle: result.record.lifecycle };
-				} catch (error) {
-					if (sidecar && priorBytes) {
-						const current = await readTaskRecord(ctx.cwd, taskId);
-						if (current.record?.intent_snapshot.revision === priorIntent.intent.revision) {
-							writeFileSync(sidecar, priorBytes);
-							execFileSync("git", ["add", "--", priorIntent.intent_ref.path], {
-								cwd: ctx.cwd,
-								stdio: ["ignore", "pipe", "pipe"],
-							});
-						}
-					}
-					throw error;
+			} catch (error) {
+				if (sidecar && priorBytes && priorIndexState) {
+					const current = await readTaskRecord(ctx.cwd, taskId);
+					if (current.record?.intent_snapshot.revision === priorIntent.intent.revision) restoreStagedIntent();
 				}
+				throw error;
+			}
 			} catch (error) {
 				const reason = error instanceof Error ? error.message : String(error);
 				notifyOnce(ctx, `authorization-apply:${taskId}:${operation}:${reason}`, `authorize failed: ${reason}`, "error");
@@ -1587,7 +1649,9 @@ async function mintCapability(
 		intent_content_hash: input.intent_content_hash,
 		diff_hash: input.diff_hash,
 		actor_id: input.actor_id,
-		confirmation_ref: `pi-confirm-${createHash("sha256").update(`${input.task_id}\0${now}`).digest("hex").slice(0, 16)}`,
+		confirmation_ref: `pi-confirm-${createHash("sha256").update(
+			`${input.task_id}\0${now}\0${input.intent_revision}\0${input.intent_content_hash}\0${input.diff_hash}`,
+		).digest("hex").slice(0, 16)}`,
 		expires_at: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
 		findings_digest:
 			input.action_kind === "request_rework"

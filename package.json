@@ -1,6 +1,6 @@
 {
   "name": "immune-brain",
-  "version": "2.8.3",
+  "version": "3.0.0",
   "description": "Immune-Brain agent skill system",
   "publishConfig": {
     "access": "public",
@@ -29,7 +29,7 @@
   },
   "scripts": {
     "changeset": "changeset",
-    "changeset:version": "changeset version",
+    "changeset:version": "changeset version && bun scripts/plugin_versioning.ts stamp",
     "changeset:publish": "changeset publish",
     "release": "bun run changeset:publish"
   },
@@ -77,7 +77,13 @@
     "plugins/immune-brain/runtime/role_prompt_bridge.ts",
     "plugins/immune-brain/runtime/loop_contract.ts",
     "plugins/immune-brain/runtime/assurance",
+    "plugins/immune-brain/runtime/claude",
     "plugins/immune-brain/runtime/prompts",
+    ".claude-plugin",
+    "plugins/immune-brain/.claude-plugin",
+    "plugins/immune-brain/.mcp.json",
+    "plugins/immune-brain/hooks",
+    "plugins/immune-brain/agents",
     "plugins/immune-brain/skills",
     "plugins/immune-brain/dist",
     "plugins/immune-brain/bin"

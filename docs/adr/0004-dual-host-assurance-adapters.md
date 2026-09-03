@@ -39,5 +39,7 @@ Assurance boundary without copying the Kernel or weakening attestation.
 
 - Pi behavior is the characterization oracle for the extracted coordinator.
 - A later Host adapter can complete the same Managed Path only after this
-  boundary and the Pi regression suite pass.
+  boundary and the Pi regression suite pass. The Claude Code adapter consumes
+  this coordinator through `plugins/immune-brain/runtime/claude/` and ships as
+  one versioned plugin next to Pi.
 - ADR-0002 still owns self-contained distribution and distinct consumer paths.

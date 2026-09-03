@@ -47,11 +47,10 @@ describe("host runtime cutover", () => {
 		}
 	});
 
-	it("MCP launcher files are absent from the CLI-only runtime surface", () => {
-		expect(existsSync(resolve(PLUGIN_ROOT, ".mcp.json"))).toBe(false);
-		expect(existsSync(resolve(PLUGIN_ROOT, "runtime/mcp-launcher.ts"))).toBe(
-			false,
-		);
+	it("retired MCP launcher remains absent while the Claude plugin stdio server is the Host adapter", () => {
+		expect(existsSync(resolve(PLUGIN_ROOT, "runtime/mcp-launcher.ts"))).toBe(false);
+		expect(existsSync(resolve(PLUGIN_ROOT, ".mcp.json"))).toBe(true);
+		expect(existsSync(resolve(PLUGIN_ROOT, "runtime/claude/mcp_server.ts"))).toBe(true);
 	});
 
 	it("list-commands returns the CLI command manifest", () => {

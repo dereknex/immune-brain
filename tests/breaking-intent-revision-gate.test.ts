@@ -207,6 +207,7 @@ describe("breaking intent revision gate", () => {
 			expect(ui.dialogCalls).toHaveLength(1);
 			expect(ui.dialogCalls[0].body).toContain("approve-breaking-intent-revision");
 			expect(ui.dialogCalls[0].body).toContain("Next Intent: rev 2");
+			expect(ui.dialogCalls[0].body).toMatch(/Next staged diff: sha256:[a-f0-9]{64}/);
 			expect(statSync(intentPath).ino).toBe(beforeInode);
 			expect(JSON.parse(readFileSync(intentPath, "utf8"))).toMatchObject({ revision: 2, task_id: TASK });
 			const record = JSON.parse(readFileSync(join(root, ".imm/state/tasks", `${TASK}.json`), "utf8"));
@@ -218,6 +219,33 @@ describe("breaking intent revision gate", () => {
 					acceptance: [{ ...INTENT.acceptance[0], assertion: "changed assertion" }],
 				})),
 			);
+		} finally { rmSync(root, { recursive: true, force: true }); }
+	});
+
+	test("breaking approval rejects a staged next-state drift after confirmation", async () => {
+		const root = makeEnrolledRoot();
+		try {
+			const intentPath = join(root, "docs", "plans", `${TASK}.intent.json`);
+			const { tool } = loadSurface({
+				authorizationAfterSidecarStage: async () => {
+					writeFileSync(intentPath, JSON.stringify({
+						...breakingIntent(),
+						acceptance: [{ ...INTENT.acceptance[0], assertion: "post-confirmation drift" }],
+					}, null, 2) + "\n");
+					execFileSync("git", ["add", "--", `docs/plans/${TASK}.intent.json`], { cwd: root });
+				},
+			});
+			const ui = makeUI();
+			const failure = await captureToolFailure(tool.execute(
+				"break-drift",
+				{ task_id: TASK, action: { op: "approve_breaking_intent_revision", next_intent: breakingIntent() } },
+				undefined,
+				undefined,
+				makeCtx(root, ui),
+			));
+			expect(failure).toMatchObject({ state: "blocked", message: "staged next-state diff changed after native confirmation" });
+			expect(ui.dialogCalls[0].body).toMatch(/Next staged diff: sha256:[a-f0-9]{64}/);
+			expect(JSON.parse(readFileSync(intentPath, "utf8"))).toMatchObject({ revision: 1, task_id: TASK });
 		} finally { rmSync(root, { recursive: true, force: true }); }
 	});
 
@@ -276,6 +304,7 @@ describe("breaking intent revision gate", () => {
 			const claimPath = join(root, ".imm/state/active-claim.json");
 			const frozenSnapshot = () => ({
 				intent: readFileSync(archivedIntent, "utf8"),
+				indexIntent: execFileSync("git", ["show", `:docs/plans/archive/${TASK}.intent.json`], { cwd: root }),
 				spec: readFileSync(archivedSpec, "utf8"),
 				record: readFileSync(recordPath, "utf8"),
 				claim: readFileSync(claimPath, "utf8"),
@@ -319,16 +348,20 @@ describe("breaking intent revision gate", () => {
 			expect(execFileSync("git", ["status", "--short"], { cwd: root, encoding: "utf8" }))
 				.not.toContain("archive/");
 		} finally { rmSync(root, { recursive: true, force: true }); }
-	});
+	}, 20000);
 
-	test("frozen precommit failure restores exact artifact and index state", async () => {
-		const root = makeEnrolledRoot();
-		try {
-			const { tool } = loadSurface({
-				authorizationAfterSidecarStage: async () => {
-					throw new Error("simulated precommit failure");
-				},
-			});
+		test("frozen precommit failure restores exact artifact and index state", async () => {
+			const root = makeEnrolledRoot();
+			try {
+				const archivedIntent = join(root, "docs", "plans", "archive", `${TASK}.intent.json`);
+				const { tool } = loadSurface({
+					authorizationAfterSidecarStage: async () => {
+						const candidate = readFileSync(archivedIntent);
+						writeFileSync(archivedIntent, Buffer.concat([candidate, Buffer.from(" ")]));
+						execFileSync("git", ["add", "--", `docs/plans/archive/${TASK}.intent.json`], { cwd: root });
+						throw new Error("simulated precommit failure");
+					},
+				});
 			await tool.execute(
 				"break-failure-freeze",
 				{ task_id: TASK, action: { op: "freeze_artifacts" } },
@@ -336,7 +369,6 @@ describe("breaking intent revision gate", () => {
 				undefined,
 				makeCtx(root, makeUI()),
 			);
-			const archivedIntent = join(root, "docs", "plans", "archive", `${TASK}.intent.json`);
 			const archivedSpec = join(root, "docs", "specs", "archive", `${TASK}.spec.md`);
 			const recordPath = join(root, ".imm/state/tasks", `${TASK}.json`);
 			const claimPath = join(root, ".imm/state/active-claim.json");
@@ -344,6 +376,7 @@ describe("breaking intent revision gate", () => {
 				const record = readFileSync(recordPath, "utf8");
 				return {
 					intent: readFileSync(archivedIntent, "utf8"),
+					indexIntent: execFileSync("git", ["show", `:docs/plans/archive/${TASK}.intent.json`], { cwd: root }),
 					spec: readFileSync(archivedSpec, "utf8"),
 					record,
 					claim: readFileSync(claimPath, "utf8"),

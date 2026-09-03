@@ -1,6 +1,6 @@
 # Immune-Brain 使用手册
 
-Immune-Brain 是一套 Skill-explicit Managed 的 Pi 工作流，并提供两个独立 host-native 维护 Skill。用户可发现五个 public Skills：
+Immune-Brain 是一套 Skill-explicit Managed 工作流，支持 Pi 与本地交互式 Claude Code，并提供两个独立 host-native 维护 Skill。用户可发现五个 public Skills：
 
 - `imm-brainstorm`：澄清需求、约束、风险和非目标。
 - `imm-planner`：创建或修订 Spec、Plan 和候选 TaskIntent。

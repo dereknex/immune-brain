@@ -14,7 +14,7 @@ Immune-Brain 在 Pi 之上提供结构化的工程工作流：
 - **计划变为可追踪的任务**（`TaskIntent` + `TaskRecord`），进度落盘持久化，不依赖对话历史。
 - **质量由代码强制保障** — 自动化 QA 与隔离式 Review 必须通过，任务才会完成。
 
-Pi 是唯一支持的宿主，可配置任意模型 Provider（Anthropic / OpenAI / Google），Immune-Brain 在其之上工作。
+Pi 与 Claude Code 是支持的宿主。未声明的适配器仍不受支持。Claude Code 最低版本为 `2.1.199`。真实 Host 证据见 `docs/verification/claude-code-host-conformance.md`。
 
 ---
 
@@ -189,7 +189,7 @@ docs/specs/                           # Living specs（原地更新）
 
 **QA 失败怎么办？** QA 返回 `rework` 或 `replan_required`，`imm-loop` 会自动路由回 Executor 或 `imm-planner` 调整范围，无需手动重置。
 
-**可以在 Pi 之外使用吗？** 不可以，Pi 是唯一支持的宿主。
+**可以在 Pi 之外使用吗？** 可以在本地交互式 Claude Code 中使用同一套 Kernel；未声明的适配器不受支持。
 
 ---
 

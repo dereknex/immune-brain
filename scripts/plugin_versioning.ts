@@ -1,8 +1,9 @@
 #!/usr/bin/env bun
-import { readFileSync, writeFileSync } from "node:fs"
+import { existsSync, readFileSync, writeFileSync } from "node:fs"
 import { resolve } from "node:path"
 
 const PACKAGE_MANIFEST = "package.json"
+const PLUGIN_MANIFEST = "plugins/immune-brain/.claude-plugin/plugin.json"
 const SEMVER_RE = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/
 const TAG_RE = /^immune-brain-v(?<version>(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*))$/
 
@@ -28,7 +29,7 @@ class SemVer {
 }
 
 function usage(): never {
-  console.error("usage: plugin_versioning.ts [--repo-root <path>] {bump <major|minor|patch|X.Y.Z> [--dry-run] [--force] | validate [--tag <immune-brain-vX.Y.Z>]}")
+  console.error("usage: plugin_versioning.ts [--repo-root <path>] {bump <major|minor|patch|X.Y.Z> [--dry-run] [--force] | stamp | validate [--tag <immune-brain-vX.Y.Z>]}")
   process.exit(2)
 }
 
@@ -53,11 +54,36 @@ function writeManifest(path: string, manifest: any): void {
 }
 function manifestPath(root: string, rel: string): string { return resolve(root, rel) }
 
-export function loadManifestVersions(root = "."): Record<string, string> {
+function packageVersion(root: string): string {
   const manifest = readManifest(manifestPath(root, PACKAGE_MANIFEST))
   if (typeof manifest.version !== "string") throw new VersionError(`Missing string version in ${PACKAGE_MANIFEST}`)
   SemVer.parse(manifest.version)
-  return { [PACKAGE_MANIFEST]: manifest.version }
+  return manifest.version
+}
+
+function requirePluginPath(root: string): string {
+  const path = manifestPath(root, PLUGIN_MANIFEST)
+  if (!existsSync(path)) throw new VersionError(`Missing ${PLUGIN_MANIFEST}`)
+  return path
+}
+
+export function stampPluginManifest(root = "."): { version: string; files: string[] } {
+  const version = packageVersion(root)
+  const path = requirePluginPath(root)
+  const plugin = readManifest(path)
+  plugin.version = version
+  writeManifest(path, plugin)
+  return { version, files: [PLUGIN_MANIFEST] }
+}
+
+export function loadManifestVersions(root = "."): Record<string, string> {
+  const version = packageVersion(root)
+  const path = requirePluginPath(root)
+  const plugin = readManifest(path)
+  if (typeof plugin.version !== "string") throw new VersionError(`Missing string version in ${PLUGIN_MANIFEST}`)
+  SemVer.parse(plugin.version)
+  if (plugin.version !== version) throw new VersionError(`${PLUGIN_MANIFEST} version ${plugin.version} does not match ${PACKAGE_MANIFEST} ${version}`)
+  return { [PACKAGE_MANIFEST]: version, [PLUGIN_MANIFEST]: plugin.version }
 }
 
 export function currentVersion(root = "."): SemVer {
@@ -72,8 +98,9 @@ export function versionFromTag(tag: string): SemVer {
 }
 
 export function validateManifests(root = ".", tag?: string): any {
-  const version = currentVersion(root)
-  const result: any = { package: "@immune-brain/agent-skills", version: version.toString(), files: [PACKAGE_MANIFEST], valid: true }
+  const versions = loadManifestVersions(root)
+  const version = SemVer.parse(versions[PACKAGE_MANIFEST])
+  const result: any = { package: "@immune-brain/agent-skills", version: version.toString(), files: Object.keys(versions), valid: true }
   if (tag) {
     const tagVersion = versionFromTag(tag)
     if (tagVersion.compare(version) !== 0) throw new VersionError(`Tag ${tag} does not match manifest version ${version}`)
@@ -86,7 +113,8 @@ export function buildBumpPlan(root: string, target: string, force = false): any 
   const current = currentVersion(root)
   const resolved = ["major", "minor", "patch"].includes(target) ? current.bump(target) : SemVer.parse(target)
   if (resolved.compare(current) < 0 && !force) throw new VersionError(`Target version ${resolved} is lower than current version ${current}; use --force to allow downgrade`)
-  return { package: "@immune-brain/agent-skills", current_version: current.toString(), target_version: resolved.toString(), files: [PACKAGE_MANIFEST] }
+  requirePluginPath(root)
+  return { package: "@immune-brain/agent-skills", current_version: current.toString(), target_version: resolved.toString(), files: [PACKAGE_MANIFEST, PLUGIN_MANIFEST] }
 }
 
 export function applyBump(root: string, target: string, dryRun = false, force = false): any {
@@ -96,6 +124,10 @@ export function applyBump(root: string, target: string, dryRun = false, force = 
   const manifest = readManifest(path)
   manifest.version = plan.target_version
   writeManifest(path, manifest)
+  const pluginPath = requirePluginPath(root)
+  const plugin = readManifest(pluginPath)
+  plugin.version = plan.target_version
+  writeManifest(pluginPath, plugin)
   return { ...plan, dry_run: false, changed: plan.current_version !== plan.target_version }
 }
 
@@ -124,6 +156,14 @@ export function main(argv = process.argv.slice(2)): number {
       const target = rest.find((a) => !a.startsWith("--"))
       if (!target) usage()
       printBump(applyBump(root, target, rest.includes("--dry-run"), rest.includes("--force")))
+      return 0
+    }
+    if (command === "stamp") {
+      const stamped = stampPluginManifest(root)
+      console.log(`package: @immune-brain/agent-skills`)
+      console.log(`version: ${stamped.version}`)
+      console.log("files:")
+      for (const path of stamped.files) console.log(`  - ${path}`)
       return 0
     }
     if (command === "validate") {

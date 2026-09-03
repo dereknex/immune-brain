@@ -1,0 +1,16 @@
+{
+  "name": "immune-brain",
+  "owner": {
+    "name": "dereknex"
+  },
+  "metadata": {
+    "description": "Immune-Brain marketplace entry for the self-contained Claude Code plugin."
+  },
+  "plugins": [
+    {
+      "name": "immune-brain",
+      "source": "./plugins/immune-brain",
+      "description": "Kernel-governed Assurance for local interactive Claude Code."
+    }
+  ]
+}
