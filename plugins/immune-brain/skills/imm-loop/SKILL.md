@@ -14,7 +14,7 @@ Agent envelope exactly. Brainstorm and Planner use the same Tool for bounded
 `arch-explorer` and explicit-lens `advisory-reviewer` dispatches. Loop may
 dispatch `compounder` only when a closed Step supplies structured evidence for
 a reusable Learning; routine work without that evidence returns `next: none`
-and creates no Learning. Do not discover or load a Pi Skill for these roles. The Managed Path public entries remain `imm-brainstorm`, `imm-planner`, and `imm-loop`; standalone `imm-pr-fix` and `imm-doc-prune` are host-native and are never dispatched as the Loop role.
+and creates no Learning. Do not discover or load a Pi Skill for these roles. The Managed Path public entries remain `imm-brainstorm`, `imm-planner`, and `imm-loop`; standalone `imm-pr-fix`, `imm-doc-prune`, and `imm-agent-doc-maintain` are host-native and are never dispatched as the Loop role.
 Subagent Dispatch Protocol](../../dist/docs/reference/subagent-dispatch-protocol.md#authorization-authority).
 All internal Agent dispatch envelopes use `run_in_background: false` and
 return a direct result to the Parent before any workflow mutation.

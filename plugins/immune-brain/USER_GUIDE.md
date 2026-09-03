@@ -13,9 +13,9 @@ Immune-Brain 是一套 **Skill-explicit Managed Path** 的 Pi 与 Claude Code �
 
 ## Public Skill surface
 
-用户可发现的 Skill 有五个：`imm-brainstorm`、`imm-planner`、`imm-loop`、`imm-pr-fix` 和 `imm-doc-prune`。
+用户可发现的 Skill 有六个：`imm-brainstorm`、`imm-planner`、`imm-loop`、`imm-pr-fix`、`imm-doc-prune` 和 `imm-agent-doc-maintain`。
 执行、QA、Review、repair 和 learning 都由 `imm-loop` 与 runtime
-内部 roles/tools 完成；它们没有独立的 public Skill 或兼容 alias。`imm-pr-fix` 和 `imm-doc-prune` 是 host-native 维护入口，不进入 Managed Path。
+内部 roles/tools 完成；它们没有独立的 public Skill 或兼容 alias。`imm-pr-fix`、`imm-doc-prune` 和 `imm-agent-doc-maintain` 是 host-native 维护入口，不进入 Managed Path。
 `executor`、`code-review`、`pr-fix` 和 `test-fixer` 使用 Code Quality Guard 的正确性约束；
 QA 仍只消费验收 evidence，不执行 Clean Code 风格门禁。
 

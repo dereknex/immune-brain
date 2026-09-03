@@ -1,0 +1,289 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "2026-09-03-001-add-imm-agent-doc-maintain",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "2026-09-03-001-add-imm-agent-doc-maintain",
+    "goal": "Publish `imm-agent-doc-maintain` as the sixth public Immune-Brain Skill: an explicitly invoked standalone host-native maintenance contract that audits tracked root and nested AGENTS.md, CLAUDE.md, and GEMINI.md files for minimal necessary context; requires an exact hash-bound manifest before bounded mutation; preserves uncertain rules and native host structure; blocks unresolved conflicts, dirty candidates, and active Managed scope; reports semantic dispositions and line/byte deltas without claiming Token savings; leaves `imm-doc-prune` and Managed authority unchanged; and updates source/dist ownership, registry/generated package bytes, supported-host discovery, current guidance, and focused tests without adding runtime, persistence, automatic learning, global-file access, contract installation, benchmark gates, or self-application to this repository's current instruction content.",
+    "acceptance": [
+      {
+        "id": "acc-maintenance-safety-contract",
+        "assertion": "The packaged `imm-agent-doc-maintain` contract enforces tracked repository-local instruction inventory, the four-part persistent-rule value gate, native-format preservation, exact action classifications, uncertainty preservation, conflict blocking, existing-pointer-only behavior, exact manifest approval, candidate hash/Git/active-scope revalidation, local failure isolation, bounded reporting, and every confirmed non-goal in the active Spec.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/imm-agent-doc-maintain-contract.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 30000,\n  \"max_output_bytes\": 65536\n}\n"
+      },
+      {
+        "id": "acc-canonical-public-surface",
+        "assertion": "The compact loader, owned packaged contract, canonical and generated registries, package ownership manifest, and metadata guards expose exactly six public Skills and classify `imm-agent-doc-maintain` with existing `execute` / `repair` vocabulary and no Managed next action.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/skill-dist-consistency.test.ts\",\n    \"plugins/immune-brain/tests/skill-registry-consistency.test.ts\",\n    \"tests/skill-registry-metadata-contract.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 60000,\n  \"max_output_bytes\": 131072\n}\n"
+      },
+      {
+        "id": "acc-pi-package-discovery",
+        "assertion": "The shipped npm package contains `imm-agent-doc-maintain` and Pi's real `DefaultResourceLoader` discovers it together with the five existing public Skills.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/pi-canary-packed-loader.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 131072\n}\n"
+      },
+      {
+        "id": "acc-claude-package-discovery",
+        "assertion": "The supported Claude Code package includes the new compact loader and owned packaged contract in the same six-Skill surface without creating a host-specific contract fork.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/claude-host-package.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 131072\n}\n"
+      },
+      {
+        "id": "acc-routing-and-doc-consistency",
+        "assertion": "Current guidance consistently names three Managed Path entries and three standalone host-native maintenance Skills, preserves `imm-doc-prune` as stale-only, and prevents `imm-agent-doc-maintain` from being presented or dispatched as a Loop internal role.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/direct-first-routing-contract.test.ts\",\n    \"tests/role-prompt-bridge.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 60000,\n  \"max_output_bytes\": 131072\n}\n"
+      },
+      {
+        "id": "acc-generated-package-sync",
+        "assertion": "The owned packaged contract declaration, generated dist registry, and generated README role map are complete and `sync-dist-docs.ts --check` reports no source/package drift.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"scripts/sync-dist-docs.ts\",\n    \"--check\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 30000,\n  \"max_output_bytes\": 65536\n}\n"
+      }
+    ],
+    "scope_hint": [
+      "AGENTS.md",
+      "CONTEXT.md",
+      "IMMUNE.md",
+      "README.md",
+      "README.zh-CN.md",
+      "docs/reference/immune-brain-skills-guide.md",
+      "docs/reference/workflow-and-subagents.md",
+      "docs/specs/add-imm-agent-doc-maintain.spec.md",
+      "docs/specs/archive/add-imm-agent-doc-maintain.spec.md",
+      "docs/user_manual.md",
+      "plugins/immune-brain/README.md",
+      "plugins/immune-brain/USER_GUIDE.md",
+      "plugins/immune-brain/dist/imm-agent-doc-maintain.md",
+      "plugins/immune-brain/dist/imm-loop.md",
+      "plugins/immune-brain/dist/registry.yaml",
+      "plugins/immune-brain/skills/imm-agent-doc-maintain/SKILL.md",
+      "plugins/immune-brain/skills/imm-loop/SKILL.md",
+      "plugins/immune-brain/skills/registry.yaml",
+      "plugins/immune-brain/tests/skill-registry-consistency.test.ts",
+      "scripts/dist-sync-manifest.ts",
+      "tests/claude-host-package.test.ts",
+      "tests/direct-first-routing-contract.test.ts",
+      "tests/imm-agent-doc-maintain-contract.test.ts",
+      "tests/pi-canary-packed-loader.test.ts",
+      "tests/role-prompt-bridge.test.ts",
+      "tests/skill-dist-consistency.test.ts"
+    ],
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/archive/2026-09-03-001-add-imm-agent-doc-maintain.intent.json",
+    "content_hash": "sha256:1dfda6a874663d264047c1cd2bf8f0751fec0913c97577f0daac621e40d00e01"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:1dfda6a874663d264047c1cd2bf8f0751fec0913c97577f0daac621e40d00e01",
+  "git_base_head": "32d6538330d794385f1294c2565b3edfc9e2a1c0",
+  "attestations": [
+    {
+      "id": "approval-qa-b6576769",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:1dfda6a874663d264047c1cd2bf8f0751fec0913c97577f0daac621e40d00e01",
+      "diff_hash": "sha256:2b4eca9a0f872f9dfaa0610d3eb83740bd639a3dd99743dc5c971f89eb68f653",
+      "actor_id": "deterministic-qa",
+      "summary": "all 6 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "acc-maintenance-safety-contract",
+          "status": "passed",
+          "summary": "host-attested QA: all 6 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-canonical-public-surface",
+          "status": "passed",
+          "summary": "host-attested QA: all 6 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-pi-package-discovery",
+          "status": "passed",
+          "summary": "host-attested QA: all 6 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-claude-package-discovery",
+          "status": "passed",
+          "summary": "host-attested QA: all 6 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-routing-and-doc-consistency",
+          "status": "passed",
+          "summary": "host-attested QA: all 6 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-generated-package-sync",
+          "status": "passed",
+          "summary": "host-attested QA: all 6 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-ad998d44",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:1dfda6a874663d264047c1cd2bf8f0751fec0913c97577f0daac621e40d00e01",
+      "diff_hash": "sha256:df0c93dbdd0d1a91753dbe2ef9d34c0f0e412cda17155c8895e5afaa83bfe94b",
+      "actor_id": "deterministic-qa",
+      "summary": "all 6 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "acc-maintenance-safety-contract",
+          "status": "passed",
+          "summary": "host-attested QA: all 6 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-canonical-public-surface",
+          "status": "passed",
+          "summary": "host-attested QA: all 6 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-pi-package-discovery",
+          "status": "passed",
+          "summary": "host-attested QA: all 6 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-claude-package-discovery",
+          "status": "passed",
+          "summary": "host-attested QA: all 6 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-routing-and-doc-consistency",
+          "status": "passed",
+          "summary": "host-attested QA: all 6 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-generated-package-sync",
+          "status": "passed",
+          "summary": "host-attested QA: all 6 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-a1094e72",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:1dfda6a874663d264047c1cd2bf8f0751fec0913c97577f0daac621e40d00e01",
+      "diff_hash": "sha256:df0c93dbdd0d1a91753dbe2ef9d34c0f0e412cda17155c8895e5afaa83bfe94b",
+      "actor_id": "parent-mediated-review",
+      "summary": "Immutable revision provenance is valid, all changed paths satisfy the six acceptance assertions, and no correctness, security, regression, or material maintenance issues were found.",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "32d6538330d794385f1294c2565b3edfc9e2a1c0",
+        "review_commit": "c7611456dace00cd24d941bcfb46b161c93adfd8",
+        "review_tree": "130efdc10fa40e9d16eecbcb8c866b9fd3fd78ed",
+        "manifest_digest": "sha256:632eb01fd158c068d026669766b90fb46dca82e57bdb16412890b320d315329a"
+      }
+    }
+  ],
+  "findings": [
+    {
+      "id": "review-2e237ce45398-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "acc-maintenance-safety-contract",
+      "source": "review",
+      "review_round": 1,
+      "summary": "plugins/immune-brain/dist/imm-agent-doc-maintain.md:40 admits any tracked path with a matching basename, including Git-tracked symlinks (mode 120000), so reading or editing AGENTS.md could follow a target outside the repository despite the external-file prohibition; require candidates to be regular files and block symlinks before inventory or mutation."
+    }
+  ],
+  "history": [
+    {
+      "id": "freeze_artifacts:2026-09-03-001-add-imm-agent-doc-maintain:2026-09-03T10:19:26.173Z",
+      "at": "2026-09-03T10:19:26.173Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent and Spec frozen at docs/plans/archive/2026-09-03-001-add-imm-agent-doc-maintain.intent.json"
+    },
+    {
+      "id": "record_approval:2026-09-03-001-add-imm-agent-doc-maintain:2026-09-03T10:19:49.799Z",
+      "at": "2026-09-03T10:19:49.799Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-b6576769\naction_v2_sha256:5c22ddc6d3a1f21508d7594a29e4b85b2bb52f90d945ea693a9ea66cbba39fde",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-d8e3479622dd717f",
+        "issued_at": "2026-09-03T10:19:49.799Z",
+        "expires_at": "2026-09-03T10:29:49.799Z"
+      }
+    },
+    {
+      "id": "request_rework:2026-09-03-001-add-imm-agent-doc-maintain:2026-09-03T10:22:33.377Z",
+      "at": "2026-09-03T10:22:33.377Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_1\naction_v2_sha256:c25eb5465b073b5d4196c47109816c0bb8d5f2139a1f79a38e70fac919f9a5e1",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-7d5180fc8e9d8cb6",
+        "issued_at": "2026-09-03T10:22:33.377Z",
+        "expires_at": "2026-09-03T10:32:33.377Z"
+      }
+    },
+    {
+      "id": "resolve_finding:2026-09-03-001-add-imm-agent-doc-maintain:2026-09-03T10:23:15.415Z",
+      "at": "2026-09-03T10:23:15.415Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-2e237ce45398-1-review-1\naction_v2_sha256:243e9c5adc4dd5f9d5e4e5f76aff919d283995a8403c3956855c47eff3a2eeb3"
+    },
+    {
+      "id": "freeze_artifacts:2026-09-03-001-add-imm-agent-doc-maintain:2026-09-03T10:23:36.800Z",
+      "at": "2026-09-03T10:23:36.800Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent and Spec frozen at docs/plans/archive/2026-09-03-001-add-imm-agent-doc-maintain.intent.json"
+    },
+    {
+      "id": "record_approval:2026-09-03-001-add-imm-agent-doc-maintain:2026-09-03T10:23:49.423Z",
+      "at": "2026-09-03T10:23:49.423Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-ad998d44\naction_v2_sha256:fa09c94fd229f1bd219f11606539ac07a37069f55ee45a0f85e018cfc033755d",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-601c0e9f4aeb211b",
+        "issued_at": "2026-09-03T10:23:49.423Z",
+        "expires_at": "2026-09-03T10:33:49.423Z"
+      }
+    },
+    {
+      "id": "record_approval:2026-09-03-001-add-imm-agent-doc-maintain:2026-09-03T10:26:53.553Z",
+      "at": "2026-09-03T10:26:53.553Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-a1094e72\naction_v2_sha256:3ebcb023d8ee88204eb571d6114d86ef86553e7d9be07893ca424aca8c9156f5",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-06b6fa0c88d91c9c",
+        "issued_at": "2026-09-03T10:26:53.554Z",
+        "expires_at": "2026-09-03T10:36:53.554Z"
+      }
+    },
+    {
+      "id": "complete:2026-09-03-001-add-imm-agent-doc-maintain:2026-09-03T10:26:55.266Z",
+      "at": "2026-09-03T10:26:55.266Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:09764e6da43a458f5c7ebc88d3e650a69d7e9c9037d55b3c8f27c8ca2fb47a97"
+    }
+  ]
+}

@@ -23,7 +23,7 @@ Pi 与 Claude Code 是支持的宿主。未声明的适配器仍不受支持。C
 - [安装](#安装)
 - [快速开始](#快速开始)
 - [如何使用](#如何使用)
-- [5 个 Skills](#5-个-skills)
+- [6 个 Skills](#6-个-skills)
 - [生命周期](#生命周期)
 - [配置](#配置)
 - [项目结构](#项目结构)
@@ -87,12 +87,13 @@ QA 与 Review 以 foreground Tool 形式运行并回传结果，返回 `phase=do
 | 计划已确认，准备开干 | "开始构建" / `imm-loop` | → Executor 构建 → QA 验证 → Review 审查 |
 | PR 被评论 / CI 挂了 | 对该 PR 使用 `imm-pr-fix` | → 独立修复，不创建新 managed 任务 |
 | 文档过时需要清理 | `imm-doc-prune` + manifest | → 仅删除已审批的过时文档 |
+| Agent instruction 文件膨胀 | `imm-agent-doc-maintain` + manifest | → 只保留不可直接推导的必要规则 |
 
 > **规则：** Managed 工作流（brainstorm → plan → loop）仅由显式的 `imm-brainstorm`、`imm-planner`、`imm-loop` 启动。普通问答、只读解释不会 Enrollment。
 
 ---
 
-## 5 个 Skills
+## 6 个 Skills
 
 | Skill | 类型 | 何时使用 | 职责 |
 |---|---|---|---|
@@ -101,6 +102,7 @@ QA 与 Review 以 foreground Tool 形式运行并回传结果，返回 `phase=do
 | `imm-loop` | Managed 协调器 | 计划已验证 | 通过 foreground Tools 协调 执行 → QA → Review → 收尾 |
 | `imm-pr-fix` | 独立 | PR 需修复 | 原地修复单个 PR，不触及 managed authority |
 | `imm-doc-prune` | 独立 | 清理过时文档 | 仅删除哈希绑定的 manifest 条目 |
+| `imm-agent-doc-maintain` | 独立 | Agent instruction 膨胀 | 将 tracked AGENTS/CLAUDE/GEMINI.md 压到最小必要上下文 |
 
 Executor、QA、Review、Compounder 等为 `imm-loop` 内部调度的角色，无需手动调用。
 

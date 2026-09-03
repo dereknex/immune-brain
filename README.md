@@ -23,7 +23,7 @@ Pi and Claude Code are the supported hosts. Undeclared adapters remain unsupport
 - [Installation](#installation)
 - [Quick Start](#quick-start)
 - [How to Use](#how-to-use)
-- [The 5 Skills](#the-5-skills)
+- [The 6 Skills](#the-6-skills)
 - [Lifecycle](#lifecycle)
 - [Configuration](#configuration)
 - [Project Layout](#project-layout)
@@ -87,12 +87,13 @@ You rarely need to remember skill names — **just describe your intent**:
 | Plan is approved, ready to build | "Start building" / `imm-loop` | → Executor builds, QA verifies, Review checks |
 | PR needs fixes after review | `imm-pr-fix` on that PR | → Standalone repair, no new managed task |
 | Docs are stale after changes | `imm-doc-prune` with manifest | → Prunes only approved stale docs |
+| Agent instruction files are bloated | `imm-agent-doc-maintain` with manifest | → Keeps only necessary non-discoverable rules |
 
 > **Rule:** Managed work (brainstorm → plan → loop) starts only from explicit `imm-brainstorm`, `imm-planner`, or `imm-loop`. Ordinary Q&A or read-only requests stay host-native and never enroll a task.
 
 ---
 
-## The 5 Skills
+## The 6 Skills
 
 | Skill | Type | When to use | What it does |
 |---|---|---|---|
@@ -101,6 +102,7 @@ You rarely need to remember skill names — **just describe your intent**:
 | `imm-loop` | Managed coordinator | Plan is validated | Drives execution → QA → Review → completion via foreground tools |
 | `imm-pr-fix` | Standalone | CI failed / review comments on a PR | Repairs one PR in place, no managed authority |
 | `imm-doc-prune` | Standalone | Stale current docs | Deletes only the hash-approved manifest entries |
+| `imm-agent-doc-maintain` | Standalone | Bloated agent instructions | Minimizes tracked AGENTS/CLAUDE/GEMINI.md to necessary context |
 
 Internal roles (Executor, QA, Review, Compounder) are dispatched by `imm-loop` — you never invoke them directly.
 

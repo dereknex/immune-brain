@@ -47,3 +47,12 @@ skills:
     output_artifacts: [prune_report]
     next_actions: []
     boundary: Prune stale current documentation after explicit manifest approval; no Managed authority mutation or authority-artifact deletion.
+  - name: imm-agent-doc-maintain
+    path: skills/imm-agent-doc-maintain/SKILL.md
+    role: execute
+    title: Agent Doc Maintain
+    role_class: repair
+    canonical: true
+    output_artifacts: [maintain_report]
+    next_actions: []
+    boundary: Minimize tracked agent-instruction context after explicit manifest approval; no Managed authority mutation, contract installation, or reference-document creation.

@@ -4,7 +4,7 @@
 This project uses the Immune-Brain workflow.
 
 - Read `IMMUNE.md` before selecting a route.
-- Ordinary host input stays host-native; only explicit `imm-brainstorm`, `imm-planner`, or `imm-loop` Skill entry starts a new Managed workflow. `imm-pr-fix` and `imm-doc-prune` are standalone host-native maintenance entries and do not start Managed workflow.
+- Ordinary host input stays host-native; only explicit `imm-brainstorm`, `imm-planner`, or `imm-loop` Skill entry starts a new Managed workflow. `imm-pr-fix`, `imm-doc-prune`, and `imm-agent-doc-maintain` are standalone host-native maintenance entries and do not start Managed workflow.
 - Keep an active Assurance projection, TaskIntent, TaskRecord, or reviewer follow-up on its current owner; resume it only when the user explicitly enters `imm-loop`.
 - Immune-Brain does not install or validate project-wide `AGENTS.md`, `IMMUNE.md`, or `CONTEXT.md` contracts.
 - Navigation Protocol: check `CONTEXT.md` `## Architecture Map` before broad searching; inspect `.imm` discovery state only for an existing Managed owner.

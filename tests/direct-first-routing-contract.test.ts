@@ -59,7 +59,7 @@ describe("Skill-explicit workflow routing contract", () => {
 
   it("aligns project constitutions and packaged consumers", () => {
     expectAll(ROOT_IMMUNE, ["Skill-explicit Managed Path", "显式 Immune-Brain Skill", "literal-user Enrollment"]);
-    expectAll(README, ["Managed Path starts only from explicit `imm-brainstorm`, `imm-planner`, or", "standalone `imm-pr-fix` and\n`imm-doc-prune` stay", "ordinary host input"]);
+    expectAll(README, ["Managed Path starts only from explicit `imm-brainstorm`, `imm-planner`, or", "standalone `imm-pr-fix`,\n`imm-doc-prune`, and `imm-agent-doc-maintain` stay", "ordinary host input"]);
     expectAll(USER_GUIDE, ["Skill-explicit Managed Path", "普通 host input 保持 host-native"]);
     expectAll(PLANNER_SKILL, ["entered explicitly by the user", "enrolls a task or enrolls generated", "artifacts unconditionally"]);
     expectAll(QUALITY_GATE, ["explicit Immune-Brain Skill entry starts Managed planning", "literal-user Enrollment remains the authority boundary"]);

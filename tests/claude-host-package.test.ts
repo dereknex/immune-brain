@@ -23,7 +23,7 @@ const REJECTED = [
   "plugins/immune-brain/.cursor-plugin",
   "plugins/immune-brain/.opencode-plugin",
 ];
-const SKILLS = ["imm-brainstorm", "imm-planner", "imm-loop", "imm-pr-fix", "imm-doc-prune"];
+const SKILLS = ["imm-brainstorm", "imm-planner", "imm-loop", "imm-pr-fix", "imm-doc-prune", "imm-agent-doc-maintain"];
 
 describe("claude host package", () => {
   it("ships one versioned Pi+Claude allowlist and rejects undeclared hosts", () => {
@@ -187,8 +187,8 @@ describe("claude host package", () => {
     expect(files.some((path: string) => path.startsWith(".cursor-plugin/"))).toBe(false);
   });
 
-  it("does not fork the five Skill contracts", () => {
+  it("does not fork the six Skill contracts", () => {
     const dist = readdirSync(resolve(PLUGIN_ROOT, "dist")).filter((name) => name.startsWith("imm-") && name.endsWith(".md"));
-    expect(dist.sort()).toEqual(["imm-brainstorm.md", "imm-doc-prune.md", "imm-loop.md", "imm-planner.md", "imm-pr-fix.md"]);
+    expect(dist.sort()).toEqual(["imm-agent-doc-maintain.md", "imm-brainstorm.md", "imm-doc-prune.md", "imm-loop.md", "imm-planner.md", "imm-pr-fix.md"]);
   });
 });

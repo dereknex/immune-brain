@@ -1,0 +1,9 @@
+{
+  "contract": "assurance_kernel/task_tombstone/v2",
+  "task_id": "2026-09-03-001-add-imm-agent-doc-maintain",
+  "lifecycle_status": "terminal",
+  "terminal_lifecycle": "done",
+  "terminal_event_id": "complete:2026-09-03-001-add-imm-agent-doc-maintain:2026-09-03T10:26:55.266Z",
+  "final_record_hash": "sha256:c9c0d89cbc47d87967eaa4a1b55af307979944725851fdf8e36973b2c1bd906f",
+  "terminalized_at": "2026-09-03T10:26:55.266Z"
+}

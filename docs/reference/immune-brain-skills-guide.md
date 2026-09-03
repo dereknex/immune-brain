@@ -1,6 +1,6 @@
 # Immune-Brain public Skills 与内部 roles 指南
 
-Immune-Brain 的 shipped public Skill surface 固定为五个入口：三个 Managed Path Skill 与两个 host-native 维护 Skill：
+Immune-Brain 的 shipped public Skill surface 固定为六个入口：三个 Managed Path Skill 与三个 host-native 维护 Skill：
 
 | Public Skill | 责任 | 下一步 |
 | --- | --- | --- |
@@ -9,6 +9,7 @@ Immune-Brain 的 shipped public Skill surface 固定为五个入口：三个 Man
 | `imm-loop` | 消费 validated Plan，协调执行、QA、Review、repair、learning 和恢复 | Kernel Tool / Planner / terminal |
 | `imm-pr-fix` | 独立 host-native PR repair；不进入 Managed Path | GitHub PR / host-native |
 | `imm-doc-prune` | 独立 host-native 文档清理；显式 manifest 批准后执行；不进入 Managed Path | host-native |
+| `imm-agent-doc-maintain` | 独立 host-native agent instruction 整理；显式 manifest 批准后执行；不进入 Managed Path | host-native |
 
 旧的 Executor、QA、Review、repair、explorer、advisory、Compounder 和 Init entry
 不再是可发现的 Skill。它们分别是 `imm-loop` 的内部 role、runtime capability 或 TUI/Tool
@@ -73,8 +74,8 @@ Managed Path uses the project's existing structure. Explicit Skills create only
 the artifacts and parent directories needed for the current request; runtime does
 not install or validate project-wide instruction files.
 
-Pi runtime 的 public loader 应发现五个 Skill，其中三个 Managed Path 入口与两个
-host-native 维护 Skill（`imm-pr-fix` 和 `imm-doc-prune`）。Canary Enrollment、Kernel evidence、
+Pi runtime 的 public loader 应发现六个 Skill，其中三个 Managed Path 入口与三个
+host-native 维护 Skill（`imm-pr-fix`、`imm-doc-prune` 和 `imm-agent-doc-maintain`）。Canary Enrollment、Kernel evidence、
 Review authorization 和 terminal settlement 通过 foreground Tools/TUI gates 完成：
 
 - `imm_canary_enrollment`：准备、rehearsal、literal-user confirmation、revalidation、commit。
@@ -86,8 +87,8 @@ Canary Work 和 Work 不再是用户工作流入口。相关 extension/tool sour
 
 ## Surface 与验证
 
-`plugins/immune-brain/skills/registry.yaml`、`dist/registry.yaml`、五个 `SKILL.md`、
-五个 `dist/imm-*.md` 和 package manifest 必须保持一致。未注册的旧 `imm-*.md`
+`plugins/immune-brain/skills/registry.yaml`、`dist/registry.yaml`、六个 `SKILL.md`、
+六个 `dist/imm-*.md` 和 package manifest 必须保持一致。未注册的旧 `imm-*.md`
 entry files、旧 Skill directories 和兼容 aliases 必须不存在。
 
 建议验证：
