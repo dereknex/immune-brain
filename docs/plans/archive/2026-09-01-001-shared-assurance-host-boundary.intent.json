@@ -1,0 +1,61 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "2026-09-01-001-shared-assurance-host-boundary",
+  "owner": "user",
+  "goal": "Extract the narrow host-neutral Enrollment and Assurance coordination boundary defined by docs/specs/dual-host-assurance.spec.md, exercise it through a fake Host and the real Pi adapter, and preserve Pi preparation identifiers and digests, persisted authority bytes, public Tool result contracts, foreground cancellation linearization, Review receipt ordering, and settlement behavior.",
+  "acceptance": [
+    {
+      "id": "acc-host-port",
+      "assertion": "A fake non-Pi Host drives routine, material, and critical progression through the shared Assurance coordinator, while missing, stale, replayed, wrong-task, wrong-revision, or incomplete Review and user authority evidence fails before Kernel mutation and shared modules import no Host SDK or adapter.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/host-neutral-assurance-coordinator.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 60000,\n  \"max_output_bytes\": 65536\n}\n"
+    },
+    {
+      "id": "acc-pi-assurance",
+      "assertion": "The real Pi adapter preserves deterministic QA, routine completion, immutable material and critical Review preparation, exact native receipt correlation and event ordering, freshness rejection, retryable post-QA Review preparation, rework, precommit cancellation, and postcommit settlement-unknown semantics while delegating host-neutral sequencing to the shared boundary.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/pi-canary-assurance-progression.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 90000,\n  \"max_output_bytes\": 65536\n}\n"
+    },
+    {
+      "id": "acc-pi-enrollment",
+      "assertion": "Pi Enrollment keeps the existing preparation contract identifier and digest, exact TaskIntent binding, TUI-only literal-user gate, zero-write rejection and cancellation behavior, opaque capability consumption, and atomic v4 Enrollment transaction through the shared Enrollment boundary.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/pi-canary-enroll-extension.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 65536\n}\n"
+    },
+    {
+      "id": "acc-package-boundary",
+      "assertion": "The accepted dual-Host ADR supersedes only ADR-0002's Pi-only assumption, the root package ships the host-neutral Assurance modules required by the unchanged Pi extension, compatibility re-exports remain bounded with an exit milestone, and Kernel/shared modules do not import Pi or Claude adapter APIs or a generic registry/dispatcher.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/pi-canary-package-boundary.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 60000,\n  \"max_output_bytes\": 65536\n}\n"
+    }
+  ],
+  "scope_hint": [
+    "docs/adr/0004-dual-host-assurance-adapters.md",
+    "docs/specs/archive/dual-host-assurance.spec.md",
+    "docs/specs/dual-host-assurance.spec.md",
+    "package.json",
+    "plugins/immune-brain/.pi-extension/imm-canary-enroll.ts",
+    "plugins/immune-brain/.pi-extension/imm-canary-work.ts",
+    "plugins/immune-brain/.pi-extension/pi-canary-assurance-progression.ts",
+    "plugins/immune-brain/.pi-extension/pi-canary-invocations.ts",
+    "plugins/immune-brain/.pi-extension/pi-canary-native-review.ts",
+    "plugins/immune-brain/.pi-extension/pi-canary-qa-findings.ts",
+    "plugins/immune-brain/.pi-extension/pi-canary-review-bundle.ts",
+    "plugins/immune-brain/.pi-extension/pi-canary-verification.ts",
+    "plugins/immune-brain/.pi-extension/runtime-stub.ts",
+    "plugins/immune-brain/runtime/assurance",
+    "plugins/immune-brain/runtime/kernel/assurance_projection.ts",
+    "plugins/immune-brain/runtime/kernel/authority_port.ts",
+    "plugins/immune-brain/runtime/kernel/canary_application.ts",
+    "plugins/immune-brain/runtime/kernel/completion.ts",
+    "plugins/immune-brain/runtime/kernel/enrollment.ts",
+    "plugins/immune-brain/runtime/kernel/enrollment_authority.ts",
+    "plugins/immune-brain/runtime/kernel/pi_canary_prepare.ts",
+    "tests/helpers/pi-canary-assurance-harness.ts",
+    "tests/host-neutral-assurance-coordinator.test.ts",
+    "tests/kernel-enrollment-transaction.test.ts",
+    "tests/pi-canary-assurance-continuation.test.ts",
+    "tests/pi-canary-assurance-progression.test.ts",
+    "tests/pi-canary-enroll-extension.test.ts",
+    "tests/pi-canary-package-boundary.test.ts",
+    "tests/pi-only-release-contract.test.ts"
+  ],
+  "risk": "critical",
+  "revision": 1
+}

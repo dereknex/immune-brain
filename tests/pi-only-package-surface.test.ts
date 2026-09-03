@@ -5,10 +5,8 @@ import { resolve } from "node:path";
 const ROOT = resolve(import.meta.dir, "..");
 const REMOVED_HOST_PATHS = [
   ".agents/plugins/marketplace.json",
-  ".claude-plugin",
   ".cursor-plugin",
   "plugins/immune-brain/.codex-plugin",
-  "plugins/immune-brain/.claude-plugin",
   "plugins/immune-brain/.cursor-plugin",
   "plugins/immune-brain/.opencode-plugin",
   "plugins/immune-brain/.pi-extension/index.ts",
@@ -20,7 +18,7 @@ const REMOVED_HOST_PATHS = [
 ];
 
 describe("Pi-only package surface", () => {
-  it("ships one Pi package manifest and no other code-agent adapters", () => {
+  it("ships one Pi+Claude package allowlist and no undeclared adapters", () => {
     const manifest = JSON.parse(readFileSync(resolve(ROOT, "package.json"), "utf8"));
     expect(manifest.pi).toEqual({
       skills: ["./plugins/immune-brain/skills"],

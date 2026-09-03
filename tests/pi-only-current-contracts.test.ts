@@ -19,7 +19,7 @@ const CURRENT_CONTRACTS = [
   "plugins/immune-brain/skills/registry.yaml",
   "plugins/immune-brain/dist/registry.yaml",
 ];
-const UNSUPPORTED_HOST_CLAIM = /\b(Codex|Cursor|Claude Code|OpenCode)\b|\.(?:codex|cursor|claude|opencode)(?:-plugin)?\//;
+const UNSUPPORTED_HOST_CLAIM = /\b(Codex|Cursor|OpenCode)\b|\.(?:codex|cursor|opencode)(?:-plugin)?\//;
 
 describe("current Pi-only contracts", () => {
   it("removes the retired public sync surface from active release contracts", () => {
@@ -55,7 +55,7 @@ describe("current Pi-only contracts", () => {
     }
   });
 
-  it("describe Pi as the sole code-agent host", () => {
+  it("describe Pi and Claude Code as the supported hosts", () => {
     const distSkills = readdirSync(resolve(ROOT, "plugins/immune-brain/dist"))
       .filter((name) => name.endsWith(".md"))
       .map((name) => `plugins/immune-brain/dist/${name}`);
@@ -66,8 +66,11 @@ describe("current Pi-only contracts", () => {
         unsupported: undefined,
       });
     }
-    expect(readFileSync(resolve(ROOT, "README.md"), "utf8")).toContain("Pi remains the only host");
-    expect(readFileSync(resolve(ROOT, "README.zh-CN.md"), "utf8")).toContain("Pi 是唯一支持的宿主");
+    expect(readFileSync(resolve(ROOT, "README.md"), "utf8")).toContain("Pi and Claude Code are the supported hosts");
+    expect(readFileSync(resolve(ROOT, "README.zh-CN.md"), "utf8")).toContain("Pi 与 Claude Code 是支持的宿主");
+    expect(readFileSync(resolve(ROOT, "plugins/immune-brain/USER_GUIDE.md"), "utf8")).toContain("Pi 与 Claude Code 工作流");
+    expect(readFileSync(resolve(ROOT, "plugins/immune-brain/USER_GUIDE.md"), "utf8")).toContain("host native Review");
+    expect(readFileSync(resolve(ROOT, "plugins/immune-brain/README.md"), "utf8")).toContain("Pi host extension or the Claude Code plugin");
     const preferencesDoc = readFileSync(resolve(ROOT, "docs/reference/immune-brain-config.md"), "utf8");
     expect(preferencesDoc).toContain("Initiative carrier default: local");
     expect(preferencesDoc).toContain("Initiative carrier default: github");

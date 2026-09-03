@@ -1,0 +1,9 @@
+{
+  "contract": "assurance_kernel/task_tombstone/v2",
+  "task_id": "2026-09-01-001-shared-assurance-host-boundary",
+  "lifecycle_status": "terminal",
+  "terminal_lifecycle": "done",
+  "terminal_event_id": "complete:2026-09-01-001-shared-assurance-host-boundary:2026-09-01T12:20:15.521Z",
+  "final_record_hash": "sha256:c98ae991f62a15533c285db3f0b0d77a6e9a7f59ab003b3d802d431f7121eb33",
+  "terminalized_at": "2026-09-01T12:20:15.521Z"
+}

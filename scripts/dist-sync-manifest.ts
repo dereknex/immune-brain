@@ -181,6 +181,12 @@ export const PACKAGED_CONTRACT_ENTRIES: PackagedContractEntry[] = [
 	},
 	// owned skill contracts — self-sourced, loader references them
 	...SKILL_OWNED_ENTRIES,
+	{
+		packaged: "claude/mcp-server.mjs",
+		source: "plugins/immune-brain/runtime/claude/mcp_server.ts",
+		kind: "adapted",
+		reason: "Generated Node stdio bundle; drift is guarded by tests/claude-host-package.test.ts.",
+	},
 ];
 
 export function renderDistDoc(entry: DistDocEntry, source: string): string {

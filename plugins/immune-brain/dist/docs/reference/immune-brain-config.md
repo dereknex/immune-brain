@@ -1,6 +1,6 @@
 # Immune-Brain Pi Preferences
 
-Pi is the only supported code-agent host. Immune-Brain does not load an
+Pi and Claude Code are supported code-agent hosts. Immune-Brain does not load an
 agent-local TOML file or Immune-Brain-specific environment overrides. User and
 project preferences belong in Pi-injected `AGENTS.md` instructions.
 

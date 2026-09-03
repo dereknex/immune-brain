@@ -122,9 +122,9 @@ describe("Roadmap shipped host and package acceptance", () => {
 		expect(
 			existsSync(join(PLUGIN_ROOT, "runtime", "immune_brain_runtime.ts")),
 		).toBe(false);
+		expect(existsSync(join(PLUGIN_ROOT, ".claude-plugin"))).toBe(true);
 		for (const relative of [
 			".codex-plugin",
-			".claude-plugin",
 			".cursor-plugin",
 			".opencode-plugin",
 		]) {

@@ -120,9 +120,11 @@ stable `drain_required` / `v3_storage_retired` diagnostic. Common entry points:
 | `bin/imm-finish` | Retired after v4 storage retirement. |
 
 The table above describes the legacy CLI surface. Current Managed execution
-runs through the Pi host extension and `runtime/kernel`: TaskRecord v3 is the
-sole production workflow authority, using `lifecycle`, `artifact_state`, and a
-single `attestations[]` collection. `workspace_transaction/v2` remains the
+runs through the Pi host extension or the Claude Code plugin and `runtime/kernel`:
+TaskRecord v4 is the current production workflow authority (lifecycle,
+artifact_state, and a single `attestations[]` collection). v3 records are
+read-only and must be drained by the prior runtime before v4 workflows take
+over; new enrollments write v4 only. `workspace_transaction/v2` remains the
 recoverable persistence envelope; its version identifies the transaction wire
 format, not the TaskRecord schema.
 

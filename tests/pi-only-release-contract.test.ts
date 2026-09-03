@@ -9,10 +9,13 @@ const ROOT = resolve(import.meta.dir, "..");
 describe("Pi-only release contract", () => {
   it("uses package.json as the sole version authority", () => {
     const versions = loadManifestVersions(ROOT);
-    expect(Object.keys(versions)).toEqual(["package.json"]);
+    expect(Object.keys(versions)).toEqual([
+      "package.json",
+      "plugins/immune-brain/.claude-plugin/plugin.json",
+    ]);
     expect(validateManifests(ROOT)).toMatchObject({
       package: "@immune-brain/agent-skills",
-      files: ["package.json"],
+      files: ["package.json", "plugins/immune-brain/.claude-plugin/plugin.json"],
       valid: true,
     });
   });
@@ -31,6 +34,7 @@ describe("Pi-only release contract", () => {
       "plugins/immune-brain/.pi-extension/imm-canary-work.ts",
       "plugins/immune-brain/skills/imm-loop/SKILL.md",
       "plugins/immune-brain/runtime/kernel/completion.ts",
+      ".claude-plugin/marketplace.json",
     ]) expect(files).toContain(required);
     for (const prefix of [
       "tests/",
@@ -38,7 +42,6 @@ describe("Pi-only release contract", () => {
       "scripts/",
       "public-release/",
       ".agents/",
-      ".claude-plugin/",
       ".cursor-plugin/",
       ".codex-plugin/",
       ".opencode-plugin/",
