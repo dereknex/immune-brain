@@ -7,12 +7,9 @@ import {
 	type SnapshotDescriptor,
 } from "../plugins/immune-brain/runtime/assurance/coordinator";
 import { AssuranceProgression } from "../plugins/immune-brain/.pi-extension/pi-canary-assurance-progression.ts";
-import {
-	matchesReservedAgentArgs,
-	STANDARD_AGENT_TOOL,
-} from "../plugins/immune-brain/.pi-extension/pi-canary-native-review.ts";
 import { PassThrough } from "node:stream";
 import { ClaudeReviewHost, REVIEWER_AGENT, AGENT_TOOL } from "../plugins/immune-brain/runtime/claude/review_host";
+import { submitClaudeReview } from "../plugins/immune-brain/runtime/claude/kernel_ports";
 import { probeHost } from "../plugins/immune-brain/runtime/claude/capability";
 import { createMcpRuntime, serveStdio } from "../plugins/immune-brain/runtime/claude/mcp_server";
 import type { ReviewBundle } from "../plugins/immune-brain/runtime/assurance/review_evidence";
@@ -121,19 +118,16 @@ function completeClaudeReview(host: ClaudeReviewHost, operationId: string, risk:
 	host.observe({ type: "SubagentStop", sessionId: "claude", agent: REVIEWER_AGENT, agentId, taskId: TASK, operationId });
 }
 
-function completePiReview(progression: AssuranceProgression, ready: { agent_params: unknown; operation_id: string }) {
-	const params = ready.agent_params as Parameters<typeof matchesReservedAgentArgs>[1];
-	const toolCallId = `pi-${ready.operation_id}`;
-	expect(progression.observeToolCall({ toolName: STANDARD_AGENT_TOOL, toolCallId, input: params })).toBeUndefined();
-	progression.observeToolResult({
-		toolName: STANDARD_AGENT_TOOL,
-		toolCallId,
-		input: params,
-		isError: false,
-		content: JSON.stringify(passVerdict(snapshot("review"))),
-		details: { status: "completed", agentId: "pi-reviewer" },
-	});
-	progression.observeToolEnd({ toolName: STANDARD_AGENT_TOOL, toolCallId });
+async function submitObservedReview(
+	h: { coordinator: AssuranceCoordinator; host: ClaudeReviewHost },
+	taskId = TASK,
+) {
+	const observed = h.host.inspectReviewForTask(taskId);
+	if (!observed.ok) {
+		if (observed.release) return h.coordinator.abandonReview(taskId, observed.reason);
+		return { state: "blocked" as const, reason: observed.reason };
+	}
+	return submitClaudeReview(h.host, h.coordinator, ctx, taskId, observed.receipt.result);
 }
 
 function sharedKernel(
@@ -217,7 +211,7 @@ function sharedKernel(
 			return { host, coordinator: new AssuranceCoordinator(portsFor(host)) };
 		},
 		pi() {
-			const ports = portsFor({ host: "pi", prepareReview: () => ({ id: "x", dispatch: {} }), consumeReview: () => ({ ok: false, reason: "unused", release: false }), releaseReview: () => undefined });
+			const ports = portsFor({ host: "pi", prepareReview: () => ({ id: "x", dispatch: {} }), releaseReview: () => undefined });
 			const { host: _ignored, ...rest } = ports;
 			return new AssuranceProgression(rest);
 		},
@@ -243,13 +237,13 @@ describe("dual-host assurance conformance", () => {
 		const ready = await m.coordinator.advance(TASK, ctx);
 		expect(ready.state).toBe("review_ready");
 		completeClaudeReview(m.host, (ready as { operation_id: string }).operation_id, "material");
-		expect(await m.coordinator.submitReview(TASK, ctx)).toEqual({ state: "completed" });
+		expect(await submitObservedReview(m)).toEqual({ state: "completed" });
 
 		const critical = sharedKernel("critical");
 		const c = critical.claude();
 		const critReady = await c.coordinator.advance(TASK, ctx);
 		completeClaudeReview(c.host, (critReady as { operation_id: string }).operation_id, "critical");
-		expect(await c.coordinator.submitReview(TASK, ctx)).toMatchObject({ state: "awaiting_user" });
+		expect(await submitObservedReview(c)).toMatchObject({ state: "awaiting_user" });
 	});
 
 	test("Pi resumes a Claude-frozen run_review task without handoff state", async () => {
@@ -262,8 +256,7 @@ describe("dual-host assurance conformance", () => {
 		const pi = kernel.pi();
 		const resumed = await pi.advance(TASK, ctx as never);
 		expect(resumed.state).toBe("review_ready");
-		completePiReview(pi, resumed as { agent_params: unknown; operation_id: string });
-		expect(await pi.submitReview(TASK, ctx as never)).toEqual({ state: "completed" });
+		expect(await pi.submitReview(TASK, ctx, passVerdict(snapshot("review")))).toEqual({ state: "completed" });
 	});
 
 	test("Claude resumes a Pi run_review task without handoff state", async () => {
@@ -277,7 +270,7 @@ describe("dual-host assurance conformance", () => {
 		const resumed = await claude.coordinator.advance(TASK, ctx);
 		expect(resumed.state).toBe("review_ready");
 		completeClaudeReview(claude.host, (resumed as { operation_id: string }).operation_id, "material");
-		expect(await claude.coordinator.submitReview(TASK, ctx)).toEqual({ state: "completed" });
+		expect(await submitObservedReview(claude)).toEqual({ state: "completed" });
 	});
 
 	test("Claude resumes a Pi-active submit_assurance task and freezes artifacts cross-host", async () => {
@@ -289,7 +282,7 @@ describe("dual-host assurance conformance", () => {
 		const ready = await claude.coordinator.advance(TASK, ctx); // freezes artifacts, runs QA
 		expect(ready.state).toBe("review_ready");
 		completeClaudeReview(claude.host, (ready as { operation_id: string }).operation_id, "material");
-		expect(await claude.coordinator.submitReview(TASK, ctx)).toEqual({ state: "completed" });
+		expect(await submitObservedReview(claude)).toEqual({ state: "completed" });
 		expect(kernel.applyCounts.value).toBe(2);
 	});
 
@@ -315,8 +308,7 @@ describe("dual-host assurance conformance", () => {
 		const pi = kernel.pi();
 		const resumed = await pi.advance(TASK, ctx as never);
 		expect(resumed.state).toBe("review_ready");
-		completePiReview(pi, resumed as { agent_params: unknown; operation_id: string });
-		expect(await pi.submitReview(TASK, ctx as never)).toEqual({ state: "completed" });
+		expect(await pi.submitReview(TASK, ctx, passVerdict(snapshot("review")))).toEqual({ state: "completed" });
 	});
 
 	test("session disconnect mid-QA aborts in-flight work and the other host resumes", async () => {
@@ -340,8 +332,7 @@ describe("dual-host assurance conformance", () => {
 		const pi = kernel.pi();
 		const resumed = await pi.advance(TASK, ctx as never);
 		expect(resumed.state).toBe("review_ready");
-		completePiReview(pi, resumed as { agent_params: unknown; operation_id: string });
-		expect(await pi.submitReview(TASK, ctx as never)).toEqual({ state: "completed" });
+		expect(await pi.submitReview(TASK, ctx, passVerdict(snapshot("review")))).toEqual({ state: "completed" });
 	});
 
 	test("authorize_user projection resumes on the other host without re-running authority", async () => {
@@ -349,7 +340,7 @@ describe("dual-host assurance conformance", () => {
 		const claude = kernel.claude();
 		const ready = await claude.coordinator.advance(TASK, ctx);
 		completeClaudeReview(claude.host, (ready as { operation_id: string }).operation_id, "critical");
-		expect(await claude.coordinator.submitReview(TASK, ctx)).toMatchObject({ state: "awaiting_user" });
+		expect(await submitObservedReview(claude)).toMatchObject({ state: "awaiting_user" });
 		await claude.coordinator.onSessionShutdown();
 		kernel.releaseClaim();
 		const pi = kernel.pi();
@@ -376,8 +367,7 @@ describe("dual-host assurance conformance", () => {
 		const resumed = await pi.advance(TASK, ctx as never); // reconciles run_review without re-running QA
 		expect(resumed.state).toBe("review_ready");
 		expect(kernel.applyCounts.value).toBe(1);
-		completePiReview(pi, resumed as { agent_params: unknown; operation_id: string });
-		expect(await pi.submitReview(TASK, ctx as never)).toEqual({ state: "completed" });
+		expect(await pi.submitReview(TASK, ctx, passVerdict(snapshot("review")))).toEqual({ state: "completed" });
 	});
 
 	test("v3 drain remains readable while vFuture, stale identity, and concurrent continuation fail closed", async () => {
@@ -389,8 +379,7 @@ describe("dual-host assurance conformance", () => {
 		const v3piHost = v3pi.pi();
 		const v3ready = await v3piHost.advance(TASK, ctx as never);
 		expect(v3ready.state).toBe("review_ready");
-		completePiReview(v3piHost, v3ready as { agent_params: unknown; operation_id: string });
-		expect(await v3piHost.submitReview(TASK, ctx as never)).toEqual({ state: "completed" });
+		expect(await v3piHost.submitReview(TASK, ctx, passVerdict(snapshot("review")))).toEqual({ state: "completed" });
 		const future = sharedKernel("routine");
 		future.future();
 		expect(await future.claude().coordinator.advance(TASK, ctx)).toMatchObject({ state: "blocked" });
@@ -400,7 +389,7 @@ describe("dual-host assurance conformance", () => {
 		const ready = await first.coordinator.advance(TASK, ctx);
 		stale.stale();
 		completeClaudeReview(first.host, (ready as { operation_id: string }).operation_id, "material");
-		expect(await first.coordinator.submitReview(TASK, ctx)).toMatchObject({ state: "blocked" });
+		expect(await submitObservedReview(first)).toMatchObject({ state: "blocked" });
 
 		expect(probeHost({ CLAUDE_CODE_VERSION: "9.0.0" }).ok).toBe(true);
 		expect(probeHost({ CLAUDE_CODE_VERSION: "2.0.0" }).ok).toBe(false);

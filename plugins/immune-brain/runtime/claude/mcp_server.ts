@@ -11,7 +11,7 @@ export const TOOLS = [
 	{ name: "status", description: "Read the Kernel Assurance Projection for an exact task.", privileged: false },
 	{ name: "enroll", description: "Enroll a Git-tracked TaskIntent after native confirmation.", privileged: true },
 	{ name: "advance_assurance", description: "Advance frozen Assurance through deterministic QA and Review reservation.", privileged: false },
-	{ name: "submit_review", description: "Submit the correlated one-shot Review receipt.", privileged: false },
+	{ name: "submit_review", description: "Submit the Parent-mediated Review verdict bound to the correlated receipt.", privileged: false },
 	{ name: "request_authorization", description: "Apply exact literal-user authorization.", privileged: true },
 	{ name: "approve_breaking_intent_revision", description: "Approve a breaking TaskIntent revision.", privileged: true },
 	{ name: "stop", description: "Stop the active task with literal-user authority.", privileged: true },
@@ -28,8 +28,9 @@ export function listMcpTools() {
 				task_id: { type: "string" },
 				...(tool.name === "approve_breaking_intent_revision" ? { next_intent: { type: "object" } } : {}),
 				...(tool.name === "stop" ? { reason: { type: "string" } } : {}),
+				...(tool.name === "submit_review" ? { verdict: { type: "object" } } : {}),
 			},
-			required: ["task_id"],
+			required: tool.name === "submit_review" ? ["task_id", "verdict"] : ["task_id"],
 		},
 		annotations: tool.privileged ? privilegedAnnotations() : { readOnlyHint: tool.name === "status" },
 	}));
@@ -97,7 +98,10 @@ export function createMcpRuntime(options: McpRuntimeOptions = {}) {
 			};
 			if (name === "enroll") return runtime.enroll(taskId, toolMeta);
 			if (name === "advance_assurance") return runtime.advance(taskId, toolMeta.signal);
-			if (name === "submit_review") return runtime.submitReview(taskId);
+			if (name === "submit_review") {
+				if (!Object.hasOwn(args, "verdict")) throw new Error("verdict is required");
+				return runtime.submitReview(taskId, args.verdict);
+			}
 			if (name === "request_authorization" || name === "approve_breaking_intent_revision" || name === "stop" || name === "repair_authority_state") {
 				return runtime.authorize(taskId, name, toolMeta, args);
 			}

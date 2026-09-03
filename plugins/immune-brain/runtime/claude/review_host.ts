@@ -4,10 +4,14 @@ import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
 import type {
 	AssuranceHostPort,
-	ConsumeReviewResult,
 	HostReviewReservation,
 	ReviewRequest,
 } from "../assurance/host_port";
+
+export type ObservedReviewReceipt = { actorId: string; result: string };
+export type ConsumeReviewResult =
+	| { ok: true; receipt: ObservedReviewReceipt }
+	| { ok: false; reason: string; release: boolean };
 
 export const REVIEWER_AGENT = "immune-brain-reviewer";
 export const CLAUDE_REVIEWER_AGENT = "immune-brain:immune-brain-reviewer";
@@ -485,7 +489,7 @@ export class ClaudeReviewHost implements AssuranceHostPort {
 		}
 	}
 
-	consumeReview(reservation: HostReviewReservation): ConsumeReviewResult {
+	inspectReview(reservation: HostReviewReservation): ConsumeReviewResult {
 		this.drain();
 		const state = this.pending.get(reservation.id);
 		if (!state) return { ok: false, reason: "reserved foreground Agent was not observed", release: false };
@@ -504,7 +508,6 @@ export class ClaudeReviewHost implements AssuranceHostPort {
 		) {
 			return { ok: false, reason: "foreground Agent terminal event correlation mismatch", release: true };
 		}
-		state.consumed = true;
 		return {
 			ok: true,
 			receipt: {
@@ -512,6 +515,22 @@ export class ClaudeReviewHost implements AssuranceHostPort {
 				result: state.postEvent.result,
 			},
 		};
+	}
+
+	consumeReview(reservation: HostReviewReservation): ConsumeReviewResult {
+		const result = this.inspectReview(reservation);
+		if (result.ok) {
+			const pending = this.pending.get(reservation.id);
+			if (pending) pending.consumed = true;
+		}
+		return result;
+	}
+
+	inspectReviewForTask(taskId: string): ConsumeReviewResult {
+		this.drain();
+		const entry = [...this.pending.entries()].find(([, state]) => state.request.taskId === taskId);
+		if (!entry) return { ok: false, reason: "reserved foreground Agent was not observed", release: false };
+		return this.inspectReview({ id: entry[0], dispatch: entry[1].request });
 	}
 
 	releaseReview(reservation: HostReviewReservation): void {

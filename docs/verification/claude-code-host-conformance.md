@@ -4,7 +4,7 @@ This file is review evidence for real Host interaction. It is not a QA attestati
 
 minimum_version: 2.1.199
 current_version: 2.1.236
-package_version: 2.8.3
+package_version: 3.0.0
 platform: darwin/arm64
 plugin_validate: pass
 authority: hitl-evidence
@@ -21,7 +21,7 @@ Every scenario row below labels exactly one class, and each class is defined onc
 
 Recorded 2026-09-03 from real `claude -p` sessions launched with `--plugin-dir plugins/immune-brain --allowedTools mcp__plugin_immune-brain_immune-brain__*`:
 
-- CLI envelope: `claude --version` → `2.1.236 (Claude Code)`; `claude plugin validate --strict plugins/immune-brain` → `Validation passed` (exit 0); plugin 2.8.3 from `.claude-plugin/plugin.json`, MCP server loads `dist/claude/mcp-server.mjs`.
+- CLI envelope: `claude --version` → `2.1.236 (Claude Code)`; `claude plugin validate --strict plugins/immune-brain` → `Validation passed` (exit 0); plugin 3.0.0 from `.claude-plugin/plugin.json`, MCP server loads `dist/claude/mcp-server.mjs`. The 2026-09-03 live session captures below were recorded against plugin 2.8.3; contract-fixture scenarios were re-verified against package 3.0.0.
 - Real MCP handshake (wire capture): `initialize` params carry `clientInfo {name: "claude-code", version: "2.1.236"}` and `capabilities {roots: {listChanged: true}, elicitation: {}}` — the Host declares the elicitation capability in every session, including headless `-p`.
 - Real `tools/call` wire format (capture from a live session): `_meta = {"claudecode/toolUseId": "toolu_…", "progressToken": N}` with no `session_id` key. Correlation of Host session identity is therefore bridged through the hook-observed `ElicitationResult` record for that exact tool call (see "Wire correlation" below).
 - Real status round-trip: a live session called `status` for the active Kernel task and received the real projection (error `null`, revision, blocking findings, and replan state rendered from `.imm`).

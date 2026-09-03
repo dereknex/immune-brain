@@ -12,7 +12,7 @@ import type { ReviewBundle } from "../plugins/immune-brain/runtime/assurance/rev
 import { tmpdir } from "node:os";
 import { ClaudeReviewHost, FileHookEventLog, MemoryHookEventLog, hookEventPath, parseHookStdin, REVIEWER_AGENT, AGENT_TOOL } from "../plugins/immune-brain/runtime/claude/review_host";
 import { createMcpRuntime, handleJsonRpc, listMcpTools } from "../plugins/immune-brain/runtime/claude/mcp_server";
-import { ClaudeRuntime, diffHashOf, type ToolMeta } from "../plugins/immune-brain/runtime/claude/kernel_ports";
+import { ClaudeRuntime, diffHashOf, submitClaudeReview, type ToolMeta } from "../plugins/immune-brain/runtime/claude/kernel_ports";
 import { createCanaryApplication } from "../plugins/immune-brain/runtime/kernel/canary_application";
 import { createMutationAuthorityRegistry } from "../plugins/immune-brain/runtime/kernel/authority_port";
 import { readTaskIntent } from "../plugins/immune-brain/runtime/kernel/intent";
@@ -192,6 +192,19 @@ function makeCoordinator(overrides: {
 	return { coordinator: new AssuranceCoordinator(ports), host, ports, counts: () => ({ applyCount }) };
 }
 
+async function submitObservedReview(
+	h: { coordinator: AssuranceCoordinator; host: ClaudeReviewHost },
+	taskId = TASK,
+	verdict?: unknown,
+) {
+	const observed = h.host.inspectReviewForTask(taskId);
+	if (!observed.ok) {
+		if (observed.release) return h.coordinator.abandonReview(taskId, observed.reason);
+		return { state: "blocked" as const, reason: observed.reason };
+	}
+	return submitClaudeReview(h.host, h.coordinator, ctx, taskId, verdict ?? observed.receipt.result);
+}
+
 describe("claude host authority", () => {
 	test("privileged MCP tools declare mandatory interaction", () => {
 		const tools = listMcpTools();
@@ -201,6 +214,9 @@ describe("claude host authority", () => {
 			});
 		}
 		expect(tools.find((tool) => tool.name === "status")?.annotations).not.toHaveProperty("anthropic/requiresUserInteraction");
+		const submitReview = tools.find((tool) => tool.name === "submit_review");
+		expect(submitReview?.inputSchema.required).toEqual(["task_id", "verdict"]);
+		expect(submitReview?.inputSchema.properties).toHaveProperty("verdict");
 	});
 
 	test("dontAsk, missing annotation, deny, cancel, and non-interactive mint zero capability", () => {
@@ -634,7 +650,7 @@ describe("claude host authority", () => {
 		host.observe({ type: "SubagentStart", sessionId: "s", agent: REVIEWER_AGENT, agentId: "a", taskId: TASK, operationId: op });
 		host.observe({ type: "SubagentStop", sessionId: "s", agent: REVIEWER_AGENT, agentId: "a", taskId: TASK, operationId: op });
 		host.observe({ type: "PostToolUse", sessionId: "s", agentId: "a", toolName: AGENT_TOOL, result, taskId: TASK, operationId: op });
-		expect(await h.coordinator.submitReview(TASK, ctx)).toEqual({ state: "completed" });
+		expect(await submitObservedReview(h)).toEqual({ state: "completed" });
 		expect(h.counts().applyCount).toBe(2);
 	});
 
@@ -662,7 +678,7 @@ describe("claude host authority", () => {
 		const missing = makeCoordinator();
 		const readyMissing = await missing.coordinator.advance(TASK, ctx);
 		expect(readyMissing.state).toBe("review_ready");
-		expect(await missing.coordinator.submitReview(TASK, ctx)).toMatchObject({ reason: "reserved foreground Agent was not observed" });
+		expect(await submitObservedReview(missing)).toMatchObject({ reason: "reserved foreground Agent was not observed" });
 		expect(missing.counts().applyCount).toBe(1);
 
 		const reordered = new ClaudeReviewHost();
@@ -671,7 +687,7 @@ describe("claude host authority", () => {
 		const op = (readyReorder as { operation_id: string }).operation_id;
 		reordered.observe({ type: "SubagentStop", sessionId: "s", agent: REVIEWER_AGENT, agentId: "a", taskId: TASK, operationId: op });
 		reordered.observe({ type: "PostToolUse", sessionId: "s", agentId: "a", toolName: AGENT_TOOL, result: JSON.stringify(passVerdict(snapshot("review"))), taskId: TASK, operationId: op });
-		expect(await hReordered.coordinator.submitReview(TASK, ctx)).toMatchObject({
+		expect(await submitObservedReview(hReordered)).toMatchObject({
 			reason: "reserved foreground Agent was not observed",
 		});
 		expect(hReordered.counts().applyCount).toBe(1);
@@ -681,7 +697,7 @@ describe("claude host authority", () => {
 		const readyWrong = await hWrong.coordinator.advance(TASK, ctx);
 		const wrongOp = (readyWrong as { operation_id: string }).operation_id;
 		completeReview(wrong, "other-op", JSON.stringify(passVerdict(snapshot("review"))));
-		expect(await hWrong.coordinator.submitReview(TASK, ctx)).toMatchObject({ reason: "reserved foreground Agent was not observed" });
+		expect(await submitObservedReview(hWrong)).toMatchObject({ reason: "reserved foreground Agent was not observed" });
 		expect(wrongOp).toBeTruthy();
 		expect(hWrong.counts().applyCount).toBe(1);
 
@@ -698,7 +714,7 @@ describe("claude host authority", () => {
 		});
 		const readyStale = await stale.coordinator.advance(TASK, ctx);
 		completeReview(host, (readyStale as { operation_id: string }).operation_id, JSON.stringify(passVerdict(snapshot("review"))));
-		expect(await stale.coordinator.submitReview(TASK, ctx)).toMatchObject({
+		expect(await submitObservedReview(stale)).toMatchObject({
 			reason: "assurance snapshot changed before Review submission",
 		});
 		expect(stale.counts().applyCount).toBe(1);
@@ -708,10 +724,35 @@ describe("claude host authority", () => {
 		const readyMal = await hMal.coordinator.advance(TASK, ctx);
 		const malOp = (readyMal as { operation_id: string }).operation_id;
 		completeReview(malformed, malOp, JSON.stringify({ contract: "nope" }));
-		expect(await hMal.coordinator.submitReview(TASK, ctx)).toMatchObject({ state: "blocked" });
-		completeReview(malformed, malOp, JSON.stringify(passVerdict(snapshot("review"))));
-		expect(await hMal.coordinator.submitReview(TASK, ctx)).toMatchObject({ state: "blocked" });
+		expect(await submitObservedReview(hMal)).toMatchObject({ state: "blocked", code: "verdict_invalid" });
+		expect(await hMal.coordinator.advance(TASK, ctx)).toMatchObject({ code: "verdict_invalid" });
 		expect(hMal.counts().applyCount).toBe(1);
+	});
+
+	test("malformed Parent verdict keeps the Review reservation for a matching retry", async () => {
+		const host = new ClaudeReviewHost();
+		const h = makeCoordinator({ host });
+		const mcp = createMcpRuntime({ cwd: ROOT, env: ENV, ports: h.ports, host });
+		await handleJsonRpc({
+			jsonrpc: "2.0",
+			id: 1,
+			method: "initialize",
+			params: { clientInfo: { name: "claude-code", version: "2.1.236" }, capabilities: { elicitation: {} } },
+		}, mcp);
+		const ready = await mcp.callTool("advance_assurance", { task_id: TASK }) as { state: string; operation_id: string };
+		expect(ready.state).toBe("review_ready");
+		const verdict = passVerdict(snapshot("review"));
+		completeReview(host, ready.operation_id, JSON.stringify(verdict));
+		await expect(mcp.callTool("submit_review", { task_id: TASK })).rejects.toThrow("verdict is required");
+		expect(await mcp.callTool("submit_review", { task_id: TASK, verdict: { ...verdict, extra: true } })).toMatchObject({
+			state: "blocked",
+			code: "verdict_invalid",
+		});
+		expect(h.counts().applyCount).toBe(1);
+		expect(await mcp.callTool("advance_assurance", { task_id: TASK })).toMatchObject({ code: "verdict_invalid" });
+		expect(await mcp.callTool("submit_review", { task_id: TASK, verdict })).toEqual({ state: "completed" });
+		expect(h.counts().applyCount).toBe(2);
+		expect(await mcp.callTool("submit_review", { task_id: TASK, verdict })).toMatchObject({ state: "blocked" });
 	});
 
 	test("ElicitationResult is removed from the persistent log after consume", () => {
@@ -822,7 +863,7 @@ describe("claude host authority", () => {
 		host.observe(start!);
 		host.observe(post!);
 		host.observe(stop!);
-		expect(await h.coordinator.submitReview(TASK, ctx)).toEqual({ state: "completed" });
+		expect(await submitObservedReview(h)).toEqual({ state: "completed" });
 	});
 
 	test("native Host hook payload shapes (prompt in tool_input, verdict in tool_response.content) correlate and settle Review", async () => {
@@ -871,7 +912,7 @@ describe("claude host authority", () => {
 		host.observe(start!);
 		host.observe(stop!);
 		host.observe(post!);
-		expect(await h.coordinator.submitReview(TASK, ctx)).toEqual({ state: "completed" });
+		expect(await submitObservedReview(h)).toEqual({ state: "completed" });
 	});
 
 	test("PostToolUse with nested operation_id/task_id in tool_input or tool_response correlates and rejects conflicts", async () => {
@@ -941,7 +982,7 @@ describe("claude host authority", () => {
 		writer.append({ type: "SubagentStart", sessionId: "hook", agent: REVIEWER_AGENT, agentId, taskId: TASK, operationId });
 		writer.append({ type: "PostToolUse", sessionId: "hook", agentId, toolName: AGENT_TOOL, result: JSON.stringify(passVerdict(snapshot("review"))), taskId: TASK, operationId });
 		writer.append({ type: "SubagentStop", sessionId: "hook", agent: REVIEWER_AGENT, agentId, taskId: TASK, operationId });
-		expect(await h.coordinator.submitReview(TASK, ctx)).toEqual({ state: "completed" });
+		expect(await submitObservedReview(h)).toEqual({ state: "completed" });
 		expect(h.counts().applyCount).toBe(2);
 	});
 
@@ -953,9 +994,9 @@ describe("claude host authority", () => {
 		host.observe({ type: "SubagentStart", sessionId: "other", agent: REVIEWER_AGENT, agentId: "x" });
 		host.observe({ type: "PostToolUse", sessionId: "other", agentId: "x", toolName: AGENT_TOOL, result: JSON.stringify(passVerdict(snapshot("review"))) });
 		host.observe({ type: "SubagentStop", sessionId: "other", agent: REVIEWER_AGENT, agentId: "x" });
-		expect(await h.coordinator.submitReview(TASK, ctx)).toMatchObject({ reason: "reserved foreground Agent was not observed" });
+		expect(await submitObservedReview(h)).toMatchObject({ reason: "reserved foreground Agent was not observed" });
 		completeReview(host, op, JSON.stringify(passVerdict(snapshot("review"))), "bound");
-		expect(await h.coordinator.submitReview(TASK, ctx)).toEqual({ state: "completed" });
+		expect(await submitObservedReview(h)).toEqual({ state: "completed" });
 	});
 
 	test("a Hook append after the drain snapshot is processed on the next drain", () => {
@@ -1036,7 +1077,7 @@ describe("claude host authority", () => {
 		const op = (ready as { operation_id: string }).operation_id;
 		completeReview(host, op, JSON.stringify(passVerdict(snapshot("review"))));
 		host.observe({ type: "SessionEnd", sessionId: "s1" });
-		expect(await h.coordinator.submitReview(TASK, ctx)).toMatchObject({ state: "blocked" });
+		expect(await submitObservedReview(h)).toMatchObject({ state: "blocked" });
 		expect(h.counts().applyCount).toBe(1);
 	});
 

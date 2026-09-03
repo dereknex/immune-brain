@@ -6,6 +6,7 @@ import {
 	AssuranceCoordinator,
 	snapshotDigest,
 	type AssuranceCoordinatorPorts,
+	type AssuranceSubmitReviewResult,
 	type AssuranceVerdict,
 	type HostContext,
 	type SnapshotDescriptor,
@@ -27,6 +28,7 @@ import {
 } from "../assurance/review_evidence";
 import { parseVerificationDescriptor } from "../verification_descriptor";
 import { projectAssurance, type AssuranceProjectionResult } from "../kernel/assurance_projection";
+import type { TaskRecord } from "../kernel/types";
 import { readTaskRecord } from "../kernel/storage";
 import { canonicalIntentHash, parseTaskIntentV1, readTaskIntent } from "../kernel/intent";
 import { capabilityActionFor, createCanaryApplication } from "../kernel/canary_application";
@@ -44,17 +46,70 @@ import { enrollCanaryTask, runEnrollmentRehearsal } from "../kernel/enrollment";
 import { reconcileKernelAuthority, repairKernelAuthority } from "../kernel/storage";
 import { preparePiCanary, revalidatePiCanary } from "../kernel/pi_canary_prepare";
 import { qaFindingId } from "../assurance/qa_findings";
-import { taskDiffHash, taskRevisionDiffHash } from "../workspace_scope";
+import { taskDiffIdentity, taskRevisionIdentity } from "../workspace_scope";
 import { confirmationRef, enrollmentNonce, evaluateNativeGate, isPrivilegedOperation, type NativeDecision } from "./interaction";
 import { ClaudeReviewHost, FileHookEventLog, type ClaudeHookEvent } from "./review_host";
 import { probeHost, type PermissionMode } from "./capability";
 
-export function diffHashOf(root: string, record: { contract?: string; git_base_head?: string; intent_snapshot: { scope_hint: string[] } }): string {
+export function diffSnapshotOf(root: string, record: TaskRecord): {
+	diff_hash: string;
+	changed_paths: readonly string[];
+} {
 	if (record.contract === "assurance_kernel/task_record/v4") {
 		if (!record.git_base_head) throw new Error("TaskRecord v4 is missing git_base_head");
-		return taskRevisionDiffHash(root, record.intent_snapshot.scope_hint, record.git_base_head);
+		return taskRevisionIdentity(root, record.intent_snapshot.scope_hint, record.git_base_head);
 	}
-	return taskDiffHash(root, record.intent_snapshot.scope_hint);
+	return taskDiffIdentity(root, record.intent_snapshot.scope_hint);
+}
+
+export function diffHashOf(root: string, record: TaskRecord): string {
+	return diffSnapshotOf(root, record).diff_hash;
+}
+
+function extractVerdictJson(input: unknown): Record<string, unknown> | null {
+	if (typeof input === "string") {
+		const cleaned = input.split("\n").map((line) => line.trim()).filter((line) => line.startsWith("{") && line.endsWith("}")).join("");
+		if (!cleaned) return null;
+		try { return JSON.parse(cleaned) as Record<string, unknown>; } catch { return null; }
+	}
+	if (typeof input === "object" && input !== null && !Array.isArray(input)) return input as Record<string, unknown>;
+	return null;
+}
+
+function verdictFingerprint(raw: Record<string, unknown>): string {
+	return JSON.stringify({
+		contract: raw.contract ?? null,
+		role: raw.role ?? null,
+		task_id: raw.task_id ?? null,
+		snapshot_digest: raw.snapshot_digest ?? null,
+		decision: raw.decision ?? null,
+		approval: raw.approval ?? null,
+		findings: raw.findings ?? null,
+	});
+}
+
+export async function submitClaudeReview(
+	host: ClaudeReviewHost,
+	coordinator: AssuranceCoordinator,
+	ctx: HostContext,
+	taskId: string,
+	verdictInput: unknown,
+): Promise<AssuranceSubmitReviewResult> {
+	if (verdictInput === undefined) throw new Error("verdict is required");
+	const observed = host.inspectReviewForTask(taskId);
+	if (!observed.ok) {
+		if (observed.release) return coordinator.abandonReview(taskId, observed.reason);
+		return { state: "blocked", reason: observed.reason };
+	}
+	const parentJson = extractVerdictJson(verdictInput);
+	const receiptJson = extractVerdictJson(observed.receipt.result);
+	if (parentJson && receiptJson && verdictFingerprint(parentJson) !== verdictFingerprint(receiptJson)) {
+		return { state: "blocked", reason: "parent verdict does not match reviewer receipt" };
+	}
+	if (parentJson && !receiptJson) {
+		return { state: "blocked", reason: "reviewer receipt is not a valid verdict" };
+	}
+	return coordinator.submitReview(taskId, ctx, verdictInput);
 }
 
 function assertProjectionBinding(before: AssuranceProjectionResult, after: AssuranceProjectionResult, allowDiffChange = false): void {
@@ -309,7 +364,7 @@ export class ClaudeRuntime {
 	private createKernelPorts(): AssuranceCoordinatorPorts {
 		return {
 			host: this.host,
-			projectTask: (root, taskId) => projectAssurance(root, taskId, (cwd, record) => diffHashOf(cwd, record as never)),
+			projectTask: (root, taskId) => projectAssurance(root, taskId, diffSnapshotOf),
 			readTaskRecord: (root, taskId) => readTaskRecord(root, taskId),
 			readTaskIntent: (root, taskId) => readTaskIntent(root, taskId),
 			frozenRunner: async () => resolveBunRunner(),
@@ -385,7 +440,7 @@ export class ClaudeRuntime {
 	}
 
 	async status(taskId: string) {
-		return projectAssurance(this.cwd, taskId, (cwd, record) => diffHashOf(cwd, record as never));
+		return projectAssurance(this.cwd, taskId, diffSnapshotOf);
 	}
 
 	async enroll(taskId: string, meta: ToolMeta) {
@@ -433,8 +488,8 @@ export class ClaudeRuntime {
 		return this.coordinator.advance(taskId, { cwd: this.cwd }, signal);
 	}
 
-	async submitReview(taskId: string) {
-		return this.coordinator.submitReview(taskId, { cwd: this.cwd });
+	async submitReview(taskId: string, verdictInput: unknown) {
+		return submitClaudeReview(this.host, this.coordinator, { cwd: this.cwd }, taskId, verdictInput);
 	}
 
 	async authorize(taskId: string, operation: string, meta: ToolMeta, extra: Record<string, unknown> = {}) {
@@ -584,7 +639,7 @@ export class ClaudeRuntime {
 					...(op === "stop" ? { reason: extra.reason ?? "user stop" } : {}),
 				} as never,
 				prior_intent_token: priorIntent.token,
-				diffProvider: (root, record) => diffHashOf(root, record as never),
+				diffProvider: diffSnapshotOf,
 				now,
 			});
 			if (op === "stop" || op === "approve_breaking_intent_revision") stagePlanningArtifactTransition(this.cwd, result.record);
@@ -651,7 +706,7 @@ export class ClaudeRuntime {
 				task_id: input.taskId,
 				operation: { op: "request_rework", capability, findings: findings as never[], actor_id: input.actorId },
 				prior_intent_token: priorIntentToken,
-				diffProvider: (root, record) => diffHashOf(root, record as never),
+				diffProvider: diffSnapshotOf,
 				now,
 			}));
 			stagePlanningArtifactTransition(ctx.cwd, result.record);
@@ -687,7 +742,7 @@ export class ClaudeRuntime {
 			task_id: input.taskId,
 			operation: { op: "record_approval", capability, approval, actor_id: input.actorId },
 			prior_intent_token: priorIntentToken,
-			diffProvider: (root, record) => diffHashOf(root, record as never),
+			diffProvider: diffSnapshotOf,
 			now,
 		}));
 	}
@@ -707,7 +762,7 @@ export class ClaudeRuntime {
 				task_id: input.taskId,
 				operation: operation as never,
 				prior_intent_token: priorIntent.token,
-				diffProvider: (root, record) => diffHashOf(root, record as never),
+				diffProvider: diffSnapshotOf,
 				now: new Date().toISOString(),
 			});
 			if (operation.op === "freeze_artifacts" || operation.op === "stop") stagePlanningArtifactTransition(ctx.cwd, result.record);

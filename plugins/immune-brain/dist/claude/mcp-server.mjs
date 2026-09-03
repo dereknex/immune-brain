@@ -565,7 +565,7 @@ ${request.prompt}`,
       state.stopEvent = event;
     }
   }
-  consumeReview(reservation) {
+  inspectReview(reservation) {
     this.drain();
     const state = this.pending.get(reservation.id);
     if (!state)
@@ -582,7 +582,6 @@ ${request.prompt}`,
     if (state.startEvent.sessionId !== state.postEvent.sessionId || state.startEvent.sessionId !== state.stopEvent.sessionId || state.startEvent.agentId !== state.postEvent.agentId || state.startEvent.agentId !== state.stopEvent.agentId) {
       return { ok: false, reason: "foreground Agent terminal event correlation mismatch", release: true };
     }
-    state.consumed = true;
     return {
       ok: true,
       receipt: {
@@ -590,6 +589,22 @@ ${request.prompt}`,
         result: state.postEvent.result
       }
     };
+  }
+  consumeReview(reservation) {
+    const result = this.inspectReview(reservation);
+    if (result.ok) {
+      const pending = this.pending.get(reservation.id);
+      if (pending)
+        pending.consumed = true;
+    }
+    return result;
+  }
+  inspectReviewForTask(taskId) {
+    this.drain();
+    const entry = [...this.pending.entries()].find(([, state]) => state.request.taskId === taskId);
+    if (!entry)
+      return { ok: false, reason: "reserved foreground Agent was not observed", release: false };
+    return this.inspectReview({ id: entry[0], dispatch: entry[1].request });
   }
   releaseReview(reservation) {
     this.pending.delete(reservation.id);
@@ -1230,20 +1245,27 @@ function buildReviewPrompt(snapshot, evidencePath) {
     acceptance,
     "Reserve the final turn for exactly one strict JSON verdict. Reply with ONLY that object, without markdown fences or commentary.",
     `PASS shape: {"contract":"assurance_kernel/assurance_verdict/v2","role":"review","task_id":"${snapshot.task_id}","snapshot_digest":"${digest}","decision":"pass","approval":{"kind":"review","authority_role":"reviewer","summary":"<one line>"}}`,
-    `REWORK shape: {"contract":"assurance_kernel/assurance_verdict/v2","role":"review","task_id":"${snapshot.task_id}","snapshot_digest":"${digest}","decision":"rework","findings":[{"id":"review-1","kind":"blocking|advisory","acceptance_id":"<id|null>","summary":"<one line>"}]}`
+    `REWORK shape: {"contract":"assurance_kernel/assurance_verdict/v2","role":"review","task_id":"${snapshot.task_id}","snapshot_digest":"${digest}","decision":"rework","findings":[{"id":"review-1","kind":"blocking|advisory","acceptance_id":"<id|null>","summary":"<one line>"}]}`,
+    `REWORK verdicts must omit the approval field entirely; do not emit "approval": null.`
   ].join(`
 `);
 }
-function parseAssuranceVerdict(text, snapshot) {
-  const cleaned = text.split(`
-`).map((line) => line.trim()).filter((line) => line.startsWith("{") && line.endsWith("}")).join("");
-  if (!cleaned)
-    throw new Error("child returned no strict JSON verdict");
+function parseAssuranceVerdict(input, snapshot) {
   let raw;
-  try {
-    raw = JSON.parse(cleaned);
-  } catch {
-    throw new Error("child verdict is not valid JSON");
+  if (typeof input === "string") {
+    const cleaned = input.split(`
+`).map((line) => line.trim()).filter((line) => line.startsWith("{") && line.endsWith("}")).join("");
+    if (!cleaned)
+      throw new Error("reviewer returned no strict JSON verdict");
+    try {
+      raw = JSON.parse(cleaned);
+    } catch {
+      throw new Error("reviewer verdict is not valid JSON");
+    }
+  } else if (typeof input === "object" && input !== null && !Array.isArray(input)) {
+    raw = input;
+  } else {
+    throw new Error("reviewer verdict must be a JSON object");
   }
   const allowed = ["contract", "role", "task_id", "snapshot_digest", "decision", "approval", "findings"];
   const unknown = Object.keys(raw).find((key) => !allowed.includes(key));
@@ -1272,8 +1294,10 @@ function parseAssuranceVerdict(text, snapshot) {
       throw new Error("pass verdict must omit findings");
     return { contract: "assurance_kernel/assurance_verdict/v2", role: snapshot.role, task_id: snapshot.task_id, snapshot_digest: snapshotDigest(snapshot), decision: "pass", approval: { kind: expectedKind, authority_role: expectedRole, summary: approval.summary } };
   }
-  if (!Array.isArray(raw.findings) || raw.findings.length === 0 || raw.approval !== undefined)
+  if (!Array.isArray(raw.findings) || raw.findings.length === 0)
     throw new Error("rework verdict findings are invalid");
+  if (raw.approval !== undefined && raw.approval !== null)
+    throw new Error("rework verdict must omit approval");
   const findings = raw.findings.map((item, index) => {
     const finding = item;
     const unknownFinding = Object.keys(finding).find((key) => !["id", "kind", "acceptance_id", "summary"].includes(key));
@@ -1615,6 +1639,7 @@ class AssuranceCoordinator {
         correlation: { record_revision: review.snapshot.record_revision, intent_content_hash: review.snapshot.intent_content_hash, diff_hash: review.snapshot.diff_hash },
         snapshot: review.snapshot,
         hostReservation,
+        verdictCorrectionRequired: false,
         evidence
       };
       this.reviewReservations.set(taskId, reservation);
@@ -1639,7 +1664,7 @@ class AssuranceCoordinator {
       signal?.removeEventListener("abort", relayExternalAbort);
     }
   }
-  async submitReview(taskId, ctx) {
+  async submitReview(taskId, ctx, verdictInput) {
     const unknown = this.unknownOperations.get(taskId);
     if (unknown) {
       this.unknownOperations.delete(taskId);
@@ -1650,13 +1675,7 @@ class AssuranceCoordinator {
       return { state: "blocked", reason: rejected.reason };
     const reservation = this.reviewReservations.get(taskId);
     if (!reservation)
-      return { state: "blocked", reason: "no reserved foreground Review operation" };
-    const observed = this.ports.host.consumeReview(reservation.hostReservation);
-    if (!observed.ok) {
-      if (observed.release)
-        this.releaseReviewReservation(taskId, reservation, observed.reason);
-      return { state: "blocked", reason: observed.reason };
-    }
+      return { state: "blocked", reason: "no active Review operation" };
     let fresh;
     try {
       fresh = await this.ports.projectTask(ctx.cwd, taskId);
@@ -1683,11 +1702,10 @@ class AssuranceCoordinator {
     }
     let verdict;
     try {
-      verdict = parseAssuranceVerdict(observed.receipt.result, reservation.snapshot);
+      verdict = parseAssuranceVerdict(verdictInput, reservation.snapshot);
     } catch (error) {
-      const reason = boundedAssuranceError(error);
-      this.releaseReviewReservation(taskId, reservation, reason);
-      return { state: "blocked", reason };
+      reservation.verdictCorrectionRequired = true;
+      return { state: "blocked", code: "verdict_invalid", reason: boundedAssuranceError(error) };
     }
     const invocation = this.openInvocation(taskId);
     this.releaseReviewReservation(taskId, reservation);
@@ -1697,7 +1715,7 @@ class AssuranceCoordinator {
         snapshot: reservation.snapshot,
         verdict,
         invocation,
-        actorId: observed.receipt.actorId
+        actorId: "parent-mediated-review"
       });
     } catch (error) {
       const reason = boundedAssuranceError(error);
@@ -1733,10 +1751,19 @@ class AssuranceCoordinator {
       return { state: "awaiting_user", operation: "record-user-approval", operation_id: reservation.operationId };
     return { state: "blocked", reason: `Kernel requires ${settled.projection.next_obligation} after Review` };
   }
+  abandonReview(taskId, reason) {
+    const reservation = this.reviewReservations.get(taskId);
+    if (!reservation)
+      return { state: "blocked", reason };
+    this.releaseReviewReservation(taskId, reservation, reason);
+    return { state: "blocked", reason };
+  }
   reviewReadyResult(taskId) {
     const reservation = this.reviewReservations.get(taskId);
     if (!reservation)
       return { state: "blocked", reason: "Review reservation disappeared" };
+    if (reservation.verdictCorrectionRequired)
+      return { state: "blocked", code: "verdict_invalid", reason: "Review verdict correction is required before advancing" };
     return { state: "review_ready", operation: "review", operation_id: reservation.operationId, snapshot_digest: snapshotDigest(reservation.snapshot), review_bundle_digest: reservation.snapshot.review_bundle_digest ?? "", agent_params: reservation.hostReservation.dispatch };
   }
   releaseReviewReservation(taskId, reservation, rejectionReason) {
@@ -2019,9 +2046,18 @@ function captureGitTaskSnapshot(projectRoot, scopeHint) {
     throw new Error("Git task snapshot changed while being captured");
   return before;
 }
-function taskDiffHash(projectRoot, scopeHint) {
-  const snapshot = captureGitTaskSnapshot(projectRoot, scopeHint);
+function hashTaskSnapshot(snapshot) {
   return `sha256:${createHash6("sha256").update(JSON.stringify(snapshot)).digest("hex")}`;
+}
+function taskDiffIdentity(projectRoot, scopeHint) {
+  const snapshot = captureGitTaskSnapshot(projectRoot, scopeHint);
+  return {
+    diff_hash: hashTaskSnapshot(snapshot),
+    changed_paths: Object.keys(snapshot.staged_files).sort(comparePaths)
+  };
+}
+function taskDiffHash(projectRoot, scopeHint) {
+  return taskDiffIdentity(projectRoot, scopeHint).diff_hash;
 }
 function gitRequired(root, args, failure) {
   const output = git(root, args);
@@ -2103,9 +2139,12 @@ function captureGitTaskRevisionSnapshot(projectRoot, scopeHint, baseHead) {
     throw new Error("Git task revision changed while being captured");
   return before;
 }
-function taskRevisionDiffHash(projectRoot, scopeHint, baseHead) {
+function taskRevisionIdentity(projectRoot, scopeHint, baseHead) {
   const snapshot = captureGitTaskRevisionSnapshot(projectRoot, scopeHint, baseHead);
-  return `sha256:${createHash6("sha256").update(JSON.stringify(snapshot)).digest("hex")}`;
+  return {
+    diff_hash: hashTaskSnapshot(snapshot),
+    changed_paths: Object.keys(snapshot.changed_paths).sort(comparePaths)
+  };
 }
 function normalizeBoundaryPath(value) {
   return value.trim().replace(/^\.\//, "").replace(/\\/g, "/").replace(/\/+$/, "");
@@ -2761,6 +2800,12 @@ var RISK_FLOOR_SCOPE_PREFIXES = [
   "plugins/immune-brain/runtime/authority_commit_receipts.ts",
   "plugins/immune-brain/.pi-extension"
 ];
+var CHANGED_PATH_RISK_FLOOR_PREFIXES = [
+  "plugins/immune-brain/runtime/kernel",
+  "plugins/immune-brain/.pi-extension",
+  "docs/specs",
+  "docs/plans"
+];
 function segmentMatches(e, s) {
   if (e === "*")
     return true;
@@ -2947,6 +2992,10 @@ function canonicalIntentHash(intent) {
   return `sha256:${sha256Hex(stableStringify(intent))}`;
 }
 var RISK_RANK = { routine: 0, material: 1, critical: 2 };
+function classifyTaskRisk(changedPaths, declaredRisk) {
+  const pathFloor = changedPaths.some((path) => CHANGED_PATH_RISK_FLOOR_PREFIXES.some((prefix) => path === prefix || path.startsWith(`${prefix}/`))) ? "material" : "routine";
+  return RISK_RANK[declaredRisk] >= RISK_RANK[pathFloor] ? declaredRisk : pathFloor;
+}
 function contentHashWithoutRevision(intent) {
   const { revision: _revision, ...rest } = intent;
   return canonicalIntentHash(rest);
@@ -4857,6 +4906,43 @@ var REQUIRED_ATTESTATIONS = {
   material: ["qa", "review"],
   critical: ["qa", "review", "user"]
 };
+function archiveActivePlanningPath(path) {
+  const matched = path.match(/^docs\/(plans|specs)\/([^/]+)$/);
+  return matched ? `docs/${matched[1]}/archive/${matched[2]}` : null;
+}
+function ownSidecarPaths(intent) {
+  const activeIntent = `docs/plans/${intent.task_id}.intent.json`;
+  const archivedIntent = archiveActivePlanningPath(activeIntent);
+  const excluded = new Set([activeIntent]);
+  if (archivedIntent)
+    excluded.add(archivedIntent);
+  const specs = intent.scope_hint.filter((path) => {
+    const archived = archiveActivePlanningPath(path);
+    return archived !== null && /^docs\/specs\/[^/]+\.spec\.md$/.test(path) && intent.scope_hint.includes(archived);
+  });
+  if (specs.length > 1) {
+    throw new KernelInvariantError([
+      `artifact transition requires at most one scope-bound Spec; found ${specs.length}`
+    ]);
+  }
+  const spec = specs[0];
+  if (spec) {
+    excluded.add(spec);
+    const archived = archiveActivePlanningPath(spec);
+    if (archived)
+      excluded.add(archived);
+  }
+  return excluded;
+}
+function asTaskDiffSnapshot(value) {
+  if (typeof value === "string")
+    return { diff_hash: value };
+  return { diff_hash: value.diff_hash, changed_paths: value.changed_paths };
+}
+function resolveProjectedRisk(intent, changedPaths = []) {
+  const excluded = ownSidecarPaths(intent);
+  return classifyTaskRisk(changedPaths.filter((path) => !excluded.has(path)), intent.risk);
+}
 function hasDistinctAuthorityAssignment(required, candidates, index = 0, usedActors = new Set) {
   if (index >= required.length)
     return true;
@@ -4870,7 +4956,7 @@ function hasDistinctAuthorityAssignment(required, candidates, index = 0, usedAct
   }
   return false;
 }
-function completionDecision(intent, record, currentDiffHash, currentIntentContentHash) {
+function completionDecision(intent, record, currentDiffHash, currentIntentContentHash, changedPaths = []) {
   assertKernelInvariantsV3(intent, record);
   const freshAttestations = record.attestations.filter((item) => item.task_revision === intent.revision && item.intent_content_hash === currentIntentContentHash && item.diff_hash === currentDiffHash);
   const freshQaResults = freshAttestations.filter((item) => item.kind === "qa").flatMap((item) => item.acceptance_results).filter((item) => item.status === "passed");
@@ -4878,7 +4964,7 @@ function completionDecision(intent, record, currentDiffHash, currentIntentConten
   const freshAcceptanceSet = new Set(freshAcceptanceIds);
   const missingAcceptanceIds = intent.acceptance.map((item) => item.id).filter((id) => !freshAcceptanceSet.has(id));
   const staleAttestationIds = record.attestations.filter((item) => item.task_revision !== intent.revision || item.intent_content_hash !== currentIntentContentHash || item.diff_hash !== currentDiffHash).map((item) => item.id);
-  const requiredKinds = REQUIRED_ATTESTATIONS[intent.risk];
+  const requiredKinds = REQUIRED_ATTESTATIONS[resolveProjectedRisk(intent, changedPaths)];
   const candidates = freshAttestations.filter((item) => requiredKinds.includes(item.kind));
   const missingApprovalKinds = requiredKinds.filter((kind) => !candidates.some((attestation) => attestation.kind === kind));
   const separationFailure = missingApprovalKinds.length === 0 && !hasDistinctAuthorityAssignment(requiredKinds, candidates);
@@ -4906,8 +4992,8 @@ function completionDecision(intent, record, currentDiffHash, currentIntentConten
     independence_violations: independenceViolations
   };
 }
-function projectTask(intent, record, currentDiffHash, currentIntentContentHash) {
-  const decision = completionDecision(intent, record, currentDiffHash, currentIntentContentHash);
+function projectTask(intent, record, currentDiffHash, currentIntentContentHash, changedPaths = []) {
+  const decision = completionDecision(intent, record, currentDiffHash, currentIntentContentHash, changedPaths);
   const blocked = decision.blocking_finding_ids.length > 0 || decision.unresolved_user_decision_ids.length > 0 || decision.replan_required_ids.length > 0 || decision.independence_violations.length > 0;
   let nextObligation = "none";
   if (record.lifecycle === "active") {
@@ -5008,20 +5094,20 @@ function freshApprovalKinds(record, currentIntentContentHash, diffHash) {
   }
   return kinds;
 }
-function projectFromRecord(record, recordRevision, workspaceRevision, diffHash) {
+function projectFromRecord(record, recordRevision, workspaceRevision, snapshot) {
   const intent = record.intent_snapshot;
-  const decision = projectTask(intent, record, diffHash, record.intent_ref.content_hash);
-  const approvalKinds = freshApprovalKinds(record, record.intent_ref.content_hash, diffHash);
+  const decision = projectTask(intent, record, snapshot.diff_hash, record.intent_ref.content_hash, snapshot.changed_paths);
+  const approvalKinds = freshApprovalKinds(record, record.intent_ref.content_hash, snapshot.diff_hash);
   const openUserDecisionCount = record.findings.filter((finding) => finding.kind === "unresolved_user_decision" && finding.status === "open").length;
   return {
     record_revision: recordRevision,
     workspace_revision: workspaceRevision,
     intent_revision: record.intent_snapshot.revision,
     intent_content_hash: record.intent_ref.content_hash,
-    diff_hash: diffHash,
+    diff_hash: snapshot.diff_hash,
     lifecycle: record.lifecycle,
     artifact_state: record.artifact_state,
-    risk: intent.risk,
+    risk: resolveProjectedRisk(intent, snapshot.changed_paths),
     next_obligation: decision.next_obligation,
     fresh_acceptance_ids: decision.fresh_acceptance_ids,
     missing_acceptance_ids: decision.missing_acceptance_ids,
@@ -5107,13 +5193,13 @@ async function projectAssurance(root, taskId, diffProvider) {
     if (claim && read.record.lifecycle !== "active")
       return fail(`terminal task ${taskId} has no matching tombstone proof`, claim);
     const workspace = await readWorkspaceStateRaw(root);
-    const diffHash = diffProvider(root, read.record);
+    const snapshot = diffProvider(root, read.record);
     return {
       contract: "assurance_kernel/assurance_projection/v1",
       task_id: taskId,
       error: null,
       claim,
-      projection: projectFromRecord(read.record, read.revision, workspace.revision, diffHash)
+      projection: projectFromRecord(read.record, read.revision, workspace.revision, snapshot)
     };
   } catch (error) {
     return fail(error instanceof Error ? error.message : String(error));
@@ -5213,7 +5299,7 @@ function findingsDigestV2(findings) {
   }));
   return `sha256:${createHash10("sha256").update(stableJson(normalized)).digest("hex")}`;
 }
-function reduceTask(recordRaw, actionRaw, authorityAudit = null) {
+function reduceTask(recordRaw, actionRaw, authorityAudit = null, changedPaths) {
   const previous = parseTaskRecord(recordRaw);
   assertKernelInvariantsV3(previous.intent_snapshot, previous);
   const action = parseTaskAction(actionRaw);
@@ -5495,7 +5581,9 @@ function reduceTask(recordRaw, actionRaw, authorityAudit = null) {
         throw new KernelInvariantError([
           `cannot complete while state is ${stateOf(record)}`
         ]);
-      const decision = completionDecision(record.intent_snapshot, record, diffHash, record.intent_ref.content_hash);
+      if (!Array.isArray(changedPaths))
+        throw new KernelInvariantError(["complete requires trusted changed paths"]);
+      const decision = completionDecision(record.intent_snapshot, record, diffHash, record.intent_ref.content_hash, changedPaths);
       if (!decision.complete)
         throw new KernelInvariantError([
           "task is not eligible for completion"
@@ -5587,10 +5675,10 @@ function applyTaskAction(input) {
       ]);
     const workspace = readWorkspaceStateRaw(root);
     const action = parseTaskAction(input.action);
-    const diffHash = diffProvider(root, current.record);
-    if (diffHash !== action.diff_hash)
+    const trustedDiff = asTaskDiffSnapshot(diffProvider(root, current.record));
+    if (trustedDiff.diff_hash !== action.diff_hash)
       throw new KernelInvariantError([
-        `action diff_hash ${action.diff_hash} does not match the trusted diff ${diffHash}`
+        `action diff_hash ${action.diff_hash} does not match the trusted diff ${trustedDiff.diff_hash}`
       ]);
     const freshRead = readTaskIntent(root, task_id, current.record.intent_ref.path);
     const { prior: priorIdentity, current: currentIdentity } = inspectIntentTokenPair(prior_intent_token, freshRead.token);
@@ -5625,11 +5713,11 @@ function applyTaskAction(input) {
       expected_record_hash: current.revision,
       intent_revision: isRevisionAction ? action.next_intent.revision : current.record.intent_snapshot.revision,
       intent_content_hash: isRevisionAction ? freshRead.content_hash : current.record.intent_ref.content_hash,
-      diff_hash: diffHash,
+      diff_hash: trustedDiff.diff_hash,
       ...action.type === "request_rework" ? { findings_digest: findingsDigestV2(action.findings) } : {}
     } : null;
     const inspectedAudit = expectedAuthority ? registry.inspect(capability, expectedAuthority, now) : null;
-    const mutation = reduceTask(current.record, action, inspectedAudit ? inspectedAudit.audit : null);
+    const mutation = reduceTask(current.record, action, inspectedAudit ? inspectedAudit.audit : null, trustedDiff.changed_paths);
     if (!isReducedMutation(mutation))
       throw new KernelInvariantError(["reducer returned an invalid mutation"]);
     if (canonicalRecordHash(mutation.record) === current.revision)
@@ -5884,7 +5972,7 @@ function createCanaryApplication(registry) {
         record: current.record
       };
     });
-    const diffHash = input.diffProvider(input.root, snapshot.record);
+    const diffHash = asTaskDiffSnapshot(input.diffProvider(input.root, snapshot.record)).diff_hash;
     if (operation.op === "stop" && !("capability" in operation))
       throw new KernelInvariantError(["stop requires user authority capability"]);
     const hasBoundSpec = snapshot.intent_snapshot.scope_hint.some((path) => /^docs\/specs\/(?!archive\/)[^/]+\.spec\.md$/.test(path) && snapshot.intent_snapshot.scope_hint.includes(archivePath(path)));
@@ -6045,68 +6133,73 @@ function createCanaryApplication(registry) {
 
 // plugins/immune-brain/runtime/kernel/authority_port.ts
 import { createHash as createHash11 } from "node:crypto";
+
+// plugins/immune-brain/runtime/kernel/capability_registry.ts
+function createCapabilityRegistry(capabilityBrand, hooks, domainLabel) {
+  const states = new WeakMap;
+  const brand = Symbol(`${domainLabel}-registry`);
+  function isCapability(value) {
+    return !!value && typeof value === "object" && value[capabilityBrand] === true && value[brand] === true;
+  }
+  function stateOf2(capability) {
+    const state = states.get(capability);
+    if (!state)
+      throw new Error(`${domainLabel} capability is not recognized by this registry`);
+    return state;
+  }
+  return {
+    brand,
+    issue(binding, issuedAt = new Date().toISOString()) {
+      hooks.validateBinding(binding, issuedAt);
+      const capability = Object.freeze(Object.defineProperties({}, {
+        [capabilityBrand]: { value: true, enumerable: false, writable: false, configurable: false },
+        [brand]: { value: true, enumerable: false, writable: false, configurable: false }
+      }));
+      states.set(capability, { binding: { ...binding }, issued_at: issuedAt, consumed: false });
+      return capability;
+    },
+    inspect(capability, expected, now = Date.now()) {
+      if (!isCapability(capability))
+        throw new Error(`${domainLabel} capability is not recognized by this registry`);
+      const state = stateOf2(capability);
+      if (state.consumed)
+        throw new Error(`${domainLabel} capability already consumed`);
+      return hooks.validateAndProject({ ...state.binding, issued_at: state.issued_at }, expected, now);
+    },
+    consume(capability, expected, now = Date.now()) {
+      const validated = this.inspect(capability, expected, now);
+      stateOf2(capability).consumed = true;
+      return validated;
+    },
+    isConsumed(capability) {
+      return stateOf2(capability).consumed;
+    }
+  };
+}
+
+// plugins/immune-brain/runtime/kernel/authority_port.ts
 function digestOfAction(action) {
   const { expected_record_hash: _r, expected_workspace_hash: _w, diff_hash: _d, ...rest } = action;
   return createHash11("sha256").update(JSON.stringify(rest)).digest("hex");
 }
 function createMutationAuthorityRegistry() {
-  const states = new WeakMap;
-  const brand = Symbol("assurance-kernel-mutation-authority-registry");
-  function isCapability(value) {
-    return !!value && typeof value === "object" && value[MUTATION_AUTHORITY_CAPABILITY_BRAND] === true && value[brand] === true;
-  }
-  function stateOf2(capability) {
-    const state = states.get(capability);
-    if (!state)
-      throw new Error("authority capability is not recognized by this registry");
-    return state;
-  }
-  function validateBinding(binding, issuedAt) {
-    const missing = [];
-    for (const [key, value] of Object.entries(binding)) {
-      if (key === "findings_digest")
-        continue;
-      if (value === undefined || value === null || value === "")
-        missing.push(key);
-    }
-    if (missing.length > 0)
-      throw new Error(`authority capability binding is incomplete: ${missing.join(", ")}`);
-    if (binding.findings_digest !== null && !/^sha256:[a-f0-9]{64}$/.test(binding.findings_digest))
-      throw new Error("authority capability findings_digest must be a canonical sha256 hash");
-    if (Number.isNaN(Date.parse(binding.expires_at)) || Date.parse(binding.expires_at) <= Date.parse(issuedAt))
-      throw new Error("authority capability must have a future expiry");
-  }
-  return {
-    brand,
-    issue(binding, issuedAt = new Date().toISOString()) {
-      validateBinding(binding, issuedAt);
-      const capability = Object.freeze(Object.defineProperties({}, {
-        [MUTATION_AUTHORITY_CAPABILITY_BRAND]: {
-          value: true,
-          enumerable: false,
-          writable: false,
-          configurable: false
-        },
-        [brand]: {
-          value: true,
-          enumerable: false,
-          writable: false,
-          configurable: false
-        }
-      }));
-      states.set(capability, {
-        ...binding,
-        issued_at: issuedAt,
-        consumed: false
-      });
-      return capability;
+  const inner = createCapabilityRegistry(MUTATION_AUTHORITY_CAPABILITY_BRAND, {
+    validateBinding(binding, issuedAt) {
+      const missing = [];
+      for (const [key, value] of Object.entries(binding)) {
+        if (key === "findings_digest")
+          continue;
+        if (value === undefined || value === null || value === "")
+          missing.push(key);
+      }
+      if (missing.length > 0)
+        throw new Error(`authority capability binding is incomplete: ${missing.join(", ")}`);
+      if (binding.findings_digest !== null && !/^sha256:[a-f0-9]{64}$/.test(binding.findings_digest))
+        throw new Error("authority capability findings_digest must be a canonical sha256 hash");
+      if (Number.isNaN(Date.parse(binding.expires_at)) || Date.parse(binding.expires_at) <= Date.parse(issuedAt))
+        throw new Error("authority capability must have a future expiry");
     },
-    inspect(capability, expected, now = Date.now()) {
-      if (!capability || !isCapability(capability))
-        throw new Error("privileged action requires an opaque authority capability");
-      const state = stateOf2(capability);
-      if (state.consumed)
-        throw new Error("authority capability is already consumed");
+    validateAndProject(state, expected, now) {
       if (Date.parse(state.expires_at) <= now)
         throw new Error("authority capability has expired");
       const actionDigest = digestOfAction(expected.action);
@@ -6143,35 +6236,40 @@ function createMutationAuthorityRegistry() {
         diff_hash: state.diff_hash,
         task_id: state.task_id
       };
+    }
+  }, "authority");
+  return {
+    brand: inner.brand,
+    issue: inner.issue.bind(inner),
+    inspect(capability, expected, now = Date.now()) {
+      if (!capability)
+        throw new Error("privileged action requires an opaque authority capability");
+      try {
+        return inner.inspect(capability, expected, now);
+      } catch (err) {
+        if (err instanceof Error && err.message.includes("not recognized by this registry"))
+          throw new Error("privileged action requires an opaque authority capability");
+        throw err;
+      }
     },
     consume(capability, expected, now = Date.now()) {
-      const validated = this.inspect(capability, expected, now);
-      stateOf2(capability).consumed = true;
-      return validated;
+      try {
+        return inner.consume(capability, expected, now);
+      } catch (err) {
+        if (err instanceof Error && err.message.includes("not recognized by this registry"))
+          throw new Error("privileged action requires an opaque authority capability");
+        throw err;
+      }
     },
-    isConsumed(capability) {
-      return stateOf2(capability).consumed;
-    }
+    isConsumed: inner.isConsumed.bind(inner)
   };
 }
 
 // plugins/immune-brain/runtime/kernel/enrollment_authority.ts
 var ENROLLMENT_CAPABILITY_BRAND = Symbol.for("assurance-kernel.enrollment-capability-brand");
 function createEnrollmentAuthorityRegistry() {
-  const states = new WeakMap;
-  const brand = Symbol.for("assurance-kernel.enrollment-capability-registry");
-  function isEnrollmentCapability(value) {
-    return !!value && typeof value === "object" && value[ENROLLMENT_CAPABILITY_BRAND] === true && value[brand] === true;
-  }
-  function stateOf2(capability) {
-    const state = states.get(capability);
-    if (!state)
-      throw new Error("enrollment capability is not recognized by this registry");
-    return state;
-  }
-  return {
-    brand,
-    issue(binding, issuedAt = new Date().toISOString()) {
+  return createCapabilityRegistry(ENROLLMENT_CAPABILITY_BRAND, {
+    validateBinding(binding, issuedAt) {
       const missing = [];
       for (const [key, value] of Object.entries(binding)) {
         if (value === undefined || value === null || value === "")
@@ -6181,19 +6279,8 @@ function createEnrollmentAuthorityRegistry() {
         throw new Error(`enrollment capability binding is incomplete: ${missing.join(", ")}`);
       if (Number.isNaN(Date.parse(binding.expires_at)) || Date.parse(binding.expires_at) <= Date.parse(issuedAt))
         throw new Error("enrollment capability must have a future expiry");
-      const capability = Object.freeze(Object.defineProperties({}, {
-        [ENROLLMENT_CAPABILITY_BRAND]: { value: true, enumerable: false, writable: false, configurable: false },
-        [brand]: { value: true, enumerable: false, writable: false, configurable: false }
-      }));
-      states.set(capability, { ...binding, issued_at: issuedAt, consumed: false });
-      return capability;
     },
-    inspect(capability, expected, now = Date.now()) {
-      if (!isEnrollmentCapability(capability))
-        throw new Error("enrollment capability required");
-      const state = stateOf2(capability);
-      if (state.consumed)
-        throw new Error("enrollment capability already consumed");
+    validateAndProject(state, expected, now) {
       if (Date.parse(state.expires_at) <= now)
         throw new Error("enrollment capability has expired");
       for (const key of Object.keys(expected)) {
@@ -6212,16 +6299,8 @@ function createEnrollmentAuthorityRegistry() {
         expires_at: state.expires_at,
         nonce: state.nonce
       };
-    },
-    consume(capability, expected, now = Date.now()) {
-      const validated = this.inspect(capability, expected, now);
-      stateOf2(capability).consumed = true;
-      return validated;
-    },
-    isConsumed(capability) {
-      return stateOf2(capability).consumed;
     }
-  };
+  }, "enrollment");
 }
 
 // plugins/immune-brain/runtime/kernel/pi_canary_prepare.ts
@@ -6325,6 +6404,60 @@ function revalidatePiCanary(root, input, previous) {
 }
 
 // plugins/immune-brain/runtime/kernel/enrollment.ts
+function runEnrollmentPreconditionChecks(root, input, capability, registry, mode, beforeLock, onReady) {
+  const blockers = [];
+  let validated = null;
+  try {
+    validated = registry.inspect(capability, input.capability_binding);
+    if (mode === "fail_fast" && validated.task_id !== input.task_id)
+      throw new Error("enrollment capability task mismatch");
+  } catch (error) {
+    if (mode === "fail_fast")
+      throw error;
+    blockers.push(`capability: ${error instanceof Error ? error.message : String(error)}`);
+  }
+  beforeLock(validated);
+  return withKernelStoreLock(root, () => {
+    let current = null;
+    let workspace = null;
+    let intent = null;
+    let gitBaseHead = null;
+    const fail = (report, error) => {
+      if (mode === "fail_fast")
+        throw error instanceof Error ? error : new Error(String(error));
+      blockers.push(report);
+    };
+    const tombstone = readTaskTombstone(root, input.task_id);
+    if (tombstone) {
+      fail("task tombstone exists; same-task re-enrollment is forbidden", new Error(`task ${input.task_id} is terminal; same-task re-enrollment is forbidden`));
+    } else {
+      current = readTaskRecordRaw(root, input.task_id);
+      if (current.record)
+        fail("task record already exists", new Error(`task ${input.task_id} already has a TaskRecord`));
+    }
+    workspace = readWorkspaceStateRaw(root);
+    if (workspace.state.current_working !== null)
+      fail(`workspace already owned by ${workspace.state.current_working}`, new Error(`workspace is already owned by ${workspace.state.current_working}`));
+    try {
+      intent = readTaskIntent(root, input.task_id);
+    } catch (error) {
+      fail(`intent: ${error instanceof Error ? error.message : String(error)}`, error);
+    }
+    try {
+      gitBaseHead = readGitHead(root);
+    } catch (error) {
+      fail(`git base: ${error instanceof Error ? error.message : String(error)}`, error);
+    }
+    const state = {
+      validated,
+      current,
+      workspace,
+      intent,
+      gitBaseHead
+    };
+    return onReady ? onReady(state) : { ...state, blockers };
+  });
+}
 function buildTaskRecordV4(input, intent, gitBaseHead) {
   return {
     contract: "assurance_kernel/task_record/v4",
@@ -6344,80 +6477,43 @@ function buildTaskRecordV4(input, intent, gitBaseHead) {
   };
 }
 function runEnrollmentRehearsal(root, input, capability, registry) {
-  const blockers = [];
-  const result = {
+  const preconditions = runEnrollmentPreconditionChecks(root, input, capability, registry, "report", () => {
+    return;
+  });
+  return {
     rehearsed: true,
     writes_performed: false,
     evidence: {
       contract: "assurance_kernel/enrollment_rehearsal/v1",
       task_id: input.task_id,
-      outcome: "ready",
-      blockers,
+      outcome: preconditions.blockers.length === 0 ? "ready" : "not_ready",
+      blockers: preconditions.blockers,
       generated_at: input.now
     }
   };
-  try {
-    registry.inspect(capability, input.capability_binding);
-  } catch (error) {
-    blockers.push(`capability: ${error instanceof Error ? error.message : String(error)}`);
-  }
-  withKernelStoreLock(root, () => {
-    const tombstone = readTaskTombstone(root, input.task_id);
-    if (tombstone) {
-      blockers.push("task tombstone exists; same-task re-enrollment is forbidden");
-    } else {
-      const current = readTaskRecordRaw(root, input.task_id);
-      if (current.record)
-        blockers.push("task record already exists");
-    }
-    const workspace = readWorkspaceStateRaw(root);
-    if (workspace.state.current_working !== null)
-      blockers.push(`workspace already owned by ${workspace.state.current_working}`);
-  });
-  try {
-    readTaskIntent(root, input.task_id);
-  } catch (error) {
-    blockers.push(`intent: ${error instanceof Error ? error.message : String(error)}`);
-  }
-  try {
-    readGitHead(root);
-  } catch (error) {
-    blockers.push(`git base: ${error instanceof Error ? error.message : String(error)}`);
-  }
-  result.evidence.outcome = blockers.length === 0 ? "ready" : "not_ready";
-  return result;
 }
 function enrollCanaryTask(root, input, registry) {
-  const validated = registry.inspect(input.capability, input.capability_binding);
-  if (validated.task_id !== input.task_id)
-    throw new Error("enrollment capability task mismatch");
-  const recomputed = preparePiCanary(root, { task_id: input.task_id, now: input.now });
-  if (recomputed.digest !== input.preparation_digest)
-    throw new Error("enrollment preparation digest mismatch");
-  const gitBaseHead = recomputed.git_base_head;
-  if (!gitBaseHead)
-    throw new Error(recomputed.git_error ?? "enrollment requires a committed Git HEAD");
-  return withKernelStoreLock(root, () => {
-    const tombstone = readTaskTombstone(root, input.task_id);
-    if (tombstone)
-      throw new Error(`task ${input.task_id} is terminal; same-task re-enrollment is forbidden`);
-    const current = readTaskRecordRaw(root, input.task_id);
-    if (current.record)
-      throw new Error(`task ${input.task_id} already has a TaskRecord`);
-    const workspace = readWorkspaceStateRaw(root);
-    if (workspace.state.current_working !== null)
-      throw new Error(`workspace is already owned by ${workspace.state.current_working}`);
-    const intent = readTaskIntent(root, input.task_id);
-    if (intent.intent.revision !== input.intent_revision)
+  let gitBaseHead = null;
+  return runEnrollmentPreconditionChecks(root, input, input.capability, registry, "fail_fast", () => {
+    const recomputed = preparePiCanary(root, { task_id: input.task_id, now: input.now });
+    if (recomputed.digest !== input.preparation_digest)
+      throw new Error("enrollment preparation digest mismatch");
+    gitBaseHead = recomputed.git_base_head;
+    if (!gitBaseHead)
+      throw new Error(recomputed.git_error ?? "enrollment requires a committed Git HEAD");
+  }, (checks) => {
+    if (!checks.validated || !checks.intent || !checks.workspace || !checks.current)
+      throw new Error("enrollment precondition state incomplete");
+    if (checks.intent.intent.revision !== input.intent_revision)
       throw new Error("intent revision mismatch");
-    if (intent.content_hash !== validated.intent_content_hash)
+    if (checks.intent.content_hash !== checks.validated.intent_content_hash)
       throw new Error("intent content hash mismatch");
-    if (readGitHead(root) !== gitBaseHead)
+    if (checks.gitBaseHead !== gitBaseHead)
       throw new Error("Git HEAD moved after the enrollment confirmation");
     registry.consume(input.capability, input.capability_binding);
-    const record = buildTaskRecordV4(input, intent, gitBaseHead);
+    const record = buildTaskRecordV4(input, checks.intent, gitBaseHead);
     const nextWorkspace = {
-      ...workspace.state,
+      ...checks.workspace.state,
       current_working: input.task_id
     };
     const claim = {
@@ -6425,7 +6521,7 @@ function enrollCanaryTask(root, input, registry) {
       backend: "kernel",
       task_id: input.task_id,
       intent_revision: input.intent_revision,
-      intent_content_hash: intent.content_hash,
+      intent_content_hash: checks.intent.content_hash,
       enrollment_event_id: `enroll-${input.task_id}-${input.now}`,
       lifecycle_status: "active",
       created_at: input.now,
@@ -6434,10 +6530,10 @@ function enrollCanaryTask(root, input, registry) {
     const mutation = commitEnrollmentLocked(root, input.task_id, {
       contract: "assurance_kernel/workspace_transaction/v2",
       task_id: input.task_id,
-      expected_record_hash: current.revision,
+      expected_record_hash: checks.current.revision,
       next_record_content: `${JSON.stringify(record, null, 2)}
 `,
-      expected_workspace_hash: workspace.revision,
+      expected_workspace_hash: checks.workspace.revision,
       next_workspace_content: `${JSON.stringify(nextWorkspace, null, 2)}
 `
     }, claim);
@@ -6460,13 +6556,62 @@ function attemptRef(snapshotDigest2) {
 }
 
 // plugins/immune-brain/runtime/claude/kernel_ports.ts
-function diffHashOf(root, record) {
+function diffSnapshotOf(root, record) {
   if (record.contract === "assurance_kernel/task_record/v4") {
     if (!record.git_base_head)
       throw new Error("TaskRecord v4 is missing git_base_head");
-    return taskRevisionDiffHash(root, record.intent_snapshot.scope_hint, record.git_base_head);
+    return taskRevisionIdentity(root, record.intent_snapshot.scope_hint, record.git_base_head);
   }
-  return taskDiffHash(root, record.intent_snapshot.scope_hint);
+  return taskDiffIdentity(root, record.intent_snapshot.scope_hint);
+}
+function diffHashOf(root, record) {
+  return diffSnapshotOf(root, record).diff_hash;
+}
+function extractVerdictJson(input) {
+  if (typeof input === "string") {
+    const cleaned = input.split(`
+`).map((line) => line.trim()).filter((line) => line.startsWith("{") && line.endsWith("}")).join("");
+    if (!cleaned)
+      return null;
+    try {
+      return JSON.parse(cleaned);
+    } catch {
+      return null;
+    }
+  }
+  if (typeof input === "object" && input !== null && !Array.isArray(input))
+    return input;
+  return null;
+}
+function verdictFingerprint(raw) {
+  return JSON.stringify({
+    contract: raw.contract ?? null,
+    role: raw.role ?? null,
+    task_id: raw.task_id ?? null,
+    snapshot_digest: raw.snapshot_digest ?? null,
+    decision: raw.decision ?? null,
+    approval: raw.approval ?? null,
+    findings: raw.findings ?? null
+  });
+}
+async function submitClaudeReview(host, coordinator, ctx, taskId, verdictInput) {
+  if (verdictInput === undefined)
+    throw new Error("verdict is required");
+  const observed = host.inspectReviewForTask(taskId);
+  if (!observed.ok) {
+    if (observed.release)
+      return coordinator.abandonReview(taskId, observed.reason);
+    return { state: "blocked", reason: observed.reason };
+  }
+  const parentJson = extractVerdictJson(verdictInput);
+  const receiptJson = extractVerdictJson(observed.receipt.result);
+  if (parentJson && receiptJson && verdictFingerprint(parentJson) !== verdictFingerprint(receiptJson)) {
+    return { state: "blocked", reason: "parent verdict does not match reviewer receipt" };
+  }
+  if (parentJson && !receiptJson) {
+    return { state: "blocked", reason: "reviewer receipt is not a valid verdict" };
+  }
+  return coordinator.submitReview(taskId, ctx, verdictInput);
 }
 function assertProjectionBinding(before, after, allowDiffChange = false) {
   const fields = allowDiffChange ? ["record_revision", "workspace_revision", "intent_revision", "intent_content_hash"] : ["record_revision", "workspace_revision", "intent_revision", "intent_content_hash", "diff_hash"];
@@ -6656,7 +6801,7 @@ class ClaudeRuntime {
   createKernelPorts() {
     return {
       host: this.host,
-      projectTask: (root, taskId) => projectAssurance(root, taskId, (cwd, record) => diffHashOf(cwd, record)),
+      projectTask: (root, taskId) => projectAssurance(root, taskId, diffSnapshotOf),
       readTaskRecord: (root, taskId) => readTaskRecord(root, taskId),
       readTaskIntent: (root, taskId) => readTaskIntent(root, taskId),
       frozenRunner: async () => resolveBunRunner(),
@@ -6718,7 +6863,7 @@ class ClaudeRuntime {
     };
   }
   async status(taskId) {
-    return projectAssurance(this.cwd, taskId, (cwd, record) => diffHashOf(cwd, record));
+    return projectAssurance(this.cwd, taskId, diffSnapshotOf);
   }
   async enroll(taskId, meta) {
     this.rejectBeforePreparation("enroll", { ...meta, taskId });
@@ -6765,8 +6910,8 @@ class ClaudeRuntime {
   async advance(taskId, signal) {
     return this.coordinator.advance(taskId, { cwd: this.cwd }, signal);
   }
-  async submitReview(taskId) {
-    return this.coordinator.submitReview(taskId, { cwd: this.cwd });
+  async submitReview(taskId, verdictInput) {
+    return submitClaudeReview(this.host, this.coordinator, { cwd: this.cwd }, taskId, verdictInput);
   }
   async authorize(taskId, operation, meta, extra = {}) {
     if (!isPrivilegedOperation(operation) && operation !== "request_authorization")
@@ -6911,7 +7056,7 @@ class ClaudeRuntime {
           ...op === "stop" ? { reason: extra.reason ?? "user stop" } : {}
         },
         prior_intent_token: priorIntent.token,
-        diffProvider: (root, record) => diffHashOf(root, record),
+        diffProvider: diffSnapshotOf,
         now
       });
       if (op === "stop" || op === "approve_breaking_intent_revision")
@@ -6968,7 +7113,7 @@ class ClaudeRuntime {
         task_id: input.taskId,
         operation: { op: "request_rework", capability: capability2, findings, actor_id: input.actorId },
         prior_intent_token: priorIntentToken,
-        diffProvider: (root, record) => diffHashOf(root, record),
+        diffProvider: diffSnapshotOf,
         now
       }));
       stagePlanningArtifactTransition(ctx.cwd, result.record);
@@ -7004,7 +7149,7 @@ class ClaudeRuntime {
       task_id: input.taskId,
       operation: { op: "record_approval", capability, approval, actor_id: input.actorId },
       prior_intent_token: priorIntentToken,
-      diffProvider: (root, record) => diffHashOf(root, record),
+      diffProvider: diffSnapshotOf,
       now
     }));
   }
@@ -7023,7 +7168,7 @@ class ClaudeRuntime {
         task_id: input.taskId,
         operation,
         prior_intent_token: priorIntent.token,
-        diffProvider: (root, record) => diffHashOf(root, record),
+        diffProvider: diffSnapshotOf,
         now: new Date().toISOString()
       });
       if (operation.op === "freeze_artifacts" || operation.op === "stop")
@@ -7045,7 +7190,7 @@ var TOOLS = [
   { name: "status", description: "Read the Kernel Assurance Projection for an exact task.", privileged: false },
   { name: "enroll", description: "Enroll a Git-tracked TaskIntent after native confirmation.", privileged: true },
   { name: "advance_assurance", description: "Advance frozen Assurance through deterministic QA and Review reservation.", privileged: false },
-  { name: "submit_review", description: "Submit the correlated one-shot Review receipt.", privileged: false },
+  { name: "submit_review", description: "Submit the Parent-mediated Review verdict bound to the correlated receipt.", privileged: false },
   { name: "request_authorization", description: "Apply exact literal-user authorization.", privileged: true },
   { name: "approve_breaking_intent_revision", description: "Approve a breaking TaskIntent revision.", privileged: true },
   { name: "stop", description: "Stop the active task with literal-user authority.", privileged: true },
@@ -7060,9 +7205,10 @@ function listMcpTools() {
       properties: {
         task_id: { type: "string" },
         ...tool.name === "approve_breaking_intent_revision" ? { next_intent: { type: "object" } } : {},
-        ...tool.name === "stop" ? { reason: { type: "string" } } : {}
+        ...tool.name === "stop" ? { reason: { type: "string" } } : {},
+        ...tool.name === "submit_review" ? { verdict: { type: "object" } } : {}
       },
-      required: ["task_id"]
+      required: tool.name === "submit_review" ? ["task_id", "verdict"] : ["task_id"]
     },
     annotations: tool.privileged ? privilegedAnnotations() : { readOnlyHint: tool.name === "status" }
   }));
@@ -7117,8 +7263,11 @@ function createMcpRuntime(options = {}) {
         return runtime.enroll(taskId, toolMeta);
       if (name === "advance_assurance")
         return runtime.advance(taskId, toolMeta.signal);
-      if (name === "submit_review")
-        return runtime.submitReview(taskId);
+      if (name === "submit_review") {
+        if (!Object.hasOwn(args, "verdict"))
+          throw new Error("verdict is required");
+        return runtime.submitReview(taskId, args.verdict);
+      }
       if (name === "request_authorization" || name === "approve_breaking_intent_revision" || name === "stop" || name === "repair_authority_state") {
         return runtime.authorize(taskId, name, toolMeta, args);
       }
