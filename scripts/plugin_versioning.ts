@@ -16,12 +16,6 @@ class SemVer {
     if (!match) throw new VersionError(`Invalid SemVer: ${value}`)
     return new SemVer(Number(match[1]), Number(match[2]), Number(match[3]))
   }
-  bump(kind: string): SemVer {
-    if (kind === "major") return new SemVer(this.major + 1, 0, 0)
-    if (kind === "minor") return new SemVer(this.major, this.minor + 1, 0)
-    if (kind === "patch") return new SemVer(this.major, this.minor, this.patch + 1)
-    throw new VersionError(`Unknown bump kind: ${kind}`)
-  }
   compare(other: SemVer): number {
     return this.major - other.major || this.minor - other.minor || this.patch - other.patch
   }
@@ -29,7 +23,7 @@ class SemVer {
 }
 
 function usage(): never {
-  console.error("usage: plugin_versioning.ts [--repo-root <path>] {bump <major|minor|patch|X.Y.Z> [--dry-run] [--force] | stamp | validate [--tag <immune-brain-vX.Y.Z>]}")
+  console.error("usage: plugin_versioning.ts [--repo-root <path>] {stamp | validate [--tag <immune-brain-vX.Y.Z>]}")
   process.exit(2)
 }
 
@@ -86,11 +80,6 @@ export function loadManifestVersions(root = "."): Record<string, string> {
   return { [PACKAGE_MANIFEST]: version, [PLUGIN_MANIFEST]: plugin.version }
 }
 
-export function currentVersion(root = "."): SemVer {
-  const versions = loadManifestVersions(root)
-  return SemVer.parse(versions[PACKAGE_MANIFEST])
-}
-
 export function versionFromTag(tag: string): SemVer {
   const match = TAG_RE.exec(tag)
   if (!match?.groups?.version) throw new VersionError(`Invalid release tag: ${tag}; expected immune-brain-vX.Y.Z`)
@@ -109,36 +98,6 @@ export function validateManifests(root = ".", tag?: string): any {
   return result
 }
 
-export function buildBumpPlan(root: string, target: string, force = false): any {
-  const current = currentVersion(root)
-  const resolved = ["major", "minor", "patch"].includes(target) ? current.bump(target) : SemVer.parse(target)
-  if (resolved.compare(current) < 0 && !force) throw new VersionError(`Target version ${resolved} is lower than current version ${current}; use --force to allow downgrade`)
-  requirePluginPath(root)
-  return { package: "@immune-brain/agent-skills", current_version: current.toString(), target_version: resolved.toString(), files: [PACKAGE_MANIFEST, PLUGIN_MANIFEST] }
-}
-
-export function applyBump(root: string, target: string, dryRun = false, force = false): any {
-  const plan = buildBumpPlan(root, target, force)
-  if (dryRun) return { ...plan, dry_run: true, changed: false }
-  const path = manifestPath(root, PACKAGE_MANIFEST)
-  const manifest = readManifest(path)
-  manifest.version = plan.target_version
-  writeManifest(path, manifest)
-  const pluginPath = requirePluginPath(root)
-  const plugin = readManifest(pluginPath)
-  plugin.version = plan.target_version
-  writeManifest(pluginPath, plugin)
-  return { ...plan, dry_run: false, changed: plan.current_version !== plan.target_version }
-}
-
-function printBump(result: any): void {
-  console.log(`package: ${result.package}`)
-  console.log(`mode: ${result.dry_run ? "dry-run" : "applied"}`)
-  console.log(`current_version: ${result.current_version}`)
-  console.log(`target_version: ${result.target_version}`)
-  console.log("files:")
-  for (const path of result.files) console.log(`  - ${path}`)
-}
 function printValidate(result: any): void {
   console.log(`package: ${result.package}`)
   console.log(`version: ${result.version}`)
@@ -152,12 +111,6 @@ export function main(argv = process.argv.slice(2)): number {
   const { root, rest } = parseGlobalArgs(argv)
   const command = rest.shift()
   try {
-    if (command === "bump") {
-      const target = rest.find((a) => !a.startsWith("--"))
-      if (!target) usage()
-      printBump(applyBump(root, target, rest.includes("--dry-run"), rest.includes("--force")))
-      return 0
-    }
     if (command === "stamp") {
       const stamped = stampPluginManifest(root)
       console.log(`package: @immune-brain/agent-skills`)

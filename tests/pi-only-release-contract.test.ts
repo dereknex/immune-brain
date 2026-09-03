@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 import { loadManifestVersions, validateManifests } from "../scripts/plugin_versioning";
@@ -57,51 +57,21 @@ describe("Pi-only release contract", () => {
     expect(manifest.files).toContain("plugins/immune-brain/skills");
   });
 
-  it("uses the root artifact by default and preserves explicit adapter overrides", () => {
-    const runRelease = (extra: string[] = []) => spawnSync("bun", [
-      "scripts/plugin_release.ts",
-      "release",
-      "--repo-root",
-      ROOT,
-      "--branch",
-      "main",
-      "--json",
-      ...extra,
-    ], { cwd: ROOT, encoding: "utf8" });
+  it("uses Changesets as the only version and publish entrypoint", () => {
+    const manifest = JSON.parse(readFileSync(resolve(ROOT, "package.json"), "utf8"));
+    expect(existsSync(resolve(ROOT, "scripts/plugin_release.ts"))).toBe(false);
+    expect(manifest.scripts["changeset:version"]).toBe(
+      "changeset version && bun scripts/plugin_versioning.ts stamp && bun scripts/plugin_versioning.ts validate",
+    );
+    expect(manifest.scripts["changeset:publish"]).toBe(
+      "bun scripts/plugin_versioning.ts validate && changeset publish",
+    );
 
-    const blocked = runRelease();
-    expect(blocked.status).toBe(0);
-    const blockedPublish = JSON.parse(blocked.stdout).phases.find((phase: { phase: string }) => phase.phase === "publish");
-    expect(blockedPublish).toMatchObject({
-      artifact_path: ROOT,
-      manifest_path: "package.json",
-      reason: "package_adapter_not_configured",
-      status: "blocked",
+    const bump = spawnSync("bun", ["scripts/plugin_versioning.ts", "bump", "patch"], {
+      cwd: ROOT,
+      encoding: "utf8",
     });
-
-    const configured = runRelease(["--adapter-command", "publish", "artifact_path", "manifest_path"]);
-    expect(configured.status).toBe(0);
-    const configuredPublish = JSON.parse(configured.stdout).phases.find((phase: { phase: string }) => phase.phase === "publish");
-    expect(configuredPublish).toMatchObject({
-      artifact_path: ROOT,
-      manifest_path: "package.json",
-      status: "planned",
-      command: ["publish", ROOT, "package.json"],
-    });
-
-    const override = resolve(ROOT, ".release-artifact-override");
-    const overridden = runRelease([
-      "--artifact-path",
-      override,
-      "--adapter-command",
-      "publish",
-      "artifact_path",
-    ]);
-    expect(overridden.status).toBe(0);
-    const overriddenPublish = JSON.parse(overridden.stdout).phases.find((phase: { phase: string }) => phase.phase === "publish");
-    expect(overriddenPublish).toMatchObject({
-      artifact_path: override,
-      command: ["publish", override],
-    });
+    expect(bump.status).toBe(2);
+    expect(bump.stderr).toContain("{stamp | validate");
   });
 });

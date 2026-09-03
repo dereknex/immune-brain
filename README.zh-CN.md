@@ -202,8 +202,8 @@ docs/specs/                           # Living specs（原地更新）
 | 任务 | 命令 |
 |------|------|
 | 创建 changeset | `bunx changeset` — 选择 bump 类型（patch/minor/major）并填写说明 |
-| 升级版本 | `bun run changeset:version` — 更新 `package.json` + `CHANGELOG.md` |
-| 本地发布 | `bun run changeset:publish` — 发布到 npm（需 `NPM_TOKEN` 或 `npm login`） |
+| 升级版本 | `bun run changeset:version` — 更新 `package.json` + `CHANGELOG.md`，然后同步并校验 Claude plugin manifest |
+| 本地发布 | `bun run changeset:publish` — 校验 manifest 版本后发布到 npm（需 `NPM_TOKEN` 或 `npm login`） |
 
 **自动化流程（推荐）：**
 1. 推送 changeset 到 `main` → workflow 自动创建 “Version Packages” PR。

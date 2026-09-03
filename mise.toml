@@ -16,7 +16,7 @@ description = "Check Pi package skill installation status"
 
 [tasks.plugin-versioning]
 run = "bun scripts/plugin_versioning.ts"
-description = "Manage Immune-Brain plugin versions (bump/validate)"
+description = "Sync and validate Immune-Brain plugin versions"
 
 [tasks.sync-dist]
 run = "bun scripts/sync-dist-docs.ts"

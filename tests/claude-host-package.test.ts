@@ -130,7 +130,8 @@ describe("claude host package", () => {
     expect(manifest.files).toContain(".claude-plugin");
     expect(manifest.files).toContain("plugins/immune-brain/.pi-extension");
     expect(manifest.files).toContain("plugins/immune-brain/runtime/claude");
-    expect(manifest.scripts["changeset:version"]).toContain("plugin_versioning.ts stamp");
+    expect(manifest.scripts["changeset:version"]).toContain("plugin_versioning.ts stamp && bun scripts/plugin_versioning.ts validate");
+    expect(manifest.scripts["changeset:publish"]).toBe("bun scripts/plugin_versioning.ts validate && changeset publish");
     expect(listMcpTools().map((tool) => tool.name)).toEqual([
       "status",
       "enroll",

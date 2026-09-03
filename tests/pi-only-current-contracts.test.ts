@@ -31,10 +31,9 @@ describe("current Pi-only contracts", () => {
       "public-release/templates/mise.toml",
     ]) expect(existsSync(resolve(ROOT, path))).toBe(false);
 
-    const release = readFileSync(resolve(ROOT, "scripts/plugin_release.ts"), "utf8");
     const readme = readFileSync(resolve(ROOT, "README.md"), "utf8");
+    expect(existsSync(resolve(ROOT, "scripts/plugin_release.ts"))).toBe(false);
     for (const token of ["scripts/sync-to-public.sh", "public-release/templates", "immune-brain-public"]) {
-      expect(release).not.toContain(token);
       expect(readme).not.toContain(token);
     }
   });

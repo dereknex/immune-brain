@@ -29,8 +29,8 @@
   },
   "scripts": {
     "changeset": "changeset",
-    "changeset:version": "changeset version && bun scripts/plugin_versioning.ts stamp",
-    "changeset:publish": "changeset publish",
+    "changeset:version": "changeset version && bun scripts/plugin_versioning.ts stamp && bun scripts/plugin_versioning.ts validate",
+    "changeset:publish": "bun scripts/plugin_versioning.ts validate && changeset publish",
     "release": "bun run changeset:publish"
   },
   "devDependencies": {

@@ -202,8 +202,8 @@ This repo uses [Changesets](https://github.com/changesets/changesets) for versio
 | Task | Command |
 |------|---------|
 | Add a changeset | `bunx changeset` — pick bump (patch/minor/major) and write summary |
-| Bump version | `bun run changeset:version` — updates `package.json` + `CHANGELOG.md` |
-| Publish (local) | `bun run changeset:publish` — publishes to npm (needs `NPM_TOKEN` or `npm login`) |
+| Bump version | `bun run changeset:version` — updates `package.json` + `CHANGELOG.md`, then syncs and validates the Claude plugin manifest |
+| Publish (local) | `bun run changeset:publish` — validates manifest versions, then publishes to npm (needs `NPM_TOKEN` or `npm login`) |
 
 **Automated flow (recommended):**
 1. Push changesets to `main` → workflow opens a “Version Packages” PR.
