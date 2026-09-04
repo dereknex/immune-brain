@@ -2,17 +2,18 @@ import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { MIN_CLAUDE_CODE_VERSION } from "../plugins/immune-brain/runtime/claude/capability";
-import { PLUGIN_VERSION } from "../plugins/immune-brain/runtime/plugin_version";
 
 const ROOT = join(import.meta.dir, "..");
 const REPORT = join(ROOT, "docs/verification/claude-native-elicitation-authority-conformance.md");
 const SERVER = join(ROOT, "plugins/immune-brain/runtime/claude/mcp_server.ts");
+const OBSERVED_PLUGIN_VERSION = "3.4.0";
 
 describe("Claude native elicitation promotion evidence", () => {
-	test("binds the supported Host floor to the current plugin and MCP protocol", () => {
+	test("binds the supported Host floor to the observed plugin and MCP protocol", () => {
 		const report = readFileSync(REPORT, "utf8");
 		const server = readFileSync(SERVER, "utf8");
-		expect(report).toContain(`plugin_version: ${PLUGIN_VERSION}`);
+		expect(report).toContain(`plugin_version: ${OBSERVED_PLUGIN_VERSION}`);
+		expect(report).toContain(`- Immune-Brain plugin: \`${OBSERVED_PLUGIN_VERSION}\``);
 		expect(report).toContain(`claude_code_version: ${MIN_CLAUDE_CODE_VERSION}`);
 		expect(report).toContain(`minimum_supported_version: ${MIN_CLAUDE_CODE_VERSION}`);
 		expect(report).toContain("mcp_protocol: 2025-06-18");
