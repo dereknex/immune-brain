@@ -1,0 +1,37 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "2026-09-04-001-task-rail-progress-depth-and-overview",
+  "owner": "user",
+  "goal": "Deepen the active-task Task Rail with an Assurance phase row and a bounded QA acceptance-progress row fed only from existing foreground update payloads, and add one /imm-tasks read-only overlay command that lists the active Managed task and every not-enrolled docs/plans/*.intent.json draft (settled history excluded) without mutating any authority state.",
+  "acceptance": [
+    {
+      "id": "acc-1",
+      "assertion": "The Task Rail renders an optional Assurance phase row and an optional QA acceptance-progress row (n/total + latest acceptance_id with running/passed/failed) when the view carries those fields, and renders exactly the previous three rows when they are absent, proven by focused extension tests on renderTaskRail outputs.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/pi-canary-work-extension.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 240000,\n  \"max_output_bytes\": 262144\n}\n"
+    },
+    {
+      "id": "acc-2",
+      "assertion": "A /imm-tasks read-only overlay lists the active task with its projected Obligation and Rail state plus every not-enrolled docs/plans/*.intent.json draft shown as Planning, excludes settled history, performs no authority mutation, and closes without state change, proven by focused extension tests using the existing makeCtx/makeUI harness.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/pi-canary-work-extension.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 240000,\n  \"max_output_bytes\": 262144\n}\n"
+    },
+    {
+      "id": "acc-3",
+      "assertion": "Every touched .pi-extension source file keeps the Footer empty and stays free of setStatus-with-text, timers, polling, and sound emission, proven by the existing forbidden-source scan assertions extended over the changed files.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/pi-canary-work-extension.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 240000,\n  \"max_output_bytes\": 262144\n}\n"
+    },
+    {
+      "id": "acc-4",
+      "assertion": "The candidate Spec docs/specs/task-rail-progress-depth-and-overview.spec.md exists with Design risk, Diagram decision, and Diagram reason fields and maps every Brainstorm manifest ID in its Brainstorm Trace, proven by a focused spec-presence test.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/task-rail-progress-spec-presence.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 60000,\n  \"max_output_bytes\": 65536\n}\n"
+    }
+  ],
+  "scope_hint": [
+    "docs/specs/task-rail-progress-depth-and-overview.spec.md",
+    "plugins/immune-brain/.pi-extension/imm-canary-work.ts",
+    "plugins/immune-brain/.pi-extension/pi-canary-interaction.ts",
+    "tests/pi-canary-work-extension.test.ts",
+    "tests/task-rail-progress-spec-presence.test.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}
