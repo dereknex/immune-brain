@@ -8,8 +8,7 @@ export type UserAttentionReason =
 	| "enrollment"
 	| "descriptor_waiver"
 	| "breaking_intent_revision"
-	| "review_authorization"
-	| "authority_repair";
+	| "review_authorization";
 
 export interface UserAttentionEventV1 {
 	active: boolean;

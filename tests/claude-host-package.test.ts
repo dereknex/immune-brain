@@ -6,6 +6,7 @@ import { spawnSync } from "node:child_process";
 import { buildClaudePlugin, checkClaudePlugin } from "../scripts/build-claude-plugin";
 import { stampPluginManifest, validateManifests } from "../scripts/plugin_versioning";
 import { MIN_CLAUDE_CODE_VERSION, probeHost } from "../plugins/immune-brain/runtime/claude/capability";
+import { PLUGIN_VERSION } from "../plugins/immune-brain/runtime/plugin_version";
 import { handleJsonRpc, listMcpTools } from "../plugins/immune-brain/runtime/claude/mcp_server";
 
 const ROOT = resolve(import.meta.dir, "..");
@@ -33,6 +34,7 @@ describe("claude host package", () => {
     expect(validateManifests(ROOT).files).toEqual([
       "package.json",
       "plugins/immune-brain/.claude-plugin/plugin.json",
+      "plugins/immune-brain/runtime/plugin_version.ts",
     ]);
     const missing = mkdtempSync(join(tmpdir(), "missing-plugin-"));
     writeFileSync(join(missing, "package.json"), JSON.stringify({ version: "0.0.1" }) + "\n");
@@ -130,8 +132,9 @@ describe("claude host package", () => {
     expect(manifest.files).toContain(".claude-plugin");
     expect(manifest.files).toContain("plugins/immune-brain/.pi-extension");
     expect(manifest.files).toContain("plugins/immune-brain/runtime/claude");
-    expect(manifest.scripts["changeset:version"]).toContain("plugin_versioning.ts stamp && bun scripts/plugin_versioning.ts validate");
-    expect(manifest.scripts["changeset:publish"]).toBe("bun scripts/plugin_versioning.ts validate && changeset publish");
+    expect(manifest.files).toContain("plugins/immune-brain/runtime/plugin_version.ts");
+    expect(manifest.scripts["changeset:version"]).toContain("build-claude-plugin.ts");
+    expect(manifest.scripts["changeset:publish"]).toBe("bun run verify:release && changeset publish");
     expect(listMcpTools().map((tool) => tool.name)).toEqual([
       "status",
       "enroll",
@@ -143,7 +146,13 @@ describe("claude host package", () => {
       "repair_authority_state",
     ]);
     const init = await handleJsonRpc({ jsonrpc: "2.0", id: 1, method: "initialize" });
-    expect(init?.result).toMatchObject({ serverInfo: { name: "claude-code" } });
+    expect(init?.result).toMatchObject({
+      serverInfo: {
+        name: "claude-code",
+        version: PLUGIN_VERSION,
+        minimumHostVersion: MIN_CLAUDE_CODE_VERSION,
+      },
+    });
   });
 
   it("fails closed on unsupported Claude versions and native Windows", () => {

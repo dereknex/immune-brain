@@ -20,6 +20,7 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
+import { PLUGIN_VERSION } from "../runtime/plugin_version";
 import {
 	parseVerificationDescriptor,
 	canonicalDescriptorBytes,
@@ -171,7 +172,6 @@ const TASK_INTENT_SCHEMA = Type.Object({
 
 export type { AssuranceRole } from "./pi-canary-assurance";
 export type AuthorizeOperation =
-	| "record-user-approval"
 	| "approve-breaking-intent-revision"
 	| "resolve-user-decision"
 	| "stop";
@@ -391,7 +391,7 @@ export default function (
 			"After implementation and focused verification, freeze the artifacts, call advance_assurance, and consume its direct terminal result; do not poll or create a detached job.",
 			"When advance_assurance returns review_ready, invoke the foreground Agent from agent_params once, then pass its structured verdict to submit_review.",
 			"For a complete breaking revision, call approve_breaking_intent_revision with the complete next_intent directly; do not ask for chat pre-confirmation because the host opens the single native confirmation before applying it.",
-			"For a proven stale authority claim, call repair_authority_state directly; do not ask for chat pre-confirmation because the host opens the single native confirmation.",
+			"For a proven stale authority claim, call repair_authority_state directly; the Kernel revalidates and removes only the redundant claim without user interaction.",
 			"After awaiting_user, call request_authorization directly so the host opens the single native confirmation; do not ask for chat pre-confirmation or ask the user to copy or report a command.",
 		],
 		parameters: Type.Object({
@@ -474,43 +474,6 @@ export default function (
 					presentTaskRailResult(ctx, taskId, blocked);
 					return failCanaryTool(taskId, action.op, "authority_conflict", "authority_conflict", blocked.result, blocked.next_action);
 				}
-				presentTaskRail(ctx, {
-					task_id: taskId,
-					state: "Approval required",
-					result: "Authority repair needs your approval",
-					next: "Decide whether to repair the stale claim",
-				});
-				const repairSelection = await requestAuthorityDialog(pi, ctx, {
-					attention_id: randomUUID(),
-					task_id: taskId,
-					reason: "authority_repair",
-					label: "Kernel authority repair required",
-				}, {
-					title: "Repair Kernel authority state?",
-					summary: [
-						`Owner: ${taskId}`,
-						`Terminal lifecycle: ${authority.owner_lifecycle}`,
-						`Claim lifecycle: ${authority.claim_lifecycle_status}`,
-					].join("\n"),
-					details: [
-						`Projection revision: ${authority.revision}`,
-						"Action: remove only the stale global claim; preserve TaskRecord and tombstone.",
-					].join("\n"),
-					signal: ctx.signal ?? signal,
-					actions: [
-						{ value: "repair", label: "Repair stale claim", description: "Remove only the stale global claim" },
-						{ value: "cancel", label: "Cancel", description: "Preserve all authority state unchanged" },
-					],
-				});
-				if (repairSelection !== "repair") {
-					const cancelled = {
-						state: "cancelled",
-						operation: action.op,
-						result: "Authority repair cancelled with zero writes",
-						next_action: "request authorization again if repair is still intended",
-					};
-					return toolResult(JSON.stringify(cancelled, null, 2), cancelled);
-				}
 				try {
 					const repaired = await repairKernelAuthority(ctx.cwd, taskId, authority.revision);
 					const result = {
@@ -574,9 +537,11 @@ export default function (
 				const blockers = state.blocking_finding_ids.length
 					+ state.unresolved_user_decision_ids.length
 					+ state.replan_required_ids.length;
+				const status = { plugin_version: PLUGIN_VERSION, ...state };
 				const details = {
 					state: "status",
 					operation: "status",
+					plugin_version: PLUGIN_VERSION,
 					lifecycle: state.lifecycle,
 					artifact_state: state.artifact_state,
 					task_state: state,
@@ -584,7 +549,7 @@ export default function (
 					next_action: state.next_obligation,
 				};
 				presentTaskRailResult(ctx, taskId, details);
-				return toolResult(JSON.stringify(state, null, 2), details);
+				return toolResult(JSON.stringify(status, null, 2), details);
 			}
 			const claim = projection.claim;
 			if (!claim || claim.task_id !== taskId) {
@@ -823,6 +788,17 @@ export default function (
 			`Decision: ${operation}`,
 			`State: ${projection.projection.lifecycle}:${projection.projection.artifact_state} | Claim: ${projection.claim.lifecycle_status}`,
 		].join("\n");
+		const intentDelta = nextIntent
+			? [
+					`Risk: ${priorIntent.intent.risk} -> ${nextIntent.risk}`,
+					`Goal: ${priorIntent.intent.goal} -> ${nextIntent.goal}`,
+					`Scope added: ${nextIntent.scope_hint.filter((path) => !priorIntent.intent.scope_hint.includes(path)).join(", ") || "none"}`,
+					`Scope removed: ${priorIntent.intent.scope_hint.filter((path) => !nextIntent.scope_hint.includes(path)).join(", ") || "none"}`,
+					`Acceptance added: ${nextIntent.acceptance.filter((item) => !priorIntent.intent.acceptance.some((prior) => prior.id === item.id)).map((item) => item.id).join(", ") || "none"}`,
+					`Acceptance removed: ${priorIntent.intent.acceptance.filter((item) => !nextIntent.acceptance.some((next) => next.id === item.id)).map((item) => item.id).join(", ") || "none"}`,
+					`Acceptance changed: ${nextIntent.acceptance.filter((item) => { const prior = priorIntent.intent.acceptance.find((candidate) => candidate.id === item.id); return prior && (prior.assertion !== item.assertion || prior.verification !== item.verification); }).map((item) => item.id).join(", ") || "none"}`,
+				]
+			: [];
 		const dialogDetails = [
 			`Operation: ${operation}`,
 			...(userDecisionOperation
@@ -834,9 +810,8 @@ export default function (
 			...(nextIntent
 				? [
 						`Next Intent: rev ${nextIntent.revision} (${nextIntentHash})`,
-						`Next Goal: ${nextIntent.goal}`,
-						`Next Scope: ${nextIntent.scope_hint.join(", ")}`,
-						`Next Acceptance Items: ${nextIntent.acceptance.length}`,
+						...intentDelta,
+						`Acceptance Items: ${priorIntent.intent.acceptance.length} -> ${nextIntent.acceptance.length}`,
 						`Next staged diff: ${stagedNextDiffHash}`,
 					]
 				: []),
@@ -922,23 +897,6 @@ export default function (
 					content_hash: nextIntentHash!,
 				};
 			}
-			// record-user-approval: literal-user approval for critical-task-completion. The approval payload is bound to the fresh
-			// projection (task revision, intent content hash, diff hash) and
-			// applied through the same exact-action capability path; the
-			// The reducer requires kind user, user authority, and active:frozen state.
-			const isUserApproval = operation === "record-user-approval";
-			const approval = isUserApproval
-				? {
-						id: `approval-user-${randomUUID().slice(0, 8)}`,
-						kind: "user" as const,
-						authority_role: "user" as const,
-						task_revision: projection.projection.intent_revision,
-						intent_content_hash: projection.projection.intent_content_hash,
-						diff_hash: projection.projection.diff_hash,
-						actor_id: "literal-user",
-						summary: "literal user approval",
-					}
-				: undefined;
 			const exactOperation = operation === "stop"
 				? { op: "stop" as const, reason: "literal user stopped task parked for replan" }
 				: operation === "approve-breaking-intent-revision"
@@ -947,7 +905,7 @@ export default function (
 							next_intent: nextIntent!,
 							next_intent_ref: nextIntentRef!,
 						}
-					: userDecisionOperation ?? userOperationFor(operation, approval);
+					: userDecisionOperation!;
 				// The exact host-built operation is shared by capability digest and
 				// application payload; command arguments cannot inject authority fields.
 				try {
@@ -971,7 +929,6 @@ export default function (
 						intent_content_hash: nextIntentHash ?? projection.projection.intent_content_hash,
 						diff_hash: operationDiffHash,
 						actor_id: "literal-user",
-						...(exactOperation.op === "record_user_approval" ? { approval: exactOperation.approval } : {}),
 						...(exactOperation.op === "approve_breaking_intent_revision"
 							? { next_intent: exactOperation.next_intent, next_intent_ref: exactOperation.next_intent_ref }
 							: {}),
@@ -1039,7 +996,6 @@ export default function (
 
 export type DerivedAuthorizationOperation =
 	| "resolve-user-decision"
-	| "record-user-approval"
 	| "stop";
 
 // Kernel projection is the sole source of authorization readiness.
@@ -1049,7 +1005,6 @@ export function deriveAuthorizationOperation(input: {
 }): { operation: DerivedAuthorizationOperation } | { blocked: string } {
 	if (input.hasOpenReplanRequired) return { operation: "stop" };
 	if (input.readiness.state === "resolve_user_decision") return { operation: "resolve-user-decision" };
-	if (input.readiness.state === "record_user_approval") return { operation: "record-user-approval" };
 	if (input.readiness.blocked) return { blocked: input.readiness.blocked };
 	return { blocked: "no unique host-derived authorization operation" };
 }
@@ -1124,15 +1079,6 @@ export function buildUserDecisionOperation(record: {
 		finding_id: open[0].id,
 		resolution: `resume after literal-user decision: ${open[0].summary}`,
 	};
-}
-
-export function userOperationFor(operation: AuthorizeOperation, approval?: unknown) {
-	if (operation !== "record-user-approval")
-		throw new Error(`unsupported authorize operation: ${operation}`);
-	// The approval payload is constructed by the authorize handler from
-	// the fresh projection; it is never derived from untrusted input.
-	if (approval === undefined) throw new Error("record-user-approval requires an approval payload");
-	return { op: "record_user_approval" as const, approval };
 }
 
 /**

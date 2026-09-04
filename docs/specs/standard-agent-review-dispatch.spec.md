@@ -154,8 +154,9 @@ because the result remains advisory and unbound.
 ### 3.4 Unchanged authority
 
 `pendingReviewVerdicts`, `request_authorization`, `ctx.ui.confirm`, capability
-minting, `applyAssuranceVerdict`, reviewer/executor independence, and critical
-user approval stay as they are. Rule #1437 is not revised.
+minting, `applyAssuranceVerdict`, and reviewer/executor independence stay as
+they are. Critical completion now follows the same fresh QA + Review settlement
+rule as material work; there is no second user-approval gate.
 
 ## 4. Invariants
 

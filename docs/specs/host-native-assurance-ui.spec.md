@@ -9,7 +9,11 @@
 supersedes this Spec's absolute ban on every custom Widget only for one bounded,
 projection-fed task-level `aboveEditor` Rail. The no-Footer, no timer/watcher,
 no custom Assurance progress engine, native Review, and literal-user authority
-invariants remain active.
+for unresolved decisions, explicit stop, and breaking Intent revision remain active.
+The current executable contract in `CONTEXT.md`, `plugins/immune-brain/skills/imm-loop/SKILL.md`,
+and `runtime/kernel/completion.ts` supersedes this Spec's Review-verdict and
+critical-completion confirmation clauses; fresh QA and required Review now
+settle automatically.
 
 This R3-D1 slice deletes Immune-Brain's custom assurance Footer and Widget after
 R3-B1 made Review visible through the standard `Agent` tool. Long-running

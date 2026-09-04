@@ -133,7 +133,6 @@ export interface ForegroundToolUpdate {
 
 export type AssuranceAdvanceResult =
 	| { state: "review_ready"; operation: "review"; operation_id: string; snapshot_digest: string; review_bundle_digest: string; agent_params: unknown }
-	| { state: "awaiting_user"; operation: "record-user-approval"; operation_id: string }
 	| { state: "rework"; operation: "qa"; operation_id: string; summary: string }
 	| { state: "cancelled"; operation: "qa" | "review"; operation_id: string; reason: string }
 	| { state: "failed"; operation: "qa" | "review"; operation_id: string; reason: string }
@@ -150,7 +149,6 @@ export type AssuranceAdvanceResult =
 
 export type AssuranceSubmitReviewResult =
 	| { state: "rework"; operation: "review"; operation_id: string; summary: string }
-	| { state: "awaiting_user"; operation: "record-user-approval"; operation_id: string }
 	| { state: "review_preparation_failed"; operation: "review"; operation_id: string; reason: string }
 	| { state: "completed" }
 	| { state: "settlement_unknown"; operation: "qa" | "review"; operation_id: string; reason: string }
@@ -528,8 +526,6 @@ export class AssuranceCoordinator {
 					return this.unknownAfterCommit(taskId, "qa", operationId, boundedAssuranceError(error));
 				}
 			}
-			if (projection.projection.next_obligation === "authorize_user")
-				return { state: "awaiting_user", operation: "record-user-approval", operation_id: operationId };
 			if (projection.projection.next_obligation !== "run_qa" && projection.projection.next_obligation !== "run_review")
 				return { state: "blocked", reason: `Kernel requires ${projection.projection.next_obligation}` };
 			const qaAlreadySettled = projection.projection.next_obligation === "run_review";
@@ -623,8 +619,6 @@ export class AssuranceCoordinator {
 					return this.unknownAfterCommit(taskId, "qa", operationId, boundedAssuranceError(error));
 				}
 			}
-			if (fresh.projection.next_obligation === "authorize_user")
-				return { state: "awaiting_user", operation: "record-user-approval", operation_id: operationId };
 			if (fresh.projection.next_obligation !== "run_review") {
 				if (authorityCommitted && aborted()) return this.unknownAfterCommit(taskId, "qa", operationId, "QA settlement projection did not require Review after cancellation");
 				return { state: "blocked", reason: `Kernel requires ${fresh.projection.next_obligation} after QA` };
@@ -777,8 +771,6 @@ export class AssuranceCoordinator {
 				return this.unknownAfterCommit(taskId, "review", reservation.operationId, boundedAssuranceError(error));
 			}
 		}
-		if (settled.projection.next_obligation === "authorize_user")
-			return { state: "awaiting_user", operation: "record-user-approval", operation_id: reservation.operationId };
 		return { state: "blocked", reason: `Kernel requires ${settled.projection.next_obligation} after Review` };
 	}
 

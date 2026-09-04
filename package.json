@@ -29,8 +29,9 @@
   },
   "scripts": {
     "changeset": "changeset",
-    "changeset:version": "changeset version && bun scripts/plugin_versioning.ts stamp && bun scripts/plugin_versioning.ts validate",
-    "changeset:publish": "bun scripts/plugin_versioning.ts validate && changeset publish",
+    "changeset:version": "changeset version && bun scripts/build-claude-plugin.ts && bun scripts/plugin_versioning.ts validate",
+    "verify:release": "bun scripts/plugin_versioning.ts validate && bun scripts/build-claude-plugin.ts --check && bun scripts/sync-dist-docs.ts --check && bun test && npm pack --dry-run --ignore-scripts",
+    "changeset:publish": "bun run verify:release && changeset publish",
     "release": "bun run changeset:publish"
   },
   "devDependencies": {
@@ -76,6 +77,7 @@
     "plugins/immune-brain/runtime/verification_descriptor.ts",
     "plugins/immune-brain/runtime/role_prompt_bridge.ts",
     "plugins/immune-brain/runtime/loop_contract.ts",
+    "plugins/immune-brain/runtime/plugin_version.ts",
     "plugins/immune-brain/runtime/assurance",
     "plugins/immune-brain/runtime/claude",
     "plugins/immune-brain/runtime/prompts",

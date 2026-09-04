@@ -16,12 +16,16 @@ describe("active runtime docs guard", () => {
     const root = mkdtempSync(join(tmpdir(), "runtime-docs-"))
     try {
       const file = join(root, "current.md")
-      writeFileSync(file, "# Current runtime\nUse plugins/immune-brain/.mcp.json and list-tools now.\n")
+      writeFileSync(file, "# Current runtime\nUse plugins/immune-brain/.mcp.json and list-tools now.\nDo record-review-verdict then record-user-approval.\nCritical tasks require final user authorization.\n")
 
       const result = runRuntimeTruth(file)
 
       expect(result.status).toBe(1)
       expect(result.stdout).toContain("current.md:2 [retired_runtime_current_ref]")
+      expect(result.stdout).toContain("current.md:3 [retired_authority_current_ref]")
+      expect(result.stdout).toContain("current.md:4 [retired_authority_current_ref]")
+      expect(result.stdout).toContain("record-review-verdict")
+      expect(result.stdout).toContain("record-user-approval")
       expect(result.stdout).toContain(".mcp.json")
       expect(result.stdout).toContain("list-tools")
     } finally {

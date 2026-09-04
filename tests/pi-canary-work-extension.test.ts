@@ -17,6 +17,8 @@ import { canonicalIntentHash, parseTaskIntentV1, readTaskIntent } from "../plugi
 import { readBackendClaim } from "../plugins/immune-brain/runtime/kernel/backend_claim";
 import { createMutationAuthorityCapabilityForTest } from "./fixtures/mutation-authority-test-seam";
 import { readTaskRecord } from "../plugins/immune-brain/runtime/kernel/storage";
+import { PLUGIN_VERSION } from "../plugins/immune-brain/runtime/plugin_version";
+import { createMcpRuntime } from "../plugins/immune-brain/runtime/claude/mcp_server";
 import { captureReviewManifest } from "../plugins/immune-brain/.pi-extension/pi-canary-review-bundle";
 import { snapshotDigest, type SnapshotDescriptor } from "../plugins/immune-brain/.pi-extension/pi-canary-assurance-progression.ts";
 import {
@@ -346,6 +348,24 @@ async function capturedToolFailure(promise: Promise<unknown>): Promise<Record<st
 		expect(Object.keys(commands)).toEqual([]);
 	});
 
+	test("Pi status reports the shared plugin version", async () => {
+		const root = makeEnrolledRoot();
+		try {
+			const { tools } = loadSurface();
+			const result = await tools[0].execute(
+				"status",
+				{ task_id: TASK, action: { op: "status" } },
+				undefined,
+				undefined,
+				makeCtx(root, makeUI()),
+			);
+			expect(JSON.parse(result.content[0].text).plugin_version).toBe(PLUGIN_VERSION);
+			expect(result.details.plugin_version).toBe(PLUGIN_VERSION);
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
 	test("compact-task-rail-hierarchy: renders compact Tool rows and keeps one bounded Task Rail lifecycle", async () => {
 		const { tools } = loadSurface();
 		const loop = tools.find((tool) => tool.name === "imm_loop_action")!;
@@ -640,37 +660,23 @@ async function capturedToolFailure(promise: Promise<unknown>): Promise<Record<st
 		}
 	});
 
-	test("shared-authority-dialog-shell: repairs a proven stale claim only after native confirmation", { timeout: 15000 }, async () => {
+	test("repairs a proven stale claim without user confirmation", { timeout: 15000 }, async () => {
 		const root = makeStaleClaimRoot();
 		const claimPath = join(root, ".imm/state/active-claim.json");
 		const recordPath = join(root, `.imm/audit/${TASK}/task-record.json`);
 		const tombstonePath = join(root, `.imm/audit/${TASK}/terminal-proof.json`);
 		try {
 			const { tools, emitted } = loadSurface();
-
 			const tool = tools.find((candidate) => candidate.name === "imm_kernel_canary")!;
-			const claimBefore = readFileSync(claimPath, "utf8");
 			const recordBefore = readFileSync(recordPath, "utf8");
 			const tombstoneBefore = readFileSync(tombstonePath, "utf8");
-			const cancelledUi = makeUI();
-			const cancelled = await tool.execute(
-				"repair-cancel",
-				{ task_id: TASK, action: { op: "repair_authority_state" } },
-				undefined,
-				undefined,
-				makeCtx(root, cancelledUi, "tui", "Approve", "note", false),
-			);
-			expect(cancelled.details.state).toBe("cancelled");
-			expect(readFileSync(claimPath, "utf8")).toBe(claimBefore);
-			expect(cancelledUi.customCalls[0].body).toContain("Projection revision: sha256:");
-			expect(cancelledUi.confirmCalls).toHaveLength(0);
-
+			const ui = makeUI();
 			const repaired = await tool.execute(
-				"repair-confirm",
+				"repair",
 				{ task_id: TASK, action: { op: "repair_authority_state" } },
 				undefined,
 				undefined,
-				makeCtx(root, makeUI()),
+				makeCtx(root, ui),
 			);
 			expect(repaired.details).toMatchObject({
 				state: "recovered_retry",
@@ -680,18 +686,34 @@ async function capturedToolFailure(promise: Promise<unknown>): Promise<Record<st
 			expect(existsSync(claimPath)).toBe(false);
 			expect(readFileSync(recordPath, "utf8")).toBe(recordBefore);
 			expect(readFileSync(tombstonePath, "utf8")).toBe(tombstoneBefore);
-			const attention = emitted.filter((event) => event.name === USER_ATTENTION_EVENT);
-			expect(attention).toHaveLength(4);
-			for (let index = 0; index < attention.length; index += 2) {
-				const opened = attention[index].payload;
-				expect(opened).toMatchObject({ active: true, task_id: TASK, reason: "authority_repair" });
-				expect(attention[index + 1].payload).toEqual({
-					active: false,
-					attention_id: opened.attention_id,
-					task_id: TASK,
-					reason: "authority_repair",
-				});
-			}
+			expect(ui.customCalls).toHaveLength(0);
+			expect(emitted.filter((event) => event.name === USER_ATTENTION_EVENT)).toHaveLength(0);
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
+	test("Claude MCP repairs a proven stale claim without interactive authority", { timeout: 15000 }, async () => {
+		const root = makeStaleClaimRoot();
+		const claimPath = join(root, ".imm/state/active-claim.json");
+		const recordPath = join(root, `.imm/audit/${TASK}/task-record.json`);
+		const tombstonePath = join(root, `.imm/audit/${TASK}/terminal-proof.json`);
+		try {
+			const recordBefore = readFileSync(recordPath, "utf8");
+			const tombstoneBefore = readFileSync(tombstonePath, "utf8");
+			const mcp = createMcpRuntime({
+				cwd: root,
+				env: { CLAUDE_CODE_PERMISSION_MODE: "manual" },
+				interactive: false,
+			});
+			mcp.bindClientHandshake({ version: "2.1.236", interactive: false });
+			await expect(mcp.callTool("repair_authority_state", { task_id: TASK })).resolves.toMatchObject({
+				state: "terminal_owner",
+				owner_task_id: TASK,
+			});
+			expect(existsSync(claimPath)).toBe(false);
+			expect(readFileSync(recordPath, "utf8")).toBe(recordBefore);
+			expect(readFileSync(tombstonePath, "utf8")).toBe(tombstoneBefore);
 		} finally {
 			rmSync(root, { recursive: true, force: true });
 		}

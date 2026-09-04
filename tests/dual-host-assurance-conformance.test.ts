@@ -19,7 +19,7 @@ const ROOT = "/tmp/dual-host-assurance";
 const ctx = { cwd: ROOT };
 
 type Risk = "routine" | "material" | "critical";
-type Obligation = "submit_assurance" | "run_qa" | "run_review" | "complete" | "authorize_user" | "none";
+type Obligation = "submit_assurance" | "run_qa" | "run_review" | "complete" | "none";
 
 function projection(
 	state: {
@@ -182,7 +182,7 @@ function sharedKernel(
 			await input.hooks?.beforeCommit?.();
 			input.hooks?.onCommit?.();
 			if (input.snapshot.role === "qa") nextObligation = risk === "routine" ? "complete" : "run_review";
-			else nextObligation = risk === "critical" ? "authorize_user" : "complete";
+			else nextObligation = "complete";
 			if (input.snapshot.role === "qa" && hooks.failQaCommit) {
 				locked = false;
 				throw new Error("host reply lost after authority commit");
@@ -243,7 +243,7 @@ describe("dual-host assurance conformance", () => {
 		const c = critical.claude();
 		const critReady = await c.coordinator.advance(TASK, ctx);
 		completeClaudeReview(c.host, (critReady as { operation_id: string }).operation_id, "critical");
-		expect(await submitObservedReview(c)).toMatchObject({ state: "awaiting_user" });
+		expect(await submitObservedReview(c)).toEqual({ state: "completed" });
 	});
 
 	test("Pi resumes a Claude-frozen run_review task without handoff state", async () => {
@@ -335,17 +335,13 @@ describe("dual-host assurance conformance", () => {
 		expect(await pi.submitReview(TASK, ctx, passVerdict(snapshot("review")))).toEqual({ state: "completed" });
 	});
 
-	test("authorize_user projection resumes on the other host without re-running authority", async () => {
+	test("critical Review completes on the originating host", async () => {
 		const kernel = sharedKernel("critical");
 		const claude = kernel.claude();
 		const ready = await claude.coordinator.advance(TASK, ctx);
 		completeClaudeReview(claude.host, (ready as { operation_id: string }).operation_id, "critical");
-		expect(await submitObservedReview(claude)).toMatchObject({ state: "awaiting_user" });
-		await claude.coordinator.onSessionShutdown();
-		kernel.releaseClaim();
-		const pi = kernel.pi();
-		expect(await pi.advance(TASK, ctx as never)).toMatchObject({ state: "awaiting_user" });
-		expect(kernel.applyCounts.value).toBe(2); // qa + review only
+		expect(await submitObservedReview(claude)).toEqual({ state: "completed" });
+		expect(kernel.applyCounts.value).toBe(2);
 	});
 
 	test("terminal projections reconcile idempotently on both hosts", async () => {

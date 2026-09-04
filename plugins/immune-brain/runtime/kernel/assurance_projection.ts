@@ -25,13 +25,9 @@ export interface AssuranceAuthorizationReadiness {
 	/**
 	 * Kernel-decidable authorization readiness:
 	 * - "resolve_user_decision": exactly one open unresolved-user-decision finding;
-	 * - "record_user_approval": Kernel projects authorize_user after fresh QA
-	 *   and Review attestations for a critical task;
 	 * - "none": nothing uniquely decidable from Kernel facts.
-	 * A pending Pi native Review verdict is a session fact and is NOT visible
-	 * here; the host composes it before this readiness.
 	 */
-	state: "resolve_user_decision" | "record_user_approval" | "none";
+	state: "resolve_user_decision" | "none";
 	/** Non-null only when Kernel facts prove the authorization is blocked. */
 	blocked: string | null;
 }
@@ -79,8 +75,6 @@ export function deriveAssuranceAuthorization(input: {
 			state: "none",
 			blocked: `resolve-user-decision requires exactly one open user decision; found ${input.open_user_decision_count}`,
 		};
-	if (input.next_obligation === "authorize_user")
-		return { state: "record_user_approval", blocked: null };
 	return { state: "none", blocked: null };
 }
 

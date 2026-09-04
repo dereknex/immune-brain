@@ -14,7 +14,7 @@ Immune-Brain 在 Pi 之上提供结构化的工程工作流：
 - **计划变为可追踪的任务**（`TaskIntent` + `TaskRecord`），进度落盘持久化，不依赖对话历史。
 - **质量由代码强制保障** — 自动化 QA 与隔离式 Review 必须通过，任务才会完成。
 
-Pi 与 Claude Code 是支持的宿主。未声明的适配器仍不受支持。Claude Code 最低版本为 `2.1.199`。真实 Host 证据见 `docs/verification/claude-code-host-conformance.md`。
+Pi 与 Claude Code 是支持的宿主。未声明的适配器仍不受支持。Claude Code 最低版本为 `2.1.199`。历史真实 Host 证据归档于 `docs/verification/archive/`；当前发布由确定性的 package 与 authority 检查把关。
 
 ---
 

@@ -6,7 +6,6 @@ export const PRIVILEGED_OPERATIONS = [
 	"request_authorization",
 	"approve_breaking_intent_revision",
 	"stop",
-	"repair_authority_state",
 ] as const;
 
 export type PrivilegedOperation = (typeof PRIVILEGED_OPERATIONS)[number];

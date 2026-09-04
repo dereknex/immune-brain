@@ -99,11 +99,11 @@ The host-neutral read-only CLI view from `imm-kernel inspect --json`. It copies 
 _Avoid_: progress projection, second TaskRecord, live Capability dump
 
 **Obligation**:
-The single next Kernel-required action projected from current facts, such as submit assurance, run QA, run Review, authorize the user, resolve findings, revise intent, or complete.
+The single next Kernel-required action projected from current facts, such as submit assurance, run QA, run Review, resolve a user decision, resolve findings, revise intent, or complete.
 _Avoid_: recommendation, workflow phase
 
 **Assurance**:
-The foreground progression from frozen artifacts through fresh QA, any required Review and user authority, to terminal settlement. Routine tasks require QA; material tasks require QA and Review; critical tasks also require final user authority.
+The foreground progression from frozen artifacts through fresh QA and any required Review to terminal settlement. Routine tasks require QA; material and critical tasks require QA and Review. User authority is reserved for unresolved decisions, explicit stop, breaking Intent revision, and other concrete exception operations.
 _Avoid_: testing, generic review, background orchestration
 
 **Settlement**:
@@ -178,7 +178,7 @@ _Avoid_: current acceptance field, QA attestation
 - The Assurance Projection derives one next Obligation from Kernel facts.
 - The Inspect Projection reads those same facts for authors; it never becomes a second authority.
 - QA executes every Acceptance Descriptor and records one atomic QA Attestation.
-- Risk determines further authority: `routine` stops at QA, `material` adds Review, and `critical` adds final user authority.
+- Risk determines technical assurance depth: `routine` stops at QA, while `material` and `critical` add Review. User authority is reserved for concrete exception operations rather than risk tier alone.
 - Settlement changes lifecycle to `done` or `stopped`, clears active ownership, and creates terminal proof.
 - Loop dispatches Internal Roles, but Kernel remains the mutation and completion authority.
 - An Initiative may group Slices and TaskIntents, but it never replaces a Spec, TaskIntent, TaskRecord, or Assurance Projection.

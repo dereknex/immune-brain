@@ -730,7 +730,6 @@ const ACTION_V2_TYPES = [
 	"record_finding",
 	"resolve_finding",
 	"record_approval",
-	"record_user_approval",
 	"revise_intent",
 	"approve_breaking_intent_revision",
 	"request_rework",
@@ -831,8 +830,7 @@ export function parseTaskAction(raw: unknown): TaskAction {
 			};
 			break;
 		}
-		case "record_approval":
-		case "record_user_approval": {
+		case "record_approval": {
 			rejectUnknown(
 				value,
 				[...ACTION_BASE_FIELDS, "approval"],

@@ -207,6 +207,14 @@ describe("breaking intent revision gate", () => {
 			expect(ui.dialogCalls).toHaveLength(1);
 			expect(ui.dialogCalls[0].body).toContain("approve-breaking-intent-revision");
 			expect(ui.dialogCalls[0].body).toContain("Next Intent: rev 2");
+			expect(ui.dialogCalls[0].body).toContain("Risk: material -> material");
+			expect(ui.dialogCalls[0].body).toContain("Goal: approve breaking intent revision -> approve breaking intent revision");
+			expect(ui.dialogCalls[0].body).toContain("Scope added: none");
+			expect(ui.dialogCalls[0].body).toContain("Scope removed: none");
+			expect(ui.dialogCalls[0].body).toContain("Acceptance added: none");
+			expect(ui.dialogCalls[0].body).toContain("Acceptance removed: none");
+			expect(ui.dialogCalls[0].body).toContain("Acceptance changed: A1");
+			expect(ui.dialogCalls[0].body).toContain("Acceptance Items: 1 -> 1");
 			expect(ui.dialogCalls[0].body).toMatch(/Next staged diff: sha256:[a-f0-9]{64}/);
 			expect(statSync(intentPath).ino).toBe(beforeInode);
 			expect(JSON.parse(readFileSync(intentPath, "utf8"))).toMatchObject({ revision: 2, task_id: TASK });

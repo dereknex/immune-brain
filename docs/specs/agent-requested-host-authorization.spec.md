@@ -3,11 +3,12 @@
 > **SUPERSEDED (2026-08-22):** This spec's TaskRecord schema, `record-review-verdict`,
 > and material-risk literal-user Review confirmation constraints are historical.
 > The current architecture is Kernel-obligation driven (TaskRecord v3,
-> `lifecycle`/`artifact_state`, single `attestations[]`). Material tasks complete
-> automatically after host-attested QA and native Review; only `critical` tasks
-> require final literal-user authorization via `request_authorization`. Retain
-> this document for historical task auditability; do not enforce its
-> non-current contracts on the v3 production path.
+> `lifecycle`/`artifact_state`, single `attestations[]`). Routine tasks complete
+> after fresh QA; material and critical tasks complete automatically after fresh
+> QA and Review. `request_authorization` is reserved for unresolved user
+> decisions and explicit stop. Retain this document for historical task
+> auditability; do not enforce its non-current contracts on the v3 production
+> path.
 
 **Task ID**: `2026-08-14-003-agent-requested-host-authorization`
 **Owner**: user
@@ -126,9 +127,10 @@ verdicts are submitted directly by the Parent from the foreground reviewer resul
 and do not enter this user-authorization path. The host never asks the model to choose
 among operations.
 
-`approve-breaking-intent-revision` and authority repair retain their dedicated
-exact-operation host gates because their payloads are not derivable from the
-ordinary authorization projection.
+`approve-breaking-intent-revision` retains its dedicated exact-operation host
+gate because its payload is not derivable from the ordinary authorization
+projection. Authority repair is now deterministic: it revalidates a narrowly
+proven stale claim and removes only that redundant claim without user input.
 
 ### 3.3 Shared authorize path
 

@@ -57,7 +57,6 @@ export type AssuranceObligation =
 	| "submit_assurance"
 	| "run_qa"
 	| "run_review"
-	| "authorize_user"
 	| "complete"
 	| "none";
 
@@ -276,7 +275,6 @@ export type TaskAction =
 	| (TaskActionBase & { type: "record_finding"; finding: TaskFinding })
 	| (TaskActionBase & { type: "resolve_finding"; finding_id: string })
 	| (TaskActionBase & { type: "record_approval"; approval: TaskApprovalV2 })
-	| (TaskActionBase & { type: "record_user_approval"; approval: TaskApprovalV2 })
 	| (TaskActionBase & {
 			type: "revise_intent";
 			next_intent: TaskIntentV1;

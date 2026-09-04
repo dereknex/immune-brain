@@ -272,8 +272,8 @@ describe("kernel assurance projection v3", () => {
 		}
 	});
 
-	test("authorization readiness is derived only from the projected obligation", () => {
-		expect(deriveAssuranceAuthorization({ next_obligation: "authorize_user", open_user_decision_count: 0 })).toEqual({ state: "record_user_approval", blocked: null });
+	test("authorization readiness is derived only from unresolved user decisions", () => {
+		expect(deriveAssuranceAuthorization({ next_obligation: "complete", open_user_decision_count: 0 })).toEqual({ state: "none", blocked: null });
 		expect(deriveAssuranceAuthorization({ next_obligation: "resolve_user_decision", open_user_decision_count: 1 })).toEqual({ state: "resolve_user_decision", blocked: null });
 		expect(deriveAssuranceAuthorization({ next_obligation: "resolve_user_decision", open_user_decision_count: 2 })).toEqual({
 			state: "none",

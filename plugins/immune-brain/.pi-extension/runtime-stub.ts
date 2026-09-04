@@ -179,7 +179,7 @@ export interface TaskRecordRead {
 // --- Assurance projection (host-neutral Kernel facts, not exported from the
 // public Kernel index) ---
 export interface AssuranceAuthorizationReadiness {
-	state: "resolve_user_decision" | "record_user_approval" | "none";
+	state: "resolve_user_decision" | "none";
 	blocked: string | null;
 }
 export interface AssuranceProjection {
@@ -191,7 +191,7 @@ export interface AssuranceProjection {
 	lifecycle: "active" | "done" | "stopped" | "";
 	artifact_state: "active" | "frozen" | "";
 	risk: "routine" | "material" | "critical" | "";
-	next_obligation: "resolve_findings" | "resolve_user_decision" | "revise_intent" | "submit_assurance" | "run_qa" | "run_review" | "authorize_user" | "complete" | "none";
+	next_obligation: "resolve_findings" | "resolve_user_decision" | "revise_intent" | "submit_assurance" | "run_qa" | "run_review" | "complete" | "none";
 	fresh_acceptance_ids: string[];
 	missing_acceptance_ids: string[];
 	stale_attestation_ids: string[];

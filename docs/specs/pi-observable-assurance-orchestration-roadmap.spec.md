@@ -343,13 +343,13 @@ literal-user confirmation for genuine critical-risk decisions.
 - Agent lifecycle events and host-normalized parameter matching are not Review
   authority requirements.
 - Malformed verdicts are retryable; stale verdicts perform zero authority writes.
-- Routine/material normal flow requires only task-creation confirmation;
-  critical normal flow adds exactly one fresh final user approval.
+- Routine normal flow requires only task-creation confirmation;
+  material and critical normal flow then run Review and settle automatically.
 
 **Promotion criteria**:
 
 - Focused tests cover direct pass/rework submission, malformed retry, stale
-  rejection, and critical final authorization.
+  rejection, and automatic critical settlement after fresh QA and Review.
 - Current Skill, reference documentation, and packaged mirrors describe the
   Parent-mediated verdict contract.
 

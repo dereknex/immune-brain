@@ -12,10 +12,15 @@ describe("Pi-only release contract", () => {
     expect(Object.keys(versions)).toEqual([
       "package.json",
       "plugins/immune-brain/.claude-plugin/plugin.json",
+      "plugins/immune-brain/runtime/plugin_version.ts",
     ]);
     expect(validateManifests(ROOT)).toMatchObject({
       package: "@immune-brain/agent-skills",
-      files: ["package.json", "plugins/immune-brain/.claude-plugin/plugin.json"],
+      files: [
+        "package.json",
+        "plugins/immune-brain/.claude-plugin/plugin.json",
+        "plugins/immune-brain/runtime/plugin_version.ts",
+      ],
       valid: true,
     });
   });
@@ -33,6 +38,7 @@ describe("Pi-only release contract", () => {
       "README.md",
       "plugins/immune-brain/.pi-extension/imm-canary-work.ts",
       "plugins/immune-brain/skills/imm-loop/SKILL.md",
+      "plugins/immune-brain/runtime/plugin_version.ts",
       "plugins/immune-brain/runtime/kernel/completion.ts",
       ".claude-plugin/marketplace.json",
     ]) expect(files).toContain(required);
@@ -61,10 +67,10 @@ describe("Pi-only release contract", () => {
     const manifest = JSON.parse(readFileSync(resolve(ROOT, "package.json"), "utf8"));
     expect(existsSync(resolve(ROOT, "scripts/plugin_release.ts"))).toBe(false);
     expect(manifest.scripts["changeset:version"]).toBe(
-      "changeset version && bun scripts/plugin_versioning.ts stamp && bun scripts/plugin_versioning.ts validate",
+      "changeset version && bun scripts/build-claude-plugin.ts && bun scripts/plugin_versioning.ts validate",
     );
     expect(manifest.scripts["changeset:publish"]).toBe(
-      "bun scripts/plugin_versioning.ts validate && changeset publish",
+      "bun run verify:release && changeset publish",
     );
 
     const bump = spawnSync("bun", ["scripts/plugin_versioning.ts", "bump", "patch"], {

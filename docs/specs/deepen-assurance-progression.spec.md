@@ -8,6 +8,13 @@ Roadmap phase: none; internal architecture maintenance
 **Diagram decision**: required  
 **Diagram reason**: Ownership, dependency direction, and QA/Review continuation are easier to verify as structure and sequence flows than as prose alone.
 
+**Current-contract override (2026-09-03)**: The executable contract in `CONTEXT.md`,
+`plugins/immune-brain/skills/imm-loop/SKILL.md`, and
+`runtime/kernel/completion.ts` supersedes this completed slice's Review-verdict
+and critical-completion confirmation clauses. Fresh QA and required Review now
+settle automatically; `request_authorization` is reserved for unresolved user
+decisions and explicit stop.
+
 ## Task
 
 Deepen Pi Assurance progression and Kernel Assurance projection in one coherent

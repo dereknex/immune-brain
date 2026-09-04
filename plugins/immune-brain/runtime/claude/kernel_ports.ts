@@ -493,21 +493,16 @@ export class ClaudeRuntime {
 	}
 
 	async authorize(taskId: string, operation: string, meta: ToolMeta, extra: Record<string, unknown> = {}) {
-		if (!isPrivilegedOperation(operation) && operation !== "request_authorization") throw new Error(`unsupported privileged operation ${operation}`);
-		this.rejectBeforePreparation(operation, { ...meta, taskId });
 		if (operation === "repair_authority_state") {
 			const authority = reconcileKernelAuthority(this.cwd, taskId);
 			if (authority.state !== "repairable_stale_claim" || authority.owner_task_id !== taskId) {
 				throw new Error(authority.diagnostic ?? "authority repair requires a repairable stale claim");
 			}
-			const gate = this.gate(operation, { ...meta, taskId }, { bindingDigest: `repair:${authority.revision}` });
-			const current = reconcileKernelAuthority(this.cwd, taskId);
-			if (current.state !== authority.state || current.owner_task_id !== authority.owner_task_id || current.revision !== authority.revision) {
-				throw new Error("authority changed after native confirmation; repair aborted before capability issuance");
-			}
-			return repairKernelAuthority(this.cwd, taskId, current.revision);
+			return repairKernelAuthority(this.cwd, taskId, authority.revision);
 		}
-		let op = operation === "request_authorization" ? "record_user_approval" : operation;
+		if (!isPrivilegedOperation(operation) && operation !== "request_authorization") throw new Error(`unsupported privileged operation ${operation}`);
+		this.rejectBeforePreparation(operation, { ...meta, taskId });
+		let op = operation;
 		let decisionOp: { finding_id: string; resolution: string } | undefined;
 		const projection = await this.status(taskId);
 		if (projection.error || !projection.claim) throw new Error(projection.error ?? "no active backend claim");
@@ -524,7 +519,7 @@ export class ClaudeRuntime {
 				if (open.length !== 1) throw new Error(`resolve-user-decision requires exactly one open user decision; found ${open.length}`);
 				op = "resolve_user_decision";
 				decisionOp = { finding_id: open[0].id, resolution: `resume after literal-user decision: ${open[0].summary}` };
-			} else if (readiness.state !== "record_user_approval") {
+			} else {
 				throw new Error(readiness.blocked ?? "no unique host-derived authorization operation");
 			}
 		}
@@ -591,18 +586,6 @@ export class ClaudeRuntime {
 		}
 		const { registry, app } = this.authority();
 		const confirmation = gate.confirmation_ref;
-		const approval = op === "record_user_approval"
-			? {
-				id: `approval-user-${randomUUID().slice(0, 8)}`,
-				kind: "user" as const,
-				authority_role: "user" as const,
-				task_revision: projection.projection.intent_revision,
-				intent_content_hash: projection.projection.intent_content_hash,
-				diff_hash: projection.projection.diff_hash,
-				actor_id: actorId,
-				summary: "literal user approval",
-			}
-			: undefined;
 		try {
 			const capabilityProjection = await this.status(taskId);
 			assertProjectionBinding(projection, capabilityProjection, Boolean(nextIntent));
@@ -621,7 +604,6 @@ export class ClaudeRuntime {
 				actor_id: actorId,
 				now,
 				confirmation_ref: confirmation,
-				...(approval ? { approval } : {}),
 				...(op === "approve_breaking_intent_revision" ? { next_intent: nextIntent, next_intent_ref: nextIntentRef } : {}),
 				...(op === "resolve_user_decision" && decisionOp ? decisionOp : {}),
 				...(op === "stop" ? { reason: extra.reason ?? "user stop" } : {}),
@@ -633,7 +615,6 @@ export class ClaudeRuntime {
 					op,
 					capability,
 					actor_id: actorId,
-					...(approval ? { approval } : {}),
 					...(op === "approve_breaking_intent_revision" ? { next_intent: nextIntent, next_intent_ref: nextIntentRef } : {}),
 					...(op === "resolve_user_decision" && decisionOp ? decisionOp : {}),
 					...(op === "stop" ? { reason: extra.reason ?? "user stop" } : {}),

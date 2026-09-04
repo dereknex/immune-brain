@@ -212,9 +212,10 @@ commit rather than pretending cancellation succeeded.
 
 `request_authorization` and `/imm-canary-authorize` retain only genuinely
 privileged operations. `record-review-verdict` is removed from their legal
-operation union after the automatic path is proven. Critical final user
-approval, enrollment, drain, stop, breaking Intent revision, and unresolved
-user decisions are unchanged in this slice.
+operation union after the automatic path is proven. Enrollment, drain, stop,
+breaking Intent revision, and unresolved user decisions remain unchanged in
+that slice. Critical final user approval is now retired separately: fresh QA
+and Review settle every risk tier without a second confirmation.
 
 ## 4. Invariants
 

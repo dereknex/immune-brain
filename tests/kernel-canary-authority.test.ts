@@ -11,8 +11,9 @@ import { join } from "node:path";
 import { createHash } from "node:crypto";
 
 import {
-	createCanaryApplication,
 	beginDrainCapabilityAction,
+	capabilityActionFor,
+	createCanaryApplication,
 } from "../plugins/immune-brain/runtime/kernel/canary_application";
 import { preparePiCanary } from "../plugins/immune-brain/runtime/kernel/pi_canary_prepare";
 import { createMutationAuthorityRegistry } from "../plugins/immune-brain/runtime/kernel/authority_port";
@@ -157,6 +158,15 @@ function stopActionCapability(registry = mutationRegistryA, overrides: Record<st
 }
 
 describe("canary application authority pairing", () => {
+	test("retired final user approval is rejected", () => {
+		expect(() => capabilityActionFor({
+			op: "record_user_approval",
+			task_id: TASK,
+			at: now,
+			actor_id: "user",
+		})).toThrow(/unsupported capability action/);
+	});
+
 	test("capability from the wrong registry is rejected with zero writes", () => {
 		const foreign = stopActionCapability(mutationRegistryB);
 		expect(() =>
@@ -373,7 +383,7 @@ describe("capability action digest single-source", () => {
 		);
 		const at = "2026-08-12T10:00:00.000Z";
 		const real = (n: string) => "sha256:" + n.repeat(64);
-		for (const op of ["stop", "request_rework", "record_user_approval", "resolve_user_decision"] as const) {
+		for (const op of ["stop", "request_rework", "resolve_user_decision"] as const) {
 			const minted = capabilityActionFor({
 				op,
 				task_id: "task-x",
@@ -382,9 +392,6 @@ describe("capability action digest single-source", () => {
 				...(op === "stop" ? { reason: "literal user stop" } : {}),
 				...(op === "request_rework"
 					? { findings: [{ id: "f-1", kind: "blocking", status: "open", acceptance_id: "A1", source: "review", review_round: null, summary: "s" }] }
-					: {}),
-				...(op === "record_user_approval"
-					? { approval: { id: "a1", kind: "user", authority_role: "user", task_revision: 1, intent_content_hash: real("1"), diff_hash: real("2"), actor_id: "user", summary: "s" } }
 					: {}),
 				...(op === "resolve_user_decision"
 					? { finding_id: "f-1", resolution: "accepted" }

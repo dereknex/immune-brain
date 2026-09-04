@@ -63,7 +63,7 @@ The Work routing adapter uses the same projection. A terminal owner with no work
 
 A markerless claim is repairable only when all authoritative facts agree: the claim, TaskRecord, and immutable tombstone name the same task; the TaskRecord phase is `done` or `stopped`; the workspace owner is `null`; the tombstone phase matches; and `final_record_hash` matches the canonical TaskRecord bytes.
 
-`imm_kernel_canary` exposes `repair_authority_state` only for that exact claim task. Native TUI confirmation binds the owner projection digest. After confirmation, Kernel revalidates under its store lock, removes only the redundant workspace claim through a recoverable repair transaction, and writes an immutable repair receipt. Cancellation, non-TUI invocation, digest drift, or missing proof performs zero writes.
+`imm_kernel_canary` exposes `repair_authority_state` only for that exact claim task. Kernel revalidates under its store lock, removes only the redundant workspace claim through a recoverable repair transaction, and writes an immutable repair receipt. The operation is deterministic and opens no user confirmation. Digest drift, non-repairable state, or missing proof performs zero writes.
 
 No repair path fabricates a tombstone, terminal event, final record hash, or completion. Broader contradictions return `authority_conflict` with conflicting owner paths and the exact supported next action.
 

@@ -6,6 +6,7 @@ const SKILL_REF_RE = /skills\/([a-z][a-z0-9-]*\/SKILL\.md)/g
 const DOC_REF_RE = /(docs\/(?:specs|plans)\/[^\s)"'`\]]+\.md)/g
 const LEGACY_SPEC_RE = /(\.imm\/specs\/[^\s)"'`\]]+\.md)/g
 const RETIRED_RUNTIME_RE = /dist\/\.imm\/imm_core|\.imm\/imm_core|\.imm\/imm-plan\.py|immune_brain_runtime\.py|\.mcp\.json|list-tools/g
+const RETIRED_AUTHORITY_RE = /record-review-verdict|record-user-approval|critical.{0,80}(?:final|second).{0,40}(?:authorization|confirmation)|(?:final|second).{0,40}(?:authorization|confirmation).{0,80}critical/gi
 
 function walk(dir: string): string[] {
   const out: string[] = []
@@ -99,6 +100,9 @@ function scanRuntimeTruthFile(path: string, root: string): any[] {
   for (const [idx, line] of content.split(/\r?\n/).entries()) {
     for (const match of line.matchAll(RETIRED_RUNTIME_RE)) {
       findings.push({ file: rel, line: idx + 1, type: "retired_runtime_current_ref", ref: match[0] })
+    }
+    for (const match of line.matchAll(RETIRED_AUTHORITY_RE)) {
+      findings.push({ file: rel, line: idx + 1, type: "retired_authority_current_ref", ref: match[0] })
     }
   }
   return findings

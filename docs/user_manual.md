@@ -87,7 +87,7 @@ PR 仍通过 `imm-loop` 继续。
 1. 没有 validated Plan 时回到 `imm-planner`。
 2. Executor、QA、Review 和 Compounder 的职责由内部 role dispatch 提供，不能作为独立用户入口调用。
 3. Scope expansion 回到 `imm-planner`；不能在当前 Step 中静默扩大范围。
-4. Review authorization 和 Enrollment 是 literal-user/native TUI authority gates。
+4. Enrollment、unresolved user decision、explicit stop 与 breaking Intent revision 是 literal-user/native TUI authority gates；QA 与 Review 通过后自动 settlement。
 5. Tool result 必须返回持久化 projection 和 `next_action`，中断后从 Kernel state 恢复。
 6. 终态返回 `phase=done` 和 `next_action=none`；取消、失败和 settlement 不靠 promise resolution 推断。
 

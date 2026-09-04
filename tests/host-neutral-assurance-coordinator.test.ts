@@ -143,7 +143,7 @@ function makeCoordinator(overrides: {
 			} else if (input.snapshot.role === "qa") {
 				nextObligation = risk === "routine" ? "complete" : "run_review";
 			} else {
-				nextObligation = risk === "critical" ? "authorize_user" : "complete";
+				nextObligation = "complete";
 			}
 			await input.hooks?.afterCommit?.();
 		},
@@ -174,15 +174,12 @@ describe("host-neutral assurance coordinator", () => {
 		expect(h.counts().applyCount).toBe(2);
 	});
 
-	test("critical Review leaves only user authorization", async () => {
+	test("critical Review completes without a second user authorization", async () => {
 		const host = new FakeReviewHost();
 		const h = makeCoordinator({ risk: "critical", host });
 		const ready = await h.coordinator.advance(TASK, ctx);
 		expect(ready.state).toBe("review_ready");
-		expect(await h.coordinator.submitReview(TASK, ctx, passVerdict(snapshot("review")))).toMatchObject({
-			state: "awaiting_user",
-			operation: "record-user-approval",
-		});
+		expect(await h.coordinator.submitReview(TASK, ctx, passVerdict(snapshot("review")))).toEqual({ state: "completed" });
 		expect(h.counts().applyCount).toBe(2);
 	});
 

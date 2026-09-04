@@ -18,6 +18,7 @@ import { createMutationAuthorityRegistry } from "../plugins/immune-brain/runtime
 import { readTaskIntent } from "../plugins/immune-brain/runtime/kernel/intent";
 import { confirmationRef, evaluateNativeGate } from "../plugins/immune-brain/runtime/claude/interaction";
 import { probeHost } from "../plugins/immune-brain/runtime/claude/capability";
+import { PLUGIN_VERSION } from "../plugins/immune-brain/runtime/plugin_version";
 
 const TASK = "phase3-task";
 const ROOT = "/tmp/claude-host-authority";
@@ -26,7 +27,7 @@ const ENV = { CLAUDE_CODE_VERSION: "2.1.236", CLAUDE_CODE_PERMISSION_MODE: "manu
 
 function projection(
 	lifecycle: "active" | "done" | "stopped" = "active",
-	nextObligation: "run_qa" | "run_review" | "complete" | "authorize_user" | "none" = "run_qa",
+	nextObligation: "run_qa" | "run_review" | "complete" | "none" = "run_qa",
 	risk: "routine" | "material" | "critical" = "material",
 	artifactState: "active" | "frozen" = "frozen",
 ) {
@@ -150,7 +151,7 @@ function makeCoordinator(overrides: {
 	const risk = overrides.risk ?? "material";
 	let currentLifecycle: "active" | "done" | "stopped" = "active";
 	let artifactState: "active" | "frozen" = "frozen";
-	let nextObligation: "run_qa" | "run_review" | "complete" | "authorize_user" | "none" = "run_qa";
+	let nextObligation: "run_qa" | "run_review" | "complete" | "none" = "run_qa";
 	const host = overrides.host ?? new ClaudeReviewHost();
 	const ports: AssuranceCoordinatorPorts = {
 		host,
@@ -178,7 +179,7 @@ function makeCoordinator(overrides: {
 			} else if (input.snapshot.role === "qa") {
 				nextObligation = risk === "routine" ? "complete" : "run_review";
 			} else {
-				nextObligation = risk === "critical" ? "authorize_user" : "complete";
+				nextObligation = "complete";
 			}
 			await input.hooks?.afterCommit?.();
 		},
@@ -206,13 +207,14 @@ async function submitObservedReview(
 }
 
 describe("claude host authority", () => {
-	test("privileged MCP tools declare mandatory interaction", () => {
+	test("only user decisions declare mandatory interaction", () => {
 		const tools = listMcpTools();
-		for (const name of ["enroll", "request_authorization", "approve_breaking_intent_revision", "stop", "repair_authority_state"]) {
+		for (const name of ["enroll", "request_authorization", "approve_breaking_intent_revision", "stop"]) {
 			expect(tools.find((tool) => tool.name === name)?.annotations).toMatchObject({
 				"anthropic/requiresUserInteraction": true,
 			});
 		}
+		expect(tools.find((tool) => tool.name === "repair_authority_state")?.annotations).not.toHaveProperty("anthropic/requiresUserInteraction");
 		expect(tools.find((tool) => tool.name === "status")?.annotations).not.toHaveProperty("anthropic/requiresUserInteraction");
 		const submitReview = tools.find((tool) => tool.name === "submit_review");
 		expect(submitReview?.inputSchema.required).toEqual(["task_id", "verdict"]);
@@ -636,7 +638,8 @@ describe("claude host authority", () => {
 		}, foreign);
 		expect(JSON.stringify(denied)).toContain("non-interactive host session cannot mint authority");
 		// Read-only status remains usable without trusted Host evidence.
-		await expect(foreign.callTool("status", { task_id: TASK })).resolves.toBeDefined();
+		const status = await foreign.callTool("status", { task_id: TASK });
+		expect(status).toMatchObject({ plugin_version: PLUGIN_VERSION });
 		expect(h.counts().applyCount).toBe(0);
 	});
 
@@ -815,7 +818,7 @@ describe("claude host authority", () => {
 		expect(source).not.toContain("requiresUserInteraction ? \"accept\"");
 		expect(source).toContain("repairKernelAuthority");
 		expect(source).toContain("canonicalIntentHash");
-		expect(source).toContain("approval-user-");
+		expect(source).not.toContain("approval-user-");
 		expect(source).toContain("next_intent_ref");
 		const mcpSource = readFileSync(resolve("plugins/immune-brain/runtime/claude/mcp_server.ts"), "utf8");
 		expect(mcpSource).not.toContain("takeConfirmation");

@@ -75,8 +75,10 @@ Host agent 直接完成 explanation、inspection 或 review，不创建 workflow
 3. Parent 在前台调用一次 `imm_canary_enrollment` Tool，并直接消费 terminal result。Tool 通过 host-native `onUpdate`/`renderResult` 展示有界 stage，不写 Footer、不创建 Widget，也不要求轮询。Enrollment 只校验 TaskIntent、Git ownership、scope、workspace claim 与最终 authority 原子提交前提；acceptance descriptors 只在后置 QA 执行。Escape/host cancellation 是唯一的 pre-commit cancellation path；commit owner 建立后 settlement 不可取消。
 4. Agent 在当前 owner 和当前用户选择的 worktree 内连续实现，并用 `git add -- <exact task paths>` 显式声明 task-owned `HEAD -> index` snapshot；禁止在 dirty worktree 使用 bulk staging。
 5. `advance_assurance` 冻结 planning artifacts，并由 host deterministic QA 在当前 worktree 运行 acceptance descriptors；Kernel 在一个 mutation 内写入 QA attestation 与全部 acceptance results。timeout、输出上限、取消和进程树终止仍 fail closed。
-6. `routine` 在 QA 后完成；`material` 追加单一 host native Review 后自动完成；`critical` 在 QA 与 Review 后通过 `request_authorization` 要求 literal-user final authorization。
+6. `routine` 在 QA 后完成；`material` 与 `critical` 追加单一 host native Review，Review 通过后自动完成。
 7. completion predicate 满足后，Kernel 将 `lifecycle` 转为 `done` 并释放 owner。
+
+只有 projection 暴露唯一 unresolved user decision 时，Parent 才调用 `request_authorization`。显式 stop 与 breaking Intent revision 使用各自的单次 native authority gate；QA、Review 和 normal completion 不经过该入口。
 
 Immune-Brain 不创建、切换或删除 Git worktree。需要文件系统隔离时，用户应在启动 Pi 或 Enrollment 前自行创建并进入 worktree；主工作区仍可直接使用。由于 TaskRecord 与 workspace claim 是 worktree-local，任务结算前必须保留该 worktree。
 

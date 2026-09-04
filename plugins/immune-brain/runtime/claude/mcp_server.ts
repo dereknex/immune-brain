@@ -2,6 +2,7 @@ import { createInterface } from "node:readline";
 import { stdin, stdout } from "node:process";
 import type { Readable, Writable } from "node:stream";
 import { CORE_CONTRACT, HOST_ID, MIN_CLAUDE_CODE_VERSION, probeHost } from "./capability";
+import { PLUGIN_VERSION } from "../plugin_version";
 import { isPrivilegedOperation, privilegedAnnotations, type NativeDecision } from "./interaction";
 import { ClaudeReviewHost, FileHookEventLog, parseHookStdin } from "./review_host";
 import { ClaudeRuntime, type ToolMeta } from "./kernel_ports";
@@ -15,7 +16,7 @@ export const TOOLS = [
 	{ name: "request_authorization", description: "Apply exact literal-user authorization.", privileged: true },
 	{ name: "approve_breaking_intent_revision", description: "Approve a breaking TaskIntent revision.", privileged: true },
 	{ name: "stop", description: "Stop the active task with literal-user authority.", privileged: true },
-	{ name: "repair_authority_state", description: "Repair a recoverable stale backend claim.", privileged: true },
+	{ name: "repair_authority_state", description: "Repair a proven recoverable stale backend claim.", privileged: false },
 ] as const;
 
 export function listMcpTools() {
@@ -75,16 +76,14 @@ export function createMcpRuntime(options: McpRuntimeOptions = {}) {
 			if ("native_decision" in args) throw new Error("native_decision cannot be supplied in tool arguments");
 			// Read-only status must stay usable without trusted Host evidence, so it
 			// is dispatched before the capability probe rejects unversioned hosts.
-			if (name === "status") return runtime.status(taskId);
+			if (name === "status") return { plugin_version: PLUGIN_VERSION, ...(await runtime.status(taskId)) };
 			// The environment version fallback is disabled on this connection:
 			// only a version bound from the trusted initialize handshake may
 			// reach authority-mutating tools.
 			if (!negotiatedVersion) throw new Error("Claude Code version is unavailable");
-			// Every authority-mutating tool requires the handshake to have
-			// declared elicitation support: only read-only status works on
-			// non-interactive sessions, so QA/review/completion cannot mutate
-			// Kernel state without native interaction capability.
-			if (!negotiatedInteractive) throw new Error("non-interactive host session cannot execute authority tools");
+			// Automatic stale-claim repair is deterministic and needs no native
+			// interaction; other mutations retain the Host capability requirement.
+			if (!negotiatedInteractive && name !== "repair_authority_state") throw new Error("non-interactive host session cannot execute authority tools");
 			const probe = probeHost(options.env ?? process.env, process.platform, negotiatedVersion);
 			if (!probe.ok) throw new Error(probe.reason);
 			const toolMeta: ToolMeta = {
@@ -168,7 +167,12 @@ export async function handleJsonRpc(message: JsonRpc, mcp = createMcpRuntime()):
 			id: message.id ?? null,
 			result: {
 				protocolVersion: "2024-11-05",
-				serverInfo: { name: HOST_ID, version: MIN_CLAUDE_CODE_VERSION, contract: CORE_CONTRACT },
+				serverInfo: {
+					name: HOST_ID,
+					version: PLUGIN_VERSION,
+					contract: CORE_CONTRACT,
+					minimumHostVersion: MIN_CLAUDE_CODE_VERSION,
+				},
 				capabilities: { tools: {} },
 			},
 		};

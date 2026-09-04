@@ -54,7 +54,7 @@ describe("Kernel assurance obligations", () => {
 	test.each([
 		["routine", ["qa"], "complete"],
 		["material", ["qa"], "run_review"],
-		["critical", ["qa", "review"], "authorize_user"],
+		["critical", ["qa", "review"], "complete"],
 	] as const)("%s risk derives %s", (risk, approvals, expected) => {
 		const [intent, record] = fixture(risk, [...approvals]);
 		expect(projectTask(intent, record, DIFF, record.intent_ref.content_hash).next_obligation).toBe(expected);
@@ -92,11 +92,11 @@ describe("Kernel assurance obligations", () => {
 		).toBe("run_review");
 	});
 
-	test("declared critical raises Review without a listed path", () => {
+	test("declared critical raises Review without requiring final user authorization", () => {
 		const [intent, record] = fixture("critical", ["qa", "review"]);
 		expect(
 			projectTask(intent, record, DIFF, record.intent_ref.content_hash, ["src/app.ts"]).next_obligation,
-		).toBe("authorize_user");
+		).toBe("complete");
 	});
 
 	test("declared routine cannot suppress a listed path", () => {

@@ -138,7 +138,7 @@ export function makeAssuranceHarness(overrides: Partial<{
 			} else if (input.snapshot.role === "qa") {
 				nextObligation = risk === "routine" ? "complete" : "run_review";
 			} else {
-				nextObligation = risk === "critical" ? "authorize_user" : "complete";
+				nextObligation = "complete";
 			}
 			await input.hooks?.afterCommit?.();
 		}),

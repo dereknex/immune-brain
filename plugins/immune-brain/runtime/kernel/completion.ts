@@ -12,7 +12,7 @@ import { assertKernelInvariantsV3, KernelInvariantError } from "./validation";
 const REQUIRED_ATTESTATIONS: Record<TaskIntentV1["risk"], ApprovalKind[]> = {
 	routine: ["qa"],
 	material: ["qa", "review"],
-	critical: ["qa", "review", "user"],
+	critical: ["qa", "review"],
 };
 
 function archiveActivePlanningPath(path: string): string | null {
@@ -199,8 +199,6 @@ export function projectTask(
 			nextObligation = "run_qa";
 		} else if (decision.missing_approval_kinds.includes("review")) {
 			nextObligation = "run_review";
-		} else if (decision.missing_approval_kinds.includes("user")) {
-			nextObligation = "authorize_user";
 		} else if (decision.complete) {
 			nextObligation = "complete";
 		}

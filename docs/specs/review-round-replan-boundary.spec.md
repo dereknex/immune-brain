@@ -80,8 +80,8 @@ may be authored after stop, but this state machine does not create or enroll it.
 - Reviewer findings remain durable and preserve their Review round.
 - Historical `unresolved_user_decision` findings remain readable and retain the
   `resolve_user_decision` authority path.
-- Routine and material tasks add no user stop after successful Assurance;
-  critical tasks still require final user approval.
+- Successful Assurance adds no user stop or final approval for any risk tier;
+  critical tasks complete after fresh QA and Review.
 
 ## Verification
 

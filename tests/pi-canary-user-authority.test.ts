@@ -216,9 +216,6 @@ describe("pi canary user authority", () => {
 			readiness: { state: "resolve_user_decision", blocked: null },
 		})).toEqual({ operation: "resolve-user-decision" });
 		expect(deriveAuthorizationOperation({
-			readiness: { state: "record_user_approval", blocked: null },
-		})).toEqual({ operation: "record-user-approval" });
-		expect(deriveAuthorizationOperation({
 			readiness: { state: "none", blocked: null },
 			hasOpenReplanRequired: true,
 		})).toEqual({ operation: "stop" });

@@ -51,7 +51,6 @@ export type CanaryOperation =
 	| { op: "resolve_finding"; finding_id: string; actor_id: string }
 	| { op: "request_rework"; capability: object; findings: TaskFinding[]; actor_id: string }
 	| { op: "record_approval"; capability: object; approval: TaskApprovalV2; actor_id: string }
-	| { op: "record_user_approval"; capability: object; approval: TaskApprovalV2; actor_id: string }
 	| { op: "revise_intent"; next_intent: TaskIntentV1; actor_id: string }
 	| { op: "approve_breaking_intent_revision"; capability: object; next_intent: TaskIntentV1; actor_id: string }
 	| { op: "complete"; actor_id: string }
@@ -140,8 +139,6 @@ export function capabilityActionFor(input: {
 	};
 	switch (input.op) {
 		case "record_approval":
-			return { ...base, approval: input.approval } as TaskAction;
-		case "record_user_approval":
 			return { ...base, approval: input.approval } as TaskAction;
 		case "request_rework":
 			return { ...base, findings: input.findings } as TaskAction;
@@ -372,10 +369,6 @@ export function createCanaryApplication(
 			case "record_approval":
 				capability = operation.capability;
 				action = { ...base, type: "record_approval", approval: operation.approval };
-				break;
-			case "record_user_approval":
-				capability = operation.capability;
-				action = { ...base, type: "record_user_approval", approval: operation.approval };
 				break;
 			case "revise_intent":
 				action = {

@@ -176,7 +176,6 @@ function intentRefMatches(intent: TaskIntentV1, ref: TaskIntentRefV3): boolean {
 function hasPrivilegedKind(action: TaskAction): boolean {
 	return (
 		action.type === "record_approval" ||
-		action.type === "record_user_approval" ||
 		action.type === "approve_breaking_intent_revision" ||
 		action.type === "request_rework" ||
 		action.type === "stop" ||
@@ -371,36 +370,6 @@ export function reduceTask(
 					: [],
 				...(storedReviewRevision ? { review_revision: storedReviewRevision } : {}),
 			});
-			appendHistory(record, action, from, approval.id, authorityAudit);
-			break;
-		}
-		case "record_user_approval": {
-			if (record.lifecycle !== "active" || record.artifact_state !== "frozen")
-				throw new KernelInvariantError([
-					`cannot record user approval while state is ${stateOf(record)}`,
-				]);
-			const approval = action.approval;
-			if (approval.kind !== "user")
-				throw new KernelInvariantError([
-					"record_user_approval requires kind user",
-				]);
-			if (!authorityAudit || authorityAudit.authority_kind !== "user")
-				throw new KernelInvariantError([
-					"record_user_approval requires user authority",
-				]);
-			if (approval.task_revision !== record.intent_snapshot.revision)
-				throw new KernelInvariantError(["approval task_revision must equal the current intent revision"]);
-			if (approval.intent_content_hash !== record.intent_ref.content_hash)
-				throw new KernelInvariantError(["approval intent_content_hash must equal the current intent hash"]);
-			if (approval.diff_hash !== diffHash)
-				throw new KernelInvariantError(["approval diff_hash must equal the action diff hash"]);
-			if (record.attestations.some((item) => item.id === approval.id))
-				throw new KernelInvariantError([
-					`attestations contains duplicate id ${approval.id}`,
-				]);
-			if (approval.review_revision)
-				throw new KernelInvariantError(["review_revision is only valid on review approvals"]);
-			record.attestations.push({ ...approval, acceptance_results: [] });
 			appendHistory(record, action, from, approval.id, authorityAudit);
 			break;
 		}

@@ -14,7 +14,7 @@ Immune-Brain adds a structured engineering workflow on top of Pi:
 - **Plans become trackable tasks** (`TaskIntent` + `TaskRecord`) so progress survives across sessions, not just chat history.
 - **Quality is enforced by code, not promises** — automated QA and isolated review must pass before a task is marked done.
 
-Pi and Claude Code are the supported hosts. Undeclared adapters remain unsupported. Minimum Claude Code is `2.1.199`. Real Host evidence lives in [docs/verification/claude-code-host-conformance.md](docs/verification/claude-code-host-conformance.md). Either host can use the model provider you configure — Immune-Brain works on top of Kernel authority, not a vendor chat.
+Pi and Claude Code are the supported hosts. Undeclared adapters remain unsupported. Minimum Claude Code is `2.1.199`. Historical real-Host evidence is archived under [docs/verification/archive/](docs/verification/archive/); deterministic package and authority checks gate current releases. Either host can use the model provider you configure — Immune-Brain works on top of Kernel authority, not a vendor chat.
 
 ---
 

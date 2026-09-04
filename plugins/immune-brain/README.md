@@ -135,8 +135,9 @@ Active TaskRecord v2 owners are upgraded once, only when their backend claim,
 workspace ownership, record snapshot, and Git-tracked TaskIntent sidecar agree.
 Terminal v2 records remain read-only historical evidence. Every risk tier runs
 host-attested deterministic QA; `material` and `critical` add native Review,
-and only `critical` requires final literal-user authorization through the
-`imm_kernel_canary` `request_authorization` foreground Tool action.
+then settle without a generic final confirmation. User authority is reserved
+for unresolved decisions, explicit stop, and breaking Intent revisions;
+proven stale claims repair deterministically without user interaction.
 
 ## Development
 

@@ -125,7 +125,7 @@ describe("completionDecision v3", () => {
 		expect(diffDrift.stale_attestation_ids).toEqual(["ap-qa"]);
 	});
 
-	test("critical requires QA, Review, and User attestations", () => {
+	test("critical requires QA and Review attestations", () => {
 		const criticalIntent = parseTaskIntentV1({ ...INTENT, risk: "critical" });
 		const criticalHash = canonicalIntentHash(criticalIntent);
 		const bound = (value: Record<string, unknown>) => ({ ...value, intent_content_hash: criticalHash });
@@ -134,9 +134,9 @@ describe("completionDecision v3", () => {
 			intent_ref: { path: "docs/plans/archive/123-short-goal.intent.json", content_hash: criticalHash },
 			attestations: items,
 		}));
-		const qaAndUser = criticalRecord([bound(attestation("qa")), bound(attestation("user"))]);
-		expect(completionDecision(criticalIntent, qaAndUser, CURRENT_DIFF, criticalHash).missing_approval_kinds).toEqual(["review"]);
-		const ready = criticalRecord([bound(attestation("qa")), bound(attestation("review")), bound(attestation("user"))]);
+		const qaOnly = criticalRecord([bound(attestation("qa"))]);
+		expect(completionDecision(criticalIntent, qaOnly, CURRENT_DIFF, criticalHash).missing_approval_kinds).toEqual(["review"]);
+		const ready = criticalRecord([bound(attestation("qa")), bound(attestation("review"))]);
 		expect(completionDecision(criticalIntent, ready, CURRENT_DIFF, criticalHash).complete).toBe(true);
 	});
 

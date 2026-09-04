@@ -52,14 +52,16 @@ function probeHost(env = process.env, platform = process.platform, hostVersion) 
   return { ok: true, version, permissionMode: "manual", platform };
 }
 
+// plugins/immune-brain/runtime/plugin_version.ts
+var PLUGIN_VERSION = "3.2.2";
+
 // plugins/immune-brain/runtime/claude/interaction.ts
 import { createHash, randomUUID } from "node:crypto";
 var PRIVILEGED_OPERATIONS = [
   "enroll",
   "request_authorization",
   "approve_breaking_intent_revision",
-  "stop",
-  "repair_authority_state"
+  "stop"
 ];
 function isPrivilegedOperation(operation) {
   return PRIVILEGED_OPERATIONS.includes(operation);
@@ -1484,8 +1486,6 @@ class AssuranceCoordinator {
           return this.unknownAfterCommit(taskId, "qa", operationId, boundedAssuranceError(error));
         }
       }
-      if (projection.projection.next_obligation === "authorize_user")
-        return { state: "awaiting_user", operation: "record-user-approval", operation_id: operationId };
       if (projection.projection.next_obligation !== "run_qa" && projection.projection.next_obligation !== "run_review")
         return { state: "blocked", reason: `Kernel requires ${projection.projection.next_obligation}` };
       const qaAlreadySettled = projection.projection.next_obligation === "run_review";
@@ -1583,8 +1583,6 @@ class AssuranceCoordinator {
           return this.unknownAfterCommit(taskId, "qa", operationId, boundedAssuranceError(error));
         }
       }
-      if (fresh.projection.next_obligation === "authorize_user")
-        return { state: "awaiting_user", operation: "record-user-approval", operation_id: operationId };
       if (fresh.projection.next_obligation !== "run_review") {
         if (authorityCommitted && aborted())
           return this.unknownAfterCommit(taskId, "qa", operationId, "QA settlement projection did not require Review after cancellation");
@@ -1747,8 +1745,6 @@ class AssuranceCoordinator {
         return this.unknownAfterCommit(taskId, "review", reservation.operationId, boundedAssuranceError(error));
       }
     }
-    if (settled.projection.next_obligation === "authorize_user")
-      return { state: "awaiting_user", operation: "record-user-approval", operation_id: reservation.operationId };
     return { state: "blocked", reason: `Kernel requires ${settled.projection.next_obligation} after Review` };
   }
   abandonReview(taskId, reason) {
@@ -3633,7 +3629,6 @@ var ACTION_V2_TYPES = [
   "record_finding",
   "resolve_finding",
   "record_approval",
-  "record_user_approval",
   "revise_intent",
   "approve_breaking_intent_revision",
   "request_rework",
@@ -3696,8 +3691,7 @@ function parseTaskAction(raw) {
       };
       break;
     }
-    case "record_approval":
-    case "record_user_approval": {
+    case "record_approval": {
       rejectUnknown2(value, [...ACTION_BASE_FIELDS, "approval"], "action", violations);
       const approval = parseApprovalV2(value.approval, 0, violations, true);
       if (approval.review_revision && approval.kind !== "review")
@@ -4904,7 +4898,7 @@ function commitTerminalLocked(root, taskId, transaction, tombstone) {
 var REQUIRED_ATTESTATIONS = {
   routine: ["qa"],
   material: ["qa", "review"],
-  critical: ["qa", "review", "user"]
+  critical: ["qa", "review"]
 };
 function archiveActivePlanningPath(path) {
   const matched = path.match(/^docs\/(plans|specs)\/([^/]+)$/);
@@ -5009,8 +5003,6 @@ function projectTask(intent, record, currentDiffHash, currentIntentContentHash, 
       nextObligation = "run_qa";
     } else if (decision.missing_approval_kinds.includes("review")) {
       nextObligation = "run_review";
-    } else if (decision.missing_approval_kinds.includes("user")) {
-      nextObligation = "authorize_user";
     } else if (decision.complete) {
       nextObligation = "complete";
     }
@@ -5036,8 +5028,6 @@ function deriveAssuranceAuthorization(input) {
       state: "none",
       blocked: `resolve-user-decision requires exactly one open user decision; found ${input.open_user_decision_count}`
     };
-  if (input.next_obligation === "authorize_user")
-    return { state: "record_user_approval", blocked: null };
   return { state: "none", blocked: null };
 }
 function emptyProjection() {
@@ -5288,7 +5278,7 @@ function intentRefMatches(intent, ref) {
   return ref.path === `docs/plans/${intent.task_id}.intent.json` && ref.content_hash === canonicalIntentHash(intent);
 }
 function hasPrivilegedKind(action) {
-  return action.type === "record_approval" || action.type === "record_user_approval" || action.type === "approve_breaking_intent_revision" || action.type === "request_rework" || action.type === "stop" || action.type === "resolve_user_decision";
+  return action.type === "record_approval" || action.type === "approve_breaking_intent_revision" || action.type === "request_rework" || action.type === "stop" || action.type === "resolve_user_decision";
 }
 function findingsDigestV2(findings) {
   const normalized = findings.map((finding) => ({
@@ -5437,36 +5427,6 @@ function reduceTask(recordRaw, actionRaw, authorityAudit = null, changedPaths) {
         })) : [],
         ...storedReviewRevision ? { review_revision: storedReviewRevision } : {}
       });
-      appendHistory(record, action, from, approval.id, authorityAudit);
-      break;
-    }
-    case "record_user_approval": {
-      if (record.lifecycle !== "active" || record.artifact_state !== "frozen")
-        throw new KernelInvariantError([
-          `cannot record user approval while state is ${stateOf(record)}`
-        ]);
-      const approval = action.approval;
-      if (approval.kind !== "user")
-        throw new KernelInvariantError([
-          "record_user_approval requires kind user"
-        ]);
-      if (!authorityAudit || authorityAudit.authority_kind !== "user")
-        throw new KernelInvariantError([
-          "record_user_approval requires user authority"
-        ]);
-      if (approval.task_revision !== record.intent_snapshot.revision)
-        throw new KernelInvariantError(["approval task_revision must equal the current intent revision"]);
-      if (approval.intent_content_hash !== record.intent_ref.content_hash)
-        throw new KernelInvariantError(["approval intent_content_hash must equal the current intent hash"]);
-      if (approval.diff_hash !== diffHash)
-        throw new KernelInvariantError(["approval diff_hash must equal the action diff hash"]);
-      if (record.attestations.some((item) => item.id === approval.id))
-        throw new KernelInvariantError([
-          `attestations contains duplicate id ${approval.id}`
-        ]);
-      if (approval.review_revision)
-        throw new KernelInvariantError(["review_revision is only valid on review approvals"]);
-      record.attestations.push({ ...approval, acceptance_results: [] });
       appendHistory(record, action, from, approval.id, authorityAudit);
       break;
     }
@@ -5706,7 +5666,7 @@ function applyTaskAction(input) {
           "intent token does not match the committed record intent"
         ]);
     }
-    const privileged = action.type === "record_approval" || action.type === "record_user_approval" || action.type === "approve_breaking_intent_revision" || action.type === "request_rework" || action.type === "stop" || action.type === "resolve_user_decision";
+    const privileged = action.type === "record_approval" || action.type === "approve_breaking_intent_revision" || action.type === "request_rework" || action.type === "stop" || action.type === "resolve_user_decision";
     const expectedAuthority = privileged ? {
       task_id,
       action,
@@ -5827,8 +5787,6 @@ function capabilityActionFor(input) {
   };
   switch (input.op) {
     case "record_approval":
-      return { ...base, approval: input.approval };
-    case "record_user_approval":
       return { ...base, approval: input.approval };
     case "request_rework":
       return { ...base, findings: input.findings };
@@ -6013,10 +5971,6 @@ function createCanaryApplication(registry) {
       case "record_approval":
         capability = operation.capability;
         action = { ...base, type: "record_approval", approval: operation.approval };
-        break;
-      case "record_user_approval":
-        capability = operation.capability;
-        action = { ...base, type: "record_user_approval", approval: operation.approval };
         break;
       case "revise_intent":
         action = {
@@ -6914,22 +6868,17 @@ class ClaudeRuntime {
     return submitClaudeReview(this.host, this.coordinator, { cwd: this.cwd }, taskId, verdictInput);
   }
   async authorize(taskId, operation, meta, extra = {}) {
-    if (!isPrivilegedOperation(operation) && operation !== "request_authorization")
-      throw new Error(`unsupported privileged operation ${operation}`);
-    this.rejectBeforePreparation(operation, { ...meta, taskId });
     if (operation === "repair_authority_state") {
       const authority = reconcileKernelAuthority(this.cwd, taskId);
       if (authority.state !== "repairable_stale_claim" || authority.owner_task_id !== taskId) {
         throw new Error(authority.diagnostic ?? "authority repair requires a repairable stale claim");
       }
-      const gate2 = this.gate(operation, { ...meta, taskId }, { bindingDigest: `repair:${authority.revision}` });
-      const current = reconcileKernelAuthority(this.cwd, taskId);
-      if (current.state !== authority.state || current.owner_task_id !== authority.owner_task_id || current.revision !== authority.revision) {
-        throw new Error("authority changed after native confirmation; repair aborted before capability issuance");
-      }
-      return repairKernelAuthority(this.cwd, taskId, current.revision);
+      return repairKernelAuthority(this.cwd, taskId, authority.revision);
     }
-    let op = operation === "request_authorization" ? "record_user_approval" : operation;
+    if (!isPrivilegedOperation(operation) && operation !== "request_authorization")
+      throw new Error(`unsupported privileged operation ${operation}`);
+    this.rejectBeforePreparation(operation, { ...meta, taskId });
+    let op = operation;
     let decisionOp;
     const projection = await this.status(taskId);
     if (projection.error || !projection.claim)
@@ -6943,7 +6892,7 @@ class ClaudeRuntime {
           throw new Error(`resolve-user-decision requires exactly one open user decision; found ${open.length}`);
         op = "resolve_user_decision";
         decisionOp = { finding_id: open[0].id, resolution: `resume after literal-user decision: ${open[0].summary}` };
-      } else if (readiness.state !== "record_user_approval") {
+      } else {
         throw new Error(readiness.blocked ?? "no unique host-derived authorization operation");
       }
     }
@@ -7010,16 +6959,6 @@ class ClaudeRuntime {
     }
     const { registry, app } = this.authority();
     const confirmation = gate.confirmation_ref;
-    const approval = op === "record_user_approval" ? {
-      id: `approval-user-${randomUUID5().slice(0, 8)}`,
-      kind: "user",
-      authority_role: "user",
-      task_revision: projection.projection.intent_revision,
-      intent_content_hash: projection.projection.intent_content_hash,
-      diff_hash: projection.projection.diff_hash,
-      actor_id: actorId,
-      summary: "literal user approval"
-    } : undefined;
     try {
       const capabilityProjection = await this.status(taskId);
       assertProjectionBinding(projection, capabilityProjection, Boolean(nextIntent));
@@ -7038,7 +6977,6 @@ class ClaudeRuntime {
         actor_id: actorId,
         now,
         confirmation_ref: confirmation,
-        ...approval ? { approval } : {},
         ...op === "approve_breaking_intent_revision" ? { next_intent: nextIntent, next_intent_ref: nextIntentRef } : {},
         ...op === "resolve_user_decision" && decisionOp ? decisionOp : {},
         ...op === "stop" ? { reason: extra.reason ?? "user stop" } : {}
@@ -7050,7 +6988,6 @@ class ClaudeRuntime {
           op,
           capability,
           actor_id: actorId,
-          ...approval ? { approval } : {},
           ...op === "approve_breaking_intent_revision" ? { next_intent: nextIntent, next_intent_ref: nextIntentRef } : {},
           ...op === "resolve_user_decision" && decisionOp ? decisionOp : {},
           ...op === "stop" ? { reason: extra.reason ?? "user stop" } : {}
@@ -7194,7 +7131,7 @@ var TOOLS = [
   { name: "request_authorization", description: "Apply exact literal-user authorization.", privileged: true },
   { name: "approve_breaking_intent_revision", description: "Approve a breaking TaskIntent revision.", privileged: true },
   { name: "stop", description: "Stop the active task with literal-user authority.", privileged: true },
-  { name: "repair_authority_state", description: "Repair a recoverable stale backend claim.", privileged: true }
+  { name: "repair_authority_state", description: "Repair a proven recoverable stale backend claim.", privileged: false }
 ];
 function listMcpTools() {
   return TOOLS.map((tool) => ({
@@ -7242,10 +7179,10 @@ function createMcpRuntime(options = {}) {
       if ("native_decision" in args)
         throw new Error("native_decision cannot be supplied in tool arguments");
       if (name === "status")
-        return runtime.status(taskId);
+        return { plugin_version: PLUGIN_VERSION, ...await runtime.status(taskId) };
       if (!negotiatedVersion)
         throw new Error("Claude Code version is unavailable");
-      if (!negotiatedInteractive)
+      if (!negotiatedInteractive && name !== "repair_authority_state")
         throw new Error("non-interactive host session cannot execute authority tools");
       const probe = probeHost(options.env ?? process.env, process.platform, negotiatedVersion);
       if (!probe.ok)
@@ -7306,7 +7243,12 @@ async function handleJsonRpc(message, mcp = createMcpRuntime()) {
       id: message.id ?? null,
       result: {
         protocolVersion: "2024-11-05",
-        serverInfo: { name: HOST_ID, version: MIN_CLAUDE_CODE_VERSION, contract: CORE_CONTRACT },
+        serverInfo: {
+          name: HOST_ID,
+          version: PLUGIN_VERSION,
+          contract: CORE_CONTRACT,
+          minimumHostVersion: MIN_CLAUDE_CODE_VERSION
+        },
         capabilities: { tools: {} }
       }
     };

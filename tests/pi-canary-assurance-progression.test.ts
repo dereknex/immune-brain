@@ -277,14 +277,11 @@ describe("foreground assurance progression", () => {
 		expect(duplicate).toMatchObject({ state: "blocked" });
 	});
 
-	test("critical Review settles reviewer authority and leaves only user approval", async () => {
+	test("critical Review settles and completes without final user approval", async () => {
 		const h = makeHarness({ risk: "critical" });
 		const ready = await h.progression.advance(TASK, ctx);
 		expect(ready.state).toBe("review_ready");
-		expect(await h.progression.submitReview(TASK, ctx, passVerdict(snapshot("review")))).toMatchObject({
-			state: "awaiting_user",
-			operation: "record-user-approval",
-		});
+		expect(await h.progression.submitReview(TASK, ctx, passVerdict(snapshot("review")))).toEqual({ state: "completed" });
 		expect(h.counts().applyCount).toBe(2);
 	});
 
