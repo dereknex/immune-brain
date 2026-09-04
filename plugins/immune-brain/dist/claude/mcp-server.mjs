@@ -2,11 +2,12 @@ import { createRequire } from "node:module";
 var __require = /* @__PURE__ */ createRequire(import.meta.url);
 
 // plugins/immune-brain/runtime/claude/mcp_server.ts
+import { randomUUID as randomUUID6 } from "node:crypto";
 import { createInterface } from "node:readline";
 import { stdin, stdout } from "node:process";
 
 // plugins/immune-brain/runtime/claude/capability.ts
-var MIN_CLAUDE_CODE_VERSION = "2.1.199";
+var MIN_CLAUDE_CODE_VERSION = "2.1.236";
 var HOST_ID = "claude-code";
 var CORE_CONTRACT = "assurance_kernel/host_adapter/claude-code/v1";
 function parseSemver(value) {
@@ -21,11 +22,6 @@ function compareSemver(left, right) {
   if (!a || !b)
     throw new Error(`invalid semver: ${!a ? left : right}`);
   return a[0] - b[0] || a[1] - b[1] || a[2] - b[2];
-}
-function parsePermissionMode(raw) {
-  if (raw === "manual" || raw === "acceptEdits" || raw === "auto" || raw === "bypassPermissions" || raw === "dontAsk")
-    return raw;
-  return null;
 }
 function probeHost(env = process.env, platform = process.platform, hostVersion) {
   const version = hostVersion ?? env.CLAUDE_CODE_VERSION ?? env.CLAUDE_CLI_VERSION;
@@ -42,14 +38,7 @@ function probeHost(env = process.env, platform = process.platform, hostVersion) 
   if (platform !== "darwin" && platform !== "linux") {
     return { ok: false, reason: `unsupported platform ${platform}; native Windows is out of scope` };
   }
-  const rawPermissionMode = env.CLAUDE_CODE_PERMISSION_MODE;
-  if (rawPermissionMode !== undefined && rawPermissionMode !== "") {
-    const permissionMode = parsePermissionMode(rawPermissionMode);
-    if (!permissionMode)
-      return { ok: false, reason: `unsupported permission mode ${rawPermissionMode}` };
-    return { ok: true, version, permissionMode, platform };
-  }
-  return { ok: true, version, permissionMode: "manual", platform };
+  return { ok: true, version, platform };
 }
 
 // plugins/immune-brain/runtime/plugin_version.ts
@@ -63,38 +52,46 @@ var PRIVILEGED_OPERATIONS = [
   "approve_breaking_intent_revision",
   "stop"
 ];
+var RECOVERY_ACTIONS = {
+  interaction_not_opened: "retry through a fresh native gate in the current Host",
+  user_denied: "wait for a fresh literal-user request",
+  user_cancelled: "wait for a fresh literal-user request",
+  correlation_missing: "retry through a fresh native gate in the current Host",
+  unsupported_host: "upgrade to a supported Claude Code version and retry in the current Host",
+  workspace_changed: "review the current workspace and retry through a fresh native gate"
+};
+
+class NativeAuthorityError extends Error {
+  reasonCode;
+  recoveryAction;
+  constructor(reasonCode, detail, recoveryAction = RECOVERY_ACTIONS[reasonCode]) {
+    super(`${reasonCode}: ${detail}; recovery: ${recoveryAction}`);
+    this.reasonCode = reasonCode;
+    this.recoveryAction = recoveryAction;
+    this.name = "NativeAuthorityError";
+  }
+}
 function isPrivilegedOperation(operation) {
   return PRIVILEGED_OPERATIONS.includes(operation);
 }
 function privilegedAnnotations() {
-  return {
-    destructiveHint: true,
-    "anthropic/requiresUserInteraction": true
-  };
+  return { destructiveHint: true };
 }
 function evaluateNativeGate(input) {
   if (!isPrivilegedOperation(input.operation))
     return { ok: true };
   if (!input.interactive)
-    return { ok: false, reason: "non-interactive execution cannot mint authority" };
-  const mode = parsePermissionMode(input.permissionMode);
-  if (!mode)
-    return { ok: false, reason: `unsupported permission mode ${String(input.permissionMode)}` };
-  if (mode === "dontAsk")
-    return { ok: false, reason: "dontAsk cannot mint authority" };
-  if (!input.requiresUserInteraction) {
-    return { ok: false, reason: "privileged operation requires anthropic/requiresUserInteraction" };
-  }
-  if (input.decision === "deny")
-    return { ok: false, reason: "native interaction denied" };
+    return { ok: false, error: new NativeAuthorityError("unsupported_host", "interactive MCP elicitation is unavailable") };
+  if (input.decision === "decline")
+    return { ok: false, error: new NativeAuthorityError("user_denied", "native interaction declined") };
   if (input.decision === "cancel")
-    return { ok: false, reason: "native interaction cancelled" };
+    return { ok: false, error: new NativeAuthorityError("user_cancelled", "native interaction cancelled") };
   if (input.decision !== "accept")
-    return { ok: false, reason: "native interaction missing" };
+    return { ok: false, error: new NativeAuthorityError("interaction_not_opened", "native interaction returned no decision") };
   return { ok: true };
 }
 function confirmationRef(input) {
-  return `claude-confirm-${createHash("sha256").update(`${input.sessionId}\x00${input.toolCallId}\x00${input.operation}\x00${input.taskId}\x00${input.intentRevision ?? ""}\x00${input.intentContentHash ?? ""}\x00${input.bindingDigest ?? ""}`).digest("hex").slice(0, 16)}`;
+  return `claude-confirm-${createHash("sha256").update(`${input.connectionId}\x00${input.toolCallId}\x00${input.requestId}\x00${input.operation}\x00${input.taskId}\x00${input.intentRevision ?? ""}\x00${input.intentContentHash ?? ""}\x00${input.bindingDigest ?? ""}`).digest("hex").slice(0, 16)}`;
 }
 function enrollmentNonce() {
   return randomUUID();
@@ -111,7 +108,6 @@ var AGENT_TOOL = "Agent";
 
 class MemoryHookEventLog {
   events = [];
-  consumed = [];
   append(event) {
     this.events.push(event);
     return true;
@@ -132,18 +128,8 @@ class MemoryHookEventLog {
         this.events.splice(i, 1);
     }
   }
-  consumeElicitation(sessionId, toolCallId) {
-    this.consumed.push(`${sessionId}\x00${toolCallId}`);
-    this.events.push({ type: "ElicitationConsumed", sessionId, toolCallId });
-    return true;
-  }
-  consumedKeys() {
-    return [...this.consumed];
-  }
 }
 var CACHE_DIR = "immune-brain-claude";
-var CONSUMED_FILE = "consumed.jsonl";
-var CONSUMED_DIR = "consumed";
 function sessionHash(sessionId) {
   return createHash2("sha256").update(sessionId).digest("hex");
 }
@@ -174,27 +160,6 @@ function ensurePrivateDir(dir) {
     return created.isDirectory() && ownedByUs(created) && (created.mode & 511) === 448;
   } catch {
     return false;
-  }
-}
-function claimAtomicKey(dir, keyName) {
-  const claimsDir = join(dir, CONSUMED_DIR);
-  if (!ensurePrivateDir(claimsDir))
-    return false;
-  const claimPath = join(claimsDir, `${keyName}.claim`);
-  const flags = constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW | constants.O_NONBLOCK;
-  let fd;
-  try {
-    fd = openSync(claimPath, flags, 384);
-  } catch (error) {
-    return false;
-  }
-  try {
-    const stat = fstatSync(fd);
-    if (!stat.isFile() || !ownedByUs(stat) || (stat.mode & 511) !== 384)
-      return false;
-    return true;
-  } finally {
-    closeSync(fd);
   }
 }
 function appendPrivate(path, dir, line) {
@@ -257,7 +222,7 @@ class FileHookEventLog {
     if (!ensurePrivateDir(dir))
       return [];
     try {
-      return readdirSync(dir).filter((name) => name.endsWith(".jsonl") && name !== CONSUMED_FILE).flatMap((name) => this.readFile(join(dir, name)));
+      return readdirSync(dir).filter((name) => name.endsWith(".jsonl")).flatMap((name) => this.readFile(join(dir, name)));
     } catch {
       return [];
     }
@@ -296,36 +261,6 @@ class FileHookEventLog {
       rmSync(path, { force: true });
     } catch {}
   }
-  consumeElicitation(sessionId, toolCallId) {
-    const dir = cacheDir(this.root);
-    const claimKey = createHash2("sha256").update(`${sessionId}\x00${toolCallId}`).digest("hex");
-    const keyClaimed = claimAtomicKey(dir, claimKey);
-    if (!keyClaimed)
-      return false;
-    if (!appendPrivate(join(dir, CONSUMED_FILE), dir, `${JSON.stringify({ sessionId, toolCallId })}
-`)) {
-      try {
-        rmSync(join(dir, CONSUMED_DIR, `${claimKey}.claim`), { force: true });
-      } catch {}
-      return false;
-    }
-    if (!this.consumedKeys().includes(`${sessionId}\x00${toolCallId}`))
-      return false;
-    return this.append({ type: "ElicitationConsumed", sessionId, toolCallId });
-  }
-  consumedKeys() {
-    if (!ensurePrivateDir(cacheDir(this.root)))
-      return [];
-    const text = readPrivate(join(cacheDir(this.root), CONSUMED_FILE));
-    if (!text)
-      return [];
-    try {
-      return text.split(`
-`).filter(Boolean).map((line) => JSON.parse(line)).map((item) => `${item.sessionId}\x00${item.toolCallId}`);
-    } catch {
-      return [];
-    }
-  }
 }
 function bindsStart(event, pending) {
   if (event.taskId && event.taskId !== pending.request.taskId)
@@ -349,11 +284,9 @@ class ClaudeReviewHost {
   host = "claude-code";
   pending = new Map;
   appliedBySession = new Map;
-  consumedElicitations = new Set;
   constructor(log = new MemoryHookEventLog) {
     this.log = log;
   }
-  confirmations = new Map;
   prepareReview(request) {
     const initialCursors = new Map;
     const sessionCursors = new Map;
@@ -383,8 +316,6 @@ ${request.prompt}`,
     this.log.append(event);
   }
   drain() {
-    for (const key of this.log.consumedKeys())
-      this.consumedElicitations.add(key);
     for (const sessionId of this.log.sessions()) {
       const events = this.log.list(sessionId);
       let start = this.appliedBySession.get(sessionId) ?? 0;
@@ -393,34 +324,10 @@ ${request.prompt}`,
       let ended = false;
       for (let i = start;i < events.length; i++) {
         const event = events[i];
-        if (event.type === "ElicitationResult") {
-          const key = `${event.sessionId}\x00${event.toolCallId}`;
-          if (this.consumedElicitations.has(key))
-            continue;
-          if (this.confirmations.has(key)) {
-            if (this.log.consumeElicitation(event.sessionId, event.toolCallId)) {
-              this.confirmations.delete(key);
-              this.consumedElicitations.add(key);
-            }
-            continue;
-          }
-          this.confirmations.set(key, event.decision);
-          continue;
-        }
-        if (event.type === "ElicitationConsumed") {
-          const key = `${event.sessionId}\x00${event.toolCallId}`;
-          this.consumedElicitations.add(key);
-          this.confirmations.delete(key);
-          continue;
-        }
         if (event.type === "SessionEnd") {
           this.log.clear(event.sessionId);
           ended = true;
           this.appliedBySession.delete(event.sessionId);
-          for (const key of this.confirmations.keys()) {
-            if (key.startsWith(`${event.sessionId}\x00`))
-              this.confirmations.delete(key);
-          }
           for (const [id, state] of this.pending) {
             if (state.startEvent?.sessionId === event.sessionId || state.postEvent?.sessionId === event.sessionId || state.stopEvent?.sessionId === event.sessionId) {
               this.pending.delete(id);
@@ -456,37 +363,6 @@ ${request.prompt}`,
         }
       }
     }
-  }
-  peekConfirmation(sessionId, toolCallId) {
-    this.drain();
-    return this.confirmations.has(`${sessionId}\x00${toolCallId}`);
-  }
-  takeConfirmation(sessionId, toolCallId) {
-    this.drain();
-    const key = `${sessionId}\x00${toolCallId}`;
-    const decision = this.confirmations.get(key);
-    if (!decision)
-      return;
-    if (!this.log.consumeElicitation(sessionId, toolCallId)) {
-      this.confirmations.delete(key);
-      return;
-    }
-    this.confirmations.delete(key);
-    this.consumedElicitations.add(key);
-    this.drain();
-    return decision;
-  }
-  sessionOfElicitation(toolCallId) {
-    this.drain();
-    const sessions = [];
-    for (const key of this.confirmations.keys()) {
-      const sep = key.lastIndexOf("\x00");
-      if (sep >= 0 && key.slice(sep + 1) === toolCallId)
-        sessions.push(key.slice(0, sep));
-    }
-    if (sessions.length !== 1)
-      return;
-    return sessions[0];
   }
   applyReviewEvent(event, state) {
     if (state.error)
@@ -620,8 +496,6 @@ function parseHookStdin(raw) {
     return null;
   }
   const hookType = String(payload.hook_event_name ?? payload.type ?? "");
-  if (hookType === "ElicitationResult" && (typeof payload.session_id !== "string" || !payload.session_id))
-    return null;
   const sessionId = String(payload.session_id ?? payload.sessionId ?? process.env.CLAUDE_SESSION_ID ?? "");
   if (!sessionId)
     return null;
@@ -713,17 +587,6 @@ function parseHookStdin(raw) {
   }
   if (hookType === "SessionEnd")
     return { type: "SessionEnd", sessionId };
-  if (hookType === "ElicitationResult") {
-    const rawToolCallId = payload.tool_use_id ?? payload.toolCallId;
-    if (typeof rawToolCallId !== "string" || !rawToolCallId)
-      return null;
-    const toolCallId = rawToolCallId;
-    const raw2 = payload.decision ?? payload.result ?? payload.action;
-    const decision = raw2 === "accept" ? "accept" : raw2 === "deny" ? "deny" : raw2 === "cancel" ? "cancel" : null;
-    if (!toolCallId || !decision)
-      return null;
-    return { type: "ElicitationResult", sessionId, toolCallId, decision };
-  }
   return null;
 }
 
@@ -6717,6 +6580,10 @@ async function mintCapability(registry, input) {
   };
   return registry.issue(binding);
 }
+function throwIfCancelled(signal) {
+  if (signal?.aborted)
+    throw new NativeAuthorityError("user_cancelled", "Tool call was cancelled");
+}
 
 class ClaudeRuntime {
   host;
@@ -6724,8 +6591,7 @@ class ClaudeRuntime {
   cwd;
   env;
   interactive;
-  permissionMode;
-  decisions;
+  requestConfirmation;
   hostVersion;
   mutationRegistry = null;
   enrollmentRegistry = createEnrollmentAuthorityRegistry();
@@ -6734,8 +6600,7 @@ class ClaudeRuntime {
     this.cwd = options.cwd;
     this.env = options.env ?? process.env;
     this.interactive = options.interactive ?? true;
-    this.permissionMode = options.permissionMode ?? "manual";
-    this.decisions = options.decisions ?? new Map;
+    this.requestConfirmation = options.requestConfirmation;
     this.host = options.host ?? new ClaudeReviewHost(new FileHookEventLog);
     if (options.ports) {
       this.coordinator = new AssuranceCoordinator({ ...options.ports, host: this.host });
@@ -6748,6 +6613,9 @@ class ClaudeRuntime {
   }
   bindHostVersion(version) {
     this.hostVersion = version || undefined;
+  }
+  bindNativeConfirmation(port) {
+    this.requestConfirmation = port;
   }
   async shutdown() {
     await this.coordinator.onSessionShutdown();
@@ -6784,32 +6652,28 @@ class ClaudeRuntime {
     this.app ??= createCanaryApplication(this.mutationRegistry);
     return { registry: this.mutationRegistry, app: this.app };
   }
-  rejectBeforePreparation(operation, meta) {
-    const configured = this.decisions.get(operation) ?? meta.decision;
-    if (configured === "deny" || configured === "cancel")
-      this.gate(operation, meta);
-  }
-  gate(operation, meta, binding = {}) {
+  async gate(operation, meta, binding = {}) {
+    throwIfCancelled(meta.signal);
     const probe = probeHost(this.env, process.platform, this.hostVersion);
     if (!probe.ok)
-      throw new Error(probe.reason);
-    const requiresUserInteraction = Boolean(meta.requiresUserInteraction);
-    const permissionMode = meta.permissionMode ?? this.permissionMode;
-    const configuredDecision = this.decisions.get(operation) ?? meta.decision;
-    const decision = configuredDecision ?? (isPrivilegedOperation(operation) && Boolean(meta.interactive ?? this.interactive) && requiresUserInteraction && permissionMode !== "dontAsk" ? this.host.takeConfirmation(meta.sessionId, meta.toolCallId) : undefined);
-    const gate = evaluateNativeGate({
-      operation,
-      permissionMode,
-      requiresUserInteraction,
-      interactive: meta.interactive ?? this.interactive,
-      decision
-    });
+      throw new NativeAuthorityError("unsupported_host", probe.reason);
+    const interactive = meta.interactive ?? this.interactive;
+    if (!interactive)
+      throw new NativeAuthorityError("unsupported_host", "interactive MCP elicitation is unavailable");
+    if (!isPrivilegedOperation(operation))
+      throw new Error(`unsupported native operation ${operation}`);
+    if (!this.requestConfirmation)
+      throw new NativeAuthorityError("interaction_not_opened", "native confirmation port is unavailable");
+    const result = await this.requestConfirmation({ operation, taskId: meta.taskId, toolCallId: meta.toolCallId, signal: meta.signal, ...binding });
+    throwIfCancelled(meta.signal);
+    const gate = evaluateNativeGate({ operation, interactive, decision: result.decision });
     if (!gate.ok)
-      throw new Error(gate.reason);
+      throw gate.error;
     return {
       confirmation_ref: confirmationRef({
-        sessionId: meta.sessionId,
+        connectionId: meta.sessionId,
         toolCallId: meta.toolCallId,
+        requestId: result.requestId,
         operation,
         taskId: meta.taskId,
         ...binding
@@ -6820,19 +6684,21 @@ class ClaudeRuntime {
     return projectAssurance(this.cwd, taskId, diffSnapshotOf);
   }
   async enroll(taskId, meta) {
-    this.rejectBeforePreparation("enroll", { ...meta, taskId });
     const now = new Date().toISOString();
     const preparation = await preparePiCanary(this.cwd, { task_id: taskId, now });
-    const gate = this.gate("enroll", { ...meta, taskId }, {
+    const intent = await readTaskIntent(this.cwd, taskId);
+    const gate = await this.gate("enroll", { ...meta, taskId }, {
+      risk: intent.intent.risk,
       intentRevision: preparation.intent?.revision,
       intentContentHash: preparation.intent?.content_hash,
       bindingDigest: preparation.digest
     });
     const { unchanged } = await revalidatePiCanary(this.cwd, { task_id: taskId, now }, preparation);
     if (!unchanged)
-      throw new Error("Workspace changed after confirmation; enrollment aborted before authority");
+      throw new NativeAuthorityError("workspace_changed", "workspace changed after native confirmation");
     if (!preparation.intent)
       throw new Error("enrollment requires a readable TaskIntent");
+    throwIfCancelled(meta.signal);
     const nonce = enrollmentNonce();
     const binding = {
       task_id: taskId,
@@ -6877,7 +6743,6 @@ class ClaudeRuntime {
     }
     if (!isPrivilegedOperation(operation) && operation !== "request_authorization")
       throw new Error(`unsupported privileged operation ${operation}`);
-    this.rejectBeforePreparation(operation, { ...meta, taskId });
     let op = operation;
     let decisionOp;
     const projection = await this.status(taskId);
@@ -6934,16 +6799,22 @@ class ClaudeRuntime {
 `);
         execFileSync4("git", ["add", "--", priorIntent.intent_ref.path], { cwd: this.cwd, stdio: ["ignore", "pipe", "pipe"] });
         const preparedRecord = await readTaskRecord(this.cwd, taskId);
-        if (!preparedRecord.record)
-          throw new Error("TaskRecord changed before the breaking revision digest");
+        if (!preparedRecord.record) {
+          throw new NativeAuthorityError("workspace_changed", "TaskRecord changed before the breaking revision digest");
+        }
         preparedDiffHash = diffHashOf(this.cwd, preparedRecord.record);
       }
       const preparedProjection = await this.status(taskId);
-      assertProjectionBinding(projection, preparedProjection, Boolean(nextIntent));
-      if (preparedProjection.projection.diff_hash !== preparedDiffHash) {
-        throw new Error("Workspace changed while preparing the authority digest");
+      try {
+        assertProjectionBinding(projection, preparedProjection, Boolean(nextIntent));
+        if (preparedProjection.projection.diff_hash !== preparedDiffHash) {
+          throw new Error("workspace changed while preparing the authority digest");
+        }
+      } catch (error) {
+        throw new NativeAuthorityError("workspace_changed", error instanceof Error ? error.message : String(error));
       }
-      gate = this.gate(operation, { ...meta, taskId }, {
+      gate = await this.gate(operation, { ...meta, taskId }, {
+        risk: projection.projection.risk,
         intentRevision: nextIntent?.revision ?? projection.projection.intent_revision,
         intentContentHash: nextIntentHash ?? projection.projection.intent_content_hash,
         bindingDigest: `${preparedDiffHash}:${nextIntentHash ?? ""}`
@@ -6961,11 +6832,16 @@ class ClaudeRuntime {
     const confirmation = gate.confirmation_ref;
     try {
       const capabilityProjection = await this.status(taskId);
-      assertProjectionBinding(projection, capabilityProjection, Boolean(nextIntent));
+      try {
+        assertProjectionBinding(projection, capabilityProjection, Boolean(nextIntent));
+      } catch (error) {
+        throw new NativeAuthorityError("workspace_changed", error instanceof Error ? error.message : String(error));
+      }
       const operationDiffHash = capabilityProjection.projection.diff_hash;
       if (nextIntent && operationDiffHash !== preparedDiffHash) {
-        throw new Error("Workspace changed after native confirmation; authority aborted before capability issuance");
+        throw new NativeAuthorityError("workspace_changed", "workspace changed after native confirmation");
       }
+      throwIfCancelled(meta.signal);
       const capability = await mintCapability(registry, {
         authority_kind: "user",
         task_id: taskId,
@@ -6981,6 +6857,7 @@ class ClaudeRuntime {
         ...op === "resolve_user_decision" && decisionOp ? decisionOp : {},
         ...op === "stop" ? { reason: extra.reason ?? "user stop" } : {}
       });
+      throwIfCancelled(meta.signal);
       const result = app.execute({
         root: this.cwd,
         task_id: taskId,
@@ -7123,6 +7000,7 @@ class ClaudeRuntime {
 }
 
 // plugins/immune-brain/runtime/claude/mcp_server.ts
+var MCP_PROTOCOL_VERSION = "2025-06-18";
 var TOOLS = [
   { name: "status", description: "Read the Kernel Assurance Projection for an exact task.", privileged: false },
   { name: "enroll", description: "Enroll a Git-tracked TaskIntent after native confirmation.", privileged: true },
@@ -7150,6 +7028,9 @@ function listMcpTools() {
     annotations: tool.privileged ? privilegedAnnotations() : { readOnlyHint: tool.name === "status" }
   }));
 }
+function supportsElicitationProtocol(value) {
+  return typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value) && value >= MCP_PROTOCOL_VERSION;
+}
 function createMcpRuntime(options = {}) {
   const host = options.host ?? new ClaudeReviewHost(new FileHookEventLog);
   const runtime = new ClaudeRuntime({
@@ -7158,18 +7039,23 @@ function createMcpRuntime(options = {}) {
     host,
     ports: options.ports,
     interactive: options.interactive,
-    decisions: options.decisions
+    requestConfirmation: options.requestConfirmation
   });
   let negotiatedVersion;
   let negotiatedInteractive = false;
+  const connectionId = randomUUID6();
   return {
     runtime,
     host,
+    connectionId,
     listTools: listMcpTools,
     bindClientHandshake(identity) {
       negotiatedVersion = identity.version || undefined;
-      negotiatedInteractive = identity.interactive;
+      negotiatedInteractive = identity.interactive && supportsElicitationProtocol(identity.protocolVersion);
       runtime.bindHostVersion(negotiatedVersion);
+    },
+    bindNativeConfirmation(port) {
+      runtime.bindNativeConfirmation(port);
     },
     sessionInteractive: () => negotiatedInteractive,
     async callTool(name, args, meta = {}) {
@@ -7181,20 +7067,19 @@ function createMcpRuntime(options = {}) {
       if (name === "status")
         return { plugin_version: PLUGIN_VERSION, ...await runtime.status(taskId) };
       if (!negotiatedVersion)
-        throw new Error("Claude Code version is unavailable");
-      if (!negotiatedInteractive && name !== "repair_authority_state")
-        throw new Error("non-interactive host session cannot execute authority tools");
+        throw new NativeAuthorityError("unsupported_host", "Claude Code version is unavailable");
+      if (!negotiatedInteractive && name !== "repair_authority_state") {
+        throw new NativeAuthorityError("unsupported_host", "interactive MCP elicitation is unavailable");
+      }
       const probe = probeHost(options.env ?? process.env, process.platform, negotiatedVersion);
       if (!probe.ok)
-        throw new Error(probe.reason);
+        throw new NativeAuthorityError("unsupported_host", probe.reason);
       const toolMeta = {
-        sessionId: meta.sessionId ?? "session",
+        sessionId: meta.sessionId ?? connectionId,
         toolCallId: meta.toolCallId ?? `call-${name}`,
         taskId,
-        requiresUserInteraction: meta.requiresUserInteraction ?? isPrivilegedOperation(name),
-        permissionMode: meta.permissionMode ?? probe.permissionMode,
-        interactive: meta.interactive ?? options.interactive ?? false,
-        decision: meta.decision
+        interactive: meta.interactive ?? options.interactive ?? negotiatedInteractive,
+        signal: meta.signal
       };
       if (name === "enroll")
         return runtime.enroll(taskId, toolMeta);
@@ -7211,19 +7096,25 @@ function createMcpRuntime(options = {}) {
       throw new Error(`unknown tool ${name}`);
     },
     observe: (event) => host.observe(event),
-    sessionOfElicitation: (toolCallId) => host.sessionOfElicitation(toolCallId),
     shutdown: () => runtime.shutdown(),
     aborts: new Map
   };
 }
-function hostCallIdentity(meta, resolveSession) {
+function hostCallIdentity(meta) {
   if (!meta)
     return;
   const toolCallId = meta["claudecode/toolUseId"];
-  if (typeof toolCallId !== "string" || !toolCallId)
-    return;
-  const sessionId = resolveSession?.(toolCallId);
-  return sessionId ? { sessionId, toolCallId } : undefined;
+  return typeof toolCallId === "string" && toolCallId ? { toolCallId } : undefined;
+}
+function rpcError(error) {
+  if (error instanceof NativeAuthorityError) {
+    return {
+      code: -32000,
+      message: error.message,
+      data: { reason_code: error.reasonCode, recovery_action: error.recoveryAction }
+    };
+  }
+  return { code: -32000, message: error instanceof Error ? error.message : String(error) };
 }
 function encodeMessage(message) {
   return Buffer.from(`${JSON.stringify(message)}
@@ -7236,13 +7127,14 @@ async function handleJsonRpc(message, mcp = createMcpRuntime()) {
     const elicitation = params.capabilities?.elicitation;
     mcp.bindClientHandshake({
       version: trustedClient && typeof params.clientInfo?.version === "string" ? params.clientInfo.version : "",
+      protocolVersion: typeof params.protocolVersion === "string" ? params.protocolVersion : undefined,
       interactive: trustedClient && elicitation !== null && typeof elicitation === "object" && !Array.isArray(elicitation)
     });
     return {
       jsonrpc: "2.0",
       id: message.id ?? null,
       result: {
-        protocolVersion: "2024-11-05",
+        protocolVersion: MCP_PROTOCOL_VERSION,
         serverInfo: {
           name: HOST_ID,
           version: PLUGIN_VERSION,
@@ -7273,13 +7165,13 @@ async function handleJsonRpc(message, mcp = createMcpRuntime()) {
       const name = String(params.name ?? "");
       const interactive = mcp.sessionInteractive();
       if (isPrivilegedOperation(name) && !interactive) {
-        throw new Error("non-interactive host session cannot mint authority");
+        throw new NativeAuthorityError("unsupported_host", "interactive MCP elicitation is unavailable");
       }
-      const identity = hostCallIdentity(params._meta, (toolCallId2) => mcp.sessionOfElicitation(toolCallId2));
+      const identity = hostCallIdentity(params._meta);
       if (isPrivilegedOperation(name) && !identity) {
-        throw new Error("host correlation metadata missing");
+        throw new NativeAuthorityError("correlation_missing", "canonical claudecode/toolUseId metadata is missing");
       }
-      const sessionId = identity?.sessionId ?? "stdio";
+      const sessionId = mcp.connectionId;
       const toolCallId = identity?.toolCallId ?? String(message.id ?? "stdio");
       const result = await mcp.callTool(name, params.arguments ?? {}, {
         sessionId,
@@ -7294,11 +7186,10 @@ async function handleJsonRpc(message, mcp = createMcpRuntime()) {
         result: { content: [{ type: "text", text: JSON.stringify(result) }] }
       };
     } catch (error) {
-      const reason = error instanceof Error ? error.message : String(error);
       return {
         jsonrpc: "2.0",
         id: message.id ?? null,
-        error: { code: -32000, message: reason }
+        error: rpcError(error)
       };
     } finally {
       mcp.aborts.delete(requestId);
@@ -7310,9 +7201,75 @@ async function handleJsonRpc(message, mcp = createMcpRuntime()) {
 }
 async function writeReply(output, reply) {
   const payload = encodeMessage(reply);
-  if (output.write(payload))
-    return;
-  await new Promise((resolve7) => output.once("drain", resolve7));
+  await new Promise((resolve7, reject) => {
+    if (!output.writable) {
+      reject(new Error("output stream is not writable"));
+      return;
+    }
+    let settled = false;
+    const cleanup = () => {
+      output.off("drain", onDrain);
+      output.off("error", onError);
+      output.off("close", onClose);
+    };
+    const onDrain = () => {
+      if (settled)
+        return;
+      settled = true;
+      cleanup();
+      resolve7();
+    };
+    const onError = (error) => {
+      if (settled)
+        return;
+      settled = true;
+      cleanup();
+      reject(error);
+    };
+    const onClose = () => {
+      if (settled)
+        return;
+      settled = true;
+      cleanup();
+      reject(new Error("output stream closed before write drained"));
+    };
+    output.once("error", onError);
+    output.once("close", onClose);
+    const ok = output.write(payload, (error) => {
+      if (settled)
+        return;
+      if (error) {
+        settled = true;
+        cleanup();
+        reject(error);
+      }
+    });
+    if (ok) {
+      settled = true;
+      cleanup();
+      resolve7();
+      return;
+    }
+    output.once("drain", onDrain);
+  });
+}
+function elicitationParams(input) {
+  const details = [
+    `Operation: ${input.operation}`,
+    `Task: ${input.taskId}`,
+    input.risk ? `Risk: ${input.risk}` : null,
+    input.intentRevision !== undefined ? `Intent revision: ${input.intentRevision}` : null,
+    input.intentContentHash ? `Intent hash: ${input.intentContentHash}` : null,
+    input.bindingDigest ? `Binding digest: ${input.bindingDigest}` : null
+  ].filter(Boolean);
+  return {
+    mode: "form",
+    message: `Authorize this exact Immune-Brain operation?
+
+${details.join(`
+`)}`,
+    requestedSchema: { type: "object", properties: {} }
+  };
 }
 async function serveStdio(options = {}) {
   const input = options.input ?? stdin;
@@ -7323,15 +7280,87 @@ async function serveStdio(options = {}) {
   });
   let buffer = Buffer.alloc(0);
   let accepting = true;
+  let requestSequence = 0;
   const inFlight = new Set;
+  const pending = new Map;
   let chain = Promise.resolve();
+  const rejectPending = (error) => {
+    for (const item of pending.values())
+      item.reject(error);
+    pending.clear();
+  };
+  mcp.bindNativeConfirmation(async (input2) => {
+    if (!accepting)
+      throw new NativeAuthorityError("interaction_not_opened", "MCP connection is closed");
+    if (input2.signal?.aborted)
+      throw new NativeAuthorityError("user_cancelled", "Tool call was cancelled");
+    const requestId = `immune-brain:elicitation:${mcp.connectionId}:${++requestSequence}`;
+    let abortListener;
+    const response = new Promise((resolve7, reject) => {
+      pending.set(requestId, { resolve: resolve7, reject });
+      abortListener = () => {
+        pending.delete(requestId);
+        reject(new NativeAuthorityError("user_cancelled", "Tool call was cancelled"));
+      };
+      input2.signal?.addEventListener("abort", abortListener, { once: true });
+    });
+    try {
+      await writeReply(output, {
+        jsonrpc: "2.0",
+        id: requestId,
+        method: "elicitation/create",
+        params: elicitationParams(input2)
+      });
+      const reply = await response;
+      if (reply.error) {
+        if (reply.error.code === -32601) {
+          throw new NativeAuthorityError("unsupported_host", "Claude Code rejected MCP elicitation/create");
+        }
+        throw new NativeAuthorityError("correlation_missing", `MCP elicitation failed: ${reply.error.message}`);
+      }
+      const result = reply.result;
+      const action = typeof result === "object" && result !== null && !Array.isArray(result) ? result.action : undefined;
+      if (action !== "accept" && action !== "decline" && action !== "cancel") {
+        throw new NativeAuthorityError("correlation_missing", "MCP elicitation returned an invalid action");
+      }
+      if (action === "accept") {
+        const content = result.content;
+        if (typeof content !== "object" || content === null || Array.isArray(content) || Object.keys(content).length !== 0) {
+          throw new NativeAuthorityError("correlation_missing", "MCP elicitation accept content did not match the requested schema");
+        }
+      }
+      return { decision: action, requestId };
+    } finally {
+      pending.delete(requestId);
+      if (abortListener)
+        input2.signal?.removeEventListener("abort", abortListener);
+    }
+  });
   const runCall = (parsed) => {
     const task = handleJsonRpc(parsed, mcp).then(async (reply) => {
       if (reply)
         await writeReply(output, reply);
+    }).catch(() => {
+      executeShutdown(1);
     });
     inFlight.add(task);
     task.finally(() => inFlight.delete(task));
+  };
+  const routeResponse = (obj) => {
+    const id = typeof obj.id === "string" ? obj.id : "";
+    const waiter = id ? pending.get(id) : undefined;
+    if (waiter) {
+      pending.delete(id);
+      const hasResult = Object.hasOwn(obj, "result");
+      const hasError = Object.hasOwn(obj, "error");
+      if (obj.jsonrpc !== "2.0" || obj.method !== undefined || hasResult === hasError) {
+        waiter.reject(new NativeAuthorityError("correlation_missing", "malformed MCP elicitation response"));
+      } else {
+        waiter.resolve(obj);
+      }
+      return true;
+    }
+    return obj.method === undefined && obj.id !== undefined;
   };
   const drainStdio = async () => {
     while (true) {
@@ -7355,10 +7384,14 @@ async function serveStdio(options = {}) {
         continue;
       }
       const obj = parsed;
+      if (routeResponse(obj))
+        continue;
       if (obj.jsonrpc !== "2.0") {
         await writeReply(output, { jsonrpc: "2.0", id: null, error: { code: -32600, message: "Invalid Request: jsonrpc must be '2.0'" } });
         continue;
       }
+      if (routeResponse(obj))
+        continue;
       if (typeof obj.method !== "string" || !obj.method) {
         const id = obj.id !== undefined && (typeof obj.id === "string" || typeof obj.id === "number") ? obj.id : null;
         await writeReply(output, { jsonrpc: "2.0", id, error: { code: -32600, message: "Invalid Request: missing method" } });
@@ -7375,11 +7408,15 @@ async function serveStdio(options = {}) {
       const rpc = parsed;
       if (rpc.method === "notifications/cancelled") {
         const requestId = rpc.params?.requestId;
-        if (requestId !== undefined)
+        if (typeof requestId === "string" && pending.has(requestId)) {
+          pending.get(requestId)?.reject(new NativeAuthorityError("user_cancelled", "native interaction was cancelled"));
+          pending.delete(requestId);
+        } else if (requestId !== undefined) {
           mcp.aborts.get(requestId)?.abort(new Error("notifications/cancelled"));
+        }
         continue;
       }
-      if (parsed.method === "tools/call") {
+      if (rpc.method === "tools/call") {
         if (!accepting) {
           if (rpc.id !== undefined)
             await writeReply(output, { jsonrpc: "2.0", id: rpc.id, error: { code: -32000, message: "stdio closed" } });
@@ -7393,6 +7430,7 @@ async function serveStdio(options = {}) {
         await writeReply(output, reply);
     }
   };
+  let resolveStdio = () => {};
   let shutdownPromise = null;
   const executeShutdown = (code = 0) => {
     if (shutdownPromise)
@@ -7401,31 +7439,49 @@ async function serveStdio(options = {}) {
       accepting = false;
       for (const ac of mcp.aborts.values())
         ac.abort(new Error("stdio closed"));
-      await Promise.allSettled([...inFlight]);
+      rejectPending(new NativeAuthorityError("user_cancelled", "MCP connection closed during native interaction"));
+      await Promise.race([
+        Promise.allSettled([...inFlight]),
+        new Promise((resolve7) => setTimeout(resolve7, 200))
+      ]);
       await mcp.shutdown();
       if (output.writable && typeof output.end === "function") {
         await new Promise((cb) => output.end(() => cb()));
       }
       process.exitCode = code;
       exit(code);
+      resolveStdio();
     })();
     return shutdownPromise;
   };
   await new Promise((resolve7) => {
+    resolveStdio = resolve7;
+    output.on("error", () => {
+      executeShutdown(1);
+    });
+    output.on("close", () => {
+      executeShutdown(0);
+    });
     input.on("data", (chunk) => {
+      if (!accepting)
+        return;
       chain = chain.then(async () => {
+        if (!accepting)
+          return;
         buffer = Buffer.concat([buffer, Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)]);
         await drainStdio();
+      }).catch(() => {
+        executeShutdown(1);
       });
     });
     input.on("end", () => {
-      chain.then(() => executeShutdown(0)).finally(resolve7);
+      chain.then(() => executeShutdown(0));
     });
     input.on("close", () => {
-      chain.then(() => executeShutdown(0)).finally(resolve7);
+      chain.then(() => executeShutdown(0));
     });
     input.on("error", () => {
-      chain.then(() => executeShutdown(1)).finally(resolve7);
+      executeShutdown(1);
     });
   });
 }
@@ -7448,9 +7504,12 @@ if (entry.endsWith("mcp_server.ts") || entry.endsWith("mcp-server.mjs")) {
     serveStdio();
 }
 export {
-  TOOLS,
-  createMcpRuntime,
-  handleJsonRpc,
+  supportsElicitationProtocol,
+  serveStdio,
   listMcpTools,
-  serveStdio
+  handleJsonRpc,
+  elicitationParams,
+  createMcpRuntime,
+  TOOLS,
+  MCP_PROTOCOL_VERSION
 };

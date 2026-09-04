@@ -17,6 +17,8 @@ Immune-Brain 的 shipped public Skill surface 固定为六个入口：三个 Man
 
 ## 协作拓扑
 
+Managed native authority failure 必须 fail closed，只报告稳定原因和一个 same-Host recovery action；不得建议切换 Pi、Direct Path、其他 Host/worktree、unmanaged implementation 或自动重试。
+
 ```mermaid
 graph TD
     User([用户请求]) --> Route{请求分类}
@@ -46,7 +48,7 @@ workflow authority，也不替代 Planner 或 Loop。
 
 Planner 是清晰仓库变更的默认规划阶段。它读取 routing projection，写入 Spec/Plan，
 声明 Scope、Result、Verification、风险和 rollback 约束。Plan-only 输出保持
-non-authoritative；Enrollment 仍由 literal user 和 Pi TUI 拥有。
+non-authoritative；Enrollment 由 literal user 和当前 Host 的原生 gate 拥有。
 
 ### `imm-loop`
 
@@ -76,7 +78,7 @@ not install or validate project-wide instruction files.
 
 Pi runtime 的 public loader 应发现六个 Skill，其中三个 Managed Path 入口与三个
 host-native 维护 Skill（`imm-pr-fix`、`imm-doc-prune` 和 `imm-agent-doc-maintain`）。Canary Enrollment、Kernel evidence、
-Review authorization 和 terminal settlement 通过 foreground Tools/TUI gates 完成：
+Review authorization 和 terminal settlement 通过当前 Host 的 foreground Tools/native gates 完成：
 
 - `imm_canary_enrollment`：准备、rehearsal、literal-user confirmation、revalidation、commit。
 - `imm_kernel_canary`：evidence、assurance、Review authorization 和 completion。

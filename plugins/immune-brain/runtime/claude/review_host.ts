@@ -45,23 +45,17 @@ export type ClaudeHookEvent =
 		taskId?: string;
 		operationId?: string;
 	}
-	| { type: "SessionEnd"; sessionId: string }
-	| { type: "ElicitationResult"; sessionId: string; toolCallId: string; decision: "accept" | "deny" | "cancel" }
-	| { type: "ElicitationConsumed"; sessionId: string; toolCallId: string };
+	| { type: "SessionEnd"; sessionId: string };
 
 export interface HookEventLog {
 	append(event: ClaudeHookEvent): boolean;
 	list(sessionId?: string): ClaudeHookEvent[];
 	sessions(): string[];
 	clear(sessionId?: string): void;
-	/** Persists consumed identity durably; true only after the record is verified. */
-	consumeElicitation(sessionId: string, toolCallId: string): boolean;
-	consumedKeys(): string[];
 }
 
 export class MemoryHookEventLog implements HookEventLog {
 	private readonly events: ClaudeHookEvent[] = [];
-	private readonly consumed: string[] = [];
 	append(event: ClaudeHookEvent): boolean { this.events.push(event); return true; }
 	list(sessionId?: string): ClaudeHookEvent[] {
 		return sessionId ? this.events.filter((event) => event.sessionId === sessionId) : [...this.events];
@@ -78,17 +72,9 @@ export class MemoryHookEventLog implements HookEventLog {
 			if (this.events[i].sessionId === sessionId) this.events.splice(i, 1);
 		}
 	}
-	consumeElicitation(sessionId: string, toolCallId: string): boolean {
-		this.consumed.push(`${sessionId}\0${toolCallId}`);
-		this.events.push({ type: "ElicitationConsumed", sessionId, toolCallId });
-		return true;
-	}
-	consumedKeys(): string[] { return [...this.consumed]; }
 }
 
 const CACHE_DIR = "immune-brain-claude";
-const CONSUMED_FILE = "consumed.jsonl";
-const CONSUMED_DIR = "consumed";
 
 function sessionHash(sessionId: string): string {
 	return createHash("sha256").update(sessionId).digest("hex");
@@ -120,25 +106,6 @@ function ensurePrivateDir(dir: string): boolean {
 	}
 }
 
-function claimAtomicKey(dir: string, keyName: string): boolean {
-	const claimsDir = join(dir, CONSUMED_DIR);
-	if (!ensurePrivateDir(claimsDir)) return false;
-	const claimPath = join(claimsDir, `${keyName}.claim`);
-	const flags = constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW | constants.O_NONBLOCK;
-	let fd: number;
-	try {
-		fd = openSync(claimPath, flags, 0o600);
-	} catch (error) {
-		return false;
-	}
-	try {
-		const stat = fstatSync(fd);
-		if (!stat.isFile() || !ownedByUs(stat) || (stat.mode & 0o777) !== 0o600) return false;
-		return true;
-	} finally {
-		closeSync(fd);
-	}
-}
 function appendPrivate(path: string, dir: string, line: string): boolean {
 	if (!ensurePrivateDir(dir)) return false;
 	const flags = constants.O_WRONLY | constants.O_CREAT | constants.O_APPEND | constants.O_NOFOLLOW | constants.O_NONBLOCK;
@@ -185,7 +152,7 @@ export class FileHookEventLog implements HookEventLog {
 		if (!ensurePrivateDir(dir)) return [];
 		try {
 			return readdirSync(dir)
-				.filter((name) => name.endsWith(".jsonl") && name !== CONSUMED_FILE)
+				.filter((name) => name.endsWith(".jsonl"))
 				.flatMap((name) => this.readFile(join(dir, name)));
 		} catch {
 			return [];
@@ -217,34 +184,6 @@ export class FileHookEventLog implements HookEventLog {
 			if (!ownedByUs(stat) || stat.isSymbolicLink() || !stat.isFile() || (stat.mode & 0o777) !== 0o600) return;
 			rmSync(path, { force: true });
 		} catch { /* cleanup cannot create authority */ }
-	}
-	consumeElicitation(sessionId: string, toolCallId: string): boolean {
-		// The durable consumed identity is claimed atomically (O_EXCL per-key)
-		// and committed to consumed.jsonl BEFORE any session evidence is touched:
-		// concurrent consumers cannot double-claim the same identity.
-		const dir = cacheDir(this.root);
-		const claimKey = createHash("sha256").update(`${sessionId}\0${toolCallId}`).digest("hex");
-		const keyClaimed = claimAtomicKey(dir, claimKey);
-		if (!keyClaimed) return false;
-		if (!appendPrivate(join(dir, CONSUMED_FILE), dir, `${JSON.stringify({ sessionId, toolCallId })}\n`)) {
-			// Roll back the claim file if the durable record append failed
-			try { rmSync(join(dir, CONSUMED_DIR, `${claimKey}.claim`), { force: true }); } catch { /* ignore */ }
-			return false;
-		}
-		if (!this.consumedKeys().includes(`${sessionId}\0${toolCallId}`)) return false;
-		return this.append({ type: "ElicitationConsumed", sessionId, toolCallId });
-	}
-	consumedKeys(): string[] {
-		if (!ensurePrivateDir(cacheDir(this.root))) return [];
-		const text = readPrivate(join(cacheDir(this.root), CONSUMED_FILE));
-		if (!text) return [];
-		try {
-			return text.split("\n").filter(Boolean)
-				.map((line) => JSON.parse(line) as { sessionId: string; toolCallId: string })
-				.map((item) => `${item.sessionId}\0${item.toolCallId}`);
-		} catch {
-			return [];
-		}
 	}
 }
 
@@ -287,10 +226,7 @@ export class ClaudeReviewHost implements AssuranceHostPort {
 	readonly host = "claude-code" as const;
 	private readonly pending = new Map<string, PendingReview>();
 	private readonly appliedBySession = new Map<string, number>();
-	private readonly consumedElicitations = new Set<string>();
 	constructor(private readonly log: HookEventLog = new MemoryHookEventLog()) {}
-
-	private readonly confirmations = new Map<string, "accept" | "deny" | "cancel">();
 
 	prepareReview(request: ReviewRequest): HostReviewReservation {
 		const initialCursors = new Map<string, number>();
@@ -322,7 +258,6 @@ export class ClaudeReviewHost implements AssuranceHostPort {
 	}
 
 	private drain(): void {
-		for (const key of this.log.consumedKeys()) this.consumedElicitations.add(key);
 		for (const sessionId of this.log.sessions()) {
 			const events = this.log.list(sessionId);
 			let start = this.appliedBySession.get(sessionId) ?? 0;
@@ -330,34 +265,10 @@ export class ClaudeReviewHost implements AssuranceHostPort {
 			let ended = false;
 			for (let i = start; i < events.length; i++) {
 				const event = events[i];
-				if (event.type === "ElicitationResult") {
-					const key = `${event.sessionId}\0${event.toolCallId}`;
-					if (this.consumedElicitations.has(key)) continue;
-					if (this.confirmations.has(key)) {
-						if (this.log.consumeElicitation(event.sessionId, event.toolCallId)) {
-							this.confirmations.delete(key);
-							this.consumedElicitations.add(key);
-						}
-						continue;
-					}
-					this.confirmations.set(key, event.decision);
-					continue;
-				}
-				if (event.type === "ElicitationConsumed") {
-					const key = `${event.sessionId}\0${event.toolCallId}`;
-					this.consumedElicitations.add(key);
-					this.confirmations.delete(key);
-					continue;
-				}
 				if (event.type === "SessionEnd") {
 					this.log.clear(event.sessionId);
 					ended = true;
 					this.appliedBySession.delete(event.sessionId);
-					// A confirmation cached before the session ended must never
-					// authorize a later privileged call.
-					for (const key of this.confirmations.keys()) {
-						if (key.startsWith(`${event.sessionId}\0`)) this.confirmations.delete(key);
-					}
 					for (const [id, state] of this.pending) {
 						if (state.startEvent?.sessionId === event.sessionId || state.postEvent?.sessionId === event.sessionId || state.stopEvent?.sessionId === event.sessionId) {
 							this.pending.delete(id);
@@ -392,38 +303,6 @@ export class ClaudeReviewHost implements AssuranceHostPort {
 				}
 			}
 		}
-	}
-
-	peekConfirmation(sessionId: string, toolCallId: string): boolean {
-		this.drain();
-		return this.confirmations.has(`${sessionId}\0${toolCallId}`);
-	}
-
-	takeConfirmation(sessionId: string, toolCallId: string): "accept" | "deny" | "cancel" | undefined {
-		this.drain();
-		const key = `${sessionId}\0${toolCallId}`;
-		const decision = this.confirmations.get(key);
-		if (!decision) return undefined;
-		if (!this.log.consumeElicitation(sessionId, toolCallId)) {
-			this.confirmations.delete(key);
-			return undefined;
-		}
-		this.confirmations.delete(key);
-		this.consumedElicitations.add(key);
-		this.drain();
-		return decision;
-	}
-
-	sessionOfElicitation(toolCallId: string): string | undefined {
-		this.drain();
-		const sessions: string[] = [];
-		for (const key of this.confirmations.keys()) {
-			const sep = key.lastIndexOf("\0");
-			if (sep >= 0 && key.slice(sep + 1) === toolCallId) sessions.push(key.slice(0, sep));
-		}
-		// Ambiguous correlation across sessions fails closed.
-		if (sessions.length !== 1) return undefined;
-		return sessions[0];
 	}
 
 	private applyReviewEvent(event: ClaudeHookEvent, state: PendingReview): void {
@@ -543,10 +422,6 @@ export function parseHookStdin(raw: string): ClaudeHookEvent | null {
 	try { payload = JSON.parse(raw) as Record<string, unknown>; }
 	catch { return null; }
 	const hookType = String(payload.hook_event_name ?? payload.type ?? "");
-	// ElicitationResult is native authority evidence: it must carry the Host's
-	// own session_id verbatim. Alias or environment fallbacks are never
-	// accepted for this event; anything else is malformed and fails closed.
-	if (hookType === "ElicitationResult" && (typeof payload.session_id !== "string" || !payload.session_id)) return null;
 	const sessionId = String(payload.session_id ?? payload.sessionId ?? process.env.CLAUDE_SESSION_ID ?? "");
 	if (!sessionId) return null;
 	const agent = String(payload.agent_type ?? payload.agent ?? payload.subagent_type ?? "");
@@ -630,16 +505,5 @@ export function parseHookStdin(raw: string): ClaudeHookEvent | null {
 		};
 	}
 	if (hookType === "SessionEnd") return { type: "SessionEnd", sessionId };
-	if (hookType === "ElicitationResult") {
-		const rawToolCallId = payload.tool_use_id ?? payload.toolCallId;
-		if (typeof rawToolCallId !== "string" || !rawToolCallId) return null;
-		const toolCallId = rawToolCallId;
-		const raw = payload.decision ?? payload.result ?? payload.action;
-		// Only the exact MCP elicitation decision strings are native evidence;
-		// booleans and aliases like "yes" are malformed and fail closed.
-		const decision = raw === "accept" ? "accept" : raw === "deny" ? "deny" : raw === "cancel" ? "cancel" : null;
-		if (!toolCallId || !decision) return null;
-		return { type: "ElicitationResult", sessionId, toolCallId, decision };
-	}
 	return null;
 }

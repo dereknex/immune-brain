@@ -1,0 +1,63 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "2026-09-04-001-claude-native-elicitation-authority",
+  "goal": "Implement the native-authority and Managed routing contract in docs/specs/2026-09-04-001-claude-native-elicitation-authority.spec.md: replace Claude permission-Hook authorization with one post-preparation server-initiated MCP elicitation for all privileged operations; bind acceptance to the exact live connection, Tool identity, operation, task, Intent revision/hash, and digest; preserve zero-write fail-closed cancellation, shutdown, replay, drift, and unsupported-Host behavior; keep plan-only artifacts non-authoritative; prohibit Direct, Pi, cross-worktree, or unmanaged fallback guidance after Managed authority failure; preserve Kernel, Pi, persisted-state, and Tool-input compatibility; and bind generated package bytes and Host support claims to deterministic tests plus updated real-Host evidence.",
+  "acceptance": [
+    {
+      "id": "acc-native-elicitation-authority",
+      "assertion": "All four privileged Claude operations use the Spec's post-preparation server-initiated elicitation sequence. Only an exact accept response to the outstanding nested request on the same trusted connection may proceed to binding revalidation and one-shot capability issuance; production runtime options and Tool metadata expose no direct-decision or preapproval seam, and deterministic tests inject the asynchronous NativeConfirmationPort boundary. Permission mode, Tool arguments, Hook events, chat text, malformed/unknown/duplicate/replayed responses, decline, cancel, outer cancellation, disconnect, shutdown, unsupported protocol, and workspace drift cannot mint authority. Stdio transport writes settle on drain, error, or close; output disconnect or failure rejects pending elicitations and settles outer Tool calls. A malformed envelope carrying the exact pending nested request ID rejects that waiter with correlation_missing instead of hanging. Breaking revision restoration and postcommit Projection reconciliation remain intact.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/claude-host-authority.test.ts\",\n    \"tests/claude-native-elicitation-promotion.test.ts\",\n    \"tests/breaking-intent-revision-gate.test.ts\",\n    \"tests/dual-host-assurance-conformance.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 180000,\n  \"max_output_bytes\": 131072\n}\n"
+    },
+    {
+      "id": "acc-managed-routing-and-failure",
+      "assertion": "Canonical Brainstorm, Planner, Loop, and BASELINE contracts use current-Host native authority language; explicit plan-only requests stop after candidate Spec/TaskIntent validation without invoking Enrollment; execution-bearing requests invoke the native gate directly; and every Managed authority failure reports one stable reason and one current-Host recovery action without suggesting Direct Path, Pi fallback, cross-worktree Enrollment, CLI authority mutation, or implementation without a Workspace Claim. Workspace binding drift detected before or after native confirmation reports workspace_changed with one fresh-current-Host-gate recovery action.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/imm-planner-kernel-intent-contract.test.ts\",\n    \"tests/pi-packaged-legacy-fallbacks.test.ts\",\n    \"tests/baseline-packaging-contract.test.ts\",\n    \"tests/exhaustive-decision-tree-contract.test.ts\",\n    \"tests/managed-authority-failure-contract.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 90000,\n  \"max_output_bytes\": 131072\n}\n"
+    },
+    {
+      "id": "acc-package-version-and-conformance",
+      "assertion": "The self-contained Claude plugin negotiates an MCP revision that supports elicitation, processes nested JSON-RPC responses while an outer Tool call is pending, removes ElicitationResult authority wiring, preserves public Tool names and input schemas, rejects unsupported Host/protocol versions before mutation, and regenerates deterministic package bytes. Current support docs and a new sanitized conformance report bind the declared minimum Claude version to real interactive plan-only, preapproval, accept, decline, cancel, disconnect, and privileged-operation evidence without presenting HITL observations as QA or Kernel authority.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/claude-host-package.test.ts\",\n    \"tests/claude-native-elicitation-promotion.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 131072\n}\n"
+    }
+  ],
+  "scope_hint": [
+    ".changeset/claude-native-elicitation-authority.md",
+    "README.md",
+    "README.zh-CN.md",
+    "docs/reference/immune-brain-skills-guide.md",
+    "docs/specs/2026-09-04-001-claude-native-elicitation-authority.spec.md",
+    "docs/specs/archive/2026-09-04-001-claude-native-elicitation-authority.spec.md",
+    "docs/user_manual.md",
+    "docs/verification/claude-native-elicitation-authority-conformance.md",
+    "plugins/immune-brain/BASELINE.md",
+    "plugins/immune-brain/README.md",
+    "plugins/immune-brain/USER_GUIDE.md",
+    "plugins/immune-brain/dist/BASELINE.md",
+    "plugins/immune-brain/dist/claude/mcp-server.mjs",
+    "plugins/immune-brain/dist/imm-brainstorm.md",
+    "plugins/immune-brain/dist/imm-loop.md",
+    "plugins/immune-brain/dist/imm-planner.md",
+    "plugins/immune-brain/hooks/hooks.json",
+    "plugins/immune-brain/runtime/claude/capability.ts",
+    "plugins/immune-brain/runtime/claude/interaction.ts",
+    "plugins/immune-brain/runtime/claude/kernel_ports.ts",
+    "plugins/immune-brain/runtime/claude/mcp_server.ts",
+    "plugins/immune-brain/runtime/claude/review_host.ts",
+    "plugins/immune-brain/skills/BASELINE.md",
+    "plugins/immune-brain/skills/imm-brainstorm/SKILL.md",
+    "plugins/immune-brain/skills/imm-loop/SKILL.md",
+    "plugins/immune-brain/skills/imm-planner/SKILL.md",
+    "tests/baseline-packaging-contract.test.ts",
+    "tests/breaking-intent-revision-gate.test.ts",
+    "tests/claude-host-authority.test.ts",
+    "tests/claude-host-package.test.ts",
+    "tests/claude-native-elicitation-promotion.test.ts",
+    "tests/dual-host-assurance-conformance.test.ts",
+    "tests/exhaustive-decision-tree-contract.test.ts",
+    "tests/imm-planner-kernel-intent-contract.test.ts",
+    "tests/managed-authority-failure-contract.test.ts",
+    "tests/pi-packaged-legacy-fallbacks.test.ts"
+  ],
+  "risk": "critical",
+  "revision": 7,
+  "owner": "user"
+}

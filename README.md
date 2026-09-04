@@ -14,7 +14,7 @@ Immune-Brain adds a structured engineering workflow on top of Pi:
 - **Plans become trackable tasks** (`TaskIntent` + `TaskRecord`) so progress survives across sessions, not just chat history.
 - **Quality is enforced by code, not promises** — automated QA and isolated review must pass before a task is marked done.
 
-Pi and Claude Code are the supported hosts. Undeclared adapters remain unsupported. Minimum Claude Code is `2.1.199`. Historical real-Host evidence is archived under [docs/verification/archive/](docs/verification/archive/); deterministic package and authority checks gate current releases. Either host can use the model provider you configure — Immune-Brain works on top of Kernel authority, not a vendor chat.
+Pi and Claude Code are the supported hosts. Undeclared adapters remain unsupported. Minimum Claude Code is `2.1.236`, the lowest version verified with interactive server-initiated MCP elicitation. Current real-Host evidence is recorded in [Claude native elicitation conformance](docs/verification/claude-native-elicitation-authority-conformance.md); historical reports remain under [docs/verification/archive/](docs/verification/archive/). Either host can use the model provider you configure — Immune-Brain works on top of Kernel authority, not a vendor chat.
 
 ---
 
@@ -191,7 +191,7 @@ docs/specs/                           # Living specs (updated in place)
 
 **QA failed — what now?** QA returns `rework` or `replan_required`. `imm-loop` routes back to the executor or to `imm-planner` for scope changes. No manual reset needed.
 
-**Can I use it outside Pi?** Yes. Local interactive Claude Code is supported from version `2.1.199`; use the Claude plugin for the same Kernel-backed workflow.
+**Can I use it outside Pi?** Yes. Local interactive Claude Code is supported from version `2.1.236`; its plugin uses a digest-bound native MCP elicitation gate for the same Kernel-backed workflow.
 
 ---
 

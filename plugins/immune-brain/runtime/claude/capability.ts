@@ -1,4 +1,4 @@
-export const MIN_CLAUDE_CODE_VERSION = "2.1.199";
+export const MIN_CLAUDE_CODE_VERSION = "2.1.236";
 export const HOST_ID = "claude-code" as const;
 export const CORE_CONTRACT = "assurance_kernel/host_adapter/claude-code/v1";
 export const SUPPORTED_PLATFORMS = ["darwin", "linux"] as const;
@@ -6,12 +6,12 @@ export const SUPPORTED_PLATFORMS = ["darwin", "linux"] as const;
 export type PermissionMode = "manual" | "acceptEdits" | "auto" | "bypassPermissions" | "dontAsk";
 
 export type HostProbe =
-	| { ok: true; version: string; permissionMode: PermissionMode; platform: string }
+	| { ok: true; version: string; platform: string }
 	| { ok: false; reason: string };
 
 function parseSemver(value: string): [number, number, number] | null {
 	// Prerelease and build suffixes are rejected: an unstable build such as
-	// 2.1.199-alpha never satisfies the stable minimum.
+	// Prerelease builds never satisfy the stable minimum.
 	const match = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/.exec(value.trim());
 	if (!match) return null;
 	return [Number(match[1]), Number(match[2]), Number(match[3])];
@@ -57,11 +57,5 @@ export function probeHost(
 	if (platform !== "darwin" && platform !== "linux") {
 		return { ok: false, reason: `unsupported platform ${platform}; native Windows is out of scope` };
 	}
-	const rawPermissionMode = env.CLAUDE_CODE_PERMISSION_MODE;
-	if (rawPermissionMode !== undefined && rawPermissionMode !== "") {
-		const permissionMode = parsePermissionMode(rawPermissionMode);
-		if (!permissionMode) return { ok: false, reason: `unsupported permission mode ${rawPermissionMode}` };
-		return { ok: true, version, permissionMode, platform };
-	}
-	return { ok: true, version, permissionMode: "manual", platform };
+	return { ok: true, version, platform };
 }

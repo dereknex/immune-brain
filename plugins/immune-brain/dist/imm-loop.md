@@ -36,7 +36,7 @@ before any workflow mutation.
 
 ## Core Responsibilities
 
-- **Main-context completion loop**: Drive the enrolled Kernel task in the current Pi conversation until completion or a safe stop.
+- **Main-context completion loop**: Drive the enrolled Kernel task in the current Host conversation until completion or a safe stop.
 - **Context-preserving execution**: Call `imm_loop_action` with `op: route`, then follow the returned `executor` context in the current Parent conversation. Implement only the active Step or pending same-boundary `follow_up`, then record structured execution evidence through the Loop runtime action. A bounded test failure uses the returned internal `test-fixer` dispatch with its explicit delegated test-file list; PR feedback or CI repair uses the returned internal `pr-fix` dispatch inside the current Plan boundary.
 - **Independent authority isolation**: Use the host `Agent` subagent primitive for `awaiting_qa_decision` and for the exact runtime-reported review gate. Standard Plan Steps close from accepted passing evidence before an internal QA boundary exists; Strict Steps and all follow-ups retain isolated QA. The parent records accepted child decisions through the Loop runtime action.
 - **Observable progress**: Update only at major phase changes: Step start, execution evidence recorded, QA/review result, or terminal stop. Always emit a terminal summary.
@@ -67,6 +67,7 @@ Use Pi native `Agent` subagents. Do not spawn Pi child processes or invoke a sep
 - The parent may implement but must not issue its own QA or review pass.
 - QA and reviewer children must not edit files, write Plans, mutate Kernel state, or close decisions directly.
 - Missing `Agent` support, failed or malformed child output, stale child target, runtime write failure, invalid projection, missing credentials, unclear verification, repeated unchanged failure, or user cancellation stops fail-closed with an explicit reason and no decision write.
+- A Managed native authority failure reports its stable reason and exactly one same-Host recovery action. Never recommend another Host, worktree, Direct Path, unmanaged implementation, or automatic retry as a fallback.
 - `replan_needed` stops at `imm-planner`; do not widen scope or rewrite the active Plan. A replacement must use a new sequential Plan path after the current Plan reaches `completed`, or after a literal user explicitly marks it `cancelled` or `superseded`.
 - Plans never suspend, resume, queue, or execute in parallel. Do not insert a repair Plan ahead of the current Plan.
 - Same-boundary review `follow_up` repeats execution, independent QA, and the originating review gate.
@@ -139,12 +140,12 @@ Default user-facing shape: checkpoint progress lines, then `Conclusion -> Eviden
 ## Kernel Canary Routing
 
 When the Kernel projection reports an active/draining backend claim, keep
-`imm-loop` as the user-facing entry and call the `imm_kernel_canary` Tool for
-that owned task. Enrollment uses the `imm_canary_enrollment` Tool and Review
-authorization remains a native TUI gate. When the projection calls for
-`request_authorization` or `approve_breaking_intent_revision`, invoke the exact
-Tool operation directly without asking the user for chat pre-confirmation; the
-native host interaction is the single authority decision. Invoke
+`imm-loop` as the user-facing entry and call the current Host's Kernel integration
+for that owned task. Enrollment and Review authorization use the current Host's
+native gates. When the projection calls for `request_authorization` or
+`approve_breaking_intent_revision`, invoke the exact Tool operation directly
+without asking the user for chat pre-confirmation; the native Host interaction is
+the single authority decision. Invoke
 `repair_authority_state` directly for a proven stale claim; Kernel revalidation
 removes only the redundant claim without user interaction. Do not invoke the
 removed `imm-canary-work` Skill as

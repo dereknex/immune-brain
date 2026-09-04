@@ -156,11 +156,11 @@ describe("claude host package", () => {
   });
 
   it("fails closed on unsupported Claude versions and native Windows", () => {
-    expect(probeHost({ CLAUDE_CODE_VERSION: "2.1.198" }).ok).toBe(false);
+    expect(probeHost({ CLAUDE_CODE_VERSION: "2.1.235" }).ok).toBe(false);
     // Prerelease builds never satisfy the stable minimum: numeric-only
-    // comparison must not accept 2.1.199-alpha as 2.1.199.
-    expect(probeHost({ CLAUDE_CODE_VERSION: "2.1.199-alpha" }).ok).toBe(false);
-    expect(probeHost({ CLAUDE_CODE_VERSION: "2.1.199+build.1" }).ok).toBe(false);
+    // comparison must not accept 2.1.236-alpha as 2.1.236.
+    expect(probeHost({ CLAUDE_CODE_VERSION: "2.1.236-alpha" }).ok).toBe(false);
+    expect(probeHost({ CLAUDE_CODE_VERSION: "2.1.236+build.1" }).ok).toBe(false);
     expect(probeHost({ CLAUDE_CODE_VERSION: MIN_CLAUDE_CODE_VERSION }, "win32").ok).toBe(false);
     expect(probeHost({ CLAUDE_CODE_VERSION: MIN_CLAUDE_CODE_VERSION }, "linux").ok).toBe(true);
     expect(probeHost({ CLAUDE_CODE_VERSION: MIN_CLAUDE_CODE_VERSION }, "darwin").ok).toBe(true);

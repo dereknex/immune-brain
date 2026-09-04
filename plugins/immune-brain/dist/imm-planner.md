@@ -22,9 +22,12 @@ planning artifacts. A later literal-user request to start Enrollment is a
 non-authoritative execution trigger: invoke the native Enrollment gate directly,
 without asking for chat pre-confirmation. For a clear mutation request that
 already includes execution, invoke that gate as soon as the candidate is
-validated and Git-tracked. Literal-user confirmation in the native gate remains
-the authority boundary. Fast-Track may compress the same phases but cannot
-bypass that boundary, QA, Review, authorization, or completion.
+validated and Git-tracked. Literal-user confirmation in the current Host's
+native gate remains the authority boundary. A gate failure preserves candidate
+artifacts and reports its reason plus exactly one same-Host recovery action; it
+must never recommend another Host, worktree, Direct Path, unmanaged
+implementation, or automatic retry. Fast-Track may compress the same phases but
+cannot bypass that boundary, QA, Review, authorization, or completion.
 
 ## Clarification supplement
 
@@ -73,7 +76,7 @@ Then route deterministically:
 - an active or otherwise nonterminal v3 Plan remains on its existing v3 route;
 - no routing policy preserves the legacy v3 Planner behavior;
 - a valid `kernel_task_intent` retirement policy produces one TaskIntent draft
-  through Pi `imm-planner`;
+  through the current Host's explicit `imm-planner`;
 - an invalid, unreadable, untracked, or tracked-deleted policy rejects new
   planning authority with `routing_policy_invalid`;
 - no Planner path enrolls a task or falls back to v3 after retirement.
@@ -90,17 +93,18 @@ The routing projection selects the planning route; explicit
 of that Plan artifact. A valid Plan never proves Managed authority. Under an
 active `kernel_task_intent` policy, authority still requires a Git-tracked
 TaskIntent whose `imm-kernel intent validate <path> --json` projection is
-`valid: true` and `enrollment_ready: true`, followed by Pi TUI enrollment.
+`valid: true` and `enrollment_ready: true`, followed by current-Host native
+Enrollment.
 
-Pi host identity is implicit and never a planning input. The production boundary
-that turns a Git-tracked TaskIntent draft into managed execution authority is the
-native host TUI: the Planner's final `ctx.ui.custom` gate (via the
-`imm_canary_enrollment` foreground Tool) provides one literal-user confirmation
-bound to the TaskIntent content hash. Invoke the Tool directly when the route is
-ready; do not ask for a chat pre-confirmation. Enrollment validates the intent,
-Git ownership, scope, workspace claim, and final authority preconditions without
-executing acceptance descriptors. A routine task proceeds from that single
-confirmation through enrollment, execution and QA without a second human stop.
+Host identity is implicit and never a planning input. The production boundary
+that turns a Git-tracked TaskIntent draft into managed execution authority is
+the current Host's native Enrollment gate. Invoke that Host integration
+directly when the route is ready; do not ask for chat pre-confirmation. The
+single literal-user decision is bound to the TaskIntent revision, content hash,
+and preparation digest. Enrollment validates the intent, Git ownership, scope,
+workspace claim, and final authority preconditions without executing acceptance
+descriptors. A routine task proceeds from that single confirmation through
+enrollment, execution and QA without a second human stop.
 
 Before authoring a TaskIntent, trace each expected behavior from its public or
 runtime entry point through existing imports and callers to the highest focused
@@ -387,10 +391,11 @@ Iteration plan under `docs/plans/` and spec under `docs/specs/`. Includes: `Summ
 - When a project explicitly expects Chinese document prose, `imm-plan <plan-path> --json` includes an `output_language` warning if target Plan or referenced Spec prose appears mostly English.
 - Spec references align with steps: each step’s `Verification` is copy-paste-checkable against repo commands or files.
 - For brainstorm-origin Plans with a manifest, `imm-plan <plan-path> --json` reports `origin_coverage` totals with no `unmapped_items` and no reason-required trace rows without reasons.
-- Managed execution handoff is Git-tracked TaskIntent author/validate plus Pi TUI enrollment. Do not sync a v3 State Ledger or invoke a missing dispatcher.
+- Managed execution handoff is Git-tracked TaskIntent author/validate plus current-Host native Enrollment. Do not sync a v3 State Ledger or invoke a missing dispatcher.
 
 ## Next Action
 
 - Gate: Reference closure and the clarification supplement are complete; every upstream `BR-*` item is represented; no unresolved user-owned decision remains; any Planner-introduced decision delta is confirmed; the Plan passes `imm-plan --json` validation; and no step has a hypothetical-only verification path.
-- If gates pass: for Kernel-managed work, invoke the `imm_canary_enrollment` Tool directly without chat pre-confirmation. Its native `ctx.ui.custom` gate provides the single literal-user confirmation bound to the TaskIntent content hash, validates Enrollment preconditions without executing acceptance descriptors, and enrolls the task to continue through `imm-loop`.
+- If gates pass: for Kernel-managed work, invoke the current Host's native Enrollment Tool directly without chat pre-confirmation. Its single literal-user gate binds the TaskIntent revision, content hash, and preparation digest, validates Enrollment preconditions without executing acceptance descriptors, and enrolls the task to continue through `imm-loop`.
+- If the native gate fails: preserve candidate artifacts and report the stable reason plus exactly one same-Host recovery action. Do not suggest another Host, worktree, Direct Path, unmanaged implementation, or automatic retry.
 - If gates are not met: state which validation failures, unresolved verification paths, or material decision deltas remain; do not name a next skill.

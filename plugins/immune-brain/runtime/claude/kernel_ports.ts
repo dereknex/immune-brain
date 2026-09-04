@@ -47,7 +47,14 @@ import { reconcileKernelAuthority, repairKernelAuthority } from "../kernel/stora
 import { preparePiCanary, revalidatePiCanary } from "../kernel/pi_canary_prepare";
 import { qaFindingId } from "../assurance/qa_findings";
 import { taskDiffIdentity, taskRevisionIdentity } from "../workspace_scope";
-import { confirmationRef, enrollmentNonce, evaluateNativeGate, isPrivilegedOperation, type NativeDecision } from "./interaction";
+import {
+	confirmationRef,
+	enrollmentNonce,
+	evaluateNativeGate,
+	isPrivilegedOperation,
+	NativeAuthorityError,
+	type NativeConfirmationPort,
+} from "./interaction";
 import { ClaudeReviewHost, FileHookEventLog, type ClaudeHookEvent } from "./review_host";
 import { probeHost, type PermissionMode } from "./capability";
 
@@ -311,6 +318,10 @@ async function mintCapability(
 	return registry.issue(binding);
 }
 
+function throwIfCancelled(signal?: AbortSignal): void {
+	if (signal?.aborted) throw new NativeAuthorityError("user_cancelled", "Tool call was cancelled");
+}
+
 export interface ClaudeRuntimeOptions {
 	cwd: string;
 	env?: Record<string, string | undefined>;
@@ -318,7 +329,7 @@ export interface ClaudeRuntimeOptions {
 	ports?: AssuranceCoordinatorPorts;
 	interactive?: boolean;
 	permissionMode?: PermissionMode;
-	decisions?: Map<string, NativeDecision>;
+	requestConfirmation?: NativeConfirmationPort;
 }
 
 export class ClaudeRuntime {
@@ -327,8 +338,7 @@ export class ClaudeRuntime {
 	private readonly cwd: string;
 	private readonly env: Record<string, string | undefined>;
 	private readonly interactive: boolean;
-	private readonly permissionMode: PermissionMode;
-	private readonly decisions: Map<string, NativeDecision>;
+	private requestConfirmation?: NativeConfirmationPort;
 	private hostVersion: string | undefined;
 	private mutationRegistry: MutationAuthorityRegistry | null = null;
 	private enrollmentRegistry = createEnrollmentAuthorityRegistry();
@@ -338,8 +348,7 @@ export class ClaudeRuntime {
 		this.cwd = options.cwd;
 		this.env = options.env ?? process.env;
 		this.interactive = options.interactive ?? true;
-		this.permissionMode = options.permissionMode ?? "manual";
-		this.decisions = options.decisions ?? new Map();
+		this.requestConfirmation = options.requestConfirmation;
 		this.host = options.host ?? new ClaudeReviewHost(new FileHookEventLog());
 		if (options.ports) {
 			this.coordinator = new AssuranceCoordinator({ ...options.ports, host: this.host });
@@ -355,6 +364,10 @@ export class ClaudeRuntime {
 	/** Bind the version announced by the connected Host during the MCP handshake. */
 	bindHostVersion(version: string | undefined): void {
 		this.hostVersion = version || undefined;
+	}
+
+	bindNativeConfirmation(port: NativeConfirmationPort): void {
+		this.requestConfirmation = port;
 	}
 
 	async shutdown(): Promise<void> {
@@ -393,45 +406,28 @@ export class ClaudeRuntime {
 		return { registry: this.mutationRegistry, app: this.app };
 	}
 
-	private rejectBeforePreparation(operation: string, meta: ToolMeta): void {
-		// Zero-mutation fast path only: a configured deny/cancel rejects before
-		// any workspace preparation. The live accept elicitation is requested
-		// and consumed only after preparation computes the binding digests, so
-		// native confirmation is always bound to hashes computed before it.
-		const configured = this.decisions.get(operation) ?? meta.decision;
-		if (configured === "deny" || configured === "cancel") this.gate(operation, meta);
-	}
-
-	private gate(operation: string, meta: ToolMeta, binding: {
+	private async gate(operation: string, meta: ToolMeta, binding: {
+		risk?: string;
 		intentRevision?: number;
 		intentContentHash?: string;
 		bindingDigest?: string;
-	} = {}): { confirmation_ref: string } {
+	} = {}): Promise<{ confirmation_ref: string }> {
+		throwIfCancelled(meta.signal);
 		const probe = probeHost(this.env, process.platform, this.hostVersion);
-		if (!probe.ok) throw new Error(probe.reason);
-		const requiresUserInteraction = Boolean(meta.requiresUserInteraction);
-		const permissionMode = meta.permissionMode ?? this.permissionMode;
-		const configuredDecision = this.decisions.get(operation) ?? meta.decision;
-		const decision = configuredDecision ?? (
-			isPrivilegedOperation(operation)
-				&& Boolean(meta.interactive ?? this.interactive)
-				&& requiresUserInteraction
-				&& permissionMode !== "dontAsk"
-				? this.host.takeConfirmation(meta.sessionId, meta.toolCallId)
-				: undefined
-		);
-		const gate = evaluateNativeGate({
-			operation,
-			permissionMode,
-			requiresUserInteraction,
-			interactive: meta.interactive ?? this.interactive,
-			decision,
-		});
-		if (!gate.ok) throw new Error(gate.reason);
+		if (!probe.ok) throw new NativeAuthorityError("unsupported_host", probe.reason);
+		const interactive = meta.interactive ?? this.interactive;
+		if (!interactive) throw new NativeAuthorityError("unsupported_host", "interactive MCP elicitation is unavailable");
+		if (!isPrivilegedOperation(operation)) throw new Error(`unsupported native operation ${operation}`);
+		if (!this.requestConfirmation) throw new NativeAuthorityError("interaction_not_opened", "native confirmation port is unavailable");
+		const result = await this.requestConfirmation({ operation, taskId: meta.taskId, toolCallId: meta.toolCallId, signal: meta.signal, ...binding });
+		throwIfCancelled(meta.signal);
+		const gate = evaluateNativeGate({ operation, interactive, decision: result.decision });
+		if (!gate.ok) throw gate.error;
 		return {
 			confirmation_ref: confirmationRef({
-				sessionId: meta.sessionId,
+				connectionId: meta.sessionId,
 				toolCallId: meta.toolCallId,
+				requestId: result.requestId,
 				operation,
 				taskId: meta.taskId,
 				...binding,
@@ -444,17 +440,19 @@ export class ClaudeRuntime {
 	}
 
 	async enroll(taskId: string, meta: ToolMeta) {
-		this.rejectBeforePreparation("enroll", { ...meta, taskId });
 		const now = new Date().toISOString();
 		const preparation = await preparePiCanary(this.cwd, { task_id: taskId, now });
-		const gate = this.gate("enroll", { ...meta, taskId }, {
+		const intent = await readTaskIntent(this.cwd, taskId);
+		const gate = await this.gate("enroll", { ...meta, taskId }, {
+			risk: intent.intent.risk,
 			intentRevision: preparation.intent?.revision,
 			intentContentHash: preparation.intent?.content_hash,
 			bindingDigest: preparation.digest,
 		});
 		const { unchanged } = await revalidatePiCanary(this.cwd, { task_id: taskId, now }, preparation);
-		if (!unchanged) throw new Error("Workspace changed after confirmation; enrollment aborted before authority");
+		if (!unchanged) throw new NativeAuthorityError("workspace_changed", "workspace changed after native confirmation");
 		if (!preparation.intent) throw new Error("enrollment requires a readable TaskIntent");
+		throwIfCancelled(meta.signal);
 		const nonce = enrollmentNonce();
 		const binding: EnrollmentCapabilityBinding = {
 			task_id: taskId,
@@ -501,7 +499,6 @@ export class ClaudeRuntime {
 			return repairKernelAuthority(this.cwd, taskId, authority.revision);
 		}
 		if (!isPrivilegedOperation(operation) && operation !== "request_authorization") throw new Error(`unsupported privileged operation ${operation}`);
-		this.rejectBeforePreparation(operation, { ...meta, taskId });
 		let op = operation;
 		let decisionOp: { finding_id: string; resolution: string } | undefined;
 		const projection = await this.status(taskId);
@@ -562,15 +559,22 @@ export class ClaudeRuntime {
 				writeFileSync(sidecar, `${JSON.stringify(nextIntent, null, 2)}\n`);
 				execFileSync("git", ["add", "--", priorIntent.intent_ref.path], { cwd: this.cwd, stdio: ["ignore", "pipe", "pipe"] });
 				const preparedRecord = await readTaskRecord(this.cwd, taskId);
-				if (!preparedRecord.record) throw new Error("TaskRecord changed before the breaking revision digest");
+				if (!preparedRecord.record) {
+					throw new NativeAuthorityError("workspace_changed", "TaskRecord changed before the breaking revision digest");
+				}
 				preparedDiffHash = diffHashOf(this.cwd, preparedRecord.record);
 			}
 			const preparedProjection = await this.status(taskId);
-			assertProjectionBinding(projection, preparedProjection, Boolean(nextIntent));
-			if (preparedProjection.projection.diff_hash !== preparedDiffHash) {
-				throw new Error("Workspace changed while preparing the authority digest");
+			try {
+				assertProjectionBinding(projection, preparedProjection, Boolean(nextIntent));
+				if (preparedProjection.projection.diff_hash !== preparedDiffHash) {
+					throw new Error("workspace changed while preparing the authority digest");
+				}
+			} catch (error) {
+				throw new NativeAuthorityError("workspace_changed", error instanceof Error ? error.message : String(error));
 			}
-			gate = this.gate(operation, { ...meta, taskId }, {
+			gate = await this.gate(operation, { ...meta, taskId }, {
+				risk: projection.projection.risk,
 				intentRevision: nextIntent?.revision ?? projection.projection.intent_revision,
 				intentContentHash: nextIntentHash ?? projection.projection.intent_content_hash,
 				bindingDigest: `${preparedDiffHash}:${nextIntentHash ?? ""}`,
@@ -588,11 +592,16 @@ export class ClaudeRuntime {
 		const confirmation = gate.confirmation_ref;
 		try {
 			const capabilityProjection = await this.status(taskId);
-			assertProjectionBinding(projection, capabilityProjection, Boolean(nextIntent));
+			try {
+				assertProjectionBinding(projection, capabilityProjection, Boolean(nextIntent));
+			} catch (error) {
+				throw new NativeAuthorityError("workspace_changed", error instanceof Error ? error.message : String(error));
+			}
 			const operationDiffHash = capabilityProjection.projection.diff_hash;
 			if (nextIntent && operationDiffHash !== preparedDiffHash) {
-				throw new Error("Workspace changed after native confirmation; authority aborted before capability issuance");
+				throw new NativeAuthorityError("workspace_changed", "workspace changed after native confirmation");
 			}
+			throwIfCancelled(meta.signal);
 			const capability = await mintCapability(registry, {
 				authority_kind: "user",
 				task_id: taskId,
@@ -608,6 +617,7 @@ export class ClaudeRuntime {
 				...(op === "resolve_user_decision" && decisionOp ? decisionOp : {}),
 				...(op === "stop" ? { reason: extra.reason ?? "user stop" } : {}),
 			});
+			throwIfCancelled(meta.signal);
 			const result = app.execute({
 				root: this.cwd,
 				task_id: taskId,
@@ -765,6 +775,5 @@ export interface ToolMeta {
 	requiresUserInteraction?: boolean;
 	permissionMode?: PermissionMode;
 	interactive?: boolean;
-	decision?: NativeDecision;
 	signal?: AbortSignal;
 }

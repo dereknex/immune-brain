@@ -14,7 +14,7 @@ Immune-Brain 在 Pi 之上提供结构化的工程工作流：
 - **计划变为可追踪的任务**（`TaskIntent` + `TaskRecord`），进度落盘持久化，不依赖对话历史。
 - **质量由代码强制保障** — 自动化 QA 与隔离式 Review 必须通过，任务才会完成。
 
-Pi 与 Claude Code 是支持的宿主。未声明的适配器仍不受支持。Claude Code 最低版本为 `2.1.199`。历史真实 Host 证据归档于 `docs/verification/archive/`；当前发布由确定性的 package 与 authority 检查把关。
+Pi 与 Claude Code 是支持的宿主。未声明的适配器仍不受支持。Claude Code 最低版本为 `2.1.236`，这是已通过交互式 server-initiated MCP elicitation 验证的最低版本。当前真实 Host 证据见 `docs/verification/claude-native-elicitation-authority-conformance.md`；历史报告归档于 `docs/verification/archive/`。
 
 ---
 
@@ -64,7 +64,7 @@ mise run check-dist-sync    # 校验生成文档同步
 
 Pi 会自动路由：需求模糊走澄清，目标明确走规划。
 
-**2. 确认计划** — Planner 会在 `docs/plans/` 生成 `TaskIntent`（范围、风险等级、验收条件）。检查无误后在 TUI 弹窗中确认 Enrollment（所有风险等级都需要确认，确认前零写入）。
+**2. 确认计划** — Planner 会在 `docs/plans/` 生成 `TaskIntent`（范围、风险等级、验收条件）。检查无误后由当前 Host 的原生 gate 确认 Enrollment（所有风险等级都需要确认，确认前零 authority 写入）。
 
 **3. 开始执行** — `imm-loop` 按计划执行、跑 QA、触发 Review。按提示暂存任务拥有的文件：
 
@@ -191,7 +191,7 @@ docs/specs/                           # Living specs（原地更新）
 
 **QA 失败怎么办？** QA 返回 `rework` 或 `replan_required`，`imm-loop` 会自动路由回 Executor 或 `imm-planner` 调整范围，无需手动重置。
 
-**可以在 Pi 之外使用吗？** 可以在本地交互式 Claude Code 中使用同一套 Kernel；未声明的适配器不受支持。
+**可以在 Pi 之外使用吗？** 可以从 `2.1.236` 起在本地交互式 Claude Code 中使用同一套 Kernel；Claude plugin 通过绑定 digest 的原生 MCP elicitation gate 获取 authority，未声明的适配器不受支持。
 
 ---
 

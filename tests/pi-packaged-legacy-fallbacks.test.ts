@@ -77,7 +77,8 @@ describe("packaged legacy CLI fallbacks", () => {
 		expectRetiredGuidanceAbsent(planner, "imm-planner.md");
 		expect(planner).toContain("imm-plan <plan-path> --json");
 		expect(planner).toContain("imm-kernel intent author");
-		expect(planner).toContain("imm_canary_enrollment");
+		expect(planner).toContain("current Host's native Enrollment");
+		expect(planner).not.toContain("imm_canary_enrollment");
 		expect(planner).not.toContain("/imm-canary-new");
 		expect(planner).not.toContain("/imm-canary-enroll");
 	});
@@ -108,7 +109,8 @@ describe("packaged legacy CLI fallbacks", () => {
 				});
 			expectRetiredGuidanceAbsent(planner, "packed/imm-planner.md");
 			expectRetiredGuidanceAbsent(compounder, "packed/imm-compounder.md");
-			expect(planner).toContain("imm_canary_enrollment");
+			expect(planner).toContain("current Host's native Enrollment");
+			expect(planner).not.toContain("imm_canary_enrollment");
 			expect(planner).not.toContain("/imm-canary-new");
 			expect(planner).not.toContain("/imm-canary-enroll");
 			expect(compounder).toContain(

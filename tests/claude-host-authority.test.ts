@@ -1,5 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
+import { PassThrough } from "node:stream";
 import { join, resolve } from "node:path";
 import {
 	AssuranceCoordinator,
@@ -11,7 +12,7 @@ import {
 import type { ReviewBundle } from "../plugins/immune-brain/runtime/assurance/review_evidence";
 import { tmpdir } from "node:os";
 import { ClaudeReviewHost, FileHookEventLog, MemoryHookEventLog, hookEventPath, parseHookStdin, REVIEWER_AGENT, AGENT_TOOL } from "../plugins/immune-brain/runtime/claude/review_host";
-import { createMcpRuntime, handleJsonRpc, listMcpTools } from "../plugins/immune-brain/runtime/claude/mcp_server";
+import { createMcpRuntime, handleJsonRpc, listMcpTools, serveStdio } from "../plugins/immune-brain/runtime/claude/mcp_server";
 import { ClaudeRuntime, diffHashOf, submitClaudeReview, type ToolMeta } from "../plugins/immune-brain/runtime/claude/kernel_ports";
 import { createCanaryApplication } from "../plugins/immune-brain/runtime/kernel/canary_application";
 import { createMutationAuthorityRegistry } from "../plugins/immune-brain/runtime/kernel/authority_port";
@@ -135,6 +136,65 @@ function authorityFixtureRoot(taskId: string): { root: string; intent: Record<st
 	return { root, intent };
 }
 
+function jsonLineReader(output: PassThrough): () => Promise<Record<string, unknown>> {
+	let buffer = "";
+	const queue: Record<string, unknown>[] = [];
+	const waiters: Array<(value: Record<string, unknown>) => void> = [];
+	output.on("data", (chunk) => {
+		buffer += chunk.toString();
+		while (buffer.includes("\n")) {
+			const newline = buffer.indexOf("\n");
+			const line = buffer.slice(0, newline);
+			buffer = buffer.slice(newline + 1);
+			if (!line) continue;
+			const value = JSON.parse(line) as Record<string, unknown>;
+			const waiter = waiters.shift();
+			if (waiter) waiter(value); else queue.push(value);
+		}
+	});
+	return () => queue.length ? Promise.resolve(queue.shift()!) : new Promise((resolve) => waiters.push(resolve));
+}
+
+async function runWireEnrollment(response: Record<string, unknown>, options: { cancelOuter?: boolean; replay?: boolean; unknownFirst?: boolean } = {}) {
+	const taskId = `wire-${Math.random().toString(16).slice(2)}`;
+	const fixture = authorityFixtureRoot(taskId);
+	const input = new PassThrough();
+	const output = new PassThrough();
+	const next = jsonLineReader(output);
+	const server = serveStdio({
+		input,
+		output,
+		runtime: createMcpRuntime({ cwd: fixture.root, env: ENV }),
+		exit: () => undefined,
+	});
+	const send = (message: unknown) => input.write(`${JSON.stringify(message)}\n`);
+	send({
+		jsonrpc: "2.0",
+		id: "init",
+		method: "initialize",
+		params: { protocolVersion: "2025-06-18", clientInfo: { name: "claude-code", version: "2.1.236" }, capabilities: { elicitation: {} } },
+	});
+	await next();
+	send({
+		jsonrpc: "2.0",
+		id: "outer",
+		method: "tools/call",
+		params: { name: "enroll", arguments: { task_id: taskId }, _meta: { "claudecode/toolUseId": "toolu-wire" } },
+	});
+	const elicitation = await next();
+	if (options.cancelOuter) {
+		send({ jsonrpc: "2.0", method: "notifications/cancelled", params: { requestId: "outer" } });
+	} else {
+		if (options.unknownFirst) send({ jsonrpc: "2.0", id: "unknown-elicitation", ...response });
+		send({ jsonrpc: "2.0", id: elicitation.id, ...response });
+		if (options.replay) send({ jsonrpc: "2.0", id: elicitation.id, ...response });
+	}
+	const result = await next();
+	input.end();
+	await server;
+	return { taskId, root: fixture.root, elicitation, result };
+}
+
 function reviewLifecycle(host: ClaudeReviewHost, input: { sessionId?: string; agentId: string; operationId?: string; taskId?: string; prompt?: string; result: string }) {
 	const sessionId = input.sessionId ?? "s";
 	host.observe({ type: "SubagentStart", sessionId, agent: REVIEWER_AGENT, agentId: input.agentId, taskId: input.taskId, operationId: input.operationId, prompt: input.prompt });
@@ -207,35 +267,41 @@ async function submitObservedReview(
 }
 
 describe("claude host authority", () => {
-	test("only user decisions declare mandatory interaction", () => {
+	test("privileged tools use the standard MCP destructive hint without vendor permission metadata", () => {
 		const tools = listMcpTools();
 		for (const name of ["enroll", "request_authorization", "approve_breaking_intent_revision", "stop"]) {
-			expect(tools.find((tool) => tool.name === name)?.annotations).toMatchObject({
-				"anthropic/requiresUserInteraction": true,
-			});
+			expect(tools.find((tool) => tool.name === name)?.annotations).toEqual({ destructiveHint: true });
 		}
-		expect(tools.find((tool) => tool.name === "repair_authority_state")?.annotations).not.toHaveProperty("anthropic/requiresUserInteraction");
-		expect(tools.find((tool) => tool.name === "status")?.annotations).not.toHaveProperty("anthropic/requiresUserInteraction");
 		const submitReview = tools.find((tool) => tool.name === "submit_review");
 		expect(submitReview?.inputSchema.required).toEqual(["task_id", "verdict"]);
 		expect(submitReview?.inputSchema.properties).toHaveProperty("verdict");
 	});
 
-	test("dontAsk, missing annotation, deny, cancel, and non-interactive mint zero capability", () => {
-		const base = { operation: "enroll", requiresUserInteraction: true, interactive: true, decision: "accept" as const, permissionMode: "manual" };
-		expect(evaluateNativeGate({ ...base, permissionMode: "dontAsk" }).ok).toBe(false);
-		expect(evaluateNativeGate({ ...base, requiresUserInteraction: false }).ok).toBe(false);
-		expect(evaluateNativeGate({ ...base, decision: "deny" }).ok).toBe(false);
+	test("production runtime exposes no direct-decision authority seam", () => {
+		const source = [
+			readFileSync(join(process.cwd(), "plugins/immune-brain/runtime/claude/kernel_ports.ts"), "utf8"),
+			readFileSync(join(process.cwd(), "plugins/immune-brain/runtime/claude/mcp_server.ts"), "utf8"),
+		].join("\n");
+		expect(source).not.toContain("configured-test-decision");
+		expect(source).not.toContain("meta.decision");
+		expect(source).not.toMatch(/decisions\??:\s*Map/);
+	});
+
+	test("only an exact native action can authorize", () => {
+		const base = { operation: "enroll", interactive: true } as const;
+		expect(evaluateNativeGate({ ...base, decision: "accept" }).ok).toBe(true);
+		expect(evaluateNativeGate({ ...base, decision: "decline" }).ok).toBe(false);
 		expect(evaluateNativeGate({ ...base, decision: "cancel" }).ok).toBe(false);
-		expect(evaluateNativeGate({ ...base, interactive: false }).ok).toBe(false);
-		expect(evaluateNativeGate({ ...base, permissionMode: "bypassPermissions" }).ok).toBe(true);
+		expect(evaluateNativeGate({ ...base, interactive: false, decision: "accept" }).ok).toBe(false);
+		expect(evaluateNativeGate(base).ok).toBe(false);
 		expect(probeHost({ CLAUDE_CODE_VERSION: "2.1.100" }).ok).toBe(false);
 	});
 
-	test("unknown permission mode fails closed before Kernel mutation", async () => {
+	test("permission modes are non-authoritative and cannot replace native elicitation", async () => {
 		const h = makeCoordinator();
+		const root = authorityFixtureRoot(TASK).root;
 		const mcp = createMcpRuntime({
-			cwd: ROOT,
+			cwd: root,
 			env: { ...ENV, CLAUDE_CODE_PERMISSION_MODE: "future-mode" },
 			ports: h.ports,
 			interactive: true,
@@ -245,66 +311,136 @@ describe("claude host authority", () => {
 			jsonrpc: "2.0",
 			id: 0,
 			method: "initialize",
-			params: { clientInfo: { name: "claude-code", version: "2.1.236" }, capabilities: { elicitation: {} } },
+			params: { protocolVersion: "2025-06-18", clientInfo: { name: "claude-code", version: "2.1.236" }, capabilities: { elicitation: {} } },
 		}, mcp);
 		await expect(mcp.callTool("enroll", { task_id: TASK }, {
-			requiresUserInteraction: true,
 			interactive: true,
 			sessionId: "s",
 			toolCallId: "c1",
 			taskId: TASK,
-		})).rejects.toThrow("unsupported permission mode future-mode");
+		})).rejects.toThrow("interaction_not_opened");
 		expect(h.counts().applyCount).toBe(0);
 	});
 
-	test("ElicitationResult requires native tool_use_id", () => {
-		expect(parseHookStdin(JSON.stringify({
-			hook_event_name: "ElicitationResult",
-			session_id: "s",
-			request_id: "rpc-id",
-			decision: "accept",
-		}))).toBeNull();
-		expect(parseHookStdin(JSON.stringify({
-			hook_event_name: "ElicitationResult",
-			session_id: "s",
-			tool_use_id: "toolu-1",
-			decision: "accept",
-		}))).toEqual({ type: "ElicitationResult", sessionId: "s", toolCallId: "toolu-1", decision: "accept" });
-		// Only the exact decision strings are native evidence; booleans and
-		// yes/no aliases are malformed and fail closed with zero mutation.
-		for (const malformed of [true, false, "yes", "no", "Accept", 1, {}]) {
-			expect(parseHookStdin(JSON.stringify({
-				hook_event_name: "ElicitationResult",
-				session_id: "s",
-				tool_use_id: "toolu-1",
-				decision: malformed,
-			}))).toBeNull();
-		}
-		// The Host's own session_id is the only session identity for this
-		// event: the sessionId alias and CLAUDE_SESSION_ID environment fallback
-		// are never accepted for native authority evidence.
-		expect(parseHookStdin(JSON.stringify({
-			hook_event_name: "ElicitationResult",
-			sessionId: "s",
-				tool_use_id: "toolu-1",
-				decision: "accept",
-			}))).toBeNull();
-		process.env.CLAUDE_SESSION_ID = "env-session";
-		try {
-			expect(parseHookStdin(JSON.stringify({
-				hook_event_name: "ElicitationResult",
-				tool_use_id: "toolu-1",
-				decision: "accept",
-			}))).toBeNull();
-		} finally {
-			delete process.env.CLAUDE_SESSION_ID;
-		}
-	});
 
-	test("confirmation refs bind the exact intent and operation digest", () => {
-		const base = { sessionId: "s", toolCallId: "t", operation: "approve_breaking_intent_revision", taskId: TASK };
+	test("confirmation refs bind the exact intent, connection, and nested request", () => {
+		const base = { connectionId: "s", toolCallId: "t", requestId: "nested", operation: "approve_breaking_intent_revision", taskId: TASK };
+		expect(confirmationRef({ ...base, intentRevision: 2, intentContentHash: "sha256:next", bindingDigest: "sha256:diff" }))
+			.not.toBe(confirmationRef({ ...base, requestId: "other", intentRevision: 2, intentContentHash: "sha256:next", bindingDigest: "sha256:diff" }));
 		expect(confirmationRef({ ...base, intentRevision: 2, intentContentHash: "sha256:next", bindingDigest: "sha256:diff" }))
 			.not.toBe(confirmationRef({ ...base, intentRevision: 3, intentContentHash: "sha256:other", bindingDigest: "sha256:diff" }));
+	});
+
+	test("stdio MCP elicitation accepts once and binds the prepared task identity", async () => {
+		const { root, taskId, elicitation, result } = await runWireEnrollment(
+			{ result: { action: "accept", content: {} } },
+			{ replay: true, unknownFirst: true },
+		);
+		expect(elicitation).toMatchObject({ jsonrpc: "2.0", method: "elicitation/create" });
+		const message = ((elicitation.params as { message?: string }).message ?? "");
+		expect(message).toContain(`Task: ${taskId}`);
+		expect(message).toContain("Risk: routine");
+		expect(message).toContain("Intent revision: 1");
+		expect(message).toContain("Intent hash: sha256:");
+		expect(message).toContain("Binding digest:");
+		expect(JSON.stringify(result)).not.toContain("error");
+		expect(JSON.parse(readFileSync(join(root, ".imm", "state", "workspace.json"), "utf8")).current_working).toBe(taskId);
+	});
+
+	test("decline, cancel, malformed response, unsupported elicitation, and outer cancellation mint zero authority", async () => {
+		const cases = [
+			{ response: { result: { action: "decline" } }, code: "user_denied" },
+			{ response: { result: { action: "cancel" } }, code: "user_cancelled" },
+			{ response: { result: { action: "yes" } }, code: "correlation_missing" },
+			{ response: { result: { action: "accept" } }, code: "correlation_missing" },
+			{ response: { result: { action: "accept", content: "yes" } }, code: "correlation_missing" },
+			{ response: { result: { action: "accept", content: { unexpected: true } } }, code: "correlation_missing" },
+			{ response: { jsonrpc: "1.0", result: { action: "accept", content: {} } }, code: "correlation_missing" },
+			{ response: { method: "spoofed/request", result: { action: "accept", content: {} } }, code: "correlation_missing" },
+			{ response: { error: { code: -32601, message: "method not found" } }, code: "unsupported_host" },
+		];
+		for (const item of cases) {
+			const result = await runWireEnrollment(item.response);
+			expect(JSON.stringify(result.result)).toContain(item.code);
+			expect(existsSync(join(result.root, ".imm", "state", "workspace.json"))).toBe(false);
+		}
+		const cancelled = await runWireEnrollment({}, { cancelOuter: true });
+		expect(JSON.stringify(cancelled.result)).toContain("user_cancelled");
+		expect(existsSync(join(cancelled.root, ".imm", "state", "workspace.json"))).toBe(false);
+	});
+
+	test("stdio output stream error terminates serveStdio and rejects pending elicitation", async () => {
+		const taskId = "wire-output-disconnect";
+		const fixture = authorityFixtureRoot(taskId);
+		const input = new PassThrough();
+		const output = new PassThrough();
+		const next = jsonLineReader(output);
+		const exitCodes: number[] = [];
+		const serverPromise = serveStdio({
+			input,
+			output,
+			runtime: createMcpRuntime({ cwd: fixture.root, env: ENV }),
+			exit: (code) => exitCodes.push(code),
+		});
+		input.write(`${JSON.stringify({
+			jsonrpc: "2.0",
+			id: "init",
+			method: "initialize",
+			params: { protocolVersion: "2025-06-18", clientInfo: { name: "claude-code", version: "2.1.236" }, capabilities: { elicitation: {} } },
+		})}\n`);
+		await next();
+		input.write(`${JSON.stringify({
+			jsonrpc: "2.0",
+			id: "outer",
+			method: "tools/call",
+			params: { name: "enroll", arguments: { task_id: taskId }, _meta: { "claudecode/toolUseId": "toolu-wire" } },
+		})}\n`);
+		const elicitation = await next();
+		expect(elicitation.method).toBe("elicitation/create");
+		output.destroy(new Error("stdout broken"));
+		await serverPromise;
+		expect(exitCodes[0]).toBe(1);
+		expect(existsSync(join(fixture.root, ".imm", "state", "workspace.json"))).toBe(false);
+	});
+
+	test("outer cancellation after native accept blocks capability issuance and commit", async () => {
+		const enrollFixture = authorityFixtureRoot("cancel-after-enroll-accept");
+		const enrollAbort = new AbortController();
+		const enrollRuntime = new ClaudeRuntime({
+			cwd: enrollFixture.root,
+			env: ENV,
+			requestConfirmation: async () => {
+				enrollAbort.abort();
+				return { decision: "accept", requestId: "nested-enroll" };
+			},
+		});
+		await expect(enrollRuntime.enroll("cancel-after-enroll-accept", {
+			taskId: "cancel-after-enroll-accept",
+			sessionId: "s",
+			toolCallId: "enroll",
+			signal: enrollAbort.signal,
+		})).rejects.toThrow("user_cancelled");
+		expect(existsSync(join(enrollFixture.root, ".imm", "state", "workspace.json"))).toBe(false);
+
+		const authorizeFixture = authorityFixtureRoot("cancel-after-authorize-accept");
+		const authorizeRuntime = new ClaudeRuntime({
+			cwd: authorizeFixture.root,
+			env: ENV,
+			requestConfirmation: async ({ operation }) => ({ decision: "accept", requestId: `nested-${operation}` }),
+		});
+		const baseMeta = { taskId: "cancel-after-authorize-accept", sessionId: "s", toolCallId: "enroll" };
+		await authorizeRuntime.enroll("cancel-after-authorize-accept", baseMeta);
+		const authorizeAbort = new AbortController();
+		authorizeRuntime.bindNativeConfirmation(async () => {
+			authorizeAbort.abort();
+			return { decision: "accept", requestId: "nested-stop" };
+		});
+		await expect(authorizeRuntime.authorize("cancel-after-authorize-accept", "stop", {
+			...baseMeta,
+			toolCallId: "stop",
+			signal: authorizeAbort.signal,
+		})).rejects.toThrow("user_cancelled");
+		expect((await authorizeRuntime.status("cancel-after-authorize-accept")).projection.lifecycle).toBe("active");
 	});
 
 	test("breaking approval uses the staged next-state digest and commits successfully", async () => {
@@ -315,7 +451,7 @@ describe("claude host authority", () => {
 			env: ENV,
 			interactive: true,
 			permissionMode: "manual",
-			decisions: new Map([["enroll", "accept"], ["approve_breaking_intent_revision", "accept"]]),
+			requestConfirmation: async ({ operation }) => ({ decision: "accept", requestId: `nested-${operation}` }),
 		});
 		const meta = (toolCallId: string): ToolMeta => ({ taskId, sessionId: "s", toolCallId, requiresUserInteraction: true, interactive: true, permissionMode: "manual" });
 		await runtime.enroll(taskId, meta("enroll"));
@@ -325,291 +461,9 @@ describe("claude host authority", () => {
 		expect(result.record.intent_ref.path).toBe(`docs/plans/${taskId}.intent.json`);
 	});
 
-	test("breaking revision consumes native acceptance only after staging and digest binding", async () => {
-		const taskId = "binding-order";
-		const fixture = authorityFixtureRoot(taskId);
-		const host = new ClaudeReviewHost(new FileHookEventLog(mkdtempSync(join(tmpdir(), "claude-binding-order-"))));
-		const sidecar = join(fixture.root, "docs", "plans", `${taskId}.intent.json`);
-		const stagedAtConfirmation: Array<number | null> = [];
-		const baseTake = host.takeConfirmation.bind(host);
-		host.takeConfirmation = (sessionId: string, toolCallId: string) => {
-			// Observed at elicitation-consumption time: the candidate intent must
-			// already be staged (digest binding computed) BEFORE confirmation.
-			stagedAtConfirmation.push(JSON.parse(readFileSync(sidecar, "utf8")).revision ?? null);
-			return baseTake(sessionId, toolCallId);
-		};
-		host.observe({ type: "ElicitationResult", sessionId: "s", toolCallId: "enroll", decision: "accept" });
-		host.observe({ type: "ElicitationResult", sessionId: "s", toolCallId: "approve", decision: "accept" });
-		const runtime = new ClaudeRuntime({
-			cwd: fixture.root,
-			env: ENV,
-			interactive: true,
-			permissionMode: "manual",
-			host,
-		});
-		const meta = (toolCallId: string): ToolMeta => ({ taskId, sessionId: "s", toolCallId, requiresUserInteraction: true, interactive: true, permissionMode: "manual" });
-		await runtime.enroll(taskId, meta("enroll"));
-		const nextIntent = { ...fixture.intent, acceptance: [{ id: "acc-1", assertion: "revised assertion", verification: "bun test" }], revision: 2 };
-		const result = await runtime.authorize(taskId, "approve_breaking_intent_revision", meta("approve"), { next_intent: nextIntent });
-		expect(result.record.intent_snapshot.revision).toBe(2);
-		// Exactly one live elicitation per operation, and the approve
-		// elicitation saw the already-staged revision-2 candidate.
-		expect(stagedAtConfirmation).toEqual([1, 2]);
-	});
 
-	test("MCP privileged call without native accept performs zero Kernel mutation", async () => {
-		const h = makeCoordinator();
-		// Preparation now runs before the native accept gate, so the runtime
-		// needs a readable fixture root for the digest computation to succeed.
-		const root = authorityFixtureRoot(TASK).root;
-		const mcp = createMcpRuntime({
-			cwd: root,
-			env: ENV,
-			ports: h.ports,
-			interactive: true,
-			host: new ClaudeReviewHost(new FileHookEventLog(mkdtempSync(join(tmpdir(), "claude-mcp-elicitation-")))),
-		});
-		// Authority-mutating tools require a version bound by the trusted
-		// initialize handshake even when CLAUDE_CODE_VERSION is set: the
-		// environment fallback is disabled on MCP connections.
-		await expect(mcp.callTool("advance_assurance", { task_id: TASK })).rejects.toThrow("Claude Code version is unavailable");
-		await handleJsonRpc({
-			jsonrpc: "2.0",
-			id: 0,
-			method: "initialize",
-			params: { clientInfo: { name: "claude-code", version: "2.1.236" }, capabilities: { elicitation: {} } },
-		}, mcp);
-		await expect(mcp.callTool("enroll", { task_id: TASK }, {
-			requiresUserInteraction: true,
-			interactive: true,
-			decision: "deny",
-			sessionId: "s",
-			toolCallId: "c1",
-			taskId: TASK,
-		})).rejects.toThrow(/denied/);
-		await expect(mcp.callTool("enroll", { task_id: TASK }, {
-			requiresUserInteraction: true,
-			interactive: true,
-			sessionId: "s",
-			toolCallId: "c2",
-			taskId: TASK,
-		})).rejects.toThrow(/native interaction missing/);
-		await expect(mcp.callTool("enroll", { task_id: TASK, native_decision: "accept" }, {
-			requiresUserInteraction: true,
-			interactive: true,
-		})).rejects.toThrow(/cannot be supplied in tool arguments/);
-		const missingMeta = await handleJsonRpc({
-			jsonrpc: "2.0",
-			id: "hook-tool",
-			method: "tools/call",
-			params: { name: "enroll", arguments: { task_id: TASK } },
-		}, mcp);
-		expect(JSON.stringify(missingMeta)).toContain("host correlation metadata missing");
-		// Privileged calls require trusted handshake evidence: an initialize
-		// without elicitation capability stays non-interactive and fails closed.
-		const nonInteractive = createMcpRuntime({
-			cwd: ROOT,
-			env: ENV,
-			ports: h.ports,
-			host: new ClaudeReviewHost(),
-		});
-		await handleJsonRpc({
-			jsonrpc: "2.0",
-			id: 1,
-			method: "initialize",
-			params: { clientInfo: { name: "claude-code", version: "2.1.236" } },
-		}, nonInteractive);
-		const denied = await handleJsonRpc({
-			jsonrpc: "2.0",
-			id: 2,
-			method: "tools/call",
-			params: { name: "enroll", arguments: { task_id: TASK }, _meta: { session_id: "s", tool_use_id: "t" } },
-		}, nonInteractive);
-		expect(JSON.stringify(denied)).toContain("non-interactive host session cannot mint authority");
-		expect(h.counts().applyCount).toBe(0);
-		// Non-interactive sessions cannot run ANY authority-mutating tool, not
-		// just the five native-confirmation operations: QA/review/completion
-		// must not mutate Kernel state without elicitation capability.
-		for (const tool of ["advance_assurance", "submit_review"]) {
-			const advanceDenied = await handleJsonRpc({
-				jsonrpc: "2.0",
-				id: 9,
-				method: "tools/call",
-				params: { name: tool, arguments: { task_id: TASK }, _meta: { session_id: "s", tool_use_id: "t" } },
-			}, nonInteractive);
-			expect(JSON.stringify(advanceDenied)).toContain("non-interactive host session cannot execute authority tools");
-		}
-		expect(h.counts().applyCount).toBe(0);
-		// Only a valid elicitation capability OBJECT counts as interactivity:
-		// false, strings, and arrays are malformed and stay non-interactive.
-		for (const malformed of [false, "yes", 1, []]) {
-			const badCapability = createMcpRuntime({
-				cwd: ROOT,
-				env: ENV,
-				ports: h.ports,
-				host: new ClaudeReviewHost(),
-			});
-			await handleJsonRpc({
-				jsonrpc: "2.0",
-				id: 1,
-				method: "initialize",
-				params: { clientInfo: { name: "claude-code", version: "2.1.236" }, capabilities: { elicitation: malformed } },
-			}, badCapability);
-			const rejected = await handleJsonRpc({
-				jsonrpc: "2.0",
-				id: 2,
-				method: "tools/call",
-				params: { name: "enroll", arguments: { task_id: TASK }, _meta: { session_id: "s", tool_use_id: "t" } },
-			}, badCapability);
-			expect(JSON.stringify(rejected)).toContain("non-interactive host session cannot mint authority");
-		}
-		expect(h.counts().applyCount).toBe(0);
-		// The handshake clientInfo.version is the trusted version source: an
-		// unversioned client fails closed for authority calls, while read-only
-		// status stays usable without trusted Host evidence.
-		const versionless = createMcpRuntime({
-			cwd: ROOT,
-			env: { CLAUDE_CODE_PERMISSION_MODE: "manual" },
-			ports: h.ports,
-			host: new ClaudeReviewHost(),
-		});
-		await expect(versionless.callTool("status", {})).rejects.toThrow("task_id is required");
-		await handleJsonRpc({
-			jsonrpc: "2.0",
-			id: 1,
-			method: "initialize",
-			params: { clientInfo: { name: "claude-code", version: "2.1.236" }, capabilities: { elicitation: {} } },
-		}, versionless);
-		await expect(versionless.callTool("status", {})).rejects.toThrow("task_id is required");
-		await expect(versionless.callTool("status", { task_id: TASK })).resolves.toBeDefined();
-		const staleVersion = createMcpRuntime({
-			cwd: ROOT,
-			env: { CLAUDE_CODE_PERMISSION_MODE: "manual" },
-			ports: h.ports,
-			host: new ClaudeReviewHost(),
-		});
-		await handleJsonRpc({
-			jsonrpc: "2.0",
-			id: 1,
-			method: "initialize",
-			params: { clientInfo: { name: "claude-code", version: "0" }, capabilities: { elicitation: {} } },
-		}, staleVersion);
-		await expect(staleVersion.callTool("advance_assurance", { task_id: TASK })).rejects.toThrow("Claude Code version is invalid: 0");
-		await expect(staleVersion.callTool("status", { task_id: TASK })).resolves.toBeDefined();
-		await handleJsonRpc({
-			jsonrpc: "2.0",
-			id: 1,
-			method: "initialize",
-			params: { clientInfo: { name: "claude-code", version: "2.1.236" }, capabilities: { elicitation: {} } },
-		}, mcp);
-		expect(JSON.stringify(missingMeta)).toContain("host correlation metadata missing");
-		mcp.observe({ type: "ElicitationResult", sessionId: "hook-session", toolCallId: "hook-tool", decision: "accept" });
-		const accepted = await handleJsonRpc({
-			jsonrpc: "2.0",
-			id: "rpc-distinct",
-			method: "tools/call",
-			params: {
-				name: "enroll",
-				arguments: { task_id: TASK },
-				_meta: { "claudecode/toolUseId": "hook-tool" },
-			},
-		}, mcp);
-		expect(JSON.stringify(accepted)).not.toContain("native interaction missing");
-		expect(JSON.stringify(accepted)).not.toContain("host correlation metadata missing");
-		expect(JSON.stringify(accepted)).not.toContain("cannot be supplied in tool arguments");
-		expect(h.counts().applyCount).toBe(0);
-	});
 
-	test("real Claude Code wire correlation bridges session identity through the ElicitationResult record", async () => {
-		const h = makeCoordinator();
-		const wire = createMcpRuntime({
-			cwd: ROOT,
-			env: ENV,
-			ports: h.ports,
-			host: new ClaudeReviewHost(),
-		});
-		await handleJsonRpc({
-			jsonrpc: "2.0",
-			id: 1,
-			method: "initialize",
-			params: { clientInfo: { name: "claude-code", version: "2.1.236" }, capabilities: { elicitation: {} } },
-		}, wire);
-		// Real Claude Code 2.1.236 sends only a namespaced tool-use id in
-		// tools/call _meta; without a matching ElicitationResult record there is
-		// no host correlation and the privileged call fails closed.
-		const noRecord = await handleJsonRpc({
-			jsonrpc: "2.0",
-			id: 2,
-			method: "tools/call",
-			params: { name: "enroll", arguments: { task_id: TASK }, _meta: { "claudecode/toolUseId": "toolu_real" } },
-		}, wire);
-		expect(JSON.stringify(noRecord)).toContain("host correlation metadata missing");
-		// The Host session binding comes from the hook-observed ElicitationResult
-		// for that exact tool call, not from the wire.
-		wire.observe({ type: "ElicitationResult", sessionId: "real-session", toolCallId: "toolu_real", decision: "accept" });
-		const bridged = await handleJsonRpc({
-			jsonrpc: "2.0",
-			id: 3,
-			method: "tools/call",
-			params: { name: "enroll", arguments: { task_id: TASK }, _meta: { "claudecode/toolUseId": "toolu_real" } },
-		}, wire);
-		expect(JSON.stringify(bridged)).not.toContain("host correlation metadata missing");
-		expect(JSON.stringify(bridged)).not.toContain("native interaction missing");
-		expect(h.counts().applyCount).toBe(0);
-		// A supplied wire session_id is never trusted: without a matching
-		// unconsumed ElicitationResult record the call still fails closed.
-		const untrustedSession = await handleJsonRpc({
-			jsonrpc: "2.0",
-			id: 4,
-			method: "tools/call",
-			params: { name: "enroll", arguments: { task_id: TASK }, _meta: { session_id: "s", tool_use_id: "wire-trusted-never" } },
-		}, wire);
-		expect(JSON.stringify(untrustedSession)).toContain("host correlation metadata missing");
-		// Non-namespaced correlation keys (tool_use_id, toolUseId, toolCallId)
-	// never mint authority even when a matching ElicitationResult record
-	// exists: only the canonical claudecode/toolUseId wire key correlates.
-		wire.observe({ type: "ElicitationResult", sessionId: "real-session", toolCallId: "toolu_alias", decision: "accept" });
-		for (const aliasMeta of [
-			{ tool_use_id: "toolu_alias" },
-			{ toolUseId: "toolu_alias" },
-			{ toolCallId: "toolu_alias" },
-		]) {
-			const aliasDenied = await handleJsonRpc({
-				jsonrpc: "2.0",
-				id: 5,
-				method: "tools/call",
-				params: { name: "enroll", arguments: { task_id: TASK }, _meta: aliasMeta },
-			}, wire);
-			expect(JSON.stringify(aliasDenied)).toContain("host correlation metadata missing");
-		}
-		expect(h.counts().applyCount).toBe(0);
-	});
 
-	test("ambiguous wire correlation across sessions fails closed", async () => {
-		const h = makeCoordinator();
-		const wire = createMcpRuntime({
-			cwd: ROOT,
-			env: ENV,
-			ports: h.ports,
-			host: new ClaudeReviewHost(),
-		});
-		await handleJsonRpc({
-			jsonrpc: "2.0",
-			id: 1,
-			method: "initialize",
-			params: { clientInfo: { name: "claude-code", version: "2.1.236" }, capabilities: { elicitation: {} } },
-		}, wire);
-		wire.observe({ type: "ElicitationResult", sessionId: "session-a", toolCallId: "toolu_shared", decision: "accept" });
-		wire.observe({ type: "ElicitationResult", sessionId: "session-b", toolCallId: "toolu_shared", decision: "accept" });
-		const ambiguous = await handleJsonRpc({
-			jsonrpc: "2.0",
-			id: 2,
-			method: "tools/call",
-			params: { name: "enroll", arguments: { task_id: TASK }, _meta: { "claudecode/toolUseId": "toolu_shared" } },
-		}, wire);
-		expect(JSON.stringify(ambiguous)).toContain("host correlation metadata missing");
-		expect(h.counts().applyCount).toBe(0);
-	});
 
 	test("MCP trust binds to the exact claude-code client name; status stays usable without trusted evidence", async () => {
 		const h = makeCoordinator();
@@ -625,7 +479,7 @@ describe("claude host authority", () => {
 			jsonrpc: "2.0",
 			id: 1,
 			method: "initialize",
-			params: { clientInfo: { name: "other-client", version: "9.9.9" }, capabilities: { elicitation: {} } },
+			params: { protocolVersion: "2025-06-18", clientInfo: { name: "other-client", version: "9.9.9" }, capabilities: { elicitation: {} } },
 		}, foreign);
 		// A non-Claude-Code client gets no trusted version or interactivity
 		// evidence regardless of declared capabilities.
@@ -636,7 +490,8 @@ describe("claude host authority", () => {
 			method: "tools/call",
 			params: { name: "enroll", arguments: { task_id: TASK }, _meta: { session_id: "s", tool_use_id: "t" } },
 		}, foreign);
-		expect(JSON.stringify(denied)).toContain("non-interactive host session cannot mint authority");
+		expect(JSON.stringify(denied)).toContain("unsupported_host");
+		expect((denied?.error?.data as { recovery_action?: string })?.recovery_action).toBe("upgrade to a supported Claude Code version and retry in the current Host");
 		// Read-only status remains usable without trusted Host evidence.
 		const status = await foreign.callTool("status", { task_id: TASK });
 		expect(status).toMatchObject({ plugin_version: PLUGIN_VERSION });
@@ -740,7 +595,7 @@ describe("claude host authority", () => {
 			jsonrpc: "2.0",
 			id: 1,
 			method: "initialize",
-			params: { clientInfo: { name: "claude-code", version: "2.1.236" }, capabilities: { elicitation: {} } },
+			params: { protocolVersion: "2025-06-18", clientInfo: { name: "claude-code", version: "2.1.236" }, capabilities: { elicitation: {} } },
 		}, mcp);
 		const ready = await mcp.callTool("advance_assurance", { task_id: TASK }) as { state: string; operation_id: string };
 		expect(ready.state).toBe("review_ready");
@@ -758,29 +613,7 @@ describe("claude host authority", () => {
 		expect(await mcp.callTool("submit_review", { task_id: TASK, verdict })).toMatchObject({ state: "blocked" });
 	});
 
-	test("ElicitationResult is removed from the persistent log after consume", () => {
-		const dir = mkdtempSync(join(tmpdir(), "claude-elicitation-"));
-		const log = new FileHookEventLog(dir);
-		const host = new ClaudeReviewHost(log);
-		host.observe({ type: "ElicitationResult", sessionId: "s", toolCallId: "t1", decision: "accept" });
-		expect(host.takeConfirmation("s", "t1")).toBe("accept");
-		expect(host.takeConfirmation("s", "t1")).toBeUndefined();
-		host.observe({ type: "ElicitationResult", sessionId: "s", toolCallId: "t2", decision: "deny" });
-		expect(host.takeConfirmation("s", "t2")).toBe("deny");
-		const restarted = new ClaudeReviewHost(new FileHookEventLog(dir));
-		expect(restarted.takeConfirmation("s", "t1")).toBeUndefined();
-		expect(restarted.takeConfirmation("s", "t2")).toBeUndefined();
-	});
 
-	test("SessionEnd discards unconsumed cached confirmations", () => {
-		const dir = mkdtempSync(join(tmpdir(), "claude-session-end-confirmations-"));
-		const host = new ClaudeReviewHost(new FileHookEventLog(dir));
-		host.observe({ type: "ElicitationResult", sessionId: "s", toolCallId: "t1", decision: "accept" });
-		expect(host.peekConfirmation("s", "t1")).toBe(true);
-		host.observe({ type: "SessionEnd", sessionId: "s" });
-		expect(host.peekConfirmation("s", "t1")).toBe(false);
-		expect(host.takeConfirmation("s", "t1")).toBeUndefined();
-	});
 
 	test("request_authorization resolves the single bound user decision", async () => {
 		const taskId = "user-decision";
@@ -790,7 +623,7 @@ describe("claude host authority", () => {
 			env: ENV,
 			interactive: true,
 			permissionMode: "manual",
-			decisions: new Map([["enroll", "accept"], ["request_authorization", "accept"]]),
+			requestConfirmation: async ({ operation }) => ({ decision: "accept", requestId: `nested-${operation}` }),
 		});
 		const meta = (toolCallId: string): ToolMeta => ({ taskId, sessionId: "s", toolCallId, requiresUserInteraction: true, interactive: true, permissionMode: "manual" });
 		await runtime.enroll(taskId, meta("enroll"));
@@ -813,21 +646,6 @@ describe("claude host authority", () => {
 		expect(finding?.status).toBe("resolved");
 	});
 
-	test("JSON-RPC privileged calls do not synthesize native acceptance", async () => {
-		const source = readFileSync(resolve("plugins/immune-brain/runtime/claude/kernel_ports.ts"), "utf8");
-		expect(source).not.toContain("requiresUserInteraction ? \"accept\"");
-		expect(source).toContain("repairKernelAuthority");
-		expect(source).toContain("canonicalIntentHash");
-		expect(source).not.toContain("approval-user-");
-		expect(source).toContain("next_intent_ref");
-		const mcpSource = readFileSync(resolve("plugins/immune-brain/runtime/claude/mcp_server.ts"), "utf8");
-		expect(mcpSource).not.toContain("takeConfirmation");
-		expect(mcpSource).toContain("notifications/cancelled");
-		expect(mcpSource).toContain('parsed.method === "tools/call"');
-		const hostSource = readFileSync(resolve("plugins/immune-brain/runtime/claude/review_host.ts"), "utf8");
-		expect(hostSource).toContain("consumeElicitation");
-		expect(mcpSource).toContain("cannot be supplied in tool arguments");
-	});
 
 	test("native PostToolUse payload correlates through session with the reserved agentId", async () => {
 		const host = new ClaudeReviewHost();
@@ -1002,76 +820,9 @@ describe("claude host authority", () => {
 		expect(await submitObservedReview(h)).toEqual({ state: "completed" });
 	});
 
-	test("a Hook append after the drain snapshot is processed on the next drain", () => {
-		let sessionLists = 0;
-		class RaceLog extends MemoryHookEventLog {
-			override list(sessionId?: string) {
-				const events = super.list(sessionId);
-				if (sessionId && sessionLists++ === 0) {
-					super.append({ type: "ElicitationResult", sessionId, toolCallId: "t2", decision: "accept" });
-				}
-				return events;
-			}
-		}
-		const host = new ClaudeReviewHost(new RaceLog());
-		host.observe({ type: "ElicitationResult", sessionId: "s", toolCallId: "t1", decision: "deny" });
-		expect(host.takeConfirmation("s", "t1")).toBe("deny");
-		expect(host.takeConfirmation("s", "t2")).toBe("accept");
-	});
 
-	test("SessionEnd cursor does not skip later ElicitationResult", () => {
-		const dir = mkdtempSync(join(tmpdir(), "claude-session-end-"));
-		const host = new ClaudeReviewHost(new FileHookEventLog(dir));
-		host.observe({ type: "ElicitationResult", sessionId: "s", toolCallId: "a", decision: "accept" });
-		expect(host.takeConfirmation("s", "a")).toBe("accept");
-		host.observe({ type: "SessionEnd", sessionId: "s" });
-		host.observe({ type: "ElicitationResult", sessionId: "s", toolCallId: "b", decision: "deny" });
-		expect(host.takeConfirmation("s", "b")).toBeUndefined();
-		host.observe({ type: "ElicitationResult", sessionId: "s", toolCallId: "c", decision: "deny" });
-		expect(host.takeConfirmation("s", "c")).toBe("deny");
-	});
 
-	test("SessionEnd refuses to delete an evidence file with the wrong mode", () => {
- const dir = mkdtempSync(join(tmpdir(), "claude-session-end-mode-"));
- const log = new FileHookEventLog(dir);
- log.append({ type: "ElicitationResult", sessionId: "s", toolCallId: "t1", decision: "accept" });
- const path = hookEventPath("s", dir);
- chmodSync(path, 0o644);
- new ClaudeReviewHost(log).observe({ type: "SessionEnd", sessionId: "s" });
- expect(existsSync(path)).toBe(true);
- });
 
-	test("consumeElicitation commits the durable consumed record before session evidence", () => {
-		const dir = mkdtempSync(join(tmpdir(), "claude-durable-order-"));
-		const log = new FileHookEventLog(dir);
-		// A directory at the consumed.jsonl path makes every durable append
-		// fail while session appends keep working: the session file must NOT
-		// gain an ElicitationConsumed record before the durable commit lands.
-		mkdirSync(join(dir, "immune-brain-claude"), { mode: 0o700 });
-		mkdirSync(join(dir, "immune-brain-claude", "consumed.jsonl"));
-		log.append({ type: "ElicitationResult", sessionId: "s", toolCallId: "t1", decision: "accept" });
-		expect(log.consumeElicitation("s", "t1")).toBe(false);
-		expect(readFileSync(hookEventPath("s", dir), "utf8"))
-			.not.toContain("ElicitationConsumed");
-		// Once the durable record is writable, consumption succeeds and both
-		// records exist.
-		rmSync(join(dir, "immune-brain-claude", "consumed.jsonl"), { recursive: true, force: true });
-		expect(log.consumeElicitation("s", "t1")).toBe(true);
-		expect(readFileSync(hookEventPath("s", dir), "utf8"))
-			.toContain("ElicitationConsumed");
-		expect(log.consumedKeys()).toContain("s\0t1");
-	});
-
-	test("concurrent FileHookEventLog instances cannot consume the same ElicitationResult twice", () => {
-		const dir = mkdtempSync(join(tmpdir(), "claude-concurrent-consume-"));
-		const log1 = new FileHookEventLog(dir);
-		const log2 = new FileHookEventLog(dir);
-		log1.append({ type: "ElicitationResult", sessionId: "race-s", toolCallId: "race-t", decision: "accept" });
-		const first = log1.consumeElicitation("race-s", "race-t");
-		const second = log2.consumeElicitation("race-s", "race-t");
-		expect([first, second].filter(Boolean).length).toBe(1);
-		expect(log1.consumedKeys()).toContain("race-s\0race-t");
-	});
 
 	test("SessionEnd drops process-local reservations without Kernel mutation", async () => {
 		const host = new ClaudeReviewHost();
@@ -1126,62 +877,15 @@ describe("claude host authority", () => {
 		expect(host.consumeReview(first)).toMatchObject({ ok: true, receipt: { result: "first" } });
 	});
 
-	test("consuming ElicitationResult does not drop a concurrent Hook append", () => {
-		const dir = mkdtempSync(join(tmpdir(), "claude-elicitation-race-"));
-		const log = new FileHookEventLog(dir);
-		const host = new ClaudeReviewHost(log);
-		host.observe({ type: "ElicitationResult", sessionId: "s", toolCallId: "t1", decision: "accept" });
-		const consume = log.consumeElicitation.bind(log);
-		log.consumeElicitation = (sessionId, toolCallId) => {
-			new FileHookEventLog(dir).append({ type: "ElicitationResult", sessionId: "s", toolCallId: "t2", decision: "deny" });
-			return consume(sessionId, toolCallId);
-		};
-		expect(host.takeConfirmation("s", "t1")).toBe("accept");
-		expect(host.takeConfirmation("s", "t2")).toBe("deny");
-	});
 
-	test("replayed ElicitationResult after consume cannot authorize again", () => {
-		const dir = mkdtempSync(join(tmpdir(), "claude-elicitation-replay-"));
-		const host = new ClaudeReviewHost(new FileHookEventLog(dir));
-		host.observe({ type: "ElicitationResult", sessionId: "s", toolCallId: "t1", decision: "accept" });
-		expect(host.takeConfirmation("s", "t1")).toBe("accept");
-		host.observe({ type: "ElicitationResult", sessionId: "s", toolCallId: "t1", decision: "accept" });
-		expect(host.takeConfirmation("s", "t1")).toBeUndefined();
-		const restarted = new ClaudeReviewHost(new FileHookEventLog(dir));
-		expect(restarted.takeConfirmation("s", "t1")).toBeUndefined();
-	});
 
-	test("SessionEnd stops the captured batch so later events cannot authorize", () => {
-		const host = new ClaudeReviewHost(new FileHookEventLog(mkdtempSync(join(tmpdir(), "claude-sessionend-batch-"))));
-		host.observe({ type: "ElicitationResult", sessionId: "s", toolCallId: "t1", decision: "accept" });
-		host.observe({ type: "SessionEnd", sessionId: "s" });
-		host.observe({ type: "ElicitationResult", sessionId: "s", toolCallId: "t2", decision: "accept" });
-		expect(host.takeConfirmation("s", "t1")).toBeUndefined();
-		expect(host.takeConfirmation("s", "t2")).toBeUndefined();
-		expect(host.peekConfirmation("s", "t2")).toBe(false);
-	});
 
-	test("elicitation consumption fails closed when the consumed record cannot persist", () => {
-		const dir = mkdtempSync(join(tmpdir(), "claude-elicitation-persist-"));
-		const log = new FileHookEventLog(dir);
-		const cache = join(dir, "immune-brain-claude");
-		mkdirSync(cache, { recursive: true });
-		chmodSync(cache, 0o700);
-		writeFileSync(join(cache, "consumed.jsonl"), "");
-		chmodSync(join(cache, "consumed.jsonl"), 0o644);
-		const host = new ClaudeReviewHost(log);
-		host.observe({ type: "ElicitationResult", sessionId: "s", toolCallId: "t1", decision: "accept" });
-		expect(host.takeConfirmation("s", "t1")).toBeUndefined();
-		chmodSync(join(cache, "consumed.jsonl"), 0o600);
-		host.observe({ type: "ElicitationResult", sessionId: "s", toolCallId: "t2", decision: "accept" });
-		expect(host.takeConfirmation("s", "t2")).toBe("accept");
-	});
 
 	test("Hook cache rejects a pre-existing cache symlink without chmod side effects", () => {
 		const dir = mkdtempSync(join(tmpdir(), "claude-session-symlink-"));
 		const outside = mkdtempSync(join(tmpdir(), "claude-session-outside-"));
 		symlinkSync(outside, join(dir, "immune-brain-claude"));
-		new ClaudeReviewHost(new FileHookEventLog(dir)).observe({ type: "ElicitationResult", sessionId: "s", toolCallId: "t1", decision: "accept" });
+		new ClaudeReviewHost(new FileHookEventLog(dir)).observe({ type: "SubagentStart", sessionId: "s", agent: REVIEWER_AGENT, agentId: "cache-test" });
 		expect(readdirSync(outside)).toEqual([]);
 		expect(statSync(outside).mode & 0o777).toBe(0o700);
 	});
@@ -1189,7 +893,7 @@ describe("claude host authority", () => {
 	test("Hook cache rejects an owned evidence file with a non-private mode", () => {
 		const dir = mkdtempSync(join(tmpdir(), "claude-session-file-mode-"));
 		const log = new FileHookEventLog(dir);
-		log.append({ type: "ElicitationResult", sessionId: "s", toolCallId: "t1", decision: "accept" });
+		log.append({ type: "SubagentStart", sessionId: "s", agent: REVIEWER_AGENT, agentId: "cache-test" });
 		const file = join(dir, "immune-brain-claude", readdirSync(join(dir, "immune-brain-claude"))[0]);
 		chmodSync(file, 0o644);
 		expect(log.list("s")).toEqual([]);
@@ -1198,7 +902,7 @@ describe("claude host authority", () => {
 	test("Hook cache directory and files are owner-only", () => {
 		const dir = mkdtempSync(join(tmpdir(), "claude-session-mode-"));
 		const host = new ClaudeReviewHost(new FileHookEventLog(dir));
-		host.observe({ type: "ElicitationResult", sessionId: "s", toolCallId: "t1", decision: "accept" });
+		host.observe({ type: "SubagentStart", sessionId: "s", agent: REVIEWER_AGENT, agentId: "cache-test" });
 		const cache = join(dir, "immune-brain-claude");
 		expect(statSync(cache).mode & 0o777).toBe(0o700);
 		const files = readdirSync(cache);
@@ -1208,12 +912,11 @@ describe("claude host authority", () => {
 	test("crafted session IDs cannot write Hook evidence outside the cache directory", () => {
 		const dir = mkdtempSync(join(tmpdir(), "claude-session-escape-"));
 		const host = new ClaudeReviewHost(new FileHookEventLog(dir));
-		host.observe({ type: "ElicitationResult", sessionId: "../evil", toolCallId: "t1", decision: "accept" });
+		host.observe({ type: "SubagentStart", sessionId: "../evil", agent: REVIEWER_AGENT, agentId: "cache-test" });
 		expect(existsSync(join(dir, "evil.jsonl"))).toBe(false);
 		expect(readdirSync(dir)).toEqual(["immune-brain-claude"]);
 		const files = readdirSync(join(dir, "immune-brain-claude"));
 		expect(files.every((name) => /^[a-f0-9]{64}\.jsonl$/.test(name))).toBe(true);
-		expect(host.takeConfirmation("../evil", "t1")).toBe("accept");
 	});
 
 	test("unidentifiable Agent PostToolUse does not settle Review", () => {
@@ -1235,16 +938,6 @@ describe("claude host authority", () => {
 		expect(host.consumeReview(reservation)).toMatchObject({ ok: false });
 	});
 
-	test("ElicitationResult rejects non-string tool_use_id values", () => {
-		for (const malformed of [123, true, {}, [], null, ""]) {
-			expect(parseHookStdin(JSON.stringify({
-				hook_event_name: "ElicitationResult",
-				session_id: "s",
-				tool_use_id: malformed,
-				decision: "accept",
-			}))).toBeNull();
-		}
-	});
 
 	test("wrong SubagentStop identity does not settle Review", () => {
 		const host = new ClaudeReviewHost();
@@ -1265,28 +958,7 @@ describe("claude host authority", () => {
 		expect(host.consumeReview(reservation)).toMatchObject({ ok: true, receipt: { result: "valid" } });
 	});
 
-	test("consumed Elicitation identities survive SessionEnd and process restart", () => {
-		const dir = mkdtempSync(join(tmpdir(), "claude-consumed-persist-"));
-		const log = new FileHookEventLog(dir);
-		const host = new ClaudeReviewHost(log);
-		host.observe({ type: "ElicitationResult", sessionId: "s", toolCallId: "t1", decision: "accept" });
-		expect(host.takeConfirmation("s", "t1")).toBe("accept");
-		host.observe({ type: "SessionEnd", sessionId: "s" });
-		const restarted = new ClaudeReviewHost(new FileHookEventLog(dir));
-		restarted.observe({ type: "ElicitationResult", sessionId: "s", toolCallId: "t1", decision: "accept" });
-		expect(restarted.takeConfirmation("s", "t1")).toBeUndefined();
-	});
 
-	test("a second session file does not skip another session's later events", () => {
-		const dir = mkdtempSync(join(tmpdir(), "claude-session-cursor-"));
-		const host = new ClaudeReviewHost(new FileHookEventLog(dir));
-		host.observe({ type: "ElicitationResult", sessionId: "keep", toolCallId: "a", decision: "accept" });
-		host.observe({ type: "ElicitationResult", sessionId: "drop", toolCallId: "b", decision: "deny" });
-		host.observe({ type: "SessionEnd", sessionId: "drop" });
-		host.observe({ type: "ElicitationResult", sessionId: "keep", toolCallId: "c", decision: "accept" });
-		expect(host.takeConfirmation("keep", "a")).toBe("accept");
-		expect(host.takeConfirmation("keep", "c")).toBe("accept");
-	});
 
 	test("Claude adapter imports no Pi SDK and shared assurance imports no Claude adapter", () => {
 		const claudeDir = resolve("plugins/immune-brain/runtime/claude");

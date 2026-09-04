@@ -60,13 +60,13 @@ describe("imm-planner kernel intent contract", () => {
 		expect(skill).toContain("revise_intent");
 	});
 
-	test("Planner enrollment authority stays Pi TUI-only", () => {
+	test("Planner keeps Enrollment authority on the current Host native gate", () => {
 		const skill = readFileSync(DIST_PATH, "utf8");
-		expect(skill).toContain("imm_canary_enrollment");
+		expect(skill).toContain("current Host's native Enrollment Tool");
 		expect(skill).toContain("literal-user confirmation");
 		expect(skill).not.toContain("/imm-canary-new");
 		expect(skill).not.toContain("/imm-canary-enroll");
-		expect(skill).toContain("Pi host identity is implicit");
+		expect(skill).not.toContain("Pi host identity is implicit");
 		expect(skill).toContain("production boundary");
 		expect(skill).not.toContain("Other hosts");
 	});
@@ -78,7 +78,7 @@ describe("imm-planner kernel intent contract", () => {
 			expect(contract).toContain("non-authoritative execution trigger");
 			expect(contract).toContain("clear mutation request that already includes execution");
 			expect(contract).toContain("without asking for chat pre-confirmation");
-			expect(contract).toContain("Literal-user confirmation in the native gate remains the authority boundary");
+			expect(contract).toContain("Literal-user confirmation in the current Host's native gate remains the authority boundary");
 		}
 	});
 
@@ -86,7 +86,7 @@ describe("imm-planner kernel intent contract", () => {
 		const dist = readFileSync(DIST_PATH, "utf8");
 		expect(dist).toContain("imm-plan --routing-status --json");
 		expect(dist).toContain("imm-kernel intent author");
-		expect(dist).toContain("imm_canary_enrollment");
+		expect(dist).toContain("current Host's native Enrollment Tool");
 		expect(dist).not.toContain("/imm-canary-new");
 		expect(dist).not.toContain("/imm-canary-enroll");
 		expect(dist).toContain("routing_policy_invalid");

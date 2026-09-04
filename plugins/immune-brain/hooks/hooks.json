@@ -31,16 +31,6 @@
         ]
       }
     ],
-    "ElicitationResult": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/dist/claude/mcp-server.mjs\" --hook"
-          }
-        ]
-      }
-    ],
     "SessionEnd": [
       {
         "hooks": [

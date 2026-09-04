@@ -34,7 +34,7 @@ host-native and are not classified by natural-language routing.
 
 - An active Assurance projection remains authoritative and resumes only when the user explicitly enters `imm-loop`.
 - Explicit `imm-brainstorm` frames ambiguity; explicit `imm-planner` plans clear work.
-- `imm-loop` consumes validated plans and active task recovery; Planner artifacts remain candidates for later literal-user Enrollment.
+- `imm-loop` consumes validated plans and active task recovery; Planner artifacts remain candidates for later literal-user Enrollment in the current Host's native gate.
 - Fast-Track compresses Managed Path without bypassing TaskIntent scope, Enrollment, QA, Review, authorization, or completion.
 
 ```mermaid
@@ -43,8 +43,8 @@ flowchart LR
   explicit -->|yes| skill[imm-brainstorm / imm-planner / imm-loop]
   explicit -->|no| host[host-native]
   owner[active Assurance owner] --> loop[imm-loop recovery]
-  skill --> enroll[literal-user Enrollment]
-  enroll --> loop
+  skill --> native[Current Host native Enrollment]
+  native --> loop
 ```
 
 ## Managed lifecycle
@@ -138,6 +138,14 @@ host-attested deterministic QA; `material` and `critical` add native Review,
 then settle without a generic final confirmation. User authority is reserved
 for unresolved decisions, explicit stop, and breaking Intent revisions;
 proven stale claims repair deterministically without user interaction.
+
+On Claude Code, privileged operations use server-initiated MCP
+`elicitation/create` after preparation has produced the exact revision, content
+hash, and binding digest. Claude Code `2.1.236` is the minimum version verified
+against this transport. Permission modes and Tool allowlists are
+non-authoritative: only the matching response on the same MCP connection can
+produce a one-shot confirmation. Failure remains in the current Host and reports
+one recovery action; there is no Pi, cross-worktree, or unmanaged fallback.
 
 ## Development
 

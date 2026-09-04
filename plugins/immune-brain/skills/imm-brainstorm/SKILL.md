@@ -64,3 +64,7 @@ collect completed child outputs, and feed them to
 background work, mutate state, or own final Spec/Plan authority.
 Agreement becomes framing evidence, Disagreement becomes decision criteria or
 `BR-Q-*`, and strong-model blockers become risks or verification requirements.
+
+When framing discusses later execution, describe Enrollment only as the current
+Host's native gate. Never recommend another Host, worktree, or unmanaged
+implementation as a fallback for a failed Managed authority interaction.
