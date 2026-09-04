@@ -25,6 +25,16 @@ function runMise(task: string): { stdout: string; stderr: string } {
 	return { stdout, stderr };
 }
 
+const HAS_MISE = (() => {
+	try {
+		Bun.spawnSync(["mise", "--version"], { stdout: "ignore", stderr: "ignore" });
+		return true;
+	} catch {
+		// Bun.spawnSync throws when the executable is absent (e.g. CI runners).
+		return false;
+	}
+})();
+
 function expectV4Manifest(output: string): void {
 	const manifest = JSON.parse(output);
 	expect(manifest.commands.map((command: { name: string }) => command.name)).toEqual([
@@ -43,11 +53,11 @@ describe("repository v4 runtime launchers", () => {
 		expect(mise.match(/runtime\/v4_runtime\.ts list-commands --json/g)).toHaveLength(2);
 	});
 
-	it("executes list-runtime-tools through v4", () => {
+	it.skipIf(!HAS_MISE)("executes list-runtime-tools through v4", () => {
 		expectV4Manifest(runMise("list-runtime-tools").stdout);
 	});
 
-	it("executes check-plugin through v4", () => {
+	it.skipIf(!HAS_MISE)("executes check-plugin through v4", () => {
 		const { stdout } = runMise("check-plugin");
 		const manifestStart = stdout.lastIndexOf('{\n  "commands"');
 		expect(manifestStart).toBeGreaterThanOrEqual(0);

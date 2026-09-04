@@ -34,7 +34,9 @@ jobs:
           registry-url: https://registry.npmjs.org
 
       - name: Update npm for Trusted Publishing
-        run: npm install -g npm@latest
+        # Pin major 11: npm 12 changed `pack --json` output shape and breaks the
+        # release-contract tests. 11.19.1 still supports OIDC trusted publishing.
+        run: npm install -g npm@11
 
       - name: Install dependencies
         run: bun install --frozen-lockfile

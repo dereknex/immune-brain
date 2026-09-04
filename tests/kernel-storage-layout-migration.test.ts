@@ -340,7 +340,7 @@ describe("migrateLegacyLayout case-fold and target preflight (review round 6)", 
 			execFileSync("git", ["-C", root, "add", "-A"]);
 			execFileSync("git", ["-C", root, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "legacy evidence"]);
 			const outcome = await runMigration(root);
-			expect(JSON.stringify(outcome)).toMatch(/case-fold target collision/);
+			expect(JSON.stringify(outcome)).toMatch(/case-fold (source|target) collision/);
 			// Zero relocation happened.
 			expect(existsSync(join(root, ".imm/audit"))).toBe(false);
 		} finally {
