@@ -2,7 +2,7 @@
 contract: immune_brain/claude_native_elicitation_conformance/v1
 observed_at: 2026-09-04
 platform: darwin-arm64
-plugin_version: 3.3.0
+plugin_version: 3.4.0
 claude_code_version: 2.1.236
 minimum_supported_version: 2.1.236
 mcp_protocol: 2025-06-18
@@ -20,7 +20,7 @@ no result is represented as a human authorization for production work.
 ## Binding
 
 - Claude Code: `2.1.236 (Claude Code)`
-- Immune-Brain plugin: `3.3.0`
+- Immune-Brain plugin: `3.4.0`
 - MCP initialize negotiation: `2025-06-18`, client `claude-code/2.1.236`, `elicitation: {}` advertised
 - Plugin runtime: `plugins/immune-brain/dist/claude/mcp-server.mjs`, freshly built from `runtime/claude/mcp_server.ts`
 - Fixture task: `native-elicit-conformance` in an isolated temporary Git repository
