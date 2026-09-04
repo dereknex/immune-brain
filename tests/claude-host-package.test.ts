@@ -171,11 +171,10 @@ describe("claude host package", () => {
     if (claude.error) {
       // Only an explicitly missing CLI makes the optional validation
       // skippable; timeouts and other launch failures must fail the run.
-      // Bun's spawnSync reports ENOENT via message without an errno `code`.
+      // Node sets errno `code`; Bun reports ENOENT via the message and
+      // leaves status undefined instead of null.
       const err = claude.error as NodeJS.ErrnoException;
-      const missing =
-        (err.code === "ENOENT" || /Executable not found|ENOENT/.test(err.message)) &&
-        claude.status === null;
+      const missing = err.code === "ENOENT" || /Executable not found|ENOENT/.test(err.message);
       if (missing) return;
       throw claude.error;
     }
