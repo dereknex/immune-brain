@@ -215,17 +215,28 @@ export function presentTaskRailResult(
 	const total = details.total;
 	const acceptanceId = string(details.acceptance_id);
 	const progressPhase = string(details.acceptance_phase);
+	const hasAcceptanceProgress = typeof current === "number"
+		&& typeof total === "number"
+		&& acceptanceId !== undefined
+		&& (progressPhase === "running" || progressPhase === "passed" || progressPhase === "failed");
 	presentTaskRail(ctx, {
 		task_id: taskId,
-		state: railState({ lifecycle, obligation: string(taskState?.next_obligation), operation, state: rawState }),
+		state: railState({
+			lifecycle,
+			obligation: string(taskState?.next_obligation),
+			operation,
+			state: rawState,
+			stage: string(details.stage),
+		}),
 		result,
 		next,
-		acceptance_progress: typeof current === "number" && typeof total === "number" && acceptanceId && progressPhase === "running" || progressPhase === "passed" || progressPhase === "failed"
+		phase: string(details.stage),
+		acceptance_progress: hasAcceptanceProgress
 			? {
-					current: typeof current === "number" ? current : 0,
-					total: typeof total === "number" ? total : 0,
-					acceptance_id: acceptanceId ?? "",
-					state: progressPhase as TaskRailAcceptanceProgress["state"],
+					current,
+					total,
+					acceptance_id: acceptanceId,
+					state: progressPhase,
 					elapsed_ms: typeof details.elapsed_ms === "number" ? details.elapsed_ms : undefined,
 			}
 			: undefined,
@@ -246,7 +257,7 @@ export async function presentTaskOverviewOverlay(
 		return;
 	}
 	try {
-		await ctx.ui.custom<void>((tui, theme) => {
+		await ctx.ui.custom<void>((_tui, theme, _keybindings, done) => {
 			const container = new Container();
 			const lines = renderTaskOverview(view, 120, theme);
 			for (const line of lines) container.addChild(new Text(line, 0, 0));
@@ -255,9 +266,7 @@ export async function presentTaskOverviewOverlay(
 				render: (width: number) => container.render(width),
 				invalidate: () => container.invalidate(),
 				handleInput: (data: string) => {
-					if (data === "\u001b" || data === "q") {
-						(tui as { requestRender: () => void }).requestRender();
-					}
+					if (data === "\u001b" || data === "q") done(undefined);
 				},
 			};
 		}, { overlay: true, overlayOptions: { anchor: "center", width: "80%", maxHeight: "80%" } });
@@ -384,6 +393,9 @@ function renderTaskRail(view: TaskRailView, width = 120, theme?: Theme): string[
 	const lines = [
 		`Task ${boundedMiddle(view.task_id, taskIdWidth)} · ${stateFormatted}`,
 	];
+	if (view.phase) {
+		lines.push(`${label("Phase:")} ${body(bounded(view.phase, availableContentWidth))}`);
+	}
 	if (view.acceptance_progress) {
 		const progress = view.acceptance_progress;
 		const symbol = progress.state === "passed" ? "✓" : progress.state === "failed" ? "✗" : "●";
@@ -429,12 +441,12 @@ export function renderTaskOverview(view: TaskOverviewView, width = 120, theme?: 
 	return lines;
 }
 
-function railState(input: { lifecycle?: string; obligation?: string; operation?: string; state?: string }): TaskRailState {
+function railState(input: { lifecycle?: string; obligation?: string; operation?: string; state?: string; stage?: string }): TaskRailState {
 	if (input.state === "blocked" || input.state === "failed" || input.state === "settlement_unknown") return "Blocked";
 	if (input.lifecycle === "done") return "Completed";
 	if (input.lifecycle === "stopped") return "Stopped";
 	if (input.state === "awaiting_user" || input.operation === "request_authorization") return "Approval required";
-	if (input.operation === "advance_assurance") return "Verifying";
+	if (input.operation === "advance_assurance" || input.operation === "qa" || input.stage === "verifying") return "Verifying";
 	if (input.operation === "submit_review" || input.obligation === "run_review") return "Reviewing";
 	if (input.lifecycle === "active") return "Working";
 	if (input.state === "running") return "Planning";

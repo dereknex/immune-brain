@@ -1380,7 +1380,13 @@ class AssuranceCoordinator {
         ensureOperationLive();
         qaVerdict = await this.ports.runQa(assurance.snapshot, assurance.descriptors, runner, {
           signal: operationController.signal,
-          onProgress: (item) => progress("verifying", `QA ${item.index}/${item.total} ${item.acceptance_id} ${item.phase}`, { current: item.index, total: item.total, acceptance_id: item.acceptance_id })
+          onProgress: (item) => progress("verifying", `QA ${item.index}/${item.total} ${item.acceptance_id} ${item.phase}`, {
+            current: item.index,
+            total: item.total,
+            acceptance_id: item.acceptance_id,
+            acceptance_phase: item.phase,
+            elapsed_ms: item.elapsed_ms
+          })
         });
         ensureOperationLive();
         const invocation = this.openInvocation(taskId);
@@ -7504,12 +7510,12 @@ if (entry.endsWith("mcp_server.ts") || entry.endsWith("mcp-server.mjs")) {
     serveStdio();
 }
 export {
-  MCP_PROTOCOL_VERSION,
-  TOOLS,
-  createMcpRuntime,
-  elicitationParams,
-  handleJsonRpc,
-  listMcpTools,
+  supportsElicitationProtocol,
   serveStdio,
-  supportsElicitationProtocol
+  listMcpTools,
+  handleJsonRpc,
+  elicitationParams,
+  createMcpRuntime,
+  TOOLS,
+  MCP_PROTOCOL_VERSION
 };

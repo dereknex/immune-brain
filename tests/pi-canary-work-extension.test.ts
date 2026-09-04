@@ -63,7 +63,7 @@ interface RegisteredCommand { handler: (args: string, ctx: unknown) => Promise<v
 interface FakeUI {
 	confirmCalls: Array<{ title: string; body: string }>;
 	selectCalls: Array<{ title: string; options: string[] }>;
-	customCalls: Array<{ body: string; collapsedBody: string }>;
+	customCalls: Array<{ body: string; collapsedBody: string; closed: boolean }>;
 	inputCalls: Array<{ title: string; placeholder?: string }>;
 	notifyCalls: Array<{ text: string; kind: string }>;
 	widgetCalls: Array<{
@@ -93,22 +93,23 @@ function makeCtx(root: string, ui: FakeUI, mode = "tui", decision: string | null
 			},
 			custom: async (factory: any) => {
 				let selected: string | undefined;
+				let closed = false;
 				const component = factory(
 					{ requestRender: () => undefined },
 					{ fg: (_color: string, text: string) => text, bold: (text: string) => text },
 					{},
-					(result: string | undefined) => { selected = result; },
+					(result: string | undefined) => { selected = result; closed = true; },
 				);
 				const collapsedBody = component.render(120).join("\n");
 				component.handleInput?.("d");
 				const body = component.render(120).join("\n");
-				ui.customCalls.push({ body, collapsedBody });
 				if (decision === null) component.handleInput?.("\u001b");
 				else {
 					const downCount = decision === "Request rework" ? 1 : decision === "Reject" ? 2 : confirmDecision ? 0 : 1;
 					for (let index = 0; index < downCount; index += 1) component.handleInput?.("\u001b[B");
 					component.handleInput?.("\r");
 				}
+				ui.customCalls.push({ body, collapsedBody, closed });
 				return selected;
 			},
 			select: async (title: string, options: string[]) => {
@@ -479,16 +480,18 @@ async function capturedToolFailure(promise: Promise<unknown>): Promise<Record<st
 			state: "Verifying",
 			result: "QA running",
 			next: "Wait for the foreground Tool result",
+			phase: "verifying",
 			acceptance_progress: { current: 2, total: 5, acceptance_id: "acc-2", state: "running", elapsed_ms: 340 },
 		});
 		const widget = ui.widgetCalls.at(-1)?.content;
 		expect(typeof widget).toBe("function");
 		const lines = (widget as (tui: unknown, theme: unknown) => { render(width: number): string[] })({}, fakeTheme).render(120);
 		expect(lines[0]).toContain("Task progress-task · ● Verifying");
-		expect(lines[1]).toContain("Acceptance: 2/5 ● acc-2 340ms");
-		expect(lines[2]).toBe("Result: QA running");
-		expect(lines[3]).toBe("Next: Wait for the foreground Tool result");
-		expect(lines).toHaveLength(4);
+		expect(lines[1]).toBe("Phase: verifying");
+		expect(lines[2]).toContain("Acceptance: 2/5 ● acc-2 340ms");
+		expect(lines[3]).toBe("Result: QA running");
+		expect(lines[4]).toBe("Next: Wait for the foreground Tool result");
+		expect(lines).toHaveLength(5);
 
 		const passedUi = makeUI();
 		presentTaskRail(makeCtx(process.cwd(), passedUi), {
@@ -515,6 +518,7 @@ async function capturedToolFailure(promise: Promise<unknown>): Promise<Record<st
 		presentTaskRailResult(makeCtx(process.cwd(), relayedUi), "relay-task", {
 			state: "running",
 			operation: "qa",
+			stage: "verifying",
 			current: 1,
 			total: 3,
 			acceptance_id: "acc-1",
@@ -524,7 +528,10 @@ async function capturedToolFailure(promise: Promise<unknown>): Promise<Record<st
 			next_action: "wait",
 		});
 		const relayedLines = ((relayedUi.widgetCalls.at(-1)?.content) as (tui: unknown, theme: unknown) => { render(width: number): string[] })({}, fakeTheme).render(120);
-		expect(relayedLines[1]).toContain("Acceptance: 1/3 ● acc-1 12ms");
+		expect(relayedLines[0]).toContain("relay-task");
+		expect(relayedLines[0]).toContain("Verifying");
+		expect(relayedLines[1]).toBe("Phase: verifying");
+		expect(relayedLines[2]).toContain("Acceptance: 1/3 ● acc-1 12ms");
 	});
 
 	test("imm-tasks overlay lists the active task and pending TaskIntent drafts without mutation", async () => {
@@ -539,9 +546,39 @@ async function capturedToolFailure(promise: Promise<unknown>): Promise<Record<st
 				join(root, "docs/plans", "canary-ext-pending.intent.json"),
 			JSON.stringify({ ...INTENT, task_id: "canary-ext-pending" }, null, 2) + "\n",
 			);
-			const ctx = makeCtx(root, ui);
+			writeFileSync(join(root, "docs/plans", "malformed.intent.json"), "not json\n");
+			writeFileSync(join(root, "docs/plans", "_invalid-name.intent.json"), "{}\n");
+			writeFileSync(
+				join(root, "docs/plans", "identity-mismatch.intent.json"),
+				JSON.stringify({ ...INTENT, task_id: "another-task" }, null, 2) + "\n",
+			);
+			writeFileSync(
+				join(root, "docs/plans", "settled-sidecar.intent.json"),
+				JSON.stringify({ ...INTENT, task_id: "settled-sidecar" }, null, 2) + "\n",
+			);
+			writeFileSync(
+				join(root, "docs/plans", "broken-tombstone.intent.json"),
+				JSON.stringify({ ...INTENT, task_id: "broken-tombstone" }, null, 2) + "\n",
+			);
+			mkdirSync(join(root, ".imm/audit/settled-sidecar"), { recursive: true });
+			writeFileSync(
+				join(root, ".imm/audit/settled-sidecar/terminal-proof.json"),
+				JSON.stringify({
+					contract: "assurance_kernel/task_tombstone/v2",
+					task_id: "settled-sidecar",
+					lifecycle_status: "terminal",
+					terminal_lifecycle: "done",
+					terminal_event_id: "settled-event",
+					final_record_hash: `sha256:${"a".repeat(64)}`,
+					terminalized_at: "2026-09-04T00:00:00.000Z",
+				}, null, 2) + "\n",
+			);
+			mkdirSync(join(root, ".imm/audit/broken-tombstone"), { recursive: true });
+			writeFileSync(join(root, ".imm/audit/broken-tombstone/terminal-proof.json"), "{}\n");
+			const ctx = makeCtx(root, ui, "tui", null);
 			await command.handler("", ctx);
 			expect(ui.customCalls).toHaveLength(1);
+			expect(ui.customCalls[0].closed).toBe(true);
 			const body = ui.customCalls[0].body;
 			expect(body).toContain("Managed Tasks (read-only)");
 			expect(body).toContain("Active:");
@@ -549,6 +586,12 @@ async function capturedToolFailure(promise: Promise<unknown>): Promise<Record<st
 			expect(body).toContain("Pending enrollment (1):");
 			expect(body).toContain("canary-ext-pending");
 			expect(body).toContain("Planning");
+			expect(body).not.toContain("malformed");
+			expect(body).not.toContain("_invalid-name");
+			expect(body).not.toContain("identity-mismatch");
+			expect(body).not.toContain("another-task");
+			expect(body).not.toContain("settled-sidecar");
+			expect(body).not.toContain("broken-tombstone");
 			// Settled history is excluded (BR-DEC-3): no audit rows appear.
 			expect(body).not.toContain("audit");
 			// Read-only: the handler mutates no Kernel state; the workspace claim survives.
@@ -915,7 +958,17 @@ async function capturedToolFailure(promise: Promise<unknown>): Promise<Record<st
 		expect(parsed.next_action).toBe("invoke the foreground reviewer and submit its verdict");
 		expect(parsed.task_state).toMatchObject({ lifecycle: "active", artifact_state: "frozen", record_revision: expect.any(String) });
 		expect(parsed.agent_params.run_in_background).toBe(false);
-		expect(updates.some((item) => JSON.stringify(item).includes("verifying"))).toBe(true);
+		const progressUpdate = updates.find((item) =>
+			(item as { details?: { acceptance_id?: string } }).details?.acceptance_id === "A1"
+		) as { details: Record<string, unknown> } | undefined;
+		expect(progressUpdate?.details).toMatchObject({
+			stage: "verifying",
+			current: 1,
+			total: 1,
+			acceptance_id: "A1",
+			acceptance_phase: "passed",
+			elapsed_ms: 1,
+		});
 		const invalid = await capturedToolFailure(tool.execute("submit-invalid", { task_id: TASK, action: { op: "submit_review", verdict: { decision: "pass" } } }, undefined, undefined, makeCtx(root, makeUI())));
 		expect(invalid).toMatchObject({ code: "verdict_invalid", next_action: "fix the verdict payload and resubmit submit_review; the Review reservation remains active; do not re-dispatch the reviewer" });
 		const repeatedAdvance = await capturedToolFailure(tool.execute("advance-again", { task_id: TASK, action: { op: "advance_assurance" } }, undefined, undefined, makeCtx(root, makeUI())));

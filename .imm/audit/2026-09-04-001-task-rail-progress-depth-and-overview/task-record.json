@@ -1,0 +1,860 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "2026-09-04-001-task-rail-progress-depth-and-overview",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "2026-09-04-001-task-rail-progress-depth-and-overview",
+    "goal": "Deepen the active-task Task Rail with an Assurance phase row and a bounded QA acceptance-progress row fed only from existing foreground update payloads, and add one /imm-tasks read-only overlay command that lists the active Managed task and every not-enrolled docs/plans/*.intent.json draft (settled history excluded) without mutating any authority state.",
+    "acceptance": [
+      {
+        "id": "acc-1",
+        "assertion": "The Task Rail classifies real QA progress payloads as Verifying and renders an optional Assurance phase row plus an optional QA acceptance-progress row (n/total plus latest acceptance id) fed only from existing foreground update payloads.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\"test\", \"tests/pi-canary-work-extension.test.ts\"],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 131072\n}\n"
+      },
+      {
+        "id": "acc-2",
+        "assertion": "A /imm-tasks read-only overlay lists the active task with its projected Obligation and every valid not-enrolled docs/plans/*.intent.json draft whose task_id matches its filename (Planning state), excluding task IDs with terminal tombstones while isolating malformed filenames, sidecars, and tombstones to their own entries.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\"test\", \"tests/pi-canary-work-extension.test.ts\"],\n  \"cwd\": \".\",\n  \"timeout_ms\": 60000,\n  \"max_output_bytes\": 131072\n}\n"
+      },
+      {
+        "id": "acc-3",
+        "assertion": "Every touched .pi-extension source file keeps the Footer empty and stays free of timer/polling sources; the complete forbidden-source scan passes and the generated Claude runtime mirror matches its shared source.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\"test\", \"tests/pi-canary-work-extension.test.ts\", \"tests/claude-host-package.test.ts\"],\n  \"cwd\": \".\",\n  \"timeout_ms\": 180000,\n  \"max_output_bytes\": 131072\n}\n"
+      },
+      {
+        "id": "acc-4",
+        "assertion": "The candidate Spec exists at its lifecycle-correct active or archived path with complete metadata and Brainstorm Trace.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\"test\", \"tests/task-rail-progress-spec-presence.test.ts\"],\n  \"cwd\": \".\",\n  \"timeout_ms\": 60000,\n  \"max_output_bytes\": 65536\n}\n"
+      }
+    ],
+    "scope_hint": [
+      "docs/specs/archive/task-rail-progress-depth-and-overview.spec.md",
+      "docs/specs/task-rail-progress-depth-and-overview.spec.md",
+      "plugins/immune-brain/.pi-extension/imm-canary-work.ts",
+      "plugins/immune-brain/.pi-extension/pi-canary-interaction.ts",
+      "plugins/immune-brain/dist/claude/mcp-server.mjs",
+      "plugins/immune-brain/runtime/assurance/coordinator.ts",
+      "tests/pi-canary-work-extension.test.ts",
+      "tests/task-rail-progress-spec-presence.test.ts"
+    ],
+    "risk": "material",
+    "revision": 11,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/archive/2026-09-04-001-task-rail-progress-depth-and-overview.intent.json",
+    "content_hash": "sha256:b5bb7245fe66a18389f0c2e3b6ede6b577aa600ab7c8e86909c351819f939317"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:597d92044297749618cc9a395ea58dc3f00dd76501e9e78a6c5568e787910865",
+  "git_base_head": "0bac4ebfaa20cd950acb52c91d6d0f0dd2efca51",
+  "attestations": [
+    {
+      "id": "approval-qa-a2207f1d",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 4,
+      "intent_content_hash": "sha256:4582c6107ce6be067f60b6c64dfbe6faea96f090b4d7233c4710d88fac3d13d9",
+      "diff_hash": "sha256:3f7ae89710d8d32e2b52a68a6dd525286f43f6ebdb5d5cd481a78aefe029e957",
+      "actor_id": "deterministic-qa",
+      "summary": "all 4 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "acc-1",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-2",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-3",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-4",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-c1b989eb",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 6,
+      "intent_content_hash": "sha256:c996dba53f0518f5fa8192f85eba2b0afb6dee16adfcd8409f1abff3c13400ca",
+      "diff_hash": "sha256:0b4f484b243cfb2190b67f3c34c70752b41a89a64ce63b99494bae21f4b7b8dd",
+      "actor_id": "deterministic-qa",
+      "summary": "all 4 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "acc-1",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-2",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-3",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-4",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-759ca93b",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 8,
+      "intent_content_hash": "sha256:4bc4c6bf462279c8bf61ae9493c7d4f7cf258c5890301267d397e93eaca7ddae",
+      "diff_hash": "sha256:c8ca08db86801926e1a47549d1248bbd9ab9e22639ffb5d14e96b60e081e5d98",
+      "actor_id": "deterministic-qa",
+      "summary": "all 4 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "acc-1",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-2",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-3",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-4",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-4f774322",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 9,
+      "intent_content_hash": "sha256:00537f8e3ebc4bc6477c1a34cb01f7810747c59d20b0a90aaf17369fcf2a736a",
+      "diff_hash": "sha256:ef2bcc3ed76951d2e81815af6dfa70c988f952853894791658eacec2f3f57ae2",
+      "actor_id": "deterministic-qa",
+      "summary": "all 4 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "acc-1",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-2",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-3",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-4",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-b440c776",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 10,
+      "intent_content_hash": "sha256:bab00b0fc0e39c5dcf5c0d34286b158b19caf82c99f45dba42ee72bfe07ef9b3",
+      "diff_hash": "sha256:26b9ba3313059084eb8699f06ff0aa925387fc7b9ddfd2623a052c76c76bba90",
+      "actor_id": "deterministic-qa",
+      "summary": "all 4 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "acc-1",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-2",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-3",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-4",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-3a195813",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 11,
+      "intent_content_hash": "sha256:b5bb7245fe66a18389f0c2e3b6ede6b577aa600ab7c8e86909c351819f939317",
+      "diff_hash": "sha256:ce7d8ec89016517cc0a78f0ed2c6559ce33b9a85baa11a5d1b0935212db50a19",
+      "actor_id": "deterministic-qa",
+      "summary": "all 4 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "acc-1",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-2",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-3",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-4",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-653cd614",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 11,
+      "intent_content_hash": "sha256:b5bb7245fe66a18389f0c2e3b6ede6b577aa600ab7c8e86909c351819f939317",
+      "diff_hash": "sha256:ce7d8ec89016517cc0a78f0ed2c6559ce33b9a85baa11a5d1b0935212db50a19",
+      "actor_id": "parent-mediated-review",
+      "summary": "Immutable revision identity and manifest digest verified; the scoped implementation satisfies all acceptance assertions without correctness, security, or regression findings.",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "0bac4ebfaa20cd950acb52c91d6d0f0dd2efca51",
+        "review_commit": "8e1a523dc31fb555d1de08a4bee0402da70bcb87",
+        "review_tree": "779d7f9f69056398d8684ce40cbfcc91e3b3bd43",
+        "manifest_digest": "sha256:4574bbe45e54acca6e4fffb02f64b37f945bedc42bc9165b6854794fd5b17a65"
+      }
+    }
+  ],
+  "findings": [
+    {
+      "id": "qa-acc-3-978783cf-5bacd1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "acc-3",
+      "source": "review",
+      "review_round": 1,
+      "summary": "verification failed (exit 1) stdout=28B stderr=404B: The following filters did not match any test files:\n tests/forbidden-source-scan.test.ts\n1261 files were searched [5.00ms]\n\nnote: Tests need \".test\", \"_test_\", \".spec\" or \"_spec_\" in the filename (ex: \"MyApp.test.ts\")\nnote: To treat the \"tests/forbidden-source-scan.test.ts\" filter as a path, run \"bun test ./tests/forbidden-source-scan.test.ts\"\n\nLearn more about bun test: https://bun.com/docs/cli/test"
+    },
+    {
+      "id": "qa-acc-4-978783cf-bc00ac",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "acc-4",
+      "source": "review",
+      "review_round": 1,
+      "summary": "verification failed (exit 1) stdout=28B stderr=726B: tests/task-rail-progress-spec-presence.test.ts:\n2 | import { readFileSync } from \"node:fs\";\n3 | \n4 | const SPEC_PATH = \"docs/specs/task-rail-progress-depth-an\n... output omitted ...\nocs/specs/task-rail-progress-depth-and-overview.spec.md'\n      at <anonymous> (/Users/derek/workspaces/immune-brain/tests/task-rail-progress-spec-presence.test.ts:7:15)\n(fail) task-rail progress Spec exists with design metadata and complete Brainstorm trace [0.49ms]\n\n 0 pass\n 1 fail\nRan 1 test across 1 file. [9.00ms]"
+    },
+    {
+      "id": "review-783dd50bef3b-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "acc-1",
+      "source": "review",
+      "review_round": 2,
+      "summary": "plugins/immune-brain/.pi-extension/pi-canary-interaction.ts:223 requires acceptance_phase, but the directly required foreground producer plugins/immune-brain/runtime/assurance/coordinator.ts:562 emits only current/total/acceptance_id, so real QA updates never render progress; phase is also declared but never rendered at line 377. Consume the existing stage payload, render the derived phase row, and test a production-shaped update."
+    },
+    {
+      "id": "review-783dd50bef3b-2-review-2",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "acc-2",
+      "source": "review",
+      "review_round": 2,
+      "summary": "plugins/immune-brain/.pi-extension/pi-canary-interaction.ts:249-260 never accepts or invokes the ctx.ui.custom done callback, so Esc/q only requests a repaint and cannot close the /imm-tasks overlay; wire the callback and test that close input settles the overlay."
+    },
+    {
+      "id": "review-783dd50bef3b-3-review-3",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "acc-4",
+      "source": "review",
+      "review_round": 2,
+      "summary": "The revision deletes docs/specs/task-rail-progress-depth-and-overview.spec.md despite acc-4 requiring that exact candidate path, while tests/task-rail-progress-spec-presence.test.ts:4-7 weakens verification by accepting the archived copy; keep the candidate Spec at the asserted path and remove the fallback."
+    },
+    {
+      "id": "review-cff74185c599-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "acc-2",
+      "source": "review",
+      "review_round": 3,
+      "summary": "plugins/immune-brain/.pi-extension/imm-canary-work.ts:1168-1175 adds unreadable or schema-invalid sidecars as Planning tasks despite the Spec requiring them to be skipped; continue from the catch and require the parsed task_id to match the filename before adding the row."
+    },
+    {
+      "id": "request_rework:2026-09-04-001-task-rail-progress-depth-and-overview:2026-09-04T12:42:44.636Z:replan-required",
+      "kind": "replan_required",
+      "status": "resolved",
+      "acceptance_id": "acc-2",
+      "source": "kernel",
+      "review_round": 3,
+      "summary": "Review returned this acceptance boundary twice; a durable replan is required."
+    },
+    {
+      "id": "review-5617ea336394-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "acc-2",
+      "source": "review",
+      "review_round": 4,
+      "summary": "plugins/immune-brain/.pi-extension/imm-canary-work.ts:1164-1176 classifies every valid non-active sidecar as Planning without checking readTaskTombstone, so a retained sidecar for a terminal task is incorrectly shown as pending; skip task IDs with tombstones and add a terminal-sidecar regression test."
+    },
+    {
+      "id": "request_rework:2026-09-04-001-task-rail-progress-depth-and-overview:2026-09-04T13:28:44.643Z:replan-required",
+      "kind": "replan_required",
+      "status": "resolved",
+      "acceptance_id": "acc-2",
+      "source": "kernel",
+      "review_round": 4,
+      "summary": "Review returned this acceptance boundary twice; a durable replan is required."
+    },
+    {
+      "id": "review-6c675f9aa8a3-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "acc-2",
+      "source": "review",
+      "review_round": 5,
+      "summary": "plugins/immune-brain/.pi-extension/imm-canary-work.ts:1168 calls readTaskTombstone before the per-sidecar validation catch; plugins/immune-brain/runtime/kernel/backend_claim.ts:164 (read because the changed caller directly invokes this state reader) rejects an invalid basename, so one malformed *.intent.json filename suppresses the entire /imm-tasks overlay instead of excluding only that sidecar; validate/skip the filename first or include the tombstone read in the per-entry catch."
+    },
+    {
+      "id": "request_rework:2026-09-04-001-task-rail-progress-depth-and-overview:2026-09-04T13:37:39.753Z:replan-required",
+      "kind": "replan_required",
+      "status": "resolved",
+      "acceptance_id": "acc-2",
+      "source": "kernel",
+      "review_round": 5,
+      "summary": "Review returned this acceptance boundary twice; a durable replan is required."
+    },
+    {
+      "id": "review-91d5d10f859e-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "acc-1",
+      "source": "review",
+      "review_round": 6,
+      "summary": "plugins/immune-brain/.pi-extension/pi-canary-interaction.ts:224 classifies actual QA progress updates ({state:\"running\", operation:\"qa\", stage:\"verifying\"}) as Planning because railState only recognizes advance_assurance; classify operation qa/verifying stage as Verifying and assert the relayed Rail title in the focused test."
+    },
+    {
+      "id": "request_rework:2026-09-04-001-task-rail-progress-depth-and-overview:2026-09-04T13:46:41.731Z:replan-required",
+      "kind": "replan_required",
+      "status": "resolved",
+      "acceptance_id": "acc-1",
+      "source": "kernel",
+      "review_round": 6,
+      "summary": "Review returned this acceptance boundary twice; a durable replan is required."
+    }
+  ],
+  "history": [
+    {
+      "id": "approve_breaking_intent_revision:2026-09-04-001-task-rail-progress-depth-and-overview:2026-09-04T12:03:51.732Z",
+      "at": "2026-09-04T12:03:51.732Z",
+      "type": "approve_breaking_intent_revision",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "intent_revision_2\naction_v2_sha256:9ba01b6c00a286a63886095663ec0f82e7fbc285f333f854fe0910f72f3af9d8",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-ec2ec86564b20643",
+        "issued_at": "2026-09-04T12:03:51.922Z",
+        "expires_at": "2026-09-04T12:13:51.922Z"
+      }
+    },
+    {
+      "id": "freeze_artifacts:2026-09-04-001-task-rail-progress-depth-and-overview:2026-09-04T12:05:00.610Z",
+      "at": "2026-09-04T12:05:00.610Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent and Spec frozen at docs/plans/archive/2026-09-04-001-task-rail-progress-depth-and-overview.intent.json"
+    },
+    {
+      "id": "approve_breaking_intent_revision:2026-09-04-001-task-rail-progress-depth-and-overview:2026-09-04T12:07:54.665Z",
+      "at": "2026-09-04T12:07:54.665Z",
+      "type": "approve_breaking_intent_revision",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "intent_revision_3\naction_v2_sha256:91938b6c3e06214b8f4b0a8093b016614714bdcc25f815f70716cbcc0242ce0f",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-c627e764ec5f867e",
+        "issued_at": "2026-09-04T12:07:54.866Z",
+        "expires_at": "2026-09-04T12:17:54.866Z"
+      }
+    },
+    {
+      "id": "freeze_artifacts:2026-09-04-001-task-rail-progress-depth-and-overview:2026-09-04T12:08:08.716Z",
+      "at": "2026-09-04T12:08:08.716Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent and Spec frozen at docs/plans/archive/2026-09-04-001-task-rail-progress-depth-and-overview.intent.json"
+    },
+    {
+      "id": "request_rework:2026-09-04-001-task-rail-progress-depth-and-overview:2026-09-04T12:08:48.265Z",
+      "at": "2026-09-04T12:08:48.265Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_1\naction_v2_sha256:3f0666e6249b900eec7a819066a3fcde2eb0c74ea296d81f2ea3f9c889c5c458",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-f8fcc3c667c3d922",
+        "issued_at": "2026-09-04T12:08:48.266Z",
+        "expires_at": "2026-09-04T12:18:48.266Z"
+      }
+    },
+    {
+      "id": "revise_intent:2026-09-04-001-task-rail-progress-depth-and-overview:2026-09-04T12:11:04.592Z",
+      "at": "2026-09-04T12:11:04.592Z",
+      "type": "revise_intent",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "intent_revision_4\naction_v2_sha256:617ca0a4fe2ae1c06b01d0054de2c543651b7d384746a566a2bbaae02bc27dc3"
+    },
+    {
+      "id": "resolve_finding:2026-09-04-001-task-rail-progress-depth-and-overview:2026-09-04T12:11:41.802Z",
+      "at": "2026-09-04T12:11:41.802Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "qa-acc-3-978783cf-5bacd1\naction_v2_sha256:164aa10b7501d792c8070f00484dd5ea6012ef600fe75d068115ecd80f5e244c"
+    },
+    {
+      "id": "resolve_finding:2026-09-04-001-task-rail-progress-depth-and-overview:2026-09-04T12:11:42.206Z",
+      "at": "2026-09-04T12:11:42.206Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "qa-acc-4-978783cf-bc00ac\naction_v2_sha256:545e53e38ac67f4d434bd639a3cb8c15657c9cacfc311e274a8ea66fc4dae869"
+    },
+    {
+      "id": "freeze_artifacts:2026-09-04-001-task-rail-progress-depth-and-overview:2026-09-04T12:12:03.137Z",
+      "at": "2026-09-04T12:12:03.137Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent and Spec frozen at docs/plans/archive/2026-09-04-001-task-rail-progress-depth-and-overview.intent.json"
+    },
+    {
+      "id": "record_approval:2026-09-04-001-task-rail-progress-depth-and-overview:2026-09-04T12:12:58.144Z",
+      "at": "2026-09-04T12:12:58.144Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-a2207f1d\naction_v2_sha256:d31dd62660f96d76f70d030cd2325974017d7591d443250655212faab2d3239a",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-2969432e043da4b6",
+        "issued_at": "2026-09-04T12:12:58.145Z",
+        "expires_at": "2026-09-04T12:22:58.145Z"
+      }
+    },
+    {
+      "id": "request_rework:2026-09-04-001-task-rail-progress-depth-and-overview:2026-09-04T12:17:51.179Z",
+      "at": "2026-09-04T12:17:51.179Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_2\naction_v2_sha256:7e64996c9baff410951ad4cc3a1cce174b4114f1f08edfe68eb739ae64661f8b",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-d4a20a0ff9fc16f3",
+        "issued_at": "2026-09-04T12:17:51.180Z",
+        "expires_at": "2026-09-04T12:27:51.180Z"
+      }
+    },
+    {
+      "id": "approve_breaking_intent_revision:2026-09-04-001-task-rail-progress-depth-and-overview:2026-09-04T12:25:13.257Z",
+      "at": "2026-09-04T12:25:13.257Z",
+      "type": "approve_breaking_intent_revision",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "intent_revision_5\naction_v2_sha256:3775e07bb4d24fef708b8c95975646541eeb047569d32c5953f83fa886312487",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-81fb84bde57da917",
+        "issued_at": "2026-09-04T12:25:13.468Z",
+        "expires_at": "2026-09-04T12:35:13.468Z"
+      }
+    },
+    {
+      "id": "approve_breaking_intent_revision:2026-09-04-001-task-rail-progress-depth-and-overview:2026-09-04T12:33:01.995Z",
+      "at": "2026-09-04T12:33:01.995Z",
+      "type": "approve_breaking_intent_revision",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "intent_revision_6\naction_v2_sha256:a2232816f6bb223a4cbe317b5799fad590819b47d774b17f0bc8eaaa15460d99",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-dcd859d5ed53a678",
+        "issued_at": "2026-09-04T12:33:02.227Z",
+        "expires_at": "2026-09-04T12:43:02.227Z"
+      }
+    },
+    {
+      "id": "resolve_finding:2026-09-04-001-task-rail-progress-depth-and-overview:2026-09-04T12:36:56.533Z",
+      "at": "2026-09-04T12:36:56.533Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-783dd50bef3b-1-review-1\naction_v2_sha256:3cc08cc9e6f40ac99a8ebbe1689b10e08025af0356ee2edba0f6d42697e4ded2"
+    },
+    {
+      "id": "resolve_finding:2026-09-04-001-task-rail-progress-depth-and-overview:2026-09-04T12:37:22.587Z",
+      "at": "2026-09-04T12:37:22.587Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-783dd50bef3b-2-review-2\naction_v2_sha256:da30ef1a2486c312da3693f141b1df3dc82f752e48ed6adf0c8a799a578fdd2e"
+    },
+    {
+      "id": "resolve_finding:2026-09-04-001-task-rail-progress-depth-and-overview:2026-09-04T12:37:40.951Z",
+      "at": "2026-09-04T12:37:40.951Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-783dd50bef3b-3-review-3\naction_v2_sha256:7fcafc0b09be24845e22d822445c4e475a66b20268b46836857aad660243ac80"
+    },
+    {
+      "id": "freeze_artifacts:2026-09-04-001-task-rail-progress-depth-and-overview:2026-09-04T12:37:53.801Z",
+      "at": "2026-09-04T12:37:53.801Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent and Spec frozen at docs/plans/archive/2026-09-04-001-task-rail-progress-depth-and-overview.intent.json"
+    },
+    {
+      "id": "record_approval:2026-09-04-001-task-rail-progress-depth-and-overview:2026-09-04T12:38:55.048Z",
+      "at": "2026-09-04T12:38:55.048Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-c1b989eb\naction_v2_sha256:95cd6831282e647217059046d60a2a768a7c895f962f7d174d151460d5a39457",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-c7fe7679039af0aa",
+        "issued_at": "2026-09-04T12:38:55.048Z",
+        "expires_at": "2026-09-04T12:48:55.048Z"
+      }
+    },
+    {
+      "id": "request_rework:2026-09-04-001-task-rail-progress-depth-and-overview:2026-09-04T12:42:44.636Z",
+      "at": "2026-09-04T12:42:44.636Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "review_round_3\naction_v2_sha256:f42bf39589d68e4adf84a8ee8b9b82c6cb254773a1460339b43ef4749e08770d",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-45b459b6db140de5",
+        "issued_at": "2026-09-04T12:42:44.637Z",
+        "expires_at": "2026-09-04T12:52:44.637Z"
+      }
+    },
+    {
+      "id": "resolve_finding:2026-09-04-001-task-rail-progress-depth-and-overview:2026-09-04T12:44:18.323Z",
+      "at": "2026-09-04T12:44:18.323Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-cff74185c599-1-review-1\naction_v2_sha256:739fc95bc74d305da43602b6ec59f295b34ed87dd114c88e7a577f512f897ca8"
+    },
+    {
+      "id": "revise_intent:2026-09-04-001-task-rail-progress-depth-and-overview:2026-09-04T12:46:30.687Z",
+      "at": "2026-09-04T12:46:30.687Z",
+      "type": "revise_intent",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "intent_revision_7\naction_v2_sha256:a46af0231f6081a7fbb03ecae0f79a8617ad9e0ecce0e5e26c0ef7af70f9e2a4"
+    },
+    {
+      "id": "approve_breaking_intent_revision:2026-09-04-001-task-rail-progress-depth-and-overview:2026-09-04T13:24:14.014Z",
+      "at": "2026-09-04T13:24:14.014Z",
+      "type": "approve_breaking_intent_revision",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "intent_revision_8\naction_v2_sha256:394f39833fcd6f386a478396fed135e7b49bd6d43b21fc45a9a650ff5d5a9bbd",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-1faf530db02382ca",
+        "issued_at": "2026-09-04T13:24:14.226Z",
+        "expires_at": "2026-09-04T13:34:14.226Z"
+      }
+    },
+    {
+      "id": "freeze_artifacts:2026-09-04-001-task-rail-progress-depth-and-overview:2026-09-04T13:24:28.539Z",
+      "at": "2026-09-04T13:24:28.539Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent and Spec frozen at docs/plans/archive/2026-09-04-001-task-rail-progress-depth-and-overview.intent.json"
+    },
+    {
+      "id": "record_approval:2026-09-04-001-task-rail-progress-depth-and-overview:2026-09-04T13:25:23.639Z",
+      "at": "2026-09-04T13:25:23.639Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-759ca93b\naction_v2_sha256:a2c632cf109fe9d04e2af5ab227ab2d58683a68c2bf4663f31708e2565a700c0",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-85f606a997d0ce18",
+        "issued_at": "2026-09-04T13:25:23.639Z",
+        "expires_at": "2026-09-04T13:35:23.639Z"
+      }
+    },
+    {
+      "id": "request_rework:2026-09-04-001-task-rail-progress-depth-and-overview:2026-09-04T13:28:44.643Z",
+      "at": "2026-09-04T13:28:44.643Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "review_round_4\naction_v2_sha256:06039012707c553ffeaf748a440264925655fa06961f56b162530d05825d4248",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-41518e97bce0d67f",
+        "issued_at": "2026-09-04T13:28:44.643Z",
+        "expires_at": "2026-09-04T13:38:44.643Z"
+      }
+    },
+    {
+      "id": "resolve_finding:2026-09-04-001-task-rail-progress-depth-and-overview:2026-09-04T13:31:16.028Z",
+      "at": "2026-09-04T13:31:16.028Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-5617ea336394-1-review-1\naction_v2_sha256:07ec03033ce94ddc26fc2740a1ae900f71da349f1ab59e4dbf614af0f041ef65"
+    },
+    {
+      "id": "approve_breaking_intent_revision:2026-09-04-001-task-rail-progress-depth-and-overview:2026-09-04T13:32:09.498Z",
+      "at": "2026-09-04T13:32:09.498Z",
+      "type": "approve_breaking_intent_revision",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "intent_revision_9\naction_v2_sha256:94ea35720bf3ddc67824f7550ef5dc0af8141963d890e3f65de02c61f6ae3868",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-14450640000cfab0",
+        "issued_at": "2026-09-04T13:32:09.746Z",
+        "expires_at": "2026-09-04T13:42:09.746Z"
+      }
+    },
+    {
+      "id": "freeze_artifacts:2026-09-04-001-task-rail-progress-depth-and-overview:2026-09-04T13:32:39.167Z",
+      "at": "2026-09-04T13:32:39.167Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent and Spec frozen at docs/plans/archive/2026-09-04-001-task-rail-progress-depth-and-overview.intent.json"
+    },
+    {
+      "id": "record_approval:2026-09-04-001-task-rail-progress-depth-and-overview:2026-09-04T13:33:38.070Z",
+      "at": "2026-09-04T13:33:38.070Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-4f774322\naction_v2_sha256:0dcffa7c9ff65f724efce095e6f00bb041891910dd36330c63a9f42c7b9169b2",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-b5d7f8608d25e821",
+        "issued_at": "2026-09-04T13:33:38.070Z",
+        "expires_at": "2026-09-04T13:43:38.070Z"
+      }
+    },
+    {
+      "id": "request_rework:2026-09-04-001-task-rail-progress-depth-and-overview:2026-09-04T13:37:39.753Z",
+      "at": "2026-09-04T13:37:39.753Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "review_round_5\naction_v2_sha256:6ca4b4089531fadeba0696047bcc513b3e7bc0f3a0a3d971742b30390cad4f46",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-a6ff663c550b1f66",
+        "issued_at": "2026-09-04T13:37:39.754Z",
+        "expires_at": "2026-09-04T13:47:39.754Z"
+      }
+    },
+    {
+      "id": "resolve_finding:2026-09-04-001-task-rail-progress-depth-and-overview:2026-09-04T13:39:31.633Z",
+      "at": "2026-09-04T13:39:31.633Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-6c675f9aa8a3-1-review-1\naction_v2_sha256:6e4427684f5c7da8935436a7fd09e551d983994b5a604d792d055e8fcd5067fa"
+    },
+    {
+      "id": "approve_breaking_intent_revision:2026-09-04-001-task-rail-progress-depth-and-overview:2026-09-04T13:40:16.997Z",
+      "at": "2026-09-04T13:40:16.997Z",
+      "type": "approve_breaking_intent_revision",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "intent_revision_10\naction_v2_sha256:6af2563a6d4a4ab72630ea435c6076956bfae4022c3027b3c629a671f540285c",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-218d451ce9d9c522",
+        "issued_at": "2026-09-04T13:40:17.233Z",
+        "expires_at": "2026-09-04T13:50:17.233Z"
+      }
+    },
+    {
+      "id": "freeze_artifacts:2026-09-04-001-task-rail-progress-depth-and-overview:2026-09-04T13:40:28.740Z",
+      "at": "2026-09-04T13:40:28.740Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent and Spec frozen at docs/plans/archive/2026-09-04-001-task-rail-progress-depth-and-overview.intent.json"
+    },
+    {
+      "id": "record_approval:2026-09-04-001-task-rail-progress-depth-and-overview:2026-09-04T13:41:25.698Z",
+      "at": "2026-09-04T13:41:25.698Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-b440c776\naction_v2_sha256:56cfeb594ccd2ab323337b8f26f3b6a49d8e53461fc3902a3ae9093bd6b1414b",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-49b841f864831b21",
+        "issued_at": "2026-09-04T13:41:25.698Z",
+        "expires_at": "2026-09-04T13:51:25.698Z"
+      }
+    },
+    {
+      "id": "request_rework:2026-09-04-001-task-rail-progress-depth-and-overview:2026-09-04T13:46:41.731Z",
+      "at": "2026-09-04T13:46:41.731Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "review_round_6\naction_v2_sha256:906a85e87db4408c5d02f0024d2b0c96a58d500387e614022f2275d01d33fc16",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-135560ce25362ea1",
+        "issued_at": "2026-09-04T13:46:41.732Z",
+        "expires_at": "2026-09-04T13:56:41.732Z"
+      }
+    },
+    {
+      "id": "resolve_finding:2026-09-04-001-task-rail-progress-depth-and-overview:2026-09-04T13:49:27.622Z",
+      "at": "2026-09-04T13:49:27.622Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-91d5d10f859e-1-review-1\naction_v2_sha256:a6fbe60ccd08391fa1022eac01363b27f597b77361325d52ae555f179c7ceada"
+    },
+    {
+      "id": "approve_breaking_intent_revision:2026-09-04-001-task-rail-progress-depth-and-overview:2026-09-04T14:33:38.322Z",
+      "at": "2026-09-04T14:33:38.322Z",
+      "type": "approve_breaking_intent_revision",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "intent_revision_11\naction_v2_sha256:72cce58fc6fab46c9f85589ccdd2557f89ed9553b950284259c8b81e91a89dc6",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-f2239e3a63c58df5",
+        "issued_at": "2026-09-04T14:33:38.576Z",
+        "expires_at": "2026-09-04T14:43:38.576Z"
+      }
+    },
+    {
+      "id": "freeze_artifacts:2026-09-04-001-task-rail-progress-depth-and-overview:2026-09-04T14:34:25.908Z",
+      "at": "2026-09-04T14:34:25.908Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent and Spec frozen at docs/plans/archive/2026-09-04-001-task-rail-progress-depth-and-overview.intent.json"
+    },
+    {
+      "id": "record_approval:2026-09-04-001-task-rail-progress-depth-and-overview:2026-09-04T14:35:32.673Z",
+      "at": "2026-09-04T14:35:32.673Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-3a195813\naction_v2_sha256:d40ba9f6181842745f265eb82e1069e6ba1bf7db9d813bedab24d7a5d6c2fbee",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-dd6b2d24e0aee4f2",
+        "issued_at": "2026-09-04T14:35:32.674Z",
+        "expires_at": "2026-09-04T14:45:32.674Z"
+      }
+    },
+    {
+      "id": "record_approval:2026-09-04-001-task-rail-progress-depth-and-overview:2026-09-04T14:40:32.490Z",
+      "at": "2026-09-04T14:40:32.490Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-653cd614\naction_v2_sha256:abf1d4d5f4f70a2e385b042100aad624908a42809fe1071a70c3034ba9204f13",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-df9d960ec4fbd239",
+        "issued_at": "2026-09-04T14:40:32.490Z",
+        "expires_at": "2026-09-04T14:50:32.490Z"
+      }
+    },
+    {
+      "id": "complete:2026-09-04-001-task-rail-progress-depth-and-overview:2026-09-04T14:40:33.262Z",
+      "at": "2026-09-04T14:40:33.262Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:0695a3537de1b41222943642e4d8c3c36d49ec8d236a80650daf7879abd7ff91"
+    }
+  ]
+}

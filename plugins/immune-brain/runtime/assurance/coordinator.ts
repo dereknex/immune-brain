@@ -559,7 +559,13 @@ export class AssuranceCoordinator {
 				ensureOperationLive();
 				qaVerdict = await this.ports.runQa(assurance.snapshot, assurance.descriptors, runner, {
 					signal: operationController.signal,
-					onProgress: (item) => progress("verifying", `QA ${item.index}/${item.total} ${item.acceptance_id} ${item.phase}`, { current: item.index, total: item.total, acceptance_id: item.acceptance_id }),
+					onProgress: (item) => progress("verifying", `QA ${item.index}/${item.total} ${item.acceptance_id} ${item.phase}`, {
+						current: item.index,
+						total: item.total,
+						acceptance_id: item.acceptance_id,
+						acceptance_phase: item.phase,
+						elapsed_ms: item.elapsed_ms,
+					}),
 				});
 				ensureOperationLive();
 				const invocation = this.openInvocation(taskId);

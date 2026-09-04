@@ -122,7 +122,12 @@ overall progress or pending work at a glance.
   `presentTaskRail` views; register `/imm-tasks` command; overlay rendering
   reuses `readBackendClaim` + `projectAssuranceState` + a bounded
   `readdirSync` of `docs/plans/*.intent.json` (already dependency-free fs).
-- No changes to `runtime/` Kernel modules, Tool schemas, or persisted formats.
+- `runtime/assurance/coordinator.ts`: preserve the existing per-acceptance
+  `phase` and `elapsed_ms` facts in the foreground update details consumed by
+  the Task Rail.
+- `dist/claude/mcp-server.mjs`: regenerate the checked-in Claude runtime mirror
+  from the shared coordinator source.
+- No changes to Kernel state, Tool schemas, or persisted formats.
 
 ### Invariants
 
@@ -149,15 +154,19 @@ overall progress or pending work at a glance.
 
 ## Compatibility And Rollback
 
-Additive-only: `TaskRailView` gains optional fields; existing callers render
-unchanged when fields are absent. No schema, persisted bytes, Tool contract, or
-event contract changes. Rollback reverts the two `.pi-extension` files and
-focused tests as one unit; ephemeral presentation needs no state repair.
+Additive-only: `TaskRailView` gains optional fields and the existing foreground
+QA update details retain two existing `QaVerificationProgress` facts; existing
+callers render unchanged when fields are absent. No schema, persisted bytes,
+Tool contract, or event contract changes. Rollback reverts the two
+`.pi-extension` files, the shared coordinator and generated mirror, plus focused
+tests as one unit; ephemeral presentation needs no state repair.
 
 ## Scope
 
 - `plugins/immune-brain/.pi-extension/pi-canary-interaction.ts`
 - `plugins/immune-brain/.pi-extension/imm-canary-work.ts`
+- `plugins/immune-brain/runtime/assurance/coordinator.ts`
+- `plugins/immune-brain/dist/claude/mcp-server.mjs` (generated runtime mirror)
 - `tests/pi-canary-work-extension.test.ts` (focused extension tests for the
   new Rail rows, overlay rendering, and forbidden-source scan coverage)
 - `docs/specs/task-rail-progress-depth-and-overview.spec.md`

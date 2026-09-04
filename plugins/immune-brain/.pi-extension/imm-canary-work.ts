@@ -1165,12 +1165,15 @@ async function buildTaskOverview(root: string): Promise<{
 			if (!name.endsWith(".intent.json")) continue;
 			const taskId = name.slice(0, -".intent.json".length);
 			if (claim && taskId === claim.task_id) continue;
-			let summary = "TaskIntent draft";
+			if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(taskId)) continue;
+			let summary: string;
 			try {
+				if (await readTaskTombstone(root, taskId)) continue;
 				const intent = await parseTaskIntentV1(JSON.parse(readFileSync(join(plansDir, name), "utf8")));
+				if (intent.task_id !== taskId) continue;
 				summary = intent.goal;
 			} catch {
-				// Draft drafts may fail strict parsing; the row keeps a generic label.
+				continue;
 			}
 			pending.push({ task_id: taskId, state: "Planning", result: summary, next: "not enrolled" });
 		}
