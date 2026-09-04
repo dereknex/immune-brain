@@ -28,19 +28,20 @@ describe("Canary Slash Command retirement", () => {
 		expect(existsSync(join(EXT, "imm-canary-succeed.ts"))).toBe(false);
 	});
 
-	test("registers foreground Tools without any Slash Commands", () => {
+	test("registers foreground Tools and the single read-only /imm-tasks overlay command", () => {
 		expect(loadFactory("imm-canary-enroll.ts")).toEqual({ tools: ["imm_canary_enrollment"], commands: [] });
 		expect(loadFactory("imm-canary-work.ts")).toEqual({
 			tools: ["imm_kernel_canary", "imm_loop_action"],
-			commands: [],
+			commands: ["imm-tasks"],
 		});
 	});
 
-	test("production extension sources contain no retired command registration", () => {
+	test("production extension sources register only the read-only /imm-tasks command", () => {
 		for (const file of ["imm-canary-enroll.ts", "imm-canary-work.ts"]) {
 			const source = readFileSync(join(EXT, file), "utf8");
-			expect(source).not.toContain("registerCommand");
 			expect(source).not.toMatch(/\/imm-canary-(new|enroll|assure|authorize|succeed)/);
+			for (const match of source.matchAll(/registerCommand\(\"([^\"]+)\"/g))
+				expect(["imm-tasks"]).toContain(match[1]);
 		}
 	});
 

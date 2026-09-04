@@ -284,15 +284,15 @@ describe("pi canary lifecycle package composition", () => {
 			const terminalStatus = await surface.tool!.execute("terminal-status", { task_id: TASK, action: { op: "status" } }, undefined, undefined, ctx);
 			expect(JSON.parse(terminalStatus.content[0].text)).toMatchObject({ lifecycle: "done", next_obligation: "none" });
 			expect(terminalStatus.details).toMatchObject({ lifecycle: "done", next_action: "none" });
-			expect(surface.commands).toEqual([]);
+			expect(surface.commands).toEqual(["imm-tasks"]);
 		} finally {
 			rmSync(root, { recursive: true, force: true });
 		}
 	}, 15_000);
 
-	test("lifecycle surface registers the foreground Tool without Slash Commands", () => {
+	test("lifecycle surface registers the foreground Tool and only the read-only /imm-tasks overlay command", () => {
 		const { tool, commands } = loadWorkSurface();
 		expect(tool).toBeDefined();
-		expect(commands).toEqual([]);
+		expect(commands).toEqual(["imm-tasks"]);
 	});
 });

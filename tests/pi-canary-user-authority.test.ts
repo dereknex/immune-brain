@@ -137,6 +137,7 @@ function loadSurface(dependencies: Record<string, unknown> = {}): {
 	const pi = {
 		on: () => {},
 		registerMessageRenderer: () => {},
+		registerCommand: () => undefined,
 		registerTool: (registered: { name: string; execute: typeof tool extends infer T ? T : never }) => {
 			if (registered.name === "imm_kernel_canary") tool = registered as never;
 		},

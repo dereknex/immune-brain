@@ -25,6 +25,7 @@ function taskPhase(taskId: string): string | null {
   // Slice 2 deletes after this repository migrates.
   const candidates = [
     join(REPO_ROOT, ".imm/audit", taskId, "task-record.json"),
+    join(REPO_ROOT, ".imm/state/tasks", `${taskId}.json`),
     join(REPO_ROOT, ".imm/tasks", `${taskId}.json`),
   ];
   for (const p of candidates) {

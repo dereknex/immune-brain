@@ -162,6 +162,7 @@ function loadSurface(dependencies: { authorizationAfterSidecarStage?: () => Prom
 	const pi = {
 		on: () => {},
 		registerMessageRenderer: () => {},
+		registerCommand: () => undefined,
 		registerTool: (registered: RegisteredTool) => {
 			if (registered.name === "imm_kernel_canary") tool = registered;
 		},
