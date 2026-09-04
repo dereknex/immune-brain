@@ -53,7 +53,7 @@ function probeHost(env = process.env, platform = process.platform, hostVersion) 
 }
 
 // plugins/immune-brain/runtime/plugin_version.ts
-var PLUGIN_VERSION = "3.2.2";
+var PLUGIN_VERSION = "3.3.0";
 
 // plugins/immune-brain/runtime/claude/interaction.ts
 import { createHash, randomUUID } from "node:crypto";
@@ -7448,9 +7448,9 @@ if (entry.endsWith("mcp_server.ts") || entry.endsWith("mcp-server.mjs")) {
     serveStdio();
 }
 export {
-  serveStdio,
-  listMcpTools,
-  handleJsonRpc,
+  TOOLS,
   createMcpRuntime,
-  TOOLS
+  handleJsonRpc,
+  listMcpTools,
+  serveStdio
 };
