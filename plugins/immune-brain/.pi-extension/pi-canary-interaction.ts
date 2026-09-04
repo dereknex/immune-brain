@@ -28,11 +28,35 @@ export type TaskRailState =
 	| "Completed"
 	| "Stopped";
 
+export interface TaskRailAcceptanceProgress {
+	current: number;
+	total: number;
+	acceptance_id: string;
+	state: "running" | "passed" | "failed";
+	elapsed_ms?: number;
+}
+
 export interface TaskRailView {
 	task_id: string;
 	state: TaskRailState;
 	result: string;
 	next: string;
+	/** Assurance phase label derived from the normalized Rail state. */
+	phase?: string;
+	/** Latest per-descriptor QA fact; rendered only while present. */
+	acceptance_progress?: TaskRailAcceptanceProgress;
+}
+
+export interface TaskOverviewEntry {
+	task_id: string;
+	state: TaskRailState;
+	result: string;
+	next: string;
+}
+
+export interface TaskOverviewView {
+	active: TaskOverviewEntry | null;
+	pending: TaskOverviewEntry[];
 }
 
 export interface AuthorityDialogAction<T extends string> {
@@ -187,17 +211,59 @@ export function presentTaskRailResult(
 	const rawState = string(details.state);
 	const result = string(details.result) ?? string(details.reason) ?? operation ?? rawState ?? "Task state updated";
 	const next = string(details.next_action) ?? "Follow the projected Obligation";
+	const current = details.current;
+	const total = details.total;
+	const acceptanceId = string(details.acceptance_id);
+	const progressPhase = string(details.acceptance_phase);
 	presentTaskRail(ctx, {
 		task_id: taskId,
 		state: railState({ lifecycle, obligation: string(taskState?.next_obligation), operation, state: rawState }),
 		result,
 		next,
+		acceptance_progress: typeof current === "number" && typeof total === "number" && acceptanceId && progressPhase === "running" || progressPhase === "passed" || progressPhase === "failed"
+			? {
+					current: typeof current === "number" ? current : 0,
+					total: typeof total === "number" ? total : 0,
+					acceptance_id: acceptanceId ?? "",
+					state: progressPhase as TaskRailAcceptanceProgress["state"],
+					elapsed_ms: typeof details.elapsed_ms === "number" ? details.elapsed_ms : undefined,
+			}
+			: undefined,
 	});
 }
 
 export function clearTerminalTaskRailOnInput(ctx: UiContext): void {
 	if (!terminalRailUis.has(ctx.ui)) return;
 	clearTaskRail(ctx);
+}
+
+export async function presentTaskOverviewOverlay(
+	ctx: UiContext & { mode?: string },
+	view: TaskOverviewView,
+): Promise<void> {
+	if (ctx.mode !== undefined && ctx.mode !== "tui") {
+		// Non-TUI hosts have no overlay surface; the command stays a no-op.
+		return;
+	}
+	try {
+		await ctx.ui.custom<void>((tui, theme) => {
+			const container = new Container();
+			const lines = renderTaskOverview(view, 120, theme);
+			for (const line of lines) container.addChild(new Text(line, 0, 0));
+			container.addChild(new Text(theme.fg("dim", "esc: close"), 1, 0));
+			return {
+				render: (width: number) => container.render(width),
+				invalidate: () => container.invalidate(),
+				handleInput: (data: string) => {
+					if (data === "\u001b" || data === "q") {
+						(tui as { requestRender: () => void }).requestRender();
+					}
+				},
+			};
+		}, { overlay: true, overlayOptions: { anchor: "center", width: "80%", maxHeight: "80%" } });
+	} catch {
+		notifyOnce(ctx, "task-overview:render", "Task overview is unavailable; projections remain authoritative.", "warning");
+	}
 }
 
 export function clearTaskRail(ctx: UiContext): void {
@@ -315,12 +381,52 @@ function renderTaskRail(view: TaskRailView, width = 120, theme?: Theme): string[
 	const stateFormatted = formatTaskRailState(view.state, theme);
 	const label = (text: string) => (theme ? theme.fg("muted", text) : text);
 	const body = (text: string) => (theme ? theme.fg("dim", text) : text);
-
-	return [
+	const lines = [
 		`Task ${boundedMiddle(view.task_id, taskIdWidth)} · ${stateFormatted}`,
+	];
+	if (view.acceptance_progress) {
+		const progress = view.acceptance_progress;
+		const symbol = progress.state === "passed" ? "✓" : progress.state === "failed" ? "✗" : "●";
+		const color = progress.state === "failed" ? "warning" : progress.state === "passed" ? "success" : "accent";
+		const elapsed = typeof progress.elapsed_ms === "number" ? ` ${progress.elapsed_ms}ms` : "";
+		const body = `${symbol} ${bounded(progress.acceptance_id, availableContentWidth - 12)}${elapsed}`;
+		lines.push(
+			theme
+				? `${label("Acceptance:")} ${theme.fg(color, `${progress.current}/${progress.total} `)}${theme.fg(color, body)}`
+				: `Acceptance: ${progress.current}/${progress.total} ${body}`,
+		);
+	}
+	lines.push(
 		`${label("Result:")} ${body(bounded(view.result, availableContentWidth))}`,
 		`${label("Next:")} ${body(bounded(view.next, availableContentWidth))}`,
-	];
+	);
+	return lines;
+}
+
+export function renderTaskOverview(view: TaskOverviewView, width = 120, theme?: Theme): string[] {
+	const label = (text: string) => (theme ? theme.fg("muted", text) : text);
+	const head = (text: string) => (theme ? theme.fg("accent", theme.bold(text)) : text);
+	const lines = [head("Managed Tasks (read-only)")];
+	if (!view.active && view.pending.length === 0) {
+		lines.push(label("No active task; no pending TaskIntent drafts."));
+		return lines;
+	}
+	if (view.active) {
+		lines.push(`${label("Active:")} ${formatTaskRailState(view.active.state, theme)} ${bounded(view.active.task_id, 60)}`);
+		lines.push(`${label("  Result:")} ${bounded(view.active.result, 100)}`);
+		lines.push(`${label("  Next:")} ${bounded(view.active.next, 100)}`);
+	} else {
+		lines.push(label("Active: none"));
+	}
+	if (view.pending.length > 0) {
+		lines.push(label(`Pending enrollment (${view.pending.length}):`));
+		for (const entry of view.pending) {
+			lines.push(`  ${formatTaskRailState(entry.state, theme)} ${bounded(entry.task_id, 60)} · ${bounded(entry.result, 60)}`);
+		}
+	} else {
+		lines.push(label("Pending enrollment: none"));
+	}
+	return lines;
 }
 
 function railState(input: { lifecycle?: string; obligation?: string; operation?: string; state?: string }): TaskRailState {

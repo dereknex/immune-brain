@@ -16,7 +16,7 @@
 
 import { execFileSync } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
@@ -58,12 +58,15 @@ import {
 	clearTerminalTaskRailOnInput,
 	loopResultDetails,
 	notifyOnce,
+	presentTaskOverviewOverlay,
 	presentTaskRail,
 	presentTaskRailResult,
 	renderStructuredCall,
 	renderStructuredResult,
 	requestAuthorityDialog,
 	resetInteractionPresentation,
+	type TaskOverviewEntry,
+	type TaskRailState,
 	type UserAttentionEventV1,
 	type UserAttentionReason,
 } from "./pi-canary-interaction";
@@ -344,6 +347,23 @@ export default function (
 		clearTerminalTaskRailOnInput(ctx);
 		await refreshTaskRail(ctx);
 		return { action: "continue" } as const;
+	});
+
+	pi.registerCommand("imm-tasks", {
+		handler: async (_args: string, ctx?: ExtensionContext) => {
+			if (!ctx || ctx.mode !== "tui") return;
+			try {
+				const view = await buildTaskOverview(ctx.cwd);
+				await presentTaskOverviewOverlay(ctx, view);
+			} catch (error) {
+				notifyOnce(
+					ctx,
+					"task-overview:command",
+					`Task overview failed: ${error instanceof Error ? error.message : String(error)}`,
+					"warning",
+				);
+			}
+		},
 	});
 
 	pi.on("session_start", async (_event: unknown, ctx?: ExtensionContext) => {
@@ -1107,6 +1127,66 @@ function diffHashOf(root: string, record: NonNullable<TaskRecordRead["record"]>)
 // Kernel module; this wrapper only binds the host diff provider. The retired
 // active-v2 migrator is gone: a v2 TaskRecord in the state layout is a
 // fail-closed projection error, never an automatic migration trigger.
+/**
+ * Read-only task overview for the /imm-tasks overlay: the active claim's
+ * task plus every not-enrolled docs/plans/*.intent.json draft. Settled
+ * history stays on the CLI (BR-DEC-3); no second state source is created.
+ */
+async function buildTaskOverview(root: string): Promise<{
+	active: TaskOverviewEntry | null;
+	pending: TaskOverviewEntry[];
+}> {
+	const claim = await readBackendClaim(root);
+	let active: TaskOverviewEntry | null = null;
+	if (claim) {
+		const projection = await projectAssuranceState(root, claim.task_id);
+		if (!projection.error) {
+			const state = projection.projection;
+			const obligation = String(state.next_obligation);
+			active = {
+				task_id: claim.task_id,
+				state: overviewRailState(state.lifecycle, obligation),
+				result: `Assurance: ${obligation.replace(/_/g, " ")}`,
+				next: `${state.fresh_acceptance_ids.length}/${state.fresh_acceptance_ids.length + state.missing_acceptance_ids.length} acceptance fresh · ${state.artifact_state}`,
+			};
+		} else {
+			active = {
+				task_id: claim.task_id,
+				state: "Blocked",
+				result: projection.error,
+				next: "inspect authority state",
+			};
+		}
+	}
+	const pending: TaskOverviewEntry[] = [];
+	const plansDir = resolve(root, "docs/plans");
+	if (existsSync(plansDir)) {
+		for (const name of readdirSync(plansDir).sort()) {
+			if (!name.endsWith(".intent.json")) continue;
+			const taskId = name.slice(0, -".intent.json".length);
+			if (claim && taskId === claim.task_id) continue;
+			let summary = "TaskIntent draft";
+			try {
+				const intent = await parseTaskIntentV1(JSON.parse(readFileSync(join(plansDir, name), "utf8")));
+				summary = intent.goal;
+			} catch {
+				// Draft drafts may fail strict parsing; the row keeps a generic label.
+			}
+			pending.push({ task_id: taskId, state: "Planning", result: summary, next: "not enrolled" });
+		}
+	}
+	return { active, pending };
+}
+
+function overviewRailState(lifecycle: string, obligation: string): TaskRailState {
+	if (lifecycle === "done") return "Completed";
+	if (lifecycle === "stopped") return "Stopped";
+	if (obligation === "run_review") return "Reviewing";
+	if (obligation === "submit_assurance" || obligation === "run_qa") return "Verifying";
+	if (obligation === "resolve_findings" || obligation === "resolve_user_decision" || obligation === "revise_intent") return "Blocked";
+	return "Working";
+}
+
 async function projectAssuranceState(root: string, taskId: string): Promise<AssuranceProjectionResult> {
 	return projectAssurance(root, taskId, diffSnapshotOf);
 }

@@ -26,6 +26,7 @@ import {
 	USER_ATTENTION_EVENT,
 	clearTerminalTaskRailOnInput,
 	presentTaskRail,
+	presentTaskRailResult,
 } from "../plugins/immune-brain/.pi-extension/pi-canary-interaction";
 
 const TASK = "canary-ext-task";
@@ -342,10 +343,10 @@ async function capturedToolFailure(promise: Promise<unknown>): Promise<Record<st
 	});
 
 	describe("foreground canary assurance extension", () => {
-	test("registers assurance and Loop routing Tools without commands", () => {
+	test("registers assurance and Loop routing Tools plus the read-only /imm-tasks command", () => {
 		const { tools, commands } = loadSurface();
 		expect(tools.map((tool) => tool.name)).toEqual(["imm_kernel_canary", "imm_loop_action"]);
-		expect(Object.keys(commands)).toEqual([]);
+		expect(Object.keys(commands)).toEqual(["imm-tasks"]);
 	});
 
 	test("Pi status reports the shared plugin version", async () => {
@@ -460,6 +461,106 @@ async function capturedToolFailure(promise: Promise<unknown>): Promise<Record<st
 		);
 		for (const forbidden of ["setStatus(", "setTimeout(", "setInterval(", "HERDR_", "herdr:blocked", "process.stdout", "\\x07"])
 			expect(source).not.toContain(forbidden);
+		for (const changed of [
+			"../plugins/immune-brain/.pi-extension/imm-canary-work.ts",
+		] as const) {
+			const workSource = readFileSync(new URL(changed, import.meta.url), "utf8");
+			for (const forbidden of ["setStatus(", "setTimeout(", "setInterval(", "HERDR_", "herdr:blocked", "\\x07"])
+				expect(workSource).not.toContain(forbidden);
+		}
+	});
+
+	test("task-rail-progress: renders optional acceptance-progress and phase rows and stays three rows without them", () => {
+		const ui = makeUI();
+		const ctx = makeCtx(process.cwd(), ui);
+		const fakeTheme = { fg: (_color: string, text: string) => text, bold: (text: string) => text } as never;
+		presentTaskRail(ctx, {
+			task_id: "progress-task",
+			state: "Verifying",
+			result: "QA running",
+			next: "Wait for the foreground Tool result",
+			acceptance_progress: { current: 2, total: 5, acceptance_id: "acc-2", state: "running", elapsed_ms: 340 },
+		});
+		const widget = ui.widgetCalls.at(-1)?.content;
+		expect(typeof widget).toBe("function");
+		const lines = (widget as (tui: unknown, theme: unknown) => { render(width: number): string[] })({}, fakeTheme).render(120);
+		expect(lines[0]).toContain("Task progress-task · ● Verifying");
+		expect(lines[1]).toContain("Acceptance: 2/5 ● acc-2 340ms");
+		expect(lines[2]).toBe("Result: QA running");
+		expect(lines[3]).toBe("Next: Wait for the foreground Tool result");
+		expect(lines).toHaveLength(4);
+
+		const passedUi = makeUI();
+		presentTaskRail(makeCtx(process.cwd(), passedUi), {
+			task_id: "progress-task",
+			state: "Verifying",
+			result: "QA item done",
+			next: "Continue",
+			acceptance_progress: { current: 5, total: 5, acceptance_id: "acc-5", state: "passed" },
+		});
+		const passedLines = ((passedUi.widgetCalls.at(-1)?.content) as (tui: unknown, theme: unknown) => { render(width: number): string[] })({}, fakeTheme).render(120);
+		expect(passedLines[1]).toContain("Acceptance: 5/5 ✓ acc-5");
+
+		const bareUi = makeUI();
+		presentTaskRail(makeCtx(process.cwd(), bareUi), {
+			task_id: "bare-task", state: "Working", result: "No progress", next: "Follow the Obligation",
+		});
+		const bareLines = ((bareUi.widgetCalls.at(-1)?.content) as (tui: unknown, theme: unknown) => { render(width: number): string[] })({}, fakeTheme).render(120);
+		expect(bareLines).toHaveLength(3);
+		expect(bareLines[0]).toBe("Task bare-task · ● Working");
+		expect(bareLines[1]).toBe("Result: No progress");
+		expect(bareLines[2]).toBe("Next: Follow the Obligation");
+
+		const relayedUi = makeUI();
+		presentTaskRailResult(makeCtx(process.cwd(), relayedUi), "relay-task", {
+			state: "running",
+			operation: "qa",
+			current: 1,
+			total: 3,
+			acceptance_id: "acc-1",
+			acceptance_phase: "running",
+			elapsed_ms: 12,
+			result: "verifying",
+			next_action: "wait",
+		});
+		const relayedLines = ((relayedUi.widgetCalls.at(-1)?.content) as (tui: unknown, theme: unknown) => { render(width: number): string[] })({}, fakeTheme).render(120);
+		expect(relayedLines[1]).toContain("Acceptance: 1/3 ● acc-1 12ms");
+	});
+
+	test("imm-tasks overlay lists the active task and pending TaskIntent drafts without mutation", async () => {
+		const { commands } = loadSurface();
+		const command = commands["imm-tasks"];
+		expect(command).toBeDefined();
+		const ui = makeUI();
+		const root = makeEnrolledRoot();
+		try {
+			// A second, not-enrolled draft sidecar in docs/plans.
+			writeFileSync(
+				join(root, "docs/plans", "canary-ext-pending.intent.json"),
+			JSON.stringify({ ...INTENT, task_id: "canary-ext-pending" }, null, 2) + "\n",
+			);
+			const ctx = makeCtx(root, ui);
+			await command.handler("", ctx);
+			expect(ui.customCalls).toHaveLength(1);
+			const body = ui.customCalls[0].body;
+			expect(body).toContain("Managed Tasks (read-only)");
+			expect(body).toContain("Active:");
+			expect(body).toContain(TASK);
+			expect(body).toContain("Pending enrollment (1):");
+			expect(body).toContain("canary-ext-pending");
+			expect(body).toContain("Planning");
+			// Settled history is excluded (BR-DEC-3): no audit rows appear.
+			expect(body).not.toContain("audit");
+			// Read-only: the handler mutates no Kernel state; the workspace claim survives.
+			const claim = await readBackendClaim(root);
+			expect(claim?.task_id).toBe(TASK);
+			// Non-TUI hosts get no overlay and no error.
+			const rpcUi = makeUI();
+			await command.handler("", makeCtx(root, rpcUi, "rpc"));
+			expect(rpcUi.customCalls).toHaveLength(0);
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
 	});
 
 	test("exposes Loop action and role dispatch builders through a read-only Tool", async () => {
