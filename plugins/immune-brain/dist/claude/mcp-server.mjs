@@ -2484,9 +2484,6 @@ function captureReviewManifest(root, input) {
     throw new Error("immutable review manifest metadata exceeds bounded output limit");
   return manifest;
 }
-function ensureReviewRevision(root, input) {
-  return publishInput(root, input).revision;
-}
 function writeNativeReviewEvidence(payload) {
   const rawDirectory = mkdtempSync(join4(tmpdir2(), "imm-canary-native-review-"));
   try {
@@ -6475,7 +6472,11 @@ function enrollCanaryTask(root, input, registry) {
       throw new Error("intent content hash mismatch");
     if (checks.gitBaseHead !== gitBaseHead)
       throw new Error("Git HEAD moved after the enrollment confirmation");
+    if (input.batch && checks.gitBaseHead !== input.batch.expected_head)
+      throw new Error(`batch_head_lineage_broken: expected ${input.batch.expected_head}, found ${checks.gitBaseHead}`);
     registry.consume(input.capability, input.capability_binding);
+    if (input.batch)
+      input.batch.registry.consumeChild(input.batch.capability, input.batch.binding, input.task_id, Date.parse(input.now));
     const record = buildTaskRecordV4(input, checks.intent, gitBaseHead);
     const nextWorkspace = {
       ...checks.workspace.state,
@@ -6492,16 +6493,23 @@ function enrollCanaryTask(root, input, registry) {
       created_at: input.now,
       updated_at: input.now
     };
-    const mutation = commitEnrollmentLocked(root, input.task_id, {
-      contract: "assurance_kernel/workspace_transaction/v2",
-      task_id: input.task_id,
-      expected_record_hash: checks.current.revision,
-      next_record_content: `${JSON.stringify(record, null, 2)}
+    let mutation;
+    try {
+      mutation = commitEnrollmentLocked(root, input.task_id, {
+        contract: "assurance_kernel/workspace_transaction/v2",
+        task_id: input.task_id,
+        expected_record_hash: checks.current.revision,
+        next_record_content: `${JSON.stringify(record, null, 2)}
 `,
-      expected_workspace_hash: checks.workspace.revision,
-      next_workspace_content: `${JSON.stringify(nextWorkspace, null, 2)}
+        expected_workspace_hash: checks.workspace.revision,
+        next_workspace_content: `${JSON.stringify(nextWorkspace, null, 2)}
 `
-    }, claim);
+      }, claim);
+    } catch (error) {
+      if (input.batch)
+        input.batch.registry.releaseChild(input.batch.capability, input.task_id);
+      throw error;
+    }
     return {
       record: mutation.record,
       backend_claim: claim,
@@ -6660,6 +6668,41 @@ function assertProjectionBinding(before, after, allowDiffChange = false) {
 function qaOutcomes(record) {
   return Object.fromEntries(record.attestations.filter((item) => item.kind === "qa").flatMap((item) => item.acceptance_results).map((result) => [result.acceptance_id, { status: result.status, summary: result.summary }]));
 }
+async function ensureClaudeReviewRevision(root, taskId, projection) {
+  const current = await readTaskRecord(root, taskId);
+  const record = current.record;
+  if (!record)
+    throw new Error(`task ${taskId} has no TaskRecord`);
+  if (current.revision !== projection.projection.record_revision)
+    throw new Error("TaskRecord changed before Review revision preparation");
+  if (record.contract !== "assurance_kernel/task_record/v4")
+    return null;
+  if (!record.git_base_head)
+    throw new Error("Review revision requires a TaskRecord v4 git_base_head");
+  const manifest = captureReviewManifest(root, {
+    taskId,
+    baseHead: record.git_base_head,
+    scopeHint: record.intent_snapshot.scope_hint,
+    expectedDiffHash: projection.projection.diff_hash,
+    intentRevision: projection.projection.intent_revision,
+    intentContentHash: projection.projection.intent_content_hash,
+    recordRevision: projection.projection.record_revision,
+    workspaceRevision: projection.projection.workspace_revision,
+    lifecycle: projection.projection.lifecycle,
+    artifactState: projection.projection.artifact_state,
+    risk: record.intent_snapshot.risk,
+    outcomes: qaOutcomes(record)
+  });
+  return {
+    contract: "assurance_kernel/review_revision/v1",
+    base_head: manifest.base_head,
+    review_tree: manifest.review_tree,
+    review_commit: manifest.review_commit,
+    review_ref: manifest.review_ref,
+    diff_hash: manifest.diff_hash,
+    manifest_digest: manifest.manifest_digest
+  };
+}
 async function buildAssuranceSnapshot(root, taskId, role, projection, runner) {
   const record = await readTaskRecord(root, taskId);
   if (!record.record || record.revision !== projection.projection.record_revision)
@@ -6810,19 +6853,7 @@ class ClaudeRuntime {
       readTaskIntent: (root, taskId) => readTaskIntentForRecord(root, taskId),
       frozenRunner: async () => resolveBunRunner(),
       buildAssurance: (root, taskId, role, projection, runner) => buildAssuranceSnapshot(root, taskId, role, projection, runner),
-      ensureReviewRevision: async (root, taskId, projection) => {
-        const current = await readTaskRecord(root, taskId);
-        if (!current.record)
-          throw new Error(`task ${taskId} has no TaskRecord`);
-        if (current.record.contract !== "assurance_kernel/task_record/v4")
-          return null;
-        return ensureReviewRevision(root, {
-          taskId,
-          baseHead: current.record.git_base_head,
-          scopeHint: current.record.intent_snapshot.scope_hint,
-          expectedDiffHash: projection.projection.diff_hash
-        });
-      },
+      ensureReviewRevision: (root, taskId, projection) => ensureClaudeReviewRevision(root, taskId, projection),
       runQa: (snapshot, descriptors, runner, options) => runDeterministicQa(snapshot, descriptors, runner, options),
       writeReviewEvidence: (input) => writeNativeReviewEvidence(input.evidence),
       applyVerdict: (ctx, input) => this.applyVerdict(ctx, input),
