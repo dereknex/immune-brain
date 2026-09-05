@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { constants, fstatSync, lstatSync, mkdirSync, openSync, readdirSync, readSync, rmSync, writeSync, closeSync } from "node:fs";
+import { constants, fstatSync, lstatSync, mkdirSync, openSync, readdirSync, readSync, realpathSync, rmSync, writeSync, closeSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
 import type {
@@ -122,18 +122,91 @@ function appendPrivate(path: string, dir: string, line: string): boolean {
 	}
 }
 
-function readPrivate(path: string): string | undefined {
+function readPrivate(path: string, maxBytes = Number.POSITIVE_INFINITY): string | undefined {
 	let fd: number;
 	try { fd = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK); } catch { return; }
 	try {
 		const stat = fstatSync(fd);
 		if (!stat.isFile() || !ownedByUs(stat) || (stat.mode & 0o777) !== 0o600) return;
+		if (stat.size > maxBytes) return;
 		const buf = Buffer.alloc(stat.size);
 		readSync(fd, buf, 0, stat.size, 0);
 		return buf.toString("utf8");
 	} finally {
 		closeSync(fd);
 	}
+}
+
+/**
+ * Upper bound on a reviewer transcript we are willing to load. A reviewer that
+ * produced more than this did not produce a verdict; refusing to allocate for it
+ * is safer than trusting whatever the tail happens to contain.
+ */
+const MAX_TRANSCRIPT_BYTES = 32 * 1024 * 1024;
+
+export type AsyncAgentLaunch = { agentId: string; outputFile: string };
+
+/**
+ * Recognise the launch receipt this Claude Code build returns for `Agent`.
+ *
+ * Every `Agent` call here runs asynchronously — `run_in_background: false` in
+ * the dispatch envelope is not honoured, and there is no synchronous mode. The
+ * tool result is therefore
+ * `{"isAsync":true,"status":"async_launched","agentId":…,"outputFile":…}`:
+ * proof that a subagent started, never its answer. Treating it as the verdict
+ * would settle Review on a receipt for starting the reviewer, so the launch
+ * envelope is read only as a pointer to where the real bytes live.
+ */
+export function parseAsyncAgentLaunch(result: string): AsyncAgentLaunch | null {
+	let payload: unknown;
+	try { payload = JSON.parse(result); } catch { return null; }
+	if (!payload || typeof payload !== "object") return null;
+	const obj = payload as Record<string, unknown>;
+	if (obj.isAsync !== true && obj.status !== "async_launched") return null;
+	const agentId = typeof obj.agentId === "string" ? obj.agentId : "";
+	const outputFile = typeof obj.outputFile === "string" ? obj.outputFile : "";
+	if (!agentId || !outputFile) return null;
+	return { agentId, outputFile };
+}
+
+/**
+ * Extract the reviewer's terminal message from its own transcript.
+ *
+ * Each record carries the `agentId` that wrote it, so the caller's independently
+ * observed id is matched per record rather than trusted for the file as a whole;
+ * a transcript that interleaves another agent cannot contribute its text.
+ */
+export function readAgentTranscriptResult(transcript: string, agentId: string): string | null {
+	let last: string | null = null;
+	for (const line of transcript.split("\n")) {
+		if (!line.trim()) continue;
+		let row: Record<string, unknown>;
+		try { row = JSON.parse(line) as Record<string, unknown>; } catch { continue; }
+		if (row.type !== "assistant" || row.agentId !== agentId) continue;
+		const message = row.message;
+		if (!message || typeof message !== "object") continue;
+		const content = (message as Record<string, unknown>).content;
+		if (!Array.isArray(content)) continue;
+		let text = "";
+		for (const block of content) {
+			if (!block || typeof block !== "object") continue;
+			const part = block as Record<string, unknown>;
+			if (part.type === "text" && typeof part.text === "string") text += part.text;
+		}
+		if (text.trim()) last = text;
+	}
+	return last;
+}
+
+/**
+ * Read the transcript the launch envelope names. The path is a symlink into the
+ * session store, so it is resolved once and then opened `O_NOFOLLOW` with the
+ * same ownership and mode checks the hook log gets.
+ */
+function readAgentTranscript(path: string): string | undefined {
+	let resolved: string;
+	try { resolved = realpathSync(path); } catch { return; }
+	return readPrivate(resolved, MAX_TRANSCRIPT_BYTES);
 }
 
 export function hookEventPath(sessionId: string, root = tmpdir()): string {
@@ -229,6 +302,11 @@ export class ClaudeReviewHost implements AssuranceHostPort {
 	constructor(private readonly log: HookEventLog = new MemoryHookEventLog()) {}
 
 	prepareReview(request: ReviewRequest): HostReviewReservation {
+		// Retire whatever the log already holds before the cursors are taken. A
+		// resumed session inherits its predecessor's file, and an unprocessed
+		// `SessionEnd` sitting in it used to survive until the first inspection —
+		// long after this reservation's own events had been appended behind it.
+		this.drain();
 		const initialCursors = new Map<string, number>();
 		const sessionCursors = new Map<string, number>();
 		for (const sessionId of this.log.sessions()) {
@@ -266,17 +344,31 @@ export class ClaudeReviewHost implements AssuranceHostPort {
 			for (let i = start; i < events.length; i++) {
 				const event = events[i];
 				if (event.type === "SessionEnd") {
-					this.log.clear(event.sessionId);
-					ended = true;
-					this.appliedBySession.delete(event.sessionId);
+					// Any reservation that already bound evidence from the finished
+					// session loses it outright; that evidence can never be revived.
 					for (const [id, state] of this.pending) {
 						if (state.startEvent?.sessionId === event.sessionId || state.postEvent?.sessionId === event.sessionId || state.stopEvent?.sessionId === event.sessionId) {
 							this.pending.delete(id);
 						}
 					}
-					// The session ended: stop processing this captured batch so a
-					// later event cannot repopulate confirmations after cleanup.
-					break;
+					// A resumed session reuses its id, so the same log can hold events
+					// appended after an earlier end. Advancing every surviving cursor
+					// past this point keeps the pre-end events unusable — the property
+					// the old whole-log clear was protecting — while still letting the
+					// events that follow reach their reservation. Clearing and stopping
+					// here instead silently discarded a live Review receipt.
+					for (const state of this.pending.values()) {
+						const current = state.initialCursors.get(sessionId) ?? 0;
+						if (i + 1 > current) state.initialCursors.set(sessionId, i + 1);
+					}
+					if (i === events.length - 1) {
+						// Nothing followed the end, so the log is safe to reclaim.
+						this.log.clear(event.sessionId);
+						ended = true;
+						this.appliedBySession.delete(event.sessionId);
+						break;
+					}
+					continue;
 				}
 				for (const state of this.pending.values()) {
 					if (state.consumed || state.error || i < (state.initialCursors.get(sessionId) ?? 0)) continue;
@@ -387,13 +479,29 @@ export class ClaudeReviewHost implements AssuranceHostPort {
 		) {
 			return { ok: false, reason: "foreground Agent terminal event correlation mismatch", release: true };
 		}
-		return {
-			ok: true,
-			receipt: {
-				actorId: `claude:${state.startEvent.agentId ?? reservation.id}`,
-				result: state.postEvent.result,
-			},
-		};
+		const actorId = `claude:${state.startEvent.agentId ?? reservation.id}`;
+		const launch = parseAsyncAgentLaunch(state.postEvent.result);
+		if (!launch) {
+			return { ok: true, receipt: { actorId, result: state.postEvent.result } };
+		}
+		// Invariant guard. Correlation already binds the PostToolUse through the
+		// same `agentId` this envelope carries, so a foreign id normally never
+		// reaches here; assert it anyway rather than read a transcript the three
+		// observed events did not agree on.
+		if (launch.agentId !== state.postEvent.agentId) {
+			return { ok: false, reason: "async Agent launch envelope names a different agent", release: true };
+		}
+		const transcript = readAgentTranscript(launch.outputFile);
+		if (transcript === undefined) {
+			// Fail closed rather than falling back to bytes the Parent supplied:
+			// an optional weaker path is a path the Parent can choose to force.
+			return { ok: false, reason: "async Agent transcript is not readable", release: false };
+		}
+		const verdict = readAgentTranscriptResult(transcript, launch.agentId);
+		if (!verdict?.trim()) {
+			return { ok: false, reason: "async Agent transcript carries no reviewer result", release: false };
+		}
+		return { ok: true, receipt: { actorId, result: verdict } };
 	}
 
 	consumeReview(reservation: HostReviewReservation): ConsumeReviewResult {
@@ -436,6 +544,14 @@ export function parseHookStdin(raw: string): ClaudeHookEvent | null {
 	if (!prompt && typeof payload.tool_input === "object" && payload.tool_input !== null) {
 		const toolInputObj = payload.tool_input as Record<string, unknown>;
 		if (typeof toolInputObj.prompt === "string") prompt = toolInputObj.prompt;
+	}
+	// The async launch envelope echoes the dispatched prompt. It is the only
+	// place the reservation marker appears when a payload omits `tool_input`,
+	// and it is written by the Host, not by the Parent, like every other field
+	// read here.
+	if (!prompt && typeof payload.tool_response === "object" && payload.tool_response !== null) {
+		const toolResponseObj = payload.tool_response as Record<string, unknown>;
+		if (typeof toolResponseObj.prompt === "string") prompt = toolResponseObj.prompt;
 	}
 	let extractedOpId = operationId;
 	let extractedTaskId = taskId;

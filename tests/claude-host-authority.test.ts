@@ -687,6 +687,12 @@ describe("claude host authority", () => {
 		expect(await submitObservedReview(h)).toEqual({ state: "completed" });
 	});
 
+	// The payloads below were written from the documented hook shapes, not
+	// recorded from a Host: no Claude Code build returns the reviewer's verdict in
+	// `tool_response.content`, and `SubagentStop` carries no `last_assistant_message`.
+	// They cover the synchronous branch that survives for a Host that would behave
+	// this way. Conformance against what Claude Code actually emits lives in
+	// tests/claude-review-host-async-agent.test.ts.
 	test("native Host hook payload shapes (prompt in tool_input, verdict in tool_response.content) correlate and settle Review", async () => {
 		const host = new ClaudeReviewHost();
 		const h = makeCoordinator({ host });
