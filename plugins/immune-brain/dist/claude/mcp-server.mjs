@@ -99,7 +99,7 @@ function enrollmentNonce() {
 
 // plugins/immune-brain/runtime/claude/review_host.ts
 import { createHash as createHash2 } from "node:crypto";
-import { constants, fstatSync, lstatSync, mkdirSync, openSync, readdirSync, readSync, rmSync, writeSync, closeSync } from "node:fs";
+import { constants, fstatSync, lstatSync, mkdirSync, openSync, readdirSync, readSync, realpathSync, rmSync, writeSync, closeSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
 var REVIEWER_AGENT = "immune-brain-reviewer";
@@ -183,7 +183,7 @@ function appendPrivate(path, dir, line) {
     closeSync(fd);
   }
 }
-function readPrivate(path) {
+function readPrivate(path, maxBytes = Number.POSITIVE_INFINITY) {
   let fd;
   try {
     fd = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
@@ -194,12 +194,75 @@ function readPrivate(path) {
     const stat = fstatSync(fd);
     if (!stat.isFile() || !ownedByUs(stat) || (stat.mode & 511) !== 384)
       return;
+    if (stat.size > maxBytes)
+      return;
     const buf = Buffer.alloc(stat.size);
     readSync(fd, buf, 0, stat.size, 0);
     return buf.toString("utf8");
   } finally {
     closeSync(fd);
   }
+}
+var MAX_TRANSCRIPT_BYTES = 32 * 1024 * 1024;
+function parseAsyncAgentLaunch(result) {
+  let payload;
+  try {
+    payload = JSON.parse(result);
+  } catch {
+    return null;
+  }
+  if (!payload || typeof payload !== "object")
+    return null;
+  const obj = payload;
+  if (obj.isAsync !== true && obj.status !== "async_launched")
+    return null;
+  const agentId = typeof obj.agentId === "string" ? obj.agentId : "";
+  const outputFile = typeof obj.outputFile === "string" ? obj.outputFile : "";
+  if (!agentId || !outputFile)
+    return null;
+  return { agentId, outputFile };
+}
+function readAgentTranscriptResult(transcript, agentId) {
+  let last = null;
+  for (const line of transcript.split(`
+`)) {
+    if (!line.trim())
+      continue;
+    let row;
+    try {
+      row = JSON.parse(line);
+    } catch {
+      continue;
+    }
+    if (row.type !== "assistant" || row.agentId !== agentId)
+      continue;
+    const message = row.message;
+    if (!message || typeof message !== "object")
+      continue;
+    const content = message.content;
+    if (!Array.isArray(content))
+      continue;
+    let text = "";
+    for (const block of content) {
+      if (!block || typeof block !== "object")
+        continue;
+      const part = block;
+      if (part.type === "text" && typeof part.text === "string")
+        text += part.text;
+    }
+    if (text.trim())
+      last = text;
+  }
+  return last;
+}
+function readAgentTranscript(path) {
+  let resolved;
+  try {
+    resolved = realpathSync(path);
+  } catch {
+    return;
+  }
+  return readPrivate(resolved, MAX_TRANSCRIPT_BYTES);
 }
 function hookEventPath(sessionId, root = tmpdir()) {
   return join(cacheDir(root), `${sessionHash(sessionId)}.jsonl`);
@@ -288,6 +351,7 @@ class ClaudeReviewHost {
     this.log = log;
   }
   prepareReview(request) {
+    this.drain();
     const initialCursors = new Map;
     const sessionCursors = new Map;
     for (const sessionId of this.log.sessions()) {
@@ -325,15 +389,23 @@ ${request.prompt}`,
       for (let i = start;i < events.length; i++) {
         const event = events[i];
         if (event.type === "SessionEnd") {
-          this.log.clear(event.sessionId);
-          ended = true;
-          this.appliedBySession.delete(event.sessionId);
           for (const [id, state] of this.pending) {
             if (state.startEvent?.sessionId === event.sessionId || state.postEvent?.sessionId === event.sessionId || state.stopEvent?.sessionId === event.sessionId) {
               this.pending.delete(id);
             }
           }
-          break;
+          for (const state of this.pending.values()) {
+            const current = state.initialCursors.get(sessionId) ?? 0;
+            if (i + 1 > current)
+              state.initialCursors.set(sessionId, i + 1);
+          }
+          if (i === events.length - 1) {
+            this.log.clear(event.sessionId);
+            ended = true;
+            this.appliedBySession.delete(event.sessionId);
+            break;
+          }
+          continue;
         }
         for (const state of this.pending.values()) {
           if (state.consumed || state.error || i < (state.initialCursors.get(sessionId) ?? 0))
@@ -460,13 +532,23 @@ ${request.prompt}`,
     if (state.startEvent.sessionId !== state.postEvent.sessionId || state.startEvent.sessionId !== state.stopEvent.sessionId || state.startEvent.agentId !== state.postEvent.agentId || state.startEvent.agentId !== state.stopEvent.agentId) {
       return { ok: false, reason: "foreground Agent terminal event correlation mismatch", release: true };
     }
-    return {
-      ok: true,
-      receipt: {
-        actorId: `claude:${state.startEvent.agentId ?? reservation.id}`,
-        result: state.postEvent.result
-      }
-    };
+    const actorId = `claude:${state.startEvent.agentId ?? reservation.id}`;
+    const launch = parseAsyncAgentLaunch(state.postEvent.result);
+    if (!launch) {
+      return { ok: true, receipt: { actorId, result: state.postEvent.result } };
+    }
+    if (launch.agentId !== state.postEvent.agentId) {
+      return { ok: false, reason: "async Agent launch envelope names a different agent", release: true };
+    }
+    const transcript = readAgentTranscript(launch.outputFile);
+    if (transcript === undefined) {
+      return { ok: false, reason: "async Agent transcript is not readable", release: false };
+    }
+    const verdict = readAgentTranscriptResult(transcript, launch.agentId);
+    if (!verdict?.trim()) {
+      return { ok: false, reason: "async Agent transcript carries no reviewer result", release: false };
+    }
+    return { ok: true, receipt: { actorId, result: verdict } };
   }
   consumeReview(reservation) {
     const result = this.inspectReview(reservation);
@@ -513,6 +595,11 @@ function parseHookStdin(raw) {
     const toolInputObj = payload.tool_input;
     if (typeof toolInputObj.prompt === "string")
       prompt = toolInputObj.prompt;
+  }
+  if (!prompt && typeof payload.tool_response === "object" && payload.tool_response !== null) {
+    const toolResponseObj = payload.tool_response;
+    if (typeof toolResponseObj.prompt === "string")
+      prompt = toolResponseObj.prompt;
   }
   let extractedOpId = operationId;
   let extractedTaskId = taskId;
@@ -602,7 +689,7 @@ import { createHash as createHash5, randomUUID as randomUUID2 } from "node:crypt
 // plugins/immune-brain/runtime/assurance/verification.ts
 import { createHash as createHash3 } from "node:crypto";
 import { execFileSync, spawn } from "node:child_process";
-import { realpathSync, statSync } from "node:fs";
+import { realpathSync as realpathSync2, statSync } from "node:fs";
 import { isAbsolute as isAbsolute2, resolve, sep as sep2, relative } from "node:path";
 
 // plugins/immune-brain/runtime/verification_descriptor.ts
@@ -705,7 +792,7 @@ function resolveBunRunner() {
   }
   let real;
   try {
-    real = realpathSync(executable);
+    real = realpathSync2(executable);
   } catch {
     throw new VerificationDescriptorError("bun runner realpath is unresolvable");
   }
@@ -1710,7 +1797,7 @@ import {
   writeFileSync,
   statSync as statSync2,
   readFileSync as readFileSync3,
-  realpathSync as realpathSync3,
+  realpathSync as realpathSync4,
   chmodSync
 } from "node:fs";
 import { tmpdir as tmpdir2 } from "node:os";
@@ -1724,7 +1811,7 @@ import {
   lstatSync as lstatSync2,
   readFileSync as readFileSync2,
   readlinkSync,
-  realpathSync as realpathSync2
+  realpathSync as realpathSync3
 } from "node:fs";
 import { resolve as resolve2 } from "node:path";
 function git(root, args) {
@@ -1891,7 +1978,7 @@ function taskSnapshotOnce(root, scope) {
   const head = git(root, ["rev-parse", "--verify", "HEAD^{commit}"])?.trim();
   if (!repositoryRoot || !head || !GIT_OBJECT_ID.test(head))
     throw new Error("cannot derive task snapshot outside a committed Git workspace");
-  if (realpathSync2(resolve2(repositoryRoot)) !== root)
+  if (realpathSync3(resolve2(repositoryRoot)) !== root)
     throw new Error("task snapshot repository root does not match the project root");
   const sparseCheckout = git(root, ["config", "--bool", "core.sparseCheckout"])?.trim();
   const sparseIndex = git(root, ["config", "--bool", "index.sparse"])?.trim();
@@ -1935,7 +2022,7 @@ function captureGitTaskSnapshot(projectRoot, scopeHint) {
   const requestedStat = lstatSync2(requestedRoot);
   if (requestedStat.isSymbolicLink() || !requestedStat.isDirectory())
     throw new Error("task snapshot root must be a real directory");
-  const root = realpathSync2(requestedRoot);
+  const root = realpathSync3(requestedRoot);
   const scope = assertCanonicalTaskScope(scopeHint);
   const before = taskSnapshotOnce(root, scope);
   gitTaskSnapshotTestHook?.();
@@ -1968,7 +2055,7 @@ function taskRevisionSnapshotOnce(root, scope, baseHead) {
   const head = git(root, ["rev-parse", "--verify", "HEAD^{commit}"])?.trim();
   if (!repositoryRoot || !head || !GIT_OBJECT_ID.test(head))
     throw new Error("cannot derive a task revision outside a committed Git workspace");
-  if (realpathSync2(resolve2(repositoryRoot)) !== root)
+  if (realpathSync3(resolve2(repositoryRoot)) !== root)
     throw new Error("task revision repository root does not match the project root");
   if (gitRequired(root, ["cat-file", "-t", baseHead], `task revision base is unreadable: ${baseHead}`) !== "commit")
     throw new Error(`task revision base is not a commit: ${baseHead}`);
@@ -2025,7 +2112,7 @@ function captureGitTaskRevisionSnapshot(projectRoot, scopeHint, baseHead) {
   const requestedStat = lstatSync2(requestedRoot);
   if (requestedStat.isSymbolicLink() || !requestedStat.isDirectory())
     throw new Error("task revision root must be a real directory");
-  const root = realpathSync2(requestedRoot);
+  const root = realpathSync3(requestedRoot);
   if (typeof baseHead !== "string" || !GIT_OBJECT_ID.test(baseHead.toLowerCase()))
     throw new Error("task revision base must be a Git commit id");
   const scope = assertCanonicalTaskScope(scopeHint);
@@ -2403,7 +2490,7 @@ function ensureReviewRevision(root, input) {
 function writeNativeReviewEvidence(payload) {
   const rawDirectory = mkdtempSync(join4(tmpdir2(), "imm-canary-native-review-"));
   try {
-    const directory = realpathSync3(rawDirectory);
+    const directory = realpathSync4(rawDirectory);
     chmodSync(directory, 493);
     const path = join4(directory, "evidence.json");
     writeFileSync(path, JSON.stringify(payload), { encoding: "utf8", mode: 420, flag: "wx" });
@@ -2418,7 +2505,7 @@ function writeNativeReviewEvidence(payload) {
   }
 }
 function assertReviewArtifact(path) {
-  const targetPath = realpathSync3(path);
+  const targetPath = realpathSync4(path);
   let stat;
   try {
     stat = statSync2(targetPath);
@@ -2612,7 +2699,7 @@ import {
   mkdirSync as mkdirSync2,
   openSync as openSync3,
   readFileSync as readFileSync6,
-  realpathSync as realpathSync5,
+  realpathSync as realpathSync6,
   renameSync,
   rmSync as rmSync3,
   writeFileSync as writeFileSync2
@@ -2641,7 +2728,7 @@ import {
   lstatSync as lstatSync4,
   openSync as openSync2,
   readFileSync as readFileSync5,
-  realpathSync as realpathSync4
+  realpathSync as realpathSync5
 } from "node:fs";
 import { execFileSync as execFileSync3 } from "node:child_process";
 import { join as join6, resolve as resolve4, sep as sep3 } from "node:path";
@@ -2939,7 +3026,7 @@ function resolveCanonicalRoot(root) {
   const rootStat = lstatSync4(resolved);
   if (rootStat.isSymbolicLink() || !rootStat.isDirectory())
     throw new Error("project root must be a real directory, not a symlink");
-  return realpathSync4(resolved);
+  return realpathSync5(resolved);
 }
 function resolveSidecarPath(canonicalRoot, activePath, archivedPath) {
   if (sidecarPresent(canonicalRoot, activePath))
@@ -3016,7 +3103,7 @@ function readTaskIntent(root, taskId, requestedPath) {
   const after = lstatSync4(target);
   assertSameIdentity(statIdentity(before), after, "intent sidecar");
   assertIdentitiesUnchanged(pathIdentities, canonicalRoot, sidecarPath);
-  const canonicalAgain = realpathSync4(root);
+  const canonicalAgain = realpathSync5(root);
   if (canonicalAgain !== canonicalRoot)
     throw new Error("canonical project root drifted while being read");
   if (lstatSync4(canonicalAgain).isSymbolicLink())
@@ -3759,7 +3846,7 @@ function revisionFor(content) {
 }
 function canonicalRoot(root) {
   try {
-    return realpathSync5(root);
+    return realpathSync6(root);
   } catch {
     throw new KernelStoreSecurityError("project root is unavailable");
   }
@@ -6388,7 +6475,11 @@ function enrollCanaryTask(root, input, registry) {
       throw new Error("intent content hash mismatch");
     if (checks.gitBaseHead !== gitBaseHead)
       throw new Error("Git HEAD moved after the enrollment confirmation");
+    if (input.batch && checks.gitBaseHead !== input.batch.expected_head)
+      throw new Error(`batch_head_lineage_broken: expected ${input.batch.expected_head}, found ${checks.gitBaseHead}`);
     registry.consume(input.capability, input.capability_binding);
+    if (input.batch)
+      input.batch.registry.consumeChild(input.batch.capability, input.batch.binding, input.task_id, Date.parse(input.now));
     const record = buildTaskRecordV4(input, checks.intent, gitBaseHead);
     const nextWorkspace = {
       ...checks.workspace.state,
@@ -6405,16 +6496,23 @@ function enrollCanaryTask(root, input, registry) {
       created_at: input.now,
       updated_at: input.now
     };
-    const mutation = commitEnrollmentLocked(root, input.task_id, {
-      contract: "assurance_kernel/workspace_transaction/v2",
-      task_id: input.task_id,
-      expected_record_hash: checks.current.revision,
-      next_record_content: `${JSON.stringify(record, null, 2)}
+    let mutation;
+    try {
+      mutation = commitEnrollmentLocked(root, input.task_id, {
+        contract: "assurance_kernel/workspace_transaction/v2",
+        task_id: input.task_id,
+        expected_record_hash: checks.current.revision,
+        next_record_content: `${JSON.stringify(record, null, 2)}
 `,
-      expected_workspace_hash: checks.workspace.revision,
-      next_workspace_content: `${JSON.stringify(nextWorkspace, null, 2)}
+        expected_workspace_hash: checks.workspace.revision,
+        next_workspace_content: `${JSON.stringify(nextWorkspace, null, 2)}
 `
-    }, claim);
+      }, claim);
+    } catch (error) {
+      if (input.batch)
+        input.batch.registry.releaseChild(input.batch.capability, input.task_id);
+      throw error;
+    }
     return {
       record: mutation.record,
       backend_claim: claim,
