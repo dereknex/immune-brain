@@ -20,8 +20,8 @@ import {
 import {
 	captureReviewBundle,
 	captureReviewManifest,
-	ensureReviewRevision,
 	writeNativeReviewEvidence,
+	type ReviewRevision,
 } from "../assurance/review_evidence";
 import { parseVerificationDescriptor } from "../verification_descriptor";
 import { projectAssurance, type AssuranceProjectionResult } from "../kernel/assurance_projection";
@@ -144,6 +144,58 @@ function qaOutcomes(record: { attestations: Array<{ kind: string; acceptance_res
 		record.attestations.filter((item) => item.kind === "qa").flatMap((item) => item.acceptance_results)
 			.map((result) => [result.acceptance_id, { status: result.status, summary: result.summary }]),
 	);
+}
+
+/**
+ * Publish the task-scoped synthetic revision for a v4 record and return the
+ * exact identity the Review snapshot binds.
+ *
+ * `submitReview` re-derives this identity and compares all four fields —
+ * `manifest_digest` included — against the reservation. Returning the bare
+ * commit identity therefore compared a real digest against `undefined` and
+ * failed every v4 submission with "Review revision changed before submission",
+ * so the manifest is recomputed here rather than only the commit. The outcomes
+ * come from the same `qaOutcomes` the Review snapshot is built from, which
+ * makes the two digests equal by construction instead of by coincidence.
+ *
+ * v3 records keep the legacy full-source bundle and return null.
+ */
+export async function ensureClaudeReviewRevision(
+	root: string,
+	taskId: string,
+	projection: AssuranceProjectionResult,
+): Promise<ReviewRevision | null> {
+	const current = await readTaskRecord(root, taskId);
+	const record = current.record;
+	if (!record) throw new Error(`task ${taskId} has no TaskRecord`);
+	if (current.revision !== projection.projection.record_revision)
+		throw new Error("TaskRecord changed before Review revision preparation");
+	if (record.contract !== "assurance_kernel/task_record/v4") return null;
+	if (!record.git_base_head)
+		throw new Error("Review revision requires a TaskRecord v4 git_base_head");
+	const manifest = captureReviewManifest(root, {
+		taskId,
+		baseHead: record.git_base_head,
+		scopeHint: record.intent_snapshot.scope_hint,
+		expectedDiffHash: projection.projection.diff_hash,
+		intentRevision: projection.projection.intent_revision,
+		intentContentHash: projection.projection.intent_content_hash,
+		recordRevision: projection.projection.record_revision,
+		workspaceRevision: projection.projection.workspace_revision,
+		lifecycle: projection.projection.lifecycle,
+		artifactState: projection.projection.artifact_state,
+		risk: record.intent_snapshot.risk,
+		outcomes: qaOutcomes(record),
+	});
+	return {
+		contract: "assurance_kernel/review_revision/v1",
+		base_head: manifest.base_head,
+		review_tree: manifest.review_tree,
+		review_commit: manifest.review_commit,
+		review_ref: manifest.review_ref,
+		diff_hash: manifest.diff_hash,
+		manifest_digest: manifest.manifest_digest,
+	};
 }
 
 async function buildAssuranceSnapshot(
@@ -351,17 +403,7 @@ export class ClaudeRuntime {
 			readTaskIntent: (root, taskId) => readTaskIntentForRecord(root, taskId),
 			frozenRunner: async () => resolveBunRunner(),
 			buildAssurance: (root, taskId, role, projection, runner) => buildAssuranceSnapshot(root, taskId, role, projection, runner),
-			ensureReviewRevision: async (root, taskId, projection) => {
-				const current = await readTaskRecord(root, taskId);
-				if (!current.record) throw new Error(`task ${taskId} has no TaskRecord`);
-				if (current.record.contract !== "assurance_kernel/task_record/v4") return null;
-				return ensureReviewRevision(root, {
-					taskId,
-					baseHead: current.record.git_base_head,
-					scopeHint: current.record.intent_snapshot.scope_hint,
-					expectedDiffHash: projection.projection.diff_hash,
-				});
-			},
+			ensureReviewRevision: (root, taskId, projection) => ensureClaudeReviewRevision(root, taskId, projection),
 			runQa: (snapshot, descriptors, runner, options) => runDeterministicQa(snapshot, descriptors, runner, options),
 			writeReviewEvidence: (input) => writeNativeReviewEvidence(input.evidence),
 			applyVerdict: (ctx, input) => this.applyVerdict(ctx, input),
