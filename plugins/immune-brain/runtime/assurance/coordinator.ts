@@ -456,7 +456,6 @@ export class AssuranceCoordinator {
 			this.rejectedReviewOperations.delete(taskId);
 		}
 		const refreshed = this.active(taskId);
-		if (refreshed?.state === "settlement_unknown") return refreshed;
 		if (refreshed?.state === "running") return { state: "blocked", reason: `assurance operation ${refreshed.operation_id} is already running` };
 		const operationId = randomUUID();
 		const operationGeneration = this.sessionGeneration;
@@ -490,13 +489,28 @@ export class AssuranceCoordinator {
 			progress(phase, `Preparing deterministic QA for ${taskId}`);
 			await this.ports.advanceBeforeProjection?.();
 			ensureOperationLive();
-			let projection = await this.ports.projectTask(ctx.cwd, taskId);
+			let projection: AssuranceProjectionResult;
+			try {
+				projection = await this.ports.projectTask(ctx.cwd, taskId);
+			} catch (error) {
+				// Retry only an explicit transient read failure, before any write.
+				if (!(error instanceof Error) || !("code" in error) || !["EINTR", "EAGAIN"].includes(String(error.code))) throw error;
+				ensureOperationLive();
+				progress("retrying_projection", "Retrying the initial authority read once; no writes replayed", { retry_attempt: 1 });
+				ensureOperationLive();
+				projection = await this.ports.projectTask(ctx.cwd, taskId);
+			}
 			ensureOperationLive();
 			if (projection.error) return { state: "blocked", reason: projection.error };
-			if (projection.projection.lifecycle === "done") return { state: "completed" };
-			if (projection.projection.lifecycle === "stopped") return { state: "stopped" };
+			if (projection.projection.lifecycle === "done" || projection.projection.lifecycle === "stopped") {
+				this.unknownOperations.delete(taskId);
+				return { state: projection.projection.lifecycle === "done" ? "completed" : "stopped" };
+			}
 			if (!projection.claim) return { state: "blocked", reason: "no active backend claim" };
 			if (projection.claim.task_id !== taskId) return { state: "blocked", reason: `backend claim belongs to ${projection.claim.task_id}, not ${taskId}` };
+			// A closed Kernel projection, not the lost host reply, decides what
+			// remains. Committed QA/Review is never replayed from local memory.
+			if (projection.projection.lifecycle === "active") this.unknownOperations.delete(taskId);
 			const parked = await this.ports.readTaskRecord(ctx.cwd, taskId);
 			ensureOperationLive();
 			if (parked.record?.findings.some((finding) => finding.kind === "replan_required" && finding.status === "open")) return { state: "blocked", reason: "review rework limit reached; a durable replan is required" };
@@ -700,7 +714,7 @@ export class AssuranceCoordinator {
 
 	async submitReview(taskId: string, ctx: HostContext, verdictInput: unknown): Promise<AssuranceSubmitReviewResult> {
 		const unknown = this.unknownOperations.get(taskId);
-		if (unknown) { this.unknownOperations.delete(taskId); return { state: "settlement_unknown", operation: unknown.operation, operation_id: unknown.operationId, reason: unknown.reason }; }
+		if (unknown) return { state: "settlement_unknown", operation: unknown.operation, operation_id: unknown.operationId, reason: unknown.reason };
 		const rejected = this.rejectedReviewOperations.get(taskId);
 		if (rejected) return { state: "blocked", reason: rejected.reason };
 		const reservation = this.reviewReservations.get(taskId);

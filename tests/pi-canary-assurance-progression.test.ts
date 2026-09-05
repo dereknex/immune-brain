@@ -148,7 +148,7 @@ describe("foreground assurance progression", () => {
 		expect((await h.ports.projectTask(ctx.cwd, TASK)).projection.next_obligation).toBe("run_review");
 	});
 
-	test("submit_review preserves the operation for an unknown QA settlement", async () => {
+	test("submit_review preserves ambiguity until the Kernel can be read", async () => {
 		const controller = new AbortController();
 		const h = makeHarness({ applyVerdict: async (_ctx, input) => {
 			await input.hooks?.beforeCommit?.();
@@ -158,7 +158,8 @@ describe("foreground assurance progression", () => {
 		} });
 		const advanced = await h.progression.advance(TASK, ctx, controller.signal);
 		expect(advanced.state).toBe("settlement_unknown");
-		expect(await h.progression.advance(TASK, ctx)).toEqual(advanced);
+		h.ports.projectTask = async () => ({ ...projection(), error: "authority unavailable" });
+		expect(await h.progression.advance(TASK, ctx)).toMatchObject({ state: "blocked", reason: "authority unavailable" });
 		expect(await h.progression.submitReview(TASK, ctx, {})).toEqual({
 			state: "settlement_unknown",
 			operation: "qa",

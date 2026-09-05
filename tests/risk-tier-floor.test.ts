@@ -25,6 +25,16 @@ const BASE = {
 } as const;
 
 describe("deterministic risk-tier floor", () => {
+	it("protects every authority prefix in both scope and concrete changes", () => {
+		for (const prefix of RISK_FLOOR_SCOPE_PREFIXES) {
+			expect(parseTaskIntentV1({ ...BASE, scope_hint: [prefix] }).risk).toBe("material");
+			expect(classifyTaskRisk([prefix], "routine")).toBe("material");
+		}
+		for (const path of ["plugins/immune-brain/runtime/plugin_version.ts", "plugins/immune-brain/runtime/claude/README.md"]) {
+			expect(parseTaskIntentV1({ ...BASE, scope_hint: [path] }).risk).toBe("routine");
+			expect(classifyTaskRisk([path], "routine")).toBe("routine");
+		}
+	});
 	it("promotes routine to material when scope_hint touches the kernel runtime", () => {
 		for (const scope_hint of [
 			["plugins/immune-brain/runtime/kernel"],

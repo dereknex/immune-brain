@@ -24,6 +24,43 @@ afterEach(() => {
 });
 
 describe("benchmark eval runner", () => {
+	it("does not equate missing lifecycle telemetry with zero user interventions", () => {
+		const observed: ScenarioMetrics = {
+			scenario_id: "lifecycle", scenario_status: "completed", question_count: 0,
+			tool_uses: 2, reported_tokens: 100, reported_tokens_source: "host_runtime", duration_ms: 10,
+			quality: { completion: "completed", verifier: "passed", authority: "parent-owned" },
+		};
+		const recordFor = (lifecycle?: ScenarioMetrics["lifecycle_metrics"]) => buildRunRecord({
+			fixture: {
+				version: 3, targetName: "immune-brain", runner: { model: "test/model" },
+				metrics: { required: ["lifecycle_metrics"] },
+				evidence: { claim_scope: "provider_runtime" }, scenarios: [{ id: "lifecycle" }],
+			},
+			observed: new Map([["lifecycle", { ...observed, lifecycle_metrics: lifecycle }]]),
+			exitCode: 0, startedAt: 0, finishedAt: 10,
+		});
+		const missing = recordFor();
+		expect(missing).toMatchObject({ metrics_complete: false, evidence_reason_code: "lifecycle_metrics_missing_or_untrusted" });
+		expect(missing.scenarios[0].lifecycle_metrics).toEqual({
+			source: "unavailable", user_interventions: null, recovery_attempts: null,
+			recovery_successes: null, duplicate_qa_runs: null, scope_revisions: null,
+		});
+		const captured = {
+			source: "host_events" as const, user_interventions: 0, recovery_attempts: 0,
+			recovery_successes: 0, duplicate_qa_runs: 0, scope_revisions: 0,
+		};
+		expect(recordFor(captured)).toMatchObject({ metrics_complete: true, claim_scope: "provider_runtime" });
+		for (const invalid of [
+			{ ...captured, recovery_successes: 1 },
+			{ ...captured, scope_revisions: -1 },
+			{ ...captured, user_interventions: null },
+			{ ...captured, source: "child_footer" } as never,
+		]) expect(recordFor(invalid).metrics_complete).toBe(false);
+		expect(recordFor({ ...captured, source: "deterministic_harness" })).toMatchObject({
+			metrics_complete: true, claim_scope: "contract_only",
+		});
+	});
+
 	it("accepts structured foreground Agent details as host runtime telemetry", () => {
 		const collector = new BenchmarkCollector("foreground_agent_details");
 		collector.consume({
@@ -476,6 +513,10 @@ describe("benchmark eval runner", () => {
 			tool_uses: null,
 			reported_tokens: null,
 			duration_ms: null,
+			lifecycle_metrics: {
+				source: "unavailable", user_interventions: null, recovery_attempts: null,
+				recovery_successes: null, duplicate_qa_runs: null, scope_revisions: null,
+			},
 		});
 	});
 

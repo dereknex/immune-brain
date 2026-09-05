@@ -60,6 +60,15 @@ export interface BenchmarkComparisonIdentity {
 	verifier_fingerprint?: string;
 }
 
+export interface LifecycleBenchmarkMetrics {
+	source: "host_events" | "deterministic_harness" | "unavailable";
+	user_interventions: number | null;
+	recovery_attempts: number | null;
+	recovery_successes: number | null;
+	duplicate_qa_runs: number | null;
+	scope_revisions: number | null;
+}
+
 export interface ScenarioMetrics {
 	scenario_id: string;
 	scenario_status: string;
@@ -71,12 +80,13 @@ export interface ScenarioMetrics {
 	advisory_metrics?: AdvisoryBenchmarkMetrics;
 	advisory_metrics_source?: AdvisoryMetricsSource;
 	quality?: BenchmarkScenarioQuality;
+	lifecycle_metrics?: LifecycleBenchmarkMetrics;
 }
 
 interface BenchmarkFixture {
 	version: number;
 	targetName: string;
-	runner: { model: string; resultTransport?: "foreground_agent_details" };
+	runner: { model: string; resultTransport?: "foreground_agent_details"; requiresInteractiveHost?: boolean };
 	metrics?: { cost?: string; required?: string[] };
 	evidence?: {
 		claim_scope?: BenchmarkClaimScope;
@@ -356,6 +366,14 @@ function completeAdvisoryMetrics(
 			Number.isInteger(metrics.truncation_count) &&
 			metrics.truncation_count >= 0,
 	);
+}
+
+function completeLifecycleMetrics(metrics: LifecycleBenchmarkMetrics | undefined): boolean {
+	return Boolean(metrics && ["host_events", "deterministic_harness"].includes(metrics.source) &&
+		[metrics.user_interventions, metrics.recovery_attempts, metrics.recovery_successes,
+			metrics.duplicate_qa_runs, metrics.scope_revisions]
+			.every((value) => typeof value === "number" && Number.isInteger(value) && value >= 0) &&
+		metrics.recovery_successes! <= metrics.recovery_attempts!);
 }
 
 function completeQuality(
@@ -804,17 +822,26 @@ export function buildRunRecord(
 	options: BuildRunRecordOptions,
 ): BenchmarkRunRecord {
 	const { fixture, observed, exitCode, startedAt, finishedAt } = options;
-	const scenarios = fixture.scenarios.map(
-		({ id }) =>
-			observed.get(id) ?? {
-				scenario_id: id,
-				scenario_status: "not_reported",
-				question_count: 0,
-				tool_uses: null,
-				reported_tokens: null,
-				duration_ms: null,
+	const scenarios: ScenarioMetrics[] = fixture.scenarios.map(({ id }) => {
+		const observedScenario = observed.get(id);
+		return {
+			scenario_id: id,
+			scenario_status: "not_reported",
+			question_count: 0,
+			tool_uses: null,
+			reported_tokens: null,
+			duration_ms: null,
+			...observedScenario,
+			lifecycle_metrics: observedScenario?.lifecycle_metrics ?? {
+				source: "unavailable",
+				user_interventions: null,
+				recovery_attempts: null,
+				recovery_successes: null,
+				duplicate_qa_runs: null,
+				scope_revisions: null,
 			},
-	);
+		};
+	});
 	const requiredMetrics = new Set(fixture.metrics?.required ?? []);
 	const expectedScenarioIds = new Set(fixture.scenarios.map(({ id }) => id));
 	const hasUnexpectedScenario = [...observed.keys()].some(
@@ -846,7 +873,8 @@ export function buildRunRecord(
 	const deterministicEvidence = scenarios.some(
 		(scenario) =>
 			scenario.reported_tokens_source === "deterministic_harness" ||
-			scenario.advisory_metrics_source === "deterministic_harness",
+			scenario.advisory_metrics_source === "deterministic_harness" ||
+			scenario.lifecycle_metrics?.source === "deterministic_harness",
 	);
 	const claimScope: BenchmarkClaimScope = deterministicEvidence
 		? "contract_only"
@@ -859,8 +887,12 @@ export function buildRunRecord(
 	);
 	const sourceScopeComplete =
 		claimScope !== "provider_runtime" || providerSourcesComplete;
+	const lifecycleMetricsComplete = !requiredMetrics.has("lifecycle_metrics") ||
+		scenarios.every((scenario) => completeLifecycleMetrics(scenario.lifecycle_metrics) &&
+			(claimScope !== "provider_runtime" || scenario.lifecycle_metrics?.source === "host_events"));
 	const metricsComplete =
 		exitCode === 0 &&
+		lifecycleMetricsComplete &&
 		basicMetricsComplete &&
 		qualityComplete &&
 		reportedTokenSourcesComplete &&
@@ -882,6 +914,9 @@ export function buildRunRecord(
 	} else if (exitCode !== 0) {
 		evidenceStatus = "incomplete";
 		evidenceReasonCode = "execution_failed";
+	} else if (!lifecycleMetricsComplete) {
+		evidenceStatus = "incomplete";
+		evidenceReasonCode = "lifecycle_metrics_missing_or_untrusted";
 	} else if (!qualityComplete) {
 		evidenceStatus = "incomplete";
 		evidenceReasonCode = "scenario_quality_missing";
@@ -1232,6 +1267,9 @@ export async function runBenchmark(
 	resultsPath = DEFAULT_RESULTS_DIR,
 ): Promise<{ record: BenchmarkRunRecord; exitCode: number }> {
 	const fixture = loadFixture(repoRoot, fixturePath);
+	if (fixture.runner.requiresInteractiveHost) {
+		throw new Error("This fixture requires interactive native authority gates; the non-interactive benchmark runner cannot execute it. No child was started and no lifecycle evidence was recorded.");
+	}
 	const resultsDir = resolve(repoRoot, resultsPath);
 	const startedAt = Date.now();
 	process.stderr.write(

@@ -4,7 +4,6 @@ import { execFileSync } from "node:child_process";
 import { join } from "node:path";
 import {
 	AssuranceCoordinator,
-	snapshotDigest,
 	type AssuranceCoordinatorPorts,
 	type AssuranceSubmitReviewResult,
 	type AssuranceVerdict,
@@ -15,8 +14,6 @@ import {
 	assertRunnerCompatible,
 	findingsDigest,
 	resolveBunRunner,
-	runFixedVerification,
-	VerificationAbortedError,
 	type FrozenRunner,
 	type VerificationDescriptor,
 } from "../assurance/verification";
@@ -45,7 +42,7 @@ import {
 import { enrollCanaryTask, runEnrollmentRehearsal } from "../kernel/enrollment";
 import { reconcileKernelAuthority, repairKernelAuthority } from "../kernel/storage";
 import { preparePiCanary, revalidatePiCanary } from "../kernel/pi_canary_prepare";
-import { qaFindingId } from "../assurance/qa_findings";
+import { runDeterministicQa } from "../assurance/qa";
 import { taskDiffIdentity, taskRevisionIdentity } from "../workspace_scope";
 import {
 	confirmationRef,
@@ -127,47 +124,6 @@ function assertProjectionBinding(before: AssuranceProjectionResult, after: Assur
 		|| fields.some((field) => before.projection[field] !== after.projection[field])) {
 		throw new Error("Task changed after native confirmation; authority aborted before capability issuance");
 	}
-}
-
-export async function runDeterministicQa(
-	snapshot: SnapshotDescriptor,
-	descriptors: Map<string, VerificationDescriptor>,
-	runner: FrozenRunner,
-	options: { signal?: AbortSignal; onProgress?: (progress: { index: number; total: number; acceptance_id: string; phase: "running" | "passed" | "failed"; elapsed_ms: number }) => void } = {},
-): Promise<AssuranceVerdict> {
-	if (snapshot.role !== "qa") throw new Error("deterministic QA requires qa role");
-	if (options.signal?.aborted) throw new VerificationAbortedError();
-	const findings: NonNullable<AssuranceVerdict["findings"]> = [];
-	for (const [offset, item] of snapshot.acceptance.entries()) {
-		if (options.signal?.aborted) throw new VerificationAbortedError();
-		const descriptor = descriptors.get(item.id);
-		if (!descriptor) throw new Error(`verification descriptor missing for ${item.id}`);
-		const startedAt = Date.now();
-		options.onProgress?.({ index: offset + 1, total: snapshot.acceptance.length, acceptance_id: item.id, phase: "running", elapsed_ms: 0 });
-		const result = await runFixedVerification(snapshot.root, descriptor, runner, { signal: options.signal });
-		const failed = result.exit_code !== 0 || result.timed_out;
-		options.onProgress?.({ index: offset + 1, total: snapshot.acceptance.length, acceptance_id: item.id, phase: failed ? "failed" : "passed", elapsed_ms: Date.now() - startedAt });
-		if (failed) {
-			findings.push({
-				id: qaFindingId(item.id, snapshotDigest(snapshot)),
-				kind: "blocking",
-				acceptance_id: item.id,
-				summary: `verification failed (exit ${result.exit_code}${result.timed_out ? ", timed out" : ""})`,
-				findings_digest: "",
-			});
-		}
-	}
-	if (findings.length > 0) {
-		return { contract: "assurance_kernel/assurance_verdict/v2", role: "qa", task_id: snapshot.task_id, snapshot_digest: snapshotDigest(snapshot), decision: "rework", findings };
-	}
-	return {
-		contract: "assurance_kernel/assurance_verdict/v2",
-		role: "qa",
-		task_id: snapshot.task_id,
-		snapshot_digest: snapshotDigest(snapshot),
-		decision: "pass",
-		approval: { kind: "qa", authority_role: "qa", summary: `all ${snapshot.acceptance.length} fixed verification descriptor(s) passed` },
-	};
 }
 
 function qaOutcomes(record: { attestations: Array<{ kind: string; acceptance_results: Array<{ acceptance_id: string; status: "passed" | "failed" | "blocked"; summary: string }> }> }) {

@@ -34,7 +34,7 @@ describe("Managed native authority failure contract", () => {
 	});
 
 	test("canonical contracts fail closed without cross-boundary fallback advice", () => {
-		const canonical = CONTRACTS.map(read).join("\n");
+		const canonical = CONTRACTS.map(read).join("\n").replace(/\s+/g, " ");
 		expect(canonical).toContain("exactly one same-Host recovery action");
 		expect(canonical).toContain("Never recommend another Host, worktree, Direct Path, unmanaged implementation, or automatic retry");
 		for (const fallback of FORBIDDEN_FALLBACKS) expect(canonical).not.toContain(fallback);

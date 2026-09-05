@@ -471,6 +471,45 @@ async function capturedToolFailure(promise: Promise<unknown>): Promise<Record<st
 		}
 	});
 
+	test("Task Rail distinguishes recovery from running work and literal-user approval", () => {
+		const kernel = loadSurface().tools.find((tool) => tool.name === "imm_kernel_canary")!;
+		const rendered = (ui: FakeUI) => {
+			const widget = ui.widgetCalls.at(-1)!.content as (tui: unknown, theme: unknown) => { render(width: number): string[] };
+			return widget({}, { fg: (_color: string, text: string) => text, bold: (text: string) => text }).render(160).join("\n");
+		};
+		for (const [state, recovery] of [
+			["review_preparation_failed", "QA already committed"],
+			["settlement_unknown", "do not replay writes"],
+			["authority_conflict", "Resolve authority conflict"],
+			["rework", "Repair blocking findings"],
+		] as const) {
+			const ui = makeUI();
+			presentTaskRailResult(makeCtx(process.cwd(), ui), TASK, {
+				state, operation: "advance_assurance", summary: "specific cause", next_action: "one next step",
+			});
+			const lines = rendered(ui);
+			expect(lines).toContain("Blocked");
+			expect(lines).toContain(recovery);
+			expect(lines).toContain("specific cause");
+			expect(lines).not.toContain("Verifying");
+			expect(ui.customCalls).toHaveLength(0);
+			const colors: string[] = [];
+			const toolResult = kernel.renderResult!({ content: [], details: {
+				state, task_state: { lifecycle: "active" }, summary: "specific cause",
+			} }, {}, {
+				fg: (color: string, text: string) => { colors.push(`${color}:${text}`); return text; },
+				bold: (text: string) => text,
+			}).render(160).join("\n");
+			expect(toolResult).toContain("State: Blocked");
+			expect(toolResult).not.toContain("State: active");
+			expect(colors).toContain("warning:Blocked");
+			expect(colors).toContain("warning:specific cause");
+		}
+		const ui = makeUI();
+		presentTaskRailResult(makeCtx(process.cwd(), ui), TASK, { state: "awaiting_user" });
+		expect(rendered(ui)).toContain("Approval required");
+	});
+
 	test("task-rail-progress: renders optional acceptance-progress and phase rows and stays three rows without them", () => {
 		const ui = makeUI();
 		const ctx = makeCtx(process.cwd(), ui);

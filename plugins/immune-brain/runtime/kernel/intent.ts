@@ -43,6 +43,12 @@ export const INTENT_SIDECAR_RELATIVE_PREFIX = "docs/plans/";
 export const RISK_FLOOR_SCOPE_PREFIXES = [
 	"plugins/immune-brain/runtime/kernel",
 	"plugins/immune-brain/runtime/authority_commit_receipts.ts",
+	"plugins/immune-brain/runtime/assurance",
+	"plugins/immune-brain/runtime/claude/interaction.ts",
+	"plugins/immune-brain/runtime/claude/capability.ts",
+	"plugins/immune-brain/runtime/claude/review_host.ts",
+	"plugins/immune-brain/runtime/claude/kernel_ports.ts",
+	"plugins/immune-brain/runtime/claude/mcp_server.ts",
 	"plugins/immune-brain/.pi-extension",
 ] as const;
 
@@ -50,8 +56,7 @@ export const RISK_FLOOR_SCOPE_PREFIXES = [
 // separate from the glob-aware scope_hint policy above: the two inputs have
 // different contracts and docs-only scope remains routine today.
 export const CHANGED_PATH_RISK_FLOOR_PREFIXES = [
-	"plugins/immune-brain/runtime/kernel",
-	"plugins/immune-brain/.pi-extension",
+	...RISK_FLOOR_SCOPE_PREFIXES,
 	"docs/specs",
 	"docs/plans",
 ] as const;

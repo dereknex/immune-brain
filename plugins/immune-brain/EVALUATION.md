@@ -28,28 +28,34 @@ instructions on invocation. If observed usage remains high, inspect the specific
 benchmark scenario, files loaded by that scenario, and repeated reference text
 before changing skill entry contracts.
 
-## GPT-5.6 behavior baseline
+## Behavior baseline
 
 The versioned behavior contract is
 `tests/fixtures/immune-brain-benchmark.json`. It covers five representative
-routes: managed planning, managed execution, an unprompted Direct-first local
-task with multiple files/verifiers, a hard-risk public-contract Managed
-boundary, and a weak plugin match. Keep the fixture workspace small so the run
-measures workflow behavior rather than repository discovery.
+routes: candidate Spec/TaskIntent planning, a routine Managed lifecycle,
+host-native mutation, a public-contract compatibility boundary, and a weak
+plugin match. Managed scenarios run sequentially in independent copied Git
+fixtures through an interactive Host with native authority tools. They require
+real Enrollment decisions and exact terminal evidence; a passing test or
+child summary is not lifecycle completion.
 
-For GPT-5.6 prompt migration, change one prompt or runtime behavior group at a
-time and rerun the same scenarios. Compare task completion, unnecessary
-questions, lifecycle artifacts, tool loops, subagent calls, input tokens,
-latency, and cost. Lower resource use counts as an improvement only when all
-scenario success checks and verifier commands still pass.
+The existing `benchmark_eval.ts` runner uses non-interactive `pi --mode json`
+and therefore rejects this fixture before launching a child. It remains usable
+for fixtures that do not require native authority gates. Interactive lifecycle
+and paid cost measurements remain pending; contract tests do not establish
+provider-runtime savings. Do not bypass the gate to produce a baseline.
+
+Compare completion, unnecessary questions, tool calls, tokens, duration, user
+interventions, successful recovery, duplicated QA, and scope revisions only
+from observed Host events. Missing signals are unavailable, never estimated
+from child prose. Compare cost only with completion, verification, and authority
+parity. Lower resource use alone is not an improvement.
 
 The benchmark invokes a paid model and is not a normal unit-test dependency.
-Its first GPT-5.6 model run is intentionally recorded as pending until an
-authorized operator runs the repository's plugin-eval command. Unit tests only
-validate that the benchmark contract remains portable and keeps all five
-behavior classes.
+Unit tests validate the fixture and deterministic execution contracts; they do
+not claim that an interactive benchmark has run.
 
-`mise r benchmark-eval` emits one structured record containing
+For supported non-interactive fixtures, `benchmark_eval.ts --fixture <path>` emits one structured record containing
 `scenario_status`, `question_count`, `tool_uses`, `reported_tokens`, and
 `duration_ms` for every scenario. It writes the newest record to
 `benchmark-results/immune-brain/latest.json` and appends the same record to

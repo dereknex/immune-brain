@@ -57,11 +57,10 @@ describe("imm-code-review activation fallback contract", () => {
 			})
 	})
 
-	it("keeps same-boundary findings on the follow_up execution route", () => {
+	it("keeps rework on the enrolled TaskIntent and Kernel projection", () => {
 		const content = read(SKILL_DIST)
-		expect(content).toContain("same-boundary")
-		expect(content).toContain("follow_up")
-		expect(content).toContain("Loop runtime action")
-		expect(content).toContain("not a Plan mutation")
+		expect(content).toContain("Bounded test or PR repair stays inside the same TaskIntent")
+		expect(content).toContain("For rework, follow the projected artifact state before editing")
+		expect(content).toContain("findings only after fixing and verifying their cause")
 	})
 })

@@ -15,7 +15,7 @@ describe("planner ensemble contract", () => {
 		expect(content).toContain("planner ensemble");
 		expect(content).not.toContain("workflow_models.planner_ensemble");
 		expect(content).toContain("advisory-only");
-		expect(content).toContain("final Spec and Plan");
+		expect(content).toContain("final Spec and TaskIntent");
 		expect(content).toContain("Agreement becomes evidence");
 		expect(content).toContain("Disagreement becomes decision criteria");
 		expect(content).toContain("strong-model blockers");

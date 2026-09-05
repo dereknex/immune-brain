@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test";
+import { runBenchmark } from "../scripts/benchmark_eval";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
@@ -27,6 +28,7 @@ describe("Immune-Brain behavior eval contract", () => {
 				"reported_tokens",
 				"duration_ms",
 				"advisory_metrics",
+				"lifecycle_metrics",
 			],
 			cost: "unavailable_by_host",
 		});
@@ -69,6 +71,17 @@ describe("Immune-Brain behavior eval contract", () => {
 		expect(contract).toContain("compatibility");
 		expect(contract).toContain("Managed");
 		expect(contract).toContain("does not implement before authority exists");
+	});
+
+	it("requires interactive native gates and rejects headless execution before launch", async () => {
+		expect(benchmark.runner.requiresInteractiveHost).toBe(true);
+		expect(benchmark.runner.parallel).toBe(false);
+		expect(benchmark.runner.isolated).toBe(false);
+		await expect(runBenchmark(resolve(import.meta.dir, ".."), BENCHMARK_PATH)).rejects.toThrow("non-interactive benchmark runner cannot execute it");
+		const lifecycle = benchmark.scenarios.find((item: { id: string }) => item.id === "multi-skill-follow-up");
+		expect(lifecycle.userInput).toContain("native Enrollment gate");
+		expect(lifecycle.userInput).toContain("freeze artifacts");
+		expect(lifecycle.successChecklist.join(" ")).toContain("terminal TaskRecord/tombstone");
 	});
 
 	it("keeps every scenario evidence-oriented", () => {

@@ -147,6 +147,7 @@ function sharedKernel(
 	let locked = false;
 	let holder: object | null = null;
 	const applyCounts = { value: 0 };
+	const executionCounts = { qa: 0, completion: 0 };
 	const portsFor = (host: AssuranceCoordinatorPorts["host"]): AssuranceCoordinatorPorts => {
 	const token = {};
 	return {
@@ -170,6 +171,7 @@ function sharedKernel(
 			reviewBundle: role === "review" ? reviewBundle() : null,
 		}),
 		runQa: async (s, _descriptors, _runner, options) => {
+			executionCounts.qa += 1;
 			hooks.onQaStart?.();
 			if (hooks.holdQa) await hooks.holdQa(options?.signal);
 			return passVerdict(s);
@@ -197,6 +199,7 @@ function sharedKernel(
 				nextObligation = "run_qa";
 			}
 			if (input.operation.op === "complete") {
+				executionCounts.completion += 1;
 				lifecycle = "done";
 				nextObligation = "none";
 			}
@@ -205,6 +208,7 @@ function sharedKernel(
 	};
 	return {
 		applyCounts,
+		executionCounts,
 		releaseClaim() { holder = null; },
 		claude() {
 			const host = new ClaudeReviewHost();
@@ -257,6 +261,7 @@ describe("dual-host assurance conformance", () => {
 		const resumed = await pi.advance(TASK, ctx as never);
 		expect(resumed.state).toBe("review_ready");
 		expect(await pi.submitReview(TASK, ctx, passVerdict(snapshot("review")))).toEqual({ state: "completed" });
+		expect(kernel.executionCounts).toEqual({ qa: 1, completion: 1 });
 	});
 
 	test("Claude resumes a Pi run_review task without handoff state", async () => {
@@ -271,6 +276,7 @@ describe("dual-host assurance conformance", () => {
 		expect(resumed.state).toBe("review_ready");
 		completeClaudeReview(claude.host, (resumed as { operation_id: string }).operation_id, "material");
 		expect(await submitObservedReview(claude)).toEqual({ state: "completed" });
+		expect(kernel.executionCounts).toEqual({ qa: 1, completion: 1 });
 	});
 
 	test("Claude resumes a Pi-active submit_assurance task and freezes artifacts cross-host", async () => {
@@ -351,6 +357,7 @@ describe("dual-host assurance conformance", () => {
 		kernel.releaseClaim();
 		expect(await kernel.claude().coordinator.advance(TASK, ctx)).toEqual({ state: "completed" });
 		expect(kernel.applyCounts.value).toBe(0); // no re-settlement of a terminal task
+		expect(kernel.executionCounts).toEqual({ qa: 0, completion: 0 });
 	});
 
 	test("postcommit ambiguity reconciles through the Kernel projection across hosts", async () => {
@@ -364,7 +371,20 @@ describe("dual-host assurance conformance", () => {
 		expect(resumed.state).toBe("review_ready");
 		expect(kernel.applyCounts.value).toBe(1);
 		expect(await pi.submitReview(TASK, ctx, passVerdict(snapshot("review")))).toEqual({ state: "completed" });
+		expect(kernel.executionCounts).toEqual({ qa: 1, completion: 1 });
 	});
+
+	for (const host of ["pi", "claude"] as const) {
+		test(`${host} recovers an unknown QA commit in the same session without replay`, async () => {
+			const kernel = sharedKernel("material", "run_qa", { failQaCommit: true });
+			const coordinator = host === "pi" ? kernel.pi() : kernel.claude().coordinator;
+			expect((await coordinator.advance(TASK, ctx)).state).toBe("settlement_unknown");
+			expect((await coordinator.advance(TASK, ctx)).state).toBe("review_ready");
+			expect(kernel.executionCounts.qa).toBe(1);
+			expect(kernel.applyCounts.value).toBe(1);
+			await coordinator.onSessionShutdown();
+		});
+	}
 
 	test("v3 drain remains readable while vFuture, stale identity, and concurrent continuation fail closed", async () => {
 		const v3 = sharedKernel("routine");

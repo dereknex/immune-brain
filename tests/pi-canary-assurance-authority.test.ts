@@ -7,9 +7,9 @@ import {
 	snapshotDigest,
 	buildReviewPrompt,
 	parseAssuranceVerdict,
-	runDeterministicQa,
 	type SnapshotDescriptor,
 } from "../plugins/immune-brain/.pi-extension/imm-canary-work.ts";
+import { runDeterministicQa } from "../plugins/immune-brain/runtime/assurance/qa";
 import {
 	parseVerificationDescriptor,
 	resolveBunRunner,

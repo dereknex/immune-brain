@@ -40,13 +40,13 @@ function expectNone(text: string, fragments: string[]) {
 }
 
 describe("Roadmap Plan boundary authoring contract", () => {
-	it("keeps Plan granularity separate from outcome Step granularity", () => {
+	it("keeps TaskIntent granularity separate from implementation batches", () => {
 		expectAll(PLANNER, [
-			"Plan Boundary Discipline",
-			"Step granularity and Plan granularity are separate decisions",
-			"authority, risk, verification, promotion, review, or rollback boundaries",
-			"successor Plans instead of larger Steps",
-			"Infrastructure that establishes an invariant should normally close and pass review before broad consumer rollout",
+			"Each TaskIntent owns one independently verifiable outcome",
+			"Implementation batches are Executor work",
+			"Keep a coherent outcome together when acceptance, risk, rollback, and authority can settle together",
+			"Split separate trust invariants when they can be independently verified",
+			"splitting would create an unsafe or unusable intermediate state",
 		]);
 
 		expectAll(CONTEXT, [
@@ -62,8 +62,7 @@ describe("Roadmap Plan boundary authoring contract", () => {
 		expectAll(PLANNER, [
 			"v3 prose Plan mutation is retired",
 			"read-only validator",
-			"(historical — read-only)",
-			"plan_core.ts",
+			"create no new Roadmap, Phase, successor Plan, or State Ledger",
 		]);
 
 		// Old instructive phrases that told agents to produce Roadmap-backed Plans must be gone
@@ -94,10 +93,10 @@ describe("Roadmap Plan boundary authoring contract", () => {
 
 	it("keeps scope pressure advisory and session lifecycle user-owned", () => {
 		expectAll(PLANNER, [
-			"file count, domain count, tokens, compactions, elapsed time, and review rounds are evidence for Planner reasoning, never universal workflow gates",
+			"File count, tokens, compactions, elapsed time, and review rounds are evidence for judgment, not universal gates",
 			"Session Lifecycle Ownership",
-			"The user decides whether progression continues in the current session or a new session",
-			"must not turn Plan boundaries, tokens, compactions, tool calls, elapsed time, or review rounds into automatic session creation, closure, or forced-stop policy",
+			"The user chooses the current or a new session",
+			"Tokens, compactions, tool counts, elapsed time, and review rounds never trigger automatic session creation or termination",
 		]);
 
 		expectAll(QUALITY_GATE, [

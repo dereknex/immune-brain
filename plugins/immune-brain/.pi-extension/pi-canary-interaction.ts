@@ -43,6 +43,7 @@ export interface TaskRailView {
 	next: string;
 	/** Assurance phase label derived from the normalized Rail state. */
 	phase?: string;
+	recovery?: string;
 	/** Latest per-descriptor QA fact; rendered only while present. */
 	acceptance_progress?: TaskRailAcceptanceProgress;
 }
@@ -209,7 +210,7 @@ export function presentTaskRailResult(
 	const lifecycle = string(taskState?.lifecycle) ?? string(details.lifecycle) ?? string(details.stage);
 	const operation = string(details.operation);
 	const rawState = string(details.state);
-	const result = string(details.result) ?? string(details.reason) ?? operation ?? rawState ?? "Task state updated";
+	const result = string(details.result) ?? string(details.reason) ?? string(details.summary) ?? operation ?? rawState ?? "Task state updated";
 	const next = string(details.next_action) ?? "Follow the projected Obligation";
 	const current = details.current;
 	const total = details.total;
@@ -231,6 +232,7 @@ export function presentTaskRailResult(
 		result,
 		next,
 		phase: string(details.stage),
+		recovery: recoveryHint(details),
 		acceptance_progress: hasAcceptanceProgress
 			? {
 					current,
@@ -336,14 +338,17 @@ export function renderStructuredResult(
 	const taskState = record(details.task_state);
 	const lifecycle = string(taskState?.lifecycle) ?? string(details.lifecycle) ?? string(details.stage);
 	const state = string(details.state) ?? "unknown";
-	const summary = string(details.result) ?? string(details.reason) ?? string(details.operation) ?? state;
+	const summary = string(details.result) ?? string(details.reason) ?? string(details.summary) ?? string(details.operation) ?? state;
 	const next = string(details.next_action) ?? "No action reported";
 	const terminal = lifecycle === "done" || lifecycle === "stopped";
+	const blocked = railState({ state }) === "Blocked";
 	const lines = [
-		`${theme.fg("muted", "State:")} ${theme.fg(state === "blocked" || state === "failed" ? "warning" : "accent", lifecycle ?? state)}`,
-		`${theme.fg("muted", "Result:")} ${theme.fg(state === "blocked" || state === "failed" ? "warning" : "dim", summary)}`,
+		`${theme.fg("muted", "State:")} ${theme.fg(blocked ? "warning" : "accent", blocked ? "Blocked" : lifecycle ?? state)}`,
+		`${theme.fg("muted", "Result:")} ${theme.fg(blocked ? "warning" : "dim", summary)}`,
 		`${theme.fg("muted", "Next:")} ${theme.fg("dim", next)}`,
 	];
+	const recovery = recoveryHint(details);
+	if (recovery) lines.push(`${theme.fg("muted", "Recovery:")} ${theme.fg("dim", recovery)}`);
 	if (terminal && taskState) lines.push(...renderFinalLines(taskState, theme));
 	return new Text(lines.join("\n"), 0, 0);
 }
@@ -396,6 +401,7 @@ function renderTaskRail(view: TaskRailView, width = 120, theme?: Theme): string[
 	if (view.phase) {
 		lines.push(`${label("Phase:")} ${body(bounded(view.phase, availableContentWidth))}`);
 	}
+	if (view.recovery) lines.push(`${label("Recovery:")} ${body(bounded(view.recovery, availableContentWidth))}`);
 	if (view.acceptance_progress) {
 		const progress = view.acceptance_progress;
 		const symbol = progress.state === "passed" ? "✓" : progress.state === "failed" ? "✗" : "●";
@@ -441,8 +447,17 @@ export function renderTaskOverview(view: TaskOverviewView, width = 120, theme?: 
 	return lines;
 }
 
+function recoveryHint(details: Record<string, unknown>): string | undefined {
+	if (details.code === "verdict_invalid") return "Correct Review payload; reservation retained";
+	if (details.state === "review_preparation_failed") return "Repair Review preparation; QA already committed";
+	if (details.state === "settlement_unknown") return "Reconcile Kernel state; do not replay writes";
+	if (details.state === "authority_conflict") return "Resolve authority conflict before resuming";
+	if (details.state === "rework") return "Repair blocking findings; retain unrelated fresh evidence";
+	return undefined;
+}
+
 function railState(input: { lifecycle?: string; obligation?: string; operation?: string; state?: string; stage?: string }): TaskRailState {
-	if (input.state === "blocked" || input.state === "failed" || input.state === "settlement_unknown") return "Blocked";
+	if (["blocked", "failed", "settlement_unknown", "review_preparation_failed", "authority_conflict", "rework"].includes(input.state ?? "")) return "Blocked";
 	if (input.lifecycle === "done") return "Completed";
 	if (input.lifecycle === "stopped") return "Stopped";
 	if (input.state === "awaiting_user" || input.operation === "request_authorization") return "Approval required";

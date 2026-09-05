@@ -91,7 +91,7 @@ describe("Brainstorm-owned clarification contract", () => {
 			"Direct Planner entry",
 			"ordinary technical choices",
 			"return to `imm-brainstorm`",
-			"Spec, Plan, or TaskIntent",
+			"TaskIntent",
 		]);
 		for (const path of plannerContracts) {
 			const contract = read(path);

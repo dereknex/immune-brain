@@ -1275,8 +1275,6 @@ class AssuranceCoordinator {
       this.rejectedReviewOperations.delete(taskId);
     }
     const refreshed = this.active(taskId);
-    if (refreshed?.state === "settlement_unknown")
-      return refreshed;
     if (refreshed?.state === "running")
       return { state: "blocked", reason: `assurance operation ${refreshed.operation_id} is already running` };
     const operationId = randomUUID2();
@@ -1308,18 +1306,30 @@ class AssuranceCoordinator {
       progress(phase, `Preparing deterministic QA for ${taskId}`);
       await this.ports.advanceBeforeProjection?.();
       ensureOperationLive();
-      let projection = await this.ports.projectTask(ctx.cwd, taskId);
+      let projection;
+      try {
+        projection = await this.ports.projectTask(ctx.cwd, taskId);
+      } catch (error) {
+        if (!(error instanceof Error) || !("code" in error) || !["EINTR", "EAGAIN"].includes(String(error.code)))
+          throw error;
+        ensureOperationLive();
+        progress("retrying_projection", "Retrying the initial authority read once; no writes replayed", { retry_attempt: 1 });
+        ensureOperationLive();
+        projection = await this.ports.projectTask(ctx.cwd, taskId);
+      }
       ensureOperationLive();
       if (projection.error)
         return { state: "blocked", reason: projection.error };
-      if (projection.projection.lifecycle === "done")
-        return { state: "completed" };
-      if (projection.projection.lifecycle === "stopped")
-        return { state: "stopped" };
+      if (projection.projection.lifecycle === "done" || projection.projection.lifecycle === "stopped") {
+        this.unknownOperations.delete(taskId);
+        return { state: projection.projection.lifecycle === "done" ? "completed" : "stopped" };
+      }
       if (!projection.claim)
         return { state: "blocked", reason: "no active backend claim" };
       if (projection.claim.task_id !== taskId)
         return { state: "blocked", reason: `backend claim belongs to ${projection.claim.task_id}, not ${taskId}` };
+      if (projection.projection.lifecycle === "active")
+        this.unknownOperations.delete(taskId);
       const parked = await this.ports.readTaskRecord(ctx.cwd, taskId);
       ensureOperationLive();
       if (parked.record?.findings.some((finding) => finding.kind === "replan_required" && finding.status === "open"))
@@ -1533,10 +1543,8 @@ class AssuranceCoordinator {
   }
   async submitReview(taskId, ctx, verdictInput) {
     const unknown = this.unknownOperations.get(taskId);
-    if (unknown) {
-      this.unknownOperations.delete(taskId);
+    if (unknown)
       return { state: "settlement_unknown", operation: unknown.operation, operation_id: unknown.operationId, reason: unknown.reason };
-    }
     const rejected = this.rejectedReviewOperations.get(taskId);
     if (rejected)
       return { state: "blocked", reason: rejected.reason };
@@ -2663,11 +2671,16 @@ var INTENT_SIDECAR_RELATIVE_PREFIX = "docs/plans/";
 var RISK_FLOOR_SCOPE_PREFIXES = [
   "plugins/immune-brain/runtime/kernel",
   "plugins/immune-brain/runtime/authority_commit_receipts.ts",
+  "plugins/immune-brain/runtime/assurance",
+  "plugins/immune-brain/runtime/claude/interaction.ts",
+  "plugins/immune-brain/runtime/claude/capability.ts",
+  "plugins/immune-brain/runtime/claude/review_host.ts",
+  "plugins/immune-brain/runtime/claude/kernel_ports.ts",
+  "plugins/immune-brain/runtime/claude/mcp_server.ts",
   "plugins/immune-brain/.pi-extension"
 ];
 var CHANGED_PATH_RISK_FLOOR_PREFIXES = [
-  "plugins/immune-brain/runtime/kernel",
-  "plugins/immune-brain/.pi-extension",
+  ...RISK_FLOOR_SCOPE_PREFIXES,
   "docs/specs",
   "docs/plans"
 ];
@@ -6378,6 +6391,75 @@ function attemptRef(snapshotDigest2) {
   return `${digest8}-${randomUUID4().slice(0, 6)}`;
 }
 
+// plugins/immune-brain/runtime/assurance/qa.ts
+async function runDeterministicQa(snapshot, descriptors, runner, options = {}) {
+  if (snapshot.role !== "qa")
+    throw new Error("deterministic QA requires qa role");
+  if (options.signal?.aborted)
+    throw new VerificationAbortedError;
+  const findings = [];
+  const runVerification = options.runVerification ?? runFixedVerification;
+  for (const [offset, item] of snapshot.acceptance.entries()) {
+    if (options.signal?.aborted)
+      throw new VerificationAbortedError;
+    const descriptor = descriptors.get(item.id);
+    if (!descriptor)
+      throw new Error(`verification descriptor missing for ${item.id}`);
+    const startedAt = Date.now();
+    options.onProgress?.({
+      index: offset + 1,
+      total: snapshot.acceptance.length,
+      acceptance_id: item.id,
+      phase: "running",
+      elapsed_ms: 0
+    });
+    const result = await runVerification(snapshot.root, descriptor, runner, {
+      signal: options.signal
+    });
+    if (options.signal?.aborted)
+      throw new VerificationAbortedError;
+    const failed = result.exit_code !== 0 || result.timed_out;
+    options.onProgress?.({
+      index: offset + 1,
+      total: snapshot.acceptance.length,
+      acceptance_id: item.id,
+      phase: failed ? "failed" : "passed",
+      elapsed_ms: Date.now() - startedAt
+    });
+    if (failed) {
+      findings.push({
+        id: qaFindingId(item.id, snapshotDigest(snapshot)),
+        kind: "blocking",
+        acceptance_id: item.id,
+        summary: `verification failed (exit ${result.exit_code}${result.timed_out ? ", timed out" : ""}) stdout=${Buffer.byteLength(result.stdout)}B stderr=${Buffer.byteLength(result.stderr)}B`,
+        findings_digest: ""
+      });
+    }
+  }
+  if (findings.length > 0) {
+    return {
+      contract: "assurance_kernel/assurance_verdict/v2",
+      role: "qa",
+      task_id: snapshot.task_id,
+      snapshot_digest: snapshotDigest(snapshot),
+      decision: "rework",
+      findings
+    };
+  }
+  return {
+    contract: "assurance_kernel/assurance_verdict/v2",
+    role: "qa",
+    task_id: snapshot.task_id,
+    snapshot_digest: snapshotDigest(snapshot),
+    decision: "pass",
+    approval: {
+      kind: "qa",
+      authority_role: "qa",
+      summary: `all ${snapshot.acceptance.length} fixed verification descriptor(s) passed`
+    }
+  };
+}
+
 // plugins/immune-brain/runtime/claude/kernel_ports.ts
 function diffSnapshotOf(root, record) {
   if (record.contract === "assurance_kernel/task_record/v4") {
@@ -6441,45 +6523,6 @@ function assertProjectionBinding(before, after, allowDiffChange = false) {
   if (before.error || !before.claim || after.error || !after.claim || before.claim.task_id !== after.claim.task_id || fields.some((field) => before.projection[field] !== after.projection[field])) {
     throw new Error("Task changed after native confirmation; authority aborted before capability issuance");
   }
-}
-async function runDeterministicQa(snapshot, descriptors, runner, options = {}) {
-  if (snapshot.role !== "qa")
-    throw new Error("deterministic QA requires qa role");
-  if (options.signal?.aborted)
-    throw new VerificationAbortedError;
-  const findings = [];
-  for (const [offset, item] of snapshot.acceptance.entries()) {
-    if (options.signal?.aborted)
-      throw new VerificationAbortedError;
-    const descriptor = descriptors.get(item.id);
-    if (!descriptor)
-      throw new Error(`verification descriptor missing for ${item.id}`);
-    const startedAt = Date.now();
-    options.onProgress?.({ index: offset + 1, total: snapshot.acceptance.length, acceptance_id: item.id, phase: "running", elapsed_ms: 0 });
-    const result = await runFixedVerification(snapshot.root, descriptor, runner, { signal: options.signal });
-    const failed = result.exit_code !== 0 || result.timed_out;
-    options.onProgress?.({ index: offset + 1, total: snapshot.acceptance.length, acceptance_id: item.id, phase: failed ? "failed" : "passed", elapsed_ms: Date.now() - startedAt });
-    if (failed) {
-      findings.push({
-        id: qaFindingId(item.id, snapshotDigest(snapshot)),
-        kind: "blocking",
-        acceptance_id: item.id,
-        summary: `verification failed (exit ${result.exit_code}${result.timed_out ? ", timed out" : ""})`,
-        findings_digest: ""
-      });
-    }
-  }
-  if (findings.length > 0) {
-    return { contract: "assurance_kernel/assurance_verdict/v2", role: "qa", task_id: snapshot.task_id, snapshot_digest: snapshotDigest(snapshot), decision: "rework", findings };
-  }
-  return {
-    contract: "assurance_kernel/assurance_verdict/v2",
-    role: "qa",
-    task_id: snapshot.task_id,
-    snapshot_digest: snapshotDigest(snapshot),
-    decision: "pass",
-    approval: { kind: "qa", authority_role: "qa", summary: `all ${snapshot.acceptance.length} fixed verification descriptor(s) passed` }
-  };
 }
 function qaOutcomes(record) {
   return Object.fromEntries(record.attestations.filter((item) => item.kind === "qa").flatMap((item) => item.acceptance_results).map((result) => [result.acceptance_id, { status: result.status, summary: result.summary }]));

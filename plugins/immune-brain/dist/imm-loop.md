@@ -6,162 +6,146 @@ description: Use to run an enrolled TaskIntent to completion through Kernel-gove
 # Immune-Brain: Loop
 
 This skill adheres to the **[BASELINE.md](BASELINE.md)**.
-At every runtime role boundary, call the read-only `imm_loop_action` Tool. Use
-`route` for active Steps, bounded repair, architecture exploration, advisory
-review, Compounder, Kernel ownership, or scope expansion. Use `dispatch_role`
-for `qa`, `code-review`, and `ui-review`, then invoke the returned foreground
-Agent envelope exactly. Brainstorm and Planner use the same Tool for bounded
-`arch-explorer` and explicit-lens `advisory-reviewer` dispatches. Loop may
-dispatch `compounder` only when a closed Step supplies structured evidence for
-a reusable Learning; routine work without that evidence returns `next: none`
-and creates no Learning. Do not discover or load a Pi Skill for these roles. The Managed Path public entries remain `imm-brainstorm`, `imm-planner`, and `imm-loop`; standalone `imm-pr-fix`, `imm-doc-prune`, and `imm-agent-doc-maintain` are host-native and are never dispatched as the Loop role.
-Dispatch authorization follows the [shared Subagent Dispatch
-Protocol](docs/reference/subagent-dispatch-protocol.md#authorization-authority).
-Same-boundary `follow_up` is not a Plan mutation; it repeats the current
-execution, QA, and originating review gate. All internal Agent dispatch
-envelopes use `run_in_background: false` and return a direct result to the Parent
-before any workflow mutation.
 
-## Workflow Profiles
+## Kernel Canary Routing and Authority
 
-- `direct` has no Plan or Ledger and never invokes this skill.
-- `standard` keeps execution in the main context, closes a Plan Step when the runtime accepts passing evidence, and therefore does not dispatch the internal QA role per Step. It still dispatches every runtime-required final code/UI review gate. The last gate pass atomically performs internal terminal settlement when `compounder_requirement.required` is false.
-- `strict` preserves the full internal loop: each Step reaches isolated QA before final review, internal Compounder handoff, and terminal settlement. A missing profile is strict.
-- Reviewer `follow_up` targets always retain isolated QA. Standard Plans allow at
-  most two completed/open rounds; `review_budget_state.budget_stop` is a hard
-  stop. Never attempt a third Loop runtime action.
-- `workflow_profile`, `compounder_requirement`, and `review_budget_state` from
-  the live Kernel / Loop projection are authoritative. Do not infer or override
-  them in the host.
+Only explicit `imm-loop` entry starts or resumes this loop. Ordinary host input
+stays host-native; it never resumes a Managed owner implicitly. Read the current
+Host's `imm_kernel_canary` `status` first and verify the exact active backend
+claim, TaskIntent, and TaskRecord. Invalid or contradictory projections fail
+closed. A candidate TaskIntent is not Enrollment authority.
 
-## Core Responsibilities
+TaskIntent defines the goal, acceptance, and `scope_hint`; TaskRecord and the
+Kernel projection own lifecycle, artifact state, freshness, and next obligation.
+Conversation memory, GitHub Issues, and `CONTEXT.md` never override them.
+Historical prose Plans and State Ledgers are read-only history, not execution
+instructions. Do not create Steps, workflow profiles, follow-up ledgers, or
+successor Plans to drive a Kernel task.
 
-- **Main-context completion loop**: Drive the enrolled Kernel task in the current Host conversation until completion or a safe stop.
-- **Context-preserving execution**: Call `imm_loop_action` with `op: route`, then follow the returned `executor` context in the current Parent conversation. Implement only the active Step or pending same-boundary `follow_up`, then record structured execution evidence through the Loop runtime action. A bounded test failure uses the returned internal `test-fixer` dispatch with its explicit delegated test-file list; PR feedback or CI repair uses the returned internal `pr-fix` dispatch inside the current Plan boundary.
-- **Independent authority isolation**: Use the host `Agent` subagent primitive for `awaiting_qa_decision` and for the exact runtime-reported review gate. Standard Plan Steps close from accepted passing evidence before an internal QA boundary exists; Strict Steps and all follow-ups retain isolated QA. The parent records accepted child decisions through the Loop runtime action.
-- **Observable progress**: Update only at major phase changes: Step start, execution evidence recorded, QA/review result, or terminal stop. Always emit a terminal summary.
-- **Kernel projection authority**: Re-read `imm_kernel_canary` `status` after every persisted action. Conversation memory never overrides the Kernel projection.
-- **External tracker boundary**: The host may attach one opted-in GitHub Issue projection after terminal settlement. Only a fresh claimless `done`/`stopped` projection plus its exact terminal tombstone projects `completed`/`not planned`; Enrollment performs no GitHub projection. Report tracker failures separately, but never treat them as evidence, stop the Loop, repeat a Kernel mutation, or import Issue state.
-- **Scope boundary**: Scope expansion always returns to `imm-planner`; Executor, test repair, and PR/CI repair stop with the concrete missing scope and verification reason instead of widening execution.
-- **Action authority**: The loop always enters through `imm_loop_action`; its projected `next` authority is `executor`, `test-fixer`, `pr-fix`, `arch-explorer`, `advisory-reviewer`, `compounder`, `imm_kernel_canary`, `imm-planner`, or `none`.
+At every internal role boundary call the read-only `imm_loop_action` Tool. Use
+`route` for current-context Executor work, bounded repair, architecture
+exploration, advisory review, Compounder, Kernel ownership, or scope expansion.
+Use Kernel ownership for an enrolled task. This Tool projects authority; it does
+not record execution evidence, mutate task state, or replace Kernel operations.
+Follow the [Subagent Dispatch Protocol](docs/reference/subagent-dispatch-protocol.md#authorization-authority).
+Never load an internal role as a public Skill or spawn another loop process.
+The standalone `imm-pr-fix`, `imm-doc-prune`, and `imm-agent-doc-maintain` are host-native
+maintenance entries, never dispatched as the Loop role. Internal `test-fixer`
+and `pr-fix` repairs remain bounded by the enrolled TaskIntent.
 
-## Kernel Loop
+## Execution Loop
 
-Repeat this sequence; do not silently stop while a valid action remains:
+Continue while the current projection has a valid action:
 
-1. Call `imm_loop_action` with `op: route` (or `dispatch_role` at a QA/review boundary) and follow the projected `next` authority.
-2. Emit one progress line: `[target][phase] result | next: action`.
-3. Execute exactly one allowed action:
-   - Kernel ownership: call `imm_kernel_canary` for that owned task. Freeze the completed artifacts, then call `advance_assurance`; when it returns `review_ready`, invoke the foreground reviewer and pass its structured verdict to `submit_review`. When the projection calls for `request_authorization` or `approve_breaking_intent_revision`, invoke the exact Tool operation directly without asking the user for chat pre-confirmation; the native host interaction is the single authority decision. Invoke `repair_authority_state` directly for a proven stale claim; Kernel revalidation removes only the redundant claim without user interaction.
-   - Active Step / `rework_needed`: follow the returned `executor` context in the current conversation, implement only the active Step or pending same-boundary `follow_up`, verify, record structured execution evidence through the Loop runtime action, and continue. A bounded test-only repair may request internal `test-fixer` with `focus_delta.specific_changes`; PR review or CI repair may request internal `pr-fix` with the current `plan_id`, changed-file boundary, and verification. Both return child evidence to the Parent and cannot widen scope.
-   - `awaiting_qa_decision`: call `imm_loop_action` with `op: dispatch_role`, role `qa`, the current projection, Plan verification, recorded evidence, and current target identity. Invoke the returned foreground Agent envelope exactly. A `rework` or `replan` must carry validated `notes`.
-   - `review_required`: map the exact `pending_review_gate` (`imm-code-review` or `imm-ui-review`) to the internal `code-review` or `ui-review` role and call `imm_loop_action` with `op: dispatch_role`, passing `pending_review_gate`, `review_changed_files`, and `review_changed_files_signature`. Invoke the returned foreground Agent envelope exactly. Record a validated pass, or open a same-boundary follow-up through the Loop runtime action.
-   - `awaiting_user_successor_decision`: stop immediately with `recommended_authority: user`, no next skill, and no runtime action. This boundary must not dispatch Planner, transition, Compounder, or a new Pi session/subagent. Only a literal user may supply a concrete validated successor Plan through the native authority gate; the internal runtime token is `--approve-successor`, never a public Skill or user-facing entry.
-4. After every accepted runtime write, discard the old snapshot and read a fresh Kernel / Loop projection. Emit a result line only when the write completes a major phase or a subagent round.
+1. For active artifacts, implement only the enrolled acceptance within
+   `scope_hint` in the current conversation. Run focused checks. Executor checks
+   are diagnostic evidence, not a QA or Review approval.
+2. Before Assurance, call `freeze_artifacts` while TaskRecord is `active:active`.
+   A bound active Spec and its archive path must both be inside `scope_hint`.
+   The Kernel owns byte-preserving archival and the frozen snapshot.
+3. Call `advance_assurance` in the foreground and consume its direct terminal
+   result. Deterministic QA runs fixed acceptance descriptors atomically inside
+   the Host integration. Do not dispatch a separate per-Step QA Agent.
+4. On `review_ready`, invoke the returned `agent_params` as one exact foreground
+   Agent call, then pass its structured verdict to `submit_review`. Do not
+   replace this snapshot-bound reviewer with a generic role dispatch. The Parent
+   cannot issue its own QA or Review pass.
+5. Follow the returned Kernel obligation. Fresh QA suffices for routine work;
+   material and critical work additionally require fresh independent Review.
+   Normal completion does not require a second user confirmation.
+6. For rework, follow the projected artifact state before editing. Resolve
+   findings only after fixing and verifying their cause. Changed snapshots
+   invalidate old evidence; freeze and run the newly required obligations.
+7. Stop on terminal `done` or `stopped`, unresolved user decisions, explicit
+   cancellation, or a failure without a safe projected action.
 
-Use Pi native `Agent` subagents. Do not spawn Pi child processes or invoke a separate `imm-loop` CLI.
+Use the fresh projection returned by a successful operation when supplied. Read
+`status` after interruption, ambiguous mutation results, absent projections, or
+suspected external changes. Never repeat a mutation merely to obtain its result.
+Kernel CAS and freshness checks remain mandatory; reducing Parent reads does
+not bypass them. Do not poll or create detached jobs.
 
-## Authority and Failure Guards
+## Decisions and Recovery
 
-- Implementation requires a validated Plan and active Step or accepted pending `follow_up`.
-- The parent may implement but must not issue its own QA or review pass.
-- QA and reviewer children must not edit files, write Plans, mutate Kernel state, or close decisions directly.
-- Missing `Agent` support, failed or malformed child output, stale child target, runtime write failure, invalid projection, missing credentials, unclear verification, repeated unchanged failure, or user cancellation stops fail-closed with an explicit reason and no decision write.
-- A Managed native authority failure reports its stable reason and exactly one same-Host recovery action. Never recommend another Host, worktree, Direct Path, unmanaged implementation, or automatic retry as a fallback.
-- `replan_needed` stops at `imm-planner`; do not widen scope or rewrite the active Plan. A replacement must use a new sequential Plan path after the current Plan reaches `completed`, or after a literal user explicitly marks it `cancelled` or `superseded`.
-- Plans never suspend, resume, queue, or execute in parallel. Do not insert a repair Plan ahead of the current Plan.
-- Same-boundary review `follow_up` repeats execution, independent QA, and the originating review gate.
-- Runtime `review_required` is the single review-gate authority. Do not invent hidden gates.
-- `imm-compounder` is an internal role and is never invoked as a public Skill. A `complete` projection carries an explicit internal Compounder handoff because the runtime determined it is required. A Standard Plan with optional Compounder is atomically finished by the last review gate and does not emit that handoff. Strict Plans preserve the successful order: current Steps and QA, required reviews, internal Compounder handoff, terminal settlement, then `awaiting_user_successor_decision` for a non-terminal Roadmap slice.
-- Successor approval is non-delegable. QA, review, Planner, Compounder, and the loop cannot approve or activate a successor, and the loop must not turn a command template into an executable successor invocation.
+- Scope expansion always returns to `imm-planner`. Collect all currently known missing
+  paths, caller/test/generated mirrors, and verification reasons in one request.
+  Do not edit outside scope while waiting or widen it piecemeal without new
+  evidence. Bounded test or PR repair stays inside the same TaskIntent.
+- Invoke `approve_breaking_intent_revision` with the complete next intent
+  directly; the native Host gate is the single user decision. Do not overwrite
+  enrolled intent sidecars or ask for chat pre-confirmation.
+- On `awaiting_user`, invoke `request_authorization` directly. It is reserved
+  for a concrete unresolved decision or explicit stop, not risk tier alone.
+- Invoke `repair_authority_state` directly for a proven stale claim. Kernel
+  revalidation removes only the redundant claim without user interaction.
+- A Managed native authority failure stays fail-closed. Report its stable reason
+  and exactly one same-Host recovery action. Never recommend another Host,
+  worktree, Direct Path, unmanaged implementation, or automatic retry.
+- After interruption, read a fresh projection and run only the pending obligation.
+  A committed QA result is honored; an interrupted precommit QA run produces no
+  approval. Do not rerun fresh QA simply because Review was interrupted.
+- Malformed or stale reviewer output is not a verdict. Keep the existing
+  reservation only if the Host reports it valid; use its exact recovery action.
+  Do not fabricate a pass or blindly redispatch Review.
+- Missing tools, credentials, invalid projections, or repeated unchanged failures
+  stop with a concrete cause. Cancellation performs no decision write and is not
+  task termination. Explicit task stop uses its native authority gate.
 
-## Stop Conditions
+## Review and Learning
 
-Stop only for:
+Reviewers are read-only and bound to the frozen snapshot. They cannot edit files,
+write planning artifacts, mutate Kernel state, or settle decisions. Report all
+substantiated blockers in one round, tied to acceptance or a concrete regression;
+separate optional advice from blockers. Suggestions alone do not justify rework.
+Use the returned verdict schema exactly, including omission of unsupported fields.
 
-- `complete` with an explicit internal Compounder handoff before terminal settlement
-- `terminal_plan_complete` after a contracted terminal Plan or a legacy Plan without successor metadata has passed internal Compounder handoff and terminal settlement; stop with no next skill, authority, or action
-- `awaiting_user_successor_decision` after finish, with literal user authority and no automatic action
-- `replan_needed`
-- blocker or required user input
-- runtime, tool, subagent, or output-contract failure
-- user cancellation (no decision write; Plan termination is a separate explicit user-confirmed runtime action)
-- repeated unchanged failure
-- explicit Step, rework, review, follow-up, or elapsed-time budget exhaustion
+`dispatch_role` for `qa`, `code-review`, or `ui-review` is used only when an
+explicit runtime-supported role boundary requests it, followed by the returned
+foreground Agent envelope exactly. It is not an extra gate on Kernel Assurance.
+All internal Agent envelopes use `run_in_background: false`.
 
-Session-local budgets are advisory. Persisted Step, QA, review, and follow-up state controls recovery. After interruption, re-enter only by reading a fresh projection: a completed runtime write is honored once; an interrupted pre-write action is not claimed; cancellation performs no decision write; repeated unchanged failure stops unless the next attempt names a strategy change; explicit budgets stop before another action.
+The internal Compounder is optional: only closed work with structured evidence
+of a reusable Learning may route to it. Routine completion creates no Learning.
+It cannot approve successors or delay terminal settlement. A projection with
+`recommended_authority: user` must not dispatch successor work automatically.
+Do not create, switch,
+or delete Git worktrees; operate only in the Host launch directory.
 
-## Observable Output Contract
+The Host may attach an opted-in GitHub projection after settlement. Only a fresh claimless
+`done`/`stopped` projection plus its exact terminal tombstone projects
+`completed`/`not planned`; Enrollment performs no GitHub projection. Report a
+tracker failure separately; never use it as evidence, a Loop blocker, or a reason to
+repeat a Kernel mutation.
 
-Do not narrate projection reads or routine runtime writes. Emit compact progress only for Step start, completed execution evidence, QA/review decisions, failures that change the plan, and terminal stop. Every subagent round still emits exactly one dispatch line and exactly one collection/result line:
+## Observable Output
+
+Emit progress at execution start, QA/Review phase changes, failures, and terminal
+stop. Every Agent round has one dispatch line and one result line; never claim a
+successful collection on timeout, cancellation, malformed output, or stale identity.
+Normal conversation and visible Tool calls are the observation surface. Do not
+narrate routine projection reads or add Footer status content.
+
+Every exit includes a concise summary:
 
 ```text
-[Step 1/3][Executor] evidence recorded | next: QA
-[Step 1/3][QA] Agent dispatched
-[Step 1/3][QA] Agent collected: pass | next: imm-code-review
-```
-
-Do not emit a successful collection line for timeout, cancellation, malformed output, or stale identity; emit the explicit failure stop instead.
-
-Every exit, including failure, must include:
-
-```text
-Plan:
-Completed Steps:
+Task:
+Completed work:
 QA:
 Review:
 Stop reason:
 Next action:
 ```
 
-Normal conversation text and visible tool calls are the correctness-level observation surface. Extension widgets are optional decoration only.
+For `settlement_unknown`, call `advance_assurance` once to reconcile the Kernel
+projection before resuming; never replay the uncertain write directly. The runtime
+retries only explicit `EINTR`/`EAGAIN` failures of its initial projection read, once,
+with cancellation checks. Semantic authority errors and mutation failures are not
+retryable reads. For `review_preparation_failed`, repair the reported transport or
+environment cause before advancing; committed QA remains valid. For
+`verdict_invalid`, correct the existing payload once and resubmit without another
+reviewer dispatch. If correction fails, report the schema failure and stop the
+correction loop.
 
-## Boundary
-
-- **Allowed**: Coordinate Kernel / Loop projections, current-conversation Executor work, isolated QA/review children, runtime decision recording, same-boundary follow-up, and terminal handoff reporting.
-- **Blocked**: Plan edits, parent-owned QA/review pass, hidden review gates, direct Kernel-store edits, child-owned state mutation, automatic Compounder execution, and external loop runners.
-- **Workflow guard**: Kernel and Loop projections choose the next authority; each authority keeps its existing Skill contract.
-
-## Output artifact
-
-A visible completion trace plus terminal summary containing Plan, completed Steps, QA state, review state, stop reason, and next action.
-
-## Next Action
-
-- If no validated Plan exists: stop and route to `imm-planner`.
-- If an allowed Loop action exists: continue the loop without another user command.
-- If work is fully closed but not finished: report the explicit internal Compounder handoff and wait for terminal settlement.
-- If the projection is `awaiting_user_successor_decision`: report the candidate and preconditions, ask for the user's decision, and stop without dispatch.
-
-## Output style
-
-Default user-facing shape: checkpoint progress lines, then `Conclusion -> Evidence -> Next action` at the terminal boundary.
-
-## Kernel Canary Routing
-
-When the Kernel projection reports an active/draining backend claim, keep
-`imm-loop` as the user-facing entry and call the current Host's Kernel integration
-for that owned task. Enrollment and Review authorization use the current Host's
-native gates. When the projection calls for `request_authorization` or
-`approve_breaking_intent_revision`, invoke the exact Tool operation directly
-without asking the user for chat pre-confirmation; the native Host interaction is
-the single authority decision. Invoke
-`repair_authority_state` directly for a proven stale claim; Kernel revalidation
-removes only the redundant claim without user interaction. Do not invoke the
-removed `imm-canary-work` Skill as
-a separate entry point. Invalid or contradictory projections fail closed. After
-implementation and focused verification, freeze the artifacts and call
-`advance_assurance`. If it returns `review_ready`, invoke the foreground
-reviewer and pass its structured verdict to `submit_review`;
-`request_authorization` is reserved for an unresolved user decision or an
-explicit stop. Critical work completes after fresh QA and Review without a
-second user confirmation.
-Every QA/Review operation stays foreground and returns its next projected
-obligation directly to the Parent. The host performs any opted-in GitHub Issue
-projection only after the corresponding authority mutation: only a fresh
-claimless `done`/`stopped` projection with its exact terminal tombstone projects
-terminal closure (`completed`/`not planned`); Enrollment performs no GitHub
-projection. Treat the attached tracker result as non-authoritative observation.
-Report its failure separately, but never use it as evidence, a stop condition,
-or a reason to repeat a Kernel mutation. A terminal tombstone alone never
-blocks unrelated v3 routing.
+For failures, name the cause, stages already committed, the safe retry boundary,
+and exactly one next action. Distinguish user approval from environment repair
+and runtime failure. Do not ask the user to manually switch internal roles.

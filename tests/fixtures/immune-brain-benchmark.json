@@ -1,15 +1,16 @@
 {
   "kind": "plugin-eval-benchmark",
   "schemaVersion": 2,
-  "version": 2,
+  "version": 3,
   "targetKind": "plugin",
   "targetName": "immune-brain",
   "runner": {
     "type": "pi-agent",
     "model": "antigravity/gemini-3.6-flash",
     "subagentType": "general-purpose",
-    "isolated": true,
-    "parallel": true,
+    "isolated": false,
+    "parallel": false,
+    "requiresInteractiveHost": true,
     "resultTransport": "foreground_agent_details"
   },
   "workspace": {
@@ -27,7 +28,8 @@
       "tool_uses",
       "reported_tokens",
       "duration_ms",
-      "advisory_metrics"
+      "advisory_metrics",
+      "lifecycle_metrics"
     ],
     "cost": "unavailable_by_host"
   },
@@ -44,8 +46,12 @@
   },
   "notes": [
     "This config intentionally points at a small fixture workspace instead of the full repository.",
-    "The scenarios use five concrete Immune-Brain explicit-entry and lifecycle slices so benchmark cost reflects plugin behavior rather than repository exploration.",
-    "Benchmark means real codex exec runs now. There is no simulated dry-run mode.",
+    "The scenarios cover explicit planning, a real routine Managed lifecycle, host-native mutation, a compatibility boundary, and a weak match.",
+    "Managed scenarios require an interactive Pi or Claude Host with the installed native authority tools. Run scenarios sequentially in independent copied fixtures; never fabricate approval or use CLI writes as Enrollment.",
+    "Before each Managed scenario, initialize the copied fixture as a Git repository, configure fixture-local git user identity, and commit its initial contents. Do not initialize or modify the source fixture or the host repository.",
+    "Record provider usage only from host events. User interventions, recovery success, repeated QA runs, and scope revisions require observed lifecycle events; when unavailable, report unavailable rather than infer them from prose.",
+    "Lifecycle metrics are user_interventions, recovery_attempts, recovery_successes, duplicate_qa_runs, and scope_revisions, with source=host_events. Missing capture is source=unavailable with null counts. question_count counts punctuation only and is not user intervention evidence.",
+    "The non-interactive benchmark_eval runner must reject this fixture before spawning a child. A paid interactive baseline remains pending until native gates and terminal evidence are observed.",
     "Keep plugin-eval run artifacts outside the plugin target when possible, and do not commit generated usage logs."
   ],
   "setupQuestions": [
@@ -60,10 +66,10 @@
       "id": "entrypoint-routing",
       "title": "Planner runtime path parity",
       "purpose": "Check whether the plugin routes a planning request through the planner capability without broad repository exploration.",
-      "userInput": "Use the local Codex plugin \"immune-brain\" if it helps. In this small fixture workspace only, prepare a focused spec and one-step plan for keeping runtime adapter references aligned with `plugins/immune-brain/runtime/v4_runtime.ts`. Read only README.md, CONTEXT.md, IMMUNE.md, HANDOFF.md, and tests/fixture-contract.test.ts unless a specific verifier failure requires more. Do not run git commands; this fixture is not a git repo. Do not inspect `plugins/immune-brain/skills`, `plugins/immune-brain/dist`, or create upstreams. Create or update only files under docs/specs and docs/plans.",
+      "userInput": "Use explicit `imm-planner` in this copied Git fixture. Prepare a focused Spec and candidate TaskIntent for keeping README runtime adapter references aligned with `plugins/immune-brain/runtime/v4_runtime.ts`. This is plan-only: do not enroll or implement. Read README.md, CONTEXT.md, IMMUNE.md, HANDOFF.md, and tests/fixture-contract.test.ts first, then only the installed Skill and referenced wrappers needed for authoring. Author the candidate through imm-kernel, stage it, and require valid: true and enrollment_ready: true. Do not create prose Plans, inspect upstreams, or edit outside docs/specs and docs/plans.",
       "successChecklist": [
         "The run uses the planning slice of the plugin.",
-        "The result leaves a spec and plan on disk under docs/.",
+        "The result leaves a Spec and Git-tracked, validated candidate TaskIntent on disk, without Enrollment.",
         "The run stays inside the fixture workspace and avoids upstream exploration."
       ]
     },
@@ -71,9 +77,9 @@
       "id": "multi-skill-follow-up",
       "title": "Run runtime contract check",
       "purpose": "Measure whether the plugin can execute a bounded follow-up and validate the result with local tests.",
-      "userInput": "Use the local Codex plugin \"immune-brain\" if it helps. In this small fixture workspace only, run the runtime adapter contract task: ensure README.md keeps `plugins/immune-brain/runtime/v4_runtime.ts` as the packaged runtime path, add or update a focused Bun test if needed, and run `bun test tests`. Read only README.md and tests/fixture-contract.test.ts first. Inspect `plugins/immune-brain/bin` only if the test needs shim coverage. Do not run git commands; this fixture is not a git repo. Do not inspect `plugins/immune-brain/skills`, `plugins/immune-brain/dist`, or create upstreams.",
+      "userInput": "Use explicit `imm-planner` to plan and execute this routine task in the copied Git fixture: change README Workflow Boundary wording from `Small one-off copy edits` to `Focused one-off copy edits` and update its focused test expectation. Invoke the current Host's native Enrollment gate directly after candidate validation; the operator must make the real decision. Then use explicit `imm-loop` to implement, freeze artifacts, run deterministic QA, and reach Kernel done. Scope includes README.md, tests/fixture-contract.test.ts, and any bound active/archive Spec. Do not fabricate authorization, use CLI authority mutations, create worktrees, or edit upstreams. If an interactive native gate is unavailable, report blocked rather than completed.",
       "successChecklist": [
-        "The task completes end to end with a testable workspace state.",
+        "The task completes with native Enrollment evidence, fresh deterministic QA, and an exact terminal TaskRecord/tombstone, not merely a passing test.",
         "The run uses a bounded execution slice instead of redoing unrelated planning.",
         "The verifier commands pass."
       ]
@@ -93,7 +99,7 @@
       "id": "explicit-managed-boundary",
       "title": "Explicit Managed boundary for a public runtime contract",
       "purpose": "Check whether an explicit Planner entry handles a public runtime contract and compatibility decision before implementation.",
-      "userInput": "Use explicit `imm-planner` for this request. The requested change would rename the packaged public runtime contract `plugins/immune-brain/runtime/v4_runtime.ts` and retain compatibility for existing consumers. In this fixture, do not mutate runtime code, do not invent a compatibility layer, do not run git commands, and keep any planning artifact under docs/specs or docs/plans.",
+      "userInput": "Use explicit `imm-planner` for this plan-only request in the copied Git fixture. The requested change would rename the packaged public runtime contract `plugins/immune-brain/runtime/v4_runtime.ts` and retain compatibility for existing consumers. Do not mutate runtime code or invent a compatibility layer. Resolve the source-repair and migration alternatives first; any necessary compatibility mechanism needs an owner, exit condition, and cleanup milestone. Keep candidate artifacts under docs/specs or docs/plans, author and stage a TaskIntent through the installed wrapper, and validate it without Enrollment.",
       "successChecklist": [
         "The explicit `imm-planner` entry selects Managed planning; request wording alone is not treated as a route trigger.",
         "The run creates only the bounded Managed planning artifact needed for later enrollment and does not implement before authority exists.",
@@ -104,7 +110,7 @@
       "id": "plugin-boundary",
       "title": "Boundary on weak match",
       "purpose": "Check whether the plugin narrows scope when the request should not trigger the full lifecycle workflow.",
-      "userInput": "This task is a weak match for the local Codex plugin \"immune-brain\": design a marketing logo for the project. Do not create image assets or broaden into unrelated design work. In this fixture workspace only, read HANDOFF.md and README.md, then record a concise boundary note in HANDOFF.md explaining why the full Immune-Brain workflow is not appropriate and what minimal handoff, if any, remains. Do not run git commands. Do not inspect `plugins/immune-brain/skills`, `plugins/immune-brain/dist`, or create upstreams.",
+      "userInput": "This task is a weak match for Immune-Brain: design a marketing logo for the project. Do not create image assets or broaden into unrelated design work. In this fixture workspace only, read HANDOFF.md and README.md, then record a concise boundary note in HANDOFF.md explaining why the full Immune-Brain workflow is not appropriate and what minimal handoff, if any, remains. Do not run git commands. Do not inspect `plugins/immune-brain/skills`, `plugins/immune-brain/dist`, or create upstreams.",
       "successChecklist": [
         "The run narrows scope instead of forcing a bad fit.",
         "Any edit is limited to a boundary or handoff note.",

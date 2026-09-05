@@ -75,7 +75,7 @@ describe("packaged legacy CLI fallbacks", () => {
 	it("removes retired planner mutation and dispatcher fallbacks", () => {
 		const planner = readFileSync(DIST_PLANNER, "utf8");
 		expectRetiredGuidanceAbsent(planner, "imm-planner.md");
-		expect(planner).toContain("imm-plan <plan-path> --json");
+		expect(planner).toContain("Historical prose Plans are read-only artifacts");
 		expect(planner).toContain("imm-kernel intent author");
 		expect(planner).toContain("current Host's native Enrollment");
 		expect(planner).not.toContain("imm_canary_enrollment");

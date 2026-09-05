@@ -1,16 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import type { Theme } from "@earendil-works/pi-coding-agent";
-import { boundedVerificationFailureDetail } from "../plugins/immune-brain/.pi-extension/imm-canary-work";
 import { AssurancePresenter, renderCanaryCall, renderCanaryResult } from "../plugins/immune-brain/.pi-extension/pi-canary-assurance";
 
 const theme = { fg: (_color: string, text: string) => text, bold: (text: string) => text } as unknown as Theme;
-
-test("bounded verifier output retains both setup and terminal evidence", () => {
-	const detail = boundedVerificationFailureDetail("", `${"setup noise\n".repeat(1000)}FAIL expected foreground receipt`);
-	expect(detail.length).toBeLessThanOrEqual(500);
-	expect(detail).toContain("setup noise");
-	expect(detail).toContain("FAIL expected foreground receipt");
-});
 
 test("assurance presenter is passive and does not mutate Footer, Widget, or transcript follow-ups", () => {
 	const presenter = new AssurancePresenter();

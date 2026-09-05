@@ -9,7 +9,7 @@ export interface ReservedAgentParams {
 	thinking: "";
 	inherit_context: false;
 	isolated: true;
-	isolation: "worktree";
+	isolation: "off";
 	run_in_background: false;
 	max_turns: number;
 	resume: "";
@@ -50,7 +50,7 @@ export function reservedAgentParams(input: {
 		thinking: "",
 		inherit_context: false,
 		isolated: true,
-		isolation: "worktree",
+		isolation: "off",
 		run_in_background: false,
 		max_turns: input.max_turns ?? 16,
 		resume: "",
