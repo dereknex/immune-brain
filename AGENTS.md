@@ -13,6 +13,10 @@ This project uses the Immune-Brain workflow.
 - Regression check: run `bun test`; there is no `test` script in `package.json`.
 <!-- IMMUNE-BRAIN:END -->
 
+## Immune-Brain Preferences
+
+- Initiative carrier default: github
+
 ## Agent skills
 
 ### Issue tracker
