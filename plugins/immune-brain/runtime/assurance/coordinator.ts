@@ -470,6 +470,10 @@ export class AssuranceCoordinator {
 		this.rejectedReviewOperations.delete(taskId);
 		let authorityCommitted = false;
 		let authorityBoundaryStarted = false;
+		// Record revision observed immediately before an in-flight ordinary
+		// mutation, so a rejected precondition can be proven to have written
+		// nothing instead of being reported as an unknown settlement.
+		let boundaryBaseline: string | null = null;
 		let reviewPreparationStarted = false;
 		let phase = "preparing";
 		const operationLive = () => this.sessionActive
@@ -519,6 +523,7 @@ export class AssuranceCoordinator {
 					return { state: "blocked", reason: `Kernel requires ${projection.projection.next_obligation}` };
 				if (aborted()) return this.cancelled("qa", operationId, "host cancellation before artifact freeze");
 				progress("freezing_artifacts", "Freezing planning artifacts for deterministic assurance");
+				boundaryBaseline = projection.projection.record_revision;
 				const freeze = this.ports.applyOrdinaryOperation(ctx, { taskId, operation: { op: "freeze_artifacts", actor_id: "executor" } });
 				authorityBoundaryStarted = true;
 				await freeze;
@@ -530,13 +535,17 @@ export class AssuranceCoordinator {
 				// The freeze outcome is proven by the re-projection above, so later
 				// read-only preparation failures are never a committed-authority mystery.
 				authorityBoundaryStarted = false;
+				boundaryBaseline = null;
 			}
 			if (projection.projection.next_obligation === "complete") {
 				progress("completing", "Completing the routine task after deterministic QA");
+				const completionBaseline = projection.projection.record_revision;
 				try {
 					await this.ports.applyOrdinaryOperation(ctx, { taskId, operation: { op: "complete", actor_id: "kernel-assurance" } });
 					return { state: "completed" };
 				} catch (error) {
+					if (await this.mutationProvablyRejected(ctx, taskId, completionBaseline))
+						return { state: "failed", operation: "qa", operation_id: operationId, reason: `${phase}: ${boundedAssuranceError(error)}` };
 					return this.unknownAfterCommit(taskId, "qa", operationId, boundedAssuranceError(error));
 				}
 			}
@@ -701,7 +710,18 @@ export class AssuranceCoordinator {
 					: `${phase}: ${boundedAssuranceError(error)}`;
 				return this.reviewPreparationFailed(taskId, operationId, reason);
 			}
-			if (authorityCommitted || authorityBoundaryStarted) return this.unknownAfterCommit(taskId, "qa", operationId, `${phase}: ${boundedAssuranceError(error)}`);
+			if (authorityCommitted || authorityBoundaryStarted) {
+				// An in-flight mutation is genuinely unknown only when the authority
+				// state cannot be proven. A Kernel precondition rejection — a missing
+				// scope-bound Spec, for example — writes nothing, and reporting it as
+				// `settlement_unknown` sends the Loop into a reconciling retry that
+				// can never change the outcome.
+				const cancelling = aborted() || error instanceof VerificationAbortedError;
+				if (!authorityCommitted && boundaryBaseline !== null && !cancelling
+					&& await this.mutationProvablyRejected(ctx, taskId, boundaryBaseline))
+					return { state: "failed", operation: "qa", operation_id: operationId, reason: `${phase}: ${boundedAssuranceError(error)}` };
+				return this.unknownAfterCommit(taskId, "qa", operationId, `${phase}: ${boundedAssuranceError(error)}`);
+			}
 			if (aborted() || error instanceof VerificationAbortedError) return this.cancelled("qa", operationId, `${phase}: host cancellation`);
 			return { state: "failed", operation: "qa", operation_id: operationId, reason: `${phase}: ${boundedAssuranceError(error)}` };
 		} finally {
@@ -833,6 +853,24 @@ export class AssuranceCoordinator {
 		if (reservation) this.releaseReviewReservation(taskId, reservation);
 		this.rejectedReviewOperations.delete(taskId);
 		return { state: "review_preparation_failed", operation: "review", operation_id: operationId, reason };
+	}
+
+	/**
+	 * Prove that a failed ordinary mutation wrote nothing.
+	 *
+	 * Re-reads the projection once and compares the record revision with the one
+	 * observed immediately before the mutation. An unchanged revision means the
+	 * Kernel rejected a precondition, which is a deterministic failure the caller
+	 * must act on — not an unknown settlement to reconcile. Any read failure or
+	 * drift stays unknown, so the conservative answer is the default.
+	 */
+	private async mutationProvablyRejected(ctx: HostContext, taskId: string, baselineRevision: string): Promise<boolean> {
+		try {
+			const fresh = await this.ports.projectTask(ctx.cwd, taskId);
+			return !fresh.error && fresh.projection.record_revision === baselineRevision;
+		} catch {
+			return false;
+		}
 	}
 
 	private unknownAfterCommit(taskId: string, operation: "qa" | "review", operationId: string, reason: string): AssuranceAdvanceResult {
