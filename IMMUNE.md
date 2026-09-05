@@ -30,7 +30,7 @@
 - **Host-native Path**：只读或明确 no-modification 请求可由普通 host agent 解释、检查和 review，不创建或更新 `.imm/` workflow authority。
 - **只读阶段**：`imm-brainstorm`（含 `adversarial` mode）默认不改代码、不改测试、不改运行态；review/QA 等内部角色由 `imm-loop` 调度。
 - **会诊阶段**：`imm-brainstorm` 的 `roundtable` mode 只作为只读 advisory layer，用于暴露多角色观点、分歧和风险；不得写计划、执行代码、记录验收结论，且不拥有 `imm-planner` 或执行/QA角色的权限。
-- **规划阶段**：`imm-planner` 只写候选 Spec、通过 canonical author 创建 TaskIntent，以及已确认的 Initiative carrier；不写旧 State Ledger，不覆盖 enrolled TaskIntent。
+- **规划阶段**：`imm-planner` 只写候选 Spec、通过 canonical author 创建 TaskIntent，以及已确认的 Initiative carrier（carrier 无内置默认值，按 `docs/reference/immune-brain-config.md` 的偏好优先级解析，解析不到时必须询问用户）；不写旧 State Ledger，不覆盖 enrolled TaskIntent。
 - **协调与执行阶段**：`imm-loop` 以 Kernel 上的 TaskIntent/TaskRecord 为权威，通过 `imm_loop_action` 投影分发内部 executor、repair、QA、review 和 compounder roles 推进当前 owner。
 
 ## 4. Agent 协作规约

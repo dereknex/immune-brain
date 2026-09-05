@@ -465,7 +465,11 @@ describe("plugin package runtime cutover parity", () => {
 		for (const contract of [packedCarrier]) {
 			expect(contract).toContain("Initiative carrier default: local");
 			expect(contract).toContain("Initiative carrier default: github");
-			expect(contract).toContain("A repository directive overrides the global directive");
+			expect(contract).toContain("A repository directive overrides the user-level directive");
+			expect(contract).toContain("There is no silent carrier default");
+			expect(contract).toContain(
+				"Never resolve to `local` or `github` because a source was absent or unreadable",
+			);
 			expect(contract).toContain("standing opt-in for GitHub projection");
 			expect(contract).toContain(
 				"the literal user must still confirm the named Initiative, its immutable slug, and the complete Parent/Child decomposition before the first remote mutation",

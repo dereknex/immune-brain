@@ -131,17 +131,21 @@ For a large proposal split across multiple TaskIntents, exactly one planning
 carrier is chosen per Initiative: a Local Markdown file at
 `docs/initiatives/<slug>.md` or one GitHub Parent Issue. This preference applies
 only to Initiatives; ordinary TaskIntents remain tracked by Kernel TaskRecords.
-Resolve the carrier in this order:
+Resolve the carrier in this order, reading each source directly rather than
+assuming the current Host injected it into context:
 
 1. a literal user instruction for the current request;
 2. `Initiative carrier default: local` or `Initiative carrier default: github`
-   in the repository root `AGENTS.md`;
-3. the same directive in `~/.pi/agent/AGENTS.md`; or
-4. ask the user when no valid directive exists.
+   in the repository root agent instruction file, whichever this repository
+   tracks: `AGENTS.md` or `CLAUDE.md`;
+3. the same directive in the Host's user-level agent instruction file; or
+4. ask the user.
 
-A repository directive overrides the global directive. Report an invalid value
-and ask instead of guessing. After resolving it, display one non-blocking line
-with the selected carrier and its source. A configured `github` default is
+A repository directive overrides the user-level directive. There is no silent
+carrier default: when no valid directive is found, ask and report which sources
+were checked. Report an invalid value and ask instead of guessing. Never resolve
+to `local` or `github` because a source was absent or unreadable. After resolving
+it, display one non-blocking line with the selected carrier and its source. A configured `github` default is
 standing opt-in for GitHub projection, but the literal user must still confirm
 the named Initiative, its immutable slug, and the complete Parent/Child
 decomposition before the first remote mutation. A prior bulk approval cannot

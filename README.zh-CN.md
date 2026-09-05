@@ -139,7 +139,7 @@ Executor、QA、Review、Compounder 等为 `imm-loop` 内部调度的角色，�
 
 ## 配置
 
-Immune-Brain **没有独立配置文件**，偏好设置写在 `AGENTS.md`（仓库根目录或 `~/.pi/agent/AGENTS.md`）：
+Immune-Brain **没有独立配置文件**，偏好设置写在仓库根目录下当前 Host 的 agent 指令文件里——`AGENTS.md`（Pi）或 `CLAUDE.md`（Claude Code）：
 
 ```md
 ## Immune-Brain Preferences
@@ -150,10 +150,10 @@ Immune-Brain **没有独立配置文件**，偏好设置写在 `AGENTS.md`（仓
 | 偏好 | 选项 | 默认 | 说明 |
 |---|---|---|---|
 | 回复语言 | 任意自然语言 | 仓库 `AGENTS.md` | 机器契约/路径/标识符保持原文 |
-| Initiative 载体 | `local` / `github` | `github` | 仅当提案拆分为多个 TaskIntent 时生效 |
+| Initiative 载体 | `local` / `github` | 无默认，Planner 询问 | 仅当提案拆分为多个 TaskIntent 时生效 |
 | Advisory subagent | 允许 / 单人 | 允许 | 受 Pi host 策略与用户显式指令约束 |
 
-优先级：**当前消息 > 仓库 `AGENTS.md` > `~/.pi/agent/AGENTS.md` > Skill 默认值**。
+优先级：**当前消息 > 仓库 agent 指令文件 > 用户级 agent 指令文件 > 询问**。Skill 会直接读取这些文件，因此即使 Host 不自动加载该文件，偏好依然生效。
 
 详见 [`docs/reference/immune-brain-config.md`](docs/reference/immune-brain-config.md)。
 

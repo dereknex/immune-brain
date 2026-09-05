@@ -1,25 +1,34 @@
-# Immune-Brain Pi Preferences
+# Immune-Brain Host Preferences
 
 Pi and Claude Code are supported code-agent hosts. Immune-Brain does not load an
 agent-local TOML file or Immune-Brain-specific environment overrides. User and
-project preferences belong in Pi-injected `AGENTS.md` instructions.
+project preferences belong in the Host's agent instruction files.
 
 ## Precedence
 
 Planner preferences resolve in this order:
 
 1. a literal instruction in the current request;
-2. the repository root `AGENTS.md`;
-3. `~/.pi/agent/AGENTS.md`; or
-4. the Skill's documented default or an explicit user question.
+2. the repository root agent instruction file, whichever the repository tracks:
+   `AGENTS.md` or `CLAUDE.md`;
+3. the Host's user-level agent instruction file; or
+4. an explicit user question.
 
-Invalid values are reported rather than guessed.
+Hosts differ in which files they auto-load: Pi injects `AGENTS.md`, while Claude
+Code auto-loads `CLAUDE.md` and does not read `~/.pi/agent/AGENTS.md` at all. A
+Skill therefore reads sources 2 and 3 directly instead of assuming the Host
+placed them in context, and reports which sources it checked.
+
+Invalid values are reported rather than guessed. A preference with no documented
+default resolves to a user question, never to a silently chosen value.
 
 ## Initiative Carrier
 
 The Initiative carrier preference applies only to proposals split across
 multiple TaskIntents. Ordinary TaskIntents remain tracked by Kernel
-TaskRecords. Set one of these fixed directives in `AGENTS.md`:
+TaskRecords. There is no built-in carrier default; when no directive is found,
+Planner asks. Set one of these fixed directives in the repository root
+`AGENTS.md` or `CLAUDE.md`:
 
 ```md
 ## Immune-Brain Preferences
@@ -33,7 +42,7 @@ TaskRecords. Set one of these fixed directives in `AGENTS.md`:
 - Initiative carrier default: github
 ```
 
-A repository directive overrides the global directive. A configured `github`
+A repository directive overrides the user-level directive. A configured `github`
 default is standing opt-in for GitHub projection, but the literal user still
 confirms the Initiative name, immutable slug, complete Parent/Child decomposition,
 granularity, and dependencies before the first remote mutation. Planner reports

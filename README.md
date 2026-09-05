@@ -139,7 +139,7 @@ Key invariants:
 
 ## Configuration
 
-Immune-Brain has **no separate config file**. Preferences live in `AGENTS.md` (repo root or `~/.pi/agent/AGENTS.md`):
+Immune-Brain has **no separate config file**. Preferences live in your host's agent instruction file at the repo root — `AGENTS.md` (Pi) or `CLAUDE.md` (Claude Code):
 
 ```md
 ## Immune-Brain Preferences
@@ -150,10 +150,10 @@ Immune-Brain has **no separate config file**. Preferences live in `AGENTS.md` (r
 | Preference | Options | Default | Notes |
 |---|---|---|---|
 | Reply language | any natural language | repo `AGENTS.md` | Machine contracts / paths stay literal |
-| Initiative carrier | `local` / `github` | `github` | Only matters when a proposal splits across multiple TaskIntents |
+| Initiative carrier | `local` / `github` | none — Planner asks | Only matters when a proposal splits across multiple TaskIntents |
 | Advisory subagents | allowed / solo | allowed | Respects Pi host policy + explicit user instruction |
 
-Precedence: **current message > repo `AGENTS.md` > `~/.pi/agent/AGENTS.md` > skill default**.
+Precedence: **current message > repo agent instruction file > user-level agent instruction file > ask**. Skills read these files directly, so a preference works even when the host does not auto-load that file.
 
 See [`docs/reference/immune-brain-config.md`](docs/reference/immune-brain-config.md) for details.
 
