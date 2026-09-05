@@ -109,16 +109,32 @@ function roleSpec(role: InternalRole): RolePromptSpec {
 }
 
 /**
+ * Directories that can hold the packaged role prompts, most specific first.
+ *
+ * From source this module sits in `runtime/`, a sibling of `dist/`. The Claude
+ * Code Host instead ships a bundle at `dist/claude/mcp-server.mjs`, where the
+ * same relative walk lands on a `dist/dist/` that never exists while the prompts
+ * sit one level up. Every test runs from source, so the shipped Host could not
+ * load a single internal role prompt and no test noticed.
+ */
+export function rolePromptSearchDirs(moduleDir: string): string[] {
+	return [
+		join(moduleDir, "..", "dist", "role-prompts"),
+		join(moduleDir, "..", "role-prompts"),
+	];
+}
+
+/**
  * Read the packaged prompt so the runtime follows the bytes shipped to a
  * consumer. The canonical source is synced into this dist-local directory.
  */
 export function loadRolePrompt(role: InternalRole): string {
 	const spec = roleSpec(role);
-	const path = join(RUNTIME_DIR, "..", "dist", "role-prompts", spec.file);
-	if (!existsSync(path)) {
-		throw new Error(`internal role prompt is not packaged: ${role}`);
+	for (const dir of rolePromptSearchDirs(RUNTIME_DIR)) {
+		const path = join(dir, spec.file);
+		if (existsSync(path)) return readFileSync(path, "utf8");
 	}
-	return readFileSync(path, "utf8");
+	throw new Error(`internal role prompt is not packaged: ${role}`);
 }
 
 export function buildRoleDelegationPacket(input: {

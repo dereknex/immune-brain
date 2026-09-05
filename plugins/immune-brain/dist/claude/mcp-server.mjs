@@ -1001,13 +1001,20 @@ function roleSpec(role) {
     throw new Error(`unknown internal role: ${String(role)}`);
   return spec;
 }
+function rolePromptSearchDirs(moduleDir) {
+  return [
+    join3(moduleDir, "..", "dist", "role-prompts"),
+    join3(moduleDir, "..", "role-prompts")
+  ];
+}
 function loadRolePrompt(role) {
   const spec = roleSpec(role);
-  const path = join3(RUNTIME_DIR, "..", "dist", "role-prompts", spec.file);
-  if (!existsSync(path)) {
-    throw new Error(`internal role prompt is not packaged: ${role}`);
+  for (const dir of rolePromptSearchDirs(RUNTIME_DIR)) {
+    const path = join3(dir, spec.file);
+    if (existsSync(path))
+      return readFileSync(path, "utf8");
   }
-  return readFileSync(path, "utf8");
+  throw new Error(`internal role prompt is not packaged: ${role}`);
 }
 function buildRoleDelegationPacket(input) {
   const spec = roleSpec(input.role);
@@ -6381,7 +6388,11 @@ function enrollCanaryTask(root, input, registry) {
       throw new Error("intent content hash mismatch");
     if (checks.gitBaseHead !== gitBaseHead)
       throw new Error("Git HEAD moved after the enrollment confirmation");
+    if (input.batch && checks.gitBaseHead !== input.batch.expected_head)
+      throw new Error(`batch_head_lineage_broken: expected ${input.batch.expected_head}, found ${checks.gitBaseHead}`);
     registry.consume(input.capability, input.capability_binding);
+    if (input.batch)
+      input.batch.registry.consumeChild(input.batch.capability, input.batch.binding, input.task_id, Date.parse(input.now));
     const record = buildTaskRecordV4(input, checks.intent, gitBaseHead);
     const nextWorkspace = {
       ...checks.workspace.state,
@@ -6398,16 +6409,23 @@ function enrollCanaryTask(root, input, registry) {
       created_at: input.now,
       updated_at: input.now
     };
-    const mutation = commitEnrollmentLocked(root, input.task_id, {
-      contract: "assurance_kernel/workspace_transaction/v2",
-      task_id: input.task_id,
-      expected_record_hash: checks.current.revision,
-      next_record_content: `${JSON.stringify(record, null, 2)}
+    let mutation;
+    try {
+      mutation = commitEnrollmentLocked(root, input.task_id, {
+        contract: "assurance_kernel/workspace_transaction/v2",
+        task_id: input.task_id,
+        expected_record_hash: checks.current.revision,
+        next_record_content: `${JSON.stringify(record, null, 2)}
 `,
-      expected_workspace_hash: checks.workspace.revision,
-      next_workspace_content: `${JSON.stringify(nextWorkspace, null, 2)}
+        expected_workspace_hash: checks.workspace.revision,
+        next_workspace_content: `${JSON.stringify(nextWorkspace, null, 2)}
 `
-    }, claim);
+      }, claim);
+    } catch (error) {
+      if (input.batch)
+        input.batch.registry.releaseChild(input.batch.capability, input.task_id);
+      throw error;
+    }
     return {
       record: mutation.record,
       backend_claim: claim,
