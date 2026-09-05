@@ -463,6 +463,35 @@ function resolveCanonicalRoot(root: string): string {
 	return realpathSync(resolved);
 }
 
+// Resolve a path-less read to the sidecar that actually exists.
+//
+// The active path stays authoritative whenever it is present: that is the
+// pre-freeze layout every path-less caller assumes, and a leftover archived
+// sidecar from an earlier task reusing the same id must never shadow it. Only
+// when the active path is gone — the post-`freeze_artifacts` layout — does the
+// archive answer, which is exactly the case that used to fail with a raw ENOENT.
+function resolveSidecarPath(
+	canonicalRoot: string,
+	activePath: string,
+	archivedPath: string,
+): string {
+	if (sidecarPresent(canonicalRoot, activePath)) return activePath;
+	if (sidecarPresent(canonicalRoot, archivedPath)) return archivedPath;
+	return activePath;
+}
+
+// Existence only. A symlink counts as present so `collectPathIdentities` still
+// rejects it as a symlink; reporting it as missing would turn a security
+// rejection into a lookup failure.
+function sidecarPresent(canonicalRoot: string, relativePath: string): boolean {
+	try {
+		lstatSync(join(canonicalRoot, relativePath));
+		return true;
+	} catch {
+		return false;
+	}
+}
+
 function collectPathIdentities(
 	canonicalRoot: string,
 	relativePath: string,
@@ -504,12 +533,19 @@ export function readTaskIntent(
 	const canonicalRoot = resolveCanonicalRoot(root);
 	const activePath = `${INTENT_SIDECAR_RELATIVE_PREFIX}${taskId}.intent.json`;
 	const archivedPath = `${INTENT_SIDECAR_RELATIVE_PREFIX}archive/${taskId}.intent.json`;
-	const sidecarPath = requestedPath ?? activePath;
+	// `freeze_artifacts` relocates the sidecar from the active path to the archive
+	// path, so the caller's TaskRecord `intent_ref.path` is the authority. When no
+	// path is requested, resolve the single sidecar that exists rather than
+	// assuming the pre-freeze layout; a missing or ambiguous sidecar is a stable
+	// contract failure, not a raw `lstat` ENOENT.
+	const sidecarPath = requestedPath ?? resolveSidecarPath(canonicalRoot, activePath, archivedPath);
 	if (sidecarPath !== activePath && sidecarPath !== archivedPath)
 		throw new Error("intent sidecar path is not the active or archived task path");
 	const target = join(canonicalRoot, sidecarPath);
 	if (!target.startsWith(canonicalRoot + sep))
 		throw new Error("intent sidecar escapes project root");
+	if (!sidecarPresent(canonicalRoot, sidecarPath))
+		throw new Error(`TaskIntent sidecar is missing at ${sidecarPath}`);
 
 	const pathIdentities = collectPathIdentities(canonicalRoot, sidecarPath);
 	const fileIdentity = pathIdentities[pathIdentities.length - 1];

@@ -1289,6 +1289,7 @@ class AssuranceCoordinator {
     this.rejectedReviewOperations.delete(taskId);
     let authorityCommitted = false;
     let authorityBoundaryStarted = false;
+    let boundaryBaseline = null;
     let reviewPreparationStarted = false;
     let phase = "preparing";
     const operationLive = () => this.sessionActive && this.sessionGeneration === operationGeneration && this.activeOperations.get(taskId) === operationId && !operationController.signal.aborted;
@@ -1340,6 +1341,7 @@ class AssuranceCoordinator {
         if (aborted())
           return this.cancelled("qa", operationId, "host cancellation before artifact freeze");
         progress("freezing_artifacts", "Freezing planning artifacts for deterministic assurance");
+        boundaryBaseline = projection.projection.record_revision;
         const freeze = this.ports.applyOrdinaryOperation(ctx, { taskId, operation: { op: "freeze_artifacts", actor_id: "executor" } });
         authorityBoundaryStarted = true;
         await freeze;
@@ -1349,13 +1351,17 @@ class AssuranceCoordinator {
         if (projection.error || projection.projection.lifecycle !== "active" || projection.projection.artifact_state !== "frozen")
           return this.unknownAfterCommit(taskId, "qa", operationId, projection.error ?? "artifact freeze did not settle");
         authorityBoundaryStarted = false;
+        boundaryBaseline = null;
       }
       if (projection.projection.next_obligation === "complete") {
         progress("completing", "Completing the routine task after deterministic QA");
+        const completionBaseline = projection.projection.record_revision;
         try {
           await this.ports.applyOrdinaryOperation(ctx, { taskId, operation: { op: "complete", actor_id: "kernel-assurance" } });
           return { state: "completed" };
         } catch (error) {
+          if (await this.mutationProvablyRejected(ctx, taskId, completionBaseline))
+            return { state: "failed", operation: "qa", operation_id: operationId, reason: `${phase}: ${boundedAssuranceError(error)}` };
           return this.unknownAfterCommit(taskId, "qa", operationId, boundedAssuranceError(error));
         }
       }
@@ -1527,8 +1533,12 @@ class AssuranceCoordinator {
         const reason = aborted() || error instanceof VerificationAbortedError ? `${phase}: host cancellation` : `${phase}: ${boundedAssuranceError(error)}`;
         return this.reviewPreparationFailed(taskId, operationId, reason);
       }
-      if (authorityCommitted || authorityBoundaryStarted)
+      if (authorityCommitted || authorityBoundaryStarted) {
+        const cancelling = aborted() || error instanceof VerificationAbortedError;
+        if (!authorityCommitted && boundaryBaseline !== null && !cancelling && await this.mutationProvablyRejected(ctx, taskId, boundaryBaseline))
+          return { state: "failed", operation: "qa", operation_id: operationId, reason: `${phase}: ${boundedAssuranceError(error)}` };
         return this.unknownAfterCommit(taskId, "qa", operationId, `${phase}: ${boundedAssuranceError(error)}`);
+      }
       if (aborted() || error instanceof VerificationAbortedError)
         return this.cancelled("qa", operationId, `${phase}: host cancellation`);
       return { state: "failed", operation: "qa", operation_id: operationId, reason: `${phase}: ${boundedAssuranceError(error)}` };
@@ -1664,6 +1674,14 @@ class AssuranceCoordinator {
       this.releaseReviewReservation(taskId, reservation);
     this.rejectedReviewOperations.delete(taskId);
     return { state: "review_preparation_failed", operation: "review", operation_id: operationId, reason };
+  }
+  async mutationProvablyRejected(ctx, taskId, baselineRevision) {
+    try {
+      const fresh = await this.ports.projectTask(ctx.cwd, taskId);
+      return !fresh.error && fresh.projection.record_revision === baselineRevision;
+    } catch {
+      return false;
+    }
   }
   unknownAfterCommit(taskId, operation, operationId, reason) {
     this.unknownOperations.set(taskId, { operation, operationId, reason });
@@ -2916,6 +2934,21 @@ function resolveCanonicalRoot(root) {
     throw new Error("project root must be a real directory, not a symlink");
   return realpathSync4(resolved);
 }
+function resolveSidecarPath(canonicalRoot, activePath, archivedPath) {
+  if (sidecarPresent(canonicalRoot, activePath))
+    return activePath;
+  if (sidecarPresent(canonicalRoot, archivedPath))
+    return archivedPath;
+  return activePath;
+}
+function sidecarPresent(canonicalRoot, relativePath) {
+  try {
+    lstatSync4(join6(canonicalRoot, relativePath));
+    return true;
+  } catch {
+    return false;
+  }
+}
 function collectPathIdentities(canonicalRoot, relativePath) {
   const identities = [];
   let current = canonicalRoot;
@@ -2943,12 +2976,14 @@ function readTaskIntent(root, taskId, requestedPath) {
   const canonicalRoot = resolveCanonicalRoot(root);
   const activePath = `${INTENT_SIDECAR_RELATIVE_PREFIX}${taskId}.intent.json`;
   const archivedPath = `${INTENT_SIDECAR_RELATIVE_PREFIX}archive/${taskId}.intent.json`;
-  const sidecarPath = requestedPath ?? activePath;
+  const sidecarPath = requestedPath ?? resolveSidecarPath(canonicalRoot, activePath, archivedPath);
   if (sidecarPath !== activePath && sidecarPath !== archivedPath)
     throw new Error("intent sidecar path is not the active or archived task path");
   const target = join6(canonicalRoot, sidecarPath);
   if (!target.startsWith(canonicalRoot + sep3))
     throw new Error("intent sidecar escapes project root");
+  if (!sidecarPresent(canonicalRoot, sidecarPath))
+    throw new Error(`TaskIntent sidecar is missing at ${sidecarPath}`);
   const pathIdentities = collectPathIdentities(canonicalRoot, sidecarPath);
   const fileIdentity = pathIdentities[pathIdentities.length - 1];
   try {
@@ -6346,7 +6381,11 @@ function enrollCanaryTask(root, input, registry) {
       throw new Error("intent content hash mismatch");
     if (checks.gitBaseHead !== gitBaseHead)
       throw new Error("Git HEAD moved after the enrollment confirmation");
+    if (input.batch && checks.gitBaseHead !== input.batch.expected_head)
+      throw new Error(`batch_head_lineage_broken: expected ${input.batch.expected_head}, found ${checks.gitBaseHead}`);
     registry.consume(input.capability, input.capability_binding);
+    if (input.batch)
+      input.batch.registry.consumeChild(input.batch.capability, input.batch.binding, input.task_id, Date.parse(input.now));
     const record = buildTaskRecordV4(input, checks.intent, gitBaseHead);
     const nextWorkspace = {
       ...checks.workspace.state,
@@ -6363,16 +6402,23 @@ function enrollCanaryTask(root, input, registry) {
       created_at: input.now,
       updated_at: input.now
     };
-    const mutation = commitEnrollmentLocked(root, input.task_id, {
-      contract: "assurance_kernel/workspace_transaction/v2",
-      task_id: input.task_id,
-      expected_record_hash: checks.current.revision,
-      next_record_content: `${JSON.stringify(record, null, 2)}
+    let mutation;
+    try {
+      mutation = commitEnrollmentLocked(root, input.task_id, {
+        contract: "assurance_kernel/workspace_transaction/v2",
+        task_id: input.task_id,
+        expected_record_hash: checks.current.revision,
+        next_record_content: `${JSON.stringify(record, null, 2)}
 `,
-      expected_workspace_hash: checks.workspace.revision,
-      next_workspace_content: `${JSON.stringify(nextWorkspace, null, 2)}
+        expected_workspace_hash: checks.workspace.revision,
+        next_workspace_content: `${JSON.stringify(nextWorkspace, null, 2)}
 `
-    }, claim);
+      }, claim);
+    } catch (error) {
+      if (input.batch)
+        input.batch.registry.releaseChild(input.batch.capability, input.task_id);
+      throw error;
+    }
     return {
       record: mutation.record,
       backend_claim: claim,
@@ -6471,6 +6517,10 @@ function diffSnapshotOf(root, record) {
 }
 function diffHashOf(root, record) {
   return diffSnapshotOf(root, record).diff_hash;
+}
+function readTaskIntentForRecord(root, taskId) {
+  const currentPath = readTaskRecordRaw(root, taskId).record?.intent_ref?.path;
+  return readTaskIntent(root, taskId, currentPath);
 }
 function extractVerdictJson(input) {
   if (typeof input === "string") {
@@ -6674,7 +6724,7 @@ class ClaudeRuntime {
       host: this.host,
       projectTask: (root, taskId) => projectAssurance(root, taskId, diffSnapshotOf),
       readTaskRecord: (root, taskId) => readTaskRecord(root, taskId),
-      readTaskIntent: (root, taskId) => readTaskIntent(root, taskId),
+      readTaskIntent: (root, taskId) => readTaskIntentForRecord(root, taskId),
       frozenRunner: async () => resolveBunRunner(),
       buildAssurance: (root, taskId, role, projection, runner) => buildAssuranceSnapshot(root, taskId, role, projection, runner),
       ensureReviewRevision: async (root, taskId, projection) => {
@@ -6735,7 +6785,7 @@ class ClaudeRuntime {
   async enroll(taskId, meta) {
     const now = new Date().toISOString();
     const preparation = await preparePiCanary(this.cwd, { task_id: taskId, now });
-    const intent = await readTaskIntent(this.cwd, taskId);
+    const intent = await readTaskIntentForRecord(this.cwd, taskId);
     const gate = await this.gate("enroll", { ...meta, taskId }, {
       risk: intent.intent.risk,
       intentRevision: preparation.intent?.revision,
@@ -6810,7 +6860,7 @@ class ClaudeRuntime {
         throw new Error(readiness.blocked ?? "no unique host-derived authorization operation");
       }
     }
-    const priorIntent = await readTaskIntent(this.cwd, taskId);
+    const priorIntent = await readTaskIntentForRecord(this.cwd, taskId);
     const now = new Date().toISOString();
     const actorId = "user";
     const nextIntent = extra.next_intent ? await parseTaskIntentV1(extra.next_intent) : undefined;
@@ -6937,7 +6987,7 @@ class ClaudeRuntime {
   }
   async applyVerdict(ctx, input) {
     const { registry, app } = await this.authority();
-    const priorIntentToken = (await readTaskIntent(ctx.cwd, input.taskId)).token;
+    const priorIntentToken = (await readTaskIntentForRecord(ctx.cwd, input.taskId)).token;
     const now = new Date().toISOString();
     const commitAndApply = async (apply) => {
       this.coordinator.commitInvocation(input.invocation);
@@ -7019,7 +7069,7 @@ class ClaudeRuntime {
   async executeOrdinary(ctx, input) {
     const { app } = await this.authority();
     const operation = input.operation.op === "revise_intent" ? { ...input.operation, next_intent: await parseTaskIntentV1(input.operation.next_intent) } : input.operation;
-    const priorIntent = await readTaskIntent(ctx.cwd, input.taskId);
+    const priorIntent = await readTaskIntentForRecord(ctx.cwd, input.taskId);
     const sidecar = join7(ctx.cwd, priorIntent.intent_ref.path);
     const priorBytes = operation.op === "revise_intent" ? readFileSync7(sidecar) : null;
     try {

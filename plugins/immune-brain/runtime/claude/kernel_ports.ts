@@ -26,7 +26,7 @@ import {
 import { parseVerificationDescriptor } from "../verification_descriptor";
 import { projectAssurance, type AssuranceProjectionResult } from "../kernel/assurance_projection";
 import type { TaskRecord } from "../kernel/types";
-import { readTaskRecord } from "../kernel/storage";
+import { readTaskRecord, readTaskRecordRaw } from "../kernel/storage";
 import { canonicalIntentHash, parseTaskIntentV1, readTaskIntent } from "../kernel/intent";
 import { capabilityActionFor, createCanaryApplication } from "../kernel/canary_application";
 import {
@@ -68,6 +68,19 @@ export function diffSnapshotOf(root: string, record: TaskRecord): {
 
 export function diffHashOf(root: string, record: TaskRecord): string {
 	return diffSnapshotOf(root, record).diff_hash;
+}
+
+/**
+ * Read the TaskIntent through the TaskRecord's `intent_ref.path`.
+ *
+ * `freeze_artifacts` relocates the sidecar from `docs/plans/<task-id>.intent.json`
+ * into `docs/plans/archive/`, so every post-freeze read — QA settlement included —
+ * must follow the record instead of the pre-freeze default path. The Pi adapter
+ * resolves the same way in its own runtime stub; both Hosts must stay in step.
+ */
+function readTaskIntentForRecord(root: string, taskId: string) {
+	const currentPath = readTaskRecordRaw(root, taskId).record?.intent_ref?.path;
+	return readTaskIntent(root, taskId, currentPath);
 }
 
 function extractVerdictJson(input: unknown): Record<string, unknown> | null {
@@ -335,7 +348,7 @@ export class ClaudeRuntime {
 			host: this.host,
 			projectTask: (root, taskId) => projectAssurance(root, taskId, diffSnapshotOf),
 			readTaskRecord: (root, taskId) => readTaskRecord(root, taskId),
-			readTaskIntent: (root, taskId) => readTaskIntent(root, taskId),
+			readTaskIntent: (root, taskId) => readTaskIntentForRecord(root, taskId),
 			frozenRunner: async () => resolveBunRunner(),
 			buildAssurance: (root, taskId, role, projection, runner) => buildAssuranceSnapshot(root, taskId, role, projection, runner),
 			ensureReviewRevision: async (root, taskId, projection) => {
@@ -398,7 +411,7 @@ export class ClaudeRuntime {
 	async enroll(taskId: string, meta: ToolMeta) {
 		const now = new Date().toISOString();
 		const preparation = await preparePiCanary(this.cwd, { task_id: taskId, now });
-		const intent = await readTaskIntent(this.cwd, taskId);
+		const intent = await readTaskIntentForRecord(this.cwd, taskId);
 		const gate = await this.gate("enroll", { ...meta, taskId }, {
 			risk: intent.intent.risk,
 			intentRevision: preparation.intent?.revision,
@@ -476,7 +489,7 @@ export class ClaudeRuntime {
 				throw new Error(readiness.blocked ?? "no unique host-derived authorization operation");
 			}
 		}
-		const priorIntent = await readTaskIntent(this.cwd, taskId);
+		const priorIntent = await readTaskIntentForRecord(this.cwd, taskId);
 		const now = new Date().toISOString();
 		const actorId = "user";
 		const nextIntent = extra.next_intent ? await parseTaskIntentV1(extra.next_intent) : undefined;
@@ -614,7 +627,7 @@ export class ClaudeRuntime {
 		},
 	): Promise<void> {
 		const { registry, app } = await this.authority();
-		const priorIntentToken = (await readTaskIntent(ctx.cwd, input.taskId)).token;
+		const priorIntentToken = (await readTaskIntentForRecord(ctx.cwd, input.taskId)).token;
 		const now = new Date().toISOString();
 		const commitAndApply = async <T>(apply: () => Promise<T>): Promise<T> => {
 			this.coordinator.commitInvocation(input.invocation as never);
@@ -699,7 +712,7 @@ export class ClaudeRuntime {
 		const operation = input.operation.op === "revise_intent"
 			? { ...input.operation, next_intent: await parseTaskIntentV1(input.operation.next_intent) }
 			: input.operation;
-		const priorIntent = await readTaskIntent(ctx.cwd, input.taskId);
+		const priorIntent = await readTaskIntentForRecord(ctx.cwd, input.taskId);
 		const sidecar = join(ctx.cwd, priorIntent.intent_ref.path);
 		const priorBytes = operation.op === "revise_intent" ? readFileSync(sidecar) : null;
 		try {

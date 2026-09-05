@@ -15,6 +15,15 @@ Host's `imm_kernel_canary` `status` first and verify the exact active backend
 claim, TaskIntent, and TaskRecord. Invalid or contradictory projections fail
 closed. A candidate TaskIntent is not Enrollment authority.
 
+Before the first Enrollment of a candidate TaskIntent, confirm the Planner
+returned `tracker_associated` for its Initiative. `tracker_projection_failed` or
+`awaiting_user_initiative_confirmation` blocks that Enrollment until the same
+complete carrier batch succeeds; report the stable carrier reason and its exact
+retry action instead of enrolling. A carrier command the Host refused, cancelled,
+or never ran is not a completed batch, and a later `imm-loop` entry does not
+clear it. This pre-Enrollment gate is distinct from the post-settlement tracker
+projection below, which never blocks the Loop.
+
 TaskIntent defines the goal, acceptance, and `scope_hint`; TaskRecord and the
 Kernel projection own lifecycle, artifact state, freshness, and next obligation.
 Conversation memory, GitHub Issues, and `CONTEXT.md` never override them.

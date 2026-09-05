@@ -381,7 +381,11 @@ async function executeForegroundEnrollment(
 			taskIntent = await readTaskIntent(root, taskId);
 		} catch (error) {
 			const message = errorMessage(error);
-			if (/not Git-tracked|ENOENT|no such file/i.test(message))
+			// `readTaskIntent` reports an absent sidecar semantically now, so the
+			// "missing" classification must recognise that wording as well as the raw
+			// filesystem errors; otherwise a missing file is misreported as a schema
+			// defect and the operator is told to repair fields that do not exist.
+			if (/not Git-tracked|ENOENT|no such file|sidecar is missing/i.test(message))
 				return terminal(action, taskId, "blocked", stage, "A Git-tracked TaskIntent is required for Kernel enrollment", "author and stage the canonical TaskIntent");
 			return terminal(action, taskId, "blocked", stage, `TaskIntent validation failed before rehearsal: ${message}`, "repair the reported TaskIntent schema errors");
 		}
