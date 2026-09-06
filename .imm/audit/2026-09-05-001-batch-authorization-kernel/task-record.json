@@ -1,0 +1,204 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "2026-09-05-001-batch-authorization-kernel",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "2026-09-05-001-batch-authorization-kernel",
+    "goal": "Implement the Kernel-side Batch Authorization defined by docs/specs/unattended-initiative-batch-run.spec.md section 3.2: one literal-user confirmation binds {batch_id, initiative_slug, plan_digest, branch, base_head, budget, actor_id, confirmation_ref, expires_at, nonce} into a per-child one-shot capability registry that derives a fresh per-child EnrollmentCapabilityBinding at enroll time, enforces plan membership, expiry, unused child slots, and an advancing Git HEAD lineage, and fails closed with zero Kernel writes on every rejected path.",
+    "acceptance": [
+      {
+        "id": "acc-batch-authority-binding",
+        "assertion": "createBatchAuthorityRegistry issues a Batch Authorization only from a literal-user confirmation reference and validates every binding field by exact match, mirroring createEnrollmentAuthorityRegistry semantics. Issue requires actor_id 'user', a nonempty confirmation_ref, a nonempty nonce, expires_at strictly after now, a nonempty branch, a committed 40-hex base_head, and a plan_digest that is the sha256 of the canonical JSON of the ordered children [{task_id,intent_path,intent_revision,intent_content_hash,blocked_by}]. Any missing, empty, mismatched, or reordered field is rejected before issuance. Unlike the single-use enrollment capability, the batch capability is consumed per child: consumeChild(capability, expected, task_id) marks exactly one child slot used and leaves the authorization valid for the remaining unused children until expires_at. Consuming a task_id absent from the confirmed plan, a task_id whose slot is already consumed, or any child after expires_at is rejected and consumes nothing. Rejected issue and consume paths leave the capability registry and all Kernel state bytes unchanged.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/kernel-batch-authority.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 65536\n}\n"
+      },
+      {
+        "id": "acc-batch-child-derivation",
+        "assertion": "deriveChildEnrollment recomputes preparation for the named child through the existing preparePiCanary path at enroll time and never reuses a preparation_digest captured at batch confirmation, because enrollment rejects a moved Git HEAD and every settled child moves it. The derived EnrollmentCapabilityBinding carries the freshly recomputed preparation_digest together with the batch confirmation_ref and actor_id, and its intent_revision and intent_content_hash must equal the values recorded for that child in plan_digest; any divergence yields batch_child_intent_changed and performs no enrollment. Derivation additionally asserts the HEAD lineage invariant: preparation.git_base_head must equal the batch state expected_head, which starts at base_head and advances only to a commit created by this batch on its own branch; any other value yields batch_head_lineage_broken with zero writes. enrollCanaryTask accepts a batch-derived capability and consumes the batch child slot inside the same store lock as the TaskRecord write, so an interrupted enrollment never leaves a consumed slot without a TaskRecord or a TaskRecord without a consumed slot. Existing single-task enrollment behavior, its digest and HEAD checks, tombstone and workspace-claim rejections, and its byte-level failure atomicity are unchanged.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/kernel-enrollment-transaction.test.ts\",\n    \"tests/kernel-batch-authority.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 180000,\n  \"max_output_bytes\": 65536\n}\n"
+      }
+    ],
+    "scope_hint": [
+      "docs/specs/archive/batch-authorization-kernel.spec.md",
+      "docs/specs/batch-authorization-kernel.spec.md",
+      "plugins/immune-brain/runtime/kernel/batch_authority.ts",
+      "plugins/immune-brain/runtime/kernel/capability_registry.ts",
+      "plugins/immune-brain/runtime/kernel/enrollment.ts",
+      "plugins/immune-brain/runtime/kernel/enrollment_authority.ts",
+      "plugins/immune-brain/runtime/kernel/pi_canary_prepare.ts",
+      "plugins/immune-brain/runtime/kernel/types.ts",
+      "tests/kernel-batch-authority.test.ts",
+      "tests/kernel-enrollment-transaction.test.ts"
+    ],
+    "risk": "critical",
+    "revision": 2,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/archive/2026-09-05-001-batch-authorization-kernel.intent.json",
+    "content_hash": "sha256:a44d4be2ea45d6c8485331d534b36ead24bc1ed32d8ebf1e3993b4339ef1205f"
+  },
+  "lifecycle": "stopped",
+  "artifact_state": "frozen",
+  "baseline": "sha256:21e64bd773b018d01d28e1d9163ba88f27022707b5b9c2f808b8603f9924017b",
+  "git_base_head": "fe7ac428e951fd48178023862a8263c5fac87c70",
+  "attestations": [
+    {
+      "id": "approval-qa-4bd17978",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:a44d4be2ea45d6c8485331d534b36ead24bc1ed32d8ebf1e3993b4339ef1205f",
+      "diff_hash": "sha256:c4362a155404480319c2bc75e53f3bc32b27b53d33542929fbac12c227144cd1",
+      "actor_id": "deterministic-qa",
+      "summary": "all 2 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "acc-batch-authority-binding",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-batch-child-derivation",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-6cc6237e",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:a44d4be2ea45d6c8485331d534b36ead24bc1ed32d8ebf1e3993b4339ef1205f",
+      "diff_hash": "sha256:ce758dbeef15357a874bbd4577b76f96f709fdecd45669317ac3b94411b2142a",
+      "actor_id": "deterministic-qa",
+      "summary": "all 2 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "acc-batch-authority-binding",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-batch-child-derivation",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 fixed verification descriptor(s) passed"
+        }
+      ]
+    }
+  ],
+  "findings": [
+    {
+      "id": "review-b20ef9c503ee-1-review-1",
+      "kind": "blocking",
+      "status": "open",
+      "acceptance_id": "acc-batch-child-derivation",
+      "source": "review",
+      "review_round": 1,
+      "summary": "The atomicity failure-injection test in tests/kernel-batch-authority.test.ts ('leaves no consumed slot when the bound record write cannot commit') passes vacuously: it chmods .imm/state to 0o500 while .imm/state/locks does not yet exist (makeRoot creates only .imm/state, and preparePiCanary/readTaskRecordRaw/readWorkspaceStateRaw/readBackendClaim create no directories), so withKernelStoreLock -> ensureSecureDirectory's mkdirSync of .imm/state/locks throws EACCES before registry.consume and consumeChild ever execute, leaving the new releaseChild rollback try/catch in plugins/immune-brain/runtime/kernel/enrollment.ts with zero coverage and the bidirectional slot/TaskRecord guarantee unverified."
+    },
+    {
+      "id": "review-b20ef9c503ee-2-review-2",
+      "kind": "advisory",
+      "status": "open",
+      "acceptance_id": "acc-batch-child-derivation",
+      "source": "review",
+      "review_round": 1,
+      "summary": "expected_head in deriveChildEnrollment and EnrollBatchContext is entirely caller-supplied and is never anchored to the confirmed binding's base_head (no assertion that a derivation with zero consumed slots uses base_head), so the literal-user-confirmed base_head constrains nothing and the lineage invariant reduces to a caller self-assertion."
+    },
+    {
+      "id": "review-b20ef9c503ee-3-review-3",
+      "kind": "advisory",
+      "status": "open",
+      "acceptance_id": "acc-batch-authority-binding",
+      "source": "review",
+      "review_round": 1,
+      "summary": "Batch expiry fails open on an unparseable clock: enrollCanaryTask passes Date.parse(input.now) into consumeChild and deriveChildEnrollment passes Date.parse(input.now) into inspect, and a NaN makes 'Date.parse(state.expires_at) <= now' false, so an expired authorization is consumed; the pre-existing single-task path avoids this by defaulting to Date.now()."
+    }
+  ],
+  "history": [
+    {
+      "id": "approve_breaking_intent_revision:2026-09-05-001-batch-authorization-kernel:2026-09-05T12:42:24.877Z",
+      "at": "2026-09-05T12:42:24.877Z",
+      "type": "approve_breaking_intent_revision",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "intent_revision_2\naction_v2_sha256:38c21caa934e7c0b084cd7e7ba32e84434ed75fca01f258c39ce63b27d1a9f51",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "user",
+        "confirmation_ref": "claude-confirm-3ae11987bc37e435",
+        "issued_at": "2026-09-05T12:43:08.148Z",
+        "expires_at": "2026-09-05T12:53:08.148Z"
+      }
+    },
+    {
+      "id": "freeze_artifacts:2026-09-05-001-batch-authorization-kernel:2026-09-05T12:47:28.155Z",
+      "at": "2026-09-05T12:47:28.155Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent and Spec frozen at docs/plans/archive/2026-09-05-001-batch-authorization-kernel.intent.json"
+    },
+    {
+      "id": "record_approval:2026-09-05-001-batch-authorization-kernel:2026-09-05T14:39:53.888Z",
+      "at": "2026-09-05T14:39:53.888Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-4bd17978\naction_v2_sha256:533f893c623a13b8b617b819735d13c11e80d45b98979064d59266140594b379",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "claude:deterministic-qa",
+        "issued_at": "2026-09-05T14:39:53.888Z",
+        "expires_at": "2026-09-05T14:49:53.888Z"
+      }
+    },
+    {
+      "id": "record_approval:2026-09-05-001-batch-authorization-kernel:2026-09-06T05:21:24.904Z",
+      "at": "2026-09-06T05:21:24.904Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-6cc6237e\naction_v2_sha256:59152e1be2d79621b14a07c887d71dcfaf118644f7d5093a3ce31d12b3f8c7c3",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "claude:deterministic-qa",
+        "issued_at": "2026-09-06T05:21:24.904Z",
+        "expires_at": "2026-09-06T05:31:24.904Z"
+      }
+    },
+    {
+      "id": "request_rework:2026-09-05-001-batch-authorization-kernel:2026-09-06T05:26:09.091Z",
+      "at": "2026-09-06T05:26:09.091Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_1\naction_v2_sha256:ffec0363ea41341b5083c1e7b7e237fb01fc878a07dcfecbde3c5e6d93111a8c",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "claude:parent-mediated-review",
+        "issued_at": "2026-09-06T05:26:09.091Z",
+        "expires_at": "2026-09-06T05:36:09.091Z"
+      }
+    },
+    {
+      "id": "stop:2026-09-05-001-batch-authorization-kernel:2026-09-06T12:08:40.879Z",
+      "at": "2026-09-06T12:08:40.879Z",
+      "type": "stop",
+      "from_state": "active:active",
+      "to_state": "stopped:frozen",
+      "reason": "Deadlock exit, user-authorized. All three review findings (review-b20ef9c503ee-1..3) had their root causes fixed and mutation-verified, but the Claude Host exposes no resolve_finding operation, so the Kernel obligation resolve_findings is unreachable and this task cannot settle. Stopping releases the workspace claim so 2026-09-06-001-claude-host-resolve-finding can be enrolled to add that operation; this task's completed work is preserved in the Git index and will be re-enrolled under a new task_id afterwards. Both QA attestations are already stale against the current diff_hash, so no fresh assurance evidence is discarded.\naction_v2_sha256:f5fa707625b93a27a7ebe88e8596048f4fefe7550cb32b86ec4f9b6a05625ae6",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "user",
+        "confirmation_ref": "claude-confirm-7eb533ea6d337bca",
+        "issued_at": "2026-09-06T12:09:36.731Z",
+        "expires_at": "2026-09-06T12:19:36.731Z"
+      }
+    }
+  ]
+}

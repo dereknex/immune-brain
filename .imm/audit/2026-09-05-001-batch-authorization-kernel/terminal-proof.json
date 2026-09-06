@@ -1,0 +1,9 @@
+{
+  "contract": "assurance_kernel/task_tombstone/v2",
+  "task_id": "2026-09-05-001-batch-authorization-kernel",
+  "lifecycle_status": "terminal",
+  "terminal_lifecycle": "stopped",
+  "terminal_event_id": "stop:2026-09-05-001-batch-authorization-kernel:2026-09-06T12:08:40.879Z",
+  "final_record_hash": "sha256:fc542532f8cd67cb1b0d6e6918c16859e31695b215fa86ac2faf26ce87d1c706",
+  "terminalized_at": "2026-09-06T12:08:40.879Z"
+}
