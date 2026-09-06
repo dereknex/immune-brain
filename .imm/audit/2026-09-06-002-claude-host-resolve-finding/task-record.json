@@ -1,0 +1,133 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "2026-09-06-002-claude-host-resolve-finding",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "2026-09-06-002-claude-host-resolve-finding",
+    "goal": "Expose the Kernel's existing resolve_finding operation on the Claude Code Host MCP surface as defined by docs/specs/claude-host-resolve-finding.spec.md: one additive ordinary tool that carries task_id and finding_id into the existing ordinary-operation port, so a Claude Host imm-loop that has fixed and verified a finding's cause can clear it and let the Kernel reproject the next obligation, instead of terminating fail-closed on 'Kernel requires resolve_findings' with no reachable operation. This task_id succeeds the stopped 2026-09-06-001-claude-host-resolve-finding, whose round-1 QA findings could not be cleared on a Host that does not yet publish resolve_finding; the implementation and its evidence are unchanged and its terminal record is preserved under .imm/audit/2026-09-06-001-claude-host-resolve-finding/.",
+    "acceptance": [
+      {
+        "id": "acc-claude-resolve-finding-tool",
+        "assertion": "listMcpTools() exposes a resolve_finding tool whose inputSchema declares both task_id and finding_id and requires exactly [\"task_id\", \"finding_id\"], and whose annotations are the ordinary non-privileged shape rather than privilegedAnnotations(), because canary_application.ts builds the Kernel action without a capability and the Pi Host imm-canary-work.ts already lists resolve_finding in its ordinary KERNEL_OPERATIONS. Calling the tool through createMcpRuntime on a fixture repository whose TaskRecord holds an open blocking finding resolves exactly that finding in the persisted TaskRecord, appends exactly one history entry, and moves the Kernel projection's next_obligation off resolve_findings; the assertion reads the resulting record and projection rather than only the tool listing, so a tool registered without working dispatch fails.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/claude-host-authority.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 180000,\n  \"max_output_bytes\": 65536\n}\n"
+      },
+      {
+        "id": "acc-claude-resolve-finding-fail-closed",
+        "assertion": "Every rejection path stays fail-closed with a byte-identical TaskRecord and zero Kernel writes: a missing or non-string finding_id is rejected by the adapter before any Kernel call, and an unknown finding id, an already-resolved finding, a non-active lifecycle, and the unresolved_user_decision and replan_required kinds each surface the reducer's KernelInvariantError unchanged, proving the adapter reads no findings, tests no kind, and adds no second authority. A connection with no bound host version and a connection that never negotiated interactive elicitation both reject the tool exactly as they reject advance_assurance. PRIVILEGED_OPERATIONS is unchanged, and the eight pre-existing tools keep their exact order, schemas, annotations, and dispatch. The checked-in plugins/immune-brain/dist/claude/mcp-server.mjs matches a fresh generate so the published surface cannot drift from its runtime source.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/claude-host-authority.test.ts\",\n    \"tests/claude-host-package.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 240000,\n  \"max_output_bytes\": 65536\n}\n"
+      }
+    ],
+    "scope_hint": [
+      "docs/specs/archive/claude-host-resolve-finding.spec.md",
+      "docs/specs/claude-host-resolve-finding.spec.md",
+      "plugins/immune-brain/.pi-extension/imm-canary-work.ts",
+      "plugins/immune-brain/dist/claude/mcp-server.mjs",
+      "plugins/immune-brain/runtime/claude/interaction.ts",
+      "plugins/immune-brain/runtime/claude/kernel_ports.ts",
+      "plugins/immune-brain/runtime/claude/mcp_server.ts",
+      "tests/claude-host-authority.test.ts",
+      "tests/claude-host-package.test.ts"
+    ],
+    "risk": "critical",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/archive/2026-09-06-002-claude-host-resolve-finding.intent.json",
+    "content_hash": "sha256:2e027d07ee32f720bcbd81489f0cded5b3659600b311b8bfca5857df78f3c7a2"
+  },
+  "lifecycle": "stopped",
+  "artifact_state": "frozen",
+  "baseline": "sha256:2e027d07ee32f720bcbd81489f0cded5b3659600b311b8bfca5857df78f3c7a2",
+  "git_base_head": "42cdfd155f264dd8ac7424e1b7646035fcd3ea99",
+  "attestations": [
+    {
+      "id": "approval-qa-c9e0c8d8",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:2e027d07ee32f720bcbd81489f0cded5b3659600b311b8bfca5857df78f3c7a2",
+      "diff_hash": "sha256:9e2d9dacf5dbfe84e02b9245172530247874035c92b46bd77a7f89014037cf6d",
+      "actor_id": "deterministic-qa",
+      "summary": "all 2 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "acc-claude-resolve-finding-tool",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-claude-resolve-finding-fail-closed",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 fixed verification descriptor(s) passed"
+        }
+      ]
+    }
+  ],
+  "findings": [
+    {
+      "id": "review-f3c08f2e124e-1-review-1",
+      "kind": "blocking",
+      "status": "open",
+      "acceptance_id": "acc-claude-resolve-finding-fail-closed",
+      "source": "review",
+      "review_round": 1,
+      "summary": "plugins/immune-brain/dist/claude/mcp-server.mjs was regenerated from a dirty worktree: it adds unrelated enrollCanaryTask batch-lineage code (input.batch, batch_head_lineage_broken, consumeChild/releaseChild) that has no source in this revision, since plugins/immune-brain/runtime/kernel/enrollment.ts is the identical blob 4fb5efe in base and review with zero batch references and runtime/kernel/batch_authority.ts is absent from tree 6ed3958, so checkClaudePlugin in the tests/claude-host-package.test.ts case 'checked-in mcp-server.mjs matches a fresh generate' fails on a clean checkout and the published server ships unreviewed enrollment behavior; regenerate the bundle from this revision's source only."
+    }
+  ],
+  "history": [
+    {
+      "id": "freeze_artifacts:2026-09-06-002-claude-host-resolve-finding:2026-09-06T13:02:38.420Z",
+      "at": "2026-09-06T13:02:38.420Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent and Spec frozen at docs/plans/archive/2026-09-06-002-claude-host-resolve-finding.intent.json"
+    },
+    {
+      "id": "record_approval:2026-09-06-002-claude-host-resolve-finding:2026-09-06T13:02:51.506Z",
+      "at": "2026-09-06T13:02:51.506Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-c9e0c8d8\naction_v2_sha256:1d467b97a332d119d25c0d60b493aeaa105b75c4f22947197ad08d33f6576a5f",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "claude:deterministic-qa",
+        "issued_at": "2026-09-06T13:02:51.506Z",
+        "expires_at": "2026-09-06T13:12:51.506Z"
+      }
+    },
+    {
+      "id": "request_rework:2026-09-06-002-claude-host-resolve-finding:2026-09-06T13:07:26.401Z",
+      "at": "2026-09-06T13:07:26.401Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_1\naction_v2_sha256:6019e61903489d5d9458977be6b89f18b3249eb0ec2a7d196da8ffcdf9eace98",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "claude:parent-mediated-review",
+        "issued_at": "2026-09-06T13:07:26.401Z",
+        "expires_at": "2026-09-06T13:17:26.401Z"
+      }
+    },
+    {
+      "id": "stop:2026-09-06-002-claude-host-resolve-finding:2026-09-06T13:14:49.408Z",
+      "at": "2026-09-06T13:14:49.408Z",
+      "type": "stop",
+      "from_state": "active:active",
+      "to_state": "stopped:frozen",
+      "reason": "Review returned a valid blocking finding (the checked-in dist bundle carries batch-lineage code whose source is outside this task's scope and uncommitted, so a clean checkout of the review revision fails build-claude-plugin --check). Clearing it needs resolve_finding, which the loaded 3.6.4 plugin does not publish. The cause is fixed by committing the batch runtime work so the next enrollment's base_head contains it; the same scope re-enrolls on that base.\naction_v2_sha256:b30c1317c193dad2140ddf51fc21f4a1be3f77b51818c1775f5d19db0eee0626",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "user",
+        "confirmation_ref": "claude-confirm-1c6e84476d590cc3",
+        "issued_at": "2026-09-06T13:22:38.786Z",
+        "expires_at": "2026-09-06T13:32:38.785Z"
+      }
+    }
+  ]
+}
