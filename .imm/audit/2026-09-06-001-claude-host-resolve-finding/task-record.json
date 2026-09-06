@@ -1,0 +1,104 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "2026-09-06-001-claude-host-resolve-finding",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "2026-09-06-001-claude-host-resolve-finding",
+    "goal": "Expose the Kernel's existing resolve_finding operation on the Claude Code Host MCP surface as defined by docs/specs/claude-host-resolve-finding.spec.md: one additive ordinary tool that carries task_id and finding_id into the existing ordinary-operation port, so a Claude Host imm-loop that has fixed and verified a finding's cause can clear it and let the Kernel reproject the next obligation, instead of terminating fail-closed on 'Kernel requires resolve_findings' with no reachable operation.",
+    "acceptance": [
+      {
+        "id": "acc-claude-resolve-finding-tool",
+        "assertion": "listMcpTools() exposes a resolve_finding tool whose inputSchema declares both task_id and finding_id and requires exactly [\"task_id\", \"finding_id\"], and whose annotations are the ordinary non-privileged shape rather than privilegedAnnotations(), because canary_application.ts builds the Kernel action without a capability and the Pi Host imm-canary-work.ts already lists resolve_finding in its ordinary KERNEL_OPERATIONS. Calling the tool through createMcpRuntime on a fixture repository whose TaskRecord holds an open blocking finding resolves exactly that finding in the persisted TaskRecord, appends exactly one history entry, and moves the Kernel projection's next_obligation off resolve_findings; the assertion reads the resulting record and projection rather than only the tool listing, so a tool registered without working dispatch fails.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/claude-host-authority.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 180000,\n  \"max_output_bytes\": 65536\n}\n"
+      },
+      {
+        "id": "acc-claude-resolve-finding-fail-closed",
+        "assertion": "Every rejection path stays fail-closed with a byte-identical TaskRecord and zero Kernel writes: a missing or non-string finding_id is rejected by the adapter before any Kernel call, and an unknown finding id, an already-resolved finding, a non-active lifecycle, and the unresolved_user_decision and replan_required kinds each surface the reducer's KernelInvariantError unchanged, proving the adapter reads no findings, tests no kind, and adds no second authority. A connection with no bound host version and a connection that never negotiated interactive elicitation both reject the tool exactly as they reject advance_assurance. PRIVILEGED_OPERATIONS is unchanged, and the eight pre-existing tools keep their exact order, schemas, annotations, and dispatch. The checked-in plugins/immune-brain/dist/claude/mcp-server.mjs matches a fresh generate so the published surface cannot drift from its runtime source.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/claude-host-authority.test.ts\",\n    \"tests/claude-host-package.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 240000,\n  \"max_output_bytes\": 65536\n}\n"
+      }
+    ],
+    "scope_hint": [
+      "docs/specs/archive/claude-host-resolve-finding.spec.md",
+      "docs/specs/claude-host-resolve-finding.spec.md",
+      "plugins/immune-brain/.pi-extension/imm-canary-work.ts",
+      "plugins/immune-brain/dist/claude/mcp-server.mjs",
+      "plugins/immune-brain/runtime/claude/interaction.ts",
+      "plugins/immune-brain/runtime/claude/kernel_ports.ts",
+      "plugins/immune-brain/runtime/claude/mcp_server.ts",
+      "tests/claude-host-authority.test.ts",
+      "tests/claude-host-package.test.ts"
+    ],
+    "risk": "critical",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/archive/2026-09-06-001-claude-host-resolve-finding.intent.json",
+    "content_hash": "sha256:73d060d86bc0df831118a6881f9f604c50c998979d1ec5149dfe5af52b830101"
+  },
+  "lifecycle": "stopped",
+  "artifact_state": "frozen",
+  "baseline": "sha256:73d060d86bc0df831118a6881f9f604c50c998979d1ec5149dfe5af52b830101",
+  "git_base_head": "058b2674115c8b379e17fa786dc0a3e76de136e9",
+  "attestations": [],
+  "findings": [
+    {
+      "id": "qa-acc-claude-resolve-finding-tool-7ecfb483-8cad36",
+      "kind": "blocking",
+      "status": "open",
+      "acceptance_id": "acc-claude-resolve-finding-tool",
+      "source": "review",
+      "review_round": 1,
+      "summary": "verification failed (exit 1) stdout=28B stderr=8986B"
+    },
+    {
+      "id": "qa-acc-claude-resolve-finding-fail-closed-7ecfb483-420d6e",
+      "kind": "blocking",
+      "status": "open",
+      "acceptance_id": "acc-claude-resolve-finding-fail-closed",
+      "source": "review",
+      "review_round": 1,
+      "summary": "verification failed (exit 1) stdout=28B stderr=9794B"
+    }
+  ],
+  "history": [
+    {
+      "id": "freeze_artifacts:2026-09-06-001-claude-host-resolve-finding:2026-09-06T12:43:39.009Z",
+      "at": "2026-09-06T12:43:39.009Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent and Spec frozen at docs/plans/archive/2026-09-06-001-claude-host-resolve-finding.intent.json"
+    },
+    {
+      "id": "request_rework:2026-09-06-001-claude-host-resolve-finding:2026-09-06T12:43:51.654Z",
+      "at": "2026-09-06T12:43:51.654Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_1\naction_v2_sha256:558fc74ca1e4bf2855f149740bf1918905e6c976d1c2448d05fd8e7fb80c69a1",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "claude:deterministic-qa",
+        "issued_at": "2026-09-06T12:43:51.654Z",
+        "expires_at": "2026-09-06T12:53:51.654Z"
+      }
+    },
+    {
+      "id": "stop:2026-09-06-001-claude-host-resolve-finding:2026-09-06T12:58:44.674Z",
+      "at": "2026-09-06T12:58:44.674Z",
+      "type": "stop",
+      "from_state": "active:active",
+      "to_state": "stopped:frozen",
+      "reason": "Round-1 QA findings are unresolvable in this Host: next_obligation is resolve_findings and the loaded 3.6.4 plugin bundle publishes no resolve_finding tool. The QA failure cause (serveStdio leaking process.exitCode into the test runner) is fixed and both descriptors now exit 0, so the same scope re-enrolls under a fresh task_id and completes.\naction_v2_sha256:c4ab15ab1f8e7999a453d2670a0a158df731ef3b6b78daa91a174854568ac6bd",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "user",
+        "confirmation_ref": "claude-confirm-37d58f58c71a7390",
+        "issued_at": "2026-09-06T13:00:16.206Z",
+        "expires_at": "2026-09-06T13:10:16.206Z"
+      }
+    }
+  ]
+}
