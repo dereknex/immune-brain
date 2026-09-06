@@ -238,7 +238,6 @@ function minimalSnapshot(role: "qa" | "review", root: string, current?: { projec
 	const record = readTaskRecord(root, TASK).record;
 	const reviewRevision = role === "review" && record?.contract === "assurance_kernel/task_record/v4"
 		? (() => {
-				const acceptance = record.intent_snapshot.acceptance;
 				const manifest = captureReviewManifest(root, {
 					taskId: TASK,
 					baseHead: record.git_base_head,
@@ -251,10 +250,15 @@ function minimalSnapshot(role: "qa" | "review", root: string, current?: { projec
 					lifecycle: state.lifecycle ?? "active",
 					artifactState: state.artifact_state ?? "frozen",
 					risk: record.intent_snapshot.risk,
-					outcomes: Object.fromEntries(acceptance.map((item: { id: string }) => [
-						item.id,
-						{ status: "passed" as const, summary: `host-attested QA: all ${acceptance.length} fixed verification descriptor(s) passed` },
-					])),
+					// Mirror the production snapshot builder: the manifest binds the
+					// outcomes of the settled QA attestation, not a synthesized
+					// stand-in. Re-deriving them keeps this double's digest equal to
+					// the one the adapter republishes at submission.
+					outcomes: Object.fromEntries(
+						record.attestations.filter((item) => item.kind === "qa")
+							.flatMap((item) => item.acceptance_results)
+							.map((result) => [result.acceptance_id, { status: result.status, summary: result.summary }]),
+					),
 				});
 				return {
 					contract: "assurance_kernel/review_revision_identity/v1" as const,

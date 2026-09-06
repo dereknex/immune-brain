@@ -1196,7 +1196,7 @@ async function projectAssuranceState(root: string, taskId: string): Promise<Assu
  * Publish and prove the task-scoped synthetic revision for a v4 record. v3
  * records keep the legacy full-source bundle and return null here.
  */
-async function ensureTaskReviewRevision(
+export async function ensureTaskReviewRevision(
 	root: string,
 	taskId: string,
 	projection: AssuranceProjectionResult,
@@ -1221,7 +1221,11 @@ async function ensureTaskReviewRevision(
 		lifecycle: projection.projection.lifecycle,
 		artifactState: projection.projection.artifact_state,
 		risk: record.intent_snapshot.risk,
-		outcomes: reviewPreflightOutcomes(record.intent_snapshot.acceptance),
+		// The same outcomes the Review snapshot is built from. A preflight stand-in
+		// only matched the settled QA attestation because deterministic QA happens to
+		// write that exact summary, so the submit-time digest comparison held by
+		// coincidence rather than by construction.
+		outcomes: qaOutcomes(record),
 	});
 	return {
 		contract: "assurance_kernel/review_revision/v1",
@@ -1505,15 +1509,6 @@ async function buildAssuranceSnapshot(
 		reviewBundle,
 		reviewManifest,
 	};
-}
-
-function reviewPreflightOutcomes(
-	acceptance: Array<{ id: string }>,
-): Record<string, { status: "passed"; summary: string }> {
-	const summary = `host-attested QA: all ${acceptance.length} fixed verification descriptor(s) passed`;
-	return Object.fromEntries(
-		acceptance.map((item) => [item.id, { status: "passed" as const, summary }]),
-	);
 }
 
 function qaOutcomes(
