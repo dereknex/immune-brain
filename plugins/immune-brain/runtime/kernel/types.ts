@@ -235,6 +235,15 @@ export interface TaskRecordV4 extends Omit<TaskRecordV3, "contract"> {
 /** The record shape every Kernel owner passes around during the v3 drain window. */
 export type TaskRecord = TaskRecordV3 | TaskRecordV4;
 
+/**
+ * Narrow the stored record union before reading a v4-only field such as
+ * `git_base_head`. Comparing `record.contract` into a plain boolean does not
+ * narrow, which let adapters read v4 fields off a v3-shaped value unchecked.
+ */
+export function isTaskRecordV4(record: TaskRecord): record is TaskRecordV4 {
+	return record.contract === TASK_RECORD_CONTRACT_V4;
+}
+
 export interface TaskProjectionV3 extends CompletionDecision {
 	contract: "assurance_kernel/projection/v3";
 	task_id: string;

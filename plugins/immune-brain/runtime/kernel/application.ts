@@ -260,6 +260,11 @@ export function applyTaskAction(
 		}
 
 		if (input.terminal) {
+			// A tombstone may only record a terminal lifecycle. Nothing upstream
+			// proved that, so an active record could have been tombstoned as
+			// `terminal_lifecycle: "active"` in violation of its own contract.
+			if (nextRecord.lifecycle === "active")
+				throw new Error("terminal settlement requires a done or stopped TaskRecord lifecycle");
 			const tombstone: TaskTombstone = {
 				contract: TASK_TOMBSTONE_CONTRACT,
 				task_id,

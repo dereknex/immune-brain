@@ -78,7 +78,22 @@ export type JournalReasonCode =
 	| "source_read_failed"
 	| "shadow_divergence"
 	| "migration_ambiguous"
-	| "readiness_query_nonqualifying";
+	| "readiness_query_nonqualifying"
+	// Emitted by runtime/commands/kernel.ts. Absent from this union until the
+	// journal types were first exported and type checked.
+	| "routing_policy_invalid"
+	| "routing_unavailable"
+	| "kernel_owner_active"
+	| "v3_owner_nonterminal"
+	| "input_oversize"
+	| "input_invalid"
+	| "intent_invalid"
+	| "task_path_mismatch"
+	| "destination_invalid"
+	| "destination_parent_invalid"
+	| "destination_parent_missing"
+	| "destination_exists"
+	| "destination_write_failed";
 
 export interface JournalEntry {
 	contract: "assurance_kernel/journal/v1";
@@ -1337,7 +1352,7 @@ export function commitEnrollmentLocked(
 	taskId: string,
 	transaction: WorkspaceTransactionV2,
 	claim: Record<string, unknown>,
-): { record: TaskRecordV2; workspace: WorkspaceState } {
+): { record: TaskRecord; workspace: WorkspaceState } {
 	const marker: EnrollmentMarker = {
 		contract: "assurance_kernel/enrollment_transaction/v1",
 		task_id: taskId,

@@ -19,6 +19,8 @@ export {
 	appendJournalEntry,
 	KernelStoreSecurityError,
 	setAfterTaskTransactionWriteForTest,
+	type JournalEntry,
+	type JournalReasonCode,
 } from "./storage";
 export {
 	reduceTask,

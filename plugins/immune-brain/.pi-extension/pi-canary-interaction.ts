@@ -1,4 +1,4 @@
-import { DynamicBorder, type ExtensionAPI, type ExtensionContext, type Theme } from "@earendil-works/pi-coding-agent";
+import { DynamicBorder, type ExtensionAPI, type ExtensionContext, type Theme, type ThemeColor } from "@earendil-works/pi-coding-agent";
 import { Container, SelectList, Text, type Component, type SelectItem } from "@earendil-works/pi-tui";
 
 export const USER_ATTENTION_EVENT = "immune-brain:user-attention.v1" as const;
@@ -75,7 +75,7 @@ export interface AuthorityDialogOptions<T extends string> {
 }
 
 type EventPublisher = Pick<ExtensionAPI, "events">;
-type UiContext = Pick<ExtensionContext, "ui">;
+export type UiContext = Pick<ExtensionContext, "ui">;
 
 const terminalRailUis = new WeakSet<object>();
 const deliveredNotifications = new WeakMap<object, Set<string>>();
@@ -373,7 +373,9 @@ function emitAttention(pi: EventPublisher, event: UserAttentionEventV1): void {
 }
 
 function formatTaskRailState(state: TaskRailState, theme?: Theme): string {
-	const symbolAndColor: Record<TaskRailState, { symbol: string; color: string }> = {
+	// Typed as the theme's own colour union: a plain `string` here silently
+	// accepted a name the theme cannot resolve.
+	const symbolAndColor: Record<TaskRailState, { symbol: string; color: ThemeColor }> = {
 		Planning: { symbol: "●", color: "muted" },
 		"Approval required": { symbol: "▲", color: "accent" },
 		Working: { symbol: "●", color: "accent" },
@@ -383,7 +385,7 @@ function formatTaskRailState(state: TaskRailState, theme?: Theme): string {
 		Completed: { symbol: "✓", color: "success" },
 		Stopped: { symbol: "■", color: "muted" },
 	};
-	const cfg = symbolAndColor[state] ?? { symbol: "●", color: "dim" };
+	const cfg: { symbol: string; color: ThemeColor } = symbolAndColor[state] ?? { symbol: "●", color: "dim" };
 	if (!theme) return `${cfg.symbol} ${state}`;
 	return `${theme.fg(cfg.color, cfg.symbol)} ${theme.fg(cfg.color, state)}`;
 }

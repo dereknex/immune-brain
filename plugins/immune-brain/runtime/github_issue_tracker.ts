@@ -275,8 +275,8 @@ export function createGhTransport(binary = "gh"): GhTransport {
 	return {
 		run(args, options = {}) {
 			return new Promise((complete) => {
-				let stdout = Buffer.alloc(0);
-				let stderr = Buffer.alloc(0);
+				let stdout: Buffer = Buffer.alloc(0);
+				let stderr: Buffer = Buffer.alloc(0);
 				let timedOut = false;
 				let outputExceeded = false;
 				let timer: ReturnType<typeof setTimeout> | undefined;
@@ -304,7 +304,7 @@ export function createGhTransport(binary = "gh"): GhTransport {
 					finish(1, error instanceof Error ? error.message : String(error));
 					return;
 				}
-				const append = (current: Buffer, chunk: Buffer): Buffer => {
+				const append = (current: Buffer, chunk: Uint8Array): Buffer => {
 					const available = Math.max(0, MAX_GH_OUTPUT - stdout.length - stderr.length);
 					if (chunk.length > available) {
 						outputExceeded = true;
@@ -312,17 +312,22 @@ export function createGhTransport(binary = "gh"): GhTransport {
 					}
 					return available > 0 ? Buffer.concat([current, chunk.subarray(0, available)]) : current;
 				};
-				child.stdout.on("data", (chunk: Buffer) => { stdout = append(stdout, chunk); });
-				child.stderr.on("data", (chunk: Buffer) => { stderr = append(stderr, chunk); });
+				const { stdout: childOut, stderr: childErr, stdin: childIn } = child;
+				if (!childOut || !childErr || !childIn) {
+					finish(1, "gh was spawned without the stdio pipes this reader requires");
+					return;
+				}
+				childOut.on("data", (chunk: Uint8Array) => { stdout = append(stdout, chunk); });
+				childErr.on("data", (chunk: Uint8Array) => { stderr = append(stderr, chunk); });
 				child.once("error", (error) => { finish(1, error.message); });
-				child.stdin.once("error", (error) => { finish(1, error.message); });
+				childIn.once("error", (error) => { finish(1, error.message); });
 				timer = setTimeout(() => {
 					timedOut = true;
 					child.kill("SIGKILL");
 				}, GH_TIMEOUT_MS);
 				child.once("close", (code) => { finish(code ?? 1); });
 				try {
-					child.stdin.end(options.stdin ?? "");
+					childIn.end(options.stdin ?? "");
 				} catch (error) {
 					finish(1, error instanceof Error ? error.message : String(error));
 				}
@@ -371,7 +376,7 @@ function parseSubIssueNumbers(raw: string): number[] {
 	if (!Array.isArray(pages)) throw new Error("gh returned malformed Sub-issue list");
 	return pages.map((item, index) => {
 		const number = (item as { number?: unknown })?.number;
-		if (!Number.isSafeInteger(number)) throw new Error(`gh returned a malformed Sub-issue entry at ${index}`);
+		if (typeof number !== "number" || !Number.isSafeInteger(number)) throw new Error(`gh returned a malformed Sub-issue entry at ${index}`);
 		return number;
 	});
 }
