@@ -700,7 +700,7 @@ export function migrateLegacyLayout(root: string): MigrationOutcome {
 			affected_paths: initial.dirty_affected_paths,
 			reason: initial.reason,
 		};
-	if (["migration_blocked_active", "invalid"].includes(initial.layout))
+	if (initial.layout === "migration_blocked_active" || initial.layout === "invalid")
 		return {
 			contract: "immune_brain/storage_layout_migration_result/v1",
 			outcome: initial.layout,

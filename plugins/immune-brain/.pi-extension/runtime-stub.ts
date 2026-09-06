@@ -1,8 +1,10 @@
 // Extension-local runtime adapter: type-isolated, executable stub.
 // Extensions import this file directly (relative path, resolvable by the Pi
 // extension loader); it forwards to the real Kernel modules via dynamic
-// import. The runtime source graph (with its pre-existing type debt) is never
-// type-checked from the extension.
+// import. Shared contracts are re-exported as types from the real Kernel
+// modules: `export type` is erased at compile time, so the extension still
+// carries no static runtime import, but a Kernel contract change now breaks
+// the extension's build instead of silently drifting from it.
 
 // --- Types (structural contracts, no runtime import) ---
 export interface EnrollmentCapabilityBinding {
@@ -178,40 +180,15 @@ export interface TaskRecordRead {
 
 // --- Assurance projection (host-neutral Kernel facts, not exported from the
 // public Kernel index) ---
-export interface AssuranceAuthorizationReadiness {
-	state: "resolve_user_decision" | "none";
-	blocked: string | null;
-}
-export interface AssuranceProjection {
-	record_revision: string;
-	workspace_revision: string;
-	intent_revision: number;
-	intent_content_hash: string;
-	diff_hash: string;
-	lifecycle: "active" | "done" | "stopped" | "";
-	artifact_state: "active" | "frozen" | "";
-	risk: "routine" | "material" | "critical" | "";
-	next_obligation: "resolve_findings" | "resolve_user_decision" | "revise_intent" | "submit_assurance" | "run_qa" | "run_review" | "complete" | "none";
-	fresh_acceptance_ids: string[];
-	missing_acceptance_ids: string[];
-	stale_attestation_ids: string[];
-	fresh_approval_kinds: string[];
-	missing_approval_kinds: string[];
-	blocking_finding_ids: string[];
-	unresolved_user_decision_ids: string[];
-	replan_required_ids: string[];
-	independence_violations: string[];
-	open_user_decision_count: number;
-	completion_ready: boolean;
-	authorization: AssuranceAuthorizationReadiness;
-}
-export interface AssuranceProjectionResult {
-	contract: "assurance_kernel/assurance_projection/v1";
-	task_id: string;
-	error: string | null;
-	claim: { task_id: string; lifecycle_status: string } | null;
-	projection: AssuranceProjection;
-}
+export type {
+	AssuranceAuthorizationReadiness,
+	AssuranceProjection,
+	AssuranceProjectionResult,
+} from "../runtime/kernel/assurance_projection";
+import type {
+	AssuranceAuthorizationReadiness,
+	AssuranceProjectionResult,
+} from "../runtime/kernel/assurance_projection";
 
 // --- Runtime forwarding (dynamic import keeps the graph out of tsc) ---
 function kernelPath(module: string): string {
@@ -349,12 +326,8 @@ export interface TaskIntentV1 {
 	acceptance: Array<{ id: string; assertion: string; verification: string }>;
 	scope_hint: string[];
 }
-export interface TaskIntentRead {
-	token: object;
-	content_hash: string;
-	intent: TaskIntentV1;
-	intent_ref: { path: string; revision: number; content_hash: string };
-}
+export type { ReadTaskIntentResult as TaskIntentRead } from "../runtime/kernel/intent";
+import type { ReadTaskIntentResult as TaskIntentRead } from "../runtime/kernel/intent";
 export interface WorkspaceRead {
 	revision: string;
 	state: { contract: string; current_working: string | null };
@@ -420,7 +393,7 @@ export async function projectAssurance(
 	},
 ): Promise<AssuranceProjectionResult> {
 	const mod = await import(/* @vite-ignore */ kernelPath("assurance_projection"));
-	return mod.projectAssurance(root, taskId, diffProvider) as unknown as AssuranceProjectionResult;
+	return mod.projectAssurance(root, taskId, diffProvider) as AssuranceProjectionResult;
 }
 
 export async function deriveAssuranceAuthorization(input: {
@@ -428,5 +401,5 @@ export async function deriveAssuranceAuthorization(input: {
 	open_user_decision_count: number;
 }): Promise<AssuranceAuthorizationReadiness> {
 	const mod = await import(/* @vite-ignore */ kernelPath("assurance_projection"));
-	return mod.deriveAssuranceAuthorization(input) as unknown as AssuranceAuthorizationReadiness;
+	return mod.deriveAssuranceAuthorization(input) as AssuranceAuthorizationReadiness;
 }

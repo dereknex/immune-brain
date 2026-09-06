@@ -24,8 +24,8 @@ import {
 	type ReviewRevision,
 } from "../assurance/review_evidence";
 import { parseVerificationDescriptor } from "../verification_descriptor";
-import { projectAssurance, type AssuranceProjectionResult } from "../kernel/assurance_projection";
-import type { TaskRecord } from "../kernel/types";
+import { projectAssurance, type AssuranceProjection, type AssuranceProjectionResult } from "../kernel/assurance_projection";
+import { isTaskRecordV4, type TaskApprovalV2, type TaskRecord } from "../kernel/types";
 import { readTaskRecord, readTaskRecordRaw } from "../kernel/storage";
 import { canonicalIntentHash, parseTaskIntentV1, readTaskIntent } from "../kernel/intent";
 import { capabilityActionFor, createCanaryApplication } from "../kernel/canary_application";
@@ -51,6 +51,7 @@ import {
 	isPrivilegedOperation,
 	NativeAuthorityError,
 	type NativeConfirmationPort,
+	type PrivilegedOperation,
 } from "./interaction";
 import { ClaudeReviewHost, FileHookEventLog, type ClaudeHookEvent } from "./review_host";
 import { probeHost, type PermissionMode } from "./capability";
@@ -129,10 +130,15 @@ export async function submitClaudeReview(
 	return coordinator.submitReview(taskId, ctx, verdictInput);
 }
 
+/** `extra` arrives as `Record<string, unknown>`; only a real string is a reason. */
+function stopReason(value: unknown): string {
+	return typeof value === "string" && value.length > 0 ? value : "user stop";
+}
+
 function assertProjectionBinding(before: AssuranceProjectionResult, after: AssuranceProjectionResult, allowDiffChange = false): void {
-	const fields = (allowDiffChange
+	const fields: ReadonlyArray<keyof AssuranceProjection> = allowDiffChange
 		? ["record_revision", "workspace_revision", "intent_revision", "intent_content_hash"]
-		: ["record_revision", "workspace_revision", "intent_revision", "intent_content_hash", "diff_hash"]) as const;
+		: ["record_revision", "workspace_revision", "intent_revision", "intent_content_hash", "diff_hash"];
 	if (before.error || !before.claim || after.error || !after.claim || before.claim.task_id !== after.claim.task_id
 		|| fields.some((field) => before.projection[field] !== after.projection[field])) {
 		throw new Error("Task changed after native confirmation; authority aborted before capability issuance");
@@ -205,23 +211,25 @@ async function buildAssuranceSnapshot(
 	projection: AssuranceProjectionResult,
 	runner: FrozenRunner,
 ) {
-	const record = await readTaskRecord(root, taskId);
-	if (!record.record || record.revision !== projection.projection.record_revision) throw new Error("TaskRecord changed before assurance snapshot capture");
-	const intent = record.record.intent_snapshot;
+	const read = await readTaskRecord(root, taskId);
+	const record = read.record;
+	if (!record || read.revision !== projection.projection.record_revision) throw new Error("TaskRecord changed before assurance snapshot capture");
+	const intent = record.intent_snapshot;
 	const descriptors = new Map<string, VerificationDescriptor>();
 	for (const item of intent.acceptance) {
 		const descriptor = parseVerificationDescriptor(item.verification);
 		assertRunnerCompatible(descriptor, runner);
 		descriptors.set(item.id, descriptor);
 	}
-	const v4 = record.record.contract === "assurance_kernel/task_record/v4";
-	const reviewBundle = role === "review" && !v4
-		? captureReviewBundle(root, intent.scope_hint, projection.projection.diff_hash, qaOutcomes(record.record))
+	// `git_base_head` exists only on TaskRecord v4, so this must narrow the union
+	// rather than test the contract string into a plain boolean.
+	const reviewBundle = role === "review" && !isTaskRecordV4(record)
+		? captureReviewBundle(root, intent.scope_hint, projection.projection.diff_hash, qaOutcomes(record))
 		: null;
-	const reviewManifest = role === "review" && v4
+	const reviewManifest = role === "review" && isTaskRecordV4(record)
 		? captureReviewManifest(root, {
 			taskId,
-			baseHead: record.record.git_base_head,
+			baseHead: record.git_base_head,
 			scopeHint: intent.scope_hint,
 			expectedDiffHash: projection.projection.diff_hash,
 			intentRevision: projection.projection.intent_revision,
@@ -231,7 +239,7 @@ async function buildAssuranceSnapshot(
 			lifecycle: projection.projection.lifecycle,
 			artifactState: projection.projection.artifact_state,
 			risk: intent.risk,
-			outcomes: qaOutcomes(record.record),
+			outcomes: qaOutcomes(record),
 		})
 		: null;
 	const dirtyFiles = reviewManifest ? Object.keys(reviewManifest.changed_paths) : reviewBundle ? Object.keys(reviewBundle.dirty_files) : [];
@@ -347,7 +355,13 @@ export interface ClaudeRuntimeOptions {
 	cwd: string;
 	env?: Record<string, string | undefined>;
 	host?: ClaudeReviewHost;
-	ports?: AssuranceCoordinatorPorts;
+	/**
+	 * Overrides layered on top of the real production ports, never a
+	 * replacement for them. A whole synthetic ports object could previously be
+	 * substituted here, so a suite could pass while the object production
+	 * actually wires was never constructed once.
+	 */
+	ports?: Partial<AssuranceCoordinatorPorts>;
 	interactive?: boolean;
 	permissionMode?: PermissionMode;
 	requestConfirmation?: NativeConfirmationPort;
@@ -371,11 +385,11 @@ export class ClaudeRuntime {
 		this.interactive = options.interactive ?? true;
 		this.requestConfirmation = options.requestConfirmation;
 		this.host = options.host ?? new ClaudeReviewHost(new FileHookEventLog());
-		if (options.ports) {
-			this.coordinator = new AssuranceCoordinator({ ...options.ports, host: this.host });
-			return;
-		}
-		this.coordinator = new AssuranceCoordinator(this.createKernelPorts());
+		this.coordinator = new AssuranceCoordinator({
+			...this.createKernelPorts(),
+			...options.ports,
+			host: this.host,
+		});
 	}
 
 	observe(event: ClaudeHookEvent): void {
@@ -395,12 +409,22 @@ export class ClaudeRuntime {
 		await this.coordinator.onSessionShutdown();
 	}
 
+	/**
+	 * The exact ports object the coordinator runs on. Public so a conformance
+	 * suite can drive what production wires instead of a hand-built double: the
+	 * host adapter defects that reached published plugins all lived in this
+	 * object and none of them were reachable from a test while it was private.
+	 */
+	kernelPorts(): AssuranceCoordinatorPorts {
+		return this.createKernelPorts();
+	}
+
 	private createKernelPorts(): AssuranceCoordinatorPorts {
 		return {
 			host: this.host,
 			projectTask: (root, taskId) => projectAssurance(root, taskId, diffSnapshotOf),
-			readTaskRecord: (root, taskId) => readTaskRecord(root, taskId),
-			readTaskIntent: (root, taskId) => readTaskIntentForRecord(root, taskId),
+			readTaskRecord: async (root, taskId) => readTaskRecord(root, taskId),
+			readTaskIntent: async (root, taskId) => readTaskIntentForRecord(root, taskId),
 			frozenRunner: async () => resolveBunRunner(),
 			buildAssurance: (root, taskId, role, projection, runner) => buildAssuranceSnapshot(root, taskId, role, projection, runner),
 			ensureReviewRevision: (root, taskId, projection) => ensureClaudeReviewRevision(root, taskId, projection),
@@ -510,7 +534,7 @@ export class ClaudeRuntime {
 			return repairKernelAuthority(this.cwd, taskId, authority.revision);
 		}
 		if (!isPrivilegedOperation(operation) && operation !== "request_authorization") throw new Error(`unsupported privileged operation ${operation}`);
-		let op = operation;
+		let op: PrivilegedOperation | "request_authorization" | "resolve_user_decision" = operation;
 		let decisionOp: { finding_id: string; resolution: string } | undefined;
 		const projection = await this.status(taskId);
 		if (projection.error || !projection.claim) throw new Error(projection.error ?? "no active backend claim");
@@ -626,7 +650,7 @@ export class ClaudeRuntime {
 				confirmation_ref: confirmation,
 				...(op === "approve_breaking_intent_revision" ? { next_intent: nextIntent, next_intent_ref: nextIntentRef } : {}),
 				...(op === "resolve_user_decision" && decisionOp ? decisionOp : {}),
-				...(op === "stop" ? { reason: extra.reason ?? "user stop" } : {}),
+				...(op === "stop" ? { reason: stopReason(extra.reason) } : {}),
 			});
 			throwIfCancelled(meta.signal);
 			const result = app.execute({
@@ -638,7 +662,7 @@ export class ClaudeRuntime {
 					actor_id: actorId,
 					...(op === "approve_breaking_intent_revision" ? { next_intent: nextIntent, next_intent_ref: nextIntentRef } : {}),
 					...(op === "resolve_user_decision" && decisionOp ? decisionOp : {}),
-					...(op === "stop" ? { reason: extra.reason ?? "user stop" } : {}),
+					...(op === "stop" ? { reason: stopReason(extra.reason) } : {}),
 				} as never,
 				prior_intent_token: priorIntent.token,
 				diffProvider: diffSnapshotOf,
@@ -714,7 +738,7 @@ export class ClaudeRuntime {
 			stagePlanningArtifactTransition(ctx.cwd, result.record);
 			return;
 		}
-		const approval = {
+		const approval: TaskApprovalV2 = {
 			id: `approval-${input.snapshot.role}-${randomUUID().slice(0, 8)}`,
 			kind: input.snapshot.role === "qa" ? "qa" : "review",
 			authority_role: input.snapshot.role === "qa" ? "qa" : "reviewer",

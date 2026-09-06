@@ -2713,6 +2713,9 @@ var TASK_RECORD_CONTRACT_V2 = "assurance_kernel/task_record/v2";
 var TASK_RECORD_CONTRACT_V3 = "assurance_kernel/task_record/v3";
 var TASK_RECORD_CONTRACT_V4 = "assurance_kernel/task_record/v4";
 var REVIEW_REVISION_IDENTITY_CONTRACT = "assurance_kernel/review_revision_identity/v1";
+function isTaskRecordV4(record) {
+  return record.contract === TASK_RECORD_CONTRACT_V4;
+}
 var REDUCED_MUTATION_BRAND = Symbol("assurance-kernel-reduced-mutation-v2");
 var MUTATION_AUTHORITY_CAPABILITY_BRAND = Symbol("assurance-kernel-mutation-authority-capability");
 
@@ -5734,6 +5737,8 @@ function applyTaskAction(input) {
       };
     }
     if (input.terminal) {
+      if (nextRecord.lifecycle === "active")
+        throw new Error("terminal settlement requires a done or stopped TaskRecord lifecycle");
       const tombstone = {
         contract: TASK_TOMBSTONE_CONTRACT,
         task_id,
@@ -6472,11 +6477,9 @@ function enrollCanaryTask(root, input, registry) {
       throw new Error("intent content hash mismatch");
     if (checks.gitBaseHead !== gitBaseHead)
       throw new Error("Git HEAD moved after the enrollment confirmation");
-    if (input.batch && checks.gitBaseHead !== input.batch.expected_head)
-      throw new Error(`batch_head_lineage_broken: expected ${input.batch.expected_head}, found ${checks.gitBaseHead}`);
     registry.consume(input.capability, input.capability_binding);
-    if (input.batch)
-      input.batch.registry.consumeChild(input.batch.capability, input.batch.binding, input.task_id, Date.parse(input.now));
+    if (!gitBaseHead)
+      throw new Error("enrollment requires a committed Git HEAD");
     const record = buildTaskRecordV4(input, checks.intent, gitBaseHead);
     const nextWorkspace = {
       ...checks.workspace.state,
@@ -6493,23 +6496,16 @@ function enrollCanaryTask(root, input, registry) {
       created_at: input.now,
       updated_at: input.now
     };
-    let mutation;
-    try {
-      mutation = commitEnrollmentLocked(root, input.task_id, {
-        contract: "assurance_kernel/workspace_transaction/v2",
-        task_id: input.task_id,
-        expected_record_hash: checks.current.revision,
-        next_record_content: `${JSON.stringify(record, null, 2)}
+    const mutation = commitEnrollmentLocked(root, input.task_id, {
+      contract: "assurance_kernel/workspace_transaction/v2",
+      task_id: input.task_id,
+      expected_record_hash: checks.current.revision,
+      next_record_content: `${JSON.stringify(record, null, 2)}
 `,
-        expected_workspace_hash: checks.workspace.revision,
-        next_workspace_content: `${JSON.stringify(nextWorkspace, null, 2)}
+      expected_workspace_hash: checks.workspace.revision,
+      next_workspace_content: `${JSON.stringify(nextWorkspace, null, 2)}
 `
-      }, claim);
-    } catch (error) {
-      if (input.batch)
-        input.batch.registry.releaseChild(input.batch.capability, input.task_id);
-      throw error;
-    }
+    }, claim);
     return {
       record: mutation.record,
       backend_claim: claim,
@@ -6659,6 +6655,9 @@ async function submitClaudeReview(host, coordinator, ctx, taskId, verdictInput) 
   }
   return coordinator.submitReview(taskId, ctx, verdictInput);
 }
+function stopReason(value) {
+  return typeof value === "string" && value.length > 0 ? value : "user stop";
+}
 function assertProjectionBinding(before, after, allowDiffChange = false) {
   const fields = allowDiffChange ? ["record_revision", "workspace_revision", "intent_revision", "intent_content_hash"] : ["record_revision", "workspace_revision", "intent_revision", "intent_content_hash", "diff_hash"];
   if (before.error || !before.claim || after.error || !after.claim || before.claim.task_id !== after.claim.task_id || fields.some((field) => before.projection[field] !== after.projection[field])) {
@@ -6704,21 +6703,21 @@ async function ensureClaudeReviewRevision(root, taskId, projection) {
   };
 }
 async function buildAssuranceSnapshot(root, taskId, role, projection, runner) {
-  const record = await readTaskRecord(root, taskId);
-  if (!record.record || record.revision !== projection.projection.record_revision)
+  const read = await readTaskRecord(root, taskId);
+  const record = read.record;
+  if (!record || read.revision !== projection.projection.record_revision)
     throw new Error("TaskRecord changed before assurance snapshot capture");
-  const intent = record.record.intent_snapshot;
+  const intent = record.intent_snapshot;
   const descriptors = new Map;
   for (const item of intent.acceptance) {
     const descriptor = parseVerificationDescriptor(item.verification);
     assertRunnerCompatible(descriptor, runner);
     descriptors.set(item.id, descriptor);
   }
-  const v4 = record.record.contract === "assurance_kernel/task_record/v4";
-  const reviewBundle = role === "review" && !v4 ? captureReviewBundle(root, intent.scope_hint, projection.projection.diff_hash, qaOutcomes(record.record)) : null;
-  const reviewManifest = role === "review" && v4 ? captureReviewManifest(root, {
+  const reviewBundle = role === "review" && !isTaskRecordV4(record) ? captureReviewBundle(root, intent.scope_hint, projection.projection.diff_hash, qaOutcomes(record)) : null;
+  const reviewManifest = role === "review" && isTaskRecordV4(record) ? captureReviewManifest(root, {
     taskId,
-    baseHead: record.record.git_base_head,
+    baseHead: record.git_base_head,
     scopeHint: intent.scope_hint,
     expectedDiffHash: projection.projection.diff_hash,
     intentRevision: projection.projection.intent_revision,
@@ -6728,7 +6727,7 @@ async function buildAssuranceSnapshot(root, taskId, role, projection, runner) {
     lifecycle: projection.projection.lifecycle,
     artifactState: projection.projection.artifact_state,
     risk: intent.risk,
-    outcomes: qaOutcomes(record.record)
+    outcomes: qaOutcomes(record)
   }) : null;
   const dirtyFiles = reviewManifest ? Object.keys(reviewManifest.changed_paths) : reviewBundle ? Object.keys(reviewBundle.dirty_files) : [];
   const snapshot = {
@@ -6827,11 +6826,11 @@ class ClaudeRuntime {
     this.interactive = options.interactive ?? true;
     this.requestConfirmation = options.requestConfirmation;
     this.host = options.host ?? new ClaudeReviewHost(new FileHookEventLog);
-    if (options.ports) {
-      this.coordinator = new AssuranceCoordinator({ ...options.ports, host: this.host });
-      return;
-    }
-    this.coordinator = new AssuranceCoordinator(this.createKernelPorts());
+    this.coordinator = new AssuranceCoordinator({
+      ...this.createKernelPorts(),
+      ...options.ports,
+      host: this.host
+    });
   }
   observe(event) {
     this.host.observe(event);
@@ -6845,12 +6844,15 @@ class ClaudeRuntime {
   async shutdown() {
     await this.coordinator.onSessionShutdown();
   }
+  kernelPorts() {
+    return this.createKernelPorts();
+  }
   createKernelPorts() {
     return {
       host: this.host,
       projectTask: (root, taskId) => projectAssurance(root, taskId, diffSnapshotOf),
-      readTaskRecord: (root, taskId) => readTaskRecord(root, taskId),
-      readTaskIntent: (root, taskId) => readTaskIntentForRecord(root, taskId),
+      readTaskRecord: async (root, taskId) => readTaskRecord(root, taskId),
+      readTaskIntent: async (root, taskId) => readTaskIntentForRecord(root, taskId),
       frozenRunner: async () => resolveBunRunner(),
       buildAssurance: (root, taskId, role, projection, runner) => buildAssuranceSnapshot(root, taskId, role, projection, runner),
       ensureReviewRevision: (root, taskId, projection) => ensureClaudeReviewRevision(root, taskId, projection),
@@ -7068,7 +7070,7 @@ class ClaudeRuntime {
         confirmation_ref: confirmation,
         ...op === "approve_breaking_intent_revision" ? { next_intent: nextIntent, next_intent_ref: nextIntentRef } : {},
         ...op === "resolve_user_decision" && decisionOp ? decisionOp : {},
-        ...op === "stop" ? { reason: extra.reason ?? "user stop" } : {}
+        ...op === "stop" ? { reason: stopReason(extra.reason) } : {}
       });
       throwIfCancelled(meta.signal);
       const result = app.execute({
@@ -7080,7 +7082,7 @@ class ClaudeRuntime {
           actor_id: actorId,
           ...op === "approve_breaking_intent_revision" ? { next_intent: nextIntent, next_intent_ref: nextIntentRef } : {},
           ...op === "resolve_user_decision" && decisionOp ? decisionOp : {},
-          ...op === "stop" ? { reason: extra.reason ?? "user stop" } : {}
+          ...op === "stop" ? { reason: stopReason(extra.reason) } : {}
         },
         prior_intent_token: priorIntent.token,
         diffProvider: diffSnapshotOf,

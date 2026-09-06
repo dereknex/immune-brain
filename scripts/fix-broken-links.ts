@@ -19,7 +19,7 @@
 //
 // Reported, NOT rewritten: .imm/*.py, .imm/imm_core/*.py, tests/test_*.py,
 // nonexistent skills/, cross-worktree paths, and any target that doesn't exist.
-import { existsSync, readFileSync, readdirSync, writeFileSync, statSync } from "node:fs"
+import { type Dirent, existsSync, readFileSync, readdirSync, writeFileSync, statSync } from "node:fs"
 import { join, relative, resolve, dirname, basename, normalize } from "node:path"
 
 const REPO_ROOT = process.cwd()
@@ -34,7 +34,7 @@ const BANNER_HISTORICAL = "> Historical note: pre-TypeScript-migration artifact;
 const BANNER_NOTE = "> Note: retired Python file paths appear as inline code and refer to the pre-TypeScript-migration runtime."
 
 function walk(dir: string, out: string[] = []): string[] {
-  let entries: ReturnType<typeof readdirSync>
+  let entries: Dirent[]
   try { entries = readdirSync(dir, { withFileTypes: true }) } catch { return out }
   for (const e of entries) {
     if (e.name === "node_modules" || e.name === ".git") continue

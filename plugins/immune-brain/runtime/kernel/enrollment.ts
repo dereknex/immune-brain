@@ -244,6 +244,10 @@ export function enrollCanaryTask(
 			// consume immediately before the marker write
 			registry.consume(input.capability, input.capability_binding);
 
+			// Set by beforeLock above, which throws when the repository has no
+			// committed HEAD. Re-assert it here: the compiler cannot carry a
+			// closure's narrowing across to this one.
+			if (!gitBaseHead) throw new Error("enrollment requires a committed Git HEAD");
 			const record = buildTaskRecordV4(input, checks.intent, gitBaseHead);
 			const nextWorkspace: WorkspaceStateLike = {
 				...checks.workspace.state,

@@ -17,6 +17,7 @@ import { createInvocationRegistry, type InvocationState, type InvocationToken } 
 import type { ReviewBundle, ReviewManifestV5, ReviewRevision } from "./review_evidence";
 import { buildRoleDelegationPacket } from "../role_prompt_bridge";
 import type { AssuranceProjectionResult } from "../kernel/assurance_projection";
+import type { TaskIntentIdentityToken } from "../kernel/intent_token_registry";
 import type { AssuranceHostPort, HostReviewReservation } from "./host_port";
 
 export type AssuranceRole = "qa" | "review";
@@ -38,7 +39,11 @@ export interface TaskRecordRead {
 	record?: { contract?: string; findings: Array<{ kind: string; status: string }> } | null;
 }
 export interface TaskIntentRead {
-	token?: string;
+	/**
+	 * The kernel's own intent identity token. Declared as `string` before this
+	 * port was ever type checked, which is a shape no host reader has produced.
+	 */
+	token?: TaskIntentIdentityToken;
 }
 
 export interface GithubTerminalProjectionInput {
@@ -873,7 +878,17 @@ export class AssuranceCoordinator {
 		}
 	}
 
-	private unknownAfterCommit(taskId: string, operation: "qa" | "review", operationId: string, reason: string): AssuranceAdvanceResult {
+	/**
+	 * Declared as the wider advance result, which made it unusable from
+	 * `submitReview` without an implicit widen. The value has always been the
+	 * settlement_unknown member both result unions share.
+	 */
+	private unknownAfterCommit(
+		taskId: string,
+		operation: "qa" | "review",
+		operationId: string,
+		reason: string,
+	): { state: "settlement_unknown"; operation: "qa" | "review"; operation_id: string; reason: string } {
 		this.unknownOperations.set(taskId, { operation, operationId, reason });
 		return { state: "settlement_unknown", operation, operation_id: operationId, reason };
 	}

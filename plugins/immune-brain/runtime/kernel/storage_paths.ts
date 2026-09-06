@@ -242,10 +242,6 @@ function inspectOldLayout(root: string): OldLayoutFacts {
 				facts.blocked_active = true;
 				continue;
 			}
-			if (kind === "marker") {
-				facts.pending_marker ??= path;
-				continue;
-			}
 			if (kind === "claim") {
 				facts.blocked_active = true;
 				continue;

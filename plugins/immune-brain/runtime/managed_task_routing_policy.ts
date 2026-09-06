@@ -26,7 +26,7 @@
 
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import {
+import { type Stats,
 	closeSync,
 	constants as fsConstants,
 	fstatSync,
@@ -145,7 +145,7 @@ export function setRoutingPolicyReaderTestHook(
 	routingPolicyReaderTestHook = hook;
 }
 
-function statIdentity(stat: ReturnType<typeof statSync>): {
+function statIdentity(stat: Stats): {
 	dev: number;
 	ino: number;
 	size: number;
