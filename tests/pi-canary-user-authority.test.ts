@@ -217,9 +217,8 @@ describe("pi canary user authority", () => {
 			readiness: { state: "resolve_user_decision", blocked: null },
 		})).toEqual({ operation: "resolve-user-decision" });
 		expect(deriveAuthorizationOperation({
-			readiness: { state: "none", blocked: null },
-			hasOpenReplanRequired: true,
-		})).toEqual({ operation: "stop" });
+			readiness: { state: "authorize_rework", blocked: null },
+		})).toEqual({ operation: "authorize-rework" });
 		expect(deriveAuthorizationOperation({
 			readiness: { state: "none", blocked: "resolve-user-decision requires exactly one open user decision; found 2" },
 		}).blocked).toMatch(/exactly one open user decision/);
@@ -413,31 +412,32 @@ describe("pi canary user authority", () => {
 		}
 	});
 
-	test("request_authorization confirms stop for a parked replan task and releases its claim", async () => {
+	test("request_authorization lets the user continue a task parked for replan", async () => {
 		const root = makeEnrolledRoot();
 		try {
 			seedOpenReplanRequired(root);
 			const { tool } = loadSurface();
 			const ui = makeUI();
 			const result = await tool.execute(
-				"req-stop",
+				"req-rework",
 				{ task_id: TASK, action: { op: "request_authorization" } },
 				undefined,
 				undefined,
 				ctxFor(root, ui, true),
 			);
-			expect(parseToolState(result)).toMatchObject({ state: "applied", operation: "stop", lifecycle: "stopped" });
+			expect(parseToolState(result)).toMatchObject({ state: "applied", operation: "authorize-rework", lifecycle: "active" });
 			expect(ui.confirmCalls).toHaveLength(1);
-			expect(ui.confirmCalls[0].title).toContain("stop");
-			expect(readTaskRecord(root, TASK).record).toBeNull();
-			expect(readAuditTaskPair(root, TASK)?.record.lifecycle).toBe("stopped");
-			expect(readBackendClaim(root)).toBeNull();
+			expect(ui.confirmCalls[0].title).toContain("authorize-rework");
+			const record = readTaskRecord(root, TASK).record;
+			expect(record?.findings.find((finding) => finding.kind === "replan_required")?.status).toBe("resolved");
+			expect(readAuditTaskPair(root, TASK)).toBeNull();
+			expect(readBackendClaim(root)?.lifecycle_status).toBe("active");
 		} finally {
 			rmSync(root, { recursive: true, force: true });
 		}
 	});
 
-	test("cancelling parked replan stop writes nothing", async () => {
+	test("cancelling parked replan authorization writes nothing", async () => {
 		const root = makeEnrolledRoot();
 		try {
 			seedOpenReplanRequired(root);
@@ -451,7 +451,7 @@ describe("pi canary user authority", () => {
 				undefined,
 				ctxFor(root, ui, false),
 			);
-			expect(parseToolState(result)).toMatchObject({ state: "cancelled", operation: "stop" });
+			expect(parseToolState(result)).toMatchObject({ state: "cancelled", operation: "authorize-rework" });
 			expect(ui.confirmCalls).toHaveLength(1);
 			expect(authorityBytes(root)).toEqual(initial);
 		} finally {

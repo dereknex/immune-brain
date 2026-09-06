@@ -3656,6 +3656,7 @@ var ACTION_V2_TYPES = [
   "request_rework",
   "complete",
   "stop",
+  "authorize_rework",
   "resolve_user_decision"
 ];
 var ACTION_BASE_FIELDS = [
@@ -3751,7 +3752,8 @@ function parseTaskAction(raw) {
       };
       break;
     }
-    case "complete": {
+    case "complete":
+    case "authorize_rework": {
       rejectUnknown2(value, [...ACTION_BASE_FIELDS], "action", violations);
       action = { ...base, type: base.type };
       break;
@@ -3809,7 +3811,7 @@ function assertTaskRecordUpdateV3(previousRaw, nextRaw, action) {
       violations.push("non-intent action cannot change the intent snapshot");
     if (next.intent_ref.content_hash !== previous.intent_ref.content_hash)
       violations.push("non-intent action cannot change intent_ref content hash");
-    if (next.intent_ref.path !== previous.intent_ref.path && action.type !== "request_rework" && action.type !== "stop")
+    if (next.intent_ref.path !== previous.intent_ref.path && action.type !== "request_rework" && action.type !== "authorize_rework" && action.type !== "stop")
       violations.push("only artifact transitions may change intent_ref path");
   }
   if (next.attestations.length < previous.attestations.length)
@@ -3821,7 +3823,7 @@ function assertTaskRecordUpdateV3(previousRaw, nextRaw, action) {
     if (!current || JSON.stringify(current) !== JSON.stringify(prior))
       violations.push(`attestation ${prior.id} was rewritten`);
   }
-  const resolvingFindingIds = action.type === "resolve_finding" ? [action.finding_id] : action.type === "resolve_user_decision" ? [action.finding_id] : action.type === "approve_breaking_intent_revision" ? previous.findings.filter((item) => item.kind === "replan_required" && item.status === "open").map((item) => item.id) : [];
+  const resolvingFindingIds = action.type === "resolve_finding" ? [action.finding_id] : action.type === "resolve_user_decision" ? [action.finding_id] : action.type === "authorize_rework" || action.type === "approve_breaking_intent_revision" ? previous.findings.filter((item) => item.kind === "replan_required" && item.status === "open").map((item) => item.id) : [];
   const reworkFindingIds = action.type === "request_rework" ? new Set(action.findings.map((item) => item.id)) : new Set;
   for (const prior of previous.findings) {
     const current = next.findings.find((item) => item.id === prior.id);
@@ -5050,6 +5052,8 @@ function deriveAssuranceAuthorization(input) {
       state: "none",
       blocked: `resolve-user-decision requires exactly one open user decision; found ${input.open_user_decision_count}`
     };
+  if (input.next_obligation === "revise_intent")
+    return { state: "authorize_rework", blocked: null };
   return { state: "none", blocked: null };
 }
 function emptyProjection() {
@@ -5300,7 +5304,7 @@ function intentRefMatches(intent, ref) {
   return ref.path === `docs/plans/${intent.task_id}.intent.json` && ref.content_hash === canonicalIntentHash(intent);
 }
 function hasPrivilegedKind(action) {
-  return action.type === "record_approval" || action.type === "approve_breaking_intent_revision" || action.type === "request_rework" || action.type === "stop" || action.type === "resolve_user_decision";
+  return action.type === "record_approval" || action.type === "approve_breaking_intent_revision" || action.type === "request_rework" || action.type === "authorize_rework" || action.type === "stop" || action.type === "resolve_user_decision";
 }
 function findingsDigestV2(findings) {
   const normalized = findings.map((finding) => ({
@@ -5518,8 +5522,8 @@ function reduceTask(recordRaw, actionRaw, authorityAudit = null, changedPaths) {
           "request_rework requires review, qa, or user authority"
         ]);
       const round = reviewRound(record);
-      const reviewAuthorityReworks = record.history.filter((entry) => entry.type === "request_rework" && entry.authority?.authority_kind === "review").length;
-      const parkForReplan = authorityAudit.authority_kind === "review" && reviewAuthorityReworks >= 1;
+      const hasPriorBlockingReviewRework = record.findings.some((finding) => finding.source === "review" && finding.kind === "blocking" && finding.review_round !== null);
+      const parkForReplan = authorityAudit.authority_kind === "review" && hasPriorBlockingReviewRework && action.findings.some((finding) => finding.kind === "blocking");
       if (!parkForReplan) {
         record.artifact_state = "active";
         record.intent_ref.path = `docs/plans/${record.task_id}.intent.json`;
@@ -5534,8 +5538,8 @@ function reduceTask(recordRaw, actionRaw, authorityAudit = null, changedPaths) {
         record.findings.push({
           ...finding,
           status: "open",
-          source: "review",
-          review_round: round
+          source: authorityAudit.authority_kind === "review" ? "review" : "execution",
+          review_round: authorityAudit.authority_kind === "review" ? round : null
         });
       }
       if (parkForReplan && !record.findings.some((item) => item.status === "open" && item.kind === "replan_required")) {
@@ -5556,6 +5560,27 @@ function reduceTask(recordRaw, actionRaw, authorityAudit = null, changedPaths) {
         record.findings.push(boundary);
       }
       appendHistory(record, action, from, `review_round_${round}`, authorityAudit);
+      break;
+    }
+    case "authorize_rework": {
+      if (record.lifecycle !== "active")
+        throw new KernelInvariantError([
+          `cannot authorize rework while lifecycle is ${record.lifecycle}`
+        ]);
+      if (authorityAudit?.authority_kind !== "user")
+        throw new KernelInvariantError([
+          "authorize_rework requires literal-user authority"
+        ]);
+      const open = record.findings.filter((finding) => finding.kind === "replan_required" && finding.status === "open");
+      if (open.length === 0)
+        throw new KernelInvariantError([
+          "authorize_rework requires an open replan boundary"
+        ]);
+      for (const finding of open)
+        finding.status = "resolved";
+      record.artifact_state = "active";
+      record.intent_ref.path = `docs/plans/${record.task_id}.intent.json`;
+      appendHistory(record, action, from, open.map((finding) => finding.id).join(","), authorityAudit);
       break;
     }
     case "complete": {
@@ -5688,7 +5713,7 @@ function applyTaskAction(input) {
           "intent token does not match the committed record intent"
         ]);
     }
-    const privileged = action.type === "record_approval" || action.type === "approve_breaking_intent_revision" || action.type === "request_rework" || action.type === "stop" || action.type === "resolve_user_decision";
+    const privileged = action.type === "record_approval" || action.type === "approve_breaking_intent_revision" || action.type === "request_rework" || action.type === "authorize_rework" || action.type === "stop" || action.type === "resolve_user_decision";
     const expectedAuthority = privileged ? {
       task_id,
       action,
@@ -5814,6 +5839,8 @@ function capabilityActionFor(input) {
       return { ...base, approval: input.approval };
     case "request_rework":
       return { ...base, findings: input.findings };
+    case "authorize_rework":
+      return { ...base, type: "authorize_rework" };
     case "stop":
       return { ...base, reason: input.reason };
     case "approve_breaking_intent_revision":
@@ -5960,7 +5987,7 @@ function createCanaryApplication(registry) {
     const hasBoundSpec = snapshot.intent_snapshot.scope_hint.some((path) => /^docs\/specs\/(?!archive\/)[^/]+\.spec\.md$/.test(path) && snapshot.intent_snapshot.scope_hint.includes(archivePath(path)));
     if (operation.op === "complete" && hasBoundSpec && snapshot.record.artifact_state !== "frozen")
       throw new KernelInvariantError(["complete requires frozen planning artifacts"]);
-    const artifactTransition = snapshot.record.artifact_state === "frozen" && (operation.op === "request_rework" || operation.op === "approve_breaking_intent_revision") ? transitionFor(input.root, snapshot.record, "restore") : operation.op === "stop" && snapshot.record.artifact_state !== "frozen" ? transitionFor(input.root, snapshot.record, "freeze", true) : undefined;
+    const artifactTransition = snapshot.record.artifact_state === "frozen" && (operation.op === "request_rework" || operation.op === "authorize_rework" || operation.op === "approve_breaking_intent_revision") ? transitionFor(input.root, snapshot.record, "restore") : operation.op === "stop" && snapshot.record.artifact_state !== "frozen" ? transitionFor(input.root, snapshot.record, "freeze", true) : undefined;
     const event_id = `${operation.op}:${input.task_id}:${at}`;
     const base = {
       event_id,
@@ -6025,6 +6052,10 @@ function createCanaryApplication(registry) {
       case "stop":
         capability = operation.capability;
         action = { ...base, type: "stop", reason: operation.reason };
+        break;
+      case "authorize_rework":
+        capability = operation.capability;
+        action = { ...base, type: "authorize_rework" };
         break;
       case "resolve_user_decision":
         capability = operation.capability;
@@ -7009,6 +7040,8 @@ class ClaudeRuntime {
           throw new Error(`resolve-user-decision requires exactly one open user decision; found ${open.length}`);
         op = "resolve_user_decision";
         decisionOp = { finding_id: open[0].id, resolution: `resume after literal-user decision: ${open[0].summary}` };
+      } else if (readiness.state === "authorize_rework") {
+        op = "authorize_rework";
       } else {
         throw new Error(readiness.blocked ?? "no unique host-derived authorization operation");
       }
@@ -7125,7 +7158,7 @@ class ClaudeRuntime {
         diffProvider: diffSnapshotOf,
         now
       });
-      if (op === "stop" || op === "approve_breaking_intent_revision")
+      if (op === "stop" || op === "authorize_rework" || op === "approve_breaking_intent_revision")
         stagePlanningArtifactTransition(this.cwd, result.record);
       return result;
     } catch (error) {

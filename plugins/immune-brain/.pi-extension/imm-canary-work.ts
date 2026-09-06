@@ -177,6 +177,7 @@ export type { AssuranceRole } from "./pi-canary-assurance";
 export type AuthorizeOperation =
 	| "approve-breaking-intent-revision"
 	| "resolve-user-decision"
+	| "authorize-rework"
 	| "stop";
 
 export interface SnapshotDescriptorInput {
@@ -841,6 +842,9 @@ export default function (
 						`Resolution: ${userDecisionOperation.resolution}`,
 					]
 				: []),
+			...(operation === "authorize-rework"
+				? [`Replan boundaries: ${projection.projection.replan_required_ids.join(", ")}`]
+				: []),
 			...(nextIntent
 				? [
 						`Next Intent: rev ${nextIntent.revision} (${nextIntentHash})`,
@@ -888,7 +892,11 @@ export default function (
 			if (nextIntent) {
 				restoreStagedIntent();
 			}
-			if (operation !== "stop" && operation !== "approve-breaking-intent-revision")
+			if (
+				operation !== "stop" &&
+				operation !== "approve-breaking-intent-revision" &&
+				operation !== "authorize-rework"
+			)
 				await recordCancelledUserDecision(ctx, taskId, operation, snapshotDigestRef).catch(() => undefined);
 			progression.closeInvocation(invocation);
 			return { state: "cancelled", operation, reason: "confirmation aborted" };
@@ -897,7 +905,11 @@ export default function (
 			if (nextIntent) {
 				restoreStagedIntent();
 			}
-			if (operation !== "stop" && operation !== "approve-breaking-intent-revision")
+			if (
+				operation !== "stop" &&
+				operation !== "approve-breaking-intent-revision" &&
+				operation !== "authorize-rework"
+			)
 				await recordCancelledUserDecision(ctx, taskId, operation, snapshotDigestRef).catch(() => undefined);
 			progression.closeInvocation(invocation);
 			return { state: "cancelled", operation, reason: "cancelled" };
@@ -939,7 +951,9 @@ export default function (
 							next_intent: nextIntent!,
 							next_intent_ref: nextIntentRef!,
 						}
-					: userDecisionOperation!;
+					: operation === "authorize-rework"
+						? { op: "authorize_rework" as const }
+						: userDecisionOperation!;
 				// The exact host-built operation is shared by capability digest and
 				// application payload; command arguments cannot inject authority fields.
 				try {
@@ -981,8 +995,9 @@ export default function (
 						now,
 					})) as unknown as { record: { lifecycle: string; artifact_state: string; intent_ref: { path: string }; intent_snapshot: { scope_hint: string[] } } };
 					if (
-						exactOperation.op === "stop"
-						|| exactOperation.op === "approve_breaking_intent_revision"
+						exactOperation.op === "stop" ||
+						exactOperation.op === "authorize_rework" ||
+						exactOperation.op === "approve_breaking_intent_revision"
 					) stagePlanningArtifactTransition(ctx.cwd, result.record);
 					return { state: "applied", operation, lifecycle: result.record.lifecycle };
 			} catch (error) {
@@ -1015,9 +1030,6 @@ export default function (
 			return { state: "blocked", reason: "TaskRecord changed while deriving authorization operation" };
 		const derived = deriveAuthorizationOperation({
 			readiness: projection.projection.authorization,
-			hasOpenReplanRequired: read.record.findings.some(
-				(finding) => finding.kind === "replan_required" && finding.status === "open",
-			),
 		});
 		if ("blocked" in derived) return { state: "blocked", reason: derived.blocked };
 		return authorizeExactOperation(taskId, derived.operation, ctx);
@@ -1030,15 +1042,14 @@ export default function (
 
 export type DerivedAuthorizationOperation =
 	| "resolve-user-decision"
-	| "stop";
+	| "authorize-rework";
 
 // Kernel projection is the sole source of authorization readiness.
 export function deriveAuthorizationOperation(input: {
 	readiness: AssuranceAuthorizationReadiness;
-	hasOpenReplanRequired?: boolean;
 }): { operation: DerivedAuthorizationOperation } | { blocked: string } {
-	if (input.hasOpenReplanRequired) return { operation: "stop" };
 	if (input.readiness.state === "resolve_user_decision") return { operation: "resolve-user-decision" };
+	if (input.readiness.state === "authorize_rework") return { operation: "authorize-rework" };
 	if (input.readiness.blocked) return { blocked: input.readiness.blocked };
 	return { blocked: "no unique host-derived authorization operation" };
 }

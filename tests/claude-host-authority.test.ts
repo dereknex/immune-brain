@@ -14,8 +14,10 @@ import { tmpdir } from "node:os";
 import { ClaudeReviewHost, FileHookEventLog, MemoryHookEventLog, hookEventPath, parseHookStdin, REVIEWER_AGENT, AGENT_TOOL } from "../plugins/immune-brain/runtime/claude/review_host";
 import { createMcpRuntime, handleJsonRpc, listMcpTools, serveStdio } from "../plugins/immune-brain/runtime/claude/mcp_server";
 import { ClaudeRuntime, diffHashOf, diffSnapshotOf, submitClaudeReview, type ToolMeta } from "../plugins/immune-brain/runtime/claude/kernel_ports";
-import { createCanaryApplication } from "../plugins/immune-brain/runtime/kernel/canary_application";
-import { createMutationAuthorityRegistry } from "../plugins/immune-brain/runtime/kernel/authority_port";
+import { createCanaryApplication, capabilityActionFor } from "../plugins/immune-brain/runtime/kernel/canary_application";
+import { createMutationAuthorityRegistry, digestOfAction } from "../plugins/immune-brain/runtime/kernel/authority_port";
+import { createMutationAuthorityCapabilityForTest } from "./fixtures/mutation-authority-test-seam";
+import { findingsDigestV2 } from "../plugins/immune-brain/runtime/kernel/reducer";
 import { readTaskIntent } from "../plugins/immune-brain/runtime/kernel/intent";
 import { confirmationRef, evaluateNativeGate, PRIVILEGED_OPERATIONS } from "../plugins/immune-brain/runtime/claude/interaction";
 import { readTaskRecord } from "../plugins/immune-brain/runtime/kernel/storage";
@@ -118,7 +120,7 @@ function reviewRequest(operationId: string, prompt = `prompt-${operationId}`) {
 	return { taskId: TASK, operationId, prompt, evidencePath: "/tmp/review.json", maxTurns: 1 };
 }
 
-function authorityFixtureRoot(taskId: string): { root: string; intent: Record<string, unknown> } {
+function authorityFixtureRoot(taskId: string, withSpec = false): { root: string; intent: Record<string, unknown> } {
 	const root = mkdtempSync(join(tmpdir(), "claude-breaking-approval-"));
 	const intent = {
 		contract: "assurance_kernel/task_intent/v1",
@@ -126,13 +128,20 @@ function authorityFixtureRoot(taskId: string): { root: string; intent: Record<st
 		owner: "user",
 		goal: "exercise breaking approval",
 		acceptance: [{ id: "acc-1", assertion: "initial assertion", verification: "bun test" }],
-		scope_hint: [`docs/plans/${taskId}.intent.json`],
+		scope_hint: [
+			`docs/plans/${taskId}.intent.json`,
+			...(withSpec ? [`docs/specs/${taskId}.spec.md`, `docs/specs/archive/${taskId}.spec.md`] : []),
+		],
 		risk: "routine",
 		revision: 1,
 	};
 	mkdirSync(join(root, ".imm", "state"), { recursive: true });
 	mkdirSync(join(root, "docs", "plans"), { recursive: true });
 	writeFileSync(join(root, "docs", "plans", `${taskId}.intent.json`), `${JSON.stringify(intent, null, 2)}\n`);
+	if (withSpec) {
+		mkdirSync(join(root, "docs", "specs", "archive"), { recursive: true });
+		writeFileSync(join(root, "docs", "specs", `${taskId}.spec.md`), `# ${taskId}\n`);
+	}
 	execFileSync("git", ["init", "-q"], { cwd: root });
 	execFileSync("git", ["add", "-A"], { cwd: root });
 	execFileSync("git", ["-c", "user.name=test", "-c", "user.email=test@example.com", "commit", "-q", "-m", "fixture"], { cwd: root });
@@ -703,6 +712,61 @@ describe("claude host authority", () => {
 		});
 		const result = await runtime.authorize(taskId, "request_authorization", meta("authorize"));
 		const finding = (result.record as { findings: Array<{ id: string; status: string }> }).findings.find((item) => item.id === "user-decision-1");
+		expect(finding?.status).toBe("resolved");
+	});
+
+	test("request_authorization lets the user continue past a replan boundary", async () => {
+		const taskId = "authorize-rework";
+		const fixture = authorityFixtureRoot(taskId, true);
+		const runtime = new ClaudeRuntime({
+			cwd: fixture.root,
+			env: ENV,
+			interactive: true,
+			permissionMode: "manual",
+			requestConfirmation: async ({ operation }) => ({ decision: "accept", requestId: `nested-${operation}` }),
+		});
+		const meta = (toolCallId: string): ToolMeta => ({ taskId, sessionId: "s", toolCallId, requiresUserInteraction: true, interactive: true, permissionMode: "manual" });
+		await runtime.enroll(taskId, meta("enroll"));
+		const registry = createMutationAuthorityRegistry();
+		const app = createCanaryApplication(registry);
+		const apply = async (operation: Record<string, unknown>, at: string) => {
+			const prior = await readTaskIntent(fixture.root, taskId, readTaskRecord(fixture.root, taskId).record!.intent_ref.path);
+			return app.execute({
+				root: fixture.root,
+				task_id: taskId,
+				operation: { ...operation, actor_id: operation.actor_id ?? "reviewer" } as never,
+				prior_intent_token: prior.token,
+				diffProvider: (root, record) => diffHashOf(root, record as never),
+				now: at,
+			});
+		};
+		const rework = async (id: string, at: string) => {
+			await apply({ op: "freeze_artifacts", actor_id: "executor" }, at);
+			execFileSync("git", ["add", "-A"], { cwd: fixture.root });
+			const record = readTaskRecord(fixture.root, taskId);
+			const finding = { id, kind: "blocking", status: "open", acceptance_id: "A1", source: "review", review_round: null, summary: "review needs rework" };
+			const action = capabilityActionFor({ op: "request_rework", task_id: taskId, at, actor_id: "reviewer", findings: [finding] });
+			const capability = createMutationAuthorityCapabilityForTest(registry, {
+				authority_kind: "review",
+				task_id: taskId,
+				action_digest: digestOfAction(action),
+				expected_record_hash: record.revision,
+				intent_revision: record.record!.intent_snapshot.revision,
+				intent_content_hash: record.record!.intent_ref.content_hash,
+				diff_hash: diffHashOf(fixture.root, record.record as never),
+				actor_id: "reviewer",
+				confirmation_ref: `review-${id}`,
+				expires_at: "2099-01-01T00:00:00.000Z",
+				findings_digest: findingsDigestV2([finding] as never[]),
+			});
+			await apply({ op: "request_rework", capability, findings: [finding] }, at);
+			execFileSync("git", ["add", "-A"], { cwd: fixture.root });
+		};
+		await rework("review-1", "2098-09-07T00:00:01.000Z");
+		await rework("review-2", "2098-09-07T00:00:03.000Z");
+		const result = await runtime.authorize(taskId, "request_authorization", meta("authorize"));
+		const finding = (result.record as { findings: Array<{ kind: string; status: string }>; lifecycle: string }).findings.find((item) => item.kind === "replan_required");
+		expect(result.record.lifecycle).toBe("active");
 		expect(finding?.status).toBe("resolved");
 	});
 

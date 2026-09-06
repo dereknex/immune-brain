@@ -160,6 +160,7 @@ export function applyTaskAction(
 			action.type === "record_approval" ||
 			action.type === "approve_breaking_intent_revision" ||
 			action.type === "request_rework" ||
+			action.type === "authorize_rework" ||
 			action.type === "stop" ||
 			action.type === "resolve_user_decision";
 

@@ -550,7 +550,7 @@ export class ClaudeRuntime {
 			return repairKernelAuthority(this.cwd, taskId, authority.revision);
 		}
 		if (!isPrivilegedOperation(operation) && operation !== "request_authorization") throw new Error(`unsupported privileged operation ${operation}`);
-		let op: PrivilegedOperation | "request_authorization" | "resolve_user_decision" = operation;
+		let op: PrivilegedOperation | "request_authorization" | "resolve_user_decision" | "authorize_rework" = operation;
 		let decisionOp: { finding_id: string; resolution: string } | undefined;
 		const projection = await this.status(taskId);
 		if (projection.error || !projection.claim) throw new Error(projection.error ?? "no active backend claim");
@@ -567,6 +567,8 @@ export class ClaudeRuntime {
 				if (open.length !== 1) throw new Error(`resolve-user-decision requires exactly one open user decision; found ${open.length}`);
 				op = "resolve_user_decision";
 				decisionOp = { finding_id: open[0].id, resolution: `resume after literal-user decision: ${open[0].summary}` };
+			} else if (readiness.state === "authorize_rework") {
+				op = "authorize_rework";
 			} else {
 				throw new Error(readiness.blocked ?? "no unique host-derived authorization operation");
 			}
@@ -684,7 +686,11 @@ export class ClaudeRuntime {
 				diffProvider: diffSnapshotOf,
 				now,
 			});
-			if (op === "stop" || op === "approve_breaking_intent_revision") stagePlanningArtifactTransition(this.cwd, result.record);
+			if (
+				op === "stop" ||
+				op === "authorize_rework" ||
+				op === "approve_breaking_intent_revision"
+			) stagePlanningArtifactTransition(this.cwd, result.record);
 			return result;
 		} catch (error) {
 			if (sidecar && priorBytes && priorIndexState) {

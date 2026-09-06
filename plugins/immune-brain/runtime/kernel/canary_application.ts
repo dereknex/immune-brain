@@ -55,6 +55,7 @@ export type CanaryOperation =
 	| { op: "approve_breaking_intent_revision"; capability: object; next_intent: TaskIntentV1; actor_id: string }
 	| { op: "complete"; actor_id: string }
 	| { op: "stop"; capability: object; reason: string; actor_id: string }
+	| { op: "authorize_rework"; capability: object; actor_id: string }
 	| { op: "resolve_user_decision"; capability: object; finding_id: string; resolution: string; actor_id: string };
 
 export interface CanaryExecuteInput {
@@ -142,6 +143,8 @@ export function capabilityActionFor(input: {
 			return { ...base, approval: input.approval } as TaskAction;
 		case "request_rework":
 			return { ...base, findings: input.findings } as TaskAction;
+		case "authorize_rework":
+			return { ...base, type: "authorize_rework" } as TaskAction;
 		case "stop":
 			return { ...base, reason: input.reason } as TaskAction;
 		case "approve_breaking_intent_revision":
@@ -326,15 +329,17 @@ export function createCanaryApplication(
 		);
 		if (operation.op === "complete" && hasBoundSpec && snapshot.record.artifact_state !== "frozen")
 			throw new KernelInvariantError(["complete requires frozen planning artifacts"]);
-		const artifactTransition = snapshot.record.artifact_state === "frozen"
-			&& (
-				operation.op === "request_rework"
-				|| operation.op === "approve_breaking_intent_revision"
+		const artifactTransition =
+			snapshot.record.artifact_state === "frozen" &&
+			(
+				operation.op === "request_rework" ||
+				operation.op === "authorize_rework" ||
+				operation.op === "approve_breaking_intent_revision"
 			)
-			? transitionFor(input.root, snapshot.record, "restore")
-			: operation.op === "stop" && snapshot.record.artifact_state !== "frozen"
-				? transitionFor(input.root, snapshot.record, "freeze", true)
-				: undefined;
+				? transitionFor(input.root, snapshot.record, "restore")
+				: operation.op === "stop" && snapshot.record.artifact_state !== "frozen"
+					? transitionFor(input.root, snapshot.record, "freeze", true)
+					: undefined;
 		const event_id = `${operation.op}:${input.task_id}:${at}`;
 		const base = {
 			event_id,
@@ -399,6 +404,10 @@ export function createCanaryApplication(
 			case "stop":
 				capability = operation.capability;
 				action = { ...base, type: "stop", reason: operation.reason };
+				break;
+			case "authorize_rework":
+				capability = operation.capability;
+				action = { ...base, type: "authorize_rework" };
 				break;
 			case "resolve_user_decision":
 				capability = operation.capability;
