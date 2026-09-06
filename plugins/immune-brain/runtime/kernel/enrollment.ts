@@ -8,6 +8,10 @@ import {
 	type EnrollmentAuthorityRegistry,
 	type EnrollmentCapabilityBinding,
 } from "./enrollment_authority";
+import type {
+	BatchAuthorityRegistry,
+	BatchAuthorizationBinding,
+} from "./batch_authority";
 import { readTaskTombstone, type BackendClaim } from "./backend_claim";
 import { preparePiCanary, readGitHead } from "./pi_canary_prepare";
 import {
@@ -18,6 +22,19 @@ import {
 } from "./storage";
 import type { TaskRecord, TaskRecordV4, WorkspaceStateLike } from "./types";
 
+/**
+ * Present only for a batch-derived enrollment. The child slot is consumed
+ * inside the same store lock as the TaskRecord write and released again if that
+ * write does not commit, so a consumed slot and a TaskRecord always agree.
+ */
+export interface EnrollBatchContext {
+	registry: BatchAuthorityRegistry;
+	capability: object;
+	binding: BatchAuthorizationBinding;
+	/** base_head, then each commit this batch created on its own branch. */
+	expected_head: string;
+}
+
 export interface EnrollCanaryInput {
 	task_id: string;
 	intent_path: string;
@@ -25,6 +42,7 @@ export interface EnrollCanaryInput {
 	preparation_digest: string;
 	capability: object;
 	capability_binding: EnrollmentCapabilityBinding;
+	batch?: EnrollBatchContext;
 	now: string;
 }
 
@@ -241,8 +259,41 @@ export function enrollCanaryTask(
 			if (checks.gitBaseHead !== gitBaseHead)
 				throw new Error("Git HEAD moved after the enrollment confirmation");
 
+			// A batch-derived enrollment must still stand on the lineage the
+			// literal user confirmed: child N's base is the commit child N-1
+			// produced on the batch branch, and child 1's base is base_head.
+			// expected_head is caller-supplied, so anchor its origin here rather
+			// than trusting the caller's own assertion: before this batch has
+			// consumed any slot it has created no commit, so the only lineage
+			// value it can hold is the confirmed base_head.
+			if (input.batch) {
+				const batch = input.batch.registry.inspect(
+					input.batch.capability,
+					input.batch.binding,
+					Date.parse(input.now),
+				);
+				if (
+					input.batch.registry.consumedChildren(input.batch.capability).length === 0 &&
+					input.batch.expected_head !== batch.base_head
+				)
+					throw new Error(
+						`batch_head_lineage_broken: the first child must enroll on the confirmed base_head ${batch.base_head}, not ${input.batch.expected_head}`,
+					);
+				if (checks.gitBaseHead !== input.batch.expected_head)
+					throw new Error(
+						`batch_head_lineage_broken: expected ${input.batch.expected_head}, found ${checks.gitBaseHead}`,
+					);
+			}
+
 			// consume immediately before the marker write
 			registry.consume(input.capability, input.capability_binding);
+			if (input.batch)
+				input.batch.registry.consumeChild(
+					input.batch.capability,
+					input.batch.binding,
+					input.task_id,
+					Date.parse(input.now),
+				);
 
 			// Set by beforeLock above, which throws when the repository has no
 			// committed HEAD. Re-assert it here: the compiler cannot carry a
@@ -264,19 +315,27 @@ export function enrollCanaryTask(
 				created_at: input.now,
 				updated_at: input.now,
 			};
-			const mutation = commitEnrollmentLocked(
-				root,
-				input.task_id,
-				{
-					contract: "assurance_kernel/workspace_transaction/v2",
-					task_id: input.task_id,
-					expected_record_hash: checks.current.revision,
-					next_record_content: `${JSON.stringify(record, null, 2)}\n`,
-					expected_workspace_hash: checks.workspace.revision,
-					next_workspace_content: `${JSON.stringify(nextWorkspace, null, 2)}\n`,
-				},
-				claim as unknown as Record<string, unknown>,
-			);
+			let mutation: ReturnType<typeof commitEnrollmentLocked>;
+			try {
+				mutation = commitEnrollmentLocked(
+					root,
+					input.task_id,
+					{
+						contract: "assurance_kernel/workspace_transaction/v2",
+						task_id: input.task_id,
+						expected_record_hash: checks.current.revision,
+						next_record_content: `${JSON.stringify(record, null, 2)}\n`,
+						expected_workspace_hash: checks.workspace.revision,
+						next_workspace_content: `${JSON.stringify(nextWorkspace, null, 2)}\n`,
+					},
+					claim as unknown as Record<string, unknown>,
+				);
+			} catch (error) {
+				// No TaskRecord was written, so the child slot must not stay used.
+				if (input.batch)
+					input.batch.registry.releaseChild(input.batch.capability, input.task_id);
+				throw error;
+			}
 			return {
 				record: mutation.record,
 				backend_claim: claim,
