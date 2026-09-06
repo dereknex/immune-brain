@@ -1,5 +1,83 @@
 # Changelog
 
+## 3.6.4
+
+### Patch Changes
+
+- [#39](https://github.com/dereknex/immune-brain/pull/39) [`5a14619`](https://github.com/dereknex/immune-brain/commit/5a14619ad8e2b383c5c99646d46b689e554c837b) Thanks [@dereknex](https://github.com/dereknex)! - Publish the full Review revision identity from the Claude Host
+
+  `submitReview` re-derives the Review revision and compares `base_head`,
+  `review_commit`, `review_tree` and `manifest_digest` against the reservation. The
+  Claude Host adapter returned only the commit identity, so the last comparison put
+  a real digest against `undefined` and every TaskRecord v4 submission stopped with
+  `review_preparation_failed: Review revision changed before submission` — an
+  unfalsifiable failure, because the revision it named had not moved. No Review
+  could settle on that Host.
+
+  The adapter now recomputes the manifest and republishes the same four fields the
+  Review snapshot binds, using the outcomes of the settled QA attestation. The Pi
+  adapter already recomputed the manifest but drew its outcomes from a preflight
+  stand-in, which matched the settled attestation only because deterministic QA
+  happens to write that exact summary; it now reads the attestation too, so both
+  hosts agree by construction rather than by coincidence.
+
+  Adds `tests/review-revision-identity-conformance.test.ts`, which drives a real
+  repository and a real TaskRecord through `advance` and `submitReview`. A port
+  double cannot express this defect, which is why the existing coordinator suites
+  never saw it.
+
+- [#40](https://github.com/dereknex/immune-brain/pull/40) [`934115b`](https://github.com/dereknex/immune-brain/commit/934115b9c3fb4cdce100321d8930209faa413297) Thanks [@dereknex](https://github.com/dereknex)! - Typecheck the repository and gate every pull request
+
+  Four host-adapter defects reached published plugins in a row. The systemic cause
+  was not any one of them: this repository had never been type checked, and no
+  check ran before a merge.
+
+  There was no `tsconfig.json`, no `tsc` invocation anywhere, and TypeScript was
+  not even a dependency. Turning the compiler on reported 59 errors in the runtime
+  and script sources, 17 of them (36%) in `runtime/claude/kernel_ports.ts` and
+  `runtime/claude/review_host.ts` — the two files that produced three of the four
+  escapes. The compiler was already pointing at the shipped defect family:
+  `'{ review_revision?: … }' is not assignable to 'TaskApprovalV2'` and
+  `Property 'git_base_head' does not exist on type 'TaskRecord'`.
+
+  All 59 are fixed, none by widening to `any`. The substantive ones:
+
+  - The Claude approval literal was untyped, so `kind` widened to `string` and
+    every check on `review_revision` — the exact field family that shipped broken
+    four times — was disabled. It is now a declared `TaskApprovalV2`.
+  - Reading `git_base_head` off a `TaskRecord` union tested the contract string
+    into a plain boolean, which does not narrow. Adds `isTaskRecordV4`, and both
+    host adapters now prove the field is present before binding a revision.
+  - `runtime/claude/review_host.ts` matched a reservation on `sessionId` and
+    `agentId`, which `PendingReview` never declared; every check was inert and the
+    function had no callers. Removed.
+  - `commitEnrollmentLocked` was declared as returning a v2 record while returning
+    a v4 one, and `JournalReasonCode` was missing the 13 codes the Kernel CLI
+    actually emits.
+  - A `TaskTombstone` could be written with `terminal_lifecycle: "active"`, which
+    its own contract forbids; settlement now refuses a nonterminal record.
+  - `failCanaryTool` could not report `review_preparation_failed`, a declared
+    `ToolFailureV1` state and a documented Loop recovery path.
+  - `notifyOnce` was called through a coordinator port that supplies no UI.
+
+  Closes the type-level hole behind the last escape: `ReviewRevision.manifest_digest`
+  was optional, so a host returning the bare commit identity still satisfied
+  `ensureReviewRevision`. The bare identity is now a separate
+  `ReviewRevisionCommit`, and omitting the digest fails the build instead of every
+  v4 submission at runtime. Deletes the unused `ensureReviewRevision` export that
+  defined the loose shape.
+
+  Makes the production port wiring reachable from tests. `ClaudeRuntime.kernelPorts()`
+  returns the object the coordinator actually runs on, and its `ports` option now
+  layers overrides on top of it rather than replacing it wholesale; the Pi ports
+  move out of an anonymous default export into
+  `createPiAssuranceProgressionPorts`. Every escaped defect lived in these two
+  objects, and neither was constructible from a test.
+
+  Adds `.github/workflows/ci.yml` on `pull_request`, running typecheck, the
+  plugin build and doc sync checks, versioning validation and `bun test`. Adds
+  `bun run typecheck` and wires it into `verify:release`.
+
 ## 3.6.3
 
 ### Patch Changes
