@@ -144,6 +144,7 @@ describe("claude host package", () => {
       "approve_breaking_intent_revision",
       "stop",
       "repair_authority_state",
+      "resolve_finding",
     ]);
     const init = await handleJsonRpc({ jsonrpc: "2.0", id: 1, method: "initialize" });
     expect(init?.result).toMatchObject({

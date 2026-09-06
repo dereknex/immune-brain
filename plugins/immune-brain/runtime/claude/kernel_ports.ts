@@ -525,6 +525,19 @@ export class ClaudeRuntime {
 		return submitClaudeReview(this.host, this.coordinator, { cwd: this.cwd }, taskId, verdictInput);
 	}
 
+	/**
+	 * Ordinary Kernel operation, not a privileged one: canary_application builds
+	 * the action without a capability and the Pi Host lists resolve_finding in
+	 * its ordinary KERNEL_OPERATIONS. The reducer owns every precondition, so
+	 * this port reads no findings and tests no kind.
+	 */
+	async resolveFinding(taskId: string, findingId: string) {
+		return this.executeOrdinary({ cwd: this.cwd }, {
+			taskId,
+			operation: { op: "resolve_finding", finding_id: findingId, actor_id: "executor" },
+		});
+	}
+
 	async authorize(taskId: string, operation: string, meta: ToolMeta, extra: Record<string, unknown> = {}) {
 		if (operation === "repair_authority_state") {
 			const authority = reconcileKernelAuthority(this.cwd, taskId);
@@ -773,7 +786,7 @@ export class ClaudeRuntime {
 		}));
 	}
 
-	private async executeOrdinary(ctx: HostContext, input: { taskId: string; operation: { op: string; actor_id: string; next_intent?: unknown } }) {
+	private async executeOrdinary(ctx: HostContext, input: { taskId: string; operation: { op: string; actor_id: string; next_intent?: unknown; finding_id?: string } }) {
 		const { app } = await this.authority();
 		const operation = input.operation.op === "revise_intent"
 			? { ...input.operation, next_intent: await parseTaskIntentV1(input.operation.next_intent) }

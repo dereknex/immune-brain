@@ -6477,7 +6477,16 @@ function enrollCanaryTask(root, input, registry) {
       throw new Error("intent content hash mismatch");
     if (checks.gitBaseHead !== gitBaseHead)
       throw new Error("Git HEAD moved after the enrollment confirmation");
+    if (input.batch) {
+      const batch = input.batch.registry.inspect(input.batch.capability, input.batch.binding, Date.parse(input.now));
+      if (input.batch.registry.consumedChildren(input.batch.capability).length === 0 && input.batch.expected_head !== batch.base_head)
+        throw new Error(`batch_head_lineage_broken: the first child must enroll on the confirmed base_head ${batch.base_head}, not ${input.batch.expected_head}`);
+      if (checks.gitBaseHead !== input.batch.expected_head)
+        throw new Error(`batch_head_lineage_broken: expected ${input.batch.expected_head}, found ${checks.gitBaseHead}`);
+    }
     registry.consume(input.capability, input.capability_binding);
+    if (input.batch)
+      input.batch.registry.consumeChild(input.batch.capability, input.batch.binding, input.task_id, Date.parse(input.now));
     if (!gitBaseHead)
       throw new Error("enrollment requires a committed Git HEAD");
     const record = buildTaskRecordV4(input, checks.intent, gitBaseHead);
@@ -6496,16 +6505,23 @@ function enrollCanaryTask(root, input, registry) {
       created_at: input.now,
       updated_at: input.now
     };
-    const mutation = commitEnrollmentLocked(root, input.task_id, {
-      contract: "assurance_kernel/workspace_transaction/v2",
-      task_id: input.task_id,
-      expected_record_hash: checks.current.revision,
-      next_record_content: `${JSON.stringify(record, null, 2)}
+    let mutation;
+    try {
+      mutation = commitEnrollmentLocked(root, input.task_id, {
+        contract: "assurance_kernel/workspace_transaction/v2",
+        task_id: input.task_id,
+        expected_record_hash: checks.current.revision,
+        next_record_content: `${JSON.stringify(record, null, 2)}
 `,
-      expected_workspace_hash: checks.workspace.revision,
-      next_workspace_content: `${JSON.stringify(nextWorkspace, null, 2)}
+        expected_workspace_hash: checks.workspace.revision,
+        next_workspace_content: `${JSON.stringify(nextWorkspace, null, 2)}
 `
-    }, claim);
+      }, claim);
+    } catch (error) {
+      if (input.batch)
+        input.batch.registry.releaseChild(input.batch.capability, input.task_id);
+      throw error;
+    }
     return {
       record: mutation.record,
       backend_claim: claim,
@@ -6948,6 +6964,12 @@ class ClaudeRuntime {
   async submitReview(taskId, verdictInput) {
     return submitClaudeReview(this.host, this.coordinator, { cwd: this.cwd }, taskId, verdictInput);
   }
+  async resolveFinding(taskId, findingId) {
+    return this.executeOrdinary({ cwd: this.cwd }, {
+      taskId,
+      operation: { op: "resolve_finding", finding_id: findingId, actor_id: "executor" }
+    });
+  }
   async authorize(taskId, operation, meta, extra = {}) {
     if (operation === "repair_authority_state") {
       const authority = reconcileKernelAuthority(this.cwd, taskId);
@@ -7224,7 +7246,8 @@ var TOOLS = [
   { name: "request_authorization", description: "Apply exact literal-user authorization.", privileged: true },
   { name: "approve_breaking_intent_revision", description: "Approve a breaking TaskIntent revision.", privileged: true },
   { name: "stop", description: "Stop the active task with literal-user authority.", privileged: true },
-  { name: "repair_authority_state", description: "Repair a proven recoverable stale backend claim.", privileged: false }
+  { name: "repair_authority_state", description: "Repair a proven recoverable stale backend claim.", privileged: false },
+  { name: "resolve_finding", description: "Resolve one open blocking or advisory finding whose cause is fixed and verified.", privileged: false }
 ];
 function listMcpTools() {
   return TOOLS.map((tool) => ({
@@ -7236,9 +7259,10 @@ function listMcpTools() {
         task_id: { type: "string" },
         ...tool.name === "approve_breaking_intent_revision" ? { next_intent: { type: "object" } } : {},
         ...tool.name === "stop" ? { reason: { type: "string" } } : {},
-        ...tool.name === "submit_review" ? { verdict: { type: "object" } } : {}
+        ...tool.name === "submit_review" ? { verdict: { type: "object" } } : {},
+        ...tool.name === "resolve_finding" ? { finding_id: { type: "string" } } : {}
       },
-      required: tool.name === "submit_review" ? ["task_id", "verdict"] : ["task_id"]
+      required: tool.name === "submit_review" ? ["task_id", "verdict"] : tool.name === "resolve_finding" ? ["task_id", "finding_id"] : ["task_id"]
     },
     annotations: tool.privileged ? privilegedAnnotations() : { readOnlyHint: tool.name === "status" }
   }));
@@ -7304,6 +7328,11 @@ function createMcpRuntime(options = {}) {
         if (!Object.hasOwn(args, "verdict"))
           throw new Error("verdict is required");
         return runtime.submitReview(taskId, args.verdict);
+      }
+      if (name === "resolve_finding") {
+        if (typeof args.finding_id !== "string" || !args.finding_id)
+          throw new Error("finding_id is required");
+        return runtime.resolveFinding(taskId, args.finding_id);
       }
       if (name === "request_authorization" || name === "approve_breaking_intent_revision" || name === "stop" || name === "repair_authority_state") {
         return runtime.authorize(taskId, name, toolMeta, args);
