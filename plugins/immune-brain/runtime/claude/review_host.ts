@@ -271,16 +271,6 @@ interface PendingReview {
 	error?: string;
 }
 
-function matchesReservation(event: ClaudeHookEvent, pending: PendingReview): boolean {
-	if ("operationId" in event && event.operationId && event.operationId !== pending.request.operationId) return false;
-	if ("taskId" in event && event.taskId && event.taskId !== pending.request.taskId) return false;
-	if (pending.sessionId && event.sessionId !== pending.sessionId) return false;
-	const eventAgentId = "agentId" in event ? event.agentId : "";
-	if (event.type === "SubagentStop" && (!eventAgentId || !pending.agentId || eventAgentId !== pending.agentId)) return false;
-	if (pending.agentId && eventAgentId && eventAgentId !== pending.agentId) return false;
-	return true;
-}
-
 function bindsStart(event: Extract<ClaudeHookEvent, { type: "SubagentStart" }>, pending: PendingReview): boolean {
 	if (event.taskId && event.taskId !== pending.request.taskId) return false;
 	if (event.prompt !== undefined) {

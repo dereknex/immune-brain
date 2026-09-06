@@ -229,10 +229,12 @@ export function buildAuthorityObservationSeedV2(
 function committedReceiptV2(
 	receipt: AuthorityCommitReceipt,
 ): receipt is AuthorityCommitReceipt & {
+	contract: "assurance_kernel/authority_commit_receipt/v2";
 	status: "committed" | "recovered_committed";
 	observation_seed: AuthorityObservationSeedV2;
 } {
 	return (
+		receipt.contract === "assurance_kernel/authority_commit_receipt/v2" &&
 		(receipt.status === "committed" ||
 			receipt.status === "recovered_committed") &&
 		receipt.observation_seed !== undefined

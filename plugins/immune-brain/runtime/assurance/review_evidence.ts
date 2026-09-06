@@ -240,14 +240,32 @@ const SNAPSHOT_IDENTITY = {
 	date: "1970-01-01T00:00:00 +0000",
 };
 
-export interface ReviewRevision {
+/**
+ * The bare synthetic-commit identity. `publishReviewRevision` can prove these
+ * five fields from Git alone; it has no manifest inputs and therefore cannot
+ * produce a digest.
+ */
+export interface ReviewRevisionCommit {
 	contract: "assurance_kernel/review_revision/v1";
 	base_head: string;
 	review_tree: string;
 	review_commit: string;
 	review_ref: string;
 	diff_hash: string;
-	manifest_digest?: string;
+}
+
+/**
+ * The full Review revision identity a host port must return.
+ *
+ * `manifest_digest` was optional here, which is the type-level hole that let a
+ * host return the bare commit identity and still satisfy
+ * `AssuranceCoordinatorPorts.ensureReviewRevision`. `submitReview` compares all
+ * four identity fields against the reservation, so an absent digest compared
+ * against a real one and failed every v4 submission at runtime instead of at
+ * build time. Requiring it makes that omission a compile error.
+ */
+export interface ReviewRevision extends ReviewRevisionCommit {
+	manifest_digest: string;
 }
 
 export interface ReviewManifestV5 {
@@ -354,7 +372,7 @@ export function publishReviewRevision(
 	snapshot: GitTaskRevisionSnapshot,
 	diffHash: string,
 	taskId: string,
-): ReviewRevision {
+): ReviewRevisionCommit {
 	if (snapshot.base_head !== snapshot.base_head.toLowerCase() || !GIT_COMMIT_ID.test(snapshot.base_head))
 		throw new Error("review revision base has invalid identity");
 	if (!REVISION_DIFF_HASH.test(diffHash)) throw new Error("review revision diff hash has invalid identity");
@@ -429,7 +447,7 @@ function publishInput(
 		scopeHint: unknown;
 		expectedDiffHash: string;
 	},
-): { snapshot: GitTaskRevisionSnapshot; revision: ReviewRevision } {
+): { snapshot: GitTaskRevisionSnapshot; revision: ReviewRevisionCommit } {
 	if (typeof input.baseHead !== "string" || !GIT_COMMIT_ID.test(input.baseHead))
 		throw new Error("review requires a TaskRecord v4 git_base_head");
 	if (!REVISION_DIFF_HASH.test(input.expectedDiffHash))
@@ -486,14 +504,6 @@ export function captureReviewManifest(
 	return manifest;
 }
 
-/** Publish and return the exact revision a v4 task must use. */
-export function ensureReviewRevision(
-	root: string,
-	input: { taskId: string; baseHead: string; scopeHint: unknown; expectedDiffHash: string },
-): ReviewRevision {
-	return publishInput(root, input).revision;
-}
-
 export function listReviewRefs(root: string): Array<{ ref: string; commit: string; taskId: string }> {
 	const output = gitEvidence(root, ["for-each-ref", "--format=%(refname) %(objectname)", `${REVIEW_REF_NAMESPACE}/`]);
 	const refs: Array<{ ref: string; commit: string; taskId: string }> = [];
@@ -534,7 +544,7 @@ export function reconcileReviewRefs(
 	return { removed, failed };
 }
 
-export function deleteReviewRef(root: string, revision: ReviewRevision): void {
+export function deleteReviewRef(root: string, revision: ReviewRevisionCommit): void {
 	const parts = revision.review_ref.split("/");
 	let validRef = false;
 	if (

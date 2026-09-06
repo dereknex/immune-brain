@@ -56,6 +56,7 @@ import {
 	clearTerminalTaskRailOnInput,
 	loopResultDetails,
 	notifyOnce,
+	type UiContext,
 	presentTaskOverviewOverlay,
 	presentTaskRail,
 	presentTaskRailResult,
@@ -68,7 +69,7 @@ import {
 	type UserAttentionEventV1,
 	type UserAttentionReason,
 } from "./pi-canary-interaction";
-import { isToolFailureState, throwToolFailure } from "./pi-canary-tool-failure";
+import { isToolFailureState, throwToolFailure, type ToolFailureV1 } from "./pi-canary-tool-failure";
 import { taskDiffIdentity, taskRevisionIdentity, captureGitTaskSnapshot } from "../runtime/workspace_scope";
 import {
 	AssuranceProgression,
@@ -87,6 +88,7 @@ import {
 	type AssuranceProgressionPorts,
 	type AssuranceSubmitReviewResult,
 	type AssuranceVerdict,
+	type HostContext,
 	type QaVerificationProgress,
 	type SnapshotDescriptor,
 } from "./pi-canary-assurance-progression";
@@ -262,11 +264,18 @@ type LoopToolAction =
 		context: Record<string, unknown>;
 	};
 
-export default function (
-	pi: ExtensionAPI,
+/**
+ * The exact ports object the Pi Assurance progression runs on.
+ *
+ * This lived as an inline literal inside the anonymous default export, so no
+ * test could ever obtain what production wires; every host adapter defect that
+ * reached a published plugin lived in this object. Exporting the factory lets
+ * the dual-host conformance suite drive the real thing.
+ */
+export function createPiAssuranceProgressionPorts(
 	dependencies: CanaryWorkExtensionDependencies = {},
-) {
-	const progression = new AssuranceProgression({
+): AssuranceProgressionPorts {
+	return {
 		projectTask: (root, taskId) => projectAssuranceState(root, taskId),
 		readTaskRecord: (root, taskId) => readTaskRecord(root, taskId),
 		readTaskIntent: (root, taskId) => readTaskIntent(root, taskId),
@@ -294,7 +303,14 @@ export default function (
 		qaOnAuthorityCommit: dependencies.qaOnAuthorityCommit,
 		qaAfterAuthorityCommit: dependencies.qaAfterAuthorityCommit,
 		qaJobTimeoutMs: dependencies.qaJobTimeoutMs,
-	} satisfies AssuranceProgressionPorts);
+	} satisfies AssuranceProgressionPorts;
+}
+
+export default function (
+	pi: ExtensionAPI,
+	dependencies: CanaryWorkExtensionDependencies = {},
+) {
+	const progression = new AssuranceProgression(createPiAssuranceProgressionPorts(dependencies));
 
 	let railContext: ExtensionContext | undefined;
 	const refreshTaskRail = async (ctx: ExtensionContext) => {
@@ -1270,8 +1286,22 @@ async function reconcileReviewRevisionRefs(root: string): Promise<{ removed: str
 	return reconcileReviewRefs(root, live);
 }
 
+/**
+ * The coordinator port supplies a `HostContext`, which carries no UI. Pi hands
+ * its full `ExtensionContext` through at runtime, so the notice still reaches
+ * the user; a host that does not is left un-notified rather than throwing from
+ * inside an authority commit, where a notification has no authority anyway.
+ */
+function notifyHost(ctx: HostContext, key: string, message: string, level: "warning" | "error"): void {
+	const ui = (ctx as Partial<UiContext>).ui;
+	if (ui) notifyOnce({ ui }, key, message, level);
+}
+
 async function applyAssuranceVerdict(
-	ctx: ExtensionContext,
+	// The coordinator port hands these a `HostContext`, not the Pi
+	// `ExtensionContext`. Both functions only ever read `cwd`; declaring the
+	// wider host type made the port assignment unsound.
+	ctx: HostContext,
 	snapshot: SnapshotDescriptor,
 	verdict: AssuranceVerdict,
 	invocation: InvocationToken,
@@ -1356,7 +1386,7 @@ async function applyAssuranceVerdict(
 		const parked = (result.record as { findings?: Array<{ kind: string; status: string }> }).findings?.some(
 			(finding) => finding.kind === "replan_required" && finding.status === "open",
 		);
-		if (parked) notifyOnce(
+		if (parked) notifyHost(
 			ctx,
 			`rework-parked:${snapshot.task_id}`,
 			`rework applied: review parked for replan with ${findings.length} finding(s)`,
@@ -1435,10 +1465,17 @@ async function buildAssuranceSnapshot(
 		assertRunnerCompatible(descriptor, runner);
 		descriptors.set(item.id, descriptor);
 	}
-	const reviewRevision = record.record.contract === "assurance_kernel/task_record/v4"
+	// `git_base_head` is optional on the read shape because v3 records carry
+	// none, so the contract test alone does not prove it is present.
+	const baseHead = record.record.contract === "assurance_kernel/task_record/v4"
+		? record.record.git_base_head
+		: undefined;
+	if (record.record.contract === "assurance_kernel/task_record/v4" && !baseHead)
+		throw new Error("TaskRecord v4 is missing its Enrollment git_base_head");
+	const reviewRevision = baseHead
 		? {
 			contract: "assurance_kernel/review_revision_identity/v1" as const,
-			base_head: record.record.git_base_head,
+			base_head: baseHead,
 			review_commit: "",
 			review_tree: "",
 			manifest_digest: "",
@@ -1612,7 +1649,7 @@ function authorityPair(): Promise<{ registry: MutationAuthorityRegistry; app: Ca
 }
 
 async function executeOrdinaryOperation(
-	ctx: ExtensionContext,
+	ctx: HostContext,
 	input: { taskId: string; operation: { op: string; actor_id: string; next_intent?: unknown } },
 ): Promise<unknown> {
 	const { app } = await authorityPair();
@@ -1633,7 +1670,10 @@ async function executeOrdinaryOperation(
 			now: new Date().toISOString(),
 		});
 		if (operation.op === "freeze_artifacts" || operation.op === "stop")
-			stagePlanningArtifactTransition(ctx.cwd, result.record);
+			stagePlanningArtifactTransition(
+				ctx.cwd,
+				(result as { record: Parameters<typeof stagePlanningArtifactTransition>[1] }).record,
+			);
 		return result;
 	} catch (error) {
 		if (priorBytes) {
@@ -1736,18 +1776,24 @@ function toolResult(text: string, details?: Record<string, unknown>) {
  * Pi or Hyper adapter upgrade cycles pass a live nested-object Tool-call
  * probe at least 30 days apart.
  */
-function prepareActionArgs(args: unknown): unknown {
-	if (args === null || typeof args !== "object" || Array.isArray(args)) return args;
+/**
+ * Pre-schema normalizer: some hosts deliver `action` as a JSON string. The Pi
+ * runtime validates the returned value against the Tool schema immediately
+ * after this shim, so the parameter type is the schema's, not a claim this
+ * function makes about unvalidated input.
+ */
+function prepareActionArgs<Params>(args: unknown): Params {
+	if (args === null || typeof args !== "object" || Array.isArray(args)) return args as Params;
 	const input = args as Record<string, unknown>;
-	if (typeof input.action !== "string") return input;
+	if (typeof input.action !== "string") return input as Params;
 	try {
 		const parsed: unknown = JSON.parse(input.action);
 		if (parsed !== null && typeof parsed === "object" && !Array.isArray(parsed))
-			return { ...input, action: parsed };
+			return { ...input, action: parsed } as Params;
 	} catch {
 		// Unchanged input keeps the normal host schema error authoritative.
 	}
-	return input;
+	return input as Params;
 }
 
 function stagePlanningArtifactTransition(root: string, record: {
@@ -1780,7 +1826,9 @@ function stagePlanningArtifactTransition(root: string, record: {
 function failCanaryTool(
 	taskId: string,
 	operation: string,
-	state: "blocked" | "failed" | "authority_conflict" | "settlement_unknown",
+	// `review_preparation_failed` is a declared ToolFailureV1 state and a
+	// documented Loop recovery path; omitting it here made it unreportable.
+	state: ToolFailureV1["state"],
 	code: string,
 	message: string,
 	nextAction: string,
