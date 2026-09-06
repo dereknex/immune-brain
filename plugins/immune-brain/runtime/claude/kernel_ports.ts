@@ -119,13 +119,16 @@ export async function submitClaudeReview(
 		if (observed.release) return coordinator.abandonReview(taskId, observed.reason);
 		return { state: "blocked", reason: observed.reason };
 	}
-	const parentJson = extractVerdictJson(verdictInput);
-	const receiptJson = extractVerdictJson(observed.receipt.result);
-	if (parentJson && receiptJson && verdictFingerprint(parentJson) !== verdictFingerprint(receiptJson)) {
-		return { state: "blocked", reason: "parent verdict does not match reviewer receipt" };
+	const parentValid = coordinator.isReviewVerdictValid(taskId, verdictInput);
+	if (!parentValid) return coordinator.submitReview(taskId, ctx, verdictInput);
+	const receiptValid = coordinator.isReviewVerdictValid(taskId, observed.receipt.result);
+	if (!receiptValid) {
+		return coordinator.abandonReview(taskId, "reviewer receipt is not a valid verdict");
 	}
-	if (parentJson && !receiptJson) {
-		return { state: "blocked", reason: "reviewer receipt is not a valid verdict" };
+	const parentJson = extractVerdictJson(verdictInput)!;
+	const receiptJson = extractVerdictJson(observed.receipt.result)!;
+	if (verdictFingerprint(parentJson) !== verdictFingerprint(receiptJson)) {
+		return { state: "blocked", reason: "parent verdict does not match reviewer receipt" };
 	}
 	return coordinator.submitReview(taskId, ctx, verdictInput);
 }

@@ -819,6 +819,17 @@ export class AssuranceCoordinator {
 		return { state: "blocked", reason: `Kernel requires ${settled.projection.next_obligation} after Review` };
 	}
 
+	isReviewVerdictValid(taskId: string, verdictInput: unknown): boolean {
+		const reservation = this.reviewReservations.get(taskId);
+		if (!reservation) return false;
+		try {
+			parseAssuranceVerdict(verdictInput, reservation.snapshot);
+			return true;
+		} catch {
+			return false;
+		}
+	}
+
 	abandonReview(taskId: string, reason: string): AssuranceSubmitReviewResult {
 		const reservation = this.reviewReservations.get(taskId);
 		if (!reservation) return { state: "blocked", reason };

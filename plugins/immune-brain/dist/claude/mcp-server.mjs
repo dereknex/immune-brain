@@ -1728,6 +1728,17 @@ class AssuranceCoordinator {
     }
     return { state: "blocked", reason: `Kernel requires ${settled.projection.next_obligation} after Review` };
   }
+  isReviewVerdictValid(taskId, verdictInput) {
+    const reservation = this.reviewReservations.get(taskId);
+    if (!reservation)
+      return false;
+    try {
+      parseAssuranceVerdict(verdictInput, reservation.snapshot);
+      return true;
+    } catch {
+      return false;
+    }
+  }
   abandonReview(taskId, reason) {
     const reservation = this.reviewReservations.get(taskId);
     if (!reservation)
@@ -6661,13 +6672,17 @@ async function submitClaudeReview(host, coordinator, ctx, taskId, verdictInput) 
       return coordinator.abandonReview(taskId, observed.reason);
     return { state: "blocked", reason: observed.reason };
   }
+  const parentValid = coordinator.isReviewVerdictValid(taskId, verdictInput);
+  if (!parentValid)
+    return coordinator.submitReview(taskId, ctx, verdictInput);
+  const receiptValid = coordinator.isReviewVerdictValid(taskId, observed.receipt.result);
+  if (!receiptValid) {
+    return coordinator.abandonReview(taskId, "reviewer receipt is not a valid verdict");
+  }
   const parentJson = extractVerdictJson(verdictInput);
   const receiptJson = extractVerdictJson(observed.receipt.result);
-  if (parentJson && receiptJson && verdictFingerprint(parentJson) !== verdictFingerprint(receiptJson)) {
+  if (verdictFingerprint(parentJson) !== verdictFingerprint(receiptJson)) {
     return { state: "blocked", reason: "parent verdict does not match reviewer receipt" };
-  }
-  if (parentJson && !receiptJson) {
-    return { state: "blocked", reason: "reviewer receipt is not a valid verdict" };
   }
   return coordinator.submitReview(taskId, ctx, verdictInput);
 }

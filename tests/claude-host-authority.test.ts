@@ -598,6 +598,55 @@ describe("claude host authority", () => {
 		expect(hMal.counts().applyCount).toBe(1);
 	});
 
+	test("malformed or invalid Reviewer receipt releases the reservation for a new attempt", async () => {
+		const host = new ClaudeReviewHost();
+		const h = makeCoordinator({ host });
+		const ready = await h.coordinator.advance(TASK, ctx) as { state: string; operation_id: string };
+		const verdict = passVerdict(snapshot("review"));
+		completeReview(host, ready.operation_id, JSON.stringify(verdict).slice(0, -1));
+		expect(await submitClaudeReview(host, h.coordinator, ctx, TASK, verdict)).toMatchObject({
+			state: "blocked",
+			reason: "reviewer receipt is not a valid verdict",
+		});
+		const retry = await h.coordinator.advance(TASK, ctx) as { state: string; operation_id: string };
+		expect(retry.state).toBe("review_ready");
+		expect(retry.operation_id).not.toBe(ready.operation_id);
+		expect(h.counts().applyCount).toBe(1);
+
+		for (const receipt of [
+			JSON.stringify({ contract: "nope" }),
+			JSON.stringify({ ...verdict, snapshot_digest: `sha256:${"f".repeat(64)}` }),
+			JSON.stringify({ ...verdict, extra: true }),
+		]) {
+			const receiptHost = new ClaudeReviewHost();
+			const receiptHarness = makeCoordinator({ host: receiptHost });
+			const receiptReady = await receiptHarness.coordinator.advance(TASK, ctx) as { operation_id: string };
+			completeReview(receiptHost, receiptReady.operation_id, receipt);
+			expect(await submitClaudeReview(receiptHost, receiptHarness.coordinator, ctx, TASK, verdict)).toMatchObject({
+				state: "blocked",
+				reason: "reviewer receipt is not a valid verdict",
+			});
+			const receiptRetry = await receiptHarness.coordinator.advance(TASK, ctx) as { state: string; operation_id: string };
+			expect(receiptRetry.state).toBe("review_ready");
+			expect(receiptRetry.operation_id).not.toBe(receiptReady.operation_id);
+			expect(receiptHarness.counts().applyCount).toBe(1);
+		}
+
+		const invalidHost = new ClaudeReviewHost();
+		const invalid = makeCoordinator({ host: invalidHost });
+		const invalidReady = await invalid.coordinator.advance(TASK, ctx) as { operation_id: string };
+		completeReview(invalidHost, invalidReady.operation_id, JSON.stringify(verdict).slice(0, -1));
+		expect(await submitClaudeReview(invalidHost, invalid.coordinator, ctx, TASK, { contract: "nope" })).toMatchObject({
+			state: "blocked",
+			code: "verdict_invalid",
+		});
+		expect(await invalid.coordinator.advance(TASK, ctx)).toMatchObject({
+			state: "blocked",
+			code: "verdict_invalid",
+		});
+		expect(invalid.counts().applyCount).toBe(1);
+	});
+
 	test("malformed Parent verdict keeps the Review reservation for a matching retry", async () => {
 		const host = new ClaudeReviewHost();
 		const h = makeCoordinator({ host });
