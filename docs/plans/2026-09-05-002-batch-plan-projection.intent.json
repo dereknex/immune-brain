@@ -1,0 +1,26 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "2026-09-05-002-batch-plan-projection",
+  "owner": "user",
+  "goal": "Implement the deterministic read-only batch plan projection defined by docs/specs/unattended-initiative-batch-run.spec.md section 3.3: projectBatchPlan resolves one published Initiative into an ordered, dependency-closed list of enrollable child TaskIntents plus the plan_digest and budget defaults that the literal-user confirmation binds, treating tracker topology strictly as observation and performing zero writes.",
+  "acceptance": [
+    {
+      "id": "acc-batch-plan-determinism",
+      "assertion": "projectBatchPlan(root, initiative_slug) is pure and performs no filesystem, Kernel, or tracker mutation. It maps every Initiative child Task ID to its canonical docs/plans/<task-id>.intent.json, reads each intent's revision and content_hash, computes a dependency order and the transitive blocked_by closure, and returns the ordered plan with a plan_digest equal to the sha256 of the canonical JSON of [{task_id,intent_path,intent_revision,intent_content_hash,blocked_by}]. The same Initiative and the same intents always yield byte-identical output and the same digest regardless of tracker response ordering. Children with an existing tombstone or an existing TaskRecord are excluded as already settled or already owned; children declared risk 'critical' are classified needs_human and are never placed in the enrollable set; a child whose intent file is missing, unparseable, or fails intent validation is classified needs_human rather than silently dropped, and its dependents are marked blocked. TaskIntentV1 carries no initiative or dependency field, so the confirmed ordered plan and its digest, not remote tracker state, are the authorization subject.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/unattended-batch-plan.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 65536\n}\n"
+    },
+    {
+      "id": "acc-batch-plan-budget-and-observation",
+      "assertion": "The projection returns the budget the confirmation binds, defaulting to max_children equal to the full enrollable child count, deadline_at equal to the confirmation time plus eight hours, and qa_failure_limit two consecutive failures per child; explicit caller values override each default and out-of-range or non-positive values are rejected before any confirmation is offered. The tracker is read exactly once during projection and its result is copied into the returned plan, so a subsequent batch run never depends on remote availability, and a tracker read failure produces a projection error rather than a partially populated plan. The projection never publishes, updates, closes, or comments on any Initiative or Issue.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/unattended-batch-plan.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 65536\n}\n"
+    }
+  ],
+  "scope_hint": [
+    "plugins/immune-brain/runtime/github_issue_tracker.ts",
+    "plugins/immune-brain/runtime/unattended/batch_plan.ts",
+    "plugins/immune-brain/runtime/unattended/types.ts",
+    "tests/unattended-batch-plan.test.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}

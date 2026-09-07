@@ -1,0 +1,26 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "2026-09-05-004-batch-branch-and-commit",
+  "owner": "user",
+  "goal": "Implement the batch branch and commit boundary defined by docs/specs/unattended-initiative-batch-run.spec.md section 3.5: a fail-closed branch preflight, and one scope-bounded Git commit per Kernel-settled child that advances the batch HEAD lineage, introducing the runtime's first Git commit authority without ever pushing, opening a pull request, or touching a Git worktree.",
+  "acceptance": [
+    {
+      "id": "acc-batch-branch-preflight",
+      "assertion": "Before any child is enrolled, the batch preflight requires a clean working tree, a committed HEAD, and the absence of refs/heads/imm/<initiative-slug>. If the branch already exists the batch terminates as rejected with reason batch_branch_exists, and a dirty tree or uncommitted HEAD is rejected with its own stable reason; every rejected preflight leaves zero Kernel writes, zero batch state files, no new ref, and the original checked-out branch. On a passing preflight the batch creates and switches to imm/<initiative-slug> from base_head and records it as the batch branch. The runtime never creates, switches, or deletes a Git worktree, never pushes a ref, and never opens or updates a pull request.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/unattended-batch-commit.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 65536\n}\n"
+    },
+    {
+      "id": "acc-batch-scope-bounded-commit",
+      "assertion": "A commit is created only after the Kernel reports that child done; a successful Git commit is never treated as evidence of settlement and elapsed time or agent belief never triggers one. Staging includes exactly the changed paths inside that child's TaskIntent scope envelope plus .imm/audit/<task-id>/**; if any change exists outside that set nothing is committed and the batch terminates as failed with reason dirty_outside_scope. The commit message is 'imm(<task-id>): <goal first line>' with the trailer 'Immune-Brain-Batch: <batch_id>'. On success the batch expected_head advances to the new commit SHA and the recorded SHA is the one the next child's HEAD lineage assertion requires; a commit failure or any HEAD value the batch did not itself produce terminates the batch as failed rather than continuing, because subsequent children could no longer prove their base.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/unattended-batch-commit.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 65536\n}\n"
+    }
+  ],
+  "scope_hint": [
+    "plugins/immune-brain/runtime/unattended/batch_git.ts",
+    "plugins/immune-brain/runtime/unattended/batch_runner.ts",
+    "plugins/immune-brain/runtime/unattended/batch_state.ts",
+    "tests/unattended-batch-commit.test.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}
