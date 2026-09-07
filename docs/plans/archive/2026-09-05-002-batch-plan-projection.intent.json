@@ -1,7 +1,6 @@
 {
   "contract": "assurance_kernel/task_intent/v1",
   "task_id": "2026-09-05-002-batch-plan-projection",
-  "owner": "user",
   "goal": "Implement the deterministic read-only batch plan projection defined by docs/specs/unattended-initiative-batch-run.spec.md section 3.3: projectBatchPlan resolves one published Initiative into an ordered, dependency-closed list of enrollable child TaskIntents plus the plan_digest and budget defaults that the literal-user confirmation binds, treating tracker topology strictly as observation and performing zero writes.",
   "acceptance": [
     {
@@ -16,11 +15,17 @@
     }
   ],
   "scope_hint": [
+    "docs/specs/archive/unattended-initiative-batch-run.spec.md",
+    "docs/specs/unattended-initiative-batch-run.spec.md",
+    "plugins/immune-brain/dist/claude/mcp-server.mjs",
     "plugins/immune-brain/runtime/github_issue_tracker.ts",
+    "plugins/immune-brain/runtime/kernel/intent.ts",
     "plugins/immune-brain/runtime/unattended/batch_plan.ts",
     "plugins/immune-brain/runtime/unattended/types.ts",
+    "tests/kernel-intent-v2.test.ts",
     "tests/unattended-batch-plan.test.ts"
   ],
   "risk": "material",
-  "revision": 1
+  "revision": 6,
+  "owner": "user"
 }

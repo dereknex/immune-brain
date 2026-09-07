@@ -1,6 +1,7 @@
 # Spec: Unattended Initiative Batch Run
 
-**Task ID**: `2026-09-05-001-batch-authorization-kernel` … `2026-09-05-007-unattended-contracts-and-constitution` (Initiative `unattended-initiative-batch-run`)
+**Active Task IDs**: `2026-09-05-002-batch-plan-projection` … `2026-09-05-007-unattended-contracts-and-constitution` (Initiative `unattended-initiative-batch-run`)
+**Prerequisite baseline**: `2026-09-05-001-batch-authorization-kernel` is committed in `32895b4`; its terminal archived TaskIntent is evidence, not an enrollable Initiative Child.
 **Owner**: user
 **Status**: Proposed
 **Output language**: English (project policy: persisted Immune-Brain documents default to English)
@@ -152,23 +153,24 @@ New privileged operation `start_unattended_batch` on both Hosts. Input is the In
 
 ## 5. Decomposition
 
+The Batch Authorization Kernel work from S1 is a committed prerequisite baseline. Its TaskIntent is terminal and archived, so it is deliberately excluded from the published Child set rather than being presented as new execution authority.
+
 | Slice | Task ID | Result | Risk | Blocked by |
 | --- | --- | --- | --- | --- |
-| S1 | `2026-09-05-001-batch-authorization-kernel` | Kernel issues, validates, and per-child consumes a Batch Authorization, enforcing membership, expiry, one-shot slots and HEAD lineage | critical | — |
 | S2 | `2026-09-05-002-batch-plan-projection` | Deterministic read-only batch plan + `plan_digest` from an Initiative, with settled/`critical` exclusion and dependency closure | material | — |
-| S3 | `2026-09-05-003-batch-run-state-machine` | Serial batch driver with skip-subtree, stop conditions, budget, expiry and run report | critical | S1, S2 |
+| S3 | `2026-09-05-003-batch-run-state-machine` | Serial batch driver with skip-subtree, stop conditions, budget, expiry and run report | critical | S2 |
 | S4 | `2026-09-05-004-batch-branch-and-commit` | Branch preflight and per-child scope-bounded commit advancing the HEAD lineage | material | S3 |
-| S5 | `2026-09-05-005-claude-batch-host-gate` | Claude Code `start_unattended_batch` native confirmation, fail-closed on non-interactive | critical | S1, S3 |
+| S5 | `2026-09-05-005-claude-batch-host-gate` | Claude Code `start_unattended_batch` native confirmation, fail-closed on non-interactive | critical | S3 |
 | S6 | `2026-09-05-006-pi-batch-host-gate` | Pi TUI parity plus dual-host conformance for the batch gate | critical | S5 |
 | S7 | `2026-09-05-007-unattended-contracts-and-constitution` | `imm-loop` opt-in contract, `IMMUNE.md`/`CONTEXT.md` amendments, ADR, dist sync | material | S4, S6 |
 
-Retain/split reasoning: S1 and S5/S6 each change a distinct trust invariant (authority derivation vs. Host confirmation) and can be verified, rolled back and authorized independently. S3 owns the whole batch state machine and is not split further, so one review round audits every transition. S4 is separable because Git history is independently revertible. S7 is contract text whose truth depends on the shipped behavior.
+Retain/split reasoning: the committed S1 baseline and current S5/S6 work each change a distinct trust invariant (authority derivation vs. Host confirmation). S3 owns the whole batch state machine and is not split further, so one review round audits every transition. S4 is separable because Git history is independently revertible. S7 is contract text whose truth depends on the shipped behavior.
 
 ## 6. Verification
 
 Each slice carries focused acceptance descriptors; the project regression command remains `bun test`.
 
-- S1 `tests/kernel-batch-authority.test.ts`: membership, expiry, one-shot slot reuse, lineage mismatch, and zero-write failure paths.
+- Baseline S1 `tests/kernel-batch-authority.test.ts`: membership, expiry, one-shot slot reuse, lineage mismatch, and zero-write failure paths; this committed prerequisite is not a current Child.
 - S2 `tests/unattended-batch-plan.test.ts`: deterministic order and digest, `critical`/settled exclusion, dependency closure, remote read is observation-only.
 - S3 `tests/unattended-batch-run.test.ts`: skip-subtree, budget stop is not a failure, expiry does not interrupt an in-flight child, interruption recovery from persisted state.
 - S4 `tests/unattended-batch-commit.test.ts`: branch-exists rejection with zero writes, scope-bounded staging, `dirty_outside_scope` stop, lineage advance.
@@ -178,7 +180,7 @@ Each slice carries focused acceptance descriptors; the project regression comman
 
 ## 7. Devil's Advocate Audit
 
-**Rollback resilience**: S1–S3 are additive modules plus one optional enrollment parameter; reverting them restores per-task Enrollment exactly. S4's output is a dedicated branch that is never pushed, so `git branch -D` is a complete rollback. S5/S6 add one operation each. A halfway state where the Host op exists but the runner does not is rejected by S5's tests, which require a real `startBatch` result.
+**Rollback resilience**: the S1 baseline and active S2–S3 work are additive modules plus one optional enrollment parameter; reverting them restores per-task Enrollment exactly. S4's output is a dedicated branch that is never pushed, so `git branch -D` is a complete rollback. S5/S6 add one operation each. A halfway state where the Host op exists but the runner does not is rejected by S5's tests, which require a real `startBatch` result.
 
 **Verification vanity**: presence tests are insufficient. Every slice must assert Kernel bytes are unchanged on rejected paths (branch exists, expired authorization, lineage break, declined confirmation), and S3 must prove that a parked child leaves its dependents unrun rather than merely reporting them.
 
