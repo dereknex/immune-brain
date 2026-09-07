@@ -163,18 +163,23 @@ After approval, author, stage, and validate every TaskIntent in the decompositio
 with `valid: true` and `enrollment_ready: true`. Resolve `../bin/imm-tracker` from this packaged contract; do not assume a bare command is on `PATH`. Submit the entire approved set once through
 `imm-tracker publish-initiative --stdin --json`. Its input contains the confirmed
 Initiative slug and goal, Parent projection, and every Child's `slice_id`,
-canonical TaskIntent path, and public projection. The Parent projection requires
+canonical TaskIntent path, bounded public `acceptance` summaries, and public
+projection. The Parent projection requires
 `problem`, `result`, and `design`, and may include `decisions`,
 `testing_strategy`, and `out_of_scope`. `design` records Initiative-level
 invariants, Slice boundaries and ordering, shared interfaces or state flow, and
 material compatibility decisions. Every Parent Slice must correspond to one
 published Child; future checklist-only Slices are not allowed in the batch.
 
-Each Child projection may contain `result`, `current_behavior`,
+Each Child must provide public `acceptance` entries with `id` and a 1-500
+character `summary`. Their IDs must match every canonical TaskIntent acceptance
+ID exactly once. Canonical assertion prose is authority evidence and must never
+be copied into public GitHub projection. Each Child projection may contain
+`result`, `current_behavior`,
 `desired_behavior`, `key_interfaces`, `verification`, `blocked_by` Task IDs,
 `out_of_scope`, and `agent_handoff`. The tracker rereads every canonical
-TaskIntent for identity, risk, and acceptance; projection fields never widen
-TaskIntent scope or authority. It validates the complete dependency graph before
+TaskIntent for identity, risk, and acceptance IDs; projection fields and public
+summaries never widen TaskIntent scope or authority. It validates the complete dependency graph before
 remote writes, creates the Parent once, creates all Children, attaches every
 Child as a native Sub-issue, creates native `blocked_by` relations, and rereads
 the complete topology. The Child Agent Brief includes a direct Parent Issue link.

@@ -1,0 +1,32 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "2026-09-07-002-github-public-acceptance-projection",
+  "owner": "user",
+  "goal": "Replace GitHub Initiative publication's direct reuse of canonical TaskIntent assertion prose with required bounded public acceptance summaries whose IDs exactly match canonical acceptance IDs, preventing internal authority context from being copied into public Issues while preserving the projection denylist, body-size preflight, and zero remote mutations on malformed input.",
+  "acceptance": [
+    {
+      "id": "acc-public-acceptance-id-binding",
+      "assertion": "Complete Initiative publication requires every Child input to provide public acceptance summaries whose IDs equal the canonical TaskIntent acceptance IDs exactly once; missing arrays, duplicate IDs, extra IDs, missing IDs, and mismatched IDs return permanent_failure before any GitHub mutation, and each public summary remains subject to the existing 1-500 safe-character projection limit.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/plugin-package-runtime.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 65536\n}\n"
+    },
+    {
+      "id": "acc-canonical-assertion-not-published",
+      "assertion": "A canonical TaskIntent assertion longer than 500 characters or containing restricted authority context can publish when the Child input supplies a safe public summary with the same ID; the rendered Issue contains that ID and summary but not the canonical assertion, prohibited public summary content still fails closed, and aggregate body overflow still performs zero GitHub mutations.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/plugin-package-runtime.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 65536\n}\n"
+    },
+    {
+      "id": "acc-planner-publication-contract",
+      "assertion": "The packaged Planner contract requires each complete-publication Child to provide bounded public acceptance summaries, states that their IDs must match canonical TaskIntent acceptance IDs exactly, and prohibits copying canonical assertion prose into public GitHub projection while retaining canonical identity, risk, and acceptance binding.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/plugin-package-runtime.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 65536\n}\n"
+    }
+  ],
+  "scope_hint": [
+    "docs/specs/archive/github-public-acceptance-projection.spec.md",
+    "docs/specs/github-public-acceptance-projection.spec.md",
+    "plugins/immune-brain/dist/imm-planner.md",
+    "plugins/immune-brain/runtime/github_issue_tracker.ts",
+    "tests/plugin-package-runtime.test.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}

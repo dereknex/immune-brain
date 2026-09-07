@@ -57,6 +57,7 @@ export interface InitiativePublicationInput {
 	tasks: Array<{
 		slice_id: string;
 		intent: string;
+		acceptance: Array<{ id: string; summary: string }>;
 		projection?: TaskProjection;
 	}>;
 }
@@ -968,7 +969,7 @@ function validateOperation(operation: TrackerOperation): TrackerOperation {
 			projection: normalizeProjection(operation.projection),
 			acceptance: operation.acceptance.map((item, index) => ({
 				id: identifier(item.id, `acceptance[${index}].id`),
-				summary: projectionText(item.summary, `acceptance[${index}].summary`, 2_000),
+				summary: projectionText(item.summary, `acceptance[${index}].summary`, 500),
 			})),
 		};
 		issueTitle(`${normalized.initiative_id}/${normalized.slice_id}`, normalized.projection?.result ?? normalized.goal);
@@ -1070,7 +1071,7 @@ function preflightPublication(root: string, input: InitiativePublicationInput): 
 	const publications = input.tasks.map((task, index) => {
 		if (!task || typeof task !== "object" || Array.isArray(task)) throw new Error(`tasks[${index}] must be an object`);
 		if (typeof task.intent !== "string") throw new Error(`tasks[${index}].intent must be a string`);
-		return taskPublication(root, input.initiative_id, task.slice_id, task.intent, task.projection);
+		return taskPublication(root, input.initiative_id, task.slice_id, task.intent, task.acceptance, task.projection);
 	});
 	const operations = publications.map((publication) => publication.operation);
 	const taskIds = new Set<string>();
@@ -1264,7 +1265,14 @@ function isSuccessfulTrackerStatus(status: TrackerStatus): boolean {
 	return status === "created" || status === "updated" || status === "already_current";
 }
 
-function taskPublication(root: string, initiativeId: string, sliceId: string, intentPath: string, projection?: TaskProjection): PreparedPublicationTask {
+function taskPublication(
+	root: string,
+	initiativeId: string,
+	sliceId: string,
+	intentPath: string,
+	acceptance: unknown,
+	projection?: TaskProjection,
+): PreparedPublicationTask {
 	const absoluteRoot = resolve(root);
 	const absolutePath = resolve(absoluteRoot, intentPath);
 	const rel = relative(absoluteRoot, absolutePath);
@@ -1275,6 +1283,20 @@ function taskPublication(root: string, initiativeId: string, sliceId: string, in
 	const read = readTaskIntent(absoluteRoot, taskId);
 	if (read.intent_ref.path !== rel) throw new Error("TaskIntent path must match its canonical sidecar path");
 	const intent = read.intent;
+	if (!Array.isArray(acceptance)) throw new Error(`Task ${taskId} requires public acceptance summaries`);
+	const expectedIds = new Set(intent.acceptance.map((item) => item.id));
+	const publicById = new Map<string, { id: string; summary: string }>();
+	acceptance.forEach((item, index) => {
+		if (!item || typeof item !== "object" || Array.isArray(item))
+			throw new Error(`Task ${taskId} acceptance[${index}] must be an object`);
+		const raw = item as Record<string, unknown>;
+		const id = identifier(raw.id, `Task ${taskId} acceptance[${index}].id`);
+		if (!expectedIds.has(id)) throw new Error(`Task ${taskId} has unknown public acceptance id: ${id}`);
+		if (publicById.has(id)) throw new Error(`Task ${taskId} has duplicate public acceptance id: ${id}`);
+		publicById.set(id, { id, summary: projectionText(raw.summary, `Task ${taskId} acceptance[${index}].summary`, 500) });
+	});
+	const missingIds = [...expectedIds].filter((id) => !publicById.has(id));
+	if (missingIds.length) throw new Error(`Task ${taskId} is missing public acceptance ids: ${missingIds.join(", ")}`);
 	return {
 		operation: validateOperation({
 			op: "upsert-task",
@@ -1283,7 +1305,7 @@ function taskPublication(root: string, initiativeId: string, sliceId: string, in
 			slice_id: sliceId,
 			goal: intent.goal,
 			risk: intent.risk,
-			acceptance: intent.acceptance.map((item) => ({ id: item.id, summary: item.assertion })),
+			acceptance: intent.acceptance.map((item) => publicById.get(item.id)!),
 			projection,
 		}) as Extract<TrackerOperation, { op: "upsert-task" }>,
 		intent_path: read.intent_ref.path,
