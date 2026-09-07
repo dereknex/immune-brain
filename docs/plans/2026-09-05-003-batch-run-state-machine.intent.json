@@ -1,7 +1,6 @@
 {
   "contract": "assurance_kernel/task_intent/v1",
   "task_id": "2026-09-05-003-batch-run-state-machine",
-  "owner": "user",
   "goal": "Implement the unattended batch run state machine defined by docs/specs/unattended-initiative-batch-run.spec.md sections 3.4 and 4: a single serial driver that owns every batch and child state transition, drives each child through the existing Kernel obligations without inventing authority, parks human-owned work and skips its dependent subtree, honors budget, deadline, and expiry stop conditions, persists recoverable state, and writes exactly one run report.",
   "acceptance": [
     {
@@ -16,6 +15,8 @@
     }
   ],
   "scope_hint": [
+    "docs/specs/archive/unattended-initiative-batch-run.spec.md",
+    "docs/specs/unattended-initiative-batch-run.spec.md",
     "plugins/immune-brain/runtime/kernel/batch_authority.ts",
     "plugins/immune-brain/runtime/unattended/batch_plan.ts",
     "plugins/immune-brain/runtime/unattended/batch_runner.ts",
@@ -24,5 +25,6 @@
     "tests/unattended-batch-run.test.ts"
   ],
   "risk": "critical",
-  "revision": 1
+  "revision": 4,
+  "owner": "user"
 }

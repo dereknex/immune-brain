@@ -71,7 +71,13 @@ function hasImplementingCommit(intentPath: string): boolean {
       cwd: REPO_ROOT,
       encoding: "utf8",
     } as any) as unknown as string;
-    return out.trim().length > 0;
+    // Settlement commits ("imm: settle …") move/archive shared authority
+    // artifacts and are not implementing commits for pending intents that
+    // merely list those shared paths in scope_hint.
+    const implementing = out
+      .split("\n")
+      .filter((line: string) => line.trim().length > 0 && !/^\w+ imm: settle /.test(line));
+    return implementing.length > 0;
   } catch { return false; }
 }
 
