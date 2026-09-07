@@ -1,0 +1,321 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "2026-09-05-002-batch-plan-projection",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "2026-09-05-002-batch-plan-projection",
+    "goal": "Implement the deterministic read-only batch plan projection defined by docs/specs/unattended-initiative-batch-run.spec.md section 3.3: projectBatchPlan resolves one published Initiative into an ordered, dependency-closed list of enrollable child TaskIntents plus the plan_digest and budget defaults that the literal-user confirmation binds, treating tracker topology strictly as observation and performing zero writes.",
+    "acceptance": [
+      {
+        "id": "acc-batch-plan-determinism",
+        "assertion": "projectBatchPlan(root, initiative_slug) is pure and performs no filesystem, Kernel, or tracker mutation. It maps every Initiative child Task ID to its canonical docs/plans/<task-id>.intent.json, reads each intent's revision and content_hash, computes a dependency order and the transitive blocked_by closure, and returns the ordered plan with a plan_digest equal to the sha256 of the canonical JSON of [{task_id,intent_path,intent_revision,intent_content_hash,blocked_by}]. The same Initiative and the same intents always yield byte-identical output and the same digest regardless of tracker response ordering. Children with an existing tombstone or an existing TaskRecord are excluded as already settled or already owned; children declared risk 'critical' are classified needs_human and are never placed in the enrollable set; a child whose intent file is missing, unparseable, or fails intent validation is classified needs_human rather than silently dropped, and its dependents are marked blocked. TaskIntentV1 carries no initiative or dependency field, so the confirmed ordered plan and its digest, not remote tracker state, are the authorization subject.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/unattended-batch-plan.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 65536\n}\n"
+      },
+      {
+        "id": "acc-batch-plan-budget-and-observation",
+        "assertion": "The projection returns the budget the confirmation binds, defaulting to max_children equal to the full enrollable child count, deadline_at equal to the confirmation time plus eight hours, and qa_failure_limit two consecutive failures per child; explicit caller values override each default and out-of-range or non-positive values are rejected before any confirmation is offered. The tracker is read exactly once during projection and its result is copied into the returned plan, so a subsequent batch run never depends on remote availability, and a tracker read failure produces a projection error rather than a partially populated plan. The projection never publishes, updates, closes, or comments on any Initiative or Issue.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/unattended-batch-plan.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 65536\n}\n"
+      }
+    ],
+    "scope_hint": [
+      "docs/specs/archive/unattended-initiative-batch-run.spec.md",
+      "docs/specs/unattended-initiative-batch-run.spec.md",
+      "plugins/immune-brain/dist/claude/mcp-server.mjs",
+      "plugins/immune-brain/runtime/github_issue_tracker.ts",
+      "plugins/immune-brain/runtime/kernel/intent.ts",
+      "plugins/immune-brain/runtime/unattended/batch_plan.ts",
+      "plugins/immune-brain/runtime/unattended/types.ts",
+      "tests/kernel-intent-v2.test.ts",
+      "tests/unattended-batch-plan.test.ts"
+    ],
+    "risk": "material",
+    "revision": 5,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/archive/2026-09-05-002-batch-plan-projection.intent.json",
+    "content_hash": "sha256:ee0a10d1baefd5941e51f6dfb178ef21f21b552a16508aebead819581ec3e636"
+  },
+  "lifecycle": "stopped",
+  "artifact_state": "frozen",
+  "baseline": "sha256:d1344fcb39b584a6c30aaf940f3690bc11aac1556f2889806921758e8937bc3b",
+  "git_base_head": "52771f4b0a32251e48bce4b5dac82786d5000957",
+  "attestations": [
+    {
+      "id": "approval-qa-8bd233a9",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:ebde3d13d9147ef25c33b8188a1a9beb9a5422110046304da12bc0fe0af7f6f3",
+      "diff_hash": "sha256:3b9701cc87efe8257ffe0a1bdeb57ba27fe317761d0c2211d04287dd721e9775",
+      "actor_id": "deterministic-qa",
+      "summary": "all 2 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "acc-batch-plan-determinism",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-batch-plan-budget-and-observation",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-79c2e62c",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 5,
+      "intent_content_hash": "sha256:ee0a10d1baefd5941e51f6dfb178ef21f21b552a16508aebead819581ec3e636",
+      "diff_hash": "sha256:cd90d787038148f53c7e930c0a303e1f17d0f2d1463097f5345af97bad1e03c1",
+      "actor_id": "deterministic-qa",
+      "summary": "all 2 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "acc-batch-plan-determinism",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-batch-plan-budget-and-observation",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 fixed verification descriptor(s) passed"
+        }
+      ]
+    }
+  ],
+  "findings": [
+    {
+      "id": "review-1c6f0b2b9e2d-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "acc-batch-plan-determinism",
+      "source": "review",
+      "review_round": 1,
+      "summary": "plugins/immune-brain/runtime/unattended/batch_plan.ts:144 calls readTaskIntent, which mutates the Kernel token registry via intent_token_registry.ts:45, so projectBatchPlan is not the required mutation-free projection; use a read-only intent path that does not mint authority tokens."
+    },
+    {
+      "id": "review-1c6f0b2b9e2d-2-review-2",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "acc-batch-plan-determinism",
+      "source": "review",
+      "review_round": 1,
+      "summary": "plugins/immune-brain/runtime/unattended/batch_plan.ts:143-154 catches every intent-read failure and fabricates invalid_intent, suppressing permission, Git-execution, symlink, descriptor-race, and other infrastructure/security errors; catch only expected missing/parse/validation failures and propagate unknown errors."
+    },
+    {
+      "id": "review-1c6f0b2b9e2d-3-review-3",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "acc-batch-plan-determinism",
+      "source": "review",
+      "review_round": 1,
+      "summary": "plugins/immune-brain/runtime/unattended/batch_plan.ts:64 and 74 order allowed mixed-case/punctuation Task IDs with localeCompare, whose result depends on the host locale and can change plan bytes and plan_digest across hosts; use a locale-independent code-point comparator."
+    },
+    {
+      "id": "review-680399836f44-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "acc-batch-plan-budget-and-observation",
+      "source": "review",
+      "review_round": 2,
+      "summary": "plugins/immune-brain/runtime/unattended/batch_plan.ts:105-110 defaults max_children to 0 when no children are enrollable, violating the required rejection of non-positive budgets and allowing confirmation of an unusable plan; reject zero-enrollable projections or validate the computed default with positiveSafeInteger."
+    },
+    {
+      "id": "request_rework:2026-09-05-002-batch-plan-projection:2026-09-07T02:48:42.789Z:replan-required",
+      "kind": "replan_required",
+      "status": "open",
+      "acceptance_id": "acc-batch-plan-budget-and-observation",
+      "source": "kernel",
+      "review_round": 2,
+      "summary": "Review returned this acceptance boundary twice; a durable replan is required."
+    }
+  ],
+  "history": [
+    {
+      "id": "approve_breaking_intent_revision:2026-09-05-002-batch-plan-projection:2026-09-07T02:23:03.372Z",
+      "at": "2026-09-07T02:23:03.372Z",
+      "type": "approve_breaking_intent_revision",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "intent_revision_2\naction_v2_sha256:0c0e86f0b3418f797be833efebbdf20005cef613824e12f906e206f6372d1028",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-2aef21d5ee6bd704",
+        "issued_at": "2026-09-07T02:23:03.569Z",
+        "expires_at": "2026-09-07T02:33:03.569Z"
+      }
+    },
+    {
+      "id": "freeze_artifacts:2026-09-05-002-batch-plan-projection:2026-09-07T02:23:19.885Z",
+      "at": "2026-09-07T02:23:19.885Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent and Spec frozen at docs/plans/archive/2026-09-05-002-batch-plan-projection.intent.json"
+    },
+    {
+      "id": "record_approval:2026-09-05-002-batch-plan-projection:2026-09-07T02:23:35.508Z",
+      "at": "2026-09-07T02:23:35.508Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-8bd233a9\naction_v2_sha256:74b06c346e2492240a4631a68ec9486b8906316148c0ea4422bdbce19efbc505",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-c3be5dd1cf28fc9e",
+        "issued_at": "2026-09-07T02:23:35.508Z",
+        "expires_at": "2026-09-07T02:33:35.508Z"
+      }
+    },
+    {
+      "id": "request_rework:2026-09-05-002-batch-plan-projection:2026-09-07T02:27:47.996Z",
+      "at": "2026-09-07T02:27:47.996Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_1\naction_v2_sha256:ab588eb07bca001f05fa7a659fe05ff3d80ce2ba1081e29ae9c04212bc8fc9b8",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-fc04bfe6412590ed",
+        "issued_at": "2026-09-07T02:27:47.999Z",
+        "expires_at": "2026-09-07T02:37:47.996Z"
+      }
+    },
+    {
+      "id": "approve_breaking_intent_revision:2026-09-05-002-batch-plan-projection:2026-09-07T02:31:00.158Z",
+      "at": "2026-09-07T02:31:00.158Z",
+      "type": "approve_breaking_intent_revision",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "intent_revision_3\naction_v2_sha256:14fe3c51ff7fab6658a393917ffaa8e1c1be437612fa60ae74f524eae96fe1a1",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-c3c66b7e34acc487",
+        "issued_at": "2026-09-07T02:31:00.380Z",
+        "expires_at": "2026-09-07T02:41:00.379Z"
+      }
+    },
+    {
+      "id": "approve_breaking_intent_revision:2026-09-05-002-batch-plan-projection:2026-09-07T02:39:24.262Z",
+      "at": "2026-09-07T02:39:24.262Z",
+      "type": "approve_breaking_intent_revision",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "intent_revision_4\naction_v2_sha256:dc2316b1c2de56503909b853181c98d6fcfe06a5a063e8e6513239a500a0f21f",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-ac156b5c3bdce0e9",
+        "issued_at": "2026-09-07T02:39:24.544Z",
+        "expires_at": "2026-09-07T02:49:24.544Z"
+      }
+    },
+    {
+      "id": "approve_breaking_intent_revision:2026-09-05-002-batch-plan-projection:2026-09-07T02:41:21.503Z",
+      "at": "2026-09-07T02:41:21.503Z",
+      "type": "approve_breaking_intent_revision",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "intent_revision_5\naction_v2_sha256:a7f9f59bf2cc458ff22ff213edef11d92b1b96ffae869bd61ef5eca16354eda4",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-bd2d1f3df4dfaf01",
+        "issued_at": "2026-09-07T02:41:21.762Z",
+        "expires_at": "2026-09-07T02:51:21.762Z"
+      }
+    },
+    {
+      "id": "resolve_finding:2026-09-05-002-batch-plan-projection:2026-09-07T02:43:19.558Z",
+      "at": "2026-09-07T02:43:19.558Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-1c6f0b2b9e2d-1-review-1\naction_v2_sha256:cba31834916fdacef5d9ada8ce47db1210af06cd968575df58abf17bb48f11e4"
+    },
+    {
+      "id": "resolve_finding:2026-09-05-002-batch-plan-projection:2026-09-07T02:43:30.549Z",
+      "at": "2026-09-07T02:43:30.549Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-1c6f0b2b9e2d-2-review-2\naction_v2_sha256:2beab1ea61c5d05895f1a0e5ff705353d660fb1ba98833bbf664e184ef581c56"
+    },
+    {
+      "id": "resolve_finding:2026-09-05-002-batch-plan-projection:2026-09-07T02:43:41.769Z",
+      "at": "2026-09-07T02:43:41.769Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-1c6f0b2b9e2d-3-review-3\naction_v2_sha256:847c3eac422b4f15085e4a49020fe27dae8edf67586294dad5cd747dd5225196"
+    },
+    {
+      "id": "freeze_artifacts:2026-09-05-002-batch-plan-projection:2026-09-07T02:43:55.084Z",
+      "at": "2026-09-07T02:43:55.084Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent and Spec frozen at docs/plans/archive/2026-09-05-002-batch-plan-projection.intent.json"
+    },
+    {
+      "id": "record_approval:2026-09-05-002-batch-plan-projection:2026-09-07T02:46:09.809Z",
+      "at": "2026-09-07T02:46:09.809Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-79c2e62c\naction_v2_sha256:e9e7208bfed459b74e678ec47bd21663521251ba12694bf9a00778166aae3da5",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-f42823eb5ac8cac8",
+        "issued_at": "2026-09-07T02:46:09.809Z",
+        "expires_at": "2026-09-07T02:56:09.809Z"
+      }
+    },
+    {
+      "id": "request_rework:2026-09-05-002-batch-plan-projection:2026-09-07T02:48:42.789Z",
+      "at": "2026-09-07T02:48:42.789Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "review_round_2\naction_v2_sha256:33f49841d84d4c1937b029796110feae2aa87732029491c674380d2f4e99254a",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-2c350a6ad747822e",
+        "issued_at": "2026-09-07T02:48:42.790Z",
+        "expires_at": "2026-09-07T02:58:42.790Z"
+      }
+    },
+    {
+      "id": "resolve_finding:2026-09-05-002-batch-plan-projection:2026-09-07T02:50:49.079Z",
+      "at": "2026-09-07T02:50:49.079Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-680399836f44-1-review-1\naction_v2_sha256:6396aac28bc8f7a5971a874ccb339f2d0b0c73a3b6f7472c47b1eaf6c9a7cf70"
+    },
+    {
+      "id": "stop:2026-09-05-002-batch-plan-projection:2026-09-07T02:51:43.265Z",
+      "at": "2026-09-07T02:51:43.265Z",
+      "type": "stop",
+      "from_state": "active:active",
+      "to_state": "stopped:frozen",
+      "reason": "literal user stopped task parked for replan\naction_v2_sha256:3a708b22ef44b5f08954d07116c4b8842a5b15465f141c08e75c1d79ac4280a1",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-092ea9cf2b3fb669",
+        "issued_at": "2026-09-07T02:51:43.266Z",
+        "expires_at": "2026-09-07T03:01:43.266Z"
+      }
+    }
+  ]
+}

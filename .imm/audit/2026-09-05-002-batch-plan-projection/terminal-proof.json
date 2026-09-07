@@ -1,0 +1,9 @@
+{
+  "contract": "assurance_kernel/task_tombstone/v2",
+  "task_id": "2026-09-05-002-batch-plan-projection",
+  "lifecycle_status": "terminal",
+  "terminal_lifecycle": "stopped",
+  "terminal_event_id": "stop:2026-09-05-002-batch-plan-projection:2026-09-07T02:51:43.265Z",
+  "final_record_hash": "sha256:aceff62026ac4f734d36b56d5c453ccc34bddec2fa13803e0c73e2653ecb6701",
+  "terminalized_at": "2026-09-07T02:51:43.265Z"
+}
