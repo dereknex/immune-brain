@@ -27,6 +27,7 @@ import {
 import {
 	mintToken,
 	type TaskIntentIdentityToken,
+	type TokenIdentity,
 } from "./intent_token_registry";
 
 export const INTENT_MAX_BYTES = 64 * 1024;
@@ -406,6 +407,26 @@ export interface ReadTaskIntentResult {
 	token: TaskIntentIdentityToken;
 }
 
+export interface ObservedTaskIntent {
+	intent: TaskIntentV1;
+	content_hash: string;
+	intent_ref: TaskIntentRefV1;
+}
+
+export class TaskIntentObservationError extends Error {
+	readonly code: "missing" | "invalid";
+
+	constructor(code: "missing" | "invalid", message: string) {
+		super(message);
+		this.name = "TaskIntentObservationError";
+		this.code = code;
+	}
+}
+
+interface TaskIntentReadSource extends ObservedTaskIntent {
+	identity: TokenIdentity;
+}
+
 export function setIntentReaderTestHook(
 	hook: { onBeforeDescriptorRead?: () => void } | null,
 ): void {
@@ -523,11 +544,11 @@ function assertIdentitiesUnchanged(
 	}
 }
 
-export function readTaskIntent(
+function readTaskIntentSource(
 	root: string,
 	taskId: string,
 	requestedPath?: string,
-): ReadTaskIntentResult {
+): TaskIntentReadSource {
 	validateTaskId(taskId);
 
 	const canonicalRoot = resolveCanonicalRoot(root);
@@ -545,7 +566,7 @@ export function readTaskIntent(
 	if (!target.startsWith(canonicalRoot + sep))
 		throw new Error("intent sidecar escapes project root");
 	if (!sidecarPresent(canonicalRoot, sidecarPath))
-		throw new Error(`TaskIntent sidecar is missing at ${sidecarPath}`);
+		throw new TaskIntentObservationError("missing", `TaskIntent sidecar is missing at ${sidecarPath}`);
 
 	const pathIdentities = collectPathIdentities(canonicalRoot, sidecarPath);
 	const fileIdentity = pathIdentities[pathIdentities.length - 1];
@@ -557,13 +578,19 @@ export function readTaskIntent(
 			["ls-files", "--error-unmatch", "--", sidecarPath],
 			{ cwd: canonicalRoot, stdio: ["ignore", "pipe", "pipe"] },
 		);
-	} catch {
-		throw new Error("TaskIntent sidecar is not Git-tracked");
+	} catch (error) {
+		if (
+			typeof error === "object"
+			&& error !== null
+			&& "status" in error
+			&& (error as { status?: unknown }).status === 1
+		) throw new TaskIntentObservationError("invalid", "TaskIntent sidecar is not Git-tracked");
+		throw error;
 	}
 
 	const before = lstatSync(target);
 	if (!before.isFile() || before.size > INTENT_MAX_BYTES)
-		throw new Error("TaskIntent sidecar must be a regular file no larger than 64 KiB");
+		throw new TaskIntentObservationError("invalid", "TaskIntent sidecar must be a regular file no larger than 64 KiB");
 
 	const fd = openSync(target, fsConstants.O_RDONLY | fsConstants.O_NOFOLLOW);
 	let bytes: Buffer;
@@ -576,7 +603,7 @@ export function readTaskIntent(
 		closeSync(fd);
 	}
 	if (bytes.byteLength > INTENT_MAX_BYTES)
-		throw new Error("TaskIntent sidecar exceeds 64 KiB");
+		throw new TaskIntentObservationError("invalid", "TaskIntent sidecar exceeds 64 KiB");
 
 	// Post-read identity re-verification without a second path read as the
 	// source of bytes.
@@ -594,27 +621,15 @@ export function readTaskIntent(
 	try {
 		intent = parseTaskIntentV1(JSON.parse(bytes.toString("utf8")));
 	} catch (error) {
-		throw new Error(
+		throw new TaskIntentObservationError(
+			"invalid",
 			`TaskIntent sidecar is invalid: ${error instanceof Error ? error.message : String(error)}`,
 		);
 	}
 	if (intent.task_id !== taskId)
-		throw new Error("intent.task_id does not match the sidecar filename task id");
+		throw new TaskIntentObservationError("invalid", "intent.task_id does not match the sidecar filename task id");
 
 	const contentHash = canonicalIntentHash(intent);
-	const token = mintToken({
-		canonical_root: canonicalRoot,
-		sidecar_path: sidecarPath,
-		path_dev: fileIdentity.dev,
-		path_ino: fileIdentity.ino,
-		fd_dev: before.dev,
-		fd_ino: before.ino,
-		fd_size: before.size,
-		fd_mtime_ms: before.mtimeMs,
-		source_bytes_sha256: sourceBytesSha256,
-		intent_content_hash: contentHash,
-	});
-
 	return {
 		intent,
 		content_hash: contentHash,
@@ -623,6 +638,35 @@ export function readTaskIntent(
 			revision: intent.revision,
 			content_hash: contentHash,
 		},
-		token,
+		identity: {
+			canonical_root: canonicalRoot,
+			sidecar_path: sidecarPath,
+			path_dev: fileIdentity.dev,
+			path_ino: fileIdentity.ino,
+			fd_dev: before.dev,
+			fd_ino: before.ino,
+			fd_size: before.size,
+			fd_mtime_ms: before.mtimeMs,
+			source_bytes_sha256: sourceBytesSha256,
+			intent_content_hash: contentHash,
+		},
 	};
+}
+
+export function observeTaskIntent(
+	root: string,
+	taskId: string,
+	requestedPath?: string,
+): ObservedTaskIntent {
+	const { identity: _identity, ...observed } = readTaskIntentSource(root, taskId, requestedPath);
+	return observed;
+}
+
+export function readTaskIntent(
+	root: string,
+	taskId: string,
+	requestedPath?: string,
+): ReadTaskIntentResult {
+	const { identity, ...observed } = readTaskIntentSource(root, taskId, requestedPath);
+	return { ...observed, token: mintToken(identity) };
 }

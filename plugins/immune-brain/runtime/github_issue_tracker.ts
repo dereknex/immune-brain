@@ -86,6 +86,18 @@ export interface GithubInitiativePublicationResult {
 	message: string;
 }
 
+export interface GithubInitiativeObservation {
+	contract: "immune_brain/github_initiative_observation/v1";
+	initiative_id: string;
+	issue_number: number;
+	tasks: Array<{
+		task_id: string;
+		slice_id: string;
+		issue_number: number;
+		blocked_by: string[];
+	}>;
+}
+
 export interface TaskProjection {
 	result?: string;
 	current_behavior?: string;
@@ -551,6 +563,63 @@ async function readBlockedByIds(
 	} catch (error) {
 		return result(operation, "permanent_failure", error instanceof Error ? error.message : String(error));
 	}
+}
+
+export async function observeGithubInitiative(
+	root: string,
+	initiativeId: string,
+	gh: GhTransport = createGhTransport(),
+): Promise<GithubInitiativeObservation> {
+	const id = identifier(initiativeId, "initiative_id");
+	const source = await snapshot(resolve(root), gh, "create-initiative");
+	if ("contract" in source) throw new Error(source.message);
+	const parent = initiativeLookup(source.issues, source.repository.id, id);
+	if (parent.kind === "missing") throw new Error(`Initiative ${id} is not published`);
+	if (parent.kind === "ambiguous") throw new Error(parent.message);
+	const subIssueNumbers = await readSubIssueNumbers(root, gh, "create-initiative", source.repository, parent.issue.number);
+	if (!Array.isArray(subIssueNumbers)) throw new Error(subIssueNumbers.message);
+	if (new Set(subIssueNumbers).size !== subIssueNumbers.length)
+		throw new Error(`Initiative ${id} has duplicate native Sub-issue relations`);
+	const tasks = subIssueNumbers.map((issueNumber) => {
+		const matches = source.issues.filter((issue) => issue.number === issueNumber);
+		if (matches.length !== 1) throw new Error(`Initiative ${id} references an unreadable Sub-issue #${issueNumber}`);
+		const issue = matches[0];
+		const taskId = ownershipMarkerValue(issue.body, "task-id");
+		const sliceId = ownershipMarkerValue(issue.body, "slice-id");
+		if (!taskId || !sliceId || ownershipMarkerValue(issue.body, "initiative-id") !== id)
+			throw new Error(`Sub-issue #${issueNumber} has invalid Initiative ownership markers`);
+		const owned = ownedTaskLookup(source.issues, source.repository.id, taskId, id, sliceId);
+		if (owned.kind !== "found" || owned.issue.number !== issueNumber)
+			throw new Error(owned.kind === "ambiguous" ? owned.message : `Sub-issue #${issueNumber} has invalid Task ownership`);
+		return { task_id: taskId, slice_id: sliceId, issue_number: issueNumber, issue_id: issue.id };
+	});
+	if (new Set(tasks.map((task) => task.task_id)).size !== tasks.length)
+		throw new Error(`Initiative ${id} has duplicate Task identities`);
+	if (new Set(tasks.map((task) => task.slice_id)).size !== tasks.length)
+		throw new Error(`Initiative ${id} has duplicate Slice identities`);
+	const taskByIssueId = new Map(tasks.map((task) => [task.issue_id, task.task_id]));
+	const observed: GithubInitiativeObservation["tasks"] = [];
+	for (const task of tasks.sort((left, right) => left.task_id < right.task_id ? -1 : left.task_id > right.task_id ? 1 : 0)) {
+		const blockerIds = await readBlockedByIds(root, gh, "create-initiative", source.repository, task.issue_number);
+		if (!Array.isArray(blockerIds)) throw new Error(blockerIds.message);
+		const blockedBy = blockerIds.map((blockerId) => {
+			const blocker = taskByIssueId.get(blockerId);
+			if (!blocker) throw new Error(`Task ${task.task_id} depends on an Issue outside Initiative ${id}`);
+			return blocker;
+		}).sort();
+		observed.push({
+			task_id: task.task_id,
+			slice_id: task.slice_id,
+			issue_number: task.issue_number,
+			blocked_by: blockedBy,
+		});
+	}
+	return {
+		contract: "immune_brain/github_initiative_observation/v1",
+		initiative_id: id,
+		issue_number: parent.issue.number,
+		tasks: observed,
+	};
 }
 
 async function confirmBlockedBy(

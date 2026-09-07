@@ -3012,6 +3012,15 @@ function classifyIntentRevision(previous, next) {
     return "breaking";
   return next.revision > previous.revision ? "compatible" : "breaking";
 }
+
+class TaskIntentObservationError extends Error {
+  code;
+  constructor(code, message) {
+    super(message);
+    this.name = "TaskIntentObservationError";
+    this.code = code;
+  }
+}
 var intentReaderTestHook = null;
 function validateTaskId3(taskId) {
   if (!TASK_ID_PATTERN.test(taskId))
@@ -3076,7 +3085,7 @@ function assertIdentitiesUnchanged(expected, canonicalRoot, relativePath) {
       throw new Error(`path component changed while being read: ${parts.slice(0, index + 1).join("/")}`);
   }
 }
-function readTaskIntent(root, taskId, requestedPath) {
+function readTaskIntentSource(root, taskId, requestedPath) {
   validateTaskId3(taskId);
   const canonicalRoot = resolveCanonicalRoot(root);
   const activePath = `${INTENT_SIDECAR_RELATIVE_PREFIX}${taskId}.intent.json`;
@@ -3088,17 +3097,19 @@ function readTaskIntent(root, taskId, requestedPath) {
   if (!target.startsWith(canonicalRoot + sep3))
     throw new Error("intent sidecar escapes project root");
   if (!sidecarPresent(canonicalRoot, sidecarPath))
-    throw new Error(`TaskIntent sidecar is missing at ${sidecarPath}`);
+    throw new TaskIntentObservationError("missing", `TaskIntent sidecar is missing at ${sidecarPath}`);
   const pathIdentities = collectPathIdentities(canonicalRoot, sidecarPath);
   const fileIdentity = pathIdentities[pathIdentities.length - 1];
   try {
     execFileSync3("git", ["ls-files", "--error-unmatch", "--", sidecarPath], { cwd: canonicalRoot, stdio: ["ignore", "pipe", "pipe"] });
-  } catch {
-    throw new Error("TaskIntent sidecar is not Git-tracked");
+  } catch (error) {
+    if (typeof error === "object" && error !== null && "status" in error && error.status === 1)
+      throw new TaskIntentObservationError("invalid", "TaskIntent sidecar is not Git-tracked");
+    throw error;
   }
   const before = lstatSync4(target);
   if (!before.isFile() || before.size > INTENT_MAX_BYTES)
-    throw new Error("TaskIntent sidecar must be a regular file no larger than 64 KiB");
+    throw new TaskIntentObservationError("invalid", "TaskIntent sidecar must be a regular file no larger than 64 KiB");
   const fd = openSync2(target, fsConstants.O_RDONLY | fsConstants.O_NOFOLLOW);
   let bytes;
   try {
@@ -3110,7 +3121,7 @@ function readTaskIntent(root, taskId, requestedPath) {
     closeSync2(fd);
   }
   if (bytes.byteLength > INTENT_MAX_BYTES)
-    throw new Error("TaskIntent sidecar exceeds 64 KiB");
+    throw new TaskIntentObservationError("invalid", "TaskIntent sidecar exceeds 64 KiB");
   const after = lstatSync4(target);
   assertSameIdentity(statIdentity(before), after, "intent sidecar");
   assertIdentitiesUnchanged(pathIdentities, canonicalRoot, sidecarPath);
@@ -3124,23 +3135,11 @@ function readTaskIntent(root, taskId, requestedPath) {
   try {
     intent = parseTaskIntentV1(JSON.parse(bytes.toString("utf8")));
   } catch (error) {
-    throw new Error(`TaskIntent sidecar is invalid: ${error instanceof Error ? error.message : String(error)}`);
+    throw new TaskIntentObservationError("invalid", `TaskIntent sidecar is invalid: ${error instanceof Error ? error.message : String(error)}`);
   }
   if (intent.task_id !== taskId)
-    throw new Error("intent.task_id does not match the sidecar filename task id");
+    throw new TaskIntentObservationError("invalid", "intent.task_id does not match the sidecar filename task id");
   const contentHash = canonicalIntentHash(intent);
-  const token = mintToken({
-    canonical_root: canonicalRoot,
-    sidecar_path: sidecarPath,
-    path_dev: fileIdentity.dev,
-    path_ino: fileIdentity.ino,
-    fd_dev: before.dev,
-    fd_ino: before.ino,
-    fd_size: before.size,
-    fd_mtime_ms: before.mtimeMs,
-    source_bytes_sha256: sourceBytesSha256,
-    intent_content_hash: contentHash
-  });
   return {
     intent,
     content_hash: contentHash,
@@ -3149,8 +3148,23 @@ function readTaskIntent(root, taskId, requestedPath) {
       revision: intent.revision,
       content_hash: contentHash
     },
-    token
+    identity: {
+      canonical_root: canonicalRoot,
+      sidecar_path: sidecarPath,
+      path_dev: fileIdentity.dev,
+      path_ino: fileIdentity.ino,
+      fd_dev: before.dev,
+      fd_ino: before.ino,
+      fd_size: before.size,
+      fd_mtime_ms: before.mtimeMs,
+      source_bytes_sha256: sourceBytesSha256,
+      intent_content_hash: contentHash
+    }
   };
+}
+function readTaskIntent(root, taskId, requestedPath) {
+  const { identity, ...observed } = readTaskIntentSource(root, taskId, requestedPath);
+  return { ...observed, token: mintToken(identity) };
 }
 
 // plugins/immune-brain/runtime/kernel/validation.ts
