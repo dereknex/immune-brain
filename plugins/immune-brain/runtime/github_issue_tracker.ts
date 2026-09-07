@@ -968,7 +968,7 @@ function validateOperation(operation: TrackerOperation): TrackerOperation {
 			projection: normalizeProjection(operation.projection),
 			acceptance: operation.acceptance.map((item, index) => ({
 				id: identifier(item.id, `acceptance[${index}].id`),
-				summary: projectionText(item.summary, `acceptance[${index}].summary`, 500),
+				summary: projectionText(item.summary, `acceptance[${index}].summary`, 2_000),
 			})),
 		};
 		issueTitle(`${normalized.initiative_id}/${normalized.slice_id}`, normalized.projection?.result ?? normalized.goal);

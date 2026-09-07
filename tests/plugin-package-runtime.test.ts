@@ -379,14 +379,24 @@ const AGENT_READY_TASK = {
 	},
 };
 
-function writeTrackedIntent(root: string, taskId: string, goal: string, risk: "routine" | "material" | "critical" = "material") {
+function writeTrackedIntent(
+	root: string,
+	taskId: string,
+	goal: string,
+	risk: "routine" | "material" | "critical" = "material",
+	assertions: string[] = [`${goal} is verified`],
+) {
 	const intentPath = `docs/plans/${taskId}.intent.json`;
 	mkdirSync(join(root, "docs", "plans"), { recursive: true });
 	writeFileSync(join(root, intentPath), `${JSON.stringify({
 		contract: "assurance_kernel/task_intent/v1",
 		task_id: taskId,
 		goal,
-		acceptance: [{ id: `acc-${taskId}`, assertion: `${goal} is verified`, verification: "{}" }],
+		acceptance: assertions.map((assertion, index) => ({
+			id: assertions.length === 1 ? `acc-${taskId}` : `acc-${taskId}-${index + 1}`,
+			assertion,
+			verification: "{}",
+		})),
 		scope_hint: ["tests/**"],
 		risk,
 		revision: 1,
@@ -395,9 +405,14 @@ function writeTrackedIntent(root: string, taskId: string, goal: string, risk: "r
 	return intentPath;
 }
 
-function initializeTrackedIntents(root: string, tasks: Array<{ task_id: string; goal: string; risk?: "routine" | "material" | "critical" }>) {
+function initializeTrackedIntents(root: string, tasks: Array<{
+	task_id: string;
+	goal: string;
+	risk?: "routine" | "material" | "critical";
+	assertions?: string[];
+}>) {
 	spawnSync("git", ["init", "-q"], { cwd: root });
-	const paths = tasks.map((task) => writeTrackedIntent(root, task.task_id, task.goal, task.risk));
+	const paths = tasks.map((task) => writeTrackedIntent(root, task.task_id, task.goal, task.risk, task.assertions));
 	spawnSync("git", ["add", ...paths], { cwd: root });
 	return paths;
 }
@@ -876,6 +891,60 @@ describe("plugin package runtime cutover parity", () => {
 
 			const retried = await runGithubInitiativePublication(root, input, gh);
 			expect(retried.status).toBe("already_current");
+		});
+	});
+
+	it("publishes canonical acceptance assertions up to 2,000 characters without truncation", async () => {
+		await withIsolatedRootAsync(async (root) => {
+			const gh = new FakeGh();
+			const assertion = "x".repeat(2_000);
+			const paths = initializeTrackedIntents(root, [
+				{ task_id: "long-acceptance", goal: "Publish long acceptance", assertions: [assertion] },
+				{ task_id: "normal-acceptance", goal: "Publish normal acceptance" },
+			]);
+			const published = await runGithubInitiativePublication(root, {
+				initiative_id: "long-acceptance-batch",
+				goal: "Publish canonical acceptance assertions",
+				projection: {
+					problem: "Valid TaskIntent assertions can exceed a narrower projection limit.",
+					result: "Publish every valid assertion without truncation.",
+					design: "TaskIntent validation remains the per-assertion bound and GitHub body preflight remains the aggregate bound.",
+				},
+				tasks: [
+					{ slice_id: "long", intent: paths[0] },
+					{ slice_id: "normal", intent: paths[1] },
+				],
+			}, gh);
+
+			expect(published.status).toBe("created");
+			expect(gh.issues.find((issue) => issue.title.includes("/long]"))?.body).toContain(assertion);
+		});
+	});
+
+	it("rejects aggregate acceptance bodies over the GitHub byte limit before mutation", async () => {
+		await withIsolatedRootAsync(async (root) => {
+			const gh = new FakeGh();
+			const paths = initializeTrackedIntents(root, [
+				{ task_id: "oversized-acceptance", goal: "Reject oversized acceptance", assertions: Array.from({ length: 28 }, () => "x".repeat(2_000)) },
+				{ task_id: "normal-acceptance", goal: "Publish normal acceptance" },
+			]);
+			const published = await runGithubInitiativePublication(root, {
+				initiative_id: "oversized-acceptance-batch",
+				goal: "Reject aggregate acceptance overflow",
+				projection: {
+					problem: "Individually valid assertions can exceed the aggregate GitHub body limit.",
+					result: "Reject an oversized Child before remote mutation.",
+					design: "The existing UTF-8 body preflight remains the aggregate bound.",
+				},
+				tasks: [
+					{ slice_id: "oversized", intent: paths[0], projection: { key_interfaces: Array.from({ length: 20 }, () => "y".repeat(500)) } },
+					{ slice_id: "normal", intent: paths[1] },
+				],
+			}, gh);
+
+			expect(published).toMatchObject({ status: "permanent_failure" });
+			expect(published.message).toContain("exceeds 65,536 UTF-8 bytes");
+			expect(gh.mutations).toBe(0);
 		});
 	});
 

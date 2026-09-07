@@ -1,0 +1,26 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "2026-09-07-001-github-initiative-acceptance-summary-limit",
+  "owner": "user",
+  "goal": "Align GitHub Initiative acceptance summary validation with the canonical TaskIntent assertion contract so assertions from 501 through 2,000 characters publish losslessly, while preserving restricted-text checks, the 65,536-byte Issue body preflight, terminal-suffix reserve, and zero GitHub mutations on rejected bodies.",
+  "acceptance": [
+    {
+      "id": "acc-valid-taskintent-acceptance-projected",
+      "assertion": "A Git-tracked canonical TaskIntent whose acceptance assertion is between 501 and 2,000 characters passes GitHub tracker upsert validation and complete Initiative publication without truncation; the rendered Child Issue contains the full assertion, while prohibited acceptance content continues to return permanent_failure before any GitHub mutation.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/plugin-package-runtime.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 65536\n}\n"
+    },
+    {
+      "id": "acc-github-body-limit-preserved",
+      "assertion": "Acceptance summaries up to 2,000 characters remain subordinate to the existing 65,536-byte UTF-8 GitHub Issue body limit and reserved terminal suffix; a complete Initiative whose rendered Child body exceeds that byte budget returns permanent_failure with zero GitHub mutations.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/plugin-package-runtime.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 65536\n}\n"
+    }
+  ],
+  "scope_hint": [
+    "docs/specs/archive/github-initiative-acceptance-summary-limit.spec.md",
+    "docs/specs/github-initiative-acceptance-summary-limit.spec.md",
+    "plugins/immune-brain/runtime/github_issue_tracker.ts",
+    "tests/plugin-package-runtime.test.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}
