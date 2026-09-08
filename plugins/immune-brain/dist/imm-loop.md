@@ -1,6 +1,6 @@
 ---
 name: imm-loop
-description: Use when the user explicitly requests execution or resumption of an Immune-Brain managed task through the Kernel-governed loop.
+description: Use when the user explicitly requests execution or resumption of an Immune-Brain task.
 ---
 
 # Immune-Brain: Loop

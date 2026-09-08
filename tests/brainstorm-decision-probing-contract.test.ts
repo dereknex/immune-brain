@@ -110,7 +110,8 @@ describe("Brainstorm decision probing contracts", () => {
 		expect(BRAINSTORM).toContain("recommended answer");
 		expect(BRAINSTORM).not.toContain("Ask one question at a time");
 		expect(PLANNER).toContain("Allowed");
-		expect(PLANNER).toContain("`CONTEXT.md` at the repo root");
+		expect(PLANNER).toContain("Consult the relevant `CONTEXT.md` terms when domain meaning is unclear or changes");
+		expect(PLANNER).toContain("`CONTEXT.md` is vocabulary and architecture navigation, not execution state");
 		expect(PLANNER).toContain("## Clarification supplement");
 		expect(PLANNER).not.toContain("## Default exhaustive decision tree");
 	});

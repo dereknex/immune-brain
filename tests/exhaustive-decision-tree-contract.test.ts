@@ -121,11 +121,15 @@ describe("Brainstorm-owned clarification contract", () => {
 	test("Planner preserves upstream decisions and focused verification authority", () => {
 		expectAll(plannerContracts, [
 			"must not repeat, reopen, or rewrite confirmed decisions",
-			"Direct Planner entry and Medium/High Design Risk work must inspect relevant ADRs and rejected Learnings",
+			"Consult relevant ADRs and rejected Learnings only when an architectural decision, known historical constraint, or conflict with the existing design makes them relevant",
+			"absent relevant history is not a planning blocker",
 			"Prefer the highest existing observable behavioral test seam and the fewest sufficient seams",
 			"Cite relevant test prior art and explain how the selected seam catches the intended regression",
 			"must not weaken acceptance-specific focused verification descriptors or add a mandatory user confirmation",
 		]);
+		for (const path of plannerContracts) {
+			expect(read(path)).not.toContain("Direct Planner entry and Medium/High Design Risk work must inspect");
+		}
 	});
 
 	test("an independent local draft can continue while a dependent product decision is unanswered", () => {

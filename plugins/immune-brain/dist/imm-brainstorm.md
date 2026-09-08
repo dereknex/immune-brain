@@ -1,6 +1,6 @@
 ---
 name: imm-brainstorm
-description: Use when the user explicitly requests Immune-Brain requirement clarification before planning; explicit entry only, framing only.
+description: Use when the user explicitly requests Immune-Brain requirement clarification.
 ---
 
 # Immune-Brain: Brainstormer

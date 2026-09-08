@@ -19,10 +19,21 @@
 - Disclose unrelated pre-existing failures without repairing them or widening
   scope. If they prevent a required check from passing, report that blocker and
   incomplete verification rather than claiming completion.
-- Use shallow discovery first; do full-scope reads only for shared contracts, security, migration, persistence, or authority changes and their callers and state owners.
+- Use bounded evidence to cover affected callers and state owners for shared-contract, security, migration, persistence, or authority changes; the category alone never requires full-directory reads. Stop expanding once the relevant behavior and verification are understood.
 - Lead with conclusion, evidence, and Next Action.
 - Advisory roles do not implement; Managed execution roles do not close QA.
 - An explicit Managed Skill entry stops host-native mutation and routes scope changes to `imm-planner`; Managed execution remains inside its accepted boundary.
+
+Before local edits or checks, read Verification and Local Recovery below. Read-only
+framing does not load that execution guidance.
+
+## Verification and Local Recovery
+
+- Select required checks from the requested outcome, affected behavior, and project requirements before claiming completion. Documentation changes use relevant link, mirror, and contract checks; local logic uses focused tests; shared behavior, build configuration, cross-module changes, and release preparation widen regression coverage. Never reduce required checks merely because they fail.
+- Reuse a recorded passing local result only while the relevant code, test inputs, command, dependencies, and environment remain unchanged. Changed or uncertain inputs require rerunning affected checks. Role handoff alone does not invalidate local evidence; local evidence never replaces Kernel-owned deterministic QA or fresh snapshot-bound Review.
+- Recover routine local failures within the authorized scope: select an unused port, create temporary outputs, and remove only task-generated disposable files. Never overwrite user data or stop an unrelated process to free a port. Before dependency installation, inspect the existing project command, lifecycle scripts, network use, and credential effects; use it only within existing authorization, without dependency or lockfile changes. Unknown or protected effects follow Host Confirmation Boundary.
+- Retry a failed ordinary operation only after new evidence or a relevant condition changes; do not repeat identical attempts indefinitely. This does not authorize retrying a failed native authority gate or an uncertain remote write.
+- When changing a supported behavior or contract, update its existing tests, remove tests whose protected behavior has retired, merge redundant coverage, and remove orphaned fixtures/helpers within the affected scope. For each removal, identify the retired behavior or the remaining coverage and run the surviving related checks. Never delete by age, count, slowness, or flakiness alone. Temporary tests name their exit condition; no per-test registry or repository-wide audit is required.
 
 ## Workflow Activation
 
@@ -61,7 +72,13 @@ classifying a non-mutating request.
 
 ### Host Confirmation Boundary
 
-Require exact host confirmation only for privileged effects:
+Require exact host confirmation only for privileged effects. For ordinary
+non-Kernel operations, an explicit user approval already covering the same
+operation, target, and impact is sufficient; ask again only for a material delta.
+A generic continuation or configured preference is not blanket authorization.
+Mandatory native gates and hash-bound manifest approvals still apply.
+
+Privileged effects include:
 
 - publish, release, deployment, or remote-system mutation;
 - destructive or irreversible operations and Git history rewrite;
@@ -113,7 +130,7 @@ always run sequentially.
 
 ## Success Criteria
 
-- Direct work closes only when the requested result is delivered and the required verification passes: a failed or unavailable required check is reported as incomplete work with its concrete blocker, never as completion. Check breadth follows the request and established project requirements, not a universal full-repository rule. Autonomously diagnose, repair, and rerun failing conventional local checks within the authorized scope; never delete, skip, or weaken a valid check to manufacture a pass.
+- Direct work closes only when the requested result is delivered and the required verification passes: a failed or unavailable required check is reported as incomplete work with its concrete blocker, never as completion. Check breadth follows the request and established project requirements, not a universal full-repository rule. Apply Shared Guards and Verification and Local Recovery for in-scope repair and evidence reuse.
 - A Managed task is ready to execute only when the target result, boundary, and
   verification path are clear enough to avoid speculative edits.
 - A Managed task is closable only when execution evidence proves the recorded

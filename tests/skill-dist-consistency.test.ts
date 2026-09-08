@@ -85,8 +85,10 @@ describe("skill dist consistency", () => {
 				name: string; description: string;
 			};
 			expect(metadata.name).toBe(item.name);
-			expect(metadata.description).toStartWith("Use when the user explicitly requests");
 			expect(metadata.description).toContain("Immune-Brain");
+			expect(metadata.description).not.toMatch(/;|manifest|never |owns |authority|framing only/i);
+			const packagedMetadata = Bun.YAML.parse(read(item.dist).match(/^---\n([\s\S]*?)\n---/)![1]) as { description: string };
+			expect(metadata.description).toBe(packagedMetadata.description);
 			expect(loader).toContain("not a whole-document read");
 			expect(loader).not.toMatch(/^Load \[/m);
 			const routes = loader.split("\n").filter((line) => line.startsWith("- "));
@@ -109,8 +111,21 @@ describe("skill dist consistency", () => {
 	test("ordinary planning excludes page design, carrier publication, and recovery branches", () => {
 		const path = join(SKILLS_DIR, "imm-planner/SKILL.md");
 		const loader = read(path);
-		const ordinary = linkedSections(path, routeLine(loader, "common:")) +
-			linkedSections(path, routeLine(loader, "standard planning:"));
+		const initial = linkedSections(path, routeLine(loader, "common:")) +
+			linkedSections(path, routeLine(loader, "assess request:"));
+		const preparation = linkedSections(path, routeLine(loader, "prepare candidates"));
+		const validation = linkedSections(path, routeLine(loader, "validate candidates:"));
+		const handoff = linkedSections(path, routeLine(loader, "handoff after validation:"));
+		const ordinary = initial + preparation + validation + handoff;
+		expect(initial).not.toContain("imm-kernel intent author");
+		expect(initial).not.toContain("**Design-view selection**");
+		expect(preparation).toContain("**Design-view selection**");
+		expect(preparation).toContain("imm-kernel intent author");
+		expect(validation).toContain("Deterministic QA owns descriptor execution");
+		expect(handoff).toContain("Plan-only requests stop here");
+		expect(initial + preparation + validation).not.toContain("current Host's native Enrollment Tool");
+		expect(handoff).toContain("current Host's native Enrollment Tool");
+		expect(loader.replace(/\s+/g, " ")).toContain("later stages retain earlier constraints");
 		for (const unrelated of ["visible_actions", "State inventory", "imm-tracker publish-initiative"]) {
 			expect(ordinary).not.toContain(unrelated);
 		}
@@ -150,6 +165,14 @@ describe("skill dist consistency", () => {
 		expect(steady).toContain("An unresolved decision pauses only dependent execution");
 		expect(steady).toContain("invoke `request_authorization` directly before ending the turn");
 		expect(steady).not.toContain("Stop on terminal `done` or `stopped`, unresolved user decisions");
+		const recoveryRules = linkedSections(loopPath, routeLine(loop, "steady execution:"));
+		expect(recoveryRules).toContain("local evidence never replaces Kernel-owned deterministic QA");
+		expect(recoveryRules).toContain("Never reduce required checks merely because they fail");
+		const repairPath = join(SKILLS_DIR, "imm-pr-fix/SKILL.md");
+		const repairRules = linkedSections(repairPath, routeLine(read(repairPath), "confirmed blocker before editing:"));
+		expect(repairRules).toContain("Never overwrite user data or stop an unrelated process");
+		expect(repairRules).toContain("For each removal, identify the retired behavior or the remaining coverage");
+		expect(normal).not.toContain("Temporary tests name their exit condition");
 		const recovery = linkedSections(loopPath, routeLine(loop, "rework,"));
 		expect(recovery).toContain("For `settlement_unknown`");
 		expect(recovery).toContain("request_authorization");

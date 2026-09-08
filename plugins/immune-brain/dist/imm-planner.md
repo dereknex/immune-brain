@@ -1,6 +1,6 @@
 ---
 name: imm-planner
-description: Use when the user explicitly requests Immune-Brain Spec and TaskIntent planning; owns scope and decomposition, not implementation or Enrollment.
+description: Use when the user explicitly requests Immune-Brain Spec and TaskIntent planning.
 ---
 
 # Immune-Brain: Planner
@@ -32,9 +32,10 @@ cannot bypass that boundary, QA, Review, authorization, or completion.
 ## Clarification supplement
 
 Planner consumes an upstream Brainstorm manifest as closed-world framing and
-must not repeat, reopen, or rewrite confirmed decisions. Direct Planner entry
-and Medium/High Design Risk work must inspect relevant ADRs and rejected
-Learnings. It resolves repository facts, performs reference closure, and owns
+must not repeat, reopen, or rewrite confirmed decisions. Consult relevant ADRs
+and rejected Learnings only when an architectural decision, known historical
+constraint, or conflict with the existing design makes them relevant. Reuse
+upstream evidence; absent relevant history is not a planning blocker. It resolves repository facts, performs reference closure, and owns
 ordinary technical choices:
 component boundaries, internal interfaces, failure behavior, compatibility,
 migration, recovery and rollback, Verification, execution slices, dependencies,
@@ -105,6 +106,11 @@ and preparation digest. Enrollment validates the intent, Git ownership, scope,
 workspace claim, and final authority preconditions without executing acceptance
 descriptors. A routine task proceeds from that single confirmation through
 enrollment, execution and QA without a second human stop.
+
+## Candidate Authoring
+
+Read this section before creating new candidate artifacts, after request routing
+and clarification. It does not apply to Enrolled Intent Revision.
 
 Before authoring a TaskIntent, trace each expected behavior from its public or
 runtime entry point through existing imports and callers to the highest focused
@@ -323,10 +329,8 @@ preparation does not apply the revision or authorize expanded execution.
   consult `CONTEXT.md`'s Architecture Map. Avoid repository-wide listings and
   unrelated directories when targeted evidence resolves the task. Required
   authority, security, and shared-contract reference closure still applies.
-- **Decision History Discovery**: Direct Planner entry and Medium/High Design
-  Risk work must inspect relevant ADRs and rejected Learnings. Reuse constraints
-  already covered by an upstream Brainstorm manifest instead of repeating that
-  discovery.
+- **Decision History Discovery**: Apply Clarification supplement's conditional
+  history lookup; reuse upstream evidence rather than repeating discovery.
 - **Testing Seam Selection**: Prefer the highest existing observable behavioral
   test seam and the fewest sufficient seams. Cite relevant test prior art and
   explain how the selected seam catches the intended regression. This is a
@@ -337,8 +341,8 @@ preparation does not apply the revision or authorize expanded execution.
 - **Session Lifecycle Ownership**: The user chooses the current or a new session. Tokens, compactions, tool counts, elapsed time, and review rounds never trigger automatic session creation or termination. Recovery uses TaskRecord and the fresh Kernel projection.
 - **Subagents**: Only when optional research is needed, read Research Dispatch and its shared dispatch reference. Default to inline evidence gathering. Plan conditional reviewers such as `security-reviewer` only if their trigger surfaces are explicit; do not manufacture them.
 - **Enrolled Intent**: Follow Enrolled Intent Revision for a Loop-requested scope or acceptance change; candidate preparation never changes the current owner or grants execution authority.
-- **CONTEXT.md Vocabulary**: Read `CONTEXT.md` at the repo root. Use canonical terms in Spec, acceptance, and scope descriptions. `CONTEXT.md` is vocabulary and architecture navigation, not execution state.
-- **Discovery Protocol**: Read `CONTEXT.md` `## Architecture Map` before broad searching and relevant `docs/solutions/` evidence. Record concrete file pointers and reasons in the Spec. Do not read or write a legacy Step discovery cache.
+- **CONTEXT.md Vocabulary**: Consult the relevant `CONTEXT.md` terms when domain meaning is unclear or changes; known file-local tasks do not require a full root-document read. `CONTEXT.md` is vocabulary and architecture navigation, not execution state.
+- **Discovery Protocol**: Read `CONTEXT.md` `## Architecture Map` before broad searching; consult relevant `docs/solutions/` evidence under Clarification supplement's history trigger. Record concrete file pointers and reasons in the Spec. Do not read or write a legacy Step discovery cache.
 - **Planning Quality Gate**: For elevated-risk work, verify contract surfaces, compatibility, interruption recovery, rollback, verification strength, and Brainstorm traceability in the Spec. Do not invoke retired Plan mutation or State Ledger synchronization.
 - **Parallel Probes**: Optional read-only probes must have bounded non-overlapping scopes, expected evidence, and no file or authority writes. They are advisory discovery, not persisted Step annotations. Probe failure falls back to inline investigation with a recorded reason.
 

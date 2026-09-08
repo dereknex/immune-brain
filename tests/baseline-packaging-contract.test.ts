@@ -99,6 +99,26 @@ describe("immune-brain BASELINE packaging contract", () => {
   // Instruction-contract scenarios, not claims that a live model executed them.
   it.each([
     {
+      scenario: "shared-contract work expands by evidence, not a directory-reading mandate",
+      required: ["Use bounded evidence to cover affected callers and state owners", "the category alone never requires full-directory reads", "Stop expanding once the relevant behavior and verification are understood"],
+    },
+    {
+      scenario: "unchanged local checks may be reused but never replace independent Kernel assurance",
+      required: ["Select required checks from the requested outcome, affected behavior, and project requirements", "Never reduce required checks merely because they fail", "code, test inputs, command, dependencies, and environment remain unchanged", "Changed or uncertain inputs require rerunning affected checks", "local evidence never replaces Kernel-owned deterministic QA or fresh snapshot-bound Review"],
+    },
+    {
+      scenario: "routine environment repair preserves user data and protected effects",
+      required: ["Never overwrite user data or stop an unrelated process", "inspect the existing project command, lifecycle scripts, network use, and credential effects", "without dependency or lockfile changes", "Retry a failed ordinary operation only after new evidence or a relevant condition changes", "does not authorize retrying a failed native authority gate or an uncertain remote write"],
+    },
+    {
+      scenario: "an existing specific approval is reused without relaxing native gates",
+      required: ["same operation, target, and impact is sufficient", "ask again only for a material delta", "not blanket authorization", "Mandatory native gates and hash-bound manifest approvals still apply"],
+    },
+    {
+      scenario: "test retirement needs a retired behavior or surviving coverage, never a failure-based deletion",
+      required: ["within the affected scope", "For each removal, identify the retired behavior or the remaining coverage", "run the surviving related checks", "Never delete by age, count, slowness, or flakiness alone", "Temporary tests name their exit condition"],
+    },
+    {
       scenario: "a test script deploys or writes production data: inspect and gate the effect before running",
       required: ["Inspect unknown test scripts before execution", "deploys, writes production data, or uses credentials is a protected effect", "apply Host Confirmation Boundary before it runs"],
     },
