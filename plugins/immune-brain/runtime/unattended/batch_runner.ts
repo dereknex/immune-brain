@@ -2,7 +2,12 @@
 // Every batch and child state transition lives here and in
 // runtime/kernel/batch_authority.ts; Host adapters are callers only and this
 // module imports no Host adapter (Invariant H-1).
-import type { BatchAuthorityRegistry } from "../kernel/batch_authority";
+import {
+	BatchAuthorizationExpiryError,
+	type BatchAuthorityRegistry,
+	type ValidatedBatchAuthorization,
+	computeBatchPlanDigest,
+} from "../kernel/batch_authority";
 import type { AssuranceProjectionResult } from "../kernel/assurance_projection";
 import type { BatchPlanChild } from "./types";
 import {
@@ -36,8 +41,7 @@ export interface BatchRunnerKernelPort {
 		taskId: string,
 		batchId: string,
 		head: string,
-	): Promise<{ commit: string }>;
-	/** review-3(5th round): read the already-created batch commit for a child,
+	): Promise<{ commit: string }>;	/** review-3(5th round): read the already-created batch commit for a child,
 	 * or null when none exists. Lets crash recovery adopt an existing commit
 	 * instead of replaying the commitChild mutation. */
 	lookupBatchCommit(
@@ -47,21 +51,31 @@ export interface BatchRunnerKernelPort {
 	): Promise<{ commit: string } | null>;
 	/** review-2(5th round): read-only claim projection for enrollment
 	 * reconciliation after an interruption between enrollTask and its state
-	 * persistence. */
-	projectTask(
-		root: string,
-		taskId: string,
-	): Promise<{
-		error: string | null;
-		claim: { task_id: string; batch_id: string | null } | null;
-	}>;
+	 * persistence. Uses the real AssuranceProjectionResult contract; batch
+	 * ownership of the claim is verified separately through the authoritative
+	 * batch registry, because the Kernel claim carries no batch id. */
+	projectTask(root: string, taskId: string): Promise<AssuranceProjectionResult>;
+	/** Authoritative batch ownership check: true when the task's Kernel claim
+	 * is held under this batch's derived capability (consumed child slot). */
+	ownsTaskClaim(taskId: string): boolean;
+	/** review-8(4th rework): Kernel-side proof that a replacement parked-batch
+	 * authorization is genuine, unexpired, and bound to this exact batch_id,
+	 * plan_digest, and base_head, validated against the Kernel's authoritative
+	 * binding state. Throws on fabrication, mismatch, or expiry; the driver
+	 * must call this before accepting a parked-batch resume. */
+	validateBatchAuthorization(input: {
+		registry: BatchAuthorityRegistry;
+		capability: object;
+		binding: Pick<ValidatedBatchAuthorization,
+			"batch_id" | "plan_digest" | "base_head" | "initiative_slug" | "budget" | "expires_at">;
+	}): ValidatedBatchAuthorization;
 }
 
 export type BatchChildAdvanceResult =
 	| { state: "completed" }
 	| { state: "stopped" }
 	| { state: "failed"; reason: string }
-	| { state: "rework"; summary: string }
+	| { state: "rework"; operation: "qa" | "review"; summary: string }
 	| { state: "blocked"; reason: string }
 	| { state: "review_ready"; operation_id: string };
 
@@ -90,18 +104,19 @@ function dependentsOf(record: BatchRunStateRecord, taskId: string): BatchChildRu
 function skipDependents(record: BatchRunStateRecord, taskId: string, reason: string): void {
 	// review-1(5th round): traverse the full transitive dependency closure —
 	// parking A must skip B *and* C in A -> B -> C, not only direct dependents.
-	const skip = new Set<string>();
+	const skip = new Set<string>([taskId]);
 	const queue = [taskId];
 	while (queue.length > 0) {
 		const current = queue.shift()!;
 		for (const dependent of dependentsOf(record, current)) {
-			if (dependent.state !== "pending" || skip.has(dependent.task_id)) continue;
+			if (skip.has(dependent.task_id)) continue;
 			skip.add(dependent.task_id);
 			queue.push(dependent.task_id);
 		}
 	}
 	record.children = record.children.map((child) =>
-		skip.has(child.task_id) ? { ...child, state: "skipped_blocked", reason } : child,
+		skip.has(child.task_id) && child.state === "pending"
+			? { ...child, state: "skipped_blocked", reason } : child,
 	);
 }
 
@@ -119,16 +134,23 @@ function budgetStopReason(record: BatchRunStateRecord, now: number): string | nu
 	return null;
 }
 
-/** review-5(2nd round): a typed expiry marker for intentional budget stops. */
-export class BatchAuthorizationExpiryError extends Error {
-	constructor(message: string) {
-		super(message);
-		this.name = "BatchAuthorizationExpiryError";
-	}
-}
+/** review-7(3rd rework): the typed expiry marker now lives at the Kernel
+ * boundary (kernel/batch_authority.ts) so a real enrollment-time expiry is
+ * structurally classifiable as an intentional budget stop; re-exported here
+ * for driver API compatibility. */
+export { BatchAuthorizationExpiryError };
 
 function isAuthorizationExpiryError(error: unknown): boolean {
 	return error instanceof BatchAuthorizationExpiryError;
+}
+
+function requireFreshProjection(
+	result: AssuranceProjectionResult,
+	taskId: string,
+): AssuranceProjectionResult & { error: null } {
+	if (result.error !== null)
+		throw new Error(`cannot reconcile Kernel projection for ${taskId}: ${result.error}`);
+	return result as AssuranceProjectionResult & { error: null };
 }
 
 /** Next pending child whose direct dependents are all committed. */
@@ -172,10 +194,9 @@ function reportFor(
 	};
 }
 
-/** review-5: persist exactly one terminal report at a terminal transition.
- * review-6: terminal replay idempotently ensures the report exists, so a
- * crash between the state write and the report write cannot permanently
- * violate the one-report contract. */
+/** review-3(6th round): persist the single run report when the batch
+ * stops — including a needs_human park, which ends the current run even
+ * though the batch remains resumable after a human decision. */
 function finalize(
 	root: string,
 	record: BatchRunStateRecord,
@@ -183,8 +204,33 @@ function finalize(
 	nextAction: string,
 ): BatchRunReport {
 	const report = reportFor(record, reason, nextAction);
-	if (isTerminalBatchState(record.batch_state)) writeBatchRunReport(root, report);
+	if (isTerminalBatchState(record.batch_state) || record.batch_state === "needs_human") {
+		writeBatchRunReport(root, report);
+	}
 	return report;
+}
+
+async function validatePersistedRun(input: StartBatchInput, record: BatchRunStateRecord): Promise<void> {
+	const plan = input.registry.children(input.capability);
+	if (record.plan_digest !== computeBatchPlanDigest(plan) ||
+		record.children.length !== plan.length || record.children.some((child, index) => {
+			const expected = plan[index]!;
+			return child.task_id !== expected.task_id ||
+				JSON.stringify(child.blocked_by) !== JSON.stringify(expected.blocked_by);
+		})) throw new Error("plan_digest mismatch: persisted children do not match the authorized plan");
+	const commits: string[] = [];
+	for (const child of record.children) {
+		if (child.state !== "committed") {
+			if (child.commit !== null) throw new Error("uncommitted batch child has a commit");
+			continue;
+		}
+		const evidence = await input.kernel.lookupBatchCommit(input.root, child.task_id, record.batch_id);
+		if (!evidence || evidence.commit !== child.commit)
+			throw new Error(`persisted batch commit lacks evidence for ${child.task_id}`);
+		commits.push(evidence.commit);
+	}
+	if (JSON.stringify([...record.commits].sort()) !== JSON.stringify(commits.sort()))
+		throw new Error("persisted batch commit list does not match child evidence");
 }
 
 /** review-6: restate a terminal record and ensure its report exists. */
@@ -200,22 +246,138 @@ function replayTerminal(
 	);
 }
 
+function validateRunAuthorization(input: StartBatchInput, existing: BatchRunStateRecord | null): void {
+	const authorized = input.kernel.validateBatchAuthorization({
+		registry: input.registry,
+		capability: input.capability,
+		binding: {
+			batch_id: input.batch_id,
+			plan_digest: existing?.plan_digest ?? input.plan_digest,
+			base_head: existing?.base_head ?? input.base_head,
+			initiative_slug: existing?.initiative_slug ?? input.initiative_slug,
+			budget: input.budget,
+			expires_at: input.authorization_expires_at,
+		},
+	});
+	if (authorized.issued_at !== input.confirmation_time ||
+		(existing && Date.parse(authorized.issued_at) <= Date.parse(existing.confirmation_time)))
+		throw new Error("the parked batch requires a fresh literal-user confirmation");
+	const children = input.children.map((child) => {
+		const { intent_path, intent_revision, intent_content_hash } = child;
+		if (intent_path === null || intent_revision === null || intent_content_hash === null)
+			throw new Error(`batch child ${child.task_id} has no complete intent identity`);
+		return { ...child, intent_path, intent_revision, intent_content_hash };
+	});
+	if (computeBatchPlanDigest(children) !== authorized.plan_digest ||
+		input.plan_digest !== authorized.plan_digest || input.base_head !== authorized.base_head)
+		throw new Error("batch run input does not match the authorized plan or base_head");
+}
+
 export async function startBatch(input: StartBatchInput): Promise<BatchRunReport> {
 	// Validation failure before the first enrollment: zero writes, rejected.
+	// reportFor only builds the report object; finalize would persist it and
+	// the spec forbids any write on a pre-enrollment rejection.
 	if (!input.children.length) {
 		const rejected = prepareBatchRunState({ ...input, children: [], now: input.now });
-		return finalize(
-			input.root,
+		return reportFor(
 			{ ...rejected, batch_state: "rejected" },
 			"batch plan is empty",
 			"Provide a non-empty enrollable child plan.",
 		);
 	}
 
-	const existing = readBatchRunState(input.root, input.batch_id);
+	let existing = readBatchRunState(input.root, input.batch_id);
+	if (existing) await validatePersistedRun(input, existing);
 	if (existing && isTerminalBatchState(existing.batch_state)) {
 		// Idempotent terminal replay: no state mutation, ensure the report.
 		return replayTerminal(input.root, existing);
+	}
+
+	if (existing?.batch_state === "needs_human") {
+		const priorConfirmation = Date.parse(existing.confirmation_time);
+		const nextConfirmation = Date.parse(input.confirmation_time);
+		const nextExpiry = Date.parse(input.authorization_expires_at);
+		const freshAuthorization =
+			Number.isFinite(nextConfirmation) &&
+			nextConfirmation > priorConfirmation &&
+			Number.isFinite(nextExpiry) &&
+			nextExpiry > Date.now();
+		if (!freshAuthorization) {
+			return finalize(
+				input.root,
+				existing,
+				"the parked batch requires a fresh literal-user confirmation",
+				"Resolve the parked child, then re-confirm the batch to continue.",
+			);
+		}
+
+		validateRunAuthorization(input, existing);
+		prepareBatchRunState({ ...input, now: input.now });
+		const remapped = await Promise.all(
+			existing.children.map(async (child) => {
+				if (child.state !== "needs_human") return child;
+				const fresh = requireFreshProjection(
+					await input.kernel.projectTask(input.root, child.task_id),
+					child.task_id,
+				);
+				if (
+					fresh.projection.lifecycle === "done" &&
+					fresh.projection.completion_ready
+				)
+					return { ...child, state: "settled" as const, reason: null };
+				if (fresh.error === null && fresh.claim?.task_id === child.task_id) {
+					return input.kernel.ownsTaskClaim(child.task_id)
+						? { ...child, state: "enrolled" as const, reason: null }
+						: child;
+				}
+				return { ...child, state: "pending" as const, reason: null };
+			}),
+		);
+		// A parked child whose Kernel claim was re-bound to a foreign batch
+		// keeps the batch parked: resuming would select an independent sibling
+		// while that claim is still open.
+		if (remapped.some((child) => child.state === "needs_human")) {
+			// review-1(7th round): a re-parked foreign-claim child re-marks its
+			// transitive dependents skipped_blocked at re-park time, healing a
+			// prior park site that missed the marking. Only pending dependents
+			// are touched; already-skipped and terminal children stay as-is.
+			const reparked: BatchRunStateRecord = { ...existing, children: remapped };
+			for (const parked of remapped) {
+				if (parked.state === "needs_human")
+					skipDependents(
+						reparked,
+						parked.task_id,
+						`dependency ${parked.task_id} parked`,
+					);
+			}
+			existing = writeBatchRunState(input.root, {
+				...reparked,
+				confirmation_time: input.confirmation_time,
+				authorization_expires_at: input.authorization_expires_at,
+				budget: input.budget,
+				batch_state: "needs_human",
+			});
+			return finalize(
+				input.root,
+				existing,
+				"a parked child's Kernel claim is held by a foreign batch",
+				"Resolve the foreign claim, then re-confirm the batch to continue.",
+			);
+		}
+		const resumedChildren = remapped.map((child) =>
+			child.state === "skipped_blocked"
+				? { ...child, state: "pending" as const, reason: null }
+				: child,
+		);
+		existing = writeBatchRunState(input.root, {
+			...existing,
+			confirmation_time: input.confirmation_time,
+			authorization_expires_at: input.authorization_expires_at,
+			budget: input.budget,
+			batch_state: "running",
+			consecutive_qa_failures: 0,
+			children: resumedChildren,
+		});
 	}
 
 	// review-2(6th round): an enrolled or settled child from an interrupted
@@ -235,6 +397,17 @@ export async function startBatch(input: StartBatchInput): Promise<BatchRunReport
 		}
 	}
 
+	if (!existing) {
+		try {
+			validateRunAuthorization(input, null);
+		} catch (error) {
+			return reportFor(
+				{ ...prepareBatchRunState(input), batch_state: "rejected" },
+				error instanceof Error ? error.message : String(error),
+				"Correct the authorization or plan, then re-confirm the batch.",
+			);
+		}
+	}
 	let record: BatchRunStateRecord =
 		existing ??
 		prepareBatchRunState({
@@ -261,11 +434,8 @@ export async function startBatch(input: StartBatchInput): Promise<BatchRunReport
 	let head = record.commits.length
 		? record.commits[record.commits.length - 1]!
 		: record.base_head;
-	let parked = false;
 
 	while (record.batch_state === "running") {
-		const now = Date.now();
-
 		const child = nextEnrollableChild(record);
 		if (!child) {
 			record.batch_state = record.children.some(
@@ -273,36 +443,6 @@ export async function startBatch(input: StartBatchInput): Promise<BatchRunReport
 			)
 				? "needs_human"
 				: "completed";
-			persist();
-			break;
-		}
-
-		// Expiry, deadline, and budget stop only the enrollment of a new child.
-		// A parked child keeps the batch in needs_human even when the budget is
-		// exhausted: the human decision must stay visible, and the budget only
-		// gates new enrollments (review-3).
-		const expiry = Date.parse(record.authorization_expires_at);
-		const budgetStop = budgetStopReason(record, now);
-		const parkedChild = record.children.some(
-			(c) => c.state === "needs_human" || c.state === "skipped_blocked",
-		);
-		if ((!Number.isNaN(expiry) && now >= expiry) || (budgetStop && parkedChild)) {
-			// Expiry outranks an existing park: budget/expiry text stays, but a
-			// parked child keeps needs_human because its decision is pending.
-			if (parkedChild) {
-				record.batch_state = "needs_human";
-				persist();
-				parked = true;
-				break;
-			}
-		}
-		if (!Number.isNaN(expiry) && now >= expiry) {
-			record.batch_state = "budget_stopped";
-			persist();
-			break;
-		}
-		if (budgetStop) {
-			record.batch_state = "budget_stopped";
 			persist();
 			break;
 		}
@@ -316,20 +456,37 @@ export async function startBatch(input: StartBatchInput): Promise<BatchRunReport
 		// would double-claim, so reconcile against a fresh Kernel projection
 		// first: a pending child that already holds this batch's claim is
 		// adopted as enrolled without a second enrollment mutation.
+		// review-2(5th round): a crash between durable enrollTask and the
+		// enrolled-persist leaves the child persisted as pending. Re-enrolling
+		// would double-claim, so reconcile against a fresh Kernel projection
+		// first: a pending child that already holds this batch's claim is
+		// adopted as enrolled without a second enrollment mutation.
+		// review-1(6th round): a pending child whose claim is held by another
+		// batch must not be adopted (claim theft) and must not be re-enrolled
+		// (claim fight). Park it for human resolution instead.
 		let adoptedClaim = false;
-		try {
-			const fresh = await input.kernel.projectTask(input.root, child.task_id);
-			if (
-				fresh.error === null &&
-				fresh.claim !== null &&
-				fresh.claim.task_id === child.task_id &&
-				fresh.claim.batch_id === input.batch_id
-			) {
-				adoptedClaim = true;
-			}
-		} catch {
-			// Read-only projection failure: fall through to enrollTask, which
-			// surfaces any real claim conflict as its own error.
+		let claimState: "none" | "ours" | "foreign" = "none";
+		const fresh = requireFreshProjection(
+			await input.kernel.projectTask(input.root, child.task_id),
+			child.task_id,
+		);
+		if (fresh.claim !== null && fresh.claim.task_id === child.task_id) {
+			claimState = input.kernel.ownsTaskClaim(child.task_id) ? "ours" : "foreign";
+		}
+		if (claimState === "ours") {
+			adoptedClaim = true;
+		} else if (claimState === "foreign") {
+			record.children = record.children.map((c) =>
+				c.task_id === child.task_id
+					? { ...c, state: "needs_human", reason: "claim held by another batch" }
+					: c,
+			);
+			// review-7: a park takes the parked child's whole dependent subtree
+			// out of the run, including on this foreign-claim path.
+			skipDependents(record, child.task_id, `dependency ${child.task_id} parked`);
+			record.batch_state = "needs_human";
+			persist();
+			return finalize(input.root, record, "claim held by another batch", "needs-human-attention");
 		}
 		if (adoptedClaim) {
 			record.children = record.children.map((c) =>
@@ -339,7 +496,32 @@ export async function startBatch(input: StartBatchInput): Promise<BatchRunReport
 			);
 			persist();
 		} else {
+		// Re-read the clock after projection; an adopted claim is not a new enrollment.
+		const now = Date.now();
+		if (now >= Date.parse(record.authorization_expires_at) || budgetStopReason(record, now)) {
+			record.batch_state = record.children.some(
+				(c) => c.state === "needs_human" || c.state === "skipped_blocked",
+			) ? "needs_human" : "budget_stopped";
+			persist();
+			break;
+		}
 		try {
+			// A new capability has no in-memory consumption history. Restore only
+			// slots backed by this batch's independently queried commit evidence.
+			await validatePersistedRun(input, record);
+			const { issued_at: _issuedAt, ...binding } = input.kernel.validateBatchAuthorization({
+				registry: input.registry,
+				capability: input.capability,
+				binding: {
+					batch_id: record.batch_id, plan_digest: record.plan_digest,
+					base_head: record.base_head, initiative_slug: record.initiative_slug,
+					budget: record.budget, expires_at: record.authorization_expires_at,
+				},
+			});
+			for (const committed of record.children) {
+				if (committed.state === "committed" && !input.registry.isChildConsumed(input.capability, committed.task_id))
+					input.registry.consumeChild(input.capability, binding, committed.task_id);
+			}
 			await input.kernel.enrollTask({
 				root: input.root,
 				task_id: child.task_id,
@@ -355,12 +537,10 @@ export async function startBatch(input: StartBatchInput): Promise<BatchRunReport
 			persist();
 		} catch (error) {
 			const message = error instanceof Error ? error.message : String(error);
-			// review-5(2nd round): only an expiry (typed or reported by the
-			// host) is an intentional budget stop; capability/binding/mismatch
-			// failures surface as needs_human.
-			const expired =
-				isAuthorizationExpiryError(error) || /authoriz[^]*expir|expir[^]*authoriz/i.test(message);
-			if (expired) {
+			// Only a typed BatchAuthorizationExpiryError is an intentional
+			// budget stop; free-form message matching misclassified
+			// infrastructure and validation failures as intentional stops.
+			if (isAuthorizationExpiryError(error)) {
 				record.children = record.children.map((c) =>
 					c.task_id === child.task_id ? { ...c, state: "pending", reason: message } : c,
 				);
@@ -371,10 +551,13 @@ export async function startBatch(input: StartBatchInput): Promise<BatchRunReport
 			record.children = record.children.map((c) =>
 				c.task_id === child.task_id ? { ...c, state: "needs_human", reason: message } : c,
 			);
-			parked = true;
+			// A park ends the run immediately: the parked child may still hold
+			// the sole Kernel claim, so selecting an independent sibling would
+			// fail its claim projection.
 			skipDependents(record, child.task_id, `dependency ${child.task_id} parked`);
+			record.batch_state = "needs_human";
 			persist();
-			continue;
+			break;
 		}
 		}
 	// Drive the child through the Kernel obligation surface only; rework
@@ -424,10 +607,10 @@ export async function startBatch(input: StartBatchInput): Promise<BatchRunReport
 					: c,
 			);
 			childTerminal = true;
-			parked = true;
 			skipDependents(record, child.task_id, `dependency ${child.task_id} parked`);
+			record.batch_state = "needs_human";
 			persist();
-		} else if (terminal.state === "rework") {
+		} else if (terminal.state === "rework" && terminal.operation === "qa") {
 			record.consecutive_qa_failures += 1;
 			if (record.consecutive_qa_failures >= record.budget.qa_failure_limit) {
 				record.children = record.children.map((c) =>
@@ -437,27 +620,20 @@ export async function startBatch(input: StartBatchInput): Promise<BatchRunReport
 				);
 				record.batch_state = "needs_human";
 				childTerminal = true;
-				parked = true;
 				skipDependents(record, child.task_id, `dependency ${child.task_id} parked`);
 				persist();
 			} else {
 				// Below the limit: the inner loop re-drives the same child.
 				persist();
 			}
-		} else if (terminal.state === "failed" || terminal.state === "blocked") {
-			const reason = terminal.reason;
-			const userOwned =
-				/resolve_user_decision|revise_intent|resolve_finding|request_authorization|review rework limit|durable replan/i.test(
-					reason,
-				);
+		} else if (terminal.state === "failed" || terminal.state === "blocked" || terminal.state === "rework") {
+			const reason = terminal.state === "rework" ? terminal.summary : terminal.reason;
 			childTerminal = true;
 			record.children = record.children.map((c) =>
-				c.task_id === child.task_id
-					? { ...c, state: userOwned ? "needs_human" : "needs_human", reason }
-					: c,
+				c.task_id === child.task_id ? { ...c, state: "needs_human", reason } : c,
 			);
-			parked = true;
 			skipDependents(record, child.task_id, `dependency ${child.task_id} parked`);
+			record.batch_state = "needs_human";
 			persist();
 		} else if (terminal.state === "review_ready") {
 			// A foreground Review reservation is owned by the calling host
@@ -477,10 +653,6 @@ export async function startBatch(input: StartBatchInput): Promise<BatchRunReport
 		}
 	}
 
-	if (parked && record.batch_state === "running") {
-		record.batch_state = "needs_human";
-		persist();
-	}
 	return finalize(input.root, record, stopReasonFor(record), "");
 }
 
@@ -516,8 +688,10 @@ export async function resumeBatch(
 ): Promise<BatchRunReport> {
 	let existing = readBatchRunState(input.root, input.batch_id);
 	if (!existing) return startBatch(input);
+	await validatePersistedRun(input, existing);
 	if (isTerminalBatchState(existing.batch_state))
 		return replayTerminal(input.root, existing);
+	if (existing.batch_state === "needs_human") return startBatch(input);
 
 	// An enrolled-but-unsettled child must reach its own Kernel terminal
 	// settlement before anything else, even under an expired authorization:
@@ -526,55 +700,37 @@ export async function resumeBatch(
 	// Kernel projection; a projection that finds no active claim means the
 	// persisted `enrolled` flag predates a successful enrollment, so the child
 	// returns to pending instead of being driven without a claim.
-	const interrupted = existing.children.find(
-		(child) => child.state === "enrolled" || child.state === "settled",
-	);
-	// review-2(5th): a crash between durable enrollTask and the
-	// enrolled-persist leaves the child persisted as pending while the Kernel
-	// claim is already open. Re-marking it pending would let the main loop
-	// re-enroll (double-claim). Adopt it as enrolled when the fresh projection
-	// shows this batch's claim on that task.
-	if (!interrupted) {
-		for (const pending of existing.children.filter((c) => c.state === "pending")) {
-			try {
-				const fresh = await input.kernel.projectTask(input.root, pending.task_id);
-				const holds =
-					fresh.error === null &&
-					fresh.claim !== null &&
-					fresh.claim.task_id === pending.task_id;
-				if (holds) {
-					existing = writeBatchRunState(input.root, {
-						...existing,
-						children: existing.children.map((c) =>
-							c.task_id === pending.task_id
-								? {
-										...c,
-										state: "enrolled",
-										reason: "adopted existing batch claim after interruption",
-									}
-								: c,
-						),
-					});
-					break;
-				}
-			} catch {
-				// Read-only projection failure: leave the child pending; the
-				// main loop's enrollTask surfaces any real claim conflict.
-			}
-		}
-	}
-	// review-2(5th): recompute after possible adoption so an adopted child is
-	// driven as interrupted instead of falling to the expiry gate.
+	// Pending children are reconciled by the normal loop using its dependency-aware
+	// selection rule. Only a persisted in-flight child needs this recovery path.
 	const driven = existing.children.find(
 		(child) => child.state === "enrolled" || child.state === "settled",
 	);
 	if (driven) {
 		if (driven.state === "enrolled") {
-			const fresh = await input.kernel.projectTask(input.root, driven.task_id);
+			const fresh = requireFreshProjection(
+				await input.kernel.projectTask(input.root, driven.task_id),
+				driven.task_id,
+			);
 			const holdsClaim =
-				fresh.error === null &&
 				fresh.claim !== null &&
-				fresh.claim.task_id === driven.task_id;
+				fresh.claim.task_id === driven.task_id &&
+				input.kernel.ownsTaskClaim(driven.task_id);
+			if (holdsClaim === false && fresh.claim !== null && fresh.claim.task_id === driven.task_id && !input.kernel.ownsTaskClaim(driven.task_id)) {
+				// review-2(6th round): the claim on this child is held by
+				// another batch. Never advance a foreign claim; park for human.
+				// review-7: skip the parked child's dependent subtree too.
+				skipDependents(existing, driven.task_id, `dependency ${driven.task_id} parked`);
+				existing = writeBatchRunState(input.root, {
+					...existing,
+					batch_state: "needs_human",
+					children: existing.children.map((c) =>
+						c.task_id === driven.task_id
+							? { ...c, state: "needs_human", reason: "claim held by another batch" }
+						: c,
+				),
+				});
+				return finalize(input.root, existing, "claim held by another batch", "needs-human-attention");
+			}
 			if (!holdsClaim) {
 				// review-1(4th round): a claimless projection still carries a
 				// projection body when the task is a terminal owner. If the fresh
@@ -584,9 +740,8 @@ export async function resumeBatch(
 				// settle the child here so resume continues at the commit
 				// obligation instead of re-enrolling completed work.
 				const settledRemotely =
-					fresh.error === null &&
-					fresh.projection?.lifecycle === "done" &&
-					fresh.projection?.completion_ready === true;
+					fresh.projection.lifecycle === "done" &&
+					fresh.projection.completion_ready === true;
 				if (settledRemotely) {
 					existing = writeBatchRunState(input.root, {
 						...existing,
@@ -636,21 +791,6 @@ export async function resumeBatch(
 			return replayTerminal(input.root, existing);
 	}
 
-	const expiry = Date.parse(existing.authorization_expires_at);
-	if (!Number.isNaN(expiry) && Date.now() >= expiry) {
-		// review-2(4th round): expiry of a still-running batch is a terminal
-		// budget_stopped transition, not an in-place report: persist the state,
-		// then write the single terminal run report. A completed child is never
-		// marked failed by this stop.
-		const stopped: BatchRunStateRecord = { ...existing, batch_state: "budget_stopped" };
-		const persisted = writeBatchRunState(input.root, stopped);
-		return finalize(
-			input.root,
-			persisted,
-			"authorization expired; resume requires a new literal-user confirmation",
-			"The authorization expired; a human decision is required: re-confirm the batch to continue.",
-		);
-	}
 	// No interrupted child remains: continue with the normal serial loop.
 	return startBatch(input);
 }
@@ -686,15 +826,33 @@ async function driveInterruptedChild(
 			// but before committed-persist replays commitChild on resume. Adopt
 			// the existing batch commit idempotently instead of mutating again.
 			let existing: { commit: string } | null = null;
+			// review-1(6th round): a lookup failure must fail closed, not fall
+			// through to commitChild, which could replay an existing commit.
 			try {
 				existing = await input.kernel.lookupBatchCommit(
 					input.root,
 					child.task_id,
 					input.batch_id,
 				);
-			} catch {
-				// Lookup failure: fall through to commitChild, which surfaces
-				// the real conflict as its own error.
+			} catch (error: unknown) {
+				const message =
+					error instanceof Error ? error.message : String(error);
+				record.children = record.children.map((c) =>
+					c.task_id === child.task_id
+						? { ...c, state: "needs_human", reason: `commit lookup failed: ${message}` }
+						: c,
+				);
+				// review-1(7th round): the commit-lookup park is a park site too;
+				// its transitive dependents become skipped_blocked like every
+				// other park, never left pending.
+				skipDependents(
+					record,
+					child.task_id,
+					`dependency ${child.task_id} failed to commit`,
+				);
+				record.batch_state = "needs_human";
+				persist();
+				throw new BatchCommitAbortError(`commit lookup failed: ${message}`);
 			}
 			const adopted =
 				existing ??
@@ -760,13 +918,19 @@ async function driveInterruptedChild(
 				return finalize(input.root, record, message, "");
 			}
 		} else if (terminal.state === "review_ready") {
+			record.children = record.children.map((c) =>
+				c.task_id === child.task_id
+					? { ...c, reason: `review reservation ${terminal.operation_id} open` }
+					: c,
+			);
+			persist();
 			// A foreground Review reservation stays with the calling host turn.
 			return reportFor(
 				record,
 				`child ${child.task_id} holds an open Review reservation`,
 				"Submit the reserved foreground Review verdict, then call startBatch again to continue.",
 			);
-		} else if (terminal.state === "rework") {
+		} else if (terminal.state === "rework" && terminal.operation === "qa") {
 			// review-3(3rd round): interrupted-child rework applies the same
 			// consecutive-failure limit as startBatch instead of parking on the
 			// first rework; below the limit the loop re-drives the same child.
@@ -785,7 +949,8 @@ async function driveInterruptedChild(
 		} else {
 			// stopped | failed | blocked: park and stop.
 			const reason =
-				terminal.state === "stopped" ? "Kernel reported the child stopped" : terminal.reason;
+				terminal.state === "stopped" ? "Kernel reported the child stopped"
+					: terminal.state === "rework" ? terminal.summary : terminal.reason;
 			record.children = record.children.map((c) =>
 				c.task_id === child.task_id ? { ...c, state: "needs_human", reason } : c,
 			);

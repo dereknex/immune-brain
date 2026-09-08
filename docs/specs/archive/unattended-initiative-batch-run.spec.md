@@ -35,7 +35,7 @@ The batch runner then, strictly serially:
 3. after Kernel settlement, stages only that child's scope envelope plus its `.imm/audit/<task-id>/` evidence and creates one commit;
 4. advances the expected HEAD lineage and moves to the next unblocked child.
 
-A child that reaches a human-owned obligation, or is declared `critical`, is parked as `needs_human`; its transitive dependents become `skipped_blocked`. The batch stops on completion, budget, deadline, expiry, commit failure, or an unrecoverable Kernel failure, and writes one run report.
+A child that reaches a human-owned obligation, or is declared `critical`, is parked as `needs_human`; its transitive dependents become `skipped_blocked`. The batch stops on completion, a park, budget, deadline, expiry, commit failure, or an unrecoverable Kernel failure, and writes one run report.
 
 ```mermaid
 stateDiagram-v2
@@ -127,7 +127,7 @@ TaskIntent has no Initiative or dependency field (`plugins/immune-brain/runtime/
 
 Batch run state lives at `.imm/state/batches/<batch_id>.json`, written through the existing kernel store lock, and is Git-ignored like the rest of `.imm/state/`. States: `prepared`, `running`, `needs_human`, `completed`, `budget_stopped`, `failed`, `rejected`; per child: `pending`, `enrolled`, `settled`, `committed`, `needs_human`, `skipped_blocked`.
 
-Failure handling: any validation failure before the first enrollment leaves zero writes and returns `rejected`. Any per-child failure parks that child, marks dependents `skipped_blocked`, and continues. A commit or lineage failure stops the whole batch (`failed`) because subsequent children can no longer prove their base.
+Failure handling: any validation failure before the first enrollment leaves zero writes and returns `rejected`. Any per-child failure parks that child, marks dependents `skipped_blocked`, and immediately stops the run as `needs_human`: a parked child may still hold its Kernel claim, so no further child is selected or enrolled until the human decision resolves the park and a fresh confirmation resumes the batch. A commit or lineage failure stops the whole batch (`failed`) because subsequent children can no longer prove their base.
 
 ### 3.5 Git branch and commit
 

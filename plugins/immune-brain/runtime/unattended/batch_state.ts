@@ -81,7 +81,21 @@ const BATCH_RUN_STATES: ReadonlySet<string> = new Set([
 	"rejected",
 ]);
 
+const ISO_TIMESTAMP_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
+
+function isCanonicalTimestamp(value: unknown): value is string {
+	if (typeof value !== "string" || !ISO_TIMESTAMP_PATTERN.test(value)) return false;
+	const milliseconds = Date.parse(value);
+	return Number.isFinite(milliseconds) && new Date(milliseconds).toISOString() === value;
+}
+
+function validateBatchId(batchId: string): void {
+	if (typeof batchId !== "string" || !BATCH_ID_PATTERN.test(batchId))
+		throw new Error("batch id is not a safe file identity");
+}
+
 function statePath(batchId: string): string {
+	validateBatchId(batchId);
 	return join(".imm", "state", "batches", `${batchId}.json`);
 }
 
@@ -101,8 +115,12 @@ function validateRecordShape(value: unknown, batchId: string): asserts value is 
 		throw new Error(`batch run state ${batchId} has an invalid plan_digest`);
 	if (typeof record.base_head !== "string" || !record.base_head)
 		throw new Error(`batch run state ${batchId} has an invalid base_head`);
-	if (typeof record.authorization_expires_at !== "string" || !record.authorization_expires_at)
+	if (!isCanonicalTimestamp(record.confirmation_time))
+		throw new Error(`batch run state ${batchId} has an invalid confirmation_time`);
+	if (!isCanonicalTimestamp(record.authorization_expires_at))
 		throw new Error(`batch run state ${batchId} has an invalid authorization_expires_at`);
+	if (!isCanonicalTimestamp(record.created_at) || !isCanonicalTimestamp(record.updated_at))
+		throw new Error(`batch run state ${batchId} has invalid state timestamps`);
 	if (!Array.isArray(record.children) || record.children.length === 0)
 		throw new Error(`batch run state ${batchId} has no children`);
 	if (!BATCH_RUN_STATES.has(String(record.batch_state)))
@@ -113,12 +131,17 @@ function validateRecordShape(value: unknown, batchId: string): asserts value is 
 		record.consecutive_qa_failures < 0
 	)
 		throw new Error(`batch run state ${batchId} has an invalid consecutive_qa_failures`);
+	const budget = record.budget as Record<string, unknown>;
 	if (
 		typeof record.budget !== "object" ||
 		record.budget === null ||
-		typeof (record.budget as Record<string, unknown>).max_children !== "number" ||
-		typeof (record.budget as Record<string, unknown>).deadline_at !== "string" ||
-		typeof (record.budget as Record<string, unknown>).qa_failure_limit !== "number"
+		typeof budget.max_children !== "number" ||
+		!Number.isInteger(budget.max_children) ||
+		budget.max_children <= 0 ||
+		!isCanonicalTimestamp(budget.deadline_at) ||
+		typeof budget.qa_failure_limit !== "number" ||
+		!Number.isInteger(budget.qa_failure_limit) ||
+		budget.qa_failure_limit <= 0
 	)
 		throw new Error(`batch run state ${batchId} has an invalid budget`);
 	if (!Array.isArray(record.commits) || record.commits.some((c) => typeof c !== "string"))
@@ -136,7 +159,7 @@ function validateRecordShape(value: unknown, batchId: string): asserts value is 
 			throw new Error(`batch run state ${batchId} has an invalid child entry`);
 		if (!CHILD_RUN_STATES.has(String(child.state)))
 			throw new Error(`batch run state ${batchId} child ${child.task_id} has an invalid state`);
-		if (!Array.isArray(child.blocked_by) || child.blocked_by.some((b) => typeof b !== "string"))
+		if (!Array.isArray(child.blocked_by) || child.blocked_by.some((b: unknown) => typeof b !== "string"))
 			throw new Error(`batch run state ${batchId} child ${child.task_id} has an invalid blocked_by`);
 		if (
 			(child.reason !== null && typeof child.reason !== "string") ||
@@ -162,12 +185,18 @@ function validateRecordShape(value: unknown, batchId: string): asserts value is 
 		if (child.state === "committed" && child.commit !== null && !record.commits.includes(child.commit))
 			throw new Error(`batch run state ${batchId} child ${child.task_id} commit is missing from commits`);
 	}
-	// Terminal batch states imply no child is mid-flight (review-1).
 	if (
-		(record.batch_state === "completed" || record.batch_state === "failed" || record.batch_state === "rejected") &&
+		(record.batch_state === "budget_stopped" ||
+			record.batch_state === "failed" ||
+			record.batch_state === "rejected") &&
 		record.children.some((child) => child.state === "enrolled" || child.state === "settled")
 	)
 		throw new Error(`batch run state ${batchId} is ${String(record.batch_state)} but a child is still mid-flight`);
+	if (
+		record.batch_state === "completed" &&
+		record.children.some((child) => child.state !== "committed")
+	)
+		throw new Error(`batch run state ${batchId} is completed but a child is not committed`);
 }
 
 export function prepareBatchRunState(input: {
@@ -181,9 +210,8 @@ export function prepareBatchRunState(input: {
 	budget: { max_children: number; deadline_at: string; qa_failure_limit: number };
 	now: string;
 }): BatchRunStateRecord {
-	if (!BATCH_ID_PATTERN.test(input.batch_id))
-		throw new Error("batch id is not a safe file identity");
-	return {
+	validateBatchId(input.batch_id);
+	const prepared: BatchRunStateRecord = {
 		contract: "assurance_kernel/batch_run_state/v1",
 		batch_id: input.batch_id,
 		initiative_slug: input.initiative_slug,
@@ -206,6 +234,7 @@ export function prepareBatchRunState(input: {
 		created_at: input.now,
 		updated_at: input.now,
 	};
+	return prepared;
 }
 
 export function readBatchRunState(root: string, batchId: string): BatchRunStateRecord | null {
@@ -256,8 +285,9 @@ export function writeBatchRunState(
 	root: string,
 	record: BatchRunStateRecord,
 ): BatchRunStateRecord {
+	const path = statePath(record.batch_id);
+	validateRecordShape(record, record.batch_id);
 	return withKernelStoreLock(root, () => {
-		const path = statePath(record.batch_id);
 		const existing = existsSync(join(root, path)) ? readSecureProjectFile(root, path) : null;
 		if (existing !== null && existing === canonicalBytes(record)) return record;
 		const stored: BatchRunStateRecord = {
@@ -285,29 +315,31 @@ export interface BatchRunReport {
 }
 
 function reportPath(batchId: string): string {
+	validateBatchId(batchId);
 	return join(".imm", "state", "batches", `${batchId}.report.json`);
 }
 
-/** review-5: persist exactly one terminal report per batch. The original
- * terminal report is authoritative: an existing report is never overwritten,
- * so replay cannot replace the first terminal reason. */
+/** Persist one current stop report per batch. Terminal reports are immutable;
+ * a resumable needs_human report may be replaced by the later stop reached
+ * after a fresh literal-user confirmation. */
 export function writeBatchRunReport(root: string, report: BatchRunReport): BatchRunReport {
+	const relative = reportPath(report.batch_id);
 	return withKernelStoreLock(root, () => {
-		const path = join(root, reportPath(report.batch_id));
+		const path = join(root, relative);
 		if (existsSync(path)) {
-			// Preserve the original report bytes (review-5).
-			const original: unknown = JSON.parse(readSecureProjectFile(root, reportPath(report.batch_id)));
+			const original: unknown = JSON.parse(readSecureProjectFile(root, relative));
 			if (
-				(typeof original === "object" && original !== null &&
-					(original as BatchRunReport).contract === "assurance_kernel/batch_run_report/v1") ||
-				original === undefined
-			) {
-				return original as BatchRunReport;
-			}
-			throw new Error(`batch run report ${report.batch_id} has an unknown contract`);
+				typeof original !== "object" ||
+				original === null ||
+				(original as BatchRunReport).contract !== "assurance_kernel/batch_run_report/v1"
+			)
+				throw new Error(`batch run report ${report.batch_id} has an unknown contract`);
+			const prior = original as BatchRunReport;
+			if (canonicalReportBytes(prior) === canonicalReportBytes(report)) return prior;
+			if (prior.batch_state !== "needs_human") return prior;
 		}
 		ensureSecureDirectory(root, join(".imm", "state", "batches"));
-		writeFileAtomically(root, reportPath(report.batch_id), canonicalReportBytes(report));
+		writeFileAtomically(root, relative, canonicalReportBytes(report));
 		return report;
 	});
 }

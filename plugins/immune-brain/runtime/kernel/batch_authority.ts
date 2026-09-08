@@ -18,6 +18,16 @@ export const BATCH_AUTHORITY_CAPABILITY_BRAND = Symbol.for(
 
 const GIT_COMMIT_ID = /^[a-f0-9]{40}$/;
 
+/** review-7(3rd rework): typed expiry marker thrown at the Kernel enrollment
+ * boundary so the driver can classify a real enrollment-time expiry as an
+ * intentional budget stop without free-form message matching. */
+export class BatchAuthorizationExpiryError extends Error {
+	constructor(message: string) {
+		super(message);
+		this.name = "BatchAuthorizationExpiryError";
+	}
+}
+
 export interface BatchPlanChild {
 	task_id: string;
 	intent_path: string;
@@ -178,6 +188,18 @@ function validateChildren(children: BatchPlanChild[], planDigest: string): void 
 				);
 		}
 	}
+	const dependencies = new Map(children.map((child) => [child.task_id, child.blocked_by]));
+	const visiting = new Set<string>();
+	const visited = new Set<string>();
+	function visit(taskId: string): void {
+		if (visiting.has(taskId)) throw new Error(`batch plan dependency cycle at ${taskId}`);
+		if (visited.has(taskId)) return;
+		visiting.add(taskId);
+		for (const blocker of dependencies.get(taskId)!) visit(blocker);
+		visiting.delete(taskId);
+		visited.add(taskId);
+	}
+	for (const child of children) visit(child.task_id);
 	if (computeBatchPlanDigest(children) !== planDigest)
 		throw new Error("batch plan digest does not match the confirmed child plan");
 }
@@ -209,7 +231,9 @@ export function createBatchAuthorityRegistry(): BatchAuthorityRegistry {
 					throw new Error("batch authorization requires a valid clock");
 				const expires = Date.parse(state.expires_at);
 				if (Number.isNaN(expires) || expires <= now)
-					throw new Error("batch authorization has expired");
+					throw new BatchAuthorizationExpiryError("batch authorization has expired");
+				if (Date.parse(state.budget.deadline_at) <= now)
+					throw new BatchAuthorizationExpiryError("batch authorization deadline has expired");
 				for (const key of Object.keys(expected) as Array<keyof BatchAuthorizationBinding>) {
 					if (key === "budget") {
 						const a = state.budget ?? ({} as BatchBudget);
