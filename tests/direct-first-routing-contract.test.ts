@@ -45,7 +45,7 @@ describe("Skill-explicit workflow routing contract", () => {
   it("retains authoritative evidence and privilege confirmation boundaries", () => {
     expectAll(BASELINE, [
       "Record reproducible evidence before reporting closure",
-      "active Managed step boundary",
+      "enrolled TaskIntent acceptance and `scope_hint`",
       "Managed scope changes",
       "routes scope changes to `imm-planner`",
     ]);

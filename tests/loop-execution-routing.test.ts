@@ -55,7 +55,7 @@ describe("Loop execution and repair routing", () => {
 		if (action.next !== "executor") throw new Error("expected executor action");
 		expect(action.context.authority).toBe("executor");
 		expect(action.context.tool_policy).toBe("workspace tools");
-		expect(action.context.prompt).toContain("active Step");
+		expect(action.context.prompt).toContain("enrolled TaskIntent acceptance");
 		expect(action.context.prompt).toContain("scope expansion");
 		expect(action.context.prompt).not.toContain("skills/");
 	});

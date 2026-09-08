@@ -1,6 +1,6 @@
 ---
 name: imm-pr-fix
-description: Use to repair GitHub PR review feedback, merge conflicts, or failing CI checks within the current PR scope.
+description: Use when the user explicitly requests Immune-Brain repair of GitHub PR review feedback, merge conflicts, or failing checks within the current PR scope.
 ---
 
 # Immune-Brain: PR Fix

@@ -1,28 +1,37 @@
 # Agent Instructions
 
-<!-- IMMUNE-BRAIN:START -->
-This project uses the Immune-Brain workflow.
+## 规则优先级
 
-- Read `IMMUNE.md` before selecting a route.
-- Ordinary host input stays host-native; only explicit `imm-brainstorm`, `imm-planner`, or `imm-loop` Skill entry starts a new Managed workflow. `imm-pr-fix`, `imm-doc-prune`, and `imm-agent-doc-maintain` are standalone host-native maintenance entries and do not start Managed workflow.
-- Keep an active Assurance projection, TaskIntent, TaskRecord, or reviewer follow-up on its current owner; resume it only when the user explicitly enters `imm-loop`.
-- Immune-Brain does not install or validate project-wide `AGENTS.md`, `IMMUNE.md`, or `CONTEXT.md` contracts.
-- Navigation Protocol: check `CONTEXT.md` `## Architecture Map` before broad searching; inspect `.imm` discovery state only for an existing Managed owner.
-- Output Language Policy: set the default language for user-facing replies here. Persisted Immune-Brain documents default to English: `HANDOFF.md`, `docs/brainstorms/`, `docs/specs/`, `docs/plans/`, and `docs/solutions/`. A reply language preference does not change document language; add an explicit document-language instruction if these documents should use another language. Keep schema fields, enum values, CLI flags, JSON keys, State Ledger fields, file paths, tool names, API names, code identifiers, and `CONTEXT.md` canonical terms such as `Step`, `Plan`, and `Spec` literal.
-- This project authorizes readonly advisory subagents and parallel probes unless the user asks for solo work. If the current host still requires current-session authorization, ask once and record `host_authorization_required`; this project instruction does not override host tool policy.
-- Regression check: run `bun test`; there is no `test` script in `package.json`.
-<!-- IMMUNE-BRAIN:END -->
+在宿主允许的权限内，当前具体任务的明确要求 > 本项目适用的 AGENTS.md > 外部通用 Skill 的流程偏好。具体范围优先于通用建议；用户只要分析或草稿时，不扩大为实施。此顺序不覆盖系统/开发者指令、工具权限、安全限制或已生效的 Managed authority。冲突只阻断依赖它的操作，其余工作继续。
 
-## Immune-Brain Preferences
+## 默认执行
 
-- Initiative carrier default: github
+- 默认中文回复，结论先行；代码标识、路径和机器契约保持原文。持久化 Immune-Brain 文档默认英文，除非用户明确指定文档语言。
+- 在请求范围内，自主完成只读检索、本地草稿、可恢复的局部编辑和常规本地测试。沿用现有实现与约定，选择能验证的最小方案；不为常规技术选择反复问用户。
+- 缺失信息时，先用代码、测试和已有决策核实；可验证且不改变目标、外部行为或权限的假设可记录后继续。确实缺少用户才能提供的关键事实时，只问受影响部分，并继续独立工作。
+- 已明确的要求和批量批准无需再次确认。不可逆、破坏性、覆盖他人未保存工作，或超出已有授权的外部写入、凭据及权限变更，在产生副作用前请求一次针对性确认。宿主要求的 native gate 直接打开，不先做聊天预确认；等待期间可继续无副作用的独立准备。
+- 保留用户现有改动。未经明确要求，不提交、推送、发布、部署或改写 Git 历史；这些操作不包含在普通“修复”请求中。
 
-## Agent skills
+## 检索与验证
 
-### Issue tracker
+- 已知文件或符号就直接读取；目标不明或涉及跨模块关系时，先查 CONTEXT.md 的 Architecture Map，再从相关目录向外扩展。ADR 只读本次决策涉及的内容，不为小改动遍历全仓。
+- 沿实际调用、依赖和生成关系补足影响面。共享契约、安全、迁移、持久化及 authority 修改需要覆盖相关调用方和状态所有者；查清当前行为及验证路径后停止扩大检索。
+- 优先运行能验证改动的最小检查；共享行为变化或发布准备再执行完整回归。项目使用 `bun test`，没有 package.json `test` script；类型检查为 `bun run typecheck`。未知测试命令先检查脚本内容，避免把联网、部署或生产数据修改当成本地测试。
+- 只读子代理可用于独立、明确范围的调查，执行方式遵守当前宿主能力；不因可选子代理不可用而阻断本地调查。This project authorizes readonly advisory subagents and parallel probes unless the user asks for solo work. 该授权不覆盖宿主工具策略（this project instruction does not override host tool policy）。只搜索当前项目及用户明确指定的路径，不扫描其他项目的会话记录。
+- 实现过程中，自主诊断、修复并重跑授权范围内失败的常规本地检查；普通失败不需要重新请求许可或重新规划。绝不删除、跳过或弱化有效检查来制造通过。
+- 完成意味着请求结果已交付、且必需验证已通过；披露缺口不能替代通过。必需检查失败或无法运行时，如实报告工作未完成并给出具体阻碍。无关的既有失败只披露，不借机扩大任务。失败、未验证和剩余阻碍直接说明；不以编写计划或汇报进度代替交付。
 
-Issues and specs live as GitHub issues in `dereknex/immune-brain`, via the `gh` CLI. See `docs/agents/issue-tracker.md`.
+## Skill 使用
 
-### Domain docs
+- 只在明确触发场景匹配或用户点名时读取 Skill 正文；普通代码问题不自动加载全仓审计、知识图谱、穷尽访谈或多角色工作流。
+- description 只负责说明何时使用；执行步骤和分支参考留在正文或按需引用文件。当前任务无需的分支不加载。
+- 外部 Skill 提供领域方法，不自行增加项目批准层级、扩大任务范围或接管 Managed owner。
 
-Single-context: `CONTEXT.md` + `docs/adr/` at the repo root. See `docs/agents/domain.md`.
+## Immune-Brain
+
+- 普通输入保持 host-native，不因文件数、测试数或重试次数自动升级为 Managed。只有用户显式进入 `imm-brainstorm`、`imm-planner`、`imm-loop` 才启动或恢复 Managed workflow；进入前读取 IMMUNE.md。
+- 已有 TaskIntent、TaskRecord 或 Assurance owner 的工作只通过显式 `imm-loop` 恢复，不通过普通编辑绕过 owner。Enrollment、breaking revision 和其他 native authority gate，以及 Kernel QA/Review，按现行契约执行；本文件不授予绕过权限。
+- `imm-pr-fix`、`imm-doc-prune`、`imm-agent-doc-maintain` 是独立 host-native 维护入口；只有用户显式调用时执行对应维护协议，不因普通提问自动进入。
+- 仅在用户选定的启动目录工作，不创建、切换或删除 Git worktree。仅为已有 Managed owner 按需检查 `.imm`，不因普通请求创建工作流状态或安装项目契约。
+- 涉及 GitHub Issue 时，使用 `gh` 与 `dereknex/immune-brain`，读取 docs/agents/issue-tracker.md；`Initiative carrier default: github`，但该偏好不等于远端发布授权。
+- 涉及领域词汇或架构决策时，参考 CONTEXT.md、相关 docs/adr/ 和 docs/agents/domain.md；这些文档不代替 Kernel 运行状态。

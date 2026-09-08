@@ -1,0 +1,51 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "workflow-contract-alignment",
+  "owner": "user",
+  "goal": "Align workflow instructions with existing approval, publication, evidence and completion behavior to remove contradictory handoffs.",
+  "acceptance": [
+    {
+      "id": "A1",
+      "assertion": "Planner distinguishes requesting native Enrollment from granting authority and preserves plan-only stopping; Loop requires complete publication only for confirmed GitHub-carried Initiatives, excludes standalone and Local candidates, and retains full-batch failure blocking as specified.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/imm-planner-kernel-intent-contract.test.ts\",\n    \"tests/carrier-enrollment-gate-contract.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 30000,\n  \"max_output_bytes\": 32768\n}\n"
+    },
+    {
+      "id": "A2",
+      "assertion": "Executor and Baseline report diagnostic outcomes without claiming evidence writes through read-only Loop actions; current Managed completion uses TaskIntent and Kernel projection, host-native completion is defined, and missing in-scope evidence is collected rather than automatically replanned while real envelope restrictions remain unchanged.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/loop-execution-routing.test.ts\",\n    \"tests/baseline-packaging-contract.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 30000,\n  \"max_output_bytes\": 32768\n}\n"
+    },
+    {
+      "id": "A3",
+      "assertion": "The Spec's revision proposal ownership, direct available native authorization action and sequential foreground advisory rules are unambiguous across canonical and packaged instructions; enrolled sidecars, cancellation, mandatory QA/Review and same-host fail-closed recovery remain protected without runtime changes.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/managed-authority-failure-contract.test.ts\",\n    \"tests/dist-docs-sync-contract.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 30000,\n  \"max_output_bytes\": 32768\n}\n"
+    }
+  ],
+  "scope_hint": [
+    "IMMUNE.md",
+    "docs/plans/archive/workflow-contract-alignment.intent.json",
+    "docs/plans/workflow-contract-alignment.intent.json",
+    "docs/reference/subagent-dispatch-protocol.md",
+    "docs/specs/archive/workflow-contract-alignment.spec.md",
+    "docs/specs/workflow-contract-alignment.spec.md",
+    "plugins/immune-brain/BASELINE.md",
+    "plugins/immune-brain/dist/BASELINE.md",
+    "plugins/immune-brain/dist/docs/reference/subagent-dispatch-protocol.md",
+    "plugins/immune-brain/dist/imm-loop.md",
+    "plugins/immune-brain/dist/imm-planner.md",
+    "plugins/immune-brain/dist/role-prompts/executor.md",
+    "plugins/immune-brain/dist/role-prompts/pr-fix.md",
+    "plugins/immune-brain/runtime/prompts/executor.md",
+    "plugins/immune-brain/runtime/prompts/pr-fix.md",
+    "plugins/immune-brain/skills/BASELINE.md",
+    "plugins/immune-brain/skills/imm-loop/SKILL.md",
+    "plugins/immune-brain/skills/imm-planner/SKILL.md",
+    "tests/baseline-packaging-contract.test.ts",
+    "tests/carrier-enrollment-gate-contract.test.ts",
+    "tests/dist-docs-sync-contract.test.ts",
+    "tests/imm-planner-kernel-intent-contract.test.ts",
+    "tests/loop-execution-routing.test.ts",
+    "tests/managed-authority-failure-contract.test.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}

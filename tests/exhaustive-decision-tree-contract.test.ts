@@ -7,9 +7,9 @@ const read = (path: string) =>
 	readFileSync(join(ROOT, path), "utf8").replace(/\s+/g, " ");
 
 const brainstormContracts = [
-	"plugins/immune-brain/skills/imm-brainstorm/SKILL.md",
 	"plugins/immune-brain/dist/imm-brainstorm.md",
 ];
+const brainstormLoader = "plugins/immune-brain/skills/imm-brainstorm/SKILL.md";
 const plannerContracts = [
 	"plugins/immune-brain/dist/imm-planner.md",
 ];
@@ -26,13 +26,25 @@ const expectAll = (paths: string[], phrases: string[]) => {
 };
 
 describe("Brainstorm-owned clarification contract", () => {
+	test("the loader resolves the canonical contract and section routes", () => {
+		const loader = read(brainstormLoader);
+		expect(loader).toContain("../../dist/imm-brainstorm.md");
+		expect(loader).toContain("Default exhaustive decision tree");
+		expect(loader).toContain("roundtable");
+		expect(loader).toContain("adversarial");
+		expect(loader).not.toContain("Seed the fixed framing roots");
+		// the common entry must not require every reference or mode
+		expect(loader).not.toContain("brainstorm_ensemble");
+		expect(loader).toContain("load a section's instructions only when its branch applies");
+	});
+
 	test("Brainstorm exhausts every sourced current-goal branch", () => {
 		expectAll(brainstormContracts, [
 			"Default exhaustive decision tree",
 			"current-goal branch",
 			"user request, repository evidence, or a settled parent decision",
 			"fixed framing roots",
-			"repository fact or a user-owned decision",
+			"repository fact, a delegated technical choice, or a material user-owned decision",
 			"complete currently unblocked frontier",
 			"recommended answer",
 			"bulk approval of all recommendations",
@@ -73,7 +85,7 @@ describe("Brainstorm-owned clarification contract", () => {
 			"explicitly selected by the user",
 			"on-demand rejected-decision evidence",
 		]);
-		const packaged = read(brainstormContracts[1]);
+		const packaged = read(brainstormContracts[0]);
 		expect(packaged).not.toContain("lightweight tasks get 1-2 probes");
 		expect(packaged).not.toContain("larger tasks may need 3-4");
 		expect(packaged).not.toContain("one question at a time");
@@ -114,8 +126,10 @@ describe("Brainstorm-owned clarification contract", () => {
 
 	test("project contract files carry the current schema", () => {
 		const agents = read("AGENTS.md");
-		expect(agents).toContain("<!-- IMMUNE-BRAIN:START -->");
-		expect(agents).toContain("<!-- IMMUNE-BRAIN:END -->");
+		expect(agents).toContain("规则优先级");
+		expect(agents).toContain("普通输入保持 host-native");
+		expect(agents).toContain("Initiative carrier default: github");
+		expect(agents).not.toContain("<!-- IMMUNE-BRAIN:START -->");
 		expect(readFileSync(join(ROOT, "CONTEXT.md"), "utf8")).toStartWith(
 			"# Project Context",
 		);

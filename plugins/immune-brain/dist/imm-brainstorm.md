@@ -1,6 +1,6 @@
 ---
 name: imm-brainstorm
-description: Use when clarifying scope.
+description: Use when the user explicitly requests Immune-Brain requirement clarification before planning; explicit entry only, framing only.
 ---
 
 # Immune-Brain: Brainstormer
@@ -43,11 +43,17 @@ Verification, and deferred items. Expand them dynamically after every answer.
 Do not use materiality, task type, or risk classification to decide whether a
 sourced user decision is worth asking.
 
-Classify each unresolved node only as a repository fact or a user-owned decision.
-Resolve facts with bounded, on-demand read-only evidence. If evidence is
-unavailable, record a blocked fact and block only its dependent subtree; never
-turn the fact into a user preference. Place every sourced user decision on the
-current frontier.
+Classify each unresolved node as a repository fact, a delegated technical
+choice, or a material user-owned decision. Resolve repository facts with
+bounded, on-demand read-only evidence. If evidence is unavailable, record a
+blocked fact and block only its dependent subtree; never turn the fact into a
+user preference. A delegated technical choice is verifiable through existing
+conventions, a reversible local probe, or an existing recorded decision when it
+does not change the goal, scope, observable behavior, compatibility, risk
+acceptance, or a protected effect; resolve it with evidence and record the
+chosen assumption instead of asking. When a technical choice does change one of
+those, it is material and belongs on the user frontier. Place every material
+user-owned decision on the current frontier.
 
 Ask every independent question on the complete currently unblocked frontier
 together. Hold downstream questions until their prerequisites are decided.

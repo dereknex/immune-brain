@@ -23,8 +23,8 @@ describe("planner ensemble contract", () => {
 
 	it("keeps Brainstorm ensemble authority in the packaged contract without local model config", () => {
 		const source = read("plugins/immune-brain/skills/imm-brainstorm/SKILL.md");
-		expect(source).toContain("brainstorm_ensemble");
-		expect(source).toContain("does not transfer framing authority");
+		// the loader only routes; ensemble authority lives in the canonical contract
+		expect(source).toContain("Brainstorm Ensemble Advisory");
 		expect(source).not.toContain("workflow_models.brainstorm_ensemble");
 
 		const content = read("plugins/immune-brain/dist/imm-brainstorm.md");

@@ -64,6 +64,38 @@ describe("immune-brain BASELINE packaging contract", () => {
     }
   })
 
+  it("executor and pr-fix prompts report diagnostic evidence without minting authority", () => {
+    const executor = read(resolve(REPO_ROOT, "plugins/immune-brain/runtime/prompts/executor.md"))
+    const executorDist = read(resolve(REPO_ROOT, "plugins/immune-brain/dist/role-prompts/executor.md"))
+    for (const content of [executor, executorDist]) {
+      expect(content).toContain("run the permitted diagnostic checks")
+      expect(content).toContain("does not store\nevidence or change task state")
+      expect(content).toContain("Autonomously diagnose,\nrepair, and rerun failing ordinary local checks")
+      expect(content).toContain("never present failed\nverification as completion")
+      expect(content).not.toContain("record structured execution evidence through the Loop runtime\naction")
+    }
+    const prFix = read(resolve(REPO_ROOT, "plugins/immune-brain/runtime/prompts/pr-fix.md"))
+    const prFixDist = read(resolve(REPO_ROOT, "plugins/immune-brain/dist/role-prompts/pr-fix.md"))
+    for (const content of [prFix, prFixDist]) {
+      expect(content).toContain("the current TaskIntent\nacceptance and `scope_hint` when operating under one")
+      expect(content).toContain("otherwise the legacy\nsupplied Plan")
+    }
+  })
+
+  it("direct completion requires passing verification instead of disclosure", () => {
+    const baseline = read(BASELINE_ROOT).replace(/\s+/g, " ")
+    expect(baseline).toContain(
+      "Direct work closes only when the requested result is delivered and the required verification passes",
+    )
+    expect(baseline).toContain(
+      "a failed or unavailable required check is reported as incomplete work with its concrete blocker, never as completion",
+    )
+    expect(baseline).toContain(
+      "Check breadth follows the request and established project requirements, not a universal full-repository rule",
+    )
+    expect(baseline).not.toContain("Direct completion contract above")
+  })
+
   it("keeps Kernel risk obligations in the canonical Loop contract", () => {
     const loop = read(resolve(DIST_DIR, "imm-loop.md"))
     expect(loop).toContain("Fresh QA suffices for routine work")

@@ -6,7 +6,7 @@
 - **Skill-explicit Managed Path**：普通 host input 保持 host-native；只有用户显式进入 `imm-brainstorm`、`imm-planner` 或 `imm-loop` 才启动或恢复 Managed workflow。active Assurance owner 保持权威，但不会改写普通输入。
 - **文件即 Managed 记忆**：Managed Path 的重要决策和工作流状态必须持久化到 Git-owned Spec/TaskIntent 或 `.imm/` authority；host-native path 不会创建或更新 `.imm/` 工作流状态，也不依赖对话记忆作为长期 authority。
 - **按请求类型使用规格**：用户显式进入 `imm-planner` 处理清晰的新仓库变更，有实质歧义时显式进入 `imm-brainstorm`；已有 Assurance owner 由用户显式进入 `imm-loop` 恢复。Planner 只产出候选 Spec/TaskIntent，不无条件 Enrollment。
-- **小步执行**：Managed TaskIntent 按可独立验收、回滚和结算的结果划分；内部实施批次不创建第二套 Step authority。Direct 不因多文件、多条本地 verifier、普通重试或只读 subagent 自动升级为 Managed。
+- **小步执行**：Managed TaskIntent 按可独立验收、回滚和结算的结果划分；内部实施批次不创建第二套中间任务 authority。Direct 不因多文件、多条本地 verifier、普通重试或只读 subagent 自动升级为 Managed。
 - **按证据沉淀**：只有确有复用价值的已闭合工作才写入 `docs/solutions/`；Direct completion 不要求 Compounder。
 - **角色权限边界（role authority boundary）**：Managed 核心 Skill 保持 `preferred bias`（最该坚持的质量目标）和 `prohibited drift`（绝不能越界的权力）；交互仪式压缩为 `role_prompt_bridge.ts` 按角色分配的工具策略与 Kernel authority/capability gate。完备性只在有限输入源（Brainstorm manifest、review follow-up packet）上启用。
 - **四项执行原则内嵌到流程**：
@@ -35,11 +35,11 @@
 
 ## 4. Agent 协作规约
 - **`imm-brainstorm`**：只在关键需求或风险仍含歧义时负责澄清；澄清后重新应用 Direct/Managed 矩阵，不默认创建计划。其 `roundtable` mode 负责在复杂取舍、需求分歧或可能 replan 的场景中提供多角色只读会诊；输出只能作为后续规划的研究材料，不直接决定 scope、计划、执行或验收。
-- **`imm-brainstorm`（`adversarial` mode）**：可选高压闸门，仅在 scope 不稳且存在显著多方分歧、或需要结构化审计记录（安全、数据迁移、跨边界合约）时触发；大多数任务从 `imm-brainstorm` 直接到 `imm-planner`，不经过此阶段。可调用内部只读 `advisory-reviewer` role（经 `imm-loop` 内部角色路由分发，见 ADR-0003）产出风险、争议假设和验证关注点，但最终 scope posture 仍由 preplan host 判断。
-- **Host-bound evidence loops**：当 planner 或 preplan 需要子代理帮助时，每个 host 使用内部只读 role（`arch-explorer`、`advisory-reviewer`，经 `imm-loop` 内部角色路由分发，见 ADR-0003），不抽 shared registry。子代理只产出 evidence（constraints、risks、unknowns、file_pointers），不写 Plan、Spec、scope posture 或 QA 结论。内部 `compounder` role 只在已闭合 Step 的证据证明存在可复用 Learning 时才被分发，判断是否值得沉淀到 `docs/solutions/`。
+- **`imm-brainstorm`（`adversarial` mode）**：可选高压闸门，仅在 scope 不稳且存在显著多方分歧、或需要结构化审计记录（安全、数据迁移、跨边界合约）时触发；大多数任务从 `imm-brainstorm` 直接到 `imm-planner`，不经过此阶段。可调用内部只读 `advisory-reviewer` role（经 `imm-loop` 内部角色路由分发，见 ADR-0003）产出风险、争议假设和验证关注点，但最终 scope posture 仍由 `imm-brainstorm` 所属 host 判断。
+- **Host-bound evidence loops**：当 planner 或 brainstorm 需要子代理帮助时，每个 host 使用内部只读 role（`arch-explorer`、`advisory-reviewer`，经 `imm-loop` 内部角色路由分发，见 ADR-0003），不抽 shared registry。子代理只产出 evidence（constraints、risks、unknowns、file_pointers），不写 Plan、Spec、scope posture 或 QA 结论。内部 `compounder` role 只在已结算 Managed task 的证据证明存在可复用 Learning 时才被分发，判断是否值得沉淀到 `docs/solutions/`。
 - **规划阶段**：`imm-planner` 负责清晰仓库变更的候选 Spec/TaskIntent；它不自动 Enrollment，也不把生成的 artifact 当作已授权任务——只有 literal-user Enrollment 才能把候选提升为 Kernel 上的 TaskIntent/TaskRecord 权威记录。
-- **Internal executor role**：只实现已 Enrollment TaskIntent 的 acceptance 与 `scope_hint`，在当前对话内做 focused verification。可选只读探针仅提供调查证据，不创建持久 Step 状态。
-- **Deterministic QA**：冻结后由 Host integration 在前台逐项运行固定 acceptance descriptors，原子提交验收；不再分发逐 Step QA Agent。
+- **Internal executor role**：只实现已 Enrollment TaskIntent 的 acceptance 与 `scope_hint`，在当前对话内做 focused verification。可选只读探针仅提供调查证据，不创建持久中间任务状态。
+- **Deterministic QA**：冻结后由 Host integration 在前台逐项运行固定 acceptance descriptors，原子提交验收；不再分发逐任务 QA Agent。
 - **Internal review roles**：material/critical 任务按 Kernel 返回的 snapshot-bound `agent_params` 分发独立前台 Reviewer；Parent 将结构化 verdict 交给 `submit_review`，不自发增加审查 gate。
 - **Internal repair role**：负责 PR 阻塞修复（merge conflict、review feedback、CI failure），只做与阻塞项直接相关的最小改动。
 - **`imm-loop`（Kernel 执行闭环）**：以已 Enrollment 的 TaskIntent/TaskRecord 为权威，在内部 role boundary 使用 `imm_loop_action`，由 Kernel Tool 完成 freeze、QA、Review 与 settlement。消费操作返回的新 projection；中断、结果不明或缺失 projection 时重新读取 status，不重复已经提交的验收。不持有独立 checkpoint runtime，亦不得将 executor 验证结果转换为 QA `pass`。
@@ -51,7 +51,7 @@ Host-native Path 与 Managed Path 的定义、入口条件和角色分工见 §1
 §3（写入边界）与 §4（Agent 协作规约）；本节不重复展开。
 
 补充约束（不在别处出现）：
-- **若 Brainstorm 阶段的澄清信息未获得用户明确回复，必须停止推进，禁止进入规划阶段。**
+- **未回复的澄清只阻断依赖它的计划承诺或执行**：独立只读调查、备选草稿与验证可继续。不能把用户未回复解释为同意，也不能把内部草稿宣称为已批准的 Spec。
 
 ---
 *版本：v4.0.1 | 日期：2026-09-01*

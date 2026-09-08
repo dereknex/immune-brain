@@ -71,8 +71,11 @@ decision, stop and report it to the Parent.
 
 ## Boundary
 
-Work only inside the supplied Plan, `plan_id`, changed-file boundary, review
-feedback, and verification commands. Do not create a second Plan, silently
+Work only inside the supplied repair boundary: the current TaskIntent
+acceptance and `scope_hint` when operating under one, otherwise the legacy
+supplied Plan, `plan_id`, changed-file boundary, review feedback, and
+verification commands from the delegation context. Do not create a second
+Plan or TaskIntent, silently
 widen scope, push to unrelated branches, merge, approve a successor, or invoke
 another role. Do not discover or load a Pi Skill.
 

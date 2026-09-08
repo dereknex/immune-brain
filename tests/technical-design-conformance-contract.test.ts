@@ -135,4 +135,24 @@ describe("risk-tiered Technical Design conformance contract", () => {
       "Do not split merely because the design names several layers, files, or services",
     ])
   })
+
+  it("omits compulsory diagram and audit ceremony for Low risk while keeping elevated-risk evidence", () => {
+    expectAll(PLANNER, [
+      "Medium/High risk Specs record `**Diagram decision**: required|not_required`",
+      "Low-risk Specs omit the empty ceremony and record neither field",
+      "Medium/High risk work records a `Devil's Advocate Audit`",
+      "Low-risk work omits the empty template",
+    ])
+    expectAll(QUALITY_GATE, [
+      "Medium/High risk Specs record `**Diagram decision**: required|not_required`",
+      "Low-risk Specs omit the empty ceremony and record neither field",
+    ])
+    for (const obsolete of [
+      "Every new or revised Spec records `**Diagram decision**",
+      "Record a `Devil's Advocate Audit` in the Spec covering",
+    ]) {
+      expect(PLANNER).not.toContain(obsolete)
+      expect(QUALITY_GATE).not.toContain(obsolete)
+    }
+  })
 })

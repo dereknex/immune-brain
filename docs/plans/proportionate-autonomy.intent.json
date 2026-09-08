@@ -1,0 +1,50 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "proportionate-autonomy",
+  "owner": "user",
+  "goal": "Make clarification, local preparation and project instruction precedence proportionate to the current task while preserving protected decisions.",
+  "acceptance": [
+    {
+      "id": "A1",
+      "assertion": "The bound Spec's clarification decisions are implemented in Brainstorm, Planner, current references and the existing fixture: facts and delegated technical choices do not require user decisions, unchanged approval does not force new rounds, and material ambiguity blocks only dependent work without changing confirmed choices or role permissions.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/exhaustive-decision-tree-contract.test.ts\",\n    \"tests/brainstorm-decision-probing-contract.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 30000,\n  \"max_output_bytes\": 32768\n}\n"
+    },
+    {
+      "id": "A2",
+      "assertion": "Project AGENTS and synchronized Baseline copies implement the Spec's task/project/external-Skill precedence within host restrictions, autonomous bounded local preparation and targeted discovery, while preserving explicit Managed entry, active ownership, protected effects, language and the literal GitHub carrier preference.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/baseline-packaging-contract.test.ts\",\n    \"tests/direct-first-routing-contract.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 30000,\n  \"max_output_bytes\": 32768\n}\n"
+    },
+    {
+      "id": "A3",
+      "assertion": "Planner and packaged planning-quality guidance omit compulsory empty diagram/audit ceremony for low-risk work, preserve evidence-relevant elevated-risk design and sensitive reference closure, and remain synchronized without changing historical validators or weakening focused acceptance verification.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/technical-design-conformance-contract.test.ts\",\n    \"tests/dist-docs-sync-contract.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 30000,\n  \"max_output_bytes\": 32768\n}\n"
+    }
+  ],
+  "scope_hint": [
+    "AGENTS.md",
+    "IMMUNE.md",
+    "docs/plans/archive/proportionate-autonomy.intent.json",
+    "docs/plans/proportionate-autonomy.intent.json",
+    "docs/reference/planning-quality-gate.md",
+    "docs/solutions/grill-me-interaction-mechanics-borrow.md",
+    "docs/specs/archive/proportionate-autonomy.spec.md",
+    "docs/specs/proportionate-autonomy.spec.md",
+    "plugins/immune-brain/BASELINE.md",
+    "plugins/immune-brain/dist/BASELINE.md",
+    "plugins/immune-brain/dist/docs/reference/planning-quality-gate.md",
+    "plugins/immune-brain/dist/imm-brainstorm.md",
+    "plugins/immune-brain/dist/imm-planner.md",
+    "plugins/immune-brain/skills/BASELINE.md",
+    "plugins/immune-brain/skills/imm-brainstorm/SKILL.md",
+    "plugins/immune-brain/skills/imm-planner/SKILL.md",
+    "tests/baseline-packaging-contract.test.ts",
+    "tests/brainstorm-decision-probing-contract.test.ts",
+    "tests/direct-first-routing-contract.test.ts",
+    "tests/dist-docs-sync-contract.test.ts",
+    "tests/exhaustive-decision-tree-contract.test.ts",
+    "tests/fixtures/imm-brainstorm-behavior-benchmark.json",
+    "tests/technical-design-conformance-contract.test.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}

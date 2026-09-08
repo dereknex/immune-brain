@@ -1,6 +1,6 @@
 ---
 name: imm-loop
-description: Use to run an enrolled TaskIntent to completion through Kernel-governed execution, QA, and Review.
+description: Use when the user explicitly requests execution or resumption of an Immune-Brain managed task through the Kernel-governed loop.
 ---
 
 # Immune-Brain: Loop
@@ -16,7 +16,12 @@ claim, TaskIntent, and TaskRecord. Invalid or contradictory projections fail
 closed. A candidate TaskIntent is not Enrollment authority.
 
 Before the first Enrollment of a candidate TaskIntent, confirm the Planner
-returned `tracker_associated` for its Initiative. `tracker_projection_failed` or
+returned `tracker_associated` — but only when the candidate belongs to an
+identified GitHub-carried Initiative. Standalone TaskIntents and Local
+Initiatives carry no tracker prerequisite: their Enrollment needs only the
+validated candidate. When membership is uncertain, resolve it against the
+Planner's carrier decision before treating the candidate as exempt; do not
+assume either way. For a GitHub-carried Initiative, `tracker_projection_failed` or
 `awaiting_user_initiative_confirmation` blocks that Enrollment until the same
 complete carrier batch succeeds; report the stable carrier reason and its exact
 retry action instead of enrolling. A carrier command the Host refused, cancelled,

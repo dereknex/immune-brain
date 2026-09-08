@@ -55,7 +55,7 @@ non-authoritative；Enrollment 由 literal user 和当前 Host 的原生 gate �
 Loop 是唯一的执行协调 public Skill。它通过 `buildLoopAction` 和
 `buildLoopRoleDispatch` 选择内部 action/role，并保持每个 boundary 的 authority：
 
-- `executor`：当前 active Step 的最小实现。
+- `executor`：当前 enrolled TaskIntent acceptance 与 `scope_hint` 的最小实现。
 - `test-fixer` / `pr-fix`：显式委派的测试和 PR repair。
 - `qa`：只消费 evidence，返回 pass/rework/replan。
 - `code-review` / `ui-review`：只读 review；Stable Review Gate identifiers 为

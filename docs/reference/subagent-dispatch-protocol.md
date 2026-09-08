@@ -104,7 +104,7 @@ Parent workflow role 必须：
 4. 把 partial/error 标记为 `degraded`。
 5. 保留自身 baseline review，不把最终判断权交给 child。
 
-普通 advisory/discovery 的每次启动都消耗一个 candidate budget slot；失败、取消、timeout 或 result_untrusted 均丢弃该输出且不得自动重试。Parent 仅在剩余候选仍独立有用且 evidence budget 仍需要时继续，否则转 solo/fail-closed fallback，并记录 `dispatch_failed` 或 `child_timeout`。该规则不改变 Kernel authority Review 的显式恢复协议。Child 永远不获得实现、Plan write、workflow mutation 或 QA closure authority。
+普通 advisory/discovery 的每次启动都消耗一个 candidate budget slot；失败、取消、timeout 或 result_untrusted 均丢弃该输出且不得自动重试。Parent 仅在剩余候选仍独立有用且 evidence budget 仍需要时继续，否则转 solo/fail-closed fallback，并记录 `dispatch_failed` 或 `child_timeout`。Read-only eligibility 与 Pi 的 one-foreground-child 调度限制是两回事：只读调查可同时存在多个待派发候选，但实际执行仍逐个 foreground child 串行消费，不得把多个 foreground Agent 假定为并发 batch。该规则不改变 Kernel authority Review 的显式恢复协议。Child 永远不获得实现、Plan write、workflow mutation 或 QA closure authority。
 
 If Kernel Review dispatch fails, the Parent does not call `submit_review`; the existing Review reservation and immutable evidence remain available for a later foreground retry. A malformed verdict may be corrected and resubmitted. A stale snapshot, explicit release, successful settlement, or session shutdown removes the reservation and evidence. There is no retry counter, dispatch receipt state machine, or provider-specific recovery path.
 

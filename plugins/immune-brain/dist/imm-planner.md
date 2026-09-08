@@ -1,6 +1,6 @@
 ---
 name: imm-planner
-description: Use to create or revise a spec and TaskIntent from requirements; owns scope and decomposition, not implementation or Enrollment.
+description: Use when the user explicitly requests Immune-Brain Spec and TaskIntent planning; owns scope and decomposition, not implementation or Enrollment.
 ---
 
 # Immune-Brain: Planner
@@ -237,10 +237,10 @@ descriptors or add a mandatory user confirmation. Use the smallest `timeout_ms` 
 - **Design-view selection**: For Medium and High risk, select every materially relevant technical-design view from architecture layers, service/component interfaces, data flow, state transitions, and temporal sequence. Record a short `Design views` statement naming the selected views and why any omitted view cannot affect the design. Do not write empty architecture, interface, data-flow, state, or sequence sections. Low risk remains concise and may omit Technical Design. When a selected view is recorded, also record its required decision content: architecture layers need layer responsibilities, dependency direction, ownership, and prohibited coupling; service/component interfaces need inputs, outputs, errors, compatibility/versioning, and caller/callee ownership; data flow needs source, transformations, validation, destination, and failure handling; state transitions need states, legal transitions, trigger, invariant, terminal ownership, and recovery; temporal sequence needs ordered interactions, authority at each point, interruption behavior, and idempotency.
 - **Technical Design Authority**: The Spec is the single Technical Design baseline. TaskIntent acceptance and scope reference the applicable design decisions or invariants without copying Technical Design prose. If discovery invalidates the baseline, stop execution and return to Planner to update the Spec and decide whether `replan` is required. TaskIntent and Initiative text do not duplicate Technical Design prose or become a prose Plan substitute.
 - **TaskIntent decomposition**: Use the selected design boundaries as one retain/split criterion for TaskIntent slices. Keep work in one TaskIntent when the selected views describe one coherent executable slice with shared acceptance, risk treatment, rollback, and authority. Split a successor TaskIntent when a service boundary, state-machine owner, migration/compatibility boundary, independently promotable layer, or sequence dependency needs independent verification, rollback, authorization, or settlement. Do not split merely because the design names several layers, files, or services. Treat trust-boundary changes as the same kind of decomposition evidence: a TaskIntent should normally change one primary trust-boundary invariant, while merely traversing several boundaries or updating both sides of one end-to-end authority chain does not require a split. Split separate trust invariants when they can be independently verified, rolled back, authorized, migrated, or settled. Keep multiple trust-boundary changes together only when they form one atomic security outcome and splitting would create an unsafe or unusable intermediate state; record that reason in the Spec. This is Planner judgment, not a TaskIntent schema field or an Enrollment counting rule. This does not revive prose Plan, Roadmap, or Phase authority.
-- **Mermaid Use**: Mermaid is required only when a medium/high-risk design contains structure, sequence, data flow, or state transition relationships that a diagram materially clarifies. Mermaid is not a universal gate; a diagram supplements adjacent prose and never becomes a second design authority. Every new or revised Spec records `**Diagram decision**: required|not_required` and a non-empty `**Diagram reason**:`. A `required` decision must have a Mermaid block; `not_required` explains why prose is sufficient.
+- **Mermaid Use**: Mermaid is required only when a medium/high-risk design contains structure, sequence, data flow, or state transition relationships that a diagram materially clarifies. Mermaid is not a universal gate; a diagram supplements adjacent prose and never becomes a second design authority. Medium/High risk Specs record `**Diagram decision**: required|not_required` and a non-empty `**Diagram reason**:`. A `required` decision must have a Mermaid block; `not_required` explains why prose is sufficient. Low-risk Specs omit the empty ceremony and record neither field.
 - **Verification**: Every acceptance assertion has a concrete focused descriptor that can fail on the intended regression. Hypothetical evidence is not execution-ready.
 - **Executable Scope**: `scope_hint` is the mutation envelope, not discovery context. Close references across callers, tests, generated mirrors, and state-machine owners before authoring. Include bound active and archive Spec paths needed for `freeze_artifacts`. Collect all known scope gaps in one revision request; ask again only when new evidence changes the boundary.
-- **Devil's Advocate Preplan Audit**: Record a `Devil's Advocate Audit` in the Spec covering rollback resilience, verification vanity, and spec dilution detection. Explain recovery from partial implementation, why verification detects the regression, and how accepted requirements remain covered.
+- **Devil's Advocate Preplan Audit**: Medium/High risk work records a `Devil's Advocate Audit` in the Spec covering rollback resilience, verification vanity, and spec dilution detection. Explain recovery from partial implementation, why verification detects the regression, and how accepted requirements remain covered. Low-risk work omits the empty template; the Spec records outcome, boundary, and concrete verification only.
 - **Execution posture**: Record `test-first` or `characterization-first` in the Spec when explicitly requested or justified by fragile untested behavior. The Executor owns the local choreography; do not create prototype or RED/GREEN/REFACTOR authority Steps. Throwaway probes must have a cleanup condition and a durable decision output.
 
 ## Settlement-Design Contract
@@ -356,7 +356,9 @@ optional advisory dispatch fails, continue inline and record the reason.
 Spec under `docs/specs/` plus canonical candidate
 `docs/plans/<task-id>.intent.json`. The Spec records outcome, discovery evidence,
 decisions, assumptions, Technical Design when required, output language,
-`Devil's Advocate Audit`, and acceptance/test mapping. Include a complete
+the Medium/High risk Devil's Advocate Audit, and acceptance/test mapping. Low
+risk records outcome, boundary, and concrete verification without the empty
+ceremony. Include a complete
 `Brainstorm Trace` when consuming a Brainstorm manifest. TaskIntent is authored
 and validated through `imm-kernel`; do not write a prose iteration Plan or sync
 a State Ledger. Keep historical Plan validation strictly read-only.
@@ -374,14 +376,14 @@ a State Ledger. Keep historical Plan validation strictly read-only.
 | Append repair outside scope | Return the complete known scope delta for Kernel revision; do not widen execution. |
 | Drop a brainstorm-confirmed item as "out of scope" without saying so | Closed-world handoff: every `BR-*` ID must be covered, decisioned, deferred, scoped out with reason, or resolved as an assumption. |
 | Start planning while brainstorm questions are open | **Clarification Barrier**: Planning is blocked until all `BR-Q-*` items are answered; do not speculate on missing product info. |
-| Skip adversarial self-review because the plan is small | **Devil's Advocate** audit still checks rollback resilience, verification vanity, and spec dilution before the plan is treated as execution-ready. |
+| Skip adversarial self-review on Medium/High risk because the plan is small | **Devil's Advocate** audit still checks rollback resilience, verification vanity, and spec dilution before the plan is treated as execution-ready. |
 
 ## Red Flags
 
 - Acceptance verification names only hypothetical evidence with no runnable descriptor.
 - New work depends on a prose Plan validator, Step activation, or State Ledger.
 - A Brainstorm manifest lacks a complete Spec `Brainstorm Trace`.
-- A Spec lacks a `Devil's Advocate Audit` covering rollback resilience, verification vanity, and spec dilution detection.
+- A Medium/High risk Spec lacks a `Devil's Advocate Audit` covering rollback resilience, verification vanity, and spec dilution detection.
 - New Spec prose ignores the document-language policy.
 - Candidate artifacts escape the approved planning scope.
 

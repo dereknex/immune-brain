@@ -51,4 +51,26 @@ describe("Initiative carrier Enrollment gate", () => {
 		expect(LOOP).toContain("distinct from the post-settlement tracker");
 		expect(LOOP).toContain("never use it as evidence, a Loop blocker");
 	});
+
+	it("standalone and Local candidates enroll without a tracker prerequisite", () => {
+		expect(LOOP).toContain(
+			"Standalone TaskIntents and Local\nInitiatives carry no tracker prerequisite",
+		);
+		expect(LOOP).toContain(
+			"their Enrollment needs only the\nvalidated candidate",
+		);
+	});
+
+	it("uncertain Initiative membership is resolved, not assumed", () => {
+		expect(LOOP).toContain(
+			"resolve it against the\nPlanner's carrier decision before treating the candidate as exempt",
+		);
+		expect(LOOP).toContain("do not\nassume either way");
+	});
+
+	it("a failed GitHub-carried batch still blocks Enrollment", () => {
+		expect(LOOP).toContain(
+			"For a GitHub-carried Initiative, `tracker_projection_failed` or\n`awaiting_user_initiative_confirmation` blocks that Enrollment until the same\ncomplete carrier batch succeeds",
+		);
+	});
 });

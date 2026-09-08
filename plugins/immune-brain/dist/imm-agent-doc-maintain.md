@@ -1,6 +1,6 @@
 ---
 name: imm-agent-doc-maintain
-description: Use to minimize tracked AGENTS.md, CLAUDE.md, and GEMINI.md files to necessary non-discoverable context after an explicit, hash-bound, user-approved manifest; never installs or validates project contracts.
+description: Use when the user explicitly requests Immune-Brain minimization of tracked AGENTS.md, CLAUDE.md, and GEMINI.md files to necessary non-discoverable context after an explicit, hash-bound, user-approved manifest; never installs or validates project contracts.
 ---
 
 # Immune-Brain: Agent Doc Maintain

@@ -72,9 +72,9 @@ describe("Brainstorm decision probing contracts", () => {
 		]) {
 			expect(brainstorm).toContain(fragment);
 		}
-		expect(COMPACT_BRAINSTORM).toContain("current-goal branch");
+		expect(COMPACT_BRAINSTORM).toContain("../../dist/imm-brainstorm.md");
 		expect(COMPACT_BRAINSTORM).toContain(
-			"never complete the Brainstorm session by themselves",
+			"Default exhaustive decision tree",
 		);
 		expect(BRAINSTORM).not.toContain("lightweight tasks get 1-2 probes");
 		expect(BRAINSTORM).not.toContain("larger tasks may need 3-4");
@@ -115,6 +115,28 @@ describe("Brainstorm decision probing contracts", () => {
 		expect(PLANNER).not.toContain("## Default exhaustive decision tree");
 	});
 
+	it("resolves facts and delegated technical choices without manufacturing user questions", () => {
+		const flatBrainstorm = flat(BRAINSTORM);
+		for (const fragment of [
+			"a repository fact, a delegated technical choice, or a material user-owned decision",
+			"A delegated technical choice is verifiable through existing conventions, a reversible local probe, or an existing recorded decision",
+			"when it does not change the goal, scope, observable behavior, compatibility, risk acceptance, or a protected effect",
+			"record the chosen assumption instead of asking",
+			"it is material and belongs on the user frontier",
+		]) {
+			expect(flatBrainstorm).toContain(fragment);
+		}
+		expect(flat(COMPACT_BRAINSTORM)).toContain(
+			"load a section's instructions only when its branch applies",
+		);
+		expect(flat(BRAINSTORM)).toContain(
+			"resolve it with evidence and record the chosen assumption instead of asking",
+		);
+		expect(BRAINSTORM).not.toContain(
+			"Classify each unresolved node only as a repository fact or a user-owned decision",
+		);
+	});
+
 	it("records the retired Preplan mechanics as migrated to Brainstorm", () => {
 		expect(HISTORY).toContain("## Historical origin");
 		expect(flat(HISTORY)).toContain(
@@ -151,6 +173,7 @@ describe("Brainstorm decision probing contracts", () => {
 			"scenario-qualified-frontier",
 			"recommendation-adoption-continues",
 			"rejected-decision-unmet-condition",
+			"delegated-technical-choice-resolves-without-asking",
 		]);
 		expect(new Set(focusedIds).size).toBe(focusedIds.length);
 		expect(focusedIds.some((id: string) => generalIds.includes(id))).toBe(

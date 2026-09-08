@@ -3,10 +3,11 @@
 ## Shared Guards
 
 - Load detailed workflow text from `dist/` only on invocation.
-- Ask only when missing information changes outcome or risk.
-- Keep edits inside the user-requested Direct scope or the active Managed step boundary.
+- Ask only when missing information would change the goal, scope, observable behavior, compatibility, risk acceptance, a protected effect, or a fact only the user can supply. Resolve repository facts and delegated technical choices with bounded evidence instead of asking.
+- Keep edits inside the user-requested Direct scope or the enrolled TaskIntent acceptance and `scope_hint`.
 - Record reproducible evidence before reporting closure.
-- Use shallow discovery first.
+- Required verification must pass before reporting completion; disclosing a gap is not a substitute. Autonomously diagnose, repair, and rerun failing conventional local checks within the authorized scope; never delete, skip, or weaken a valid check to manufacture a pass. If a required check remains failing or cannot run, report the work as incomplete with the concrete blocker.
+- Use shallow discovery first; do full-scope reads only for shared contracts, security, migration, persistence, or authority changes and their callers and state owners.
 - Lead with conclusion, evidence, and Next Action.
 - Advisory roles do not implement; Managed execution roles do not close QA.
 - An explicit Managed Skill entry stops host-native mutation and routes scope changes to `imm-planner`; Managed execution remains inside its accepted boundary.
@@ -65,7 +66,10 @@ Routine Managed enrollment uses one current-Host native confirmation bound to th
 
 State mutations, step activations, QA decisions, and plan switches remain
 strictly sequential. Read-only work — repo exploration, advisory review,
-host probing, planner research — may be dispatched in parallel.
+host probing, planner research — is eligible for parallel dispatch in
+capability terms, but Pi schedules one foreground child at a time: launch one
+child, consume its direct result, then decide whether another child is needed.
+Do not assume multiple foreground Agents run as a concurrent batch.
 
 Parallel dispatch is restricted by capability, not by a closed Skill list. Every
 child delegation packet must enforce read-only advisory behavior: no file edits,
@@ -99,11 +103,11 @@ always run sequentially.
 
 ## Success Criteria
 
-- Direct work closes only under the Direct completion contract above.
-- A Managed Step is ready to execute only when the target result, boundary, and
+- Direct work closes only when the requested result is delivered and the required verification passes: a failed or unavailable required check is reported as incomplete work with its concrete blocker, never as completion. Check breadth follows the request and established project requirements, not a universal full-repository rule. Autonomously diagnose, repair, and rerun failing conventional local checks within the authorized scope; never delete, skip, or weaken a valid check to manufacture a pass.
+- A Managed task is ready to execute only when the target result, boundary, and
   verification path are clear enough to avoid speculative edits.
-- A Managed Step is closable only when execution evidence proves the recorded
-  verification path and the active boundary still matches the Plan.
+- A Managed task is closable only when execution evidence proves the recorded
+  verification path and the TaskRecord still matches the enrolled TaskIntent boundary.
 - Managed scope changes, missing evidence, or structural mismatch return to
   `imm-planner` instead of being hidden inside execution or QA.
 
@@ -135,4 +139,4 @@ Immune-Brain commands and `.imm` state.
 
 Prefer shallow discovery before full-file reads. Start with file lists,
 `rg` hits, symbol/signature scans, and targeted line ranges; read whole files
-only when the narrower evidence path cannot answer the active Step question.
+only when the narrower evidence path cannot answer the active task question.

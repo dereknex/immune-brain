@@ -1,6 +1,6 @@
 ---
 name: imm-doc-prune
-description: Use to prune stale current documentation from a Git repository after an explicit, hash-bound, user-approved manifest; never deletes Managed authority artifacts.
+description: Use when the user explicitly requests Immune-Brain pruning of stale current documentation from a Git repository after an explicit, hash-bound, user-approved manifest; never deletes Managed authority artifacts.
 ---
 
 # Immune-Brain: Doc Prune

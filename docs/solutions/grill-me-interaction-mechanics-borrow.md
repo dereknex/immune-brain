@@ -12,7 +12,7 @@ key_files:
 next_reuse_scenarios:
   - Borrowing interaction discipline from a terse upstream skill without importing its workflow topology
   - Clarifying a fixed current goal through provenance-bounded exhaustive traversal
-  - Separating repository facts from user-owned decisions
+  - Separating repository facts, delegated technical choices, and material user-owned decisions
   - Continuing downstream traversal after a recommended answer is adopted
   - Keeping Planner clarification limited to concrete omissions, conflicts, and invalidated assumptions
 ---
@@ -21,8 +21,8 @@ next_reuse_scenarios:
 
 `imm-brainstorm` owns exhaustive clarification for the fixed current goal:
 
-1. Classify each surfaced uncertainty by provenance. Resolve repository facts with bounded read-only evidence; put user-owned decisions on the clarification frontier.
-2. Ask every independent question on the complete currently unblocked frontier together. Include a concrete recommendation and trade-off for each decision.
+1. Classify each surfaced uncertainty by provenance. Resolve repository facts with bounded read-only evidence; resolve delegated technical choices with evidence or a reversible local probe when they do not change the goal, scope, observable behavior, compatibility, risk acceptance, or a protected effect; put material user-owned decisions on the clarification frontier.
+2. Ask every independent material decision on the complete currently unblocked frontier together. Include a concrete recommendation and trade-off for each decision.
 3. Treat an adopted recommendation as the answer to that frontier node only. Expand and traverse newly reachable downstream branches until the frontier is empty.
 4. Reopen a confirmed decision only when new evidence invalidates an assumption or the proposed summary introduces or changes a decision.
 5. Record explicit `defer` and `blocked` outcomes rather than silently treating them as resolved.
