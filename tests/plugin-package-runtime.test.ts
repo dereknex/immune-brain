@@ -259,6 +259,16 @@ class FakeGh implements GhTransport {
 				const blockers = child ? [...(child as any).blockedBy ?? []] : [];
 				return ok(JSON.stringify(blockers.length ? blockers.map((id: number) => [{ issue_id: id }]) : [[]]));
 			}
+				if (dependencyList && args.includes("--method") && args.includes("DELETE")) {
+					this.mutations += 1;
+					const child = this.issues.find((issue) => issue.number === Number(dependencyList[1]));
+					if (!child) return { ...ok(), exit_code: 1, stderr: "not found" };
+					const blocker = Number(args.find((value) => value.startsWith("issue_id="))!.split("=")[1]);
+					const current = ((child as any).blockedBy ??= []) as number[];
+					const index = current.indexOf(blocker);
+					if (index !== -1) current.splice(index, 1);
+					return ok();
+				}
 				if (dependencyList) {
 					this.mutations += 1;
 					const child = this.issues.find((issue) => issue.number === Number(dependencyList[1]));
@@ -332,7 +342,9 @@ class FakeGh implements GhTransport {
 				return { exit_code: 1, stdout: "", stderr: "body too long", timed_out: false, output_exceeded: false };
 			const issue = this.issues.find((candidate) => candidate.number === Number(args[2]));
 			if (!issue) return { ...ok(), exit_code: 1, stderr: "not found" };
-			issue.body = options.stdin ?? "";
+			const titleIndex = args.indexOf("--title");
+			if (titleIndex !== -1 && args[titleIndex + 1] !== undefined) issue.title = args[titleIndex + 1];
+			if (options.stdin !== undefined) issue.body = options.stdin;
 			return ok();
 		}
 		if (args[0] === "issue" && args[1] === "close") {
@@ -1391,4 +1403,236 @@ describe("plugin package runtime cutover parity", () => {
 		expect(invalid.stderr).toContain("invalid_tracker_command");
 	});
 
+});
+
+describe("initiative amendment publication", () => {
+	interface PublishedState {
+		parent: typeof gh.issues[number];
+		child: (typeof gh.issues)[number];
+	}
+
+	/** Publish a two-Task Initiative, then close one Child terminally to serve as history. */
+	async function withAmendmentBase(
+		fn: (root: string, gh: FakeGh, base: { parentIssue: any; pending: any; historical: any; paths: string[] }) => Promise<void>,
+	) {
+		await withIsolatedRootAsync(async (root) => {
+			const gh = new FakeGh();
+			const tasks = [
+				{ task_id: "amend-done", goal: "Deliver the completed prerequisite", slice_id: "done" },
+				{ task_id: "amend-live", goal: "Deliver the pending work", slice_id: "live", blocked_by: ["amend-done"] },
+			];
+			const paths = initializeTrackedIntents(root, tasks);
+			const input = {
+				initiative_id: "amend-init",
+			goal: "Ship the amendable Initiative",
+			projection: {
+					problem: "Planning evolves after publication.",
+					result: "Ship the amendable Initiative",
+					design: "One slice completes, one slice continues.",
+			},
+				tasks: tasks.map((task, index) => ({
+					slice_id: task.slice_id,
+					intent: paths[index],
+					acceptance: publicAcceptance(task.task_id),
+					projection: { result: task.goal, blocked_by: task.blocked_by },
+				})),
+			};
+			const published = await runGithubInitiativePublication(root, input, gh);
+			expect(published.status).toBe("created");
+			const historical = gh.issues.find((issue) => issue.body.includes("task-id=amend-done"))!;
+			const terminal = await runGithubTrackerOperation(root, {
+				op: "mark-terminal",
+				initiative_id: "amend-init",
+				task_id: "amend-done",
+				slice_id: "done",
+				phase: "done",
+				terminal_event_id: "evt-amend-done",
+			} as any, gh);
+			expect(terminal.status).toBe("updated");
+			const parentIssue = gh.issues.find((issue) => issue.body.includes("kind=initiative"))!;
+			const pending = gh.issues.find((issue) => issue.body.includes("task-id=amend-live"))!;
+			await fn(root, gh, { parentIssue, pending, historical, paths });
+		});
+	}
+
+	const amendedGoal = (goal: string, task_id: string) => {
+		const intentPath = `docs/plans/${task_id}.intent.json`;
+		return { intent: intentPath };
+	};
+
+	/** Amend the pending Child's projection to a new result while keeping its TaskIntent. */
+	function amendmentInput(
+		paths: string[],
+		parentIssue: any,
+		pending: any,
+		historical: any,
+		overrides: { pendingResult?: string; blockedBy?: string[]; newTask?: { task_id: string; goal: string; intent: string } } = {},
+	) {
+		const pendingResult = overrides.pendingResult ?? pending.title;
+		const tasks: any[] = [{
+			slice_id: "live",
+			intent: paths[1],
+			acceptance: publicAcceptance("amend-live"),
+			projection: {
+				result: overrides.pendingResult ?? "Deliver the amended pending work",
+				blocked_by: overrides.blockedBy ?? ["amend-done"],
+			},
+			binding: { issue_number: pending.number, title: pending.title, body: pending.body, state: "open" },
+		}];
+		if (overrides.newTask) {
+			tasks.push({
+				slice_id: "new",
+				intent: overrides.newTask.intent,
+				acceptance: publicAcceptance(overrides.newTask.task_id),
+				projection: { result: overrides.newTask.goal },
+			});
+		}
+		return {
+			initiative_id: "amend-init",
+			goal: "Ship the amended Initiative result",
+			projection: {
+				problem: "Planning evolves after publication.",
+				result: "Ship the amended Initiative result",
+				design: "The pending frontier is amended with approved content.",
+			},
+			tasks,
+			amendment: {
+				parent: { issue_number: parentIssue.number, title: parentIssue.title, body: parentIssue.body, state: "open" },
+				tasks: [{ task_id: "amend-live", binding: { issue_number: pending.number, title: pending.title, body: pending.body, state: "open" } }],
+				historical: [{ task_id: "amend-done", binding: { issue_number: historical.number, title: historical.title, body: historical.body, state: "closed" } }],
+			},
+		};
+	}
+
+	it("rejects changed briefs without amendment input (strict default)", async () => {
+		await withAmendmentBase(async (root, gh, { parentIssue, pending, historical, paths }) => {
+			const before = gh.mutations;
+			const strictInput = JSON.parse(JSON.stringify(amendmentInput(paths, parentIssue, pending, historical, { pendingResult: "Different result" })));
+			delete strictInput.amendment;
+			strictInput.tasks[0].projection.blocked_by = [];
+			strictInput.tasks.push({
+				slice_id: "done",
+				intent: paths[0],
+				acceptance: publicAcceptance("amend-done"),
+				projection: { result: "Deliver the completed prerequisite", blocked_by: [] },
+			});
+			const strict = await runGithubInitiativePublication(root, strictInput as any, gh);
+			expect(strict.status).toBe("permanent_failure");
+			expect(gh.mutations).toBe(before);
+		});
+	});
+
+	it("amends approved pending content and preserves historical bytes and relations", async () => {
+		await withAmendmentBase(async (root, gh, { parentIssue, pending, historical, paths }) => {
+			const historicalBytes = historical.body;
+			const historicalTitle = historical.title;
+			const amended = await runGithubInitiativePublication(
+				root,
+				amendmentInput(paths, parentIssue, pending, historical, { pendingResult: "Deliver the amended pending work", blockedBy: [] }),
+				gh,
+			);
+			expect(amended.status).toBe("updated");
+			expect(pending.title).toContain("Deliver the amended pending work");
+			expect(pending.blockedBy ?? []).toEqual([]);
+			expect(historical.body).toBe(historicalBytes);
+			expect(historical.title).toBe(historicalTitle);
+			expect(historical.state).toBe("closed");
+			expect(gh.subIssues.get(parentIssue.number)).toContain(historical.number);
+			const repeated = await runGithubInitiativePublication(
+				root,
+				amendmentInput(paths, parentIssue, gh.issues.find((issue) => issue.body.includes("task-id=amend-live"))!, historical, { blockedBy: [] }),
+				gh,
+			);
+			expect(repeated.status).toBe("already_current");
+		});
+	});
+
+	it("fails closed on baseline drift, omitted membership, and stopped prerequisites", async () => {
+		await withAmendmentBase(async (root, gh, { parentIssue, pending, historical, paths }) => {
+			const baseline = amendmentInput(paths, parentIssue, pending, historical);
+			const driftInput = JSON.parse(JSON.stringify(baseline));
+			driftInput.amendment.parent.body += " user edit";
+			const before = gh.mutations;
+			expect((await runGithubInitiativePublication(root, driftInput, gh)).status).toBe("ambiguous_remote_state");
+			expect(gh.mutations).toBe(before);
+
+			const omittedInput = JSON.parse(JSON.stringify(baseline));
+			omittedInput.amendment.historical = [];
+			expect((await runGithubInitiativePublication(root, omittedInput, gh)).status).toBe("ambiguous_remote_state");
+			expect(gh.mutations).toBe(before);
+
+			const foreign = JSON.parse(JSON.stringify(baseline));
+			foreign.amendment.historical[0].binding.issue_number = 999;
+			expect((await runGithubInitiativePublication(root, foreign, gh)).status).toBe("ambiguous_remote_state");
+			expect(gh.mutations).toBe(before);
+
+			const stopped = await runGithubTrackerOperation(root, {
+				op: "mark-terminal",
+				initiative_id: "amend-init",
+				task_id: "amend-live",
+				slice_id: "live",
+				phase: "stopped",
+				terminal_event_id: "evt-amend-live",
+			} as any, gh);
+			expect(stopped.status).toBe("updated");
+			expect((await runGithubInitiativePublication(root, baseline, gh)).status).toBe("ambiguous_remote_state");
+		});
+	});
+it("rejects pending bindings whose issue_number does not match the observable Issue", async () => {
+		await withAmendmentBase(async (root, gh, { parentIssue, pending, historical, paths }) => {
+			const input = amendmentInput(paths, parentIssue, pending, historical);
+			input.amendment.tasks[0].binding.issue_number = 999;
+			const before = gh.mutations;
+			expect((await runGithubInitiativePublication(root, input, gh)).status).toBe("ambiguous_remote_state");
+			expect(gh.mutations).toBe(before);
+		});
+	});
+
+	it("accepts the approved-final Parent content on retry and converges dependencies when content is already final", async () => {
+		await withAmendmentBase(async (root, gh, { parentIssue, pending, historical, paths }) => {
+			// First amendment applies the approved content with cleared dependencies.
+			const amended = await runGithubInitiativePublication(
+				root,
+				amendmentInput(paths, parentIssue, pending, historical, { pendingResult: "Deliver the amended pending work", blockedBy: [] }),
+				gh,
+			);
+			expect(amended.status).toBe("updated");
+
+			// Original (pre-amend) Parent bytes now diverge from remote, but remote equals approved-final → accepted.
+			const live = gh.issues.find((issue) => issue.body.includes("task-id=amend-live"))!;
+			const retryOriginal = amendmentInput(paths, parentIssue, live, historical, { blockedBy: [] });
+			const retry = await runGithubInitiativePublication(root, retryOriginal, gh);
+			expect(retry.status).toBe("already_current");
+
+			// Remote Parent already carries approved-final bytes while binding holds approved-final bytes too.
+			const finalBinding = JSON.parse(JSON.stringify(retryOriginal));
+			const liveParent = gh.issues.find((issue) => issue.body.includes("initiative-id=amend-init"))!;
+			finalBinding.amendment.parent = { issue_number: liveParent.number, title: liveParent.title, body: liveParent.body, state: "open" };
+			finalBinding.tasks[0].binding = { issue_number: live.number, title: live.title, body: live.body, state: "open" };
+			expect((await runGithubInitiativePublication(root, finalBinding, gh)).status).toBe("already_current");
+		});
+	});
+
+	it("converges pending dependencies when the pending content already matches the approved final bytes", async () => {
+		await withAmendmentBase(async (root, gh, { parentIssue, pending, historical, paths }) => {
+			// Apply the amendment once, then re-add a dependency edge remotely (simulating partial-write resume).
+			const amended = await runGithubInitiativePublication(
+				root,
+				amendmentInput(paths, parentIssue, pending, historical, { pendingResult: "Deliver the amended pending work", blockedBy: [] }),
+				gh,
+			);
+			expect(amended.status).toBe("updated");
+			const live = gh.issues.find((issue) => issue.body.includes("task-id=amend-live"))!;
+
+			// Manually re-add the historical blocker edge so the content is final but dependencies diverge.
+			(live as any).blockedBy = [historical.number];
+			const resume = await runGithubInitiativePublication(
+				root,
+				amendmentInput(paths, parentIssue, live, historical, { pendingResult: "Deliver the amended pending work", blockedBy: [] }),
+				gh,
+			);
+			expect(resume.status).toBe("already_current");
+			expect((live as any).blockedBy ?? []).toEqual([]);
+		});
+	});
 });

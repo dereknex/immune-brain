@@ -60,6 +60,35 @@ export interface InitiativePublicationInput {
 		acceptance: Array<{ id: string; summary: string }>;
 		projection?: TaskProjection;
 	}>;
+	/**
+	 * Explicit amendment input: binds the caller's desired pending frontier to
+	 * the exact observed remote content it was approved against, and declares
+	 * read-only historical Child identities. When omitted, publication keeps
+	 * today's strict default semantics (create once, never rewrite).
+	 */
+	amendment?: {
+		parent: InitiativeAmendmentBinding;
+		tasks: Array<InitiativeTaskAmendment>;
+		historical: InitiativeHistoricalChild[];
+	};
+}
+
+/** Identity plus expected remote title/body/state for one bound Issue. */
+export interface InitiativeAmendmentBinding {
+	issue_number: number;
+	title: string;
+	body: string;
+	state: "open" | "closed";
+}
+
+export interface InitiativeTaskAmendment {
+	task_id: string;
+	binding?: InitiativeAmendmentBinding;
+}
+
+export interface InitiativeHistoricalChild {
+	task_id: string;
+	binding: InitiativeAmendmentBinding;
 }
 
 export interface GithubInitiativePublicationResult {
@@ -680,14 +709,18 @@ function bodyLimitFailure(operation: TrackerOperation["op"], body: string, reser
 		: result(operation, "permanent_failure", "rendered GitHub Issue body exceeds 65,536 UTF-8 bytes");
 }
 
-function createInitiativeBody(repository: RepositoryInfo, operation: Extract<TrackerOperation, { op: "create-initiative" }>): string {
+function createInitiativeBody(
+	repository: RepositoryInfo,
+	operation: Extract<TrackerOperation, { op: "create-initiative" }>,
+	historicalSlices: string[] = [],
+): string {
 	const projection = operation.projection ?? {};
 	return `${[
 		PROTOCOL_MARKER,
 		KIND_INITIATIVE_MARKER,
 		marker("repo-id", repository.id),
 		marker("initiative-id", operation.initiative_id),
-	].join("\n")}\n\n# ${titleText(projection.result ?? operation.goal)}\n\nOpt-in, non-authoritative Immune-Brain Initiative planning carrier. Kernel TaskIntent, TaskRecord, and Assurance remain the execution authority.\n\n## How to use this Issue\n\n- Edit planning prose and Slice ordering directly after creation.\n- Keep each Slice marker attached to exactly one stable Slice entry.\n- The tracker never rewrites or closes this Parent after creation; the tracker never changes or closes it automatically.\n\n## Problem\n\n${publicText(projection.problem ?? "The Initiative addresses the bounded delivery described below.", "projection.problem")}\n\n## Result\n\n${publicText(projection.result ?? operation.goal, "projection.result")}\n\n## Initiative design\n\n${publicText(projection.design ?? "Each Child preserves the shared Initiative decisions and boundaries recorded here.", "projection.design")}\n\n## Decisions\n\n${listText(projection.decisions, "- No additional Initiative decisions recorded.")}\n\n## Testing strategy\n\n${publicText(projection.testing_strategy ?? "Each Child closes from its focused acceptance verification.", "projection.testing_strategy")}\n\n## Out of scope\n\n${listText(projection.out_of_scope, "- Unrelated work outside this Initiative.")}\n\n## Slices\n\n${operation.slices.length === 0 ? "No Slices recorded yet." : operation.slices.map((slice) => `- [ ] ${marker("slice-id", slice.id)} **${slice.id}**: ${slice.result ?? slice.goal}${slice.blocked_by?.length ? ` (blocked by: ${slice.blocked_by.join(", ")})` : ""}`).join("\n")}\n\n## Authority boundary\n\nThis Issue is outbound visibility only. GitHub state never starts, authorizes, reprioritizes, or settles work. Native Sub-issues identify published Tasks; their state is only an observation.\n`;
+	].join("\n")}\n\n# ${titleText(projection.result ?? operation.goal)}\n\nOpt-in, non-authoritative Immune-Brain Initiative planning carrier. Kernel TaskIntent, TaskRecord, and Assurance remain the execution authority.\n\n## How to use this Issue\n\n- Edit planning prose and Slice ordering directly after creation.\n- Keep each Slice marker attached to exactly one stable Slice entry.\n- The tracker never rewrites or closes this Parent after creation; the tracker never changes or closes it automatically.\n\n## Problem\n\n${publicText(projection.problem ?? "The Initiative addresses the bounded delivery described below.", "projection.problem")}\n\n## Result\n\n${publicText(projection.result ?? operation.goal, "projection.result")}\n\n## Initiative design\n\n${publicText(projection.design ?? "Each Child preserves the shared Initiative decisions and boundaries recorded here.", "projection.design")}\n\n## Decisions\n\n${listText(projection.decisions, "- No additional Initiative decisions recorded.")}\n\n## Testing strategy\n\n${publicText(projection.testing_strategy ?? "Each Child closes from its focused acceptance verification.", "projection.testing_strategy")}\n\n## Out of scope\n\n${listText(projection.out_of_scope, "- Unrelated work outside this Initiative.")}\n\n## Slices\n\n${operation.slices.length + historicalSlices.length === 0 ? "No Slices recorded yet." : [...historicalSlices, ...operation.slices.map((slice) => `- [ ] ${marker("slice-id", slice.id)} **${slice.id}**: ${slice.result ?? slice.goal}${slice.blocked_by?.length ? ` (blocked by: ${slice.blocked_by.join(", ")})` : ""}`)].join("\n")}\n\n## Authority boundary\n\nThis Issue is outbound visibility only. GitHub state never starts, authorizes, reprioritizes, or settles work. Native Sub-issues identify published Tasks; their state is only an observation.\n`;
 }
 
 async function createInitiative(
@@ -749,11 +782,139 @@ function childBody(
 	].join("\n")}\n\n# ${titleText(projection.result ?? operation.goal)}\n\nOpt-in, non-authoritative Immune-Brain Task Issue. Kernel TaskIntent, TaskRecord, and Assurance remain the execution authority.\n\n## Parent\n\n| Initiative | \`${operation.initiative_id}\` |\n| Parent Issue | [#${parent.number}](${parent.url}) |\n| Slice | \`${operation.slice_id}\` |\n| Risk | \`${operation.risk}\` |\n\n## What to build\n\n${publicText(projection.result ?? operation.goal, "projection.result")}\n\n## Current behavior\n\n${publicText(projection.current_behavior ?? "The current behavior is defined by the repository's existing contract.", "projection.current_behavior")}\n\n## Desired behavior\n\n${publicText(projection.desired_behavior ?? operation.goal, "projection.desired_behavior")}\n\n## Key interfaces\n\n${listText(projection.key_interfaces, "- Canonical TaskIntent acceptance and Kernel lifecycle remain authoritative.")}\n\n## Acceptance criteria\n\n${acceptance}\n\n## Verification\n\n${publicText(projection.verification ?? "Run the focused acceptance verification declared by the TaskIntent.", "projection.verification")}\n\n## Blocked by\n\n${projection.blocked_by?.length ? projection.blocked_by.map((id) => `- \`${identifier(id, "blocked_by task_id")}\``).join("\n") : "None"}\n\n## Out of scope\n\n${listText(projection.out_of_scope, "- Scope not declared by the validated TaskIntent.")}\n\n## Agent handoff\n\n${publicText(projection.agent_handoff ?? "Implement only the bounded TaskIntent result and run the focused checks. Do not widen scope or treat GitHub as authorization.", "projection.agent_handoff")}\n\n## Lifecycle\n\n- **Open** means this Task still needs attention; it does not mean the Task is authorized or executing.\n- Only a fresh claimless terminal projection can close this Issue: \`done\` becomes **Completed**, and \`stopped\` becomes **Not planned**.\n\n## Authority boundary\n\nThis Issue is outbound visibility only. GitHub state never changes TaskIntent, TaskRecord, QA, Review, authorization, or Kernel settlement. Internal role prompts, tool policies, review gates, model reservations, and prompt digests are not part of this external handoff.\n`;
 }
 
+/** Derived approved-final content and baseline-derived historical evidence for an amendment. */
+interface AmendmentExecutionContext {
+	/** Approved final title/body per pending Task id. */
+	pendingContent: Map<string, { title: string; body: string }>;
+	/** Approved final Parent title/body. */
+	parent: { title: string; body: string };
+	/** Historical Slice lines derived from the approved Parent baseline (exact bytes). */
+	historicalSlices: string[];
+}
+
+/**
+ * Derive the approved-final content for every amendment write from the current
+ * TaskIntents and the approved baseline. Historical Slice lines are extracted
+ * from the Parent binding's baseline body so the final expectation is fixed
+ * before any mutation, never derived from post-write remote state.
+ */
+function approvedAmendmentContent(
+	root: string,
+	repository: RepositoryInfo,
+	parentIssue: GithubIssue,
+	prepared: ReturnType<typeof preflightPublication>,
+	amendment: ReturnType<typeof validateAmendment>,
+): AmendmentExecutionContext | string {
+	const parent = validateOperation({
+		op: "create-initiative",
+		initiative_id: prepared.initiative.initiative_id,
+		goal: prepared.initiative.goal,
+		projection: prepared.initiative.projection,
+		slices: prepared.order.map((operation) => ({
+			id: operation.slice_id,
+			goal: operation.goal,
+			result: operation.projection?.result,
+			blocked_by: operation.projection?.blocked_by,
+		})),
+	}) as Extract<TrackerOperation, { op: "create-initiative" }>;
+	const amendedSliceIds = new Set(parent.slices.map((slice) => slice.id));
+	const historicalSlices = baselineHistoricalSlices(amendment.parent.body, amendedSliceIds);
+	if (typeof historicalSlices === "string") return historicalSlices;
+	const pendingContent = new Map<string, { title: string; body: string }>();
+	const sourceStub = {
+		repository,
+		issues: [parentIssue],
+	};
+	void sourceStub;
+	for (const operation of prepared.order) {
+		const body = childBody(repository, operation, parentIssue);
+		const oversized = bodyLimitFailure("upsert-task", body, MAX_TERMINAL_SUFFIX_BYTES);
+		if (oversized) return `${oversized.status}: ${oversized.message}`;
+		pendingContent.set(operation.task_id, {
+			title: issueTitle(`${operation.initiative_id}/${operation.slice_id}`, operation.projection?.result ?? operation.goal),
+			body,
+		});
+	}
+	const parentBody = createInitiativeBody(sourceStub.repository, parent, historicalSlices);
+	const oversizedParent = bodyLimitFailure("create-initiative", parentBody);
+	if (oversizedParent) return `${oversizedParent.status}: ${oversizedParent.message}`;
+	return {
+		pendingContent,
+		parent: {
+			title: issueTitle(parent.initiative_id, parent.projection?.result ?? parent.goal),
+			body: parentBody,
+		},
+		historicalSlices,
+	};
+}
+
+/**
+ * Extract historical Slice lines from the approved Parent baseline body.
+ * Accepts any exactly-once Slice marker representation and returns the exact
+ * baseline line bytes; fails closed on malformed Slice entries.
+ */
+function baselineHistoricalSlices(parentBaselineBody: string, amendedSliceIds: Set<string>): string[] | string {
+	const lines: string[] = [];
+	for (const match of parentBaselineBody.matchAll(/^.*<!-- immune-brain:slice-id=([A-Za-z0-9._:-]+) -->.*$/gm)) {
+		const sliceId = match[1];
+		if (amendedSliceIds.has(sliceId)) continue;
+		const line = match[0];
+		if (countLiteral(line, marker("slice-id", sliceId)) !== 1)
+			return `historical Slice ${sliceId} has missing or duplicate Slice markers in the approved Parent baseline`;
+		if (!ownershipMarkerValue(line, "slice-id"))
+			return `historical Slice ${sliceId} has a malformed Slice marker in the approved Parent baseline`;
+		lines.push(line);
+	}
+	for (const sliceId of amendedSliceIds) {
+		if (countLiteral(parentBaselineBody, marker("slice-id", sliceId)) !== 1)
+			return `approved Parent baseline does not carry exactly one Slice marker for ${sliceId}`;
+	}
+	return lines;
+}
+
+/** Edit an open Initiative Parent's title/body to the approved amendment content. */
+async function amendInitiativeParent(
+	root: string,
+	gh: GhTransport,
+	operation: Extract<TrackerOperation, { op: "create-initiative" }>,
+	source: RepositorySnapshot,
+	binding: InitiativeAmendmentBinding,
+	context: AmendmentExecutionContext,
+): Promise<GithubTrackerResult> {
+	const lookup = (issues: GithubIssue[]) => initiativeLookup(issues, source.repository.id, operation.initiative_id);
+	const found = lookup(source.issues);
+	if (found.kind !== "found")
+		return result(operation.op, "permanent_failure", "an amendment requires the Initiative Parent to already exist");
+	const body = context.parent.body;
+	const oversized = bodyLimitFailure(operation.op, body);
+	if (oversized) return oversized;
+	const title = context.parent.title;
+	if (found.issue.body === body && found.issue.title === title)
+		return result(operation.op, "already_current", "Initiative Issue already carries the requested amended content", found.issue);
+	if (found.issue.body !== binding.body || found.issue.title !== binding.title)
+		return result(operation.op, "ambiguous_remote_state", "Initiative Parent changed since the approved amendment baseline", found.issue);
+	const edited = await gh.run([
+		"issue", "edit", String(found.issue.number), "--repo", source.repository.name_with_owner,
+		"--title", title,
+		"--body-file", "-",
+	], { cwd: root, stdin: body });
+	if (edited.exit_code !== 0 || edited.output_exceeded) return ghFailure(operation.op, edited, "Initiative amendment edit failed");
+	const refreshed = await snapshot(root, gh, operation.op);
+	if ("contract" in refreshed) return refreshed;
+	const confirmed = lookup(refreshed.issues);
+	if (confirmed.kind !== "found") return result(operation.op, "ambiguous_remote_state", "Initiative Parent became ambiguous after amendment", found.issue);
+	return confirmed.issue.body === body && confirmed.issue.title === title
+		? result(operation.op, "updated", "Initiative Issue updated with approved amendment content", confirmed.issue)
+		: result(operation.op, "retryable_failure", "Initiative amendment did not converge to the requested title and body", confirmed.issue);
+}
+
 async function upsertTask(
 	root: string,
 	gh: GhTransport,
 	operation: Extract<TrackerOperation, { op: "upsert-task" }>,
 	source: RepositorySnapshot,
+	pendingBinding: InitiativeAmendmentBinding | undefined | null = null,
+	amendmentContext: AmendmentExecutionContext | undefined = undefined,
 ): Promise<GithubTrackerResult> {
 	const parent = initiativeLookup(source.issues, source.repository.id, operation.initiative_id);
 	if (parent.kind === "ambiguous") return result(operation.op, "ambiguous_remote_state", parent.message);
@@ -807,11 +968,22 @@ async function upsertTask(
 		child = created.issue;
 		createdChild = true;
 	} else {
-		if (found.issue.body !== body || found.issue.title !== title)
-			return result(operation.op, "permanent_failure", "Task Issue already exists with a different title or Agent Brief; edit the GitHub source or retry the original projection before changing native relations", found.issue);
 		const owned = ownedTaskLookup(source.issues, source.repository.id, operation.task_id, operation.initiative_id, operation.slice_id);
 		if (owned.kind !== "found") return result(operation.op, "ambiguous_remote_state", owned.kind === "ambiguous" ? owned.message : "Task Issue ownership changed during publication", found.issue);
 		child = owned.issue;
+		if (pendingBinding !== null) {
+			if (child.state !== "open")
+				return result(operation.op, "ambiguous_remote_state", `Task ${operation.task_id} is closed and cannot be amended as pending work`, found.issue);
+			const approvedFinal = amendmentContext?.pendingContent.get(operation.task_id);
+			const isFinal = approvedFinal !== undefined && found.issue.body === approvedFinal.body && found.issue.title === approvedFinal.title;
+			if (!isFinal) {
+				if (pendingBinding !== undefined && (found.issue.body !== pendingBinding.body || found.issue.title !== pendingBinding.title))
+					return result(operation.op, "ambiguous_remote_state", `Task ${operation.task_id} changed since the approved amendment baseline`, found.issue);
+			}
+			return updatePendingChild(root, gh, source, operation, child, blockers, approvedFinal);
+		}
+		if (found.issue.body !== body || found.issue.title !== title)
+			return result(operation.op, "permanent_failure", "Task Issue already exists with a different title or Agent Brief; edit the GitHub source or retry the original projection before changing native relations", found.issue);
 	}
 	const attachment = await confirmAttachment(root, gh, operation.op, source.repository, parent.issue.number, child.number);
 	if (!("attached" in attachment)) return attachment;
@@ -1051,6 +1223,20 @@ function validateOperation(operation: TrackerOperation): TrackerOperation {
 	};
 }
 
+/** Run one amendment pending Task: create unbound new Children, amend bound drift. */
+async function runAmendmentTaskOperation(
+	root: string,
+	gh: GhTransport,
+	operation: Extract<TrackerOperation, { op: "upsert-task" }>,
+	pendingBinding: InitiativeAmendmentBinding | undefined,
+	context: AmendmentExecutionContext | undefined,
+): Promise<GithubTrackerResult> {
+	const absoluteRoot = resolve(root);
+	const source = await snapshot(absoluteRoot, gh, operation.op);
+	if ("contract" in source) return source;
+	return upsertTask(absoluteRoot, gh, operation, source, pendingBinding, context);
+}
+
 export async function runGithubTrackerOperation(
 	root: string,
 	input: TrackerOperation,
@@ -1100,12 +1286,12 @@ interface PreparedPublicationTask {
 	intent_content_hash: string;
 }
 
-function publicationPlan(operations: Array<Extract<TrackerOperation, { op: "upsert-task" }>>): {
+function publicationPlan(operations: Array<Extract<TrackerOperation, { op: "upsert-task" }>>, satisfiedPrerequisites: Set<string> = new Set()): {
 	order: Array<Extract<TrackerOperation, { op: "upsert-task" }>>;
 	parallel_groups: string[][];
 } {
 	const remaining = new Set(operations.map((operation) => operation.task_id));
-	const done = new Set<string>();
+	const done = new Set<string>(satisfiedPrerequisites);
 	const order: Array<Extract<TrackerOperation, { op: "upsert-task" }>> = [];
 	const parallelGroups: string[][] = [];
 	while (remaining.size) {
@@ -1127,9 +1313,10 @@ function preflightPublication(root: string, input: InitiativePublicationInput): 
 	order: Array<Extract<TrackerOperation, { op: "upsert-task" }>>;
 	parallel_groups: string[][];
 	intent_bindings: Map<string, Pick<PreparedPublicationTask, "intent_path" | "intent_content_hash">>;
+	foreign_dependers: Map<string, string[]>;
 } {
 	if (!input || typeof input !== "object" || Array.isArray(input)) throw new Error("publication must be an object");
-	if (!Array.isArray(input.tasks) || input.tasks.length < 2)
+	if (!Array.isArray(input.tasks) || input.tasks.length < (input.amendment ? 1 : 2))
 		throw new Error("a complete Initiative publication requires at least two Tasks");
 	if (!input.projection || typeof input.projection !== "object" || Array.isArray(input.projection))
 		throw new Error("publication projection must be an object");
@@ -1142,6 +1329,11 @@ function preflightPublication(root: string, input: InitiativePublicationInput): 
 		if (typeof task.intent !== "string") throw new Error(`tasks[${index}].intent must be a string`);
 		return taskPublication(root, input.initiative_id, task.slice_id, task.intent, task.acceptance, task.projection);
 	});
+	const historicalIds = new Set<string>();
+	if (input.amendment) {
+		if (!Array.isArray(input.amendment.historical)) throw new Error("amendment.historical must be an array");
+		for (const child of input.amendment.historical) historicalIds.add(identifier(child.task_id, "amendment.historical task_id"));
+	}
 	const operations = publications.map((publication) => publication.operation);
 	const taskIds = new Set<string>();
 	const sliceIds = new Set<string>();
@@ -1151,12 +1343,20 @@ function preflightPublication(root: string, input: InitiativePublicationInput): 
 		taskIds.add(operation.task_id);
 		sliceIds.add(operation.slice_id);
 	}
+	const foreignDependers = new Map<string, string[]>();
 	for (const operation of operations) {
 		for (const blocker of operation.projection?.blocked_by ?? []) {
-			if (!taskIds.has(blocker)) throw new Error(`Task ${operation.task_id} depends on ${blocker}, which is outside the complete Initiative batch`);
+			if (!taskIds.has(blocker) && !historicalIds.has(blocker)) {
+				if (input.amendment === undefined)
+					throw new Error(`Task ${operation.task_id} depends on ${blocker}, which is outside the complete Initiative batch`);
+				foreignDependers.set(blocker, [...(foreignDependers.get(blocker) ?? []), operation.task_id]);
+			}
 		}
 	}
-	const plan = publicationPlan(operations);
+	const foreignIds = new Set(foreignDependers.keys());
+	const plan = input.amendment === undefined
+		? publicationPlan(operations)
+		: publicationPlan(operations, new Set([...historicalIds, ...foreignIds]));
 	const initiative = validateOperation({
 		op: "create-initiative",
 		initiative_id: input.initiative_id,
@@ -1173,7 +1373,7 @@ function preflightPublication(root: string, input: InitiativePublicationInput): 
 		intent_path: publication.intent_path,
 		intent_content_hash: publication.intent_content_hash,
 	}]));
-	return { initiative, ...plan, intent_bindings: intentBindings };
+	return { initiative, ...plan, intent_bindings: intentBindings, foreign_dependers: foreignDependers };
 }
 
 function publicationIntentDrift(
@@ -1207,6 +1407,234 @@ function publicationIssueDrift(expected: {
 	return null;
 }
 
+/** One bound Issue's expected remote identity and content. */
+function validateAmendmentBinding(binding: unknown, label: string): InitiativeAmendmentBinding {
+	if (!binding || typeof binding !== "object" || Array.isArray(binding)) throw new Error(`${label} must be an object`);
+	const raw = binding as Record<string, unknown>;
+	if (!Number.isSafeInteger(raw.issue_number) || (raw.issue_number as number) < 1)
+		throw new Error(`${label}.issue_number must be a positive integer`);
+	if (raw.state !== "open" && raw.state !== "closed") throw new Error(`${label}.state must be "open" or "closed"`);
+	if (typeof raw.title !== "string" || !raw.title.trim()) throw new Error(`${label}.title must be a non-empty string`);
+	if (typeof raw.body !== "string") throw new Error(`${label}.body must be a string`);
+	if (Buffer.byteLength(raw.body, "utf8") > GITHUB_ISSUE_BODY_LIMIT) throw new Error(`${label}.body exceeds 65,536 UTF-8 bytes`);
+	return { issue_number: raw.issue_number as number, title: raw.title, body: raw.body, state: raw.state };
+}
+
+function validateAmendment(input: InitiativePublicationInput): {
+	parent: InitiativeAmendmentBinding;
+	tasks: Map<string, InitiativeAmendmentBinding | undefined>;
+	historical: Map<string, InitiativeAmendmentBinding>;
+} {
+	const amendment = input.amendment!;
+	const parent = validateAmendmentBinding(amendment.parent, "amendment.parent");
+	if (parent.state !== "open") throw new Error("amendment.parent must be an open Issue");
+	const tasks = new Map<string, InitiativeAmendmentBinding | undefined>();
+	const historical = new Map<string, InitiativeAmendmentBinding>();
+	if (!Array.isArray(amendment.tasks)) throw new Error("amendment.tasks must be an array");
+	for (const [index, task] of amendment.tasks.entries()) {
+		if (!task || typeof task !== "object" || Array.isArray(task)) throw new Error(`amendment.tasks[${index}] must be an object`);
+		const taskId = identifier((task as { task_id: unknown }).task_id, `amendment.tasks[${index}].task_id`);
+		if (tasks.has(taskId) || historical.has(taskId)) throw new Error(`duplicate amendment Task id: ${taskId}`);
+		const binding = (task as { binding: unknown }).binding as InitiativeAmendmentBinding | undefined;
+		if (binding !== undefined && binding.state !== "open")
+			throw new Error(`amendment.tasks[${index}].binding.state must be "open" for pending Children`);
+		tasks.set(taskId, binding === undefined ? undefined : validateAmendmentBinding(binding, `amendment.tasks[${index}].binding`));
+	}
+	if (!Array.isArray(amendment.historical)) throw new Error("amendment.historical must be an array");
+	for (const [index, child] of amendment.historical.entries()) {
+		if (!child || typeof child !== "object" || Array.isArray(child)) throw new Error(`amendment.historical[${index}] must be an object`);
+		const raw = child as { task_id: unknown; binding: unknown };
+		const taskId = identifier(raw.task_id, `amendment.historical[${index}].task_id`);
+		if (tasks.has(taskId) || historical.has(taskId)) throw new Error(`duplicate amendment Task id: ${taskId}`);
+		historical.set(taskId, validateAmendmentBinding(raw.binding, `amendment.historical[${index}].binding`));
+	}
+	return { parent, tasks, historical };
+}
+
+/** Compare a bound Issue's observed remote identity/content against the approved baseline. */
+function amendmentBindingDrift(binding: InitiativeAmendmentBinding, actual: GithubIssue, label: string): string | null {
+	if (binding.issue_number !== actual.number) return `${label} is bound to Issue #${binding.issue_number} but observed Issue #${actual.number}`;
+	if (binding.state !== actual.state) return `${label} is bound as ${binding.state} but observed as ${actual.state}`;
+	if (binding.title !== actual.title || binding.body !== actual.body) return `${label} remote content does not match the approved baseline`;
+	return null;
+}
+
+/** Split observed Sub-issues into bound pending vs bound historical, verifying complete membership. */
+function classifyObservedChildren(
+	source: RepositorySnapshot,
+	initiativeId: string,
+	pendingBindings: Map<string, InitiativeAmendmentBinding | undefined>,
+	historicalBindings: Map<string, InitiativeAmendmentBinding>,
+): Map<string, GithubIssue> | string {
+	const observed = new Map<string, GithubIssue>();
+	for (const issue of source.issues) {
+		if (issue.body.includes(marker("initiative-id", initiativeId)) && issue.body.includes(KIND_TASK_MARKER)) {
+			const taskId = ownershipMarkerValue(issue.body, "task-id");
+			if (!taskId) return `Issue #${issue.number} has missing or duplicate task-id ownership markers`;
+			if (observed.has(taskId)) return `duplicate Task Issue identity: ${taskId}`;
+			observed.set(taskId, issue);
+		}
+	}
+	const pendingIds = new Set(pendingBindings.keys());
+	const historicalIds = new Set(historicalBindings.keys());
+	for (const [taskId, issue] of observed) {
+		if (issue.state === "closed" && pendingIds.has(taskId))
+			return `pending Task ${taskId} (Issue #${issue.number}) is closed; the amendment cannot treat closed work as pending`;
+		if (issue.state === "closed" && !historicalIds.has(taskId))
+			return `closed Child ${taskId} (Issue #${issue.number}) must be declared as historical`;
+		if (pendingIds.has(taskId)) continue;
+		if (historicalIds.has(taskId)) {
+			const binding = historicalBindings.get(taskId)!;
+			const drift = amendmentBindingDrift(binding, issue, `historical Task ${taskId}`);
+			if (drift) return drift;
+			continue;
+		}
+		return `observed Child ${taskId} (Issue #${issue.number}) is neither approved pending nor declared historical; the amendment must declare the complete membership`;
+	}
+	return observed;
+}
+
+async function validateAmendmentTopology(
+	root: string,
+	gh: GhTransport,
+	source: RepositorySnapshot,
+	initiativeId: string,
+	parentIssue: GithubIssue,
+	pendingBindings: Map<string, InitiativeAmendmentBinding | undefined>,
+	historicalBindings: Map<string, InitiativeAmendmentBinding>,
+	foreignDependers: Map<string, string[]>,
+	approvedFinal: {
+		pendingContent: Map<string, { title: string; body: string }>;
+		parent: { title: string; body: string };
+		historicalSlices: string[];
+	},
+): Promise<Map<string, GithubIssue> | GithubTrackerResult> {
+	const classified = classifyObservedChildren(source, initiativeId, pendingBindings, historicalBindings);
+	if (typeof classified === "string") return result("create-initiative", "ambiguous_remote_state", classified, parentIssue);
+	const bound = classified;
+	const pendingIds = new Set(pendingBindings.keys());
+	const historicalIds = new Set(historicalBindings.keys());
+	const attached = await readSubIssueNumbers(root, gh, "create-initiative", source.repository, parentIssue.number);
+	if (!Array.isArray(attached)) return attached;
+	const attachedNumbers = new Set(attached);
+	for (const [taskId, binding] of historicalBindings) {
+		const issue = bound.get(taskId);
+		if (!issue) return result("create-initiative", "ambiguous_remote_state", `historical Task ${taskId} is not observable`, parentIssue);
+		if (binding.issue_number !== issue.number)
+			return result("create-initiative", "ambiguous_remote_state", `historical Task ${taskId} is bound to Issue #${binding.issue_number} but observed Issue #${issue.number}`, issue);
+		if (!attachedNumbers.has(issue.number))
+			return result("create-initiative", "ambiguous_remote_state", `historical Task ${taskId} (Issue #${issue.number}) is not attached to the Parent`, issue);
+		const ownership = await confirmTerminalOwnership(root, gh, "create-initiative", source, issue);
+		if (!("owned" in ownership)) return ownership;
+	}
+	for (const [taskId, binding] of pendingBindings) {
+		const issue = bound.get(taskId);
+		if (!issue) return result("create-initiative", "ambiguous_remote_state", `bound pending Task ${taskId} is not observable`, parentIssue);
+		if (binding && binding.issue_number !== issue.number)
+			return result("create-initiative", "ambiguous_remote_state", `pending Task ${taskId} is bound to Issue #${binding.issue_number} but observed Issue #${issue.number}`, issue);
+		if (!attachedNumbers.has(issue.number))
+			return result("create-initiative", "ambiguous_remote_state", `pending Task ${taskId} (Issue #${issue.number}) is not attached to the Parent`, issue);
+		if (issue.state !== "open")
+			return result("create-initiative", "ambiguous_remote_state", `pending Task ${taskId} (Issue #${issue.number}) is closed and cannot be amended`, issue);
+		if (binding) {
+			const approved = approvedFinal.pendingContent.get(taskId)!;
+			const matchesBaseline = binding.title === issue.title && binding.body === issue.body;
+			const matchesApprovedFinal = approved && approved.title === issue.title && approved.body === issue.body;
+			if (!matchesBaseline && !matchesApprovedFinal)
+				return result("create-initiative", "ambiguous_remote_state", `pending Task ${taskId} remote content does not match the approved baseline or already-applied approved content`, issue);
+		}
+		const ownership = await confirmTerminalOwnership(root, gh, "create-initiative", source, issue);
+		if (!("owned" in ownership)) return ownership;
+	}
+	for (const number of attachedNumbers) {
+		const issue = source.issues.find((candidate) => candidate.number === number);
+		const taskId = issue ? ownershipMarkerValue(issue.body, "task-id") : null;
+		if (!taskId || (!pendingIds.has(taskId) && !historicalIds.has(taskId)))
+			return result("create-initiative", "ambiguous_remote_state", `Parent Sub-issue #${number} is not part of the declared amendment membership`, parentIssue);
+	}
+	for (const [blockerId, dependers] of foreignDependers) {
+		const issue = [...bound.values()].find((candidate) => ownershipMarkerValue(candidate.body, "task-id") === blockerId)
+			?? source.issues.find((candidate) => ownershipMarkerValue(candidate.body, "task-id") === blockerId);
+		if (!issue)
+			return result("create-initiative", "ambiguous_remote_state", `Task ${dependers.join(", ")} depends on ${blockerId}, which is not part of the declared amendment membership`, parentIssue);
+		if (!attachedNumbers.has(issue.number))
+			return result("create-initiative", "ambiguous_remote_state", `blocking Task ${blockerId} (Issue #${issue.number}) is not attached to the Parent`, issue);
+	}
+	return bound;
+}
+
+async function updatePendingChild(
+	root: string,
+	gh: GhTransport,
+	source: RepositorySnapshot,
+	op: Extract<TrackerOperation, { op: "upsert-task" }>,
+	child: GithubIssue,
+	desiredBlockers: GithubIssue[],
+	approvedFinal: { title: string; body: string } | undefined,
+): Promise<GithubTrackerResult> {
+	const parent = initiativeLookup(source.issues, source.repository.id, op.initiative_id);
+	const body = childBody(source.repository, op, parent.kind === "found" ? parent.issue : child);
+	const oversized = bodyLimitFailure(op.op, body, MAX_TERMINAL_SUFFIX_BYTES);
+	if (oversized) return oversized;
+	const title = issueTitle(`${op.initiative_id}/${op.slice_id}`, op.projection?.result ?? op.goal);
+	const baseBody = child.body;
+	const suffixMatch = [...baseBody.matchAll(/<!-- immune-brain:terminal-event=([A-Za-z0-9._:-]+) -->/g)];
+	if (suffixMatch.length > 1) return result(op.op, "ambiguous_remote_state", "pending Task has multiple terminal markers", child);
+	const finalBody = suffixMatch.length === 1 ? `${body.trimEnd()}${terminalSuffix(suffixMatch[0][1])}` : body;
+	if (approvedFinal !== undefined && (finalBody !== approvedFinal.body || title !== approvedFinal.title))
+		return result(op.op, "ambiguous_remote_state", `pending Task ${op.task_id} carries a terminal suffix that diverges from the approved amendment content`, child);
+	if (child.title !== title || child.body !== finalBody) {
+		const edited = await gh.run([
+			"issue", "edit", String(child.number), "--repo", source.repository.name_with_owner,
+			"--title", title,
+			"--body-file", "-",
+		], { cwd: root, stdin: finalBody });
+		if (edited.exit_code !== 0 || edited.output_exceeded) return ghFailure(op.op, edited, `pending Task Issue #${child.number} update failed`);
+	}
+	const dependencies = await convergePendingDependencies(root, gh, source, child.number, desiredBlockers);
+	if (!("complete" in dependencies)) return dependencies;
+	const refreshed = await snapshot(root, gh, op.op);
+	if ("contract" in refreshed) return refreshed;
+	const reread = ownedTaskLookup(refreshed.issues, refreshed.repository.id, op.task_id, op.initiative_id, op.slice_id);
+	if (reread.kind !== "found" || reread.issue.number !== child.number)
+		return result(op.op, "ambiguous_remote_state", `pending Task ${op.task_id} changed identity during amendment`, child);
+	if (reread.issue.title !== title || reread.issue.body !== finalBody)
+		return result(op.op, "retryable_failure", `pending Task ${op.task_id} update did not converge`, reread.issue);
+	const currentDependencies = await confirmBlockedBy(root, gh, op.op, refreshed.repository, reread.issue.number, desiredBlockers);
+	if (!("complete" in currentDependencies)) return currentDependencies;
+	if (!currentDependencies.complete)
+		return result(op.op, "retryable_failure", `pending Task ${op.task_id} dependencies did not converge`, reread.issue);
+	const contentCurrent = child.title === title && child.body === finalBody;
+	return contentCurrent
+		? result(op.op, "already_current", `pending Task ${op.task_id} already carries the approved amendment content`, reread.issue)
+		: result(op.op, "updated", `pending Task ${op.task_id} Agent Brief updated with approved amendment content`, reread.issue);
+}
+
+/** Converge the exact approved dependency set on a pending Child (amendment only). */
+async function convergePendingDependencies(
+	root: string,
+	gh: GhTransport,
+	source: RepositorySnapshot,
+	childNumber: number,
+	requestedBlockers: GithubIssue[],
+): Promise<GithubTrackerResult | { complete: true }> {
+	const expected = requestedBlockers.map((blocker) => blocker.id);
+	const existing = await readBlockedByIds(root, gh, "upsert-task", source.repository, childNumber);
+	if (!Array.isArray(existing)) return existing;
+	const removed = existing.filter((id) => !expected.includes(id));
+	for (const id of removed) {
+		const mutation = await gh.run([
+			"api", "--method", "DELETE", "-F", `issue_id=${id}`,
+			`repos/${source.repository.name_with_owner}/issues/${childNumber}/dependencies/blocked_by`,
+		], { cwd: root });
+		if (mutation.exit_code !== 0 || mutation.output_exceeded)
+			return ghFailure("upsert-task", mutation, `native blocked_by removal failed for Issue #${childNumber}`);
+	}
+	const attach = await attachBlockedBy(root, gh, "upsert-task", source.repository, childNumber, requestedBlockers);
+	if (!("complete" in attach)) return attach;
+	return { complete: true };
+}
+
 export async function runGithubInitiativePublication(
 	root: string,
 	input: InitiativePublicationInput,
@@ -1214,8 +1642,25 @@ export async function runGithubInitiativePublication(
 ): Promise<GithubInitiativePublicationResult> {
 	const absoluteRoot = resolve(root);
 	let prepared: ReturnType<typeof preflightPublication>;
+	let amendment: ReturnType<typeof validateAmendment> | undefined;
+	let amendmentContext: AmendmentExecutionContext | undefined;
 	try {
 		prepared = preflightPublication(absoluteRoot, input);
+		if (input.amendment !== undefined) {
+			if (prepared.order.length < 1)
+				throw new Error("an amendment requires at least one pending Task");
+			const validated = validateAmendment(input);
+			const declared = new Set([...validated.tasks.keys(), ...validated.historical.keys()]);
+			for (const operation of prepared.order) {
+				if (!declared.has(operation.task_id))
+					throw new Error(`amendment.tasks must declare pending Task ${operation.task_id}`);
+			}
+			for (const [taskId, binding] of validated.historical) {
+				if (binding.state === "open")
+					throw new Error(`historical Task ${taskId} must be a closed Issue; open work belongs in amendment.tasks`);
+			}
+			amendment = validated;
+		}
 	} catch (error) {
 		return publicationResult("permanent_failure", error instanceof Error ? error.message : String(error));
 	}
@@ -1225,6 +1670,8 @@ export async function runGithubInitiativePublication(
 	if ("contract" in initial) return publicationResult(initial.status, initial.message, initial);
 	const initialParent = initiativeLookup(initial.issues, initial.repository.id, prepared.initiative.initiative_id);
 	if (initialParent.kind === "ambiguous") return publicationResult("ambiguous_remote_state", initialParent.message);
+	if (amendment && initialParent.kind === "missing")
+		return publicationResult("permanent_failure", "an amendment requires the Initiative Parent to already exist");
 	const parentForPreflight = initialParent.kind === "found" ? initialParent.issue : {
 		id: Number.MAX_SAFE_INTEGER,
 		number: Number.MAX_SAFE_INTEGER,
@@ -1241,16 +1688,42 @@ export async function runGithubInitiativePublication(
 		if (childFailure) return publicationResult(childFailure.status, childFailure.message, childFailure);
 	}
 
+	if (amendment) {
+		if (initialParent.kind !== "found")
+			return publicationResult("permanent_failure", "an amendment requires the Initiative Parent to already exist");
+		const approvedFinalParent = approvedAmendmentContent(absoluteRoot, initial.repository, initialParent.issue, prepared, amendment);
+		if (typeof approvedFinalParent === "string") return publicationResult("ambiguous_remote_state", approvedFinalParent);
+		const { parent, pendingContent, historicalSlices } = approvedFinalParent;
+		const parentBaseline = amendmentBindingDrift(amendment.parent, initialParent.issue, "amendment Parent");
+		const parentApproved = initialParent.issue.title === parent.title && initialParent.issue.body === parent.body;
+		if (parentBaseline && !parentApproved) return publicationResult("ambiguous_remote_state", parentBaseline);
+		const topology = await validateAmendmentTopology(
+			absoluteRoot, gh, initial, prepared.initiative.initiative_id, initialParent.issue,
+			amendment.tasks, amendment.historical,
+			prepared.foreign_dependers,
+			{ pendingContent, parent, historicalSlices },
+		);
+		if (!("get" in topology)) return publicationResult(topology.status, topology.message, topology);
+		amendmentContext = { pendingContent, parent, historicalSlices };
+	}
+
 	const beforeParentWrite = publicationIntentDrift(absoluteRoot, prepared.intent_bindings);
 	if (beforeParentWrite) return publicationResult("ambiguous_remote_state", beforeParentWrite);
-	const parentResult = await runGithubTrackerOperation(absoluteRoot, prepared.initiative, gh);
+	let parentResult: GithubTrackerResult;
+	if (amendment && amendmentContext) {
+		parentResult = await amendInitiativeParent(absoluteRoot, gh, prepared.initiative, initial, amendment.parent, amendmentContext);
+	} else {
+		parentResult = await runGithubTrackerOperation(absoluteRoot, prepared.initiative, gh);
+	}
 	if (!isSuccessfulTrackerStatus(parentResult.status))
 		return publicationResult(parentResult.status, parentResult.message, parentResult);
 	const taskResults: GithubInitiativePublicationResult["tasks"] = [];
 	for (const operation of prepared.order) {
 		const intentDrift = publicationIntentDrift(absoluteRoot, prepared.intent_bindings, [operation.task_id]);
 		if (intentDrift) return publicationResult("ambiguous_remote_state", intentDrift, parentResult, taskResults);
-		const taskResult = await runGithubTrackerOperation(absoluteRoot, operation, gh);
+		const taskResult = amendment
+			? await runAmendmentTaskOperation(absoluteRoot, gh, operation, amendment.tasks.get(operation.task_id), amendmentContext)
+			: await runGithubTrackerOperation(absoluteRoot, operation, gh);
 		taskResults.push({
 			task_id: operation.task_id,
 			slice_id: operation.slice_id,
@@ -1269,11 +1742,15 @@ export async function runGithubInitiativePublication(
 	if ("contract" in finalSource) return publicationResult(finalSource.status, finalSource.message, parentResult, taskResults);
 	const parent = initiativeLookup(finalSource.issues, finalSource.repository.id, prepared.initiative.initiative_id);
 	if (parent.kind !== "found") return publicationResult("ambiguous_remote_state", parent.kind === "ambiguous" ? parent.message : "published Initiative Parent disappeared", parentResult, taskResults);
+	const amendedSliceIds = new Set(prepared.initiative.slices.map((slice) => slice.id));
+	void amendedSliceIds;
 	const parentDrift = publicationIssueDrift(
 		parentResult,
 		parent.issue,
-		issueTitle(prepared.initiative.initiative_id, prepared.initiative.projection?.result ?? prepared.initiative.goal),
-		createInitiativeBody(finalSource.repository, prepared.initiative),
+		amendmentContext ? amendmentContext.parent.title : issueTitle(prepared.initiative.initiative_id, prepared.initiative.projection?.result ?? prepared.initiative.goal),
+		amendmentContext
+			? amendmentContext.parent.body
+			: createInitiativeBody(finalSource.repository, prepared.initiative),
 		"Initiative Parent",
 	);
 	if (parentDrift) return publicationResult("ambiguous_remote_state", parentDrift, parentResult, taskResults);
@@ -1307,8 +1784,35 @@ export async function runGithubInitiativePublication(
 	}
 	const attached = await readSubIssueNumbers(absoluteRoot, gh, "upsert-task", finalSource.repository, parent.issue.number);
 	if (!Array.isArray(attached)) return publicationResult(attached.status, attached.message, parentResult, taskResults);
+	if (amendment) {
+		for (const [taskId, binding] of amendment.historical) {
+			const historical = finalSource.issues.find(
+				(issue) => issue.number === binding.issue_number && issue.body.includes(marker("task-id", taskId)),
+			);
+			const drift = historical ? amendmentBindingDrift(binding, historical, `historical Task ${taskId}`) : `historical Task ${taskId} is not observable after publication`;
+			if (drift) return publicationResult("ambiguous_remote_state", drift, parentResult, taskResults);
+			if (!attached.includes(historical!.number))
+				return publicationResult("ambiguous_remote_state", `historical Task ${taskId} lost its native Sub-issue attachment`, parentResult, taskResults);
+		}
+		const attachedNumbers = new Set(attached);
+		for (const number of attachedNumbers) {
+			const issue = finalSource.issues.find((candidate) => candidate.number === number);
+			const taskId = issue ? ownershipMarkerValue(issue.body, "task-id") : null;
+		if (!taskId || (!amendment.tasks.has(taskId) && !amendment.historical.has(taskId)))
+				return publicationResult("ambiguous_remote_state", `Parent Sub-issue #${number} is not part of the declared amendment membership`, parentResult, taskResults);
+		}
+		for (const operation of prepared.order) {
+			for (const blockerId of operation.projection?.blocked_by ?? []) {
+				if (amendment.historical.has(blockerId)) {
+					const blocker = taskLookup(finalSource.issues, finalSource.repository.id, blockerId);
+					if (blocker.kind !== "found" || blocker.issue.state_reason !== "completed")
+						return publicationResult("ambiguous_remote_state", `Task ${operation.task_id} depends on stopped historical prerequisite ${blockerId}`, parentResult, taskResults);
+				}
+			}
+		}
+	}
 	const sortedAttached = [...attached].sort((left, right) => left - right);
-	const sortedExpected = [...expectedNumbers].sort((left, right) => left - right);
+	const sortedExpected = [...expectedNumbers, ...(amendment ? [...amendment.historical.values()].map((binding) => binding.issue_number) : [])].sort((left, right) => left - right);
 	if (sortedAttached.length !== sortedExpected.length || sortedAttached.some((number, index) => number !== sortedExpected[index]))
 		return publicationResult("ambiguous_remote_state", "Initiative Parent Sub-issues do not match the complete publication batch", parentResult, taskResults);
 	const statuses = [parentResult.status, ...taskResults.map((task) => task.status)];

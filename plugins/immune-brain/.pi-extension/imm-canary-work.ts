@@ -1686,8 +1686,24 @@ async function executeOrdinaryOperation(
 	const priorIntent = await readTaskIntent(ctx.cwd, input.taskId);
 	const sidecar = join(ctx.cwd, priorIntent.intent_ref.path);
 	const priorBytes = operation.op === "revise_intent" ? readFileSync(sidecar) : null;
+	// A content-changing revision writes the sidecar before the kernel's drift
+	// check runs; an unstaged write is itself scoped drift and deadlocks the
+	// revision. Mirror the breaking-revision path: stage the written sidecar
+	// (worktree == index) and restore the exact prior index entry on failure.
+	const priorIndexState = priorBytes !== null
+		? execFileSync("git", ["ls-files", "--stage", "-z", "--", priorIntent.intent_ref.path], {
+			cwd: ctx.cwd,
+			stdio: ["ignore", "pipe", "pipe"],
+		})
+		: null;
 	try {
-		if (priorBytes) writeFileSync(sidecar, `${JSON.stringify(operation.next_intent, null, 2)}\n`);
+		if (priorBytes) {
+			writeFileSync(sidecar, `${JSON.stringify(operation.next_intent, null, 2)}\n`);
+			execFileSync("git", ["add", "--", priorIntent.intent_ref.path], {
+				cwd: ctx.cwd,
+				stdio: ["ignore", "pipe", "pipe"],
+			});
+		}
 		const result = await app.execute({
 			root: ctx.cwd,
 			task_id: input.taskId,
@@ -1705,7 +1721,20 @@ async function executeOrdinaryOperation(
 	} catch (error) {
 		if (priorBytes) {
 			const current = await readTaskRecord(ctx.cwd, input.taskId);
-			if (current.record?.intent_snapshot.revision === priorIntent.intent.revision) writeFileSync(sidecar, priorBytes);
+			if (current.record?.intent_snapshot.revision === priorIntent.intent.revision) {
+				writeFileSync(sidecar, priorBytes);
+				execFileSync("git", ["update-index", "--force-remove", "--", priorIntent.intent_ref.path], {
+					cwd: ctx.cwd,
+					stdio: ["ignore", "pipe", "pipe"],
+				});
+				if (priorIndexState && priorIndexState.length > 0) {
+					execFileSync("git", ["update-index", "-z", "--index-info"], {
+						cwd: ctx.cwd,
+						input: priorIndexState,
+						stdio: ["pipe", "ignore", "pipe"],
+					});
+				}
+			}
 		}
 		throw error;
 	}

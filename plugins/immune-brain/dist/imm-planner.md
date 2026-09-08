@@ -219,6 +219,19 @@ TaskIntent or TaskRecord. Existing Issue markers grant permission only for
 idempotent retry of that same approved Initiative; they never grant execution
 authority.
 
+For amending an already-published Initiative, the same
+`imm-tracker publish-initiative --stdin --json` operation accepts an optional
+`amendment` input after the literal user approves the changed pending frontier.
+Provide the complete approved pending Tasks plus the complete read-only
+historical Child list, each binding the observed `issue_number`, title, body,
+and state at approval. The tracker verifies every bound Issue against that
+baseline before any write, updates only approved pending briefs, converges the
+exact approved pending `blocked_by` set, creates newly added pending Children,
+and preserves historical Children byte-for-byte with their native Sub-issue
+links and dependency relations. Omitted membership, baseline drift, or a
+stopped historical prerequisite fails closed with zero or bounded mutations
+and an exact retry action; the strict no-amendment default is unchanged.
+
 ### Verification Descriptor Discipline
 
 Every acceptance verification descriptor must be a focused, deterministic,

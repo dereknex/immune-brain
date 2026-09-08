@@ -41,6 +41,53 @@ GitHub shares one number space across issues and PRs, so a bare `#42` may be eit
 
 Create a GitHub issue.
 
+## Existing Initiative amendment (tracker contract)
+
+`imm-tracker publish-initiative --stdin --json` also accepts an optional
+`amendment` input for an already-published Initiative. The caller supplies the
+approved pending frontier plus read-only historical Child identities, each bound
+to the exact expected remote `issue_number`, `title`, `body`, and `state` at the
+moment of approval:
+
+```json
+{
+  "amendment": {
+    "parent": { "issue_number": 1, "title": "...", "body": "...", "state": "open" },
+    "tasks": [
+      { "task_id": "slice-live", "binding": { "issue_number": 2, "title": "...", "body": "...", "state": "open" } },
+      { "task_id": "slice-new" }
+    ],
+    "historical": [
+      { "task_id": "slice-done", "binding": { "issue_number": 3, "title": "...", "body": "...", "state": "closed" } }
+    ]
+  }
+}
+```
+
+Semantics:
+
+- The amendment requires the open Parent and every bound pending Child to match
+  the approved baseline title/body/state exactly before any write; remote drift
+  returns `ambiguous_remote_state` with zero mutations. Retry after a partial
+  write accepts only the original bound content or the exact requested final
+  content.
+- Approved pending briefs are updated (title/body only, terminal suffixes
+  preserved), new pending Children are created and attached, and pending
+  `blocked_by` relations converge to the exact approved set (adds and removals,
+  with ownership revalidated before each edge mutation).
+- Historical Children are never regenerated, detached, or edited: their exact
+title, body, state, and dependency relations are preserved byte-for-byte, and
+  the Parent keeps every historical Slice entry exactly once. Historical
+  prerequisites must be closed; a stopped (not completed) prerequisite is
+  rejected instead of silently treated as satisfied.
+- Omitted existing pending work, duplicate identities, foreign or ambiguous
+  ownership, and closed pending Children are rejected before writes. Without an
+  `amendment` input the operation keeps its strict default: an existing Parent
+  with different content is `permanent_failure` — the tracker never rewrites it.
+- The batch result reports the pending execution order only (first unblocked
+  Task, stable order, parallel groups); historical Children never appear as
+  runnable work.
+
 ## When a skill says "fetch the relevant ticket"
 
 Run `gh issue view <number> --comments`. For an Immune-Brain Task Issue, complete
