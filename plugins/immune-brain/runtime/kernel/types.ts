@@ -297,6 +297,7 @@ export type TaskAction =
 	| (TaskActionBase & { type: "request_rework"; findings: TaskFinding[] })
 	| (TaskActionBase & { type: "complete" })
 	| (TaskActionBase & { type: "stop"; reason: string })
+	| (TaskActionBase & { type: "authorize_rework" })
 	| (TaskActionBase & { type: "resolve_user_decision"; finding_id: string; resolution: string });
 
 

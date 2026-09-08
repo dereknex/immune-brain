@@ -1351,6 +1351,8 @@ class AssuranceCoordinator {
     return this.sessionGeneration;
   }
   async advance(taskId, ctx, signal, onUpdate) {
+    if (this.isInvocationOpen(taskId))
+      return { state: "blocked", reason: "an authority invocation is already open" };
     const active = this.active(taskId);
     if (active?.state === "review_ready") {
       const reservation = this.reviewReservations.get(taskId);
@@ -1728,6 +1730,17 @@ class AssuranceCoordinator {
     }
     return { state: "blocked", reason: `Kernel requires ${settled.projection.next_obligation} after Review` };
   }
+  isReviewVerdictValid(taskId, verdictInput) {
+    const reservation = this.reviewReservations.get(taskId);
+    if (!reservation)
+      return false;
+    try {
+      parseAssuranceVerdict(verdictInput, reservation.snapshot);
+      return true;
+    } catch {
+      return false;
+    }
+  }
   abandonReview(taskId, reason) {
     const reservation = this.reviewReservations.get(taskId);
     if (!reservation)
@@ -1742,6 +1755,12 @@ class AssuranceCoordinator {
     if (reservation.verdictCorrectionRequired)
       return { state: "blocked", code: "verdict_invalid", reason: "Review verdict correction is required before advancing" };
     return { state: "review_ready", operation: "review", operation_id: reservation.operationId, snapshot_digest: snapshotDigest(reservation.snapshot), review_bundle_digest: reservation.snapshot.review_bundle_digest ?? "", agent_params: reservation.hostReservation.dispatch };
+  }
+  releaseStoppedReview(taskId) {
+    const reservation = this.reviewReservations.get(taskId);
+    if (reservation)
+      this.releaseReviewReservation(taskId, reservation);
+    this.rejectedReviewOperations.delete(taskId);
   }
   releaseReviewReservation(taskId, reservation, rejectionReason) {
     if (this.reviewReservations.get(taskId) !== reservation)
@@ -3001,6 +3020,15 @@ function classifyIntentRevision(previous, next) {
     return "breaking";
   return next.revision > previous.revision ? "compatible" : "breaking";
 }
+
+class TaskIntentObservationError extends Error {
+  code;
+  constructor(code, message) {
+    super(message);
+    this.name = "TaskIntentObservationError";
+    this.code = code;
+  }
+}
 var intentReaderTestHook = null;
 function validateTaskId3(taskId) {
   if (!TASK_ID_PATTERN.test(taskId))
@@ -3065,7 +3093,7 @@ function assertIdentitiesUnchanged(expected, canonicalRoot, relativePath) {
       throw new Error(`path component changed while being read: ${parts.slice(0, index + 1).join("/")}`);
   }
 }
-function readTaskIntent(root, taskId, requestedPath) {
+function readTaskIntentSource(root, taskId, requestedPath) {
   validateTaskId3(taskId);
   const canonicalRoot = resolveCanonicalRoot(root);
   const activePath = `${INTENT_SIDECAR_RELATIVE_PREFIX}${taskId}.intent.json`;
@@ -3077,17 +3105,19 @@ function readTaskIntent(root, taskId, requestedPath) {
   if (!target.startsWith(canonicalRoot + sep3))
     throw new Error("intent sidecar escapes project root");
   if (!sidecarPresent(canonicalRoot, sidecarPath))
-    throw new Error(`TaskIntent sidecar is missing at ${sidecarPath}`);
+    throw new TaskIntentObservationError("missing", `TaskIntent sidecar is missing at ${sidecarPath}`);
   const pathIdentities = collectPathIdentities(canonicalRoot, sidecarPath);
   const fileIdentity = pathIdentities[pathIdentities.length - 1];
   try {
     execFileSync3("git", ["ls-files", "--error-unmatch", "--", sidecarPath], { cwd: canonicalRoot, stdio: ["ignore", "pipe", "pipe"] });
-  } catch {
-    throw new Error("TaskIntent sidecar is not Git-tracked");
+  } catch (error) {
+    if (typeof error === "object" && error !== null && "status" in error && error.status === 1)
+      throw new TaskIntentObservationError("invalid", "TaskIntent sidecar is not Git-tracked");
+    throw error;
   }
   const before = lstatSync4(target);
   if (!before.isFile() || before.size > INTENT_MAX_BYTES)
-    throw new Error("TaskIntent sidecar must be a regular file no larger than 64 KiB");
+    throw new TaskIntentObservationError("invalid", "TaskIntent sidecar must be a regular file no larger than 64 KiB");
   const fd = openSync2(target, fsConstants.O_RDONLY | fsConstants.O_NOFOLLOW);
   let bytes;
   try {
@@ -3099,7 +3129,7 @@ function readTaskIntent(root, taskId, requestedPath) {
     closeSync2(fd);
   }
   if (bytes.byteLength > INTENT_MAX_BYTES)
-    throw new Error("TaskIntent sidecar exceeds 64 KiB");
+    throw new TaskIntentObservationError("invalid", "TaskIntent sidecar exceeds 64 KiB");
   const after = lstatSync4(target);
   assertSameIdentity(statIdentity(before), after, "intent sidecar");
   assertIdentitiesUnchanged(pathIdentities, canonicalRoot, sidecarPath);
@@ -3113,23 +3143,11 @@ function readTaskIntent(root, taskId, requestedPath) {
   try {
     intent = parseTaskIntentV1(JSON.parse(bytes.toString("utf8")));
   } catch (error) {
-    throw new Error(`TaskIntent sidecar is invalid: ${error instanceof Error ? error.message : String(error)}`);
+    throw new TaskIntentObservationError("invalid", `TaskIntent sidecar is invalid: ${error instanceof Error ? error.message : String(error)}`);
   }
   if (intent.task_id !== taskId)
-    throw new Error("intent.task_id does not match the sidecar filename task id");
+    throw new TaskIntentObservationError("invalid", "intent.task_id does not match the sidecar filename task id");
   const contentHash = canonicalIntentHash(intent);
-  const token = mintToken({
-    canonical_root: canonicalRoot,
-    sidecar_path: sidecarPath,
-    path_dev: fileIdentity.dev,
-    path_ino: fileIdentity.ino,
-    fd_dev: before.dev,
-    fd_ino: before.ino,
-    fd_size: before.size,
-    fd_mtime_ms: before.mtimeMs,
-    source_bytes_sha256: sourceBytesSha256,
-    intent_content_hash: contentHash
-  });
   return {
     intent,
     content_hash: contentHash,
@@ -3138,8 +3156,23 @@ function readTaskIntent(root, taskId, requestedPath) {
       revision: intent.revision,
       content_hash: contentHash
     },
-    token
+    identity: {
+      canonical_root: canonicalRoot,
+      sidecar_path: sidecarPath,
+      path_dev: fileIdentity.dev,
+      path_ino: fileIdentity.ino,
+      fd_dev: before.dev,
+      fd_ino: before.ino,
+      fd_size: before.size,
+      fd_mtime_ms: before.mtimeMs,
+      source_bytes_sha256: sourceBytesSha256,
+      intent_content_hash: contentHash
+    }
   };
+}
+function readTaskIntent(root, taskId, requestedPath) {
+  const { identity, ...observed } = readTaskIntentSource(root, taskId, requestedPath);
+  return { ...observed, token: mintToken(identity) };
 }
 
 // plugins/immune-brain/runtime/kernel/validation.ts
@@ -3645,6 +3678,7 @@ var ACTION_V2_TYPES = [
   "request_rework",
   "complete",
   "stop",
+  "authorize_rework",
   "resolve_user_decision"
 ];
 var ACTION_BASE_FIELDS = [
@@ -3740,7 +3774,8 @@ function parseTaskAction(raw) {
       };
       break;
     }
-    case "complete": {
+    case "complete":
+    case "authorize_rework": {
       rejectUnknown2(value, [...ACTION_BASE_FIELDS], "action", violations);
       action = { ...base, type: base.type };
       break;
@@ -3798,7 +3833,7 @@ function assertTaskRecordUpdateV3(previousRaw, nextRaw, action) {
       violations.push("non-intent action cannot change the intent snapshot");
     if (next.intent_ref.content_hash !== previous.intent_ref.content_hash)
       violations.push("non-intent action cannot change intent_ref content hash");
-    if (next.intent_ref.path !== previous.intent_ref.path && action.type !== "request_rework" && action.type !== "stop")
+    if (next.intent_ref.path !== previous.intent_ref.path && action.type !== "request_rework" && action.type !== "authorize_rework" && action.type !== "stop")
       violations.push("only artifact transitions may change intent_ref path");
   }
   if (next.attestations.length < previous.attestations.length)
@@ -3810,7 +3845,7 @@ function assertTaskRecordUpdateV3(previousRaw, nextRaw, action) {
     if (!current || JSON.stringify(current) !== JSON.stringify(prior))
       violations.push(`attestation ${prior.id} was rewritten`);
   }
-  const resolvingFindingIds = action.type === "resolve_finding" ? [action.finding_id] : action.type === "resolve_user_decision" ? [action.finding_id] : action.type === "approve_breaking_intent_revision" ? previous.findings.filter((item) => item.kind === "replan_required" && item.status === "open").map((item) => item.id) : [];
+  const resolvingFindingIds = action.type === "resolve_finding" ? [action.finding_id] : action.type === "resolve_user_decision" ? [action.finding_id] : action.type === "authorize_rework" || action.type === "approve_breaking_intent_revision" ? previous.findings.filter((item) => item.kind === "replan_required" && item.status === "open").map((item) => item.id) : [];
   const reworkFindingIds = action.type === "request_rework" ? new Set(action.findings.map((item) => item.id)) : new Set;
   for (const prior of previous.findings) {
     const current = next.findings.find((item) => item.id === prior.id);
@@ -5039,6 +5074,8 @@ function deriveAssuranceAuthorization(input) {
       state: "none",
       blocked: `resolve-user-decision requires exactly one open user decision; found ${input.open_user_decision_count}`
     };
+  if (input.next_obligation === "revise_intent")
+    return { state: "authorize_rework", blocked: null };
   return { state: "none", blocked: null };
 }
 function emptyProjection() {
@@ -5289,7 +5326,7 @@ function intentRefMatches(intent, ref) {
   return ref.path === `docs/plans/${intent.task_id}.intent.json` && ref.content_hash === canonicalIntentHash(intent);
 }
 function hasPrivilegedKind(action) {
-  return action.type === "record_approval" || action.type === "approve_breaking_intent_revision" || action.type === "request_rework" || action.type === "stop" || action.type === "resolve_user_decision";
+  return action.type === "record_approval" || action.type === "approve_breaking_intent_revision" || action.type === "request_rework" || action.type === "authorize_rework" || action.type === "stop" || action.type === "resolve_user_decision";
 }
 function findingsDigestV2(findings) {
   const normalized = findings.map((finding) => ({
@@ -5507,8 +5544,8 @@ function reduceTask(recordRaw, actionRaw, authorityAudit = null, changedPaths) {
           "request_rework requires review, qa, or user authority"
         ]);
       const round = reviewRound(record);
-      const reviewAuthorityReworks = record.history.filter((entry) => entry.type === "request_rework" && entry.authority?.authority_kind === "review").length;
-      const parkForReplan = authorityAudit.authority_kind === "review" && reviewAuthorityReworks >= 1;
+      const hasPriorBlockingReviewRework = record.findings.some((finding) => finding.source === "review" && finding.kind === "blocking" && finding.review_round !== null);
+      const parkForReplan = authorityAudit.authority_kind === "review" && hasPriorBlockingReviewRework && action.findings.some((finding) => finding.kind === "blocking");
       if (!parkForReplan) {
         record.artifact_state = "active";
         record.intent_ref.path = `docs/plans/${record.task_id}.intent.json`;
@@ -5523,8 +5560,8 @@ function reduceTask(recordRaw, actionRaw, authorityAudit = null, changedPaths) {
         record.findings.push({
           ...finding,
           status: "open",
-          source: "review",
-          review_round: round
+          source: authorityAudit.authority_kind === "review" ? "review" : "execution",
+          review_round: authorityAudit.authority_kind === "review" ? round : null
         });
       }
       if (parkForReplan && !record.findings.some((item) => item.status === "open" && item.kind === "replan_required")) {
@@ -5545,6 +5582,27 @@ function reduceTask(recordRaw, actionRaw, authorityAudit = null, changedPaths) {
         record.findings.push(boundary);
       }
       appendHistory(record, action, from, `review_round_${round}`, authorityAudit);
+      break;
+    }
+    case "authorize_rework": {
+      if (record.lifecycle !== "active")
+        throw new KernelInvariantError([
+          `cannot authorize rework while lifecycle is ${record.lifecycle}`
+        ]);
+      if (authorityAudit?.authority_kind !== "user")
+        throw new KernelInvariantError([
+          "authorize_rework requires literal-user authority"
+        ]);
+      const open = record.findings.filter((finding) => finding.kind === "replan_required" && finding.status === "open");
+      if (open.length === 0)
+        throw new KernelInvariantError([
+          "authorize_rework requires an open replan boundary"
+        ]);
+      for (const finding of open)
+        finding.status = "resolved";
+      record.artifact_state = "active";
+      record.intent_ref.path = `docs/plans/${record.task_id}.intent.json`;
+      appendHistory(record, action, from, open.map((finding) => finding.id).join(","), authorityAudit);
       break;
     }
     case "complete": {
@@ -5677,7 +5735,7 @@ function applyTaskAction(input) {
           "intent token does not match the committed record intent"
         ]);
     }
-    const privileged = action.type === "record_approval" || action.type === "approve_breaking_intent_revision" || action.type === "request_rework" || action.type === "stop" || action.type === "resolve_user_decision";
+    const privileged = action.type === "record_approval" || action.type === "approve_breaking_intent_revision" || action.type === "request_rework" || action.type === "authorize_rework" || action.type === "stop" || action.type === "resolve_user_decision";
     const expectedAuthority = privileged ? {
       task_id,
       action,
@@ -5803,6 +5861,8 @@ function capabilityActionFor(input) {
       return { ...base, approval: input.approval };
     case "request_rework":
       return { ...base, findings: input.findings };
+    case "authorize_rework":
+      return { ...base, type: "authorize_rework" };
     case "stop":
       return { ...base, reason: input.reason };
     case "approve_breaking_intent_revision":
@@ -5949,7 +6009,7 @@ function createCanaryApplication(registry) {
     const hasBoundSpec = snapshot.intent_snapshot.scope_hint.some((path) => /^docs\/specs\/(?!archive\/)[^/]+\.spec\.md$/.test(path) && snapshot.intent_snapshot.scope_hint.includes(archivePath(path)));
     if (operation.op === "complete" && hasBoundSpec && snapshot.record.artifact_state !== "frozen")
       throw new KernelInvariantError(["complete requires frozen planning artifacts"]);
-    const artifactTransition = snapshot.record.artifact_state === "frozen" && (operation.op === "request_rework" || operation.op === "approve_breaking_intent_revision") ? transitionFor(input.root, snapshot.record, "restore") : operation.op === "stop" && snapshot.record.artifact_state !== "frozen" ? transitionFor(input.root, snapshot.record, "freeze", true) : undefined;
+    const artifactTransition = snapshot.record.artifact_state === "frozen" && (operation.op === "request_rework" || operation.op === "authorize_rework" || operation.op === "approve_breaking_intent_revision") ? transitionFor(input.root, snapshot.record, "restore") : operation.op === "stop" && snapshot.record.artifact_state !== "frozen" ? transitionFor(input.root, snapshot.record, "freeze", true) : undefined;
     const event_id = `${operation.op}:${input.task_id}:${at}`;
     const base = {
       event_id,
@@ -6014,6 +6074,10 @@ function createCanaryApplication(registry) {
       case "stop":
         capability = operation.capability;
         action = { ...base, type: "stop", reason: operation.reason };
+        break;
+      case "authorize_rework":
+        capability = operation.capability;
+        action = { ...base, type: "authorize_rework" };
         break;
       case "resolve_user_decision":
         capability = operation.capability;
@@ -6477,7 +6541,16 @@ function enrollCanaryTask(root, input, registry) {
       throw new Error("intent content hash mismatch");
     if (checks.gitBaseHead !== gitBaseHead)
       throw new Error("Git HEAD moved after the enrollment confirmation");
+    if (input.batch) {
+      const batch = input.batch.registry.inspect(input.batch.capability, input.batch.binding, Date.parse(input.now));
+      if (input.batch.registry.consumedChildren(input.batch.capability).length === 0 && input.batch.expected_head !== batch.base_head)
+        throw new Error(`batch_head_lineage_broken: the first child must enroll on the confirmed base_head ${batch.base_head}, not ${input.batch.expected_head}`);
+      if (checks.gitBaseHead !== input.batch.expected_head)
+        throw new Error(`batch_head_lineage_broken: expected ${input.batch.expected_head}, found ${checks.gitBaseHead}`);
+    }
     registry.consume(input.capability, input.capability_binding);
+    if (input.batch)
+      input.batch.registry.consumeChild(input.batch.capability, input.batch.binding, input.task_id, Date.parse(input.now));
     if (!gitBaseHead)
       throw new Error("enrollment requires a committed Git HEAD");
     const record = buildTaskRecordV4(input, checks.intent, gitBaseHead);
@@ -6496,16 +6569,23 @@ function enrollCanaryTask(root, input, registry) {
       created_at: input.now,
       updated_at: input.now
     };
-    const mutation = commitEnrollmentLocked(root, input.task_id, {
-      contract: "assurance_kernel/workspace_transaction/v2",
-      task_id: input.task_id,
-      expected_record_hash: checks.current.revision,
-      next_record_content: `${JSON.stringify(record, null, 2)}
+    let mutation;
+    try {
+      mutation = commitEnrollmentLocked(root, input.task_id, {
+        contract: "assurance_kernel/workspace_transaction/v2",
+        task_id: input.task_id,
+        expected_record_hash: checks.current.revision,
+        next_record_content: `${JSON.stringify(record, null, 2)}
 `,
-      expected_workspace_hash: checks.workspace.revision,
-      next_workspace_content: `${JSON.stringify(nextWorkspace, null, 2)}
+        expected_workspace_hash: checks.workspace.revision,
+        next_workspace_content: `${JSON.stringify(nextWorkspace, null, 2)}
 `
-    }, claim);
+      }, claim);
+    } catch (error) {
+      if (input.batch)
+        input.batch.registry.releaseChild(input.batch.capability, input.task_id);
+      throw error;
+    }
     return {
       record: mutation.record,
       backend_claim: claim,
@@ -6645,13 +6725,17 @@ async function submitClaudeReview(host, coordinator, ctx, taskId, verdictInput) 
       return coordinator.abandonReview(taskId, observed.reason);
     return { state: "blocked", reason: observed.reason };
   }
+  const parentValid = coordinator.isReviewVerdictValid(taskId, verdictInput);
+  if (!parentValid)
+    return coordinator.submitReview(taskId, ctx, verdictInput);
+  const receiptValid = coordinator.isReviewVerdictValid(taskId, observed.receipt.result);
+  if (!receiptValid) {
+    return coordinator.abandonReview(taskId, "reviewer receipt is not a valid verdict");
+  }
   const parentJson = extractVerdictJson(verdictInput);
   const receiptJson = extractVerdictJson(observed.receipt.result);
-  if (parentJson && receiptJson && verdictFingerprint(parentJson) !== verdictFingerprint(receiptJson)) {
+  if (verdictFingerprint(parentJson) !== verdictFingerprint(receiptJson)) {
     return { state: "blocked", reason: "parent verdict does not match reviewer receipt" };
-  }
-  if (parentJson && !receiptJson) {
-    return { state: "blocked", reason: "reviewer receipt is not a valid verdict" };
   }
   return coordinator.submitReview(taskId, ctx, verdictInput);
 }
@@ -6948,6 +7032,12 @@ class ClaudeRuntime {
   async submitReview(taskId, verdictInput) {
     return submitClaudeReview(this.host, this.coordinator, { cwd: this.cwd }, taskId, verdictInput);
   }
+  async resolveFinding(taskId, findingId) {
+    return this.executeOrdinary({ cwd: this.cwd }, {
+      taskId,
+      operation: { op: "resolve_finding", finding_id: findingId, actor_id: "executor" }
+    });
+  }
   async authorize(taskId, operation, meta, extra = {}) {
     if (operation === "repair_authority_state") {
       const authority = reconcileKernelAuthority(this.cwd, taskId);
@@ -6972,6 +7062,8 @@ class ClaudeRuntime {
           throw new Error(`resolve-user-decision requires exactly one open user decision; found ${open.length}`);
         op = "resolve_user_decision";
         decisionOp = { finding_id: open[0].id, resolution: `resume after literal-user decision: ${open[0].summary}` };
+      } else if (readiness.state === "authorize_rework") {
+        op = "authorize_rework";
       } else {
         throw new Error(readiness.blocked ?? "no unique host-derived authorization operation");
       }
@@ -7088,7 +7180,7 @@ class ClaudeRuntime {
         diffProvider: diffSnapshotOf,
         now
       });
-      if (op === "stop" || op === "approve_breaking_intent_revision")
+      if (op === "stop" || op === "authorize_rework" || op === "approve_breaking_intent_revision")
         stagePlanningArtifactTransition(this.cwd, result.record);
       return result;
     } catch (error) {
@@ -7224,7 +7316,8 @@ var TOOLS = [
   { name: "request_authorization", description: "Apply exact literal-user authorization.", privileged: true },
   { name: "approve_breaking_intent_revision", description: "Approve a breaking TaskIntent revision.", privileged: true },
   { name: "stop", description: "Stop the active task with literal-user authority.", privileged: true },
-  { name: "repair_authority_state", description: "Repair a proven recoverable stale backend claim.", privileged: false }
+  { name: "repair_authority_state", description: "Repair a proven recoverable stale backend claim.", privileged: false },
+  { name: "resolve_finding", description: "Resolve one open blocking or advisory finding whose cause is fixed and verified.", privileged: false }
 ];
 function listMcpTools() {
   return TOOLS.map((tool) => ({
@@ -7236,9 +7329,10 @@ function listMcpTools() {
         task_id: { type: "string" },
         ...tool.name === "approve_breaking_intent_revision" ? { next_intent: { type: "object" } } : {},
         ...tool.name === "stop" ? { reason: { type: "string" } } : {},
-        ...tool.name === "submit_review" ? { verdict: { type: "object" } } : {}
+        ...tool.name === "submit_review" ? { verdict: { type: "object" } } : {},
+        ...tool.name === "resolve_finding" ? { finding_id: { type: "string" } } : {}
       },
-      required: tool.name === "submit_review" ? ["task_id", "verdict"] : ["task_id"]
+      required: tool.name === "submit_review" ? ["task_id", "verdict"] : tool.name === "resolve_finding" ? ["task_id", "finding_id"] : ["task_id"]
     },
     annotations: tool.privileged ? privilegedAnnotations() : { readOnlyHint: tool.name === "status" }
   }));
@@ -7304,6 +7398,11 @@ function createMcpRuntime(options = {}) {
         if (!Object.hasOwn(args, "verdict"))
           throw new Error("verdict is required");
         return runtime.submitReview(taskId, args.verdict);
+      }
+      if (name === "resolve_finding") {
+        if (typeof args.finding_id !== "string" || !args.finding_id)
+          throw new Error("finding_id is required");
+        return runtime.resolveFinding(taskId, args.finding_id);
       }
       if (name === "request_authorization" || name === "approve_breaking_intent_revision" || name === "stop" || name === "repair_authority_state") {
         return runtime.authorize(taskId, name, toolMeta, args);

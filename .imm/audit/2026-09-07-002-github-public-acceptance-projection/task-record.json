@@ -1,0 +1,140 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "2026-09-07-002-github-public-acceptance-projection",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "2026-09-07-002-github-public-acceptance-projection",
+    "goal": "Replace GitHub Initiative publication's direct reuse of canonical TaskIntent assertion prose with required bounded public acceptance summaries whose IDs exactly match canonical acceptance IDs, preventing internal authority context from being copied into public Issues while preserving the projection denylist, body-size preflight, and zero remote mutations on malformed input.",
+    "acceptance": [
+      {
+        "id": "acc-public-acceptance-id-binding",
+        "assertion": "Complete Initiative publication requires every Child input to provide public acceptance summaries whose IDs equal the canonical TaskIntent acceptance IDs exactly once; missing arrays, duplicate IDs, extra IDs, missing IDs, and mismatched IDs return permanent_failure before any GitHub mutation, and each public summary remains subject to the existing 1-500 safe-character projection limit.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/plugin-package-runtime.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 65536\n}\n"
+      },
+      {
+        "id": "acc-canonical-assertion-not-published",
+        "assertion": "A canonical TaskIntent assertion longer than 500 characters or containing restricted authority context can publish when the Child input supplies a safe public summary with the same ID; the rendered Issue contains that ID and summary but not the canonical assertion, prohibited public summary content still fails closed, and aggregate body overflow still performs zero GitHub mutations.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/plugin-package-runtime.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 65536\n}\n"
+      },
+      {
+        "id": "acc-planner-publication-contract",
+        "assertion": "The packaged Planner contract requires each complete-publication Child to provide bounded public acceptance summaries, states that their IDs must match canonical TaskIntent acceptance IDs exactly, and prohibits copying canonical assertion prose into public GitHub projection while retaining canonical identity, risk, and acceptance binding.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/plugin-package-runtime.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 65536\n}\n"
+      }
+    ],
+    "scope_hint": [
+      "docs/specs/archive/github-public-acceptance-projection.spec.md",
+      "docs/specs/github-public-acceptance-projection.spec.md",
+      "plugins/immune-brain/dist/imm-planner.md",
+      "plugins/immune-brain/runtime/github_issue_tracker.ts",
+      "tests/plugin-package-runtime.test.ts"
+    ],
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/archive/2026-09-07-002-github-public-acceptance-projection.intent.json",
+    "content_hash": "sha256:0672b4289d828657457f1b25bf315f20c976e8970082c7c96b5502edcd91b56c"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:0672b4289d828657457f1b25bf315f20c976e8970082c7c96b5502edcd91b56c",
+  "git_base_head": "2a55864c61b9715b188c20ab35c39bd2c59d8ce4",
+  "attestations": [
+    {
+      "id": "approval-qa-5d3d6f03",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:0672b4289d828657457f1b25bf315f20c976e8970082c7c96b5502edcd91b56c",
+      "diff_hash": "sha256:b92bd02bb6bcae21f1d5f8e3780fb5ef7ae93672757c9e761dc8fdb5d70734c2",
+      "actor_id": "deterministic-qa",
+      "summary": "all 3 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "acc-public-acceptance-id-binding",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-canonical-assertion-not-published",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-planner-publication-contract",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-6c4e494a",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:0672b4289d828657457f1b25bf315f20c976e8970082c7c96b5502edcd91b56c",
+      "diff_hash": "sha256:b92bd02bb6bcae21f1d5f8e3780fb5ef7ae93672757c9e761dc8fdb5d70734c2",
+      "actor_id": "parent-mediated-review",
+      "summary": "Immutable revision provenance is consistent, and the implementation enforces exact bounded public acceptance bindings without publishing canonical assertions or mutating GitHub before failed preflight validation.",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "2a55864c61b9715b188c20ab35c39bd2c59d8ce4",
+        "review_commit": "0453ffc3f3110e33d0b34876d53336f6a294bfb2",
+        "review_tree": "c1c20379af3c098c39d495725eafa3741fbd6ebb",
+        "manifest_digest": "sha256:67851ef1d50784f3126000a9b256d2ae47db8264bb3cdd64fe9b0a67e30f7b40"
+      }
+    }
+  ],
+  "findings": [],
+  "history": [
+    {
+      "id": "freeze_artifacts:2026-09-07-002-github-public-acceptance-projection:2026-09-07T01:25:26.740Z",
+      "at": "2026-09-07T01:25:26.740Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent and Spec frozen at docs/plans/archive/2026-09-07-002-github-public-acceptance-projection.intent.json"
+    },
+    {
+      "id": "record_approval:2026-09-07-002-github-public-acceptance-projection:2026-09-07T01:25:40.907Z",
+      "at": "2026-09-07T01:25:40.907Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-5d3d6f03\naction_v2_sha256:dc18894e251658ac867392432b8162651c49326889688aabca5c7286ee0e9661",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-3a1270f657702096",
+        "issued_at": "2026-09-07T01:25:40.907Z",
+        "expires_at": "2026-09-07T01:35:40.907Z"
+      }
+    },
+    {
+      "id": "record_approval:2026-09-07-002-github-public-acceptance-projection:2026-09-07T01:29:05.621Z",
+      "at": "2026-09-07T01:29:05.621Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-6c4e494a\naction_v2_sha256:36fbbd85758335b6bc7930749e27215ece4ae1c3ed45344a3263d727d7dddeb5",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-91604798d7c8c236",
+        "issued_at": "2026-09-07T01:29:05.621Z",
+        "expires_at": "2026-09-07T01:39:05.621Z"
+      }
+    },
+    {
+      "id": "complete:2026-09-07-002-github-public-acceptance-projection:2026-09-07T01:29:06.394Z",
+      "at": "2026-09-07T01:29:06.394Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:832357c541fd68dbd4c9672afe5c6e1a4639921c274a3e575ca5b380ccfb0f12"
+    }
+  ]
+}

@@ -735,6 +735,7 @@ const ACTION_V2_TYPES = [
 	"request_rework",
 	"complete",
 	"stop",
+	"authorize_rework",
 	"resolve_user_decision",
 ] as const;
 
@@ -897,7 +898,8 @@ export function parseTaskAction(raw: unknown): TaskAction {
 			};
 			break;
 		}
-		case "complete": {
+		case "complete":
+		case "authorize_rework": {
 			rejectUnknown(value, [...ACTION_BASE_FIELDS], "action", violations);
 			action = { ...base, type: base.type };
 			break;
@@ -1002,6 +1004,7 @@ export function assertTaskRecordUpdateV3(
 		if (
 			next.intent_ref.path !== previous.intent_ref.path &&
 			action.type !== "request_rework" &&
+			action.type !== "authorize_rework" &&
 			action.type !== "stop"
 		)
 			violations.push("only artifact transitions may change intent_ref path");
@@ -1023,11 +1026,12 @@ export function assertTaskRecordUpdateV3(
 			? [action.finding_id]
 			: action.type === "resolve_user_decision"
 				? [action.finding_id]
-				: action.type === "approve_breaking_intent_revision"
-					? previous.findings
-						.filter((item) => item.kind === "replan_required" && item.status === "open")
-						.map((item) => item.id)
-					: [];
+			: action.type === "authorize_rework" ||
+				  action.type === "approve_breaking_intent_revision"
+				? previous.findings
+					.filter((item) => item.kind === "replan_required" && item.status === "open")
+					.map((item) => item.id)
+				: [];
 	const reworkFindingIds =
 		action.type === "request_rework"
 			? new Set(action.findings.map((item) => item.id))

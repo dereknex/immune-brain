@@ -1,0 +1,31 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "2026-09-05-007-unattended-contracts-and-constitution",
+  "owner": "user",
+  "goal": "Land the contract and constitution changes that make unattended batch runs a declared capability rather than undocumented behavior, as required by docs/specs/unattended-initiative-batch-run.spec.md sections 3.6 and 7: an explicit opt-in imm-loop parameter that leaves default behavior unchanged, amended IMMUNE.md authority text, CONTEXT.md vocabulary and Architecture Map entries, an ADR recording the reopened decision, and a synchronized dist copy, with every statement bound to shipped behavior.",
+  "acceptance": [
+    {
+      "id": "acc-unattended-contract-text",
+      "assertion": "The imm-loop Skill source and its dist copy document an explicit opt-in unattended batch parameter and state that omitting it leaves imm-loop behavior byte-identical to today, that the parameter authorizes only a user-confirmed batch of already-planned child TaskIntents, that critical children are never batched, and that the runner never pushes, opens a pull request, resolves a user decision, or creates, switches, or deletes a Git worktree. IMMUNE.md is amended so that a Batch Authorization is described as one literal-user Enrollment act covering a confirmed ordered child list, preserving the rule that no agent may promote a candidate to authority. CONTEXT.md adds the canonical terms Batch Authorization, batch plan, plan_digest, HEAD lineage, and batch branch, and its Architecture Map lists runtime/unattended and runtime/kernel/batch_authority.ts as the sole owners of batch state transitions. docs/adr/0005-unattended-initiative-batch-run.md records the reopened successor-authority decision, the evidence that TaskRecord v4 supplies identity, atomicity, and recovery, and the deferred cron, headless, CI, and multi-worktree items. No contract sentence asserts behavior the shipped slices do not implement.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/unattended-contracts.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 65536\n}\n"
+    },
+    {
+      "id": "acc-dist-sync-and-regression",
+      "assertion": "Every edited Skill source and its dist counterpart stay byte-consistent under the existing dist sync guard, packaging and manifest checks continue to pass, and the full bun test regression suite passes with no previously passing test disabled, skipped, or weakened. The bound active Spec docs/specs/unattended-initiative-batch-run.spec.md is archived byte-preserving to docs/specs/archive/unattended-initiative-batch-run.spec.md by the Kernel at freeze.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/dist-docs-sync-contract.test.ts\",\n    \"tests/unattended-contracts.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 180000,\n  \"max_output_bytes\": 65536\n}\n"
+    }
+  ],
+  "scope_hint": [
+    "CONTEXT.md",
+    "IMMUNE.md",
+    "docs/adr/0005-unattended-initiative-batch-run.md",
+    "docs/specs/archive/unattended-initiative-batch-run.spec.md",
+    "docs/specs/unattended-initiative-batch-run.spec.md",
+    "plugins/immune-brain/dist/imm-loop.md",
+    "plugins/immune-brain/skills/imm-loop/SKILL.md",
+    "tests/dist-docs-sync-contract.test.ts",
+    "tests/unattended-contracts.test.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}

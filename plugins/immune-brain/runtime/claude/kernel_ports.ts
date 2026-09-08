@@ -119,13 +119,16 @@ export async function submitClaudeReview(
 		if (observed.release) return coordinator.abandonReview(taskId, observed.reason);
 		return { state: "blocked", reason: observed.reason };
 	}
-	const parentJson = extractVerdictJson(verdictInput);
-	const receiptJson = extractVerdictJson(observed.receipt.result);
-	if (parentJson && receiptJson && verdictFingerprint(parentJson) !== verdictFingerprint(receiptJson)) {
-		return { state: "blocked", reason: "parent verdict does not match reviewer receipt" };
+	const parentValid = coordinator.isReviewVerdictValid(taskId, verdictInput);
+	if (!parentValid) return coordinator.submitReview(taskId, ctx, verdictInput);
+	const receiptValid = coordinator.isReviewVerdictValid(taskId, observed.receipt.result);
+	if (!receiptValid) {
+		return coordinator.abandonReview(taskId, "reviewer receipt is not a valid verdict");
 	}
-	if (parentJson && !receiptJson) {
-		return { state: "blocked", reason: "reviewer receipt is not a valid verdict" };
+	const parentJson = extractVerdictJson(verdictInput)!;
+	const receiptJson = extractVerdictJson(observed.receipt.result)!;
+	if (verdictFingerprint(parentJson) !== verdictFingerprint(receiptJson)) {
+		return { state: "blocked", reason: "parent verdict does not match reviewer receipt" };
 	}
 	return coordinator.submitReview(taskId, ctx, verdictInput);
 }
@@ -525,6 +528,19 @@ export class ClaudeRuntime {
 		return submitClaudeReview(this.host, this.coordinator, { cwd: this.cwd }, taskId, verdictInput);
 	}
 
+	/**
+	 * Ordinary Kernel operation, not a privileged one: canary_application builds
+	 * the action without a capability and the Pi Host lists resolve_finding in
+	 * its ordinary KERNEL_OPERATIONS. The reducer owns every precondition, so
+	 * this port reads no findings and tests no kind.
+	 */
+	async resolveFinding(taskId: string, findingId: string) {
+		return this.executeOrdinary({ cwd: this.cwd }, {
+			taskId,
+			operation: { op: "resolve_finding", finding_id: findingId, actor_id: "executor" },
+		});
+	}
+
 	async authorize(taskId: string, operation: string, meta: ToolMeta, extra: Record<string, unknown> = {}) {
 		if (operation === "repair_authority_state") {
 			const authority = reconcileKernelAuthority(this.cwd, taskId);
@@ -534,7 +550,7 @@ export class ClaudeRuntime {
 			return repairKernelAuthority(this.cwd, taskId, authority.revision);
 		}
 		if (!isPrivilegedOperation(operation) && operation !== "request_authorization") throw new Error(`unsupported privileged operation ${operation}`);
-		let op: PrivilegedOperation | "request_authorization" | "resolve_user_decision" = operation;
+		let op: PrivilegedOperation | "request_authorization" | "resolve_user_decision" | "authorize_rework" = operation;
 		let decisionOp: { finding_id: string; resolution: string } | undefined;
 		const projection = await this.status(taskId);
 		if (projection.error || !projection.claim) throw new Error(projection.error ?? "no active backend claim");
@@ -551,6 +567,8 @@ export class ClaudeRuntime {
 				if (open.length !== 1) throw new Error(`resolve-user-decision requires exactly one open user decision; found ${open.length}`);
 				op = "resolve_user_decision";
 				decisionOp = { finding_id: open[0].id, resolution: `resume after literal-user decision: ${open[0].summary}` };
+			} else if (readiness.state === "authorize_rework") {
+				op = "authorize_rework";
 			} else {
 				throw new Error(readiness.blocked ?? "no unique host-derived authorization operation");
 			}
@@ -668,7 +686,11 @@ export class ClaudeRuntime {
 				diffProvider: diffSnapshotOf,
 				now,
 			});
-			if (op === "stop" || op === "approve_breaking_intent_revision") stagePlanningArtifactTransition(this.cwd, result.record);
+			if (
+				op === "stop" ||
+				op === "authorize_rework" ||
+				op === "approve_breaking_intent_revision"
+			) stagePlanningArtifactTransition(this.cwd, result.record);
 			return result;
 		} catch (error) {
 			if (sidecar && priorBytes && priorIndexState) {
@@ -773,7 +795,7 @@ export class ClaudeRuntime {
 		}));
 	}
 
-	private async executeOrdinary(ctx: HostContext, input: { taskId: string; operation: { op: string; actor_id: string; next_intent?: unknown } }) {
+	private async executeOrdinary(ctx: HostContext, input: { taskId: string; operation: { op: string; actor_id: string; next_intent?: unknown; finding_id?: string } }) {
 		const { app } = await this.authority();
 		const operation = input.operation.op === "revise_intent"
 			? { ...input.operation, next_intent: await parseTaskIntentV1(input.operation.next_intent) }

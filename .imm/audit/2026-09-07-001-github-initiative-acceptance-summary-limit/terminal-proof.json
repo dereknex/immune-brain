@@ -1,0 +1,9 @@
+{
+  "contract": "assurance_kernel/task_tombstone/v2",
+  "task_id": "2026-09-07-001-github-initiative-acceptance-summary-limit",
+  "lifecycle_status": "terminal",
+  "terminal_lifecycle": "done",
+  "terminal_event_id": "complete:2026-09-07-001-github-initiative-acceptance-summary-limit:2026-09-07T01:12:31.912Z",
+  "final_record_hash": "sha256:c527e147fec1fc2ad103687f1743da4a3dab13b875b0c9b2c91517cac9cacadd",
+  "terminalized_at": "2026-09-07T01:12:31.912Z"
+}

@@ -204,6 +204,33 @@ function reworkCapability(kind: "review" | "qa" | "user", overrides: Record<stri
 	});
 }
 
+function requestReviewRework(findings: Record<string, unknown>[], at: string) {
+	const action = capabilityActionFor({
+		op: "request_rework",
+		task_id: TASK,
+		at,
+		actor_id: "reviewer-1",
+		findings: findings as never[],
+	});
+	const capability = createMutationAuthorityCapabilityForTest(mutationRegistry, {
+		authority_kind: "review",
+		task_id: TASK,
+		action_digest: digestOfAction(action),
+		expected_record_hash: readTaskRecord(root, TASK).revision,
+		intent_revision: 1,
+		intent_content_hash: currentIntentHash(),
+		diff_hash: DIFF,
+		actor_id: "reviewer-1",
+		confirmation_ref: `conf-${at}`,
+		expires_at: "2099-01-01T00:00:00.000Z",
+		findings_digest: findingsDigestV2(findings as never[]),
+	});
+	return execute(
+		{ op: "request_rework", capability, findings: findings as never[], actor_id: "reviewer-1" },
+		at,
+	);
+}
+
 describe("request_rework authority", () => {
 	test("direct request_rework without capability is rejected with zero writes", () => {
 		toReview();
@@ -330,6 +357,93 @@ describe("request_rework authority", () => {
 		expect(boundary).toBeDefined();
 		expect(boundary?.review_round).toBe(2);
 		expect(result.record.findings.some((f) => f.kind === "unresolved_user_decision")).toBe(false);
+		execFileSync("git", ["add", "-A"], { cwd: root });
+
+		const authorizedAt = "2026-08-12T10:00:06.000Z";
+		const authorizeAction = capabilityActionFor({
+			op: "authorize_rework",
+			task_id: TASK,
+			at: authorizedAt,
+			actor_id: "literal-user",
+		});
+		const authorizeCapability = createMutationAuthorityCapabilityForTest(mutationRegistry, {
+			authority_kind: "user",
+			task_id: TASK,
+			action_digest: digestOfAction(authorizeAction),
+			expected_record_hash: readTaskRecord(root, TASK).revision,
+			intent_revision: 1,
+			intent_content_hash: currentIntentHash(),
+			diff_hash: DIFF,
+			actor_id: "literal-user",
+			confirmation_ref: "confirm-authorize-rework",
+			expires_at: "2099-01-01T00:00:00.000Z",
+			findings_digest: null,
+		});
+		const resumed = execute(
+			{ op: "authorize_rework", capability: authorizeCapability, actor_id: "literal-user" },
+			authorizedAt,
+		);
+		expect(resumed.record).toMatchObject({ lifecycle: "active", artifact_state: "active" });
+		expect(resumed.record.findings.find((f) => f.kind === "replan_required")?.status).toBe("resolved");
+		expect(resumed.record.findings.find((f) => f.id === "rw-2")?.status).toBe("open");
+		expect(resumed.record.history.at(-1)?.authority?.authority_kind).toBe("user");
+	});
+
+	test("a repeated advisory Review does not force a replan", () => {
+		const advisory = (id: string) => [{
+			id,
+			kind: "advisory",
+			status: "open",
+			acceptance_id: null,
+			source: "review",
+			review_round: null,
+			summary: "non-blocking provenance note",
+		}];
+		toReview();
+		requestReviewRework(advisory("rw-advisory-1"), "2026-08-12T10:00:03.000Z");
+		toReview("2026-08-12T10:00:04.000Z");
+		const result = requestReviewRework(advisory("rw-advisory-2"), "2026-08-12T10:00:05.000Z");
+		expect(result.record.findings.some((finding) => finding.kind === "replan_required")).toBe(false);
+		expect(result.record.findings.find((finding) => finding.id === "rw-advisory-2")?.kind).toBe("advisory");
+	});
+
+	test("an advisory Review followed by the first blocking Review does not force a replan", () => {
+		toReview();
+		requestReviewRework([{
+			id: "rw-advisory-first",
+			kind: "advisory",
+			status: "open",
+			acceptance_id: null,
+			source: "review",
+			review_round: null,
+			summary: "advisory first",
+		}], "2026-08-12T10:00:03.000Z");
+		toReview("2026-08-12T10:00:04.000Z");
+		const result = requestReviewRework([{
+			...FINDINGS[0],
+			id: "rw-first-blocking",
+		}], "2026-08-12T10:00:05.000Z");
+		expect(result.record.findings.some((finding) => finding.kind === "replan_required")).toBe(false);
+		expect(result.record.findings.find((finding) => finding.id === "rw-first-blocking")?.kind).toBe("blocking");
+	});
+
+	test("a QA blocking rework followed by the first blocking Review does not force a replan", () => {
+		toReview();
+		const qaResult = execute(
+			{ op: "request_rework", capability: reworkCapability("qa"), findings: [...FINDINGS] as never[], actor_id: "reviewer-1" },
+			"2026-08-12T10:00:03.000Z",
+		);
+		expect(qaResult.record.findings.find((finding) => finding.id === "rw-1")).toMatchObject({
+			source: "execution",
+			review_round: null,
+		});
+		toReview("2026-08-12T10:00:04.000Z");
+		const result = requestReviewRework([{
+			...FINDINGS[0],
+			id: "rw-first-review-blocking",
+		}], "2026-08-12T10:00:05.000Z");
+		expect(result.record.findings.some((finding) => finding.kind === "replan_required")).toBe(false);
+		expect(result.record.findings.find((finding) => finding.id === "rw-first-review-blocking")?.review_round).toBe(1);
 	});
 
 	test("QA rework after a Review rework does not write replan_required", () => {

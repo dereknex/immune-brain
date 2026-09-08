@@ -44,7 +44,13 @@ function writeClaim(root: string, taskId: string): void {
 	);
 }
 
-function writeClaimedTask(root: string, taskId: string, scope_hint: string[], risk: "routine" | "material" = "routine") {
+function writeClaimedTask(
+	root: string,
+	taskId: string,
+	scope_hint: string[],
+	risk: "routine" | "material" = "routine",
+	artifactState: "active" | "frozen" = "active",
+) {
 	const intent = {
 		contract: "assurance_kernel/task_intent/v1",
 		task_id: taskId,
@@ -57,8 +63,11 @@ function writeClaimedTask(root: string, taskId: string, scope_hint: string[], ri
 	};
 	const parsed = parseTaskIntentV1(intent);
 	const hash = canonicalIntentHash(parsed);
-	mkdirSync(join(root, "docs/plans"), { recursive: true });
-	writeFileSync(join(root, "docs/plans", `${taskId}.intent.json`), `${JSON.stringify(intent, null, 2)}\n`);
+	const intentPath = artifactState === "frozen"
+		? `docs/plans/archive/${taskId}.intent.json`
+		: `docs/plans/${taskId}.intent.json`;
+	mkdirSync(join(root, "docs/plans", artifactState === "frozen" ? "archive" : ""), { recursive: true });
+	writeFileSync(join(root, intentPath), `${JSON.stringify(intent, null, 2)}\n`);
 	writeClaim(root, taskId);
 	mkdirSync(join(root, ".imm/state/tasks"), { recursive: true });
 	writeFileSync(
@@ -67,9 +76,9 @@ function writeClaimedTask(root: string, taskId: string, scope_hint: string[], ri
 			contract: "assurance_kernel/task_record/v3",
 			task_id: taskId,
 			intent_snapshot: intent,
-			intent_ref: { path: `docs/plans/${taskId}.intent.json`, content_hash: hash },
+			intent_ref: { path: intentPath, content_hash: hash },
 			lifecycle: "active",
-			artifact_state: "active",
+			artifact_state: artifactState,
 			baseline: `sha256:${"a".repeat(64)}`,
 			attestations: [],
 			findings: [],
@@ -139,6 +148,30 @@ describe("imm-kernel inspect", () => {
 		expect(output.risk.floor_applied).toBe(true);
 		expect(output.risk.matching_scope_entries).toEqual(["plugins/immune-brain/runtime/kernel/intent.ts"]);
 		expect(output.unobservable.capability).toBe("unobservable");
+	});
+
+	it("projects a frozen task from the TaskRecord archive path and rejects sidecar drift", () => {
+		const root = tempRoot();
+		const intent = writeClaimedTask(root, "inspect-frozen", ["docs/specs/example.spec.md"], "routine", "frozen");
+		const result = runKernelCommand(["inspect", "--json"], root);
+		expect(result.returncode).toBe(0);
+		const output = JSON.parse(result.stdout);
+		expect(output.assurance.error).toBeNull();
+		expect(output.assurance.projection).toMatchObject({
+			lifecycle: "active",
+			artifact_state: "frozen",
+		});
+
+		writeFileSync(
+			join(root, "docs/plans/archive/inspect-frozen.intent.json"),
+			`${JSON.stringify({ ...intent, goal: "tampered" }, null, 2)}\n`,
+		);
+		const drifted = runKernelCommand(["inspect", "--json"], root);
+		expect(drifted.returncode).toBe(1);
+		expect(JSON.parse(drifted.stdout).error).toMatchObject({
+			code: "source_read_failed",
+			message: "TaskIntent sidecar does not match TaskRecord content hash",
+		});
 	});
 
 	it("keeps routine risk when scope does not touch the floor", () => {

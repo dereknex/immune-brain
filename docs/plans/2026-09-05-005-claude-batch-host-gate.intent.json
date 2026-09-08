@@ -1,0 +1,27 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "2026-09-05-005-claude-batch-host-gate",
+  "owner": "user",
+  "goal": "Implement the Claude Code Host gate for unattended batch runs defined by docs/specs/unattended-initiative-batch-run.spec.md section 3.6: one privileged MCP operation start_unattended_batch whose elicitation summary is derived from Kernel and projection facts rather than model-supplied text, which issues the Batch Authorization on accept and remains fail-closed on non-interactive sessions, decline, cancel, and every rejected precondition.",
+  "acceptance": [
+    {
+      "id": "acc-claude-batch-gate",
+      "assertion": "start_unattended_batch joins PRIVILEGED_OPERATIONS and is rejected on any non-interactive Claude Code session with the existing unsupported_host failure code, exactly as enroll, request_authorization, approve_breaking_intent_revision, and stop are, so an unattended entry can never be self-authorized by a headless session. Its only model-supplied input is the Initiative slug; the confirmation content, namely the Initiative, batch branch, ordered child list with each child's risk, the excluded critical and already-settled children, the budget, and expires_at, is derived from projectBatchPlan and Kernel state, and the elicitation is bound to the resulting plan_digest so a plan that changed between projection and acceptance is rejected rather than confirmed. Accept issues exactly one Batch Authorization through the Kernel registry and calls startBatch; the Host adapter mints no capability itself and owns no batch state transition.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/claude-batch-authority.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 65536\n}\n"
+    },
+    {
+      "id": "acc-claude-batch-fail-closed",
+      "assertion": "Decline, cancel, elicitation timeout, missing or replayed elicitation evidence, an ambiguous session identity, an active workspace claim, a failing branch preflight, and an empty enrollable child set each produce zero Kernel writes, zero batch state, no new Git ref, and a stable rejection reason with exactly one same-Host recovery action, never a suggestion of another Host, worktree, Direct Path, unmanaged implementation, or automatic retry. The operation returns exactly one of started, rejected, cancelled, or blocked, and the status operation stays usable in every one of those outcomes. Existing privileged operations, their gates, and the default imm-loop behavior are unchanged by this slice.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/claude-batch-authority.test.ts\",\n    \"tests/claude-host-authority.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 180000,\n  \"max_output_bytes\": 65536\n}\n"
+    }
+  ],
+  "scope_hint": [
+    "plugins/immune-brain/runtime/claude/interaction.ts",
+    "plugins/immune-brain/runtime/claude/kernel_ports.ts",
+    "plugins/immune-brain/runtime/claude/mcp_server.ts",
+    "tests/claude-batch-authority.test.ts",
+    "tests/claude-host-authority.test.ts"
+  ],
+  "risk": "critical",
+  "revision": 1
+}

@@ -17,6 +17,7 @@ import { join } from "node:path";
 import {
 	canonicalIntentHash,
 	classifyIntentRevision,
+	observeTaskIntent,
 	parseTaskIntentV1,
 	readTaskIntent,
 } from "../plugins/immune-brain/runtime/kernel/intent";
@@ -225,6 +226,16 @@ describe("readTaskIntent secure reader", () => {
 		expect(result.intent_ref.revision).toBe(1);
 		expect(result.content_hash).toBe(canonicalIntentHash(result.intent));
 		expect(result.intent_ref.content_hash).toBe(result.content_hash);
+	});
+
+	test("observes the same canonical intent without issuing an authority token", () => {
+		const root = makeRepo({
+			"docs/plans/123-short-goal.intent.json": intentJson(),
+		});
+		const observed = observeTaskIntent(root, "123-short-goal");
+		expect(observed.intent.task_id).toBe("123-short-goal");
+		expect(observed.content_hash).toBe(canonicalIntentHash(observed.intent));
+		expect("token" in observed).toBe(false);
 	});
 
 	test("accepts staged tracked intent", () => {

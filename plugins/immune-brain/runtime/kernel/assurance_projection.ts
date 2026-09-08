@@ -25,9 +25,10 @@ export interface AssuranceAuthorizationReadiness {
 	/**
 	 * Kernel-decidable authorization readiness:
 	 * - "resolve_user_decision": exactly one open unresolved-user-decision finding;
+	 * - "authorize_rework": an open replan boundary can be overridden by the user;
 	 * - "none": nothing uniquely decidable from Kernel facts.
 	 */
-	state: "resolve_user_decision" | "none";
+	state: "resolve_user_decision" | "authorize_rework" | "none";
 	/** Non-null only when Kernel facts prove the authorization is blocked. */
 	blocked: string | null;
 }
@@ -75,6 +76,8 @@ export function deriveAssuranceAuthorization(input: {
 			state: "none",
 			blocked: `resolve-user-decision requires exactly one open user decision; found ${input.open_user_decision_count}`,
 		};
+	if (input.next_obligation === "revise_intent")
+		return { state: "authorize_rework", blocked: null };
 	return { state: "none", blocked: null };
 }
 

@@ -1,0 +1,313 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "2026-09-06-003-claude-host-resolve-finding",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "2026-09-06-003-claude-host-resolve-finding",
+    "goal": "Expose the Kernel's existing resolve_finding operation on the Claude Code Host MCP surface as defined by docs/specs/claude-host-resolve-finding.spec.md: one additive ordinary tool that carries task_id and finding_id into the existing ordinary-operation port, so a Claude Host imm-loop that has fixed and verified a finding's cause can clear it and let the Kernel reproject the next obligation, instead of terminating fail-closed on 'Kernel requires resolve_findings' with no reachable operation. This task_id succeeds the stopped 2026-09-06-001 and 2026-09-06-002 canaries of the same scope, neither of which could clear its own findings on a Host that does not yet publish resolve_finding; their terminal records are preserved under .imm/audit/. The batch runtime source that 002's Review found in the checked-in bundle without a committed origin is now committed, so this enrollment's base_head carries source for every line that bundle contains.",
+    "acceptance": [
+      {
+        "id": "acc-claude-resolve-finding-tool",
+        "assertion": "listMcpTools() exposes a resolve_finding tool whose inputSchema declares both task_id and finding_id and requires exactly [\"task_id\", \"finding_id\"], and whose annotations are the ordinary non-privileged shape rather than privilegedAnnotations(), because canary_application.ts builds the Kernel action without a capability and the Pi Host imm-canary-work.ts already lists resolve_finding in its ordinary KERNEL_OPERATIONS. Calling the tool through createMcpRuntime on a fixture repository whose TaskRecord holds an open blocking finding resolves exactly that finding in the persisted TaskRecord, appends exactly one history entry, and moves the Kernel projection's next_obligation off resolve_findings; the assertion reads the resulting record and projection rather than only the tool listing, so a tool registered without working dispatch fails.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/claude-host-authority.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 180000,\n  \"max_output_bytes\": 65536\n}\n"
+      },
+      {
+        "id": "acc-claude-resolve-finding-fail-closed",
+        "assertion": "Every rejection path stays fail-closed with a byte-identical TaskRecord and zero Kernel writes: a missing or non-string finding_id is rejected by the adapter before any Kernel call, and an unknown finding id, an already-resolved finding, a non-active lifecycle, and the unresolved_user_decision and replan_required kinds each surface the reducer's KernelInvariantError unchanged, proving the adapter reads no findings, tests no kind, and adds no second authority. Byte-identical zero-write verification covers the TaskRecord, workspace, and active claim bytes and file identities. A connection with no bound host version and a connection that never negotiated interactive elicitation both reject the tool exactly as they reject advance_assurance. PRIVILEGED_OPERATIONS is unchanged, and the eight pre-existing tools keep their exact order, schemas, annotations, and dispatch. The checked-in plugins/immune-brain/dist/claude/mcp-server.mjs matches a fresh generate so the published surface cannot drift from its runtime source.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/claude-host-authority.test.ts\",\n    \"tests/claude-host-package.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 240000,\n  \"max_output_bytes\": 65536\n}\n"
+      }
+    ],
+    "scope_hint": [
+      "docs/specs/archive/claude-host-resolve-finding.spec.md",
+      "docs/specs/claude-host-resolve-finding.spec.md",
+      "plugins/immune-brain/.pi-extension/imm-canary-work.ts",
+      "plugins/immune-brain/dist/claude/mcp-server.mjs",
+      "plugins/immune-brain/runtime/claude/interaction.ts",
+      "plugins/immune-brain/runtime/claude/kernel_ports.ts",
+      "plugins/immune-brain/runtime/claude/mcp_server.ts",
+      "tests/claude-host-authority.test.ts",
+      "tests/claude-host-package.test.ts"
+    ],
+    "risk": "critical",
+    "revision": 2,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/archive/2026-09-06-003-claude-host-resolve-finding.intent.json",
+    "content_hash": "sha256:b0bb5014f705a6faad7510e3a7c8daa24ce7fbc902891f5c7cf343a8a5ce68c2"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:7fda08f6964d6b75989394d2765b50df7d153ad01725e6442526ecec312b5992",
+  "git_base_head": "32895b486ca244cab393414260dfd7f8e73d635c",
+  "attestations": [
+    {
+      "id": "approval-qa-7572383d",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:7fda08f6964d6b75989394d2765b50df7d153ad01725e6442526ecec312b5992",
+      "diff_hash": "sha256:2e6291e20c4da853d30bf151018e018e0baf7432f36fd82f44ce15a3f85a18d9",
+      "actor_id": "deterministic-qa",
+      "summary": "all 2 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "acc-claude-resolve-finding-tool",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-claude-resolve-finding-fail-closed",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-dc80e730",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:7fda08f6964d6b75989394d2765b50df7d153ad01725e6442526ecec312b5992",
+      "diff_hash": "sha256:c69759c8d0c5bf1758581b96bbb387e60e35c7834cd3435be9870b5548ca6aa2",
+      "actor_id": "deterministic-qa",
+      "summary": "all 2 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "acc-claude-resolve-finding-tool",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-claude-resolve-finding-fail-closed",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-165af646",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:b0bb5014f705a6faad7510e3a7c8daa24ce7fbc902891f5c7cf343a8a5ce68c2",
+      "diff_hash": "sha256:51e5d59b81e0630b55226b87c73b2f37ec0724cdd54513b432c6b89827715936",
+      "actor_id": "deterministic-qa",
+      "summary": "all 2 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "acc-claude-resolve-finding-tool",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-claude-resolve-finding-fail-closed",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-63203a31",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:b0bb5014f705a6faad7510e3a7c8daa24ce7fbc902891f5c7cf343a8a5ce68c2",
+      "diff_hash": "sha256:51e5d59b81e0630b55226b87c73b2f37ec0724cdd54513b432c6b89827715936",
+      "actor_id": "parent-mediated-review",
+      "summary": "Immutable revision provenance is valid, and the Claude Host exposes resolve_finding with ordinary dispatch, reducer-owned validation, fail-closed behavior, and published-artifact coverage.",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "32895b486ca244cab393414260dfd7f8e73d635c",
+        "review_commit": "623afaae1f53afc2a6a002376d7480a99f2fc16f",
+        "review_tree": "7281f77cf2f45a31d23ba84e581fe7b7c2a6bd71",
+        "manifest_digest": "sha256:995e9a5f30588eb323bd3717b8db58c4eb61935379a8b3d30edda7e44ba28c5f"
+      }
+    }
+  ],
+  "findings": [
+    {
+      "id": "review-c022aefba5ee-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "acc-claude-resolve-finding-fail-closed",
+      "source": "review",
+      "review_round": 1,
+      "summary": "tests/claude-host-authority.test.ts:1143 omits the required non-active lifecycle rejection and does not instrument zero Kernel writes, so those claimed fail-closed guarantees can regress while the descriptor still passes."
+    },
+    {
+      "id": "review-636d818a794a-1-review-1",
+      "kind": "advisory",
+      "status": "resolved",
+      "acceptance_id": null,
+      "source": "review",
+      "review_round": 2,
+      "summary": "docs/specs/archive/claude-host-resolve-finding.spec.md:3 identifies the archived Spec as task 2026-09-06-001 even though this immutable revision belongs to 2026-09-06-003; update the metadata to preserve correct task provenance."
+    },
+    {
+      "id": "request_rework:2026-09-06-003-claude-host-resolve-finding:2026-09-06T14:57:26.704Z:replan-required",
+      "kind": "replan_required",
+      "status": "resolved",
+      "acceptance_id": null,
+      "source": "kernel",
+      "review_round": 2,
+      "summary": "Review returned this acceptance boundary twice; a durable replan is required."
+    }
+  ],
+  "history": [
+    {
+      "id": "freeze_artifacts:2026-09-06-003-claude-host-resolve-finding:2026-09-06T13:26:01.067Z",
+      "at": "2026-09-06T13:26:01.067Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent and Spec frozen at docs/plans/archive/2026-09-06-003-claude-host-resolve-finding.intent.json"
+    },
+    {
+      "id": "record_approval:2026-09-06-003-claude-host-resolve-finding:2026-09-06T13:26:14.206Z",
+      "at": "2026-09-06T13:26:14.206Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-7572383d\naction_v2_sha256:3e14518dcdee3c2d78aad071938c9f541cb8b029881b5c97f9503a7345fbe38c",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "claude:deterministic-qa",
+        "issued_at": "2026-09-06T13:26:14.206Z",
+        "expires_at": "2026-09-06T13:36:14.206Z"
+      }
+    },
+    {
+      "id": "request_rework:2026-09-06-003-claude-host-resolve-finding:2026-09-06T14:48:46.379Z",
+      "at": "2026-09-06T14:48:46.379Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_1\naction_v2_sha256:1d6765c944b5144b1ab8ac60d59bf2b051eba426937406ecb34505406c36ba30",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-2370c1472ef0d8a4",
+        "issued_at": "2026-09-06T14:48:46.379Z",
+        "expires_at": "2026-09-06T14:58:46.379Z"
+      }
+    },
+    {
+      "id": "resolve_finding:2026-09-06-003-claude-host-resolve-finding:2026-09-06T14:54:05.584Z",
+      "at": "2026-09-06T14:54:05.584Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-c022aefba5ee-1-review-1\naction_v2_sha256:8ab7c1ba6961cebf6748f55d71e87da2ba8ceecd36827d830552845cc80b7fe2"
+    },
+    {
+      "id": "freeze_artifacts:2026-09-06-003-claude-host-resolve-finding:2026-09-06T14:54:14.046Z",
+      "at": "2026-09-06T14:54:14.046Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent and Spec frozen at docs/plans/archive/2026-09-06-003-claude-host-resolve-finding.intent.json"
+    },
+    {
+      "id": "record_approval:2026-09-06-003-claude-host-resolve-finding:2026-09-06T14:54:37.848Z",
+      "at": "2026-09-06T14:54:37.848Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-dc80e730\naction_v2_sha256:5c9e079fb47b5c8de9a1cdfe7ee37bbf3f930858b712ca815f09a0e406dd21db",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-9ea9b21816fb0a1d",
+        "issued_at": "2026-09-06T14:54:37.848Z",
+        "expires_at": "2026-09-06T15:04:37.848Z"
+      }
+    },
+    {
+      "id": "request_rework:2026-09-06-003-claude-host-resolve-finding:2026-09-06T14:57:26.704Z",
+      "at": "2026-09-06T14:57:26.704Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "review_round_2\naction_v2_sha256:8291a512e22524ea20596a05dce1b4be1d3fcf55eadb160c0bb2160bc86944c4",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-08c15e627df0d847",
+        "issued_at": "2026-09-06T14:57:26.704Z",
+        "expires_at": "2026-09-06T15:07:26.704Z"
+      }
+    },
+    {
+      "id": "approve_breaking_intent_revision:2026-09-06-003-claude-host-resolve-finding:2026-09-06T15:21:48.506Z",
+      "at": "2026-09-06T15:21:48.506Z",
+      "type": "approve_breaking_intent_revision",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "intent_revision_2\naction_v2_sha256:95cfbbefe46660953d57c4dea00c698ce14cd6654a66f60433a9d3557ca0388d",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-c94199102e537b1a",
+        "issued_at": "2026-09-06T15:21:48.750Z",
+        "expires_at": "2026-09-06T15:31:48.750Z"
+      }
+    },
+    {
+      "id": "resolve_finding:2026-09-06-003-claude-host-resolve-finding:2026-09-06T15:22:12.895Z",
+      "at": "2026-09-06T15:22:12.895Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-636d818a794a-1-review-1\naction_v2_sha256:0cd4e3bf12e6299af1b6c8e51304adbe2ec904a618a6545b132d26c0031d38e9"
+    },
+    {
+      "id": "freeze_artifacts:2026-09-06-003-claude-host-resolve-finding:2026-09-06T15:22:23.482Z",
+      "at": "2026-09-06T15:22:23.482Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent and Spec frozen at docs/plans/archive/2026-09-06-003-claude-host-resolve-finding.intent.json"
+    },
+    {
+      "id": "record_approval:2026-09-06-003-claude-host-resolve-finding:2026-09-06T15:22:47.361Z",
+      "at": "2026-09-06T15:22:47.361Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-165af646\naction_v2_sha256:1ed86fa027391a3ac88e0e87f671d13d9dfa691c776f6e006a8f21063b228057",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-49f05d50892bdf25",
+        "issued_at": "2026-09-06T15:22:47.361Z",
+        "expires_at": "2026-09-06T15:32:47.361Z"
+      }
+    },
+    {
+      "id": "record_approval:2026-09-06-003-claude-host-resolve-finding:2026-09-06T15:26:19.814Z",
+      "at": "2026-09-06T15:26:19.814Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-63203a31\naction_v2_sha256:0a4bdb45dd540c5bb6b554cd45f037963b028e76b0c35fee3d4972895a0cff3f",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-da8d081869a8f095",
+        "issued_at": "2026-09-06T15:26:19.814Z",
+        "expires_at": "2026-09-06T15:36:19.814Z"
+      }
+    },
+    {
+      "id": "complete:2026-09-06-003-claude-host-resolve-finding:2026-09-06T15:26:20.491Z",
+      "at": "2026-09-06T15:26:20.491Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:1c6a9d255e4d5749e521b0755dbba290b36a8d31d1ecc0b83bc338d412a2b354"
+    }
+  ]
+}

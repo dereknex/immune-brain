@@ -12,6 +12,13 @@ function read(rel: string): string {
 }
 
 describe("imm-loop Kernel routing contract", () => {
+	test("Pi task stop names its native gate separately from interruption", () => {
+		for (const path of ["plugins/immune-brain/dist/imm-loop.md", "plugins/immune-brain/README.md"]) {
+			const text = read(path);
+			expect(text).toContain("request_stop");
+			expect(text).toContain("not task termination");
+		}
+	});
 	test("enrollment validates descriptors without executing them", () => {
 		const guide = read("plugins/immune-brain/USER_GUIDE.md");
 		const kernelCommand = read("plugins/immune-brain/runtime/commands/kernel.ts");

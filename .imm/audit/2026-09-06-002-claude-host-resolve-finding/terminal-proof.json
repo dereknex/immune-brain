@@ -1,0 +1,9 @@
+{
+  "contract": "assurance_kernel/task_tombstone/v2",
+  "task_id": "2026-09-06-002-claude-host-resolve-finding",
+  "lifecycle_status": "terminal",
+  "terminal_lifecycle": "stopped",
+  "terminal_event_id": "stop:2026-09-06-002-claude-host-resolve-finding:2026-09-06T13:14:49.408Z",
+  "final_record_hash": "sha256:3834b249400592fe03e1129f6fbaecdd3837b8ad33f308d13e94c572a216fa75",
+  "terminalized_at": "2026-09-06T13:14:49.408Z"
+}

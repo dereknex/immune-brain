@@ -292,6 +292,124 @@ function minimalSnapshot(role: "qa" | "review", root: string, current?: { projec
 	};
 }
 
+describe("registered request_stop settlement and UI", () => {
+	for (const brokenIntent of ["missing", "malformed"]) {
+		test(`stop preparation failure releases invocation for same-session retry (${brokenIntent})`, async () => {
+			const root = makeEnrolledRoot();
+			try {
+				const { tools } = loadSurface();
+				const ui = makeUI();
+				const context = makeCtx(root, ui);
+				const path = join(root, `docs/plans/${TASK}.intent.json`);
+				const bytes = readFileSync(path);
+				const before = readFileSync(join(root, `.imm/state/tasks/${TASK}.json`), "utf8");
+				if (brokenIntent === "missing") rmSync(path);
+				else writeFileSync(path, "{malformed");
+				await capturedToolFailure(tools[0].execute("stop-bad-intent", { task_id: TASK, action: { op: "request_stop" } }, undefined, undefined, context));
+				expect(ui.customCalls).toHaveLength(0);
+				expect(readFileSync(join(root, `.imm/state/tasks/${TASK}.json`), "utf8")).toBe(before);
+				writeFileSync(path, bytes);
+				const retry = await tools[0].execute("stop-retry", { task_id: TASK, action: { op: "request_stop" } }, undefined, undefined, context);
+				expect(JSON.parse(retry.content[0].text)).toMatchObject({ state: "applied", operation: "stop", lifecycle: "stopped" });
+				expect(ui.customCalls).toHaveLength(1);
+			} finally { rmSync(root, { recursive: true, force: true }); }
+		});
+	}
+	for (const approve of [true, false]) {
+		test(`native stop UI preserves its contract (approve=${approve})`, async () => {
+			const root = makeEnrolledRoot();
+			try {
+				const { tools, emitted } = loadSurface();
+				const ui = makeUI();
+				const context = makeCtx(root, ui, "tui", "Approve", "", approve);
+				let footerCalls = 0;
+				context.ui.setStatus = () => { footerCalls++; };
+				const before = readFileSync(join(root, `.imm/state/tasks/${TASK}.json`), "utf8");
+				const result = await tools[0].execute("stop-ui", { task_id: TASK, action: { op: "request_stop" } }, undefined, undefined, context);
+				expect(JSON.parse(result.content[0].text)).toMatchObject(approve
+					? { state: "applied", operation: "stop", lifecycle: "stopped" }
+					: { state: "cancelled" });
+				expect(ui.customCalls).toHaveLength(1);
+				expect(ui.customCalls[0].body).toContain("stop");
+				const attention = emitted.filter((event) => event.name === USER_ATTENTION_EVENT).map((event) => event.payload);
+				expect(attention).toHaveLength(2);
+				expect(attention.map((event) => event.active)).toEqual([true, false]);
+				expect(attention[0].attention_id).toBe(attention[1].attention_id);
+				expect(attention.every((event) => event.task_id === TASK)).toBe(true);
+				expect(footerCalls).toBe(0);
+				expect(ui.notifyCalls.filter((call) => call.kind === "error")).toEqual([]);
+				const lastRail = ui.widgetCalls.filter((call) => call.key === TASK_RAIL_KEY).at(-1)!;
+				expect(lastRail).toBeDefined();
+				const theme = { fg: (_color: string, text: string) => text, bold: (text: string) => text };
+				const lines = typeof lastRail.content === "function" ? lastRail.content({}, theme).render(120) : lastRail.content!;
+				if (approve) expect(lines.join("\n")).toContain("Stopped");
+				else {
+					expect(lines.join("\n")).not.toContain("Stopped");
+					expect(readFileSync(join(root, `.imm/state/tasks/${TASK}.json`), "utf8")).toBe(before);
+					expect(readBackendClaim(root)).not.toBeNull();
+				}
+			} finally { rmSync(root, { recursive: true, force: true }); }
+		});
+	}
+
+	for (const stagingFailure of [false, true]) {
+		test(`real stop releases Review and preserves terminal evidence (stagingFailure=${stagingFailure})`, async () => {
+			const root = makeEnrolledRoot();
+			let evidenceRemoved = 0;
+			try {
+				const { tools } = loadSurface({
+					buildAssurance: async (rootPath: string, _task: string, role: "qa" | "review", current: { projection?: Record<string, any> }) => ({
+						snapshot: minimalSnapshot(role, rootPath, current), descriptors: new Map(),
+						reviewBundle: role === "review" ? { dirty_files: {}, outcomes: {}, bundle_digest: "sha256:bundle" } : null,
+					}),
+					runQa: async (snapshot: SnapshotDescriptor) => ({
+						contract: "assurance_kernel/assurance_verdict/v2", role: "qa", task_id: TASK,
+						snapshot_digest: snapshotDigest(snapshot), decision: "pass",
+						approval: { kind: "qa", authority_role: "qa", summary: "passed" },
+					}),
+					writeReviewEvidence: () => ({ path: join(root, "review.json"), remove: () => { evidenceRemoved++; } }),
+				});
+				const tool = tools[0];
+				const context = makeCtx(root, makeUI());
+				const ready = JSON.parse((await tool.execute("qa", { task_id: TASK, action: { op: "advance_assurance" } }, undefined, undefined, context)).content[0].text);
+				expect(ready.state).toBe("review_ready");
+				expect(evidenceRemoved).toBe(0);
+				const stopContext = makeCtx(root, makeUI());
+				const custom = stopContext.ui.custom;
+				stopContext.ui.custom = async (factory: any) => {
+					const choice = await custom(factory);
+					if (stagingFailure) writeFileSync(join(root, ".git/index.lock"), "held by staging failure test\n");
+					return choice;
+				};
+				const stopped = JSON.parse((await tool.execute("stop-review", { task_id: TASK, action: { op: "request_stop" } }, undefined, undefined, stopContext)).content[0].text);
+				expect(stopped).toMatchObject({ state: "applied", operation: "stop", lifecycle: "stopped" });
+				if (stagingFailure) expect(stopped.delivery_error).toContain("index.lock");
+				else expect(stopped.delivery_error).toBeUndefined();
+				expect(evidenceRemoved).toBe(1);
+				expect(readBackendClaim(root)).toBeNull();
+				const recordPath = join(root, `.imm/audit/${TASK}/task-record.json`);
+				const proofPath = join(root, `.imm/audit/${TASK}/terminal-proof.json`);
+				const record = readFileSync(recordPath, "utf8");
+				const proof = readFileSync(proofPath, "utf8");
+				expect(JSON.parse(record).lifecycle).toBe("stopped");
+				expect(JSON.parse(proof).terminal_lifecycle).toBe("stopped");
+				expect(existsSync(join(root, `docs/plans/archive/${TASK}.intent.json`))).toBe(true);
+				expect(existsSync(join(root, "docs/specs/archive/canary-ext-task.spec.md"))).toBe(true);
+				expect(existsSync(join(root, `docs/plans/${TASK}.intent.json`))).toBe(false);
+				expect(existsSync(join(root, "docs/specs/canary-ext-task.spec.md"))).toBe(false);
+				await capturedToolFailure(tool.execute("late-review", { task_id: TASK, action: { op: "submit_review", verdict: {
+					contract: "assurance_kernel/assurance_verdict/v2", role: "review", task_id: TASK,
+					snapshot_digest: ready.snapshot_digest, decision: "pass",
+					approval: { kind: "review", authority_role: "reviewer", summary: "late" },
+				} } }, undefined, undefined, context));
+				expect(readFileSync(recordPath, "utf8")).toBe(record);
+				expect(readFileSync(proofPath, "utf8")).toBe(proof);
+				expect(evidenceRemoved).toBe(1);
+			} finally { rmSync(root, { recursive: true, force: true }); }
+		});
+	}
+});
+
 function walkOpKinds(schema: Record<string, unknown>, out: string[]): void {
 	if (Array.isArray(schema.anyOf)) for (const item of schema.anyOf as Record<string, unknown>[]) walkOpKinds(item, out);
 	const properties = schema.properties as Record<string, unknown> | undefined;
@@ -925,6 +1043,11 @@ async function capturedToolFailure(promise: Promise<unknown>): Promise<Record<st
 			(item: Record<string, any>) => item.properties?.op?.const === "request_authorization",
 		);
 		expect(Object.keys(requestAuthorization.properties)).toEqual(["op"]);
+		const requestStop = schema.properties.action.anyOf.find(
+			(item: Record<string, any>) => item.properties?.op?.const === "request_stop",
+		);
+		expect(Object.keys(requestStop.properties)).toEqual(["op"]);
+		expect(requestStop.required).toEqual(["op"]);
 	});
 
 	test("revise_intent preserves sidecar identity, passes the old token, persists success, and rolls back precommit failure", { timeout: 15000 }, async () => {

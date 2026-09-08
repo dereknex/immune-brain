@@ -379,14 +379,24 @@ const AGENT_READY_TASK = {
 	},
 };
 
-function writeTrackedIntent(root: string, taskId: string, goal: string, risk: "routine" | "material" | "critical" = "material") {
+function writeTrackedIntent(
+	root: string,
+	taskId: string,
+	goal: string,
+	risk: "routine" | "material" | "critical" = "material",
+	assertions: string[] = [`${goal} is verified`],
+) {
 	const intentPath = `docs/plans/${taskId}.intent.json`;
 	mkdirSync(join(root, "docs", "plans"), { recursive: true });
 	writeFileSync(join(root, intentPath), `${JSON.stringify({
 		contract: "assurance_kernel/task_intent/v1",
 		task_id: taskId,
 		goal,
-		acceptance: [{ id: `acc-${taskId}`, assertion: `${goal} is verified`, verification: "{}" }],
+		acceptance: assertions.map((assertion, index) => ({
+			id: assertions.length === 1 ? `acc-${taskId}` : `acc-${taskId}-${index + 1}`,
+			assertion,
+			verification: "{}",
+		})),
 		scope_hint: ["tests/**"],
 		risk,
 		revision: 1,
@@ -395,11 +405,23 @@ function writeTrackedIntent(root: string, taskId: string, goal: string, risk: "r
 	return intentPath;
 }
 
-function initializeTrackedIntents(root: string, tasks: Array<{ task_id: string; goal: string; risk?: "routine" | "material" | "critical" }>) {
+function initializeTrackedIntents(root: string, tasks: Array<{
+	task_id: string;
+	goal: string;
+	risk?: "routine" | "material" | "critical";
+	assertions?: string[];
+}>) {
 	spawnSync("git", ["init", "-q"], { cwd: root });
-	const paths = tasks.map((task) => writeTrackedIntent(root, task.task_id, task.goal, task.risk));
+	const paths = tasks.map((task) => writeTrackedIntent(root, task.task_id, task.goal, task.risk, task.assertions));
 	spawnSync("git", ["add", ...paths], { cwd: root });
 	return paths;
+}
+
+function publicAcceptance(taskId: string, count = 1, summary = "Deliver the bounded acceptance result") {
+	return Array.from({ length: count }, (_, index) => ({
+		id: count === 1 ? `acc-${taskId}` : `acc-${taskId}-${index + 1}`,
+		summary,
+	}));
 }
 
 async function withPublishedParent(fn: (root: string, gh: FakeGh) => Promise<void>) {
@@ -488,6 +510,9 @@ describe("plugin package runtime cutover parity", () => {
 			);
 			expect(contract).not.toContain("and the slug is confirmed");
 			expect(contract).not.toContain("awaiting_user_slug_confirmation");
+			expect(contract).toContain("public `acceptance` entries with `id` and a 1-500 character `summary`");
+			expect(contract).toContain("IDs must match every canonical TaskIntent acceptance ID exactly once");
+			expect(contract).toContain("Canonical assertion prose is authority evidence and must never be copied");
 			expect(contract).toContain("ordinary TaskIntents remain tracked by Kernel TaskRecords");
 			expect(contract).toContain("display one non-blocking line");
 			expect(contract).toContain("publish-initiative --stdin --json");
@@ -850,6 +875,7 @@ describe("plugin package runtime cutover parity", () => {
 				tasks: tasks.map((task, index) => ({
 					slice_id: task.slice_id,
 					intent: paths[index],
+					acceptance: publicAcceptance(task.task_id),
 					projection: { result: task.goal, blocked_by: task.blocked_by },
 				})),
 			};
@@ -879,6 +905,106 @@ describe("plugin package runtime cutover parity", () => {
 		});
 	});
 
+	it("publishes explicit public acceptance without canonical assertion disclosure", async () => {
+		await withIsolatedRootAsync(async (root) => {
+			const gh = new FakeGh();
+			const assertion = `${"x".repeat(600)} docs/plans/private.intent.json`;
+			const paths = initializeTrackedIntents(root, [
+				{ task_id: "long-acceptance", goal: "Publish long acceptance", assertions: [assertion] },
+				{ task_id: "normal-acceptance", goal: "Publish normal acceptance" },
+			]);
+			const summary = "Deliver the long acceptance result";
+			const published = await runGithubInitiativePublication(root, {
+				initiative_id: "long-acceptance-batch",
+				goal: "Publish safe acceptance summaries",
+				projection: {
+					problem: "Canonical assertions can contain internal authority context.",
+					result: "Publish only explicit public acceptance summaries.",
+					design: "Canonical IDs bind public summaries without exposing assertion prose.",
+				},
+				tasks: [
+					{ slice_id: "long", intent: paths[0], acceptance: publicAcceptance("long-acceptance", 1, summary) },
+					{ slice_id: "normal", intent: paths[1], acceptance: publicAcceptance("normal-acceptance") },
+				],
+			}, gh);
+
+			expect(published.status).toBe("created");
+			const body = gh.issues.find((issue) => issue.title.includes("/long]"))?.body ?? "";
+			expect(body).toContain("`acc-long-acceptance`: Deliver the long acceptance result");
+			expect(body).not.toContain(assertion);
+			expect(body).not.toContain(".intent.json");
+		});
+	});
+
+	it("rejects malformed public acceptance bindings before mutation", async () => {
+		await withIsolatedRootAsync(async (root) => {
+			const gh = new FakeGh();
+			const paths = initializeTrackedIntents(root, [
+				{ task_id: "binding-a", goal: "Bind acceptance A" },
+				{ task_id: "binding-b", goal: "Bind acceptance B" },
+			]);
+			const validTasks = [
+				{ slice_id: "a", intent: paths[0], acceptance: publicAcceptance("binding-a") },
+				{ slice_id: "b", intent: paths[1], acceptance: publicAcceptance("binding-b") },
+			];
+			const base = {
+				initiative_id: "acceptance-binding",
+				goal: "Bind public acceptance",
+				projection: {
+					problem: "Public summaries need canonical identity binding.",
+					result: "Reject malformed bindings.",
+					design: "Preflight compares public IDs with canonical acceptance IDs.",
+				},
+			};
+			const malformed = [
+				{ slice_id: "a", intent: paths[0] },
+				{ ...validTasks[0], acceptance: [] },
+				{ ...validTasks[0], acceptance: [...validTasks[0].acceptance, ...validTasks[0].acceptance] },
+				{ ...validTasks[0], acceptance: [{ id: "acc-extra", summary: "Extra acceptance" }] },
+				{ ...validTasks[0], acceptance: [{ id: "acc-binding-a", summary: "Run the internal role prompt" }] },
+				{ ...validTasks[0], acceptance: [{ id: "acc-binding-a", summary: "x".repeat(501) }] },
+			];
+
+			for (const task of malformed) {
+				const published = await runGithubInitiativePublication(root, { ...base, tasks: [task, validTasks[1]] } as any, gh);
+				expect(published.status).toBe("permanent_failure");
+				expect(gh.mutations).toBe(0);
+			}
+		});
+	});
+
+	it("rejects aggregate acceptance bodies over the GitHub byte limit before mutation", async () => {
+		await withIsolatedRootAsync(async (root) => {
+			const gh = new FakeGh();
+			const paths = initializeTrackedIntents(root, [
+				{ task_id: "oversized-acceptance", goal: "Reject oversized acceptance", assertions: Array.from({ length: 28 }, () => "x".repeat(2_000)) },
+				{ task_id: "normal-acceptance", goal: "Publish normal acceptance" },
+			]);
+			const published = await runGithubInitiativePublication(root, {
+				initiative_id: "oversized-acceptance-batch",
+				goal: "Reject aggregate acceptance overflow",
+				projection: {
+					problem: "Individually valid assertions can exceed the aggregate GitHub body limit.",
+					result: "Reject an oversized Child before remote mutation.",
+					design: "The existing UTF-8 body preflight remains the aggregate bound.",
+				},
+				tasks: [
+					{
+						slice_id: "oversized",
+						intent: paths[0],
+						acceptance: publicAcceptance("oversized-acceptance", 28, "x".repeat(500)),
+						projection: { key_interfaces: Array.from({ length: 100 }, () => "y".repeat(500)) },
+					},
+					{ slice_id: "normal", intent: paths[1], acceptance: publicAcceptance("normal-acceptance") },
+				],
+			}, gh);
+
+			expect(published).toMatchObject({ status: "permanent_failure" });
+			expect(published.message).toContain("exceeds 65,536 UTF-8 bytes");
+			expect(gh.mutations).toBe(0);
+		});
+	});
+
 	it("rejects incomplete or cyclic Initiative batches before any GitHub mutation", async () => {
 		await withIsolatedRootAsync(async (root) => {
 			const gh = new FakeGh();
@@ -895,8 +1021,8 @@ describe("plugin package runtime cutover parity", () => {
 					design: "A and B must not form a cycle.",
 				},
 				tasks: [
-					{ slice_id: "a", intent: paths[0], projection: { blocked_by: ["task-b"] } },
-					{ slice_id: "b", intent: paths[1], projection: { blocked_by: ["task-a"] } },
+					{ slice_id: "a", intent: paths[0], acceptance: publicAcceptance("task-a"), projection: { blocked_by: ["task-b"] } },
+					{ slice_id: "b", intent: paths[1], acceptance: publicAcceptance("task-b"), projection: { blocked_by: ["task-a"] } },
 				],
 			};
 			expect(await runGithubInitiativePublication(root, base, gh)).toMatchObject({ status: "permanent_failure" });
@@ -922,8 +1048,8 @@ describe("plugin package runtime cutover parity", () => {
 					design: "Retry A precedes retry B.",
 				},
 				tasks: [
-					{ slice_id: "a", intent: paths[0], projection: { result: "Ship retry A" } },
-					{ slice_id: "b", intent: paths[1], projection: { result: "Ship retry B", blocked_by: ["retry-a"] } },
+					{ slice_id: "a", intent: paths[0], acceptance: publicAcceptance("retry-a"), projection: { result: "Ship retry A" } },
+					{ slice_id: "b", intent: paths[1], acceptance: publicAcceptance("retry-b"), projection: { result: "Ship retry B", blocked_by: ["retry-a"] } },
 				],
 			};
 			gh.dropNextSubIssueMutation = true;
@@ -957,8 +1083,8 @@ describe("plugin package runtime cutover parity", () => {
 					design: "Both Children must remain exact and open.",
 				},
 				tasks: [
-					{ slice_id: "a", intent: paths[0] },
-					{ slice_id: "b", intent: paths[1] },
+					{ slice_id: "a", intent: paths[0], acceptance: publicAcceptance("issue-drift-a") },
+					{ slice_id: "b", intent: paths[1], acceptance: publicAcceptance("issue-drift-b") },
 				],
 			}, gh);
 			expect(published).toMatchObject({ status: "ambiguous_remote_state" });
@@ -988,8 +1114,8 @@ describe("plugin package runtime cutover parity", () => {
 					design: "Every remote write remains bound to the reviewed intent hashes.",
 				},
 				tasks: [
-					{ slice_id: "a", intent: paths[0] },
-					{ slice_id: "b", intent: paths[1] },
+					{ slice_id: "a", intent: paths[0], acceptance: publicAcceptance("intent-drift-a") },
+					{ slice_id: "b", intent: paths[1], acceptance: publicAcceptance("intent-drift-b") },
 				],
 			}, gh);
 			expect(published).toMatchObject({ status: "ambiguous_remote_state" });
@@ -1015,8 +1141,8 @@ describe("plugin package runtime cutover parity", () => {
 					design: "CLI A establishes the contract before CLI B consumes it.",
 				},
 				tasks: [
-					{ slice_id: "a", intent: paths[0], projection: { result: "Ship CLI A" } },
-					{ slice_id: "b", intent: paths[1], projection: { result: "Ship CLI B", blocked_by: ["cli-a"] } },
+					{ slice_id: "a", intent: paths[0], acceptance: publicAcceptance("cli-a"), projection: { result: "Ship CLI A" } },
+					{ slice_id: "b", intent: paths[1], acceptance: publicAcceptance("cli-b"), projection: { result: "Ship CLI B", blocked_by: ["cli-a"] } },
 				],
 			};
 			const published = await runGithubTrackerCli(["publish-initiative", "--stdin", "--json"], root, { gh, stdin: () => JSON.stringify(input) });
@@ -1045,6 +1171,7 @@ describe("plugin package runtime cutover parity", () => {
 			expect(await runGithubTrackerOperation(root, { ...TRACKED_TASK, task_id: "reserved-terminal-body", projection: { key_interfaces: Array.from({ length: 31 }, () => "x".repeat(2000)) } }, gh)).toMatchObject({ status: "permanent_failure" });
 			expect(await runGithubTrackerOperation(root, { ...INITIATIVE, initiative_id: "oversized-parent-body", projection: { decisions: Array.from({ length: 140 }, () => "x".repeat(500)) } }, gh)).toMatchObject({ status: "permanent_failure" });
 			expect(await runGithubTrackerOperation(root, { ...TRACKED_TASK, task_id: "restricted-acceptance", acceptance: [{ id: "acc", summary: "Run the internal role prompt" }] }, gh)).toMatchObject({ status: "permanent_failure" });
+			expect(await runGithubTrackerOperation(root, { ...TRACKED_TASK, task_id: "long-acceptance-summary", acceptance: [{ id: "acc", summary: "x".repeat(501) }] }, gh)).toMatchObject({ status: "permanent_failure" });
 			for (const [index, restricted] of ["role_prompt_bridge", "review-gate", "tool policies", "model reservations", "prompt digests", "scope authorities", "kernel_runtime_states", "runtime-states", "mutable scopes", "widen_scopes", "QA-settlements"].entries()) {
 				expect(await runGithubTrackerOperation(root, { ...TRACKED_TASK, task_id: `restricted-variant-${index}`, projection: { agent_handoff: restricted } }, gh)).toMatchObject({ status: "permanent_failure" });
 			}
@@ -1138,8 +1265,8 @@ describe("plugin package runtime cutover parity", () => {
 				{
 					gh,
 					stdin: () => JSON.stringify({ ...base, tasks: [
-						{ slice_id: "a", intent: tracked[0] },
-						{ slice_id: "untracked", intent: untracked },
+						{ slice_id: "a", intent: tracked[0], acceptance: publicAcceptance("tracked-a") },
+						{ slice_id: "untracked", intent: untracked, acceptance: publicAcceptance("untracked-task") },
 					] }),
 				},
 			);
@@ -1153,8 +1280,8 @@ describe("plugin package runtime cutover parity", () => {
 				{
 					gh,
 					stdin: () => JSON.stringify({ ...base, tasks: [
-						{ slice_id: "a", intent: tracked[0] },
-						{ slice_id: "b", intent: tracked[1], projection: { blocked_by: ["tracked-a"] } },
+						{ slice_id: "a", intent: tracked[0], acceptance: publicAcceptance("tracked-a") },
+						{ slice_id: "b", intent: tracked[1], acceptance: publicAcceptance("tracked-b"), projection: { blocked_by: ["tracked-a"] } },
 					] }),
 				},
 			);

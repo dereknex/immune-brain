@@ -178,6 +178,7 @@ function hasPrivilegedKind(action: TaskAction): boolean {
 		action.type === "record_approval" ||
 		action.type === "approve_breaking_intent_revision" ||
 		action.type === "request_rework" ||
+		action.type === "authorize_rework" ||
 		action.type === "stop" ||
 		action.type === "resolve_user_decision"
 	);
@@ -449,13 +450,16 @@ export function reduceTask(
 					"request_rework requires review, qa, or user authority",
 				]);
 			const round = reviewRound(record);
-			const reviewAuthorityReworks = record.history.filter(
-				(entry) =>
-					entry.type === "request_rework" &&
-					entry.authority?.authority_kind === "review",
-			).length;
+			const hasPriorBlockingReviewRework = record.findings.some(
+				(finding) =>
+					finding.source === "review" &&
+					finding.kind === "blocking" &&
+					finding.review_round !== null,
+			);
 			const parkForReplan =
-				authorityAudit.authority_kind === "review" && reviewAuthorityReworks >= 1;
+				authorityAudit.authority_kind === "review" &&
+				hasPriorBlockingReviewRework &&
+				action.findings.some((finding) => finding.kind === "blocking");
 			if (!parkForReplan) {
 				record.artifact_state = "active";
 				record.intent_ref.path = `docs/plans/${record.task_id}.intent.json`;
@@ -470,8 +474,8 @@ export function reduceTask(
 				record.findings.push({
 					...finding,
 					status: "open",
-					source: "review",
-					review_round: round,
+					source: authorityAudit.authority_kind === "review" ? "review" : "execution",
+					review_round: authorityAudit.authority_kind === "review" ? round : null,
 				});
 			}
 			if (
@@ -500,6 +504,28 @@ export function reduceTask(
 				record.findings.push(boundary);
 			}
 			appendHistory(record, action, from, `review_round_${round}`, authorityAudit);
+			break;
+		}
+		case "authorize_rework": {
+			if (record.lifecycle !== "active")
+				throw new KernelInvariantError([
+					`cannot authorize rework while lifecycle is ${record.lifecycle}`,
+				]);
+			if (authorityAudit?.authority_kind !== "user")
+				throw new KernelInvariantError([
+					"authorize_rework requires literal-user authority",
+				]);
+			const open = record.findings.filter(
+				(finding) => finding.kind === "replan_required" && finding.status === "open",
+			);
+			if (open.length === 0)
+				throw new KernelInvariantError([
+					"authorize_rework requires an open replan boundary",
+				]);
+			for (const finding of open) finding.status = "resolved";
+			record.artifact_state = "active";
+			record.intent_ref.path = `docs/plans/${record.task_id}.intent.json`;
+			appendHistory(record, action, from, open.map((finding) => finding.id).join(","), authorityAudit);
 			break;
 		}
 		case "complete": {

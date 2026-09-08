@@ -248,19 +248,6 @@ function runInspect(root: string): KernelExecution {
 				),
 			};
 		}
-		let declared: TaskRisk;
-		let intent: TaskIntentV1;
-		try {
-			const raw = JSON.parse(
-				readSecureProjectFile(root, `docs/plans/${claim.task_id}.intent.json`),
-			) as { risk?: unknown };
-			if (raw.risk !== "routine" && raw.risk !== "material" && raw.risk !== "critical")
-				throw new Error(`intent.risk is unreadable for ${claim.task_id}`);
-			declared = raw.risk;
-			intent = parseTaskIntentV1(raw);
-		} catch (error) {
-			return sourceFailure("inspect", error);
-		}
 		let recordRead: ReturnType<typeof readTaskRecordRaw>;
 		try {
 			recordRead = readTaskRecordRaw(root, claim.task_id);
@@ -285,6 +272,21 @@ function runInspect(root: string): KernelExecution {
 			};
 		}
 		const record = recordRead.record;
+		let declared: TaskRisk;
+		let intent: TaskIntentV1;
+		try {
+			const raw = JSON.parse(
+				readSecureProjectFile(root, record.intent_ref.path),
+			) as { risk?: unknown };
+			if (raw.risk !== "routine" && raw.risk !== "material" && raw.risk !== "critical")
+				throw new Error(`intent.risk is unreadable for ${claim.task_id}`);
+			declared = raw.risk;
+			intent = parseTaskIntentV1(raw);
+			if (canonicalIntentHash(intent) !== record.intent_ref.content_hash)
+				throw new Error("TaskIntent sidecar does not match TaskRecord content hash");
+		} catch (error) {
+			return sourceFailure("inspect", error);
+		}
 		const workspaceState = readWorkspaceStateRaw(root);
 		let identity;
 		try {

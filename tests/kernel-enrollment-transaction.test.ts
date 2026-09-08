@@ -9,12 +9,17 @@ import {
 	type BackendClaim,
 } from "../plugins/immune-brain/runtime/kernel/backend_claim";
 import { enrollCanaryTask } from "../plugins/immune-brain/runtime/kernel/enrollment";
-import { preparePiCanary } from "../plugins/immune-brain/runtime/kernel/pi_canary_prepare";
+import { preparePiCanary, readGitHead } from "../plugins/immune-brain/runtime/kernel/pi_canary_prepare";
 import {
 	createEnrollmentAuthorityRegistry,
 	type EnrollmentCapabilityBinding,
 } from "../plugins/immune-brain/runtime/kernel/enrollment_authority";
 import { readTaskRecord } from "../plugins/immune-brain/runtime/kernel/storage";
+import {
+	computeBatchPlanDigest,
+	createBatchAuthorityRegistry,
+	deriveChildEnrollment,
+} from "../plugins/immune-brain/runtime/kernel/batch_authority";
 
 function makeRoot(): string {
 	const root = mkdtempSync(join(tmpdir(), "p2b0-enroll-"));
@@ -265,5 +270,123 @@ describe("enrollment transaction", () => {
 		expect(readTaskRecord(root, taskId).record).toBeNull();
 		expect(readBackendClaim(root)).toBeNull();
 		expect(registry.isConsumed(capability)).toBe(false);
+	});
+});
+
+describe("batch-derived enrollment atomicity", () => {
+	function batchChild(root: string, taskId: string) {
+		const prep = preparePiCanary(root, { task_id: taskId, now: "2026-08-12T00:00:00.000Z" });
+		if (!prep.intent) throw new Error("fixture intent missing");
+		return {
+			task_id: taskId,
+			intent_path: prep.intent.path,
+			intent_revision: prep.intent.revision,
+			intent_content_hash: prep.intent.content_hash,
+			blocked_by: [] as string[],
+		};
+	}
+
+	function batchBinding(root: string, children: ReturnType<typeof batchChild>[]) {
+		return {
+			batch_id: "batch-tx-001",
+			initiative_slug: "unattended-initiative-batch-run",
+			plan_digest: computeBatchPlanDigest(children),
+			branch: "imm/unattended-initiative-batch-run",
+			base_head: readGitHead(root),
+			budget: {
+				max_children: children.length,
+				deadline_at: "2099-01-01T00:00:00.000Z",
+				qa_failure_limit: 2,
+			},
+			actor_id: "user",
+			confirmation_ref: "batch-confirm-001",
+			expires_at: "2099-01-01T00:00:00.000Z",
+			nonce: "batch-tx-nonce",
+		};
+	}
+
+	test("the child slot and the TaskRecord are committed together", () => {
+		const root = makeRoot();
+		writeIntent(root, "task-b01");
+		const children = [batchChild(root, "task-b01")];
+		const binding = batchBinding(root, children);
+		const batchRegistry = createBatchAuthorityRegistry();
+		const capability = batchRegistry.issue(binding, children, "2026-08-12T00:00:00.000Z");
+		const enrollmentRegistry = createEnrollmentAuthorityRegistry();
+		const head = readGitHead(root);
+		const derived = deriveChildEnrollment(root, batchRegistry, {
+			capability,
+			binding,
+			task_id: "task-b01",
+			expected_head: head,
+			now: "2026-08-12T00:00:00.000Z",
+		});
+		const childCapability = enrollmentRegistry.issue(derived.binding, "2026-08-12T00:00:00.000Z");
+
+		const result = enrollCanaryTask(
+			root,
+			{
+				task_id: "task-b01",
+				intent_path: derived.binding.intent_path,
+				intent_revision: derived.binding.intent_revision,
+				preparation_digest: derived.binding.preparation_digest,
+				capability: childCapability,
+				capability_binding: derived.binding,
+				batch: { registry: batchRegistry, capability, binding, expected_head: head },
+				now: "2026-08-12T00:00:00.000Z",
+			},
+			enrollmentRegistry,
+		);
+		expect(result.record.task_id).toBe("task-b01");
+		expect(batchRegistry.consumedChildren(capability)).toEqual(["task-b01"]);
+		expect(readTaskRecord(root, "task-b01").record).not.toBeNull();
+	});
+
+	test("a blocked batch enrollment consumes no slot and writes no record", () => {
+		const root = makeRoot();
+		writeIntent(root, "task-b02");
+		const children = [batchChild(root, "task-b02")];
+		const binding = batchBinding(root, children);
+		const batchRegistry = createBatchAuthorityRegistry();
+		const capability = batchRegistry.issue(binding, children, "2026-08-12T00:00:00.000Z");
+		const enrollmentRegistry = createEnrollmentAuthorityRegistry();
+		const head = readGitHead(root);
+		const derived = deriveChildEnrollment(root, batchRegistry, {
+			capability,
+			binding,
+			task_id: "task-b02",
+			expected_head: head,
+			now: "2026-08-12T00:00:00.000Z",
+		});
+		const childCapability = enrollmentRegistry.issue(derived.binding, "2026-08-12T00:00:00.000Z");
+		// A worktree that already owns another task blocks the enrollment under
+		// the same lock that would have consumed the slot.
+		writeFileSync(
+			join(root, ".imm/state/workspace.json"),
+			`{"contract":"assurance_kernel/workspace/v1","current_working":"other-task"}\n`,
+		);
+
+		expect(() =>
+			enrollCanaryTask(
+				root,
+				{
+					task_id: "task-b02",
+					intent_path: derived.binding.intent_path,
+					intent_revision: derived.binding.intent_revision,
+					preparation_digest: preparePiCanary(root, {
+						task_id: "task-b02",
+						now: "2026-08-12T00:00:00.000Z",
+					}).digest,
+					capability: childCapability,
+					capability_binding: derived.binding,
+					batch: { registry: batchRegistry, capability, binding, expected_head: head },
+					now: "2026-08-12T00:00:00.000Z",
+				},
+				enrollmentRegistry,
+			),
+		).toThrow(/owned/i);
+		expect(batchRegistry.consumedChildren(capability)).toEqual([]);
+		expect(readTaskRecord(root, "task-b02").record).toBeNull();
+		expect(readBackendClaim(root)).toBeNull();
 	});
 });

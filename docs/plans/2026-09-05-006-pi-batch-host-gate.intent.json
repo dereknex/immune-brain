@@ -1,0 +1,27 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "2026-09-05-006-pi-batch-host-gate",
+  "owner": "user",
+  "goal": "Implement the Pi Host gate for unattended batch runs at parity with the Claude Code gate, as required by docs/specs/unattended-initiative-batch-run.spec.md section 3.6 and the dual-host delivery decision: the Pi extension presents the same Kernel-derived batch confirmation through its native TUI, issues the same Batch Authorization, and both Hosts are asserted equivalent by one shared conformance test.",
+  "acceptance": [
+    {
+      "id": "acc-pi-batch-gate",
+      "assertion": "The Pi extension exposes an unattended batch entry whose confirmation is rendered through the native TUI confirm surface and whose content is derived from projectBatchPlan and Kernel state, presenting the Initiative, batch branch, ordered child list with risk, excluded children, budget, and expires_at, and bound to the same plan_digest. Accept issues one Batch Authorization through the same Kernel registry and calls the same startBatch driver; the extension mints no capability and owns no batch state transition. Decline, cancel, a non-interactive Pi invocation, an active workspace claim, a failing branch preflight, and an empty enrollable child set each perform zero Kernel writes, zero batch state, and no new Git ref, and report a stable reason with exactly one same-Host recovery action.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/pi-batch-authority.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 65536\n}\n"
+    },
+    {
+      "id": "acc-dual-host-batch-parity",
+      "assertion": "One shared conformance assertion in tests/dual-host-assurance-conformance.test.ts drives the identical batch confirmation scenario through both the Claude Code and Pi adapters and requires the same issued Batch Authorization binding, the same accepted and rejected outcomes with the same stable reason codes, and the same zero-write guarantees, so neither Host can authorize an unattended batch the other would refuse. Existing dual-host resume and assurance conformance coverage continues to pass unchanged.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/dual-host-assurance-conformance.test.ts\",\n    \"tests/pi-batch-authority.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 180000,\n  \"max_output_bytes\": 65536\n}\n"
+    }
+  ],
+  "scope_hint": [
+    "plugins/immune-brain/.pi-extension/imm-canary-enroll.ts",
+    "plugins/immune-brain/.pi-extension/imm-unattended-batch.ts",
+    "plugins/immune-brain/.pi-extension/runtime-stub.ts",
+    "tests/dual-host-assurance-conformance.test.ts",
+    "tests/pi-batch-authority.test.ts"
+  ],
+  "risk": "critical",
+  "revision": 1
+}

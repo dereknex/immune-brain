@@ -1,0 +1,2038 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "2026-09-05-003-batch-run-state-machine",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "2026-09-05-003-batch-run-state-machine",
+    "goal": "Implement the unattended batch run state machine defined by docs/specs/unattended-initiative-batch-run.spec.md sections 3.4 and 4: a single serial driver that owns every batch and child state transition, drives each child through the existing Kernel obligations without inventing authority, parks human-owned work and skips its dependent subtree, honors budget, deadline, and expiry stop conditions, persists recoverable state, and writes exactly one run report.",
+    "acceptance": [
+      {
+        "id": "acc-batch-run-transitions",
+        "assertion": "startBatch drives children strictly serially through prepared, running, and one terminal batch state of completed, budget_stopped, failed, or rejected, with per-child states pending, enrolled, settled, committed, needs_human, and skipped_blocked. Every transition of this machine lives in runtime/unattended and runtime/kernel/batch_authority.ts; no Host adapter module writes batch state or advances a child, and the driver imports no Host adapter module. Each child is enrolled through the batch-derived capability and then advanced only through the existing Kernel obligation surface, so implementation, freeze, deterministic QA, and Review evidence remain Kernel-owned and the driver never fabricates a QA pass, a Review verdict, or a settlement. A child that returns a user-owned obligation of resolve_user_decision, a breaking revise_intent, a blocking finding, or record-user-approval, and a child that reaches the consecutive QA failure limit, are parked as needs_human, and every transitive dependent of a parked or failed child becomes skipped_blocked and is never enrolled. Parking a child as needs_human immediately transitions the batch to needs_human and stops: an independent sibling is never selected or enrolled while a parked child retains its Kernel claim, and this is covered by an independent-sibling regression test. This includes the resume path: after a fresh confirmation, a parked child whose fresh Kernel projection shows a claim held by a foreign batch keeps the batch parked as needs_human, with skipped dependents not reset and no sibling enrolled until the foreign claim is resolved. All foreign-claim parks — main-loop selection, crash-recovery adoption, driven-child resume, and parked-resume — also mark every transitive dependent of the parked child skipped_blocked at park time.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/unattended-batch-run.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 180000,\n  \"max_output_bytes\": 65536\n}\n"
+      },
+      {
+        "id": "acc-batch-run-stop-and-recovery",
+        "assertion": "Budget exhaustion through max_children, deadline_at, or authorization expiry terminates the batch as budget_stopped, which is an intentional stop and not a failure, and reaching it never marks a completed child as failed. Expiry and deadline block only the enrollment of a new child: a child already enrolled runs to its own Kernel terminal settlement and its commit, so no unsettled claim, orphaned workspace claim, or uncommitted working tree is left behind. budget_stopped classification for authorization expiry is derived only from a structured Kernel error discriminator (BatchAuthorizationExpiryError, defined in kernel/batch_authority.ts and thrown by its enrollment-time validateAndProject boundary), never from free-form error message matching, so infrastructure and validation failures are never suppressed as intentional stops. Batch run state is persisted at .imm/state/batches/<batch_id>.json through the existing kernel store lock and is Git-ignored; after an interruption the driver reconstructs the exact pending obligation from that state plus a fresh Kernel projection, never replays a committed mutation, and refuses to resume an expired authorization, requiring a new literal-user confirmation. A pre-enrollment validation failure (empty plan) returns rejected with zero writes: neither the batch state file nor the run report file is persisted. Exactly one run report is written after the final child settles or the batch stops, naming the terminal batch state, each child's terminal state and reason, the commits created, and the single next action.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/unattended-batch-run.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 180000,\n  \"max_output_bytes\": 65536\n}\n"
+      }
+    ],
+    "scope_hint": [
+      "docs/specs/archive/unattended-initiative-batch-run.spec.md",
+      "docs/specs/unattended-initiative-batch-run.spec.md",
+      "plugins/immune-brain/runtime/kernel/batch_authority.ts",
+      "plugins/immune-brain/runtime/unattended/batch_plan.ts",
+      "plugins/immune-brain/runtime/unattended/batch_runner.ts",
+      "plugins/immune-brain/runtime/unattended/batch_state.ts",
+      "plugins/immune-brain/runtime/unattended/types.ts",
+      "tests/unattended-batch-run.test.ts"
+    ],
+    "risk": "critical",
+    "revision": 7,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/archive/2026-09-05-003-batch-run-state-machine.intent.json",
+    "content_hash": "sha256:b0b3f078f1d8485cc4cacfc7cde6f55a6cd4048f12b1c60b1f6797143470945a"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:99be3b7a016c1cfa76657f482312b10d3e51036bf726ec954d3c230177c8392b",
+  "git_base_head": "45a8d9cd262df0109c2e90a7409d840fd01da54f",
+  "attestations": [
+    {
+      "id": "approval-qa-e7706882",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 4,
+      "intent_content_hash": "sha256:99be3b7a016c1cfa76657f482312b10d3e51036bf726ec954d3c230177c8392b",
+      "diff_hash": "sha256:f6e7f188ca4ee798fddd3f70ae9c559bbdcf4d47b48e9b850af71a3855c17fc8",
+      "actor_id": "deterministic-qa",
+      "summary": "all 2 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "acc-batch-run-transitions",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-batch-run-stop-and-recovery",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-e3a4c743",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 4,
+      "intent_content_hash": "sha256:99be3b7a016c1cfa76657f482312b10d3e51036bf726ec954d3c230177c8392b",
+      "diff_hash": "sha256:841bec1ad00ca2fef6a37d9b5232f7f8071f671a5580efa7f42793c3aa7fdf43",
+      "actor_id": "deterministic-qa",
+      "summary": "all 2 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "acc-batch-run-transitions",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-batch-run-stop-and-recovery",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-b63064b6",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 4,
+      "intent_content_hash": "sha256:99be3b7a016c1cfa76657f482312b10d3e51036bf726ec954d3c230177c8392b",
+      "diff_hash": "sha256:dcb2f4da41c1c0aebb9dc7a2a68f826e1d1fc04ac5db4d444c5abc1db315cb82",
+      "actor_id": "deterministic-qa",
+      "summary": "all 2 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "acc-batch-run-transitions",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-batch-run-stop-and-recovery",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-35eee37b",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 4,
+      "intent_content_hash": "sha256:99be3b7a016c1cfa76657f482312b10d3e51036bf726ec954d3c230177c8392b",
+      "diff_hash": "sha256:7e81641a304342a57aea16d82fb0e5587e089856b04e0225a3b888086b3965b9",
+      "actor_id": "deterministic-qa",
+      "summary": "all 2 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "acc-batch-run-transitions",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-batch-run-stop-and-recovery",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-7148ac4e",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 4,
+      "intent_content_hash": "sha256:99be3b7a016c1cfa76657f482312b10d3e51036bf726ec954d3c230177c8392b",
+      "diff_hash": "sha256:19a44802db7cc8966c2f7555c3fe13bce4b79698e24cb2b9cada1612668fad57",
+      "actor_id": "deterministic-qa",
+      "summary": "all 2 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "acc-batch-run-transitions",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-batch-run-stop-and-recovery",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-e68bdf4e",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 5,
+      "intent_content_hash": "sha256:50f9035e9e7e12ef0983bb89b58a0fc95a8f4bacae94725469fb091a8eaf760f",
+      "diff_hash": "sha256:3306f9203d23272301ecfcf918faad9feceafd84c9e5b5c14a93efbfb0c7adf8",
+      "actor_id": "deterministic-qa",
+      "summary": "all 2 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "acc-batch-run-transitions",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-batch-run-stop-and-recovery",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-20115b71",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 6,
+      "intent_content_hash": "sha256:baf2d5a45d781147812c238441e6e830cbfaa7ae16e2e5141f2250a73d66649e",
+      "diff_hash": "sha256:27b19bd3ee05c09f2400b6ae6addc82a2f50125689c14e6365061967feac6368",
+      "actor_id": "deterministic-qa",
+      "summary": "all 2 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "acc-batch-run-transitions",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-batch-run-stop-and-recovery",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-2d9ad644",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 7,
+      "intent_content_hash": "sha256:b0b3f078f1d8485cc4cacfc7cde6f55a6cd4048f12b1c60b1f6797143470945a",
+      "diff_hash": "sha256:d6cf9684c1861a30d1cc08d7fe0148877b934adc28e591ecc65ad7f40b7960d8",
+      "actor_id": "deterministic-qa",
+      "summary": "all 2 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "acc-batch-run-transitions",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-batch-run-stop-and-recovery",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-160a9ccc",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 7,
+      "intent_content_hash": "sha256:b0b3f078f1d8485cc4cacfc7cde6f55a6cd4048f12b1c60b1f6797143470945a",
+      "diff_hash": "sha256:6616c77510b4c086a57eb9bd9fb36a3057aab05fdf587774533b7547f7b59dc4",
+      "actor_id": "deterministic-qa",
+      "summary": "all 2 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "acc-batch-run-transitions",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-batch-run-stop-and-recovery",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-5a2e58d2",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 7,
+      "intent_content_hash": "sha256:b0b3f078f1d8485cc4cacfc7cde6f55a6cd4048f12b1c60b1f6797143470945a",
+      "diff_hash": "sha256:a96e1761bed59c9665e47123dd6543ac90e210c4e8fe74b94bf22289ee6a599b",
+      "actor_id": "deterministic-qa",
+      "summary": "all 2 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "acc-batch-run-transitions",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-batch-run-stop-and-recovery",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-d6170acd",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 7,
+      "intent_content_hash": "sha256:b0b3f078f1d8485cc4cacfc7cde6f55a6cd4048f12b1c60b1f6797143470945a",
+      "diff_hash": "sha256:f963aec5167d691602ddf129dcb440b9152412b88547ec54257b324b61dca57b",
+      "actor_id": "deterministic-qa",
+      "summary": "all 2 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "acc-batch-run-transitions",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-batch-run-stop-and-recovery",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-4ad6dce4",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 7,
+      "intent_content_hash": "sha256:b0b3f078f1d8485cc4cacfc7cde6f55a6cd4048f12b1c60b1f6797143470945a",
+      "diff_hash": "sha256:e1e30cfaea986410b0be7c895c3c3e18d8aeac5dd7ac9b6463c5f264dce629a4",
+      "actor_id": "deterministic-qa",
+      "summary": "all 2 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "acc-batch-run-transitions",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-batch-run-stop-and-recovery",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-8fb93aec",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 7,
+      "intent_content_hash": "sha256:b0b3f078f1d8485cc4cacfc7cde6f55a6cd4048f12b1c60b1f6797143470945a",
+      "diff_hash": "sha256:8677eaad85daafb26ed47bb157fbe3a6184d66ffdc9456617f655f915f5c68f9",
+      "actor_id": "deterministic-qa",
+      "summary": "all 2 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "acc-batch-run-transitions",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-batch-run-stop-and-recovery",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-128243b9",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 7,
+      "intent_content_hash": "sha256:b0b3f078f1d8485cc4cacfc7cde6f55a6cd4048f12b1c60b1f6797143470945a",
+      "diff_hash": "sha256:eca54f17ea4f3432ab71a549f68f8ccca843da0ed0b5916e9a68de13a692b2a2",
+      "actor_id": "deterministic-qa",
+      "summary": "all 2 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "acc-batch-run-transitions",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-batch-run-stop-and-recovery",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-0819fddd",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 7,
+      "intent_content_hash": "sha256:b0b3f078f1d8485cc4cacfc7cde6f55a6cd4048f12b1c60b1f6797143470945a",
+      "diff_hash": "sha256:c818fbe68609b508ee1db1a0d324f356f137508c7d75efba88bb374677ffebc1",
+      "actor_id": "deterministic-qa",
+      "summary": "all 2 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "acc-batch-run-transitions",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-batch-run-stop-and-recovery",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-f4c5c5f7",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 7,
+      "intent_content_hash": "sha256:b0b3f078f1d8485cc4cacfc7cde6f55a6cd4048f12b1c60b1f6797143470945a",
+      "diff_hash": "sha256:eefd053640d0dcc80c17cb4b2ac03d3976ee27e18e9af4d5295cb1bf7cdf2bbb",
+      "actor_id": "deterministic-qa",
+      "summary": "all 2 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "acc-batch-run-transitions",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-batch-run-stop-and-recovery",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-2a4f3cad",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 7,
+      "intent_content_hash": "sha256:b0b3f078f1d8485cc4cacfc7cde6f55a6cd4048f12b1c60b1f6797143470945a",
+      "diff_hash": "sha256:998b58ccee63324cbea61fbd3432112a85e0e3c7eda3ed7991f8b1aac8917b13",
+      "actor_id": "deterministic-qa",
+      "summary": "all 2 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "acc-batch-run-transitions",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-batch-run-stop-and-recovery",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-e4712f94",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 7,
+      "intent_content_hash": "sha256:b0b3f078f1d8485cc4cacfc7cde6f55a6cd4048f12b1c60b1f6797143470945a",
+      "diff_hash": "sha256:4ffd4ac5246bf3c930397ebb94e0d13fd10f0dade98233dc8c10fd82031868e3",
+      "actor_id": "deterministic-qa",
+      "summary": "all 2 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "acc-batch-run-transitions",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-batch-run-stop-and-recovery",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-de960024",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 7,
+      "intent_content_hash": "sha256:b0b3f078f1d8485cc4cacfc7cde6f55a6cd4048f12b1c60b1f6797143470945a",
+      "diff_hash": "sha256:52be232efd4b382bd8308abbb6769da85071e2b160b7d174f670d973de38d4e9",
+      "actor_id": "deterministic-qa",
+      "summary": "all 2 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "acc-batch-run-transitions",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-batch-run-stop-and-recovery",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-1830fe63",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 7,
+      "intent_content_hash": "sha256:b0b3f078f1d8485cc4cacfc7cde6f55a6cd4048f12b1c60b1f6797143470945a",
+      "diff_hash": "sha256:52be232efd4b382bd8308abbb6769da85071e2b160b7d174f670d973de38d4e9",
+      "actor_id": "parent-mediated-review",
+      "summary": "Verified manifest digest, immutable commit identity, single parent, tree and changed objects; reviewed all changed files and embedded passing QA outcomes, with no evidence-based blocking findings against the supplied acceptance assertions.",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "45a8d9cd262df0109c2e90a7409d840fd01da54f",
+        "review_commit": "fe8b35922891f0b3e4c09ff6ea02691802a17e41",
+        "review_tree": "c5fb05397a528f7c7c1513d89b653c0d745f86cb",
+        "manifest_digest": "sha256:e0c6e3b62deaa1e3d7681a9e8b68d1a25ea144c724851b74d6d38f6ee7c1f88b"
+      }
+    }
+  ],
+  "findings": [
+    {
+      "id": "review-ca59edf3ab17-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "acc-batch-run-stop-and-recovery",
+      "source": "review",
+      "review_round": 1,
+      "summary": "plugins/immune-brain/runtime/unattended/batch_runner.ts:51-57,232-234,541-545,573-589 invents a projectTask result incompatible with the real AssuranceProjectionResult (claim has no batch_id while projection is required), then accesses the omitted projection and accepts resumed claims by task_id alone; tests/unattended-batch-run.test.ts masks this with casts and fabricated batch_id values, so the code cannot type-check against or securely reconcile the Kernel projection. Use the real projection contract plus authoritative batch ownership verification and add a production-shaped recovery test."
+    },
+    {
+      "id": "review-384d3c3db699-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "acc-batch-run-stop-and-recovery",
+      "source": "review",
+      "review_round": 2,
+      "summary": "batch_runner.ts suppresses lookupBatchCommit failures for a settled child and then calls commitChild, which can replay an already-created commit instead of failing closed."
+    },
+    {
+      "id": "review-384d3c3db699-2-review-2",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "acc-batch-run-transitions",
+      "source": "review",
+      "review_round": 2,
+      "summary": "resumeBatch verifies only that an enrolled child's claim exists, not that ownsTaskClaim is true, allowing an interrupted batch to advance a claim now owned by another batch."
+    },
+    {
+      "id": "review-384d3c3db699-3-review-3",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "acc-batch-run-stop-and-recovery",
+      "source": "review",
+      "review_round": 2,
+      "summary": "A run ending with parked needs_human children never persists a run report because finalize writes reports only for completed, budget_stopped, failed, or rejected states, violating the required report after the batch stops."
+    },
+    {
+      "id": "request_rework:2026-09-05-003-batch-run-state-machine:2026-09-07T09:42:06.973Z:replan-required",
+      "kind": "replan_required",
+      "status": "resolved",
+      "acceptance_id": "acc-batch-run-stop-and-recovery",
+      "source": "kernel",
+      "review_round": 2,
+      "summary": "Review returned this acceptance boundary twice; a durable replan is required."
+    },
+    {
+      "id": "review-a851834f2dd5-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "acc-batch-run-stop-and-recovery",
+      "source": "review",
+      "review_round": 3,
+      "summary": "plugins/immune-brain/runtime/unattended/batch_runner.ts:537-704 cannot resume a parked needs_human batch: startBatch only promotes prepared to running, ignores fresh authorization fields in input, and therefore either returns the unchanged park or permanently converts the old expired authorization to budget_stopped."
+    },
+    {
+      "id": "review-a851834f2dd5-2-review-2",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "acc-batch-run-stop-and-recovery",
+      "source": "review",
+      "review_round": 3,
+      "summary": "plugins/immune-brain/runtime/unattended/batch_runner.ts:352,577,625 returns reportFor directly for foreign-claim needs_human stops, so those runs persist no required report; moreover batch_state.ts:291-305 preserves an earlier needs_human report after a later budget_stopped transition, leaving the sole report inconsistent with the terminal batch state."
+    },
+    {
+      "id": "review-a851834f2dd5-3-review-3",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "acc-batch-run-stop-and-recovery",
+      "source": "review",
+      "review_round": 3,
+      "summary": "plugins/immune-brain/runtime/unattended/batch_state.ts:83-160 accepts malformed persisted authorization dates and non-positive or non-integer budgets, after which batch_runner.ts treats invalid dates as unbounded and can bypass deadline or expiry stops instead of failing closed at the recovery boundary."
+    },
+    {
+      "id": "request_rework:2026-09-05-003-batch-run-state-machine:2026-09-07T10:21:25.005Z:replan-required",
+      "kind": "replan_required",
+      "status": "resolved",
+      "acceptance_id": "acc-batch-run-stop-and-recovery",
+      "source": "kernel",
+      "review_round": 3,
+      "summary": "Review returned this acceptance boundary twice; a durable replan is required."
+    },
+    {
+      "id": "review-a48dbe28aeac-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "acc-batch-run-stop-and-recovery",
+      "source": "review",
+      "review_round": 4,
+      "summary": "plugins/immune-brain/runtime/unattended/batch_state.ts:182-187,340-341 accepts completed records with pending/needs_human children and budget_stopped records with enrolled/settled children, while batch_runner.ts:216-218 blindly replays them; enforce complete terminal child-state invariants to prevent fabricated completion and orphaned claims."
+    },
+    {
+      "id": "review-a48dbe28aeac-2-review-2",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "acc-batch-run-stop-and-recovery",
+      "source": "review",
+      "review_round": 4,
+      "summary": "plugins/immune-brain/runtime/unattended/batch_runner.ts:658-707 treats a non-null projection error as proof that an interrupted enrolled child has no claim, rewrites it to pending, and re-enrolls it; fail closed on projection errors to avoid suppressing an unknown boundary failure and double-claiming the child."
+    },
+    {
+      "id": "request_rework:2026-09-05-003-batch-run-state-machine:2026-09-07T11:55:44.261Z:replan-required",
+      "kind": "replan_required",
+      "status": "resolved",
+      "acceptance_id": "acc-batch-run-stop-and-recovery",
+      "source": "kernel",
+      "review_round": 4,
+      "summary": "Review returned this acceptance boundary twice; a durable replan is required."
+    },
+    {
+      "id": "review-fee141445929-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "acc-batch-run-transitions",
+      "source": "review",
+      "review_round": 5,
+      "summary": "plugins/immune-brain/runtime/unattended/batch_runner.ts:495-536 parks a child but leaves the batch running, so an independent sibling is selected while the parked child still owns the sole Kernel claim; projectAssurance then rejects the sibling claim projection and startBatch throws without its needs_human report—transition to needs_human and stop immediately when a child is parked, with an independent-sibling regression test."
+    },
+    {
+      "id": "review-fee141445929-2-review-2",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "acc-batch-run-stop-and-recovery",
+      "source": "review",
+      "review_round": 5,
+      "summary": "plugins/immune-brain/runtime/unattended/batch_runner.ts:431-444 classifies any enrollment error whose free-form message mentions authorization and expiry as budget_stopped, suppressing infrastructure or validation failures as intentional stops; use only BatchAuthorizationExpiryError or another structured Kernel error discriminator."
+    },
+    {
+      "id": "request_rework:2026-09-05-003-batch-run-state-machine:2026-09-07T12:44:55.456Z:replan-required",
+      "kind": "replan_required",
+      "status": "resolved",
+      "acceptance_id": "acc-batch-run-transitions",
+      "source": "kernel",
+      "review_round": 5,
+      "summary": "Review returned this acceptance boundary twice; a durable replan is required."
+    },
+    {
+      "id": "review-97c8ce4742c8-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "acc-batch-run-transitions",
+      "source": "review",
+      "review_round": 6,
+      "summary": "plugins/immune-brain/runtime/unattended/batch_runner.ts:250-279 resets skipped dependents and marks the batch running after fresh confirmation even when a parked child's projection shows a foreign claim, allowing the loop at 326-453 to enroll an independent sibling while that parked child retains a Kernel claim."
+    },
+    {
+      "id": "review-97c8ce4742c8-2-review-2",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": null,
+      "source": "review",
+      "review_round": 6,
+      "summary": "plugins/immune-brain/runtime/unattended/batch_runner.ts:214-221 routes empty-plan rejection through finalize, which writes batch-001.report.json, while the changed spec requires pre-enrollment validation failures to leave zero writes and tests/unattended-batch-run.test.ts:276-285 only checks that the state file is absent."
+    },
+    {
+      "id": "request_rework:2026-09-05-003-batch-run-state-machine:2026-09-07T13:04:03.476Z:replan-required",
+      "kind": "replan_required",
+      "status": "resolved",
+      "acceptance_id": "acc-batch-run-transitions",
+      "source": "kernel",
+      "review_round": 6,
+      "summary": "Review returned this acceptance boundary twice; a durable replan is required."
+    },
+    {
+      "id": "review-c51459b5fdff-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "acc-batch-run-transitions",
+      "source": "review",
+      "review_round": 7,
+      "summary": "plugins/immune-brain/runtime/unattended/batch_runner.ts:424,639,685 parks children with foreign claims without calling skipDependents, leaving their transitive dependents pending instead of required skipped_blocked."
+    },
+    {
+      "id": "review-c51459b5fdff-2-review-2",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "acc-batch-run-stop-and-recovery",
+      "source": "review",
+      "review_round": 7,
+      "summary": "plugins/immune-brain/runtime/unattended/batch_runner.ts:122 recognizes only its local BatchAuthorizationExpiryError, but the Kernel expiry boundary in plugins/immune-brain/runtime/kernel/batch_authority.ts:212 throws an undifferentiated Error, so a real enrollment-time expiry cannot be classified structurally as budget_stopped without forbidden message matching."
+    },
+    {
+      "id": "request_rework:2026-09-05-003-batch-run-state-machine:2026-09-07T13:24:40.191Z:replan-required",
+      "kind": "replan_required",
+      "status": "resolved",
+      "acceptance_id": "acc-batch-run-transitions",
+      "source": "kernel",
+      "review_round": 7,
+      "summary": "Review returned this acceptance boundary twice; a durable replan is required."
+    },
+    {
+      "id": "review-016a0ff0ccf0-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "acc-batch-run-stop-and-recovery",
+      "source": "review",
+      "review_round": 8,
+      "summary": "plugins/immune-brain/runtime/unattended/batch_runner.ts:241-273 treats a caller-supplied later confirmation_time as freshness and only revalidates that the capability is genuine and unexpired, so the original still-valid capability can resume a parked batch without a new literal-user confirmation; it also validates input.base_head rather than the persisted batch base_head."
+    },
+    {
+      "id": "review-016a0ff0ccf0-2-review-2",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "acc-batch-run-transitions",
+      "source": "review",
+      "review_round": 8,
+      "summary": "plugins/immune-brain/runtime/unattended/batch_runner.ts:73-77,566-581 erases the Kernel rework operation discriminator and retries every rework under the QA failure limit, so a blocking Review finding can be driven automatically instead of immediately parking the child as needs_human."
+    },
+    {
+      "id": "review-016a0ff0ccf0-3-review-3",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "acc-batch-run-stop-and-recovery",
+      "source": "review",
+      "review_round": 8,
+      "summary": "plugins/immune-brain/runtime/unattended/batch_runner.ts:934-940 returns an interrupted child's review_ready result without persisting its operation_id, so crash recovery can lose the exact pending Review reservation required to continue safely."
+    },
+    {
+      "id": "review-016a0ff0ccf0-4-review-4",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "acc-batch-run-transitions",
+      "source": "review",
+      "review_round": 8,
+      "summary": "plugins/immune-brain/runtime/unattended/batch_runner.ts:102-119 traverses only pending dependents; an already-skipped intermediate node is not enqueued, so parked-resume healing can leave a pending transitive descendant unmarked instead of skipped_blocked."
+    },
+    {
+      "id": "request_rework:2026-09-05-003-batch-run-state-machine:2026-09-07T14:50:39.942Z:replan-required",
+      "kind": "replan_required",
+      "status": "resolved",
+      "acceptance_id": "acc-batch-run-stop-and-recovery",
+      "source": "kernel",
+      "review_round": 8,
+      "summary": "Review returned this acceptance boundary twice; a durable replan is required."
+    },
+    {
+      "id": "review-7191377da52c-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "acc-batch-run-transitions",
+      "source": "review",
+      "review_round": 9,
+      "summary": "The immutable revision fails the repository typecheck: batch_runner.ts passes nullable unattended BatchPlanChild values to the Kernel authorization digest contract, and batch_state.ts has an implicit-any blocked_by callback."
+    },
+    {
+      "id": "request_rework:2026-09-05-003-batch-run-state-machine:2026-09-07T15:06:16.830Z:replan-required",
+      "kind": "replan_required",
+      "status": "resolved",
+      "acceptance_id": "acc-batch-run-transitions",
+      "source": "kernel",
+      "review_round": 9,
+      "summary": "Review returned this acceptance boundary twice; a durable replan is required."
+    },
+    {
+      "id": "review-d9a25d010bbc-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "acc-batch-run-stop-and-recovery",
+      "source": "review",
+      "review_round": 10,
+      "summary": "plugins/immune-brain/runtime/unattended/batch_state.ts:235-336 validates batch IDs only in prepareBatchRunState, so exported read/write/report functions accept traversal IDs such as ../../../victim and can read or overwrite paths outside .imm/state/batches; enforce BATCH_ID_PATTERN at every persistence path boundary and add direct regression tests."
+    },
+    {
+      "id": "request_rework:2026-09-05-003-batch-run-state-machine:2026-09-07T15:17:12.070Z:replan-required",
+      "kind": "replan_required",
+      "status": "resolved",
+      "acceptance_id": "acc-batch-run-stop-and-recovery",
+      "source": "kernel",
+      "review_round": 10,
+      "summary": "Review returned this acceptance boundary twice; a durable replan is required."
+    },
+    {
+      "id": "review-9c21b4f45b03-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "acc-batch-run-stop-and-recovery",
+      "source": "review",
+      "review_round": 11,
+      "summary": "plugins/immune-brain/runtime/unattended/batch_runner.ts:821 marks an expired resumed run budget_stopped after its last in-flight child commits, even though no new enrollment remains; expiry should only gate new enrollment and this path should complete like the normal loop."
+    },
+    {
+      "id": "review-9c21b4f45b03-2-review-2",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "acc-batch-run-stop-and-recovery",
+      "source": "review",
+      "review_round": 11,
+      "summary": "plugins/immune-brain/runtime/unattended/batch_runner.ts:431 checks deadline_at before awaiting projectTask, while plugins/immune-brain/runtime/kernel/batch_authority.ts does not enforce deadline_at at enrollment, so a child can be enrolled after the authorized deadline elapses during projection."
+    },
+    {
+      "id": "request_rework:2026-09-05-003-batch-run-state-machine:2026-09-07T15:29:38.818Z:replan-required",
+      "kind": "replan_required",
+      "status": "resolved",
+      "acceptance_id": "acc-batch-run-stop-and-recovery",
+      "source": "kernel",
+      "review_round": 11,
+      "summary": "Review returned this acceptance boundary twice; a durable replan is required."
+    },
+    {
+      "id": "review-5fd9c23f1fa1-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "acc-batch-run-stop-and-recovery",
+      "source": "review",
+      "review_round": 12,
+      "summary": "plugins/immune-brain/runtime/unattended/batch_state.ts:106 and batch_runner.ts:266 trust valid-shaped persisted child states and commit strings without binding them to the authorized plan or fresh Kernel/Git evidence, so edited or corrupted state can claim every child is committed and make terminal replay report fabricated completion."
+    },
+    {
+      "id": "request_rework:2026-09-05-003-batch-run-state-machine:2026-09-07T15:42:22.601Z:replan-required",
+      "kind": "replan_required",
+      "status": "resolved",
+      "acceptance_id": "acc-batch-run-stop-and-recovery",
+      "source": "kernel",
+      "review_round": 12,
+      "summary": "Review returned this acceptance boundary twice; a durable replan is required."
+    },
+    {
+      "id": "review-a89a78947566-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "acc-batch-run-transitions",
+      "source": "review",
+      "review_round": 13,
+      "summary": "plugins/immune-brain/runtime/kernel/batch_authority.ts:164 accepts cyclic or self-blocking plans; startBatch then finds no enrollable child at batch_runner.ts:438, attempts an invalid completed transition after already persisting running state, and throws without a terminal report; reject dependency cycles at the authority boundary."
+    },
+    {
+      "id": "request_rework:2026-09-05-003-batch-run-state-machine:2026-09-07T15:57:31.741Z:replan-required",
+      "kind": "replan_required",
+      "status": "resolved",
+      "acceptance_id": "acc-batch-run-transitions",
+      "source": "kernel",
+      "review_round": 13,
+      "summary": "Review returned this acceptance boundary twice; a durable replan is required."
+    },
+    {
+      "id": "review-47bfcb06f381-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "acc-batch-run-stop-and-recovery",
+      "source": "review",
+      "review_round": 14,
+      "summary": "batch_runner.ts parked-resume write (~line 330: `existing = writeBatchRunState(input.root, { ...existing, confirmation_time, authorization_expires_at, budget, batch_state: \"running\", children: resumedChildren })`) never resets `consecutive_qa_failures`, which is still >= `budget.qa_failure_limit` from the park that stopped the run; driveInterruptedChild then does `record.consecutive_qa_failures += 1` and immediately re-parks on the child's very first QA rework, so a fresh literal-user confirmation can never make progress (tests only resume from blocked/foreign-claim/review_ready parks, never from a QA-limit park). Smallest fix: set `consecutive_qa_failures: 0` in that fresh-confirmation resume write and add one resume-after-QA-limit-park test asserting the child gets the full retry budget."
+    },
+    {
+      "id": "review-47bfcb06f381-2-review-2",
+      "kind": "advisory",
+      "status": "resolved",
+      "acceptance_id": "acc-batch-run-transitions",
+      "source": "review",
+      "review_round": 14,
+      "summary": "batch_runner.ts only converts `skipped_blocked` back to `pending` in the branch where no child remains parked (`resumedChildren`), so the un-skip is unreachable exactly when it is needed: after a human resolves a parked blocker and it commits (covered by the 'fresh confirmation resumes a parked batch' test, which uses a single child), its dependents stay `skipped_blocked` forever and `nextEnrollableChild` (pending-only) never enrolls them, so the batch reaches `completed` with next_action 'settled every enrollable child' while plan children were silently dropped. Smallest fix: on a fresh-confirmation resume always reset `skipped_blocked` children whose blockers are no longer needs_human, and add an A->B resume test asserting B is enrolled after A commits."
+    },
+    {
+      "id": "review-47bfcb06f381-3-review-3",
+      "kind": "advisory",
+      "status": "resolved",
+      "acceptance_id": "acc-batch-run-stop-and-recovery",
+      "source": "review",
+      "review_round": 14,
+      "summary": "batch_state.ts `ensureSecureDirectory`/`writeFileAtomically` re-implement only part of the existing kernel storage symlink boundary (unchanged path plugins/immune-brain/runtime/kernel/storage.ts, read because acc-batch-run-stop-and-recovery requires persistence 'through the existing kernel store lock'): they lstat only `.imm/state/batches` and rely on `existsSync` (which follows symlinks), so a symlink at `.imm` or `.imm/state` passes the write-side check and redirects batch state and report writes outside the project, while `readSecureProjectFile` on the read side rejects it via `assertNoSymlinkSegments`; the only symlink test plants the link at `batches`. Smallest fix: call the kernel's existing segment check (or walk `.imm`, `.imm/state`, `batches` with `lstatSync().isSymbolicLink()`) before `writeFileAtomically`, plus one test with the symlink at `.imm/state`."
+    },
+    {
+      "id": "request_rework:2026-09-05-003-batch-run-state-machine:2026-09-07T16:16:58.869Z:replan-required",
+      "kind": "replan_required",
+      "status": "resolved",
+      "acceptance_id": "acc-batch-run-stop-and-recovery",
+      "source": "kernel",
+      "review_round": 14,
+      "summary": "Review returned this acceptance boundary twice; a durable replan is required."
+    },
+    {
+      "id": "review-ec1c6b9e3f0f-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "acc-batch-run-stop-and-recovery",
+      "source": "review",
+      "review_round": 15,
+      "summary": "plugins/immune-brain/runtime/unattended/batch_runner.ts:696：resumeBatch 按原始数组顺序投影所有 pending child，而非按实际可 enrollment 顺序恢复。合法计划 [B blocked_by A, A] 在 A enrollment 成功、enrolled 状态尚未持久化时中断，恢复会先投影 B；直接依赖的未修改文件 plugins/immune-brain/runtime/kernel/assurance_projection.ts（为核实 projectTask 返回契约而读取）明确在 backend claim 属于其他 task 时返回 error，因此 requireFreshProjection 抛错，永远到不了 A 的 claim adoption，留下未结算 claim。最小修复是按 nextEnrollableChild 的同一选择规则定位待恢复 child，并增加该逆序计划的中断回归测试；测试 projection 必须模拟真实 Kernel 的跨 task claim 冲突，而非为每个 task 独立返回无错误结果。"
+    },
+    {
+      "id": "request_rework:2026-09-05-003-batch-run-state-machine:2026-09-07T16:30:18.831Z:replan-required",
+      "kind": "replan_required",
+      "status": "resolved",
+      "acceptance_id": "acc-batch-run-stop-and-recovery",
+      "source": "kernel",
+      "review_round": 15,
+      "summary": "Review returned this acceptance boundary twice; a durable replan is required."
+    },
+    {
+      "id": "review-254218f21ffb-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "acc-batch-run-stop-and-recovery",
+      "source": "review",
+      "review_round": 16,
+      "summary": "plugins/immune-brain/runtime/unattended/batch_runner.ts:256 binds a parked-run replacement authorization to the original base_head, but a freshly issued capability has no consumed children. After an earlier child has committed, the next enrollment therefore fails the first-child lineage check in plugins/immune-brain/runtime/kernel/batch_authority.ts (deriveChildEnrollment requires expected_head === validated.base_head when consumedChildren is empty). Fresh confirmation cannot actually resume remaining enrollments after prior commits; the scripted enrollTask in tests/unattended-batch-run.test.ts:104 bypasses this real boundary. Add Kernel-validated renewal that carries forward verified batch lineage and consumed-child history, and cover a commit → park → fresh capability → next enrollment sequence using the real derivation boundary."
+    },
+    {
+      "id": "request_rework:2026-09-05-003-batch-run-state-machine:2026-09-07T16:44:57.256Z:replan-required",
+      "kind": "replan_required",
+      "status": "resolved",
+      "acceptance_id": "acc-batch-run-stop-and-recovery",
+      "source": "kernel",
+      "review_round": 16,
+      "summary": "Review returned this acceptance boundary twice; a durable replan is required."
+    }
+  ],
+  "history": [
+    {
+      "id": "freeze_artifacts:2026-09-05-003-batch-run-state-machine:2026-09-07T08:35:20.685Z",
+      "at": "2026-09-07T08:35:20.685Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent and Spec frozen at docs/plans/archive/2026-09-05-003-batch-run-state-machine.intent.json"
+    },
+    {
+      "id": "record_approval:2026-09-05-003-batch-run-state-machine:2026-09-07T08:35:34.628Z",
+      "at": "2026-09-07T08:35:34.628Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-e7706882\naction_v2_sha256:06d703210444e4a30e2664fdcbcbbb1b480f843c13112179da1297122e8c4605",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-d57205d00b38faba",
+        "issued_at": "2026-09-07T08:35:34.628Z",
+        "expires_at": "2026-09-07T08:45:34.628Z"
+      }
+    },
+    {
+      "id": "request_rework:2026-09-05-003-batch-run-state-machine:2026-09-07T08:45:25.768Z",
+      "at": "2026-09-07T08:45:25.768Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_1\naction_v2_sha256:a3a7b7662fd2b3539461535b1107c0c46687f156ef119260bd1ada046c5972fc",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-80fdb7c3e768987e",
+        "issued_at": "2026-09-07T08:45:25.769Z",
+        "expires_at": "2026-09-07T08:55:25.769Z"
+      }
+    },
+    {
+      "id": "resolve_finding:2026-09-05-003-batch-run-state-machine:2026-09-07T09:36:20.052Z",
+      "at": "2026-09-07T09:36:20.052Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-ca59edf3ab17-1-review-1\naction_v2_sha256:34b384539ca63e42360dc853a59d400b1a12595c94897c7c6fc524b6895fe8ac"
+    },
+    {
+      "id": "freeze_artifacts:2026-09-05-003-batch-run-state-machine:2026-09-07T09:36:40.490Z",
+      "at": "2026-09-07T09:36:40.490Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent and Spec frozen at docs/plans/archive/2026-09-05-003-batch-run-state-machine.intent.json"
+    },
+    {
+      "id": "record_approval:2026-09-05-003-batch-run-state-machine:2026-09-07T09:37:07.043Z",
+      "at": "2026-09-07T09:37:07.043Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-e3a4c743\naction_v2_sha256:1f39cbff420d04f4291d8507756921c3010ff8f11098068587fb3bdad78d4c6b",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-3c6f65a20e369b27",
+        "issued_at": "2026-09-07T09:37:07.043Z",
+        "expires_at": "2026-09-07T09:47:07.043Z"
+      }
+    },
+    {
+      "id": "request_rework:2026-09-05-003-batch-run-state-machine:2026-09-07T09:42:06.973Z",
+      "at": "2026-09-07T09:42:06.973Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "review_round_2\naction_v2_sha256:665bebabd7a7184aa60ffef9c4bfbe43d6f4719e1a3f357283f81e5c7b90c43f",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-2e2bd034b9ffa2ae",
+        "issued_at": "2026-09-07T09:42:06.973Z",
+        "expires_at": "2026-09-07T09:52:06.973Z"
+      }
+    },
+    {
+      "id": "resolve_finding:2026-09-05-003-batch-run-state-machine:2026-09-07T10:12:03.924Z",
+      "at": "2026-09-07T10:12:03.924Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-384d3c3db699-1-review-1\naction_v2_sha256:6f7f7144f863fb0b2c1bb3699fd999650eb40fd52fcf91c1e529dc05aa589e1a"
+    },
+    {
+      "id": "resolve_finding:2026-09-05-003-batch-run-state-machine:2026-09-07T10:12:16.940Z",
+      "at": "2026-09-07T10:12:16.940Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-384d3c3db699-2-review-2\naction_v2_sha256:ba1be66254806c3d77c352d7ce73ecf56f2ef4bf235a9d036f06f9e347c75011"
+    },
+    {
+      "id": "resolve_finding:2026-09-05-003-batch-run-state-machine:2026-09-07T10:12:32.378Z",
+      "at": "2026-09-07T10:12:32.378Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-384d3c3db699-3-review-3\naction_v2_sha256:4298b67d65ceeb9287ace5d514472beaf733a29b130871ce837e3a417f1233e3"
+    },
+    {
+      "id": "authorize_rework:2026-09-05-003-batch-run-state-machine:2026-09-07T10:15:41.848Z",
+      "at": "2026-09-07T10:15:41.848Z",
+      "type": "authorize_rework",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "request_rework:2026-09-05-003-batch-run-state-machine:2026-09-07T09:42:06.973Z:replan-required\naction_v2_sha256:af8a0375d6f29f630f4235bee0ba2c6e1a276199e5699ad27f323cc1d6bf9bae",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-83b65f8974867865",
+        "issued_at": "2026-09-07T10:15:41.848Z",
+        "expires_at": "2026-09-07T10:25:41.848Z"
+      }
+    },
+    {
+      "id": "freeze_artifacts:2026-09-05-003-batch-run-state-machine:2026-09-07T10:15:54.098Z",
+      "at": "2026-09-07T10:15:54.098Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent and Spec frozen at docs/plans/archive/2026-09-05-003-batch-run-state-machine.intent.json"
+    },
+    {
+      "id": "record_approval:2026-09-05-003-batch-run-state-machine:2026-09-07T10:16:10.572Z",
+      "at": "2026-09-07T10:16:10.572Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-b63064b6\naction_v2_sha256:40cdb9b9ef2e2609fef7e30aafafd0acd8ea0701e9aab7a84d5adc6366ab14f2",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-aa080bf4ee6b6847",
+        "issued_at": "2026-09-07T10:16:10.572Z",
+        "expires_at": "2026-09-07T10:26:10.572Z"
+      }
+    },
+    {
+      "id": "request_rework:2026-09-05-003-batch-run-state-machine:2026-09-07T10:21:25.005Z",
+      "at": "2026-09-07T10:21:25.005Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "review_round_3\naction_v2_sha256:86d5fde5d8ed88998433c4bcb20895f5d4518092e967a05b57c03f3a8307ffdd",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-5d7188d7ee489612",
+        "issued_at": "2026-09-07T10:21:25.005Z",
+        "expires_at": "2026-09-07T10:31:25.005Z"
+      }
+    },
+    {
+      "id": "resolve_finding:2026-09-05-003-batch-run-state-machine:2026-09-07T11:44:26.372Z",
+      "at": "2026-09-07T11:44:26.372Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-a851834f2dd5-1-review-1\naction_v2_sha256:3ad4115b4688d33505972f952b083e6cb2001ddc394ba15c59077afa6fa0d38b"
+    },
+    {
+      "id": "resolve_finding:2026-09-05-003-batch-run-state-machine:2026-09-07T11:44:48.649Z",
+      "at": "2026-09-07T11:44:48.649Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-a851834f2dd5-2-review-2\naction_v2_sha256:3adb8a3c5b004ef4d1b090d0f33a261034467b06348b5a47a0f813698a398371"
+    },
+    {
+      "id": "resolve_finding:2026-09-05-003-batch-run-state-machine:2026-09-07T11:45:09.213Z",
+      "at": "2026-09-07T11:45:09.213Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-a851834f2dd5-3-review-3\naction_v2_sha256:27af8ea21bff002b8b23812dda7764d8e9c47c2dde7dd16860ba8c239ee8f1f3"
+    },
+    {
+      "id": "authorize_rework:2026-09-05-003-batch-run-state-machine:2026-09-07T11:48:00.676Z",
+      "at": "2026-09-07T11:48:00.676Z",
+      "type": "authorize_rework",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "request_rework:2026-09-05-003-batch-run-state-machine:2026-09-07T10:21:25.005Z:replan-required\naction_v2_sha256:b799c065439655e4b1711b535870a2eafbf97a6f6fbb7e04c4234b7919dd98b6",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-847a4ce420b16ecf",
+        "issued_at": "2026-09-07T11:48:00.676Z",
+        "expires_at": "2026-09-07T11:58:00.676Z"
+      }
+    },
+    {
+      "id": "freeze_artifacts:2026-09-05-003-batch-run-state-machine:2026-09-07T11:48:21.993Z",
+      "at": "2026-09-07T11:48:21.993Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent and Spec frozen at docs/plans/archive/2026-09-05-003-batch-run-state-machine.intent.json"
+    },
+    {
+      "id": "record_approval:2026-09-05-003-batch-run-state-machine:2026-09-07T11:48:42.091Z",
+      "at": "2026-09-07T11:48:42.091Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-35eee37b\naction_v2_sha256:070c5ecb8f53b55a82138933ff08d520a3973bd4df6bfd3610492e90684e40eb",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-a7be2137ae0491ab",
+        "issued_at": "2026-09-07T11:48:42.091Z",
+        "expires_at": "2026-09-07T11:58:42.091Z"
+      }
+    },
+    {
+      "id": "request_rework:2026-09-05-003-batch-run-state-machine:2026-09-07T11:55:44.261Z",
+      "at": "2026-09-07T11:55:44.261Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "review_round_4\naction_v2_sha256:ebd71187e50b53d993ebd18c568160de05426519a7530aef2390a0deb13face1",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-fdca7362bbb1be4f",
+        "issued_at": "2026-09-07T11:55:44.261Z",
+        "expires_at": "2026-09-07T12:05:44.261Z"
+      }
+    },
+    {
+      "id": "resolve_finding:2026-09-05-003-batch-run-state-machine:2026-09-07T12:07:54.510Z",
+      "at": "2026-09-07T12:07:54.510Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-a48dbe28aeac-1-review-1\naction_v2_sha256:a6bdcc3db8750ddd900ef79a7031e437087004c5d653e0f8fe54db4662b85c70"
+    },
+    {
+      "id": "resolve_finding:2026-09-05-003-batch-run-state-machine:2026-09-07T12:08:22.074Z",
+      "at": "2026-09-07T12:08:22.074Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-a48dbe28aeac-2-review-2\naction_v2_sha256:1d48b5bb7be26b77a73420d8da083842ed18a27b67f4acf8a83f58a1029173c3"
+    },
+    {
+      "id": "authorize_rework:2026-09-05-003-batch-run-state-machine:2026-09-07T12:12:02.955Z",
+      "at": "2026-09-07T12:12:02.955Z",
+      "type": "authorize_rework",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "request_rework:2026-09-05-003-batch-run-state-machine:2026-09-07T11:55:44.261Z:replan-required\naction_v2_sha256:0fc1f601b21344e1b1fe5443492f316cca2105121d25b543bdd3f83c1d1f0a43",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-35474b4231e975ff",
+        "issued_at": "2026-09-07T12:12:02.955Z",
+        "expires_at": "2026-09-07T12:22:02.955Z"
+      }
+    },
+    {
+      "id": "freeze_artifacts:2026-09-05-003-batch-run-state-machine:2026-09-07T12:12:33.994Z",
+      "at": "2026-09-07T12:12:33.994Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent and Spec frozen at docs/plans/archive/2026-09-05-003-batch-run-state-machine.intent.json"
+    },
+    {
+      "id": "record_approval:2026-09-05-003-batch-run-state-machine:2026-09-07T12:12:53.926Z",
+      "at": "2026-09-07T12:12:53.926Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-7148ac4e\naction_v2_sha256:e623541bee5f26508a77745ed674b4cb6f9a4275c8caa4fa43f716f8ca7116cc",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-730f45258a22615c",
+        "issued_at": "2026-09-07T12:12:53.926Z",
+        "expires_at": "2026-09-07T12:22:53.926Z"
+      }
+    },
+    {
+      "id": "request_rework:2026-09-05-003-batch-run-state-machine:2026-09-07T12:44:55.456Z",
+      "at": "2026-09-07T12:44:55.456Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "review_round_5\naction_v2_sha256:f8c297d8969fa84114fa83ac8f8afe328793f5736a451330c5bebbca834d75b9",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-1283e1dff2b82293",
+        "issued_at": "2026-09-07T12:44:55.457Z",
+        "expires_at": "2026-09-07T12:54:55.457Z"
+      }
+    },
+    {
+      "id": "approve_breaking_intent_revision:2026-09-05-003-batch-run-state-machine:2026-09-07T12:48:41.308Z",
+      "at": "2026-09-07T12:48:41.308Z",
+      "type": "approve_breaking_intent_revision",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "intent_revision_5\naction_v2_sha256:0f15b0d5b2782cb1324fa2dfb6ba59eba916d49bb89b3e4ea83e68e383671056",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-d7e36208313599ed",
+        "issued_at": "2026-09-07T12:48:41.526Z",
+        "expires_at": "2026-09-07T12:58:41.526Z"
+      }
+    },
+    {
+      "id": "resolve_finding:2026-09-05-003-batch-run-state-machine:2026-09-07T12:58:11.600Z",
+      "at": "2026-09-07T12:58:11.600Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-fee141445929-1-review-1\naction_v2_sha256:9b3204c000c8657cc867d67efeeee734dab15028d209e24eec2a0ed16f4b85e7"
+    },
+    {
+      "id": "resolve_finding:2026-09-05-003-batch-run-state-machine:2026-09-07T12:58:18.289Z",
+      "at": "2026-09-07T12:58:18.289Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-fee141445929-2-review-2\naction_v2_sha256:b199bd0e00cc96949da5aa50d624d219326bf41cd07b5cdaf499b58ca09c821a"
+    },
+    {
+      "id": "freeze_artifacts:2026-09-05-003-batch-run-state-machine:2026-09-07T12:58:25.876Z",
+      "at": "2026-09-07T12:58:25.876Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent and Spec frozen at docs/plans/archive/2026-09-05-003-batch-run-state-machine.intent.json"
+    },
+    {
+      "id": "record_approval:2026-09-05-003-batch-run-state-machine:2026-09-07T12:58:33.599Z",
+      "at": "2026-09-07T12:58:33.599Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-e68bdf4e\naction_v2_sha256:e7d6c0bb9e8ae8f1313bc4fed9cbd22caa905404aad397b8502329299bde6815",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-c9a261ffd657dcdd",
+        "issued_at": "2026-09-07T12:58:33.600Z",
+        "expires_at": "2026-09-07T13:08:33.600Z"
+      }
+    },
+    {
+      "id": "request_rework:2026-09-05-003-batch-run-state-machine:2026-09-07T13:04:03.476Z",
+      "at": "2026-09-07T13:04:03.476Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "review_round_6\naction_v2_sha256:f4e7b6b7bb4067c48b75a3a43413f01af8891835dc6bcea791bec118fb8a8a00",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-ad46b25521adb04a",
+        "issued_at": "2026-09-07T13:04:03.476Z",
+        "expires_at": "2026-09-07T13:14:03.476Z"
+      }
+    },
+    {
+      "id": "resolve_finding:2026-09-05-003-batch-run-state-machine:2026-09-07T13:10:43.566Z",
+      "at": "2026-09-07T13:10:43.566Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-97c8ce4742c8-1-review-1\naction_v2_sha256:1ef6b883db372d50c9cef9548f1f9a7ca7cdd0611ccc950665626b0e8888d141"
+    },
+    {
+      "id": "resolve_finding:2026-09-05-003-batch-run-state-machine:2026-09-07T13:10:50.136Z",
+      "at": "2026-09-07T13:10:50.136Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-97c8ce4742c8-2-review-2\naction_v2_sha256:286066ca460a46e464aaa16dcc95e8a072680163170790cae51514ef4df92768"
+    },
+    {
+      "id": "approve_breaking_intent_revision:2026-09-05-003-batch-run-state-machine:2026-09-07T13:14:18.283Z",
+      "at": "2026-09-07T13:14:18.283Z",
+      "type": "approve_breaking_intent_revision",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "intent_revision_6\naction_v2_sha256:21ba222adf4e58b74d4362c642851a6ea9502380e04d0c2c6c50b2e4195ede94",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-828a5b7cd601f28c",
+        "issued_at": "2026-09-07T13:14:18.493Z",
+        "expires_at": "2026-09-07T13:24:18.492Z"
+      }
+    },
+    {
+      "id": "freeze_artifacts:2026-09-05-003-batch-run-state-machine:2026-09-07T13:14:35.527Z",
+      "at": "2026-09-07T13:14:35.527Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent and Spec frozen at docs/plans/archive/2026-09-05-003-batch-run-state-machine.intent.json"
+    },
+    {
+      "id": "record_approval:2026-09-05-003-batch-run-state-machine:2026-09-07T13:14:42.044Z",
+      "at": "2026-09-07T13:14:42.044Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-20115b71\naction_v2_sha256:71b72567742dbd215edb83ca6fa24f8e04dd238ddfbfbece06be3b77f5a55b52",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-b8a256cc7bcb5d89",
+        "issued_at": "2026-09-07T13:14:42.044Z",
+        "expires_at": "2026-09-07T13:24:42.044Z"
+      }
+    },
+    {
+      "id": "request_rework:2026-09-05-003-batch-run-state-machine:2026-09-07T13:24:40.191Z",
+      "at": "2026-09-07T13:24:40.191Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "review_round_7\naction_v2_sha256:e5c93ff395bb0209b77322a5d9a80f379dc41f57842bb421eb5c91357c876a02",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-966e40ab93268c2d",
+        "issued_at": "2026-09-07T13:24:40.191Z",
+        "expires_at": "2026-09-07T13:34:40.191Z"
+      }
+    },
+    {
+      "id": "resolve_finding:2026-09-05-003-batch-run-state-machine:2026-09-07T13:29:22.060Z",
+      "at": "2026-09-07T13:29:22.060Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-c51459b5fdff-1-review-1\naction_v2_sha256:d7936443e6deed7fea47ca799214f2f451475e06af6f22d40e019f847446d29c"
+    },
+    {
+      "id": "resolve_finding:2026-09-05-003-batch-run-state-machine:2026-09-07T13:29:28.634Z",
+      "at": "2026-09-07T13:29:28.634Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-c51459b5fdff-2-review-2\naction_v2_sha256:83716848402874b02d435cf5f7022b943f00be81bba7568b3ea61afc734b35c7"
+    },
+    {
+      "id": "approve_breaking_intent_revision:2026-09-05-003-batch-run-state-machine:2026-09-07T13:36:06.338Z",
+      "at": "2026-09-07T13:36:06.338Z",
+      "type": "approve_breaking_intent_revision",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "intent_revision_7\naction_v2_sha256:4de7f65708bedf14d45ea0b8afd1da040e57c4fd857f1259a2ae91236a823a80",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-1dbe0afc8b81796d",
+        "issued_at": "2026-09-07T13:36:06.570Z",
+        "expires_at": "2026-09-07T13:46:06.570Z"
+      }
+    },
+    {
+      "id": "freeze_artifacts:2026-09-05-003-batch-run-state-machine:2026-09-07T13:36:14.808Z",
+      "at": "2026-09-07T13:36:14.808Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent and Spec frozen at docs/plans/archive/2026-09-05-003-batch-run-state-machine.intent.json"
+    },
+    {
+      "id": "record_approval:2026-09-05-003-batch-run-state-machine:2026-09-07T13:36:18.724Z",
+      "at": "2026-09-07T13:36:18.724Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-2d9ad644\naction_v2_sha256:1f96e909073bc0107993e0e8fc18934feb97b38f4ab977fd042c009571a9be6a",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-6a9e8cc93580b5ca",
+        "issued_at": "2026-09-07T13:36:18.724Z",
+        "expires_at": "2026-09-07T13:46:18.724Z"
+      }
+    },
+    {
+      "id": "record_approval:2026-09-05-003-batch-run-state-machine:2026-09-07T14:05:50.063Z",
+      "at": "2026-09-07T14:05:50.063Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-160a9ccc\naction_v2_sha256:fbf3e2b31f36e9d4fd44ee5a864a37b39e82f29cd4055c79c131c298c5e8e683",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-7b6b81cc9ea5f39c",
+        "issued_at": "2026-09-07T14:05:50.063Z",
+        "expires_at": "2026-09-07T14:15:50.063Z"
+      }
+    },
+    {
+      "id": "record_approval:2026-09-05-003-batch-run-state-machine:2026-09-07T14:27:31.564Z",
+      "at": "2026-09-07T14:27:31.564Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-5a2e58d2\naction_v2_sha256:1f1dd8e2379b17387f92d61907eebe263c46fab419b1288ae2cdf2b219737816",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-431ad4df54870a8f",
+        "issued_at": "2026-09-07T14:27:31.565Z",
+        "expires_at": "2026-09-07T14:37:31.565Z"
+      }
+    },
+    {
+      "id": "request_rework:2026-09-05-003-batch-run-state-machine:2026-09-07T14:50:39.942Z",
+      "at": "2026-09-07T14:50:39.942Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "review_round_8\naction_v2_sha256:363577181e2a8fb7f2a5803093ac86eaec22a6f3cd2b271f4e4ae15916f60bbf",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-a51c042a22de9109",
+        "issued_at": "2026-09-07T14:50:39.942Z",
+        "expires_at": "2026-09-07T15:00:39.942Z"
+      }
+    },
+    {
+      "id": "authorize_rework:2026-09-05-003-batch-run-state-machine:2026-09-07T14:51:03.037Z",
+      "at": "2026-09-07T14:51:03.037Z",
+      "type": "authorize_rework",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "request_rework:2026-09-05-003-batch-run-state-machine:2026-09-07T14:50:39.942Z:replan-required\naction_v2_sha256:161d7b9cb576a9974077626cecd2c98d96a2b76afddc893cb47d65a56db1f4cd",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-2718a5f7d13ba940",
+        "issued_at": "2026-09-07T14:51:03.038Z",
+        "expires_at": "2026-09-07T15:01:03.038Z"
+      }
+    },
+    {
+      "id": "resolve_finding:2026-09-05-003-batch-run-state-machine:2026-09-07T14:58:34.704Z",
+      "at": "2026-09-07T14:58:34.704Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-016a0ff0ccf0-1-review-1\naction_v2_sha256:24b7bd296aa910e02355d4921c9016f0867cf5c77881ab9dc8abe84a6b2414d1"
+    },
+    {
+      "id": "resolve_finding:2026-09-05-003-batch-run-state-machine:2026-09-07T14:58:45.059Z",
+      "at": "2026-09-07T14:58:45.059Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-016a0ff0ccf0-2-review-2\naction_v2_sha256:65b15f4b0fbba3b5521cb7b77f4812e1230c018af7f9bbe7d7b5c3bad8cedcd5"
+    },
+    {
+      "id": "resolve_finding:2026-09-05-003-batch-run-state-machine:2026-09-07T14:58:54.451Z",
+      "at": "2026-09-07T14:58:54.451Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-016a0ff0ccf0-3-review-3\naction_v2_sha256:930b2b2e6477bd185546b6e9a8d7aa7c2f5f372a86b965986f85ce0557426009"
+    },
+    {
+      "id": "resolve_finding:2026-09-05-003-batch-run-state-machine:2026-09-07T14:59:04.644Z",
+      "at": "2026-09-07T14:59:04.644Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-016a0ff0ccf0-4-review-4\naction_v2_sha256:f02e1878c2d8cac6e044709bd77f7c737bd070ab7fd89b51308ef86acedecb1e"
+    },
+    {
+      "id": "freeze_artifacts:2026-09-05-003-batch-run-state-machine:2026-09-07T14:59:35.745Z",
+      "at": "2026-09-07T14:59:35.745Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent and Spec frozen at docs/plans/archive/2026-09-05-003-batch-run-state-machine.intent.json"
+    },
+    {
+      "id": "record_approval:2026-09-05-003-batch-run-state-machine:2026-09-07T14:59:46.471Z",
+      "at": "2026-09-07T14:59:46.471Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-d6170acd\naction_v2_sha256:71c632ec28a8db8d9f1a082b4ed91380f1dedb82c82a404d2c1bcf2e0e74de44",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-52fedbe77abd598f",
+        "issued_at": "2026-09-07T14:59:46.472Z",
+        "expires_at": "2026-09-07T15:09:46.471Z"
+      }
+    },
+    {
+      "id": "request_rework:2026-09-05-003-batch-run-state-machine:2026-09-07T15:06:16.830Z",
+      "at": "2026-09-07T15:06:16.830Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "review_round_9\naction_v2_sha256:78f8eb2032cd7193c1c93f4aafe2b04eadf0d2aadc976030a0c721880a4ba5a0",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-25161a26d4343eba",
+        "issued_at": "2026-09-07T15:06:16.830Z",
+        "expires_at": "2026-09-07T15:16:16.830Z"
+      }
+    },
+    {
+      "id": "authorize_rework:2026-09-05-003-batch-run-state-machine:2026-09-07T15:06:32.918Z",
+      "at": "2026-09-07T15:06:32.918Z",
+      "type": "authorize_rework",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "request_rework:2026-09-05-003-batch-run-state-machine:2026-09-07T15:06:16.830Z:replan-required\naction_v2_sha256:9322702939e4b39d745d708a34891686f6f1758981aaab57232385cce73b7648",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-b4f398c5782dc3bc",
+        "issued_at": "2026-09-07T15:06:32.919Z",
+        "expires_at": "2026-09-07T15:16:32.919Z"
+      }
+    },
+    {
+      "id": "resolve_finding:2026-09-05-003-batch-run-state-machine:2026-09-07T15:09:15.116Z",
+      "at": "2026-09-07T15:09:15.116Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-7191377da52c-1-review-1\naction_v2_sha256:f23df2b074ae10b7c59de7b71062a42cb3bc06a35f7bb2d89feeec90b7e1e535"
+    },
+    {
+      "id": "freeze_artifacts:2026-09-05-003-batch-run-state-machine:2026-09-07T15:09:38.926Z",
+      "at": "2026-09-07T15:09:38.926Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent and Spec frozen at docs/plans/archive/2026-09-05-003-batch-run-state-machine.intent.json"
+    },
+    {
+      "id": "record_approval:2026-09-05-003-batch-run-state-machine:2026-09-07T15:09:49.120Z",
+      "at": "2026-09-07T15:09:49.120Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-4ad6dce4\naction_v2_sha256:b23fc220d5617bf54f7b51ce9d6fd89c2fde104338956d142756ce6dc869e0df",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-c74f29e02a0ea9d5",
+        "issued_at": "2026-09-07T15:09:49.120Z",
+        "expires_at": "2026-09-07T15:19:49.120Z"
+      }
+    },
+    {
+      "id": "request_rework:2026-09-05-003-batch-run-state-machine:2026-09-07T15:17:12.070Z",
+      "at": "2026-09-07T15:17:12.070Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "review_round_10\naction_v2_sha256:a950ca8d490929afd2ec2051b1de8b1187b4f1245e730e31ee8a8b6b9a02cd5f",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-fe3aa360917335ef",
+        "issued_at": "2026-09-07T15:17:12.070Z",
+        "expires_at": "2026-09-07T15:27:12.070Z"
+      }
+    },
+    {
+      "id": "authorize_rework:2026-09-05-003-batch-run-state-machine:2026-09-07T15:17:27.810Z",
+      "at": "2026-09-07T15:17:27.810Z",
+      "type": "authorize_rework",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "request_rework:2026-09-05-003-batch-run-state-machine:2026-09-07T15:17:12.070Z:replan-required\naction_v2_sha256:5e281b02deb5e01f492218861fb04ec416d373cb1d9bd451b7a1e8e7da0bf733",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-26dc80ad39931713",
+        "issued_at": "2026-09-07T15:17:27.811Z",
+        "expires_at": "2026-09-07T15:27:27.811Z"
+      }
+    },
+    {
+      "id": "resolve_finding:2026-09-05-003-batch-run-state-machine:2026-09-07T15:21:07.527Z",
+      "at": "2026-09-07T15:21:07.527Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-d9a25d010bbc-1-review-1\naction_v2_sha256:54f249331893dc6e3bfa66dac00b38973a045ffe69bfb0f09f26d07ccd7b59c7"
+    },
+    {
+      "id": "freeze_artifacts:2026-09-05-003-batch-run-state-machine:2026-09-07T15:21:24.807Z",
+      "at": "2026-09-07T15:21:24.807Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent and Spec frozen at docs/plans/archive/2026-09-05-003-batch-run-state-machine.intent.json"
+    },
+    {
+      "id": "record_approval:2026-09-05-003-batch-run-state-machine:2026-09-07T15:21:34.767Z",
+      "at": "2026-09-07T15:21:34.767Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-8fb93aec\naction_v2_sha256:a5dcd74525ca66008e4b286c83dc7b3ca699b3628123bc94b0b8844bcbd94e1b",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-a93fd53592b6ec67",
+        "issued_at": "2026-09-07T15:21:34.767Z",
+        "expires_at": "2026-09-07T15:31:34.767Z"
+      }
+    },
+    {
+      "id": "request_rework:2026-09-05-003-batch-run-state-machine:2026-09-07T15:29:38.818Z",
+      "at": "2026-09-07T15:29:38.818Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "review_round_11\naction_v2_sha256:d555aa4d81da1a00542a495d57426caf7d2af641cb4af72b692d0be4bcfc6c88",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-6fe1ee36daa02c20",
+        "issued_at": "2026-09-07T15:29:38.818Z",
+        "expires_at": "2026-09-07T15:39:38.818Z"
+      }
+    },
+    {
+      "id": "authorize_rework:2026-09-05-003-batch-run-state-machine:2026-09-07T15:30:00.489Z",
+      "at": "2026-09-07T15:30:00.489Z",
+      "type": "authorize_rework",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "request_rework:2026-09-05-003-batch-run-state-machine:2026-09-07T15:29:38.818Z:replan-required\naction_v2_sha256:b48e977847827fb59bfdffb6b2c9f7f4bd463566603cb4884301f78a4b926919",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-29ac452bd065fe8b",
+        "issued_at": "2026-09-07T15:30:00.489Z",
+        "expires_at": "2026-09-07T15:40:00.489Z"
+      }
+    },
+    {
+      "id": "resolve_finding:2026-09-05-003-batch-run-state-machine:2026-09-07T15:35:24.862Z",
+      "at": "2026-09-07T15:35:24.862Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-9c21b4f45b03-1-review-1\naction_v2_sha256:eb7fcd0920e21aa2d14a52cde0418f3f4c5051a4b26e42dc0e3fe8005b9ed1b9"
+    },
+    {
+      "id": "resolve_finding:2026-09-05-003-batch-run-state-machine:2026-09-07T15:35:34.724Z",
+      "at": "2026-09-07T15:35:34.724Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-9c21b4f45b03-2-review-2\naction_v2_sha256:75d69dbb36758b6601ac6cbbc0cf4b176ed65684ec1452b8aae14cd77405e9e0"
+    },
+    {
+      "id": "freeze_artifacts:2026-09-05-003-batch-run-state-machine:2026-09-07T15:36:08.668Z",
+      "at": "2026-09-07T15:36:08.668Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent and Spec frozen at docs/plans/archive/2026-09-05-003-batch-run-state-machine.intent.json"
+    },
+    {
+      "id": "record_approval:2026-09-05-003-batch-run-state-machine:2026-09-07T15:36:20.877Z",
+      "at": "2026-09-07T15:36:20.877Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-128243b9\naction_v2_sha256:431ae252cc267f7a406669949e75954cba2c690097c146f296efc170affbb4df",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-bd2cddc9ab473e0d",
+        "issued_at": "2026-09-07T15:36:20.878Z",
+        "expires_at": "2026-09-07T15:46:20.878Z"
+      }
+    },
+    {
+      "id": "request_rework:2026-09-05-003-batch-run-state-machine:2026-09-07T15:42:22.601Z",
+      "at": "2026-09-07T15:42:22.601Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "review_round_12\naction_v2_sha256:ffc481ad59b0f6ddbd3c71d7ddee5861e0ec1782365cb6c8d6a0ba0ade781cbc",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-1d22e0f6ad31446a",
+        "issued_at": "2026-09-07T15:42:22.602Z",
+        "expires_at": "2026-09-07T15:52:22.602Z"
+      }
+    },
+    {
+      "id": "authorize_rework:2026-09-05-003-batch-run-state-machine:2026-09-07T15:42:42.942Z",
+      "at": "2026-09-07T15:42:42.942Z",
+      "type": "authorize_rework",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "request_rework:2026-09-05-003-batch-run-state-machine:2026-09-07T15:42:22.601Z:replan-required\naction_v2_sha256:6e15f1ac9ee530d11cc5248dc6954dc2e86c770c6eb85af35bb3b810184b0804",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-a5eeb4497a4ccfd6",
+        "issued_at": "2026-09-07T15:42:42.942Z",
+        "expires_at": "2026-09-07T15:52:42.942Z"
+      }
+    },
+    {
+      "id": "resolve_finding:2026-09-05-003-batch-run-state-machine:2026-09-07T15:49:32.741Z",
+      "at": "2026-09-07T15:49:32.741Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-5fd9c23f1fa1-1-review-1\naction_v2_sha256:2480a7a6df24821f90ded17358da5b29141f4a2508c854ffb52a13bd99b7c307"
+    },
+    {
+      "id": "freeze_artifacts:2026-09-05-003-batch-run-state-machine:2026-09-07T15:49:53.560Z",
+      "at": "2026-09-07T15:49:53.560Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent and Spec frozen at docs/plans/archive/2026-09-05-003-batch-run-state-machine.intent.json"
+    },
+    {
+      "id": "record_approval:2026-09-05-003-batch-run-state-machine:2026-09-07T15:50:03.265Z",
+      "at": "2026-09-07T15:50:03.265Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-0819fddd\naction_v2_sha256:f51f02bfe89f28ce25358247cfa49eb98d2b9efd6d19019b259771510229fd6c",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-4774894a89b608e5",
+        "issued_at": "2026-09-07T15:50:03.265Z",
+        "expires_at": "2026-09-07T16:00:03.265Z"
+      }
+    },
+    {
+      "id": "request_rework:2026-09-05-003-batch-run-state-machine:2026-09-07T15:57:31.741Z",
+      "at": "2026-09-07T15:57:31.741Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "review_round_13\naction_v2_sha256:30da347107b593f51347c8d1720f42a036b59151cc1475adc1a211398cf4de21",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-b84dc427185d891c",
+        "issued_at": "2026-09-07T15:57:31.741Z",
+        "expires_at": "2026-09-07T16:07:31.741Z"
+      }
+    },
+    {
+      "id": "authorize_rework:2026-09-05-003-batch-run-state-machine:2026-09-07T16:02:55.328Z",
+      "at": "2026-09-07T16:02:55.328Z",
+      "type": "authorize_rework",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "request_rework:2026-09-05-003-batch-run-state-machine:2026-09-07T15:57:31.741Z:replan-required\naction_v2_sha256:bf2c01e23704c8a9eb75203dac980d6aa6c7cac4ef64d6fa0abe4140c56fd9e0",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-b9c7d81a4c582f19",
+        "issued_at": "2026-09-07T16:02:55.328Z",
+        "expires_at": "2026-09-07T16:12:55.328Z"
+      }
+    },
+    {
+      "id": "resolve_finding:2026-09-05-003-batch-run-state-machine:2026-09-07T16:07:14.951Z",
+      "at": "2026-09-07T16:07:14.951Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-a89a78947566-1-review-1\naction_v2_sha256:863030288a5b08094ab4528dd2b52857888343ec4ea69e03bbc82050cf054d11"
+    },
+    {
+      "id": "freeze_artifacts:2026-09-05-003-batch-run-state-machine:2026-09-07T16:07:47.936Z",
+      "at": "2026-09-07T16:07:47.936Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent and Spec frozen at docs/plans/archive/2026-09-05-003-batch-run-state-machine.intent.json"
+    },
+    {
+      "id": "record_approval:2026-09-05-003-batch-run-state-machine:2026-09-07T16:07:57.998Z",
+      "at": "2026-09-07T16:07:57.998Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-f4c5c5f7\naction_v2_sha256:8d64fd31e8029433cb9ccb5f873e47fbe30785b2f080c22417fa547120c79d2e",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-d457e0029b31c4d3",
+        "issued_at": "2026-09-07T16:07:57.999Z",
+        "expires_at": "2026-09-07T16:17:57.999Z"
+      }
+    },
+    {
+      "id": "request_rework:2026-09-05-003-batch-run-state-machine:2026-09-07T16:16:58.869Z",
+      "at": "2026-09-07T16:16:58.869Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "review_round_14\naction_v2_sha256:5048d9aa70637412f32a247a1d1536e19c0de868a0669c1d4406efc608e4dbf2",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-24e970e903a9a68f",
+        "issued_at": "2026-09-07T16:16:58.870Z",
+        "expires_at": "2026-09-07T16:26:58.869Z"
+      }
+    },
+    {
+      "id": "authorize_rework:2026-09-05-003-batch-run-state-machine:2026-09-07T16:21:27.373Z",
+      "at": "2026-09-07T16:21:27.373Z",
+      "type": "authorize_rework",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "request_rework:2026-09-05-003-batch-run-state-machine:2026-09-07T16:16:58.869Z:replan-required\naction_v2_sha256:a5da6aa02b7ce500e2471a33ae9efe687d6958353d0a04535da5b18999744d6e",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-6cf4677eb8fee17d",
+        "issued_at": "2026-09-07T16:21:27.374Z",
+        "expires_at": "2026-09-07T16:31:27.374Z"
+      }
+    },
+    {
+      "id": "resolve_finding:2026-09-05-003-batch-run-state-machine:2026-09-07T16:25:33.826Z",
+      "at": "2026-09-07T16:25:33.826Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-47bfcb06f381-1-review-1\naction_v2_sha256:7d9a381f470448a73250c6b8b158393f5c7f934b729c24cd525d2e6a0c311098"
+    },
+    {
+      "id": "resolve_finding:2026-09-05-003-batch-run-state-machine:2026-09-07T16:25:50.001Z",
+      "at": "2026-09-07T16:25:50.001Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-47bfcb06f381-2-review-2\naction_v2_sha256:5b85f4bf917d12c55773648bee5d8a613194b71f4d6b6db4f7bb5d047c0b5210"
+    },
+    {
+      "id": "resolve_finding:2026-09-05-003-batch-run-state-machine:2026-09-07T16:26:00.873Z",
+      "at": "2026-09-07T16:26:00.873Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-47bfcb06f381-3-review-3\naction_v2_sha256:d5fafeb75220faf6ad85474898c72f035b3d96d209bb85effb3103109c81f33a"
+    },
+    {
+      "id": "freeze_artifacts:2026-09-05-003-batch-run-state-machine:2026-09-07T16:26:22.218Z",
+      "at": "2026-09-07T16:26:22.218Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent and Spec frozen at docs/plans/archive/2026-09-05-003-batch-run-state-machine.intent.json"
+    },
+    {
+      "id": "record_approval:2026-09-05-003-batch-run-state-machine:2026-09-07T16:26:32.526Z",
+      "at": "2026-09-07T16:26:32.526Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-2a4f3cad\naction_v2_sha256:ed05e136cd78294b52e3604ab4a3c45b0f0c52741b68b11fc0f1b91f9bbb0ed2",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-49b373acc7884b8c",
+        "issued_at": "2026-09-07T16:26:32.526Z",
+        "expires_at": "2026-09-07T16:36:32.526Z"
+      }
+    },
+    {
+      "id": "request_rework:2026-09-05-003-batch-run-state-machine:2026-09-07T16:30:18.831Z",
+      "at": "2026-09-07T16:30:18.831Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "review_round_15\naction_v2_sha256:09b3c140e9e9c3b9623a591f24308b37f00e631d2d11fb1b48e229758be71719",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-2d202dac4edb5f24",
+        "issued_at": "2026-09-07T16:30:18.831Z",
+        "expires_at": "2026-09-07T16:40:18.831Z"
+      }
+    },
+    {
+      "id": "authorize_rework:2026-09-05-003-batch-run-state-machine:2026-09-07T16:35:01.828Z",
+      "at": "2026-09-07T16:35:01.828Z",
+      "type": "authorize_rework",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "request_rework:2026-09-05-003-batch-run-state-machine:2026-09-07T16:30:18.831Z:replan-required\naction_v2_sha256:c65951042b3d69a75d3813fa40ea3bd323bfc5a3608e11f316b0b22706631ecd",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-bd86786a896993e3",
+        "issued_at": "2026-09-07T16:35:01.828Z",
+        "expires_at": "2026-09-07T16:45:01.828Z"
+      }
+    },
+    {
+      "id": "resolve_finding:2026-09-05-003-batch-run-state-machine:2026-09-07T16:40:13.022Z",
+      "at": "2026-09-07T16:40:13.022Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-ec1c6b9e3f0f-1-review-1\naction_v2_sha256:d69c71e93e124c7f45374586024e11294c14ccb5e2c2826f57c7788e80059459"
+    },
+    {
+      "id": "freeze_artifacts:2026-09-05-003-batch-run-state-machine:2026-09-07T16:40:35.914Z",
+      "at": "2026-09-07T16:40:35.914Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent and Spec frozen at docs/plans/archive/2026-09-05-003-batch-run-state-machine.intent.json"
+    },
+    {
+      "id": "record_approval:2026-09-05-003-batch-run-state-machine:2026-09-07T16:40:48.338Z",
+      "at": "2026-09-07T16:40:48.338Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-e4712f94\naction_v2_sha256:bf32b76469ec4933b3896939b8af56d1b184fdba8549e0ae6157d1d948d9059e",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-d322c1e331edfa21",
+        "issued_at": "2026-09-07T16:40:48.338Z",
+        "expires_at": "2026-09-07T16:50:48.338Z"
+      }
+    },
+    {
+      "id": "request_rework:2026-09-05-003-batch-run-state-machine:2026-09-07T16:44:57.256Z",
+      "at": "2026-09-07T16:44:57.256Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "review_round_16\naction_v2_sha256:55eb948ee78c8c871c469a030f9110d8aae6e59f3eae20092c1ec97ce6d9d917",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-5002bc3b92924767",
+        "issued_at": "2026-09-07T16:44:57.256Z",
+        "expires_at": "2026-09-07T16:54:57.256Z"
+      }
+    },
+    {
+      "id": "authorize_rework:2026-09-05-003-batch-run-state-machine:2026-09-07T16:45:59.899Z",
+      "at": "2026-09-07T16:45:59.899Z",
+      "type": "authorize_rework",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "request_rework:2026-09-05-003-batch-run-state-machine:2026-09-07T16:44:57.256Z:replan-required\naction_v2_sha256:3b7a9469e7e06f127c027dbfb2640b886186749f2b10beb1c274be3b52a27c8b",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-98c05861bdb109e6",
+        "issued_at": "2026-09-07T16:45:59.900Z",
+        "expires_at": "2026-09-07T16:55:59.900Z"
+      }
+    },
+    {
+      "id": "resolve_finding:2026-09-05-003-batch-run-state-machine:2026-09-07T23:52:54.470Z",
+      "at": "2026-09-07T23:52:54.470Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-254218f21ffb-1-review-1\naction_v2_sha256:5f1e32d11708fc3e72fffd7b9f11f063002289e98c5bde09456641a1137b9a7e"
+    },
+    {
+      "id": "freeze_artifacts:2026-09-05-003-batch-run-state-machine:2026-09-07T23:53:14.812Z",
+      "at": "2026-09-07T23:53:14.812Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent and Spec frozen at docs/plans/archive/2026-09-05-003-batch-run-state-machine.intent.json"
+    },
+    {
+      "id": "record_approval:2026-09-05-003-batch-run-state-machine:2026-09-07T23:53:27.182Z",
+      "at": "2026-09-07T23:53:27.182Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-de960024\naction_v2_sha256:e076bab3ea76c325b17de7169e969ff6823057e94a74f18cb1e2270a15ba8b20",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-cb9021c8ba1b91c9",
+        "issued_at": "2026-09-07T23:53:27.183Z",
+        "expires_at": "2026-09-08T00:03:27.183Z"
+      }
+    },
+    {
+      "id": "record_approval:2026-09-05-003-batch-run-state-machine:2026-09-07T23:57:33.746Z",
+      "at": "2026-09-07T23:57:33.746Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-1830fe63\naction_v2_sha256:24821bb19ebebcdb05542dd417a807924d49b2fe4c23785c92a5d4ac5fdd8a59",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-00dc560a28b73263",
+        "issued_at": "2026-09-07T23:57:33.746Z",
+        "expires_at": "2026-09-08T00:07:33.746Z"
+      }
+    },
+    {
+      "id": "complete:2026-09-05-003-batch-run-state-machine:2026-09-07T23:57:34.393Z",
+      "at": "2026-09-07T23:57:34.393Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:d0f34ba5a51ad6bb2a679157b4b39fb43773c842d74c730d8020e1e7eca933be"
+    }
+  ]
+}

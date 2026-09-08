@@ -71,7 +71,21 @@ function hasImplementingCommit(intentPath: string): boolean {
       cwd: REPO_ROOT,
       encoding: "utf8",
     } as any) as unknown as string;
-    return out.trim().length > 0;
+    // Settlement commits ("imm: settle …") move/archive shared authority
+    // artifacts and are not implementing commits for pending intents that
+    // merely list those shared paths in scope_hint. Likewise, commits that
+    // implement or settle OTHER sibling tasks ("imm: …" and "imm: settle …")
+    // legitimately touch shared scope paths and do not count as implementing
+    // commits for this still-pending intent.
+    const implementing = out
+      .split("\n")
+      .filter(
+        (line: string) =>
+          line.trim().length > 0 &&
+          !/^\w+ imm: /.test(line) &&
+          !/^\w+ imm: settle /.test(line),
+      );
+    return implementing.length > 0;
   } catch { return false; }
 }
 
@@ -97,8 +111,13 @@ describe("planning artifact archival", () => {
         continue;
       }
       if (phase === null) {
-        // no record: check second signal
-        if (hasImplementingCommit(rel)) {
+        // no record: check second signal. Skip intents whose scope still
+        // references paths that do not exist (task not started; sibling batch
+        // tasks legitimately created shared runtime files in the meantime).
+        const taskScope: string[] = (JSON.parse(readFileSync(full, "utf8")).scope_hint ?? [])
+          .filter((p: string) => !isPlanningPath(p));
+        const missingScope = taskScope.some((p: string) => !existsSync(join(REPO_ROOT, p)));
+        if (!missingScope && hasImplementingCommit(rel)) {
           violations.push(`${rel} has implementing commit but no record, should be archived`);
           shouldArchive.push(rel);
         }

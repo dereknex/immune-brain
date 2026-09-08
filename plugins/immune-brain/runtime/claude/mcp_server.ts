@@ -26,6 +26,7 @@ export const TOOLS = [
 	{ name: "approve_breaking_intent_revision", description: "Approve a breaking TaskIntent revision.", privileged: true },
 	{ name: "stop", description: "Stop the active task with literal-user authority.", privileged: true },
 	{ name: "repair_authority_state", description: "Repair a proven recoverable stale backend claim.", privileged: false },
+	{ name: "resolve_finding", description: "Resolve one open blocking or advisory finding whose cause is fixed and verified.", privileged: false },
 ] as const;
 
 export function listMcpTools() {
@@ -39,8 +40,13 @@ export function listMcpTools() {
 				...(tool.name === "approve_breaking_intent_revision" ? { next_intent: { type: "object" } } : {}),
 				...(tool.name === "stop" ? { reason: { type: "string" } } : {}),
 				...(tool.name === "submit_review" ? { verdict: { type: "object" } } : {}),
+				...(tool.name === "resolve_finding" ? { finding_id: { type: "string" } } : {}),
 			},
-			required: tool.name === "submit_review" ? ["task_id", "verdict"] : ["task_id"],
+			required: tool.name === "submit_review"
+				? ["task_id", "verdict"]
+				: tool.name === "resolve_finding"
+					? ["task_id", "finding_id"]
+					: ["task_id"],
 		},
 		annotations: tool.privileged ? privilegedAnnotations() : { readOnlyHint: tool.name === "status" },
 	}));
@@ -118,6 +124,13 @@ export function createMcpRuntime(options: McpRuntimeOptions = {}) {
 			if (name === "submit_review") {
 				if (!Object.hasOwn(args, "verdict")) throw new Error("verdict is required");
 				return runtime.submitReview(taskId, args.verdict);
+			}
+			if (name === "resolve_finding") {
+				// Structural only. Which findings may be resolved, and when, stays
+				// the reducer's decision; duplicating it here would create a second
+				// authority that could drift from the Kernel.
+				if (typeof args.finding_id !== "string" || !args.finding_id) throw new Error("finding_id is required");
+				return runtime.resolveFinding(taskId, args.finding_id);
 			}
 			if (name === "request_authorization" || name === "approve_breaking_intent_revision" || name === "stop" || name === "repair_authority_state") {
 				return runtime.authorize(taskId, name, toolMeta, args);

@@ -57,6 +57,7 @@ export interface InitiativePublicationInput {
 	tasks: Array<{
 		slice_id: string;
 		intent: string;
+		acceptance: Array<{ id: string; summary: string }>;
 		projection?: TaskProjection;
 	}>;
 }
@@ -83,6 +84,18 @@ export interface GithubInitiativePublicationResult {
 		parallel_issue_groups: number[][];
 	};
 	message: string;
+}
+
+export interface GithubInitiativeObservation {
+	contract: "immune_brain/github_initiative_observation/v1";
+	initiative_id: string;
+	issue_number: number;
+	tasks: Array<{
+		task_id: string;
+		slice_id: string;
+		issue_number: number;
+		blocked_by: string[];
+	}>;
 }
 
 export interface TaskProjection {
@@ -550,6 +563,63 @@ async function readBlockedByIds(
 	} catch (error) {
 		return result(operation, "permanent_failure", error instanceof Error ? error.message : String(error));
 	}
+}
+
+export async function observeGithubInitiative(
+	root: string,
+	initiativeId: string,
+	gh: GhTransport = createGhTransport(),
+): Promise<GithubInitiativeObservation> {
+	const id = identifier(initiativeId, "initiative_id");
+	const source = await snapshot(resolve(root), gh, "create-initiative");
+	if ("contract" in source) throw new Error(source.message);
+	const parent = initiativeLookup(source.issues, source.repository.id, id);
+	if (parent.kind === "missing") throw new Error(`Initiative ${id} is not published`);
+	if (parent.kind === "ambiguous") throw new Error(parent.message);
+	const subIssueNumbers = await readSubIssueNumbers(root, gh, "create-initiative", source.repository, parent.issue.number);
+	if (!Array.isArray(subIssueNumbers)) throw new Error(subIssueNumbers.message);
+	if (new Set(subIssueNumbers).size !== subIssueNumbers.length)
+		throw new Error(`Initiative ${id} has duplicate native Sub-issue relations`);
+	const tasks = subIssueNumbers.map((issueNumber) => {
+		const matches = source.issues.filter((issue) => issue.number === issueNumber);
+		if (matches.length !== 1) throw new Error(`Initiative ${id} references an unreadable Sub-issue #${issueNumber}`);
+		const issue = matches[0];
+		const taskId = ownershipMarkerValue(issue.body, "task-id");
+		const sliceId = ownershipMarkerValue(issue.body, "slice-id");
+		if (!taskId || !sliceId || ownershipMarkerValue(issue.body, "initiative-id") !== id)
+			throw new Error(`Sub-issue #${issueNumber} has invalid Initiative ownership markers`);
+		const owned = ownedTaskLookup(source.issues, source.repository.id, taskId, id, sliceId);
+		if (owned.kind !== "found" || owned.issue.number !== issueNumber)
+			throw new Error(owned.kind === "ambiguous" ? owned.message : `Sub-issue #${issueNumber} has invalid Task ownership`);
+		return { task_id: taskId, slice_id: sliceId, issue_number: issueNumber, issue_id: issue.id };
+	});
+	if (new Set(tasks.map((task) => task.task_id)).size !== tasks.length)
+		throw new Error(`Initiative ${id} has duplicate Task identities`);
+	if (new Set(tasks.map((task) => task.slice_id)).size !== tasks.length)
+		throw new Error(`Initiative ${id} has duplicate Slice identities`);
+	const taskByIssueId = new Map(tasks.map((task) => [task.issue_id, task.task_id]));
+	const observed: GithubInitiativeObservation["tasks"] = [];
+	for (const task of tasks.sort((left, right) => left.task_id < right.task_id ? -1 : left.task_id > right.task_id ? 1 : 0)) {
+		const blockerIds = await readBlockedByIds(root, gh, "create-initiative", source.repository, task.issue_number);
+		if (!Array.isArray(blockerIds)) throw new Error(blockerIds.message);
+		const blockedBy = blockerIds.map((blockerId) => {
+			const blocker = taskByIssueId.get(blockerId);
+			if (!blocker) throw new Error(`Task ${task.task_id} depends on an Issue outside Initiative ${id}`);
+			return blocker;
+		}).sort();
+		observed.push({
+			task_id: task.task_id,
+			slice_id: task.slice_id,
+			issue_number: task.issue_number,
+			blocked_by: blockedBy,
+		});
+	}
+	return {
+		contract: "immune_brain/github_initiative_observation/v1",
+		initiative_id: id,
+		issue_number: parent.issue.number,
+		tasks: observed,
+	};
 }
 
 async function confirmBlockedBy(
@@ -1070,7 +1140,7 @@ function preflightPublication(root: string, input: InitiativePublicationInput): 
 	const publications = input.tasks.map((task, index) => {
 		if (!task || typeof task !== "object" || Array.isArray(task)) throw new Error(`tasks[${index}] must be an object`);
 		if (typeof task.intent !== "string") throw new Error(`tasks[${index}].intent must be a string`);
-		return taskPublication(root, input.initiative_id, task.slice_id, task.intent, task.projection);
+		return taskPublication(root, input.initiative_id, task.slice_id, task.intent, task.acceptance, task.projection);
 	});
 	const operations = publications.map((publication) => publication.operation);
 	const taskIds = new Set<string>();
@@ -1264,7 +1334,14 @@ function isSuccessfulTrackerStatus(status: TrackerStatus): boolean {
 	return status === "created" || status === "updated" || status === "already_current";
 }
 
-function taskPublication(root: string, initiativeId: string, sliceId: string, intentPath: string, projection?: TaskProjection): PreparedPublicationTask {
+function taskPublication(
+	root: string,
+	initiativeId: string,
+	sliceId: string,
+	intentPath: string,
+	acceptance: unknown,
+	projection?: TaskProjection,
+): PreparedPublicationTask {
 	const absoluteRoot = resolve(root);
 	const absolutePath = resolve(absoluteRoot, intentPath);
 	const rel = relative(absoluteRoot, absolutePath);
@@ -1275,6 +1352,20 @@ function taskPublication(root: string, initiativeId: string, sliceId: string, in
 	const read = readTaskIntent(absoluteRoot, taskId);
 	if (read.intent_ref.path !== rel) throw new Error("TaskIntent path must match its canonical sidecar path");
 	const intent = read.intent;
+	if (!Array.isArray(acceptance)) throw new Error(`Task ${taskId} requires public acceptance summaries`);
+	const expectedIds = new Set(intent.acceptance.map((item) => item.id));
+	const publicById = new Map<string, { id: string; summary: string }>();
+	acceptance.forEach((item, index) => {
+		if (!item || typeof item !== "object" || Array.isArray(item))
+			throw new Error(`Task ${taskId} acceptance[${index}] must be an object`);
+		const raw = item as Record<string, unknown>;
+		const id = identifier(raw.id, `Task ${taskId} acceptance[${index}].id`);
+		if (!expectedIds.has(id)) throw new Error(`Task ${taskId} has unknown public acceptance id: ${id}`);
+		if (publicById.has(id)) throw new Error(`Task ${taskId} has duplicate public acceptance id: ${id}`);
+		publicById.set(id, { id, summary: projectionText(raw.summary, `Task ${taskId} acceptance[${index}].summary`, 500) });
+	});
+	const missingIds = [...expectedIds].filter((id) => !publicById.has(id));
+	if (missingIds.length) throw new Error(`Task ${taskId} is missing public acceptance ids: ${missingIds.join(", ")}`);
 	return {
 		operation: validateOperation({
 			op: "upsert-task",
@@ -1283,7 +1374,7 @@ function taskPublication(root: string, initiativeId: string, sliceId: string, in
 			slice_id: sliceId,
 			goal: intent.goal,
 			risk: intent.risk,
-			acceptance: intent.acceptance.map((item) => ({ id: item.id, summary: item.assertion })),
+			acceptance: intent.acceptance.map((item) => publicById.get(item.id)!),
 			projection,
 		}) as Extract<TrackerOperation, { op: "upsert-task" }>,
 		intent_path: read.intent_ref.path,
