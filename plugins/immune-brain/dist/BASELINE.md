@@ -2,11 +2,21 @@
 
 ## Shared Guards
 
-- Load detailed workflow text from `dist/` only on invocation.
+- On explicit invocation, read only common constraints and selected section routes
+  from `dist/`; nested modes, examples, recovery, and references load on demand.
 - Ask only when missing information would change the goal, scope, observable behavior, compatibility, risk acceptance, a protected effect, or a fact only the user can supply. Resolve repository facts and delegated technical choices with bounded evidence instead of asking.
 - Keep edits inside the user-requested Direct scope or the enrolled TaskIntent acceptance and `scope_hint`.
 - Record reproducible evidence before reporting closure.
 - Required verification must pass before reporting completion; disclosing a gap is not a substitute. Autonomously diagnose, repair, and rerun failing conventional local checks within the authorized scope; never delete, skip, or weaken a valid check to manufacture a pass. If a required check remains failing or cannot run, report the work as incomplete with the concrete blocker.
+- Inspect unknown test scripts before execution. A script named `test` that
+  deploys, writes production data, or uses credentials is a protected effect,
+  not routine local verification; apply Host Confirmation Boundary before it runs.
+- Unanswered questions block only dependent commitments or execution. Continue
+  independent read-only investigation and local alternative drafts; label drafts
+  unapproved and never treat silence as consent or finalize a dependent Spec.
+- Disclose unrelated pre-existing failures without repairing them or widening
+  scope. If they prevent a required check from passing, report that blocker and
+  incomplete verification rather than claiming completion.
 - Use shallow discovery first; do full-scope reads only for shared contracts, security, migration, persistence, or authority changes and their callers and state owners.
 - Lead with conclusion, evidence, and Next Action.
 - Advisory roles do not implement; Managed execution roles do not close QA.
@@ -108,8 +118,10 @@ always run sequentially.
   verification path are clear enough to avoid speculative edits.
 - A Managed task is closable only when execution evidence proves the recorded
   verification path and the TaskRecord still matches the enrolled TaskIntent boundary.
-- Managed scope changes, missing evidence, or structural mismatch return to
-  `imm-planner` instead of being hidden inside execution or QA.
+- Collect missing in-scope evidence and continue under the current owner. Missing
+  evidence alone does not require replanning. Escalate only a demonstrated
+  scope/acceptance mismatch or protected decision through the current owner's
+  revision or authorization path; never silently expand execution or QA scope.
 
 ## Retirement Completion
 

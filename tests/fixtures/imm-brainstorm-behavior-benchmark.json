@@ -39,9 +39,9 @@
     ]
   },
   "notes": [
-    "This focused config measures Brainstorm exhaustive frontier behavior separately from the four-route plugin baseline.",
+    "This focused config measures proportionate Brainstorm clarification and explicit exhaustive interrogation separately from the general plugin baseline.",
     "Every scenario runs through a read-only isolated Pi Agent and should leave no Spec, Plan, CONTEXT.md, or implementation edit.",
-    "Launch all five scenarios in one parallel batch with antigravity/gemini-3.6-flash.",
+    "Run the declared scenarios only when a live model benchmark is explicitly requested; static contract checks do not establish model compliance.",
     "Record provider billing cost as unavailable_by_host; do not estimate it."
   ],
   "scenarios": [
@@ -85,10 +85,10 @@
       "id": "recommendation-adoption-continues",
       "title": "Continue traversal after recommendations are adopted",
       "purpose": "Verify that adopting the current recommendations settles those nodes but does not prematurely complete Brainstorm while downstream branches remain.",
-      "userInput": "Continue the local Pi Skill `imm-brainstorm` session for an admin-only CSV export. In the prior round you asked who can export and which rows are included; I adopted both recommendations: admins only, current visible rows only. Adopting recommendations closes only the current frontier nodes. Continue traversing any newly unlocked current-goal branches, including failure behavior and verification, with numbered recommendations. Do not create or edit any files.",
+      "userInput": "Continue the local Pi Skill `imm-brainstorm` session for an admin-only CSV export. I explicitly request exhaustive interrogation of the sourced current-goal tree. In the prior round you asked who can export and which rows are included; I adopted both recommendations: admins only, current visible rows only. Adopting recommendations closes only the current frontier nodes. Continue traversing any newly unlocked material current-goal decisions, including whether partial export data may be returned on failure, with numbered recommendations. Resolve technical verification choices yourself. Do not create or edit any files.",
       "successChecklist": [
         "The response treats the adopted audience and row-scope recommendations as settled without asking them again.",
-        "The response continues with newly unlocked current-goal questions such as download failure behavior or observable verification.",
+        "The response continues with newly unlocked material questions such as partial export behavior; it resolves technical verification choices instead of asking them.",
         "Each newly surfaced question is numbered and includes a recommended answer.",
         "The response does not declare the Brainstorm complete or route to Planner while those branches remain open, and no workspace file is created or changed."
       ]
@@ -103,6 +103,28 @@
         "The response cites the unmet reconsideration evidence instead of reopening the decision.",
         "The response asks no generic `what changed?` question and does not route to Planner.",
         "No workspace file is created or changed."
+      ]
+    },
+    {
+      "id": "clear-request-zero-questions",
+      "title": "A clear request does not trigger a default exhaustive interview",
+      "purpose": "Verify ordinary explicit entry can finish without expanding framing roots.",
+      "userInput": "Use the local Pi Skill `imm-brainstorm`. Frame only a README spelling correction: replace the word `teh` with `the`, leave behavior, all other text, tests, and permissions unchanged. Success means only that typo is corrected. No other decisions are pending and I am not requesting exhaustive interrogation. Do not create or edit any files.",
+      "successChecklist": [
+        "The response asks zero questions and does not seed beneficiary, migration, or rollback interview branches.",
+        "The response presents the unchanged result as a correction window, not another approval gate.",
+        "No workspace file is created or changed."
+      ]
+    },
+    {
+      "id": "bulk-approval-no-new-delta",
+      "title": "Unchanged bulk approval can close framing",
+      "purpose": "Verify an adopted recommendation does not force another round without a material delta.",
+      "userInput": "Continue local Pi Skill `imm-brainstorm` in default mode. The only proposed change was a README spelling correction from `teh` to `the`, preserving all other text and behavior. That correction and its exact diff check were the complete recommendations. I approve all recommendations; there are no unresolved facts or downstream decisions. Do not create or edit any files.",
+      "successChecklist": [
+        "The response treats bulk approval as settled without reconfirmation.",
+        "The response does not invent another frontier or ask generic implementation questions.",
+        "The response can report framing ready and no workspace file is created or changed."
       ]
     },
     {

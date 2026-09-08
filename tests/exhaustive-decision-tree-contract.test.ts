@@ -29,7 +29,7 @@ describe("Brainstorm-owned clarification contract", () => {
 	test("the loader resolves the canonical contract and section routes", () => {
 		const loader = read(brainstormLoader);
 		expect(loader).toContain("../../dist/imm-brainstorm.md");
-		expect(loader).toContain("Default exhaustive decision tree");
+		expect(loader).toContain("Default clarification");
 		expect(loader).toContain("roundtable");
 		expect(loader).toContain("adversarial");
 		expect(loader).not.toContain("Seed the fixed framing roots");
@@ -38,53 +38,57 @@ describe("Brainstorm-owned clarification contract", () => {
 		expect(loader).toContain("load a section's instructions only when its branch applies");
 	});
 
-	test("Brainstorm exhausts every sourced current-goal branch", () => {
+	test("Brainstorm defaults to proportionate evidence-backed clarification", () => {
 		expectAll(brainstormContracts, [
-			"Default exhaustive decision tree",
+			"Default clarification",
 			"current-goal branch",
 			"user request, repository evidence, or a settled parent decision",
-			"fixed framing roots",
 			"repository fact, a delegated technical choice, or a material user-owned decision",
 			"complete currently unblocked frontier",
 			"recommended answer",
 			"bulk approval of all recommendations",
-			"settle only the current nodes",
-			"Recompute the tree after every response",
+			"settle their decisions without another approval round",
 			"frontier is empty",
 			"BR-DEFER-*",
 			"BR-Q-*",
 		]);
 		for (const path of brainstormContracts) {
 			const contract = read(path);
-			expect(contract).not.toContain(
-				"place only decisions that can change Result, Scope, behavior, Verification, or risk treatment on the user frontier",
-			);
+			expect(contract).not.toContain("Do not use materiality");
+			expect(contract).not.toContain("never complete the Brainstorm session by themselves");
+			expect(contract).not.toContain("do not short-circuit its exhaustive traversal");
 			expect(contract).not.toContain(
 				"Before framing, scan `docs/solutions/` for entries with `rejected: true` frontmatter",
 			);
 		}
 	});
 
-	test("recommendation adoption advances rather than ends traversal", () => {
+	test("clear requests and unchanged bulk approvals can finish without another round", () => {
 		expectAll(brainstormContracts, [
-			"Direct requirements and adopted recommendations settle only the current nodes",
-			"never complete the Brainstorm session by themselves",
-			"newly unlocked downstream branches",
+			"Direct requirements and adopted recommendations settle their decisions without another approval round",
+			"ask again only for a newly evidenced material decision",
 			"zero-question fast path",
-			"complete seeded and dynamically expanded tree",
+			"Do not seed or expand a complete tree by default",
 			"Do not ask the user to reconfirm decisions reflected without change",
 			"explicit confirmation of only that decision delta",
 		]);
 	});
 
-	test("Brainstorm modes share one protocol and require explicit lens selection", () => {
+	test("exhaustive interrogation and analysis lenses require explicit selection", () => {
 		expectAll(brainstormContracts, [
 			"goal, beneficiary and scenario, current state, desired behavior",
 			"failure and edge behavior, compatibility and migration",
-			"same exhaustive frontier protocol",
+			"Read this section only when the user explicitly requests thorough or exhaustive interrogation",
+			"selecting a lens alone does not require it",
 			"explicitly selected by the user",
 			"on-demand rejected-decision evidence",
 		]);
+		const raw = readFileSync(join(ROOT, brainstormContracts[0]), "utf8");
+		const defaultSection = raw.split("## Default clarification\n")[1].split("\n## ")[0];
+		expect(defaultSection).not.toContain("Seed the fixed framing roots");
+		const optIn = raw.split("## Explicit exhaustive interrogation\n")[1].split("\n## ")[0];
+		expect(optIn).toContain("Seed the fixed framing roots");
+		expect(optIn).toContain("Recompute the tree after every response");
 		const packaged = read(brainstormContracts[0]);
 		expect(packaged).not.toContain("lightweight tasks get 1-2 probes");
 		expect(packaged).not.toContain("larger tasks may need 3-4");
@@ -121,6 +125,18 @@ describe("Brainstorm-owned clarification contract", () => {
 			"Prefer the highest existing observable behavioral test seam and the fewest sufficient seams",
 			"Cite relevant test prior art and explain how the selected seam catches the intended regression",
 			"must not weaken acceptance-specific focused verification descriptors or add a mandatory user confirmation",
+		]);
+	});
+
+	test("an independent local draft can continue while a dependent product decision is unanswered", () => {
+		expectAll(plannerContracts, [
+			"Finalization and dependent commitments are blocked until required `BR-Q-*` items are answered",
+			"Independent investigation and explicitly unapproved alternative drafts may continue",
+			"silence is not consent",
+		]);
+		expectAll(brainstormContracts, [
+			"Independent framing may continue while a dependent subtree is blocked",
+			"no required fact blocks the handoff",
 		]);
 	});
 

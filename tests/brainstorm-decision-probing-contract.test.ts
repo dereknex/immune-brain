@@ -65,8 +65,8 @@ describe("Brainstorm decision probing contracts", () => {
 			"Ask every independent question on the complete currently unblocked frontier together",
 			"Hold downstream questions until their prerequisites are decided",
 			"Number every question, include grounded options and one recommended answer",
-			"Direct requirements and adopted recommendations settle only the current nodes",
-			"Recompute the tree after every response",
+			"Direct requirements and adopted recommendations settle their decisions without another approval round",
+			"ask again only for a newly evidenced material decision",
 			"Ask fewer questions only because dependencies keep downstream branches blocked",
 			"never because of an arbitrary question budget",
 		]) {
@@ -74,7 +74,7 @@ describe("Brainstorm decision probing contracts", () => {
 		}
 		expect(COMPACT_BRAINSTORM).toContain("../../dist/imm-brainstorm.md");
 		expect(COMPACT_BRAINSTORM).toContain(
-			"Default exhaustive decision tree",
+			"Default clarification",
 		);
 		expect(BRAINSTORM).not.toContain("lightweight tasks get 1-2 probes");
 		expect(BRAINSTORM).not.toContain("larger tasks may need 3-4");
@@ -173,6 +173,8 @@ describe("Brainstorm decision probing contracts", () => {
 			"scenario-qualified-frontier",
 			"recommendation-adoption-continues",
 			"rejected-decision-unmet-condition",
+			"clear-request-zero-questions",
+			"bulk-approval-no-new-delta",
 			"delegated-technical-choice-resolves-without-asking",
 		]);
 		expect(new Set(focusedIds).size).toBe(focusedIds.length);

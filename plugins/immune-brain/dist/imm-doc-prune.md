@@ -36,6 +36,8 @@ no persistent report, and no automatic commit.
 
 ## Ordered Pruning Protocol
 
+### Inventory and Manifest
+
 1. **Establish repository safety.** Mutation requires a Git worktree. A
    non-Git repository or an untracked candidate is audit-only. Record the
    candidate path, blob/content hash, tracked status, and candidate-local
@@ -91,6 +93,8 @@ no persistent report, and no automatic commit.
    "clean stale docs" is insufficient. Interruption starts a fresh scan; no
    manifest is persisted.
 
+### Approved Mutation
+
 9. **Revalidate and mutate minimally.** Re-read candidate bytes, Git status,
    inbound references, generated ownership, and active scope immediately
    before each approved change. Drift blocks that item. Delete a whole file
@@ -98,6 +102,8 @@ no persistent report, and no automatic commit.
    logical section or move still-current constraints into an existing current
    owner before deleting the obsolete source. Never renumber ADRs and never
    create a new ADR or Solution merely to complete pruning.
+
+### Verify and Report
 
 10. **Verify and report.** Re-scan residual names and paths, current local
     links on current documentation, source/generated parity, existing documentation contract tests,

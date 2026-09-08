@@ -11,7 +11,7 @@ key_files:
   - tests/fixtures/imm-brainstorm-behavior-benchmark.json
 next_reuse_scenarios:
   - Borrowing interaction discipline from a terse upstream skill without importing its workflow topology
-  - Clarifying a fixed current goal through provenance-bounded exhaustive traversal
+  - Clarifying a fixed current goal through proportionate evidence-backed questions
   - Separating repository facts, delegated technical choices, and material user-owned decisions
   - Continuing downstream traversal after a recommended answer is adopted
   - Keeping Planner clarification limited to concrete omissions, conflicts, and invalidated assumptions
@@ -19,15 +19,20 @@ next_reuse_scenarios:
 
 ## Current pattern
 
-`imm-brainstorm` owns exhaustive clarification for the fixed current goal:
+`imm-brainstorm` owns proportionate clarification for the fixed current goal:
 
 1. Classify each surfaced uncertainty by provenance. Resolve repository facts with bounded read-only evidence; resolve delegated technical choices with evidence or a reversible local probe when they do not change the goal, scope, observable behavior, compatibility, risk acceptance, or a protected effect; put material user-owned decisions on the clarification frontier.
 2. Ask every independent material decision on the complete currently unblocked frontier together. Include a concrete recommendation and trade-off for each decision.
-3. Treat an adopted recommendation as the answer to that frontier node only. Expand and traverse newly reachable downstream branches until the frontier is empty.
+3. Treat an adopted recommendation as settled. Continue only for newly evidenced material decisions; a clear request or unchanged bulk approval can complete framing without more questions.
 4. Reopen a confirmed decision only when new evidence invalidates an assumption or the proposed summary introduces or changes a decision.
 5. Record explicit `defer` and `blocked` outcomes rather than silently treating them as resolved.
 
 `adversarial` is an explicit analysis lens over this same frontier protocol. It does not own a separate interview or routing stage.
+
+Exhaustive tree expansion is reserved for an explicit request for thorough
+interrogation, not the default for clear tasks. In that opt-in protocol, adopted
+recommendations close current nodes while sourced downstream branches remain
+to be traversed. Facts and delegated choices still do not become user questions.
 
 `imm-planner` consumes the confirmed Brainstorm manifest, resolves repository facts and ordinary technical choices, and performs reference closure. It asks a clarification supplement only for a concrete omission, repository conflict, invalidated assumption, or newly surfaced user decision; it does not run a second exhaustive interview or silently change a confirmed decision.
 

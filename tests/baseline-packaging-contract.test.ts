@@ -96,6 +96,35 @@ describe("immune-brain BASELINE packaging contract", () => {
     expect(baseline).not.toContain("Direct completion contract above")
   })
 
+  // Instruction-contract scenarios, not claims that a live model executed them.
+  it.each([
+    {
+      scenario: "a test script deploys or writes production data: inspect and gate the effect before running",
+      required: ["Inspect unknown test scripts before execution", "deploys, writes production data, or uses credentials is a protected effect", "apply Host Confirmation Boundary before it runs"],
+    },
+    {
+      scenario: "an unanswered product question blocks only its dependent commitment, not an independent draft",
+      required: ["Unanswered questions block only dependent commitments or execution", "Continue independent read-only investigation and local alternative drafts", "label drafts unapproved and never treat silence as consent"],
+    },
+    {
+      scenario: "an unrelated baseline failure is disclosed without expanding scope or claiming a required check passed",
+      required: ["Disclose unrelated pre-existing failures without repairing them or widening scope", "If they prevent a required check from passing", "incomplete verification rather than claiming completion"],
+    },
+    {
+      scenario: "missing in-scope evidence is collected locally while a demonstrated acceptance mismatch still escalates",
+      required: ["Collect missing in-scope evidence and continue under the current owner", "Missing evidence alone does not require replanning", "scope/acceptance mismatch or protected decision", "never silently expand execution or QA scope"],
+    },
+    {
+      scenario: "a recoverable local test failure is repaired and rerun without weakening the check",
+      required: ["Autonomously diagnose, repair, and rerun failing conventional local checks within the authorized scope", "never delete, skip, or weaken a valid check to manufacture a pass"],
+    },
+  ])("$scenario", ({ required }) => {
+    for (const path of [BASELINE_ROOT, BASELINE_SKILLS, BASELINE_DIST]) {
+      const contract = read(path).replace(/\s+/g, " ")
+      for (const phrase of required) expect(contract).toContain(phrase)
+    }
+  })
+
   it("keeps Kernel risk obligations in the canonical Loop contract", () => {
     const loop = read(resolve(DIST_DIR, "imm-loop.md"))
     expect(loop).toContain("Fresh QA suffices for routine work")

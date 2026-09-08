@@ -5,6 +5,8 @@ description: Use when the user explicitly requests Immune-Brain repair of GitHub
 
 # Immune-Brain: PR Fix
 
+## Authority Boundary
+
 Repair blockers on one GitHub pull request without creating or mutating
 TaskIntent, TaskRecord, Kernel, Spec, or Plan authority. An already active
 Managed task remains owned by `imm-loop`; stop and direct the user there when
@@ -66,7 +68,9 @@ not repair blockers.
 
 ### 4. Verify and close out
 
-Run the smallest checks that reproduce each blocker, then any repository check
+Before any push or feedback mutation, apply the BASELINE Host Confirmation
+Boundary to the exact remote effect; the repair request alone does not grant
+unrequested publication authority. Run the smallest checks that reproduce each blocker, then any repository check
 required by the changed surface. Re-read remote PR status, verify local HEAD is
 the expected PR head, inspect the final diff, and push only the repair branch.
 Reply to or resolve handled feedback when GitHub permissions and thread state

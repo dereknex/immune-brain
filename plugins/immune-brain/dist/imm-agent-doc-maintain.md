@@ -37,6 +37,8 @@ commit.
 
 ## Ordered Maintenance Protocol
 
+### Inventory and Manifest
+
 1. **Establish repository safety.** Mutation requires a Git worktree. Only
    tracked regular files named exactly `AGENTS.md`, `CLAUDE.md`, or `GEMINI.md`,
    at the repository root or in nested tracked directories, are candidates.
@@ -100,12 +102,16 @@ commit.
    repository scope or declared precedence are `BLOCKED`. Filename convention,
    nesting, or guessed host behavior alone may not resolve a conflict.
 
+### Manifest Approval and Recovery
+
 7. **Produce one exact manifest.** `audit` mode stops after the manifest.
    Mutation mode also stops until the literal user approves exact manifest
    entries (for example, "all recommendations except 4 and 7"). Broad approval
    such as "clean AGENTS.md" is insufficient. Interruption starts a fresh scan;
    no manifest is persisted. No fixed line, byte, percentage, or Token target
    authorizes removal.
+
+### Approved Mutation
 
 8. **Revalidate and mutate minimally.** Re-read candidate bytes, Git status,
    content hash, references, precedence evidence, and active scope immediately
@@ -115,6 +121,8 @@ commit.
    guardrails, security constraints, data-loss prevention, accessibility
    basics, and explicit user requirements are never simplified away for
    brevity.
+
+### Verify and Report
 
 9. **Verify and report.** Re-scan modified instruction relationships, local
    pointer targets, duplicate retained meanings, unresolved conflicts,

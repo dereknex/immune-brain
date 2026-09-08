@@ -46,7 +46,7 @@ describe("Skill-explicit workflow routing contract", () => {
     expectAll(BASELINE, [
       "Record reproducible evidence before reporting closure",
       "enrolled TaskIntent acceptance and `scope_hint`",
-      "Managed scope changes",
+      "Collect missing in-scope evidence",
       "routes scope changes to `imm-planner`",
     ]);
     expectAll(BASELINE, [

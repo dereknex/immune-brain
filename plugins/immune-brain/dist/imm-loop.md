@@ -41,7 +41,7 @@ At every internal role boundary call the read-only `imm_loop_action` Tool. Use
 exploration, advisory review, Compounder, Kernel ownership, or scope expansion.
 Use Kernel ownership for an enrolled task. This Tool projects authority; it does
 not record execution evidence, mutate task state, or replace Kernel operations.
-Follow the [Subagent Dispatch Protocol](docs/reference/subagent-dispatch-protocol.md#authorization-authority).
+Before a child dispatch, read the [Subagent Dispatch Protocol](docs/reference/subagent-dispatch-protocol.md#authorization-authority).
 Never load an internal role as a public Skill or spawn another loop process.
 The standalone `imm-pr-fix`, `imm-doc-prune`, and `imm-agent-doc-maintain` are host-native
 maintenance entries, never dispatched as the Loop role. Internal `test-fixer`
@@ -155,6 +155,8 @@ Review:
 Stop reason:
 Next action:
 ```
+
+## Failure Output
 
 For `settlement_unknown`, call `advance_assurance` once to reconcile the Kernel
 projection before resuming; never replay the uncertain write directly. The runtime

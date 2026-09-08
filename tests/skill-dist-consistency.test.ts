@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { readdirSync, readFileSync, existsSync, statSync } from "node:fs";
-import { join, resolve, relative, sep } from "node:path";
+import { dirname, join, resolve, relative, sep } from "node:path";
 import {
 	DIST_DOC_ENTRIES,
 	PACKAGED_CONTRACT_ENTRIES,
@@ -32,7 +32,129 @@ function publicSkills(): Array<{ name: string; skill: string; dist: string }> {
 		}));
 }
 
+// Load precisely the heading body promised by the loaders, excluding nested branches.
+function linkedSections(loaderPath: string, route: string): string {
+	const links = [...route.matchAll(/\[[^\]]+\]\(([^)]+)\)/g)];
+	expect(links.length, route).toBeGreaterThan(0);
+	return links.map(([, target]) => {
+		const [path, anchor] = target.split("#");
+		expect(anchor, target).toBeTruthy();
+		const text = read(resolve(dirname(loaderPath), path));
+		const headings = [...text.matchAll(/^#{1,6} (.+)$/gm)];
+		const matches = headings.filter((heading) =>
+			heading[1].toLowerCase().replace(/[^\w\s-]/g, "").replace(/\s/g, "-") === anchor,
+		);
+		expect(matches.length, target).toBe(1);
+		const heading = matches[0];
+		const next = headings[headings.indexOf(heading) + 1];
+		return text.slice(heading.index! + heading[0].length, next?.index);
+	}).join("\n").replace(/\s+/g, " ");
+}
+
+function routeLine(loader: string, prefix: string): string {
+	const line = loader.split("\n").find((line) => line.startsWith(`- ${prefix}`));
+	expect(line, prefix).toBeDefined();
+	return line!;
+}
+
 describe("skill dist consistency", () => {
+	// These pair explicit entry with weak lexical matches; they assert metadata,
+	// not a simulated classifier or a live model's selection rate.
+	test.each([
+		["imm-brainstorm", "clarify requirements with Immune-Brain", "explain this function", "requirement clarification"],
+		["imm-planner", "plan a Spec with Immune-Brain", "fix this bug", "Spec and TaskIntent planning"],
+		["imm-loop", "resume my Immune-Brain task", "continue explaining", "execution or resumption"],
+		["imm-pr-fix", "repair PR feedback with Immune-Brain", "review this function", "GitHub PR review feedback"],
+		["imm-doc-prune", "prune stale docs with Immune-Brain", "explain this document", "stale current documentation"],
+		["imm-agent-doc-maintain", "minimize AGENTS.md with Immune-Brain", "what does this instruction mean", "tracked AGENTS.md"],
+	])("%s: explicit '%s', not ordinary '%s'", (name, _explicit, _ordinary, scope) => {
+		const loader = read(join(SKILLS_DIR, name, "SKILL.md"));
+		const metadata = Bun.YAML.parse(loader.match(/^---\n([\s\S]*?)\n---/)![1]) as { description: string };
+		expect(metadata.description).toStartWith("Use when the user explicitly requests");
+		expect(metadata.description).toContain(scope);
+		const activation = linkedSections(join(SKILLS_DIR, name, "SKILL.md"),
+			"[Activation](../../dist/BASELINE.md#workflow-activation)");
+		expect(activation).toContain("Ordinary host input stays host-native");
+		expect(activation).toContain("new Managed workflow starts only from explicit");
+	});
+
+	test("all six explicit-entry loaders have valid frontmatter and section targets", () => {
+		for (const item of publicSkills()) {
+			const loader = read(item.skill);
+			const metadata = Bun.YAML.parse(loader.match(/^---\n([\s\S]*?)\n---/)![1]) as {
+				name: string; description: string;
+			};
+			expect(metadata.name).toBe(item.name);
+			expect(metadata.description).toStartWith("Use when the user explicitly requests");
+			expect(metadata.description).toContain("Immune-Brain");
+			expect(loader).toContain("not a whole-document read");
+			expect(loader).not.toMatch(/^Load \[/m);
+			const routes = loader.split("\n").filter((line) => line.startsWith("- "));
+			expect(routes.length).toBeGreaterThan(1);
+			for (const route of routes) {
+				expect(route).not.toContain(" through ");
+				linkedSections(item.skill, route);
+			}
+			const common = linkedSections(item.skill, routeLine(loader, "common:"));
+			expect(common).not.toMatch(/(?:load|read) (?:all|every) (?:reference|mode)/i);
+		}
+	});
+
+	test("ordinary planning excludes page design, carrier publication, and recovery branches", () => {
+		const path = join(SKILLS_DIR, "imm-planner/SKILL.md");
+		const loader = read(path);
+		const ordinary = linkedSections(path, routeLine(loader, "common:")) +
+			linkedSections(path, routeLine(loader, "standard planning:"));
+		for (const unrelated of ["visible_actions", "State inventory", "imm-tracker publish-initiative"]) {
+			expect(ordinary).not.toContain(unrelated);
+		}
+		expect(ordinary).toContain("imm-kernel intent author");
+		const page = linkedSections(path, routeLine(loader, "`mode: page_design`"));
+		expect(page).toContain("DESIGN.md");
+		expect(page).toContain("Do not edit UI files, tests, Specs, Plans, or workflow state");
+		expect(page).not.toContain("imm-kernel intent author");
+		const revision = linkedSections(path, routeLine(loader, "revision of an enrolled intent"));
+		expect(revision).toContain("Preserve the prior on-disk sidecars");
+		expect(revision).toContain("approve_breaking_intent_revision");
+		expect(revision).toContain("the native Host gate is the single user decision");
+	});
+
+	test("clear framing skips opt-in interrogation and Loop recovery exposes native guards", () => {
+		const brainPath = join(SKILLS_DIR, "imm-brainstorm/SKILL.md");
+		const brain = read(brainPath);
+		const normal = linkedSections(brainPath, routeLine(brain, "common:")) +
+			linkedSections(brainPath, routeLine(brain, "default:"));
+		expect(normal).toContain("zero-question fast path");
+		expect(normal).not.toContain("Seed the fixed framing roots");
+		expect(normal).not.toContain("buildBrainstormEnsembleRequest");
+		expect(linkedSections(brainPath, routeLine(brain, "explicit thorough interrogation:")))
+			.toContain("Seed the fixed framing roots");
+		const loopPath = join(SKILLS_DIR, "imm-loop/SKILL.md");
+		const loop = read(loopPath);
+		expect(linkedSections(loopPath, routeLine(loop, "steady execution:")))
+			.not.toContain("For `settlement_unknown`");
+		const recovery = linkedSections(loopPath, routeLine(loop, "rework,"));
+		expect(recovery).toContain("For `settlement_unknown`");
+		expect(recovery).toContain("request_authorization");
+		expect(recovery).toContain("fail-closed");
+		expect(recovery).toContain("never replay the uncertain write");
+	});
+
+	test("maintenance audits stop at manifests and mutation routes expose all guards", () => {
+		for (const name of ["imm-doc-prune", "imm-agent-doc-maintain"]) {
+			const path = join(SKILLS_DIR, name, "SKILL.md");
+			const loader = read(path);
+			const audit = linkedSections(path, routeLine(loader, "common:")) +
+				linkedSections(path, routeLine(loader, "audit or manifest preparation:"));
+			expect(audit).toContain("literal user approves exact manifest");
+			expect(audit).toContain("BLOCKED_ACTIVE_SCOPE");
+			expect(audit).not.toContain("**Revalidate and mutate minimally.**");
+			const mutation = linkedSections(path, routeLine(loader, "approved mutation"));
+			expect(mutation).toContain("Drift blocks that item");
+			expect(mutation).toContain("Managed authority mutation");
+		}
+	});
+
 	test("every public skill has a packaged counterpart", () => {
 		const skills = publicSkills();
 		expect(skills.map((item) => item.name).sort()).toEqual([
