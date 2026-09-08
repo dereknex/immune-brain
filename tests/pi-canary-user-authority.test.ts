@@ -26,7 +26,7 @@ const INTENT = {
 	task_id: TASK,
 	goal: "user authority",
 	acceptance: [{ id: "A1", assertion: "a1", verification: "true" }],
-	scope_hint: ["plugins/immune-brain/.pi-extension"],
+	scope_hint: ["plugins/immune-brain/.pi-extension", "docs/specs/stop.spec.md", "docs/specs/archive/stop.spec.md"],
 	risk: "routine",
 	revision: 1,
 	owner: "user",
@@ -44,6 +44,8 @@ function makeUI(): FakeUI {
 function makeEnrolledRoot(): string {
 	const root = mkdtempSync(join(tmpdir(), "p2b2-user-"));
 	mkdirSync(join(root, "docs", "plans"), { recursive: true });
+	mkdirSync(join(root, "docs", "specs"), { recursive: true });
+	writeFileSync(join(root, "docs/specs/stop.spec.md"), "# Stop fixture\n");
 	mkdirSync(join(root, ".imm/state"), { recursive: true });
 	mkdirSync(join(root, "plugins", "immune-brain", ".pi-extension"), { recursive: true });
 	execFileSync("git", ["init", "-q"], { cwd: root });
@@ -127,6 +129,7 @@ function seedOpenReplanRequired(root: string): void {
 }
 
 function loadSurface(dependencies: Record<string, unknown> = {}): {
+	shutdown: () => Promise<void>;
 	tool: {
 		execute: (id: string, params: unknown, signal: unknown, onUpdate: unknown, ctx: unknown) => Promise<{ content: Array<{ text: string }>; details?: Record<string, unknown> }>;
 	};
@@ -134,8 +137,9 @@ function loadSurface(dependencies: Record<string, unknown> = {}): {
 	const mod = require("../plugins/immune-brain/.pi-extension/imm-canary-work.ts");
 	const factory = mod.default as (pi: ExtensionAPI) => void;
 	let tool: { execute: (id: string, params: unknown, signal: unknown, onUpdate: unknown, ctx: unknown) => Promise<{ content: Array<{ text: string }>; details?: Record<string, unknown> }> } | undefined;
+	const handlers = new Map<string, () => Promise<void>>();
 	const pi = {
-		on: () => {},
+		on: (event: string, handler: () => Promise<void>) => { handlers.set(event, handler); },
 		registerMessageRenderer: () => {},
 		registerCommand: () => undefined,
 		registerTool: (registered: { name: string; execute: typeof tool extends infer T ? T : never }) => {
@@ -144,7 +148,7 @@ function loadSurface(dependencies: Record<string, unknown> = {}): {
 	} as unknown as ExtensionAPI;
 	factory(pi, dependencies);
 	if (!tool) throw new Error("foreground Tool not registered");
-	return { tool };
+	return { tool, shutdown: async () => { await handlers.get("session_shutdown")?.(); } };
 }
 
 function parseToolState(result: { content: Array<{ text: string }>; details?: Record<string, unknown> }): Record<string, unknown> {
@@ -194,6 +198,143 @@ function ctxFor(root: string, ui: FakeUI, confirmResult: boolean | (() => Promis
 }
 
 describe("pi canary user authority", () => {
+	test("request_stop confirms and settles the exact active task", async () => {
+		const root = makeEnrolledRoot();
+		try {
+			const { tool } = loadSurface();
+			const ui = makeUI();
+			const result = await tool.execute("stop-active", { task_id: TASK, action: { op: "request_stop" } }, undefined, undefined, ctxFor(root, ui, true));
+			expect(parseToolState(result)).toMatchObject({ state: "applied", operation: "stop", lifecycle: "stopped" });
+			expect(ui.confirmCalls).toHaveLength(1);
+			expect(ui.confirmCalls[0].body).toContain("stop");
+			expect(readBackendClaim(root)).toBeNull();
+			expect(readAuditTaskPair(root, TASK).record?.lifecycle).toBe("stopped");
+			expect(readFileSync(join(root, "plugins/immune-brain/.pi-extension/owned.ts"), "utf8")).toBe("task snapshot\n");
+		} finally { rmSync(root, { recursive: true, force: true }); }
+	});
+
+	for (const frozen of [false, true]) {
+		test(`request_stop cancellation and confirmation preserve work (frozen=${frozen})`, async () => {
+			const root = makeEnrolledRoot();
+			try {
+				const { tool } = loadSurface();
+				if (frozen) await tool.execute("freeze", { task_id: TASK, action: { op: "freeze_artifacts" } }, undefined, undefined, ctxFor(root, makeUI(), true));
+				const before = authorityBytes(root);
+				const cancelled = await tool.execute("cancel-stop", { task_id: TASK, action: { op: "request_stop" } }, undefined, undefined, ctxFor(root, makeUI(), false));
+				expect(parseToolState(cancelled).state).toBe("cancelled");
+				expect(authorityBytes(root)).toEqual(before);
+				await tool.execute("confirm-stop", { task_id: TASK, action: { op: "request_stop", reason: "forged", actor_id: "forged", capability: {} } }, undefined, undefined, ctxFor(root, makeUI(), true));
+				const terminal = readAuditTaskPair(root, TASK);
+				expect(terminal.record?.lifecycle).toBe("stopped");
+				expect(JSON.stringify(terminal)).not.toContain("forged");
+				expect(readBackendClaim(root)).toBeNull();
+				const ui = makeUI();
+				await captureToolFailure(tool.execute("repeat-stop", { task_id: TASK, action: { op: "request_stop" } }, undefined, undefined, ctxFor(root, ui, true)));
+				expect(ui.confirmCalls).toHaveLength(0);
+				expect(readAuditTaskPair(root, TASK)).toEqual(terminal);
+			} finally { rmSync(root, { recursive: true, force: true }); }
+		});
+	}
+
+	test("request_stop discards a Tool abort during confirmation", async () => {
+		const root = makeEnrolledRoot();
+		try {
+			const { tool } = loadSurface();
+			const before = authorityBytes(root);
+			const controller = new AbortController();
+			const result = await tool.execute("abort-stop", { task_id: TASK, action: { op: "request_stop" } }, controller.signal, undefined, ctxFor(root, makeUI(), async () => { controller.abort(); return true; }));
+			expect(parseToolState(result).state).toBe("cancelled");
+			expect(authorityBytes(root)).toEqual(before);
+		} finally { rmSync(root, { recursive: true, force: true }); }
+	});
+
+	for (const kind of ["timeout", "session_shutdown"] as const) {
+		test(`request_stop ignores a ${kind} confirmation`, async () => {
+			const root = makeEnrolledRoot();
+			try {
+				const { tool, shutdown } = loadSurface();
+				const before = authorityBytes(root);
+				const context = ctxFor(root, makeUI(), async () => { await shutdown(); return true; });
+				if (kind === "timeout") context.ui.custom = async () => undefined;
+				const call = tool.execute("interrupted-stop", { task_id: TASK, action: { op: "request_stop" } }, undefined, undefined, context);
+				if (kind === "timeout") expect(parseToolState(await call).state).toBe("cancelled");
+				else await captureToolFailure(call);
+				expect(authorityBytes(root)).toEqual(before);
+			} finally { rmSync(root, { recursive: true, force: true }); }
+		});
+	}
+
+	for (const kind of ["non-tui", "foreign-task", "provider-error", "drift", "concurrent"] as const) {
+		test(`request_stop fails closed for ${kind}`, async () => {
+			const root = makeEnrolledRoot();
+			try {
+				const { tool } = loadSurface();
+				const before = authorityBytes(root);
+				const ui = makeUI();
+				const context = ctxFor(root, ui, async () => {
+					if (kind === "provider-error") throw new Error("dialog unavailable");
+					if (kind === "drift") {
+						writeFileSync(join(root, "plugins/immune-brain/.pi-extension/owned.ts"), "concurrent change\n");
+						execFileSync("git", ["add", "."], { cwd: root });
+					}
+					if (kind === "concurrent") {
+						const otherUi = makeUI();
+						await captureToolFailure(tool.execute("second-stop", { task_id: TASK, action: { op: "request_stop" } }, undefined, undefined, ctxFor(root, otherUi, true)));
+						expect(otherUi.confirmCalls).toHaveLength(0);
+						return false;
+					}
+					return true;
+				}, kind === "non-tui" ? "rpc" : "tui");
+				const call = tool.execute("negative-stop", { task_id: kind === "foreign-task" ? "another-task" : TASK, action: { op: "request_stop" } }, undefined, undefined, context);
+				if (kind === "concurrent") expect(parseToolState(await call).state).toBe("cancelled");
+				else await captureToolFailure(call);
+				expect(authorityBytes(root)).toEqual(before);
+				if (kind === "non-tui" || kind === "foreign-task") expect(ui.confirmCalls).toHaveLength(0);
+			} finally { rmSync(root, { recursive: true, force: true }); }
+		});
+	}
+
+	test("request_stop rejects running assurance before opening confirmation", async () => {
+		const root = makeEnrolledRoot();
+		let release!: () => void;
+		let entered!: () => void;
+		const gate = new Promise<void>((resolve) => { release = resolve; });
+		const ready = new Promise<void>((resolve) => { entered = resolve; });
+		const { tool } = loadSurface({ advanceBeforeProjection: async () => { entered(); await gate; } });
+		const controller = new AbortController();
+		const running = tool.execute("qa", { task_id: TASK, action: { op: "advance_assurance" } }, controller.signal, undefined, ctxFor(root, makeUI(), true)).catch(() => undefined);
+		try {
+			await ready;
+			const before = authorityBytes(root);
+			const ui = makeUI();
+			const failure = await captureToolFailure(tool.execute("stop", { task_id: TASK, action: { op: "request_stop" } }, undefined, undefined, ctxFor(root, ui, true)));
+			expect(failure.message).toMatch(/already running/i);
+			expect(ui.confirmCalls).toHaveLength(0);
+			expect(authorityBytes(root)).toEqual(before);
+		} finally {
+			controller.abort();
+			release();
+			await running;
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
+	test("stop confirmation rejects concurrent assurance before preparation", async () => {
+		const root = makeEnrolledRoot();
+		let preparations = 0;
+		const { tool } = loadSurface({ advanceBeforeProjection: async () => { preparations++; } });
+		try {
+			const before = authorityBytes(root);
+			const result = await tool.execute("stop", { task_id: TASK, action: { op: "request_stop" } }, undefined, undefined, ctxFor(root, makeUI(), async () => {
+				await captureToolFailure(tool.execute("qa", { task_id: TASK, action: { op: "advance_assurance" } }, undefined, undefined, ctxFor(root, makeUI(), true)));
+				expect(preparations).toBe(0);
+				return false;
+			}));
+			expect(parseToolState(result).state).toBe("cancelled");
+			expect(authorityBytes(root)).toEqual(before);
+		} finally { rmSync(root, { recursive: true, force: true }); }
+	});
+
 	test("user-decision operation is host-built from exactly one open decision", () => {
 		const open = {
 			id: "decision-1",

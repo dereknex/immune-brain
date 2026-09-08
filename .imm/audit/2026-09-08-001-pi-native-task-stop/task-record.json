@@ -1,0 +1,486 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "2026-09-08-001-pi-native-task-stop",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "2026-09-08-001-pi-native-task-stop",
+    "goal": "Expose a minimal Pi request_stop Tool action that safely stops the exact enrolled task after one literal-user native confirmation, reusing existing Kernel stop authority and terminal settlement as defined in docs/specs/pi-native-task-stop.spec.md, without discarding implementation work or weakening cancellation, concurrency and snapshot checks.",
+    "acceptance": [
+      {
+        "id": "acc-stop-native-authority",
+        "assertion": "Implement the Spec Interface and Authority and Ordered Sequence contracts: the registered Pi Tool accepts action {op: request_stop} and routes eligible active and frozen tasks, including waiting-for-Review/replan, through one native confirmation and exact host-built stop authority. Confirmed stop produces real stopped TaskRecord and terminal proof, archives bound planning artifacts, releases the claim, preserves unrelated and implementation files, and uses a truthful host-owned reason. No direct store edits or alternate settlement mechanism are introduced.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/pi-canary-user-authority.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 65536\n}\n"
+      },
+      {
+        "id": "acc-stop-interruption-safety",
+        "assertion": "Satisfy the complete Spec Settlement Enumeration: cancel, timeout, abort and session shutdown before commit create no stop/finding/artifact mutation; missing, foreign or terminal ownership, concurrent invocation and changed snapshot reject without overwriting competing state. Only Kernel committed evidence determines terminal outcome. Successful stop invalidates outstanding Review resources; late results and repeated requests cannot rewrite terminal evidence. Post-commit delivery errors preserve stopped authority and report their separate failure. Retain real Kernel CAS, invocation and recoverable-transaction semantics.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/pi-canary-user-authority.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 65536\n}\n"
+      },
+      {
+        "id": "acc-stop-public-contract",
+        "assertion": "Satisfy Spec UI, Compatibility and Rollback: request_stop exposes only op within action and cannot accept caller-owned authority, confirmation, actor or reason; request_authorization behavior remains unchanged. Canonical Loop and Pi documentation distinguish explicit confirmed task stop from Host cancellation and busy-operation rejection. Registered Tool and UI tests verify native attention events, one confirmation, Stopped success, normal cancellation without error toast, existing correlated failures, and an empty Footer. Ship the existing extension directly with no new command, compatibility layer or package/version churn.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/imm-canary-work-contract.test.ts\",\n    \"tests/pi-canary-work-extension.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 65536\n}\n"
+      }
+    ],
+    "scope_hint": [
+      "docs/specs/archive/pi-native-task-stop.spec.md",
+      "docs/specs/pi-native-task-stop.spec.md",
+      "plugins/immune-brain/.pi-extension/imm-canary-work.ts",
+      "plugins/immune-brain/.pi-extension/pi-canary-interaction.ts",
+      "plugins/immune-brain/README.md",
+      "plugins/immune-brain/dist/claude/mcp-server.mjs",
+      "plugins/immune-brain/dist/imm-loop.md",
+      "plugins/immune-brain/runtime/assurance/coordinator.ts",
+      "plugins/immune-brain/runtime/assurance/invocations.ts",
+      "plugins/immune-brain/runtime/kernel/application.ts",
+      "plugins/immune-brain/runtime/kernel/authority_port.ts",
+      "plugins/immune-brain/runtime/kernel/backend_claim.ts",
+      "plugins/immune-brain/runtime/kernel/canary_application.ts",
+      "plugins/immune-brain/runtime/kernel/reducer.ts",
+      "plugins/immune-brain/runtime/kernel/storage.ts",
+      "tests/imm-canary-work-contract.test.ts",
+      "tests/kernel-canary-application.test.ts",
+      "tests/kernel-canary-terminal-transaction.test.ts",
+      "tests/pi-canary-assurance-continuation.test.ts",
+      "tests/pi-canary-invocation-registry.test.ts",
+      "tests/pi-canary-package-boundary.test.ts",
+      "tests/pi-canary-packed-loader.test.ts",
+      "tests/pi-canary-user-authority.test.ts",
+      "tests/pi-canary-work-extension.test.ts"
+    ],
+    "risk": "critical",
+    "revision": 2,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/archive/2026-09-08-001-pi-native-task-stop.intent.json",
+    "content_hash": "sha256:d8967d1993339200e704477a8b5c0e2f4211bbe94916d7c6de866968c5662f06"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:b579fa8b1cc6737526dee48100ffb48a7abd3628a9c5916e9177b7d2349c7fe4",
+  "git_base_head": "6548e3058cb058190c35c000ced92da8e03144c0",
+  "attestations": [
+    {
+      "id": "approval-qa-a702cb41",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:d8967d1993339200e704477a8b5c0e2f4211bbe94916d7c6de866968c5662f06",
+      "diff_hash": "sha256:9e5b3d54b1e139593e687b82507ca341ade3daccad54e92858cb9da1a3ce7dc1",
+      "actor_id": "deterministic-qa",
+      "summary": "all 3 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "acc-stop-native-authority",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-stop-interruption-safety",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-stop-public-contract",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-6b0c5fd0",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:d8967d1993339200e704477a8b5c0e2f4211bbe94916d7c6de866968c5662f06",
+      "diff_hash": "sha256:04df9d2c31bb916833a81e8ce222976f63694c2a77aa0bcc196d98fd7b48c5ce",
+      "actor_id": "deterministic-qa",
+      "summary": "all 3 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "acc-stop-native-authority",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-stop-interruption-safety",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-stop-public-contract",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-02b9c032",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:d8967d1993339200e704477a8b5c0e2f4211bbe94916d7c6de866968c5662f06",
+      "diff_hash": "sha256:72ecd608b948a98cbc85d00c2dd89d4dd95a2e5dd72360e2f48ade6d97588ca3",
+      "actor_id": "deterministic-qa",
+      "summary": "all 3 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "acc-stop-native-authority",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-stop-interruption-safety",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-stop-public-contract",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-d875b9c9",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:d8967d1993339200e704477a8b5c0e2f4211bbe94916d7c6de866968c5662f06",
+      "diff_hash": "sha256:09d2ec690550ecd0b4e7bfc963f1e72e921d1dad4a008353fe6af5f58f7ddb48",
+      "actor_id": "deterministic-qa",
+      "summary": "all 3 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "acc-stop-native-authority",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-stop-interruption-safety",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-stop-public-contract",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-53613b9f",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:d8967d1993339200e704477a8b5c0e2f4211bbe94916d7c6de866968c5662f06",
+      "diff_hash": "sha256:09d2ec690550ecd0b4e7bfc963f1e72e921d1dad4a008353fe6af5f58f7ddb48",
+      "actor_id": "parent-mediated-review",
+      "summary": "Verified manifest and snapshot digests, commit parentage, and changed-path blob identities against the supplied immutable revisions. Reviewed all changed paths and relevant authority, invocation, settlement, and UI dependencies. No actionable correctness or acceptance-contract violations found. The implementation reuses exact host-owned stop authority, preserves cancellation and CAS boundaries, releases pending Review resources after terminal settlement, and reports post-commit staging failures separately. Forged authority fields do not influence privileged input; request_authorization routing remains unchanged. Verification relied on immutable source and supplied Kernel QA evidence; no tests were rerun and no files were modified.",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "6548e3058cb058190c35c000ced92da8e03144c0",
+        "review_commit": "a43f57682018c17f90fe17614362ff5caa262849",
+        "review_tree": "ed131fd80a5196440f9cbe730cab361d27d2d0cf",
+        "manifest_digest": "sha256:e973112badf752d0e8add9a488e05fcd3d88674f75b30e2f34271bde1b3410f6"
+      }
+    }
+  ],
+  "findings": [
+    {
+      "id": "review-18bb981dfe96-1-review-stop-busy-admission",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "acc-stop-interruption-safety",
+      "source": "review",
+      "review_round": 1,
+      "summary": "At review commit 54d0fb621b41e35fd4caa3671ce59d809082bc45, plugins/immune-brain/.pi-extension/imm-canary-work.ts:553 routes request_stop directly to authorizeExactOperation, whose admission at line 733 checks only the invocation registry. Running QA is tracked separately: plugins/immune-brain/runtime/assurance/coordinator.ts:473 registers activeOperations, but does not open an invocation until line 599, after deterministic QA finishes. Consequently, request_stop during QA execution can open its confirmation and commit a stop while QA is still running, contrary to the explicit busy-operation restriction in docs/specs/archive/pi-native-task-stop.spec.md:17 and :94. The unchanged invocation dependency was inspected to establish this admission behavior: runtime/assurance/invocations.ts:54 rejects only an existing open invocation, not active QA. Add a coordinator-owned admission check that rejects stop while assurance is running, retaining support for an idle Review reservation, and cover it with a registered-Tool test that holds QA pending and asserts no stop dialog, capability issuance, or terminal mutation."
+    },
+    {
+      "id": "review-03c776af4453-1-stop-settlement-regression-coverage",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "acc-stop-interruption-safety",
+      "source": "review",
+      "review_round": 2,
+      "summary": "P2: tests/pi-canary-user-authority.test.ts:201 and tests/pi-canary-assurance-continuation.test.ts:13 do not verify the required registered-Tool settlement boundaries. The new continuation test calls releaseStoppedReview directly without stopping a task; removing the production cleanup calls would leave this test green. No request_stop test induces a post-commit staging failure or asserts delivery_error, so the new recovery branch at plugins/immune-brain/.pi-extension/imm-canary-work.ts:1019 is also unprotected. Add focused registered-Tool tests that stop a task with a pending Review reservation and reject its late verdict, and induce staging failure after real Kernel settlement while asserting stopped record, terminal proof, archived artifacts, released claim, and a separately reported delivery error. These are explicit acceptance requirements, not additional functionality."
+    },
+    {
+      "id": "review-03c776af4453-2-stop-native-ui-regression-coverage",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "acc-stop-public-contract",
+      "source": "review",
+      "review_round": 2,
+      "summary": "P2: tests/pi-canary-work-extension.test.ts:928 only adds schema assertions for request_stop. Its registered-Tool UI behavior is not tested: the request_stop harness at tests/pi-canary-user-authority.test.ts:173 supplies neither an attention-event recorder nor Rail/Footer spies, and cancellation tests never inspect notifyCalls. Consequently missing attention begin/end events, incorrect success Rail state, or an error toast on ordinary cancellation would not fail the new coverage. Add request_stop success and cancellation cases to the existing UI-capable extension harness, asserting one native confirmation, paired attention events, Stopped on success, no cancellation error toast, and untouched Footer, as explicitly required by acc-stop-public-contract."
+    },
+    {
+      "id": "request_rework:2026-09-08-001-pi-native-task-stop:2026-09-08T01:51:24.979Z:replan-required",
+      "kind": "replan_required",
+      "status": "resolved",
+      "acceptance_id": "acc-stop-interruption-safety",
+      "source": "kernel",
+      "review_round": 2,
+      "summary": "Review returned this acceptance boundary twice; a durable replan is required."
+    },
+    {
+      "id": "review-622c1482513a-1-review-stop-invocation-cleanup",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "acc-stop-interruption-safety",
+      "source": "review",
+      "review_round": 3,
+      "summary": "P2 — plugins/immune-brain/.pi-extension/imm-canary-work.ts:748: The newly exposed request_stop path opens an invocation at line 735, but readTaskIntent runs outside both the dialog catch and the final cleanup block. If the intent sidecar is missing, malformed, or becomes unreadable after projection, this read throws and leaves the invocation open. Restoring the sidecar does not restore operation: subsequent stop/authorization requests reject as concurrent, and the new coordinator.ts:439 guard also blocks advance_assurance until session cleanup. This also escapes the normal correlated Tool failure handling. Put all preparation after openInvocation inside an exception-safe cleanup boundary, return the existing structured blocked result, and add a registered-Tool regression that causes the read failure, restores the sidecar, and successfully retries in the same session. Unchanged dependencies inspected to establish this failure: runtime/kernel/assurance_projection.ts projects record/diff facts without validating the intent sidecar, runtime/kernel/intent.ts:665 performs the separate sidecar read, and runtime/assurance/invocations.ts:54 rejects any subsequent invocation while the leaked token remains open."
+    },
+    {
+      "id": "request_rework:2026-09-08-001-pi-native-task-stop:2026-09-08T02:08:46.326Z:replan-required",
+      "kind": "replan_required",
+      "status": "resolved",
+      "acceptance_id": "acc-stop-interruption-safety",
+      "source": "kernel",
+      "review_round": 3,
+      "summary": "Review returned this acceptance boundary twice; a durable replan is required."
+    }
+  ],
+  "history": [
+    {
+      "id": "approve_breaking_intent_revision:2026-09-08-001-pi-native-task-stop:2026-09-08T01:25:28.949Z",
+      "at": "2026-09-08T01:25:28.949Z",
+      "type": "approve_breaking_intent_revision",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "intent_revision_2\naction_v2_sha256:15cb71a4055e008801c44e98b930cbf371c19a5466b846f3b573021fcf0cda8e",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-8e8f89052a29e4ed",
+        "issued_at": "2026-09-08T01:25:29.244Z",
+        "expires_at": "2026-09-08T01:35:29.244Z"
+      }
+    },
+    {
+      "id": "freeze_artifacts:2026-09-08-001-pi-native-task-stop:2026-09-08T01:29:02.431Z",
+      "at": "2026-09-08T01:29:02.431Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent and Spec frozen at docs/plans/archive/2026-09-08-001-pi-native-task-stop.intent.json"
+    },
+    {
+      "id": "record_approval:2026-09-08-001-pi-native-task-stop:2026-09-08T01:30:00.914Z",
+      "at": "2026-09-08T01:30:00.914Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-a702cb41\naction_v2_sha256:a0418f4dd7c132d35ecefda104b11e55a9144a352d012c23f0ec279c7dc5590c",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-b67a50f8d1ee248c",
+        "issued_at": "2026-09-08T01:30:00.915Z",
+        "expires_at": "2026-09-08T01:40:00.915Z"
+      }
+    },
+    {
+      "id": "request_rework:2026-09-08-001-pi-native-task-stop:2026-09-08T01:36:32.635Z",
+      "at": "2026-09-08T01:36:32.635Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_1\naction_v2_sha256:194a61ea565f77d725844c7fc7648731f2ffb29261f27d2ec0b9f395df21f849",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-b3981a47796dde5c",
+        "issued_at": "2026-09-08T01:36:32.635Z",
+        "expires_at": "2026-09-08T01:46:32.635Z"
+      }
+    },
+    {
+      "id": "resolve_finding:2026-09-08-001-pi-native-task-stop:2026-09-08T01:42:20.298Z",
+      "at": "2026-09-08T01:42:20.298Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-18bb981dfe96-1-review-stop-busy-admission\naction_v2_sha256:3c740b6ad76b147c19aa091d65a6f577df64fcd6ffe6e81b6b32855deaab46e7"
+    },
+    {
+      "id": "freeze_artifacts:2026-09-08-001-pi-native-task-stop:2026-09-08T01:42:46.465Z",
+      "at": "2026-09-08T01:42:46.465Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent and Spec frozen at docs/plans/archive/2026-09-08-001-pi-native-task-stop.intent.json"
+    },
+    {
+      "id": "record_approval:2026-09-08-001-pi-native-task-stop:2026-09-08T01:43:45.685Z",
+      "at": "2026-09-08T01:43:45.685Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-6b0c5fd0\naction_v2_sha256:a0dbbeb6daed3fde13ca975c36df5f2e9b8e53093b57b401e254e538bca4ccf1",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-d817a9b9c29e46e5",
+        "issued_at": "2026-09-08T01:43:45.685Z",
+        "expires_at": "2026-09-08T01:53:45.685Z"
+      }
+    },
+    {
+      "id": "request_rework:2026-09-08-001-pi-native-task-stop:2026-09-08T01:51:24.979Z",
+      "at": "2026-09-08T01:51:24.979Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "review_round_2\naction_v2_sha256:aed72c45fcf22dd7f8da6c9fb64fc1cfd3d976ebe324c7567593333a2c45f9e3",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-fcc8cf45e35f7cbf",
+        "issued_at": "2026-09-08T01:51:24.979Z",
+        "expires_at": "2026-09-08T02:01:24.979Z"
+      }
+    },
+    {
+      "id": "authorize_rework:2026-09-08-001-pi-native-task-stop:2026-09-08T01:52:06.018Z",
+      "at": "2026-09-08T01:52:06.018Z",
+      "type": "authorize_rework",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "request_rework:2026-09-08-001-pi-native-task-stop:2026-09-08T01:51:24.979Z:replan-required\naction_v2_sha256:8cec4a7bdf169174807266762c64ce2c4c847e3cddeb606aa905086403d5dd44",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-f74bb10cb30e4f78",
+        "issued_at": "2026-09-08T01:52:06.018Z",
+        "expires_at": "2026-09-08T02:02:06.018Z"
+      }
+    },
+    {
+      "id": "resolve_finding:2026-09-08-001-pi-native-task-stop:2026-09-08T01:59:33.235Z",
+      "at": "2026-09-08T01:59:33.235Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-03c776af4453-1-stop-settlement-regression-coverage\naction_v2_sha256:688caac24395154c052eec76070cc4c06c8e4ccf0cb62edc8656db81e67224ac"
+    },
+    {
+      "id": "resolve_finding:2026-09-08-001-pi-native-task-stop:2026-09-08T01:59:47.513Z",
+      "at": "2026-09-08T01:59:47.513Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-03c776af4453-2-stop-native-ui-regression-coverage\naction_v2_sha256:d0a6a02d1c86915fa44916f4687028039016bc9a173047f1d50a8459cbc0e5ce"
+    },
+    {
+      "id": "freeze_artifacts:2026-09-08-001-pi-native-task-stop:2026-09-08T02:00:19.727Z",
+      "at": "2026-09-08T02:00:19.727Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent and Spec frozen at docs/plans/archive/2026-09-08-001-pi-native-task-stop.intent.json"
+    },
+    {
+      "id": "record_approval:2026-09-08-001-pi-native-task-stop:2026-09-08T02:01:26.338Z",
+      "at": "2026-09-08T02:01:26.338Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-02b9c032\naction_v2_sha256:21ad6df383451d95caedd82d8bd90d5c25f0b373d7781d928eb661f5bf40d34e",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-472e446e49383b52",
+        "issued_at": "2026-09-08T02:01:26.339Z",
+        "expires_at": "2026-09-08T02:11:26.339Z"
+      }
+    },
+    {
+      "id": "request_rework:2026-09-08-001-pi-native-task-stop:2026-09-08T02:08:46.326Z",
+      "at": "2026-09-08T02:08:46.326Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "review_round_3\naction_v2_sha256:3720e923962850f7cc589a3062094c5574f5aaac234e18cff0bceaa14c14e0a3",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-754c54174c9987e4",
+        "issued_at": "2026-09-08T02:08:46.326Z",
+        "expires_at": "2026-09-08T02:18:46.326Z"
+      }
+    },
+    {
+      "id": "authorize_rework:2026-09-08-001-pi-native-task-stop:2026-09-08T02:21:51.334Z",
+      "at": "2026-09-08T02:21:51.334Z",
+      "type": "authorize_rework",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "request_rework:2026-09-08-001-pi-native-task-stop:2026-09-08T02:08:46.326Z:replan-required\naction_v2_sha256:3d9da22631d7040d7eb86bce18b4d7b167afc7fe513d765953a6907a496eea2b",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-4b9f234902ccd381",
+        "issued_at": "2026-09-08T02:21:51.335Z",
+        "expires_at": "2026-09-08T02:31:51.335Z"
+      }
+    },
+    {
+      "id": "resolve_finding:2026-09-08-001-pi-native-task-stop:2026-09-08T02:26:17.915Z",
+      "at": "2026-09-08T02:26:17.915Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-622c1482513a-1-review-stop-invocation-cleanup\naction_v2_sha256:9e3327f7c24613abdf367772c07c5f36c189e1ef6b77265c1c3f9df0a3548a75"
+    },
+    {
+      "id": "freeze_artifacts:2026-09-08-001-pi-native-task-stop:2026-09-08T02:26:46.706Z",
+      "at": "2026-09-08T02:26:46.706Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent and Spec frozen at docs/plans/archive/2026-09-08-001-pi-native-task-stop.intent.json"
+    },
+    {
+      "id": "record_approval:2026-09-08-001-pi-native-task-stop:2026-09-08T02:27:52.411Z",
+      "at": "2026-09-08T02:27:52.411Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-d875b9c9\naction_v2_sha256:2ae0c4f76ba6a32967f323caccf92851b2fceecbc7a4365491383d014f787988",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-f1770521a9e638ec",
+        "issued_at": "2026-09-08T02:27:52.412Z",
+        "expires_at": "2026-09-08T02:37:52.412Z"
+      }
+    },
+    {
+      "id": "record_approval:2026-09-08-001-pi-native-task-stop:2026-09-08T02:34:46.439Z",
+      "at": "2026-09-08T02:34:46.439Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-53613b9f\naction_v2_sha256:de0cb42dd57417078c84b2859ddfb8dd5116ec9862610fe06c9cb58846e76c22",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-badbfbe74fdaddb6",
+        "issued_at": "2026-09-08T02:34:46.439Z",
+        "expires_at": "2026-09-08T02:44:46.439Z"
+      }
+    },
+    {
+      "id": "complete:2026-09-08-001-pi-native-task-stop:2026-09-08T02:34:47.383Z",
+      "at": "2026-09-08T02:34:47.383Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:033fd5e477619237449deb0e498c4afca4e2c93c8d6159c4f5a69945ef2b5647"
+    }
+  ]
+}

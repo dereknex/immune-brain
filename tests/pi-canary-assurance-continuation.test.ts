@@ -9,6 +9,17 @@ import {
 	snapshot,
 } from "./helpers/pi-canary-assurance-harness.ts";
 
+
+test("terminal stop releases pending Review and rejects late verdicts", async () => {
+	const h = makeAssuranceHarness();
+	expect((await h.progression.advance(TASK, ctx)).state).toBe("review_ready");
+	h.progression.releaseStoppedReview(TASK);
+	expect(h.progression.active(TASK)).toBeNull();
+	const before = h.counts().applyCount;
+	expect((await h.progression.submitReview(TASK, ctx, passVerdict(snapshot("review")))).state).toBe("blocked");
+	expect(h.counts().applyCount).toBe(before);
+});
+
 test("initial transient read retries once and reports the retry without repeating QA", async () => {
 	const h = makeAssuranceHarness();
 	const original = h.ports.projectTask;

@@ -436,6 +436,7 @@ export class AssuranceCoordinator {
 	sessionGenerationValue(): number { return this.sessionGeneration; }
 
 	async advance(taskId: string, ctx: HostContext, signal?: AbortSignal, onUpdate?: (update: ForegroundToolUpdate) => void): Promise<AssuranceAdvanceResult> {
+		if (this.isInvocationOpen(taskId)) return { state: "blocked", reason: "an authority invocation is already open" };
 		const active = this.active(taskId);
 		if (active?.state === "review_ready") {
 			const reservation = this.reviewReservations.get(taskId);
@@ -842,6 +843,12 @@ export class AssuranceCoordinator {
 		if (!reservation) return { state: "blocked", reason: "Review reservation disappeared" };
 		if (reservation.verdictCorrectionRequired) return { state: "blocked", code: "verdict_invalid", reason: "Review verdict correction is required before advancing" };
 		return { state: "review_ready", operation: "review", operation_id: reservation.operationId, snapshot_digest: snapshotDigest(reservation.snapshot), review_bundle_digest: reservation.snapshot.review_bundle_digest ?? "", agent_params: reservation.hostReservation.dispatch };
+	}
+
+	releaseStoppedReview(taskId: string): void {
+		const reservation = this.reviewReservations.get(taskId);
+		if (reservation) this.releaseReviewReservation(taskId, reservation);
+		this.rejectedReviewOperations.delete(taskId);
 	}
 
 	private releaseReviewReservation(taskId: string, reservation: ReviewReservation, rejectionReason?: string): void {

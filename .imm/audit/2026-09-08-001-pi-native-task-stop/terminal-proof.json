@@ -1,0 +1,9 @@
+{
+  "contract": "assurance_kernel/task_tombstone/v2",
+  "task_id": "2026-09-08-001-pi-native-task-stop",
+  "lifecycle_status": "terminal",
+  "terminal_lifecycle": "done",
+  "terminal_event_id": "complete:2026-09-08-001-pi-native-task-stop:2026-09-08T02:34:47.383Z",
+  "final_record_hash": "sha256:ab701b52b922b13c2713c6c02ed74dd97f002976ce091210051025adac5dbac3",
+  "terminalized_at": "2026-09-08T02:34:47.383Z"
+}

@@ -1,0 +1,51 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "2026-09-08-001-pi-native-task-stop",
+  "goal": "Expose a minimal Pi request_stop Tool action that safely stops the exact enrolled task after one literal-user native confirmation, reusing existing Kernel stop authority and terminal settlement as defined in docs/specs/pi-native-task-stop.spec.md, without discarding implementation work or weakening cancellation, concurrency and snapshot checks.",
+  "acceptance": [
+    {
+      "id": "acc-stop-native-authority",
+      "assertion": "Implement the Spec Interface and Authority and Ordered Sequence contracts: the registered Pi Tool accepts action {op: request_stop} and routes eligible active and frozen tasks, including waiting-for-Review/replan, through one native confirmation and exact host-built stop authority. Confirmed stop produces real stopped TaskRecord and terminal proof, archives bound planning artifacts, releases the claim, preserves unrelated and implementation files, and uses a truthful host-owned reason. No direct store edits or alternate settlement mechanism are introduced.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/pi-canary-user-authority.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 65536\n}\n"
+    },
+    {
+      "id": "acc-stop-interruption-safety",
+      "assertion": "Satisfy the complete Spec Settlement Enumeration: cancel, timeout, abort and session shutdown before commit create no stop/finding/artifact mutation; missing, foreign or terminal ownership, concurrent invocation and changed snapshot reject without overwriting competing state. Only Kernel committed evidence determines terminal outcome. Successful stop invalidates outstanding Review resources; late results and repeated requests cannot rewrite terminal evidence. Post-commit delivery errors preserve stopped authority and report their separate failure. Retain real Kernel CAS, invocation and recoverable-transaction semantics.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/pi-canary-user-authority.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 65536\n}\n"
+    },
+    {
+      "id": "acc-stop-public-contract",
+      "assertion": "Satisfy Spec UI, Compatibility and Rollback: request_stop exposes only op within action and cannot accept caller-owned authority, confirmation, actor or reason; request_authorization behavior remains unchanged. Canonical Loop and Pi documentation distinguish explicit confirmed task stop from Host cancellation and busy-operation rejection. Registered Tool and UI tests verify native attention events, one confirmation, Stopped success, normal cancellation without error toast, existing correlated failures, and an empty Footer. Ship the existing extension directly with no new command, compatibility layer or package/version churn.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/imm-canary-work-contract.test.ts\",\n    \"tests/pi-canary-work-extension.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 65536\n}\n"
+    }
+  ],
+  "scope_hint": [
+    "docs/specs/archive/pi-native-task-stop.spec.md",
+    "docs/specs/pi-native-task-stop.spec.md",
+    "plugins/immune-brain/.pi-extension/imm-canary-work.ts",
+    "plugins/immune-brain/.pi-extension/pi-canary-interaction.ts",
+    "plugins/immune-brain/README.md",
+    "plugins/immune-brain/dist/claude/mcp-server.mjs",
+    "plugins/immune-brain/dist/imm-loop.md",
+    "plugins/immune-brain/runtime/assurance/coordinator.ts",
+    "plugins/immune-brain/runtime/assurance/invocations.ts",
+    "plugins/immune-brain/runtime/kernel/application.ts",
+    "plugins/immune-brain/runtime/kernel/authority_port.ts",
+    "plugins/immune-brain/runtime/kernel/backend_claim.ts",
+    "plugins/immune-brain/runtime/kernel/canary_application.ts",
+    "plugins/immune-brain/runtime/kernel/reducer.ts",
+    "plugins/immune-brain/runtime/kernel/storage.ts",
+    "tests/imm-canary-work-contract.test.ts",
+    "tests/kernel-canary-application.test.ts",
+    "tests/kernel-canary-terminal-transaction.test.ts",
+    "tests/pi-canary-assurance-continuation.test.ts",
+    "tests/pi-canary-invocation-registry.test.ts",
+    "tests/pi-canary-package-boundary.test.ts",
+    "tests/pi-canary-packed-loader.test.ts",
+    "tests/pi-canary-user-authority.test.ts",
+    "tests/pi-canary-work-extension.test.ts"
+  ],
+  "risk": "critical",
+  "revision": 2,
+  "owner": "user"
+}

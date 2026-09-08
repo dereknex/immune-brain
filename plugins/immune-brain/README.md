@@ -139,6 +139,14 @@ then settle without a generic final confirmation. User authority is reserved
 for unresolved decisions, explicit stop, and breaking Intent revisions;
 proven stale claims repair deterministically without user interaction.
 
+On Pi, an explicit task-stop request uses
+`imm_kernel_canary({ task_id, action: { op: "request_stop" } })` and one native
+confirmation. Successful Kernel settlement preserves implementation files and
+releases the claim. Dialog or Tool cancellation is not task termination. A busy
+invocation must finish or be cancelled with existing Host controls first;
+`request_stop` does not force-kill QA. `request_authorization` remains reserved
+for unresolved decisions and rework authorization.
+
 On Claude Code, privileged operations use server-initiated MCP
 `elicitation/create` after preparation has produced the exact revision, content
 hash, and binding digest. Claude Code `2.1.236` is the minimum version verified

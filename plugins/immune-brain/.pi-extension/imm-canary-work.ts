@@ -436,6 +436,7 @@ export default function (
 				Type.Object({ op: Type.Literal("advance_assurance") }),
 				Type.Object({ op: Type.Literal("submit_review"), verdict: Type.Unknown() }),
 				Type.Object({ op: Type.Literal("request_authorization") }),
+				Type.Object({ op: Type.Literal("request_stop") }),
 				Type.Object({ op: Type.Literal("repair_authority_state") }),
 				Type.Object({ op: Type.Literal("freeze_artifacts") }),
 				Type.Object({
@@ -531,8 +532,8 @@ export default function (
 					return failCanaryTool(taskId, action.op, "authority_conflict", "authority_repair_failed", message, blocked.next_action);
 				}
 			}
-			if (action.op === "advance_assurance" || action.op === "request_authorization" || action.op === "submit_review" || action.op === "approve_breaking_intent_revision") {
-				if ((action.op === "request_authorization" || action.op === "approve_breaking_intent_revision") && ctx.mode !== "tui")
+			if (action.op === "advance_assurance" || action.op === "request_stop" || action.op === "request_authorization" || action.op === "submit_review" || action.op === "approve_breaking_intent_revision") {
+				if ((action.op === "request_stop" || action.op === "request_authorization" || action.op === "approve_breaking_intent_revision") && ctx.mode !== "tui")
 					return failCanaryTool(taskId, action.op, "blocked", "tui_required", "literal-user authorization is TUI-only", "invoke the TUI Tool");
 				const result = action.op === "advance_assurance"
 					? await progression.advance(taskId, ctx, signal, (update) => {
@@ -548,7 +549,9 @@ export default function (
 								ctx,
 								(action as { next_intent?: unknown }).next_intent,
 							)
-							: await requestAuthorization(taskId, ctx);
+							: action.op === "request_stop"
+								? await authorizeExactOperation(taskId, "stop", { ...ctx, signal: signal && ctx.signal ? AbortSignal.any([signal, ctx.signal]) : signal ?? ctx.signal })
+								: await requestAuthorization(taskId, ctx);
 				const enriched = await enrichAssuranceResult(ctx, taskId, result as unknown as Record<string, unknown>);
 				presentTaskRailResult(ctx, taskId, enriched);
 				throwIfCanaryToolFailure(taskId, action.op, enriched);
@@ -697,7 +700,7 @@ export default function (
 	});
 
 	type AuthorizationOutcome =
-		| { state: "applied"; operation: AuthorizeOperation; lifecycle?: string }
+		| { state: "applied"; operation: AuthorizeOperation; lifecycle?: string; delivery_error?: string }
 		| { state: "cancelled"; operation: AuthorizeOperation; reason: string }
 		| { state: "blocked"; reason: string };
 
@@ -727,12 +730,15 @@ export default function (
 			let invocation: InvocationToken;
 			const authorizationGeneration = progression.sessionGenerationValue();
 			try {
+				if (operation === "stop" && progression.active(taskId)?.state === "running")
+					throw new Error("assurance operation is already running");
 				invocation = progression.openInvocation(taskId);
 		} catch (error) {
 			const reason = error instanceof Error ? error.message : String(error);
 			notifyOnce(ctx, `authorization-open:${taskId}:${reason}`, `cannot authorize ${taskId}: ${reason}`, "error");
 			return { state: "blocked", reason };
 		}
+		try {
 		const projection = await projectAssuranceState(ctx.cwd, taskId);
 		if (projection.error || !projection.claim) {
 			const reason = projection.error ?? "no active backend claim";
@@ -899,9 +905,12 @@ export default function (
 			)
 				await recordCancelledUserDecision(ctx, taskId, operation, snapshotDigestRef).catch(() => undefined);
 			progression.closeInvocation(invocation);
+			if (operation === "stop" && !ctx.signal?.aborted && !(error instanceof Error && error.name === "AbortError")) {
+				return { state: "blocked", reason: "native stop confirmation failed; retry request_stop in this Host" };
+			}
 			return { state: "cancelled", operation, reason: "confirmation aborted" };
 		}
-		if (!confirmed) {
+		if (!confirmed || ctx.signal?.aborted) {
 			if (nextIntent) {
 				restoreStagedIntent();
 			}
@@ -922,7 +931,6 @@ export default function (
 			progression.closeInvocation(invocation);
 			return { state: "blocked", reason: "session changed; confirmation discarded" };
 		}
-		try {
 			// Linearization point: only this fresh affirmative continuation
 			// may mint/apply; timeout/cancel already won open -> cancelled.
 			try {
@@ -944,7 +952,7 @@ export default function (
 				};
 			}
 			const exactOperation = operation === "stop"
-				? { op: "stop" as const, reason: "literal user stopped task parked for replan" }
+				? { op: "stop" as const, reason: "literal user requested task stop" }
 				: operation === "approve-breaking-intent-revision"
 					? {
 							op: "approve_breaking_intent_revision" as const,
@@ -994,6 +1002,7 @@ export default function (
 						diffProvider: (root: string, record: NonNullable<TaskRecordRead["record"]>) => diffSnapshotOf(root, record),
 						now,
 					})) as unknown as { record: { lifecycle: string; artifact_state: string; intent_ref: { path: string }; intent_snapshot: { scope_hint: string[] } } };
+					if (exactOperation.op === "stop") progression.releaseStoppedReview(taskId);
 					if (
 						exactOperation.op === "stop" ||
 						exactOperation.op === "authorize_rework" ||
@@ -1009,6 +1018,13 @@ export default function (
 			}
 			} catch (error) {
 				const reason = error instanceof Error ? error.message : String(error);
+				if (operation === "stop") {
+					const terminal = await projectAssuranceState(ctx.cwd, taskId).catch(() => null);
+					if (terminal && !terminal.error && terminal.projection.lifecycle === "stopped") {
+						progression.releaseStoppedReview(taskId);
+						return { state: "applied", operation, lifecycle: "stopped", delivery_error: reason };
+					}
+				}
 				notifyOnce(ctx, `authorization-apply:${taskId}:${operation}:${reason}`, `authorize failed: ${reason}`, "error");
 				return { state: "blocked", reason };
 			} finally {

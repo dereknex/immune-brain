@@ -83,8 +83,14 @@ not bypass them. Do not poll or create detached jobs.
 - Invoke `approve_breaking_intent_revision` with the complete next intent
   directly; the native Host gate is the single user decision. Do not overwrite
   enrolled intent sidecars or ask for chat pre-confirmation.
-- On `awaiting_user`, invoke `request_authorization` directly. It is reserved
-  for a concrete unresolved decision or explicit stop, not risk tier alone.
+- On `awaiting_user`, invoke `request_authorization` directly for a concrete
+  unresolved decision or rework authorization, not risk tier alone.
+- When the user explicitly asks to stop a Pi task, invoke
+  `imm_kernel_canary({ task_id, action: { op: "request_stop" } })` directly.
+  Its single native confirmation authorizes existing Kernel stop settlement.
+  Cancellation is not task termination. A busy invocation must finish or be
+  cancelled through existing Host controls before requesting stop; never clear
+  claims manually or use this operation to force-kill QA.
 - Invoke `repair_authority_state` directly for a proven stale claim. Kernel
   revalidation removes only the redundant claim without user interaction.
 - A Managed native authority failure stays fail-closed. Report its stable reason

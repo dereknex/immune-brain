@@ -1351,6 +1351,8 @@ class AssuranceCoordinator {
     return this.sessionGeneration;
   }
   async advance(taskId, ctx, signal, onUpdate) {
+    if (this.isInvocationOpen(taskId))
+      return { state: "blocked", reason: "an authority invocation is already open" };
     const active = this.active(taskId);
     if (active?.state === "review_ready") {
       const reservation = this.reviewReservations.get(taskId);
@@ -1753,6 +1755,12 @@ class AssuranceCoordinator {
     if (reservation.verdictCorrectionRequired)
       return { state: "blocked", code: "verdict_invalid", reason: "Review verdict correction is required before advancing" };
     return { state: "review_ready", operation: "review", operation_id: reservation.operationId, snapshot_digest: snapshotDigest(reservation.snapshot), review_bundle_digest: reservation.snapshot.review_bundle_digest ?? "", agent_params: reservation.hostReservation.dispatch };
+  }
+  releaseStoppedReview(taskId) {
+    const reservation = this.reviewReservations.get(taskId);
+    if (reservation)
+      this.releaseReviewReservation(taskId, reservation);
+    this.rejectedReviewOperations.delete(taskId);
   }
   releaseReviewReservation(taskId, reservation, rejectionReason) {
     if (this.reviewReservations.get(taskId) !== reservation)
