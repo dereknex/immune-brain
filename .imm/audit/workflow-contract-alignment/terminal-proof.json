@@ -1,0 +1,9 @@
+{
+  "contract": "assurance_kernel/task_tombstone/v2",
+  "task_id": "workflow-contract-alignment",
+  "lifecycle_status": "terminal",
+  "terminal_lifecycle": "done",
+  "terminal_event_id": "complete:workflow-contract-alignment:2026-09-08T06:25:01.483Z",
+  "final_record_hash": "sha256:88c24a4f469a6a719a4fa011e5598fff7b5aa5cb9925db79cc50b794049573d3",
+  "terminalized_at": "2026-09-08T06:25:01.483Z"
+}
