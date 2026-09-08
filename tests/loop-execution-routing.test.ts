@@ -172,7 +172,8 @@ describe("Loop execution and repair routing", () => {
 		expect(loop).toContain("test-fixer");
 		expect(loop).toContain("pr-fix");
 		expect(loop).toContain("imm_kernel_canary");
-		expect(loop).toContain("Scope expansion always returns to `imm-planner`");
+		expect(loop).toContain("Scope expansion returns to Planner's Enrolled Intent Revision route");
+		expect(loop.replace(/\s+/g, " ")).toContain("the current Loop submits it through Kernel revision authority");
 		expect(loop).not.toContain("route it through `imm-canary-work`");
 		for (const path of [
 			"plugins/immune-brain/dist/role-prompts/executor.md",

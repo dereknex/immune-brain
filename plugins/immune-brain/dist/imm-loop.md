@@ -70,8 +70,12 @@ Continue while the current projection has a valid action:
 6. For rework, follow the projected artifact state before editing. Resolve
    findings only after fixing and verifying their cause. Changed snapshots
    invalidate old evidence; freeze and run the newly required obligations.
-7. Stop on terminal `done` or `stopped`, unresolved user decisions, explicit
-   cancellation, or a failure without a safe projected action.
+7. An unresolved decision pauses only dependent execution. On `awaiting_user`,
+   invoke `request_authorization` directly before ending the turn; use the
+   Decisions and Recovery route for its native-gate handling. End the turn if
+   the decision remains unresolved, is cancelled, or the gate fails. Otherwise
+   continue from the returned projection. Stop on terminal `done` or `stopped`,
+   explicit cancellation, or a failure without a safe projected action.
 
 Use the fresh projection returned by a successful operation when supplied. Read
 `status` after interruption, ambiguous mutation results, absent projections, or
@@ -81,10 +85,13 @@ not bypass them. Do not poll or create detached jobs.
 
 ## Decisions and Recovery
 
-- Scope expansion always returns to `imm-planner`. Collect all currently known missing
-  paths, caller/test/generated mirrors, and verification reasons in one request.
-  Do not edit outside scope while waiting or widen it piecemeal without new
-  evidence. Bounded test or PR repair stays inside the same TaskIntent.
+- Scope expansion returns to Planner's Enrolled Intent Revision route. Planner
+  prepares the complete proposed revision without replacing the active owner;
+  the current Loop submits it through Kernel revision authority. Collect all
+  currently known missing paths, caller/test/generated mirrors, and verification
+  reasons in one request. Do not edit outside scope while waiting or widen it
+  piecemeal without new evidence. Bounded test or PR repair stays inside the same
+  TaskIntent.
 - Invoke `approve_breaking_intent_revision` with the complete next intent
   directly; the native Host gate is the single user decision. Do not overwrite
   enrolled intent sidecars or ask for chat pre-confirmation.
@@ -128,8 +135,6 @@ The internal Compounder is optional: only closed work with structured evidence
 of a reusable Learning may route to it. Routine completion creates no Learning.
 It cannot approve successors or delay terminal settlement. A projection with
 `recommended_authority: user` must not dispatch successor work automatically.
-Do not create, switch,
-or delete Git worktrees; operate only in the Host launch directory.
 
 The Host may attach an opted-in GitHub projection after settlement. Only a fresh claimless
 `done`/`stopped` projection plus its exact terminal tombstone projects

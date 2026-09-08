@@ -16,8 +16,8 @@ an explicit `imm-loop` entry; explicit Planner entry owns planning and the later
 native Enrollment gate.
 
 Plan-only output remains non-authoritative. Planner creates or validates a
-candidate Spec/TaskIntent, but it never enrolls a task or enrolls generated
-artifacts unconditionally. Explicit Plan-only requests stop after returning the
+candidate Spec/TaskIntent. Planner may request the native Enrollment gate;
+only that gate grants execution authority. Explicit Plan-only requests stop after returning the
 planning artifacts. A later literal-user request to start Enrollment is a
 non-authoritative execution trigger: invoke the native Enrollment gate directly,
 without asking for chat pre-confirmation. For a clear mutation request that
@@ -71,15 +71,16 @@ resolved wrapper and use the resolved `imm-kernel` wrapper for every Kernel
 command below. Do not assume either bare command is available on shell `PATH`.
 Then route deterministically:
 
-- an active Kernel claim routes to `imm-loop` for foreground Kernel Tool
-  coordination, not new planning;
+- an active Kernel claim remains with `imm-loop` for foreground Kernel Tool
+  coordination, except a Loop-requested revision follows Enrolled Intent Revision
+  below to prepare a non-authoritative proposal for that same owner;
 - an active or otherwise nonterminal v3 Plan remains on its existing v3 route;
 - no routing policy preserves the legacy v3 Planner behavior;
 - a valid `kernel_task_intent` retirement policy produces one TaskIntent draft
   through the current Host's explicit `imm-planner`;
 - an invalid, unreadable, untracked, or tracked-deleted policy rejects new
   planning authority with `routing_policy_invalid`;
-- no Planner path enrolls a task or falls back to v3 after retirement.
+- no Planner path grants execution authority or falls back to v3 after retirement.
 
 Current owner, phase, completion, and authority facts are authoritative only
 when read from the Assurance projection and TaskRecord. `CONTEXT.md` is
@@ -294,17 +295,34 @@ state coverage, and verification cues for desktop and mobile. Use `Standard` or
 The mode produces an
 implementation-ready contract and routes it to normal planning or execution.
 
+## Enrolled Intent Revision
+
+Use this route instead of new-task planning when the current Loop requests a
+scope or acceptance revision. Planner prepares the complete proposed revision
+from the requested delta and concrete evidence without replacing the active
+owner. Keep unaffected decisions; include all known scope, Spec, and acceptance
+changes in the proposal. Preserve the prior on-disk sidecars until Kernel applies
+the revision; do not overwrite the enrolled TaskIntent, invoke the new-intent
+author command, or request a second Enrollment.
+
+Return the proposal to the current Loop owner for Kernel `revise_intent` or,
+when breaking, `approve_breaking_intent_revision` with the complete next intent.
+The native gate is the single user decision for a breaking revision; candidate
+preparation does not apply the revision or authorize expanded execution.
+
 ## Planning Rules
 
 - **Entry Contract**: Use when Spec/TaskIntent planning is needed. An already enrolled owner remains on its current Kernel authority and resumes only through explicit `imm-loop`; a validated candidate still needs native Enrollment.
 - **Output Language Gate**: Before writing or revising any Spec or Plan, read the project output language policy from `AGENTS.md`, `IMMUNE.md`, or Immune-Brain plugin config. Default Spec and Plan prose to English unless the current user request, project instructions, or host/user preference contains an explicit document-language instruction. A reply-language instruction does not change document language. Keep schema fields, CLI commands, file paths, code identifiers, enum values, JSON keys, and canonical terms such as `Step`, `Plan`, `Spec`, `Verification`, `Discovery cache`, and `Devil's Advocate Audit` literal.
 - **Clarification Supplement**: If an upstream `imm-brainstorm` manifest exists, verify that every `BR-Q-*` item is resolved and every confirmed framing decision is represented; must not repeat, reopen, or rewrite confirmed decisions. Ask only a focused omission, repository-conflict, or invalidated-assumption delta tied to concrete evidence. Resolve a local delta here; return to `imm-brainstorm` when it reopens multiple product branches or changes the overall goal or Scope. Finalization requires no unresolved supplement and no unconfirmed decision introduced by Planner.
 - **Planning Bootstrap**: When no upstream `imm-brainstorm` manifest exists, preserve Direct Planner entry by resolving repository facts and deriving ordinary technical choices. An already-clear request takes the zero-question fast path to a non-blocking correction summary. Discovery of an unresolved user-owned goal, user, scope, behavior, compatibility preference, risk acceptance, or success criterion returns to `imm-brainstorm`; Planner does not convert product uncertainty into a silent assumption or duplicate Brainstorm's interview.
-- **Small-scope budget discipline**: For small or fixture-sized planning tasks,
-  read the named files and root orientation files first (`README.md`,
-  `CONTEXT.md`, `IMMUNE.md`, `HANDOFF.md`, active tests/docs). Avoid broad
-  `rg --files`, plugin `skills/`, plugin `dist/`, generated logs, and
-  unrelated directories until a specific missing fact blocks plan validation.
+- **Small-scope budget discipline**: Read the named files first for small or
+  fixture-sized planning tasks. Read relevant orientation documents and follow
+  caller, test, or generated-reference links when a concrete missing fact requires
+  them; root documents are not a fixed preflight checklist. Before broad searching,
+  consult `CONTEXT.md`'s Architecture Map. Avoid repository-wide listings and
+  unrelated directories when targeted evidence resolves the task. Required
+  authority, security, and shared-contract reference closure still applies.
 - **Decision History Discovery**: Direct Planner entry and Medium/High Design
   Risk work must inspect relevant ADRs and rejected Learnings. Reuse constraints
   already covered by an upstream Brainstorm manifest instead of repeating that
@@ -318,7 +336,7 @@ implementation-ready contract and routes it to normal planning or execution.
 - **Brainstorm Manifest Mapping**: Record every upstream `BR-*` item in a Spec `Brainstorm Trace`, mapped to TaskIntent acceptance, a captured decision, or an explicit reason for deferral or exclusion. Resolve every `BR-Q-*` item before handoff. Do not silently narrow confirmed framing.
 - **Session Lifecycle Ownership**: The user chooses the current or a new session. Tokens, compactions, tool counts, elapsed time, and review rounds never trigger automatic session creation or termination. Recovery uses TaskRecord and the fresh Kernel projection.
 - **Subagents**: Only when optional research is needed, read Research Dispatch and its shared dispatch reference. Default to inline evidence gathering. Plan conditional reviewers such as `security-reviewer` only if their trigger surfaces are explicit; do not manufacture them.
-- **Enrolled Intent**: Planner never overwrites an enrolled TaskIntent. Scope or acceptance changes use Kernel revision authority; breaking revisions invoke the native gate directly with the complete next intent. Preserve the prior on-disk sidecars until Kernel applies the revision.
+- **Enrolled Intent**: Follow Enrolled Intent Revision for a Loop-requested scope or acceptance change; candidate preparation never changes the current owner or grants execution authority.
 - **CONTEXT.md Vocabulary**: Read `CONTEXT.md` at the repo root. Use canonical terms in Spec, acceptance, and scope descriptions. `CONTEXT.md` is vocabulary and architecture navigation, not execution state.
 - **Discovery Protocol**: Read `CONTEXT.md` `## Architecture Map` before broad searching and relevant `docs/solutions/` evidence. Record concrete file pointers and reasons in the Spec. Do not read or write a legacy Step discovery cache.
 - **Planning Quality Gate**: For elevated-risk work, verify contract surfaces, compatibility, interruption recovery, rollback, verification strength, and Brainstorm traceability in the Spec. Do not invoke retired Plan mutation or State Ledger synchronization.

@@ -59,7 +59,7 @@ describe("imm-code-review activation fallback contract", () => {
 
 	it("keeps rework on the enrolled TaskIntent and Kernel projection", () => {
 		const content = read(SKILL_DIST)
-		expect(content).toContain("Bounded test or PR repair stays inside the same TaskIntent")
+		expect(content.replace(/\s+/g, " ")).toContain("Bounded test or PR repair stays inside the same TaskIntent")
 		expect(content).toContain("For rework, follow the projected artifact state before editing")
 		expect(content).toContain("findings only after fixing and verifying their cause")
 	})

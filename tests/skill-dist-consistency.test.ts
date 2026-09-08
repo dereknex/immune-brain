@@ -96,6 +96,12 @@ describe("skill dist consistency", () => {
 				linkedSections(item.skill, route);
 			}
 			const common = linkedSections(item.skill, routeLine(loader, "common:"));
+			if (["imm-brainstorm", "imm-planner", "imm-loop"].includes(item.name)) {
+				expect(common).toContain("Stage only explicit task-owned paths");
+				expect(common).toContain("Never use `git add .` or `git add -A` in a dirty worktree");
+				expect(common).toContain("Do not create, switch, or delete Git worktrees");
+				expect(common).toContain("operate only in the Host launch directory");
+			}
 			expect(common).not.toMatch(/(?:load|read) (?:all|every) (?:reference|mode)/i);
 		}
 	});
@@ -109,21 +115,29 @@ describe("skill dist consistency", () => {
 			expect(ordinary).not.toContain(unrelated);
 		}
 		expect(ordinary).toContain("imm-kernel intent author");
+		expect(ordinary).not.toContain("read the named files and root orientation files first");
+		expect(ordinary).toContain("Read the named files first");
+		expect(ordinary).toContain("when a concrete missing fact requires them");
 		const page = linkedSections(path, routeLine(loader, "`mode: page_design`"));
 		expect(page).toContain("DESIGN.md");
 		expect(page).toContain("Do not edit UI files, tests, Specs, Plans, or workflow state");
 		expect(page).not.toContain("imm-kernel intent author");
-		const revision = linkedSections(path, routeLine(loader, "revision of an enrolled intent"));
+		const revisionRoute = routeLine(loader, "revision of an enrolled intent");
+		expect(revisionRoute).toContain("instead of standard planning:");
+		const revision = linkedSections(path, routeLine(loader, "common:")) + linkedSections(path, revisionRoute);
+		expect(revision).toContain("Planner prepares the complete proposed revision");
+		expect(revision).toContain("Return the proposal to the current Loop owner");
 		expect(revision).toContain("Preserve the prior on-disk sidecars");
 		expect(revision).toContain("approve_breaking_intent_revision");
 		expect(revision).toContain("the native Host gate is the single user decision");
+		expect(revision).not.toContain("imm-kernel intent author");
+		expect(revision).not.toContain("current Host's native Enrollment Tool");
 	});
 
 	test("clear framing skips opt-in interrogation and Loop recovery exposes native guards", () => {
 		const brainPath = join(SKILLS_DIR, "imm-brainstorm/SKILL.md");
 		const brain = read(brainPath);
-		const normal = linkedSections(brainPath, routeLine(brain, "common:")) +
-			linkedSections(brainPath, routeLine(brain, "default:"));
+		const normal = linkedSections(brainPath, routeLine(brain, "common:"));
 		expect(normal).toContain("zero-question fast path");
 		expect(normal).not.toContain("Seed the fixed framing roots");
 		expect(normal).not.toContain("buildBrainstormEnsembleRequest");
@@ -131,13 +145,32 @@ describe("skill dist consistency", () => {
 			.toContain("Seed the fixed framing roots");
 		const loopPath = join(SKILLS_DIR, "imm-loop/SKILL.md");
 		const loop = read(loopPath);
-		expect(linkedSections(loopPath, routeLine(loop, "steady execution:")))
-			.not.toContain("For `settlement_unknown`");
+		const steady = linkedSections(loopPath, routeLine(loop, "steady execution:"));
+		expect(steady).not.toContain("For `settlement_unknown`");
+		expect(steady).toContain("An unresolved decision pauses only dependent execution");
+		expect(steady).toContain("invoke `request_authorization` directly before ending the turn");
+		expect(steady).not.toContain("Stop on terminal `done` or `stopped`, unresolved user decisions");
 		const recovery = linkedSections(loopPath, routeLine(loop, "rework,"));
 		expect(recovery).toContain("For `settlement_unknown`");
 		expect(recovery).toContain("request_authorization");
 		expect(recovery).toContain("fail-closed");
 		expect(recovery).toContain("never replay the uncertain write");
+	});
+
+	test.each(["default", "roundtable", "adversarial", "exhaustive"])("%s framing inherits clarification, manifest, and handoff guards", (mode) => {
+		const path = join(SKILLS_DIR, "imm-brainstorm/SKILL.md");
+		const loader = read(path);
+		const framing = linkedSections(path, routeLine(loader, "common:")) +
+			(mode === "exhaustive" ? linkedSections(path, routeLine(loader, "explicit thorough interrogation:")) :
+				mode === "default" ? "" : linkedSections(path, routeLine(loader, "optional research,")));
+		expect(framing).toContain("zero-question fast path");
+		expect(framing).toContain("Do not ask the user to reconfirm decisions reflected without change");
+		expect(framing).toContain("Handoff Manifest");
+		expect(framing).toContain("`BR-REQ-*`");
+		expect(framing).toContain("If a decision delta is still unconfirmed");
+		expect(framing).toContain("omit the handoff manifest");
+		expect(framing).toContain("If gates pass: suggest `imm-planner`");
+		if (mode !== "exhaustive") expect(framing).not.toContain("Seed the fixed framing roots");
 	});
 
 	test("maintenance audits stop at manifests and mutation routes expose all guards", () => {

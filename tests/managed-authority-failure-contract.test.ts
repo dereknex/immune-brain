@@ -72,6 +72,9 @@ describe("Managed native authority failure contract", () => {
 			"invoke `imm_kernel_canary({ task_id, action: { op: \"request_stop\" } })` directly",
 		);
 		expect(loop).toContain("Cancellation is not task termination");
+		expect(loop).toContain("An unresolved decision pauses only dependent execution");
+		expect(loop).toContain("invoke `request_authorization` directly before ending the turn");
+		expect(loop).not.toContain("Stop on terminal `done` or `stopped`, unresolved user decisions");
 	});
 
 	test("revision preparation preserves enrolled sidecars until Kernel applies it", () => {
@@ -83,6 +86,10 @@ describe("Managed native authority failure contract", () => {
 		expect(planner).toContain(
 			"Preserve the prior on-disk sidecars until Kernel applies the revision",
 		);
+		expect(planner).toContain("except a Loop-requested revision follows Enrolled Intent Revision");
+		expect(planner).toContain("Planner prepares the complete proposed revision");
+		expect(planner).toContain("Return the proposal to the current Loop owner");
+		expect(loop).toContain("Planner prepares the complete proposed revision without replacing the active owner");
 	});
 
 	test("advisory scheduling distinguishes eligibility from the one-foreground-child limit", () => {

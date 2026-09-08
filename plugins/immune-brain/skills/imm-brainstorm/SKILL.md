@@ -19,9 +19,8 @@ Read each linked heading body up to the next heading; nested sections and
 references load only under their own condition. Never read the whole contract
 or all references as an entry prerequisite.
 
-- common: [Shared Guards](../../dist/BASELINE.md#shared-guards), [Workflow Activation](../../dist/BASELINE.md#workflow-activation), [Host Confirmation Boundary](../../dist/BASELINE.md#host-confirmation-boundary), [Boundary](../../dist/imm-brainstorm.md#boundary), [Invocation modes](../../dist/imm-brainstorm.md#invocation-modes)
-- default: [Default clarification](../../dist/imm-brainstorm.md#default-clarification), [Workflow Rules](../../dist/imm-brainstorm.md#workflow-rules), [Output artifact](../../dist/imm-brainstorm.md#output-artifact), [Output style](../../dist/imm-brainstorm.md#output-style), [Next Action](../../dist/imm-brainstorm.md#next-action)
-- explicit thorough interrogation: default plus [Explicit exhaustive interrogation](../../dist/imm-brainstorm.md#explicit-exhaustive-interrogation)
+- common: all modes read [Shared Guards](../../dist/BASELINE.md#shared-guards), [Workflow Activation](../../dist/BASELINE.md#workflow-activation), [Host Confirmation Boundary](../../dist/BASELINE.md#host-confirmation-boundary), [Boundary](../../dist/imm-brainstorm.md#boundary), [Invocation modes](../../dist/imm-brainstorm.md#invocation-modes), [Default clarification](../../dist/imm-brainstorm.md#default-clarification), [Workflow Rules](../../dist/imm-brainstorm.md#workflow-rules), [Output artifact](../../dist/imm-brainstorm.md#output-artifact), [Output style](../../dist/imm-brainstorm.md#output-style), [Next Action](../../dist/imm-brainstorm.md#next-action)
+- explicit thorough interrogation: [Explicit exhaustive interrogation](../../dist/imm-brainstorm.md#explicit-exhaustive-interrogation)
 - optional research, including explicitly selected `roundtable` or `adversarial` advisory: [Research Dispatch](../../dist/imm-brainstorm.md#research-dispatch), [Brainstorm Ensemble Advisory](../../dist/imm-brainstorm.md#brainstorm-ensemble-advisory)
 - requested framing document: [Output Language Policy](../../dist/BASELINE.md#output-language-policy)
 

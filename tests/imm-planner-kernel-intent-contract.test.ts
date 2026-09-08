@@ -47,7 +47,10 @@ describe("imm-planner kernel intent contract", () => {
 		expect(skill).toContain("routing_policy_invalid");
 		expect(skill).toContain("imm-loop");
 		expect(skill).not.toContain("imm-canary-work");
-		expect(skill).toContain("no Planner path enrolls a task");
+		expect(skill).not.toContain("no Planner path enrolls a task");
+		expect(skill).not.toContain("it never enrolls a task");
+		expect(skill).toContain("Planner may request the native Enrollment gate");
+		expect(skill).toContain("only that gate grants execution authority");
 	});
 
 	test("canonical contract forbids direct artifact writes and names the canonical author command", () => {
