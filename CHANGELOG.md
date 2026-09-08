@@ -1,5 +1,68 @@
 # Changelog
 
+## 3.6.5
+
+### Patch Changes
+
+- [#52](https://github.com/dereknex/immune-brain/pull/52) [`439658a`](https://github.com/dereknex/immune-brain/commit/439658abaaa1064fd570977a1c9d457a1f2054bf) Thanks [@dereknex](https://github.com/dereknex)! - Carry the assurance fixes found while running the first real batch
+
+  Driving an enrolled batch through both Hosts surfaced five boundaries that
+  stopped a task with no way forward:
+
+  - A user can now authorize rework continuation directly, without escalating a
+    routine rework to the reviewer.
+  - A malformed Review receipt is recovered from durable evidence instead of
+    pinning the task in a state no operation can leave.
+  - The Claude Host exposes `resolve_finding`, so a closed finding on that Host no
+    longer requires switching to Pi.
+  - Published GitHub Issues carry their own public acceptance summary instead of
+    the canonical TaskIntent assertion prose. The projected text stays within
+    1–500 characters, and the input limit now accepts a summary that matches a
+    canonical assertion length rather than rejecting the whole batch.
+
+- [#52](https://github.com/dereknex/immune-brain/pull/52) [`439658a`](https://github.com/dereknex/immune-brain/commit/439658abaaa1064fd570977a1c9d457a1f2054bf) Thanks [@dereknex](https://github.com/dereknex)! - Stop a Managed task from Pi with one native confirmation
+
+  Kernel already settled tasks on `stop`, but the Pi extension exposed no user
+  reachable entry, so a task holding the workspace claim could not be released
+  without editing `.imm` state by hand.
+
+  `imm_kernel_canary` accepts `action: {op: request_stop}` for an eligible
+  `active` or `frozen` task, including one waiting on Review or a replan gate.
+  The Host opens one native confirmation, builds the stop authority itself, and
+  the Kernel performs the existing stop settlement: terminal TaskRecord,
+  terminal proof, archived planning artifacts and a released claim. Unrelated
+  and implementation files are preserved.
+
+  Cancelling, timing out, aborting, or closing the session before the commit
+  mutates nothing, and a stop preparation failure releases the invocation so the
+  same session can retry. Concurrent Assurance work and a snapshot that moved
+  under the request are rejected rather than overwritten; a confirmed stop
+  invalidates outstanding Review resources so a late verdict cannot rewrite
+  terminal evidence. A delivery failure after the commit is reported separately
+  and does not undo the stop.
+
+- [#52](https://github.com/dereknex/immune-brain/pull/52) [`439658a`](https://github.com/dereknex/immune-brain/commit/439658abaaa1064fd570977a1c9d457a1f2054bf) Thanks [@dereknex](https://github.com/dereknex)! - Run one confirmed Initiative batch serially and resume it after a crash
+
+  A confirmed batch plan had no executor that could survive an interruption: a
+  child could be enrolled, settled and committed at three separate points, and
+  restarting the run re-derived none of them.
+
+  `startBatch` and `resumeBatch` now drive one eligible child at a time through
+  enroll → advance → commit, and a resumed run adopts whatever the previous
+  process had already persisted. Recovery shares the dependency-aware child
+  selection rule with the normal loop instead of re-implementing it, so a
+  reverse-ordered plan resumes identically to a forward-ordered one.
+
+  Renewed authorization no longer loses the consumption history of children that
+  were already committed. Before the next enrollment the driver verifies each
+  committed child against the batch commit ledger, so a stale or fabricated
+  `committed` flag cannot report a completed batch, and HEAD lineage stays
+  enforced for the first enrollment of a fresh authorization.
+
+  Persistence derives its path from a validated `batch_id` at every entrypoint,
+  so a caller cannot escape `.imm/state/batches/`, and the replan gate keeps
+  QA rework and Review rework on separate counters.
+
 ## 3.6.4
 
 ### Patch Changes
