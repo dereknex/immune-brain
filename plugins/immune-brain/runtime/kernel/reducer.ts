@@ -167,8 +167,10 @@ function sha256Hex(value: string): string {
 }
 
 function intentRefMatches(intent: TaskIntentV1, ref: TaskIntentRefV3): boolean {
+	const activePath = `docs/plans/${intent.task_id}.intent.json`;
+	const archivedPath = `docs/plans/archive/${intent.task_id}.intent.json`;
 	return (
-		ref.path === `docs/plans/${intent.task_id}.intent.json` &&
+		(ref.path === activePath || ref.path === archivedPath) &&
 		ref.content_hash === canonicalIntentHash(intent)
 	);
 }

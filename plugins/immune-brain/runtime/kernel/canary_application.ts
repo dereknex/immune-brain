@@ -381,7 +381,13 @@ export function createCanaryApplication(
 					type: "revise_intent",
 					next_intent: operation.next_intent,
 					next_intent_ref: {
-						path: `docs/plans/${operation.next_intent.task_id}.intent.json`,
+						// revise_intent never unfreezes artifacts, so a revision
+						// while frozen must keep the archived sidecar path that
+						// record validation enforces (active path otherwise).
+						path:
+							snapshot.record.artifact_state === "frozen"
+								? `docs/plans/archive/${operation.next_intent.task_id}.intent.json`
+								: `docs/plans/${operation.next_intent.task_id}.intent.json`,
 						content_hash: canonicalIntentHash(operation.next_intent),
 					},
 				};
