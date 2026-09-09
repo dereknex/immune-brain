@@ -1,7 +1,6 @@
 {
   "contract": "assurance_kernel/task_intent/v1",
   "task_id": "2026-09-05-004-batch-branch-and-commit",
-  "owner": "user",
   "goal": "Implement the batch branch and commit boundary defined by docs/specs/unattended-initiative-batch-run.spec.md section 3.5: a fail-closed branch preflight, and one scope-bounded Git commit per Kernel-settled child that advances the batch HEAD lineage, introducing the runtime's first Git commit authority without ever pushing, opening a pull request, or touching a Git worktree.",
   "acceptance": [
     {
@@ -16,11 +15,14 @@
     }
   ],
   "scope_hint": [
+    "docs/specs/archive/unattended-initiative-batch-run.spec.md",
+    "docs/specs/unattended-initiative-batch-run.spec.md",
     "plugins/immune-brain/runtime/unattended/batch_git.ts",
     "plugins/immune-brain/runtime/unattended/batch_runner.ts",
     "plugins/immune-brain/runtime/unattended/batch_state.ts",
     "tests/unattended-batch-commit.test.ts"
   ],
   "risk": "material",
-  "revision": 1
+  "revision": 2,
+  "owner": "user"
 }

@@ -2,6 +2,9 @@
 // Every batch and child state transition lives here and in
 // runtime/kernel/batch_authority.ts; Host adapters are callers only and this
 // module imports no Host adapter (Invariant H-1).
+import { spawnSync } from "node:child_process";
+import { existsSync } from "node:fs";
+import { join } from "node:path";
 import {
 	BatchAuthorizationExpiryError,
 	type BatchAuthorityRegistry,
@@ -10,6 +13,13 @@ import {
 } from "../kernel/batch_authority";
 import type { AssuranceProjectionResult } from "../kernel/assurance_projection";
 import type { BatchPlanChild } from "./types";
+import {
+	type BatchRunnerGitPort,
+	type BatchGitPreflightResult,
+	runBatchGitPreflight,
+	commitBatchChild,
+	lookupBatchCommit,
+} from "./batch_git";
 import {
 	type BatchRunStateRecord,
 	type BatchChildRun,
@@ -36,19 +46,30 @@ export interface BatchRunnerKernelPort {
 	/** Drive one enrolled child toward its own Kernel terminal settlement. */
 	advanceTask(root: string, taskId: string): Promise<BatchChildAdvanceResult>;
 	/** Scope-bound commit after Kernel reports a child done. */
-	commitChild(
+	commitChild?(
 		root: string,
 		taskId: string,
 		batchId: string,
 		head: string,
-	): Promise<{ commit: string }>;	/** review-3(5th round): read the already-created batch commit for a child,
+		branch?: string,
+		intentPath?: string,
+	): Promise<{ commit: string }>;
+	/** review-3(5th round): read the already-created batch commit for a child,
 	 * or null when none exists. Lets crash recovery adopt an existing commit
 	 * instead of replaying the commitChild mutation. */
-	lookupBatchCommit(
+	lookupBatchCommit?(
 		root: string,
 		taskId: string,
 		batchId: string,
+		expectedHead?: string,
+		branch?: string,
 	): Promise<{ commit: string } | null>;
+	/** Optional Git preflight check. */
+	gitPreflight?(input: {
+		root: string;
+		initiative_slug: string;
+		base_head: string;
+	}): Promise<BatchGitPreflightResult> | BatchGitPreflightResult;
 	/** review-2(5th round): read-only claim projection for enrollment
 	 * reconciliation after an interruption between enrollTask and its state
 	 * persistence. Uses the real AssuranceProjectionResult contract; batch
@@ -93,6 +114,7 @@ export interface StartBatchInput {
 	budget: { max_children: number; deadline_at: string; qa_failure_limit: number };
 	now: string;
 	kernel: BatchRunnerKernelPort;
+	git?: BatchRunnerGitPort;
 }
 
 export type { BatchRunReport } from "./batch_state";
@@ -210,6 +232,60 @@ function finalize(
 	return report;
 }
 
+/** review round 8: only lineage breaks (external branch switch / HEAD
+ * regression) on a persisted record fail the batch with a persisted report;
+ * fabricated records keep throwing with zero writes. */
+function isLineageBreakError(message: string): boolean {
+	return message.includes("batch_head_lineage_broken");
+}
+
+/** review round 9: a lineage-broken persisted batch may hold in-flight
+ * children; failed batches reject enrolled/settled children, so transition
+ * them to needs_human and skip their pending dependents before persisting. */
+function failPersistedLineage(
+	root: string,
+	existing: BatchRunStateRecord,
+	message: string,
+): BatchRunStateRecord {
+	const children = existing.children.map((c) =>
+		c.state === "enrolled" || c.state === "settled"
+			? { ...c, state: "needs_human" as const, reason: message }
+			: c,
+	);
+	const record: BatchRunStateRecord = { ...existing, batch_state: "failed", children };
+	for (const child of record.children) {
+		if (child.state === "needs_human") {
+			skipDependents(record, child.task_id, `dependency ${child.task_id} parked`);
+		}
+	}
+	return writeBatchRunState(root, record);
+}
+
+/** review round 11: detect external HEAD movement or branch switch against a
+ * persisted record's expected lineage; returns the failure message or null. */
+function externalHeadDriftMessage(root: string, record: BatchRunStateRecord): string | null {
+	if (!existsSync(join(root, ".git"))) return null;
+	const head = record.commits.length
+		? record.commits[record.commits.length - 1]!
+		: record.base_head;
+	const headCheck = spawnSync("git", ["-C", root, "rev-parse", "HEAD"], {
+		encoding: "utf8",
+		stdio: ["ignore", "pipe", "pipe"],
+	});
+	if (headCheck.status === 0 && headCheck.stdout.trim() && headCheck.stdout.trim() !== head) {
+		return `batch_head_lineage_broken: current HEAD ${headCheck.stdout.trim()} does not match expected batch head ${head}`;
+	}
+	const branchCheck = spawnSync("git", ["-C", root, "symbolic-ref", "--short", "HEAD"], {
+		encoding: "utf8",
+		stdio: ["ignore", "pipe", "pipe"],
+	});
+	const currentBranch = branchCheck.stdout.trim();
+	if (branchCheck.status !== 0 || currentBranch !== record.branch) {
+		return `batch_head_lineage_broken: current branch ${currentBranch} does not match expected batch branch ${record.branch}`;
+	}
+	return null;
+}
+
 async function validatePersistedRun(input: StartBatchInput, record: BatchRunStateRecord): Promise<void> {
 	const plan = input.registry.children(input.capability);
 	if (record.plan_digest !== computeBatchPlanDigest(plan) ||
@@ -224,9 +300,36 @@ async function validatePersistedRun(input: StartBatchInput, record: BatchRunStat
 			if (child.commit !== null) throw new Error("uncommitted batch child has a commit");
 			continue;
 		}
-		const evidence = await input.kernel.lookupBatchCommit(input.root, child.task_id, record.batch_id);
-		if (!evidence || evidence.commit !== child.commit)
+		const evidence = input.git?.lookupBatchCommit
+			? await input.git.lookupBatchCommit(input.root, child.task_id, record.batch_id, undefined, record.branch)
+			: input.kernel.lookupBatchCommit
+				? await input.kernel.lookupBatchCommit(input.root, child.task_id, record.batch_id, undefined, record.branch)
+				: await lookupBatchCommit({
+					root: input.root,
+					taskId: child.task_id,
+					batchId: record.batch_id,
+					branch: record.branch,
+				});
+		if (!evidence || evidence.commit !== child.commit) {
+			// Distinguish an unreachable recorded commit (external HEAD regression)
+			// from a fabricated record: reachability is only checkable in a real repo.
+			if (
+				evidence === null && typeof child.commit === "string" && child.commit.length > 0 &&
+				existsSync(join(input.root, ".git"))
+			) {
+				const reach = spawnSync(
+					"git",
+					["-C", input.root, "merge-base", "--is-ancestor", child.commit, "HEAD"],
+					{ encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] },
+				);
+				if (reach.status !== 0) {
+					throw new Error(
+						`batch_head_lineage_broken: recorded commit ${child.commit} for ${child.task_id} is no longer reachable from HEAD`,
+					);
+				}
+			}
 			throw new Error(`persisted batch commit lacks evidence for ${child.task_id}`);
+		}
 		commits.push(evidence.commit);
 	}
 	if (JSON.stringify([...record.commits].sort()) !== JSON.stringify(commits.sort()))
@@ -287,7 +390,19 @@ export async function startBatch(input: StartBatchInput): Promise<BatchRunReport
 	}
 
 	let existing = readBatchRunState(input.root, input.batch_id);
-	if (existing) await validatePersistedRun(input, existing);
+	if (existing) {
+		try {
+			await validatePersistedRun(input, existing);
+		} catch (error) {
+			const message = error instanceof Error ? error.message : String(error);
+			if (isLineageBreakError(message)) {
+				if (isTerminalBatchState(existing.batch_state)) return replayTerminal(input.root, existing);
+				const failed = failPersistedLineage(input.root, existing, message);
+				return finalize(input.root, failed, message, "");
+			}
+			throw error;
+		}
+	}
 	if (existing && isTerminalBatchState(existing.batch_state)) {
 		// Idempotent terminal replay: no state mutation, ensure the report.
 		return replayTerminal(input.root, existing);
@@ -407,6 +522,34 @@ export async function startBatch(input: StartBatchInput): Promise<BatchRunReport
 				"Correct the authorization or plan, then re-confirm the batch.",
 			);
 		}
+
+		// Mandatory batch branch preflight: run before any child is enrolled.
+		const preflightResult = input.git?.preflight
+			? await input.git.preflight({
+				root: input.root,
+				initiative_slug: input.initiative_slug,
+				base_head: input.base_head,
+			})
+			: input.kernel.gitPreflight
+				? await input.kernel.gitPreflight({
+					root: input.root,
+					initiative_slug: input.initiative_slug,
+					base_head: input.base_head,
+				})
+				: runBatchGitPreflight({
+					root: input.root,
+					initiative_slug: input.initiative_slug,
+					base_head: input.base_head,
+				});
+
+		if (!preflightResult.ok) {
+			const rejected = prepareBatchRunState({ ...input, now: input.now });
+			return reportFor(
+				{ ...rejected, batch_state: "rejected" },
+				preflightResult.reason,
+				preflightResult.message || "Correct the preflight condition and re-confirm.",
+			);
+		}
 	}
 	let record: BatchRunStateRecord =
 		existing ??
@@ -434,6 +577,14 @@ export async function startBatch(input: StartBatchInput): Promise<BatchRunReport
 	let head = record.commits.length
 		? record.commits[record.commits.length - 1]!
 		: record.base_head;
+
+	// Validate current Git HEAD and branch against the expected head/branch before continuing (review rounds 7+11)
+	const driftMessage = externalHeadDriftMessage(input.root, record);
+	if (driftMessage) {
+		record.batch_state = "failed";
+		persist();
+		return finalize(input.root, record, driftMessage, "");
+	}
 
 	while (record.batch_state === "running") {
 		const child = nextEnrollableChild(record);
@@ -548,6 +699,17 @@ export async function startBatch(input: StartBatchInput): Promise<BatchRunReport
 				persist();
 				break;
 			}
+			// review round 10: external HEAD movement after the pre-loop check
+			// (including between children) fails the batch, it never parks.
+			if (isLineageBreakError(message)) {
+				record.children = record.children.map((c) =>
+					c.task_id === child.task_id ? { ...c, state: "needs_human", reason: message } : c,
+				);
+				skipDependents(record, child.task_id, `dependency ${child.task_id} parked`);
+				record.batch_state = "failed";
+				persist();
+				break;
+			}
 			record.children = record.children.map((c) =>
 				c.task_id === child.task_id ? { ...c, state: "needs_human", reason: message } : c,
 			);
@@ -576,12 +738,20 @@ export async function startBatch(input: StartBatchInput): Promise<BatchRunReport
 			persist();
 			// Scope-bound commit; a lineage failure fails the whole batch.
 			try {
-				const { commit } = await input.kernel.commitChild(
-					input.root,
-					child.task_id,
-					input.batch_id,
-					head,
-				);
+				const planChild = input.children.find((c) => c.task_id === child.task_id);
+				const intentPath = planChild?.intent_path ?? undefined;
+				const { commit } = input.git?.commitChild
+					? await input.git.commitChild(input.root, child.task_id, input.batch_id, head, record.branch, intentPath)
+					: input.kernel.commitChild
+						? await input.kernel.commitChild(input.root, child.task_id, input.batch_id, head, record.branch, intentPath)
+						: await commitBatchChild({
+							root: input.root,
+							taskId: child.task_id,
+							batchId: input.batch_id,
+							expectedHead: head,
+							branch: record.branch,
+							intentPath,
+						});
 				record.children = record.children.map((c) =>
 					c.task_id === child.task_id ? { ...c, state: "committed", commit } : c,
 				);
@@ -663,8 +833,10 @@ function stopReasonFor(record: BatchRunStateRecord): string | null {
 				budgetStopReason(record, Date.now()) ??
 				"budget, deadline, or authorization expiry stopped new enrollments"
 			);
-		case "failed":
-			return "a commit or lineage failure stopped the batch";
+		case "failed": {
+			const failedChild = record.children.find((c) => c.state === "needs_human" && c.reason);
+			return failedChild?.reason ?? "a commit or lineage failure stopped the batch";
+		}
 		case "needs_human":
 			return "a parked child needs a human decision";
 		case "completed":
@@ -688,7 +860,17 @@ export async function resumeBatch(
 ): Promise<BatchRunReport> {
 	let existing = readBatchRunState(input.root, input.batch_id);
 	if (!existing) return startBatch(input);
-	await validatePersistedRun(input, existing);
+	try {
+		await validatePersistedRun(input, existing);
+	} catch (error) {
+		const message = error instanceof Error ? error.message : String(error);
+		if (isLineageBreakError(message)) {
+			if (isTerminalBatchState(existing.batch_state)) return replayTerminal(input.root, existing);
+			const failed = failPersistedLineage(input.root, existing, message);
+			return finalize(input.root, failed, message, "");
+		}
+		throw error;
+	}
 	if (isTerminalBatchState(existing.batch_state))
 		return replayTerminal(input.root, existing);
 	if (existing.batch_state === "needs_human") return startBatch(input);
@@ -707,6 +889,16 @@ export async function resumeBatch(
 	);
 	if (driven) {
 		if (driven.state === "enrolled") {
+			// review round 11: verify external HEAD/branch lineage before Kernel
+			// advancement of an enrolled child. review round 12: a settled child
+			// defers to driveInterruptedChild's lookupBatchCommit verification,
+			// which adopts a verified own commit (crash before committed-persist)
+			// instead of misjudging it as external drift.
+			const drivenDrift = externalHeadDriftMessage(input.root, existing);
+			if (drivenDrift) {
+				const failed = failPersistedLineage(input.root, existing, drivenDrift);
+				return finalize(input.root, failed, drivenDrift, "");
+			}
 			const fresh = requireFreshProjection(
 				await input.kernel.projectTask(input.root, driven.task_id),
 				driven.task_id,
@@ -829,11 +1021,23 @@ async function driveInterruptedChild(
 			// review-1(6th round): a lookup failure must fail closed, not fall
 			// through to commitChild, which could replay an existing commit.
 			try {
-				existing = await input.kernel.lookupBatchCommit(
-					input.root,
-					child.task_id,
-					input.batch_id,
-				);
+				existing = input.git?.lookupBatchCommit
+					? await input.git.lookupBatchCommit(input.root, child.task_id, input.batch_id, head, record.branch)
+					: input.kernel.lookupBatchCommit
+						? await input.kernel.lookupBatchCommit(
+							input.root,
+							child.task_id,
+							input.batch_id,
+							head,
+							record.branch,
+						)
+						: await lookupBatchCommit({
+							root: input.root,
+							taskId: child.task_id,
+							batchId: input.batch_id,
+							expectedHead: head,
+							branch: record.branch,
+						});
 			} catch (error: unknown) {
 				const message =
 					error instanceof Error ? error.message : String(error);
@@ -850,31 +1054,49 @@ async function driveInterruptedChild(
 					child.task_id,
 					`dependency ${child.task_id} failed to commit`,
 				);
-				record.batch_state = "needs_human";
+				const isLineageError =
+					message.includes("batch_head_lineage_broken") || message.includes("lineage");
+				record.batch_state = isLineageError ? "failed" : "needs_human";
 				persist();
 				throw new BatchCommitAbortError(`commit lookup failed: ${message}`);
 			}
+			const planChild = input.children.find((c) => c.task_id === child.task_id);
+			const intentPath = planChild?.intent_path ?? undefined;
+			const doCommit = async () => {
+				if (input.git?.commitChild) {
+					return input.git.commitChild(input.root, child.task_id, input.batch_id, head, record.branch, intentPath);
+				}
+				if (input.kernel.commitChild) {
+					return input.kernel.commitChild(input.root, child.task_id, input.batch_id, head, record.branch, intentPath);
+				}
+				return commitBatchChild({
+					root: input.root,
+					taskId: child.task_id,
+					batchId: input.batch_id,
+					expectedHead: head,
+					branch: record.branch,
+					intentPath,
+				});
+			};
 			const adopted =
 				existing ??
-				(await input.kernel
-					.commitChild(input.root, child.task_id, input.batch_id, head)
-					.catch((error: unknown) => {
-						const message = error instanceof Error ? error.message : String(error);
-						record.children = record.children.map((c) =>
-							c.task_id === child.task_id
-								? { ...c, state: "needs_human", reason: message }
-								: c,
-						);
-						// review-4: dependents are skipped_blocked, not left pending.
-						skipDependents(
-							record,
-							child.task_id,
-							`dependency ${child.task_id} failed to commit`,
-						);
-						record.batch_state = "failed";
-						persist();
-						throw new BatchCommitAbortError(message);
-					}));
+				(await doCommit().catch((error: unknown) => {
+					const message = error instanceof Error ? error.message : String(error);
+					record.children = record.children.map((c) =>
+						c.task_id === child.task_id
+							? { ...c, state: "needs_human", reason: message }
+							: c,
+					);
+					// review-4: dependents are skipped_blocked, not left pending.
+					skipDependents(
+						record,
+						child.task_id,
+						`dependency ${child.task_id} failed to commit`,
+					);
+					record.batch_state = "failed";
+					persist();
+					throw new BatchCommitAbortError(message);
+				}));
 			const { commit } = adopted;
 			record.children = record.children.map((c) =>
 				c.task_id === child.task_id ? { ...c, state: "committed", commit } : c,
@@ -893,12 +1115,20 @@ async function driveInterruptedChild(
 			record.consecutive_qa_failures = 0;
 			persist();
 			try {
-				const { commit } = await input.kernel.commitChild(
-					input.root,
-					child.task_id,
-					input.batch_id,
-					head,
-				);
+				const planChild = input.children.find((c) => c.task_id === child.task_id);
+				const intentPath = planChild?.intent_path ?? undefined;
+				const { commit } = input.git?.commitChild
+					? await input.git.commitChild(input.root, child.task_id, input.batch_id, head, record.branch, intentPath)
+					: input.kernel.commitChild
+						? await input.kernel.commitChild(input.root, child.task_id, input.batch_id, head, record.branch, intentPath)
+						: await commitBatchChild({
+							root: input.root,
+							taskId: child.task_id,
+							batchId: input.batch_id,
+							expectedHead: head,
+							branch: record.branch,
+							intentPath,
+						});
 				record.children = record.children.map((c) =>
 					c.task_id === child.task_id ? { ...c, state: "committed", commit } : c,
 				);

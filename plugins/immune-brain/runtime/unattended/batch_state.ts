@@ -41,6 +41,8 @@ export interface BatchRunStateRecord {
 	initiative_slug: string;
 	plan_digest: string;
 	base_head: string;
+	/** Dedicated batch branch, e.g. imm/<initiative-slug>. */
+	branch?: string;
 	/** Timestamp of the literal-user batch confirmation. */
 	confirmation_time: string;
 	/** Authorization expiry from the batch capability binding. */
@@ -115,6 +117,8 @@ function validateRecordShape(value: unknown, batchId: string): asserts value is 
 		throw new Error(`batch run state ${batchId} has an invalid plan_digest`);
 	if (typeof record.base_head !== "string" || !record.base_head)
 		throw new Error(`batch run state ${batchId} has an invalid base_head`);
+	if (record.branch !== undefined && (typeof record.branch !== "string" || !record.branch))
+		throw new Error(`batch run state ${batchId} has an invalid branch`);
 	if (!isCanonicalTimestamp(record.confirmation_time))
 		throw new Error(`batch run state ${batchId} has an invalid confirmation_time`);
 	if (!isCanonicalTimestamp(record.authorization_expires_at))
@@ -205,6 +209,7 @@ export function prepareBatchRunState(input: {
 	children: BatchPlanChild[];
 	plan_digest: string;
 	base_head: string;
+	branch?: string;
 	confirmation_time: string;
 	authorization_expires_at: string;
 	budget: { max_children: number; deadline_at: string; qa_failure_limit: number };
@@ -217,6 +222,7 @@ export function prepareBatchRunState(input: {
 		initiative_slug: input.initiative_slug,
 		plan_digest: input.plan_digest,
 		base_head: input.base_head,
+		branch: input.branch ?? `imm/${input.initiative_slug}`,
 		confirmation_time: input.confirmation_time,
 		authorization_expires_at: input.authorization_expires_at,
 		budget: input.budget,

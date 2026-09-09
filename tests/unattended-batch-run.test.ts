@@ -88,6 +88,15 @@ function input(
 		budget,
 		now: FAR_FUTURE,
 		kernel,
+		git: overrides.git ?? {
+			preflight: () => ({ ok: true, branch: `imm/${overrides.initiative_slug ?? "initiative-slug"}` }),
+			commitChild: kernel.commitChild
+				? (r, t, b, h, ip) => kernel.commitChild!(r, t, b, h, ip)
+				: async () => ({ commit: "c".padEnd(40, "0") }),
+			lookupBatchCommit: kernel.lookupBatchCommit
+				? (r, t, b, eh) => kernel.lookupBatchCommit!(r, t, b, eh)
+				: async () => null,
+		},
 		...overrides,
 	};
 }
@@ -210,6 +219,8 @@ describe("renewed authorization with real enrollment derivation", () => {
 					return enroll(args);
 				};
 				const prepared = prepareBatchRunState({ ...request, confirmation_time: "2026-01-01T00:00:00.000Z" });
+				// Recovery fixture reflects post-preflight reality: the batch branch exists and is checked out.
+				git("checkout", "-qb", prepared.branch ?? `imm/${request.initiative_slug}`);
 				if (recoveredClaim) kernel.enrolled.push("task-a");
 				else await kernel.commitChild(root, "task-a", request.batch_id, base);
 				writeBatchRunState(root, { ...prepared, batch_state: "needs_human",

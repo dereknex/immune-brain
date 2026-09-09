@@ -1,0 +1,1525 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "2026-09-05-004-batch-branch-and-commit",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "2026-09-05-004-batch-branch-and-commit",
+    "goal": "Implement the batch branch and commit boundary defined by docs/specs/unattended-initiative-batch-run.spec.md section 3.5: a fail-closed branch preflight, and one scope-bounded Git commit per Kernel-settled child that advances the batch HEAD lineage, introducing the runtime's first Git commit authority without ever pushing, opening a pull request, or touching a Git worktree.",
+    "acceptance": [
+      {
+        "id": "acc-batch-branch-preflight",
+        "assertion": "Before any child is enrolled, the batch preflight requires a clean working tree, a committed HEAD, and the absence of refs/heads/imm/<initiative-slug>. If the branch already exists the batch terminates as rejected with reason batch_branch_exists, and a dirty tree or uncommitted HEAD is rejected with its own stable reason; every rejected preflight leaves zero Kernel writes, zero batch state files, no new ref, and the original checked-out branch. On a passing preflight the batch creates and switches to imm/<initiative-slug> from base_head and records it as the batch branch. The runtime never creates, switches, or deletes a Git worktree, never pushes a ref, and never opens or updates a pull request.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/unattended-batch-commit.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 65536\n}\n"
+      },
+      {
+        "id": "acc-batch-scope-bounded-commit",
+        "assertion": "A commit is created only after the Kernel reports that child done; a successful Git commit is never treated as evidence of settlement and elapsed time or agent belief never triggers one. Staging includes exactly the changed paths inside that child's TaskIntent scope envelope plus .imm/audit/<task-id>/**; if any change exists outside that set nothing is committed and the batch terminates as failed with reason dirty_outside_scope. The commit message is 'imm(<task-id>): <goal first line>' with the trailer 'Immune-Brain-Batch: <batch_id>'. On success the batch expected_head advances to the new commit SHA and the recorded SHA is the one the next child's HEAD lineage assertion requires; a commit failure or any HEAD value the batch did not itself produce terminates the batch as failed rather than continuing, because subsequent children could no longer prove their base.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/unattended-batch-commit.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 65536\n}\n"
+      }
+    ],
+    "scope_hint": [
+      "docs/specs/archive/unattended-initiative-batch-run.spec.md",
+      "docs/specs/unattended-initiative-batch-run.spec.md",
+      "plugins/immune-brain/runtime/unattended/batch_git.ts",
+      "plugins/immune-brain/runtime/unattended/batch_runner.ts",
+      "plugins/immune-brain/runtime/unattended/batch_state.ts",
+      "tests/unattended-batch-commit.test.ts"
+    ],
+    "risk": "material",
+    "revision": 2,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/archive/2026-09-05-004-batch-branch-and-commit.intent.json",
+    "content_hash": "sha256:6c307684753d3a52379420d0fe65d75e6bc4bb24efba36b3833077942a520bfe"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:6cc694210bb3b958bbb05df5c19b03a8fcb58ca58fa1ad0c55306c4a456ab89c",
+  "git_base_head": "ebbc983ff7a6ccafa38b214626bf33a3ae94b584",
+  "attestations": [
+    {
+      "id": "approval-qa-f12cb271",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:6c307684753d3a52379420d0fe65d75e6bc4bb24efba36b3833077942a520bfe",
+      "diff_hash": "sha256:71f2ba0472fad58d4119ce1d0d440ebaa487403598e64d9ba6731c5d8bcc66bc",
+      "actor_id": "deterministic-qa",
+      "summary": "all 2 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "acc-batch-branch-preflight",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-batch-scope-bounded-commit",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-bd3f3052",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:6c307684753d3a52379420d0fe65d75e6bc4bb24efba36b3833077942a520bfe",
+      "diff_hash": "sha256:e5807e3509fcaf4b179274c40fc04a573f90c93d6e878493ccacb8b403791393",
+      "actor_id": "deterministic-qa",
+      "summary": "all 2 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "acc-batch-branch-preflight",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-batch-scope-bounded-commit",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-cbbf0b88",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:6c307684753d3a52379420d0fe65d75e6bc4bb24efba36b3833077942a520bfe",
+      "diff_hash": "sha256:49687fcd320a5738b924dce355a2758536d41a93242cb44591216d4eed802317",
+      "actor_id": "deterministic-qa",
+      "summary": "all 2 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "acc-batch-branch-preflight",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-batch-scope-bounded-commit",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-5d9631de",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:6c307684753d3a52379420d0fe65d75e6bc4bb24efba36b3833077942a520bfe",
+      "diff_hash": "sha256:d1caa2daf2f9b67180a947a2d1c929234cede1bd0bb797576be91cadb14dd935",
+      "actor_id": "deterministic-qa",
+      "summary": "all 2 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "acc-batch-branch-preflight",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-batch-scope-bounded-commit",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-e3957779",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:6c307684753d3a52379420d0fe65d75e6bc4bb24efba36b3833077942a520bfe",
+      "diff_hash": "sha256:ff02b5f3395cf6de54ebbca4fd35794f306c67cb69899968147eec223eac5ec3",
+      "actor_id": "deterministic-qa",
+      "summary": "all 2 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "acc-batch-branch-preflight",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-batch-scope-bounded-commit",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-4879f088",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:6c307684753d3a52379420d0fe65d75e6bc4bb24efba36b3833077942a520bfe",
+      "diff_hash": "sha256:9b212d84fbb08dbe33129311db28f737b8aa0ffdab15bf70e49a444f07a69729",
+      "actor_id": "deterministic-qa",
+      "summary": "all 2 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "acc-batch-branch-preflight",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-batch-scope-bounded-commit",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-6ccf6ea0",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:6c307684753d3a52379420d0fe65d75e6bc4bb24efba36b3833077942a520bfe",
+      "diff_hash": "sha256:d3817aa260182e82855be5eb753076da42f1621bec5cc2cbf37be1e7e19e4d6e",
+      "actor_id": "deterministic-qa",
+      "summary": "all 2 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "acc-batch-branch-preflight",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-batch-scope-bounded-commit",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-d7fa9bac",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:6c307684753d3a52379420d0fe65d75e6bc4bb24efba36b3833077942a520bfe",
+      "diff_hash": "sha256:0a83159caff6fb0ea45a0cdcf7117c172c5a10bbca0f81aff4cc3249a5db2b8f",
+      "actor_id": "deterministic-qa",
+      "summary": "all 2 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "acc-batch-branch-preflight",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-batch-scope-bounded-commit",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-0d5e74db",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:6c307684753d3a52379420d0fe65d75e6bc4bb24efba36b3833077942a520bfe",
+      "diff_hash": "sha256:0259d45dfc1cdac96788e5a1086a6e9a587403d976839111710abd7d8ffd3418",
+      "actor_id": "deterministic-qa",
+      "summary": "all 2 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "acc-batch-branch-preflight",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-batch-scope-bounded-commit",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-c4fce902",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:6c307684753d3a52379420d0fe65d75e6bc4bb24efba36b3833077942a520bfe",
+      "diff_hash": "sha256:c51f5bcc0777c4ad73aef037334156442881391ea38d795940d7e57bc2550b61",
+      "actor_id": "deterministic-qa",
+      "summary": "all 2 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "acc-batch-branch-preflight",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-batch-scope-bounded-commit",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-c275671f",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:6c307684753d3a52379420d0fe65d75e6bc4bb24efba36b3833077942a520bfe",
+      "diff_hash": "sha256:811363fdee137376f5c22f88fa3a0c82739fab7774ac30605a8b4a4995613426",
+      "actor_id": "deterministic-qa",
+      "summary": "all 2 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "acc-batch-branch-preflight",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-batch-scope-bounded-commit",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-f637d332",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:6c307684753d3a52379420d0fe65d75e6bc4bb24efba36b3833077942a520bfe",
+      "diff_hash": "sha256:f8e9bd6673c3c2419cdada37b4a032335bb7a5fa4d94d51bad1ae695572dd59b",
+      "actor_id": "deterministic-qa",
+      "summary": "all 2 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "acc-batch-branch-preflight",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-batch-scope-bounded-commit",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-e7cc23c8",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:6c307684753d3a52379420d0fe65d75e6bc4bb24efba36b3833077942a520bfe",
+      "diff_hash": "sha256:3698d387e59d4a8f90aa20a151b4ae9bb1a8255286f08111380f6f4ed2ea37ba",
+      "actor_id": "deterministic-qa",
+      "summary": "all 2 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "acc-batch-branch-preflight",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-batch-scope-bounded-commit",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-42e44c1f",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:6c307684753d3a52379420d0fe65d75e6bc4bb24efba36b3833077942a520bfe",
+      "diff_hash": "sha256:3311c2cbbd34d97b8b74ad8e406064044049e17498fa250963fcc36ec518013d",
+      "actor_id": "deterministic-qa",
+      "summary": "all 2 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "acc-batch-branch-preflight",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-batch-scope-bounded-commit",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-60fecc8f",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:6c307684753d3a52379420d0fe65d75e6bc4bb24efba36b3833077942a520bfe",
+      "diff_hash": "sha256:7aea3a448d321496e86f6b6737434f02a0266d1017face3d3c252eb69850fc15",
+      "actor_id": "deterministic-qa",
+      "summary": "all 2 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "acc-batch-branch-preflight",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-batch-scope-bounded-commit",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-b8361982",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:6c307684753d3a52379420d0fe65d75e6bc4bb24efba36b3833077942a520bfe",
+      "diff_hash": "sha256:2b85a76d33e08bb6b8b5b3f1315d99bc92fd5760bf24e20d2ea235d25001b72a",
+      "actor_id": "deterministic-qa",
+      "summary": "all 2 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "acc-batch-branch-preflight",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-batch-scope-bounded-commit",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-472252b6",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:6c307684753d3a52379420d0fe65d75e6bc4bb24efba36b3833077942a520bfe",
+      "diff_hash": "sha256:29be1fabd74778399c8c41d57e5788402976ad92bc48a1b4f903b8ce47977062",
+      "actor_id": "deterministic-qa",
+      "summary": "all 2 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "acc-batch-branch-preflight",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-batch-scope-bounded-commit",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-a4a6117e",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:6c307684753d3a52379420d0fe65d75e6bc4bb24efba36b3833077942a520bfe",
+      "diff_hash": "sha256:ebb34d678b223720a24326b034a3f32b3a0c7c78ead7e7e6be402285207f6869",
+      "actor_id": "deterministic-qa",
+      "summary": "all 2 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "acc-batch-branch-preflight",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-batch-scope-bounded-commit",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-bf22dffa",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:6c307684753d3a52379420d0fe65d75e6bc4bb24efba36b3833077942a520bfe",
+      "diff_hash": "sha256:ebb34d678b223720a24326b034a3f32b3a0c7c78ead7e7e6be402285207f6869",
+      "actor_id": "parent-mediated-review",
+      "summary": "Verified immutable revision parent, tree, changed-path object identities and manifest digest; reviewed all four changed files and Kernel-attested passing acceptance outcomes; no blocking correctness, security or regression findings.",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "ebbc983ff7a6ccafa38b214626bf33a3ae94b584",
+        "review_commit": "7cd0a0e112cdd9db903afc9237e78e9a2466ad04",
+        "review_tree": "d6aa47f9982f0d2b50d7331d6735781a81c9f9b8",
+        "manifest_digest": "sha256:dfc5183868db6ee1012429aa2d18e9dd83556d4e7347e1bda0bc853ab9717362"
+      }
+    }
+  ],
+  "findings": [
+    {
+      "id": "review-91dde8f03d57-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "acc-batch-scope-bounded-commit",
+      "source": "review",
+      "review_round": 1,
+      "summary": "plugins/immune-brain/runtime/unattended/batch_git.ts:201 从可修改的 intent 文件读取 scope_hint，没有绑定已批准的 revision/hash；当 intent 文件自身在 scope 内时，执行者可扩大 scope_hint，让额外文件通过检查并被提交。应从经过验证的 terminal TaskRecord.intent_snapshot 获取授权范围和 goal；该 snapshot 的存在由直接依赖的 plugins/immune-brain/runtime/kernel/storage.ts:readAuditTaskPair 及其 authority projection 调用证实。补充 intent 被篡改时拒绝扩大提交范围的测试。"
+    },
+    {
+      "id": "review-91dde8f03d57-2-review-2",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "acc-batch-scope-bounded-commit",
+      "source": "review",
+      "review_round": 1,
+      "summary": "plugins/immune-brain/runtime/unattended/batch_git.ts:185 仅检查两个 JSON 的 lifecycle 字符串，忽略 task identity、contract 和 final_record_hash，任意伪造或错配的 done 文件都会被当作 Kernel settlement。应使用已经导入的 readAuditTaskPair，并检查其 terminal lifecycle；直接依赖 plugins/immune-brain/runtime/kernel/storage.ts:readAuditTaskPair 已提供身份、hash 和安全文件读取校验。新增测试目前使用不完整 record 和非现行 proof 字段，需替换为有效审计 fixture，并覆盖错配和篡改拒绝。"
+    },
+    {
+      "id": "review-91dde8f03d57-3-review-3",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "acc-batch-scope-bounded-commit",
+      "source": "review",
+      "review_round": 1,
+      "summary": "plugins/immune-brain/runtime/unattended/batch_git.ts:292 和 batch_runner.ts:951 的恢复路径只凭 subject/trailer 搜索并接纳历史提交，不验证当前 HEAD 等于该提交、其唯一 parent 等于 expected_head。若提交成功后状态落盘前中断，再出现外部提交，恢复仍会接纳旧提交；最后一个 child 可直接令 batch completed，违反未知 HEAD 必须 failed 的要求。恢复接纳前校验 HEAD、唯一 parent 和可靠的本批次提交证据；Git lookup 非零退出也应抛错，不能当作不存在。补充恢复期间外部 HEAD 漂移测试。"
+    },
+    {
+      "id": "review-91dde8f03d57-4-review-4",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "acc-batch-scope-bounded-commit",
+      "source": "review",
+      "review_round": 1,
+      "summary": "plugins/immune-brain/runtime/unattended/batch_git.ts:156 对 NUL 分隔的 Git 文件名调用 trim，改变了路径身份。已暂存的 'src/allowed.ts ' 会被检查为获准的 'src/allowed.ts'；若后者存在，git add 可成功，而随后的普通 git commit 仍会提交前者这个越界文件。应保留原始路径字节，拒绝无法安全表示的路径，使用 literal pathspec，并在提交前检查真实 staged 路径集合；新增带首尾空白文件名的越界测试。"
+    },
+    {
+      "id": "review-91dde8f03d57-5-review-5",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "acc-batch-branch-preflight",
+      "source": "review",
+      "review_round": 1,
+      "summary": "plugins/immune-brain/runtime/unattended/batch_runner.ts:439 以 root/.git 是否存在决定是否执行 mandatory preflight；没有 .git 且未注入 Git port 时会直接写 batch state 并进入 enrollment，而不是拒绝无 committed HEAD 的环境。仓库子目录同样会跳过 dirty/branch 检查。应无条件调用注入或默认 preflight，并验证 root 是实际仓库根目录；补充非 Git 目录和仓库子目录必须零 state 写入、零 enrollment 的测试。"
+    },
+    {
+      "id": "qa-acc-batch-branch-preflight-1bfc65e6-2818dc",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "acc-batch-branch-preflight",
+      "source": "execution",
+      "review_round": null,
+      "summary": "verification failed (exit 1) stdout=28B stderr=3156B"
+    },
+    {
+      "id": "qa-acc-batch-scope-bounded-commit-1bfc65e6-b31ea5",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "acc-batch-scope-bounded-commit",
+      "source": "execution",
+      "review_round": null,
+      "summary": "verification failed (exit 1) stdout=28B stderr=3154B"
+    },
+    {
+      "id": "review-89b8af18955f-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "acc-batch-scope-bounded-commit",
+      "source": "review",
+      "review_round": 2,
+      "summary": "plugins/immune-brain/runtime/unattended/batch_git.ts:288: git commit executes repository hooks after the staged scope check; a pre-commit hook that stages an unrelated file causes an out-of-scope commit to succeed, since the post-commit checks verify only HEAD and its parent. Disable hooks for this controlled commit or use an explicitly bounded immutable tree and atomic ref update; add a regression covering a hook that stages an unauthorized path."
+    },
+    {
+      "id": "review-89b8af18955f-2-review-2",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "acc-batch-scope-bounded-commit",
+      "source": "review",
+      "review_round": 2,
+      "summary": "plugins/immune-brain/runtime/unattended/batch_git.ts:170: scope validation normalizes backslashes into separators, but literal git add preserves them. On POSIX, a root-level filename such as src\\allowed.ts therefore passes scope src/allowed.ts and is committed despite being a different, unauthorized path; the audit-prefix exception has the same issue. The unchanged plugins/immune-brain/runtime/workspace_scope.ts was inspected because this changed caller invokes pathMatchesScope, which also normalizes backslashes. Reject noncanonical Git paths before either scope check and add a POSIX backslash-path regression."
+    },
+    {
+      "id": "review-89b8af18955f-3-review-3",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "acc-batch-scope-bounded-commit",
+      "source": "review",
+      "review_round": 2,
+      "summary": "plugins/immune-brain/runtime/unattended/batch_runner.ts:926: interrupted-child recovery maps every lookupBatchCommit failure to needs_human, including the newly introduced batch_head_lineage_broken error. After a crash between commit creation and state persistence followed by an external commit, recovery parks a resumable batch instead of terminating it as failed as required. Persist failed for commit-lookup lineage failures and cover this scenario through resumeBatch rather than only testing the lookup helper."
+    },
+    {
+      "id": "request_rework:2026-09-05-004-batch-branch-and-commit:2026-09-09T09:29:19.492Z:replan-required",
+      "kind": "replan_required",
+      "status": "resolved",
+      "acceptance_id": "acc-batch-scope-bounded-commit",
+      "source": "kernel",
+      "review_round": 2,
+      "summary": "Review returned this acceptance boundary twice; a durable replan is required."
+    },
+    {
+      "id": "review-537c2e1f91b1-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "acc-batch-scope-bounded-commit",
+      "source": "review",
+      "review_round": 3,
+      "summary": "plugins/immune-brain/runtime/unattended/batch_git.ts:302,338: --no-verify 不会禁用 prepare-commit-msg 或 post-commit hook。前者可改写 batch trailer，后者可 amend 提交并加入越界文件；越界检查随后执行 reset --hard expectedHead，会删除本次 child 的源码、terminal audit 以及并发产生的未提交修改。应对自动提交显式禁用全部 Git hooks，并移除破坏性回滚，失败时保留现场；补充 prepare-commit-msg/post-commit 与数据保留测试。"
+    },
+    {
+      "id": "review-537c2e1f91b1-2-review-2",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "acc-batch-branch-preflight",
+      "source": "review",
+      "review_round": 3,
+      "summary": "plugins/immune-brain/runtime/unattended/batch_git.ts:146: checkout -b 会运行 post-checkout hook；hook 返回非零时，分支已经创建并切换，但这里直接返回 branch_creation_failed，留下新 ref 和新 checked-out branch，违反 rejected preflight 的零副作用要求。对自动 checkout 显式禁用 hooks，并增加失败 hook 的回归测试，确保拒绝不会留下已切换的分支。"
+    },
+    {
+      "id": "review-537c2e1f91b1-3-review-3",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "acc-batch-scope-bounded-commit",
+      "source": "review",
+      "review_round": 3,
+      "summary": "plugins/immune-brain/runtime/unattended/batch_git.ts:355,394 与 plugins/immune-brain/runtime/unattended/batch_runner.ts:953: 恢复流程仅凭提交消息、batch trailer、HEAD 和单 parent 就采用已有提交，不验证提交是否由 batch 产生或其 delta 是否在 child scope 内。若在 settled 状态持久化后、自动提交前中断，外部直接基于 expectedHead 创建带相同消息和 trailer 的越界提交，resume 会将其登记为 committed 并继续。应记录可验证的提交操作身份，并在采用提交前核验 terminal audit、授权 scope 和 immutable commit delta；增加伪装外部提交的恢复测试。"
+    },
+    {
+      "id": "request_rework:2026-09-05-004-batch-branch-and-commit:2026-09-09T09:35:46.736Z:replan-required",
+      "kind": "replan_required",
+      "status": "resolved",
+      "acceptance_id": "acc-batch-scope-bounded-commit",
+      "source": "kernel",
+      "review_round": 3,
+      "summary": "Review returned this acceptance boundary twice; a durable replan is required."
+    },
+    {
+      "id": "review-dca9350a507a-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "acc-batch-scope-bounded-commit",
+      "source": "review",
+      "review_round": 4,
+      "summary": "plugins/immune-brain/runtime/unattended/batch_git.ts:394: lookupBatchCommit treats a matching author name, message/trailer, parent and in-scope delta as proof that the batch produced a commit. After settlement but before commit, an external process can create an in-scope commit with those public metadata values; recovery adopts it, even with the terminal audit and other child changes still uncommitted, and batch_runner.ts:967 advances the recorded lineage. This violates the requirement to reject HEAD values not produced by the batch. Persist the exact intended commit identity before updating the branch and require that durable identity for recovery; add a regression using a matching batch author and an in-scope external commit."
+    },
+    {
+      "id": "review-dca9350a507a-2-review-2",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "acc-batch-branch-preflight",
+      "source": "review",
+      "review_round": 4,
+      "summary": "plugins/immune-brain/runtime/unattended/batch_git.ts:101: git status --porcelain inherits status.showUntrackedFiles=no, so a repository containing non-ignored untracked files can pass the clean-tree preflight, create the batch branch and enroll a child. The later ls-files check cannot restore the required zero-write rejection. Explicitly pass --untracked-files=all and add a preflight regression with status.showUntrackedFiles=no, asserting dirty_working_tree, no enrollment/state files and unchanged branch."
+    },
+    {
+      "id": "request_rework:2026-09-05-004-batch-branch-and-commit:2026-09-09T09:41:00.453Z:replan-required",
+      "kind": "replan_required",
+      "status": "resolved",
+      "acceptance_id": "acc-batch-scope-bounded-commit",
+      "source": "kernel",
+      "review_round": 4,
+      "summary": "Review returned this acceptance boundary twice; a durable replan is required."
+    },
+    {
+      "id": "review-6a600e95a487-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "acc-batch-scope-bounded-commit",
+      "source": "review",
+      "review_round": 5,
+      "summary": "P1: plugins/immune-brain/runtime/unattended/batch_git.ts:243-258 writes commit evidence using unchecked mkdirSync/writeFileSync. A pre-existing symlink at the ignored .imm/state/batches/commits directory or evidence filename redirects this write outside the repository and can overwrite an unrelated file after the commit succeeds; neither Git cleanliness nor scope checks detect it. Validate directory components and use no-follow, atomic evidence persistence following the existing batch_state.ts persistence pattern; add a regression asserting symlink targets remain untouched."
+    },
+    {
+      "id": "review-6a600e95a487-2-review-2",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "acc-batch-branch-preflight",
+      "source": "review",
+      "review_round": 5,
+      "summary": "P1: plugins/immune-brain/runtime/unattended/batch_git.ts:163-169 unconditionally deletes the target branch after checkout fails without proving this invocation created it. If another process creates imm/<slug> between show-ref and checkout, checkout rejects the existing branch and cleanup then deletes that other process's ref. Remove unconditional branch deletion and only roll back a ref whose creation and identity this invocation can prove; cover concurrent branch creation with a regression."
+    },
+    {
+      "id": "request_rework:2026-09-05-004-batch-branch-and-commit:2026-09-09T09:46:22.377Z:replan-required",
+      "kind": "replan_required",
+      "status": "resolved",
+      "acceptance_id": "acc-batch-scope-bounded-commit",
+      "source": "kernel",
+      "review_round": 5,
+      "summary": "Review returned this acceptance boundary twice; a durable replan is required."
+    },
+    {
+      "id": "review-26e0f9215616-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "acc-batch-scope-bounded-commit",
+      "source": "review",
+      "review_round": 6,
+      "summary": "plugins/immune-brain/runtime/unattended/batch_runner.ts:246 calls lookupBatchCommit without expectedHead when validating persisted committed children, which skips the HEAD validation in batch_git.ts:558. If the process stops after persisting the final child as committed but before marking the batch completed, an external commit can advance HEAD; resume accepts the historical commit evidence and marks the batch completed instead of failed. Validate the current HEAD against the last recorded batch commit before continuing a running batch, persist failed on mismatch, and add a regression covering this post-commit persistence window."
+    },
+    {
+      "id": "review-26e0f9215616-2-review-2",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "acc-batch-scope-bounded-commit",
+      "source": "review",
+      "review_round": 6,
+      "summary": "plugins/immune-brain/runtime/unattended/batch_git.ts:230 derives dirty paths solely from diff-index and untracked files, while preflight at line 115 relies on status. Both honor assume-unchanged/skip-worktree index flags, so a modified tracked out-of-scope file carrying either flag is invisible: preflight succeeds and a settled child's allowed changes are committed despite dirty_outside_scope. Reject unsupported index flags before preflight and commit inspection, without changing the user's index, and cover a hidden out-of-scope modification. The unchanged workspace_scope.ts was inspected because batch_git.ts imports its scope matcher; its assertNoScopedIndexFlags already documents and handles the same Git visibility limitation for task snapshots."
+    },
+    {
+      "id": "request_rework:2026-09-05-004-batch-branch-and-commit:2026-09-09T09:54:11.359Z:replan-required",
+      "kind": "replan_required",
+      "status": "resolved",
+      "acceptance_id": "acc-batch-scope-bounded-commit",
+      "source": "kernel",
+      "review_round": 6,
+      "summary": "Review returned this acceptance boundary twice; a durable replan is required."
+    },
+    {
+      "id": "review-0712596414b7-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "acc-batch-scope-bounded-commit",
+      "source": "review",
+      "review_round": 7,
+      "summary": "plugins/immune-brain/runtime/unattended/batch_git.ts:237: getUnsupportedIndexFlags only rejects h and S, but git ls-files -v emits lowercase s when skip-worktree and assume-unchanged are both set. An out-of-scope tracked modification carrying both flags escapes this guard and the subsequent Git diff inspection, allowing a child commit despite dirty outside-scope content; the same helper also allows a dirty preflight. Reject lowercase s as well, fail closed when ls-files fails instead of returning [], and add coverage for combined flags in both preflight and commit."
+    },
+    {
+      "id": "review-0712596414b7-2-review-2",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "acc-batch-scope-bounded-commit",
+      "source": "review",
+      "review_round": 7,
+      "summary": "plugins/immune-brain/runtime/unattended/batch_git.ts:473: changedPaths includes staged deletions from diff-index HEAD, but those paths no longer exist in either the index or working tree. Passing them back to git add -A -- produces a pathspec-not-matched error, so a valid scoped child using git rm or git mv fails instead of committing. Preserve already-staged deletions and stage only paths still requiring an index update, while retaining validation of the complete changed and staged sets; add scoped staged-deletion and staged-rename regression tests."
+    },
+    {
+      "id": "request_rework:2026-09-05-004-batch-branch-and-commit:2026-09-09T10:02:30.189Z:replan-required",
+      "kind": "replan_required",
+      "status": "resolved",
+      "acceptance_id": "acc-batch-scope-bounded-commit",
+      "source": "kernel",
+      "review_round": 7,
+      "summary": "Review returned this acceptance boundary twice; a durable replan is required."
+    },
+    {
+      "id": "review-8b28a5d2daa9-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "acc-batch-scope-bounded-commit",
+      "source": "review",
+      "review_round": 8,
+      "summary": "plugins/immune-brain/runtime/unattended/batch_git.ts:448 checks only HEAD's SHA before committing, and batch_runner.ts:491 likewise never checks the recorded batch branch. After preflight, switching to main at the same base SHA while a child is running or interrupted passes every lineage check; the settled child's commit then advances main while imm/<initiative-slug> remains unchanged, and the batch records success. Pass the authorized branch into the commit operation and fail closed unless symbolic HEAD equals that branch before staging/committing and during recovery; add a regression covering a same-SHA branch switch before settlement."
+    },
+    {
+      "id": "request_rework:2026-09-05-004-batch-branch-and-commit:2026-09-09T10:08:30.049Z:replan-required",
+      "kind": "replan_required",
+      "status": "resolved",
+      "acceptance_id": "acc-batch-scope-bounded-commit",
+      "source": "kernel",
+      "review_round": 8,
+      "summary": "Review returned this acceptance boundary twice; a durable replan is required."
+    }
+  ],
+  "history": [
+    {
+      "id": "approve_breaking_intent_revision:2026-09-05-004-batch-branch-and-commit:2026-09-09T09:07:41.304Z",
+      "at": "2026-09-09T09:07:41.304Z",
+      "type": "approve_breaking_intent_revision",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "intent_revision_2\naction_v2_sha256:e3ec680ad8226f16a7ce65b09157ead7f83674b6c4b86bf8577d19f01b42c4a5",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-ff142666935e2d71",
+        "issued_at": "2026-09-09T09:07:41.495Z",
+        "expires_at": "2026-09-09T09:17:41.495Z"
+      }
+    },
+    {
+      "id": "freeze_artifacts:2026-09-05-004-batch-branch-and-commit:2026-09-09T09:07:55.059Z",
+      "at": "2026-09-09T09:07:55.059Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent and Spec frozen at docs/plans/archive/2026-09-05-004-batch-branch-and-commit.intent.json"
+    },
+    {
+      "id": "record_approval:2026-09-05-004-batch-branch-and-commit:2026-09-09T09:17:22.782Z",
+      "at": "2026-09-09T09:17:22.782Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-f12cb271\naction_v2_sha256:6ce63ef64c330f4ad6c72d4655e22cc8277150498571b7fba528b503443ae247",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-0e47976a27f82ec1",
+        "issued_at": "2026-09-09T09:17:22.782Z",
+        "expires_at": "2026-09-09T09:27:22.782Z"
+      }
+    },
+    {
+      "id": "request_rework:2026-09-05-004-batch-branch-and-commit:2026-09-09T09:19:31.520Z",
+      "at": "2026-09-09T09:19:31.520Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_1\naction_v2_sha256:311789b0fab01c4374a0b0874c863a6405a063b7122e86da2ecf336a6f15290b",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-060e386918a7a09a",
+        "issued_at": "2026-09-09T09:19:31.520Z",
+        "expires_at": "2026-09-09T09:29:31.520Z"
+      }
+    },
+    {
+      "id": "resolve_finding:2026-09-05-004-batch-branch-and-commit:2026-09-09T09:24:55.075Z",
+      "at": "2026-09-09T09:24:55.075Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-91dde8f03d57-1-review-1\naction_v2_sha256:c94514fde211ad47a54e4af8cae3223712ef8090b8a452990efc31e31b5133b4"
+    },
+    {
+      "id": "resolve_finding:2026-09-05-004-batch-branch-and-commit:2026-09-09T09:25:01.476Z",
+      "at": "2026-09-09T09:25:01.476Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-91dde8f03d57-2-review-2\naction_v2_sha256:bd29bf952c2ec8c6f4e028fb98c0bff6e02debb955157703324e75b0c3b443b4"
+    },
+    {
+      "id": "resolve_finding:2026-09-05-004-batch-branch-and-commit:2026-09-09T09:25:10.374Z",
+      "at": "2026-09-09T09:25:10.374Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-91dde8f03d57-3-review-3\naction_v2_sha256:0e4a81e984197a93d217d8869791628f59ceaffafa332ba2ba1de65a2238f7d1"
+    },
+    {
+      "id": "resolve_finding:2026-09-05-004-batch-branch-and-commit:2026-09-09T09:25:20.175Z",
+      "at": "2026-09-09T09:25:20.175Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-91dde8f03d57-4-review-4\naction_v2_sha256:c8f73933d84ed6ddf38afa2723d8ee8b7aa0a4f80fa20cf66505e9e36ebfdc89"
+    },
+    {
+      "id": "resolve_finding:2026-09-05-004-batch-branch-and-commit:2026-09-09T09:25:26.978Z",
+      "at": "2026-09-09T09:25:26.978Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-91dde8f03d57-5-review-5\naction_v2_sha256:4cbc9ecc94e5fc64a703a038654d6df213fd0f39620406445641548e602ffc7c"
+    },
+    {
+      "id": "freeze_artifacts:2026-09-05-004-batch-branch-and-commit:2026-09-09T09:25:47.549Z",
+      "at": "2026-09-09T09:25:47.549Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent and Spec frozen at docs/plans/archive/2026-09-05-004-batch-branch-and-commit.intent.json"
+    },
+    {
+      "id": "request_rework:2026-09-05-004-batch-branch-and-commit:2026-09-09T09:26:06.419Z",
+      "at": "2026-09-09T09:26:06.419Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_2\naction_v2_sha256:e07e52fe64269168722ccc026a5850f2da527d3ca926c4aa7a2f028d4686664f",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-970e6566220bb414",
+        "issued_at": "2026-09-09T09:26:06.419Z",
+        "expires_at": "2026-09-09T09:36:06.419Z"
+      }
+    },
+    {
+      "id": "resolve_finding:2026-09-05-004-batch-branch-and-commit:2026-09-09T09:26:54.005Z",
+      "at": "2026-09-09T09:26:54.005Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "qa-acc-batch-branch-preflight-1bfc65e6-2818dc\naction_v2_sha256:7a5ce375f4771f7723e6c95f4b2b7d1325dd0305bc0b15cfb137a9aa269b692e"
+    },
+    {
+      "id": "resolve_finding:2026-09-05-004-batch-branch-and-commit:2026-09-09T09:27:02.411Z",
+      "at": "2026-09-09T09:27:02.411Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "qa-acc-batch-scope-bounded-commit-1bfc65e6-b31ea5\naction_v2_sha256:cb226984cfd891b30616a2829b494ec11bea43c4a9a084c42a36bac305638be2"
+    },
+    {
+      "id": "freeze_artifacts:2026-09-05-004-batch-branch-and-commit:2026-09-09T09:27:15.423Z",
+      "at": "2026-09-09T09:27:15.423Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent and Spec frozen at docs/plans/archive/2026-09-05-004-batch-branch-and-commit.intent.json"
+    },
+    {
+      "id": "record_approval:2026-09-05-004-batch-branch-and-commit:2026-09-09T09:27:28.993Z",
+      "at": "2026-09-09T09:27:28.993Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-bd3f3052\naction_v2_sha256:e4ad5f85e04f8444e2f48897e8ffdb5d91f512bba2345708732c6ebd8ffdffca",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-9411e6e376644b31",
+        "issued_at": "2026-09-09T09:27:28.993Z",
+        "expires_at": "2026-09-09T09:37:28.993Z"
+      }
+    },
+    {
+      "id": "request_rework:2026-09-05-004-batch-branch-and-commit:2026-09-09T09:29:19.492Z",
+      "at": "2026-09-09T09:29:19.492Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "review_round_2\naction_v2_sha256:f4ec663436b91aeff645a180a7f4e445912fe379322cf2f5f840396b0481c2c3",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-b7580a8e594e1b23",
+        "issued_at": "2026-09-09T09:29:19.493Z",
+        "expires_at": "2026-09-09T09:39:19.493Z"
+      }
+    },
+    {
+      "id": "authorize_rework:2026-09-05-004-batch-branch-and-commit:2026-09-09T09:31:13.544Z",
+      "at": "2026-09-09T09:31:13.544Z",
+      "type": "authorize_rework",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "request_rework:2026-09-05-004-batch-branch-and-commit:2026-09-09T09:29:19.492Z:replan-required\naction_v2_sha256:d4844401f01bf640293a8ae27250321c3cf426bdd37d123a53335203a6f9d84f",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-c797e706879854be",
+        "issued_at": "2026-09-09T09:31:13.544Z",
+        "expires_at": "2026-09-09T09:41:13.544Z"
+      }
+    },
+    {
+      "id": "resolve_finding:2026-09-05-004-batch-branch-and-commit:2026-09-09T09:33:08.504Z",
+      "at": "2026-09-09T09:33:08.504Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-89b8af18955f-1-review-1\naction_v2_sha256:a20be47caecb348002a3c2973a9e394a6703e14e7af01c3f1e411943c1a060d9"
+    },
+    {
+      "id": "resolve_finding:2026-09-05-004-batch-branch-and-commit:2026-09-09T09:33:18.331Z",
+      "at": "2026-09-09T09:33:18.331Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-89b8af18955f-2-review-2\naction_v2_sha256:d9dcdd95956a93a3ac6b0b370a944017b63d1fc8521850d19488809005b57c5a"
+    },
+    {
+      "id": "resolve_finding:2026-09-05-004-batch-branch-and-commit:2026-09-09T09:33:26.652Z",
+      "at": "2026-09-09T09:33:26.652Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-89b8af18955f-3-review-3\naction_v2_sha256:05ee7f2ee542ac88337948c2c516828701d6f7443a377e963dd44fcb679cb4f5"
+    },
+    {
+      "id": "freeze_artifacts:2026-09-05-004-batch-branch-and-commit:2026-09-09T09:33:39.721Z",
+      "at": "2026-09-09T09:33:39.721Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent and Spec frozen at docs/plans/archive/2026-09-05-004-batch-branch-and-commit.intent.json"
+    },
+    {
+      "id": "record_approval:2026-09-05-004-batch-branch-and-commit:2026-09-09T09:33:56.418Z",
+      "at": "2026-09-09T09:33:56.418Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-cbbf0b88\naction_v2_sha256:9b60e9ba858f72b567baddd91ed487c87f589ced3566e6c8f82e34d76406ca83",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-09f6364960ded489",
+        "issued_at": "2026-09-09T09:33:56.418Z",
+        "expires_at": "2026-09-09T09:43:56.418Z"
+      }
+    },
+    {
+      "id": "request_rework:2026-09-05-004-batch-branch-and-commit:2026-09-09T09:35:46.736Z",
+      "at": "2026-09-09T09:35:46.736Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "review_round_3\naction_v2_sha256:887f068b7cc7a5995780a536013d1840e93fd6e0641d6e95bf03511cbc0e64b4",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-954cb89baa795a94",
+        "issued_at": "2026-09-09T09:35:46.736Z",
+        "expires_at": "2026-09-09T09:45:46.736Z"
+      }
+    },
+    {
+      "id": "authorize_rework:2026-09-05-004-batch-branch-and-commit:2026-09-09T09:36:13.140Z",
+      "at": "2026-09-09T09:36:13.140Z",
+      "type": "authorize_rework",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "request_rework:2026-09-05-004-batch-branch-and-commit:2026-09-09T09:35:46.736Z:replan-required\naction_v2_sha256:dd77fc9e757e5b7d4f2c7a6160e0a8397bc67178efd312e9f11cc2f1195afcf7",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-be54e22b1a2fe179",
+        "issued_at": "2026-09-09T09:36:13.140Z",
+        "expires_at": "2026-09-09T09:46:13.140Z"
+      }
+    },
+    {
+      "id": "resolve_finding:2026-09-05-004-batch-branch-and-commit:2026-09-09T09:38:26.409Z",
+      "at": "2026-09-09T09:38:26.409Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-537c2e1f91b1-1-review-1\naction_v2_sha256:7348455f895a2499856066cf43c9a1e8909b22cb79466fee76b8cf6326af9f93"
+    },
+    {
+      "id": "resolve_finding:2026-09-05-004-batch-branch-and-commit:2026-09-09T09:38:36.635Z",
+      "at": "2026-09-09T09:38:36.635Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-537c2e1f91b1-2-review-2\naction_v2_sha256:8529926f6dc0030b3dadd541d0daf1f1760761dd60bdacddbbc940746f4cbebc"
+    },
+    {
+      "id": "resolve_finding:2026-09-05-004-batch-branch-and-commit:2026-09-09T09:38:44.154Z",
+      "at": "2026-09-09T09:38:44.154Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-537c2e1f91b1-3-review-3\naction_v2_sha256:e68ccc30d8ba48b20ecb0e1fc15465453b3be703a069ad1e7a638cafc907d25b"
+    },
+    {
+      "id": "freeze_artifacts:2026-09-05-004-batch-branch-and-commit:2026-09-09T09:39:00.804Z",
+      "at": "2026-09-09T09:39:00.804Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent and Spec frozen at docs/plans/archive/2026-09-05-004-batch-branch-and-commit.intent.json"
+    },
+    {
+      "id": "record_approval:2026-09-05-004-batch-branch-and-commit:2026-09-09T09:39:16.123Z",
+      "at": "2026-09-09T09:39:16.123Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-5d9631de\naction_v2_sha256:facf907c300b4cb12ce545bc237351344482d4e411e0f2f6a8cb84331b0f5f96",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-b8d41167b97af070",
+        "issued_at": "2026-09-09T09:39:16.123Z",
+        "expires_at": "2026-09-09T09:49:16.123Z"
+      }
+    },
+    {
+      "id": "request_rework:2026-09-05-004-batch-branch-and-commit:2026-09-09T09:41:00.453Z",
+      "at": "2026-09-09T09:41:00.453Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "review_round_4\naction_v2_sha256:9e1c02641dedb05d99bd24357d44ae76530351d052f5482ff53462b389c7441e",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-c7d0dcfac2f2cd58",
+        "issued_at": "2026-09-09T09:41:00.453Z",
+        "expires_at": "2026-09-09T09:51:00.453Z"
+      }
+    },
+    {
+      "id": "authorize_rework:2026-09-05-004-batch-branch-and-commit:2026-09-09T09:41:11.829Z",
+      "at": "2026-09-09T09:41:11.829Z",
+      "type": "authorize_rework",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "request_rework:2026-09-05-004-batch-branch-and-commit:2026-09-09T09:41:00.453Z:replan-required\naction_v2_sha256:1d6e83622a091ccbfbde607be834e54bd4462bbc04c2f0f7794eaf70bccbe0dd",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-25dde8d24c69d35b",
+        "issued_at": "2026-09-09T09:41:11.829Z",
+        "expires_at": "2026-09-09T09:51:11.829Z"
+      }
+    },
+    {
+      "id": "resolve_finding:2026-09-05-004-batch-branch-and-commit:2026-09-09T09:43:32.793Z",
+      "at": "2026-09-09T09:43:32.793Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-dca9350a507a-1-review-1\naction_v2_sha256:b6760b2e99505aa32a159929047801f8f3a2f108da04104caa4d8153392beefc"
+    },
+    {
+      "id": "resolve_finding:2026-09-05-004-batch-branch-and-commit:2026-09-09T09:43:41.652Z",
+      "at": "2026-09-09T09:43:41.652Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-dca9350a507a-2-review-2\naction_v2_sha256:e8e96d4a724884cf1eea91e345b5f665742284c783b35aac5a5bc54d10d2d725"
+    },
+    {
+      "id": "freeze_artifacts:2026-09-05-004-batch-branch-and-commit:2026-09-09T09:43:59.105Z",
+      "at": "2026-09-09T09:43:59.105Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent and Spec frozen at docs/plans/archive/2026-09-05-004-batch-branch-and-commit.intent.json"
+    },
+    {
+      "id": "record_approval:2026-09-05-004-batch-branch-and-commit:2026-09-09T09:44:15.981Z",
+      "at": "2026-09-09T09:44:15.981Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-e3957779\naction_v2_sha256:8ebf0725f482b05d3631aac2210e091c2e15de5e6d003ee5bc257cccc7787eb2",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-2c5b3f388134c389",
+        "issued_at": "2026-09-09T09:44:15.981Z",
+        "expires_at": "2026-09-09T09:54:15.981Z"
+      }
+    },
+    {
+      "id": "request_rework:2026-09-05-004-batch-branch-and-commit:2026-09-09T09:46:22.377Z",
+      "at": "2026-09-09T09:46:22.377Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "review_round_5\naction_v2_sha256:25e97d493846b8d2e57909fd70856be33da35f372eeb8d424a733ab2337e1d3b",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-0ba73d697fa8c8b6",
+        "issued_at": "2026-09-09T09:46:22.377Z",
+        "expires_at": "2026-09-09T09:56:22.377Z"
+      }
+    },
+    {
+      "id": "authorize_rework:2026-09-05-004-batch-branch-and-commit:2026-09-09T09:47:40.168Z",
+      "at": "2026-09-09T09:47:40.168Z",
+      "type": "authorize_rework",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "request_rework:2026-09-05-004-batch-branch-and-commit:2026-09-09T09:46:22.377Z:replan-required\naction_v2_sha256:a7ab20263c146863eb71ec0cf4b63958d8e949d702bf070066b5a581eee4ecc6",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-ac58c67e637a59a1",
+        "issued_at": "2026-09-09T09:47:40.168Z",
+        "expires_at": "2026-09-09T09:57:40.168Z"
+      }
+    },
+    {
+      "id": "resolve_finding:2026-09-05-004-batch-branch-and-commit:2026-09-09T09:51:14.738Z",
+      "at": "2026-09-09T09:51:14.738Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-6a600e95a487-1-review-1\naction_v2_sha256:5d38433762102c943fcc16a922dfd05e56ecf36f75d642a40369fa84f9faa0d1"
+    },
+    {
+      "id": "resolve_finding:2026-09-05-004-batch-branch-and-commit:2026-09-09T09:51:24.746Z",
+      "at": "2026-09-09T09:51:24.746Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-6a600e95a487-2-review-2\naction_v2_sha256:aec00508c2e7b359a86af222905d37f612f51af73ad5f19d548d77b7dce00485"
+    },
+    {
+      "id": "freeze_artifacts:2026-09-05-004-batch-branch-and-commit:2026-09-09T09:51:39.581Z",
+      "at": "2026-09-09T09:51:39.581Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent and Spec frozen at docs/plans/archive/2026-09-05-004-batch-branch-and-commit.intent.json"
+    },
+    {
+      "id": "record_approval:2026-09-05-004-batch-branch-and-commit:2026-09-09T09:51:58.087Z",
+      "at": "2026-09-09T09:51:58.087Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-4879f088\naction_v2_sha256:bcf050ca92df8e2a095fb8c69fb2136e744f324fa3bd42b8dcdeac4452833a6f",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-f93ac28fe679c2af",
+        "issued_at": "2026-09-09T09:51:58.087Z",
+        "expires_at": "2026-09-09T10:01:58.087Z"
+      }
+    },
+    {
+      "id": "request_rework:2026-09-05-004-batch-branch-and-commit:2026-09-09T09:54:11.359Z",
+      "at": "2026-09-09T09:54:11.359Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "review_round_6\naction_v2_sha256:c1fb599651af52ccd9f6d9e713f02b2e5cfe2c1152cfdf5bc073b3d8596a1670",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-4b092ee3f2bcf467",
+        "issued_at": "2026-09-09T09:54:11.360Z",
+        "expires_at": "2026-09-09T10:04:11.359Z"
+      }
+    },
+    {
+      "id": "authorize_rework:2026-09-05-004-batch-branch-and-commit:2026-09-09T09:54:59.097Z",
+      "at": "2026-09-09T09:54:59.097Z",
+      "type": "authorize_rework",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "request_rework:2026-09-05-004-batch-branch-and-commit:2026-09-09T09:54:11.359Z:replan-required\naction_v2_sha256:68b2daa18e5feca68b3e730c358b3d8b9db7d3135bce26ea88e64746e6d3fb2c",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-01e5df8f87a389e6",
+        "issued_at": "2026-09-09T09:54:59.097Z",
+        "expires_at": "2026-09-09T10:04:59.097Z"
+      }
+    },
+    {
+      "id": "resolve_finding:2026-09-05-004-batch-branch-and-commit:2026-09-09T09:59:22.932Z",
+      "at": "2026-09-09T09:59:22.932Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-26e0f9215616-1-review-1\naction_v2_sha256:2e58fe503eff5615a55f0cf190d58829c547eb26ac9df92ee932bb99aa4e159d"
+    },
+    {
+      "id": "resolve_finding:2026-09-05-004-batch-branch-and-commit:2026-09-09T09:59:31.949Z",
+      "at": "2026-09-09T09:59:31.949Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-26e0f9215616-2-review-2\naction_v2_sha256:a505dcb29566429a2e3824c1816a4897a7a9c552e8268477cf4bf4a8e2940afc"
+    },
+    {
+      "id": "freeze_artifacts:2026-09-05-004-batch-branch-and-commit:2026-09-09T09:59:48.641Z",
+      "at": "2026-09-09T09:59:48.641Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent and Spec frozen at docs/plans/archive/2026-09-05-004-batch-branch-and-commit.intent.json"
+    },
+    {
+      "id": "record_approval:2026-09-05-004-batch-branch-and-commit:2026-09-09T10:00:06.876Z",
+      "at": "2026-09-09T10:00:06.876Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-6ccf6ea0\naction_v2_sha256:e78511c7d96cd5f99b69019d72e958748304477e58704f21258b68cdd28cc3b1",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-cfb4bd4b2e1da27c",
+        "issued_at": "2026-09-09T10:00:06.876Z",
+        "expires_at": "2026-09-09T10:10:06.876Z"
+      }
+    },
+    {
+      "id": "request_rework:2026-09-05-004-batch-branch-and-commit:2026-09-09T10:02:30.189Z",
+      "at": "2026-09-09T10:02:30.189Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "review_round_7\naction_v2_sha256:500fd8b94d47216b71c5526f16c8ae3050773cc4c31faefd75fd17bb79ab1f3a",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-7877cc799d5e7fba",
+        "issued_at": "2026-09-09T10:02:30.189Z",
+        "expires_at": "2026-09-09T10:12:30.189Z"
+      }
+    },
+    {
+      "id": "authorize_rework:2026-09-05-004-batch-branch-and-commit:2026-09-09T10:03:21.372Z",
+      "at": "2026-09-09T10:03:21.372Z",
+      "type": "authorize_rework",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "request_rework:2026-09-05-004-batch-branch-and-commit:2026-09-09T10:02:30.189Z:replan-required\naction_v2_sha256:fc4dcf77ba39a0151dbbe5c51829fa09dd95c5ed18ccad83f9f5ce61bd4a7c6f",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-4c3fa1367ccf2ae1",
+        "issued_at": "2026-09-09T10:03:21.372Z",
+        "expires_at": "2026-09-09T10:13:21.372Z"
+      }
+    },
+    {
+      "id": "resolve_finding:2026-09-05-004-batch-branch-and-commit:2026-09-09T10:05:32.954Z",
+      "at": "2026-09-09T10:05:32.954Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-0712596414b7-1-review-1\naction_v2_sha256:50dfc258f199bc7455c42b11d36d68ad436879333124b91e089f8b45f3ee11f6"
+    },
+    {
+      "id": "resolve_finding:2026-09-05-004-batch-branch-and-commit:2026-09-09T10:05:41.876Z",
+      "at": "2026-09-09T10:05:41.876Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-0712596414b7-2-review-2\naction_v2_sha256:1f1a7d04d5746382c6e09ac5d8c483f1133af1b28ec4f6151efe52fdb1638b3b"
+    },
+    {
+      "id": "freeze_artifacts:2026-09-05-004-batch-branch-and-commit:2026-09-09T10:06:01.228Z",
+      "at": "2026-09-09T10:06:01.228Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent and Spec frozen at docs/plans/archive/2026-09-05-004-batch-branch-and-commit.intent.json"
+    },
+    {
+      "id": "record_approval:2026-09-05-004-batch-branch-and-commit:2026-09-09T10:06:22.714Z",
+      "at": "2026-09-09T10:06:22.714Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-d7fa9bac\naction_v2_sha256:6a699b4dff0cd15c1952675b56f14eb7bfa7c03ae2461a2c1f127971b9d0acbc",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-c946ebe2da1d0e88",
+        "issued_at": "2026-09-09T10:06:22.714Z",
+        "expires_at": "2026-09-09T10:16:22.714Z"
+      }
+    },
+    {
+      "id": "request_rework:2026-09-05-004-batch-branch-and-commit:2026-09-09T10:08:30.049Z",
+      "at": "2026-09-09T10:08:30.049Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "review_round_8\naction_v2_sha256:db21e00a51fccf4834b0c7fe7b05771dd2104dc07f2bb0e4abaee36d3cfd6911",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-dffbd88576ba3ccc",
+        "issued_at": "2026-09-09T10:08:30.049Z",
+        "expires_at": "2026-09-09T10:18:30.049Z"
+      }
+    },
+    {
+      "id": "authorize_rework:2026-09-05-004-batch-branch-and-commit:2026-09-09T10:10:56.054Z",
+      "at": "2026-09-09T10:10:56.054Z",
+      "type": "authorize_rework",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "request_rework:2026-09-05-004-batch-branch-and-commit:2026-09-09T10:08:30.049Z:replan-required\naction_v2_sha256:f23e58edbfe783ed8064bd6329e47788fb96b705220c467d24a3ed0c123bc199",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-4d4a8b1344a5529d",
+        "issued_at": "2026-09-09T10:10:56.054Z",
+        "expires_at": "2026-09-09T10:20:56.054Z"
+      }
+    },
+    {
+      "id": "resolve_finding:2026-09-05-004-batch-branch-and-commit:2026-09-09T10:40:55.546Z",
+      "at": "2026-09-09T10:40:55.546Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-8b28a5d2daa9-1-review-1\naction_v2_sha256:18fe78e19f55cc7e5b373c98879a3a6f4adfaae21f794ea834392a09677edb07"
+    },
+    {
+      "id": "freeze_artifacts:2026-09-05-004-batch-branch-and-commit:2026-09-09T10:41:48.329Z",
+      "at": "2026-09-09T10:41:48.329Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent and Spec frozen at docs/plans/archive/2026-09-05-004-batch-branch-and-commit.intent.json"
+    },
+    {
+      "id": "record_approval:2026-09-05-004-batch-branch-and-commit:2026-09-09T10:42:15.989Z",
+      "at": "2026-09-09T10:42:15.989Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-0d5e74db\naction_v2_sha256:fb07670d29173cf326842576a8f4d6d96c2a9ecf3ec8aafa332205547be34cff",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-6d59824bb3e18f6f",
+        "issued_at": "2026-09-09T10:42:15.990Z",
+        "expires_at": "2026-09-09T10:52:15.990Z"
+      }
+    },
+    {
+      "id": "record_approval:2026-09-05-004-batch-branch-and-commit:2026-09-09T10:59:41.290Z",
+      "at": "2026-09-09T10:59:41.290Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-c4fce902\naction_v2_sha256:8b6a26671588d5da109bc7916832f27d9bc2005da5a5910fc6b2ac710e31dbdb",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-8262ac288b93a154",
+        "issued_at": "2026-09-09T10:59:41.290Z",
+        "expires_at": "2026-09-09T11:09:41.290Z"
+      }
+    },
+    {
+      "id": "record_approval:2026-09-05-004-batch-branch-and-commit:2026-09-09T11:06:55.237Z",
+      "at": "2026-09-09T11:06:55.237Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-c275671f\naction_v2_sha256:59d826fd785c579c22bc27451aab295ca814253164629e301c3739c8ea3a270f",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-780d0bd3082e64dd",
+        "issued_at": "2026-09-09T11:06:55.238Z",
+        "expires_at": "2026-09-09T11:16:55.238Z"
+      }
+    },
+    {
+      "id": "record_approval:2026-09-05-004-batch-branch-and-commit:2026-09-09T11:17:59.811Z",
+      "at": "2026-09-09T11:17:59.811Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-f637d332\naction_v2_sha256:fc422a922f206a8fd7fff9c5ff00efc022088dbe216277f6ce3ff81e179c2bcd",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-a7a239040f4ed318",
+        "issued_at": "2026-09-09T11:17:59.811Z",
+        "expires_at": "2026-09-09T11:27:59.811Z"
+      }
+    },
+    {
+      "id": "record_approval:2026-09-05-004-batch-branch-and-commit:2026-09-09T11:25:12.969Z",
+      "at": "2026-09-09T11:25:12.969Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-e7cc23c8\naction_v2_sha256:261c6d6c6ffe1e3fc14fb3cd93d95f5887282490c54e3d848c61efee803c8fdc",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-5e21d1f176a0605e",
+        "issued_at": "2026-09-09T11:25:12.969Z",
+        "expires_at": "2026-09-09T11:35:12.969Z"
+      }
+    },
+    {
+      "id": "record_approval:2026-09-05-004-batch-branch-and-commit:2026-09-09T11:57:58.799Z",
+      "at": "2026-09-09T11:57:58.799Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-42e44c1f\naction_v2_sha256:e9039ff6f99496644caa2823b2467a6c0df5934bd07fdf1cf33d51fef7fab047",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-21a9e011b7a1daa7",
+        "issued_at": "2026-09-09T11:57:58.799Z",
+        "expires_at": "2026-09-09T12:07:58.799Z"
+      }
+    },
+    {
+      "id": "record_approval:2026-09-05-004-batch-branch-and-commit:2026-09-09T12:11:38.179Z",
+      "at": "2026-09-09T12:11:38.179Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-60fecc8f\naction_v2_sha256:45f10e061c6ae2e9674528d01c81b30b70d3bbaf5ef302391acb842fa6438e96",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-8888466e9a813a75",
+        "issued_at": "2026-09-09T12:11:38.179Z",
+        "expires_at": "2026-09-09T12:21:38.179Z"
+      }
+    },
+    {
+      "id": "record_approval:2026-09-05-004-batch-branch-and-commit:2026-09-09T12:21:18.431Z",
+      "at": "2026-09-09T12:21:18.431Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-b8361982\naction_v2_sha256:d2fb87ada2eab42128fd3bc29121bea9e17eb431bdd24f1f4ced9371ec2f9a01",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-b7f6b44fb297b9dd",
+        "issued_at": "2026-09-09T12:21:18.431Z",
+        "expires_at": "2026-09-09T12:31:18.431Z"
+      }
+    },
+    {
+      "id": "record_approval:2026-09-05-004-batch-branch-and-commit:2026-09-09T12:29:03.232Z",
+      "at": "2026-09-09T12:29:03.232Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-472252b6\naction_v2_sha256:49f49ec98dc24a10748bac29cdf201fbbdefcc3eb4235c890ff1a8f12cb0a487",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-4ed95c8964ba26e9",
+        "issued_at": "2026-09-09T12:29:03.232Z",
+        "expires_at": "2026-09-09T12:39:03.232Z"
+      }
+    },
+    {
+      "id": "record_approval:2026-09-05-004-batch-branch-and-commit:2026-09-09T13:09:09.964Z",
+      "at": "2026-09-09T13:09:09.964Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-a4a6117e\naction_v2_sha256:31f24442820f600d39b53d04c21e2e5fb043ea6e93898c3db0f12e39c7eb8845",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-644e7200cfb0e6c0",
+        "issued_at": "2026-09-09T13:09:09.964Z",
+        "expires_at": "2026-09-09T13:19:09.964Z"
+      }
+    },
+    {
+      "id": "record_approval:2026-09-05-004-batch-branch-and-commit:2026-09-09T13:12:28.424Z",
+      "at": "2026-09-09T13:12:28.424Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-bf22dffa\naction_v2_sha256:3a462e30264312959ec0c0364e62dc0a5668d6b0ee3cbad5c6c2c5acdf6daefa",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-9a884189193a4181",
+        "issued_at": "2026-09-09T13:12:28.424Z",
+        "expires_at": "2026-09-09T13:22:28.424Z"
+      }
+    },
+    {
+      "id": "complete:2026-09-05-004-batch-branch-and-commit:2026-09-09T13:12:29.055Z",
+      "at": "2026-09-09T13:12:29.055Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:7990ac1c0dce4182c0c7a333128f147dee71be946c0c51d327dbd95dc8604598"
+    }
+  ]
+}

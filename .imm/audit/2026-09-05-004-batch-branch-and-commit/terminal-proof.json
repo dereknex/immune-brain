@@ -1,0 +1,9 @@
+{
+  "contract": "assurance_kernel/task_tombstone/v2",
+  "task_id": "2026-09-05-004-batch-branch-and-commit",
+  "lifecycle_status": "terminal",
+  "terminal_lifecycle": "done",
+  "terminal_event_id": "complete:2026-09-05-004-batch-branch-and-commit:2026-09-09T13:12:29.055Z",
+  "final_record_hash": "sha256:becc5508212e72b34a5d923141fc43531a8ae8d45a2cf987b5e40abec1708e5c",
+  "terminalized_at": "2026-09-09T13:12:29.055Z"
+}
