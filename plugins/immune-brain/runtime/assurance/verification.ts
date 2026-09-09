@@ -5,7 +5,7 @@
 // runner, compatibility gate, fixed execution, and findings digest.
 
 import { createHash } from "node:crypto";
-import { execFileSync, spawn } from "node:child_process";
+import { execFileSync, spawn, spawnSync } from "node:child_process";
 import { realpathSync, statSync } from "node:fs";
 import { isAbsolute, join, resolve, sep, relative } from "node:path";
 
@@ -43,7 +43,18 @@ export function resolveBunRunner(): FrozenRunner {
 	}
 	let real: string;
 	try {
-		real = realpathSync(executable);
+		// When which returns a version-manager shim (e.g. mise or asdf),
+		// realpathSync on the shim resolves to the version-manager binary rather
+		// than bun. Ask bun itself for its real process.execPath.
+		const execPath = spawnSync(executable, ["-e", "console.log(process.execPath)"], {
+			encoding: "utf8",
+			stdio: ["ignore", "pipe", "ignore"],
+		});
+		if (execPath.status === 0 && execPath.stdout.trim().length > 0) {
+			real = realpathSync(execPath.stdout.trim());
+		} else {
+			real = realpathSync(executable);
+		}
 	} catch {
 		throw new VerificationDescriptorError("bun runner realpath is unresolvable");
 	}

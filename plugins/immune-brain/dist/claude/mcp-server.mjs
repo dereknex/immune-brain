@@ -688,7 +688,7 @@ import { createHash as createHash5, randomUUID as randomUUID2 } from "node:crypt
 
 // plugins/immune-brain/runtime/assurance/verification.ts
 import { createHash as createHash3 } from "node:crypto";
-import { execFileSync, spawn } from "node:child_process";
+import { execFileSync, spawn, spawnSync } from "node:child_process";
 import { realpathSync as realpathSync2, statSync } from "node:fs";
 import { isAbsolute as isAbsolute2, resolve, sep as sep2, relative } from "node:path";
 
@@ -792,7 +792,15 @@ function resolveBunRunner() {
   }
   let real;
   try {
-    real = realpathSync2(executable);
+    const execPath = spawnSync(executable, ["-e", "console.log(process.execPath)"], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"]
+    });
+    if (execPath.status === 0 && execPath.stdout.trim().length > 0) {
+      real = realpathSync2(execPath.stdout.trim());
+    } else {
+      real = realpathSync2(executable);
+    }
   } catch {
     throw new VerificationDescriptorError("bun runner realpath is unresolvable");
   }
@@ -1823,7 +1831,7 @@ import { tmpdir as tmpdir2 } from "node:os";
 import { join as join4 } from "node:path";
 
 // plugins/immune-brain/runtime/workspace_scope.ts
-import { spawnSync } from "node:child_process";
+import { spawnSync as spawnSync2 } from "node:child_process";
 import { createHash as createHash6 } from "node:crypto";
 import {
   existsSync as existsSync2,
@@ -1834,7 +1842,7 @@ import {
 } from "node:fs";
 import { resolve as resolve2 } from "node:path";
 function git(root, args) {
-  const result = spawnSync("git", ["-C", root, ...args], {
+  const result = spawnSync2("git", ["-C", root, ...args], {
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"]
   });
@@ -1858,7 +1866,7 @@ var portablePathCollator = new Intl.Collator("und", {
 });
 var gitTaskSnapshotTestHook;
 function gitBytes(root, args) {
-  const result = spawnSync("git", ["-C", root, ...args], {
+  const result = spawnSync2("git", ["-C", root, ...args], {
     encoding: null,
     stdio: ["ignore", "pipe", "pipe"],
     maxBuffer: 8 * 1024 * 1024
@@ -6338,12 +6346,12 @@ function createEnrollmentAuthorityRegistry() {
 
 // plugins/immune-brain/runtime/kernel/pi_canary_prepare.ts
 import { createHash as createHash12 } from "node:crypto";
-import { spawnSync as spawnSync2 } from "node:child_process";
+import { spawnSync as spawnSync3 } from "node:child_process";
 import { resolve as resolve6 } from "node:path";
 var SOURCE_PATH = ".imm/state/workspace.json";
 var GIT_OBJECT_ID4 = /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/;
 function readGitHead(root) {
-  const result = spawnSync2("git", ["-C", root, "rev-parse", "--verify", "HEAD^{commit}"], {
+  const result = spawnSync3("git", ["-C", root, "rev-parse", "--verify", "HEAD^{commit}"], {
     encoding: "utf8"
   });
   const head = typeof result.stdout === "string" ? result.stdout.trim() : "";
