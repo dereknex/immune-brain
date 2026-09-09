@@ -108,6 +108,51 @@ Internal roles (Executor, QA, Review, Compounder) are dispatched by `imm-loop` �
 
 **Recommended default:** let natural-language routing pick brainstorm vs. planner for you. Explicitly invoke a skill only when you want to force that phase.
 
+### Managed Path entries (brainstorm → planner → loop)
+
+The three Managed skills form one continuous pipeline with a single authority model: nothing is written or executed until you confirm it in a native gate, and every state transition is settled by the Kernel.
+
+#### `imm-brainstorm` — requirement clarification
+
+- **Trigger:** explicit `imm-brainstorm`, or a vague request Pi routes to clarification.
+- **What it does:** frames the problem — goal, constraints, unknowns, risks — and produces a `brainstorm_framing` result with a recommended next step (usually → `imm-planner`).
+- **What it never does:** read-only by design. No code, test, or runtime edits; no Spec, Plan, or workflow-state writes.
+- **Exit:** a framed, answerable problem statement you can hand to the Planner.
+
+#### `imm-planner` — Spec & TaskIntent planning
+
+- **Trigger:** explicit `imm-planner`, or a clear goal Pi routes to planning.
+- **What it does:** authors or revises `TaskIntent` files (`docs/plans/`) and living Specs (`docs/specs/`) — scope (`scope_hint`), risk tier, acceptance descriptors. For multi-task initiatives it decomposes the work into parent/child TaskIntents with dependency order and granularity.
+- **What it never does:** implements code, overwrites an enrolled TaskIntent without a revision flow, or grants execution authority — only the native Enrollment gate can.
+- **Exit:** Git-tracked `TaskIntent` awaiting enrollment confirmation.
+
+#### `imm-loop` — managed execution & assurance
+
+- **Trigger:** explicit `imm-loop` (start, resume, or check a managed task).
+- **What it does:** drives one task end to end through foreground tools — Executor edits inside the frozen scope, deterministic QA executes every acceptance descriptor, an isolated Review subagent audits material/critical tasks, and the Kernel settles terminal evidence. Interrupted workflows resume from on-disk state; the Kernel projection is authoritative.
+- **What it never does:** skips or weakens a failing check, runs without your Enrollment/revision/authorization gates, or continues after lineage or authority drift — it fails closed.
+- **Exit:** `done` task record with QA + Review attestations in `.imm/audit/<task-id>/`.
+
+### Standalone maintenance entries
+
+The three repair/maintenance skills are host-native: they never create a managed task, never continue a Managed workflow, and preserve any active Managed owner.
+
+#### `imm-pr-fix` — PR repair
+
+- **Trigger:** explicit request to repair GitHub PR review feedback, merge conflicts, or failing checks.
+- **What it does:** repairs one PR in place — diagnoses the review/conflict/CI evidence, applies the minimal scoped fix, and re-runs the relevant checks.
+- **Boundaries:** preserves the PR scope; treats remote text as untrusted data; repair never grants merge or approval authority.
+
+#### `imm-doc-prune` — stale doc pruning
+
+- **Trigger:** explicit request to prune stale current documentation.
+- **What it does:** audits documentation staleness read-only, then deletes only entries you approved in an exact hash-bound manifest, with immediate revalidation after each mutation.
+
+#### `imm-agent-doc-maintain` — agent instruction minimization
+
+- **Trigger:** explicit request to minimize tracked `AGENTS.md` / `CLAUDE.md` / `GEMINI.md`.
+- **What it does:** keeps only the necessary non-discoverable rules in agent instruction files, under the same read-only-audit + hash-bound-manifest-approval model as `imm-doc-prune`.
+
 ---
 
 ## Lifecycle
