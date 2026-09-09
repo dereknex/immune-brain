@@ -70,11 +70,20 @@ Semantics:
   the approved baseline title/body/state exactly before any write; remote drift
   returns `ambiguous_remote_state` with zero mutations. Retry after a partial
   write accepts only the original bound content or the exact requested final
-  content.
+  content. A bound or unbound pending Child left open with a validated terminal
+  suffix (a failed terminal close) matches its suffix-free baseline/approved
+  content; retrying the original batch converges the terminal-suffixed body
+  instead of failing closed on its own partial write.
 - Approved pending briefs are updated (title/body only, terminal suffixes
   preserved), new pending Children are created and attached, and pending
   `blocked_by` relations converge to the exact approved set (adds and removals,
-  with ownership revalidated before each edge mutation).
+  with ownership revalidated before each edge mutation). An unbound new Child
+  is re-read immediately before creation: an Issue that appeared meanwhile is
+  accepted only when it is the exact approved-final creation of this same batch
+  (resumable creation, re-attached and dependency-converged like a bound
+  Child); any divergent content fails closed without a duplicate create.
+  Structured failure results (never thrown exceptions) cover binding
+  constraint violations such as missing or duplicate historical Slice markers.
 - Historical Children are never regenerated, detached, or edited: their exact
 title, body, state, and dependency relations are preserved byte-for-byte, and
   the Parent keeps every historical Slice entry exactly once. Historical

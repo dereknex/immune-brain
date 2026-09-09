@@ -1,5 +1,14 @@
 import { DynamicBorder, type ExtensionAPI, type ExtensionContext, type Theme, type ThemeColor } from "@earendil-works/pi-coding-agent";
-import { Container, SelectList, Text, type Component, type SelectItem } from "@earendil-works/pi-tui";
+import {
+	Container,
+	SelectList,
+	Text,
+	sliceByColumn,
+	truncateToWidth,
+	visibleWidth,
+	type Component,
+	type SelectItem,
+} from "@earendil-works/pi-tui";
 
 export const USER_ATTENTION_EVENT = "immune-brain:user-attention.v1" as const;
 export const TASK_RAIL_KEY = "immune-brain.task-rail" as const;
@@ -186,12 +195,7 @@ export async function requestAuthorityDialog<T extends string, R = T | undefined
 export function presentTaskRail(ctx: UiContext, view: TaskRailView): void {
 	try {
 		ctx.ui.setWidget(TASK_RAIL_KEY, (_tui, theme) => {
-			return {
-				render(width: number): string[] {
-					return renderTaskRail(view, width, theme);
-				},
-				invalidate(): void {},
-			};
+			return safeWidgetRender((width) => renderTaskRail(view, width, theme));
 		}, { placement: "aboveEditor" });
 		if (view.state === "Completed" || view.state === "Stopped") terminalRailUis.add(ctx.ui);
 		else terminalRailUis.delete(ctx.ui);
@@ -275,6 +279,25 @@ export async function presentTaskOverviewOverlay(
 	} catch {
 		notifyOnce(ctx, "task-overview:render", "Task overview is unavailable; projections remain authoritative.", "warning");
 	}
+}
+
+// pi renders widget lines verbatim and throws in doRender — killing the whole
+// process — when a line exceeds the terminal width. Clamp every line at the
+// widget boundary so line-builder bugs degrade to a truncated row instead.
+function safeWidgetRender(render: (width: number) => string[]): {
+	render(width: number): string[];
+	invalidate(): void;
+} {
+	return {
+		render(width: number): string[] {
+			try {
+				return render(width).map((line) => truncateToWidth(line, width, "…"));
+			} catch {
+				return [];
+			}
+		},
+		invalidate(): void {},
+	};
 }
 
 export function clearTaskRail(ctx: UiContext): void {
@@ -501,13 +524,18 @@ function strings(value: unknown): string[] {
 	return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
 }
 
+// Truncate by terminal columns, not character count — CJK/double-width chars
+// overflow otherwise and pi's doRender crashes the whole process on wide lines.
 function bounded(value: string, max: number): string {
-	return value.length <= max ? value : `${value.slice(0, max - 1)}…`;
+	return truncateToWidth(value, max, "…");
 }
 
 function boundedMiddle(value: string, max: number): string {
-	if (value.length <= max) return value;
+	const width = visibleWidth(value);
+	if (width <= max) return value;
 	const visible = max - 1;
 	const start = Math.ceil(visible / 2);
-	return `${value.slice(0, start)}…${value.slice(-(visible - start))}`;
+	const head = truncateToWidth(sliceByColumn(value, 0, start, true), start, "");
+	const tail = truncateToWidth(sliceByColumn(value, width - (visible - start), visible - start, true), visible - start, "");
+	return `${head}…${tail}`;
 }

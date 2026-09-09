@@ -5323,7 +5323,9 @@ function appendHistory(record, action, from, detail, audit) {
   record.history.push(entry);
 }
 function intentRefMatches(intent, ref) {
-  return ref.path === `docs/plans/${intent.task_id}.intent.json` && ref.content_hash === canonicalIntentHash(intent);
+  const activePath = `docs/plans/${intent.task_id}.intent.json`;
+  const archivedPath = `docs/plans/archive/${intent.task_id}.intent.json`;
+  return (ref.path === activePath || ref.path === archivedPath) && ref.content_hash === canonicalIntentHash(intent);
 }
 function hasPrivilegedKind(action) {
   return action.type === "record_approval" || action.type === "approve_breaking_intent_revision" || action.type === "request_rework" || action.type === "authorize_rework" || action.type === "stop" || action.type === "resolve_user_decision";
@@ -6051,7 +6053,7 @@ function createCanaryApplication(registry) {
           type: "revise_intent",
           next_intent: operation.next_intent,
           next_intent_ref: {
-            path: `docs/plans/${operation.next_intent.task_id}.intent.json`,
+            path: snapshot.record.artifact_state === "frozen" ? `docs/plans/archive/${operation.next_intent.task_id}.intent.json` : `docs/plans/${operation.next_intent.task_id}.intent.json`,
             content_hash: canonicalIntentHash(operation.next_intent)
           }
         };
