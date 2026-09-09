@@ -1,0 +1,9 @@
+{
+  "contract": "assurance_kernel/task_tombstone/v2",
+  "task_id": "2026-09-09-001-trim-agent-instruction-immune-rules",
+  "lifecycle_status": "terminal",
+  "terminal_lifecycle": "done",
+  "terminal_event_id": "complete:2026-09-09-001-trim-agent-instruction-immune-rules:2026-09-09T16:30:26.292Z",
+  "final_record_hash": "sha256:7b9edae8195d787487e71a77c78eeec175004cf3c4e78898fcf046af9e8e3823",
+  "terminalized_at": "2026-09-09T16:30:26.292Z"
+}

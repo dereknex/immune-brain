@@ -1,0 +1,209 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "2026-09-09-001-trim-agent-instruction-immune-rules",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "2026-09-09-001-trim-agent-instruction-immune-rules",
+    "goal": "Remove Immune-Brain workflow explanations from the repository's always-loaded AGENTS.md content while preserving general agent guidance, repository navigation, the CLAUDE.md symlink, and the Initiative carrier preference, without changing Skill metadata or runtime behavior.",
+    "acceptance": [
+      {
+        "id": "acc-agent-instruction-boundary",
+        "assertion": "AGENTS.md retains general precedence, verification, Skill-selection guidance, and Initiative carrier default: github; it no longer carries the dedicated Immune-Brain workflow rules or the 普通输入保持 host-native trigger text; CLAUDE.md remains a symbolic link to AGENTS.md.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/exhaustive-decision-tree-contract.test.ts\",\n    \"tests/subagent-activation-contract-retirement.test.ts\",\n    \"tests/host-tool-policy-contract.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 32768\n}\n"
+      },
+      {
+        "id": "acc-release-metadata",
+        "assertion": "A patch changeset describes the reduced agent-instruction interference and is covered by the existing root-instruction contract test.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/exhaustive-decision-tree-contract.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 60000,\n  \"max_output_bytes\": 16384\n}\n"
+      }
+    ],
+    "scope_hint": [
+      ".changeset/trim-agent-instruction-immune-rules.md",
+      "AGENTS.md",
+      "CLAUDE.md",
+      "docs/specs/archive/trim-agent-instruction-immune-rules.spec.md",
+      "docs/specs/trim-agent-instruction-immune-rules.spec.md",
+      "tests/exhaustive-decision-tree-contract.test.ts"
+    ],
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/archive/2026-09-09-001-trim-agent-instruction-immune-rules.intent.json",
+    "content_hash": "sha256:acbf821c69fbadc6a909be96006972b3ae69c1c5c2ae627212ae75c0714fe4a7"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:acbf821c69fbadc6a909be96006972b3ae69c1c5c2ae627212ae75c0714fe4a7",
+  "git_base_head": "a0ed6ab6bcfd88d145fc0a70264ca4019171a554",
+  "attestations": [
+    {
+      "id": "approval-qa-9f2c2127",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:acbf821c69fbadc6a909be96006972b3ae69c1c5c2ae627212ae75c0714fe4a7",
+      "diff_hash": "sha256:55049ddf0d7285f7fdc738b29d9199d7052f72def567ac822b3c5752717c5073",
+      "actor_id": "deterministic-qa",
+      "summary": "all 2 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "acc-agent-instruction-boundary",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-release-metadata",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-3ee2b724",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:acbf821c69fbadc6a909be96006972b3ae69c1c5c2ae627212ae75c0714fe4a7",
+      "diff_hash": "sha256:cc161c49aadf41c5f9fc682978f106bd3f6b84c429a45b1620e22cb841bff07d",
+      "actor_id": "deterministic-qa",
+      "summary": "all 2 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "acc-agent-instruction-boundary",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-release-metadata",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-a2237f9c",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:acbf821c69fbadc6a909be96006972b3ae69c1c5c2ae627212ae75c0714fe4a7",
+      "diff_hash": "sha256:cc161c49aadf41c5f9fc682978f106bd3f6b84c429a45b1620e22cb841bff07d",
+      "actor_id": "parent-mediated-review",
+      "summary": "已核实 base、review commit、唯一父提交、tree、manifest digest 及全部变更对象；指令清理、保留条款、CLAUDE.md 符号链接和 patch changeset 符合验收要求，Kernel QA 两项验收均通过，未发现实质问题。",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "a0ed6ab6bcfd88d145fc0a70264ca4019171a554",
+        "review_commit": "0a9c5d4cd1fe5f3421bd6d7218183f27457e509d",
+        "review_tree": "011fd5dd206cf689083ca7c6469726e15e3ab7ae",
+        "manifest_digest": "sha256:e8da5a93acd3403c447ec0e57e19bb584d022587c533602e9e12b2d6b491fc29"
+      }
+    }
+  ],
+  "findings": [
+    {
+      "id": "review-04c53f55b2e3-1-R1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "acc-release-metadata",
+      "source": "review",
+      "review_round": 1,
+      "summary": "tests/exhaustive-decision-tree-contract.test.ts permanently requires .changeset/trim-agent-instruction-immune-rules.md, but Changesets consumes that file during versioning, so later release verification would fail with ENOENT; keep durable instruction and symlink assertions while moving temporary changeset validation out of the permanent test."
+    }
+  ],
+  "history": [
+    {
+      "id": "freeze_artifacts:2026-09-09-001-trim-agent-instruction-immune-rules:2026-09-09T16:18:50.136Z",
+      "at": "2026-09-09T16:18:50.136Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent and Spec frozen at docs/plans/archive/2026-09-09-001-trim-agent-instruction-immune-rules.intent.json"
+    },
+    {
+      "id": "record_approval:2026-09-09-001-trim-agent-instruction-immune-rules:2026-09-09T16:19:06.665Z",
+      "at": "2026-09-09T16:19:06.665Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-9f2c2127\naction_v2_sha256:2ef9fb2f66fc9f6396a150e11b5d7ff4ea3d6f2c4f82ba39a0be14e9ba29abca",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-8bd8ba08db7ce294",
+        "issued_at": "2026-09-09T16:19:06.666Z",
+        "expires_at": "2026-09-09T16:29:06.666Z"
+      }
+    },
+    {
+      "id": "request_rework:2026-09-09-001-trim-agent-instruction-immune-rules:2026-09-09T16:23:20.926Z",
+      "at": "2026-09-09T16:23:20.926Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_1\naction_v2_sha256:37923d82a56f2b86d868452113ff1cc55d8f81c4e9cbf93e0e6fd36238660b9f",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-2b8ffe810d696ad9",
+        "issued_at": "2026-09-09T16:23:20.927Z",
+        "expires_at": "2026-09-09T16:33:20.927Z"
+      }
+    },
+    {
+      "id": "resolve_finding:2026-09-09-001-trim-agent-instruction-immune-rules:2026-09-09T16:26:36.466Z",
+      "at": "2026-09-09T16:26:36.466Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-04c53f55b2e3-1-R1\naction_v2_sha256:2883b257018a0d0b8ef75dfb8ebd48c1ac4fbf7c532695a0bed33925d982f92e"
+    },
+    {
+      "id": "freeze_artifacts:2026-09-09-001-trim-agent-instruction-immune-rules:2026-09-09T16:27:03.618Z",
+      "at": "2026-09-09T16:27:03.618Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent and Spec frozen at docs/plans/archive/2026-09-09-001-trim-agent-instruction-immune-rules.intent.json"
+    },
+    {
+      "id": "record_approval:2026-09-09-001-trim-agent-instruction-immune-rules:2026-09-09T16:27:25.228Z",
+      "at": "2026-09-09T16:27:25.228Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-3ee2b724\naction_v2_sha256:65348d7c6507af7617b5a134f5f57f681b4cb93f2f55dfe3bac242505cfdf2e3",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-c429dfc0afa2f244",
+        "issued_at": "2026-09-09T16:27:25.229Z",
+        "expires_at": "2026-09-09T16:37:25.229Z"
+      }
+    },
+    {
+      "id": "record_approval:2026-09-09-001-trim-agent-instruction-immune-rules:2026-09-09T16:30:25.680Z",
+      "at": "2026-09-09T16:30:25.680Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-a2237f9c\naction_v2_sha256:a938673d0618deb9d50ea23b170a63e3d85f768d9d6f764be92e90fffa0e6e32",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-373baf520e6aec40",
+        "issued_at": "2026-09-09T16:30:25.680Z",
+        "expires_at": "2026-09-09T16:40:25.680Z"
+      }
+    },
+    {
+      "id": "complete:2026-09-09-001-trim-agent-instruction-immune-rules:2026-09-09T16:30:26.292Z",
+      "at": "2026-09-09T16:30:26.292Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:a52e0c8b0762117c6584006a1509e562faf3e8932300438b223a7999a20add10"
+    }
+  ]
+}

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { readFileSync } from "node:fs";
+import { existsSync, lstatSync, readFileSync, readlinkSync } from "node:fs";
 import { join } from "node:path";
 
 const ROOT = join(__dirname, "..");
@@ -147,9 +147,22 @@ describe("Brainstorm-owned clarification contract", () => {
 	test("project contract files carry the current schema", () => {
 		const agents = read("AGENTS.md");
 		expect(agents).toContain("规则优先级");
-		expect(agents).toContain("普通输入保持 host-native");
+		expect(agents).toContain("## Skill 使用");
 		expect(agents).toContain("Initiative carrier default: github");
+		expect(agents).not.toContain("普通输入保持 host-native");
+		expect(agents).not.toContain("Managed owner");
+		expect(agents).not.toContain("TaskIntent");
+		expect(agents).not.toContain("Kernel QA/Review");
+		expect(agents).not.toContain(".imm");
 		expect(agents).not.toContain("<!-- IMMUNE-BRAIN:START -->");
+		expect(lstatSync(join(ROOT, "CLAUDE.md")).isSymbolicLink()).toBe(true);
+		expect(readlinkSync(join(ROOT, "CLAUDE.md"))).toBe("AGENTS.md");
+		const changeset = ".changeset/trim-agent-instruction-immune-rules.md";
+		if (existsSync(join(ROOT, changeset))) {
+			expect(read(changeset)).toContain(
+				"Reduce Immune-Brain interference with unrelated Skills",
+			);
+		}
 		expect(readFileSync(join(ROOT, "CONTEXT.md"), "utf8")).toStartWith(
 			"# Project Context",
 		);

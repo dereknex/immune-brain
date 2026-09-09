@@ -1,0 +1,28 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "2026-09-09-001-trim-agent-instruction-immune-rules",
+  "owner": "user",
+  "goal": "Remove Immune-Brain workflow explanations from the repository's always-loaded AGENTS.md content while preserving general agent guidance, repository navigation, the CLAUDE.md symlink, and the Initiative carrier preference, without changing Skill metadata or runtime behavior.",
+  "acceptance": [
+    {
+      "id": "acc-agent-instruction-boundary",
+      "assertion": "AGENTS.md retains general precedence, verification, Skill-selection guidance, and Initiative carrier default: github; it no longer carries the dedicated Immune-Brain workflow rules or the 普通输入保持 host-native trigger text; CLAUDE.md remains a symbolic link to AGENTS.md.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/exhaustive-decision-tree-contract.test.ts\",\n    \"tests/subagent-activation-contract-retirement.test.ts\",\n    \"tests/host-tool-policy-contract.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 32768\n}\n"
+    },
+    {
+      "id": "acc-release-metadata",
+      "assertion": "A patch changeset describes the reduced agent-instruction interference and is covered by the existing root-instruction contract test.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/exhaustive-decision-tree-contract.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 60000,\n  \"max_output_bytes\": 16384\n}\n"
+    }
+  ],
+  "scope_hint": [
+    ".changeset/trim-agent-instruction-immune-rules.md",
+    "AGENTS.md",
+    "CLAUDE.md",
+    "docs/specs/archive/trim-agent-instruction-immune-rules.spec.md",
+    "docs/specs/trim-agent-instruction-immune-rules.spec.md",
+    "tests/exhaustive-decision-tree-contract.test.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}

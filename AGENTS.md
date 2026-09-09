@@ -2,11 +2,11 @@
 
 ## 规则优先级
 
-在宿主允许的权限内，当前具体任务的明确要求 > 本项目适用的 AGENTS.md > 外部通用 Skill 的流程偏好。具体范围优先于通用建议；用户只要分析或草稿时，不扩大为实施。此顺序不覆盖系统/开发者指令、工具权限、安全限制或已生效的 Managed authority。冲突只阻断依赖它的操作，其余工作继续。
+在宿主允许的权限内，当前具体任务的明确要求 > 本项目适用的 AGENTS.md > 外部通用 Skill 的流程偏好。具体范围优先于通用建议；用户只要分析或草稿时，不扩大为实施。此顺序不覆盖系统/开发者指令、工具权限或安全限制。冲突只阻断依赖它的操作，其余工作继续。
 
 ## 默认执行
 
-- 默认中文回复，结论先行；代码标识、路径和机器契约保持原文。持久化 Immune-Brain 文档默认英文，除非用户明确指定文档语言。
+- 默认中文回复，结论先行；代码标识、路径和机器契约保持原文。
 - 在请求范围内，自主完成只读检索、本地草稿、可恢复的局部编辑和常规本地测试。沿用现有实现与约定，选择能验证的最小方案；不为常规技术选择反复问用户。
 - 缺失信息时，先用代码、测试和已有决策核实；可验证且不改变目标、外部行为或权限的假设可记录后继续。确实缺少用户才能提供的关键事实时，只问受影响部分，并继续独立工作。
 - 已明确的要求和批量批准无需再次确认。不可逆、破坏性、覆盖他人未保存工作，或超出已有授权的外部写入、凭据及权限变更，在产生副作用前请求一次针对性确认。宿主要求的 native gate 直接打开，不先做聊天预确认；等待期间可继续无副作用的独立准备。
@@ -17,7 +17,7 @@
 - 已知文件或符号就直接读取；目标不明或涉及跨模块关系时，先查 CONTEXT.md 的 Architecture Map，再从相关目录向外扩展。ADR 只读本次决策涉及的内容，不为小改动遍历全仓。
 - 沿实际调用、依赖和生成关系补足影响面。共享契约、安全、迁移、持久化及 authority 修改需要覆盖相关调用方和状态所有者；查清当前行为及验证路径后停止扩大检索。
 - 优先运行能验证改动的最小检查：文档改动检查相关链接、镜像和契约，局部逻辑运行 focused tests，共享行为、构建配置、跨模块变化或发布准备再扩大回归。项目使用 `bun test`，没有 package.json `test` script；类型检查为 `bun run typecheck`。未知测试命令先检查脚本内容，不把部署、凭据使用或生产数据修改当成本地测试。
-- 验证范围由任务与影响面确定，不因失败临时缩减。相关代码、测试输入、命令、依赖和环境未变化时可复用已记录的本地通过结果；变化或不确定时重跑。角色交接不强制重复验证，但本地结果不能替代 Kernel 独立 QA/Review。
+- 验证范围由任务与影响面确定，不因失败临时缩减。相关代码、测试输入、命令、依赖和环境未变化时可复用已记录的本地通过结果；变化或不确定时重跑。
 - 在授权范围内自主恢复本地环境：选空闲端口、创建临时输出、仅清理本次任务生成的可丢弃文件，不覆盖用户数据或终止无关进程。安装依赖前检查现有命令、安装脚本、网络和凭据副作用；不擅自变更依赖或 lockfile。只有新证据或相关条件变化才重试普通失败，不自动重试失败的 native gate 或结果不明的远端写入。
 - 只读子代理可用于独立、明确范围的调查，执行方式遵守当前宿主能力；不因可选子代理不可用而阻断本地调查。This project authorizes readonly advisory subagents and parallel probes unless the user asks for solo work. 该授权不覆盖宿主工具策略（this project instruction does not override host tool policy）。只搜索当前项目及用户明确指定的路径，不扫描其他项目的会话记录。
 - 实现过程中，自主诊断、修复并重跑授权范围内失败的常规本地检查；普通失败不需要重新请求许可或重新规划。绝不删除、跳过或弱化有效检查来制造通过。
@@ -28,13 +28,14 @@
 
 - 只在明确触发场景匹配或用户点名时读取 Skill 正文；普通代码问题不自动加载全仓审计、知识图谱、穷尽访谈或多角色工作流。
 - description 只负责说明何时使用；执行步骤和分支参考留在正文或按需引用文件。当前任务无需的分支不加载。
-- 外部 Skill 提供领域方法，不自行增加项目批准层级、扩大任务范围或接管 Managed owner。
+- 外部 Skill 提供领域方法，不自行增加项目批准层级、扩大任务范围或接管当前任务。
 
-## Immune-Brain
+## 项目约定
 
-- 普通输入保持 host-native，不因文件数、测试数或重试次数自动升级为 Managed。只有用户显式进入 `imm-brainstorm`、`imm-planner`、`imm-loop` 才启动或恢复 Managed workflow；进入前读取 IMMUNE.md。
-- 已有 TaskIntent、TaskRecord 或 Assurance owner 的工作只通过显式 `imm-loop` 恢复，不通过普通编辑绕过 owner。Enrollment、breaking revision 和其他 native authority gate，以及 Kernel QA/Review，按现行契约执行；本文件不授予绕过权限。
-- `imm-pr-fix`、`imm-doc-prune`、`imm-agent-doc-maintain` 是独立 host-native 维护入口；只有用户显式调用时执行对应维护协议，不因普通提问自动进入。
-- 仅在用户选定的启动目录工作，不创建、切换或删除 Git worktree。仅为已有 Managed owner 按需检查 `.imm`，不因普通请求创建工作流状态或安装项目契约。
-- 涉及 GitHub Issue 时，使用 `gh` 与 `dereknex/immune-brain`，读取 docs/agents/issue-tracker.md；`Initiative carrier default: github`，但该偏好不等于远端发布授权。
-- 涉及领域词汇或架构决策时，参考 CONTEXT.md、相关 docs/adr/ 和 docs/agents/domain.md；这些文档不代替 Kernel 运行状态。
+- 仅在用户选定的启动目录工作，不创建、切换或删除 Git worktree。
+- 涉及 GitHub Issue 时，使用 `gh` 与 `dereknex/immune-brain`，读取 docs/agents/issue-tracker.md。
+- 涉及领域词汇或架构决策时，参考 CONTEXT.md、相关 docs/adr/ 和 docs/agents/domain.md。
+
+## Immune-Brain Preferences
+
+- Initiative carrier default: github
