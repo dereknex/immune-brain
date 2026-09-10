@@ -472,8 +472,38 @@ export async function runBatchGitPreflight(input: any): Promise<any> {
 }
 
 export async function readGitHead(root: string): Promise<string> {
-	const mod = await import(/* @vite-ignore */ kernelPath("pi_canary_prepare"));
-	return mod.readGitHead(root);
+	// The Pi extension must reach Kernel prepare only through the shared Enrollment
+	// boundary, so this reads HEAD itself rather than importing the Kernel prepare
+	// module. The unattended Git module reads HEAD the same way.
+	const { spawnSync } = await import("node:child_process");
+	const result = spawnSync("git", ["-C", root, "rev-parse", "HEAD"], { encoding: "utf8" });
+	if (result.status !== 0) throw new Error(`git rev-parse HEAD is unavailable for ${root}`);
+	return result.stdout.trim();
+}
+
+/**
+ * Read the immutable terminal audit record for a settled child.
+ *
+ * A child reaches Kernel settlement before the batch commits it, and settlement
+ * clears the live state record, so the batch resume preflight must resolve the
+ * child's authorized scope from the audit pair instead. Read-only: neither the
+ * audit pair nor this reader mutates Kernel state.
+ */
+export async function readSettledTaskRecord(
+	root: string,
+	taskId: string,
+): Promise<{ scope_hint: string[]; intent_path: string | undefined } | null> {
+	const mod = await import(/* @vite-ignore */ kernelPath("storage"));
+	const pair = mod.readAuditTaskPair(root, taskId);
+	if (!pair?.record) return null;
+	const record = pair.record as {
+		intent_snapshot?: { scope_hint?: string[] };
+		intent_ref?: { path?: string };
+	};
+	return {
+		scope_hint: record.intent_snapshot?.scope_hint ?? [],
+		intent_path: record.intent_ref?.path,
+	};
 }
 
 export async function pathMatchesScope(path: string, scopePath: string): Promise<boolean> {

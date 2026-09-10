@@ -26,7 +26,7 @@ import {
 import { parseVerificationDescriptor } from "../verification_descriptor";
 import { projectAssurance, type AssuranceProjection, type AssuranceProjectionResult } from "../kernel/assurance_projection";
 import { isTaskRecordV4, type TaskApprovalV2, type TaskRecord } from "../kernel/types";
-import { readTaskRecord, readTaskRecordRaw } from "../kernel/storage";
+import { readAuditTaskPair, readTaskRecord, readTaskRecordRaw } from "../kernel/storage";
 import { canonicalIntentHash, parseTaskIntentV1, readTaskIntent } from "../kernel/intent";
 import { capabilityActionFor, createCanaryApplication } from "../kernel/canary_application";
 import {
@@ -1053,7 +1053,12 @@ export class ClaudeRuntime {
 			}
 			// Kernel projections accept staged in-flight work inside the active child's
 			// authorized scope, and reject unstaged/untracked bytes or out-of-scope paths.
-			const inFlightChild = existingBatch.children.find((c: { state: string }) => c.state === "enrolled" || c.state === "needs_human");
+			// `settled` belongs here: Kernel settlement happens before the batch commits the
+			// child, and settlement clears the live state record, so a crash in that window
+			// resumes into a settled child whose staged work is legitimate.
+			const inFlightChild = existingBatch.children.find(
+				(c: { state: string }) => c.state === "enrolled" || c.state === "needs_human" || c.state === "settled",
+			);
 			let authorizedScope: string[] = [];
 			if (inFlightChild) {
 				// Derive the scope from the Kernel TaskRecord intent snapshot first: a
@@ -1068,9 +1073,24 @@ export class ClaudeRuntime {
 				} catch {
 					// fallback below
 				}
-				if (authorizedScope.length === 0) {
+				if (authorizedScope.length === 0 && inFlightChild.state === "settled") {
+					// A settled child has no live state record; its authority is the immutable
+					// terminal audit pair. Read-only, so a refusal still writes nothing.
 					try {
-						const read = readTaskIntent(this.cwd, inFlightChild.task_id);
+						const settled = readAuditTaskPair(this.cwd, inFlightChild.task_id)?.record as
+							| { intent_snapshot?: { scope_hint?: string[] } }
+							| undefined;
+						authorizedScope = settled?.intent_snapshot?.scope_hint ?? [];
+					} catch {
+						// fallback below
+					}
+				}
+				if (authorizedScope.length === 0) {
+					// Resolve through the TaskRecord's intent_ref: after freeze the
+					// sidecar lives in docs/plans/archive/, so the default pre-freeze
+					// path would either throw or read a stale file.
+					try {
+						const read = readTaskIntentForRecord(this.cwd, inFlightChild.task_id);
 						authorizedScope = read.intent.scope_hint ?? [];
 					} catch {
 						// fallback below

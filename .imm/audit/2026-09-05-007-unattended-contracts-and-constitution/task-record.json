@@ -1,0 +1,434 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "2026-09-05-007-unattended-contracts-and-constitution",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "2026-09-05-007-unattended-contracts-and-constitution",
+    "goal": "Land the contract and constitution changes that make unattended batch runs a declared capability rather than undocumented behavior, as required by docs/specs/unattended-initiative-batch-run.spec.md sections 3.6 and 7: an explicit opt-in imm-loop parameter that leaves default behavior unchanged, amended IMMUNE.md authority text, CONTEXT.md vocabulary and Architecture Map entries, an ADR recording the reopened decision, and a synchronized dist copy, with every statement bound to shipped behavior.",
+    "acceptance": [
+      {
+        "id": "acc-unattended-contract-text",
+        "assertion": "The imm-loop Skill source and its dist copy document an explicit opt-in unattended batch parameter and state that omitting it leaves imm-loop behavior byte-identical to today, that the parameter authorizes only a user-confirmed batch of already-planned child TaskIntents, that critical children are never batched, and that the runner never pushes, opens a pull request, resolves a user decision, or creates, switches, or deletes a Git worktree. IMMUNE.md is amended so that a Batch Authorization is described as one literal-user Enrollment act covering a confirmed ordered child list, preserving the rule that no agent may promote a candidate to authority. CONTEXT.md adds the canonical terms Batch Authorization, batch plan, plan_digest, HEAD lineage, and batch branch, and its Architecture Map lists runtime/unattended and runtime/kernel/batch_authority.ts as the sole owners of batch state transitions. docs/adr/0005-unattended-initiative-batch-run.md records the reopened successor-authority decision, the evidence that TaskRecord v4 supplies identity, atomicity, and recovery, and the deferred cron, headless, CI, and multi-worktree items. No contract sentence asserts behavior the shipped slices do not implement.",
+        "verification": "{\"contract\":\"assurance_kernel/verification_descriptor/v1\",\"runner_id\":\"bun\",\"runner_version\":\"1.3.14\",\"argv\":[\"test\",\"tests/unattended-contracts.test.ts\"],\"cwd\":\".\",\"timeout_ms\":120000,\"max_output_bytes\":65536}"
+      },
+      {
+        "id": "acc-dist-sync-and-regression",
+        "assertion": "Every edited Skill source and its dist counterpart stay byte-consistent under the existing dist sync guard, and the packaging and manifest checks it owns pass. The focused suites covering every edited surface of this task pass under the Kernel's bounded deterministic QA, no previously passing test in those suites is disabled, skipped, or weakened, and no third-party or regression surface is traded away. The full regression suite plus packaging and manifest checks remain the release gate `bun run verify:release`, whose full output exceeds the Kernel's fixed QA output bound, so CI enforces it on the pull request instead of a descriptor. The bound active Spec docs/specs/unattended-initiative-batch-run.spec.md is archived byte-preserving to docs/specs/archive/unattended-initiative-batch-run.spec.md by the Kernel at freeze.",
+        "verification": "{\"contract\":\"assurance_kernel/verification_descriptor/v1\",\"runner_id\":\"bun\",\"runner_version\":\"1.3.14\",\"argv\":[\"test\",\"tests/unattended-contracts.test.ts\",\"tests/dist-docs-sync-contract.test.ts\",\"tests/claude-host-package.test.ts\",\"tests/pi-canary-package-boundary.test.ts\",\"tests/post-freeze-intent-resolution.test.ts\",\"tests/pi-canary-work-extension.test.ts\",\"tests/pi-canary-user-authority.test.ts\",\"tests/pi-batch-authority.test.ts\",\"tests/dual-host-assurance-conformance.test.ts\"],\"cwd\":\".\",\"timeout_ms\":300000,\"max_output_bytes\":262144}"
+      }
+    ],
+    "scope_hint": [
+      "CONTEXT.md",
+      "IMMUNE.md",
+      "docs/adr/0005-unattended-initiative-batch-run.md",
+      "docs/specs/archive/unattended-initiative-batch-run.spec.md",
+      "docs/specs/unattended-initiative-batch-run.spec.md",
+      "plugins/immune-brain/.pi-extension/imm-canary-work.ts",
+      "plugins/immune-brain/.pi-extension/imm-unattended-batch.ts",
+      "plugins/immune-brain/.pi-extension/runtime-stub.ts",
+      "plugins/immune-brain/dist/claude/mcp-server.mjs",
+      "plugins/immune-brain/dist/imm-loop.md",
+      "plugins/immune-brain/runtime/claude/kernel_ports.ts",
+      "plugins/immune-brain/skills/imm-loop/SKILL.md",
+      "tests/claude-host-package.test.ts",
+      "tests/dist-docs-sync-contract.test.ts",
+      "tests/unattended-contracts.test.ts"
+    ],
+    "risk": "material",
+    "revision": 4,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/archive/2026-09-05-007-unattended-contracts-and-constitution.intent.json",
+    "content_hash": "sha256:65bf8a860f7374c7790ed2be8ca01b57bd675098159fd695d3728fb42a0a2cf7"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:5f5cac2dbb7efe33eb9dc201d486f63ef21b37767ae798484e85a324e780105a",
+  "git_base_head": "df0c411555d4bd160b41f5f65c7fcecc7999fdd7",
+  "attestations": [
+    {
+      "id": "approval-qa-e9cd0abc",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:2f5719d8d68b09565877b6c5b6b3ae4034219de17a857631addd4717efc6c4d8",
+      "diff_hash": "sha256:b6e65e569bdda2dde731bba6b2146fa5437a5e9e4f886acba59819388cee8a92",
+      "actor_id": "deterministic-qa",
+      "summary": "all 2 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "acc-unattended-contract-text",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-dist-sync-and-regression",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-4d4bc084",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:2f5719d8d68b09565877b6c5b6b3ae4034219de17a857631addd4717efc6c4d8",
+      "diff_hash": "sha256:42b55d89882f0c968ceb7a35e84819cf808b548b6ebec0a1599095a0974e2ed3",
+      "actor_id": "deterministic-qa",
+      "summary": "all 2 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "acc-unattended-contract-text",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-dist-sync-and-regression",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-75689494",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 4,
+      "intent_content_hash": "sha256:65bf8a860f7374c7790ed2be8ca01b57bd675098159fd695d3728fb42a0a2cf7",
+      "diff_hash": "sha256:1949ccf076ecef74b67efced5e64d4af9b9244128e97cde8810d3fe11ea588eb",
+      "actor_id": "deterministic-qa",
+      "summary": "all 2 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "acc-unattended-contract-text",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-dist-sync-and-regression",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-199a85eb",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 4,
+      "intent_content_hash": "sha256:65bf8a860f7374c7790ed2be8ca01b57bd675098159fd695d3728fb42a0a2cf7",
+      "diff_hash": "sha256:49492b03554c09c89dd7b5288f5856b1c97da67a30d5043437d1a6b4904f6311",
+      "actor_id": "deterministic-qa",
+      "summary": "all 2 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "acc-unattended-contract-text",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-dist-sync-and-regression",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-8ec00f72",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 4,
+      "intent_content_hash": "sha256:65bf8a860f7374c7790ed2be8ca01b57bd675098159fd695d3728fb42a0a2cf7",
+      "diff_hash": "sha256:49492b03554c09c89dd7b5288f5856b1c97da67a30d5043437d1a6b4904f6311",
+      "actor_id": "parent-mediated-review",
+      "summary": "Verified the immutable review commit parent, tree and manifest digest, the changed paths' blobs, and the settled-child resume scope fix; contract, constitution, CONTEXT and ADR agree on the explicit opt-in and its boundaries, and both acceptances passed deterministic QA.",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "df0c411555d4bd160b41f5f65c7fcecc7999fdd7",
+        "review_commit": "d513e1207609c264b9d29e2e12a8911f099800c9",
+        "review_tree": "6ed9ad73bd1b68256c725fac443bff9c7a45d71b",
+        "manifest_digest": "sha256:10c094a7ff203be6c98d7e24e4295ffff0758b17390e2df8c742d0d15226ee13"
+      }
+    }
+  ],
+  "findings": [
+    {
+      "id": "review-5702d169c0e4-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "acc-unattended-contract-text",
+      "source": "review",
+      "review_round": 1,
+      "summary": "ADR 0005 claims no batch-scoped record exists, but the shipped runtime persists BatchRunStateRecord to .imm/state/batches/<batch_id>.json for orchestration and recovery; the contract test enforces that wrong sentence. Narrow the claim to authority and bind the text to the real execution record."
+    },
+    {
+      "id": "review-4095ae3a326e-1-review-full-regression-evidence-missing",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "acc-dist-sync-and-regression",
+      "source": "review",
+      "review_round": 2,
+      "summary": "acc-dist-sync-and-regression asserts the full regression suite and packaging/manifest checks pass, but its verification descriptor only runs two focused test files, so no bound evidence can support that clause. Rebind the descriptor to the full-suite release-gate command on this revision."
+    },
+    {
+      "id": "request_rework:2026-09-05-007-unattended-contracts-and-constitution:2026-09-10T12:14:03.783Z:replan-required",
+      "kind": "replan_required",
+      "status": "resolved",
+      "acceptance_id": "acc-dist-sync-and-regression",
+      "source": "kernel",
+      "review_round": 2,
+      "summary": "Review returned this acceptance boundary twice; a durable replan is required."
+    },
+    {
+      "id": "qa-acc-dist-sync-and-regression-f47084f9-d9d299",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "acc-dist-sync-and-regression",
+      "source": "execution",
+      "review_round": null,
+      "summary": "verification failed (exit 1) stdout=770B stderr=35B"
+    }
+  ],
+  "history": [
+    {
+      "id": "approve_breaking_intent_revision:2026-09-05-007-unattended-contracts-and-constitution:2026-09-10T12:02:34.817Z",
+      "at": "2026-09-10T12:02:34.817Z",
+      "type": "approve_breaking_intent_revision",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "intent_revision_2\naction_v2_sha256:0f08dcf988a8ba2d1152516a099e260a00639c2e06b3e0f7e7bc8b16579a2e60",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-f8cc0364e79f0f28",
+        "issued_at": "2026-09-10T12:02:35.042Z",
+        "expires_at": "2026-09-10T12:12:35.042Z"
+      }
+    },
+    {
+      "id": "freeze_artifacts:2026-09-05-007-unattended-contracts-and-constitution:2026-09-10T12:03:47.894Z",
+      "at": "2026-09-10T12:03:47.894Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent and Spec frozen at docs/plans/archive/2026-09-05-007-unattended-contracts-and-constitution.intent.json"
+    },
+    {
+      "id": "record_approval:2026-09-05-007-unattended-contracts-and-constitution:2026-09-10T12:03:56.857Z",
+      "at": "2026-09-10T12:03:56.857Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-e9cd0abc\naction_v2_sha256:5d702e736c2c981b5453509bb284de60ca1e0e0cbca649018ea35891a483a6fa",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-97b6501dd4706998",
+        "issued_at": "2026-09-10T12:03:56.858Z",
+        "expires_at": "2026-09-10T12:13:56.858Z"
+      }
+    },
+    {
+      "id": "request_rework:2026-09-05-007-unattended-contracts-and-constitution:2026-09-10T12:07:46.668Z",
+      "at": "2026-09-10T12:07:46.668Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_1\naction_v2_sha256:8628db9fd5b768137381075861cbe971f28d8d26636f60ef6900ec81e7dd0f56",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-af47b354b3322428",
+        "issued_at": "2026-09-10T12:07:46.668Z",
+        "expires_at": "2026-09-10T12:17:46.668Z"
+      }
+    },
+    {
+      "id": "resolve_finding:2026-09-05-007-unattended-contracts-and-constitution:2026-09-10T12:08:58.227Z",
+      "at": "2026-09-10T12:08:58.227Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-5702d169c0e4-1-review-1\naction_v2_sha256:5132e436d9100ede0fe07a64cf990a6e3ed93fb42432030969c41eba6e3c0e9d"
+    },
+    {
+      "id": "freeze_artifacts:2026-09-05-007-unattended-contracts-and-constitution:2026-09-10T12:09:06.547Z",
+      "at": "2026-09-10T12:09:06.547Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent and Spec frozen at docs/plans/archive/2026-09-05-007-unattended-contracts-and-constitution.intent.json"
+    },
+    {
+      "id": "record_approval:2026-09-05-007-unattended-contracts-and-constitution:2026-09-10T12:09:20.948Z",
+      "at": "2026-09-10T12:09:20.948Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-4d4bc084\naction_v2_sha256:64aa634cc855b622724f7a8ce15dee11b5345be8ba95b88e40039a96910dceb3",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-68b53ee8b9ec25b2",
+        "issued_at": "2026-09-10T12:09:20.948Z",
+        "expires_at": "2026-09-10T12:19:20.948Z"
+      }
+    },
+    {
+      "id": "request_rework:2026-09-05-007-unattended-contracts-and-constitution:2026-09-10T12:14:03.783Z",
+      "at": "2026-09-10T12:14:03.783Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "review_round_2\naction_v2_sha256:39bf7307915dca656d91eebda38a5642108d562990b5c55f2e73cff811ec3575",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-7252b356482f0c9a",
+        "issued_at": "2026-09-10T12:14:03.783Z",
+        "expires_at": "2026-09-10T12:24:03.783Z"
+      }
+    },
+    {
+      "id": "authorize_rework:2026-09-05-007-unattended-contracts-and-constitution:2026-09-10T12:57:58.613Z",
+      "at": "2026-09-10T12:57:58.613Z",
+      "type": "authorize_rework",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "request_rework:2026-09-05-007-unattended-contracts-and-constitution:2026-09-10T12:14:03.783Z:replan-required\naction_v2_sha256:f4953b7a01b5c77f7e5094ed3720c71cf16270b2ea3ca72b86d5f413c37a93f6",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-df39503a66fa02ce",
+        "issued_at": "2026-09-10T12:57:58.614Z",
+        "expires_at": "2026-09-10T13:07:58.614Z"
+      }
+    },
+    {
+      "id": "revise_intent:2026-09-05-007-unattended-contracts-and-constitution:2026-09-10T12:59:15.038Z",
+      "at": "2026-09-10T12:59:15.038Z",
+      "type": "revise_intent",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "intent_revision_3\naction_v2_sha256:b38ed628974c5cbfd6dc6e753b8791e86e727781885c13c0923bf06196f1f1c3"
+    },
+    {
+      "id": "resolve_finding:2026-09-05-007-unattended-contracts-and-constitution:2026-09-10T13:03:35.056Z",
+      "at": "2026-09-10T13:03:35.056Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-4095ae3a326e-1-review-full-regression-evidence-missing\naction_v2_sha256:6730fcfdd1fe385773fe9dc520d52254994794dc9f60836a1db787c1245b2da5"
+    },
+    {
+      "id": "freeze_artifacts:2026-09-05-007-unattended-contracts-and-constitution:2026-09-10T13:03:44.238Z",
+      "at": "2026-09-10T13:03:44.238Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent and Spec frozen at docs/plans/archive/2026-09-05-007-unattended-contracts-and-constitution.intent.json"
+    },
+    {
+      "id": "request_rework:2026-09-05-007-unattended-contracts-and-constitution:2026-09-10T13:06:36.939Z",
+      "at": "2026-09-10T13:06:36.939Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_3\naction_v2_sha256:66afcb9e7c0cdec0cf14ee152ebea0d671bb83fafad7115c2938aafcf3b45158",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-58e2c955e9a07973",
+        "issued_at": "2026-09-10T13:06:36.939Z",
+        "expires_at": "2026-09-10T13:16:36.939Z"
+      }
+    },
+    {
+      "id": "approve_breaking_intent_revision:2026-09-05-007-unattended-contracts-and-constitution:2026-09-10T14:36:41.456Z",
+      "at": "2026-09-10T14:36:41.456Z",
+      "type": "approve_breaking_intent_revision",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "intent_revision_4\naction_v2_sha256:ab3811c191909f3613a729f232fbf37463defa812224b728387180323a46c01f",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-90ee0633748b9730",
+        "issued_at": "2026-09-10T14:36:41.816Z",
+        "expires_at": "2026-09-10T14:46:41.816Z"
+      }
+    },
+    {
+      "id": "resolve_finding:2026-09-05-007-unattended-contracts-and-constitution:2026-09-10T14:37:00.552Z",
+      "at": "2026-09-10T14:37:00.552Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "qa-acc-dist-sync-and-regression-f47084f9-d9d299\naction_v2_sha256:814cfc0591d264130c168fa87e3e1a8e8a7356f226bfb7169a02633721b8bad4"
+    },
+    {
+      "id": "freeze_artifacts:2026-09-05-007-unattended-contracts-and-constitution:2026-09-10T14:37:12.201Z",
+      "at": "2026-09-10T14:37:12.201Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent and Spec frozen at docs/plans/archive/2026-09-05-007-unattended-contracts-and-constitution.intent.json"
+    },
+    {
+      "id": "record_approval:2026-09-05-007-unattended-contracts-and-constitution:2026-09-10T14:38:21.546Z",
+      "at": "2026-09-10T14:38:21.546Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-75689494\naction_v2_sha256:50006dba2ccf56e15e4dbbdcdd8b80364715da85b9ee7f29242d7c57da89e7f5",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-bb420de17303c55b",
+        "issued_at": "2026-09-10T14:38:21.547Z",
+        "expires_at": "2026-09-10T14:48:21.547Z"
+      }
+    },
+    {
+      "id": "record_approval:2026-09-05-007-unattended-contracts-and-constitution:2026-09-10T14:52:13.427Z",
+      "at": "2026-09-10T14:52:13.427Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-199a85eb\naction_v2_sha256:214a916254ae83621c359553f56090cd008c18d89ab938991ec87fa305a73e16",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-9428570fc8ce26be",
+        "issued_at": "2026-09-10T14:52:13.428Z",
+        "expires_at": "2026-09-10T15:02:13.428Z"
+      }
+    },
+    {
+      "id": "record_approval:2026-09-05-007-unattended-contracts-and-constitution:2026-09-10T14:56:43.231Z",
+      "at": "2026-09-10T14:56:43.231Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-8ec00f72\naction_v2_sha256:7de7b252e89b36d97b316eca49e303969caa6e2c47e3e543e7203008aedbb92f",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-f0ed6e25b550bb7d",
+        "issued_at": "2026-09-10T14:56:43.232Z",
+        "expires_at": "2026-09-10T15:06:43.232Z"
+      }
+    },
+    {
+      "id": "complete:2026-09-05-007-unattended-contracts-and-constitution:2026-09-10T14:56:44.311Z",
+      "at": "2026-09-10T14:56:44.311Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:87b6d93a2aa8cd50ef87343d69b945eeb2bd22fd32eea3b1c3ffcd546a3afd8e"
+    }
+  ]
+}

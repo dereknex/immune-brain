@@ -313,7 +313,11 @@ export default function (
 	pi: ExtensionAPI,
 	dependencies: CanaryWorkExtensionDependencies = {},
 ) {
-	const progression = ((globalThis as any)[GLOBAL_PI_PROGRESSION_KEY] ??= new AssuranceProgression(createPiAssuranceProgressionPorts(dependencies)));
+	// One progression per extension load, published for the batch gate to reuse.
+	// Reusing whatever instance a previous load left behind would leak another
+	// session's Review reservations into this one, so the load always replaces it.
+	const progression = new AssuranceProgression(createPiAssuranceProgressionPorts(dependencies));
+	(globalThis as any)[GLOBAL_PI_PROGRESSION_KEY] = progression;
 
 	let railContext: ExtensionContext | undefined;
 	const refreshTaskRail = async (ctx: ExtensionContext) => {

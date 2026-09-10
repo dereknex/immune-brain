@@ -13,6 +13,7 @@ import {
 	readGitHead,
 	readWorkspaceState,
 	readBackendClaim,
+	readSettledTaskRecord,
 	readTaskIntent,
 	readTaskRecord,
 	advancePiTask,
@@ -249,20 +250,41 @@ export async function executePiUnattendedBatch(
 		// authorized scope, and reject unstaged/untracked bytes or out-of-scope paths.
 		// Mirror that rule here so a doomed resume fails closed with a stable reason
 		// instead of surfacing an unstructured projection error.
-		const inFlightChild = existingBatch.children.find((c: { state: string }) => c.state === "enrolled" || c.state === "needs_human");
+		// `settled` belongs here: Kernel settlement happens before the batch commits the
+		// child, and settlement clears the live state record, so a crash in that window
+		// resumes into a settled child whose staged work is legitimate.
+		const inFlightChild = existingBatch.children.find(
+			(c: { state: string }) => c.state === "enrolled" || c.state === "needs_human" || c.state === "settled",
+		);
 		let authorizedScope: string[] = [];
 		if (inFlightChild) {
 			// Derive the scope from the Kernel TaskRecord intent snapshot first: a
 			// frozen/archived sidecar must not shrink the authorized scope to empty.
+			let recordedIntentPath: string | undefined;
 			try {
 				const recordRead = await readTaskRecord(root, inFlightChild.task_id);
 				authorizedScope = recordRead.record?.intent_snapshot?.scope_hint ?? [];
+				recordedIntentPath = recordRead.record?.intent_ref?.path;
 			} catch {
 				// fallback below
 			}
-			if (authorizedScope.length === 0) {
+			if (authorizedScope.length === 0 && inFlightChild.state === "settled") {
+				// A settled child has no live state record; its authority is the immutable
+				// terminal audit pair. Read-only, so a refusal still writes nothing.
 				try {
-					const read = await readTaskIntent(root, inFlightChild.task_id);
+					const settled = await readSettledTaskRecord(root, inFlightChild.task_id);
+					authorizedScope = settled?.scope_hint ?? [];
+					recordedIntentPath = recordedIntentPath ?? settled?.intent_path;
+				} catch {
+					// fallback below
+				}
+			}
+			if (authorizedScope.length === 0) {
+				// Resolve through the TaskRecord's own intent_ref path: after freeze the
+				// sidecar lives under docs/plans/archive/, so the pre-freeze default path
+				// is either missing or stale.
+				try {
+					const read = await readTaskIntent(root, inFlightChild.task_id, recordedIntentPath);
 					authorizedScope = read.intent.scope_hint ?? [];
 				} catch {
 					// fallback below

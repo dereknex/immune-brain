@@ -143,6 +143,7 @@ describe("claude host package", () => {
       "request_authorization",
       "approve_breaking_intent_revision",
       "stop",
+      "start_unattended_batch",
       "repair_authority_state",
       "resolve_finding",
     ]);

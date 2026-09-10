@@ -83,6 +83,28 @@ suspected external changes. Never repeat a mutation merely to obtain its result.
 Kernel CAS and freshness checks remain mandatory; reducing Parent reads does
 not bypass them. Do not poll or create detached jobs.
 
+## Unattended Batch Opt-In
+
+The only unattended batch entry is the privileged Host tool `start_unattended_batch`
+with its `initiative_slug` parameter. That parameter is the opt-in: absent the call,
+`imm-loop` behavior is byte-identical to per-task Enrollment, and no batch state,
+branch, or Batch Authorization exists. The Standalone Hosts expose the same tool
+name and the same single parameter; it is never a batch of tasks the Host chose.
+
+Invoking it authorizes only a user-confirmed batch of already-planned child
+TaskIntents. The Host projects the batch plan from the Initiative's published
+children, excludes every `critical` child, renders the ordered child list, budget,
+and plan digest through its native confirmation, and issues one Kernel Batch
+Authorization for that exact plan. The extension mints no capability and owns no
+batch state transition: the shared `startBatch` driver in
+`runtime/unattended/` owns every batch transition, and each child is still
+enrolled, assured, and settled by the Kernel under an ordinary TaskRecord.
+
+Batch execution never pushes a ref, opens or updates a pull request, resolves a
+user decision, or creates, switches, or deletes a Git worktree. Its sole Git
+effect is the batch branch `imm/<initiative-slug>` plus one scope-bounded commit
+per completed child.
+
 ## Decisions and Recovery
 
 - Scope expansion returns to Planner's Enrolled Intent Revision route. Planner

@@ -110,6 +110,26 @@ _Avoid_: testing, generic review, background orchestration
 The atomic terminal transition that writes the final TaskRecord and tombstone, clears active ownership, and leaves the Task `done` or `stopped`.
 _Avoid_: chat completion, archive-only operation
 
+**Batch Authorization**:
+One literal-user Enrollment act covering a confirmed ordered child list instead of a single TaskIntent. It spans the batch without becoming a higher authority: every child is still enrolled, assured, settled, and recorded by the Kernel on its own, and no agent may promote a candidate to authority through it.
+_Avoid_: bulk enrollment authority, planner approval, TaskIntent list status
+
+**Batch Plan**:
+The deterministic read-only projection of one Initiative into ordered enrollable children, dependency closure, intent identities, excluded children, budget, and the `plan_digest`. It observes Tracker and TaskRecord facts and writes nothing.
+_Avoid_: schedule, task queue, execution order preference
+
+**Plan Digest**:
+The hash over the ordered child identities the literal user approved. Every issue, resume, and child enrollment revalidates it, so a plan that changed after confirmation is refused rather than executed.
+_Avoid_: checksum of the Issue body, plan version number
+
+**Batch Branch**:
+The single dedicated branch `imm/<initiative-slug>` that a batch run creates from the confirmed `base_head` and advances one scope-bounded commit per completed child. It is never pushed and never opened as a pull request.
+_Avoid_: feature branch, worktree, trunk
+
+**HEAD Lineage**:
+The Kernel-enforced chain where each child enrolls on the commit its predecessor produced on the batch branch, so an externally moved HEAD fails the run closed instead of rebasing or force-continuing.
+_Avoid_: commit ordering convention, best-effort ancestry
+
 ### Supporting Concepts
 
 **Learning**:
@@ -192,6 +212,7 @@ _Avoid_: current acceptance field, QA attestation
 - Worktree state: `.imm/state/tasks/<task-id>.json` stores the current-production TaskRecord v4 (v3 records are read-only drain-only), `.imm/state/workspace.json` stores workspace ownership, and `.imm/audit/<task-id>/` stores settled terminal evidence (tracked); `.imm/state/` is wholly Git-ignored runtime state.
 - Host integration: `plugins/immune-brain/.pi-extension/` owns Pi native Enrollment, deterministic QA, foreground Review dispatch, authorization dialogs, and Task Rail presentation. `plugins/immune-brain/runtime/claude/` owns the Claude Code MCP/Hook adapter; the plugin manifests live under `plugins/immune-brain/.claude-plugin/`, `.mcp.json`, `hooks/`, and `agents/`.
 - Loop dispatch: `plugins/immune-brain/runtime/loop_contract.ts`, `role_prompt_bridge.ts`, and `runtime/prompts/` define internal role routing and bounded delegation contracts.
+- Batch execution: `plugins/immune-brain/runtime/unattended/` and `plugins/immune-brain/runtime/kernel/batch_authority.ts` alone own every batch state transition, plan projection, Git branch and per-child commit, and Batch Authorization; the Claude and Pi host adapters are callers only.
 - CLI surface: `plugins/immune-brain/runtime/v4_runtime.ts` routes the stable wrappers in `plugins/immune-brain/bin/`; `imm-kernel` owns current Kernel commands, while `imm-plan` retains routing-policy and historical Plan validation surfaces.
 - Initiative projection: `plugins/immune-brain/runtime/github_issue_tracker.ts` and `plugins/immune-brain/bin/imm-tracker` own the optional one-way GitHub Issues adapter, complete batch publication, Parent/Child relationship verification, and execution recommendations without reading or writing Kernel authority.
 - Packaging: root `package.json` is the Pi package manifest; `plugins/immune-brain/dist/` is checked-in generated output guarded by `bun scripts/sync-dist-docs.ts --check`.

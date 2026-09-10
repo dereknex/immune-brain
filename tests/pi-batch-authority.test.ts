@@ -9,6 +9,7 @@ import {
 } from "../plugins/immune-brain/.pi-extension/imm-unattended-batch";
 import type { GithubInitiativeObservation } from "../plugins/immune-brain/runtime/github_issue_tracker";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { revisionForContent } from "../plugins/immune-brain/runtime/kernel/storage";
 
 function initGitRepo(root: string): string {
 	execFileSync("git", ["init", "-q", "-b", "main"], { cwd: root });
@@ -1009,5 +1010,105 @@ describe("acc-pi-batch-gate", () => {
 		expect(content.report.batch_state).toBe("needs_human");
 		expect(content.report.children.some((child: { reason: string | null }) => (child.reason ?? "").includes("projection unavailable"))).toBe(true);
 		expect(content.report.next_action.length).toBeGreaterThan(0);
+	});
+});
+
+describe("settled-child resume preflight", () => {
+	it("review-settled-child-resume-scope: resumes a settled child with legitimate staged in-scope work", async () => {
+		const fixture = createBatchFixture("settled-scope");
+		// Give the child an in-scope source path so its staged work is legitimate.
+		const c1IntentPath = join(fixture.root, "docs", "plans", "settled-scope-c1.intent.json");
+		const c1Intent = JSON.parse(readFileSync(c1IntentPath, "utf8"));
+		c1Intent.scope_hint = [...c1Intent.scope_hint, "src/impl.ts"];
+		writeFileSync(c1IntentPath, `${JSON.stringify(c1Intent, null, 2)}\n`);
+		execFileSync("git", ["add", c1IntentPath], { cwd: fixture.root });
+		execFileSync("git", ["commit", "-q", "-m", "widen child scope"], { cwd: fixture.root });
+
+		let step = 0;
+		let lastCommit: string | null = null;
+
+		// First run pauses on the reserved Review, so the child stays in-flight.
+		const first = await executePiUnattendedBatch({
+			root: fixture.root,
+			initiativeSlug: "settled-scope",
+			readInitiative: async () => fixture.observation,
+			batchKernel: {
+				advanceTask: async () => {
+					step++;
+					if (step === 1) return { state: "review_ready", operation_id: "op-settled", agent_params: { prompt: "review" } as never };
+					return { state: "completed" };
+				},
+				commitChild: async () => {
+					writeFileSync(join(fixture.root, "dummy.txt"), `${Date.now()}`);
+					execFileSync("git", ["add", "dummy.txt"], { cwd: fixture.root });
+					execFileSync("git", ["commit", "-q", "-m", "settled commit"], { cwd: fixture.root });
+					lastCommit = execFileSync("git", ["rev-parse", "HEAD"], { cwd: fixture.root, encoding: "utf8" }).trim();
+					return { commit: lastCommit };
+				},
+				lookupBatchCommit: async () => (lastCommit ? { commit: lastCommit } : null),
+			},
+			confirmBatch: async () => "accept",
+		});
+		expect(first.state).toBe("started");
+
+		const record = JSON.parse(readFileSync(join(fixture.root, ".imm", "state", "tasks", "settled-scope-c1.json"), "utf8"));
+
+		// The Kernel settles the child before the batch commits it, and settlement
+		// clears the live state record: only the terminal audit pair remains.
+		const terminal = { ...record, lifecycle: "done", artifact_state: "frozen" };
+		const terminalBytes = `${JSON.stringify(terminal, null, 2)}\n`;
+		mkdirSync(join(fixture.root, ".imm", "audit", "settled-scope-c1"), { recursive: true });
+		writeFileSync(join(fixture.root, ".imm", "audit", "settled-scope-c1", "task-record.json"), terminalBytes);
+		writeFileSync(
+			join(fixture.root, ".imm", "audit", "settled-scope-c1", "terminal-proof.json"),
+			`${JSON.stringify({
+				contract: "assurance_kernel/task_tombstone/v2",
+				task_id: "settled-scope-c1",
+				lifecycle_status: "terminal",
+				terminal_lifecycle: "done",
+				terminal_event_id: `complete:settled-scope-c1:${new Date().toISOString()}`,
+				final_record_hash: revisionForContent(terminalBytes),
+				terminalized_at: new Date().toISOString(),
+			}, null, 2)}\n`,
+		);
+		rmSync(join(fixture.root, ".imm", "state", "tasks", "settled-scope-c1.json"), { force: true });
+		// Terminal evidence is Git-tracked, so settlement stages the audit pair.
+		execFileSync("git", ["add", ".imm/audit"], { cwd: fixture.root });
+		// Settlement also releases the child's workspace claim.
+		writeFileSync(
+			join(fixture.root, ".imm", "state", "workspace.json"),
+			JSON.stringify({ contract: "assurance_kernel/workspace/v1", current_working: null }),
+		);
+		rmSync(join(fixture.root, ".imm", "state", "active-claim.json"), { force: true });
+
+		const batchPath = join(fixture.root, ".imm", "state", "batches", `${first.batch_id}.json`);
+		const batchRecord = JSON.parse(readFileSync(batchPath, "utf8"));
+		batchRecord.children = batchRecord.children.map((child: { task_id: string }) => child.task_id === "settled-scope-c1" ? { ...child, state: "settled" } : child);
+		writeFileSync(batchPath, `${JSON.stringify(batchRecord, null, 2)}\n`);
+
+		// A legitimate in-scope staged change from the settled child.
+		mkdirSync(join(fixture.root, "src"), { recursive: true });
+		writeFileSync(join(fixture.root, "src", "impl.ts"), "export const impl = 7; // settled work\n");
+		execFileSync("git", ["add", "src/impl.ts"], { cwd: fixture.root });
+
+		const resumed = await executePiUnattendedBatch({
+			root: fixture.root,
+			initiativeSlug: "settled-scope",
+			readInitiative: async () => fixture.observation,
+			batchKernel: {
+				advanceTask: async () => ({ state: "completed" }),
+				commitChild: async () => {
+					execFileSync("git", ["add", "-A"], { cwd: fixture.root });
+					execFileSync("git", ["commit", "-q", "-m", "settled resume commit"], { cwd: fixture.root });
+					lastCommit = execFileSync("git", ["rev-parse", "HEAD"], { cwd: fixture.root, encoding: "utf8" }).trim();
+					return { commit: lastCommit };
+				},
+				lookupBatchCommit: async () => (lastCommit ? { commit: lastCommit } : null),
+			},
+			confirmBatch: async () => "accept",
+		});
+
+		// A settled child's staged in-scope work must not be misread as out-of-scope.
+		expect(resumed.state).toBe("started");
 	});
 });
