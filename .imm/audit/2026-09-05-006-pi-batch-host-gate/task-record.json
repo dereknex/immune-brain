@@ -1,0 +1,2204 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "2026-09-05-006-pi-batch-host-gate",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "2026-09-05-006-pi-batch-host-gate",
+    "goal": "Implement the Pi Host gate for unattended batch runs at parity with the Claude Code gate, as required by docs/specs/unattended-initiative-batch-run.spec.md section 3.6 and the dual-host delivery decision: the Pi extension presents the same Kernel-derived batch confirmation through its native TUI, issues the same Batch Authorization, and both Hosts are asserted equivalent by one shared conformance test.",
+    "acceptance": [
+      {
+        "id": "acc-pi-batch-gate",
+        "assertion": "The Pi extension exposes an unattended batch entry whose confirmation is rendered through the native TUI confirm surface and whose content is derived from projectBatchPlan and Kernel state, presenting the Initiative, batch branch, ordered child list with risk, excluded children, budget, and expires_at, and bound to the same plan_digest. Accept issues one Batch Authorization through the same Kernel registry and calls the same startBatch driver; the extension mints no capability and owns no batch state transition. Decline, cancel, a non-interactive Pi invocation, an active workspace claim, a failing branch preflight, and an empty enrollable child set each perform zero Kernel writes, zero batch state, and no new Git ref, and report a stable reason with exactly one same-Host recovery action.",
+        "verification": "{\"contract\":\"assurance_kernel/verification_descriptor/v1\",\"runner_id\":\"bun\",\"runner_version\":\"1.3.14\",\"argv\":[\"test\",\"tests/pi-batch-authority.test.ts\"],\"cwd\":\".\",\"timeout_ms\":120000,\"max_output_bytes\":65536}"
+      },
+      {
+        "id": "acc-dual-host-batch-parity",
+        "assertion": "One shared conformance assertion in tests/dual-host-assurance-conformance.test.ts drives the identical batch confirmation scenario through both the Claude Code and Pi adapters and requires the same issued Batch Authorization binding, the same accepted and rejected outcomes with the same stable reason codes, and the same zero-write guarantees, so neither Host can authorize an unattended batch the other would refuse. Existing dual-host resume and assurance conformance coverage continues to pass unchanged.",
+        "verification": "{\"contract\":\"assurance_kernel/verification_descriptor/v1\",\"runner_id\":\"bun\",\"runner_version\":\"1.3.14\",\"argv\":[\"test\",\"tests/dual-host-assurance-conformance.test.ts\",\"tests/pi-batch-authority.test.ts\"],\"cwd\":\".\",\"timeout_ms\":180000,\"max_output_bytes\":65536}"
+      }
+    ],
+    "scope_hint": [
+      "docs/specs/archive/unattended-initiative-batch-run.spec.md",
+      "docs/specs/unattended-initiative-batch-run.spec.md",
+      "package.json",
+      "plugins/immune-brain/.pi-extension/imm-canary-enroll.ts",
+      "plugins/immune-brain/.pi-extension/imm-canary-work.ts",
+      "plugins/immune-brain/.pi-extension/imm-unattended-batch.ts",
+      "plugins/immune-brain/.pi-extension/runtime-stub.ts",
+      "plugins/immune-brain/runtime/claude/kernel_ports.ts",
+      "plugins/immune-brain/runtime/unattended/batch_runner.ts",
+      "tests/dual-host-assurance-conformance.test.ts",
+      "tests/pi-batch-authority.test.ts"
+    ],
+    "risk": "critical",
+    "revision": 4,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/archive/2026-09-05-006-pi-batch-host-gate.intent.json",
+    "content_hash": "sha256:fac4c12e4d4ea830fa08696ecbbcdd2f9aec860285d881c97f8ad05d0873399e"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:e5f1cfbaf7d74a9a552c5811c2fcc24cbdaa869f9d283b79133b71119a2ea087",
+  "git_base_head": "3a8070a39f4629176a992956bb2f7fe3d8e960c6",
+  "attestations": [
+    {
+      "id": "approval-qa-743bf02e",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:e5f1cfbaf7d74a9a552c5811c2fcc24cbdaa869f9d283b79133b71119a2ea087",
+      "diff_hash": "sha256:bae1c1acf42d1010b76a55adef4dcf6f3a2d1fd5cb1a77ec32790fe98126a7a7",
+      "actor_id": "deterministic-qa",
+      "summary": "all 2 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "acc-pi-batch-gate",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-dual-host-batch-parity",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-a90aa329",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:e5f1cfbaf7d74a9a552c5811c2fcc24cbdaa869f9d283b79133b71119a2ea087",
+      "diff_hash": "sha256:a80ef0084bb508214cc4b22a0af20fc41d068fa2cc8d6040b1e4197903b9eae2",
+      "actor_id": "deterministic-qa",
+      "summary": "all 2 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "acc-pi-batch-gate",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-dual-host-batch-parity",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-aff3fa55",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:e5f1cfbaf7d74a9a552c5811c2fcc24cbdaa869f9d283b79133b71119a2ea087",
+      "diff_hash": "sha256:2eb90ea7caddab07689aae1f20d2668ba0d26c64b07ccaf4d6af85203383d5f8",
+      "actor_id": "deterministic-qa",
+      "summary": "all 2 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "acc-pi-batch-gate",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-dual-host-batch-parity",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-19744509",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:e5f1cfbaf7d74a9a552c5811c2fcc24cbdaa869f9d283b79133b71119a2ea087",
+      "diff_hash": "sha256:33d780fc237412865e12bad1b7961442fdfc8899c21fb208f964f843a261d3e9",
+      "actor_id": "deterministic-qa",
+      "summary": "all 2 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "acc-pi-batch-gate",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-dual-host-batch-parity",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-0954afb7",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:e5f1cfbaf7d74a9a552c5811c2fcc24cbdaa869f9d283b79133b71119a2ea087",
+      "diff_hash": "sha256:fabe1be2e10a57850c05676362fc226a1750cb6a0b42750646f41946d2e1d0dc",
+      "actor_id": "deterministic-qa",
+      "summary": "all 2 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "acc-pi-batch-gate",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-dual-host-batch-parity",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-955dbb13",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:e5f1cfbaf7d74a9a552c5811c2fcc24cbdaa869f9d283b79133b71119a2ea087",
+      "diff_hash": "sha256:074697a00cafe40d9919155aea30e8a19fabe208decd39531b5427aa18753518",
+      "actor_id": "deterministic-qa",
+      "summary": "all 2 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "acc-pi-batch-gate",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-dual-host-batch-parity",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-43561447",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:1f9564d7a0580a1141eebd9bcb0a390541d517d753cc7c2368e84e74351eef28",
+      "diff_hash": "sha256:b58034dc12aca5879008924ff9a8c349bd643869f2c28282b29c8dea99f70c5a",
+      "actor_id": "deterministic-qa",
+      "summary": "all 2 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "acc-pi-batch-gate",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-dual-host-batch-parity",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-3b5c0dcb",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:1f9564d7a0580a1141eebd9bcb0a390541d517d753cc7c2368e84e74351eef28",
+      "diff_hash": "sha256:319743a42c915ea9d1c5d5e605e4eb63762afbbddd4e872db4e72d46541e28ba",
+      "actor_id": "deterministic-qa",
+      "summary": "all 2 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "acc-pi-batch-gate",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-dual-host-batch-parity",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-73b133ff",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:1f9564d7a0580a1141eebd9bcb0a390541d517d753cc7c2368e84e74351eef28",
+      "diff_hash": "sha256:3e2fff466fe864f534c04b35e78c487dd446efe6d6210952f6896e956c3b905b",
+      "actor_id": "deterministic-qa",
+      "summary": "all 2 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "acc-pi-batch-gate",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-dual-host-batch-parity",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-33d2afe0",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:1f9564d7a0580a1141eebd9bcb0a390541d517d753cc7c2368e84e74351eef28",
+      "diff_hash": "sha256:d4e257e2a388edd994e34dc680c01fbdfdbef68b8d2c261f601e2894f53d6a9e",
+      "actor_id": "deterministic-qa",
+      "summary": "all 2 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "acc-pi-batch-gate",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-dual-host-batch-parity",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-167a2785",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 3,
+      "intent_content_hash": "sha256:7c3c9ffc420c284f426cc9365406c691eae794f63d26c5e0a92a22828813d88f",
+      "diff_hash": "sha256:bd0ee3fd38979cbc0975b72795a1f051a96e78fcb264ea2cc638a163def98203",
+      "actor_id": "deterministic-qa",
+      "summary": "all 2 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "acc-pi-batch-gate",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-dual-host-batch-parity",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-a3e9875e",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 3,
+      "intent_content_hash": "sha256:7c3c9ffc420c284f426cc9365406c691eae794f63d26c5e0a92a22828813d88f",
+      "diff_hash": "sha256:8ab1b1ff0ee3be09ce151be24a4edc13cf0dee991e8cd0f470b2c336992e9be6",
+      "actor_id": "deterministic-qa",
+      "summary": "all 2 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "acc-pi-batch-gate",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-dual-host-batch-parity",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-e774db6e",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 3,
+      "intent_content_hash": "sha256:7c3c9ffc420c284f426cc9365406c691eae794f63d26c5e0a92a22828813d88f",
+      "diff_hash": "sha256:c3ccc14640450503e9e02329e1195332029f4edfc874bad0e834de6d3863196e",
+      "actor_id": "deterministic-qa",
+      "summary": "all 2 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "acc-pi-batch-gate",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-dual-host-batch-parity",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-d3b782bc",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 3,
+      "intent_content_hash": "sha256:7c3c9ffc420c284f426cc9365406c691eae794f63d26c5e0a92a22828813d88f",
+      "diff_hash": "sha256:52e3fd17b55496142b418f66e1f7bc67ce3f100cbaf1bc23249ae37cd416b7a4",
+      "actor_id": "deterministic-qa",
+      "summary": "all 2 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "acc-pi-batch-gate",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-dual-host-batch-parity",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-58552656",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 3,
+      "intent_content_hash": "sha256:7c3c9ffc420c284f426cc9365406c691eae794f63d26c5e0a92a22828813d88f",
+      "diff_hash": "sha256:6104b8e53c8fcb29f7dc81f8360e300a17b809d5a0ef02c4d5552a9d1f01b726",
+      "actor_id": "deterministic-qa",
+      "summary": "all 2 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "acc-pi-batch-gate",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-dual-host-batch-parity",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-fe7823b4",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 3,
+      "intent_content_hash": "sha256:7c3c9ffc420c284f426cc9365406c691eae794f63d26c5e0a92a22828813d88f",
+      "diff_hash": "sha256:6fbc0c9dd665addef07a22392e93dc2e1651d0214b85476b6ce991a45650ee6a",
+      "actor_id": "deterministic-qa",
+      "summary": "all 2 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "acc-pi-batch-gate",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-dual-host-batch-parity",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-7acedc4f",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 3,
+      "intent_content_hash": "sha256:7c3c9ffc420c284f426cc9365406c691eae794f63d26c5e0a92a22828813d88f",
+      "diff_hash": "sha256:ac66ae970545c22f6409f629ce7cf20f7713150caf5aba6e6cd3bfd33a4393ad",
+      "actor_id": "deterministic-qa",
+      "summary": "all 2 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "acc-pi-batch-gate",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-dual-host-batch-parity",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-94adbf41",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 3,
+      "intent_content_hash": "sha256:7c3c9ffc420c284f426cc9365406c691eae794f63d26c5e0a92a22828813d88f",
+      "diff_hash": "sha256:6a7083a01fe4327a8952ffa55fa716656a1a77d8802fe6b60a2893b72bc14ce8",
+      "actor_id": "deterministic-qa",
+      "summary": "all 2 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "acc-pi-batch-gate",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-dual-host-batch-parity",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-52405e68",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 3,
+      "intent_content_hash": "sha256:7c3c9ffc420c284f426cc9365406c691eae794f63d26c5e0a92a22828813d88f",
+      "diff_hash": "sha256:fe021fad0e6cf61f2a8f4e82516b6cda3b032721c21ab21ac943edf955767ff8",
+      "actor_id": "deterministic-qa",
+      "summary": "all 2 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "acc-pi-batch-gate",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-dual-host-batch-parity",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-c41280f4",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 4,
+      "intent_content_hash": "sha256:fac4c12e4d4ea830fa08696ecbbcdd2f9aec860285d881c97f8ad05d0873399e",
+      "diff_hash": "sha256:83016a2349a7c32c2a8de326459d2f85fc4e8a92453e5b881905a01696e67ebc",
+      "actor_id": "deterministic-qa",
+      "summary": "all 2 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "acc-pi-batch-gate",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-dual-host-batch-parity",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-3f094503",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 4,
+      "intent_content_hash": "sha256:fac4c12e4d4ea830fa08696ecbbcdd2f9aec860285d881c97f8ad05d0873399e",
+      "diff_hash": "sha256:83016a2349a7c32c2a8de326459d2f85fc4e8a92453e5b881905a01696e67ebc",
+      "actor_id": "parent-mediated-review",
+      "summary": "Verified the immutable review commit parent, tree and manifest digest; read-only pre-confirmation state reads, shared Kernel registry and startBatch authority, Review dispatch visible to Parent, and driver-owned running-batch authorization renewal all hold; no rework required.",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "3a8070a39f4629176a992956bb2f7fe3d8e960c6",
+        "review_commit": "b6fa95bd3212672f411e00bc620d775ed36f578d",
+        "review_tree": "2cb4d6db4b61880ff56b752988641169b6247a6c",
+        "manifest_digest": "sha256:981105db99947bde6430a8d538a09a9c28519d9ee897f567e70da57b0503cee8"
+      }
+    }
+  ],
+  "findings": [
+    {
+      "id": "review-c4a53756ac02-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "acc-pi-batch-gate",
+      "source": "review",
+      "review_round": 1,
+      "summary": "plugins/immune-brain/.pi-extension/imm-unattended-batch.ts:368：生产 realPort.advanceTask 无条件返回 completed，projectTask 同样返回伪造的无 claim 投影；注册工具未覆盖这些实现。直接调用的未修改文件 plugins/immune-brain/runtime/unattended/batch_runner.ts 表明 driver 信任 completed 并持久化 settled、立即尝试提交，因此真实任务未经实现、QA、Review 或 Kernel terminal settlement 就进入提交路径。接入真实 Kernel projection 和 assurance progression，返回真实 enrollment revision，并增加不覆盖这些生产端口的测试。"
+    },
+    {
+      "id": "review-c4a53756ac02-2-review-2",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "acc-pi-batch-gate",
+      "source": "review",
+      "review_round": 1,
+      "summary": "plugins/immune-brain/.pi-extension/imm-unattended-batch.ts:193：confirmBatch 可选且 decision 默认 accept，interactive 也默认 true；调用公开执行入口时遗漏确认端口即可签发授权并创建分支和 batch 状态，完全没有用户确认。确认端口缺失时必须以稳定原因零写入拒绝，并仅允许显式 accept 进入授权路径；补充缺失端口和无效返回值测试。"
+    },
+    {
+      "id": "review-c4a53756ac02-3-review-3",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "acc-pi-batch-gate",
+      "source": "review",
+      "review_round": 1,
+      "summary": "plugins/immune-brain/.pi-extension/imm-unattended-batch.ts:188：确认详情先筛选 enrollable，再据同一 status 将每个 child 的风险固定显示为 material，因此 routine child 也被错误显示为 material，风险没有来自 Kernel intent。使用与计划中 intent identity 一致的实际 risk，并在 tests/pi-batch-authority.test.ts:117 的 routine/material fixture 中分别断言准确风险。"
+    },
+    {
+      "id": "review-c4a53756ac02-4-review-4",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "acc-dual-host-batch-parity",
+      "source": "review",
+      "review_round": 1,
+      "summary": "tests/dual-host-assurance-conformance.test.ts:467：新增 conformance 使用不同 child identity 的两套 fixture，只比较 accepted 状态和 child 数量，从未观察或比较签发的 Batch Authorization binding，也未断言稳定 reason code 一致；branch preflight 和 empty child 场景缺失，零写入检查主要只验证 batch 目录不存在。通过共享场景驱动两端，捕获并核对真实授权绑定与签发次数，覆盖全部拒绝场景并比较 Kernel 状态及 Git refs 前后快照，才能保护本次明确要求的授权一致性。"
+    },
+    {
+      "id": "review-c4a53756ac02-5-review-5",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "acc-pi-batch-gate",
+      "source": "review",
+      "review_round": 1,
+      "summary": "plugins/immune-brain/.pi-extension/imm-unattended-batch.ts:89 与 :444：Pi 非交互拒绝的唯一 recovery action 要求升级 Claude Code，无法修复当前 Pi Host 的非交互调用，违反 same-Host recovery 要求；改为在交互式 Pi TUI 中重新发起该请求，并修正 tests/pi-batch-authority.test.ts:109 中固化错误 Host 的断言。"
+    },
+    {
+      "id": "review-e45a72ba7db7-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "acc-pi-batch-gate",
+      "source": "review",
+      "review_round": 2,
+      "summary": "plugins/immune-brain/.pi-extension/runtime-stub.ts:476 每次 advancePiTask 都创建临时 AssuranceProgression，并在 review_ready 时丢弃 agent_params 和实例；material child 的 Review reservation 因而无法通过现有 submit_review 提交。直接调用关系核实：未修改的 runtime/assurance/coordinator.ts:381、746 将 reservation 保存在实例 Map，未修改的 .pi-extension/imm-canary-work.ts:314 使用另一个实例。应复用当前 Pi session 的 progression，保留并返回完整 Review dispatch，并增加不替换 advanceTask 的 material-child 集成覆盖。"
+    },
+    {
+      "id": "review-e45a72ba7db7-2-review-2",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "acc-pi-batch-gate",
+      "source": "review",
+      "review_round": 2,
+      "summary": "plugins/immune-brain/.pi-extension/imm-unattended-batch.ts:336 在最后一次 signal.aborted 检查后仍 await 两次 registry 创建，随后直接 issue 并调用 startBatch；取消若发生在这些异步导入期间，仍会创建分支、写入 batch state 并开始 enrollment。应将异步准备移至最终取消检查之前，并在进入有副作用的 driver 前设置明确的取消提交边界，增加该窗口内取消的零写入测试。"
+    },
+    {
+      "id": "review-e45a72ba7db7-3-review-3",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "acc-dual-host-batch-parity",
+      "source": "review",
+      "review_round": 2,
+      "summary": "tests/dual-host-assurance-conformance.test.ts:600 起的拒绝场景没有比较 stable reason codes，也没有全面验证 Kernel 状态及 Git refs 不变；目前 Claude 的 decline 返回没有 code，而 Pi 返回 user_denied，测试仍通过。为核实 acceptance 的双 Host 契约，直接读取了未修改的 runtime/claude/kernel_ports.ts:1063。应在两端公开一致的稳定拒绝码，并让共享断言逐场景比较 code、恢复动作、Kernel 状态及 refs；同时不能把 validateBatchAuthorization 的调用次数当作 Authorization issue 次数。"
+    },
+    {
+      "id": "request_rework:2026-09-05-006-pi-batch-host-gate:2026-09-10T03:08:46.343Z:replan-required",
+      "kind": "replan_required",
+      "status": "resolved",
+      "acceptance_id": "acc-pi-batch-gate",
+      "source": "kernel",
+      "review_round": 2,
+      "summary": "Review returned this acceptance boundary twice; a durable replan is required."
+    },
+    {
+      "id": "review-f634db8f2bba-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "acc-pi-batch-gate",
+      "source": "review",
+      "review_round": 3,
+      "summary": "plugins/immune-brain/.pi-extension/runtime-stub.ts:478 的 advancePiTask 创建了独立 AssuranceProgression，而现有 imm-canary-work.ts:314、544 的 advance_assurance/submit_review 使用另一实例。batch 到达 review_ready 时，Review reservation 留在前者；后者提交会返回 no active Review operation。共享 batch_runner.ts:808 还只返回暂停报告，没有传出 agent_params，因此注册工具也无法交付该 reservation 的 reviewer 调用。应复用 Pi session 的同一 progression，并将 Review dispatch 及后续提交接回已有 foreground 路径；补充真实 progression 的 batch → review_ready → submit_review 检查。"
+    },
+    {
+      "id": "review-f634db8f2bba-2-review-2",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "acc-dual-host-batch-parity",
+      "source": "review",
+      "review_round": 3,
+      "summary": "plugins/immune-brain/.pi-extension/runtime-stub.ts:494 的 projectAssuranceForTask 使用 record.diff_hash 和 record.scope_hint 构造当前 diff，并回退到 sha256:0 和空路径，而不是读取实际任务 diff。Kernel assurance_projection.ts 根据传入 diff 判断 evidence/approval freshness；batch_runner.ts:935 又依赖 completion_ready 识别已完成 child。该适配会把真实已完成任务判为未满足 assurance，破坏恢复时的终态识别，也无法反映实际文件变化。Claude 使用真实 diffSnapshotOf。应直接复用 Pi 已有 projectAssuranceState 或同等真实 diff provider，并覆盖已完成 child 的终态投影。"
+    },
+    {
+      "id": "review-f634db8f2bba-3-review-3",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "acc-dual-host-batch-parity",
+      "source": "review",
+      "review_round": 3,
+      "summary": "tests/dual-host-assurance-conformance.test.ts:466 新增 conformance 没有断言稳定 reason code 的一致性。实际 Pi decline 返回 code=user_denied、active claim 返回 code=active_claim_exists，而 Claude kernel_ports.ts 的对应返回对象没有 code；测试只比较 reason 文案，因此明确要求的代码一致性未实现。assertZeroWrites 也只检查两个目录是否存在和 HEAD OID，不比较 refs、workspace 或 backend claim；创建指向原 HEAD 的新分支或改写现有 authority 文件仍会通过。应统一两个 adapter 的稳定错误投影，通过共享断言比较 code，并比较调用前后的全部相关 authority 状态及 refs。"
+    },
+    {
+      "id": "request_rework:2026-09-05-006-pi-batch-host-gate:2026-09-10T03:18:01.547Z:replan-required",
+      "kind": "replan_required",
+      "status": "resolved",
+      "acceptance_id": "acc-pi-batch-gate",
+      "source": "kernel",
+      "review_round": 3,
+      "summary": "Review returned this acceptance boundary twice; a durable replan is required."
+    },
+    {
+      "id": "review-0d285a7b8642-1-review-pi-batch-review-handoff",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "acc-pi-batch-gate",
+      "source": "review",
+      "review_round": 4,
+      "summary": "plugins/immune-brain/.pi-extension/runtime-stub.ts:476 creates a separate AssuranceProgression for batch advancement. Its Review reservation is inaccessible to the existing Pi submit_review handler, which uses the different progression instantiated at imm-canary-work.ts:314 and invoked at :544. Furthermore, the shared batch runner discards agent_params when returning its review_ready report, and the entry creates a new batch on every invocation, rejecting the existing active claim or branch instead of resuming it. Consequently a real child reaching Review cannot follow the report's recovery instruction. Unchanged dependencies inspected to trace this affected state machine: runtime/assurance/coordinator.ts:746 rejects submissions without the instance-local reservation; runtime/unattended/batch_runner.ts:808 pauses and requires submission followed by continuation of the same batch. Reuse the session-owned Pi progression, expose the reserved foreground Agent parameters, and retain/recover the same batch identity through the shared resume path. Add a production-port Review handoff and continuation test."
+    },
+    {
+      "id": "review-0d285a7b8642-2-review-pi-batch-projection-scope",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "acc-pi-batch-gate",
+      "source": "review",
+      "review_round": 4,
+      "summary": "plugins/immune-brain/.pi-extension/runtime-stub.ts:498 passes the entire TaskRecord to taskDiffIdentity instead of its scope array. Every projection with an existing record therefore fails with 'task scope must contain at least one canonical path', breaking claim reconciliation and resume. Unchanged dependencies inspected because this new adapter calls them: runtime/workspace_scope.ts:242 requires a nonempty array, and runtime/kernel/assurance_projection.ts:281 invokes the supplied callback for an existing record. Reuse the established Pi projection implementation or its diffSnapshotOf logic at imm-canary-work.ts:1157, which selects revision identity when appropriate and otherwise uses record.intent_snapshot.scope_hint. Cover an existing enrolled and terminal record through the real adapter."
+    },
+    {
+      "id": "review-0d285a7b8642-3-review-batch-parity-zero-write-coverage",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "acc-dual-host-batch-parity",
+      "source": "review",
+      "review_round": 4,
+      "summary": "tests/dual-host-assurance-conformance.test.ts:510 defines assertZeroWrites using only absence of batch/tasks directories and unchanged HEAD. This passes if an adapter creates a new branch at the same HEAD or modifies workspace/claim authority files, so it does not enforce the explicitly required zero Kernel writes and no-new-ref guarantees. The scenarios also bypass the registered Pi tool through executePiUnattendedBatch, and several rejection cases assert different host-specific outcomes or substrings rather than equal stable reason codes. Exercise both actual host entry adapters with normalized host envelopes, snapshot all relevant Kernel state and Git refs before/after each rejection, and compare the required reason codes. The manifest's passing QA outcomes are acknowledged; these are gaps in what those passing assertions establish."
+    },
+    {
+      "id": "request_rework:2026-09-05-006-pi-batch-host-gate:2026-09-10T03:27:14.945Z:replan-required",
+      "kind": "replan_required",
+      "status": "resolved",
+      "acceptance_id": "acc-pi-batch-gate",
+      "source": "kernel",
+      "review_round": 4,
+      "summary": "Review returned this acceptance boundary twice; a durable replan is required."
+    },
+    {
+      "id": "review-c0849f804a57-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "acc-pi-batch-gate",
+      "source": "review",
+      "review_round": 5,
+      "summary": "plugins/immune-brain/.pi-extension/runtime-stub.ts:474 创建独立的 sharedPiProgression，使 batch Review reservation 与现有 submit_review 工具分属不同实例；且 startBatch 的报告丢弃 agent_params，调用者无法完成要求的 foreground Review。沿该调用链核查的未修改文件 imm-canary-work.ts:314、544 使用另一个 progression，runtime/assurance/coordinator.ts:746 对没有本实例 reservation 的提交返回 no active Review operation，runtime/unattended/batch_runner.ts 的 review_ready 分支仅返回文字报告。应复用同一 session progression 并透传 Review dispatch，增加真实 reservation 创建、提交和继续 batch 的测试，不能用 advanceTask 直接返回 completed 替代。"
+    },
+    {
+      "id": "review-c0849f804a57-2-review-2",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "acc-pi-batch-gate",
+      "source": "review",
+      "review_round": 5,
+      "summary": "plugins/immune-brain/.pi-extension/imm-unattended-batch.ts:195、397 恢复时保留原 plan_digest，却在仍有 enrollable children 时只用当前剩余 children 签发授权。沿 projectBatchPlan 调用核查的未修改 runtime/unattended/batch_plan.ts 将已完成和已 enrolled 的 child 排除，因此 A 已完成、B 待运行时，原始 [A,B] digest 与新 [B] 不匹配；runtime/kernel/batch_authority.ts 的 validateChildren 会直接抛错。应从 Kernel 验证过的原始完整计划恢复同一授权主体，并测试部分完成及独立 sibling 尚可 enrollment 的恢复场景。"
+    },
+    {
+      "id": "review-c0849f804a57-3-review-3",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "acc-pi-batch-gate",
+      "source": "review",
+      "review_round": 5,
+      "summary": "plugins/immune-brain/.pi-extension/imm-unattended-batch.ts:198 恢复确认复用 existingBatch.authorization_expires_at；初始十分钟到期后，即使用户重新接受，也会在 batchRegistry.issue 抛出 batch authorization must have a future expiry，无法恢复 needs_human/running batch。沿授权调用核查的未修改 runtime/kernel/batch_authority.ts 明确要求 expires_at 晚于 issuedAt。应在新确认中展示并绑定新的有效期，并验证过期暂停后的重新授权。"
+    },
+    {
+      "id": "review-c0849f804a57-4-review-4",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "acc-dual-host-batch-parity",
+      "source": "review",
+      "review_round": 5,
+      "summary": "tests/dual-host-assurance-conformance.test.ts:514 的 assertZeroWrites 检查 .imm/state/batch，而实际持久化目录是 .imm/state/batches；tests/pi-batch-authority.test.ts 同样重复此错误。为核对零写入断言读取的未修改 runtime/unattended/batch_state.ts:101、325 确认 state 和 report 都写入 batches。另仅比较 HEAD 无法发现新增但未 checkout 的 Git ref。应比较完整 Kernel state 与 refs 的前后快照，并通过注册的 Pi execute 入口验证稳定失败码；当前直接调用 helper 的测试绕过了真正的 Host 错误映射，无法证明要求的双 Host 一致性。"
+    },
+    {
+      "id": "request_rework:2026-09-05-006-pi-batch-host-gate:2026-09-10T05:05:15.683Z:replan-required",
+      "kind": "replan_required",
+      "status": "resolved",
+      "acceptance_id": "acc-pi-batch-gate",
+      "source": "kernel",
+      "review_round": 5,
+      "summary": "Review returned this acceptance boundary twice; a durable replan is required."
+    },
+    {
+      "id": "review-c860185467b9-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "acc-pi-batch-gate",
+      "source": "review",
+      "review_round": 6,
+      "summary": "plugins/immune-brain/.pi-extension/runtime-stub.ts:482 创建独立的全局 AssuranceProgression，batch 的 Review reservation 因而不属于 imm_kernel_canary.submit_review 使用的实例。直接调用方 imm-canary-work.ts:314、544 分别创建并提交到另一个实例；同一状态机 runtime/assurance/coordinator.ts:746 明确在无 reservation 时返回 'no active Review operation'。此外 batch_runner.ts 的 review_ready 分支只返回 report，丢失 agent_params，实际 material child 无法完成 Review 交接；当前测试替换 advanceTask，未覆盖此路径。应复用当前 Pi session 的 progression，保留并返回 foreground Review dispatch，增加真实 advance/submit_review 集成断言。"
+    },
+    {
+      "id": "review-c860185467b9-2-review-2",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "acc-pi-batch-gate",
+      "source": "review",
+      "review_round": 6,
+      "summary": "plugins/immune-brain/.pi-extension/imm-unattended-batch.ts:396 在恢复时只要 normalizedChildren 非空就把剩余 enrollable 子集传给 startBatch，但 capability 和 plan_digest 仍绑定完整旧计划。直接调用的 runtime/unattended/batch_plan.ts 将已持有 record 的 child 排除，故包含两个独立 child 的 batch 在第一个 child 暂停 Review 后恢复，input.children 缺少第一个 child；同一状态机 batch_runner.ts 的 validateRunAuthorization 会判定 digest 不一致，或运行中恢复在后续授权检查因重新计算的 budget 不匹配而停止。应从同一个经过验证的完整恢复计划构建确认内容、children、budget 和授权，并覆盖存在独立 pending sibling 的恢复场景。"
+    },
+    {
+      "id": "review-c860185467b9-3-review-3",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "acc-pi-batch-gate",
+      "source": "review",
+      "review_round": 6,
+      "summary": "plugins/immune-brain/.pi-extension/imm-unattended-batch.ts:452 将 persisted child.state !== 'pending' 直接当成 Kernel claim ownership 证明；同一状态机 runtime/unattended/batch_runner.ts 明确依赖 ownsTaskClaim 区分本 batch 与 foreign claim。旧 batch 中的 needs_human child 若随后被其他 enrollment 持有，此判断仍返回 true，且 :111 的同名 task 检查允许越过 active claim gate，从而恢复并推进不属于该 batch 的 claim。应通过 Kernel 可验证的 enrollment identity/消费证据判断归属，无法证明时返回单一恢复动作且零写入，并补 foreign-claim 恢复测试。"
+    },
+    {
+      "id": "request_rework:2026-09-05-006-pi-batch-host-gate:2026-09-10T06:40:01.330Z:replan-required",
+      "kind": "replan_required",
+      "status": "resolved",
+      "acceptance_id": "acc-pi-batch-gate",
+      "source": "kernel",
+      "review_round": 6,
+      "summary": "Review returned this acceptance boundary twice; a durable replan is required."
+    },
+    {
+      "id": "review-a8fd822d12e1-1-review-pi-batch-claim-ownership",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "acc-pi-batch-gate",
+      "source": "review",
+      "review_round": 7,
+      "summary": "plugins/immune-brain/.pi-extension/imm-unattended-batch.ts:112：恢复批次时，仅凭 task_id 属于 existingBatch.children，且历史中未找到其他 confirmation_ref，就将活动 claim 认作本批次所有；读取异常也直接设置 isOwnClaim=true。普通 enrollment 创建的 TaskRecord.history 为空，因此独立授权的同名 child claim 会通过此检查。随后 :464 的 ownsTaskClaim 将该推断交给共享 runner，后者会采用并推进此 claim，而不是阻断，违反活动 claim 场景的零写入要求。最小修复是使用可验证的 Kernel batch-derived enrollment 所有权证据；证据缺失或读取失败必须拒绝，不得把 task_id 匹配或缺少 foreign event 当作所有权。补充恢复批次遇到独立 enrollment claim 的拒绝及零写入测试。"
+    },
+    {
+      "id": "review-a8fd822d12e1-2-review-pi-batch-resume-confirmation-binding",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "acc-pi-batch-gate",
+      "source": "review",
+      "review_round": 7,
+      "summary": "plugins/immune-brain/.pi-extension/imm-unattended-batch.ts:211：恢复时使用 existingBatch.plan_digest，但 :222-236 的确认内容来自重新 projectBatchPlan 得到的当前 children，实际授权及执行 children 却在 :394-416 改回 existingBatch.children。部分完成或 tracker 发生变化后，用户看到的有序 children、排除项可能不对应被授权的旧 digest；恢复路径还跳过 :289 开始的确认后计划重验证。最小修复是从同一个经过 Kernel 验证的恢复计划生成确认内容、digest 和执行 children，明确已完成及待执行项，并在确认后重新验证同一绑定。增加部分完成及确认期间计划变化的恢复测试，断言展示内容与实际授权一致。"
+    },
+    {
+      "id": "request_rework:2026-09-05-006-pi-batch-host-gate:2026-09-10T06:54:58.420Z:replan-required",
+      "kind": "replan_required",
+      "status": "resolved",
+      "acceptance_id": "acc-pi-batch-gate",
+      "source": "kernel",
+      "review_round": 7,
+      "summary": "Review returned this acceptance boundary twice; a durable replan is required."
+    },
+    {
+      "id": "review-1c0a0c59a36e-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "acc-pi-batch-gate",
+      "source": "review",
+      "review_round": 8,
+      "summary": "plugins/immune-brain/.pi-extension/imm-unattended-batch.ts:524 在 startBatch 验证持久化批次之前直接改写 authorization_expires_at，且吞掉读写异常；因此后续 plan_digest 或持久化证据校验失败仍已修改权威状态，写入中断还可能截断状态文件，违反 Host 不拥有批次状态变更的契约。为核对实际调用读取的 plugins/immune-brain/runtime/unattended/batch_runner.ts 明确将状态转换置于 driver，并先验证持久化记录。删除 Host 直接写入，将续期交给共享 driver 的受验证持久化入口，并覆盖校验拒绝时原状态逐字节不变。"
+    },
+    {
+      "id": "review-1c0a0c59a36e-2-review-2",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "acc-pi-batch-gate",
+      "source": "review",
+      "review_round": 8,
+      "summary": "plugins/immune-brain/.pi-extension/imm-unattended-batch.ts:537 将 advancePiTask 返回的 Review dispatch 交给仅生成 BatchRunReport 的 startBatch，最终只返回 report，丢失 agent_params 和 snapshot_digest。为追踪此交接读取的 plugins/immune-brain/runtime/unattended/batch_runner.ts 在 review_ready 分支只保留 operation_id 文本并要求提交 verdict，因此真实 material child 的调用结果无法直接启动其已预留 reviewer；当前 tests/pi-batch-authority.test.ts 的恢复测试用模拟 completed 绕过了真实 Review。保留并返回同一次 advance 的完整 Review dispatch，提供准确的同 Host 下一步，并增加真实 reservation 到 submit_review 的交接断言。"
+    },
+    {
+      "id": "request_rework:2026-09-05-006-pi-batch-host-gate:2026-09-10T07:08:15.177Z:replan-required",
+      "kind": "replan_required",
+      "status": "resolved",
+      "acceptance_id": "acc-pi-batch-gate",
+      "source": "kernel",
+      "review_round": 8,
+      "summary": "Review returned this acceptance boundary twice; a durable replan is required."
+    },
+    {
+      "id": "review-80a891ad0b8c-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "acc-pi-batch-gate",
+      "source": "review",
+      "review_round": 9,
+      "summary": "plugins/immune-brain/.pi-extension/imm-unattended-batch.ts:120 将相同 git_base_head 且没有 foreignAuthority 当成批次所有权证明，但新 Enrollment 的 history 本来就是空数组：直接依赖的 plugins/immune-brain/runtime/kernel/enrollment.ts 中 buildTaskRecordV4 明确如此初始化。因此同一 HEAD 上独立 Enrollment 的同名 child 可被当成本批次 claim，并经 ownsTaskClaim 交给共享 driver 推进，违反外来 active claim 必须零写入拒绝的要求。应使用 Kernel 可验证的正向批次 Enrollment 绑定证明所有权，缺少证明时拒绝；增加 history 为空的真实外来 Enrollment 回归测试，而不是只伪造带 foreign confirmation_ref 的 history。"
+    },
+    {
+      "id": "review-80a891ad0b8c-2-review-2",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "acc-pi-batch-gate",
+      "source": "review",
+      "review_round": 9,
+      "summary": "plugins/immune-brain/.pi-extension/imm-unattended-batch.ts:186 在恢复及确认后复核时固定读取 docs/plans/<task>.intent.json；真实 assurance freeze 会将该文件迁至 archive，直接依赖的 plugins/immune-brain/runtime/kernel/canary_application.ts:208 的 artifact transition 明确执行该迁移。因此真实 child 到达 Review 或前序 child 完成后，批次恢复会因读取已不存在的 active sidecar 被拒绝；现有恢复测试用模拟 advanceTask 绕过了 freeze，无法覆盖该失败。应从 Kernel TaskRecord 的当前 intent_ref 读取内容，同时保留原授权计划中的 intent_path/digest 身份，并增加经历真实 freeze、Review 交接和前序 child 归档的恢复测试。"
+    },
+    {
+      "id": "request_rework:2026-09-05-006-pi-batch-host-gate:2026-09-10T07:19:35.361Z:replan-required",
+      "kind": "replan_required",
+      "status": "resolved",
+      "acceptance_id": "acc-pi-batch-gate",
+      "source": "kernel",
+      "review_round": 9,
+      "summary": "Review returned this acceptance boundary twice; a durable replan is required."
+    },
+    {
+      "id": "review-a62bc370967e-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "acc-pi-batch-gate",
+      "source": "review",
+      "review_round": 10,
+      "summary": "[P1] plugins/immune-brain/.pi-extension/imm-unattended-batch.ts:121 and plugins/immune-brain/runtime/claude/kernel_ports.ts:930 infer ownership from matching branch/HEAD and absence of a foreign history entry. This does not prove batch-derived enrollment: runtime/kernel/enrollment.ts:177 initializes every enrollment, including independent enrollment, with history: []. An independently enrolled child on the batch branch at the same HEAD therefore passes isOwnClaim, and the new ownsTaskClaim override lets resumeBatch advance that foreign claim. The foreign-claim test only checks the different-branch case, masking this bypass. Require positive Kernel-owned evidence binding the active enrollment event to the batch; otherwise reject without writes. Add the same-branch, same-HEAD independent-enrollment case for both hosts."
+    },
+    {
+      "id": "review-a62bc370967e-2-review-2",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "acc-dual-host-batch-parity",
+      "source": "review",
+      "review_round": 10,
+      "summary": "[P1] plugins/immune-brain/.pi-extension/imm-unattended-batch.ts:165 rejects every dirty working tree even when resuming an existing batch; the corresponding Claude path at runtime/claude/kernel_ports.ts:971 does the same. A real child paused for foreground Review can have staged implementation or frozen artifact changes that remain uncommitted until the shared driver's post-settlement commit. The instructed second start_unattended_batch call consequently rejects before reaching resumeBatch. Manually committing to satisfy the recovery action moves HEAD outside the recorded batch lineage. Keep the clean-tree requirement for new batches, but validate existing-batch recovery against its authorized child scope and lineage. Add a resume scenario with actual uncommitted child changes; current tests postpone file modifications until the mocked commitChild."
+    },
+    {
+      "id": "request_rework:2026-09-05-006-pi-batch-host-gate:2026-09-10T07:55:06.314Z:replan-required",
+      "kind": "replan_required",
+      "status": "resolved",
+      "acceptance_id": "acc-pi-batch-gate",
+      "source": "kernel",
+      "review_round": 10,
+      "summary": "Review returned this acceptance boundary twice; a durable replan is required."
+    },
+    {
+      "id": "review-27958a382c96-1-review-batch-resume-unproven-claim-ownership",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "acc-pi-batch-gate",
+      "source": "review",
+      "review_round": 11,
+      "summary": "P1: plugins/immune-brain/.pi-extension/imm-unattended-batch.ts:123 和 plugins/immune-brain/runtime/claude/kernel_ports.ts:930 将同一 Git lineage 且没有 foreignAuthority 的 TaskRecord 判定为本批次所有，随后覆盖 ownsTaskClaim。没有 authority 历史不等于存在本批次授权：直接相关的未修改 enrollment owner plugins/immune-brain/runtime/kernel/enrollment.ts:177 对普通与 batch enrollment 都写入 history: []，并未持久化该证明。因此，已有 enrolled/needs_human child 的外部 claim 可以通过此检查，被当成本批次 claim 推进。直接相关的共享 driver plugins/immune-brain/runtime/unattended/batch_runner.ts:909 依赖 ownsTaskClaim 阻止外部 claim，无法补救该误判。最小修复是依据 Kernel 可验证的 enrollment/batch 绑定判断所有权，无法证明时保持 blocked；不能以缺少反证替代正向授权。补充 enrolled 和 needs_human 状态下、相同 branch/HEAD、history: [] 的外部 claim 零写入测试；现有 tests/pi-batch-authority.test.ts:646 只覆盖 pending。"
+    },
+    {
+      "id": "review-27958a382c96-2-review-batch-resume-porcelain-leading-space",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "acc-dual-host-batch-parity",
+      "source": "review",
+      "review_round": 11,
+      "summary": "P2: plugins/immune-brain/runtime/claude/kernel_ports.ts:974 在按固定列读取 porcelain 之前对完整 stdout 调用 trim()；Pi 新适配器具有相同实现。对于首条普通未暂存修改 ' M src/file.ts'，trim() 删除前导空格，随后 line.slice(3) 得到 'rc/file.ts'，导致实际属于授权范围的文件被错误判定为越界，正常的中断恢复被拒绝。相反，若错误截取后的路径恰好在 scope 内，也会错误放行。使用 git status --porcelain=v1 -z 并保留状态列，正确解析路径及 rename 条目；至少不能在按列切片前 trimStart。增加两端共享的已跟踪文件未暂存修改恢复测试，覆盖 scope 内与 scope 外路径；当前 staged spec fixture 不会触发此问题。"
+    },
+    {
+      "id": "request_rework:2026-09-05-006-pi-batch-host-gate:2026-09-10T08:07:25.005Z:replan-required",
+      "kind": "replan_required",
+      "status": "resolved",
+      "acceptance_id": "acc-pi-batch-gate",
+      "source": "kernel",
+      "review_round": 11,
+      "summary": "Review returned this acceptance boundary twice; a durable replan is required."
+    },
+    {
+      "id": "qa-acc-dual-host-batch-parity-5b087e86-ea6485",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "acc-dual-host-batch-parity",
+      "source": "execution",
+      "review_round": null,
+      "summary": "verification failed (exit 1) stdout=28B stderr=29811B"
+    },
+    {
+      "id": "review-6c9134e081d3-1-native-decline-unreachable",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "acc-dual-host-batch-parity",
+      "source": "review",
+      "review_round": 12,
+      "summary": "[P2] plugins/immune-brain/.pi-extension/imm-unattended-batch.ts:781 的真实 Pi 弹窗只提供 confirm/cancel，并将所有非 confirm 结果映射为 cancel。因此用户无法产生 Claude 支持的 decline/rejected/native interaction declined 结果。tests/dual-host-assurance-conformance.test.ts 的 DECLINE 场景直接注入 confirmBatch 返回 decline，绕过了存在缺陷的注册工具入口，不能证明真实 Host 行为一致。最小修复：增加明确的 decline 操作，分别映射 decline、cancel 和 Escape，并通过注册工具的 execute 路径验证两种拒绝结果及零写入保证。"
+    },
+    {
+      "id": "review-6c9134e081d3-2-frozen-child-risk-fallback",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "acc-pi-batch-gate",
+      "source": "review",
+      "review_round": 12,
+      "summary": "[P2] plugins/immune-brain/.pi-extension/imm-unattended-batch.ts:324 在恢复批次时，根据重建的 docs/plans/<task>.intent.json 显式路径再次读取风险；该重建路径没有采用 TaskRecord.intent_ref.path。正常 freeze_artifacts 已将 sidecar 移到 archive，所以读取失败后会把真实 routine child 显示为 material。Claude kernel_ports.ts 的恢复风险展示也使用相同逻辑。为验证读取语义，检查了未修改的 plugins/immune-brain/runtime/kernel/intent.ts:562：归档回退只适用于未指定路径的调用，不能补救这里的显式旧路径。最小修复：保留并使用恢复计划时已读取的 intent_snapshot.risk，或采用 TaskRecord 的当前路径；读取失败不得伪造风险。增加在第一次恢复前实际冻结归档 routine child、随后检查确认内容的测试；现有 review-handoff 测试把归档操作放在暂停时尚未执行的 commitChild 回调中，没有覆盖此情况。"
+    },
+    {
+      "id": "request_rework:2026-09-05-006-pi-batch-host-gate:2026-09-10T08:45:26.994Z:replan-required",
+      "kind": "replan_required",
+      "status": "resolved",
+      "acceptance_id": "acc-dual-host-batch-parity",
+      "source": "kernel",
+      "review_round": 12,
+      "summary": "Review returned this acceptance boundary twice; a durable replan is required."
+    },
+    {
+      "id": "review-4c4c9f445877-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "acc-dual-host-batch-parity",
+      "source": "review",
+      "review_round": 13,
+      "summary": "findExistingActiveBatch treats terminal batch states as corrupt; use shared batch state validation and return terminal records for replay."
+    },
+    {
+      "id": "review-4c4c9f445877-2-review-2",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "acc-dual-host-batch-parity",
+      "source": "review",
+      "review_round": 13,
+      "summary": "Unify post-confirmation active claim rejection reason text and check order between Pi and Claude adapters."
+    },
+    {
+      "id": "request_rework:2026-09-05-006-pi-batch-host-gate:2026-09-10T09:23:11.415Z:replan-required",
+      "kind": "replan_required",
+      "status": "resolved",
+      "acceptance_id": "acc-dual-host-batch-parity",
+      "source": "kernel",
+      "review_round": 13,
+      "summary": "Review returned this acceptance boundary twice; a durable replan is required."
+    },
+    {
+      "id": "review-f72ae870f4f0-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "acc-dual-host-batch-parity",
+      "source": "review",
+      "review_round": 14,
+      "summary": "Pi omits the final workspace claim check after the async plan revalidation and before authority issuance; a foreign enrollment completing during the second projectBatchPlan read lets Pi authorize and create the branch and batch state while Claude returns blocked. Add the check before registry issue/startBatch and a conformance scenario."
+    },
+    {
+      "id": "review-f72ae870f4f0-2-review-2",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "acc-pi-batch-gate",
+      "source": "review",
+      "review_round": 14,
+      "summary": "start_unattended_batch puts the full report and review_dispatch only in Tool details; model-visible content carries just batch_id and batch_state, so Parent cannot obtain operation_id, agent_params or next_action to launch the reserved foreground Review. Serialize the structured result into content and test the registered Tool execute for review_ready and needs_human."
+    },
+    {
+      "id": "request_rework:2026-09-05-006-pi-batch-host-gate:2026-09-10T09:38:59.318Z:replan-required",
+      "kind": "replan_required",
+      "status": "resolved",
+      "acceptance_id": "acc-dual-host-batch-parity",
+      "source": "kernel",
+      "review_round": 14,
+      "summary": "Review returned this acceptance boundary twice; a durable replan is required."
+    }
+  ],
+  "history": [
+    {
+      "id": "freeze_artifacts:2026-09-05-006-pi-batch-host-gate:2026-09-10T02:52:10.350Z",
+      "at": "2026-09-10T02:52:10.350Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent and Spec frozen at docs/plans/archive/2026-09-05-006-pi-batch-host-gate.intent.json"
+    },
+    {
+      "id": "record_approval:2026-09-05-006-pi-batch-host-gate:2026-09-10T02:52:25.130Z",
+      "at": "2026-09-10T02:52:25.130Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-743bf02e\naction_v2_sha256:ed939eb541b9f08ed2fc486f8ed206652f8a64122dcd0258bfd86dda6a0787be",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-5bd0f061504e7bac",
+        "issued_at": "2026-09-10T02:52:25.131Z",
+        "expires_at": "2026-09-10T03:02:25.131Z"
+      }
+    },
+    {
+      "id": "request_rework:2026-09-05-006-pi-batch-host-gate:2026-09-10T02:54:47.362Z",
+      "at": "2026-09-10T02:54:47.362Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_1\naction_v2_sha256:1a543ffa180e24a0ea400f0e0fe87b701c010aff220f6d3d542798ff8b4551be",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-74a443fdd55dd476",
+        "issued_at": "2026-09-10T02:54:47.362Z",
+        "expires_at": "2026-09-10T03:04:47.362Z"
+      }
+    },
+    {
+      "id": "resolve_finding:2026-09-05-006-pi-batch-host-gate:2026-09-10T03:05:00.285Z",
+      "at": "2026-09-10T03:05:00.285Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-c4a53756ac02-1-review-1\naction_v2_sha256:7968a37fa13ff5ed68b7cf9aaec0529a207e2321fd12361d839cf1b55827520c"
+    },
+    {
+      "id": "resolve_finding:2026-09-05-006-pi-batch-host-gate:2026-09-10T03:05:07.898Z",
+      "at": "2026-09-10T03:05:07.898Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-c4a53756ac02-2-review-2\naction_v2_sha256:8cf4725459d38d28dcccacc5d9f55b08aed66094816f5d704ef637644a82f7a1"
+    },
+    {
+      "id": "resolve_finding:2026-09-05-006-pi-batch-host-gate:2026-09-10T03:05:15.564Z",
+      "at": "2026-09-10T03:05:15.564Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-c4a53756ac02-3-review-3\naction_v2_sha256:caecd68d7287a3a798049e02d025a24873cf67c4bdce7b2d47314a9da05efbb4"
+    },
+    {
+      "id": "resolve_finding:2026-09-05-006-pi-batch-host-gate:2026-09-10T03:05:23.981Z",
+      "at": "2026-09-10T03:05:23.981Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-c4a53756ac02-4-review-4\naction_v2_sha256:3c32a580f2e0bb110fab004a0ced15abafc234a05cbe06c70fee1b79fc7bcb6f"
+    },
+    {
+      "id": "resolve_finding:2026-09-05-006-pi-batch-host-gate:2026-09-10T03:05:30.769Z",
+      "at": "2026-09-10T03:05:30.769Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-c4a53756ac02-5-review-5\naction_v2_sha256:be5627cd55e14884505a2f90afdcfb13e18758a703489b29917b170a4bf84a27"
+    },
+    {
+      "id": "freeze_artifacts:2026-09-05-006-pi-batch-host-gate:2026-09-10T03:05:43.425Z",
+      "at": "2026-09-10T03:05:43.425Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent and Spec frozen at docs/plans/archive/2026-09-05-006-pi-batch-host-gate.intent.json"
+    },
+    {
+      "id": "record_approval:2026-09-05-006-pi-batch-host-gate:2026-09-10T03:05:58.448Z",
+      "at": "2026-09-10T03:05:58.448Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-a90aa329\naction_v2_sha256:e110f2b7dca381e0be89334e4333e674f4d220308b8cddda94b13220058ded0b",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-f2f243a490144183",
+        "issued_at": "2026-09-10T03:05:58.448Z",
+        "expires_at": "2026-09-10T03:15:58.448Z"
+      }
+    },
+    {
+      "id": "request_rework:2026-09-05-006-pi-batch-host-gate:2026-09-10T03:08:46.343Z",
+      "at": "2026-09-10T03:08:46.343Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "review_round_2\naction_v2_sha256:1aaca315b65cf82a7e6eaea96408874fcfbbd7c124f3843f688b958b707db5ed",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-5956efd9d7a9ada1",
+        "issued_at": "2026-09-10T03:08:46.343Z",
+        "expires_at": "2026-09-10T03:18:46.343Z"
+      }
+    },
+    {
+      "id": "authorize_rework:2026-09-05-006-pi-batch-host-gate:2026-09-10T03:09:46.594Z",
+      "at": "2026-09-10T03:09:46.594Z",
+      "type": "authorize_rework",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "request_rework:2026-09-05-006-pi-batch-host-gate:2026-09-10T03:08:46.343Z:replan-required\naction_v2_sha256:073e3386a853304140ad9d76b974a0b63643ba6482623ee7fe97204dfaad3af5",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-746d34d172dea96b",
+        "issued_at": "2026-09-10T03:09:46.594Z",
+        "expires_at": "2026-09-10T03:19:46.594Z"
+      }
+    },
+    {
+      "id": "resolve_finding:2026-09-05-006-pi-batch-host-gate:2026-09-10T03:12:55.768Z",
+      "at": "2026-09-10T03:12:55.768Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-e45a72ba7db7-1-review-1\naction_v2_sha256:06b90900b5ba5638802fdc6bc3b41876f580422a1ec2661e270e967b78f16eb2"
+    },
+    {
+      "id": "resolve_finding:2026-09-05-006-pi-batch-host-gate:2026-09-10T03:13:01.652Z",
+      "at": "2026-09-10T03:13:01.652Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-e45a72ba7db7-2-review-2\naction_v2_sha256:a2899a81544ba581fe4b2432cfd6f1d14550307c95ef363dc5fbc9a5ea015f69"
+    },
+    {
+      "id": "resolve_finding:2026-09-05-006-pi-batch-host-gate:2026-09-10T03:13:08.493Z",
+      "at": "2026-09-10T03:13:08.493Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-e45a72ba7db7-3-review-3\naction_v2_sha256:253d704cf8f930541c4f0eed71ef7dd5b9c00d4414b1d45e18817c98c9ffae25"
+    },
+    {
+      "id": "freeze_artifacts:2026-09-05-006-pi-batch-host-gate:2026-09-10T03:13:24.639Z",
+      "at": "2026-09-10T03:13:24.639Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent and Spec frozen at docs/plans/archive/2026-09-05-006-pi-batch-host-gate.intent.json"
+    },
+    {
+      "id": "record_approval:2026-09-05-006-pi-batch-host-gate:2026-09-10T03:13:40.155Z",
+      "at": "2026-09-10T03:13:40.155Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-aff3fa55\naction_v2_sha256:1bf536cbc53307bf411a9941f7bb08bb49b0d9fdd78519e01c62c991e47410b0",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-aed9bb6887fc5514",
+        "issued_at": "2026-09-10T03:13:40.155Z",
+        "expires_at": "2026-09-10T03:23:40.155Z"
+      }
+    },
+    {
+      "id": "request_rework:2026-09-05-006-pi-batch-host-gate:2026-09-10T03:18:01.547Z",
+      "at": "2026-09-10T03:18:01.547Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "review_round_3\naction_v2_sha256:9ccf4841565f1a73cc4afc478194180caefae9021b463e56c007a702e2f99379",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-7ae8dbd370d2026a",
+        "issued_at": "2026-09-10T03:18:01.547Z",
+        "expires_at": "2026-09-10T03:28:01.547Z"
+      }
+    },
+    {
+      "id": "authorize_rework:2026-09-05-006-pi-batch-host-gate:2026-09-10T03:18:41.231Z",
+      "at": "2026-09-10T03:18:41.231Z",
+      "type": "authorize_rework",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "request_rework:2026-09-05-006-pi-batch-host-gate:2026-09-10T03:18:01.547Z:replan-required\naction_v2_sha256:976c0f771c670c9e9d4cff01820a0f73ff10826097e471f06d2d9d429934b8de",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-a2fb5babbdf44472",
+        "issued_at": "2026-09-10T03:18:41.231Z",
+        "expires_at": "2026-09-10T03:28:41.231Z"
+      }
+    },
+    {
+      "id": "resolve_finding:2026-09-05-006-pi-batch-host-gate:2026-09-10T03:21:35.002Z",
+      "at": "2026-09-10T03:21:35.002Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-f634db8f2bba-1-review-1\naction_v2_sha256:e43d0e16d5e0bc25a8c0a48dd2ee9ddd2230ebe745585477b417df7161d02bc4"
+    },
+    {
+      "id": "resolve_finding:2026-09-05-006-pi-batch-host-gate:2026-09-10T03:21:45.857Z",
+      "at": "2026-09-10T03:21:45.857Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-f634db8f2bba-2-review-2\naction_v2_sha256:e009c13dc724f8ae7dc63eb19d7081bf9ab76c14b4e10181b5f27330b63b352b"
+    },
+    {
+      "id": "resolve_finding:2026-09-05-006-pi-batch-host-gate:2026-09-10T03:21:54.902Z",
+      "at": "2026-09-10T03:21:54.902Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-f634db8f2bba-3-review-3\naction_v2_sha256:3a7376d800238379eecceabeb524444b7619116508d0353013cb360fa16934c4"
+    },
+    {
+      "id": "freeze_artifacts:2026-09-05-006-pi-batch-host-gate:2026-09-10T03:22:09.949Z",
+      "at": "2026-09-10T03:22:09.949Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent and Spec frozen at docs/plans/archive/2026-09-05-006-pi-batch-host-gate.intent.json"
+    },
+    {
+      "id": "record_approval:2026-09-05-006-pi-batch-host-gate:2026-09-10T03:22:28.296Z",
+      "at": "2026-09-10T03:22:28.296Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-19744509\naction_v2_sha256:ec624d1083c29f6b82130c37180875e93c59d91dc08f53dba5f9979a4cd18819",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-77bc3ea3ad533ab2",
+        "issued_at": "2026-09-10T03:22:28.296Z",
+        "expires_at": "2026-09-10T03:32:28.296Z"
+      }
+    },
+    {
+      "id": "request_rework:2026-09-05-006-pi-batch-host-gate:2026-09-10T03:27:14.945Z",
+      "at": "2026-09-10T03:27:14.945Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "review_round_4\naction_v2_sha256:d9d9972f240dd7dd8a06c92a933e98222675b697aa1913c0d4b5326a3e6b91b3",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-f15456d2a3f5e859",
+        "issued_at": "2026-09-10T03:27:14.945Z",
+        "expires_at": "2026-09-10T03:37:14.945Z"
+      }
+    },
+    {
+      "id": "authorize_rework:2026-09-05-006-pi-batch-host-gate:2026-09-10T04:49:59.151Z",
+      "at": "2026-09-10T04:49:59.151Z",
+      "type": "authorize_rework",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "request_rework:2026-09-05-006-pi-batch-host-gate:2026-09-10T03:27:14.945Z:replan-required\naction_v2_sha256:1910f9131321402586a15020ccf1d6f870eb39aee4ee93701b72957073a51a30",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-b627e28c5a0dab20",
+        "issued_at": "2026-09-10T04:49:59.151Z",
+        "expires_at": "2026-09-10T04:59:59.151Z"
+      }
+    },
+    {
+      "id": "resolve_finding:2026-09-05-006-pi-batch-host-gate:2026-09-10T05:01:42.623Z",
+      "at": "2026-09-10T05:01:42.623Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-0d285a7b8642-1-review-pi-batch-review-handoff\naction_v2_sha256:de9540079e1cb09d95fa5c1c98778966919a96432532fd58639f903f3fd234ac"
+    },
+    {
+      "id": "resolve_finding:2026-09-05-006-pi-batch-host-gate:2026-09-10T05:01:50.875Z",
+      "at": "2026-09-10T05:01:50.875Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-0d285a7b8642-2-review-pi-batch-projection-scope\naction_v2_sha256:040e0da7c6314659083977c45ed42d3e1bcc53196c85a3f2e01527a937aba86a"
+    },
+    {
+      "id": "resolve_finding:2026-09-05-006-pi-batch-host-gate:2026-09-10T05:01:59.049Z",
+      "at": "2026-09-10T05:01:59.049Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-0d285a7b8642-3-review-batch-parity-zero-write-coverage\naction_v2_sha256:bb4ed902f787e289a31dde225b1457b0944c4ff1e228ad24a0ed2e0be4290ee0"
+    },
+    {
+      "id": "freeze_artifacts:2026-09-05-006-pi-batch-host-gate:2026-09-10T05:02:13.301Z",
+      "at": "2026-09-10T05:02:13.301Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent and Spec frozen at docs/plans/archive/2026-09-05-006-pi-batch-host-gate.intent.json"
+    },
+    {
+      "id": "record_approval:2026-09-05-006-pi-batch-host-gate:2026-09-10T05:02:33.814Z",
+      "at": "2026-09-10T05:02:33.814Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-0954afb7\naction_v2_sha256:ae60ace70a45625419fdc6edbf69b5d1b9868353a3da5398bd8b09824ce8805c",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-95da4463962f9104",
+        "issued_at": "2026-09-10T05:02:33.814Z",
+        "expires_at": "2026-09-10T05:12:33.814Z"
+      }
+    },
+    {
+      "id": "request_rework:2026-09-05-006-pi-batch-host-gate:2026-09-10T05:05:15.683Z",
+      "at": "2026-09-10T05:05:15.683Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "review_round_5\naction_v2_sha256:caee13433b07248553844b2a67808b15b7f025699f51f721c265bafb4557b2a8",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-673219e21fff74f3",
+        "issued_at": "2026-09-10T05:05:15.683Z",
+        "expires_at": "2026-09-10T05:15:15.683Z"
+      }
+    },
+    {
+      "id": "authorize_rework:2026-09-05-006-pi-batch-host-gate:2026-09-10T06:12:16.314Z",
+      "at": "2026-09-10T06:12:16.314Z",
+      "type": "authorize_rework",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "request_rework:2026-09-05-006-pi-batch-host-gate:2026-09-10T05:05:15.683Z:replan-required\naction_v2_sha256:8988ef48cb4d164f3f4fac39629ddfb1c586427bb948dbd669e9aa60c3cab5c1",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-5c420fc4ae41d837",
+        "issued_at": "2026-09-10T06:12:16.314Z",
+        "expires_at": "2026-09-10T06:22:16.314Z"
+      }
+    },
+    {
+      "id": "resolve_finding:2026-09-05-006-pi-batch-host-gate:2026-09-10T06:36:11.914Z",
+      "at": "2026-09-10T06:36:11.914Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-c0849f804a57-1-review-1\naction_v2_sha256:730d27dddf16d71e165eab4d2b3f2bca26c584aece97050c6984260d950d6254"
+    },
+    {
+      "id": "resolve_finding:2026-09-05-006-pi-batch-host-gate:2026-09-10T06:36:19.976Z",
+      "at": "2026-09-10T06:36:19.976Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-c0849f804a57-2-review-2\naction_v2_sha256:a818c9152e4bf9155122471dddc45767a968143ba2656331781ffb06dbba3ba0"
+    },
+    {
+      "id": "resolve_finding:2026-09-05-006-pi-batch-host-gate:2026-09-10T06:36:27.333Z",
+      "at": "2026-09-10T06:36:27.333Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-c0849f804a57-3-review-3\naction_v2_sha256:e2d7e87e32edb7df89f542cb128eb4d1df4ca68b97af8673cd6e9b07070af129"
+    },
+    {
+      "id": "resolve_finding:2026-09-05-006-pi-batch-host-gate:2026-09-10T06:36:34.455Z",
+      "at": "2026-09-10T06:36:34.455Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-c0849f804a57-4-review-4\naction_v2_sha256:dd7778481e3aa2e3b0f83122f3ce3941106ae0a18d9b48fd7e14c45a03ea2897"
+    },
+    {
+      "id": "freeze_artifacts:2026-09-05-006-pi-batch-host-gate:2026-09-10T06:36:50.234Z",
+      "at": "2026-09-10T06:36:50.234Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent and Spec frozen at docs/plans/archive/2026-09-05-006-pi-batch-host-gate.intent.json"
+    },
+    {
+      "id": "record_approval:2026-09-05-006-pi-batch-host-gate:2026-09-10T06:37:09.034Z",
+      "at": "2026-09-10T06:37:09.034Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-955dbb13\naction_v2_sha256:937df2b74b02b267472ae8c8e686fc3de99305784ff4453f4c6817ea632cb50d",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-2a34df36f8d3ffb0",
+        "issued_at": "2026-09-10T06:37:09.035Z",
+        "expires_at": "2026-09-10T06:47:09.035Z"
+      }
+    },
+    {
+      "id": "request_rework:2026-09-05-006-pi-batch-host-gate:2026-09-10T06:40:01.330Z",
+      "at": "2026-09-10T06:40:01.330Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "review_round_6\naction_v2_sha256:3014410954954aad4af675201e9b41fc34bc17cb31a8750d4f2629fd7e8fa1fa",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-dca64a9d8bb29622",
+        "issued_at": "2026-09-10T06:40:01.330Z",
+        "expires_at": "2026-09-10T06:50:01.330Z"
+      }
+    },
+    {
+      "id": "authorize_rework:2026-09-05-006-pi-batch-host-gate:2026-09-10T06:40:15.846Z",
+      "at": "2026-09-10T06:40:15.846Z",
+      "type": "authorize_rework",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "request_rework:2026-09-05-006-pi-batch-host-gate:2026-09-10T06:40:01.330Z:replan-required\naction_v2_sha256:26d3166e2a9f3ba86a9a7969c4d08437366415da0fcae45aa9bf26ee09788c73",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-32200cd44056d64d",
+        "issued_at": "2026-09-10T06:40:15.847Z",
+        "expires_at": "2026-09-10T06:50:15.847Z"
+      }
+    },
+    {
+      "id": "approve_breaking_intent_revision:2026-09-05-006-pi-batch-host-gate:2026-09-10T06:42:29.899Z",
+      "at": "2026-09-10T06:42:29.899Z",
+      "type": "approve_breaking_intent_revision",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "intent_revision_2\naction_v2_sha256:0cf8b4a26ad4a17b8a9a135994e6d751a14c3236f21b977c5feef7dfdda53d69",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-3747a439df4a5021",
+        "issued_at": "2026-09-10T06:42:30.160Z",
+        "expires_at": "2026-09-10T06:52:30.160Z"
+      }
+    },
+    {
+      "id": "resolve_finding:2026-09-05-006-pi-batch-host-gate:2026-09-10T06:48:52.906Z",
+      "at": "2026-09-10T06:48:52.906Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-c860185467b9-1-review-1\naction_v2_sha256:348f3351df1da38ce9a38d0c11a472ffcaa957e1c1058924393522ed74a2f08f"
+    },
+    {
+      "id": "resolve_finding:2026-09-05-006-pi-batch-host-gate:2026-09-10T06:49:01.780Z",
+      "at": "2026-09-10T06:49:01.780Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-c860185467b9-2-review-2\naction_v2_sha256:12fb57d6d7ec50e1833fdaf7a2fa228d26ecad01669b406f0641a54321688ea9"
+    },
+    {
+      "id": "resolve_finding:2026-09-05-006-pi-batch-host-gate:2026-09-10T06:49:08.289Z",
+      "at": "2026-09-10T06:49:08.289Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-c860185467b9-3-review-3\naction_v2_sha256:79724ca797f4d43c5e03cedd86cd634eca639a735e60a12d3e6a1cdb29ccf967"
+    },
+    {
+      "id": "freeze_artifacts:2026-09-05-006-pi-batch-host-gate:2026-09-10T06:49:21.805Z",
+      "at": "2026-09-10T06:49:21.805Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent and Spec frozen at docs/plans/archive/2026-09-05-006-pi-batch-host-gate.intent.json"
+    },
+    {
+      "id": "record_approval:2026-09-05-006-pi-batch-host-gate:2026-09-10T06:49:41.004Z",
+      "at": "2026-09-10T06:49:41.004Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-43561447\naction_v2_sha256:cf97ad39de6a2c55f98d4a28cbbe3d3a068d158d66da99e0e1d029ce10cd9309",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-a6b8ed2f322c6005",
+        "issued_at": "2026-09-10T06:49:41.005Z",
+        "expires_at": "2026-09-10T06:59:41.005Z"
+      }
+    },
+    {
+      "id": "request_rework:2026-09-05-006-pi-batch-host-gate:2026-09-10T06:54:58.420Z",
+      "at": "2026-09-10T06:54:58.420Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "review_round_7\naction_v2_sha256:533898e49c02cb422061b1fb5a95ae5edfb5acef419c35e9c307904d65145b9f",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-5cbdcc49c7a8f041",
+        "issued_at": "2026-09-10T06:54:58.420Z",
+        "expires_at": "2026-09-10T07:04:58.420Z"
+      }
+    },
+    {
+      "id": "authorize_rework:2026-09-05-006-pi-batch-host-gate:2026-09-10T06:55:15.435Z",
+      "at": "2026-09-10T06:55:15.435Z",
+      "type": "authorize_rework",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "request_rework:2026-09-05-006-pi-batch-host-gate:2026-09-10T06:54:58.420Z:replan-required\naction_v2_sha256:4d00c92983bdf89196d4d284860bb7091549b36ee752c5736ffc45286e0aadfc",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-2e870d424d20fa94",
+        "issued_at": "2026-09-10T06:55:15.436Z",
+        "expires_at": "2026-09-10T07:05:15.436Z"
+      }
+    },
+    {
+      "id": "resolve_finding:2026-09-05-006-pi-batch-host-gate:2026-09-10T07:04:23.730Z",
+      "at": "2026-09-10T07:04:23.730Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-a8fd822d12e1-1-review-pi-batch-claim-ownership\naction_v2_sha256:ae78f4b02a09e557ac9c88f894d548fb8885ae957f6b45c431a36cb92cd0959a"
+    },
+    {
+      "id": "resolve_finding:2026-09-05-006-pi-batch-host-gate:2026-09-10T07:04:31.938Z",
+      "at": "2026-09-10T07:04:31.938Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-a8fd822d12e1-2-review-pi-batch-resume-confirmation-binding\naction_v2_sha256:49996dda7f6f3d9799c8d9cde0de6addc37f82ee34884f005e2661191a7de4a6"
+    },
+    {
+      "id": "freeze_artifacts:2026-09-05-006-pi-batch-host-gate:2026-09-10T07:04:45.918Z",
+      "at": "2026-09-10T07:04:45.918Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent and Spec frozen at docs/plans/archive/2026-09-05-006-pi-batch-host-gate.intent.json"
+    },
+    {
+      "id": "record_approval:2026-09-05-006-pi-batch-host-gate:2026-09-10T07:05:09.414Z",
+      "at": "2026-09-10T07:05:09.414Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-3b5c0dcb\naction_v2_sha256:6ebb2b9c0894091c83c9b4dba4b70cf9afb099b628c75d17ffadadea61dfb171",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-7e7dd3d000273711",
+        "issued_at": "2026-09-10T07:05:09.414Z",
+        "expires_at": "2026-09-10T07:15:09.414Z"
+      }
+    },
+    {
+      "id": "request_rework:2026-09-05-006-pi-batch-host-gate:2026-09-10T07:08:15.177Z",
+      "at": "2026-09-10T07:08:15.177Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "review_round_8\naction_v2_sha256:78859c4ee9674cd3c22764c560483d49104997c2925b06bfc5c85a4ea8a79eaf",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-9bb0dba758610d7e",
+        "issued_at": "2026-09-10T07:08:15.177Z",
+        "expires_at": "2026-09-10T07:18:15.177Z"
+      }
+    },
+    {
+      "id": "authorize_rework:2026-09-05-006-pi-batch-host-gate:2026-09-10T07:10:01.718Z",
+      "at": "2026-09-10T07:10:01.718Z",
+      "type": "authorize_rework",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "request_rework:2026-09-05-006-pi-batch-host-gate:2026-09-10T07:08:15.177Z:replan-required\naction_v2_sha256:e19c1a4bcbe72eadd11ffc72e27769ed88cbc0df8c98f7333eb9e6673a1e6a9b",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-a46ff281a0753308",
+        "issued_at": "2026-09-10T07:10:01.718Z",
+        "expires_at": "2026-09-10T07:20:01.718Z"
+      }
+    },
+    {
+      "id": "resolve_finding:2026-09-05-006-pi-batch-host-gate:2026-09-10T07:14:59.697Z",
+      "at": "2026-09-10T07:14:59.697Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-1c0a0c59a36e-1-review-1\naction_v2_sha256:7b1c772d47e8f0d5b032f826ba837bc752c0f113b4d1f9f898ea0dcb24ce45c3"
+    },
+    {
+      "id": "resolve_finding:2026-09-05-006-pi-batch-host-gate:2026-09-10T07:15:08.995Z",
+      "at": "2026-09-10T07:15:08.995Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-1c0a0c59a36e-2-review-2\naction_v2_sha256:8d043be403c8df0ebc847e7f59e58292d553d68d1bf8833d329552124a978dfe"
+    },
+    {
+      "id": "freeze_artifacts:2026-09-05-006-pi-batch-host-gate:2026-09-10T07:15:24.545Z",
+      "at": "2026-09-10T07:15:24.545Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent and Spec frozen at docs/plans/archive/2026-09-05-006-pi-batch-host-gate.intent.json"
+    },
+    {
+      "id": "record_approval:2026-09-05-006-pi-batch-host-gate:2026-09-10T07:15:46.031Z",
+      "at": "2026-09-10T07:15:46.031Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-73b133ff\naction_v2_sha256:1f0af92aeb68367398f528221c4905e4907a77689d91ee309705b0b7221f424e",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-d28eb46e54313136",
+        "issued_at": "2026-09-10T07:15:46.031Z",
+        "expires_at": "2026-09-10T07:25:46.031Z"
+      }
+    },
+    {
+      "id": "request_rework:2026-09-05-006-pi-batch-host-gate:2026-09-10T07:19:35.361Z",
+      "at": "2026-09-10T07:19:35.361Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "review_round_9\naction_v2_sha256:9f79d15e04e97e83944e6b5d4b73ab9f82f4fe4c946ae3e815da7dba2ff857a0",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-f5811206267018d6",
+        "issued_at": "2026-09-10T07:19:35.361Z",
+        "expires_at": "2026-09-10T07:29:35.361Z"
+      }
+    },
+    {
+      "id": "authorize_rework:2026-09-05-006-pi-batch-host-gate:2026-09-10T07:21:08.564Z",
+      "at": "2026-09-10T07:21:08.564Z",
+      "type": "authorize_rework",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "request_rework:2026-09-05-006-pi-batch-host-gate:2026-09-10T07:19:35.361Z:replan-required\naction_v2_sha256:8822eba828178754c5615ae1ba0f75d271920e66c77bbe1023039d7e3991568c",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-0d566e02c1d7d8bd",
+        "issued_at": "2026-09-10T07:21:08.564Z",
+        "expires_at": "2026-09-10T07:31:08.564Z"
+      }
+    },
+    {
+      "id": "resolve_finding:2026-09-05-006-pi-batch-host-gate:2026-09-10T07:29:49.590Z",
+      "at": "2026-09-10T07:29:49.590Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-80a891ad0b8c-1-review-1\naction_v2_sha256:803e7efef132d4c2b00818a5b27a64e21aad889c91a14982524ce2174616d48e"
+    },
+    {
+      "id": "resolve_finding:2026-09-05-006-pi-batch-host-gate:2026-09-10T07:29:58.102Z",
+      "at": "2026-09-10T07:29:58.102Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-80a891ad0b8c-2-review-2\naction_v2_sha256:939820a55028a885db23cc292a20ed3eadc29afab3d2a15d244a3e654a87a7a2"
+    },
+    {
+      "id": "freeze_artifacts:2026-09-05-006-pi-batch-host-gate:2026-09-10T07:30:17.230Z",
+      "at": "2026-09-10T07:30:17.230Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent and Spec frozen at docs/plans/archive/2026-09-05-006-pi-batch-host-gate.intent.json"
+    },
+    {
+      "id": "record_approval:2026-09-05-006-pi-batch-host-gate:2026-09-10T07:30:37.620Z",
+      "at": "2026-09-10T07:30:37.620Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-33d2afe0\naction_v2_sha256:1ec6e965417757e8c679ebddb82b83193b5d497579e86b1698b7c254b36ec70f",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-92190d4b8d2c66d7",
+        "issued_at": "2026-09-10T07:30:37.621Z",
+        "expires_at": "2026-09-10T07:40:37.621Z"
+      }
+    },
+    {
+      "id": "approve_breaking_intent_revision:2026-09-05-006-pi-batch-host-gate:2026-09-10T07:39:12.604Z",
+      "at": "2026-09-10T07:39:12.604Z",
+      "type": "approve_breaking_intent_revision",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "intent_revision_3\naction_v2_sha256:066c42fb398620aca3c0bec8ad375cca5a3b03546388cf9b62fcfb0a5a405a01",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-c5040e6fe1d486a9",
+        "issued_at": "2026-09-10T07:39:12.827Z",
+        "expires_at": "2026-09-10T07:49:12.827Z"
+      }
+    },
+    {
+      "id": "freeze_artifacts:2026-09-05-006-pi-batch-host-gate:2026-09-10T07:48:17.829Z",
+      "at": "2026-09-10T07:48:17.829Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent and Spec frozen at docs/plans/archive/2026-09-05-006-pi-batch-host-gate.intent.json"
+    },
+    {
+      "id": "record_approval:2026-09-05-006-pi-batch-host-gate:2026-09-10T07:48:43.626Z",
+      "at": "2026-09-10T07:48:43.626Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-167a2785\naction_v2_sha256:5d7de64cb8186fb1ba1a9ed6c5a4ea3072b353d1013c11a7659556bd6db48d87",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-c49ac45699c7e7d4",
+        "issued_at": "2026-09-10T07:48:43.627Z",
+        "expires_at": "2026-09-10T07:58:43.627Z"
+      }
+    },
+    {
+      "id": "request_rework:2026-09-05-006-pi-batch-host-gate:2026-09-10T07:55:06.314Z",
+      "at": "2026-09-10T07:55:06.314Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "review_round_10\naction_v2_sha256:c4649f72e5218583a3e33092c0f7cc1ec2d43ff14bad6936cd9196a004956abf",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-4ef3df89f6f9b0b9",
+        "issued_at": "2026-09-10T07:55:06.314Z",
+        "expires_at": "2026-09-10T08:05:06.314Z"
+      }
+    },
+    {
+      "id": "authorize_rework:2026-09-05-006-pi-batch-host-gate:2026-09-10T07:58:05.479Z",
+      "at": "2026-09-10T07:58:05.479Z",
+      "type": "authorize_rework",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "request_rework:2026-09-05-006-pi-batch-host-gate:2026-09-10T07:55:06.314Z:replan-required\naction_v2_sha256:81852078e5dc7f562279c5c560e6db06b812a099c93b1be6fa82ca45fd4bb724",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-60cc319cc5a3d1af",
+        "issued_at": "2026-09-10T07:58:05.479Z",
+        "expires_at": "2026-09-10T08:08:05.479Z"
+      }
+    },
+    {
+      "id": "resolve_finding:2026-09-05-006-pi-batch-host-gate:2026-09-10T08:01:26.953Z",
+      "at": "2026-09-10T08:01:26.953Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-a62bc370967e-1-review-1\naction_v2_sha256:af278acd8a52d27145aee5cd647408077d56c9b515cf80a7dd2d370a4ca2b582"
+    },
+    {
+      "id": "resolve_finding:2026-09-05-006-pi-batch-host-gate:2026-09-10T08:01:45.203Z",
+      "at": "2026-09-10T08:01:45.203Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-a62bc370967e-2-review-2\naction_v2_sha256:93b50a565947305d4e0711e4c1d1949e9353659c4181138c21307c1a62f1d3db"
+    },
+    {
+      "id": "freeze_artifacts:2026-09-05-006-pi-batch-host-gate:2026-09-10T08:02:01.973Z",
+      "at": "2026-09-10T08:02:01.973Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent and Spec frozen at docs/plans/archive/2026-09-05-006-pi-batch-host-gate.intent.json"
+    },
+    {
+      "id": "record_approval:2026-09-05-006-pi-batch-host-gate:2026-09-10T08:02:27.074Z",
+      "at": "2026-09-10T08:02:27.074Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-a3e9875e\naction_v2_sha256:3fed1d45363cd8212bf1cbaa42d82a063c816e4af3b88b4ddb4378b30cdc02c4",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-6539e2f564ff66c2",
+        "issued_at": "2026-09-10T08:02:27.075Z",
+        "expires_at": "2026-09-10T08:12:27.075Z"
+      }
+    },
+    {
+      "id": "request_rework:2026-09-05-006-pi-batch-host-gate:2026-09-10T08:07:25.005Z",
+      "at": "2026-09-10T08:07:25.005Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "review_round_11\naction_v2_sha256:f67181ce75992064ddddf890a040125bd5e801dc1e94c595dea3f9c6776b5867",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-cd705a3e16ed27ae",
+        "issued_at": "2026-09-10T08:07:25.005Z",
+        "expires_at": "2026-09-10T08:17:25.005Z"
+      }
+    },
+    {
+      "id": "authorize_rework:2026-09-05-006-pi-batch-host-gate:2026-09-10T08:09:39.506Z",
+      "at": "2026-09-10T08:09:39.506Z",
+      "type": "authorize_rework",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "request_rework:2026-09-05-006-pi-batch-host-gate:2026-09-10T08:07:25.005Z:replan-required\naction_v2_sha256:3872f10d42460eb507859bd6c369800ce500753883d799dba723071b1473069c",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-1188ae5035676ed1",
+        "issued_at": "2026-09-10T08:09:39.507Z",
+        "expires_at": "2026-09-10T08:19:39.507Z"
+      }
+    },
+    {
+      "id": "resolve_finding:2026-09-05-006-pi-batch-host-gate:2026-09-10T08:15:11.795Z",
+      "at": "2026-09-10T08:15:11.795Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-27958a382c96-1-review-batch-resume-unproven-claim-ownership\naction_v2_sha256:4c1fbd1f0201a01157333b1dfc611d5f7bb5b105450d7ca4060a764d2da4a98e"
+    },
+    {
+      "id": "resolve_finding:2026-09-05-006-pi-batch-host-gate:2026-09-10T08:16:03.081Z",
+      "at": "2026-09-10T08:16:03.081Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-27958a382c96-2-review-batch-resume-porcelain-leading-space\naction_v2_sha256:ad7b8acf482a53a0079ee319ba213b637dcb066f060d0f65cd9e8064b00a1ce7"
+    },
+    {
+      "id": "freeze_artifacts:2026-09-05-006-pi-batch-host-gate:2026-09-10T08:16:09.837Z",
+      "at": "2026-09-10T08:16:09.837Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent and Spec frozen at docs/plans/archive/2026-09-05-006-pi-batch-host-gate.intent.json"
+    },
+    {
+      "id": "request_rework:2026-09-05-006-pi-batch-host-gate:2026-09-10T08:16:32.553Z",
+      "at": "2026-09-10T08:16:32.553Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_12\naction_v2_sha256:757853b38c6970739e05773a2e2df149a42e52c28072d00e558dc7173f185871",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-cc5bbb6ea3d7d007",
+        "issued_at": "2026-09-10T08:16:32.554Z",
+        "expires_at": "2026-09-10T08:26:32.554Z"
+      }
+    },
+    {
+      "id": "resolve_finding:2026-09-05-006-pi-batch-host-gate:2026-09-10T08:21:02.401Z",
+      "at": "2026-09-10T08:21:02.401Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "qa-acc-dual-host-batch-parity-5b087e86-ea6485\naction_v2_sha256:ddd9382d5fd946c214dd724755abb853d0a3d2774ae7490123e0b3189a358b92"
+    },
+    {
+      "id": "freeze_artifacts:2026-09-05-006-pi-batch-host-gate:2026-09-10T08:21:08.009Z",
+      "at": "2026-09-10T08:21:08.009Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent and Spec frozen at docs/plans/archive/2026-09-05-006-pi-batch-host-gate.intent.json"
+    },
+    {
+      "id": "record_approval:2026-09-05-006-pi-batch-host-gate:2026-09-10T08:21:31.967Z",
+      "at": "2026-09-10T08:21:31.967Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-e774db6e\naction_v2_sha256:c9aa9f9293c1b44bf93c8747d0fd9ede5da20401639812d557912e630ef6b167",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-45581d8e06961a52",
+        "issued_at": "2026-09-10T08:21:31.967Z",
+        "expires_at": "2026-09-10T08:31:31.967Z"
+      }
+    },
+    {
+      "id": "record_approval:2026-09-05-006-pi-batch-host-gate:2026-09-10T08:39:11.009Z",
+      "at": "2026-09-10T08:39:11.009Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-d3b782bc\naction_v2_sha256:c86f1fa09eebd217ca0f747028cb63df833e120303cfcd8dd9c8ff76bd6ff84e",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-28a0d6de7fb4b497",
+        "issued_at": "2026-09-10T08:39:11.010Z",
+        "expires_at": "2026-09-10T08:49:11.010Z"
+      }
+    },
+    {
+      "id": "request_rework:2026-09-05-006-pi-batch-host-gate:2026-09-10T08:45:26.994Z",
+      "at": "2026-09-10T08:45:26.994Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "review_round_12\naction_v2_sha256:bd7903efee3f21675fe32c41a5736dec1a2ff01b6003130098d2156fcb8dd380",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-4dbec301465b5709",
+        "issued_at": "2026-09-10T08:45:26.995Z",
+        "expires_at": "2026-09-10T08:55:26.995Z"
+      }
+    },
+    {
+      "id": "authorize_rework:2026-09-05-006-pi-batch-host-gate:2026-09-10T08:45:50.576Z",
+      "at": "2026-09-10T08:45:50.576Z",
+      "type": "authorize_rework",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "request_rework:2026-09-05-006-pi-batch-host-gate:2026-09-10T08:45:26.994Z:replan-required\naction_v2_sha256:2e41d66d0eb6f9b6c930850b058bd94c78ce1cf2a14d74d1dc9c3b1816f82c50",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-c5c023e068510bd2",
+        "issued_at": "2026-09-10T08:45:50.576Z",
+        "expires_at": "2026-09-10T08:55:50.576Z"
+      }
+    },
+    {
+      "id": "resolve_finding:2026-09-05-006-pi-batch-host-gate:2026-09-10T08:55:43.307Z",
+      "at": "2026-09-10T08:55:43.307Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-6c9134e081d3-1-native-decline-unreachable\naction_v2_sha256:bc4031ceddd90179d55906d18a6fc774a7028c017262036023769de4e01b6bbb"
+    },
+    {
+      "id": "resolve_finding:2026-09-05-006-pi-batch-host-gate:2026-09-10T08:55:52.172Z",
+      "at": "2026-09-10T08:55:52.172Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-6c9134e081d3-2-frozen-child-risk-fallback\naction_v2_sha256:1b62f85238cb4d18ec8b141c22e25794f7ded73412f91a4a8ef92e5e18fc37e9"
+    },
+    {
+      "id": "freeze_artifacts:2026-09-05-006-pi-batch-host-gate:2026-09-10T08:55:59.901Z",
+      "at": "2026-09-10T08:55:59.901Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent and Spec frozen at docs/plans/archive/2026-09-05-006-pi-batch-host-gate.intent.json"
+    },
+    {
+      "id": "record_approval:2026-09-05-006-pi-batch-host-gate:2026-09-10T08:56:32.599Z",
+      "at": "2026-09-10T08:56:32.599Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-58552656\naction_v2_sha256:638d522d0b23a92177b85842c7f21a5cfdbe845d3a43a3c452e1c959a4382135",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-9d56adad9557525a",
+        "issued_at": "2026-09-10T08:56:32.600Z",
+        "expires_at": "2026-09-10T09:06:32.599Z"
+      }
+    },
+    {
+      "id": "record_approval:2026-09-05-006-pi-batch-host-gate:2026-09-10T09:04:27.426Z",
+      "at": "2026-09-10T09:04:27.426Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-fe7823b4\naction_v2_sha256:ff40d811d305d134f45349f4df733541ad58197d59b0fb00d71a2c296d1765ae",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-83d2a92e7776b7d2",
+        "issued_at": "2026-09-10T09:04:27.426Z",
+        "expires_at": "2026-09-10T09:14:27.426Z"
+      }
+    },
+    {
+      "id": "record_approval:2026-09-05-006-pi-batch-host-gate:2026-09-10T09:18:27.998Z",
+      "at": "2026-09-10T09:18:27.998Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-7acedc4f\naction_v2_sha256:cc1006383e3df8d2eb409375c2a49b6de9fb4fbe84a8723672373e4bff1c30a7",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-b96c3580f44681a5",
+        "issued_at": "2026-09-10T09:18:27.998Z",
+        "expires_at": "2026-09-10T09:28:27.998Z"
+      }
+    },
+    {
+      "id": "request_rework:2026-09-05-006-pi-batch-host-gate:2026-09-10T09:23:11.415Z",
+      "at": "2026-09-10T09:23:11.415Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "review_round_13\naction_v2_sha256:62f5e3d661d6ad7b5d95af2af4a9cd4c0d1deff24ddd1a87c6bfe828a10c940f",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-652c15000771e3bc",
+        "issued_at": "2026-09-10T09:23:11.416Z",
+        "expires_at": "2026-09-10T09:33:11.416Z"
+      }
+    },
+    {
+      "id": "authorize_rework:2026-09-05-006-pi-batch-host-gate:2026-09-10T09:24:16.682Z",
+      "at": "2026-09-10T09:24:16.682Z",
+      "type": "authorize_rework",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "request_rework:2026-09-05-006-pi-batch-host-gate:2026-09-10T09:23:11.415Z:replan-required\naction_v2_sha256:aa75ad3f2d3622b232e87562b955871bcdb6207cff2ed52b6fd34a379d314ecf",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-ffa8d7bbeef9b864",
+        "issued_at": "2026-09-10T09:24:16.682Z",
+        "expires_at": "2026-09-10T09:34:16.682Z"
+      }
+    },
+    {
+      "id": "resolve_finding:2026-09-05-006-pi-batch-host-gate:2026-09-10T09:32:49.680Z",
+      "at": "2026-09-10T09:32:49.680Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-4c4c9f445877-1-review-1\naction_v2_sha256:5dd42e2c12a0f5f41ea67969c9f6290c604cf2ce9c96fdb62e48a1ee26f6e0b1"
+    },
+    {
+      "id": "resolve_finding:2026-09-05-006-pi-batch-host-gate:2026-09-10T09:32:56.638Z",
+      "at": "2026-09-10T09:32:56.638Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-4c4c9f445877-2-review-2\naction_v2_sha256:eb94c9f60596eb3285023aadc937cf7d3d0446a53e9c95cdabd264e910f359fb"
+    },
+    {
+      "id": "freeze_artifacts:2026-09-05-006-pi-batch-host-gate:2026-09-10T09:33:04.059Z",
+      "at": "2026-09-10T09:33:04.059Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent and Spec frozen at docs/plans/archive/2026-09-05-006-pi-batch-host-gate.intent.json"
+    },
+    {
+      "id": "record_approval:2026-09-05-006-pi-batch-host-gate:2026-09-10T09:33:36.168Z",
+      "at": "2026-09-10T09:33:36.168Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-94adbf41\naction_v2_sha256:0746b44ea058e63e7f08f6b5ff7c5fb36ddbdcd4c69e4371a1a915ce54352ef3",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-a4bef1c0df8f0abe",
+        "issued_at": "2026-09-10T09:33:36.168Z",
+        "expires_at": "2026-09-10T09:43:36.168Z"
+      }
+    },
+    {
+      "id": "request_rework:2026-09-05-006-pi-batch-host-gate:2026-09-10T09:38:59.318Z",
+      "at": "2026-09-10T09:38:59.318Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "review_round_14\naction_v2_sha256:40a56444fbafb3523ad44ad3943b4201d5f902f5dad4091381b33c18976d4f0d",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-ef745177ba7948e9",
+        "issued_at": "2026-09-10T09:38:59.318Z",
+        "expires_at": "2026-09-10T09:48:59.318Z"
+      }
+    },
+    {
+      "id": "authorize_rework:2026-09-05-006-pi-batch-host-gate:2026-09-10T09:40:01.945Z",
+      "at": "2026-09-10T09:40:01.945Z",
+      "type": "authorize_rework",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "request_rework:2026-09-05-006-pi-batch-host-gate:2026-09-10T09:38:59.318Z:replan-required\naction_v2_sha256:b8b966ba425e9755670392b2dcfa1d38d6124ad82462d7846166225662314924",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-b4a1a065892c0d7f",
+        "issued_at": "2026-09-10T09:40:01.945Z",
+        "expires_at": "2026-09-10T09:50:01.945Z"
+      }
+    },
+    {
+      "id": "resolve_finding:2026-09-05-006-pi-batch-host-gate:2026-09-10T09:43:39.413Z",
+      "at": "2026-09-10T09:43:39.413Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-f72ae870f4f0-1-review-1\naction_v2_sha256:81e1df316245bc693d4ef2b11b37a917707a31281a783f19d7d0ab6911b82e8b"
+    },
+    {
+      "id": "resolve_finding:2026-09-05-006-pi-batch-host-gate:2026-09-10T09:43:47.440Z",
+      "at": "2026-09-10T09:43:47.440Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-f72ae870f4f0-2-review-2\naction_v2_sha256:e2a6b49c18d7fee9bc1887e636d6f0b16f89752ed070ec0ecca9b53e856ef27b"
+    },
+    {
+      "id": "freeze_artifacts:2026-09-05-006-pi-batch-host-gate:2026-09-10T09:43:54.446Z",
+      "at": "2026-09-10T09:43:54.446Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent and Spec frozen at docs/plans/archive/2026-09-05-006-pi-batch-host-gate.intent.json"
+    },
+    {
+      "id": "record_approval:2026-09-05-006-pi-batch-host-gate:2026-09-10T09:44:51.931Z",
+      "at": "2026-09-10T09:44:51.931Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-52405e68\naction_v2_sha256:bb49cdfeb4a47119414b3eb7c9dc377d0e6068e631978c622ca2a8ba7d997bc1",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-8540a050c1c0c1d8",
+        "issued_at": "2026-09-10T09:44:51.931Z",
+        "expires_at": "2026-09-10T09:54:51.931Z"
+      }
+    },
+    {
+      "id": "approve_breaking_intent_revision:2026-09-05-006-pi-batch-host-gate:2026-09-10T10:03:49.060Z",
+      "at": "2026-09-10T10:03:49.060Z",
+      "type": "approve_breaking_intent_revision",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "intent_revision_4\naction_v2_sha256:c48a25bc0628977f642398819ca5c3d643310380b6ef4602b38abb392c79b54e",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-99c071b0fb5d48fb",
+        "issued_at": "2026-09-10T10:03:49.312Z",
+        "expires_at": "2026-09-10T10:13:49.312Z"
+      }
+    },
+    {
+      "id": "freeze_artifacts:2026-09-05-006-pi-batch-host-gate:2026-09-10T10:04:24.083Z",
+      "at": "2026-09-10T10:04:24.083Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent and Spec frozen at docs/plans/archive/2026-09-05-006-pi-batch-host-gate.intent.json"
+    },
+    {
+      "id": "record_approval:2026-09-05-006-pi-batch-host-gate:2026-09-10T10:04:59.297Z",
+      "at": "2026-09-10T10:04:59.297Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-c41280f4\naction_v2_sha256:9a85944b890df020d0f7ed66121a24142e84c921e82d02d379d4ac410f4b6bf5",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-4237f527ccf545bb",
+        "issued_at": "2026-09-10T10:04:59.297Z",
+        "expires_at": "2026-09-10T10:14:59.297Z"
+      }
+    },
+    {
+      "id": "record_approval:2026-09-05-006-pi-batch-host-gate:2026-09-10T10:08:58.341Z",
+      "at": "2026-09-10T10:08:58.341Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-3f094503\naction_v2_sha256:fe3f1150553ed5e45377b7b40a66102458326c3da0a5b66dd37ddfab8946b63b",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-f62072fb47cc25a5",
+        "issued_at": "2026-09-10T10:08:58.341Z",
+        "expires_at": "2026-09-10T10:18:58.341Z"
+      }
+    },
+    {
+      "id": "complete:2026-09-05-006-pi-batch-host-gate:2026-09-10T10:08:59.157Z",
+      "at": "2026-09-10T10:08:59.157Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:272721d12acc92c059d3cc3111877a83a04dd10428d76732c04f17a03c3f068c"
+    }
+  ]
+}

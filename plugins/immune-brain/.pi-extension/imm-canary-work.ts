@@ -307,11 +307,13 @@ export function createPiAssuranceProgressionPorts(
 	} satisfies AssuranceProgressionPorts;
 }
 
+const GLOBAL_PI_PROGRESSION_KEY = Symbol.for("immune_brain.pi_assurance_progression");
+
 export default function (
 	pi: ExtensionAPI,
 	dependencies: CanaryWorkExtensionDependencies = {},
 ) {
-	const progression = new AssuranceProgression(createPiAssuranceProgressionPorts(dependencies));
+	const progression = ((globalThis as any)[GLOBAL_PI_PROGRESSION_KEY] ??= new AssuranceProgression(createPiAssuranceProgressionPorts(dependencies)));
 
 	let railContext: ExtensionContext | undefined;
 	const refreshTaskRail = async (ctx: ExtensionContext) => {
@@ -536,7 +538,7 @@ export default function (
 				if ((action.op === "request_stop" || action.op === "request_authorization" || action.op === "approve_breaking_intent_revision") && ctx.mode !== "tui")
 					return failCanaryTool(taskId, action.op, "blocked", "tui_required", "literal-user authorization is TUI-only", "invoke the TUI Tool");
 				const result = action.op === "advance_assurance"
-					? await progression.advance(taskId, ctx, signal, (update) => {
+					? await progression.advance(taskId, ctx, signal, (update: any) => {
 						onUpdate?.(update);
 						presentTaskRailResult(ctx, taskId, update.details as Record<string, unknown> | undefined);
 					})
