@@ -5,6 +5,7 @@ export const PRIVILEGED_OPERATIONS = [
 	"request_authorization",
 	"approve_breaking_intent_revision",
 	"stop",
+	"start_unattended_batch",
 ] as const;
 
 export type PrivilegedOperation = (typeof PRIVILEGED_OPERATIONS)[number];
@@ -66,12 +67,22 @@ export function evaluateNativeGate(input: NativeGateInput): NativeGateResult {
 
 export interface NativeConfirmationInput {
 	operation: PrivilegedOperation;
-	taskId: string;
+	taskId?: string;
+	initiativeSlug?: string;
 	toolCallId: string;
 	risk?: string;
 	intentRevision?: number;
 	intentContentHash?: string;
 	bindingDigest?: string;
+	planDigest?: string;
+	batchDetails?: {
+		initiative_slug: string;
+		batch_branch: string;
+		children: Array<{ task_id: string; slice_id: string; risk?: string }>;
+		excluded: Array<{ task_id: string; slice_id: string; reason: string }>;
+		budget: { max_children: number; deadline_at: string; qa_failure_limit: number };
+		expires_at: string;
+	};
 	signal?: AbortSignal;
 }
 
@@ -87,13 +98,15 @@ export function confirmationRef(input: {
 	toolCallId: string;
 	requestId: string;
 	operation: string;
-	taskId: string;
+	taskId?: string;
+	initiativeSlug?: string;
 	intentRevision?: number;
 	intentContentHash?: string;
 	bindingDigest?: string;
+	planDigest?: string;
 }): string {
 	return `claude-confirm-${createHash("sha256")
-		.update(`${input.connectionId}\0${input.toolCallId}\0${input.requestId}\0${input.operation}\0${input.taskId}\0${input.intentRevision ?? ""}\0${input.intentContentHash ?? ""}\0${input.bindingDigest ?? ""}`)
+		.update(`${input.connectionId}\0${input.toolCallId}\0${input.requestId}\0${input.operation}\0${input.taskId ?? ""}\0${input.initiativeSlug ?? ""}\0${input.intentRevision ?? ""}\0${input.intentContentHash ?? ""}\0${input.bindingDigest ?? ""}\0${input.planDigest ?? ""}`)
 		.digest("hex")
 		.slice(0, 16)}`;
 }

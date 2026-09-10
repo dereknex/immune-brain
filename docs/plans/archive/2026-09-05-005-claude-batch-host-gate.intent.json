@@ -1,7 +1,6 @@
 {
   "contract": "assurance_kernel/task_intent/v1",
   "task_id": "2026-09-05-005-claude-batch-host-gate",
-  "owner": "user",
   "goal": "Implement the Claude Code Host gate for unattended batch runs defined by docs/specs/unattended-initiative-batch-run.spec.md section 3.6: one privileged MCP operation start_unattended_batch whose elicitation summary is derived from Kernel and projection facts rather than model-supplied text, which issues the Batch Authorization on accept and remains fail-closed on non-interactive sessions, decline, cancel, and every rejected precondition.",
   "acceptance": [
     {
@@ -16,6 +15,8 @@
     }
   ],
   "scope_hint": [
+    "docs/specs/archive/unattended-initiative-batch-run.spec.md",
+    "docs/specs/unattended-initiative-batch-run.spec.md",
     "plugins/immune-brain/runtime/claude/interaction.ts",
     "plugins/immune-brain/runtime/claude/kernel_ports.ts",
     "plugins/immune-brain/runtime/claude/mcp_server.ts",
@@ -23,5 +24,6 @@
     "tests/claude-host-authority.test.ts"
   ],
   "risk": "critical",
-  "revision": 1
+  "revision": 2,
+  "owner": "user"
 }

@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { join } from "node:path";
 import {
 	AssuranceCoordinator,
@@ -44,6 +44,32 @@ import { reconcileKernelAuthority, repairKernelAuthority } from "../kernel/stora
 import { preparePiCanary, revalidatePiCanary } from "../kernel/pi_canary_prepare";
 import { runDeterministicQa } from "../assurance/qa";
 import { taskDiffIdentity, taskRevisionIdentity } from "../workspace_scope";
+import { projectBatchPlan } from "../unattended/batch_plan";
+import {
+	startBatch,
+	type BatchRunnerKernelPort,
+	type BatchRunReport,
+} from "../unattended/batch_runner";
+import {
+	createBatchAuthorityRegistry,
+	computeBatchPlanDigest,
+	deriveChildEnrollment,
+	type BatchAuthorityRegistry,
+	type BatchAuthorizationBinding,
+} from "../kernel/batch_authority";
+import {
+	runBatchGitPreflight,
+	type BatchRunnerGitPort,
+} from "../unattended/batch_git";
+import type {
+	BatchPlan,
+	BatchPlanChild,
+	InitiativeObservationReader,
+} from "../unattended/types";
+import { observeGithubInitiative } from "../github_issue_tracker";
+import { readWorkspaceStateRaw } from "../kernel/storage";
+import { readBackendClaim } from "../kernel/backend_claim";
+import { readGitHead } from "../kernel/pi_canary_prepare";
 import {
 	confirmationRef,
 	enrollmentNonce,
@@ -368,6 +394,9 @@ export interface ClaudeRuntimeOptions {
 	interactive?: boolean;
 	permissionMode?: PermissionMode;
 	requestConfirmation?: NativeConfirmationPort;
+	batchKernel?: Partial<BatchRunnerKernelPort>;
+	batchGit?: BatchRunnerGitPort;
+	readInitiative?: InitiativeObservationReader;
 }
 
 export class ClaudeRuntime {
@@ -380,13 +409,20 @@ export class ClaudeRuntime {
 	private hostVersion: string | undefined;
 	private mutationRegistry: MutationAuthorityRegistry | null = null;
 	private enrollmentRegistry = createEnrollmentAuthorityRegistry();
+	private batchRegistry = createBatchAuthorityRegistry();
 	private app: ReturnType<typeof createCanaryApplication> | null = null;
+	private readonly batchKernel?: Partial<BatchRunnerKernelPort>;
+	private readonly batchGit?: BatchRunnerGitPort;
+	private readonly readInitiative?: InitiativeObservationReader;
 
 	constructor(options: ClaudeRuntimeOptions) {
 		this.cwd = options.cwd;
 		this.env = options.env ?? process.env;
 		this.interactive = options.interactive ?? true;
 		this.requestConfirmation = options.requestConfirmation;
+		this.batchKernel = options.batchKernel;
+		this.batchGit = options.batchGit;
+		this.readInitiative = options.readInitiative;
 		this.host = options.host ?? new ClaudeReviewHost(new FileHookEventLog());
 		this.coordinator = new AssuranceCoordinator({
 			...this.createKernelPorts(),
@@ -823,12 +859,446 @@ export class ClaudeRuntime {
 			throw error;
 		}
 	}
+
+	async startUnattendedBatch(
+		initiativeSlug: string,
+		meta: ToolMeta,
+	): Promise<
+		| { state: "started"; batch_id: string; report: BatchRunReport }
+		| { state: "rejected"; reason: string; recovery_action: string }
+		| { state: "cancelled"; reason: string; recovery_action: string }
+		| { state: "blocked"; reason: string; recovery_action: string }
+	> {
+		throwIfCancelled(meta.signal);
+		const probe = probeHost(this.env, process.platform, this.hostVersion);
+		if (!probe.ok) throw new NativeAuthorityError("unsupported_host", probe.reason);
+		const interactive = meta.interactive ?? this.interactive;
+		if (!interactive) throw new NativeAuthorityError("unsupported_host", "interactive MCP elicitation is unavailable");
+		if (!this.requestConfirmation) throw new NativeAuthorityError("interaction_not_opened", "native confirmation port is unavailable");
+
+		// 1. Validate initiative slug
+		if (!/^[a-z0-9][a-z0-9._-]{0,127}$/i.test(initiativeSlug)) {
+			return {
+				state: "rejected",
+				reason: `invalid initiative slug: ${initiativeSlug}`,
+				recovery_action: "specify a valid initiative slug and retry in the current Host",
+			};
+		}
+
+		// 2. Active workspace claim check (pre-confirmation)
+		const workspaceState = readWorkspaceStateRaw(this.cwd);
+		const claim = readBackendClaim(this.cwd);
+		const activeTaskId = workspaceState.state.current_working || (claim?.lifecycle_status === "active" ? claim.task_id : null);
+		if (activeTaskId) {
+			return {
+				state: "blocked",
+				reason: `an active workspace claim already exists for task: ${activeTaskId}`,
+				recovery_action: "resolve or stop the active task before starting a batch in the current Host",
+			};
+		}
+
+		// 3. Git HEAD & read-only preflight check (pre-confirmation)
+		let baseHead: string;
+		try {
+			baseHead = readGitHead(this.cwd);
+		} catch (err) {
+			return {
+				state: "rejected",
+				reason: err instanceof Error ? err.message : String(err),
+				recovery_action: "commit working changes and ensure a committed Git HEAD exists in the current Host",
+			};
+		}
+
+		const batchBranch = `imm/${initiativeSlug}`;
+		// Read-only check: verify clean tree and branch does not exist without creating refs before confirmation
+		const branchExists = spawnSync("git", ["-C", this.cwd, "show-ref", "--verify", "--quiet", `refs/heads/${batchBranch}`]);
+		if (branchExists.status === 0) {
+			return {
+				state: "rejected",
+				reason: `branch preflight failed: branch refs/heads/${batchBranch} already exists`,
+				recovery_action: "delete or rename the conflicting branch, or commit working changes in the current Host",
+			};
+		}
+		const status = spawnSync("git", ["-C", this.cwd, "status", "--porcelain", "--untracked-files=all"], {
+			encoding: "utf8",
+		});
+		if (status.status !== 0 || status.stdout.trim().length > 0) {
+			return {
+				state: "rejected",
+				reason: "branch preflight failed: working tree is dirty",
+				recovery_action: "delete or rename the conflicting branch, or commit working changes in the current Host",
+			};
+		}
+
+		// 4. Project batch plan (pre-confirmation)
+		const now = new Date().toISOString();
+		let plan: BatchPlan;
+		try {
+			plan = await projectBatchPlan(
+				this.cwd,
+				initiativeSlug,
+				{ confirmation_time: now },
+				this.readInitiative ?? observeGithubInitiative,
+			);
+		} catch (err) {
+			const msg = err instanceof Error ? err.message : String(err);
+			if (msg.includes("has no enrollable children")) {
+				return {
+					state: "rejected",
+					reason: "empty enrollable child set: no enrollable child tasks found in the initiative plan",
+					recovery_action: "ensure the initiative has uncompleted, non-critical child tasks in the current Host",
+				};
+			}
+			return {
+				state: "rejected",
+				reason: `failed to project batch plan: ${msg}`,
+				recovery_action: "review initiative issues and planning sidecars in the current Host",
+			};
+		}
+
+		if (plan.enrollable.length === 0) {
+			return {
+				state: "rejected",
+				reason: "empty enrollable child set: no enrollable child tasks found in the initiative plan",
+				recovery_action: "ensure the initiative has uncompleted, non-critical child tasks in the current Host",
+			};
+		}
+
+		// 5. Native confirmation elicitation
+		const planDigest = computeBatchPlanDigest(plan.enrollable);
+		const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
+		const batchDetails = {
+			initiative_slug: initiativeSlug,
+			batch_branch: batchBranch,
+			children: plan.children
+				.filter((c) => c.status === "enrollable")
+				.map((c) => {
+					let risk = "material";
+					try {
+						const read = readTaskIntent(this.cwd, c.task_id, c.intent_path ?? undefined);
+						risk = read.intent.risk;
+					} catch {
+						// fallback to material
+					}
+					return {
+						task_id: c.task_id,
+						slice_id: c.slice_id,
+						risk,
+					};
+				}),
+			excluded: plan.children
+				.filter((c) => c.status !== "enrollable")
+				.map((c) => ({
+					task_id: c.task_id,
+					slice_id: c.slice_id,
+					reason: c.status === "needs_human" && c.reason === "critical" ? "critical" : (c.reason ?? c.status),
+				})),
+			budget: plan.budget,
+			expires_at: expiresAt,
+		};
+
+		// review-4: bounded elicitation timeout preventing indefinite hang on missing/replayed evidence
+		const configuredTimeout = Number(this.env.IMMUNE_BRAIN_BATCH_TIMEOUT_MS);
+		const timeoutMs = Number.isFinite(configuredTimeout) && configuredTimeout > 0 ? configuredTimeout : 60_000;
+		const timeoutController = new AbortController();
+		const timeoutTimer = setTimeout(() => {
+			timeoutController.abort(new NativeAuthorityError("user_cancelled", "native confirmation timed out"));
+		}, timeoutMs);
+		const elicitationSignal = meta.signal
+			? AbortSignal.any([meta.signal, timeoutController.signal])
+			: timeoutController.signal;
+
+		let confirmationResult: { decision: "accept" | "decline" | "cancel"; requestId: string };
+		try {
+			confirmationResult = await this.requestConfirmation({
+				operation: "start_unattended_batch",
+				initiativeSlug,
+				toolCallId: meta.toolCallId,
+				planDigest,
+				batchDetails,
+				signal: elicitationSignal,
+			});
+		} catch (err) {
+			if (timeoutController.signal.aborted && !meta.signal?.aborted) {
+				return {
+					state: "rejected",
+					reason: "native confirmation timed out waiting for user interaction",
+					recovery_action: "retry through a fresh native gate in the current Host",
+				};
+			}
+			if (meta.signal?.aborted) {
+				return {
+					state: "cancelled",
+					reason: "user cancelled before batch execution",
+					recovery_action: "wait for a fresh literal-user request",
+				};
+			}
+			if (err instanceof NativeAuthorityError) {
+				if (err.reasonCode === "unsupported_host") throw err;
+				if (err.reasonCode === "user_cancelled") {
+					return { state: "cancelled", reason: err.message, recovery_action: err.recoveryAction };
+				}
+				if (err.reasonCode === "user_denied") {
+					return { state: "rejected", reason: err.message, recovery_action: err.recoveryAction };
+				}
+				return { state: "rejected", reason: err.message, recovery_action: err.recoveryAction };
+			}
+			return {
+				state: "rejected",
+				reason: err instanceof Error ? err.message : String(err),
+				recovery_action: "retry through a fresh native gate in the current Host",
+			};
+		} finally {
+			clearTimeout(timeoutTimer);
+		}
+
+		if (meta.signal?.aborted) {
+			return {
+				state: "cancelled",
+				reason: "user cancelled before batch execution",
+				recovery_action: "wait for a fresh literal-user request",
+			};
+		}
+
+		if (confirmationResult.decision === "decline") {
+			return {
+				state: "rejected",
+				reason: "native interaction declined",
+				recovery_action: "wait for a fresh literal-user request",
+			};
+		}
+		if (confirmationResult.decision === "cancel") {
+			return {
+				state: "cancelled",
+				reason: "native interaction cancelled",
+				recovery_action: "wait for a fresh literal-user request",
+			};
+		}
+		if (confirmationResult.decision !== "accept") {
+			return {
+				state: "rejected",
+				reason: "native interaction returned no decision",
+				recovery_action: "retry through a fresh native gate in the current Host",
+			};
+		}
+
+		// 6. Post-confirmation Revalidation (Drift check, Workspace claim, Git HEAD)
+		const postWorkspaceState = readWorkspaceStateRaw(this.cwd);
+		const postClaim = readBackendClaim(this.cwd);
+		if (postWorkspaceState.state.current_working || postClaim?.lifecycle_status === "active") {
+			return {
+				state: "blocked",
+				reason: "an active workspace claim appeared during confirmation",
+				recovery_action: "resolve or stop the active task before starting a batch in the current Host",
+			};
+		}
+
+		let revalidatedPlan: BatchPlan;
+		try {
+			revalidatedPlan = await projectBatchPlan(
+				this.cwd,
+				initiativeSlug,
+				{ confirmation_time: now },
+				this.readInitiative ?? observeGithubInitiative,
+			);
+		} catch (err) {
+			return {
+				state: "rejected",
+				reason: "batch plan became unreadable after native confirmation",
+				recovery_action: "review the current workspace and retry through a fresh native gate in the current Host",
+			};
+		}
+
+		const revalidatedDigest = computeBatchPlanDigest(revalidatedPlan.enrollable);
+		if (revalidatedDigest !== planDigest) {
+			return {
+				state: "rejected",
+				reason: "batch plan changed after native confirmation",
+				recovery_action: "review the current workspace and retry through a fresh native gate in the current Host",
+			};
+		}
+
+		// review-batch-head-revalidation-window: re-verify Git HEAD after asynchronous revalidation
+		let postHead: string;
+		try {
+			postHead = readGitHead(this.cwd);
+		} catch (err) {
+			return {
+				state: "rejected",
+				reason: "Git repository became unreadable after native confirmation",
+				recovery_action: "review the current workspace and retry through a fresh native gate in the current Host",
+			};
+		}
+		if (postHead !== baseHead) {
+			return {
+				state: "rejected",
+				reason: "Git HEAD moved after native confirmation",
+				recovery_action: "review the current workspace and retry through a fresh native gate in the current Host",
+			};
+		}
+
+		// review-batch-active-claim-race: re-check workspace and backend claim after asynchronous revalidation
+		const finalWorkspaceState = readWorkspaceStateRaw(this.cwd);
+		const finalClaim = readBackendClaim(this.cwd);
+		const finalActiveTaskId = finalWorkspaceState.state.current_working || (finalClaim?.lifecycle_status === "active" ? finalClaim.task_id : null);
+		if (finalActiveTaskId) {
+			return {
+				state: "blocked",
+				reason: `an active workspace claim appeared during revalidation for task: ${finalActiveTaskId}`,
+				recovery_action: "resolve or stop the active task before starting a batch in the current Host",
+			};
+		}
+
+		// review-1: verify cancellation signal right before authority issuance and startBatch
+		if (meta.signal?.aborted) {
+			return {
+				state: "cancelled",
+				reason: "user cancelled before batch execution",
+				recovery_action: "wait for a fresh literal-user request",
+			};
+		}
+
+		// 7. Issue Batch Authorization through Kernel registry and startBatch
+		const batchId = `batch-${initiativeSlug}-${Date.now()}`;
+		const confirmation = confirmationRef({
+			connectionId: meta.sessionId,
+			toolCallId: meta.toolCallId,
+			requestId: confirmationResult.requestId,
+			operation: "start_unattended_batch",
+			initiativeSlug,
+			planDigest,
+		});
+		const binding: BatchAuthorizationBinding = {
+			batch_id: batchId,
+			initiative_slug: initiativeSlug,
+			plan_digest: planDigest,
+			branch: batchBranch,
+			base_head: baseHead,
+			budget: plan.budget,
+			actor_id: "user",
+			confirmation_ref: confirmation,
+			expires_at: expiresAt,
+			nonce: enrollmentNonce(),
+		};
+
+		// review-2: normalize child dependencies using plan.enrollable so already_settled dependencies do not cause digest mismatch
+		const enrollableChildById = new Map(plan.enrollable.map((c) => [c.task_id, c]));
+		const normalizedChildren: BatchPlanChild[] = plan.children
+			.filter((c) => c.status === "enrollable")
+			.map((c) => {
+				const digestChild = enrollableChildById.get(c.task_id);
+				return {
+					...c,
+					blocked_by: digestChild ? [...digestChild.blocked_by] : c.blocked_by,
+				};
+			});
+		const capability = this.batchRegistry.issue(binding, plan.enrollable, now);
+
+		const kernelPort = this.createBatchKernelPort(this.batchRegistry, capability, binding);
+		const report = await startBatch({
+			root: this.cwd,
+			batch_id: batchId,
+			initiative_slug: initiativeSlug,
+			registry: this.batchRegistry,
+			capability,
+			children: normalizedChildren,
+			plan_digest: planDigest,
+			base_head: baseHead,
+			confirmation_time: now,
+			authorization_expires_at: expiresAt,
+			budget: plan.budget,
+			now,
+			kernel: kernelPort,
+			git: this.batchGit,
+		});
+
+		// review-3 & review-batch-preflight-recovery-is-diagnostic: map rejected batch state to rejected result with same-Host recovery action
+		if (report.batch_state === "rejected") {
+			return {
+				state: "rejected",
+				reason: report.reason ?? "batch run rejected",
+				recovery_action: "delete or rename the conflicting branch, or commit working changes and retry in the current Host",
+			};
+		}
+
+		return {
+			state: "started",
+			batch_id: batchId,
+			report,
+		};
+	}
+
+	private createBatchKernelPort(
+		registry: BatchAuthorityRegistry,
+		capability: object,
+		binding: BatchAuthorizationBinding,
+	): BatchRunnerKernelPort {
+		// review-batch-partial-port-fabricates-enrollment: construct real production port first, never fabricate stubs
+		const realPort: BatchRunnerKernelPort = {
+			enrollTask: async ({ root, task_id, batch }) => {
+				const now = new Date().toISOString();
+				const derived = deriveChildEnrollment(root, batch.registry, {
+					capability: batch.capability,
+					binding,
+					task_id,
+					expected_head: batch.binding.expected_head,
+					now,
+				});
+				const enrollmentCapability = this.enrollmentRegistry.issue(derived.binding);
+				const input = {
+					task_id,
+					intent_path: derived.binding.intent_path,
+					intent_revision: derived.binding.intent_revision,
+					preparation_digest: derived.binding.preparation_digest,
+					capability: enrollmentCapability,
+					capability_binding: derived.binding,
+					batch: {
+						registry: batch.registry,
+						capability: batch.capability,
+						binding,
+						expected_head: batch.binding.expected_head,
+					},
+					now,
+				};
+				const rehearsal = runEnrollmentRehearsal(root, input, enrollmentCapability, this.enrollmentRegistry);
+				if (!rehearsal.rehearsed || rehearsal.evidence.outcome !== "ready") {
+					throw new Error(`Kernel enrollment rehearsal failed: ${rehearsal.evidence.blockers.join("; ")}`);
+				}
+				const enrolled = enrollCanaryTask(root, input, this.enrollmentRegistry);
+				const recordRaw = readTaskRecordRaw(root, task_id);
+				return { record_revision: recordRaw.revision };
+			},
+			advanceTask: async (root, taskId) => {
+				const result = await this.coordinator.advance(taskId, { cwd: root });
+				if (result.state === "completed") return { state: "completed" };
+				if (result.state === "stopped") return { state: "stopped" };
+				if (result.state === "rework") return { state: "rework", operation: result.operation, summary: result.summary };
+				if (result.state === "review_ready") return { state: "review_ready", operation_id: result.operation_id };
+				if (result.state === "blocked") return { state: "blocked", reason: result.reason };
+				return { state: "failed", reason: (result as { reason?: string }).reason ?? "advance failed" };
+			},
+			projectTask: async (root, taskId) => projectAssurance(root, taskId, diffSnapshotOf),
+			ownsTaskClaim: (taskId) => {
+				return registry.isChildConsumed(capability, taskId);
+			},
+			validateBatchAuthorization: (input) => {
+				return input.registry.inspect(input.capability, input.binding as never);
+			},
+		};
+
+		if (!this.batchKernel) return realPort;
+		return {
+			...realPort,
+			...this.batchKernel,
+		};
+	}
 }
 
 export interface ToolMeta {
 	sessionId: string;
 	toolCallId: string;
 	taskId: string;
+	initiativeSlug?: string;
 	requiresUserInteraction?: boolean;
 	permissionMode?: PermissionMode;
 	interactive?: boolean;

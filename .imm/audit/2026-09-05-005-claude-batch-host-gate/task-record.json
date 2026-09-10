@@ -1,0 +1,529 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "2026-09-05-005-claude-batch-host-gate",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "2026-09-05-005-claude-batch-host-gate",
+    "goal": "Implement the Claude Code Host gate for unattended batch runs defined by docs/specs/unattended-initiative-batch-run.spec.md section 3.6: one privileged MCP operation start_unattended_batch whose elicitation summary is derived from Kernel and projection facts rather than model-supplied text, which issues the Batch Authorization on accept and remains fail-closed on non-interactive sessions, decline, cancel, and every rejected precondition.",
+    "acceptance": [
+      {
+        "id": "acc-claude-batch-gate",
+        "assertion": "start_unattended_batch joins PRIVILEGED_OPERATIONS and is rejected on any non-interactive Claude Code session with the existing unsupported_host failure code, exactly as enroll, request_authorization, approve_breaking_intent_revision, and stop are, so an unattended entry can never be self-authorized by a headless session. Its only model-supplied input is the Initiative slug; the confirmation content, namely the Initiative, batch branch, ordered child list with each child's risk, the excluded critical and already-settled children, the budget, and expires_at, is derived from projectBatchPlan and Kernel state, and the elicitation is bound to the resulting plan_digest so a plan that changed between projection and acceptance is rejected rather than confirmed. Accept issues exactly one Batch Authorization through the Kernel registry and calls startBatch; the Host adapter mints no capability itself and owns no batch state transition.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/claude-batch-authority.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 65536\n}\n"
+      },
+      {
+        "id": "acc-claude-batch-fail-closed",
+        "assertion": "Decline, cancel, elicitation timeout, missing or replayed elicitation evidence, an ambiguous session identity, an active workspace claim, a failing branch preflight, and an empty enrollable child set each produce zero Kernel writes, zero batch state, no new Git ref, and a stable rejection reason with exactly one same-Host recovery action, never a suggestion of another Host, worktree, Direct Path, unmanaged implementation, or automatic retry. The operation returns exactly one of started, rejected, cancelled, or blocked, and the status operation stays usable in every one of those outcomes. Existing privileged operations, their gates, and the default imm-loop behavior are unchanged by this slice.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/claude-batch-authority.test.ts\",\n    \"tests/claude-host-authority.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 180000,\n  \"max_output_bytes\": 65536\n}\n"
+      }
+    ],
+    "scope_hint": [
+      "docs/specs/archive/unattended-initiative-batch-run.spec.md",
+      "docs/specs/unattended-initiative-batch-run.spec.md",
+      "plugins/immune-brain/runtime/claude/interaction.ts",
+      "plugins/immune-brain/runtime/claude/kernel_ports.ts",
+      "plugins/immune-brain/runtime/claude/mcp_server.ts",
+      "tests/claude-batch-authority.test.ts",
+      "tests/claude-host-authority.test.ts"
+    ],
+    "risk": "critical",
+    "revision": 2,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/archive/2026-09-05-005-claude-batch-host-gate.intent.json",
+    "content_hash": "sha256:99577995fb0a35288998bb1976d5916262c58f575499ae4acd9f834e6191b956"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:83c1e6a74810109478f47384f2563c15c419f2b01568b6d669b151dfbda9bef7",
+  "git_base_head": "e75c5e859e7464d5042d4c269ebc2c04e02e3cbe",
+  "attestations": [
+    {
+      "id": "approval-qa-c87acd8a",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:99577995fb0a35288998bb1976d5916262c58f575499ae4acd9f834e6191b956",
+      "diff_hash": "sha256:762186060ccc61d998d29b333def99f12f8e2ba2efeb2cf1350089c708887059",
+      "actor_id": "deterministic-qa",
+      "summary": "all 2 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "acc-claude-batch-gate",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-claude-batch-fail-closed",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-ae09cb39",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:99577995fb0a35288998bb1976d5916262c58f575499ae4acd9f834e6191b956",
+      "diff_hash": "sha256:8a9a1424dda9b71c9c01807c1cb3439c4d68d30943557ffdc89f1829344d0b6f",
+      "actor_id": "deterministic-qa",
+      "summary": "all 2 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "acc-claude-batch-gate",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-claude-batch-fail-closed",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-19ff45b0",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:99577995fb0a35288998bb1976d5916262c58f575499ae4acd9f834e6191b956",
+      "diff_hash": "sha256:13ac510f9b1f91c5fe92952bdc794490d6e98b92d83d134edaa4d4fef9ec6dc2",
+      "actor_id": "deterministic-qa",
+      "summary": "all 2 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "acc-claude-batch-gate",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-claude-batch-fail-closed",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-7709ed08",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:99577995fb0a35288998bb1976d5916262c58f575499ae4acd9f834e6191b956",
+      "diff_hash": "sha256:15c71343160cfbb8a1099f31e80d6bc99445db7416daafdc5fb1856b6fa8067c",
+      "actor_id": "deterministic-qa",
+      "summary": "all 2 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "acc-claude-batch-gate",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "acc-claude-batch-fail-closed",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-0da86ab9",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:99577995fb0a35288998bb1976d5916262c58f575499ae4acd9f834e6191b956",
+      "diff_hash": "sha256:15c71343160cfbb8a1099f31e80d6bc99445db7416daafdc5fb1856b6fa8067c",
+      "actor_id": "parent-mediated-review",
+      "summary": "已检查全部五个变更路径及相关 Kernel 调用链，未发现阻断问题；不可变 Git 对象与 manifest 一致，两项验收的嵌入 QA 结果均通过，按要求未重跑测试。",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "e75c5e859e7464d5042d4c269ebc2c04e02e3cbe",
+        "review_commit": "68ab688737fc312ac1b858781f86e1841294026c",
+        "review_tree": "7616435015f3cb4d28ca09a3ea94826de1e75491",
+        "manifest_digest": "sha256:ef8a2cb0ff3dda104ceb8045db9cee83d09f916246cfad219b3340b13504353a"
+      }
+    }
+  ],
+  "findings": [
+    {
+      "id": "review-cb0dcbefc63c-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "acc-claude-batch-fail-closed",
+      "source": "review",
+      "review_round": 1,
+      "summary": "plugins/immune-brain/runtime/claude/kernel_ports.ts:1082：接受确认后再次 await projectBatchPlan，但返回后直到 registry.issue/startBatch 都没有检查 cancellation；用户在这次远程查询期间取消，仍会创建分支、持久化 batch 并可能 enroll。应在最后一次异步重验证之后、发行 authority 和启动之前检查 signal，并返回 cancelled；增加该时间窗口的零写入测试。"
+    },
+    {
+      "id": "review-cb0dcbefc63c-2-review-2",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "acc-claude-batch-gate",
+      "source": "review",
+      "review_round": 1,
+      "summary": "plugins/immune-brain/runtime/claude/kernel_ports.ts:1127：授权使用 plan.enrollable，却向 startBatch 传入未经依赖归一化的 plan.children。直接调用所需的未修改文件 runtime/unattended/batch_plan.ts 会从 enrollable.blocked_by 排除 already_settled 依赖，而 runtime/unattended/batch_runner.ts 的 validateRunAuthorization 会重新计算输入 children 的摘要；因此合法的已完成前置任务加待执行后继任务会产生摘要不匹配，无法启动。应保留显示元数据但使用 plan.enrollable 的规范依赖构造 runner children，并覆盖已完成前置任务场景。"
+    },
+    {
+      "id": "review-cb0dcbefc63c-3-review-3",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "acc-claude-batch-fail-closed",
+      "source": "review",
+      "review_round": 1,
+      "summary": "plugins/immune-brain/runtime/claude/kernel_ports.ts:1149：无论 startBatch 返回什么 report，均返回 state: started。直接调用所需的未修改 runtime/unattended/batch_runner.ts 明确在最终 branch preflight 或 authorization 校验失败时返回 batch_state: rejected；例如确认期间分支被创建、工作树变脏或授权过期，本接口仍宣告启动且没有顶层 rejection reason/recovery_action。应将 rejected report 映射为 rejected 和一个同 Host 恢复动作，并增加确认后 preflight 失败测试。"
+    },
+    {
+      "id": "review-cb0dcbefc63c-4-review-4",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "acc-claude-batch-fail-closed",
+      "source": "review",
+      "review_round": 1,
+      "summary": "plugins/immune-brain/runtime/claude/kernel_ports.ts:1001：新的 batch gate 直接等待 requestConfirmation，没有超时边界；其实际调用链 plugins/immune-brain/runtime/claude/mcp_server.ts:434 的 await response 也没有 timer，未知或旧 requestId 的回复只被忽略。因此连接保持打开但 elicitation 证据缺失或仅被重放时，请求永久 pending，不会产生要求的稳定拒绝结果，expires_at 也不会终止等待。应为 batch elicitation 增加有界超时、清理 pending 并返回 rejected，保留旧 privileged operations 行为，补充 wire 级超时和仅重放证据测试。"
+    },
+    {
+      "id": "review-abaffb4a195a-1-review-batch-enrollment-context",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "acc-claude-batch-gate",
+      "source": "review",
+      "review_round": 2,
+      "summary": "plugins/immune-brain/runtime/claude/kernel_ports.ts:1247 构造 enrollment input 时遗漏 batch context，随后在第 1260 行调用 enrollCanaryTask。Kernel 因而跳过 batch 专属的 HEAD lineage 检查和与 TaskRecord 写入同锁的 consumeChild；真实 enrollment 成功后，适配器第 1275 行的 ownsTaskClaim 仍返回 false，恢复流程会把本批次自己的活跃 claim 判为 foreign。请将 registry、capability、完整 binding 和 expected_head 通过 input.batch 传入既有 Kernel enrollment，并增加不替换 enrollTask 的真实 enrollment/ownership 回归覆盖。现有成功测试 mock 了 enrollment，无法发现此缺口。"
+    },
+    {
+      "id": "review-abaffb4a195a-2-review-batch-active-claim-race",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "acc-claude-batch-fail-closed",
+      "source": "review",
+      "review_round": 2,
+      "summary": "plugins/immune-brain/runtime/claude/kernel_ports.ts:1116 在最后一次 workspace/backend claim 检查之后 await projectBatchPlan，恢复执行后只检查 digest 和 cancellation，直接 issue 并调用 startBatch。第二次 Initiative 读取期间另一个请求可以完成 enrollment；只要计划未变，本请求仍继续。startBatch 在 child enrollment 检查之前执行建分支 preflight 并持久化 running 状态，因此会在已有 active claim 的情况下创建 Git ref 和 batch state，违反零写入契约。请在异步重验证完成后重新检查 claim，并由 Kernel 在首次副作用边界保证 claim 检查与启动互斥；补充第二次 readInitiative 期间出现 active claim 的回归测试，断言 blocked 且无新增 ref 或 batch state。"
+    },
+    {
+      "id": "request_rework:2026-09-05-005-claude-batch-host-gate:2026-09-10T02:10:55.909Z:replan-required",
+      "kind": "replan_required",
+      "status": "resolved",
+      "acceptance_id": "acc-claude-batch-gate",
+      "source": "kernel",
+      "review_round": 2,
+      "summary": "Review returned this acceptance boundary twice; a durable replan is required."
+    },
+    {
+      "id": "review-a488a4792a01-1-review-batch-head-revalidation-window",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "acc-claude-batch-fail-closed",
+      "source": "review",
+      "review_round": 3,
+      "summary": "plugins/immune-brain/runtime/claude/kernel_ports.ts:1116：最后一次 HEAD 校验发生在异步 projectBatchPlan 重读之前，重读之后只复查 claim 和取消信号。如果此时另一个操作提交了不改变 child intent 的内容，plan_digest 仍相同，授权会继续签发。随后 runBatchGitPreflight 仅检查 HEAD 存在，不检查它等于 base_head，并执行 checkout -b <branch> <旧 base_head>，因此创建新 ref、切回旧快照并写入 batch state，而不是拒绝确认期间发生的工作区变化。最小修复：在异步重读完成后、签发授权前再次验证 HEAD；增加第二次 readInitiative 期间推进 HEAD 的回归用例，断言拒绝且不新增 ref 或 batch state。"
+    },
+    {
+      "id": "review-a488a4792a01-2-review-batch-partial-port-fabricates-enrollment",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "acc-claude-batch-gate",
+      "source": "review",
+      "review_round": 3,
+      "summary": "plugins/immune-brain/runtime/claude/kernel_ports.ts:1237：提供任何 batchKernel 局部覆盖都会令未覆盖的 enrollTask 返回伪造的 record_revision=\\\"r\\\"，未覆盖的 advanceTask 直接返回 completed，ownsTaskClaim 默认返回 true，而不是复用真实 Kernel 实现。tests/claude-batch-authority.test.ts:722 声称验证真实 enrollment 和 child slot 消耗，但正好进入此分支，实际没有调用 deriveChildEnrollment 或 enrollCanaryTask；其 completed 断言无法证明关键授权契约。最小修复：先构建真实默认 port，再仅覆盖显式提供的方法，删除隐式成功替身；更新该测试，实际断言 Kernel enrollment、slot 消耗及每次确认只签发一次 Batch Authorization。"
+    },
+    {
+      "id": "review-a488a4792a01-3-review-batch-preflight-recovery-is-diagnostic",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "acc-claude-batch-fail-closed",
+      "source": "review",
+      "review_round": 3,
+      "summary": "plugins/immune-brain/runtime/claude/kernel_ports.ts:1219：直接将 report.next_action 作为 recovery_action，不能保证返回恢复操作。startBatch 在 preflight 拒绝时把 preflightResult.message 放入 next_action，因此确认期间出现冲突分支或脏工作区时，recovery_action 实际只是“branch refs/heads/... already exists”或“working tree is dirty before batch preflight”，没有要求的一个 same-Host 恢复操作，且非空诊断使 fallback 永远不生效。最小修复：将诊断保留在 reason，并由 Claude adapter 返回固定的一条当前 Host 修复后重新确认操作；强化现有 report-reject 用例，不仅检查 recovery_action 已定义。"
+    },
+    {
+      "id": "request_rework:2026-09-05-005-claude-batch-host-gate:2026-09-10T02:24:41.613Z:replan-required",
+      "kind": "replan_required",
+      "status": "resolved",
+      "acceptance_id": "acc-claude-batch-fail-closed",
+      "source": "kernel",
+      "review_round": 3,
+      "summary": "Review returned this acceptance boundary twice; a durable replan is required."
+    }
+  ],
+  "history": [
+    {
+      "id": "approve_breaking_intent_revision:2026-09-05-005-claude-batch-host-gate:2026-09-10T01:55:41.349Z",
+      "at": "2026-09-10T01:55:41.349Z",
+      "type": "approve_breaking_intent_revision",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "intent_revision_2\naction_v2_sha256:58f051516060772f3032b4922700e466d0a37edcafbb9800a87d329e7285885b",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-917180d698f940cb",
+        "issued_at": "2026-09-10T01:55:41.661Z",
+        "expires_at": "2026-09-10T02:05:41.661Z"
+      }
+    },
+    {
+      "id": "freeze_artifacts:2026-09-05-005-claude-batch-host-gate:2026-09-10T01:55:53.361Z",
+      "at": "2026-09-10T01:55:53.361Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent and Spec frozen at docs/plans/archive/2026-09-05-005-claude-batch-host-gate.intent.json"
+    },
+    {
+      "id": "record_approval:2026-09-05-005-claude-batch-host-gate:2026-09-10T01:58:00.082Z",
+      "at": "2026-09-10T01:58:00.082Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-c87acd8a\naction_v2_sha256:c6af1b82855c65117aa6c3d4cede5e2d94285daa19b899a0fa8a44bf6ceb6368",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-b606bc544316ed8a",
+        "issued_at": "2026-09-10T01:58:00.082Z",
+        "expires_at": "2026-09-10T02:08:00.082Z"
+      }
+    },
+    {
+      "id": "request_rework:2026-09-05-005-claude-batch-host-gate:2026-09-10T02:00:58.207Z",
+      "at": "2026-09-10T02:00:58.207Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_1\naction_v2_sha256:772a512440b220e852de779e7c174da145bfee1077bca1207b64ec52dca96d41",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-587f2de74175abe3",
+        "issued_at": "2026-09-10T02:00:58.208Z",
+        "expires_at": "2026-09-10T02:10:58.208Z"
+      }
+    },
+    {
+      "id": "resolve_finding:2026-09-05-005-claude-batch-host-gate:2026-09-10T02:06:10.488Z",
+      "at": "2026-09-10T02:06:10.488Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-cb0dcbefc63c-1-review-1\naction_v2_sha256:0d477bd5ffe2a480498d5fd9789ae482e4d2242984affacaaf24b3c819b77966"
+    },
+    {
+      "id": "resolve_finding:2026-09-05-005-claude-batch-host-gate:2026-09-10T02:06:18.037Z",
+      "at": "2026-09-10T02:06:18.037Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-cb0dcbefc63c-2-review-2\naction_v2_sha256:bd6498cd477af74fda5e7b37e55c613992749fe413cb8b131990c9cc985448c7"
+    },
+    {
+      "id": "resolve_finding:2026-09-05-005-claude-batch-host-gate:2026-09-10T02:06:22.959Z",
+      "at": "2026-09-10T02:06:22.959Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-cb0dcbefc63c-3-review-3\naction_v2_sha256:d753e6097536a3d6405da5c76fd299260966b5e6e12641b3913fd7dfd2526213"
+    },
+    {
+      "id": "resolve_finding:2026-09-05-005-claude-batch-host-gate:2026-09-10T02:06:29.738Z",
+      "at": "2026-09-10T02:06:29.738Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-cb0dcbefc63c-4-review-4\naction_v2_sha256:dcd8943b4158e8ab1a03d8b917ac60382d6c0843e8bf01144e7cf0db2ad4cebc"
+    },
+    {
+      "id": "freeze_artifacts:2026-09-05-005-claude-batch-host-gate:2026-09-10T02:06:39.875Z",
+      "at": "2026-09-10T02:06:39.875Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent and Spec frozen at docs/plans/archive/2026-09-05-005-claude-batch-host-gate.intent.json"
+    },
+    {
+      "id": "record_approval:2026-09-05-005-claude-batch-host-gate:2026-09-10T02:07:04.772Z",
+      "at": "2026-09-10T02:07:04.772Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-ae09cb39\naction_v2_sha256:65bd7ab28e7f543912abfa7e49de5bdfe2dc39301e4a16ce6baaf93aac2c53b0",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-332cfe862aaef0e4",
+        "issued_at": "2026-09-10T02:07:04.772Z",
+        "expires_at": "2026-09-10T02:17:04.772Z"
+      }
+    },
+    {
+      "id": "request_rework:2026-09-05-005-claude-batch-host-gate:2026-09-10T02:10:55.909Z",
+      "at": "2026-09-10T02:10:55.909Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "review_round_2\naction_v2_sha256:6542c5ee776dd2bb7280238e07fdf6f73cfdafb966821c1a1d2b1ebb93f4f1c7",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-f0310cd0da5ccf0c",
+        "issued_at": "2026-09-10T02:10:55.909Z",
+        "expires_at": "2026-09-10T02:20:55.909Z"
+      }
+    },
+    {
+      "id": "authorize_rework:2026-09-05-005-claude-batch-host-gate:2026-09-10T02:14:13.470Z",
+      "at": "2026-09-10T02:14:13.470Z",
+      "type": "authorize_rework",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "request_rework:2026-09-05-005-claude-batch-host-gate:2026-09-10T02:10:55.909Z:replan-required\naction_v2_sha256:9172e699773ae154a3651ad6e19ddae6e5cf7731141a2fd4e8d998233ad72734",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-9cb44ee850bd69d9",
+        "issued_at": "2026-09-10T02:14:13.471Z",
+        "expires_at": "2026-09-10T02:24:13.471Z"
+      }
+    },
+    {
+      "id": "resolve_finding:2026-09-05-005-claude-batch-host-gate:2026-09-10T02:17:36.765Z",
+      "at": "2026-09-10T02:17:36.765Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-abaffb4a195a-1-review-batch-enrollment-context\naction_v2_sha256:a5980f5db2b594ea02472c65aed7a969fe16bea848b5374621cf3a8734087913"
+    },
+    {
+      "id": "resolve_finding:2026-09-05-005-claude-batch-host-gate:2026-09-10T02:17:44.140Z",
+      "at": "2026-09-10T02:17:44.140Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-abaffb4a195a-2-review-batch-active-claim-race\naction_v2_sha256:5ba66073b36012a4bef0808c67c6157dce567c2494cc3bf899c568b6e64917aa"
+    },
+    {
+      "id": "freeze_artifacts:2026-09-05-005-claude-batch-host-gate:2026-09-10T02:17:56.582Z",
+      "at": "2026-09-10T02:17:56.582Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent and Spec frozen at docs/plans/archive/2026-09-05-005-claude-batch-host-gate.intent.json"
+    },
+    {
+      "id": "record_approval:2026-09-05-005-claude-batch-host-gate:2026-09-10T02:18:19.110Z",
+      "at": "2026-09-10T02:18:19.110Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-19ff45b0\naction_v2_sha256:1dc8465cc5d1f3a6650a4fc368abfdcfc35d6cfae768a587fef88fb61f62f09e",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-ac2d09c6e89c5ee5",
+        "issued_at": "2026-09-10T02:18:19.110Z",
+        "expires_at": "2026-09-10T02:28:19.110Z"
+      }
+    },
+    {
+      "id": "request_rework:2026-09-05-005-claude-batch-host-gate:2026-09-10T02:24:41.613Z",
+      "at": "2026-09-10T02:24:41.613Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "review_round_3\naction_v2_sha256:ede965f74715d4d0a9c5e4f3eec56527001f6bf1f24c11f953cedd338085f6b3",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-8e9a25951cf89ac1",
+        "issued_at": "2026-09-10T02:24:41.613Z",
+        "expires_at": "2026-09-10T02:34:41.613Z"
+      }
+    },
+    {
+      "id": "authorize_rework:2026-09-05-005-claude-batch-host-gate:2026-09-10T02:33:08.021Z",
+      "at": "2026-09-10T02:33:08.021Z",
+      "type": "authorize_rework",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "request_rework:2026-09-05-005-claude-batch-host-gate:2026-09-10T02:24:41.613Z:replan-required\naction_v2_sha256:429be60949e6e9d0e80657c8e52cd704ceac8e45ce99f7baf0b70a677c9eda9a",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-8480d56c4d3533f2",
+        "issued_at": "2026-09-10T02:33:08.022Z",
+        "expires_at": "2026-09-10T02:43:08.022Z"
+      }
+    },
+    {
+      "id": "resolve_finding:2026-09-05-005-claude-batch-host-gate:2026-09-10T02:36:46.182Z",
+      "at": "2026-09-10T02:36:46.182Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-a488a4792a01-1-review-batch-head-revalidation-window\naction_v2_sha256:d8f3ae6e0725358138eea53ae5acc640ac60b8f7910111baa2b009c6f4cb8d2f"
+    },
+    {
+      "id": "resolve_finding:2026-09-05-005-claude-batch-host-gate:2026-09-10T02:36:55.244Z",
+      "at": "2026-09-10T02:36:55.244Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-a488a4792a01-2-review-batch-partial-port-fabricates-enrollment\naction_v2_sha256:052141aa8b53c46c955e2bd9bce584b2fe8933afdae71f584d26388d9a50dc2e"
+    },
+    {
+      "id": "resolve_finding:2026-09-05-005-claude-batch-host-gate:2026-09-10T02:37:03.143Z",
+      "at": "2026-09-10T02:37:03.143Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-a488a4792a01-3-review-batch-preflight-recovery-is-diagnostic\naction_v2_sha256:ec6abbb99d00c60110221b1e6d1d49fa14af78bd5bf5f00290df7b343d6971c5"
+    },
+    {
+      "id": "freeze_artifacts:2026-09-05-005-claude-batch-host-gate:2026-09-10T02:37:14.671Z",
+      "at": "2026-09-10T02:37:14.671Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent and Spec frozen at docs/plans/archive/2026-09-05-005-claude-batch-host-gate.intent.json"
+    },
+    {
+      "id": "record_approval:2026-09-05-005-claude-batch-host-gate:2026-09-10T02:37:43.607Z",
+      "at": "2026-09-10T02:37:43.607Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-7709ed08\naction_v2_sha256:d816afd69b2a3a9806c2bb0b191326e8c64b0a2961b7e2ec6ccafae75adee94d",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-0c40a15bdba4b04a",
+        "issued_at": "2026-09-10T02:37:43.607Z",
+        "expires_at": "2026-09-10T02:47:43.607Z"
+      }
+    },
+    {
+      "id": "record_approval:2026-09-05-005-claude-batch-host-gate:2026-09-10T02:42:00.202Z",
+      "at": "2026-09-10T02:42:00.202Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-0da86ab9\naction_v2_sha256:5f940e63c60548edba650e367016147d5a0739d1abdc9a01b469ee99c81ddc29",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-c4ff026a0a2a024b",
+        "issued_at": "2026-09-10T02:42:00.202Z",
+        "expires_at": "2026-09-10T02:52:00.202Z"
+      }
+    },
+    {
+      "id": "complete:2026-09-05-005-claude-batch-host-gate:2026-09-10T02:42:01.481Z",
+      "at": "2026-09-10T02:42:01.481Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:5fd6ef8e35ff746a58f3d1f463abb6e6024bcbf54ae461912de41d10aac4d994"
+    }
+  ]
+}
