@@ -25,6 +25,7 @@ export const TOOLS = [
 	{ name: "request_authorization", description: "Apply exact literal-user authorization.", privileged: true },
 	{ name: "approve_breaking_intent_revision", description: "Approve a breaking TaskIntent revision.", privileged: true },
 	{ name: "stop", description: "Stop the active task with literal-user authority.", privileged: true },
+	{ name: "start_unattended_batch", description: "Start an unattended serial batch run for an Initiative after native confirmation.", privileged: true },
 	{ name: "repair_authority_state", description: "Repair a proven recoverable stale backend claim.", privileged: false },
 	{ name: "resolve_finding", description: "Resolve one open blocking or advisory finding whose cause is fixed and verified.", privileged: false },
 ] as const;
@@ -36,17 +37,23 @@ export function listMcpTools() {
 		inputSchema: {
 			type: "object",
 			properties: {
-				task_id: { type: "string" },
-				...(tool.name === "approve_breaking_intent_revision" ? { next_intent: { type: "object" } } : {}),
-				...(tool.name === "stop" ? { reason: { type: "string" } } : {}),
-				...(tool.name === "submit_review" ? { verdict: { type: "object" } } : {}),
-				...(tool.name === "resolve_finding" ? { finding_id: { type: "string" } } : {}),
+				...(tool.name === "start_unattended_batch"
+					? { initiative_slug: { type: "string" } }
+					: {
+						task_id: { type: "string" },
+						...(tool.name === "approve_breaking_intent_revision" ? { next_intent: { type: "object" } } : {}),
+						...(tool.name === "stop" ? { reason: { type: "string" } } : {}),
+						...(tool.name === "submit_review" ? { verdict: { type: "object" } } : {}),
+						...(tool.name === "resolve_finding" ? { finding_id: { type: "string" } } : {}),
+					}),
 			},
-			required: tool.name === "submit_review"
-				? ["task_id", "verdict"]
-				: tool.name === "resolve_finding"
-					? ["task_id", "finding_id"]
-					: ["task_id"],
+			required: tool.name === "start_unattended_batch"
+				? ["initiative_slug"]
+				: tool.name === "submit_review"
+					? ["task_id", "verdict"]
+					: tool.name === "resolve_finding"
+						? ["task_id", "finding_id"]
+						: ["task_id"],
 		},
 		annotations: tool.privileged ? privilegedAnnotations() : { readOnlyHint: tool.name === "status" },
 	}));
@@ -63,6 +70,9 @@ export interface McpRuntimeOptions {
 	host?: ClaudeReviewHost;
 	interactive?: boolean;
 	requestConfirmation?: NativeConfirmationPort;
+	batchKernel?: Partial<import("../unattended/batch_runner").BatchRunnerKernelPort>;
+	batchGit?: import("../unattended/batch_git").BatchRunnerGitPort;
+	readInitiative?: import("../unattended/types").InitiativeObservationReader;
 }
 
 export function createMcpRuntime(options: McpRuntimeOptions = {}) {
@@ -74,6 +84,9 @@ export function createMcpRuntime(options: McpRuntimeOptions = {}) {
 		ports: options.ports,
 		interactive: options.interactive,
 		requestConfirmation: options.requestConfirmation,
+		batchKernel: options.batchKernel,
+		batchGit: options.batchGit,
+		readInitiative: options.readInitiative,
 	});
 	// Trusted Host evidence negotiated on this JSON-RPC connection. Absent
 	// handshake evidence means unversioned and non-interactive: fail closed.
@@ -95,6 +108,26 @@ export function createMcpRuntime(options: McpRuntimeOptions = {}) {
 		},
 		sessionInteractive: () => negotiatedInteractive,
 		async callTool(name: string, args: Record<string, unknown>, meta: Partial<ToolMeta> = {}) {
+			if (name === "start_unattended_batch") {
+				const initiativeSlug = String(args.initiative_slug ?? "");
+				if (!initiativeSlug) throw new Error("initiative_slug is required");
+				if ("native_decision" in args) throw new Error("native_decision cannot be supplied in tool arguments");
+				if (!negotiatedVersion) throw new NativeAuthorityError("unsupported_host", "Claude Code version is unavailable");
+				if (!negotiatedInteractive) {
+					throw new NativeAuthorityError("unsupported_host", "interactive MCP elicitation is unavailable");
+				}
+				const probe = probeHost(options.env ?? process.env, process.platform, negotiatedVersion);
+				if (!probe.ok) throw new NativeAuthorityError("unsupported_host", probe.reason);
+				const toolMeta: ToolMeta = {
+					sessionId: meta.sessionId ?? connectionId,
+					toolCallId: meta.toolCallId ?? `call-${name}`,
+					taskId: initiativeSlug,
+					initiativeSlug,
+					interactive: meta.interactive ?? options.interactive ?? negotiatedInteractive,
+					signal: meta.signal,
+				};
+				return runtime.startUnattendedBatch(initiativeSlug, toolMeta);
+			}
 			const taskId = String(args.task_id ?? "");
 			if (!taskId) throw new Error("task_id is required");
 			if ("native_decision" in args) throw new Error("native_decision cannot be supplied in tool arguments");
@@ -309,6 +342,24 @@ async function writeReply(output: Writable, reply: JsonRpc): Promise<void> {
 }
 
 export function elicitationParams(input: NativeConfirmationInput) {
+	if (input.operation === "start_unattended_batch") {
+		const b = input.batchDetails;
+		const details = [
+			`Operation: start_unattended_batch`,
+			`Initiative: ${input.initiativeSlug ?? b?.initiative_slug}`,
+			b?.batch_branch ? `Batch branch: ${b.batch_branch}` : null,
+			input.planDigest ? `Plan digest: ${input.planDigest}` : null,
+			b?.children ? `Ordered children (${b.children.length}):\n${b.children.map((c) => `  - ${c.task_id} (${c.slice_id}) [risk: ${c.risk ?? "unknown"}]`).join("\n")}` : null,
+			b?.excluded && b.excluded.length > 0 ? `Excluded children (${b.excluded.length}):\n${b.excluded.map((e) => `  - ${e.task_id} (${e.slice_id}): ${e.reason}`).join("\n")}` : null,
+			b?.budget ? `Budget: max_children=${b.budget.max_children}, deadline_at=${b.budget.deadline_at}, qa_failure_limit=${b.budget.qa_failure_limit}` : null,
+			b?.expires_at ? `Expires at: ${b.expires_at}` : null,
+		].filter(Boolean);
+		return {
+			mode: "form",
+			message: `Authorize this unattended batch run for ${input.initiativeSlug}?\n\n${details.join("\n")}`,
+			requestedSchema: { type: "object", properties: {} },
+		};
+	}
 	const details = [
 		`Operation: ${input.operation}`,
 		`Task: ${input.taskId}`,

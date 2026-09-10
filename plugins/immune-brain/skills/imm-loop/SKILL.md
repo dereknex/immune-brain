@@ -22,6 +22,7 @@ references load only under their own condition. Never read the whole contract
 or all references as an entry prerequisite.
 
 - common: [Shared Guards](../../dist/BASELINE.md#shared-guards), [Workflow Activation](../../dist/BASELINE.md#workflow-activation), [Host Confirmation Boundary](../../dist/BASELINE.md#host-confirmation-boundary), [Kernel Canary Routing and Authority](../../dist/imm-loop.md#kernel-canary-routing-and-authority)
+- unattended batch run, or any question about whether `imm-loop` starts one: [Unattended Batch Opt-In](../../dist/imm-loop.md#unattended-batch-opt-in)
 - steady execution: [Verification and Local Recovery](../../dist/BASELINE.md#verification-and-local-recovery), [Execution Loop](../../dist/imm-loop.md#execution-loop), [Observable Output](../../dist/imm-loop.md#observable-output)
 - rework, scope expansion, breaking revision, user decision, stop, interruption or unknown state before any action: [Decisions and Recovery](../../dist/imm-loop.md#decisions-and-recovery), [Failure Output](../../dist/imm-loop.md#failure-output); re-read `status`, then the pending obligation
 - review or post-settlement learning: [Review and Learning](../../dist/imm-loop.md#review-and-learning)

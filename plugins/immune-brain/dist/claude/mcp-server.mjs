@@ -2,7 +2,7 @@ import { createRequire } from "node:module";
 var __require = /* @__PURE__ */ createRequire(import.meta.url);
 
 // plugins/immune-brain/runtime/claude/mcp_server.ts
-import { randomUUID as randomUUID6 } from "node:crypto";
+import { randomUUID as randomUUID8 } from "node:crypto";
 import { createInterface } from "node:readline";
 import { stdin, stdout } from "node:process";
 
@@ -50,7 +50,8 @@ var PRIVILEGED_OPERATIONS = [
   "enroll",
   "request_authorization",
   "approve_breaking_intent_revision",
-  "stop"
+  "stop",
+  "start_unattended_batch"
 ];
 var RECOVERY_ACTIONS = {
   interaction_not_opened: "retry through a fresh native gate in the current Host",
@@ -91,7 +92,7 @@ function evaluateNativeGate(input) {
   return { ok: true };
 }
 function confirmationRef(input) {
-  return `claude-confirm-${createHash("sha256").update(`${input.connectionId}\x00${input.toolCallId}\x00${input.requestId}\x00${input.operation}\x00${input.taskId}\x00${input.intentRevision ?? ""}\x00${input.intentContentHash ?? ""}\x00${input.bindingDigest ?? ""}`).digest("hex").slice(0, 16)}`;
+  return `claude-confirm-${createHash("sha256").update(`${input.connectionId}\x00${input.toolCallId}\x00${input.requestId}\x00${input.operation}\x00${input.taskId ?? ""}\x00${input.initiativeSlug ?? ""}\x00${input.intentRevision ?? ""}\x00${input.intentContentHash ?? ""}\x00${input.bindingDigest ?? ""}\x00${input.planDigest ?? ""}`).digest("hex").slice(0, 16)}`;
 }
 function enrollmentNonce() {
   return randomUUID();
@@ -678,10 +679,10 @@ function parseHookStdin(raw) {
 }
 
 // plugins/immune-brain/runtime/claude/kernel_ports.ts
-import { randomUUID as randomUUID5 } from "node:crypto";
-import { existsSync as existsSync3, readFileSync as readFileSync7, writeFileSync as writeFileSync3 } from "node:fs";
-import { execFileSync as execFileSync4 } from "node:child_process";
-import { join as join7 } from "node:path";
+import { randomUUID as randomUUID7 } from "node:crypto";
+import { existsSync as existsSync6, readdirSync as readdirSync2, readFileSync as readFileSync8, writeFileSync as writeFileSync5 } from "node:fs";
+import { execFileSync as execFileSync4, spawnSync as spawnSync6 } from "node:child_process";
+import { join as join10 } from "node:path";
 
 // plugins/immune-brain/runtime/assurance/coordinator.ts
 import { createHash as createHash5, randomUUID as randomUUID2 } from "node:crypto";
@@ -3177,6 +3178,10 @@ function readTaskIntentSource(root, taskId, requestedPath) {
       intent_content_hash: contentHash
     }
   };
+}
+function observeTaskIntent(root, taskId, requestedPath) {
+  const { identity: _identity, ...observed } = readTaskIntentSource(root, taskId, requestedPath);
+  return observed;
 }
 function readTaskIntent(root, taskId, requestedPath) {
   const { identity, ...observed } = readTaskIntentSource(root, taskId, requestedPath);
@@ -6683,6 +6688,2187 @@ async function runDeterministicQa(snapshot, descriptors, runner, options = {}) {
   };
 }
 
+// plugins/immune-brain/runtime/unattended/batch_plan.ts
+import { createHash as createHash13 } from "node:crypto";
+
+// plugins/immune-brain/runtime/github_issue_tracker.ts
+import { spawn as spawn2 } from "node:child_process";
+import { basename as basename2, relative as relative3, resolve as resolve7, sep as sep5 } from "node:path";
+var CONTRACT = "immune_brain/github_issue_tracker_result/v1";
+var PROTOCOL_MARKER = "<!-- immune-brain-tracker:v1 -->";
+var KIND_INITIATIVE_MARKER = "<!-- immune-brain:kind=initiative -->";
+var KIND_TASK_MARKER = "<!-- immune-brain:kind=task -->";
+var ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
+var MAX_GH_OUTPUT = 8 * 1024 * 1024;
+var MAX_DIAGNOSTIC = 512;
+var GH_TIMEOUT_MS = 20000;
+var MAX_SNAPSHOT_PAGES = 100;
+var MAX_TERMINAL_EVENT_ID = 500;
+function countLiteral(value, needle) {
+  if (!needle)
+    return 0;
+  let count = 0;
+  let index = 0;
+  while ((index = value.indexOf(needle, index)) !== -1) {
+    count += 1;
+    index += needle.length;
+  }
+  return count;
+}
+function marker(name, value) {
+  return `<!-- immune-brain:${name}=${value} -->`;
+}
+function terminalMarker(eventId) {
+  return `<!-- immune-brain:terminal-event=${eventId} -->`;
+}
+function terminalSuffix(eventId) {
+  return `
+
+${terminalMarker(eventId)}
+Terminal event: \`${eventId}\`
+`;
+}
+var MAX_TERMINAL_SUFFIX_BYTES = Buffer.byteLength(terminalSuffix("x".repeat(MAX_TERMINAL_EVENT_ID)), "utf8");
+function redactSecrets(value) {
+  return value.replace(/\bgh[pousr]_[A-Za-z0-9_]+\b/g, "[REDACTED_GITHUB_TOKEN]").replace(/\bgithub_pat_[A-Za-z0-9_]+\b/g, "[REDACTED_GITHUB_TOKEN]").replace(/\bBearer\s+\S+/gi, "Bearer [REDACTED]").replace(/\b(?:token|secret|password)\s*[=:]\s*\S+/gi, "credential=[REDACTED]");
+}
+function identifier(value, name) {
+  if (typeof value !== "string" || !ID_PATTERN.test(value))
+    throw new Error(`${name} must match ${ID_PATTERN}`);
+  if (/^(?:gh[pousr]_|github_pat_)/i.test(value))
+    throw new Error(`${name} must not contain a token-like value`);
+  return value;
+}
+function redactGithubDiagnostic(value) {
+  return redactSecrets(value).replace(/\s+/g, " ").trim().slice(0, MAX_DIAGNOSTIC);
+}
+function result(operation, status, message, issue) {
+  return {
+    contract: CONTRACT,
+    operation,
+    status,
+    association_found: issue !== undefined,
+    ...issue ? { issue_number: issue.number, issue_url: issue.url, node_id: String(issue.id) } : {},
+    message: redactGithubDiagnostic(message)
+  };
+}
+function ghFailure(operation, execution, message) {
+  const retryable = execution.timed_out || /timeout|timed out|network|connection|temporar|rate limit|502|503|504/i.test(execution.stderr);
+  return result(operation, retryable ? "retryable_failure" : "permanent_failure", `${message}: ${execution.output_exceeded ? "gh output limit exceeded" : execution.stderr || `gh exited ${execution.exit_code}`}`);
+}
+function createGhTransport(binary = "gh") {
+  return {
+    run(args, options = {}) {
+      return new Promise((complete) => {
+        let stdout = Buffer.alloc(0);
+        let stderr = Buffer.alloc(0);
+        let timedOut = false;
+        let outputExceeded = false;
+        let timer;
+        let settled = false;
+        const finish = (exitCode, spawnError = "") => {
+          if (settled)
+            return;
+          settled = true;
+          if (timer)
+            clearTimeout(timer);
+          complete({
+            exit_code: exitCode,
+            stdout: stdout.toString("utf8"),
+            stderr: `${stderr.toString("utf8")}${spawnError}`,
+            timed_out: timedOut,
+            output_exceeded: outputExceeded
+          });
+        };
+        let child;
+        try {
+          child = spawn2(binary, args, {
+            cwd: options.cwd,
+            stdio: ["pipe", "pipe", "pipe"],
+            env: process.env
+          });
+        } catch (error) {
+          finish(1, error instanceof Error ? error.message : String(error));
+          return;
+        }
+        const append = (current, chunk) => {
+          const available = Math.max(0, MAX_GH_OUTPUT - stdout.length - stderr.length);
+          if (chunk.length > available) {
+            outputExceeded = true;
+            child.kill("SIGKILL");
+          }
+          return available > 0 ? Buffer.concat([current, chunk.subarray(0, available)]) : current;
+        };
+        const { stdout: childOut, stderr: childErr, stdin: childIn } = child;
+        if (!childOut || !childErr || !childIn) {
+          finish(1, "gh was spawned without the stdio pipes this reader requires");
+          return;
+        }
+        childOut.on("data", (chunk) => {
+          stdout = append(stdout, chunk);
+        });
+        childErr.on("data", (chunk) => {
+          stderr = append(stderr, chunk);
+        });
+        child.once("error", (error) => {
+          finish(1, error.message);
+        });
+        childIn.once("error", (error) => {
+          finish(1, error.message);
+        });
+        timer = setTimeout(() => {
+          timedOut = true;
+          child.kill("SIGKILL");
+        }, GH_TIMEOUT_MS);
+        child.once("close", (code) => {
+          finish(code ?? 1);
+        });
+        try {
+          childIn.end(options.stdin ?? "");
+        } catch (error) {
+          finish(1, error instanceof Error ? error.message : String(error));
+        }
+      });
+    }
+  };
+}
+function parseRepository(raw) {
+  const value = JSON.parse(raw);
+  if (!Number.isSafeInteger(value.id) || typeof value.full_name !== "string" || !value.full_name.includes("/"))
+    throw new Error("gh returned malformed repository identity");
+  return { id: value.id, name_with_owner: value.full_name };
+}
+function parseIssues(raw) {
+  const parsed = JSON.parse(raw);
+  const pages = Array.isArray(parsed) && parsed.every(Array.isArray) ? parsed.flat() : parsed;
+  if (!Array.isArray(pages))
+    throw new Error("gh returned malformed Issue list");
+  return pages.filter((item) => Boolean(item) && typeof item === "object" && !("pull_request" in item)).map((item) => {
+    if (!Number.isSafeInteger(item.id) || !Number.isSafeInteger(item.number) || typeof item.html_url !== "string" || typeof item.title !== "string" || typeof item.body !== "string" && item.body !== null || item.state !== "open" && item.state !== "closed")
+      throw new Error("gh returned a malformed Issue");
+    return {
+      id: item.id,
+      number: item.number,
+      url: item.html_url,
+      title: item.title,
+      body: typeof item.body === "string" ? item.body : "",
+      state: item.state,
+      state_reason: typeof item.state_reason === "string" ? item.state_reason.toLowerCase() : null
+    };
+  });
+}
+function parseSubIssueNumbers(raw) {
+  const parsed = JSON.parse(raw);
+  const pages = Array.isArray(parsed) && parsed.every(Array.isArray) ? parsed.flat() : parsed;
+  if (!Array.isArray(pages))
+    throw new Error("gh returned malformed Sub-issue list");
+  return pages.map((item, index) => {
+    const number = item?.number;
+    if (typeof number !== "number" || !Number.isSafeInteger(number))
+      throw new Error(`gh returned a malformed Sub-issue entry at ${index}`);
+    return number;
+  });
+}
+async function snapshot(root, gh, operation) {
+  const repositoryExecution = await gh.run(["api", "repos/{owner}/{repo}"], { cwd: root });
+  if (repositoryExecution.exit_code !== 0 || repositoryExecution.output_exceeded)
+    return ghFailure(operation, repositoryExecution, "cannot resolve GitHub repository");
+  let repository;
+  try {
+    repository = parseRepository(repositoryExecution.stdout);
+  } catch (error) {
+    return result(operation, "permanent_failure", error instanceof Error ? error.message : String(error));
+  }
+  const issues = [];
+  for (let page = 1;page <= MAX_SNAPSHOT_PAGES; page += 1) {
+    const issuesExecution = await gh.run(["api", `repos/${repository.name_with_owner}/issues?state=all&per_page=100&page=${page}`], { cwd: root });
+    if (issuesExecution.exit_code !== 0 || issuesExecution.output_exceeded)
+      return ghFailure(operation, issuesExecution, "cannot query GitHub Issues");
+    let raw;
+    try {
+      raw = JSON.parse(issuesExecution.stdout);
+    } catch (error) {
+      return result(operation, "permanent_failure", error instanceof Error ? error.message : String(error));
+    }
+    if (!Array.isArray(raw))
+      return result(operation, "permanent_failure", "gh returned malformed Issue list");
+    const pageCount = raw.length;
+    try {
+      issues.push(...parseIssues(issuesExecution.stdout));
+    } catch (error) {
+      return result(operation, "permanent_failure", error instanceof Error ? error.message : String(error));
+    }
+    if (pageCount < 100)
+      break;
+    if (page === MAX_SNAPSHOT_PAGES)
+      return result(operation, "permanent_failure", "too many GitHub Issues to snapshot");
+  }
+  return { repository, issues };
+}
+function findIssue(issues, primary, required) {
+  const candidates = issues.filter((issue2) => primary.every((needle) => issue2.body.includes(needle)));
+  if (candidates.length === 0)
+    return { kind: "missing" };
+  if (candidates.length !== 1)
+    return { kind: "ambiguous", message: `multiple Issues contain identity marker ${primary[0]}` };
+  const issue = candidates[0];
+  for (const expected of [PROTOCOL_MARKER, ...required]) {
+    if (countLiteral(issue.body, expected) !== 1)
+      return { kind: "ambiguous", message: `Issue #${issue.number} has missing or duplicate identity markers` };
+  }
+  return { kind: "found", issue };
+}
+function initiativeLookup(issues, repositoryId, initiativeId) {
+  const initiative = marker("initiative-id", initiativeId);
+  return findIssue(issues, [initiative, KIND_INITIATIVE_MARKER], [marker("repo-id", repositoryId), initiative]);
+}
+function ownershipMarkerValue(body, name) {
+  const values = [...body.matchAll(new RegExp(`<!-- immune-brain:${name}=([A-Za-z0-9][A-Za-z0-9._-]{0,127}) -->`, "g"))];
+  return values.length === 1 ? values[0][1] : null;
+}
+function taskLookup(issues, repositoryId, taskId) {
+  const task = marker("task-id", taskId);
+  const base = findIssue(issues, [task, KIND_TASK_MARKER], [marker("repo-id", repositoryId), task]);
+  if (base.kind !== "found")
+    return base;
+  for (const name of ["task-id", "initiative-id", "slice-id"]) {
+    if (!ownershipMarkerValue(base.issue.body, name))
+      return { kind: "ambiguous", message: `Issue #${base.issue.number} has missing or duplicate ${name} ownership markers` };
+  }
+  return base;
+}
+function ownedTaskLookup(issues, repositoryId, taskId, initiativeId, sliceId) {
+  const base = taskLookup(issues, repositoryId, taskId);
+  if (base.kind !== "found")
+    return base;
+  return base.issue.body.includes(marker("initiative-id", initiativeId)) && base.issue.body.includes(marker("slice-id", sliceId)) ? base : { kind: "ambiguous", message: `Issue #${base.issue.number} belongs to another Initiative or Slice; Task ownership is immutable` };
+}
+async function readSubIssueNumbers(root, gh, operation, repository, parentNumber) {
+  const listed = await gh.run(["api", "--paginate", "--slurp", `repos/${repository.name_with_owner}/issues/${parentNumber}/sub_issues?per_page=100`], { cwd: root });
+  if (listed.exit_code !== 0 || listed.output_exceeded)
+    return ghFailure(operation, listed, "cannot read native Sub-issue relations");
+  try {
+    return parseSubIssueNumbers(listed.stdout);
+  } catch (error) {
+    return result(operation, "permanent_failure", error instanceof Error ? error.message : String(error));
+  }
+}
+async function readBlockedByIds(root, gh, operation, repository, childNumber) {
+  const listed = await gh.run(["api", "--paginate", "--slurp", `repos/${repository.name_with_owner}/issues/${childNumber}/dependencies/blocked_by?per_page=100`], { cwd: root });
+  if (listed.exit_code !== 0 || listed.output_exceeded)
+    return ghFailure(operation, listed, "cannot read native blocked_by relations");
+  try {
+    const pages = JSON.parse(listed.stdout);
+    if (!Array.isArray(pages) || pages.some((page) => !Array.isArray(page)))
+      throw new Error("gh returned malformed blocked_by pages");
+    const ids = pages.flat().map((item, index) => {
+      const id = item?.issue_id ?? item?.id;
+      if (!Number.isSafeInteger(id))
+        throw new Error(`gh returned malformed blocked_by entry at ${index}`);
+      return id;
+    });
+    if (new Set(ids).size !== ids.length)
+      return result(operation, "ambiguous_remote_state", `Issue #${childNumber} has duplicate native blocked_by relations`);
+    return ids;
+  } catch (error) {
+    return result(operation, "permanent_failure", error instanceof Error ? error.message : String(error));
+  }
+}
+async function observeGithubInitiative(root, initiativeId, gh = createGhTransport()) {
+  const id = identifier(initiativeId, "initiative_id");
+  const source = await snapshot(resolve7(root), gh, "create-initiative");
+  if ("contract" in source)
+    throw new Error(source.message);
+  const parent = initiativeLookup(source.issues, source.repository.id, id);
+  if (parent.kind === "missing")
+    throw new Error(`Initiative ${id} is not published`);
+  if (parent.kind === "ambiguous")
+    throw new Error(parent.message);
+  const subIssueNumbers = await readSubIssueNumbers(root, gh, "create-initiative", source.repository, parent.issue.number);
+  if (!Array.isArray(subIssueNumbers))
+    throw new Error(subIssueNumbers.message);
+  if (new Set(subIssueNumbers).size !== subIssueNumbers.length)
+    throw new Error(`Initiative ${id} has duplicate native Sub-issue relations`);
+  const tasks = subIssueNumbers.map((issueNumber) => {
+    const matches = source.issues.filter((issue2) => issue2.number === issueNumber);
+    if (matches.length !== 1)
+      throw new Error(`Initiative ${id} references an unreadable Sub-issue #${issueNumber}`);
+    const issue = matches[0];
+    const taskId = ownershipMarkerValue(issue.body, "task-id");
+    const sliceId = ownershipMarkerValue(issue.body, "slice-id");
+    if (!taskId || !sliceId || ownershipMarkerValue(issue.body, "initiative-id") !== id)
+      throw new Error(`Sub-issue #${issueNumber} has invalid Initiative ownership markers`);
+    const owned = ownedTaskLookup(source.issues, source.repository.id, taskId, id, sliceId);
+    if (owned.kind !== "found" || owned.issue.number !== issueNumber)
+      throw new Error(owned.kind === "ambiguous" ? owned.message : `Sub-issue #${issueNumber} has invalid Task ownership`);
+    return { task_id: taskId, slice_id: sliceId, issue_number: issueNumber, issue_id: issue.id };
+  });
+  if (new Set(tasks.map((task) => task.task_id)).size !== tasks.length)
+    throw new Error(`Initiative ${id} has duplicate Task identities`);
+  if (new Set(tasks.map((task) => task.slice_id)).size !== tasks.length)
+    throw new Error(`Initiative ${id} has duplicate Slice identities`);
+  const taskByIssueId = new Map(tasks.map((task) => [task.issue_id, task.task_id]));
+  const observed = [];
+  for (const task of tasks.sort((left, right) => left.task_id < right.task_id ? -1 : left.task_id > right.task_id ? 1 : 0)) {
+    const blockerIds = await readBlockedByIds(root, gh, "create-initiative", source.repository, task.issue_number);
+    if (!Array.isArray(blockerIds))
+      throw new Error(blockerIds.message);
+    const blockedBy = blockerIds.map((blockerId) => {
+      const blocker = taskByIssueId.get(blockerId);
+      if (!blocker)
+        throw new Error(`Task ${task.task_id} depends on an Issue outside Initiative ${id}`);
+      return blocker;
+    }).sort();
+    observed.push({
+      task_id: task.task_id,
+      slice_id: task.slice_id,
+      issue_number: task.issue_number,
+      blocked_by: blockedBy
+    });
+  }
+  return {
+    contract: "immune_brain/github_initiative_observation/v1",
+    initiative_id: id,
+    issue_number: parent.issue.number,
+    tasks: observed
+  };
+}
+
+// plugins/immune-brain/runtime/unattended/batch_plan.ts
+var ID_PATTERN2 = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
+var DEFAULT_DEADLINE_MS = 8 * 60 * 60 * 1000;
+var DEFAULT_QA_FAILURE_LIMIT = 2;
+function compareIds(left, right) {
+  return left < right ? -1 : left > right ? 1 : 0;
+}
+function positiveSafeInteger(value, name) {
+  if (!Number.isSafeInteger(value) || value <= 0)
+    throw new Error(`${name} must be a positive safe integer`);
+  return value;
+}
+var ISO_TIMESTAMP_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?Z$/;
+function timestamp(value, name) {
+  if (typeof value !== "string" || !ISO_TIMESTAMP_PATTERN.test(value))
+    throw new Error(`${name} must be an ISO timestamp`);
+  const milliseconds = Date.parse(value);
+  if (!Number.isFinite(milliseconds))
+    throw new Error(`${name} must be an ISO timestamp`);
+  return { milliseconds, iso: new Date(milliseconds).toISOString() };
+}
+function normalizeObservation(value, initiativeSlug) {
+  if (!value || value.contract !== "immune_brain/github_initiative_observation/v1")
+    throw new Error("tracker returned an invalid Initiative observation contract");
+  if (value.initiative_id !== initiativeSlug)
+    throw new Error("tracker returned an observation for another Initiative");
+  if (!Number.isSafeInteger(value.issue_number) || value.issue_number <= 0)
+    throw new Error("tracker returned an invalid Initiative Issue number");
+  if (!Array.isArray(value.tasks))
+    throw new Error("tracker returned an invalid Initiative Task list");
+  const taskIds = new Set;
+  const sliceIds = new Set;
+  const tasks = value.tasks.map((task, index) => {
+    if (!task || typeof task !== "object")
+      throw new Error(`tracker Task ${index} is invalid`);
+    if (!ID_PATTERN2.test(task.task_id))
+      throw new Error(`tracker Task ${index} has an invalid task_id`);
+    if (!ID_PATTERN2.test(task.slice_id))
+      throw new Error(`tracker Task ${index} has an invalid slice_id`);
+    if (!Number.isSafeInteger(task.issue_number) || task.issue_number <= 0)
+      throw new Error(`tracker Task ${task.task_id} has an invalid Issue number`);
+    if (!Array.isArray(task.blocked_by) || task.blocked_by.some((id) => typeof id !== "string" || !ID_PATTERN2.test(id)))
+      throw new Error(`tracker Task ${task.task_id} has invalid blocked_by dependencies`);
+    if (taskIds.has(task.task_id))
+      throw new Error(`tracker returned duplicate Task ${task.task_id}`);
+    if (sliceIds.has(task.slice_id))
+      throw new Error(`tracker returned duplicate Slice ${task.slice_id}`);
+    taskIds.add(task.task_id);
+    sliceIds.add(task.slice_id);
+    const blockedBy = [...task.blocked_by].sort();
+    if (new Set(blockedBy).size !== blockedBy.length || blockedBy.includes(task.task_id))
+      throw new Error(`tracker Task ${task.task_id} has invalid blocked_by dependencies`);
+    return { ...task, blocked_by: blockedBy };
+  });
+  for (const task of tasks) {
+    const unknown = task.blocked_by.find((id) => !taskIds.has(id));
+    if (unknown)
+      throw new Error(`tracker Task ${task.task_id} depends on unknown Task ${unknown}`);
+  }
+  return { ...value, tasks: tasks.sort((left, right) => compareIds(left.task_id, right.task_id)) };
+}
+function dependencyOrder(observation) {
+  const remaining = new Map(observation.tasks.map((task) => [task.task_id, task]));
+  const done = new Set;
+  const order = [];
+  while (remaining.size) {
+    const ready = [...remaining.values()].filter((task) => task.blocked_by.every((id) => done.has(id))).sort((left, right) => compareIds(left.task_id, right.task_id));
+    if (!ready.length)
+      throw new Error("Initiative Task dependencies must form an acyclic graph");
+    for (const task of ready) {
+      remaining.delete(task.task_id);
+      done.add(task.task_id);
+      order.push(task);
+    }
+  }
+  return order;
+}
+function dependencyClosures(order) {
+  const closures = new Map;
+  for (const task of order) {
+    const closure = new Set;
+    for (const dependency of task.blocked_by) {
+      closure.add(dependency);
+      for (const transitive of closures.get(dependency) ?? [])
+        closure.add(transitive);
+    }
+    closures.set(task.task_id, [...closure].sort());
+  }
+  return closures;
+}
+function budget(input, enrollableCount, confirmationTime) {
+  const maxChildren = input.budget?.max_children === undefined ? positiveSafeInteger(enrollableCount, "budget.max_children") : positiveSafeInteger(input.budget.max_children, "budget.max_children");
+  if (maxChildren > enrollableCount)
+    throw new Error("budget.max_children exceeds the enrollable Child count");
+  const qaFailureLimit = input.budget?.qa_failure_limit === undefined ? DEFAULT_QA_FAILURE_LIMIT : positiveSafeInteger(input.budget.qa_failure_limit, "budget.qa_failure_limit");
+  const deadline = input.budget?.deadline_at === undefined ? new Date(confirmationTime.milliseconds + DEFAULT_DEADLINE_MS).toISOString() : timestamp(input.budget.deadline_at, "budget.deadline_at").iso;
+  if (Date.parse(deadline) <= confirmationTime.milliseconds)
+    throw new Error("budget.deadline_at must be later than confirmation_time");
+  return { max_children: maxChildren, deadline_at: deadline, qa_failure_limit: qaFailureLimit };
+}
+async function projectBatchPlan(root, initiativeSlug, input, readInitiative = observeGithubInitiative) {
+  if (!ID_PATTERN2.test(initiativeSlug))
+    throw new Error("initiative_slug is invalid");
+  if (!input || typeof input !== "object")
+    throw new Error("batch plan input is required");
+  const confirmationTime = timestamp(input.confirmation_time, "confirmation_time");
+  const trackerObservation = normalizeObservation(await readInitiative(root, initiativeSlug), initiativeSlug);
+  const order = dependencyOrder(trackerObservation);
+  const closures = dependencyClosures(order);
+  const children = [];
+  for (const task of order) {
+    const blockedBy = closures.get(task.task_id);
+    const child = { task_id: task.task_id, slice_id: task.slice_id, blocked_by: blockedBy };
+    const tombstone = readTaskTombstone(root, task.task_id);
+    const record = readTaskRecordRaw(root, task.task_id).record;
+    if (tombstone && record)
+      throw new Error(`Task ${task.task_id} has conflicting settled and active state`);
+    if (tombstone) {
+      children.push({ ...child, status: "already_settled", reason: null, intent_path: null, intent_revision: null, intent_content_hash: null });
+      continue;
+    }
+    if (record) {
+      children.push({ ...child, status: "already_owned", reason: null, intent_path: null, intent_revision: null, intent_content_hash: null });
+      continue;
+    }
+    const intentPath = `docs/plans/${task.task_id}.intent.json`;
+    try {
+      const read = observeTaskIntent(root, task.task_id, intentPath);
+      children.push({
+        ...child,
+        status: read.intent.risk === "critical" ? "needs_human" : "enrollable",
+        reason: read.intent.risk === "critical" ? "critical" : null,
+        intent_path: read.intent_ref.path,
+        intent_revision: read.intent_ref.revision,
+        intent_content_hash: read.content_hash
+      });
+    } catch (error) {
+      if (!(error instanceof TaskIntentObservationError))
+        throw error;
+      children.push({ ...child, status: "needs_human", reason: "invalid_intent", intent_path: null, intent_revision: null, intent_content_hash: null });
+    }
+  }
+  const directDependencies = new Map(order.map((task) => [task.task_id, task.blocked_by]));
+  const childById = new Map(children.map((child) => [child.task_id, child]));
+  for (const child of children) {
+    if (child.status !== "enrollable")
+      continue;
+    if (directDependencies.get(child.task_id).some((id) => {
+      const status = childById.get(id).status;
+      return status === "already_owned" || status === "needs_human" || status === "blocked";
+    })) {
+      child.status = "blocked";
+      child.reason = "dependency_unavailable";
+    }
+  }
+  const enrollable = children.filter((child) => child.status === "enrollable").map((child) => ({
+    task_id: child.task_id,
+    intent_path: child.intent_path,
+    intent_revision: child.intent_revision,
+    intent_content_hash: child.intent_content_hash,
+    blocked_by: child.blocked_by.filter((id) => childById.get(id)?.status === "enrollable")
+  }));
+  if (!enrollable.length)
+    throw new Error("batch plan has no enrollable children; nothing to confirm");
+  const planDigest = `sha256:${createHash13("sha256").update(stableStringify(enrollable)).digest("hex")}`;
+  return {
+    contract: "assurance_kernel/batch_plan/v1",
+    initiative_slug: initiativeSlug,
+    confirmation_time: confirmationTime.iso,
+    tracker_observation: trackerObservation,
+    children,
+    enrollable,
+    plan_digest: planDigest,
+    budget: budget(input, enrollable.length, confirmationTime)
+  };
+}
+
+// plugins/immune-brain/runtime/unattended/batch_runner.ts
+import { spawnSync as spawnSync5 } from "node:child_process";
+import { existsSync as existsSync5 } from "node:fs";
+import { join as join9 } from "node:path";
+
+// plugins/immune-brain/runtime/kernel/batch_authority.ts
+import { createHash as createHash14 } from "node:crypto";
+var BATCH_AUTHORITY_CAPABILITY_BRAND = Symbol.for("assurance-kernel.batch-authority-capability-brand");
+var GIT_COMMIT_ID2 = /^[a-f0-9]{40}$/;
+
+class BatchAuthorizationExpiryError extends Error {
+  constructor(message) {
+    super(message);
+    this.name = "BatchAuthorizationExpiryError";
+  }
+}
+function sha256Hex3(bytes) {
+  return createHash14("sha256").update(bytes).digest("hex");
+}
+function stableStringify3(value) {
+  if (value === null || typeof value !== "object")
+    return JSON.stringify(value);
+  if (Array.isArray(value))
+    return `[${value.map((entry) => stableStringify3(entry)).join(",")}]`;
+  const record = value;
+  return `{${Object.keys(record).sort().map((key) => `${JSON.stringify(key)}:${stableStringify3(record[key])}`).join(",")}}`;
+}
+function computeBatchPlanDigest(children) {
+  const canonical = children.map((child) => ({
+    blocked_by: [...child.blocked_by],
+    intent_content_hash: child.intent_content_hash,
+    intent_path: child.intent_path,
+    intent_revision: child.intent_revision,
+    task_id: child.task_id
+  }));
+  return `sha256:${sha256Hex3(stableStringify3(canonical))}`;
+}
+function requireNonEmpty(binding) {
+  const missing = [];
+  for (const key of [
+    "batch_id",
+    "initiative_slug",
+    "plan_digest",
+    "branch",
+    "base_head",
+    "actor_id",
+    "confirmation_ref",
+    "expires_at",
+    "nonce"
+  ]) {
+    const value = binding[key];
+    if (value === undefined || value === null || value === "")
+      missing.push(key);
+  }
+  if (!binding.budget || typeof binding.budget !== "object")
+    missing.push("budget");
+  if (missing.length > 0)
+    throw new Error(`batch authorization binding is incomplete: ${missing.join(", ")}`);
+}
+function validateBudget(budget2, issuedAt) {
+  if (!Number.isInteger(budget2.max_children) || budget2.max_children <= 0)
+    throw new Error("batch budget max_children must be a positive integer");
+  if (!Number.isInteger(budget2.qa_failure_limit) || budget2.qa_failure_limit <= 0)
+    throw new Error("batch budget qa_failure_limit must be a positive integer");
+  const deadline = Date.parse(budget2.deadline_at);
+  if (Number.isNaN(deadline) || deadline <= Date.parse(issuedAt))
+    throw new Error("batch budget must have a future deadline_at");
+}
+function validateChildren(children, planDigest) {
+  if (!Array.isArray(children) || children.length === 0)
+    throw new Error("batch authorization requires a non-empty child plan");
+  const seen = new Set;
+  for (const child of children) {
+    if (!child || typeof child !== "object")
+      throw new Error("batch plan child must be an object");
+    for (const key of ["task_id", "intent_path", "intent_content_hash"]) {
+      if (typeof child[key] !== "string" || child[key] === "")
+        throw new Error(`batch plan child ${key} must be a non-empty string`);
+    }
+    if (!Number.isInteger(child.intent_revision) || child.intent_revision <= 0)
+      throw new Error("batch plan child intent_revision must be a positive integer");
+    if (!Array.isArray(child.blocked_by) || child.blocked_by.some((id) => typeof id !== "string" || id === ""))
+      throw new Error("batch plan child blocked_by must be an array of task ids");
+    if (seen.has(child.task_id))
+      throw new Error(`batch plan child ${child.task_id} appears more than once`);
+    seen.add(child.task_id);
+  }
+  for (const child of children) {
+    for (const blocker of child.blocked_by) {
+      if (!seen.has(blocker))
+        throw new Error(`batch plan child ${child.task_id} is blocked by ${blocker}, which is not in the confirmed plan`);
+    }
+  }
+  const dependencies = new Map(children.map((child) => [child.task_id, child.blocked_by]));
+  const visiting = new Set;
+  const visited = new Set;
+  function visit(taskId) {
+    if (visiting.has(taskId))
+      throw new Error(`batch plan dependency cycle at ${taskId}`);
+    if (visited.has(taskId))
+      return;
+    visiting.add(taskId);
+    for (const blocker of dependencies.get(taskId))
+      visit(blocker);
+    visiting.delete(taskId);
+    visited.add(taskId);
+  }
+  for (const child of children)
+    visit(child.task_id);
+  if (computeBatchPlanDigest(children) !== planDigest)
+    throw new Error("batch plan digest does not match the confirmed child plan");
+}
+function createBatchAuthorityRegistry() {
+  const inner = createCapabilityRegistry(BATCH_AUTHORITY_CAPABILITY_BRAND, {
+    validateBinding(binding, issuedAt) {
+      requireNonEmpty(binding);
+      if (binding.actor_id !== "user")
+        throw new Error("batch authorization requires a literal-user actor_id");
+      if (!GIT_COMMIT_ID2.test(binding.base_head))
+        throw new Error("batch authorization base_head must be a committed 40-hex commit id");
+      const expires = Date.parse(binding.expires_at);
+      if (Number.isNaN(expires) || expires <= Date.parse(issuedAt))
+        throw new Error("batch authorization must have a future expiry");
+      validateBudget(binding.budget, issuedAt);
+    },
+    validateAndProject(state, expected, now) {
+      if (!Number.isFinite(now))
+        throw new Error("batch authorization requires a valid clock");
+      const expires = Date.parse(state.expires_at);
+      if (Number.isNaN(expires) || expires <= now)
+        throw new BatchAuthorizationExpiryError("batch authorization has expired");
+      if (Date.parse(state.budget.deadline_at) <= now)
+        throw new BatchAuthorizationExpiryError("batch authorization deadline has expired");
+      for (const key of Object.keys(expected)) {
+        if (key === "budget") {
+          const a = state.budget ?? {};
+          const b = expected.budget ?? {};
+          if (a.max_children !== b.max_children || a.deadline_at !== b.deadline_at || a.qa_failure_limit !== b.qa_failure_limit)
+            throw new Error("batch authorization budget mismatch");
+          continue;
+        }
+        if (state[key] !== expected[key])
+          throw new Error(`batch authorization ${key} mismatch`);
+      }
+      return {
+        batch_id: state.batch_id,
+        initiative_slug: state.initiative_slug,
+        plan_digest: state.plan_digest,
+        branch: state.branch,
+        base_head: state.base_head,
+        budget: { ...state.budget },
+        actor_id: state.actor_id,
+        confirmation_ref: state.confirmation_ref,
+        issued_at: state.issued_at,
+        expires_at: state.expires_at,
+        nonce: state.nonce
+      };
+    }
+  }, "batch authorization");
+  const plans = new WeakMap;
+  const consumed = new WeakMap;
+  function planOf(capability) {
+    const plan = plans.get(capability);
+    if (!plan)
+      throw new Error("batch authorization capability is not recognized by this registry");
+    return plan;
+  }
+  function slotsOf(capability) {
+    const slots = consumed.get(capability);
+    if (!slots)
+      throw new Error("batch authorization capability is not recognized by this registry");
+    return slots;
+  }
+  return {
+    brand: inner.brand,
+    issue(binding, children, issuedAt = new Date().toISOString()) {
+      requireNonEmpty(binding);
+      validateChildren(children, binding.plan_digest);
+      const capability = inner.issue(binding, issuedAt);
+      plans.set(capability, children.map((child) => ({ ...child, blocked_by: [...child.blocked_by] })));
+      consumed.set(capability, new Set);
+      return capability;
+    },
+    inspect(capability, expected, now = Date.now()) {
+      planOf(capability);
+      return inner.inspect(capability, expected, now);
+    },
+    children(capability) {
+      return planOf(capability).map((child) => ({ ...child, blocked_by: [...child.blocked_by] }));
+    },
+    consumedChildren(capability) {
+      return [...slotsOf(capability)];
+    },
+    isChildConsumed(capability, taskId) {
+      return slotsOf(capability).has(taskId);
+    },
+    consumeChild(capability, expected, taskId, now = Date.now()) {
+      const validated = this.inspect(capability, expected, now);
+      const plan = planOf(capability);
+      if (!plan.some((child) => child.task_id === taskId))
+        throw new Error(`batch_child_not_in_plan: ${taskId}`);
+      const slots = slotsOf(capability);
+      if (slots.has(taskId))
+        throw new Error(`batch_child_slot_consumed: ${taskId}`);
+      slots.add(taskId);
+      return validated;
+    },
+    releaseChild(capability, taskId) {
+      slotsOf(capability).delete(taskId);
+    },
+    isExhausted(capability) {
+      return slotsOf(capability).size >= planOf(capability).length;
+    }
+  };
+}
+function deriveChildEnrollment(root, registry, input) {
+  const validated = registry.inspect(input.capability, input.binding, Date.parse(input.now));
+  const child = registry.children(input.capability).find((entry) => entry.task_id === input.task_id);
+  if (!child)
+    throw new Error(`batch_child_not_in_plan: ${input.task_id}`);
+  if (registry.isChildConsumed(input.capability, input.task_id))
+    throw new Error(`batch_child_slot_consumed: ${input.task_id}`);
+  if (!GIT_COMMIT_ID2.test(input.expected_head))
+    throw new Error("batch_head_lineage_broken: expected_head is not a commit id");
+  const preparation = preparePiCanary(root, { task_id: input.task_id, now: input.now });
+  if (!preparation.git_base_head)
+    throw new Error(preparation.git_error ?? "enrollment requires a committed Git HEAD");
+  if (preparation.git_base_head !== input.expected_head)
+    throw new Error(`batch_head_lineage_broken: expected ${input.expected_head}, found ${preparation.git_base_head}`);
+  if (!preparation.intent)
+    throw new Error(`batch_child_intent_changed: ${input.task_id} intent sidecar is unreadable`);
+  if (preparation.intent.path !== child.intent_path || preparation.intent.revision !== child.intent_revision || preparation.intent.content_hash !== child.intent_content_hash)
+    throw new Error(`batch_child_intent_changed: ${input.task_id}`);
+  if (registry.consumedChildren(input.capability).length === 0 && input.expected_head !== validated.base_head)
+    throw new Error(`batch_head_lineage_broken: the first child must enroll on the confirmed base_head ${validated.base_head}, not ${input.expected_head}`);
+  return {
+    child,
+    preparation,
+    binding: {
+      task_id: child.task_id,
+      intent_path: child.intent_path,
+      intent_revision: child.intent_revision,
+      intent_content_hash: child.intent_content_hash,
+      preparation_digest: preparation.digest,
+      actor_id: validated.actor_id,
+      confirmation_ref: validated.confirmation_ref,
+      expires_at: validated.expires_at,
+      nonce: `${validated.nonce}:${child.task_id}`
+    }
+  };
+}
+
+// plugins/immune-brain/runtime/unattended/batch_git.ts
+import { spawnSync as spawnSync4 } from "node:child_process";
+import { randomUUID as randomUUID5 } from "node:crypto";
+import {
+  constants as constants3,
+  closeSync as closeSync4,
+  existsSync as existsSync3,
+  lstatSync as lstatSync6,
+  mkdirSync as mkdirSync3,
+  openSync as openSync4,
+  realpathSync as realpathSync7,
+  renameSync as renameSync2,
+  rmSync as rmSync4,
+  writeFileSync as writeFileSync3
+} from "node:fs";
+import { dirname as dirname4, join as join7 } from "node:path";
+var DEFAULT_GIT_ENV = {
+  ...process.env,
+  GIT_AUTHOR_NAME: process.env.GIT_AUTHOR_NAME || "Immune-Brain Batch",
+  GIT_AUTHOR_EMAIL: process.env.GIT_AUTHOR_EMAIL || "immune-brain@local",
+  GIT_COMMITTER_NAME: process.env.GIT_COMMITTER_NAME || "Immune-Brain Batch",
+  GIT_COMMITTER_EMAIL: process.env.GIT_COMMITTER_EMAIL || "immune-brain@local"
+};
+function runBatchGitPreflight(input) {
+  const { root, initiative_slug: initiativeSlug, base_head: baseHead } = input;
+  const branch = `imm/${initiativeSlug}`;
+  const toplevelResult = spawnSync4("git", ["-C", root, "rev-parse", "--show-toplevel"], {
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"]
+  });
+  if (toplevelResult.status !== 0 || !toplevelResult.stdout.trim()) {
+    return {
+      ok: false,
+      reason: "not_a_git_repository",
+      message: "root must be a Git repository with a committed HEAD"
+    };
+  }
+  let realToplevel;
+  let realRoot;
+  try {
+    realToplevel = realpathSync7(toplevelResult.stdout.trim());
+    realRoot = realpathSync7(root);
+  } catch {
+    return {
+      ok: false,
+      reason: "not_repository_root",
+      message: "failed to resolve repository root"
+    };
+  }
+  if (realToplevel !== realRoot) {
+    return {
+      ok: false,
+      reason: "not_repository_root",
+      message: "batch root must be the top-level repository root, not a subdirectory"
+    };
+  }
+  const flaggedPreflight = getUnsupportedIndexFlags(root);
+  if (flaggedPreflight.length > 0) {
+    return {
+      ok: false,
+      reason: "dirty_working_tree",
+      message: `unsupported index flags (assume-unchanged/skip-worktree) detected: ${flaggedPreflight.join(", ")}`
+    };
+  }
+  const statusResult = spawnSync4("git", ["-C", root, "status", "--porcelain", "--untracked-files=all", "--ignore-submodules=none"], {
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"]
+  });
+  if (statusResult.status !== 0) {
+    return {
+      ok: false,
+      reason: "dirty_working_tree",
+      message: statusResult.stderr?.trim() || "failed to inspect working tree status"
+    };
+  }
+  if (statusResult.stdout.trim().length > 0) {
+    return {
+      ok: false,
+      reason: "dirty_working_tree",
+      message: "working tree is dirty before batch preflight"
+    };
+  }
+  const headResult = spawnSync4("git", ["-C", root, "rev-parse", "--verify", "HEAD^{commit}"], {
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"]
+  });
+  if (headResult.status !== 0 || !headResult.stdout.trim()) {
+    return {
+      ok: false,
+      reason: "uncommitted_head",
+      message: "HEAD is uncommitted or not a valid commit"
+    };
+  }
+  const branchCheck = spawnSync4("git", ["-C", root, "show-ref", "--verify", "--quiet", `refs/heads/${branch}`], { stdio: ["ignore", "ignore", "ignore"] });
+  if (branchCheck.status === 0) {
+    return {
+      ok: false,
+      reason: "batch_branch_exists",
+      message: `branch refs/heads/${branch} already exists`
+    };
+  }
+  const originalBranchResult = spawnSync4("git", ["-C", root, "symbolic-ref", "--short", "HEAD"], {
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"]
+  });
+  const originalBranch = originalBranchResult.stdout.trim();
+  const checkoutResult = spawnSync4("git", ["-C", root, "-c", "core.hooksPath=/dev/null", "checkout", "-b", branch, baseHead], {
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"],
+    env: DEFAULT_GIT_ENV
+  });
+  if (checkoutResult.status !== 0) {
+    const stderr = checkoutResult.stderr?.trim() || "";
+    const branchExists = stderr.includes("already exists") || spawnSync4("git", ["-C", root, "show-ref", "--verify", "--quiet", `refs/heads/${branch}`]).status === 0;
+    const currentBranchCheck = spawnSync4("git", ["-C", root, "symbolic-ref", "--short", "HEAD"], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"]
+    }).stdout.trim();
+    if (currentBranchCheck === branch && originalBranch && originalBranch !== branch) {
+      spawnSync4("git", ["-C", root, "-c", "core.hooksPath=/dev/null", "checkout", originalBranch], {
+        stdio: ["ignore", "ignore", "ignore"]
+      });
+    }
+    if (branchExists) {
+      return {
+        ok: false,
+        reason: "batch_branch_exists",
+        message: `branch refs/heads/${branch} already exists`
+      };
+    }
+    return {
+      ok: false,
+      reason: "branch_creation_failed",
+      message: stderr || `failed to checkout -b ${branch} ${baseHead}`
+    };
+  }
+  return { ok: true, branch };
+}
+function hasBoundaryWhitespace(path) {
+  return path.split("/").some((segment) => segment.trim() !== segment || segment.length === 0);
+}
+function getUnsupportedIndexFlags(root) {
+  const result2 = spawnSync4("git", ["-C", root, "ls-files", "-v", "-z", "--"], {
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"]
+  });
+  if (result2.status !== 0) {
+    throw new Error("failed to inspect index flags via git ls-files -v");
+  }
+  const entries = result2.stdout.split("\x00").filter((e) => e.length > 0);
+  const flagged = [];
+  for (const entry of entries) {
+    const tag = entry[0];
+    if (tag === "h" || tag === "S" || tag === "s") {
+      flagged.push(entry.slice(2));
+    }
+  }
+  return flagged;
+}
+function isPathAllowedForChild(path, taskId, scopeHint) {
+  if (hasBoundaryWhitespace(path))
+    return false;
+  if (path.includes("\\"))
+    return false;
+  const normalized = path.replace(/^\.\//, "");
+  if (normalized === `.imm/audit/${taskId}` || normalized.startsWith(`.imm/audit/${taskId}/`)) {
+    return true;
+  }
+  return scopeHint.some((scopePath) => {
+    if (scopePath.includes("*") || scopePath.includes("?")) {
+      return pathMatchesScope(normalized, scopePath);
+    }
+    return normalized === scopePath || normalized.startsWith(`${scopePath}/`);
+  });
+}
+function getChangedProjectPaths(root) {
+  const tracked = spawnSync4("git", ["-C", root, "diff-index", "--name-only", "-z", "--ignore-submodules=none", "HEAD", "--"], {
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"]
+  });
+  if (tracked.status !== 0)
+    throw new Error("failed to inspect tracked diff vs HEAD");
+  const untracked = spawnSync4("git", ["-C", root, "ls-files", "--others", "--exclude-standard", "-z", "--"], {
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"]
+  });
+  if (untracked.status !== 0)
+    throw new Error("failed to inspect untracked files");
+  const splitZ = (s) => s.split("\x00").filter((p) => p.length > 0);
+  return [...new Set([...splitZ(tracked.stdout), ...splitZ(untracked.stdout)])];
+}
+function getStagedProjectPaths(root) {
+  const staged = spawnSync4("git", ["-C", root, "diff-index", "--cached", "--name-only", "-z", "--ignore-submodules=none", "HEAD", "--"], {
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"]
+  });
+  if (staged.status !== 0)
+    throw new Error("failed to inspect staged diff vs HEAD");
+  return staged.stdout.split("\x00").filter((p) => p.length > 0);
+}
+function getUnstagedProjectPaths(root) {
+  const diffFiles = spawnSync4("git", ["-C", root, "diff-files", "--name-only", "-z", "--ignore-submodules=none", "--"], {
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"]
+  });
+  if (diffFiles.status !== 0)
+    throw new Error("failed to inspect unstaged tracked changes");
+  const untracked = spawnSync4("git", ["-C", root, "ls-files", "--others", "--exclude-standard", "-z", "--"], {
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"]
+  });
+  if (untracked.status !== 0)
+    throw new Error("failed to inspect untracked files");
+  const splitZ = (s) => s.split("\x00").filter((p) => p.length > 0);
+  return [...new Set([...splitZ(diffFiles.stdout), ...splitZ(untracked.stdout)])];
+}
+function getCommittedDeltaPaths(root) {
+  const delta = spawnSync4("git", ["-C", root, "diff-tree", "--no-commit-id", "--name-only", "-z", "-r", "HEAD~1", "HEAD"], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+  if (delta.status !== 0)
+    throw new Error("failed to inspect committed tree delta");
+  return delta.stdout.split("\x00").filter((p) => p.length > 0);
+}
+function commitEvidencePath(batchId, taskId) {
+  return join7(".imm", "state", "batches", "commits", `${batchId}-${taskId}.json`);
+}
+function ensureSecureDirectory2(root, relativePath) {
+  const segments = relativePath.split("/").filter(Boolean);
+  let current = root;
+  for (const segment of segments) {
+    current = join7(current, segment);
+    if (existsSync3(current)) {
+      const stats = lstatSync6(current);
+      if (stats.isSymbolicLink() || !stats.isDirectory()) {
+        throw new Error(`${segment} exists but is not a real directory`);
+      }
+    } else {
+      mkdirSync3(current);
+    }
+  }
+  return current;
+}
+function writeFileAtomically(root, relativePath, bytes) {
+  const target = join7(root, relativePath);
+  const targetDir = dirname4(target);
+  ensureSecureDirectory2(root, dirname4(relativePath));
+  const stats = lstatSync6(targetDir);
+  if (stats.isSymbolicLink() || !stats.isDirectory()) {
+    throw new Error(`${dirname4(relativePath)} is not a real directory`);
+  }
+  if (existsSync3(target)) {
+    const targetStats = lstatSync6(target);
+    if (targetStats.isSymbolicLink()) {
+      throw new Error(`${relativePath} is a symlink`);
+    }
+  }
+  const tempPath = `${target}.${randomUUID5()}.tmp`;
+  let fd = null;
+  try {
+    fd = openSync4(tempPath, constants3.O_WRONLY | constants3.O_CREAT | constants3.O_EXCL, 384);
+    writeFileSync3(fd, bytes, "utf8");
+    closeSync4(fd);
+    fd = null;
+    renameSync2(tempPath, target);
+  } finally {
+    if (fd !== null)
+      closeSync4(fd);
+    if (existsSync3(tempPath)) {
+      try {
+        rmSync4(tempPath);
+      } catch {}
+    }
+  }
+}
+function writeBatchCommitEvidence(root, evidence) {
+  const path = commitEvidencePath(evidence.batchId, evidence.taskId);
+  const payload = {
+    contract: "assurance_kernel/batch_commit_evidence/v1",
+    batch_id: evidence.batchId,
+    task_id: evidence.taskId,
+    commit: evidence.commit,
+    parent_head: evidence.parentHead,
+    created_at: new Date().toISOString()
+  };
+  writeFileAtomically(root, path, `${JSON.stringify(payload, null, 2)}
+`);
+}
+function readBatchCommitEvidence(root, batchId, taskId) {
+  const path = commitEvidencePath(batchId, taskId);
+  const fullPath = join7(root, path);
+  if (!existsSync3(fullPath))
+    return null;
+  try {
+    const content = readSecureProjectFile(root, path);
+    const parsed = JSON.parse(content);
+    if (parsed.contract === "assurance_kernel/batch_commit_evidence/v1" && parsed.batch_id === batchId && parsed.task_id === taskId && typeof parsed.commit === "string" && typeof parsed.parent_head === "string") {
+      return { commit: parsed.commit, parent_head: parsed.parent_head };
+    }
+  } catch {
+    return null;
+  }
+  return null;
+}
+async function commitBatchChild(input) {
+  const { root, taskId, batchId, expectedHead, branch: expectedBranch } = input;
+  const auditPair = readAuditTaskPair(root, taskId);
+  if (!auditPair) {
+    throw new Error(`cannot commit child ${taskId}: task is not settled done (audit pair missing)`);
+  }
+  const lifecycle = "lifecycle" in auditPair.record ? auditPair.record.lifecycle : auditPair.record.phase;
+  if (lifecycle !== "done") {
+    throw new Error(`cannot commit child ${taskId}: task is not settled done (lifecycle is ${lifecycle})`);
+  }
+  if (auditPair.proof.terminal_lifecycle !== "done") {
+    throw new Error(`cannot commit child ${taskId}: terminal proof lifecycle is not done`);
+  }
+  if (auditPair.record.task_id !== taskId || auditPair.proof.task_id !== taskId) {
+    throw new Error(`cannot commit child ${taskId}: audit task id mismatch`);
+  }
+  const intentSnapshot = auditPair.record.intent_snapshot;
+  const goal = typeof intentSnapshot.goal === "string" ? intentSnapshot.goal : "";
+  const scopeHint = Array.isArray(intentSnapshot.scope_hint) ? intentSnapshot.scope_hint.filter((s) => typeof s === "string") : [];
+  if (expectedBranch !== undefined) {
+    const currentBranchResult = spawnSync4("git", ["-C", root, "symbolic-ref", "--short", "HEAD"], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"]
+    });
+    const currentBranch = currentBranchResult.stdout.trim();
+    if (currentBranchResult.status !== 0 || currentBranch !== expectedBranch) {
+      throw new Error(`batch_head_lineage_broken: current branch ${currentBranch} does not match expected branch ${expectedBranch}`);
+    }
+  }
+  const currentHeadResult = spawnSync4("git", ["-C", root, "rev-parse", "HEAD"], {
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"]
+  });
+  const currentHead = currentHeadResult.stdout.trim();
+  if (currentHeadResult.status !== 0 || !currentHead || currentHead !== expectedHead) {
+    throw new Error(`batch_head_lineage_broken: current HEAD ${currentHead} does not match expected_head ${expectedHead}`);
+  }
+  const flaggedCommit = getUnsupportedIndexFlags(root);
+  if (flaggedCommit.length > 0) {
+    throw new Error("dirty_outside_scope");
+  }
+  const changedPaths = getChangedProjectPaths(root);
+  const outsideScope = changedPaths.filter((p) => !isPathAllowedForChild(p, taskId, scopeHint));
+  if (outsideScope.length > 0) {
+    throw new Error("dirty_outside_scope");
+  }
+  const pathsToStage = getUnstagedProjectPaths(root);
+  if (pathsToStage.length > 0) {
+    const addResult = spawnSync4("git", ["-C", root, "--literal-pathspecs", "add", "-A", "--", ...pathsToStage], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"]
+    });
+    if (addResult.status !== 0) {
+      throw new Error(`failed to stage changed paths: ${addResult.stderr?.trim() || "git add failed"}`);
+    }
+  }
+  const residualUnstaged = getUnstagedProjectPaths(root);
+  if (residualUnstaged.length > 0) {
+    throw new Error(`residual unstaged changes cannot be captured by the parent repository: ${residualUnstaged.join(", ")}`);
+  }
+  const staged = getStagedProjectPaths(root);
+  const stagedOutside = staged.filter((p) => !isPathAllowedForChild(p, taskId, scopeHint));
+  if (stagedOutside.length > 0) {
+    spawnSync4("git", ["-C", root, "reset", "--quiet"], { stdio: ["ignore", "ignore", "ignore"] });
+    throw new Error("dirty_outside_scope");
+  }
+  const goalFirstLine = goal.trim().split(/\r?\n/)[0]?.trim() || taskId;
+  const commitMessage = `imm(${taskId}): ${goalFirstLine}
+
+Immune-Brain-Batch: ${batchId}
+`;
+  const commitResult = spawnSync4("git", ["-C", root, "-c", "core.hooksPath=/dev/null", "commit", "--no-verify", "-F", "-"], {
+    input: commitMessage,
+    encoding: "utf8",
+    stdio: ["pipe", "pipe", "pipe"],
+    env: DEFAULT_GIT_ENV
+  });
+  if (commitResult.status !== 0) {
+    throw new Error(`commit failed for child ${taskId}: ${commitResult.stderr?.trim() || "git commit failed"}`);
+  }
+  const newHeadResult = spawnSync4("git", ["-C", root, "rev-parse", "HEAD"], {
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"]
+  });
+  const newHead = newHeadResult.stdout.trim();
+  if (newHeadResult.status !== 0 || !newHead || newHead === expectedHead) {
+    throw new Error("commit_failed");
+  }
+  const parentsResult = spawnSync4("git", ["-C", root, "rev-parse", "HEAD^@"], {
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"]
+  });
+  const parents = parentsResult.stdout.trim().split(/\s+/).filter(Boolean);
+  if (parents.length !== 1 || parents[0] !== expectedHead) {
+    throw new Error(`batch_head_lineage_broken: commit parent ${parents.join(",")} does not match expected_head ${expectedHead}`);
+  }
+  const committedDelta = getCommittedDeltaPaths(root);
+  const deltaOutside = committedDelta.filter((p) => !isPathAllowedForChild(p, taskId, scopeHint));
+  if (deltaOutside.length > 0) {
+    throw new Error("dirty_outside_scope");
+  }
+  writeBatchCommitEvidence(root, { batchId, taskId, commit: newHead, parentHead: expectedHead });
+  return { commit: newHead };
+}
+async function lookupBatchCommit(input) {
+  const { root, taskId, batchId, expectedHead, branch: expectedBranch } = input;
+  const FORMAT = "%H%x00%(trailers:key=Immune-Brain-Batch,valueonly)%x00%an%x00%ae%x00%s";
+  const subjectPrefix = `imm(${taskId}):`;
+  const parseEntry = (entry) => {
+    const parts = entry.split("\x00");
+    return {
+      commit: parts[0]?.trim() ?? "",
+      trailer: parts[1]?.trim() ?? "",
+      authorName: parts[2]?.trim() ?? "",
+      subject: parts[4]?.trim() ?? ""
+    };
+  };
+  const evidence = readBatchCommitEvidence(root, batchId, taskId);
+  let candidates = [];
+  let evidenceBacked = false;
+  if (evidence && evidence.commit) {
+    const direct = spawnSync4("git", ["-C", root, "log", "-n", "1", `--format=${FORMAT}`, evidence.commit, "--"], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+    if (direct.status !== 0) {
+      throw new Error(`failed to inspect batch commit for ${taskId}: ${direct.stderr?.trim() || "git log failed"}`);
+    }
+    if (direct.stdout?.trim()) {
+      const parsed = parseEntry(direct.stdout);
+      if (parsed.commit === evidence.commit) {
+        candidates = [parsed];
+        evidenceBacked = true;
+      }
+    }
+  }
+  if (!candidates.length) {
+    const result2 = spawnSync4("git", [
+      "-C",
+      root,
+      "log",
+      "--fixed-strings",
+      `--grep=${subjectPrefix}`,
+      "-n",
+      "20",
+      `--format=%x1e${FORMAT}`
+    ], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+    if (result2.status !== 0) {
+      throw new Error(`failed to lookup batch commit for ${taskId}: ${result2.stderr?.trim() || "git log failed"}`);
+    }
+    candidates = (result2.stdout ?? "").split("\x1E").filter((entry) => entry.trim()).map(parseEntry);
+  }
+  let match = null;
+  for (const candidate of candidates) {
+    if (!candidate.commit || candidate.trailer !== batchId)
+      continue;
+    if (!candidate.subject.startsWith(subjectPrefix))
+      continue;
+    match = candidate;
+    break;
+  }
+  if (!match)
+    return null;
+  const commit = match.commit;
+  if (!evidenceBacked) {
+    const evidenceForMatch = readBatchCommitEvidence(root, batchId, taskId);
+    if (!evidenceForMatch || evidenceForMatch.commit !== commit) {
+      throw new Error(`batch_head_lineage_broken: commit ${commit} lacks durable batch runner production evidence`);
+    }
+  }
+  if (match.authorName && match.authorName !== DEFAULT_GIT_ENV.GIT_AUTHOR_NAME) {
+    throw new Error(`batch_head_lineage_broken: adopted commit author ${match.authorName} does not match batch authority ${DEFAULT_GIT_ENV.GIT_AUTHOR_NAME}`);
+  }
+  if (expectedBranch !== undefined) {
+    const currentBranchResult = spawnSync4("git", ["-C", root, "symbolic-ref", "--short", "HEAD"], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"]
+    });
+    const currentBranch = currentBranchResult.stdout.trim();
+    if (currentBranchResult.status !== 0 || currentBranch !== expectedBranch) {
+      throw new Error(`batch_head_lineage_broken: current branch ${currentBranch} does not match expected branch ${expectedBranch}`);
+    }
+  }
+  if (expectedHead !== undefined) {
+    const currentHeadResult = spawnSync4("git", ["-C", root, "rev-parse", "HEAD"], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"]
+    });
+    const currentHead = currentHeadResult.stdout.trim();
+    if (currentHead !== commit) {
+      throw new Error(`batch_head_lineage_broken: current HEAD ${currentHead} diverged from adopted commit ${commit}`);
+    }
+    const parentsResult = spawnSync4("git", ["-C", root, "rev-parse", `${commit}^@`], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"]
+    });
+    const parents = parentsResult.stdout.trim().split(/\s+/).filter(Boolean);
+    if (parents.length !== 1 || parents[0] !== expectedHead) {
+      throw new Error(`batch_head_lineage_broken: adopted commit parent ${parents.join(",")} does not match expected_head ${expectedHead}`);
+    }
+    const auditPair = readAuditTaskPair(root, taskId);
+    if (!auditPair) {
+      throw new Error(`batch_head_lineage_broken: adopted commit lacks terminal audit pair for ${taskId}`);
+    }
+    const lifecycle = "lifecycle" in auditPair.record ? auditPair.record.lifecycle : auditPair.record.phase;
+    if (lifecycle !== "done") {
+      throw new Error(`batch_head_lineage_broken: adopted commit task lifecycle is not done: ${lifecycle}`);
+    }
+    const scopeHint = Array.isArray(auditPair.record.intent_snapshot.scope_hint) ? auditPair.record.intent_snapshot.scope_hint.filter((s) => typeof s === "string") : [];
+    const deltaResult = spawnSync4("git", ["-C", root, "diff-tree", "--no-commit-id", "--name-only", "-z", "-r", expectedHead, commit], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+    if (deltaResult.status !== 0) {
+      throw new Error("batch_head_lineage_broken: failed to inspect adopted commit delta");
+    }
+    const changedInCommit = deltaResult.stdout.split("\x00").filter((p) => p.length > 0);
+    const outside = changedInCommit.filter((p) => !isPathAllowedForChild(p, taskId, scopeHint));
+    if (outside.length > 0) {
+      throw new Error(`batch_head_lineage_broken: adopted commit contains out-of-scope changes: ${outside.join(", ")}`);
+    }
+  }
+  return { commit };
+}
+
+// plugins/immune-brain/runtime/unattended/batch_state.ts
+import { existsSync as existsSync4, mkdirSync as mkdirSync4, openSync as openSync5, closeSync as closeSync5, writeFileSync as writeFileSync4, renameSync as renameSync3, lstatSync as lstatSync7, constants as constants4, rmSync as rmSync5 } from "node:fs";
+import { randomUUID as randomUUID6 } from "node:crypto";
+import { dirname as dirname5, join as join8 } from "node:path";
+var BATCH_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
+var CHILD_RUN_STATES = new Set([
+  "pending",
+  "enrolled",
+  "settled",
+  "committed",
+  "needs_human",
+  "skipped_blocked"
+]);
+var BATCH_RUN_STATES = new Set([
+  "prepared",
+  "running",
+  "needs_human",
+  "completed",
+  "budget_stopped",
+  "failed",
+  "rejected"
+]);
+var ISO_TIMESTAMP_PATTERN2 = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
+function isCanonicalTimestamp(value) {
+  if (typeof value !== "string" || !ISO_TIMESTAMP_PATTERN2.test(value))
+    return false;
+  const milliseconds = Date.parse(value);
+  return Number.isFinite(milliseconds) && new Date(milliseconds).toISOString() === value;
+}
+function validateBatchId(batchId) {
+  if (typeof batchId !== "string" || !BATCH_ID_PATTERN.test(batchId))
+    throw new Error("batch id is not a safe file identity");
+}
+function statePath(batchId) {
+  validateBatchId(batchId);
+  return join8(".imm", "state", "batches", `${batchId}.json`);
+}
+function canonicalBytes(record) {
+  return `${JSON.stringify(record, null, 2)}
+`;
+}
+function validateRecordShape(value, batchId) {
+  if (typeof value !== "object" || value === null)
+    throw new Error(`batch run state ${batchId} is not an object`);
+  const record = value;
+  if (record.contract !== "assurance_kernel/batch_run_state/v1")
+    throw new Error(`batch run state ${batchId} has an unknown contract`);
+  if (record.batch_id !== batchId)
+    throw new Error(`batch run state ${batchId} carries batch_id ${String(record.batch_id)}`);
+  if (typeof record.plan_digest !== "string" || !record.plan_digest)
+    throw new Error(`batch run state ${batchId} has an invalid plan_digest`);
+  if (typeof record.base_head !== "string" || !record.base_head)
+    throw new Error(`batch run state ${batchId} has an invalid base_head`);
+  if (record.branch !== undefined && (typeof record.branch !== "string" || !record.branch))
+    throw new Error(`batch run state ${batchId} has an invalid branch`);
+  if (!isCanonicalTimestamp(record.confirmation_time))
+    throw new Error(`batch run state ${batchId} has an invalid confirmation_time`);
+  if (!isCanonicalTimestamp(record.authorization_expires_at))
+    throw new Error(`batch run state ${batchId} has an invalid authorization_expires_at`);
+  if (!isCanonicalTimestamp(record.created_at) || !isCanonicalTimestamp(record.updated_at))
+    throw new Error(`batch run state ${batchId} has invalid state timestamps`);
+  if (!Array.isArray(record.children) || record.children.length === 0)
+    throw new Error(`batch run state ${batchId} has no children`);
+  if (!BATCH_RUN_STATES.has(String(record.batch_state)))
+    throw new Error(`batch run state ${batchId} has an invalid batch_state`);
+  if (typeof record.consecutive_qa_failures !== "number" || !Number.isInteger(record.consecutive_qa_failures) || record.consecutive_qa_failures < 0)
+    throw new Error(`batch run state ${batchId} has an invalid consecutive_qa_failures`);
+  const budget2 = record.budget;
+  if (typeof record.budget !== "object" || record.budget === null || typeof budget2.max_children !== "number" || !Number.isInteger(budget2.max_children) || budget2.max_children <= 0 || !isCanonicalTimestamp(budget2.deadline_at) || typeof budget2.qa_failure_limit !== "number" || !Number.isInteger(budget2.qa_failure_limit) || budget2.qa_failure_limit <= 0)
+    throw new Error(`batch run state ${batchId} has an invalid budget`);
+  if (!Array.isArray(record.commits) || record.commits.some((c) => typeof c !== "string"))
+    throw new Error(`batch run state ${batchId} has an invalid commits list`);
+  const seenTaskIds = new Set;
+  for (const child of record.children) {
+    if (typeof child !== "object" || child === null || typeof child.task_id !== "string" || !child.task_id || typeof child.slice_id !== "string" || !child.slice_id)
+      throw new Error(`batch run state ${batchId} has an invalid child entry`);
+    if (!CHILD_RUN_STATES.has(String(child.state)))
+      throw new Error(`batch run state ${batchId} child ${child.task_id} has an invalid state`);
+    if (!Array.isArray(child.blocked_by) || child.blocked_by.some((b) => typeof b !== "string"))
+      throw new Error(`batch run state ${batchId} child ${child.task_id} has an invalid blocked_by`);
+    if (child.reason !== null && typeof child.reason !== "string" || child.commit !== null && typeof child.commit !== "string")
+      throw new Error(`batch run state ${batchId} child ${child.task_id} has invalid terminal fields`);
+    if (child.state === "committed" && child.commit === null)
+      throw new Error(`batch run state ${batchId} child ${child.task_id} is committed without a commit`);
+    if (child.state !== "committed" && child.commit !== null)
+      throw new Error(`batch run state ${batchId} child ${child.task_id} has a commit but is not committed`);
+    if ((child.state === "needs_human" || child.state === "skipped_blocked") && child.reason === null)
+      throw new Error(`batch run state ${batchId} child ${child.task_id} needs a terminal reason`);
+    if (seenTaskIds.has(child.task_id))
+      throw new Error(`batch run state ${batchId} has a duplicate child ${child.task_id}`);
+    seenTaskIds.add(child.task_id);
+  }
+  for (const child of record.children) {
+    if (child.state === "committed" && child.commit !== null && !record.commits.includes(child.commit))
+      throw new Error(`batch run state ${batchId} child ${child.task_id} commit is missing from commits`);
+  }
+  if ((record.batch_state === "budget_stopped" || record.batch_state === "failed" || record.batch_state === "rejected") && record.children.some((child) => child.state === "enrolled" || child.state === "settled"))
+    throw new Error(`batch run state ${batchId} is ${String(record.batch_state)} but a child is still mid-flight`);
+  if (record.batch_state === "completed" && record.children.some((child) => child.state !== "committed"))
+    throw new Error(`batch run state ${batchId} is completed but a child is not committed`);
+}
+function prepareBatchRunState(input) {
+  validateBatchId(input.batch_id);
+  const prepared = {
+    contract: "assurance_kernel/batch_run_state/v1",
+    batch_id: input.batch_id,
+    initiative_slug: input.initiative_slug,
+    plan_digest: input.plan_digest,
+    base_head: input.base_head,
+    branch: input.branch ?? `imm/${input.initiative_slug}`,
+    confirmation_time: input.confirmation_time,
+    authorization_expires_at: input.authorization_expires_at,
+    budget: input.budget,
+    batch_state: "prepared",
+    children: input.children.map((child) => ({
+      task_id: child.task_id,
+      slice_id: child.slice_id,
+      blocked_by: [...child.blocked_by],
+      state: "pending",
+      reason: null,
+      commit: null
+    })),
+    consecutive_qa_failures: 0,
+    commits: [],
+    created_at: input.now,
+    updated_at: input.now
+  };
+  return prepared;
+}
+function readBatchRunState(root, batchId) {
+  const path = statePath(batchId);
+  if (!existsSync4(join8(root, path)))
+    return null;
+  const parsed = JSON.parse(readSecureProjectFile(root, path));
+  validateRecordShape(parsed, batchId);
+  return parsed;
+}
+function ensureSecureDirectory3(root, relative4) {
+  const target = join8(root, relative4);
+  const parent = dirname5(target);
+  if (!existsSync4(parent))
+    mkdirSync4(parent, { recursive: true });
+  if (existsSync4(target)) {
+    const stats = lstatSync7(target);
+    if (!stats.isDirectory())
+      throw new Error(`${relative4} exists but is not a directory`);
+  } else {
+    mkdirSync4(target);
+  }
+  return target;
+}
+function writeFileAtomically2(root, relative4, bytes) {
+  const target = join8(root, relative4);
+  const targetDir = dirname5(target);
+  const stats = lstatSync7(targetDir);
+  if (!stats.isDirectory())
+    throw new Error(`${dirname5(relative4)} is not a directory`);
+  const tempPath = `${target}.${randomUUID6()}.tmp`;
+  let fd = null;
+  try {
+    fd = openSync5(tempPath, constants4.O_WRONLY | constants4.O_CREAT | constants4.O_EXCL, 384);
+    writeFileSync4(fd, bytes, "utf8");
+    closeSync5(fd);
+    fd = null;
+    renameSync3(tempPath, target);
+  } finally {
+    if (fd !== null)
+      closeSync5(fd);
+    if (existsSync4(tempPath)) {
+      try {
+        rmSync5(tempPath);
+      } catch {}
+    }
+  }
+}
+function writeBatchRunState(root, record) {
+  const path = statePath(record.batch_id);
+  validateRecordShape(record, record.batch_id);
+  return withKernelStoreLock(root, () => {
+    const existing = existsSync4(join8(root, path)) ? readSecureProjectFile(root, path) : null;
+    if (existing !== null && existing === canonicalBytes(record))
+      return record;
+    const stored = {
+      ...record,
+      updated_at: new Date().toISOString()
+    };
+    ensureSecureDirectory3(root, join8(".imm", "state", "batches"));
+    writeFileAtomically2(root, path, canonicalBytes(stored));
+    return stored;
+  });
+}
+function reportPath(batchId) {
+  validateBatchId(batchId);
+  return join8(".imm", "state", "batches", `${batchId}.report.json`);
+}
+function writeBatchRunReport(root, report) {
+  const relative4 = reportPath(report.batch_id);
+  return withKernelStoreLock(root, () => {
+    const path = join8(root, relative4);
+    if (existsSync4(path)) {
+      const original = JSON.parse(readSecureProjectFile(root, relative4));
+      if (typeof original !== "object" || original === null || original.contract !== "assurance_kernel/batch_run_report/v1")
+        throw new Error(`batch run report ${report.batch_id} has an unknown contract`);
+      const prior = original;
+      if (canonicalReportBytes(prior) === canonicalReportBytes(report))
+        return prior;
+      if (prior.batch_state !== "needs_human")
+        return prior;
+    }
+    ensureSecureDirectory3(root, join8(".imm", "state", "batches"));
+    writeFileAtomically2(root, relative4, canonicalReportBytes(report));
+    return report;
+  });
+}
+function canonicalReportBytes(report) {
+  return `${JSON.stringify(report, null, 2)}
+`;
+}
+function isTerminalBatchState(state) {
+  return state === "completed" || state === "budget_stopped" || state === "failed" || state === "rejected";
+}
+
+// plugins/immune-brain/runtime/unattended/batch_runner.ts
+function dependentsOf(record, taskId) {
+  return record.children.filter((child) => child.blocked_by.includes(taskId));
+}
+function skipDependents(record, taskId, reason) {
+  const skip = new Set([taskId]);
+  const queue = [taskId];
+  while (queue.length > 0) {
+    const current = queue.shift();
+    for (const dependent of dependentsOf(record, current)) {
+      if (skip.has(dependent.task_id))
+        continue;
+      skip.add(dependent.task_id);
+      queue.push(dependent.task_id);
+    }
+  }
+  record.children = record.children.map((child) => skip.has(child.task_id) && child.state === "pending" ? { ...child, state: "skipped_blocked", reason } : child);
+}
+function budgetStopReason(record, now) {
+  const enrolledCount = record.children.filter((child) => child.state !== "pending" && child.state !== "skipped_blocked").length;
+  if (enrolledCount >= record.budget.max_children)
+    return `max_children budget exhausted (${record.budget.max_children})`;
+  const deadline = Date.parse(record.budget.deadline_at);
+  if (!Number.isNaN(deadline) && now >= deadline)
+    return `deadline_at reached (${record.budget.deadline_at})`;
+  return null;
+}
+function isAuthorizationExpiryError(error) {
+  return error instanceof BatchAuthorizationExpiryError;
+}
+function requireFreshProjection(result2, taskId) {
+  if (result2.error !== null)
+    throw new Error(`cannot reconcile Kernel projection for ${taskId}: ${result2.error}`);
+  return result2;
+}
+function nextEnrollableChild(record) {
+  return record.children.find((child) => child.state === "pending" && record.children.every((other) => !child.blocked_by.includes(other.task_id) || other.state === "committed")) ?? null;
+}
+var TERMINAL_NEXT_ACTIONS = {
+  completed: "The batch settled every enrollable child; review the commits and the tracker.",
+  budget_stopped: "Budget, deadline, or authorization expiry stopped new enrollments; re-confirm to continue under a new authorization.",
+  failed: "A commit or lineage failure stopped the batch; inspect the failing child and the branch state.",
+  rejected: "The batch was rejected before any enrollment; correct the stated reason and re-confirm.",
+  needs_human: "A parked child needs a human decision; resolve it, then re-confirm to continue.",
+  running: "The batch is still running; no terminal report is due yet.",
+  prepared: "The batch is prepared but not started."
+};
+function reportFor(record, reason, nextAction) {
+  return {
+    contract: "assurance_kernel/batch_run_report/v1",
+    batch_id: record.batch_id,
+    initiative_slug: record.initiative_slug,
+    batch_state: record.batch_state,
+    children: record.children,
+    commits: record.commits,
+    reason,
+    next_action: nextAction || (TERMINAL_NEXT_ACTIONS[record.batch_state] ?? "Inspect the batch run state."),
+    created_at: record.updated_at
+  };
+}
+function finalize(root, record, reason, nextAction) {
+  const report = reportFor(record, reason, nextAction);
+  if (isTerminalBatchState(record.batch_state) || record.batch_state === "needs_human") {
+    writeBatchRunReport(root, report);
+  }
+  return report;
+}
+function isLineageBreakError(message) {
+  return message.includes("batch_head_lineage_broken");
+}
+function failPersistedLineage(root, existing, message) {
+  const children = existing.children.map((c) => c.state === "enrolled" || c.state === "settled" ? { ...c, state: "needs_human", reason: message } : c);
+  const record = { ...existing, batch_state: "failed", children };
+  for (const child of record.children) {
+    if (child.state === "needs_human") {
+      skipDependents(record, child.task_id, `dependency ${child.task_id} parked`);
+    }
+  }
+  return writeBatchRunState(root, record);
+}
+function externalHeadDriftMessage(root, record) {
+  if (!existsSync5(join9(root, ".git")))
+    return null;
+  const head = record.commits.length ? record.commits[record.commits.length - 1] : record.base_head;
+  const headCheck = spawnSync5("git", ["-C", root, "rev-parse", "HEAD"], {
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"]
+  });
+  if (headCheck.status === 0 && headCheck.stdout.trim() && headCheck.stdout.trim() !== head) {
+    return `batch_head_lineage_broken: current HEAD ${headCheck.stdout.trim()} does not match expected batch head ${head}`;
+  }
+  const branchCheck = spawnSync5("git", ["-C", root, "symbolic-ref", "--short", "HEAD"], {
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"]
+  });
+  const currentBranch = branchCheck.stdout.trim();
+  if (branchCheck.status !== 0 || currentBranch !== record.branch) {
+    return `batch_head_lineage_broken: current branch ${currentBranch} does not match expected batch branch ${record.branch}`;
+  }
+  return null;
+}
+async function validatePersistedRun(input, record) {
+  const plan = input.registry.children(input.capability);
+  if (record.plan_digest !== computeBatchPlanDigest(plan) || record.children.length !== plan.length || record.children.some((child, index) => {
+    const expected = plan[index];
+    return child.task_id !== expected.task_id || JSON.stringify(child.blocked_by) !== JSON.stringify(expected.blocked_by);
+  }))
+    throw new Error("plan_digest mismatch: persisted children do not match the authorized plan");
+  const commits = [];
+  for (const child of record.children) {
+    if (child.state !== "committed") {
+      if (child.commit !== null)
+        throw new Error("uncommitted batch child has a commit");
+      continue;
+    }
+    const evidence = input.git?.lookupBatchCommit ? await input.git.lookupBatchCommit(input.root, child.task_id, record.batch_id, undefined, record.branch) : input.kernel.lookupBatchCommit ? await input.kernel.lookupBatchCommit(input.root, child.task_id, record.batch_id, undefined, record.branch) : await lookupBatchCommit({
+      root: input.root,
+      taskId: child.task_id,
+      batchId: record.batch_id,
+      branch: record.branch
+    });
+    if (!evidence || evidence.commit !== child.commit) {
+      if (evidence === null && typeof child.commit === "string" && child.commit.length > 0 && existsSync5(join9(input.root, ".git"))) {
+        const reach = spawnSync5("git", ["-C", input.root, "merge-base", "--is-ancestor", child.commit, "HEAD"], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+        if (reach.status !== 0) {
+          throw new Error(`batch_head_lineage_broken: recorded commit ${child.commit} for ${child.task_id} is no longer reachable from HEAD`);
+        }
+      }
+      throw new Error(`persisted batch commit lacks evidence for ${child.task_id}`);
+    }
+    commits.push(evidence.commit);
+  }
+  if (JSON.stringify([...record.commits].sort()) !== JSON.stringify(commits.sort()))
+    throw new Error("persisted batch commit list does not match child evidence");
+}
+function replayTerminal(root, existing) {
+  return finalize(root, existing, `terminal state already reached: ${existing.batch_state}`, "");
+}
+function validateRunAuthorization(input, existing) {
+  const authorized = input.kernel.validateBatchAuthorization({
+    registry: input.registry,
+    capability: input.capability,
+    binding: {
+      batch_id: input.batch_id,
+      plan_digest: existing?.plan_digest ?? input.plan_digest,
+      base_head: existing?.base_head ?? input.base_head,
+      initiative_slug: existing?.initiative_slug ?? input.initiative_slug,
+      budget: input.budget,
+      expires_at: input.authorization_expires_at
+    }
+  });
+  if (authorized.issued_at !== input.confirmation_time || existing && Date.parse(authorized.issued_at) <= Date.parse(existing.confirmation_time))
+    throw new Error("the parked batch requires a fresh literal-user confirmation");
+  const children = input.children.map((child) => {
+    const { intent_path, intent_revision, intent_content_hash } = child;
+    if (intent_path === null || intent_revision === null || intent_content_hash === null)
+      throw new Error(`batch child ${child.task_id} has no complete intent identity`);
+    return { ...child, intent_path, intent_revision, intent_content_hash };
+  });
+  if (computeBatchPlanDigest(children) !== authorized.plan_digest || input.plan_digest !== authorized.plan_digest || input.base_head !== authorized.base_head)
+    throw new Error("batch run input does not match the authorized plan or base_head");
+}
+async function startBatch(input) {
+  if (!input.children.length) {
+    const rejected = prepareBatchRunState({ ...input, children: [], now: input.now });
+    return reportFor({ ...rejected, batch_state: "rejected" }, "batch plan is empty", "Provide a non-empty enrollable child plan.");
+  }
+  let existing = readBatchRunState(input.root, input.batch_id);
+  if (existing) {
+    try {
+      await validatePersistedRun(input, existing);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (isLineageBreakError(message)) {
+        if (isTerminalBatchState(existing.batch_state))
+          return replayTerminal(input.root, existing);
+        const failed = failPersistedLineage(input.root, existing, message);
+        return finalize(input.root, failed, message, "");
+      }
+      throw error;
+    }
+  }
+  if (existing && isTerminalBatchState(existing.batch_state)) {
+    return replayTerminal(input.root, existing);
+  }
+  if (existing?.batch_state === "needs_human") {
+    const priorConfirmation = Date.parse(existing.confirmation_time);
+    const nextConfirmation = Date.parse(input.confirmation_time);
+    const nextExpiry = Date.parse(input.authorization_expires_at);
+    const freshAuthorization = Number.isFinite(nextConfirmation) && nextConfirmation > priorConfirmation && Number.isFinite(nextExpiry) && nextExpiry > Date.now();
+    if (!freshAuthorization) {
+      return finalize(input.root, existing, "the parked batch requires a fresh literal-user confirmation", "Resolve the parked child, then re-confirm the batch to continue.");
+    }
+    validateRunAuthorization(input, existing);
+    prepareBatchRunState({ ...input, now: input.now });
+    const remapped = await Promise.all(existing.children.map(async (child) => {
+      if (child.state !== "needs_human")
+        return child;
+      const fresh = requireFreshProjection(await input.kernel.projectTask(input.root, child.task_id), child.task_id);
+      if (fresh.projection.lifecycle === "done" && fresh.projection.completion_ready)
+        return { ...child, state: "settled", reason: null };
+      if (fresh.error === null && fresh.claim?.task_id === child.task_id) {
+        return input.kernel.ownsTaskClaim(child.task_id) ? { ...child, state: "enrolled", reason: null } : child;
+      }
+      return { ...child, state: "pending", reason: null };
+    }));
+    if (remapped.some((child) => child.state === "needs_human")) {
+      const reparked = { ...existing, children: remapped };
+      for (const parked of remapped) {
+        if (parked.state === "needs_human")
+          skipDependents(reparked, parked.task_id, `dependency ${parked.task_id} parked`);
+      }
+      existing = writeBatchRunState(input.root, {
+        ...reparked,
+        confirmation_time: input.confirmation_time,
+        authorization_expires_at: input.authorization_expires_at,
+        budget: input.budget,
+        batch_state: "needs_human"
+      });
+      return finalize(input.root, existing, "a parked child's Kernel claim is held by a foreign batch", "Resolve the foreign claim, then re-confirm the batch to continue.");
+    }
+    const resumedChildren = remapped.map((child) => child.state === "skipped_blocked" ? { ...child, state: "pending", reason: null } : child);
+    existing = writeBatchRunState(input.root, {
+      ...existing,
+      confirmation_time: input.confirmation_time,
+      authorization_expires_at: input.authorization_expires_at,
+      budget: input.budget,
+      batch_state: "running",
+      consecutive_qa_failures: 0,
+      children: resumedChildren
+    });
+  }
+  if (existing?.batch_state === "running") {
+    const nextConfirmation = Date.parse(input.confirmation_time);
+    const nextExpiry = Date.parse(input.authorization_expires_at);
+    const priorConfirmation = Date.parse(existing.confirmation_time);
+    const persistedExpiry = Date.parse(existing.authorization_expires_at);
+    const renewedAuthorization = Number.isFinite(nextConfirmation) && nextConfirmation > priorConfirmation && Number.isFinite(nextExpiry) && nextExpiry > Date.now() && nextExpiry > persistedExpiry;
+    if (renewedAuthorization) {
+      validateRunAuthorization(input, existing);
+      existing = writeBatchRunState(input.root, {
+        ...existing,
+        confirmation_time: input.confirmation_time,
+        authorization_expires_at: input.authorization_expires_at,
+        budget: input.budget
+      });
+    }
+  }
+  if (existing) {
+    const interruptedChild = existing.children.find((child) => child.state === "enrolled" || child.state === "settled");
+    if (interruptedChild) {
+      return await resumeBatch(input, (root, taskId) => input.kernel.projectTask(root, taskId));
+    }
+  }
+  if (!existing) {
+    try {
+      validateRunAuthorization(input, null);
+    } catch (error) {
+      return reportFor({ ...prepareBatchRunState(input), batch_state: "rejected" }, error instanceof Error ? error.message : String(error), "Correct the authorization or plan, then re-confirm the batch.");
+    }
+    const preflightResult = input.git?.preflight ? await input.git.preflight({
+      root: input.root,
+      initiative_slug: input.initiative_slug,
+      base_head: input.base_head
+    }) : input.kernel.gitPreflight ? await input.kernel.gitPreflight({
+      root: input.root,
+      initiative_slug: input.initiative_slug,
+      base_head: input.base_head
+    }) : runBatchGitPreflight({
+      root: input.root,
+      initiative_slug: input.initiative_slug,
+      base_head: input.base_head
+    });
+    if (!preflightResult.ok) {
+      const rejected = prepareBatchRunState({ ...input, now: input.now });
+      return reportFor({ ...rejected, batch_state: "rejected" }, preflightResult.reason, preflightResult.message || "Correct the preflight condition and re-confirm.");
+    }
+  }
+  let record = existing ?? prepareBatchRunState({
+    batch_id: input.batch_id,
+    initiative_slug: input.initiative_slug,
+    children: input.children,
+    plan_digest: input.plan_digest,
+    base_head: input.base_head,
+    confirmation_time: input.confirmation_time,
+    authorization_expires_at: input.authorization_expires_at,
+    budget: input.budget,
+    now: input.now
+  });
+  const persist = () => {
+    record = writeBatchRunState(input.root, record);
+  };
+  if (record.batch_state === "prepared") {
+    record.batch_state = "running";
+    persist();
+  }
+  let head = record.commits.length ? record.commits[record.commits.length - 1] : record.base_head;
+  const driftMessage = externalHeadDriftMessage(input.root, record);
+  if (driftMessage) {
+    record.batch_state = "failed";
+    persist();
+    return finalize(input.root, record, driftMessage, "");
+  }
+  while (record.batch_state === "running") {
+    const child = nextEnrollableChild(record);
+    if (!child) {
+      record.batch_state = record.children.some((c) => c.state === "needs_human" || c.state === "skipped_blocked") ? "needs_human" : "completed";
+      persist();
+      break;
+    }
+    let adoptedClaim = false;
+    let claimState = "none";
+    const fresh = requireFreshProjection(await input.kernel.projectTask(input.root, child.task_id), child.task_id);
+    if (fresh.claim !== null && fresh.claim.task_id === child.task_id) {
+      claimState = input.kernel.ownsTaskClaim(child.task_id) ? "ours" : "foreign";
+    }
+    if (claimState === "ours") {
+      adoptedClaim = true;
+    } else if (claimState === "foreign") {
+      record.children = record.children.map((c) => c.task_id === child.task_id ? { ...c, state: "needs_human", reason: "claim held by another batch" } : c);
+      skipDependents(record, child.task_id, `dependency ${child.task_id} parked`);
+      record.batch_state = "needs_human";
+      persist();
+      return finalize(input.root, record, "claim held by another batch", "needs-human-attention");
+    }
+    if (adoptedClaim) {
+      record.children = record.children.map((c) => c.task_id === child.task_id ? { ...c, state: "enrolled", reason: "adopted existing batch claim after interruption" } : c);
+      persist();
+    } else {
+      const now = Date.now();
+      if (now >= Date.parse(record.authorization_expires_at) || budgetStopReason(record, now)) {
+        record.batch_state = record.children.some((c) => c.state === "needs_human" || c.state === "skipped_blocked") ? "needs_human" : "budget_stopped";
+        persist();
+        break;
+      }
+      try {
+        await validatePersistedRun(input, record);
+        const { issued_at: _issuedAt, ...binding } = input.kernel.validateBatchAuthorization({
+          registry: input.registry,
+          capability: input.capability,
+          binding: {
+            batch_id: record.batch_id,
+            plan_digest: record.plan_digest,
+            base_head: record.base_head,
+            initiative_slug: record.initiative_slug,
+            budget: record.budget,
+            expires_at: record.authorization_expires_at
+          }
+        });
+        for (const committed of record.children) {
+          if (committed.state === "committed" && !input.registry.isChildConsumed(input.capability, committed.task_id))
+            input.registry.consumeChild(input.capability, binding, committed.task_id);
+        }
+        await input.kernel.enrollTask({
+          root: input.root,
+          task_id: child.task_id,
+          batch: {
+            registry: input.registry,
+            capability: input.capability,
+            binding: { batch_id: input.batch_id, expected_head: head }
+          }
+        });
+        record.children = record.children.map((c) => c.task_id === child.task_id ? { ...c, state: "enrolled" } : c);
+        persist();
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        if (isAuthorizationExpiryError(error)) {
+          record.children = record.children.map((c) => c.task_id === child.task_id ? { ...c, state: "pending", reason: message } : c);
+          record.batch_state = "budget_stopped";
+          persist();
+          break;
+        }
+        if (isLineageBreakError(message)) {
+          record.children = record.children.map((c) => c.task_id === child.task_id ? { ...c, state: "needs_human", reason: message } : c);
+          skipDependents(record, child.task_id, `dependency ${child.task_id} parked`);
+          record.batch_state = "failed";
+          persist();
+          break;
+        }
+        record.children = record.children.map((c) => c.task_id === child.task_id ? { ...c, state: "needs_human", reason: message } : c);
+        skipDependents(record, child.task_id, `dependency ${child.task_id} parked`);
+        record.batch_state = "needs_human";
+        persist();
+        break;
+      }
+    }
+    let childTerminal = false;
+    while (!childTerminal) {
+      const terminal = await input.kernel.advanceTask(input.root, child.task_id);
+      if (terminal.state === "completed") {
+        childTerminal = true;
+        record.consecutive_qa_failures = 0;
+        record.children = record.children.map((c) => c.task_id === child.task_id ? { ...c, state: "settled", reason: null } : c);
+        persist();
+        try {
+          const planChild = input.children.find((c) => c.task_id === child.task_id);
+          const intentPath = planChild?.intent_path ?? undefined;
+          const { commit } = input.git?.commitChild ? await input.git.commitChild(input.root, child.task_id, input.batch_id, head, record.branch, intentPath) : input.kernel.commitChild ? await input.kernel.commitChild(input.root, child.task_id, input.batch_id, head, record.branch, intentPath) : await commitBatchChild({
+            root: input.root,
+            taskId: child.task_id,
+            batchId: input.batch_id,
+            expectedHead: head,
+            branch: record.branch,
+            intentPath
+          });
+          record.children = record.children.map((c) => c.task_id === child.task_id ? { ...c, state: "committed", commit } : c);
+          record.commits.push(commit);
+          head = commit;
+          persist();
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          record.children = record.children.map((c) => c.task_id === child.task_id ? { ...c, state: "needs_human", reason: message } : c);
+          skipDependents(record, child.task_id, `dependency ${child.task_id} failed to commit`);
+          record.batch_state = "failed";
+          persist();
+          break;
+        }
+      } else if (terminal.state === "stopped") {
+        record.children = record.children.map((c) => c.task_id === child.task_id ? { ...c, state: "needs_human", reason: "Kernel reported the child stopped" } : c);
+        childTerminal = true;
+        skipDependents(record, child.task_id, `dependency ${child.task_id} parked`);
+        record.batch_state = "needs_human";
+        persist();
+      } else if (terminal.state === "rework" && terminal.operation === "qa") {
+        record.consecutive_qa_failures += 1;
+        if (record.consecutive_qa_failures >= record.budget.qa_failure_limit) {
+          record.children = record.children.map((c) => c.task_id === child.task_id ? { ...c, state: "needs_human", reason: `QA failure limit reached: ${terminal.summary}` } : c);
+          record.batch_state = "needs_human";
+          childTerminal = true;
+          skipDependents(record, child.task_id, `dependency ${child.task_id} parked`);
+          persist();
+        } else {
+          persist();
+        }
+      } else if (terminal.state === "failed" || terminal.state === "blocked" || terminal.state === "rework") {
+        const reason = terminal.state === "rework" ? terminal.summary : terminal.reason;
+        childTerminal = true;
+        record.children = record.children.map((c) => c.task_id === child.task_id ? { ...c, state: "needs_human", reason } : c);
+        skipDependents(record, child.task_id, `dependency ${child.task_id} parked`);
+        record.batch_state = "needs_human";
+        persist();
+      } else if (terminal.state === "review_ready") {
+        record.children = record.children.map((c) => c.task_id === child.task_id ? { ...c, state: "enrolled", reason: `review reservation ${terminal.operation_id} open` } : c);
+        persist();
+        return reportFor(record, `child ${child.task_id} holds an open Review reservation`, "Submit the reserved foreground Review verdict, then call startBatch again to continue.");
+      }
+    }
+  }
+  return finalize(input.root, record, stopReasonFor(record), "");
+}
+function stopReasonFor(record) {
+  switch (record.batch_state) {
+    case "budget_stopped":
+      return budgetStopReason(record, Date.now()) ?? "budget, deadline, or authorization expiry stopped new enrollments";
+    case "failed": {
+      const failedChild = record.children.find((c) => c.state === "needs_human" && c.reason);
+      return failedChild?.reason ?? "a commit or lineage failure stopped the batch";
+    }
+    case "needs_human":
+      return "a parked child needs a human decision";
+    case "completed":
+      return "all enrollable children committed";
+    default:
+      return null;
+  }
+}
+async function resumeBatch(input, projection) {
+  let existing = readBatchRunState(input.root, input.batch_id);
+  if (!existing)
+    return startBatch(input);
+  try {
+    await validatePersistedRun(input, existing);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (isLineageBreakError(message)) {
+      if (isTerminalBatchState(existing.batch_state))
+        return replayTerminal(input.root, existing);
+      const failed = failPersistedLineage(input.root, existing, message);
+      return finalize(input.root, failed, message, "");
+    }
+    throw error;
+  }
+  if (isTerminalBatchState(existing.batch_state))
+    return replayTerminal(input.root, existing);
+  if (existing.batch_state === "needs_human")
+    return startBatch(input);
+  const driven = existing.children.find((child) => child.state === "enrolled" || child.state === "settled");
+  if (driven) {
+    if (driven.state === "enrolled") {
+      const drivenDrift = externalHeadDriftMessage(input.root, existing);
+      if (drivenDrift) {
+        const failed = failPersistedLineage(input.root, existing, drivenDrift);
+        return finalize(input.root, failed, drivenDrift, "");
+      }
+      const fresh = requireFreshProjection(await input.kernel.projectTask(input.root, driven.task_id), driven.task_id);
+      const holdsClaim = fresh.claim !== null && fresh.claim.task_id === driven.task_id && input.kernel.ownsTaskClaim(driven.task_id);
+      if (holdsClaim === false && fresh.claim !== null && fresh.claim.task_id === driven.task_id && !input.kernel.ownsTaskClaim(driven.task_id)) {
+        skipDependents(existing, driven.task_id, `dependency ${driven.task_id} parked`);
+        existing = writeBatchRunState(input.root, {
+          ...existing,
+          batch_state: "needs_human",
+          children: existing.children.map((c) => c.task_id === driven.task_id ? { ...c, state: "needs_human", reason: "claim held by another batch" } : c)
+        });
+        return finalize(input.root, existing, "claim held by another batch", "needs-human-attention");
+      }
+      if (!holdsClaim) {
+        const settledRemotely = fresh.projection.lifecycle === "done" && fresh.projection.completion_ready === true;
+        if (settledRemotely) {
+          existing = writeBatchRunState(input.root, {
+            ...existing,
+            children: existing.children.map((c) => c.task_id === driven.task_id ? { ...c, state: "settled", reason: "crash after settlement; resuming at commit" } : c)
+          });
+        } else {
+          existing = writeBatchRunState(input.root, {
+            ...existing,
+            children: existing.children.map((c) => c.task_id === driven.task_id ? { ...c, state: "pending", reason: "enrollment did not complete; re-enrolling" } : c)
+          });
+        }
+      }
+    }
+    const current = existing.children.find((c) => c.task_id === driven.task_id) ?? driven;
+    if (current.state === "settled" || current.state === "enrolled") {
+      try {
+        const driven2 = await driveInterruptedChild(input, current);
+        if (driven2)
+          return driven2;
+      } catch (error) {
+        if (error instanceof BatchCommitAbortError) {
+          const failed = readBatchRunState(input.root, input.batch_id);
+          return finalize(input.root, failed, error.message, "");
+        }
+        throw error;
+      }
+    }
+    existing = readBatchRunState(input.root, input.batch_id);
+    if (isTerminalBatchState(existing.batch_state))
+      return replayTerminal(input.root, existing);
+  }
+  return startBatch(input);
+}
+
+class BatchCommitAbortError extends Error {
+}
+async function driveInterruptedChild(input, child) {
+  let record = readBatchRunState(input.root, input.batch_id);
+  const persist = () => {
+    record = writeBatchRunState(input.root, record);
+  };
+  if (record.batch_state === "prepared") {
+    record.batch_state = "running";
+    persist();
+  }
+  let head = record.commits.length ? record.commits[record.commits.length - 1] : record.base_head;
+  while (child.state === "enrolled" || child.state === "settled") {
+    if (child.state === "settled") {
+      let existing = null;
+      try {
+        existing = input.git?.lookupBatchCommit ? await input.git.lookupBatchCommit(input.root, child.task_id, input.batch_id, head, record.branch) : input.kernel.lookupBatchCommit ? await input.kernel.lookupBatchCommit(input.root, child.task_id, input.batch_id, head, record.branch) : await lookupBatchCommit({
+          root: input.root,
+          taskId: child.task_id,
+          batchId: input.batch_id,
+          expectedHead: head,
+          branch: record.branch
+        });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        record.children = record.children.map((c) => c.task_id === child.task_id ? { ...c, state: "needs_human", reason: `commit lookup failed: ${message}` } : c);
+        skipDependents(record, child.task_id, `dependency ${child.task_id} failed to commit`);
+        const isLineageError = message.includes("batch_head_lineage_broken") || message.includes("lineage");
+        record.batch_state = isLineageError ? "failed" : "needs_human";
+        persist();
+        throw new BatchCommitAbortError(`commit lookup failed: ${message}`);
+      }
+      const planChild = input.children.find((c) => c.task_id === child.task_id);
+      const intentPath = planChild?.intent_path ?? undefined;
+      const doCommit = async () => {
+        if (input.git?.commitChild) {
+          return input.git.commitChild(input.root, child.task_id, input.batch_id, head, record.branch, intentPath);
+        }
+        if (input.kernel.commitChild) {
+          return input.kernel.commitChild(input.root, child.task_id, input.batch_id, head, record.branch, intentPath);
+        }
+        return commitBatchChild({
+          root: input.root,
+          taskId: child.task_id,
+          batchId: input.batch_id,
+          expectedHead: head,
+          branch: record.branch,
+          intentPath
+        });
+      };
+      const adopted = existing ?? await doCommit().catch((error) => {
+        const message = error instanceof Error ? error.message : String(error);
+        record.children = record.children.map((c) => c.task_id === child.task_id ? { ...c, state: "needs_human", reason: message } : c);
+        skipDependents(record, child.task_id, `dependency ${child.task_id} failed to commit`);
+        record.batch_state = "failed";
+        persist();
+        throw new BatchCommitAbortError(message);
+      });
+      const { commit } = adopted;
+      record.children = record.children.map((c) => c.task_id === child.task_id ? { ...c, state: "committed", commit } : c);
+      record.commits.push(commit);
+      head = commit;
+      persist();
+      child = { ...child, state: "committed", commit };
+      continue;
+    }
+    const terminal = await input.kernel.advanceTask(input.root, child.task_id);
+    if (terminal.state === "completed") {
+      record.children = record.children.map((c) => c.task_id === child.task_id ? { ...c, state: "settled", reason: null } : c);
+      record.consecutive_qa_failures = 0;
+      persist();
+      try {
+        const planChild = input.children.find((c) => c.task_id === child.task_id);
+        const intentPath = planChild?.intent_path ?? undefined;
+        const { commit } = input.git?.commitChild ? await input.git.commitChild(input.root, child.task_id, input.batch_id, head, record.branch, intentPath) : input.kernel.commitChild ? await input.kernel.commitChild(input.root, child.task_id, input.batch_id, head, record.branch, intentPath) : await commitBatchChild({
+          root: input.root,
+          taskId: child.task_id,
+          batchId: input.batch_id,
+          expectedHead: head,
+          branch: record.branch,
+          intentPath
+        });
+        record.children = record.children.map((c) => c.task_id === child.task_id ? { ...c, state: "committed", commit } : c);
+        record.commits.push(commit);
+        head = commit;
+        persist();
+        child = { ...child, state: "committed", commit };
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        record.children = record.children.map((c) => c.task_id === child.task_id ? { ...c, state: "needs_human", reason: message } : c);
+        skipDependents(record, child.task_id, `dependency ${child.task_id} failed to commit`);
+        record.batch_state = "failed";
+        persist();
+        return finalize(input.root, record, message, "");
+      }
+    } else if (terminal.state === "review_ready") {
+      record.children = record.children.map((c) => c.task_id === child.task_id ? { ...c, reason: `review reservation ${terminal.operation_id} open` } : c);
+      persist();
+      return reportFor(record, `child ${child.task_id} holds an open Review reservation`, "Submit the reserved foreground Review verdict, then call startBatch again to continue.");
+    } else if (terminal.state === "rework" && terminal.operation === "qa") {
+      record.consecutive_qa_failures += 1;
+      if (record.consecutive_qa_failures >= record.budget.qa_failure_limit) {
+        const reason = `QA failure limit reached: ${terminal.summary}`;
+        record.children = record.children.map((c) => c.task_id === child.task_id ? { ...c, state: "needs_human", reason } : c);
+        record.batch_state = "needs_human";
+        skipDependents(record, child.task_id, `dependency ${child.task_id} parked`);
+        persist();
+        return finalize(input.root, record, reason, "");
+      }
+      persist();
+    } else {
+      const reason = terminal.state === "stopped" ? "Kernel reported the child stopped" : terminal.state === "rework" ? terminal.summary : terminal.reason;
+      record.children = record.children.map((c) => c.task_id === child.task_id ? { ...c, state: "needs_human", reason } : c);
+      record.batch_state = "needs_human";
+      skipDependents(record, child.task_id, `dependency ${child.task_id} parked`);
+      persist();
+      return finalize(input.root, record, reason, "");
+    }
+  }
+  return null;
+}
+
 // plugins/immune-brain/runtime/claude/kernel_ports.ts
 function diffSnapshotOf(root, record) {
   if (record.contract === "assurance_kernel/task_record/v4") {
@@ -6759,7 +8945,7 @@ function assertProjectionBinding(before, after, allowDiffChange = false) {
   }
 }
 function qaOutcomes(record) {
-  return Object.fromEntries(record.attestations.filter((item) => item.kind === "qa").flatMap((item) => item.acceptance_results).map((result) => [result.acceptance_id, { status: result.status, summary: result.summary }]));
+  return Object.fromEntries(record.attestations.filter((item) => item.kind === "qa").flatMap((item) => item.acceptance_results).map((result2) => [result2.acceptance_id, { status: result2.status, summary: result2.summary }]));
 }
 async function ensureClaudeReviewRevision(root, taskId, projection) {
   const current = await readTaskRecord(root, taskId);
@@ -6824,7 +9010,7 @@ async function buildAssuranceSnapshot(root, taskId, role, projection, runner) {
     outcomes: qaOutcomes(record)
   }) : null;
   const dirtyFiles = reviewManifest ? Object.keys(reviewManifest.changed_paths) : reviewBundle ? Object.keys(reviewBundle.dirty_files) : [];
-  const snapshot = {
+  const snapshot2 = {
     contract: "assurance_kernel/assurance_snapshot/v2",
     task_id: taskId,
     role,
@@ -6853,7 +9039,7 @@ async function buildAssuranceSnapshot(root, taskId, role, projection, runner) {
       }
     } : {}
   };
-  return { snapshot, descriptors, reviewBundle, reviewManifest };
+  return { snapshot: snapshot2, descriptors, reviewBundle, reviewManifest };
 }
 function stagePlanningArtifactTransition(root, record) {
   const intentActive = record.intent_ref.path.replace("docs/plans/archive/", "docs/plans/");
@@ -6864,7 +9050,7 @@ function stagePlanningArtifactTransition(root, record) {
     intentArchive,
     ...specActive ? [specActive, specActive.replace("docs/specs/", "docs/specs/archive/")] : []
   ];
-  const paths = candidates.filter((path) => existsSync3(join7(root, path)) || execFileSync4("git", ["ls-files", "--cached", "--", path], { cwd: root, encoding: "utf8" }).trim().length > 0);
+  const paths = candidates.filter((path) => existsSync6(join10(root, path)) || execFileSync4("git", ["ls-files", "--cached", "--", path], { cwd: root, encoding: "utf8" }).trim().length > 0);
   if (paths.length === 0)
     return;
   execFileSync4("git", ["add", "--", ...paths], { cwd: root, stdio: ["ignore", "pipe", "pipe"] });
@@ -6902,6 +9088,79 @@ function throwIfCancelled(signal) {
   if (signal?.aborted)
     throw new NativeAuthorityError("user_cancelled", "Tool call was cancelled");
 }
+function syncIsOwnBatchClaim(cwd, existingBatch, taskId, batchBranch) {
+  let claim = null;
+  let workspace = null;
+  try {
+    claim = JSON.parse(readFileSync8(join10(cwd, ".imm", "state", "active-claim.json"), "utf8"));
+    workspace = JSON.parse(readFileSync8(join10(cwd, ".imm", "state", "workspace.json"), "utf8"));
+  } catch {
+    return false;
+  }
+  const currentTaskId = workspace?.state?.current_working || (claim?.lifecycle_status === "active" ? claim?.task_id : null);
+  if (currentTaskId !== taskId || !claim)
+    return false;
+  const branch = spawnSync6("git", ["-C", cwd, "branch", "--show-current"], { encoding: "utf8" }).stdout.trim();
+  if (branch !== batchBranch)
+    return false;
+  const childInBatch = existingBatch.children.find((c) => c.task_id === taskId);
+  if (!childInBatch || !(childInBatch.state === "enrolled" || childInBatch.state === "needs_human")) {
+    return false;
+  }
+  let rec = null;
+  try {
+    rec = JSON.parse(readFileSync8(join10(cwd, ".imm", "state", "tasks", `${taskId}.json`), "utf8"));
+  } catch {
+    return false;
+  }
+  const lineageHeads = [existingBatch.base_head].concat(Array.isArray(existingBatch.commits) ? existingBatch.commits : []);
+  if (!lineageHeads.includes(rec.git_base_head))
+    return false;
+  if (claim.enrollment_event_id !== `enroll-${taskId}-${claim.created_at}`)
+    return false;
+  const createdAt = Date.parse(claim.created_at);
+  if (!Number.isFinite(createdAt) || createdAt > Date.parse(existingBatch.updated_at))
+    return false;
+  if (claim.task_id !== taskId || claim.lifecycle_status !== "active")
+    return false;
+  if (claim.intent_revision !== rec.intent_snapshot?.revision)
+    return false;
+  if (claim.intent_content_hash !== rec.intent_ref?.content_hash)
+    return false;
+  return true;
+}
+function findExistingActiveBatch(root, initiativeSlug) {
+  const batchesDir = join10(root, ".imm", "state", "batches");
+  if (!existsSync6(batchesDir))
+    return null;
+  const files = readdirSync2(batchesDir);
+  for (const file of files) {
+    if (!file.endsWith(".json"))
+      continue;
+    let record;
+    try {
+      record = JSON.parse(readFileSync8(join10(batchesDir, file), "utf8"));
+    } catch {
+      return { corrupt: true, path: file };
+    }
+    if (record.contract === "assurance_kernel/batch_run_state/v1" && record.initiative_slug === initiativeSlug) {
+      const validStates = new Set([
+        "prepared",
+        "running",
+        "needs_human",
+        "completed",
+        "budget_stopped",
+        "failed",
+        "rejected"
+      ]);
+      if (typeof record.batch_id !== "string" || typeof record.base_head !== "string" || !Array.isArray(record.children) || !validStates.has(record.batch_state)) {
+        return { corrupt: true, path: file };
+      }
+      return record;
+    }
+  }
+  return null;
+}
 
 class ClaudeRuntime {
   host;
@@ -6913,12 +9172,19 @@ class ClaudeRuntime {
   hostVersion;
   mutationRegistry = null;
   enrollmentRegistry = createEnrollmentAuthorityRegistry();
+  batchRegistry = createBatchAuthorityRegistry();
   app = null;
+  batchKernel;
+  batchGit;
+  readInitiative;
   constructor(options) {
     this.cwd = options.cwd;
     this.env = options.env ?? process.env;
     this.interactive = options.interactive ?? true;
     this.requestConfirmation = options.requestConfirmation;
+    this.batchKernel = options.batchKernel;
+    this.batchGit = options.batchGit;
+    this.readInitiative = options.readInitiative;
     this.host = options.host ?? new ClaudeReviewHost(new FileHookEventLog);
     this.coordinator = new AssuranceCoordinator({
       ...this.createKernelPorts(),
@@ -6950,7 +9216,7 @@ class ClaudeRuntime {
       frozenRunner: async () => resolveBunRunner(),
       buildAssurance: (root, taskId, role, projection, runner) => buildAssuranceSnapshot(root, taskId, role, projection, runner),
       ensureReviewRevision: (root, taskId, projection) => ensureClaudeReviewRevision(root, taskId, projection),
-      runQa: (snapshot, descriptors, runner, options) => runDeterministicQa(snapshot, descriptors, runner, options),
+      runQa: (snapshot2, descriptors, runner, options) => runDeterministicQa(snapshot2, descriptors, runner, options),
       writeReviewEvidence: (input) => writeNativeReviewEvidence(input.evidence),
       applyVerdict: (ctx, input) => this.applyVerdict(ctx, input),
       applyOrdinaryOperation: (ctx, input) => this.executeOrdinary(ctx, input)
@@ -6973,16 +9239,16 @@ class ClaudeRuntime {
       throw new Error(`unsupported native operation ${operation}`);
     if (!this.requestConfirmation)
       throw new NativeAuthorityError("interaction_not_opened", "native confirmation port is unavailable");
-    const result = await this.requestConfirmation({ operation, taskId: meta.taskId, toolCallId: meta.toolCallId, signal: meta.signal, ...binding });
+    const result2 = await this.requestConfirmation({ operation, taskId: meta.taskId, toolCallId: meta.toolCallId, signal: meta.signal, ...binding });
     throwIfCancelled(meta.signal);
-    const gate = evaluateNativeGate({ operation, interactive, decision: result.decision });
+    const gate = evaluateNativeGate({ operation, interactive, decision: result2.decision });
     if (!gate.ok)
       throw gate.error;
     return {
       confirmation_ref: confirmationRef({
         connectionId: meta.sessionId,
         toolCallId: meta.toolCallId,
-        requestId: result.requestId,
+        requestId: result2.requestId,
         operation,
         taskId: meta.taskId,
         ...binding
@@ -7086,8 +9352,8 @@ class ClaudeRuntime {
       throw new Error("approve_breaking_intent_revision requires next_intent");
     const nextIntentHash = nextIntent ? canonicalIntentHash(nextIntent) : undefined;
     const nextIntentRef = nextIntent ? { path: `docs/plans/${nextIntent.task_id}.intent.json`, content_hash: nextIntentHash } : undefined;
-    const sidecar = nextIntent ? join7(this.cwd, priorIntent.intent_ref.path) : undefined;
-    const priorBytes = sidecar ? readFileSync7(sidecar) : undefined;
+    const sidecar = nextIntent ? join10(this.cwd, priorIntent.intent_ref.path) : undefined;
+    const priorBytes = sidecar ? readFileSync8(sidecar) : undefined;
     const priorIndexState = sidecar ? execFileSync4("git", ["ls-files", "--stage", "-z", "--", priorIntent.intent_ref.path], {
       cwd: this.cwd,
       stdio: ["ignore", "pipe", "pipe"]
@@ -7095,7 +9361,7 @@ class ClaudeRuntime {
     const restoreStagedIntent = () => {
       if (!sidecar || !priorBytes || !priorIndexState)
         return;
-      writeFileSync3(sidecar, priorBytes);
+      writeFileSync5(sidecar, priorBytes);
       execFileSync4("git", ["update-index", "--force-remove", "--", priorIntent.intent_ref.path], {
         cwd: this.cwd,
         stdio: ["ignore", "pipe", "pipe"]
@@ -7112,7 +9378,7 @@ class ClaudeRuntime {
     let gate;
     try {
       if (sidecar && nextIntent) {
-        writeFileSync3(sidecar, `${JSON.stringify(nextIntent, null, 2)}
+        writeFileSync5(sidecar, `${JSON.stringify(nextIntent, null, 2)}
 `);
         execFileSync4("git", ["add", "--", priorIntent.intent_ref.path], { cwd: this.cwd, stdio: ["ignore", "pipe", "pipe"] });
         const preparedRecord = await readTaskRecord(this.cwd, taskId);
@@ -7175,7 +9441,7 @@ class ClaudeRuntime {
         ...op === "stop" ? { reason: stopReason(extra.reason) } : {}
       });
       throwIfCancelled(meta.signal);
-      const result = app.execute({
+      const result2 = app.execute({
         root: this.cwd,
         task_id: taskId,
         operation: {
@@ -7191,8 +9457,8 @@ class ClaudeRuntime {
         now
       });
       if (op === "stop" || op === "authorize_rework" || op === "approve_breaking_intent_revision")
-        stagePlanningArtifactTransition(this.cwd, result.record);
-      return result;
+        stagePlanningArtifactTransition(this.cwd, result2.record);
+      return result2;
     } catch (error) {
       if (sidecar && priorBytes && priorIndexState) {
         const current = await readTaskRecord(this.cwd, taskId);
@@ -7211,9 +9477,9 @@ class ClaudeRuntime {
       this.coordinator.commitInvocation(input.invocation);
       const settlement = apply();
       input.hooks?.onCommit?.();
-      const result = await settlement;
+      const result2 = await settlement;
       await input.hooks?.afterCommit?.();
-      return result;
+      return result2;
     };
     if (input.verdict.decision === "rework") {
       const findings = input.verdict.findings.map((finding) => ({
@@ -7239,7 +9505,7 @@ class ClaudeRuntime {
         confirmation_ref: `claude:${input.actorId}`
       });
       await input.hooks?.beforeCommit?.();
-      const result = await commitAndApply(async () => app.execute({
+      const result2 = await commitAndApply(async () => app.execute({
         root: ctx.cwd,
         task_id: input.taskId,
         operation: { op: "request_rework", capability: capability2, findings, actor_id: input.actorId },
@@ -7247,11 +9513,11 @@ class ClaudeRuntime {
         diffProvider: diffSnapshotOf,
         now
       }));
-      stagePlanningArtifactTransition(ctx.cwd, result.record);
+      stagePlanningArtifactTransition(ctx.cwd, result2.record);
       return;
     }
     const approval = {
-      id: `approval-${input.snapshot.role}-${randomUUID5().slice(0, 8)}`,
+      id: `approval-${input.snapshot.role}-${randomUUID7().slice(0, 8)}`,
       kind: input.snapshot.role === "qa" ? "qa" : "review",
       authority_role: input.snapshot.role === "qa" ? "qa" : "reviewer",
       task_revision: input.snapshot.intent_revision,
@@ -7288,13 +9554,13 @@ class ClaudeRuntime {
     const { app } = await this.authority();
     const operation = input.operation.op === "revise_intent" ? { ...input.operation, next_intent: await parseTaskIntentV1(input.operation.next_intent) } : input.operation;
     const priorIntent = await readTaskIntentForRecord(ctx.cwd, input.taskId);
-    const sidecar = join7(ctx.cwd, priorIntent.intent_ref.path);
-    const priorBytes = operation.op === "revise_intent" ? readFileSync7(sidecar) : null;
+    const sidecar = join10(ctx.cwd, priorIntent.intent_ref.path);
+    const priorBytes = operation.op === "revise_intent" ? readFileSync8(sidecar) : null;
     try {
       if (priorBytes)
-        writeFileSync3(sidecar, `${JSON.stringify(operation.next_intent, null, 2)}
+        writeFileSync5(sidecar, `${JSON.stringify(operation.next_intent, null, 2)}
 `);
-      const result = await app.execute({
+      const result2 = await app.execute({
         root: ctx.cwd,
         task_id: input.taskId,
         operation,
@@ -7303,16 +9569,587 @@ class ClaudeRuntime {
         now: new Date().toISOString()
       });
       if (operation.op === "freeze_artifacts" || operation.op === "stop")
-        stagePlanningArtifactTransition(ctx.cwd, result.record);
-      return result;
+        stagePlanningArtifactTransition(ctx.cwd, result2.record);
+      return result2;
     } catch (error) {
       if (priorBytes) {
         const current = await readTaskRecord(ctx.cwd, input.taskId);
         if (current.record?.intent_snapshot.revision === priorIntent.intent.revision)
-          writeFileSync3(sidecar, priorBytes);
+          writeFileSync5(sidecar, priorBytes);
       }
       throw error;
     }
+  }
+  async startUnattendedBatch(initiativeSlug, meta) {
+    throwIfCancelled(meta.signal);
+    const probe = probeHost(this.env, process.platform, this.hostVersion);
+    if (!probe.ok)
+      throw new NativeAuthorityError("unsupported_host", probe.reason);
+    const interactive = meta.interactive ?? this.interactive;
+    if (!interactive)
+      throw new NativeAuthorityError("unsupported_host", "interactive MCP elicitation is unavailable");
+    if (!this.requestConfirmation)
+      throw new NativeAuthorityError("interaction_not_opened", "native confirmation port is unavailable");
+    if (!/^[a-z0-9][a-z0-9._-]{0,127}$/i.test(initiativeSlug)) {
+      return {
+        state: "rejected",
+        reason: `invalid initiative slug: ${initiativeSlug}`,
+        recovery_action: "specify a valid initiative slug and retry in the current Host"
+      };
+    }
+    const existingBatch = findExistingActiveBatch(this.cwd, initiativeSlug);
+    const isResuming = existingBatch !== null;
+    if (existingBatch?.corrupt) {
+      return {
+        state: "blocked",
+        reason: `batch run state is unreadable or invalid: ${existingBatch.path}`,
+        recovery_action: "resolve or remove the invalid batch state file, then retry in the current Host"
+      };
+    }
+    const batchBranch = `imm/${initiativeSlug}`;
+    const workspaceState = readWorkspaceStateRaw(this.cwd);
+    const claim = readBackendClaim(this.cwd);
+    const activeTaskId = workspaceState.state.current_working || (claim?.lifecycle_status === "active" ? claim.task_id : null);
+    const isOwnClaim = isResuming && activeTaskId !== null && syncIsOwnBatchClaim(this.cwd, existingBatch, activeTaskId, batchBranch);
+    if (activeTaskId && !isOwnClaim) {
+      return {
+        state: "blocked",
+        reason: `an active workspace claim already exists for task: ${activeTaskId}`,
+        recovery_action: "resolve or stop the active task before starting a batch in the current Host"
+      };
+    }
+    let baseHead;
+    try {
+      baseHead = readGitHead(this.cwd);
+    } catch (err) {
+      return {
+        state: "rejected",
+        reason: err instanceof Error ? err.message : String(err),
+        recovery_action: "commit working changes and ensure a committed Git HEAD exists in the current Host"
+      };
+    }
+    const branchExists = spawnSync6("git", ["-C", this.cwd, "show-ref", "--verify", "--quiet", `refs/heads/${batchBranch}`]);
+    if (branchExists.status === 0 && !isResuming) {
+      return {
+        state: "rejected",
+        reason: `branch preflight failed: branch refs/heads/${batchBranch} already exists`,
+        recovery_action: "delete or rename the conflicting branch, or commit working changes in the current Host"
+      };
+    }
+    const statusProc = spawnSync6("git", ["-C", this.cwd, "status", "--porcelain=v1", "-z", "--no-renames", "--untracked-files=all"], {
+      encoding: "utf8"
+    });
+    if (statusProc.status !== 0) {
+      return {
+        state: "rejected",
+        reason: "branch preflight failed: git status is unreadable",
+        recovery_action: "check the repository integrity and retry in the current Host"
+      };
+    }
+    const statusEntries = [];
+    for (const entry of statusProc.stdout.split("\x00")) {
+      if (entry.length === 0)
+        continue;
+      statusEntries.push({ code: entry.slice(0, 2), path: entry.slice(3) });
+    }
+    if (statusEntries.length > 0) {
+      if (!isResuming) {
+        return {
+          state: "rejected",
+          reason: "branch preflight failed: working tree is dirty",
+          recovery_action: "delete or rename the conflicting branch, or commit working changes in the current Host"
+        };
+      }
+      const inFlightChild = existingBatch.children.find((c) => c.state === "enrolled" || c.state === "needs_human" || c.state === "settled");
+      let authorizedScope = [];
+      if (inFlightChild) {
+        try {
+          const recordRead = readTaskRecordRaw(this.cwd, inFlightChild.task_id);
+          authorizedScope = recordRead.record?.intent_snapshot?.scope_hint ?? [];
+        } catch {}
+        if (authorizedScope.length === 0 && inFlightChild.state === "settled") {
+          try {
+            const settled = readAuditTaskPair(this.cwd, inFlightChild.task_id)?.record;
+            authorizedScope = settled?.intent_snapshot?.scope_hint ?? [];
+          } catch {}
+        }
+        if (authorizedScope.length === 0) {
+          try {
+            const read = readTaskIntentForRecord(this.cwd, inFlightChild.task_id);
+            authorizedScope = read.intent.scope_hint ?? [];
+          } catch {}
+        }
+        if (authorizedScope.length === 0) {
+          return {
+            state: "rejected",
+            reason: "branch preflight failed: cannot derive the in-flight child's authorized scope",
+            recovery_action: "resolve the child's intent record, then retry in the current Host"
+          };
+        }
+      }
+      const dirtyBytes = statusEntries.some(({ code }) => code === "??" || code[1] !== " ");
+      if (dirtyBytes) {
+        return {
+          state: "rejected",
+          reason: "branch preflight failed: working tree has unstaged or untracked changes",
+          recovery_action: "stage the in-flight changes with git add, then retry in the current Host"
+        };
+      }
+      const outsideScope = statusEntries.some(({ path }) => {
+        if (path.startsWith(".imm/") || path.startsWith("docs/plans/") || path.startsWith("docs/specs/"))
+          return false;
+        return !authorizedScope.some((scopePath) => pathMatchesScope(path, scopePath));
+      });
+      if (outsideScope) {
+        return {
+          state: "rejected",
+          reason: "branch preflight failed: working tree has changes outside the authorized child scope",
+          recovery_action: "commit or unstage changes outside the active task scope, then retry in the current Host"
+        };
+      }
+    }
+    const now = new Date().toISOString();
+    let recoveryChildren = [];
+    let planDigest;
+    let confirmChildrenDetails = [];
+    let confirmExcludedDetails = [];
+    const recoveryRiskByTask = new Map;
+    let budget2 = existingBatch ? existingBatch.budget : { max_children: 10, deadline_at: new Date(Date.now() + 8 * 3600 * 1000).toISOString(), qa_failure_limit: 2 };
+    if (isResuming) {
+      try {
+        recoveryChildren = await Promise.all(existingBatch.children.map(async (c) => {
+          const intentPath = `docs/plans/${c.task_id}.intent.json`;
+          let read = { intent: { revision: 1, risk: "material" }, content_hash: "" };
+          try {
+            const taskRecordRead = readTaskRecordRaw(this.cwd, c.task_id);
+            if (taskRecordRead.record) {
+              read = {
+                intent: taskRecordRead.record.intent_snapshot,
+                content_hash: taskRecordRead.record.intent_ref.content_hash
+              };
+            } else {
+              read = await readTaskIntent(this.cwd, c.task_id, intentPath);
+            }
+          } catch {
+            const archivePath2 = `docs/plans/archive/${c.task_id}.intent.json`;
+            try {
+              read = await readTaskIntent(this.cwd, c.task_id, archivePath2);
+            } catch {
+              read = await readTaskIntent(this.cwd, c.task_id, intentPath);
+            }
+          }
+          recoveryRiskByTask.set(c.task_id, read.intent?.risk ?? "material");
+          const isDone = c.state === "committed" || c.state === "settled";
+          return {
+            task_id: c.task_id,
+            slice_id: c.slice_id,
+            status: isDone ? "already_settled" : "enrollable",
+            blocked_by: [...c.blocked_by],
+            reason: c.reason ?? null,
+            intent_path: intentPath,
+            intent_revision: read.intent.revision,
+            intent_content_hash: read.content_hash
+          };
+        }));
+      } catch (err) {
+        return {
+          state: "rejected",
+          reason: `failed to project batch plan: ${err instanceof Error ? err.message : String(err)}`,
+          recovery_action: "review initiative issues and planning sidecars in the current Host"
+        };
+      }
+      planDigest = computeBatchPlanDigest(recoveryChildren);
+      for (const c of recoveryChildren) {
+        confirmChildrenDetails.push({
+          task_id: c.task_id,
+          slice_id: c.slice_id,
+          risk: recoveryRiskByTask.get(c.task_id) ?? "material"
+        });
+      }
+    } else {
+      let plan;
+      try {
+        plan = await projectBatchPlan(this.cwd, initiativeSlug, { confirmation_time: now }, this.readInitiative ?? observeGithubInitiative);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        if (msg.includes("has no enrollable children")) {
+          return {
+            state: "rejected",
+            reason: "empty enrollable child set: no enrollable child tasks found in the initiative plan",
+            recovery_action: "ensure the initiative has uncompleted, non-critical child tasks in the current Host"
+          };
+        }
+        return {
+          state: "rejected",
+          reason: `failed to project batch plan: ${msg}`,
+          recovery_action: "review initiative issues and planning sidecars in the current Host"
+        };
+      }
+      if (plan.enrollable.length === 0) {
+        return {
+          state: "rejected",
+          reason: "empty enrollable child set: no enrollable child tasks found in the initiative plan",
+          recovery_action: "ensure the initiative has uncompleted, non-critical child tasks in the current Host"
+        };
+      }
+      budget2 = plan.budget;
+      const enrollableChildById = new Map(plan.enrollable.map((c) => [c.task_id, c]));
+      recoveryChildren = plan.children.filter((c) => c.status === "enrollable").map((c) => {
+        const digestChild = enrollableChildById.get(c.task_id);
+        return {
+          ...c,
+          blocked_by: digestChild ? [...digestChild.blocked_by] : c.blocked_by
+        };
+      });
+      planDigest = computeBatchPlanDigest(plan.enrollable);
+      for (const c of plan.children.filter((item) => item.status === "enrollable")) {
+        let childRisk = "material";
+        try {
+          const intentRead = await readTaskIntent(this.cwd, c.task_id, c.intent_path ?? undefined);
+          childRisk = intentRead.intent.risk;
+        } catch {}
+        confirmChildrenDetails.push({
+          task_id: c.task_id,
+          slice_id: c.slice_id,
+          risk: childRisk
+        });
+      }
+      confirmExcludedDetails = plan.children.filter((c) => c.status !== "enrollable").map((c) => ({
+        task_id: c.task_id,
+        slice_id: c.slice_id,
+        reason: c.status === "needs_human" && c.reason === "critical" ? "critical" : c.reason ?? c.status
+      }));
+    }
+    const isExistingExpired = isResuming && Date.parse(existingBatch.authorization_expires_at) <= Date.now();
+    const expiresAt = isResuming && !isExistingExpired && existingBatch.batch_state === "running" ? existingBatch.authorization_expires_at : new Date(Date.now() + 10 * 60 * 1000).toISOString();
+    const batchDetails = {
+      initiative_slug: initiativeSlug,
+      batch_branch: batchBranch,
+      children: confirmChildrenDetails,
+      excluded: confirmExcludedDetails,
+      budget: budget2,
+      expires_at: expiresAt
+    };
+    const configuredTimeout = Number(this.env.IMMUNE_BRAIN_BATCH_TIMEOUT_MS);
+    const timeoutMs = Number.isFinite(configuredTimeout) && configuredTimeout > 0 ? configuredTimeout : 60000;
+    const timeoutController = new AbortController;
+    const timeoutTimer = setTimeout(() => {
+      timeoutController.abort(new NativeAuthorityError("user_cancelled", "native confirmation timed out"));
+    }, timeoutMs);
+    const elicitationSignal = meta.signal ? AbortSignal.any([meta.signal, timeoutController.signal]) : timeoutController.signal;
+    let confirmationResult;
+    try {
+      confirmationResult = await this.requestConfirmation({
+        operation: "start_unattended_batch",
+        initiativeSlug,
+        toolCallId: meta.toolCallId,
+        planDigest,
+        batchDetails,
+        signal: elicitationSignal
+      });
+    } catch (err) {
+      if (timeoutController.signal.aborted && !meta.signal?.aborted) {
+        return {
+          state: "rejected",
+          reason: "native confirmation timed out waiting for user interaction",
+          recovery_action: "retry through a fresh native gate in the current Host"
+        };
+      }
+      if (meta.signal?.aborted) {
+        return {
+          state: "cancelled",
+          reason: "user cancelled before batch execution",
+          recovery_action: "wait for a fresh literal-user request"
+        };
+      }
+      if (err instanceof NativeAuthorityError) {
+        if (err.reasonCode === "unsupported_host")
+          throw err;
+        if (err.reasonCode === "user_cancelled") {
+          return { state: "cancelled", reason: err.message, recovery_action: err.recoveryAction };
+        }
+        if (err.reasonCode === "user_denied") {
+          return { state: "rejected", reason: err.message, recovery_action: err.recoveryAction };
+        }
+        return { state: "rejected", reason: err.message, recovery_action: err.recoveryAction };
+      }
+      return {
+        state: "rejected",
+        reason: err instanceof Error ? err.message : String(err),
+        recovery_action: "retry through a fresh native gate in the current Host"
+      };
+    } finally {
+      clearTimeout(timeoutTimer);
+    }
+    if (meta.signal?.aborted) {
+      return {
+        state: "cancelled",
+        reason: "user cancelled before batch execution",
+        recovery_action: "wait for a fresh literal-user request"
+      };
+    }
+    if (confirmationResult.decision === "decline") {
+      return {
+        state: "rejected",
+        reason: "native interaction declined",
+        recovery_action: "wait for a fresh literal-user request"
+      };
+    }
+    if (confirmationResult.decision === "cancel") {
+      return {
+        state: "cancelled",
+        reason: "native interaction cancelled",
+        recovery_action: "wait for a fresh literal-user request"
+      };
+    }
+    if (confirmationResult.decision !== "accept") {
+      return {
+        state: "rejected",
+        reason: "native interaction returned no decision",
+        recovery_action: "retry through a fresh native gate in the current Host"
+      };
+    }
+    const postWorkspaceState = readWorkspaceStateRaw(this.cwd);
+    const postClaim = readBackendClaim(this.cwd);
+    const postActiveTaskId = postWorkspaceState.state.current_working || (postClaim?.lifecycle_status === "active" ? postClaim.task_id : null);
+    const isPostOwnClaim = isResuming && postActiveTaskId !== null && syncIsOwnBatchClaim(this.cwd, existingBatch, postActiveTaskId, batchBranch);
+    if (postActiveTaskId && !isPostOwnClaim) {
+      return {
+        state: "blocked",
+        reason: `an active workspace claim appeared during confirmation for task: ${postActiveTaskId}`,
+        recovery_action: "resolve or stop the active task before starting a batch in the current Host"
+      };
+    }
+    if (isResuming) {
+      let recheckedDigest;
+      try {
+        const recheckedChildren = await Promise.all(existingBatch.children.map(async (c) => {
+          const intentPath = `docs/plans/${c.task_id}.intent.json`;
+          let read = { intent: { revision: 1, risk: "material" }, content_hash: "" };
+          try {
+            const taskRecordRead = readTaskRecordRaw(this.cwd, c.task_id);
+            if (taskRecordRead.record) {
+              read = {
+                intent: taskRecordRead.record.intent_snapshot,
+                content_hash: taskRecordRead.record.intent_ref.content_hash
+              };
+            } else {
+              read = await readTaskIntent(this.cwd, c.task_id, intentPath);
+            }
+          } catch {
+            const archivePath2 = `docs/plans/archive/${c.task_id}.intent.json`;
+            try {
+              read = await readTaskIntent(this.cwd, c.task_id, archivePath2);
+            } catch {
+              read = await readTaskIntent(this.cwd, c.task_id, intentPath);
+            }
+          }
+          const isDone = c.state === "committed" || c.state === "settled";
+          return {
+            task_id: c.task_id,
+            slice_id: c.slice_id,
+            status: isDone ? "already_settled" : "enrollable",
+            blocked_by: [...c.blocked_by],
+            reason: c.reason ?? null,
+            intent_path: intentPath,
+            intent_revision: read.intent.revision,
+            intent_content_hash: read.content_hash
+          };
+        }));
+        recheckedDigest = computeBatchPlanDigest(recheckedChildren);
+      } catch (err) {
+        return {
+          state: "rejected",
+          reason: "batch plan became unreadable after native confirmation",
+          recovery_action: "review the current workspace and retry through a fresh native gate in the current Host"
+        };
+      }
+      if (recheckedDigest !== planDigest) {
+        return {
+          state: "rejected",
+          reason: "batch plan changed after native confirmation",
+          recovery_action: "review the current workspace and retry through a fresh native gate in the current Host"
+        };
+      }
+    } else {
+      let revalidatedPlan;
+      try {
+        revalidatedPlan = await projectBatchPlan(this.cwd, initiativeSlug, { confirmation_time: now }, this.readInitiative ?? observeGithubInitiative);
+      } catch (err) {
+        return {
+          state: "rejected",
+          reason: "batch plan became unreadable after native confirmation",
+          recovery_action: "review the current workspace and retry through a fresh native gate in the current Host"
+        };
+      }
+      const revalidatedDigest = computeBatchPlanDigest(revalidatedPlan.enrollable);
+      if (revalidatedDigest !== planDigest) {
+        return {
+          state: "rejected",
+          reason: "batch plan changed after native confirmation",
+          recovery_action: "review the current workspace and retry through a fresh native gate in the current Host"
+        };
+      }
+    }
+    let postHead;
+    try {
+      postHead = readGitHead(this.cwd);
+    } catch (err) {
+      return {
+        state: "rejected",
+        reason: "Git repository became unreadable after native confirmation",
+        recovery_action: "review the current workspace and retry through a fresh native gate in the current Host"
+      };
+    }
+    if (postHead !== baseHead) {
+      return {
+        state: "rejected",
+        reason: "Git HEAD moved after native confirmation",
+        recovery_action: "review the current workspace and retry through a fresh native gate in the current Host"
+      };
+    }
+    const finalWorkspaceState = readWorkspaceStateRaw(this.cwd);
+    const finalClaim = readBackendClaim(this.cwd);
+    const finalActiveTaskId = finalWorkspaceState.state.current_working || (finalClaim?.lifecycle_status === "active" ? finalClaim.task_id : null);
+    const finalIsOwnClaim = isResuming && finalActiveTaskId !== null && syncIsOwnBatchClaim(this.cwd, existingBatch, finalActiveTaskId, batchBranch);
+    if (finalActiveTaskId && !finalIsOwnClaim) {
+      return {
+        state: "blocked",
+        reason: `an active workspace claim appeared during confirmation for task: ${finalActiveTaskId}`,
+        recovery_action: "resolve or stop the active task before starting a batch in the current Host"
+      };
+    }
+    if (meta.signal?.aborted) {
+      return {
+        state: "cancelled",
+        reason: "user cancelled before batch execution",
+        recovery_action: "wait for a fresh literal-user request"
+      };
+    }
+    const batchId = existingBatch ? existingBatch.batch_id : `batch-${initiativeSlug}-${Date.now()}`;
+    const confirmation = confirmationRef({
+      connectionId: meta.sessionId,
+      toolCallId: meta.toolCallId,
+      requestId: confirmationResult.requestId,
+      operation: "start_unattended_batch",
+      initiativeSlug,
+      planDigest
+    });
+    const binding = {
+      batch_id: batchId,
+      initiative_slug: initiativeSlug,
+      plan_digest: planDigest,
+      branch: batchBranch,
+      base_head: isResuming ? existingBatch.base_head : baseHead,
+      budget: budget2,
+      actor_id: "user",
+      confirmation_ref: confirmation,
+      expires_at: expiresAt,
+      nonce: enrollmentNonce()
+    };
+    const capability = this.batchRegistry.issue(binding, recoveryChildren, now);
+    const basePort = this.createBatchKernelPort(this.batchRegistry, capability, binding);
+    const kernelPort = {
+      ...basePort,
+      ownsTaskClaim: (taskId) => {
+        if (isResuming && taskId === activeTaskId) {
+          return syncIsOwnBatchClaim(this.cwd, existingBatch, taskId, batchBranch);
+        }
+        return basePort.ownsTaskClaim(taskId);
+      }
+    };
+    const report = await startBatch({
+      root: this.cwd,
+      batch_id: batchId,
+      initiative_slug: initiativeSlug,
+      registry: this.batchRegistry,
+      capability,
+      children: recoveryChildren,
+      plan_digest: planDigest,
+      base_head: isResuming ? existingBatch.base_head : baseHead,
+      confirmation_time: now,
+      authorization_expires_at: expiresAt,
+      budget: budget2,
+      now,
+      kernel: kernelPort,
+      git: this.batchGit
+    });
+    if (report.batch_state === "rejected") {
+      return {
+        state: "rejected",
+        reason: report.reason ?? "batch run rejected",
+        recovery_action: "delete or rename the conflicting branch, or commit working changes and retry in the current Host"
+      };
+    }
+    return {
+      state: "started",
+      batch_id: batchId,
+      report
+    };
+  }
+  createBatchKernelPort(registry, capability, binding) {
+    const realPort = {
+      enrollTask: async ({ root, task_id, batch }) => {
+        const now = new Date().toISOString();
+        const derived = deriveChildEnrollment(root, batch.registry, {
+          capability: batch.capability,
+          binding,
+          task_id,
+          expected_head: batch.binding.expected_head,
+          now
+        });
+        const enrollmentCapability = this.enrollmentRegistry.issue(derived.binding);
+        const input = {
+          task_id,
+          intent_path: derived.binding.intent_path,
+          intent_revision: derived.binding.intent_revision,
+          preparation_digest: derived.binding.preparation_digest,
+          capability: enrollmentCapability,
+          capability_binding: derived.binding,
+          batch: {
+            registry: batch.registry,
+            capability: batch.capability,
+            binding,
+            expected_head: batch.binding.expected_head
+          },
+          now
+        };
+        const rehearsal = runEnrollmentRehearsal(root, input, enrollmentCapability, this.enrollmentRegistry);
+        if (!rehearsal.rehearsed || rehearsal.evidence.outcome !== "ready") {
+          throw new Error(`Kernel enrollment rehearsal failed: ${rehearsal.evidence.blockers.join("; ")}`);
+        }
+        const enrolled = enrollCanaryTask(root, input, this.enrollmentRegistry);
+        const recordRaw = readTaskRecordRaw(root, task_id);
+        return { record_revision: recordRaw.revision };
+      },
+      advanceTask: async (root, taskId) => {
+        const result2 = await this.coordinator.advance(taskId, { cwd: root });
+        if (result2.state === "completed")
+          return { state: "completed" };
+        if (result2.state === "stopped")
+          return { state: "stopped" };
+        if (result2.state === "rework")
+          return { state: "rework", operation: result2.operation, summary: result2.summary };
+        if (result2.state === "review_ready")
+          return { state: "review_ready", operation_id: result2.operation_id };
+        if (result2.state === "blocked")
+          return { state: "blocked", reason: result2.reason };
+        return { state: "failed", reason: result2.reason ?? "advance failed" };
+      },
+      projectTask: async (root, taskId) => projectAssurance(root, taskId, diffSnapshotOf),
+      ownsTaskClaim: (taskId) => {
+        return registry.isChildConsumed(capability, taskId);
+      },
+      validateBatchAuthorization: (input) => {
+        return input.registry.inspect(input.capability, input.binding);
+      }
+    };
+    if (!this.batchKernel)
+      return realPort;
+    return {
+      ...realPort,
+      ...this.batchKernel
+    };
   }
 }
 
@@ -7326,6 +10163,7 @@ var TOOLS = [
   { name: "request_authorization", description: "Apply exact literal-user authorization.", privileged: true },
   { name: "approve_breaking_intent_revision", description: "Approve a breaking TaskIntent revision.", privileged: true },
   { name: "stop", description: "Stop the active task with literal-user authority.", privileged: true },
+  { name: "start_unattended_batch", description: "Start an unattended serial batch run for an Initiative after native confirmation.", privileged: true },
   { name: "repair_authority_state", description: "Repair a proven recoverable stale backend claim.", privileged: false },
   { name: "resolve_finding", description: "Resolve one open blocking or advisory finding whose cause is fixed and verified.", privileged: false }
 ];
@@ -7336,13 +10174,15 @@ function listMcpTools() {
     inputSchema: {
       type: "object",
       properties: {
-        task_id: { type: "string" },
-        ...tool.name === "approve_breaking_intent_revision" ? { next_intent: { type: "object" } } : {},
-        ...tool.name === "stop" ? { reason: { type: "string" } } : {},
-        ...tool.name === "submit_review" ? { verdict: { type: "object" } } : {},
-        ...tool.name === "resolve_finding" ? { finding_id: { type: "string" } } : {}
+        ...tool.name === "start_unattended_batch" ? { initiative_slug: { type: "string" } } : {
+          task_id: { type: "string" },
+          ...tool.name === "approve_breaking_intent_revision" ? { next_intent: { type: "object" } } : {},
+          ...tool.name === "stop" ? { reason: { type: "string" } } : {},
+          ...tool.name === "submit_review" ? { verdict: { type: "object" } } : {},
+          ...tool.name === "resolve_finding" ? { finding_id: { type: "string" } } : {}
+        }
       },
-      required: tool.name === "submit_review" ? ["task_id", "verdict"] : tool.name === "resolve_finding" ? ["task_id", "finding_id"] : ["task_id"]
+      required: tool.name === "start_unattended_batch" ? ["initiative_slug"] : tool.name === "submit_review" ? ["task_id", "verdict"] : tool.name === "resolve_finding" ? ["task_id", "finding_id"] : ["task_id"]
     },
     annotations: tool.privileged ? privilegedAnnotations() : { readOnlyHint: tool.name === "status" }
   }));
@@ -7358,11 +10198,14 @@ function createMcpRuntime(options = {}) {
     host,
     ports: options.ports,
     interactive: options.interactive,
-    requestConfirmation: options.requestConfirmation
+    requestConfirmation: options.requestConfirmation,
+    batchKernel: options.batchKernel,
+    batchGit: options.batchGit,
+    readInitiative: options.readInitiative
   });
   let negotiatedVersion;
   let negotiatedInteractive = false;
-  const connectionId = randomUUID6();
+  const connectionId = randomUUID8();
   return {
     runtime,
     host,
@@ -7378,6 +10221,30 @@ function createMcpRuntime(options = {}) {
     },
     sessionInteractive: () => negotiatedInteractive,
     async callTool(name, args, meta = {}) {
+      if (name === "start_unattended_batch") {
+        const initiativeSlug = String(args.initiative_slug ?? "");
+        if (!initiativeSlug)
+          throw new Error("initiative_slug is required");
+        if ("native_decision" in args)
+          throw new Error("native_decision cannot be supplied in tool arguments");
+        if (!negotiatedVersion)
+          throw new NativeAuthorityError("unsupported_host", "Claude Code version is unavailable");
+        if (!negotiatedInteractive) {
+          throw new NativeAuthorityError("unsupported_host", "interactive MCP elicitation is unavailable");
+        }
+        const probe2 = probeHost(options.env ?? process.env, process.platform, negotiatedVersion);
+        if (!probe2.ok)
+          throw new NativeAuthorityError("unsupported_host", probe2.reason);
+        const toolMeta2 = {
+          sessionId: meta.sessionId ?? connectionId,
+          toolCallId: meta.toolCallId ?? `call-${name}`,
+          taskId: initiativeSlug,
+          initiativeSlug,
+          interactive: meta.interactive ?? options.interactive ?? negotiatedInteractive,
+          signal: meta.signal
+        };
+        return runtime.startUnattendedBatch(initiativeSlug, toolMeta2);
+      }
       const taskId = String(args.task_id ?? "");
       if (!taskId)
         throw new Error("task_id is required");
@@ -7497,7 +10364,7 @@ async function handleJsonRpc(message, mcp = createMcpRuntime()) {
       }
       const sessionId = mcp.connectionId;
       const toolCallId = identity?.toolCallId ?? String(message.id ?? "stdio");
-      const result = await mcp.callTool(name, params.arguments ?? {}, {
+      const result2 = await mcp.callTool(name, params.arguments ?? {}, {
         sessionId,
         toolCallId,
         interactive,
@@ -7507,7 +10374,7 @@ async function handleJsonRpc(message, mcp = createMcpRuntime()) {
       return {
         jsonrpc: "2.0",
         id: message.id ?? null,
-        result: { content: [{ type: "text", text: JSON.stringify(result) }] }
+        result: { content: [{ type: "text", text: JSON.stringify(result2) }] }
       };
     } catch (error) {
       return {
@@ -7525,7 +10392,7 @@ async function handleJsonRpc(message, mcp = createMcpRuntime()) {
 }
 async function writeReply(output, reply) {
   const payload = encodeMessage(reply);
-  await new Promise((resolve7, reject) => {
+  await new Promise((resolve8, reject) => {
     if (!output.writable) {
       reject(new Error("output stream is not writable"));
       return;
@@ -7541,7 +10408,7 @@ async function writeReply(output, reply) {
         return;
       settled = true;
       cleanup();
-      resolve7();
+      resolve8();
     };
     const onError = (error) => {
       if (settled)
@@ -7571,13 +10438,38 @@ async function writeReply(output, reply) {
     if (ok) {
       settled = true;
       cleanup();
-      resolve7();
+      resolve8();
       return;
     }
     output.once("drain", onDrain);
   });
 }
 function elicitationParams(input) {
+  if (input.operation === "start_unattended_batch") {
+    const b = input.batchDetails;
+    const details2 = [
+      `Operation: start_unattended_batch`,
+      `Initiative: ${input.initiativeSlug ?? b?.initiative_slug}`,
+      b?.batch_branch ? `Batch branch: ${b.batch_branch}` : null,
+      input.planDigest ? `Plan digest: ${input.planDigest}` : null,
+      b?.children ? `Ordered children (${b.children.length}):
+${b.children.map((c) => `  - ${c.task_id} (${c.slice_id}) [risk: ${c.risk ?? "unknown"}]`).join(`
+`)}` : null,
+      b?.excluded && b.excluded.length > 0 ? `Excluded children (${b.excluded.length}):
+${b.excluded.map((e) => `  - ${e.task_id} (${e.slice_id}): ${e.reason}`).join(`
+`)}` : null,
+      b?.budget ? `Budget: max_children=${b.budget.max_children}, deadline_at=${b.budget.deadline_at}, qa_failure_limit=${b.budget.qa_failure_limit}` : null,
+      b?.expires_at ? `Expires at: ${b.expires_at}` : null
+    ].filter(Boolean);
+    return {
+      mode: "form",
+      message: `Authorize this unattended batch run for ${input.initiativeSlug}?
+
+${details2.join(`
+`)}`,
+      requestedSchema: { type: "object", properties: {} }
+    };
+  }
   const details = [
     `Operation: ${input.operation}`,
     `Task: ${input.taskId}`,
@@ -7620,8 +10512,8 @@ async function serveStdio(options = {}) {
       throw new NativeAuthorityError("user_cancelled", "Tool call was cancelled");
     const requestId = `immune-brain:elicitation:${mcp.connectionId}:${++requestSequence}`;
     let abortListener;
-    const response = new Promise((resolve7, reject) => {
-      pending.set(requestId, { resolve: resolve7, reject });
+    const response = new Promise((resolve8, reject) => {
+      pending.set(requestId, { resolve: resolve8, reject });
       abortListener = () => {
         pending.delete(requestId);
         reject(new NativeAuthorityError("user_cancelled", "Tool call was cancelled"));
@@ -7642,13 +10534,13 @@ async function serveStdio(options = {}) {
         }
         throw new NativeAuthorityError("correlation_missing", `MCP elicitation failed: ${reply.error.message}`);
       }
-      const result = reply.result;
-      const action = typeof result === "object" && result !== null && !Array.isArray(result) ? result.action : undefined;
+      const result2 = reply.result;
+      const action = typeof result2 === "object" && result2 !== null && !Array.isArray(result2) ? result2.action : undefined;
       if (action !== "accept" && action !== "decline" && action !== "cancel") {
         throw new NativeAuthorityError("correlation_missing", "MCP elicitation returned an invalid action");
       }
       if (action === "accept") {
-        const content = result.content;
+        const content = result2.content;
         if (typeof content !== "object" || content === null || Array.isArray(content) || Object.keys(content).length !== 0) {
           throw new NativeAuthorityError("correlation_missing", "MCP elicitation accept content did not match the requested schema");
         }
@@ -7766,7 +10658,7 @@ async function serveStdio(options = {}) {
       rejectPending(new NativeAuthorityError("user_cancelled", "MCP connection closed during native interaction"));
       await Promise.race([
         Promise.allSettled([...inFlight]),
-        new Promise((resolve7) => setTimeout(resolve7, 200))
+        new Promise((resolve8) => setTimeout(resolve8, 200))
       ]);
       await mcp.shutdown();
       if (output.writable && typeof output.end === "function") {
@@ -7778,8 +10670,8 @@ async function serveStdio(options = {}) {
     })();
     return shutdownPromise;
   };
-  await new Promise((resolve7) => {
-    resolveStdio = resolve7;
+  await new Promise((resolve8) => {
+    resolveStdio = resolve8;
     output.on("error", () => {
       executeShutdown(1);
     });

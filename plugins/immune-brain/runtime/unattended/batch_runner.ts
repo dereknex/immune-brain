@@ -495,6 +495,35 @@ export async function startBatch(input: StartBatchInput): Promise<BatchRunReport
 		});
 	}
 
+	// A running batch can outlive its authorization while it waits on a child's
+	// reserved foreground Review. The driver owns every batch state transition,
+	// so the renewal the Host bound into the capability must be adopted here;
+	// otherwise the record keeps the expired stamp and the next child enrollment
+	// stops the batch as budget_stopped even though the literal user just
+	// re-confirmed it. Renewal requires the same proof the parked path requires:
+	// a strictly newer literal-user confirmation and a later, still-valid expiry.
+	if (existing?.batch_state === "running") {
+		const nextConfirmation = Date.parse(input.confirmation_time);
+		const nextExpiry = Date.parse(input.authorization_expires_at);
+		const priorConfirmation = Date.parse(existing.confirmation_time);
+		const persistedExpiry = Date.parse(existing.authorization_expires_at);
+		const renewedAuthorization =
+			Number.isFinite(nextConfirmation) &&
+			nextConfirmation > priorConfirmation &&
+			Number.isFinite(nextExpiry) &&
+			nextExpiry > Date.now() &&
+			nextExpiry > persistedExpiry;
+		if (renewedAuthorization) {
+			validateRunAuthorization(input, existing);
+			existing = writeBatchRunState(input.root, {
+				...existing,
+				confirmation_time: input.confirmation_time,
+				authorization_expires_at: input.authorization_expires_at,
+				budget: input.budget,
+			});
+		}
+	}
+
 	// review-2(6th round): an enrolled or settled child from an interrupted
 	// run must be driven to its own terminal settlement and commit before any
 	// new child is selected, or startBatch would double-claim the task or

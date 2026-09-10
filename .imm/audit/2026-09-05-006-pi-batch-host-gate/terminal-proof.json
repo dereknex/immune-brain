@@ -1,0 +1,9 @@
+{
+  "contract": "assurance_kernel/task_tombstone/v2",
+  "task_id": "2026-09-05-006-pi-batch-host-gate",
+  "lifecycle_status": "terminal",
+  "terminal_lifecycle": "done",
+  "terminal_event_id": "complete:2026-09-05-006-pi-batch-host-gate:2026-09-10T10:08:59.157Z",
+  "final_record_hash": "sha256:b793b5d128752c1171605e2419d91ab28c619a08329bfaa989062818bc6ad683",
+  "terminalized_at": "2026-09-10T10:08:59.157Z"
+}

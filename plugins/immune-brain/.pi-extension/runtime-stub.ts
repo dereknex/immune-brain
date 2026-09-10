@@ -283,7 +283,12 @@ export async function readTaskRecord(
 	taskId: string,
 ): Promise<TaskRecordRead> {
 	const mod = await import(/* @vite-ignore */ kernelPath("storage"));
-	return mod.readTaskRecord(root, taskId);
+	// Lock-free read only. `storage.readTaskRecord` wraps this in
+	// withKernelStoreLock, which first runs pending-transaction recovery, so a
+	// decline, a cancel, or a rejected preflight would otherwise mutate Kernel
+	// state before the literal user ever approved anything. Mutating Kernel
+	// entrypoints still take their own lock when the batch actually starts.
+	return mod.readTaskRecordRaw(root, taskId);
 }
 export async function withKernelStoreLock<T>(root: string, operation: () => T): Promise<T> {
 	const mod = await import(/* @vite-ignore */ kernelPath("storage"));
@@ -403,3 +408,188 @@ export async function deriveAssuranceAuthorization(input: {
 	const mod = await import(/* @vite-ignore */ kernelPath("assurance_projection"));
 	return mod.deriveAssuranceAuthorization(input) as AssuranceAuthorizationReadiness;
 }
+
+// --- Batch Authority & Unattended Runner Forwarding ---
+function unattendedPath(module: string): string {
+	return `../runtime/unattended/${module}.ts`;
+}
+
+export type {
+	BatchPlan,
+	BatchPlanChild,
+	BatchPlanBudget,
+	BatchPlanDigestChild,
+	InitiativeObservationReader,
+} from "../runtime/unattended/types";
+export type {
+	BatchAuthorityRegistry,
+	BatchAuthorizationBinding,
+	ValidatedBatchAuthorization,
+} from "../runtime/kernel/batch_authority";
+export type {
+	BatchRunnerKernelPort,
+	StartBatchInput,
+	BatchRunReport,
+} from "../runtime/unattended/batch_runner";
+export type {
+	BatchRunnerGitPort,
+	BatchGitPreflightResult,
+} from "../runtime/unattended/batch_git";
+
+export async function projectBatchPlan(
+	root: string,
+	initiativeSlug: string,
+	input: any,
+	readInitiative?: any,
+): Promise<any> {
+	const mod = await import(/* @vite-ignore */ unattendedPath("batch_plan"));
+	return mod.projectBatchPlan(root, initiativeSlug, input, readInitiative);
+}
+
+export async function computeBatchPlanDigest(children: any): Promise<string> {
+	const mod = await import(/* @vite-ignore */ kernelPath("batch_authority"));
+	return mod.computeBatchPlanDigest(children);
+}
+
+export async function createBatchAuthorityRegistry(): Promise<any> {
+	const mod = await import(/* @vite-ignore */ kernelPath("batch_authority"));
+	return mod.createBatchAuthorityRegistry();
+}
+
+export async function deriveChildEnrollment(root: string, registry: any, input: any): Promise<any> {
+	const mod = await import(/* @vite-ignore */ kernelPath("batch_authority"));
+	return mod.deriveChildEnrollment(root, registry, input);
+}
+
+export async function startBatch(input: any): Promise<any> {
+	const mod = await import(/* @vite-ignore */ unattendedPath("batch_runner"));
+	return mod.startBatch(input);
+}
+
+export async function runBatchGitPreflight(input: any): Promise<any> {
+	const mod = await import(/* @vite-ignore */ unattendedPath("batch_git"));
+	return mod.runBatchGitPreflight(input);
+}
+
+export async function readGitHead(root: string): Promise<string> {
+	// The Pi extension must reach Kernel prepare only through the shared Enrollment
+	// boundary, so this reads HEAD itself rather than importing the Kernel prepare
+	// module. The unattended Git module reads HEAD the same way.
+	const { spawnSync } = await import("node:child_process");
+	const result = spawnSync("git", ["-C", root, "rev-parse", "HEAD"], { encoding: "utf8" });
+	if (result.status !== 0) throw new Error(`git rev-parse HEAD is unavailable for ${root}`);
+	return result.stdout.trim();
+}
+
+/**
+ * Read the immutable terminal audit record for a settled child.
+ *
+ * A child reaches Kernel settlement before the batch commits it, and settlement
+ * clears the live state record, so the batch resume preflight must resolve the
+ * child's authorized scope from the audit pair instead. Read-only: neither the
+ * audit pair nor this reader mutates Kernel state.
+ */
+export async function readSettledTaskRecord(
+	root: string,
+	taskId: string,
+): Promise<{ scope_hint: string[]; intent_path: string | undefined } | null> {
+	const mod = await import(/* @vite-ignore */ kernelPath("storage"));
+	const pair = mod.readAuditTaskPair(root, taskId);
+	if (!pair?.record) return null;
+	const record = pair.record as {
+		intent_snapshot?: { scope_hint?: string[] };
+		intent_ref?: { path?: string };
+	};
+	return {
+		scope_hint: record.intent_snapshot?.scope_hint ?? [],
+		intent_path: record.intent_ref?.path,
+	};
+}
+
+export async function pathMatchesScope(path: string, scopePath: string): Promise<boolean> {
+	const mod = await import(/* @vite-ignore */ runtimePath("workspace_scope"));
+	return mod.pathMatchesScope(path, scopePath);
+}
+
+const GLOBAL_PI_PROGRESSION_KEY = Symbol.for("immune_brain.pi_assurance_progression");
+
+export async function getSharedPiProgression(): Promise<any> {
+	let progression = (globalThis as any)[GLOBAL_PI_PROGRESSION_KEY];
+	if (!progression) {
+		const workMod = await import(/* @vite-ignore */ "./imm-canary-work");
+		const ports = workMod.createPiAssuranceProgressionPorts();
+		const progMod = await import(/* @vite-ignore */ "./pi-canary-assurance-progression");
+		progression = new progMod.AssuranceProgression(ports);
+		(globalThis as any)[GLOBAL_PI_PROGRESSION_KEY] = progression;
+	}
+	return progression;
+}
+
+export async function advancePiTask(root: string, taskId: string): Promise<any> {
+	const progression = await getSharedPiProgression();
+	const result = await progression.advance(taskId, { cwd: root });
+	if (result.state === "completed") return { state: "completed" };
+	if (result.state === "stopped") return { state: "stopped" };
+	if (result.state === "rework") return { state: "rework", operation: result.operation, summary: result.summary };
+	if (result.state === "review_ready") return { state: "review_ready", operation_id: result.operation_id, agent_params: result.agent_params };
+	if (result.state === "blocked") return { state: "blocked", reason: result.reason };
+	return { state: "failed", reason: (result as { reason?: string }).reason ?? "advance failed" };
+}
+
+export async function projectAssuranceForTask(root: string, taskId: string): Promise<any> {
+	const [assuranceMod, scopeMod] = await Promise.all([
+		import(/* @vite-ignore */ kernelPath("assurance_projection")),
+		import(/* @vite-ignore */ runtimePath("workspace_scope")),
+	]);
+	const diffSnapshotOf = (r: string, record: any) => {
+		if (record.contract === "assurance_kernel/task_record/v4") {
+			if (!record.git_base_head)
+				throw new Error("TaskRecord v4 is missing git_base_head");
+			return scopeMod.taskRevisionIdentity(r, record.intent_snapshot.scope_hint, record.git_base_head);
+		}
+		return scopeMod.taskDiffIdentity(r, record.intent_snapshot.scope_hint);
+	};
+	return assuranceMod.projectAssurance(root, taskId, diffSnapshotOf);
+}
+
+export async function findExistingActiveBatch(root: string, initiativeSlug: string): Promise<any> {
+	const { join } = await import("node:path");
+	const { existsSync, readdirSync, readFileSync } = await import("node:fs");
+	const batchesDir = join(root, ".imm", "state", "batches");
+	if (!existsSync(batchesDir)) return null;
+	const files = readdirSync(batchesDir);
+	for (const file of files) {
+		if (!file.endsWith(".json")) continue;
+		let record: any;
+		try {
+			record = JSON.parse(readFileSync(join(batchesDir, file), "utf8"));
+		} catch {
+			// Unreadable Kernel batch state must fail closed: silently treating the
+			// initiative as batchless could authorize a parallel run.
+			return { corrupt: true, path: file };
+		}
+		if (record.contract === "assurance_kernel/batch_run_state/v1" && record.initiative_slug === initiativeSlug) {
+			const validStates = new Set([
+				"prepared",
+				"running",
+				"needs_human",
+				"completed",
+				"budget_stopped",
+				"failed",
+				"rejected",
+			]);
+			if (
+				typeof record.batch_id !== "string" ||
+				typeof record.base_head !== "string" ||
+				!Array.isArray(record.children) ||
+				!validStates.has(record.batch_state)
+			) {
+				return { corrupt: true, path: file };
+			}
+			return record;
+		}
+	}
+	return null;
+}
+
+

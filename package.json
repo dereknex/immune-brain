@@ -82,6 +82,7 @@
     "plugins/immune-brain/runtime/loop_contract.ts",
     "plugins/immune-brain/runtime/plugin_version.ts",
     "plugins/immune-brain/runtime/assurance",
+    "plugins/immune-brain/runtime/unattended",
     "plugins/immune-brain/runtime/claude",
     "plugins/immune-brain/runtime/prompts",
     ".claude-plugin",

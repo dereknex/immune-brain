@@ -31,6 +31,7 @@
 - **只读阶段**：`imm-brainstorm`（含 `adversarial` mode）默认不改代码、不改测试、不改运行态；review/QA 等内部角色由 `imm-loop` 调度。
 - **会诊阶段**：`imm-brainstorm` 的 `roundtable` mode 只作为只读 advisory layer，用于暴露多角色观点、分歧和风险；不得写计划、执行代码、记录验收结论，且不拥有 `imm-planner` 或执行/QA角色的权限。
 - **规划阶段**：`imm-planner` 只写候选 Spec、通过 canonical author 创建 TaskIntent，以及已确认的 Initiative carrier（carrier 无内置默认值，按 `docs/reference/immune-brain-config.md` 的偏好优先级解析，解析不到时必须询问用户）；不写旧 State Ledger，不覆盖 enrolled TaskIntent。
+- **Batch Authorization 不新增 authority 层级**：一次 literal-user Enrollment act 可以覆盖一份已确认的有序 child 列表（Batch Authorization）；每个 child 仍由 Kernel 单独 Enrollment、单独 Assure、单独结算并各自持有 TaskRecord。Batch Authorization 只是这次 Enrollment 的覆盖范围，不是新的授权主体，任何 agent 不得据此把候选 TaskIntent 升格为 authority，也不得替用户确认批次。
 - **协调与执行阶段**：`imm-loop` 以 Kernel 上的 TaskIntent/TaskRecord 为权威，通过 `imm_loop_action` 投影分发内部 executor、repair、QA、review 和 compounder roles 推进当前 owner。
 
 ## 4. Agent 协作规约
@@ -40,6 +41,7 @@
 - **规划阶段**：`imm-planner` 负责清晰仓库变更的候选 Spec/TaskIntent；它不自动 Enrollment，也不把生成的 artifact 当作已授权任务——只有 literal-user Enrollment 才能把候选提升为 Kernel 上的 TaskIntent/TaskRecord 权威记录。
 - **Internal executor role**：只实现已 Enrollment TaskIntent 的 acceptance 与 `scope_hint`，在当前对话内做 focused verification。可选只读探针仅提供调查证据，不创建持久中间任务状态。
 - **Deterministic QA**：冻结后由 Host integration 在前台逐项运行固定 acceptance descriptors，原子提交验收；不再分发逐任务 QA Agent。
+- **Unattended batch run**：唯一入口是 Host 的 privileged tool `start_unattended_batch`（参数 `initiative_slug`）；未调用时 `imm-loop` 行为与逐任务 Enrollment 完全一致，不产生任何 batch state、branch 或 Batch Authorization。批次只覆盖已发布、非 `critical` 的 child TaskIntent，共用一个必须在原生确认中展示的 plan digest；runner 不 push、不开 PR、不解析 user decision、不创建/切换/删除 Git worktree。
 - **Internal review roles**：material/critical 任务按 Kernel 返回的 snapshot-bound `agent_params` 分发独立前台 Reviewer；Parent 将结构化 verdict 交给 `submit_review`，不自发增加审查 gate。
 - **Internal repair role**：负责 PR 阻塞修复（merge conflict、review feedback、CI failure），只做与阻塞项直接相关的最小改动。
 - **`imm-loop`（Kernel 执行闭环）**：以已 Enrollment 的 TaskIntent/TaskRecord 为权威，在内部 role boundary 使用 `imm_loop_action`，由 Kernel Tool 完成 freeze、QA、Review 与 settlement。消费操作返回的新 projection；中断、结果不明或缺失 projection 时重新读取 status，不重复已经提交的验收。不持有独立 checkpoint runtime，亦不得将 executor 验证结果转换为 QA `pass`。
