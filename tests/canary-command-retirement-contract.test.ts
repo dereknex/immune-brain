@@ -19,11 +19,15 @@ function loadFactory(file: string): { tools: string[]; commands: string[] } {
 }
 
 describe("Canary Slash Command retirement", () => {
-	test("ships only the two foreground Tool factories", () => {
+	test("ships only the foreground Tool factories", () => {
 		const manifest = JSON.parse(readFileSync(join(EXT, "package.json"), "utf8")) as {
 			pi: { extensions: string[] };
 		};
-		expect(manifest.pi.extensions).toEqual(["./imm-canary-enroll.ts", "./imm-canary-work.ts"]);
+		expect(manifest.pi.extensions).toEqual([
+			"./imm-canary-enroll.ts",
+			"./imm-canary-work.ts",
+			"./imm-unattended-batch.ts",
+		]);
 		expect(existsSync(join(EXT, "imm-canary-new.ts"))).toBe(false);
 		expect(existsSync(join(EXT, "imm-canary-succeed.ts"))).toBe(false);
 	});

@@ -954,6 +954,11 @@ describe("acc-pi-batch-gate", () => {
 		expect(pkg.files).toContain("plugins/immune-brain/runtime/unattended");
 		const mod = await import("../plugins/immune-brain/runtime/unattended/batch_plan");
 		expect(mod.projectBatchPlan).toBeDefined();
+
+		const piExtPkg = JSON.parse(
+			readFileSync(join(process.cwd(), "plugins/immune-brain/.pi-extension/package.json"), "utf8"),
+		);
+		expect(piExtPkg.pi?.extensions).toContain("./imm-unattended-batch.ts");
 	});
 
 	// review-f72ae870f4f0-2: the Parent consumes the model-visible content, so the

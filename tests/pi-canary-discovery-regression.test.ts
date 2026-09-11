@@ -19,6 +19,7 @@ const ROOT = resolve(__dirname, "..");
 const FACTORY_FILES = [
 	"plugins/immune-brain/.pi-extension/imm-canary-enroll.ts",
 	"plugins/immune-brain/.pi-extension/imm-canary-work.ts",
+	"plugins/immune-brain/.pi-extension/imm-unattended-batch.ts",
 ];
 const RETIRED_PROGRESS_FILES = [
 	"plugins/immune-brain/.pi-extension/index.ts",
@@ -75,13 +76,14 @@ function basenameOf(p: string): string {
 }
 
 describe("pi extension discovery regression (canary-001)", () => {
-	test("acc-1: exactly the two foreground Tool factories are discovered from the repo package", async () => {
+	test("acc-1: foreground Tool factories are discovered from the repo package without helpers", async () => {
 		const { paths, errors } = await loadExtensions(ROOT);
-		expect(paths.length).toBe(2);
+		expect(paths.length).toBe(3);
 		const names = paths.map(basenameOf).sort();
 		expect(names).toEqual([
 			"imm-canary-enroll.ts",
 			"imm-canary-work.ts",
+			"imm-unattended-batch.ts",
 		]);
 		for (const helper of HELPER_FILES) {
 			expect(paths.join("\n")).not.toContain(basenameOf(helper));

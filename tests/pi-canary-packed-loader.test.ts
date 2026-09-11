@@ -138,6 +138,7 @@ describe("packed artifact loader", () => {
 				expect(names).toEqual([
 					"imm-canary-enroll.ts",
 					"imm-canary-work.ts",
+					"imm-unattended-batch.ts",
 				]);
 				const skillsResult = loader.getSkills();
 				const baselineDiagnostics = skillsResult.diagnostics.filter(

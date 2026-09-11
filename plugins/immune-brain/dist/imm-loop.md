@@ -90,6 +90,9 @@ with its `initiative_slug` parameter. That parameter is the opt-in: absent the c
 `imm-loop` behavior is byte-identical to per-task Enrollment, and no batch state,
 branch, or Batch Authorization exists. The Standalone Hosts expose the same tool
 name and the same single parameter; it is never a batch of tasks the Host chose.
+When an Initiative is referenced by its tracker Issue (e.g. `github #<number>`),
+extract `initiative_slug` from the Issue body `<!-- immune-brain:initiative-id=<slug> -->`
+marker or title prefix before invoking the tool.
 
 Invoking it authorizes only a user-confirmed batch of already-planned child
 TaskIntents. The Host projects the batch plan from the Initiative's published
