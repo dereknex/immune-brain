@@ -13,6 +13,7 @@ Immune-Brain adds a structured engineering workflow on top of Pi:
 - **You describe what you want** in natural language — the agent figures out whether to clarify, plan, or execute.
 - **Plans become trackable tasks** (`TaskIntent` + `TaskRecord`) so progress survives across sessions, not just chat history.
 - **Quality is enforced by code, not promises** — automated QA and isolated review must pass before a task is marked done.
+- **Ready Initiatives can run as a batch** — one confirmed batch authorization lets `imm-loop` work through a published Initiative's children serially, while every child is still enrolled, QA'd, reviewed, and settled on its own.
 
 Pi and Claude Code are the supported hosts. Undeclared adapters remain unsupported. Minimum Claude Code is `2.1.236`, the lowest version verified with interactive server-initiated MCP elicitation. Current real-Host evidence is recorded in [Claude native elicitation conformance](docs/verification/claude-native-elicitation-authority-conformance.md); historical reports remain under [docs/verification/archive/](docs/verification/archive/). Either host can use the model provider you configure — Immune-Brain works on top of Kernel authority, not a vendor chat.
 
@@ -25,6 +26,7 @@ Pi and Claude Code are the supported hosts. Undeclared adapters remain unsupport
 - [How to Use](#how-to-use)
 - [The 6 Skills](#the-6-skills)
 - [Lifecycle](#lifecycle)
+- [Unattended Batch Runs](#unattended-batch-runs)
 - [Configuration](#configuration)
 - [Project Layout](#project-layout)
 - [FAQ](#faq)
@@ -85,6 +87,7 @@ You rarely need to remember skill names — **just describe your intent**:
 | Idea is fuzzy, needs scoping | "Help me think through a notification system" | → `imm-brainstorm` clarifies questions, no code changes |
 | Goal is clear, needs a plan | "Plan the dark-mode feature" or let Pi route there | → `imm-planner` writes `TaskIntent` + specs in `docs/plans/` |
 | Plan is approved, ready to build | "Start building" / `imm-loop` | → Executor builds, QA verifies, Review checks |
+| A published Initiative is ready to run | "Run initiative `<slug>` unattended" | → Host's `start_unattended_batch`: one native confirmation covers the ordered plan digest, children run serially |
 | PR needs fixes after review | `imm-pr-fix` on that PR | → Standalone repair, no new managed task |
 | Docs are stale after changes | `imm-doc-prune` with manifest | → Prunes only approved stale docs |
 | Agent instruction files are bloated | `imm-agent-doc-maintain` with manifest | → Keeps only necessary non-discoverable rules |
@@ -131,6 +134,7 @@ The three Managed skills form one continuous pipeline with a single authority mo
 - **Trigger:** explicit `imm-loop` (start, resume, or check a managed task).
 - **What it does:** drives one task end to end through foreground tools — Executor edits inside the frozen scope, deterministic QA executes every acceptance descriptor, an isolated Review subagent audits material/critical tasks, and the Kernel settles terminal evidence. Interrupted workflows resume from on-disk state; the Kernel projection is authoritative.
 - **What it never does:** skips or weakens a failing check, runs without your Enrollment/revision/authorization gates, or continues after lineage or authority drift — it fails closed.
+- **Finding evidence:** every Review finding carries machine-checkable provenance (`trigger`, `caller_chain`, `violated`). A claim that fresh passing QA evidence already contradicts is recorded as `refuted` and only blocks again if that evidence goes stale.
 - **Exit:** `done` task record with QA + Review attestations in `.imm/audit/<task-id>/`.
 
 ### Standalone maintenance entries
@@ -178,7 +182,20 @@ Key invariants:
 - **One active step at a time**, edits only inside that step's boundary.
 - **Scope (`scope_hint`) is frozen at enrollment** — out-of-scope files are ignored.
 - **Evidence before closure** — QA is the only authority that can close a step.
+- **Findings carry evidence** — a refuted Review finding suppresses work only while the QA evidence bound to it stays fresh for the current revision, intent hash, and diff; when that evidence goes stale the finding blocks again, and nothing stored is rewritten by the invalidation.
+- **Batches are opt-in and bounded** — an unattended batch exists only after you confirm the Host's `start_unattended_batch`; each child keeps its own enrollment, QA, review, and settlement.
 - **Advisory never implements**, execution never self-approves.
+
+---
+
+## Unattended Batch Runs
+
+When an Initiative has several ready children, you can run them as one serial batch instead of task by task.
+
+- **Entry is explicit:** the Host's privileged `start_unattended_batch` tool, taking the Initiative slug. Nothing batch-related exists until it is called — without it, `imm-loop` behaves exactly like per-task enrollment and creates no batch state, branch, or authorization.
+- **One confirmation, one digest:** the native gate (Pi TUI dialog or Claude MCP elicitation) shows the ordered child list and the shared plan digest; that single literal-user act is the whole Batch Authorization.
+- **Per-child authority survives:** every child is still enrolled, frozen, QA'd, reviewed, and settled by the Kernel on its own `TaskRecord`. The batch is the scope of one authorization, never a new authority layer.
+- **Bounds:** only published, non-`critical` children run, serially on a dedicated batch branch. The run parks when a child needs a human decision or a budget, deadline, authorization, or commit failure stops it, and dependents of a blocked child are skipped rather than reordered. The runner never pushes, opens PRs, resolves user decisions, or creates, switches, or deletes Git worktrees.
 
 ---
 
@@ -236,6 +253,10 @@ docs/specs/                           # Living specs (updated in place)
 
 **QA failed — what now?** QA returns `rework` or `replan_required`. `imm-loop` routes back to the executor or to `imm-planner` for scope changes. No manual reset needed.
 
+**A review finding stopped blocking — why?** It was refuted: fresh deterministic QA evidence shows the acceptance it names passes. The refutation is bound to that exact evidence, so the finding blocks again the moment the evidence goes stale for the current revision, intent hash, or diff.
+
+**Can it run a whole Initiative without me?** Only as far as you authorize. Confirm `start_unattended_batch` with the Initiative slug and the runner works through the published, non-`critical` children serially on one batch branch — parking as soon as a child needs a human decision or the run hits a budget, deadline, authorization, or commit failure. It never pushes, opens PRs, or settles user decisions for you.
+
 **Can I use it outside Pi?** Yes. Local interactive Claude Code is supported from version `2.1.236`; its plugin uses a digest-bound native MCP elicitation gate for the same Kernel-backed workflow.
 
 ---
@@ -256,13 +277,13 @@ This repo uses [Changesets](https://github.com/changesets/changesets) for versio
 
 Setup: add `NPM_TOKEN` (npm access token with publish permission) to GitHub repo secrets. Workflow is `.github/workflows/release.yml` using `changesets/action@v1`.
 
-**Initial publish (2.8.1):**
+**Manual publish (fallback):**
 ```bash
-npm publish --access public   # one-time, requires npm login / NPM_TOKEN
+npm publish --access public   # requires npm login / NPM_TOKEN
 # or
 bun run changeset:publish
 ```
-The package is scoped `@immune-brain/agent-skills` — `publishConfig.access=public` is already set. After initial publish, all future releases go through changesets.
+The package publishes to npm as `immune-brain` (current release `3.6.6`) with `publishConfig.access=public` already set. After the initial publish, all future releases go through changesets.
 
 See `CHANGELOG.md` and `.changeset/config.json` (changelog: `@changesets/changelog-github`, repo: `dereknex/immune-brain`).
 
