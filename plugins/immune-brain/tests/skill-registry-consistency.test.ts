@@ -49,7 +49,7 @@ function distReference(skillPath: string): string | null {
 const registry = parseRegistry(readFileSync(REGISTRY_PATH, "utf-8"))
 
 describe("skill registry consistency", () => {
-  it("publishes the three Managed Skills and three standalone host-native Skills", () => {
+  it("publishes the three Managed Skills and four standalone host-native Skills", () => {
     expect(registry.map((entry) => entry.name)).toEqual([
       "imm-brainstorm",
       "imm-planner",
@@ -57,6 +57,7 @@ describe("skill registry consistency", () => {
       "imm-pr-fix",
       "imm-doc-prune",
       "imm-agent-doc-maintain",
+      "imm-review-retro",
     ])
   })
 
@@ -116,6 +117,15 @@ describe("skill registry consistency", () => {
       .sort()
     const registered = registry.map((e) => e.name).sort()
     expect(onDisk).toEqual(registered)
+  })
+
+  it("names imm-review-retro in a patch changeset", () => {
+    const dir = resolve(PLUGIN_ROOT, "../../.changeset")
+    const files = readdirSync(dir).filter((name) => name.endsWith(".md") && name !== "README.md")
+    const hit = files.some((name) =>
+      readFileSync(resolve(dir, name), "utf-8").includes("imm-review-retro"),
+    )
+    expect(hit).toBe(true)
   })
 
   it("no SKILL.md description contains stray CJK characters", () => {

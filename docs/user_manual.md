@@ -1,6 +1,6 @@
 # Immune-Brain 使用手册
 
-Immune-Brain 是一套 Skill-explicit Managed 工作流，支持 Pi 与本地交互式 Claude Code，并提供三个独立 host-native 维护 Skill。用户可发现六个 public Skills：
+Immune-Brain 是一套 Skill-explicit Managed 工作流，支持 Pi 与本地交互式 Claude Code，并提供四个独立 host-native Skill。用户可发现七个 public Skills：
 
 - `imm-brainstorm`：澄清需求、约束、风险和非目标。
 - `imm-planner`：创建或修订 Spec、Plan 和候选 TaskIntent。
@@ -8,6 +8,7 @@ Immune-Brain 是一套 Skill-explicit Managed 工作流，支持 Pi 与本地交
 - `imm-pr-fix`：直接诊断并修复一个 GitHub PR，不创建 Managed authority。
 - `imm-doc-prune`：在显式 manifest 批准后清理过期当前文档，不创建 Managed authority。
 - `imm-agent-doc-maintain`：在显式 manifest 批准后整理 tracked agent instruction 文件，不创建 Managed authority。
+- `imm-review-retro`：按模型统计审查负载与项目使用量，只读 session logs，不创建 Managed authority。
 
 ### `imm-doc-prune`
 
@@ -16,6 +17,10 @@ Immune-Brain 是一套 Skill-explicit Managed 工作流，支持 Pi 与本地交
 ### `imm-agent-doc-maintain`
 
 独立整理 tracked `AGENTS.md`、`CLAUDE.md`、`GEMINI.md` 中的最小必要上下文。它盘点当前仓库根级和嵌套文件，按四项价值门槛分类，输出精确 manifest，用户显式批准后才删除冗余、改写规则或改为指向已有权威文档的指针。无法确认价值的规则保留为 `UNVERIFIED`；无法确定的冲突标记 `BLOCKED`。它不创建参考文档，不安装或校验项目级契约，不修改用户级全局文件，也不进入 Managed Path。`imm-doc-prune` 仍只处理有证据的 stale 内容；两个 Skill 不互相调用。
+
+### `imm-review-retro`
+
+独立按模型排名审查负载，并报告 sessions、turns、编辑量、工具分布与 top projects。默认扫描用户全部 pi session logs，`--project` 按 cwd 子串限定。它不审查 diff、不写 session logs、不进入 Managed Path。
 
 Executor、QA、Review、learning 和 architecture exploration 都是
 `imm-loop` 使用的内部 runtime roles/tools。Loop 内部 `pr-fix` role 与独立
@@ -43,7 +48,7 @@ request
 
 显式 Skill 使用项目现有结构，并只创建当前工作需要的 artifact 及其父目录。Runtime 不安装、覆盖或校验项目级 `AGENTS.md`、`IMMUNE.md` 或 `CONTEXT.md`。
 
-## 六个 public Skills
+## 七个 public Skills
 
 ### `imm-brainstorm`
 
@@ -95,7 +100,7 @@ PR 仍通过 `imm-loop` 继续。
 
 ## 验证与发布
 
-公共 surface 由 `skills/registry.yaml` 声明，必须与六个 `skills/*/SKILL.md`、对应
+公共 surface 由 `skills/registry.yaml` 声明，必须与七个 `skills/*/SKILL.md`、对应
 `dist/imm-*.md`、package manifest 和实际 Pi loader 结果一致。未注册的旧 Skill 目录、
 旧 dist entry files 和兼容 alias 不应重新加入 registry。
 

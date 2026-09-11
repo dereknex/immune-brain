@@ -19,6 +19,7 @@
 	"include": [
 		"plugins/immune-brain/runtime/**/*.ts",
 		"plugins/immune-brain/.pi-extension/**/*.ts",
+		"plugins/immune-brain/skills/**/*.ts",
 		"scripts/**/*.ts",
 		"types/**/*.d.ts"
 	],

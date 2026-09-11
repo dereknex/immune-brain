@@ -1,0 +1,162 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "imm-review-retro",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "imm-review-retro",
+    "goal": "Ship imm-review-retro as a public host-native Skill that ranks models by review load and reports basic project usage from pi session logs, without Managed Path or Kernel authority changes.",
+    "acceptance": [
+      {
+        "id": "A1",
+        "assertion": "The TypeScript analyzer, given a committed JSONL fixture, preserves review attribution to the last editor, uniq versus reviews, rev/100ed, score and verdict parsing, findings split including bookkeeping, separate kernel submit_review counts, --project cwd filtering, and the new usage counters for sessions, turns, edits, tool-call histogram, and top projects.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/review-retro-analyzer.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 30000,\n  \"max_output_bytes\": 32768\n}\n"
+      },
+      {
+        "id": "A2",
+        "assertion": "Registry, owned dist contract, dist-sync manifest, and hardcoded public-Skill lists publish imm-review-retro as the seventh public Skill; loader and dist frontmatter plus section routes satisfy existing packaging guards; a patch changeset names the Skill.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/skill-dist-consistency.test.ts\",\n    \"tests/claude-host-package.test.ts\",\n    \"plugins/immune-brain/tests/skill-registry-consistency.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 30000,\n  \"max_output_bytes\": 32768\n}\n"
+      },
+      {
+        "id": "A3",
+        "assertion": "The packed package contains the Skill loader, analyzer script, and dist contract; current-facing routing copy keeps Managed Path as imm-brainstorm, imm-planner, and imm-loop, and names imm-review-retro as a standalone host-native Skill.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/pi-canary-packed-loader.test.ts\",\n    \"tests/direct-first-routing-contract.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 30000,\n  \"max_output_bytes\": 32768\n}\n"
+      }
+    ],
+    "scope_hint": [
+      ".changeset/imm-review-retro.md",
+      "CONTEXT.md",
+      "IMMUNE.md",
+      "README.md",
+      "README.zh-CN.md",
+      "docs/plans/archive/imm-review-retro.intent.json",
+      "docs/plans/imm-review-retro.intent.json",
+      "docs/reference/immune-brain-skills-guide.md",
+      "docs/specs/archive/imm-review-retro.spec.md",
+      "docs/specs/imm-review-retro.spec.md",
+      "docs/user_manual.md",
+      "plugins/immune-brain/README.md",
+      "plugins/immune-brain/USER_GUIDE.md",
+      "plugins/immune-brain/dist/imm-review-retro.md",
+      "plugins/immune-brain/dist/registry.yaml",
+      "plugins/immune-brain/skills/imm-review-retro/SKILL.md",
+      "plugins/immune-brain/skills/imm-review-retro/scripts/review_retro.ts",
+      "plugins/immune-brain/skills/registry.yaml",
+      "plugins/immune-brain/tests/skill-registry-consistency.test.ts",
+      "scripts/dist-sync-manifest.ts",
+      "tests/claude-host-package.test.ts",
+      "tests/direct-first-routing-contract.test.ts",
+      "tests/fixtures/review-retro",
+      "tests/pi-canary-packed-loader.test.ts",
+      "tests/review-retro-analyzer.test.ts",
+      "tests/skill-dist-consistency.test.ts",
+      "tsconfig.json"
+    ],
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/archive/imm-review-retro.intent.json",
+    "content_hash": "sha256:d53ecff1f4a1df7351f992759ad64ad173d9e9b34505175fc0e22b017c8aad8c"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:d53ecff1f4a1df7351f992759ad64ad173d9e9b34505175fc0e22b017c8aad8c",
+  "git_base_head": "d3bb074ad0c8d8c78a374ce86cea83f2ebd8c82a",
+  "attestations": [
+    {
+      "id": "approval-qa-428cc86c",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:d53ecff1f4a1df7351f992759ad64ad173d9e9b34505175fc0e22b017c8aad8c",
+      "diff_hash": "sha256:e96b769fec8d3ab1a7a3247b34a24a0b567430dd5aeb2d85cacc3486c381661f",
+      "actor_id": "deterministic-qa",
+      "summary": "all 3 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "A2",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "A3",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-7c454760",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:d53ecff1f4a1df7351f992759ad64ad173d9e9b34505175fc0e22b017c8aad8c",
+      "diff_hash": "sha256:e96b769fec8d3ab1a7a3247b34a24a0b567430dd5aeb2d85cacc3486c381661f",
+      "actor_id": "parent-mediated-review",
+      "summary": "imm-review-retro ships as the seventh public Skill: analyzer fixture locks A1 counting rules, registry/dist/packaging lists and packed loader cover A2/A3, and routing keeps Managed Path as brainstorm/planner/loop.",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "d3bb074ad0c8d8c78a374ce86cea83f2ebd8c82a",
+        "review_commit": "b7fddec656eab99deceb023b9335b13aaacf4dae",
+        "review_tree": "09870bf361cec20f0f3d424da4e72d2b34108747",
+        "manifest_digest": "sha256:7f334f6fc3be1a91405f9495a928c408e08356cb92182b7cf9688e08a3870941"
+      }
+    }
+  ],
+  "findings": [],
+  "history": [
+    {
+      "id": "freeze_artifacts:imm-review-retro:2026-09-11T10:08:11.313Z",
+      "at": "2026-09-11T10:08:11.313Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent and Spec frozen at docs/plans/archive/imm-review-retro.intent.json"
+    },
+    {
+      "id": "record_approval:imm-review-retro:2026-09-11T10:08:22.843Z",
+      "at": "2026-09-11T10:08:22.843Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-428cc86c\naction_v2_sha256:c0f7c2755b3ed0fcfd43f6572c9e72b1c4a07f0ba59fed642c3f853fd0ce4b2c",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-b31921cc474cebe5",
+        "issued_at": "2026-09-11T10:08:22.843Z",
+        "expires_at": "2026-09-11T10:18:22.843Z"
+      }
+    },
+    {
+      "id": "record_approval:imm-review-retro:2026-09-11T14:26:20.054Z",
+      "at": "2026-09-11T14:26:20.054Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-7c454760\naction_v2_sha256:b8ca660ec5c8003ab9b1d5a0b98e6e2c47e1f3d251afb574e5adbc5ca65bbcc5",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-983364c3cd95b6db",
+        "issued_at": "2026-09-11T14:26:20.054Z",
+        "expires_at": "2026-09-11T14:36:20.054Z"
+      }
+    },
+    {
+      "id": "complete:imm-review-retro:2026-09-11T14:26:21.826Z",
+      "at": "2026-09-11T14:26:21.826Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:5fd9378d8202776ec99f3c4e8d24599226893eaae98d0955939b6ab993183d5c"
+    }
+  ]
+}

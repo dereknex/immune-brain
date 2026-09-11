@@ -1,6 +1,6 @@
 # Immune-Brain public Skills 与内部 roles 指南
 
-Immune-Brain 的 shipped public Skill surface 固定为六个入口：三个 Managed Path Skill 与三个 host-native 维护 Skill：
+Immune-Brain 的 shipped public Skill surface 固定为七个入口：三个 Managed Path Skill 与四个 host-native 独立 Skill：
 
 | Public Skill | 责任 | 下一步 |
 | --- | --- | --- |
@@ -10,6 +10,7 @@ Immune-Brain 的 shipped public Skill surface 固定为六个入口：三个 Man
 | `imm-pr-fix` | 独立 host-native PR repair；不进入 Managed Path | GitHub PR / host-native |
 | `imm-doc-prune` | 独立 host-native 文档清理；显式 manifest 批准后执行；不进入 Managed Path | host-native |
 | `imm-agent-doc-maintain` | 独立 host-native agent instruction 整理；显式 manifest 批准后执行；不进入 Managed Path | host-native |
+| `imm-review-retro` | 独立 host-native 审查负载与项目使用量回顾；不进入 Managed Path | host-native |
 
 旧的 Executor、QA、Review、repair、explorer、advisory、Compounder 和 Init entry
 不再是可发现的 Skill。它们分别是 `imm-loop` 的内部 role、runtime capability 或 TUI/Tool
@@ -76,8 +77,8 @@ Managed Path uses the project's existing structure. Explicit Skills create only
 the artifacts and parent directories needed for the current request; runtime does
 not install or validate project-wide instruction files.
 
-Pi runtime 的 public loader 应发现六个 Skill，其中三个 Managed Path 入口与三个
-host-native 维护 Skill（`imm-pr-fix`、`imm-doc-prune` 和 `imm-agent-doc-maintain`）。Canary Enrollment、Kernel evidence、
+Pi runtime 的 public loader 应发现七个 Skill，其中三个 Managed Path 入口与四个
+host-native 独立 Skill（`imm-pr-fix`、`imm-doc-prune`、`imm-agent-doc-maintain` 和 `imm-review-retro`）。Canary Enrollment、Kernel evidence、
 Review authorization 和 terminal settlement 通过当前 Host 的 foreground Tools/native gates 完成：
 
 - `imm_canary_enrollment`：准备、rehearsal、literal-user confirmation、revalidation、commit。
@@ -89,8 +90,8 @@ Canary Work 和 Work 不再是用户工作流入口。相关 extension/tool sour
 
 ## Surface 与验证
 
-`plugins/immune-brain/skills/registry.yaml`、`dist/registry.yaml`、六个 `SKILL.md`、
-六个 `dist/imm-*.md` 和 package manifest 必须保持一致。未注册的旧 `imm-*.md`
+`plugins/immune-brain/skills/registry.yaml`、`dist/registry.yaml`、七个 `SKILL.md`、
+七个 `dist/imm-*.md` 和 package manifest 必须保持一致。未注册的旧 `imm-*.md`
 entry files、旧 Skill directories 和兼容 aliases 必须不存在。
 
 建议验证：

@@ -155,6 +155,14 @@ export const SKILL_OWNED_ENTRIES: PackagedContractEntry[] = [
 			"Packaged contract is its own authoring source; plugins/immune-brain/skills/imm-agent-doc-maintain/SKILL.md is a minimal loader that references it. Legitimate size difference, no byte identity.",
 		skill: "imm-agent-doc-maintain",
 	},
+	{
+		packaged: "imm-review-retro.md",
+		source: null,
+		kind: "owned",
+		reason:
+			"Packaged contract is its own authoring source; plugins/immune-brain/skills/imm-review-retro/SKILL.md is a minimal loader that references it. Legitimate size difference, no byte identity.",
+		skill: "imm-review-retro",
+	},
 ];
 
 export const PACKAGED_CONTRACT_ENTRIES: PackagedContractEntry[] = [

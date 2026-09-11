@@ -19,7 +19,7 @@
 
 普通 host input 不执行自然语言 Managed 路由，也不初始化项目契约；显式 Immune-Brain Skill 负责启动新的 Managed workflow。已有 active Assurance owner 保持权威，但只在用户显式进入 `imm-loop` 时恢复。
 - `.imm/state/`：worktree-local 运行态（TaskRecord v4、workspace ownership、锁与 transaction marker），整体 Git-ignored；terminal evidence 归 `.imm/audit/<task-id>/` tracked 存储。旧 v3 布局 `.imm/memory/`（state.json、MEMORY.md、current_iteration.json）已 retired：runtime 只作 drain-only 读取，新写入一律走 v4 布局。
-- `skills/`：存放六个 user-facing Skill 定义；`imm-brainstorm`、`imm-planner` 和 `imm-loop` 是 Managed Path 入口，`imm-pr-fix`、`imm-doc-prune` 和 `imm-agent-doc-maintain` 是 host-native 维护入口；内部 role prompts 位于插件 `runtime/prompts/`。
+- `skills/`：存放七个 user-facing Skill 定义；`imm-brainstorm`、`imm-planner` 和 `imm-loop` 是 Managed Path 入口，`imm-pr-fix`、`imm-doc-prune`、`imm-agent-doc-maintain` 和 `imm-review-retro` 是 host-native 独立入口；内部 role prompts 位于插件 `runtime/prompts/`。
 - `docs/specs/`：存放当前任务的功能规格与验收标准。
 - `docs/solutions/`：存放长期沉淀的工程模式、最佳实践与问题解法。
 - `CONTEXT.md`（仓库根）：共享领域词汇与架构导航；非运行态真源，运行状态由 TaskRecord 和 Kernel projection 提供。

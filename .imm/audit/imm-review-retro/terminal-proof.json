@@ -1,0 +1,9 @@
+{
+  "contract": "assurance_kernel/task_tombstone/v2",
+  "task_id": "imm-review-retro",
+  "lifecycle_status": "terminal",
+  "terminal_lifecycle": "done",
+  "terminal_event_id": "complete:imm-review-retro:2026-09-11T14:26:21.826Z",
+  "final_record_hash": "sha256:ec0f0126f56160e8343a5fa8abe7661391944080dc383eb1efe4aa7fe2351f3b",
+  "terminalized_at": "2026-09-11T14:26:21.826Z"
+}

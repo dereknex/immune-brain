@@ -1,0 +1,54 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "imm-review-retro",
+  "owner": "user",
+  "goal": "Ship imm-review-retro as a public host-native Skill that ranks models by review load and reports basic project usage from pi session logs, without Managed Path or Kernel authority changes.",
+  "acceptance": [
+    {
+      "id": "A1",
+      "assertion": "The TypeScript analyzer, given a committed JSONL fixture, preserves review attribution to the last editor, uniq versus reviews, rev/100ed, score and verdict parsing, findings split including bookkeeping, separate kernel submit_review counts, --project cwd filtering, and the new usage counters for sessions, turns, edits, tool-call histogram, and top projects.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/review-retro-analyzer.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 30000,\n  \"max_output_bytes\": 32768\n}\n"
+    },
+    {
+      "id": "A2",
+      "assertion": "Registry, owned dist contract, dist-sync manifest, and hardcoded public-Skill lists publish imm-review-retro as the seventh public Skill; loader and dist frontmatter plus section routes satisfy existing packaging guards; a patch changeset names the Skill.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/skill-dist-consistency.test.ts\",\n    \"tests/claude-host-package.test.ts\",\n    \"plugins/immune-brain/tests/skill-registry-consistency.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 30000,\n  \"max_output_bytes\": 32768\n}\n"
+    },
+    {
+      "id": "A3",
+      "assertion": "The packed package contains the Skill loader, analyzer script, and dist contract; current-facing routing copy keeps Managed Path as imm-brainstorm, imm-planner, and imm-loop, and names imm-review-retro as a standalone host-native Skill.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/pi-canary-packed-loader.test.ts\",\n    \"tests/direct-first-routing-contract.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 30000,\n  \"max_output_bytes\": 32768\n}\n"
+    }
+  ],
+  "scope_hint": [
+    ".changeset/imm-review-retro.md",
+    "CONTEXT.md",
+    "IMMUNE.md",
+    "README.md",
+    "README.zh-CN.md",
+    "docs/plans/archive/imm-review-retro.intent.json",
+    "docs/plans/imm-review-retro.intent.json",
+    "docs/reference/immune-brain-skills-guide.md",
+    "docs/specs/archive/imm-review-retro.spec.md",
+    "docs/specs/imm-review-retro.spec.md",
+    "docs/user_manual.md",
+    "plugins/immune-brain/README.md",
+    "plugins/immune-brain/USER_GUIDE.md",
+    "plugins/immune-brain/dist/imm-review-retro.md",
+    "plugins/immune-brain/dist/registry.yaml",
+    "plugins/immune-brain/skills/imm-review-retro/SKILL.md",
+    "plugins/immune-brain/skills/imm-review-retro/scripts/review_retro.ts",
+    "plugins/immune-brain/skills/registry.yaml",
+    "plugins/immune-brain/tests/skill-registry-consistency.test.ts",
+    "scripts/dist-sync-manifest.ts",
+    "tests/claude-host-package.test.ts",
+    "tests/direct-first-routing-contract.test.ts",
+    "tests/fixtures/review-retro",
+    "tests/pi-canary-packed-loader.test.ts",
+    "tests/review-retro-analyzer.test.ts",
+    "tests/skill-dist-consistency.test.ts",
+    "tsconfig.json"
+  ],
+  "risk": "material",
+  "revision": 1
+}

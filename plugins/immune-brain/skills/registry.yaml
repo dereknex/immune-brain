@@ -56,3 +56,12 @@ skills:
     output_artifacts: [maintain_report]
     next_actions: []
     boundary: Minimize tracked agent-instruction context after explicit manifest approval; no Managed authority mutation, contract installation, or reference-document creation.
+  - name: imm-review-retro
+    path: skills/imm-review-retro/SKILL.md
+    role: execute
+    title: Review Retro
+    role_class: discovery
+    canonical: true
+    output_artifacts: [retro_report]
+    next_actions: []
+    boundary: Rank models by review load and report project usage from pi session logs. Read-only. No Managed Path mutation.

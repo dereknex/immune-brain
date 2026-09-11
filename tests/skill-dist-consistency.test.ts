@@ -67,6 +67,7 @@ describe("skill dist consistency", () => {
 		["imm-pr-fix", "repair PR feedback with Immune-Brain", "review this function", "GitHub PR review feedback"],
 		["imm-doc-prune", "prune stale docs with Immune-Brain", "explain this document", "stale current documentation"],
 		["imm-agent-doc-maintain", "minimize AGENTS.md with Immune-Brain", "what does this instruction mean", "tracked AGENTS.md"],
+		["imm-review-retro", "review-retro with Immune-Brain", "review this function", "cross-model review load"],
 	])("%s: explicit '%s', not ordinary '%s'", (name, _explicit, _ordinary, scope) => {
 		const loader = read(join(SKILLS_DIR, name, "SKILL.md"));
 		const metadata = Bun.YAML.parse(loader.match(/^---\n([\s\S]*?)\n---/)![1]) as { description: string };
@@ -78,7 +79,7 @@ describe("skill dist consistency", () => {
 		expect(activation).toContain("new Managed workflow starts only from explicit");
 	});
 
-	test("all six explicit-entry loaders have valid frontmatter and section targets", () => {
+	test("all public explicit-entry loaders have valid frontmatter and section targets", () => {
 		for (const item of publicSkills()) {
 			const loader = read(item.skill);
 			const metadata = Bun.YAML.parse(loader.match(/^---\n([\s\S]*?)\n---/)![1]) as {
@@ -220,6 +221,7 @@ describe("skill dist consistency", () => {
 			"imm-loop",
 			"imm-planner",
 			"imm-pr-fix",
+			"imm-review-retro",
 		]);
 		for (const item of skills) {
 			expect(read(item.skill).length).toBeGreaterThan(0);
@@ -267,7 +269,7 @@ describe("skill dist consistency", () => {
 
 		// Every owned skill contract is tracked
 		expect(SKILL_OWNED_ENTRIES.map((e) => e.packaged).sort()).toEqual(
-			["imm-agent-doc-maintain.md", "imm-brainstorm.md", "imm-doc-prune.md", "imm-loop.md", "imm-planner.md", "imm-pr-fix.md"].sort(),
+			["imm-agent-doc-maintain.md", "imm-brainstorm.md", "imm-doc-prune.md", "imm-loop.md", "imm-planner.md", "imm-pr-fix.md", "imm-review-retro.md"].sort(),
 		);
 	});
 

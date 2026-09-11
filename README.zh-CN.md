@@ -25,7 +25,7 @@ Pi 与 Claude Code 是支持的宿主。未声明的适配器仍不受支持。C
 - [安装](#安装)
 - [快速开始](#快速开始)
 - [如何使用](#如何使用)
-- [6 个 Skills](#6-个-skills)
+- [7 个 Skills](#7-个-skills)
 - [生命周期](#生命周期)
 - [无人值守批次运行](#无人值守批次运行)
 - [配置](#配置)
@@ -119,6 +119,7 @@ Immune-Brain 提供两种清晰的工作模式：日常轻量编码走 **Host-na
 | PR 被评论 / CI 挂了 | 对该 PR 使用 `/imm-pr-fix` | → 独立修复：在当前 PR 内针对性修复，不创建新 managed 任务 |
 | 文档过时需要清理 | `/imm-doc-prune` | → 只读审计过时文档，仅删除经哈希审批的条目 |
 | Agent 指令文件膨胀 | `/imm-agent-doc-maintain` | → 将 tracked `AGENTS.md` / `CLAUDE.md` 压到最小必要上下文 |
+| 想知道哪个模型的改动总被审查 | `/imm-review-retro` | → 按模型排名审查负载，并从 session logs 汇报项目使用量 |
 
 > **核心原则：Skill 显式调用**
 > - **普通输入保持 Host-native**：自然语言提问绝不自动绑架流程或发起 Enrollment。你完全自主决定何时开启严格工程保障。
@@ -126,7 +127,7 @@ Immune-Brain 提供两种清晰的工作模式：日常轻量编码走 **Host-na
 
 ---
 
-## 6 个 Skills
+## 7 个 Skills
 
 | Skill | 类型 | 何时使用 | 职责 |
 |---|---|---|---|
@@ -136,10 +137,11 @@ Immune-Brain 提供两种清晰的工作模式：日常轻量编码走 **Host-na
 | `imm-pr-fix` | 独立 | PR 需修复 | 原地修复单个 PR，不触及 managed authority |
 | `imm-doc-prune` | 独立 | 清理过时文档 | 仅删除哈希绑定的 manifest 条目 |
 | `imm-agent-doc-maintain` | 独立 | Agent instruction 膨胀 | 将 tracked AGENTS/CLAUDE/GEMINI.md 压到最小必要上下文 |
+| `imm-review-retro` | 独立 | 比较模型的审查负载 | 排名被审查代码的作者并汇报项目使用量 |
 
 Executor、QA、Review、Compounder 等为 `imm-loop` 内部调度的角色，无需手动调用。
 
-所有 6 个 Skill 均显式调用。新需求开发时：若需求含糊先调 `imm-brainstorm`，目标清晰直接调 `imm-planner`，完成确认后调 `imm-loop` 推进闭环。
+所有 7 个 Skill 均显式调用。新需求开发时：若需求含糊先调 `imm-brainstorm`，目标清晰直接调 `imm-planner`，完成确认后调 `imm-loop` 推进闭环。
 
 ### Managed Path 入口（brainstorm → planner → loop）
 
@@ -186,6 +188,11 @@ Executor、QA、Review、Compounder 等为 `imm-loop` 内部调度的角色，�
 
 - **触发方式：** 显式要求精简版本控制下的 `AGENTS.md` / `CLAUDE.md` / `GEMINI.md`。
 - **职责：** 遵循与 `imm-doc-prune` 相同的「只读审计 + 哈希清单审批」模式，仅保留无法直接推导的必要规则。
+
+#### `imm-review-retro` — 审查负载与项目使用回顾
+
+- **触发方式：** 显式要求跨模型审查复盘或项目使用量回顾。
+- **职责：** 从 pi session logs 按模型排名被审查代码的作者，并汇报 sessions/turns/编辑量/工具分布。只读；不审查 diff。
 
 ---
 

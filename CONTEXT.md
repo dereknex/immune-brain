@@ -206,7 +206,7 @@ _Avoid_: current acceptance field, QA attestation
 
 ## Architecture Map
 
-- Public entries: `plugins/immune-brain/skills/imm-brainstorm/`, `imm-planner/`, and `imm-loop/` enter or continue the Managed Path; `imm-pr-fix/` is the standalone host-native PR repair Skill, `imm-doc-prune/` is the standalone host-native document maintenance Skill, and `imm-agent-doc-maintain/` is the standalone host-native agent-instruction maintenance Skill.
+- Public entries: `plugins/immune-brain/skills/imm-brainstorm/`, `imm-planner/`, and `imm-loop/` enter or continue the Managed Path; `imm-pr-fix/` is the standalone host-native PR repair Skill, `imm-doc-prune/` is the standalone host-native document maintenance Skill, `imm-agent-doc-maintain/` is the standalone host-native agent-instruction maintenance Skill, and `imm-review-retro/` is the standalone host-native review-load and project-usage retro Skill.
 - Planning artifacts: `docs/specs/` stores active Specs; `docs/plans/*.intent.json` stores active TaskIntents despite the historical directory name. Frozen artifacts move under the corresponding `archive/` directories.
 - Kernel authority: `plugins/immune-brain/runtime/kernel/` owns TaskIntent parsing, Enrollment, TaskRecord reduction/storage, claims, projections, and completion.
 - Worktree state: `.imm/state/tasks/<task-id>.json` stores the current-production TaskRecord v4 (v3 records are read-only drain-only), `.imm/state/workspace.json` stores workspace ownership, and `.imm/audit/<task-id>/` stores settled terminal evidence (tracked); `.imm/state/` is wholly Git-ignored runtime state.

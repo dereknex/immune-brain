@@ -25,7 +25,7 @@ Pi and Claude Code are the supported hosts. Undeclared adapters remain unsupport
 - [Installation](#installation)
 - [Quick Start](#quick-start)
 - [How to Use](#how-to-use)
-- [The 6 Skills](#the-6-skills)
+- [The 7 Skills](#the-7-skills)
 - [Lifecycle](#lifecycle)
 - [Unattended Batch Runs](#unattended-batch-runs)
 - [Configuration](#configuration)
@@ -119,6 +119,7 @@ Immune-Brain provides two clean modes: **Host-native** for daily coding, and **M
 | PR has review comments or failing CI | `/imm-pr-fix` on that PR | → Standalone repair: minimal scoped fix in place, no managed task created |
 | Project docs out of date | `/imm-doc-prune` | → Read-only audit; deletes only user-approved stale docs from manifest |
 | Agent instructions bloated | `/imm-agent-doc-maintain` | → Minimizes tracked `AGENTS.md` / `CLAUDE.md` to essential non-discoverable rules |
+| Which model's edits keep coming back for review | `/imm-review-retro` | → Ranks models by review load and reports project usage from session logs |
 
 > **Core Principle: Skill-Explicit Entry**
 > - **Ordinary input stays host-native**: Natural language queries never automatically start planning or task enrollment. You choose when to turn on engineering rigor.
@@ -126,7 +127,7 @@ Immune-Brain provides two clean modes: **Host-native** for daily coding, and **M
 
 ---
 
-## The 6 Skills
+## The 7 Skills
 
 | Skill | Type | When to use | What it does |
 |---|---|---|---|
@@ -136,10 +137,11 @@ Immune-Brain provides two clean modes: **Host-native** for daily coding, and **M
 | `imm-pr-fix` | Standalone | CI failed / review comments on a PR | Repairs one PR in place, no managed authority |
 | `imm-doc-prune` | Standalone | Stale current docs | Deletes only the hash-approved manifest entries |
 | `imm-agent-doc-maintain` | Standalone | Bloated agent instructions | Minimizes tracked AGENTS/CLAUDE/GEMINI.md to necessary context |
+| `imm-review-retro` | Standalone | Compare models by review load | Ranks authors of reviewed code and reports project usage |
 
 Internal roles (Executor, QA, Review, Compounder) are dispatched by `imm-loop` — you never invoke them directly.
 
-All 6 skills are invoked explicitly. For new features, start with `imm-brainstorm` (if requirements are uncertain) or `imm-planner` (if requirements are clear), then proceed to `imm-loop` once enrolled.
+All 7 skills are invoked explicitly. For new features, start with `imm-brainstorm` (if requirements are uncertain) or `imm-planner` (if requirements are clear), then proceed to `imm-loop` once enrolled.
 
 ### Managed Path entries (brainstorm → planner → loop)
 
@@ -186,6 +188,11 @@ The three repair/maintenance skills are host-native: they never create a managed
 
 - **Trigger:** explicit request to minimize tracked `AGENTS.md` / `CLAUDE.md` / `GEMINI.md`.
 - **What it does:** keeps only the necessary non-discoverable rules in agent instruction files, under the same read-only-audit + hash-bound-manifest-approval model as `imm-doc-prune`.
+
+#### `imm-review-retro` — review load and project usage
+
+- **Trigger:** explicit request for a cross-model review retro or project usage look-back.
+- **What it does:** ranks models by how much review their own edits triggered, plus sessions/turns/edits/tool mix, from pi session logs. Read-only. Not a diff review.
 
 ---
 
@@ -265,7 +272,7 @@ See [`docs/reference/immune-brain-config.md`](docs/reference/immune-brain-config
 package.json                          # Pi package manifest (skills + extensions)
 plugins/immune-brain/
 ├── .pi-extension/                    # Pi TUI + Kernel authority extension
-├── skills/                           # 6 public Skills (trigger shims)
+├── skills/                           # 7 public Skills (trigger shims)
 ├── dist/                             # Built skill contracts & references
 ├── runtime/                          # Bun + TypeScript runtime & Kernel
 └── bin/                              # CLI wrappers (→ runtime/v4_runtime.ts)

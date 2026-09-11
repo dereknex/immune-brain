@@ -54,10 +54,13 @@ describe("packed artifact loader", () => {
 				"plugins/immune-brain/skills/imm-brainstorm/SKILL.md",
 				"plugins/immune-brain/skills/imm-loop/SKILL.md",
 				"plugins/immune-brain/skills/imm-planner/SKILL.md",
+				"plugins/immune-brain/skills/imm-review-retro/SKILL.md",
+				"plugins/immune-brain/skills/imm-review-retro/scripts/review_retro.ts",
 				"plugins/immune-brain/skills/registry.yaml",
 				"plugins/immune-brain/dist/imm-brainstorm.md",
 				"plugins/immune-brain/dist/imm-loop.md",
 				"plugins/immune-brain/dist/imm-planner.md",
+				"plugins/immune-brain/dist/imm-review-retro.md",
 				"plugins/immune-brain/runtime/kernel/canary_application.ts",
 				"plugins/immune-brain/dist/role-prompts/code-review.md",
 			]) {
@@ -152,7 +155,7 @@ describe("packed artifact loader", () => {
 					)
 					.map((s: { name: string }) => s.name)
 					.sort();
-				expect(skills).toEqual(["imm-agent-doc-maintain", "imm-brainstorm", "imm-doc-prune", "imm-loop", "imm-planner", "imm-pr-fix"]);
+				expect(skills).toEqual(["imm-agent-doc-maintain", "imm-brainstorm", "imm-doc-prune", "imm-loop", "imm-planner", "imm-pr-fix", "imm-review-retro"]);
 
 				const work = extensions.find((extension: { path?: string }) =>
 					extension.path?.endsWith("imm-canary-work.ts"),

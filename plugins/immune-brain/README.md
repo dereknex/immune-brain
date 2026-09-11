@@ -3,7 +3,7 @@
 Lifecycle skills for agentic engineering: planning, execution, review, QA, and
 learning capture, backed by a deterministic TypeScript workflow runtime.
 
-Each of the six public Skills is a compact `skills/<name>/SKILL.md`
+Each of the seven public Skills is a compact `skills/<name>/SKILL.md`
 trigger shim that loads its full instructions from `dist/<name>.md` only on
 invocation. Execution, review, QA, and learning capabilities remain internal
 runtime roles or tools. `imm-pr-fix` is the standalone host-native repair
@@ -18,18 +18,18 @@ and repair roles; it is not a QA or style-only gate.
 
 ## Public Skill surface
 
-The package exposes six Skills: `imm-brainstorm`, `imm-planner`, `imm-loop`,
-`imm-pr-fix`, `imm-doc-prune`, and `imm-agent-doc-maintain`. The first three enter or continue the Managed Path;
+The package exposes seven Skills: `imm-brainstorm`, `imm-planner`, `imm-loop`,
+`imm-pr-fix`, `imm-doc-prune`, `imm-agent-doc-maintain`, and `imm-review-retro`. The first three enter or continue the Managed Path;
 `imm-pr-fix` repairs one PR directly, `imm-doc-prune` prunes stale current
-documentation, and `imm-agent-doc-maintain` minimizes tracked agent-instruction
-context, all without Managed authority. Internal roles
+documentation, `imm-agent-doc-maintain` minimizes tracked agent-instruction
+context, and `imm-review-retro` ranks models by review load and reports project usage, all without Managed authority. Internal roles
 are dispatched by the runtime through packaged prompts under
 `dist/role-prompts/`; Loop never discovers them through Skill loading. Skills use the project's existing files and create only the artifacts
 the user explicitly requested.
 
 Managed Path starts only from explicit `imm-brainstorm`, `imm-planner`, or
 `imm-loop` entry; ordinary host input and standalone `imm-pr-fix`,
-`imm-doc-prune`, and `imm-agent-doc-maintain` stay
+`imm-doc-prune`, `imm-agent-doc-maintain`, and `imm-review-retro` stay
 host-native and are not classified by natural-language routing.
 
 - An active Assurance projection remains authoritative and resumes only when the user explicitly enters `imm-loop`.
@@ -83,10 +83,11 @@ Managed invariants (see `BASELINE.md`):
 | `imm-pr-fix` | execute; repair; canonical | Repair one GitHub PR directly; no Managed authority mutation or scope expansion. |
 | `imm-doc-prune` | execute; repair; canonical | Prune stale current documentation after explicit manifest approval; no Managed authority mutation or authority-artifact deletion. |
 | `imm-agent-doc-maintain` | execute; repair; canonical | Minimize tracked agent-instruction context after explicit manifest approval; no Managed authority mutation, contract installation, or reference-document creation. |
+| `imm-review-retro` | execute; discovery; canonical | Rank models by review load and report project usage from pi session logs. Read-only. No Managed Path mutation. |
 <!-- END GENERATED: skill-registry-role-map -->
 
 The authoritative public role manifest is [`skills/registry.yaml`](skills/registry.yaml).
-It contains the six user-facing Skill entries; internal role authority
+It contains the seven user-facing Skill entries; internal role authority
 and transitions live in the runtime bridge.
 
 ## Review gates

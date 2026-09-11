@@ -1,0 +1,5 @@
+{"type":"session","cwd":"/tmp/other-app"}
+{"timestamp":"2099-01-01T00:00:00Z","message":{"role":"assistant","provider":"openai","model":"gpt-5","content":[{"type":"toolCall","id":"e1","name":"write","arguments":{"path":"b.ts"}}]}}
+{"timestamp":"2099-01-01T00:00:01Z","message":{"role":"assistant","provider":"openai","model":"gpt-5","content":[{"type":"toolCall","id":"r1","name":"Agent","arguments":{"subagent_type":"Review","description":"review b.ts","prompt":"look for defects"}}]}}
+{"timestamp":"2099-01-01T00:00:02Z","message":{"role":"toolResult","toolCallId":"r1","content":"[SCORE: 3.0 / 10] [VERDICT: REJECT] [RISK: HIGH] [BLOCKING: 2] [ADVISORY: 0]"}}
+{"timestamp":"2099-01-01T00:00:03Z","message":{"role":"assistant","provider":"openai","model":"gpt-5","content":[{"type":"toolCall","id":"f1","name":"imm_kernel_canary","arguments":{"task_id":"t2","action":{"op":"record_finding","finding":{"id":"g1","kind":"blocking","acceptance_id":"A1","summary":"real defect in auth"}}}}]}}
