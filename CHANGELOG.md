@@ -1,5 +1,19 @@
 # Changelog
 
+## 3.6.7
+
+### Patch Changes
+
+- [#61](https://github.com/dereknex/immune-brain/pull/61) [`3a8070a`](https://github.com/dereknex/immune-brain/commit/3a8070a39f4629176a992956bb2f7fe3d8e960c6) Thanks [@dereknex](https://github.com/dereknex)! - Implement the Claude Code native Host confirmation gate for unattended batch runs (`start_unattended_batch`), fail-closed on non-interactive sessions with plan digest binding, zero writes on decline/cancel, and full lineage verification.
+
+- [#61](https://github.com/dereknex/immune-brain/pull/61) [`df0c411`](https://github.com/dereknex/immune-brain/commit/df0c411555d4bd160b41f5f65c7fcecc7999fdd7) Thanks [@dereknex](https://github.com/dereknex)! - Add the Pi Host gate for unattended initiative batch runs and prove dual-host parity: the Pi extension now presents the Kernel-derived batch confirmation through its native TUI, issues the same Batch Authorization through the shared registry and `startBatch` driver, and a shared conformance test asserts both Hosts accept and refuse the identical batch identically.
+
+- [#61](https://github.com/dereknex/immune-brain/pull/61) [`3905728`](https://github.com/dereknex/immune-brain/commit/39057280fc26449a2d2d6101c5aacf25a4b76cd5) Thanks [@dereknex](https://github.com/dereknex)! - Document unattended batch runs as a declared capability and repair the regressions that surfaced with them: `imm-loop`'s contract now names the `start_unattended_batch` opt-in and its limits, `IMMUNE.md`/`CONTEXT.md` carry the Batch Authorization, batch plan, plan digest, HEAD lineage and batch branch vocabulary plus the sole batch-state owners, ADR 0005 records the reopened decision, and per-host session isolation, the Pi Enrollment boundary, post-freeze intent resolution, the settled-child resume scope and the checked-in Claude bundle are back in line.
+
+- [#62](https://github.com/dereknex/immune-brain/pull/62) [`a686673`](https://github.com/dereknex/immune-brain/commit/a68667385ec6c9322cd7eb5e6a3a341d327d91ec) Thanks [@dereknex](https://github.com/dereknex)! - Carry refuted Review findings as derived state with executable counterevidence: a Review rework finding now carries the reviewer's evidence and a Kernel-derived anchor, the new `refute_finding` operation is reachable from both Hosts and binds only a fresh passing QA attestation covering the finding's own acceptance, a re-submitted claim inherits the still-live refutation for its anchor instead of reopening as bare blocking work, and the refutation loses force — without rewriting stored state — as soon as its evidence goes stale for the current revision, intent hash or diff. The TaskRecord parse and append-only update invariants fail closed on anchor/evidence pairs that do not match, counterevidence no QA attestation backs, refuted user-decision or replan findings, and transitions that rewrite finding fields they do not own.
+
+- [`e75c5e8`](https://github.com/dereknex/immune-brain/commit/e75c5e859e7464d5042d4c269ebc2c04e02e3cbe) Thanks [@dereknex](https://github.com/dereknex)! - Reduce Immune-Brain interference with unrelated Skills by removing Managed workflow explanations from the repository agent instructions.
+
 ## 3.6.6
 
 ### Patch Changes
