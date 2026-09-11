@@ -42,7 +42,7 @@ function probeHost(env = process.env, platform = process.platform, hostVersion) 
 }
 
 // plugins/immune-brain/runtime/plugin_version.ts
-var PLUGIN_VERSION = "3.6.7";
+var PLUGIN_VERSION = "3.6.8";
 
 // plugins/immune-brain/runtime/claude/interaction.ts
 import { createHash, randomUUID } from "node:crypto";
