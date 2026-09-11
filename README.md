@@ -41,7 +41,7 @@ Pi and Claude Code are the supported hosts. Undeclared adapters remain unsupport
 
 ### In Pi
 
-Configure skills and extensions in `package.json` (or your global Pi configuration):
+Pi discovers Skills and extensions from `package.json` (or your global Pi configuration):
 
 ```json
 // package.json → pi.skills / pi.extensions
@@ -50,6 +50,8 @@ Configure skills and extensions in `package.json` (or your global Pi configurati
   "extensions": ["./plugins/immune-brain/.pi-extension"]
 }
 ```
+
+No extra server config is needed. Installing the package via Pi makes all 6 Skills available automatically.
 
 ### In Claude Code
 
@@ -319,7 +321,7 @@ npm publish --access public   # requires npm login / NPM_TOKEN
 # or
 bun run changeset:publish
 ```
-The package publishes to npm as `immune-brain` (current release `3.6.6`) with `publishConfig.access=public` already set. After the initial publish, all future releases go through changesets.
+The package publishes to npm as `immune-brain` (current release `3.6.7`) with `publishConfig.access=public` already set. After the initial publish, all future releases go through changesets.
 
 See `CHANGELOG.md` and `.changeset/config.json` (changelog: `@changesets/changelog-github`, repo: `dereknex/immune-brain`).
 

@@ -41,7 +41,7 @@ Pi 与 Claude Code 是支持的宿主。未声明的适配器仍不受支持。C
 
 ### 在 Pi 中使用
 
-在项目 `package.json`（或全局 Pi 配置）中声明 Skills 与扩展：
+Pi 通过 `package.json`（或全局 Pi 配置）自动发现 Skills 与扩展：
 
 ```json
 // package.json → pi.skills / pi.extensions
@@ -50,6 +50,8 @@ Pi 与 Claude Code 是支持的宿主。未声明的适配器仍不受支持。C
   "extensions": ["./plugins/immune-brain/.pi-extension"]
 }
 ```
+
+无需额外 server 配置，通过 Pi 安装本 package 后 6 个 Skill 即自动可用。
 
 ### 在 Claude Code 中使用
 
@@ -319,7 +321,7 @@ npm publish --access public   # 需 npm login / NPM_TOKEN
 # 或
 bun run changeset:publish
 ```
-包名为 `immune-brain`（当前版本 `3.6.6`），已配置 `publishConfig.access=public`。首次发布后，后续所有版本均通过 changesets 管理。
+包名为 `immune-brain`（当前版本 `3.6.7`），已配置 `publishConfig.access=public`。首次发布后，后续所有版本均通过 changesets 管理。
 
 详见 `CHANGELOG.md` 与 `.changeset/config.json`（changelog: `@changesets/changelog-github`，repo: `dereknex/immune-brain`）。
 

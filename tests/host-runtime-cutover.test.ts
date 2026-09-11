@@ -98,7 +98,7 @@ describe("host runtime cutover", () => {
 		expect(result.stderr).toMatch(/v3_storage_retired|drain_required/);
 	});
 
-	it("documents Pi CLI-only runtime fallback without leaking unavailable task tools", () => {
+	it("documents host runtime and Pi package installation without leaking unavailable task tools", () => {
 		const offenders: string[] = [];
 		for (const rel of PI_FACING_CONTRACTS) {
 			const content = readFileSync(resolve(REPO_ROOT, rel), "utf-8");
@@ -107,6 +107,7 @@ describe("host runtime cutover", () => {
 		expect(offenders).toEqual([]);
 
 		const readme = readFileSync(resolve(REPO_ROOT, "README.md"), "utf-8");
+		expect(readme).toContain("Pi and Claude Code are the supported hosts");
 		expect(readme).toContain(
 			"Pi discovers Skills and extensions from `package.json`",
 		);
