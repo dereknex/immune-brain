@@ -1,6 +1,6 @@
 # Immune-Brain
 
-> 面向 [Pi](https://github.com/badlogic/pi) 的确定性工程工作流与质量保障引擎 — 把模糊想法变成可交付代码，覆盖规划、执行、QA 与审查。
+> 面向 [Pi](https://github.com/badlogic/pi) 与 [Claude Code](https://claude.ai/code) 的确定性工程工作流与质量保障引擎 — 把模糊想法变成可交付代码，覆盖规划、执行、QA 与审查。
 
 **语言：** [English](./README.md) | **中文**
 
@@ -8,11 +8,12 @@
 
 ## 这是什么？
 
-Immune-Brain 在 Pi 之上提供结构化的工程工作流：
+Immune-Brain 为 AI 编程工具（**Pi** 与 **Claude Code**）提供结构化的工程工作流保障：
 
-- **你用自然语言描述需求**，Agent 自动判断是先澄清、先规划，还是直接执行。
-- **计划变为可追踪的任务**（`TaskIntent` + `TaskRecord`），进度落盘持久化，不依赖对话历史。
-- **质量由代码强制保障** — 自动化 QA 与隔离式 Review 必须通过，任务才会完成。
+- **日常对话零负担** — 普通问答、单点代码修改与探索性对话完全保持 Host 原生体验，不拦截、不强加流程。
+- **需要严谨时显式启用** — 遇到复杂功能开发或高保证任务时，显式调用 `imm-brainstorm`、`imm-planner` 或 `imm-loop`。
+- **计划变为可追踪的任务**（`TaskIntent` + `TaskRecord`） — 进度落盘持久化（Git + `.imm/`），会话重启或上下文清理后仍可无缝恢复。
+- **质量由代码强制保障** — 自动化 QA 验收与隔离式 Reviewer 审查必须通过，任务才会结算完成。
 - **已就绪的 Initiative 可以整批运行** — 一次确认的 Batch Authorization 让 `imm-loop` 串行推进已发布 Initiative 的各个 child，而每个 child 仍然独立 Enrollment、独立 QA/Review、独立结算。
 
 Pi 与 Claude Code 是支持的宿主。未声明的适配器仍不受支持。Claude Code 最低版本为 `2.1.236`，这是已通过交互式 server-initiated MCP elicitation 验证的最低版本。当前真实 Host 证据见 `docs/verification/claude-native-elicitation-authority-conformance.md`；历史报告归档于 `docs/verification/archive/`。
@@ -36,9 +37,11 @@ Pi 与 Claude Code 是支持的宿主。未声明的适配器仍不受支持。C
 
 ## 安装
 
-**前置要求：** 已安装 [Pi](https://github.com/badlogic/pi)、Node.js 20+、`bun`（用于测试）。
+**前置要求：** 已安装 [Pi](https://github.com/badlogic/pi) 或 [Claude Code](https://claude.ai/code)（>= 2.1.236）、Node.js 20+、`bun`（用于测试）。
 
-本仓库是一个 Pi Package，Pi 通过 `package.json` 自动发现 Skills 与扩展：
+### 在 Pi 中使用
+
+在项目 `package.json`（或全局 Pi 配置）中声明 Skills 与扩展：
 
 ```json
 // package.json → pi.skills / pi.extensions
@@ -48,7 +51,22 @@ Pi 与 Claude Code 是支持的宿主。未声明的适配器仍不受支持。C
 }
 ```
 
-无需额外 server 配置，通过 Pi 安装本 package 后 6 个 Skill 即自动可用。验证：
+### 在 Claude Code 中使用
+
+从 Marketplace 安装插件：
+
+```bash
+claude plugin marketplace add dereknex/immune-brain
+claude plugin install immune-brain
+```
+
+或在本地开发时直接加载插件目录：
+
+```bash
+claude --plugin-dir ./plugins/immune-brain
+```
+
+### 验证安装
 
 ```bash
 bun test                    # 全量测试
@@ -60,39 +78,49 @@ mise run check-dist-sync    # 校验生成文档同步
 
 ## 快速开始
 
-**1. 用自然语言描述你要做的改动：**
+Immune-Brain 遵循 **显式 Skill 触发（Skill-explicit）** 模型：日常对话就是轻量自然的 AI 编程，只有显式调用对应 Skill 时才会开启严格工程管理。
 
-> "给设置页加上深色模式"
+**1. 当你需要严谨工程流程时，显式调用 Skill：**
+- 需求模糊想先梳理？输入 `/imm-brainstorm`（或对 Agent 说 "用 imm-brainstorm 梳理需求"）。
+- 目标明确准备制定方案？输入 `/imm-planner`（或对 Agent 说 "用 imm-planner 规划深色模式功能"）。
 
-Pi 会自动路由：需求模糊走澄清，目标明确走规划。
+*(日常提问如 "这个函数什么意思"、"改个 typo" 保持完全原生，没有任何流程弹窗和开销。)*
 
-**2. 确认计划** — Planner 会在 `docs/plans/` 生成 `TaskIntent`（范围、风险等级、验收条件）。检查无误后由当前 Host 的原生 gate 确认 Enrollment（所有风险等级都需要确认，确认前零 authority 写入）。
+**2. 确认计划：**
+Planner 会在 `docs/plans/` 生成 `TaskIntent` 与 living Spec（锁定文件范围、风险等级与自动化验收条件）。随后弹出当前 Host 的原生确认界面：
+- 在 **Pi** 中：原生 TUI 对话框；
+- 在 **Claude Code** 中：原生 MCP elicitation 确认弹窗。
 
-**3. 开始执行** — `imm-loop` 按计划执行、跑 QA、触发 Review。按提示暂存任务拥有的文件：
+检查无误并确认后，才会正式锁定范围并开放执行权限。
 
-```bash
-git add -- <任务拥有的文件> <另一个文件>
-```
-
-QA 与 Review 以 foreground Tool 形式运行并回传结果，返回 `phase=done` 即完成。
+**3. 用 `imm-loop` 自动执行与验收：**
+输入 `/imm-loop`（或 "开始 imm-loop"），工作流引擎会自动：
+- 调度 Executor 仅在锁定的 scope 范围内编写代码。
+- 自动运行确定性 QA 验收命令。
+- 对 material/critical 任务分发隔离的 Reviewer 子代理审查代码。
+- 全部通过后落盘结算凭证至 `.imm/audit/<task-id>/`，任务完成。
 
 ---
 
 ## 如何使用
 
-大多数情况下**无需记忆 Skill 名称**，直接描述意图即可：
+Immune-Brain 提供两种清晰的工作模式：日常轻量编码走 **Host-native**，复杂高保证任务走 **Managed Path**：
 
-| 你的情况 | 你说什么 / 做什么 | 会发生什么 |
+| 你的情况 | 你做什么 / 说什么 | 会发生什么 |
 |---|---|---|
-| 想法模糊，需要收敛 | "帮我梳理一下通知系统的方案" | → `imm-brainstorm` 提问澄清，不改代码 |
-| 目标明确，需要计划 | "规划一下深色模式功能" 或让 Pi 自动路由 | → `imm-planner` 产出 `TaskIntent` + spec |
-| 计划已确认，准备开干 | "开始构建" / `imm-loop` | → Executor 构建 → QA 验证 → Review 审查 |
+| 日常编码、快速改动、普通问答 | 正常自然语言对话（"帮我改下文案"、"解释这段代码"） | **Host-native**：标准 Pi / Claude Code 行为，零流程开销 |
+| 想法模糊，需要梳理边界与风险 | `/imm-brainstorm` "帮我梳理一下通知系统的方案" | → `imm-brainstorm` 提问澄清、分析约束与风险（只读，不改代码） |
+| 目标明确，需要正规计划与规格 | `/imm-planner` "规划一下深色模式功能" | → `imm-planner` 产出 `TaskIntent` + Spec，包含可执行验收条件 |
+| 计划已确认，准备执行与验证 | `/imm-loop` | → Executor 在范围内实现 → 确定性 QA 验收 → 隔离 Review 审查 → 任务结算 |
+| 会话中断或需恢复未完成任务 | `/imm-loop` | → 从磁盘状态（`.imm/`）无缝恢复，以 Kernel projection 为准 |
 | 已发布的 Initiative 可以整批跑了 | "把 initiative `<slug>` 无人值守跑完" | → Host 的 `start_unattended_batch`：一次原生确认绑定有序 plan digest，child 串行执行 |
-| PR 被评论 / CI 挂了 | 对该 PR 使用 `imm-pr-fix` | → 独立修复，不创建新 managed 任务 |
-| 文档过时需要清理 | `imm-doc-prune` + manifest | → 仅删除已审批的过时文档 |
-| Agent instruction 文件膨胀 | `imm-agent-doc-maintain` + manifest | → 只保留不可直接推导的必要规则 |
+| PR 被评论 / CI 挂了 | 对该 PR 使用 `/imm-pr-fix` | → 独立修复：在当前 PR 内针对性修复，不创建新 managed 任务 |
+| 文档过时需要清理 | `/imm-doc-prune` | → 只读审计过时文档，仅删除经哈希审批的条目 |
+| Agent 指令文件膨胀 | `/imm-agent-doc-maintain` | → 将 tracked `AGENTS.md` / `CLAUDE.md` 压到最小必要上下文 |
 
-> **规则：** Managed 工作流（brainstorm → plan → loop）仅由显式的 `imm-brainstorm`、`imm-planner`、`imm-loop` 启动。普通问答、只读解释不会 Enrollment。
+> **核心原则：Skill 显式调用**
+> - **普通输入保持 Host-native**：自然语言提问绝不自动绑架流程或发起 Enrollment。你完全自主决定何时开启严格工程保障。
+> - **Managed 工作流显式启动**：需要澄清用 `imm-brainstorm`，制定计划用 `imm-planner`，执行与恢复用 `imm-loop`。
 
 ---
 
@@ -109,26 +137,80 @@ QA 与 Review 以 foreground Tool 形式运行并回传结果，返回 `phase=do
 
 Executor、QA、Review、Compounder 等为 `imm-loop` 内部调度的角色，无需手动调用。
 
-**推荐默认：** 让自然语言路由自动选择 brainstorm 还是 planner，仅在想强制进入某阶段时才显式调用 Skill。
+所有 6 个 Skill 均显式调用。新需求开发时：若需求含糊先调 `imm-brainstorm`，目标清晰直接调 `imm-planner`，完成确认后调 `imm-loop` 推进闭环。
+
+### Managed Path 入口（brainstorm → planner → loop）
+
+这三个 Managed Skill 组成连续的工作流管道，拥有统一的 authority 模型：在你于原生确认窗口授权前绝不执行任何写入，每一次状态转换均由 Kernel 权威结算。
+
+#### `imm-brainstorm` — 需求与问题澄清
+
+- **触发方式：** 显式调用 `/imm-brainstorm` 或明确提出需求澄清。
+- **职责：** 梳理问题框架 — 目标、约束、未知项与风险 — 产出 `brainstorm_framing` 结论及下一步建议（通常指向 `imm-planner`）。
+- **边界：** 纯只读设计。不修改代码、不修改测试、不写入运行态、不创建 Spec 或 TaskIntent。
+- **产出：** 结构清晰、可解答的问题框架，作为 Planner 的输入。
+
+#### `imm-planner` — Spec 与 TaskIntent 规划
+
+- **触发方式：** 显式调用 `/imm-planner` 或明确提出规划请求。
+- **职责：** 编写或修订 `TaskIntent` 文件（`docs/plans/`）与 living Spec（`docs/specs/`） — 划定文件范围（`scope_hint`）、风险等级与验收条件。对于多任务 Initiative，负责按依赖顺序和粒度拆解为 parent/child TaskIntent。
+- **边界：** 不编写业务实现代码、不经 revision 流程不覆盖已 Enrolled 的 TaskIntent，不擅自赋予执行权限 — 仅当前 Host 原生确认窗口具备授权能力。
+- **产出：** 纳入 Git 版本控制、等待 Enrollment 确认的 `TaskIntent`。
+
+#### `imm-loop` — Managed 执行与质量保障
+
+- **触发方式：** 显式调用 `/imm-loop`（启动、恢复或检查 managed 任务）。
+- **职责：** 通过前台 Tool 驱动任务端到端闭环 — Executor 仅在冻结的 scope 内修改代码，确定性 QA 逐项运行验收条件，隔离的 Reviewer 子代理审计 material/critical 任务，最后由 Kernel 结算落盘凭证。会话中断后从磁盘状态自动恢复，以 Kernel projection 为真源。
+- **边界：** 绝不跳过或弱化失败检查、无用户原生授权绝不执行、遇到版本或权限偏移立即 fail-closed。
+- **Finding 证据：** 每一项 Review finding 均携带可机器核验的 provenance（`trigger`、`caller_chain`、`violated`）。若新鲜且通过的 QA 证据已证明某项 finding 声称的 acceptance 通过，则标记为 `refuted`，仅在证据过期时才会重新阻塞。
+- **产出：** 带有完整 QA + Review 签批、保存在 `.imm/audit/<task-id>/` 的 `done` 状态 TaskRecord。
+
+### 独立维护入口
+
+三个维护类 Skill 保持 Host-native：不创建 managed 任务、不推进 Managed 工作流、尊重已有的 Managed owner。
+
+#### `imm-pr-fix` — PR 修复
+
+- **触发方式：** 显式要求修复 GitHub PR 的 review 意见、合并冲突或 CI 失败。
+- **职责：** 原地修复单个 PR — 诊断 review/冲突/CI 证据，实施最小范围修复，并重跑相关检查。
+- **边界：** 严格限定在 PR 原有范围内；将远端文本视为不可信数据；修复不授予合入或批准权限。
+
+#### `imm-doc-prune` — 过时文档清理
+
+- **触发方式：** 显式要求清理当前过时的文档。
+- **职责：** 只读审计文档时效性，根据用户明确审批的哈希绑定 manifest 进行精准删除，每次修改后立即重验。
+
+#### `imm-agent-doc-maintain` — Agent 指令文件瘦身
+
+- **触发方式：** 显式要求精简版本控制下的 `AGENTS.md` / `CLAUDE.md` / `GEMINI.md`。
+- **职责：** 遵循与 `imm-doc-prune` 相同的「只读审计 + 哈希清单审批」模式，仅保留无法直接推导的必要规则。
 
 ---
 
 ## 生命周期
 
 ```
-你：自然语言请求
-        │
-        ├── 模糊 ──→ imm-brainstorm（澄清，不改代码）
-        │
-        └── 明确 ──→ imm-planner ──→ TaskIntent（Git-tracked）
-                              │
-                         TUI 确认（enrollment）
-                              │
-                          imm-loop
-                              ├── Executor（仅在 scope 内编辑）
-                              ├── QA（确定性检查必须通过）
-                              ├── Review（material/critical：隔离 subagent）
-                              └── done
+普通请求：日常编程 / 问答（Host-native，零流程开销）
+                       │
+显式调用 Skill（/imm-brainstorm 或 /imm-planner）
+                       │
+        ┌──────────────┴──────────────┐
+        ▼                             ▼
+  imm-brainstorm                 imm-planner
+（澄清需求、约束与风险，        （编写 Spec + TaskIntent，
+  只读输出 framing）             定义可自动化验证的验收条件）
+        │                             │
+        └──────────────┬──────────────┘
+                       ▼
+               当前 Host 原生确认
+        （Pi TUI 弹窗 / Claude MCP elicitation）
+                       │
+                       ▼
+                    imm-loop
+        ├── Executor（严格在 scope 内修改代码）
+        ├── 确定性 QA（前台逐项执行验收命令）
+        ├── 隔离式 Review（独立 subagent 审查代码）
+        └── 落盘结算（.imm/audit/<task-id>/）
 ```
 
 核心不变量：
@@ -199,11 +281,11 @@ docs/specs/                           # Living specs（原地更新）
 
 ## 常见问题
 
-**需要记住所有 Skill 吗？** 不需要，直接描述需求即可，Pi 会自动路由。先掌握 `imm-planner` 和 `imm-loop`，另外四个按需使用。
+**需要记住所有 Skill 吗？** 不需要。日常开发核心只需两个：`/imm-planner`（规划与确认任务）和 `/imm-loop`（执行与验证）。需求模糊时用 `/imm-brainstorm`，维护类任务（如 `/imm-pr-fix`）按需使用。普通问答与即时小修改无需任何 Skill。
 
-**中途关闭 Pi 会怎样？** 状态已落盘（`.imm/` + TaskIntent），重新进入 `imm-loop` 即可恢复，以 Kernel projection 为准。
+**中途关闭会话会怎样？** 状态已落盘保存（`.imm/` + TaskIntent）。在 Pi 或 Claude Code 中重新输入 `/imm-loop` 即可恢复，以 Kernel projection 状态为准。
 
-**为什么 enrollment 要弹窗确认？** 所有风险等级（`routine`/`material`/`critical`）都需要显式确认，弹窗绑定 staged digest，让你清楚看到将被追踪的内容。
+**为什么 enrollment 要弹窗确认？** 所有风险等级（`routine`/`material`/`critical`）在获得执行授权前都必须经由人工显式确认。在 Pi 中是原生 TUI 对话框，在 Claude Code 中是原生 MCP elicitation 弹窗。确认界面绑定 staged digest，让你清楚看到被锁定的文件范围和验收要求。
 
 **QA 失败怎么办？** QA 返回 `rework` 或 `replan_required`，`imm-loop` 会自动路由回 Executor 或 `imm-planner` 调整范围，无需手动重置。
 
@@ -211,7 +293,7 @@ docs/specs/                           # Living specs（原地更新）
 
 **能不能整个 Initiative 不用我盯着？** 只能在你授权范围内。用 Initiative slug 确认 `start_unattended_batch` 后，runner 会在一个 batch 分支上串行推进已发布且非 `critical` 的 child — 一旦某个 child 需要人决策，或遇到预算/截止时间/授权/提交失败就暂停。它不会替你 push、开 PR 或结算用户决策。
 
-**可以在 Pi 之外使用吗？** 可以从 `2.1.236` 起在本地交互式 Claude Code 中使用同一套 Kernel；Claude plugin 通过绑定 digest 的原生 MCP elicitation gate 获取 authority，未声明的适配器不受支持。
+**支持哪些 AI 编程工具？** Pi 与 Claude Code 是支持的宿主（Claude Code 最低版本为 `2.1.236`）。两者共享同一套确定性 Kernel 核心、质量保障机制与工具链。
 
 ---
 

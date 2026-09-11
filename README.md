@@ -1,6 +1,6 @@
 # Immune-Brain
 
-> Deterministic workflow & quality engine for [Pi](https://github.com/badlogic/pi) — turn vague ideas into shipped code with planning, execution, QA, and review.
+> Deterministic workflow & quality engine for [Pi](https://github.com/badlogic/pi) and [Claude Code](https://claude.ai/code) — turn vague ideas into shipped code with planning, execution, QA, and review.
 
 **Language:** **English** | [中文](./README.zh-CN.md)
 
@@ -8,12 +8,13 @@
 
 ## What Is This?
 
-Immune-Brain adds a structured engineering workflow on top of Pi:
+Immune-Brain brings a structured engineering workflow to AI coding assistants (**Pi** and **Claude Code**):
 
-- **You describe what you want** in natural language — the agent figures out whether to clarify, plan, or execute.
-- **Plans become trackable tasks** (`TaskIntent` + `TaskRecord`) so progress survives across sessions, not just chat history.
-- **Quality is enforced by code, not promises** — automated QA and isolated review must pass before a task is marked done.
-- **Ready Initiatives can run as a batch** — one confirmed batch authorization lets `imm-loop` work through a published Initiative's children serially, while every child is still enrolled, QA'd, reviewed, and settled on its own.
+- **Zero overhead for normal chat & coding** — Ordinary questions, quick edits, and exploratory chat stay 100% host-native. Immune-Brain never interrupts normal conversation.
+- **Explicit trigger when rigor matters** — When you want engineering discipline, invoke `imm-brainstorm`, `imm-planner`, or `imm-loop`.
+- **Plans become trackable tasks** (`TaskIntent` + `TaskRecord`) — Progress lives on disk (Git + `.imm/`), surviving restarts and context wipes.
+- **Quality is enforced by code, not promises** — Automated QA and isolated review subagents must pass before a task can complete.
+- **Ready Initiatives can run as a batch** — One confirmed batch authorization lets `imm-loop` work through a published Initiative's children serially, while every child is still enrolled, QA'd, reviewed, and settled on its own.
 
 Pi and Claude Code are the supported hosts. Undeclared adapters remain unsupported. Minimum Claude Code is `2.1.236`, the lowest version verified with interactive server-initiated MCP elicitation. Current real-Host evidence is recorded in [Claude native elicitation conformance](docs/verification/claude-native-elicitation-authority-conformance.md); historical reports remain under [docs/verification/archive/](docs/verification/archive/). Either host can use the model provider you configure — Immune-Brain works on top of Kernel authority, not a vendor chat.
 
@@ -36,9 +37,11 @@ Pi and Claude Code are the supported hosts. Undeclared adapters remain unsupport
 
 ## Installation
 
-**Prerequisites:** [Pi](https://github.com/badlogic/pi) installed, Node.js 20+, `bun` for tests.
+**Prerequisites:** [Pi](https://github.com/badlogic/pi) or [Claude Code](https://claude.ai/code) (>= 2.1.236), Node.js 20+, `bun` for tests.
 
-This repo is a Pi package — Pi discovers Skills and extensions from `package.json`:
+### In Pi
+
+Configure skills and extensions in `package.json` (or your global Pi configuration):
 
 ```json
 // package.json → pi.skills / pi.extensions
@@ -48,7 +51,22 @@ This repo is a Pi package — Pi discovers Skills and extensions from `package.j
 }
 ```
 
-No extra server config is needed. Installing the package via Pi makes all 6 Skills available automatically. Verify with:
+### In Claude Code
+
+Add the plugin from the marketplace:
+
+```bash
+claude plugin marketplace add dereknex/immune-brain
+claude plugin install immune-brain
+```
+
+Or load the local directory directly:
+
+```bash
+claude --plugin-dir ./plugins/immune-brain
+```
+
+### Verification
 
 ```bash
 bun test                          # run all tests
@@ -60,39 +78,49 @@ mise run check-dist-sync           # verify generated docs are in sync
 
 ## Quick Start
 
-**1. Describe the change you want** — just talk to Pi in natural language:
+Immune-Brain follows a **Skill-explicit** model: ordinary conversation is just standard, lightweight AI coding. The managed workflow activates **only when you explicitly invoke a skill**.
 
-> "Add dark mode to the settings page"
+**1. Call a skill when you need structured engineering**:
+- Fuzzy idea that needs scoping? Run `/imm-brainstorm` (or ask the agent to use `imm-brainstorm`).
+- Ready to design and build? Run `/imm-planner` (or ask the agent to use `imm-planner`).
 
-Pi routes it automatically: vague requests go to clarification, clear requests go to planning.
+*(Ordinary questions like "What does this function do?" or "Fix this typo" stay host-native — zero workflow ceremony.)*
 
-**2. Confirm the plan** — Planner writes a `TaskIntent` (scope, risk, acceptance checks). Review it, then confirm enrollment in the TUI dialog (required for all risk levels). No writes happen before you confirm.
+**2. Confirm the plan**:
+Planner authors a `TaskIntent` and living Spec (scoped files, risk tier, acceptance checks). A native confirmation dialog opens directly:
+- In **Pi**: native TUI modal dialog.
+- In **Claude Code**: native MCP elicitation confirmation.
 
-**3. Let it run** — `imm-loop` executes the plan, runs QA, and triggers review. Stage your owned files when prompted:
+Review the scope and confirm enrollment. No code or authority writes happen before your explicit confirmation.
 
-```bash
-git add -- <file-owned-by-task> <another-file>
-```
-
-QA and review run as foreground tools and report back to the host. When the tool returns `phase=done`, the task is complete.
+**3. Run and verify with `imm-loop`**:
+Run `/imm-loop` (or say "Start imm-loop"). The engine will:
+- Dispatch an Executor to write code strictly within the frozen scope.
+- Run deterministic QA acceptance checks.
+- Dispatch an isolated Review subagent for material/critical changes.
+- Settle the completed proof into `.imm/audit/<task-id>/`.
 
 ---
 
 ## How to Use
 
-You rarely need to remember skill names — **just describe your intent**:
+Immune-Brain provides two clean modes: **Host-native** for daily coding, and **Managed Path** for structured, high-assurance tasks:
 
 | Your situation | What to say / do | What happens |
 |---|---|---|
-| Idea is fuzzy, needs scoping | "Help me think through a notification system" | → `imm-brainstorm` clarifies questions, no code changes |
-| Goal is clear, needs a plan | "Plan the dark-mode feature" or let Pi route there | → `imm-planner` writes `TaskIntent` + specs in `docs/plans/` |
-| Plan is approved, ready to build | "Start building" / `imm-loop` | → Executor builds, QA verifies, Review checks |
-| A published Initiative is ready to run | "Run initiative `<slug>` unattended" | → Host's `start_unattended_batch`: one native confirmation covers the ordered plan digest, children run serially |
-| PR needs fixes after review | `imm-pr-fix` on that PR | → Standalone repair, no new managed task |
-| Docs are stale after changes | `imm-doc-prune` with manifest | → Prunes only approved stale docs |
-| Agent instruction files are bloated | `imm-agent-doc-maintain` with manifest | → Keeps only necessary non-discoverable rules |
+| Daily coding, quick fix, general Q&A | Normal conversation ("Fix typo in README", "Explain this function") | **Host-native**: Standard Pi / Claude Code behavior. Zero workflow overhead. |
+| Fuzzy idea, needs scoping & risk analysis | `/imm-brainstorm` "Help me think through webhook support" | → `imm-brainstorm` frames requirements, constraints, and risks (read-only, no code edits) |
+| Clear goal, want formal plan & specs | `/imm-planner` "Plan the webhook feature" | → `imm-planner` writes `TaskIntent` + Specs with testable acceptance checks |
+| Plan confirmed, ready to build & verify | `/imm-loop` | → Executor builds within scope → deterministic QA verifies → isolated Review checks → task settles |
+| Session interrupted or resuming a task | `/imm-loop` | → Resumes existing task seamlessly from on-disk state (`.imm/`) |
+| Ready Initiative to run unattended | "Run initiative `<slug>` unattended" | → Host's `start_unattended_batch`: one native confirmation covers ordered plan digest, children run serially |
+| PR has review comments or failing CI | `/imm-pr-fix` on that PR | → Standalone repair: minimal scoped fix in place, no managed task created |
+| Project docs out of date | `/imm-doc-prune` | → Read-only audit; deletes only user-approved stale docs from manifest |
+| Agent instructions bloated | `/imm-agent-doc-maintain` | → Minimizes tracked `AGENTS.md` / `CLAUDE.md` to essential non-discoverable rules |
 
-> **Rule:** Managed work (brainstorm → plan → loop) starts only from explicit `imm-brainstorm`, `imm-planner`, or `imm-loop`. Ordinary Q&A or read-only requests stay host-native and never enroll a task.
+> **Core Principle: Skill-Explicit Entry**
+> - **Ordinary input stays host-native**: Natural language queries never automatically start planning or task enrollment. You choose when to turn on engineering rigor.
+> - **Managed work starts with explicit skills**: Use `imm-brainstorm` to clarify, `imm-planner` to plan, and `imm-loop` to execute and resume.
 
 ---
 
@@ -109,7 +137,7 @@ You rarely need to remember skill names — **just describe your intent**:
 
 Internal roles (Executor, QA, Review, Compounder) are dispatched by `imm-loop` — you never invoke them directly.
 
-**Recommended default:** let natural-language routing pick brainstorm vs. planner for you. Explicitly invoke a skill only when you want to force that phase.
+All 6 skills are invoked explicitly. For new features, start with `imm-brainstorm` (if requirements are uncertain) or `imm-planner` (if requirements are clear), then proceed to `imm-loop` once enrolled.
 
 ### Managed Path entries (brainstorm → planner → loop)
 
@@ -117,21 +145,21 @@ The three Managed skills form one continuous pipeline with a single authority mo
 
 #### `imm-brainstorm` — requirement clarification
 
-- **Trigger:** explicit `imm-brainstorm`, or a vague request Pi routes to clarification.
+- **Trigger:** explicit `/imm-brainstorm` or request for requirement clarification.
 - **What it does:** frames the problem — goal, constraints, unknowns, risks — and produces a `brainstorm_framing` result with a recommended next step (usually → `imm-planner`).
 - **What it never does:** read-only by design. No code, test, or runtime edits; no Spec, Plan, or workflow-state writes.
 - **Exit:** a framed, answerable problem statement you can hand to the Planner.
 
 #### `imm-planner` — Spec & TaskIntent planning
 
-- **Trigger:** explicit `imm-planner`, or a clear goal Pi routes to planning.
+- **Trigger:** explicit `/imm-planner` or request for Spec & TaskIntent planning.
 - **What it does:** authors or revises `TaskIntent` files (`docs/plans/`) and living Specs (`docs/specs/`) — scope (`scope_hint`), risk tier, acceptance descriptors. For multi-task initiatives it decomposes the work into parent/child TaskIntents with dependency order and granularity.
 - **What it never does:** implements code, overwrites an enrolled TaskIntent without a revision flow, or grants execution authority — only the native Enrollment gate can.
 - **Exit:** Git-tracked `TaskIntent` awaiting enrollment confirmation.
 
 #### `imm-loop` — managed execution & assurance
 
-- **Trigger:** explicit `imm-loop` (start, resume, or check a managed task).
+- **Trigger:** explicit `/imm-loop` (start, resume, or check a managed task).
 - **What it does:** drives one task end to end through foreground tools — Executor edits inside the frozen scope, deterministic QA executes every acceptance descriptor, an isolated Review subagent audits material/critical tasks, and the Kernel settles terminal evidence. Interrupted workflows resume from on-disk state; the Kernel projection is authoritative.
 - **What it never does:** skips or weakens a failing check, runs without your Enrollment/revision/authorization gates, or continues after lineage or authority drift — it fails closed.
 - **Finding evidence:** every Review finding carries machine-checkable provenance (`trigger`, `caller_chain`, `violated`). A claim that fresh passing QA evidence already contradicts is recorded as `refuted` and only blocks again if that evidence goes stale.
@@ -162,19 +190,27 @@ The three repair/maintenance skills are host-native: they never create a managed
 ## Lifecycle
 
 ```
-You: natural language request
-        │
-        ├─── vague ──→ imm-brainstorm (clarify, no edits)
-        │
-        └─── clear ──→ imm-planner ──→ TaskIntent (Git-tracked)
-                              │
-                         TUI confirm (enrollment)
-                              │
-                          imm-loop
-                              ├── Executor (edits inside scope)
-                              ├── QA (deterministic checks must pass)
-                              ├── Review (material/critical: isolated subagent)
-                              └── done
+Ordinary request: normal coding / Q&A (Host-native, zero overhead)
+                       │
+Explicit skill call (/imm-brainstorm or /imm-planner)
+                       │
+        ┌──────────────┴──────────────┐
+        ▼                             ▼
+  imm-brainstorm                 imm-planner
+(clarify requirements,         (author Spec + TaskIntent,
+  read-only framing)             define acceptance checks)
+        │                             │
+        └──────────────┬──────────────┘
+                       ▼
+            Native Host Confirmation
+        (Pi TUI dialog / Claude MCP elicitation)
+                       │
+                       ▼
+                    imm-loop
+        ├── Executor (edits strictly inside scope)
+        ├── Deterministic QA (runs all acceptance checks)
+        ├── Isolated Review (independent subagent audit)
+        └── Settled (.imm/audit/<task-id>/)
 ```
 
 Key invariants:
@@ -245,11 +281,11 @@ docs/specs/                           # Living specs (updated in place)
 
 ## FAQ
 
-**Do I need to learn all 6 skills?** No. Just describe what you want — Pi routes to the right skill. Learn `imm-planner` and `imm-loop` first; the other four are occasional.
+**Do I need to learn all 6 skills?** No. Most of the time you only need `/imm-planner` (to plan and enroll a task) and `/imm-loop` (to build and verify it). Use `imm-brainstorm` when requirements need clarifying first, and the maintenance skills (`imm-pr-fix`, etc.) only when specific repair needs arise. Ordinary chat and simple edits don't need any skills at all.
 
-**What if I interrupt or close Pi mid-task?** State is on disk (`.imm/` + TaskIntent). Re-enter `imm-loop` to resume — the Kernel projection is authoritative.
+**What if I interrupt or close the session mid-task?** State is safely stored on disk (`.imm/` + TaskIntent). In Pi or Claude Code, simply re-enter `/imm-loop` to resume — the Kernel projection is authoritative.
 
-**Why does enrollment show a TUI dialog?** All risk levels (`routine`/`material`/`critical`) require explicit confirmation. It binds the staged digest so you see exactly what will be tracked.
+**Why does enrollment show a confirmation dialog?** All risk levels (`routine`/`material`/`critical`) require explicit human confirmation before execution authority is granted. In Pi, this is a native TUI modal dialog; in Claude Code, it is a native MCP elicitation gate. It binds the staged digest so you see exactly what will be tracked.
 
 **QA failed — what now?** QA returns `rework` or `replan_required`. `imm-loop` routes back to the executor or to `imm-planner` for scope changes. No manual reset needed.
 
@@ -257,7 +293,7 @@ docs/specs/                           # Living specs (updated in place)
 
 **Can it run a whole Initiative without me?** Only as far as you authorize. Confirm `start_unattended_batch` with the Initiative slug and the runner works through the published, non-`critical` children serially on one batch branch — parking as soon as a child needs a human decision or the run hits a budget, deadline, authorization, or commit failure. It never pushes, opens PRs, or settles user decisions for you.
 
-**Can I use it outside Pi?** Yes. Local interactive Claude Code is supported from version `2.1.236`; its plugin uses a digest-bound native MCP elicitation gate for the same Kernel-backed workflow.
+**Which AI coding assistants are supported?** Pi and Claude Code are the supported hosts (Claude Code version >= `2.1.236`). Both hosts run on the exact same Kernel authority, assurance guarantees, and multi-skill pipeline.
 
 ---
 
