@@ -55,6 +55,8 @@ export interface TaskRailView {
 	recovery?: string;
 	/** Latest per-descriptor QA fact; rendered only while present. */
 	acceptance_progress?: TaskRailAcceptanceProgress;
+	/** Optional pipeline milestone progress indicator. */
+	pipeline?: boolean;
 }
 
 export interface TaskOverviewEntry {
@@ -144,7 +146,7 @@ export async function requestAuthorityDialog<T extends string, R = T | undefined
 					finish = done;
 					if (settled || options.signal?.aborted) done(undefined);
 					let expanded = false;
-					const detailText = new Text(theme.fg("muted", "Details collapsed; press d to expand."), 1, 0);
+					const detailText = new Text(theme.fg("muted", "▸ Details collapsed; press d to expand."), 1, 0);
 					const selectList = new SelectList(
 						options.actions.map((action): SelectItem => ({ ...action })),
 						options.actions.length,
@@ -158,13 +160,27 @@ export async function requestAuthorityDialog<T extends string, R = T | undefined
 					);
 					selectList.onSelect = (item) => complete(item.value as T);
 					selectList.onCancel = () => complete(undefined);
+
+					const affirmativeAction = options.actions.find((a) =>
+						["confirm", "authorize", "yes", "accept"].includes(a.value.toLowerCase()),
+					);
+					const negativeAction = options.actions.find((a) =>
+						["cancel", "decline", "no", "reject"].includes(a.value.toLowerCase()),
+					);
+
+					const affKey = affirmativeAction ? "y/enter" : "enter";
+					const negKey = negativeAction ? "n/esc" : "esc";
+					const affLabel = affirmativeAction ? affirmativeAction.value : "choose";
+					const negLabel = negativeAction ? negativeAction.value : "cancel";
+					const hintLine = `d: details | ${affKey}: ${affLabel} | ${negKey}: ${negLabel}`;
+
 					const container = new Container();
 					container.addChild(new DynamicBorder((text: string) => theme.fg("accent", text)));
 					container.addChild(new Text(theme.fg("accent", theme.bold(options.title)), 1, 0));
-					container.addChild(new Text(options.summary, 1, 0));
+					container.addChild(new Text(formatDialogSummary(options.summary, theme), 1, 0));
 					container.addChild(detailText);
 					container.addChild(selectList);
-					container.addChild(new Text(theme.fg("dim", "d: toggle details | enter: choose | esc: cancel"), 1, 0));
+					container.addChild(new Text(theme.fg("dim", hintLine), 1, 0));
 					container.addChild(new DynamicBorder((text: string) => theme.fg("accent", text)));
 					return {
 						render: (width) => container.render(width),
@@ -172,8 +188,18 @@ export async function requestAuthorityDialog<T extends string, R = T | undefined
 						handleInput: (data) => {
 							if (data === "d" || data === "D") {
 								expanded = !expanded;
-								detailText.setText(expanded ? options.details : theme.fg("muted", "Details collapsed; press d to expand."));
+								detailText.setText(expanded
+									? `${theme.fg("muted", "▾ Details:")}\n${options.details}`
+									: theme.fg("muted", "▸ Details collapsed; press d to expand."));
 								tui.requestRender();
+								return;
+							}
+							if ((data === "y" || data === "Y") && affirmativeAction) {
+								complete(affirmativeAction.value as T);
+								return;
+							}
+							if ((data === "n" || data === "N") && negativeAction) {
+								complete(negativeAction.value as T);
 								return;
 							}
 							selectList.handleInput(data);
@@ -372,6 +398,13 @@ export function renderStructuredResult(
 	];
 	const recovery = recoveryHint(details);
 	if (recovery) lines.push(`${theme.fg("muted", "Recovery:")} ${theme.fg("dim", recovery)}`);
+	const facts = record(details.facts) ?? record(details.execution_facts);
+	if (facts) {
+		const factParts = Object.entries(facts)
+			.map(([k, v]) => `${k}=${String(v)}`)
+			.join(" · ");
+		if (factParts) lines.push(`${theme.fg("muted", "Facts:")} ${theme.fg("dim", factParts)}`);
+	}
 	if (terminal && taskState) lines.push(...renderFinalLines(taskState, theme));
 	return new Text(lines.join("\n"), 0, 0);
 }
@@ -423,6 +456,9 @@ function renderTaskRail(view: TaskRailView, width = 120, theme?: Theme): string[
 	const lines = [
 		`Task ${boundedMiddle(view.task_id, taskIdWidth)} · ${stateFormatted}`,
 	];
+	if (view.pipeline) {
+		lines.push(`${label("Pipeline:")} ${renderPipelineMilestones(view.state, theme)}`);
+	}
 	if (view.phase) {
 		lines.push(`${label("Phase:")} ${body(bounded(view.phase, availableContentWidth))}`);
 	}
@@ -446,6 +482,69 @@ function renderTaskRail(view: TaskRailView, width = 120, theme?: Theme): string[
 	return lines;
 }
 
+export function renderPipelineMilestones(state: TaskRailState, theme?: Theme): string {
+	const milestones = [
+		{ name: "Plan", key: "plan" },
+		{ name: "Exec", key: "exec" },
+		{ name: "QA", key: "qa" },
+		{ name: "Review", key: "review" },
+	] as const;
+
+	type StepStatus = "done" | "active" | "pending" | "blocked" | "stopped";
+
+	let statuses: [StepStatus, StepStatus, StepStatus, StepStatus];
+	switch (state) {
+		case "Planning":
+			statuses = ["active", "pending", "pending", "pending"];
+			break;
+		case "Approval required":
+		case "Working":
+			statuses = ["done", "active", "pending", "pending"];
+			break;
+		case "Verifying":
+			statuses = ["done", "done", "active", "pending"];
+			break;
+		case "Reviewing":
+			statuses = ["done", "done", "done", "active"];
+			break;
+		case "Completed":
+			statuses = ["done", "done", "done", "done"];
+			break;
+		case "Blocked":
+			statuses = ["done", "blocked", "pending", "pending"];
+			break;
+		case "Stopped":
+			statuses = ["done", "stopped", "pending", "pending"];
+			break;
+		default:
+			statuses = ["pending", "pending", "pending", "pending"];
+	}
+
+	const renderStep = (name: string, status: StepStatus, index: number): string => {
+		const stepNum = index + 1;
+		if (!theme) {
+			const sym = status === "done" ? "✔" : status === "active" ? "●" : status === "blocked" ? "⚠" : status === "stopped" ? "■" : "○";
+			return `[${stepNum}.${name} ${sym}]`;
+		}
+		switch (status) {
+			case "done":
+				return `[${stepNum}.${name} ${theme.fg("success", "✔")}]`;
+			case "active":
+				return `[${stepNum}.${name} ${theme.fg("accent", "●")}]`;
+			case "blocked":
+				return `[${stepNum}.${name} ${theme.fg("warning", "⚠")}]`;
+			case "stopped":
+				return `[${stepNum}.${name} ${theme.fg("muted", "■")}]`;
+			case "pending":
+			default:
+				return `[${stepNum}.${name} ${theme.fg("dim", "○")}]`;
+		}
+	};
+
+	const sep = theme ? ` ${theme.fg("dim", "─")} ` : " ─ ";
+	return milestones.map((m, i) => renderStep(m.name, statuses[i], i)).join(sep);
+}
+
 export function renderTaskOverview(view: TaskOverviewView, width = 120, theme?: Theme): string[] {
 	const label = (text: string) => (theme ? theme.fg("muted", text) : text);
 	const head = (text: string) => (theme ? theme.fg("accent", theme.bold(text)) : text);
@@ -456,6 +555,7 @@ export function renderTaskOverview(view: TaskOverviewView, width = 120, theme?: 
 	}
 	if (view.active) {
 		lines.push(`${label("Active:")} ${formatTaskRailState(view.active.state, theme)} ${bounded(view.active.task_id, 60)}`);
+		lines.push(`${label("  Pipeline:")} ${renderPipelineMilestones(view.active.state, theme)}`);
 		lines.push(`${label("  Result:")} ${bounded(view.active.result, 100)}`);
 		lines.push(`${label("  Next:")} ${bounded(view.active.next, 100)}`);
 	} else {
@@ -501,13 +601,58 @@ function renderFinalLines(taskState: Record<string, unknown>, theme: Theme): str
 		+ strings(taskState.unresolved_user_decision_ids).length
 		+ strings(taskState.replan_required_ids).length;
 	const diffHash = string(taskState.diff_hash);
+	const divider = theme.fg("dim", "────────────────────────────────────────");
 	return [
+		divider,
+		theme.fg("accent", theme.bold("Final Settlement Summary")),
 		`${theme.fg("muted", "Acceptance:")} ${theme.fg(missing === 0 ? "success" : "warning", `${fresh}/${fresh + missing} fresh`)}`,
 		`${theme.fg("muted", "QA / Review:")} ${theme.fg("dim", approvals.length > 0 ? approvals.join(", ") : "not recorded")}`,
 		`${theme.fg("muted", "Residual blockers:")} ${theme.fg(blockers === 0 ? "dim" : "warning", String(blockers))}`,
 		`${theme.fg("muted", "Repository health:")} ${theme.fg("dim", "not assessed")}`,
 		`${theme.fg("muted", "Git:")} ${theme.fg("dim", diffHash ? `task diff ${diffHash.slice(0, 15)}` : "not reported")}`,
+		divider,
 	];
+}
+
+function formatDialogSummary(summary: string, theme: Theme): string {
+	const lines = summary.split("\n");
+	return lines.map((line) => {
+		const colonIdx = line.indexOf(":");
+		if (colonIdx === -1) return theme.fg("dim", line);
+		const key = line.slice(0, colonIdx).trim();
+		const value = line.slice(colonIdx + 1).trim();
+		let formattedValue = theme.fg("dim", value);
+		const lowerKey = key.toLowerCase();
+		if (lowerKey === "risk") {
+			const isHigh = /high|material|critical/i.test(value);
+			formattedValue = isHigh ? theme.fg("warning", theme.bold(value)) : theme.fg("accent", value);
+		} else if (lowerKey === "goal") {
+			formattedValue = theme.fg("accent", value);
+		} else if (lowerKey === "acceptance") {
+			formattedValue = theme.fg("success", value);
+		}
+		return `${theme.fg("muted", `${key}:`)} ${formattedValue}`;
+	}).join("\n");
+}
+
+export function boundedPath(path: string, max: number): string {
+	const width = visibleWidth(path);
+	if (width <= max) return path;
+	if (!path.includes("/")) return bounded(path, max);
+	const parts = path.split("/");
+	const fileName = parts.pop() ?? "";
+	const fileWidth = visibleWidth(fileName);
+	if (fileWidth + 2 >= max) {
+		return bounded(fileName, max);
+	}
+	const remaining = max - fileWidth - 3; // "…/"
+	let prefix = "";
+	for (const part of parts) {
+		const next = prefix ? `${prefix}/${part}` : part;
+		if (visibleWidth(next) > remaining) break;
+		prefix = next;
+	}
+	return prefix ? `${prefix}/…/${fileName}` : `…/${fileName}`;
 }
 
 function record(value: unknown): Record<string, unknown> | undefined {

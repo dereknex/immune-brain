@@ -27,6 +27,9 @@ import {
 	clearTerminalTaskRailOnInput,
 	presentTaskRail,
 	presentTaskRailResult,
+	renderPipelineMilestones,
+	boundedPath,
+	requestAuthorityDialog,
 } from "../plugins/immune-brain/.pi-extension/pi-canary-interaction";
 
 const TASK = "canary-ext-task";
@@ -1279,5 +1282,165 @@ async function capturedToolFailure(promise: Promise<unknown>): Promise<Record<st
 			expect(JSON.parse((await pending).content[0].text).state).toBe("cancelled");
 			expect(applyCount).toBe(0);
 		} finally { rmSync(root, { recursive: true, force: true }); }
+	});
+
+	test("interaction-layout: pipeline milestones accurately track workflow progression across states", () => {
+		const fakeTheme = { fg: (_color: string, text: string) => text, bold: (text: string) => text } as never;
+		// 1. Planning
+		const planMilestones = renderPipelineMilestones("Planning", fakeTheme);
+		expect(planMilestones).toContain("[1.Plan ●]");
+		expect(planMilestones).toContain("[2.Exec ○]");
+		expect(planMilestones).toContain("[3.QA ○]");
+		expect(planMilestones).toContain("[4.Review ○]");
+
+		// 2. Working
+		const workMilestones = renderPipelineMilestones("Working", fakeTheme);
+		expect(workMilestones).toContain("[1.Plan ✔]");
+		expect(workMilestones).toContain("[2.Exec ●]");
+		expect(workMilestones).toContain("[3.QA ○]");
+
+		// 3. Verifying
+		const qaMilestones = renderPipelineMilestones("Verifying", fakeTheme);
+		expect(qaMilestones).toContain("[1.Plan ✔]");
+		expect(qaMilestones).toContain("[2.Exec ✔]");
+		expect(qaMilestones).toContain("[3.QA ●]");
+		expect(qaMilestones).toContain("[4.Review ○]");
+
+		// 4. Reviewing
+		const reviewMilestones = renderPipelineMilestones("Reviewing", fakeTheme);
+		expect(reviewMilestones).toContain("[1.Plan ✔]");
+		expect(reviewMilestones).toContain("[2.Exec ✔]");
+		expect(reviewMilestones).toContain("[3.QA ✔]");
+		expect(reviewMilestones).toContain("[4.Review ●]");
+
+		// 5. Completed
+		const doneMilestones = renderPipelineMilestones("Completed", fakeTheme);
+		expect(doneMilestones).toContain("[1.Plan ✔]");
+		expect(doneMilestones).toContain("[2.Exec ✔]");
+		expect(doneMilestones).toContain("[3.QA ✔]");
+		expect(doneMilestones).toContain("[4.Review ✔]");
+
+		// 6. Blocked
+		const blockedMilestones = renderPipelineMilestones("Blocked", fakeTheme);
+		expect(blockedMilestones).toContain("[2.Exec ⚠]");
+
+		// 7. Stopped
+		const stoppedMilestones = renderPipelineMilestones("Stopped", fakeTheme);
+		expect(stoppedMilestones).toContain("[2.Exec ■]");
+	});
+
+	test("interaction-layout: task rail optionally displays pipeline row when requested", () => {
+		const fakeTheme = { fg: (_color: string, text: string) => text, bold: (text: string) => text } as never;
+		const ui = makeUI();
+		const ctx = makeCtx(process.cwd(), ui);
+		presentTaskRail(ctx, {
+			task_id: "pipeline-task",
+			state: "Working",
+			result: "Coding in progress",
+			next: "Run QA tests",
+			pipeline: true,
+		});
+		const widget = ui.widgetCalls.at(-1)?.content;
+		const lines = (widget as (tui: unknown, theme: unknown) => { render(width: number): string[] })({}, fakeTheme).render(120);
+		expect(lines[0]).toContain("Task pipeline-task · ● Working");
+		expect(lines[1]).toContain("Pipeline:");
+		expect(lines[1]).toContain("[1.Plan ✔]");
+		expect(lines[1]).toContain("[2.Exec ●]");
+		expect(lines[2]).toBe("Result: Coding in progress");
+		expect(lines[3]).toBe("Next: Run QA tests");
+	});
+
+	test("interaction-layout: boundedPath intelligently preserves filename and root components", () => {
+		// 1. Short path: returns verbatim
+		expect(boundedPath("src/index.ts", 30)).toBe("src/index.ts");
+
+		// 2. Long path with directory: preserves filename at end
+		const longPath = "plugins/immune-brain/.pi-extension/pi-canary-interaction.ts";
+		const truncated = boundedPath(longPath, 35);
+		expect(truncated).toContain("pi-canary-interaction.ts");
+		expect(truncated.endsWith("pi-canary-interaction.ts")).toBe(true);
+
+		// 3. Path without slash: falls back to regular bounded truncation
+		const noSlashTruncated = boundedPath("very_long_file_name_without_slashes.ts", 15);
+		expect(noSlashTruncated).toContain("very_long_file");
+		expect(noSlashTruncated).toContain("…");
+	});
+
+	test("interaction-layout: authority dialog supports single-key decisions (y/n) and formatted summary", async () => {
+		let chosenResult: string | undefined;
+		const fakePi = { events: { emit: () => true } };
+		const fakeCtx = {
+			ui: {
+				custom: async (factory: any) => {
+					let selected: string | undefined;
+					const component = factory(
+						{ requestRender: () => undefined },
+						{ fg: (_color: string, text: string) => text, bold: (text: string) => text },
+						{},
+						(res: string | undefined) => { selected = res; },
+					);
+					// Verify summary formatting includes key highlights
+					const rendered = component.render(120).join("\n");
+					expect(rendered).toContain("Risk: material");
+					expect(rendered).toContain("Goal: migrate layout");
+					expect(rendered).toContain("y/enter: confirm");
+					expect(rendered).toContain("n/esc: cancel");
+
+					// Test single-key 'y' selection
+					component.handleInput("y");
+					return selected;
+				},
+				notify: () => undefined,
+			},
+		};
+
+		const confirmed = await requestAuthorityDialog(
+			fakePi as any,
+			fakeCtx as any,
+			{ attention_id: "test-att", task_id: "test-task", reason: "enrollment" },
+			{
+				title: "Confirm Enrollment",
+				summary: "Task: test-task\nGoal: migrate layout\nRisk: material",
+				details: "Digest: sha256:1234",
+				actions: [
+					{ value: "confirm", label: "Confirm", description: "Proceed" },
+					{ value: "cancel", label: "Cancel", description: "Abort" },
+				],
+			},
+		);
+		expect(confirmed).toBe("confirm");
+
+		// Test single-key 'n' selection
+		const cancelCtx = {
+			ui: {
+				custom: async (factory: any) => {
+					let selected: string | undefined;
+					const component = factory(
+						{ requestRender: () => undefined },
+						{ fg: (_color: string, text: string) => text, bold: (text: string) => text },
+						{},
+						(res: string | undefined) => { selected = res; },
+					);
+					component.handleInput("n");
+					return selected;
+				},
+				notify: () => undefined,
+			},
+		};
+		const cancelled = await requestAuthorityDialog(
+			fakePi as any,
+			cancelCtx as any,
+			{ attention_id: "test-att-2", task_id: "test-task", reason: "enrollment" },
+			{
+				title: "Confirm Enrollment",
+				summary: "Task: test-task\nGoal: migrate layout",
+				details: "Digest: sha256:1234",
+				actions: [
+					{ value: "confirm", label: "Confirm", description: "Proceed" },
+					{ value: "cancel", label: "Cancel", description: "Abort" },
+				],
+			},
+		);
+		expect(cancelled).toBe("cancel");
 	});
 });
