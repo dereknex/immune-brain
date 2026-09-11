@@ -4,11 +4,13 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { deriveAssuranceAuthorization, projectAssurance } from "../plugins/immune-brain/runtime/kernel/assurance_projection";
+import { completionDecision } from "../plugins/immune-brain/runtime/kernel/completion";
 import { enrollCanaryTask } from "../plugins/immune-brain/runtime/kernel/enrollment";
 import { createEnrollmentAuthorityRegistry, type EnrollmentCapabilityBinding } from "../plugins/immune-brain/runtime/kernel/enrollment_authority";
 import { canonicalIntentHash } from "../plugins/immune-brain/runtime/kernel/intent";
 import * as kernelIndex from "../plugins/immune-brain/runtime/kernel/index";
 import { preparePiCanary } from "../plugins/immune-brain/runtime/kernel/pi_canary_prepare";
+import { anchorForEvidence } from "../plugins/immune-brain/runtime/kernel/refutation";
 import { revisionForContent } from "../plugins/immune-brain/runtime/kernel/storage";
 import { taskDiffIdentity } from "../plugins/immune-brain/runtime/workspace_scope";
 
@@ -267,6 +269,54 @@ describe("kernel assurance projection v3", () => {
 			expect(projection.unresolved_user_decision_ids).toEqual(["decision-1"]);
 			expect(projection.replan_required_ids).toEqual(["replan-1"]);
 			expect(projection.next_obligation).toBe("resolve_user_decision");
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
+	test("a refuted finding blocks again once its counterevidence goes stale", async () => {
+		const root = makeEnrolledRoot();
+		try {
+			freezeRecord(root);
+			seedAttestation(root, "qa", { id: "qa-live" });
+			const refutedEvidence = {
+				trigger: "the claim's call chain was exercised by the descriptor",
+				caller_chain: ["runtime/kernel/completion.ts"],
+				violated: { kind: "acceptance", ref: "A1" },
+			};
+			mutateRecord(root, (record) =>
+				record.findings.push({
+					id: "refuted-1",
+					kind: "blocking",
+					status: "refuted",
+					acceptance_id: "A1",
+					source: "review",
+					review_round: 1,
+					summary: "already refuted with executable evidence",
+					anchor: anchorForEvidence(refutedEvidence as never),
+					evidence: refutedEvidence,
+					counterevidence: { attestation_id: "qa-live", acceptance_id: "A1" },
+				}),
+			);
+			// A live refutation neither blocks completion nor appears in the
+			// blocking set; inferred liveness comes from the fresh attestation.
+			let projection = (await projectAssurance(root, TASK, diffOf)).projection;
+			expect(projection.blocking_finding_ids).toEqual([]);
+			expect(projection.next_obligation).toBe("run_review");
+			// The caller's current intent hash is part of the same identity
+			// `freshAttestations` filters on: a drifted on-disk intent puts the
+			// bound attestation outside that set and revives the gate.
+			const record = JSON.parse(readFileSync(join(root, ".imm", "state", "tasks", `${TASK}.json`), "utf8"));
+			const drifted = completionDecision(record.intent_snapshot, record, diffOf(root).diff_hash, `sha256:${"f".repeat(64)}`);
+			expect(drifted.blocking_finding_ids).toEqual(["refuted-1"]);
+			// A changed diff identity leaves the bound attestation stale, so the
+			// derived refutation loses force and the finding blocks again.
+			writeFileSync(join(root, "plugins", "immune-brain", ".pi-extension", "owned.ts"), "changed\n");
+			execFileSync("git", ["add", "-A"], { cwd: root });
+			projection = (await projectAssurance(root, TASK, diffOf)).projection;
+			expect(projection.blocking_finding_ids).toEqual(["refuted-1"]);
+			expect(projection.stale_attestation_ids).toEqual(["qa-live"]);
+			expect(projection.next_obligation).toBe("resolve_findings");
 		} finally {
 			rmSync(root, { recursive: true, force: true });
 		}

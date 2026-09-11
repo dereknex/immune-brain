@@ -233,6 +233,30 @@ describe("canary application v3 semantic operations", () => {
 		expect(resolved.record.findings[0].status).toBe("resolved");
 	});
 
+	test("refute_finding maps a closed operation that requires fresh passing QA evidence", () => {
+		execute({
+			op: "record_finding",
+			finding: { id: "f-1", kind: "advisory", acceptance_id: "A1", summary: "note" },
+			actor_id: "executor-1",
+		});
+		expect(() =>
+			execute(
+				{ op: "refute_finding", finding_id: "f-1", attestation_id: "ap-qa", actor_id: "executor-1" },
+				"2026-08-12T10:00:02.000Z",
+			),
+		).toThrow(KernelInvariantError);
+		freeze();
+		qaApproval();
+		const refuted = execute(
+			{ op: "refute_finding", finding_id: "f-1", attestation_id: "ap-qa", actor_id: "executor-1" },
+			"2026-08-12T10:00:02.000Z",
+		);
+		expect(refuted.record.findings[0]).toMatchObject({
+			status: "refuted",
+			counterevidence: { attestation_id: "ap-qa", acceptance_id: "A1" },
+		});
+	});
+
 	test("draining retains same-task ordinary mutation authority", () => {
 		const action = { type: "stop", event_id: `begin_drain:${TASK}:${now}`, at: now, actor_id: "user", reason: "begin_drain" };
 		const capability = createMutationAuthorityCapabilityForTest(registry, {

@@ -4,6 +4,7 @@ import { execFileSync, spawnSync } from "node:child_process";
 import { join } from "node:path";
 import {
 	AssuranceCoordinator,
+	reviewReworkFindings,
 	type AssuranceCoordinatorPorts,
 	type AssuranceSubmitReviewResult,
 	type AssuranceVerdict,
@@ -12,7 +13,6 @@ import {
 } from "../assurance/coordinator";
 import {
 	assertRunnerCompatible,
-	findingsDigest,
 	resolveBunRunner,
 	type FrozenRunner,
 	type VerificationDescriptor,
@@ -25,7 +25,8 @@ import {
 } from "../assurance/review_evidence";
 import { parseVerificationDescriptor } from "../verification_descriptor";
 import { projectAssurance, type AssuranceProjection, type AssuranceProjectionResult } from "../kernel/assurance_projection";
-import { isTaskRecordV4, type TaskApprovalV2, type TaskRecord } from "../kernel/types";
+import { isTaskRecordV4, type TaskApprovalV2, type TaskFinding, type TaskRecord } from "../kernel/types";
+import { findingsDigestV2 } from "../kernel/reducer";
 import { readAuditTaskPair, readTaskRecord, readTaskRecordRaw } from "../kernel/storage";
 import { canonicalIntentHash, parseTaskIntentV1, readTaskIntent } from "../kernel/intent";
 import { capabilityActionFor, createCanaryApplication } from "../kernel/canary_application";
@@ -370,7 +371,7 @@ async function mintCapability(
 		confirmation_ref: input.confirmation_ref,
 		expires_at: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
 		findings_digest: input.action_kind === "request_rework"
-			? await findingsDigest((input.findings as Array<{ id: string; kind: string; acceptance_id: string | null; summary: string }>))
+			? findingsDigestV2(input.findings as TaskFinding[])
 			: null,
 	};
 	return registry.issue(binding);
@@ -667,6 +668,23 @@ export class ClaudeRuntime {
 		});
 	}
 
+	/**
+	 * Ordinary Kernel operation, not a privileged one: the actor cannot assert a
+	 * refutation, it can only bind a fresh passing QA attestation the Kernel
+	 * already validated. The reducer owns every precondition.
+	 */
+	async refuteFinding(taskId: string, findingId: string, attestationId: string) {
+		return this.executeOrdinary({ cwd: this.cwd }, {
+			taskId,
+			operation: {
+				op: "refute_finding",
+				finding_id: findingId,
+				attestation_id: attestationId,
+				actor_id: "executor",
+			},
+		});
+	}
+
 	async authorize(taskId: string, operation: string, meta: ToolMeta, extra: Record<string, unknown> = {}) {
 		if (operation === "repair_authority_state") {
 			const authority = reconcileKernelAuthority(this.cwd, taskId);
@@ -852,15 +870,7 @@ export class ClaudeRuntime {
 			return result;
 		};
 		if (input.verdict.decision === "rework") {
-			const findings = input.verdict.findings!.map((finding) => ({
-				id: finding.id,
-				kind: finding.kind,
-				status: "open",
-				acceptance_id: finding.acceptance_id,
-				source: "review",
-				review_round: null,
-				summary: finding.summary,
-			}));
+			const findings = reviewReworkFindings(input.verdict);
 			const capability = await mintCapability(registry, {
 				authority_kind: input.snapshot.role,
 				task_id: input.taskId,
@@ -921,7 +931,7 @@ export class ClaudeRuntime {
 		}));
 	}
 
-	private async executeOrdinary(ctx: HostContext, input: { taskId: string; operation: { op: string; actor_id: string; next_intent?: unknown; finding_id?: string } }) {
+	private async executeOrdinary(ctx: HostContext, input: { taskId: string; operation: { op: string; actor_id: string; next_intent?: unknown; finding_id?: string; attestation_id?: string } }) {
 		const { app } = await this.authority();
 		const operation = input.operation.op === "revise_intent"
 			? { ...input.operation, next_intent: await parseTaskIntentV1(input.operation.next_intent) }

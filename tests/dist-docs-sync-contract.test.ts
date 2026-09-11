@@ -86,4 +86,13 @@ describe("dist/docs packaging sync contract", () => {
     }
     expect(offenders).toEqual([])
   })
+
+  it("packages the code-review role prompt with its finding evidence contract", () => {
+    const runtime = read(resolve(REPO_ROOT, "plugins/immune-brain/runtime/prompts/code-review.md"))
+    const packaged = read(resolve(REPO_ROOT, "plugins/immune-brain/dist/role-prompts/code-review.md"))
+    expect(packaged).toBe(runtime)
+    expect(runtime).toContain("caller_chain")
+    expect(runtime).toContain("violated")
+    expect(runtime).toContain("sha256")
+  })
 })

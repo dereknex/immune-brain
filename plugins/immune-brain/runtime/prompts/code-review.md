@@ -30,6 +30,14 @@ Return exactly one JSON object with the fields required by the Loop review
 contract: `contract`, `role`, `task_id`, `snapshot_digest`, `decision` (`pass`
 or `rework`), and for `pass` include `approval` (`kind`, `authority_role`,
 `summary`), for `rework` include `findings` (`id`, `kind`, `acceptance_id`,
-`summary`). Do not invent fields. A passing review has no findings. If the
+`summary`, `evidence`). Every rework finding's `evidence` must carry
+`trigger` (the concrete inputs or state that reach the defect), a non-empty
+`caller_chain` (ordered repository paths or symbols), and `violated`
+(`kind`: `acceptance` or `security_boundary`, `ref`: the acceptance id or
+boundary name). Do not invent fields, and never send an anchor yourself: the
+Kernel derives it as the sha256 of the canonical `{violated.kind,
+violated.ref, caller_chain}`, so an identical claim keeps one stable identity
+across review rounds while a different call chain is a different claim. A
+passing review has no findings. If the
 checkpoint is `awaiting_user_successor_decision`, stop without dispatch; only
 a literal user may invoke `--approve-successor`.

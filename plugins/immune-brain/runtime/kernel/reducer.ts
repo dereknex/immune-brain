@@ -4,6 +4,7 @@
 
 import { createHash } from "node:crypto";
 import { completionDecision } from "./completion";
+import { anchorForEvidence, isFreshPassingQaAttestation, refutationIdentity, refutationIsLive } from "./refutation";
 import {
 	REDUCED_MUTATION_BRAND,
 	TASK_RECORD_CONTRACT_V4,
@@ -193,13 +194,33 @@ function hasPrivilegedKind(action: TaskAction): boolean {
  * set and applied to another.
  */
 export function findingsDigestV2(findings: TaskFinding[]): string {
+	// Anchor and evidence are included only when the finding actually carries
+	// them, so a pre-extension findings set keeps its historical bytes while a
+	// capability minted over one anchor set cannot be spent on another.
 	const normalized = findings.map((finding) => ({
 		id: finding.id,
 		kind: finding.kind,
 		acceptance_id: finding.acceptance_id,
 		summary: finding.summary,
+		...(finding.anchor !== undefined ? { anchor: finding.anchor ?? null } : {}),
+		...(finding.evidence !== undefined ? { evidence: finding.evidence ?? null } : {}),
 	}));
 	return `sha256:${createHash("sha256").update(stableJson(normalized)).digest("hex")}`;
+}
+
+/**
+ * Two findings share an acceptance boundary when they name the same
+ * acceptance, or when neither does and their review evidence names the same
+ * violated reference. Null boundaries without comparable evidence are not
+ * shared, so a second-round finding can no longer park the task by accident.
+ */
+function sharesAcceptanceBoundary(left: TaskFinding, right: TaskFinding): boolean {
+	if (left.acceptance_id !== null && right.acceptance_id !== null)
+		return left.acceptance_id === right.acceptance_id;
+	if (left.acceptance_id !== null || right.acceptance_id !== null) return false;
+	const leftRef = left.evidence?.violated.ref ?? null;
+	const rightRef = right.evidence?.violated.ref ?? null;
+	return leftRef !== null && leftRef === rightRef;
 }
 
 export function reduceTask(
@@ -311,7 +332,78 @@ export function reduceTask(
 				throw new KernelInvariantError([
 					`finding ${action.finding_id} is already resolved`,
 				]);
+			// A live refutation already suppresses the finding, so resolving it
+			// would make that suppression permanent. Only a refutation whose bound
+			// evidence went stale may still be resolved.
+			if (
+				finding.status === "refuted" &&
+				refutationIsLive(
+					finding,
+					record.attestations,
+					refutationIdentity(record, action.diff_hash),
+				)
+			)
+				throw new KernelInvariantError([
+					`finding ${action.finding_id} is still refuted by live counterevidence`,
+				]);
 			finding.status = "resolved";
+			appendHistory(record, action, from, action.finding_id, authorityAudit);
+			break;
+		}
+		case "refute_finding": {
+			if (record.lifecycle !== "active")
+				throw new KernelInvariantError([
+					`cannot refute findings while lifecycle is ${record.lifecycle}`,
+				]);
+			const finding = record.findings.find(
+				(item) => item.id === action.finding_id,
+			);
+			if (!finding)
+				throw new KernelInvariantError([
+					`finding ${action.finding_id} does not exist`,
+				]);
+			if (finding.kind === "unresolved_user_decision" || finding.kind === "replan_required")
+				throw new KernelInvariantError([
+					"refute_finding cannot refute a user decision or replan boundary",
+				]);
+			if (finding.status === "resolved")
+				throw new KernelInvariantError([
+					`finding ${action.finding_id} is already resolved`,
+				]);
+			if (!finding.acceptance_id)
+				throw new KernelInvariantError([
+					"refute_finding requires a finding bound to an acceptance id",
+				]);
+			if (
+				finding.status === "refuted" &&
+				refutationIsLive(
+					finding,
+					record.attestations,
+					refutationIdentity(record, action.diff_hash),
+				)
+			)
+				throw new KernelInvariantError([
+					`finding ${action.finding_id} is already refuted by live counterevidence`,
+				]);
+			// The actor cannot assert a refutation; it can only bind a QA
+			// attestation the Kernel already validated as fresh and passing for
+			// this acceptance. A stale binding is rebindable with new evidence,
+			// which is how a refutation is renewed after a diff or intent change.
+			if (
+				!isFreshPassingQaAttestation(
+					record.attestations.find((item) => item.id === action.attestation_id),
+					finding.acceptance_id,
+					refutationIdentity(record, action.diff_hash),
+				)
+			)
+				throw new KernelInvariantError([
+					`refute_finding requires a fresh passing QA attestation covering ${finding.acceptance_id ?? "null"}`,
+				]);
+			finding.status = "refuted";
+			finding.counterevidence = {
+				attestation_id: action.attestation_id,
+				acceptance_id: finding.acceptance_id,
+			};
 			appendHistory(record, action, from, action.finding_id, authorityAudit);
 			break;
 		}
@@ -452,32 +544,94 @@ export function reduceTask(
 					"request_rework requires review, qa, or user authority",
 				]);
 			const round = reviewRound(record);
-			const hasPriorBlockingReviewRework = record.findings.some(
+			// An anchor is authority: it decides whether this claim inherits an
+			// existing refutation. The Kernel recomputes it from the finding's own
+			// evidence, so a caller cannot bind one claim's identity to another
+			// claim's provenance.
+			for (const finding of action.findings) {
+				const anchor = finding.anchor ?? null;
+				const evidence = finding.evidence ?? null;
+				if ((anchor === null) !== (evidence === null))
+					throw new KernelInvariantError([
+						`finding ${finding.id} must carry anchor and evidence together`,
+					]);
+				if (evidence && anchor !== anchorForEvidence(evidence))
+					throw new KernelInvariantError([
+						`finding ${finding.id} anchor must equal the digest of its evidence`,
+					]);
+				// Only a Review rework carries reviewer provenance; a QA or user
+				// rework that does would be a caller asserting review identity.
+				if (anchor !== null && authorityAudit.authority_kind !== "review")
+					throw new KernelInvariantError([
+						`${authorityAudit.authority_kind} rework cannot carry review provenance`,
+					]);
+			}
+			const identity = refutationIdentity(record, action.diff_hash);
+			// A prior finding that is still refuted by live evidence is not an
+			// outstanding dispute, so a new claim on its boundary is not a repeat
+			// offence. Once its evidence goes stale it blocks again and counts.
+			const priorBlockingReviewFindings = record.findings.filter(
 				(finding) =>
 					finding.source === "review" &&
 					finding.kind === "blocking" &&
-					finding.review_round !== null,
+					finding.review_round !== null &&
+					!(
+						finding.status === "refuted" &&
+						refutationIsLive(finding, record.attestations, identity)
+					),
 			);
+			// Anchor reconciliation: a new Review finding whose anchor matches a
+			// Review finding that is still live-refuted is admitted as refuted with
+			// the inherited counterevidence binding, for blocking and advisory
+			// claims alike. The claim's identity is the anchor, so the inherited
+			// binding keeps the acceptance its QA evidence was actually proved on.
+			// A refutation whose evidence went stale no longer suppresses anything,
+			// so the same claim is admitted as open and blocks again.
+			const admissions = action.findings.map((finding) => {
+				const inherited =
+					finding.anchor != null
+						? record.findings.find(
+								(prior) =>
+									prior.source === "review" &&
+									prior.status === "refuted" &&
+									prior.anchor === finding.anchor &&
+									refutationIsLive(prior, record.attestations, identity),
+							)
+						: undefined;
+				return { finding, inherited };
+			});
+			const disputed = admissions.find(
+				({ finding, inherited }) =>
+					finding.kind === "blocking" &&
+					inherited === undefined &&
+					priorBlockingReviewFindings.some((prior) =>
+						sharesAcceptanceBoundary(finding, prior),
+					),
+			)?.finding;
 			const parkForReplan =
-				authorityAudit.authority_kind === "review" &&
-				hasPriorBlockingReviewRework &&
-				action.findings.some((finding) => finding.kind === "blocking");
+				authorityAudit.authority_kind === "review" && disputed !== undefined;
 			if (!parkForReplan) {
 				record.artifact_state = "active";
 				record.intent_ref.path = `docs/plans/${record.task_id}.intent.json`;
 			}
 			const findingIds = new Set(record.findings.map((item) => item.id));
-			for (const finding of action.findings) {
+			for (const { finding, inherited } of admissions) {
 				if (findingIds.has(finding.id))
 					throw new KernelInvariantError([
 						`findings contains duplicate id ${finding.id}`,
 					]);
 				findingIds.add(finding.id);
 				record.findings.push({
-					...finding,
-					status: "open",
+					id: finding.id,
+					kind: finding.kind,
+					status: inherited ? "refuted" : "open",
+					acceptance_id: finding.acceptance_id,
 					source: authorityAudit.authority_kind === "review" ? "review" : "execution",
 					review_round: authorityAudit.authority_kind === "review" ? round : null,
+					summary: finding.summary,
+					...(finding.anchor !== undefined ? { anchor: finding.anchor } : {}),
+					...(finding.evidence !== undefined ? { evidence: finding.evidence } : {}),
+					counterevidence: inherited ? { ...inherited.counterevidence! } : null,
 				});
 			}
 			if (
@@ -486,9 +640,6 @@ export function reduceTask(
 					(item) => item.status === "open" && item.kind === "replan_required",
 				)
 			) {
-				const disputed =
-					action.findings.find((item: TaskFinding) => item.kind === "blocking") ??
-					action.findings[0];
 				const boundary = {
 					id: `${action.event_id}:replan-required`,
 					kind: "replan_required" as const,

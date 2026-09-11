@@ -9,6 +9,8 @@ import {
 	type ApprovalAuthorityRole,
 	type ApprovalKind,
 	type EvidenceStatus,
+	type FindingCounterevidence,
+	type FindingEvidence,
 	type FindingKind,
 	type FindingSource,
 	type FindingStatus,
@@ -28,6 +30,7 @@ import {
 	type TaskRecordV4,
 } from "./types";
 import { canonicalIntentHash, parseTaskIntentV1 } from "./intent";
+import { refutationIdentity, refutationIsLive, anchorForEvidence, isFreshPassingQaAttestation } from "./refutation";
 
 const GIT_OBJECT_ID = /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/;
 
@@ -157,7 +160,7 @@ const FINDING_KINDS: FindingKind[] = [
 	"unresolved_user_decision",
 	"replan_required",
 ];
-const FINDING_STATUSES: FindingStatus[] = ["open", "resolved"];
+const FINDING_STATUSES: FindingStatus[] = ["open", "resolved", "refuted"];
 const FINDING_SOURCES: FindingSource[] = [
 	"execution",
 	"review",
@@ -171,6 +174,56 @@ const APPROVAL_AUTHORITY_ROLES: ApprovalAuthorityRole[] = [
 	"user",
 ];
 
+function nullableAnchor(
+	value: unknown,
+	path: string,
+	violations: string[],
+): string | null {
+	if (value === null || value === undefined) return null;
+	return stringAt(value, path, violations);
+}
+
+function parseFindingEvidence(
+	value: unknown,
+	path: string,
+	violations: string[],
+): FindingEvidence | null {
+	if (value === null || value === undefined) return null;
+	const item = objectAt(value, path, violations);
+	rejectUnknown(item, ["trigger", "caller_chain", "violated"], path, violations);
+	const trigger = stringAt(item.trigger, `${path}.trigger`, violations);
+	const chain = arrayAt(item.caller_chain, `${path}.caller_chain`, violations);
+	if (chain.length === 0)
+		violations.push(`${path}.caller_chain must contain at least one entry`);
+	const caller_chain = chain.map((entry, index) =>
+		stringAt(entry, `${path}.caller_chain[${index}]`, violations),
+	);
+	const violatedRaw = objectAt(item.violated, `${path}.violated`, violations);
+	rejectUnknown(violatedRaw, ["kind", "ref"], `${path}.violated`, violations);
+	const kind = enumAt(
+		violatedRaw.kind,
+		["acceptance", "security_boundary"] as const,
+		`${path}.violated.kind`,
+		violations,
+	);
+	const ref = stringAt(violatedRaw.ref, `${path}.violated.ref`, violations);
+	return { trigger, caller_chain, violated: { kind, ref } };
+}
+
+function parseFindingCounterevidence(
+	value: unknown,
+	path: string,
+	violations: string[],
+): FindingCounterevidence | null {
+	if (value === null || value === undefined) return null;
+	const item = objectAt(value, path, violations);
+	rejectUnknown(item, ["attestation_id", "acceptance_id"], path, violations);
+	return {
+		attestation_id: stringAt(item.attestation_id, `${path}.attestation_id`, violations),
+		acceptance_id: stringAt(item.acceptance_id, `${path}.acceptance_id`, violations),
+	};
+}
+
 function parseFinding(
 	value: unknown,
 	index: number,
@@ -180,7 +233,18 @@ function parseFinding(
 	const item = objectAt(value, path, violations);
 	rejectUnknown(
 		item,
-		["id", "kind", "status", "acceptance_id", "source", "review_round", "summary"],
+		[
+			"id",
+			"kind",
+			"status",
+			"acceptance_id",
+			"source",
+			"review_round",
+			"summary",
+			"anchor",
+			"evidence",
+			"counterevidence",
+		],
 		path,
 		violations,
 	);
@@ -192,6 +256,21 @@ function parseFinding(
 		source: enumAt(item.source, FINDING_SOURCES, `${path}.source`, violations),
 		review_round: nullablePositiveInteger(item.review_round, `${path}.review_round`, violations),
 		summary: stringAt(item.summary, `${path}.summary`, violations),
+		...(item.anchor !== undefined
+			? { anchor: nullableAnchor(item.anchor, `${path}.anchor`, violations) }
+			: {}),
+		...(item.evidence !== undefined
+			? { evidence: parseFindingEvidence(item.evidence, `${path}.evidence`, violations) }
+			: {}),
+		...(item.counterevidence !== undefined
+			? {
+					counterevidence: parseFindingCounterevidence(
+						item.counterevidence,
+						`${path}.counterevidence`,
+						violations,
+					),
+				}
+			: {}),
 	};
 }
 
@@ -645,6 +724,55 @@ function parseTaskRecordAtVersion(raw: unknown, version: 3 | 4): TaskRecordV3 | 
 	uniqueIds(attestations, "record.attestations", violations);
 	uniqueIds(findings, "record.findings", violations);
 	uniqueIds(history, "record.history", violations);
+	// A persisted refutation is authority: it suppresses a blocking finding
+	// until its bound evidence goes stale. The record must therefore prove the
+	// binding is one the Kernel could have written, or a malformed record could
+	// suppress a finding with evidence for a different acceptance.
+	for (const [index, finding] of findings.entries()) {
+		const path = `record.findings[${index}]`;
+		if (finding.anchor != null && !SHA256_HEX.test(finding.anchor))
+			violations.push(`${path}.anchor must be sha256:<64 hex>`);
+		const anchor = finding.anchor ?? null;
+		const evidence = finding.evidence ?? null;
+		if ((anchor === null) !== (evidence === null))
+			violations.push(`${path} must carry anchor and evidence together`);
+		if (anchor !== null && evidence !== null && anchor !== anchorForEvidence(evidence))
+			violations.push(`${path}.anchor must equal the digest of its evidence`);
+		// A refuted user decision or replan boundary would hide the very gate
+		// those findings exist to hold; only review claims may be refuted.
+		if (
+			finding.status === "refuted" &&
+			(finding.kind === "unresolved_user_decision" || finding.kind === "replan_required")
+		)
+			violations.push(`${path} refuted requires a blocking or advisory finding`);
+		const counterevidence = finding.counterevidence ?? null;
+		if (finding.status === "refuted" && !counterevidence)
+			violations.push(`${path} status refuted requires counterevidence`);
+		if (!counterevidence) continue;
+		if (finding.status === "open")
+			violations.push(`${path} open finding cannot carry counterevidence`);
+		// The binding need not name the finding's own acceptance: an inherited
+		// refutation carries the QA evidence it was originally proved with. It
+		// must name an acceptance that evidence actually reports as passed, or
+		// the refutation would assert nothing.
+		const attestation = attestations.find(
+			(item) => item.id === counterevidence.attestation_id,
+		);
+		if (!attestation || attestation.kind !== "qa")
+			violations.push(
+				`${path}.counterevidence.attestation_id must reference a qa attestation`,
+			);
+		else if (
+			!attestation.acceptance_results.some(
+				(result) =>
+					result.acceptance_id === counterevidence.acceptance_id &&
+					result.status === "passed",
+			)
+		)
+			violations.push(
+				`${path}.counterevidence.acceptance_id must be an acceptance its attestation passed`,
+			);
+	}
 	if (violations.length > 0) throw new KernelValidationError(violations);
 	const record = {
 		contract: expectedContract,
@@ -729,6 +857,7 @@ export function assertKernelInvariantsV2(
 const ACTION_V2_TYPES = [
 	"record_finding",
 	"resolve_finding",
+	"refute_finding",
 	"record_approval",
 	"revise_intent",
 	"approve_breaking_intent_revision",
@@ -826,6 +955,29 @@ export function parseTaskAction(raw: unknown): TaskAction {
 				finding_id: stringAt(
 					value.finding_id,
 					"action.finding_id",
+					violations,
+				),
+			};
+			break;
+		}
+		case "refute_finding": {
+			rejectUnknown(
+				value,
+				[...ACTION_BASE_FIELDS, "finding_id", "attestation_id"],
+				"action",
+				violations,
+			);
+			action = {
+				...base,
+				type: "refute_finding",
+				finding_id: stringAt(
+					value.finding_id,
+					"action.finding_id",
+					violations,
+				),
+				attestation_id: stringAt(
+					value.attestation_id,
+					"action.attestation_id",
 					violations,
 				),
 			};
@@ -1032,22 +1184,63 @@ export function assertTaskRecordUpdateV3(
 					.filter((item) => item.kind === "replan_required" && item.status === "open")
 					.map((item) => item.id)
 				: [];
-	const reworkFindingIds =
-		action.type === "request_rework"
-			? new Set(action.findings.map((item) => item.id))
-			: new Set<string>();
+	// A transition may change only the fields it writes; a legal-looking
+	// transition must not carry a rewritten claim along with it.
+	const withoutFields = (finding: TaskFinding, fields: readonly string[]): string => {
+		const copy: Record<string, unknown> = { ...finding };
+		for (const field of fields) delete copy[field];
+		return JSON.stringify(copy);
+	};
 	for (const prior of previous.findings) {
 		const current = next.findings.find((item) => item.id === prior.id);
 		if (!current)
 			violations.push(`finding item ${prior.id} was removed`);
 		else if (
 			JSON.stringify(current) !== JSON.stringify(prior) &&
+			// A finding may move to resolved from open, or from a refutation
+			// whose bound evidence went stale (the Spec's stale -> resolved
+			// edge); a refutation that is still live already suppresses the
+			// finding and may not be made permanent. Only refute_finding may set
+			// or renew refuted, and only stale refutations are rebindable.
 			!(
 				resolvingFindingIds.includes(prior.id) &&
-				prior.status === "open" &&
-				current.status === "resolved"
+				prior.status !== "resolved" &&
+				current.status === "resolved" &&
+				(prior.status === "open" ||
+					!refutationIsLive(
+						prior,
+						previous.attestations,
+						refutationIdentity(previous, action.diff_hash),
+					)) &&
+				withoutFields(prior, ["status"]) === withoutFields(current, ["status"])
 			) &&
-			!(reworkFindingIds.has(prior.id) && current.review_round !== null)
+			!(
+				action.type === "refute_finding" &&
+				prior.id === action.finding_id &&
+				prior.status !== "resolved" &&
+				current.status === "refuted" &&
+				// First refutation, or the Spec's stale -> refuted renewal: a
+				// refutation that is still live may neither be renewed nor
+				// rebound to other evidence.
+				(prior.status === "open" ||
+					!refutationIsLive(
+						prior,
+						previous.attestations,
+						refutationIdentity(previous, action.diff_hash),
+					)) &&
+				current.counterevidence?.attestation_id === action.attestation_id &&
+				// The renewal binds the acceptance the finding names, not just any
+				// acceptance the attestation happens to pass (Spec: the evidence
+				// must cover the finding's own acceptance_id).
+				current.counterevidence?.acceptance_id === prior.acceptance_id &&
+				isFreshPassingQaAttestation(
+					previous.attestations.find((item) => item.id === action.attestation_id),
+					current.counterevidence?.acceptance_id ?? "",
+					refutationIdentity(previous, action.diff_hash),
+				) &&
+				withoutFields(prior, ["status", "counterevidence"]) ===
+					withoutFields(current, ["status", "counterevidence"])
+			)
 		)
 			violations.push(`finding item ${prior.id} was rewritten`);
 	}

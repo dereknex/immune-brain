@@ -110,7 +110,17 @@ test("Parent-submitted rework verdict restores execution", async () => {
 		...passVerdict(reviewSnapshot),
 		decision: "rework" as const,
 		approval: undefined,
-		findings: [{ id: "review-1", kind: "blocking" as const, acceptance_id: "A1", summary: "repair the regression" }],
+		findings: [{
+			id: "review-1",
+			kind: "blocking" as const,
+			acceptance_id: "A1",
+			summary: "repair the regression",
+			evidence: {
+				trigger: "the repaired path reaches the regression",
+				caller_chain: ["runtime/assurance/coordinator.ts"],
+				violated: { kind: "acceptance" as const, ref: "A1" },
+			},
+		}],
 	};
 	expect(await h.progression.submitReview(TASK, ctx, verdict)).toMatchObject({ state: "rework", summary: "repair the regression" });
 	expect(h.counts().applyCount).toBe(2);

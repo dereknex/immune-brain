@@ -472,6 +472,25 @@ async function capturedToolFailure(promise: Promise<unknown>): Promise<Record<st
 		expect(Object.keys(commands)).toEqual(["imm-tasks"]);
 	});
 
+	test("the Kernel Tool exposes and maps the ordinary refute_finding operation", () => {
+		const { tools } = loadSurface();
+		const kernel = tools.find((tool) => tool.name === "imm_kernel_canary")!;
+		const schema = kernel.parameters as any;
+		expect(Check(schema, { task_id: TASK, action: { op: "refute_finding", finding_id: "f-1", attestation_id: "ap-qa" } })).toBe(true);
+		// The evidence binding is not optional: a refutation with no QA
+		// attestation to bind has nothing the Kernel could validate.
+		expect(Check(schema, { task_id: TASK, action: { op: "refute_finding", finding_id: "f-1" } })).toBe(false);
+		const mod = require("../plugins/immune-brain/.pi-extension/imm-canary-work.ts") as {
+			toCanaryOperation: (action: { op: string }, actorId: string) => unknown;
+		};
+		expect(mod.toCanaryOperation({ op: "refute_finding", finding_id: "f-1", attestation_id: "ap-qa" }, "executor")).toEqual({
+			op: "refute_finding",
+			finding_id: "f-1",
+			attestation_id: "ap-qa",
+			actor_id: "executor",
+		});
+	});
+
 	test("Pi status reports the shared plugin version", async () => {
 		const root = makeEnrolledRoot();
 		try {

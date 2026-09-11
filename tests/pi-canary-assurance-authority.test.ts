@@ -7,8 +7,10 @@ import {
 	snapshotDigest,
 	buildReviewPrompt,
 	parseAssuranceVerdict,
+	reviewReworkFindings,
 	type SnapshotDescriptor,
 } from "../plugins/immune-brain/.pi-extension/imm-canary-work.ts";
+import { findingsDigestV2 } from "../plugins/immune-brain/runtime/kernel/reducer";
 import { runDeterministicQa } from "../plugins/immune-brain/runtime/assurance/qa";
 import {
 	parseVerificationDescriptor,
@@ -36,6 +38,23 @@ function snapshot(overrides: Partial<SnapshotDescriptor> = {}): SnapshotDescript
 		dirty_files: ["src/new.ts"],
 		review_bundle_digest: "sha256:" + "e".repeat(64),
 		...overrides,
+	});
+}
+
+const REVIEW_EVIDENCE = {
+	trigger: "the empty caller chain reaches the defect",
+	caller_chain: ["runtime/kernel/reducer.ts", "sharesAcceptanceBoundary()"],
+	violated: { kind: "acceptance", ref: "A1" },
+};
+
+function reworkVerdict(s: SnapshotDescriptor, evidence: unknown = REVIEW_EVIDENCE): string {
+	return JSON.stringify({
+		contract: "assurance_kernel/assurance_verdict/v2",
+		role: "review",
+		task_id: s.task_id,
+		snapshot_digest: snapshotDigest(s),
+		decision: "rework",
+		findings: [{ id: "r-1", kind: "blocking", acceptance_id: "A1", summary: "broken", evidence }],
 	});
 }
 
@@ -96,17 +115,11 @@ describe("canary assurance authority", () => {
 		const s = snapshot();
 		const pass = parseAssuranceVerdict(passVerdict(s), s);
 		expect(pass.approval?.authority_role).toBe("reviewer");
-		const rework = JSON.stringify({
-			contract: "assurance_kernel/assurance_verdict/v2",
-			role: "review",
-			task_id: s.task_id,
-			snapshot_digest: snapshotDigest(s),
-			decision: "rework",
-			findings: [{ id: "r-1", kind: "blocking", acceptance_id: "A1", summary: "broken" }],
-		});
+		const rework = reworkVerdict(s);
 		const first = parseAssuranceVerdict(rework, s);
 		expect(first.findings?.[0].id).toBe(`review-${snapshotDigest(s).slice(7, 19)}-1-r-1`);
 		expect(first.findings?.[0].findings_digest).toMatch(/^sha256:/);
+		expect(first.findings?.[0].anchor).toMatch(/^sha256:[a-f0-9]{64}$/);
 		const reworkObject = JSON.parse(rework);
 		expect(parseAssuranceVerdict({ ...reworkObject, approval: null }, s).decision).toBe("rework");
 		expect(() => parseAssuranceVerdict({ ...reworkObject, approval: { kind: "review" } }, s)).toThrow("rework verdict must omit approval");
@@ -116,6 +129,61 @@ describe("canary assurance authority", () => {
 		expect(() => parseAssuranceVerdict(passVerdict(s).replace('"role":"review"', '"role":"qa"'), s)).toThrow(/role mismatch/i);
 		expect(() => parseAssuranceVerdict(passVerdict(s).replace(snapshotDigest(s), "sha256:" + "0".repeat(64)), s)).toThrow(/snapshot digest mismatch/i);
 		expect(() => parseAssuranceVerdict(rework.replace('"summary":"broken"', '"summary":"broken","findings_digest":"forged"'), s)).toThrow(/unknown field/i);
+	});
+
+	test("review rework findings require evidence and reject an anchor they assert", () => {
+		const s = snapshot();
+		const withoutEvidence = JSON.parse(reworkVerdict(s)) as { findings: Array<Record<string, unknown>> };
+		delete withoutEvidence.findings[0].evidence;
+		expect(() => parseAssuranceVerdict(JSON.stringify(withoutEvidence), s)).toThrow(/evidence is required/);
+		expect(() => parseAssuranceVerdict(reworkVerdict(s, { ...REVIEW_EVIDENCE, caller_chain: [] }), s)).toThrow(/caller_chain/);
+		expect(() => parseAssuranceVerdict(reworkVerdict(s, { ...REVIEW_EVIDENCE, trigger: "  " }), s)).toThrow(/trigger/);
+		expect(() => parseAssuranceVerdict(reworkVerdict(s, { ...REVIEW_EVIDENCE, violated: { kind: "other", ref: "A1" } }), s)).toThrow(/violated.kind/);
+		expect(() => parseAssuranceVerdict(reworkVerdict(s, { ...REVIEW_EVIDENCE, anchor: "sha256:" + "0".repeat(64) }), s)).toThrow(/unknown field/);
+		// QA-role rework verdicts keep the pre-extension finding contract.
+		const qa = snapshot({ role: "qa" });
+		const qaVerdict = JSON.stringify({
+			contract: "assurance_kernel/assurance_verdict/v2",
+			role: "qa",
+			task_id: qa.task_id,
+			snapshot_digest: snapshotDigest(qa),
+			decision: "rework",
+			findings: [{ id: "q-1", kind: "blocking", acceptance_id: "A1", summary: "failed" }],
+		});
+		expect(parseAssuranceVerdict(qaVerdict, qa).decision).toBe("rework");
+		const qaWithEvidence = JSON.stringify({
+			contract: "assurance_kernel/assurance_verdict/v2",
+			role: "qa",
+			task_id: qa.task_id,
+			snapshot_digest: snapshotDigest(qa),
+			decision: "rework",
+			findings: [{ id: "q-1", kind: "blocking", acceptance_id: "A1", summary: "failed", evidence: REVIEW_EVIDENCE }],
+		});
+		expect(() => parseAssuranceVerdict(qaWithEvidence, qa)).toThrow(/unknown field/);
+	});
+
+	test("both host adapters forward the derived anchor and evidence into findingsDigestV2", () => {
+		const s = snapshot();
+		const parsed = parseAssuranceVerdict(reworkVerdict(s), s);
+		const findings = reviewReworkFindings(parsed);
+		expect(findings[0]).toMatchObject({ anchor: parsed.findings?.[0].anchor, evidence: { ...REVIEW_EVIDENCE } });
+		const digest = findingsDigestV2(findings as never[]);
+		expect(digest).toBe(findingsDigestV2(findings as never[]));
+		expect(digest).not.toBe(findingsDigestV2([{ ...findings[0], anchor: "sha256:" + "0".repeat(64) }] as never[]));
+		expect(digest).not.toBe(findingsDigestV2([{ ...findings[0], evidence: { ...REVIEW_EVIDENCE, caller_chain: ["other"] } }] as never[]));
+		// Anchors are derived, not asserted: the same evidence yields one stable
+		// anchor and a different violated identity or caller chain yields another.
+		const otherAnchor = parseAssuranceVerdict(reworkVerdict(s, { ...REVIEW_EVIDENCE, caller_chain: ["other"] }), s).findings?.[0].anchor;
+		expect(otherAnchor).not.toBe(parsed.findings?.[0].anchor);
+	});
+
+	test("buildReviewPrompt states the evidence contract without disclosing prior findings", () => {
+		const prompt = buildReviewPrompt(snapshot());
+		expect(prompt).toContain("evidence.trigger");
+		expect(prompt).toContain("caller_chain");
+		expect(prompt).toContain("security_boundary");
+		expect(prompt).not.toContain("counterevidence");
+		expect(prompt).not.toContain("refuted");
 	});
 
 	test("deterministic QA runs fixed descriptors without executor-authored evidence", async () => {

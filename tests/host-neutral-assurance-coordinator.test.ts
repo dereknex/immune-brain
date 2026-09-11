@@ -3,6 +3,8 @@ import { readdirSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import {
 	AssuranceCoordinator,
+	buildReviewPrompt,
+	parseAssuranceVerdict,
 	snapshotDigest,
 	type AssuranceCoordinatorPorts,
 	type AssuranceVerdict,
@@ -238,5 +240,65 @@ describe("host-neutral assurance coordinator", () => {
 			const source = readFileSync(join(dir, name), "utf8");
 			expect({ name, match: source.match(banned)?.[0] }).toEqual({ name, match: undefined });
 		}
+	});
+
+	test("review rework findings require machine-checkable evidence", async () => {
+		const host = new FakeReviewHost();
+		const h = makeCoordinator({ host });
+		expect((await h.coordinator.advance(TASK, ctx)).state).toBe("review_ready");
+		const s = snapshot("review");
+		const verdict = (evidence?: unknown) => ({
+			contract: "assurance_kernel/assurance_verdict/v2",
+			role: "review",
+			task_id: TASK,
+			snapshot_digest: snapshotDigest(s),
+			decision: "rework" as const,
+			findings: [{
+				id: "r-1",
+				kind: "blocking" as const,
+				acceptance_id: "A1",
+				summary: "broken",
+				...(evidence !== undefined ? { evidence } : {}),
+			}],
+		});
+		const complete = {
+			trigger: "the empty caller chain reaches state the assertion forbids",
+			caller_chain: ["runtime/a.ts", "shares()"],
+			violated: { kind: "acceptance" as const, ref: "A1" },
+		};
+		// Missing or empty evidence returns the existing verdict_invalid path
+		// with zero authority writes; a complete verdict settles.
+		expect(await h.coordinator.submitReview(TASK, ctx, verdict())).toMatchObject({ state: "blocked", code: "verdict_invalid" });
+		expect(await h.coordinator.submitReview(TASK, ctx, verdict({ ...complete, caller_chain: [] }))).toMatchObject({ state: "blocked", code: "verdict_invalid" });
+		expect(h.counts().applyCount).toBe(1);
+		expect(await h.coordinator.submitReview(TASK, ctx, verdict(complete))).toMatchObject({ state: "rework" });
+		expect(h.counts().applyCount).toBe(2);
+	});
+
+	test("a review verdict derives one stable anchor from violated identity and caller chain", () => {
+		const s = snapshot("review");
+		const parse = (evidence: unknown) => parseAssuranceVerdict({
+			contract: "assurance_kernel/assurance_verdict/v2",
+			role: "review",
+			task_id: TASK,
+			snapshot_digest: snapshotDigest(s),
+			decision: "rework",
+			findings: [{ id: "r-1", kind: "blocking", acceptance_id: "A1", summary: "broken", evidence }],
+		}, s);
+		const evidence = { trigger: "t", caller_chain: ["a.ts"], violated: { kind: "acceptance", ref: "A1" } };
+		const first = parse(evidence).findings![0];
+		expect(first.anchor).toMatch(/^sha256:[a-f0-9]{64}$/);
+		expect(parse(evidence).findings![0].anchor).toBe(first.anchor);
+		expect(parse({ ...evidence, caller_chain: ["b.ts"] }).findings![0].anchor).not.toBe(first.anchor);
+		expect(parse({ ...evidence, violated: { kind: "acceptance", ref: "A2" } }).findings![0].anchor).not.toBe(first.anchor);
+	});
+
+	test("buildReviewPrompt states the evidence contract and discloses no prior finding", () => {
+		const prompt = buildReviewPrompt(snapshot("review"));
+		expect(prompt).toContain("evidence.trigger");
+		expect(prompt).toContain("caller_chain");
+		expect(prompt).toContain("security_boundary");
+		expect(prompt).not.toContain("counterevidence");
+		expect(prompt).not.toContain("refuted");
 	});
 });
