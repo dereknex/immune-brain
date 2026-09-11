@@ -13,6 +13,7 @@ Immune-Brain 在 Pi 之上提供结构化的工程工作流：
 - **你用自然语言描述需求**，Agent 自动判断是先澄清、先规划，还是直接执行。
 - **计划变为可追踪的任务**（`TaskIntent` + `TaskRecord`），进度落盘持久化，不依赖对话历史。
 - **质量由代码强制保障** — 自动化 QA 与隔离式 Review 必须通过，任务才会完成。
+- **已就绪的 Initiative 可以整批运行** — 一次确认的 Batch Authorization 让 `imm-loop` 串行推进已发布 Initiative 的各个 child，而每个 child 仍然独立 Enrollment、独立 QA/Review、独立结算。
 
 Pi 与 Claude Code 是支持的宿主。未声明的适配器仍不受支持。Claude Code 最低版本为 `2.1.236`，这是已通过交互式 server-initiated MCP elicitation 验证的最低版本。当前真实 Host 证据见 `docs/verification/claude-native-elicitation-authority-conformance.md`；历史报告归档于 `docs/verification/archive/`。
 
@@ -25,6 +26,7 @@ Pi 与 Claude Code 是支持的宿主。未声明的适配器仍不受支持。C
 - [如何使用](#如何使用)
 - [6 个 Skills](#6-个-skills)
 - [生命周期](#生命周期)
+- [无人值守批次运行](#无人值守批次运行)
 - [配置](#配置)
 - [项目结构](#项目结构)
 - [常见问题](#常见问题)
@@ -85,6 +87,7 @@ QA 与 Review 以 foreground Tool 形式运行并回传结果，返回 `phase=do
 | 想法模糊，需要收敛 | "帮我梳理一下通知系统的方案" | → `imm-brainstorm` 提问澄清，不改代码 |
 | 目标明确，需要计划 | "规划一下深色模式功能" 或让 Pi 自动路由 | → `imm-planner` 产出 `TaskIntent` + spec |
 | 计划已确认，准备开干 | "开始构建" / `imm-loop` | → Executor 构建 → QA 验证 → Review 审查 |
+| 已发布的 Initiative 可以整批跑了 | "把 initiative `<slug>` 无人值守跑完" | → Host 的 `start_unattended_batch`：一次原生确认绑定有序 plan digest，child 串行执行 |
 | PR 被评论 / CI 挂了 | 对该 PR 使用 `imm-pr-fix` | → 独立修复，不创建新 managed 任务 |
 | 文档过时需要清理 | `imm-doc-prune` + manifest | → 仅删除已审批的过时文档 |
 | Agent instruction 文件膨胀 | `imm-agent-doc-maintain` + manifest | → 只保留不可直接推导的必要规则 |
@@ -133,7 +136,20 @@ Executor、QA、Review、Compounder 等为 `imm-loop` 内部调度的角色，�
 - **一次仅一个活跃步骤**，编辑仅在步骤边界内。
 - **范围（`scope_hint`）在 enrollment 时冻结**，范围外文件被忽略。
 - **先记录证据再关闭** — 只有 QA 能关闭步骤。
+- **Finding 必须携带证据** — 被反证的 Review finding 只在绑定它的 QA 证据对当前 revision、intent hash 与 diff 仍然新鲜时压制工作；证据过期后 finding 重新阻塞，且这个失效过程不重写任何已存状态。
+- **批次必须显式授权且有边界** — 只有你确认 Host 的 `start_unattended_batch` 之后才存在无人值守批次；每个 child 仍各自 Enrollment、QA、Review 与结算。
 - **Advisory 不实现，执行不自审。**
+
+---
+
+## 无人值守批次运行
+
+当一个 Initiative 下已经有多个就绪的 child，可以把它们作为一批串行跑完，而不用逐个任务手动推进。
+
+- **入口显式：** Host 的 privileged tool `start_unattended_batch`（参数为 Initiative slug）。未调用之前不存在任何 batch state、分支或授权；未调用时 `imm-loop` 行为与逐任务 Enrollment 完全一致。
+- **一次确认、一个 digest：** 原生 gate（Pi TUI 弹窗或 Claude MCP elicitation）展示有序 child 列表与共享 plan digest，这一次 literal-user 确认就是全部 Batch Authorization。
+- **每个 child 的 authority 不变：** 每个 child 仍由 Kernel 单独 Enrollment、冻结、QA、Review 并以自己的 `TaskRecord` 结算。批次只是一次授权的覆盖范围，不是新的授权层级。
+- **边界：** 只跑已发布且非 `critical` 的 child，在专属 batch 分支上串行执行；一旦某个 child 需要人决策，或遇到预算/截止时间/授权/提交失败就暂停，被阻塞 child 的依赖项标记为跳过而不是调序。runner 不 push、不开 PR、不代替用户结算 decision、也不创建/切换/删除 Git worktree。
 
 ---
 
@@ -191,6 +207,10 @@ docs/specs/                           # Living specs（原地更新）
 
 **QA 失败怎么办？** QA 返回 `rework` 或 `replan_required`，`imm-loop` 会自动路由回 Executor 或 `imm-planner` 调整范围，无需手动重置。
 
+**Review finding 突然不再阻塞了？** 它被反证了：新鲜的确定性 QA 证据表明它声称的 acceptance 是通过的。反证绑定到那份具体证据，所以证据一旦对当前 revision、intent hash 或 diff 失效，该 finding 会重新阻塞。
+
+**能不能整个 Initiative 不用我盯着？** 只能在你授权范围内。用 Initiative slug 确认 `start_unattended_batch` 后，runner 会在一个 batch 分支上串行推进已发布且非 `critical` 的 child — 一旦某个 child 需要人决策，或遇到预算/截止时间/授权/提交失败就暂停。它不会替你 push、开 PR 或结算用户决策。
+
 **可以在 Pi 之外使用吗？** 可以从 `2.1.236` 起在本地交互式 Claude Code 中使用同一套 Kernel；Claude plugin 通过绑定 digest 的原生 MCP elicitation gate 获取 authority，未声明的适配器不受支持。
 
 ---
@@ -211,13 +231,13 @@ docs/specs/                           # Living specs（原地更新）
 
 配置：在 GitHub 仓库 Secrets 中添加 `NPM_TOKEN`（有发布权限的 npm token）。Workflow 为 `.github/workflows/release.yml`，基于 `changesets/action@v1`。
 
-**首次发布（2.8.1）：**
+**手动发布（回退方案）：**
 ```bash
-npm publish --access public   # 首次发布，需 npm login / NPM_TOKEN
+npm publish --access public   # 需 npm login / NPM_TOKEN
 # 或
 bun run changeset:publish
 ```
-包名为 scoped `@immune-brain/agent-skills`，已配置 `publishConfig.access=public`。首次发布后，后续所有版本均通过 changesets 管理。
+包名为 `immune-brain`（当前版本 `3.6.6`），已配置 `publishConfig.access=public`。首次发布后，后续所有版本均通过 changesets 管理。
 
 详见 `CHANGELOG.md` 与 `.changeset/config.json`（changelog: `@changesets/changelog-github`，repo: `dereknex/immune-brain`）。
 
