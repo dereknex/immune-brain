@@ -1,5 +1,13 @@
 # Changelog
 
+## 3.6.8
+
+### Patch Changes
+
+- [`699ac64`](https://github.com/dereknex/immune-brain/commit/699ac64c4edee410f6b2e235680bb4382191da3f) Thanks [@dereknex](https://github.com/dereknex)! - Register the unattended batch tool in the Pi host extension manifest and document tracker issue slug extraction. The extension entry manifest (`plugins/immune-brain/.pi-extension/package.json`) now lists `./imm-unattended-batch.ts`, allowing Pi to discover and load `start_unattended_batch` for executing multi-task Initiatives after native confirmation. Also clarifies resolving an Initiative tracker issue to its `initiative_slug` in `dist/imm-loop.md`.
+
+- [`923c0a9`](https://github.com/dereknex/immune-brain/commit/923c0a9463c52a533bbd04e10d80a8cf35f6abd5) Thanks [@dereknex](https://github.com/dereknex)! - Enhance the unified interaction UI with pipeline milestone progress, single-key authority decisions, and structured summary formatting. The Task Rail and task overview overlay now display pipeline milestone progress (`[1.Plan] ─ [2.Exec] ─ [3.QA] ─ [4.Review]`) across all lifecycle states. Authority dialogs highlight structured summary fields (Risk, Goal, Acceptance) and support single-key decisions (`y` to confirm/authorize, `n` to cancel/decline). Tool row results render micro-execution facts when present, terminal settlement outputs a clear Final Settlement summary card, and long file paths intelligently preserve the trailing filename during terminal width truncation.
+
 ## 3.6.7
 
 ### Patch Changes

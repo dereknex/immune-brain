@@ -1,6 +1,6 @@
 {
   "name": "immune-brain",
-  "version": "3.6.7",
+  "version": "3.6.8",
   "description": "Immune-Brain agent skill system",
   "publishConfig": {
     "access": "public",
