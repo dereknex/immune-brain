@@ -19,6 +19,7 @@ import { preparePiCanary } from "../plugins/immune-brain/runtime/kernel/pi_canar
 import { createMutationAuthorityRegistry, digestOfAction } from "../plugins/immune-brain/runtime/kernel/authority_port";
 import { createMutationAuthorityCapabilityForTest } from "./fixtures/mutation-authority-test-seam";
 import { findingsDigestV2 } from "../plugins/immune-brain/runtime/kernel/reducer";
+import { anchorForEvidence } from "../plugins/immune-brain/runtime/kernel/refutation";
 import { enrollCanaryTask } from "../plugins/immune-brain/runtime/kernel/enrollment";
 import {
 	createEnrollmentAuthorityRegistry,
@@ -32,7 +33,10 @@ const INTENT = {
 	contract: "assurance_kernel/task_intent/v1",
 	task_id: TASK,
 	goal: "rework authority",
-	acceptance: [{ id: "A1", assertion: "a1", verification: "v1" }],
+	acceptance: [
+		{ id: "A1", assertion: "a1", verification: "v1" },
+		{ id: "A2", assertion: "a2", verification: "v2" },
+	],
 	scope_hint: [
 		"src/task.ts",
 		`docs/specs/${TASK}.spec.md`,
@@ -172,6 +176,34 @@ const FINDINGS = [
 		summary: "evidence does not satisfy the assertion",
 	},
 ] as const;
+
+const REVIEW_AT = "2026-08-12T10:00:02.000Z";
+const QA_ATTESTATION_ID = `ap-qa-${REVIEW_AT}`;
+const REVIEW_EVIDENCE = {
+	trigger: "the shared boundary matcher accepts an unrelated acceptance",
+	caller_chain: ["runtime/kernel/reducer.ts", "sharesAcceptanceBoundary()"],
+	violated: { kind: "acceptance", ref: "A1" },
+};
+// A second claim on the same acceptance, with its own derived anchor.
+const OTHER_EVIDENCE = {
+	...REVIEW_EVIDENCE,
+	caller_chain: ["runtime/kernel/completion.ts"],
+};
+const ANCHOR = anchorForEvidence(REVIEW_EVIDENCE as never);
+const OTHER_ANCHOR = anchorForEvidence(OTHER_EVIDENCE as never);
+
+function reviewFinding(overrides: Record<string, unknown>) {
+	return {
+		id: "rw-1",
+		kind: "blocking",
+		status: "open",
+		acceptance_id: "A1",
+		source: "review",
+		review_round: null,
+		summary: "review finding",
+		...overrides,
+	};
+}
 
 function reworkCapability(kind: "review" | "qa" | "user", overrides: Record<string, unknown> = {}) {
 	const record = readTaskRecord(root, TASK);
@@ -484,5 +516,219 @@ describe("request_rework authority", () => {
 		);
 		expect(result.record).toMatchObject({ lifecycle: "active", artifact_state: "active" });
 		expect(result.record.findings.some((f) => f.kind === "replan_required")).toBe(false);
+	});
+
+	test("a second-round blocking Review on a different acceptance boundary does not park", () => {
+		toReview();
+		requestReviewRework([
+			reviewFinding({ id: "rw-a1", acceptance_id: "A1" }),
+		], "2026-08-12T10:00:03.000Z");
+		toReview("2026-08-12T10:00:04.000Z");
+		const result = requestReviewRework([
+			reviewFinding({ id: "rw-a2", acceptance_id: "A2" }),
+		], "2026-08-12T10:00:05.000Z");
+		expect(result.record.findings.some((finding) => finding.kind === "replan_required")).toBe(false);
+		expect(result.record.findings.find((finding) => finding.id === "rw-a2")?.status).toBe("open");
+	});
+
+	test("null acceptance boundaries park only on the same violated ref", () => {
+		const nullFinding = (id: string, ref: string) => {
+			const evidence = { ...REVIEW_EVIDENCE, violated: { kind: "security_boundary", ref } };
+			return reviewFinding({
+				id,
+				acceptance_id: null,
+				anchor: anchorForEvidence(evidence as never),
+				evidence,
+			});
+		};
+		toReview();
+		requestReviewRework([nullFinding("rw-null-1", "boundary:parse")], "2026-08-12T10:00:03.000Z");
+		toReview("2026-08-12T10:00:04.000Z");
+		const unrelated = requestReviewRework([nullFinding("rw-null-2", "boundary:render")], "2026-08-12T10:00:05.000Z");
+		expect(unrelated.record.findings.some((finding) => finding.kind === "replan_required")).toBe(false);
+		toReview("2026-08-12T10:00:06.000Z");
+		const related = requestReviewRework([nullFinding("rw-null-3", "boundary:parse")], "2026-08-12T10:00:07.000Z");
+		expect(related.record.findings.some((finding) => finding.kind === "replan_required")).toBe(true);
+	});
+
+	test("request_rework inherits counterevidence only from a live anchor match", () => {
+		toReview();
+		requestReviewRework(
+			[reviewFinding({ id: "rw-refuted", anchor: ANCHOR, evidence: REVIEW_EVIDENCE })],
+			"2026-08-12T10:00:03.000Z",
+		);
+		execFileSync("git", ["add", "-A"], { cwd: root });
+		const refuted = execute(
+			{ op: "refute_finding", finding_id: "rw-refuted", attestation_id: QA_ATTESTATION_ID, actor_id: "executor-1" },
+			"2026-08-12T10:00:03.500Z",
+		);
+		expect(refuted.record.findings.find((finding) => finding.id === "rw-refuted")).toMatchObject({
+			status: "refuted",
+			counterevidence: { attestation_id: QA_ATTESTATION_ID, acceptance_id: "A1" },
+		});
+		toReview("2026-08-12T10:00:04.000Z");
+		const repeat = requestReviewRework(
+			[reviewFinding({ id: "rw-repeat", anchor: ANCHOR, evidence: REVIEW_EVIDENCE })],
+			"2026-08-12T10:00:05.000Z",
+		);
+		expect(repeat.record.findings.find((finding) => finding.id === "rw-repeat")).toMatchObject({
+			status: "refuted",
+			counterevidence: { attestation_id: QA_ATTESTATION_ID, acceptance_id: "A1" },
+		});
+		expect(repeat.record.findings.some((finding) => finding.kind === "replan_required")).toBe(false);
+	});
+
+	test("a different anchor is admitted open even when a refutation exists", () => {
+		toReview();
+		requestReviewRework(
+			[reviewFinding({ id: "rw-refuted", anchor: ANCHOR, evidence: REVIEW_EVIDENCE })],
+			"2026-08-12T10:00:03.000Z",
+		);
+		execFileSync("git", ["add", "-A"], { cwd: root });
+		execute(
+			{ op: "refute_finding", finding_id: "rw-refuted", attestation_id: QA_ATTESTATION_ID, actor_id: "executor-1" },
+			"2026-08-12T10:00:03.500Z",
+		);
+		toReview("2026-08-12T10:00:04.000Z");
+		const result = requestReviewRework(
+			[reviewFinding({ id: "rw-new", anchor: OTHER_ANCHOR, evidence: OTHER_EVIDENCE })],
+			"2026-08-12T10:00:05.000Z",
+		);
+		expect(result.record.findings.find((finding) => finding.id === "rw-new")?.status).toBe("open");
+	});
+
+	test("a live refutation resets the replan boundary for its acceptance", () => {
+		toReview();
+		requestReviewRework(
+			[reviewFinding({ id: "rw-refuted", anchor: ANCHOR, evidence: REVIEW_EVIDENCE })],
+			"2026-08-12T10:00:03.000Z",
+		);
+		execFileSync("git", ["add", "-A"], { cwd: root });
+		execute(
+			{ op: "refute_finding", finding_id: "rw-refuted", attestation_id: QA_ATTESTATION_ID, actor_id: "executor-1" },
+			"2026-08-12T10:00:03.500Z",
+		);
+		toReview("2026-08-12T10:00:04.000Z");
+		// A prior finding that is still refuted by live evidence is not an
+		// outstanding dispute, so a different claim on the same acceptance is
+		// not a repeat offence and does not park the task.
+		const result = requestReviewRework(
+			[reviewFinding({ id: "rw-new", anchor: OTHER_ANCHOR, evidence: OTHER_EVIDENCE })],
+			"2026-08-12T10:00:05.000Z",
+		);
+		expect(result.record.findings.some((finding) => finding.kind === "replan_required")).toBe(false);
+		expect(result.record.findings.find((finding) => finding.id === "rw-new")?.status).toBe("open");
+	});
+
+	test("an advisory finding inherits a live refutation for the same claim", () => {
+		toReview();
+		requestReviewRework(
+			[reviewFinding({ id: "rw-refuted", anchor: ANCHOR, evidence: REVIEW_EVIDENCE })],
+			"2026-08-12T10:00:03.000Z",
+		);
+		execFileSync("git", ["add", "-A"], { cwd: root });
+		execute(
+			{ op: "refute_finding", finding_id: "rw-refuted", attestation_id: QA_ATTESTATION_ID, actor_id: "executor-1" },
+			"2026-08-12T10:00:03.500Z",
+		);
+		toReview("2026-08-12T10:00:04.000Z");
+		const result = requestReviewRework(
+			[reviewFinding({ id: "rw-advisory-repeat", kind: "advisory", anchor: ANCHOR, evidence: REVIEW_EVIDENCE })],
+			"2026-08-12T10:00:05.000Z",
+		);
+		expect(result.record.findings.find((finding) => finding.id === "rw-advisory-repeat")).toMatchObject({
+			status: "refuted",
+			counterevidence: { attestation_id: QA_ATTESTATION_ID, acceptance_id: "A1" },
+		});
+	});
+
+	test("request_rework rejects an anchor that is not the digest of its own evidence", () => {
+		toReview();
+		// The anchor decides whether this claim inherits a refutation, so a
+		// caller cannot bind it to evidence it does not describe...
+		expect(() =>
+			requestReviewRework(
+				[reviewFinding({ id: "rw-forged", anchor: ANCHOR, evidence: OTHER_EVIDENCE })],
+				"2026-08-12T10:00:03.000Z",
+			),
+		).toThrow();
+		// ...and anchor and evidence must travel together.
+		expect(() =>
+			requestReviewRework(
+				[reviewFinding({ id: "rw-orphan", anchor: ANCHOR })],
+				"2026-08-12T10:00:03.000Z",
+			),
+		).toThrow();
+	});
+
+	test("a re-reported claim inherits the refutation across acceptance metadata", () => {
+		toReview();
+		requestReviewRework(
+			[reviewFinding({ id: "rw-refuted", anchor: ANCHOR, evidence: REVIEW_EVIDENCE })],
+			"2026-08-12T10:00:03.000Z",
+		);
+		execFileSync("git", ["add", "-A"], { cwd: root });
+		execute(
+			{ op: "refute_finding", finding_id: "rw-refuted", attestation_id: QA_ATTESTATION_ID, actor_id: "executor-1" },
+			"2026-08-12T10:00:03.500Z",
+		);
+		toReview("2026-08-12T10:00:04.000Z");
+		// The anchor is the claim identity; the acceptance label it is re-reported
+		// under does not change the claim, so the inherited binding keeps the
+		// acceptance its QA evidence was actually proved on.
+		const result = requestReviewRework(
+			[reviewFinding({ id: "rw-same-claim", acceptance_id: "A2", anchor: ANCHOR, evidence: REVIEW_EVIDENCE })],
+			"2026-08-12T10:00:05.000Z",
+		);
+		expect(result.record.findings.find((finding) => finding.id === "rw-same-claim")).toMatchObject({
+			status: "refuted",
+			acceptance_id: "A2",
+			counterevidence: { attestation_id: QA_ATTESTATION_ID, acceptance_id: "A1" },
+		});
+	});
+
+	test("a QA rework cannot carry review provenance", () => {
+		toReview();
+		const at = "2026-08-12T10:00:03.000Z";
+		const qaFindings = [reviewFinding({ id: "qa-provenance", anchor: ANCHOR, evidence: REVIEW_EVIDENCE })];
+		const action = capabilityActionFor({
+			op: "request_rework",
+			task_id: TASK,
+			at,
+			actor_id: "qa-1",
+			findings: qaFindings as never[],
+		});
+		const capability = createMutationAuthorityCapabilityForTest(mutationRegistry, {
+			authority_kind: "qa",
+			task_id: TASK,
+			action_digest: digestOfAction(action),
+			expected_record_hash: readTaskRecord(root, TASK).revision,
+			intent_revision: 1,
+			intent_content_hash: currentIntentHash(),
+			diff_hash: DIFF,
+			actor_id: "qa-1",
+			confirmation_ref: "conf-qa-provenance",
+			expires_at: "2099-01-01T00:00:00.000Z",
+			findings_digest: findingsDigestV2(qaFindings as never[]),
+		});
+		expect(() =>
+			execute(
+				{ op: "request_rework", capability, findings: qaFindings as never[], actor_id: "qa-1" },
+				at,
+			),
+		).toThrow();
+	});
+
+	test("findingsDigestV2 binds the anchor and evidence of a rework capability", () => {
+		const base = reviewFinding({ anchor: ANCHOR, evidence: REVIEW_EVIDENCE });
+		expect(findingsDigestV2([base as never])).toBe(findingsDigestV2([{ ...base } as never]));
+		expect(findingsDigestV2([base as never])).not.toBe(
+			findingsDigestV2([{ ...base, anchor: `sha256:${"b".repeat(64)}` } as never]),
+		);
+		expect(findingsDigestV2([base as never])).not.toBe(
+			findingsDigestV2([
+				{ ...base, evidence: { ...REVIEW_EVIDENCE, caller_chain: ["other"] } } as never,
+			]),
+		);
 	});
 });

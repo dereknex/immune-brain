@@ -28,6 +28,7 @@ export const TOOLS = [
 	{ name: "start_unattended_batch", description: "Start an unattended serial batch run for an Initiative after native confirmation.", privileged: true },
 	{ name: "repair_authority_state", description: "Repair a proven recoverable stale backend claim.", privileged: false },
 	{ name: "resolve_finding", description: "Resolve one open blocking or advisory finding whose cause is fixed and verified.", privileged: false },
+	{ name: "refute_finding", description: "Refute one open finding by binding the fresh passing QA attestation that contradicts it.", privileged: false },
 ] as const;
 
 export function listMcpTools() {
@@ -45,6 +46,7 @@ export function listMcpTools() {
 						...(tool.name === "stop" ? { reason: { type: "string" } } : {}),
 						...(tool.name === "submit_review" ? { verdict: { type: "object" } } : {}),
 						...(tool.name === "resolve_finding" ? { finding_id: { type: "string" } } : {}),
+						...(tool.name === "refute_finding" ? { finding_id: { type: "string" }, attestation_id: { type: "string" } } : {}),
 					}),
 			},
 			required: tool.name === "start_unattended_batch"
@@ -53,7 +55,9 @@ export function listMcpTools() {
 					? ["task_id", "verdict"]
 					: tool.name === "resolve_finding"
 						? ["task_id", "finding_id"]
-						: ["task_id"],
+						: tool.name === "refute_finding"
+							? ["task_id", "finding_id", "attestation_id"]
+							: ["task_id"],
 		},
 		annotations: tool.privileged ? privilegedAnnotations() : { readOnlyHint: tool.name === "status" },
 	}));
@@ -164,6 +168,13 @@ export function createMcpRuntime(options: McpRuntimeOptions = {}) {
 				// authority that could drift from the Kernel.
 				if (typeof args.finding_id !== "string" || !args.finding_id) throw new Error("finding_id is required");
 				return runtime.resolveFinding(taskId, args.finding_id);
+			}
+			if (name === "refute_finding") {
+				// Structural only, exactly like resolve_finding: the reducer owns
+				// which findings may be refuted and with which evidence.
+				if (typeof args.finding_id !== "string" || !args.finding_id) throw new Error("finding_id is required");
+				if (typeof args.attestation_id !== "string" || !args.attestation_id) throw new Error("attestation_id is required");
+				return runtime.refuteFinding(taskId, args.finding_id, args.attestation_id);
 			}
 			if (name === "request_authorization" || name === "approve_breaking_intent_revision" || name === "stop" || name === "repair_authority_state") {
 				return runtime.authorize(taskId, name, toolMeta, args);

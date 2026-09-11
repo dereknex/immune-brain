@@ -158,5 +158,22 @@ export function makeAssuranceHarness(overrides: Partial<{
 export function resultText(s: SnapshotDescriptor, decision: "pass" | "rework" = "pass"): string {
 	return JSON.stringify(decision === "pass"
 		? passVerdict(s)
-		: { contract: "assurance_kernel/assurance_verdict/v2", role: "review", task_id: TASK, snapshot_digest: snapshotDigest(s), decision: "rework", findings: [{ id: "finding", kind: "blocking", acceptance_id: "A1", summary: "needs repair" }] });
+		: {
+				contract: "assurance_kernel/assurance_verdict/v2",
+				role: "review",
+				task_id: TASK,
+				snapshot_digest: snapshotDigest(s),
+				decision: "rework",
+				findings: [{
+					id: "finding",
+					kind: "blocking",
+					acceptance_id: "A1",
+					summary: "needs repair",
+					evidence: {
+						trigger: "the repaired path reaches the defect",
+						caller_chain: ["runtime/assurance/coordinator.ts"],
+						violated: { kind: "acceptance", ref: "A1" },
+					},
+				}],
+			});
 }

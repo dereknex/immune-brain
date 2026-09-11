@@ -685,10 +685,58 @@ import { execFileSync as execFileSync4, spawnSync as spawnSync6 } from "node:chi
 import { join as join10 } from "node:path";
 
 // plugins/immune-brain/runtime/assurance/coordinator.ts
-import { createHash as createHash5, randomUUID as randomUUID2 } from "node:crypto";
+import { createHash as createHash6, randomUUID as randomUUID2 } from "node:crypto";
+
+// plugins/immune-brain/runtime/kernel/refutation.ts
+import { createHash as createHash3 } from "node:crypto";
+
+// plugins/immune-brain/runtime/canonical_json.ts
+function stableStringify(value) {
+  if (value === null || value === undefined)
+    return "null";
+  if (typeof value !== "object")
+    return JSON.stringify(value);
+  if (Array.isArray(value)) {
+    return `[${value.map(stableStringify).join(", ")}]`;
+  }
+  const obj = value;
+  return `{${Object.keys(obj).sort().map((key) => `${JSON.stringify(key)}: ${stableStringify(obj[key])}`).join(", ")}}`;
+}
+
+// plugins/immune-brain/runtime/kernel/refutation.ts
+function refutationIdentity(record, diffHash) {
+  return {
+    intent_revision: record.intent_snapshot.revision,
+    intent_content_hash: record.intent_ref.content_hash,
+    diff_hash: diffHash
+  };
+}
+function anchorForEvidence(evidence) {
+  return `sha256:${createHash3("sha256").update(stableStringify({
+    violated: evidence.violated,
+    caller_chain: evidence.caller_chain
+  })).digest("hex")}`;
+}
+function isFreshPassingQaAttestation(attestation, acceptanceId, identity) {
+  if (!attestation || attestation.kind !== "qa")
+    return false;
+  if (attestation.task_revision !== identity.intent_revision)
+    return false;
+  if (attestation.intent_content_hash !== identity.intent_content_hash)
+    return false;
+  if (attestation.diff_hash !== identity.diff_hash)
+    return false;
+  return attestation.acceptance_results.some((result) => result.acceptance_id === acceptanceId && result.status === "passed");
+}
+function refutationIsLive(finding, attestations, identity) {
+  const counterevidence = finding.counterevidence ?? null;
+  if (!counterevidence?.attestation_id || !counterevidence.acceptance_id)
+    return false;
+  return isFreshPassingQaAttestation(attestations.find((item) => item.id === counterevidence.attestation_id), counterevidence.acceptance_id, identity);
+}
 
 // plugins/immune-brain/runtime/assurance/verification.ts
-import { createHash as createHash3 } from "node:crypto";
+import { createHash as createHash4 } from "node:crypto";
 import { execFileSync, spawn, spawnSync } from "node:child_process";
 import { realpathSync as realpathSync2, statSync } from "node:fs";
 import { isAbsolute as isAbsolute2, resolve, sep as sep2, relative } from "node:path";
@@ -814,7 +862,7 @@ function resolveBunRunner() {
   if (!stat.isFile())
     throw new VerificationDescriptorError("bun runner is not a regular file");
   const { readFileSync } = __require("node:fs");
-  const contentHash = `sha256:${createHash3("sha256").update(readFileSync(real)).digest("hex")}`;
+  const contentHash = `sha256:${createHash4("sha256").update(readFileSync(real)).digest("hex")}`;
   let version = "";
   try {
     version = execFileSync(real, ["--version"], { encoding: "utf8" }).trim();
@@ -972,7 +1020,7 @@ function findingsDigest(findings) {
     kind: f.kind,
     summary: f.summary
   }));
-  return `sha256:${createHash3("sha256").update(`[${normalized.join(",")}]`).digest("hex")}`;
+  return `sha256:${createHash4("sha256").update(`[${normalized.join(",")}]`).digest("hex")}`;
 }
 
 // plugins/immune-brain/runtime/assurance/invocations.ts
@@ -1026,25 +1074,10 @@ function createInvocationRegistry() {
 }
 
 // plugins/immune-brain/runtime/role_prompt_bridge.ts
-import { createHash as createHash4 } from "node:crypto";
+import { createHash as createHash5 } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { join as join3, dirname as dirname2 } from "node:path";
 import { fileURLToPath } from "node:url";
-
-// plugins/immune-brain/runtime/canonical_json.ts
-function stableStringify(value) {
-  if (value === null || value === undefined)
-    return "null";
-  if (typeof value !== "object")
-    return JSON.stringify(value);
-  if (Array.isArray(value)) {
-    return `[${value.map(stableStringify).join(", ")}]`;
-  }
-  const obj = value;
-  return `{${Object.keys(obj).sort().map((key) => `${JSON.stringify(key)}: ${stableStringify(obj[key])}`).join(", ")}}`;
-}
-
-// plugins/immune-brain/runtime/role_prompt_bridge.ts
 var RUNTIME_DIR = dirname2(fileURLToPath(import.meta.url));
 var INTERNAL_ROLE_PROMPTS = {
   qa: { file: "qa.md", authority: "qa", tool_policy: "no tools" },
@@ -1132,7 +1165,7 @@ function buildRoleDelegationPacket(input) {
   ].join(`
 
 `);
-  const promptDigest = `sha256:${createHash4("sha256").update(prompt).digest("hex")}`;
+  const promptDigest = `sha256:${createHash5("sha256").update(prompt).digest("hex")}`;
   return {
     contract: "immune_brain/role_delegation/v1",
     role: input.role,
@@ -1145,6 +1178,22 @@ function buildRoleDelegationPacket(input) {
 }
 
 // plugins/immune-brain/runtime/assurance/coordinator.ts
+function reviewReworkFindings(verdict) {
+  if (verdict.decision !== "rework" || !verdict.findings?.length)
+    throw new Error("review rework findings require a rework verdict");
+  return verdict.findings.map((finding) => ({
+    id: finding.id,
+    kind: finding.kind,
+    status: "open",
+    acceptance_id: finding.acceptance_id,
+    source: "review",
+    review_round: null,
+    summary: finding.summary,
+    anchor: finding.anchor ?? null,
+    evidence: finding.evidence ?? null,
+    counterevidence: null
+  }));
+}
 var QA_MIN_JOB_TIMEOUT_SECONDS = 15 * 60;
 var QA_MAX_JOB_TIMEOUT_SECONDS = 60 * 60;
 var QA_JOB_OVERHEAD_SECONDS = 2 * 60;
@@ -1172,7 +1221,7 @@ function reviewTurnBudget(workload) {
   return workload === "quick" ? 12 : workload === "standard" ? 16 : 24;
 }
 function snapshotDigest(snapshot) {
-  return `sha256:${createHash5("sha256").update(JSON.stringify(snapshot)).digest("hex")}`;
+  return `sha256:${createHash6("sha256").update(JSON.stringify(snapshot)).digest("hex")}`;
 }
 function buildReviewPrompt(snapshot, evidencePath) {
   if (snapshot.role !== "review")
@@ -1212,11 +1261,44 @@ function buildReviewPrompt(snapshot, evidencePath) {
     "Acceptance assertions:",
     acceptance,
     "Reserve the final turn for exactly one strict JSON verdict. Reply with ONLY that object, without markdown fences or commentary.",
+    `Every rework finding must carry machine-checkable provenance: evidence.trigger (the concrete inputs or state that reach the defect), a non-empty evidence.caller_chain (ordered repository paths or symbols), and evidence.violated {kind: "acceptance"|"security_boundary", ref}. The anchor is derived from that evidence; a finding without it is rejected and the correction must be resubmitted.`,
     `PASS shape: {"contract":"assurance_kernel/assurance_verdict/v2","role":"review","task_id":"${snapshot.task_id}","snapshot_digest":"${digest}","decision":"pass","approval":{"kind":"review","authority_role":"reviewer","summary":"<one line>"}}`,
-    `REWORK shape: {"contract":"assurance_kernel/assurance_verdict/v2","role":"review","task_id":"${snapshot.task_id}","snapshot_digest":"${digest}","decision":"rework","findings":[{"id":"review-1","kind":"blocking|advisory","acceptance_id":"<id|null>","summary":"<one line>"}]}`,
+    `REWORK shape: {"contract":"assurance_kernel/assurance_verdict/v2","role":"review","task_id":"${snapshot.task_id}","snapshot_digest":"${digest}","decision":"rework","findings":[{"id":"review-1","kind":"blocking|advisory","acceptance_id":"<id|null>","summary":"<one line>","evidence":{"trigger":"<concrete inputs or state>","caller_chain":["<path-or-symbol>"],"violated":{"kind":"acceptance|security_boundary","ref":"<acceptance id or boundary>"}}}]}`,
     `REWORK verdicts must omit the approval field entirely; do not emit "approval": null.`
   ].join(`
 `);
+}
+function parseVerdictEvidence(value, index) {
+  if (!value || typeof value !== "object" || Array.isArray(value))
+    throw new Error(`finding ${index} evidence is required`);
+  const evidence = value;
+  const unknown = Object.keys(evidence).find((key) => !["trigger", "caller_chain", "violated"].includes(key));
+  if (unknown)
+    throw new Error(`finding ${index} evidence has unknown field: ${unknown}`);
+  if (typeof evidence.trigger !== "string" || !evidence.trigger.trim())
+    throw new Error(`finding ${index} evidence.trigger must be a non-empty string`);
+  const chain = evidence.caller_chain;
+  if (!Array.isArray(chain) || chain.length === 0 || chain.some((entry) => typeof entry !== "string" || !entry.trim()))
+    throw new Error(`finding ${index} evidence.caller_chain must be a non-empty list of paths or symbols`);
+  const violated = evidence.violated;
+  if (!violated || typeof violated !== "object" || Array.isArray(violated))
+    throw new Error(`finding ${index} evidence.violated is required`);
+  const violatedRecord = violated;
+  const unknownViolated = Object.keys(violatedRecord).find((key) => !["kind", "ref"].includes(key));
+  if (unknownViolated)
+    throw new Error(`finding ${index} evidence.violated has unknown field: ${unknownViolated}`);
+  if (violatedRecord.kind !== "acceptance" && violatedRecord.kind !== "security_boundary")
+    throw new Error(`finding ${index} evidence.violated.kind must be acceptance or security_boundary`);
+  if (typeof violatedRecord.ref !== "string" || !violatedRecord.ref.trim())
+    throw new Error(`finding ${index} evidence.violated.ref must be a non-empty string`);
+  return {
+    trigger: evidence.trigger,
+    caller_chain: chain,
+    violated: {
+      kind: violatedRecord.kind,
+      ref: violatedRecord.ref
+    }
+  };
 }
 function parseAssuranceVerdict(input, snapshot) {
   let raw;
@@ -1268,14 +1350,24 @@ function parseAssuranceVerdict(input, snapshot) {
     throw new Error("rework verdict must omit approval");
   const findings = raw.findings.map((item, index) => {
     const finding = item;
-    const unknownFinding = Object.keys(finding).find((key) => !["id", "kind", "acceptance_id", "summary"].includes(key));
+    const allowedFindingKeys = snapshot.role === "review" ? ["id", "kind", "acceptance_id", "summary", "evidence"] : ["id", "kind", "acceptance_id", "summary"];
+    const unknownFinding = Object.keys(finding).find((key) => !allowedFindingKeys.includes(key));
     if (unknownFinding)
       throw new Error(`finding ${index} has unknown field: ${unknownFinding}`);
     if (typeof finding.id !== "string" || !finding.id.trim() || finding.kind !== "blocking" && finding.kind !== "advisory" || finding.acceptance_id !== null && typeof finding.acceptance_id !== "string" || typeof finding.summary !== "string" || !finding.summary.trim())
       throw new Error(`finding ${index} is invalid`);
     const id = `review-${snapshotDigest(snapshot).slice(7, 19)}-${index + 1}-${finding.id.replace(/[^A-Za-z0-9._-]/g, "-").slice(0, 48)}`;
     const normalized = { id, kind: finding.kind, acceptance_id: finding.acceptance_id, summary: finding.summary };
-    return { ...normalized, findings_digest: findingsDigest([normalized]) };
+    if (snapshot.role !== "review")
+      return { ...normalized, findings_digest: findingsDigest([normalized]) };
+    const evidence = parseVerdictEvidence(finding.evidence, index);
+    const anchor = anchorForEvidence(evidence);
+    return {
+      ...normalized,
+      anchor,
+      evidence,
+      findings_digest: findingsDigest([normalized])
+    };
   });
   return { contract: "assurance_kernel/assurance_verdict/v2", role: snapshot.role, task_id: snapshot.task_id, snapshot_digest: snapshotDigest(snapshot), decision: "rework", findings };
 }
@@ -1818,7 +1910,7 @@ function boundedAssuranceError(error) {
 
 // plugins/immune-brain/runtime/assurance/review_evidence.ts
 import { execFileSync as execFileSync2 } from "node:child_process";
-import { createHash as createHash7 } from "node:crypto";
+import { createHash as createHash8 } from "node:crypto";
 import {
   mkdtempSync,
   rmSync as rmSync2,
@@ -1833,7 +1925,7 @@ import { join as join4 } from "node:path";
 
 // plugins/immune-brain/runtime/workspace_scope.ts
 import { spawnSync as spawnSync2 } from "node:child_process";
-import { createHash as createHash6 } from "node:crypto";
+import { createHash as createHash7 } from "node:crypto";
 import {
   existsSync as existsSync2,
   lstatSync as lstatSync2,
@@ -2060,7 +2152,7 @@ function captureGitTaskSnapshot(projectRoot, scopeHint) {
   return before;
 }
 function hashTaskSnapshot(snapshot) {
-  return `sha256:${createHash6("sha256").update(JSON.stringify(snapshot)).digest("hex")}`;
+  return `sha256:${createHash7("sha256").update(JSON.stringify(snapshot)).digest("hex")}`;
 }
 function taskDiffIdentity(projectRoot, scopeHint) {
   const snapshot = captureGitTaskSnapshot(projectRoot, scopeHint);
@@ -2205,7 +2297,7 @@ function pathMatchesScope(path, scopePath) {
 // plugins/immune-brain/runtime/assurance/review_evidence.ts
 var MAX_REVIEW_BUNDLE_BYTES = 2 * 1024 * 1024;
 function bundleDigest(bundle) {
-  return `sha256:${createHash7("sha256").update(JSON.stringify(bundle)).digest("hex")}`;
+  return `sha256:${createHash8("sha256").update(JSON.stringify(bundle)).digest("hex")}`;
 }
 var reviewUtf8 = new TextDecoder("utf-8", { fatal: true });
 function readIndexBlob(root, path, entry) {
@@ -2355,7 +2447,7 @@ var SNAPSHOT_IDENTITY = {
   date: "1970-01-01T00:00:00 +0000"
 };
 function manifestDigest(manifest) {
-  return `sha256:${createHash7("sha256").update(JSON.stringify(manifest)).digest("hex")}`;
+  return `sha256:${createHash8("sha256").update(JSON.stringify(manifest)).digest("hex")}`;
 }
 function gitEvidenceBytes(root, args, extraEnv = {}) {
   return execFileSync2("git", args, {
@@ -2481,7 +2573,7 @@ function publishInput(root, input) {
   if (!REVISION_DIFF_HASH.test(input.expectedDiffHash))
     throw new Error("review task revision hash has invalid identity");
   const snapshot = captureGitTaskRevisionSnapshot(root, input.scopeHint, input.baseHead);
-  const recomputed = `sha256:${createHash7("sha256").update(JSON.stringify(snapshot)).digest("hex")}`;
+  const recomputed = `sha256:${createHash8("sha256").update(JSON.stringify(snapshot)).digest("hex")}`;
   if (recomputed !== input.expectedDiffHash)
     throw new Error("review task revision does not match assurance snapshot");
   return { snapshot, revision: publishReviewRevision(snapshot.repository_root, snapshot, recomputed, input.taskId) };
@@ -2714,7 +2806,7 @@ function serializeTaskTombstone(tombstone) {
 }
 
 // plugins/immune-brain/runtime/kernel/storage.ts
-import { createHash as createHash9, randomUUID as randomUUID3 } from "node:crypto";
+import { createHash as createHash10, randomUUID as randomUUID3 } from "node:crypto";
 import {
   closeSync as closeSync3,
   constants as constants2,
@@ -2748,7 +2840,7 @@ var REDUCED_MUTATION_BRAND = Symbol("assurance-kernel-reduced-mutation-v2");
 var MUTATION_AUTHORITY_CAPABILITY_BRAND = Symbol("assurance-kernel-mutation-authority-capability");
 
 // plugins/immune-brain/runtime/kernel/intent.ts
-import { createHash as createHash8 } from "node:crypto";
+import { createHash as createHash9 } from "node:crypto";
 import {
   closeSync as closeSync2,
   constants as fsConstants,
@@ -2879,7 +2971,7 @@ var portablePathCollator2 = new Intl.Collator("und", {
   ignorePunctuation: false
 });
 function sha256Hex(bytes) {
-  return createHash8("sha256").update(bytes).digest("hex");
+  return createHash9("sha256").update(bytes).digest("hex");
 }
 function objectAt(value, path, violations) {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
@@ -3276,7 +3368,7 @@ var FINDING_KINDS = [
   "unresolved_user_decision",
   "replan_required"
 ];
-var FINDING_STATUSES = ["open", "resolved"];
+var FINDING_STATUSES = ["open", "resolved", "refuted"];
 var FINDING_SOURCES = [
   "execution",
   "review",
@@ -3289,10 +3381,52 @@ var APPROVAL_AUTHORITY_ROLES = [
   "qa",
   "user"
 ];
+function nullableAnchor(value, path, violations) {
+  if (value === null || value === undefined)
+    return null;
+  return stringAt(value, path, violations);
+}
+function parseFindingEvidence(value, path, violations) {
+  if (value === null || value === undefined)
+    return null;
+  const item = objectAt2(value, path, violations);
+  rejectUnknown2(item, ["trigger", "caller_chain", "violated"], path, violations);
+  const trigger = stringAt(item.trigger, `${path}.trigger`, violations);
+  const chain = arrayAt(item.caller_chain, `${path}.caller_chain`, violations);
+  if (chain.length === 0)
+    violations.push(`${path}.caller_chain must contain at least one entry`);
+  const caller_chain = chain.map((entry, index) => stringAt(entry, `${path}.caller_chain[${index}]`, violations));
+  const violatedRaw = objectAt2(item.violated, `${path}.violated`, violations);
+  rejectUnknown2(violatedRaw, ["kind", "ref"], `${path}.violated`, violations);
+  const kind = enumAt(violatedRaw.kind, ["acceptance", "security_boundary"], `${path}.violated.kind`, violations);
+  const ref = stringAt(violatedRaw.ref, `${path}.violated.ref`, violations);
+  return { trigger, caller_chain, violated: { kind, ref } };
+}
+function parseFindingCounterevidence(value, path, violations) {
+  if (value === null || value === undefined)
+    return null;
+  const item = objectAt2(value, path, violations);
+  rejectUnknown2(item, ["attestation_id", "acceptance_id"], path, violations);
+  return {
+    attestation_id: stringAt(item.attestation_id, `${path}.attestation_id`, violations),
+    acceptance_id: stringAt(item.acceptance_id, `${path}.acceptance_id`, violations)
+  };
+}
 function parseFinding(value, index, violations) {
   const path = `record.findings[${index}]`;
   const item = objectAt2(value, path, violations);
-  rejectUnknown2(item, ["id", "kind", "status", "acceptance_id", "source", "review_round", "summary"], path, violations);
+  rejectUnknown2(item, [
+    "id",
+    "kind",
+    "status",
+    "acceptance_id",
+    "source",
+    "review_round",
+    "summary",
+    "anchor",
+    "evidence",
+    "counterevidence"
+  ], path, violations);
   return {
     id: stringAt(item.id, `${path}.id`, violations),
     kind: enumAt(item.kind, FINDING_KINDS, `${path}.kind`, violations),
@@ -3300,7 +3434,12 @@ function parseFinding(value, index, violations) {
     acceptance_id: nullableString(item.acceptance_id, `${path}.acceptance_id`, violations),
     source: enumAt(item.source, FINDING_SOURCES, `${path}.source`, violations),
     review_round: nullablePositiveInteger(item.review_round, `${path}.review_round`, violations),
-    summary: stringAt(item.summary, `${path}.summary`, violations)
+    summary: stringAt(item.summary, `${path}.summary`, violations),
+    ...item.anchor !== undefined ? { anchor: nullableAnchor(item.anchor, `${path}.anchor`, violations) } : {},
+    ...item.evidence !== undefined ? { evidence: parseFindingEvidence(item.evidence, `${path}.evidence`, violations) } : {},
+    ...item.counterevidence !== undefined ? {
+      counterevidence: parseFindingCounterevidence(item.counterevidence, `${path}.counterevidence`, violations)
+    } : {}
   };
 }
 function parseHistoryV2(value, index, violations) {
@@ -3635,6 +3774,31 @@ function parseTaskRecordAtVersion(raw, version) {
   uniqueIds(attestations, "record.attestations", violations);
   uniqueIds(findings, "record.findings", violations);
   uniqueIds(history, "record.history", violations);
+  for (const [index, finding] of findings.entries()) {
+    const path = `record.findings[${index}]`;
+    if (finding.anchor != null && !SHA256_HEX.test(finding.anchor))
+      violations.push(`${path}.anchor must be sha256:<64 hex>`);
+    const anchor = finding.anchor ?? null;
+    const evidence = finding.evidence ?? null;
+    if (anchor === null !== (evidence === null))
+      violations.push(`${path} must carry anchor and evidence together`);
+    if (anchor !== null && evidence !== null && anchor !== anchorForEvidence(evidence))
+      violations.push(`${path}.anchor must equal the digest of its evidence`);
+    if (finding.status === "refuted" && (finding.kind === "unresolved_user_decision" || finding.kind === "replan_required"))
+      violations.push(`${path} refuted requires a blocking or advisory finding`);
+    const counterevidence = finding.counterevidence ?? null;
+    if (finding.status === "refuted" && !counterevidence)
+      violations.push(`${path} status refuted requires counterevidence`);
+    if (!counterevidence)
+      continue;
+    if (finding.status === "open")
+      violations.push(`${path} open finding cannot carry counterevidence`);
+    const attestation = attestations.find((item) => item.id === counterevidence.attestation_id);
+    if (!attestation || attestation.kind !== "qa")
+      violations.push(`${path}.counterevidence.attestation_id must reference a qa attestation`);
+    else if (!attestation.acceptance_results.some((result) => result.acceptance_id === counterevidence.acceptance_id && result.status === "passed"))
+      violations.push(`${path}.counterevidence.acceptance_id must be an acceptance its attestation passed`);
+  }
   if (violations.length > 0)
     throw new KernelValidationError(violations);
   const record = {
@@ -3685,6 +3849,7 @@ function assertKernelInvariantsV3(intentRaw, recordRaw) {
 var ACTION_V2_TYPES = [
   "record_finding",
   "resolve_finding",
+  "refute_finding",
   "record_approval",
   "revise_intent",
   "approve_breaking_intent_revision",
@@ -3746,6 +3911,16 @@ function parseTaskAction(raw) {
         ...base,
         type: "resolve_finding",
         finding_id: stringAt(value.finding_id, "action.finding_id", violations)
+      };
+      break;
+    }
+    case "refute_finding": {
+      rejectUnknown2(value, [...ACTION_BASE_FIELDS, "finding_id", "attestation_id"], "action", violations);
+      action = {
+        ...base,
+        type: "refute_finding",
+        finding_id: stringAt(value.finding_id, "action.finding_id", violations),
+        attestation_id: stringAt(value.attestation_id, "action.attestation_id", violations)
       };
       break;
     }
@@ -3859,12 +4034,17 @@ function assertTaskRecordUpdateV3(previousRaw, nextRaw, action) {
       violations.push(`attestation ${prior.id} was rewritten`);
   }
   const resolvingFindingIds = action.type === "resolve_finding" ? [action.finding_id] : action.type === "resolve_user_decision" ? [action.finding_id] : action.type === "authorize_rework" || action.type === "approve_breaking_intent_revision" ? previous.findings.filter((item) => item.kind === "replan_required" && item.status === "open").map((item) => item.id) : [];
-  const reworkFindingIds = action.type === "request_rework" ? new Set(action.findings.map((item) => item.id)) : new Set;
+  const withoutFields = (finding, fields) => {
+    const copy = { ...finding };
+    for (const field of fields)
+      delete copy[field];
+    return JSON.stringify(copy);
+  };
   for (const prior of previous.findings) {
     const current = next.findings.find((item) => item.id === prior.id);
     if (!current)
       violations.push(`finding item ${prior.id} was removed`);
-    else if (JSON.stringify(current) !== JSON.stringify(prior) && !(resolvingFindingIds.includes(prior.id) && prior.status === "open" && current.status === "resolved") && !(reworkFindingIds.has(prior.id) && current.review_round !== null))
+    else if (JSON.stringify(current) !== JSON.stringify(prior) && !(resolvingFindingIds.includes(prior.id) && prior.status !== "resolved" && current.status === "resolved" && (prior.status === "open" || !refutationIsLive(prior, previous.attestations, refutationIdentity(previous, action.diff_hash))) && withoutFields(prior, ["status"]) === withoutFields(current, ["status"])) && !(action.type === "refute_finding" && prior.id === action.finding_id && prior.status !== "resolved" && current.status === "refuted" && (prior.status === "open" || !refutationIsLive(prior, previous.attestations, refutationIdentity(previous, action.diff_hash))) && current.counterevidence?.attestation_id === action.attestation_id && current.counterevidence?.acceptance_id === prior.acceptance_id && isFreshPassingQaAttestation(previous.attestations.find((item) => item.id === action.attestation_id), current.counterevidence?.acceptance_id ?? "", refutationIdentity(previous, action.diff_hash)) && withoutFields(prior, ["status", "counterevidence"]) === withoutFields(current, ["status", "counterevidence"])))
       violations.push(`finding item ${prior.id} was rewritten`);
   }
   if (violations.length > 0)
@@ -3890,7 +4070,7 @@ class KernelStoreSecurityError extends Error {
   }
 }
 function revisionFor(content) {
-  return `sha256:${createHash9("sha256").update(content).digest("hex")}`;
+  return `sha256:${createHash10("sha256").update(content).digest("hex")}`;
 }
 function canonicalRoot(root) {
   try {
@@ -5030,7 +5210,12 @@ function completionDecision(intent, record, currentDiffHash, currentIntentConten
     }
   }
   const independenceViolations = candidates.filter((item) => repeatedActors.has(item.actor_id)).map((item) => item.id);
-  const blockingFindingIds = record.findings.filter((item) => item.status === "open" && item.kind === "blocking").map((item) => item.id);
+  const refutationState = {
+    intent_revision: intent.revision,
+    intent_content_hash: currentIntentContentHash,
+    diff_hash: currentDiffHash
+  };
+  const blockingFindingIds = record.findings.filter((item) => item.kind === "blocking" && (item.status === "open" || item.status === "refuted" && !refutationIsLive(item, record.attestations, refutationState))).map((item) => item.id);
   const unresolvedUserDecisionIds = record.findings.filter((item) => item.status === "open" && item.kind === "unresolved_user_decision").map((item) => item.id);
   const replanRequiredIds = record.findings.filter((item) => item.status === "open" && item.kind === "replan_required").map((item) => item.id);
   return {
@@ -5258,7 +5443,7 @@ async function projectAssurance(root, taskId, diffProvider) {
 }
 
 // plugins/immune-brain/runtime/kernel/reducer.ts
-import { createHash as createHash10 } from "node:crypto";
+import { createHash as createHash11 } from "node:crypto";
 var RISK_RANK2 = {
   routine: 0,
   material: 1,
@@ -5285,13 +5470,13 @@ function stableJson(value) {
   return primitive === undefined ? "null" : primitive;
 }
 function canonicalRecordHash(record) {
-  return `sha256:${createHash10("sha256").update(`${JSON.stringify(record, null, 2)}
+  return `sha256:${createHash11("sha256").update(`${JSON.stringify(record, null, 2)}
 `).digest("hex")}`;
 }
 function actionFingerprint(action, intentRevision, intentContentHash, audit) {
   const { expected_record_hash: _r, expected_workspace_hash: _w, diff_hash: _d, ...payload } = action;
   const base = audit ? { action: payload, intentRevision, intentContentHash, audit } : { action: payload, intentRevision, intentContentHash };
-  return createHash10("sha256").update(stableJson(base)).digest("hex");
+  return createHash11("sha256").update(stableJson(base)).digest("hex");
 }
 function historyReason(action, intentRevision, intentContentHash, audit, detail) {
   const fingerprint = `action_v2_sha256:${actionFingerprint(action, intentRevision, intentContentHash, audit)}`;
@@ -5348,9 +5533,20 @@ function findingsDigestV2(findings) {
     id: finding.id,
     kind: finding.kind,
     acceptance_id: finding.acceptance_id,
-    summary: finding.summary
+    summary: finding.summary,
+    ...finding.anchor !== undefined ? { anchor: finding.anchor ?? null } : {},
+    ...finding.evidence !== undefined ? { evidence: finding.evidence ?? null } : {}
   }));
-  return `sha256:${createHash10("sha256").update(stableJson(normalized)).digest("hex")}`;
+  return `sha256:${createHash11("sha256").update(stableJson(normalized)).digest("hex")}`;
+}
+function sharesAcceptanceBoundary(left, right) {
+  if (left.acceptance_id !== null && right.acceptance_id !== null)
+    return left.acceptance_id === right.acceptance_id;
+  if (left.acceptance_id !== null || right.acceptance_id !== null)
+    return false;
+  const leftRef = left.evidence?.violated.ref ?? null;
+  const rightRef = right.evidence?.violated.ref ?? null;
+  return leftRef !== null && leftRef === rightRef;
 }
 function reduceTask(recordRaw, actionRaw, authorityAudit = null, changedPaths) {
   const previous = parseTaskRecord(recordRaw);
@@ -5435,7 +5631,49 @@ function reduceTask(recordRaw, actionRaw, authorityAudit = null, changedPaths) {
         throw new KernelInvariantError([
           `finding ${action.finding_id} is already resolved`
         ]);
+      if (finding.status === "refuted" && refutationIsLive(finding, record.attestations, refutationIdentity(record, action.diff_hash)))
+        throw new KernelInvariantError([
+          `finding ${action.finding_id} is still refuted by live counterevidence`
+        ]);
       finding.status = "resolved";
+      appendHistory(record, action, from, action.finding_id, authorityAudit);
+      break;
+    }
+    case "refute_finding": {
+      if (record.lifecycle !== "active")
+        throw new KernelInvariantError([
+          `cannot refute findings while lifecycle is ${record.lifecycle}`
+        ]);
+      const finding = record.findings.find((item) => item.id === action.finding_id);
+      if (!finding)
+        throw new KernelInvariantError([
+          `finding ${action.finding_id} does not exist`
+        ]);
+      if (finding.kind === "unresolved_user_decision" || finding.kind === "replan_required")
+        throw new KernelInvariantError([
+          "refute_finding cannot refute a user decision or replan boundary"
+        ]);
+      if (finding.status === "resolved")
+        throw new KernelInvariantError([
+          `finding ${action.finding_id} is already resolved`
+        ]);
+      if (!finding.acceptance_id)
+        throw new KernelInvariantError([
+          "refute_finding requires a finding bound to an acceptance id"
+        ]);
+      if (finding.status === "refuted" && refutationIsLive(finding, record.attestations, refutationIdentity(record, action.diff_hash)))
+        throw new KernelInvariantError([
+          `finding ${action.finding_id} is already refuted by live counterevidence`
+        ]);
+      if (!isFreshPassingQaAttestation(record.attestations.find((item) => item.id === action.attestation_id), finding.acceptance_id, refutationIdentity(record, action.diff_hash)))
+        throw new KernelInvariantError([
+          `refute_finding requires a fresh passing QA attestation covering ${finding.acceptance_id ?? "null"}`
+        ]);
+      finding.status = "refuted";
+      finding.counterevidence = {
+        attestation_id: action.attestation_id,
+        acceptance_id: finding.acceptance_id
+      };
       appendHistory(record, action, from, action.finding_id, authorityAudit);
       break;
     }
@@ -5559,28 +5797,55 @@ function reduceTask(recordRaw, actionRaw, authorityAudit = null, changedPaths) {
           "request_rework requires review, qa, or user authority"
         ]);
       const round = reviewRound(record);
-      const hasPriorBlockingReviewRework = record.findings.some((finding) => finding.source === "review" && finding.kind === "blocking" && finding.review_round !== null);
-      const parkForReplan = authorityAudit.authority_kind === "review" && hasPriorBlockingReviewRework && action.findings.some((finding) => finding.kind === "blocking");
+      for (const finding of action.findings) {
+        const anchor = finding.anchor ?? null;
+        const evidence = finding.evidence ?? null;
+        if (anchor === null !== (evidence === null))
+          throw new KernelInvariantError([
+            `finding ${finding.id} must carry anchor and evidence together`
+          ]);
+        if (evidence && anchor !== anchorForEvidence(evidence))
+          throw new KernelInvariantError([
+            `finding ${finding.id} anchor must equal the digest of its evidence`
+          ]);
+        if (anchor !== null && authorityAudit.authority_kind !== "review")
+          throw new KernelInvariantError([
+            `${authorityAudit.authority_kind} rework cannot carry review provenance`
+          ]);
+      }
+      const identity = refutationIdentity(record, action.diff_hash);
+      const priorBlockingReviewFindings = record.findings.filter((finding) => finding.source === "review" && finding.kind === "blocking" && finding.review_round !== null && !(finding.status === "refuted" && refutationIsLive(finding, record.attestations, identity)));
+      const admissions = action.findings.map((finding) => {
+        const inherited = finding.anchor != null ? record.findings.find((prior) => prior.source === "review" && prior.status === "refuted" && prior.anchor === finding.anchor && refutationIsLive(prior, record.attestations, identity)) : undefined;
+        return { finding, inherited };
+      });
+      const disputed = admissions.find(({ finding, inherited }) => finding.kind === "blocking" && inherited === undefined && priorBlockingReviewFindings.some((prior) => sharesAcceptanceBoundary(finding, prior)))?.finding;
+      const parkForReplan = authorityAudit.authority_kind === "review" && disputed !== undefined;
       if (!parkForReplan) {
         record.artifact_state = "active";
         record.intent_ref.path = `docs/plans/${record.task_id}.intent.json`;
       }
       const findingIds = new Set(record.findings.map((item) => item.id));
-      for (const finding of action.findings) {
+      for (const { finding, inherited } of admissions) {
         if (findingIds.has(finding.id))
           throw new KernelInvariantError([
             `findings contains duplicate id ${finding.id}`
           ]);
         findingIds.add(finding.id);
         record.findings.push({
-          ...finding,
-          status: "open",
+          id: finding.id,
+          kind: finding.kind,
+          status: inherited ? "refuted" : "open",
+          acceptance_id: finding.acceptance_id,
           source: authorityAudit.authority_kind === "review" ? "review" : "execution",
-          review_round: authorityAudit.authority_kind === "review" ? round : null
+          review_round: authorityAudit.authority_kind === "review" ? round : null,
+          summary: finding.summary,
+          ...finding.anchor !== undefined ? { anchor: finding.anchor } : {},
+          ...finding.evidence !== undefined ? { evidence: finding.evidence } : {},
+          counterevidence: inherited ? { ...inherited.counterevidence } : null
         });
       }
       if (parkForReplan && !record.findings.some((item) => item.status === "open" && item.kind === "replan_required")) {
-        const disputed = action.findings.find((item) => item.kind === "blocking") ?? action.findings[0];
         const boundary = {
           id: `${action.event_id}:replan-required`,
           kind: "replan_required",
@@ -6052,6 +6317,14 @@ function createCanaryApplication(registry) {
       case "resolve_finding":
         action = { ...base, type: "resolve_finding", finding_id: operation.finding_id };
         break;
+      case "refute_finding":
+        action = {
+          ...base,
+          type: "refute_finding",
+          finding_id: operation.finding_id,
+          attestation_id: operation.attestation_id
+        };
+        break;
       case "request_rework":
         capability = operation.capability;
         action = { ...base, type: "request_rework", findings: operation.findings };
@@ -6178,7 +6451,7 @@ function createCanaryApplication(registry) {
 }
 
 // plugins/immune-brain/runtime/kernel/authority_port.ts
-import { createHash as createHash11 } from "node:crypto";
+import { createHash as createHash12 } from "node:crypto";
 
 // plugins/immune-brain/runtime/kernel/capability_registry.ts
 function createCapabilityRegistry(capabilityBrand, hooks, domainLabel) {
@@ -6226,7 +6499,7 @@ function createCapabilityRegistry(capabilityBrand, hooks, domainLabel) {
 // plugins/immune-brain/runtime/kernel/authority_port.ts
 function digestOfAction(action) {
   const { expected_record_hash: _r, expected_workspace_hash: _w, diff_hash: _d, ...rest } = action;
-  return createHash11("sha256").update(JSON.stringify(rest)).digest("hex");
+  return createHash12("sha256").update(JSON.stringify(rest)).digest("hex");
 }
 function createMutationAuthorityRegistry() {
   const inner = createCapabilityRegistry(MUTATION_AUTHORITY_CAPABILITY_BRAND, {
@@ -6350,7 +6623,7 @@ function createEnrollmentAuthorityRegistry() {
 }
 
 // plugins/immune-brain/runtime/kernel/pi_canary_prepare.ts
-import { createHash as createHash12 } from "node:crypto";
+import { createHash as createHash13 } from "node:crypto";
 import { spawnSync as spawnSync3 } from "node:child_process";
 import { resolve as resolve6 } from "node:path";
 var SOURCE_PATH = ".imm/state/workspace.json";
@@ -6365,7 +6638,7 @@ function readGitHead(root) {
   return head.toLowerCase();
 }
 function sha256Hex2(bytes) {
-  return createHash12("sha256").update(bytes).digest("hex");
+  return createHash13("sha256").update(bytes).digest("hex");
 }
 function stableStringify2(value) {
   if (value === null || typeof value !== "object")
@@ -6689,7 +6962,7 @@ async function runDeterministicQa(snapshot, descriptors, runner, options = {}) {
 }
 
 // plugins/immune-brain/runtime/unattended/batch_plan.ts
-import { createHash as createHash13 } from "node:crypto";
+import { createHash as createHash14 } from "node:crypto";
 
 // plugins/immune-brain/runtime/github_issue_tracker.ts
 import { spawn as spawn2 } from "node:child_process";
@@ -7198,7 +7471,7 @@ async function projectBatchPlan(root, initiativeSlug, input, readInitiative = ob
   }));
   if (!enrollable.length)
     throw new Error("batch plan has no enrollable children; nothing to confirm");
-  const planDigest = `sha256:${createHash13("sha256").update(stableStringify(enrollable)).digest("hex")}`;
+  const planDigest = `sha256:${createHash14("sha256").update(stableStringify(enrollable)).digest("hex")}`;
   return {
     contract: "assurance_kernel/batch_plan/v1",
     initiative_slug: initiativeSlug,
@@ -7217,7 +7490,7 @@ import { existsSync as existsSync5 } from "node:fs";
 import { join as join9 } from "node:path";
 
 // plugins/immune-brain/runtime/kernel/batch_authority.ts
-import { createHash as createHash14 } from "node:crypto";
+import { createHash as createHash15 } from "node:crypto";
 var BATCH_AUTHORITY_CAPABILITY_BRAND = Symbol.for("assurance-kernel.batch-authority-capability-brand");
 var GIT_COMMIT_ID2 = /^[a-f0-9]{40}$/;
 
@@ -7228,7 +7501,7 @@ class BatchAuthorizationExpiryError extends Error {
   }
 }
 function sha256Hex3(bytes) {
-  return createHash14("sha256").update(bytes).digest("hex");
+  return createHash15("sha256").update(bytes).digest("hex");
 }
 function stableStringify3(value) {
   if (value === null || typeof value !== "object")
@@ -9080,7 +9353,7 @@ async function mintCapability(registry, input) {
     actor_id: input.actor_id,
     confirmation_ref: input.confirmation_ref,
     expires_at: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
-    findings_digest: input.action_kind === "request_rework" ? await findingsDigest(input.findings) : null
+    findings_digest: input.action_kind === "request_rework" ? findingsDigestV2(input.findings) : null
   };
   return registry.issue(binding);
 }
@@ -9314,6 +9587,17 @@ class ClaudeRuntime {
       operation: { op: "resolve_finding", finding_id: findingId, actor_id: "executor" }
     });
   }
+  async refuteFinding(taskId, findingId, attestationId) {
+    return this.executeOrdinary({ cwd: this.cwd }, {
+      taskId,
+      operation: {
+        op: "refute_finding",
+        finding_id: findingId,
+        attestation_id: attestationId,
+        actor_id: "executor"
+      }
+    });
+  }
   async authorize(taskId, operation, meta, extra = {}) {
     if (operation === "repair_authority_state") {
       const authority = reconcileKernelAuthority(this.cwd, taskId);
@@ -9482,15 +9766,7 @@ class ClaudeRuntime {
       return result2;
     };
     if (input.verdict.decision === "rework") {
-      const findings = input.verdict.findings.map((finding) => ({
-        id: finding.id,
-        kind: finding.kind,
-        status: "open",
-        acceptance_id: finding.acceptance_id,
-        source: "review",
-        review_round: null,
-        summary: finding.summary
-      }));
+      const findings = reviewReworkFindings(input.verdict);
       const capability2 = await mintCapability(registry, {
         authority_kind: input.snapshot.role,
         task_id: input.taskId,
@@ -10165,7 +10441,8 @@ var TOOLS = [
   { name: "stop", description: "Stop the active task with literal-user authority.", privileged: true },
   { name: "start_unattended_batch", description: "Start an unattended serial batch run for an Initiative after native confirmation.", privileged: true },
   { name: "repair_authority_state", description: "Repair a proven recoverable stale backend claim.", privileged: false },
-  { name: "resolve_finding", description: "Resolve one open blocking or advisory finding whose cause is fixed and verified.", privileged: false }
+  { name: "resolve_finding", description: "Resolve one open blocking or advisory finding whose cause is fixed and verified.", privileged: false },
+  { name: "refute_finding", description: "Refute one open finding by binding the fresh passing QA attestation that contradicts it.", privileged: false }
 ];
 function listMcpTools() {
   return TOOLS.map((tool) => ({
@@ -10179,10 +10456,11 @@ function listMcpTools() {
           ...tool.name === "approve_breaking_intent_revision" ? { next_intent: { type: "object" } } : {},
           ...tool.name === "stop" ? { reason: { type: "string" } } : {},
           ...tool.name === "submit_review" ? { verdict: { type: "object" } } : {},
-          ...tool.name === "resolve_finding" ? { finding_id: { type: "string" } } : {}
+          ...tool.name === "resolve_finding" ? { finding_id: { type: "string" } } : {},
+          ...tool.name === "refute_finding" ? { finding_id: { type: "string" }, attestation_id: { type: "string" } } : {}
         }
       },
-      required: tool.name === "start_unattended_batch" ? ["initiative_slug"] : tool.name === "submit_review" ? ["task_id", "verdict"] : tool.name === "resolve_finding" ? ["task_id", "finding_id"] : ["task_id"]
+      required: tool.name === "start_unattended_batch" ? ["initiative_slug"] : tool.name === "submit_review" ? ["task_id", "verdict"] : tool.name === "resolve_finding" ? ["task_id", "finding_id"] : tool.name === "refute_finding" ? ["task_id", "finding_id", "attestation_id"] : ["task_id"]
     },
     annotations: tool.privileged ? privilegedAnnotations() : { readOnlyHint: tool.name === "status" }
   }));
@@ -10280,6 +10558,13 @@ function createMcpRuntime(options = {}) {
         if (typeof args.finding_id !== "string" || !args.finding_id)
           throw new Error("finding_id is required");
         return runtime.resolveFinding(taskId, args.finding_id);
+      }
+      if (name === "refute_finding") {
+        if (typeof args.finding_id !== "string" || !args.finding_id)
+          throw new Error("finding_id is required");
+        if (typeof args.attestation_id !== "string" || !args.attestation_id)
+          throw new Error("attestation_id is required");
+        return runtime.refuteFinding(taskId, args.finding_id, args.attestation_id);
       }
       if (name === "request_authorization" || name === "approve_breaking_intent_revision" || name === "stop" || name === "repair_authority_state") {
         return runtime.authorize(taskId, name, toolMeta, args);

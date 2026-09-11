@@ -16,8 +16,23 @@ export type FindingKind =
 	| "advisory"
 	| "unresolved_user_decision"
 	| "replan_required";
-export type FindingStatus = "open" | "resolved";
+export type FindingStatus = "open" | "resolved" | "refuted";
 export type FindingSource = "execution" | "review" | "kernel" | "migration";
+
+/** Machine-checkable provenance a Review finding must carry at the verdict boundary. */
+export interface FindingEvidence {
+	trigger: string;
+	caller_chain: string[];
+	violated: {
+		kind: "acceptance" | "security_boundary";
+		ref: string;
+	};
+}
+
+export interface FindingCounterevidence {
+	attestation_id: string;
+	acceptance_id: string;
+}
 
 export interface TaskFinding {
 	id: string;
@@ -27,6 +42,19 @@ export interface TaskFinding {
 	source: FindingSource;
 	review_round: number | null;
 	summary: string;
+	/**
+	 * Additive v4 fields. Absent on records written before this contract
+	 * extension, so the TaskRecord contract is not bumped; `parseFinding`
+	 * normalizes them to null.
+	 *
+	 * `anchor` identifies the claim (sha256 over violated + caller_chain),
+	 * `evidence` is the reviewer-supplied provenance that produced it, and
+	 * `counterevidence` binds a refutation to the Kernel-validated QA
+	 * attestation that contradicted the claim.
+	 */
+	anchor?: string | null;
+	evidence?: FindingEvidence | null;
+	counterevidence?: FindingCounterevidence | null;
 }
 
 export type ApprovalKind = "review" | "qa" | "user";
@@ -283,6 +311,11 @@ export interface TaskActionBase {
 export type TaskAction =
 	| (TaskActionBase & { type: "record_finding"; finding: TaskFinding })
 	| (TaskActionBase & { type: "resolve_finding"; finding_id: string })
+	| (TaskActionBase & {
+			type: "refute_finding";
+			finding_id: string;
+			attestation_id: string;
+	  })
 	| (TaskActionBase & { type: "record_approval"; approval: TaskApprovalV2 })
 	| (TaskActionBase & {
 			type: "revise_intent";

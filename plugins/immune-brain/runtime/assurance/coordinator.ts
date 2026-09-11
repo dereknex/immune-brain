@@ -7,6 +7,8 @@
 // evidence reservation.
 
 import { createHash, randomUUID } from "node:crypto";
+import type { FindingEvidence, TaskFinding } from "../kernel/types";
+import { anchorForEvidence } from "../kernel/refutation";
 import {
 	findingsDigest,
 	type FrozenRunner,
@@ -88,8 +90,38 @@ export interface AssuranceVerdict {
 		kind: "blocking" | "advisory";
 		acceptance_id: string | null;
 		summary: string;
+		/**
+		 * Derived by `parseAssuranceVerdict` for Review-role rework findings. QA
+		 * findings and pass verdicts never carry it.
+		 */
+		anchor?: string;
+		evidence?: FindingEvidence;
+		/** Digest this plugin's verdict parser derives for one finding. */
 		findings_digest: string;
 	}>;
+}
+
+/**
+ * The single Review-verdict → Kernel-finding mapping both Host adapters use.
+ * Keeping it here is what makes the two Hosts produce the same
+ * `findingsDigestV2` for the same verdict: the reviewer's anchor and evidence
+ * are forwarded unchanged into the capability binding and the Kernel action.
+ */
+export function reviewReworkFindings(verdict: AssuranceVerdict): TaskFinding[] {
+	if (verdict.decision !== "rework" || !verdict.findings?.length)
+		throw new Error("review rework findings require a rework verdict");
+	return verdict.findings.map((finding) => ({
+		id: finding.id,
+		kind: finding.kind,
+		status: "open" as const,
+		acceptance_id: finding.acceptance_id,
+		source: "review" as const,
+		review_round: null,
+		summary: finding.summary,
+		anchor: finding.anchor ?? null,
+		evidence: finding.evidence ?? null,
+		counterevidence: null,
+	}));
 }
 
 export interface ReviewRevisionIdentity {
@@ -314,10 +346,55 @@ export function buildReviewPrompt(snapshot: SnapshotDescriptor, evidencePath?: s
 			: `Intent revision ${snapshot.intent_revision} (hash ${snapshot.intent_content_hash}), diff ${snapshot.diff_hash}, review bundle ${snapshot.review_bundle_digest}, state ${snapshot.lifecycle}:${snapshot.artifact_state}.`,
 		"Acceptance assertions:", acceptance,
 		"Reserve the final turn for exactly one strict JSON verdict. Reply with ONLY that object, without markdown fences or commentary.",
+		`Every rework finding must carry machine-checkable provenance: evidence.trigger (the concrete inputs or state that reach the defect), a non-empty evidence.caller_chain (ordered repository paths or symbols), and evidence.violated {kind: "acceptance"|"security_boundary", ref}. The anchor is derived from that evidence; a finding without it is rejected and the correction must be resubmitted.`,
 		`PASS shape: {"contract":"assurance_kernel/assurance_verdict/v2","role":"review","task_id":"${snapshot.task_id}","snapshot_digest":"${digest}","decision":"pass","approval":{"kind":"review","authority_role":"reviewer","summary":"<one line>"}}`,
-		`REWORK shape: {"contract":"assurance_kernel/assurance_verdict/v2","role":"review","task_id":"${snapshot.task_id}","snapshot_digest":"${digest}","decision":"rework","findings":[{"id":"review-1","kind":"blocking|advisory","acceptance_id":"<id|null>","summary":"<one line>"}]}`,
+		`REWORK shape: {"contract":"assurance_kernel/assurance_verdict/v2","role":"review","task_id":"${snapshot.task_id}","snapshot_digest":"${digest}","decision":"rework","findings":[{"id":"review-1","kind":"blocking|advisory","acceptance_id":"<id|null>","summary":"<one line>","evidence":{"trigger":"<concrete inputs or state>","caller_chain":["<path-or-symbol>"],"violated":{"kind":"acceptance|security_boundary","ref":"<acceptance id or boundary>"}}}]}`,
 		`REWORK verdicts must omit the approval field entirely; do not emit "approval": null.`,
 	].join("\n");
+}
+
+function parseVerdictEvidence(value: unknown, index: number): FindingEvidence {
+	if (!value || typeof value !== "object" || Array.isArray(value))
+		throw new Error(`finding ${index} evidence is required`);
+	const evidence = value as Record<string, unknown>;
+	const unknown = Object.keys(evidence).find(
+		(key) => !["trigger", "caller_chain", "violated"].includes(key),
+	);
+	if (unknown) throw new Error(`finding ${index} evidence has unknown field: ${unknown}`);
+	if (typeof evidence.trigger !== "string" || !evidence.trigger.trim())
+		throw new Error(`finding ${index} evidence.trigger must be a non-empty string`);
+	const chain = evidence.caller_chain;
+	if (
+		!Array.isArray(chain) ||
+		chain.length === 0 ||
+		chain.some((entry) => typeof entry !== "string" || !entry.trim())
+	)
+		throw new Error(
+			`finding ${index} evidence.caller_chain must be a non-empty list of paths or symbols`,
+		);
+	const violated = evidence.violated;
+	if (!violated || typeof violated !== "object" || Array.isArray(violated))
+		throw new Error(`finding ${index} evidence.violated is required`);
+	const violatedRecord = violated as Record<string, unknown>;
+	const unknownViolated = Object.keys(violatedRecord).find(
+		(key) => !["kind", "ref"].includes(key),
+	);
+	if (unknownViolated)
+		throw new Error(`finding ${index} evidence.violated has unknown field: ${unknownViolated}`);
+	if (violatedRecord.kind !== "acceptance" && violatedRecord.kind !== "security_boundary")
+		throw new Error(
+			`finding ${index} evidence.violated.kind must be acceptance or security_boundary`,
+		);
+	if (typeof violatedRecord.ref !== "string" || !violatedRecord.ref.trim())
+		throw new Error(`finding ${index} evidence.violated.ref must be a non-empty string`);
+	return {
+		trigger: evidence.trigger,
+		caller_chain: chain as string[],
+		violated: {
+			kind: violatedRecord.kind,
+			ref: violatedRecord.ref,
+		},
+	};
 }
 
 export function parseAssuranceVerdict(input: unknown, snapshot: SnapshotDescriptor): AssuranceVerdict {
@@ -353,12 +430,33 @@ export function parseAssuranceVerdict(input: unknown, snapshot: SnapshotDescript
 	if (raw.approval !== undefined && raw.approval !== null) throw new Error("rework verdict must omit approval");
 	const findings = raw.findings.map((item, index) => {
 		const finding = item as Record<string, unknown>;
-		const unknownFinding = Object.keys(finding).find((key) => !["id", "kind", "acceptance_id", "summary"].includes(key));
+		const allowedFindingKeys =
+			snapshot.role === "review"
+				? ["id", "kind", "acceptance_id", "summary", "evidence"]
+				: ["id", "kind", "acceptance_id", "summary"];
+		const unknownFinding = Object.keys(finding).find(
+			(key) => !allowedFindingKeys.includes(key),
+		);
 		if (unknownFinding) throw new Error(`finding ${index} has unknown field: ${unknownFinding}`);
 		if (typeof finding.id !== "string" || !finding.id.trim() || (finding.kind !== "blocking" && finding.kind !== "advisory") || (finding.acceptance_id !== null && typeof finding.acceptance_id !== "string") || typeof finding.summary !== "string" || !finding.summary.trim()) throw new Error(`finding ${index} is invalid`);
 		const id = `review-${snapshotDigest(snapshot).slice(7, 19)}-${index + 1}-${finding.id.replace(/[^A-Za-z0-9._-]/g, "-").slice(0, 48)}`;
 		const normalized = { id, kind: finding.kind as "blocking" | "advisory", acceptance_id: finding.acceptance_id as string | null, summary: finding.summary as string };
-		return { ...normalized, findings_digest: findingsDigest([normalized]) };
+		if (snapshot.role !== "review")
+			return { ...normalized, findings_digest: findingsDigest([normalized]) };
+		// Review findings must carry evidence; the anchor is derived here so a
+		// capability minted for one anchor set cannot be spent on another and
+		// the reviewer can never assert the anchor directly.
+		const evidence = parseVerdictEvidence(finding.evidence, index);
+		// The digest that decides refutation inheritance is derived here so the
+		// reviewer can never assert the anchor directly; the Kernel recomputes it
+		// from the same evidence before admitting the finding.
+		const anchor = anchorForEvidence(evidence);
+		return {
+			...normalized,
+			anchor,
+			evidence,
+			findings_digest: findingsDigest([normalized]),
+		};
 	});
 	return { contract: "assurance_kernel/assurance_verdict/v2", role: snapshot.role, task_id: snapshot.task_id, snapshot_digest: snapshotDigest(snapshot), decision: "rework", findings };
 }

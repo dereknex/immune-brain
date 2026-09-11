@@ -71,6 +71,7 @@ import {
 } from "./pi-canary-interaction";
 import { isToolFailureState, throwToolFailure, type ToolFailureV1 } from "./pi-canary-tool-failure";
 import { taskDiffIdentity, taskRevisionIdentity, captureGitTaskSnapshot } from "../runtime/workspace_scope";
+import { reviewReworkFindings } from "../runtime/assurance/coordinator";
 import {
 	AssuranceProgression,
 	buildReviewPrompt,
@@ -144,6 +145,7 @@ const KERNEL_OPERATIONS = [
 	"freeze_artifacts",
 	"record_finding",
 	"resolve_finding",
+	"refute_finding",
 	"revise_intent",
 	"complete",
 ] as const;
@@ -455,6 +457,11 @@ export default function (
 					}),
 				}),
 				Type.Object({ op: Type.Literal("resolve_finding"), finding_id: Type.String() }),
+				Type.Object({
+					op: Type.Literal("refute_finding"),
+					finding_id: Type.String(),
+					attestation_id: Type.String(),
+				}),
 				Type.Object({
 					op: Type.Literal("revise_intent"),
 					next_intent: TASK_INTENT_SCHEMA,
@@ -1076,7 +1083,11 @@ export function deriveAuthorizationOperation(input: {
 	return { blocked: "no unique host-derived authorization operation" };
 }
 
-function toCanaryOperation(action: { op: string }, actorId: string) {
+/**
+ * Ordinary Kernel operation mapping, exported so the conformance suite can
+ * prove the Tool schema and this projection cannot drift apart.
+ */
+export function toCanaryOperation(action: { op: string }, actorId: string) {
 	switch (action.op) {
 		case "freeze_artifacts":
 			return { op: "freeze_artifacts", actor_id: actorId };
@@ -1088,6 +1099,13 @@ function toCanaryOperation(action: { op: string }, actorId: string) {
 			};
 		case "resolve_finding":
 			return { op: "resolve_finding", finding_id: (action as unknown as { finding_id: string }).finding_id, actor_id: actorId };
+		case "refute_finding":
+			return {
+				op: "refute_finding",
+				finding_id: (action as unknown as { finding_id: string }).finding_id,
+				attestation_id: (action as unknown as { attestation_id: string }).attestation_id,
+				actor_id: actorId,
+			};
 		case "revise_intent":
 			return { op: "revise_intent", next_intent: (action as unknown as { next_intent: unknown }).next_intent, actor_id: actorId };
 		case "complete":
@@ -1379,15 +1397,7 @@ async function applyAssuranceVerdict(
 		return result;
 	};
 	if (verdict.decision === "rework") {
-		const findings = verdict.findings!.map((finding) => ({
-			id: finding.id,
-			kind: finding.kind,
-			status: "open",
-			acceptance_id: finding.acceptance_id,
-			source: "review",
-			review_round: null,
-			summary: finding.summary,
-		}));
+		const findings = reviewReworkFindings(verdict);
 		const now = new Date().toISOString();
 		const capability = await mintCapability(registry, {
 			authority_kind: authorityKind,
@@ -1656,14 +1666,7 @@ async function mintCapability(
 		expires_at: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
 		findings_digest:
 			input.action_kind === "request_rework"
-				? await findingsDigestV2(
-						(input.findings as Array<{ id: string; kind: string; acceptance_id: string | null; summary: string }>).map((f) => ({
-							id: f.id,
-							kind: f.kind,
-							acceptance_id: f.acceptance_id,
-							summary: f.summary,
-						})),
-					)
+				? await findingsDigestV2(input.findings as never[])
 				: null,
 	};
 	return registry.issue(binding);
@@ -1936,6 +1939,7 @@ export {
 	classifyReviewWorkload,
 	deriveQaJobTimeoutMs,
 	parseAssuranceVerdict,
+	reviewReworkFindings,
 	snapshotDigest,
 	QA_JOB_TIMEOUT_SECONDS,
 	REVIEW_DISPATCH_TIMEOUT_MS,

@@ -1,0 +1,74 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "review-finding-provenance",
+  "owner": "user",
+  "goal": "Carry a refuted Review finding forward with its executable counterevidence so a later independent Review round does not rediscover it as new work, while the refutation loses force the moment its bound evidence goes stale.",
+  "acceptance": [
+    {
+      "id": "A1",
+      "assertion": "parseAssuranceVerdict rejects a review-role rework verdict whose findings omit evidence.trigger, a non-empty evidence.caller_chain, or evidence.violated {kind, ref}, returning the existing verdict_invalid blocked result without writing authority; a complete verdict parses and derives a stable sha256 anchor over the canonical {violated.kind, violated.ref, caller_chain}; QA-role and pass verdicts are unchanged; and buildReviewPrompt instructs the required evidence fields without disclosing any prior finding.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/host-neutral-assurance-coordinator.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 60000,\n  \"max_output_bytes\": 32768\n}\n"
+    },
+    {
+      "id": "A2",
+      "assertion": "A refute_finding operation and action set an open finding to status refuted with a counterevidence binding of {attestation_id, acceptance_id}, and are rejected with a KernelInvariantError when no fresh passing QA attestation in the record covers that acceptance_id; TaskFinding gains only optional anchor and counterevidence fields so the TaskRecord contract is not bumped, and the append-only invariant still rejects finding removal and any rewrite other than the open-to-resolved and open-to-refuted transitions.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/kernel-r2c2-reducer.test.ts\",\n    \"tests/kernel-canary-application.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 60000,\n  \"max_output_bytes\": 32768\n}\n"
+    },
+    {
+      "id": "A3",
+      "assertion": "request_rework records a new review finding whose anchor matches a live refuted finding as status refuted with that finding's inherited counterevidence binding, so it is not counted in blocking_finding_ids while the bound attestation stays fresh, and records a review finding carrying a different anchor as status open so it still blocks completion; findingsDigestV2 covers anchor so a capability minted for one anchor set cannot be spent on another.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/kernel-canary-rework-authority.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 60000,\n  \"max_output_bytes\": 32768\n}\n"
+    },
+    {
+      "id": "A4",
+      "assertion": "Refutation liveness is derived rather than stored: completionDecision counts a refuted finding as blocking again as soon as its bound attestation leaves the fresh set because diff_hash or the intent revision changed, and projectTask then reports next_obligation resolve_findings, while a refuted finding whose attestation is still fresh neither blocks completion nor appears in blocking_finding_ids.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/kernel-assurance-projection.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 60000,\n  \"max_output_bytes\": 32768\n}\n"
+    },
+    {
+      "id": "A5",
+      "assertion": "The replan boundary parks a task only when a new blocking review finding that was not admitted as refuted shares an acceptance boundary with a prior blocking review finding, where a shared boundary means an equal acceptance_id or, when both are null, an equal evidence.violated.ref; a second-round blocking review finding on an unrelated acceptance boundary no longer writes a replan_required finding.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/kernel-canary-rework-authority.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 60000,\n  \"max_output_bytes\": 32768\n}\n"
+    },
+    {
+      "id": "A6",
+      "assertion": "The Claude and Pi host adapters both forward evidence and anchor from the parsed verdict into the findings array they pass to findingsDigestV2 when minting the request_rework capability, so the two hosts produce the same findings digest for the same verdict and neither can submit review findings that reach the Kernel without an anchor.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/claude-host-authority.test.ts\",\n    \"tests/pi-canary-assurance-authority.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 32768\n}\n"
+    },
+    {
+      "id": "A7",
+      "assertion": "The code-review role prompt states the required finding evidence fields and their anchor semantics, and the checked-in generated mirror under plugins/immune-brain/dist/role-prompts/ matches its runtime source so the packaged reviewer contract cannot drift from the runtime one.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/dist-docs-sync-contract.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 60000,\n  \"max_output_bytes\": 32768\n}\n"
+    }
+  ],
+  "scope_hint": [
+    "docs/plans/archive/review-finding-provenance.intent.json",
+    "docs/plans/review-finding-provenance.intent.json",
+    "docs/specs/archive/review-finding-provenance.spec.md",
+    "docs/specs/review-finding-provenance.spec.md",
+    "plugins/immune-brain/.pi-extension/imm-canary-work.ts",
+    "plugins/immune-brain/.pi-extension/runtime-stub.ts",
+    "plugins/immune-brain/dist/role-prompts/code-review.md",
+    "plugins/immune-brain/runtime/assurance/coordinator.ts",
+    "plugins/immune-brain/runtime/claude/kernel_ports.ts",
+    "plugins/immune-brain/runtime/kernel/canary_application.ts",
+    "plugins/immune-brain/runtime/kernel/completion.ts",
+    "plugins/immune-brain/runtime/kernel/reducer.ts",
+    "plugins/immune-brain/runtime/kernel/types.ts",
+    "plugins/immune-brain/runtime/kernel/validation.ts",
+    "plugins/immune-brain/runtime/prompts/code-review.md",
+    "tests/claude-host-authority.test.ts",
+    "tests/dist-docs-sync-contract.test.ts",
+    "tests/helpers/pi-canary-assurance-harness.ts",
+    "tests/host-neutral-assurance-coordinator.test.ts",
+    "tests/kernel-assurance-projection.test.ts",
+    "tests/kernel-canary-application.test.ts",
+    "tests/kernel-canary-rework-authority.test.ts",
+    "tests/kernel-r2c2-reducer.test.ts",
+    "tests/pi-canary-assurance-authority.test.ts",
+    "tests/pi-canary-assurance-continuation.test.ts",
+    "tests/pi-canary-assurance-progression.test.ts",
+    "tests/pi-canary-review-outcome-evidence.test.ts"
+  ],
+  "risk": "critical",
+  "revision": 1
+}

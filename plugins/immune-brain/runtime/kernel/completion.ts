@@ -8,6 +8,7 @@ import type {
 	TaskRecord,
 } from "./types";
 import { assertKernelInvariantsV3, KernelInvariantError } from "./validation";
+import { refutationIsLive } from "./refutation";
 
 const REQUIRED_ATTESTATIONS: Record<TaskIntentV1["risk"], ApprovalKind[]> = {
 	routine: ["qa"],
@@ -137,8 +138,25 @@ export function completionDecision(
 		.filter((item) => repeatedActors.has(item.actor_id))
 		.map((item) => item.id);
 
+	// A refutation is live only while its bound QA attestation is still fresh
+	// for this diff and intent hash. When it goes stale the refuted finding
+	// counts as blocking again; nothing stored is rewritten by that
+	// invalidation, so the append-only invariant survives. The identity is the
+	// one `freshAttestations` filters on, including the caller's current intent
+	// hash, so a drifted intent revives the gate with the attestation.
+	const refutationState = {
+		intent_revision: intent.revision,
+		intent_content_hash: currentIntentContentHash,
+		diff_hash: currentDiffHash,
+	};
 	const blockingFindingIds = record.findings
-		.filter((item) => item.status === "open" && item.kind === "blocking")
+		.filter(
+			(item) =>
+				item.kind === "blocking" &&
+				(item.status === "open" ||
+					(item.status === "refuted" &&
+						!refutationIsLive(item, record.attestations, refutationState))),
+		)
 		.map((item) => item.id);
 	const unresolvedUserDecisionIds = record.findings
 		.filter((item) => item.status === "open" && item.kind === "unresolved_user_decision")

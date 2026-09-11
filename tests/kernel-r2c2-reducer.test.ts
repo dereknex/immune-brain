@@ -10,7 +10,8 @@ import type {
 	TaskAction,
 	TaskRecordV3,
 } from "../plugins/immune-brain/runtime/kernel/types";
-import { KernelInvariantError, parseTaskRecordV3 } from "../plugins/immune-brain/runtime/kernel/validation";
+import { KernelInvariantError, KernelValidationError, assertTaskRecordUpdateV3, parseTaskRecordV3 } from "../plugins/immune-brain/runtime/kernel/validation";
+import { anchorForEvidence } from "../plugins/immune-brain/runtime/kernel/refutation";
 
 const INTENT = {
 	contract: "assurance_kernel/task_intent/v1",
@@ -29,8 +30,8 @@ const INTENT_HASH = canonicalIntentHash(INTENT);
 const DIFF = `sha256:${"a".repeat(64)}`;
 const WS = `sha256:${"b".repeat(64)}`;
 
-function recordFixture(overrides: Partial<TaskRecordV3> = {}): TaskRecordV3 {
-	const record: TaskRecordV3 = {
+function rawRecordFixture(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+	return {
 		contract: "assurance_kernel/task_record/v3",
 		task_id: "task-r2c2",
 		intent_snapshot: INTENT,
@@ -44,8 +45,27 @@ function recordFixture(overrides: Partial<TaskRecordV3> = {}): TaskRecordV3 {
 		attestations: [],
 		findings: [],
 		history: [],
+		...overrides,
 	};
-	return parseTaskRecordV3({ ...record, ...overrides } as unknown as Record<string, unknown>);
+}
+
+function recordFixture(overrides: Partial<TaskRecordV3> = {}): TaskRecordV3 {
+	return parseTaskRecordV3(rawRecordFixture(overrides as Record<string, unknown>));
+}
+
+function qaAttestation(overrides: Record<string, unknown> = {}) {
+	return {
+		id: "ap-qa",
+		kind: "qa",
+		authority_role: "qa",
+		task_revision: 1,
+		intent_content_hash: INTENT_HASH,
+		diff_hash: DIFF,
+		actor_id: "qa-1",
+		summary: "qa passed",
+		acceptance_results: [{ acceptance_id: "A1", status: "passed", summary: "A1 passed" }],
+		...overrides,
+	};
 }
 
 function frozenFixture(overrides: Partial<TaskRecordV3> = {}): TaskRecordV3 {
@@ -295,5 +315,233 @@ describe("TaskRecord v3 reducer", () => {
 			...baseAction("complete"),
 			expected_record_hash: `sha256:${"0".repeat(64)}`,
 		} as TaskAction, null)).toThrow(KernelInvariantError);
+	});
+
+	test("refute_finding binds a fresh passing QA attestation and rejects everything weaker", () => {
+		const finding = {
+			id: "f-1",
+			kind: "blocking",
+			status: "open",
+			acceptance_id: "A1",
+			source: "review",
+			review_round: 1,
+			summary: "broken",
+		} as const;
+		const attestation = qaAttestation;
+		const fixture = (findings: unknown[], attestations: unknown[] = []) =>
+			recordFixture({ findings, attestations } as never);
+		const refute = (record: TaskRecordV3) =>
+			reduce(record, {
+				...baseAction("refute_finding"),
+				finding_id: "f-1",
+				attestation_id: "ap-qa",
+			} as TaskAction);
+		const resolve = (record: TaskRecordV3) =>
+			reduce(record, {
+				...baseAction("resolve_finding"),
+				finding_id: "f-1",
+			} as TaskAction);
+		// The actor cannot assert a refutation: no fresh, passing QA attestation
+		// covering A1 means the action is rejected with the record unchanged.
+		expect(() => refute(fixture([finding]))).toThrow(KernelInvariantError);
+		expect(() => refute(fixture([finding], [attestation({ diff_hash: `sha256:${"e".repeat(64)}` })]))).toThrow(KernelInvariantError);
+		expect(() => refute(fixture([finding], [attestation({ task_revision: 2 })]))).toThrow(KernelInvariantError);
+		expect(() => refute(fixture([finding], [attestation({ acceptance_results: [{ acceptance_id: "A1", status: "failed", summary: "no" }] })]))).toThrow(KernelInvariantError);
+		// A fresh passing QA attestation covering the finding's acceptance refutes it.
+		const mutation = refute(fixture([finding], [attestation()]));
+		expect(mutation.record.findings[0]).toMatchObject({
+			status: "refuted",
+			counterevidence: { attestation_id: "ap-qa", acceptance_id: "A1" },
+		});
+		// Append-only: a live refutation cannot be rewritten by another
+		// refute_finding.
+		expect(() => refute(mutation.record)).toThrow(KernelInvariantError);
+		// A live refutation already suppresses the finding, so resolving it would
+		// make that suppression permanent; the Kernel refuses while the bound
+		// evidence is live.
+		expect(() => resolve(mutation.record)).toThrow(KernelInvariantError);
+		// Once the bound attestation leaves the fresh set the refutation has no
+		// force, so the stale refuted finding is resolvable again.
+		const staleRefuted = fixture(
+			[{
+				...finding,
+				status: "refuted",
+				counterevidence: { attestation_id: "ap-qa", acceptance_id: "A1" },
+			}],
+			[attestation({ diff_hash: `sha256:${"e".repeat(64)}` })],
+		);
+		expect(resolve(staleRefuted).record.findings[0].status).toBe("resolved");
+	});
+
+	test("a persisted refutation must prove the binding the Kernel could have written", () => {
+		const refutedFinding = {
+			id: "f-1",
+			kind: "blocking",
+			status: "refuted",
+			acceptance_id: "A1",
+			source: "review",
+			review_round: 1,
+			summary: "already refuted",
+			counterevidence: { attestation_id: "ap-qa", acceptance_id: "A1" },
+		};
+		const parse = (findings: unknown[], attestations: unknown[] = []) =>
+			parseTaskRecordV3(rawRecordFixture({ findings, attestations }));
+		// The record a live refutation is written as stays parseable.
+		expect(parse([refutedFinding], [qaAttestation()])).toBeTruthy();
+		// A refuted finding without the evidence it claims is not authority.
+		expect(() => parse([{ ...refutedFinding, counterevidence: undefined }], [qaAttestation()]))
+			.toThrow(KernelValidationError);
+		// Evidence for another acceptance cannot suppress this finding.
+		expect(() => parse(
+			[{ ...refutedFinding, counterevidence: { attestation_id: "ap-qa", acceptance_id: "A2" } }],
+			[qaAttestation()],
+		)).toThrow(KernelValidationError);
+		// An inherited refutation keeps the acceptance its QA evidence was
+		// proved on, which need not be the finding's own acceptance id.
+		expect(parse(
+			[{
+				...refutedFinding,
+				acceptance_id: "A2",
+				counterevidence: { attestation_id: "ap-qa", acceptance_id: "A1" },
+			}],
+			[qaAttestation()],
+		)).toBeTruthy();
+		// Dangling or non-QA evidence is not executable counterevidence.
+		expect(() => parse([refutedFinding])).toThrow(KernelValidationError);
+		expect(() => parse([refutedFinding], [qaAttestation({ kind: "review", authority_role: "reviewer" })]))
+			.toThrow(KernelValidationError);
+		// An open finding cannot carry counterevidence, and an asserted anchor
+		// must have the derived digest shape.
+		expect(() => parse([{ ...refutedFinding, status: "open" }], [qaAttestation()]))
+			.toThrow(KernelValidationError);
+		expect(() => parse([{
+			id: "f-1",
+			kind: "blocking",
+			status: "open",
+			acceptance_id: "A1",
+			source: "review",
+			review_round: 1,
+			summary: "asserted anchor",
+			anchor: "not-a-digest",
+		}])).toThrow(KernelValidationError);
+		// A refuted user decision or replan boundary would hide the gate those
+		// findings exist to hold.
+		for (const kind of ["unresolved_user_decision", "replan_required"])
+			expect(() => parse([{ ...refutedFinding, kind }], [qaAttestation()]))
+				.toThrow(KernelValidationError);
+		// An anchor is only authority when it is the digest of the finding's own
+		// evidence.
+		const evidence = {
+			trigger: "the claim was reproduced by its caller chain",
+			caller_chain: ["runtime/kernel/refutation.ts"],
+			violated: { kind: "acceptance", ref: "A1" },
+		};
+		const derived = anchorForEvidence(evidence as never);
+		expect(parse([{ ...refutedFinding, anchor: derived, evidence }], [qaAttestation()])).toBeTruthy();
+		expect(() => parse([{ ...refutedFinding, anchor: derived }], [qaAttestation()]))
+			.toThrow(KernelValidationError);
+		expect(() => parse([{ ...refutedFinding, anchor: `sha256:${"b".repeat(64)}`, evidence }], [qaAttestation()]))
+			.toThrow(KernelValidationError);
+	});
+
+	test("a legal refutation transition may not carry a rewritten claim", () => {
+		const finding = {
+			id: "f-1",
+			kind: "blocking",
+			status: "open",
+			acceptance_id: "A1",
+			source: "review",
+			review_round: 1,
+			summary: "broken",
+		} as const;
+		const previous = recordFixture({ findings: [finding], attestations: [qaAttestation()] } as never);
+		const action = {
+			...baseAction("refute_finding"),
+			finding_id: "f-1",
+			attestation_id: "ap-qa",
+		} as TaskAction;
+		const mutation = reduce(previous, action);
+		// The Kernel's own transition is a legal write...
+		expect(() => assertTaskRecordUpdateV3(previous, mutation.record, action)).not.toThrow();
+		// ...but the same transition cannot also rewrite the claim it refutes.
+		const tampered = {
+			...mutation.record,
+			findings: mutation.record.findings.map((item) =>
+				item.id === "f-1" ? { ...item, summary: "rewritten" } : item,
+			),
+		} as TaskRecordV3;
+		expect(() => assertTaskRecordUpdateV3(previous, tampered, action)).toThrow(KernelInvariantError);
+	});
+
+	test("the append-only refutation exemption admits only the Kernel's transitions", () => {
+		const finding = {
+			id: "f-1",
+			kind: "blocking",
+			status: "open",
+			acceptance_id: "A1",
+			source: "review",
+			review_round: 1,
+			summary: "broken",
+		} as const;
+		const stale = qaAttestation({ id: "ap-qa-stale", diff_hash: `sha256:${"c".repeat(64)}` });
+		const attestations = [qaAttestation(), stale];
+		const action = {
+			...baseAction("refute_finding"),
+			finding_id: "f-1",
+			attestation_id: "ap-qa",
+		} as TaskAction;
+		// The Spec's stale -> refuted renewal is a legal write.
+		const stalePrior = parseTaskRecordV3(rawRecordFixture({
+			findings: [{
+				...finding,
+				status: "refuted",
+				counterevidence: { attestation_id: "ap-qa-stale", acceptance_id: "A1" },
+			}],
+			attestations,
+		}));
+		const renewed = reduce(stalePrior, action).record;
+		expect(() => assertTaskRecordUpdateV3(stalePrior, renewed, action)).not.toThrow();
+		// Rebinding a refutation that is still live is not.
+		const livePrior = parseTaskRecordV3(rawRecordFixture({
+			findings: [{
+				...finding,
+				status: "refuted",
+				counterevidence: { attestation_id: "ap-qa", acceptance_id: "A1" },
+			}],
+			attestations,
+		}));
+		const rebound = {
+			...livePrior,
+			findings: livePrior.findings.map((item) => ({
+				...item,
+				counterevidence: { attestation_id: "ap-qa-stale", acceptance_id: "A1" },
+			})),
+			history: renewed.history,
+		};
+		expect(() => assertTaskRecordUpdateV3(livePrior, rebound as never, action)).toThrow(KernelInvariantError);
+		// The refutation binds the acceptance the finding names, not another
+		// acceptance the same attestation happens to pass.
+		const mismatched = parseTaskRecordV3(rawRecordFixture({
+			findings: [{ ...finding, acceptance_id: "A0" }],
+			attestations,
+		}));
+		const misbound = {
+			...mismatched,
+			findings: mismatched.findings.map((item) => ({
+				...item,
+				status: "refuted",
+				counterevidence: { attestation_id: "ap-qa", acceptance_id: "A1" },
+			})),
+			history: renewed.history,
+		};
+		expect(() => assertTaskRecordUpdateV3(mismatched, misbound as never, action)).toThrow(KernelInvariantError);
+		// Neither can a rework action rewrite a finding it names.
+		const rework = { ...baseAction("request_rework"), findings: [finding] } as TaskAction;
+		const rewritten = {
+			...livePrior,
+			findings: livePrior.findings.map((item) => ({ ...item, summary: "rewritten" })),
+			history: renewed.history,
+		};
+		expect(() => assertTaskRecordUpdateV3(livePrior, rewritten as never, rework)).toThrow(KernelInvariantError);
 	});
 });

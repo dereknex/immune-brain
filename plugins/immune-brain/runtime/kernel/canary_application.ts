@@ -49,6 +49,7 @@ export type CanaryOperation =
 	| { op: "freeze_artifacts"; actor_id: string }
 	| { op: "record_finding"; finding: Omit<TaskFinding, "status" | "source" | "review_round">; actor_id: string }
 	| { op: "resolve_finding"; finding_id: string; actor_id: string }
+	| { op: "refute_finding"; finding_id: string; attestation_id: string; actor_id: string }
 	| { op: "request_rework"; capability: object; findings: TaskFinding[]; actor_id: string }
 	| { op: "record_approval"; capability: object; approval: TaskApprovalV2; actor_id: string }
 	| { op: "revise_intent"; next_intent: TaskIntentV1; actor_id: string }
@@ -366,6 +367,14 @@ export function createCanaryApplication(
 				break;
 			case "resolve_finding":
 				action = { ...base, type: "resolve_finding", finding_id: operation.finding_id };
+				break;
+			case "refute_finding":
+				action = {
+					...base,
+					type: "refute_finding",
+					finding_id: operation.finding_id,
+					attestation_id: operation.attestation_id,
+				};
 				break;
 			case "request_rework":
 				capability = operation.capability;

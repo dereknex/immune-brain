@@ -174,7 +174,15 @@ export interface TaskRecordRead {
 				manifest_digest: string;
 			};
 		}>;
-		findings: Array<{ id: string; kind: string; status: string; summary?: string }>;
+		findings: Array<{
+			id: string;
+			kind: string;
+			status: string;
+			summary?: string;
+			anchor?: string | null;
+			evidence?: unknown;
+			counterevidence?: { attestation_id: string; acceptance_id: string } | null;
+		}>;
 	} | null;
 }
 

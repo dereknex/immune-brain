@@ -1106,6 +1106,21 @@ describe("claude host authority", () => {
 			expect({ name, match: source.match(bannedAssurance)?.[0] }).toEqual({ name, match: undefined });
 		}
 	});
+
+	test("both Host adapters mint request_rework findings through the shared verdict mapping", () => {
+		// Both adapters build the findings array independently, so parity is
+		// pinned to the shared mapping and to the Kernel digest that binds the
+		// capability. A host that inlines its own mapping (and drops the anchor)
+		// would mint a digest the Kernel would refuse.
+		const hosts = [
+			["claude", readFileSync(resolve("plugins/immune-brain/runtime/claude/kernel_ports.ts"), "utf8")],
+			["pi", readFileSync(resolve("plugins/immune-brain/.pi-extension/imm-canary-work.ts"), "utf8")],
+		] as const;
+		for (const [name, source] of hosts) {
+			expect({ name, sharedMapping: /reviewReworkFindings\(\s*(input\.)?verdict\s*\)/.test(source) }).toEqual({ name, sharedMapping: true });
+			expect({ name, kernelDigest: source.includes("findingsDigestV2(input.findings") }).toEqual({ name, kernelDigest: true });
+		}
+	});
 });
 
 /**
@@ -1344,6 +1359,7 @@ describe("claude host resolve_finding", () => {
 			"start_unattended_batch",
 			"repair_authority_state",
 			"resolve_finding",
+			"refute_finding",
 		]);
 		expect([...PRIVILEGED_OPERATIONS]).toEqual([
 			"enroll",
@@ -1357,5 +1373,66 @@ describe("claude host resolve_finding", () => {
 		for (const name of ["enroll", "request_authorization", "approve_breaking_intent_revision", "stop", "start_unattended_batch"]) {
 			expect(listMcpTools().find((tool) => tool.name === name)?.annotations).toEqual({ destructiveHint: true });
 		}
+	});
+
+	test("publishes an ordinary refute_finding tool that actually refutes the finding", async () => {
+		const tools = listMcpTools();
+		const tool = tools.find((entry) => entry.name === "refute_finding");
+		expect(tool).toBeDefined();
+		expect(tool?.inputSchema.properties).toHaveProperty("task_id");
+		expect(tool?.inputSchema.properties).toHaveProperty("finding_id");
+		expect(tool?.inputSchema.properties).toHaveProperty("attestation_id");
+		expect(tool?.inputSchema.required).toEqual(["task_id", "finding_id", "attestation_id"]);
+		// Ordinary, not privileged: the actor can only bind QA evidence the
+		// Kernel already validated, and the reducer owns every precondition.
+		expect(tool?.annotations).toEqual({ readOnlyHint: false });
+
+		const root = makeResolveFindingRoot(false);
+		const recordPath = join(root, ".imm", "state", "tasks", `${RESOLVE_TASK}.json`);
+		const record = JSON.parse(readFileSync(recordPath, "utf8"));
+		record.attestations.push({
+			id: "qa-live",
+			kind: "qa",
+			authority_role: "qa",
+			task_revision: 1,
+			intent_content_hash: RESOLVE_INTENT_HASH,
+			diff_hash: diffHashOf(root, readTaskRecord(root, RESOLVE_TASK).record!),
+			actor_id: "qa-host",
+			summary: "descriptor passed",
+			acceptance_results: [{ acceptance_id: "A1", status: "passed", summary: "A1 passed" }],
+		});
+		writeFileSync(recordPath, `${JSON.stringify(record, null, 2)}\n`);
+		const mcp = await resolveFindingRuntime(root);
+
+		await mcp.callTool("refute_finding", { task_id: RESOLVE_TASK, finding_id: "f-blocking", attestation_id: "qa-live" });
+
+		const after = readTaskRecord(root, RESOLVE_TASK).record;
+		if (!after) throw new Error("TaskRecord did not parse after refutation");
+		expect(after.findings.find((item) => item.id === "f-blocking")).toMatchObject({
+			status: "refuted",
+			counterevidence: { attestation_id: "qa-live", acceptance_id: "A1" },
+		});
+		expect(after.findings.find((item) => item.id === "f-advisory")?.status).toBe("open");
+		expect(after.history.at(-1)?.type).toBe("refute_finding");
+		// The refuted finding no longer blocks: the projection proves the tool
+		// reaches the Kernel rather than a local no-op.
+		expect((await projectAssurance(root, RESOLVE_TASK, diffSnapshotOf)).projection.blocking_finding_ids).toEqual([]);
+	});
+
+	test("every rejected refutation is fail-closed and leaves the record byte-identical", async () => {
+		const root = makeResolveFindingRoot(false);
+		const mcp = await resolveFindingRuntime(root);
+		const original = authorityState(root);
+
+		await expect(mcp.callTool("refute_finding", { task_id: RESOLVE_TASK })).rejects.toThrow("finding_id is required");
+		await expect(mcp.callTool("refute_finding", { task_id: RESOLVE_TASK, finding_id: "f-blocking" }))
+			.rejects.toThrow("attestation_id is required");
+		await expect(mcp.callTool("refute_finding", { task_id: RESOLVE_TASK, finding_id: "f-blocking", attestation_id: 7 }))
+			.rejects.toThrow("attestation_id is required");
+		// Semantic rejection, owned by the reducer: no fresh passing QA evidence
+		// covering the finding's acceptance exists in this fixture.
+		await expect(mcp.callTool("refute_finding", { task_id: RESOLVE_TASK, finding_id: "f-blocking", attestation_id: "qa-live" }))
+			.rejects.toThrow(/fresh passing QA attestation/);
+		expect(recordBytes(root)).toBe(original[0].bytes);
 	});
 });
