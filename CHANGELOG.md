@@ -1,5 +1,13 @@
 # Changelog
 
+## 3.6.9
+
+### Patch Changes
+
+- [`6e3f370`](https://github.com/dereknex/immune-brain/commit/6e3f3705971326d90c9149f9bd6d0287dbe87810) Thanks [@dereknex](https://github.com/dereknex)! - Publish readable GitHub tracker Issues: titles are composed from bounded Planner display names (`[<short_name>] <title>` for the Parent, `[<short_name>] S<n> <title>` for Children) instead of the full goal text, Children carry the repository's `ready-for-agent` and `blocked` labels while the Parent carries none, Issue bodies no longer repeat the title or the opt-in/Lifecycle/Authority stanzas, and a declared `projection.source_issue` renders a Provenance link.
+
+- [`bc1b6f9`](https://github.com/dereknex/immune-brain/commit/bc1b6f90785871b7d585d329a501d94713943e5c) Thanks [@dereknex](https://github.com/dereknex)! - Add the public `imm-review-retro` Skill: rank models by the code review their own edits triggered and report basic project usage from pi session logs. Standalone host-native entry; no Managed Path or Kernel authority change.
+
 ## 3.6.8
 
 ### Patch Changes
