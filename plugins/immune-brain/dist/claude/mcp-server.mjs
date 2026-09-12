@@ -7126,7 +7126,8 @@ function parseIssues(raw) {
       title: item.title,
       body: typeof item.body === "string" ? item.body : "",
       state: item.state,
-      state_reason: typeof item.state_reason === "string" ? item.state_reason.toLowerCase() : null
+      state_reason: typeof item.state_reason === "string" ? item.state_reason.toLowerCase() : null,
+      labels: Array.isArray(item.labels) ? item.labels.map((label) => typeof label === "string" ? label : label?.name).filter((name) => typeof name === "string") : []
     };
   });
 }

@@ -172,8 +172,13 @@ with `valid: true` and `enrollment_ready: true`. Resolve `../bin/imm-tracker` fr
 Initiative slug and goal, Parent projection, and every Child's `slice_id`,
 canonical TaskIntent path, bounded public `acceptance` summaries, and public
 projection. The Parent projection requires
-`problem`, `result`, and `design`, and may include `decisions`,
-`testing_strategy`, and `out_of_scope`. `design` records Initiative-level
+`short_name`, `title`, `problem`, `result`, and `design`, and may include
+`source_issue`, `decisions`,
+`testing_strategy`, and `out_of_scope`. `short_name` (1-32 characters) is the
+stable short Initiative name used in every Issue title; `title` (1-60
+characters) is the short Initiative display title; `source_issue` is the
+originating feature Issue number, rendered as a Provenance link. `design`
+records Initiative-level
 invariants, Slice boundaries and ordering, shared interfaces or state flow, and
 material compatibility decisions. Every Parent Slice must correspond to one
 published Child; future checklist-only Slices are not allowed in the batch.
@@ -181,15 +186,24 @@ published Child; future checklist-only Slices are not allowed in the batch.
 Each Child must provide public `acceptance` entries with `id` and a 1-500
 character `summary`. Their IDs must match every canonical TaskIntent acceptance
 ID exactly once. Canonical assertion prose is authority evidence and must never
-be copied into public GitHub projection. Each Child projection may contain
+be copied into public GitHub projection. Each Child projection requires
+`title` (1-60 characters), the short Slice display title, and may contain
 `result`, `current_behavior`,
 `desired_behavior`, `key_interfaces`, `verification`, `blocked_by` Task IDs,
-`out_of_scope`, and `agent_handoff`. The tracker rereads every canonical
+`out_of_scope`, and `agent_handoff`. The tracker composes Issue titles from
+these display names only — the Parent as `[<short_name>] <title>` and each
+Child as `[<short_name>] S<n> <title>` with `n` the declared Slice position —
+and fails the whole batch closed before any remote write when a display name
+is missing or the composed title exceeds 80 characters; it never falls back to
+goal prose and never truncates a title. The tracker rereads every canonical
 TaskIntent for identity, risk, and acceptance IDs; projection fields and public
 summaries never widen TaskIntent scope or authority. It validates the complete dependency graph before
 remote writes, creates the Parent once, creates all Children, attaches every
 Child as a native Sub-issue, creates native `blocked_by` relations, and rereads
-the complete topology. The Child Agent Brief includes a direct Parent Issue link.
+the complete topology. Every Child carries `ready-for-agent`, blocked Children
+additionally carry `blocked`, and the Parent carries neither; the tracker never
+creates labels, so a repository missing a required label fails the batch closed
+before any remote write. The Child Agent Brief includes a direct Parent Issue link.
 Internal role prompts, tool policies, review gates, model reservations, and
 prompt digests never belong in this external handoff. If
 `docs/initiatives/<slug>.md` exists, publication fails with a carrier conflict;

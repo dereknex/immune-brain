@@ -1,0 +1,9 @@
+{
+  "contract": "assurance_kernel/task_tombstone/v2",
+  "task_id": "github-tracker-issue-presentation",
+  "lifecycle_status": "terminal",
+  "terminal_lifecycle": "done",
+  "terminal_event_id": "complete:github-tracker-issue-presentation:2026-09-12T14:58:45.251Z",
+  "final_record_hash": "sha256:565e722a3ab675e112a6e745346e94555a4d4a6d15e9a3cfccea08864dce0c9e",
+  "terminalized_at": "2026-09-12T14:58:45.251Z"
+}

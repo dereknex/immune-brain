@@ -14,6 +14,15 @@ const GH_TIMEOUT_MS = 20_000;
 const MAX_SNAPSHOT_PAGES = 100;
 const GITHUB_ISSUE_BODY_LIMIT = 65_536;
 const MAX_TERMINAL_EVENT_ID = 500;
+const MAX_TITLE_LENGTH = 80;
+const MAX_DISPLAY_SHORT_NAME = 32;
+const MAX_DISPLAY_TITLE = 60;
+const READY_FOR_AGENT_LABEL = "ready-for-agent";
+const BLOCKED_LABEL = "blocked";
+const MANAGED_ISSUE_LABELS: readonly string[] = [READY_FOR_AGENT_LABEL, BLOCKED_LABEL];
+
+/** Single compressed Activity/Authority footer shared by Parent and Task Issues. */
+const ISSUE_FOOTER = "---\n\n_Outbound visibility only: GitHub state never authorizes or settles work — Kernel TaskIntent, TaskRecord, QA, Review, and Assurance remain the execution authority. An Open Issue only means the Task still needs attention; only a claimless terminal projection closes it (`done` → Completed, `stopped` → Not planned)._";
 
 type TrackerStatus =
 	| "created"
@@ -42,6 +51,9 @@ export interface InitiativeSlice {
 }
 
 export interface InitiativeProjection {
+	short_name?: string;
+	title?: string;
+	source_issue?: string;
 	problem?: string;
 	result?: string;
 	design?: string;
@@ -128,6 +140,9 @@ export interface GithubInitiativeObservation {
 }
 
 export interface TaskProjection {
+	short_name?: string;
+	title?: string;
+	slice_ordinal?: number;
 	result?: string;
 	current_behavior?: string;
 	desired_behavior?: string;
@@ -188,6 +203,7 @@ interface GithubIssue {
 	body: string;
 	state: "open" | "closed";
 	state_reason: string | null;
+	labels: string[];
 }
 
 interface RepositorySnapshot {
@@ -276,10 +292,118 @@ function titleText(value: string): string {
 	return redactSecrets(value).replace(/\s+/g, " ");
 }
 
-function issueTitle(owner: string, result: string): string {
-	const title = `[${owner}] ${titleText(result)}`;
-	if (title.length > 256) throw new Error("GitHub Issue title must not exceed 256 characters");
+/**
+ * A Planner-supplied display name for an Issue title. Display names are the
+ * only title source: the full goal/result prose stays in the body, and a
+ * missing or oversized display name fails closed instead of being truncated.
+ */
+function displayName(value: unknown, name: string, max: number): string {
+	if (typeof value !== "string" || !value.trim())
+		throw new Error(`${name} is required: publish a bounded display name instead of the full goal text`);
+	// Brackets are rejected on the raw value: redaction later introduces its own
+	// bracketed marker, which must never be mistaken for caller-supplied syntax.
+	if (/[[\]]/.test(value)) throw new Error(`${name} must not contain square brackets`);
+	return projectionText(value, name, max);
+}
+
+function issueTitle(value: string): string {
+	const title = titleText(value);
+	if (title.length > MAX_TITLE_LENGTH)
+		throw new Error(`GitHub Issue title must not exceed ${MAX_TITLE_LENGTH} characters: shorten the Planner display names`);
 	return title;
+}
+
+function initiativeDisplayNames(projection: InitiativeProjection | undefined): { shortName: string } {
+	const missing = (["short_name", "title"] as const).filter((field) => projection?.[field] === undefined);
+	if (missing.length)
+		throw new Error(`Initiative projection requires display names; missing ${missing.map((field) => `projection.${field}`).join(", ")}`);
+	return { shortName: displayName(projection?.short_name, "projection.short_name", MAX_DISPLAY_SHORT_NAME) };
+}
+
+function initiativeIssueTitle(initiativeId: string, projection: InitiativeProjection | undefined): string {
+	const { shortName } = initiativeDisplayNames(projection);
+	const title = displayName(projection?.title, "projection.title", MAX_DISPLAY_TITLE);
+	return issueTitle(`[${shortName}] ${title}`);
+}
+
+function taskDisplayNames(operation: Extract<TrackerOperation, { op: "upsert-task" }>): { shortName: string; title: string; ordinal: number } {
+	const projection = operation.projection;
+	if (projection?.short_name === undefined || projection.title === undefined || projection.slice_ordinal === undefined)
+		throw new Error(`Task ${operation.task_id} requires projection.short_name, projection.title, and projection.slice_ordinal display names`);
+	return {
+		shortName: displayName(projection.short_name, "projection.short_name", MAX_DISPLAY_SHORT_NAME),
+		title: displayName(projection.title, "projection.title", MAX_DISPLAY_TITLE),
+		ordinal: projection.slice_ordinal,
+	};
+}
+
+function taskIssueTitle(operation: Extract<TrackerOperation, { op: "upsert-task" }>, fallbackOrdinal?: number): string {
+	const { shortName, title, ordinal } = taskDisplayNames(operation);
+	return issueTitle(`[${shortName}] S${fallbackOrdinal ?? ordinal} ${title}`);
+}
+
+/**
+ * The Slice position in the Initiative: the Parent's Slices checklist is the
+ * declared order, so a Child keeps the same `S<n>` across amendment batches
+ * instead of renumbering to its position inside the current batch.
+ */
+function sliceOrdinalFromChecklist(parentBody: string, sliceId: string, fallback: number): number {
+	const declared = [...parentBody.matchAll(/^- \[[ xX]\] <!-- immune-brain:slice-id=([A-Za-z0-9._:-]+) -->/gm)].map((match) => match[1]);
+	const index = declared.indexOf(sliceId);
+	return index === -1 ? fallback : index + 1;
+}
+
+/** Labels a published Task Issue must carry; the Parent carries none of them. */
+function desiredTaskLabels(operation: Extract<TrackerOperation, { op: "upsert-task" }>): string[] {
+	return (operation.projection?.blocked_by ?? []).length
+		? [READY_FOR_AGENT_LABEL, BLOCKED_LABEL]
+		: [READY_FOR_AGENT_LABEL];
+}
+
+/** Converge managed labels from the observed set: add what is desired, remove only managed labels that are not. */
+function labelMutationArgs(observed: string[], desired: string[]): string[] {
+	const args: string[] = [];
+	for (const label of desired) if (!observed.includes(label)) args.push("--add-label", label);
+	for (const label of MANAGED_ISSUE_LABELS)
+		if (observed.includes(label) && !desired.includes(label)) args.push("--remove-label", label);
+	return args;
+}
+
+async function repositoryLabels(root: string, gh: GhTransport, repository: RepositoryInfo): Promise<string[] | GithubTrackerResult> {
+	const execution = await gh.run(
+		["label", "list", "--repo", repository.name_with_owner, "--json", "name", "--limit", "1000"],
+		{ cwd: root },
+	);
+	if (execution.exit_code !== 0 || execution.output_exceeded)
+		return ghFailure("upsert-task", execution, "cannot query repository labels");
+	try {
+		const parsed = JSON.parse(execution.stdout) as unknown;
+		if (!Array.isArray(parsed)) throw new Error("gh returned malformed label list");
+		return parsed
+			.map((item) => (item as { name?: unknown })?.name)
+			.filter((name): name is string => typeof name === "string");
+	} catch (error) {
+		return result("upsert-task", "permanent_failure", error instanceof Error ? error.message : String(error));
+	}
+}
+
+/**
+ * Labels are never created by the tracker: a repository missing a required
+ * label fails closed before any Issue mutation, naming the exact label.
+ */
+async function labelAvailabilityFailure(
+	root: string,
+	gh: GhTransport,
+	repository: RepositoryInfo,
+	required: string[],
+): Promise<GithubTrackerResult | null> {
+	if (!required.length) return null;
+	const labels = await repositoryLabels(root, gh, repository);
+	if (!Array.isArray(labels)) return labels;
+	const missing = required.filter((label) => !labels.includes(label));
+	return missing.length
+		? result("upsert-task", "permanent_failure", `repository labels missing: ${missing.join(", ")}; create them before publishing so Task Issues carry publication state`)
+		: null;
 }
 
 export function redactGithubDiagnostic(value: string): string {
@@ -414,6 +538,11 @@ function parseIssues(raw: string): GithubIssue[] {
 				body: typeof item.body === "string" ? item.body : "",
 				state: item.state,
 				state_reason: typeof item.state_reason === "string" ? item.state_reason.toLowerCase() : null,
+				labels: Array.isArray(item.labels)
+					? item.labels
+						.map((label) => (typeof label === "string" ? label : (label as { name?: unknown })?.name))
+						.filter((name): name is string => typeof name === "string")
+					: [],
 			};
 		});
 }
@@ -721,12 +850,15 @@ function createInitiativeBody(
 	historicalSlices: string[] = [],
 ): string {
 	const projection = operation.projection ?? {};
+	const provenance = projection.source_issue
+		? `## Provenance\n\n- Derived from #${projection.source_issue}: the originating feature Issue for this Initiative.\n\n`
+		: "";
 	return `${[
 		PROTOCOL_MARKER,
 		KIND_INITIATIVE_MARKER,
 		marker("repo-id", repository.id),
 		marker("initiative-id", operation.initiative_id),
-	].join("\n")}\n\n# ${titleText(projection.result ?? operation.goal)}\n\nOpt-in, non-authoritative Immune-Brain Initiative planning carrier. Kernel TaskIntent, TaskRecord, and Assurance remain the execution authority.\n\n## How to use this Issue\n\n- Edit planning prose and Slice ordering directly after creation.\n- Keep each Slice marker attached to exactly one stable Slice entry.\n- The tracker never rewrites or closes this Parent after creation; the tracker never changes or closes it automatically.\n\n## Problem\n\n${publicText(projection.problem ?? "The Initiative addresses the bounded delivery described below.", "projection.problem")}\n\n## Result\n\n${publicText(projection.result ?? operation.goal, "projection.result")}\n\n## Initiative design\n\n${publicText(projection.design ?? "Each Child preserves the shared Initiative decisions and boundaries recorded here.", "projection.design")}\n\n## Decisions\n\n${listText(projection.decisions, "- No additional Initiative decisions recorded.")}\n\n## Testing strategy\n\n${publicText(projection.testing_strategy ?? "Each Child closes from its focused acceptance verification.", "projection.testing_strategy")}\n\n## Out of scope\n\n${listText(projection.out_of_scope, "- Unrelated work outside this Initiative.")}\n\n## Slices\n\n${operation.slices.length + historicalSlices.length === 0 ? "No Slices recorded yet." : [...historicalSlices, ...operation.slices.map((slice) => `- [ ] ${marker("slice-id", slice.id)} **${slice.id}**: ${slice.result ?? slice.goal}${slice.blocked_by?.length ? ` (blocked by: ${slice.blocked_by.join(", ")})` : ""}`)].join("\n")}\n\n## Authority boundary\n\nThis Issue is outbound visibility only. GitHub state never starts, authorizes, reprioritizes, or settles work. Native Sub-issues identify published Tasks; their state is only an observation.\n`;
+	].join("\n")}\n\n${provenance}## How to use this Issue\n\n- Edit planning prose and Slice ordering directly after creation.\n- Keep each Slice marker attached to exactly one stable Slice entry.\n- The tracker never rewrites or closes this Parent after creation; the tracker never changes or closes it automatically.\n\n## Problem\n\n${publicText(projection.problem ?? "The Initiative addresses the bounded delivery described below.", "projection.problem")}\n\n## Result\n\n${publicText(projection.result ?? operation.goal, "projection.result")}\n\n## Initiative design\n\n${publicText(projection.design ?? "Each Child preserves the shared Initiative decisions and boundaries recorded here.", "projection.design")}\n\n## Decisions\n\n${listText(projection.decisions, "- No additional Initiative decisions recorded.")}\n\n## Testing strategy\n\n${publicText(projection.testing_strategy ?? "Each Child closes from its focused acceptance verification.", "projection.testing_strategy")}\n\n## Out of scope\n\n${listText(projection.out_of_scope, "- Unrelated work outside this Initiative.")}\n\n## Slices\n\n${operation.slices.length + historicalSlices.length === 0 ? "No Slices recorded yet." : [...historicalSlices, ...operation.slices.map((slice) => `- [ ] ${marker("slice-id", slice.id)} **${slice.id}**: ${slice.result ?? slice.goal}${slice.blocked_by?.length ? ` (blocked by: ${slice.blocked_by.join(", ")})` : ""}`)].join("\n")}\n\n${ISSUE_FOOTER}\n`;
 }
 
 async function createInitiative(
@@ -741,7 +873,7 @@ async function createInitiative(
 	const body = createInitiativeBody(source.repository, operation);
 	const oversized = bodyLimitFailure(operation.op, body);
 	if (oversized) return oversized;
-	const title = issueTitle(operation.initiative_id, operation.projection?.result ?? operation.goal);
+	const title = initiativeIssueTitle(operation.initiative_id, operation.projection);
 	if (found.kind === "missing") {
 		const mutation = await gh.run([
 			"issue", "create", "--repo", source.repository.name_with_owner,
@@ -761,8 +893,28 @@ async function createInitiative(
 			? result(operation.op, "created", "Initiative Issue created as the single GitHub source", confirmed.issue)
 			: result(operation.op, "retryable_failure", "Initiative Issue did not converge to the requested initial title and body", confirmed.issue);
 	}
-	if (found.issue.body === body && found.issue.title === title)
+	if (found.issue.body === body && found.issue.title === title) {
+		// A repeated complete batch is a convergence pass: managed labels the Parent
+		// must not carry are repaired here, without rewriting its content.
+		const labelArgs = labelMutationArgs(found.issue.labels, []);
+		if (labelArgs.length) {
+			const edited = await gh.run([
+				"issue", "edit", String(found.issue.number), "--repo", source.repository.name_with_owner,
+				...labelArgs,
+			], { cwd: root });
+			if (edited.exit_code !== 0 || edited.output_exceeded)
+				return ghFailure(operation.op, edited, "Initiative Parent label convergence failed");
+			const refreshed = await snapshot(root, gh, operation.op);
+			if ("contract" in refreshed) return refreshed;
+			const confirmed = lookup(refreshed.issues);
+			if (confirmed.kind !== "found")
+				return result(operation.op, "ambiguous_remote_state", "Initiative Parent became ambiguous after label convergence", found.issue);
+			return confirmed.issue.title === title && confirmed.issue.body === body && !labelMutationArgs(confirmed.issue.labels, []).length
+				? result(operation.op, "updated", "Initiative Issue managed labels converged", confirmed.issue)
+				: result(operation.op, "retryable_failure", "Initiative Issue did not converge to an unlabeled Parent", confirmed.issue);
+		}
 		return result(operation.op, "already_current", "Initiative Issue already carries the requested initial source", found.issue);
+	}
 	return result(
 		operation.op,
 		"permanent_failure",
@@ -785,7 +937,7 @@ function childBody(
 		marker("initiative-id", operation.initiative_id),
 		marker("slice-id", operation.slice_id),
 		marker("task-id", operation.task_id),
-	].join("\n")}\n\n# ${titleText(projection.result ?? operation.goal)}\n\nOpt-in, non-authoritative Immune-Brain Task Issue. Kernel TaskIntent, TaskRecord, and Assurance remain the execution authority.\n\n## Parent\n\n| Initiative | \`${operation.initiative_id}\` |\n| Parent Issue | [#${parent.number}](${parent.url}) |\n| Slice | \`${operation.slice_id}\` |\n| Risk | \`${operation.risk}\` |\n\n## What to build\n\n${publicText(projection.result ?? operation.goal, "projection.result")}\n\n## Current behavior\n\n${publicText(projection.current_behavior ?? "The current behavior is defined by the repository's existing contract.", "projection.current_behavior")}\n\n## Desired behavior\n\n${publicText(projection.desired_behavior ?? operation.goal, "projection.desired_behavior")}\n\n## Key interfaces\n\n${listText(projection.key_interfaces, "- Canonical TaskIntent acceptance and Kernel lifecycle remain authoritative.")}\n\n## Acceptance criteria\n\n${acceptance}\n\n## Verification\n\n${publicText(projection.verification ?? "Run the focused acceptance verification declared by the TaskIntent.", "projection.verification")}\n\n## Blocked by\n\n${projection.blocked_by?.length ? projection.blocked_by.map((id) => `- \`${identifier(id, "blocked_by task_id")}\``).join("\n") : "None"}\n\n## Out of scope\n\n${listText(projection.out_of_scope, "- Scope not declared by the validated TaskIntent.")}\n\n## Agent handoff\n\n${publicText(projection.agent_handoff ?? "Implement only the bounded TaskIntent result and run the focused checks. Do not widen scope or treat GitHub as authorization.", "projection.agent_handoff")}\n\n## Lifecycle\n\n- **Open** means this Task still needs attention; it does not mean the Task is authorized or executing.\n- Only a fresh claimless terminal projection can close this Issue: \`done\` becomes **Completed**, and \`stopped\` becomes **Not planned**.\n\n## Authority boundary\n\nThis Issue is outbound visibility only. GitHub state never changes TaskIntent, TaskRecord, QA, Review, authorization, or Kernel settlement. Internal role prompts, tool policies, review gates, model reservations, and prompt digests are not part of this external handoff.\n`;
+	].join("\n")}\n\n## Parent\n\n| Initiative | \`${operation.initiative_id}\` |\n| Parent Issue | [#${parent.number}](${parent.url}) |\n| Slice | \`${operation.slice_id}\` |\n| Risk | \`${operation.risk}\` |\n\n## Current behavior\n\n${publicText(projection.current_behavior ?? "The current behavior is defined by the repository's existing contract.", "projection.current_behavior")}\n\n## Desired behavior\n\n${publicText(projection.desired_behavior ?? projection.result ?? operation.goal, "projection.desired_behavior")}\n\n## Key interfaces\n\n${listText(projection.key_interfaces, "- Canonical TaskIntent acceptance and Kernel lifecycle remain authoritative.")}\n\n## Acceptance criteria\n\n${acceptance}\n\n## Verification\n\n${publicText(projection.verification ?? "Run the focused acceptance verification declared by the TaskIntent.", "projection.verification")}\n\n## Blocked by\n\n${projection.blocked_by?.length ? projection.blocked_by.map((id) => `- \`${identifier(id, "blocked_by task_id")}\``).join("\n") : "None"}\n\n## Out of scope\n\n${listText(projection.out_of_scope, "- Scope not declared by the validated TaskIntent.")}\n\n## Agent handoff\n\n${publicText(projection.agent_handoff ?? "Implement only the bounded TaskIntent result and run the focused checks. Do not widen scope or treat GitHub as authorization.", "projection.agent_handoff")}\n\n${ISSUE_FOOTER}\n`;
 }
 
 /** Derived approved-final content and baseline-derived historical evidence for an amendment. */
@@ -846,28 +998,30 @@ function approvedAmendmentContent(
 	);
 	const historicalSlices = baselineHistoricalSlices(amendment.parent.body, amendedSliceIds, boundSliceIds);
 	if (typeof historicalSlices === "string") return historicalSlices;
-	const pendingContent = new Map<string, { title: string; body: string }>();
 	const sourceStub = {
 		repository,
 		issues: [parentIssue],
 	};
 	void sourceStub;
+	// The approved final Parent body fixes the Slices checklist, so every Child
+	// title is numbered from the Initiative order rather than from this batch.
+	const parentBody = createInitiativeBody(sourceStub.repository, parent, historicalSlices);
+	const oversizedParent = bodyLimitFailure("create-initiative", parentBody);
+	if (oversizedParent) return `${oversizedParent.status}: ${oversizedParent.message}`;
+	const pendingContent = new Map<string, { title: string; body: string }>();
 	for (const operation of prepared.order) {
 		const body = childBody(repository, operation, parentIssue);
 		const oversized = bodyLimitFailure("upsert-task", body, MAX_TERMINAL_SUFFIX_BYTES);
 		if (oversized) return `${oversized.status}: ${oversized.message}`;
 		pendingContent.set(operation.task_id, {
-			title: issueTitle(`${operation.initiative_id}/${operation.slice_id}`, operation.projection?.result ?? operation.goal),
+			title: taskIssueTitle(operation, sliceOrdinalFromChecklist(parentBody, operation.slice_id, operation.projection?.slice_ordinal ?? 1)),
 			body,
 		});
 	}
-	const parentBody = createInitiativeBody(sourceStub.repository, parent, historicalSlices);
-	const oversizedParent = bodyLimitFailure("create-initiative", parentBody);
-	if (oversizedParent) return `${oversizedParent.status}: ${oversizedParent.message}`;
 	return {
 		pendingContent,
 		parent: {
-			title: issueTitle(parent.initiative_id, parent.projection?.result ?? parent.goal),
+			title: initiativeIssueTitle(parent.initiative_id, parent.projection),
 			body: parentBody,
 		},
 		parentIssueNumber: parentIssue.number,
@@ -939,20 +1093,29 @@ async function amendInitiativeParent(
 		return result(operation.op, "ambiguous_remote_state", "an amendment requires the Initiative Parent to remain open", found.issue);
 	if (binding.issue_number !== found.issue.number)
 		return result(operation.op, "ambiguous_remote_state", `amendment Parent is bound to Issue #${binding.issue_number} but observed Issue #${found.issue.number}`, found.issue);
-	if (found.issue.body === body && found.issue.title === title)
+	if (found.issue.body === body && found.issue.title === title && !labelMutationArgs(found.issue.labels, []).length)
 		return result(operation.op, "already_current", "Initiative Issue already carries the requested amended content", found.issue);
-	if (found.issue.body !== binding.body || found.issue.title !== binding.title)
+	// Content that already matches the approved final bytes still converges labels;
+	// anything else must still be the approved amendment baseline.
+	if ((found.issue.body !== body || found.issue.title !== title)
+		&& (found.issue.body !== binding.body || found.issue.title !== binding.title))
 		return result(operation.op, "ambiguous_remote_state", "Initiative Parent changed since the approved amendment baseline", found.issue);
+	// The Parent carries no Task state labels: any managed label observed on it is
+	// drift and is removed by the same edit that writes the amended content.
+	const labelArgs = labelMutationArgs(found.issue.labels, []);
 	const edited = await gh.run([
 		"issue", "edit", String(found.issue.number), "--repo", source.repository.name_with_owner,
 		"--title", title,
 		"--body-file", "-",
+		...labelArgs,
 	], { cwd: root, stdin: body });
 	if (edited.exit_code !== 0 || edited.output_exceeded) return ghFailure(operation.op, edited, "Initiative amendment edit failed");
 	const refreshed = await snapshot(root, gh, operation.op);
 	if ("contract" in refreshed) return refreshed;
 	const confirmed = lookup(refreshed.issues);
 	if (confirmed.kind !== "found") return result(operation.op, "ambiguous_remote_state", "Initiative Parent became ambiguous after amendment", found.issue);
+	if (MANAGED_ISSUE_LABELS.some((label) => confirmed.issue.labels.includes(label)))
+		return result(operation.op, "retryable_failure", "Initiative amendment did not converge to an unlabeled Parent", confirmed.issue);
 	return confirmed.issue.body === body && confirmed.issue.title === title
 		? result(operation.op, "updated", "Initiative Issue updated with approved amendment content", confirmed.issue)
 		: result(operation.op, "retryable_failure", "Initiative amendment did not converge to the requested title and body", confirmed.issue);
@@ -966,6 +1129,8 @@ async function upsertTask(
 	pendingBinding: InitiativeAmendmentBinding | undefined | null = null,
 	amendmentContext: AmendmentExecutionContext | undefined = undefined,
 ): Promise<GithubTrackerResult> {
+	const labelFailure = await labelAvailabilityFailure(root, gh, source.repository, desiredTaskLabels(operation));
+	if (labelFailure) return labelFailure;
 	const parent = initiativeLookup(source.issues, source.repository.id, operation.initiative_id);
 	if (parent.kind === "ambiguous") return result(operation.op, "ambiguous_remote_state", parent.message);
 	if (parent.kind === "missing")
@@ -997,9 +1162,10 @@ async function upsertTask(
 	const body = childBody(source.repository, operation, parent.issue);
 	const oversized = bodyLimitFailure(operation.op, body, MAX_TERMINAL_SUFFIX_BYTES);
 	if (oversized) return oversized;
-	const title = issueTitle(`${operation.initiative_id}/${operation.slice_id}`, operation.projection?.result ?? operation.goal);
+	const title = taskIssueTitle(operation, sliceOrdinalFromChecklist(parent.issue.body, operation.slice_id, operation.projection?.slice_ordinal ?? 1));
 	let child: GithubIssue;
 	let createdChild = false;
+	let labelsConverged = false;
 	if (found.kind === "missing") {
 		// Pre-create re-read (amendment path): a concurrent writer may have already
 		// created this unbound Task between the initial snapshot and our create — the
@@ -1039,6 +1205,7 @@ async function upsertTask(
 			"issue", "create", "--repo", source.repository.name_with_owner,
 			"--title", title,
 			"--body-file", "-",
+			...desiredTaskLabels(operation).flatMap((label) => ["--label", label]),
 		], { cwd: root, stdin: body });
 		const refreshed = await snapshot(root, gh, operation.op);
 		if ("contract" in refreshed) return refreshed;
@@ -1106,6 +1273,18 @@ async function upsertTask(
 		}
 		if (found.issue.body !== body || found.issue.title !== title)
 			return result(operation.op, "permanent_failure", "Task Issue already exists with a different title or Agent Brief; edit the GitHub source or retry the original projection before changing native relations", found.issue);
+		// A repeated complete batch is a convergence pass: managed label drift is
+		// repaired here without rewriting content the tracker never owns.
+		const observedLabelArgs = labelMutationArgs(child.labels, desiredTaskLabels(operation));
+		if (observedLabelArgs.length) {
+			const edited = await gh.run([
+				"issue", "edit", String(child.number), "--repo", source.repository.name_with_owner,
+				...observedLabelArgs,
+			], { cwd: root });
+			if (edited.exit_code !== 0 || edited.output_exceeded)
+				return ghFailure(operation.op, edited, `Task Issue #${child.number} label convergence failed`);
+			labelsConverged = true;
+		}
 	}
 	const attachment = await confirmAttachment(root, gh, operation.op, source.repository, parent.issue.number, child.number);
 	if (!("attached" in attachment)) return attachment;
@@ -1141,7 +1320,7 @@ async function upsertTask(
 	if (attachment.attached && dependencies.complete)
 		return createdChild
 			? result(operation.op, "created", "Task Issue created and attached with native blocking relations", child)
-			: result(operation.op, "already_current", "Task Issue, native Sub-issue relation, and blocking relations are current", child);
+			: result(operation.op, labelsConverged ? "updated" : "already_current", "Task Issue, native Sub-issue relation, and blocking relations are current", child);
 	return createdChild
 		? result(operation.op, "created", "Task Issue created and attached as a native Sub-issue", child)
 		: result(operation.op, "updated", "existing Task Issue attached as a native Sub-issue", child);
@@ -1272,7 +1451,13 @@ function normalizeProjection(value: TaskProjection | undefined): TaskProjection 
 	if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("projection must be an object");
 	const blockedBy = normalizedProjectionList(value.blocked_by, "projection.blocked_by", 128)?.map((id) => identifier(id, "projection.blocked_by task_id"));
 	if (blockedBy && new Set(blockedBy).size !== blockedBy.length) throw new Error("projection.blocked_by must not contain duplicate Task IDs");
+	if (value.slice_ordinal !== undefined
+		&& (typeof value.slice_ordinal !== "number" || !Number.isSafeInteger(value.slice_ordinal) || value.slice_ordinal < 1 || value.slice_ordinal > 999))
+		throw new Error("projection.slice_ordinal must be an integer between 1 and 999");
 	return {
+		short_name: value.short_name,
+		title: value.title,
+		slice_ordinal: value.slice_ordinal,
 		result: value.result === undefined ? undefined : projectionText(value.result, "projection.result"),
 		current_behavior: value.current_behavior === undefined ? undefined : projectionText(value.current_behavior, "projection.current_behavior"),
 		desired_behavior: value.desired_behavior === undefined ? undefined : projectionText(value.desired_behavior, "projection.desired_behavior"),
@@ -1287,7 +1472,12 @@ function normalizeProjection(value: TaskProjection | undefined): TaskProjection 
 function normalizeInitiativeProjection(value: InitiativeProjection | undefined): InitiativeProjection | undefined {
 	if (value === undefined) return undefined;
 	if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("projection must be an object");
+	if (value.source_issue !== undefined && (typeof value.source_issue !== "string" || !/^[1-9][0-9]{0,9}$/.test(value.source_issue)))
+		throw new Error("projection.source_issue must be a GitHub Issue number");
 	return {
+		short_name: value.short_name,
+		title: value.title,
+		source_issue: value.source_issue,
 		problem: value.problem === undefined ? undefined : projectionText(value.problem, "projection.problem"),
 		result: value.result === undefined ? undefined : projectionText(value.result, "projection.result"),
 		design: value.design === undefined ? undefined : projectionText(value.design, "projection.design"),
@@ -1318,7 +1508,7 @@ function validateOperation(operation: TrackerOperation): TrackerOperation {
 			};
 			}),
 		};
-		issueTitle(normalized.initiative_id, normalized.projection?.result ?? normalized.goal);
+		initiativeIssueTitle(normalized.initiative_id, normalized.projection);
 		return normalized;
 	}
 	if (operation.op === "upsert-task") {
@@ -1335,7 +1525,7 @@ function validateOperation(operation: TrackerOperation): TrackerOperation {
 				summary: projectionText(item.summary, `acceptance[${index}].summary`, 500),
 			})),
 		};
-		issueTitle(`${normalized.initiative_id}/${normalized.slice_id}`, normalized.projection?.result ?? normalized.goal);
+		taskIssueTitle(normalized);
 		return normalized;
 	}
 	return {
@@ -1446,10 +1636,14 @@ function preflightPublication(root: string, input: InitiativePublicationInput): 
 		if (input.projection[field] === undefined)
 			throw new Error(`a complete Initiative publication requires projection.${field}`);
 	}
+	// The Initiative display names are validated once here, before any Task
+	// projection is stamped with them, so a missing or oversized display name
+	// fails the batch closed with zero remote writes.
+	const initiativeShortName = initiativeDisplayNames(input.projection).shortName;
 	const publications = input.tasks.map((task, index) => {
 		if (!task || typeof task !== "object" || Array.isArray(task)) throw new Error(`tasks[${index}] must be an object`);
 		if (typeof task.intent !== "string") throw new Error(`tasks[${index}].intent must be a string`);
-		return taskPublication(root, input.initiative_id, task.slice_id, task.intent, task.acceptance, task.projection);
+		return taskPublication(root, input.initiative_id, task.slice_id, task.intent, task.acceptance, task.projection, index + 1, initiativeShortName);
 	});
 	const historicalIds = new Set<string>();
 	if (input.amendment) {
@@ -1820,7 +2014,7 @@ async function updatePendingChild(
 	const body = childBody(source.repository, op, parent.kind === "found" ? parent.issue : child);
 	const oversized = bodyLimitFailure(op.op, body, MAX_TERMINAL_SUFFIX_BYTES);
 	if (oversized) return oversized;
-	const title = issueTitle(`${op.initiative_id}/${op.slice_id}`, op.projection?.result ?? op.goal);
+	const title = taskIssueTitle(op, sliceOrdinalFromChecklist(parent.kind === "found" ? parent.issue.body : child.body, op.slice_id, op.projection?.slice_ordinal ?? 1));
 	// Parent content expectation for pre-write revalidation: on the amendment
 	// path the expectation is always the fixed approved final Parent bytes —
 	// never re-adopt freshly observed content as the baseline, so an edit that
@@ -1874,7 +2068,8 @@ async function updatePendingChild(
 	// that landed after the snapshot must be preserved exactly, never
 	// overwritten by bytes computed from stale data.
 	let observed = child;
-	if (child.title !== title || child.body !== finalBody) {
+	const desiredLabels = desiredTaskLabels(op);
+	if (child.title !== title || child.body !== finalBody || labelMutationArgs(child.labels, desiredLabels).length) {
 		// Re-read the Child immediately before writing: earlier blocker ownership
 		// reads may have raced a concurrent user edit. The bound issue_number must
 		// still hold and the remote content must still be baseline-or-approved-final.
@@ -1896,11 +2091,13 @@ async function updatePendingChild(
 		const writeBody = typeof observedEvent === "string"
 			? `${body.trimEnd()}${terminalSuffix(observedEvent)}`
 			: finalBody;
-		if (observed.title !== title || observed.body !== writeBody) {
+		const labelArgs = labelMutationArgs(observed.labels, desiredLabels);
+		if (observed.title !== title || observed.body !== writeBody || labelArgs.length) {
 			const edited = await gh.run([
 				"issue", "edit", String(child.number), "--repo", source.repository.name_with_owner,
 				"--title", title,
 				"--body-file", "-",
+				...labelArgs,
 			], { cwd: root, stdin: writeBody });
 			if (edited.exit_code !== 0 || edited.output_exceeded) return ghFailure(op.op, edited, `pending Task Issue #${child.number} update failed`);
 			finalBody = writeBody;
@@ -1915,11 +2112,15 @@ async function updatePendingChild(
 		return result(op.op, "ambiguous_remote_state", `pending Task ${op.task_id} changed identity during amendment`, child);
 	if (reread.issue.title !== title || reread.issue.body !== finalBody)
 		return result(op.op, "retryable_failure", `pending Task ${op.task_id} update did not converge`, reread.issue);
+	const labelsCurrent = !desiredLabels.some((label) => !reread.issue.labels.includes(label));
+	if (!labelsCurrent)
+		return result(op.op, "retryable_failure", `pending Task ${op.task_id} labels did not converge`, reread.issue);
 	const currentDependencies = await confirmBlockedBy(root, gh, op.op, refreshed.repository, reread.issue.number, desiredBlockers);
 	if (!("complete" in currentDependencies)) return currentDependencies;
 	if (!currentDependencies.complete)
 		return result(op.op, "retryable_failure", `pending Task ${op.task_id} dependencies did not converge`, reread.issue);
-	const contentCurrent = child.title === title && child.body === finalBody;
+	const contentCurrent = child.title === title && child.body === finalBody
+		&& labelMutationArgs(child.labels, desiredLabels).length === 0;
 	return contentCurrent
 		? result(op.op, "already_current", `pending Task ${op.task_id} already carries the approved amendment content`, reread.issue)
 		: result(op.op, "updated", `pending Task ${op.task_id} Agent Brief updated with approved amendment content`, reread.issue);
@@ -2089,6 +2290,12 @@ export async function runGithubInitiativePublication(
 	if (initialParent.kind === "ambiguous") return publicationResult("ambiguous_remote_state", initialParent.message);
 	if (amendment && initialParent.kind === "missing")
 		return publicationResult("permanent_failure", "an amendment requires the Initiative Parent to already exist");
+	// Label availability is validated before any remote mutation: the tracker
+	// never creates labels, so a missing label fails the whole batch closed
+	// instead of half-publishing an Initiative.
+	const requiredLabels = [...new Set(prepared.order.flatMap((operation) => desiredTaskLabels(operation)))];
+	const labelFailure = await labelAvailabilityFailure(absoluteRoot, gh, initial.repository, requiredLabels);
+	if (labelFailure) return publicationResult(labelFailure.status, labelFailure.message, labelFailure);
 	const parentForPreflight = initialParent.kind === "found" ? initialParent.issue : {
 		id: Number.MAX_SAFE_INTEGER,
 		number: Number.MAX_SAFE_INTEGER,
@@ -2097,6 +2304,7 @@ export async function runGithubInitiativePublication(
 		body: "",
 		state: "open" as const,
 		state_reason: null,
+		labels: [],
 	};
 	const parentBodyFailure = bodyLimitFailure("create-initiative", createInitiativeBody(initial.repository, prepared.initiative));
 	if (parentBodyFailure) return publicationResult(parentBodyFailure.status, parentBodyFailure.message, parentBodyFailure);
@@ -2214,7 +2422,7 @@ export async function runGithubInitiativePublication(
 	const parentDrift = publicationIssueDrift(
 		parentResult,
 		parent.issue,
-		amendmentContext ? amendmentContext.parent.title : issueTitle(prepared.initiative.initiative_id, prepared.initiative.projection?.result ?? prepared.initiative.goal),
+		amendmentContext ? amendmentContext.parent.title : initiativeIssueTitle(prepared.initiative.initiative_id, prepared.initiative.projection),
 		amendmentContext
 			? amendmentContext.parent.body
 			: createInitiativeBody(finalSource.repository, prepared.initiative),
@@ -2241,12 +2449,15 @@ export async function runGithubInitiativePublication(
 		const childDrift = publicationIssueDrift(
 			childResult,
 			child.issue,
-			issueTitle(`${operation.initiative_id}/${operation.slice_id}`, operation.projection?.result ?? operation.goal),
+			taskIssueTitle(operation, sliceOrdinalFromChecklist(parent.issue.body, operation.slice_id, operation.projection?.slice_ordinal ?? 1)),
 			childBody(finalSource.repository, operation, parent.issue),
 			`Task ${operation.task_id}`,
 			{ allowTerminalSuffix: amendmentContext !== undefined },
 		);
 		if (childDrift) return publicationResult("ambiguous_remote_state", childDrift, parentResult, taskResults);
+		const expectedLabels = desiredTaskLabels(operation);
+		if (childResult.status !== "already_current" && expectedLabels.some((label) => !child.issue.labels.includes(label)))
+			return publicationResult("ambiguous_remote_state", `Task ${operation.task_id} is missing publication labels after publication`, parentResult, taskResults);
 		expectedNumbers.push(child.issue.number);
 		const ownership = await confirmTerminalOwnership(absoluteRoot, gh, "upsert-task", finalSource, child.issue);
 		if (!("owned" in ownership)) return publicationResult(ownership.status, ownership.message, parentResult, taskResults);
@@ -2341,7 +2552,9 @@ function taskPublication(
 	sliceId: string,
 	intentPath: string,
 	acceptance: unknown,
-	projection?: TaskProjection,
+	projection: TaskProjection | undefined,
+	ordinal: number,
+	initiativeShortName: string,
 ): PreparedPublicationTask {
 	const absoluteRoot = resolve(root);
 	const absolutePath = resolve(absoluteRoot, intentPath);
@@ -2367,6 +2580,18 @@ function taskPublication(
 	});
 	const missingIds = [...expectedIds].filter((id) => !publicById.has(id));
 	if (missingIds.length) throw new Error(`Task ${taskId} is missing public acceptance ids: ${missingIds.join(", ")}`);
+	// Display names are stamped from the Initiative so every Child title carries
+	// the same short name and its declared Slice position; an explicitly
+	// supplied value must agree, never silently override.
+	if (projection?.short_name !== undefined && projection.short_name !== initiativeShortName)
+		throw new Error(`Task ${taskId} projection.short_name must match the Initiative short name`);
+	if (projection?.slice_ordinal !== undefined && projection.slice_ordinal !== ordinal)
+		throw new Error(`Task ${taskId} projection.slice_ordinal must match its declared Slice position ${ordinal}`);
+	const stampedProjection: TaskProjection = {
+		...(projection ?? {}),
+		short_name: initiativeShortName,
+		slice_ordinal: ordinal,
+	};
 	return {
 		operation: validateOperation({
 			op: "upsert-task",
@@ -2376,7 +2601,7 @@ function taskPublication(
 			goal: intent.goal,
 			risk: intent.risk,
 			acceptance: intent.acceptance.map((item) => publicById.get(item.id)!),
-			projection,
+			projection: stampedProjection,
 		}) as Extract<TrackerOperation, { op: "upsert-task" }>,
 		intent_path: read.intent_ref.path,
 		intent_content_hash: read.content_hash,

@@ -1,0 +1,38 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "github-tracker-issue-presentation",
+  "owner": "user",
+  "goal": "Make Immune-Brain published GitHub Issues human-readable and convention-aligned: short titles driven by Planner-supplied display names, repo-label projection for state and risk signals, deduplicated body templates, provenance link to the originating issue, and slice-ordered child publication.",
+  "acceptance": [
+    {
+      "id": "GTP-1",
+      "assertion": "Issue titles are built from Planner-supplied display names instead of full goal/result prose: the Parent title is `[<initiative-short-name>] <initiative-display-title>` and each Child title is `[<initiative-short-name>] S<n> <slice-display-title>`; the full result text no longer appears in any title; titles are capped at 80 characters and publication fails closed with a clear error when a display name is missing or the cap is exceeded, never silently truncating.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/github-issue-projection-contract.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 60000,\n  \"max_output_bytes\": 20000\n}\n"
+    },
+    {
+      "id": "GTP-2",
+      "assertion": "Publication and amendment converge Issue labels from declared state using only pre-existing repository labels: every Child carries `ready-for-agent`, a Child with non-empty blocked_by additionally carries `blocked`, and the Parent carries no state labels; label application is idempotent and drift (label removed or added on the remote) is repaired on the next convergence pass; a missing label fails closed before any Issue mutation naming the exact label, with no auto-created labels.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/github-issue-projection-contract.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 60000,\n  \"max_output_bytes\": 20000\n}\n"
+    },
+    {
+      "id": "GTP-3",
+      "assertion": "Body templates no longer repeat title content and carry a single compressed boilerplate: the `## What to build` section and the body H1 duplicate of the title are removed from Task bodies, the Lifecycle and Authority boundary stanzas are collapsed into one short footer line per Issue, and the Parent keeps Problem/Result/Design/Decisions sections verbatim so no planning information is lost.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/github-issue-projection-contract.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 60000,\n  \"max_output_bytes\": 20000\n}\n"
+    },
+    {
+      "id": "GTP-4",
+      "assertion": "Published Initiatives record provenance and order: when the Planner projection declares a source issue, the Parent body renders a Provenance section linking it, Child Issues are created in declared slice order so the sub-issue list matches execution order, and existing binding convergence semantics (content-identity re-check, permanent_failure on unmanaged drift) are unchanged for previously published Issues.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/github-issue-projection-contract.test.ts\",\n    \"tests/plugin-package-runtime.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 20000\n}\n"
+    }
+  ],
+  "scope_hint": [
+    "docs/plans/github-tracker-issue-presentation.intent.json",
+    "docs/specs/archive/github-tracker-issue-presentation.spec.md",
+    "docs/specs/github-tracker-issue-presentation.spec.md",
+    "plugins/immune-brain/runtime/github_issue_tracker.ts",
+    "tests/github-issue-projection-contract.test.ts",
+    "tests/plugin-package-runtime.test.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}

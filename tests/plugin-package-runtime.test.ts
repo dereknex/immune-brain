@@ -225,11 +225,13 @@ type FakeIssue = {
 	body: string | null;
 	state: "open" | "closed";
 	state_reason: string | null;
+	labels?: string[];
 	blockedBy?: number[];
 };
 
 class FakeGh implements GhTransport {
 	issues: FakeIssue[] = [];
+	repositoryLabels = ["ready-for-agent", "blocked"];
 	subIssues = new Map<number, number[]>();
 	mutations = 0;
 	loseNextCreateResponse = false;
@@ -240,6 +242,8 @@ class FakeGh implements GhTransport {
 
 	async run(args: string[], options: { cwd?: string; stdin?: string } = {}): Promise<GhExecution> {
 		const ok = (stdout = ""): GhExecution => ({ exit_code: 0, stdout, stderr: "", timed_out: false, output_exceeded: false });
+		if (args[0] === "label" && args[1] === "list")
+			return ok(JSON.stringify(this.repositoryLabels.map((name) => ({ name }))));
 		if (args[0] === "api" && args[1] === "repos/{owner}/{repo}")
 			return ok(JSON.stringify({ id: 4242, full_name: "example/project" }));
 		if (args[0] === "api") {
@@ -330,6 +334,7 @@ class FakeGh implements GhTransport {
 				body: options.stdin ?? "",
 				state: "open",
 				state_reason: null,
+				labels: args.flatMap((value, index) => (value === "--label" ? [args[index + 1]] : [])),
 			});
 			this.afterIssueCreate?.(number, options.cwd ?? "");
 			if (this.loseNextCreateResponse) {
@@ -347,6 +352,10 @@ class FakeGh implements GhTransport {
 			const titleIndex = args.indexOf("--title");
 			if (titleIndex !== -1 && args[titleIndex + 1] !== undefined) issue.title = args[titleIndex + 1];
 			if (options.stdin !== undefined) issue.body = options.stdin;
+			for (let index = 0; index < args.length; index += 1) {
+				if (args[index] === "--add-label" && !(issue.labels ??= []).includes(args[index + 1])) issue.labels.push(args[index + 1]);
+				if (args[index] === "--remove-label") issue.labels = (issue.labels ?? []).filter((label) => label !== args[index + 1]);
+			}
 			return ok();
 		}
 		if (args[0] === "issue" && args[1] === "close") {
@@ -365,6 +374,7 @@ const INITIATIVE = {
 	op: "create-initiative" as const,
 	initiative_id: "tracking-v1",
 	goal: "Track a large delivery",
+	projection: { short_name: "tracking", title: "Track a large delivery" },
 	slices: [{ id: "S1", goal: "Ship the first bounded Task" }],
 };
 
@@ -376,12 +386,20 @@ const TRACKED_TASK = {
 	goal: "Ship the first bounded Task",
 	risk: "material" as const,
 	acceptance: [{ id: "acc-task", summary: "The bounded Task is verified" }],
+	projection: { short_name: "tracking", title: "Ship the first bounded Task", slice_ordinal: 1 },
 };
-const BLOCKER_TASK = { ...TRACKED_TASK, task_id: "blocker-task", projection: { result: "Publish the prerequisite contract" } };
+const BLOCKER_TASK = {
+	...TRACKED_TASK,
+	task_id: "blocker-task",
+	projection: { short_name: "tracking", title: "Publish the prerequisite contract", slice_ordinal: 1 },
+};
 const AGENT_READY_TASK = {
 	...TRACKED_TASK,
 	task_id: "agent-ready-task",
 	projection: {
+		short_name: "tracking",
+		title: "Publish an Agent-ready Task",
+		slice_ordinal: 1,
 		result: "Publish an Agent-ready Task",
 		current_behavior: "The projection is sparse.",
 		desired_behavior: "The projection is self-contained.",
@@ -708,15 +726,19 @@ describe("plugin package runtime cutover parity", () => {
 		await withIsolatedRootAsync(async (root) => {
 			const gh = new FakeGh();
 			gh.loseNextCreateResponse = true;
-			const requested = { ...INITIATIVE, goal: "Track a large delivery for gho_supersecret" };
+			const requested = {
+				...INITIATIVE,
+				goal: "Track a large delivery for gho_supersecret",
+				projection: { short_name: "tracking", title: "Track a large delivery for gho_supersecret" },
+			};
 			const initiative = await runGithubTrackerOperation(root, requested, gh);
 			expect(initiative).toMatchObject({ status: "created", association_found: true, issue_number: 1 });
 			expect(initiative.message).not.toContain("gho_secret");
-			expect(gh.issues[0].title).toBe("[tracking-v1] Track a large delivery for [REDACTED_GITHUB_TOKEN]");
+			expect(gh.issues[0].title).toBe("[tracking] Track a large delivery for [REDACTED_GITHUB_TOKEN]");
 			expect(gh.issues[0].body).toContain("[REDACTED_GITHUB_TOKEN]");
 			expect(gh.issues[0].body).toContain("<!-- immune-brain:slice-id=S1 -->");
 			expect(gh.issues[0].body).toContain("## How to use this Issue");
-			expect(gh.issues[0].body).toContain("Kernel TaskIntent, TaskRecord, and Assurance remain the execution authority");
+			expect(gh.issues[0].body).toContain("Outbound visibility only");
 			expect(gh.issues[0].body).toContain("the tracker never changes or closes it automatically");
 			expect(gh.issues[0].body).toContain("**S1**: Ship the first bounded Task");
 
@@ -806,8 +828,8 @@ describe("plugin package runtime cutover parity", () => {
 			expect(gh.issues[1].body).toContain("<!-- immune-brain:initiative-id=tracking-v1 -->");
 			expect(gh.issues[1].body).toContain("<!-- immune-brain:slice-id=S1 -->");
 			expect(gh.issues[1].body).toContain("| Initiative | `tracking-v1` |");
-			expect(gh.issues[1].body).toContain("## Lifecycle");
-			expect(gh.issues[1].body).toContain("Only a fresh claimless terminal projection can close this Issue");
+			expect(gh.issues[1].body).toContain("Outbound visibility only");
+			expect(gh.issues[1].body).toContain("only a claimless terminal projection closes it");
 			expect(gh.issues[1].body).not.toContain("tracker-state");
 			expect(gh.issues[1].body).not.toContain(".intent.json");
 
@@ -842,19 +864,19 @@ describe("plugin package runtime cutover parity", () => {
 			const published = await runGithubTrackerOperation(root, AGENT_READY_TASK, gh);
 			expect(published).toMatchObject({ status: "created", issue_number: 3 });
 			const child = gh.issues.find((issue) => issue.number === 3)!;
-			expect(child.title).toBe("[tracking-v1/S1] Publish an Agent-ready Task");
+			expect(child.title).toBe("[tracking] S1 Publish an Agent-ready Task");
 			expect(child.title).not.toContain("agent-ready-task");
 			expect(child.title).not.toContain("IB:");
 			expect(child.body).toContain("## Parent");
 			expect(child.body).toContain("[#1](https://github.com/example/project/issues/1)");
-			expect(child.body).toContain("## What to build");
 			expect(child.body).toContain("## Current behavior");
+			expect(child.body).not.toContain("## What to build");
 			expect(child.body).toContain("## Desired behavior");
 			expect(child.body).toContain("## Key interfaces");
 			expect(child.body).toContain("## Blocked by");
 			expect(child.body).toContain("`blocker-task`");
 			expect(child.body).toContain("## Agent handoff");
-			expect(child.body).toContain("## Authority boundary");
+			expect(child.body).toContain("Outbound visibility only");
 			expect(child.body).not.toContain("[IB:");
 			expect(child.body).not.toContain(".intent.json");
 			const originalChildTitle = child.title;
@@ -881,6 +903,8 @@ describe("plugin package runtime cutover parity", () => {
 				initiative_id: "complete-batch",
 				goal: "Ship one complete Initiative",
 				projection: {
+					short_name: "tracking",
+					title: "Track a large delivery",
 					problem: "Incremental ticket publication hides the full decomposition.",
 					result: "The complete delivery is reviewable before publication.",
 					design: "The foundation contract lands first; API and documentation then proceed independently.",
@@ -890,7 +914,7 @@ describe("plugin package runtime cutover parity", () => {
 					slice_id: task.slice_id,
 					intent: paths[index],
 					acceptance: publicAcceptance(task.task_id),
-					projection: { result: task.goal, blocked_by: task.blocked_by },
+					projection: { title: task.goal, result: task.goal, blocked_by: task.blocked_by },
 				})),
 			};
 
@@ -932,18 +956,20 @@ describe("plugin package runtime cutover parity", () => {
 				initiative_id: "long-acceptance-batch",
 				goal: "Publish safe acceptance summaries",
 				projection: {
+					short_name: "tracking",
+					title: "Track a large delivery",
 					problem: "Canonical assertions can contain internal authority context.",
 					result: "Publish only explicit public acceptance summaries.",
 					design: "Canonical IDs bind public summaries without exposing assertion prose.",
 				},
 				tasks: [
-					{ slice_id: "long", intent: paths[0], acceptance: publicAcceptance("long-acceptance", 1, summary) },
-					{ slice_id: "normal", intent: paths[1], acceptance: publicAcceptance("normal-acceptance") },
+					{ slice_id: "long", intent: paths[0], acceptance: publicAcceptance("long-acceptance", 1, summary), projection: { title: "Long acceptance" } },
+					{ slice_id: "normal", intent: paths[1], acceptance: publicAcceptance("normal-acceptance"), projection: { title: "Normal acceptance" } },
 				],
 			}, gh);
 
 			expect(published.status).toBe("created");
-			const body = gh.issues.find((issue) => issue.title.includes("/long]"))?.body ?? "";
+			const body = gh.issues.find((issue) => issue.title === "[tracking] S1 Long acceptance")?.body ?? "";
 			expect(body).toContain("`acc-long-acceptance`: Deliver the long acceptance result");
 			expect(body).not.toContain(assertion);
 			expect(body).not.toContain(".intent.json");
@@ -958,13 +984,15 @@ describe("plugin package runtime cutover parity", () => {
 				{ task_id: "binding-b", goal: "Bind acceptance B" },
 			]);
 			const validTasks = [
-				{ slice_id: "a", intent: paths[0], acceptance: publicAcceptance("binding-a") },
-				{ slice_id: "b", intent: paths[1], acceptance: publicAcceptance("binding-b") },
+				{ slice_id: "a", intent: paths[0], acceptance: publicAcceptance("binding-a"), projection: { title: "Binding A" } },
+				{ slice_id: "b", intent: paths[1], acceptance: publicAcceptance("binding-b"), projection: { title: "Binding B" } },
 			];
 			const base = {
 				initiative_id: "acceptance-binding",
 				goal: "Bind public acceptance",
 				projection: {
+					short_name: "tracking",
+					title: "Track a large delivery",
 					problem: "Public summaries need canonical identity binding.",
 					result: "Reject malformed bindings.",
 					design: "Preflight compares public IDs with canonical acceptance IDs.",
@@ -998,6 +1026,8 @@ describe("plugin package runtime cutover parity", () => {
 				initiative_id: "oversized-acceptance-batch",
 				goal: "Reject aggregate acceptance overflow",
 				projection: {
+					short_name: "tracking",
+					title: "Track a large delivery",
 					problem: "Individually valid assertions can exceed the aggregate GitHub body limit.",
 					result: "Reject an oversized Child before remote mutation.",
 					design: "The existing UTF-8 body preflight remains the aggregate bound.",
@@ -1007,9 +1037,9 @@ describe("plugin package runtime cutover parity", () => {
 						slice_id: "oversized",
 						intent: paths[0],
 						acceptance: publicAcceptance("oversized-acceptance", 28, "x".repeat(500)),
-						projection: { key_interfaces: Array.from({ length: 100 }, () => "y".repeat(500)) },
+						projection: { title: "Oversized Task body", key_interfaces: Array.from({ length: 100 }, () => "y".repeat(500)) },
 					},
-					{ slice_id: "normal", intent: paths[1], acceptance: publicAcceptance("normal-acceptance") },
+					{ slice_id: "normal", intent: paths[1], acceptance: publicAcceptance("normal-acceptance"), projection: { title: "Normal acceptance" } },
 				],
 			}, gh);
 
@@ -1030,13 +1060,15 @@ describe("plugin package runtime cutover parity", () => {
 				initiative_id: "invalid-batch",
 				goal: "Reject invalid batches",
 				projection: {
+					short_name: "tracking",
+					title: "Track a large delivery",
 					problem: "An invalid graph must not reach GitHub.",
 					result: "Reject invalid batches",
 					design: "A and B must not form a cycle.",
 				},
 				tasks: [
-					{ slice_id: "a", intent: paths[0], acceptance: publicAcceptance("task-a"), projection: { blocked_by: ["task-b"] } },
-					{ slice_id: "b", intent: paths[1], acceptance: publicAcceptance("task-b"), projection: { blocked_by: ["task-a"] } },
+					{ slice_id: "a", intent: paths[0], acceptance: publicAcceptance("task-a"), projection: { title: "Ship cycle A", blocked_by: ["task-b"] } },
+					{ slice_id: "b", intent: paths[1], acceptance: publicAcceptance("task-b"), projection: { title: "Ship cycle B", blocked_by: ["task-a"] } },
 				],
 			};
 			expect(await runGithubInitiativePublication(root, base, gh)).toMatchObject({ status: "permanent_failure" });
@@ -1057,13 +1089,15 @@ describe("plugin package runtime cutover parity", () => {
 				initiative_id: "retry-batch",
 				goal: "Resume one publication batch",
 				projection: {
+					short_name: "tracking",
+					title: "Track a large delivery",
 					problem: "A failed relation may leave a partial remote batch.",
 					result: "Resume one publication batch",
 					design: "Retry A precedes retry B.",
 				},
 				tasks: [
-					{ slice_id: "a", intent: paths[0], acceptance: publicAcceptance("retry-a"), projection: { result: "Ship retry A" } },
-					{ slice_id: "b", intent: paths[1], acceptance: publicAcceptance("retry-b"), projection: { result: "Ship retry B", blocked_by: ["retry-a"] } },
+					{ slice_id: "a", intent: paths[0], acceptance: publicAcceptance("retry-a"), projection: { title: "Ship retry A", result: "Ship retry A" } },
+					{ slice_id: "b", intent: paths[1], acceptance: publicAcceptance("retry-b"), projection: { title: "Ship retry B", result: "Ship retry B", blocked_by: ["retry-a"] } },
 				],
 			};
 			gh.dropNextSubIssueMutation = true;
@@ -1092,13 +1126,15 @@ describe("plugin package runtime cutover parity", () => {
 				initiative_id: "issue-drift",
 				goal: "Detect Issue drift",
 				projection: {
+					short_name: "tracking",
+					title: "Track a large delivery",
 					problem: "An early Child can drift during a long publication.",
 					result: "Detect Issue drift",
 					design: "Both Children must remain exact and open.",
 				},
 				tasks: [
-					{ slice_id: "a", intent: paths[0], acceptance: publicAcceptance("issue-drift-a") },
-					{ slice_id: "b", intent: paths[1], acceptance: publicAcceptance("issue-drift-b") },
+					{ slice_id: "a", intent: paths[0], acceptance: publicAcceptance("issue-drift-a"), projection: { title: "Issue drift A" } },
+					{ slice_id: "b", intent: paths[1], acceptance: publicAcceptance("issue-drift-b"), projection: { title: "Issue drift B" } },
 				],
 			}, gh);
 			expect(published).toMatchObject({ status: "ambiguous_remote_state" });
@@ -1123,13 +1159,15 @@ describe("plugin package runtime cutover parity", () => {
 				initiative_id: "intent-drift",
 				goal: "Detect TaskIntent drift",
 				projection: {
+					short_name: "tracking",
+					title: "Track a large delivery",
 					problem: "TaskIntent can change during a long publication.",
 					result: "Detect TaskIntent drift",
 					design: "Every remote write remains bound to the reviewed intent hashes.",
 				},
 				tasks: [
-					{ slice_id: "a", intent: paths[0], acceptance: publicAcceptance("intent-drift-a") },
-					{ slice_id: "b", intent: paths[1], acceptance: publicAcceptance("intent-drift-b") },
+					{ slice_id: "a", intent: paths[0], acceptance: publicAcceptance("intent-drift-a"), projection: { title: "Intent drift A" } },
+					{ slice_id: "b", intent: paths[1], acceptance: publicAcceptance("intent-drift-b"), projection: { title: "Intent drift B" } },
 				],
 			}, gh);
 			expect(published).toMatchObject({ status: "ambiguous_remote_state" });
@@ -1150,13 +1188,15 @@ describe("plugin package runtime cutover parity", () => {
 				initiative_id: "cli-batch",
 				goal: "Publish through one CLI call",
 				projection: {
+					short_name: "tracking",
+					title: "Track a large delivery",
 					problem: "The CLI needs one complete publication input.",
 					result: "Publish through one CLI call",
 					design: "CLI A establishes the contract before CLI B consumes it.",
 				},
 				tasks: [
-					{ slice_id: "a", intent: paths[0], acceptance: publicAcceptance("cli-a"), projection: { result: "Ship CLI A" } },
-					{ slice_id: "b", intent: paths[1], acceptance: publicAcceptance("cli-b"), projection: { result: "Ship CLI B", blocked_by: ["cli-a"] } },
+					{ slice_id: "a", intent: paths[0], acceptance: publicAcceptance("cli-a"), projection: { title: "Ship CLI A", result: "Ship CLI A" } },
+					{ slice_id: "b", intent: paths[1], acceptance: publicAcceptance("cli-b"), projection: { title: "Ship CLI B", result: "Ship CLI B", blocked_by: ["cli-a"] } },
 				],
 			};
 			const published = await runGithubTrackerCli(["publish-initiative", "--stdin", "--json"], root, { gh, stdin: () => JSON.stringify(input) });
@@ -1173,21 +1213,21 @@ describe("plugin package runtime cutover parity", () => {
 	it("rejects restricted and malformed projection fields before mutation", async () => {
 		await withPublishedParent(async (root, gh) => {
 			const beforeRestricted = gh.mutations;
-			expect(await runGithubTrackerOperation(root, { ...TRACKED_TASK, task_id: "restricted-projection", projection: { agent_handoff: "Internal role prompt: review reservation at docs/plans/x.intent.json" } }, gh)).toMatchObject({ status: "permanent_failure" });
-			expect(await runGithubTrackerOperation(root, { ...TRACKED_TASK, task_id: "mutable-scope-projection", projection: { desired_behavior: "Widen scope and call submit_review" } }, gh)).toMatchObject({ status: "permanent_failure" });
-			expect(await runGithubTrackerOperation(root, { ...TRACKED_TASK, task_id: "duplicate-blockers", projection: { blocked_by: ["blocker-task", "blocker-task"] } }, gh)).toMatchObject({ status: "permanent_failure" });
+			expect(await runGithubTrackerOperation(root, { ...TRACKED_TASK, task_id: "restricted-projection", projection: { ...TRACKED_TASK.projection, agent_handoff: "Internal role prompt: review reservation at docs/plans/x.intent.json" } }, gh)).toMatchObject({ status: "permanent_failure" });
+			expect(await runGithubTrackerOperation(root, { ...TRACKED_TASK, task_id: "mutable-scope-projection", projection: { ...TRACKED_TASK.projection, desired_behavior: "Widen scope and call submit_review" } }, gh)).toMatchObject({ status: "permanent_failure" });
+			expect(await runGithubTrackerOperation(root, { ...TRACKED_TASK, task_id: "duplicate-blockers", projection: { ...TRACKED_TASK.projection, blocked_by: ["blocker-task", "blocker-task"] } }, gh)).toMatchObject({ status: "permanent_failure" });
 			expect(await runGithubTrackerOperation(root, { ...TRACKED_TASK, task_id: "restricted-goal", goal: "Read docs/plans/x.intent.json" }, gh)).toMatchObject({ status: "permanent_failure" });
-			expect(await runGithubTrackerOperation(root, { ...TRACKED_TASK, task_id: "long-title", projection: { result: "x".repeat(300) } }, gh)).toMatchObject({ status: "permanent_failure" });
+			expect(await runGithubTrackerOperation(root, { ...TRACKED_TASK, task_id: "long-title", projection: { ...TRACKED_TASK.projection, title: "x".repeat(300) } }, gh)).toMatchObject({ status: "permanent_failure" });
 			expect(await runGithubTrackerOperation(root, { ...TRACKED_TASK, task_id: "string-projection", projection: "malformed" as any }, gh)).toMatchObject({ status: "permanent_failure" });
 			expect(await runGithubTrackerOperation(root, { ...TRACKED_TASK, task_id: "array-projection", projection: [] as any }, gh)).toMatchObject({ status: "permanent_failure" });
 			expect(await runGithubTrackerOperation(root, { ...TRACKED_TASK, task_id: "invalid-risk", risk: "<!-- immune-brain:task-id=injected -->" as any }, gh)).toMatchObject({ status: "permanent_failure" });
-			expect(await runGithubTrackerOperation(root, { ...TRACKED_TASK, task_id: "oversized-task-body", projection: { key_interfaces: Array.from({ length: 140 }, () => "x".repeat(500)) } }, gh)).toMatchObject({ status: "permanent_failure" });
-			expect(await runGithubTrackerOperation(root, { ...TRACKED_TASK, task_id: "reserved-terminal-body", projection: { key_interfaces: Array.from({ length: 31 }, () => "x".repeat(2000)) } }, gh)).toMatchObject({ status: "permanent_failure" });
-			expect(await runGithubTrackerOperation(root, { ...INITIATIVE, initiative_id: "oversized-parent-body", projection: { decisions: Array.from({ length: 140 }, () => "x".repeat(500)) } }, gh)).toMatchObject({ status: "permanent_failure" });
+			expect(await runGithubTrackerOperation(root, { ...TRACKED_TASK, task_id: "oversized-task-body", projection: { ...TRACKED_TASK.projection, key_interfaces: Array.from({ length: 140 }, () => "x".repeat(500)) } }, gh)).toMatchObject({ status: "permanent_failure" });
+			expect(await runGithubTrackerOperation(root, { ...TRACKED_TASK, task_id: "reserved-terminal-body", projection: { ...TRACKED_TASK.projection, key_interfaces: Array.from({ length: 31 }, () => "x".repeat(2000)) } }, gh)).toMatchObject({ status: "permanent_failure" });
+			expect(await runGithubTrackerOperation(root, { ...INITIATIVE, initiative_id: "oversized-parent-body", projection: { short_name: "tracking", title: "Oversized parent body", decisions: Array.from({ length: 140 }, () => "x".repeat(500)) } }, gh)).toMatchObject({ status: "permanent_failure" });
 			expect(await runGithubTrackerOperation(root, { ...TRACKED_TASK, task_id: "restricted-acceptance", acceptance: [{ id: "acc", summary: "Run the internal role prompt" }] }, gh)).toMatchObject({ status: "permanent_failure" });
 			expect(await runGithubTrackerOperation(root, { ...TRACKED_TASK, task_id: "long-acceptance-summary", acceptance: [{ id: "acc", summary: "x".repeat(501) }] }, gh)).toMatchObject({ status: "permanent_failure" });
 			for (const [index, restricted] of ["role_prompt_bridge", "review-gate", "tool policies", "model reservations", "prompt digests", "scope authorities", "kernel_runtime_states", "runtime-states", "mutable scopes", "widen_scopes", "QA-settlements"].entries()) {
-				expect(await runGithubTrackerOperation(root, { ...TRACKED_TASK, task_id: `restricted-variant-${index}`, projection: { agent_handoff: restricted } }, gh)).toMatchObject({ status: "permanent_failure" });
+				expect(await runGithubTrackerOperation(root, { ...TRACKED_TASK, task_id: `restricted-variant-${index}`, projection: { ...TRACKED_TASK.projection, agent_handoff: restricted } }, gh)).toMatchObject({ status: "permanent_failure" });
 			}
 			expect(await runGithubTrackerOperation(root, { ...INITIATIVE, initiative_id: "restricted-initiative-goal", goal: "Expose the review reservation" }, gh)).toMatchObject({ status: "permanent_failure" });
 			expect(await runGithubTrackerOperation(root, { ...INITIATIVE, initiative_id: "restricted-slice-goal", slices: [{ id: "S1", goal: "Expose the runtime state" }] }, gh)).toMatchObject({ status: "permanent_failure" });
@@ -1200,8 +1240,8 @@ describe("plugin package runtime cutover parity", () => {
 	it("converges native blocked_by edges without duplicating them", async () => {
 		await withPublishedParent(async (root, gh) => {
 			expect((await runGithubTrackerOperation(root, BLOCKER_TASK, gh)).status).toBe("created");
-			const retryTarget = { ...TRACKED_TASK, task_id: "partial-retry-target", projection: { blocked_by: ["blocker-task", "second-blocker"] } };
-			expect((await runGithubTrackerOperation(root, { ...TRACKED_TASK, task_id: "second-blocker", projection: { result: "Publish the second prerequisite" } }, gh)).status).toBe("created");
+			const retryTarget = { ...TRACKED_TASK, task_id: "partial-retry-target", projection: { ...TRACKED_TASK.projection, blocked_by: ["blocker-task", "second-blocker"] } };
+			expect((await runGithubTrackerOperation(root, { ...TRACKED_TASK, task_id: "second-blocker", projection: { ...TRACKED_TASK.projection, result: "Publish the second prerequisite" } }, gh)).status).toBe("created");
 			expect((await runGithubTrackerOperation(root, retryTarget, gh)).status).toBe("created");
 			const retryChild = gh.issues.find((issue) => issue.body.includes("partial-retry-target"))!;
 			retryChild.blockedBy = [1002];
@@ -1210,7 +1250,7 @@ describe("plugin package runtime cutover parity", () => {
 			expect(gh.mutations - beforeRetry).toBe(1);
 			expect(retryChild.blockedBy).toEqual([1002, 1003]);
 			const beforeChangedBrief = gh.mutations;
-			expect(await runGithubTrackerOperation(root, { ...retryTarget, projection: { blocked_by: ["blocker-task"] } }, gh)).toMatchObject({ status: "permanent_failure" });
+			expect(await runGithubTrackerOperation(root, { ...retryTarget, projection: { ...TRACKED_TASK.projection, blocked_by: ["blocker-task"] } }, gh)).toMatchObject({ status: "permanent_failure" });
 			expect(gh.mutations).toBe(beforeChangedBrief);
 			retryChild.blockedBy.push(9999);
 			const beforeExtraEdge = gh.mutations;
@@ -1236,21 +1276,21 @@ describe("plugin package runtime cutover parity", () => {
 			gh.subIssues.set(1, attached);
 			gh.subIssues.set(1, attached.filter((number) => number !== 2));
 			const beforeDetached = gh.mutations;
-			expect(await runGithubTrackerOperation(root, { ...TRACKED_TASK, task_id: "detached-blocker-target", projection: { blocked_by: ["blocker-task"] } }, gh)).toMatchObject({ status: "ambiguous_remote_state" });
+			expect(await runGithubTrackerOperation(root, { ...TRACKED_TASK, task_id: "detached-blocker-target", projection: { ...TRACKED_TASK.projection, blocked_by: ["blocker-task"] } }, gh)).toMatchObject({ status: "ambiguous_remote_state" });
 			expect(gh.mutations).toBe(beforeDetached);
 			gh.subIssues.set(1, attached);
 			gh.detachBlockerAfterDependencyMutation = true;
-			expect(await runGithubTrackerOperation(root, { ...TRACKED_TASK, task_id: "raced-blocker-target", projection: { blocked_by: ["blocker-task"] } }, gh)).toMatchObject({ status: "ambiguous_remote_state" });
+			expect(await runGithubTrackerOperation(root, { ...TRACKED_TASK, task_id: "raced-blocker-target", projection: { ...TRACKED_TASK.projection, blocked_by: ["blocker-task"] } }, gh)).toMatchObject({ status: "ambiguous_remote_state" });
 			gh.subIssues.set(1, attached);
 			gh.mutateChildAfterDependencyMutation = true;
-			expect(await runGithubTrackerOperation(root, { ...TRACKED_TASK, task_id: "raced-child-target", projection: { blocked_by: ["blocker-task"] } }, gh)).toMatchObject({ status: "ambiguous_remote_state" });
+			expect(await runGithubTrackerOperation(root, { ...TRACKED_TASK, task_id: "raced-child-target", projection: { ...TRACKED_TASK.projection, blocked_by: ["blocker-task"] } }, gh)).toMatchObject({ status: "ambiguous_remote_state" });
 			gh.subIssues.set(1, attached);
 			gh.dropNextSubIssueMutation = true;
 			const nonConverging = { ...TRACKED_TASK, task_id: "non-converging-sub-issue" };
 			expect(await runGithubTrackerOperation(root, nonConverging, gh)).toMatchObject({ status: "retryable_failure" });
 			expect(await runGithubTrackerOperation(root, nonConverging, gh)).toMatchObject({ status: "updated" });
 			const before = gh.mutations;
-			const missing = await runGithubTrackerOperation(root, { ...AGENT_READY_TASK, task_id: "missing-blocker-target", projection: { blocked_by: ["not-published"] } }, gh);
+			const missing = await runGithubTrackerOperation(root, { ...AGENT_READY_TASK, task_id: "missing-blocker-target", projection: { ...AGENT_READY_TASK.projection, blocked_by: ["not-published"] } }, gh);
 			expect(missing.status).toBe("permanent_failure");
 			expect(gh.mutations).toBe(before);
 		});
@@ -1268,6 +1308,8 @@ describe("plugin package runtime cutover parity", () => {
 				initiative_id: "tracked-batch",
 				goal: "Publish only canonical tracked work",
 				projection: {
+					short_name: "tracking",
+					title: "Track a large delivery",
 					problem: "Untracked intent files must never be projected.",
 					result: "Publish only canonical tracked work",
 					design: "Tracked A precedes tracked B.",
@@ -1279,8 +1321,8 @@ describe("plugin package runtime cutover parity", () => {
 				{
 					gh,
 					stdin: () => JSON.stringify({ ...base, tasks: [
-						{ slice_id: "a", intent: tracked[0], acceptance: publicAcceptance("tracked-a") },
-						{ slice_id: "untracked", intent: untracked, acceptance: publicAcceptance("untracked-task") },
+						{ slice_id: "a", intent: tracked[0], acceptance: publicAcceptance("tracked-a"), projection: { title: "Tracked A" } },
+						{ slice_id: "untracked", intent: untracked, acceptance: publicAcceptance("untracked-task"), projection: { title: "Untracked work" } },
 					] }),
 				},
 			);
@@ -1294,8 +1336,8 @@ describe("plugin package runtime cutover parity", () => {
 				{
 					gh,
 					stdin: () => JSON.stringify({ ...base, tasks: [
-						{ slice_id: "a", intent: tracked[0], acceptance: publicAcceptance("tracked-a") },
-						{ slice_id: "b", intent: tracked[1], acceptance: publicAcceptance("tracked-b"), projection: { blocked_by: ["tracked-a"] } },
+						{ slice_id: "a", intent: tracked[0], acceptance: publicAcceptance("tracked-a"), projection: { title: "Tracked A" } },
+						{ slice_id: "b", intent: tracked[1], acceptance: publicAcceptance("tracked-b"), projection: { title: "Tracked B", blocked_by: ["tracked-a"] } },
 					] }),
 				},
 			);
@@ -1428,6 +1470,8 @@ describe("initiative amendment publication", () => {
 				initiative_id: "amend-init",
 			goal: "Ship the amendable Initiative",
 			projection: {
+					short_name: "tracking",
+					title: "Track a large delivery",
 					problem: "Planning evolves after publication.",
 					result: "Ship the amendable Initiative",
 					design: "One slice completes, one slice continues.",
@@ -1436,7 +1480,7 @@ describe("initiative amendment publication", () => {
 					slice_id: task.slice_id,
 					intent: paths[index],
 					acceptance: publicAcceptance(task.task_id),
-					projection: { result: task.goal, blocked_by: task.blocked_by },
+					projection: { title: task.goal, result: task.goal, blocked_by: task.blocked_by },
 				})),
 			};
 			const published = await runGithubInitiativePublication(root, input, gh);
@@ -1476,6 +1520,7 @@ describe("initiative amendment publication", () => {
 			intent: paths[1],
 			acceptance: publicAcceptance("amend-live"),
 			projection: {
+				title: overrides.pendingResult ?? "Deliver the amended pending work",
 				result: overrides.pendingResult ?? "Deliver the amended pending work",
 				blocked_by: overrides.blockedBy ?? ["amend-done"],
 			},
@@ -1486,13 +1531,15 @@ describe("initiative amendment publication", () => {
 				slice_id: "new",
 				intent: overrides.newTask.intent,
 				acceptance: publicAcceptance(overrides.newTask.task_id),
-				projection: { result: overrides.newTask.goal },
+				projection: { title: overrides.newTask.goal, result: overrides.newTask.goal },
 			});
 		}
 		return {
 			initiative_id: "amend-init",
 			goal: "Ship the amended Initiative result",
 			projection: {
+				short_name: "tracking",
+				title: "Track a large delivery",
 				problem: "Planning evolves after publication.",
 				result: "Ship the amended Initiative result",
 				design: "The pending frontier is amended with approved content.",
@@ -1516,7 +1563,7 @@ describe("initiative amendment publication", () => {
 				slice_id: "done",
 				intent: paths[0],
 				acceptance: publicAcceptance("amend-done"),
-				projection: { result: "Deliver the completed prerequisite", blocked_by: [] },
+				projection: { title: "Deliver the completed prerequisite", result: "Deliver the completed prerequisite", blocked_by: [] },
 			});
 			const strict = await runGithubInitiativePublication(root, strictInput as any, gh);
 			expect(strict.status).toBe("permanent_failure");
@@ -2468,12 +2515,12 @@ it("rejects pending bindings whose issue_number does not match the observable Is
 			const foreign = await runGithubInitiativePublication(root, {
 				initiative_id: "foreign-init",
 				goal: "Foreign Initiative",
-				projection: { problem: "Foreign planning context.", result: "Foreign Initiative", design: "A standalone foreign Initiative." },
+				projection: { short_name: "foreign", title: "Foreign Initiative", problem: "Foreign planning context.", result: "Foreign Initiative", design: "A standalone foreign Initiative." },
 				tasks: foreignTasks.map((task, index) => ({
 					slice_id: task.slice_id,
 					intent: foreignPaths[index],
 					acceptance: publicAcceptance(task.task_id),
-					projection: { result: task.goal },
+					projection: { title: task.goal, result: task.goal },
 				})),
 			} as any, gh);
 			expect(foreign.status).toBe("created");

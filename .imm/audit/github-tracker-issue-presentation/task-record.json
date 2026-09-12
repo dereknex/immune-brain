@@ -1,0 +1,276 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "github-tracker-issue-presentation",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "github-tracker-issue-presentation",
+    "goal": "Make Immune-Brain published GitHub Issues human-readable and convention-aligned: short titles driven by Planner-supplied display names, repo-label projection for state and risk signals, deduplicated body templates, provenance link to the originating issue, and slice-ordered child publication.",
+    "acceptance": [
+      {
+        "id": "GTP-1",
+        "assertion": "Issue titles are built from Planner-supplied display names instead of full goal/result prose: the Parent title is `[<initiative-short-name>] <initiative-display-title>` and each Child title is `[<initiative-short-name>] S<n> <slice-display-title>`; the full result text no longer appears in any title; titles are capped at 80 characters and publication fails closed with a clear error when a display name is missing or the cap is exceeded, never silently truncating.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/github-issue-projection-contract.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 60000,\n  \"max_output_bytes\": 20000\n}\n"
+      },
+      {
+        "id": "GTP-2",
+        "assertion": "Publication and amendment converge Issue labels from declared state using only pre-existing repository labels: every Child carries `ready-for-agent`, a Child with non-empty blocked_by additionally carries `blocked`, and the Parent carries no state labels; label application is idempotent and drift (label removed or added on the remote) is repaired on the next convergence pass; a missing label fails closed before any Issue mutation naming the exact label, with no auto-created labels.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/github-issue-projection-contract.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 60000,\n  \"max_output_bytes\": 20000\n}\n"
+      },
+      {
+        "id": "GTP-3",
+        "assertion": "Body templates no longer repeat title content and carry a single compressed boilerplate: the `## What to build` section and the body H1 duplicate of the title are removed from Task bodies, the Lifecycle and Authority boundary stanzas are collapsed into one short footer line per Issue, and the Parent keeps Problem/Result/Design/Decisions sections verbatim so no planning information is lost.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/github-issue-projection-contract.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 60000,\n  \"max_output_bytes\": 20000\n}\n"
+      },
+      {
+        "id": "GTP-4",
+        "assertion": "Published Initiatives record provenance and order: when the Planner projection declares a source issue, the Parent body renders a Provenance section linking it, Child Issues are created in declared slice order so the sub-issue list matches execution order, and existing binding convergence semantics (content-identity re-check, permanent_failure on unmanaged drift) are unchanged for previously published Issues.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/github-issue-projection-contract.test.ts\",\n    \"tests/plugin-package-runtime.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 20000\n}\n"
+      }
+    ],
+    "scope_hint": [
+      "docs/plans/github-tracker-issue-presentation.intent.json",
+      "docs/specs/archive/github-tracker-issue-presentation.spec.md",
+      "docs/specs/github-tracker-issue-presentation.spec.md",
+      "plugins/immune-brain/runtime/github_issue_tracker.ts",
+      "tests/github-issue-projection-contract.test.ts",
+      "tests/plugin-package-runtime.test.ts"
+    ],
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/archive/github-tracker-issue-presentation.intent.json",
+    "content_hash": "sha256:ff2d719a28f195bd41d71bb947f8f8c12c5ccfb2ce96730a271dc3e5df5265cf"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:ff2d719a28f195bd41d71bb947f8f8c12c5ccfb2ce96730a271dc3e5df5265cf",
+  "git_base_head": "4fd2ef0bbd908468b2e3ef88036e5f8b9f637836",
+  "attestations": [
+    {
+      "id": "approval-qa-f10f71e8",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:ff2d719a28f195bd41d71bb947f8f8c12c5ccfb2ce96730a271dc3e5df5265cf",
+      "diff_hash": "sha256:e4b8994b2e98825df24bd0a56efd8b3b2e0bc0b2a29afc1121b64dc74d72e402",
+      "actor_id": "deterministic-qa",
+      "summary": "all 4 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "GTP-1",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "GTP-2",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "GTP-3",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "GTP-4",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-06bf3e9b",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:ff2d719a28f195bd41d71bb947f8f8c12c5ccfb2ce96730a271dc3e5df5265cf",
+      "diff_hash": "sha256:1ec3f4b63290268319783f3df9698387cebd84e2dee7813cf93233e94fc6d8f4",
+      "actor_id": "deterministic-qa",
+      "summary": "all 4 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "GTP-1",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "GTP-2",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "GTP-3",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "GTP-4",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-9b7e989e",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:ff2d719a28f195bd41d71bb947f8f8c12c5ccfb2ce96730a271dc3e5df5265cf",
+      "diff_hash": "sha256:1ec3f4b63290268319783f3df9698387cebd84e2dee7813cf93233e94fc6d8f4",
+      "actor_id": "parent-mediated-review",
+      "summary": "Display-name titles, managed-label convergence, compressed bodies, and provenance/order match GTP-1–GTP-4 with fail-closed preflight and unchanged binding drift.",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "4fd2ef0bbd908468b2e3ef88036e5f8b9f637836",
+        "review_commit": "f0fe6340806d994155f139e308df7e100b657ed2",
+        "review_tree": "31e623a72a310bfe834ceb33ea0ba35527b4803d",
+        "manifest_digest": "sha256:6f3c7bbfa2cc0b637e16f3f189c7b9b0ccd9f1c69ebc431ef8f7750292d2a9dc"
+      }
+    }
+  ],
+  "findings": [
+    {
+      "id": "review-e5dba9b38033-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "GTP-2",
+      "source": "review",
+      "review_round": 1,
+      "summary": "Already-current publication/upsert leaves drifted managed labels in place; only create and amendment write labels.",
+      "anchor": "sha256:0c6b1eeec2d5c1b0c9c0fd40982a49e7fa4dfa1483fe6676f301d289e392a52e",
+      "evidence": {
+        "trigger": "publish-initiative creates Children with ready-for-agent (and blocked when blocked_by is non-empty); a human then removes ready-for-agent from a Child or adds it on the Parent; the same complete batch is published again with no amendment.",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/github_issue_tracker.ts:upsertTask",
+          "plugins/immune-brain/runtime/github_issue_tracker.ts:createInitiative",
+          "plugins/immune-brain/runtime/github_issue_tracker.ts:runGithubInitiativePublication"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "GTP-2"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-e5dba9b38033-2-review-2",
+      "kind": "advisory",
+      "status": "open",
+      "acceptance_id": "GTP-1",
+      "source": "review",
+      "review_round": 1,
+      "summary": "sliceOrdinalFromChecklist matches only unchecked `- [ ]` Slice lines, so a checked historical line retitles remaining Children.",
+      "anchor": "sha256:b416858fb818d59f0f41fbc0cb16cb9165b7a8a712ed46bd42910a6de48e5464",
+      "evidence": {
+        "trigger": "Parent Slices checklist contains a historical `- [x] <!-- immune-brain:slice-id=a -->` line plus pending `- [ ] <!-- immune-brain:slice-id=b -->`; amendment builds Child B's title from sliceOrdinalFromChecklist.",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/github_issue_tracker.ts:sliceOrdinalFromChecklist",
+          "plugins/immune-brain/runtime/github_issue_tracker.ts:taskIssueTitle",
+          "plugins/immune-brain/runtime/github_issue_tracker.ts:approvedAmendmentContent"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "GTP-1"
+        }
+      },
+      "counterevidence": null
+    }
+  ],
+  "history": [
+    {
+      "id": "freeze_artifacts:github-tracker-issue-presentation:2026-09-12T14:34:04.871Z",
+      "at": "2026-09-12T14:34:04.871Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent and Spec frozen at docs/plans/archive/github-tracker-issue-presentation.intent.json"
+    },
+    {
+      "id": "record_approval:github-tracker-issue-presentation:2026-09-12T14:34:23.791Z",
+      "at": "2026-09-12T14:34:23.791Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-f10f71e8\naction_v2_sha256:22942925c3fbeaf8e3f74a0cebc923ddbe71f207c3c0a790268342255a740052",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-438e71572c3e4075",
+        "issued_at": "2026-09-12T14:34:23.792Z",
+        "expires_at": "2026-09-12T14:44:23.791Z"
+      }
+    },
+    {
+      "id": "request_rework:github-tracker-issue-presentation:2026-09-12T14:42:58.839Z",
+      "at": "2026-09-12T14:42:58.839Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_1\naction_v2_sha256:37714829e6af29ae4dd4a59c70820bf47b35f4817cac716727922b06b6834a19",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-7e281d1205371f7b",
+        "issued_at": "2026-09-12T14:42:58.840Z",
+        "expires_at": "2026-09-12T14:52:58.839Z"
+      }
+    },
+    {
+      "id": "resolve_finding:github-tracker-issue-presentation:2026-09-12T14:46:45.138Z",
+      "at": "2026-09-12T14:46:45.138Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-e5dba9b38033-1-review-1\naction_v2_sha256:3a69c22947337764341793f02a9dd185c5f4e53460145a4fe7397a0a09511489"
+    },
+    {
+      "id": "freeze_artifacts:github-tracker-issue-presentation:2026-09-12T14:46:59.794Z",
+      "at": "2026-09-12T14:46:59.794Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent and Spec frozen at docs/plans/archive/github-tracker-issue-presentation.intent.json"
+    },
+    {
+      "id": "record_approval:github-tracker-issue-presentation:2026-09-12T14:47:15.427Z",
+      "at": "2026-09-12T14:47:15.427Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-06bf3e9b\naction_v2_sha256:44676032d65d5ebdb71b1e1029198c08cc6a2b39e823707235ebb91d937ee686",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-2f6cc8550dc3b46a",
+        "issued_at": "2026-09-12T14:47:15.427Z",
+        "expires_at": "2026-09-12T14:57:15.427Z"
+      }
+    },
+    {
+      "id": "record_approval:github-tracker-issue-presentation:2026-09-12T14:58:44.632Z",
+      "at": "2026-09-12T14:58:44.632Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-9b7e989e\naction_v2_sha256:dbbb114cc2b943cce2cd9a37372808dc984aa9c80df286d6bd0feec4627c59e9",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-0ae4196606108757",
+        "issued_at": "2026-09-12T14:58:44.632Z",
+        "expires_at": "2026-09-12T15:08:44.632Z"
+      }
+    },
+    {
+      "id": "complete:github-tracker-issue-presentation:2026-09-12T14:58:45.251Z",
+      "at": "2026-09-12T14:58:45.251Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:aa6378ff3ca58bca96c6b23e498201ff352da10f6f063083266eed064625f29f"
+    }
+  ]
+}
