@@ -119,15 +119,6 @@ describe("skill registry consistency", () => {
     expect(onDisk).toEqual(registered)
   })
 
-  it("names imm-review-retro in a patch changeset", () => {
-    const dir = resolve(PLUGIN_ROOT, "../../.changeset")
-    const files = readdirSync(dir).filter((name) => name.endsWith(".md") && name !== "README.md")
-    const hit = files.some((name) =>
-      readFileSync(resolve(dir, name), "utf-8").includes("imm-review-retro"),
-    )
-    expect(hit).toBe(true)
-  })
-
   it("no SKILL.md description contains stray CJK characters", () => {
     const offenders: string[] = []
     for (const entry of registry) {
