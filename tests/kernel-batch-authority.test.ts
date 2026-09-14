@@ -12,6 +12,11 @@ import {
 	type BatchAuthorizationBinding,
 	type BatchPlanChild,
 } from "../plugins/immune-brain/runtime/kernel/batch_authority";
+import {
+	LITERAL_USER_ACTOR_ID,
+	canonicalActorId,
+	isLiteralUserActor,
+} from "../plugins/immune-brain/runtime/kernel/actor_identity";
 import { enrollCanaryTask } from "../plugins/immune-brain/runtime/kernel/enrollment";
 import { createEnrollmentAuthorityRegistry } from "../plugins/immune-brain/runtime/kernel/enrollment_authority";
 import { preparePiCanary, readGitHead } from "../plugins/immune-brain/runtime/kernel/pi_canary_prepare";
@@ -187,6 +192,21 @@ describe("batch authorization issue", () => {
 		const root = makeRoot(["t1"]);
 		const children = [childFor(root, "t1")];
 		expect(() => issueWith(root, children, { actor_id: "agent" })).toThrow(/literal-user/i);
+	});
+
+	test("reads the historical user spelling and the canonical one identically", () => {
+		// Both spellings mean the literal user, so a batch authorized before the
+		// convergence still validates and derives the same child enrollment: only
+		// the recorded audit identity is converged, never the settled bytes.
+		const root = makeRoot(["t1"]);
+		const children = [childFor(root, "t1")];
+		for (const spelling of ["literal-user", "user"]) {
+			const capability = issueWith(root, children, { actor_id: spelling });
+			const projected = registry.inspect(capability, { ...bindingFor(root, children), actor_id: spelling }, AT_ISSUE);
+			expect(projected.actor_id).toBe(spelling);
+			expect(isLiteralUserActor(String(projected.actor_id))).toBe(true);
+			expect(canonicalActorId(String(projected.actor_id))).toBe(LITERAL_USER_ACTOR_ID);
+		}
 	});
 
 	test("rejects every empty binding field", () => {

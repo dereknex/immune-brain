@@ -130,6 +130,7 @@ import {
 	type CanaryApplication,
 	type MutationAuthorityRegistry,
 	type CapabilityBindingV2,
+	LITERAL_USER_ACTOR_ID,
 } from "./runtime-stub";
 import { invocationRegistry } from "./pi-canary-assurance-progression";
 
@@ -974,7 +975,7 @@ export default function (
 						intent_revision: nextIntent?.revision ?? projection.projection.intent_revision,
 						intent_content_hash: nextIntentHash ?? projection.projection.intent_content_hash,
 						diff_hash: operationDiffHash,
-						actor_id: "literal-user",
+						actor_id: LITERAL_USER_ACTOR_ID,
 						...(exactOperation.op === "approve_breaking_intent_revision"
 							? { next_intent: exactOperation.next_intent, next_intent_ref: exactOperation.next_intent_ref }
 							: {}),
@@ -987,7 +988,7 @@ export default function (
 					const result = (await app.execute({
 						root: ctx.cwd,
 						task_id: taskId,
-						operation: { ...exactOperation, capability, actor_id: "literal-user" } as never,
+						operation: { ...exactOperation, capability, actor_id: LITERAL_USER_ACTOR_ID } as never,
 						prior_intent_token: priorIntent.token,
 						diffProvider: (root: string, record: NonNullable<TaskRecordRead["record"]>) => diffSnapshotOf(root, record),
 						now,
@@ -1114,7 +1115,7 @@ export async function recordCancelledUserDecision(
 				acceptance_id: null,
 				summary: `${operation} confirmation cancelled by literal user; snapshot ${snapshotDigestRef}`,
 			},
-			actor_id: "literal-user",
+			actor_id: LITERAL_USER_ACTOR_ID,
 		} as never,
 		prior_intent_token: (await readTaskIntent(ctx.cwd, taskId)).token,
 		diffProvider: (root: string, record: NonNullable<TaskRecordRead["record"]>) => diffSnapshotOf(root, record),

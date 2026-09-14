@@ -6,6 +6,12 @@
 // carries no static runtime import, but a Kernel contract change now breaks
 // the extension's build instead of silently drifting from it.
 
+// --- Kernel constants the extension must carry as values ---
+// The literal-user authority identity. Mirrored here because extensions cannot
+// statically import Kernel modules; tests/dual-host-assurance-conformance.test.ts
+// pins this value to runtime/kernel/actor_identity.ts, so the two cannot drift.
+export const LITERAL_USER_ACTOR_ID = "literal-user";
+
 // --- Types (structural contracts, no runtime import) ---
 export interface EnrollmentCapabilityBinding {
 	task_id: string;

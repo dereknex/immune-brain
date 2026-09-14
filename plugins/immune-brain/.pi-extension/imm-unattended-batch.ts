@@ -5,6 +5,7 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { join } from "node:path";
 import {
+	LITERAL_USER_ACTOR_ID,
 	createBatchAuthorityRegistry,
 	deriveChildEnrollment,
 	startBatch,
@@ -281,7 +282,7 @@ export async function executePiUnattendedBatch(
 		branch: batchBranch,
 		base_head: existingBatch ? existingBatch.base_head : baseHead,
 		budget,
-		actor_id: "user",
+		actor_id: LITERAL_USER_ACTOR_ID,
 		confirmation_ref: confirmation,
 		expires_at: expiresAt,
 		nonce: randomUUID(),

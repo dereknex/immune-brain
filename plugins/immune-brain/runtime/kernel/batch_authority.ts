@@ -9,6 +9,7 @@
 
 import { createHash } from "node:crypto";
 import { createCapabilityRegistry } from "./capability_registry";
+import { isLiteralUserActor } from "./actor_identity";
 import type { EnrollmentCapabilityBinding } from "./enrollment_authority";
 import { preparePiCanary, type PiCanaryPreparation } from "./pi_canary_prepare";
 
@@ -214,7 +215,10 @@ export function createBatchAuthorityRegistry(): BatchAuthorityRegistry {
 		{
 			validateBinding(binding, issuedAt) {
 				requireNonEmpty(binding);
-				if (binding.actor_id !== "user")
+				// Both the canonical literal-user spelling and the historical `user`
+				// spelling are read, so a batch authorized before the convergence keeps
+				// validating; new bindings are written canonically.
+				if (!isLiteralUserActor(binding.actor_id))
 					throw new Error("batch authorization requires a literal-user actor_id");
 				if (!GIT_COMMIT_ID.test(binding.base_head))
 					throw new Error("batch authorization base_head must be a committed 40-hex commit id");
@@ -256,6 +260,9 @@ export function createBatchAuthorityRegistry(): BatchAuthorityRegistry {
 					branch: state.branch,
 					base_head: state.base_head,
 					budget: { ...state.budget },
+					// Kept faithful to the stored state: a batch authorized before the
+					// convergence resumes with the spelling it was issued under, and the
+					// recorded audit identity is canonicalized once, where it is written.
 					actor_id: state.actor_id,
 					confirmation_ref: state.confirmation_ref,
 					issued_at: state.issued_at,

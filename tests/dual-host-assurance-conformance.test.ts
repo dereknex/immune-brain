@@ -25,6 +25,12 @@ import {
 	restoreStagedIntent,
 } from "../plugins/immune-brain/runtime/staged_intent";
 import { deriveAuthorizationOperation } from "../plugins/immune-brain/runtime/authorization_operation";
+import {
+	LITERAL_USER_ACTOR_ID,
+	canonicalActorId,
+	isLiteralUserActor,
+} from "../plugins/immune-brain/runtime/kernel/actor_identity";
+import { LITERAL_USER_ACTOR_ID as PI_STUB_LITERAL_USER } from "../plugins/immune-brain/.pi-extension/runtime-stub";
 import type { GithubInitiativeObservation } from "../plugins/immune-brain/runtime/github_issue_tracker";
 
 const TASK = "dual-host-task";
@@ -641,8 +647,12 @@ describe("dual-host assurance conformance", () => {
 			expect(piBinding.base_head).toBe(piFixture.head);
 			expect(claudeBinding.base_head).toMatch(/^[a-f0-9]{40}$/);
 			expect(piBinding.base_head).toMatch(/^[a-f0-9]{40}$/);
-			expect(claudeBinding.actor_id).toBe("user");
-			expect(piBinding.actor_id).toBe("user");
+			// The recorded actor identity converges: both Hosts mint the canonical
+			// literal-user spelling for the same authorization, so this identity
+			// cannot drift again (S12 ACT-3).
+			expect(claudeBinding.actor_id).toBe(LITERAL_USER_ACTOR_ID);
+			expect(piBinding.actor_id).toBe(LITERAL_USER_ACTOR_ID);
+			expect(claudeBinding.actor_id).toBe(piBinding.actor_id);
 		}
 
 		// 2. Parity scenario: DECLINE with identical zero writes and stable reasons
@@ -2187,5 +2197,28 @@ describe("dual-host assurance conformance", () => {
 				blocked: "no unique host-derived authorization operation",
 			});
 		});
+	});
+
+	// S12 ACT-3: the literal-user identity is one value for both Hosts, and the
+	// extension's mirrored constant cannot drift from the Kernel's.
+	test("records one literal-user identity across both Hosts", () => {
+		expect(PI_STUB_LITERAL_USER).toBe(LITERAL_USER_ACTOR_ID);
+		// The Hosts' two spellings are one identity; the recorded value is canonical.
+		expect(canonicalActorId("user")).toBe(LITERAL_USER_ACTOR_ID);
+		expect(canonicalActorId(LITERAL_USER_ACTOR_ID)).toBe(LITERAL_USER_ACTOR_ID);
+		// A non literal-user actor is never absorbed into the literal user.
+		for (const actor of ["executor", "deterministic-qa", "parent-mediated-review", "reviewer"]) {
+			expect({ actor, canonical: canonicalActorId(actor) }).toEqual({ actor, canonical: actor });
+			expect({ actor, literalUser: isLiteralUserActor(actor) }).toEqual({ actor, literalUser: false });
+		}
+		// Both adapters mint the canonical spelling rather than a second one.
+		for (const path of [
+			"plugins/immune-brain/.pi-extension/imm-unattended-batch.ts",
+			"plugins/immune-brain/runtime/claude/kernel_ports.ts",
+		]) {
+			const source = readFileSync(resolve(path), "utf8");
+			expect({ path, canonical: source.includes("LITERAL_USER_ACTOR_ID") }).toEqual({ path, canonical: true });
+			expect({ path, hardcoded: /actor_id:\s*"user"/.test(source) }).toEqual({ path, hardcoded: false });
+		}
 	});
 });

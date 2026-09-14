@@ -14,6 +14,7 @@ import { resolve } from "node:path";
 // can resolve them at runtime), and the stub forwards to the real Kernel
 // modules via dynamic import.
 import {
+	LITERAL_USER_ACTOR_ID,
 	createEnrollmentAuthorityRegistry,
 	preparePiCanary,
 	revalidatePiCanary,
@@ -523,7 +524,7 @@ async function executeForegroundEnrollment(
 			intent_revision: preparation.intent.revision,
 			intent_content_hash: preparation.intent.content_hash,
 			preparation_digest: preparation.digest,
-			actor_id: "user",
+			actor_id: LITERAL_USER_ACTOR_ID,
 			confirmation_ref: `pi-confirm-${createHash("sha256").update(`${taskId}\0${now}\0${nonce}`).digest("hex").slice(0, 16)}`,
 			expires_at: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
 			nonce,

@@ -6501,6 +6501,16 @@ function createCanaryApplication(registry) {
 // plugins/immune-brain/runtime/kernel/authority_port.ts
 import { createHash as createHash12 } from "node:crypto";
 
+// plugins/immune-brain/runtime/kernel/actor_identity.ts
+var LITERAL_USER_ACTOR_ID = "literal-user";
+var LITERAL_USER_SPELLINGS = new Set([LITERAL_USER_ACTOR_ID, "user"]);
+function isLiteralUserActor(actorId) {
+  return LITERAL_USER_SPELLINGS.has(actorId);
+}
+function canonicalActorId(actorId) {
+  return actorId === "user" ? LITERAL_USER_ACTOR_ID : actorId;
+}
+
 // plugins/immune-brain/runtime/kernel/capability_registry.ts
 function createCapabilityRegistry(capabilityBrand, hooks, domainLabel) {
   const states = new WeakMap;
@@ -6591,7 +6601,7 @@ function createMutationAuthorityRegistry() {
       return {
         audit: {
           authority_kind: state.authority_kind,
-          actor_id: state.actor_id,
+          actor_id: canonicalActorId(state.actor_id),
           confirmation_ref: state.confirmation_ref,
           issued_at: state.issued_at,
           expires_at: state.expires_at
@@ -7335,7 +7345,7 @@ function createBatchAuthorityRegistry() {
   const inner = createCapabilityRegistry(BATCH_AUTHORITY_CAPABILITY_BRAND, {
     validateBinding(binding, issuedAt) {
       requireNonEmpty(binding);
-      if (binding.actor_id !== "user")
+      if (!isLiteralUserActor(binding.actor_id))
         throw new Error("batch authorization requires a literal-user actor_id");
       if (!GIT_COMMIT_ID2.test(binding.base_head))
         throw new Error("batch authorization base_head must be a committed 40-hex commit id");
@@ -10156,7 +10166,7 @@ class ClaudeRuntime {
       intent_revision: preparation.intent.revision,
       intent_content_hash: preparation.intent.content_hash,
       preparation_digest: preparation.digest,
-      actor_id: "user",
+      actor_id: LITERAL_USER_ACTOR_ID,
       confirmation_ref: gate.confirmation_ref,
       expires_at: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
       nonce
@@ -10232,7 +10242,7 @@ class ClaudeRuntime {
     }
     const priorIntent = await readTaskIntentForRecord(this.cwd, taskId);
     const now = new Date().toISOString();
-    const actorId = "user";
+    const actorId = LITERAL_USER_ACTOR_ID;
     const nextIntent = extra.next_intent ? await parseTaskIntentV1(extra.next_intent) : undefined;
     if (op === "approve_breaking_intent_revision" && !nextIntent)
       throw new Error("approve_breaking_intent_revision requires next_intent");
@@ -10305,7 +10315,7 @@ class ClaudeRuntime {
         intent_revision: nextIntent?.revision ?? capabilityProjection.projection.intent_revision,
         intent_content_hash: nextIntentHash ?? capabilityProjection.projection.intent_content_hash,
         diff_hash: operationDiffHash,
-        actor_id: actorId,
+        actor_id: canonicalActorId(actorId),
         now,
         confirmation_ref: confirmation,
         ...op === "approve_breaking_intent_revision" ? { next_intent: nextIntent, next_intent_ref: nextIntentRef } : {},
@@ -10319,7 +10329,7 @@ class ClaudeRuntime {
         operation: {
           op,
           capability,
-          actor_id: actorId,
+          actor_id: canonicalActorId(actorId),
           ...op === "approve_breaking_intent_revision" ? { next_intent: nextIntent, next_intent_ref: nextIntentRef } : {},
           ...op === "resolve_user_decision" && decisionOp ? decisionOp : {},
           ...op === "stop" ? { reason: stopReason(extra.reason) } : {}
@@ -10607,7 +10617,7 @@ class ClaudeRuntime {
       branch: batchBranch,
       base_head: existingBatch ? existingBatch.base_head : baseHead,
       budget,
-      actor_id: "user",
+      actor_id: LITERAL_USER_ACTOR_ID,
       confirmation_ref: confirmation,
       expires_at: expiresAt,
       nonce: enrollmentNonce()

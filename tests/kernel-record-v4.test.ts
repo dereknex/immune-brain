@@ -1,6 +1,11 @@
 import { describe, expect, test } from "bun:test";
 import { canonicalIntentHash, parseTaskIntentV1 } from "../plugins/immune-brain/runtime/kernel/intent";
 import { parseTaskRecordV3, parseTaskRecordV4 } from "../plugins/immune-brain/runtime/kernel/validation";
+import {
+	LITERAL_USER_ACTOR_ID,
+	canonicalActorId,
+	isLiteralUserActor,
+} from "../plugins/immune-brain/runtime/kernel/actor_identity";
 
 const INTENT = {
 	contract: "assurance_kernel/task_intent/v1",
@@ -74,5 +79,66 @@ describe("TaskRecord v4 schema", () => {
 		expect(() => parseTaskRecordV4(record({ attestations: [attestation("user", { review_revision: reviewRevision() })] }))).toThrow(/only valid/);
 		expect(() => parseTaskRecordV4(record({ attestations: [attestation("review", { review_revision: { ...reviewRevision(), base_head: "e".repeat(40) } })] }))).toThrow(/base_head/);
 		expect(() => parseTaskRecordV3({ ...record(), contract: "assurance_kernel/task_record/v3" })).toThrow();
+	});
+});
+
+describe("recorded actor identity", () => {
+	// The recorded actor survey before the convergence: `literal-user` in 220
+	// places across 54 settled records, `user` in 4 places across three
+	// Claude-Host-era records. The converged spelling is `literal-user`; a
+	// historical `user` is still read as the literal user.
+	test("reads a historical user audit as the literal user", () => {
+		expect(isLiteralUserActor("user")).toBe(true);
+		expect(isLiteralUserActor("literal-user")).toBe(true);
+		expect(isLiteralUserActor("executor")).toBe(false);
+		expect(isLiteralUserActor("")).toBe(false);
+	});
+
+	test("records the converged spelling for both historical and current input", () => {
+		expect(canonicalActorId("user")).toBe(LITERAL_USER_ACTOR_ID);
+		expect(canonicalActorId(LITERAL_USER_ACTOR_ID)).toBe(LITERAL_USER_ACTOR_ID);
+		// Every other actor keeps its own identity: only the literal user has a
+		// second historical spelling.
+		expect(canonicalActorId("executor")).toBe("executor");
+		expect(canonicalActorId("deterministic-qa")).toBe("deterministic-qa");
+	});
+
+	test("leaves an already-settled record carrying the historical spelling byte-identical", () => {
+		const historical = record({
+			lifecycle: "done",
+			// The shape a settled Claude-Host-era record carries: a lifecycle
+			// transition whose authority block names the literal user with the
+			// historical spelling.
+			history: [
+				{
+					id: "h-1",
+					type: "authorize",
+					at: "2026-09-06T00:00:00.000Z",
+					from_state: "active:active",
+					to_state: "active:active",
+					reason: "approve_breaking_intent_revision",
+					authority: {
+						authority_kind: "user",
+						actor_id: "user",
+						confirmation_ref: "claude-confirm-1",
+						issued_at: "2026-09-06T00:00:00.000Z",
+						expires_at: "2026-09-06T01:00:00.000Z",
+					},
+				},
+			],
+		});
+		const parsed = parseTaskRecordV4(historical);
+		// The reader accepts it and the bytes are untouched: nothing migrates a
+		// settled record in place.
+		expect((parsed.history?.[0] as { authority: { actor_id: string } }).authority.actor_id).toBe("user");
+		// The reader hands the historical authority block back verbatim: no
+		// migration, no rewriting, no normalized copy written over settled bytes.
+		expect((parsed.history?.[0] as { authority: unknown }).authority).toEqual({
+			authority_kind: "user",
+			actor_id: "user",
+			confirmation_ref: "claude-confirm-1",
+			issued_at: "2026-09-06T00:00:00.000Z",
+			expires_at: "2026-09-06T01:00:00.000Z",
+		});
 	});
 });

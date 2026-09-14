@@ -1,0 +1,166 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "wc-converge-batch-actor-id",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "wc-converge-batch-actor-id",
+    "goal": "Converge the recorded batch actor_id on one spelling across both Hosts, surveying the existing audit records first and migrating only forward, never rewriting authority identity inside already-settled records.",
+    "acceptance": [
+      {
+        "id": "ACT-1",
+        "assertion": "Both Hosts record the same actor_id for a literal-user batch authorization: the Pi `literal-user` spelling and the Claude `user` spelling converge on one value, chosen after surveying which spelling the existing audit records already carry, and the choice is stated in the change with its evidence.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.4.2\",\n  \"argv\": [\n    \"test\",\n    \"tests/kernel-batch-authority.test.ts\",\n    \"tests/dual-host-assurance-conformance.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 65536\n}\n"
+      },
+      {
+        "id": "ACT-2",
+        "assertion": "Already-settled audit records are not rewritten in place. The reader accepts both spellings for historical records so existing audits stay readable, while every newly written record uses the converged spelling only.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.4.2\",\n  \"argv\": [\n    \"test\",\n    \"tests/kernel-record-v4.test.ts\",\n    \"tests/kernel-batch-authority.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 65536\n}\n"
+      },
+      {
+        "id": "ACT-3",
+        "assertion": "A dual-host conformance scenario asserts the recorded actor_id is identical on both Hosts for the same authorization, so this identity cannot drift again.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.4.2\",\n  \"argv\": [\n    \"test\",\n    \"tests/dual-host-assurance-conformance.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 60000,\n  \"max_output_bytes\": 65536\n}\n"
+      }
+    ],
+    "scope_hint": [
+      ".changeset/wc-converge-batch-actor-id.md",
+      "docs/plans/wc-converge-batch-actor-id.intent.json",
+      "docs/specs/archive/workflow-consolidation.spec.md",
+      "docs/specs/workflow-consolidation.spec.md",
+      "plugins/immune-brain/.pi-extension/imm-canary-enroll.ts",
+      "plugins/immune-brain/.pi-extension/imm-canary-work.ts",
+      "plugins/immune-brain/.pi-extension/imm-unattended-batch.ts",
+      "plugins/immune-brain/.pi-extension/runtime-stub.ts",
+      "plugins/immune-brain/dist/claude/mcp-server.mjs",
+      "plugins/immune-brain/runtime/claude/kernel_ports.ts",
+      "plugins/immune-brain/runtime/kernel/actor_identity.ts",
+      "plugins/immune-brain/runtime/kernel/authority_port.ts",
+      "plugins/immune-brain/runtime/kernel/batch_authority.ts",
+      "tests/dual-host-assurance-conformance.test.ts",
+      "tests/kernel-batch-authority.test.ts",
+      "tests/kernel-record-v4.test.ts"
+    ],
+    "risk": "critical",
+    "revision": 2,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/archive/wc-converge-batch-actor-id.intent.json",
+    "content_hash": "sha256:b155bbe25ab17946903b2fbaa6e135b50b7aa5fa293e11a2219478b31b33ad52"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:8e97c78ce99a273b0bc4238db5b4957d34db889f3f4d19118a3233b2a8dc0fb9",
+  "git_base_head": "9d61307a4e7249327e8d293a137c58b9d2c73dee",
+  "attestations": [
+    {
+      "id": "approval-qa-b7481e37",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:b155bbe25ab17946903b2fbaa6e135b50b7aa5fa293e11a2219478b31b33ad52",
+      "diff_hash": "sha256:2d59cedfe761df4f3b3c79bc824eb783d14951a82d9ffc1a9efd16d5ca0e05f5",
+      "actor_id": "deterministic-qa",
+      "summary": "all 3 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "ACT-1",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "ACT-2",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "ACT-3",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-ba2da4df",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:b155bbe25ab17946903b2fbaa6e135b50b7aa5fa293e11a2219478b31b33ad52",
+      "diff_hash": "sha256:2d59cedfe761df4f3b3c79bc824eb783d14951a82d9ffc1a9efd16d5ca0e05f5",
+      "actor_id": "parent-mediated-review",
+      "summary": "Both Hosts mint the surveyed canonical literal-user actor_id, readers accept both spellings without rewriting settled records, and the dual-host conformance test pins the identity and stub mirror; no regressions found.",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "9d61307a4e7249327e8d293a137c58b9d2c73dee",
+        "review_commit": "73e1b2d278030bc2dc80f4126a49907f0871f003",
+        "review_tree": "ad0e45dd8f52b8d548af5b42267e9c075700a946",
+        "manifest_digest": "sha256:c8e460fe967cf90dd0c0f81775e34ba4b8a932e77efcf19fd7df24205d71f539"
+      }
+    }
+  ],
+  "findings": [],
+  "history": [
+    {
+      "id": "approve_breaking_intent_revision:wc-converge-batch-actor-id:2026-09-14T11:12:47.738Z",
+      "at": "2026-09-14T11:12:47.738Z",
+      "type": "approve_breaking_intent_revision",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "intent_revision_2\naction_v2_sha256:75af7d88f9364784333cfd973c3251a742406740382a0ba4df8081fa94959223",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-6848da08e82df4cf",
+        "issued_at": "2026-09-14T11:12:48.191Z",
+        "expires_at": "2026-09-14T11:22:48.191Z"
+      }
+    },
+    {
+      "id": "freeze_artifacts:wc-converge-batch-actor-id:2026-09-14T11:12:56.949Z",
+      "at": "2026-09-14T11:12:56.949Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent and Spec frozen at docs/plans/archive/wc-converge-batch-actor-id.intent.json"
+    },
+    {
+      "id": "record_approval:wc-converge-batch-actor-id:2026-09-14T11:14:24.071Z",
+      "at": "2026-09-14T11:14:24.071Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-b7481e37\naction_v2_sha256:469dc45a9b15884b04b14d66b158e97e179e12941eb3d46eac86f06a336473b0",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-e48f102a1fda4297",
+        "issued_at": "2026-09-14T11:14:24.072Z",
+        "expires_at": "2026-09-14T11:24:24.072Z"
+      }
+    },
+    {
+      "id": "record_approval:wc-converge-batch-actor-id:2026-09-14T11:16:20.775Z",
+      "at": "2026-09-14T11:16:20.775Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-ba2da4df\naction_v2_sha256:6b34fa3248a0379ec7700d8df25e0cdef1da457f6264a0dc5be6e61a5a20a1fd",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-72552610387e230b",
+        "issued_at": "2026-09-14T11:16:20.775Z",
+        "expires_at": "2026-09-14T11:26:20.775Z"
+      }
+    },
+    {
+      "id": "complete:wc-converge-batch-actor-id:2026-09-14T11:16:22.674Z",
+      "at": "2026-09-14T11:16:22.674Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:102297a7744d8c65c16eeb68889cdde58c01b56719b73a1163b0f32de96b02ab"
+    }
+  ]
+}

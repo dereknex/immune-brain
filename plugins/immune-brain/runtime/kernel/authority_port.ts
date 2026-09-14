@@ -4,6 +4,7 @@
 // remain here.
 
 import { createHash } from "node:crypto";
+import { canonicalActorId } from "./actor_identity";
 
 import {
 	MUTATION_AUTHORITY_CAPABILITY_BRAND,
@@ -118,7 +119,11 @@ export function createMutationAuthorityRegistry(): MutationAuthorityRegistry {
 				return {
 					audit: {
 						authority_kind: state.authority_kind,
-						actor_id: state.actor_id,
+						// One recorded spelling: this projection is the single point where
+						// an authority's actor becomes the history entry's audit identity,
+						// so a Host that still supplies the historical `user` spelling is
+						// recorded as the canonical literal user.
+						actor_id: canonicalActorId(state.actor_id),
 						confirmation_ref: state.confirmation_ref,
 						issued_at: state.issued_at,
 						expires_at: state.expires_at,

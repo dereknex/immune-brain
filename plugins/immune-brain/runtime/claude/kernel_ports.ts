@@ -49,6 +49,7 @@ import { projectBatchPlan } from "../unattended/batch_plan";
 import { batchReason } from "../unattended/batch_reasons";
 import { startConfirmationDeadline } from "../unattended/confirmation_deadline";
 import { deriveAuthorizationOperation } from "../authorization_operation";
+import { LITERAL_USER_ACTOR_ID, canonicalActorId } from "../kernel/actor_identity";
 import {
 	captureStagedIntent,
 	restoreStagedIntent as restoreStagedIntentShared,
@@ -561,7 +562,7 @@ export class ClaudeRuntime {
 			intent_revision: preparation.intent.revision,
 			intent_content_hash: preparation.intent.content_hash,
 			preparation_digest: preparation.digest,
-			actor_id: "user",
+			actor_id: LITERAL_USER_ACTOR_ID,
 			confirmation_ref: gate.confirmation_ref,
 			expires_at: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
 			nonce,
@@ -655,7 +656,7 @@ export class ClaudeRuntime {
 		}
 		const priorIntent = await readTaskIntentForRecord(this.cwd, taskId);
 		const now = new Date().toISOString();
-		const actorId = "user";
+		const actorId = LITERAL_USER_ACTOR_ID;
 		const nextIntent = extra.next_intent ? await parseTaskIntentV1(extra.next_intent) : undefined;
 		if (op === "approve_breaking_intent_revision" && !nextIntent) throw new Error("approve_breaking_intent_revision requires next_intent");
 		const nextIntentHash = nextIntent ? canonicalIntentHash(nextIntent) : undefined;
@@ -727,7 +728,7 @@ export class ClaudeRuntime {
 				intent_revision: nextIntent?.revision ?? capabilityProjection.projection.intent_revision,
 				intent_content_hash: nextIntentHash ?? capabilityProjection.projection.intent_content_hash,
 				diff_hash: operationDiffHash,
-				actor_id: actorId,
+				actor_id: canonicalActorId(actorId),
 				now,
 				confirmation_ref: confirmation,
 				...(op === "approve_breaking_intent_revision" ? { next_intent: nextIntent, next_intent_ref: nextIntentRef } : {}),
@@ -741,7 +742,7 @@ export class ClaudeRuntime {
 				operation: {
 					op,
 					capability,
-					actor_id: actorId,
+					actor_id: canonicalActorId(actorId),
 					...(op === "approve_breaking_intent_revision" ? { next_intent: nextIntent, next_intent_ref: nextIntentRef } : {}),
 					...(op === "resolve_user_decision" && decisionOp ? decisionOp : {}),
 					...(op === "stop" ? { reason: stopReason(extra.reason) } : {}),
@@ -1086,7 +1087,7 @@ export class ClaudeRuntime {
 			branch: batchBranch,
 			base_head: existingBatch ? existingBatch.base_head : baseHead,
 			budget,
-			actor_id: "user",
+			actor_id: LITERAL_USER_ACTOR_ID,
 			confirmation_ref: confirmation,
 			expires_at: expiresAt,
 			nonce: enrollmentNonce(),
