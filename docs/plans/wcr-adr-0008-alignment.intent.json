@@ -1,0 +1,21 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "wcr-adr-0008-alignment",
+  "owner": "user",
+  "goal": "Update docs/adr/0008-batch-capability-rehydration.md so its description of where the batch-authorization reuse decision lives matches the shared runtime/unattended/ implementation completed by wcr-complete-shared-batch-preflight, instead of the pre-remediation claim.",
+  "acceptance": [
+    {
+      "id": "RB9-1",
+      "assertion": "docs/adr/0008-batch-capability-rehydration.md's description of the shared preflight (around the lines that name where the reuse decision lives) accurately names the function(s) and file(s) that own the reuse/expiry decision after wcr-complete-shared-batch-preflight lands.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.4.2\",\n  \"argv\": [\n    \"run\",\n    \"typecheck\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 180000,\n  \"max_output_bytes\": 131072\n}\n"
+    }
+  ],
+  "scope_hint": [
+    "docs/adr/0008-batch-capability-rehydration.md",
+    "docs/plans/wcr-adr-0008-alignment.intent.json",
+    "docs/specs/archive/workflow-consolidation-remediation.spec.md",
+    "docs/specs/workflow-consolidation-remediation.spec.md"
+  ],
+  "risk": "routine",
+  "revision": 1
+}

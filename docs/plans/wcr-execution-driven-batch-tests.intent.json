@@ -1,0 +1,27 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "wcr-execution-driven-batch-tests",
+  "owner": "user",
+  "goal": "Replace two weak assertions with execution-driven ones: tests/unattended-batch-plan.test.ts's binding-refusal case currently compares batch_plan's output to the same inspectSpecBinding call batch_plan makes internally instead of driving enrollCanary's refusal path, and two dual-host-assurance-conformance.test.ts scenarios prove adapter routing via source-text includes() on the adapter files instead of executed behavior.",
+  "acceptance": [
+    {
+      "id": "RB7-1",
+      "assertion": "tests/unattended-batch-plan.test.ts's Spec-binding-refusal coverage drives enrollCanary directly for a child whose scope_hint cannot bind its Spec, and asserts on enrollCanary's returned refusal, rather than only comparing batch_plan's excluded-child output to inspectSpecBinding (the function batch_plan itself already calls).",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.4.2\",\n  \"argv\": [\n    \"test\",\n    \"tests/unattended-batch-plan.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 90000,\n  \"max_output_bytes\": 65536\n}\n"
+    },
+    {
+      "id": "RB7-2",
+      "assertion": "The two dual-host-assurance-conformance.test.ts scenarios (as of the review baseline, near lines 2113 and 2175) that currently assert adapter routing via includes() on adapter source text instead assert on executed behavior or an observable return value/side effect of the actual routed call.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.4.2\",\n  \"argv\": [\n    \"test\",\n    \"tests/dual-host-assurance-conformance.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 131072\n}\n"
+    }
+  ],
+  "scope_hint": [
+    "docs/plans/wcr-execution-driven-batch-tests.intent.json",
+    "docs/specs/archive/workflow-consolidation-remediation.spec.md",
+    "docs/specs/workflow-consolidation-remediation.spec.md",
+    "tests/dual-host-assurance-conformance.test.ts",
+    "tests/unattended-batch-plan.test.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}

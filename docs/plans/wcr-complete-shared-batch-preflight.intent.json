@@ -1,0 +1,32 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "wcr-complete-shared-batch-preflight",
+  "owner": "user",
+  "goal": "Finish the S9 preflight extraction that CONTEXT.md:215 says runtime/unattended/ already owns exclusively: move the reuse/expiry decision, the BatchAuthorizationBinding construction, and the post-gate claim/drift cascade out of runtime/claude/kernel_ports.ts and .pi-extension/imm-unattended-batch.ts into runtime/unattended/, so both adapters become callers only.",
+  "acceptance": [
+    {
+      "id": "RB2-1",
+      "assertion": "runtime/claude/kernel_ports.ts and .pi-extension/imm-unattended-batch.ts call one function exported from runtime/unattended/ for: the reuse/expiry decision (isExistingExpired, expiresAt, reuseBlockers, reuseAuthorization), the BatchAuthorizationBinding construction, and the post-gate claim/drift cascade. Neither adapter recomputes isExistingExpired, reuseBlockers, or the claim locally, and neither recomputes the claim twice within its own call.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.4.2\",\n  \"argv\": [\n    \"test\",\n    \"tests/claude-batch-authority.test.ts\",\n    \"tests/pi-batch-authority.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 131072\n}\n"
+    },
+    {
+      "id": "RB2-2",
+      "assertion": "batch_preflight.ts's BatchDriftProjection fields active_claim_task_id, own_claim, and plan_unavailable_reason are, after the extraction, either consumed by both adapters (replacing their local recomputation) or removed from BatchDriftProjection because nothing consumes them.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.4.2\",\n  \"argv\": [\n    \"test\",\n    \"tests/unattended-batch-run.test.ts\",\n    \"tests/dual-host-assurance-conformance.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 131072\n}\n"
+    }
+  ],
+  "scope_hint": [
+    "docs/plans/wcr-complete-shared-batch-preflight.intent.json",
+    "docs/specs/archive/workflow-consolidation-remediation.spec.md",
+    "docs/specs/workflow-consolidation-remediation.spec.md",
+    "plugins/immune-brain/.pi-extension/imm-unattended-batch.ts",
+    "plugins/immune-brain/runtime/claude/kernel_ports.ts",
+    "plugins/immune-brain/runtime/unattended/batch_preflight.ts",
+    "tests/claude-batch-authority.test.ts",
+    "tests/dual-host-assurance-conformance.test.ts",
+    "tests/pi-batch-authority.test.ts",
+    "tests/unattended-batch-run.test.ts"
+  ],
+  "risk": "critical",
+  "revision": 1
+}

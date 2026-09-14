@@ -1,0 +1,26 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "wcr-tool-surface-test-validity",
+  "owner": "user",
+  "goal": "Fix tests/packaged-contract-tool-surface.test.ts so a contract token present on zero Host tool surfaces is reported as a failure (the exact HTN-2 regression it exists to catch), and its pre-change comparison reads the actual pre-S1 file content instead of a hardcoded paraphrase.",
+  "acceptance": [
+    {
+      "id": "RB4-1",
+      "assertion": "tests/packaged-contract-tool-surface.test.ts reports a contract token as a failure when it is present on neither CLAUDE_TOOLS nor PI_TOOLS (zero surfaces), not only when it is present on at least one.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.4.2\",\n  \"argv\": [\n    \"test\",\n    \"tests/packaged-contract-tool-surface.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 60000,\n  \"max_output_bytes\": 65536\n}\n"
+    },
+    {
+      "id": "RB4-2",
+      "assertion": "The 'fails against pre-change contracts' case in tests/packaged-contract-tool-surface.test.ts reads the actual file content at the commit immediately preceding S1's first contract change (via git show <sha>^:<path> at test time) instead of a hardcoded paraphrase of the old text.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.4.2\",\n  \"argv\": [\n    \"test\",\n    \"tests/packaged-contract-tool-surface.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 60000,\n  \"max_output_bytes\": 65536\n}\n"
+    }
+  ],
+  "scope_hint": [
+    "docs/plans/wcr-tool-surface-test-validity.intent.json",
+    "docs/specs/archive/workflow-consolidation-remediation.spec.md",
+    "docs/specs/workflow-consolidation-remediation.spec.md",
+    "tests/packaged-contract-tool-surface.test.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}

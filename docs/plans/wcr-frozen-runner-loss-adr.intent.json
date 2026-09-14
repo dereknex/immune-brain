@@ -1,0 +1,21 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "wcr-frozen-runner-loss-adr",
+  "owner": "user",
+  "goal": "Author docs/adr/0009-settled-slice-reverification-loss.md recording the accepted decision that settled TaskIntents (S1/S2/S3, frozen at runner_version 1.3.14) permanently lose their frozen re-verification path once the host runner moves past that version, and that re-verification protection for settled Slices going forward is main's standing test suite's responsibility, not a re-openable frozen artifact. No runtime or test code changes.",
+  "acceptance": [
+    {
+      "id": "RB14-1",
+      "assertion": "docs/adr/0009-settled-slice-reverification-loss.md exists with status: accepted, names S1 (wc-host-neutral-contract-tool-names), S2 (wc-behavioral-guardrails), and S3 (wc-batch-resume-single-gate) as the affected settled TaskIntents, names runtime/assurance/verification.ts's assertRunnerCompatible as the mechanism that fails their reverification, and records the decision that main's standing test suite carries protection for settled Slices going forward. No file outside docs/adr/ changes.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.4.2\",\n  \"argv\": [\n    \"run\",\n    \"typecheck\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 180000,\n  \"max_output_bytes\": 131072\n}\n"
+    }
+  ],
+  "scope_hint": [
+    "docs/adr/0009-settled-slice-reverification-loss.md",
+    "docs/plans/wcr-frozen-runner-loss-adr.intent.json",
+    "docs/specs/archive/workflow-consolidation-remediation.spec.md",
+    "docs/specs/workflow-consolidation-remediation.spec.md"
+  ],
+  "risk": "routine",
+  "revision": 1
+}

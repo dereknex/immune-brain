@@ -1,0 +1,24 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "wcr-dedupe-pi-batch-strings",
+  "owner": "user",
+  "goal": "Extract the TUI-refusal/recovery strings repeated verbatim within .pi-extension/imm-unattended-batch.ts into one local helper, and move or correct the stale isOwnBatchClaim comment that now describes code living in batch_preflight.ts.",
+  "acceptance": [
+    {
+      "id": "RB12-1",
+      "assertion": "The TUI-refusal/recovery strings duplicated within .pi-extension/imm-unattended-batch.ts (as of the review baseline, near lines 119-121 and 442-443) exist in exactly one place, called from both sites; the comment describing isOwnBatchClaim (as of the review baseline, near lines 60-71) is moved to sit above its actual definition in batch_preflight.ts or corrected to describe what is actually declared at its current location.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.4.2\",\n  \"argv\": [\n    \"test\",\n    \"tests/pi-batch-authority.test.ts\",\n    \"tests/unattended-batch-run.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 131072\n}\n"
+    }
+  ],
+  "scope_hint": [
+    "docs/plans/wcr-dedupe-pi-batch-strings.intent.json",
+    "docs/specs/archive/workflow-consolidation-remediation.spec.md",
+    "docs/specs/workflow-consolidation-remediation.spec.md",
+    "plugins/immune-brain/.pi-extension/imm-unattended-batch.ts",
+    "plugins/immune-brain/runtime/unattended/batch_preflight.ts",
+    "tests/pi-batch-authority.test.ts",
+    "tests/unattended-batch-run.test.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}

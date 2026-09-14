@@ -1,0 +1,22 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "wcr-retire-superseded-guards",
+  "owner": "user",
+  "goal": "Complete S2's guardrail migration: remove the regex/spelling-based assertions in tests/unattended-contracts.test.ts and tests/v3-island-deletion.test.ts that the new behavioral guards were meant to replace, once the behavioral guards' coverage is extended to plugins/immune-brain/.pi-extension/ and plugins/immune-brain/runtime/claude/ (the two guard sets currently check neither directory).",
+  "acceptance": [
+    {
+      "id": "RB5-1",
+      "assertion": "tests/unattended-contracts.test.ts's 'ships no Git worktree command' guard and tests/v3-island-deletion.test.ts's spelling-based coverage table both check plugins/immune-brain/.pi-extension/ and plugins/immune-brain/runtime/claude/, not only their prior scope; and the superseded regex/spelling assertions this Slice's Spec Decision 5 names as replaced (tests/unattended-contracts.test.ts:333-344, tests/v3-island-deletion.test.ts:84-99 as of the review baseline) are removed once the extended behavioral guards are verified to still catch the same regressions.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.4.2\",\n  \"argv\": [\n    \"test\",\n    \"tests/unattended-contracts.test.ts\",\n    \"tests/v3-island-deletion.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 90000,\n  \"max_output_bytes\": 65536\n}\n"
+    }
+  ],
+  "scope_hint": [
+    "docs/plans/wcr-retire-superseded-guards.intent.json",
+    "docs/specs/archive/workflow-consolidation-remediation.spec.md",
+    "docs/specs/workflow-consolidation-remediation.spec.md",
+    "tests/unattended-contracts.test.ts",
+    "tests/v3-island-deletion.test.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}

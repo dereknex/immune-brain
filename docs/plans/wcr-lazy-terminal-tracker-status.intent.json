@@ -1,0 +1,23 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "wcr-lazy-terminal-tracker-status",
+  "owner": "user",
+  "goal": "Stop kernel_ports.ts's withTerminalTracker from running a full this.status() call for every advance/submitReview/authorize invocation regardless of whether the call is terminal; only pay that cost when the underlying operation actually reached a terminal state.",
+  "acceptance": [
+    {
+      "id": "RB13-1",
+      "assertion": "withTerminalTracker in runtime/claude/kernel_ports.ts does not call this.status() for a non-terminal advance/submitReview/authorize invocation; it still projects the terminal tracker state exactly as before for a call that does reach a terminal (done/stopped) state.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.4.2\",\n  \"argv\": [\n    \"test\",\n    \"tests/claude-batch-authority.test.ts\",\n    \"tests/dual-host-assurance-conformance.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 131072\n}\n"
+    }
+  ],
+  "scope_hint": [
+    "docs/plans/wcr-lazy-terminal-tracker-status.intent.json",
+    "docs/specs/archive/workflow-consolidation-remediation.spec.md",
+    "docs/specs/workflow-consolidation-remediation.spec.md",
+    "plugins/immune-brain/runtime/claude/kernel_ports.ts",
+    "tests/claude-batch-authority.test.ts",
+    "tests/dual-host-assurance-conformance.test.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}

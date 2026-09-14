@@ -1,0 +1,28 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "wcr-batch-resume-budget-drift",
+  "owner": "user",
+  "goal": "Fix batch_preflight.ts so a settled (non-active) batch record never causes a fresh batch to inherit a stale budget or be reconstructed as already-settled: is_resuming must be computed once from activeRecord !== null and used identically for both the budget-inheritance decision and the reported projection field.",
+  "acceptance": [
+    {
+      "id": "RB1-1",
+      "assertion": "A new fixture in tests/unattended-batch-run.test.ts drives a settled BatchRunStateRecord (batch_state not 'running') with an expired authorization_expires_at and budget.deadline_at, then calls the preflight path the Host adapters use for a fresh batch on that initiative_slug. The returned projection issues a fresh default budget (max_children: 10, deadline_at approximately DEFAULT_BATCH_BUDGET_MS out from now, qa_failure_limit: 2), not the settled record's stale budget, and at least one child is not force-reconstructed as already_settled.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.4.2\",\n  \"argv\": [\n    \"test\",\n    \"tests/unattended-batch-run.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 90000,\n  \"max_output_bytes\": 65536\n}\n"
+    },
+    {
+      "id": "RB1-2",
+      "assertion": "projectPlanSurface and projectBatchDrift in plugins/immune-brain/runtime/unattended/batch_preflight.ts derive is_resuming from the same activeRecord !== null value everywhere it is read within one call; no code path can pass a different is_resuming into projectPlanSurface than the is_resuming reported back in the returned projection for the same on-disk state.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.4.2\",\n  \"argv\": [\n    \"test\",\n    \"tests/unattended-batch-run.test.ts\",\n    \"tests/dual-host-assurance-conformance.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 131072\n}\n"
+    }
+  ],
+  "scope_hint": [
+    "docs/plans/wcr-batch-resume-budget-drift.intent.json",
+    "docs/specs/archive/workflow-consolidation-remediation.spec.md",
+    "docs/specs/workflow-consolidation-remediation.spec.md",
+    "plugins/immune-brain/runtime/unattended/batch_preflight.ts",
+    "tests/dual-host-assurance-conformance.test.ts",
+    "tests/unattended-batch-run.test.ts"
+  ],
+  "risk": "critical",
+  "revision": 1
+}

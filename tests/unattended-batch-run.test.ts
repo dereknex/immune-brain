@@ -1797,7 +1797,11 @@ describe("shared batch preflight projection", () => {
 		return root;
 	}
 
-	function writeBatch(root: string, batchState: string): void {
+	function writeBatch(
+		root: string,
+		batchState: string,
+		overrides: { authorization_expires_at?: string; budget?: { max_children: number; deadline_at: string; qa_failure_limit: number } } = {},
+	): void {
 		writeFileSync(
 			join(root, ".imm/state/batches/batch-1.json"),
 			`${JSON.stringify({
@@ -1808,8 +1812,8 @@ describe("shared batch preflight projection", () => {
 				branch: `imm/${SLUG}`,
 				base_head: headOf(root),
 				commits: [],
-				authorization_expires_at: FAR_FUTURE,
-				budget: { max_children: 2, deadline_at: FAR_FUTURE, qa_failure_limit: 2 },
+				authorization_expires_at: overrides.authorization_expires_at ?? FAR_FUTURE,
+				budget: overrides.budget ?? { max_children: 2, deadline_at: FAR_FUTURE, qa_failure_limit: 2 },
 				updated_at: NOW,
 				children: [
 					{ task_id: "child-a", slice_id: "S1", state: "committed", blocked_by: [], commit: null, reason: null },
@@ -1874,6 +1878,40 @@ describe("shared batch preflight projection", () => {
 			expect(outcome.projection.existing_batch?.batch_id).toBe("batch-1");
 			expect(outcome.projection.existing_batch?.batch_state).toBe("completed");
 			expect(outcome.projection.base_head).toBe(headOf(root));
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
+	it("issues a fresh budget for a settled batch even when its own deadline already expired", async () => {
+		const root = fixture();
+		try {
+			const expired = "2020-01-01T00:00:00.000Z";
+			writeBatch(root, "completed", {
+				authorization_expires_at: expired,
+				budget: { max_children: 2, deadline_at: expired, qa_failure_limit: 2 },
+			});
+
+			const before = Date.now();
+			const outcome = await projectBatchPreflight({ root, initiative_slug: SLUG, now: NOW });
+			if (!outcome.ok) throw new Error(`preflight rejected: ${outcome.reason}`);
+
+			expect(outcome.projection.is_resuming).toBe(false);
+			// A settled record's stale, long-expired budget must never be inherited
+			// into a fresh run: the projection issues the same default a from-scratch
+			// batch gets, not the record's own expired figures.
+			expect(outcome.projection.budget.max_children).toBe(10);
+			expect(outcome.projection.budget.qa_failure_limit).toBe(2);
+			const deadlineMs = Date.parse(outcome.projection.budget.deadline_at);
+			expect(deadlineMs).toBeGreaterThan(before);
+			expect(deadlineMs).toBeLessThanOrEqual(Date.now() + 8 * 60 * 60 * 1_000);
+			// The settled record still replays its own children (child-a really was
+			// committed), but that must never force every child to already_settled:
+			// child-b, never committed, stays enrollable for the replay to enroll.
+			expect(outcome.projection.recovery_children.map((c) => [c.task_id, c.status])).toEqual([
+				["child-a", "already_settled"],
+				["child-b", "enrollable"],
+			]);
 		} finally {
 			rmSync(root, { recursive: true, force: true });
 		}

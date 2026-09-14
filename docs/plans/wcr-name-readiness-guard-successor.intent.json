@@ -1,0 +1,21 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "wcr-name-readiness-guard-successor",
+  "owner": "user",
+  "goal": "Record the successor for the ISL-2 coverage removed with tests/kernel-r2a-boundary.test.ts (an unrecognized runKernelCommand invocation refuses with invalid_command and writes nothing to authoritative state): tests/kernel-shadow-cli.test.ts already asserts this generically for an unknown command; extend it to also cover the literal 'readiness' token so the original scenario is preserved, not just an arbitrary placeholder string, and name it as ISL-2's successor.",
+  "acceptance": [
+    {
+      "id": "RB8-1",
+      "assertion": "tests/kernel-shadow-cli.test.ts's unknown-command coverage additionally exercises runKernelCommand(['readiness', '--json']) (not only an arbitrary placeholder token), asserting returncode 2 / invalid_command, a rejected journal entry, and that .imm/state/workspace.json is not created; an inline comment names this as the successor for the ISL-2 coverage retired with tests/kernel-r2a-boundary.test.ts at S5.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.4.2\",\n  \"argv\": [\n    \"test\",\n    \"tests/kernel-shadow-cli.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 60000,\n  \"max_output_bytes\": 65536\n}\n"
+    }
+  ],
+  "scope_hint": [
+    "docs/plans/wcr-name-readiness-guard-successor.intent.json",
+    "docs/specs/archive/workflow-consolidation-remediation.spec.md",
+    "docs/specs/workflow-consolidation-remediation.spec.md",
+    "tests/kernel-shadow-cli.test.ts"
+  ],
+  "risk": "routine",
+  "revision": 1
+}

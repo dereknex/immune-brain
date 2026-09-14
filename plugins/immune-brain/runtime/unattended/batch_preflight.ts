@@ -317,11 +317,15 @@ async function projectPlanSurface(input: {
 	let planDigest: string;
 	let excluded: Array<{ task_id: string; slice_id: string; reason: string }> = [];
 	const riskByTask = new Map<string, string>();
-	let budget: BatchPlanBudget = existingBatch
+	// A settled record is not a resume: it keeps its identity and branch, and
+	// still replays from its own children below instead of a fresh plan
+	// projection, but a fresh run over it must issue the fresh default budget
+	// rather than inherit a deadline that has already passed.
+	let budget: BatchPlanBudget = isResuming && existingBatch
 		? existingBatch.budget
 		: { max_children: 10, deadline_at: new Date(Date.now() + DEFAULT_BATCH_BUDGET_MS).toISOString(), qa_failure_limit: 2 };
 
-	if (isResuming) {
+	if (existingBatch) {
 		try {
 			recoveryChildren = existingBatch!.children.map((c) => {
 				const intentPath = `docs/plans/${c.task_id}.intent.json`;
@@ -514,7 +518,7 @@ export async function projectBatchPreflight(
 	const planSurface = await projectPlanSurface({
 		root,
 		initiative_slug: initiativeSlug,
-		is_resuming: existingBatch !== null,
+		is_resuming: isResuming,
 		existing_batch: existingBatch,
 		now,
 		readInitiative,
@@ -564,7 +568,7 @@ export async function projectBatchDrift(options: BatchPreflightOptions): Promise
 	const surface = await projectPlanSurface({
 		root,
 		initiative_slug: initiativeSlug,
-		is_resuming: existingBatch !== null,
+		is_resuming: isResuming,
 		existing_batch: existingBatch,
 		now: options.now ?? new Date().toISOString(),
 		readInitiative,

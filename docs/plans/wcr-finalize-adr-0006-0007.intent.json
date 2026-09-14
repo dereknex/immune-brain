@@ -1,0 +1,22 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "wcr-finalize-adr-0006-0007",
+  "owner": "user",
+  "goal": "Resolve docs/adr/0006-unattended-review-dispatch-authority.md and docs/adr/0007-parked-child-claim-release.md out of their 'proposed'/'Decision: Not settled' state: since the code implementing each decision already shipped in S1-S14, finalize each ADR's status to reflect the decision actually taken, matching CONTEXT.md's definition of an ADR as a settled, hard-to-reverse decision.",
+  "acceptance": [
+    {
+      "id": "RB10-1",
+      "assertion": "docs/adr/0006-unattended-review-dispatch-authority.md and docs/adr/0007-parked-child-claim-release.md each record a settled status (not 'proposed') and a 'Decision:' section naming the option actually implemented, not an open list of options.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.4.2\",\n  \"argv\": [\n    \"run\",\n    \"typecheck\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 180000,\n  \"max_output_bytes\": 131072\n}\n"
+    }
+  ],
+  "scope_hint": [
+    "docs/adr/0006-unattended-review-dispatch-authority.md",
+    "docs/adr/0007-parked-child-claim-release.md",
+    "docs/plans/wcr-finalize-adr-0006-0007.intent.json",
+    "docs/specs/archive/workflow-consolidation-remediation.spec.md",
+    "docs/specs/workflow-consolidation-remediation.spec.md"
+  ],
+  "risk": "routine",
+  "revision": 1
+}

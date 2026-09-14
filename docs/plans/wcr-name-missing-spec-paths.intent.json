@@ -1,0 +1,29 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "wcr-name-missing-spec-paths",
+  "owner": "user",
+  "goal": "Make inspectSpecBinding's unpaired-path binding_missing fallback (runtime/kernel/spec_binding.ts, reached when non-empty active/archived scope_hint paths exist but never pair into exactly one binding) name the concrete unpaired paths instead of returning an empty missing array and a generic message, and make batch_plan.ts render that detail; remove the unreachable SPEC_BINDING_REASONS.binding_incomplete dead-code entry.",
+  "acceptance": [
+    {
+      "id": "RB6-1",
+      "assertion": "inspectSpecBinding's final binding_missing return (reached when active and/or archived Spec paths exist in scope_hint but do not pair into exactly one binding) populates missing with the concrete unpaired active and/or archived paths; the genuinely-empty case (no active and no archived paths at all) is unchanged, since it has no path to name.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.4.2\",\n  \"argv\": [\n    \"test\",\n    \"tests/kernel-enrollment-authority.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 60000,\n  \"max_output_bytes\": 65536\n}\n"
+    },
+    {
+      "id": "RB6-2",
+      "assertion": "batch_plan.ts's specBindingReason renders the populated missing paths for every binding_missing case that has them, through the same shared rendering branch binding_incomplete already uses; the unreachable SPEC_BINDING_REASONS.binding_incomplete map entry is removed.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.4.2\",\n  \"argv\": [\n    \"test\",\n    \"tests/unattended-batch-plan.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 60000,\n  \"max_output_bytes\": 65536\n}\n"
+    }
+  ],
+  "scope_hint": [
+    "docs/plans/wcr-name-missing-spec-paths.intent.json",
+    "docs/specs/archive/workflow-consolidation-remediation.spec.md",
+    "docs/specs/workflow-consolidation-remediation.spec.md",
+    "plugins/immune-brain/runtime/kernel/spec_binding.ts",
+    "plugins/immune-brain/runtime/unattended/batch_plan.ts",
+    "tests/kernel-enrollment-authority.test.ts",
+    "tests/unattended-batch-plan.test.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}
