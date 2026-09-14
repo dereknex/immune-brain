@@ -7014,6 +7014,143 @@ async function runDeterministicQa(snapshot, descriptors, runner, options = {}) {
   };
 }
 
+// plugins/immune-brain/runtime/unattended/batch_reasons.ts
+var BATCH_REASONS = Object.freeze({
+  invalid_slug: {
+    state: "rejected",
+    reason: (detail) => `invalid initiative slug: ${detail}`,
+    recovery_action: "specify a valid initiative slug and retry in the current Host"
+  },
+  batch_state_unreadable: {
+    state: "blocked",
+    reason: (detail) => `batch run state is unreadable or invalid: ${detail}`,
+    recovery_action: "resolve or remove the invalid batch state file, then retry in the current Host"
+  },
+  claim_already_active: {
+    state: "blocked",
+    reason: (detail) => `an active workspace claim already exists for task: ${detail}`,
+    recovery_action: "resolve or stop the active task before starting a batch in the current Host"
+  },
+  git_head_unreadable: {
+    state: "rejected",
+    reason: (detail) => detail,
+    recovery_action: "commit working changes and ensure a committed Git HEAD exists in the current Host"
+  },
+  branch_already_exists: {
+    state: "rejected",
+    reason: (detail) => `branch preflight failed: branch refs/heads/${detail} already exists`,
+    recovery_action: "delete or rename the conflicting branch, or commit working changes in the current Host"
+  },
+  git_status_unreadable: {
+    state: "rejected",
+    reason: "branch preflight failed: git status is unreadable",
+    recovery_action: "check the repository integrity and retry in the current Host"
+  },
+  working_tree_dirty: {
+    state: "rejected",
+    reason: "branch preflight failed: working tree is dirty",
+    recovery_action: "delete or rename the conflicting branch, or commit working changes in the current Host"
+  },
+  authorized_scope_underivable: {
+    state: "rejected",
+    reason: "branch preflight failed: cannot derive the in-flight child's authorized scope",
+    recovery_action: "resolve the child's intent record, then retry in the current Host"
+  },
+  working_tree_unstaged: {
+    state: "rejected",
+    reason: "branch preflight failed: working tree has unstaged or untracked changes",
+    recovery_action: "stage the in-flight changes with git add, then retry in the current Host"
+  },
+  working_tree_out_of_scope: {
+    state: "rejected",
+    reason: "branch preflight failed: working tree has changes outside the authorized child scope",
+    recovery_action: "commit or unstage changes outside the active task scope, then retry in the current Host"
+  },
+  empty_enrollable_set: {
+    state: "rejected",
+    reason: "empty enrollable child set: no enrollable child tasks found in the initiative plan",
+    recovery_action: "ensure the initiative has uncompleted, non-critical child tasks in the current Host"
+  },
+  plan_projection_failed: {
+    state: "rejected",
+    reason: (detail) => `failed to project batch plan: ${detail}`,
+    recovery_action: "review initiative issues and planning sidecars in the current Host"
+  },
+  confirmation_port_unavailable: {
+    state: "rejected",
+    reason: "native confirmation port is unavailable",
+    recovery_action: "retry through a fresh native gate in the current Host"
+  },
+  confirmation_timed_out: {
+    state: "rejected",
+    reason: "native confirmation timed out waiting for user interaction",
+    recovery_action: "retry through a fresh native gate in the current Host"
+  },
+  confirmation_cancelled: {
+    state: "cancelled",
+    reason: "native interaction cancelled",
+    recovery_action: "wait for a fresh literal-user request"
+  },
+  confirmation_declined: {
+    state: "rejected",
+    reason: "native interaction declined",
+    recovery_action: "wait for a fresh literal-user request"
+  },
+  confirmation_no_decision: {
+    state: "rejected",
+    reason: "native interaction returned no decision",
+    recovery_action: "retry through a fresh native gate in the current Host"
+  },
+  confirmation_failed: {
+    state: "rejected",
+    reason: (detail) => detail,
+    recovery_action: "retry through a fresh native gate in the current Host"
+  },
+  claim_appeared_during_confirmation: {
+    state: "blocked",
+    reason: (detail) => `an active workspace claim appeared during confirmation for task: ${detail}`,
+    recovery_action: "resolve or stop the active task before starting a batch in the current Host"
+  },
+  plan_became_unreadable: {
+    state: "rejected",
+    reason: "batch plan became unreadable after native confirmation",
+    recovery_action: "review the current workspace and retry through a fresh native gate in the current Host"
+  },
+  plan_changed: {
+    state: "rejected",
+    reason: "batch plan changed after native confirmation",
+    recovery_action: "review the current workspace and retry through a fresh native gate in the current Host"
+  },
+  repository_became_unreadable: {
+    state: "rejected",
+    reason: "Git repository became unreadable after native confirmation",
+    recovery_action: "review the current workspace and retry through a fresh native gate in the current Host"
+  },
+  head_moved: {
+    state: "rejected",
+    reason: "Git HEAD moved after native confirmation",
+    recovery_action: "review the current workspace and retry through a fresh native gate in the current Host"
+  },
+  cancelled_before_execution: {
+    state: "cancelled",
+    reason: "user cancelled before batch execution",
+    recovery_action: "wait for a fresh literal-user request"
+  },
+  batch_run_rejected: {
+    state: "rejected",
+    reason: (detail) => detail || "batch run rejected",
+    recovery_action: "delete or rename the conflicting branch, or commit working changes and retry in the current Host"
+  }
+});
+function batchReason(key, detail = "") {
+  const spec = BATCH_REASONS[key];
+  return {
+    state: spec.state,
+    reason: typeof spec.reason === "function" ? spec.reason(detail) : spec.reason,
+    recovery_action: spec.recovery_action
+  };
+}
+
 // plugins/immune-brain/runtime/unattended/batch_preflight.ts
 import { existsSync as existsSync4, readdirSync as readdirSync2, readFileSync as readFileSync7 } from "node:fs";
 import { join as join8 } from "node:path";
@@ -8048,8 +8185,14 @@ function isTerminalBatchState(state) {
 // plugins/immune-brain/runtime/unattended/batch_preflight.ts
 var INITIATIVE_SLUG_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 var DEFAULT_BATCH_BUDGET_MS = 8 * 60 * 60 * 1000;
-function reject(state, reason, recovery_action) {
-  return { ok: false, state, reason, recovery_action };
+function reject(key, detail = "") {
+  const resolved = batchReason(key, detail);
+  return {
+    ok: false,
+    state: resolved.state === "blocked" ? "blocked" : "rejected",
+    reason: resolved.reason,
+    recovery_action: resolved.recovery_action
+  };
 }
 function readActiveClaimTaskId(root) {
   const workspace = readWorkspaceStateRaw(root);
@@ -8251,11 +8394,7 @@ async function projectPlanSurface(input) {
         };
       });
     } catch (err) {
-      return {
-        ok: false,
-        reason: `failed to project batch plan: ${err instanceof Error ? err.message : String(err)}`,
-        recovery_action: "review initiative issues and planning sidecars in the current Host"
-      };
+      return { ok: false, key: "plan_projection_failed", detail: err instanceof Error ? err.message : String(err) };
     }
     planDigest = computeBatchPlanDigest(recoveryChildren.map((c) => ({
       task_id: c.task_id,
@@ -8271,23 +8410,11 @@ async function projectPlanSurface(input) {
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       if (msg.includes("has no enrollable children"))
-        return {
-          ok: false,
-          reason: "empty enrollable child set: no enrollable child tasks found in the initiative plan",
-          recovery_action: "ensure the initiative has uncompleted, non-critical child tasks in the current Host"
-        };
-      return {
-        ok: false,
-        reason: `failed to project batch plan: ${msg}`,
-        recovery_action: "review initiative issues and planning sidecars in the current Host"
-      };
+        return { ok: false, key: "empty_enrollable_set", detail: "" };
+      return { ok: false, key: "plan_projection_failed", detail: msg };
     }
     if (!plan.enrollable.length)
-      return {
-        ok: false,
-        reason: "empty enrollable child set: no enrollable child tasks found in the initiative plan",
-        recovery_action: "ensure the initiative has uncompleted, non-critical child tasks in the current Host"
-      };
+      return { ok: false, key: "empty_enrollable_set", detail: "" };
     budget = plan.budget;
     const enrollableChildById = new Map(plan.enrollable.map((c) => [c.task_id, c]));
     recoveryChildren = plan.children.filter((c) => c.status === "enrollable").map((c) => {
@@ -8321,10 +8448,10 @@ async function projectPlanSurface(input) {
 async function projectBatchPreflight(options) {
   const { root, initiative_slug: initiativeSlug, readInitiative } = options;
   if (!INITIATIVE_SLUG_PATTERN.test(initiativeSlug))
-    return reject("rejected", `invalid initiative slug: ${initiativeSlug}`, "specify a valid initiative slug and retry in the current Host");
+    return reject("invalid_slug", initiativeSlug);
   const found = findExistingActiveBatch(root, initiativeSlug);
   if (found?.corrupt)
-    return reject("blocked", `batch run state is unreadable or invalid: ${found.path}`, "resolve or remove the invalid batch state file, then retry in the current Host");
+    return reject("batch_state_unreadable", found.path);
   const activeRecord = found ? found.record : null;
   const existingBatch = activeRecord ?? findSettledBatchRecord(root, initiativeSlug);
   const isResuming = activeRecord !== null;
@@ -8332,32 +8459,32 @@ async function projectBatchPreflight(options) {
   const activeTaskId = readActiveClaimTaskId(root);
   const ownClaim = isResuming && activeTaskId !== null && isOwnBatchClaim(root, activeRecord, activeTaskId, batchBranch);
   if (activeTaskId && !ownClaim)
-    return reject("blocked", `an active workspace claim already exists for task: ${activeTaskId}`, "resolve or stop the active task before starting a batch in the current Host");
+    return reject("claim_already_active", activeTaskId);
   let baseHead;
   try {
     baseHead = readGitHead(root);
   } catch (err) {
-    return reject("rejected", err instanceof Error ? err.message : String(err), "commit working changes and ensure a committed Git HEAD exists in the current Host");
+    return reject("git_head_unreadable", err instanceof Error ? err.message : String(err));
   }
   const branchExists = spawnSync4("git", ["-C", root, "show-ref", "--verify", "--quiet", `refs/heads/${batchBranch}`]);
   if (branchExists.status === 0 && !existingBatch)
-    return reject("rejected", `branch preflight failed: branch refs/heads/${batchBranch} already exists`, "delete or rename the conflicting branch, or commit working changes in the current Host");
+    return reject("branch_already_exists", batchBranch);
   const statusEntries = porcelainEntries(root);
   if (statusEntries === null)
-    return reject("rejected", "branch preflight failed: git status is unreadable", "check the repository integrity and retry in the current Host");
+    return reject("git_status_unreadable");
   if (statusEntries.length > 0) {
     if (!isResuming)
-      return reject("rejected", "branch preflight failed: working tree is dirty", "delete or rename the conflicting branch, or commit working changes in the current Host");
+      return reject("working_tree_dirty");
     const inFlightChild = existingBatch.children.find((c) => c.state === "enrolled" || c.state === "needs_human" || c.state === "settled");
     let authorizedScope = [];
     if (inFlightChild) {
       authorizedScope = authorizedScopeOf(root, inFlightChild.task_id, inFlightChild.state);
       if (authorizedScope.length === 0)
-        return reject("rejected", "branch preflight failed: cannot derive the in-flight child's authorized scope", "resolve the child's intent record, then retry in the current Host");
+        return reject("authorized_scope_underivable");
     }
     const dirtyBytes = statusEntries.some(({ code }) => code === "??" || code[1] !== " ");
     if (dirtyBytes)
-      return reject("rejected", "branch preflight failed: working tree has unstaged or untracked changes", "stage the in-flight changes with git add, then retry in the current Host");
+      return reject("working_tree_unstaged");
     let outsideScope = false;
     for (const { path } of statusEntries) {
       if (path.startsWith(".imm/") || path.startsWith("docs/plans/") || path.startsWith("docs/specs/"))
@@ -8375,7 +8502,7 @@ async function projectBatchPreflight(options) {
       }
     }
     if (outsideScope)
-      return reject("rejected", "branch preflight failed: working tree has changes outside the authorized child scope", "commit or unstage changes outside the active task scope, then retry in the current Host");
+      return reject("working_tree_out_of_scope");
   }
   const now = options.now ?? new Date().toISOString();
   const planSurface = await projectPlanSurface({
@@ -8387,7 +8514,7 @@ async function projectBatchPreflight(options) {
     readInitiative
   });
   if (!planSurface.ok)
-    return reject("rejected", planSurface.reason, planSurface.recovery_action);
+    return reject(planSurface.key, planSurface.detail);
   return {
     ok: true,
     projection: {
@@ -8429,7 +8556,7 @@ async function projectBatchDrift(options) {
     own_claim: isResuming && activeClaimTaskId !== null && isOwnBatchClaim(root, existingBatch, activeClaimTaskId, batchBranch),
     base_head: baseHead,
     plan_digest: surface.ok ? surface.surface.plan_digest : null,
-    plan_unavailable_reason: surface.ok ? null : surface.reason
+    plan_unavailable_reason: surface.ok ? null : batchReason(surface.key, surface.detail).reason
   };
 }
 
@@ -9918,7 +10045,7 @@ class ClaudeRuntime {
     if (!isPrivilegedOperation(operation))
       throw new Error(`unsupported native operation ${operation}`);
     if (!this.requestConfirmation)
-      throw new NativeAuthorityError("interaction_not_opened", "native confirmation port is unavailable");
+      throw new NativeAuthorityError("interaction_not_opened", batchReason("confirmation_port_unavailable").reason);
     const result = await this.requestConfirmation({ operation, taskId: meta.taskId, toolCallId: meta.toolCallId, signal: meta.signal, ...binding });
     throwIfCancelled(meta.signal);
     const gate = evaluateNativeGate({ operation, interactive, decision: result.decision });
@@ -10272,7 +10399,7 @@ class ClaudeRuntime {
     if (!interactive)
       throw new NativeAuthorityError("unsupported_host", "interactive MCP elicitation is unavailable");
     if (!this.requestConfirmation)
-      throw new NativeAuthorityError("interaction_not_opened", "native confirmation port is unavailable");
+      throw new NativeAuthorityError("interaction_not_opened", batchReason("confirmation_port_unavailable").reason);
     const now = new Date().toISOString();
     const preflight = await projectBatchPreflight({
       root: this.cwd,
@@ -10355,19 +10482,10 @@ class ClaudeRuntime {
         });
       } catch (err) {
         if (timeoutController.signal.aborted && !meta.signal?.aborted) {
-          return {
-            state: "rejected",
-            reason: "native confirmation timed out waiting for user interaction",
-            recovery_action: "retry through a fresh native gate in the current Host"
-          };
+          return batchReason("confirmation_timed_out");
         }
-        if (meta.signal?.aborted) {
-          return {
-            state: "cancelled",
-            reason: "user cancelled before batch execution",
-            recovery_action: "wait for a fresh literal-user request"
-          };
-        }
+        if (meta.signal?.aborted)
+          return batchReason("cancelled_before_execution");
         if (err instanceof NativeAuthorityError) {
           if (err.reasonCode === "unsupported_host")
             throw err;
@@ -10379,102 +10497,43 @@ class ClaudeRuntime {
           }
           return { state: "rejected", reason: err.message, recovery_action: err.recoveryAction };
         }
-        return {
-          state: "rejected",
-          reason: err instanceof Error ? err.message : String(err),
-          recovery_action: "retry through a fresh native gate in the current Host"
-        };
+        return batchReason("confirmation_failed", err instanceof Error ? err.message : String(err));
       } finally {
         clearTimeout(timeoutTimer);
       }
-      if (meta.signal?.aborted) {
-        return {
-          state: "cancelled",
-          reason: "user cancelled before batch execution",
-          recovery_action: "wait for a fresh literal-user request"
-        };
-      }
-      if (confirmationResult.decision === "decline") {
-        return {
-          state: "rejected",
-          reason: "native interaction declined",
-          recovery_action: "wait for a fresh literal-user request"
-        };
-      }
-      if (confirmationResult.decision === "cancel") {
-        return {
-          state: "cancelled",
-          reason: "native interaction cancelled",
-          recovery_action: "wait for a fresh literal-user request"
-        };
-      }
-      if (confirmationResult.decision !== "accept") {
-        return {
-          state: "rejected",
-          reason: "native interaction returned no decision",
-          recovery_action: "retry through a fresh native gate in the current Host"
-        };
-      }
+      if (meta.signal?.aborted)
+        return batchReason("cancelled_before_execution");
+      if (confirmationResult.decision === "decline")
+        return batchReason("confirmation_declined");
+      if (confirmationResult.decision === "cancel")
+        return batchReason("confirmation_cancelled");
+      if (confirmationResult.decision !== "accept")
+        return batchReason("confirmation_no_decision");
     }
     const recheckActiveTaskId = readActiveClaimTaskId(this.cwd);
     const recheckOwnClaim = isResuming && recheckActiveTaskId !== null && isOwnBatchClaim(this.cwd, existingBatch, recheckActiveTaskId, batchBranch);
-    if (recheckActiveTaskId && !recheckOwnClaim) {
-      return {
-        state: "blocked",
-        reason: `an active workspace claim appeared during confirmation for task: ${recheckActiveTaskId}`,
-        recovery_action: "resolve or stop the active task before starting a batch in the current Host"
-      };
-    }
+    if (recheckActiveTaskId && !recheckOwnClaim)
+      return batchReason("claim_appeared_during_confirmation", recheckActiveTaskId);
     const drift = await projectBatchDrift({
       root: this.cwd,
       initiative_slug: initiativeSlug,
       now,
       readInitiative: this.readInitiative ?? observeGithubInitiative
     });
-    if (!drift.plan_digest) {
-      return {
-        state: "rejected",
-        reason: "batch plan became unreadable after native confirmation",
-        recovery_action: "review the current workspace and retry through a fresh native gate in the current Host"
-      };
-    }
-    if (drift.plan_digest !== planDigest) {
-      return {
-        state: "rejected",
-        reason: "batch plan changed after native confirmation",
-        recovery_action: "review the current workspace and retry through a fresh native gate in the current Host"
-      };
-    }
-    if (drift.base_head === null) {
-      return {
-        state: "rejected",
-        reason: "Git repository became unreadable after native confirmation",
-        recovery_action: "review the current workspace and retry through a fresh native gate in the current Host"
-      };
-    }
-    if (drift.base_head !== baseHead) {
-      return {
-        state: "rejected",
-        reason: "Git HEAD moved after native confirmation",
-        recovery_action: "review the current workspace and retry through a fresh native gate in the current Host"
-      };
-    }
+    if (!drift.plan_digest)
+      return batchReason("plan_became_unreadable");
+    if (drift.plan_digest !== planDigest)
+      return batchReason("plan_changed");
+    if (drift.base_head === null)
+      return batchReason("repository_became_unreadable");
+    if (drift.base_head !== baseHead)
+      return batchReason("head_moved");
     const finalActiveTaskId = readActiveClaimTaskId(this.cwd);
     const finalIsOwnClaim = isResuming && finalActiveTaskId !== null && isOwnBatchClaim(this.cwd, existingBatch, finalActiveTaskId, batchBranch);
-    if (finalActiveTaskId && !finalIsOwnClaim) {
-      return {
-        state: "blocked",
-        reason: `an active workspace claim appeared during confirmation for task: ${finalActiveTaskId}`,
-        recovery_action: "resolve or stop the active task before starting a batch in the current Host"
-      };
-    }
-    if (meta.signal?.aborted) {
-      return {
-        state: "cancelled",
-        reason: "user cancelled before batch execution",
-        recovery_action: "wait for a fresh literal-user request"
-      };
-    }
+    if (finalActiveTaskId && !finalIsOwnClaim)
+      return batchReason("claim_appeared_during_confirmation", finalActiveTaskId);
+    if (meta.signal?.aborted)
+      return batchReason("cancelled_before_execution");
     const batchId = existingBatch ? existingBatch.batch_id : `batch-${initiativeSlug}-${Date.now()}`;
     const confirmation = confirmationRef({
       connectionId: meta.sessionId,
@@ -10523,13 +10582,8 @@ class ClaudeRuntime {
       kernel: kernelPort,
       git: this.batchGit
     });
-    if (report.batch_state === "rejected") {
-      return {
-        state: "rejected",
-        reason: report.reason ?? "batch run rejected",
-        recovery_action: "delete or rename the conflicting branch, or commit working changes and retry in the current Host"
-      };
-    }
+    if (report.batch_state === "rejected")
+      return batchReason("batch_run_rejected", report.reason ?? "");
     return {
       state: "started",
       batch_id: batchId,

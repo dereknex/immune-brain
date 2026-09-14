@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import {
 	AssuranceCoordinator,
 	snapshotDigest,
@@ -19,6 +19,7 @@ import { probeHost } from "../plugins/immune-brain/runtime/claude/capability";
 import { createMcpRuntime, serveStdio } from "../plugins/immune-brain/runtime/claude/mcp_server";
 import type { ReviewBundle } from "../plugins/immune-brain/runtime/assurance/review_evidence";
 import { executePiUnattendedBatch } from "../plugins/immune-brain/.pi-extension/imm-unattended-batch";
+import { BATCH_REASONS, batchReason } from "../plugins/immune-brain/runtime/unattended/batch_reasons";
 import type { GithubInitiativeObservation } from "../plugins/immune-brain/runtime/github_issue_tracker";
 
 const TASK = "dual-host-task";
@@ -664,8 +665,6 @@ describe("dual-host assurance conformance", () => {
 
 			expect(cRes.state).toBe("rejected");
 			expect(pRes.state).toBe("rejected");
-			expect(cRes.reason).toBe(pRes.reason);
-			expect(cRes.recovery_action).toBe(pRes.recovery_action);
 			assertZeroWrites(cf, pf);
 		}
 
@@ -694,8 +693,6 @@ describe("dual-host assurance conformance", () => {
 
 			expect(cRes.state).toBe("cancelled");
 			expect(pRes.state).toBe("cancelled");
-			expect(cRes.reason).toBe(pRes.reason);
-			expect(cRes.recovery_action).toBe(pRes.recovery_action);
 			assertZeroWrites(cf, pf);
 		}
 
@@ -1516,10 +1513,6 @@ describe("dual-host assurance conformance", () => {
 
 			expect(cRes2.state).toBe("blocked");
 			expect(pRes2.state).toBe("blocked");
-			// The message template is identical across hosts; only the host-local task
-			// id differs, so normalize it before comparing parity.
-			const normalizeReason = (reason: string): string => reason.replace(/for task: .*$/, "for task: <id>");
-			expect(normalizeReason(cRes2.reason)).toBe(normalizeReason(pRes2.reason));
 			expect(cRes2.reason).toContain("an active workspace claim appeared during confirmation");
 			expect(cRes2.recovery_action).toBe(pRes2.recovery_action);
 			expect(readFileSync(cBatchPath, "utf8")).toBe(cBatchBefore);
@@ -1924,8 +1917,6 @@ describe("dual-host assurance conformance", () => {
 
 			expect(cRes.state).toBe("rejected");
 			expect(pRes.state).toBe("rejected");
-			expect(cRes.reason).toBe(pRes.reason);
-			expect(cRes.recovery_action).toBe(pRes.recovery_action);
 			// Byte-for-byte: the pending transaction is untouched and nothing was written.
 			expect(snapshotState(cf.root)).toBe(cBefore);
 			expect(snapshotState(pf.root)).toBe(pBefore);
@@ -2031,4 +2022,36 @@ describe("dual-host assurance conformance", () => {
 	},
 		120_000,
 	);
+
+	// Restated property (RSN-2): the adapter-parity comparisons above were retired
+	// because two adapters reading one table agree for the wrong reason. What must
+	// still hold — and can still fail — is that the shared table is the ONLY
+	// producer of batch-gate reason and recovery prose: no adapter may carry a
+	// copy of it again.
+	test("the shared batch reason table is the only producer of gate prose", () => {
+		const adapterSources = [
+			readFileSync(resolve("plugins/immune-brain/.pi-extension/imm-unattended-batch.ts"), "utf8"),
+			readFileSync(resolve("plugins/immune-brain/runtime/claude/kernel_ports.ts"), "utf8"),
+		];
+		const keys = Object.keys(BATCH_REASONS) as Array<keyof typeof BATCH_REASONS>;
+		expect(keys.length).toBeGreaterThan(20);
+		for (const key of keys) {
+			const resolved = batchReason(key, "<detail>");
+			expect(resolved.reason.length).toBeGreaterThan(0);
+			expect(resolved.recovery_action.length).toBeGreaterThan(0);
+			for (const source of adapterSources) {
+				// The recovery text is static for every entry, so its absence from both
+				// adapters is exactly the "no second producer" property.
+				expect({ key, present: source.includes(resolved.recovery_action) }).toEqual({ key, present: false });
+			}
+		}
+		// A static or templated reason must not be restated in an adapter either.
+		for (const key of keys) {
+			const spec = BATCH_REASONS[key];
+			if (typeof spec.reason === "function") continue;
+			for (const source of adapterSources) {
+				expect({ key, present: source.includes(spec.reason) }).toEqual({ key, present: false });
+			}
+		}
+	});
 });

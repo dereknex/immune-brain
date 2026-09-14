@@ -1,0 +1,164 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "wc-shared-batch-reasons",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "wc-shared-batch-reasons",
+    "goal": "Make a single frozen table in runtime/unattended/batch_reasons.ts the only producer of batch reason and recovery strings on both Hosts, and retire the dual-host parity assertions that this change makes tautological, restating the property they protected.",
+    "acceptance": [
+      {
+        "id": "RSN-1",
+        "assertion": "A new module runtime/unattended/batch_reasons.ts holds a frozen map from stable reason key to its reason text and recovery action. Both Host adapters render from it and neither composes batch prose of its own, so the same condition produces the same reason and recovery on both Hosts by construction.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.4.2\",\n  \"argv\": [\n    \"test\",\n    \"tests/unattended-batch-run.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 60000,\n  \"max_output_bytes\": 65536\n}\n"
+      },
+      {
+        "id": "RSN-2",
+        "assertion": "Parity assertions in tests/dual-host-assurance-conformance.test.ts that only compared two adapters' batch reason strings are retired in this same change, because reading one shared table makes them pass for the wrong reason. The protected property is restated as an assertion that the shared table is the only producer of batch reason prose — a property that can still fail — and no other conformance scenario is removed.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.4.2\",\n  \"argv\": [\n    \"test\",\n    \"tests/dual-host-assurance-conformance.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 60000,\n  \"max_output_bytes\": 65536\n}\n"
+      },
+      {
+        "id": "RSN-3",
+        "assertion": "Every reason key previously emitted by either adapter is present in the shared table with its existing text and recovery action, so no operator-visible failure message is lost or silently reworded by this change.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.4.2\",\n  \"argv\": [\n    \"test\",\n    \"tests/unattended-batch-run.test.ts\",\n    \"tests/managed-authority-failure-contract.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 65536\n}\n"
+      }
+    ],
+    "scope_hint": [
+      ".changeset/wc-shared-batch-reasons.md",
+      "docs/plans/wc-shared-batch-reasons.intent.json",
+      "docs/specs/archive/workflow-consolidation.spec.md",
+      "docs/specs/workflow-consolidation.spec.md",
+      "plugins/immune-brain/.pi-extension/imm-unattended-batch.ts",
+      "plugins/immune-brain/dist/claude/mcp-server.mjs",
+      "plugins/immune-brain/runtime/claude/kernel_ports.ts",
+      "plugins/immune-brain/runtime/unattended/batch_preflight.ts",
+      "plugins/immune-brain/runtime/unattended/batch_reasons.ts",
+      "plugins/immune-brain/runtime/unattended/batch_runner.ts",
+      "tests/dual-host-assurance-conformance.test.ts",
+      "tests/managed-authority-failure-contract.test.ts",
+      "tests/unattended-batch-run.test.ts",
+      "tests/unattended-contracts.test.ts"
+    ],
+    "risk": "material",
+    "revision": 2,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/archive/wc-shared-batch-reasons.intent.json",
+    "content_hash": "sha256:22b6defc372c5080d4b43a5386c25ea766367317f3ad3efe979561f310f54b68"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:d1efa0cbf39e4d12cb65b12aa7bb49b8b91d73db54ce4ab4a694bab23c59109c",
+  "git_base_head": "059786fa462b253f84981901c1e0515824fd12a3",
+  "attestations": [
+    {
+      "id": "approval-qa-27e4e115",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:22b6defc372c5080d4b43a5386c25ea766367317f3ad3efe979561f310f54b68",
+      "diff_hash": "sha256:79d4bbafbce057804da961b459a2212c4c3e290999408193ee6ea2da2cdf4659",
+      "actor_id": "deterministic-qa",
+      "summary": "all 3 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "RSN-1",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "RSN-2",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "RSN-3",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-1b187771",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:22b6defc372c5080d4b43a5386c25ea766367317f3ad3efe979561f310f54b68",
+      "diff_hash": "sha256:79d4bbafbce057804da961b459a2212c4c3e290999408193ee6ea2da2cdf4659",
+      "actor_id": "parent-mediated-review",
+      "summary": "Frozen shared batch-reason table is the sole prose producer on both Hosts with all 25 legacy messages preserved verbatim; parity assertions correctly retired and restated as a falsifiable single-producer property.",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "059786fa462b253f84981901c1e0515824fd12a3",
+        "review_commit": "c104b57627c42089c1eb09ea2df3b7d2bb234ad9",
+        "review_tree": "d7280eecb7a8ad3aea6b06d2d10b32d2158d13ed",
+        "manifest_digest": "sha256:b48313f58766764f86f1e2a82b6379dedf3a49c6cfae480b0267ad67b30fc23e"
+      }
+    }
+  ],
+  "findings": [],
+  "history": [
+    {
+      "id": "approve_breaking_intent_revision:wc-shared-batch-reasons:2026-09-14T09:19:45.497Z",
+      "at": "2026-09-14T09:19:45.497Z",
+      "type": "approve_breaking_intent_revision",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "intent_revision_2\naction_v2_sha256:bbb6cbc04e34e3f57d9928709e7d90c62346477fd430a4316cafadd7336096a1",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-06bd29aafd53fbba",
+        "issued_at": "2026-09-14T09:19:45.774Z",
+        "expires_at": "2026-09-14T09:29:45.774Z"
+      }
+    },
+    {
+      "id": "freeze_artifacts:wc-shared-batch-reasons:2026-09-14T09:19:58.609Z",
+      "at": "2026-09-14T09:19:58.609Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent and Spec frozen at docs/plans/archive/wc-shared-batch-reasons.intent.json"
+    },
+    {
+      "id": "record_approval:wc-shared-batch-reasons:2026-09-14T09:20:17.357Z",
+      "at": "2026-09-14T09:20:17.357Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-27e4e115\naction_v2_sha256:14c92d24990ce22031ad643480198c08e0bb3013f5b25b3a510ce495fefc6432",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-36093aa370e183e3",
+        "issued_at": "2026-09-14T09:20:17.357Z",
+        "expires_at": "2026-09-14T09:30:17.357Z"
+      }
+    },
+    {
+      "id": "record_approval:wc-shared-batch-reasons:2026-09-14T09:45:38.973Z",
+      "at": "2026-09-14T09:45:38.973Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-1b187771\naction_v2_sha256:1e7d3ef4361deed8620a78abb5b0872df7ea915335301c67d1ec8b3db42645ce",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-53dcf8e0d96cece5",
+        "issued_at": "2026-09-14T09:45:38.974Z",
+        "expires_at": "2026-09-14T09:55:38.974Z"
+      }
+    },
+    {
+      "id": "complete:wc-shared-batch-reasons:2026-09-14T09:45:39.935Z",
+      "at": "2026-09-14T09:45:39.935Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:42a7ff0830103c2d83c8d6f0ce7c387f1734e8650cc16c234bf2a7cd8336f2a6"
+    }
+  ]
+}

@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { canonicalIntentHash, parseTaskIntentV1 } from "../plugins/immune-brain/runtime/kernel/intent";
 import { projectBatchPlan } from "../plugins/immune-brain/runtime/unattended/batch_plan";
+import { batchReason } from "../plugins/immune-brain/runtime/unattended/batch_reasons";
 
 /**
  * Contract-text conformance for the unattended batch run.
@@ -433,10 +434,17 @@ describe("unattended batch contract text", () => {
 		expect(LOOP_CONTRACT).not.toMatch(/imm-loop must start a batch|先调用 start_unattended_batch/i);
 
 		// The shipped entry requires a literal-user confirmation; a non-interactive
-		// invocation is refused, so the opt-in cannot happen implicitly.
+		// invocation is refused, so the opt-in cannot happen implicitly. The refusal
+		// text is table-owned: the adapter names the key and the shared table owns the
+		// operator-visible prose, so assert the resolution rather than the spelling.
 		const piExtension = read("plugins/immune-brain/.pi-extension/imm-unattended-batch.ts");
 		expect(piExtension).toContain("unsupported_host");
-		expect(piExtension).toContain('reason: "native confirmation port is unavailable"');
+		expect(piExtension).toContain('batchReason("confirmation_port_unavailable")');
+		expect(batchReason("confirmation_port_unavailable")).toEqual({
+			state: "rejected",
+			reason: "native confirmation port is unavailable",
+			recovery_action: "retry through a fresh native gate in the current Host",
+		});
 
 		// The opt-in never runs on its own: nothing in the shipped extension starts
 		// a batch outside the registered Tool.

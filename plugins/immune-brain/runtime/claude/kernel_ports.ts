@@ -46,6 +46,7 @@ import { preparePiCanary, revalidatePiCanary } from "../kernel/pi_canary_prepare
 import { runDeterministicQa } from "../assurance/qa";
 import { taskDiffIdentity, taskRevisionIdentity, pathMatchesScope } from "../workspace_scope";
 import { projectBatchPlan } from "../unattended/batch_plan";
+import { batchReason } from "../unattended/batch_reasons";
 import {
 	projectBatchPreflight,
 	projectBatchDrift,
@@ -509,7 +510,10 @@ export class ClaudeRuntime {
 		const interactive = meta.interactive ?? this.interactive;
 		if (!interactive) throw new NativeAuthorityError("unsupported_host", "interactive MCP elicitation is unavailable");
 		if (!isPrivilegedOperation(operation)) throw new Error(`unsupported native operation ${operation}`);
-		if (!this.requestConfirmation) throw new NativeAuthorityError("interaction_not_opened", "native confirmation port is unavailable");
+		// The text is table-owned; only the form (a thrown native error rather than
+		// a returned envelope) is this Host's.
+		if (!this.requestConfirmation)
+			throw new NativeAuthorityError("interaction_not_opened", batchReason("confirmation_port_unavailable").reason);
 		const result = await this.requestConfirmation({ operation, taskId: meta.taskId, toolCallId: meta.toolCallId, signal: meta.signal, ...binding });
 		throwIfCancelled(meta.signal);
 		const gate = evaluateNativeGate({ operation, interactive, decision: result.decision });
@@ -900,7 +904,10 @@ export class ClaudeRuntime {
 		if (!probe.ok) throw new NativeAuthorityError("unsupported_host", probe.reason);
 		const interactive = meta.interactive ?? this.interactive;
 		if (!interactive) throw new NativeAuthorityError("unsupported_host", "interactive MCP elicitation is unavailable");
-		if (!this.requestConfirmation) throw new NativeAuthorityError("interaction_not_opened", "native confirmation port is unavailable");
+		// The text is table-owned; only the form (a thrown native error rather than
+		// a returned envelope) is this Host's.
+		if (!this.requestConfirmation)
+			throw new NativeAuthorityError("interaction_not_opened", batchReason("confirmation_port_unavailable").reason);
 
 		// 1. Host-independent batch preflight: claim ownership, branch
 		// availability, working-tree cleanliness against the authorized scope,
@@ -1007,19 +1014,9 @@ export class ClaudeRuntime {
 				});
 			} catch (err) {
 			if (timeoutController.signal.aborted && !meta.signal?.aborted) {
-				return {
-					state: "rejected",
-					reason: "native confirmation timed out waiting for user interaction",
-					recovery_action: "retry through a fresh native gate in the current Host",
-				};
+				return batchReason("confirmation_timed_out");
 			}
-			if (meta.signal?.aborted) {
-				return {
-					state: "cancelled",
-					reason: "user cancelled before batch execution",
-					recovery_action: "wait for a fresh literal-user request",
-				};
-			}
+			if (meta.signal?.aborted) return batchReason("cancelled_before_execution");
 			if (err instanceof NativeAuthorityError) {
 				if (err.reasonCode === "unsupported_host") throw err;
 				if (err.reasonCode === "user_cancelled") {
@@ -1030,44 +1027,16 @@ export class ClaudeRuntime {
 				}
 				return { state: "rejected", reason: err.message, recovery_action: err.recoveryAction };
 			}
-			return {
-				state: "rejected",
-				reason: err instanceof Error ? err.message : String(err),
-				recovery_action: "retry through a fresh native gate in the current Host",
-			};
+			return batchReason("confirmation_failed", err instanceof Error ? err.message : String(err));
 		} finally {
 			clearTimeout(timeoutTimer);
 		}
 
-		if (meta.signal?.aborted) {
-			return {
-				state: "cancelled",
-				reason: "user cancelled before batch execution",
-				recovery_action: "wait for a fresh literal-user request",
-			};
-		}
+		if (meta.signal?.aborted) return batchReason("cancelled_before_execution");
 
-		if (confirmationResult.decision === "decline") {
-			return {
-				state: "rejected",
-				reason: "native interaction declined",
-				recovery_action: "wait for a fresh literal-user request",
-			};
-		}
-		if (confirmationResult.decision === "cancel") {
-			return {
-				state: "cancelled",
-				reason: "native interaction cancelled",
-				recovery_action: "wait for a fresh literal-user request",
-			};
-		}
-		if (confirmationResult.decision !== "accept") {
-			return {
-				state: "rejected",
-				reason: "native interaction returned no decision",
-				recovery_action: "retry through a fresh native gate in the current Host",
-			};
-		}
+		if (confirmationResult.decision === "decline") return batchReason("confirmation_declined");
+		if (confirmationResult.decision === "cancel") return batchReason("confirmation_cancelled");
+		if (confirmationResult.decision !== "accept") return batchReason("confirmation_no_decision");
 		}
 
 		// 6. Post-confirmation revalidation: the same shared preflight, re-run. A
@@ -1076,47 +1045,18 @@ export class ClaudeRuntime {
 		const recheckActiveTaskId = readActiveClaimTaskId(this.cwd);
 		const recheckOwnClaim =
 			isResuming && recheckActiveTaskId !== null && isOwnBatchClaim(this.cwd, existingBatch!, recheckActiveTaskId, batchBranch);
-		if (recheckActiveTaskId && !recheckOwnClaim) {
-			return {
-				state: "blocked",
-				reason: `an active workspace claim appeared during confirmation for task: ${recheckActiveTaskId}`,
-				recovery_action: "resolve or stop the active task before starting a batch in the current Host",
-			};
-		}
+		if (recheckActiveTaskId && !recheckOwnClaim)
+			return batchReason("claim_appeared_during_confirmation", recheckActiveTaskId);
 		const drift = await projectBatchDrift({
 			root: this.cwd,
 			initiative_slug: initiativeSlug,
 			now,
 			readInitiative: this.readInitiative ?? observeGithubInitiative,
 		});
-		if (!drift.plan_digest) {
-			return {
-				state: "rejected",
-				reason: "batch plan became unreadable after native confirmation",
-				recovery_action: "review the current workspace and retry through a fresh native gate in the current Host",
-			};
-		}
-		if (drift.plan_digest !== planDigest) {
-			return {
-				state: "rejected",
-				reason: "batch plan changed after native confirmation",
-				recovery_action: "review the current workspace and retry through a fresh native gate in the current Host",
-			};
-		}
-		if (drift.base_head === null) {
-			return {
-				state: "rejected",
-				reason: "Git repository became unreadable after native confirmation",
-				recovery_action: "review the current workspace and retry through a fresh native gate in the current Host",
-			};
-		}
-		if (drift.base_head !== baseHead) {
-			return {
-				state: "rejected",
-				reason: "Git HEAD moved after native confirmation",
-				recovery_action: "review the current workspace and retry through a fresh native gate in the current Host",
-			};
-		}
+		if (!drift.plan_digest) return batchReason("plan_became_unreadable");
+		if (drift.plan_digest !== planDigest) return batchReason("plan_changed");
+		if (drift.base_head === null) return batchReason("repository_became_unreadable");
+		if (drift.base_head !== baseHead) return batchReason("head_moved");
 
 		// review-batch-active-claim-race: re-check workspace and backend claim after asynchronous revalidation
 		const finalActiveTaskId = readActiveClaimTaskId(this.cwd);
@@ -1126,22 +1066,11 @@ export class ClaudeRuntime {
 			isResuming &&
 			finalActiveTaskId !== null &&
 			isOwnBatchClaim(this.cwd, existingBatch!, finalActiveTaskId, batchBranch);
-		if (finalActiveTaskId && !finalIsOwnClaim) {
-			return {
-				state: "blocked",
-				reason: `an active workspace claim appeared during confirmation for task: ${finalActiveTaskId}`,
-				recovery_action: "resolve or stop the active task before starting a batch in the current Host",
-			};
-		}
+		if (finalActiveTaskId && !finalIsOwnClaim)
+			return batchReason("claim_appeared_during_confirmation", finalActiveTaskId);
 
 		// review-1: verify cancellation signal right before authority issuance and startBatch
-		if (meta.signal?.aborted) {
-			return {
-				state: "cancelled",
-				reason: "user cancelled before batch execution",
-				recovery_action: "wait for a fresh literal-user request",
-			};
-		}
+		if (meta.signal?.aborted) return batchReason("cancelled_before_execution");
 
 		// 7. Issue Batch Authorization through Kernel registry and startBatch
 		const batchId = existingBatch ? existingBatch.batch_id : `batch-${initiativeSlug}-${Date.now()}`;
@@ -1197,13 +1126,7 @@ export class ClaudeRuntime {
 		});
 
 		// review-3 & review-batch-preflight-recovery-is-diagnostic: map rejected batch state to rejected result with same-Host recovery action
-		if (report.batch_state === "rejected") {
-			return {
-				state: "rejected",
-				reason: report.reason ?? "batch run rejected",
-				recovery_action: "delete or rename the conflicting branch, or commit working changes and retry in the current Host",
-			};
-		}
+		if (report.batch_state === "rejected") return batchReason("batch_run_rejected", report.reason ?? "");
 
 		return {
 			state: "started",

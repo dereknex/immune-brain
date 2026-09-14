@@ -21,6 +21,7 @@ import { readTaskIntent } from "../kernel/intent";
 import { readAuditTaskPair, readTaskRecordRaw, readWorkspaceStateRaw } from "../kernel/storage";
 import { pathMatchesScope } from "../workspace_scope";
 import { projectBatchPlan } from "./batch_plan";
+import { batchReason, type BatchReasonKey } from "./batch_reasons";
 import { isTerminalBatchState, type BatchRunStateRecord } from "./batch_state";
 import type {
 	BatchPlanBudget,
@@ -65,11 +66,16 @@ export interface BatchPreflightRejection {
 }
 
 function reject(
-	state: "blocked" | "rejected",
-	reason: string,
-	recovery_action: string,
+	key: BatchReasonKey,
+	detail = "",
 ): { ok: false } & BatchPreflightRejection {
-	return { ok: false, state, reason, recovery_action };
+	const resolved = batchReason(key, detail);
+	return {
+		ok: false,
+		state: resolved.state === "blocked" ? "blocked" : "rejected",
+		reason: resolved.reason,
+		recovery_action: resolved.recovery_action,
+	};
 }
 
 /**
@@ -291,7 +297,7 @@ interface PlanSurface {
 
 type PlanSurfaceOutcome =
 	| { ok: true; surface: PlanSurface }
-	| { ok: false; reason: string; recovery_action: string };
+	| { ok: false; key: BatchReasonKey; detail: string };
 
 /**
  * The plan half of the projection: the confirmed plan surface for a fresh run,
@@ -358,11 +364,7 @@ async function projectPlanSurface(input: {
 				} satisfies BatchPlanChild;
 			});
 		} catch (err) {
-			return {
-				ok: false,
-				reason: `failed to project batch plan: ${err instanceof Error ? err.message : String(err)}`,
-				recovery_action: "review initiative issues and planning sidecars in the current Host",
-			};
+			return { ok: false, key: "plan_projection_failed", detail: err instanceof Error ? err.message : String(err) };
 		}
 		planDigest = computeBatchPlanDigest(
 			recoveryChildren.map((c) => ({
@@ -380,23 +382,11 @@ async function projectPlanSurface(input: {
 		} catch (err) {
 			const msg = err instanceof Error ? err.message : String(err);
 			if (msg.includes("has no enrollable children"))
-				return {
-					ok: false,
-					reason: "empty enrollable child set: no enrollable child tasks found in the initiative plan",
-					recovery_action: "ensure the initiative has uncompleted, non-critical child tasks in the current Host",
-				};
-			return {
-				ok: false,
-				reason: `failed to project batch plan: ${msg}`,
-				recovery_action: "review initiative issues and planning sidecars in the current Host",
-			};
+				return { ok: false, key: "empty_enrollable_set", detail: "" };
+			return { ok: false, key: "plan_projection_failed", detail: msg };
 		}
 		if (!plan.enrollable.length)
-			return {
-				ok: false,
-				reason: "empty enrollable child set: no enrollable child tasks found in the initiative plan",
-				recovery_action: "ensure the initiative has uncompleted, non-critical child tasks in the current Host",
-			};
+			return { ok: false, key: "empty_enrollable_set", detail: "" };
 
 		budget = plan.budget;
 		const enrollableChildById = new Map(plan.enrollable.map((c) => [c.task_id, c]));
@@ -444,16 +434,12 @@ export async function projectBatchPreflight(
 ): Promise<BatchPreflightOutcome> {
 	const { root, initiative_slug: initiativeSlug, readInitiative } = options;
 	if (!INITIATIVE_SLUG_PATTERN.test(initiativeSlug))
-		return reject("rejected", `invalid initiative slug: ${initiativeSlug}`, "specify a valid initiative slug and retry in the current Host");
+		return reject("invalid_slug", initiativeSlug);
 
 	// Existing active/paused batch for this initiative: a terminal record is not active.
 	const found = findExistingActiveBatch(root, initiativeSlug);
 	if (found?.corrupt)
-		return reject(
-			"blocked",
-			`batch run state is unreadable or invalid: ${found.path}`,
-			"resolve or remove the invalid batch state file, then retry in the current Host",
-		);
+		return reject("batch_state_unreadable", found.path);
 	// A settled record is not a resume, but it still owns the batch branch and
 	// identity a later call replays instead of starting a parallel run.
 	const activeRecord: BatchRunStateRecord | null = found ? found.record : null;
@@ -466,41 +452,25 @@ export async function projectBatchPreflight(
 	const ownClaim =
 		isResuming && activeTaskId !== null && isOwnBatchClaim(root, activeRecord!, activeTaskId, batchBranch);
 	if (activeTaskId && !ownClaim)
-		return reject(
-			"blocked",
-			`an active workspace claim already exists for task: ${activeTaskId}`,
-			"resolve or stop the active task before starting a batch in the current Host",
-		);
+		return reject("claim_already_active", activeTaskId);
 
 	// 2. HEAD, branch availability, working tree (pre-confirmation, read-only).
 	let baseHead: string;
 	try {
 		baseHead = readGitHead(root);
 	} catch (err) {
-		return reject(
-			"rejected",
-			err instanceof Error ? err.message : String(err),
-			"commit working changes and ensure a committed Git HEAD exists in the current Host",
-		);
+		return reject("git_head_unreadable", err instanceof Error ? err.message : String(err));
 	}
 	const branchExists = spawnSync("git", ["-C", root, "show-ref", "--verify", "--quiet", `refs/heads/${batchBranch}`]);
 	if (branchExists.status === 0 && !existingBatch)
-		return reject(
-			"rejected",
-			`branch preflight failed: branch refs/heads/${batchBranch} already exists`,
-			"delete or rename the conflicting branch, or commit working changes in the current Host",
-		);
+		return reject("branch_already_exists", batchBranch);
 
 	const statusEntries = porcelainEntries(root);
 	if (statusEntries === null)
-		return reject("rejected", "branch preflight failed: git status is unreadable", "check the repository integrity and retry in the current Host");
+		return reject("git_status_unreadable");
 	if (statusEntries.length > 0) {
 		if (!isResuming)
-			return reject(
-				"rejected",
-				"branch preflight failed: working tree is dirty",
-				"delete or rename the conflicting branch, or commit working changes in the current Host",
-			);
+			return reject("working_tree_dirty");
 		// Kernel projections accept staged in-flight work inside the active child's
 		// authorized scope, and reject unstaged/untracked bytes or out-of-scope paths.
 		// `settled` belongs here: Kernel settlement happens before the batch commits
@@ -513,19 +483,11 @@ export async function projectBatchPreflight(
 		if (inFlightChild) {
 			authorizedScope = authorizedScopeOf(root, inFlightChild.task_id, inFlightChild.state);
 			if (authorizedScope.length === 0)
-				return reject(
-					"rejected",
-					"branch preflight failed: cannot derive the in-flight child's authorized scope",
-					"resolve the child's intent record, then retry in the current Host",
-				);
+				return reject("authorized_scope_underivable");
 		}
 		const dirtyBytes = statusEntries.some(({ code }) => code === "??" || code[1] !== " ");
 		if (dirtyBytes)
-			return reject(
-				"rejected",
-				"branch preflight failed: working tree has unstaged or untracked changes",
-				"stage the in-flight changes with git add, then retry in the current Host",
-			);
+			return reject("working_tree_unstaged");
 		let outsideScope = false;
 		for (const { path } of statusEntries) {
 			if (path.startsWith(".imm/") || path.startsWith("docs/plans/") || path.startsWith("docs/specs/")) continue;
@@ -544,11 +506,7 @@ export async function projectBatchPreflight(
 			}
 		}
 		if (outsideScope)
-			return reject(
-				"rejected",
-				"branch preflight failed: working tree has changes outside the authorized child scope",
-				"commit or unstage changes outside the active task scope, then retry in the current Host",
-			);
+			return reject("working_tree_out_of_scope");
 	}
 
 	// 3. Project or reconstruct the plan (pre-confirmation).
@@ -562,7 +520,7 @@ export async function projectBatchPreflight(
 		readInitiative,
 	});
 	if (!planSurface.ok)
-		return reject("rejected", planSurface.reason, planSurface.recovery_action);
+		return reject(planSurface.key, planSurface.detail);
 
 	return {
 		ok: true,
@@ -625,6 +583,6 @@ export async function projectBatchDrift(options: BatchPreflightOptions): Promise
 			isResuming && activeClaimTaskId !== null && isOwnBatchClaim(root, existingBatch!, activeClaimTaskId, batchBranch),
 		base_head: baseHead,
 		plan_digest: surface.ok ? surface.surface.plan_digest : null,
-		plan_unavailable_reason: surface.ok ? null : surface.reason,
+		plan_unavailable_reason: surface.ok ? null : batchReason(surface.key, surface.detail).reason,
 	};
 }

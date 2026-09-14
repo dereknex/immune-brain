@@ -21,6 +21,7 @@ import {
 	type BatchRunReport,
 	type InitiativeObservationReader,
 } from "./runtime-stub";
+import { batchReason } from "../runtime/unattended/batch_reasons";
 import {
 	projectBatchPreflight,
 	projectBatchDrift,
@@ -182,50 +183,26 @@ export async function executePiUnattendedBatch(
 	if (!reuseAuthorization) {
 		// review-2: fail closed with zero writes when confirmation port is missing
 		if (!options.confirmBatch) {
-			return {
-				state: "rejected",
-				reason: "native confirmation port is unavailable",
-				recovery_action: "retry through a fresh native gate in the current Host",
-			};
+			return batchReason("confirmation_port_unavailable");
 		}
 
 		try {
 			decision = await options.confirmBatch(confirmDetails);
 		} catch (err) {
 			if (signal?.aborted) {
-				return {
-					state: "cancelled",
-					reason: "native interaction cancelled",
-					recovery_action: "wait for a fresh literal-user request",
-				};
+				return batchReason("confirmation_cancelled");
 			}
-			return {
-				state: "rejected",
-				reason: err instanceof Error ? err.message : String(err),
-				recovery_action: "retry through a fresh native gate in the current Host",
-			};
+			return batchReason("confirmation_failed", err instanceof Error ? err.message : String(err));
 		}
 
 		if (decision === "cancel" || signal?.aborted) {
-			return {
-				state: "cancelled",
-				reason: "native interaction cancelled",
-				recovery_action: "wait for a fresh literal-user request",
-			};
+			return batchReason("confirmation_cancelled");
 		}
 		if (decision === "decline") {
-			return {
-				state: "rejected",
-				reason: "native interaction declined",
-				recovery_action: "wait for a fresh literal-user request",
-			};
+			return batchReason("confirmation_declined");
 		}
 		if (decision !== "accept") {
-			return {
-				state: "rejected",
-				reason: "native interaction returned no decision",
-				recovery_action: "retry through a fresh native gate in the current Host",
-			};
+			return batchReason("confirmation_no_decision");
 		}
 	}
 
@@ -237,11 +214,7 @@ export async function executePiUnattendedBatch(
 	const postIsOwnClaim =
 		isResuming && postActiveTaskId !== null && isOwnBatchClaim(root, existingBatch!, postActiveTaskId, batchBranch);
 	if (postActiveTaskId && !postIsOwnClaim) {
-		return {
-			state: "blocked",
-			reason: `an active workspace claim appeared during confirmation for task: ${postActiveTaskId}`,
-			recovery_action: "resolve or stop the active task before starting a batch in the current Host",
-		};
+		return batchReason("claim_appeared_during_confirmation", postActiveTaskId);
 	}
 
 	const drift = await projectBatchDrift({
@@ -251,32 +224,16 @@ export async function executePiUnattendedBatch(
 		readInitiative: options.readInitiative,
 	});
 	if (!drift.plan_digest) {
-		return {
-			state: "rejected",
-			reason: "batch plan became unreadable after native confirmation",
-			recovery_action: "review the current workspace and retry through a fresh native gate in the current Host",
-		};
+		return batchReason("plan_became_unreadable");
 	}
 	if (drift.plan_digest !== planDigest) {
-		return {
-			state: "rejected",
-			reason: "batch plan changed after native confirmation",
-			recovery_action: "review the current workspace and retry through a fresh native gate in the current Host",
-		};
+		return batchReason("plan_changed");
 	}
 	if (drift.base_head === null) {
-		return {
-			state: "rejected",
-			reason: "Git repository became unreadable after native confirmation",
-			recovery_action: "review the current workspace and retry through a fresh native gate in the current Host",
-		};
+		return batchReason("repository_became_unreadable");
 	}
 	if (drift.base_head !== baseHead) {
-		return {
-			state: "rejected",
-			reason: "Git HEAD moved after native confirmation",
-			recovery_action: "review the current workspace and retry through a fresh native gate in the current Host",
-		};
+		return batchReason("head_moved");
 	}
 
 	// review-f72ae870f4f0-1: re-check the workspace claim AFTER the async plan
@@ -290,11 +247,7 @@ export async function executePiUnattendedBatch(
 		finalActiveTaskId !== null &&
 		isOwnBatchClaim(root, existingBatch!, finalActiveTaskId, batchBranch);
 	if (finalActiveTaskId && !finalIsOwnClaim) {
-		return {
-			state: "blocked",
-			reason: `an active workspace claim appeared during confirmation for task: ${finalActiveTaskId}`,
-			recovery_action: "resolve or stop the active task before starting a batch in the current Host",
-		};
+		return batchReason("claim_appeared_during_confirmation", finalActiveTaskId);
 	}
 
 	// 6. Issue Batch Authorization through Kernel registry and startBatch
@@ -302,13 +255,7 @@ export async function executePiUnattendedBatch(
 	const enrollmentRegistry = await createEnrollmentAuthorityRegistry();
 
 	// review-2: verify cancellation signal right before authority issuance and startBatch
-	if (signal?.aborted) {
-		return {
-			state: "cancelled",
-			reason: "user cancelled before batch execution",
-			recovery_action: "wait for a fresh literal-user request",
-		};
-	}
+	if (signal?.aborted) return batchReason("cancelled_before_execution");
 
 	const batchId = existingBatch ? existingBatch.batch_id : `batch-${initiativeSlug}-${Date.now()}`;
 	const confirmation = piConfirmationRef({
@@ -429,11 +376,7 @@ export async function executePiUnattendedBatch(
 	});
 
 	if (report.batch_state === "rejected") {
-		return {
-			state: "rejected",
-			reason: report.reason ?? "batch run rejected",
-			recovery_action: "delete or rename the conflicting branch, or commit working changes and retry in the current Host",
-		};
+		return batchReason("batch_run_rejected", report.reason ?? "");
 	}
 
 	return {

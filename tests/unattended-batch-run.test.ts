@@ -27,6 +27,7 @@ import {
 	findExistingActiveBatch,
 	findSettledBatchRecord,
 } from "../plugins/immune-brain/runtime/unattended/batch_preflight";
+import { BATCH_REASONS, batchReason } from "../plugins/immune-brain/runtime/unattended/batch_reasons";
 import {
 	createBatchAuthorityRegistry,
 	deriveChildEnrollment,
@@ -1905,6 +1906,65 @@ describe("shared batch preflight projection", () => {
 		expect(imports.every((specifier) => specifier.startsWith(".") || specifier.startsWith("node:"))).toBe(true);
 		for (const forbidden of ["process.platform", "hostVersion", "probeHost", "requestConfirmation", "elicitation"]) {
 			expect({ forbidden, present: source.includes(forbidden) }).toEqual({ forbidden, present: false });
+		}
+	});
+
+	it("renders its rejections from the frozen shared reason table", async () => {
+		const root = fixture();
+		try {
+			// A condition the table owns: a batch branch no record created.
+			execFileSync("git", ["branch", `imm/${SLUG}`], { cwd: root });
+			const outcome = await projectBatchPreflight({ root, initiative_slug: SLUG, now: NOW });
+			expect(outcome).toMatchObject(batchReason("branch_already_exists", `imm/${SLUG}`));
+
+			// The table is frozen: no caller can reword a Host's operator-visible text.
+			expect(Object.isFrozen(BATCH_REASONS)).toBe(true);
+			expect(() => {
+				(BATCH_REASONS as Record<string, unknown>).plan_changed = { state: "rejected", reason: "x", recovery_action: "y" };
+			}).toThrow();
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
+	it("keeps every migrated reason key with its exact existing text and recovery action", () => {
+		// The vocabulary the two adapters and the preflight emitted before the table
+		// existed. A key that disappears, or a text that is silently reworded, fails
+		// here rather than reaching an operator as changed prose.
+		const expected: Record<string, [string, string]> = {
+			invalid_slug: ["invalid initiative slug: <detail>", "specify a valid initiative slug and retry in the current Host"],
+			batch_state_unreadable: ["batch run state is unreadable or invalid: <detail>", "resolve or remove the invalid batch state file, then retry in the current Host"],
+			claim_already_active: ["an active workspace claim already exists for task: <detail>", "resolve or stop the active task before starting a batch in the current Host"],
+			git_head_unreadable: ["<detail>", "commit working changes and ensure a committed Git HEAD exists in the current Host"],
+			branch_already_exists: ["branch preflight failed: branch refs/heads/<detail> already exists", "delete or rename the conflicting branch, or commit working changes in the current Host"],
+			git_status_unreadable: ["branch preflight failed: git status is unreadable", "check the repository integrity and retry in the current Host"],
+			working_tree_dirty: ["branch preflight failed: working tree is dirty", "delete or rename the conflicting branch, or commit working changes in the current Host"],
+			authorized_scope_underivable: ["branch preflight failed: cannot derive the in-flight child's authorized scope", "resolve the child's intent record, then retry in the current Host"],
+			working_tree_unstaged: ["branch preflight failed: working tree has unstaged or untracked changes", "stage the in-flight changes with git add, then retry in the current Host"],
+			working_tree_out_of_scope: ["branch preflight failed: working tree has changes outside the authorized child scope", "commit or unstage changes outside the active task scope, then retry in the current Host"],
+			empty_enrollable_set: ["empty enrollable child set: no enrollable child tasks found in the initiative plan", "ensure the initiative has uncompleted, non-critical child tasks in the current Host"],
+			plan_projection_failed: ["failed to project batch plan: <detail>", "review initiative issues and planning sidecars in the current Host"],
+			confirmation_port_unavailable: ["native confirmation port is unavailable", "retry through a fresh native gate in the current Host"],
+			confirmation_timed_out: ["native confirmation timed out waiting for user interaction", "retry through a fresh native gate in the current Host"],
+			confirmation_cancelled: ["native interaction cancelled", "wait for a fresh literal-user request"],
+			confirmation_declined: ["native interaction declined", "wait for a fresh literal-user request"],
+			confirmation_no_decision: ["native interaction returned no decision", "retry through a fresh native gate in the current Host"],
+			confirmation_failed: ["<detail>", "retry through a fresh native gate in the current Host"],
+			claim_appeared_during_confirmation: ["an active workspace claim appeared during confirmation for task: <detail>", "resolve or stop the active task before starting a batch in the current Host"],
+			plan_became_unreadable: ["batch plan became unreadable after native confirmation", "review the current workspace and retry through a fresh native gate in the current Host"],
+			plan_changed: ["batch plan changed after native confirmation", "review the current workspace and retry through a fresh native gate in the current Host"],
+			repository_became_unreadable: ["Git repository became unreadable after native confirmation", "review the current workspace and retry through a fresh native gate in the current Host"],
+			head_moved: ["Git HEAD moved after native confirmation", "review the current workspace and retry through a fresh native gate in the current Host"],
+			cancelled_before_execution: ["user cancelled before batch execution", "wait for a fresh literal-user request"],
+			batch_run_rejected: ["<detail>", "delete or rename the conflicting branch, or commit working changes and retry in the current Host"],
+		};
+		expect(Object.keys(BATCH_REASONS).sort()).toEqual(Object.keys(expected).sort());
+		for (const [key, [reason, recoveryAction]] of Object.entries(expected)) {
+			expect(batchReason(key as keyof typeof BATCH_REASONS, "<detail>")).toEqual({
+				state: expect.any(String),
+				reason,
+				recovery_action: recoveryAction,
+			});
 		}
 	});
 });
