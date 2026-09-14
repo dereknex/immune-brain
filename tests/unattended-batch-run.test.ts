@@ -1,9 +1,9 @@
 import { execFileSync } from "node:child_process";
 import { preparePiCanary } from "../plugins/immune-brain/runtime/kernel/pi_canary_prepare";
 import { describe, expect, it, spyOn } from "bun:test";
-import { mkdtempSync, rmSync, existsSync, writeFileSync, mkdirSync, readFileSync, readdirSync, symlinkSync } from "node:fs";
+import { mkdtempSync, rmSync, existsSync, writeFileSync, mkdirSync, readFileSync, readdirSync, statSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import type { BatchPlanChild } from "../plugins/immune-brain/runtime/unattended/types";
 import {
 	prepareBatchRunState,
@@ -22,6 +22,11 @@ import {
 	type BatchChildAdvanceResult,
 } from "../plugins/immune-brain/runtime/unattended/batch_runner";
 import type { AssuranceProjectionResult } from "../plugins/immune-brain/runtime/kernel/assurance_projection";
+import {
+	projectBatchPreflight,
+	findExistingActiveBatch,
+	findSettledBatchRecord,
+} from "../plugins/immune-brain/runtime/unattended/batch_preflight";
 import {
 	createBatchAuthorityRegistry,
 	deriveChildEnrollment,
@@ -1745,6 +1750,161 @@ describe("startBatch state machine", () => {
 		} finally {
 			rmSync(root, { recursive: true, force: true });
 			rmSync(outside, { recursive: true, force: true });
+		}
+	});
+});
+
+// The shared batch preflight: the Host-independent projection both adapters
+// route through. Covered here for its own contract; the dirty-tree and
+// authorized-scope branches are exercised end-to-end by the dual-host
+// conformance suite, which drives both adapters through them.
+describe("shared batch preflight projection", () => {
+	const SLUG = "preflight-initiative";
+	const NOW = "2026-01-01T00:00:00.000Z";
+
+	function headOf(root: string): string {
+		return execFileSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).trim();
+	}
+
+	function fixture(): string {
+		const root = mkdtempSync(join(tmpdir(), "imm-preflight-"));
+		execFileSync("git", ["init", "-q"], { cwd: root });
+		execFileSync("git", ["config", "user.email", "t@example.com"], { cwd: root });
+		execFileSync("git", ["config", "user.name", "T"], { cwd: root });
+		mkdirSync(join(root, "docs/plans"), { recursive: true });
+		mkdirSync(join(root, ".imm/state/batches"), { recursive: true });
+		// Mirrors the repository's storage-layout cutover: worktree-local state is
+		// Git-ignored, so a projection sees only real work as a tree change.
+		writeFileSync(join(root, ".gitignore"), ".imm/state/\n");
+		for (const taskId of ["child-a", "child-b"]) {
+			writeFileSync(
+				join(root, `docs/plans/${taskId}.intent.json`),
+				`${JSON.stringify({
+					contract: "assurance_kernel/task_intent/v1",
+					task_id: taskId,
+					goal: `Deliver ${taskId}`,
+					acceptance: [{ id: `acc-${taskId}`, assertion: "a", verification: "{}" }],
+					scope_hint: ["src/**", `docs/specs/${taskId}.spec.md`, `docs/specs/archive/${taskId}.spec.md`],
+					risk: "material",
+					revision: 1,
+					owner: "user",
+				}, null, 2)}\n`,
+			);
+		}
+		execFileSync("git", ["add", "-A"], { cwd: root });
+		execFileSync("git", ["commit", "-qm", "fixture"], { cwd: root });
+		return root;
+	}
+
+	function writeBatch(root: string, batchState: string): void {
+		writeFileSync(
+			join(root, ".imm/state/batches/batch-1.json"),
+			`${JSON.stringify({
+				contract: "assurance_kernel/batch_run_state/v1",
+				batch_id: "batch-1",
+				initiative_slug: SLUG,
+				batch_state: batchState,
+				branch: `imm/${SLUG}`,
+				base_head: headOf(root),
+				commits: [],
+				authorization_expires_at: FAR_FUTURE,
+				budget: { max_children: 2, deadline_at: FAR_FUTURE, qa_failure_limit: 2 },
+				updated_at: NOW,
+				children: [
+					{ task_id: "child-a", slice_id: "S1", state: "committed", blocked_by: [], commit: null, reason: null },
+					{ task_id: "child-b", slice_id: "S2", state: "pending", blocked_by: ["child-a"], commit: null, reason: null },
+				],
+			}, null, 2)}\n`,
+		);
+	}
+
+	function snapshot(root: string): Record<string, string> {
+		const files: Record<string, string> = {};
+		const visit = (directory: string) => {
+			for (const name of readdirSync(directory).sort()) {
+				if (name === ".git") continue;
+				const path = join(directory, name);
+				if (statSync(path).isDirectory()) visit(path);
+				else files[path.slice(root.length)] = readFileSync(path).toString("base64");
+			}
+		};
+		visit(root);
+		return files;
+	}
+
+	it("projects a resume from the record and writes nothing", async () => {
+		const root = fixture();
+		try {
+			writeBatch(root, "running");
+			const before = snapshot(root);
+			const outcome = await projectBatchPreflight({ root, initiative_slug: SLUG, now: NOW });
+
+			if (!outcome.ok) throw new Error(`preflight rejected: ${outcome.reason}`);
+			expect(outcome.ok).toBe(true);
+			expect(outcome.projection.is_resuming).toBe(true);
+			expect(outcome.projection.batch_branch).toBe(`imm/${SLUG}`);
+			expect(outcome.projection.base_head).toBe(headOf(root));
+			expect(outcome.projection.recovery_children.map((c) => [c.task_id, c.status])).toEqual([
+				["child-a", "already_settled"],
+				["child-b", "enrollable"],
+			]);
+			expect(outcome.projection.plan_digest).toMatch(/^sha256:[0-9a-f]{64}$/);
+			expect(outcome.projection.risk_by_task).toEqual({ "child-a": "material", "child-b": "material" });
+			// Zero writes: the projection is a pure read, including for a rejection.
+			expect(snapshot(root)).toEqual(before);
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
+	it("does not treat a settled batch as active but keeps the identity a replay needs", async () => {
+		const root = fixture();
+		try {
+			writeBatch(root, "completed");
+
+			expect(findExistingActiveBatch(root, SLUG)).toBeNull();
+			expect(findSettledBatchRecord(root, SLUG)?.batch_id).toBe("batch-1");
+
+			const outcome = await projectBatchPreflight({ root, initiative_slug: SLUG, now: NOW });
+			if (!outcome.ok) throw new Error(`preflight rejected: ${outcome.reason}`);
+			expect(outcome.projection.is_resuming).toBe(false);
+			// The settled record still owns the branch and the identity the runner
+			// replays, so a later call is not a parallel run and not a conflict.
+			expect(outcome.projection.existing_batch?.batch_id).toBe("batch-1");
+			expect(outcome.projection.existing_batch?.batch_state).toBe("completed");
+			expect(outcome.projection.base_head).toBe(headOf(root));
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
+	it("rejects a batch branch no record of this initiative created", async () => {
+		const root = fixture();
+		try {
+			execFileSync("git", ["branch", `imm/${SLUG}`], { cwd: root });
+			const outcome = await projectBatchPreflight({ root, initiative_slug: SLUG, now: NOW });
+
+			expect(outcome).toMatchObject({
+				ok: false,
+				state: "rejected",
+				reason: `branch preflight failed: branch refs/heads/imm/${SLUG} already exists`,
+			});
+			expect(execFileSync("git", ["branch", "--list", `imm/${SLUG}`], { cwd: root, encoding: "utf8" }).trim()).not.toBe("");
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
+	it("stays Host-neutral: no Host SDK import and no Host-identity branch", () => {
+		const source = readFileSync(
+			resolve("plugins/immune-brain/runtime/unattended/batch_preflight.ts"),
+			"utf8",
+		);
+		const imports = [...source.matchAll(/^import[\s\S]*?from "([^"]+)";/gm)].map((match) => match[1]);
+		expect(imports.length).toBeGreaterThan(0);
+		expect(imports.every((specifier) => specifier.startsWith(".") || specifier.startsWith("node:"))).toBe(true);
+		for (const forbidden of ["process.platform", "hostVersion", "probeHost", "requestConfirmation", "elicitation"]) {
+			expect({ forbidden, present: source.includes(forbidden) }).toEqual({ forbidden, present: false });
 		}
 	});
 });

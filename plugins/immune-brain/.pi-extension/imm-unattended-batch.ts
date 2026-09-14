@@ -6,25 +6,14 @@ import { spawnSync } from "node:child_process";
 import { join } from "node:path";
 import {
 	createBatchAuthorityRegistry,
-	computeBatchPlanDigest,
 	deriveChildEnrollment,
-	projectBatchPlan,
 	startBatch,
-	readGitHead,
-	readWorkspaceState,
-	readBackendClaim,
-	readSettledTaskRecord,
-	readTaskIntent,
 	readTaskRecord,
 	advancePiTask,
 	projectAssuranceForTask,
-	pathMatchesScope,
-	findExistingActiveBatch,
 	runEnrollmentRehearsal,
 	enrollCanaryTask,
 	createEnrollmentAuthorityRegistry,
-	type BatchPlan,
-	type BatchPlanChild,
 	type BatchAuthorityRegistry,
 	type BatchAuthorizationBinding,
 	type BatchRunnerKernelPort,
@@ -32,6 +21,13 @@ import {
 	type BatchRunReport,
 	type InitiativeObservationReader,
 } from "./runtime-stub";
+import {
+	projectBatchPreflight,
+	projectBatchDrift,
+	readActiveClaimTaskId,
+	isOwnBatchClaim,
+	expectedBatchHead,
+} from "../runtime/unattended/batch_preflight";
 import {
 	presentTaskRail,
 	presentTaskRailResult,
@@ -70,55 +66,6 @@ export function mapDialogSelection(selected: string | undefined): "accept" | "de
  * Called fresh at pre-confirmation, post-confirmation, and from ownsTaskClaim so
  * a claim swapped during confirmation is never adopted.
  */
-function syncIsOwnBatchClaim(
-	root: string,
-	existingBatch: any,
-	taskId: string,
-	batchBranch: string,
-): boolean {
-	let claim: any = null;
-	let workspace: any = null;
-	try {
-		claim = JSON.parse(readFileSync(join(root, ".imm", "state", "active-claim.json"), "utf8"));
-		workspace = JSON.parse(readFileSync(join(root, ".imm", "state", "workspace.json"), "utf8"));
-	} catch {
-		return false;
-	}
-	const currentTaskId =
-		workspace?.state?.current_working ||
-		(claim?.lifecycle_status === "active" ? claim?.task_id : null);
-	if (currentTaskId !== taskId || !claim) return false;
-	const branch = spawnSync("git", ["-C", root, "branch", "--show-current"], { encoding: "utf8" }).stdout.trim();
-	if (branch !== batchBranch) return false;
-	const childInBatch = existingBatch.children.find((c: { task_id: string }) => c.task_id === taskId);
-	if (!childInBatch || !(childInBatch.state === "enrolled" || childInBatch.state === "needs_human")) {
-		return false;
-	}
-	let rec: any = null;
-	try {
-		rec = JSON.parse(readFileSync(join(root, ".imm", "state", "tasks", `${taskId}.json`), "utf8"));
-	} catch {
-		return false;
-	}
-	const lineageHeads = [existingBatch.base_head].concat(
-		Array.isArray(existingBatch.commits) ? existingBatch.commits : [],
-	);
-	if (!lineageHeads.includes(rec.git_base_head)) return false;
-	if (claim.enrollment_event_id !== `enroll-${taskId}-${claim.created_at}`) return false;
-	const createdAt = Date.parse(claim.created_at);
-	if (!Number.isFinite(createdAt) || createdAt > Date.parse(existingBatch.updated_at)) return false;
-	if (claim.task_id !== taskId || claim.lifecycle_status !== "active") return false;
-	if (claim.intent_revision !== rec.intent_snapshot?.revision) return false;
-	if (claim.intent_content_hash !== rec.intent_ref?.content_hash) return false;
-	return true;
-}
-
-/** The HEAD a resumable batch must still sit on: its last child commit, or its base. */
-function expectedBatchHead(record: { base_head: string; commits?: unknown }): string {
-	const commits = Array.isArray(record.commits) ? (record.commits as string[]) : [];
-	return commits.length > 0 ? commits[commits.length - 1]! : record.base_head;
-}
-
 export interface PiBatchExecutionOptions {
 	root: string;
 	initiativeSlug: string;
@@ -169,309 +116,43 @@ export async function executePiUnattendedBatch(
 		};
 	}
 
-	if (!INITIATIVE_SLUG_PATTERN.test(initiativeSlug)) {
-		return {
-			state: "rejected",
-			reason: `invalid initiative slug: ${initiativeSlug}`,
-			recovery_action: "specify a valid initiative slug and retry in the current Host",
-		};
-	}
-
-	// Check for an existing active/paused batch for this initiative
-	const existingBatch = await findExistingActiveBatch(root, initiativeSlug);
-	if (existingBatch?.corrupt) {
-		return {
-			state: "blocked",
-			reason: `batch run state is unreadable or invalid: ${existingBatch.path}`,
-			recovery_action: "resolve or remove the invalid batch state file, then retry in the current Host",
-		};
-	}
-	const isResuming = existingBatch !== null;
-	const batchBranch = `imm/${initiativeSlug}`;
-
-	// 1. Active workspace claim check (pre-confirmation)
-	const workspace = await readWorkspaceState(root);
-	const claim = await readBackendClaim(root);
-	const activeTaskId = workspace.state.current_working || (claim?.lifecycle_status === "active" ? claim.task_id : null);
-	const isOwnClaim =
-		isResuming &&
-		activeTaskId !== null &&
-		syncIsOwnBatchClaim(root, existingBatch, activeTaskId, batchBranch);
-	if (activeTaskId && !isOwnClaim) {
-		return {
-			state: "blocked",
-			reason: `an active workspace claim already exists for task: ${activeTaskId}`,
-			recovery_action: "resolve or stop the active task before starting a batch in the current Host",
-		};
-	}
-
-	// 2. Git HEAD & read-only preflight check (pre-confirmation)
-	let baseHead: string;
-	try {
-		baseHead = await readGitHead(root);
-	} catch (err) {
-		return {
-			state: "rejected",
-			reason: err instanceof Error ? err.message : String(err),
-			recovery_action: "commit working changes and ensure a committed Git HEAD exists in the current Host",
-		};
-	}
-
-	const branchExists = spawnSync("git", ["-C", root, "show-ref", "--verify", "--quiet", `refs/heads/${batchBranch}`]);
-	if (branchExists.status === 0 && !isResuming) {
-		return {
-			state: "rejected",
-			reason: `branch preflight failed: branch refs/heads/${batchBranch} already exists`,
-			recovery_action: "delete or rename the conflicting branch, or commit working changes in the current Host",
-		};
-	}
-
-	// review-batch-resume-porcelain-leading-space: parse the NUL-delimited v1
-	// format. Trimming the whole output first shifted the fixed status columns of
-	// an unstaged modification (" M path") and silently mis-scoped the path.
-	const statusProc = spawnSync("git", ["-C", root, "status", "--porcelain=v1", "-z", "--no-renames", "--untracked-files=all"], { encoding: "utf8" });
-	if (statusProc.status !== 0) {
-		return {
-			state: "rejected",
-			reason: "branch preflight failed: git status is unreadable",
-			recovery_action: "check the repository integrity and retry in the current Host",
-		};
-	}
-	const statusEntries: Array<{ code: string; path: string }> = [];
-	// -z with --no-renames lists each side of a rename as its own D/A entry, so a
-	// cross-scope rename cannot hide the out-of-scope source deletion.
-	for (const entry of statusProc.stdout.split("\0")) {
-		if (entry.length === 0) continue;
-		statusEntries.push({ code: entry.slice(0, 2), path: entry.slice(3) });
-	}
-	if (statusEntries.length > 0) {
-		if (!isResuming) {
-			return {
-				state: "rejected",
-				reason: "branch preflight failed: working tree is dirty",
-				recovery_action: "delete or rename the conflicting branch, or commit working changes in the current Host",
-			};
-		}
-		// Kernel projections accept staged in-flight work inside the active child's
-		// authorized scope, and reject unstaged/untracked bytes or out-of-scope paths.
-		// Mirror that rule here so a doomed resume fails closed with a stable reason
-		// instead of surfacing an unstructured projection error.
-		// `settled` belongs here: Kernel settlement happens before the batch commits the
-		// child, and settlement clears the live state record, so a crash in that window
-		// resumes into a settled child whose staged work is legitimate.
-		const inFlightChild = existingBatch.children.find(
-			(c: { state: string }) => c.state === "enrolled" || c.state === "needs_human" || c.state === "settled",
-		);
-		let authorizedScope: string[] = [];
-		if (inFlightChild) {
-			// Derive the scope from the Kernel TaskRecord intent snapshot first: a
-			// frozen/archived sidecar must not shrink the authorized scope to empty.
-			let recordedIntentPath: string | undefined;
-			try {
-				const recordRead = await readTaskRecord(root, inFlightChild.task_id);
-				authorizedScope = recordRead.record?.intent_snapshot?.scope_hint ?? [];
-				recordedIntentPath = recordRead.record?.intent_ref?.path;
-			} catch {
-				// fallback below
-			}
-			if (authorizedScope.length === 0 && inFlightChild.state === "settled") {
-				// A settled child has no live state record; its authority is the immutable
-				// terminal audit pair. Read-only, so a refusal still writes nothing.
-				try {
-					const settled = await readSettledTaskRecord(root, inFlightChild.task_id);
-					authorizedScope = settled?.scope_hint ?? [];
-					recordedIntentPath = recordedIntentPath ?? settled?.intent_path;
-				} catch {
-					// fallback below
-				}
-			}
-			if (authorizedScope.length === 0) {
-				// Resolve through the TaskRecord's own intent_ref path: after freeze the
-				// sidecar lives under docs/plans/archive/, so the pre-freeze default path
-				// is either missing or stale.
-				try {
-					const read = await readTaskIntent(root, inFlightChild.task_id, recordedIntentPath);
-					authorizedScope = read.intent.scope_hint ?? [];
-				} catch {
-					// fallback below
-				}
-			}
-			if (authorizedScope.length === 0) {
-				return {
-					state: "rejected",
-					reason: "branch preflight failed: cannot derive the in-flight child's authorized scope",
-					recovery_action: "resolve the child's intent record, then retry in the current Host",
-				};
-			}
-		}
-		const dirtyBytes = statusEntries.some(({ code }) => code === "??" || code[1] !== " ");
-		if (dirtyBytes) {
-			return {
-				state: "rejected",
-				reason: "branch preflight failed: working tree has unstaged or untracked changes",
-				recovery_action: "stage the in-flight changes with git add, then retry in the current Host",
-			};
-		}
-		let outsideScope = false;
-		for (const { path } of statusEntries) {
-			if (path.startsWith(".imm/") || path.startsWith("docs/plans/") || path.startsWith("docs/specs/")) continue;
-			// Scope entries may be exact files, directories, or globs; delegate the
-			// boundary matching to the Kernel's own helper instead of exact includes.
-			let matched = false;
-			for (const scopePath of authorizedScope) {
-				if (await pathMatchesScope(path, scopePath)) {
-					matched = true;
-					break;
-				}
-			}
-			if (!matched) {
-				outsideScope = true;
-				break;
-			}
-		}
-		if (outsideScope) {
-			return {
-				state: "rejected",
-				reason: "branch preflight failed: working tree has changes outside the authorized child scope",
-				recovery_action: "commit or unstage changes outside the active task scope, then retry in the current Host",
-			};
-		}
-	}
-
-	// 3. Project or reconstruct batch plan (pre-confirmation)
+	// 1. Host-independent batch preflight: claim ownership, branch availability,
+	// working-tree cleanliness against the authorized scope, recovery children,
+	// plan digest, and base HEAD are one shared projection, so neither Host
+	// re-implements a batch decision.
 	const now = new Date().toISOString();
-	let recoveryChildren: BatchPlanChild[] = [];
-	let planDigest: string;
-	let confirmChildrenDetails: string[] = [];
-	let confirmExcludedDetails: string[] = [];
-	const recoveryRiskByTask = new Map<string, string>();
-	let budget = existingBatch ? existingBatch.budget : { max_children: 10, deadline_at: new Date(Date.now() + 8 * 3600 * 1000).toISOString(), qa_failure_limit: 2 };
-
-	if (isResuming) {
-		// Reconstruct unified recovery plan from existingBatch.children
-		try {
-			recoveryChildren = await Promise.all(
-				existingBatch.children.map(async (c: any) => {
-					const intentPath = `docs/plans/${c.task_id}.intent.json`;
-					let read = { intent: { revision: 1, risk: "material" }, content_hash: "" };
-					try {
-						const taskRecordRead = await readTaskRecord(root, c.task_id);
-						if (taskRecordRead.record) {
-							read = {
-								intent: taskRecordRead.record.intent_snapshot,
-								content_hash: taskRecordRead.record.intent_ref.content_hash,
-							};
-						} else {
-							read = (await readTaskIntent(root, c.task_id, intentPath)) as any;
-						}
-					} catch {
-						const archivePath = `docs/plans/archive/${c.task_id}.intent.json`;
-						try {
-							read = (await readTaskIntent(root, c.task_id, archivePath)) as any;
-						} catch {
-							read = (await readTaskIntent(root, c.task_id, intentPath)) as any;
-						}
-					}
-					// Keep the risk captured by the authoritative read above; a stale
-					// reconstructed path must never fabricate a risk later.
-					recoveryRiskByTask.set(c.task_id, read.intent?.risk ?? "material");
-					const isDone = c.state === "committed" || c.state === "settled";
-					return {
-						task_id: c.task_id,
-						slice_id: c.slice_id,
-						status: isDone ? ("already_settled" as const) : ("enrollable" as const),
-						blocked_by: [...c.blocked_by],
-						reason: c.reason ?? null,
-						intent_path: intentPath,
-						intent_revision: read.intent.revision,
-						intent_content_hash: read.content_hash,
-					};
-				}),
-			);
-		} catch (err) {
-			return {
-				state: "rejected",
-				reason: `failed to project batch plan: ${err instanceof Error ? err.message : String(err)}`,
-				recovery_action: "review initiative issues and planning sidecars in the current Host",
-			};
-		}
-		planDigest = await computeBatchPlanDigest(recoveryChildren);
-		for (const c of recoveryChildren) {
-			// Use the risk captured from the authoritative recovery read; never fall
-			// back to a fabricated "material" when the reconstructed sidecar path is
-			// stale (freeze_artifacts archives the active sidecar).
-			const childRisk = recoveryRiskByTask.get(c.task_id) ?? "material";
-			if (c.status === "already_settled") {
-				confirmChildrenDetails.push(`  - ${c.task_id} (${c.slice_id}) [risk: ${childRisk}] [status: completed]`);
-			} else {
-				confirmChildrenDetails.push(`  - ${c.task_id} (${c.slice_id}) [risk: ${childRisk}] [status: pending execution]`);
-			}
-		}
-	} else {
-		let plan: BatchPlan;
-		try {
-			plan = await projectBatchPlan(
-				root,
-				initiativeSlug,
-				{ confirmation_time: now },
-				options.readInitiative,
-			);
-		} catch (err) {
-			const msg = err instanceof Error ? err.message : String(err);
-			if (msg.includes("has no enrollable children")) {
-				return {
-					state: "rejected",
-					reason: "empty enrollable child set: no enrollable child tasks found in the initiative plan",
-					recovery_action: "ensure the initiative has uncompleted, non-critical child tasks in the current Host",
-				};
-			}
-			return {
-				state: "rejected",
-				reason: `failed to project batch plan: ${msg}`,
-				recovery_action: "review initiative issues and planning sidecars in the current Host",
-			};
-		}
-
-		if (!plan.enrollable.length) {
-			return {
-				state: "rejected",
-				reason: "empty enrollable child set: no enrollable child tasks found in the initiative plan",
-				recovery_action: "ensure the initiative has uncompleted, non-critical child tasks in the current Host",
-			};
-		}
-
-		budget = plan.budget;
-		const enrollableChildById = new Map(plan.enrollable.map((c) => [c.task_id, c]));
-		recoveryChildren = plan.children
-			.filter((c) => c.status === "enrollable")
-			.map((c) => {
-				const digestChild = enrollableChildById.get(c.task_id);
-				return {
-					...c,
-					blocked_by: digestChild ? [...digestChild.blocked_by] : c.blocked_by,
-				};
-			});
-		planDigest = await computeBatchPlanDigest(plan.enrollable);
-
-		for (const c of plan.children.filter((item) => item.status === "enrollable")) {
-			let childRisk = "material";
-			try {
-				const intentRead = await readTaskIntent(root, c.task_id, c.intent_path ?? undefined);
-				childRisk = intentRead.intent.risk;
-			} catch {
-				// fallback
-			}
-			confirmChildrenDetails.push(`  - ${c.task_id} (${c.slice_id}) [risk: ${childRisk}]`);
-		}
-		confirmExcludedDetails = plan.children.filter((c) => c.status !== "enrollable").map((c) => `  - ${c.task_id} (${c.slice_id}): ${c.reason ?? c.status}`);
+	const preflight = await projectBatchPreflight({
+		root,
+		initiative_slug: initiativeSlug,
+		now,
+		readInitiative: options.readInitiative,
+	});
+	if (!preflight.ok) {
+		return { state: preflight.state, reason: preflight.reason, recovery_action: preflight.recovery_action };
 	}
+	const isResuming = preflight.projection.is_resuming;
+	const batchBranch = preflight.projection.batch_branch;
+	const existingBatch = preflight.projection.existing_batch;
+	const baseHead = preflight.projection.base_head;
+	const budget = preflight.projection.budget;
+	const planDigest = preflight.projection.plan_digest;
+	const recoveryChildren = preflight.projection.recovery_children;
+	const confirmChildrenDetails = recoveryChildren.map((c) => {
+		const childRisk = preflight.projection.risk_by_task[c.task_id] ?? "material";
+		return c.status === "already_settled"
+			? `  - ${c.task_id} (${c.slice_id}) [risk: ${childRisk}] [status: completed]`
+			: `  - ${c.task_id} (${c.slice_id}) [risk: ${childRisk}] [status: pending execution]`;
+	});
+	const confirmExcludedDetails = preflight.projection.excluded.map(
+		(c) => `  - ${c.task_id} (${c.slice_id}): ${c.reason}`,
+	);
 
 	// ADR-0005 Decision 1: one Batch Authorization spans the work it authorizes,
 	// so its expiry is the deadline the literal user confirmed rather than a fixed
 	// window that lapses while a child is parked on a foreground Review.
-	const isExistingExpired = isResuming && Date.parse(existingBatch.authorization_expires_at) <= Date.now();
-	const expiresAt = isResuming && !isExistingExpired && existingBatch.batch_state === "running"
-		? existingBatch.authorization_expires_at
+	const isExistingExpired = isResuming && Date.parse(existingBatch!.authorization_expires_at) <= Date.now();
+	const expiresAt = isResuming && !isExistingExpired && existingBatch!.batch_state === "running"
+		? existingBatch!.authorization_expires_at
 		: budget.deadline_at;
 
 	// ADR-0005 Decision 1: a Batch Authorization is one literal-user Enrollment
@@ -479,7 +160,7 @@ export async function executePiUnattendedBatch(
 	// of opening a second native gate. Anything that no longer binds falls through
 	// to the gate below, which names the reason and demands the fresh confirmation.
 	const reuseBlockers: string[] = [];
-	if (isResuming) {
+	if (isResuming && existingBatch) {
 		if (isExistingExpired) reuseBlockers.push("batch_authorization_expired");
 		if (existingBatch.batch_state !== "running") reuseBlockers.push("batch_not_running");
 		if (existingBatch.plan_digest !== planDigest) reuseBlockers.push("batch_plan_digest_changed");
@@ -548,16 +229,13 @@ export async function executePiUnattendedBatch(
 		}
 	}
 
-	// 5. Post-confirmation Revalidation (Workspace claim, Plan drift, Git HEAD)
-	const postWorkspace = await readWorkspaceState(root);
-	const postClaim = await readBackendClaim(root);
-	const postActiveTaskId = postWorkspace.state.current_working || (postClaim?.lifecycle_status === "active" ? postClaim.task_id : null);
+	// 5. Post-confirmation revalidation: the same shared decisions, re-verified
+	// after the native gate and after the asynchronous plan read.
+	const postActiveTaskId = readActiveClaimTaskId(root);
 	// Re-verify the full claim identity now, not the pre-confirmation snapshot: a
 	// claim swapped for the same child during confirmation must stay blocked.
 	const postIsOwnClaim =
-		isResuming &&
-		postActiveTaskId !== null &&
-		syncIsOwnBatchClaim(root, existingBatch, postActiveTaskId, batchBranch);
+		isResuming && postActiveTaskId !== null && isOwnBatchClaim(root, existingBatch!, postActiveTaskId, batchBranch);
 	if (postActiveTaskId && !postIsOwnClaim) {
 		return {
 			state: "blocked",
@@ -566,97 +244,34 @@ export async function executePiUnattendedBatch(
 		};
 	}
 
-	if (isResuming) {
-		let recheckedDigest: string;
-		try {
-			const recheckedChildren = await Promise.all(
-				existingBatch.children.map(async (c: any) => {
-					const intentPath = `docs/plans/${c.task_id}.intent.json`;
-					let read = { intent: { revision: 1, risk: "material" }, content_hash: "" };
-					try {
-						const taskRecordRead = await readTaskRecord(root, c.task_id);
-						if (taskRecordRead.record) {
-							read = {
-								intent: taskRecordRead.record.intent_snapshot,
-								content_hash: taskRecordRead.record.intent_ref.content_hash,
-							};
-						} else {
-							read = (await readTaskIntent(root, c.task_id, intentPath)) as any;
-						}
-					} catch {
-						const archivePath = `docs/plans/archive/${c.task_id}.intent.json`;
-						try {
-							read = (await readTaskIntent(root, c.task_id, archivePath)) as any;
-						} catch {
-							read = (await readTaskIntent(root, c.task_id, intentPath)) as any;
-						}
-					}
-					const isDone = c.state === "committed" || c.state === "settled";
-					return {
-						task_id: c.task_id,
-						slice_id: c.slice_id,
-						status: isDone ? ("already_settled" as const) : ("enrollable" as const),
-						blocked_by: [...c.blocked_by],
-						reason: c.reason ?? null,
-						intent_path: intentPath,
-						intent_revision: read.intent.revision,
-						intent_content_hash: read.content_hash,
-					};
-				}),
-			);
-			recheckedDigest = await computeBatchPlanDigest(recheckedChildren);
-		} catch (err) {
-			return {
-				state: "rejected",
-				reason: "batch plan became unreadable after native confirmation",
-				recovery_action: "review the current workspace and retry through a fresh native gate in the current Host",
-			};
-		}
-		if (recheckedDigest !== planDigest) {
-			return {
-				state: "rejected",
-				reason: "batch plan changed after native confirmation",
-				recovery_action: "review the current workspace and retry through a fresh native gate in the current Host",
-			};
-		}
-	} else {
-		let revalidatedPlan: BatchPlan;
-		try {
-			revalidatedPlan = await projectBatchPlan(
-				root,
-				initiativeSlug,
-				{ confirmation_time: now },
-				options.readInitiative,
-			);
-		} catch (err) {
-			return {
-				state: "rejected",
-				reason: "batch plan became unreadable after native confirmation",
-				recovery_action: "review the current workspace and retry through a fresh native gate in the current Host",
-			};
-		}
-
-		const revalidatedDigest = await computeBatchPlanDigest(revalidatedPlan.enrollable);
-		if (revalidatedDigest !== planDigest) {
-			return {
-				state: "rejected",
-				reason: "batch plan changed after native confirmation",
-				recovery_action: "review the current workspace and retry through a fresh native gate in the current Host",
-			};
-		}
+	const drift = await projectBatchDrift({
+		root,
+		initiative_slug: initiativeSlug,
+		now,
+		readInitiative: options.readInitiative,
+	});
+	if (!drift.plan_digest) {
+		return {
+			state: "rejected",
+			reason: "batch plan became unreadable after native confirmation",
+			recovery_action: "review the current workspace and retry through a fresh native gate in the current Host",
+		};
 	}
-
-	let postHead: string;
-	try {
-		postHead = await readGitHead(root);
-	} catch (err) {
+	if (drift.plan_digest !== planDigest) {
+		return {
+			state: "rejected",
+			reason: "batch plan changed after native confirmation",
+			recovery_action: "review the current workspace and retry through a fresh native gate in the current Host",
+		};
+	}
+	if (drift.base_head === null) {
 		return {
 			state: "rejected",
 			reason: "Git repository became unreadable after native confirmation",
 			recovery_action: "review the current workspace and retry through a fresh native gate in the current Host",
 		};
 	}
-	if (postHead !== baseHead) {
+	if (drift.base_head !== baseHead) {
 		return {
 			state: "rejected",
 			reason: "Git HEAD moved after native confirmation",
@@ -669,13 +284,11 @@ export async function executePiUnattendedBatch(
 	// enrollment completing during the Initiative read would otherwise reach
 	// authority issuance and let startBatch create the branch and batch state,
 	// while Claude returns blocked. Same check, same order, same reason as Claude.
-	const finalWorkspace = await readWorkspaceState(root);
-	const finalClaim = await readBackendClaim(root);
-	const finalActiveTaskId = finalWorkspace.state.current_working || (finalClaim?.lifecycle_status === "active" ? finalClaim.task_id : null);
+	const finalActiveTaskId = readActiveClaimTaskId(root);
 	const finalIsOwnClaim =
 		isResuming &&
 		finalActiveTaskId !== null &&
-		syncIsOwnBatchClaim(root, existingBatch, finalActiveTaskId, batchBranch);
+		isOwnBatchClaim(root, existingBatch!, finalActiveTaskId, batchBranch);
 	if (finalActiveTaskId && !finalIsOwnClaim) {
 		return {
 			state: "blocked",
@@ -711,7 +324,7 @@ export async function executePiUnattendedBatch(
 		initiative_slug: initiativeSlug,
 		plan_digest: planDigest,
 		branch: batchBranch,
-		base_head: isResuming ? existingBatch.base_head : baseHead,
+		base_head: existingBatch ? existingBatch.base_head : baseHead,
 		budget,
 		actor_id: "user",
 		confirmation_ref: confirmation,
@@ -770,10 +383,10 @@ export async function executePiUnattendedBatch(
 			return projectAssuranceForTask(taskRoot, taskId);
 		},
 		ownsTaskClaim: (taskId) => {
-			if (isResuming && taskId === activeTaskId) {
+			if (isResuming && taskId === readActiveClaimTaskId(root)) {
 				// Re-verify the CURRENT claim identity synchronously: a claim swapped
 				// during confirmation is never adopted.
-				return syncIsOwnBatchClaim(root, existingBatch, taskId, batchBranch);
+				return isOwnBatchClaim(root, existingBatch!, taskId, batchBranch);
 			}
 			return batchRegistry.isChildConsumed(capability, taskId);
 		},
@@ -806,7 +419,7 @@ export async function executePiUnattendedBatch(
 		capability,
 		children: recoveryChildren,
 		plan_digest: planDigest,
-		base_head: isResuming ? existingBatch.base_head : baseHead,
+		base_head: existingBatch ? existingBatch.base_head : baseHead,
 		confirmation_time: now,
 		authorization_expires_at: expiresAt,
 		budget,
