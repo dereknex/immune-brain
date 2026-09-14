@@ -54,6 +54,9 @@ import {
 	captureStagedIntent,
 	restoreStagedIntent as restoreStagedIntentShared,
 } from "../staged_intent";
+import { projectTerminalTrackerState } from "../assurance/coordinator";
+import { runGithubTrackerOperation } from "../github_issue_tracker";
+import { readTaskTombstone } from "../kernel/backend_claim";
 import {
 	projectBatchPreflight,
 	projectBatchDrift,
@@ -585,11 +588,41 @@ export class ClaudeRuntime {
 	}
 
 	async advance(taskId: string, signal?: AbortSignal) {
-		return this.coordinator.advance(taskId, { cwd: this.cwd }, signal);
+		return this.withTerminalTracker(
+			taskId,
+			await this.coordinator.advance(taskId, { cwd: this.cwd }, signal),
+		);
 	}
 
 	async submitReview(taskId: string, verdictInput: unknown) {
-		return submitClaudeReview(this.host, this.coordinator, { cwd: this.cwd }, taskId, verdictInput);
+		return this.withTerminalTracker(
+			taskId,
+			await submitClaudeReview(this.host, this.coordinator, { cwd: this.cwd }, taskId, verdictInput),
+		);
+	}
+
+	/**
+	 * Post-settlement GitHub tracker projection: the same shared step the Pi Host
+	 * runs, so an opted-in terminal projection no longer depends on which Host
+	 * settled the task.
+	 *
+	 * Transport, never authority: the shared projection derives nothing unless the
+	 * Kernel already shows a fresh claimless done/stopped task with its exact
+	 * terminal tombstone, a tracker failure is reported as `tracker` alongside the
+	 * authoritative result rather than as evidence or a blocker, and it never
+	 * repeats the settling mutation.
+	 */
+	private async withTerminalTracker<T>(taskId: string, result: T): Promise<T> {
+		if (result === null || typeof result !== "object") return result;
+		const projection = await this.status(taskId);
+		const tracker = await projectTerminalTrackerState({
+			root: this.cwd,
+			task_id: taskId,
+			projection,
+			tombstone: readTaskTombstone(this.cwd, taskId),
+			markTerminal: (root, input) => runGithubTrackerOperation(root, { op: "mark-terminal", ...input }),
+		});
+		return tracker ? ({ ...(result as object), tracker } as T) : result;
 	}
 
 	/**
@@ -756,7 +789,9 @@ export class ClaudeRuntime {
 				op === "authorize_rework" ||
 				op === "approve_breaking_intent_revision"
 			) stagePlanningArtifactTransition(this.cwd, result.record);
-			return result;
+			// A stop settles the task: project the terminal tracker state exactly as
+			// the Pi Host does after its own settlement.
+			return this.withTerminalTracker(taskId, result);
 		} catch (error) {
 			if (stagedSnapshot) {
 				const current = await readTaskRecord(this.cwd, taskId);

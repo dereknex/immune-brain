@@ -408,15 +408,22 @@ test("host hooks never project active state and publish terminal projection only
 	expect(enrollment).not.toContain("github_issue_tracker");
 	expect(stub).not.toContain("markGithubTaskActive");
 	expect(stub).not.toContain("mark-active");
-	// Terminal projection stays gated behind fresh Assurance plus exact tombstone reads.
+	// Terminal projection stays gated behind fresh Assurance plus exact tombstone
+	// reads. The projection step itself is shared with the Claude Host, so the
+	// gate is: fresh projection, then the exact tombstone, then that shared step,
+	// which is the only thing that reaches the tracker.
 	const enrichment = work.indexOf("async function enrichAssuranceResult");
 	const freshProjection = work.indexOf("await projectAssuranceState", enrichment);
-	const tombstoneRead = work.indexOf("await readTaskTombstone", freshProjection);
-	const terminalProjection = work.indexOf("await markGithubTaskTerminal", tombstoneRead);
+	const sharedProjection = work.indexOf("projectTerminalTrackerState({", freshProjection);
+	const tombstoneRead = work.indexOf("await readTaskTombstone", sharedProjection);
+	const trackerCall = work.indexOf("markGithubTaskTerminal", tombstoneRead);
 	expect(enrichment).toBeGreaterThan(-1);
 	expect(freshProjection).toBeGreaterThan(enrichment);
-	expect(tombstoneRead).toBeGreaterThan(freshProjection);
-	expect(terminalProjection).toBeGreaterThan(tombstoneRead);
+	expect(sharedProjection).toBeGreaterThan(freshProjection);
+	// The exact tombstone is read inside the shared step, and the tracker is only
+	// reachable through the step that forwards to it.
+	expect(tombstoneRead).toBeGreaterThan(sharedProjection);
+	expect(trackerCall).toBeGreaterThan(tombstoneRead);
 });
 
 test("parseAssuranceVerdict rejects a verdict bound to another snapshot", () => {

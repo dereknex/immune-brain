@@ -8,6 +8,7 @@
 export {
 	AssuranceCoordinator,
 	deriveGithubTerminalProjectionInput,
+	projectTerminalTrackerState,
 	deriveQaJobTimeoutMs,
 	classifyReviewWorkload,
 	reviewTurnBudget,

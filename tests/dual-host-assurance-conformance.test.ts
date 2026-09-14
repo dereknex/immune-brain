@@ -25,6 +25,7 @@ import {
 	restoreStagedIntent,
 } from "../plugins/immune-brain/runtime/staged_intent";
 import { deriveAuthorizationOperation } from "../plugins/immune-brain/runtime/authorization_operation";
+import { projectTerminalTrackerState } from "../plugins/immune-brain/runtime/assurance/coordinator";
 import {
 	LITERAL_USER_ACTOR_ID,
 	canonicalActorId,
@@ -2219,6 +2220,76 @@ describe("dual-host assurance conformance", () => {
 			const source = readFileSync(resolve(path), "utf8");
 			expect({ path, canonical: source.includes("LITERAL_USER_ACTOR_ID") }).toEqual({ path, canonical: true });
 			expect({ path, hardcoded: /actor_id:\s*"user"/.test(source) }).toEqual({ path, hardcoded: false });
+		}
+	});
+
+	// S13 GHP-3: the post-settlement tracker projection reports beside the
+	// authoritative result. A tracker failure never becomes evidence, a blocker,
+	// or a reason to repeat the settling Kernel mutation.
+	test("reports a tracker failure beside settlement without touching Kernel state", async () => {
+		const root = mkdtempSync(join(tmpdir(), "imm-terminal-tracker-"));
+		try {
+			execFileSync("git", ["init", "-q", "-b", "main"], { cwd: root });
+			mkdirSync(join(root, ".imm", "state"), { recursive: true });
+			const settled = {
+				claim: null,
+				projection: { lifecycle: "done" },
+			} as never;
+			const tombstone = {
+				task_id: "terminal-tracker-task",
+				lifecycle_status: "terminal",
+				terminal_lifecycle: "done",
+				terminal_event_id: "evt-terminal-tracker",
+			} as never;
+			const stateBefore = readdirSync(join(root, ".imm", "state")).sort();
+
+			const tracker = await projectTerminalTrackerState({
+				root,
+				task_id: "terminal-tracker-task",
+				projection: settled,
+				tombstone,
+				markTerminal: async () => {
+					throw new Error("gh transport unavailable");
+				},
+			});
+			// Reported, not thrown: the settlement result stays authoritative.
+			expect(tracker).toMatchObject({
+				operation: "mark-terminal",
+				status: "retryable_failure",
+				association_found: false,
+			});
+			// Nothing was written, replayed, or reconciled: zero Kernel writes.
+			expect(readdirSync(join(root, ".imm", "state")).sort()).toEqual(stateBefore);
+			expect(execFileSync("git", ["status", "--porcelain"], { cwd: root, encoding: "utf8" }).trim()).toBe("");
+
+			// A non-settled projection projects nothing at all, so the step cannot
+			// become a blocker for a task that is still active.
+			let calls = 0;
+			const absent = await projectTerminalTrackerState({
+				root,
+				task_id: "terminal-tracker-task",
+				projection: { claim: { task_id: "terminal-tracker-task" }, projection: { lifecycle: "active" } } as never,
+				tombstone,
+				markTerminal: async () => {
+					calls += 1;
+					throw new Error("must not be called");
+				},
+			});
+			expect(absent).toBeUndefined();
+			expect(calls).toBe(0);
+
+			// Both Hosts settle through the one shared step.
+			for (const path of [
+				"plugins/immune-brain/runtime/claude/kernel_ports.ts",
+				"plugins/immune-brain/.pi-extension/imm-canary-work.ts",
+			]) {
+				expect({ path, shared: readFileSync(resolve(path), "utf8").includes("projectTerminalTrackerState") }).toEqual({
+					path,
+					shared: true,
+				});
+			}
+		} finally {
+			rmSync(root, { recursive: true, force: true });
 		}
 	});
 });

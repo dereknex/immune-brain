@@ -103,4 +103,24 @@ describe("Managed native authority failure contract", () => {
 		);
 		expect(protocol).toContain("不得把多个 foreground Agent 假定为并发 batch");
 	});
+
+	test("a post-settlement tracker failure is not a managed authority failure", () => {
+		// The tracker is transport: its failure block is a tracker result carried
+		// beside the authoritative settlement, never a Managed authority failure
+		// kind, and never advice to repeat a Kernel mutation.
+		const contract = read("plugins/immune-brain/runtime/assurance/coordinator.ts");
+		expect(contract).toContain("tracker observation failed after authoritative settlement");
+		expect(contract).not.toMatch(/tracker[^\n]*authority_kind/);
+		// The contract the agent actually reads states the separation, and no
+		// contract turns a tracker failure into a blocker or into advice to repeat
+		// the settling mutation.
+		expect(read("plugins/immune-brain/dist/imm-loop.md")).toContain("distinct from the post-settlement tracker");
+		for (const path of CONTRACTS) {
+			expect({ path, repeats: /tracker[^\n]{0,80}(retry the (mutation|settlement)|is a blocker)/i.test(read(path)) }).toEqual({
+				path,
+				repeats: false,
+			});
+		}
+	});
+
 });

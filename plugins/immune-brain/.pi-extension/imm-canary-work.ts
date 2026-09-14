@@ -82,6 +82,7 @@ import {
 	classifyReviewWorkload,
 	deriveQaJobTimeoutMs,
 	deriveGithubTerminalProjectionInput,
+	projectTerminalTrackerState,
 	parseAssuranceVerdict,
 	snapshotDigest,
 	QA_JOB_TIMEOUT_SECONDS,
@@ -1731,24 +1732,15 @@ async function enrichAssuranceResult(
 		: projection.projection;
 	let tracker: Awaited<ReturnType<typeof markGithubTaskTerminal>> | undefined;
 	await reconcileRefsQuietly(ctx.cwd);
-	if (!projection.error) {
-		try {
-			const terminalInput = deriveGithubTerminalProjectionInput(
-				taskId,
-				projection,
-				await readTaskTombstone(ctx.cwd, taskId),
-			);
-			if (terminalInput) tracker = await markGithubTaskTerminal(ctx.cwd, terminalInput);
-		} catch {
-			tracker = {
-				contract: "immune_brain/github_issue_tracker_result/v1",
-				operation: "mark-terminal",
-				status: "retryable_failure",
-				association_found: false,
-				message: "tracker observation failed after authoritative settlement",
-			};
-		}
-	}
+	// One shared projection: the Claude Host runs the same step, so the opted-in
+	// terminal tracker outcome does not depend on which Host settled the task.
+	tracker = await projectTerminalTrackerState({
+		root: ctx.cwd,
+		task_id: taskId,
+		projection,
+		tombstone: await readTaskTombstone(ctx.cwd, taskId),
+		markTerminal: (root, input) => markGithubTaskTerminal(root, input),
+	});
 	return {
 		...result,
 		task_state: taskState,

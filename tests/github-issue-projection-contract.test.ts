@@ -1,4 +1,7 @@
 import { describe, expect, it } from "bun:test";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+import { deriveGithubTerminalProjectionInput, projectTerminalTrackerState } from "../plugins/immune-brain/runtime/assurance/coordinator.ts";
 import { spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -416,5 +419,113 @@ describe("GitHub Issue presentation contract", () => {
 			expect(gh.createdNumbers.slice(1)).toEqual(published.execution?.issue_order);
 			expect(published.execution?.order).toEqual(["widget-a", "widget-b"]);
 		});
+	});
+});
+
+describe("post-settlement tracker projection", () => {
+	const TASK = "tracker-terminal-task";
+	const TOMBSTONE = {
+		task_id: TASK,
+		lifecycle_status: "terminal",
+		terminal_lifecycle: "done",
+		terminal_event_id: "evt-tracker-terminal",
+	};
+	const settled = {
+		claim: null,
+		projection: { lifecycle: "done" },
+	} as never;
+
+	it("derives the same terminal input the Pi Host derives and forwards it verbatim", async () => {
+		const seen: Array<{ root: string; task_id: string; phase: string; terminal_event_id: string }> = [];
+		const result = await projectTerminalTrackerState({
+			root: "/repo",
+			task_id: TASK,
+			projection: settled,
+			tombstone: TOMBSTONE,
+			markTerminal: async (root, input) => {
+				seen.push({ root, ...input });
+				return {
+					contract: "immune_brain/github_issue_tracker_result/v1",
+					operation: "mark-terminal",
+					status: "not_tracked",
+					association_found: false,
+					message: "no tracker association",
+				};
+			},
+		});
+		// One derivation: the projection input is exactly the shared denominator of
+		// the Pi Host's own call, so both Hosts project the same terminal state.
+		expect(seen).toEqual([
+			{ root: "/repo", ...deriveGithubTerminalProjectionInput(TASK, settled, TOMBSTONE as never) },
+		]);
+		expect(seen[0].phase).toBe("done");
+		expect(result?.operation).toBe("mark-terminal");
+	});
+
+	it("projects nothing unless the Kernel already shows a settled, claimless task", async () => {
+		let calls = 0;
+		const markTerminal = async (): Promise<never> => {
+			calls += 1;
+			throw new Error("must not be called");
+		};
+		const cases: Array<[string, unknown, unknown]> = [
+			["projection error", { error: "no claim" } as never, TOMBSTONE],
+			["live claim", { claim: { task_id: TASK }, projection: { lifecycle: "done" } } as never, TOMBSTONE],
+			["active task", { claim: null, projection: { lifecycle: "active" } } as never, TOMBSTONE],
+			["missing tombstone", settled, null],
+			["non-terminal tombstone", settled, { ...TOMBSTONE, lifecycle_status: "active" }],
+			["mismatched tombstone", settled, { ...TOMBSTONE, task_id: "other" }],
+			[
+				"lifecycle mismatch",
+				{ claim: null, projection: { lifecycle: "stopped" } } as never,
+				TOMBSTONE,
+			],
+		];
+		for (const [label, projection, tombstone] of cases) {
+			const result = await projectTerminalTrackerState({
+				root: "/repo",
+				task_id: TASK,
+				projection: projection as never,
+				tombstone: tombstone as never,
+				markTerminal,
+			});
+			expect({ label, result }).toEqual({ label, result: undefined });
+		}
+		expect(calls).toBe(0);
+	});
+
+	it("reports a tracker failure beside the authoritative result instead of failing the settlement", async () => {
+		const failure = await projectTerminalTrackerState({
+			root: "/repo",
+			task_id: TASK,
+			projection: settled,
+			tombstone: TOMBSTONE,
+			markTerminal: async () => {
+				throw new Error("gh exited 1");
+			},
+		});
+		// The settlement already happened in the Kernel; the tracker outcome is
+		// transport, so it is reported and never retried as authority.
+		expect(failure).toEqual({
+			contract: "immune_brain/github_issue_tracker_result/v1",
+			operation: "mark-terminal",
+			status: "retryable_failure",
+			association_found: false,
+			message: "tracker observation failed after authoritative settlement",
+		});
+	});
+
+	it("keeps both Hosts on that one shared projection", () => {
+		// The Claude Host settles through advance, submitReview, and authorize, and
+		// every one of those paths runs the shared step; the Pi Host runs it after
+		// its own settlement. A Host that stops calling it, or that invents its own
+		// tracker step, fails here.
+		const claude = readFileSync(resolve("plugins/immune-brain/runtime/claude/kernel_ports.ts"), "utf8");
+		const piWork = readFileSync(resolve("plugins/immune-brain/.pi-extension/imm-canary-work.ts"), "utf8");
+		expect(claude).toContain("projectTerminalTrackerState");
+		expect(piWork).toContain("projectTerminalTrackerState");
+		expect(claude).toContain("runGithubTrackerOperation(root, { op: \"mark-terminal\"");
+		const wrapper = claude.slice(claude.indexOf("private async withTerminalTracker"));
+		expect(wrapper.slice(0, wrapper.indexOf("\n\t}"))).not.toMatch(/applyOrdinary|advancePiTask|makeCapability|mintCapability/);
 	});
 });

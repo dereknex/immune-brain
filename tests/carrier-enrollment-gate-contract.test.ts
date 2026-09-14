@@ -10,6 +10,8 @@
 import { describe, expect, it } from "bun:test";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
+import { deriveGithubTerminalProjectionInput } from "../plugins/immune-brain/runtime/assurance/coordinator";
+import { resolve } from "node:path";
 
 const REPO_ROOT = resolve(import.meta.dir, "..");
 const read = (path: string) => readFileSync(resolve(REPO_ROOT, path), "utf-8");
@@ -73,4 +75,41 @@ describe("Initiative carrier Enrollment gate", () => {
 			"For a GitHub-carried Initiative, `tracker_projection_failed` or\n`awaiting_user_initiative_confirmation` blocks that Enrollment until the same\ncomplete carrier batch succeeds",
 		);
 	});
+
+	it("performs no GitHub projection at Enrollment and only projects a settled task", () => {
+		// Enrollment is authority; the tracker is transport. The projection step is
+		// reachable only from a settlement path, never from enrollment.
+		const enrollmentSources = [
+			"plugins/immune-brain/.pi-extension/imm-canary-enroll.ts",
+			"plugins/immune-brain/runtime/claude/kernel_ports.ts",
+		];
+		for (const path of enrollmentSources) {
+			const source = readFileSync(resolve(path), "utf8");
+			// The whole enrollment extension for the Pi Host; for the Claude Host the
+			// enroll method up to the next method, so a settlement path later in the
+			// file is not read as part of enrollment.
+			const start = source.indexOf("async enroll(");
+			const body = start === -1 ? source : source.slice(start, source.indexOf("\n\tasync ", start + 1));
+			expect({ path, projectsAtEnroll: /projectTerminalTrackerState|mark-terminal/.test(body) }).toEqual({
+				path,
+				projectsAtEnroll: false,
+			});
+		}
+		// The shared step derives nothing without a tracker association: a repository
+		// with no tracker answer simply reports not_tracked, which is what keeps the
+		// projection opt-in rather than a required Enrollment prerequisite.
+		expect(
+			deriveGithubTerminalProjectionInput(
+				"carrier-task",
+				{ claim: null, projection: { lifecycle: "done" } } as never,
+				{
+					task_id: "carrier-task",
+					lifecycle_status: "terminal",
+					terminal_lifecycle: "done",
+					terminal_event_id: "evt-carrier",
+				} as never,
+			)?.phase,
+		).toBe("done");
+	});
+
 });

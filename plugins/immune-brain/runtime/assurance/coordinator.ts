@@ -21,6 +21,7 @@ import { buildRoleDelegationPacket } from "../role_prompt_bridge";
 import type { AssuranceProjectionResult } from "../kernel/assurance_projection";
 import type { TaskIntentIdentityToken } from "../kernel/intent_token_registry";
 import type { AssuranceHostPort, HostReviewReservation } from "./host_port";
+import type { GithubTrackerResult as GithubTrackerProjectionResult } from "../github_issue_tracker";
 
 export type AssuranceRole = "qa" | "review";
 export interface AssuranceCorrelation {
@@ -73,6 +74,42 @@ export function deriveGithubTerminalProjectionInput(
 		terminal_event_id: tombstone.terminal_event_id,
 	};
 }
+
+/**
+ * Post-settlement GitHub tracker projection, shared so a task settled under
+ * either Host produces the same opted-in terminal projection.
+ *
+ * Transport, never authority: the projection runs only for a fresh claimless
+ * done/stopped projection plus its exact terminal tombstone (`derive` returns
+ * null otherwise), a tracker failure is reported as a retryable failure rather
+ * than evidence or a blocker, and a failure never repeats the settling Kernel
+ * mutation.
+ */
+export async function projectTerminalTrackerState(input: {
+	root: string;
+	task_id: string;
+	projection: AssuranceProjectionResult;
+	tombstone: TaskTombstone | null;
+	markTerminal: (root: string, projection: GithubTerminalProjectionInput) => Promise<GithubTrackerProjectionResult>;
+}): Promise<GithubTrackerProjectionResult | undefined> {
+	if (input.projection.error) return undefined;
+	const terminal = deriveGithubTerminalProjectionInput(input.task_id, input.projection, input.tombstone);
+	if (!terminal) return undefined;
+	try {
+		return await input.markTerminal(input.root, terminal);
+	} catch {
+		return TRACKER_PROJECTION_FAILURE;
+	}
+}
+
+/** The one shape both Hosts report when post-settlement observation fails. */
+export const TRACKER_PROJECTION_FAILURE: GithubTrackerProjectionResult = {
+	contract: "immune_brain/github_issue_tracker_result/v1",
+	operation: "mark-terminal",
+	status: "retryable_failure",
+	association_found: false,
+	message: "tracker observation failed after authoritative settlement",
+};
 
 export interface AssuranceVerdict {
 	contract: "assurance_kernel/assurance_verdict/v2";

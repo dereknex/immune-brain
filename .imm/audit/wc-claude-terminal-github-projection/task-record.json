@@ -1,0 +1,165 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "wc-claude-terminal-github-projection",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "wc-claude-terminal-github-projection",
+    "goal": "Give the Claude Code Host the post-settlement GitHub projection the Pi Host already performs, so an opted-in tracker projection no longer depends on which Host settled the task.",
+    "acceptance": [
+      {
+        "id": "GHP-1",
+        "assertion": "The Claude Code Host calls deriveGithubTerminalProjectionInput after settlement the way .pi-extension/imm-canary-work.ts already does, so a task settled under Claude Code produces the same opted-in terminal tracker projection as the same task settled under Pi.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.4.2\",\n  \"argv\": [\n    \"test\",\n    \"tests/github-issue-projection-contract.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 60000,\n  \"max_output_bytes\": 65536\n}\n"
+      },
+      {
+        "id": "GHP-2",
+        "assertion": "Projection preconditions are unchanged and still enforced: only a fresh claimless done or stopped projection plus its exact terminal tombstone projects completed or not planned, Enrollment performs no GitHub projection, and the projection remains opt-in.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.4.2\",\n  \"argv\": [\n    \"test\",\n    \"tests/github-issue-projection-contract.test.ts\",\n    \"tests/carrier-enrollment-gate-contract.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 65536\n}\n"
+      },
+      {
+        "id": "GHP-3",
+        "assertion": "A tracker failure is reported separately and never becomes evidence, a Loop blocker, or a reason to repeat a Kernel mutation, matching the existing Pi behavior and the packaged contract.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.4.2\",\n  \"argv\": [\n    \"test\",\n    \"tests/dual-host-assurance-conformance.test.ts\",\n    \"tests/managed-authority-failure-contract.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 65536\n}\n"
+      }
+    ],
+    "scope_hint": [
+      ".changeset/wc-claude-terminal-github-projection.md",
+      "docs/plans/wc-claude-terminal-github-projection.intent.json",
+      "docs/specs/archive/workflow-consolidation.spec.md",
+      "docs/specs/workflow-consolidation.spec.md",
+      "plugins/immune-brain/.pi-extension/imm-canary-work.ts",
+      "plugins/immune-brain/.pi-extension/pi-canary-assurance-progression.ts",
+      "plugins/immune-brain/dist/claude/mcp-server.mjs",
+      "plugins/immune-brain/runtime/assurance/coordinator.ts",
+      "plugins/immune-brain/runtime/claude/kernel_ports.ts",
+      "plugins/immune-brain/runtime/claude/mcp_server.ts",
+      "tests/carrier-enrollment-gate-contract.test.ts",
+      "tests/dual-host-assurance-conformance.test.ts",
+      "tests/github-issue-projection-contract.test.ts",
+      "tests/managed-authority-failure-contract.test.ts",
+      "tests/pi-canary-assurance-progression.test.ts"
+    ],
+    "risk": "material",
+    "revision": 2,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/archive/wc-claude-terminal-github-projection.intent.json",
+    "content_hash": "sha256:5dadb5f35c170695d0addcf829c303bf3cad016adc898d4f50be69c1a0b308f1"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:62681884215d272fb3628e79c2544ee2eb525145acbc4423abe827a48069856d",
+  "git_base_head": "70c3adc469a7b7fe7862defd89dd6829b35681e9",
+  "attestations": [
+    {
+      "id": "approval-qa-df53020a",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:5dadb5f35c170695d0addcf829c303bf3cad016adc898d4f50be69c1a0b308f1",
+      "diff_hash": "sha256:52e329529aa840b0185d2c9846c8679c9d66632f35d54ce5c644d8cf99962352",
+      "actor_id": "deterministic-qa",
+      "summary": "all 3 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "GHP-1",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "GHP-2",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "GHP-3",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-143f197f",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:5dadb5f35c170695d0addcf829c303bf3cad016adc898d4f50be69c1a0b308f1",
+      "diff_hash": "sha256:52e329529aa840b0185d2c9846c8679c9d66632f35d54ce5c644d8cf99962352",
+      "actor_id": "parent-mediated-review",
+      "summary": "Verified revision identity (parent, tree, manifest); shared projectTerminalTrackerState keeps preconditions (fresh claimless done/stopped + exact tombstone), opt-in, and failure-is-transport semantics, both Hosts settle through it, and Enrollment performs no projection.",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "70c3adc469a7b7fe7862defd89dd6829b35681e9",
+        "review_commit": "ae4fcb89be0af6bd298b4c1260eb2893401396a8",
+        "review_tree": "327809d2ce1cbaa04e5d18a078eec79e387d3836",
+        "manifest_digest": "sha256:0534aa7bf8420827242a9e75a84c8fd2922adbda6b96a26b26fd8c989582f15d"
+      }
+    }
+  ],
+  "findings": [],
+  "history": [
+    {
+      "id": "approve_breaking_intent_revision:wc-claude-terminal-github-projection:2026-09-14T13:18:43.709Z",
+      "at": "2026-09-14T13:18:43.709Z",
+      "type": "approve_breaking_intent_revision",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "intent_revision_2\naction_v2_sha256:18cfa13e60a524af950400e0ccae81947f994584e195d05fa46c97fab099d758",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-9cd9ea687e15db94",
+        "issued_at": "2026-09-14T13:18:43.992Z",
+        "expires_at": "2026-09-14T13:28:43.992Z"
+      }
+    },
+    {
+      "id": "freeze_artifacts:wc-claude-terminal-github-projection:2026-09-14T13:18:54.823Z",
+      "at": "2026-09-14T13:18:54.823Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent and Spec frozen at docs/plans/archive/wc-claude-terminal-github-projection.intent.json"
+    },
+    {
+      "id": "record_approval:wc-claude-terminal-github-projection:2026-09-14T13:19:16.389Z",
+      "at": "2026-09-14T13:19:16.389Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-df53020a\naction_v2_sha256:e100e01019534885dc9f432c318e85f43aad7044ed7140faf7c5b28c690230c4",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-0bc5752e45088e0f",
+        "issued_at": "2026-09-14T13:19:16.389Z",
+        "expires_at": "2026-09-14T13:29:16.389Z"
+      }
+    },
+    {
+      "id": "record_approval:wc-claude-terminal-github-projection:2026-09-14T13:26:35.792Z",
+      "at": "2026-09-14T13:26:35.792Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-143f197f\naction_v2_sha256:3cdae8b45329ee78ff6c451932e317f97d3b4410a4af08d97f0468ff5781b54a",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-309bbf89bece2408",
+        "issued_at": "2026-09-14T13:26:35.796Z",
+        "expires_at": "2026-09-14T13:36:35.796Z"
+      }
+    },
+    {
+      "id": "complete:wc-claude-terminal-github-projection:2026-09-14T13:26:36.933Z",
+      "at": "2026-09-14T13:26:36.933Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:0223a53a61a2adb34b8c6523e7e6d2590c96008c41fd72da6e153ea98718d54e"
+    }
+  ]
+}

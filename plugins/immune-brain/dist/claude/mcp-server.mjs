@@ -680,7 +680,7 @@ function parseHookStdin(raw) {
 
 // plugins/immune-brain/runtime/claude/kernel_ports.ts
 import { randomUUID as randomUUID7 } from "node:crypto";
-import { existsSync as existsSync7, readFileSync as readFileSync10, writeFileSync as writeFileSync6 } from "node:fs";
+import { existsSync as existsSync8, readFileSync as readFileSync11, writeFileSync as writeFileSync6 } from "node:fs";
 import { execFileSync as execFileSync5 } from "node:child_process";
 import { join as join12 } from "node:path";
 
@@ -1178,6 +1178,34 @@ function buildRoleDelegationPacket(input) {
 }
 
 // plugins/immune-brain/runtime/assurance/coordinator.ts
+function deriveGithubTerminalProjectionInput(taskId, projection, tombstone) {
+  if (projection.error || projection.claim !== null || projection.projection.lifecycle !== "done" && projection.projection.lifecycle !== "stopped" || tombstone?.task_id !== taskId || tombstone.lifecycle_status !== "terminal" || tombstone.terminal_lifecycle !== projection.projection.lifecycle)
+    return null;
+  return {
+    task_id: taskId,
+    phase: projection.projection.lifecycle,
+    terminal_event_id: tombstone.terminal_event_id
+  };
+}
+async function projectTerminalTrackerState(input) {
+  if (input.projection.error)
+    return;
+  const terminal = deriveGithubTerminalProjectionInput(input.task_id, input.projection, input.tombstone);
+  if (!terminal)
+    return;
+  try {
+    return await input.markTerminal(input.root, terminal);
+  } catch {
+    return TRACKER_PROJECTION_FAILURE;
+  }
+}
+var TRACKER_PROJECTION_FAILURE = {
+  contract: "immune_brain/github_issue_tracker_result/v1",
+  operation: "mark-terminal",
+  status: "retryable_failure",
+  association_found: false,
+  message: "tracker observation failed after authoritative settlement"
+};
 function reviewReworkFindings(verdict) {
   if (verdict.decision !== "rework" || !verdict.findings?.length)
     throw new Error("review rework findings require a rework verdict");
@@ -7229,8 +7257,1302 @@ function restoreStagedIntent(root, snapshot) {
   }
 }
 
+// plugins/immune-brain/runtime/github_issue_tracker.ts
+import { spawn as spawn2 } from "node:child_process";
+import { existsSync as existsSync3, readFileSync as readFileSync8 } from "node:fs";
+import { basename as basename2, relative as relative3, resolve as resolve7, sep as sep5 } from "node:path";
+var CONTRACT = "immune_brain/github_issue_tracker_result/v1";
+var PROTOCOL_MARKER = "<!-- immune-brain-tracker:v1 -->";
+var KIND_INITIATIVE_MARKER = "<!-- immune-brain:kind=initiative -->";
+var KIND_TASK_MARKER = "<!-- immune-brain:kind=task -->";
+var ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
+var MAX_GH_OUTPUT = 8 * 1024 * 1024;
+var MAX_DIAGNOSTIC = 512;
+var GH_TIMEOUT_MS = 20000;
+var MAX_SNAPSHOT_PAGES = 100;
+var GITHUB_ISSUE_BODY_LIMIT = 65536;
+var MAX_TERMINAL_EVENT_ID = 500;
+var MAX_TITLE_LENGTH = 80;
+var MAX_DISPLAY_SHORT_NAME = 32;
+var MAX_DISPLAY_TITLE = 60;
+var READY_FOR_AGENT_LABEL = "ready-for-agent";
+var BLOCKED_LABEL = "blocked";
+var MANAGED_ISSUE_LABELS = [READY_FOR_AGENT_LABEL, BLOCKED_LABEL];
+var ISSUE_FOOTER = "---\n\n_Outbound visibility only: GitHub state never authorizes or settles work — Kernel TaskIntent, TaskRecord, QA, Review, and Assurance remain the execution authority. An Open Issue only means the Task still needs attention; only a claimless terminal projection closes it (`done` → Completed, `stopped` → Not planned)._";
+function countLiteral(value, needle) {
+  if (!needle)
+    return 0;
+  let count = 0;
+  let index = 0;
+  while ((index = value.indexOf(needle, index)) !== -1) {
+    count += 1;
+    index += needle.length;
+  }
+  return count;
+}
+function marker(name, value) {
+  return `<!-- immune-brain:${name}=${value} -->`;
+}
+function terminalMarker(eventId) {
+  return `<!-- immune-brain:terminal-event=${eventId} -->`;
+}
+function terminalSuffix(eventId) {
+  return `
+
+${terminalMarker(eventId)}
+Terminal event: \`${eventId}\`
+`;
+}
+var MAX_TERMINAL_SUFFIX_BYTES = Buffer.byteLength(terminalSuffix("x".repeat(MAX_TERMINAL_EVENT_ID)), "utf8");
+function terminalEvent(value) {
+  if (typeof value !== "string" || !/^[A-Za-z0-9._:-]{1,500}$/.test(value))
+    throw new Error("terminal_event_id must be a bounded opaque Kernel event id");
+  if (/(?:gh[pousr]_|github_pat_)/i.test(value))
+    throw new Error("terminal_event_id must not contain a token-like value");
+  if (value === "multiple" || value === "malformed")
+    throw new Error(`terminal_event_id must not be the reserved parser sentinel: ${value}`);
+  return value;
+}
+function redactSecrets(value) {
+  return value.replace(/\bgh[pousr]_[A-Za-z0-9_]+\b/g, "[REDACTED_GITHUB_TOKEN]").replace(/\bgithub_pat_[A-Za-z0-9_]+\b/g, "[REDACTED_GITHUB_TOKEN]").replace(/\bBearer\s+\S+/gi, "Bearer [REDACTED]").replace(/\b(?:token|secret|password)\s*[=:]\s*\S+/gi, "credential=[REDACTED]");
+}
+function publicText(value, name, max = 2000) {
+  if (typeof value !== "string")
+    throw new Error(`${name} must be a string`);
+  const text = value.trim();
+  if (!text || text.length > max || text.includes("\x00"))
+    throw new Error(`${name} must contain 1-${max} safe characters`);
+  return redactSecrets(text).replaceAll("<!--", "&lt;!--").replaceAll("-->", "--&gt;");
+}
+function identifier(value, name) {
+  if (typeof value !== "string" || !ID_PATTERN.test(value))
+    throw new Error(`${name} must match ${ID_PATTERN}`);
+  if (/^(?:gh[pousr]_|github_pat_)/i.test(value))
+    throw new Error(`${name} must not contain a token-like value`);
+  return value;
+}
+function titleText(value) {
+  return redactSecrets(value).replace(/\s+/g, " ");
+}
+function displayName(value, name, max) {
+  if (typeof value !== "string" || !value.trim())
+    throw new Error(`${name} is required: publish a bounded display name instead of the full goal text`);
+  if (/[[\]]/.test(value))
+    throw new Error(`${name} must not contain square brackets`);
+  return projectionText(value, name, max);
+}
+function issueTitle(value) {
+  const title = titleText(value);
+  if (title.length > MAX_TITLE_LENGTH)
+    throw new Error(`GitHub Issue title must not exceed ${MAX_TITLE_LENGTH} characters: shorten the Planner display names`);
+  return title;
+}
+function initiativeDisplayNames(projection) {
+  const missing = ["short_name", "title"].filter((field) => projection?.[field] === undefined);
+  if (missing.length)
+    throw new Error(`Initiative projection requires display names; missing ${missing.map((field) => `projection.${field}`).join(", ")}`);
+  return { shortName: displayName(projection?.short_name, "projection.short_name", MAX_DISPLAY_SHORT_NAME) };
+}
+function initiativeIssueTitle(initiativeId, projection) {
+  const { shortName } = initiativeDisplayNames(projection);
+  const title = displayName(projection?.title, "projection.title", MAX_DISPLAY_TITLE);
+  return issueTitle(`[${shortName}] ${title}`);
+}
+function taskDisplayNames(operation) {
+  const projection = operation.projection;
+  if (projection?.short_name === undefined || projection.title === undefined || projection.slice_ordinal === undefined)
+    throw new Error(`Task ${operation.task_id} requires projection.short_name, projection.title, and projection.slice_ordinal display names`);
+  return {
+    shortName: displayName(projection.short_name, "projection.short_name", MAX_DISPLAY_SHORT_NAME),
+    title: displayName(projection.title, "projection.title", MAX_DISPLAY_TITLE),
+    ordinal: projection.slice_ordinal
+  };
+}
+function taskIssueTitle(operation, fallbackOrdinal) {
+  const { shortName, title, ordinal } = taskDisplayNames(operation);
+  return issueTitle(`[${shortName}] S${fallbackOrdinal ?? ordinal} ${title}`);
+}
+function sliceOrdinalFromChecklist(parentBody, sliceId, fallback) {
+  const declared = [...parentBody.matchAll(/^- \[[ xX]\] <!-- immune-brain:slice-id=([A-Za-z0-9._:-]+) -->/gm)].map((match) => match[1]);
+  const index = declared.indexOf(sliceId);
+  return index === -1 ? fallback : index + 1;
+}
+function desiredTaskLabels(operation) {
+  return (operation.projection?.blocked_by ?? []).length ? [READY_FOR_AGENT_LABEL, BLOCKED_LABEL] : [READY_FOR_AGENT_LABEL];
+}
+function labelMutationArgs(observed, desired) {
+  const args = [];
+  for (const label of desired)
+    if (!observed.includes(label))
+      args.push("--add-label", label);
+  for (const label of MANAGED_ISSUE_LABELS)
+    if (observed.includes(label) && !desired.includes(label))
+      args.push("--remove-label", label);
+  return args;
+}
+async function repositoryLabels(root, gh, repository) {
+  const execution = await gh.run(["label", "list", "--repo", repository.name_with_owner, "--json", "name", "--limit", "1000"], { cwd: root });
+  if (execution.exit_code !== 0 || execution.output_exceeded)
+    return ghFailure("upsert-task", execution, "cannot query repository labels");
+  try {
+    const parsed = JSON.parse(execution.stdout);
+    if (!Array.isArray(parsed))
+      throw new Error("gh returned malformed label list");
+    return parsed.map((item) => item?.name).filter((name) => typeof name === "string");
+  } catch (error) {
+    return result("upsert-task", "permanent_failure", error instanceof Error ? error.message : String(error));
+  }
+}
+async function labelAvailabilityFailure(root, gh, repository, required) {
+  if (!required.length)
+    return null;
+  const labels = await repositoryLabels(root, gh, repository);
+  if (!Array.isArray(labels))
+    return labels;
+  const missing = required.filter((label) => !labels.includes(label));
+  return missing.length ? result("upsert-task", "permanent_failure", `repository labels missing: ${missing.join(", ")}; create them before publishing so Task Issues carry publication state`) : null;
+}
+function redactGithubDiagnostic(value) {
+  return redactSecrets(value).replace(/\s+/g, " ").trim().slice(0, MAX_DIAGNOSTIC);
+}
+function result(operation, status, message, issue) {
+  return {
+    contract: CONTRACT,
+    operation,
+    status,
+    association_found: issue !== undefined,
+    ...issue ? { issue_number: issue.number, issue_url: issue.url, node_id: String(issue.id) } : {},
+    message: redactGithubDiagnostic(message)
+  };
+}
+function ghFailure(operation, execution, message) {
+  const retryable = execution.timed_out || /timeout|timed out|network|connection|temporar|rate limit|502|503|504/i.test(execution.stderr);
+  return result(operation, retryable ? "retryable_failure" : "permanent_failure", `${message}: ${execution.output_exceeded ? "gh output limit exceeded" : execution.stderr || `gh exited ${execution.exit_code}`}`);
+}
+function createGhTransport(binary = "gh") {
+  return {
+    run(args, options = {}) {
+      return new Promise((complete) => {
+        let stdout = Buffer.alloc(0);
+        let stderr = Buffer.alloc(0);
+        let timedOut = false;
+        let outputExceeded = false;
+        let timer;
+        let settled = false;
+        const finish = (exitCode, spawnError = "") => {
+          if (settled)
+            return;
+          settled = true;
+          if (timer)
+            clearTimeout(timer);
+          complete({
+            exit_code: exitCode,
+            stdout: stdout.toString("utf8"),
+            stderr: `${stderr.toString("utf8")}${spawnError}`,
+            timed_out: timedOut,
+            output_exceeded: outputExceeded
+          });
+        };
+        let child;
+        try {
+          child = spawn2(binary, args, {
+            cwd: options.cwd,
+            stdio: ["pipe", "pipe", "pipe"],
+            env: process.env
+          });
+        } catch (error) {
+          finish(1, error instanceof Error ? error.message : String(error));
+          return;
+        }
+        const append = (current, chunk) => {
+          const available = Math.max(0, MAX_GH_OUTPUT - stdout.length - stderr.length);
+          if (chunk.length > available) {
+            outputExceeded = true;
+            child.kill("SIGKILL");
+          }
+          return available > 0 ? Buffer.concat([current, chunk.subarray(0, available)]) : current;
+        };
+        const { stdout: childOut, stderr: childErr, stdin: childIn } = child;
+        if (!childOut || !childErr || !childIn) {
+          finish(1, "gh was spawned without the stdio pipes this reader requires");
+          return;
+        }
+        childOut.on("data", (chunk) => {
+          stdout = append(stdout, chunk);
+        });
+        childErr.on("data", (chunk) => {
+          stderr = append(stderr, chunk);
+        });
+        child.once("error", (error) => {
+          finish(1, error.message);
+        });
+        childIn.once("error", (error) => {
+          finish(1, error.message);
+        });
+        timer = setTimeout(() => {
+          timedOut = true;
+          child.kill("SIGKILL");
+        }, GH_TIMEOUT_MS);
+        child.once("close", (code) => {
+          finish(code ?? 1);
+        });
+        try {
+          childIn.end(options.stdin ?? "");
+        } catch (error) {
+          finish(1, error instanceof Error ? error.message : String(error));
+        }
+      });
+    }
+  };
+}
+function parseRepository(raw) {
+  const value = JSON.parse(raw);
+  if (!Number.isSafeInteger(value.id) || typeof value.full_name !== "string" || !value.full_name.includes("/"))
+    throw new Error("gh returned malformed repository identity");
+  return { id: value.id, name_with_owner: value.full_name };
+}
+function parseIssues(raw) {
+  const parsed = JSON.parse(raw);
+  const pages = Array.isArray(parsed) && parsed.every(Array.isArray) ? parsed.flat() : parsed;
+  if (!Array.isArray(pages))
+    throw new Error("gh returned malformed Issue list");
+  return pages.filter((item) => Boolean(item) && typeof item === "object" && !("pull_request" in item)).map((item) => {
+    if (!Number.isSafeInteger(item.id) || !Number.isSafeInteger(item.number) || typeof item.html_url !== "string" || typeof item.title !== "string" || typeof item.body !== "string" && item.body !== null || item.state !== "open" && item.state !== "closed")
+      throw new Error("gh returned a malformed Issue");
+    return {
+      id: item.id,
+      number: item.number,
+      url: item.html_url,
+      title: item.title,
+      body: typeof item.body === "string" ? item.body : "",
+      state: item.state,
+      state_reason: typeof item.state_reason === "string" ? item.state_reason.toLowerCase() : null,
+      labels: Array.isArray(item.labels) ? item.labels.map((label) => typeof label === "string" ? label : label?.name).filter((name) => typeof name === "string") : []
+    };
+  });
+}
+function parseSubIssueNumbers(raw) {
+  const parsed = JSON.parse(raw);
+  const pages = Array.isArray(parsed) && parsed.every(Array.isArray) ? parsed.flat() : parsed;
+  if (!Array.isArray(pages))
+    throw new Error("gh returned malformed Sub-issue list");
+  return pages.map((item, index) => {
+    const number = item?.number;
+    if (typeof number !== "number" || !Number.isSafeInteger(number))
+      throw new Error(`gh returned a malformed Sub-issue entry at ${index}`);
+    return number;
+  });
+}
+async function snapshot(root, gh, operation) {
+  const repositoryExecution = await gh.run(["api", "repos/{owner}/{repo}"], { cwd: root });
+  if (repositoryExecution.exit_code !== 0 || repositoryExecution.output_exceeded)
+    return ghFailure(operation, repositoryExecution, "cannot resolve GitHub repository");
+  let repository;
+  try {
+    repository = parseRepository(repositoryExecution.stdout);
+  } catch (error) {
+    return result(operation, "permanent_failure", error instanceof Error ? error.message : String(error));
+  }
+  const issues = [];
+  for (let page = 1;page <= MAX_SNAPSHOT_PAGES; page += 1) {
+    const issuesExecution = await gh.run(["api", `repos/${repository.name_with_owner}/issues?state=all&per_page=100&page=${page}`], { cwd: root });
+    if (issuesExecution.exit_code !== 0 || issuesExecution.output_exceeded)
+      return ghFailure(operation, issuesExecution, "cannot query GitHub Issues");
+    let raw;
+    try {
+      raw = JSON.parse(issuesExecution.stdout);
+    } catch (error) {
+      return result(operation, "permanent_failure", error instanceof Error ? error.message : String(error));
+    }
+    if (!Array.isArray(raw))
+      return result(operation, "permanent_failure", "gh returned malformed Issue list");
+    const pageCount = raw.length;
+    try {
+      issues.push(...parseIssues(issuesExecution.stdout));
+    } catch (error) {
+      return result(operation, "permanent_failure", error instanceof Error ? error.message : String(error));
+    }
+    if (pageCount < 100)
+      break;
+    if (page === MAX_SNAPSHOT_PAGES)
+      return result(operation, "permanent_failure", "too many GitHub Issues to snapshot");
+  }
+  return { repository, issues };
+}
+function findIssue(issues, primary, required) {
+  const candidates = issues.filter((issue) => primary.every((needle) => issue.body.includes(needle)));
+  if (candidates.length === 0)
+    return { kind: "missing" };
+  if (candidates.length !== 1)
+    return { kind: "ambiguous", message: `multiple Issues contain identity marker ${primary[0]}` };
+  const issue = candidates[0];
+  for (const expected of [PROTOCOL_MARKER, ...required]) {
+    if (countLiteral(issue.body, expected) !== 1)
+      return { kind: "ambiguous", message: `Issue #${issue.number} has missing or duplicate identity markers` };
+  }
+  return { kind: "found", issue };
+}
+function initiativeLookup(issues, repositoryId, initiativeId) {
+  const initiative = marker("initiative-id", initiativeId);
+  return findIssue(issues, [initiative, KIND_INITIATIVE_MARKER], [marker("repo-id", repositoryId), initiative]);
+}
+function ownershipMarkerValue(body, name) {
+  const values = [...body.matchAll(new RegExp(`<!-- immune-brain:${name}=([A-Za-z0-9][A-Za-z0-9._-]{0,127}) -->`, "g"))];
+  return values.length === 1 ? values[0][1] : null;
+}
+function taskLookup(issues, repositoryId, taskId) {
+  const task = marker("task-id", taskId);
+  const base = findIssue(issues, [task, KIND_TASK_MARKER], [marker("repo-id", repositoryId), task]);
+  if (base.kind !== "found")
+    return base;
+  for (const name of ["task-id", "initiative-id", "slice-id"]) {
+    if (!ownershipMarkerValue(base.issue.body, name))
+      return { kind: "ambiguous", message: `Issue #${base.issue.number} has missing or duplicate ${name} ownership markers` };
+  }
+  return base;
+}
+function ownedTaskLookup(issues, repositoryId, taskId, initiativeId, sliceId) {
+  const base = taskLookup(issues, repositoryId, taskId);
+  if (base.kind !== "found")
+    return base;
+  return base.issue.body.includes(marker("initiative-id", initiativeId)) && base.issue.body.includes(marker("slice-id", sliceId)) ? base : { kind: "ambiguous", message: `Issue #${base.issue.number} belongs to another Initiative or Slice; Task ownership is immutable` };
+}
+function sliceCount(parentBody, sliceId) {
+  return countLiteral(parentBody, marker("slice-id", sliceId));
+}
+async function readSubIssueNumbers(root, gh, operation, repository, parentNumber) {
+  const listed = await gh.run(["api", "--paginate", "--slurp", `repos/${repository.name_with_owner}/issues/${parentNumber}/sub_issues?per_page=100`], { cwd: root });
+  if (listed.exit_code !== 0 || listed.output_exceeded)
+    return ghFailure(operation, listed, "cannot read native Sub-issue relations");
+  try {
+    return parseSubIssueNumbers(listed.stdout);
+  } catch (error) {
+    return result(operation, "permanent_failure", error instanceof Error ? error.message : String(error));
+  }
+}
+async function confirmAttachment(root, gh, operation, repository, parentNumber, childNumber) {
+  const read = await readSubIssueNumbers(root, gh, operation, repository, parentNumber);
+  if (!Array.isArray(read))
+    return read;
+  const matches = read.filter((candidate) => candidate === childNumber).length;
+  if (matches > 1)
+    return result(operation, "ambiguous_remote_state", `Issue #${parentNumber} lists the Task Issue more than once`);
+  return { attached: matches === 1 };
+}
+async function attachSubIssue(root, gh, operation, repository, parentNumber, child) {
+  const mutation = await gh.run([
+    "api",
+    "-F",
+    `sub_issue_id=${child.id}`,
+    `repos/${repository.name_with_owner}/issues/${parentNumber}/sub_issues`
+  ], { cwd: root });
+  if (mutation.exit_code !== 0 || mutation.output_exceeded)
+    return ghFailure(operation, mutation, "native Sub-issue attachment failed");
+  const confirmed = await confirmAttachment(root, gh, operation, repository, parentNumber, child.number);
+  if (!("attached" in confirmed))
+    return confirmed;
+  return confirmed.attached ? { attached: true } : result(operation, "retryable_failure", "native Sub-issue relation did not converge", child);
+}
+async function readBlockedByIds(root, gh, operation, repository, childNumber) {
+  const listed = await gh.run(["api", "--paginate", "--slurp", `repos/${repository.name_with_owner}/issues/${childNumber}/dependencies/blocked_by?per_page=100`], { cwd: root });
+  if (listed.exit_code !== 0 || listed.output_exceeded)
+    return ghFailure(operation, listed, "cannot read native blocked_by relations");
+  try {
+    const pages = JSON.parse(listed.stdout);
+    if (!Array.isArray(pages) || pages.some((page) => !Array.isArray(page)))
+      throw new Error("gh returned malformed blocked_by pages");
+    const ids = pages.flat().map((item, index) => {
+      const id = item?.issue_id ?? item?.id;
+      if (!Number.isSafeInteger(id))
+        throw new Error(`gh returned malformed blocked_by entry at ${index}`);
+      return id;
+    });
+    if (new Set(ids).size !== ids.length)
+      return result(operation, "ambiguous_remote_state", `Issue #${childNumber} has duplicate native blocked_by relations`);
+    return ids;
+  } catch (error) {
+    return result(operation, "permanent_failure", error instanceof Error ? error.message : String(error));
+  }
+}
+async function observeGithubInitiative(root, initiativeId, gh = createGhTransport()) {
+  const id = identifier(initiativeId, "initiative_id");
+  const source = await snapshot(resolve7(root), gh, "create-initiative");
+  if ("contract" in source)
+    throw new Error(source.message);
+  const parent = initiativeLookup(source.issues, source.repository.id, id);
+  if (parent.kind === "missing")
+    throw new Error(`Initiative ${id} is not published`);
+  if (parent.kind === "ambiguous")
+    throw new Error(parent.message);
+  const subIssueNumbers = await readSubIssueNumbers(root, gh, "create-initiative", source.repository, parent.issue.number);
+  if (!Array.isArray(subIssueNumbers))
+    throw new Error(subIssueNumbers.message);
+  if (new Set(subIssueNumbers).size !== subIssueNumbers.length)
+    throw new Error(`Initiative ${id} has duplicate native Sub-issue relations`);
+  const tasks = subIssueNumbers.map((issueNumber) => {
+    const matches = source.issues.filter((issue) => issue.number === issueNumber);
+    if (matches.length !== 1)
+      throw new Error(`Initiative ${id} references an unreadable Sub-issue #${issueNumber}`);
+    const issue = matches[0];
+    const taskId = ownershipMarkerValue(issue.body, "task-id");
+    const sliceId = ownershipMarkerValue(issue.body, "slice-id");
+    if (!taskId || !sliceId || ownershipMarkerValue(issue.body, "initiative-id") !== id)
+      throw new Error(`Sub-issue #${issueNumber} has invalid Initiative ownership markers`);
+    const owned = ownedTaskLookup(source.issues, source.repository.id, taskId, id, sliceId);
+    if (owned.kind !== "found" || owned.issue.number !== issueNumber)
+      throw new Error(owned.kind === "ambiguous" ? owned.message : `Sub-issue #${issueNumber} has invalid Task ownership`);
+    return { task_id: taskId, slice_id: sliceId, issue_number: issueNumber, issue_id: issue.id };
+  });
+  if (new Set(tasks.map((task) => task.task_id)).size !== tasks.length)
+    throw new Error(`Initiative ${id} has duplicate Task identities`);
+  if (new Set(tasks.map((task) => task.slice_id)).size !== tasks.length)
+    throw new Error(`Initiative ${id} has duplicate Slice identities`);
+  const taskByIssueId = new Map(tasks.map((task) => [task.issue_id, task.task_id]));
+  const observed = [];
+  for (const task of tasks.sort((left, right) => left.task_id < right.task_id ? -1 : left.task_id > right.task_id ? 1 : 0)) {
+    const blockerIds = await readBlockedByIds(root, gh, "create-initiative", source.repository, task.issue_number);
+    if (!Array.isArray(blockerIds))
+      throw new Error(blockerIds.message);
+    const blockedBy = blockerIds.map((blockerId) => {
+      const blocker = taskByIssueId.get(blockerId);
+      if (!blocker)
+        throw new Error(`Task ${task.task_id} depends on an Issue outside Initiative ${id}`);
+      return blocker;
+    }).sort();
+    observed.push({
+      task_id: task.task_id,
+      slice_id: task.slice_id,
+      issue_number: task.issue_number,
+      blocked_by: blockedBy
+    });
+  }
+  return {
+    contract: "immune_brain/github_initiative_observation/v1",
+    initiative_id: id,
+    issue_number: parent.issue.number,
+    tasks: observed
+  };
+}
+async function confirmBlockedBy(root, gh, operation, repository, childNumber, blockers) {
+  const ids = await readBlockedByIds(root, gh, operation, repository, childNumber);
+  if (!Array.isArray(ids))
+    return ids;
+  const expected = blockers.map((blocker) => blocker.id);
+  if (ids.some((id) => !expected.includes(id)))
+    return result(operation, "ambiguous_remote_state", `Issue #${childNumber} has unrequested native blocked_by relations`);
+  return { complete: ids.length === expected.length && expected.every((id) => ids.includes(id)) };
+}
+async function attachBlockedBy(root, gh, operation, repository, childNumber, blockers) {
+  const existing = await readBlockedByIds(root, gh, operation, repository, childNumber);
+  if (!Array.isArray(existing))
+    return existing;
+  for (const blocker of blockers) {
+    if (existing.includes(blocker.id))
+      continue;
+    const mutation = await gh.run([
+      "api",
+      "-F",
+      `issue_id=${blocker.id}`,
+      `repos/${repository.name_with_owner}/issues/${childNumber}/dependencies/blocked_by`
+    ], { cwd: root });
+    if (mutation.exit_code !== 0 || mutation.output_exceeded)
+      return ghFailure(operation, mutation, `native blocked_by attachment failed for Issue #${blocker.number}`);
+    existing.push(blocker.id);
+  }
+  const confirmed = await confirmBlockedBy(root, gh, operation, repository, childNumber, blockers);
+  if ("complete" in confirmed)
+    return confirmed.complete ? { complete: true } : result(operation, "retryable_failure", "native blocked_by relations did not converge");
+  return confirmed;
+}
+function carrierConflict(root, operation, initiativeId) {
+  if (!existsSync3(resolve7(root, "docs", "initiatives", `${initiativeId}.md`)))
+    return null;
+  return result(operation, "permanent_failure", `Initiative carrier conflict: docs/initiatives/${initiativeId}.md already owns this slug locally; remove the duplicate carrier before using the GitHub projection`);
+}
+function listText(values, fallback) {
+  return values?.length ? values.map((value) => `- ${value}`).join(`
+`) : fallback;
+}
+function bodyLimitFailure(operation, body, reserve = 0) {
+  return Buffer.byteLength(body, "utf8") + reserve <= GITHUB_ISSUE_BODY_LIMIT ? null : result(operation, "permanent_failure", "rendered GitHub Issue body exceeds 65,536 UTF-8 bytes");
+}
+function createInitiativeBody(repository, operation, historicalSlices = []) {
+  const projection = operation.projection ?? {};
+  const provenance = projection.source_issue ? `## Provenance
+
+- Derived from #${projection.source_issue}: the originating feature Issue for this Initiative.
+
+` : "";
+  return `${[
+    PROTOCOL_MARKER,
+    KIND_INITIATIVE_MARKER,
+    marker("repo-id", repository.id),
+    marker("initiative-id", operation.initiative_id)
+  ].join(`
+`)}
+
+${provenance}## How to use this Issue
+
+- Edit planning prose and Slice ordering directly after creation.
+- Keep each Slice marker attached to exactly one stable Slice entry.
+- The tracker never rewrites or closes this Parent after creation; the tracker never changes or closes it automatically.
+
+## Problem
+
+${publicText(projection.problem ?? "The Initiative addresses the bounded delivery described below.", "projection.problem")}
+
+## Result
+
+${publicText(projection.result ?? operation.goal, "projection.result")}
+
+## Initiative design
+
+${publicText(projection.design ?? "Each Child preserves the shared Initiative decisions and boundaries recorded here.", "projection.design")}
+
+## Decisions
+
+${listText(projection.decisions, "- No additional Initiative decisions recorded.")}
+
+## Testing strategy
+
+${publicText(projection.testing_strategy ?? "Each Child closes from its focused acceptance verification.", "projection.testing_strategy")}
+
+## Out of scope
+
+${listText(projection.out_of_scope, "- Unrelated work outside this Initiative.")}
+
+## Slices
+
+${operation.slices.length + historicalSlices.length === 0 ? "No Slices recorded yet." : [...historicalSlices, ...operation.slices.map((slice) => `- [ ] ${marker("slice-id", slice.id)} **${slice.id}**: ${slice.result ?? slice.goal}${slice.blocked_by?.length ? ` (blocked by: ${slice.blocked_by.join(", ")})` : ""}`)].join(`
+`)}
+
+${ISSUE_FOOTER}
+`;
+}
+async function createInitiative(root, gh, operation, source) {
+  const lookup = (issues) => initiativeLookup(issues, source.repository.id, operation.initiative_id);
+  const found = lookup(source.issues);
+  if (found.kind === "ambiguous")
+    return result(operation.op, "ambiguous_remote_state", found.message);
+  const body = createInitiativeBody(source.repository, operation);
+  const oversized = bodyLimitFailure(operation.op, body);
+  if (oversized)
+    return oversized;
+  const title = initiativeIssueTitle(operation.initiative_id, operation.projection);
+  if (found.kind === "missing") {
+    const mutation = await gh.run([
+      "issue",
+      "create",
+      "--repo",
+      source.repository.name_with_owner,
+      "--title",
+      title,
+      "--body-file",
+      "-"
+    ], { cwd: root, stdin: body });
+    const refreshed = await snapshot(root, gh, operation.op);
+    if ("contract" in refreshed)
+      return refreshed;
+    const confirmed = lookup(refreshed.issues);
+    if (confirmed.kind === "ambiguous")
+      return result(operation.op, "ambiguous_remote_state", confirmed.message);
+    if (confirmed.kind === "missing") {
+      return mutation.exit_code !== 0 && !mutation.timed_out && !mutation.output_exceeded ? ghFailure(operation.op, mutation, "Initiative Issue creation failed") : result(operation.op, "retryable_failure", "Initiative creation could not be confirmed");
+    }
+    return confirmed.issue.body === body && confirmed.issue.title === title ? result(operation.op, "created", "Initiative Issue created as the single GitHub source", confirmed.issue) : result(operation.op, "retryable_failure", "Initiative Issue did not converge to the requested initial title and body", confirmed.issue);
+  }
+  if (found.issue.body === body && found.issue.title === title) {
+    const labelArgs = labelMutationArgs(found.issue.labels, []);
+    if (labelArgs.length) {
+      const edited = await gh.run([
+        "issue",
+        "edit",
+        String(found.issue.number),
+        "--repo",
+        source.repository.name_with_owner,
+        ...labelArgs
+      ], { cwd: root });
+      if (edited.exit_code !== 0 || edited.output_exceeded)
+        return ghFailure(operation.op, edited, "Initiative Parent label convergence failed");
+      const refreshed = await snapshot(root, gh, operation.op);
+      if ("contract" in refreshed)
+        return refreshed;
+      const confirmed = lookup(refreshed.issues);
+      if (confirmed.kind !== "found")
+        return result(operation.op, "ambiguous_remote_state", "Initiative Parent became ambiguous after label convergence", found.issue);
+      return confirmed.issue.title === title && confirmed.issue.body === body && !labelMutationArgs(confirmed.issue.labels, []).length ? result(operation.op, "updated", "Initiative Issue managed labels converged", confirmed.issue) : result(operation.op, "retryable_failure", "Initiative Issue did not converge to an unlabeled Parent", confirmed.issue);
+    }
+    return result(operation.op, "already_current", "Initiative Issue already carries the requested initial source", found.issue);
+  }
+  return result(operation.op, "permanent_failure", "Initiative Issue already exists and the tracker never rewrites it; edit the GitHub source directly for later planning changes", found.issue);
+}
+function childBody(repository, operation, parent) {
+  const projection = operation.projection ?? {};
+  const acceptance = operation.acceptance.map((item) => `- \`${item.id}\`: ${item.summary}`).join(`
+`);
+  return `${[
+    PROTOCOL_MARKER,
+    KIND_TASK_MARKER,
+    marker("repo-id", repository.id),
+    marker("initiative-id", operation.initiative_id),
+    marker("slice-id", operation.slice_id),
+    marker("task-id", operation.task_id)
+  ].join(`
+`)}
+
+## Parent
+
+| Initiative | \`${operation.initiative_id}\` |
+| Parent Issue | [#${parent.number}](${parent.url}) |
+| Slice | \`${operation.slice_id}\` |
+| Risk | \`${operation.risk}\` |
+
+## Current behavior
+
+${publicText(projection.current_behavior ?? "The current behavior is defined by the repository's existing contract.", "projection.current_behavior")}
+
+## Desired behavior
+
+${publicText(projection.desired_behavior ?? projection.result ?? operation.goal, "projection.desired_behavior")}
+
+## Key interfaces
+
+${listText(projection.key_interfaces, "- Canonical TaskIntent acceptance and Kernel lifecycle remain authoritative.")}
+
+## Acceptance criteria
+
+${acceptance}
+
+## Verification
+
+${publicText(projection.verification ?? "Run the focused acceptance verification declared by the TaskIntent.", "projection.verification")}
+
+## Blocked by
+
+${projection.blocked_by?.length ? projection.blocked_by.map((id) => `- \`${identifier(id, "blocked_by task_id")}\``).join(`
+`) : "None"}
+
+## Out of scope
+
+${listText(projection.out_of_scope, "- Scope not declared by the validated TaskIntent.")}
+
+## Agent handoff
+
+${publicText(projection.agent_handoff ?? "Implement only the bounded TaskIntent result and run the focused checks. Do not widen scope or treat GitHub as authorization.", "projection.agent_handoff")}
+
+${ISSUE_FOOTER}
+`;
+}
+async function upsertTask(root, gh, operation, source, pendingBinding = null, amendmentContext = undefined) {
+  const labelFailure = await labelAvailabilityFailure(root, gh, source.repository, desiredTaskLabels(operation));
+  if (labelFailure)
+    return labelFailure;
+  const parent = initiativeLookup(source.issues, source.repository.id, operation.initiative_id);
+  if (parent.kind === "ambiguous")
+    return result(operation.op, "ambiguous_remote_state", parent.message);
+  if (parent.kind === "missing")
+    return result(operation.op, "permanent_failure", "the Initiative Parent Issue must exist before publishing a Task");
+  if (sliceCount(parent.issue.body, operation.slice_id) !== 1)
+    return result(operation.op, "ambiguous_remote_state", `Parent Issue #${parent.issue.number} has missing or duplicate Slice marker ${operation.slice_id}; restore exactly one stable Slice entry in the GitHub source`, parent.issue);
+  const lookup = (issues) => taskLookup(issues, source.repository.id, operation.task_id);
+  const found = lookup(source.issues);
+  if (found.kind === "ambiguous")
+    return result(operation.op, "ambiguous_remote_state", found.message);
+  if (found.kind === "missing" && pendingBinding !== null && pendingBinding !== undefined)
+    return result(operation.op, "ambiguous_remote_state", `Task ${operation.task_id} is bound to Issue #${pendingBinding.issue_number} but that Issue no longer holds its Task marker; amend the binding or restore the marker instead of recreating`, parent.issue);
+  const blockerIds = operation.projection?.blocked_by ?? [];
+  const blockers = [];
+  for (const blockerId of blockerIds) {
+    if (blockerId === operation.task_id)
+      return result(operation.op, "ambiguous_remote_state", "a Task cannot block itself", parent.issue);
+    const blocker = taskLookup(source.issues, source.repository.id, blockerId);
+    if (blocker.kind === "missing")
+      return result(operation.op, "permanent_failure", `blocking Task ${blockerId} has not been published`, parent.issue);
+    if (blocker.kind === "ambiguous")
+      return result(operation.op, "ambiguous_remote_state", blocker.message, parent.issue);
+    const ownership = await confirmTerminalOwnership(root, gh, operation.op, source, blocker.issue);
+    if (!("owned" in ownership))
+      return ownership;
+    blockers.push(blocker.issue);
+  }
+  const body = childBody(source.repository, operation, parent.issue);
+  const oversized = bodyLimitFailure(operation.op, body, MAX_TERMINAL_SUFFIX_BYTES);
+  if (oversized)
+    return oversized;
+  const title = taskIssueTitle(operation, sliceOrdinalFromChecklist(parent.issue.body, operation.slice_id, operation.projection?.slice_ordinal ?? 1));
+  let child;
+  let createdChild = false;
+  let labelsConverged = false;
+  if (found.kind === "missing") {
+    if (amendmentContext !== undefined) {
+      const reRead = await snapshot(root, gh, operation.op);
+      if ("contract" in reRead)
+        return reRead;
+      const reReadParent = initiativeLookup(reRead.issues, reRead.repository.id, operation.initiative_id);
+      if (reReadParent.kind !== "found")
+        return result(operation.op, "ambiguous_remote_state", reReadParent.kind === "ambiguous" ? reReadParent.message : "amendment Parent is not observable before creating a new Child", parent.issue);
+      if (reReadParent.issue.number !== amendmentContext.parentIssueNumber)
+        return result(operation.op, "ambiguous_remote_state", `amendment Parent is bound to Issue #${amendmentContext.parentIssueNumber} but observed Issue #${reReadParent.issue.number} before creating a new Child`, reReadParent.issue);
+      if (reReadParent.issue.state !== "open")
+        return result(operation.op, "ambiguous_remote_state", "amendment Parent is no longer open before creating a new Child", reReadParent.issue);
+      if (amendmentContext.parent.title !== reReadParent.issue.title || amendmentContext.parent.body !== reReadParent.issue.body)
+        return result(operation.op, "ambiguous_remote_state", "amendment Parent content changed before creating a new Child", reReadParent.issue);
+      if (sliceCount(reReadParent.issue.body, operation.slice_id) !== 1)
+        return result(operation.op, "ambiguous_remote_state", `Parent Issue #${reReadParent.issue.number} lost its exact Slice marker ${operation.slice_id} before creating a new Child`, reReadParent.issue);
+      const raced = lookup(reRead.issues);
+      if (raced.kind === "ambiguous")
+        return result(operation.op, "ambiguous_remote_state", raced.message);
+      if (raced.kind === "found") {
+        const approved = amendmentContext.pendingContent.get(operation.task_id);
+        const resumable = approved !== undefined && raced.issue.state === "open" && carriesApprovedContent(raced.issue.title, raced.issue.body, approved);
+        if (!resumable)
+          return result(operation.op, "ambiguous_remote_state", `new pending Task ${operation.task_id} is unbound but Issue #${raced.issue.number} already exists with divergent content; bind it to amend`, raced.issue);
+        return updatePendingChild(root, gh, reRead, operation, raced.issue, undefined, blockers, approved, amendmentContext);
+      }
+    }
+    const mutation = await gh.run([
+      "issue",
+      "create",
+      "--repo",
+      source.repository.name_with_owner,
+      "--title",
+      title,
+      "--body-file",
+      "-",
+      ...desiredTaskLabels(operation).flatMap((label) => ["--label", label])
+    ], { cwd: root, stdin: body });
+    const refreshed = await snapshot(root, gh, operation.op);
+    if ("contract" in refreshed)
+      return refreshed;
+    const created = lookup(refreshed.issues);
+    if (created.kind === "ambiguous")
+      return result(operation.op, "ambiguous_remote_state", created.message);
+    if (created.kind === "missing") {
+      return mutation.exit_code !== 0 && !mutation.timed_out && !mutation.output_exceeded ? ghFailure(operation.op, mutation, "Task Issue creation failed") : result(operation.op, "retryable_failure", "Task creation could not be confirmed");
+    }
+    if (created.issue.body !== body || created.issue.title !== title)
+      return result(operation.op, "retryable_failure", "Task Issue did not converge to the requested title and body", created.issue);
+    if (amendmentContext !== undefined) {
+      if (created.issue.state !== "open")
+        return result(operation.op, "ambiguous_remote_state", `new pending Task ${operation.task_id} (Issue #${created.issue.number}) is not open after creation`, created.issue);
+      return updatePendingChild(root, gh, source, operation, created.issue, undefined, blockers, amendmentContext.pendingContent.get(operation.task_id), amendmentContext);
+    }
+    child = created.issue;
+    createdChild = true;
+  } else {
+    const owned = ownedTaskLookup(source.issues, source.repository.id, operation.task_id, operation.initiative_id, operation.slice_id);
+    if (owned.kind !== "found")
+      return result(operation.op, "ambiguous_remote_state", owned.kind === "ambiguous" ? owned.message : "Task Issue ownership changed during publication", found.issue);
+    child = owned.issue;
+    if (pendingBinding !== null) {
+      if (child.state !== "open")
+        return result(operation.op, "ambiguous_remote_state", `Task ${operation.task_id} is closed and cannot be amended as pending work`, found.issue);
+      if (pendingBinding !== undefined && pendingBinding.issue_number !== child.number)
+        return result(operation.op, "ambiguous_remote_state", `Task ${operation.task_id} is bound to Issue #${pendingBinding.issue_number} but observed Issue #${child.number}`, found.issue);
+      const approvedFinal = amendmentContext?.pendingContent.get(operation.task_id);
+      const isFinal = approvedFinal !== undefined && carriesApprovedContent(found.issue.title, found.issue.body, approvedFinal);
+      if (!isFinal) {
+        const baselineMatches = pendingBinding !== undefined && pendingBinding.title === found.issue.title && carriesApprovedContent(found.issue.title, found.issue.body, pendingBinding);
+        if (!baselineMatches)
+          return result(operation.op, "ambiguous_remote_state", `Task ${operation.task_id} changed since the approved amendment baseline`, found.issue);
+      }
+      return updatePendingChild(root, gh, source, operation, child, pendingBinding?.issue_number, blockers, approvedFinal, amendmentContext);
+    }
+    if (amendmentContext !== undefined) {
+      const approvedFinal = amendmentContext.pendingContent.get(operation.task_id);
+      const resumable = approvedFinal !== undefined && child.state === "open" && carriesApprovedContent(found.issue.title, found.issue.body, approvedFinal);
+      if (!resumable)
+        return result(operation.op, "ambiguous_remote_state", `new pending Task ${operation.task_id} is unbound but Issue #${child.number} already exists with divergent content; bind it to amend`, found.issue);
+      return updatePendingChild(root, gh, source, operation, child, undefined, blockers, approvedFinal, amendmentContext);
+    }
+    if (found.issue.body !== body || found.issue.title !== title)
+      return result(operation.op, "permanent_failure", "Task Issue already exists with a different title or Agent Brief; edit the GitHub source or retry the original projection before changing native relations", found.issue);
+    const observedLabelArgs = labelMutationArgs(child.labels, desiredTaskLabels(operation));
+    if (observedLabelArgs.length) {
+      const edited = await gh.run([
+        "issue",
+        "edit",
+        String(child.number),
+        "--repo",
+        source.repository.name_with_owner,
+        ...observedLabelArgs
+      ], { cwd: root });
+      if (edited.exit_code !== 0 || edited.output_exceeded)
+        return ghFailure(operation.op, edited, `Task Issue #${child.number} label convergence failed`);
+      labelsConverged = true;
+    }
+  }
+  const attachment = await confirmAttachment(root, gh, operation.op, source.repository, parent.issue.number, child.number);
+  if (!("attached" in attachment))
+    return attachment;
+  if (!attachment.attached) {
+    const attach = await attachSubIssue(root, gh, operation.op, source.repository, parent.issue.number, child);
+    if (!("attached" in attach))
+      return attach;
+  }
+  const dependencies = await confirmBlockedBy(root, gh, operation.op, source.repository, child.number, blockers);
+  if (!("complete" in dependencies))
+    return dependencies;
+  if (!dependencies.complete) {
+    const attached = await attachBlockedBy(root, gh, operation.op, source.repository, child.number, blockers);
+    if (!("complete" in attached))
+      return attached;
+  }
+  const finalSource = await snapshot(root, gh, operation.op);
+  if ("contract" in finalSource)
+    return finalSource;
+  const finalChild = ownedTaskLookup(finalSource.issues, finalSource.repository.id, operation.task_id, operation.initiative_id, operation.slice_id);
+  if (finalChild.kind !== "found" || finalChild.issue.id !== child.id || finalChild.issue.title !== title || finalChild.issue.body !== body)
+    return result(operation.op, "ambiguous_remote_state", "Task Issue changed identity, title, or body during dependency publication", child);
+  const finalChildOwnership = await confirmTerminalOwnership(root, gh, operation.op, finalSource, finalChild.issue);
+  if (!("owned" in finalChildOwnership))
+    return finalChildOwnership;
+  child = finalChild.issue;
+  for (let index = 0;index < blockerIds.length; index += 1) {
+    const current = taskLookup(finalSource.issues, finalSource.repository.id, blockerIds[index]);
+    if (current.kind !== "found" || current.issue.id !== blockers[index].id)
+      return result(operation.op, "ambiguous_remote_state", `blocking Task ${blockerIds[index]} changed ownership during dependency publication`, child);
+    const ownership = await confirmTerminalOwnership(root, gh, operation.op, finalSource, current.issue);
+    if (!("owned" in ownership))
+      return ownership;
+  }
+  const finalDependencies = await confirmBlockedBy(root, gh, operation.op, finalSource.repository, child.number, blockers);
+  if (!("complete" in finalDependencies))
+    return finalDependencies;
+  if (!finalDependencies.complete)
+    return result(operation.op, "ambiguous_remote_state", "native blocked_by relations changed during dependency publication", child);
+  if (attachment.attached && dependencies.complete)
+    return createdChild ? result(operation.op, "created", "Task Issue created and attached with native blocking relations", child) : result(operation.op, labelsConverged ? "updated" : "already_current", "Task Issue, native Sub-issue relation, and blocking relations are current", child);
+  return createdChild ? result(operation.op, "created", "Task Issue created and attached as a native Sub-issue", child) : result(operation.op, "updated", "existing Task Issue attached as a native Sub-issue", child);
+}
+async function confirmTerminalOwnership(root, gh, operation, source, child) {
+  const initiativeId = ownershipMarkerValue(child.body, "initiative-id");
+  const sliceId = ownershipMarkerValue(child.body, "slice-id");
+  if (!initiativeId || !sliceId)
+    return result(operation, "ambiguous_remote_state", `Issue #${child.number} has invalid ownership markers`, child);
+  const parent = initiativeLookup(source.issues, source.repository.id, initiativeId);
+  if (parent.kind !== "found")
+    return result(operation, "ambiguous_remote_state", parent.kind === "ambiguous" ? parent.message : `Issue #${child.number} has no exact Initiative Parent`, child);
+  if (sliceCount(parent.issue.body, sliceId) !== 1)
+    return result(operation, "ambiguous_remote_state", `Issue #${child.number} has no exact Slice in Parent #${parent.issue.number}`, child);
+  const attachment = await confirmAttachment(root, gh, operation, source.repository, parent.issue.number, child.number);
+  if (!("attached" in attachment))
+    return attachment;
+  return attachment.attached ? { owned: true } : result(operation, "ambiguous_remote_state", `Issue #${child.number} is not attached to its marker-bound Parent #${parent.issue.number}`, child);
+}
+async function closeTerminalIssue(root, gh, operation, source, issue, lookup) {
+  const desiredReason = operation.phase === "done" ? "completed" : "not_planned";
+  const close = await gh.run([
+    "issue",
+    "close",
+    String(issue.number),
+    "--repo",
+    source.repository.name_with_owner,
+    "--reason",
+    operation.phase === "done" ? "completed" : "not planned"
+  ], { cwd: root });
+  const refreshed = await snapshot(root, gh, operation.op);
+  if ("contract" in refreshed)
+    return refreshed;
+  const found = lookup(refreshed.issues);
+  if (found.kind === "ambiguous")
+    return result(operation.op, "ambiguous_remote_state", found.message);
+  if (found.kind === "missing")
+    return result(operation.op, "retryable_failure", "terminal Issue closure could not be confirmed");
+  if (countLiteral(found.issue.body, terminalMarker(operation.terminal_event_id)) !== 1)
+    return result(operation.op, "ambiguous_remote_state", "terminal Issue body changed during closure", found.issue);
+  if (found.issue.state === "closed" && found.issue.state_reason === desiredReason)
+    return result(operation.op, "updated", "terminal Task Issue closure confirmed", found.issue);
+  return close.exit_code !== 0 ? ghFailure(operation.op, close, "terminal Issue closure failed") : result(operation.op, "retryable_failure", "terminal Issue closure did not converge", found.issue);
+}
+async function markTerminal(root, gh, operation, source) {
+  const lookup = (issues) => taskLookup(issues, source.repository.id, operation.task_id);
+  const found = lookup(source.issues);
+  if (found.kind === "missing")
+    return result(operation.op, "already_current", "Task has no opted-in tracker association");
+  if (found.kind === "ambiguous")
+    return result(operation.op, "ambiguous_remote_state", found.message);
+  const issue = found.issue;
+  const ownership = await confirmTerminalOwnership(root, gh, operation.op, source, issue);
+  if (!("owned" in ownership))
+    return ownership;
+  const existingEvents = [...issue.body.matchAll(/<!-- immune-brain:terminal-event=([A-Za-z0-9._:-]+) -->/g)];
+  if (existingEvents.length > 1 || existingEvents.length === 1 && existingEvents[0][1] !== operation.terminal_event_id)
+    return result(operation.op, "ambiguous_remote_state", "terminal Issue conflicts with authoritative settlement", issue);
+  const desiredReason = operation.phase === "done" ? "completed" : "not_planned";
+  if (existingEvents.length === 1) {
+    if (issue.state === "closed")
+      return issue.state_reason === desiredReason ? result(operation.op, "already_current", "terminal Task Issue is current", issue) : result(operation.op, "ambiguous_remote_state", "closed Issue reason conflicts with authoritative settlement", issue);
+    return closeTerminalIssue(root, gh, operation, source, issue, lookup);
+  }
+  if (issue.state === "closed")
+    return result(operation.op, "ambiguous_remote_state", "a manually closed nonterminal Task Issue is preserved and never reopened automatically", issue);
+  const updated = `${issue.body.trimEnd()}${terminalSuffix(operation.terminal_event_id)}`;
+  const oversized = bodyLimitFailure(operation.op, updated);
+  if (oversized)
+    return oversized;
+  const edited = await gh.run([
+    "issue",
+    "edit",
+    String(issue.number),
+    "--repo",
+    source.repository.name_with_owner,
+    "--body-file",
+    "-"
+  ], { cwd: root, stdin: updated });
+  if (edited.exit_code !== 0 || edited.output_exceeded)
+    return ghFailure(operation.op, edited, "terminal marker publication failed");
+  const refreshed = await snapshot(root, gh, operation.op);
+  if ("contract" in refreshed)
+    return refreshed;
+  const reread = lookup(refreshed.issues);
+  if (reread.kind === "ambiguous")
+    return result(operation.op, "ambiguous_remote_state", reread.message);
+  if (reread.kind === "missing" || countLiteral(reread.issue.body, terminalMarker(operation.terminal_event_id)) !== 1)
+    return result(operation.op, "retryable_failure", "terminal marker publication could not be confirmed");
+  const refreshedOwnership = await confirmTerminalOwnership(root, gh, operation.op, refreshed, reread.issue);
+  if (!("owned" in refreshedOwnership))
+    return refreshedOwnership;
+  return closeTerminalIssue(root, gh, operation, refreshed, reread.issue, lookup);
+}
+function normalizedList(value, name, max = 2000) {
+  if (value === undefined)
+    return;
+  if (!Array.isArray(value))
+    throw new Error(`${name} must be an array`);
+  return value.map((item, index) => publicText(item, `${name}[${index}]`, max));
+}
+function projectionText(value, name, max = 2000) {
+  const text = publicText(value, name, max);
+  if (/(?:docs\/plans\/|\.intent\.json\b|internal[\s_-]+roles?|role[\s_-]+prompts?|review[\s_-]+reservations?|model[\s_-]+reservations?|prompt[\s_-]+digests?|kernel[\s_-]+runtimes?(?:[\s_-]+states?)?|runtime[\s_-]+states?|review[\s_-]+gates?|tool[\s_-]+polic(?:y|ies)|mutable[\s_-]+scopes?|scope[\s_-]+authorit(?:y|ies)|widen[\s_-]+scopes?|QA[\s_-]+settlements?|record_approval|submit_review|advance_assurance|request_authorization)/i.test(text))
+    throw new Error(`${name} contains restricted authority context`);
+  return text;
+}
+function normalizedProjectionList(value, name, max = 2000) {
+  if (value === undefined)
+    return;
+  if (!Array.isArray(value))
+    throw new Error(`${name} must be an array`);
+  return value.map((item, index) => projectionText(item, `${name}[${index}]`, max));
+}
+function projectionRisk(value) {
+  if (value === "routine" || value === "material" || value === "critical")
+    return value;
+  throw new Error("risk must be routine, material, or critical");
+}
+function normalizeProjection(value) {
+  if (value === undefined)
+    return;
+  if (!value || typeof value !== "object" || Array.isArray(value))
+    throw new Error("projection must be an object");
+  const blockedBy = normalizedProjectionList(value.blocked_by, "projection.blocked_by", 128)?.map((id) => identifier(id, "projection.blocked_by task_id"));
+  if (blockedBy && new Set(blockedBy).size !== blockedBy.length)
+    throw new Error("projection.blocked_by must not contain duplicate Task IDs");
+  if (value.slice_ordinal !== undefined && (typeof value.slice_ordinal !== "number" || !Number.isSafeInteger(value.slice_ordinal) || value.slice_ordinal < 1 || value.slice_ordinal > 999))
+    throw new Error("projection.slice_ordinal must be an integer between 1 and 999");
+  return {
+    short_name: value.short_name,
+    title: value.title,
+    slice_ordinal: value.slice_ordinal,
+    result: value.result === undefined ? undefined : projectionText(value.result, "projection.result"),
+    current_behavior: value.current_behavior === undefined ? undefined : projectionText(value.current_behavior, "projection.current_behavior"),
+    desired_behavior: value.desired_behavior === undefined ? undefined : projectionText(value.desired_behavior, "projection.desired_behavior"),
+    key_interfaces: normalizedProjectionList(value.key_interfaces, "projection.key_interfaces", 500),
+    verification: value.verification === undefined ? undefined : projectionText(value.verification, "projection.verification"),
+    blocked_by: blockedBy,
+    out_of_scope: normalizedProjectionList(value.out_of_scope, "projection.out_of_scope", 500),
+    agent_handoff: value.agent_handoff === undefined ? undefined : projectionText(value.agent_handoff, "projection.agent_handoff")
+  };
+}
+function normalizeInitiativeProjection(value) {
+  if (value === undefined)
+    return;
+  if (!value || typeof value !== "object" || Array.isArray(value))
+    throw new Error("projection must be an object");
+  if (value.source_issue !== undefined && (typeof value.source_issue !== "string" || !/^[1-9][0-9]{0,9}$/.test(value.source_issue)))
+    throw new Error("projection.source_issue must be a GitHub Issue number");
+  return {
+    short_name: value.short_name,
+    title: value.title,
+    source_issue: value.source_issue,
+    problem: value.problem === undefined ? undefined : projectionText(value.problem, "projection.problem"),
+    result: value.result === undefined ? undefined : projectionText(value.result, "projection.result"),
+    design: value.design === undefined ? undefined : projectionText(value.design, "projection.design"),
+    decisions: normalizedProjectionList(value.decisions, "projection.decisions", 500),
+    testing_strategy: value.testing_strategy === undefined ? undefined : projectionText(value.testing_strategy, "projection.testing_strategy"),
+    out_of_scope: normalizedProjectionList(value.out_of_scope, "projection.out_of_scope", 500)
+  };
+}
+function validateOperation(operation) {
+  if (operation.op === "create-initiative") {
+    const seen = new Set;
+    const normalized = {
+      ...operation,
+      initiative_id: identifier(operation.initiative_id, "initiative_id"),
+      goal: projectionText(operation.goal, "goal"),
+      projection: normalizeInitiativeProjection(operation.projection),
+      slices: operation.slices.map((slice, index) => {
+        const id = identifier(slice.id, `slices[${index}].id`);
+        if (seen.has(id))
+          throw new Error(`duplicate Slice id: ${id}`);
+        seen.add(id);
+        return {
+          id,
+          goal: projectionText(slice.goal, `slices[${index}].goal`, 1000),
+          result: slice.result === undefined ? undefined : projectionText(slice.result, `slices[${index}].result`, 1000),
+          blocked_by: normalizedList(slice.blocked_by, `slices[${index}].blocked_by`, 128)?.map((taskId, blockerIndex) => identifier(projectionText(taskId, `slices[${index}].blocked_by[${blockerIndex}]`, 128), `slices[${index}].blocked_by task_id`))
+        };
+      })
+    };
+    initiativeIssueTitle(normalized.initiative_id, normalized.projection);
+    return normalized;
+  }
+  if (operation.op === "upsert-task") {
+    const normalized = {
+      ...operation,
+      initiative_id: identifier(operation.initiative_id, "initiative_id"),
+      task_id: identifier(operation.task_id, "task_id"),
+      slice_id: identifier(operation.slice_id, "slice_id"),
+      risk: projectionRisk(operation.risk),
+      goal: projectionText(operation.goal, "goal"),
+      projection: normalizeProjection(operation.projection),
+      acceptance: operation.acceptance.map((item, index) => ({
+        id: identifier(item.id, `acceptance[${index}].id`),
+        summary: projectionText(item.summary, `acceptance[${index}].summary`, 500)
+      }))
+    };
+    taskIssueTitle(normalized);
+    return normalized;
+  }
+  return {
+    ...operation,
+    task_id: identifier(operation.task_id, "task_id"),
+    terminal_event_id: terminalEvent(operation.terminal_event_id)
+  };
+}
+async function runGithubTrackerOperation(root, input, gh = createGhTransport()) {
+  let operation;
+  try {
+    operation = validateOperation(input);
+  } catch (error) {
+    return result(input.op, "permanent_failure", error instanceof Error ? error.message : String(error));
+  }
+  const absoluteRoot = resolve7(root);
+  if (operation.op !== "mark-terminal") {
+    const conflict = carrierConflict(absoluteRoot, operation.op, operation.initiative_id);
+    if (conflict)
+      return conflict;
+  }
+  const source = await snapshot(absoluteRoot, gh, operation.op);
+  if ("contract" in source)
+    return source;
+  switch (operation.op) {
+    case "create-initiative":
+      return createInitiative(absoluteRoot, gh, operation, source);
+    case "upsert-task":
+      return upsertTask(absoluteRoot, gh, operation, source);
+    case "mark-terminal":
+      return markTerminal(absoluteRoot, gh, operation, source);
+  }
+}
+function issueTerminalEventId(body) {
+  const suffixMatch = [...body.matchAll(/<!-- immune-brain:terminal-event=([A-Za-z0-9._:-]+) -->/g)];
+  if (suffixMatch.length === 0)
+    return null;
+  if (suffixMatch.length > 1)
+    return "multiple";
+  const eventId = suffixMatch[0][1];
+  if (eventId.length > MAX_TERMINAL_EVENT_ID || !body.endsWith(terminalSuffix(eventId)))
+    return "malformed";
+  return eventId;
+}
+function stripTerminalSuffixFromBytes(body) {
+  if (body === undefined)
+    return null;
+  const eventId = issueTerminalEventId(body);
+  if (eventId === null || eventId === "multiple" || eventId === "malformed")
+    return eventId;
+  const suffix = terminalSuffix(eventId);
+  if (!body.endsWith(suffix))
+    return null;
+  return body.slice(0, body.length - suffix.length);
+}
+function carriesApprovedContent(title, body, approved) {
+  if (title !== approved.title)
+    return false;
+  if (body === approved.body)
+    return true;
+  const stripped = stripTerminalSuffixFromBytes(body);
+  return typeof stripped === "string" && stripped.trimEnd() === approved.body.trimEnd();
+}
+async function updatePendingChild(root, gh, source, op, child, boundNumber, desiredBlockers, approvedFinal, amendmentContext = undefined) {
+  const parent = initiativeLookup(source.issues, source.repository.id, op.initiative_id);
+  const body = childBody(source.repository, op, parent.kind === "found" ? parent.issue : child);
+  const oversized = bodyLimitFailure(op.op, body, MAX_TERMINAL_SUFFIX_BYTES);
+  if (oversized)
+    return oversized;
+  const title = taskIssueTitle(op, sliceOrdinalFromChecklist(parent.kind === "found" ? parent.issue.body : child.body, op.slice_id, op.projection?.slice_ordinal ?? 1));
+  const parentApprovedContent = amendmentContext?.parent;
+  const parentBoundNumber = amendmentContext?.parentIssueNumber;
+  const baseBody = child.body;
+  const suffixEvent = issueTerminalEventId(baseBody);
+  if (suffixEvent === "multiple")
+    return result(op.op, "ambiguous_remote_state", "pending Task has multiple terminal markers", child);
+  if (suffixEvent === "malformed")
+    return result(op.op, "ambiguous_remote_state", `pending Task ${op.task_id} carries a malformed terminal marker (marker without its exact canonical suffix)`, child);
+  let finalBody = suffixEvent !== null ? `${body.trimEnd()}${terminalSuffix(suffixEvent)}` : body;
+  const approvedMatches = approvedFinal !== undefined && carriesApprovedContent(title, body, approvedFinal);
+  if (!approvedMatches)
+    return result(op.op, "ambiguous_remote_state", `pending Task ${op.task_id} carries a terminal suffix that diverges from the approved amendment content`, child);
+  const approvedNow = approvedFinal !== undefined && carriesApprovedContent(child.title, child.body, approvedFinal);
+  if (approvedNow) {
+    const currentParent = initiativeLookup(source.issues, source.repository.id, op.initiative_id);
+    if (currentParent.kind !== "found")
+      return result(op.op, "ambiguous_remote_state", "pending Task Parent is not observable before attachment convergence", child);
+    const revalidated = await revalidatePendingChildBeforeWrite(root, gh, child.number, op.task_id, approvedFinal, undefined, true, parentApprovedContent, parentBoundNumber);
+    if ("contract" in revalidated)
+      return revalidated;
+    const targetParentNumber = parentBoundNumber ?? currentParent.issue.number;
+    const attachment = await confirmAttachment(root, gh, op.op, source.repository, targetParentNumber, child.number);
+    if (!("attached" in attachment))
+      return attachment;
+    if (!attachment.attached) {
+      const attached = await attachSubIssue(root, gh, op.op, source.repository, targetParentNumber, child);
+      if (!("attached" in attached))
+        return attached;
+    }
+  }
+  let observed = child;
+  const desiredLabels = desiredTaskLabels(op);
+  if (child.title !== title || child.body !== finalBody || labelMutationArgs(child.labels, desiredLabels).length) {
+    const revalidated = await revalidatePendingChildBeforeWrite(root, gh, child.number, op.task_id, approvedFinal, { title: child.title, body: child.body }, false, parentApprovedContent, parentBoundNumber);
+    if ("contract" in revalidated)
+      return revalidated;
+    observed = revalidated;
+    const observedEvent = issueTerminalEventId(observed.body);
+    if (observedEvent === "malformed")
+      return result(op.op, "ambiguous_remote_state", `pending Task ${op.task_id} carries a malformed terminal marker (marker without its exact canonical suffix)`, child);
+    const writeBody = typeof observedEvent === "string" ? `${body.trimEnd()}${terminalSuffix(observedEvent)}` : finalBody;
+    const labelArgs = labelMutationArgs(observed.labels, desiredLabels);
+    if (observed.title !== title || observed.body !== writeBody || labelArgs.length) {
+      const edited = await gh.run([
+        "issue",
+        "edit",
+        String(child.number),
+        "--repo",
+        source.repository.name_with_owner,
+        "--title",
+        title,
+        "--body-file",
+        "-",
+        ...labelArgs
+      ], { cwd: root, stdin: writeBody });
+      if (edited.exit_code !== 0 || edited.output_exceeded)
+        return ghFailure(op.op, edited, `pending Task Issue #${child.number} update failed`);
+      finalBody = writeBody;
+    }
+  }
+  const dependencies = await convergePendingDependencies(root, gh, source, child.number, op.task_id, desiredBlockers, approvedFinal, parentApprovedContent, parentBoundNumber);
+  if (!("complete" in dependencies))
+    return dependencies;
+  const refreshed = await snapshot(root, gh, op.op);
+  if ("contract" in refreshed)
+    return refreshed;
+  const reread = ownedTaskLookup(refreshed.issues, refreshed.repository.id, op.task_id, op.initiative_id, op.slice_id);
+  if (reread.kind !== "found" || reread.issue.number !== child.number)
+    return result(op.op, "ambiguous_remote_state", `pending Task ${op.task_id} changed identity during amendment`, child);
+  if (reread.issue.title !== title || reread.issue.body !== finalBody)
+    return result(op.op, "retryable_failure", `pending Task ${op.task_id} update did not converge`, reread.issue);
+  const labelsCurrent = !desiredLabels.some((label) => !reread.issue.labels.includes(label));
+  if (!labelsCurrent)
+    return result(op.op, "retryable_failure", `pending Task ${op.task_id} labels did not converge`, reread.issue);
+  const currentDependencies = await confirmBlockedBy(root, gh, op.op, refreshed.repository, reread.issue.number, desiredBlockers);
+  if (!("complete" in currentDependencies))
+    return currentDependencies;
+  if (!currentDependencies.complete)
+    return result(op.op, "retryable_failure", `pending Task ${op.task_id} dependencies did not converge`, reread.issue);
+  const contentCurrent = child.title === title && child.body === finalBody && labelMutationArgs(child.labels, desiredLabels).length === 0;
+  return contentCurrent ? result(op.op, "already_current", `pending Task ${op.task_id} already carries the approved amendment content`, reread.issue) : result(op.op, "updated", `pending Task ${op.task_id} Agent Brief updated with approved amendment content`, reread.issue);
+}
+async function convergePendingDependencies(root, gh, source, childNumber, childTaskId, requestedBlockers, approvedFinal, parentApprovedContent = undefined, parentBoundNumber = undefined) {
+  const expected = requestedBlockers.map((blocker) => blocker.id);
+  const existing = await readBlockedByIds(root, gh, "upsert-task", source.repository, childNumber);
+  if (!Array.isArray(existing))
+    return existing;
+  const removed = existing.filter((id) => !expected.includes(id));
+  for (const id of removed) {
+    const revalidated = await revalidatePendingChildBeforeWrite(root, gh, childNumber, childTaskId, approvedFinal, undefined, false, parentApprovedContent, parentBoundNumber);
+    if ("contract" in revalidated)
+      return revalidated;
+    const mutation = await gh.run([
+      "api",
+      "--method",
+      "DELETE",
+      `repos/${source.repository.name_with_owner}/issues/${childNumber}/dependencies/blocked_by/${id}`
+    ], { cwd: root });
+    if (mutation.exit_code !== 0 || mutation.output_exceeded)
+      return ghFailure("upsert-task", mutation, `native blocked_by removal failed for Issue #${childNumber}`);
+  }
+  const additions = requestedBlockers.filter((blocker) => !existing.includes(blocker.id));
+  for (const blocker of additions) {
+    const revalidated = await revalidatePendingChildBeforeWrite(root, gh, childNumber, childTaskId, approvedFinal, undefined, false, parentApprovedContent, parentBoundNumber);
+    if ("contract" in revalidated)
+      return revalidated;
+    const mutation = await gh.run([
+      "api",
+      "-F",
+      `issue_id=${blocker.id}`,
+      `repos/${source.repository.name_with_owner}/issues/${childNumber}/dependencies/blocked_by`
+    ], { cwd: root });
+    if (mutation.exit_code !== 0 || mutation.output_exceeded)
+      return ghFailure("upsert-task", mutation, `native blocked_by attachment failed for Issue #${blocker.number}`);
+  }
+  const confirm = await confirmBlockedBy(root, gh, "upsert-task", source.repository, childNumber, requestedBlockers);
+  if (!("complete" in confirm))
+    return confirm;
+  return confirm.complete ? { complete: true } : { complete: true };
+}
+async function revalidatePendingChildBeforeWrite(root, gh, childNumber, childTaskId, approvedFinal, allowedBaseline = undefined, skipAttachmentCheck = false, parentApproved = undefined, parentExpectedNumber = undefined) {
+  const refreshed = await snapshot(root, gh, "upsert-task");
+  if ("contract" in refreshed)
+    return refreshed;
+  const resolved = taskLookup(refreshed.issues, refreshed.repository.id, childTaskId);
+  if (resolved.kind !== "found")
+    return result("upsert-task", "ambiguous_remote_state", `pending Task ${childTaskId} is not uniquely owned before a write: ${resolved.kind}`);
+  const child = resolved.issue;
+  if (child.number !== childNumber)
+    return result("upsert-task", "ambiguous_remote_state", `pending Task ${childTaskId} resolves to Issue #${child.number}, not the bound Issue #${childNumber}`, child);
+  if (child.state !== "open")
+    return result("upsert-task", "ambiguous_remote_state", `pending Task ${childTaskId} (Issue #${childNumber}) is no longer open before a dependency write`, child);
+  const contentFinal = approvedFinal !== undefined && carriesApprovedContent(child.title, child.body, approvedFinal);
+  const contentBaseline = allowedBaseline !== undefined && child.title === allowedBaseline.title && child.body === allowedBaseline.body;
+  if (!contentFinal && !contentBaseline)
+    return result("upsert-task", "ambiguous_remote_state", `pending Task ${childTaskId} (Issue #${childNumber}) content is no longer the approved final bytes before a dependency write`, child);
+  const initiativeId = [...child.body.matchAll(/<!-- immune-brain:initiative-id=([A-Za-z0-9._:-]+) -->/g)].map((match) => match[1])[0];
+  if (!initiativeId)
+    return result("upsert-task", "ambiguous_remote_state", `pending Task ${childTaskId} (Issue #${childNumber}) lost its Initiative marker before a dependency write`, child);
+  const parent = initiativeLookup(refreshed.issues, refreshed.repository.id, initiativeId);
+  if (parent.kind !== "found" || parent.issue.state !== "open")
+    return result("upsert-task", "ambiguous_remote_state", `pending Task ${childTaskId} (Issue #${childNumber}) lost its open Parent before a dependency write`, child);
+  if (parentExpectedNumber !== undefined && parent.issue.number !== parentExpectedNumber)
+    return result("upsert-task", "ambiguous_remote_state", `pending Task ${childTaskId} (Issue #${childNumber}) Parent resolves to Issue #${parent.issue.number}, not the bound Parent Issue #${parentExpectedNumber} before a dependency write`, child);
+  if (parentApproved !== undefined && (parent.issue.title !== parentApproved.title || parent.issue.body !== parentApproved.body))
+    return result("upsert-task", "ambiguous_remote_state", `pending Task ${childTaskId} (Issue #${childNumber}) Parent changed since the approved amendment content before a dependency write`, child);
+  if (!skipAttachmentCheck) {
+    const attachedNow = await readSubIssueNumbers(root, gh, "upsert-task", refreshed.repository, parent.issue.number);
+    if (!Array.isArray(attachedNow))
+      return attachedNow;
+    if (!attachedNow.includes(childNumber))
+      return result("upsert-task", "ambiguous_remote_state", `pending Task ${childTaskId} (Issue #${childNumber}) is no longer attached to the Parent before a dependency write`, child);
+  }
+  const sliceId = ownershipMarkerValue(child.body, "slice-id");
+  if (sliceId && sliceCount(parent.issue.body, sliceId) !== 1)
+    return result("upsert-task", "ambiguous_remote_state", `pending Task ${childTaskId} (Issue #${childNumber}) lost its exact Slice in the Parent before a dependency write`, child);
+  return child;
+}
+
 // plugins/immune-brain/runtime/unattended/batch_preflight.ts
-import { existsSync as existsSync4, readdirSync as readdirSync2, readFileSync as readFileSync8 } from "node:fs";
+import { existsSync as existsSync5, readdirSync as readdirSync2, readFileSync as readFileSync9 } from "node:fs";
 import { join as join9 } from "node:path";
 import { spawnSync as spawnSync4 } from "node:child_process";
 
@@ -7483,352 +8805,6 @@ function deriveChildEnrollment(root, registry, input) {
 
 // plugins/immune-brain/runtime/unattended/batch_plan.ts
 import { createHash as createHash15 } from "node:crypto";
-
-// plugins/immune-brain/runtime/github_issue_tracker.ts
-import { spawn as spawn2 } from "node:child_process";
-import { basename as basename2, relative as relative3, resolve as resolve7, sep as sep5 } from "node:path";
-var CONTRACT = "immune_brain/github_issue_tracker_result/v1";
-var PROTOCOL_MARKER = "<!-- immune-brain-tracker:v1 -->";
-var KIND_INITIATIVE_MARKER = "<!-- immune-brain:kind=initiative -->";
-var KIND_TASK_MARKER = "<!-- immune-brain:kind=task -->";
-var ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
-var MAX_GH_OUTPUT = 8 * 1024 * 1024;
-var MAX_DIAGNOSTIC = 512;
-var GH_TIMEOUT_MS = 20000;
-var MAX_SNAPSHOT_PAGES = 100;
-var MAX_TERMINAL_EVENT_ID = 500;
-function countLiteral(value, needle) {
-  if (!needle)
-    return 0;
-  let count = 0;
-  let index = 0;
-  while ((index = value.indexOf(needle, index)) !== -1) {
-    count += 1;
-    index += needle.length;
-  }
-  return count;
-}
-function marker(name, value) {
-  return `<!-- immune-brain:${name}=${value} -->`;
-}
-function terminalMarker(eventId) {
-  return `<!-- immune-brain:terminal-event=${eventId} -->`;
-}
-function terminalSuffix(eventId) {
-  return `
-
-${terminalMarker(eventId)}
-Terminal event: \`${eventId}\`
-`;
-}
-var MAX_TERMINAL_SUFFIX_BYTES = Buffer.byteLength(terminalSuffix("x".repeat(MAX_TERMINAL_EVENT_ID)), "utf8");
-function redactSecrets(value) {
-  return value.replace(/\bgh[pousr]_[A-Za-z0-9_]+\b/g, "[REDACTED_GITHUB_TOKEN]").replace(/\bgithub_pat_[A-Za-z0-9_]+\b/g, "[REDACTED_GITHUB_TOKEN]").replace(/\bBearer\s+\S+/gi, "Bearer [REDACTED]").replace(/\b(?:token|secret|password)\s*[=:]\s*\S+/gi, "credential=[REDACTED]");
-}
-function identifier(value, name) {
-  if (typeof value !== "string" || !ID_PATTERN.test(value))
-    throw new Error(`${name} must match ${ID_PATTERN}`);
-  if (/^(?:gh[pousr]_|github_pat_)/i.test(value))
-    throw new Error(`${name} must not contain a token-like value`);
-  return value;
-}
-function redactGithubDiagnostic(value) {
-  return redactSecrets(value).replace(/\s+/g, " ").trim().slice(0, MAX_DIAGNOSTIC);
-}
-function result(operation, status, message, issue) {
-  return {
-    contract: CONTRACT,
-    operation,
-    status,
-    association_found: issue !== undefined,
-    ...issue ? { issue_number: issue.number, issue_url: issue.url, node_id: String(issue.id) } : {},
-    message: redactGithubDiagnostic(message)
-  };
-}
-function ghFailure(operation, execution, message) {
-  const retryable = execution.timed_out || /timeout|timed out|network|connection|temporar|rate limit|502|503|504/i.test(execution.stderr);
-  return result(operation, retryable ? "retryable_failure" : "permanent_failure", `${message}: ${execution.output_exceeded ? "gh output limit exceeded" : execution.stderr || `gh exited ${execution.exit_code}`}`);
-}
-function createGhTransport(binary = "gh") {
-  return {
-    run(args, options = {}) {
-      return new Promise((complete) => {
-        let stdout = Buffer.alloc(0);
-        let stderr = Buffer.alloc(0);
-        let timedOut = false;
-        let outputExceeded = false;
-        let timer;
-        let settled = false;
-        const finish = (exitCode, spawnError = "") => {
-          if (settled)
-            return;
-          settled = true;
-          if (timer)
-            clearTimeout(timer);
-          complete({
-            exit_code: exitCode,
-            stdout: stdout.toString("utf8"),
-            stderr: `${stderr.toString("utf8")}${spawnError}`,
-            timed_out: timedOut,
-            output_exceeded: outputExceeded
-          });
-        };
-        let child;
-        try {
-          child = spawn2(binary, args, {
-            cwd: options.cwd,
-            stdio: ["pipe", "pipe", "pipe"],
-            env: process.env
-          });
-        } catch (error) {
-          finish(1, error instanceof Error ? error.message : String(error));
-          return;
-        }
-        const append = (current, chunk) => {
-          const available = Math.max(0, MAX_GH_OUTPUT - stdout.length - stderr.length);
-          if (chunk.length > available) {
-            outputExceeded = true;
-            child.kill("SIGKILL");
-          }
-          return available > 0 ? Buffer.concat([current, chunk.subarray(0, available)]) : current;
-        };
-        const { stdout: childOut, stderr: childErr, stdin: childIn } = child;
-        if (!childOut || !childErr || !childIn) {
-          finish(1, "gh was spawned without the stdio pipes this reader requires");
-          return;
-        }
-        childOut.on("data", (chunk) => {
-          stdout = append(stdout, chunk);
-        });
-        childErr.on("data", (chunk) => {
-          stderr = append(stderr, chunk);
-        });
-        child.once("error", (error) => {
-          finish(1, error.message);
-        });
-        childIn.once("error", (error) => {
-          finish(1, error.message);
-        });
-        timer = setTimeout(() => {
-          timedOut = true;
-          child.kill("SIGKILL");
-        }, GH_TIMEOUT_MS);
-        child.once("close", (code) => {
-          finish(code ?? 1);
-        });
-        try {
-          childIn.end(options.stdin ?? "");
-        } catch (error) {
-          finish(1, error instanceof Error ? error.message : String(error));
-        }
-      });
-    }
-  };
-}
-function parseRepository(raw) {
-  const value = JSON.parse(raw);
-  if (!Number.isSafeInteger(value.id) || typeof value.full_name !== "string" || !value.full_name.includes("/"))
-    throw new Error("gh returned malformed repository identity");
-  return { id: value.id, name_with_owner: value.full_name };
-}
-function parseIssues(raw) {
-  const parsed = JSON.parse(raw);
-  const pages = Array.isArray(parsed) && parsed.every(Array.isArray) ? parsed.flat() : parsed;
-  if (!Array.isArray(pages))
-    throw new Error("gh returned malformed Issue list");
-  return pages.filter((item) => Boolean(item) && typeof item === "object" && !("pull_request" in item)).map((item) => {
-    if (!Number.isSafeInteger(item.id) || !Number.isSafeInteger(item.number) || typeof item.html_url !== "string" || typeof item.title !== "string" || typeof item.body !== "string" && item.body !== null || item.state !== "open" && item.state !== "closed")
-      throw new Error("gh returned a malformed Issue");
-    return {
-      id: item.id,
-      number: item.number,
-      url: item.html_url,
-      title: item.title,
-      body: typeof item.body === "string" ? item.body : "",
-      state: item.state,
-      state_reason: typeof item.state_reason === "string" ? item.state_reason.toLowerCase() : null,
-      labels: Array.isArray(item.labels) ? item.labels.map((label) => typeof label === "string" ? label : label?.name).filter((name) => typeof name === "string") : []
-    };
-  });
-}
-function parseSubIssueNumbers(raw) {
-  const parsed = JSON.parse(raw);
-  const pages = Array.isArray(parsed) && parsed.every(Array.isArray) ? parsed.flat() : parsed;
-  if (!Array.isArray(pages))
-    throw new Error("gh returned malformed Sub-issue list");
-  return pages.map((item, index) => {
-    const number = item?.number;
-    if (typeof number !== "number" || !Number.isSafeInteger(number))
-      throw new Error(`gh returned a malformed Sub-issue entry at ${index}`);
-    return number;
-  });
-}
-async function snapshot(root, gh, operation) {
-  const repositoryExecution = await gh.run(["api", "repos/{owner}/{repo}"], { cwd: root });
-  if (repositoryExecution.exit_code !== 0 || repositoryExecution.output_exceeded)
-    return ghFailure(operation, repositoryExecution, "cannot resolve GitHub repository");
-  let repository;
-  try {
-    repository = parseRepository(repositoryExecution.stdout);
-  } catch (error) {
-    return result(operation, "permanent_failure", error instanceof Error ? error.message : String(error));
-  }
-  const issues = [];
-  for (let page = 1;page <= MAX_SNAPSHOT_PAGES; page += 1) {
-    const issuesExecution = await gh.run(["api", `repos/${repository.name_with_owner}/issues?state=all&per_page=100&page=${page}`], { cwd: root });
-    if (issuesExecution.exit_code !== 0 || issuesExecution.output_exceeded)
-      return ghFailure(operation, issuesExecution, "cannot query GitHub Issues");
-    let raw;
-    try {
-      raw = JSON.parse(issuesExecution.stdout);
-    } catch (error) {
-      return result(operation, "permanent_failure", error instanceof Error ? error.message : String(error));
-    }
-    if (!Array.isArray(raw))
-      return result(operation, "permanent_failure", "gh returned malformed Issue list");
-    const pageCount = raw.length;
-    try {
-      issues.push(...parseIssues(issuesExecution.stdout));
-    } catch (error) {
-      return result(operation, "permanent_failure", error instanceof Error ? error.message : String(error));
-    }
-    if (pageCount < 100)
-      break;
-    if (page === MAX_SNAPSHOT_PAGES)
-      return result(operation, "permanent_failure", "too many GitHub Issues to snapshot");
-  }
-  return { repository, issues };
-}
-function findIssue(issues, primary, required) {
-  const candidates = issues.filter((issue) => primary.every((needle) => issue.body.includes(needle)));
-  if (candidates.length === 0)
-    return { kind: "missing" };
-  if (candidates.length !== 1)
-    return { kind: "ambiguous", message: `multiple Issues contain identity marker ${primary[0]}` };
-  const issue = candidates[0];
-  for (const expected of [PROTOCOL_MARKER, ...required]) {
-    if (countLiteral(issue.body, expected) !== 1)
-      return { kind: "ambiguous", message: `Issue #${issue.number} has missing or duplicate identity markers` };
-  }
-  return { kind: "found", issue };
-}
-function initiativeLookup(issues, repositoryId, initiativeId) {
-  const initiative = marker("initiative-id", initiativeId);
-  return findIssue(issues, [initiative, KIND_INITIATIVE_MARKER], [marker("repo-id", repositoryId), initiative]);
-}
-function ownershipMarkerValue(body, name) {
-  const values = [...body.matchAll(new RegExp(`<!-- immune-brain:${name}=([A-Za-z0-9][A-Za-z0-9._-]{0,127}) -->`, "g"))];
-  return values.length === 1 ? values[0][1] : null;
-}
-function taskLookup(issues, repositoryId, taskId) {
-  const task = marker("task-id", taskId);
-  const base = findIssue(issues, [task, KIND_TASK_MARKER], [marker("repo-id", repositoryId), task]);
-  if (base.kind !== "found")
-    return base;
-  for (const name of ["task-id", "initiative-id", "slice-id"]) {
-    if (!ownershipMarkerValue(base.issue.body, name))
-      return { kind: "ambiguous", message: `Issue #${base.issue.number} has missing or duplicate ${name} ownership markers` };
-  }
-  return base;
-}
-function ownedTaskLookup(issues, repositoryId, taskId, initiativeId, sliceId) {
-  const base = taskLookup(issues, repositoryId, taskId);
-  if (base.kind !== "found")
-    return base;
-  return base.issue.body.includes(marker("initiative-id", initiativeId)) && base.issue.body.includes(marker("slice-id", sliceId)) ? base : { kind: "ambiguous", message: `Issue #${base.issue.number} belongs to another Initiative or Slice; Task ownership is immutable` };
-}
-async function readSubIssueNumbers(root, gh, operation, repository, parentNumber) {
-  const listed = await gh.run(["api", "--paginate", "--slurp", `repos/${repository.name_with_owner}/issues/${parentNumber}/sub_issues?per_page=100`], { cwd: root });
-  if (listed.exit_code !== 0 || listed.output_exceeded)
-    return ghFailure(operation, listed, "cannot read native Sub-issue relations");
-  try {
-    return parseSubIssueNumbers(listed.stdout);
-  } catch (error) {
-    return result(operation, "permanent_failure", error instanceof Error ? error.message : String(error));
-  }
-}
-async function readBlockedByIds(root, gh, operation, repository, childNumber) {
-  const listed = await gh.run(["api", "--paginate", "--slurp", `repos/${repository.name_with_owner}/issues/${childNumber}/dependencies/blocked_by?per_page=100`], { cwd: root });
-  if (listed.exit_code !== 0 || listed.output_exceeded)
-    return ghFailure(operation, listed, "cannot read native blocked_by relations");
-  try {
-    const pages = JSON.parse(listed.stdout);
-    if (!Array.isArray(pages) || pages.some((page) => !Array.isArray(page)))
-      throw new Error("gh returned malformed blocked_by pages");
-    const ids = pages.flat().map((item, index) => {
-      const id = item?.issue_id ?? item?.id;
-      if (!Number.isSafeInteger(id))
-        throw new Error(`gh returned malformed blocked_by entry at ${index}`);
-      return id;
-    });
-    if (new Set(ids).size !== ids.length)
-      return result(operation, "ambiguous_remote_state", `Issue #${childNumber} has duplicate native blocked_by relations`);
-    return ids;
-  } catch (error) {
-    return result(operation, "permanent_failure", error instanceof Error ? error.message : String(error));
-  }
-}
-async function observeGithubInitiative(root, initiativeId, gh = createGhTransport()) {
-  const id = identifier(initiativeId, "initiative_id");
-  const source = await snapshot(resolve7(root), gh, "create-initiative");
-  if ("contract" in source)
-    throw new Error(source.message);
-  const parent = initiativeLookup(source.issues, source.repository.id, id);
-  if (parent.kind === "missing")
-    throw new Error(`Initiative ${id} is not published`);
-  if (parent.kind === "ambiguous")
-    throw new Error(parent.message);
-  const subIssueNumbers = await readSubIssueNumbers(root, gh, "create-initiative", source.repository, parent.issue.number);
-  if (!Array.isArray(subIssueNumbers))
-    throw new Error(subIssueNumbers.message);
-  if (new Set(subIssueNumbers).size !== subIssueNumbers.length)
-    throw new Error(`Initiative ${id} has duplicate native Sub-issue relations`);
-  const tasks = subIssueNumbers.map((issueNumber) => {
-    const matches = source.issues.filter((issue) => issue.number === issueNumber);
-    if (matches.length !== 1)
-      throw new Error(`Initiative ${id} references an unreadable Sub-issue #${issueNumber}`);
-    const issue = matches[0];
-    const taskId = ownershipMarkerValue(issue.body, "task-id");
-    const sliceId = ownershipMarkerValue(issue.body, "slice-id");
-    if (!taskId || !sliceId || ownershipMarkerValue(issue.body, "initiative-id") !== id)
-      throw new Error(`Sub-issue #${issueNumber} has invalid Initiative ownership markers`);
-    const owned = ownedTaskLookup(source.issues, source.repository.id, taskId, id, sliceId);
-    if (owned.kind !== "found" || owned.issue.number !== issueNumber)
-      throw new Error(owned.kind === "ambiguous" ? owned.message : `Sub-issue #${issueNumber} has invalid Task ownership`);
-    return { task_id: taskId, slice_id: sliceId, issue_number: issueNumber, issue_id: issue.id };
-  });
-  if (new Set(tasks.map((task) => task.task_id)).size !== tasks.length)
-    throw new Error(`Initiative ${id} has duplicate Task identities`);
-  if (new Set(tasks.map((task) => task.slice_id)).size !== tasks.length)
-    throw new Error(`Initiative ${id} has duplicate Slice identities`);
-  const taskByIssueId = new Map(tasks.map((task) => [task.issue_id, task.task_id]));
-  const observed = [];
-  for (const task of tasks.sort((left, right) => left.task_id < right.task_id ? -1 : left.task_id > right.task_id ? 1 : 0)) {
-    const blockerIds = await readBlockedByIds(root, gh, "create-initiative", source.repository, task.issue_number);
-    if (!Array.isArray(blockerIds))
-      throw new Error(blockerIds.message);
-    const blockedBy = blockerIds.map((blockerId) => {
-      const blocker = taskByIssueId.get(blockerId);
-      if (!blocker)
-        throw new Error(`Task ${task.task_id} depends on an Issue outside Initiative ${id}`);
-      return blocker;
-    }).sort();
-    observed.push({
-      task_id: task.task_id,
-      slice_id: task.slice_id,
-      issue_number: task.issue_number,
-      blocked_by: blockedBy
-    });
-  }
-  return {
-    contract: "immune_brain/github_initiative_observation/v1",
-    initiative_id: id,
-    issue_number: parent.issue.number,
-    tasks: observed
-  };
-}
-
-// plugins/immune-brain/runtime/unattended/batch_plan.ts
 var ID_PATTERN2 = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 var DEFAULT_DEADLINE_MS = 8 * 60 * 60 * 1000;
 var DEFAULT_QA_FAILURE_LIMIT = 2;
@@ -8039,7 +9015,7 @@ async function projectBatchPlan(root, initiativeSlug, input, readInitiative = ob
 }
 
 // plugins/immune-brain/runtime/unattended/batch_state.ts
-import { existsSync as existsSync3, mkdirSync as mkdirSync3, openSync as openSync4, closeSync as closeSync4, writeFileSync as writeFileSync4, renameSync as renameSync2, lstatSync as lstatSync6, constants as constants3, rmSync as rmSync4 } from "node:fs";
+import { existsSync as existsSync4, mkdirSync as mkdirSync3, openSync as openSync4, closeSync as closeSync4, writeFileSync as writeFileSync4, renameSync as renameSync2, lstatSync as lstatSync6, constants as constants3, rmSync as rmSync4 } from "node:fs";
 import { randomUUID as randomUUID5 } from "node:crypto";
 import { dirname as dirname4, join as join8 } from "node:path";
 var BATCH_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
@@ -8169,7 +9145,7 @@ function prepareBatchRunState(input) {
 }
 function readBatchRunState(root, batchId) {
   const path = statePath(batchId);
-  if (!existsSync3(join8(root, path)))
+  if (!existsSync4(join8(root, path)))
     return null;
   const parsed = JSON.parse(readSecureProjectFile(root, path));
   validateRecordShape(parsed, batchId);
@@ -8178,9 +9154,9 @@ function readBatchRunState(root, batchId) {
 function ensureSecureDirectory2(root, relative) {
   const target = join8(root, relative);
   const parent = dirname4(target);
-  if (!existsSync3(parent))
+  if (!existsSync4(parent))
     mkdirSync3(parent, { recursive: true });
-  if (existsSync3(target)) {
+  if (existsSync4(target)) {
     const stats = lstatSync6(target);
     if (!stats.isDirectory())
       throw new Error(`${relative} exists but is not a directory`);
@@ -8206,7 +9182,7 @@ function writeFileAtomically(root, relative, bytes) {
   } finally {
     if (fd !== null)
       closeSync4(fd);
-    if (existsSync3(tempPath)) {
+    if (existsSync4(tempPath)) {
       try {
         rmSync4(tempPath);
       } catch {}
@@ -8217,7 +9193,7 @@ function writeBatchRunState(root, record) {
   const path = statePath(record.batch_id);
   validateRecordShape(record, record.batch_id);
   return withKernelStoreLock(root, () => {
-    const existing = existsSync3(join8(root, path)) ? readSecureProjectFile(root, path) : null;
+    const existing = existsSync4(join8(root, path)) ? readSecureProjectFile(root, path) : null;
     if (existing !== null && existing === canonicalBytes(record))
       return record;
     const stored = {
@@ -8237,7 +9213,7 @@ function writeBatchRunReport(root, report) {
   const relative = reportPath(report.batch_id);
   return withKernelStoreLock(root, () => {
     const path = join8(root, relative);
-    if (existsSync3(path)) {
+    if (existsSync4(path)) {
       const original = JSON.parse(readSecureProjectFile(root, relative));
       if (typeof original !== "object" || original === null || original.contract !== "assurance_kernel/batch_run_report/v1")
         throw new Error(`batch run report ${report.batch_id} has an unknown contract`);
@@ -8279,14 +9255,14 @@ function readActiveClaimTaskId(root) {
 }
 function findExistingActiveBatch(root, initiativeSlug) {
   const batchesDir = join9(root, ".imm", "state", "batches");
-  if (!existsSync4(batchesDir))
+  if (!existsSync5(batchesDir))
     return null;
   for (const file of readdirSync2(batchesDir)) {
     if (!file.endsWith(".json"))
       continue;
     let record;
     try {
-      record = JSON.parse(readFileSync8(join9(batchesDir, file), "utf8"));
+      record = JSON.parse(readFileSync9(join9(batchesDir, file), "utf8"));
     } catch {
       return { corrupt: true, path: file };
     }
@@ -8315,7 +9291,7 @@ function findExistingActiveBatch(root, initiativeSlug) {
 }
 function findSettledBatchRecord(root, initiativeSlug) {
   const batchesDir = join9(root, ".imm", "state", "batches");
-  if (!existsSync4(batchesDir))
+  if (!existsSync5(batchesDir))
     return null;
   let newest = null;
   for (const file of readdirSync2(batchesDir).sort()) {
@@ -8323,7 +9299,7 @@ function findSettledBatchRecord(root, initiativeSlug) {
       continue;
     let record;
     try {
-      record = JSON.parse(readFileSync8(join9(batchesDir, file), "utf8"));
+      record = JSON.parse(readFileSync9(join9(batchesDir, file), "utf8"));
     } catch {
       continue;
     }
@@ -8351,8 +9327,8 @@ function isOwnBatchClaim(root, existingBatch, taskId, batchBranch) {
   let claim = null;
   let workspace = null;
   try {
-    claim = JSON.parse(readFileSync8(join9(root, ".imm", "state", "active-claim.json"), "utf8"));
-    workspace = JSON.parse(readFileSync8(join9(root, ".imm", "state", "workspace.json"), "utf8"));
+    claim = JSON.parse(readFileSync9(join9(root, ".imm", "state", "active-claim.json"), "utf8"));
+    workspace = JSON.parse(readFileSync9(join9(root, ".imm", "state", "workspace.json"), "utf8"));
   } catch {
     return false;
   }
@@ -8368,7 +9344,7 @@ function isOwnBatchClaim(root, existingBatch, taskId, batchBranch) {
   }
   let rec = null;
   try {
-    rec = JSON.parse(readFileSync8(join9(root, ".imm", "state", "tasks", `${taskId}.json`), "utf8"));
+    rec = JSON.parse(readFileSync9(join9(root, ".imm", "state", "tasks", `${taskId}.json`), "utf8"));
   } catch {
     return false;
   }
@@ -8640,7 +9616,7 @@ async function projectBatchDrift(options) {
 
 // plugins/immune-brain/runtime/unattended/batch_runner.ts
 import { spawnSync as spawnSync6 } from "node:child_process";
-import { existsSync as existsSync6 } from "node:fs";
+import { existsSync as existsSync7 } from "node:fs";
 import { join as join11 } from "node:path";
 
 // plugins/immune-brain/runtime/unattended/batch_git.ts
@@ -8649,7 +9625,7 @@ import { randomUUID as randomUUID6 } from "node:crypto";
 import {
   constants as constants4,
   closeSync as closeSync5,
-  existsSync as existsSync5,
+  existsSync as existsSync6,
   lstatSync as lstatSync7,
   mkdirSync as mkdirSync4,
   openSync as openSync5,
@@ -8873,7 +9849,7 @@ function ensureSecureDirectory3(root, relativePath) {
   let current = root;
   for (const segment of segments) {
     current = join10(current, segment);
-    if (existsSync5(current)) {
+    if (existsSync6(current)) {
       const stats = lstatSync7(current);
       if (stats.isSymbolicLink() || !stats.isDirectory()) {
         throw new Error(`${segment} exists but is not a real directory`);
@@ -8892,7 +9868,7 @@ function writeFileAtomically2(root, relativePath, bytes) {
   if (stats.isSymbolicLink() || !stats.isDirectory()) {
     throw new Error(`${dirname5(relativePath)} is not a real directory`);
   }
-  if (existsSync5(target)) {
+  if (existsSync6(target)) {
     const targetStats = lstatSync7(target);
     if (targetStats.isSymbolicLink()) {
       throw new Error(`${relativePath} is a symlink`);
@@ -8909,7 +9885,7 @@ function writeFileAtomically2(root, relativePath, bytes) {
   } finally {
     if (fd !== null)
       closeSync5(fd);
-    if (existsSync5(tempPath)) {
+    if (existsSync6(tempPath)) {
       try {
         rmSync5(tempPath);
       } catch {}
@@ -8932,7 +9908,7 @@ function writeBatchCommitEvidence(root, evidence) {
 function readBatchCommitEvidence(root, batchId, taskId) {
   const path = commitEvidencePath(batchId, taskId);
   const fullPath = join10(root, path);
-  if (!existsSync5(fullPath))
+  if (!existsSync6(fullPath))
     return null;
   try {
     const content = readSecureProjectFile(root, path);
@@ -9245,7 +10221,7 @@ function failPersistedLineage(root, existing, message) {
   return writeBatchRunState(root, record);
 }
 function externalHeadDriftMessage(root, record) {
-  if (!existsSync6(join11(root, ".git")))
+  if (!existsSync7(join11(root, ".git")))
     return null;
   const head = record.commits.length ? record.commits[record.commits.length - 1] : record.base_head;
   const headCheck = spawnSync6("git", ["-C", root, "rev-parse", "HEAD"], {
@@ -9286,7 +10262,7 @@ async function validatePersistedRun(input, record) {
       branch: record.branch
     });
     if (!evidence || evidence.commit !== child.commit) {
-      if (evidence === null && typeof child.commit === "string" && child.commit.length > 0 && existsSync6(join11(input.root, ".git"))) {
+      if (evidence === null && typeof child.commit === "string" && child.commit.length > 0 && existsSync7(join11(input.root, ".git"))) {
         const reach = spawnSync6("git", ["-C", input.root, "merge-base", "--is-ancestor", child.commit, "HEAD"], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
         if (reach.status !== 0) {
           throw new Error(`batch_head_lineage_broken: recorded commit ${child.commit} for ${child.task_id} is no longer reachable from HEAD`);
@@ -10008,7 +10984,7 @@ function stagePlanningArtifactTransition(root, record) {
     intentArchive,
     ...specActive ? [specActive, specActive.replace("docs/specs/", "docs/specs/archive/")] : []
   ];
-  const paths = candidates.filter((path) => existsSync7(join12(root, path)) || execFileSync5("git", ["ls-files", "--cached", "--", path], { cwd: root, encoding: "utf8" }).trim().length > 0);
+  const paths = candidates.filter((path) => existsSync8(join12(root, path)) || execFileSync5("git", ["ls-files", "--cached", "--", path], { cwd: root, encoding: "utf8" }).trim().length > 0);
   if (paths.length === 0)
     return;
   execFileSync5("git", ["add", "--", ...paths], { cwd: root, stdio: ["ignore", "pipe", "pipe"] });
@@ -10188,10 +11164,23 @@ class ClaudeRuntime {
     return enrollCanaryTask(this.cwd, input, this.enrollmentRegistry);
   }
   async advance(taskId, signal) {
-    return this.coordinator.advance(taskId, { cwd: this.cwd }, signal);
+    return this.withTerminalTracker(taskId, await this.coordinator.advance(taskId, { cwd: this.cwd }, signal));
   }
   async submitReview(taskId, verdictInput) {
-    return submitClaudeReview(this.host, this.coordinator, { cwd: this.cwd }, taskId, verdictInput);
+    return this.withTerminalTracker(taskId, await submitClaudeReview(this.host, this.coordinator, { cwd: this.cwd }, taskId, verdictInput));
+  }
+  async withTerminalTracker(taskId, result) {
+    if (result === null || typeof result !== "object")
+      return result;
+    const projection = await this.status(taskId);
+    const tracker = await projectTerminalTrackerState({
+      root: this.cwd,
+      task_id: taskId,
+      projection,
+      tombstone: readTaskTombstone(this.cwd, taskId),
+      markTerminal: (root, input) => runGithubTrackerOperation(root, { op: "mark-terminal", ...input })
+    });
+    return tracker ? { ...result, tracker } : result;
   }
   async resolveFinding(taskId, findingId) {
     return this.executeOrdinary({ cwd: this.cwd }, {
@@ -10249,7 +11238,7 @@ class ClaudeRuntime {
     const nextIntentHash = nextIntent ? canonicalIntentHash(nextIntent) : undefined;
     const nextIntentRef = nextIntent ? { path: `docs/plans/${nextIntent.task_id}.intent.json`, content_hash: nextIntentHash } : undefined;
     const sidecar = nextIntent ? join12(this.cwd, priorIntent.intent_ref.path) : undefined;
-    const priorBytes = sidecar ? readFileSync10(sidecar) : undefined;
+    const priorBytes = sidecar ? readFileSync11(sidecar) : undefined;
     const stagedSnapshot = sidecar ? captureStagedIntent(this.cwd, priorIntent.intent_ref.path) : undefined;
     const restoreStagedIntent2 = () => {
       if (!stagedSnapshot)
@@ -10340,7 +11329,7 @@ class ClaudeRuntime {
       });
       if (op === "stop" || op === "authorize_rework" || op === "approve_breaking_intent_revision")
         stagePlanningArtifactTransition(this.cwd, result.record);
-      return result;
+      return this.withTerminalTracker(taskId, result);
     } catch (error) {
       if (stagedSnapshot) {
         const current = await readTaskRecord(this.cwd, taskId);
@@ -10429,7 +11418,7 @@ class ClaudeRuntime {
     const operation = input.operation.op === "revise_intent" ? { ...input.operation, next_intent: await parseTaskIntentV1(input.operation.next_intent) } : input.operation;
     const priorIntent = await readTaskIntentForRecord(ctx.cwd, input.taskId);
     const sidecar = join12(ctx.cwd, priorIntent.intent_ref.path);
-    const priorBytes = operation.op === "revise_intent" ? readFileSync10(sidecar) : null;
+    const priorBytes = operation.op === "revise_intent" ? readFileSync11(sidecar) : null;
     const priorStaged = priorBytes !== null ? captureStagedIntent(ctx.cwd, priorIntent.intent_ref.path) : null;
     try {
       if (priorBytes) {
