@@ -1,0 +1,141 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "wc-behavioral-guardrails",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "wc-behavioral-guardrails",
+    "goal": "Restate the two inverted guardrails so each fails on the regression it names instead of on a spelling: the unattended worktree prohibition becomes an assertion over the Git argument vectors the batch runtime can actually produce, and the v3-island coverage assertion becomes an assertion that production code imports none of the retired plan_core exports.",
+    "acceptance": [
+      {
+        "id": "GRD-1",
+        "assertion": "The worktree guard in tests/unattended-contracts.test.ts no longer regex-matches source text. It asserts that no Git argument vector the batch runtime can produce begins with `worktree`, so an invocation assembled through a variable, template literal, or helper is caught, and a legitimate mention of the word in a reason key or comment no longer fails the suite. The prohibition itself is unchanged: batch execution still creates, switches, and deletes no Git worktree.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/unattended-contracts.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 60000,\n  \"max_output_bytes\": 20000\n}\n"
+      },
+      {
+        "id": "GRD-2",
+        "assertion": "The `retains coverage for the surviving runtime modules` assertion in tests/v3-island-deletion.test.ts stops requiring that a named test file contain a module path substring. It asserts instead that production code imports none of the retired plan_core exports, which is the property the substring stood in for, so retiring a dead test or renaming a module no longer reads as guardrail weakening.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/v3-island-deletion.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 60000,\n  \"max_output_bytes\": 20000\n}\n"
+      },
+      {
+        "id": "GRD-3",
+        "assertion": "Neither guard is removed and neither protected property is weakened: both suites still fail when the prohibited behavior is reintroduced, and the full unattended and island suites pass unchanged otherwise.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/unattended-contracts.test.ts\",\n    \"tests/v3-island-deletion.test.ts\",\n    \"tests/unattended-batch-run.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 20000\n}\n"
+      }
+    ],
+    "scope_hint": [
+      "docs/plans/wc-behavioral-guardrails.intent.json",
+      "docs/specs/archive/workflow-consolidation.spec.md",
+      "docs/specs/workflow-consolidation.spec.md",
+      "tests/unattended-batch-run.test.ts",
+      "tests/unattended-contracts.test.ts",
+      "tests/v3-island-deletion.test.ts"
+    ],
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/archive/wc-behavioral-guardrails.intent.json",
+    "content_hash": "sha256:1091f58a3c895289e7cd6ed8fb14691453e72ce8d9311e35751d7261522e9d5f"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:1091f58a3c895289e7cd6ed8fb14691453e72ce8d9311e35751d7261522e9d5f",
+  "git_base_head": "aecf5ddab3b608dbf06023ef9f87662e45812667",
+  "attestations": [
+    {
+      "id": "approval-qa-c83b9a16",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:1091f58a3c895289e7cd6ed8fb14691453e72ce8d9311e35751d7261522e9d5f",
+      "diff_hash": "sha256:fe3667dff4c9fd653921eca63b87ab60523f85cddaa262f7e6b24466fd270662",
+      "actor_id": "deterministic-qa",
+      "summary": "all 3 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "GRD-1",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "GRD-2",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "GRD-3",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-05b64a23",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:1091f58a3c895289e7cd6ed8fb14691453e72ce8d9311e35751d7261522e9d5f",
+      "diff_hash": "sha256:fe3667dff4c9fd653921eca63b87ab60523f85cddaa262f7e6b24466fd270662",
+      "actor_id": "parent-mediated-review",
+      "summary": "Worktree guard records live Git argv and plan_core guard allowlists production imports; both still fail if the prohibited behavior returns.",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "aecf5ddab3b608dbf06023ef9f87662e45812667",
+        "review_commit": "02f8c6a53fae8008763a86c6965b80ac382e0c36",
+        "review_tree": "d1a244c9a6e278ec4fa9cc4eabccb673035e2e91",
+        "manifest_digest": "sha256:d7f52dcb2d6df85a03014fa778b0dd8739d40cbd351c12c272ef313a40745928"
+      }
+    }
+  ],
+  "findings": [],
+  "history": [
+    {
+      "id": "freeze_artifacts:wc-behavioral-guardrails:2026-09-14T02:58:43.563Z",
+      "at": "2026-09-14T02:58:43.563Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent and Spec frozen at docs/plans/archive/wc-behavioral-guardrails.intent.json"
+    },
+    {
+      "id": "record_approval:wc-behavioral-guardrails:2026-09-14T02:58:47.097Z",
+      "at": "2026-09-14T02:58:47.097Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-c83b9a16\naction_v2_sha256:268871293e32494c22c2047ff2da8cb83d1f59e82ca32cc772918394fb960559",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-2f55b35134d766d5",
+        "issued_at": "2026-09-14T02:58:47.098Z",
+        "expires_at": "2026-09-14T03:08:47.098Z"
+      }
+    },
+    {
+      "id": "record_approval:wc-behavioral-guardrails:2026-09-14T03:04:46.425Z",
+      "at": "2026-09-14T03:04:46.425Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-05b64a23\naction_v2_sha256:7f4a92733a5a47840c216aaf0535a9d674f8f3aa9da435f96950e6fa66ece3fd",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-dbb457ea48e5d644",
+        "issued_at": "2026-09-14T03:04:46.425Z",
+        "expires_at": "2026-09-14T03:14:46.425Z"
+      }
+    },
+    {
+      "id": "complete:wc-behavioral-guardrails:2026-09-14T03:04:47.214Z",
+      "at": "2026-09-14T03:04:47.214Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:cd40ba35d4c803a2bd344d19d94d8d99356540cb5593e8beb1bcf8681a2051c0"
+    }
+  ]
+}

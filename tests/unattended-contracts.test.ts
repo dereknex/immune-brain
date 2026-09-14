@@ -1,7 +1,10 @@
 import { describe, expect, it } from "bun:test";
-import { execFileSync } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
+import { canonicalIntentHash, parseTaskIntentV1 } from "../plugins/immune-brain/runtime/kernel/intent";
 
 /**
  * Contract-text conformance for the unattended batch run.
@@ -37,6 +40,267 @@ function section(document: string, heading: string): string {
 	const rest = document.slice(start + heading.length);
 	const next = rest.search(/\n## /);
 	return next === -1 ? rest : rest.slice(0, next);
+}
+
+const GUARD_TASK_ID = "git-guard-fixture";
+const GUARD_BATCH_ID = "batch-git-guard";
+const GUARD_CHANGED_PATH = "notes.txt";
+const GUARD_HEAD = "1".repeat(40);
+const GUARD_COMMIT = "2".repeat(40);
+
+/**
+ * Terminal audit pair for the fixture task, in the shape a settled child leaves
+ * behind. Generated rather than copied so the guard does not depend on some
+ * unrelated task's real record staying on disk.
+ */
+function writeAuditPair(root: string, taskId: string): void {
+	const auditDir = join(root, ".imm", "audit", taskId);
+	mkdirSync(auditDir, { recursive: true });
+	const intent = parseTaskIntentV1({
+		contract: "assurance_kernel/task_intent/v1",
+		task_id: taskId,
+		owner: "user",
+		goal: `Goal for ${taskId}`,
+		scope_hint: [GUARD_CHANGED_PATH],
+		acceptance: [{ id: `acc-${taskId}`, assertion: "assert something", verification: "bun test" }],
+		risk: "material",
+		revision: 1,
+	});
+	const intentHash = canonicalIntentHash(intent);
+	const recordBytes = `${JSON.stringify(
+		{
+			contract: "assurance_kernel/task_record/v4",
+			task_id: taskId,
+			intent_snapshot: intent,
+			intent_ref: { path: `docs/plans/archive/${taskId}.intent.json`, content_hash: intentHash },
+			lifecycle: "done",
+			artifact_state: "frozen",
+			baseline: intentHash,
+			git_base_head: GUARD_HEAD,
+			attestations: [],
+			findings: [],
+			history: [],
+		},
+		null,
+		2,
+	)}\n`;
+	writeFileSync(join(auditDir, "task-record.json"), recordBytes);
+	writeFileSync(
+		join(auditDir, "terminal-proof.json"),
+		`${JSON.stringify(
+			{
+				contract: "assurance_kernel/task_tombstone/v2",
+				task_id: taskId,
+				lifecycle_status: "terminal",
+				terminal_lifecycle: "done",
+				terminal_event_id: `evt-${taskId}`,
+				final_record_hash: `sha256:${createHash("sha256").update(recordBytes).digest("hex")}`,
+				terminalized_at: "2026-01-01T00:00:00.000Z",
+			},
+			null,
+			2,
+		)}\n`,
+	);
+}
+
+/**
+ * Install a recording `git` first on PATH. It logs every argument vector it is
+ * handed and answers with just enough canned output for the runtime's Git layer
+ * to run its real code paths — so the guard asserts over the vectors the runtime
+ * produces, catching an invocation assembled through a helper, variable, or
+ * template literal, while a legitimate mention of `worktree` in a reason key or
+ * a comment no longer fails the suite.
+ *
+ * The drive runs in a child process: the shim has to be on PATH when that
+ * process starts, and mocking `node:child_process` here would leak into every
+ * other suite sharing this runner process.
+ */
+function installRecordingGit(options: {
+	binDir: string;
+	logPath: string;
+	committedMarker: string;
+	stagedMarker: string;
+	root: string;
+}): void {
+	const shim = `#!/bin/sh
+log="${options.logPath}"
+committed="${options.committedMarker}"
+staged="${options.stagedMarker}"
+printf '%s\\000' "$@" >> "$log"
+printf '\\n' >> "$log"
+
+command=""
+skip=""
+for argument in "$@"; do
+  if [ "$skip" = "1" ]; then skip=""; continue; fi
+  case "$argument" in
+    -C|-c) skip="1"; continue ;;
+    -*) continue ;;
+  esac
+  command="$argument"
+  break
+done
+
+case "$command" in
+  rev-parse)
+    case "$*" in
+      *--show-toplevel*) printf '%s\\n' "${options.root}" ;;
+      *"^@"*) printf '%s\\n' "${GUARD_HEAD}" ;;
+      *) if [ -f "$committed" ]; then printf '%s\\n' "${GUARD_COMMIT}"; else printf '%s\\n' "${GUARD_HEAD}"; fi ;;
+    esac ;;
+  symbolic-ref) printf '%s\\n' "main" ;;
+  show-ref) exit 1 ;;
+  diff-files) if [ ! -f "$staged" ]; then printf '${GUARD_CHANGED_PATH}\\000'; fi ;;
+  ls-files)
+    case "$*" in
+      *-v*) ;;
+      *--others*) if [ ! -f "$staged" ]; then printf '${GUARD_CHANGED_PATH}\\000'; fi ;;
+    esac ;;
+  add) : > "$staged" ;;
+  commit) : > "$committed" ;;
+  log) printf '%s\\000%s\\000%s\\000%s\\000%s\\n' "${GUARD_COMMIT}" "${GUARD_BATCH_ID}" "Immune-Brain Batch" "immune-brain@local" "imm(${GUARD_TASK_ID}): recorded" ;;
+esac
+exit 0
+`;
+	writeFileSync(join(options.binDir, "git"), shim, { mode: 0o755 });
+}
+
+/** The Git subcommand of an argument vector, past any global options. */
+function gitSubcommand(invocation: string[]): string {
+	for (let index = 0; index < invocation.length; index += 1) {
+		const argument = invocation[index] ?? "";
+		if (argument === "-C" || argument === "-c") {
+			index += 1;
+			continue;
+		}
+		if (argument.startsWith("-")) continue;
+		return argument;
+	}
+	return "";
+}
+
+function recordedInvocations(logPath: string): string[][] {
+	return readFileSync(logPath, "utf8")
+		.split("\n")
+		.filter((line) => line.length > 0)
+		.map((line) => line.split("\0").filter((part) => part.length > 0));
+}
+
+/**
+ * The child-process drive: the Git layer's branch preflight, scope-bounded child
+ * commit, and commit lookup, then the runner's persisted-state inspections. Every
+ * step asserts the path really ran, so the guard cannot pass by driving nothing.
+ */
+function driveSource(runtimeDir: string): string {
+	const runtimePath = (relativePath: string) => JSON.stringify(join(runtimeDir, relativePath));
+	return `import { mkdirSync } from "node:fs";
+import { join } from "node:path";
+const git = await import(${runtimePath("unattended/batch_git.ts")});
+const { createBatchAuthorityRegistry, computeBatchPlanDigest } = await import(${runtimePath("kernel/batch_authority.ts")});
+const { prepareBatchRunState, writeBatchRunState } = await import(${runtimePath("unattended/batch_state.ts")});
+const { resumeBatch } = await import(${runtimePath("unattended/batch_runner.ts")});
+
+const [root, taskId, batchId, head, commit] = process.argv.slice(2);
+
+const preflight = git.runBatchGitPreflight({ root, initiative_slug: "initiative-slug", base_head: head });
+if (!preflight.ok) throw new Error(\`preflight rejected: \${preflight.reason}\`);
+const committed = await git.commitBatchChild({ root, taskId, batchId, expectedHead: head });
+if (committed.commit !== commit) throw new Error(\`unexpected child commit \${committed.commit}\`);
+const adopted = await git.lookupBatchCommit({ root, taskId, batchId, expectedHead: head });
+if (!adopted || adopted.commit !== commit) throw new Error("commit lookup did not adopt the child commit");
+
+const farFuture = "2099-01-01T00:00:00.000Z";
+const confirmationTime = "2026-01-01T00:00:00.000Z";
+const children = [
+	{
+		task_id: "child-1",
+		slice_id: "S1",
+		blocked_by: [],
+		status: "enrollable",
+		reason: null,
+		intent_path: "docs/plans/child-1.intent.json",
+		intent_revision: 1,
+		intent_content_hash: "0".repeat(64),
+	},
+];
+const planDigest = computeBatchPlanDigest(children);
+const registry = createBatchAuthorityRegistry();
+const budget = { max_children: 1, deadline_at: farFuture, qa_failure_limit: 3 };
+
+/** Persist a batch record, then resume it so the runner inspects Git itself. */
+const resumePersisted = async (state, recordCommit) => {
+	const id = \`batch-\${state}\`;
+	const capability = registry.issue(
+		{
+			batch_id: id,
+			initiative_slug: "initiative-slug",
+			plan_digest: planDigest,
+			branch: "imm/initiative-slug",
+			base_head: head,
+			budget,
+			actor_id: "user",
+			confirmation_ref: "confirm",
+			expires_at: farFuture,
+			nonce: "n",
+		},
+		children,
+		confirmationTime,
+	);
+	const input = {
+		root,
+		batch_id: id,
+		initiative_slug: "initiative-slug",
+		registry,
+		capability,
+		children,
+		plan_digest: planDigest,
+		base_head: head,
+		confirmation_time: confirmationTime,
+		authorization_expires_at: farFuture,
+		budget,
+		now: farFuture,
+		kernel: {},
+		git: {
+			preflight: (request) => git.runBatchGitPreflight(request),
+			commitChild: (r, t, b, h, branch, intentPath) =>
+				git.commitBatchChild({ root: r, taskId: t, batchId: b, expectedHead: h, branch, intentPath }),
+			lookupBatchCommit: (r, t, b, expectedHead, branch) =>
+				git.lookupBatchCommit({ root: r, taskId: t, batchId: b, expectedHead, branch }),
+		},
+	};
+	const prepared = prepareBatchRunState(input);
+	writeBatchRunState(root, {
+		...prepared,
+		batch_state: "running",
+		children: prepared.children.map((child) => ({
+			...child,
+			state,
+			...(recordCommit ? { commit: recordCommit } : {}),
+		})),
+		commits: recordCommit ? [recordCommit] : [],
+	});
+	try {
+		return {
+			report: await resumeBatch(input, () => {
+				throw new Error("no projection is expected on this path");
+			}),
+			error: null,
+		};
+	} catch (error) {
+		return { report: null, error: String(error) };
+	}
+};
+
+mkdirSync(join(root, ".git"), { recursive: true });
+const drift = await resumePersisted("enrolled", null);
+if (!drift.report || drift.report.batch_state !== "failed" || !String(drift.report.reason).includes("lineage")) {
+	throw new Error(\`the runner's head-drift inspection did not run: \${JSON.stringify(drift)}\`);
+}
+const unreachable = await resumePersisted("committed", "3".repeat(40));
+if (!unreachable.error || !unreachable.error.includes("lacks evidence")) {
+	throw new Error(\`the runner's unreachable-commit inspection did not run: \${JSON.stringify(unreachable)}\`);
+}
+`;
 }
 
 describe("unattended batch contract text", () => {
@@ -213,20 +477,43 @@ describe("unattended batch contract text", () => {
 		}
 	});
 
-	it("ships no Git worktree command in the batch runtime", () => {
-		const tracked = execFileSync("git", ["ls-files", "plugins/immune-brain/runtime/unattended"], {
-			cwd: REPO_ROOT,
-			encoding: "utf8",
-		})
-			.split("\n")
-			.filter(Boolean);
-		expect(tracked.length).toBeGreaterThan(0);
-		for (const path of tracked) {
-			const content = read(path)
-				.split("\n")
-				.filter((line) => !line.trimStart().startsWith("//"))
-				.join("\n");
-			expect(content).not.toMatch(/["']worktree["']|git", \["worktree/);
+	it("never produces a worktree invocation while the batch runtime runs", () => {
+		const scratch = mkdtempSync(join(tmpdir(), "imm-git-guard-"));
+		const root = join(scratch, "repo");
+		const binDir = join(scratch, "bin");
+		const logPath = join(scratch, "invocations.log");
+		const drivePath = join(scratch, "drive.ts");
+		try {
+			mkdirSync(root);
+			mkdirSync(binDir);
+			writeAuditPair(root, GUARD_TASK_ID);
+			installRecordingGit({
+				binDir,
+				logPath,
+				committedMarker: join(scratch, "committed"),
+				stagedMarker: join(scratch, "staged"),
+				root,
+			});
+			// Drive the runtime's Git layer down its real paths — branch preflight,
+			// the scope-bounded child commit, and the commit lookup.
+			writeFileSync(drivePath, driveSource(join(REPO_ROOT, "plugins/immune-brain/runtime")));
+			const drive = spawnSync(
+				"bun",
+				[drivePath, root, GUARD_TASK_ID, GUARD_BATCH_ID, GUARD_HEAD, GUARD_COMMIT],
+				{
+					cwd: REPO_ROOT,
+					encoding: "utf8",
+					env: { ...process.env, PATH: `${binDir}:${process.env.PATH ?? ""}` },
+				},
+			);
+			expect({ status: drive.status, stderr: drive.stderr.trim().slice(0, 2000) }).toEqual({ status: 0, stderr: "" });
+
+			const subcommands = recordedInvocations(logPath).map(gitSubcommand);
+			// A drive that never reached the mutating Git effects would assert nothing.
+			for (const mutation of ["checkout", "add", "commit"]) expect(subcommands).toContain(mutation);
+			expect(subcommands).not.toContain("worktree");
+		} finally {
+			rmSync(scratch, { recursive: true, force: true });
 		}
 	});
 });
