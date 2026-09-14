@@ -9407,8 +9407,8 @@ async function projectPlanSurface(input) {
   let planDigest;
   let excluded = [];
   const riskByTask = new Map;
-  let budget = existingBatch ? existingBatch.budget : { max_children: 10, deadline_at: new Date(Date.now() + DEFAULT_BATCH_BUDGET_MS).toISOString(), qa_failure_limit: 2 };
-  if (isResuming) {
+  let budget = isResuming && existingBatch ? existingBatch.budget : { max_children: 10, deadline_at: new Date(Date.now() + DEFAULT_BATCH_BUDGET_MS).toISOString(), qa_failure_limit: 2 };
+  if (existingBatch) {
     try {
       recoveryChildren = existingBatch.children.map((c) => {
         const intentPath = `docs/plans/${c.task_id}.intent.json`;
@@ -9562,7 +9562,7 @@ async function projectBatchPreflight(options) {
   const planSurface = await projectPlanSurface({
     root,
     initiative_slug: initiativeSlug,
-    is_resuming: existingBatch !== null,
+    is_resuming: isResuming,
     existing_batch: existingBatch,
     now,
     readInitiative
@@ -9596,7 +9596,7 @@ async function projectBatchDrift(options) {
   const surface = await projectPlanSurface({
     root,
     initiative_slug: initiativeSlug,
-    is_resuming: existingBatch !== null,
+    is_resuming: isResuming,
     existing_batch: existingBatch,
     now: options.now ?? new Date().toISOString(),
     readInitiative

@@ -1,0 +1,9 @@
+{
+  "contract": "assurance_kernel/task_tombstone/v2",
+  "task_id": "wcr-batch-resume-budget-drift",
+  "lifecycle_status": "terminal",
+  "terminal_lifecycle": "done",
+  "terminal_event_id": "complete:wcr-batch-resume-budget-drift:2026-09-14T15:58:26.144Z",
+  "final_record_hash": "sha256:bf08a84d6b85233ac573726da4c18c3a62432853cbb6b23566d1e0b5a5296322",
+  "terminalized_at": "2026-09-14T15:58:26.144Z"
+}

@@ -1,0 +1,131 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "wcr-batch-resume-budget-drift",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "wcr-batch-resume-budget-drift",
+    "goal": "Fix batch_preflight.ts so a settled (non-active) batch record never causes a fresh batch to inherit a stale budget or be reconstructed as already-settled: is_resuming must be computed once from activeRecord !== null and used identically for both the budget-inheritance decision and the reported projection field.",
+    "acceptance": [
+      {
+        "id": "RB1-1",
+        "assertion": "A new fixture in tests/unattended-batch-run.test.ts drives a settled BatchRunStateRecord (batch_state not 'running') with an expired authorization_expires_at and budget.deadline_at, then calls the preflight path the Host adapters use for a fresh batch on that initiative_slug. The returned projection issues a fresh default budget (max_children: 10, deadline_at approximately DEFAULT_BATCH_BUDGET_MS out from now, qa_failure_limit: 2), not the settled record's stale budget, and at least one child is not force-reconstructed as already_settled.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.4.2\",\n  \"argv\": [\n    \"test\",\n    \"tests/unattended-batch-run.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 90000,\n  \"max_output_bytes\": 65536\n}\n"
+      },
+      {
+        "id": "RB1-2",
+        "assertion": "projectPlanSurface and projectBatchDrift in plugins/immune-brain/runtime/unattended/batch_preflight.ts derive is_resuming from the same activeRecord !== null value everywhere it is read within one call; no code path can pass a different is_resuming into projectPlanSurface than the is_resuming reported back in the returned projection for the same on-disk state.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.4.2\",\n  \"argv\": [\n    \"test\",\n    \"tests/unattended-batch-run.test.ts\",\n    \"tests/dual-host-assurance-conformance.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 131072\n}\n"
+      }
+    ],
+    "scope_hint": [
+      "docs/plans/wcr-batch-resume-budget-drift.intent.json",
+      "docs/specs/archive/workflow-consolidation-remediation.spec.md",
+      "docs/specs/workflow-consolidation-remediation.spec.md",
+      "plugins/immune-brain/runtime/unattended/batch_preflight.ts",
+      "tests/dual-host-assurance-conformance.test.ts",
+      "tests/unattended-batch-run.test.ts"
+    ],
+    "risk": "critical",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/archive/wcr-batch-resume-budget-drift.intent.json",
+    "content_hash": "sha256:a86ddedb9fc323ec999fe65248b82fe3dc3268f1241ea7e4440a0de7724bed30"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:a86ddedb9fc323ec999fe65248b82fe3dc3268f1241ea7e4440a0de7724bed30",
+  "git_base_head": "437e3fb68964265701947d6ed49d6c9bbf9cce54",
+  "attestations": [
+    {
+      "id": "approval-qa-fe2b0a4a",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:a86ddedb9fc323ec999fe65248b82fe3dc3268f1241ea7e4440a0de7724bed30",
+      "diff_hash": "sha256:41fcfc6ba60a56385d7a2be0207b8745bd9012adf390d64ca9fc7a8a8b0aec18",
+      "actor_id": "deterministic-qa",
+      "summary": "all 2 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "RB1-1",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "RB1-2",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-e1a1f41c",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:a86ddedb9fc323ec999fe65248b82fe3dc3268f1241ea7e4440a0de7724bed30",
+      "diff_hash": "sha256:41fcfc6ba60a56385d7a2be0207b8745bd9012adf390d64ca9fc7a8a8b0aec18",
+      "actor_id": "parent-mediated-review",
+      "summary": "Revision identity verified; is_resuming now derives from a single activeRecord !== null source in both preflight and drift, and settled records receive a fresh default budget while still replaying their own children, matching RB1-1/RB1-2 with host-attested QA passes.",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "437e3fb68964265701947d6ed49d6c9bbf9cce54",
+        "review_commit": "a6d20065a39b0a3603cafd3066485f2a3c44f7fa",
+        "review_tree": "bd0534393295c34834d7d4265093d7ab51e3d1b2",
+        "manifest_digest": "sha256:4f7d535f84f235bbfa0ab45a2f3dee4e4dac4b15293fbd47a3f56b74b3839201"
+      }
+    }
+  ],
+  "findings": [],
+  "history": [
+    {
+      "id": "freeze_artifacts:wcr-batch-resume-budget-drift:2026-09-14T15:55:48.330Z",
+      "at": "2026-09-14T15:55:48.330Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent and Spec frozen at docs/plans/archive/wcr-batch-resume-budget-drift.intent.json"
+    },
+    {
+      "id": "record_approval:wcr-batch-resume-budget-drift:2026-09-14T15:56:09.371Z",
+      "at": "2026-09-14T15:56:09.371Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-fe2b0a4a\naction_v2_sha256:f56ae0dd1b3065e16d513c22c2413f20b617d45c8bfdb242514b60bb314c8601",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-4ee919a5d39555e7",
+        "issued_at": "2026-09-14T15:56:09.371Z",
+        "expires_at": "2026-09-14T16:06:09.371Z"
+      }
+    },
+    {
+      "id": "record_approval:wcr-batch-resume-budget-drift:2026-09-14T15:58:25.557Z",
+      "at": "2026-09-14T15:58:25.557Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-e1a1f41c\naction_v2_sha256:36e82111d5fefa3cd140864f9b05fcde63a1266f608cdaae44226d9239381e07",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-5d1c1bc367048929",
+        "issued_at": "2026-09-14T15:58:25.557Z",
+        "expires_at": "2026-09-14T16:08:25.557Z"
+      }
+    },
+    {
+      "id": "complete:wcr-batch-resume-budget-drift:2026-09-14T15:58:26.144Z",
+      "at": "2026-09-14T15:58:26.144Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:5070a1fd88b0f26792926ffde045ed3c00a9e2367ba3511fd5a6190670d5a726"
+    }
+  ]
+}
