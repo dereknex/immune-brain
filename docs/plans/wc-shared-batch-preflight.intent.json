@@ -1,0 +1,45 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "wc-shared-batch-preflight",
+  "owner": "user",
+  "goal": "Move the batch preflight projection both Host adapters currently duplicate into a new runtime/unattended/batch_preflight.ts, so claim ownership, branch availability, dirty-tree checking, recovery-children reconstruction, plan drift, and HEAD lineage are decided once below the Host boundary, and fix findExistingActiveBatch to filter terminal states.",
+  "acceptance": [
+    {
+      "id": "PFL-1",
+      "assertion": "A new module runtime/unattended/batch_preflight.ts projects claim ownership, batch branch availability, working-tree cleanliness against the authorized scope, reconstructed recovery children, plan digest, and base HEAD from a repository root, initiative slug, resolved branch, and prior persisted batch record. It performs no confirmation, mints no capability, imports no Host SDK, and branches on no Host identity.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/unattended-batch-run.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 60000,\n  \"max_output_bytes\": 20000\n}\n"
+    },
+    {
+      "id": "PFL-2",
+      "assertion": "Both adapters route through it in this same change: runtime/claude/kernel_ports.ts and .pi-extension/imm-unattended-batch.ts each retain only genuinely Host-specific behavior — their confirmation transport, their failure envelope shape, and their non-interactive refusal form — and neither re-implements a preflight decision. A tree in which only one adapter is migrated fails this acceptance.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/dual-host-assurance-conformance.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 60000,\n  \"max_output_bytes\": 20000\n}\n"
+    },
+    {
+      "id": "PFL-3",
+      "assertion": "findExistingActiveBatch filters terminal states instead of matching any record for the slug, in the single shared implementation that replaces the two identical copies in .pi-extension/runtime-stub.ts and runtime/claude/kernel_ports.ts, so a settled batch is no longer returned as active.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/unattended-batch-run.test.ts\",\n    \"tests/dual-host-assurance-conformance.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 20000\n}\n"
+    },
+    {
+      "id": "PFL-4",
+      "assertion": "No generic Host registry and no Host-identity branch is introduced inside shared runtime; ADR-0004's rejection stands. The change moves Host-independent pure functions to the layer that already owns batch state and nothing else.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/host-neutral-assurance-coordinator.test.ts\",\n    \"tests/unattended-contracts.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 20000\n}\n"
+    }
+  ],
+  "scope_hint": [
+    "docs/plans/wc-shared-batch-preflight.intent.json",
+    "docs/specs/archive/workflow-consolidation.spec.md",
+    "docs/specs/workflow-consolidation.spec.md",
+    "plugins/immune-brain/.pi-extension/imm-unattended-batch.ts",
+    "plugins/immune-brain/.pi-extension/runtime-stub.ts",
+    "plugins/immune-brain/runtime/claude/kernel_ports.ts",
+    "plugins/immune-brain/runtime/unattended/batch_git.ts",
+    "plugins/immune-brain/runtime/unattended/batch_preflight.ts",
+    "plugins/immune-brain/runtime/unattended/batch_runner.ts",
+    "tests/dual-host-assurance-conformance.test.ts",
+    "tests/host-neutral-assurance-coordinator.test.ts",
+    "tests/unattended-batch-run.test.ts",
+    "tests/unattended-contracts.test.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}

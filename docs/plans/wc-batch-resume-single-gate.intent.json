@@ -1,0 +1,34 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "wc-batch-resume-single-gate",
+  "owner": "user",
+  "goal": "Restore ADR-0005 Decision 1 on the Pi Host: a Batch Authorization is one literal-user Enrollment act, so resuming an already-authorized batch reuses the existing authorization instead of opening a second native confirmation gate.",
+  "acceptance": [
+    {
+      "id": "RSM-1",
+      "assertion": "The Pi batch gate no longer calls options.confirmBatch(...) when it is resuming an existing authorized batch for the same initiative slug. The isResuming state the function already tracks gates the confirmation call the way it gates the other eleven resume-sensitive branches, so a resumed run opens exactly zero additional native gates.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/pi-batch-authority.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 60000,\n  \"max_output_bytes\": 20000\n}\n"
+    },
+    {
+      "id": "RSM-2",
+      "assertion": "Reuse is conditional, not unconditional: a resume still fails closed when the existing authorization is expired, when the plan digest no longer binds, or when the HEAD lineage no longer binds, and in each of those cases it still demands a fresh literal-user confirmation with its stable reason and recovery action. Only an intact, unexpired, still-binding authorization is reused.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/pi-batch-authority.test.ts\",\n    \"tests/kernel-batch-authority.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 20000\n}\n"
+    },
+    {
+      "id": "RSM-3",
+      "assertion": "Claude Code and Pi agree on resume gating: the dual-host conformance suite covers a resume of an authorized batch on both Hosts and asserts the same gate count and the same outcome, so this behavior cannot drift between adapters.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/dual-host-assurance-conformance.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 60000,\n  \"max_output_bytes\": 20000\n}\n"
+    }
+  ],
+  "scope_hint": [
+    "docs/plans/wc-batch-resume-single-gate.intent.json",
+    "docs/specs/archive/workflow-consolidation.spec.md",
+    "docs/specs/workflow-consolidation.spec.md",
+    "plugins/immune-brain/.pi-extension/imm-unattended-batch.ts",
+    "tests/dual-host-assurance-conformance.test.ts",
+    "tests/kernel-batch-authority.test.ts",
+    "tests/pi-batch-authority.test.ts"
+  ],
+  "risk": "critical",
+  "revision": 1
+}

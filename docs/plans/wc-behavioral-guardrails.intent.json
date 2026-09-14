@@ -1,0 +1,33 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "wc-behavioral-guardrails",
+  "owner": "user",
+  "goal": "Restate the two inverted guardrails so each fails on the regression it names instead of on a spelling: the unattended worktree prohibition becomes an assertion over the Git argument vectors the batch runtime can actually produce, and the v3-island coverage assertion becomes an assertion that production code imports none of the retired plan_core exports.",
+  "acceptance": [
+    {
+      "id": "GRD-1",
+      "assertion": "The worktree guard in tests/unattended-contracts.test.ts no longer regex-matches source text. It asserts that no Git argument vector the batch runtime can produce begins with `worktree`, so an invocation assembled through a variable, template literal, or helper is caught, and a legitimate mention of the word in a reason key or comment no longer fails the suite. The prohibition itself is unchanged: batch execution still creates, switches, and deletes no Git worktree.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/unattended-contracts.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 60000,\n  \"max_output_bytes\": 20000\n}\n"
+    },
+    {
+      "id": "GRD-2",
+      "assertion": "The `retains coverage for the surviving runtime modules` assertion in tests/v3-island-deletion.test.ts stops requiring that a named test file contain a module path substring. It asserts instead that production code imports none of the retired plan_core exports, which is the property the substring stood in for, so retiring a dead test or renaming a module no longer reads as guardrail weakening.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/v3-island-deletion.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 60000,\n  \"max_output_bytes\": 20000\n}\n"
+    },
+    {
+      "id": "GRD-3",
+      "assertion": "Neither guard is removed and neither protected property is weakened: both suites still fail when the prohibited behavior is reintroduced, and the full unattended and island suites pass unchanged otherwise.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/unattended-contracts.test.ts\",\n    \"tests/v3-island-deletion.test.ts\",\n    \"tests/unattended-batch-run.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 20000\n}\n"
+    }
+  ],
+  "scope_hint": [
+    "docs/plans/wc-behavioral-guardrails.intent.json",
+    "docs/specs/archive/workflow-consolidation.spec.md",
+    "docs/specs/workflow-consolidation.spec.md",
+    "tests/unattended-batch-run.test.ts",
+    "tests/unattended-contracts.test.ts",
+    "tests/v3-island-deletion.test.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}

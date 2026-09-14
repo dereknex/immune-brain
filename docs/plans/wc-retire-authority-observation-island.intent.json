@@ -1,0 +1,57 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "wc-retire-authority-observation-island",
+  "owner": "user",
+  "goal": "Delete the closed authority-observation island (six modules, 2,277 lines) together with the tests whose only protected subject is that code, remove its two erased type imports and barrel export, and narrow the npm files list to match, while retaining the TaskRecord v3 read path, legacy_audit.ts, and storage_layout_migration.ts.",
+  "acceptance": [
+    {
+      "id": "ISL-1",
+      "assertion": "The six island modules are absent from the repository: runtime/kernel/observation.ts, runtime/kernel/automatic_observations.ts, runtime/kernel/legacy.ts, runtime/kernel/readiness.ts, runtime/kernel/readiness_evidence.ts, and runtime/authority_commit_receipts.ts. Their barrel line in runtime/kernel/index.ts and the two erased `import type` statements in runtime/kernel/canary_eligibility.ts are removed, and canary_eligibility keeps the documented behavior that those inputs were ignored and never authority.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"run\",\n    \"typecheck\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 180000,\n  \"max_output_bytes\": 20000\n}\n"
+    },
+    {
+      "id": "ISL-2",
+      "assertion": "Every test removed in this change either protected a behavior that no longer exists or names the surviving test that still covers it; no assertion about a retained behavior is deleted, skipped, or weakened, and the remaining suite passes.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/v3-island-deletion.test.ts\",\n    \"tests/kernel-canary-eligibility.test.ts\",\n    \"tests/kernel-core.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 20000\n}\n"
+    },
+    {
+      "id": "ISL-3",
+      "assertion": "Three surfaces are explicitly retained and still work: the TaskRecord v3 read path in runtime/kernel/types.ts, validation.ts, and storage.ts, because real v3 audit records exist on disk and readAuditTaskPair would throw without it; runtime/kernel/legacy_audit.ts, the live reader behind `imm-kernel audit --legacy`; and runtime/kernel/storage_layout_migration.ts, whose retirement depends on external repositories.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/kernel-record-v3.test.ts\",\n    \"tests/v4-storage-retirement-legacy-audit.test.ts\",\n    \"tests/kernel-storage-layout-migration.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 20000\n}\n"
+    },
+    {
+      "id": "ISL-4",
+      "assertion": "The package no longer ships the deleted surface: the package.json files list is narrowed to match the remaining tree, and the packaged plugin still builds and loads on both Hosts.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/plugin-package-runtime.test.ts\",\n    \"tests/claude-host-package.test.ts\",\n    \"tests/pi-only-package-surface.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 20000\n}\n"
+    }
+  ],
+  "scope_hint": [
+    "docs/plans/wc-retire-authority-observation-island.intent.json",
+    "docs/specs/archive/workflow-consolidation.spec.md",
+    "docs/specs/workflow-consolidation.spec.md",
+    "package.json",
+    "plugins/immune-brain/runtime/authority_commit_receipts.ts",
+    "plugins/immune-brain/runtime/kernel/automatic_observations.ts",
+    "plugins/immune-brain/runtime/kernel/canary_eligibility.ts",
+    "plugins/immune-brain/runtime/kernel/index.ts",
+    "plugins/immune-brain/runtime/kernel/legacy.ts",
+    "plugins/immune-brain/runtime/kernel/observation.ts",
+    "plugins/immune-brain/runtime/kernel/readiness.ts",
+    "plugins/immune-brain/runtime/kernel/readiness_evidence.ts",
+    "tests/authority-commit-receipts.test.ts",
+    "tests/claude-host-package.test.ts",
+    "tests/kernel-canary-eligibility.test.ts",
+    "tests/kernel-core.test.ts",
+    "tests/kernel-readiness-evidence.test.ts",
+    "tests/kernel-readiness.test.ts",
+    "tests/kernel-record-v3.test.ts",
+    "tests/kernel-storage-layout-migration.test.ts",
+    "tests/pi-only-package-surface.test.ts",
+    "tests/plugin-package-runtime.test.ts",
+    "tests/state-ledger-migration.test.ts",
+    "tests/v3-island-deletion.test.ts",
+    "tests/v4-storage-retirement-legacy-audit.test.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}
