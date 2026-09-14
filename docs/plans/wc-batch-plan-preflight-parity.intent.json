@@ -7,17 +7,17 @@
     {
       "id": "BPP-1",
       "assertion": "runtime/unattended/batch_plan.ts calls the shared runtime/kernel/spec_binding.ts check for every candidate child and excludes any child whose scope_hint lacks its bound active and archive Spec paths, reporting a stable reason that names the missing paths. The check is advisory at plan time and does not mint, alter, or consume any authority.",
-      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/unattended-batch-plan.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 60000,\n  \"max_output_bytes\": 20000\n}\n"
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.4.2\",\n  \"argv\": [\n    \"test\",\n    \"tests/unattended-batch-plan.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 60000,\n  \"max_output_bytes\": 20000\n}\n"
     },
     {
       "id": "BPP-2",
       "assertion": "Existing batch plan validation is unchanged in every other respect: critical children are still excluded, declared dependency order is still honored, dependents of a skipped child are still skipped, and the plan digest is still computed over the same content.",
-      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/unattended-batch-plan.test.ts\",\n    \"tests/unattended-batch-run.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 20000\n}\n"
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.4.2\",\n  \"argv\": [\n    \"test\",\n    \"tests/unattended-batch-plan.test.ts\",\n    \"tests/unattended-batch-run.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 20000\n}\n"
     },
     {
       "id": "BPP-3",
       "assertion": "Plan-time exclusion and enrollment-time refusal agree: a child the plan excludes for a missing Spec binding is the same child enrollment would refuse, verified against the same shared function rather than a second copy of the rule.",
-      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/unattended-batch-plan.test.ts\",\n    \"tests/kernel-enrollment-authority.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 20000\n}\n"
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.4.2\",\n  \"argv\": [\n    \"test\",\n    \"tests/unattended-batch-plan.test.ts\",\n    \"tests/kernel-enrollment-authority.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 20000\n}\n"
     }
   ],
   "scope_hint": [

@@ -217,7 +217,7 @@ describe("foreground assurance progression", () => {
 		const h = makeHarness({ project: async () => projection("active", "run_review") });
 		h.ports.frozenRunner = async () => {
 			controller.abort();
-			return { id: "bun", version: "1.3.14" } as never;
+			return { id: "bun", version: "1.4.2" } as never;
 		};
 		const result = await h.progression.advance(TASK, ctx, controller.signal);
 		expect(result).toMatchObject({ state: "review_preparation_failed", operation: "review" });

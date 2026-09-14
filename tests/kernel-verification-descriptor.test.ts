@@ -72,9 +72,9 @@ describe("shared verification descriptor parser", () => {
 		const { parseVerificationDescriptor, canonicalDescriptorBytes } =
 			require("../plugins/immune-brain/runtime/verification_descriptor");
 		const compact =
-			'{"contract":"assurance_kernel/verification_descriptor/v1","runner_id":"bun","runner_version":"1.3.14","argv":["test","tests/x.test.ts"],"cwd":".","timeout_ms":120000,"max_output_bytes":262144}';
+			'{"contract":"assurance_kernel/verification_descriptor/v1","runner_id":"bun","runner_version":"1.4.2","argv":["test","tests/x.test.ts"],"cwd":".","timeout_ms":120000,"max_output_bytes":262144}';
 		const pretty =
-			'{\n  "contract": "assurance_kernel/verification_descriptor/v1",\n  "runner_id": "bun",\n  "runner_version": "1.3.14",\n  "argv": ["test", "tests/x.test.ts"],\n  "cwd": ".",\n  "timeout_ms": 120000,\n  "max_output_bytes": 262144\n}';
+			'{\n  "contract": "assurance_kernel/verification_descriptor/v1",\n  "runner_id": "bun",\n  "runner_version": "1.4.2",\n  "argv": ["test", "tests/x.test.ts"],\n  "cwd": ".",\n  "timeout_ms": 120000,\n  "max_output_bytes": 262144\n}';
 		const a = parseVerificationDescriptor(compact);
 		const b = parseVerificationDescriptor(pretty);
 		expect(canonicalDescriptorBytes(a)).toBe(canonicalDescriptorBytes(b));

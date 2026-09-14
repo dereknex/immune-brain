@@ -7,22 +7,22 @@
     {
       "id": "SPB-1",
       "assertion": "A new module runtime/kernel/spec_binding.ts owns boundSpecPath and readBoundActiveSpec. Given a repository root and a scope_hint it returns the resolved bound active Spec path or a structured rejection naming each missing required path. It fails closed on zero bound Specs and on more than one, and the existing freeze-time message `artifact freeze requires one scope-bound active Spec` is preserved for the freeze caller.",
-      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/kernel-canary-application.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 60000,\n  \"max_output_bytes\": 20000\n}\n"
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.4.2\",\n  \"argv\": [\n    \"test\",\n    \"tests/kernel-canary-application.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 60000,\n  \"max_output_bytes\": 20000\n}\n"
     },
     {
       "id": "SPB-2",
       "assertion": "runtime/kernel/enrollment.ts calls the shared function inside the existing enrollment transaction and refuses an enrollment whose scope_hint omits the bound active Spec path or its archive path, reporting each missing path by name. The check is a pure read that writes nothing, adds no second human gate, and is idempotent: re-running it on unchanged inputs returns the same projection.",
-      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/kernel-enrollment-authority.test.ts\",\n    \"tests/kernel-enrollment-transaction.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 20000\n}\n"
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.4.2\",\n  \"argv\": [\n    \"test\",\n    \"tests/kernel-enrollment-authority.test.ts\",\n    \"tests/kernel-enrollment-transaction.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 20000\n}\n"
     },
     {
       "id": "SPB-3",
       "assertion": "Freeze-time enforcement is retained rather than replaced, because enrollment cannot observe post-implementation scope drift: runtime/kernel/canary_application.ts still validates the binding at freeze with unchanged behavior, and a task whose scope drifts after enrollment is still refused at freeze.",
-      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/kernel-canary-application.test.ts\",\n    \"tests/post-freeze-intent-resolution.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 20000\n}\n"
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.4.2\",\n  \"argv\": [\n    \"test\",\n    \"tests/kernel-canary-application.test.ts\",\n    \"tests/post-freeze-intent-resolution.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 20000\n}\n"
     },
     {
       "id": "SPB-4",
       "assertion": "The restriction is deliberate and observable: an existing candidate TaskIntent whose scope_hint omits the Spec paths stops enrolling and must be revised, and the refusal names the exact paths to add rather than reporting a generic validation failure.",
-      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/kernel-enrollment-authority.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 60000,\n  \"max_output_bytes\": 20000\n}\n"
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.4.2\",\n  \"argv\": [\n    \"test\",\n    \"tests/kernel-enrollment-authority.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 60000,\n  \"max_output_bytes\": 20000\n}\n"
     }
   ],
   "scope_hint": [

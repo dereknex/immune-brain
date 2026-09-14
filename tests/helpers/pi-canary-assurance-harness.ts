@@ -111,12 +111,12 @@ export function makeAssuranceHarness(overrides: Partial<{
 		projectTask: overrides.project ?? (async () => projection(currentLifecycle, nextObligation, risk, artifactState)),
 		readTaskRecord: async () => ({ record: { findings: [] } } as never),
 		readTaskIntent: async () => ({ token: "intent-token" } as never),
-		frozenRunner: async () => ({ id: "bun", version: "1.3.14" } as never),
+		frozenRunner: async () => ({ id: "bun", version: "1.4.2" } as never),
 		buildAssurance: async (_root, _task, role) => ({
 			snapshot: snapshot(role),
 			descriptors: new Map([[
 				"A1",
-				{ contract: "assurance_kernel/verification_descriptor/v1", runner_id: "bun", runner_version: "1.3.14", argv: ["test"], cwd: ".", timeout_ms: 1000, max_output_bytes: 1024 },
+				{ contract: "assurance_kernel/verification_descriptor/v1", runner_id: "bun", runner_version: "1.4.2", argv: ["test"], cwd: ".", timeout_ms: 1000, max_output_bytes: 1024 },
 			]] as never),
 			reviewBundle: role === "review" ? reviewBundle() : null,
 		}),

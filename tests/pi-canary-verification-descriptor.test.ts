@@ -22,7 +22,7 @@ import {
 const GOOD = {
 	contract: "assurance_kernel/verification_descriptor/v1",
 	runner_id: "bun",
-	runner_version: "1.3.14",
+	runner_version: "1.4.2",
 	argv: ["test", "tests/focused.test.ts"],
 	cwd: ".",
 	timeout_ms: 120000,

@@ -7,17 +7,17 @@
     {
       "id": "RSN-1",
       "assertion": "A new module runtime/unattended/batch_reasons.ts holds a frozen map from stable reason key to its reason text and recovery action. Both Host adapters render from it and neither composes batch prose of its own, so the same condition produces the same reason and recovery on both Hosts by construction.",
-      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/unattended-batch-run.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 60000,\n  \"max_output_bytes\": 20000\n}\n"
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.4.2\",\n  \"argv\": [\n    \"test\",\n    \"tests/unattended-batch-run.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 60000,\n  \"max_output_bytes\": 20000\n}\n"
     },
     {
       "id": "RSN-2",
       "assertion": "Parity assertions in tests/dual-host-assurance-conformance.test.ts that only compared two adapters' batch reason strings are retired in this same change, because reading one shared table makes them pass for the wrong reason. The protected property is restated as an assertion that the shared table is the only producer of batch reason prose — a property that can still fail — and no other conformance scenario is removed.",
-      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/dual-host-assurance-conformance.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 60000,\n  \"max_output_bytes\": 20000\n}\n"
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.4.2\",\n  \"argv\": [\n    \"test\",\n    \"tests/dual-host-assurance-conformance.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 60000,\n  \"max_output_bytes\": 20000\n}\n"
     },
     {
       "id": "RSN-3",
       "assertion": "Every reason key previously emitted by either adapter is present in the shared table with its existing text and recovery action, so no operator-visible failure message is lost or silently reworded by this change.",
-      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/unattended-batch-run.test.ts\",\n    \"tests/managed-authority-failure-contract.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 20000\n}\n"
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.4.2\",\n  \"argv\": [\n    \"test\",\n    \"tests/unattended-batch-run.test.ts\",\n    \"tests/managed-authority-failure-contract.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 20000\n}\n"
     }
   ],
   "scope_hint": [

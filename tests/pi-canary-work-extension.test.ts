@@ -40,7 +40,7 @@ const INTENT = {
 	acceptance: [{
 		id: "A1",
 		assertion: "a1",
-		verification: JSON.stringify({ contract: "assurance_kernel/verification_descriptor/v1", runner_id: "bun", runner_version: "1.3.14", argv: ["test"], cwd: ".", timeout_ms: 1_000, max_output_bytes: 1_024 }),
+		verification: JSON.stringify({ contract: "assurance_kernel/verification_descriptor/v1", runner_id: "bun", runner_version: "1.4.2", argv: ["test"], cwd: ".", timeout_ms: 1_000, max_output_bytes: 1_024 }),
 	}],
 	scope_hint: [
 		"plugins/immune-brain/.pi-extension",

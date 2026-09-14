@@ -7,22 +7,22 @@
     {
       "id": "CVG-1",
       "assertion": "Post-rollback re-verification becomes shared behavior on both Hosts: after restoring a staged intent, both adapters re-verify the restored bytes and the index rather than stopping at `git update-index`, adopting Pi's stricter branch. A rollback that leaves either the bytes or the index inconsistent fails closed on both Hosts.",
-      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/dual-host-assurance-conformance.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 60000,\n  \"max_output_bytes\": 20000\n}\n"
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.4.2\",\n  \"argv\": [\n    \"test\",\n    \"tests/dual-host-assurance-conformance.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 60000,\n  \"max_output_bytes\": 20000\n}\n"
     },
     {
       "id": "CVG-2",
       "assertion": "The bounded elicitation timeout becomes shared behavior on both Hosts, adopting Claude's branch: an unanswered native confirmation is bounded by the existing IMMUNE_BRAIN_BATCH_TIMEOUT_MS setting with its current default rather than waiting indefinitely, and the timeout path fails closed with a stable reason and one recovery action.",
-      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/dual-host-assurance-conformance.test.ts\",\n    \"tests/claude-native-elicitation-promotion.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 20000\n}\n"
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.4.2\",\n  \"argv\": [\n    \"test\",\n    \"tests/dual-host-assurance-conformance.test.ts\",\n    \"tests/claude-native-elicitation-promotion.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 20000\n}\n"
     },
     {
       "id": "CVG-3",
       "assertion": "runtime/claude/kernel_ports.ts imports deriveAuthorizationOperation from the shared export instead of re-implementing it inline, which is what that export's own comment says it exists for, so the conformance suite can prove the derivation cannot drift between Hosts.",
-      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/dual-host-assurance-conformance.test.ts\",\n    \"tests/claude-host-authority.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 20000\n}\n"
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.4.2\",\n  \"argv\": [\n    \"test\",\n    \"tests/dual-host-assurance-conformance.test.ts\",\n    \"tests/claude-host-authority.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 20000\n}\n"
     },
     {
       "id": "CVG-4",
       "assertion": "Each converged behavior gains a dual-host conformance scenario that fails if either adapter regresses to its previous branch, so these three divergences cannot silently reappear.",
-      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/dual-host-assurance-conformance.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 60000,\n  \"max_output_bytes\": 20000\n}\n"
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.4.2\",\n  \"argv\": [\n    \"test\",\n    \"tests/dual-host-assurance-conformance.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 60000,\n  \"max_output_bytes\": 20000\n}\n"
     }
   ],
   "scope_hint": [

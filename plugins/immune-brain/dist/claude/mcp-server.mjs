@@ -3065,9 +3065,9 @@ function parseTaskIntentV1(raw) {
   if (!Array.isArray(acceptanceRaw) || acceptanceRaw.length === 0) {
     violations.push("intent.acceptance must contain at least one item");
   } else {
-    const acceptance2 = acceptanceRaw.map((item, index) => parseAcceptanceItemV1(item, index, violations));
+    const acceptance = acceptanceRaw.map((item, index) => parseAcceptanceItemV1(item, index, violations));
     const ids = new Set;
-    for (const item of acceptance2) {
+    for (const item of acceptance) {
       if (ids.has(item.id))
         violations.push(`duplicate acceptance id: ${item.id}`);
       ids.add(item.id);
@@ -5407,21 +5407,21 @@ async function projectAssurance(root, taskId, diffProvider) {
       const auditPair = await readAuditTaskPair(root, taskId);
       if (!auditPair)
         return fail(`task ${taskId} has no terminal audit pair`, claim);
-      const workspace2 = await readWorkspaceStateRaw(root);
+      const workspace = await readWorkspaceStateRaw(root);
       if (auditPair.record.contract === "assurance_kernel/task_record/v2")
         return {
           contract: "assurance_kernel/assurance_projection/v1",
           task_id: taskId,
           error: null,
           claim: null,
-          projection: projectHistoricalTerminal(auditPair.record, auditPair.recordRevision, workspace2.revision)
+          projection: projectHistoricalTerminal(auditPair.record, auditPair.recordRevision, workspace.revision)
         };
       return {
         contract: "assurance_kernel/assurance_projection/v1",
         task_id: taskId,
         error: null,
         claim: null,
-        projection: projectFromRecord(auditPair.record, auditPair.recordRevision, workspace2.revision, diffProvider(root, auditPair.record))
+        projection: projectFromRecord(auditPair.record, auditPair.recordRevision, workspace.revision, diffProvider(root, auditPair.record))
       };
     }
     if (read.record.task_id !== taskId)
@@ -5504,7 +5504,7 @@ function reviewRound(record) {
   return Math.max(0, ...record.findings.filter((item) => item.source === "review").map((item) => item.review_round ?? 0)) + 1;
 }
 function appendHistory(record, action, from, detail, audit) {
-  if (record.history.some((entry2) => entry2.id === action.event_id))
+  if (record.history.some((entry) => entry.id === action.event_id))
     throw new KernelInvariantError([
       `history contains duplicate id ${action.event_id}`
     ]);
@@ -6460,7 +6460,7 @@ function createCapabilityRegistry(capabilityBrand, hooks, domainLabel) {
   function isCapability(value) {
     return !!value && typeof value === "object" && value[capabilityBrand] === true && value[brand] === true;
   }
-  function stateOf2(capability) {
+  function stateOf(capability) {
     const state = states.get(capability);
     if (!state)
       throw new Error(`${domainLabel} capability is not recognized by this registry`);
@@ -6480,18 +6480,18 @@ function createCapabilityRegistry(capabilityBrand, hooks, domainLabel) {
     inspect(capability, expected, now = Date.now()) {
       if (!isCapability(capability))
         throw new Error(`${domainLabel} capability is not recognized by this registry`);
-      const state = stateOf2(capability);
+      const state = stateOf(capability);
       if (state.consumed)
         throw new Error(`${domainLabel} capability already consumed`);
       return hooks.validateAndProject({ ...state.binding, issued_at: state.issued_at }, expected, now);
     },
     consume(capability, expected, now = Date.now()) {
       const validated = this.inspect(capability, expected, now);
-      stateOf2(capability).consumed = true;
+      stateOf(capability).consumed = true;
       return validated;
     },
     isConsumed(capability) {
-      return stateOf2(capability).consumed;
+      return stateOf(capability).consumed;
     }
   };
 }
@@ -6651,11 +6651,11 @@ function stableStringify2(value) {
 function preparePiCanary(root, input) {
   if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(input.task_id))
     throw new Error("task id must match [A-Za-z0-9][A-Za-z0-9._-]{0,127}");
-  const canonicalRoot2 = resolve6(root);
-  const statePath = resolve6(canonicalRoot2, SOURCE_PATH);
+  const canonicalRoot = resolve6(root);
+  const statePath = resolve6(canonicalRoot, SOURCE_PATH);
   let intent = null;
   try {
-    const read = readTaskIntent(canonicalRoot2, input.task_id);
+    const read = readTaskIntent(canonicalRoot, input.task_id);
     intent = {
       path: read.intent_ref.path,
       revision: read.intent_ref.revision,
@@ -6664,7 +6664,7 @@ function preparePiCanary(root, input) {
   } catch {
     intent = null;
   }
-  const claim = readBackendClaim(canonicalRoot2);
+  const claim = readBackendClaim(canonicalRoot);
   const backend = claim ? {
     present: true,
     task_id: claim.task_id,
@@ -6672,14 +6672,14 @@ function preparePiCanary(root, input) {
   } : { present: false, task_id: null, lifecycle_status: null };
   if (claim && claim.task_id !== input.task_id)
     throw new Error(`backend claim belongs to task ${claim.task_id}, not ${input.task_id}`);
-  const tombstone = readTaskTombstone(canonicalRoot2, input.task_id);
+  const tombstone = readTaskTombstone(canonicalRoot, input.task_id);
   const taskTombstone = tombstone ? {
     present: true,
     terminal_lifecycle: tombstone.terminal_lifecycle
   } : { present: false, terminal_lifecycle: null };
   if (tombstone && claim)
     throw new Error(`task ${input.task_id} has both an active backend claim and a terminal tombstone`);
-  const current = readTaskRecordRaw(canonicalRoot2, input.task_id);
+  const current = readTaskRecordRaw(canonicalRoot, input.task_id);
   const record = current.record ? { present: true, lifecycle: current.record.lifecycle, artifact_state: current.record.artifact_state } : { present: false, lifecycle: null, artifact_state: null };
   if (claim && !current.record)
     throw new Error(`backend claim exists for task ${input.task_id} but its TaskRecord v3 is absent`);
@@ -6687,7 +6687,7 @@ function preparePiCanary(root, input) {
     throw new Error(`backend claim exists for task ${input.task_id} but its intent sidecar is unreadable`);
   if (current.record && current.record.task_id !== input.task_id)
     throw new Error(`task record identity is inconsistent for ${input.task_id}`);
-  const state = readWorkspaceStateRaw(canonicalRoot2);
+  const state = readWorkspaceStateRaw(canonicalRoot);
   const workspace = {
     current_working: state.state.current_working
   };
@@ -6696,7 +6696,7 @@ function preparePiCanary(root, input) {
   let gitBaseHead = null;
   let gitError = null;
   try {
-    gitBaseHead = readGitHead(canonicalRoot2);
+    gitBaseHead = readGitHead(canonicalRoot);
   } catch (error) {
     gitError = error instanceof Error ? error.message : String(error);
   }
@@ -6884,11 +6884,11 @@ function enrollCanaryTask(root, input, registry) {
 
 // plugins/immune-brain/runtime/assurance/qa_findings.ts
 import { randomUUID as randomUUID4 } from "node:crypto";
-function qaFindingId(acceptanceId, snapshotDigest2) {
-  return `qa-${acceptanceId}-${attemptRef(snapshotDigest2)}`;
+function qaFindingId(acceptanceId, snapshotDigest) {
+  return `qa-${acceptanceId}-${attemptRef(snapshotDigest)}`;
 }
-function attemptRef(snapshotDigest2) {
-  const digest8 = snapshotDigest2.slice("sha256:".length, "sha256:".length + 8);
+function attemptRef(snapshotDigest) {
+  const digest8 = snapshotDigest.slice("sha256:".length, "sha256:".length + 8);
   return `${digest8}-${randomUUID4().slice(0, 6)}`;
 }
 
@@ -7180,7 +7180,7 @@ async function snapshot(root, gh, operation) {
   return { repository, issues };
 }
 function findIssue(issues, primary, required) {
-  const candidates = issues.filter((issue2) => primary.every((needle) => issue2.body.includes(needle)));
+  const candidates = issues.filter((issue) => primary.every((needle) => issue.body.includes(needle)));
   if (candidates.length === 0)
     return { kind: "missing" };
   if (candidates.length !== 1)
@@ -7264,7 +7264,7 @@ async function observeGithubInitiative(root, initiativeId, gh = createGhTranspor
   if (new Set(subIssueNumbers).size !== subIssueNumbers.length)
     throw new Error(`Initiative ${id} has duplicate native Sub-issue relations`);
   const tasks = subIssueNumbers.map((issueNumber) => {
-    const matches = source.issues.filter((issue2) => issue2.number === issueNumber);
+    const matches = source.issues.filter((issue) => issue.number === issueNumber);
     if (matches.length !== 1)
       throw new Error(`Initiative ${id} references an unreadable Sub-issue #${issueNumber}`);
     const issue = matches[0];
@@ -7544,12 +7544,12 @@ function requireNonEmpty(binding) {
   if (missing.length > 0)
     throw new Error(`batch authorization binding is incomplete: ${missing.join(", ")}`);
 }
-function validateBudget(budget2, issuedAt) {
-  if (!Number.isInteger(budget2.max_children) || budget2.max_children <= 0)
+function validateBudget(budget, issuedAt) {
+  if (!Number.isInteger(budget.max_children) || budget.max_children <= 0)
     throw new Error("batch budget max_children must be a positive integer");
-  if (!Number.isInteger(budget2.qa_failure_limit) || budget2.qa_failure_limit <= 0)
+  if (!Number.isInteger(budget.qa_failure_limit) || budget.qa_failure_limit <= 0)
     throw new Error("batch budget qa_failure_limit must be a positive integer");
-  const deadline = Date.parse(budget2.deadline_at);
+  const deadline = Date.parse(budget.deadline_at);
   if (Number.isNaN(deadline) || deadline <= Date.parse(issuedAt))
     throw new Error("batch budget must have a future deadline_at");
 }
@@ -7879,14 +7879,14 @@ function hasBoundaryWhitespace(path) {
   return path.split("/").some((segment) => segment.trim() !== segment || segment.length === 0);
 }
 function getUnsupportedIndexFlags(root) {
-  const result2 = spawnSync4("git", ["-C", root, "ls-files", "-v", "-z", "--"], {
+  const result = spawnSync4("git", ["-C", root, "ls-files", "-v", "-z", "--"], {
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"]
   });
-  if (result2.status !== 0) {
+  if (result.status !== 0) {
     throw new Error("failed to inspect index flags via git ls-files -v");
   }
-  const entries = result2.stdout.split("\x00").filter((e) => e.length > 0);
+  const entries = result.stdout.split("\x00").filter((e) => e.length > 0);
   const flagged = [];
   for (const entry of entries) {
     const tag = entry[0];
@@ -8173,7 +8173,7 @@ async function lookupBatchCommit(input) {
     }
   }
   if (!candidates.length) {
-    const result2 = spawnSync4("git", [
+    const result = spawnSync4("git", [
       "-C",
       root,
       "log",
@@ -8183,10 +8183,10 @@ async function lookupBatchCommit(input) {
       "20",
       `--format=%x1e${FORMAT}`
     ], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
-    if (result2.status !== 0) {
-      throw new Error(`failed to lookup batch commit for ${taskId}: ${result2.stderr?.trim() || "git log failed"}`);
+    if (result.status !== 0) {
+      throw new Error(`failed to lookup batch commit for ${taskId}: ${result.stderr?.trim() || "git log failed"}`);
     }
-    candidates = (result2.stdout ?? "").split("\x1E").filter((entry) => entry.trim()).map(parseEntry);
+    candidates = (result.stdout ?? "").split("\x1E").filter((entry) => entry.trim()).map(parseEntry);
   }
   let match = null;
   for (const candidate of candidates) {
@@ -8325,8 +8325,8 @@ function validateRecordShape(value, batchId) {
     throw new Error(`batch run state ${batchId} has an invalid batch_state`);
   if (typeof record.consecutive_qa_failures !== "number" || !Number.isInteger(record.consecutive_qa_failures) || record.consecutive_qa_failures < 0)
     throw new Error(`batch run state ${batchId} has an invalid consecutive_qa_failures`);
-  const budget2 = record.budget;
-  if (typeof record.budget !== "object" || record.budget === null || typeof budget2.max_children !== "number" || !Number.isInteger(budget2.max_children) || budget2.max_children <= 0 || !isCanonicalTimestamp(budget2.deadline_at) || typeof budget2.qa_failure_limit !== "number" || !Number.isInteger(budget2.qa_failure_limit) || budget2.qa_failure_limit <= 0)
+  const budget = record.budget;
+  if (typeof record.budget !== "object" || record.budget === null || typeof budget.max_children !== "number" || !Number.isInteger(budget.max_children) || budget.max_children <= 0 || !isCanonicalTimestamp(budget.deadline_at) || typeof budget.qa_failure_limit !== "number" || !Number.isInteger(budget.qa_failure_limit) || budget.qa_failure_limit <= 0)
     throw new Error(`batch run state ${batchId} has an invalid budget`);
   if (!Array.isArray(record.commits) || record.commits.some((c) => typeof c !== "string"))
     throw new Error(`batch run state ${batchId} has an invalid commits list`);
@@ -8395,26 +8395,26 @@ function readBatchRunState(root, batchId) {
   validateRecordShape(parsed, batchId);
   return parsed;
 }
-function ensureSecureDirectory3(root, relative4) {
-  const target = join8(root, relative4);
+function ensureSecureDirectory3(root, relative) {
+  const target = join8(root, relative);
   const parent = dirname5(target);
   if (!existsSync4(parent))
     mkdirSync4(parent, { recursive: true });
   if (existsSync4(target)) {
     const stats = lstatSync7(target);
     if (!stats.isDirectory())
-      throw new Error(`${relative4} exists but is not a directory`);
+      throw new Error(`${relative} exists but is not a directory`);
   } else {
     mkdirSync4(target);
   }
   return target;
 }
-function writeFileAtomically2(root, relative4, bytes) {
-  const target = join8(root, relative4);
+function writeFileAtomically2(root, relative, bytes) {
+  const target = join8(root, relative);
   const targetDir = dirname5(target);
   const stats = lstatSync7(targetDir);
   if (!stats.isDirectory())
-    throw new Error(`${dirname5(relative4)} is not a directory`);
+    throw new Error(`${dirname5(relative)} is not a directory`);
   const tempPath = `${target}.${randomUUID6()}.tmp`;
   let fd = null;
   try {
@@ -8454,11 +8454,11 @@ function reportPath(batchId) {
   return join8(".imm", "state", "batches", `${batchId}.report.json`);
 }
 function writeBatchRunReport(root, report) {
-  const relative4 = reportPath(report.batch_id);
+  const relative = reportPath(report.batch_id);
   return withKernelStoreLock(root, () => {
-    const path = join8(root, relative4);
+    const path = join8(root, relative);
     if (existsSync4(path)) {
-      const original = JSON.parse(readSecureProjectFile(root, relative4));
+      const original = JSON.parse(readSecureProjectFile(root, relative));
       if (typeof original !== "object" || original === null || original.contract !== "assurance_kernel/batch_run_report/v1")
         throw new Error(`batch run report ${report.batch_id} has an unknown contract`);
       const prior = original;
@@ -8468,7 +8468,7 @@ function writeBatchRunReport(root, report) {
         return prior;
     }
     ensureSecureDirectory3(root, join8(".imm", "state", "batches"));
-    writeFileAtomically2(root, relative4, canonicalReportBytes(report));
+    writeFileAtomically2(root, relative, canonicalReportBytes(report));
     return report;
   });
 }
@@ -8510,10 +8510,10 @@ function budgetStopReason(record, now) {
 function isAuthorizationExpiryError(error) {
   return error instanceof BatchAuthorizationExpiryError;
 }
-function requireFreshProjection(result2, taskId) {
-  if (result2.error !== null)
-    throw new Error(`cannot reconcile Kernel projection for ${taskId}: ${result2.error}`);
-  return result2;
+function requireFreshProjection(result, taskId) {
+  if (result.error !== null)
+    throw new Error(`cannot reconcile Kernel projection for ${taskId}: ${result.error}`);
+  return result;
 }
 function nextEnrollableChild(record) {
   return record.children.find((child) => child.state === "pending" && record.children.every((other) => !child.blocked_by.includes(other.task_id) || other.state === "committed")) ?? null;
@@ -9003,9 +9003,9 @@ async function resumeBatch(input, projection) {
     const current = existing.children.find((c) => c.task_id === driven.task_id) ?? driven;
     if (current.state === "settled" || current.state === "enrolled") {
       try {
-        const driven2 = await driveInterruptedChild(input, current);
-        if (driven2)
-          return driven2;
+        const driven = await driveInterruptedChild(input, current);
+        if (driven)
+          return driven;
       } catch (error) {
         if (error instanceof BatchCommitAbortError) {
           const failed = readBatchRunState(input.root, input.batch_id);
@@ -9219,7 +9219,7 @@ function assertProjectionBinding(before, after, allowDiffChange = false) {
   }
 }
 function qaOutcomes(record) {
-  return Object.fromEntries(record.attestations.filter((item) => item.kind === "qa").flatMap((item) => item.acceptance_results).map((result2) => [result2.acceptance_id, { status: result2.status, summary: result2.summary }]));
+  return Object.fromEntries(record.attestations.filter((item) => item.kind === "qa").flatMap((item) => item.acceptance_results).map((result) => [result.acceptance_id, { status: result.status, summary: result.summary }]));
 }
 async function ensureClaudeReviewRevision(root, taskId, projection) {
   const current = await readTaskRecord(root, taskId);
@@ -9284,7 +9284,7 @@ async function buildAssuranceSnapshot(root, taskId, role, projection, runner) {
     outcomes: qaOutcomes(record)
   }) : null;
   const dirtyFiles = reviewManifest ? Object.keys(reviewManifest.changed_paths) : reviewBundle ? Object.keys(reviewBundle.dirty_files) : [];
-  const snapshot2 = {
+  const snapshot = {
     contract: "assurance_kernel/assurance_snapshot/v2",
     task_id: taskId,
     role,
@@ -9313,7 +9313,7 @@ async function buildAssuranceSnapshot(root, taskId, role, projection, runner) {
       }
     } : {}
   };
-  return { snapshot: snapshot2, descriptors, reviewBundle, reviewManifest };
+  return { snapshot, descriptors, reviewBundle, reviewManifest };
 }
 function stagePlanningArtifactTransition(root, record) {
   const intentActive = record.intent_ref.path.replace("docs/plans/archive/", "docs/plans/");
@@ -9494,7 +9494,7 @@ class ClaudeRuntime {
       frozenRunner: async () => resolveBunRunner(),
       buildAssurance: (root, taskId, role, projection, runner) => buildAssuranceSnapshot(root, taskId, role, projection, runner),
       ensureReviewRevision: (root, taskId, projection) => ensureClaudeReviewRevision(root, taskId, projection),
-      runQa: (snapshot2, descriptors, runner, options) => runDeterministicQa(snapshot2, descriptors, runner, options),
+      runQa: (snapshot, descriptors, runner, options) => runDeterministicQa(snapshot, descriptors, runner, options),
       writeReviewEvidence: (input) => writeNativeReviewEvidence(input.evidence),
       applyVerdict: (ctx, input) => this.applyVerdict(ctx, input),
       applyOrdinaryOperation: (ctx, input) => this.executeOrdinary(ctx, input)
@@ -9517,16 +9517,16 @@ class ClaudeRuntime {
       throw new Error(`unsupported native operation ${operation}`);
     if (!this.requestConfirmation)
       throw new NativeAuthorityError("interaction_not_opened", "native confirmation port is unavailable");
-    const result2 = await this.requestConfirmation({ operation, taskId: meta.taskId, toolCallId: meta.toolCallId, signal: meta.signal, ...binding });
+    const result = await this.requestConfirmation({ operation, taskId: meta.taskId, toolCallId: meta.toolCallId, signal: meta.signal, ...binding });
     throwIfCancelled(meta.signal);
-    const gate = evaluateNativeGate({ operation, interactive, decision: result2.decision });
+    const gate = evaluateNativeGate({ operation, interactive, decision: result.decision });
     if (!gate.ok)
       throw gate.error;
     return {
       confirmation_ref: confirmationRef({
         connectionId: meta.sessionId,
         toolCallId: meta.toolCallId,
-        requestId: result2.requestId,
+        requestId: result.requestId,
         operation,
         taskId: meta.taskId,
         ...binding
@@ -9730,7 +9730,7 @@ class ClaudeRuntime {
         ...op === "stop" ? { reason: stopReason(extra.reason) } : {}
       });
       throwIfCancelled(meta.signal);
-      const result2 = app.execute({
+      const result = app.execute({
         root: this.cwd,
         task_id: taskId,
         operation: {
@@ -9746,8 +9746,8 @@ class ClaudeRuntime {
         now
       });
       if (op === "stop" || op === "authorize_rework" || op === "approve_breaking_intent_revision")
-        stagePlanningArtifactTransition(this.cwd, result2.record);
-      return result2;
+        stagePlanningArtifactTransition(this.cwd, result.record);
+      return result;
     } catch (error) {
       if (sidecar && priorBytes && priorIndexState) {
         const current = await readTaskRecord(this.cwd, taskId);
@@ -9766,13 +9766,13 @@ class ClaudeRuntime {
       this.coordinator.commitInvocation(input.invocation);
       const settlement = apply();
       input.hooks?.onCommit?.();
-      const result2 = await settlement;
+      const result = await settlement;
       await input.hooks?.afterCommit?.();
-      return result2;
+      return result;
     };
     if (input.verdict.decision === "rework") {
       const findings = reviewReworkFindings(input.verdict);
-      const capability2 = await mintCapability(registry, {
+      const capability = await mintCapability(registry, {
         authority_kind: input.snapshot.role,
         task_id: input.taskId,
         action_kind: "request_rework",
@@ -9786,15 +9786,15 @@ class ClaudeRuntime {
         confirmation_ref: `claude:${input.actorId}`
       });
       await input.hooks?.beforeCommit?.();
-      const result2 = await commitAndApply(async () => app.execute({
+      const result = await commitAndApply(async () => app.execute({
         root: ctx.cwd,
         task_id: input.taskId,
-        operation: { op: "request_rework", capability: capability2, findings, actor_id: input.actorId },
+        operation: { op: "request_rework", capability, findings, actor_id: input.actorId },
         prior_intent_token: priorIntentToken,
         diffProvider: diffSnapshotOf,
         now
       }));
-      stagePlanningArtifactTransition(ctx.cwd, result2.record);
+      stagePlanningArtifactTransition(ctx.cwd, result.record);
       return;
     }
     const approval = {
@@ -9841,7 +9841,7 @@ class ClaudeRuntime {
       if (priorBytes)
         writeFileSync5(sidecar, `${JSON.stringify(operation.next_intent, null, 2)}
 `);
-      const result2 = await app.execute({
+      const result = await app.execute({
         root: ctx.cwd,
         task_id: input.taskId,
         operation,
@@ -9850,8 +9850,8 @@ class ClaudeRuntime {
         now: new Date().toISOString()
       });
       if (operation.op === "freeze_artifacts" || operation.op === "stop")
-        stagePlanningArtifactTransition(ctx.cwd, result2.record);
-      return result2;
+        stagePlanningArtifactTransition(ctx.cwd, result.record);
+      return result;
     } catch (error) {
       if (priorBytes) {
         const current = await readTaskRecord(ctx.cwd, input.taskId);
@@ -9995,7 +9995,7 @@ class ClaudeRuntime {
     let confirmChildrenDetails = [];
     let confirmExcludedDetails = [];
     const recoveryRiskByTask = new Map;
-    let budget2 = existingBatch ? existingBatch.budget : { max_children: 10, deadline_at: new Date(Date.now() + 8 * 3600 * 1000).toISOString(), qa_failure_limit: 2 };
+    let budget = existingBatch ? existingBatch.budget : { max_children: 10, deadline_at: new Date(Date.now() + 8 * 3600 * 1000).toISOString(), qa_failure_limit: 2 };
     if (isResuming) {
       try {
         recoveryChildren = await Promise.all(existingBatch.children.map(async (c) => {
@@ -10012,9 +10012,9 @@ class ClaudeRuntime {
               read = await readTaskIntent(this.cwd, c.task_id, intentPath);
             }
           } catch {
-            const archivePath2 = `docs/plans/archive/${c.task_id}.intent.json`;
+            const archivePath = `docs/plans/archive/${c.task_id}.intent.json`;
             try {
-              read = await readTaskIntent(this.cwd, c.task_id, archivePath2);
+              read = await readTaskIntent(this.cwd, c.task_id, archivePath);
             } catch {
               read = await readTaskIntent(this.cwd, c.task_id, intentPath);
             }
@@ -10073,7 +10073,7 @@ class ClaudeRuntime {
           recovery_action: "ensure the initiative has uncompleted, non-critical child tasks in the current Host"
         };
       }
-      budget2 = plan.budget;
+      budget = plan.budget;
       const enrollableChildById = new Map(plan.enrollable.map((c) => [c.task_id, c]));
       recoveryChildren = plan.children.filter((c) => c.status === "enrollable").map((c) => {
         const digestChild = enrollableChildById.get(c.task_id);
@@ -10122,7 +10122,7 @@ class ClaudeRuntime {
       batch_branch: batchBranch,
       children: confirmChildrenDetails,
       excluded: confirmExcludedDetails,
-      budget: budget2,
+      budget,
       expires_at: expiresAt,
       ...reuseBlockers.length > 0 ? {
         re_confirmation_required: reuseBlockers,
@@ -10241,9 +10241,9 @@ class ClaudeRuntime {
               read = await readTaskIntent(this.cwd, c.task_id, intentPath);
             }
           } catch {
-            const archivePath2 = `docs/plans/archive/${c.task_id}.intent.json`;
+            const archivePath = `docs/plans/archive/${c.task_id}.intent.json`;
             try {
-              read = await readTaskIntent(this.cwd, c.task_id, archivePath2);
+              read = await readTaskIntent(this.cwd, c.task_id, archivePath);
             } catch {
               read = await readTaskIntent(this.cwd, c.task_id, intentPath);
             }
@@ -10345,7 +10345,7 @@ class ClaudeRuntime {
       plan_digest: planDigest,
       branch: batchBranch,
       base_head: isResuming ? existingBatch.base_head : baseHead,
-      budget: budget2,
+      budget,
       actor_id: "user",
       confirmation_ref: confirmation,
       expires_at: expiresAt,
@@ -10373,7 +10373,7 @@ class ClaudeRuntime {
       base_head: isResuming ? existingBatch.base_head : baseHead,
       confirmation_time: now,
       authorization_expires_at: expiresAt,
-      budget: budget2,
+      budget,
       now,
       kernel: kernelPort,
       git: this.batchGit
@@ -10427,18 +10427,18 @@ class ClaudeRuntime {
         return { record_revision: recordRaw.revision };
       },
       advanceTask: async (root, taskId) => {
-        const result2 = await this.coordinator.advance(taskId, { cwd: root });
-        if (result2.state === "completed")
+        const result = await this.coordinator.advance(taskId, { cwd: root });
+        if (result.state === "completed")
           return { state: "completed" };
-        if (result2.state === "stopped")
+        if (result.state === "stopped")
           return { state: "stopped" };
-        if (result2.state === "rework")
-          return { state: "rework", operation: result2.operation, summary: result2.summary };
-        if (result2.state === "review_ready")
-          return { state: "review_ready", operation_id: result2.operation_id };
-        if (result2.state === "blocked")
-          return { state: "blocked", reason: result2.reason };
-        return { state: "failed", reason: result2.reason ?? "advance failed" };
+        if (result.state === "rework")
+          return { state: "rework", operation: result.operation, summary: result.summary };
+        if (result.state === "review_ready")
+          return { state: "review_ready", operation_id: result.operation_id };
+        if (result.state === "blocked")
+          return { state: "blocked", reason: result.reason };
+        return { state: "failed", reason: result.reason ?? "advance failed" };
       },
       projectTask: async (root, taskId) => projectAssurance(root, taskId, diffSnapshotOf),
       ownsTaskClaim: (taskId) => {
@@ -10538,10 +10538,10 @@ function createMcpRuntime(options = {}) {
         if (!negotiatedInteractive) {
           throw new NativeAuthorityError("unsupported_host", "interactive MCP elicitation is unavailable");
         }
-        const probe2 = probeHost(options.env ?? process.env, process.platform, negotiatedVersion);
-        if (!probe2.ok)
-          throw new NativeAuthorityError("unsupported_host", probe2.reason);
-        const toolMeta2 = {
+        const probe = probeHost(options.env ?? process.env, process.platform, negotiatedVersion);
+        if (!probe.ok)
+          throw new NativeAuthorityError("unsupported_host", probe.reason);
+        const toolMeta = {
           sessionId: meta.sessionId ?? connectionId,
           toolCallId: meta.toolCallId ?? `call-${name}`,
           taskId: initiativeSlug,
@@ -10549,7 +10549,7 @@ function createMcpRuntime(options = {}) {
           interactive: meta.interactive ?? options.interactive ?? negotiatedInteractive,
           signal: meta.signal
         };
-        return runtime.startUnattendedBatch(initiativeSlug, toolMeta2);
+        return runtime.startUnattendedBatch(initiativeSlug, toolMeta);
       }
       const taskId = String(args.task_id ?? "");
       if (!taskId)
@@ -10677,7 +10677,7 @@ async function handleJsonRpc(message, mcp = createMcpRuntime()) {
       }
       const sessionId = mcp.connectionId;
       const toolCallId = identity?.toolCallId ?? String(message.id ?? "stdio");
-      const result2 = await mcp.callTool(name, params.arguments ?? {}, {
+      const result = await mcp.callTool(name, params.arguments ?? {}, {
         sessionId,
         toolCallId,
         interactive,
@@ -10687,7 +10687,7 @@ async function handleJsonRpc(message, mcp = createMcpRuntime()) {
       return {
         jsonrpc: "2.0",
         id: message.id ?? null,
-        result: { content: [{ type: "text", text: JSON.stringify(result2) }] }
+        result: { content: [{ type: "text", text: JSON.stringify(result) }] }
       };
     } catch (error) {
       return {
@@ -10705,7 +10705,7 @@ async function handleJsonRpc(message, mcp = createMcpRuntime()) {
 }
 async function writeReply(output, reply) {
   const payload = encodeMessage(reply);
-  await new Promise((resolve8, reject) => {
+  await new Promise((resolve, reject) => {
     if (!output.writable) {
       reject(new Error("output stream is not writable"));
       return;
@@ -10721,7 +10721,7 @@ async function writeReply(output, reply) {
         return;
       settled = true;
       cleanup();
-      resolve8();
+      resolve();
     };
     const onError = (error) => {
       if (settled)
@@ -10751,7 +10751,7 @@ async function writeReply(output, reply) {
     if (ok) {
       settled = true;
       cleanup();
-      resolve8();
+      resolve();
       return;
     }
     output.once("drain", onDrain);
@@ -10760,7 +10760,7 @@ async function writeReply(output, reply) {
 function elicitationParams(input) {
   if (input.operation === "start_unattended_batch") {
     const b = input.batchDetails;
-    const details2 = [
+    const details = [
       `Operation: start_unattended_batch`,
       `Initiative: ${input.initiativeSlug ?? b?.initiative_slug}`,
       b?.batch_branch ? `Batch branch: ${b.batch_branch}` : null,
@@ -10778,7 +10778,7 @@ ${b.excluded.map((e) => `  - ${e.task_id} (${e.slice_id}): ${e.reason}`).join(`
       mode: "form",
       message: `Authorize this unattended batch run for ${input.initiativeSlug}?
 
-${details2.join(`
+${details.join(`
 `)}`,
       requestedSchema: { type: "object", properties: {} }
     };
@@ -10818,27 +10818,27 @@ async function serveStdio(options = {}) {
       item.reject(error);
     pending.clear();
   };
-  mcp.bindNativeConfirmation(async (input2) => {
+  mcp.bindNativeConfirmation(async (input) => {
     if (!accepting)
       throw new NativeAuthorityError("interaction_not_opened", "MCP connection is closed");
-    if (input2.signal?.aborted)
+    if (input.signal?.aborted)
       throw new NativeAuthorityError("user_cancelled", "Tool call was cancelled");
     const requestId = `immune-brain:elicitation:${mcp.connectionId}:${++requestSequence}`;
     let abortListener;
-    const response = new Promise((resolve8, reject) => {
-      pending.set(requestId, { resolve: resolve8, reject });
+    const response = new Promise((resolve, reject) => {
+      pending.set(requestId, { resolve, reject });
       abortListener = () => {
         pending.delete(requestId);
         reject(new NativeAuthorityError("user_cancelled", "Tool call was cancelled"));
       };
-      input2.signal?.addEventListener("abort", abortListener, { once: true });
+      input.signal?.addEventListener("abort", abortListener, { once: true });
     });
     try {
       await writeReply(output, {
         jsonrpc: "2.0",
         id: requestId,
         method: "elicitation/create",
-        params: elicitationParams(input2)
+        params: elicitationParams(input)
       });
       const reply = await response;
       if (reply.error) {
@@ -10847,13 +10847,13 @@ async function serveStdio(options = {}) {
         }
         throw new NativeAuthorityError("correlation_missing", `MCP elicitation failed: ${reply.error.message}`);
       }
-      const result2 = reply.result;
-      const action = typeof result2 === "object" && result2 !== null && !Array.isArray(result2) ? result2.action : undefined;
+      const result = reply.result;
+      const action = typeof result === "object" && result !== null && !Array.isArray(result) ? result.action : undefined;
       if (action !== "accept" && action !== "decline" && action !== "cancel") {
         throw new NativeAuthorityError("correlation_missing", "MCP elicitation returned an invalid action");
       }
       if (action === "accept") {
-        const content = result2.content;
+        const content = result.content;
         if (typeof content !== "object" || content === null || Array.isArray(content) || Object.keys(content).length !== 0) {
           throw new NativeAuthorityError("correlation_missing", "MCP elicitation accept content did not match the requested schema");
         }
@@ -10862,7 +10862,7 @@ async function serveStdio(options = {}) {
     } finally {
       pending.delete(requestId);
       if (abortListener)
-        input2.signal?.removeEventListener("abort", abortListener);
+        input.signal?.removeEventListener("abort", abortListener);
     }
   });
   const runCall = (parsed) => {
@@ -10971,7 +10971,7 @@ async function serveStdio(options = {}) {
       rejectPending(new NativeAuthorityError("user_cancelled", "MCP connection closed during native interaction"));
       await Promise.race([
         Promise.allSettled([...inFlight]),
-        new Promise((resolve8) => setTimeout(resolve8, 200))
+        new Promise((resolve) => setTimeout(resolve, 200))
       ]);
       await mcp.shutdown();
       if (output.writable && typeof output.end === "function") {
@@ -10983,8 +10983,8 @@ async function serveStdio(options = {}) {
     })();
     return shutdownPromise;
   };
-  await new Promise((resolve8) => {
-    resolveStdio = resolve8;
+  await new Promise((resolve) => {
+    resolveStdio = resolve;
     output.on("error", () => {
       executeShutdown(1);
     });
@@ -11033,12 +11033,12 @@ if (entry.endsWith("mcp_server.ts") || entry.endsWith("mcp-server.mjs")) {
     serveStdio();
 }
 export {
-  supportsElicitationProtocol,
-  serveStdio,
-  listMcpTools,
-  handleJsonRpc,
-  elicitationParams,
-  createMcpRuntime,
+  MCP_PROTOCOL_VERSION,
   TOOLS,
-  MCP_PROTOCOL_VERSION
+  createMcpRuntime,
+  elicitationParams,
+  handleJsonRpc,
+  listMcpTools,
+  serveStdio,
+  supportsElicitationProtocol
 };

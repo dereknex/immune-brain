@@ -7,22 +7,22 @@
     {
       "id": "ADR-1",
       "assertion": "docs/adr/0006 records whether the runtime may invoke the reviewer itself rather than handing Review back to a foreground Host turn. It states the problem, at least two concrete options with their authority consequences, a recommendation with rationale, and status Proposed. It changes no code.",
-      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/active-runtime-docs-contract.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 60000,\n  \"max_output_bytes\": 20000\n}\n"
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.4.2\",\n  \"argv\": [\n    \"test\",\n    \"tests/active-runtime-docs-contract.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 60000,\n  \"max_output_bytes\": 20000\n}\n"
     },
     {
       "id": "ADR-2",
       "assertion": "docs/adr/0007 records whether a child parked on a foreground obligation may release its claim so independent siblings continue, including what that would mean for claim ownership, the single-owner invariant, and batch settlement. Options, recommendation, and status Proposed are present; no code changes.",
-      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/active-runtime-docs-contract.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 60000,\n  \"max_output_bytes\": 20000\n}\n"
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.4.2\",\n  \"argv\": [\n    \"test\",\n    \"tests/active-runtime-docs-contract.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 60000,\n  \"max_output_bytes\": 20000\n}\n"
     },
     {
       "id": "ADR-3",
       "assertion": "docs/adr/0008 records whether a batch capability can be rehydrated after a crash, including what evidence would have to survive and how it would interact with the strictly-newer-confirmation renewal rule. Options, recommendation, and status Proposed are present; no code changes.",
-      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/active-runtime-docs-contract.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 60000,\n  \"max_output_bytes\": 20000\n}\n"
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.4.2\",\n  \"argv\": [\n    \"test\",\n    \"tests/active-runtime-docs-contract.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 60000,\n  \"max_output_bytes\": 20000\n}\n"
     },
     {
       "id": "ADR-4",
       "assertion": "The three drafts are internally consistent with the accepted ADR-0004 and ADR-0005 decisions, introduce no reference to a path or symbol that does not exist, and pass the repository's documentation reference guards.",
-      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/stale-reference-ratchet.test.ts\",\n    \"tests/vocabulary-dead-reference-contract.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 20000\n}\n"
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.4.2\",\n  \"argv\": [\n    \"test\",\n    \"tests/stale-reference-ratchet.test.ts\",\n    \"tests/vocabulary-dead-reference-contract.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 20000\n}\n"
     }
   ],
   "scope_hint": [
