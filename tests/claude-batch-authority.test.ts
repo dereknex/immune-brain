@@ -274,6 +274,54 @@ describe("acc-claude-batch-gate", () => {
 		expect(result.report.initiative_slug).toBe("accept-exec");
 		expect(result.report.batch_state).toBe("completed");
 	});
+
+	it("TTL-1: authorization expiry is the confirmed budget deadline, not a fixed ten-minute window", async () => {
+		const fixture = createBatchFixture("claude-ttl");
+		const batchDetails: Record<string, unknown>[] = [];
+		let lastCommit: string | null = null;
+		const runtime = createMcpRuntime({
+			cwd: fixture.root,
+			env: ENV,
+			interactive: true,
+			readInitiative: async () => fixture.observation,
+			batchKernel: {
+				enrollTask: async () => ({ record_revision: "rev-1" }),
+				advanceTask: async () => ({ state: "completed" }),
+				commitChild: async () => {
+					writeFileSync(join(fixture.root, "dummy.txt"), `${Date.now()}`);
+					execFileSync("git", ["add", "dummy.txt"], { cwd: fixture.root });
+					execFileSync("git", ["commit", "-q", "-m", "child commit"], { cwd: fixture.root });
+					lastCommit = execFileSync("git", ["rev-parse", "HEAD"], { cwd: fixture.root, encoding: "utf8" }).trim();
+					return { commit: lastCommit };
+				},
+				lookupBatchCommit: async () => (lastCommit ? { commit: lastCommit } : null),
+			},
+			requestConfirmation: async (request) => {
+				batchDetails.push(request.batchDetails as Record<string, unknown>);
+				return { decision: "accept", requestId: "req-ttl" };
+			},
+		});
+		runtime.bindClientHandshake({ version: "2.1.236", interactive: true, protocolVersion: "2025-06-18" });
+
+		const result = await runtime.callTool(
+			"start_unattended_batch",
+			{ initiative_slug: "claude-ttl" },
+			{ toolCallId: "toolu-ttl" },
+		);
+		expect(result.state).toBe("started");
+
+		// The literal user confirmed exactly one deadline; the authorization expires with it.
+		const confirmedBudget = batchDetails[0]!.budget as { deadline_at: string };
+		expect(batchDetails[0]!.expires_at).toBe(confirmedBudget.deadline_at);
+
+		const state = JSON.parse(
+			readFileSync(join(fixture.root, ".imm", "state", "batches", `${result.batch_id}.json`), "utf8"),
+		);
+		expect(state.budget.deadline_at).toBe(confirmedBudget.deadline_at);
+		expect(state.authorization_expires_at).toBe(confirmedBudget.deadline_at);
+		// Regression guard: the authorization outlives a fixed ten-minute window.
+		expect(Date.parse(state.authorization_expires_at) - Date.now()).toBeGreaterThan(10 * 60 * 1000);
+	});
 });
 
 describe("acc-claude-batch-fail-closed", () => {

@@ -1,0 +1,155 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "wc-batch-authorization-lifetime",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "wc-batch-authorization-lifetime",
+    "goal": "Make one Batch Authorization span the work it authorizes: derive its expiry from the authorized budget deadline on both Hosts instead of a hardcoded ten minutes, without relaxing any fail-closed clock, issuance, or renewal check.",
+    "acceptance": [
+      {
+        "id": "TTL-1",
+        "assertion": "Batch authorization expiry is derived from the authorized budget.deadline_at on both Hosts, replacing the hardcoded now + 10 minutes in runtime/claude/kernel_ports.ts and .pi-extension/imm-unattended-batch.ts. The value bound at issuance is the one the literal user confirmed; no new default deadline is introduced and the existing default budget is unchanged.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.4.2\",\n  \"argv\": [\n    \"test\",\n    \"tests/claude-batch-authority.test.ts\",\n    \"tests/pi-batch-authority.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 65536\n}\n"
+      },
+      {
+        "id": "TTL-2",
+        "assertion": "Every existing fail-closed check in runtime/kernel/batch_authority.ts is preserved verbatim in effect: expiry and deadline must both be strictly in the future at issuance, an unreadable or non-monotonic clock still fails closed, and an expired authorization still refuses the batch and still requires a strictly newer literal-user confirmation to renew.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.4.2\",\n  \"argv\": [\n    \"test\",\n    \"tests/kernel-batch-authority.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 60000,\n  \"max_output_bytes\": 20000\n}\n"
+      },
+      {
+        "id": "TTL-3",
+        "assertion": "The renewal path in runtime/unattended/batch_runner.ts is retained, because a batch can still outlive a deadline the user themselves chose; a batch parked on a foreground Review inside its confirmed budget no longer expires, while one that passes its confirmed deadline still does.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.4.2\",\n  \"argv\": [\n    \"test\",\n    \"tests/unattended-batch-run.test.ts\",\n    \"tests/dual-host-assurance-conformance.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 131072\n}\n"
+      }
+    ],
+    "scope_hint": [
+      "docs/plans/wc-batch-authorization-lifetime.intent.json",
+      "docs/specs/archive/workflow-consolidation.spec.md",
+      "docs/specs/workflow-consolidation.spec.md",
+      "plugins/immune-brain/.pi-extension/imm-unattended-batch.ts",
+      "plugins/immune-brain/runtime/claude/kernel_ports.ts",
+      "plugins/immune-brain/runtime/kernel/batch_authority.ts",
+      "plugins/immune-brain/runtime/unattended/batch_runner.ts",
+      "tests/claude-batch-authority.test.ts",
+      "tests/dual-host-assurance-conformance.test.ts",
+      "tests/kernel-batch-authority.test.ts",
+      "tests/pi-batch-authority.test.ts",
+      "tests/unattended-batch-run.test.ts"
+    ],
+    "risk": "critical",
+    "revision": 2,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/archive/wc-batch-authorization-lifetime.intent.json",
+    "content_hash": "sha256:e5912c4fdab054372ada792bc0cf3f08bf512b494af36374179c344c1f091ba6"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:50e669a2611f8da4edc8e6d45eb54d546260a2d37b4e86e67bb0d833013adc55",
+  "git_base_head": "52e06190905b35e09e70a3972089b8dfdaf69615",
+  "attestations": [
+    {
+      "id": "approval-qa-39135d95",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:e5912c4fdab054372ada792bc0cf3f08bf512b494af36374179c344c1f091ba6",
+      "diff_hash": "sha256:cf86eed97bd91d6c479726b584af6d5cc7ca6c23da895535352a8969678719dd",
+      "actor_id": "deterministic-qa",
+      "summary": "all 3 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "TTL-1",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "TTL-2",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "TTL-3",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-8867ef8c",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:e5912c4fdab054372ada792bc0cf3f08bf512b494af36374179c344c1f091ba6",
+      "diff_hash": "sha256:cf86eed97bd91d6c479726b584af6d5cc7ca6c23da895535352a8969678719dd",
+      "actor_id": "parent-mediated-review",
+      "summary": "Both Hosts bind batch authorization expiry to the confirmed budget.deadline_at; kernel fail-closed checks and runner renewal remain unchanged.",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "52e06190905b35e09e70a3972089b8dfdaf69615",
+        "review_commit": "62ff2d7d21e91d06b90d7791f597a7cdfb87b24c",
+        "review_tree": "b90e1d86cf3fc53e4de67795cd5a939b6645784c",
+        "manifest_digest": "sha256:586a3e82d9f94149f92b29c7b2e2ad1dff2dd95db712e5909c5db3885b84ce10"
+      }
+    }
+  ],
+  "findings": [],
+  "history": [
+    {
+      "id": "revise_intent:wc-batch-authorization-lifetime:2026-09-14T05:55:02.348Z",
+      "at": "2026-09-14T05:55:02.348Z",
+      "type": "revise_intent",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "intent_revision_2\naction_v2_sha256:7253c71acfeb181909fed3c9f008d1b42b7cd50ada2f349e920ca7faae500e32"
+    },
+    {
+      "id": "freeze_artifacts:wc-batch-authorization-lifetime:2026-09-14T05:58:27.013Z",
+      "at": "2026-09-14T05:58:27.013Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent and Spec frozen at docs/plans/archive/wc-batch-authorization-lifetime.intent.json"
+    },
+    {
+      "id": "record_approval:wc-batch-authorization-lifetime:2026-09-14T05:59:03.018Z",
+      "at": "2026-09-14T05:59:03.018Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-39135d95\naction_v2_sha256:c142c44ebf36a5cd7898e3e73b7657bf08b9b3e7e257aa23985960622545fa92",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-9d8d9d6c0038a1ba",
+        "issued_at": "2026-09-14T05:59:03.019Z",
+        "expires_at": "2026-09-14T06:09:03.019Z"
+      }
+    },
+    {
+      "id": "record_approval:wc-batch-authorization-lifetime:2026-09-14T06:06:14.610Z",
+      "at": "2026-09-14T06:06:14.610Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-8867ef8c\naction_v2_sha256:7a48f2b40996e4081489477725a9fe647f9d46a42013214160ca8eb2d69fac36",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-1beba9391525690d",
+        "issued_at": "2026-09-14T06:06:14.610Z",
+        "expires_at": "2026-09-14T06:16:14.610Z"
+      }
+    },
+    {
+      "id": "complete:wc-batch-authorization-lifetime:2026-09-14T06:06:15.376Z",
+      "at": "2026-09-14T06:06:15.376Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:c216eba5fbf6681f7b7196cef893e900d1232977bfea551c4cf48e7a130e31c8"
+    }
+  ]
+}

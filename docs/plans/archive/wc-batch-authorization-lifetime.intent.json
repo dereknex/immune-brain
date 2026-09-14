@@ -1,13 +1,12 @@
 {
   "contract": "assurance_kernel/task_intent/v1",
   "task_id": "wc-batch-authorization-lifetime",
-  "owner": "user",
   "goal": "Make one Batch Authorization span the work it authorizes: derive its expiry from the authorized budget deadline on both Hosts instead of a hardcoded ten minutes, without relaxing any fail-closed clock, issuance, or renewal check.",
   "acceptance": [
     {
       "id": "TTL-1",
       "assertion": "Batch authorization expiry is derived from the authorized budget.deadline_at on both Hosts, replacing the hardcoded now + 10 minutes in runtime/claude/kernel_ports.ts and .pi-extension/imm-unattended-batch.ts. The value bound at issuance is the one the literal user confirmed; no new default deadline is introduced and the existing default budget is unchanged.",
-      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.4.2\",\n  \"argv\": [\n    \"test\",\n    \"tests/claude-batch-authority.test.ts\",\n    \"tests/pi-batch-authority.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 20000\n}\n"
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.4.2\",\n  \"argv\": [\n    \"test\",\n    \"tests/claude-batch-authority.test.ts\",\n    \"tests/pi-batch-authority.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 65536\n}\n"
     },
     {
       "id": "TTL-2",
@@ -17,7 +16,7 @@
     {
       "id": "TTL-3",
       "assertion": "The renewal path in runtime/unattended/batch_runner.ts is retained, because a batch can still outlive a deadline the user themselves chose; a batch parked on a foreground Review inside its confirmed budget no longer expires, while one that passes its confirmed deadline still does.",
-      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.4.2\",\n  \"argv\": [\n    \"test\",\n    \"tests/unattended-batch-run.test.ts\",\n    \"tests/dual-host-assurance-conformance.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 20000\n}\n"
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.4.2\",\n  \"argv\": [\n    \"test\",\n    \"tests/unattended-batch-run.test.ts\",\n    \"tests/dual-host-assurance-conformance.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 131072\n}\n"
     }
   ],
   "scope_hint": [
@@ -35,5 +34,6 @@
     "tests/unattended-batch-run.test.ts"
   ],
   "risk": "critical",
-  "revision": 1
+  "revision": 2,
+  "owner": "user"
 }

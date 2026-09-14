@@ -417,6 +417,53 @@ describe("acc-pi-batch-gate", () => {
 		expect(result.report.commits.length).toBe(2);
 	});
 
+	it("TTL-1: authorization expiry is the confirmed budget deadline, not a fixed ten-minute window", async () => {
+		const fixture = createBatchFixture("pi-ttl");
+		let lastCommit: string | null = null;
+		const confirmed: Array<{ summary: string }> = [];
+
+		const result = await executePiUnattendedBatch({
+			root: fixture.root,
+			initiativeSlug: "pi-ttl",
+			readInitiative: async () => fixture.observation,
+			batchKernel: {
+				advanceTask: async () => {
+					// Clear task claim as each child completes
+					writeFileSync(
+						join(fixture.root, ".imm", "state", "workspace.json"),
+						JSON.stringify({ contract: "assurance_kernel/workspace/v1", current_working: null }),
+					);
+					const claimPath = join(fixture.root, ".imm", "state", "active-claim.json");
+					if (existsSync(claimPath)) rmSync(claimPath, { force: true });
+					return { state: "completed" };
+				},
+				commitChild: async () => {
+					writeFileSync(join(fixture.root, "dummy.txt"), `${Date.now()}`);
+					execFileSync("git", ["add", "dummy.txt"], { cwd: fixture.root });
+					execFileSync("git", ["commit", "-q", "-m", "child commit"], { cwd: fixture.root });
+					const commit = execFileSync("git", ["rev-parse", "HEAD"], { cwd: fixture.root, encoding: "utf8" }).trim();
+					lastCommit = commit;
+					return { commit };
+				},
+				lookupBatchCommit: async () => (lastCommit ? { commit: lastCommit } : null),
+			},
+			confirmBatch: async (details) => {
+				confirmed.push(details);
+				return "accept";
+			},
+		});
+		expect(result.state).toBe("started");
+
+		const state = JSON.parse(
+			readFileSync(join(fixture.root, ".imm", "state", "batches", `${result.batch_id}.json`), "utf8"),
+		);
+		// The literal user confirmed exactly one deadline; the authorization expires with it.
+		expect(state.authorization_expires_at).toBe(state.budget.deadline_at);
+		// Regression guard: the authorization outlives a fixed ten-minute window.
+		expect(Date.parse(state.authorization_expires_at) - Date.now()).toBeGreaterThan(10 * 60 * 1000);
+		expect(confirmed[0]!.summary).toContain(`Expires at: ${state.authorization_expires_at}`);
+	});
+
 	it("review-2: cancellation right before batch execution produces cancelled state with zero writes", async () => {
 		const fixture = createBatchFixture("cancel-pre-issue");
 		const controller = new AbortController();

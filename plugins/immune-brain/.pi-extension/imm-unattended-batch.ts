@@ -466,10 +466,13 @@ export async function executePiUnattendedBatch(
 		confirmExcludedDetails = plan.children.filter((c) => c.status !== "enrollable").map((c) => `  - ${c.task_id} (${c.slice_id}): ${c.reason ?? c.status}`);
 	}
 
+	// ADR-0005 Decision 1: one Batch Authorization spans the work it authorizes,
+	// so its expiry is the deadline the literal user confirmed rather than a fixed
+	// window that lapses while a child is parked on a foreground Review.
 	const isExistingExpired = isResuming && Date.parse(existingBatch.authorization_expires_at) <= Date.now();
 	const expiresAt = isResuming && !isExistingExpired && existingBatch.batch_state === "running"
 		? existingBatch.authorization_expires_at
-		: new Date(Date.now() + 10 * 60 * 1000).toISOString();
+		: budget.deadline_at;
 
 	// ADR-0005 Decision 1: a Batch Authorization is one literal-user Enrollment
 	// act, so a resume of an intact, still-binding authorization reuses it instead

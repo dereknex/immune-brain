@@ -10102,7 +10102,7 @@ class ClaudeRuntime {
       }));
     }
     const isExistingExpired = isResuming && Date.parse(existingBatch.authorization_expires_at) <= Date.now();
-    const expiresAt = isResuming && !isExistingExpired && existingBatch.batch_state === "running" ? existingBatch.authorization_expires_at : new Date(Date.now() + 10 * 60 * 1000).toISOString();
+    const expiresAt = isResuming && !isExistingExpired && existingBatch.batch_state === "running" ? existingBatch.authorization_expires_at : budget.deadline_at;
     const reuseBlockers = [];
     if (isResuming) {
       if (isExistingExpired)
