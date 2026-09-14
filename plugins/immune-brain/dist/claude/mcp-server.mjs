@@ -7365,6 +7365,16 @@ async function observeGithubInitiative(root, initiativeId, gh = createGhTranspor
 var ID_PATTERN2 = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 var DEFAULT_DEADLINE_MS = 8 * 60 * 60 * 1000;
 var DEFAULT_QA_FAILURE_LIMIT = 2;
+var SPEC_BINDING_REASONS = {
+  binding_missing: "spec_binding_missing",
+  binding_incomplete: "spec_binding_incomplete: ",
+  binding_ambiguous: "spec_binding_ambiguous"
+};
+function specBindingReason(inspection) {
+  if (inspection.code === "binding_incomplete" && inspection.missing.length > 0)
+    return `spec_binding_incomplete: ${inspection.missing.join(", ")}`;
+  return SPEC_BINDING_REASONS[inspection.code];
+}
 function compareIds(left, right) {
   return left < right ? -1 : left > right ? 1 : 0;
 }
@@ -7489,10 +7499,33 @@ async function projectBatchPlan(root, initiativeSlug, input, readInitiative = ob
     const intentPath = `docs/plans/${task.task_id}.intent.json`;
     try {
       const read = observeTaskIntent(root, task.task_id, intentPath);
+      if (read.intent.risk === "critical") {
+        children.push({
+          ...child,
+          status: "needs_human",
+          reason: "critical",
+          intent_path: read.intent_ref.path,
+          intent_revision: read.intent_ref.revision,
+          intent_content_hash: read.content_hash
+        });
+        continue;
+      }
+      const binding = inspectSpecBinding(read.intent);
+      if (!binding.ok) {
+        children.push({
+          ...child,
+          status: "needs_human",
+          reason: specBindingReason(binding),
+          intent_path: read.intent_ref.path,
+          intent_revision: read.intent_ref.revision,
+          intent_content_hash: read.content_hash
+        });
+        continue;
+      }
       children.push({
         ...child,
-        status: read.intent.risk === "critical" ? "needs_human" : "enrollable",
-        reason: read.intent.risk === "critical" ? "critical" : null,
+        status: "enrollable",
+        reason: null,
         intent_path: read.intent_ref.path,
         intent_revision: read.intent_ref.revision,
         intent_content_hash: read.content_hash

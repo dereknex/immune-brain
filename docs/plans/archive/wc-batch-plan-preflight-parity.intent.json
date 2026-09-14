@@ -1,7 +1,6 @@
 {
   "contract": "assurance_kernel/task_intent/v1",
   "task_id": "wc-batch-plan-preflight-parity",
-  "owner": "user",
   "goal": "Have the unattended batch plan projection reuse the shared Spec-binding check so a child that cannot freeze is excluded at planning time, before it is offered for enrollment and before an Executor writes its implementation.",
   "acceptance": [
     {
@@ -12,7 +11,7 @@
     {
       "id": "BPP-2",
       "assertion": "Existing batch plan validation is unchanged in every other respect: critical children are still excluded, declared dependency order is still honored, dependents of a skipped child are still skipped, and the plan digest is still computed over the same content.",
-      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.4.2\",\n  \"argv\": [\n    \"test\",\n    \"tests/unattended-batch-plan.test.ts\",\n    \"tests/unattended-batch-run.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 20000\n}\n"
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.4.2\",\n  \"argv\": [\n    \"test\",\n    \"tests/unattended-batch-plan.test.ts\",\n    \"tests/unattended-batch-run.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 65536\n}\n"
     },
     {
       "id": "BPP-3",
@@ -21,15 +20,20 @@
     }
   ],
   "scope_hint": [
+    ".changeset/wc-batch-plan-preflight-parity.md",
     "docs/plans/wc-batch-plan-preflight-parity.intent.json",
     "docs/specs/archive/workflow-consolidation.spec.md",
     "docs/specs/workflow-consolidation.spec.md",
+    "plugins/immune-brain/dist/claude/mcp-server.mjs",
     "plugins/immune-brain/runtime/kernel/spec_binding.ts",
     "plugins/immune-brain/runtime/unattended/batch_plan.ts",
+    "plugins/immune-brain/runtime/unattended/types.ts",
     "tests/kernel-enrollment-authority.test.ts",
     "tests/unattended-batch-plan.test.ts",
-    "tests/unattended-batch-run.test.ts"
+    "tests/unattended-batch-run.test.ts",
+    "tests/unattended-contracts.test.ts"
   ],
   "risk": "material",
-  "revision": 1
+  "revision": 2,
+  "owner": "user"
 }

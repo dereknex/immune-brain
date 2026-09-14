@@ -27,12 +27,25 @@ export type BatchPlanChildStatus =
 	| "needs_human"
 	| "blocked";
 
+/**
+ * Stable per-child exclusion reasons a Host renders verbatim. The Spec-binding
+ * reasons mirror the shared enrollment precondition, and the incomplete form
+ * names every path the TaskIntent has to add.
+ */
+export type BatchPlanChildReason =
+	| "critical"
+	| "invalid_intent"
+	| "dependency_unavailable"
+	| "spec_binding_missing"
+	| "spec_binding_ambiguous"
+	| `spec_binding_incomplete: ${string}`;
+
 export interface BatchPlanChild {
 	task_id: string;
 	slice_id: string;
 	blocked_by: string[];
 	status: BatchPlanChildStatus;
-	reason: "critical" | "invalid_intent" | "dependency_unavailable" | null;
+	reason: BatchPlanChildReason | null;
 	intent_path: string | null;
 	intent_revision: number | null;
 	intent_content_hash: string | null;

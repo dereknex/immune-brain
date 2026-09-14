@@ -7,10 +7,12 @@ import {
 	TaskIntentObservationError,
 } from "../kernel/intent";
 import { readTaskRecordRaw } from "../kernel/storage";
+import { inspectSpecBinding, type SpecBindingInspection } from "../kernel/spec_binding";
 import type {
 	BatchPlan,
 	BatchPlanBudget,
 	BatchPlanChild,
+	BatchPlanChildReason,
 	BatchPlanDigestChild,
 	InitiativeObservationReader,
 	ProjectBatchPlanInput,
@@ -19,6 +21,28 @@ import type {
 const ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 const DEFAULT_DEADLINE_MS = 8 * 60 * 60 * 1_000;
 const DEFAULT_QA_FAILURE_LIMIT = 2;
+
+/**
+ * Enrollment refuses a child whose scope_hint cannot name its bound Spec pair,
+ * so the plan excludes the same children here, before a confirmation offers
+ * them and before an Executor writes their implementation. The reason carries a
+ * stable code plus every path the intent must add. Advisory only: this mints,
+ * alters, and consumes no authority.
+ */
+const SPEC_BINDING_REASONS: Record<
+	Extract<SpecBindingInspection, { ok: false }>["code"],
+	BatchPlanChildReason
+> = {
+	binding_missing: "spec_binding_missing",
+	binding_incomplete: "spec_binding_incomplete: ",
+	binding_ambiguous: "spec_binding_ambiguous",
+};
+
+function specBindingReason(inspection: Extract<SpecBindingInspection, { ok: false }>): BatchPlanChildReason {
+	if (inspection.code === "binding_incomplete" && inspection.missing.length > 0)
+		return `spec_binding_incomplete: ${inspection.missing.join(", ")}`;
+	return SPEC_BINDING_REASONS[inspection.code];
+}
 
 function compareIds(left: string, right: string): number {
 	return left < right ? -1 : left > right ? 1 : 0;
@@ -153,10 +177,33 @@ export async function projectBatchPlan(
 		const intentPath = `docs/plans/${task.task_id}.intent.json`;
 		try {
 			const read = observeTaskIntent(root, task.task_id, intentPath);
+			if (read.intent.risk === "critical") {
+				children.push({
+					...child,
+					status: "needs_human",
+					reason: "critical",
+					intent_path: read.intent_ref.path,
+					intent_revision: read.intent_ref.revision,
+					intent_content_hash: read.content_hash,
+				});
+				continue;
+			}
+			const binding = inspectSpecBinding(read.intent);
+			if (!binding.ok) {
+				children.push({
+					...child,
+					status: "needs_human",
+					reason: specBindingReason(binding),
+					intent_path: read.intent_ref.path,
+					intent_revision: read.intent_ref.revision,
+					intent_content_hash: read.content_hash,
+				});
+				continue;
+			}
 			children.push({
 				...child,
-				status: read.intent.risk === "critical" ? "needs_human" : "enrollable",
-				reason: read.intent.risk === "critical" ? "critical" : null,
+				status: "enrollable",
+				reason: null,
 				intent_path: read.intent_ref.path,
 				intent_revision: read.intent_ref.revision,
 				intent_content_hash: read.content_hash,

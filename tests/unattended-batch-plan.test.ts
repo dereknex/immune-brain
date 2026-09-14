@@ -21,6 +21,7 @@ import {
 } from "../plugins/immune-brain/runtime/github_issue_tracker";
 import { stableStringify } from "../plugins/immune-brain/runtime/canonical_json";
 import { readTaskIntent } from "../plugins/immune-brain/runtime/kernel/intent";
+import { inspectSpecBinding } from "../plugins/immune-brain/runtime/kernel/spec_binding";
 import { projectBatchPlan } from "../plugins/immune-brain/runtime/unattended/batch_plan";
 
 const CONFIRMATION_TIME = "2099-01-01T00:00:00.000Z";
@@ -78,7 +79,16 @@ class ObservationGh implements GhTransport {
 	}
 }
 
-function writeIntent(root: string, taskId: string, risk: "material" | "critical" = "material"): string {
+function writeIntent(
+	root: string,
+	taskId: string,
+	risk: "material" | "critical" = "material",
+	scopeHint: string[] = [
+		"tests/**",
+		`docs/specs/${taskId}.spec.md`,
+		`docs/specs/archive/${taskId}.spec.md`,
+	],
+): string {
 	const path = `docs/plans/${taskId}.intent.json`;
 	mkdirSync(join(root, "docs/plans"), { recursive: true });
 	writeFileSync(join(root, path), `${JSON.stringify({
@@ -86,7 +96,7 @@ function writeIntent(root: string, taskId: string, risk: "material" | "critical"
 		task_id: taskId,
 		goal: `Deliver ${taskId}`,
 		acceptance: [{ id: `acc-${taskId}`, assertion: `Deliver ${taskId}`, verification: "{}" }],
-		scope_hint: ["tests/**"],
+		scope_hint: scopeHint,
 		risk,
 		revision: 1,
 		owner: "user",
@@ -112,6 +122,10 @@ function fixtureRoot(): string {
 		writeIntent(root, "B-c"),
 		writeIntent(root, "a-b"),
 		writeIntent(root, "b-d"),
+		// A child that binds no Spec pair at all, and one that names only the
+		// active path: enrollment refuses both, so the plan excludes both.
+		writeIntent(root, "unbound", "material", ["tests/**"]),
+		writeIntent(root, "partial", "material", ["tests/**", "docs/specs/partial.spec.md"]),
 		malformedPath,
 		invalidPath,
 	];
@@ -177,6 +191,8 @@ const SHUFFLED_TASKS: GithubInitiativeObservation["tasks"] = [
 	{ task_id: "critical", slice_id: "S5", issue_number: 5, blocked_by: [] },
 	{ task_id: "owned", slice_id: "S3", issue_number: 3, blocked_by: [] },
 	{ task_id: "base", slice_id: "S2", issue_number: 2, blocked_by: [] },
+	{ task_id: "unbound", slice_id: "S10", issue_number: 10, blocked_by: [] },
+	{ task_id: "partial", slice_id: "S11", issue_number: 11, blocked_by: [] },
 ];
 
 describe("unattended batch plan projection", () => {
@@ -225,6 +241,8 @@ describe("unattended batch plan projection", () => {
 				settled: "already_settled",
 				dependent: "blocked",
 				final: "enrollable",
+				partial: "needs_human",
+				unbound: "needs_human",
 			});
 			expect(first.children.find((child) => child.task_id === "final")?.blocked_by).toEqual(["base", "critical", "settled"]);
 			expect(first.enrollable.map((child) => child.task_id)).toEqual(["base", "final"]);
@@ -297,6 +315,58 @@ describe("unattended batch plan projection", () => {
 			await expect(projectBatchPlan(root, "batch", { confirmation_time: CONFIRMATION_TIME }, async () => observation([
 				{ task_id: "settled", slice_id: "S1", issue_number: 1, blocked_by: [] },
 			]))).rejects.toThrow("no enrollable children");
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
+	it("excludes a child that cannot name its bound Spec pair, before the confirmation and without writes", async () => {
+		const root = fixtureRoot();
+		try {
+			const before = snapshotFiles(root);
+			const plan = await projectBatchPlan(root, "batch", { confirmation_time: CONFIRMATION_TIME }, async () =>
+				observation(SHUFFLED_TASKS),
+			);
+
+			expect(plan.children.find((child) => child.task_id === "unbound")).toMatchObject({
+				status: "needs_human",
+				reason: "spec_binding_missing",
+			});
+			expect(plan.children.find((child) => child.task_id === "partial")).toMatchObject({
+				status: "needs_human",
+				reason: "spec_binding_incomplete: docs/specs/archive/partial.spec.md",
+			});
+			// Excluded before the confirmation offers them, so neither reaches enrollment.
+			const offered = plan.enrollable.map((child) => child.task_id);
+			expect(offered).not.toContain("unbound");
+			expect(offered).not.toContain("partial");
+			expect(snapshotFiles(root)).toEqual(before);
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
+	it("agrees with the shared enrollment precondition for every candidate child", async () => {
+		const root = fixtureRoot();
+		try {
+			const plan = await projectBatchPlan(root, "batch", { confirmation_time: CONFIRMATION_TIME }, async () =>
+				observation(SHUFFLED_TASKS),
+			);
+			// One rule, not a second copy: a candidate child is excluded for its Spec
+			// binding exactly when the shared predicate used by enrollment refuses it.
+			for (const child of plan.children) {
+				if (!child.intent_path) continue;
+				const read = readTaskIntent(root, child.task_id, child.intent_path);
+				const refusedByEnrollment = !inspectSpecBinding(read.intent).ok;
+				const excludedAtPlanTime =
+					child.status === "needs_human" &&
+					typeof child.reason === "string" &&
+					child.reason.startsWith("spec_binding_");
+				expect({ task_id: child.task_id, excludedAtPlanTime }).toEqual({
+					task_id: child.task_id,
+					excludedAtPlanTime: refusedByEnrollment,
+				});
+			}
 		} finally {
 			rmSync(root, { recursive: true, force: true });
 		}

@@ -1,10 +1,11 @@
 import { describe, expect, it } from "bun:test";
-import { spawnSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { canonicalIntentHash, parseTaskIntentV1 } from "../plugins/immune-brain/runtime/kernel/intent";
+import { projectBatchPlan } from "../plugins/immune-brain/runtime/unattended/batch_plan";
 
 /**
  * Contract-text conformance for the unattended batch run.
@@ -321,7 +322,7 @@ describe("unattended batch contract text", () => {
 		expect(piExtension).toContain("initiative_slug: Type.String");
 	});
 
-	it("states the restrictions the runner actually enforces", () => {
+	it("states the restrictions the runner actually enforces", async () => {
 		const optIn = section(LOOP_CONTRACT, "## Unattended Batch Opt-In");
 		for (const claim of ["never pushes a ref", "pull request", "user decision", "Git worktree"]) {
 			expect(optIn).toContain(claim);
@@ -341,10 +342,54 @@ describe("unattended batch contract text", () => {
 			.filter((line) => /\bgit\b/.test(line) || /["'](push|worktree)["']/.test(line));
 		expect(gitMutations.filter((line) => /"push"|"worktree"|'push'|'worktree'/.test(line))).toEqual([]);
 
-		// Shipped restriction: a `critical` child is never enrollable.
-		const plan = read("plugins/immune-brain/runtime/unattended/batch_plan.ts");
-		expect(plan).toContain('read.intent.risk === "critical" ? "needs_human" : "enrollable"');
-		expect(plan).toContain('read.intent.risk === "critical" ? "critical" : null');
+		// Shipped restriction: a `critical` child is never enrollable. Asserted by
+		// running the projection, not by matching one branch's spelling — the
+		// classification gained a Spec-binding exclusion ahead of it.
+		const criticalRoot = mkdtempSync(join(tmpdir(), "imm-critical-child-"));
+		try {
+			mkdirSync(join(criticalRoot, "docs/plans"), { recursive: true });
+			const writeChild = (taskId: string, risk: string, scope: string[]) =>
+				writeFileSync(join(criticalRoot, `docs/plans/${taskId}.intent.json`), `${JSON.stringify({
+					contract: "assurance_kernel/task_intent/v1",
+					task_id: taskId,
+					goal: `Deliver ${taskId}`,
+					acceptance: [{ id: `acc-${taskId}`, assertion: "a", verification: "{}" }],
+					scope_hint: scope,
+					risk,
+					revision: 1,
+					owner: "user",
+				}, null, 2)}\n`);
+			writeChild("critical-child", "critical", ["tests/**"]);
+			writeChild("healthy-child", "material", [
+				"tests/**",
+				"docs/specs/healthy-child.spec.md",
+				"docs/specs/archive/healthy-child.spec.md",
+			]);
+			// The projection only offers Git-tracked TaskIntents.
+			execFileSync("git", ["init", "-q"], { cwd: criticalRoot });
+			execFileSync("git", ["add", "docs/plans"], { cwd: criticalRoot });
+			const plan = await projectBatchPlan(
+				criticalRoot,
+				"initiative",
+				{ confirmation_time: "2099-01-01T00:00:00.000Z" },
+				async () => ({
+					contract: "immune_brain/github_initiative_observation/v1",
+					initiative_id: "initiative",
+					issue_number: 1,
+					tasks: [
+						{ task_id: "critical-child", slice_id: "S1", issue_number: 2, blocked_by: [] },
+						{ task_id: "healthy-child", slice_id: "S2", issue_number: 3, blocked_by: [] },
+					],
+				}),
+			);
+			expect(plan.children.map((child) => [child.task_id, child.status, child.reason])).toEqual([
+				["critical-child", "needs_human", "critical"],
+				["healthy-child", "enrollable", null],
+			]);
+			expect(plan.enrollable.map((child) => child.task_id)).toEqual(["healthy-child"]);
+		} finally {
+			rmSync(criticalRoot, { recursive: true, force: true });
+		}
 	});
 
 	it("amends the constitution, vocabulary, and Architecture Map ownership boundary", () => {

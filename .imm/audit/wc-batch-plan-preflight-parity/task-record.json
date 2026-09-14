@@ -1,0 +1,162 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "wc-batch-plan-preflight-parity",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "wc-batch-plan-preflight-parity",
+    "goal": "Have the unattended batch plan projection reuse the shared Spec-binding check so a child that cannot freeze is excluded at planning time, before it is offered for enrollment and before an Executor writes its implementation.",
+    "acceptance": [
+      {
+        "id": "BPP-1",
+        "assertion": "runtime/unattended/batch_plan.ts calls the shared runtime/kernel/spec_binding.ts check for every candidate child and excludes any child whose scope_hint lacks its bound active and archive Spec paths, reporting a stable reason that names the missing paths. The check is advisory at plan time and does not mint, alter, or consume any authority.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.4.2\",\n  \"argv\": [\n    \"test\",\n    \"tests/unattended-batch-plan.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 60000,\n  \"max_output_bytes\": 20000\n}\n"
+      },
+      {
+        "id": "BPP-2",
+        "assertion": "Existing batch plan validation is unchanged in every other respect: critical children are still excluded, declared dependency order is still honored, dependents of a skipped child are still skipped, and the plan digest is still computed over the same content.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.4.2\",\n  \"argv\": [\n    \"test\",\n    \"tests/unattended-batch-plan.test.ts\",\n    \"tests/unattended-batch-run.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 65536\n}\n"
+      },
+      {
+        "id": "BPP-3",
+        "assertion": "Plan-time exclusion and enrollment-time refusal agree: a child the plan excludes for a missing Spec binding is the same child enrollment would refuse, verified against the same shared function rather than a second copy of the rule.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.4.2\",\n  \"argv\": [\n    \"test\",\n    \"tests/unattended-batch-plan.test.ts\",\n    \"tests/kernel-enrollment-authority.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 20000\n}\n"
+      }
+    ],
+    "scope_hint": [
+      ".changeset/wc-batch-plan-preflight-parity.md",
+      "docs/plans/wc-batch-plan-preflight-parity.intent.json",
+      "docs/specs/archive/workflow-consolidation.spec.md",
+      "docs/specs/workflow-consolidation.spec.md",
+      "plugins/immune-brain/dist/claude/mcp-server.mjs",
+      "plugins/immune-brain/runtime/kernel/spec_binding.ts",
+      "plugins/immune-brain/runtime/unattended/batch_plan.ts",
+      "plugins/immune-brain/runtime/unattended/types.ts",
+      "tests/kernel-enrollment-authority.test.ts",
+      "tests/unattended-batch-plan.test.ts",
+      "tests/unattended-batch-run.test.ts",
+      "tests/unattended-contracts.test.ts"
+    ],
+    "risk": "material",
+    "revision": 2,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/archive/wc-batch-plan-preflight-parity.intent.json",
+    "content_hash": "sha256:09088f02d460f86af286b4772c08323e72244341e53eec87194ec3ec28a0bfb4"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:21b3baa26010f1131e05694aa80d167a626e93162f3d1622afcce595d1bbdd01",
+  "git_base_head": "ed64724ab7cd69a933d76df02be6765a0b7c7b01",
+  "attestations": [
+    {
+      "id": "approval-qa-ee06fd91",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:09088f02d460f86af286b4772c08323e72244341e53eec87194ec3ec28a0bfb4",
+      "diff_hash": "sha256:7bd967e07a3df5040746470b2adb5ca85fb57701446ab210d535f9986a8d6127",
+      "actor_id": "deterministic-qa",
+      "summary": "all 3 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "BPP-1",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "BPP-2",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "BPP-3",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-0ea5268e",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:09088f02d460f86af286b4772c08323e72244341e53eec87194ec3ec28a0bfb4",
+      "diff_hash": "sha256:7bd967e07a3df5040746470b2adb5ca85fb57701446ab210d535f9986a8d6127",
+      "actor_id": "parent-mediated-review",
+      "summary": "Plan reuses shared inspectSpecBinding for preflight exclusion with stable path-naming reasons; critical/dependency/digest behavior unchanged, enrollment parity tested against the same shared predicate, dist artifact matches source.",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "ed64724ab7cd69a933d76df02be6765a0b7c7b01",
+        "review_commit": "935a4af8b57b953150e406f453a19ffb1280c5ad",
+        "review_tree": "7fe5e8a5c4ea24ee06f5a35e7e25ea7bccda484d",
+        "manifest_digest": "sha256:443f46fc0d9c5eb0dcee7cb32e1b4c434557158fe200dc14c6edfc29bcf2a9af"
+      }
+    }
+  ],
+  "findings": [],
+  "history": [
+    {
+      "id": "approve_breaking_intent_revision:wc-batch-plan-preflight-parity:2026-09-14T08:12:07.876Z",
+      "at": "2026-09-14T08:12:07.876Z",
+      "type": "approve_breaking_intent_revision",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "intent_revision_2\naction_v2_sha256:4c5400972bd2224808a8af794f53e3d05c8bacf20bf380ae4ebbd9e0a13fed2c",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-66896eae834e26b1",
+        "issued_at": "2026-09-14T08:12:08.425Z",
+        "expires_at": "2026-09-14T08:22:08.425Z"
+      }
+    },
+    {
+      "id": "freeze_artifacts:wc-batch-plan-preflight-parity:2026-09-14T08:12:19.096Z",
+      "at": "2026-09-14T08:12:19.096Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent and Spec frozen at docs/plans/archive/wc-batch-plan-preflight-parity.intent.json"
+    },
+    {
+      "id": "record_approval:wc-batch-plan-preflight-parity:2026-09-14T08:12:24.442Z",
+      "at": "2026-09-14T08:12:24.442Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-ee06fd91\naction_v2_sha256:71748e7486353cf4693d7e2ad22441ab96db416ba5e14d56b49812103d44a2b0",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-a97f9995eaad22a4",
+        "issued_at": "2026-09-14T08:12:24.443Z",
+        "expires_at": "2026-09-14T08:22:24.443Z"
+      }
+    },
+    {
+      "id": "record_approval:wc-batch-plan-preflight-parity:2026-09-14T08:20:48.232Z",
+      "at": "2026-09-14T08:20:48.232Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-0ea5268e\naction_v2_sha256:7a8322a078d72b0907ad5b9c8d86da0b5a2684b85e98a7bb13e690c8cfd5e568",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-a77fc090c0343e8d",
+        "issued_at": "2026-09-14T08:20:48.232Z",
+        "expires_at": "2026-09-14T08:30:48.232Z"
+      }
+    },
+    {
+      "id": "complete:wc-batch-plan-preflight-parity:2026-09-14T08:20:49.189Z",
+      "at": "2026-09-14T08:20:49.189Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:ea3e97a9d6f584579a34db374194e94a88bff1744248a26f32e517bd709afebc"
+    }
+  ]
+}
