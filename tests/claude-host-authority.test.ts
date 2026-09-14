@@ -1,4 +1,5 @@
 import { execFileSync } from "node:child_process";
+import { afterAll, describe, expect, setDefaultTimeout, test } from "bun:test";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { PassThrough } from "node:stream";
 import { join, resolve } from "node:path";
@@ -29,6 +30,12 @@ import { PLUGIN_VERSION } from "../plugins/immune-brain/runtime/plugin_version";
 const TASK = "phase3-task";
 const ROOT = "/tmp/claude-host-authority";
 const ctx = { cwd: ROOT };
+// These tests drive real git repositories and full Kernel flows. The Kernel QA
+// runner executes them under a minimal environment where the same flow takes
+// noticeably longer than it does interactively, so the file bounds them
+// explicitly instead of depending on bun's 5s default.
+setDefaultTimeout(60_000);
+
 const ENV = { CLAUDE_CODE_VERSION: "2.1.236", CLAUDE_CODE_PERMISSION_MODE: "manual" };
 
 function projection(

@@ -47,6 +47,12 @@ import { runDeterministicQa } from "../assurance/qa";
 import { taskDiffIdentity, taskRevisionIdentity, pathMatchesScope } from "../workspace_scope";
 import { projectBatchPlan } from "../unattended/batch_plan";
 import { batchReason } from "../unattended/batch_reasons";
+import { startConfirmationDeadline } from "../unattended/confirmation_deadline";
+import { deriveAuthorizationOperation } from "../authorization_operation";
+import {
+	captureStagedIntent,
+	restoreStagedIntent as restoreStagedIntentShared,
+} from "../staged_intent";
 import {
 	projectBatchPreflight,
 	projectBatchDrift,
@@ -628,12 +634,14 @@ export class ClaudeRuntime {
 		let decisionOp: { finding_id: string; resolution: string } | undefined;
 		const projection = await this.status(taskId);
 		if (projection.error || !projection.claim) throw new Error(projection.error ?? "no active backend claim");
-		// Kernel projection is the sole source of authorization readiness:
-		// request_authorization submits the exact operation the projection
-		// derives, including the single bound user-decision resolution.
-		const readiness = projection.projection.authorization;
+		// Kernel projection is the sole source of authorization readiness, and the
+		// derivation is the shared export both Hosts use, so it cannot drift:
+		// request_authorization submits the exact operation the projection derives,
+		// including the single bound user-decision resolution.
 		if (operation === "request_authorization") {
-			if (readiness.state === "resolve_user_decision") {
+			const derived = deriveAuthorizationOperation({ readiness: projection.projection.authorization });
+			if ("blocked" in derived) throw new Error(derived.blocked);
+			if (derived.operation === "resolve-user-decision") {
 				const record = await readTaskRecord(this.cwd, taskId);
 				const open = (record.record?.findings ?? []).filter(
 					(finding) => finding.kind === "unresolved_user_decision" && finding.status === "open",
@@ -641,10 +649,8 @@ export class ClaudeRuntime {
 				if (open.length !== 1) throw new Error(`resolve-user-decision requires exactly one open user decision; found ${open.length}`);
 				op = "resolve_user_decision";
 				decisionOp = { finding_id: open[0].id, resolution: `resume after literal-user decision: ${open[0].summary}` };
-			} else if (readiness.state === "authorize_rework") {
-				op = "authorize_rework";
 			} else {
-				throw new Error(readiness.blocked ?? "no unique host-derived authorization operation");
+				op = "authorize_rework";
 			}
 		}
 		const priorIntent = await readTaskIntentForRecord(this.cwd, taskId);
@@ -658,26 +664,10 @@ export class ClaudeRuntime {
 			: undefined;
 		const sidecar = nextIntent ? join(this.cwd, priorIntent.intent_ref.path) : undefined;
 		const priorBytes = sidecar ? readFileSync(sidecar) : undefined;
-		const priorIndexState = sidecar
-			? execFileSync("git", ["ls-files", "--stage", "-z", "--", priorIntent.intent_ref.path], {
-				cwd: this.cwd,
-				stdio: ["ignore", "pipe", "pipe"],
-			})
-			: undefined;
+		const stagedSnapshot = sidecar ? captureStagedIntent(this.cwd, priorIntent.intent_ref.path) : undefined;
 		const restoreStagedIntent = (): void => {
-			if (!sidecar || !priorBytes || !priorIndexState) return;
-			writeFileSync(sidecar, priorBytes);
-			execFileSync("git", ["update-index", "--force-remove", "--", priorIntent.intent_ref.path], {
-				cwd: this.cwd,
-				stdio: ["ignore", "pipe", "pipe"],
-			});
-			if (priorIndexState.length > 0) {
-				execFileSync("git", ["update-index", "-z", "--index-info"], {
-					cwd: this.cwd,
-					input: priorIndexState,
-					stdio: ["pipe", "ignore", "pipe"],
-				});
-			}
+			if (!stagedSnapshot) return;
+			restoreStagedIntentShared(this.cwd, stagedSnapshot);
 		};
 		let preparedDiffHash = projection.projection.diff_hash;
 		let gate: { confirmation_ref: string };
@@ -707,7 +697,7 @@ export class ClaudeRuntime {
 				bindingDigest: `${preparedDiffHash}:${nextIntentHash ?? ""}`,
 			});
 		} catch (error) {
-			if (sidecar && priorBytes && priorIndexState) {
+			if (stagedSnapshot) {
 				const current = await readTaskRecord(this.cwd, taskId);
 				if (current.record?.intent_snapshot.revision === priorIntent.intent.revision) {
 					restoreStagedIntent();
@@ -767,7 +757,7 @@ export class ClaudeRuntime {
 			) stagePlanningArtifactTransition(this.cwd, result.record);
 			return result;
 		} catch (error) {
-			if (sidecar && priorBytes && priorIndexState) {
+			if (stagedSnapshot) {
 				const current = await readTaskRecord(this.cwd, taskId);
 				if (current.record?.intent_snapshot.revision === priorIntent.intent.revision) {
 					restoreStagedIntent();
@@ -869,8 +859,18 @@ export class ClaudeRuntime {
 		const priorIntent = await readTaskIntentForRecord(ctx.cwd, input.taskId);
 		const sidecar = join(ctx.cwd, priorIntent.intent_ref.path);
 		const priorBytes = operation.op === "revise_intent" ? readFileSync(sidecar) : null;
+		// A content-changing revision writes the sidecar before the kernel's drift
+		// check runs, so the written sidecar is staged and the exact prior bytes and
+		// index entry are restored, verified, if the revision fails.
+		const priorStaged = priorBytes !== null ? captureStagedIntent(ctx.cwd, priorIntent.intent_ref.path) : null;
 		try {
-			if (priorBytes) writeFileSync(sidecar, `${JSON.stringify(operation.next_intent, null, 2)}\n`);
+			if (priorBytes) {
+				writeFileSync(sidecar, `${JSON.stringify(operation.next_intent, null, 2)}\n`);
+				execFileSync("git", ["add", "--", priorIntent.intent_ref.path], {
+					cwd: ctx.cwd,
+					stdio: ["ignore", "pipe", "pipe"],
+				});
+			}
 			const result = await app.execute({
 				root: ctx.cwd,
 				task_id: input.taskId,
@@ -882,9 +882,10 @@ export class ClaudeRuntime {
 			if (operation.op === "freeze_artifacts" || operation.op === "stop") stagePlanningArtifactTransition(ctx.cwd, result.record);
 			return result;
 		} catch (error) {
-			if (priorBytes) {
+			if (priorStaged) {
 				const current = await readTaskRecord(ctx.cwd, input.taskId);
-				if (current.record?.intent_snapshot.revision === priorIntent.intent.revision) writeFileSync(sidecar, priorBytes);
+				if (current.record?.intent_snapshot.revision === priorIntent.intent.revision)
+					restoreStagedIntentShared(ctx.cwd, priorStaged);
 			}
 			throw error;
 		}
@@ -992,16 +993,9 @@ export class ClaudeRuntime {
 			requestId: existingBatch ? `resumed-${existingBatch.batch_id}` : "",
 		};
 		if (!reuseAuthorization) {
-			// review-4: bounded elicitation timeout preventing indefinite hang on missing/replayed evidence
-			const configuredTimeout = Number(this.env.IMMUNE_BRAIN_BATCH_TIMEOUT_MS);
-			const timeoutMs = Number.isFinite(configuredTimeout) && configuredTimeout > 0 ? configuredTimeout : 60_000;
-			const timeoutController = new AbortController();
-			const timeoutTimer = setTimeout(() => {
-				timeoutController.abort(new NativeAuthorityError("user_cancelled", "native confirmation timed out"));
-			}, timeoutMs);
-			const elicitationSignal = meta.signal
-				? AbortSignal.any([meta.signal, timeoutController.signal])
-				: timeoutController.signal;
+			// review-4: the bounded elicitation deadline is shared behavior now, so
+			// both Hosts bound an unanswered confirmation by the same setting.
+			const deadline = startConfirmationDeadline({ env: this.env, signal: meta.signal });
 
 			try {
 				confirmationResult = await this.requestConfirmation({
@@ -1010,12 +1004,10 @@ export class ClaudeRuntime {
 					toolCallId: meta.toolCallId,
 					planDigest,
 					batchDetails,
-					signal: elicitationSignal,
+					signal: deadline.signal,
 				});
 			} catch (err) {
-			if (timeoutController.signal.aborted && !meta.signal?.aborted) {
-				return batchReason("confirmation_timed_out");
-			}
+			if (deadline.timedOut()) return batchReason("confirmation_timed_out");
 			if (meta.signal?.aborted) return batchReason("cancelled_before_execution");
 			if (err instanceof NativeAuthorityError) {
 				if (err.reasonCode === "unsupported_host") throw err;
@@ -1029,9 +1021,14 @@ export class ClaudeRuntime {
 			}
 			return batchReason("confirmation_failed", err instanceof Error ? err.message : String(err));
 		} finally {
-			clearTimeout(timeoutTimer);
+			deadline.clear();
 		}
 
+		// A transport that answers "cancel" on abort is still a timeout, not a user
+		// decision: the Host that owns the transport reports which one it was.
+		if (deadline.timedOut()) return batchReason("confirmation_timed_out");
+		if (confirmationResult.decision === "cancel" && meta.signal?.aborted)
+			return batchReason("confirmation_cancelled");
 		if (meta.signal?.aborted) return batchReason("cancelled_before_execution");
 
 		if (confirmationResult.decision === "decline") return batchReason("confirmation_declined");

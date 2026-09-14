@@ -43,6 +43,10 @@ import {
 import type { InvocationToken } from "./pi-canary-invocations";
 import { runDeterministicQa } from "../runtime/assurance/qa";
 import {
+	captureStagedIntent,
+	restoreStagedIntent as restoreStagedIntentShared,
+} from "../runtime/staged_intent";
+import {
 	reservedAgentParams,
 	type ReservedAgentParams,
 } from "./pi-canary-native-review";
@@ -762,38 +766,11 @@ export default function (
 		const priorIntent = await readTaskIntent(ctx.cwd, taskId);
 		const sidecar = nextIntent ? join(ctx.cwd, priorIntent.intent_ref.path) : undefined;
 		const priorBytes = sidecar ? readFileSync(sidecar) : undefined;
-		const priorIndexState = sidecar
-			? execFileSync("git", ["ls-files", "--stage", "-z", "--", priorIntent.intent_ref.path], {
-					cwd: ctx.cwd,
-					stdio: ["ignore", "pipe", "pipe"],
-				})
-			: undefined;
+		const stagedSnapshot = sidecar ? captureStagedIntent(ctx.cwd, priorIntent.intent_ref.path) : undefined;
 		let stagedNextDiffHash: string | undefined;
 		const restoreStagedIntent = (): void => {
-			if (!sidecar || !priorBytes || !priorIndexState) return;
-			writeFileSync(sidecar, priorBytes);
-			execFileSync("git", ["update-index", "--force-remove", "--", priorIntent.intent_ref.path], {
-				cwd: ctx.cwd,
-				stdio: ["ignore", "pipe", "pipe"],
-			});
-			if (priorIndexState.length > 0) {
-				execFileSync("git", ["update-index", "-z", "--index-info"], {
-					cwd: ctx.cwd,
-					input: priorIndexState,
-					stdio: ["pipe", "ignore", "pipe"],
-				});
-			}
-			const restoredBytes = readFileSync(sidecar);
-			if (!restoredBytes.equals(priorBytes)) {
-				throw new Error("failed to restore prior intent bytes");
-			}
-			const restoredIndex = execFileSync("git", ["ls-files", "--stage", "-z", "--", priorIntent.intent_ref.path], {
-				cwd: ctx.cwd,
-				stdio: ["ignore", "pipe", "pipe"],
-			});
-			if (!restoredIndex.equals(priorIndexState)) {
-				throw new Error("failed to restore prior intent git index entry");
-			}
+			if (!stagedSnapshot) return;
+			restoreStagedIntentShared(ctx.cwd, stagedSnapshot);
 		};
 		if (nextIntent) {
 			try {
@@ -1023,7 +1000,7 @@ export default function (
 					) stagePlanningArtifactTransition(ctx.cwd, result.record);
 					return { state: "applied", operation, lifecycle: result.record.lifecycle };
 			} catch (error) {
-				if (sidecar && priorBytes && priorIndexState) {
+				if (stagedSnapshot) {
 					const current = await readTaskRecord(ctx.cwd, taskId);
 					if (current.record?.intent_snapshot.revision === priorIntent.intent.revision) restoreStagedIntent();
 				}
@@ -1069,19 +1046,14 @@ export default function (
 // Helpers (module scope; no workflow state)
 // ---------------------------------------------------------------------------
 
-export type DerivedAuthorizationOperation =
-	| "resolve-user-decision"
-	| "authorize-rework";
+// The derivation is shared with the Claude adapter so it cannot drift between
+// Hosts; this module re-exports it for its existing callers and tests.
+import {
+	deriveAuthorizationOperation,
+	type DerivedAuthorizationOperation,
+} from "../runtime/authorization_operation";
 
-// Kernel projection is the sole source of authorization readiness.
-export function deriveAuthorizationOperation(input: {
-	readiness: AssuranceAuthorizationReadiness;
-}): { operation: DerivedAuthorizationOperation } | { blocked: string } {
-	if (input.readiness.state === "resolve_user_decision") return { operation: "resolve-user-decision" };
-	if (input.readiness.state === "authorize_rework") return { operation: "authorize-rework" };
-	if (input.readiness.blocked) return { blocked: input.readiness.blocked };
-	return { blocked: "no unique host-derived authorization operation" };
-}
+export { deriveAuthorizationOperation, type DerivedAuthorizationOperation };
 
 /**
  * Ordinary Kernel operation mapping, exported so the conformance suite can
@@ -1698,13 +1670,8 @@ async function executeOrdinaryOperation(
 	// A content-changing revision writes the sidecar before the kernel's drift
 	// check runs; an unstaged write is itself scoped drift and deadlocks the
 	// revision. Mirror the breaking-revision path: stage the written sidecar
-	// (worktree == index) and restore the exact prior index entry on failure.
-	const priorIndexState = priorBytes !== null
-		? execFileSync("git", ["ls-files", "--stage", "-z", "--", priorIntent.intent_ref.path], {
-			cwd: ctx.cwd,
-			stdio: ["ignore", "pipe", "pipe"],
-		})
-		: null;
+	// (worktree == index) and restore the exact prior state on failure.
+	const priorStaged = priorBytes !== null ? captureStagedIntent(ctx.cwd, priorIntent.intent_ref.path) : null;
 	try {
 		if (priorBytes) {
 			writeFileSync(sidecar, `${JSON.stringify(operation.next_intent, null, 2)}\n`);
@@ -1730,19 +1697,8 @@ async function executeOrdinaryOperation(
 	} catch (error) {
 		if (priorBytes) {
 			const current = await readTaskRecord(ctx.cwd, input.taskId);
-			if (current.record?.intent_snapshot.revision === priorIntent.intent.revision) {
-				writeFileSync(sidecar, priorBytes);
-				execFileSync("git", ["update-index", "--force-remove", "--", priorIntent.intent_ref.path], {
-					cwd: ctx.cwd,
-					stdio: ["ignore", "pipe", "pipe"],
-				});
-				if (priorIndexState && priorIndexState.length > 0) {
-					execFileSync("git", ["update-index", "-z", "--index-info"], {
-						cwd: ctx.cwd,
-						input: priorIndexState,
-						stdio: ["pipe", "ignore", "pipe"],
-					});
-				}
+			if (current.record?.intent_snapshot.revision === priorIntent.intent.revision && priorStaged) {
+				restoreStagedIntentShared(ctx.cwd, priorStaged);
 			}
 		}
 		throw error;

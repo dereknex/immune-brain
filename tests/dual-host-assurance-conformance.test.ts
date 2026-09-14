@@ -20,6 +20,11 @@ import { createMcpRuntime, serveStdio } from "../plugins/immune-brain/runtime/cl
 import type { ReviewBundle } from "../plugins/immune-brain/runtime/assurance/review_evidence";
 import { executePiUnattendedBatch } from "../plugins/immune-brain/.pi-extension/imm-unattended-batch";
 import { BATCH_REASONS, batchReason } from "../plugins/immune-brain/runtime/unattended/batch_reasons";
+import {
+	captureStagedIntent,
+	restoreStagedIntent,
+} from "../plugins/immune-brain/runtime/staged_intent";
+import { deriveAuthorizationOperation } from "../plugins/immune-brain/runtime/authorization_operation";
 import type { GithubInitiativeObservation } from "../plugins/immune-brain/runtime/github_issue_tracker";
 
 const TASK = "dual-host-task";
@@ -1716,6 +1721,54 @@ describe("dual-host assurance conformance", () => {
 			expect(execFileSync("git", ["rev-parse", "HEAD"], { cwd: pf.root, encoding: "utf8" }).trim()).toBe(pHeadBefore);
 		}
 
+		// 17. Converged divergence: an unanswered native confirmation is bounded on
+		// both Hosts by the same setting and reports a timeout, not a cancellation.
+		{
+			const cf = createConformanceFixture("conf-timeout-c");
+			const pf = createConformanceFixture("conf-timeout-p");
+			// Both transports honor their signal, exactly as the real dialog and the
+			// MCP elicitation port do: an unanswered confirmation ends on abort.
+			const unanswered = (signal?: AbortSignal): Promise<"cancel"> =>
+				new Promise((resolve) => {
+					if (signal?.aborted) return resolve("cancel");
+					signal?.addEventListener("abort", () => resolve("cancel"), { once: true });
+				});
+			let piConfirmations = 0;
+			const cr = createMcpRuntime({
+				cwd: cf.root,
+				env: { ...ENV, IMMUNE_BRAIN_BATCH_TIMEOUT_MS: "40" },
+				interactive: true,
+				readInitiative: async () => cf.observation,
+				requestConfirmation: async (request) => {
+					await unanswered((request as { signal?: AbortSignal }).signal);
+					return { decision: "cancel", requestId: "req-timeout" };
+				},
+			});
+			cr.bindClientHandshake({ version: "2.1.236", interactive: true, protocolVersion: "2025-06-18" });
+			const cRes = await cr.callTool(
+				"start_unattended_batch",
+				{ initiative_slug: "conf-timeout-c" },
+				{ toolCallId: "toolu-timeout" },
+			);
+			const pRes = await executePiUnattendedBatch({
+				root: pf.root,
+				initiativeSlug: "conf-timeout-p",
+				interactive: true,
+				env: { ...process.env, IMMUNE_BRAIN_BATCH_TIMEOUT_MS: "40" },
+				readInitiative: async () => pf.observation,
+				confirmBatch: async (details) => {
+					piConfirmations += 1;
+					await unanswered(details.signal);
+					return "cancel";
+				},
+			});
+
+			// A timeout is a timeout on both Hosts, not a user cancellation.
+			expect(cRes).toMatchObject(batchReason("confirmation_timed_out"));
+			expect(pRes).toMatchObject(batchReason("confirmation_timed_out"));
+			expect(piConfirmations).toBe(1);
+			assertZeroWrites(cf, pf);
+		}
 		// 16. Parity scenario: FOREIGN CLAIM APPEARING DURING THE POST-CONFIRMATION
 		// PLAN REVALIDATION READ
 		// (a claim that lands while the second Initiative read is in flight must
@@ -2053,5 +2106,86 @@ describe("dual-host assurance conformance", () => {
 				expect({ key, present: source.includes(spec.reason) }).toEqual({ key, present: false });
 			}
 		}
+	});
+
+	// Converged divergences (S11). Each of these fails if either Host regresses to
+	// its previous branch: Pi restored without verifying, and Claude re-derived the
+	// authorization operation inline.
+	describe("converged host divergences", () => {
+		test("restores a staged intent through the shared verifying implementation", () => {
+			// The restore is shared, so the verification is one implementation: a git
+			// that silently no-ops update-index must fail the restore closed, which is
+			// exactly what stopping at update-index used to miss.
+			const root = mkdtempSync(join(tmpdir(), "imm-restore-verify-"));
+			const shimDir = mkdtempSync(join(tmpdir(), "imm-git-shim-"));
+			const previousPath = process.env.PATH;
+			try {
+				execFileSync("git", ["init", "-q"], { cwd: root });
+				execFileSync("git", ["config", "user.email", "t@example.com"], { cwd: root });
+				execFileSync("git", ["config", "user.name", "T"], { cwd: root });
+				mkdirSync(join(root, "docs/plans"), { recursive: true });
+				const sidecar = "docs/plans/restore.intent.json";
+				writeFileSync(join(root, sidecar), '{"revision":1}\n');
+				execFileSync("git", ["add", sidecar], { cwd: root });
+				execFileSync("git", ["commit", "-qm", "fixture"], { cwd: root });
+
+				const snapshot = captureStagedIntent(root, sidecar);
+				writeFileSync(join(root, sidecar), '{"revision":2}\n');
+				execFileSync("git", ["add", sidecar], { cwd: root });
+
+				const realGit = execFileSync("which", ["git"], { encoding: "utf8" }).trim();
+				writeFileSync(
+					join(shimDir, "git"),
+					`#!/bin/sh\nif [ "$1" = "update-index" ]; then exit 0; fi\nexec ${realGit} "$@"\n`,
+					{ mode: 0o755 },
+				);
+				process.env.PATH = `${shimDir}:${previousPath}`;
+				expect(() => restoreStagedIntent(root, snapshot)).toThrow(
+					/failed to restore prior intent git index entry/,
+				);
+			} finally {
+				process.env.PATH = previousPath;
+				rmSync(shimDir, { recursive: true, force: true });
+				rmSync(root, { recursive: true, force: true });
+			}
+
+			// Both adapters route through that one implementation rather than keeping
+			// their own restore body.
+			for (const [host, path] of [
+				["pi", "plugins/immune-brain/.pi-extension/imm-canary-work.ts"],
+				["claude", "plugins/immune-brain/runtime/claude/kernel_ports.ts"],
+			] as const) {
+				const source = readFileSync(resolve(path), "utf8");
+				expect({ host, shared: source.includes("restoreStagedIntentShared") }).toEqual({ host, shared: true });
+				expect({ host, own: source.includes('["update-index", "--force-remove"') }).toEqual({ host, own: false });
+			}
+		});
+
+		test("derives the authorization operation from the shared export on both Hosts", () => {
+			const piSource = readFileSync(resolve("plugins/immune-brain/.pi-extension/imm-canary-work.ts"), "utf8");
+			const claudeSource = readFileSync(resolve("plugins/immune-brain/runtime/claude/kernel_ports.ts"), "utf8");
+			expect(piSource).toContain('from "../runtime/authorization_operation"');
+			expect(claudeSource).toContain('from "../authorization_operation"');
+			// A Host that maps Kernel readiness inline is the drift this forbids.
+			for (const [host, source] of [["pi", piSource], ["claude", claudeSource]] as const) {
+				expect({ host, inline: source.includes('readiness.state === "resolve_user_decision"') }).toEqual({
+					host,
+					inline: false,
+				});
+			}
+			// One derivation over Kernel readiness, identical for both Hosts.
+			expect(deriveAuthorizationOperation({ readiness: { state: "resolve_user_decision", blocked: null } })).toEqual({
+				operation: "resolve-user-decision",
+			});
+			expect(deriveAuthorizationOperation({ readiness: { state: "authorize_rework", blocked: null } })).toEqual({
+				operation: "authorize-rework",
+			});
+			expect(deriveAuthorizationOperation({ readiness: { state: "none", blocked: "claim is draining" } })).toEqual({
+				blocked: "claim is draining",
+			});
+			expect(deriveAuthorizationOperation({ readiness: { state: "none", blocked: null } })).toEqual({
+				blocked: "no unique host-derived authorization operation",
+			});
+		});
 	});
 });

@@ -22,6 +22,7 @@ import {
 	type InitiativeObservationReader,
 } from "./runtime-stub";
 import { batchReason } from "../runtime/unattended/batch_reasons";
+import { startConfirmationDeadline } from "../runtime/unattended/confirmation_deadline";
 import {
 	projectBatchPreflight,
 	projectBatchDrift,
@@ -75,6 +76,8 @@ export interface PiBatchExecutionOptions {
 	batchKernel?: Partial<BatchRunnerKernelPort>;
 	batchGit?: BatchRunnerGitPort;
 	readInitiative?: InitiativeObservationReader;
+	/** Environment the confirmation deadline reads; production passes process.env. */
+	env?: Record<string, string | undefined>;
 	confirmBatch?: (details: {
 		title: string;
 		summary: string;
@@ -186,15 +189,20 @@ export async function executePiUnattendedBatch(
 			return batchReason("confirmation_port_unavailable");
 		}
 
+		// The bounded elicitation deadline is shared behavior: an unanswered native
+		// confirmation is bounded by the same setting on both Hosts.
+		const deadline = startConfirmationDeadline({ env: options.env ?? process.env, signal });
 		try {
-			decision = await options.confirmBatch(confirmDetails);
+			decision = await options.confirmBatch({ ...confirmDetails, signal: deadline.signal });
 		} catch (err) {
-			if (signal?.aborted) {
-				return batchReason("confirmation_cancelled");
-			}
+			if (deadline.timedOut()) return batchReason("confirmation_timed_out");
+			if (signal?.aborted) return batchReason("confirmation_cancelled");
 			return batchReason("confirmation_failed", err instanceof Error ? err.message : String(err));
+		} finally {
+			deadline.clear();
 		}
 
+		if (deadline.timedOut()) return batchReason("confirmation_timed_out");
 		if (decision === "cancel" || signal?.aborted) {
 			return batchReason("confirmation_cancelled");
 		}

@@ -1,0 +1,221 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "wc-converge-host-divergences",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "wc-converge-host-divergences",
+    "goal": "Converge three uncovered behavioral divergences between the Host adapters onto the safer branch: post-rollback re-verification becomes shared, the bounded elicitation timeout becomes shared, and Claude imports deriveAuthorizationOperation instead of re-deriving it inline.",
+    "acceptance": [
+      {
+        "id": "CVG-1",
+        "assertion": "Post-rollback re-verification becomes shared behavior on both Hosts: after restoring a staged intent, both adapters re-verify the restored bytes and the index rather than stopping at `git update-index`, adopting Pi's stricter branch. A rollback that leaves either the bytes or the index inconsistent fails closed on both Hosts.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.4.2\",\n  \"argv\": [\n    \"test\",\n    \"tests/dual-host-assurance-conformance.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 65536\n}\n"
+      },
+      {
+        "id": "CVG-2",
+        "assertion": "The bounded elicitation timeout becomes shared behavior on both Hosts, adopting Claude's branch: an unanswered native confirmation is bounded by the existing IMMUNE_BRAIN_BATCH_TIMEOUT_MS setting with its current default rather than waiting indefinitely, and the timeout path fails closed with a stable reason and one recovery action.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.4.2\",\n  \"argv\": [\n    \"test\",\n    \"tests/dual-host-assurance-conformance.test.ts\",\n    \"tests/claude-native-elicitation-promotion.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 65536\n}\n"
+      },
+      {
+        "id": "CVG-3",
+        "assertion": "runtime/claude/kernel_ports.ts imports deriveAuthorizationOperation from the shared export instead of re-implementing it inline, which is what that export's own comment says it exists for, so the conformance suite can prove the derivation cannot drift between Hosts.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.4.2\",\n  \"argv\": [\n    \"test\",\n    \"tests/dual-host-assurance-conformance.test.ts\",\n    \"tests/claude-host-authority.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 65536\n}\n"
+      },
+      {
+        "id": "CVG-4",
+        "assertion": "Each converged behavior gains a dual-host conformance scenario that fails if either adapter regresses to its previous branch, so these three divergences cannot silently reappear.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.4.2\",\n  \"argv\": [\n    \"test\",\n    \"tests/dual-host-assurance-conformance.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 65536\n}\n"
+      }
+    ],
+    "scope_hint": [
+      ".changeset/wc-converge-host-divergences.md",
+      "docs/plans/wc-converge-host-divergences.intent.json",
+      "docs/specs/archive/workflow-consolidation.spec.md",
+      "docs/specs/workflow-consolidation.spec.md",
+      "package.json",
+      "plugins/immune-brain/.pi-extension/imm-canary-work.ts",
+      "plugins/immune-brain/.pi-extension/imm-unattended-batch.ts",
+      "plugins/immune-brain/.pi-extension/runtime-stub.ts",
+      "plugins/immune-brain/dist/claude/mcp-server.mjs",
+      "plugins/immune-brain/runtime/authorization_operation.ts",
+      "plugins/immune-brain/runtime/claude/kernel_ports.ts",
+      "plugins/immune-brain/runtime/staged_intent.ts",
+      "plugins/immune-brain/runtime/unattended/batch_preflight.ts",
+      "plugins/immune-brain/runtime/unattended/confirmation_deadline.ts",
+      "tests/claude-host-authority.test.ts",
+      "tests/claude-native-elicitation-promotion.test.ts",
+      "tests/dual-host-assurance-conformance.test.ts"
+    ],
+    "risk": "material",
+    "revision": 2,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/archive/wc-converge-host-divergences.intent.json",
+    "content_hash": "sha256:581a4356189fce9813e779f1926a233d16a2c98d418d3af51ce6469c4b82cc64"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:ff3b3828c5fb3ea665b019d69ef0531cdf981156fddb78da377deb054e6cb720",
+  "git_base_head": "482b1321bd49ca32e8bd00713f8f9805254280c5",
+  "attestations": [
+    {
+      "id": "approval-qa-491e59fb",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:581a4356189fce9813e779f1926a233d16a2c98d418d3af51ce6469c4b82cc64",
+      "diff_hash": "sha256:58de985d736bed97e860752104b9c78c1c368f5fd6c3ca912a0eec3aa932d205",
+      "actor_id": "deterministic-qa",
+      "summary": "all 4 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "CVG-1",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "CVG-2",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "CVG-3",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "CVG-4",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-7c2bd6a7",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:581a4356189fce9813e779f1926a233d16a2c98d418d3af51ce6469c4b82cc64",
+      "diff_hash": "sha256:58de985d736bed97e860752104b9c78c1c368f5fd6c3ca912a0eec3aa932d205",
+      "actor_id": "parent-mediated-review",
+      "summary": "Revision identity verified (base 482b1321, single-parent commit 1b20a4e1, tree 23f7713e, manifest digest match). All four acceptances hold: staged_intent.ts shares the capture/restore/verify implementation with fail-closed byte and index checks adopted by both adapters (CVG-1); confirmation_deadline.ts shares the IMMUNE_BRAIN_BATCH_TIMEOUT_MS bound with the 60s default, and both Hosts report confirmation_timed_out on deadline expiry while the production Pi dialog transport honors the abort signal (CVG-2); kernel_ports.ts imports the shared deriveAuthorizationOperation with an identical readiness mapping (CVG-3); the conformance suite gains dual-host scenarios including a git-shim no-op update-index restore-failure test, a 40ms timeout parity test, and source-level drift guards (CVG-4). Dist bundle matches source.",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "482b1321bd49ca32e8bd00713f8f9805254280c5",
+        "review_commit": "1b20a4e11738e55e6f8f75adf25dab9b88d2418c",
+        "review_tree": "23f7713e0b8f7643f24ed1a9cc1c286cd363a074",
+        "manifest_digest": "sha256:1477563a3b735b55f40923c9fcdde6f13e62eb4f119f3b5417f319cd104b2569"
+      }
+    }
+  ],
+  "findings": [
+    {
+      "id": "qa-CVG-3-3bea90f4-14609f",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "CVG-3",
+      "source": "execution",
+      "review_round": null,
+      "summary": "verification failed (exit 1) stdout=28B stderr=48374B",
+      "anchor": null,
+      "evidence": null,
+      "counterevidence": null
+    }
+  ],
+  "history": [
+    {
+      "id": "approve_breaking_intent_revision:wc-converge-host-divergences:2026-09-14T10:13:52.846Z",
+      "at": "2026-09-14T10:13:52.846Z",
+      "type": "approve_breaking_intent_revision",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "intent_revision_2\naction_v2_sha256:8eb2958c8518a10e931ba685ec4b889b14bc96d328c8ebf38e4c684073d96b71",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-1e92f072d3e32c36",
+        "issued_at": "2026-09-14T10:13:53.278Z",
+        "expires_at": "2026-09-14T10:23:53.278Z"
+      }
+    },
+    {
+      "id": "freeze_artifacts:wc-converge-host-divergences:2026-09-14T10:14:02.292Z",
+      "at": "2026-09-14T10:14:02.292Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent and Spec frozen at docs/plans/archive/wc-converge-host-divergences.intent.json"
+    },
+    {
+      "id": "request_rework:wc-converge-host-divergences:2026-09-14T10:16:39.743Z",
+      "at": "2026-09-14T10:16:39.743Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_1\naction_v2_sha256:223edb9e466a359ab5e13c3a0d40e67956e2cbf66d68e3b205ed2507a5215951",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-bee30bed3f1b4789",
+        "issued_at": "2026-09-14T10:16:39.744Z",
+        "expires_at": "2026-09-14T10:26:39.743Z"
+      }
+    },
+    {
+      "id": "resolve_finding:wc-converge-host-divergences:2026-09-14T10:34:39.529Z",
+      "at": "2026-09-14T10:34:39.529Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "qa-CVG-3-3bea90f4-14609f\naction_v2_sha256:79132f897a1d8fd606e9d60f1479d8aee24778afc078f09594c13493c55e08d6"
+    },
+    {
+      "id": "freeze_artifacts:wc-converge-host-divergences:2026-09-14T10:34:48.463Z",
+      "at": "2026-09-14T10:34:48.463Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent and Spec frozen at docs/plans/archive/wc-converge-host-divergences.intent.json"
+    },
+    {
+      "id": "record_approval:wc-converge-host-divergences:2026-09-14T10:37:10.662Z",
+      "at": "2026-09-14T10:37:10.662Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-491e59fb\naction_v2_sha256:2d783bd72981b1eec537b8ceee45de0eb5b5f9c8ad1b7972da894fc342bfe0b8",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-a29663135f1f21f8",
+        "issued_at": "2026-09-14T10:37:10.662Z",
+        "expires_at": "2026-09-14T10:47:10.662Z"
+      }
+    },
+    {
+      "id": "record_approval:wc-converge-host-divergences:2026-09-14T10:40:44.479Z",
+      "at": "2026-09-14T10:40:44.479Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-7c2bd6a7\naction_v2_sha256:ac5bcf63818384ca0c2e4ee2c098048f0f306c3ca5450968cbabd0331bbafb74",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-3bd571caea6919fa",
+        "issued_at": "2026-09-14T10:40:44.479Z",
+        "expires_at": "2026-09-14T10:50:44.479Z"
+      }
+    },
+    {
+      "id": "complete:wc-converge-host-divergences:2026-09-14T10:40:46.637Z",
+      "at": "2026-09-14T10:40:46.637Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:ab29663a9a3f4adfbf17dd23ad43fe871f8a6a9c540c8c82a93237a1a7554919"
+    }
+  ]
+}
