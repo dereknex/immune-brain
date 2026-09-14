@@ -1,0 +1,121 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "wc-unattended-decision-adrs",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "wc-unattended-decision-adrs",
+    "goal": "Draft three ADRs that record the decision space for unattended Review disposition without settling it in code: runtime reviewer invocation, parked-child claim release, and batch capability rehydration after a crash.",
+    "acceptance": [
+      {
+        "id": "ADR-1",
+        "assertion": "docs/adr/0006 records whether the runtime may invoke the reviewer itself rather than handing Review back to a foreground Host turn. It states the problem, at least two concrete options with their authority consequences, a recommendation with rationale, and status Proposed. It changes no code.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.4.2\",\n  \"argv\": [\n    \"test\",\n    \"tests/active-runtime-docs-contract.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 60000,\n  \"max_output_bytes\": 20000\n}\n"
+      },
+      {
+        "id": "ADR-2",
+        "assertion": "docs/adr/0007 records whether a child parked on a foreground obligation may release its claim so independent siblings continue, including what that would mean for claim ownership, the single-owner invariant, and batch settlement. Options, recommendation, and status Proposed are present; no code changes.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.4.2\",\n  \"argv\": [\n    \"test\",\n    \"tests/active-runtime-docs-contract.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 60000,\n  \"max_output_bytes\": 20000\n}\n"
+      },
+      {
+        "id": "ADR-3",
+        "assertion": "docs/adr/0008 records whether a batch capability can be rehydrated after a crash, including what evidence would have to survive and how it would interact with the strictly-newer-confirmation renewal rule. Options, recommendation, and status Proposed are present; no code changes.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.4.2\",\n  \"argv\": [\n    \"test\",\n    \"tests/active-runtime-docs-contract.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 60000,\n  \"max_output_bytes\": 20000\n}\n"
+      },
+      {
+        "id": "ADR-4",
+        "assertion": "The three drafts are internally consistent with the accepted ADR-0004 and ADR-0005 decisions, introduce no reference to a path or symbol that does not exist, and pass the repository's documentation reference guards.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.4.2\",\n  \"argv\": [\n    \"test\",\n    \"tests/stale-reference-ratchet.test.ts\",\n    \"tests/vocabulary-dead-reference-contract.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 20000\n}\n"
+      }
+    ],
+    "scope_hint": [
+      "docs/adr/0006-unattended-review-dispatch-authority.md",
+      "docs/adr/0007-parked-child-claim-release.md",
+      "docs/adr/0008-batch-capability-rehydration.md",
+      "docs/plans/wc-unattended-decision-adrs.intent.json",
+      "docs/specs/archive/workflow-consolidation.spec.md",
+      "docs/specs/workflow-consolidation.spec.md",
+      "tests/active-runtime-docs-contract.test.ts",
+      "tests/stale-reference-ratchet.test.ts",
+      "tests/vocabulary-dead-reference-contract.test.ts"
+    ],
+    "risk": "routine",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/archive/wc-unattended-decision-adrs.intent.json",
+    "content_hash": "sha256:92c5fe6009a5e9d10af896c952f79ddaf9448e7b8a381167d68eabe51876725f"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:92c5fe6009a5e9d10af896c952f79ddaf9448e7b8a381167d68eabe51876725f",
+  "git_base_head": "09c461ada89a6e35f2ce1e7b0a921f5fa4b973fa",
+  "attestations": [
+    {
+      "id": "approval-qa-5282ea31",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:92c5fe6009a5e9d10af896c952f79ddaf9448e7b8a381167d68eabe51876725f",
+      "diff_hash": "sha256:968fd9a375930927cbfb2e65aa398c750d9577efdecd20ff6769e10a99d01f3a",
+      "actor_id": "deterministic-qa",
+      "summary": "all 4 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "ADR-1",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "ADR-2",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "ADR-3",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "ADR-4",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 fixed verification descriptor(s) passed"
+        }
+      ]
+    }
+  ],
+  "findings": [],
+  "history": [
+    {
+      "id": "freeze_artifacts:wc-unattended-decision-adrs:2026-09-14T14:08:28.473Z",
+      "at": "2026-09-14T14:08:28.473Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent and Spec frozen at docs/plans/archive/wc-unattended-decision-adrs.intent.json"
+    },
+    {
+      "id": "record_approval:wc-unattended-decision-adrs:2026-09-14T14:08:29.539Z",
+      "at": "2026-09-14T14:08:29.539Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-5282ea31\naction_v2_sha256:0b5206eda3aabee623e9818d46bedc43e4a757dfd1521d76e5765bf01a7d208c",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-3d8dbab031964cbd",
+        "issued_at": "2026-09-14T14:08:29.539Z",
+        "expires_at": "2026-09-14T14:18:29.539Z"
+      }
+    },
+    {
+      "id": "complete:wc-unattended-decision-adrs:2026-09-14T14:08:30.257Z",
+      "at": "2026-09-14T14:08:30.257Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:f0fdf84884727dc6e8f16212a64e51be0e849ab78477bf5e36a6837c477bd3d9"
+    }
+  ]
+}

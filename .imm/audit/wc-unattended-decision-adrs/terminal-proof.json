@@ -1,0 +1,9 @@
+{
+  "contract": "assurance_kernel/task_tombstone/v2",
+  "task_id": "wc-unattended-decision-adrs",
+  "lifecycle_status": "terminal",
+  "terminal_lifecycle": "done",
+  "terminal_event_id": "complete:wc-unattended-decision-adrs:2026-09-14T14:08:30.257Z",
+  "final_record_hash": "sha256:61a25e7661ba16ea0754e41a4d741ff80af11540a838d7a2477801bd2adfe910",
+  "terminalized_at": "2026-09-14T14:08:30.257Z"
+}
