@@ -11264,15 +11264,19 @@ class ClaudeRuntime {
   async withTerminalTracker(taskId, result) {
     if (result === null || typeof result !== "object")
       return result;
-    const projection = await this.status(taskId);
-    const tracker = await projectTerminalTrackerState({
-      root: this.cwd,
-      task_id: taskId,
-      projection,
-      tombstone: readTaskTombstone(this.cwd, taskId),
-      markTerminal: (root, input) => runGithubTrackerOperation(root, { op: "mark-terminal", ...input })
-    });
-    return tracker ? { ...result, tracker } : result;
+    try {
+      const projection = await this.status(taskId);
+      const tracker = await projectTerminalTrackerState({
+        root: this.cwd,
+        task_id: taskId,
+        projection,
+        tombstone: readTaskTombstone(this.cwd, taskId),
+        markTerminal: (root, input) => runGithubTrackerOperation(root, { op: "mark-terminal", ...input })
+      });
+      return tracker ? { ...result, tracker } : result;
+    } catch {
+      return { ...result, tracker: TRACKER_PROJECTION_FAILURE };
+    }
   }
   async resolveFinding(taskId, findingId) {
     return this.executeOrdinary({ cwd: this.cwd }, {
@@ -11375,6 +11379,7 @@ class ClaudeRuntime {
     }
     const { registry, app } = this.authority();
     const confirmation = gate.confirmation_ref;
+    let committed;
     try {
       const capabilityProjection = await this.status(taskId);
       try {
@@ -11418,9 +11423,9 @@ class ClaudeRuntime {
         diffProvider: diffSnapshotOf,
         now
       });
+      committed = result;
       if (op === "stop" || op === "authorize_rework" || op === "approve_breaking_intent_revision")
         stagePlanningArtifactTransition(this.cwd, result.record);
-      return this.withTerminalTracker(taskId, result);
     } catch (error) {
       if (stagedSnapshot) {
         const current = await readTaskRecord(this.cwd, taskId);
@@ -11430,6 +11435,7 @@ class ClaudeRuntime {
       }
       throw error;
     }
+    return this.withTerminalTracker(taskId, committed);
   }
   async applyVerdict(ctx, input) {
     const { registry, app } = await this.authority();

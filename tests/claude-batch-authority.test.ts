@@ -16,6 +16,7 @@ import {
 } from "../plugins/immune-brain/runtime/claude/interaction";
 import type { GithubInitiativeObservation } from "../plugins/immune-brain/runtime/github_issue_tracker";
 import { ClaudeRuntime, type ToolMeta } from "../plugins/immune-brain/runtime/claude/kernel_ports";
+import { readTaskRecordRaw } from "../plugins/immune-brain/runtime/kernel/storage";
 
 const ENV = { CLAUDE_CODE_VERSION: "2.1.236", CLAUDE_CODE_PERMISSION_MODE: "manual" };
 
@@ -941,5 +942,88 @@ describe("acc-claude-batch-fail-closed", () => {
 		expect(second.state).toBe("rejected");
 		expect(second.reason).toBe("native interaction declined");
 		expect(second.recovery_action).toBe("wait for a fresh literal-user request");
+	});
+	// RB3-1 / F3: the post-settlement tracker projection runs after the Kernel
+	// mutation committed, so a failure inside it must not roll the staged intent
+	// back or turn the committed revision into an exception a caller could retry.
+	it("keeps a committed mutation when the post-settlement tracker projection throws", async () => {
+		const taskId = "tracker-throw-after-commit";
+		const root = mkdtempSync(join(tmpdir(), "claude-tracker-throw-"));
+		try {
+			const intent = {
+				contract: "assurance_kernel/task_intent/v1",
+				task_id: taskId,
+				owner: "user",
+				goal: "exercise a post-settlement tracker failure",
+				acceptance: [{ id: "acc-1", assertion: "initial assertion", verification: "bun test" }],
+				scope_hint: [
+					`docs/plans/${taskId}.intent.json`,
+					`docs/specs/${taskId}.spec.md`,
+					`docs/specs/archive/${taskId}.spec.md`,
+				],
+				risk: "routine",
+				revision: 1,
+			};
+			mkdirSync(join(root, ".imm", "state"), { recursive: true });
+			mkdirSync(join(root, "docs", "plans"), { recursive: true });
+			mkdirSync(join(root, "docs", "specs", "archive"), { recursive: true });
+			writeFileSync(join(root, "docs", "plans", `${taskId}.intent.json`), `${JSON.stringify(intent, null, 2)}\n`);
+			writeFileSync(join(root, "docs", "specs", `${taskId}.spec.md`), `# ${taskId}\n`);
+			execFileSync("git", ["init", "-q", "-b", "main"], { cwd: root });
+			execFileSync("git", ["add", "-A"], { cwd: root });
+			execFileSync("git", ["-c", "user.name=test", "-c", "user.email=test@example.com", "commit", "-q", "-m", "fixture"], { cwd: root });
+
+			const runtime = new ClaudeRuntime({
+				cwd: root,
+				env: ENV,
+				interactive: true,
+				permissionMode: "manual",
+				requestConfirmation: async ({ operation }) => ({ decision: "accept", requestId: `nested-${operation}` }),
+			});
+			const meta = (toolCallId: string): ToolMeta => ({
+				taskId,
+				sessionId: "s",
+				toolCallId,
+				requiresUserInteraction: true,
+				interactive: true,
+				permissionMode: "manual",
+			});
+			await runtime.enroll(taskId, meta("enroll"));
+
+			// Force the failure exactly where the acceptance forces it: the
+			// observation that only runs after the mutation has committed.
+			const realStatus = runtime.status.bind(runtime);
+			let forced = 0;
+			runtime.status = (async (id: string) => {
+				if (readTaskRecordRaw(root, id).record?.intent_snapshot.revision === 2) {
+					forced += 1;
+					throw new Error("terminal-tracker projection failed");
+				}
+				return realStatus(id);
+			}) as ClaudeRuntime["status"];
+
+			const nextIntent = {
+				...intent,
+				acceptance: [{ id: "acc-1", assertion: "revised assertion", verification: "bun test" }],
+				revision: 2,
+			};
+			const result = await runtime.authorize(taskId, "approve_breaking_intent_revision", meta("approve"), {
+				next_intent: nextIntent,
+			});
+
+			expect(forced).toBe(1);
+			// The committed mutation is still the authoritative result, with the
+			// tracker failure reported beside it rather than thrown.
+			expect(result.record.intent_snapshot.revision).toBe(2);
+			expect((result as { tracker?: unknown }).tracker).toMatchObject({
+				operation: "mark-terminal",
+				status: "retryable_failure",
+			});
+			// And the staged sidecar was not rolled back to the pre-mutation revision.
+			const sidecar = JSON.parse(readFileSync(join(root, "docs", "plans", `${taskId}.intent.json`), "utf8"));
+			expect(sidecar.revision).toBe(2);
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
 	});
 });

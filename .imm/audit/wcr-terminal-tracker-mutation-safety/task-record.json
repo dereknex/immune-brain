@@ -1,0 +1,121 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "wcr-terminal-tracker-mutation-safety",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "wcr-terminal-tracker-mutation-safety",
+    "goal": "Stop kernel_ports.ts's terminal-tracker projection from running inside the authorize try/catch that owns Kernel-mutation rollback: a projection failure after the underlying Kernel mutation has already committed must never trigger restoreStagedIntent() or rethrow in a way a caller could read as 'the mutation did not happen' and retry.",
+    "acceptance": [
+      {
+        "id": "RB3-1",
+        "assertion": "In runtime/claude/kernel_ports.ts's authorize path, a forced failure inside the terminal-tracker projection (withTerminalTracker) that runs after app.execute has already committed the operation (op: 'stop', 'authorize_rework', or 'approve_breaking_intent_revision') does not call restoreStagedIntent() and does not cause the caller to receive an exception implying the underlying mutation did not apply; the mutation's committed result is still returned, with the tracker failure reported alongside it (not as an authority-level error).",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.4.2\",\n  \"argv\": [\n    \"test\",\n    \"tests/claude-batch-authority.test.ts\",\n    \"tests/kernel-batch-authority.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 131072\n}\n"
+      }
+    ],
+    "scope_hint": [
+      "docs/plans/wcr-terminal-tracker-mutation-safety.intent.json",
+      "docs/specs/archive/workflow-consolidation-remediation.spec.md",
+      "docs/specs/workflow-consolidation-remediation.spec.md",
+      "plugins/immune-brain/runtime/claude/kernel_ports.ts",
+      "tests/claude-batch-authority.test.ts",
+      "tests/kernel-batch-authority.test.ts"
+    ],
+    "risk": "critical",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/archive/wcr-terminal-tracker-mutation-safety.intent.json",
+    "content_hash": "sha256:5956708e35e87e2f87b472505cc95fa91756bb2ef1d7125cf73def06ab1841a9"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:5956708e35e87e2f87b472505cc95fa91756bb2ef1d7125cf73def06ab1841a9",
+  "git_base_head": "6c6631157ed70f7afeb278fec4961c87ed015710",
+  "attestations": [
+    {
+      "id": "approval-qa-53fc904f",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:5956708e35e87e2f87b472505cc95fa91756bb2ef1d7125cf73def06ab1841a9",
+      "diff_hash": "sha256:215a6561deb9bc9ace5473881b288ad6dd7881b344b69613fd047569b443517b",
+      "actor_id": "deterministic-qa",
+      "summary": "all 1 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "RB3-1",
+          "status": "passed",
+          "summary": "host-attested QA: all 1 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-9d88acee",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:5956708e35e87e2f87b472505cc95fa91756bb2ef1d7125cf73def06ab1841a9",
+      "diff_hash": "sha256:215a6561deb9bc9ace5473881b288ad6dd7881b344b69613fd047569b443517b",
+      "actor_id": "parent-mediated-review",
+      "summary": "Verified revision identity (parent, tree, manifest) and diff: withTerminalTracker now runs outside the rollback try/catch and converts observation failures into TRACKER_PROJECTION_FAILURE beside the committed result, satisfying RB3-1 with a targeted test; no correctness, regression, or security issues found.",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "6c6631157ed70f7afeb278fec4961c87ed015710",
+        "review_commit": "240ba19691d975c0fbdb76fa4bdb1c3136f04a88",
+        "review_tree": "2050bb841799e67e1525dd233c2a464445fe20a6",
+        "manifest_digest": "sha256:11dfe5e43f1e75d24da066b967cc9c1657b7b68104a2c65532683ef0d032befe"
+      }
+    }
+  ],
+  "findings": [],
+  "history": [
+    {
+      "id": "freeze_artifacts:wcr-terminal-tracker-mutation-safety:2026-09-14T16:27:55.019Z",
+      "at": "2026-09-14T16:27:55.019Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent and Spec frozen at docs/plans/archive/wcr-terminal-tracker-mutation-safety.intent.json"
+    },
+    {
+      "id": "record_approval:wcr-terminal-tracker-mutation-safety:2026-09-14T16:28:06.380Z",
+      "at": "2026-09-14T16:28:06.380Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-53fc904f\naction_v2_sha256:d2679b98ab0c04fa22108b2fb4bf9198a32d66a93675939c40f437cecc5188ec",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-a93bc5eb77864759",
+        "issued_at": "2026-09-14T16:28:06.380Z",
+        "expires_at": "2026-09-14T16:38:06.380Z"
+      }
+    },
+    {
+      "id": "record_approval:wcr-terminal-tracker-mutation-safety:2026-09-14T16:30:36.638Z",
+      "at": "2026-09-14T16:30:36.638Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-9d88acee\naction_v2_sha256:dabacd55b2d40eac53173aa265875a12646eeed7661728f809e4c71d33a6e11b",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-6ea973ae35b28960",
+        "issued_at": "2026-09-14T16:30:36.638Z",
+        "expires_at": "2026-09-14T16:40:36.638Z"
+      }
+    },
+    {
+      "id": "complete:wcr-terminal-tracker-mutation-safety:2026-09-14T16:30:37.249Z",
+      "at": "2026-09-14T16:30:37.249Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:9cfd14fa4d87123aa5042fffe9315fd23361f006724d29ad5b162dec9b232678"
+    }
+  ]
+}

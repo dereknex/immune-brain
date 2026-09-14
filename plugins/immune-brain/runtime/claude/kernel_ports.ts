@@ -54,7 +54,7 @@ import {
 	captureStagedIntent,
 	restoreStagedIntent as restoreStagedIntentShared,
 } from "../staged_intent";
-import { projectTerminalTrackerState } from "../assurance/coordinator";
+import { projectTerminalTrackerState, TRACKER_PROJECTION_FAILURE } from "../assurance/coordinator";
 import { runGithubTrackerOperation } from "../github_issue_tracker";
 import { readTaskTombstone } from "../kernel/backend_claim";
 import {
@@ -624,15 +624,22 @@ export class ClaudeRuntime {
 	 */
 	private async withTerminalTracker<T>(taskId: string, result: T): Promise<T> {
 		if (result === null || typeof result !== "object") return result;
-		const projection = await this.status(taskId);
-		const tracker = await projectTerminalTrackerState({
-			root: this.cwd,
-			task_id: taskId,
-			projection,
-			tombstone: readTaskTombstone(this.cwd, taskId),
-			markTerminal: (root, input) => runGithubTrackerOperation(root, { op: "mark-terminal", ...input }),
-		});
-		return tracker ? ({ ...(result as object), tracker } as T) : result;
+		try {
+			const projection = await this.status(taskId);
+			const tracker = await projectTerminalTrackerState({
+				root: this.cwd,
+				task_id: taskId,
+				projection,
+				tombstone: readTaskTombstone(this.cwd, taskId),
+				markTerminal: (root, input) => runGithubTrackerOperation(root, { op: "mark-terminal", ...input }),
+			});
+			return tracker ? ({ ...(result as object), tracker } as T) : result;
+		} catch {
+			// The underlying Kernel mutation already committed, so a failed observation
+			// is reported beside the authoritative result instead of rethrown into a
+			// path a caller could read as "the mutation did not happen" and retry.
+			return { ...(result as object), tracker: TRACKER_PROJECTION_FAILURE } as T;
+		}
 	}
 
 	/**
@@ -752,6 +759,7 @@ export class ClaudeRuntime {
 		}
 		const { registry, app } = this.authority();
 		const confirmation = gate.confirmation_ref;
+		let committed: ReturnType<typeof app.execute>;
 		try {
 			const capabilityProjection = await this.status(taskId);
 			try {
@@ -795,14 +803,12 @@ export class ClaudeRuntime {
 				diffProvider: diffSnapshotOf,
 				now,
 			});
+			committed = result;
 			if (
 				op === "stop" ||
 				op === "authorize_rework" ||
 				op === "approve_breaking_intent_revision"
 			) stagePlanningArtifactTransition(this.cwd, result.record);
-			// A stop settles the task: project the terminal tracker state exactly as
-			// the Pi Host does after its own settlement.
-			return this.withTerminalTracker(taskId, result);
 		} catch (error) {
 			if (stagedSnapshot) {
 				const current = await readTaskRecord(this.cwd, taskId);
@@ -812,6 +818,11 @@ export class ClaudeRuntime {
 			}
 			throw error;
 		}
+		// A stop settles the task: project the terminal tracker state exactly as the
+		// Pi Host does after its own settlement. It runs once the mutation's own
+		// try/catch has closed, so observation can never roll the staged intent back
+		// or turn a committed mutation into an exception.
+		return this.withTerminalTracker(taskId, committed);
 	}
 
 	private async applyVerdict(
