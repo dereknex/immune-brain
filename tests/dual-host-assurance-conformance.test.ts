@@ -840,6 +840,10 @@ describe("dual-host assurance conformance", () => {
 			// Run round 1 pausing for review on both hosts
 			let cStep = 0;
 			let cLastCommit: string | null = null;
+			// Native gates opened per Host. One authorization covers the whole batch:
+			// the resume below must add none on either Host.
+			let cGates = 0;
+			let pGates = 0;
 			const cr = createMcpRuntime({
 				cwd: cf.root,
 				env: ENV,
@@ -867,7 +871,10 @@ describe("dual-host assurance conformance", () => {
 					},
 					lookupBatchCommit: async () => (cLastCommit ? { commit: cLastCommit } : null),
 				},
-				requestConfirmation: async () => ({ decision: "accept", requestId: "r-c1" }),
+				requestConfirmation: async () => {
+					cGates++;
+					return { decision: "accept", requestId: "r-c1" };
+				},
 			});
 			cr.bindClientHandshake({ version: "2.1.236", interactive: true, protocolVersion: "2025-06-18" });
 			const cRes1 = await cr.callTool("start_unattended_batch", { initiative_slug: `${sharedResumeSlug}-c` }, { toolCallId: "toolu-cr1" });
@@ -895,7 +902,10 @@ describe("dual-host assurance conformance", () => {
 					},
 					lookupBatchCommit: async () => (pLastCommit ? { commit: pLastCommit } : null),
 				},
-				confirmBatch: async () => "accept",
+				confirmBatch: async () => {
+					pGates++;
+					return "accept";
+				},
 			});
 
 			expect(cRes1.state).toBe("started");
@@ -936,7 +946,10 @@ describe("dual-host assurance conformance", () => {
 					},
 					lookupBatchCommit: async () => (pLastCommit ? { commit: pLastCommit } : null),
 				},
-				confirmBatch: async () => "accept",
+				confirmBatch: async () => {
+					pGates++;
+					return "accept";
+				},
 			});
 
 			expect(cRes2.state).toBe("started");
@@ -944,6 +957,9 @@ describe("dual-host assurance conformance", () => {
 			expect(cRes2.batch_id).toBe(cRes1.batch_id);
 			expect(pRes2.batch_id).toBe(pRes1.batch_id);
 			expect(cRes2.report.batch_state).toBe(pRes2.report.batch_state);
+			// ADR-0005 Decision 1: resuming the authorized batch opens no second gate
+			// on either Host, so both hosts agree on the count and the outcome.
+			expect({ claude: cGates, pi: pGates }).toEqual({ claude: 1, pi: 1 });
 		}
 
 		// 9. Parity scenario: OUT-OF-SCOPE STAGED CHANGE BLOCKS RESUME IDENTICALLY
@@ -1432,6 +1448,19 @@ describe("dual-host assurance conformance", () => {
 			expect(cRes1.state).toBe("started");
 			expect(pRes1.state).toBe("started");
 
+			// An intact, still-binding authorization is reused without a second gate, so
+			// expire the persisted one to keep this resume re-confirming: this scenario
+			// exists to prove a mid-confirmation claim swap is caught on both Hosts.
+			for (const [stateRoot, batchId] of [
+				[cf.root, cRes1.batch_id],
+				[pf.root, pRes1.batch_id],
+			] as const) {
+				const statePath = join(stateRoot, ".imm", "state", "batches", `${batchId}.json`);
+				const persisted = JSON.parse(readFileSync(statePath, "utf8"));
+				persisted.authorization_expires_at = "2020-01-01T00:00:00.000Z";
+				writeFileSync(statePath, `${JSON.stringify(persisted, null, 2)}\n`);
+			}
+
 			const cBatchPath = join(cf.root, ".imm", "state", "batches", `${cRes1.batch_id}.json`);
 			const pBatchPath = join(pf.root, ".imm", "state", "batches", `${pRes1.batch_id}.json`);
 			const cBatchBefore = readFileSync(cBatchPath, "utf8");
@@ -1859,6 +1888,19 @@ describe("dual-host assurance conformance", () => {
 					}, null, 2)}\n`,
 				);
 			}
+			// An intact, still-binding authorization is reused without a second gate, so
+			// expire the persisted one: this scenario proves a *declined* resume leaves
+			// the pending Kernel transaction untouched on both Hosts.
+			for (const [stateRoot, batchId] of [
+				[cf.root, cFirst.batch_id],
+				[pf.root, pFirst.batch_id],
+			] as const) {
+				const statePath = join(stateRoot, ".imm", "state", "batches", `${batchId}.json`);
+				const persisted = JSON.parse(readFileSync(statePath, "utf8"));
+				persisted.authorization_expires_at = "2020-01-01T00:00:00.000Z";
+				writeFileSync(statePath, `${JSON.stringify(persisted, null, 2)}\n`);
+			}
+
 			const cBefore = snapshotState(cf.root);
 			const pBefore = snapshotState(pf.root);
 

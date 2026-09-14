@@ -113,6 +113,12 @@ function syncIsOwnBatchClaim(
 	return true;
 }
 
+/** The HEAD a resumable batch must still sit on: its last child commit, or its base. */
+function expectedBatchHead(record: { base_head: string; commits?: unknown }): string {
+	const commits = Array.isArray(record.commits) ? (record.commits as string[]) : [];
+	return commits.length > 0 ? commits[commits.length - 1]! : record.base_head;
+}
+
 export interface PiBatchExecutionOptions {
 	root: string;
 	initiativeSlug: string;
@@ -465,62 +471,78 @@ export async function executePiUnattendedBatch(
 		? existingBatch.authorization_expires_at
 		: new Date(Date.now() + 10 * 60 * 1000).toISOString();
 
+	// ADR-0005 Decision 1: a Batch Authorization is one literal-user Enrollment
+	// act, so a resume of an intact, still-binding authorization reuses it instead
+	// of opening a second native gate. Anything that no longer binds falls through
+	// to the gate below, which names the reason and demands the fresh confirmation.
+	const reuseBlockers: string[] = [];
+	if (isResuming) {
+		if (isExistingExpired) reuseBlockers.push("batch_authorization_expired");
+		if (existingBatch.batch_state !== "running") reuseBlockers.push("batch_not_running");
+		if (existingBatch.plan_digest !== planDigest) reuseBlockers.push("batch_plan_digest_changed");
+		if (existingBatch.branch !== batchBranch) reuseBlockers.push("batch_branch_changed");
+		if (expectedBatchHead(existingBatch) !== baseHead) reuseBlockers.push("batch_head_lineage_moved");
+	}
+	const reuseAuthorization = isResuming && reuseBlockers.length === 0;
+
 	// 4. Native confirmation
 	const confirmDetails = {
 		title: `Authorize Unattended Batch: ${initiativeSlug}`,
 		summary: `Initiative: ${initiativeSlug}\nBatch branch: ${batchBranch}\nPlan digest: ${planDigest}\nBudget: max_children=${budget.max_children}, deadline_at=${budget.deadline_at}, qa_failure_limit=${budget.qa_failure_limit}\nExpires at: ${expiresAt}`,
-		details: `Ordered children (${recoveryChildren.length}):\n${confirmChildrenDetails.join("\n")}${confirmExcludedDetails.length > 0 ? `\n\nExcluded children:\n${confirmExcludedDetails.join("\n")}` : ""}`,
+		details: `Ordered children (${recoveryChildren.length}):\n${confirmChildrenDetails.join("\n")}${confirmExcludedDetails.length > 0 ? `\n\nExcluded children:\n${confirmExcludedDetails.join("\n")}` : ""}${reuseBlockers.length > 0 ? `\n\nRe-confirmation required: ${reuseBlockers.join(", ")}.\nRecovery: confirm to issue a fresh authorization bound to the current plan and HEAD.` : ""}`,
 		planDigest,
 		signal,
 	};
 
-	// review-2: fail closed with zero writes when confirmation port is missing
-	if (!options.confirmBatch) {
-		return {
-			state: "rejected",
-			reason: "native confirmation port is unavailable",
-			recovery_action: "retry through a fresh native gate in the current Host",
-		};
-	}
+	let decision: "accept" | "decline" | "cancel" = "accept";
+	if (!reuseAuthorization) {
+		// review-2: fail closed with zero writes when confirmation port is missing
+		if (!options.confirmBatch) {
+			return {
+				state: "rejected",
+				reason: "native confirmation port is unavailable",
+				recovery_action: "retry through a fresh native gate in the current Host",
+			};
+		}
 
-	let decision: "accept" | "decline" | "cancel";
-	try {
-		decision = await options.confirmBatch(confirmDetails);
-	} catch (err) {
-		if (signal?.aborted) {
+		try {
+			decision = await options.confirmBatch(confirmDetails);
+		} catch (err) {
+			if (signal?.aborted) {
+				return {
+					state: "cancelled",
+					reason: "native interaction cancelled",
+					recovery_action: "wait for a fresh literal-user request",
+				};
+			}
+			return {
+				state: "rejected",
+				reason: err instanceof Error ? err.message : String(err),
+				recovery_action: "retry through a fresh native gate in the current Host",
+			};
+		}
+
+		if (decision === "cancel" || signal?.aborted) {
 			return {
 				state: "cancelled",
 				reason: "native interaction cancelled",
 				recovery_action: "wait for a fresh literal-user request",
 			};
 		}
-		return {
-			state: "rejected",
-			reason: err instanceof Error ? err.message : String(err),
-			recovery_action: "retry through a fresh native gate in the current Host",
-		};
-	}
-
-	if (decision === "cancel" || signal?.aborted) {
-		return {
-			state: "cancelled",
-			reason: "native interaction cancelled",
-			recovery_action: "wait for a fresh literal-user request",
-		};
-	}
-	if (decision === "decline") {
-		return {
-			state: "rejected",
-			reason: "native interaction declined",
-			recovery_action: "wait for a fresh literal-user request",
-		};
-	}
-	if (decision !== "accept") {
-		return {
-			state: "rejected",
-			reason: "native interaction returned no decision",
-			recovery_action: "retry through a fresh native gate in the current Host",
-		};
+		if (decision === "decline") {
+			return {
+				state: "rejected",
+				reason: "native interaction declined",
+				recovery_action: "wait for a fresh literal-user request",
+			};
+		}
+		if (decision !== "accept") {
+			return {
+				state: "rejected",
+				reason: "native interaction returned no decision",
+				recovery_action: "retry through a fresh native gate in the current Host",
+			};
+		}
 	}
 
 	// 5. Post-confirmation Revalidation (Workspace claim, Plan drift, Git HEAD)

@@ -9403,6 +9403,10 @@ function syncIsOwnBatchClaim(cwd, existingBatch, taskId, batchBranch) {
     return false;
   return true;
 }
+function expectedBatchHead(record) {
+  const commits = Array.isArray(record.commits) ? record.commits : [];
+  return commits.length > 0 ? commits[commits.length - 1] : record.base_head;
+}
 function findExistingActiveBatch(root, initiativeSlug) {
   const batchesDir = join10(root, ".imm", "state", "batches");
   if (!existsSync6(batchesDir))
@@ -10099,38 +10103,86 @@ class ClaudeRuntime {
     }
     const isExistingExpired = isResuming && Date.parse(existingBatch.authorization_expires_at) <= Date.now();
     const expiresAt = isResuming && !isExistingExpired && existingBatch.batch_state === "running" ? existingBatch.authorization_expires_at : new Date(Date.now() + 10 * 60 * 1000).toISOString();
+    const reuseBlockers = [];
+    if (isResuming) {
+      if (isExistingExpired)
+        reuseBlockers.push("batch_authorization_expired");
+      if (existingBatch.batch_state !== "running")
+        reuseBlockers.push("batch_not_running");
+      if (existingBatch.plan_digest !== planDigest)
+        reuseBlockers.push("batch_plan_digest_changed");
+      if (existingBatch.branch !== batchBranch)
+        reuseBlockers.push("batch_branch_changed");
+      if (expectedBatchHead(existingBatch) !== baseHead)
+        reuseBlockers.push("batch_head_lineage_moved");
+    }
+    const reuseAuthorization = isResuming && reuseBlockers.length === 0;
     const batchDetails = {
       initiative_slug: initiativeSlug,
       batch_branch: batchBranch,
       children: confirmChildrenDetails,
       excluded: confirmExcludedDetails,
       budget: budget2,
-      expires_at: expiresAt
+      expires_at: expiresAt,
+      ...reuseBlockers.length > 0 ? {
+        re_confirmation_required: reuseBlockers,
+        recovery: "confirm to issue a fresh authorization bound to the current plan and HEAD"
+      } : {}
     };
-    const configuredTimeout = Number(this.env.IMMUNE_BRAIN_BATCH_TIMEOUT_MS);
-    const timeoutMs = Number.isFinite(configuredTimeout) && configuredTimeout > 0 ? configuredTimeout : 60000;
-    const timeoutController = new AbortController;
-    const timeoutTimer = setTimeout(() => {
-      timeoutController.abort(new NativeAuthorityError("user_cancelled", "native confirmation timed out"));
-    }, timeoutMs);
-    const elicitationSignal = meta.signal ? AbortSignal.any([meta.signal, timeoutController.signal]) : timeoutController.signal;
-    let confirmationResult;
-    try {
-      confirmationResult = await this.requestConfirmation({
-        operation: "start_unattended_batch",
-        initiativeSlug,
-        toolCallId: meta.toolCallId,
-        planDigest,
-        batchDetails,
-        signal: elicitationSignal
-      });
-    } catch (err) {
-      if (timeoutController.signal.aborted && !meta.signal?.aborted) {
+    let confirmationResult = {
+      decision: "accept",
+      requestId: existingBatch ? `resumed-${existingBatch.batch_id}` : ""
+    };
+    if (!reuseAuthorization) {
+      const configuredTimeout = Number(this.env.IMMUNE_BRAIN_BATCH_TIMEOUT_MS);
+      const timeoutMs = Number.isFinite(configuredTimeout) && configuredTimeout > 0 ? configuredTimeout : 60000;
+      const timeoutController = new AbortController;
+      const timeoutTimer = setTimeout(() => {
+        timeoutController.abort(new NativeAuthorityError("user_cancelled", "native confirmation timed out"));
+      }, timeoutMs);
+      const elicitationSignal = meta.signal ? AbortSignal.any([meta.signal, timeoutController.signal]) : timeoutController.signal;
+      try {
+        confirmationResult = await this.requestConfirmation({
+          operation: "start_unattended_batch",
+          initiativeSlug,
+          toolCallId: meta.toolCallId,
+          planDigest,
+          batchDetails,
+          signal: elicitationSignal
+        });
+      } catch (err) {
+        if (timeoutController.signal.aborted && !meta.signal?.aborted) {
+          return {
+            state: "rejected",
+            reason: "native confirmation timed out waiting for user interaction",
+            recovery_action: "retry through a fresh native gate in the current Host"
+          };
+        }
+        if (meta.signal?.aborted) {
+          return {
+            state: "cancelled",
+            reason: "user cancelled before batch execution",
+            recovery_action: "wait for a fresh literal-user request"
+          };
+        }
+        if (err instanceof NativeAuthorityError) {
+          if (err.reasonCode === "unsupported_host")
+            throw err;
+          if (err.reasonCode === "user_cancelled") {
+            return { state: "cancelled", reason: err.message, recovery_action: err.recoveryAction };
+          }
+          if (err.reasonCode === "user_denied") {
+            return { state: "rejected", reason: err.message, recovery_action: err.recoveryAction };
+          }
+          return { state: "rejected", reason: err.message, recovery_action: err.recoveryAction };
+        }
         return {
           state: "rejected",
-          reason: "native confirmation timed out waiting for user interaction",
+          reason: err instanceof Error ? err.message : String(err),
           recovery_action: "retry through a fresh native gate in the current Host"
         };
+      } finally {
+        clearTimeout(timeoutTimer);
       }
       if (meta.signal?.aborted) {
         return {
@@ -10139,52 +10191,27 @@ class ClaudeRuntime {
           recovery_action: "wait for a fresh literal-user request"
         };
       }
-      if (err instanceof NativeAuthorityError) {
-        if (err.reasonCode === "unsupported_host")
-          throw err;
-        if (err.reasonCode === "user_cancelled") {
-          return { state: "cancelled", reason: err.message, recovery_action: err.recoveryAction };
-        }
-        if (err.reasonCode === "user_denied") {
-          return { state: "rejected", reason: err.message, recovery_action: err.recoveryAction };
-        }
-        return { state: "rejected", reason: err.message, recovery_action: err.recoveryAction };
+      if (confirmationResult.decision === "decline") {
+        return {
+          state: "rejected",
+          reason: "native interaction declined",
+          recovery_action: "wait for a fresh literal-user request"
+        };
       }
-      return {
-        state: "rejected",
-        reason: err instanceof Error ? err.message : String(err),
-        recovery_action: "retry through a fresh native gate in the current Host"
-      };
-    } finally {
-      clearTimeout(timeoutTimer);
-    }
-    if (meta.signal?.aborted) {
-      return {
-        state: "cancelled",
-        reason: "user cancelled before batch execution",
-        recovery_action: "wait for a fresh literal-user request"
-      };
-    }
-    if (confirmationResult.decision === "decline") {
-      return {
-        state: "rejected",
-        reason: "native interaction declined",
-        recovery_action: "wait for a fresh literal-user request"
-      };
-    }
-    if (confirmationResult.decision === "cancel") {
-      return {
-        state: "cancelled",
-        reason: "native interaction cancelled",
-        recovery_action: "wait for a fresh literal-user request"
-      };
-    }
-    if (confirmationResult.decision !== "accept") {
-      return {
-        state: "rejected",
-        reason: "native interaction returned no decision",
-        recovery_action: "retry through a fresh native gate in the current Host"
-      };
+      if (confirmationResult.decision === "cancel") {
+        return {
+          state: "cancelled",
+          reason: "native interaction cancelled",
+          recovery_action: "wait for a fresh literal-user request"
+        };
+      }
+      if (confirmationResult.decision !== "accept") {
+        return {
+          state: "rejected",
+          reason: "native interaction returned no decision",
+          recovery_action: "retry through a fresh native gate in the current Host"
+        };
+      }
     }
     const postWorkspaceState = readWorkspaceStateRaw(this.cwd);
     const postClaim = readBackendClaim(this.cwd);

@@ -930,6 +930,13 @@ describe("acc-pi-batch-gate", () => {
 		renameSync(activePath, join(archiveDir, "frozen-risk-c1.intent.json"));
 		execFileSync("git", ["add", "-A"], { cwd: fixture.root });
 
+		// An intact, still-binding authorization is reused without a second gate, so
+		// expire the persisted one to keep this resume re-confirming.
+		const batchStatePath = join(fixture.root, ".imm", "state", "batches", `${result1.batch_id}.json`);
+		const batchState = JSON.parse(readFileSync(batchStatePath, "utf8"));
+		batchState.authorization_expires_at = "2020-01-01T00:00:00.000Z";
+		writeFileSync(batchStatePath, `${JSON.stringify(batchState, null, 2)}\n`);
+
 		let capturedConfirmation: { details: string } | null = null;
 		const result2 = await executePiUnattendedBatch({
 			root: fixture.root,
@@ -1115,5 +1122,172 @@ describe("settled-child resume preflight", () => {
 
 		// A settled child's staged in-scope work must not be misread as out-of-scope.
 		expect(resumed.state).toBe("started");
+	});
+});
+
+describe("batch authorization reuse (ADR-0005 Decision 1)", () => {
+	/** Round 1 leaves a running batch whose child paused for foreground Review. */
+	async function startRunningBatch(slug: string) {
+		const fixture = createBatchFixture(slug);
+		let lastCommit: string | null = null;
+		let step = 0;
+		const result = await executePiUnattendedBatch({
+			root: fixture.root,
+			initiativeSlug: slug,
+			readInitiative: async () => fixture.observation,
+			batchKernel: {
+				advanceTask: async () => {
+					step++;
+					if (step === 1) return { state: "review_ready", operation_id: "op-reuse", agent_params: { prompt: "review" } as never };
+					return { state: "completed" };
+				},
+				commitChild: async () => {
+					writeFileSync(join(fixture.root, "dummy.txt"), `${Date.now()}`);
+					execFileSync("git", ["add", "dummy.txt"], { cwd: fixture.root });
+					execFileSync("git", ["commit", "-q", "-m", "child commit"], { cwd: fixture.root });
+					lastCommit = execFileSync("git", ["rev-parse", "HEAD"], { cwd: fixture.root, encoding: "utf8" }).trim();
+					return { commit: lastCommit };
+				},
+				lookupBatchCommit: async () => (lastCommit ? { commit: lastCommit } : null),
+			},
+			confirmBatch: async () => "accept",
+		});
+		if (result.state !== "started") throw new Error(`batch did not start: ${JSON.stringify(result)}`);
+		return { fixture, batchId: result.batch_id };
+	}
+
+	/** Round 2: resume, completing the batch unless the confirmation declines. */
+	async function resumeBatch(
+		fixture: { root: string; observation: GithubInitiativeObservation },
+		slug: string,
+		confirmBatch: (details: { details: string }) => Promise<"accept" | "decline" | "cancel">,
+	) {
+		let lastCommit: string | null = null;
+		return executePiUnattendedBatch({
+			root: fixture.root,
+			initiativeSlug: slug,
+			readInitiative: async () => fixture.observation,
+			batchKernel: {
+				advanceTask: async () => {
+					writeFileSync(
+						join(fixture.root, ".imm", "state", "workspace.json"),
+						JSON.stringify({ contract: "assurance_kernel/workspace/v1", current_working: null }),
+					);
+					const claimPath = join(fixture.root, ".imm", "state", "active-claim.json");
+					if (existsSync(claimPath)) rmSync(claimPath, { force: true });
+					return { state: "completed" };
+				},
+				commitChild: async () => {
+					writeFileSync(join(fixture.root, "dummy.txt"), `${Date.now()}`);
+					execFileSync("git", ["add", "dummy.txt"], { cwd: fixture.root });
+					execFileSync("git", ["commit", "-q", "-m", "child commit 2"], { cwd: fixture.root });
+					lastCommit = execFileSync("git", ["rev-parse", "HEAD"], { cwd: fixture.root, encoding: "utf8" }).trim();
+					return { commit: lastCommit };
+				},
+				lookupBatchCommit: async () => (lastCommit ? { commit: lastCommit } : null),
+			},
+			confirmBatch,
+		});
+	}
+
+	function rewriteBatchState(root: string, batchId: string, mutate: (state: Record<string, any>) => void): void {
+		const path = join(root, ".imm", "state", "batches", `${batchId}.json`);
+		const state = JSON.parse(readFileSync(path, "utf8"));
+		mutate(state);
+		writeFileSync(path, `${JSON.stringify(state, null, 2)}\n`);
+	}
+
+	it("reuses an intact, still-binding authorization with zero additional native gates", async () => {
+		const { fixture, batchId } = await startRunningBatch("reuse-intact");
+		const gates: string[] = [];
+		const resumed = await resumeBatch(fixture, "reuse-intact", async (details) => {
+			gates.push(details.details);
+			return "accept";
+		});
+
+		expect(gates).toEqual([]);
+		expect(resumed.state).toBe("started");
+		expect(resumed.batch_id).toBe(batchId);
+		expect(resumed.report.batch_state).toBe("completed");
+	});
+
+	it("demands a fresh gate when the authorization expired, naming the reason", async () => {
+		const { fixture, batchId } = await startRunningBatch("reuse-expired");
+		rewriteBatchState(fixture.root, batchId, (state) => {
+			state.authorization_expires_at = "2020-01-01T00:00:00.000Z";
+		});
+
+		const gates: string[] = [];
+		const declined = await resumeBatch(fixture, "reuse-expired", async (details) => {
+			gates.push(details.details);
+			return "decline";
+		});
+
+		expect(gates).toHaveLength(1);
+		expect(gates[0]).toContain("batch_authorization_expired");
+		expect(gates[0]).toContain("Recovery: confirm to issue a fresh authorization");
+		expect(declined.state).toBe("rejected");
+		expect(declined.reason).toBe("native interaction declined");
+		expect(declined.recovery_action).toBe("wait for a fresh literal-user request");
+	});
+
+	it("demands a fresh gate when the HEAD lineage moved, then fails closed on the drift", async () => {
+		const { fixture } = await startRunningBatch("reuse-head");
+		writeFileSync(join(fixture.root, "outside.txt"), "external commit\n");
+		execFileSync("git", ["add", "outside.txt"], { cwd: fixture.root });
+		execFileSync("git", ["commit", "-q", "-m", "external commit"], { cwd: fixture.root });
+
+		const gates: string[] = [];
+		const resumed = await resumeBatch(fixture, "reuse-head", async (details) => {
+			gates.push(details.details);
+			return "accept";
+		});
+
+		expect(gates).toHaveLength(1);
+		expect(gates[0]).toContain("batch_head_lineage_moved");
+		expect(resumed.state).toBe("started");
+		expect(resumed.report.batch_state).toBe("failed");
+		expect(String(resumed.report.reason)).toContain("lineage");
+	});
+
+	it("demands a fresh gate when the persisted plan digest no longer binds", async () => {
+		const { fixture, batchId } = await startRunningBatch("reuse-digest");
+		rewriteBatchState(fixture.root, batchId, (state) => {
+			state.plan_digest = `sha256:${"0".repeat(64)}`;
+		});
+
+		const gates: string[] = [];
+		let failure: string | null = null;
+		try {
+			const resumed = await resumeBatch(fixture, "reuse-digest", async (details) => {
+				gates.push(details.details);
+				return "accept";
+			});
+			failure = resumed.state === "rejected" ? resumed.reason : "a drifted plan resumed instead of failing closed";
+		} catch (error) {
+			failure = error instanceof Error ? error.message : String(error);
+		}
+
+		expect(gates).toHaveLength(1);
+		expect(gates[0]).toContain("batch_plan_digest_changed");
+		expect(String(failure)).toContain("plan_digest mismatch");
+	});
+
+	it("demands a fresh gate for a parked batch, which then resumes on the newer confirmation", async () => {
+		const { fixture, batchId } = await startRunningBatch("reuse-parked");
+		rewriteBatchState(fixture.root, batchId, (state) => {
+			state.batch_state = "needs_human";
+		});
+
+		const gates: string[] = [];
+		const resumed = await resumeBatch(fixture, "reuse-parked", async (details) => {
+			gates.push(details.details);
+			return "accept";
+		});
+
+		expect(gates).toHaveLength(1);
+		expect(gates[0]).toContain("batch_not_running");
+		expect(resumed.state).toBe("started");
+		expect(resumed.report.batch_state).toBe("completed");
 	});
 });

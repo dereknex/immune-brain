@@ -1,0 +1,273 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "wc-batch-resume-single-gate",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "wc-batch-resume-single-gate",
+    "goal": "Restore ADR-0005 Decision 1 on the Pi Host: a Batch Authorization is one literal-user Enrollment act, so resuming an already-authorized batch reuses the existing authorization instead of opening a second native confirmation gate.",
+    "acceptance": [
+      {
+        "id": "RSM-1",
+        "assertion": "The Pi batch gate no longer calls options.confirmBatch(...) when it is resuming an existing authorized batch for the same initiative slug. The isResuming state the function already tracks gates the confirmation call the way it gates the other eleven resume-sensitive branches, so a resumed run opens exactly zero additional native gates.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/pi-batch-authority.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 60000,\n  \"max_output_bytes\": 65536\n}\n"
+      },
+      {
+        "id": "RSM-2",
+        "assertion": "Reuse is conditional, not unconditional: a resume still fails closed when the existing authorization is expired, when the plan digest no longer binds, or when the HEAD lineage no longer binds, and in each of those cases it still demands a fresh literal-user confirmation with its stable reason and recovery action. Only an intact, unexpired, still-binding authorization is reused.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/pi-batch-authority.test.ts\",\n    \"tests/kernel-batch-authority.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 65536\n}\n"
+      },
+      {
+        "id": "RSM-3",
+        "assertion": "Claude Code and Pi agree on resume gating: the dual-host conformance suite covers a resume of an intact, still-binding authorized batch on both Hosts and asserts that each Host opens zero additional native confirmation gates and reaches the same outcome, so this behavior cannot drift between adapters.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/dual-host-assurance-conformance.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 300000,\n  \"max_output_bytes\": 131072\n}\n"
+      },
+      {
+        "id": "RSM-4",
+        "assertion": "The Claude Code batch gate reuses the existing authorization on the same terms as Pi: a resume of an intact, still-binding batch opens no elicitation, and reuse stays conditional on the same fail-closed conditions (an expired authorization, a drifted plan digest, a moved HEAD lineage, or a parked batch each still demand a fresh literal-user confirmation with a stable reason and recovery action).",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/claude-batch-authority.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 60000,\n  \"max_output_bytes\": 65536\n}\n"
+      }
+    ],
+    "scope_hint": [
+      "docs/plans/wc-batch-resume-single-gate.intent.json",
+      "docs/specs/archive/workflow-consolidation.spec.md",
+      "docs/specs/workflow-consolidation.spec.md",
+      "plugins/immune-brain/.pi-extension/imm-unattended-batch.ts",
+      "plugins/immune-brain/runtime/claude/kernel_ports.ts",
+      "tests/claude-batch-authority.test.ts",
+      "tests/dual-host-assurance-conformance.test.ts",
+      "tests/kernel-batch-authority.test.ts",
+      "tests/pi-batch-authority.test.ts"
+    ],
+    "risk": "critical",
+    "revision": 2,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/archive/wc-batch-resume-single-gate.intent.json",
+    "content_hash": "sha256:816bdd7cac9d7bcc7853dbdbd4d883663e1b2e689a105fdf2451f5e574326565"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:611f2916e9bab9413038747d7c3265e9431d2da25f1f650ee8e805e1439e3bbd",
+  "git_base_head": "d80837b510f47244399707ea93f189af9c55bd32",
+  "attestations": [
+    {
+      "id": "approval-qa-fe569d32",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:816bdd7cac9d7bcc7853dbdbd4d883663e1b2e689a105fdf2451f5e574326565",
+      "diff_hash": "sha256:a21781abd586ae77655f2ef04c2aee862d99af35c3f46ce77afdfe2d3b97c0dd",
+      "actor_id": "deterministic-qa",
+      "summary": "all 4 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "RSM-1",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "RSM-2",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "RSM-3",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "RSM-4",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-0710528c",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:816bdd7cac9d7bcc7853dbdbd4d883663e1b2e689a105fdf2451f5e574326565",
+      "diff_hash": "sha256:a21781abd586ae77655f2ef04c2aee862d99af35c3f46ce77afdfe2d3b97c0dd",
+      "actor_id": "parent-mediated-review",
+      "summary": "Pi and Claude skip the native batch gate only when an existing running authorization is unexpired and still bound to plan digest, branch, and HEAD; otherwise they re-confirm with a named reason, and dual-host plus Host tests lock the zero-gate resume.",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "d80837b510f47244399707ea93f189af9c55bd32",
+        "review_commit": "1140c1c557b1d8a57f0b976121d993596e1706f2",
+        "review_tree": "1e3d7a6b55bc447dd4f09d7109f0a3ab47badd6a",
+        "manifest_digest": "sha256:0f3b1e4f3027ce19784ab2d214d9cbb444ad1421559688c680de74d4d576a2bf"
+      }
+    }
+  ],
+  "findings": [
+    {
+      "id": "qa-RSM-1-2444d992-a8759f",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "RSM-1",
+      "source": "execution",
+      "review_round": null,
+      "summary": "verification failed (exit 1) stdout=0B stderr=73B",
+      "anchor": null,
+      "evidence": null,
+      "counterevidence": null
+    },
+    {
+      "id": "qa-RSM-2-2444d992-578bfd",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "RSM-2",
+      "source": "execution",
+      "review_round": null,
+      "summary": "verification failed (exit 1) stdout=0B stderr=73B",
+      "anchor": null,
+      "evidence": null,
+      "counterevidence": null
+    },
+    {
+      "id": "qa-RSM-3-2444d992-e16aff",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "RSM-3",
+      "source": "execution",
+      "review_round": null,
+      "summary": "verification failed (exit 1) stdout=0B stderr=73B",
+      "anchor": null,
+      "evidence": null,
+      "counterevidence": null
+    },
+    {
+      "id": "qa-RSM-4-2444d992-62cde1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "RSM-4",
+      "source": "execution",
+      "review_round": null,
+      "summary": "verification failed (exit 1) stdout=0B stderr=73B",
+      "anchor": null,
+      "evidence": null,
+      "counterevidence": null
+    }
+  ],
+  "history": [
+    {
+      "id": "approve_breaking_intent_revision:wc-batch-resume-single-gate:2026-09-14T03:24:18.956Z",
+      "at": "2026-09-14T03:24:18.956Z",
+      "type": "approve_breaking_intent_revision",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "intent_revision_2\naction_v2_sha256:1886b1337db4dd2c9dc9281c6d8dcc292462ed4aba88c57778860d32422ee246",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-ad8a66e5dfc4f03d",
+        "issued_at": "2026-09-14T03:24:19.093Z",
+        "expires_at": "2026-09-14T03:34:19.093Z"
+      }
+    },
+    {
+      "id": "freeze_artifacts:wc-batch-resume-single-gate:2026-09-14T03:35:49.783Z",
+      "at": "2026-09-14T03:35:49.783Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent and Spec frozen at docs/plans/archive/wc-batch-resume-single-gate.intent.json"
+    },
+    {
+      "id": "request_rework:wc-batch-resume-single-gate:2026-09-14T03:35:51.157Z",
+      "at": "2026-09-14T03:35:51.157Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_1\naction_v2_sha256:ca368e1c39a0954a373cfc78eb4ca4c3f36084183cdf1572017f66f4cb298371",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-22c5069909f80c02",
+        "issued_at": "2026-09-14T03:35:51.160Z",
+        "expires_at": "2026-09-14T03:45:51.157Z"
+      }
+    },
+    {
+      "id": "resolve_finding:wc-batch-resume-single-gate:2026-09-14T03:43:29.782Z",
+      "at": "2026-09-14T03:43:29.782Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "qa-RSM-1-2444d992-a8759f\naction_v2_sha256:b7f44f3a31994f0c762fd52fc8f56cffc3f2e917ee580034151de587f93f595f"
+    },
+    {
+      "id": "resolve_finding:wc-batch-resume-single-gate:2026-09-14T03:43:37.678Z",
+      "at": "2026-09-14T03:43:37.678Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "qa-RSM-2-2444d992-578bfd\naction_v2_sha256:10750ce1aa61eaf3b93d44629cfd6a6bfe10ac80b6d551a78f8ee674aec18622"
+    },
+    {
+      "id": "resolve_finding:wc-batch-resume-single-gate:2026-09-14T03:43:45.700Z",
+      "at": "2026-09-14T03:43:45.700Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "qa-RSM-3-2444d992-e16aff\naction_v2_sha256:c7f0f49bfb49b4caa9ddf0b546714811db74f250ba198193853188c67dc1e44e"
+    },
+    {
+      "id": "resolve_finding:wc-batch-resume-single-gate:2026-09-14T03:43:53.454Z",
+      "at": "2026-09-14T03:43:53.454Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "qa-RSM-4-2444d992-62cde1\naction_v2_sha256:a9251db56b34a01618f3a360e7b840e3f22a36a44d6ddee226da0c61744f0994"
+    },
+    {
+      "id": "freeze_artifacts:wc-batch-resume-single-gate:2026-09-14T03:44:15.927Z",
+      "at": "2026-09-14T03:44:15.927Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent and Spec frozen at docs/plans/archive/wc-batch-resume-single-gate.intent.json"
+    },
+    {
+      "id": "record_approval:wc-batch-resume-single-gate:2026-09-14T03:45:08.876Z",
+      "at": "2026-09-14T03:45:08.876Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-fe569d32\naction_v2_sha256:78f9e013b306194cf882bb2ebecb9fbe75039e31d263ccbbe5b8e47c32a5bed1",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-69cbc69eec447639",
+        "issued_at": "2026-09-14T03:45:08.876Z",
+        "expires_at": "2026-09-14T03:55:08.876Z"
+      }
+    },
+    {
+      "id": "record_approval:wc-batch-resume-single-gate:2026-09-14T03:50:38.873Z",
+      "at": "2026-09-14T03:50:38.873Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-0710528c\naction_v2_sha256:64833d767a6f71d4507f8e61ecc8388045a6baf9cdca1090acfd69cb27d8fe84",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-2b80ea8ebc42c46e",
+        "issued_at": "2026-09-14T03:50:38.873Z",
+        "expires_at": "2026-09-14T04:00:38.873Z"
+      }
+    },
+    {
+      "id": "complete:wc-batch-resume-single-gate:2026-09-14T03:50:39.827Z",
+      "at": "2026-09-14T03:50:39.827Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:db3ea60143c5dff50b253cb81d946783a29b5cd8688cf52c4d3e222010429295"
+    }
+  ]
+}

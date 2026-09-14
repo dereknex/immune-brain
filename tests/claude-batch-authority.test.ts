@@ -792,4 +792,106 @@ describe("acc-claude-batch-fail-closed", () => {
 		const branchCheck = execFileSync("git", ["branch", "--list", "imm/head-race"], { cwd: fixture.root, encoding: "utf8" }).trim();
 		expect(branchCheck).toBe("");
 	});
+
+	it("reuses an intact, still-binding authorization with zero additional elicitations", async () => {
+		const fixture = createBatchFixture("claude-reuse");
+		let elicitations = 0;
+		let lastCommit: string | null = null;
+		let step = 0;
+		const runtime = createMcpRuntime({
+			cwd: fixture.root,
+			env: ENV,
+			interactive: true,
+			readInitiative: async () => fixture.observation,
+			batchKernel: {
+				advanceTask: async () => {
+					step++;
+					if (step === 1) return { state: "review_ready", operation_id: "op-cr", agent_params: { prompt: "review" } as never };
+					// Settlement clears the live claim and the workspace owner; the resume
+					// seam mirrors that so the next child can be projected.
+					writeFileSync(
+						join(fixture.root, ".imm", "state", "workspace.json"),
+						JSON.stringify({ contract: "assurance_kernel/workspace/v1", current_working: null }),
+					);
+					const claimPath = join(fixture.root, ".imm", "state", "active-claim.json");
+					if (existsSync(claimPath)) rmSync(claimPath, { force: true });
+					return { state: "completed" };
+				},
+				commitChild: async () => {
+					writeFileSync(join(fixture.root, "dummy.txt"), `${Date.now()}`);
+					execFileSync("git", ["add", "dummy.txt"], { cwd: fixture.root });
+					execFileSync("git", ["commit", "-q", "-m", "child commit"], { cwd: fixture.root });
+					lastCommit = execFileSync("git", ["rev-parse", "HEAD"], { cwd: fixture.root, encoding: "utf8" }).trim();
+					return { commit: lastCommit };
+				},
+				lookupBatchCommit: async () => (lastCommit ? { commit: lastCommit } : null),
+			},
+			requestConfirmation: async () => {
+				elicitations++;
+				return { decision: "accept", requestId: `req-reuse-${elicitations}` };
+			},
+		});
+		runtime.bindClientHandshake({ version: "2.1.236", interactive: true, protocolVersion: "2025-06-18" });
+
+		const first = await runtime.callTool(
+			"start_unattended_batch",
+			{ initiative_slug: "claude-reuse" },
+			{ toolCallId: "toolu-cr1" },
+		);
+		expect(first.state).toBe("started");
+		expect(elicitations).toBe(1);
+
+		const second = await runtime.callTool(
+			"start_unattended_batch",
+			{ initiative_slug: "claude-reuse" },
+			{ toolCallId: "toolu-cr2" },
+		);
+		expect(elicitations).toBe(1);
+		expect(second.state).toBe("started");
+		expect(second.batch_id).toBe(first.batch_id);
+		expect(second.report.batch_state).toBe("completed");
+	});
+
+	it("demands a fresh elicitation when the authorization expired, naming the reason", async () => {
+		const fixture = createBatchFixture("claude-expired");
+		const batchDetails: Record<string, unknown>[] = [];
+		let decision: "accept" | "decline" = "accept";
+		const runtime = createMcpRuntime({
+			cwd: fixture.root,
+			env: ENV,
+			interactive: true,
+			readInitiative: async () => fixture.observation,
+			requestConfirmation: async (request) => {
+				batchDetails.push(request.batchDetails as Record<string, unknown>);
+				return { decision, requestId: `req-expired-${batchDetails.length}` };
+			},
+		});
+		runtime.bindClientHandshake({ version: "2.1.236", interactive: true, protocolVersion: "2025-06-18" });
+
+		const first = await runtime.callTool(
+			"start_unattended_batch",
+			{ initiative_slug: "claude-expired" },
+			{ toolCallId: "toolu-ce1" },
+		);
+		expect(first.state).toBe("started");
+
+		const statePath = join(fixture.root, ".imm", "state", "batches", `${first.batch_id}.json`);
+		const state = JSON.parse(readFileSync(statePath, "utf8"));
+		state.authorization_expires_at = "2020-01-01T00:00:00.000Z";
+		writeFileSync(statePath, `${JSON.stringify(state, null, 2)}\n`);
+
+		decision = "decline";
+		const second = await runtime.callTool(
+			"start_unattended_batch",
+			{ initiative_slug: "claude-expired" },
+			{ toolCallId: "toolu-ce2" },
+		);
+
+		expect(batchDetails).toHaveLength(2);
+		expect(JSON.stringify(batchDetails[1]!.re_confirmation_required)).toContain("batch_authorization_expired");
+		expect(String(batchDetails[1]!.recovery)).toContain("fresh authorization");
+		expect(second.state).toBe("rejected");
+		expect(second.reason).toBe("native interaction declined");
+		expect(second.recovery_action).toBe("wait for a fresh literal-user request");
+	});
 });

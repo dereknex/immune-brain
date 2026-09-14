@@ -452,6 +452,12 @@ function syncIsOwnBatchClaim(
 	return true;
 }
 
+/** The HEAD a resumable batch must still sit on: its last child commit, or its base. */
+function expectedBatchHead(record: { base_head: string; commits?: unknown }): string {
+	const commits = Array.isArray(record.commits) ? (record.commits as string[]) : [];
+	return commits.length > 0 ? commits[commits.length - 1]! : record.base_head;
+}
+
 function findExistingActiveBatch(root: string, initiativeSlug: string): any {
 	const batchesDir = join(root, ".imm", "state", "batches");
 	if (!existsSync(batchesDir)) return null;
@@ -1276,6 +1282,22 @@ export class ClaudeRuntime {
 		const expiresAt = isResuming && !isExistingExpired && existingBatch.batch_state === "running"
 			? existingBatch.authorization_expires_at
 			: new Date(Date.now() + 10 * 60 * 1000).toISOString();
+
+		// ADR-0005 Decision 1: a Batch Authorization is one literal-user Enrollment
+		// act, so a resume of an intact, still-binding authorization reuses it instead
+		// of opening a second native gate. Anything that no longer binds falls through
+		// to the elicitation below, which names the reason and demands the fresh
+		// literal-user confirmation.
+		const reuseBlockers: string[] = [];
+		if (isResuming) {
+			if (isExistingExpired) reuseBlockers.push("batch_authorization_expired");
+			if (existingBatch.batch_state !== "running") reuseBlockers.push("batch_not_running");
+			if (existingBatch.plan_digest !== planDigest) reuseBlockers.push("batch_plan_digest_changed");
+			if (existingBatch.branch !== batchBranch) reuseBlockers.push("batch_branch_changed");
+			if (expectedBatchHead(existingBatch) !== baseHead) reuseBlockers.push("batch_head_lineage_moved");
+		}
+		const reuseAuthorization = isResuming && reuseBlockers.length === 0;
+
 		const batchDetails = {
 			initiative_slug: initiativeSlug,
 			batch_branch: batchBranch,
@@ -1283,30 +1305,43 @@ export class ClaudeRuntime {
 			excluded: confirmExcludedDetails,
 			budget,
 			expires_at: expiresAt,
+			...(reuseBlockers.length > 0
+				? {
+						re_confirmation_required: reuseBlockers,
+						recovery: "confirm to issue a fresh authorization bound to the current plan and HEAD",
+					}
+				: {}),
 		};
 
-		// review-4: bounded elicitation timeout preventing indefinite hang on missing/replayed evidence
-		const configuredTimeout = Number(this.env.IMMUNE_BRAIN_BATCH_TIMEOUT_MS);
-		const timeoutMs = Number.isFinite(configuredTimeout) && configuredTimeout > 0 ? configuredTimeout : 60_000;
-		const timeoutController = new AbortController();
-		const timeoutTimer = setTimeout(() => {
-			timeoutController.abort(new NativeAuthorityError("user_cancelled", "native confirmation timed out"));
-		}, timeoutMs);
-		const elicitationSignal = meta.signal
-			? AbortSignal.any([meta.signal, timeoutController.signal])
-			: timeoutController.signal;
+		// A reused authorization keeps this invocation's Kernel binding without a new
+		// literal-user act, so its confirmation reference names the resumed batch
+		// rather than a requestId no elicitation produced.
+		let confirmationResult: { decision: "accept" | "decline" | "cancel"; requestId: string } = {
+			decision: "accept",
+			requestId: existingBatch ? `resumed-${existingBatch.batch_id}` : "",
+		};
+		if (!reuseAuthorization) {
+			// review-4: bounded elicitation timeout preventing indefinite hang on missing/replayed evidence
+			const configuredTimeout = Number(this.env.IMMUNE_BRAIN_BATCH_TIMEOUT_MS);
+			const timeoutMs = Number.isFinite(configuredTimeout) && configuredTimeout > 0 ? configuredTimeout : 60_000;
+			const timeoutController = new AbortController();
+			const timeoutTimer = setTimeout(() => {
+				timeoutController.abort(new NativeAuthorityError("user_cancelled", "native confirmation timed out"));
+			}, timeoutMs);
+			const elicitationSignal = meta.signal
+				? AbortSignal.any([meta.signal, timeoutController.signal])
+				: timeoutController.signal;
 
-		let confirmationResult: { decision: "accept" | "decline" | "cancel"; requestId: string };
-		try {
-			confirmationResult = await this.requestConfirmation({
-				operation: "start_unattended_batch",
-				initiativeSlug,
-				toolCallId: meta.toolCallId,
-				planDigest,
-				batchDetails,
-				signal: elicitationSignal,
-			});
-		} catch (err) {
+			try {
+				confirmationResult = await this.requestConfirmation({
+					operation: "start_unattended_batch",
+					initiativeSlug,
+					toolCallId: meta.toolCallId,
+					planDigest,
+					batchDetails,
+					signal: elicitationSignal,
+				});
+			} catch (err) {
 			if (timeoutController.signal.aborted && !meta.signal?.aborted) {
 				return {
 					state: "rejected",
@@ -1368,6 +1403,7 @@ export class ClaudeRuntime {
 				reason: "native interaction returned no decision",
 				recovery_action: "retry through a fresh native gate in the current Host",
 			};
+		}
 		}
 
 		// 6. Post-confirmation Revalidation (Drift check, Workspace claim, Git HEAD)
