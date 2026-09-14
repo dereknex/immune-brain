@@ -1,0 +1,9 @@
+{
+  "contract": "assurance_kernel/task_tombstone/v2",
+  "task_id": "wc-reduce-plan-core-to-validator",
+  "lifecycle_status": "terminal",
+  "terminal_lifecycle": "done",
+  "terminal_event_id": "complete:wc-reduce-plan-core-to-validator:2026-09-14T06:56:53.676Z",
+  "final_record_hash": "sha256:b37a4be37196b82c67cf7e604312200fbc661e8af4029ec7b2ba338d673b2705",
+  "terminalized_at": "2026-09-14T06:56:53.676Z"
+}

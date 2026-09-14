@@ -7,11 +7,6 @@ import {
 	buildLoopAction,
 	resolveLoopRoute,
 } from "../plugins/immune-brain/runtime/loop_contract";
-import {
-	buildPlanSignature,
-	normalizePlan,
-	parsePlan,
-} from "../plugins/immune-brain/runtime/plan_core";
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const BIN_DIR = resolve(REPO_ROOT, "plugins/immune-brain/bin");
@@ -70,9 +65,9 @@ describe("partially live runtime trim", () => {
 		expect(payload.steps.length).toBeGreaterThan(0);
 		expect(payload.origin_coverage.complete).toBe(true);
 
-		const parsed = parsePlan(resolve(REPO_ROOT, VALID_ARCHIVE_PLAN));
-		const normalized = normalizePlan(parsed, REPO_ROOT);
-		expect(buildPlanSignature(normalized)).toMatch(/^[0-9a-f]{64}$/);
+		// The direct parsePlan/normalizePlan/buildPlanSignature calls retired with
+		// their export surface: the plan signature has no production caller, so the
+		// `imm-plan --json` projection above is the whole live contract here.
 
 		expect(
 			resolveLoopRoute({ ownership: "plan", target: "step" }),

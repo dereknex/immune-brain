@@ -1,11 +1,9 @@
 /**
- * Plan parsing, normalization, signatures, and validation.
+ * Plan parsing, normalization, and validation.
  */
 import { existsSync, readFileSync } from "node:fs";
 import { resolve, relative, sep } from "node:path";
-import { createHash } from "node:crypto";
 import process from "node:process";
-import { stableStringify } from "./canonical_json";
 
 // ── errors ───────────────────────────────────────────────────────────
 
@@ -48,18 +46,18 @@ const ROADMAP_SLICE_REQUIRED_FIELDS: Array<[key: string, label: string]> = [
 
 // ── plan parsing helpers ─────────────────────────────────────────────
 
-export function hasPlaceholder(value: string): boolean {
+function hasPlaceholder(value: string): boolean {
 	const text = value || "";
 	return Boolean(
 		PLACEHOLDER_RE.test(text) || text.includes("<") || text.includes(">"),
 	);
 }
 
-export function isActionStepResult(value: string): boolean {
+function isActionStepResult(value: string): boolean {
 	return ACTION_RESULT_RE.test((value || "").trim());
 }
 
-export function parseDependsOn(rawValue: string): number[] {
+function parseDependsOn(rawValue: string): number[] {
 	const value = rawValue.trim();
 	if (value.toLowerCase() === "none") return [];
 	const deps: number[] = [];
@@ -81,7 +79,7 @@ export function parseDependsOn(rawValue: string): number[] {
 	return deps;
 }
 
-export function parseStepScope(rawValue: string): string[] {
+function parseStepScope(rawValue: string): string[] {
 	const codeSpans = [...rawValue.matchAll(/`([^`\n]+)`/g)].map((match) =>
 		match[1].trim(),
 	);
@@ -110,7 +108,7 @@ export function parseStepScope(rawValue: string): string[] {
 	return paths;
 }
 
-export function parseBrainstormManifestItems(rawValue: string): string[] {
+function parseBrainstormManifestItems(rawValue: string): string[] {
 	return rawValue
 		? rawValue
 				.split(/[;,]/)
@@ -119,7 +117,7 @@ export function parseBrainstormManifestItems(rawValue: string): string[] {
 		: [];
 }
 
-export function parseBrainstormTraceRow(
+function parseBrainstormTraceRow(
 	stripped: string,
 ): Record<string, string> | null {
 	if (!stripped.startsWith("|") || !stripped.endsWith("|")) return null;
@@ -137,7 +135,7 @@ export function parseBrainstormTraceRow(
 	return { item, status, target, reason };
 }
 
-export function parseDiscoveryCache(
+function parseDiscoveryCache(
 	rawValue: string,
 ): Array<{ path: string; reason: string }> {
 	const value = (rawValue || "").trim();
@@ -157,7 +155,7 @@ export function parseDiscoveryCache(
 	return entries;
 }
 
-export function validateParallelProbeShape(
+function validateParallelProbeShape(
 	probe: Record<string, unknown>,
 ): Record<string, unknown> {
 	if (typeof probe !== "object" || probe === null) {
@@ -179,7 +177,7 @@ export function validateParallelProbeShape(
 	return probe;
 }
 
-export function parseParallelProbeEntry(
+function parseParallelProbeEntry(
 	rawEntry: string,
 ): Record<string, unknown> {
 	const probe: Record<string, unknown> = {};
@@ -205,7 +203,7 @@ export function parseParallelProbeEntry(
 	return validateParallelProbeShape(probe);
 }
 
-export function parseParallelProbes(
+function parseParallelProbes(
 	rawValue: string,
 ): Array<Record<string, unknown>> {
 	const value = (rawValue || "").trim();
@@ -237,7 +235,7 @@ function parseSpecReference(rawValue: string): string {
 	return (rawValue || "").trim().replace(/^`|`$/g, "");
 }
 
-export interface ParsedSpecDesign {
+interface ParsedSpecDesign {
 	path: string;
 	exists: boolean;
 	design_risk: string | null;
@@ -340,7 +338,7 @@ function parseReferencedSpec(
 
 // ── plan parsing ─────────────────────────────────────────────────────
 
-export interface ParsedStep {
+interface ParsedStep {
 	number: number;
 	result: string | null;
 	verification: string | null;
@@ -353,7 +351,7 @@ export interface ParsedStep {
 	agent_hint: string | null;
 }
 
-export interface ParsedRoadmapPhase {
+interface ParsedRoadmapPhase {
 	title: string;
 	acceptance_criteria_present: boolean;
 	acceptance_criteria: string[];
@@ -361,14 +359,14 @@ export interface ParsedRoadmapPhase {
 	promotion_criteria: string[];
 }
 
-export interface PlanValidationWarning {
+interface PlanValidationWarning {
 	code: string;
 	message: string;
 	phase?: string;
 	field?: string;
 }
 
-export interface ParsedPlan {
+interface ParsedPlan {
 	path: string;
 	summary: string | null;
 	task: Record<string, string>;
@@ -378,7 +376,7 @@ export interface ParsedPlan {
 	steps: ParsedStep[];
 }
 
-export function parsePlan(path: string): ParsedPlan {
+function parsePlan(path: string): ParsedPlan {
 	const lines = readFileSync(path, "utf-8").split("\n");
 	let summary: string | null = null;
 	const steps: ParsedStep[] = [];
@@ -533,9 +531,7 @@ export function parsePlan(path: string): ParsedPlan {
 	};
 }
 
-// ── plan signature ───────────────────────────────────────────────────
-
-export interface NormalizedStep {
+interface NormalizedStep {
 	number: number;
 	step_id: string;
 	result: string;
@@ -548,17 +544,16 @@ export interface NormalizedStep {
 	test_scenarios?: string[] | null;
 }
 
-export interface NormalizedPlan {
+interface NormalizedPlan {
 	plan_path: string;
 	summary: string;
 	task: Record<string, string>;
 	steps: NormalizedStep[];
 }
 
-export type WorkflowProfile = "standard" | "strict";
-export type CompounderPolicy = "optional" | "required";
+type WorkflowProfile = "standard" | "strict";
 
-export function workflowProfileForTask(
+function workflowProfileForTask(
 	task: Record<string, string> | null | undefined,
 ): WorkflowProfile {
 	return task?.workflow_profile?.trim().toLowerCase() === "standard"
@@ -566,40 +561,7 @@ export function workflowProfileForTask(
 		: "strict";
 }
 
-export function compounderPolicyForTask(
-	task: Record<string, string> | null | undefined,
-): CompounderPolicy {
-	if (task?.compounder?.trim().toLowerCase() === "optional") return "optional";
-	return "required";
-}
-
-export function buildSignaturePayload(normalizedPlan: NormalizedPlan): string {
-	// Keep cross-runtime parity: the legacy Plan signature predates Scope.
-	const payload = {
-		summary: normalizedPlan.summary,
-		task: normalizedPlan.task,
-		steps: normalizedPlan.steps.map((step) => ({
-			number: step.number,
-			step_id: step.step_id,
-			result: step.result,
-			verification: step.verification,
-			test_scenarios: step.test_scenarios,
-			discovery_cache: step.discovery_cache,
-			parallel_probes: step.parallel_probes,
-			depends_on: step.depends_on,
-			agent_hint: step.agent_hint,
-		})),
-	};
-	return stableStringify(payload);
-}
-
-export function buildPlanSignature(normalizedPlan: NormalizedPlan): string {
-	return createHash("sha256")
-		.update(buildSignaturePayload(normalizedPlan))
-		.digest("hex");
-}
-
-export function normalizePlan(
+function normalizePlan(
 	plan: ParsedPlan,
 	projectRoot?: string,
 ): NormalizedPlan {
@@ -623,7 +585,7 @@ export function normalizePlan(
 	};
 }
 
-export function normalizePlanPath(
+function normalizePlanPath(
 	planPath: string,
 	projectRoot?: string,
 ): string {
@@ -845,7 +807,7 @@ function validatePlanContract(task: Record<string, string>): string[] {
 	return errors;
 }
 
-export function validatePlan(plan: ParsedPlan): {
+function validatePlan(plan: ParsedPlan): {
 	errors: string[];
 	warnings: PlanValidationWarning[];
 } {
@@ -954,7 +916,7 @@ export function validatePlan(plan: ParsedPlan): {
 	return { errors, warnings };
 }
 
-export interface OriginCoverageProjection {
+interface OriginCoverageProjection {
 	applicable: boolean;
 	declared_items: number;
 	mapped_items: number;
@@ -964,7 +926,7 @@ export interface OriginCoverageProjection {
 	complete: boolean;
 }
 
-export interface PlanValidationProjection extends NormalizedPlan {
+interface PlanValidationProjection extends NormalizedPlan {
 	warnings: PlanValidationWarning[];
 	origin_coverage: OriginCoverageProjection;
 }
@@ -975,7 +937,7 @@ const REASON_REQUIRED_STATUSES = new Set([
 	"deferred",
 ]);
 
-export function deriveOriginCoverage(
+function deriveOriginCoverage(
 	plan: ParsedPlan,
 ): OriginCoverageProjection {
 	const declared = [

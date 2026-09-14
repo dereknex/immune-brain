@@ -84,9 +84,11 @@ describe("retention policy consistency", () => {
     const pinnedCandidates = ["docs/specs/opencode-native-plugin.spec.md", "docs/specs/archive/opencode-native-plugin.spec.md"];
     expect(pinnedCandidates.some(p => existsSync(join(REPO_ROOT, p)))).toBe(true);
 
-    // signature constant still pins the frozen reference (guard against accidental rewrite)
+    // The frozen plan-signature constant retired with plan_core's signature
+    // surface: its last consumer, tests/plan-validation.test.ts, now reads only
+    // the live projection, so no reference signature remains to pin. The archived
+    // migration plan that constant covered stays referenced by that suite.
     const planValidation = readFileSync(join(REPO_ROOT, "tests/plan-validation.test.ts"), "utf8");
-    expect(planValidation).toContain("e89bf7809875d215c2ca0275c8f6e86e024dd451934fdc04d8e4a422bbd03a6c");
     expect(planValidation).toContain("2026-06-29-001-feat-bun-typescript-runtime-migration-plan.md");
   });
 });

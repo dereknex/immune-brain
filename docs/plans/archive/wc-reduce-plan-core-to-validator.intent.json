@@ -1,7 +1,6 @@
 {
   "contract": "assurance_kernel/task_intent/v1",
   "task_id": "wc-reduce-plan-core-to-validator",
-  "owner": "user",
   "goal": "Reduce runtime/plan_core.ts to the validator surface production actually reaches and remove the two orphans in runtime/v4_runtime.ts, using the compiler rather than a name list to decide which bodies are genuinely unreachable.",
   "acceptance": [
     {
@@ -17,20 +16,25 @@
     {
       "id": "PLC-3",
       "assertion": "Plan validation behavior is unchanged for every input the live validator still serves: tests/plan-validation.test.ts passes with no assertion weakened, and any test in it whose only protected subject was a now-deleted export is removed with an explicit statement of which behavior retired.",
-      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.4.2\",\n  \"argv\": [\n    \"test\",\n    \"tests/plan-validation.test.ts\",\n    \"tests/v3-island-deletion.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 20000\n}\n"
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.4.2\",\n  \"argv\": [\n    \"test\",\n    \"tests/plan-validation.test.ts\",\n    \"tests/v3-island-deletion.test.ts\",\n    \"tests/partially-live-runtime-trim.test.ts\",\n    \"tests/imm-core-barrel-retirement.test.ts\",\n    \"tests/retention-policy-consistency.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 20000\n}\n"
     }
   ],
   "scope_hint": [
+    ".changeset/wc-reduce-plan-core-to-validator.md",
     "docs/plans/wc-reduce-plan-core-to-validator.intent.json",
     "docs/specs/archive/workflow-consolidation.spec.md",
     "docs/specs/workflow-consolidation.spec.md",
     "plugins/immune-brain/runtime/plan_core.ts",
     "plugins/immune-brain/runtime/v4_runtime.ts",
+    "tests/imm-core-barrel-retirement.test.ts",
+    "tests/partially-live-runtime-trim.test.ts",
     "tests/plan-validation.test.ts",
+    "tests/retention-policy-consistency.test.ts",
     "tests/v3-island-deletion.test.ts",
     "tests/v4-plan-control-plane.test.ts",
     "tests/v4-runtime-launchers.test.ts"
   ],
   "risk": "material",
-  "revision": 1
+  "revision": 2,
+  "owner": "user"
 }

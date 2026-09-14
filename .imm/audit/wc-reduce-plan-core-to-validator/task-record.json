@@ -1,0 +1,163 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "wc-reduce-plan-core-to-validator",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "wc-reduce-plan-core-to-validator",
+    "goal": "Reduce runtime/plan_core.ts to the validator surface production actually reaches and remove the two orphans in runtime/v4_runtime.ts, using the compiler rather than a name list to decide which bodies are genuinely unreachable.",
+    "acceptance": [
+      {
+        "id": "PLC-1",
+        "assertion": "runtime/plan_core.ts exports only the surface reached from production: PlanValidationError and projectPlanValidation, the two symbols runtime/v4_runtime.ts imports. The other 30 exports are de-exported first and only then deleted, and `bun run typecheck` is what determines which bodies are genuinely unreachable, because projectPlanValidation may retain internal call paths through symbols that look unused from outside. No symbol is deleted from a name list alone.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.4.2\",\n  \"argv\": [\n    \"run\",\n    \"typecheck\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 180000,\n  \"max_output_bytes\": 20000\n}\n"
+      },
+      {
+        "id": "PLC-2",
+        "assertion": "The two orphans in runtime/v4_runtime.ts are removed: the READ_ONLY_V3_COMMANDS constant, which is declared and referenced nowhere in the repository, and the unused `command` and `args` parameters of retiredResponse. The read-only v3 CLI wall itself is unchanged and still refuses the retired commands with the same message.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.4.2\",\n  \"argv\": [\n    \"test\",\n    \"tests/v4-runtime-launchers.test.ts\",\n    \"tests/v4-plan-control-plane.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 20000\n}\n"
+      },
+      {
+        "id": "PLC-3",
+        "assertion": "Plan validation behavior is unchanged for every input the live validator still serves: tests/plan-validation.test.ts passes with no assertion weakened, and any test in it whose only protected subject was a now-deleted export is removed with an explicit statement of which behavior retired.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.4.2\",\n  \"argv\": [\n    \"test\",\n    \"tests/plan-validation.test.ts\",\n    \"tests/v3-island-deletion.test.ts\",\n    \"tests/partially-live-runtime-trim.test.ts\",\n    \"tests/imm-core-barrel-retirement.test.ts\",\n    \"tests/retention-policy-consistency.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 20000\n}\n"
+      }
+    ],
+    "scope_hint": [
+      ".changeset/wc-reduce-plan-core-to-validator.md",
+      "docs/plans/wc-reduce-plan-core-to-validator.intent.json",
+      "docs/specs/archive/workflow-consolidation.spec.md",
+      "docs/specs/workflow-consolidation.spec.md",
+      "plugins/immune-brain/runtime/plan_core.ts",
+      "plugins/immune-brain/runtime/v4_runtime.ts",
+      "tests/imm-core-barrel-retirement.test.ts",
+      "tests/partially-live-runtime-trim.test.ts",
+      "tests/plan-validation.test.ts",
+      "tests/retention-policy-consistency.test.ts",
+      "tests/v3-island-deletion.test.ts",
+      "tests/v4-plan-control-plane.test.ts",
+      "tests/v4-runtime-launchers.test.ts"
+    ],
+    "risk": "material",
+    "revision": 2,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/archive/wc-reduce-plan-core-to-validator.intent.json",
+    "content_hash": "sha256:738392e5aab9434cead99dacf228664ad5ca2c588f97db373929a33e830bfd1e"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:8bb735c7cc18c1f4739b0bf1ec90a02b7a934e2d944d0f3ab1aff6d891590093",
+  "git_base_head": "6ea82832decddf847c420a643e5310b847287c46",
+  "attestations": [
+    {
+      "id": "approval-qa-580734ac",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:738392e5aab9434cead99dacf228664ad5ca2c588f97db373929a33e830bfd1e",
+      "diff_hash": "sha256:6e266b2ff7dceb4b029f73b5e631398fdc29e73cde6d43f7f9c241a716f94801",
+      "actor_id": "deterministic-qa",
+      "summary": "all 3 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "PLC-1",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "PLC-2",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "PLC-3",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-791905d9",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:738392e5aab9434cead99dacf228664ad5ca2c588f97db373929a33e830bfd1e",
+      "diff_hash": "sha256:6e266b2ff7dceb4b029f73b5e631398fdc29e73cde6d43f7f9c241a716f94801",
+      "actor_id": "parent-mediated-review",
+      "summary": "plan_core.ts exports exactly PlanValidationError and projectPlanValidation with all de-exported bodies still internally called and the four deleted symbols (compounderPolicyForTask, buildSignaturePayload, buildPlanSignature, CompounderPolicy) referenced nowhere in the review tree; retiredResponse lost only its unused params with byte-identical rejection body and both call sites updated, READ_ONLY_V3_COMMANDS gone; plan-validation suite rewired to the projection with identical assertion messages, the single removed test (plan-signature parity) protected only a deleted export and carries an explicit retirement note, mirrored in partially-live-runtime-trim and retention-policy-consistency.",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "6ea82832decddf847c420a643e5310b847287c46",
+        "review_commit": "96a6d99946eae388b2abe48609356a8123469d51",
+        "review_tree": "c75100b15e3b5eac5ecf14229c290a788cbb99b5",
+        "manifest_digest": "sha256:0f0b3a85c180ada298bdafde64577889553c1b31954d9979f5a134bd50c2d80b"
+      }
+    }
+  ],
+  "findings": [],
+  "history": [
+    {
+      "id": "approve_breaking_intent_revision:wc-reduce-plan-core-to-validator:2026-09-14T06:50:30.143Z",
+      "at": "2026-09-14T06:50:30.143Z",
+      "type": "approve_breaking_intent_revision",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "intent_revision_2\naction_v2_sha256:88fea30807ebfc8bcc276a2cb8f5f2fd46f5c47fdbc6bebca00a64b977b2fe86",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-084097a3e4fac2a4",
+        "issued_at": "2026-09-14T06:50:30.392Z",
+        "expires_at": "2026-09-14T07:00:30.392Z"
+      }
+    },
+    {
+      "id": "freeze_artifacts:wc-reduce-plan-core-to-validator:2026-09-14T06:50:38.021Z",
+      "at": "2026-09-14T06:50:38.021Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent and Spec frozen at docs/plans/archive/wc-reduce-plan-core-to-validator.intent.json"
+    },
+    {
+      "id": "record_approval:wc-reduce-plan-core-to-validator:2026-09-14T06:50:48.399Z",
+      "at": "2026-09-14T06:50:48.399Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-580734ac\naction_v2_sha256:59ba374dda324f2c624b5c5c736783cf61c8b412796fe0d8570778b1d0b3ca3d",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-0107b4df61a2d532",
+        "issued_at": "2026-09-14T06:50:48.399Z",
+        "expires_at": "2026-09-14T07:00:48.399Z"
+      }
+    },
+    {
+      "id": "record_approval:wc-reduce-plan-core-to-validator:2026-09-14T06:56:52.667Z",
+      "at": "2026-09-14T06:56:52.667Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-791905d9\naction_v2_sha256:0db29cd9d8d5ace1caa37ee5ff90245f6df6f93930bf997bd167bfc07ba98c21",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-2885a605e6f2213e",
+        "issued_at": "2026-09-14T06:56:52.668Z",
+        "expires_at": "2026-09-14T07:06:52.668Z"
+      }
+    },
+    {
+      "id": "complete:wc-reduce-plan-core-to-validator:2026-09-14T06:56:53.676Z",
+      "at": "2026-09-14T06:56:53.676Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:be93abe2c3a0d4f3f7e9fbe90ad52c6251f4685179aa9d84a98cdbe2d85b211f"
+    }
+  ]
+}

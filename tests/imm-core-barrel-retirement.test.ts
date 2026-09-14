@@ -25,17 +25,8 @@ const EXPECTED_REPOINTS: Record<string, Record<string, string>> = {
 		InternalRole: "role_prompt_bridge.ts",
 	},
 	"tests/plan-validation.test.ts": {
-		parsePlan: "plan_core.ts",
-		normalizePlan: "plan_core.ts",
-		buildPlanSignature: "plan_core.ts",
-		validatePlan: "plan_core.ts",
-		parseDependsOn: "plan_core.ts",
-		parseBrainstormManifestItems: "plan_core.ts",
-		parseDiscoveryCache: "plan_core.ts",
-		parseParallelProbes: "plan_core.ts",
-		workflowProfileForTask: "plan_core.ts",
-		compounderPolicyForTask: "plan_core.ts",
 		PlanValidationError: "plan_core.ts",
+		projectPlanValidation: "plan_core.ts",
 	},
 	"tests/handoff-scope-exclusion.test.ts": {
 		captureGitWorkspaceSnapshot: "workspace_scope.ts",

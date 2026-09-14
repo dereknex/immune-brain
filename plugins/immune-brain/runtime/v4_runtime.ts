@@ -46,8 +46,6 @@ const RETIRED_MUTATING_COMMANDS = new Set([
 	"imm-retire-stale-wrapper",
 ]);
 
-const READ_ONLY_V3_COMMANDS = new Set(["imm-plan"]);
-
 const RETIRED_PLAN_OPTIONS = new Set([
 	"--sync",
 	"--terminate-current",
@@ -85,7 +83,10 @@ function unavailableRoutingProjection(): RoutingPolicyProjection {
 	};
 }
 
-function retiredResponse(command: string, args: string[], root: string): {
+// The read-only v3 CLI wall: retired mutating commands and retired plan
+// options keep this exact rejection, so the message shape is deliberately not
+// a parameter of the callers' command name or arguments.
+function retiredResponse(root: string): {
 	stdout: string;
 	stderr: string;
 	returncode: number;
@@ -124,7 +125,7 @@ function runPlanCli(args: string[], root: string): {
 	stderr: string;
 	returncode: number;
 } {
-	if (hasRetiredPlanOption(args)) return retiredResponse("imm-plan", args, root);
+	if (hasRetiredPlanOption(args)) return retiredResponse(root);
 	if (
 		args.length === 2 &&
 		args[0] === "--routing-status" &&
@@ -219,7 +220,7 @@ async function runCli(command: string, args: string[], root: string): Promise<{
 	if (command === "imm-kernel") return runKernelCli(args, root);
 	if (command === "imm-plan") return runPlanCli(args, root);
 	if (command === "imm-tracker") return runGithubTrackerCli(args, root);
-	if (RETIRED_MUTATING_COMMANDS.has(command)) return retiredResponse(command, args, root);
+	if (RETIRED_MUTATING_COMMANDS.has(command)) return retiredResponse(root);
 	return {
 		stdout: "",
 		stderr: `Unknown Immune-Brain v4 command: ${command}\n`,
