@@ -2212,13 +2212,20 @@ describe("dual-host assurance conformance", () => {
 			expect({ actor, canonical: canonicalActorId(actor) }).toEqual({ actor, canonical: actor });
 			expect({ actor, literalUser: isLiteralUserActor(actor) }).toEqual({ actor, literalUser: false });
 		}
-		// Both adapters mint the canonical spelling rather than a second one.
+		// Both adapters mint the canonical spelling rather than a second one: after the
+		// shared authorization flow, the batch binding mints it once in the shared
+		// owner both adapters call, and neither adapter spells it itself.
+		const sharedOwner = readFileSync(
+			resolve("plugins/immune-brain/runtime/unattended/batch_preflight.ts"),
+			"utf8",
+		);
+		expect(sharedOwner.includes("LITERAL_USER_ACTOR_ID")).toBe(true);
 		for (const path of [
 			"plugins/immune-brain/.pi-extension/imm-unattended-batch.ts",
 			"plugins/immune-brain/runtime/claude/kernel_ports.ts",
 		]) {
 			const source = readFileSync(resolve(path), "utf8");
-			expect({ path, canonical: source.includes("LITERAL_USER_ACTOR_ID") }).toEqual({ path, canonical: true });
+			expect({ path, shared: source.includes("authorizeBatch") }).toEqual({ path, shared: true });
 			expect({ path, hardcoded: /actor_id:\s*"user"/.test(source) }).toEqual({ path, hardcoded: false });
 		}
 	});

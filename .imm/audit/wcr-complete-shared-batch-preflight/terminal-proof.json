@@ -1,0 +1,9 @@
+{
+  "contract": "assurance_kernel/task_tombstone/v2",
+  "task_id": "wcr-complete-shared-batch-preflight",
+  "lifecycle_status": "terminal",
+  "terminal_lifecycle": "done",
+  "terminal_event_id": "complete:wcr-complete-shared-batch-preflight:2026-09-14T16:21:54.823Z",
+  "final_record_hash": "sha256:83600c17ab9821187933248ab1d03b562f234667815cbee71bb7e2b186ac925c",
+  "terminalized_at": "2026-09-14T16:21:54.823Z"
+}

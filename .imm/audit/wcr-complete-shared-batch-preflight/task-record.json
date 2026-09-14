@@ -1,0 +1,135 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "wcr-complete-shared-batch-preflight",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "wcr-complete-shared-batch-preflight",
+    "goal": "Finish the S9 preflight extraction that CONTEXT.md:215 says runtime/unattended/ already owns exclusively: move the reuse/expiry decision, the BatchAuthorizationBinding construction, and the post-gate claim/drift cascade out of runtime/claude/kernel_ports.ts and .pi-extension/imm-unattended-batch.ts into runtime/unattended/, so both adapters become callers only.",
+    "acceptance": [
+      {
+        "id": "RB2-1",
+        "assertion": "runtime/claude/kernel_ports.ts and .pi-extension/imm-unattended-batch.ts call one function exported from runtime/unattended/ for: the reuse/expiry decision (isExistingExpired, expiresAt, reuseBlockers, reuseAuthorization), the BatchAuthorizationBinding construction, and the post-gate claim/drift cascade. Neither adapter recomputes isExistingExpired, reuseBlockers, or the claim locally, and neither recomputes the claim twice within its own call.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.4.2\",\n  \"argv\": [\n    \"test\",\n    \"tests/claude-batch-authority.test.ts\",\n    \"tests/pi-batch-authority.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 131072\n}\n"
+      },
+      {
+        "id": "RB2-2",
+        "assertion": "batch_preflight.ts's BatchDriftProjection fields active_claim_task_id, own_claim, and plan_unavailable_reason are, after the extraction, either consumed by both adapters (replacing their local recomputation) or removed from BatchDriftProjection because nothing consumes them.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.4.2\",\n  \"argv\": [\n    \"test\",\n    \"tests/unattended-batch-run.test.ts\",\n    \"tests/dual-host-assurance-conformance.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 131072\n}\n"
+      }
+    ],
+    "scope_hint": [
+      "docs/plans/wcr-complete-shared-batch-preflight.intent.json",
+      "docs/specs/archive/workflow-consolidation-remediation.spec.md",
+      "docs/specs/workflow-consolidation-remediation.spec.md",
+      "plugins/immune-brain/.pi-extension/imm-unattended-batch.ts",
+      "plugins/immune-brain/runtime/claude/kernel_ports.ts",
+      "plugins/immune-brain/runtime/unattended/batch_preflight.ts",
+      "tests/claude-batch-authority.test.ts",
+      "tests/dual-host-assurance-conformance.test.ts",
+      "tests/pi-batch-authority.test.ts",
+      "tests/unattended-batch-run.test.ts"
+    ],
+    "risk": "critical",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/archive/wcr-complete-shared-batch-preflight.intent.json",
+    "content_hash": "sha256:8b1bb1820fc219dfb35d744466788feb3b76e605588fb48e53e9eab150f6c516"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:8b1bb1820fc219dfb35d744466788feb3b76e605588fb48e53e9eab150f6c516",
+  "git_base_head": "5b2b9e4870f125acbdae1b159875d2a5d0afa098",
+  "attestations": [
+    {
+      "id": "approval-qa-e2d18a04",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:8b1bb1820fc219dfb35d744466788feb3b76e605588fb48e53e9eab150f6c516",
+      "diff_hash": "sha256:bd8195d2c1b751d1540f8ef4560168aff892cc68c87e0f332d90c79e8c614fdb",
+      "actor_id": "deterministic-qa",
+      "summary": "all 2 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "RB2-1",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "RB2-2",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-ceb58ac3",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:8b1bb1820fc219dfb35d744466788feb3b76e605588fb48e53e9eab150f6c516",
+      "diff_hash": "sha256:bd8195d2c1b751d1540f8ef4560168aff892cc68c87e0f332d90c79e8c614fdb",
+      "actor_id": "parent-mediated-review",
+      "summary": "Verified review_commit 7cb3670f parent/tree against the manifest; both adapters now delegate the reuse/expiry decision, gate cascade, and binding construction to the single authorizeBatch in runtime/unattended/batch_preflight.ts (RB2-1), the drift projection's claim fields are consumed by that shared owner replacing both adapters' local recomputation (RB2-2), host-specific envelopes and confirmation refs are preserved, and remaining claim reads in adapters are the pre-existing ownsTaskClaim runner callback, not the post-gate cascade.",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "5b2b9e4870f125acbdae1b159875d2a5d0afa098",
+        "review_commit": "7cb3670f85db42a02f7657498e8d8120c2eda56c",
+        "review_tree": "fec425151e2c3216545852fbdbfcadb979bb5fc5",
+        "manifest_digest": "sha256:be8f4dbb0d456ba30da101e7620c93eff585b183d12c1d33d246d1feae11da02"
+      }
+    }
+  ],
+  "findings": [],
+  "history": [
+    {
+      "id": "freeze_artifacts:wcr-complete-shared-batch-preflight:2026-09-14T16:16:55.852Z",
+      "at": "2026-09-14T16:16:55.852Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent and Spec frozen at docs/plans/archive/wcr-complete-shared-batch-preflight.intent.json"
+    },
+    {
+      "id": "record_approval:wcr-complete-shared-batch-preflight:2026-09-14T16:18:19.350Z",
+      "at": "2026-09-14T16:18:19.350Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-e2d18a04\naction_v2_sha256:d27005dcdd9f20879b22a0532b9d038d9fcb55f97ed3dbacfa22df18aa5a547e",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-7381b4f5af79e231",
+        "issued_at": "2026-09-14T16:18:19.353Z",
+        "expires_at": "2026-09-14T16:28:19.353Z"
+      }
+    },
+    {
+      "id": "record_approval:wcr-complete-shared-batch-preflight:2026-09-14T16:21:54.181Z",
+      "at": "2026-09-14T16:21:54.181Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-ceb58ac3\naction_v2_sha256:911b8038caa1d10af0692bda775c299716dbac948ea6f7031583f7b65a3a4231",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-5cb1869d2b22fbcb",
+        "issued_at": "2026-09-14T16:21:54.182Z",
+        "expires_at": "2026-09-14T16:31:54.182Z"
+      }
+    },
+    {
+      "id": "complete:wcr-complete-shared-batch-preflight:2026-09-14T16:21:54.823Z",
+      "at": "2026-09-14T16:21:54.823Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:0589a391d9070225eda6789234a36d297c2ef168f7a93c0b2fa40efa1b8de6ad"
+    }
+  ]
+}

@@ -5,7 +5,6 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { join } from "node:path";
 import {
-	LITERAL_USER_ACTOR_ID,
 	createBatchAuthorityRegistry,
 	deriveChildEnrollment,
 	startBatch,
@@ -16,7 +15,6 @@ import {
 	enrollCanaryTask,
 	createEnrollmentAuthorityRegistry,
 	type BatchAuthorityRegistry,
-	type BatchAuthorizationBinding,
 	type BatchRunnerKernelPort,
 	type BatchRunnerGitPort,
 	type BatchRunReport,
@@ -25,11 +23,10 @@ import {
 import { batchReason } from "../runtime/unattended/batch_reasons";
 import { startConfirmationDeadline } from "../runtime/unattended/confirmation_deadline";
 import {
+	authorizeBatch,
 	projectBatchPreflight,
-	projectBatchDrift,
 	readActiveClaimTaskId,
 	isOwnBatchClaim,
-	expectedBatchHead,
 } from "../runtime/unattended/batch_preflight";
 import {
 	presentTaskRail,
@@ -142,122 +139,71 @@ export async function executePiUnattendedBatch(
 	const budget = preflight.projection.budget;
 	const planDigest = preflight.projection.plan_digest;
 	const recoveryChildren = preflight.projection.recovery_children;
-	const confirmChildrenDetails = recoveryChildren.map((c) => {
-		const childRisk = preflight.projection.risk_by_task[c.task_id] ?? "material";
-		return c.status === "already_settled"
-			? `  - ${c.task_id} (${c.slice_id}) [risk: ${childRisk}] [status: completed]`
-			: `  - ${c.task_id} (${c.slice_id}) [risk: ${childRisk}] [status: pending execution]`;
-	});
-	const confirmExcludedDetails = preflight.projection.excluded.map(
-		(c) => `  - ${c.task_id} (${c.slice_id}): ${c.reason}`,
-	);
 
-	// ADR-0005 Decision 1: one Batch Authorization spans the work it authorizes,
-	// so its expiry is the deadline the literal user confirmed rather than a fixed
-	// window that lapses while a child is parked on a foreground Review.
-	const isExistingExpired = isResuming && Date.parse(existingBatch!.authorization_expires_at) <= Date.now();
-	const expiresAt = isResuming && !isExistingExpired && existingBatch!.batch_state === "running"
-		? existingBatch!.authorization_expires_at
-		: budget.deadline_at;
-
-	// ADR-0005 Decision 1: a Batch Authorization is one literal-user Enrollment
-	// act, so a resume of an intact, still-binding authorization reuses it instead
-	// of opening a second native gate. Anything that no longer binds falls through
-	// to the gate below, which names the reason and demands the fresh confirmation.
-	const reuseBlockers: string[] = [];
-	if (isResuming && existingBatch) {
-		if (isExistingExpired) reuseBlockers.push("batch_authorization_expired");
-		if (existingBatch.batch_state !== "running") reuseBlockers.push("batch_not_running");
-		if (existingBatch.plan_digest !== planDigest) reuseBlockers.push("batch_plan_digest_changed");
-		if (existingBatch.branch !== batchBranch) reuseBlockers.push("batch_branch_changed");
-		if (expectedBatchHead(existingBatch) !== baseHead) reuseBlockers.push("batch_head_lineage_moved");
-	}
-	const reuseAuthorization = isResuming && reuseBlockers.length === 0;
-
-	// 4. Native confirmation
-	const confirmDetails = {
-		title: `Authorize Unattended Batch: ${initiativeSlug}`,
-		summary: `Initiative: ${initiativeSlug}\nBatch branch: ${batchBranch}\nPlan digest: ${planDigest}\nBudget: max_children=${budget.max_children}, deadline_at=${budget.deadline_at}, qa_failure_limit=${budget.qa_failure_limit}\nExpires at: ${expiresAt}`,
-		details: `Ordered children (${recoveryChildren.length}):\n${confirmChildrenDetails.join("\n")}${confirmExcludedDetails.length > 0 ? `\n\nExcluded children:\n${confirmExcludedDetails.join("\n")}` : ""}${reuseBlockers.length > 0 ? `\n\nRe-confirmation required: ${reuseBlockers.join(", ")}.\nRecovery: confirm to issue a fresh authorization bound to the current plan and HEAD.` : ""}`,
-		planDigest,
-		signal,
-	};
-
-	let decision: "accept" | "decline" | "cancel" = "accept";
-	if (!reuseAuthorization) {
-		// review-2: fail closed with zero writes when confirmation port is missing
-		if (!options.confirmBatch) {
-			return batchReason("confirmation_port_unavailable");
-		}
-
-		// The bounded elicitation deadline is shared behavior: an unanswered native
-		// confirmation is bounded by the same setting on both Hosts.
-		const deadline = startConfirmationDeadline({ env: options.env ?? process.env, signal });
-		try {
-			decision = await options.confirmBatch({ ...confirmDetails, signal: deadline.signal });
-		} catch (err) {
-			if (deadline.timedOut()) return batchReason("confirmation_timed_out");
-			if (signal?.aborted) return batchReason("confirmation_cancelled");
-			return batchReason("confirmation_failed", err instanceof Error ? err.message : String(err));
-		} finally {
-			deadline.clear();
-		}
-
-		if (deadline.timedOut()) return batchReason("confirmation_timed_out");
-		if (decision === "cancel" || signal?.aborted) {
-			return batchReason("confirmation_cancelled");
-		}
-		if (decision === "decline") {
-			return batchReason("confirmation_declined");
-		}
-		if (decision !== "accept") {
-			return batchReason("confirmation_no_decision");
-		}
-	}
-
-	// 5. Post-confirmation revalidation: the same shared decisions, re-verified
-	// after the native gate and after the asynchronous plan read.
-	const postActiveTaskId = readActiveClaimTaskId(root);
-	// Re-verify the full claim identity now, not the pre-confirmation snapshot: a
-	// claim swapped for the same child during confirmation must stay blocked.
-	const postIsOwnClaim =
-		isResuming && postActiveTaskId !== null && isOwnBatchClaim(root, existingBatch!, postActiveTaskId, batchBranch);
-	if (postActiveTaskId && !postIsOwnClaim) {
-		return batchReason("claim_appeared_during_confirmation", postActiveTaskId);
-	}
-
-	const drift = await projectBatchDrift({
+	// 4. Literal-user gate plus the shared reuse/expiry decision, the post-gate
+	// claim/drift cascade, and the Batch Authorization binding. The Host supplies
+	// only its gate, its confirmation reference, and its binding nonce.
+	const authorization = await authorizeBatch<PiBatchExecutionResult>({
 		root,
 		initiative_slug: initiativeSlug,
 		now,
+		projection: preflight.projection,
 		readInitiative: options.readInitiative,
-	});
-	if (!drift.plan_digest) {
-		return batchReason("plan_became_unreadable");
-	}
-	if (drift.plan_digest !== planDigest) {
-		return batchReason("plan_changed");
-	}
-	if (drift.base_head === null) {
-		return batchReason("repository_became_unreadable");
-	}
-	if (drift.base_head !== baseHead) {
-		return batchReason("head_moved");
-	}
+		nonce: randomUUID(),
+		gate: async (facts) => {
+			// review-2: fail closed with zero writes when confirmation port is missing
+			if (!options.confirmBatch) {
+				return { kind: "host_rejection", value: batchReason("confirmation_port_unavailable") };
+			}
+			const confirmDetails = {
+				title: `Authorize Unattended Batch: ${facts.initiative_slug}`,
+				summary: `Initiative: ${facts.initiative_slug}\nBatch branch: ${facts.batch_branch}\nPlan digest: ${facts.plan_digest}\nBudget: max_children=${facts.budget.max_children}, deadline_at=${facts.budget.deadline_at}, qa_failure_limit=${facts.budget.qa_failure_limit}\nExpires at: ${facts.expires_at}`,
+				details: `Ordered children (${facts.children.length}):\n${facts.children.map((child) => `  - ${child.task_id} (${child.slice_id}) [risk: ${child.risk}] [status: ${child.status === "already_settled" ? "completed" : "pending execution"}]`).join("\n")}${facts.excluded.length > 0 ? `\n\nExcluded children:\n${facts.excluded.map((child) => `  - ${child.task_id} (${child.slice_id}): ${child.reason}`).join("\n")}` : ""}${facts.reuse_blockers.length > 0 ? `\n\nRe-confirmation required: ${facts.reuse_blockers.join(", ")}.\nRecovery: confirm to issue a fresh authorization bound to the current plan and HEAD.` : ""}`,
+				planDigest: facts.plan_digest,
+				signal,
+			};
 
-	// review-f72ae870f4f0-1: re-check the workspace claim AFTER the async plan
-	// revalidation finishes. The earlier check ran before that await, so a foreign
-	// enrollment completing during the Initiative read would otherwise reach
-	// authority issuance and let startBatch create the branch and batch state,
-	// while Claude returns blocked. Same check, same order, same reason as Claude.
-	const finalActiveTaskId = readActiveClaimTaskId(root);
-	const finalIsOwnClaim =
-		isResuming &&
-		finalActiveTaskId !== null &&
-		isOwnBatchClaim(root, existingBatch!, finalActiveTaskId, batchBranch);
-	if (finalActiveTaskId && !finalIsOwnClaim) {
-		return batchReason("claim_appeared_during_confirmation", finalActiveTaskId);
-	}
+			// The bounded elicitation deadline is shared behavior: an unanswered native
+			// confirmation is bounded by the same setting on both Hosts.
+			const deadline = startConfirmationDeadline({ env: options.env ?? process.env, signal });
+			let decision: "accept" | "decline" | "cancel";
+			try {
+				decision = await options.confirmBatch({ ...confirmDetails, signal: deadline.signal });
+			} catch (err) {
+				if (deadline.timedOut()) return { kind: "host_rejection", value: batchReason("confirmation_timed_out") };
+				if (signal?.aborted) return { kind: "host_rejection", value: batchReason("confirmation_cancelled") };
+				return {
+					kind: "host_rejection",
+					value: batchReason("confirmation_failed", err instanceof Error ? err.message : String(err)),
+				};
+			} finally {
+				deadline.clear();
+			}
+
+			if (deadline.timedOut()) return { kind: "host_rejection", value: batchReason("confirmation_timed_out") };
+			if (decision === "cancel" || signal?.aborted) {
+				return { kind: "host_rejection", value: batchReason("confirmation_cancelled") };
+			}
+			if (decision === "decline") {
+				return { kind: "host_rejection", value: batchReason("confirmation_declined") };
+			}
+			if (decision !== "accept") {
+				return { kind: "host_rejection", value: batchReason("confirmation_no_decision") };
+			}
+			return { kind: "confirmed", request_id: randomUUID() };
+		},
+		confirmationRef: ({ batch_id, request_id }) =>
+			piConfirmationRef({
+				toolCallId: `call-${batch_id}`,
+				requestId: request_id ?? randomUUID(),
+				operation: "start_unattended_batch",
+				initiativeSlug,
+				planDigest,
+			}),
+	});
+	if (authorization.outcome === "host_rejection") return authorization.value;
+	if (authorization.outcome === "rejected") return authorization.rejection;
+	const { binding, batch_id: batchId, expires_at: expiresAt } = authorization;
 
 	// 6. Issue Batch Authorization through Kernel registry and startBatch
 	const batchRegistry: BatchAuthorityRegistry = await createBatchAuthorityRegistry();
@@ -265,28 +211,6 @@ export async function executePiUnattendedBatch(
 
 	// review-2: verify cancellation signal right before authority issuance and startBatch
 	if (signal?.aborted) return batchReason("cancelled_before_execution");
-
-	const batchId = existingBatch ? existingBatch.batch_id : `batch-${initiativeSlug}-${Date.now()}`;
-	const confirmation = piConfirmationRef({
-		toolCallId: `call-${batchId}`,
-		requestId: randomUUID(),
-		operation: "start_unattended_batch",
-		initiativeSlug,
-		planDigest,
-	});
-
-	const binding: BatchAuthorizationBinding = {
-		batch_id: batchId,
-		initiative_slug: initiativeSlug,
-		plan_digest: planDigest,
-		branch: batchBranch,
-		base_head: existingBatch ? existingBatch.base_head : baseHead,
-		budget,
-		actor_id: LITERAL_USER_ACTOR_ID,
-		confirmation_ref: confirmation,
-		expires_at: expiresAt,
-		nonce: randomUUID(),
-	};
 
 	const capability = batchRegistry.issue(binding, recoveryChildren as any, now);
 

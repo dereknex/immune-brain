@@ -14,8 +14,9 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 
+import { LITERAL_USER_ACTOR_ID } from "../kernel/actor_identity";
 import { readBackendClaim } from "../kernel/backend_claim";
-import { computeBatchPlanDigest } from "../kernel/batch_authority";
+import { computeBatchPlanDigest, type BatchAuthorizationBinding } from "../kernel/batch_authority";
 import { readGitHead } from "../kernel/pi_canary_prepare";
 import { readTaskIntent } from "../kernel/intent";
 import { readAuditTaskPair, readTaskRecordRaw, readWorkspaceStateRaw } from "../kernel/storage";
@@ -27,6 +28,7 @@ import type {
 	BatchPlanBudget,
 	BatchPlanChild,
 	BatchPlanChildReason,
+	BatchPlanChildStatus,
 	InitiativeObservationReader,
 } from "./types";
 
@@ -65,17 +67,20 @@ export interface BatchPreflightRejection {
 	recovery_action: string;
 }
 
-function reject(
-	key: BatchReasonKey,
-	detail = "",
-): { ok: false } & BatchPreflightRejection {
+function batchRejection(key: BatchReasonKey, detail = ""): BatchPreflightRejection {
 	const resolved = batchReason(key, detail);
 	return {
-		ok: false,
 		state: resolved.state === "blocked" ? "blocked" : "rejected",
 		reason: resolved.reason,
 		recovery_action: resolved.recovery_action,
 	};
+}
+
+function reject(
+	key: BatchReasonKey,
+	detail = "",
+): { ok: false } & BatchPreflightRejection {
+	return { ok: false, ...batchRejection(key, detail) };
 }
 
 /**
@@ -588,5 +593,172 @@ export async function projectBatchDrift(options: BatchPreflightOptions): Promise
 		base_head: baseHead,
 		plan_digest: surface.ok ? surface.surface.plan_digest : null,
 		plan_unavailable_reason: surface.ok ? null : batchReason(surface.key, surface.detail).reason,
+	};
+}
+
+/**
+ * The literal-user gate facts: the shared plan and Kernel facts a Host renders
+ * its own confirmation UI around. Rendering stays Host-specific; no decision
+ * does.
+ */
+export interface BatchConfirmationFacts {
+	initiative_slug: string;
+	batch_branch: string;
+	plan_digest: string;
+	budget: BatchPlanBudget;
+	expires_at: string;
+	reuse_blockers: string[];
+	children: Array<{ task_id: string; slice_id: string; risk: string; status: BatchPlanChildStatus }>;
+	excluded: Array<{ task_id: string; slice_id: string; reason: string }>;
+}
+
+/**
+ * A Host's answer to its own gate. `request_id` is the Host's confirmation
+ * identity; a Host rejection rides through untouched so each adapter keeps its
+ * own failure-envelope shape.
+ */
+export type BatchGateDecision<HostRejection> =
+	| { kind: "confirmed"; request_id: string }
+	| { kind: "host_rejection"; value: HostRejection };
+
+export type BatchAuthorizationOutcome<HostRejection> =
+	| {
+			outcome: "authorized";
+			batch_id: string;
+			reuse_authorization: boolean;
+			reuse_blockers: string[];
+			expires_at: string;
+			binding: BatchAuthorizationBinding;
+	  }
+	| { outcome: "rejected"; rejection: BatchPreflightRejection }
+	| { outcome: "host_rejection"; value: HostRejection };
+
+export interface BatchAuthorizationOptions<HostRejection> {
+	root: string;
+	initiative_slug: string;
+	now: string;
+	projection: BatchPreflightProjection;
+	readInitiative?: InitiativeObservationReader;
+	/** Host-native literal-user gate; called only when the authorization cannot be reused. */
+	gate: (facts: BatchConfirmationFacts) => Promise<BatchGateDecision<HostRejection>>;
+	/** Host-native confirmation reference for the binding. */
+	confirmationRef: (input: { batch_id: string; request_id: string | null }) => string;
+	/** Host-native binding nonce. */
+	nonce: string;
+}
+
+/**
+ * The one authorization flow both Host adapters call after the shared
+ * preflight: ADR-0005's reuse/expiry decision, the literal-user gate, the
+ * post-gate claim/drift cascade, and the BatchAuthorizationBinding. A Host
+ * supplies its gate, its confirmation reference, and its nonce; every decision
+ * below stays Host-independent.
+ */
+export async function authorizeBatch<HostRejection>(
+	options: BatchAuthorizationOptions<HostRejection>,
+): Promise<BatchAuthorizationOutcome<HostRejection>> {
+	const { root, initiative_slug: initiativeSlug, now, projection } = options;
+	const {
+		batch_branch: batchBranch,
+		base_head: baseHead,
+		budget,
+		plan_digest: planDigest,
+		is_resuming: isResuming,
+	} = projection;
+	const existingBatch = projection.existing_batch;
+
+	// ADR-0005 Decision 1: one Batch Authorization spans the work it authorizes,
+	// so its expiry is the deadline the literal user confirmed rather than a fixed
+	// window that lapses while a child is parked on a foreground Review.
+	const isExistingExpired = isResuming && Date.parse(existingBatch!.authorization_expires_at) <= Date.now();
+	const expiresAt = isResuming && !isExistingExpired && existingBatch!.batch_state === "running"
+		? existingBatch!.authorization_expires_at
+		: budget.deadline_at;
+
+	// ADR-0005 Decision 1: a resume of an intact, still-binding authorization
+	// reuses it instead of opening a second native gate. Anything that no longer
+	// binds falls through to the gate below, which names the reason.
+	const reuseBlockers: string[] = [];
+	if (isResuming && existingBatch) {
+		if (isExistingExpired) reuseBlockers.push("batch_authorization_expired");
+		if (existingBatch.batch_state !== "running") reuseBlockers.push("batch_not_running");
+		if (existingBatch.plan_digest !== planDigest) reuseBlockers.push("batch_plan_digest_changed");
+		if (existingBatch.branch !== batchBranch) reuseBlockers.push("batch_branch_changed");
+		if (expectedBatchHead(existingBatch) !== baseHead) reuseBlockers.push("batch_head_lineage_moved");
+	}
+	const reuseAuthorization = isResuming && reuseBlockers.length === 0;
+
+	const batchId = existingBatch ? existingBatch.batch_id : `batch-${initiativeSlug}-${Date.now()}`;
+	const facts: BatchConfirmationFacts = {
+		initiative_slug: initiativeSlug,
+		batch_branch: batchBranch,
+		plan_digest: planDigest,
+		budget,
+		expires_at: expiresAt,
+		reuse_blockers: reuseBlockers,
+		children: projection.recovery_children.map((child) => ({
+			task_id: child.task_id,
+			slice_id: child.slice_id,
+			risk: projection.risk_by_task[child.task_id] ?? "material",
+			status: child.status,
+		})),
+		excluded: projection.excluded,
+	};
+
+	let requestId: string | null = null;
+	if (!reuseAuthorization) {
+		const decision = await options.gate(facts);
+		if (decision.kind === "host_rejection") return { outcome: "host_rejection", value: decision.value };
+		requestId = decision.request_id;
+	}
+
+	// Post-gate cascade: the drift projection reports the live claim it read
+	// before its own asynchronous plan read, so a claim swapped during the gate
+	// and one appearing during the read are both caught without either adapter
+	// recomputing the claim.
+	const drift = await projectBatchDrift({
+		root,
+		initiative_slug: initiativeSlug,
+		now,
+		readInitiative: options.readInitiative,
+	});
+	if (drift.active_claim_task_id && !drift.own_claim)
+		return { outcome: "rejected", rejection: batchRejection("claim_appeared_during_confirmation", drift.active_claim_task_id) };
+	if (drift.plan_digest === null)
+		return { outcome: "rejected", rejection: batchRejection("plan_became_unreadable", drift.plan_unavailable_reason ?? "") };
+	if (drift.plan_digest !== planDigest)
+		return { outcome: "rejected", rejection: batchRejection("plan_changed", drift.plan_digest) };
+	if (drift.base_head === null) return { outcome: "rejected", rejection: batchRejection("repository_became_unreadable") };
+	if (drift.base_head !== baseHead)
+		return { outcome: "rejected", rejection: batchRejection("head_moved", drift.base_head) };
+
+	// The drift projection's own claim read happened before its plan read; this
+	// one happens after it, so a foreign enrollment completing during that read is
+	// still caught before any authority is issued.
+	const finalClaimTaskId = readActiveClaimTaskId(root);
+	const finalOwnClaim =
+		isResuming && finalClaimTaskId !== null && isOwnBatchClaim(root, existingBatch!, finalClaimTaskId, batchBranch);
+	if (finalClaimTaskId && !finalOwnClaim)
+		return { outcome: "rejected", rejection: batchRejection("claim_appeared_during_confirmation", finalClaimTaskId) };
+
+	const binding: BatchAuthorizationBinding = {
+		batch_id: batchId,
+		initiative_slug: initiativeSlug,
+		plan_digest: planDigest,
+		branch: batchBranch,
+		base_head: existingBatch ? existingBatch.base_head : baseHead,
+		budget,
+		actor_id: LITERAL_USER_ACTOR_ID,
+		confirmation_ref: options.confirmationRef({ batch_id: batchId, request_id: requestId }),
+		expires_at: expiresAt,
+		nonce: options.nonce,
+	};
+	return {
+		outcome: "authorized",
+		batch_id: batchId,
+		reuse_authorization: reuseAuthorization,
+		reuse_blockers: reuseBlockers,
+		expires_at: expiresAt,
+		binding,
 	};
 }

@@ -9239,14 +9239,16 @@ function isTerminalBatchState(state) {
 // plugins/immune-brain/runtime/unattended/batch_preflight.ts
 var INITIATIVE_SLUG_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 var DEFAULT_BATCH_BUDGET_MS = 8 * 60 * 60 * 1000;
-function reject(key, detail = "") {
+function batchRejection(key, detail = "") {
   const resolved = batchReason(key, detail);
   return {
-    ok: false,
     state: resolved.state === "blocked" ? "blocked" : "rejected",
     reason: resolved.reason,
     recovery_action: resolved.recovery_action
   };
+}
+function reject(key, detail = "") {
+  return { ok: false, ...batchRejection(key, detail) };
 }
 function readActiveClaimTaskId(root) {
   const workspace = readWorkspaceStateRaw(root);
@@ -9611,6 +9613,96 @@ async function projectBatchDrift(options) {
     base_head: baseHead,
     plan_digest: surface.ok ? surface.surface.plan_digest : null,
     plan_unavailable_reason: surface.ok ? null : batchReason(surface.key, surface.detail).reason
+  };
+}
+async function authorizeBatch(options) {
+  const { root, initiative_slug: initiativeSlug, now, projection } = options;
+  const {
+    batch_branch: batchBranch,
+    base_head: baseHead,
+    budget,
+    plan_digest: planDigest,
+    is_resuming: isResuming
+  } = projection;
+  const existingBatch = projection.existing_batch;
+  const isExistingExpired = isResuming && Date.parse(existingBatch.authorization_expires_at) <= Date.now();
+  const expiresAt = isResuming && !isExistingExpired && existingBatch.batch_state === "running" ? existingBatch.authorization_expires_at : budget.deadline_at;
+  const reuseBlockers = [];
+  if (isResuming && existingBatch) {
+    if (isExistingExpired)
+      reuseBlockers.push("batch_authorization_expired");
+    if (existingBatch.batch_state !== "running")
+      reuseBlockers.push("batch_not_running");
+    if (existingBatch.plan_digest !== planDigest)
+      reuseBlockers.push("batch_plan_digest_changed");
+    if (existingBatch.branch !== batchBranch)
+      reuseBlockers.push("batch_branch_changed");
+    if (expectedBatchHead(existingBatch) !== baseHead)
+      reuseBlockers.push("batch_head_lineage_moved");
+  }
+  const reuseAuthorization = isResuming && reuseBlockers.length === 0;
+  const batchId = existingBatch ? existingBatch.batch_id : `batch-${initiativeSlug}-${Date.now()}`;
+  const facts = {
+    initiative_slug: initiativeSlug,
+    batch_branch: batchBranch,
+    plan_digest: planDigest,
+    budget,
+    expires_at: expiresAt,
+    reuse_blockers: reuseBlockers,
+    children: projection.recovery_children.map((child) => ({
+      task_id: child.task_id,
+      slice_id: child.slice_id,
+      risk: projection.risk_by_task[child.task_id] ?? "material",
+      status: child.status
+    })),
+    excluded: projection.excluded
+  };
+  let requestId = null;
+  if (!reuseAuthorization) {
+    const decision = await options.gate(facts);
+    if (decision.kind === "host_rejection")
+      return { outcome: "host_rejection", value: decision.value };
+    requestId = decision.request_id;
+  }
+  const drift = await projectBatchDrift({
+    root,
+    initiative_slug: initiativeSlug,
+    now,
+    readInitiative: options.readInitiative
+  });
+  if (drift.active_claim_task_id && !drift.own_claim)
+    return { outcome: "rejected", rejection: batchRejection("claim_appeared_during_confirmation", drift.active_claim_task_id) };
+  if (drift.plan_digest === null)
+    return { outcome: "rejected", rejection: batchRejection("plan_became_unreadable", drift.plan_unavailable_reason ?? "") };
+  if (drift.plan_digest !== planDigest)
+    return { outcome: "rejected", rejection: batchRejection("plan_changed", drift.plan_digest) };
+  if (drift.base_head === null)
+    return { outcome: "rejected", rejection: batchRejection("repository_became_unreadable") };
+  if (drift.base_head !== baseHead)
+    return { outcome: "rejected", rejection: batchRejection("head_moved", drift.base_head) };
+  const finalClaimTaskId = readActiveClaimTaskId(root);
+  const finalOwnClaim = isResuming && finalClaimTaskId !== null && isOwnBatchClaim(root, existingBatch, finalClaimTaskId, batchBranch);
+  if (finalClaimTaskId && !finalOwnClaim)
+    return { outcome: "rejected", rejection: batchRejection("claim_appeared_during_confirmation", finalClaimTaskId) };
+  const binding = {
+    batch_id: batchId,
+    initiative_slug: initiativeSlug,
+    plan_digest: planDigest,
+    branch: batchBranch,
+    base_head: existingBatch ? existingBatch.base_head : baseHead,
+    budget,
+    actor_id: LITERAL_USER_ACTOR_ID,
+    confirmation_ref: options.confirmationRef({ batch_id: batchId, request_id: requestId }),
+    expires_at: expiresAt,
+    nonce: options.nonce
+  };
+  return {
+    outcome: "authorized",
+    batch_id: batchId,
+    reuse_authorization: reuseAuthorization,
+    reuse_blockers: reuseBlockers,
+    expires_at: expiresAt,
+    binding
   };
 }
 
@@ -11479,137 +11571,100 @@ class ClaudeRuntime {
     const budget = preflight.projection.budget;
     const planDigest = preflight.projection.plan_digest;
     const recoveryChildren = preflight.projection.recovery_children;
-    const confirmChildrenDetails = recoveryChildren.map((c) => ({
-      task_id: c.task_id,
-      slice_id: c.slice_id,
-      risk: preflight.projection.risk_by_task[c.task_id] ?? "material"
-    }));
-    const confirmExcludedDetails = preflight.projection.excluded.map((c) => ({
-      task_id: c.task_id,
-      slice_id: c.slice_id,
-      reason: c.reason
-    }));
-    const isExistingExpired = isResuming && Date.parse(existingBatch.authorization_expires_at) <= Date.now();
-    const expiresAt = isResuming && !isExistingExpired && existingBatch.batch_state === "running" ? existingBatch.authorization_expires_at : budget.deadline_at;
-    const reuseBlockers = [];
-    if (isResuming && existingBatch) {
-      if (isExistingExpired)
-        reuseBlockers.push("batch_authorization_expired");
-      if (existingBatch.batch_state !== "running")
-        reuseBlockers.push("batch_not_running");
-      if (existingBatch.plan_digest !== planDigest)
-        reuseBlockers.push("batch_plan_digest_changed");
-      if (existingBatch.branch !== batchBranch)
-        reuseBlockers.push("batch_branch_changed");
-      if (expectedBatchHead(existingBatch) !== baseHead)
-        reuseBlockers.push("batch_head_lineage_moved");
-    }
-    const reuseAuthorization = isResuming && reuseBlockers.length === 0;
-    const batchDetails = {
-      initiative_slug: initiativeSlug,
-      batch_branch: batchBranch,
-      children: confirmChildrenDetails,
-      excluded: confirmExcludedDetails,
-      budget,
-      expires_at: expiresAt,
-      ...reuseBlockers.length > 0 ? {
-        re_confirmation_required: reuseBlockers,
-        recovery: "confirm to issue a fresh authorization bound to the current plan and HEAD"
-      } : {}
-    };
-    let confirmationResult = {
-      decision: "accept",
-      requestId: existingBatch ? `resumed-${existingBatch.batch_id}` : ""
-    };
-    if (!reuseAuthorization) {
-      const deadline = startConfirmationDeadline({ env: this.env, signal: meta.signal });
-      try {
-        confirmationResult = await this.requestConfirmation({
-          operation: "start_unattended_batch",
-          initiativeSlug,
-          toolCallId: meta.toolCallId,
-          planDigest,
-          batchDetails,
-          signal: deadline.signal
-        });
-      } catch (err) {
-        if (deadline.timedOut())
-          return batchReason("confirmation_timed_out");
-        if (meta.signal?.aborted)
-          return batchReason("cancelled_before_execution");
-        if (err instanceof NativeAuthorityError) {
-          if (err.reasonCode === "unsupported_host")
-            throw err;
-          if (err.reasonCode === "user_cancelled") {
-            return { state: "cancelled", reason: err.message, recovery_action: err.recoveryAction };
-          }
-          if (err.reasonCode === "user_denied") {
-            return { state: "rejected", reason: err.message, recovery_action: err.recoveryAction };
-          }
-          return { state: "rejected", reason: err.message, recovery_action: err.recoveryAction };
-        }
-        return batchReason("confirmation_failed", err instanceof Error ? err.message : String(err));
-      } finally {
-        deadline.clear();
-      }
-      if (deadline.timedOut())
-        return batchReason("confirmation_timed_out");
-      if (confirmationResult.decision === "cancel" && meta.signal?.aborted)
-        return batchReason("confirmation_cancelled");
-      if (meta.signal?.aborted)
-        return batchReason("cancelled_before_execution");
-      if (confirmationResult.decision === "decline")
-        return batchReason("confirmation_declined");
-      if (confirmationResult.decision === "cancel")
-        return batchReason("confirmation_cancelled");
-      if (confirmationResult.decision !== "accept")
-        return batchReason("confirmation_no_decision");
-    }
-    const recheckActiveTaskId = readActiveClaimTaskId(this.cwd);
-    const recheckOwnClaim = isResuming && recheckActiveTaskId !== null && isOwnBatchClaim(this.cwd, existingBatch, recheckActiveTaskId, batchBranch);
-    if (recheckActiveTaskId && !recheckOwnClaim)
-      return batchReason("claim_appeared_during_confirmation", recheckActiveTaskId);
-    const drift = await projectBatchDrift({
+    const authorization = await authorizeBatch({
       root: this.cwd,
       initiative_slug: initiativeSlug,
       now,
-      readInitiative: this.readInitiative ?? observeGithubInitiative
+      projection: preflight.projection,
+      readInitiative: this.readInitiative ?? observeGithubInitiative,
+      nonce: enrollmentNonce(),
+      gate: async (facts) => {
+        const deadline = startConfirmationDeadline({ env: this.env, signal: meta.signal });
+        let confirmationResult;
+        try {
+          confirmationResult = await this.requestConfirmation({
+            operation: "start_unattended_batch",
+            initiativeSlug,
+            toolCallId: meta.toolCallId,
+            planDigest,
+            batchDetails: {
+              initiative_slug: facts.initiative_slug,
+              batch_branch: facts.batch_branch,
+              children: facts.children.map((child) => ({
+                task_id: child.task_id,
+                slice_id: child.slice_id,
+                risk: child.risk
+              })),
+              excluded: facts.excluded.map((child) => ({
+                task_id: child.task_id,
+                slice_id: child.slice_id,
+                reason: child.reason
+              })),
+              budget: facts.budget,
+              expires_at: facts.expires_at,
+              ...facts.reuse_blockers.length > 0 ? {
+                re_confirmation_required: facts.reuse_blockers,
+                recovery: "confirm to issue a fresh authorization bound to the current plan and HEAD"
+              } : {}
+            },
+            signal: deadline.signal
+          });
+        } catch (err) {
+          if (deadline.timedOut())
+            return { kind: "host_rejection", value: batchReason("confirmation_timed_out") };
+          if (meta.signal?.aborted)
+            return { kind: "host_rejection", value: batchReason("cancelled_before_execution") };
+          if (err instanceof NativeAuthorityError) {
+            if (err.reasonCode === "unsupported_host")
+              throw err;
+            if (err.reasonCode === "user_cancelled") {
+              return {
+                kind: "host_rejection",
+                value: { state: "cancelled", reason: err.message, recovery_action: err.recoveryAction }
+              };
+            }
+            return {
+              kind: "host_rejection",
+              value: { state: "rejected", reason: err.message, recovery_action: err.recoveryAction }
+            };
+          }
+          return {
+            kind: "host_rejection",
+            value: batchReason("confirmation_failed", err instanceof Error ? err.message : String(err))
+          };
+        } finally {
+          deadline.clear();
+        }
+        if (deadline.timedOut())
+          return { kind: "host_rejection", value: batchReason("confirmation_timed_out") };
+        if (confirmationResult.decision === "cancel" && meta.signal?.aborted)
+          return { kind: "host_rejection", value: batchReason("confirmation_cancelled") };
+        if (meta.signal?.aborted)
+          return { kind: "host_rejection", value: batchReason("cancelled_before_execution") };
+        if (confirmationResult.decision === "decline")
+          return { kind: "host_rejection", value: batchReason("confirmation_declined") };
+        if (confirmationResult.decision === "cancel")
+          return { kind: "host_rejection", value: batchReason("confirmation_cancelled") };
+        if (confirmationResult.decision !== "accept")
+          return { kind: "host_rejection", value: batchReason("confirmation_no_decision") };
+        return { kind: "confirmed", request_id: confirmationResult.requestId };
+      },
+      confirmationRef: ({ batch_id, request_id }) => confirmationRef({
+        connectionId: meta.sessionId,
+        toolCallId: meta.toolCallId,
+        requestId: request_id ?? `resumed-${batch_id}`,
+        operation: "start_unattended_batch",
+        initiativeSlug,
+        planDigest
+      })
     });
-    if (!drift.plan_digest)
-      return batchReason("plan_became_unreadable");
-    if (drift.plan_digest !== planDigest)
-      return batchReason("plan_changed");
-    if (drift.base_head === null)
-      return batchReason("repository_became_unreadable");
-    if (drift.base_head !== baseHead)
-      return batchReason("head_moved");
-    const finalActiveTaskId = readActiveClaimTaskId(this.cwd);
-    const finalIsOwnClaim = isResuming && finalActiveTaskId !== null && isOwnBatchClaim(this.cwd, existingBatch, finalActiveTaskId, batchBranch);
-    if (finalActiveTaskId && !finalIsOwnClaim)
-      return batchReason("claim_appeared_during_confirmation", finalActiveTaskId);
+    if (authorization.outcome === "host_rejection")
+      return authorization.value;
+    if (authorization.outcome === "rejected")
+      return authorization.rejection;
+    const { binding, batch_id: batchId, expires_at: expiresAt } = authorization;
     if (meta.signal?.aborted)
       return batchReason("cancelled_before_execution");
-    const batchId = existingBatch ? existingBatch.batch_id : `batch-${initiativeSlug}-${Date.now()}`;
-    const confirmation = confirmationRef({
-      connectionId: meta.sessionId,
-      toolCallId: meta.toolCallId,
-      requestId: confirmationResult.requestId,
-      operation: "start_unattended_batch",
-      initiativeSlug,
-      planDigest
-    });
-    const binding = {
-      batch_id: batchId,
-      initiative_slug: initiativeSlug,
-      plan_digest: planDigest,
-      branch: batchBranch,
-      base_head: existingBatch ? existingBatch.base_head : baseHead,
-      budget,
-      actor_id: LITERAL_USER_ACTOR_ID,
-      confirmation_ref: confirmation,
-      expires_at: expiresAt,
-      nonce: enrollmentNonce()
-    };
     const capability = this.batchRegistry.issue(binding, recoveryChildren, now);
     const basePort = this.createBatchKernelPort(this.batchRegistry, capability, binding);
     const kernelPort = {

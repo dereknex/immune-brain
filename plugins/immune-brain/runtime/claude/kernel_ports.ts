@@ -58,11 +58,10 @@ import { projectTerminalTrackerState } from "../assurance/coordinator";
 import { runGithubTrackerOperation } from "../github_issue_tracker";
 import { readTaskTombstone } from "../kernel/backend_claim";
 import {
+	authorizeBatch,
 	projectBatchPreflight,
-	projectBatchDrift,
 	readActiveClaimTaskId,
 	isOwnBatchClaim,
-	expectedBatchHead,
 } from "../unattended/batch_preflight";
 import {
 	startBatch,
@@ -96,6 +95,7 @@ import {
 	isPrivilegedOperation,
 	NativeAuthorityError,
 	type NativeConfirmationPort,
+	type NativeDecision,
 	type PrivilegedOperation,
 } from "./interaction";
 import { ClaudeReviewHost, FileHookEventLog, type ClaudeHookEvent } from "./review_host";
@@ -417,6 +417,16 @@ export interface ClaudeRuntimeOptions {
 	batchGit?: BatchRunnerGitPort;
 	readInitiative?: InitiativeObservationReader;
 }
+
+/**
+ * The Claude Host's own failure envelopes for a batch start; the shared
+ * authorization flow passes them through untouched.
+ */
+type ClaudeBatchStartResult =
+	| { state: "started"; batch_id: string; report: BatchRunReport }
+	| { state: "rejected"; reason: string; recovery_action: string }
+	| { state: "cancelled"; reason: string; recovery_action: string }
+	| { state: "blocked"; reason: string; recovery_action: string };
 
 /**
  * Synchronous re-verification that the currently held claim for `taskId` is this
@@ -931,12 +941,7 @@ export class ClaudeRuntime {
 	async startUnattendedBatch(
 		initiativeSlug: string,
 		meta: ToolMeta,
-	): Promise<
-		| { state: "started"; batch_id: string; report: BatchRunReport }
-		| { state: "rejected"; reason: string; recovery_action: string }
-		| { state: "cancelled"; reason: string; recovery_action: string }
-		| { state: "blocked"; reason: string; recovery_action: string }
-	> {
+	): Promise<ClaudeBatchStartResult> {
 		throwIfCancelled(meta.signal);
 		const probe = probeHost(this.env, process.platform, this.hostVersion);
 		if (!probe.ok) throw new NativeAuthorityError("unsupported_host", probe.reason);
@@ -972,162 +977,110 @@ export class ClaudeRuntime {
 		const budget = preflight.projection.budget;
 		const planDigest = preflight.projection.plan_digest;
 		const recoveryChildren = preflight.projection.recovery_children;
-		const confirmChildrenDetails = recoveryChildren.map((c) => ({
-			task_id: c.task_id,
-			slice_id: c.slice_id,
-			risk: preflight.projection.risk_by_task[c.task_id] ?? "material",
-		}));
-		const confirmExcludedDetails = preflight.projection.excluded.map((c) => ({
-			task_id: c.task_id,
-			slice_id: c.slice_id,
-			reason: c.reason,
-		}));
-
-		// 5. Native confirmation elicitation
-		// ADR-0005 Decision 1: one Batch Authorization spans the work it authorizes,
-		// so its expiry is the deadline the literal user confirmed rather than a fixed
-		// window that lapses while a child is parked on a foreground Review.
-		const isExistingExpired = isResuming && Date.parse(existingBatch!.authorization_expires_at) <= Date.now();
-		const expiresAt = isResuming && !isExistingExpired && existingBatch!.batch_state === "running"
-			? existingBatch!.authorization_expires_at
-			: budget.deadline_at;
-
-		// ADR-0005 Decision 1: a Batch Authorization is one literal-user Enrollment
-		// act, so a resume of an intact, still-binding authorization reuses it instead
-		// of opening a second native gate. Anything that no longer binds falls through
-		// to the elicitation below, which names the reason and demands the fresh
-		// literal-user confirmation.
-		const reuseBlockers: string[] = [];
-		if (isResuming && existingBatch) {
-			if (isExistingExpired) reuseBlockers.push("batch_authorization_expired");
-			if (existingBatch.batch_state !== "running") reuseBlockers.push("batch_not_running");
-			if (existingBatch.plan_digest !== planDigest) reuseBlockers.push("batch_plan_digest_changed");
-			if (existingBatch.branch !== batchBranch) reuseBlockers.push("batch_branch_changed");
-			if (expectedBatchHead(existingBatch) !== baseHead) reuseBlockers.push("batch_head_lineage_moved");
-		}
-		const reuseAuthorization = isResuming && reuseBlockers.length === 0;
-
-		const batchDetails = {
-			initiative_slug: initiativeSlug,
-			batch_branch: batchBranch,
-			children: confirmChildrenDetails,
-			excluded: confirmExcludedDetails,
-			budget,
-			expires_at: expiresAt,
-			...(reuseBlockers.length > 0
-				? {
-						re_confirmation_required: reuseBlockers,
-						recovery: "confirm to issue a fresh authorization bound to the current plan and HEAD",
-					}
-				: {}),
-		};
-
-		// A reused authorization keeps this invocation's Kernel binding without a new
-		// literal-user act, so its confirmation reference names the resumed batch
-		// rather than a requestId no elicitation produced.
-		let confirmationResult: { decision: "accept" | "decline" | "cancel"; requestId: string } = {
-			decision: "accept",
-			requestId: existingBatch ? `resumed-${existingBatch.batch_id}` : "",
-		};
-		if (!reuseAuthorization) {
-			// review-4: the bounded elicitation deadline is shared behavior now, so
-			// both Hosts bound an unanswered confirmation by the same setting.
-			const deadline = startConfirmationDeadline({ env: this.env, signal: meta.signal });
-
-			try {
-				confirmationResult = await this.requestConfirmation({
-					operation: "start_unattended_batch",
-					initiativeSlug,
-					toolCallId: meta.toolCallId,
-					planDigest,
-					batchDetails,
-					signal: deadline.signal,
-				});
-			} catch (err) {
-			if (deadline.timedOut()) return batchReason("confirmation_timed_out");
-			if (meta.signal?.aborted) return batchReason("cancelled_before_execution");
-			if (err instanceof NativeAuthorityError) {
-				if (err.reasonCode === "unsupported_host") throw err;
-				if (err.reasonCode === "user_cancelled") {
-					return { state: "cancelled", reason: err.message, recovery_action: err.recoveryAction };
-				}
-				if (err.reasonCode === "user_denied") {
-					return { state: "rejected", reason: err.message, recovery_action: err.recoveryAction };
-				}
-				return { state: "rejected", reason: err.message, recovery_action: err.recoveryAction };
-			}
-			return batchReason("confirmation_failed", err instanceof Error ? err.message : String(err));
-		} finally {
-			deadline.clear();
-		}
-
-		// A transport that answers "cancel" on abort is still a timeout, not a user
-		// decision: the Host that owns the transport reports which one it was.
-		if (deadline.timedOut()) return batchReason("confirmation_timed_out");
-		if (confirmationResult.decision === "cancel" && meta.signal?.aborted)
-			return batchReason("confirmation_cancelled");
-		if (meta.signal?.aborted) return batchReason("cancelled_before_execution");
-
-		if (confirmationResult.decision === "decline") return batchReason("confirmation_declined");
-		if (confirmationResult.decision === "cancel") return batchReason("confirmation_cancelled");
-		if (confirmationResult.decision !== "accept") return batchReason("confirmation_no_decision");
-		}
-
-		// 6. Post-confirmation revalidation: the same shared preflight, re-run. A
-		// claim, plan, or HEAD that drifted during the native gate fails closed
-		// without a second copy of any preflight decision.
-		const recheckActiveTaskId = readActiveClaimTaskId(this.cwd);
-		const recheckOwnClaim =
-			isResuming && recheckActiveTaskId !== null && isOwnBatchClaim(this.cwd, existingBatch!, recheckActiveTaskId, batchBranch);
-		if (recheckActiveTaskId && !recheckOwnClaim)
-			return batchReason("claim_appeared_during_confirmation", recheckActiveTaskId);
-		const drift = await projectBatchDrift({
+		// 5. Literal-user gate plus the shared reuse/expiry decision, the post-gate
+		// claim/drift cascade, and the Batch Authorization binding. The Host supplies
+		// only its gate, its confirmation reference, and its binding nonce.
+		const authorization = await authorizeBatch<ClaudeBatchStartResult>({
 			root: this.cwd,
 			initiative_slug: initiativeSlug,
 			now,
+			projection: preflight.projection,
 			readInitiative: this.readInitiative ?? observeGithubInitiative,
-		});
-		if (!drift.plan_digest) return batchReason("plan_became_unreadable");
-		if (drift.plan_digest !== planDigest) return batchReason("plan_changed");
-		if (drift.base_head === null) return batchReason("repository_became_unreadable");
-		if (drift.base_head !== baseHead) return batchReason("head_moved");
+			nonce: enrollmentNonce(),
+			gate: async (facts) => {
+				// review-4: the bounded elicitation deadline is shared behavior now, so
+				// both Hosts bound an unanswered confirmation by the same setting.
+				const deadline = startConfirmationDeadline({ env: this.env, signal: meta.signal });
+				let confirmationResult: { decision: NativeDecision; requestId: string };
+				try {
+					confirmationResult = await this.requestConfirmation!({
+						operation: "start_unattended_batch",
+						initiativeSlug,
+						toolCallId: meta.toolCallId,
+						planDigest,
+						batchDetails: {
+							initiative_slug: facts.initiative_slug,
+							batch_branch: facts.batch_branch,
+							children: facts.children.map((child) => ({
+								task_id: child.task_id,
+								slice_id: child.slice_id,
+								risk: child.risk,
+							})),
+							excluded: facts.excluded.map((child) => ({
+								task_id: child.task_id,
+								slice_id: child.slice_id,
+								reason: child.reason,
+							})),
+							budget: facts.budget,
+							expires_at: facts.expires_at,
+							...(facts.reuse_blockers.length > 0
+								? {
+										re_confirmation_required: facts.reuse_blockers,
+										recovery: "confirm to issue a fresh authorization bound to the current plan and HEAD",
+									}
+								: {}),
+						},
+						signal: deadline.signal,
+					});
+				} catch (err) {
+					if (deadline.timedOut()) return { kind: "host_rejection", value: batchReason("confirmation_timed_out") };
+					if (meta.signal?.aborted)
+						return { kind: "host_rejection", value: batchReason("cancelled_before_execution") };
+					if (err instanceof NativeAuthorityError) {
+						if (err.reasonCode === "unsupported_host") throw err;
+						if (err.reasonCode === "user_cancelled") {
+							return {
+								kind: "host_rejection",
+								value: { state: "cancelled", reason: err.message, recovery_action: err.recoveryAction },
+							};
+						}
+						return {
+							kind: "host_rejection",
+							value: { state: "rejected", reason: err.message, recovery_action: err.recoveryAction },
+						};
+					}
+					return {
+						kind: "host_rejection",
+						value: batchReason("confirmation_failed", err instanceof Error ? err.message : String(err)),
+					};
+				} finally {
+					deadline.clear();
+				}
 
-		// review-batch-active-claim-race: re-check workspace and backend claim after asynchronous revalidation
-		const finalActiveTaskId = readActiveClaimTaskId(this.cwd);
-		// Re-verify the full claim identity now: a claim swapped for the same child
-		// during confirmation must stay blocked even when plan and HEAD are stable.
-		const finalIsOwnClaim =
-			isResuming &&
-			finalActiveTaskId !== null &&
-			isOwnBatchClaim(this.cwd, existingBatch!, finalActiveTaskId, batchBranch);
-		if (finalActiveTaskId && !finalIsOwnClaim)
-			return batchReason("claim_appeared_during_confirmation", finalActiveTaskId);
+				// A transport that answers "cancel" on abort is still a timeout, not a user
+				// decision: the Host that owns the transport reports which one it was.
+				if (deadline.timedOut()) return { kind: "host_rejection", value: batchReason("confirmation_timed_out") };
+				if (confirmationResult.decision === "cancel" && meta.signal?.aborted)
+					return { kind: "host_rejection", value: batchReason("confirmation_cancelled") };
+				if (meta.signal?.aborted)
+					return { kind: "host_rejection", value: batchReason("cancelled_before_execution") };
+				if (confirmationResult.decision === "decline")
+					return { kind: "host_rejection", value: batchReason("confirmation_declined") };
+				if (confirmationResult.decision === "cancel")
+					return { kind: "host_rejection", value: batchReason("confirmation_cancelled") };
+				if (confirmationResult.decision !== "accept")
+					return { kind: "host_rejection", value: batchReason("confirmation_no_decision") };
+				return { kind: "confirmed", request_id: confirmationResult.requestId };
+			},
+			// A reused authorization keeps this invocation's Kernel binding without a new
+			// literal-user act, so its confirmation reference names the resumed batch
+			// rather than a requestId no elicitation produced.
+			confirmationRef: ({ batch_id, request_id }) =>
+				confirmationRef({
+					connectionId: meta.sessionId,
+					toolCallId: meta.toolCallId,
+					requestId: request_id ?? `resumed-${batch_id}`,
+					operation: "start_unattended_batch",
+					initiativeSlug,
+					planDigest,
+				}),
+		});
+		if (authorization.outcome === "host_rejection") return authorization.value;
+		if (authorization.outcome === "rejected") return authorization.rejection;
+		const { binding, batch_id: batchId, expires_at: expiresAt } = authorization;
 
 		// review-1: verify cancellation signal right before authority issuance and startBatch
 		if (meta.signal?.aborted) return batchReason("cancelled_before_execution");
-
-		// 7. Issue Batch Authorization through Kernel registry and startBatch
-		const batchId = existingBatch ? existingBatch.batch_id : `batch-${initiativeSlug}-${Date.now()}`;
-		const confirmation = confirmationRef({
-			connectionId: meta.sessionId,
-			toolCallId: meta.toolCallId,
-			requestId: confirmationResult.requestId,
-			operation: "start_unattended_batch",
-			initiativeSlug,
-			planDigest,
-		});
-		const binding: BatchAuthorizationBinding = {
-			batch_id: batchId,
-			initiative_slug: initiativeSlug,
-			plan_digest: planDigest,
-			branch: batchBranch,
-			base_head: existingBatch ? existingBatch.base_head : baseHead,
-			budget,
-			actor_id: LITERAL_USER_ACTOR_ID,
-			confirmation_ref: confirmation,
-			expires_at: expiresAt,
-			nonce: enrollmentNonce(),
-		};
 
 		const capability = this.batchRegistry.issue(binding, recoveryChildren as any, now);
 
