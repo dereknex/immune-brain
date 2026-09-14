@@ -3,8 +3,17 @@
 // eligible when its Git-tracked TaskIntent is readable and no Kernel owner
 // (workspace, backend claim, TaskRecord v2, tombstone) blocks enrollment.
 
-import type { ReadinessReport } from "./readiness";
-import type { ReadinessEvidenceInput } from "./readiness_evidence";
+// The readiness/evidence pipeline is retired with the authority-observation
+// island. These two derived inputs stay on the eligibility input for caller
+// compatibility only: they are ignored below and are never authority, so they
+// are read structurally instead of importing the deleted modules.
+export interface RetiredReadinessInput {
+	status: string;
+}
+
+export interface RetiredReadinessEvidenceInput {
+	status: string;
+}
 
 export type WaivableGate = "observation_window_days";
 
@@ -26,8 +35,8 @@ export interface CanaryTaskIdentity {
 }
 
 export interface CanaryEligibilityInput {
-	readiness?: ReadinessReport;
-	evidence?: ReadinessEvidenceInput;
+	readiness?: RetiredReadinessInput;
+	evidence?: RetiredReadinessEvidenceInput;
 	task: CanaryTaskIdentity;
 	waiver?: CanaryWaiver;
 	now: string;

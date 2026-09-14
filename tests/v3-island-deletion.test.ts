@@ -82,11 +82,16 @@ describe("v3 island deletion", () => {
 
 	it("retains coverage for the surviving runtime modules", () => {
 		const coverage: Array<[string, string]> = [
-			["tests/authority-commit-receipts.test.ts", "runtime/authority_commit_receipts"],
-			["tests/state-ledger-migration.test.ts", "runtime/kernel/automatic_observations"],
 			["tests/role-prompt-bridge.test.ts", "runtime/role_prompt_bridge"],
 			["tests/loop-execution-routing.test.ts", "runtime/loop_contract"],
 			["tests/role-prompt-bridge.test.ts", "scripts/dist-sync-manifest"],
+			// The authority-observation island's test files are retired with the
+			// island; the surfaces this slice keeps stay covered by name.
+			["tests/v4-storage-retirement-legacy-audit.test.ts", "runtime/kernel/legacy_audit"],
+			[
+				"tests/kernel-storage-layout-migration.test.ts",
+				"runtime/kernel/storage_layout_migration",
+			],
 		];
 
 		for (const [path, modulePath] of coverage) {

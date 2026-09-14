@@ -1,0 +1,304 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "wc-retire-authority-observation-island",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "wc-retire-authority-observation-island",
+    "goal": "Delete the closed authority-observation island (six modules, 2,277 lines) together with the tests whose only protected subject is that code, remove its two erased type imports and barrel export, and narrow the npm files list to match, while retaining the TaskRecord v3 read path, legacy_audit.ts, and storage_layout_migration.ts.",
+    "acceptance": [
+      {
+        "id": "ISL-1",
+        "assertion": "The six island modules are absent from the repository: runtime/kernel/observation.ts, runtime/kernel/automatic_observations.ts, runtime/kernel/legacy.ts, runtime/kernel/readiness.ts, runtime/kernel/readiness_evidence.ts, and runtime/authority_commit_receipts.ts. Their barrel line in runtime/kernel/index.ts and the two erased `import type` statements in runtime/kernel/canary_eligibility.ts are removed, and canary_eligibility keeps the documented behavior that those inputs were ignored and never authority.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.4.2\",\n  \"argv\": [\n    \"run\",\n    \"typecheck\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 180000,\n  \"max_output_bytes\": 20000\n}\n"
+      },
+      {
+        "id": "ISL-2",
+        "assertion": "Every test removed in this change either protected a behavior that no longer exists or names the surviving test that still covers it; no assertion about a retained behavior is deleted, skipped, or weakened, and the remaining suite passes.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.4.2\",\n  \"argv\": [\n    \"test\",\n    \"tests/v3-island-deletion.test.ts\",\n    \"tests/kernel-canary-eligibility.test.ts\",\n    \"tests/enrollment-confirmation-relocation.test.ts\",\n    \"tests/pi-canary-enroll-extension.test.ts\",\n    \"tests/imm-core-barrel-retirement.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 20000\n}\n"
+      },
+      {
+        "id": "ISL-3",
+        "assertion": "Three surfaces are explicitly retained and still work: the TaskRecord v3 read path in runtime/kernel/types.ts, validation.ts, and storage.ts, because real v3 audit records exist on disk and readAuditTaskPair would throw without it; runtime/kernel/legacy_audit.ts, the live reader behind `imm-kernel audit --legacy`; and runtime/kernel/storage_layout_migration.ts, whose retirement depends on external repositories.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.4.2\",\n  \"argv\": [\n    \"test\",\n    \"tests/kernel-record-v3.test.ts\",\n    \"tests/v4-storage-retirement-legacy-audit.test.ts\",\n    \"tests/kernel-storage-layout-migration.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 20000\n}\n"
+      },
+      {
+        "id": "ISL-4",
+        "assertion": "The package no longer ships the deleted surface: the package.json files list is narrowed to match the remaining tree, and the packaged plugin still builds and loads on both Hosts.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.4.2\",\n  \"argv\": [\n    \"test\",\n    \"tests/plugin-package-runtime.test.ts\",\n    \"tests/claude-host-package.test.ts\",\n    \"tests/pi-only-package-surface.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 20000\n}\n"
+      }
+    ],
+    "scope_hint": [
+      ".changeset/wc-retire-authority-observation-island.md",
+      "docs/plans/wc-retire-authority-observation-island.intent.json",
+      "docs/specs/archive/workflow-consolidation.spec.md",
+      "docs/specs/workflow-consolidation.spec.md",
+      "package.json",
+      "plugins/immune-brain/runtime/authority_commit_receipts.ts",
+      "plugins/immune-brain/runtime/kernel/automatic_observations.ts",
+      "plugins/immune-brain/runtime/kernel/canary_eligibility.ts",
+      "plugins/immune-brain/runtime/kernel/index.ts",
+      "plugins/immune-brain/runtime/kernel/legacy.ts",
+      "plugins/immune-brain/runtime/kernel/observation.ts",
+      "plugins/immune-brain/runtime/kernel/readiness.ts",
+      "plugins/immune-brain/runtime/kernel/readiness_evidence.ts",
+      "tests/authority-commit-receipts.test.ts",
+      "tests/claude-host-package.test.ts",
+      "tests/enrollment-confirmation-relocation.test.ts",
+      "tests/imm-core-barrel-retirement.test.ts",
+      "tests/kernel-canary-eligibility.test.ts",
+      "tests/kernel-core.test.ts",
+      "tests/kernel-r2a-boundary.test.ts",
+      "tests/kernel-readiness-evidence.test.ts",
+      "tests/kernel-readiness.test.ts",
+      "tests/kernel-record-v3.test.ts",
+      "tests/kernel-storage-layout-migration.test.ts",
+      "tests/pi-canary-enroll-extension.test.ts",
+      "tests/pi-only-package-surface.test.ts",
+      "tests/plugin-package-runtime.test.ts",
+      "tests/state-ledger-migration.test.ts",
+      "tests/v3-island-deletion.test.ts",
+      "tests/v4-storage-retirement-legacy-audit.test.ts"
+    ],
+    "risk": "material",
+    "revision": 3,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/archive/wc-retire-authority-observation-island.intent.json",
+    "content_hash": "sha256:6f8718a4b8a4668cbb9db1ddea09ccc34e99e5637f7059824b89cd2ed2bf697f"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:e38b0b4da2a235a10775f62f633befefe5fc0cfc59fb527f3e32c6192a2528c7",
+  "git_base_head": "47fefda339def7e850113679f812bf79e81c4d79",
+  "attestations": [
+    {
+      "id": "approval-qa-ed5519fa",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:ee8ec821312c780a7a34e227a2ac8317601ba4021745b8387f0ab1dde9b03b18",
+      "diff_hash": "sha256:4b890b2ecd576fd5b515ccaf80b4be68b653d0b3cf6382b79bc5b4651414f9da",
+      "actor_id": "deterministic-qa",
+      "summary": "all 4 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "ISL-1",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "ISL-2",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "ISL-3",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "ISL-4",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-6c29dc3d",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 3,
+      "intent_content_hash": "sha256:6f8718a4b8a4668cbb9db1ddea09ccc34e99e5637f7059824b89cd2ed2bf697f",
+      "diff_hash": "sha256:80523b0bf8d3f6f1600efe92fab6c1dd19985a4d6e076a21746d96140df4a49a",
+      "actor_id": "deterministic-qa",
+      "summary": "all 4 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "ISL-1",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "ISL-2",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "ISL-3",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "ISL-4",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-460f2330",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 3,
+      "intent_content_hash": "sha256:6f8718a4b8a4668cbb9db1ddea09ccc34e99e5637f7059824b89cd2ed2bf697f",
+      "diff_hash": "sha256:80523b0bf8d3f6f1600efe92fab6c1dd19985a4d6e076a21746d96140df4a49a",
+      "actor_id": "parent-mediated-review",
+      "summary": "Island retirement is complete and surgical: six modules absent, barrel/import lines removed, eligibility behavior unchanged, deleted tests covered only deleted behavior, retained v3/legacy-audit/migration surfaces intact, package files list narrowed, QA green on all four acceptances.",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "47fefda339def7e850113679f812bf79e81c4d79",
+        "review_commit": "c1454404bff9f7323532978e9c2fa97100997951",
+        "review_tree": "ad3e4081afcd01d6f12bfcc30b4abca9ba4fce98",
+        "manifest_digest": "sha256:76425e15c5480a149581c3d31e8ab03a9d984f9c8d1b79b97e9c73846d889c59"
+      }
+    }
+  ],
+  "findings": [
+    {
+      "id": "review-f706bb6008c7-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "ISL-2",
+      "source": "review",
+      "review_round": 1,
+      "summary": "Remaining suite is broken: four surviving test files still import or path-assert the deleted island modules (unchanged files read only because ISL-2's remaining-suite assertion and their deleted-module imports directly require it).",
+      "anchor": "sha256:d25a9eb1ada558e4dc7f018b908a09eb829dacbb71ede08983f95fb7f6ac297a",
+      "evidence": {
+        "trigger": "Running the remaining suite (bun test) on the review tree: tests/kernel-r2a-boundary.test.ts imports the deleted authority_commit_receipts (line 22), kernel/automatic_observations (line 30) and kernel/observation (line 34), and asserts existsSync(plugins/immune-brain/runtime/kernel/readiness.ts)===true and existsSync(tests/kernel-readiness.test.ts)===true (lines 216-219), both deleted; tests/enrollment-confirmation-relocation.test.ts line 13 and tests/pi-canary-enroll-extension.test.ts line 13 import AUTHORITY_OBSERVATION_GENERATION_V2/AUTHORITY_OBSERVER_VERSION_V2 from the deleted plugins/immune-brain/runtime/authority_commit_receipts; tests/imm-core-barrel-retirement.test.ts EXPECTED_REPOINTS still keys the deleted tests/state-ledger-migration.test.ts and readFileSync's it plus the deleted owner modules authority_commit_receipts.ts/kernel/observation.ts/kernel/automatic_observations.ts, throwing ENOENT. No bunfig.toml test exclusion exists, so bun test executes all four files and fails at module resolution/ENOENT; the ISL-2 descriptor only ran tests/v3-island-deletion.test.ts and tests/kernel-canary-eligibility.test.ts, so this was not exercised.",
+        "caller_chain": [
+          "tests/kernel-r2a-boundary.test.ts",
+          "tests/enrollment-confirmation-relocation.test.ts",
+          "tests/pi-canary-enroll-extension.test.ts",
+          "tests/imm-core-barrel-retirement.test.ts",
+          "plugins/immune-brain/runtime/authority_commit_receipts.ts",
+          "plugins/immune-brain/runtime/kernel/observation.ts",
+          "plugins/immune-brain/runtime/kernel/automatic_observations.ts"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "ISL-2"
+        }
+      },
+      "counterevidence": null
+    }
+  ],
+  "history": [
+    {
+      "id": "revise_intent:wc-retire-authority-observation-island:2026-09-14T06:15:27.908Z",
+      "at": "2026-09-14T06:15:27.908Z",
+      "type": "revise_intent",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "intent_revision_2\naction_v2_sha256:7a65b825a0c3b2577b59456b69d85f244f50b1ab8cddcf5602b9bbc6514f2553"
+    },
+    {
+      "id": "freeze_artifacts:wc-retire-authority-observation-island:2026-09-14T06:15:41.789Z",
+      "at": "2026-09-14T06:15:41.789Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent and Spec frozen at docs/plans/archive/wc-retire-authority-observation-island.intent.json"
+    },
+    {
+      "id": "record_approval:wc-retire-authority-observation-island:2026-09-14T06:16:00.423Z",
+      "at": "2026-09-14T06:16:00.423Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-ed5519fa\naction_v2_sha256:9558ad50247ebc67d9259ce545e63047e43ea344890aa0659fa4d6c58200832b",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-070a2b73a83f783d",
+        "issued_at": "2026-09-14T06:16:00.424Z",
+        "expires_at": "2026-09-14T06:26:00.424Z"
+      }
+    },
+    {
+      "id": "request_rework:wc-retire-authority-observation-island:2026-09-14T06:22:43.325Z",
+      "at": "2026-09-14T06:22:43.325Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_1\naction_v2_sha256:9093f14179d777778b0b83daebe417e2987cf4c28ed22b79d9dc3213def4c5cc",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-a7a446f051c602a6",
+        "issued_at": "2026-09-14T06:22:43.326Z",
+        "expires_at": "2026-09-14T06:32:43.326Z"
+      }
+    },
+    {
+      "id": "approve_breaking_intent_revision:wc-retire-authority-observation-island:2026-09-14T06:24:35.352Z",
+      "at": "2026-09-14T06:24:35.352Z",
+      "type": "approve_breaking_intent_revision",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "intent_revision_3\naction_v2_sha256:18d34ad07c798549db635d8e85ad2c0ad2b4faf308310b523ebf904d9460b389",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-98f2f561133cfd97",
+        "issued_at": "2026-09-14T06:24:35.854Z",
+        "expires_at": "2026-09-14T06:34:35.854Z"
+      }
+    },
+    {
+      "id": "resolve_finding:wc-retire-authority-observation-island:2026-09-14T06:24:56.378Z",
+      "at": "2026-09-14T06:24:56.378Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-f706bb6008c7-1-review-1\naction_v2_sha256:964db393651c325d8e3cc7b722828e7ea530ed7e3dab2fb97a2be56eedf2a424"
+    },
+    {
+      "id": "freeze_artifacts:wc-retire-authority-observation-island:2026-09-14T06:25:05.012Z",
+      "at": "2026-09-14T06:25:05.012Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent and Spec frozen at docs/plans/archive/wc-retire-authority-observation-island.intent.json"
+    },
+    {
+      "id": "record_approval:wc-retire-authority-observation-island:2026-09-14T06:25:27.303Z",
+      "at": "2026-09-14T06:25:27.303Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-6c29dc3d\naction_v2_sha256:92335f6533740326a5b30dc36e2790d0e797715dcce0aead4ebe2820b32f9078",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-2168173cd89e7286",
+        "issued_at": "2026-09-14T06:25:27.303Z",
+        "expires_at": "2026-09-14T06:35:27.303Z"
+      }
+    },
+    {
+      "id": "record_approval:wc-retire-authority-observation-island:2026-09-14T06:30:31.732Z",
+      "at": "2026-09-14T06:30:31.732Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-460f2330\naction_v2_sha256:ff01c13684c03ba42ec3051846b272ca586d437823aeda6267bef2f886db7a88",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-c46eff6f86093dc3",
+        "issued_at": "2026-09-14T06:30:31.733Z",
+        "expires_at": "2026-09-14T06:40:31.733Z"
+      }
+    },
+    {
+      "id": "complete:wc-retire-authority-observation-island:2026-09-14T06:30:34.834Z",
+      "at": "2026-09-14T06:30:34.834Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:4acc6c1e2db750240fe778d4c9bed374ed27f24e6dc99e5c910d5ba8dbfee0a6"
+    }
+  ]
+}

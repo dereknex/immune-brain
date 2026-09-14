@@ -7,10 +7,11 @@ import { execFileSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createHash } from "node:crypto";
-import {
-	AUTHORITY_OBSERVATION_GENERATION_V2,
-	AUTHORITY_OBSERVER_VERSION_V2,
-} from "../plugins/immune-brain/runtime/authority_commit_receipts";
+// The authority-observation island is retired; the receipt and observation
+// journals it wrote are still pre-existing on-disk state the current Host must
+// tolerate, so these fixtures keep the recorded marker literals locally.
+const AUTHORITY_OBSERVATION_GENERATION_V2 = "automatic-observation/v2";
+const AUTHORITY_OBSERVER_VERSION_V2 = "assurance-kernel-p2a-observer/v2";
 import { assertTaskIntentPreparationStable } from "../plugins/immune-brain/.pi-extension/imm-canary-enroll";
 import { readTaskIntent } from "../plugins/immune-brain/runtime/kernel/intent";
 import { preparePiCanary } from "../plugins/immune-brain/runtime/kernel/pi_canary_prepare";

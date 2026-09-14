@@ -74,7 +74,6 @@
     "plugins/immune-brain/runtime/kernel",
     "plugins/immune-brain/runtime/canonical_json.ts",
     "plugins/immune-brain/runtime/workspace_scope.ts",
-    "plugins/immune-brain/runtime/authority_commit_receipts.ts",
     "plugins/immune-brain/runtime/managed_task_routing_policy.ts",
     "plugins/immune-brain/runtime/github_issue_tracker.ts",
     "plugins/immune-brain/runtime/verification_descriptor.ts",
