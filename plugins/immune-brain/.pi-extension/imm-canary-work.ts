@@ -125,7 +125,6 @@ import {
 	findingsDigestV2,
 	capabilityActionFor,
 	digestOfAction,
-	type AssuranceAuthorizationReadiness,
 	type AssuranceProjectionResult,
 	type TaskRecordRead,
 	type CanaryApplication,

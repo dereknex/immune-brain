@@ -11238,7 +11238,6 @@ class ClaudeRuntime {
     const nextIntentHash = nextIntent ? canonicalIntentHash(nextIntent) : undefined;
     const nextIntentRef = nextIntent ? { path: `docs/plans/${nextIntent.task_id}.intent.json`, content_hash: nextIntentHash } : undefined;
     const sidecar = nextIntent ? join12(this.cwd, priorIntent.intent_ref.path) : undefined;
-    const priorBytes = sidecar ? readFileSync11(sidecar) : undefined;
     const stagedSnapshot = sidecar ? captureStagedIntent(this.cwd, priorIntent.intent_ref.path) : undefined;
     const restoreStagedIntent2 = () => {
       if (!stagedSnapshot)

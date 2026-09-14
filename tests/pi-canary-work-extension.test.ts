@@ -1,6 +1,11 @@
 // Phase 3 foreground Tool and native Review bridge contract.
 
-import { describe, expect, test } from "bun:test";
+import { describe, expect, setDefaultTimeout, test } from "bun:test";
+
+// Several of these tests drive real git repositories and full Kernel flows and
+// run 3-4s interactively, so bun's 5s default makes them flake under load (a CI
+// runner or the Kernel QA environment). Bound them explicitly instead.
+setDefaultTimeout(60_000);
 import { Check } from "typebox/value";
 import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync, existsSync, statSync } from "node:fs";
 import { execFileSync } from "node:child_process";

@@ -697,7 +697,8 @@ export class ClaudeRuntime {
 			? { path: `docs/plans/${nextIntent.task_id}.intent.json`, content_hash: nextIntentHash! }
 			: undefined;
 		const sidecar = nextIntent ? join(this.cwd, priorIntent.intent_ref.path) : undefined;
-		const priorBytes = sidecar ? readFileSync(sidecar) : undefined;
+		// The snapshot carries the prior bytes; a second read would only be a
+		// second source for the same fact.
 		const stagedSnapshot = sidecar ? captureStagedIntent(this.cwd, priorIntent.intent_ref.path) : undefined;
 		const restoreStagedIntent = (): void => {
 			if (!stagedSnapshot) return;
