@@ -1,0 +1,112 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "wc-host-neutral-contract-tool-names",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "wc-host-neutral-contract-tool-names",
+    "goal": "Make the packaged Immune-Brain contracts Host-neutral about tool identity: remove the stale freeze_artifacts instruction the Kernel already performs internally, replace Pi-only tool names with the obligation they stand for, and add a focused guard so no packaged contract can again name a tool that is absent from the invoking Host's surface.",
+    "acceptance": [
+      {
+        "id": "HTN-1",
+        "assertion": "No packaged contract under plugins/immune-brain/dist/ instructs a Host to call a tool that does not exist on that Host: the freeze_artifacts step is removed from imm-loop.md because runtime/assurance/coordinator.ts already performs artifact freeze inside advance_assurance, and every remaining imm_kernel_canary / imm_loop_action reference in imm-loop.md, imm-planner.md, and imm-review-retro.md is restated as the Host-neutral obligation instead of a single Host's tool spelling. No Host gains or loses a tool.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/packaged-contract-tool-surface.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 60000,\n  \"max_output_bytes\": 20000\n}\n"
+      },
+      {
+        "id": "HTN-2",
+        "assertion": "A new focused contract test tests/packaged-contract-tool-surface.test.ts enumerates every tool identifier appearing in the packaged contracts and fails unless each one is registered on at least one Host tool surface (runtime/claude/mcp_server.ts for Claude Code, the Pi extension registration for Pi). The test fails against the pre-change contracts, which is the evidence that it catches the regression it names.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/packaged-contract-tool-surface.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 60000,\n  \"max_output_bytes\": 20000\n}\n"
+      },
+      {
+        "id": "HTN-3",
+        "assertion": "The doc pipeline stays consistent after the edits: the three files remain SKILL_OWNED_ENTRIES in scripts/dist-sync-manifest.ts, their minimal skills/*/SKILL.md loaders are unchanged, and the existing dist sync and skill consistency guards still pass.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.3.14\",\n  \"argv\": [\n    \"test\",\n    \"tests/dist-docs-sync-contract.test.ts\",\n    \"tests/skill-dist-consistency.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 20000\n}\n"
+      }
+    ],
+    "scope_hint": [
+      "docs/plans/wc-host-neutral-contract-tool-names.intent.json",
+      "docs/specs/archive/workflow-consolidation.spec.md",
+      "docs/specs/workflow-consolidation.spec.md",
+      "plugins/immune-brain/dist/imm-loop.md",
+      "plugins/immune-brain/dist/imm-planner.md",
+      "plugins/immune-brain/dist/imm-review-retro.md",
+      "scripts/dist-sync-manifest.ts",
+      "tests/dist-docs-sync-contract.test.ts",
+      "tests/packaged-contract-tool-surface.test.ts",
+      "tests/skill-dist-consistency.test.ts"
+    ],
+    "risk": "routine",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/archive/wc-host-neutral-contract-tool-names.intent.json",
+    "content_hash": "sha256:617f5c8fb1822cd2c75eb4ee223c44bb2423319f78cb9cf5512fb6a19f05058f"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:617f5c8fb1822cd2c75eb4ee223c44bb2423319f78cb9cf5512fb6a19f05058f",
+  "git_base_head": "db044fb6d3c660bb6f01b65fb2eae2d0fcd465cc",
+  "attestations": [
+    {
+      "id": "approval-qa-16b25e3e",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:617f5c8fb1822cd2c75eb4ee223c44bb2423319f78cb9cf5512fb6a19f05058f",
+      "diff_hash": "sha256:639596c28a3d61b0a02db3ea50c2d5b3c1e71473e8c7e8387d90e1930d72a92a",
+      "actor_id": "deterministic-qa",
+      "summary": "all 3 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "HTN-1",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "HTN-2",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "HTN-3",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 fixed verification descriptor(s) passed"
+        }
+      ]
+    }
+  ],
+  "findings": [],
+  "history": [
+    {
+      "id": "freeze_artifacts:wc-host-neutral-contract-tool-names:2026-09-14T02:28:23.018Z",
+      "at": "2026-09-14T02:28:23.018Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent and Spec frozen at docs/plans/archive/wc-host-neutral-contract-tool-names.intent.json"
+    },
+    {
+      "id": "record_approval:wc-host-neutral-contract-tool-names:2026-09-14T02:28:23.923Z",
+      "at": "2026-09-14T02:28:23.923Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-16b25e3e\naction_v2_sha256:4a6c4a9db0992e3efd55ef1c87e211a014f132b0924d2a133f3ca548945b1cab",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-f8fe565ede94d18c",
+        "issued_at": "2026-09-14T02:28:23.923Z",
+        "expires_at": "2026-09-14T02:38:23.923Z"
+      }
+    },
+    {
+      "id": "complete:wc-host-neutral-contract-tool-names:2026-09-14T02:28:24.633Z",
+      "at": "2026-09-14T02:28:24.633Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:b41ef2570b776a70382e2e74fd39d75b7c385b45708ec5e8cdb9ab1f93bc3079"
+    }
+  ]
+}

@@ -11,9 +11,9 @@ This skill adheres to the **[BASELINE.md](BASELINE.md)**.
 
 Only explicit `imm-loop` entry starts or resumes this loop. Ordinary host input
 stays host-native; it never resumes a Managed owner implicitly. Read the current
-Host's `imm_kernel_canary` `status` first and verify the exact active backend
-claim, TaskIntent, and TaskRecord. Invalid or contradictory projections fail
-closed. A candidate TaskIntent is not Enrollment authority.
+Host's `status` projection first and verify the exact active backend claim,
+TaskIntent, and TaskRecord. Invalid or contradictory projections fail closed. A
+candidate TaskIntent is not Enrollment authority.
 
 Before the first Enrollment of a candidate TaskIntent, confirm the Planner
 returned `tracker_associated` — but only when the candidate belongs to an
@@ -36,11 +36,12 @@ Historical prose Plans and State Ledgers are read-only history, not execution
 instructions. Do not create Steps, workflow profiles, follow-up ledgers, or
 successor Plans to drive a Kernel task.
 
-At every internal role boundary call the read-only `imm_loop_action` Tool. Use
-`route` for current-context Executor work, bounded repair, architecture
-exploration, advisory review, Compounder, Kernel ownership, or scope expansion.
-Use Kernel ownership for an enrolled task. This Tool projects authority; it does
-not record execution evidence, mutate task state, or replace Kernel operations.
+At every internal role boundary call the invoking Host's read-only role-boundary
+route. Use `route` for current-context Executor work, bounded repair,
+architecture exploration, advisory review, Compounder, Kernel ownership, or
+scope expansion. Use Kernel ownership for an enrolled task. This route projects
+authority; it does not record execution evidence, mutate task state, or replace
+Kernel operations.
 Before a child dispatch, read the [Subagent Dispatch Protocol](docs/reference/subagent-dispatch-protocol.md#authorization-authority).
 Never load an internal role as a public Skill or spawn another loop process.
 The standalone `imm-pr-fix`, `imm-doc-prune`, and `imm-agent-doc-maintain` are host-native
@@ -54,23 +55,23 @@ Continue while the current projection has a valid action:
 1. For active artifacts, implement only the enrolled acceptance within
    `scope_hint` in the current conversation. Run focused checks. Executor checks
    are diagnostic evidence, not a QA or Review approval.
-2. Before Assurance, call `freeze_artifacts` while TaskRecord is `active:active`.
-   A bound active Spec and its archive path must both be inside `scope_hint`.
-   The Kernel owns byte-preserving archival and the frozen snapshot.
-3. Call `advance_assurance` in the foreground and consume its direct terminal
-   result. Deterministic QA runs fixed acceptance descriptors atomically inside
-   the Host integration. Do not dispatch a separate per-Step QA Agent.
-4. On `review_ready`, invoke the returned `agent_params` as one exact foreground
+2. Call `advance_assurance` in the foreground and consume its direct terminal
+   result. The Kernel freezes the artifacts itself before QA: it owns
+   byte-preserving archival and the frozen snapshot, and a bound active Spec and
+   its archive path must both be inside `scope_hint`. Deterministic QA runs
+   fixed acceptance descriptors atomically inside the Host integration. Do not
+   dispatch a separate per-Step QA Agent.
+3. On `review_ready`, invoke the returned `agent_params` as one exact foreground
    Agent call, then pass its structured verdict to `submit_review`. Do not
    replace this snapshot-bound reviewer with a generic role dispatch. The Parent
    cannot issue its own QA or Review pass.
-5. Follow the returned Kernel obligation. Fresh QA suffices for routine work;
+4. Follow the returned Kernel obligation. Fresh QA suffices for routine work;
    material and critical work additionally require fresh independent Review.
    Normal completion does not require a second user confirmation.
-6. For rework, follow the projected artifact state before editing. Resolve
+5. For rework, follow the projected artifact state before editing. Resolve
    findings only after fixing and verifying their cause. Changed snapshots
-   invalidate old evidence; freeze and run the newly required obligations.
-7. An unresolved decision pauses only dependent execution. On `awaiting_user`,
+   invalidate old evidence; run the newly required obligations.
+6. An unresolved decision pauses only dependent execution. On `awaiting_user`,
    invoke `request_authorization` directly before ending the turn; use the
    Decisions and Recovery route for its native-gate handling. End the turn if
    the decision remains unresolved, is cancelled, or the gate fails. Otherwise
@@ -122,9 +123,9 @@ per completed child.
   enrolled intent sidecars or ask for chat pre-confirmation.
 - On `awaiting_user`, invoke `request_authorization` directly for a concrete
   unresolved decision or rework authorization, not risk tier alone.
-- When the user explicitly asks to stop a Pi task, invoke
-  `imm_kernel_canary({ task_id, action: { op: "request_stop" } })` directly.
-  Its single native confirmation authorizes existing Kernel stop settlement.
+- When the user explicitly asks to stop an active task, invoke the Kernel stop
+  operation through the invoking Host directly. Its single native confirmation
+  authorizes existing Kernel stop settlement.
   Cancellation is not task termination. A busy invocation must finish or be
   cancelled through existing Host controls before requesting stop; never clear
   claims manually or use this operation to force-kill QA.

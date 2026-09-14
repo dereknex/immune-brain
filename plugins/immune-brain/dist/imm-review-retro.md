@@ -52,8 +52,8 @@ aloud in the report so the 口径 stays visible.
   other.
 - `avgSc` / `pass%` parse `[SCORE: …]` and `[VERDICT: …]` tags from the
   matching Review `toolResult`. Untagged reviews show `-`.
-- `registr` counts `imm_kernel_canary` `submit_review`. It is the
-  registration of the same review and is never added into `reviews`.
+- `registr` counts the Kernel `submit_review` registration in the session log.
+  It is the registration of the same review and is never added into `reviews`.
 - `rounds/task` is registrations per distinct `(cwd, task_id)`. High values
   can be canary/QA harness re-registration, not human-visible rework.
 - Findings are `record_finding` calls, deduped per session. Summaries that
