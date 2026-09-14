@@ -9,18 +9,24 @@ function read(rel: string): string {
 }
 
 const KERNEL_SURFACE = [
-	"imm_loop_action",
-	"imm_kernel_canary",
 	"advance_assurance",
 	"submit_review",
 	"request_authorization",
 ] as const;
+
+// The packaged loop contract is shared by both Hosts, so routing and stop are
+// named by the obligation they impose rather than by one Host's tool spelling.
+// tests/packaged-contract-tool-surface.test.ts enforces that property generally.
+const HOST_NEUTRAL_OBLIGATIONS = ["role-boundary route", "Kernel stop operation"] as const;
 
 describe("loop contract v4 alignment", () => {
 	test("packaged loop contract instructs the Kernel path and not the retired autowork playbook", () => {
 		const dist = read("plugins/immune-brain/dist/imm-loop.md");
 		for (const token of KERNEL_SURFACE) {
 			expect(dist).toContain(token);
+		}
+		for (const obligation of HOST_NEUTRAL_OBLIGATIONS) {
+			expect(dist.replace(/\s+/g, " ")).toContain(obligation);
 		}
 		expect(dist).not.toContain("imm-autowork");
 		expect(dist).not.toMatch(/State Ledger authority/i);

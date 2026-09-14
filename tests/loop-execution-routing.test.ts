@@ -167,11 +167,13 @@ describe("Loop execution and repair routing", () => {
 
 	it("documents internal execution routing with no public role shims", () => {
 		const loop = read("plugins/immune-brain/dist/imm-loop.md");
-		expect(loop).toContain("imm_loop_action");
+		// Routing and Kernel ownership are stated as obligations: the packaged
+		// contract is shared by both Hosts, so it never names one Host's tools.
+		expect(loop.replace(/\s+/g, " ")).toContain("role-boundary route");
 		expect(loop).not.toContain("buildLoopRoleContext");
 		expect(loop).toContain("test-fixer");
 		expect(loop).toContain("pr-fix");
-		expect(loop).toContain("imm_kernel_canary");
+		expect(loop).toContain("Kernel ownership");
 		expect(loop).toContain("Scope expansion returns to Planner's Enrolled Intent Revision route");
 		expect(loop.replace(/\s+/g, " ")).toContain("the current Loop submits it through Kernel revision authority");
 		expect(loop).not.toContain("route it through `imm-canary-work`");

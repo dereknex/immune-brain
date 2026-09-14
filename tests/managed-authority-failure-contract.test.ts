@@ -69,7 +69,7 @@ describe("Managed native authority failure contract", () => {
 			"On `awaiting_user`, invoke `request_authorization` directly",
 		);
 		expect(loop).toContain(
-			"invoke `imm_kernel_canary({ task_id, action: { op: \"request_stop\" } })` directly",
+			"invoke the Kernel stop operation through the invoking Host directly",
 		);
 		expect(loop).toContain("Cancellation is not task termination");
 		expect(loop).toContain("An unresolved decision pauses only dependent execution");

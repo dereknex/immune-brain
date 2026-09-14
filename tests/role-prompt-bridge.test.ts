@@ -242,7 +242,7 @@ describe("internal role-prompt bridge", () => {
 	});
 	it("keeps canonical Loop role dispatch on the internal bridge", () => {
 		const content = read("plugins/immune-brain/dist/imm-loop.md");
-		expect(content).toContain("imm_loop_action");
+		expect(content.replace(/\s+/g, " ")).toContain("role-boundary route");
 		expect(content).toContain("standalone `imm-pr-fix`, `imm-doc-prune`, and `imm-agent-doc-maintain` are host-native");
 		expect(content).toContain("never dispatched as the Loop role");
 		expect(content).not.toMatch(/public\s+Skills\s+remain available as rollback shims/);
