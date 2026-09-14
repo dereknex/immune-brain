@@ -5,6 +5,8 @@ import {
 	type EnrollmentCapabilityBinding,
 } from "../plugins/immune-brain/runtime/kernel/enrollment_authority";
 import { createTestEnrollmentCapability } from "./fixtures/enrollment-capability-test-seam";
+import { inspectSpecBinding } from "../plugins/immune-brain/runtime/kernel/spec_binding";
+import { parseTaskIntentV1 } from "../plugins/immune-brain/runtime/kernel/intent";
 
 const binding: EnrollmentCapabilityBinding = {
 	task_id: "task-001",
@@ -88,5 +90,97 @@ describe("enrollment authority registry", () => {
 		const b = makeRegistry();
 		const capFromA = a.issue();
 		expect(() => b.registry.inspect(capFromA, binding)).toThrow(/not recognized by this registry/i);
+	});
+});
+
+// The enrollment Spec-binding precondition, as the pure projection enrollment
+// and its rehearsal both consume: no filesystem read, no write, and a rejection
+// that names every path the intent has to add.
+describe("enrollment Spec binding", () => {
+	function intentFor(scope_hint: string[], taskId = "task-001") {
+		return parseTaskIntentV1({
+			contract: "assurance_kernel/task_intent/v1",
+			task_id: taskId,
+			owner: "user",
+			goal: `goal for ${taskId}`,
+			acceptance: [{ id: "acc-1", assertion: "a", verification: "bun test tests/x.test.ts" }],
+			scope_hint,
+			risk: "routine",
+			revision: 1,
+		});
+	}
+
+	test("accepts exactly one bound active/archive pair", () => {
+		const inspection = inspectSpecBinding(
+			intentFor(["docs/plans", "docs/specs/one.spec.md", "docs/specs/archive/one.spec.md"]),
+		);
+		expect(inspection).toEqual({
+			ok: true,
+			binding: { active: "docs/specs/one.spec.md", archive: "docs/specs/archive/one.spec.md" },
+		});
+	});
+
+	test("refuses an intent that binds no Spec, and is idempotent", () => {
+		const intent = intentFor(["docs/plans", "plugins/immune-brain/runtime"]);
+		const first = inspectSpecBinding(intent);
+		const second = inspectSpecBinding(intent);
+		expect(first).toMatchObject({ ok: false, code: "binding_missing", missing: [] });
+		expect(first.ok === false && first.message).toMatch(/requires one scope-bound active Spec/);
+		expect(second).toEqual(first);
+	});
+
+	test("names the missing archive path for an active-only scope", () => {
+		const inspection = inspectSpecBinding(
+			intentFor(["docs/plans", "docs/specs/two.spec.md"]),
+		);
+		expect(inspection).toMatchObject({
+			ok: false,
+			code: "binding_incomplete",
+			missing: ["docs/specs/archive/two.spec.md"],
+		});
+	});
+
+	test("names the missing active path for an archive-only scope", () => {
+		const inspection = inspectSpecBinding(
+			intentFor(["docs/plans", "docs/specs/archive/three.spec.md"]),
+		);
+		expect(inspection).toMatchObject({
+			ok: false,
+			code: "binding_incomplete",
+			missing: ["docs/specs/three.spec.md"],
+		});
+		expect(inspection.ok === false && inspection.message).toContain("docs/specs/three.spec.md");
+	});
+
+	test("names every incomplete path when both sides carry an unmatched entry", () => {
+		const inspection = inspectSpecBinding(
+			intentFor([
+				"docs/plans",
+				"docs/specs/four.spec.md",
+				"docs/specs/archive/five.spec.md",
+			]),
+		);
+		expect(inspection).toMatchObject({
+			ok: false,
+			code: "binding_incomplete",
+			missing: ["docs/specs/archive/four.spec.md", "docs/specs/five.spec.md"],
+		});
+	});
+
+	test("refuses two bound pairs as ambiguous and names them", () => {
+		const inspection = inspectSpecBinding(
+			intentFor([
+				"docs/specs/six.spec.md",
+				"docs/specs/archive/six.spec.md",
+				"docs/specs/seven.spec.md",
+				"docs/specs/archive/seven.spec.md",
+			]),
+		);
+		expect(inspection).toMatchObject({ ok: false, code: "binding_ambiguous", missing: [] });
+		const message = inspection.ok === false ? inspection.message : "";
+		// parseTaskIntentV1 sorts scope_hint, so assert the count and both names.
+		expect(message).toContain("at most one scope-bound Spec; found 2:");
+		expect(message).toContain("docs/specs/six.spec.md");
+		expect(message).toContain("docs/specs/seven.spec.md");
 	});
 });

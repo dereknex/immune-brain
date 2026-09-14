@@ -1,0 +1,9 @@
+{
+  "contract": "assurance_kernel/task_tombstone/v2",
+  "task_id": "wc-enrollment-spec-binding",
+  "lifecycle_status": "terminal",
+  "terminal_lifecycle": "done",
+  "terminal_event_id": "complete:wc-enrollment-spec-binding:2026-09-14T07:52:35.107Z",
+  "final_record_hash": "sha256:e98e33872a087e7c63d6f5860a645419a6ffb955a60be6c68c67b2d78b3e1c1c",
+  "terminalized_at": "2026-09-14T07:52:35.107Z"
+}

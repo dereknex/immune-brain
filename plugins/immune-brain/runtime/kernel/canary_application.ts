@@ -24,6 +24,7 @@ import {
 	type BackendClaim,
 } from "./backend_claim";
 import { canonicalIntentHash } from "./intent";
+import { archivePath, boundSpecPath, readBoundActiveSpec } from "./spec_binding";
 import { parseTaskRecord } from "./validation";
 import type { TaskIntentIdentityToken } from "./intent_token_registry";
 import {
@@ -164,39 +165,6 @@ export function capabilityActionFor(input: {
 			throw new KernelInvariantError([
 				`unsupported capability action: ${input.op}`,
 			]);
-	}
-}
-
-function archivePath(path: string): string {
-	const matched = path.match(/^docs\/(plans|specs)\/([^/]+)$/);
-	if (!matched) throw new KernelInvariantError([`artifact path is not active: ${path}`]);
-	return `docs/${matched[1]}/archive/${matched[2]}`;
-}
-
-function boundSpecPath(intent: TaskIntentV1): string | undefined {
-	const candidates = intent.scope_hint.filter(
-		(path) => /^docs\/specs\/(?!archive\/)[^/]+\.spec\.md$/.test(path) && intent.scope_hint.includes(archivePath(path)),
-	);
-	if (candidates.length > 1)
-		throw new KernelInvariantError([`artifact transition requires at most one scope-bound Spec; found ${candidates.length}`]);
-	return candidates[0];
-}
-
-function readBoundActiveSpec(
-	root: string,
-	intent: TaskIntentV1,
-	required = true,
-): { path: string; content: string } | undefined {
-	const specPath = boundSpecPath(intent);
-	if (!specPath) {
-		if (required) throw new KernelInvariantError(["artifact freeze requires one scope-bound active Spec"]);
-		return undefined;
-	}
-	try {
-		return { path: specPath, content: readSecureProjectFile(root, specPath) };
-	} catch (error) {
-		if (error instanceof Error && error.message.startsWith("source_missing:") && !required) return undefined;
-		throw error;
 	}
 }
 

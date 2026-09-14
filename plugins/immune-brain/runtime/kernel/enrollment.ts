@@ -4,6 +4,7 @@
 // No CLI, runtime route, or production issuer exists in P2B0.
 
 import { canonicalIntentHash, readTaskIntent } from "./intent";
+import { inspectSpecBinding } from "./spec_binding";
 import {
 	type EnrollmentAuthorityRegistry,
 	type EnrollmentCapabilityBinding,
@@ -137,6 +138,15 @@ function runEnrollmentPreconditionChecks<T>(
 			intent = readTaskIntent(root, input.task_id);
 		} catch (error) {
 			fail(`intent: ${error instanceof Error ? error.message : String(error)}`, error);
+		}
+		// The Spec binding is an enrollment precondition, not a freeze surprise: a
+		// scope_hint that cannot name the bound active Spec and its archive path is
+		// refused here, before any Executor turn, instead of after the work exists.
+		// Freeze-time enforcement stays, because enrollment cannot observe
+		// post-implementation scope drift.
+		if (intent) {
+			const binding = inspectSpecBinding(intent.intent);
+			if (!binding.ok) fail(binding.message, new Error(binding.message));
 		}
 		try {
 			gitBaseHead = readGitHead(root);

@@ -120,7 +120,7 @@ function reviewRequest(operationId: string, prompt = `prompt-${operationId}`) {
 	return { taskId: TASK, operationId, prompt, evidencePath: "/tmp/review.json", maxTurns: 1 };
 }
 
-function authorityFixtureRoot(taskId: string, withSpec = false): { root: string; intent: Record<string, unknown> } {
+function authorityFixtureRoot(taskId: string): { root: string; intent: Record<string, unknown> } {
 	const root = mkdtempSync(join(tmpdir(), "claude-breaking-approval-"));
 	const intent = {
 		contract: "assurance_kernel/task_intent/v1",
@@ -130,7 +130,8 @@ function authorityFixtureRoot(taskId: string, withSpec = false): { root: string;
 		acceptance: [{ id: "acc-1", assertion: "initial assertion", verification: "bun test" }],
 		scope_hint: [
 			`docs/plans/${taskId}.intent.json`,
-			...(withSpec ? [`docs/specs/${taskId}.spec.md`, `docs/specs/archive/${taskId}.spec.md`] : []),
+			`docs/specs/${taskId}.spec.md`,
+			`docs/specs/archive/${taskId}.spec.md`,
 		],
 		risk: "routine",
 		revision: 1,
@@ -138,10 +139,8 @@ function authorityFixtureRoot(taskId: string, withSpec = false): { root: string;
 	mkdirSync(join(root, ".imm", "state"), { recursive: true });
 	mkdirSync(join(root, "docs", "plans"), { recursive: true });
 	writeFileSync(join(root, "docs", "plans", `${taskId}.intent.json`), `${JSON.stringify(intent, null, 2)}\n`);
-	if (withSpec) {
-		mkdirSync(join(root, "docs", "specs", "archive"), { recursive: true });
-		writeFileSync(join(root, "docs", "specs", `${taskId}.spec.md`), `# ${taskId}\n`);
-	}
+	mkdirSync(join(root, "docs", "specs", "archive"), { recursive: true });
+	writeFileSync(join(root, "docs", "specs", `${taskId}.spec.md`), `# ${taskId}\n`);
 	execFileSync("git", ["init", "-q"], { cwd: root });
 	execFileSync("git", ["add", "-A"], { cwd: root });
 	execFileSync("git", ["-c", "user.name=test", "-c", "user.email=test@example.com", "commit", "-q", "-m", "fixture"], { cwd: root });
@@ -717,7 +716,7 @@ describe("claude host authority", () => {
 
 	test("request_authorization lets the user continue past a replan boundary", async () => {
 		const taskId = "authorize-rework";
-		const fixture = authorityFixtureRoot(taskId, true);
+		const fixture = authorityFixtureRoot(taskId);
 		const runtime = new ClaudeRuntime({
 			cwd: fixture.root,
 			env: ENV,

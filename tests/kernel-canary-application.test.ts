@@ -20,6 +20,7 @@ import { preparePiCanary } from "../plugins/immune-brain/runtime/kernel/pi_canar
 import { readBackendClaim, readTaskTombstone } from "../plugins/immune-brain/runtime/kernel/backend_claim";
 import { readTaskRecord } from "../plugins/immune-brain/runtime/kernel/storage";
 import { createMutationAuthorityCapabilityForTest } from "./fixtures/mutation-authority-test-seam";
+import { boundSpecPath, readBoundActiveSpec } from "../plugins/immune-brain/runtime/kernel/spec_binding";
 import { KernelInvariantError } from "../plugins/immune-brain/runtime/kernel/validation";
 
 const TASK = "canary-app-task";
@@ -280,5 +281,59 @@ describe("canary application v3 semantic operations", () => {
 			actor_id: "executor-1",
 		}, "2026-08-12T10:00:01.000Z");
 		expect(result.record.lifecycle).toBe("active");
+	});
+});
+
+// The shared Spec-binding module owns the predicate both callers use: enrollment
+// refuses an intent whose scope_hint cannot name the pair (covered by the
+// enrollment transaction suite), and freeze keeps its unchanged behavior because
+// enrollment cannot observe post-implementation drift — including the bound
+// active Spec simply disappearing from the worktree.
+describe("Spec binding at freeze", () => {
+	function intentWith(scope_hint: string[]) {
+		return parseTaskIntentV1({ ...INTENT, scope_hint });
+	}
+
+	test("the freeze caller keeps the unchanged zero-bound and ambiguous contract", () => {
+		const bound = intentWith([
+			"docs/plans",
+			`docs/specs/${TASK}.spec.md`,
+			`docs/specs/archive/${TASK}.spec.md`,
+		]);
+		expect(boundSpecPath(bound)).toBe(`docs/specs/${TASK}.spec.md`);
+		expect(readBoundActiveSpec(root, bound)).toEqual({
+			path: `docs/specs/${TASK}.spec.md`,
+			content: "# Canary app task\n",
+		});
+
+		const specLess = intentWith(["docs/plans"]);
+		expect(boundSpecPath(specLess)).toBeUndefined();
+		expect(() => readBoundActiveSpec(root, specLess)).toThrow(
+			/artifact freeze requires one scope-bound active Spec/,
+		);
+		// An advisory caller may ask without failing.
+		expect(readBoundActiveSpec(root, specLess, false)).toBeUndefined();
+
+		const ambiguous = intentWith([
+			"docs/specs/one.spec.md",
+			"docs/specs/archive/one.spec.md",
+			"docs/specs/two.spec.md",
+			"docs/specs/archive/two.spec.md",
+		]);
+		expect(() => boundSpecPath(ambiguous)).toThrow(
+			/artifact transition requires at most one scope-bound Spec; found 2/,
+		);
+	});
+
+	test("freeze fails closed when the bound active Spec disappears after enrollment", () => {
+		rmSync(join(root, "docs", "specs", `${TASK}.spec.md`), { force: true });
+		expect(() => execute({ op: "freeze_artifacts", actor_id: "executor-1" })).toThrow(
+			`source_missing: docs/specs/${TASK}.spec.md`,
+		);
+		// The refusal wrote nothing: the record is still active and unfrozen.
+		expect(readTaskRecord(root, TASK).record).toMatchObject({
+			lifecycle: "active",
+			artifact_state: "active",
+		});
 	});
 });

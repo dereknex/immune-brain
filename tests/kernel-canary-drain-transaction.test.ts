@@ -41,7 +41,7 @@ const INTENT = {
 	task_id: TASK,
 	goal: "drain transaction",
 	acceptance: [{ id: "A1", assertion: "a1", verification: "v1" }],
-	scope_hint: ["docs/plans"],
+	scope_hint: ["docs/plans", `docs/specs/archive/${TASK}.spec.md`, `docs/specs/${TASK}.spec.md`],
 	risk: "routine",
 	revision: 1,
 	owner: "user",

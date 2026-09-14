@@ -23,7 +23,11 @@ const INTENT = {
 		{ id: "A1", assertion: "a1", verification: "true" },
 		{ id: "A2", assertion: "a2", verification: "true" },
 	],
-	scope_hint: ["plugins/immune-brain/.pi-extension"],
+	scope_hint: [
+		`docs/specs/archive/${TASK}.spec.md`,
+		`docs/specs/${TASK}.spec.md`,
+		"plugins/immune-brain/.pi-extension",
+	],
 	risk: "material",
 	revision: 1,
 	owner: "user",
@@ -346,7 +350,7 @@ describe("dynamic changed-path review gate", () => {
 		`docs/plans/archive/${TIER_TASK}.intent.json`,
 		`docs/plans/${TIER_TASK}.intent.json`,
 		`docs/specs/archive/${TIER_TASK}.spec.md`,
-		"docs/specs/other.spec.md",
+		"docs/specs/other.md",
 		`docs/specs/${TIER_TASK}.spec.md`,
 		"src/app.ts",
 	];
@@ -376,7 +380,7 @@ describe("dynamic changed-path review gate", () => {
 		writeFileSync(join(root, "src", "app.ts"), "export const value = 1;\n");
 		writeFileSync(join(root, "docs", "specs", `${TIER_TASK}.spec.md`), "# spec\n");
 		writeFileSync(join(root, "docs", "specs", "archive", `${TIER_TASK}.spec.md`), "# spec\n");
-		writeFileSync(join(root, "docs", "specs", "other.spec.md"), "# other\n");
+		writeFileSync(join(root, "docs", "specs", "other.md"), "# other\n");
 		writeFileSync(join(root, "docs", "plans", `${TIER_TASK}.intent.json`), `${JSON.stringify(TIER_INTENT, null, 2)}\n`);
 		writeFileSync(join(root, "docs", "plans", "archive", `${TIER_TASK}.intent.json`), `${JSON.stringify(TIER_INTENT, null, 2)}\n`);
 		execFileSync("git", ["add", "-A"], { cwd: root });
@@ -462,7 +466,7 @@ describe("dynamic changed-path review gate", () => {
 	test("a listed path raises Review even when declared risk is routine", async () => {
 		const root = enrollTier();
 		try {
-			stage(root, "docs/specs/other.spec.md", "# other changed\n");
+			stage(root, "docs/specs/other.md", "# other changed\n");
 			freezeTier(root);
 			seedTierQa(root);
 			const projection = (await projectAssurance(root, TIER_TASK, tierDiff)).projection;
@@ -482,7 +486,7 @@ describe("dynamic changed-path review gate", () => {
 			let projection = (await projectAssurance(root, TIER_TASK, tierDiff)).projection;
 			expect(projection.risk).toBe("routine");
 			expect(projection.next_obligation).toBe("complete");
-			stage(root, "docs/specs/other.spec.md", "# other changed\n");
+			stage(root, "docs/specs/other.md", "# other changed\n");
 			projection = (await projectAssurance(root, TIER_TASK, tierDiff)).projection;
 			expect(projection.risk).toBe("material");
 			expect(projection.next_obligation).toBe("run_qa");

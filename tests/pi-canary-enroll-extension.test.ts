@@ -268,7 +268,7 @@ describe("pi canary enroll handler integration", () => {
 					owner: "user",
 					risk,
 					revision: 1,
-					scope_hint: ["publish"],
+					scope_hint: ["publish", `docs/specs/${taskId}.spec.md`, `docs/specs/archive/${taskId}.spec.md`],
 					acceptance: [
 						{ id: "A1", assertion: "artifact exists", verification: JSON.stringify({
 							contract: "assurance_kernel/verification_descriptor/v1",
@@ -503,7 +503,9 @@ describe("pi canary enroll handler integration", () => {
 			expect(ui.customCalls[0].body).toContain("Acceptance descriptors:");
 			expect(ui.confirmCalls[0].body).toContain("Goal: publish the canary");
 			expect(ui.confirmCalls[0].body).toContain("Risk: routine");
-			expect(ui.confirmCalls[0].body).toContain("Scope: publish");
+			expect(ui.confirmCalls[0].body).toContain(
+				"Scope: docs/specs/archive/enroll-task-001.spec.md, docs/specs/enroll-task-001.spec.md, publish",
+			);
 			expect(ui.confirmCalls[0].body).toContain("A1: artifact exists");
 			expect(ui.confirmCalls[0].body).toContain("Preparation digest: sha256:");
 			expect(updates).toContain("awaiting_confirmation");
@@ -691,7 +693,7 @@ describe("pi canary enroll handler integration", () => {
 							owner: "user",
 							risk: "routine",
 							revision: 1,
-							scope_hint: ["publish"],
+							scope_hint: ["publish", `docs/specs/${TASK}.spec.md`, `docs/specs/archive/${TASK}.spec.md`],
 							acceptance: [
 								{ id: "A1", assertion: "artifact exists", verification: "test -f artifact" },
 							],

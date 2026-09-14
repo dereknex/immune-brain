@@ -499,7 +499,7 @@ describe("dual-host assurance conformance", () => {
 				owner: "user",
 				goal: "c1",
 				acceptance: [{ id: "acc-1", assertion: "c1", verification: "bun test" }],
-				scope_hint: [`docs/plans/${slug}-c1.intent.json`, ...inScopeExtra],
+				scope_hint: [`docs/plans/${slug}-c1.intent.json`, `docs/specs/${slug}-c1.spec.md`, `docs/specs/archive/${slug}-c1.spec.md`, ...inScopeExtra],
 				risk: "routine",
 				revision: 1,
 			};
@@ -511,7 +511,7 @@ describe("dual-host assurance conformance", () => {
 					owner: "user",
 					goal: "c2",
 					acceptance: [{ id: "acc-2", assertion: "c2", verification: "bun test" }],
-					scope_hint: [`docs/plans/${slug}-c2.intent.json`, ...inScopeExtra],
+					scope_hint: [`docs/plans/${slug}-c2.intent.json`, `docs/specs/${slug}-c2.spec.md`, `docs/specs/archive/${slug}-c2.spec.md`, ...inScopeExtra],
 					risk: "routine",
 					revision: 1,
 				};

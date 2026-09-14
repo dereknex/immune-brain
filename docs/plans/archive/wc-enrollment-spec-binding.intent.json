@@ -1,7 +1,6 @@
 {
   "contract": "assurance_kernel/task_intent/v1",
   "task_id": "wc-enrollment-spec-binding",
-  "owner": "user",
   "goal": "Move the Spec-binding precondition from freeze time to enrollment time: extract boundSpecPath and readBoundActiveSpec into runtime/kernel/spec_binding.ts and have runtime/kernel/enrollment.ts reject a scope_hint that lacks the bound active and archive Spec paths, naming each missing path, while retaining freeze-time enforcement unchanged.",
   "acceptance": [
     {
@@ -12,7 +11,7 @@
     {
       "id": "SPB-2",
       "assertion": "runtime/kernel/enrollment.ts calls the shared function inside the existing enrollment transaction and refuses an enrollment whose scope_hint omits the bound active Spec path or its archive path, reporting each missing path by name. The check is a pure read that writes nothing, adds no second human gate, and is idempotent: re-running it on unchanged inputs returns the same projection.",
-      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.4.2\",\n  \"argv\": [\n    \"test\",\n    \"tests/kernel-enrollment-authority.test.ts\",\n    \"tests/kernel-enrollment-transaction.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 20000\n}\n"
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.4.2\",\n  \"argv\": [\n    \"test\",\n    \"tests/kernel-enrollment-authority.test.ts\",\n    \"tests/kernel-enrollment-transaction.test.ts\",\n    \"tests/kernel-batch-authority.test.ts\",\n    \"tests/kernel-canary-rehearsal.test.ts\",\n    \"tests/claude-host-authority.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 65536\n}\n"
     },
     {
       "id": "SPB-3",
@@ -26,17 +25,32 @@
     }
   ],
   "scope_hint": [
+    ".changeset/wc-enrollment-spec-binding.md",
     "docs/plans/wc-enrollment-spec-binding.intent.json",
     "docs/specs/archive/workflow-consolidation.spec.md",
     "docs/specs/workflow-consolidation.spec.md",
+    "plugins/immune-brain/dist/claude/mcp-server.mjs",
     "plugins/immune-brain/runtime/kernel/canary_application.ts",
     "plugins/immune-brain/runtime/kernel/enrollment.ts",
     "plugins/immune-brain/runtime/kernel/spec_binding.ts",
+    "tests/claude-batch-authority.test.ts",
+    "tests/claude-host-authority.test.ts",
+    "tests/dual-host-assurance-conformance.test.ts",
+    "tests/enrollment-confirmation-relocation.test.ts",
+    "tests/kernel-assurance-projection.test.ts",
+    "tests/kernel-batch-authority.test.ts",
     "tests/kernel-canary-application.test.ts",
+    "tests/kernel-canary-authority.test.ts",
+    "tests/kernel-canary-claim-writer-boundary.test.ts",
+    "tests/kernel-canary-drain-transaction.test.ts",
+    "tests/kernel-canary-rehearsal.test.ts",
     "tests/kernel-enrollment-authority.test.ts",
     "tests/kernel-enrollment-transaction.test.ts",
+    "tests/pi-batch-authority.test.ts",
+    "tests/pi-canary-enroll-extension.test.ts",
     "tests/post-freeze-intent-resolution.test.ts"
   ],
   "risk": "critical",
-  "revision": 1
+  "revision": 2,
+  "owner": "user"
 }

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { mkdtempSync, writeFileSync, mkdirSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, writeFileSync, mkdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 
@@ -8,7 +8,7 @@ import {
 	serializeBackendClaim,
 	type BackendClaim,
 } from "../plugins/immune-brain/runtime/kernel/backend_claim";
-import { enrollCanaryTask } from "../plugins/immune-brain/runtime/kernel/enrollment";
+import { enrollCanaryTask, runEnrollmentRehearsal } from "../plugins/immune-brain/runtime/kernel/enrollment";
 import { preparePiCanary, readGitHead } from "../plugins/immune-brain/runtime/kernel/pi_canary_prepare";
 import {
 	createEnrollmentAuthorityRegistry,
@@ -43,7 +43,11 @@ function baseIntent(taskId: string, revision = 1) {
 				verification: `bun test tests/${taskId}.test.ts`,
 			},
 		],
-		scope_hint: ["docs/plans"],
+		scope_hint: [
+			"docs/plans",
+			`docs/specs/${taskId}.spec.md`,
+			`docs/specs/archive/${taskId}.spec.md`,
+		],
 		risk: "routine",
 		revision,
 	};
@@ -270,6 +274,91 @@ describe("enrollment transaction", () => {
 		expect(readTaskRecord(root, taskId).record).toBeNull();
 		expect(readBackendClaim(root)).toBeNull();
 		expect(registry.isConsumed(capability)).toBe(false);
+	});
+});
+
+describe("enrollment Spec binding precondition", () => {
+	const registry = createEnrollmentAuthorityRegistry();
+	const NOW = "2026-08-12T00:00:00.000Z";
+
+	function attempt(root: string, taskId: string) {
+		const binding = bindingFor(root, taskId);
+		const capability = registry.issue(binding);
+		const input = {
+			task_id: taskId,
+			intent_path: `docs/plans/${taskId}.intent.json`,
+			intent_revision: 1,
+			preparation_digest: binding.preparation_digest,
+			capability,
+			capability_binding: binding,
+			now: NOW,
+		};
+		return { binding, capability, input };
+	}
+
+	test("refuses an intent that binds no Spec and names the required pair", () => {
+		const root = makeRoot();
+		const taskId = "task-spec-less";
+		writeIntent(root, taskId, { ...baseIntent(taskId), scope_hint: ["docs/plans"] });
+		const { capability, input } = attempt(root, taskId);
+
+		expect(() => enrollCanaryTask(root, input, registry)).toThrow(
+			/enrollment requires one scope-bound active Spec and its archive path in scope_hint: add docs\/specs\/<name>\.spec\.md and docs\/specs\/archive\/<name>\.spec\.md/,
+		);
+		// Zero authority: no record, no claim, and the capability stays unconsumed.
+		expect(readTaskRecord(root, taskId).record).toBeNull();
+		expect(readBackendClaim(root)).toBeNull();
+		expect(registry.isConsumed(capability)).toBe(false);
+		expect(existsSync(join(root, ".imm", "state", "workspace.json"))).toBe(false);
+	});
+
+	test("names the missing archive path when only the active Spec is in scope", () => {
+		const root = makeRoot();
+		const taskId = "task-active-only";
+		writeIntent(root, taskId, {
+			...baseIntent(taskId),
+			scope_hint: ["docs/plans", `docs/specs/${taskId}.spec.md`],
+		});
+		const { capability, input } = attempt(root, taskId);
+
+		expect(() => enrollCanaryTask(root, input, registry)).toThrow(
+			`enrollment requires the bound Spec pair in scope_hint; add docs/specs/archive/${taskId}.spec.md`,
+		);
+		expect(registry.isConsumed(capability)).toBe(false);
+	});
+
+	test("names the missing active path when only the archive Spec is in scope", () => {
+		const root = makeRoot();
+		const taskId = "task-archive-only";
+		writeIntent(root, taskId, {
+			...baseIntent(taskId),
+			scope_hint: ["docs/plans", `docs/specs/archive/${taskId}.spec.md`],
+		});
+		const { capability, input } = attempt(root, taskId);
+
+		expect(() => enrollCanaryTask(root, input, registry)).toThrow(
+			`enrollment requires the bound Spec pair in scope_hint; add docs/specs/${taskId}.spec.md`,
+		);
+		expect(registry.isConsumed(capability)).toBe(false);
+	});
+
+	test("the rehearsal reports the same refusal with zero writes and is idempotent", () => {
+		const root = makeRoot();
+		const taskId = "task-rehearsal-spec-less";
+		writeIntent(root, taskId, { ...baseIntent(taskId), scope_hint: ["docs/plans"] });
+		const { capability, input } = attempt(root, taskId);
+
+		const first = runEnrollmentRehearsal(root, input, capability, registry);
+		const second = runEnrollmentRehearsal(root, input, capability, registry);
+		expect(first.writes_performed).toBe(false);
+		expect(first.evidence.outcome).toBe("not_ready");
+		expect(first.evidence.blockers).toEqual([
+			"enrollment requires one scope-bound active Spec and its archive path in scope_hint: add docs/specs/<name>.spec.md and docs/specs/archive/<name>.spec.md",
+		]);
+		// Unchanged inputs project the same evidence, and the capability is untouched.
+		expect(second.evidence).toEqual(first.evidence);
+		expect(registry.isConsumed(capability)).toBe(false);
+		expect(readTaskRecord(root, taskId).record).toBeNull();
 	});
 });
 

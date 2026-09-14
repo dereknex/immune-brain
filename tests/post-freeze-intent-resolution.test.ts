@@ -12,6 +12,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { readTaskIntent } from "../plugins/immune-brain/runtime/kernel/intent";
+import { inspectSpecBinding } from "../plugins/immune-brain/runtime/kernel/spec_binding";
 
 const TASK_ID = "123-short-goal";
 const ACTIVE_PATH = `docs/plans/${TASK_ID}.intent.json`;
@@ -110,6 +111,31 @@ describe("post-freeze TaskIntent resolution", () => {
 			expect(read.intent.goal).toBe(INTENT.goal);
 			// The record is still the authority: an explicit path reaches the archive.
 			expect(readTaskIntent(root, TASK_ID, ARCHIVED_PATH).intent.goal).toBe("Stale archived outcome");
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+});
+
+describe("Spec binding survives sidecar relocation", () => {
+	test("the archived sidecar still binds its active and archive Spec pair", () => {
+		// freeze_artifacts moves the sidecar into the archive; the binding it
+		// carries is what a restore reads back, so the pair must survive intact.
+		const bound = {
+			...INTENT,
+			scope_hint: ["docs/specs/post-freeze.spec.md", "docs/specs/archive/post-freeze.spec.md"],
+		};
+		const root = makeRepo({ [ARCHIVED_PATH]: `${JSON.stringify(bound, null, 2)}\n` });
+		try {
+			const read = readTaskIntent(root, TASK_ID);
+			expect(read.intent_ref.path).toBe(ARCHIVED_PATH);
+			expect(inspectSpecBinding(read.intent)).toEqual({
+				ok: true,
+				binding: {
+					active: "docs/specs/post-freeze.spec.md",
+					archive: "docs/specs/archive/post-freeze.spec.md",
+				},
+			});
 		} finally {
 			rmSync(root, { recursive: true, force: true });
 		}

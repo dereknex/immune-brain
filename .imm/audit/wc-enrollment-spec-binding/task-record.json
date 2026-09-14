@@ -1,0 +1,184 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "wc-enrollment-spec-binding",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "wc-enrollment-spec-binding",
+    "goal": "Move the Spec-binding precondition from freeze time to enrollment time: extract boundSpecPath and readBoundActiveSpec into runtime/kernel/spec_binding.ts and have runtime/kernel/enrollment.ts reject a scope_hint that lacks the bound active and archive Spec paths, naming each missing path, while retaining freeze-time enforcement unchanged.",
+    "acceptance": [
+      {
+        "id": "SPB-1",
+        "assertion": "A new module runtime/kernel/spec_binding.ts owns boundSpecPath and readBoundActiveSpec. Given a repository root and a scope_hint it returns the resolved bound active Spec path or a structured rejection naming each missing required path. It fails closed on zero bound Specs and on more than one, and the existing freeze-time message `artifact freeze requires one scope-bound active Spec` is preserved for the freeze caller.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.4.2\",\n  \"argv\": [\n    \"test\",\n    \"tests/kernel-canary-application.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 60000,\n  \"max_output_bytes\": 20000\n}\n"
+      },
+      {
+        "id": "SPB-2",
+        "assertion": "runtime/kernel/enrollment.ts calls the shared function inside the existing enrollment transaction and refuses an enrollment whose scope_hint omits the bound active Spec path or its archive path, reporting each missing path by name. The check is a pure read that writes nothing, adds no second human gate, and is idempotent: re-running it on unchanged inputs returns the same projection.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.4.2\",\n  \"argv\": [\n    \"test\",\n    \"tests/kernel-enrollment-authority.test.ts\",\n    \"tests/kernel-enrollment-transaction.test.ts\",\n    \"tests/kernel-batch-authority.test.ts\",\n    \"tests/kernel-canary-rehearsal.test.ts\",\n    \"tests/claude-host-authority.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 65536\n}\n"
+      },
+      {
+        "id": "SPB-3",
+        "assertion": "Freeze-time enforcement is retained rather than replaced, because enrollment cannot observe post-implementation scope drift: runtime/kernel/canary_application.ts still validates the binding at freeze with unchanged behavior, and a task whose scope drifts after enrollment is still refused at freeze.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.4.2\",\n  \"argv\": [\n    \"test\",\n    \"tests/kernel-canary-application.test.ts\",\n    \"tests/post-freeze-intent-resolution.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 20000\n}\n"
+      },
+      {
+        "id": "SPB-4",
+        "assertion": "The restriction is deliberate and observable: an existing candidate TaskIntent whose scope_hint omits the Spec paths stops enrolling and must be revised, and the refusal names the exact paths to add rather than reporting a generic validation failure.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.4.2\",\n  \"argv\": [\n    \"test\",\n    \"tests/kernel-enrollment-authority.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 60000,\n  \"max_output_bytes\": 20000\n}\n"
+      }
+    ],
+    "scope_hint": [
+      ".changeset/wc-enrollment-spec-binding.md",
+      "docs/plans/wc-enrollment-spec-binding.intent.json",
+      "docs/specs/archive/workflow-consolidation.spec.md",
+      "docs/specs/workflow-consolidation.spec.md",
+      "plugins/immune-brain/dist/claude/mcp-server.mjs",
+      "plugins/immune-brain/runtime/kernel/canary_application.ts",
+      "plugins/immune-brain/runtime/kernel/enrollment.ts",
+      "plugins/immune-brain/runtime/kernel/spec_binding.ts",
+      "tests/claude-batch-authority.test.ts",
+      "tests/claude-host-authority.test.ts",
+      "tests/dual-host-assurance-conformance.test.ts",
+      "tests/enrollment-confirmation-relocation.test.ts",
+      "tests/kernel-assurance-projection.test.ts",
+      "tests/kernel-batch-authority.test.ts",
+      "tests/kernel-canary-application.test.ts",
+      "tests/kernel-canary-authority.test.ts",
+      "tests/kernel-canary-claim-writer-boundary.test.ts",
+      "tests/kernel-canary-drain-transaction.test.ts",
+      "tests/kernel-canary-rehearsal.test.ts",
+      "tests/kernel-enrollment-authority.test.ts",
+      "tests/kernel-enrollment-transaction.test.ts",
+      "tests/pi-batch-authority.test.ts",
+      "tests/pi-canary-enroll-extension.test.ts",
+      "tests/post-freeze-intent-resolution.test.ts"
+    ],
+    "risk": "critical",
+    "revision": 2,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/archive/wc-enrollment-spec-binding.intent.json",
+    "content_hash": "sha256:5bcf47534a5eb2a5cce02ce12fa042b4b35b95497239ada1b791a92a26543b13"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:2d3840f4a7c81edb76f72fcd9a41b692750fbd4949df6fe2e15b4db9f637c3a6",
+  "git_base_head": "b284e653f4df2a5f2422b0097bb03d51c389dde7",
+  "attestations": [
+    {
+      "id": "approval-qa-83fe1fd9",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:5bcf47534a5eb2a5cce02ce12fa042b4b35b95497239ada1b791a92a26543b13",
+      "diff_hash": "sha256:04a14aa85bdec3ba4ed9d399e277a55ad4db3320b489e3e036f49402e1bd39dc",
+      "actor_id": "deterministic-qa",
+      "summary": "all 4 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "SPB-1",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "SPB-2",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "SPB-3",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "SPB-4",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-3027bbcd",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:5bcf47534a5eb2a5cce02ce12fa042b4b35b95497239ada1b791a92a26543b13",
+      "diff_hash": "sha256:04a14aa85bdec3ba4ed9d399e277a55ad4db3320b489e3e036f49402e1bd39dc",
+      "actor_id": "parent-mediated-review",
+      "summary": "Revision identity verified (commit 96c0f15, single parent b284e65, tree 3abdc1f). spec_binding.ts owns the shared predicate with the freeze message preserved; enrollment runs the pure, idempotent inspectSpecBinding check inside the existing store-lock transaction and names each missing path; freeze-time enforcement in canary_application.ts is unchanged with a new drift-refusal test; test fixture updates add the Spec pair without weakening assertions, and the dist bundle matches source.",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "b284e653f4df2a5f2422b0097bb03d51c389dde7",
+        "review_commit": "96c0f15de6b93038e948ad90aff7f6527883657c",
+        "review_tree": "3abdc1fbbe90dfe9c5ceb2f488f924dfd69a95d5",
+        "manifest_digest": "sha256:42afc9f640a0d049a90555f6e3b18417dc18851e239cb913faa1753514ed3b22"
+      }
+    }
+  ],
+  "findings": [],
+  "history": [
+    {
+      "id": "approve_breaking_intent_revision:wc-enrollment-spec-binding:2026-09-14T07:44:52.250Z",
+      "at": "2026-09-14T07:44:52.250Z",
+      "type": "approve_breaking_intent_revision",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "intent_revision_2\naction_v2_sha256:09f864fe14b7a87484bc84fa4cfc2e6c7263f5ba7e7170db3bde061ce955272f",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-f25ec6778e56c58c",
+        "issued_at": "2026-09-14T07:44:52.561Z",
+        "expires_at": "2026-09-14T07:54:52.561Z"
+      }
+    },
+    {
+      "id": "freeze_artifacts:wc-enrollment-spec-binding:2026-09-14T07:45:10.647Z",
+      "at": "2026-09-14T07:45:10.647Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent and Spec frozen at docs/plans/archive/wc-enrollment-spec-binding.intent.json"
+    },
+    {
+      "id": "record_approval:wc-enrollment-spec-binding:2026-09-14T07:45:35.967Z",
+      "at": "2026-09-14T07:45:35.967Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-83fe1fd9\naction_v2_sha256:37bf855901fc0ce111102d87f7c35be2d14cbcc92514870df7025d46d3b0ea5b",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-285deb1d64a7f7aa",
+        "issued_at": "2026-09-14T07:45:35.967Z",
+        "expires_at": "2026-09-14T07:55:35.967Z"
+      }
+    },
+    {
+      "id": "record_approval:wc-enrollment-spec-binding:2026-09-14T07:52:33.493Z",
+      "at": "2026-09-14T07:52:33.493Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-3027bbcd\naction_v2_sha256:278980ce1642c69ed18b71af28b5ea58dbf88b167a70e5e582756deaa297ec73",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-4a59de91f2d7a393",
+        "issued_at": "2026-09-14T07:52:33.493Z",
+        "expires_at": "2026-09-14T08:02:33.493Z"
+      }
+    },
+    {
+      "id": "complete:wc-enrollment-spec-binding:2026-09-14T07:52:35.107Z",
+      "at": "2026-09-14T07:52:35.107Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:79647fda921b7a2b6c850e22bc78ed9473b877575abd808d521f6f8584a762ff"
+    }
+  ]
+}

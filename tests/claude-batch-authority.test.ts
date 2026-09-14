@@ -46,7 +46,7 @@ function createBatchFixture(slug = "demo-init"): {
 		owner: "user",
 		goal: "child 1",
 		acceptance: [{ id: "acc-1", assertion: "c1 assertion", verification: "bun test" }],
-		scope_hint: [`docs/plans/${slug}-c1.intent.json`],
+		scope_hint: [`docs/plans/${slug}-c1.intent.json`, `docs/specs/${slug}-c1.spec.md`, `docs/specs/archive/${slug}-c1.spec.md`],
 		risk: "routine",
 		revision: 1,
 	};
@@ -59,7 +59,7 @@ function createBatchFixture(slug = "demo-init"): {
 		owner: "user",
 		goal: "child 2",
 		acceptance: [{ id: "acc-2", assertion: "c2 assertion", verification: "bun test" }],
-		scope_hint: [`docs/plans/${slug}-c2.intent.json`],
+		scope_hint: [`docs/plans/${slug}-c2.intent.json`, `docs/specs/${slug}-c2.spec.md`, `docs/specs/archive/${slug}-c2.spec.md`],
 		risk: "material",
 		revision: 1,
 	};
@@ -72,7 +72,7 @@ function createBatchFixture(slug = "demo-init"): {
 		owner: "user",
 		goal: "child 3 critical",
 		acceptance: [{ id: "acc-3", assertion: "c3 assertion", verification: "bun test" }],
-		scope_hint: [`docs/plans/${slug}-c3.intent.json`],
+		scope_hint: [`docs/plans/${slug}-c3.intent.json`, `docs/specs/${slug}-c3.spec.md`, `docs/specs/archive/${slug}-c3.spec.md`],
 		risk: "critical",
 		revision: 1,
 	};

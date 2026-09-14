@@ -120,7 +120,7 @@ function makeEligibleRepo(
 				owner: "user",
 				risk,
 				revision: 1,
-				scope_hint: ["publish"],
+				scope_hint: ["publish", `docs/specs/${taskId}.spec.md`, `docs/specs/archive/${taskId}.spec.md`],
 				acceptance: [
 					{
 						id: "A1",
@@ -388,7 +388,7 @@ describe("enrollment confirmation relocation", () => {
 							owner: "user",
 							risk: "routine",
 							revision: 1,
-							scope_hint: ["publish"],
+							scope_hint: ["publish", `docs/specs/${TASK}.spec.md`, `docs/specs/archive/${TASK}.spec.md`],
 							acceptance: [
 								{
 									id: "A1",

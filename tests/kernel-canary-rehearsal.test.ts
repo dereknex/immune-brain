@@ -36,7 +36,11 @@ function writeIntent(root: string, taskId: string) {
 		owner: "user",
 		goal: `goal ${taskId}`,
 		acceptance: [{ id: "acc-1", assertion: "a", verification: "bun test" }],
-		scope_hint: [`plugins/immune-brain/runtime/kernel/${taskId}.ts`],
+		scope_hint: [
+			`plugins/immune-brain/runtime/kernel/${taskId}.ts`,
+			`docs/specs/${taskId}.spec.md`,
+			`docs/specs/archive/${taskId}.spec.md`,
+		],
 		risk: "routine",
 		revision: 1,
 	};

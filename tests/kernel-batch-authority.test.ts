@@ -40,7 +40,7 @@ function intentFor(taskId: string, revision = 1, goal = `goal for ${taskId}`) {
 				verification: `bun test tests/${taskId}.test.ts`,
 			},
 		],
-		scope_hint: ["docs/plans"],
+		scope_hint: ["docs/plans", `docs/specs/${taskId}.spec.md`, `docs/specs/archive/${taskId}.spec.md`],
 		risk: "routine",
 		revision,
 	};
