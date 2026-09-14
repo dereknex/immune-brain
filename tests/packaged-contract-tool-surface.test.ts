@@ -14,8 +14,17 @@
 //     names with the operation literals Pi's Tools declare. A name both Hosts
 //     accept as an operation is Host-neutral; a name only one Host registers as a
 //     Tool is a Host-specific spelling.
+//
+// A Host-specific spelling is reported whenever the token is a call target,
+// either because a Host registers it as a Tool or because the contract itself
+// names it as one (the word Tool/Operation right after it). The second source is
+// what makes a Tool no Host registers any more — the HTN-2 regression this guard
+// exists to catch — a failure instead of a silent pass: a registration that no
+// longer exists leaves nothing to derive from, but the contract still spells the
+// obligation as the Tool it claims.
 
 import { describe, expect, test } from "bun:test";
+import { execFileSync } from "node:child_process";
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { TOOLS } from "../plugins/immune-brain/runtime/claude/mcp_server";
@@ -32,6 +41,8 @@ const PI_OPERATION_LITERAL = /Type\.Literal\("([a-z0-9_]+)"\)/g;
 /** A Tool declaration in a Pi extension file. */
 const PI_TOOL_DECLARATION = /^\s+name: "([a-z][a-z0-9_]*)"[,]?$/gm;
 const TOOL_SPELLING = /^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$/;
+/** The word Tool/Operation right after a token marks it as a call target. */
+const TOOL_WORD_AFTER = /^\s*(?:Tool|Tools|Operation|Operations)\b/;
 
 function read(abs: string): string {
 	return readFileSync(abs, "utf8");
@@ -74,30 +85,35 @@ const SHARED_OPERATIONS = new Set([...piOperationNames()].filter((name) => CLAUD
 
 /**
  * The Host-specific Tool spellings a contract text names. A spelling is
- * Host-specific when some Host registers it as a Tool and it is neither a
- * shared operation nor registered on every Host.
+ * Host-specific when it is a call target and is neither a shared operation nor
+ * registered on every Host; a call target no Host registers at all is the
+ * worst case of the same rule, not an exemption from it.
  */
 function hostSpecificToolSpellings(text: string): string[] {
 	const found = new Set<string>();
-	for (const [, token] of text.matchAll(BACKTICKED)) {
+	for (const match of text.matchAll(BACKTICKED)) {
+		const token = match[1]!;
 		if (!TOOL_SPELLING.test(token)) continue;
 		if (SHARED_OPERATIONS.has(token) || EVERY_HOST_TOOLS.has(token)) continue;
-		if (CLAUDE_TOOLS.has(token) || PI_TOOLS.has(token)) found.add(token);
+		const index = match.index ?? 0;
+		const registered = CLAUDE_TOOLS.has(token) || PI_TOOLS.has(token);
+		const named = TOOL_WORD_AFTER.test(text.slice(index + match[0].length));
+		if (registered || named) found.add(token);
 	}
 	return [...found].sort();
 }
 
-function contractViolations(): string[] {
+/** The violations one contract text contributes, in line order. */
+function contractViolationsIn(rel: string, text: string): string[] {
 	const violations: string[] = [];
-	for (const abs of markdownContracts()) {
-		const rel = abs.slice(ROOT.length + 1);
-		read(abs)
-			.split("\n")
-			.forEach((line, index) => {
-				for (const token of hostSpecificToolSpellings(line)) violations.push(`${rel}:${index + 1}: \`${token}\``);
-			});
-	}
+	text.split("\n").forEach((line, index) => {
+		for (const token of hostSpecificToolSpellings(line)) violations.push(`${rel}:${index + 1}: \`${token}\``);
+	});
 	return violations;
+}
+
+function contractViolations(): string[] {
+	return markdownContracts().flatMap((abs) => contractViolationsIn(abs.slice(ROOT.length + 1), read(abs)));
 }
 
 describe("packaged contract tool surface", () => {
@@ -117,16 +133,26 @@ describe("packaged contract tool surface", () => {
 	});
 
 	test("the guard rejects the pre-change contracts", () => {
-		// Verbatim pre-change sentences from the packaged contracts this slice fixed.
-		// The guard has to fail against these, or it does not catch the regression it names.
-		expect(
-			hostSpecificToolSpellings(
-				[
-					"Host's `imm_kernel_canary` `status` first and verify the exact active backend",
-					"At every internal role boundary call the read-only `imm_loop_action` Tool. Use",
-				].join("\n"),
-			),
-		).toEqual(["imm_kernel_canary", "imm_loop_action"]);
+		// The commit immediately before S1's first contract change owns the actual
+		// pre-change text, read here at test time: a paraphrase of the old sentences
+		// could drift from what the guard actually rejected.
+		const path = "plugins/immune-brain/dist/imm-loop.md";
+		const before = execFileSync("git", ["show", `aecf5dd^:${path}`], { cwd: ROOT, encoding: "utf8" });
+		const violations = contractViolationsIn(path, before);
+		expect(violations.length).toBeGreaterThan(0);
+		expect(violations.join("\n")).toContain("`imm_kernel_canary`");
+		expect(violations.join("\n")).toContain("`imm_loop_action`");
+	});
+
+	test("the guard rejects a tool spelling no Host registers any more", () => {
+		// HTN-2's exact regression: a contract names a Tool that no Host surface
+		// registers. Zero surfaces is a failure, not a silent pass.
+		expect(hostSpecificToolSpellings("The read-only `retired_host_tool` Tool projects authority.")).toEqual([
+			"retired_host_tool",
+		]);
+		expect(hostSpecificToolSpellings("Call the `retired_kernel_operation` Operation first.")).toEqual([
+			"retired_kernel_operation",
+		]);
 	});
 
 	test("a shared Kernel operation and an every-Host tool name stay accepted", () => {

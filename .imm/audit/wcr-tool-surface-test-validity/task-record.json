@@ -1,0 +1,129 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "wcr-tool-surface-test-validity",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "wcr-tool-surface-test-validity",
+    "goal": "Fix tests/packaged-contract-tool-surface.test.ts so a contract token present on zero Host tool surfaces is reported as a failure (the exact HTN-2 regression it exists to catch), and its pre-change comparison reads the actual pre-S1 file content instead of a hardcoded paraphrase.",
+    "acceptance": [
+      {
+        "id": "RB4-1",
+        "assertion": "tests/packaged-contract-tool-surface.test.ts reports a contract token as a failure when it is present on neither CLAUDE_TOOLS nor PI_TOOLS (zero surfaces), not only when it is present on at least one.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.4.2\",\n  \"argv\": [\n    \"test\",\n    \"tests/packaged-contract-tool-surface.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 60000,\n  \"max_output_bytes\": 65536\n}\n"
+      },
+      {
+        "id": "RB4-2",
+        "assertion": "The 'fails against pre-change contracts' case in tests/packaged-contract-tool-surface.test.ts reads the actual file content at the commit immediately preceding S1's first contract change (via git show <sha>^:<path> at test time) instead of a hardcoded paraphrase of the old text.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.4.2\",\n  \"argv\": [\n    \"test\",\n    \"tests/packaged-contract-tool-surface.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 60000,\n  \"max_output_bytes\": 65536\n}\n"
+      }
+    ],
+    "scope_hint": [
+      "docs/plans/wcr-tool-surface-test-validity.intent.json",
+      "docs/specs/archive/workflow-consolidation-remediation.spec.md",
+      "docs/specs/workflow-consolidation-remediation.spec.md",
+      "tests/packaged-contract-tool-surface.test.ts"
+    ],
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/archive/wcr-tool-surface-test-validity.intent.json",
+    "content_hash": "sha256:7258e061870869434ba15face7bf373511e88f71f1f2a26cea6e0de392f4c013"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:7258e061870869434ba15face7bf373511e88f71f1f2a26cea6e0de392f4c013",
+  "git_base_head": "760d3ee73abc05b947a406295e6c296dab44eada",
+  "attestations": [
+    {
+      "id": "approval-qa-f03ba2d3",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:7258e061870869434ba15face7bf373511e88f71f1f2a26cea6e0de392f4c013",
+      "diff_hash": "sha256:1a76e3396d4e89797414226dfa9dfae6cde36463d755cfdf60205ce869ba6d43",
+      "actor_id": "deterministic-qa",
+      "summary": "all 2 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "RB4-1",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "RB4-2",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-963c85a3",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:7258e061870869434ba15face7bf373511e88f71f1f2a26cea6e0de392f4c013",
+      "diff_hash": "sha256:1a76e3396d4e89797414226dfa9dfae6cde36463d755cfdf60205ce869ba6d43",
+      "actor_id": "parent-mediated-review",
+      "summary": "Verified revision identity (parent 760d3ee, tree faf651b); zero-surface tool tokens are now flagged via registration or Tool/Operation word context (RB4-1, heuristic required to avoid false positives on non-tool backticked identifiers like task_id), and the pre-change case reads real history via git show aecf5dd^:plugins/immune-brain/dist/imm-loop.md at test time (RB4-2); the git-history dependency in the test is mandated by RB4-2 itself.",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "760d3ee73abc05b947a406295e6c296dab44eada",
+        "review_commit": "652c3b300df7f23278002d767393b09abd30d2e7",
+        "review_tree": "faf651b74f5150fa65f7197f63d527ec3aa5f51c",
+        "manifest_digest": "sha256:40d629a36e489dca8aaa197b1d9aea38da973e787c0397848760260579c1118a"
+      }
+    }
+  ],
+  "findings": [],
+  "history": [
+    {
+      "id": "freeze_artifacts:wcr-tool-surface-test-validity:2026-09-14T16:42:20.032Z",
+      "at": "2026-09-14T16:42:20.032Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent and Spec frozen at docs/plans/archive/wcr-tool-surface-test-validity.intent.json"
+    },
+    {
+      "id": "record_approval:wcr-tool-surface-test-validity:2026-09-14T16:42:20.794Z",
+      "at": "2026-09-14T16:42:20.794Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-f03ba2d3\naction_v2_sha256:638d28e39d4d56e135fb3a327f6496a46eeb70f2233d7b1d7ea1c07e04ac69c5",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-fe82591903a6efa5",
+        "issued_at": "2026-09-14T16:42:20.794Z",
+        "expires_at": "2026-09-14T16:52:20.794Z"
+      }
+    },
+    {
+      "id": "record_approval:wcr-tool-surface-test-validity:2026-09-14T16:44:58.371Z",
+      "at": "2026-09-14T16:44:58.371Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-963c85a3\naction_v2_sha256:934fbf79468519dbc5933c192ff262eba31a7b387162907ebf7b1c2db3faf15d",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-7bca42de2644226a",
+        "issued_at": "2026-09-14T16:44:58.371Z",
+        "expires_at": "2026-09-14T16:54:58.371Z"
+      }
+    },
+    {
+      "id": "complete:wcr-tool-surface-test-validity:2026-09-14T16:44:58.869Z",
+      "at": "2026-09-14T16:44:58.869Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:125b3f3050d938b8888318eb7955778ff0334c2a4f51180a398a92819537b484"
+    }
+  ]
+}
