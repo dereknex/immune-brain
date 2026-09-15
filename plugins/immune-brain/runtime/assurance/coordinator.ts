@@ -172,6 +172,8 @@ export interface ReviewRevisionIdentity {
 export interface SnapshotDescriptor {
 	contract: "assurance_kernel/assurance_snapshot/v2";
 	task_id: string;
+	/** The exact run this snapshot was captured from; null when none is committed. */
+	run_id: string | null;
 	role: AssuranceRole;
 	record_revision: string;
 	workspace_revision: string;

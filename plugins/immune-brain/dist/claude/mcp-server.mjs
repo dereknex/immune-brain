@@ -5704,6 +5704,24 @@ function convergePendingRelocations(root, db) {
     setPendingRelocations(db, run.run_id, null);
   }
 }
+function withKernelStoreLockForTask(root, taskId, operation) {
+  validateTaskId4(taskId);
+  return withKernelTransaction(root, (db) => {
+    assertNoRetiredFileStore(root, db, taskId);
+    convergePendingRelocations(root, db);
+    retryPendingAuditExports(root, db);
+    return operation();
+  });
+}
+function recoverKernelStoreFollowUps(root, taskId) {
+  if (typeof taskId === "string" && taskId.length > 0)
+    return void withKernelStoreLockForTask(root, taskId, () => {
+      return;
+    });
+  return void withKernelStoreLock(root, () => {
+    return;
+  });
+}
 function withKernelStoreLock(root, operation) {
   const result = withKernelTransaction(root, (db) => {
     assertNoRetiredFileStore(root);
@@ -5747,7 +5765,7 @@ function requireActiveRun(db, taskId) {
     throw new KernelStoreConflictError(`task ${taskId} has no workspace claim to mutate`);
   return run;
 }
-function commitTaskRecordLocked(root, taskId, expectedRecordHash, nextRecord, expectedWorkspaceHash, nextWorkspace, artifactRelocations = []) {
+function commitTaskRecordLocked(root, taskId, expectedRecordHash, nextRecord, expectedWorkspaceHash, nextWorkspace, artifactRelocations = [], capabilityRunId) {
   validateTaskId4(taskId);
   const nextRecordContent = `${JSON.stringify(nextRecord, null, 2)}
 `;
@@ -5757,6 +5775,7 @@ function commitTaskRecordLocked(root, taskId, expectedRecordHash, nextRecord, ex
     const run = requireActiveRun(db, taskId);
     const identity = runIdentity(db, run);
     assertRunBinding(identity, { task_id: taskId, run_id: run.run_id }, "task record commit");
+    assertCapabilityRun(identity, capabilityRunId, "task record commit");
     const committedRecord = parseTaskRecord(nextRecord);
     const currentRevision = canonicalRecordHash(recordFromRun(run));
     if (currentRevision !== expectedRecordHash)
@@ -5778,6 +5797,12 @@ function commitTaskRecordLocked(root, taskId, expectedRecordHash, nextRecord, ex
     };
   });
   return committed;
+}
+function assertCapabilityRun(current, capabilityRunId, operation) {
+  if (capabilityRunId === undefined)
+    return;
+  if (capabilityRunId !== current.run_id)
+    throw new KernelStoreSecurityError(`${operation} authority was issued for run ${capabilityRunId} but this worktree holds run ${current.run_id}`);
 }
 function claimBytesFromRun(run) {
   return serializeBackendClaim(claimFromRunRow(run));
@@ -5836,7 +5861,7 @@ function commitEnrollmentLocked(root, taskId, transaction, claim) {
     return { record: nextRecord, workspace: nextWorkspace };
   });
 }
-function commitDrainLocked(root, taskId, expectedClaimContent, nextClaimContent, at) {
+function commitDrainLocked(root, taskId, expectedClaimContent, nextClaimContent, at, capabilityRunId) {
   validateTaskId4(taskId);
   const expected = parseBackendClaim(JSON.parse(expectedClaimContent));
   const next = parseBackendClaim(JSON.parse(nextClaimContent));
@@ -5856,6 +5881,7 @@ function commitDrainLocked(root, taskId, expectedClaimContent, nextClaimContent,
     const active = requireActiveRun(db, taskId);
     const identity = runIdentity(db, active);
     assertRunBinding(identity, { task_id: taskId, run_id: active.run_id }, "drain transaction");
+    assertCapabilityRun(identity, capabilityRunId, "drain transaction");
     if (claimBytesFromRun(active) !== expectedClaimContent)
       throw new KernelStoreConflictError(`drain transaction claim bytes changed for ${taskId}`);
     updateRunClaim(db, active.run_id, "active", "draining", at);
@@ -5869,7 +5895,7 @@ function commitDrainLocked(root, taskId, expectedClaimContent, nextClaimContent,
     return next;
   });
 }
-function commitTerminalLocked(root, taskId, transaction, tombstone) {
+function commitTerminalLocked(root, taskId, transaction, tombstone, capabilityRunId) {
   validateTaskId4(taskId);
   if (transaction.task_id !== taskId)
     throw new KernelStoreSecurityError("terminal transaction task identity is inconsistent");
@@ -5901,6 +5927,7 @@ function commitTerminalLocked(root, taskId, transaction, tombstone) {
       throw new KernelStoreSecurityError("terminal settlement claim must be active or draining");
     const identity = runIdentity(db, run);
     assertRunBinding(identity, { task_id: taskId, run_id: run.run_id }, "terminal settlement");
+    assertCapabilityRun(identity, capabilityRunId, "terminal settlement");
     for (const relocation of transaction.artifact_relocations ?? [])
       assertArtifactRelocation(relocation);
     const workspaceRevision = assertWorkspaceExpectation(db, transaction.expected_workspace_hash, "workspace");
@@ -6109,6 +6136,7 @@ function deriveAssuranceAuthorization(input) {
 }
 function emptyProjection() {
   return {
+    run_id: null,
     record_revision: "",
     workspace_revision: "",
     intent_revision: 0,
@@ -6167,6 +6195,7 @@ function projectFromRecord(record, recordRevision, workspaceRevision, snapshot) 
   const approvalKinds = freshApprovalKinds(record, record.intent_ref.content_hash, snapshot.diff_hash);
   const openUserDecisionCount = record.findings.filter((finding) => finding.kind === "unresolved_user_decision" && finding.status === "open").length;
   return {
+    run_id: null,
     record_revision: recordRevision,
     workspace_revision: workspaceRevision,
     intent_revision: record.intent_snapshot.revision,
@@ -6235,6 +6264,7 @@ async function projectAssurance(root, taskId, diffProvider) {
     if (!read.record) {
       if (!terminalOwner)
         return fail(`task ${taskId} has no TaskRecord v3`, claim);
+      const committedRunId = reconcileKernelAuthority(root, taskId).owner_run_id;
       const committed = await readCommittedRecord(root, taskId);
       if (committed) {
         const workspace = await readWorkspaceStateRaw(root);
@@ -6243,7 +6273,10 @@ async function projectAssurance(root, taskId, diffProvider) {
           task_id: taskId,
           error: null,
           claim: null,
-          projection: projectFromRecord(committed.record, committed.revision, workspace.revision, diffProvider(root, committed.record))
+          projection: {
+            ...projectFromRecord(committed.record, committed.revision, workspace.revision, diffProvider(root, committed.record)),
+            run_id: committedRunId
+          }
         };
       }
       const auditPair = await readAuditTaskPair(root, taskId);
@@ -6277,7 +6310,10 @@ async function projectAssurance(root, taskId, diffProvider) {
       task_id: taskId,
       error: null,
       claim,
-      projection: projectFromRecord(read.record, read.revision, workspace.revision, snapshot)
+      projection: {
+        ...projectFromRecord(read.record, read.revision, workspace.revision, snapshot),
+        run_id: reconcileKernelAuthority(root, taskId).owner_run_id
+      }
     };
   } catch (error) {
     return fail(error instanceof Error ? error.message : String(error));
@@ -6287,6 +6323,10 @@ async function projectAssurance(root, taskId, diffProvider) {
 // plugins/immune-brain/runtime/kernel/application.ts
 function applyTaskAction(input) {
   const { root, task_id, prior_intent_token, registry, capability, diffProvider, now } = input;
+  const capabilityRunId = (() => {
+    const value = capability?.run_id;
+    return typeof value === "string" && value.length > 0 ? value : undefined;
+  })();
   return withKernelStoreLock(root, () => {
     const current = readTaskRecordRaw(root, task_id);
     if (!current.record)
@@ -6406,7 +6446,7 @@ function applyTaskAction(input) {
         next_workspace_content: serializeWorkspace(nextWorkspaceState),
         ...input.artifact_transition ? { artifact_relocations: input.artifact_transition.relocations } : {}
       };
-      commitTerminalLocked(root, task_id, transaction, tombstone);
+      commitTerminalLocked(root, task_id, transaction, tombstone, capabilityRunId);
       return {
         revision: canonicalRecordHash(nextRecord),
         record: nextRecord,
@@ -6793,7 +6833,7 @@ function createCanaryApplication(registry) {
         lifecycle_status: "draining",
         updated_at: now
       };
-      return commitDrainLocked(input.root, input.task_id, serializeBackendClaim(claim), serializeBackendClaim(nextClaim), now);
+      return commitDrainLocked(input.root, input.task_id, serializeBackendClaim(claim), serializeBackendClaim(nextClaim), now, typeof input.run_id === "string" && input.run_id.length > 0 ? input.run_id : undefined);
     });
   }
   return { registry, execute, beginDrain };
@@ -6864,8 +6904,10 @@ function createMutationAuthorityRegistry() {
   const inner = createCapabilityRegistry(MUTATION_AUTHORITY_CAPABILITY_BRAND, {
     validateBinding(binding, issuedAt) {
       const missing = [];
+      if (binding.run_id !== undefined && binding.run_id.length === 0)
+        throw new Error("authority capability run_id must not be empty");
       for (const [key, value] of Object.entries(binding)) {
-        if (key === "findings_digest")
+        if (key === "findings_digest" || key === "run_id")
           continue;
         if (value === undefined || value === null || value === "")
           missing.push(key);
@@ -6885,6 +6927,8 @@ function createMutationAuthorityRegistry() {
         throw new Error("authority capability action digest mismatch");
       if (state.task_id !== expected.task_id)
         throw new Error("authority capability task mismatch");
+      if (state.run_id !== undefined && expected.run_id !== undefined && state.run_id !== expected.run_id)
+        throw new Error("authority capability run mismatch");
       if (state.expected_record_hash !== expected.expected_record_hash)
         throw new Error("authority capability record hash mismatch");
       if (state.intent_revision !== expected.intent_revision)
@@ -6908,6 +6952,7 @@ function createMutationAuthorityRegistry() {
           expires_at: state.expires_at
         },
         action_digest: actionDigest,
+        ...state.run_id !== undefined ? { run_id: state.run_id } : {},
         expected_record_hash: state.expected_record_hash,
         intent_revision: state.intent_revision,
         intent_content_hash: state.intent_content_hash,
@@ -11196,6 +11241,7 @@ function diffHashOf(root, record) {
   return diffSnapshotOf(root, record).diff_hash;
 }
 function readTaskIntentForRecord(root, taskId) {
+  recoverKernelStoreFollowUps(root, taskId);
   const currentPath = readTaskRecordRaw(root, taskId).record?.intent_ref?.path;
   return readTaskIntent(root, taskId, currentPath);
 }
@@ -11334,6 +11380,7 @@ async function buildAssuranceSnapshot(root, taskId, role, projection, runner) {
   const snapshot = {
     contract: "assurance_kernel/assurance_snapshot/v2",
     task_id: taskId,
+    run_id: projection.projection.run_id,
     role,
     record_revision: projection.projection.record_revision,
     workspace_revision: projection.projection.workspace_revision,
@@ -11393,6 +11440,7 @@ async function mintCapability(registry, input) {
   const binding = {
     authority_kind: input.authority_kind,
     task_id: input.task_id,
+    ...input.run_id ? { run_id: input.run_id } : {},
     action_digest: digestOfAction(action),
     expected_record_hash: input.expected_record_hash,
     intent_revision: input.intent_revision,
@@ -11694,6 +11742,7 @@ class ClaudeRuntime {
       const capability = await mintCapability(registry, {
         authority_kind: "user",
         task_id: taskId,
+        run_id: capabilityProjection.projection.run_id,
         action_kind: op,
         expected_record_hash: capabilityProjection.projection.record_revision,
         intent_revision: nextIntent?.revision ?? capabilityProjection.projection.intent_revision,
@@ -11753,6 +11802,7 @@ class ClaudeRuntime {
       const capability = await mintCapability(registry, {
         authority_kind: input.snapshot.role,
         task_id: input.taskId,
+        run_id: input.snapshot.run_id,
         action_kind: "request_rework",
         expected_record_hash: input.snapshot.record_revision,
         intent_revision: input.snapshot.intent_revision,
@@ -11789,6 +11839,7 @@ class ClaudeRuntime {
     const capability = await mintCapability(registry, {
       authority_kind: input.snapshot.role,
       task_id: input.taskId,
+      run_id: input.snapshot.run_id,
       action_kind: "record_approval",
       expected_record_hash: input.snapshot.record_revision,
       intent_revision: input.snapshot.intent_revision,

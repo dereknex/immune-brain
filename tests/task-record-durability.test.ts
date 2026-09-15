@@ -1,9 +1,9 @@
 import { describe, expect, test } from "bun:test";
-import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 
 import {
@@ -20,17 +20,26 @@ import {
 } from "../plugins/immune-brain/runtime/kernel/sqlite_store";
 import {
   commitEnrollmentLocked,
+  commitTaskRecordLocked,
   commitTerminalLocked,
   MISSING_REVISION,
-  readAuditTaskPair,
+  readCommittedRecord,
   readTaskRecordRaw,
   readWorkspaceStateRaw,
   reconcileKernelAuthority,
+  recoverKernelStoreFollowUps,
   repairKernelAuthority,
   retryStoreFollowUps,
   revisionForContent,
   serializeWorkspace,
 } from "../plugins/immune-brain/runtime/kernel/storage";
+import {
+  createMutationAuthorityRegistry,
+  digestOfAction,
+} from "../plugins/immune-brain/runtime/kernel/authority_port";
+import { writeBatchRunState } from "../plugins/immune-brain/runtime/unattended/batch_state";
+import { BATCH_STATE_RELATIVE, inspectStorageLayout } from "../plugins/immune-brain/runtime/kernel/storage_paths";
+import { readAuditTaskPair } from "../plugins/immune-brain/runtime/kernel/storage";
 import { canonicalRecordHash } from "../plugins/immune-brain/runtime/kernel/reducer";
 import { activeRunId, readRunRowById } from "../plugins/immune-brain/runtime/kernel/sqlite_store";
 import { seedKernelRunForTest } from "./fixtures/mutation-authority-test-seam";
@@ -779,6 +788,173 @@ describe("SQLite authority store durability", () => {
       expect(record.revision).toBe(canonicalRecordHash(record.record!));
       expect(record.revision).toBe(canonicalRecordHash(JSON.parse(run.record_json) as never));
       expect(record.revision).toMatch(/^sha256:[a-f0-9]{64}$/);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+  test("authority issued for one run is refused in a worktree holding another", () => {
+    const rootA = storeRoot();
+    const rootB = storeRoot();
+    try {
+      const a = storeEnrollFixture(rootA, "durability-s");
+      const b = storeEnrollFixture(rootB, "durability-s");
+      expect(a.run_id).not.toBe(b.run_id);
+      const recordB = withKernelRead(rootB, (db) => readRunRowById(db, b.run_id))!;
+      const before = readTaskRecordRaw(rootB, "durability-s").revision;
+      // A capability minted in A names A's run. Applied here, the store refuses
+      // it before any write: identical task, intent and record content cannot
+      // stand in for the run identity.
+      expect(() =>
+        commitTaskRecordLocked(
+          rootB,
+          "durability-s",
+          before,
+          JSON.parse(recordB.record_json) as never,
+          readWorkspaceStateRaw(rootB).revision,
+          { contract: "assurance_kernel/workspace/v1", current_working: "durability-s" },
+          [],
+          a.run_id,
+        ),
+      ).toThrow(KernelStoreSecurityError);
+      expect(readTaskRecordRaw(rootB, "durability-s").revision).toBe(before);
+      // The registry itself refuses the cross-run inspection as well.
+      const registry = createMutationAuthorityRegistry();
+      const stopAction = {
+        type: "stop",
+        event_id: "e",
+        at: "2026-08-12T10:00:00.000Z",
+        actor_id: "user",
+        expected_record_hash: before,
+        expected_workspace_hash: "w",
+        diff_hash: `sha256:${"b".repeat(64)}`,
+        reason: "stop",
+      } as never;
+      const capability = registry.issue({
+        authority_kind: "user",
+        task_id: "durability-s",
+        run_id: a.run_id,
+        action_digest: digestOfAction(stopAction),
+        expected_record_hash: before,
+        intent_revision: 1,
+        intent_content_hash: `sha256:${"a".repeat(64)}`,
+        diff_hash: `sha256:${"b".repeat(64)}`,
+        actor_id: "user",
+        confirmation_ref: "confirmation",
+        expires_at: "2099-01-01T00:00:00.000Z",
+        findings_digest: null,
+      });
+      expect(() =>
+        registry.inspect(capability, {
+          task_id: "durability-s",
+          run_id: b.run_id,
+          action: stopAction,
+          expected_record_hash: before,
+          intent_revision: 1,
+          intent_content_hash: `sha256:${"a".repeat(64)}`,
+          diff_hash: `sha256:${"b".repeat(64)}`,
+        }),
+      ).toThrow(/run mismatch/);
+    } finally {
+      rmSync(rootA, { recursive: true, force: true });
+      rmSync(rootB, { recursive: true, force: true });
+    }
+  });
+
+  test("a refused restore never costs the live store its committed facts", () => {
+    // The publication boundary is the risky window: the live write-ahead log is
+    // folded into the main file before any sidecar is removed, so a failure
+    // between validation and the swap cannot lose committed transactions.
+    if (process.getuid?.() === 0) return;
+    const root = storeRoot();
+    try {
+      const seeded = storeEnrollFixture(root, "durability-t");
+      const foreign = storeRoot();
+      try {
+        storeEnrollFixture(foreign, "durability-t");
+        const backup = join(root, "foreign.sqlite");
+        backupKernelStore(foreign, backup);
+        const stateDir = join(root, ".imm", "state");
+        chmodSync(stateDir, 0o555);
+        let failure: unknown = null;
+        try {
+          restoreKernelStore(root, backup);
+        } catch (error) {
+          failure = error;
+        } finally {
+          chmodSync(stateDir, 0o755);
+        }
+        expect(failure).not.toBeNull();
+        // The commit survived: the run, its record and its owner are intact.
+        expect(withKernelRead(root, (db) => readRunRowByTask(db, "durability-t"))!.run_id).toBe(seeded.run_id);
+        expect(readWorkspaceStateRaw(root).state.current_working).toBe("durability-t");
+        expect(readTaskRecordRaw(root, "durability-t").record?.lifecycle).toBe("active");
+      } finally {
+        rmSync(foreign, { recursive: true, force: true });
+      }
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test("persisted batch state no longer blocks Kernel mutations", () => {
+    const root = storeRoot();
+    try {
+      // A batch run leaves .imm/state/batches behind. The layout gate must
+      // recognize it as a supported directory instead of failing the worktree
+      // closed, which is what blocked every later Kernel mutation.
+      mkdirSync(join(root, ".imm/state/batches"), { recursive: true });
+      writeFileSync(
+        join(root, ".imm/state/batches/batch-1.json"),
+        `${JSON.stringify({ batch_id: "batch-1" }, null, 2)}\n`,
+      );
+      expect(inspectStorageLayout(root).layout).toBe("ready");
+      // The whitelist cannot drift from the writer: the batch owner's own path
+      // is the directory the inspector accepts.
+      expect(dirname(join(root, ".imm/state/batches", "batch-1.json"))).toBe(
+        join(root, BATCH_STATE_RELATIVE),
+      );
+      // A registered mutation still commits with that state present.
+      expect(storeEnrollFixture(root, "durability-u").state).toBe("active");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test("a committed relocation that never reached the filesystem is recovered before a read", () => {
+    const root = storeRoot();
+    try {
+      storeEnrollFixture(root, "durability-v");
+      const run = withKernelRead(root, (db) => readRunRowByTask(db, "durability-v"))!;
+      // The interrupted freeze state: the record points at the archive path,
+      // the source is still in place and the target was never written.
+      mkdirSync(join(root, "docs/plans"), { recursive: true });
+      const sidecarBytes = "{}\n";
+      writeFileSync(join(root, "docs/plans/durability-v.intent.json"), sidecarBytes);
+      // The record already points at the archive path and the move is recorded
+      // as pending, exactly as an interrupted freeze leaves it.
+      const record = JSON.parse(run.record_json) as Record<string, unknown>;
+      record.intent_ref = {
+        path: "docs/plans/archive/durability-v.intent.json",
+        content_hash: (record.intent_ref as { content_hash: string }).content_hash,
+      };
+      record.artifact_state = "frozen";
+      withKernelTransaction(root, (db) => {
+        db.prepare("UPDATE runs SET pending_relocations_json = ? WHERE run_id = ?").run(
+          JSON.stringify([
+            {
+              from_path: "docs/plans/durability-v.intent.json",
+              to_path: "docs/plans/archive/durability-v.intent.json",
+              content_hash: revisionForContent(sidecarBytes),
+            },
+          ]),
+          run.run_id,
+        );
+      });
+      // The recovery entry completes the recorded move.
+      recoverKernelStoreFollowUps(root, "durability-v");
+      expect(existsSync(join(root, "docs/plans/archive/durability-v.intent.json"))).toBe(true);
+      expect(existsSync(join(root, "docs/plans/durability-v.intent.json"))).toBe(false);
+      expect(withKernelRead(root, (db) => readRunRowByTask(db, "durability-v"))!.pending_relocations_json).toBeNull();
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

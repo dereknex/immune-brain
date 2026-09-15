@@ -63,6 +63,7 @@ import {
 	mintRunId,
 	runIdentity,
 	terminalOperationId,
+	type RunIdentity,
 } from "./run_identity";
 import {
 	KernelStoreConflictError,
@@ -963,6 +964,18 @@ export function withKernelStoreLockForTask<T>(
 	});
 }
 
+/**
+ * Converge committed-but-unapplied store work (pending artifact relocations and
+ * terminal audit exports) before a Host reads anything the record points at.
+ * Both Hosts call this at their mutation entry, so a freeze interrupted between
+ * its commit and its file moves completes instead of failing the next read.
+ */
+export function recoverKernelStoreFollowUps(root: string, taskId?: string): void {
+	if (typeof taskId === "string" && taskId.length > 0)
+		return void withKernelStoreLockForTask(root, taskId, () => undefined);
+	return void withKernelStoreLock(root, () => undefined);
+}
+
 export function withKernelStoreLock<T>(root: string, operation: () => T): T {
 	const result = withKernelTransaction(root, (db) => {
 		assertNoRetiredFileStore(root);
@@ -1053,6 +1066,7 @@ export function commitTaskRecordLocked(
 	expectedWorkspaceHash: string,
 	nextWorkspace: WorkspaceState,
 	artifactRelocations: ArtifactRelocationV1[] = [],
+	capabilityRunId?: string,
 ): StoredTaskMutationV3 {
 	validateTaskId(taskId);
 	const nextRecordContent = `${JSON.stringify(nextRecord, null, 2)}\n`;
@@ -1062,6 +1076,7 @@ export function commitTaskRecordLocked(
 		const run = requireActiveRun(db, taskId);
 		const identity = runIdentity(db, run);
 		assertRunBinding(identity, { task_id: taskId, run_id: run.run_id }, "task record commit");
+		assertCapabilityRun(identity, capabilityRunId, "task record commit");
 		const committedRecord = parseTaskRecord(nextRecord as unknown as Record<string, unknown>);
 		const currentRevision = canonicalRecordHash(recordFromRun(run));
 		if (currentRevision !== expectedRecordHash)
@@ -1089,6 +1104,24 @@ export function commitTaskRecordLocked(
 		};
 	});
 	return committed;
+}
+
+/**
+ * A native capability names the exact run it was issued for. Two worktrees can
+ * hold the same logical task with identical record, intent and diff content, so
+ * task and content bindings alone cannot keep authority in the worktree that
+ * issued it; the run identity can.
+ */
+export function assertCapabilityRun(
+	current: RunIdentity,
+	capabilityRunId: string | undefined,
+	operation: string,
+): void {
+	if (capabilityRunId === undefined) return;
+	if (capabilityRunId !== current.run_id)
+		throw new KernelStoreSecurityError(
+			`${operation} authority was issued for run ${capabilityRunId} but this worktree holds run ${current.run_id}`,
+		);
 }
 
 function claimBytesFromRun(run: KernelRunRow): string {
@@ -1181,6 +1214,7 @@ export function commitDrainLocked(
 	expectedClaimContent: string,
 	nextClaimContent: string,
 	at: string,
+	capabilityRunId?: string,
 ): BackendClaim {
 	validateTaskId(taskId);
 	const expected = parseBackendClaim(JSON.parse(expectedClaimContent) as Record<string, unknown>);
@@ -1200,6 +1234,7 @@ export function commitDrainLocked(
 		const active = requireActiveRun(db, taskId);
 		const identity = runIdentity(db, active);
 		assertRunBinding(identity, { task_id: taskId, run_id: active.run_id }, "drain transaction");
+		assertCapabilityRun(identity, capabilityRunId, "drain transaction");
 		if (claimBytesFromRun(active) !== expectedClaimContent)
 			throw new KernelStoreConflictError(
 				`drain transaction claim bytes changed for ${taskId}`,
@@ -1227,6 +1262,7 @@ export function commitTerminalLocked(
 	taskId: string,
 	transaction: WorkspaceTransactionV2,
 	tombstone: TaskTombstone,
+	capabilityRunId?: string,
 ): { record: TaskRecord; workspace: WorkspaceState } {
 	validateTaskId(taskId);
 	if (transaction.task_id !== taskId)
@@ -1269,6 +1305,7 @@ export function commitTerminalLocked(
 			throw new KernelStoreSecurityError("terminal settlement claim must be active or draining");
 		const identity = runIdentity(db, run);
 		assertRunBinding(identity, { task_id: taskId, run_id: run.run_id }, "terminal settlement");
+		assertCapabilityRun(identity, capabilityRunId, "terminal settlement");
 		for (const relocation of transaction.artifact_relocations ?? [])
 			assertArtifactRelocation(relocation);
 		const workspaceRevision = assertWorkspaceExpectation(

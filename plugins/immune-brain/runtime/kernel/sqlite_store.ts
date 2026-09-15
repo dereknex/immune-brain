@@ -871,7 +871,10 @@ export function restoreKernelStore(root: string, sourcePath: string): void {
 		rmSync(temp, { force: true });
 		throw error;
 	}
-	// Only a validated backup reaches the swap.
+	// Only a validated backup reaches the swap. Fold the live database's write
+	// ahead log into its main file first: deleting the sidecars is otherwise a
+	// window in which committed transactions only exist in the WAL.
+	checkpointLiveStore(canonical, target);
 	for (const suffix of ["-wal", "-shm"]) rmSync(`${target}${suffix}`, { force: true });
 	renameSync(temp, target);
 	const directory = openSync(dirname(target), constants.O_RDONLY);
@@ -883,6 +886,36 @@ export function restoreKernelStore(root: string, sourcePath: string): void {
 	const db = openStoreFile(canonical, target, {});
 	if (!db) throw new KernelStoreConflictError("restored kernel store could not be opened");
 	closeQuietly(db);
+}
+
+/**
+ * Fold committed write-ahead-log content into the main database file so a
+ * later swap cannot lose transactions that had not reached it yet.
+ */
+function checkpointLiveStore(canonical: string, target: string): void {
+	if (!existsSync(target)) return;
+	let db: DatabaseSync;
+	try {
+		db = new DatabaseSync(target);
+	} catch {
+		return;
+	}
+	try {
+		db.exec("PRAGMA busy_timeout = 5000");
+		db.exec("PRAGMA wal_checkpoint(TRUNCATE)");
+	} finally {
+		try {
+			db.close();
+		} catch {
+			// A close failure leaves the checkpointed file in place.
+		}
+	}
+	const fd = openSync(target, constants.O_RDONLY);
+	try {
+		fsyncSync(fd);
+	} finally {
+		closeSync(fd);
+	}
 }
 
 export function readStoreBytes(path: string): Buffer {

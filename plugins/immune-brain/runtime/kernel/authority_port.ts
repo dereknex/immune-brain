@@ -18,6 +18,13 @@ import { createCapabilityRegistry } from "./capability_registry";
 export interface CapabilityBindingV2 {
 	authority_kind: MutationAuthorityKind;
 	task_id: string;
+	/**
+	 * The exact run this authority was issued for. Two worktrees may each run
+	 * the same logical task with identical record, intent and diff content but
+	 * different run identities, so the task and content bindings alone cannot
+	 * tell them apart.
+	 */
+	run_id?: string;
 	action_digest: string;
 	expected_record_hash: string;
 	intent_revision: number;
@@ -33,6 +40,7 @@ export interface CapabilityBindingV2 {
 export interface ValidatedAuthorityV2 {
 	audit: AuthorityAuditDescriptor;
 	action_digest: string;
+	run_id?: string;
 	expected_record_hash: string;
 	intent_revision: number;
 	intent_content_hash: string;
@@ -42,6 +50,7 @@ export interface ValidatedAuthorityV2 {
 
 export interface MutationAuthorityInspection {
 	task_id: string;
+	run_id?: string;
 	action: TaskAction;
 	expected_record_hash: string;
 	intent_revision: number;
@@ -83,8 +92,10 @@ export function createMutationAuthorityRegistry(): MutationAuthorityRegistry {
 		{
 			validateBinding(binding, issuedAt) {
 				const missing: string[] = [];
+				if (binding.run_id !== undefined && binding.run_id.length === 0)
+					throw new Error("authority capability run_id must not be empty");
 				for (const [key, value] of Object.entries(binding)) {
-					if (key === "findings_digest") continue;
+					if (key === "findings_digest" || key === "run_id") continue;
 					if (value === undefined || value === null || value === "") missing.push(key);
 				}
 				if (missing.length > 0)
@@ -102,6 +113,12 @@ export function createMutationAuthorityRegistry(): MutationAuthorityRegistry {
 					throw new Error("authority capability action digest mismatch");
 				if (state.task_id !== expected.task_id)
 					throw new Error("authority capability task mismatch");
+				if (
+					state.run_id !== undefined &&
+					expected.run_id !== undefined &&
+					state.run_id !== expected.run_id
+				)
+					throw new Error("authority capability run mismatch");
 				if (state.expected_record_hash !== expected.expected_record_hash)
 					throw new Error("authority capability record hash mismatch");
 				if (state.intent_revision !== expected.intent_revision)
@@ -129,6 +146,7 @@ export function createMutationAuthorityRegistry(): MutationAuthorityRegistry {
 						expires_at: state.expires_at,
 					},
 					action_digest: actionDigest,
+					...(state.run_id !== undefined ? { run_id: state.run_id } : {}),
 					expected_record_hash: state.expected_record_hash,
 					intent_revision: state.intent_revision,
 					intent_content_hash: state.intent_content_hash,

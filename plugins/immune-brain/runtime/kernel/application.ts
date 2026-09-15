@@ -72,6 +72,12 @@ export function applyTaskAction(
 ): StoredTaskMutationV3 {
 	const { root, task_id, prior_intent_token, registry, capability, diffProvider, now } =
 		input;
+	// The capability names the exact run it was issued for; the store refuses it
+	// anywhere else, so authority cannot cross a worktree boundary.
+	const capabilityRunId = (() => {
+		const value = (capability as { run_id?: unknown } | undefined)?.run_id;
+		return typeof value === "string" && value.length > 0 ? value : undefined;
+	})();
 	return withKernelStoreLock(root, () => {
 		const current = readTaskRecordRaw(root, task_id);
 		if (!current.record)
@@ -280,7 +286,7 @@ export function applyTaskAction(
 				next_workspace_content: serializeWorkspace(nextWorkspaceState),
 				...(input.artifact_transition ? { artifact_relocations: input.artifact_transition.relocations } : {}),
 			};
-			commitTerminalLocked(root, task_id, transaction, tombstone);
+			commitTerminalLocked(root, task_id, transaction, tombstone, capabilityRunId);
 			return {
 				revision: canonicalRecordHash(nextRecord),
 				record: nextRecord,

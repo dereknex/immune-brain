@@ -40,6 +40,12 @@ export interface AssuranceAuthorizationReadiness {
 }
 
 export interface AssuranceProjection {
+	/**
+	 * The exact run this projection describes: one worktree owns one store and
+	 * one active run, so the run id is the authority identity a capability must
+	 * bind. Null when no run is committed.
+	 */
+	run_id: string | null;
 	record_revision: string;
 	workspace_revision: string;
 	intent_revision: number;
@@ -89,6 +95,7 @@ export function deriveAssuranceAuthorization(input: {
 
 function emptyProjection(): AssuranceProjection {
 	return {
+		run_id: null,
 		record_revision: "",
 		workspace_revision: "",
 		intent_revision: 0,
@@ -174,6 +181,8 @@ function projectFromRecord(
 		(finding) => finding.kind === "unresolved_user_decision" && finding.status === "open",
 	).length;
 	return {
+		// Filled by the caller from the committed run row.
+		run_id: null,
 		record_revision: recordRevision,
 		workspace_revision: workspaceRevision,
 		intent_revision: record.intent_snapshot.revision,
@@ -260,6 +269,7 @@ export async function projectAssurance(
 		}
 		if (!read.record) {
 			if (!terminalOwner) return fail(`task ${taskId} has no TaskRecord v3`, claim);
+			const committedRunId = reconcileKernelAuthority(root, taskId).owner_run_id;
 			// The store keeps the terminal record itself, so a settled task projects
 			// from committed facts even while its audit export is still in flight.
 			const committed = await readCommittedRecord(root, taskId);
@@ -270,12 +280,15 @@ export async function projectAssurance(
 					task_id: taskId,
 					error: null,
 					claim: null,
-					projection: projectFromRecord(
-						committed.record,
-						committed.revision,
-						workspace.revision,
-						diffProvider(root, committed.record),
-					),
+					projection: {
+						...projectFromRecord(
+							committed.record,
+							committed.revision,
+							workspace.revision,
+							diffProvider(root, committed.record),
+						),
+						run_id: committedRunId,
+					},
 				};
 			}
 			const auditPair = await readAuditTaskPair(root, taskId);
@@ -308,7 +321,10 @@ export async function projectAssurance(
 			task_id: taskId,
 			error: null,
 			claim,
-			projection: projectFromRecord(read.record, read.revision, workspace.revision, snapshot),
+			projection: {
+				...projectFromRecord(read.record, read.revision, workspace.revision, snapshot),
+				run_id: reconcileKernelAuthority(root, taskId).owner_run_id,
+			},
 		};
 	} catch (error) {
 		return fail(error instanceof Error ? error.message : String(error));

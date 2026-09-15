@@ -27,7 +27,7 @@ import { parseVerificationDescriptor } from "../verification_descriptor";
 import { projectAssurance, type AssuranceProjection, type AssuranceProjectionResult } from "../kernel/assurance_projection";
 import { isTaskRecordV4, type TaskApprovalV2, type TaskFinding, type TaskRecord } from "../kernel/types";
 import { findingsDigestV2 } from "../kernel/reducer";
-import { readTaskRecord, readTaskRecordRaw } from "../kernel/storage";
+import { readTaskRecord, readTaskRecordRaw, recoverKernelStoreFollowUps } from "../kernel/storage";
 import { canonicalIntentHash, parseTaskIntentV1, readTaskIntent } from "../kernel/intent";
 import { capabilityActionFor, createCanaryApplication } from "../kernel/canary_application";
 import {
@@ -117,6 +117,10 @@ export function diffHashOf(root: string, record: TaskRecord): string {
  * resolves the same way in its own runtime stub; both Hosts must stay in step.
  */
 function readTaskIntentForRecord(root: string, taskId: string) {
+	// A committed freeze relocation may not have reached the filesystem yet, and
+	// the record already points at the archive path. Converge the follow-ups
+	// first, then follow the record.
+	recoverKernelStoreFollowUps(root, taskId);
 	const currentPath = readTaskRecordRaw(root, taskId).record?.intent_ref?.path;
 	return readTaskIntent(root, taskId, currentPath);
 }
@@ -300,6 +304,7 @@ async function buildAssuranceSnapshot(
 	const snapshot: SnapshotDescriptor = {
 		contract: "assurance_kernel/assurance_snapshot/v2",
 		task_id: taskId,
+		run_id: projection.projection.run_id,
 		role,
 		record_revision: projection.projection.record_revision,
 		workspace_revision: projection.projection.workspace_revision,
@@ -353,6 +358,7 @@ async function mintCapability(
 	input: {
 		authority_kind: "review" | "qa" | "user";
 		task_id: string;
+		run_id?: string | null;
 		action_kind: string;
 		expected_record_hash: string;
 		intent_revision: number;
@@ -386,6 +392,7 @@ async function mintCapability(
 	const binding: CapabilityBindingV2 = {
 		authority_kind: input.authority_kind,
 		task_id: input.task_id,
+		...(input.run_id ? { run_id: input.run_id } : {}),
 		action_digest: digestOfAction(action),
 		expected_record_hash: input.expected_record_hash,
 		intent_revision: input.intent_revision,
@@ -790,6 +797,7 @@ export class ClaudeRuntime {
 			const capability = await mintCapability(registry, {
 				authority_kind: "user",
 				task_id: taskId,
+				run_id: capabilityProjection.projection.run_id,
 				action_kind: op,
 				expected_record_hash: capabilityProjection.projection.record_revision,
 				intent_revision: nextIntent?.revision ?? capabilityProjection.projection.intent_revision,
@@ -867,6 +875,7 @@ export class ClaudeRuntime {
 			const capability = await mintCapability(registry, {
 				authority_kind: input.snapshot.role,
 				task_id: input.taskId,
+				run_id: input.snapshot.run_id,
 				action_kind: "request_rework",
 				expected_record_hash: input.snapshot.record_revision,
 				intent_revision: input.snapshot.intent_revision,
@@ -903,6 +912,7 @@ export class ClaudeRuntime {
 		const capability = await mintCapability(registry, {
 			authority_kind: input.snapshot.role,
 			task_id: input.taskId,
+			run_id: input.snapshot.run_id,
 			action_kind: "record_approval",
 			expected_record_hash: input.snapshot.record_revision,
 			intent_revision: input.snapshot.intent_revision,

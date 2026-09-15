@@ -179,6 +179,7 @@ export interface SnapshotDescriptorInput {
 	root: string;
 	task_id: string;
 	role: AssuranceRole;
+	run_id?: string | null;
 	record_revision: string;
 	workspace_revision: string;
 	intent_revision: number;
@@ -207,6 +208,7 @@ export function buildSnapshot(input: SnapshotDescriptorInput): SnapshotDescripto
 	return {
 		contract: "assurance_kernel/assurance_snapshot/v2",
 		task_id: input.task_id,
+		run_id: input.run_id ?? null,
 		role: input.role,
 		record_revision: input.record_revision,
 		workspace_revision: input.workspace_revision,
@@ -979,6 +981,7 @@ export default function (
 					const capability = await mintCapability(registry, {
 						authority_kind: "user",
 						task_id: taskId,
+						run_id: projection.projection.run_id,
 						action_kind: exactOperation.op,
 						expected_record_hash: projection.projection.record_revision,
 						intent_revision: nextIntent?.revision ?? projection.projection.intent_revision,
@@ -1384,6 +1387,7 @@ async function applyAssuranceVerdict(
 		const capability = await mintCapability(registry, {
 			authority_kind: authorityKind,
 			task_id: snapshot.task_id,
+			run_id: snapshot.run_id,
 			action_kind: "request_rework",
 			expected_record_hash: snapshot.record_revision,
 			intent_revision: snapshot.intent_revision,
@@ -1438,6 +1442,7 @@ async function applyAssuranceVerdict(
 	const capability = await mintCapability(registry, {
 		authority_kind: snapshot.role,
 		task_id: snapshot.task_id,
+		run_id: snapshot.run_id,
 		action_kind: "record_approval",
 		expected_record_hash: snapshot.record_revision,
 		intent_revision: snapshot.intent_revision,
@@ -1543,6 +1548,7 @@ async function buildAssuranceSnapshot(
 				root,
 				task_id: taskId,
 				role,
+				run_id: projection.projection.run_id,
 				record_revision: projection.projection.record_revision,
 				workspace_revision: projection.projection.workspace_revision,
 				intent_revision: projection.projection.intent_revision,
@@ -1599,6 +1605,7 @@ async function mintCapability(
 	input: {
 		authority_kind: "review" | "qa" | "user";
 		task_id: string;
+		run_id: string | null;
 		action_kind: string;
 		expected_record_hash: string;
 		intent_revision: number;
@@ -1636,6 +1643,7 @@ async function mintCapability(
 	const binding: CapabilityBindingV2 = {
 		authority_kind: input.authority_kind,
 		task_id: input.task_id,
+		...(input.run_id ? { run_id: input.run_id } : {}),
 		action_digest: digest,
 		expected_record_hash: input.expected_record_hash,
 		intent_revision: input.intent_revision,

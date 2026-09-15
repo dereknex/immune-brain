@@ -428,6 +428,7 @@ export function createCanaryApplication(
 		root: string;
 		task_id: string;
 		capability: object;
+		run_id?: string | null;
 		now?: string;
 	}): BackendClaim {
 		if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(input.task_id))
@@ -486,6 +487,9 @@ export function createCanaryApplication(
 				serializeBackendClaim(claim),
 				serializeBackendClaim(nextClaim),
 				now,
+				typeof input.run_id === "string" && input.run_id.length > 0
+					? input.run_id
+					: undefined,
 			);
 		});
 	}
