@@ -33,7 +33,12 @@ import {
 import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 
-import { KERNEL_DB_RELATIVE, KERNEL_STORE_SCHEMA_VERSION, kernelStoreBindingDigest } from "./storage_paths";
+import {
+	KERNEL_DB_RELATIVE,
+	KERNEL_STORE_SCHEMA_VERSION,
+	kernelStoreBindingDigest,
+	kernelStoreIdentityPath,
+} from "./storage_paths";
 
 export { KERNEL_STORE_SCHEMA_VERSION };
 
@@ -183,6 +188,22 @@ function assertSafeSegments(canonical: string, candidate: string): void {
 	}
 }
 
+/** Reject a store path that is not a regular file inside the worktree. */
+function assertSafeStoreTarget(canonical: string, target: string): void {
+	assertSafeSegments(canonical, target);
+	try {
+		const stat = lstatSync(target);
+		if (stat.isSymbolicLink())
+			throw new KernelStoreSecurityError(
+				`symlink storage segment is forbidden: ${relative(canonical, target)}`,
+			);
+		if (!stat.isFile())
+			throw new KernelStoreSecurityError("kernel store is not a regular file");
+	} catch (error) {
+		if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+	}
+}
+
 function ensureStoreDirectory(canonical: string): void {
 	const target = resolve(canonical, KERNEL_DB_RELATIVE);
 	const directory = dirname(target);
@@ -211,14 +232,7 @@ function ensureStoreDirectory(canonical: string): void {
 				`storage segment is not a directory: ${relative(canonical, current)}`,
 			);
 	}
-	assertSafeSegments(canonical, target);
-	try {
-		const stat = lstatSync(target);
-		if (!stat.isFile())
-			throw new KernelStoreSecurityError("kernel store is not a regular file");
-	} catch (error) {
-		if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
-	}
+	assertSafeStoreTarget(canonical, target);
 }
 
 export function kernelStoreExists(root: string): boolean {
@@ -315,7 +329,18 @@ function assertSchema(db: DatabaseSync, root: string): void {
 		.prepare("SELECT name FROM sqlite_master WHERE type = 'table'")
 		.all() as Array<{ name?: unknown }>;
 	const tables = new Set(rows.map((row) => String(row.name)));
-	if (tables.size === 0) return; // fresh file: schema is created by the caller
+	if (tables.size === 0) {
+		// A tableless file is either a brand-new store (created by the lock or by
+		// this open) or a store that lost its contents. The creation marker tells
+		// them apart: an existing identity means this worktree had a store, so
+		// re-initializing would silently replace real authority with an empty
+		// workspace. Fail closed and name the recovery.
+		if (existsSync(resolve(root, kernelStoreIdentityPath())))
+			throw new KernelStoreSecurityError(
+				"kernel store exists but carries no schema; restore .imm/state/kernel.sqlite from backup or remove the state directory deliberately to start a new worktree identity",
+			);
+		return;
+	}
 	if (!tables.has("store_meta") || !tables.has("runs") || !tables.has("workspace")) {
 		throw new KernelSchemaError(
 			"kernel store schema is not recognizable; the database was not created by this runtime",
@@ -335,6 +360,19 @@ function assertSchema(db: DatabaseSync, root: string): void {
 		throw new KernelStoreSecurityError(
 			"kernel store belongs to a different worktree; restore it into its binding worktree or run the supported rebinding",
 		);
+}
+
+/**
+ * Record that this worktree has a store. Written once, at first initialization:
+ * it is the only surviving evidence that a later tableless database is a
+ * damaged store rather than a new one.
+ */
+function writeStoreIdentity(root: string): void {
+	const path = resolve(root, kernelStoreIdentityPath());
+	if (existsSync(path)) return;
+	writeFileSync(path, `${JSON.stringify({ contract: "assurance_kernel/store_identity/v1", created_at: new Date().toISOString() }, null, 2)}\n`, {
+		flag: "wx",
+	});
 }
 
 function initializeSchema(db: DatabaseSync, root: string, now: string): void {
@@ -374,6 +412,9 @@ export function openKernelStore(
 	const path = resolve(canonical, KERNEL_DB_RELATIVE);
 	const create = options.create ?? true;
 	if (!existsSync(path) && !create) return null;
+	// Safety validation applies to reads as well: following a symlinked store
+	// would read (or create) authority outside the worktree.
+	assertSafeStoreTarget(canonical, path);
 	if (!options.readOnly) ensureStoreDirectory(canonical);
 	return openStoreFile(canonical, path, options);
 }
@@ -403,7 +444,17 @@ function openStoreFile(
 			(db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='store_meta'").get() as
 				| { name?: unknown }
 				| undefined) !== undefined;
-		if (!initialized) initializeSchema(db, canonical, options.now ?? new Date().toISOString());
+		if (!initialized) {
+			if (options.readOnly) {
+				// A read against a store that has no schema yet: there is nothing to
+				// read and nothing to create, so report "no store" instead of
+				// inventing one through a write from a read path.
+				db.close();
+				return null;
+			}
+			initializeSchema(db, canonical, options.now ?? new Date().toISOString());
+			writeStoreIdentity(canonical);
+		}
 		return db;
 	} catch (error) {
 		try {

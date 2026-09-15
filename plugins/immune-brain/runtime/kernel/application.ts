@@ -4,6 +4,7 @@
 // the dedicated recoverable workspace transaction. Consumed by the Pi canary
 // host adapter via canary_application.
 
+import { terminalRequestDigest } from "./run_identity";
 import {
 	type MutationAuthorityRegistry,
 } from "./authority_port";
@@ -288,7 +289,17 @@ export function applyTaskAction(
 				next_workspace_content: serializeWorkspace(nextWorkspaceState),
 				...(input.artifact_transition ? { artifact_relocations: input.artifact_transition.relocations } : {}),
 			};
-			commitTerminalLocked(root, task_id, transaction, tombstone, authorityRunId);
+			commitTerminalLocked(
+				root,
+				task_id,
+				transaction,
+				tombstone,
+				authorityRunId,
+				// The request this settlement answers: a retry with a different
+				// reason, actor or event time is a different decision and must be
+				// authorized again rather than replayed.
+				terminalRequestDigest(action),
+			);
 			return {
 				revision: canonicalRecordHash(nextRecord),
 				record: nextRecord,

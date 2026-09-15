@@ -8,6 +8,7 @@
 // once inside the Pi lifecycle extension activation closure; tests use
 // tests/fixtures/mutation-authority-test-seam.ts.
 
+import { terminalRequestDigest } from "./run_identity";
 import {
 	type MutationAuthorityRegistry,
 } from "./authority_port";
@@ -281,6 +282,13 @@ export function createCanaryApplication(
 				input.root,
 				input.task_id,
 				`${operation.op}:${input.task_id}:${at}`,
+				terminalRequestDigest({
+					type: operation.op,
+					event_id: `${operation.op}:${input.task_id}:${at}`,
+					at,
+					actor_id: operation.actor_id,
+					reason: "reason" in operation ? operation.reason : undefined,
+				}),
 			);
 			if (replayed)
 				return {

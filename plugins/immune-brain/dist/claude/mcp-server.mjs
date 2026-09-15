@@ -2681,6 +2681,7 @@ import {
   fstatSync as fstatSync2
 } from "node:fs";
 import { resolve as resolve3 } from "node:path";
+var STATE_RELATIVE = ".imm/state";
 var AUDIT_RELATIVE = ".imm/audit";
 var KERNEL_DB_RELATIVE = ".imm/state/kernel.sqlite";
 var KERNEL_STORE_SCHEMA_VERSION = 1;
@@ -2696,6 +2697,9 @@ function kernelStoreBindingDigest(canonicalRoot, workspaceId) {
 function validateTaskId(taskId) {
   if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(taskId))
     throw new Error(`task id must match [A-Za-z0-9][A-Za-z0-9._-]{0,127}: ${taskId}`);
+}
+function kernelStoreIdentityPath() {
+  return `${STATE_RELATIVE}/kernel.identity.json`;
 }
 function auditTaskDirPath(taskId) {
   validateTaskId(taskId);
@@ -2819,6 +2823,19 @@ function assertSafeSegments(canonical, candidate) {
       throw new KernelStoreSecurityError(`symlink storage segment is forbidden: ${relative2(canonical, current)}`);
   }
 }
+function assertSafeStoreTarget(canonical, target) {
+  assertSafeSegments(canonical, target);
+  try {
+    const stat = lstatSync4(target);
+    if (stat.isSymbolicLink())
+      throw new KernelStoreSecurityError(`symlink storage segment is forbidden: ${relative2(canonical, target)}`);
+    if (!stat.isFile())
+      throw new KernelStoreSecurityError("kernel store is not a regular file");
+  } catch (error) {
+    if (error.code !== "ENOENT")
+      throw error;
+  }
+}
 function ensureStoreDirectory(canonical) {
   const target = resolve4(canonical, KERNEL_DB_RELATIVE);
   const directory = dirname3(target);
@@ -2844,15 +2861,7 @@ function ensureStoreDirectory(canonical) {
     if (!stat.isDirectory())
       throw new KernelStoreSecurityError(`storage segment is not a directory: ${relative2(canonical, current)}`);
   }
-  assertSafeSegments(canonical, target);
-  try {
-    const stat = lstatSync4(target);
-    if (!stat.isFile())
-      throw new KernelStoreSecurityError("kernel store is not a regular file");
-  } catch (error) {
-    if (error.code !== "ENOENT")
-      throw error;
-  }
+  assertSafeStoreTarget(canonical, target);
 }
 var SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS store_meta (
@@ -2932,8 +2941,11 @@ function applyPragmas(db, busyTimeoutMs, writable) {
 function assertSchema(db, root) {
   const rows = db.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all();
   const tables = new Set(rows.map((row) => String(row.name)));
-  if (tables.size === 0)
+  if (tables.size === 0) {
+    if (existsSync3(resolve4(root, kernelStoreIdentityPath())))
+      throw new KernelStoreSecurityError("kernel store exists but carries no schema; restore .imm/state/kernel.sqlite from backup or remove the state directory deliberately to start a new worktree identity");
     return;
+  }
   if (!tables.has("store_meta") || !tables.has("runs") || !tables.has("workspace")) {
     throw new KernelSchemaError("kernel store schema is not recognizable; the database was not created by this runtime");
   }
@@ -2947,6 +2959,15 @@ function assertSchema(db, root) {
     throw new KernelSchemaError("kernel store identity metadata is missing");
   if (workspaceBinding(root, workspaceId) !== binding)
     throw new KernelStoreSecurityError("kernel store belongs to a different worktree; restore it into its binding worktree or run the supported rebinding");
+}
+function writeStoreIdentity(root) {
+  const path = resolve4(root, kernelStoreIdentityPath());
+  if (existsSync3(path))
+    return;
+  writeFileSync2(path, `${JSON.stringify({ contract: "assurance_kernel/store_identity/v1", created_at: new Date().toISOString() }, null, 2)}
+`, {
+    flag: "wx"
+  });
 }
 function initializeSchema(db, root, now) {
   db.exec("BEGIN IMMEDIATE");
@@ -2975,6 +2996,7 @@ function openKernelStore(root, options = {}) {
   const create = options.create ?? true;
   if (!existsSync3(path) && !create)
     return null;
+  assertSafeStoreTarget(canonical, path);
   if (!options.readOnly)
     ensureStoreDirectory(canonical);
   return openStoreFile(canonical, path, options);
@@ -2990,8 +3012,14 @@ function openStoreFile(canonical, path, options = {}) {
     applyPragmas(db, options.busyTimeoutMs ?? DEFAULT_BUSY_TIMEOUT_MS, !options.readOnly);
     assertSchema(db, canonical);
     const initialized = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='store_meta'").get() !== undefined;
-    if (!initialized)
+    if (!initialized) {
+      if (options.readOnly) {
+        db.close();
+        return null;
+      }
       initializeSchema(db, canonical, options.now ?? new Date().toISOString());
+      writeStoreIdentity(canonical);
+    }
     return db;
   } catch (error) {
     try {
@@ -3345,7 +3373,7 @@ function serializeTaskTombstone(tombstone) {
 }
 
 // plugins/immune-brain/runtime/kernel/storage.ts
-import { createHash as createHash12 } from "node:crypto";
+import { createHash as createHash13 } from "node:crypto";
 import {
   constants as constants3,
   closeSync as closeSync5,
@@ -5256,7 +5284,7 @@ function isReducedMutation(value) {
 }
 
 // plugins/immune-brain/runtime/kernel/run_identity.ts
-import { randomUUID as randomUUID4 } from "node:crypto";
+import { createHash as createHash12, randomUUID as randomUUID4 } from "node:crypto";
 function mintRunId() {
   return `run-${randomUUID4()}`;
 }
@@ -5273,6 +5301,16 @@ function enrollmentOperationId(taskId, eventId) {
 function drainOperationId(taskId, updatedAt) {
   return `drain:${taskId}:${updatedAt}`;
 }
+function terminalRequestDigest(action) {
+  const canonical = JSON.stringify({
+    type: action.type,
+    event_id: action.event_id,
+    at: action.at,
+    actor_id: action.actor_id,
+    reason: typeof action.reason === "string" ? action.reason : null
+  });
+  return `sha256:${createHash12("sha256").update(canonical).digest("hex")}`;
+}
 function terminalOperationId(taskId, eventId) {
   return `terminal:${taskId}:${eventId}`;
 }
@@ -5281,7 +5319,7 @@ function terminalOperationId(taskId, eventId) {
 var MISSING_REVISION = "missing";
 var INITIAL_WORKSPACE_REVISION = recordRevision(0);
 function revisionFor(content) {
-  return `sha256:${createHash12("sha256").update(content).digest("hex")}`;
+  return `sha256:${createHash13("sha256").update(content).digest("hex")}`;
 }
 function revisionForContent(content) {
   return revisionFor(content);
@@ -5674,12 +5712,15 @@ function workspaceStateFromRow(db, runId) {
     current_working: run && run.state === "active" ? run.task_id : null
   };
 }
-function readCommittedTerminalResult(root, taskId, eventId) {
+function readCommittedTerminalResult(root, taskId, eventId, requestDigest) {
   validateTaskId4(taskId);
   const read = withKernelRead(root, (db) => {
     const row = readOperationRow(db, terminalOperationId(taskId, eventId));
     if (!row)
       return null;
+    const parsed = JSON.parse(row.result_json);
+    if ((parsed.request_digest ?? null) !== (requestDigest ?? null))
+      throw new KernelStoreConflictError(`terminal operation for ${taskId} was committed for a different request; resubmit the exact request that settled it`);
     return decodeOperationResult(row.result_json);
   });
   return read ?? null;
@@ -6002,7 +6043,7 @@ function commitDrainLocked(root, taskId, expectedClaimContent, nextClaimContent,
     return next;
   });
 }
-function commitTerminalLocked(root, taskId, transaction, tombstone, capabilityRunId) {
+function commitTerminalLocked(root, taskId, transaction, tombstone, capabilityRunId, requestDigest) {
   validateTaskId4(taskId);
   if (transaction.task_id !== taskId)
     throw new KernelStoreSecurityError("terminal transaction task identity is inconsistent");
@@ -6049,7 +6090,8 @@ function commitTerminalLocked(root, taskId, transaction, tombstone, capabilityRu
       run_id: run.run_id,
       result_json: JSON.stringify({
         record_json: transaction.next_record_content,
-        workspace_json: transaction.next_workspace_content
+        workspace_json: transaction.next_workspace_content,
+        ...requestDigest ? { request_digest: requestDigest } : {}
       }),
       committed_at: tombstone.terminalized_at
     });
@@ -6553,7 +6595,7 @@ function applyTaskAction(input) {
         next_workspace_content: serializeWorkspace(nextWorkspaceState),
         ...input.artifact_transition ? { artifact_relocations: input.artifact_transition.relocations } : {}
       };
-      commitTerminalLocked(root, task_id, transaction, tombstone, authorityRunId);
+      commitTerminalLocked(root, task_id, transaction, tombstone, authorityRunId, terminalRequestDigest(action));
       return {
         revision: canonicalRecordHash(nextRecord),
         record: nextRecord,
@@ -6764,7 +6806,13 @@ function createCanaryApplication(registry) {
     const operation = input.operation;
     const at = now;
     if (operation.op === "complete" || operation.op === "stop") {
-      const replayed = readCommittedTerminalResult(input.root, input.task_id, `${operation.op}:${input.task_id}:${at}`);
+      const replayed = readCommittedTerminalResult(input.root, input.task_id, `${operation.op}:${input.task_id}:${at}`, terminalRequestDigest({
+        type: operation.op,
+        event_id: `${operation.op}:${input.task_id}:${at}`,
+        at,
+        actor_id: operation.actor_id,
+        reason: "reason" in operation ? operation.reason : undefined
+      }));
       if (replayed)
         return {
           revision: revisionForContent(`${JSON.stringify(replayed.record, null, 2)}
@@ -6962,7 +7010,7 @@ function createCanaryApplication(registry) {
 }
 
 // plugins/immune-brain/runtime/kernel/authority_port.ts
-import { createHash as createHash13 } from "node:crypto";
+import { createHash as createHash14 } from "node:crypto";
 
 // plugins/immune-brain/runtime/kernel/actor_identity.ts
 var LITERAL_USER_ACTOR_ID = "literal-user";
@@ -7020,7 +7068,7 @@ function createCapabilityRegistry(capabilityBrand, hooks, domainLabel) {
 // plugins/immune-brain/runtime/kernel/authority_port.ts
 function digestOfAction(action) {
   const { expected_record_hash: _r, expected_workspace_hash: _w, diff_hash: _d, ...rest } = action;
-  return createHash13("sha256").update(JSON.stringify(rest)).digest("hex");
+  return createHash14("sha256").update(JSON.stringify(rest)).digest("hex");
 }
 function createMutationAuthorityRegistry() {
   const inner = createCapabilityRegistry(MUTATION_AUTHORITY_CAPABILITY_BRAND, {
@@ -7149,7 +7197,7 @@ function createEnrollmentAuthorityRegistry() {
 }
 
 // plugins/immune-brain/runtime/kernel/pi_canary_prepare.ts
-import { createHash as createHash14 } from "node:crypto";
+import { createHash as createHash15 } from "node:crypto";
 import { spawnSync as spawnSync4 } from "node:child_process";
 import { resolve as resolve8 } from "node:path";
 var SOURCE_PATH = stateDatabasePath();
@@ -7164,7 +7212,7 @@ function readGitHead(root) {
   return head.toLowerCase();
 }
 function sha256Hex2(bytes) {
-  return createHash14("sha256").update(bytes).digest("hex");
+  return createHash15("sha256").update(bytes).digest("hex");
 }
 function stableStringify2(value) {
   if (value === null || typeof value !== "object")
@@ -9011,7 +9059,7 @@ import { join as join8 } from "node:path";
 import { spawnSync as spawnSync5 } from "node:child_process";
 
 // plugins/immune-brain/runtime/kernel/batch_authority.ts
-import { createHash as createHash15 } from "node:crypto";
+import { createHash as createHash16 } from "node:crypto";
 var BATCH_AUTHORITY_CAPABILITY_BRAND = Symbol.for("assurance-kernel.batch-authority-capability-brand");
 var GIT_COMMIT_ID2 = /^[a-f0-9]{40}$/;
 
@@ -9022,7 +9070,7 @@ class BatchAuthorizationExpiryError extends Error {
   }
 }
 function sha256Hex3(bytes) {
-  return createHash15("sha256").update(bytes).digest("hex");
+  return createHash16("sha256").update(bytes).digest("hex");
 }
 function stableStringify3(value) {
   if (value === null || typeof value !== "object")
@@ -9258,7 +9306,7 @@ function deriveChildEnrollment(root, registry, input) {
 }
 
 // plugins/immune-brain/runtime/unattended/batch_plan.ts
-import { createHash as createHash16 } from "node:crypto";
+import { createHash as createHash17 } from "node:crypto";
 var ID_PATTERN2 = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 var DEFAULT_DEADLINE_MS = 8 * 60 * 60 * 1000;
 var DEFAULT_QA_FAILURE_LIMIT = 2;
@@ -9450,7 +9498,7 @@ async function projectBatchPlan(root, initiativeSlug, input, readInitiative = ob
   }));
   if (!enrollable.length)
     throw new Error("batch plan has no enrollable children; nothing to confirm");
-  const planDigest = `sha256:${createHash16("sha256").update(stableStringify(enrollable)).digest("hex")}`;
+  const planDigest = `sha256:${createHash17("sha256").update(stableStringify(enrollable)).digest("hex")}`;
   return {
     contract: "assurance_kernel/batch_plan/v1",
     initiative_slug: initiativeSlug,

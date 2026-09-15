@@ -11,7 +11,7 @@
  * logical task with distinct run identities, and a terminal task cannot be
  * re-enrolled in the same worktree.
  */
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import type { DatabaseSync } from "node:sqlite";
 
 import { KernelStoreSecurityError, workspaceIdentity } from "./sqlite_store";
@@ -59,6 +59,30 @@ export function enrollmentOperationId(taskId: string, eventId: string): string {
 
 export function drainOperationId(taskId: string, updatedAt: string): string {
 	return `drain:${taskId}:${updatedAt}`;
+}
+
+/**
+ * Digest of a terminal request's own content. The capability is deliberately
+ * opaque and excluded, so a retry that re-mints authority for the *same*
+ * request produces the same digest, while a different reason, actor or event
+ * time produces a different one and must be authorized again instead of being
+ * answered from the committed operation.
+ */
+export function terminalRequestDigest(action: {
+	type: string;
+	event_id: string;
+	at: string;
+	actor_id: string;
+	reason?: unknown;
+}): string {
+	const canonical = JSON.stringify({
+		type: action.type,
+		event_id: action.event_id,
+		at: action.at,
+		actor_id: action.actor_id,
+		reason: typeof action.reason === "string" ? action.reason : null,
+	});
+	return `sha256:${createHash("sha256").update(canonical).digest("hex")}`;
 }
 
 export function terminalOperationId(taskId: string, eventId: string): string {

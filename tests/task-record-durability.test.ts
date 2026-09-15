@@ -1120,6 +1120,24 @@ describe("SQLite authority store durability", () => {
     }
   });
 
+  test("a store that lost its tables fails closed instead of reading as idle", () => {
+    const root = storeRoot();
+    try {
+      const enrolled = storeEnrollFixture(root, "durability-torn");
+      expect(enrolled.state).toBe("active");
+      // Simulate a store whose contents were destroyed while its creation
+      // marker survived: re-initializing here would silently replace real
+      // authority with an empty workspace.
+      writeFileSync(join(root, ".imm/state/kernel.sqlite"), "");
+      expect(() => reconcileKernelAuthority(root, "durability-torn")).toThrow(/carries no schema/);
+      expect(() => readTaskRecordRaw(root, "durability-torn")).toThrow(/carries no schema/);
+      // The recovery is explicit and the marker still describes the worktree.
+      expect(existsSync(join(root, ".imm/state/kernel.identity.json"))).toBe(true);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   test("a settled run-scoped audit pair is recognized as terminal evidence", () => {
     const root = storeRoot();
     try {

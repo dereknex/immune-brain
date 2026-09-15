@@ -117,6 +117,18 @@ export function stateClaimPath(): string {
 	return `${STATE_RELATIVE}/active-claim.json`;
 }
 
+/**
+ * Creation marker for the worktree store, written once when the database is
+ * first initialized. A worktree keeps its identity even if the database is
+ * truncated: the marker is what distinguishes "brand-new store" from "store
+ * that lost its contents", so corruption fails closed instead of reading as an
+ * idle unowned worktree. The storage migration (mws-migration-release) carries
+ * it together with the database and retires it when it does.
+ */
+export function kernelStoreIdentityPath(): string {
+	return `${STATE_RELATIVE}/kernel.identity.json`;
+}
+
 export function stateStoreLockPath(): string {
 	return `${STATE_RELATIVE}/locks/kernel-store.lock`;
 }
@@ -522,7 +534,14 @@ interface FileStoreFacts {
 	fail_reason: string | null;
 }
 
-const KERNEL_DB_ENTRIES = ["kernel.sqlite", "kernel.sqlite-wal", "kernel.sqlite-shm"];
+const KERNEL_DB_ENTRIES = [
+	"kernel.sqlite",
+	"kernel.sqlite-wal",
+	"kernel.sqlite-shm",
+	// The store's creation marker: it travels with the database and is what
+	// distinguishes a new worktree store from a damaged one.
+	"kernel.identity.json",
+];
 
 /**
  * Facts about the retired `.imm/state/*.json` file store. Its authority must be

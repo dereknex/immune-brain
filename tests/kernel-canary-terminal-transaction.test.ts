@@ -358,6 +358,55 @@ describe("terminal ownership transfer", () => {
 		expect(withKernelRead(root, (db) => readRunRowByTask(db, TASK))).toEqual(runBefore);
 	});
 
+	test("a different request for the same settled event is refused, not replayed", () => {
+		const cap = stopCapability("2026-08-12T10:00:01.000Z");
+		const first = execute(
+			{ op: "stop", capability: cap, reason: "halt", actor_id: "user" },
+			"2026-08-12T10:00:01.000Z",
+		);
+		expect(first.record.lifecycle).toBe("stopped");
+		// Same task and instant, different reason: the committed result answers the
+		// request that was authorized, not this one.
+		const record = readTaskRecord(root, TASK);
+		const digest = (a: Record<string, unknown>) =>
+			createHash("sha256").update(JSON.stringify(a)).digest("hex");
+		const at = "2026-08-12T10:00:01.000Z";
+		const other = createMutationAuthorityCapabilityForTest(mutationRegistry, {
+			authority_kind: "user",
+			task_id: TASK,
+			action_digest: digest({
+				type: "stop",
+				event_id: `stop:${TASK}:${at}`,
+				at,
+				actor_id: "user",
+				reason: "different",
+			}),
+			expected_record_hash: record.revision,
+			intent_revision: 1,
+			intent_content_hash: INTENT_HASH,
+			diff_hash: DIFF,
+			actor_id: "user",
+			confirmation_ref: "different-request",
+			expires_at: "2099-01-01T00:00:00.000Z",
+			findings_digest: null,
+		});
+		// Called directly with no usable intent token: the replay decision must
+		// precede the token and capability checks, which a settled run cannot pass.
+		expect(() =>
+			app.execute({
+				root,
+				task_id: TASK,
+				operation: { op: "stop", capability: other, reason: "different", actor_id: "user" },
+				prior_intent_token: "",
+				diffProvider: () => ({ diff_hash: DIFF, changed_paths: [] as const }),
+				now: at,
+			}),
+		).toThrow(/different request/i);
+		// The settled facts are untouched by the refused request.
+		expect(readTaskRecord(root, TASK).revision).toBe(record.revision);
+		expect(readTaskTombstone(root, TASK)?.terminal_lifecycle).toBe("stopped");
+	});
+
 	test("terminalized task cannot be re-enrolled", () => {
 		completeTask();
 		const enrollmentRegistry = createEnrollmentAuthorityRegistry();

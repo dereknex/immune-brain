@@ -787,11 +787,17 @@ export function readCommittedTerminalResult(
 	root: string,
 	taskId: string,
 	eventId: string,
+	requestDigest?: string,
 ): { record: TaskRecord; workspace: WorkspaceState } | null {
 	validateTaskId(taskId);
 	const read = withKernelRead(root, (db) => {
 		const row = readOperationRow(db, terminalOperationId(taskId, eventId));
 		if (!row) return null;
+		const parsed = JSON.parse(row.result_json) as CommittedOperationResult;
+		if ((parsed.request_digest ?? null) !== (requestDigest ?? null))
+			throw new KernelStoreConflictError(
+				`terminal operation for ${taskId} was committed for a different request; resubmit the exact request that settled it`,
+			);
 		return decodeOperationResult(row.result_json);
 	});
 	return read ?? null;
@@ -1136,6 +1142,14 @@ function assertWorkspaceExpectation(db: DatabaseSync, expected: string, label: s
 interface CommittedOperationResult {
 	record_json: string;
 	workspace_json: string;
+	/**
+	 * Digest of the request this operation committed. A lost response replays
+	 * only when the retry carries the same request: operation, task and time are
+	 * not enough, because a different reason or actor at the same instant is a
+	 * different authorization decision. Absent on operations committed before
+	 * this field existed; absence never authorizes a different request.
+	 */
+	request_digest?: string;
 }
 
 function decodeOperationResult(
@@ -1399,6 +1413,7 @@ export function commitTerminalLocked(
 	transaction: WorkspaceTransactionV2,
 	tombstone: TaskTombstone,
 	capabilityRunId?: string,
+	requestDigest?: string,
 ): { record: TaskRecord; workspace: WorkspaceState } {
 	validateTaskId(taskId);
 	if (transaction.task_id !== taskId)
@@ -1468,6 +1483,7 @@ export function commitTerminalLocked(
 			result_json: JSON.stringify({
 				record_json: transaction.next_record_content,
 				workspace_json: transaction.next_workspace_content,
+				...(requestDigest ? { request_digest: requestDigest } : {}),
 			} satisfies CommittedOperationResult),
 			committed_at: tombstone.terminalized_at,
 		});
