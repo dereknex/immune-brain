@@ -17,6 +17,7 @@ import {
 import type { GithubInitiativeObservation } from "../plugins/immune-brain/runtime/github_issue_tracker";
 import { ClaudeRuntime, type ToolMeta } from "../plugins/immune-brain/runtime/claude/kernel_ports";
 import { readTaskRecordRaw } from "../plugins/immune-brain/runtime/kernel/storage";
+import { readTaskTombstone } from "../plugins/immune-brain/runtime/kernel/backend_claim";
 
 const ENV = { CLAUDE_CODE_VERSION: "2.1.236", CLAUDE_CODE_PERMISSION_MODE: "manual" };
 
@@ -991,37 +992,33 @@ describe("acc-claude-batch-fail-closed", () => {
 			await runtime.enroll(taskId, meta("enroll"));
 
 			// Force the failure exactly where the acceptance forces it: the
-			// observation that only runs after the mutation has committed.
+			// observation that only runs after the mutation has committed. A stop
+			// settles the task, so it is the read that follows that commit which fails.
 			const realStatus = runtime.status.bind(runtime);
 			let forced = 0;
 			runtime.status = (async (id: string) => {
-				if (readTaskRecordRaw(root, id).record?.intent_snapshot.revision === 2) {
+				if (readTaskTombstone(root, id) !== null) {
 					forced += 1;
 					throw new Error("terminal-tracker projection failed");
 				}
 				return realStatus(id);
 			}) as ClaudeRuntime["status"];
 
-			const nextIntent = {
-				...intent,
-				acceptance: [{ id: "acc-1", assertion: "revised assertion", verification: "bun test" }],
-				revision: 2,
-			};
-			const result = await runtime.authorize(taskId, "approve_breaking_intent_revision", meta("approve"), {
-				next_intent: nextIntent,
-			});
+			const result = await runtime.authorize(taskId, "stop", meta("stop"));
 
 			expect(forced).toBe(1);
 			// The committed mutation is still the authoritative result, with the
 			// tracker failure reported beside it rather than thrown.
-			expect(result.record.intent_snapshot.revision).toBe(2);
+			expect(result.record.lifecycle).toBe("stopped");
 			expect((result as { tracker?: unknown }).tracker).toMatchObject({
 				operation: "mark-terminal",
 				status: "retryable_failure",
 			});
-			// And the staged sidecar was not rolled back to the pre-mutation revision.
-			const sidecar = JSON.parse(readFileSync(join(root, "docs", "plans", `${taskId}.intent.json`), "utf8"));
-			expect(sidecar.revision).toBe(2);
+			// And the settlement the throw could not undo is still the committed state:
+			// the terminal tombstone the projection needed is there, and the live record
+			// has already moved into the audit directory.
+			expect(readTaskTombstone(root, taskId)?.terminal_lifecycle).toBe("stopped");
+			expect(readTaskRecordRaw(root, taskId).record).toBeNull();
 		} finally {
 			rmSync(root, { recursive: true, force: true });
 		}

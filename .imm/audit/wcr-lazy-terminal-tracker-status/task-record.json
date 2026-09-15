@@ -1,0 +1,137 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "wcr-lazy-terminal-tracker-status",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "wcr-lazy-terminal-tracker-status",
+    "goal": "Stop kernel_ports.ts's withTerminalTracker from running a full this.status() call for every advance/submitReview/authorize invocation regardless of whether the call is terminal; only pay that cost when the underlying operation actually reached a terminal state.",
+    "acceptance": [
+      {
+        "id": "RB13-1",
+        "assertion": "withTerminalTracker in runtime/claude/kernel_ports.ts does not call this.status() for a non-terminal advance/submitReview/authorize invocation; it still projects the terminal tracker state exactly as before for a call that does reach a terminal (done/stopped) state.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.4.2\",\n  \"argv\": [\n    \"test\",\n    \"tests/claude-batch-authority.test.ts\",\n    \"tests/dual-host-assurance-conformance.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 131072\n}\n"
+      }
+    ],
+    "scope_hint": [
+      "docs/plans/wcr-lazy-terminal-tracker-status.intent.json",
+      "docs/specs/archive/workflow-consolidation-remediation.spec.md",
+      "docs/specs/workflow-consolidation-remediation.spec.md",
+      "plugins/immune-brain/dist/claude/mcp-server.mjs",
+      "plugins/immune-brain/runtime/claude/kernel_ports.ts",
+      "tests/claude-batch-authority.test.ts",
+      "tests/dual-host-assurance-conformance.test.ts"
+    ],
+    "risk": "material",
+    "revision": 2,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/archive/wcr-lazy-terminal-tracker-status.intent.json",
+    "content_hash": "sha256:4d8184c3a1d75c0862219deb9e5258656a45c2fa131aa3149dead1949431f858"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:57efd3b5f4b0df07850e8ce10a2886c9911edea7b19d172fae76c8e98ad2aca5",
+  "git_base_head": "9180330144529e7f34048cf721e1433f84a9ac1f",
+  "attestations": [
+    {
+      "id": "approval-qa-179d8954",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:4d8184c3a1d75c0862219deb9e5258656a45c2fa131aa3149dead1949431f858",
+      "diff_hash": "sha256:b18b10d8d24de05fcfbe3b370e4ad9660f75e23bacb6fdae4ca919edfec9cb98",
+      "actor_id": "deterministic-qa",
+      "summary": "all 1 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "RB13-1",
+          "status": "passed",
+          "summary": "host-attested QA: all 1 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-8a3dd7d9",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:4d8184c3a1d75c0862219deb9e5258656a45c2fa131aa3149dead1949431f858",
+      "diff_hash": "sha256:b18b10d8d24de05fcfbe3b370e4ad9660f75e23bacb6fdae4ca919edfec9cb98",
+      "actor_id": "parent-mediated-review",
+      "summary": "已核验 immutable revision 的唯一父提交、tree、全部变更路径对象及 manifest_digest；非终态结果跳过 tracker 专用 status 读取，终态结果保留原有投影与失败处理，源码与发布产物一致。Kernel QA 已通过 RB13-1，未发现阻断问题。",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "9180330144529e7f34048cf721e1433f84a9ac1f",
+        "review_commit": "15e8e1cff85887d249264776d3e5db4752f89499",
+        "review_tree": "4f9c1319660dabe13893157750430b4b9c074256",
+        "manifest_digest": "sha256:41156727c129186b1b0a5fc1b06535e65b3a7c4691f608c1199a449de649c3c5"
+      }
+    }
+  ],
+  "findings": [],
+  "history": [
+    {
+      "id": "approve_breaking_intent_revision:wcr-lazy-terminal-tracker-status:2026-09-15T02:52:06.405Z",
+      "at": "2026-09-15T02:52:06.405Z",
+      "type": "approve_breaking_intent_revision",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "intent_revision_2\naction_v2_sha256:b888dea2195dfec84c0f434ffca5133ec42b117c26f115285c355b83daa10bca",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-3512e77812c45727",
+        "issued_at": "2026-09-15T02:52:07.108Z",
+        "expires_at": "2026-09-15T03:02:07.108Z"
+      }
+    },
+    {
+      "id": "freeze_artifacts:wcr-lazy-terminal-tracker-status:2026-09-15T03:00:52.159Z",
+      "at": "2026-09-15T03:00:52.159Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent and Spec frozen at docs/plans/archive/wcr-lazy-terminal-tracker-status.intent.json"
+    },
+    {
+      "id": "record_approval:wcr-lazy-terminal-tracker-status:2026-09-15T03:01:22.307Z",
+      "at": "2026-09-15T03:01:22.307Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-179d8954\naction_v2_sha256:8d9e2dcadf9762e4a3ffc44897fb24a3cc5afe51d2ac7809ada4aad04bbe36a0",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-6352ee7e12e9d804",
+        "issued_at": "2026-09-15T03:01:22.310Z",
+        "expires_at": "2026-09-15T03:11:22.310Z"
+      }
+    },
+    {
+      "id": "record_approval:wcr-lazy-terminal-tracker-status:2026-09-15T03:02:46.540Z",
+      "at": "2026-09-15T03:02:46.540Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-8a3dd7d9\naction_v2_sha256:2961172ef08f20bd12ce71d49304d2b5c7c922bd44fdbf019b57596bcce754b8",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-a4aff72b592aa422",
+        "issued_at": "2026-09-15T03:02:46.540Z",
+        "expires_at": "2026-09-15T03:12:46.540Z"
+      }
+    },
+    {
+      "id": "complete:wcr-lazy-terminal-tracker-status:2026-09-15T03:02:47.318Z",
+      "at": "2026-09-15T03:02:47.318Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:d84baa03d525fcb0ebd2792dc3f8e1927ed384c620ad9895a2f5334e902755de"
+    }
+  ]
+}

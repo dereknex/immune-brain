@@ -10946,6 +10946,13 @@ async function submitClaudeReview(host, coordinator, ctx, taskId, verdictInput) 
   }
   return coordinator.submitReview(taskId, ctx, verdictInput);
 }
+function settledKernelResult(result) {
+  const state = result.state;
+  if (state === "completed" || state === "stopped")
+    return true;
+  const lifecycle = result.record?.lifecycle;
+  return lifecycle === "done" || lifecycle === "stopped";
+}
 function stopReason(value) {
   return typeof value === "string" && value.length > 0 ? value : "user stop";
 }
@@ -11248,6 +11255,8 @@ class ClaudeRuntime {
   }
   async withTerminalTracker(taskId, result) {
     if (result === null || typeof result !== "object")
+      return result;
+    if (!settledKernelResult(result))
       return result;
     try {
       const projection = await this.status(taskId);

@@ -170,6 +170,20 @@ export async function submitClaudeReview(
 	return coordinator.submitReview(taskId, ctx, verdictInput);
 }
 
+/**
+ * Whether a Kernel result settled its task: the coordinator's own terminal
+ * outcomes, or the lifecycle a privileged mutation committed. Only such a result
+ * can have produced the claimless terminal projection the GitHub tracker step
+ * needs, and it is exported so the gate's terminal shapes are asserted directly
+ * instead of by settling a task against a live tracker.
+ */
+export function settledKernelResult(result: object): boolean {
+	const state = (result as { state?: unknown }).state;
+	if (state === "completed" || state === "stopped") return true;
+	const lifecycle = (result as { record?: { lifecycle?: unknown } }).record?.lifecycle;
+	return lifecycle === "done" || lifecycle === "stopped";
+}
+
 /** `extra` arrives as `Record<string, unknown>`; only a real string is a reason. */
 function stopReason(value: unknown): string {
 	return typeof value === "string" && value.length > 0 ? value : "user stop";
@@ -606,7 +620,9 @@ export class ClaudeRuntime {
 	/**
 	 * Post-settlement GitHub tracker projection: the same shared step the Pi Host
 	 * runs, so an opted-in terminal projection no longer depends on which Host
-	 * settled the task.
+	 * settled the task. Only a call that settled its task pays for it: the step
+	 * cannot project anything from a result that reports a live obligation, so
+	 * every other invocation returns untouched without reading the Kernel.
 	 *
 	 * Transport, never authority: the shared projection derives nothing unless the
 	 * Kernel already shows a fresh claimless done/stopped task with its exact
@@ -616,6 +632,7 @@ export class ClaudeRuntime {
 	 */
 	private async withTerminalTracker<T>(taskId: string, result: T): Promise<T> {
 		if (result === null || typeof result !== "object") return result;
+		if (!settledKernelResult(result)) return result;
 		try {
 			const projection = await this.status(taskId);
 			const tracker = await projectTerminalTrackerState({

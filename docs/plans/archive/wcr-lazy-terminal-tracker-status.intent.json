@@ -1,7 +1,6 @@
 {
   "contract": "assurance_kernel/task_intent/v1",
   "task_id": "wcr-lazy-terminal-tracker-status",
-  "owner": "user",
   "goal": "Stop kernel_ports.ts's withTerminalTracker from running a full this.status() call for every advance/submitReview/authorize invocation regardless of whether the call is terminal; only pay that cost when the underlying operation actually reached a terminal state.",
   "acceptance": [
     {
@@ -14,10 +13,12 @@
     "docs/plans/wcr-lazy-terminal-tracker-status.intent.json",
     "docs/specs/archive/workflow-consolidation-remediation.spec.md",
     "docs/specs/workflow-consolidation-remediation.spec.md",
+    "plugins/immune-brain/dist/claude/mcp-server.mjs",
     "plugins/immune-brain/runtime/claude/kernel_ports.ts",
     "tests/claude-batch-authority.test.ts",
     "tests/dual-host-assurance-conformance.test.ts"
   ],
   "risk": "material",
-  "revision": 1
+  "revision": 2,
+  "owner": "user"
 }

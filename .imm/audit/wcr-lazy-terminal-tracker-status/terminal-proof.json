@@ -1,0 +1,9 @@
+{
+  "contract": "assurance_kernel/task_tombstone/v2",
+  "task_id": "wcr-lazy-terminal-tracker-status",
+  "lifecycle_status": "terminal",
+  "terminal_lifecycle": "done",
+  "terminal_event_id": "complete:wcr-lazy-terminal-tracker-status:2026-09-15T03:02:47.318Z",
+  "final_record_hash": "sha256:9dcea50294109003083f300f17e2788df2c3392338fdb1b887b395c7936420c6",
+  "terminalized_at": "2026-09-15T03:02:47.318Z"
+}

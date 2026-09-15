@@ -14,7 +14,7 @@ import { AssuranceProgression } from "../plugins/immune-brain/.pi-extension/pi-c
 import { revisionForContent } from "../plugins/immune-brain/runtime/kernel/storage";
 import { PassThrough } from "node:stream";
 import { ClaudeReviewHost, REVIEWER_AGENT, AGENT_TOOL } from "../plugins/immune-brain/runtime/claude/review_host";
-import { submitClaudeReview, ClaudeRuntime, type ToolMeta } from "../plugins/immune-brain/runtime/claude/kernel_ports";
+import { submitClaudeReview, ClaudeRuntime, settledKernelResult, type ToolMeta } from "../plugins/immune-brain/runtime/claude/kernel_ports";
 import { probeHost } from "../plugins/immune-brain/runtime/claude/capability";
 import { createMcpRuntime, serveStdio } from "../plugins/immune-brain/runtime/claude/mcp_server";
 import type { ReviewBundle } from "../plugins/immune-brain/runtime/assurance/review_evidence";
@@ -2475,6 +2475,53 @@ describe("dual-host assurance conformance", () => {
 	// S13 GHP-3: the post-settlement tracker projection reports beside the
 	// authoritative result. A tracker failure never becomes evidence, a blocker,
 	// or a reason to repeat the settling Kernel mutation.
+	test("pays for the terminal tracker projection only after a settling call", async () => {
+		const root = mkdtempSync(join(tmpdir(), "imm-terminal-tracker-gate-"));
+		try {
+			execFileSync("git", ["init", "-q"], { cwd: root });
+			const runtime = new ClaudeRuntime({
+				cwd: root,
+				env: HOST_ENV,
+				host: new ClaudeReviewHost(),
+				interactive: true,
+				permissionMode: "manual",
+				requestConfirmation: async () => ({ decision: "accept", requestId: "r-tracker-gate" }),
+			});
+			const reads: string[] = [];
+			const status = runtime.status.bind(runtime);
+			runtime.status = async (taskId: string) => {
+				reads.push(taskId);
+				return status(taskId);
+			};
+			// A call that settles nothing cannot have produced the claimless terminal
+			// projection the tracker step needs, so it must not read the Kernel for it
+			// and must return the same result it would have returned before.
+			const blocked = await runtime.submitReview("tracker-gate-task", { nonsense: true });
+			expect({ state: blocked.state, reads: [...reads], tracker: "tracker" in blocked }).toEqual({
+				state: "blocked",
+				reads: [],
+				tracker: false,
+			});
+			// The gate admits exactly the shapes a settling call produces: the
+			// coordinator's terminal outcomes and a committed terminal lifecycle.
+			expect([
+				settledKernelResult({ state: "completed" }),
+				settledKernelResult({ state: "stopped" }),
+				settledKernelResult({ record: { lifecycle: "done" } }),
+				settledKernelResult({ record: { lifecycle: "stopped" } }),
+			]).toEqual([true, true, true, true]);
+			expect([
+				settledKernelResult({ state: "review_ready" }),
+				settledKernelResult({ state: "rework" }),
+				settledKernelResult({ state: "blocked" }),
+				settledKernelResult({ state: "cancelled" }),
+				settledKernelResult({ record: { lifecycle: "active" } }),
+			]).toEqual([false, false, false, false, false]);
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
 	test("reports a tracker failure beside settlement without touching Kernel state", async () => {
 		const root = mkdtempSync(join(tmpdir(), "imm-terminal-tracker-"));
 		try {
