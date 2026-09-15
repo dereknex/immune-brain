@@ -1,0 +1,86 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "wcr-name-readiness-guard-successor",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "wcr-name-readiness-guard-successor",
+    "goal": "Record the successor for the ISL-2 coverage removed with tests/kernel-r2a-boundary.test.ts (an unrecognized runKernelCommand invocation refuses with invalid_command and writes nothing to authoritative state): tests/kernel-shadow-cli.test.ts already asserts this generically for an unknown command; extend it to also cover the literal 'readiness' token so the original scenario is preserved, not just an arbitrary placeholder string, and name it as ISL-2's successor.",
+    "acceptance": [
+      {
+        "id": "RB8-1",
+        "assertion": "tests/kernel-shadow-cli.test.ts's unknown-command coverage additionally exercises runKernelCommand(['readiness', '--json']) (not only an arbitrary placeholder token), asserting returncode 2 / invalid_command, a rejected journal entry, and that .imm/state/workspace.json is not created; an inline comment names this as the successor for the ISL-2 coverage retired with tests/kernel-r2a-boundary.test.ts at S5.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.4.2\",\n  \"argv\": [\n    \"test\",\n    \"tests/kernel-shadow-cli.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 60000,\n  \"max_output_bytes\": 65536\n}\n"
+      }
+    ],
+    "scope_hint": [
+      "docs/plans/wcr-name-readiness-guard-successor.intent.json",
+      "docs/specs/archive/workflow-consolidation-remediation.spec.md",
+      "docs/specs/workflow-consolidation-remediation.spec.md",
+      "tests/kernel-shadow-cli.test.ts"
+    ],
+    "risk": "routine",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/archive/wcr-name-readiness-guard-successor.intent.json",
+    "content_hash": "sha256:179629e1eb6149f3c24b1168419b3fa113cdb6afb305a37438f016c89c590441"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:179629e1eb6149f3c24b1168419b3fa113cdb6afb305a37438f016c89c590441",
+  "git_base_head": "fe9b2fe5ced50188d7cc2c9e12f1bbe3403268c5",
+  "attestations": [
+    {
+      "id": "approval-qa-4731ab54",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:179629e1eb6149f3c24b1168419b3fa113cdb6afb305a37438f016c89c590441",
+      "diff_hash": "sha256:8895298bf754f7f5aa7741cb19882adc3ce35de7363f4f2c68f1d2f39e288e78",
+      "actor_id": "deterministic-qa",
+      "summary": "all 1 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "RB8-1",
+          "status": "passed",
+          "summary": "host-attested QA: all 1 fixed verification descriptor(s) passed"
+        }
+      ]
+    }
+  ],
+  "findings": [],
+  "history": [
+    {
+      "id": "freeze_artifacts:wcr-name-readiness-guard-successor:2026-09-15T02:03:05.917Z",
+      "at": "2026-09-15T02:03:05.917Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent and Spec frozen at docs/plans/archive/wcr-name-readiness-guard-successor.intent.json"
+    },
+    {
+      "id": "record_approval:wcr-name-readiness-guard-successor:2026-09-15T02:03:06.531Z",
+      "at": "2026-09-15T02:03:06.531Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-4731ab54\naction_v2_sha256:c770cc2aa928b25ee97535b4ffd1b39220d2ea01a97ecfd01ebb7a10f9f63926",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-8a91a93f906ebb5b",
+        "issued_at": "2026-09-15T02:03:06.531Z",
+        "expires_at": "2026-09-15T02:13:06.531Z"
+      }
+    },
+    {
+      "id": "complete:wcr-name-readiness-guard-successor:2026-09-15T02:03:07.064Z",
+      "at": "2026-09-15T02:03:07.064Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:91b24bef5a9b64283f0e1f424f072ca8e752f06ceb6cefc5229c1e3c941febd6"
+    }
+  ]
+}

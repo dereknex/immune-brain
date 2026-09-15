@@ -114,13 +114,30 @@ describe("imm-kernel status", () => {
 
 	it("journals rejected unknown commands without mutating authoritative state", () => {
 		const root = tempRoot();
-		const result = runKernelCommand(["totally-unknown-command"], root);
-		expect(result.returncode).toBe(2);
+		// ISL-2 successor: the coverage retired with tests/kernel-r2a-boundary.test.ts
+		// at S5 asserted that the removed `readiness` command refuses as an
+		// unrecognized one with zero writes. The literal token is exercised here
+		// beside the arbitrary placeholder, so a command table that resolved it again
+		// would fail on the real command rather than only on a token nobody can
+		// register. `readiness` is also a retired top-level token, which the command
+		// surface deliberately keeps out of the friction journal, so the journal
+		// assertion belongs to the unknown-command path and the retired token is
+		// asserted on the same refusal plus its silence.
+		const unknown = runKernelCommand(["totally-unknown-command"], root);
+		expect(unknown.returncode).toBe(2);
+		expect(JSON.parse(unknown.stdout).error?.code).toBe("invalid_command");
 		const journalPath = join(root, ".imm/state/journal.jsonl");
-		expect(existsSync(journalPath)).toBe(true);
 		const line = JSON.parse(readFileSync(journalPath, "utf8").trim().split("\n").at(-1) ?? "{}");
-		expect(line.command).toBe("totally-unknown-command");
-		expect(line.result).toBe("rejected");
+		expect(line).toMatchObject({
+			command: "totally-unknown-command",
+			result: "rejected",
+			reason_code: "invalid_command",
+		});
+
+		const retired = runKernelCommand(["readiness", "--json"], root);
+		expect(retired.returncode).toBe(2);
+		expect(JSON.parse(retired.stdout).error?.code).toBe("invalid_command");
+		expect(readFileSync(journalPath, "utf8").trim().split("\n")).toHaveLength(1);
 		expect(existsSync(join(root, ".imm/state/workspace.json"))).toBe(false);
 	});
 

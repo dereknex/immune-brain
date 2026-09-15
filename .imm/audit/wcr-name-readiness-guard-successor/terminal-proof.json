@@ -1,0 +1,9 @@
+{
+  "contract": "assurance_kernel/task_tombstone/v2",
+  "task_id": "wcr-name-readiness-guard-successor",
+  "lifecycle_status": "terminal",
+  "terminal_lifecycle": "done",
+  "terminal_event_id": "complete:wcr-name-readiness-guard-successor:2026-09-15T02:03:07.064Z",
+  "final_record_hash": "sha256:257491c337eaf5291bda637fb8ae6b0fd81c3fa59ab309c8a1f19087cc4a9e39",
+  "terminalized_at": "2026-09-15T02:03:07.064Z"
+}
