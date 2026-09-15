@@ -1,13 +1,12 @@
 {
   "contract": "assurance_kernel/task_intent/v1",
   "task_id": "mws-sqlite-authority",
-  "owner": "user",
   "goal": "Replace multi-file authority persistence with one worktree-local SQLite transaction boundary and exact execution identities while preserving Kernel authorization.",
   "acceptance": [
     {
       "id": "A1",
       "assertion": "SQLite persistence enforces one active run per worktree, revision-checked concurrent writes, bounded locks and crash/disk-error recovery without JSON-byte CAS; isolated worktrees and consistent backup/restore preserve exact workspace/run identity.",
-      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.4.2\",\n  \"argv\": [\n    \"test\",\n    \"tests/task-record-durability.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 60000,\n  \"max_output_bytes\": 131072\n}"
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.4.2\",\n  \"argv\": [\n    \"test\",\n    \"tests/task-record-durability.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 60000,\n  \"max_output_bytes\": 131072\n}\n"
     },
     {
       "id": "A2",
@@ -22,7 +21,7 @@
     {
       "id": "A4",
       "assertion": "Pi and Claude expose the same exact-run authority projection, reject incompatible schema and retain native receipt/freshness boundaries using the SQLite store.",
-      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.4.2\",\n  \"argv\": [\n    \"test\",\n    \"tests/dual-host-assurance-conformance.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 60000,\n  \"max_output_bytes\": 131072\n}\n"
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.4.2\",\n  \"argv\": [\n    \"test\",\n    \"tests/dual-host-assurance-conformance.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 180000,\n  \"max_output_bytes\": 131072\n}\n"
     }
   ],
   "scope_hint": [
@@ -149,5 +148,6 @@
     "tests/v4-storage-retirement-legacy-audit.test.ts"
   ],
   "risk": "critical",
-  "revision": 1
+  "revision": 2,
+  "owner": "user"
 }

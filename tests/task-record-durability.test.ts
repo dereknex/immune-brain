@@ -4,6 +4,7 @@ import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { DatabaseSync } from "node:sqlite";
 
 import {
 	KernelStoreConflictError,
@@ -71,6 +72,34 @@ function terminalPair(taskId: string): {
     }
   }
   return null;
+}
+
+/**
+ * A task whose Kernel authority is still live in this worktree: its archived
+ * TaskIntent is a transitory freeze artifact, not evidence loss. Only a positive
+ * live record counts; an unreadable store is never treated as proof of absence.
+ */
+function liveTaskInFlight(taskId: string): boolean {
+  const legacy = join(REPO_ROOT, ".imm/state/tasks", `${taskId}.json`);
+  if (existsSync(legacy)) {
+    try {
+      const raw = JSON.parse(readFileSync(legacy, "utf8")) as { lifecycle?: unknown };
+      if (raw.lifecycle === "active") return true;
+    } catch {
+      // unreadable live record: fall through to the store probe
+    }
+  }
+  const storePath = join(REPO_ROOT, ".imm/state/kernel.sqlite");
+  if (!existsSync(storePath)) return false;
+  const db = new DatabaseSync(storePath, { readOnly: true });
+  try {
+    const row = db.prepare("SELECT state FROM runs WHERE task_id = ?").get(taskId) as
+      | { state?: unknown }
+      | undefined;
+    return row?.state === "active";
+  } finally {
+    db.close();
+  }
 }
 
 function archivalRequiresRecord(taskId: string): { ok: boolean; reason?: string } {
@@ -172,7 +201,11 @@ describe("task record durability", () => {
 
     // The cutover layout isolates evidence per task-ID directory, so state
     // writes from concurrent tasks can never collide with terminal evidence.
-    const missing = archived.filter((id) => !archivalRequiresRecord(id).ok).sort();
+    // An archived TaskIntent whose task is still in flight is a freeze artifact
+    // of the active task, not lost terminal evidence.
+    const missing = archived
+      .filter((id) => !archivalRequiresRecord(id).ok && !liveTaskInFlight(id))
+      .sort();
     const unexpectedMissing = missing.filter((id) => !baselineList.includes(id)).sort();
     expect(
       unexpectedMissing,
