@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, setDefaultTimeout, test } from "bun:test";
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -273,6 +273,11 @@ function releaseWorkspaceForTest(root: string): void {
 		db.prepare("DELETE FROM runs WHERE state = 'active'").run();
 	});
 }
+
+// Every test here drives a real host runtime and temporary Git repositories, so
+// the per-test bound must clear bun's 5s default even under the Kernel QA
+// minimal environment (which is slower than an interactive session).
+setDefaultTimeout(60_000);
 
 const TASK = "dual-host-task";
 const ROOT = "/tmp/dual-host-assurance";
