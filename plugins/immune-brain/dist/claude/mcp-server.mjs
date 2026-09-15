@@ -680,7 +680,7 @@ function parseHookStdin(raw) {
 
 // plugins/immune-brain/runtime/claude/kernel_ports.ts
 import { randomUUID as randomUUID9 } from "node:crypto";
-import { existsSync as existsSync10, readFileSync as readFileSync11, writeFileSync as writeFileSync7 } from "node:fs";
+import { existsSync as existsSync10, readFileSync as readFileSync12, writeFileSync as writeFileSync7 } from "node:fs";
 import { execFileSync as execFileSync5 } from "node:child_process";
 import { join as join11 } from "node:path";
 
@@ -2665,11 +2665,22 @@ function assertReviewArtifact(path) {
 }
 
 // plugins/immune-brain/runtime/kernel/backend_claim.ts
-import { lstatSync as lstatSync4, readFileSync as readFileSync5 } from "node:fs";
-import { join as join4, resolve as resolve4 } from "node:path";
+import { lstatSync as lstatSync5, readFileSync as readFileSync6 } from "node:fs";
+import { join as join4, resolve as resolve5 } from "node:path";
 
 // plugins/immune-brain/runtime/kernel/storage_paths.ts
 import { createHash as createHash9 } from "node:crypto";
+import {
+  constants as FS_CONSTANTS,
+  lstatSync as lstatSync3,
+  openSync as openSync2,
+  readFileSync as readFileSync4,
+  realpathSync as realpathSync5,
+  readdirSync as readdirSync2,
+  closeSync as closeSync2,
+  fstatSync as fstatSync2
+} from "node:fs";
+import { resolve as resolve3 } from "node:path";
 var AUDIT_RELATIVE = ".imm/audit";
 var KERNEL_DB_RELATIVE = ".imm/state/kernel.sqlite";
 var KERNEL_STORE_SCHEMA_VERSION = 1;
@@ -2690,11 +2701,43 @@ function auditTaskDirPath(taskId) {
   validateTaskId(taskId);
   return `${AUDIT_RELATIVE}/${taskId}`;
 }
+function auditRunDirPath(taskId, runId) {
+  validateTaskId(taskId);
+  if (!/^run-[A-Za-z0-9-]+$/.test(runId))
+    throw new Error(`invalid run identity: ${runId}`);
+  return `${auditTaskDirPath(taskId)}/${runId}`;
+}
+function auditRunRecordPath(taskId, runId) {
+  return `${auditRunDirPath(taskId, runId)}/task-record.json`;
+}
+function auditRunTerminalProofPath(taskId, runId) {
+  return `${auditRunDirPath(taskId, runId)}/terminal-proof.json`;
+}
+function auditEvidencePaths(root, taskId) {
+  validateTaskId(taskId);
+  const runs = (listEntries(root, auditTaskDirPath(taskId)) ?? []).filter((entry) => /^run-[A-Za-z0-9-]+$/.test(entry));
+  if (runs.length === 1) {
+    const runId = runs[0];
+    return {
+      record: auditRunRecordPath(taskId, runId),
+      proof: auditRunTerminalProofPath(taskId, runId)
+    };
+  }
+  return { record: auditTaskRecordPath(taskId), proof: auditTerminalProofPath(taskId) };
+}
 function auditTaskRecordPath(taskId) {
   return `${auditTaskDirPath(taskId)}/task-record.json`;
 }
 function auditTerminalProofPath(taskId) {
   return `${auditTaskDirPath(taskId)}/terminal-proof.json`;
+}
+function listEntries(root, relativePath) {
+  const candidate = resolve3(root, relativePath);
+  try {
+    return readdirSync2(candidate).sort();
+  } catch {
+    return null;
+  }
 }
 
 // plugins/immune-brain/runtime/kernel/sqlite_store.ts
@@ -2702,20 +2745,20 @@ import { randomUUID as randomUUID3 } from "node:crypto";
 import { spawnSync as spawnSync3 } from "node:child_process";
 import {
   constants as constants2,
-  closeSync as closeSync2,
+  closeSync as closeSync3,
   copyFileSync,
   existsSync as existsSync3,
   fsyncSync,
-  lstatSync as lstatSync3,
+  lstatSync as lstatSync4,
   mkdirSync as mkdirSync2,
-  openSync as openSync2,
-  readFileSync as readFileSync4,
-  realpathSync as realpathSync5,
+  openSync as openSync3,
+  readFileSync as readFileSync5,
+  realpathSync as realpathSync6,
   renameSync,
   rmSync as rmSync3,
   writeFileSync as writeFileSync2
 } from "node:fs";
-import { dirname as dirname3, isAbsolute as isAbsolute3, relative as relative2, resolve as resolve3, sep as sep3 } from "node:path";
+import { dirname as dirname3, isAbsolute as isAbsolute3, relative as relative2, resolve as resolve4, sep as sep3 } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 var DEFAULT_BUSY_TIMEOUT_MS = 5000;
 
@@ -2751,7 +2794,7 @@ function runStoreFault() {
 }
 function canonicalRoot(root) {
   try {
-    return realpathSync5(root);
+    return realpathSync6(root);
   } catch {
     throw new KernelStoreSecurityError("project root is unavailable");
   }
@@ -2762,10 +2805,10 @@ function storeKey(root) {
 function assertSafeSegments(canonical, candidate) {
   let current = canonical;
   for (const segment of relative2(canonical, candidate).split(sep3).filter(Boolean)) {
-    current = resolve3(current, segment);
+    current = resolve4(current, segment);
     let stat;
     try {
-      stat = lstatSync3(current);
+      stat = lstatSync4(current);
     } catch (error) {
       const code = error.code;
       if (code === "ENOENT" || code === "ENOTDIR")
@@ -2777,15 +2820,15 @@ function assertSafeSegments(canonical, candidate) {
   }
 }
 function ensureStoreDirectory(canonical) {
-  const target = resolve3(canonical, KERNEL_DB_RELATIVE);
+  const target = resolve4(canonical, KERNEL_DB_RELATIVE);
   const directory = dirname3(target);
   assertSafeSegments(canonical, directory);
   let current = canonical;
   for (const segment of relative2(canonical, directory).split(sep3).filter(Boolean)) {
-    current = resolve3(current, segment);
+    current = resolve4(current, segment);
     let stat;
     try {
-      stat = lstatSync3(current);
+      stat = lstatSync4(current);
     } catch (error) {
       const code = error.code;
       if (code !== "ENOENT" && code !== "ENOTDIR")
@@ -2803,7 +2846,7 @@ function ensureStoreDirectory(canonical) {
   }
   assertSafeSegments(canonical, target);
   try {
-    const stat = lstatSync3(target);
+    const stat = lstatSync4(target);
     if (!stat.isFile())
       throw new KernelStoreSecurityError("kernel store is not a regular file");
   } catch (error) {
@@ -2869,7 +2912,7 @@ function gitCommonDir(root) {
   const value = result.stdout.trim();
   if (!value)
     return null;
-  return isAbsolute3(value) ? value : resolve3(root, value);
+  return isAbsolute3(value) ? value : resolve4(root, value);
 }
 function readMeta(db, key) {
   const row = db.prepare("SELECT value FROM store_meta WHERE key = ?").get(key);
@@ -2928,7 +2971,7 @@ function initializeSchema(db, root, now) {
 }
 function openKernelStore(root, options = {}) {
   const canonical = canonicalRoot(root);
-  const path = resolve3(canonical, KERNEL_DB_RELATIVE);
+  const path = resolve4(canonical, KERNEL_DB_RELATIVE);
   const create = options.create ?? true;
   if (!existsSync3(path) && !create)
     return null;
@@ -3194,7 +3237,7 @@ function validateTaskId2(taskId) {
 }
 function readJsonOrNull(path) {
   try {
-    const stat = lstatSync4(path);
+    const stat = lstatSync5(path);
     if (stat.isSymbolicLink())
       throw new KernelBackendClaimError("owner file must not be a symlink");
     if (!stat.isFile())
@@ -3204,7 +3247,7 @@ function readJsonOrNull(path) {
       return null;
     throw error;
   }
-  return JSON.parse(readFileSync5(path, "utf8"));
+  return JSON.parse(readFileSync6(path, "utf8"));
 }
 function parseBackendClaim(raw) {
   const unknown = Object.keys(raw).filter((key) => !ALLOWED.includes(key));
@@ -3287,7 +3330,7 @@ function parseTaskTombstone(raw) {
 }
 function readTaskTombstone(root, taskId) {
   validateTaskId2(taskId);
-  const raw = readJsonOrNull(join4(resolve4(root), auditTerminalProofPath(taskId)));
+  const raw = readJsonOrNull(join4(resolve5(root), auditEvidencePaths(root, taskId).proof));
   if (!raw)
     return null;
   const tombstone = parseTaskTombstone(raw);
@@ -3305,21 +3348,21 @@ function serializeTaskTombstone(tombstone) {
 import { createHash as createHash12 } from "node:crypto";
 import {
   constants as constants3,
-  closeSync as closeSync4,
+  closeSync as closeSync5,
   existsSync as existsSync4,
-  fstatSync as fstatSync3,
+  fstatSync as fstatSync4,
   fsyncSync as fsyncSync2,
-  lstatSync as lstatSync6,
+  lstatSync as lstatSync7,
   mkdirSync as mkdirSync3,
-  openSync as openSync4,
-  readFileSync as readFileSync7,
-  readdirSync as readdirSync2,
-  realpathSync as realpathSync7,
+  openSync as openSync5,
+  readFileSync as readFileSync8,
+  readdirSync as readdirSync3,
+  realpathSync as realpathSync8,
   renameSync as renameSync2,
   rmSync as rmSync4,
   writeFileSync as writeFileSync3
 } from "node:fs";
-import { dirname as dirname4, isAbsolute as isAbsolute4, relative as relative3, resolve as resolve6, sep as sep5 } from "node:path";
+import { dirname as dirname4, isAbsolute as isAbsolute4, relative as relative3, resolve as resolve7, sep as sep5 } from "node:path";
 
 // plugins/immune-brain/runtime/kernel/reducer.ts
 import { createHash as createHash11 } from "node:crypto";
@@ -3327,16 +3370,16 @@ import { createHash as createHash11 } from "node:crypto";
 // plugins/immune-brain/runtime/kernel/intent.ts
 import { createHash as createHash10 } from "node:crypto";
 import {
-  closeSync as closeSync3,
+  closeSync as closeSync4,
   constants as fsConstants,
-  fstatSync as fstatSync2,
-  lstatSync as lstatSync5,
-  openSync as openSync3,
-  readFileSync as readFileSync6,
-  realpathSync as realpathSync6
+  fstatSync as fstatSync3,
+  lstatSync as lstatSync6,
+  openSync as openSync4,
+  readFileSync as readFileSync7,
+  realpathSync as realpathSync7
 } from "node:fs";
 import { execFileSync as execFileSync3 } from "node:child_process";
-import { join as join5, resolve as resolve5, sep as sep4 } from "node:path";
+import { join as join5, resolve as resolve6, sep as sep4 } from "node:path";
 
 // plugins/immune-brain/runtime/kernel/types.ts
 var TASK_PHASES = ["working", "review", "done", "stopped"];
@@ -3652,11 +3695,11 @@ function assertSameIdentity(before, after, what) {
     throw new Error(`${what} changed while being read`);
 }
 function resolveCanonicalRoot(root) {
-  const resolved = resolve5(root);
-  const rootStat = lstatSync5(resolved);
+  const resolved = resolve6(root);
+  const rootStat = lstatSync6(resolved);
   if (rootStat.isSymbolicLink() || !rootStat.isDirectory())
     throw new Error("project root must be a real directory, not a symlink");
-  return realpathSync6(resolved);
+  return realpathSync7(resolved);
 }
 function resolveSidecarPath(canonicalRoot, activePath, archivedPath) {
   if (sidecarPresent(canonicalRoot, activePath))
@@ -3667,7 +3710,7 @@ function resolveSidecarPath(canonicalRoot, activePath, archivedPath) {
 }
 function sidecarPresent(canonicalRoot, relativePath) {
   try {
-    lstatSync5(join5(canonicalRoot, relativePath));
+    lstatSync6(join5(canonicalRoot, relativePath));
     return true;
   } catch {
     return false;
@@ -3678,7 +3721,7 @@ function collectPathIdentities(canonicalRoot, relativePath) {
   let current = canonicalRoot;
   for (const part of relativePath.split("/")) {
     current = join5(current, part);
-    const stat = lstatSync5(current);
+    const stat = lstatSync6(current);
     if (stat.isSymbolicLink())
       throw new Error("intent sidecar path contains a symlink");
     identities.push({ dev: stat.dev, ino: stat.ino });
@@ -3690,7 +3733,7 @@ function assertIdentitiesUnchanged(expected, canonicalRoot, relativePath) {
   const parts = relativePath.split("/");
   for (let index = 0;index < parts.length; index += 1) {
     current = join5(current, parts[index]);
-    const stat = lstatSync5(current);
+    const stat = lstatSync6(current);
     if (stat.dev !== expected[index].dev || stat.ino !== expected[index].ino)
       throw new Error(`path component changed while being read: ${parts.slice(0, index + 1).join("/")}`);
   }
@@ -3717,28 +3760,28 @@ function readTaskIntentSource(root, taskId, requestedPath) {
       throw new TaskIntentObservationError("invalid", "TaskIntent sidecar is not Git-tracked");
     throw error;
   }
-  const before = lstatSync5(target);
+  const before = lstatSync6(target);
   if (!before.isFile() || before.size > INTENT_MAX_BYTES)
     throw new TaskIntentObservationError("invalid", "TaskIntent sidecar must be a regular file no larger than 64 KiB");
-  const fd = openSync3(target, fsConstants.O_RDONLY | fsConstants.O_NOFOLLOW);
+  const fd = openSync4(target, fsConstants.O_RDONLY | fsConstants.O_NOFOLLOW);
   let bytes;
   try {
-    const fdStat = fstatSync2(fd);
+    const fdStat = fstatSync3(fd);
     assertSameIdentity(statIdentity(before), fdStat, "intent sidecar descriptor");
     intentReaderTestHook?.onBeforeDescriptorRead?.();
-    bytes = readFileSync6(fd);
+    bytes = readFileSync7(fd);
   } finally {
-    closeSync3(fd);
+    closeSync4(fd);
   }
   if (bytes.byteLength > INTENT_MAX_BYTES)
     throw new TaskIntentObservationError("invalid", "TaskIntent sidecar exceeds 64 KiB");
-  const after = lstatSync5(target);
+  const after = lstatSync6(target);
   assertSameIdentity(statIdentity(before), after, "intent sidecar");
   assertIdentitiesUnchanged(pathIdentities, canonicalRoot, sidecarPath);
-  const canonicalAgain = realpathSync6(root);
+  const canonicalAgain = realpathSync7(root);
   if (canonicalAgain !== canonicalRoot)
     throw new Error("canonical project root drifted while being read");
-  if (lstatSync5(canonicalAgain).isSymbolicLink())
+  if (lstatSync6(canonicalAgain).isSymbolicLink())
     throw new Error("canonical project root became a symlink while being read");
   const sourceBytesSha256 = sha256Hex(bytes);
   let intent;
@@ -5255,7 +5298,7 @@ function validateTaskId4(taskId) {
 }
 function canonicalRoot2(root) {
   try {
-    return realpathSync7(root);
+    return realpathSync8(root);
   } catch {
     throw new KernelStoreSecurityError("project root is unavailable");
   }
@@ -5263,7 +5306,7 @@ function canonicalRoot2(root) {
 function retireSupersededRetiredFiles(root, db, taskId) {
   const canonical = canonicalRoot2(root);
   for (const path of [FILE_STORE_CLAIM_RELATIVE, FILE_STORE_WORKSPACE_RELATIVE]) {
-    const full = resolve6(canonical, path);
+    const full = resolve7(canonical, path);
     if (!existsSync4(full))
       continue;
     if (isRetiredFileProvablySuperseded(full, db, taskId))
@@ -5276,7 +5319,7 @@ function isRetiredFileProvablySuperseded(path, db, taskId) {
     return false;
   let raw;
   try {
-    raw = JSON.parse(readFileSync7(path, "utf8"));
+    raw = JSON.parse(readFileSync8(path, "utf8"));
   } catch {
     return false;
   }
@@ -5296,7 +5339,7 @@ function assertNoRetiredFileStore(root, db, taskId) {
     [".imm/state/tasks", "task records"]
   ];
   for (const [path, label] of retired) {
-    if (existsSync4(resolve6(canonical, path)))
+    if (existsSync4(resolve7(canonical, path)))
       throw new KernelStoreSecurityError(`retired file-store authority is present (${label}: ${path}); import it with the supported migration before mutating this worktree`);
   }
   const derived = [
@@ -5304,7 +5347,7 @@ function assertNoRetiredFileStore(root, db, taskId) {
     [FILE_STORE_WORKSPACE_RELATIVE, "workspace owner"]
   ];
   for (const [path, label] of derived) {
-    const full = resolve6(canonical, path);
+    const full = resolve7(canonical, path);
     if (!existsSync4(full))
       continue;
     if (db === undefined || typeof taskId !== "string" || taskId.length === 0)
@@ -5312,8 +5355,8 @@ function assertNoRetiredFileStore(root, db, taskId) {
     if (!isRetiredFileProvablySuperseded(full, db, taskId))
       throw new KernelStoreSecurityError(`retired file-store authority is present (${label}: ${path}) and does not belong to this task; import it with the supported migration before mutating this worktree`);
   }
-  if (existsSync4(resolve6(canonical, FILE_STORE_TRANSACTIONS_RELATIVE))) {
-    const entries = readdirNames(resolve6(canonical, FILE_STORE_TRANSACTIONS_RELATIVE));
+  if (existsSync4(resolve7(canonical, FILE_STORE_TRANSACTIONS_RELATIVE))) {
+    const entries = readdirNames(resolve7(canonical, FILE_STORE_TRANSACTIONS_RELATIVE));
     const pending = entries.filter((entry) => entry.endsWith(".json") && entry !== "storage-layout-migration.json");
     if (pending.length > 0)
       throw new KernelStoreSecurityError(`retired file-store transaction marker is present (${pending[0]}); settle it with the runtime that wrote it before mutating this worktree`);
@@ -5327,7 +5370,7 @@ function retiredFileStoreConflict(root, db, taskId) {
     [".imm/state/tasks", "task records"]
   ];
   for (const [path, label] of authority)
-    if (existsSync4(resolve6(canonical, path)))
+    if (existsSync4(resolve7(canonical, path)))
       return `retired file-store authority is present (${label}: ${path}); import it with the supported migration before mutating this worktree`;
   const storeHasTask = db !== null && taskId !== null && readRunRowByTask(db, taskId) !== null;
   if (!storeHasTask) {
@@ -5336,10 +5379,10 @@ function retiredFileStoreConflict(root, db, taskId) {
       [FILE_STORE_WORKSPACE_RELATIVE, "workspace owner"]
     ];
     for (const [path, label] of derived)
-      if (existsSync4(resolve6(canonical, path)))
+      if (existsSync4(resolve7(canonical, path)))
         return `retired file-store authority is present (${label}: ${path}); import it with the supported migration before mutating this worktree`;
   }
-  const transactions = resolve6(canonical, FILE_STORE_TRANSACTIONS_RELATIVE);
+  const transactions = resolve7(canonical, FILE_STORE_TRANSACTIONS_RELATIVE);
   if (existsSync4(transactions)) {
     const pending = readdirNames(transactions).filter((entry) => entry.endsWith(".json") && entry !== "storage-layout-migration.json");
     if (pending.length > 0)
@@ -5349,7 +5392,7 @@ function retiredFileStoreConflict(root, db, taskId) {
 }
 function readdirNames(path) {
   try {
-    return readdirSync2(path);
+    return readdirSync3(path);
   } catch {
     return [];
   }
@@ -5362,14 +5405,14 @@ function safeCandidate(root, relativePath) {
   if (!relativePath || relativePath.includes("\x00") || isAbsolute4(relativePath) || relativePath.includes("\\"))
     throw new KernelStoreSecurityError("project-relative path is invalid");
   const canonical = canonicalRoot2(root);
-  const candidate = resolve6(canonical, relativePath);
+  const candidate = resolve7(canonical, relativePath);
   if (!withinRoot(canonical, candidate))
     throw new KernelStoreSecurityError("path escapes the project root");
   return { root: canonical, path: candidate };
 }
 function pathStatOrNull(path) {
   try {
-    return lstatSync6(path);
+    return lstatSync7(path);
   } catch (error) {
     const code = error.code;
     if (code === "ENOENT" || code === "ENOTDIR")
@@ -5381,7 +5424,7 @@ function assertNoSymlinkSegments(root, candidate) {
   const rel = relative3(root, candidate);
   let current = root;
   for (const segment of rel.split(sep5).filter(Boolean)) {
-    current = resolve6(current, segment);
+    current = resolve7(current, segment);
     const stat = pathStatOrNull(current);
     if (!stat)
       continue;
@@ -5393,11 +5436,11 @@ function capturePathIdentities(root, candidate) {
   const paths = [root];
   let current = root;
   for (const segment of relative3(root, candidate).split(sep5).filter(Boolean)) {
-    current = resolve6(current, segment);
+    current = resolve7(current, segment);
     paths.push(current);
   }
   return paths.map((path) => {
-    const stat = lstatSync6(path);
+    const stat = lstatSync7(path);
     if (stat.isSymbolicLink())
       throw new KernelStoreSecurityError(`symlink storage segment is forbidden: ${relative3(root, path)}`);
     return { path, dev: stat.dev, ino: stat.ino };
@@ -5405,7 +5448,7 @@ function capturePathIdentities(root, candidate) {
 }
 function assertPathIdentitiesUnchanged(before) {
   for (const identity of before) {
-    const after = lstatSync6(identity.path);
+    const after = lstatSync7(identity.path);
     if (after.isSymbolicLink() || after.dev !== identity.dev || after.ino !== identity.ino)
       throw new KernelStoreSecurityError(`path identity changed during access: ${identity.path}`);
   }
@@ -5415,7 +5458,7 @@ function ensureSecureDirectory(root, relativePath) {
   const rel = relative3(target.root, target.path);
   let current = target.root;
   for (const segment of rel.split(sep5).filter(Boolean)) {
-    current = resolve6(current, segment);
+    current = resolve7(current, segment);
     const stat = pathStatOrNull(current);
     if (stat) {
       if (stat.isSymbolicLink())
@@ -5440,19 +5483,19 @@ function readSecureProjectFile(root, relativePath) {
   const noFollow = constants3.O_NOFOLLOW ?? 0;
   let fd = null;
   try {
-    fd = openSync4(candidate.path, constants3.O_RDONLY | noFollow);
-    const opened = fstatSync3(fd);
+    fd = openSync5(candidate.path, constants3.O_RDONLY | noFollow);
+    const opened = fstatSync4(fd);
     if (opened.dev !== before.dev || opened.ino !== before.ino)
       throw new KernelStoreSecurityError(`source identity changed: ${relativePath}`);
-    const content = readFileSync7(fd, "utf8");
-    const after = lstatSync6(candidate.path);
+    const content = readFileSync8(fd, "utf8");
+    const after = lstatSync7(candidate.path);
     if (after.dev !== opened.dev || after.ino !== opened.ino)
       throw new KernelStoreSecurityError(`source identity changed: ${relativePath}`);
     assertPathIdentitiesUnchanged(identities);
     return content;
   } finally {
     if (fd !== null)
-      closeSync4(fd);
+      closeSync5(fd);
   }
 }
 function currentRevision(root, relativePath) {
@@ -5481,18 +5524,18 @@ function clearStaleLock(lockPath) {
   let stale = false;
   let fd = null;
   try {
-    fd = openSync4(lockPath, constants3.O_RDONLY | (constants3.O_NOFOLLOW ?? 0));
-    const raw = JSON.parse(readFileSync7(fd, "utf8"));
+    fd = openSync5(lockPath, constants3.O_RDONLY | (constants3.O_NOFOLLOW ?? 0));
+    const raw = JSON.parse(readFileSync8(fd, "utf8"));
     stale = Number.isInteger(raw.pid) && Number(raw.pid) > 0 && !processIsAlive(Number(raw.pid));
   } catch {
     stale = Date.now() - Number(before.mtimeMs) > 30000;
   } finally {
     if (fd !== null)
-      closeSync4(fd);
+      closeSync5(fd);
   }
   if (!stale)
     return false;
-  const after = lstatSync6(lockPath);
+  const after = lstatSync7(lockPath);
   if (after.isSymbolicLink() || after.dev !== before.dev || after.ino !== before.ino)
     throw new KernelStoreSecurityError("kernel store lock identity changed during recovery");
   rmSync4(lockPath);
@@ -5503,7 +5546,7 @@ function withExclusiveLock(lockPath, operation) {
   let fd = null;
   for (let attempt = 0;attempt < 2; attempt += 1) {
     try {
-      fd = openSync4(lockPath, constants3.O_WRONLY | constants3.O_CREAT | constants3.O_EXCL | noFollow, 384);
+      fd = openSync5(lockPath, constants3.O_WRONLY | constants3.O_CREAT | constants3.O_EXCL | noFollow, 384);
       break;
     } catch (error) {
       if (attempt === 0 && error.code === "EEXIST" && clearStaleLock(lockPath))
@@ -5513,25 +5556,25 @@ function withExclusiveLock(lockPath, operation) {
   }
   if (fd === null)
     throw new KernelStoreConflictError("kernel store lock could not be acquired");
-  const identity = fstatSync3(fd);
+  const identity = fstatSync4(fd);
   try {
     writeFileSync3(fd, `${JSON.stringify({ pid: process.pid, started_at: nowIso() })}
 `, "utf8");
     fsyncSync2(fd);
     return operation();
   } finally {
-    closeSync4(fd);
+    closeSync5(fd);
     const current = pathStatOrNull(lockPath);
     if (current && !current.isSymbolicLink() && current.dev === identity.dev && current.ino === identity.ino)
       rmSync4(lockPath);
   }
 }
 function fsyncDirectory(path) {
-  const fd = openSync4(path, constants3.O_RDONLY);
+  const fd = openSync5(path, constants3.O_RDONLY);
   try {
     fsyncSync2(fd);
   } finally {
-    closeSync4(fd);
+    closeSync5(fd);
   }
 }
 function atomicCasWrite(root, relativePath, content, expectedRevision) {
@@ -5546,17 +5589,17 @@ function atomicCasWrite(root, relativePath, content, expectedRevision) {
     const tempPath = `${candidate.path}.${process.pid}.tmp`;
     let fd = null;
     try {
-      fd = openSync4(tempPath, constants3.O_WRONLY | constants3.O_CREAT | constants3.O_EXCL, 384);
+      fd = openSync5(tempPath, constants3.O_WRONLY | constants3.O_CREAT | constants3.O_EXCL, 384);
       writeFileSync3(fd, content, "utf8");
       fsyncSync2(fd);
-      closeSync4(fd);
+      closeSync5(fd);
       fd = null;
       assertNoSymlinkSegments(candidate.root, candidate.path);
       renameSync2(tempPath, candidate.path);
       fsyncDirectory(dirname4(candidate.path));
     } finally {
       if (fd !== null)
-        closeSync4(fd);
+        closeSync5(fd);
       rmSync4(tempPath, { force: true });
     }
     return revisionFor(content);
@@ -5696,10 +5739,18 @@ function readCommittedRecord(root, taskId) {
   });
   return read ?? null;
 }
-function readAuditTaskPair(root, taskId) {
+function readAuditTaskPair(root, taskId, runId) {
   validateTaskId4(taskId);
-  const recordPath = auditTaskRecordPath(taskId);
-  const proofPath = auditTerminalProofPath(taskId);
+  let recordPath;
+  let proofPath;
+  if (runId !== undefined) {
+    recordPath = auditRunRecordPath(taskId, runId);
+    proofPath = auditRunTerminalProofPath(taskId, runId);
+  } else {
+    const resolved = auditEvidencePaths(root, taskId);
+    recordPath = resolved.record;
+    proofPath = resolved.proof;
+  }
   const recordRevision = currentRevision(root, recordPath);
   const proofRevision = currentRevision(root, proofPath);
   if (recordRevision === MISSING_REVISION && proofRevision === MISSING_REVISION)
@@ -5734,8 +5785,8 @@ function exportTerminalAudit(root, run) {
   runAuditExportFault();
   if (!run.terminal_proof_json)
     throw new KernelStoreSecurityError(`terminal run ${run.run_id} has no committed terminal proof`);
-  convergeFile(root, auditTaskRecordPath(run.task_id), MISSING_REVISION, run.record_json);
-  convergeFile(root, auditTerminalProofPath(run.task_id), MISSING_REVISION, run.terminal_proof_json);
+  convergeFile(root, auditRunRecordPath(run.task_id, run.run_id), MISSING_REVISION, run.record_json);
+  convergeFile(root, auditRunTerminalProofPath(run.task_id, run.run_id), MISSING_REVISION, run.terminal_proof_json);
 }
 function retryPendingAuditExports(root, db) {
   for (const run of listPendingAuditExports(db)) {
@@ -6109,9 +6160,9 @@ function reconcileKernelAuthority(root, taskId) {
       return conflictProjection(taskId, conflict);
     return projectKernelAuthorityLocked(db, root, taskId);
   });
-  if (projected)
+  if (projected && projected.state !== "unowned")
     return projected;
-  const legacy = retiredFileStoreDiagnostic(root, null, taskId);
+  const legacy = projected ? null : retiredFileStoreDiagnostic(root, null, taskId);
   if (legacy)
     return conflictProjection(taskId, legacy);
   try {
@@ -6141,7 +6192,7 @@ function reconcileKernelAuthority(root, taskId) {
       revision: ""
     };
   }
-  return {
+  return projected ?? {
     contract: "assurance_kernel/authority_projection/v1",
     requested_task_id: taskId,
     state: "unowned",
@@ -7095,7 +7146,7 @@ function createEnrollmentAuthorityRegistry() {
 // plugins/immune-brain/runtime/kernel/pi_canary_prepare.ts
 import { createHash as createHash14 } from "node:crypto";
 import { spawnSync as spawnSync4 } from "node:child_process";
-import { resolve as resolve7 } from "node:path";
+import { resolve as resolve8 } from "node:path";
 var SOURCE_PATH = stateDatabasePath();
 var GIT_OBJECT_ID4 = /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/;
 function readGitHead(root) {
@@ -7121,8 +7172,8 @@ function stableStringify2(value) {
 function preparePiCanary(root, input) {
   if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(input.task_id))
     throw new Error("task id must match [A-Za-z0-9][A-Za-z0-9._-]{0,127}");
-  const canonicalRoot = resolve7(root);
-  const statePath = resolve7(canonicalRoot, SOURCE_PATH);
+  const canonicalRoot = resolve8(root);
+  const statePath = resolve8(canonicalRoot, SOURCE_PATH);
   let intent = null;
   try {
     const read = readTaskIntent(canonicalRoot, input.task_id);
@@ -7615,12 +7666,12 @@ function deriveAuthorizationOperation(input) {
 
 // plugins/immune-brain/runtime/staged_intent.ts
 import { execFileSync as execFileSync4 } from "node:child_process";
-import { readFileSync as readFileSync8, writeFileSync as writeFileSync4 } from "node:fs";
+import { readFileSync as readFileSync9, writeFileSync as writeFileSync4 } from "node:fs";
 import { join as join6 } from "node:path";
 function captureStagedIntent(root, relativePath) {
   return {
     path: relativePath,
-    bytes: readFileSync8(join6(root, relativePath)),
+    bytes: readFileSync9(join6(root, relativePath)),
     index_state: execFileSync4("git", ["ls-files", "--stage", "-z", "--", relativePath], {
       cwd: root,
       stdio: ["ignore", "pipe", "pipe"]
@@ -7640,7 +7691,7 @@ function restoreStagedIntent(root, snapshot) {
       stdio: ["pipe", "ignore", "pipe"]
     });
   }
-  const restoredBytes = readFileSync8(join6(root, snapshot.path));
+  const restoredBytes = readFileSync9(join6(root, snapshot.path));
   if (!restoredBytes.equals(snapshot.bytes)) {
     throw new Error("failed to restore prior intent bytes");
   }
@@ -7655,8 +7706,8 @@ function restoreStagedIntent(root, snapshot) {
 
 // plugins/immune-brain/runtime/github_issue_tracker.ts
 import { spawn as spawn2 } from "node:child_process";
-import { existsSync as existsSync5, readFileSync as readFileSync9 } from "node:fs";
-import { basename, relative as relative4, resolve as resolve8, sep as sep6 } from "node:path";
+import { existsSync as existsSync5, readFileSync as readFileSync10 } from "node:fs";
+import { basename, relative as relative4, resolve as resolve9, sep as sep6 } from "node:path";
 var CONTRACT = "immune_brain/github_issue_tracker_result/v1";
 var PROTOCOL_MARKER = "<!-- immune-brain-tracker:v1 -->";
 var KIND_INITIATIVE_MARKER = "<!-- immune-brain:kind=initiative -->";
@@ -8072,7 +8123,7 @@ async function readBlockedByIds(root, gh, operation, repository, childNumber) {
 }
 async function observeGithubInitiative(root, initiativeId, gh = createGhTransport()) {
   const id = identifier(initiativeId, "initiative_id");
-  const source = await snapshot(resolve8(root), gh, "create-initiative");
+  const source = await snapshot(resolve9(root), gh, "create-initiative");
   if ("contract" in source)
     throw new Error(source.message);
   const parent = initiativeLookup(source.issues, source.repository.id, id);
@@ -8161,7 +8212,7 @@ async function attachBlockedBy(root, gh, operation, repository, childNumber, blo
   return confirmed;
 }
 function carrierConflict(root, operation, initiativeId) {
-  if (!existsSync5(resolve8(root, "docs", "initiatives", `${initiativeId}.md`)))
+  if (!existsSync5(resolve9(root, "docs", "initiatives", `${initiativeId}.md`)))
     return null;
   return result(operation, "permanent_failure", `Initiative carrier conflict: docs/initiatives/${initiativeId}.md already owns this slug locally; remove the duplicate carrier before using the GitHub projection`);
 }
@@ -8733,7 +8784,7 @@ async function runGithubTrackerOperation(root, input, gh = createGhTransport()) 
   } catch (error) {
     return result(input.op, "permanent_failure", error instanceof Error ? error.message : String(error));
   }
-  const absoluteRoot = resolve8(root);
+  const absoluteRoot = resolve9(root);
   if (operation.op !== "mark-terminal") {
     const conflict = carrierConflict(absoluteRoot, operation.op, operation.initiative_id);
     if (conflict)
@@ -8948,7 +8999,7 @@ async function revalidatePendingChildBeforeWrite(root, gh, childNumber, childTas
 }
 
 // plugins/immune-brain/runtime/unattended/batch_preflight.ts
-import { existsSync as existsSync7, readdirSync as readdirSync3, readFileSync as readFileSync10 } from "node:fs";
+import { existsSync as existsSync7, readdirSync as readdirSync4, readFileSync as readFileSync11 } from "node:fs";
 import { randomUUID as randomUUID7 } from "node:crypto";
 import { join as join8 } from "node:path";
 import { spawnSync as spawnSync5 } from "node:child_process";
@@ -9407,7 +9458,7 @@ async function projectBatchPlan(root, initiativeSlug, input, readInitiative = ob
 }
 
 // plugins/immune-brain/runtime/unattended/batch_state.ts
-import { existsSync as existsSync6, mkdirSync as mkdirSync4, openSync as openSync5, closeSync as closeSync5, writeFileSync as writeFileSync5, renameSync as renameSync3, lstatSync as lstatSync7, constants as constants4, rmSync as rmSync5 } from "node:fs";
+import { existsSync as existsSync6, mkdirSync as mkdirSync4, openSync as openSync6, closeSync as closeSync6, writeFileSync as writeFileSync5, renameSync as renameSync3, lstatSync as lstatSync8, constants as constants4, rmSync as rmSync5 } from "node:fs";
 import { randomUUID as randomUUID6 } from "node:crypto";
 import { dirname as dirname5, join as join7 } from "node:path";
 var BATCH_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
@@ -9549,7 +9600,7 @@ function ensureSecureDirectory2(root, relative) {
   if (!existsSync6(parent))
     mkdirSync4(parent, { recursive: true });
   if (existsSync6(target)) {
-    const stats = lstatSync7(target);
+    const stats = lstatSync8(target);
     if (!stats.isDirectory())
       throw new Error(`${relative} exists but is not a directory`);
   } else {
@@ -9560,20 +9611,20 @@ function ensureSecureDirectory2(root, relative) {
 function writeFileAtomically(root, relative, bytes) {
   const target = join7(root, relative);
   const targetDir = dirname5(target);
-  const stats = lstatSync7(targetDir);
+  const stats = lstatSync8(targetDir);
   if (!stats.isDirectory())
     throw new Error(`${dirname5(relative)} is not a directory`);
   const tempPath = `${target}.${randomUUID6()}.tmp`;
   let fd = null;
   try {
-    fd = openSync5(tempPath, constants4.O_WRONLY | constants4.O_CREAT | constants4.O_EXCL, 384);
+    fd = openSync6(tempPath, constants4.O_WRONLY | constants4.O_CREAT | constants4.O_EXCL, 384);
     writeFileSync5(fd, bytes, "utf8");
-    closeSync5(fd);
+    closeSync6(fd);
     fd = null;
     renameSync3(tempPath, target);
   } finally {
     if (fd !== null)
-      closeSync5(fd);
+      closeSync6(fd);
     if (existsSync6(tempPath)) {
       try {
         rmSync5(tempPath);
@@ -9650,12 +9701,12 @@ function findExistingActiveBatch(root, initiativeSlug) {
   const batchesDir = join8(root, ".imm", "state", "batches");
   if (!existsSync7(batchesDir))
     return null;
-  for (const file of readdirSync3(batchesDir)) {
+  for (const file of readdirSync4(batchesDir)) {
     if (!file.endsWith(".json"))
       continue;
     let record;
     try {
-      record = JSON.parse(readFileSync10(join8(batchesDir, file), "utf8"));
+      record = JSON.parse(readFileSync11(join8(batchesDir, file), "utf8"));
     } catch {
       return { corrupt: true, path: file };
     }
@@ -9687,12 +9738,12 @@ function findSettledBatchRecord(root, initiativeSlug) {
   if (!existsSync7(batchesDir))
     return null;
   let newest = null;
-  for (const file of readdirSync3(batchesDir).sort()) {
+  for (const file of readdirSync4(batchesDir).sort()) {
     if (!file.endsWith(".json"))
       continue;
     let record;
     try {
-      record = JSON.parse(readFileSync10(join8(batchesDir, file), "utf8"));
+      record = JSON.parse(readFileSync11(join8(batchesDir, file), "utf8"));
     } catch {
       continue;
     }
@@ -10109,12 +10160,12 @@ import { spawnSync as spawnSync6 } from "node:child_process";
 import { randomUUID as randomUUID8 } from "node:crypto";
 import {
   constants as constants5,
-  closeSync as closeSync6,
+  closeSync as closeSync7,
   existsSync as existsSync8,
-  lstatSync as lstatSync8,
+  lstatSync as lstatSync9,
   mkdirSync as mkdirSync5,
-  openSync as openSync6,
-  realpathSync as realpathSync8,
+  openSync as openSync7,
+  realpathSync as realpathSync9,
   renameSync as renameSync4,
   rmSync as rmSync6,
   writeFileSync as writeFileSync6
@@ -10144,8 +10195,8 @@ function runBatchGitPreflight(input) {
   let realToplevel;
   let realRoot;
   try {
-    realToplevel = realpathSync8(toplevelResult.stdout.trim());
-    realRoot = realpathSync8(root);
+    realToplevel = realpathSync9(toplevelResult.stdout.trim());
+    realRoot = realpathSync9(root);
   } catch {
     return {
       ok: false,
@@ -10339,7 +10390,7 @@ function ensureSecureDirectory3(root, relativePath) {
   for (const segment of segments) {
     current = join9(current, segment);
     if (existsSync8(current)) {
-      const stats = lstatSync8(current);
+      const stats = lstatSync9(current);
       if (stats.isSymbolicLink() || !stats.isDirectory()) {
         throw new Error(`${segment} exists but is not a real directory`);
       }
@@ -10353,12 +10404,12 @@ function writeFileAtomically2(root, relativePath, bytes) {
   const target = join9(root, relativePath);
   const targetDir = dirname6(target);
   ensureSecureDirectory3(root, dirname6(relativePath));
-  const stats = lstatSync8(targetDir);
+  const stats = lstatSync9(targetDir);
   if (stats.isSymbolicLink() || !stats.isDirectory()) {
     throw new Error(`${dirname6(relativePath)} is not a real directory`);
   }
   if (existsSync8(target)) {
-    const targetStats = lstatSync8(target);
+    const targetStats = lstatSync9(target);
     if (targetStats.isSymbolicLink()) {
       throw new Error(`${relativePath} is a symlink`);
     }
@@ -10366,14 +10417,14 @@ function writeFileAtomically2(root, relativePath, bytes) {
   const tempPath = `${target}.${randomUUID8()}.tmp`;
   let fd = null;
   try {
-    fd = openSync6(tempPath, constants5.O_WRONLY | constants5.O_CREAT | constants5.O_EXCL, 384);
+    fd = openSync7(tempPath, constants5.O_WRONLY | constants5.O_CREAT | constants5.O_EXCL, 384);
     writeFileSync6(fd, bytes, "utf8");
-    closeSync6(fd);
+    closeSync7(fd);
     fd = null;
     renameSync4(tempPath, target);
   } finally {
     if (fd !== null)
-      closeSync6(fd);
+      closeSync7(fd);
     if (existsSync8(tempPath)) {
       try {
         rmSync6(tempPath);
@@ -11952,7 +12003,7 @@ class ClaudeRuntime {
     const operation = input.operation.op === "revise_intent" ? { ...input.operation, next_intent: await parseTaskIntentV1(input.operation.next_intent) } : input.operation;
     const priorIntent = await readTaskIntentForRecord(ctx.cwd, input.taskId);
     const sidecar = join11(ctx.cwd, priorIntent.intent_ref.path);
-    const priorBytes = operation.op === "revise_intent" ? readFileSync11(sidecar) : null;
+    const priorBytes = operation.op === "revise_intent" ? readFileSync12(sidecar) : null;
     const priorStaged = priorBytes !== null ? captureStagedIntent(ctx.cwd, priorIntent.intent_ref.path) : null;
     try {
       if (priorBytes) {

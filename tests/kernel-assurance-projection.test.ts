@@ -11,6 +11,7 @@ import { canonicalIntentHash } from "../plugins/immune-brain/runtime/kernel/inte
 import * as kernelIndex from "../plugins/immune-brain/runtime/kernel/index";
 import { preparePiCanary } from "../plugins/immune-brain/runtime/kernel/pi_canary_prepare";
 import { anchorForEvidence } from "../plugins/immune-brain/runtime/kernel/refutation";
+import { auditRunTerminalProofPath } from "../plugins/immune-brain/runtime/kernel/storage_paths";
 import {
 	commitTerminalLocked,
 	readAuditTaskPair,
@@ -264,7 +265,8 @@ describe("kernel assurance projection v3", () => {
 		const contradictory = makeEnrolledRoot();
 		try {
 			terminalize(contradictory, "done");
-			const path = join(contradictory, ".imm/audit", TASK, "terminal-proof.json");
+			const runId = withKernelRead(contradictory, (db) => readRunRowByTask(db, TASK))!.run_id;
+			const path = join(contradictory, auditRunTerminalProofPath(TASK, runId));
 			const tombstone = JSON.parse(readFileSync(path, "utf8"));
 			tombstone.final_record_hash = `sha256:${"f".repeat(64)}`;
 			writeFileSync(path, `${JSON.stringify(tombstone, null, 2)}\n`);

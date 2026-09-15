@@ -47,8 +47,9 @@ import {
 	type TaskTombstone,
 } from "./backend_claim";
 import {
-	auditTaskRecordPath,
-	auditTerminalProofPath,
+	auditEvidencePaths,
+	auditRunRecordPath,
+	auditRunTerminalProofPath,
 	FILE_STORE_CLAIM_RELATIVE,
 	FILE_STORE_TRANSACTIONS_RELATIVE,
 	FILE_STORE_WORKSPACE_RELATIVE,
@@ -887,14 +888,25 @@ export function readCommittedRecord(
 export function readAuditTaskPair(
 	root: string,
 	taskId: string,
+	runId?: string,
 ): {
 	recordRevision: string;
 	record: TaskRecord | TaskRecordV2;
 	proof: TaskTombstone;
 } | null {
 	validateTaskId(taskId);
-	const recordPath = auditTaskRecordPath(taskId);
-	const proofPath = auditTerminalProofPath(taskId);
+	let recordPath: string;
+	let proofPath: string;
+	if (runId !== undefined) {
+		// An exact run's own evidence, with no fallback: a run that has not
+		// exported yet reads as absent rather than as another run's proof.
+		recordPath = auditRunRecordPath(taskId, runId);
+		proofPath = auditRunTerminalProofPath(taskId, runId);
+	} else {
+		const resolved = auditEvidencePaths(root, taskId);
+		recordPath = resolved.record;
+		proofPath = resolved.proof;
+	}
 	const recordRevision = currentRevision(root, recordPath);
 	const proofRevision = currentRevision(root, proofPath);
 	if (recordRevision === MISSING_REVISION && proofRevision === MISSING_REVISION)
@@ -952,10 +964,12 @@ function exportTerminalAudit(root: string, run: KernelRunRow): void {
 		throw new KernelStoreSecurityError(
 			`terminal run ${run.run_id} has no committed terminal proof`,
 		);
-	convergeFile(root, auditTaskRecordPath(run.task_id), MISSING_REVISION, run.record_json);
+	// Keyed by run: another worktree's run of the same logical task owns its own
+	// audit directory, so neither export can block the other.
+	convergeFile(root, auditRunRecordPath(run.task_id, run.run_id), MISSING_REVISION, run.record_json);
 	convergeFile(
 		root,
-		auditTerminalProofPath(run.task_id),
+		auditRunTerminalProofPath(run.task_id, run.run_id),
 		MISSING_REVISION,
 		run.terminal_proof_json,
 	);
@@ -1618,10 +1632,12 @@ export function reconcileKernelAuthority(
 		if (conflict) return conflictProjection(taskId, conflict);
 		return projectKernelAuthorityLocked(db, root, taskId);
 	});
-	if (projected) return projected;
-	// A worktree without a store yet can still hold committed audit evidence
-	// (fresh clone): terminal evidence alone classifies as terminal_owner.
-	const legacy = retiredFileStoreDiagnostic(root, null, taskId);
+	// A store that confirms no run for this task is unowned *in this worktree*,
+	// but committed audit evidence may still describe the task (a fresh clone
+	// that has since recorded one unrelated mutation). Terminal evidence alone
+	// classifies as terminal_owner in both states.
+	if (projected && projected.state !== "unowned") return projected;
+	const legacy = projected ? null : retiredFileStoreDiagnostic(root, null, taskId);
 	if (legacy) return conflictProjection(taskId, legacy);
 	try {
 		const audit = readAuditTaskPair(root, taskId);
@@ -1650,17 +1666,19 @@ export function reconcileKernelAuthority(
 			revision: "",
 		};
 	}
-	return {
-		contract: "assurance_kernel/authority_projection/v1",
-		requested_task_id: taskId,
-		state: "unowned",
-		owner_task_id: null,
-		owner_run_id: null,
-		owner_lifecycle: null,
-		claim_lifecycle_status: null,
-		diagnostic: null,
-		revision: "",
-	};
+	return (
+		projected ?? {
+			contract: "assurance_kernel/authority_projection/v1",
+			requested_task_id: taskId,
+			state: "unowned",
+			owner_task_id: null,
+			owner_run_id: null,
+			owner_lifecycle: null,
+			claim_lifecycle_status: null,
+			diagnostic: null,
+			revision: "",
+		}
+	);
 }
 
 function retiredFileStoreDiagnostic(

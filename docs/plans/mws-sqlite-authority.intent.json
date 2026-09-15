@@ -21,7 +21,7 @@
     {
       "id": "A4",
       "assertion": "Pi and Claude expose the same exact-run authority projection, reject incompatible schema and retain native receipt/freshness boundaries using the SQLite store.",
-      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.4.2\",\n  \"argv\": [\n    \"test\",\n    \"tests/dual-host-assurance-conformance.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 180000,\n  \"max_output_bytes\": 131072\n}\n"
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.4.2\",\n  \"argv\": [\n    \"test\",\n    \"tests/dual-host-assurance-conformance.test.ts\",\n    \"tests/kernel-assurance-projection.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 180000,\n  \"max_output_bytes\": 131072\n}\n"
     }
   ],
   "scope_hint": [
@@ -148,6 +148,6 @@
     "tests/v4-storage-retirement-legacy-audit.test.ts"
   ],
   "risk": "critical",
-  "revision": 4,
+  "revision": 5,
   "owner": "user"
 }

@@ -9,7 +9,7 @@
 import { lstatSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 
-import { auditTerminalProofPath } from "./storage_paths";
+import { auditEvidencePaths } from "./storage_paths";
 import { activeRunId, readRunRowById, withKernelRead, type KernelRunRow } from "./sqlite_store";
 import type { TaskLifecycle } from "./types";
 
@@ -181,7 +181,7 @@ export function parseTaskTombstone(raw: Record<string, unknown>): TaskTombstone 
 /** Fail-closed task-scoped tombstone read. Malformed/unreadable/symlinked state throws; only ENOENT means absent. */
 export function readTaskTombstone(root: string, taskId: string): TaskTombstone | null {
 	validateTaskId(taskId);
-	const raw = readJsonOrNull(join(resolve(root), auditTerminalProofPath(taskId)));
+	const raw = readJsonOrNull(join(resolve(root), auditEvidencePaths(root, taskId).proof));
 	if (!raw) return null;
 	const tombstone = parseTaskTombstone(raw);
 	if (tombstone.task_id !== taskId)

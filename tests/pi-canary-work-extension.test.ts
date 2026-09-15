@@ -16,6 +16,7 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { createMutationAuthorityRegistry } from "../plugins/immune-brain/runtime/kernel/authority_port";
 import { createCanaryApplication } from "../plugins/immune-brain/runtime/kernel/canary_application";
 import { enrollCanaryTask } from "../plugins/immune-brain/runtime/kernel/enrollment";
+import { auditEvidencePaths } from "../plugins/immune-brain/runtime/kernel/storage_paths";
 import { preparePiCanary } from "../plugins/immune-brain/runtime/kernel/pi_canary_prepare";
 import { createEnrollmentAuthorityRegistry, type EnrollmentCapabilityBinding } from "../plugins/immune-brain/runtime/kernel/enrollment_authority";
 import { canonicalIntentHash, parseTaskIntentV1, readTaskIntent } from "../plugins/immune-brain/runtime/kernel/intent";
@@ -419,8 +420,9 @@ describe("registered request_stop settlement and UI", () => {
 				else expect(stopped.delivery_error).toBeUndefined();
 				expect(evidenceRemoved).toBe(1);
 				expect(readBackendClaim(root)).toBeNull();
-				const recordPath = join(root, `.imm/audit/${TASK}/task-record.json`);
-				const proofPath = join(root, `.imm/audit/${TASK}/terminal-proof.json`);
+				const evidence = auditEvidencePaths(root, TASK);
+				const recordPath = join(root, evidence.record);
+				const proofPath = join(root, evidence.proof);
 				const record = readFileSync(recordPath, "utf8");
 				const proof = readFileSync(proofPath, "utf8");
 				expect(JSON.parse(record).lifecycle).toBe("stopped");
@@ -1019,8 +1021,9 @@ async function capturedToolFailure(promise: Promise<unknown>): Promise<Record<st
 	test("repairs a proven stale claim without user confirmation", { timeout: 15000 }, async () => {
 		const root = makeStaleClaimRoot();
 		const claimPath = join(root, ".imm/state/active-claim.json");
-		const recordPath = join(root, `.imm/audit/${TASK}/task-record.json`);
-		const tombstonePath = join(root, `.imm/audit/${TASK}/terminal-proof.json`);
+		const evidence = auditEvidencePaths(root, TASK);
+		const recordPath = join(root, evidence.record);
+		const tombstonePath = join(root, evidence.proof);
 		try {
 			const { tools, emitted } = loadSurface();
 			const tool = tools.find((candidate) => candidate.name === "imm_kernel_canary")!;
@@ -1052,8 +1055,9 @@ async function capturedToolFailure(promise: Promise<unknown>): Promise<Record<st
 	test("Claude MCP repairs a proven stale claim without interactive authority", { timeout: 15000 }, async () => {
 		const root = makeStaleClaimRoot();
 		const claimPath = join(root, ".imm/state/active-claim.json");
-		const recordPath = join(root, `.imm/audit/${TASK}/task-record.json`);
-		const tombstonePath = join(root, `.imm/audit/${TASK}/terminal-proof.json`);
+		const evidence = auditEvidencePaths(root, TASK);
+		const recordPath = join(root, evidence.record);
+		const tombstonePath = join(root, evidence.proof);
 		try {
 			const recordBefore = readFileSync(recordPath, "utf8");
 			const tombstoneBefore = readFileSync(tombstonePath, "utf8");

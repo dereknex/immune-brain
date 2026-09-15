@@ -132,6 +132,52 @@ export function auditTaskDirPath(taskId: string): string {
 	return `${AUDIT_RELATIVE}/${taskId}`;
 }
 
+/**
+ * Per-run audit evidence: `.imm/audit/<task-id>/<run-id>/`.
+ *
+ * Two worktrees may each run the same logical task with distinct run
+ * identities, so the export is keyed by task *and* run. The flat task
+ * directory above stays readable as historical evidence; the storage migration
+ * (mws-migration-release) is what retires it.
+ */
+export function auditRunDirPath(taskId: string, runId: string): string {
+	validateTaskId(taskId);
+	if (!/^run-[A-Za-z0-9-]+$/.test(runId)) throw new Error(`invalid run identity: ${runId}`);
+	return `${auditTaskDirPath(taskId)}/${runId}`;
+}
+
+export function auditRunRecordPath(taskId: string, runId: string): string {
+	return `${auditRunDirPath(taskId, runId)}/task-record.json`;
+}
+
+export function auditRunTerminalProofPath(taskId: string, runId: string): string {
+	return `${auditRunDirPath(taskId, runId)}/terminal-proof.json`;
+}
+
+/**
+ * Where this task's audit evidence lives: its single run directory, or the flat
+ * historical task directory when no run-scoped export exists. Several run
+ * directories mean only an explicit run identity can decide, so the flat path
+ * is returned and the caller's own validation decides what is readable.
+ */
+export function auditEvidencePaths(root: string, taskId: string): {
+	record: string;
+	proof: string;
+} {
+	validateTaskId(taskId);
+	const runs = (listEntries(root, auditTaskDirPath(taskId)) ?? []).filter((entry) =>
+		/^run-[A-Za-z0-9-]+$/.test(entry),
+	);
+	if (runs.length === 1) {
+		const runId = runs[0];
+		return {
+			record: auditRunRecordPath(taskId, runId),
+			proof: auditRunTerminalProofPath(taskId, runId),
+		};
+	}
+	return { record: auditTaskRecordPath(taskId), proof: auditTerminalProofPath(taskId) };
+}
+
 export function auditTaskRecordPath(taskId: string): string {
 	return `${auditTaskDirPath(taskId)}/task-record.json`;
 }

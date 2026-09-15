@@ -15,6 +15,10 @@ import {
 	capabilityActionFor,
 	createCanaryApplication,
 } from "../plugins/immune-brain/runtime/kernel/canary_application";
+import {
+	auditRunRecordPath,
+	auditRunTerminalProofPath,
+} from "../plugins/immune-brain/runtime/kernel/storage_paths";
 import { preparePiCanary } from "../plugins/immune-brain/runtime/kernel/pi_canary_prepare";
 import { digestOfAction, createMutationAuthorityRegistry } from "../plugins/immune-brain/runtime/kernel/authority_port";
 import { createMutationAuthorityCapabilityForTest } from "./fixtures/mutation-authority-test-seam";
@@ -406,8 +410,9 @@ describe("terminal ownership transfer", () => {
 		// The next locked operation retries the export without touching authority.
 		setAuditExportFaultForTest(null);
 		withKernelStoreLock(root, () => undefined);
-		expect(existsSync(join(root, ".imm/audit", TASK, "task-record.json"))).toBe(true);
-		expect(existsSync(join(root, ".imm/audit", TASK, "terminal-proof.json"))).toBe(true);
+		const runId = withKernelRead(root, (db) => readRunRowByTask(db, TASK))!.run_id;
+		expect(existsSync(join(root, auditRunRecordPath(TASK, runId)))).toBe(true);
+		expect(existsSync(join(root, auditRunTerminalProofPath(TASK, runId)))).toBe(true);
 		const exported = withKernelRead(root, (db) => readRunRowByTask(db, TASK))!;
 		expect(exported.audit_exported_at).not.toBeNull();
 		expect(exported.state).toBe("done");

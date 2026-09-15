@@ -1027,8 +1027,8 @@ describe("SQLite authority store durability", () => {
       expect(a.run_id).not.toBe(b.run_id);
       // A settles and its tracked audit pair reaches B (for example through Git).
       mkdirSync(join(rootA, ".imm/audit/durability-y"), { recursive: true });
-      const terminalBytes = `${JSON.stringify(storeTerminalRecord("durability-y"), null, 2)}\n`;
-      writeFileSync(join(rootA, ".imm/audit/durability-y/task-record.json"), terminalBytes);
+      const foreignTerminalBytes = `${JSON.stringify(storeTerminalRecord("durability-y"), null, 2)}\n`;
+      writeFileSync(join(rootA, ".imm/audit/durability-y/task-record.json"), foreignTerminalBytes);
       writeFileSync(
         join(rootA, ".imm/audit/durability-y/terminal-proof.json"),
         `${JSON.stringify(
@@ -1038,19 +1038,18 @@ describe("SQLite authority store durability", () => {
             lifecycle_status: "terminal",
             terminal_lifecycle: "done",
             terminal_event_id: "complete:durability-y:2026-08-12T10:00:05.000Z",
-            final_record_hash: revisionForContent(terminalBytes),
+            final_record_hash: revisionForContent(foreignTerminalBytes),
             terminalized_at: "2026-08-12T10:00:05.000Z",
           },
           null,
           2,
         )}\n`,
       );
-      mkdirSync(join(rootB, ".imm/audit/durability-y"), { recursive: true });
+      // The foreign evidence arrives in B under A's own run directory.
+      const foreignDir = join(rootB, ".imm/audit/durability-y", a.run_id);
+      mkdirSync(foreignDir, { recursive: true });
       for (const name of ["task-record.json", "terminal-proof.json"])
-        writeFileSync(
-          join(rootB, ".imm/audit/durability-y", name),
-          readFileSync(join(rootA, ".imm/audit/durability-y", name)),
-        );
+        writeFileSync(join(foreignDir, name), readFileSync(join(rootA, ".imm/audit/durability-y", name)));
       // B's own active run is not displaced by another run's evidence.
       expect(reconcileKernelAuthority(rootB, "durability-y")).toMatchObject({
         state: "active_owner",
@@ -1064,9 +1063,89 @@ describe("SQLite authority store durability", () => {
       expect(projected.error).toBeNull();
       expect(projected.projection).toMatchObject({ lifecycle: "active", artifact_state: "active" });
       expect(readTaskRecordRaw(rootB, "durability-y").revision).toBe(before);
+
+      // B settles too: its own export must succeed beside A's evidence, and A's
+      // bytes must survive untouched.
+      const aBefore = readFileSync(join(rootB, ".imm/audit/durability-y", a.run_id, "task-record.json"));
+      const localTerminalBytes = `${JSON.stringify(storeTerminalRecord("durability-y"), null, 2)}\n`;
+      commitTerminalLocked(
+        rootB,
+        "durability-y",
+        {
+          contract: "assurance_kernel/workspace_transaction/v2",
+          task_id: "durability-y",
+          expected_record_hash: before,
+          next_record_content: localTerminalBytes,
+          expected_workspace_hash: readWorkspaceStateRaw(rootB).revision,
+          next_workspace_content: serializeWorkspace({
+            contract: "assurance_kernel/workspace/v1",
+            current_working: null,
+          }),
+        },
+        {
+          contract: "assurance_kernel/task_tombstone/v2",
+          task_id: "durability-y",
+          lifecycle_status: "terminal",
+          terminal_lifecycle: "done",
+          terminal_event_id: "complete:durability-y:2026-08-12T10:00:07.000Z",
+          final_record_hash: revisionForContent(localTerminalBytes),
+          terminalized_at: "2026-08-12T10:00:07.000Z",
+        },
+      );
+      expect(() =>
+        withKernelStoreLockForTask(rootB, "durability-y", () => undefined),
+      ).not.toThrow();
+      const own = join(rootB, ".imm/audit/durability-y", b.run_id);
+      expect(existsSync(join(own, "task-record.json"))).toBe(true);
+      expect(existsSync(join(own, "terminal-proof.json"))).toBe(true);
+      expect(
+        readFileSync(join(rootB, ".imm/audit/durability-y", a.run_id, "task-record.json")),
+      ).toEqual(aBefore);
+      expect(withKernelRead(rootB, (db) => readRunRowByTask(db, "durability-y"))!.audit_exported_at).not.toBeNull();
     } finally {
       rmSync(rootA, { recursive: true, force: true });
       rmSync(rootB, { recursive: true, force: true });
+    }
+  });
+
+  test("historical audit evidence still projects as terminal after the store exists", () => {
+    const root = storeRoot();
+    try {
+      // A fresh clone of a pre-run-scoped repository carries only the audit pair.
+      const taskId = "durability-historical";
+      const terminalBytes = `${JSON.stringify(storeTerminalRecord(taskId), null, 2)}\n`;
+      mkdirSync(join(root, ".imm/audit", taskId), { recursive: true });
+      writeFileSync(join(root, ".imm/audit", taskId, "task-record.json"), terminalBytes);
+      writeFileSync(
+        join(root, ".imm/audit", taskId, "terminal-proof.json"),
+        `${JSON.stringify(
+          {
+            contract: "assurance_kernel/task_tombstone/v2",
+            task_id: taskId,
+            lifecycle_status: "terminal",
+            terminal_lifecycle: "done",
+            terminal_event_id: `complete:${taskId}:2026-08-12T10:00:05.000Z`,
+            final_record_hash: revisionForContent(terminalBytes),
+            terminalized_at: "2026-08-12T10:00:05.000Z",
+          },
+          null,
+          2,
+        )}\n`,
+      );
+      expect(reconcileKernelAuthority(root, taskId)).toMatchObject({ state: "terminal_owner" });
+      // Another task's run creates the store and then settles, leaving the
+      // workspace idle again. The historical task must not turn into an empty
+      // projection just because a database now exists.
+      storeEnrollFixture(root, "durability-live");
+      withKernelTransaction(root, (db) => {
+        db.prepare("UPDATE workspace SET current_run_id = NULL WHERE id = 1").run();
+        db.prepare("DELETE FROM runs WHERE state = 'active'").run();
+      });
+      expect(existsSync(join(root, ".imm/state/kernel.sqlite"))).toBe(true);
+      expect(reconcileKernelAuthority(root, taskId)).toMatchObject({ state: "terminal_owner" });
+      expect(withKernelRead(root, (db) => readRunRowByTask(db, taskId))).toBeNull();
+    } finally {
+      rmSync(root, { recursive: true, force: true });
     }
   });
 
