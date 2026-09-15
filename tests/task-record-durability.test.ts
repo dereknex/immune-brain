@@ -40,7 +40,13 @@ import {
 } from "../plugins/immune-brain/runtime/kernel/authority_port";
 import { writeBatchRunState } from "../plugins/immune-brain/runtime/unattended/batch_state";
 import { projectAssurance } from "../plugins/immune-brain/runtime/kernel/assurance_projection";
-import { BATCH_STATE_RELATIVE, inspectStorageLayout } from "../plugins/immune-brain/runtime/kernel/storage_paths";
+import {
+  auditEvidencePaths,
+  auditRunRecordPath,
+  auditRunTerminalProofPath,
+  BATCH_STATE_RELATIVE,
+  inspectStorageLayout,
+} from "../plugins/immune-brain/runtime/kernel/storage_paths";
 import { readAuditTaskPair } from "../plugins/immune-brain/runtime/kernel/storage";
 import { canonicalRecordHash } from "../plugins/immune-brain/runtime/kernel/reducer";
 import { applyTaskAction } from "../plugins/immune-brain/runtime/kernel/application";
@@ -65,25 +71,31 @@ function isIgnored(relativePath: string): boolean {
 }
 
 /**
- * Terminal evidence for one archived task. `.imm/audit/<task-id>/` owns the
- * immutable pair under the cutover layout; a temporary expiring branch (Slice
- * 2 deletes it) still accepts the pre-activation legacy `.imm/tasks/` pair so
- * this repository can settle under the installed old runtime before it
- * migrates.
+ * Terminal evidence for one archived task. A settled run exports
+ * `.imm/audit/<task-id>/<run-id>/`; the flat task directory stays readable for
+ * repositories that predate run-scoped export, and a temporary expiring branch
+ * (the storage-migration slice deletes it) still accepts the pre-activation
+ * legacy `.imm/tasks/` pair so this repository can settle under the installed
+ * old runtime before it migrates.
  */
 function terminalPair(taskId: string): {
   recordPath: string;
   proofPath: string;
 } | null {
-  for (const dir of [join(AUDIT_DIR, taskId), join(REPO_ROOT, ".imm/tasks")]) {
-    const recordPath = join(
-      dir,
-      dir === join(AUDIT_DIR, taskId) ? "task-record.json" : `${taskId}.json`,
-    );
+  const taskDir = join(AUDIT_DIR, taskId);
+  const runDirs = (existsSync(taskDir) ? readdirSync(taskDir, { withFileTypes: true }) : [])
+    .filter((entry) => entry.isDirectory() && /^run-[A-Za-z0-9-]+$/.test(entry.name))
+    .map((entry) => join(taskDir, entry.name))
+    .sort();
+  for (const dir of [...runDirs, taskDir, join(REPO_ROOT, ".imm/tasks")]) {
+    const flat = dir === taskDir;
+    const legacy = dir === join(REPO_ROOT, ".imm/tasks");
+    const recordPath = join(dir, legacy ? `${taskId}.json` : "task-record.json");
     const proofPath = join(
       dir,
-      dir === join(AUDIT_DIR, taskId) ? "terminal-proof.json" : `${taskId}.backend-claim.json`,
+      legacy ? `${taskId}.backend-claim.json` : "terminal-proof.json",
     );
+    if (flat && runDirs.length > 0) continue;
     if (existsSync(recordPath) && existsSync(proofPath)) {
       return { recordPath, proofPath };
     }
@@ -1105,6 +1117,50 @@ describe("SQLite authority store durability", () => {
     } finally {
       rmSync(rootA, { recursive: true, force: true });
       rmSync(rootB, { recursive: true, force: true });
+    }
+  });
+
+  test("a settled run-scoped audit pair is recognized as terminal evidence", () => {
+    const root = storeRoot();
+    try {
+      const taskId = "durability-scoped";
+      storeEnrollFixture(root, taskId);
+      const run = withKernelRead(root, (db) => readRunRowByTask(db, taskId))!;
+      const terminalBytes = `${JSON.stringify(storeTerminalRecord(taskId), null, 2)}\n`;
+      commitTerminalLocked(
+        root,
+        taskId,
+        {
+          contract: "assurance_kernel/workspace_transaction/v2",
+          task_id: taskId,
+          expected_record_hash: readTaskRecordRaw(root, taskId).revision,
+          next_record_content: terminalBytes,
+          expected_workspace_hash: readWorkspaceStateRaw(root).revision,
+          next_workspace_content: serializeWorkspace({
+            contract: "assurance_kernel/workspace/v1",
+            current_working: null,
+          }),
+        },
+        {
+          contract: "assurance_kernel/task_tombstone/v2",
+          task_id: taskId,
+          lifecycle_status: "terminal",
+          terminal_lifecycle: "done",
+          terminal_event_id: `complete:${taskId}:2026-08-12T10:00:09.000Z`,
+          final_record_hash: revisionForContent(terminalBytes),
+          terminalized_at: "2026-08-12T10:00:09.000Z",
+        },
+      );
+      withKernelStoreLockForTask(root, taskId, () => undefined);
+      const paths = auditEvidencePaths(root, taskId);
+      expect(paths.record).toBe(auditRunRecordPath(taskId, run.run_id));
+      expect(paths.proof).toBe(auditRunTerminalProofPath(taskId, run.run_id));
+      expect(existsSync(join(root, paths.record))).toBe(true);
+      expect(existsSync(join(root, paths.proof))).toBe(true);
+      const pair = readAuditTaskPair(root, taskId, run.run_id)!;
+      expect(pair.proof.terminal_lifecycle).toBe("done");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
     }
   });
 

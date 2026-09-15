@@ -10,6 +10,7 @@ import {
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 
+import { readTaskTombstone } from "../plugins/immune-brain/runtime/kernel/backend_claim";
 import {
 	readBackendClaim,
 	parseBackendClaim,
@@ -49,7 +50,12 @@ import {
 	createEnrollmentAuthorityRegistry,
 	type EnrollmentCapabilityBinding,
 } from "../plugins/immune-brain/runtime/kernel/enrollment_authority";
-import { readTaskRecord, readWorkspaceStateRaw } from "../plugins/immune-brain/runtime/kernel/storage";
+import {
+	readTaskRecord,
+	readWorkspaceStateRaw,
+	reconcileKernelAuthority,
+	revisionForContent,
+} from "../plugins/immune-brain/runtime/kernel/storage";
 import {
 	computeBatchPlanDigest,
 	createBatchAuthorityRegistry,
@@ -203,6 +209,67 @@ describe("enrollment workspace revision binding", () => {
 			registry,
 		);
 	}
+
+	test("another worktree's terminal audit does not forbid a first enrollment here", () => {
+		const root = makeRoot();
+		try {
+			writeIntent(root, "task-a");
+			// Another run of the same logical task settled elsewhere and its audit
+			// reached this worktree; no local run exists here.
+			const terminalBytes = `${JSON.stringify(
+				{
+					contract: "assurance_kernel/task_record/v4",
+					task_id: "task-a",
+					intent_snapshot: parseTaskIntentV1({
+						contract: "assurance_kernel/task_intent/v1",
+						task_id: "task-a",
+						goal: "g",
+						acceptance: [{ id: "A1", assertion: "a", verification: "bun test tests/x.test.ts" }],
+						scope_hint: ["docs/plans"],
+						risk: "routine",
+						revision: 1,
+						owner: "user",
+					}),
+					intent_ref: { path: "docs/plans/task-a.intent.json", content_hash: `sha256:${"a".repeat(64)}` },
+					lifecycle: "done",
+					artifact_state: "frozen",
+					baseline: `sha256:${"a".repeat(64)}`,
+					git_base_head: "a".repeat(40),
+					attestations: [],
+					findings: [],
+					history: [],
+				},
+				null,
+				2,
+			)}\n`;
+			mkdirSync(join(root, ".imm/audit/task-a", "run-foreign"), { recursive: true });
+			writeFileSync(join(root, ".imm/audit/task-a", "run-foreign", "task-record.json"), terminalBytes);
+			writeFileSync(
+				join(root, ".imm/audit/task-a", "run-foreign", "terminal-proof.json"),
+				`${JSON.stringify(
+					{
+						contract: "assurance_kernel/task_tombstone/v2",
+						task_id: "task-a",
+						lifecycle_status: "terminal",
+						terminal_lifecycle: "done",
+						terminal_event_id: "complete:task-a:2026-08-12T10:00:05.000Z",
+						final_record_hash: revisionForContent(terminalBytes),
+						terminalized_at: "2026-08-12T10:00:05.000Z",
+					},
+					null,
+					2,
+				)}\n`,
+			);
+			// This worktree has never run task-a, so it may enroll it.
+			expect(() => enroll(root, "task-a")).not.toThrow();
+			expect(readTaskRecord(root, "task-a").record).toMatchObject({ lifecycle: "active" });
+			// The local authority is this worktree's own active run; the foreign
+			// proof stays readable evidence without becoming local authority.
+			expect(reconcileKernelAuthority(root, "task-a")).toMatchObject({ state: "active_owner" });
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
 
 	test("a confirmation taken while idle is refused once the workspace has been owned and released", () => {
 		const root = makeRoot();

@@ -3,6 +3,7 @@
 // for one confirmed canary task. Requires a valid EnrollmentCapability.
 // No CLI, runtime route, or production issuer exists in P2B0.
 
+import { readRunRowByTask, withKernelRead } from "./sqlite_store";
 import { readTaskIntent } from "./intent";
 import { inspectSpecBinding } from "./spec_binding";
 import {
@@ -13,7 +14,7 @@ import type {
 	BatchAuthorityRegistry,
 	BatchAuthorizationBinding,
 } from "./batch_authority";
-import { readTaskTombstone, type BackendClaim } from "./backend_claim";
+import type { BackendClaim } from "./backend_claim";
 import { preparePiCanary, readGitHead } from "./pi_canary_prepare";
 import {
 	commitEnrollmentLocked,
@@ -115,10 +116,18 @@ function runEnrollmentPreconditionChecks<T>(
 			blockers.push(report);
 		};
 
-		const tombstone = readTaskTombstone(root, input.task_id);
-		if (tombstone) {
+		// Terminal protection is the *local* committed run, never the audit
+		// evidence: another worktree's run of the same logical task exports its
+		// own audit directory, and that evidence must not forbid a first
+		// enrollment here. Audit files remain readable as historical evidence for
+		// tasks this worktree has no run for (see reconcileKernelAuthority).
+		const localRun = reconcileKernelAuthority(root, input.task_id);
+		const localTerminal =
+			localRun.state === "terminal_owner" &&
+			withKernelRead(root, (db) => readRunRowByTask(db, input.task_id)) !== null;
+		if (localTerminal) {
 			fail(
-				"task tombstone exists; same-task re-enrollment is forbidden",
+				"local run is terminal; same-task re-enrollment is forbidden",
 				new Error(`task ${input.task_id} is terminal; same-task re-enrollment is forbidden`),
 			);
 		} else {

@@ -7268,9 +7268,10 @@ function runEnrollmentPreconditionChecks(root, input, capability, registry, mode
         throw error instanceof Error ? error : new Error(String(error));
       blockers.push(report);
     };
-    const tombstone = readTaskTombstone(root, input.task_id);
-    if (tombstone) {
-      fail("task tombstone exists; same-task re-enrollment is forbidden", new Error(`task ${input.task_id} is terminal; same-task re-enrollment is forbidden`));
+    const localRun = reconcileKernelAuthority(root, input.task_id);
+    const localTerminal = localRun.state === "terminal_owner" && withKernelRead(root, (db) => readRunRowByTask(db, input.task_id)) !== null;
+    if (localTerminal) {
+      fail("local run is terminal; same-task re-enrollment is forbidden", new Error(`task ${input.task_id} is terminal; same-task re-enrollment is forbidden`));
     } else {
       current = readTaskRecordRaw(root, input.task_id);
       if (current.record)
@@ -9821,7 +9822,8 @@ function authorizedScopeOf(root, taskId, state) {
   } catch {}
   if (scope.length === 0 && state === "settled") {
     try {
-      const settled = readAuditTaskPair(root, taskId);
+      const localRun = currentRunId(root, taskId);
+      const settled = readAuditTaskPair(root, taskId, localRun ?? undefined);
       const snapshot = settled?.record?.intent_snapshot;
       scope = snapshot?.scope_hint ?? [];
       recordedIntentPath = recordedIntentPath ?? settled?.record?.intent_ref?.path;
@@ -10463,7 +10465,8 @@ function readBatchCommitEvidence(root, batchId, taskId) {
 }
 async function commitBatchChild(input) {
   const { root, taskId, batchId, expectedHead, branch: expectedBranch } = input;
-  const auditPair = readAuditTaskPair(root, taskId);
+  const localRun = currentRunId(root, taskId);
+  const auditPair = readAuditTaskPair(root, taskId, localRun ?? undefined);
   if (!auditPair) {
     throw new Error(`cannot commit child ${taskId}: task is not settled done (audit pair missing)`);
   }
@@ -10658,7 +10661,8 @@ async function lookupBatchCommit(input) {
     if (parents.length !== 1 || parents[0] !== expectedHead) {
       throw new Error(`batch_head_lineage_broken: adopted commit parent ${parents.join(",")} does not match expected_head ${expectedHead}`);
     }
-    const auditPair = readAuditTaskPair(root, taskId);
+    const adoptedRun = currentRunId(root, taskId);
+    const auditPair = readAuditTaskPair(root, taskId, adoptedRun ?? undefined);
     if (!auditPair) {
       throw new Error(`batch_head_lineage_broken: adopted commit lacks terminal audit pair for ${taskId}`);
     }

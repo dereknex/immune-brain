@@ -20,7 +20,7 @@ import { readBackendClaim } from "../kernel/backend_claim";
 import { computeBatchPlanDigest, type BatchAuthorizationBinding } from "../kernel/batch_authority";
 import { readGitHead } from "../kernel/pi_canary_prepare";
 import { readTaskIntent } from "../kernel/intent";
-import { readAuditTaskPair, readTaskRecordRaw, readWorkspaceStateRaw } from "../kernel/storage";
+import { currentRunId, readAuditTaskPair, readTaskRecordRaw, readWorkspaceStateRaw } from "../kernel/storage";
 import { pathMatchesScope } from "../workspace_scope";
 import { projectBatchPlan } from "./batch_plan";
 import { batchReason, type BatchReasonKey } from "./batch_reasons";
@@ -258,7 +258,8 @@ function authorizedScopeOf(root: string, taskId: string, state: string): string[
 		// A settled child has no live state record; its authority is the immutable
 		// terminal audit pair. Read-only, so a refusal still writes nothing.
 		try {
-			const settled = readAuditTaskPair(root, taskId);
+			const localRun = currentRunId(root, taskId);
+			const settled = readAuditTaskPair(root, taskId, localRun ?? undefined);
 			const snapshot = (settled?.record as { intent_snapshot?: { scope_hint?: string[] } } | null | undefined)
 				?.intent_snapshot;
 			scope = snapshot?.scope_hint ?? [];
