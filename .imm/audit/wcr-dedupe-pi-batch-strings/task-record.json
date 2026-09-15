@@ -1,0 +1,122 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "wcr-dedupe-pi-batch-strings",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "wcr-dedupe-pi-batch-strings",
+    "goal": "Extract the TUI-refusal/recovery strings repeated verbatim within .pi-extension/imm-unattended-batch.ts into one local helper, and move or correct the stale isOwnBatchClaim comment that now describes code living in batch_preflight.ts.",
+    "acceptance": [
+      {
+        "id": "RB12-1",
+        "assertion": "The TUI-refusal/recovery strings duplicated within .pi-extension/imm-unattended-batch.ts (as of the review baseline, near lines 119-121 and 442-443) exist in exactly one place, called from both sites; the comment describing isOwnBatchClaim (as of the review baseline, near lines 60-71) is moved to sit above its actual definition in batch_preflight.ts or corrected to describe what is actually declared at its current location.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.4.2\",\n  \"argv\": [\n    \"test\",\n    \"tests/pi-batch-authority.test.ts\",\n    \"tests/unattended-batch-run.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 131072\n}\n"
+      }
+    ],
+    "scope_hint": [
+      "docs/plans/wcr-dedupe-pi-batch-strings.intent.json",
+      "docs/specs/archive/workflow-consolidation-remediation.spec.md",
+      "docs/specs/workflow-consolidation-remediation.spec.md",
+      "plugins/immune-brain/.pi-extension/imm-unattended-batch.ts",
+      "plugins/immune-brain/runtime/unattended/batch_preflight.ts",
+      "tests/pi-batch-authority.test.ts",
+      "tests/unattended-batch-run.test.ts"
+    ],
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/archive/wcr-dedupe-pi-batch-strings.intent.json",
+    "content_hash": "sha256:2ad9a7c745bb1fc85019f1bd525728500c39c23664c7398618e74690d2b11d09"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:2ad9a7c745bb1fc85019f1bd525728500c39c23664c7398618e74690d2b11d09",
+  "git_base_head": "ab02218469926f49cdd4a2b6dee4e4580849d805",
+  "attestations": [
+    {
+      "id": "approval-qa-460fa869",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:2ad9a7c745bb1fc85019f1bd525728500c39c23664c7398618e74690d2b11d09",
+      "diff_hash": "sha256:3b468b9c5ca2e93bcf35a590db48260d14886c2eed76e4c06541f899bea68bae",
+      "actor_id": "deterministic-qa",
+      "summary": "all 1 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "RB12-1",
+          "status": "passed",
+          "summary": "host-attested QA: all 1 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-d8101228",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:2ad9a7c745bb1fc85019f1bd525728500c39c23664c7398618e74690d2b11d09",
+      "diff_hash": "sha256:3b468b9c5ca2e93bcf35a590db48260d14886c2eed76e4c06541f899bea68bae",
+      "actor_id": "parent-mediated-review",
+      "summary": "已核验 base、review commit、唯一父提交、tree、manifest digest 及全部变更对象；两处拒绝路径共用同一字符串 helper，isOwnBatchClaim 注释已移至实际定义上方，原有返回行为保持不变。Kernel QA 已通过 RB12-1，未发现阻断问题。",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "ab02218469926f49cdd4a2b6dee4e4580849d805",
+        "review_commit": "7662652fd500fce3f46fe05a7500b44508ec37e8",
+        "review_tree": "8f3bc28d775484fa7d502aae21ce68a565d4eb55",
+        "manifest_digest": "sha256:4be0df9a71da48aa603a9a9d01a46b8476131bf0b8986abf2d5143ba3141d7e6"
+      }
+    }
+  ],
+  "findings": [],
+  "history": [
+    {
+      "id": "freeze_artifacts:wcr-dedupe-pi-batch-strings:2026-09-15T02:42:37.977Z",
+      "at": "2026-09-15T02:42:37.977Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent and Spec frozen at docs/plans/archive/wcr-dedupe-pi-batch-strings.intent.json"
+    },
+    {
+      "id": "record_approval:wcr-dedupe-pi-batch-strings:2026-09-15T02:42:51.686Z",
+      "at": "2026-09-15T02:42:51.686Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-460fa869\naction_v2_sha256:d919ba7477286313eadc54c62f84013e012c21b2b83923fbe76a4885b6508d0f",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-46e62ba67dc45371",
+        "issued_at": "2026-09-15T02:42:51.686Z",
+        "expires_at": "2026-09-15T02:52:51.686Z"
+      }
+    },
+    {
+      "id": "record_approval:wcr-dedupe-pi-batch-strings:2026-09-15T02:44:03.404Z",
+      "at": "2026-09-15T02:44:03.404Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-d8101228\naction_v2_sha256:54db9b7c9cf2fbabe623229a9489eabc45b29687f9de628c5392b8ae08e3bf22",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-1434be654202f2d3",
+        "issued_at": "2026-09-15T02:44:03.404Z",
+        "expires_at": "2026-09-15T02:54:03.404Z"
+      }
+    },
+    {
+      "id": "complete:wcr-dedupe-pi-batch-strings:2026-09-15T02:44:03.965Z",
+      "at": "2026-09-15T02:44:03.965Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:70fee1a8648521e163e91eab16c3c1f99377b2094f4f698e37db28e767cc8ce2"
+    }
+  ]
+}

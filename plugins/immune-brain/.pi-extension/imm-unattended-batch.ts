@@ -49,16 +49,20 @@ export function mapDialogSelection(selected: string | undefined): "accept" | "de
 }
 
 /**
- * Synchronous re-verification that the currently held claim for `taskId` is this
- * batch's own Kernel enrollment. Positive evidence only: the driver's durable
- * child slot (enrolled/needs_human), the batch Git lineage, the Kernel's own
- * event-id derivation, the intent identity on the TaskRecord, and the claim
- * created before the batch's last durable write. The mutable confirmation_time
- * is deliberately not used, so a needs_human re-authorization (which updates
- * confirmation_time) can never turn this batch's own claim into a foreign one.
- *
- * Called fresh at pre-confirmation, post-confirmation, and from ownsTaskClaim so
- * a claim swapped during confirmation is never adopted.
+ * The one refusal a non-interactive Host gets. The registered tool surface and
+ * the batch entry point share it, so they cannot drift on which Host may run a
+ * batch or on how to recover from asking one that may not.
+ */
+function nonInteractiveRefusal(): { reason: string; recovery_action: string } {
+	return {
+		reason: "interactive TUI elicitation is unavailable in non-interactive mode",
+		recovery_action: "invoke through an interactive Pi TUI session in the current Host",
+	};
+}
+
+/**
+ * Batch execution the Host adapters drive: everything above is shared with the
+ * Claude adapter and the decisions below are the Host's own.
  */
 export interface PiBatchExecutionOptions {
 	root: string;
@@ -104,13 +108,7 @@ export async function executePiUnattendedBatch(
 	const { root, initiativeSlug, signal } = options;
 	const interactive = options.interactive ?? true;
 
-	if (!interactive) {
-		return {
-			state: "rejected",
-			reason: "interactive TUI elicitation is unavailable in non-interactive mode",
-			recovery_action: "invoke through an interactive Pi TUI session in the current Host",
-		};
-	}
+	if (!interactive) return { state: "rejected", ...nonInteractiveRefusal() };
 
 	// 1. Host-independent batch preflight: claim ownership, branch availability,
 	// working-tree cleanliness against the authorized scope, recovery children,
@@ -351,14 +349,15 @@ export default function (
 		) => {
 			const { initiative_slug: initiativeSlug } = params;
 			if (ctx.mode !== "tui") {
+				const refusal = nonInteractiveRefusal();
 				throwToolFailure({
 					tool: "imm_canary_enrollment",
 					task_id: initiativeSlug,
 					operation: "start_unattended_batch",
 					state: "blocked",
 					code: "unsupported_host",
-					message: "interactive TUI elicitation is unavailable in non-interactive mode",
-					next_action: "invoke through an interactive Pi TUI session in the current Host",
+					message: refusal.reason,
+					next_action: refusal.recovery_action,
 				});
 			}
 

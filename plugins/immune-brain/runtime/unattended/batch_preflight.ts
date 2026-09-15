@@ -181,8 +181,16 @@ export function expectedBatchHead(record: { base_head: string; commits?: unknown
 
 /**
  * Whether the live claim is this batch's own interrupted child: same task, on
- * the batch branch, still a live child of the record, with a claim minted by
- * that child's enrollment and bound to its TaskRecord.
+ * the batch branch, still a live child of the record. Positive evidence only:
+ * the driver's durable child slot (enrolled/needs_human), the batch Git lineage,
+ * the Kernel's own event-id derivation, the intent identity on the TaskRecord,
+ * and the claim created before the batch's last durable write. The mutable
+ * confirmation_time is deliberately not used, so a needs_human re-authorization
+ * (which updates confirmation_time) can never turn this batch's own claim into a
+ * foreign one.
+ *
+ * Called fresh at pre-confirmation, post-confirmation, and from ownsTaskClaim so
+ * a claim swapped during confirmation is never adopted.
  */
 export function isOwnBatchClaim(
 	root: string,
