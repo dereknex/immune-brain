@@ -1,0 +1,152 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "wcr-retire-superseded-guards",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "wcr-retire-superseded-guards",
+    "goal": "Complete S2's guardrail migration: remove the regex/spelling-based assertions in tests/unattended-contracts.test.ts and tests/v3-island-deletion.test.ts that the new behavioral guards were meant to replace, once the behavioral guards' coverage is extended to plugins/immune-brain/.pi-extension/ and plugins/immune-brain/runtime/claude/ (the two guard sets currently check neither directory).",
+    "acceptance": [
+      {
+        "id": "RB5-1",
+        "assertion": "tests/unattended-contracts.test.ts's 'ships no Git worktree command' guard and tests/v3-island-deletion.test.ts's spelling-based coverage table both check plugins/immune-brain/.pi-extension/ and plugins/immune-brain/runtime/claude/, not only their prior scope; and the superseded regex/spelling assertions this Slice's Spec Decision 5 names as replaced (tests/unattended-contracts.test.ts:333-344, tests/v3-island-deletion.test.ts:84-99 as of the review baseline) are removed once the extended behavioral guards are verified to still catch the same regressions.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.4.2\",\n  \"argv\": [\n    \"test\",\n    \"tests/unattended-contracts.test.ts\",\n    \"tests/v3-island-deletion.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 90000,\n  \"max_output_bytes\": 65536\n}\n"
+      }
+    ],
+    "scope_hint": [
+      "docs/plans/wcr-retire-superseded-guards.intent.json",
+      "docs/specs/archive/workflow-consolidation-remediation.spec.md",
+      "docs/specs/workflow-consolidation-remediation.spec.md",
+      "tests/unattended-contracts.test.ts",
+      "tests/v3-island-deletion.test.ts"
+    ],
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/archive/wcr-retire-superseded-guards.intent.json",
+    "content_hash": "sha256:318baf6620c5bfec027fe982ac956418a8577d254bcd829110a748074984f880"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:318baf6620c5bfec027fe982ac956418a8577d254bcd829110a748074984f880",
+  "git_base_head": "be260b203a294dc58c62bb5e494ec76d215840d2",
+  "attestations": [
+    {
+      "id": "approval-qa-0ad8e406",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:318baf6620c5bfec027fe982ac956418a8577d254bcd829110a748074984f880",
+      "diff_hash": "sha256:7e03c33d58a09af145effcffef4b5d49e5f36beda6ce46525a2bcbd7c89cc105",
+      "actor_id": "deterministic-qa",
+      "summary": "all 1 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "RB5-1",
+          "status": "passed",
+          "summary": "host-attested QA: all 1 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-7f278c21",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:318baf6620c5bfec027fe982ac956418a8577d254bcd829110a748074984f880",
+      "diff_hash": "sha256:3c29b533f85e29492313d5dad68d0069be04724558fd44cd8e24423d312847e0",
+      "actor_id": "deterministic-qa",
+      "summary": "all 1 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "RB5-1",
+          "status": "passed",
+          "summary": "host-attested QA: all 1 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-98e25c49",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:318baf6620c5bfec027fe982ac956418a8577d254bcd829110a748074984f880",
+      "diff_hash": "sha256:3c29b533f85e29492313d5dad68d0069be04724558fd44cd8e24423d312847e0",
+      "actor_id": "parent-mediated-review",
+      "summary": "Superseded regex/spelling guards replaced by behavioral recording-Git drives covering both Host adapters (.pi-extension and runtime/claude) with non-vacuous leg markers, and the retirement scan scope is now asserted rather than assumed; RB5-1 satisfied.",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "be260b203a294dc58c62bb5e494ec76d215840d2",
+        "review_commit": "d6a7c6381157e00f12e13d9a4d3fc7e0dcb6c719",
+        "review_tree": "5dfcc68b316f7f30ab2eade5d1e4bb64c437ba0a",
+        "manifest_digest": "sha256:1142259e12a3dabcc183f15ef1946e036503db1374f8435f66cba183d1a008c6"
+      }
+    }
+  ],
+  "findings": [],
+  "history": [
+    {
+      "id": "freeze_artifacts:wcr-retire-superseded-guards:2026-09-14T23:22:04.821Z",
+      "at": "2026-09-14T23:22:04.821Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent and Spec frozen at docs/plans/archive/wcr-retire-superseded-guards.intent.json"
+    },
+    {
+      "id": "record_approval:wcr-retire-superseded-guards:2026-09-14T23:22:06.961Z",
+      "at": "2026-09-14T23:22:06.961Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-0ad8e406\naction_v2_sha256:ab7e3a8aee2bc6ea52c3c6264246baad95e65bd5210cd9b0809013bb345a3f2c",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-0ebb439e9893a453",
+        "issued_at": "2026-09-14T23:22:06.962Z",
+        "expires_at": "2026-09-14T23:32:06.962Z"
+      }
+    },
+    {
+      "id": "record_approval:wcr-retire-superseded-guards:2026-09-14T23:27:49.503Z",
+      "at": "2026-09-14T23:27:49.503Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-7f278c21\naction_v2_sha256:131486b87f6b3d0dd0bf88215f632d853cd6c60f2ecb4f206ee4f6fc56979e9c",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-c5e2e5b1c5085527",
+        "issued_at": "2026-09-14T23:27:49.503Z",
+        "expires_at": "2026-09-14T23:37:49.503Z"
+      }
+    },
+    {
+      "id": "record_approval:wcr-retire-superseded-guards:2026-09-15T00:57:22.234Z",
+      "at": "2026-09-15T00:57:22.234Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-98e25c49\naction_v2_sha256:cbf6a7347fa23379e430e21db0090b5b1c916575186c91ff4d87888fc2cbc273",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-c06cf243a6b75118",
+        "issued_at": "2026-09-15T00:57:22.234Z",
+        "expires_at": "2026-09-15T01:07:22.234Z"
+      }
+    },
+    {
+      "id": "complete:wcr-retire-superseded-guards:2026-09-15T00:57:22.816Z",
+      "at": "2026-09-15T00:57:22.816Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:8ee8a4e0eae19d1c074cc8f81af6616b8a9d4eb2ba651b322df82c29983ae550"
+    }
+  ]
+}

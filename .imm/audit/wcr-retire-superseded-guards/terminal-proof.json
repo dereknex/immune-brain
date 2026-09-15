@@ -1,0 +1,9 @@
+{
+  "contract": "assurance_kernel/task_tombstone/v2",
+  "task_id": "wcr-retire-superseded-guards",
+  "lifecycle_status": "terminal",
+  "terminal_lifecycle": "done",
+  "terminal_event_id": "complete:wcr-retire-superseded-guards:2026-09-15T00:57:22.816Z",
+  "final_record_hash": "sha256:34e97781a35aef6c1900d64b3a60cd938c91582b8bdf0c3463f27adc7f067f29",
+  "terminalized_at": "2026-09-15T00:57:22.816Z"
+}

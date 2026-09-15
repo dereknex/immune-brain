@@ -20,9 +20,14 @@ function listTypeScriptFiles(dir: string): string[] {
 		.filter((path) => statSync(path).isFile() && path.endsWith(".ts"));
 }
 
+/**
+ * Every TypeScript file the retirement scans: both Host adapters, the runtime,
+ * the package's own tests, and this repository's suites.
+ */
 function sourceFiles(): string[] {
 	return [
 		...listTypeScriptFiles(resolve(ROOT, "plugins/immune-brain/runtime")),
+		...listTypeScriptFiles(resolve(ROOT, "plugins/immune-brain/.pi-extension")),
 		...listTypeScriptFiles(resolve(ROOT, "plugins/immune-brain/tests")),
 		...listTypeScriptFiles(resolve(ROOT, "tests")),
 	].filter((path) => {
@@ -80,28 +85,11 @@ describe("v3 island deletion", () => {
 		expect(offenders).toEqual([]);
 	});
 
-	it("retains coverage for the surviving runtime modules", () => {
-		const coverage: Array<[string, string]> = [
-			["tests/role-prompt-bridge.test.ts", "runtime/role_prompt_bridge"],
-			["tests/loop-execution-routing.test.ts", "runtime/loop_contract"],
-			["tests/role-prompt-bridge.test.ts", "scripts/dist-sync-manifest"],
-			// The authority-observation island's test files are retired with the
-			// island; the surfaces this slice keeps stay covered by name.
-			["tests/v4-storage-retirement-legacy-audit.test.ts", "runtime/kernel/legacy_audit"],
-			[
-				"tests/kernel-storage-layout-migration.test.ts",
-				"runtime/kernel/storage_layout_migration",
-			],
-		];
-
-		for (const [path, modulePath] of coverage) {
-			expect(readFileSync(resolve(ROOT, path), "utf8")).toContain(modulePath);
-		}
-
-		// `plan_core`'s protected property is not a test file's spelling of its path
-		// but the closure of what production reaches: the validator surface stays
-		// imported and every export retired with the island stays out, whether the
-		// module is renamed or a dead test is retired. The two live names are the
+	it("keeps the retired plan_core exports out of every production file", () => {
+		// The protected property is the closure of what production reaches, not a
+		// test file's spelling of a module path: no production file may import a
+		// symbol retired with the island, whether the module is renamed, a dead
+		// test is retired, or a path spelling moves. The two live names are the
 		// symbols runtime/v4_runtime.ts imports.
 		const liveSurface = new Set(["PlanValidationError", "projectPlanValidation"]);
 		const offenders: string[] = [];
@@ -122,5 +110,24 @@ describe("v3 island deletion", () => {
 			}
 		}
 		expect(offenders).toEqual([]);
+	});
+
+	it("scans both Host adapters for every retired surface", () => {
+		// Neither adapter may be exempt from a retirement just because it lives
+		// outside the runtime directory: the scan's scope is asserted, not assumed.
+		const scanned = new Set(sourceFiles().map((path) => relative(ROOT, path).split(sep).join("/")));
+		const production = new Set(productionSourceFiles().map((path) => relative(ROOT, path).split(sep).join("/")));
+		for (const [scope, dir, files] of [
+			["retirement scan", "plugins/immune-brain/.pi-extension/", scanned],
+			["retirement scan", "plugins/immune-brain/runtime/claude/", scanned],
+			["production closure", "plugins/immune-brain/.pi-extension/", production],
+			["production closure", "plugins/immune-brain/runtime/claude/", production],
+		] as const) {
+			expect({ scope, dir, covered: [...files].some((rel) => rel.startsWith(dir)) }).toEqual({
+				scope,
+				dir,
+				covered: true,
+			});
+		}
 	});
 });

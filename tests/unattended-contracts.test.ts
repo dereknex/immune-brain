@@ -305,6 +305,60 @@ if (!unreachable.error || !unreachable.error.includes("lacks evidence")) {
 `;
 }
 
+/**
+ * The Host-adapter leg: both adapters' batch entry points run against the
+ * recording Git, so a `worktree` or `push` vector either Host could produce is
+ * recorded here too. The adapters reach Git only for reads — every mutating
+ * vector stays the shared runtime's business — and each leg writes its own
+ * result marker so a leg that never ran cannot pass silently.
+ */
+function adapterDriveSource(runtimeDir: string): string {
+	const extensionPath = JSON.stringify(join(runtimeDir, "..", ".pi-extension", "imm-unattended-batch.ts"));
+	const claudePath = JSON.stringify(join(runtimeDir, "claude", "kernel_ports.ts"));
+	const reviewHostPath = JSON.stringify(join(runtimeDir, "claude", "review_host.ts"));
+	return `import { writeFileSync } from "node:fs";
+import { join } from "node:path";
+const { executePiUnattendedBatch } = await import(${extensionPath});
+const { ClaudeRuntime } = await import(${claudePath});
+const { ClaudeReviewHost } = await import(${reviewHostPath});
+
+const [root, markerDir] = process.argv.slice(2);
+const slug = "initiative-slug";
+const observation = {
+	contract: "immune_brain/github_initiative_observation/v1",
+	initiative_id: slug,
+	issue_number: 1,
+	tasks: [],
+};
+
+const pi = await executePiUnattendedBatch({
+	root,
+	initiativeSlug: slug,
+	interactive: true,
+	readInitiative: async () => observation,
+	confirmBatch: async () => "decline",
+});
+writeFileSync(join(markerDir, "pi.json"), JSON.stringify(pi));
+
+const claude = new ClaudeRuntime({
+	cwd: root,
+	env: { CLAUDE_CODE_VERSION: "2.1.236", CLAUDE_CODE_PERMISSION_MODE: "manual" },
+	host: new ClaudeReviewHost(),
+	interactive: true,
+	readInitiative: async () => observation,
+	requestConfirmation: async () => ({ decision: "decline", requestId: "recorded" }),
+});
+claude.bindHostVersion("2.1.236");
+const result = await claude.startUnattendedBatch(slug, {
+	toolCallId: "recorded",
+	sessionId: "recorded",
+	interactive: true,
+	permissionMode: "manual",
+});
+writeFileSync(join(markerDir, "claude.json"), JSON.stringify(result));
+`;
+}
+
 describe("unattended batch contract text", () => {
 	it("documents the opt-in entry, the single parameter, and the unchanged default", () => {
 		const optIn = section(LOOP_CONTRACT, "## Unattended Batch Opt-In");
@@ -329,19 +383,6 @@ describe("unattended batch contract text", () => {
 			expect(optIn).toContain(claim);
 		}
 		expect(optIn).toContain("`critical`");
-
-		// Shipped restriction: no push, no PR, no worktree mutation anywhere in the runner.
-		const runnerSources = [
-			read("plugins/immune-brain/runtime/unattended/batch_git.ts"),
-			read("plugins/immune-brain/runtime/unattended/batch_runner.ts"),
-			read("plugins/immune-brain/runtime/unattended/batch_plan.ts"),
-			read("plugins/immune-brain/runtime/unattended/batch_state.ts"),
-		].join("\n");
-		const gitMutations = runnerSources
-			.split("\n")
-			.filter((line) => !line.trimStart().startsWith("//"))
-			.filter((line) => /\bgit\b/.test(line) || /["'](push|worktree)["']/.test(line));
-		expect(gitMutations.filter((line) => /"push"|"worktree"|'push'|'worktree'/.test(line))).toEqual([]);
 
 		// Shipped restriction: a `critical` child is never enrollable. Asserted by
 		// running the projection, not by matching one branch's spelling — the
@@ -564,7 +605,50 @@ describe("unattended batch contract text", () => {
 			const subcommands = recordedInvocations(logPath).map(gitSubcommand);
 			// A drive that never reached the mutating Git effects would assert nothing.
 			for (const mutation of ["checkout", "add", "commit"]) expect(subcommands).toContain(mutation);
-			expect(subcommands).not.toContain("worktree");
+			// The prohibition the contract states, over the vectors this runtime can
+			// actually produce: no push, no worktree mutation.
+			for (const forbidden of ["worktree", "push"]) expect(subcommands).not.toContain(forbidden);
+		} finally {
+			rmSync(scratch, { recursive: true, force: true });
+		}
+	});
+
+	it("never produces a worktree or mutating invocation from either Host adapter", () => {
+		const scratch = mkdtempSync(join(tmpdir(), "imm-adapter-git-guard-"));
+		const root = join(scratch, "repo");
+		const binDir = join(scratch, "bin");
+		const logPath = join(scratch, "invocations.log");
+		const drivePath = join(scratch, "adapter-drive.ts");
+		try {
+			mkdirSync(root);
+			mkdirSync(binDir);
+			installRecordingGit({
+				binDir,
+				logPath,
+				committedMarker: join(scratch, "committed"),
+				stagedMarker: join(scratch, "staged"),
+				root,
+			});
+			// Both Host adapters' batch entry points, against the recording Git.
+			writeFileSync(drivePath, adapterDriveSource(join(REPO_ROOT, "plugins/immune-brain/runtime")));
+			const drive = spawnSync("bun", [drivePath, root, scratch], {
+				cwd: REPO_ROOT,
+				encoding: "utf8",
+				env: { ...process.env, PATH: `${binDir}:${process.env.PATH ?? ""}` },
+			});
+			expect({ status: drive.status, stderr: drive.stderr.trim().slice(0, 2000) }).toEqual({ status: 0, stderr: "" });
+			// Both legs really ran and reached Git: one preflight read each.
+			for (const leg of ["pi", "claude"]) {
+				expect({ leg, wrote: existsSync(join(scratch, `${leg}.json`)) }).toEqual({ leg, wrote: true });
+			}
+
+			const subcommands = recordedInvocations(logPath).map(gitSubcommand);
+			expect(subcommands.filter((command) => command === "rev-parse").length).toBeGreaterThanOrEqual(2);
+			// A Host adapter reaches Git only for reads: every mutating vector a batch
+			// can produce belongs to the shared runtime the first drive covers, and
+			// `worktree`/`push` belong to no path at all.
+			const forbidden = ["worktree", "push", "add", "commit", "checkout", "reset", "branch", "update-ref"];
+			expect(subcommands.filter((command) => forbidden.includes(command))).toEqual([]);
 		} finally {
 			rmSync(scratch, { recursive: true, force: true });
 		}
