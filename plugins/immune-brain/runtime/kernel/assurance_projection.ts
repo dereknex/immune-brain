@@ -247,9 +247,19 @@ export async function projectAssurance(
 			const tombstone = readTaskTombstone(root, taskId);
 			if (tombstone) {
 				const authority = reconcileKernelAuthority(root, taskId);
-				if (authority.state === "repairable_stale_claim")
+				// A terminal proof keyed by task id may have been exported by
+				// another worktree's run of this same task: it is that run's
+				// evidence, not a conflict with this worktree's own run. The local
+				// store decides, and an active local run keeps its authority.
+				if (authority.state === "active_owner") {
+					// fall through: the local run owns this task here
+				} else if (authority.state === "repairable_stale_claim")
 					return fail(`task ${taskId} has a repairable stale backend claim`, claim);
-				return fail(authority.diagnostic ?? `authority state conflicts for ${taskId}`, claim);
+				else
+					return fail(
+						authority.diagnostic ?? `authority state conflicts for ${taskId}`,
+						claim,
+					);
 			}
 		} else {
 			const authority = reconcileKernelAuthority(root, taskId);

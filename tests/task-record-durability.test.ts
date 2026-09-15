@@ -39,6 +39,7 @@ import {
   digestOfAction,
 } from "../plugins/immune-brain/runtime/kernel/authority_port";
 import { writeBatchRunState } from "../plugins/immune-brain/runtime/unattended/batch_state";
+import { projectAssurance } from "../plugins/immune-brain/runtime/kernel/assurance_projection";
 import { BATCH_STATE_RELATIVE, inspectStorageLayout } from "../plugins/immune-brain/runtime/kernel/storage_paths";
 import { readAuditTaskPair } from "../plugins/immune-brain/runtime/kernel/storage";
 import { canonicalRecordHash } from "../plugins/immune-brain/runtime/kernel/reducer";
@@ -1014,6 +1015,58 @@ describe("SQLite authority store durability", () => {
       expect(storeEnrollFixture(root, "durability-u").state).toBe("active");
     } finally {
       rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test("a terminal proof from another worktree's run of the same task is not a local conflict", async () => {
+    const rootA = storeRoot();
+    const rootB = storeRoot();
+    try {
+      const a = storeEnrollFixture(rootA, "durability-y");
+      const b = storeEnrollFixture(rootB, "durability-y");
+      expect(a.run_id).not.toBe(b.run_id);
+      // A settles and its tracked audit pair reaches B (for example through Git).
+      mkdirSync(join(rootA, ".imm/audit/durability-y"), { recursive: true });
+      const terminalBytes = `${JSON.stringify(storeTerminalRecord("durability-y"), null, 2)}\n`;
+      writeFileSync(join(rootA, ".imm/audit/durability-y/task-record.json"), terminalBytes);
+      writeFileSync(
+        join(rootA, ".imm/audit/durability-y/terminal-proof.json"),
+        `${JSON.stringify(
+          {
+            contract: "assurance_kernel/task_tombstone/v2",
+            task_id: "durability-y",
+            lifecycle_status: "terminal",
+            terminal_lifecycle: "done",
+            terminal_event_id: "complete:durability-y:2026-08-12T10:00:05.000Z",
+            final_record_hash: revisionForContent(terminalBytes),
+            terminalized_at: "2026-08-12T10:00:05.000Z",
+          },
+          null,
+          2,
+        )}\n`,
+      );
+      mkdirSync(join(rootB, ".imm/audit/durability-y"), { recursive: true });
+      for (const name of ["task-record.json", "terminal-proof.json"])
+        writeFileSync(
+          join(rootB, ".imm/audit/durability-y", name),
+          readFileSync(join(rootA, ".imm/audit/durability-y", name)),
+        );
+      // B's own active run is not displaced by another run's evidence.
+      expect(reconcileKernelAuthority(rootB, "durability-y")).toMatchObject({
+        state: "active_owner",
+        owner_run_id: b.run_id,
+      });
+      const before = readTaskRecordRaw(rootB, "durability-y").revision;
+      const projected = await projectAssurance(rootB, "durability-y", () => ({
+        diff_hash: `sha256:${"b".repeat(64)}`,
+        changed_paths: [],
+      }));
+      expect(projected.error).toBeNull();
+      expect(projected.projection).toMatchObject({ lifecycle: "active", artifact_state: "active" });
+      expect(readTaskRecordRaw(rootB, "durability-y").revision).toBe(before);
+    } finally {
+      rmSync(rootA, { recursive: true, force: true });
+      rmSync(rootB, { recursive: true, force: true });
     }
   });
 

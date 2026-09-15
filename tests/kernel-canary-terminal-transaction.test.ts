@@ -337,6 +337,23 @@ describe("terminal ownership transfer", () => {
 		expect(withKernelRead(root, (db) => readRunRowByTask(db, TASK))!.state).toBe("stopped");
 	});
 
+	test("a lost settlement response replays the committed result through the application", () => {
+		// Settlement clears the active record, so the retry cannot pass the
+		// preflight: the committed operation is the only answer, and it must be
+		// the same result the first call produced.
+		const completed = completeTask();
+		const runBefore = withKernelRead(root, (db) => readRunRowByTask(db, TASK))!;
+		const replayed = execute(
+			{ op: "complete", actor_id: "executor-1" },
+			"2026-08-12T10:00:04.000Z",
+		);
+		expect(replayed.revision).toBe(completed.revision);
+		expect(replayed.record).toEqual(completed.record);
+		expect(replayed.workspace.state.current_working).toBeNull();
+		// Nothing was written twice: the terminal run row is byte-identical.
+		expect(withKernelRead(root, (db) => readRunRowByTask(db, TASK))).toEqual(runBefore);
+	});
+
 	test("terminalized task cannot be re-enrolled", () => {
 		completeTask();
 		const enrollmentRegistry = createEnrollmentAuthorityRegistry();

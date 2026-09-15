@@ -33,6 +33,7 @@ import {
 	readSecureProjectFile,
 	readTaskRecordRaw,
 	currentRunId,
+	readCommittedTerminalResult,
 	readWorkspaceStateRaw,
 	revisionForContent,
 	withKernelStoreLock,
@@ -271,6 +272,28 @@ export function createCanaryApplication(
 		const now = input.now ?? new Date().toISOString();
 		const operation = input.operation;
 		const at = now;
+		// A settled run clears the active record, so a lost settlement response can
+		// only be answered from the committed operation — and only with the
+		// committed result. This runs before the record, token and capability
+		// checks, which a terminal run can no longer satisfy.
+		if (operation.op === "complete" || operation.op === "stop") {
+			const replayed = readCommittedTerminalResult(
+				input.root,
+				input.task_id,
+				`${operation.op}:${input.task_id}:${at}`,
+			);
+			if (replayed)
+				return {
+					// The committed result is the answer: same record identity, same
+					// cleared workspace, no second write.
+					revision: revisionForContent(`${JSON.stringify(replayed.record, null, 2)}\n`),
+					record: replayed.record,
+					workspace: {
+						revision: revisionForContent(`${JSON.stringify(replayed.workspace, null, 2)}\n`),
+						state: replayed.workspace,
+					},
+				};
+		}
 		// Preflight snapshot inside the store lock derives the exact current
 		// identities; authoritative CAS revalidation still happens inside the
 		// locked application port, so any concurrent change fails closed.

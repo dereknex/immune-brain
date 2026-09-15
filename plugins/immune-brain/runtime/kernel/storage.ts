@@ -776,6 +776,26 @@ function workspaceStateFromRow(db: DatabaseSync, runId: string | null): Workspac
  * store. Capability validation needs only this identity, so it never pays for
  * a full authority projection on the mutation path.
  */
+/**
+ * The committed result of a terminal operation, if this worktree already
+ * committed it. Settlement clears the active run, so a lost response can only
+ * be answered from the durable operation row — and only with the committed
+ * result, never by re-running the operation.
+ */
+export function readCommittedTerminalResult(
+	root: string,
+	taskId: string,
+	eventId: string,
+): { record: TaskRecord; workspace: WorkspaceState } | null {
+	validateTaskId(taskId);
+	const read = withKernelRead(root, (db) => {
+		const row = readOperationRow(db, terminalOperationId(taskId, eventId));
+		if (!row) return null;
+		return decodeOperationResult(row.result_json);
+	});
+	return read ?? null;
+}
+
 export function currentRunId(root: string, taskId: string): string | null {
 	validateTaskId(taskId);
 	const read = withKernelRead(root, (db) => {
@@ -1190,6 +1210,11 @@ export function assertCapabilityRun(
 		throw new KernelStoreSecurityError(
 			`${operation} authority was issued for run ${capabilityRunId} but this worktree holds run ${current.run_id}`,
 		);
+}
+
+export function terminalProofRunId(proof: TaskTombstone): string | null {
+	const value = (proof as unknown as { run_id?: unknown }).run_id;
+	return typeof value === "string" && value.length > 0 ? value : null;
 }
 
 function claimBytesFromRun(run: KernelRunRow): string {

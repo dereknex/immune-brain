@@ -5631,6 +5631,16 @@ function workspaceStateFromRow(db, runId) {
     current_working: run && run.state === "active" ? run.task_id : null
   };
 }
+function readCommittedTerminalResult(root, taskId, eventId) {
+  validateTaskId4(taskId);
+  const read = withKernelRead(root, (db) => {
+    const row = readOperationRow(db, terminalOperationId(taskId, eventId));
+    if (!row)
+      return null;
+    return decodeOperationResult(row.result_json);
+  });
+  return read ?? null;
+}
 function currentRunId(root, taskId) {
   validateTaskId4(taskId);
   const read = withKernelRead(root, (db) => {
@@ -6281,9 +6291,10 @@ async function projectAssurance(root, taskId, diffProvider) {
       const tombstone = readTaskTombstone(root, taskId);
       if (tombstone) {
         const authority = reconcileKernelAuthority(root, taskId);
-        if (authority.state === "repairable_stale_claim")
+        if (authority.state === "active_owner") {} else if (authority.state === "repairable_stale_claim")
           return fail(`task ${taskId} has a repairable stale backend claim`, claim);
-        return fail(authority.diagnostic ?? `authority state conflicts for ${taskId}`, claim);
+        else
+          return fail(authority.diagnostic ?? `authority state conflicts for ${taskId}`, claim);
       }
     } else {
       const authority = reconcileKernelAuthority(root, taskId);
@@ -6696,6 +6707,20 @@ function createCanaryApplication(registry) {
     const now = input.now ?? new Date().toISOString();
     const operation = input.operation;
     const at = now;
+    if (operation.op === "complete" || operation.op === "stop") {
+      const replayed = readCommittedTerminalResult(input.root, input.task_id, `${operation.op}:${input.task_id}:${at}`);
+      if (replayed)
+        return {
+          revision: revisionForContent(`${JSON.stringify(replayed.record, null, 2)}
+`),
+          record: replayed.record,
+          workspace: {
+            revision: revisionForContent(`${JSON.stringify(replayed.workspace, null, 2)}
+`),
+            state: replayed.workspace
+          }
+        };
+    }
     const snapshot = withKernelStoreLock(input.root, () => {
       const current = readTaskRecordRaw(input.root, input.task_id);
       if (!current.record)
