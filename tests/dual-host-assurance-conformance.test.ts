@@ -14,7 +14,7 @@ import { AssuranceProgression } from "../plugins/immune-brain/.pi-extension/pi-c
 import { revisionForContent } from "../plugins/immune-brain/runtime/kernel/storage";
 import { PassThrough } from "node:stream";
 import { ClaudeReviewHost, REVIEWER_AGENT, AGENT_TOOL } from "../plugins/immune-brain/runtime/claude/review_host";
-import { submitClaudeReview } from "../plugins/immune-brain/runtime/claude/kernel_ports";
+import { submitClaudeReview, ClaudeRuntime, type ToolMeta } from "../plugins/immune-brain/runtime/claude/kernel_ports";
 import { probeHost } from "../plugins/immune-brain/runtime/claude/capability";
 import { createMcpRuntime, serveStdio } from "../plugins/immune-brain/runtime/claude/mcp_server";
 import type { ReviewBundle } from "../plugins/immune-brain/runtime/assurance/review_evidence";
@@ -33,6 +33,199 @@ import {
 } from "../plugins/immune-brain/runtime/kernel/actor_identity";
 import { LITERAL_USER_ACTOR_ID as PI_STUB_LITERAL_USER } from "../plugins/immune-brain/.pi-extension/runtime-stub";
 import type { GithubInitiativeObservation } from "../plugins/immune-brain/runtime/github_issue_tracker";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { enrollCanaryTask } from "../plugins/immune-brain/runtime/kernel/enrollment";
+import {
+	createEnrollmentAuthorityRegistry,
+	type EnrollmentCapabilityBinding,
+} from "../plugins/immune-brain/runtime/kernel/enrollment_authority";
+import { preparePiCanary } from "../plugins/immune-brain/runtime/kernel/pi_canary_prepare";
+import { readTaskIntent } from "../plugins/immune-brain/runtime/kernel/intent";
+
+const FIXTURE_NOW = "2026-08-12T10:00:00.000Z";
+const HOST_ENV = { CLAUDE_CODE_VERSION: "2.1.236", CLAUDE_CODE_PERMISSION_MODE: "manual" };
+
+/** One enrolled fixture repository both Host adapters drive below. */
+function enrolledHostFixture(taskId: string): string {
+	const root = mkdtempSync(join(tmpdir(), "imm-host-divergence-"));
+	mkdirSync(join(root, ".imm/state"), { recursive: true });
+	mkdirSync(join(root, "docs/plans"), { recursive: true });
+	mkdirSync(join(root, "docs/specs/archive"), { recursive: true });
+	const intent = {
+		contract: "assurance_kernel/task_intent/v1",
+		task_id: taskId,
+		owner: "user",
+		goal: "exercise converged Host behaviour",
+		acceptance: [{ id: "acc-1", assertion: "initial assertion", verification: "bun test" }],
+		scope_hint: [
+			`docs/plans/${taskId}.intent.json`,
+			`docs/specs/${taskId}.spec.md`,
+			`docs/specs/archive/${taskId}.spec.md`,
+		],
+		risk: "routine",
+		revision: 1,
+	};
+	writeFileSync(join(root, "docs/plans", `${taskId}.intent.json`), `${JSON.stringify(intent, null, 2)}\n`);
+	writeFileSync(join(root, "docs/specs", `${taskId}.spec.md`), `# ${taskId}\n`);
+	execFileSync("git", ["init", "-q"], { cwd: root });
+	execFileSync("git", ["add", "-A"], { cwd: root });
+	execFileSync("git", ["-c", "user.name=test", "-c", "user.email=test@example.com", "commit", "-q", "-m", "fixture"], {
+		cwd: root,
+	});
+	writeFileSync(
+		join(root, ".imm/state/workspace.json"),
+		`${JSON.stringify({ contract: "assurance_kernel/workspace/v1", current_working: null }, null, 2)}\n`,
+	);
+	const registry = createEnrollmentAuthorityRegistry();
+	const read = readTaskIntent(root, taskId, `docs/plans/${taskId}.intent.json`);
+	const preparation = preparePiCanary(root, { task_id: taskId, now: FIXTURE_NOW });
+	const binding: EnrollmentCapabilityBinding = {
+		task_id: taskId,
+		intent_path: `docs/plans/${taskId}.intent.json`,
+		intent_revision: 1,
+		intent_content_hash: read.content_hash,
+		preparation_digest: preparation.digest,
+		actor_id: "user",
+		confirmation_ref: "c",
+		expires_at: "2099-01-01T00:00:00.000Z",
+		nonce: "n",
+	};
+	enrollCanaryTask(
+		root,
+		{
+			task_id: taskId,
+			intent_path: binding.intent_path,
+			intent_revision: 1,
+			preparation_digest: preparation.digest,
+			capability: registry.issue(binding, FIXTURE_NOW),
+			capability_binding: binding,
+			now: FIXTURE_NOW,
+		},
+		registry,
+	);
+	return root;
+}
+
+/** The breaking revision both Hosts are asked to apply in the drives below. */
+function breakingRevisionOf(root: string, taskId: string): Record<string, unknown> {
+	const read = readTaskIntent(root, taskId, `docs/plans/${taskId}.intent.json`);
+	return {
+		...read.intent,
+		acceptance: [{ id: "acc-1", assertion: "revised assertion", verification: "bun test" }],
+		revision: 2,
+	};
+}
+
+interface RegisteredCanaryTool {
+	execute: (id: string, params: unknown, signal: unknown, onUpdate: unknown, ctx: unknown) => Promise<unknown>;
+}
+
+/** The Pi Host's registered canary tool, with its test-only failure hook. */
+function piCanaryTool(dependencies: { authorizationAfterSidecarStage?: () => Promise<void> }): RegisteredCanaryTool {
+	const mod = require("../plugins/immune-brain/.pi-extension/imm-canary-work.ts");
+	let tool: RegisteredCanaryTool | undefined;
+	const pi = {
+		on: () => {},
+		registerMessageRenderer: () => {},
+		registerCommand: () => undefined,
+		registerTool: (registered: { name: string } & RegisteredCanaryTool) => {
+			if (registered.name === "imm_kernel_canary") tool = registered;
+		},
+	} as unknown as ExtensionAPI;
+	(mod.default as (pi: ExtensionAPI, dependencies?: unknown) => void)(pi, dependencies);
+	if (!tool) throw new Error("imm_kernel_canary tool not registered");
+	return tool;
+}
+
+function piCanaryCtx(root: string) {
+	return {
+		mode: "tui",
+		cwd: root,
+		signal: new AbortController().signal,
+		ui: {
+			notify: () => {},
+			custom: async (factory: any) => {
+				let selected: string | undefined;
+				const component = factory(
+					{ requestRender: () => undefined },
+					{ fg: (_color: string, text: string) => text, bold: (text: string) => text },
+					{},
+					(result: string | undefined) => { selected = result; },
+				);
+				component.handleInput?.("d");
+				component.handleInput?.("\r");
+				return selected;
+			},
+		},
+	};
+}
+
+/** The Pi Host's message when a post-stage failure tries to undo the staging. */
+async function piBreakingFailure(root: string, taskId: string): Promise<string> {
+	const tool = piCanaryTool({
+		authorizationAfterSidecarStage: async () => {
+			throw new Error("simulated precommit failure");
+		},
+	});
+	return tool
+		.execute(
+			`${taskId}-breaking`,
+			{ task_id: taskId, action: { op: "approve_breaking_intent_revision", next_intent: breakingRevisionOf(root, taskId) } },
+			undefined,
+			undefined,
+			piCanaryCtx(root),
+		)
+		.then(
+			() => "",
+			(error: unknown) => (error instanceof Error ? error.message : String(error)),
+		);
+}
+
+/** What the Pi Host answers when it is asked to authorize on a claim whose
+ * projection names no authorization state. */
+async function piAuthorizationFailure(root: string, taskId: string): Promise<string> {
+	const tool = piCanaryTool({});
+	return tool
+		.execute(
+			`${taskId}-authorize`,
+			{ task_id: taskId, action: { op: "request_authorization" } },
+			undefined,
+			undefined,
+			piCanaryCtx(root),
+		)
+		.then(
+			(value: unknown) => JSON.stringify(value),
+			(error: unknown) => (error instanceof Error ? error.message : String(error)),
+		);
+}
+
+/** The Claude Host's message for the same failure, through its own entry point. */
+async function claudeBreakingFailure(root: string, taskId: string): Promise<string> {
+	const runtime = new ClaudeRuntime({
+		cwd: root,
+		env: HOST_ENV,
+		host: new ClaudeReviewHost(),
+		interactive: true,
+		permissionMode: "manual",
+		requestConfirmation: async () => {
+			throw new Error("simulated precommit failure");
+		},
+	});
+	const meta: ToolMeta = {
+		taskId,
+		sessionId: "s",
+		toolCallId: "breaking",
+		requiresUserInteraction: true,
+		interactive: true,
+		permissionMode: "manual",
+	};
+	return runtime
+		.authorize(taskId, "approve_breaking_intent_revision", meta, { next_intent: breakingRevisionOf(root, taskId) })
+		.then(
+			() => "",
+			(error: unknown) => (error instanceof Error ? error.message : String(error)),
+		);
+}
 
 const TASK = "dual-host-task";
 const ROOT = "/tmp/dual-host-assurance";
@@ -2123,7 +2316,7 @@ describe("dual-host assurance conformance", () => {
 	// its previous branch: Pi restored without verifying, and Claude re-derived the
 	// authorization operation inline.
 	describe("converged host divergences", () => {
-		test("restores a staged intent through the shared verifying implementation", () => {
+		test("restores a staged intent through the shared verifying implementation", async () => {
 			// The restore is shared, so the verification is one implementation: a git
 			// that silently no-ops update-index must fail the restore closed, which is
 			// exactly what stopping at update-index used to miss.
@@ -2154,36 +2347,41 @@ describe("dual-host assurance conformance", () => {
 				expect(() => restoreStagedIntent(root, snapshot)).toThrow(
 					/failed to restore prior intent git index entry/,
 				);
+
+				// Both adapters route through that one implementation rather than keeping
+				// their own restore body: each Host is driven through its own entry point
+				// with the same lying git and the same post-stage failure while it is still
+				// on PATH, and the shared restore failure is what the caller sees.
+				for (const host of ["pi", "claude"] as const) {
+					const taskId = `${host}-restore`;
+					const fixture = enrolledHostFixture(taskId);
+					try {
+						const message =
+							host === "pi"
+								? await piBreakingFailure(fixture, taskId)
+								: await claudeBreakingFailure(fixture, taskId);
+						expect({ host, shared: message.includes("failed to restore prior intent git index entry") }).toEqual({
+							host,
+							shared: true,
+						});
+					} finally {
+						rmSync(fixture, { recursive: true, force: true });
+					}
+				}
 			} finally {
 				process.env.PATH = previousPath;
 				rmSync(shimDir, { recursive: true, force: true });
 				rmSync(root, { recursive: true, force: true });
 			}
-
-			// Both adapters route through that one implementation rather than keeping
-			// their own restore body.
-			for (const [host, path] of [
-				["pi", "plugins/immune-brain/.pi-extension/imm-canary-work.ts"],
-				["claude", "plugins/immune-brain/runtime/claude/kernel_ports.ts"],
-			] as const) {
-				const source = readFileSync(resolve(path), "utf8");
-				expect({ host, shared: source.includes("restoreStagedIntentShared") }).toEqual({ host, shared: true });
-				expect({ host, own: source.includes('["update-index", "--force-remove"') }).toEqual({ host, own: false });
-			}
 		});
 
-		test("derives the authorization operation from the shared export on both Hosts", () => {
-			const piSource = readFileSync(resolve("plugins/immune-brain/.pi-extension/imm-canary-work.ts"), "utf8");
-			const claudeSource = readFileSync(resolve("plugins/immune-brain/runtime/claude/kernel_ports.ts"), "utf8");
-			expect(piSource).toContain('from "../runtime/authorization_operation"');
-			expect(claudeSource).toContain('from "../authorization_operation"');
-			// A Host that maps Kernel readiness inline is the drift this forbids.
-			for (const [host, source] of [["pi", piSource], ["claude", claudeSource]] as const) {
-				expect({ host, inline: source.includes('readiness.state === "resolve_user_decision"') }).toEqual({
-					host,
-					inline: false,
-				});
-			}
+		test("derives the authorization operation from the shared export on both Hosts", async () => {
+			// The Pi Host's registered surface carries the shared derivation itself, so
+			// the function the tool runs is the same object the Claude adapter imports.
+			const piSurface = require("../plugins/immune-brain/.pi-extension/imm-canary-work.ts") as {
+				deriveAuthorizationOperation: unknown;
+			};
+			expect(piSurface.deriveAuthorizationOperation).toBe(deriveAuthorizationOperation);
 			// One derivation over Kernel readiness, identical for both Hosts.
 			expect(deriveAuthorizationOperation({ readiness: { state: "resolve_user_decision", blocked: null } })).toEqual({
 				operation: "resolve-user-decision",
@@ -2197,6 +2395,50 @@ describe("dual-host assurance conformance", () => {
 			expect(deriveAuthorizationOperation({ readiness: { state: "none", blocked: null } })).toEqual({
 				blocked: "no unique host-derived authorization operation",
 			});
+			// A Host that maps Kernel readiness inline is the drift this forbids, so the
+			// Claude entry point is driven against a real claim: whatever its Kernel
+			// projection reports, the authorization call answers with the shared result.
+			const taskId = "authorization-derivation";
+			const root = enrolledHostFixture(taskId);
+			try {
+				const runtime = new ClaudeRuntime({
+					cwd: root,
+					env: HOST_ENV,
+					host: new ClaudeReviewHost(),
+					interactive: true,
+					permissionMode: "manual",
+					requestConfirmation: async () => ({ decision: "accept", requestId: "r-derive" }),
+				});
+				const projection = await runtime.status(taskId);
+				const derived = deriveAuthorizationOperation({ readiness: projection.projection.authorization });
+				const meta: ToolMeta = {
+					taskId,
+					sessionId: "s",
+					toolCallId: "derive",
+					requiresUserInteraction: true,
+					interactive: true,
+					permissionMode: "manual",
+				};
+				const claudeOutcome = await runtime.authorize(taskId, "request_authorization", meta).then(
+					() => null,
+					(error: unknown) => (error instanceof Error ? error.message : String(error)),
+				);
+				// Both Hosts are driven through their own authorization entry point, and
+				// each answers with the shared derivation rather than an inline mapping of
+				// its own.
+				const piOutcome = await piAuthorizationFailure(root, taskId);
+				expect({
+					derived,
+					pi: piOutcome.includes("no unique host-derived authorization operation"),
+					claude: claudeOutcome,
+				}).toEqual({
+					derived: { blocked: "no unique host-derived authorization operation" },
+					pi: true,
+					claude: "no unique host-derived authorization operation",
+				});
+			} finally {
+				rmSync(root, { recursive: true, force: true });
+			}
 		});
 	});
 

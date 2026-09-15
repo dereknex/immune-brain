@@ -1,0 +1,167 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "wcr-execution-driven-batch-tests",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "wcr-execution-driven-batch-tests",
+    "goal": "Replace two weak assertions with execution-driven ones: tests/unattended-batch-plan.test.ts's binding-refusal case currently compares batch_plan's output to the same inspectSpecBinding call batch_plan makes internally instead of driving enrollCanary's refusal path, and two dual-host-assurance-conformance.test.ts scenarios prove adapter routing via source-text includes() on the adapter files instead of executed behavior.",
+    "acceptance": [
+      {
+        "id": "RB7-1",
+        "assertion": "tests/unattended-batch-plan.test.ts's Spec-binding-refusal coverage drives enrollCanary directly for a child whose scope_hint cannot bind its Spec, and asserts on enrollCanary's returned refusal, rather than only comparing batch_plan's excluded-child output to inspectSpecBinding (the function batch_plan itself already calls).",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.4.2\",\n  \"argv\": [\n    \"test\",\n    \"tests/unattended-batch-plan.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 90000,\n  \"max_output_bytes\": 65536\n}\n"
+      },
+      {
+        "id": "RB7-2",
+        "assertion": "The two dual-host-assurance-conformance.test.ts scenarios (as of the review baseline, near lines 2113 and 2175) that currently assert adapter routing via includes() on adapter source text instead assert on executed behavior or an observable return value/side effect of the actual routed call.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.4.2\",\n  \"argv\": [\n    \"test\",\n    \"tests/dual-host-assurance-conformance.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 131072\n}\n"
+      }
+    ],
+    "scope_hint": [
+      "docs/plans/wcr-execution-driven-batch-tests.intent.json",
+      "docs/specs/archive/workflow-consolidation-remediation.spec.md",
+      "docs/specs/workflow-consolidation-remediation.spec.md",
+      "tests/dual-host-assurance-conformance.test.ts",
+      "tests/unattended-batch-plan.test.ts"
+    ],
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/archive/wcr-execution-driven-batch-tests.intent.json",
+    "content_hash": "sha256:d144d3018b6a93ee8cd47442ba9e88e02b6b0ce802dbc857d4ba20c74e19a905"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:d144d3018b6a93ee8cd47442ba9e88e02b6b0ce802dbc857d4ba20c74e19a905",
+  "git_base_head": "8ad09cba2ffac0fdf2f735694c42f463a5e8cc36",
+  "attestations": [
+    {
+      "id": "approval-qa-801ee6bc",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:d144d3018b6a93ee8cd47442ba9e88e02b6b0ce802dbc857d4ba20c74e19a905",
+      "diff_hash": "sha256:c4c47b28d4541ef3da02f77a39f3097cffb5a2d1755fb10e38eb055379c4e178",
+      "actor_id": "deterministic-qa",
+      "summary": "all 2 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "RB7-1",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "RB7-2",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-ce3cffcc",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:d144d3018b6a93ee8cd47442ba9e88e02b6b0ce802dbc857d4ba20c74e19a905",
+      "diff_hash": "sha256:f534cf0ff6e33570e51b47ab11f94a0e76dc5ba7e7368b114d88597157bbe46f",
+      "actor_id": "deterministic-qa",
+      "summary": "all 2 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "RB7-1",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "RB7-2",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-ef02f49d",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:d144d3018b6a93ee8cd47442ba9e88e02b6b0ce802dbc857d4ba20c74e19a905",
+      "diff_hash": "sha256:f534cf0ff6e33570e51b47ab11f94a0e76dc5ba7e7368b114d88597157bbe46f",
+      "actor_id": "parent-mediated-review",
+      "summary": "已核验 manifest_digest、Git revision 的唯一父提交、tree 与变更路径；RB7-1 直接执行 enrollment 并验证 Spec-binding 拒绝，RB7-2 执行两端真实 adapter 入口并检查可观察结果；Kernel QA 两项均通过，未发现阻断问题。",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "8ad09cba2ffac0fdf2f735694c42f463a5e8cc36",
+        "review_commit": "96c832b13653fcbb0911f4c153f9bd50fe1e17a6",
+        "review_tree": "91c1743737929df834fe9e50515d3c09d07fda1d",
+        "manifest_digest": "sha256:12d4824ac684b2bab0eff6c4f1408b78a52daf6d98eb7d5536053cd3d4797fba"
+      }
+    }
+  ],
+  "findings": [],
+  "history": [
+    {
+      "id": "freeze_artifacts:wcr-execution-driven-batch-tests:2026-09-15T01:49:12.850Z",
+      "at": "2026-09-15T01:49:12.850Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent and Spec frozen at docs/plans/archive/wcr-execution-driven-batch-tests.intent.json"
+    },
+    {
+      "id": "record_approval:wcr-execution-driven-batch-tests:2026-09-15T01:49:35.224Z",
+      "at": "2026-09-15T01:49:35.224Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-801ee6bc\naction_v2_sha256:8cb5a8e893b74a9d8abc8bdcc2a3b01c9da06427fb8667dca91248fc59dba3a6",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-5f36d7754055af90",
+        "issued_at": "2026-09-15T01:49:35.224Z",
+        "expires_at": "2026-09-15T01:59:35.224Z"
+      }
+    },
+    {
+      "id": "record_approval:wcr-execution-driven-batch-tests:2026-09-15T01:52:49.638Z",
+      "at": "2026-09-15T01:52:49.638Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-ce3cffcc\naction_v2_sha256:e5136c79c78eb7937ec4f65dfbdeb7b03878e3efb1b7b465928a2106b99975a1",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-f922002f252329e2",
+        "issued_at": "2026-09-15T01:52:49.638Z",
+        "expires_at": "2026-09-15T02:02:49.638Z"
+      }
+    },
+    {
+      "id": "record_approval:wcr-execution-driven-batch-tests:2026-09-15T01:54:35.630Z",
+      "at": "2026-09-15T01:54:35.630Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-ef02f49d\naction_v2_sha256:2d097ef6c38e1761ac10f7b787fe4984ff9c4d8abdfc3c0d8afe717066cd099f",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-47d8d4f1b35eea4d",
+        "issued_at": "2026-09-15T01:54:35.631Z",
+        "expires_at": "2026-09-15T02:04:35.631Z"
+      }
+    },
+    {
+      "id": "complete:wcr-execution-driven-batch-tests:2026-09-15T01:54:36.216Z",
+      "at": "2026-09-15T01:54:36.216Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:affac2e6eb594e684450cc277eeece8d9da6f21e0a89ab0386811ba80c865cdc"
+    }
+  ]
+}

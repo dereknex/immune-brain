@@ -22,9 +22,63 @@ import {
 import { stableStringify } from "../plugins/immune-brain/runtime/canonical_json";
 import { readTaskIntent } from "../plugins/immune-brain/runtime/kernel/intent";
 import { inspectSpecBinding } from "../plugins/immune-brain/runtime/kernel/spec_binding";
+import { enrollCanaryTask } from "../plugins/immune-brain/runtime/kernel/enrollment";
+import {
+	createEnrollmentAuthorityRegistry,
+	type EnrollmentCapabilityBinding,
+} from "../plugins/immune-brain/runtime/kernel/enrollment_authority";
+import { preparePiCanary } from "../plugins/immune-brain/runtime/kernel/pi_canary_prepare";
+import { readBackendClaim } from "../plugins/immune-brain/runtime/kernel/backend_claim";
+import { readTaskRecord } from "../plugins/immune-brain/runtime/kernel/storage";
 import { projectBatchPlan } from "../plugins/immune-brain/runtime/unattended/batch_plan";
 
 const CONFIRMATION_TIME = "2099-01-01T00:00:00.000Z";
+
+/** A committed HEAD and an unowned workspace, the preconditions enrollment adds
+ * over the read-only plan projection. */
+function prepareEnrollmentFixture(root: string): void {
+	execFileSync(
+		"git",
+		["-c", "user.name=fixture", "-c", "user.email=fixture@example.invalid", "commit", "-qm", "fixture"],
+		{ cwd: root },
+	);
+	writeFileSync(
+		join(root, ".imm/state/workspace.json"),
+		`${JSON.stringify({ contract: "assurance_kernel/workspace/v1", current_working: null }, null, 2)}\n`,
+	);
+}
+
+/** The enrollment call the Host makes for one fixture child, capability included. */
+function enrollChild(root: string, taskId: string): void {
+	const intentPath = `docs/plans/${taskId}.intent.json`;
+	const read = readTaskIntent(root, taskId, intentPath);
+	const registry = createEnrollmentAuthorityRegistry();
+	const preparation = preparePiCanary(root, { task_id: taskId, now: CONFIRMATION_TIME });
+	const binding: EnrollmentCapabilityBinding = {
+		task_id: taskId,
+		intent_path: intentPath,
+		intent_revision: read.intent.revision,
+		intent_content_hash: read.content_hash,
+		preparation_digest: preparation.digest,
+		actor_id: "user",
+		confirmation_ref: "pi-confirm-fixture",
+		expires_at: "2100-01-01T00:00:00.000Z",
+		nonce: `nonce-${taskId}`,
+	};
+	enrollCanaryTask(
+		root,
+		{
+			task_id: taskId,
+			intent_path: intentPath,
+			intent_revision: read.intent.revision,
+			preparation_digest: preparation.digest,
+			capability: registry.issue(binding, CONFIRMATION_TIME),
+			capability_binding: binding,
+			now: CONFIRMATION_TIME,
+		},
+		registry,
+	);
+}
 
 function result(stdout: unknown): GhExecution {
 	return {
@@ -389,6 +443,51 @@ describe("unattended batch plan projection", () => {
 					task_id: child.task_id,
 					excludedAtPlanTime: refusedByEnrollment,
 				});
+			}
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
+	it("drives the real enrollment refusal for a child whose Spec halves never pair", () => {
+		const root = fixtureRoot();
+		try {
+			prepareEnrollmentFixture(root);
+			// The refusal asserted here comes out of the enrollment path itself, not
+			// out of comparing the plan's output to the predicate `batch_plan` calls
+			// internally: one child that names no Spec path, one that names a single
+			// half, one whose two halves never pair.
+			const cases = [
+				{
+					task_id: "unbound",
+					named: ["enrollment requires one scope-bound active Spec and its archive path"],
+				},
+				{
+					task_id: "partial",
+					named: ["enrollment requires the bound Spec pair", "docs/specs/archive/partial.spec.md"],
+				},
+				{
+					task_id: "mismatched",
+					named: ["docs/specs/archive/mismatched.spec.md", "docs/specs/other.spec.md"],
+				},
+			];
+			for (const { task_id, named } of cases) {
+				let refusal: string | null = null;
+				try {
+					enrollChild(root, task_id);
+				} catch (error) {
+					refusal = error instanceof Error ? error.message : String(error);
+				}
+				expect({ task_id, refused: refusal !== null }).toEqual({ task_id, refused: true });
+				for (const path of named)
+					expect({ task_id, path, named: refusal?.includes(path) === true }).toEqual({
+						task_id,
+						path,
+						named: true,
+					});
+				// Refused before any state write: no TaskRecord, no backend claim.
+				expect(readTaskRecord(root, task_id).record).toBeNull();
+				expect(readBackendClaim(root) ?? null).toBeNull();
 			}
 		} finally {
 			rmSync(root, { recursive: true, force: true });
