@@ -1,0 +1,9 @@
+{
+  "contract": "assurance_kernel/task_tombstone/v2",
+  "task_id": "wcr-finalize-adr-0006-0007",
+  "lifecycle_status": "terminal",
+  "terminal_lifecycle": "done",
+  "terminal_event_id": "complete:wcr-finalize-adr-0006-0007:2026-09-15T02:07:39.937Z",
+  "final_record_hash": "sha256:f4ae1689f4a7b35499dc2fe7ea567993265ee9d10db851a41e5aa83ffd2f7119",
+  "terminalized_at": "2026-09-15T02:07:39.937Z"
+}

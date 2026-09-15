@@ -1,0 +1,87 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "wcr-finalize-adr-0006-0007",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "wcr-finalize-adr-0006-0007",
+    "goal": "Resolve docs/adr/0006-unattended-review-dispatch-authority.md and docs/adr/0007-parked-child-claim-release.md out of their 'proposed'/'Decision: Not settled' state: since the code implementing each decision already shipped in S1-S14, finalize each ADR's status to reflect the decision actually taken, matching CONTEXT.md's definition of an ADR as a settled, hard-to-reverse decision.",
+    "acceptance": [
+      {
+        "id": "RB10-1",
+        "assertion": "docs/adr/0006-unattended-review-dispatch-authority.md and docs/adr/0007-parked-child-claim-release.md each record a settled status (not 'proposed') and a 'Decision:' section naming the option actually implemented, not an open list of options.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.4.2\",\n  \"argv\": [\n    \"run\",\n    \"typecheck\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 180000,\n  \"max_output_bytes\": 131072\n}\n"
+      }
+    ],
+    "scope_hint": [
+      "docs/adr/0006-unattended-review-dispatch-authority.md",
+      "docs/adr/0007-parked-child-claim-release.md",
+      "docs/plans/wcr-finalize-adr-0006-0007.intent.json",
+      "docs/specs/archive/workflow-consolidation-remediation.spec.md",
+      "docs/specs/workflow-consolidation-remediation.spec.md"
+    ],
+    "risk": "routine",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/archive/wcr-finalize-adr-0006-0007.intent.json",
+    "content_hash": "sha256:97a14feb92843c60d73f8753ae375338bfe3970f5ea9197a5b3bb6bb1251842d"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:97a14feb92843c60d73f8753ae375338bfe3970f5ea9197a5b3bb6bb1251842d",
+  "git_base_head": "36358931becdc469daa379535093982170a80b02",
+  "attestations": [
+    {
+      "id": "approval-qa-7e197353",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:97a14feb92843c60d73f8753ae375338bfe3970f5ea9197a5b3bb6bb1251842d",
+      "diff_hash": "sha256:d1337342fe4b81374272923ce295c45610b8d2eb3444cc9790504c6623e00f58",
+      "actor_id": "deterministic-qa",
+      "summary": "all 1 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "RB10-1",
+          "status": "passed",
+          "summary": "host-attested QA: all 1 fixed verification descriptor(s) passed"
+        }
+      ]
+    }
+  ],
+  "findings": [],
+  "history": [
+    {
+      "id": "freeze_artifacts:wcr-finalize-adr-0006-0007:2026-09-15T02:07:36.790Z",
+      "at": "2026-09-15T02:07:36.790Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent and Spec frozen at docs/plans/archive/wcr-finalize-adr-0006-0007.intent.json"
+    },
+    {
+      "id": "record_approval:wcr-finalize-adr-0006-0007:2026-09-15T02:07:39.356Z",
+      "at": "2026-09-15T02:07:39.356Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-7e197353\naction_v2_sha256:c7b46ad4b2f530054442b7b10e7552d0eeb9390c34b691e5aa56f2321c623ae1",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-a5e913687fe17f88",
+        "issued_at": "2026-09-15T02:07:39.356Z",
+        "expires_at": "2026-09-15T02:17:39.356Z"
+      }
+    },
+    {
+      "id": "complete:wcr-finalize-adr-0006-0007:2026-09-15T02:07:39.937Z",
+      "at": "2026-09-15T02:07:39.937Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:aa57548d7a56aa02ba07c264558055e4087c4d7473a9f8ce6765ee76af71ac16"
+    }
+  ]
+}

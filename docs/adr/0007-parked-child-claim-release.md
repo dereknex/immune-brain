@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: accepted
 ---
 
 # Parked-Child Claim Release
@@ -20,32 +20,32 @@ stale tombstone, so releasing it is not a bookkeeping change.
 
 ## Decision
 
-Not settled. The options are:
-
 1. **Keep the claim while parked (shipped).** A parked child keeps its claim,
-   its TaskRecord, and its terminal obligations. Siblings wait. The single-owner
-   invariant, the claim owner matrix in `runtime/kernel/storage.ts`, and batch
-   settlement all stay as they are; the cost is serial throughput.
-2. **Release the claim behind a durable re-entry record.** The parked child
-   would release the claim so siblings continue, and a durable record would let
-   it re-acquire exactly the obligation it left. This needs answers this ADR
-   does not have: who owns the task while parked, how a re-acquisition avoids
+   its TaskRecord, and its terminal obligations. Siblings wait, so a batch run's
+   progress is bounded by its slowest parked child; the single-owner invariant,
+   the claim owner matrix in `runtime/kernel/storage.ts`, and batch settlement
+   all stay as they are.
+2. **No second record of the park is introduced.** A parked claim lifecycle
+   state would give the Kernel two records of the same fact — the claim and the
+   parked obligation — which is the dual-authority shape
+   `runtime/kernel/backend_claim.ts` was consolidated to remove, and a released
+   claim has to answer who owns the task while parked, how re-acquisition avoids
    racing a stale worker, and what the projection shows in between. The facts
-   that would have to survive are the Review reservation identity, the frozen
-   snapshot digest, the intent identity, and the CAS revision of the record.
-3. **Add a parked claim lifecycle state.** A third claim state would make the
-   park first-class, but it would also give the Kernel two records of the same
-   fact — the claim and the parked obligation — which is the dual-authority
-   shape `runtime/kernel/backend_claim.ts` was consolidated to remove.
+   such a design would have to carry are the Review reservation identity, the
+   frozen snapshot digest, the intent identity, and the CAS revision of the
+   record.
 
-Recommendation: keep option 1 until a batch run's wall-clock is genuinely
-bounded by parked children rather than by the work itself, and design option 2
-against the claim owner matrix before adding any state.
+Revisit this decision when a batch run's wall-clock is genuinely bounded by
+parked children rather than by the work itself, and design a release against the
+claim owner matrix before adding any state.
 
 ## Rejected Alternatives
 
-- Releasing the claim without a durable re-entry record: a task with no owner
-  and no obligation is indistinguishable from an abandoned one.
+- **Releasing the claim behind a durable re-entry record.** A task with no owner
+  and no obligation is indistinguishable from an abandoned one, and the record
+  would have to preserve exactly the four facts Decision 2 lists.
+- **Adding a parked claim lifecycle state.** Two records of the same fact, which
+  the claim owner matrix was consolidated to avoid.
 - Letting a sibling adopt a parked child's claim: that would silently transfer
   the obligation, including its Review reservation, to a different task.
 
