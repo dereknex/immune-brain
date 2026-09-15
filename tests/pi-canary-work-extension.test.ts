@@ -26,6 +26,7 @@ import { PLUGIN_VERSION } from "../plugins/immune-brain/runtime/plugin_version";
 import { createMcpRuntime } from "../plugins/immune-brain/runtime/claude/mcp_server";
 import { captureReviewManifest } from "../plugins/immune-brain/.pi-extension/pi-canary-review-bundle";
 import { snapshotDigest, type SnapshotDescriptor } from "../plugins/immune-brain/.pi-extension/pi-canary-assurance-progression.ts";
+import { readRunRowByTask, updateRunRecord, withKernelRead, withKernelTransaction } from "../plugins/immune-brain/runtime/kernel/sqlite_store";
 import {
 	TASK_RAIL_KEY,
 	USER_ATTENTION_EVENT,
@@ -145,7 +146,6 @@ function makeEnrolledRoot(): string {
 	writeFileSync(join(root, "plugins", "immune-brain", ".pi-extension", "task.ts"), "export const task = 'baseline';\n");
 	execFileSync("git", ["add", "-A"], { cwd: root });
 	execFileSync("git", ["commit", "-qm", "intent"], { cwd: root });
-	writeFileSync(join(root, ".imm/state/workspace.json"), JSON.stringify({ contract: "assurance_kernel/workspace/v1", current_working: null }, null, 2) + "\n");
 	const registry = createEnrollmentAuthorityRegistry();
 	const prep = preparePiCanary(root, { task_id: TASK, now: "2026-08-12T10:00:00.000Z" });
 	const binding: EnrollmentCapabilityBinding = {
@@ -171,10 +171,34 @@ function makeEnrolledRoot(): string {
 	return root;
 }
 
+/** The run row owns the record; fixtures read and write it through the store. */
+function storedRecordBytes(root: string): string {
+	const run = withKernelRead(root, (db) => readRunRowByTask(db, TASK));
+	if (!run) throw new Error(`fixture run ${TASK} is missing`);
+	return run.record_json;
+}
+
+/** Replace the stored record bytes through a revision-checked store write. */
+function storedRecordBytesFor(root: string, taskId: string): string {
+	const run = withKernelRead(root, (db) => readRunRowByTask(db, taskId));
+	if (!run) throw new Error(`fixture run ${taskId} is missing`);
+	return run.record_json;
+}
+
+function writeStoredRecord(root: string, bytes: string): void {
+	const run = withKernelRead(root, (db) => readRunRowByTask(db, TASK));
+	if (!run) throw new Error(`fixture run ${TASK} is missing`);
+	withKernelTransaction(root, (db) => {
+		updateRunRecord(db, run.run_id, run.revision, bytes, "2026-08-12T10:00:00.000Z");
+	});
+}
+
 function makeStaleClaimRoot(): string {
 	const root = makeEnrolledRoot();
 	const claimPath = join(root, ".imm/state/active-claim.json");
-	const claimBytes = readFileSync(claimPath, "utf8");
+	// The claim is derived: snapshot its bytes from the store projection, then
+	// settle the task and put the retired file back to model a leftover.
+	const claimBytes = `${JSON.stringify(readBackendClaim(root), null, 2)}\n`;
 	const registry = createMutationAuthorityRegistry();
 	const app = createCanaryApplication(registry);
 	const at = "2026-08-12T10:00:01.000Z";
@@ -310,12 +334,12 @@ describe("registered request_stop settlement and UI", () => {
 				const context = makeCtx(root, ui);
 				const path = join(root, `docs/plans/${TASK}.intent.json`);
 				const bytes = readFileSync(path);
-				const before = readFileSync(join(root, `.imm/state/tasks/${TASK}.json`), "utf8");
+				const before = storedRecordBytes(root);
 				if (brokenIntent === "missing") rmSync(path);
 				else writeFileSync(path, "{malformed");
 				await capturedToolFailure(tools[0].execute("stop-bad-intent", { task_id: TASK, action: { op: "request_stop" } }, undefined, undefined, context));
 				expect(ui.customCalls).toHaveLength(0);
-				expect(readFileSync(join(root, `.imm/state/tasks/${TASK}.json`), "utf8")).toBe(before);
+				expect(storedRecordBytes(root)).toBe(before);
 				writeFileSync(path, bytes);
 				const retry = await tools[0].execute("stop-retry", { task_id: TASK, action: { op: "request_stop" } }, undefined, undefined, context);
 				expect(JSON.parse(retry.content[0].text)).toMatchObject({ state: "applied", operation: "stop", lifecycle: "stopped" });
@@ -332,7 +356,7 @@ describe("registered request_stop settlement and UI", () => {
 				const context = makeCtx(root, ui, "tui", "Approve", "", approve);
 				let footerCalls = 0;
 				context.ui.setStatus = () => { footerCalls++; };
-				const before = readFileSync(join(root, `.imm/state/tasks/${TASK}.json`), "utf8");
+				const before = storedRecordBytes(root);
 				const result = await tools[0].execute("stop-ui", { task_id: TASK, action: { op: "request_stop" } }, undefined, undefined, context);
 				expect(JSON.parse(result.content[0].text)).toMatchObject(approve
 					? { state: "applied", operation: "stop", lifecycle: "stopped" }
@@ -353,7 +377,7 @@ describe("registered request_stop settlement and UI", () => {
 				if (approve) expect(lines.join("\n")).toContain("Stopped");
 				else {
 					expect(lines.join("\n")).not.toContain("Stopped");
-					expect(readFileSync(join(root, `.imm/state/tasks/${TASK}.json`), "utf8")).toBe(before);
+					expect(storedRecordBytes(root)).toBe(before);
 					expect(readBackendClaim(root)).not.toBeNull();
 				}
 			} finally { rmSync(root, { recursive: true, force: true }); }
@@ -468,7 +492,7 @@ async function capturedToolFailure(promise: Promise<unknown>): Promise<Record<st
 			const resumed = await freshParent.tools[0].execute("resume", { task_id: TASK, action: { op: "advance_assurance" } }, undefined, undefined, makeCtx(root, makeUI()));
 			expect(JSON.parse(resumed.content[0].text).state).toBe("review_ready");
 			expect(qaRuns).toBe(1);
-			const record = JSON.parse(readFileSync(join(root, `.imm/state/tasks/${TASK}.json`), "utf8"));
+			const record = JSON.parse(storedRecordBytes(root));
 			expect(record.attestations.filter((attestation: { kind: string }) => attestation.kind === "qa")).toHaveLength(1);
 		} finally { rmSync(root, { recursive: true, force: true }); }
 	});
@@ -1101,7 +1125,7 @@ async function capturedToolFailure(promise: Promise<unknown>): Promise<Record<st
 			expect(success.details).toMatchObject({ state: "recorded", operation: "revise_intent" });
 			expect(statSync(successPath).ino).toBe(successInode);
 			expect(JSON.parse(readFileSync(successPath, "utf8"))).toEqual(parseTaskIntentV1(normalizedNextIntent));
-			expect(JSON.parse(readFileSync(join(successRoot, ".imm/state/tasks", `${TASK}.json`), "utf8"))).toMatchObject({
+			expect(JSON.parse(storedRecordBytesFor(successRoot, TASK))).toMatchObject({
 				intent_snapshot: { revision: 2 },
 				intent_ref: { content_hash: canonicalIntentHash(parseTaskIntentV1(normalizedNextIntent)) },
 			});
@@ -1120,7 +1144,7 @@ async function capturedToolFailure(promise: Promise<unknown>): Promise<Record<st
 			});
 			expect(statSync(failurePath).ino).toBe(failureInode);
 			expect(readFileSync(failurePath, "utf8")).toBe(priorBytes);
-			expect(JSON.parse(readFileSync(join(failureRoot, ".imm/state/tasks", `${TASK}.json`), "utf8"))).toMatchObject({ intent_snapshot: { revision: 1 } });
+			expect(JSON.parse(storedRecordBytesFor(failureRoot, TASK))).toMatchObject({ intent_snapshot: { revision: 1 } });
 		} finally {
 			rmSync(successRoot, { recursive: true, force: true });
 			rmSync(failureRoot, { recursive: true, force: true });
@@ -1198,7 +1222,7 @@ async function capturedToolFailure(promise: Promise<unknown>): Promise<Record<st
 				makeCtx(root, makeUI()),
 			));
 			expect(result.state).toBe("review_preparation_failed");
-			const record = JSON.parse(readFileSync(join(root, `.imm/state/tasks/${TASK}.json`), "utf8"));
+			const record = JSON.parse(storedRecordBytes(root));
 			expect(record.attestations.some((attestation: { kind: string }) => attestation.kind === "qa")).toBe(true);
 		} finally { rmSync(root, { recursive: true, force: true }); }
 	});

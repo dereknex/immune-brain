@@ -59,10 +59,6 @@ beforeEach(() => {
 	writeFileSync(join(root, "docs", "specs", `${TASK}.spec.md`), "# Canary app task\n");
 	execFileSync("git", ["add", "-A"], { cwd: root });
 	execFileSync("git", ["commit", "-qm", "intent"], { cwd: root });
-	writeFileSync(join(root, ".imm/state/workspace.json"), `${JSON.stringify({
-		contract: "assurance_kernel/workspace/v1",
-		current_working: null,
-	}, null, 2)}\n`);
 	const enrollmentRegistry = createEnrollmentAuthorityRegistry();
 	const preparation = preparePiCanary(root, { task_id: TASK, now });
 	const binding: EnrollmentCapabilityBinding = {

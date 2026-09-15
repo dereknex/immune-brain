@@ -151,7 +151,6 @@ describe("pi canary lifecycle package composition", () => {
 		const root = mkdtempSync(join(tmpdir(), "p2b2-handoff-"));
 		mkdirSync(join(root, "docs", "plans"), { recursive: true });
 		mkdirSync(join(root, "docs", "specs"), { recursive: true });
-		mkdirSync(join(root, ".imm", "tasks"), { recursive: true });
 		execFileSync("git", ["init", "-q"], { cwd: root });
 		writeFileSync(
 			join(root, "docs", "plans", `${TASK}.intent.json`),
@@ -161,14 +160,6 @@ describe("pi canary lifecycle package composition", () => {
 		execFileSync("git", ["add", "-A"], { cwd: root });
 		execFileSync("git", ["commit", "-qm", "intent"], { cwd: root });
 		mkdirSync(join(root, ".imm/state"), { recursive: true });
-		writeFileSync(
-			join(root, ".imm/state/workspace.json"),
-			JSON.stringify(
-				{ contract: "assurance_kernel/workspace/v1", current_working: null },
-				null,
-				2,
-			) + "\n",
-		);
 		try {
 			const enrollmentRegistry = createEnrollmentAuthorityRegistry();
 			const prep = preparePiCanary(root, { task_id: TASK, now: "2026-08-12T10:00:00.000Z" });
@@ -230,7 +221,6 @@ describe("pi canary lifecycle package composition", () => {
 		writeFileSync(join(root, "docs", "specs", "canary-handoff-task.spec.md"), "# Canary handoff task\n");
 		execFileSync("git", ["add", "-A"], { cwd: root });
 		execFileSync("git", ["commit", "-qm", "intent"], { cwd: root });
-		writeFileSync(join(root, ".imm/state/workspace.json"), JSON.stringify({ contract: "assurance_kernel/workspace/v1", current_working: null }, null, 2) + "\n");
 		try {
 			const enrollmentTool = loadEnrollmentTool();
 			const enrollment = await enrollmentTool.execute(

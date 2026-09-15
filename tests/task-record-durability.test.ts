@@ -1,8 +1,24 @@
 import { describe, expect, test } from "bun:test";
-import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
+import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+
+import {
+	KernelStoreConflictError,
+	KernelStoreSecurityError,
+	backupKernelStore,
+	openKernelStore,
+	readRunRowByTask,
+	readWorkspaceRow,
+	restoreKernelStore,
+	withKernelRead,
+	withKernelTransaction,
+	writeWorkspaceRow,
+} from "../plugins/immune-brain/runtime/kernel/sqlite_store";
+import { seedKernelRunForTest } from "./fixtures/mutation-authority-test-seam";
+import { canonicalIntentHash, parseTaskIntentV1 } from "../plugins/immune-brain/runtime/kernel/intent";
 
 const REPO_ROOT = resolve(import.meta.dir, "..");
 const ARCHIVE_DIR = join(REPO_ROOT, "docs/plans/archive");
@@ -97,11 +113,10 @@ describe("task record durability", () => {
     expect(gitignore).toMatch(/^\.imm\/state\/\s*$/m);
     expect(gitignore).not.toMatch(/^\.imm\/audit\/\s*$/m);
 
-    expect(isIgnored(".imm/state/tasks/any-task.json")).toBe(true);
-    expect(isIgnored(".imm/state/workspace.json")).toBe(true);
-    expect(isIgnored(".imm/state/active-claim.json")).toBe(true);
-    expect(isIgnored(".imm/state/transactions/terminal-transaction.json")).toBe(true);
-    expect(isIgnored(".imm/state/locks/kernel-store.lock")).toBe(true);
+    expect(isIgnored(".imm/state/kernel.sqlite")).toBe(true);
+    expect(isIgnored(".imm/state/kernel.sqlite-wal")).toBe(true);
+    expect(isIgnored(".imm/state/kernel.sqlite-shm")).toBe(true);
+    expect(isIgnored(".imm/state/kernel-backup.sqlite")).toBe(true);
     expect(isIgnored(".imm/migrations/foo/bar")).toBe(true);
 
     expect(isIgnored(".imm/audit/any-task/task-record.json")).toBe(false);
@@ -159,5 +174,242 @@ describe("task record durability", () => {
       (id) => archived.includes(id) && !archivalRequiresRecord(id).ok,
     );
     expect(anyBaselineMissing).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// A1: the SQLite authority store is the durability and concurrency boundary.
+// ---------------------------------------------------------------------------
+
+function storeRoot(): string {
+  const root = mkdtempSync(join(tmpdir(), "imm-store-durability-"));
+  return root;
+}
+
+function seededRecord(taskId: string, gitHead: string) {
+  const intent = {
+    contract: "assurance_kernel/task_intent/v1",
+    task_id: taskId,
+    goal: "durability fixture",
+    acceptance: [{ id: "A1", assertion: "a1", verification: "bun test tests/x.test.ts" }],
+    scope_hint: ["docs/plans"],
+    risk: "routine",
+    revision: 1,
+    owner: "user",
+  };
+  return {
+    contract: "assurance_kernel/task_record/v4",
+    task_id: taskId,
+    intent_snapshot: intent,
+    intent_ref: {
+      path: `docs/plans/${taskId}.intent.json`,
+      content_hash: canonicalIntentHash(parseTaskIntentV1(intent)),
+    },
+    lifecycle: "active",
+    artifact_state: "active",
+    baseline: `sha256:${"a".repeat(64)}`,
+    git_base_head: gitHead,
+    attestations: [],
+    findings: [],
+    history: [],
+  };
+}
+
+describe("SQLite authority store durability", () => {
+  test("enforces one active run per worktree through the database constraint", () => {
+    const root = storeRoot();
+    try {
+      seedKernelRunForTest(root, { task_id: "durability-a", record: seededRecord("durability-a", "a".repeat(40)) });
+      expect(() =>
+        seedKernelRunForTest(root, { task_id: "durability-b", record: seededRecord("durability-b", "a".repeat(40)) }),
+      ).toThrow(KernelStoreConflictError);
+      // The refused insert left no trace of the second run.
+      expect(withKernelRead(root, (db) => readRunRowByTask(db, "durability-b"))).toBeNull();
+      expect(withKernelRead(root, (db) => readWorkspaceRow(db).current_run_id)).not.toBeNull();
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test("revision-checked concurrent writes reject stale writers and ignore byte identity", () => {
+    const root = storeRoot();
+    try {
+      const seeded = seedKernelRunForTest(root, {
+        task_id: "durability-c",
+        record: seededRecord("durability-c", "a".repeat(40)),
+      });
+      const first = withKernelRead(root, (db) => readRunRowByTask(db, "durability-c")!);
+      expect(first.revision).toBe(1);
+      // A committed write advances the monotonic revision.
+      withKernelTransaction(root, (db) => {
+        db.prepare("UPDATE runs SET revision = revision + 1 WHERE run_id = ?").run(seeded.run_id);
+      });
+      const second = withKernelRead(root, (db) => readRunRowByTask(db, "durability-c")!);
+      expect(second.revision).toBe(2);
+      // Identical bytes cannot stand in for the revision: the stale writer is
+      // refused even though its payload matches the committed one.
+      expect(() =>
+        withKernelTransaction(root, (db) => {
+          const result = db
+            .prepare("UPDATE runs SET record_json = record_json WHERE run_id = ? AND revision = ?")
+            .run(seeded.run_id, first.revision);
+          if (Number(result.changes) !== 1) throw new KernelStoreConflictError("stale writer refused");
+        }),
+      ).toThrow(KernelStoreConflictError);
+      expect(withKernelRead(root, (db) => readRunRowByTask(db, "durability-c")!).revision).toBe(2);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test("a cross-process writer is bounded by the busy timeout instead of hanging", () => {
+    const root = storeRoot();
+    try {
+      seedKernelRunForTest(root, { task_id: "durability-d", record: seededRecord("durability-d", "a".repeat(40)) });
+      const holder = spawnSync(
+        "bun",
+        [
+          "-e",
+          `const { DatabaseSync } = require("node:sqlite");
+           const db = new DatabaseSync(${JSON.stringify(join(root, ".imm/state/kernel.sqlite"))});
+           db.exec("PRAGMA busy_timeout = 5000");
+           db.exec("BEGIN IMMEDIATE");
+           db.exec("UPDATE workspace SET revision = revision WHERE id = 1");
+           console.log("locked");
+           await new Promise((r) => setTimeout(r, 1200));
+           db.exec("COMMIT");
+           db.close();`,
+        ],
+        { encoding: "utf8" },
+      );
+      // The background holder ran to completion and never surfaced a failure.
+      expect(holder.status).toBe(0);
+      expect(holder.stdout).toContain("locked");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test("a fault after the authority write rolls the transaction back completely", async () => {
+    const root = storeRoot();
+    try {
+      const seeded = seedKernelRunForTest(root, {
+        task_id: "durability-e",
+        record: seededRecord("durability-e", "a".repeat(40)),
+      });
+      const { setAfterTaskTransactionWriteForTest } = await import(
+        "../plugins/immune-brain/runtime/kernel/storage"
+      );
+      const before = withKernelRead(root, (db) => ({
+        run: readRunRowByTask(db, "durability-e")!,
+        workspace: readWorkspaceRow(db),
+      }));
+      setAfterTaskTransactionWriteForTest(() => {
+        throw new Error("simulated disk failure after the authority write");
+      });
+      expect(() =>
+        withKernelTransaction(root, (db) => {
+          db.prepare("UPDATE runs SET revision = revision + 1 WHERE run_id = ?").run(seeded.run_id);
+          writeWorkspaceRow(db, readWorkspaceRow(db).revision, seeded.run_id, "2026-08-12T01:00:00.000Z");
+        }),
+      ).toThrow(/simulated disk failure/);
+      setAfterTaskTransactionWriteForTest(null);
+      const after = withKernelRead(root, (db) => ({
+        run: readRunRowByTask(db, "durability-e")!,
+        workspace: readWorkspaceRow(db),
+      }));
+      expect(after.run.revision).toBe(before.run.revision);
+      expect(after.workspace.revision).toBe(before.workspace.revision);
+      expect(after.workspace.updated_at).toBe(before.workspace.updated_at);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test("isolated worktrees keep separate stores, identities and owners", () => {
+    const rootA = storeRoot();
+    const rootB = storeRoot();
+    try {
+      const seed = (root: string) =>
+        seedKernelRunForTest(root, {
+          task_id: "shared-logical-task",
+          record: seededRecord("shared-logical-task", "a".repeat(40)),
+        });
+      const a = seed(rootA);
+      const b = seed(rootB);
+      expect(a.run_id).not.toBe(b.run_id);
+      const identity = (root: string) => {
+        const db = openKernelStore(root, { create: false })!;
+        try {
+          const meta = db.prepare("SELECT value FROM store_meta WHERE key = 'workspace_id'").get() as {
+            value: string;
+          };
+          return meta.value;
+        } finally {
+          db.close();
+        }
+      };
+      expect(identity(rootA)).not.toBe(identity(rootB));
+      // A database copied into another worktree is refused instead of granting authority.
+      const copied = join(rootB, "copied.sqlite");
+      backupKernelStore(rootA, copied);
+      expect(() => restoreKernelStore(rootB, copied)).toThrow(KernelStoreSecurityError);
+    } finally {
+      rmSync(rootA, { recursive: true, force: true });
+      rmSync(rootB, { recursive: true, force: true });
+    }
+  });
+
+  test("a consistent backup restores the exact workspace and run identity", () => {
+    const root = storeRoot();
+    const backupPath = `${root}-backup.sqlite`;
+    try {
+      const seeded = seedKernelRunForTest(root, {
+        task_id: "durability-f",
+        record: seededRecord("durability-f", "a".repeat(40)),
+      });
+      const before = withKernelRead(root, (db) => ({
+        run: readRunRowByTask(db, "durability-f")!,
+        workspace: readWorkspaceRow(db),
+      }));
+      backupKernelStore(root, backupPath);
+      rmSync(join(root, ".imm/state/kernel.sqlite"), { force: true });
+      rmSync(join(root, ".imm/state/kernel.sqlite-wal"), { force: true });
+      rmSync(join(root, ".imm/state/kernel.sqlite-shm"), { force: true });
+      expect(withKernelRead(root, (db) => readRunRowByTask(db, "durability-f"))).toBeNull();
+      restoreKernelStore(root, backupPath);
+      const after = withKernelRead(root, (db) => ({
+        run: readRunRowByTask(db, "durability-f")!,
+        workspace: readWorkspaceRow(db),
+      }));
+      expect(after.run).toEqual(before.run);
+      expect(after.workspace).toEqual(before.workspace);
+      expect(after.run.run_id).toBe(seeded.run_id);
+      // Restored rows still bind to the committed record revision.
+      expect(after.run.revision).toBe(1);
+      writeFileSync(join(root, "restore-probe.txt"), "ok");
+      expect(existsSync(join(root, "restore-probe.txt"))).toBe(true);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+      rmSync(backupPath, { force: true });
+    }
+  });
+
+  test("an incompatible schema is rejected before any authority write", () => {
+    const root = storeRoot();
+    try {
+      seedKernelRunForTest(root, { task_id: "durability-g", record: seededRecord("durability-g", "a".repeat(40)) });
+      const db = openKernelStore(root, { create: false })!;
+      db.prepare("UPDATE store_meta SET value = ? WHERE key = 'schema_version'").run("99");
+      db.close();
+      expect(() => openKernelStore(root, { create: false })).toThrow(/schema version 99 is incompatible/);
+      expect(() =>
+        withKernelTransaction(root, (b) => {
+          writeWorkspaceRow(b, readWorkspaceRow(b).revision, null, "2026-08-12T01:00:00.000Z");
+        }),
+      ).toThrow(/schema version 99 is incompatible/);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 });

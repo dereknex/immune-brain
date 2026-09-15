@@ -308,6 +308,14 @@ export async function withKernelStoreLock<T>(root: string, operation: () => T): 
 	const mod = await import(/* @vite-ignore */ kernelPath("storage"));
 	return mod.withKernelStoreLock(root, operation);
 }
+export async function withKernelStoreLockForTask<T>(
+	root: string,
+	taskId: string,
+	operation: () => T,
+): Promise<T> {
+	const mod = await import(/* @vite-ignore */ kernelPath("storage"));
+	return mod.withKernelStoreLockForTask(root, taskId, operation);
+}
 export async function readBackendClaim(root: string): Promise<BackendClaim | null> {
 	const mod = await import(/* @vite-ignore */ kernelPath("backend_claim"));
 	return mod.readBackendClaim(root);

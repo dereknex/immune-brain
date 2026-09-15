@@ -13,6 +13,8 @@ export {
 	readSecureProjectFile,
 	commitTaskRecordLocked,
 	withKernelStoreLock,
+	withKernelStoreLockForTask,
+	probeKernelStore,
 	serializeWorkspace,
 	revisionForContent,
 	appendJournalEntry,

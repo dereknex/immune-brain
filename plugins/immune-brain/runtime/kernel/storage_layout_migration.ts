@@ -678,9 +678,18 @@ function removeMigrationMarker(root: string): void {
 }
 
 /**
- * Run the one-release migration. Read-only inspection first; no Git index
- * writes; the triggering mutation must stop and report `migration_completed`
- * until the affected diff is committed.
+ * Diagnose the retired file store and refuse to convert it.
+ *
+ * The authority store is now the worktree-local SQLite database, so the
+ * previous file-target conversion is retired: relocating legacy evidence into
+ * `.imm/state/*.json` would create a second authority store that no runtime
+ * reads. Converting a legacy layout is owned by the coordinated major release
+ * importer, which imports facts into SQLite and keeps the relocation helpers
+ * below for the immutable audit pair.
+ *
+ * Read-only inspection first; every non-ready layout reports its stable
+ * diagnosis, and a legacy layout that would once have migrated reports
+ * `invalid` with the importer requirement instead of writing anything.
  */
 export function migrateLegacyLayout(root: string): MigrationOutcome {
 	const initial = inspectStorageLayout(root);
@@ -697,6 +706,14 @@ export function migrateLegacyLayout(root: string): MigrationOutcome {
 			outcome: initial.layout,
 			affected_paths: [],
 			reason: initial.reason,
+		};
+	if (initial.layout === "migration_required")
+		return {
+			contract: "immune_brain/storage_layout_migration_result/v1",
+			outcome: "invalid",
+			affected_paths: initial.dirty_affected_paths,
+			reason:
+				"the retired file store must be imported into the SQLite authority store by the supported major-release importer; no file-target migration is performed",
 		};
 
 	const oldLock = resolve(root, LEGACY_TASKS_RELATIVE, ".workspace.lock");

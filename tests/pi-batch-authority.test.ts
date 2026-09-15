@@ -10,6 +10,162 @@ import {
 import type { GithubInitiativeObservation } from "../plugins/immune-brain/runtime/github_issue_tracker";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { revisionForContent } from "../plugins/immune-brain/runtime/kernel/storage";
+import { canonicalIntentHash, parseTaskIntentV1 } from "../plugins/immune-brain/runtime/kernel/intent";
+import { seedKernelRunForTest } from "./fixtures/mutation-authority-test-seam";
+import { readRunRowByTask, withKernelRead, withKernelTransaction } from "../plugins/immune-brain/runtime/kernel/sqlite_store";
+import { commitTerminalLocked, readWorkspaceStateRaw, retryStoreFollowUps, revisionForContent, serializeWorkspace } from "../plugins/immune-brain/runtime/kernel/storage";
+
+/** Claim the workspace for a fixture task through the store. */
+/** Make the live owner run look foreign to an approved batch lineage. */
+function makeOwnerForeignForTest(root: string, taskId: string): void {
+	const run = withKernelRead(root, (db) => readRunRowByTask(db, taskId));
+	if (!run) throw new Error(`fixture run ${taskId} is missing`);
+	const record = JSON.parse(run.record_json) as Record<string, unknown>;
+	record.git_base_head = "b".repeat(40);
+	withKernelTransaction(root, (db) => {
+		db.prepare("UPDATE runs SET record_json = ?, enrollment_event_id = ? WHERE run_id = ?").run(
+			`${JSON.stringify(record, null, 2)}\n`,
+			`foreign-${taskId}`,
+			run.run_id,
+		);
+	});
+}
+
+/**
+ * Replace the live owner with an unproven claim: the run mirrors the Kernel's
+ * event-id derivation and task identity, but its enrollment event was created
+ * after the batch's last durable write, so the batch cannot adopt it.
+ */
+function forgeUnprovenClaimForTest(
+	root: string,
+	taskId: string,
+	enrollmentEventId: string,
+	createdAt: string,
+): void {
+	const run = withKernelRead(root, (db) => readRunRowByTask(db, taskId));
+	if (!run) throw new Error(`fixture run ${taskId} is missing`);
+	withKernelTransaction(root, (db) => {
+		db.prepare("UPDATE runs SET enrollment_event_id = ?, updated_at = ? WHERE run_id = ?").run(
+			enrollmentEventId,
+			createdAt,
+			run.run_id,
+		);
+	});
+}
+
+/** Settle the live owner into its terminal audit pair through the store. */
+function settleOwnerForTest(root: string, taskId: string): void {
+	const run = withKernelRead(root, (db) => readRunRowByTask(db, taskId));
+	if (!run) throw new Error(`fixture run ${taskId} is missing`);
+	const record = JSON.parse(run.record_json) as Record<string, unknown>;
+	record.lifecycle = "done";
+	record.artifact_state = "frozen";
+	record.intent_ref = {
+		...((record.intent_ref as Record<string, unknown>) ?? {}),
+		path: `docs/plans/archive/${taskId}.intent.json`,
+	};
+	const terminalBytes = `${JSON.stringify(record, null, 2)}\n`;
+	const tombstone = {
+		contract: "assurance_kernel/task_tombstone/v2",
+		task_id: taskId,
+		lifecycle_status: "terminal",
+		terminal_lifecycle: "done",
+		terminal_event_id: `complete:${taskId}:2026-08-12T10:00:04.000Z`,
+		final_record_hash: revisionForContent(terminalBytes),
+		terminalized_at: "2026-08-12T10:00:04.000Z",
+	};
+	const workspace = readWorkspaceStateRaw(root);
+	commitTerminalLocked(
+		root,
+		taskId,
+		{
+			contract: "assurance_kernel/workspace_transaction/v2",
+			task_id: taskId,
+			expected_record_hash: revisionForContent(run.record_json),
+			next_record_content: terminalBytes,
+			expected_workspace_hash: workspace.revision,
+			next_workspace_content: serializeWorkspace({
+				contract: "assurance_kernel/workspace/v1",
+				current_working: null,
+			}),
+		},
+		tombstone as never,
+	);
+	retryStoreFollowUps(root);
+}
+
+function claimWorkspaceForTest(root: string, taskId: string): void {
+	const intent = {
+		contract: "assurance_kernel/task_intent/v1",
+		task_id: taskId,
+		goal: "drift fixture",
+		acceptance: [{ id: "A1", assertion: "a1", verification: "bun test tests/x.test.ts" }],
+		scope_hint: ["docs/plans"],
+		risk: "routine" as const,
+		revision: 1,
+		owner: "user",
+	};
+	seedKernelRunForTest(root, {
+		task_id: taskId,
+		record: {
+			contract: "assurance_kernel/task_record/v4",
+			task_id: taskId,
+			intent_snapshot: intent,
+			intent_ref: {
+				path: `docs/plans/${taskId}.intent.json`,
+				content_hash: canonicalIntentHash(parseTaskIntentV1(intent)),
+			},
+			lifecycle: "active",
+			artifact_state: "active",
+			baseline: `sha256:${"a".repeat(64)}`,
+			git_base_head: "a".repeat(40),
+			attestations: [],
+			findings: [],
+			history: [],
+		},
+	});
+}
+
+/** Release the workspace: the owner settles and no active run remains. */
+function releaseWorkspaceForTest(root: string): void {
+	withKernelTransaction(root, (db) => {
+		db.prepare("UPDATE workspace SET current_run_id = NULL WHERE id = 1").run();
+		db.prepare("DELETE FROM runs WHERE state = 'active'").run();
+	});
+}
+
+/** Seed one active run: ownership is derived, so the claim is real state. */
+function seedInFlightOwner(root: string, taskId: string): void {
+	const intent = {
+		contract: "assurance_kernel/task_intent/v1",
+		task_id: taskId,
+		goal: "in-flight fixture",
+		acceptance: [{ id: "A1", assertion: "a1", verification: "bun test tests/x.test.ts" }],
+		scope_hint: ["docs/plans"],
+		risk: "routine" as const,
+		revision: 1,
+		owner: "user",
+	};
+	seedKernelRunForTest(root, {
+		task_id: taskId,
+		record: {
+			contract: "assurance_kernel/task_record/v4",
+			task_id: taskId,
+			intent_snapshot: intent,
+			intent_ref: {
+				path: `docs/plans/${taskId}.intent.json`,
+				content_hash: canonicalIntentHash(parseTaskIntentV1(intent)),
+			},
+			lifecycle: "active",
+			artifact_state: "active",
+			baseline: `sha256:${"a".repeat(64)}`,
+			git_base_head: "a".repeat(40),
+			attestations: [],
+			findings: [],
+			history: [],
+		},
+	});
+}
 
 function initGitRepo(root: string): string {
 	execFileSync("git", ["init", "-q", "-b", "main"], { cwd: root });
@@ -277,10 +433,7 @@ describe("acc-pi-batch-gate", () => {
 
 	it("active workspace claim blocks execution with state: blocked and zero writes", async () => {
 		const fixture = createBatchFixture("active-claim");
-		writeFileSync(
-			join(fixture.root, ".imm", "state", "workspace.json"),
-			JSON.stringify({ contract: "assurance_kernel/workspace/v1", current_working: "in-flight-task" }),
-		);
+		seedInFlightOwner(fixture.root, "in-flight-task");
 		let dialogOpened = false;
 
 		const result = await executePiUnattendedBatch({
@@ -389,12 +542,7 @@ describe("acc-pi-batch-gate", () => {
 			batchKernel: {
 				advanceTask: async () => {
 					// Clear task claim as each child completes
-					writeFileSync(
-						join(fixture.root, ".imm", "state", "workspace.json"),
-						JSON.stringify({ contract: "assurance_kernel/workspace/v1", current_working: null }),
-					);
-					const claimPath = join(fixture.root, ".imm", "state", "active-claim.json");
-					if (existsSync(claimPath)) rmSync(claimPath, { force: true });
+					releaseWorkspaceForTest(fixture.root);
 					return { state: "completed" };
 				},
 				commitChild: async () => {
@@ -429,12 +577,7 @@ describe("acc-pi-batch-gate", () => {
 			batchKernel: {
 				advanceTask: async () => {
 					// Clear task claim as each child completes
-					writeFileSync(
-						join(fixture.root, ".imm", "state", "workspace.json"),
-						JSON.stringify({ contract: "assurance_kernel/workspace/v1", current_working: null }),
-					);
-					const claimPath = join(fixture.root, ".imm", "state", "active-claim.json");
-					if (existsSync(claimPath)) rmSync(claimPath, { force: true });
+					releaseWorkspaceForTest(fixture.root);
 					return { state: "completed" };
 				},
 				commitChild: async () => {
@@ -491,38 +634,25 @@ describe("acc-pi-batch-gate", () => {
 		const fixture = createBatchFixture("proj-scope");
 		const { projectAssuranceForTask } = await import("../plugins/immune-brain/.pi-extension/runtime-stub");
 
-		// Create a realistic v4 TaskRecord
-		mkdirSync(join(fixture.root, ".imm", "state", "tasks"), { recursive: true });
+		// The enrolled record lives in the store; the workspace itself stays free.
 		const { readTaskIntent } = await import("../plugins/immune-brain/.pi-extension/runtime-stub");
 		const read = await readTaskIntent(fixture.root, "proj-scope-c1", "docs/plans/proj-scope-c1.intent.json");
-		const record = {
-			contract: "assurance_kernel/task_record/v4",
+		seedKernelRunForTest(fixture.root, {
 			task_id: "proj-scope-c1",
-			git_base_head: fixture.head,
-			baseline: `sha256:${"0".repeat(64)}`,
-			intent_snapshot: read.intent,
-			intent_ref: { path: "docs/plans/proj-scope-c1.intent.json", content_hash: read.content_hash },
-			lifecycle: "active",
-			artifact_state: "active",
-			attestations: [],
-			findings: [],
-			history: [],
-		};
-		writeFileSync(join(fixture.root, ".imm", "state", "tasks", "proj-scope-c1.json"), JSON.stringify(record));
-		writeFileSync(
-			join(fixture.root, ".imm", "state", "active-claim.json"),
-			JSON.stringify({
-				contract: "assurance_kernel/backend_claim/v2",
-				backend: "kernel",
+			record: {
+				contract: "assurance_kernel/task_record/v4",
 				task_id: "proj-scope-c1",
-				intent_revision: 1,
-				intent_content_hash: read.content_hash,
-				enrollment_event_id: "event-1",
-				lifecycle_status: "active",
-				created_at: new Date().toISOString(),
-				updated_at: new Date().toISOString(),
-			}),
-		);
+				git_base_head: fixture.head,
+				baseline: `sha256:${"0".repeat(64)}`,
+				intent_snapshot: read.intent,
+				intent_ref: { path: "docs/plans/proj-scope-c1.intent.json", content_hash: read.content_hash },
+				lifecycle: "active",
+				artifact_state: "active",
+				attestations: [],
+				findings: [],
+				history: [],
+			},
+		});
 
 		const proj = await projectAssuranceForTask(fixture.root, "proj-scope-c1");
 		expect(proj.error).toBeNull();
@@ -596,12 +726,7 @@ describe("acc-pi-batch-gate", () => {
 			readInitiative: async () => fixture.observation,
 			batchKernel: {
 				advanceTask: async () => {
-					writeFileSync(
-						join(fixture.root, ".imm", "state", "workspace.json"),
-						JSON.stringify({ contract: "assurance_kernel/workspace/v1", current_working: null }),
-					);
-					const claimPath = join(fixture.root, ".imm", "state", "active-claim.json");
-					if (existsSync(claimPath)) rmSync(claimPath, { force: true });
+					releaseWorkspaceForTest(fixture.root);
 					return { state: "completed" };
 				},
 				commitChild: async () => {
@@ -680,12 +805,7 @@ describe("acc-pi-batch-gate", () => {
 			readInitiative: async () => fixture.observation,
 			batchKernel: {
 				advanceTask: async () => {
-					writeFileSync(
-						join(fixture.root, ".imm", "state", "workspace.json"),
-						JSON.stringify({ contract: "assurance_kernel/workspace/v1", current_working: null }),
-					);
-					const claimPath = join(fixture.root, ".imm", "state", "active-claim.json");
-					if (existsSync(claimPath)) rmSync(claimPath, { force: true });
+					releaseWorkspaceForTest(fixture.root);
 					return { state: "completed" };
 				},
 				commitChild: async () => {
@@ -751,25 +871,9 @@ describe("acc-pi-batch-gate", () => {
 			writeFileSync(child1RecordPath, JSON.stringify(record, null, 2) + "\n");
 		}
 
-		// Ensure active claim is set on the batch branch at the exact same HEAD
-		writeFileSync(
-			join(fixture.root, ".imm", "state", "workspace.json"),
-			JSON.stringify({ contract: "assurance_kernel/workspace/v1", current_working: "foreign-claim-c1" }),
-		);
-		writeFileSync(
-			join(fixture.root, ".imm", "state", "active-claim.json"),
-			JSON.stringify({
-				contract: "assurance_kernel/backend_claim/v2",
-				backend: "kernel",
-				task_id: "foreign-claim-c1",
-				intent_revision: 1,
-				intent_content_hash: `sha256:${"0".repeat(64)}`,
-				enrollment_event_id: "event-foreign",
-				lifecycle_status: "active",
-				created_at: new Date().toISOString(),
-				updated_at: new Date().toISOString(),
-			}),
-		);
+		// Make the live owner foreign to this batch: its recorded lineage is not
+		// any head the approved batch produced.
+		makeOwnerForeignForTest(fixture.root, "foreign-claim-c1");
 
 		const batchStateBefore = readFileSync(batchStatePath, "utf8");
 		const headBefore = execFileSync("git", ["rev-parse", "HEAD"], { cwd: fixture.root, encoding: "utf8" }).trim();
@@ -821,26 +925,16 @@ describe("acc-pi-batch-gate", () => {
 		expect(result1.state).toBe("started");
 
 		const batchStatePath = join(fixture.root, ".imm", "state", "batches", `${result1.batch_id}.json`);
-		const recordPath = join(fixture.root, ".imm", "state", "tasks", "unproven-claim-c1.json");
-		const record = JSON.parse(readFileSync(recordPath, "utf8"));
 
 		// Forge an independent claim that mirrors the Kernel's event-id derivation and
 		// the task identity, but was created after the batch's last durable write.
 		const batchUpdatedAt = JSON.parse(readFileSync(batchStatePath, "utf8")).updated_at;
 		const foreignCreatedAt = new Date(Date.parse(batchUpdatedAt) + 1000).toISOString();
-		writeFileSync(
-			join(fixture.root, ".imm", "state", "active-claim.json"),
-			JSON.stringify({
-				contract: "assurance_kernel/backend_claim/v2",
-				backend: "kernel",
-				task_id: "unproven-claim-c1",
-				intent_revision: record.intent_snapshot.revision,
-				intent_content_hash: record.intent_ref.content_hash,
-				enrollment_event_id: `enroll-unproven-claim-c1-${foreignCreatedAt}`,
-				lifecycle_status: "active",
-				created_at: foreignCreatedAt,
-				updated_at: foreignCreatedAt,
-			}),
+		forgeUnprovenClaimForTest(
+			fixture.root,
+			"unproven-claim-c1",
+			`enroll-unproven-claim-c1-${foreignCreatedAt}`,
+			foreignCreatedAt,
 		);
 
 		const headBefore = execFileSync("git", ["rev-parse", "HEAD"], { cwd: fixture.root, encoding: "utf8" }).trim();
@@ -1110,35 +1204,11 @@ describe("settled-child resume preflight", () => {
 		});
 		expect(first.state).toBe("started");
 
-		const record = JSON.parse(readFileSync(join(fixture.root, ".imm", "state", "tasks", "settled-scope-c1.json"), "utf8"));
-
-		// The Kernel settles the child before the batch commits it, and settlement
-		// clears the live state record: only the terminal audit pair remains.
-		const terminal = { ...record, lifecycle: "done", artifact_state: "frozen" };
-		const terminalBytes = `${JSON.stringify(terminal, null, 2)}\n`;
-		mkdirSync(join(fixture.root, ".imm", "audit", "settled-scope-c1"), { recursive: true });
-		writeFileSync(join(fixture.root, ".imm", "audit", "settled-scope-c1", "task-record.json"), terminalBytes);
-		writeFileSync(
-			join(fixture.root, ".imm", "audit", "settled-scope-c1", "terminal-proof.json"),
-			`${JSON.stringify({
-				contract: "assurance_kernel/task_tombstone/v2",
-				task_id: "settled-scope-c1",
-				lifecycle_status: "terminal",
-				terminal_lifecycle: "done",
-				terminal_event_id: `complete:settled-scope-c1:${new Date().toISOString()}`,
-				final_record_hash: revisionForContent(terminalBytes),
-				terminalized_at: new Date().toISOString(),
-			}, null, 2)}\n`,
-		);
-		rmSync(join(fixture.root, ".imm", "state", "tasks", "settled-scope-c1.json"), { force: true });
-		// Terminal evidence is Git-tracked, so settlement stages the audit pair.
+		// The Kernel settles the child before the batch commits it: the terminal run
+		// replaces the active owner, and only the immutable audit pair remains as
+		// tracked evidence (staged, because terminal evidence is Git-tracked).
+		settleOwnerForTest(fixture.root, "settled-scope-c1");
 		execFileSync("git", ["add", ".imm/audit"], { cwd: fixture.root });
-		// Settlement also releases the child's workspace claim.
-		writeFileSync(
-			join(fixture.root, ".imm", "state", "workspace.json"),
-			JSON.stringify({ contract: "assurance_kernel/workspace/v1", current_working: null }),
-		);
-		rmSync(join(fixture.root, ".imm", "state", "active-claim.json"), { force: true });
 
 		const batchPath = join(fixture.root, ".imm", "state", "batches", `${first.batch_id}.json`);
 		const batchRecord = JSON.parse(readFileSync(batchPath, "utf8"));
@@ -1216,12 +1286,7 @@ describe("batch authorization reuse (ADR-0005 Decision 1)", () => {
 			readInitiative: async () => fixture.observation,
 			batchKernel: {
 				advanceTask: async () => {
-					writeFileSync(
-						join(fixture.root, ".imm", "state", "workspace.json"),
-						JSON.stringify({ contract: "assurance_kernel/workspace/v1", current_working: null }),
-					);
-					const claimPath = join(fixture.root, ".imm", "state", "active-claim.json");
-					if (existsSync(claimPath)) rmSync(claimPath, { force: true });
+					releaseWorkspaceForTest(fixture.root);
 					return { state: "completed" };
 				},
 				commitChild: async () => {
@@ -1252,6 +1317,7 @@ describe("batch authorization reuse (ADR-0005 Decision 1)", () => {
 			return "accept";
 		});
 
+		if (resumed.state !== "started") console.log("BLOCKED2:", JSON.stringify(resumed).slice(0, 400));
 		expect(gates).toEqual([]);
 		expect(resumed.state).toBe("started");
 		expect(resumed.batch_id).toBe(batchId);

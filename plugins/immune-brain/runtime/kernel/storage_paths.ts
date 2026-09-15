@@ -14,16 +14,19 @@
  * migration_uncommitted | recovery_required | invalid.
  */
 import { spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import {
 	constants as FS_CONSTANTS,
 	lstatSync,
 	openSync,
 	readFileSync,
+	realpathSync,
 	readdirSync,
 	closeSync,
 	fstatSync,
 } from "node:fs";
 import { resolve } from "node:path";
+import { DatabaseSync } from "node:sqlite";
 
 // ---------------------------------------------------------------------------
 // New permanent layout paths
@@ -36,6 +39,36 @@ export const JOURNAL_RELATIVE = ".imm/state/journal.jsonl";
 export const MIGRATION_MARKER_RELATIVE =
 	".imm/state/transactions/storage-layout-migration.json";
 
+/** The single worktree authority database (never committed; `.imm/state` is ignored). */
+export const KERNEL_DB_RELATIVE = ".imm/state/kernel.sqlite";
+export const KERNEL_STORE_SCHEMA_VERSION = 1;
+export const KERNEL_DB_SIDECARS = [
+	".imm/state/kernel.sqlite-wal",
+	".imm/state/kernel.sqlite-shm",
+] as const;
+
+/**
+ * The retired file-store authority layout (`.imm/state/*.json`) written by the
+ * previous runtime. Recognized only so inspection can require the SQLite
+ * importer; no current runtime reads or writes mutable authority here.
+ */
+export const FILE_STORE_CLAIM_RELATIVE = ".imm/state/active-claim.json";
+export const FILE_STORE_WORKSPACE_RELATIVE = ".imm/state/workspace.json";
+export const FILE_STORE_TASKS_RELATIVE = ".imm/state/tasks";
+export const FILE_STORE_TRANSACTIONS_RELATIVE = ".imm/state/transactions";
+export const FILE_STORE_LOCKS_RELATIVE = ".imm/state/locks";
+/** Session observation receipts: inert output, never authority. */
+export const FILE_STORE_OBSERVATIONS_RELATIVE = ".imm/state/observations";
+
+/** Inert file-store entries that carry no authority after the cutover. */
+export const FILE_STORE_INERT_FILES = [
+	".imm/state/journal.jsonl",
+	".imm/state/locks/kernel-store.lock",
+] as const;
+
+/** A file-store migration manifest left by the retired migrator. */
+export const FILE_STORE_MIGRATION_MARKER = MIGRATION_MARKER_RELATIVE;
+
 /* Transaction marker file names under `.imm/state/transactions/`. */
 export const KERNEL_TRANSACTION_MARKERS = [
 	"workspace-transaction-v2.json",
@@ -44,6 +77,19 @@ export const KERNEL_TRANSACTION_MARKERS = [
 	"terminal-transaction.json",
 	"authority-repair-transaction.json",
 ] as const;
+
+export function stateDatabasePath(): string {
+	return KERNEL_DB_RELATIVE;
+}
+
+/**
+ * Worktree binding digest: a store is bound to the canonical worktree path it
+ * was created in, so a database copied from another worktree is refused
+ * instead of granting authority.
+ */
+export function kernelStoreBindingDigest(canonicalRoot: string, workspaceId: string): string {
+	return createHash("sha256").update(`${canonicalRoot}\0${workspaceId}`).digest("hex");
+}
 
 function validateTaskId(taskId: string): void {
 	if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(taskId))
@@ -352,17 +398,289 @@ function gitDirtyAffected(root: string): string[] | null {
 	return [...dirty].sort();
 }
 
+/**
+ * A pending transaction under the retired file store: a Kernel transaction
+ * marker needing the runtime that wrote it, or an interrupted file-target
+ * migration manifest. Either way the next mutation must stop and diagnose.
+ */
 function pendingNewMarker(root: string): string | null {
-	const entries = listEntries(root, ".imm/state/transactions");
+	const entries = listEntries(root, FILE_STORE_TRANSACTIONS_RELATIVE);
 	if (!entries) return null;
-	for (const entry of entries) {
-		if (entry === "storage-layout-migration.json") return `.imm/state/transactions/${entry}`;
-		if ((KERNEL_TRANSACTION_MARKERS as readonly string[]).includes(entry))
-			return `.imm/state/transactions/${entry}`;
+	const first = entries.find((entry) => entry.endsWith(".json"));
+	return first ? `${FILE_STORE_TRANSACTIONS_RELATIVE}/${first}` : null;
+}
+
+/** Read one `store_meta` value without opening the runtime store module. */
+function readStoreMeta(db: DatabaseSync, key: string): string | null {
+	const row = db.prepare("SELECT value FROM store_meta WHERE key = ?").get(key) as
+		| { value?: unknown }
+		| undefined;
+	return row && typeof row.value === "string" ? row.value : null;
+}
+
+/**
+ * SQLite authority store facts: presence plus schema/binding validity. The
+ * inspector stays read-only and never repairs; an incompatible or foreign
+ * store reports `invalid` so no worktree silently mixes authority stores.
+ */
+function readKernelStoreFacts(root: string): { present: boolean; reason: string | null } {
+	const status = entryStatus(root, KERNEL_DB_RELATIVE);
+	if (status === "absent") return { present: false, reason: null };
+	if (status !== "file")
+		return { present: true, reason: `${KERNEL_DB_RELATIVE} is ${status}` };
+	let db: DatabaseSync | null = null;
+	try {
+		db = new DatabaseSync(resolve(root, KERNEL_DB_RELATIVE), { readOnly: true });
+		const version = readStoreMeta(db, "schema_version");
+		if (version !== String(KERNEL_STORE_SCHEMA_VERSION))
+			return {
+				present: true,
+				reason: `kernel store schema version ${version ?? "missing"} is incompatible with this runtime (${KERNEL_STORE_SCHEMA_VERSION})`,
+			};
+		const workspaceId = readStoreMeta(db, "workspace_id");
+		const binding = readStoreMeta(db, "workspace_binding");
+		if (!workspaceId || !binding)
+			return { present: true, reason: "kernel store identity metadata is missing" };
+		if (kernelStoreBindingDigest(realpathSync(root), workspaceId) !== binding)
+			return {
+				present: true,
+				reason: "kernel store belongs to a different worktree; restore it into its binding worktree or run the supported rebinding",
+			};
+		return { present: true, reason: null };
+	} catch (error) {
+		return {
+			present: true,
+			reason: `kernel store is unreadable: ${error instanceof Error ? error.message : String(error)}`,
+		};
+	} finally {
+		try {
+			db?.close();
+		} catch {
+			// The connection is already closed.
+		}
 	}
-	return entries.find((entry) => entry.endsWith(".json"))
-		? `.imm/state/transactions/${entries.find((entry) => entry.endsWith(".json")) ?? ""}`
-		: null;
+}
+
+interface FileStoreFacts {
+	present: boolean;
+	blocked_active: boolean;
+	pending_marker: string | null;
+	fail_reason: string | null;
+}
+
+const KERNEL_DB_ENTRIES = ["kernel.sqlite", "kernel.sqlite-wal", "kernel.sqlite-shm"];
+
+/**
+ * Facts about the retired `.imm/state/*.json` file store. Its authority must be
+ * imported through the supported migration before this runtime may mutate the
+ * worktree; the inspector only describes what it finds.
+ */
+function inspectFileStoreLayout(root: string): FileStoreFacts {
+	const facts: FileStoreFacts = {
+		present: false,
+		blocked_active: false,
+		pending_marker: null,
+		fail_reason: null,
+	};
+	try {
+		const stateStatus = entryStatus(root, STATE_RELATIVE);
+		if (stateStatus === "symlink" || stateStatus === "other")
+			throw new Error(`${STATE_RELATIVE} is ${stateStatus}`);
+		if (stateStatus !== "directory") return facts;
+		for (const entry of listEntries(root, STATE_RELATIVE) ?? []) {
+			const full = `${STATE_RELATIVE}/${entry}`;
+			const status = entryStatus(root, full);
+			if (status === "symlink" || status === "other")
+				throw new Error(`${full} is ${status}`);
+			if (KERNEL_DB_ENTRIES.includes(entry)) {
+				if (status !== "file") throw new Error(`${full} is not a regular file`);
+				continue;
+			}
+			if (status === "directory") {
+				if (
+					![
+						FILE_STORE_TASKS_RELATIVE,
+						FILE_STORE_TRANSACTIONS_RELATIVE,
+						FILE_STORE_LOCKS_RELATIVE,
+						FILE_STORE_OBSERVATIONS_RELATIVE,
+					].includes(full)
+				)
+					throw new Error(`unknown directory under ${STATE_RELATIVE}: ${entry}`);
+				continue;
+			}
+			if ((FILE_STORE_INERT_FILES as readonly string[]).includes(full)) continue;
+			facts.present = true;
+			if (full === FILE_STORE_CLAIM_RELATIVE) {
+				// The file-store claim is the workspace owner regardless of contents.
+				facts.blocked_active = true;
+				continue;
+			}
+			if (full === FILE_STORE_WORKSPACE_RELATIVE) {
+				const owner = readJsonField(root, full, "current_working");
+				if (typeof owner === "string" && owner.length > 0) facts.blocked_active = true;
+				continue;
+			}
+			throw new Error(`unknown file under ${STATE_RELATIVE}: ${entry}`);
+		}
+		for (const entry of listEntries(root, FILE_STORE_TASKS_RELATIVE) ?? []) {
+			const full = `${FILE_STORE_TASKS_RELATIVE}/${entry}`;
+			const status = entryStatus(root, full);
+			if (status === "symlink" || status === "other")
+				throw new Error(`${full} is ${status}`);
+			if (status !== "file") throw new Error(`${full} is not a regular file`);
+			if (!entry.endsWith(".json"))
+				throw new Error(`unknown file under ${FILE_STORE_TASKS_RELATIVE}: ${entry}`);
+			facts.present = true;
+			const lifecycle =
+				readJsonField(root, full, "lifecycle") ?? readJsonField(root, full, "phase");
+			if (lifecycle !== "done" && lifecycle !== "stopped") facts.blocked_active = true;
+		}
+		const marker = pendingNewMarker(root);
+		if (marker) {
+			facts.present = true;
+			facts.pending_marker = marker;
+		}
+	} catch (error) {
+		facts.fail_reason = error instanceof Error ? error.message : String(error);
+	}
+	return facts;
+}
+
+export function inspectStorageLayout(root: string): StorageLayoutInspection {
+	const rootFailure = assertNewLayoutRootsSafe(root);
+	if (rootFailure) {
+		return {
+			contract: "assurance_kernel/storage_layout_inspection/v1",
+			layout: "invalid",
+			old_authority_present: false,
+			pending_marker: null,
+			dirty_affected_paths: [],
+			reason: rootFailure,
+		};
+	}
+	const oldFacts = inspectOldLayout(root);
+	if (oldFacts.fail_reason) {
+		return {
+			contract: "assurance_kernel/storage_layout_inspection/v1",
+			layout: "invalid",
+			old_authority_present: oldFacts.old_authority_present,
+			pending_marker: null,
+			dirty_affected_paths: [],
+			reason: oldFacts.fail_reason,
+		};
+	}
+	const fileFacts = inspectFileStoreLayout(root);
+	if (fileFacts.fail_reason) {
+		return {
+			contract: "assurance_kernel/storage_layout_inspection/v1",
+			layout: "invalid",
+			old_authority_present: fileFacts.present,
+			pending_marker: null,
+			dirty_affected_paths: [],
+			reason: fileFacts.fail_reason,
+		};
+	}
+
+	const store = readKernelStoreFacts(root);
+	const auditPresent = entryStatus(root, AUDIT_RELATIVE) !== "absent";
+	const dirty = gitDirtyAffected(root);
+	const legacyAuthority = oldFacts.old_authority_present || fileFacts.present;
+
+	if (store.present) {
+		if (store.reason) {
+			return {
+				contract: "assurance_kernel/storage_layout_inspection/v1",
+				layout: "invalid",
+				old_authority_present: legacyAuthority,
+				pending_marker: null,
+				dirty_affected_paths: dirty ?? [],
+				reason: store.reason,
+			};
+		}
+		if (legacyAuthority) {
+			return {
+				contract: "assurance_kernel/storage_layout_inspection/v1",
+				layout: "invalid",
+				old_authority_present: true,
+				pending_marker: fileFacts.pending_marker,
+				dirty_affected_paths: dirty ?? [],
+				reason:
+					"both a SQLite authority store and retired file-store authority exist; import or remove the retired store with the supported migration before mutating",
+			};
+		}
+		return {
+			contract: "assurance_kernel/storage_layout_inspection/v1",
+			layout: "ready",
+			old_authority_present: false,
+			pending_marker: null,
+			dirty_affected_paths: [],
+			reason: null,
+		};
+	}
+
+	if (fileFacts.pending_marker || oldFacts.pending_marker) {
+		return {
+			contract: "assurance_kernel/storage_layout_inspection/v1",
+			layout: "recovery_required",
+			old_authority_present: legacyAuthority,
+			pending_marker: fileFacts.pending_marker ?? oldFacts.pending_marker,
+			dirty_affected_paths: dirty ?? [],
+			reason:
+				"a retired transaction marker exists; settle it with the runtime that wrote it before importing authority into SQLite",
+		};
+	}
+	if (fileFacts.blocked_active || oldFacts.blocked_active) {
+		return {
+			contract: "assurance_kernel/storage_layout_inspection/v1",
+			layout: "migration_blocked_active",
+			old_authority_present: true,
+			pending_marker: null,
+			dirty_affected_paths: dirty ?? [],
+			reason:
+				"an active claim, nonterminal TaskRecord or non-null workspace owner exists in the retired file store; settle or stop it with the prior runtime first",
+		};
+	}
+	if (legacyAuthority) {
+		return {
+			contract: "assurance_kernel/storage_layout_inspection/v1",
+			layout: "migration_required",
+			old_authority_present: true,
+			pending_marker: null,
+			dirty_affected_paths: dirty ?? [],
+			reason:
+				"an owner-free retired file store exists; it must be imported into the SQLite authority store by the supported migration",
+		};
+	}
+	if (dirty !== null && dirty.length > 0) {
+		// Cleanup-only migrations (deleted templates, MEMORY.md, owner-free
+		// workspace) still leave an affected diff that must be committed first.
+		return {
+			contract: "assurance_kernel/storage_layout_inspection/v1",
+			layout: "migration_uncommitted",
+			old_authority_present: false,
+			pending_marker: null,
+			dirty_affected_paths: dirty,
+			reason: "affected audit or retired legacy paths differ from HEAD; commit the diff before any managed mutation",
+		};
+	}
+	if (auditPresent && dirty === null) {
+		return {
+			contract: "assurance_kernel/storage_layout_inspection/v1",
+			layout: "invalid",
+			old_authority_present: false,
+			pending_marker: null,
+			dirty_affected_paths: [],
+			reason: "audit evidence exists but the Git workspace is unavailable; committed state cannot be verified",
+		};
+	}
+	return {
+		contract: "assurance_kernel/storage_layout_inspection/v1",
+		layout: "ready",
+		old_authority_present: false,
+		pending_marker: null,
+		dirty_affected_paths: [],
+		reason: null,
+	};
 }
 
 /** Validate that the new-layout roots are not symlinked outside the
@@ -394,95 +712,4 @@ function assertNewLayoutRootsSafe(root: string): string | null {
 		}
 	}
 	return null;
-}
-
-export function inspectStorageLayout(root: string): StorageLayoutInspection {
-	const rootFailure = assertNewLayoutRootsSafe(root);
-	if (rootFailure) {
-		return {
-			contract: "assurance_kernel/storage_layout_inspection/v1",
-			layout: "invalid",
-			old_authority_present: false,
-			pending_marker: null,
-			dirty_affected_paths: [],
-			reason: rootFailure,
-		};
-	}
-	const oldFacts = inspectOldLayout(root);
-	if (oldFacts.fail_reason) {
-		return {
-			contract: "assurance_kernel/storage_layout_inspection/v1",
-			layout: "invalid",
-			old_authority_present: oldFacts.old_authority_present,
-			pending_marker: null,
-			dirty_affected_paths: [],
-			reason: oldFacts.fail_reason,
-		};
-	}
-
-	const newMarker = pendingNewMarker(root);
-	const auditPresent = entryStatus(root, AUDIT_RELATIVE) !== "absent";
-	const dirty = gitDirtyAffected(root);
-
-	if (oldFacts.pending_marker || newMarker) {
-		return {
-			contract: "assurance_kernel/storage_layout_inspection/v1",
-			layout: "recovery_required",
-			old_authority_present: oldFacts.old_authority_present,
-			pending_marker: oldFacts.pending_marker ?? newMarker,
-			dirty_affected_paths: dirty ?? [],
-			reason: "a recoverable migration or Kernel transaction marker exists; mutation must recover it under lock first",
-		};
-	}
-	if (oldFacts.blocked_active) {
-		return {
-			contract: "assurance_kernel/storage_layout_inspection/v1",
-			layout: "migration_blocked_active",
-			old_authority_present: true,
-			pending_marker: null,
-			dirty_affected_paths: dirty ?? [],
-			reason: "an active claim, nonterminal TaskRecord, non-null workspace owner, or non-idle v3 Ledger exists in the old layout; settle or stop it with the prior runtime first",
-		};
-	}
-	if (oldFacts.old_authority_present) {
-		return {
-			contract: "assurance_kernel/storage_layout_inspection/v1",
-			layout: "migration_required",
-			old_authority_present: true,
-			pending_marker: null,
-			dirty_affected_paths: dirty ?? [],
-			reason: "an owner-free legacy layout exists; the next eligible stateful mutation runs the one-release migration and stops",
-		};
-	}
-	if (dirty !== null && dirty.length > 0) {
-		// review-2: cleanup-only migrations (deleted templates, MEMORY.md,
-		// owner-free workspace) still leave an affected diff that must be
-		// committed before the layout can be ready.
-		return {
-			contract: "assurance_kernel/storage_layout_inspection/v1",
-			layout: "migration_uncommitted",
-			old_authority_present: false,
-			pending_marker: null,
-			dirty_affected_paths: dirty,
-			reason: "affected audit or retired legacy paths differ from HEAD; commit the migration diff before any managed mutation",
-		};
-	}
-	if (auditPresent && dirty === null) {
-		return {
-			contract: "assurance_kernel/storage_layout_inspection/v1",
-			layout: "invalid",
-			old_authority_present: false,
-			pending_marker: null,
-			dirty_affected_paths: [],
-			reason: "audit evidence exists but the Git workspace is unavailable; committed state cannot be verified",
-		};
-	}
-	return {
-		contract: "assurance_kernel/storage_layout_inspection/v1",
-		layout: "ready",
-		old_authority_present: false,
-		pending_marker: null,
-		dirty_affected_paths: [],
-		reason: null,
-	};
 }

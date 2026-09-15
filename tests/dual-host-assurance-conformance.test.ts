@@ -41,6 +41,9 @@ import {
 } from "../plugins/immune-brain/runtime/kernel/enrollment_authority";
 import { preparePiCanary } from "../plugins/immune-brain/runtime/kernel/pi_canary_prepare";
 import { readTaskIntent } from "../plugins/immune-brain/runtime/kernel/intent";
+import { withKernelTransaction } from "../plugins/immune-brain/runtime/kernel/sqlite_store";
+import { canonicalIntentHash, parseTaskIntentV1 } from "../plugins/immune-brain/runtime/kernel/intent";
+import { seedKernelRunForTest } from "./fixtures/mutation-authority-test-seam";
 
 const FIXTURE_NOW = "2026-08-12T10:00:00.000Z";
 const HOST_ENV = { CLAUDE_CODE_VERSION: "2.1.236", CLAUDE_CODE_PERMISSION_MODE: "manual" };
@@ -72,10 +75,6 @@ function enrolledHostFixture(taskId: string): string {
 	execFileSync("git", ["-c", "user.name=test", "-c", "user.email=test@example.com", "commit", "-q", "-m", "fixture"], {
 		cwd: root,
 	});
-	writeFileSync(
-		join(root, ".imm/state/workspace.json"),
-		`${JSON.stringify({ contract: "assurance_kernel/workspace/v1", current_working: null }, null, 2)}\n`,
-	);
 	const registry = createEnrollmentAuthorityRegistry();
 	const read = readTaskIntent(root, taskId, `docs/plans/${taskId}.intent.json`);
 	const preparation = preparePiCanary(root, { task_id: taskId, now: FIXTURE_NOW });
@@ -225,6 +224,54 @@ async function claudeBreakingFailure(root: string, taskId: string): Promise<stri
 			() => "",
 			(error: unknown) => (error instanceof Error ? error.message : String(error)),
 		);
+}
+
+/** Seed one active run: ownership is derived, so the claim is real state. */
+function seedInFlightOwner(
+	root: string,
+	taskId: string,
+	identity: { enrollment_event_id?: string; created_at?: string; updated_at?: string } = {},
+): void {
+	const intent = {
+		contract: "assurance_kernel/task_intent/v1",
+		task_id: taskId,
+		goal: "in-flight fixture",
+		acceptance: [{ id: "A1", assertion: "a1", verification: "bun test tests/x.test.ts" }],
+		scope_hint: ["docs/plans"],
+		risk: "routine" as const,
+		revision: 1,
+		owner: "user",
+	};
+	seedKernelRunForTest(root, {
+		task_id: taskId,
+		enrollment_event_id: identity.enrollment_event_id,
+		created_at: identity.created_at,
+		updated_at: identity.updated_at,
+		record: {
+			contract: "assurance_kernel/task_record/v4",
+			task_id: taskId,
+			intent_snapshot: intent,
+			intent_ref: {
+				path: `docs/plans/${taskId}.intent.json`,
+				content_hash: canonicalIntentHash(parseTaskIntentV1(intent)),
+			},
+			lifecycle: "active",
+			artifact_state: "active",
+			baseline: `sha256:${"a".repeat(64)}`,
+			git_base_head: "a".repeat(40),
+			attestations: [],
+			findings: [],
+			history: [],
+		},
+	});
+}
+
+/** Release the workspace: the owner settles and no active run remains. */
+function releaseWorkspaceForTest(root: string): void {
+	withKernelTransaction(root, (db) => {
+		db.prepare("UPDATE workspace SET current_run_id = NULL WHERE id = 1").run();
+		db.prepare("DELETE FROM runs WHERE state = 'active'").run();
+	});
 }
 
 const TASK = "dual-host-task";
@@ -909,12 +956,7 @@ describe("dual-host assurance conformance", () => {
 		{
 			const cf = createConformanceFixture("conf-claim-c");
 			const pf = createConformanceFixture("conf-claim-p");
-			for (const root of [cf.root, pf.root]) {
-				writeFileSync(
-					join(root, ".imm", "state", "workspace.json"),
-					JSON.stringify({ contract: "assurance_kernel/workspace/v1", current_working: "existing-task" }),
-				);
-			}
+			for (const root of [cf.root, pf.root]) seedInFlightOwner(root, "existing-task");
 
 			const cr = createMcpRuntime({
 				cwd: cf.root,
@@ -1059,12 +1101,7 @@ describe("dual-host assurance conformance", () => {
 					advanceTask: async () => {
 						cStep++;
 						if (cStep === 1) return { state: "review_ready", operation_id: "c-op", agent_params: { prompt: "review" } as never };
-						writeFileSync(
-							join(cf.root, ".imm", "state", "workspace.json"),
-							JSON.stringify({ contract: "assurance_kernel/workspace/v1", current_working: null }),
-						);
-						const claimPath = join(cf.root, ".imm", "state", "active-claim.json");
-						if (existsSync(claimPath)) rmSync(claimPath, { force: true });
+						releaseWorkspaceForTest(cf.root);
 						return { state: "completed" };
 					},
 					commitChild: async () => {
@@ -1134,12 +1171,7 @@ describe("dual-host assurance conformance", () => {
 				readInitiative: async () => pf.observation,
 				batchKernel: {
 					advanceTask: async () => {
-						writeFileSync(
-							join(pf.root, ".imm", "state", "workspace.json"),
-							JSON.stringify({ contract: "assurance_kernel/workspace/v1", current_working: null }),
-						);
-						const claimPath = join(pf.root, ".imm", "state", "active-claim.json");
-						if (existsSync(claimPath)) rmSync(claimPath, { force: true });
+						releaseWorkspaceForTest(pf.root);
 						return { state: "completed" };
 					},
 					commitChild: async () => {
@@ -1375,7 +1407,7 @@ describe("dual-host assurance conformance", () => {
 					advanceTask: async () => {
 						cStep++;
 						if (cStep === 1) return { state: "review_ready", operation_id: "c-op", agent_params: { prompt: "review" } as never };
-						writeFileSync(join(cf.root, ".imm", "state", "workspace.json"), JSON.stringify({ contract: "assurance_kernel/workspace/v1", current_working: null }));
+						releaseWorkspaceForTest(cf.root);
 						const claimPath = join(cf.root, ".imm", "state", "active-claim.json");
 						if (existsSync(claimPath)) rmSync(claimPath, { force: true });
 						return { state: "completed" };
@@ -1406,7 +1438,7 @@ describe("dual-host assurance conformance", () => {
 					advanceTask: async () => {
 						pStep++;
 						if (pStep === 1) return { state: "review_ready", operation_id: "p-op", agent_params: { prompt: "review" } as never };
-						writeFileSync(join(pf.root, ".imm", "state", "workspace.json"), JSON.stringify({ contract: "assurance_kernel/workspace/v1", current_working: null }));
+						releaseWorkspaceForTest(pf.root);
 						const claimPath = join(pf.root, ".imm", "state", "active-claim.json");
 						if (existsSync(claimPath)) rmSync(claimPath, { force: true });
 						return { state: "completed" };
@@ -1447,12 +1479,7 @@ describe("dual-host assurance conformance", () => {
 				readInitiative: async () => pf.observation,
 				batchKernel: {
 					advanceTask: async () => {
-						writeFileSync(
-							join(pf.root, ".imm", "state", "workspace.json"),
-							JSON.stringify({ contract: "assurance_kernel/workspace/v1", current_working: null }),
-						);
-						const claimPath = join(pf.root, ".imm", "state", "active-claim.json");
-						if (existsSync(claimPath)) rmSync(claimPath, { force: true });
+						releaseWorkspaceForTest(pf.root);
 						return { state: "completed" };
 					},
 					commitChild: async () => {
@@ -1491,12 +1518,7 @@ describe("dual-host assurance conformance", () => {
 					advanceTask: async () => {
 						cStep++;
 						if (cStep === 1) return { state: "review_ready", operation_id: "c-op", agent_params: { prompt: "review" } as never };
-						writeFileSync(
-							join(cf.root, ".imm", "state", "workspace.json"),
-							JSON.stringify({ contract: "assurance_kernel/workspace/v1", current_working: null }),
-						);
-						const claimPath = join(cf.root, ".imm", "state", "active-claim.json");
-						if (existsSync(claimPath)) rmSync(claimPath, { force: true });
+						releaseWorkspaceForTest(cf.root);
 						return { state: "completed" };
 					},
 					commitChild: async () => {
@@ -1525,12 +1547,7 @@ describe("dual-host assurance conformance", () => {
 					advanceTask: async () => {
 						pStep++;
 						if (pStep === 1) return { state: "review_ready", operation_id: "p-op", agent_params: { prompt: "review" } as never };
-						writeFileSync(
-							join(pf.root, ".imm", "state", "workspace.json"),
-							JSON.stringify({ contract: "assurance_kernel/workspace/v1", current_working: null }),
-						);
-						const claimPath = join(pf.root, ".imm", "state", "active-claim.json");
-						if (existsSync(claimPath)) rmSync(claimPath, { force: true });
+						releaseWorkspaceForTest(pf.root);
 						return { state: "completed" };
 					},
 					commitChild: async () => {
@@ -1564,12 +1581,7 @@ describe("dual-host assurance conformance", () => {
 				readInitiative: async () => pf.observation,
 				batchKernel: {
 					advanceTask: async () => {
-						writeFileSync(
-							join(pf.root, ".imm", "state", "workspace.json"),
-							JSON.stringify({ contract: "assurance_kernel/workspace/v1", current_working: null }),
-						);
-						const claimPath = join(pf.root, ".imm", "state", "active-claim.json");
-						if (existsSync(claimPath)) rmSync(claimPath, { force: true });
+						releaseWorkspaceForTest(pf.root);
 						return { state: "completed" };
 					},
 					commitChild: async () => {
@@ -1677,22 +1689,16 @@ describe("dual-host assurance conformance", () => {
 			const forgeForeignClaim = (root: string, taskId: string, batchStatePath: string): void => {
 				const updatedAt = JSON.parse(readFileSync(batchStatePath, "utf8")).updated_at;
 				const foreignCreatedAt = new Date(Date.parse(updatedAt) + 1000).toISOString();
-				// Kernel-looking event-id derivation, but created after the batch's last
-				// durable write: an independent enrollment during the pause.
-				writeFileSync(
-					join(root, ".imm", "state", "active-claim.json"),
-					JSON.stringify({
-						contract: "assurance_kernel/backend_claim/v2",
-						backend: "kernel",
-						task_id: taskId,
-						intent_revision: 1,
-						intent_content_hash: `sha256:${cRes1.batch_id.startsWith("batch-conf-swap-c") ? "c" : "p"}.repeat(64)`.replace(".repeat(64)", ""),
-						enrollment_event_id: `enroll-${taskId}-${foreignCreatedAt}`,
-						lifecycle_status: "active",
-						created_at: foreignCreatedAt,
-						updated_at: foreignCreatedAt,
-					}),
-				);
+				// Kernel-looking event-id derivation, but created after the batch's
+				// last durable write: an independent enrollment during the pause.
+				// The store allows exactly one active run, so the competing claim
+				// replaces the current owner.
+				releaseWorkspaceForTest(root);
+				seedInFlightOwner(root, taskId, {
+					enrollment_event_id: `enroll-${taskId}-${foreignCreatedAt}`,
+					created_at: foreignCreatedAt,
+					updated_at: foreignCreatedAt,
+				});
 			};
 
 			// Round 2 confirmation callbacks swap the same child's claim mid-confirmation.
@@ -1844,7 +1850,7 @@ describe("dual-host assurance conformance", () => {
 				readInitiative: async () => cf.observation,
 				batchKernel: {
 					advanceTask: async () => {
-						writeFileSync(join(cf.root, ".imm", "state", "workspace.json"), JSON.stringify({ contract: "assurance_kernel/workspace/v1", current_working: null }));
+						releaseWorkspaceForTest(cf.root);
 						const claimPath = join(cf.root, ".imm", "state", "active-claim.json");
 						if (existsSync(claimPath)) rmSync(claimPath, { force: true });
 						return { state: "completed" };
@@ -1872,7 +1878,7 @@ describe("dual-host assurance conformance", () => {
 				readInitiative: async () => pf.observation,
 				batchKernel: {
 					advanceTask: async () => {
-						writeFileSync(join(pf.root, ".imm", "state", "workspace.json"), JSON.stringify({ contract: "assurance_kernel/workspace/v1", current_working: null }));
+						releaseWorkspaceForTest(pf.root);
 						const claimPath = join(pf.root, ".imm", "state", "active-claim.json");
 						if (existsSync(claimPath)) rmSync(claimPath, { force: true });
 						return { state: "completed" };
@@ -1986,20 +1992,10 @@ describe("dual-host assurance conformance", () => {
 
 			const injectClaim = (root: string, taskId: string): void => {
 				const createdAt = new Date().toISOString();
-				writeFileSync(
-					join(root, ".imm", "state", "active-claim.json"),
-					JSON.stringify({
-						contract: "assurance_kernel/backend_claim/v2",
-						backend: "kernel",
-						task_id: taskId,
-						intent_revision: 1,
-						intent_content_hash: `sha256:${"f".repeat(64)}`,
-						enrollment_event_id: `enroll-${taskId}-${createdAt}`,
-						lifecycle_status: "active",
-						created_at: createdAt,
-						updated_at: createdAt,
-					}),
-				);
+				// A competing enrollment replaces the current owner: the store keeps
+				// exactly one active run.
+				releaseWorkspaceForTest(root);
+				seedInFlightOwner(root, taskId, { created_at: createdAt, updated_at: createdAt });
 			};
 
 			let cReads = 0;
@@ -2120,37 +2116,22 @@ describe("dual-host assurance conformance", () => {
 			expect(cFirst.state).toBe("started");
 			expect(pFirst.state).toBe("started");
 
-			// A well-formed pending v2 transaction that recovery would complete.
-			// Its hashes match the current bytes, so the locking read really writes.
+			// A retired file-store transaction marker is never interpreted by the
+			// SQLite store: both Hosts must stop on it with the marker untouched
+			// and no authority written.
 			for (const [root, taskId] of [[cf.root, `${sharedPendingSlug}-c-c1`], [pf.root, `${sharedPendingSlug}-p-c1`]] as const) {
-				const recordPath = join(root, ".imm", "state", "tasks", `${taskId}.json`);
-				const workspacePath = join(root, ".imm", "state", "workspace.json");
-				const recordBytes = readFileSync(recordPath, "utf8");
-				const workspaceBytes = readFileSync(workspacePath, "utf8");
 				mkdirSync(join(root, ".imm", "state", "transactions"), { recursive: true });
 				writeFileSync(
 					join(root, ".imm", "state", "transactions", "workspace-transaction-v2.json"),
 					`${JSON.stringify({
 						contract: "assurance_kernel/workspace_transaction/v2",
 						task_id: taskId,
-						expected_record_hash: revisionForContent(recordBytes),
-						next_record_content: `${recordBytes}\n`,
-						expected_workspace_hash: revisionForContent(workspaceBytes),
-						next_workspace_content: workspaceBytes,
+						expected_record_hash: "rev:1",
+						next_record_content: "{}",
+						expected_workspace_hash: "rev:1",
+						next_workspace_content: "{}",
 					}, null, 2)}\n`,
 				);
-			}
-			// An intact, still-binding authorization is reused without a second gate, so
-			// expire the persisted one: this scenario proves a *declined* resume leaves
-			// the pending Kernel transaction untouched on both Hosts.
-			for (const [stateRoot, batchId] of [
-				[cf.root, cFirst.batch_id],
-				[pf.root, pFirst.batch_id],
-			] as const) {
-				const statePath = join(stateRoot, ".imm", "state", "batches", `${batchId}.json`);
-				const persisted = JSON.parse(readFileSync(statePath, "utf8"));
-				persisted.authorization_expires_at = "2020-01-01T00:00:00.000Z";
-				writeFileSync(statePath, `${JSON.stringify(persisted, null, 2)}\n`);
 			}
 
 			const cBefore = snapshotState(cf.root);
@@ -2161,7 +2142,7 @@ describe("dual-host assurance conformance", () => {
 				env: ENV,
 				interactive: true,
 				readInitiative: async () => cf.observation,
-				requestConfirmation: async () => ({ decision: "decline", requestId: "r-pending-2" }),
+				requestConfirmation: async () => ({ decision: "accept", requestId: "r-pending-2" }),
 			});
 			cr2.bindClientHandshake({ version: "2.1.236", interactive: true, protocolVersion: "2025-06-18" });
 			const cRes = await cr2.callTool("start_unattended_batch", { initiative_slug: `${sharedPendingSlug}-c` }, { toolCallId: "toolu-pending2" });
@@ -2171,12 +2152,17 @@ describe("dual-host assurance conformance", () => {
 				initiativeSlug: `${sharedPendingSlug}-p`,
 				interactive: true,
 				readInitiative: async () => pf.observation,
-				confirmBatch: async () => "decline",
+				confirmBatch: async () => "accept",
 			});
 
+			// Same outcome on both Hosts: blocked, with the marker still present.
 			expect(cRes.state).toBe("rejected");
 			expect(pRes.state).toBe("rejected");
-			// Byte-for-byte: the pending transaction is untouched and nothing was written.
+			for (const [result, label] of [[cRes, "claude"], [pRes, "pi"]] as const) {
+				expect(JSON.stringify(result)).toMatch(/retired file-store transaction marker/);
+				expect(label).toBeTruthy();
+			}
+			// Byte-for-byte: the retired marker is untouched and nothing was written.
 			expect(snapshotState(cf.root)).toBe(cBefore);
 			expect(snapshotState(pf.root)).toBe(pBefore);
 		}
@@ -2201,7 +2187,7 @@ describe("dual-host assurance conformance", () => {
 					advanceTask: async () => {
 						cStep++;
 						if (cStep === 1) return { state: "review_ready", operation_id: "c-renew", agent_params: { prompt: "review" } as never };
-						writeFileSync(join(cf.root, ".imm", "state", "workspace.json"), JSON.stringify({ contract: "assurance_kernel/workspace/v1", current_working: null }));
+						releaseWorkspaceForTest(cf.root);
 						const claimPath = join(cf.root, ".imm", "state", "active-claim.json");
 						if (existsSync(claimPath)) rmSync(claimPath, { force: true });
 						return { state: "completed" };
@@ -2226,7 +2212,7 @@ describe("dual-host assurance conformance", () => {
 				advanceTask: async () => {
 					pStep++;
 					if (pStep === 1) return { state: "review_ready", operation_id: "p-renew", agent_params: { prompt: "review" } as never };
-					writeFileSync(join(pf.root, ".imm", "state", "workspace.json"), JSON.stringify({ contract: "assurance_kernel/workspace/v1", current_working: null }));
+					releaseWorkspaceForTest(pf.root);
 					const claimPath = join(pf.root, ".imm", "state", "active-claim.json");
 					if (existsSync(claimPath)) rmSync(claimPath, { force: true });
 					return { state: "completed" };

@@ -1,23 +1,47 @@
-import { createHash, randomUUID } from "node:crypto";
+/**
+ * Kernel authority store adapter.
+ *
+ * One worktree-local SQLite database (`.imm/state/kernel.sqlite`) is the single
+ * transaction boundary for runs, lifecycle, revisions, findings, attestations
+ * and operation outcomes. This module owns the authority decisions that used to
+ * be spread across file-level CAS writes and recoverable transaction markers:
+ *
+ * - the workspace owner is derived from the single active run,
+ * - concurrent writes are checked by monotonic integer revisions,
+ * - every replayable operation records its result in the same transaction, so a
+ *   lost response reuses durable facts instead of writing again,
+ * - terminal settlement commits atomically and exports audit evidence
+ *   afterwards, where an interrupted export stays retryable and can never
+ *   reactivate a settled run.
+ *
+ * File-level helpers still exist for tracked evidence: documentation artifacts
+ * (freeze/rework relocation) and the immutable audit pair under `.imm/audit/`.
+ */
+import { createHash } from "node:crypto";
 import {
-	closeSync,
 	constants,
+	closeSync,
+	existsSync,
 	fstatSync,
 	fsyncSync,
 	lstatSync,
 	mkdirSync,
 	openSync,
 	readFileSync,
+	readdirSync,
 	realpathSync,
 	renameSync,
 	rmSync,
 	writeFileSync,
 } from "node:fs";
-import { basename, dirname, isAbsolute, relative, resolve, sep } from "node:path";
+import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
+import type { DatabaseSync } from "node:sqlite";
+
 import {
+	claimFromRunRow,
 	parseBackendClaim,
-	readBackendClaim,
 	parseTaskTombstone,
+	serializeBackendClaim,
 	serializeTaskTombstone,
 	type BackendClaim,
 	type TaskTombstone,
@@ -25,14 +49,46 @@ import {
 import {
 	auditTaskRecordPath,
 	auditTerminalProofPath,
-	JOURNAL_RELATIVE,
-	stateClaimPath,
-	stateStoreLockPath,
-	stateTaskRecordPath,
-	stateTransactionPath,
-	stateWorkspacePath,
+	FILE_STORE_CLAIM_RELATIVE,
+	FILE_STORE_TRANSACTIONS_RELATIVE,
+	FILE_STORE_WORKSPACE_RELATIVE,
+	stateDatabasePath,
 } from "./storage_paths";
+import { canonicalRecordHash } from "./reducer";
 import { parseTaskRecord, parseTaskRecordV2 } from "./validation";
+import {
+	assertRunBinding,
+	drainOperationId,
+	enrollmentOperationId,
+	mintRunId,
+	runIdentity,
+	terminalOperationId,
+} from "./run_identity";
+import {
+	KernelStoreConflictError,
+	KernelStoreSecurityError,
+	activeRunId,
+	appendJournalRow,
+	findJournalObservation,
+	insertOperationRow,
+	insertRunRow,
+	listPendingAuditExports,
+	listPendingRelocations,
+	markAuditExported,
+	setPendingRelocations,
+	readOperationRow,
+	readRunRowById,
+	readRunRowByTask,
+	readWorkspaceRow,
+	setStoreFaultForTest,
+	updateRunClaim,
+	updateRunRecord,
+	updateRunTerminal,
+	withKernelRead,
+	withKernelTransaction,
+	writeWorkspaceRow,
+	type KernelRunRow,
+} from "./sqlite_store";
 import type {
 	TaskLifecycle,
 	TaskPhase,
@@ -42,25 +98,13 @@ import type {
 	V3AuthorityObservation,
 } from "./types";
 
+export {
+	KernelSchemaError,
+	KernelStoreConflictError,
+	KernelStoreSecurityError,
+} from "./sqlite_store";
+
 export const MISSING_REVISION = "missing";
-
-export class KernelStoreConflictError extends Error {
-	readonly code = "kernel_store_conflict";
-
-	constructor(message: string) {
-		super(message);
-		this.name = "KernelStoreConflictError";
-	}
-}
-
-export class KernelStoreSecurityError extends Error {
-	readonly code = "kernel_store_security_error";
-
-	constructor(message: string) {
-		super(message);
-		this.name = "KernelStoreSecurityError";
-	}
-}
 
 export interface WorkspaceState {
 	contract: "assurance_kernel/workspace/v1";
@@ -108,8 +152,25 @@ export interface JournalEntry {
 	observation?: V3AuthorityObservation;
 }
 
+// ---------------------------------------------------------------------------
+// Revision vocabulary: monotonic integers instead of serialized byte hashes.
+// ---------------------------------------------------------------------------
+
 function revisionFor(content: string): string {
 	return `sha256:${createHash("sha256").update(content).digest("hex")}`;
+}
+
+export function revisionForContent(content: string): string {
+	return revisionFor(content);
+}
+
+function nowIso(): string {
+	return new Date().toISOString();
+}
+
+function validateTaskId(taskId: string): void {
+	if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(taskId))
+		throw new KernelStoreSecurityError("task_id is not a safe file identity");
 }
 
 function canonicalRoot(root: string): string {
@@ -119,6 +180,116 @@ function canonicalRoot(root: string): string {
 		throw new KernelStoreSecurityError("project root is unavailable");
 	}
 }
+
+// ---------------------------------------------------------------------------
+// Retired file-store guard: a worktree must never mix two authority stores.
+// ---------------------------------------------------------------------------
+
+/**
+ * Refuse mutation while the retired `.imm/state/*.json` file store (or the
+ * pre-cutover `.imm/tasks` layout) still holds authority. The check is bounded
+ * to `existsSync` paths so it can run on every locked mutation.
+ */
+function assertNoRetiredFileStore(
+	root: string,
+	db?: DatabaseSync,
+	taskId?: string | null,
+): void {
+	const canonical = canonicalRoot(root);
+	const derivedSuperseded =
+		db !== undefined &&
+		typeof taskId === "string" &&
+		taskId.length > 0 &&
+		readRunRowByTask(db, taskId) !== null;
+	// Real authority in the retired store: must be imported, never ignored.
+	const retired: Array<[string, string]> = [
+		[".imm/tasks", "pre-cutover task store"],
+		[".imm/workspace.json", "pre-cutover workspace owner"],
+		[".imm/state/tasks", "task records"],
+	];
+	for (const [path, label] of retired) {
+		if (existsSync(resolve(canonical, path)))
+			throw new KernelStoreSecurityError(
+				`retired file-store authority is present (${label}: ${path}); import it with the supported migration before mutating this worktree`,
+			);
+	}
+	// Derived duplicates: a leftover claim/owner file whose task the store has
+	// already superseded is provably inert, so it is retired instead of blocking.
+	const derived: Array<[string, string]> = [
+		[FILE_STORE_CLAIM_RELATIVE, "workspace claim"],
+		[FILE_STORE_WORKSPACE_RELATIVE, "workspace owner"],
+	];
+	for (const [path, label] of derived) {
+		const full = resolve(canonical, path);
+		if (!existsSync(full)) continue;
+		if (!derivedSuperseded)
+			throw new KernelStoreSecurityError(
+				`retired file-store authority is present (${label}: ${path}); import it with the supported migration before mutating this worktree`,
+			);
+		rmSync(full, { force: true });
+	}
+	if (existsSync(resolve(canonical, FILE_STORE_TRANSACTIONS_RELATIVE))) {
+		const entries = readdirNames(resolve(canonical, FILE_STORE_TRANSACTIONS_RELATIVE));
+		const pending = entries.filter((entry) => entry.endsWith(".json") && entry !== "storage-layout-migration.json");
+		if (pending.length > 0)
+			throw new KernelStoreSecurityError(
+				`retired file-store transaction marker is present (${pending[0]}); settle it with the runtime that wrote it before mutating this worktree`,
+			);
+	}
+}
+
+/**
+ * Read-only file-store conflict inspection. Real authority in the retired store
+ * always conflicts; a derived claim/owner file conflicts only while the store
+ * has no run for the requested task (a leftover for a known task is inert and
+ * gets retired by the next mutation).
+ */
+function retiredFileStoreConflict(
+	root: string,
+	db: DatabaseSync | null,
+	taskId: string | null,
+): string | null {
+	const canonical = canonicalRoot(root);
+	const authority: Array<[string, string]> = [
+		[".imm/tasks", "pre-cutover task store"],
+		[".imm/workspace.json", "pre-cutover workspace owner"],
+		[".imm/state/tasks", "task records"],
+	];
+	for (const [path, label] of authority)
+		if (existsSync(resolve(canonical, path)))
+			return `retired file-store authority is present (${label}: ${path}); import it with the supported migration before mutating this worktree`;
+	const storeHasTask = db !== null && taskId !== null && readRunRowByTask(db, taskId) !== null;
+	if (!storeHasTask) {
+		const derived: Array<[string, string]> = [
+			[FILE_STORE_CLAIM_RELATIVE, "workspace claim"],
+			[FILE_STORE_WORKSPACE_RELATIVE, "workspace owner"],
+		];
+		for (const [path, label] of derived)
+			if (existsSync(resolve(canonical, path)))
+				return `retired file-store authority is present (${label}: ${path}); import it with the supported migration before mutating this worktree`;
+	}
+	const transactions = resolve(canonical, FILE_STORE_TRANSACTIONS_RELATIVE);
+	if (existsSync(transactions)) {
+		const pending = readdirNames(transactions).filter(
+			(entry) => entry.endsWith(".json") && entry !== "storage-layout-migration.json",
+		);
+		if (pending.length > 0)
+			return `retired file-store transaction marker is present (${pending[0]}); settle it with the runtime that wrote it before mutating this worktree`;
+	}
+	return null;
+}
+
+function readdirNames(path: string): string[] {
+	try {
+		return readdirSync(path);
+	} catch {
+		return [];
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Secure file helpers (tracked evidence + artifact relocation only).
+// ---------------------------------------------------------------------------
 
 function withinRoot(root: string, candidate: string): boolean {
 	const rel = relative(root, candidate);
@@ -280,9 +451,7 @@ function clearStaleLock(lockPath: string): boolean {
 	const before = pathStatOrNull(lockPath);
 	if (!before) return true;
 	if (before.isSymbolicLink() || !before.isFile())
-		throw new KernelStoreSecurityError(
-			"kernel store lock is not a regular file",
-		);
+		throw new KernelStoreSecurityError("kernel store lock is not a regular file");
 	let stale = false;
 	let fd: number | null = null;
 	try {
@@ -299,11 +468,7 @@ function clearStaleLock(lockPath: string): boolean {
 	}
 	if (!stale) return false;
 	const after = lstatSync(lockPath);
-	if (
-		after.isSymbolicLink() ||
-		after.dev !== before.dev ||
-		after.ino !== before.ino
-	)
+	if (after.isSymbolicLink() || after.dev !== before.dev || after.ino !== before.ino)
 		throw new KernelStoreSecurityError(
 			"kernel store lock identity changed during recovery",
 		);
@@ -311,6 +476,7 @@ function clearStaleLock(lockPath: string): boolean {
 	return true;
 }
 
+/** Bounded exclusive file lock for tracked-evidence writes. */
 function withExclusiveLock<T>(lockPath: string, operation: () => T): T {
 	const noFollow = constants.O_NOFOLLOW ?? 0;
 	let fd: number | null = null;
@@ -318,10 +484,7 @@ function withExclusiveLock<T>(lockPath: string, operation: () => T): T {
 		try {
 			fd = openSync(
 				lockPath,
-				constants.O_WRONLY |
-					constants.O_CREAT |
-					constants.O_EXCL |
-					noFollow,
+				constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | noFollow,
 				0o600,
 			);
 			break;
@@ -343,7 +506,7 @@ function withExclusiveLock<T>(lockPath: string, operation: () => T): T {
 	try {
 		writeFileSync(
 			fd,
-			`${JSON.stringify({ pid: process.pid, started_at: new Date().toISOString() })}\n`,
+			`${JSON.stringify({ pid: process.pid, started_at: nowIso() })}\n`,
 			"utf8",
 		);
 		fsyncSync(fd);
@@ -386,14 +549,10 @@ function atomicCasWrite(
 			throw new KernelStoreConflictError(
 				`CAS mismatch for ${relativePath}: expected ${expectedRevision}, got ${actualRevision}`,
 			);
-		const tempPath = `${candidate.path}.${randomUUID()}.tmp`;
+		const tempPath = `${candidate.path}.${process.pid}.tmp`;
 		let fd: number | null = null;
 		try {
-			fd = openSync(
-				tempPath,
-				constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL,
-				0o600,
-			);
+			fd = openSync(tempPath, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL, 0o600);
 			writeFileSync(fd, content, "utf8");
 			fsyncSync(fd);
 			closeSync(fd);
@@ -409,93 +568,7 @@ function atomicCasWrite(
 	});
 }
 
-function validateTaskId(taskId: string): void {
-	if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(taskId))
-		throw new KernelStoreSecurityError("task_id is not a safe file identity");
-}
-
-const JOURNAL_LOCK_NAME = ".journal.lock";
-const JOURNAL_READ_LIMIT = 64 * 1024 * 1024;
-const TRANSACTION_PATH = ".imm/tasks/.workspace-transaction.json";
-const V1_TRANSACTION_RETIRED = "workspace_transaction/v1 is retired after v4 storage retirement; use TaskRecord v3 + workspace_transaction/v2";
-
-let afterTaskTransactionWriteForTest: (() => void) | null = null;
-
-/** Test-only seam for a failure after the first file in a two-file transaction. */
-export function setAfterTaskTransactionWriteForTest(
-	hook: (() => void) | null,
-): void {
-	afterTaskTransactionWriteForTest = hook;
-}
-
-function runAfterTaskTransactionWriteHook(): void {
-	const hook = afterTaskTransactionWriteForTest;
-	afterTaskTransactionWriteForTest = null;
-	hook?.();
-}
-
-let terminalSettlementStepHookForTest: ((stepIndex: number) => void) | null = null;
-
-/** Test-only seam: fail deterministically after each terminal settlement step. */
-export function setTerminalSettlementStepHookForTest(
-	hook: ((stepIndex: number) => void) | null,
-): void {
-	terminalSettlementStepHookForTest = hook;
-}
-
-function runTerminalSettlementStepHook(stepIndex: number): void {
-	const hook = terminalSettlementStepHookForTest;
-	if (!hook) return;
-	hook(stepIndex);
-	// A hook that did not interrupt keeps observing later steps; a thrown
-	// interruption propagates before this line and is consumed by the caller
-	// clearing the hook.
-}
-
-
-function parseWorkspaceContent(content: string): WorkspaceState {
-	const raw = JSON.parse(content) as Record<string, unknown>;
-	const unknown = Object.keys(raw).filter(
-		(key) => !["contract", "current_working"].includes(key),
-	);
-	if (unknown.length > 0)
-		throw new KernelStoreSecurityError(
-			`workspace has unknown field: ${unknown[0]}`,
-		);
-	if (raw.contract !== "assurance_kernel/workspace/v1")
-		throw new KernelStoreSecurityError("workspace contract is invalid");
-	if (
-		raw.current_working !== null &&
-		(typeof raw.current_working !== "string" || !raw.current_working.trim())
-	)
-		throw new KernelStoreSecurityError("workspace current_working is invalid");
-	if (typeof raw.current_working === "string") validateTaskId(raw.current_working);
-	return raw as unknown as WorkspaceState;
-}
-
-function serializeWorkspace(state: WorkspaceState): string {
-	return `${JSON.stringify(state, null, 2)}\n`;
-}
-
-export { serializeWorkspace };
-
-export function readWorkspaceStateRaw(root: string): {
-	revision: string;
-	state: WorkspaceState;
-} {
-	const relativePath = stateWorkspacePath();
-	if (currentRevision(root, relativePath) === MISSING_REVISION)
-		return {
-			revision: MISSING_REVISION,
-			state: {
-				contract: "assurance_kernel/workspace/v1",
-				current_working: null,
-			},
-		};
-	const content = readSecureProjectFile(root, relativePath);
-	return { revision: revisionFor(content), state: parseWorkspaceContent(content) };
-}
-
+/** Converge a tracked evidence file to exact bytes: same bytes are idempotent. */
 function convergeFile(
 	root: string,
 	relativePath: string,
@@ -509,90 +582,12 @@ function convergeFile(
 		throw new KernelStoreConflictError(
 			`transaction conflict for ${relativePath}: expected ${expectedRevision} or ${nextRevision}, got ${actualRevision}`,
 		);
-	return atomicCasWrite(
-		root,
-		relativePath,
-		nextContent,
-		expectedRevision,
-	);
-}
-
-function appendJournalLineLocked(root: string, entry: JournalEntry): void {
-	const directory = ensureSecureDirectory(root, dirname(JOURNAL_RELATIVE));
-	const path = resolve(directory, basename(JOURNAL_RELATIVE));
-	assertNoSymlinkSegments(canonicalRoot(root), path);
-	const noFollow = constants.O_NOFOLLOW ?? 0;
-	const fd = openSync(
-		path,
-		constants.O_WRONLY | constants.O_CREAT | constants.O_APPEND | noFollow,
-		0o600,
-	);
-	try {
-		writeFileSync(fd, `${JSON.stringify(entry)}\n`, "utf8");
-		fsyncSync(fd);
-	} finally {
-		closeSync(fd);
-	}
-}
-
-function withJournalLock<T>(root: string, operation: () => T): T {
-	const directory = ensureSecureDirectory(root, dirname(JOURNAL_RELATIVE));
-	return withExclusiveLock(resolve(directory, JOURNAL_LOCK_NAME), operation);
-}
-
-export function appendJournalEntry(root: string, entry: JournalEntry): void {
-	withJournalLock(root, () => appendJournalLineLocked(root, entry));
-}
-
-export function appendObservationJournalEntry(
-	root: string,
-	entry: JournalEntry & { observation: V3AuthorityObservation },
-): "appended" | "duplicate" {
-	return withJournalLock(root, () => {
-		let existing = "";
-		try {
-			existing = readSecureProjectFile(root, JOURNAL_RELATIVE);
-		} catch (error) {
-			if (!(error instanceof Error) || !error.message.startsWith("source_missing:"))
-				throw error;
-		}
-		if (Buffer.byteLength(existing, "utf8") > JOURNAL_READ_LIMIT)
-			throw new KernelStoreSecurityError("kernel journal exceeds the observation read limit");
-		for (const [index, line] of existing.split("\n").entries()) {
-			if (!line.trim()) continue;
-			let parsed: Record<string, unknown>;
-			try {
-				parsed = JSON.parse(line) as Record<string, unknown>;
-			} catch {
-				throw new KernelStoreSecurityError(
-					`kernel journal line ${index + 1} is not valid JSON`,
-				);
-			}
-			const observation = parsed.observation as
-				| Record<string, unknown>
-				| undefined;
-			if (observation?.commit_id !== entry.observation.commit_id) continue;
-			if (observation.observation_id === entry.observation.observation_id)
-				return "duplicate";
-			throw new KernelStoreConflictError(
-				`observation commit identity conflict: ${entry.observation.commit_id}`,
-			);
-		}
-		appendJournalLineLocked(root, entry);
-		return "appended";
-	});
+	return atomicCasWrite(root, relativePath, nextContent, expectedRevision);
 }
 
 // ---------------------------------------------------------------------------
-// R2C2 dedicated TaskRecord v3 transaction path.
-// Uses the existing exclusive store lock and rejects the retired v1 marker.
+// Artifact relocation (documentation artifacts only; S2 removes the relocation).
 // ---------------------------------------------------------------------------
-
-const TRANSACTION_PATH_V2 = stateTransactionPath("workspace-transaction-v2.json");
-const ENROLLMENT_MARKER_PATH = stateTransactionPath("enrollment-marker.json");
-const DRAIN_MARKER_PATH = stateTransactionPath("drain-transaction.json");
-const TERMINAL_MARKER_PATH = stateTransactionPath("terminal-transaction.json");
-const AUTHORITY_REPAIR_MARKER_PATH = stateTransactionPath("authority-repair-transaction.json");
 
 export interface ArtifactRelocationV1 {
 	from_path: string;
@@ -612,89 +607,6 @@ interface WorkspaceTransactionV2 {
 
 export type { WorkspaceTransactionV2 };
 
-export function revisionForContent(content: string): string {
-	return revisionFor(content);
-}
-
-function parseWorkspaceTransactionV2(raw: Record<string, unknown>): WorkspaceTransactionV2 {
-	const allowed = [
-		"contract",
-		"task_id",
-		"expected_record_hash",
-		"next_record_content",
-		"expected_workspace_hash",
-		"next_workspace_content",
-		"artifact_relocations",
-	];
-	const unknown = Object.keys(raw).filter((key) => !allowed.includes(key));
-	if (unknown.length > 0)
-		throw new KernelStoreSecurityError(
-			`workspace transaction v2 has unknown field: ${unknown[0]}`,
-		);
-	if (raw.contract !== "assurance_kernel/workspace_transaction/v2")
-		throw new KernelStoreSecurityError(
-			"workspace transaction v2 contract is invalid",
-		);
-	for (const field of allowed.slice(1, 6)) {
-		if (typeof raw[field] !== "string" || !String(raw[field]).trim())
-			throw new KernelStoreSecurityError(
-				`workspace transaction v2 ${field} is invalid`,
-			);
-	}
-	const relocationRaw = raw.artifact_relocations;
-	if (relocationRaw !== undefined && !Array.isArray(relocationRaw))
-		throw new KernelStoreSecurityError("workspace transaction v2 artifact_relocations is invalid");
-	const artifactRelocations = (relocationRaw ?? []).map((item, index) => {
-		if (!item || typeof item !== "object" || Array.isArray(item))
-			throw new KernelStoreSecurityError(`artifact relocation ${index} is invalid`);
-		const value = item as Record<string, unknown>;
-		const unknownFields = Object.keys(value).filter((key) => !["from_path", "to_path", "content_hash"].includes(key));
-		if (unknownFields.length > 0)
-			throw new KernelStoreSecurityError(`artifact relocation has unknown field: ${unknownFields[0]}`);
-		for (const field of ["from_path", "to_path", "content_hash"])
-			if (typeof value[field] !== "string" || !String(value[field]).trim())
-				throw new KernelStoreSecurityError(`artifact relocation ${field} is invalid`);
-		const relocation = value as unknown as ArtifactRelocationV1;
-		assertArtifactRelocation(relocation);
-		return relocation;
-	});
-	const transaction = {
-		...(raw as unknown as WorkspaceTransactionV2),
-		...(artifactRelocations.length > 0 ? { artifact_relocations: artifactRelocations } : {}),
-	};
-	validateTaskId(transaction.task_id);
-	const record = parseTaskRecord(
-		JSON.parse(transaction.next_record_content),
-	);
-	if (record.task_id !== transaction.task_id)
-		throw new KernelStoreSecurityError(
-			"workspace transaction v2 task identity is inconsistent",
-		);
-	parseWorkspaceContent(transaction.next_workspace_content);
-	return transaction;
-}
-
-function readPendingTransactionV2(root: string): WorkspaceTransactionV2 | null {
-	if (currentRevision(root, TRANSACTION_PATH_V2) === MISSING_REVISION) return null;
-	const raw = JSON.parse(
-		readSecureProjectFile(root, TRANSACTION_PATH_V2),
-	) as Record<string, unknown>;
-	return parseWorkspaceTransactionV2(raw);
-}
-
-function removeTransactionMarkerV2(root: string): void {
-	const candidate = safeCandidate(root, TRANSACTION_PATH_V2);
-	assertNoSymlinkSegments(candidate.root, candidate.path);
-	const stat = pathStatOrNull(candidate.path);
-	if (!stat) return;
-	if (!stat.isFile())
-		throw new KernelStoreSecurityError(
-			"workspace transaction v2 marker is not a regular file",
-		);
-	rmSync(candidate.path);
-	fsyncDirectory(dirname(candidate.path));
-}
-
 function archiveArtifactPath(path: string): string | null {
 	const matched = path.match(/^docs\/(plans|specs)\/([^/]+)$/);
 	return matched ? `docs/${matched[1]}/archive/${matched[2]}` : null;
@@ -704,8 +616,8 @@ function assertArtifactRelocation(relocation: ArtifactRelocationV1): void {
 	if (!/^sha256:[a-f0-9]{64}$/.test(relocation.content_hash))
 		throw new KernelStoreSecurityError("artifact relocation content_hash is invalid");
 	if (
-		archiveArtifactPath(relocation.from_path) !== relocation.to_path
-		&& archiveArtifactPath(relocation.to_path) !== relocation.from_path
+		archiveArtifactPath(relocation.from_path) !== relocation.to_path &&
+		archiveArtifactPath(relocation.to_path) !== relocation.from_path
 	)
 		throw new KernelStoreSecurityError("artifact relocation paths must be one active/archive pair");
 }
@@ -729,77 +641,92 @@ function convergeArtifactRelocation(root: string, relocation: ArtifactRelocation
 	if (dirname(from.path) !== dirname(to.path)) fsyncDirectory(dirname(to.path));
 }
 
-function completeTransactionV2Locked(
-	root: string,
-	transaction: WorkspaceTransactionV2,
-	invokeTestHook: boolean,
-): StoredTaskMutationV3 {
-	for (const relocation of transaction.artifact_relocations ?? [])
-		convergeArtifactRelocation(root, relocation);
-	const taskPath = stateTaskRecordPath(transaction.task_id);
-	const taskRevision = convergeFile(
-		root,
-		taskPath,
-		transaction.expected_record_hash,
-		transaction.next_record_content,
+// ---------------------------------------------------------------------------
+// Test seams.
+// ---------------------------------------------------------------------------
+
+/**
+ * Test-only seam. Runs after the authority writes of the current transaction
+ * and immediately before COMMIT, so a thrown fault must roll the whole
+ * transaction back with no partial authority.
+ */
+export function setAfterTaskTransactionWriteForTest(
+	hook: (() => void) | null,
+): void {
+	setStoreFaultForTest(hook);
+}
+
+let auditExportFaultForTest: (() => void) | null = null;
+
+/** Test-only seam: fail the terminal audit export after settlement commits. */
+export function setAuditExportFaultForTest(hook: (() => void) | null): void {
+	auditExportFaultForTest = hook;
+}
+
+function runAuditExportFault(): void {
+	const hook = auditExportFaultForTest;
+	auditExportFaultForTest = null;
+	hook?.();
+}
+
+// ---------------------------------------------------------------------------
+// Workspace and TaskRecord reads.
+// ---------------------------------------------------------------------------
+
+function parseWorkspaceContent(content: string): WorkspaceState {
+	const raw = JSON.parse(content) as Record<string, unknown>;
+	const unknown = Object.keys(raw).filter(
+		(key) => !["contract", "current_working"].includes(key),
 	);
-	if (invokeTestHook) runAfterTaskTransactionWriteHook();
-	const workspaceRevision = convergeFile(
-		root,
-		stateWorkspacePath(),
-		transaction.expected_workspace_hash,
-		transaction.next_workspace_content,
-	);
-	const record = parseTaskRecord(
-		JSON.parse(transaction.next_record_content),
-	);
-	const workspace = parseWorkspaceContent(transaction.next_workspace_content);
-	removeTransactionMarkerV2(root);
+	if (unknown.length > 0)
+		throw new KernelStoreSecurityError(`workspace has unknown field: ${unknown[0]}`);
+	if (raw.contract !== "assurance_kernel/workspace/v1")
+		throw new KernelStoreSecurityError("workspace contract is invalid");
+	if (
+		raw.current_working !== null &&
+		(typeof raw.current_working !== "string" || !raw.current_working.trim())
+	)
+		throw new KernelStoreSecurityError("workspace current_working is invalid");
+	if (typeof raw.current_working === "string") validateTaskId(raw.current_working);
+	return raw as unknown as WorkspaceState;
+}
+
+function serializeWorkspace(state: WorkspaceState): string {
+	return `${JSON.stringify(state, null, 2)}\n`;
+}
+
+export { serializeWorkspace };
+
+function workspaceStateFromRow(db: DatabaseSync, runId: string | null): WorkspaceState {
+	if (!runId) return { contract: "assurance_kernel/workspace/v1", current_working: null };
+	const run = readRunRowById(db, runId);
 	return {
-		revision: taskRevision,
-		record,
-		workspace: { revision: workspaceRevision, state: workspace },
+		contract: "assurance_kernel/workspace/v1",
+		current_working: run && run.state === "active" ? run.task_id : null,
 	};
 }
 
-function recoverPendingTransactionV2Locked(root: string): void {
-	const transaction = readPendingTransactionV2(root);
-	if (transaction) completeTransactionV2Locked(root, transaction, false);
+export function readWorkspaceStateRaw(root: string): {
+	revision: string;
+	state: WorkspaceState;
+} {
+	const read = withKernelRead(root, (db) => {
+		const row = readWorkspaceRow(db);
+		const state = workspaceStateFromRow(db, row.current_run_id);
+		return { revision: revisionFor(serializeWorkspace(state)), state };
+	});
+	if (read) return read;
+	return {
+		revision: MISSING_REVISION,
+		state: { contract: "assurance_kernel/workspace/v1", current_working: null },
+	};
 }
 
-/**
- * v4-only recovery gate: if a retired v1 transaction marker exists, every
- * store recovery (including v2) fails closed with the stable diagnostic.
- * This guarantees no v4 operation can silently complete or discard a legacy
- * v1 transaction; the operator must resolve it with the prior runtime first.
- */
-function assertNoRetiredV1Marker(root: string): void {
-	if (currentRevision(root, TRANSACTION_PATH) !== MISSING_REVISION)
-		throw new KernelStoreSecurityError(V1_TRANSACTION_RETIRED);
-}
-
-/** Reject any retired v1 marker before considering v2 recovery. */
-function recoverAnyPendingTransactionLocked(root: string): void {
-	const hasV1 = currentRevision(root, TRANSACTION_PATH) !== MISSING_REVISION;
-	const hasV2 = currentRevision(root, TRANSACTION_PATH_V2) !== MISSING_REVISION;
-	const hasEnrollment =
-		currentRevision(root, ENROLLMENT_MARKER_PATH) !== MISSING_REVISION;
-	const hasDrain = currentRevision(root, DRAIN_MARKER_PATH) !== MISSING_REVISION;
-	const hasTerminal = currentRevision(root, TERMINAL_MARKER_PATH) !== MISSING_REVISION;
-	const hasAuthorityRepair =
-		currentRevision(root, AUTHORITY_REPAIR_MARKER_PATH) !== MISSING_REVISION;
-	if (hasV1)
-		throw new KernelStoreSecurityError(V1_TRANSACTION_RETIRED);
-	const markers = [hasV2, hasEnrollment, hasDrain, hasTerminal, hasAuthorityRepair].filter(Boolean).length;
-	if (markers > 1)
-		throw new KernelStoreSecurityError(
-			"simultaneous workspace transaction markers are forbidden",
-		);
-	if (hasV2) recoverPendingTransactionV2Locked(root);
-	if (hasEnrollment) recoverPendingEnrollmentLocked(root);
-	if (hasDrain) recoverPendingDrainLocked(root);
-	if (hasTerminal) recoverPendingTerminalLocked(root, false);
-	if (hasAuthorityRepair) recoverPendingAuthorityRepairLocked(root);
+function recordFromRun(run: KernelRunRow): TaskRecord {
+	const record = parseTaskRecord(JSON.parse(run.record_json) as Record<string, unknown>);
+	if (record.task_id !== run.task_id)
+		throw new KernelStoreSecurityError("task record identity is inconsistent with its run");
+	return record;
 }
 
 export function readTaskRecordRaw(
@@ -807,19 +734,17 @@ export function readTaskRecordRaw(
 	taskId: string,
 ): { revision: string; record: TaskRecord | null } {
 	validateTaskId(taskId);
-	const relativePath = stateTaskRecordPath(taskId);
-	if (currentRevision(root, relativePath) === MISSING_REVISION)
-		return { revision: MISSING_REVISION, record: null };
-	const content = readSecureProjectFile(root, relativePath);
-	const raw = JSON.parse(content) as { contract?: unknown };
-	if (raw.contract === "assurance_kernel/task_record/v2")
-		throw new KernelStoreSecurityError(
-			"TaskRecord v2 is not supported in the state layout; v2 records belong to the historical audit layout",
-		);
-	const record = parseTaskRecord(raw);
-	if (record.task_id !== taskId)
-		throw new KernelStoreSecurityError("task record v3 identity is inconsistent");
-	return { revision: revisionFor(content), record };
+	const read = withKernelRead(root, (db) => {
+		const run = readRunRowByTask(db, taskId);
+		if (!run) return { revision: MISSING_REVISION, record: null };
+		// Terminal records stay durable in the store as the run index; the
+		// active-record surface mirrors the previous layout, where terminal
+		// evidence lives in the immutable audit pair.
+		if (run.state !== "active") return { revision: MISSING_REVISION, record: null };
+		const record = recordFromRun(run);
+		return { revision: canonicalRecordHash(record), record };
+	});
+	return read ?? { revision: MISSING_REVISION, record: null };
 }
 
 /**
@@ -828,7 +753,7 @@ export function readTaskRecordRaw(
  * Both files must exist, be identity-consistent, and the proof's
  * `final_record_hash` must equal the record bytes' revision. Only ENOENT on
  * the whole task directory means absent; a partial pair fails closed.
- * The audit record may be TaskRecord v3 or historical terminal v2.
+ * The audit record may be TaskRecord v3/v4 or historical terminal v2.
  */
 export function readAuditTaskPair(
 	root: string,
@@ -852,13 +777,9 @@ export function readAuditTaskPair(
 		JSON.parse(readSecureProjectFile(root, proofPath)) as Record<string, unknown>,
 	);
 	if (proof.task_id !== taskId)
-		throw new KernelStoreSecurityError(
-			"terminal audit proof identity is inconsistent",
-		);
+		throw new KernelStoreSecurityError("terminal audit proof identity is inconsistent");
 	if (proof.final_record_hash !== recordRevision)
-		throw new KernelStoreSecurityError(
-			"terminal audit proof does not match its task record",
-		);
+		throw new KernelStoreSecurityError("terminal audit proof does not match its task record");
 	const raw = JSON.parse(recordContent) as { contract?: unknown };
 	let record: TaskRecord | TaskRecordV2;
 	if (raw.contract === "assurance_kernel/task_record/v2") {
@@ -878,7 +799,7 @@ export function readAuditTaskPair(
 			(current.lifecycle !== "done" && current.lifecycle !== "stopped")
 		)
 			throw new KernelStoreSecurityError(
-				"audit TaskRecord v3 must be terminal and identity-consistent",
+				"audit TaskRecord must be terminal and identity-consistent",
 			);
 		record = current;
 	}
@@ -889,10 +810,202 @@ export function readTaskRecord(
 	root: string,
 	taskId: string,
 ): { revision: string; record: TaskRecord | null } {
-	return withKernelStoreLock(root, () => readTaskRecordRaw(root, taskId));
+	return readTaskRecordRaw(root, taskId);
 }
 
-/** Commit a TaskRecord v3 reducer result through the recoverable transaction. */
+// ---------------------------------------------------------------------------
+// Audit export: deterministic, idempotent, retryable, never authority.
+// ---------------------------------------------------------------------------
+
+function exportTerminalAudit(root: string, run: KernelRunRow): void {
+	runAuditExportFault();
+	if (!run.terminal_proof_json)
+		throw new KernelStoreSecurityError(
+			`terminal run ${run.run_id} has no committed terminal proof`,
+		);
+	convergeFile(root, auditTaskRecordPath(run.task_id), MISSING_REVISION, run.record_json);
+	convergeFile(
+		root,
+		auditTerminalProofPath(run.task_id),
+		MISSING_REVISION,
+		run.terminal_proof_json,
+	);
+}
+
+/** Retry any terminal settlement whose audit export did not complete. */
+function retryPendingAuditExports(root: string, db: DatabaseSync): void {
+	for (const run of listPendingAuditExports(db)) {
+		exportTerminalAudit(root, run);
+		markAuditExported(db, run.run_id, nowIso());
+	}
+}
+
+/**
+ * Converge document relocations that a committed record write still owes.
+ * Relocation is a file move, so it runs after COMMIT and stays idempotent:
+ * an interruption leaves the committed record authoritative and the move is
+ * retried under the next lock.
+ */
+function convergePendingRelocations(root: string, db: DatabaseSync): void {
+	for (const run of listPendingRelocations(db)) {
+		const relocations = JSON.parse(run.pending_relocations_json ?? "[]") as ArtifactRelocationV1[];
+		for (const relocation of relocations) convergeArtifactRelocation(root, relocation);
+		setPendingRelocations(db, run.run_id, null);
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Journal.
+// ---------------------------------------------------------------------------
+
+export function appendJournalEntry(root: string, entry: JournalEntry): void {
+	withKernelStoreLock(root, () => {
+		withKernelTransaction(root, (db) => {
+			appendJournalRow(
+				db,
+				JSON.stringify(entry),
+				entry.task_id,
+				entry.observation?.commit_id ?? null,
+				entry.observation?.observation_id ?? null,
+			);
+		});
+	});
+}
+
+export function appendObservationJournalEntry(
+	root: string,
+	entry: JournalEntry & { observation: V3AuthorityObservation },
+): "appended" | "duplicate" {
+	return withKernelTransaction(root, (db) => {
+		const existing = findJournalObservation(db, entry.observation.commit_id);
+		if (existing) {
+			if (existing.observation_id === entry.observation.observation_id) return "duplicate";
+			throw new KernelStoreConflictError(
+				`observation commit identity conflict: ${entry.observation.commit_id}`,
+			);
+		}
+		appendJournalRow(
+			db,
+			JSON.stringify(entry),
+			entry.task_id,
+			entry.observation.commit_id,
+			entry.observation.observation_id,
+		);
+		return "appended";
+	});
+}
+
+// ---------------------------------------------------------------------------
+// Locked transaction boundary.
+// ---------------------------------------------------------------------------
+
+/**
+ * Run one authority operation under the workspace write transaction. Retired
+ * file-store authority blocks every mutation, and interrupted audit exports are
+ * retried before the operation observes state.
+ */
+/**
+ * Run one authority operation under the workspace write transaction for an
+ * explicit task. A leftover derived claim/owner file whose task the store
+ * already superseded is retired here; anything else fails closed.
+ */
+export function withKernelStoreLockForTask<T>(
+	root: string,
+	taskId: string,
+	operation: () => T,
+): T {
+	validateTaskId(taskId);
+	return withKernelTransaction(root, (db) => {
+		assertNoRetiredFileStore(root, db, taskId);
+		convergePendingRelocations(root, db);
+		retryPendingAuditExports(root, db);
+		return operation();
+	});
+}
+
+export function withKernelStoreLock<T>(root: string, operation: () => T): T {
+	const result = withKernelTransaction(root, (db) => {
+		assertNoRetiredFileStore(root);
+		return operation();
+	});
+	// Deterministic follow-ups run after the authority transaction committed:
+	// document relocation and audit evidence can never roll back or revive an
+	// already settled run, and an interruption stays retryable here.
+	retryStoreFollowUps(root);
+	return result;
+}
+
+/** Converge owed document relocations and interrupted audit exports. */
+export function retryStoreFollowUps(root: string): void {
+	withKernelTransaction(root, (db) => {
+		convergePendingRelocations(root, db);
+		retryPendingAuditExports(root, db);
+	});
+}
+
+// ---------------------------------------------------------------------------
+// CAS writes.
+// ---------------------------------------------------------------------------
+
+function assertWorkspaceExpectation(db: DatabaseSync, expected: string, label: string): number {
+	const row = readWorkspaceRow(db);
+	const state = workspaceStateFromRow(db, row.current_run_id);
+	const currentRevision = revisionFor(serializeWorkspace(state));
+	if (expected === MISSING_REVISION) {
+		// The store itself is created by this transaction: only the pristine
+		// idle workspace may accept a missing expectation.
+		if (state.current_working !== null || row.revision !== 0)
+			throw new KernelStoreConflictError(
+				`CAS mismatch for ${label}: expected ${expected}, got ${currentRevision}`,
+			);
+		return row.revision;
+	}
+	if (currentRevision !== expected)
+		throw new KernelStoreConflictError(
+			`CAS mismatch for ${label}: expected ${expected}, got ${currentRevision}`,
+		);
+	return row.revision;
+}
+
+interface CommittedOperationResult {
+	record_json: string;
+	workspace_json: string;
+}
+
+function decodeOperationResult(
+	resultJson: string,
+): { record: TaskRecord; workspace: WorkspaceState } {
+	const parsed = JSON.parse(resultJson) as CommittedOperationResult;
+	return {
+		record: parseTaskRecord(JSON.parse(parsed.record_json) as Record<string, unknown>),
+		workspace: parseWorkspaceContent(parsed.workspace_json),
+	};
+}
+
+function requireActiveRun(db: DatabaseSync, taskId: string): KernelRunRow {
+	const run = readRunRowByTask(db, taskId);
+	if (!run)
+		throw new KernelStoreConflictError(`task ${taskId} has no enrolled run in this worktree`);
+	if (run.state !== "active")
+		throw new KernelStoreConflictError(
+			`task ${taskId} is ${run.state}; only an active run can be mutated`,
+		);
+	if (run.claim_status === null)
+		throw new KernelStoreConflictError(`task ${taskId} has no workspace claim to mutate`);
+	return run;
+}
+
+/**
+ * Read-only store probe for commands that must not create authority state:
+ * retired file-store authority fails closed, and an existing store is opened
+ * and validated without writing.
+ */
+export function probeKernelStore(root: string): void {
+	assertNoRetiredFileStore(root);
+	withKernelRead(root, () => undefined);
+}
+
+/** Commit a TaskRecord result through one revision-checked transaction. */
 export function commitTaskRecordLocked(
 	root: string,
 	taskId: string,
@@ -902,42 +1015,258 @@ export function commitTaskRecordLocked(
 	nextWorkspace: WorkspaceState,
 	artifactRelocations: ArtifactRelocationV1[] = [],
 ): StoredTaskMutationV3 {
-	const transaction: WorkspaceTransactionV2 = {
-		contract: "assurance_kernel/workspace_transaction/v2",
-		task_id: taskId,
-		expected_record_hash: expectedRecordHash,
-		next_record_content: `${JSON.stringify(nextRecord, null, 2)}\n`,
-		expected_workspace_hash: expectedWorkspaceHash,
-		next_workspace_content: serializeWorkspace(nextWorkspace),
-		...(artifactRelocations.length > 0 ? { artifact_relocations: artifactRelocations } : {}),
-	};
-	atomicCasWrite(
-		root,
-		TRANSACTION_PATH_V2,
-		`${JSON.stringify(transaction, null, 2)}\n`,
-		MISSING_REVISION,
-	);
-	try {
-		return completeTransactionV2Locked(root, transaction, true);
-	} catch (error) {
-		try {
-			return completeTransactionV2Locked(root, transaction, false);
-		} catch (recoveryError) {
+	validateTaskId(taskId);
+	const nextRecordContent = `${JSON.stringify(nextRecord, null, 2)}\n`;
+	const timestamp = nowIso();
+	const committed = withKernelTransaction(root, (db) => {
+		assertNoRetiredFileStore(root);
+		const run = requireActiveRun(db, taskId);
+		const identity = runIdentity(db, run);
+		assertRunBinding(identity, { task_id: taskId, run_id: run.run_id }, "task record commit");
+		const committedRecord = parseTaskRecord(nextRecord as unknown as Record<string, unknown>);
+		const currentRevision = canonicalRecordHash(recordFromRun(run));
+		if (currentRevision !== expectedRecordHash)
 			throw new KernelStoreConflictError(
-				`kernel v2 transaction failed and remains recoverable: ${error instanceof Error ? error.message : error}; recovery: ${recoveryError instanceof Error ? recoveryError.message : recoveryError}`,
+				`CAS mismatch for run ${run.run_id}: expected ${expectedRecordHash}, got ${currentRevision}`,
 			);
-		}
-	}
+		for (const relocation of artifactRelocations) assertArtifactRelocation(relocation);
+		updateRunRecord(db, run.run_id, run.revision, nextRecordContent, timestamp);
+		if (artifactRelocations.length > 0)
+			setPendingRelocations(db, run.run_id, JSON.stringify(artifactRelocations));
+		const workspaceRevision = assertWorkspaceExpectation(db, expectedWorkspaceHash, "workspace");
+		writeWorkspaceRow(db, workspaceRevision, run.run_id, timestamp);
+		return {
+			revision: canonicalRecordHash(committedRecord),
+			record: committedRecord,
+			workspace: {
+				revision: revisionFor(serializeWorkspace(nextWorkspace)),
+				state: nextWorkspace,
+			},
+		};
+	});
+	return committed;
 }
 
-export function withKernelStoreLock<T>(root: string, operation: () => T): T {
-	const locksDirectory = ensureSecureDirectory(root, dirname(stateStoreLockPath()));
-	return withExclusiveLock(resolve(locksDirectory, basename(stateStoreLockPath())), () => {
-		assertNoRetiredV1Marker(root);
-		recoverAnyPendingTransactionLocked(root);
-		return operation();
+function claimBytesFromRun(run: KernelRunRow): string {
+	return serializeBackendClaim(claimFromRunRow(run));
+}
+
+/**
+ * Enroll one run: the TaskRecord, the workspace owner and the derived claim
+ * commit together, or nothing does. A replayed call with the same enrollment
+ * event returns the committed result instead of writing again.
+ */
+export function commitEnrollmentLocked(
+	root: string,
+	taskId: string,
+	transaction: WorkspaceTransactionV2,
+	claim: Record<string, unknown>,
+): { record: TaskRecord; workspace: WorkspaceState } {
+	validateTaskId(taskId);
+	if (transaction.task_id !== taskId)
+		throw new KernelStoreSecurityError("enrollment transaction task identity is inconsistent");
+	const parsedClaim = parseBackendClaim(claim);
+	if (parsedClaim.task_id !== taskId)
+		throw new KernelStoreSecurityError("enrollment claim task identity is inconsistent");
+	if (parsedClaim.lifecycle_status !== "active")
+		throw new KernelStoreSecurityError("enrollment claim must be active");
+	const nextRecord = parseTaskRecord(
+		JSON.parse(transaction.next_record_content) as Record<string, unknown>,
+	);
+	if (nextRecord.task_id !== taskId)
+		throw new KernelStoreSecurityError("enrollment task record identity is inconsistent");
+	const nextWorkspace = parseWorkspaceContent(transaction.next_workspace_content);
+	if (nextWorkspace.current_working !== taskId)
+		throw new KernelStoreSecurityError("enrollment must claim the workspace for its task");
+
+	return withKernelTransaction(root, (db) => {
+		assertNoRetiredFileStore(root, db, taskId);
+		const runId = mintRunId();
+		const operationId = enrollmentOperationId(taskId, parsedClaim.enrollment_event_id);
+		const replay = readOperationRow(db, operationId);
+		if (replay) return decodeOperationResult(replay.result_json);
+		const existing = readRunRowByTask(db, taskId);
+		if (existing)
+			throw new KernelStoreConflictError(
+				`task ${taskId} already has run ${existing.run_id} (${existing.state}); same-task re-enrollment is forbidden`,
+			);
+		const active = readRunRowById(db, activeRunId(db) ?? "");
+		if (active)
+			throw new KernelStoreConflictError(
+				`workspace is already owned by ${active.task_id} (run ${active.run_id})`,
+			);
+		const workspaceRevision = assertWorkspaceExpectation(
+			db,
+			transaction.expected_workspace_hash,
+			"workspace",
+		);
+		const run = insertRunRow(db, {
+			run_id: runId,
+			task_id: taskId,
+			record_json: transaction.next_record_content,
+			intent_revision: parsedClaim.intent_revision,
+			intent_content_hash: parsedClaim.intent_content_hash,
+			enrollment_event_id: parsedClaim.enrollment_event_id,
+			claim_status: "active",
+			created_at: parsedClaim.created_at,
+			updated_at: parsedClaim.updated_at,
+		});
+		writeWorkspaceRow(db, workspaceRevision, run.run_id, parsedClaim.updated_at);
+		insertOperationRow(db, {
+			operation_id: operationId,
+			kind: "enrollment",
+			run_id: run.run_id,
+			result_json: JSON.stringify({
+				record_json: transaction.next_record_content,
+				workspace_json: transaction.next_workspace_content,
+			} satisfies CommittedOperationResult),
+			committed_at: parsedClaim.updated_at,
+		});
+		return { record: nextRecord, workspace: nextWorkspace };
 	});
 }
+
+/**
+ * Commit the recoverable active -> draining claim transition under the store
+ * transaction. The derived claim bytes are the CAS identity, so a divergent
+ * claim fails closed before anything is written.
+ */
+export function commitDrainLocked(
+	root: string,
+	taskId: string,
+	expectedClaimContent: string,
+	nextClaimContent: string,
+	at: string,
+): BackendClaim {
+	validateTaskId(taskId);
+	const expected = parseBackendClaim(JSON.parse(expectedClaimContent) as Record<string, unknown>);
+	const next = parseBackendClaim(JSON.parse(nextClaimContent) as Record<string, unknown>);
+	if (expected.task_id !== taskId || next.task_id !== taskId)
+		throw new KernelStoreSecurityError("drain claim identity is inconsistent");
+	if (expected.lifecycle_status !== "active" || next.lifecycle_status !== "draining")
+		throw new KernelStoreSecurityError("drain transaction must transition active -> draining");
+	return withKernelTransaction(root, (db) => {
+		assertNoRetiredFileStore(root);
+		const run = readRunRowByTask(db, taskId);
+		if (!run)
+			throw new KernelStoreConflictError(`task ${taskId} has no enrolled run in this worktree`);
+		const operationId = drainOperationId(taskId, next.updated_at);
+		const replay = readOperationRow(db, operationId);
+		if (replay) return next;
+		const active = requireActiveRun(db, taskId);
+		const identity = runIdentity(db, active);
+		assertRunBinding(identity, { task_id: taskId, run_id: active.run_id }, "drain transaction");
+		if (claimBytesFromRun(active) !== expectedClaimContent)
+			throw new KernelStoreConflictError(
+				`drain transaction claim bytes changed for ${taskId}`,
+			);
+		updateRunClaim(db, active.run_id, "active", "draining", at);
+		insertOperationRow(db, {
+			operation_id: operationId,
+			kind: "drain",
+			run_id: active.run_id,
+			result_json: JSON.stringify(next),
+			committed_at: at,
+		});
+		return next;
+	});
+}
+
+/**
+ * Commit terminal ownership transfer under the store transaction: the terminal
+ * TaskRecord, the cleared workspace owner and the released claim commit
+ * together. Audit evidence is exported afterwards; an interrupted export stays
+ * retryable and never reactivates the run.
+ */
+export function commitTerminalLocked(
+	root: string,
+	taskId: string,
+	transaction: WorkspaceTransactionV2,
+	tombstone: TaskTombstone,
+): { record: TaskRecord; workspace: WorkspaceState } {
+	validateTaskId(taskId);
+	if (transaction.task_id !== taskId)
+		throw new KernelStoreSecurityError("terminal transaction task identity is inconsistent");
+	if (tombstone.task_id !== taskId)
+		throw new KernelStoreSecurityError("terminal tombstone task identity is inconsistent");
+	const nextWorkspaceState = parseWorkspaceContent(transaction.next_workspace_content);
+	if (nextWorkspaceState.current_working !== null)
+		throw new KernelStoreSecurityError("terminal settlement requires a cleared workspace owner");
+	if (tombstone.final_record_hash !== revisionFor(transaction.next_record_content))
+		throw new KernelStoreSecurityError(
+			"terminal proof must match the terminal record bytes",
+		);
+	const terminalRecord = parseTaskRecord(
+		JSON.parse(transaction.next_record_content) as Record<string, unknown>,
+	);
+	if (terminalRecord.task_id !== taskId)
+		throw new KernelStoreSecurityError("terminal record identity is inconsistent");
+	if (tombstone.terminal_lifecycle !== terminalRecord.lifecycle)
+		throw new KernelStoreSecurityError(
+			"terminal proof lifecycle contradicts the terminal TaskRecord",
+		);
+	const proofBytes = serializeTaskTombstone(tombstone);
+
+	const committed = withKernelTransaction(root, (db) => {
+		assertNoRetiredFileStore(root, db, taskId);
+		const run = readRunRowByTask(db, taskId);
+		if (!run)
+			throw new KernelStoreConflictError(`task ${taskId} has no enrolled run in this worktree`);
+		const operationId = terminalOperationId(taskId, tombstone.terminal_event_id);
+		// A lost response replays the same event identity: the committed
+		// settlement is reused before any state guard runs.
+		const replay = readOperationRow(db, operationId);
+		if (replay) return decodeOperationResult(replay.result_json);
+		if (run.state !== "active")
+			throw new KernelStoreConflictError(
+				`terminal settlement refused: run ${run.run_id} is already ${run.state}`,
+			);
+		if (run.claim_status !== "active" && run.claim_status !== "draining")
+			throw new KernelStoreSecurityError("terminal settlement claim must be active or draining");
+		const identity = runIdentity(db, run);
+		assertRunBinding(identity, { task_id: taskId, run_id: run.run_id }, "terminal settlement");
+		for (const relocation of transaction.artifact_relocations ?? [])
+			assertArtifactRelocation(relocation);
+		const workspaceRevision = assertWorkspaceExpectation(
+			db,
+			transaction.expected_workspace_hash,
+			"workspace",
+		);
+		const lifecycle = terminalRecord.lifecycle === "done" ? "done" : "stopped";
+		updateRunTerminal(
+			db,
+			run.run_id,
+			lifecycle,
+			transaction.next_record_content,
+			proofBytes,
+			tombstone.terminalized_at,
+		);
+		writeWorkspaceRow(db, workspaceRevision, null, tombstone.terminalized_at);
+		if ((transaction.artifact_relocations ?? []).length > 0)
+			setPendingRelocations(db, run.run_id, JSON.stringify(transaction.artifact_relocations));
+		insertOperationRow(db, {
+			operation_id: operationId,
+			kind: "terminal",
+			run_id: run.run_id,
+			result_json: JSON.stringify({
+				record_json: transaction.next_record_content,
+				workspace_json: transaction.next_workspace_content,
+			} satisfies CommittedOperationResult),
+			committed_at: tombstone.terminalized_at,
+		});
+		return { record: terminalRecord, workspace: nextWorkspaceState };
+	});
+
+	// Settlement is committed. The relocation and the audit export are
+	// deterministic follow-ups performed after this transaction by
+	// `withKernelStoreLock` (or by the next locked operation); an interruption
+	// stays retryable and can never reactivate the run.
+	return committed;
+}
+
+// ---------------------------------------------------------------------------
+// Authority projection (owner matrix) derived from the store.
+// ---------------------------------------------------------------------------
 
 export type KernelAuthorityState =
 	| "unowned"
@@ -951,179 +1280,164 @@ export interface KernelAuthorityProjection {
 	requested_task_id: string;
 	state: KernelAuthorityState;
 	owner_task_id: string | null;
+	owner_run_id: string | null;
 	owner_lifecycle: TaskLifecycle | null;
 	claim_lifecycle_status: BackendClaim["lifecycle_status"] | null;
 	diagnostic: string | null;
 	revision: string;
 }
 
-/**
- * Recover durable Kernel transactions, then classify all ownership facts under
- * one lock. This is the shared fact boundary for host adapters; it never
- * invents terminality or removes a claim.
- */
+interface AuthorityFacts {
+	workspace_revision: number;
+	current_run_id: string | null;
+	active_run_id: string | null;
+	requested_run_state: TaskLifecycle | null;
+	requested_run_id: string | null;
+	audit_record_revision: string | null;
+}
+
+function authorityFacts(
+	db: DatabaseSync,
+	root: string,
+	taskId: string,
+): AuthorityFacts {
+	const workspace = readWorkspaceRow(db);
+	const active = readRunRowById(db, activeRunId(db) ?? "");
+	const requested = readRunRowByTask(db, taskId);
+	let auditRevision: string | null = null;
+	try {
+		auditRevision = readAuditTaskPair(root, taskId)?.recordRevision ?? null;
+	} catch (error) {
+		throw new KernelStoreConflictError(
+			error instanceof Error ? error.message : String(error),
+		);
+	}
+	return {
+		workspace_revision: workspace.revision,
+		current_run_id: workspace.current_run_id,
+		active_run_id: active && active.state === "active" ? active.run_id : null,
+		requested_run_state: requested ? requested.state : null,
+		requested_run_id: requested ? requested.run_id : null,
+		audit_record_revision: auditRevision,
+	};
+}
+
 function projectKernelAuthorityLocked(
+	db: DatabaseSync,
 	root: string,
 	taskId: string,
 ): KernelAuthorityProjection {
+	const projection = (fields: {
+		state: KernelAuthorityState;
+		owner_task_id?: string | null;
+		owner_run_id?: string | null;
+		owner_lifecycle?: TaskLifecycle | null;
+		claim_lifecycle_status?: BackendClaim["lifecycle_status"] | null;
+		diagnostic?: string | null;
+		revision: string;
+	}): KernelAuthorityProjection => ({
+		contract: "assurance_kernel/authority_projection/v1",
+		requested_task_id: taskId,
+		state: fields.state,
+		owner_task_id: fields.owner_task_id ?? null,
+		owner_run_id: fields.owner_run_id ?? null,
+		owner_lifecycle: fields.owner_lifecycle ?? null,
+		claim_lifecycle_status: fields.claim_lifecycle_status ?? null,
+		diagnostic: fields.diagnostic ?? null,
+		revision: fields.revision,
+	});
 	try {
-		const claim = readBackendClaim(root);
-		const ownerTaskId = claim?.task_id ?? null;
-		const inspectedTaskId = ownerTaskId ?? taskId;
-		const stateRecord = readTaskRecordRaw(root, inspectedTaskId);
-		const auditPair = readAuditTaskPair(root, inspectedTaskId);
-		const workspace = readWorkspaceStateRaw(root).state;
-		const record = stateRecord.record;
-		const auditRecord = auditPair?.record;
-		const authorityRecord = record
-			? {
-					task_id: record.task_id,
-					lifecycle: record.lifecycle,
-					intent_revision: record.intent_snapshot.revision,
-					intent_content_hash: record.intent_ref.content_hash,
-				}
-			: auditRecord
-				? "phase" in auditRecord
-					? {
-							task_id: auditRecord.task_id,
-							lifecycle: auditRecord.phase as "done" | "stopped",
-							intent_revision: auditRecord.intent_revision,
-							intent_content_hash: auditRecord.intent_ref.content_hash,
-						}
-					: {
-							task_id: auditRecord.task_id,
-							lifecycle: auditRecord.lifecycle,
-							intent_revision: auditRecord.intent_snapshot.revision,
-							intent_content_hash: auditRecord.intent_ref.content_hash,
-						}
-				: null;
-		const terminal = auditPair !== null;
-		// review-1: a state record must never coexist with a terminal audit
-		// pair; only the settlement marker may hold them transiently, and a
-		// present marker routes to recovery/conflict before this projection.
-		const duplicateStateAndAudit = Boolean(stateRecord.record && auditPair);
-		const matchingTerminalProof = Boolean(auditPair && workspace.current_working === null);
-		const matchingClaimIdentity = Boolean(
-			claim &&
-			authorityRecord &&
-			claim.task_id === authorityRecord.task_id &&
-			claim.intent_revision === authorityRecord.intent_revision &&
-			claim.intent_content_hash === authorityRecord.intent_content_hash,
-		);
-		const sameOwner = claim ? workspace.current_working === claim.task_id : workspace.current_working === null;
-		const revision = revisionForContent(JSON.stringify({ claim, stateRecord, auditPair, workspace }));
-
-		if (duplicateStateAndAudit)
-			return {
-				contract: "assurance_kernel/authority_projection/v1",
-				requested_task_id: taskId,
+		const facts = authorityFacts(db, root, taskId);
+		const revision = revisionFor(JSON.stringify(facts));
+		const active = facts.active_run_id ? readRunRowById(db, facts.active_run_id) : null;
+		if (facts.current_run_id && !active)
+			return projection({
 				state: "authority_conflict",
-				owner_task_id: claim?.task_id ?? null,
-				owner_lifecycle: authorityRecord?.lifecycle ?? null,
-				claim_lifecycle_status: claim?.lifecycle_status ?? null,
-				diagnostic: `simultaneous state record and terminal audit pair for ${inspectedTaskId}; resolve or recover before authority interpretation`,
+				owner_task_id: facts.current_run_id,
+				diagnostic: `workspace owner references run ${facts.current_run_id}, which is not active`,
 				revision,
-			};
-		if (claim && !sameOwner && !matchingTerminalProof)
-			return {
-				contract: "assurance_kernel/authority_projection/v1",
-				requested_task_id: taskId,
-				state: "authority_conflict",
-				owner_task_id: claim.task_id,
-				owner_lifecycle: authorityRecord?.lifecycle ?? null,
-				claim_lifecycle_status: claim.lifecycle_status,
-				diagnostic: `workspace owner ${workspace.current_working ?? "null"} contradicts claim ${claim.task_id}`,
-				revision,
-			};
-		if (claim && !authorityRecord)
-			return {
-				contract: "assurance_kernel/authority_projection/v1",
-				requested_task_id: taskId,
-				state: "authority_conflict",
-				owner_task_id: claim.task_id,
-				owner_lifecycle: null,
-				claim_lifecycle_status: claim.lifecycle_status,
-				diagnostic: `claim ${claim.task_id} has no TaskRecord`,
-				revision,
-			};
-		if (claim && matchingTerminalProof && matchingClaimIdentity)
-			return {
-				contract: "assurance_kernel/authority_projection/v1",
-				requested_task_id: taskId,
-				state: "repairable_stale_claim",
-				owner_task_id: claim.task_id,
-				owner_lifecycle: authorityRecord?.lifecycle ?? null,
-				claim_lifecycle_status: claim.lifecycle_status,
-				diagnostic: null,
-				revision,
-			};
-		if (claim && terminal)
-			return {
-				contract: "assurance_kernel/authority_projection/v1",
-				requested_task_id: taskId,
-				state: "authority_conflict",
-				owner_task_id: claim.task_id,
-				owner_lifecycle: authorityRecord?.lifecycle ?? null,
-				claim_lifecycle_status: claim.lifecycle_status,
-				diagnostic: `claim ${claim.task_id} has contradictory terminal ownership evidence`,
-				revision,
-			};
-		if (claim)
-			return {
-				contract: "assurance_kernel/authority_projection/v1",
-				requested_task_id: taskId,
+			});
+		if (active) {
+			if (facts.current_run_id !== active.run_id)
+				return projection({
+					state: "authority_conflict",
+					owner_task_id: active.task_id,
+					owner_run_id: active.run_id,
+					diagnostic: "workspace owner contradicts the active run",
+					revision,
+				});
+			if (active.claim_status === null)
+				return projection({
+					state: "authority_conflict",
+					owner_task_id: active.task_id,
+					owner_run_id: active.run_id,
+					diagnostic: "active run carries no workspace claim",
+					revision,
+				});
+			if (active.task_id === taskId && facts.audit_record_revision !== null)
+				return projection({
+					state: "authority_conflict",
+					owner_task_id: active.task_id,
+					owner_run_id: active.run_id,
+					owner_lifecycle: "active",
+					claim_lifecycle_status: active.claim_status,
+					diagnostic: `terminal audit evidence exists while ${taskId} is active`,
+					revision,
+				});
+			return projection({
 				state: "active_owner",
-				owner_task_id: claim.task_id,
-				owner_lifecycle: authorityRecord?.lifecycle ?? null,
-				claim_lifecycle_status: claim.lifecycle_status,
-				diagnostic: null,
+				owner_task_id: active.task_id,
+				owner_run_id: active.run_id,
+				owner_lifecycle: "active",
+				claim_lifecycle_status: active.claim_status,
 				revision,
-			};
-		if (matchingTerminalProof)
-			return {
-				contract: "assurance_kernel/authority_projection/v1",
-				requested_task_id: taskId,
+			});
+		}
+		if (facts.requested_run_state && facts.requested_run_state !== "active")
+			return projection({
 				state: "terminal_owner",
-				owner_task_id: inspectedTaskId,
-				owner_lifecycle: authorityRecord?.lifecycle ?? null,
-				claim_lifecycle_status: null,
-				diagnostic: null,
+				owner_task_id: taskId,
+				owner_run_id: facts.requested_run_id,
+				owner_lifecycle: facts.requested_run_state,
 				revision,
-			};
-		if (authorityRecord || workspace.current_working !== null)
-			return {
-				contract: "assurance_kernel/authority_projection/v1",
-				requested_task_id: taskId,
+			});
+		if (facts.audit_record_revision !== null)
+			return projection({
+				state: "terminal_owner",
+				owner_task_id: taskId,
+				owner_lifecycle: null,
+				revision,
+			});
+		if (facts.requested_run_state)
+			return projection({
 				state: "authority_conflict",
-				owner_task_id: workspace.current_working,
-				owner_lifecycle: authorityRecord?.lifecycle ?? null,
-				claim_lifecycle_status: null,
-				diagnostic: "nonterminal owner state exists without a backend claim",
+				owner_task_id: taskId,
+				owner_run_id: facts.requested_run_id,
+				diagnostic: "nonterminal run exists without a workspace owner",
 				revision,
-			};
-		return {
-			contract: "assurance_kernel/authority_projection/v1",
-			requested_task_id: taskId,
-			state: "unowned",
-			owner_task_id: null,
-			owner_lifecycle: null,
-			claim_lifecycle_status: null,
-			diagnostic: null,
-			revision,
-		};
-
+			});
+		return projection({ state: "unowned", revision });
 	} catch (error) {
-		return {
-			contract: "assurance_kernel/authority_projection/v1",
-			requested_task_id: taskId,
+		return projection({
 			state: "authority_conflict",
-			owner_task_id: null,
-			owner_lifecycle: null,
-			claim_lifecycle_status: null,
 			diagnostic: error instanceof Error ? error.message : String(error),
 			revision: "",
-		};
+		});
 	}
+}
+
+function conflictProjection(taskId: string, diagnostic: string): KernelAuthorityProjection {
+	return {
+		contract: "assurance_kernel/authority_projection/v1",
+		requested_task_id: taskId,
+		state: "authority_conflict",
+		owner_task_id: null,
+		owner_run_id: null,
+		owner_lifecycle: null,
+		claim_lifecycle_status: null,
+		diagnostic,
+		revision: "",
+	};
 }
 
 export function reconcileKernelAuthority(
@@ -1131,664 +1445,101 @@ export function reconcileKernelAuthority(
 	taskId: string,
 ): KernelAuthorityProjection {
 	validateTaskId(taskId);
-	return withKernelStoreLock(root, () => projectKernelAuthorityLocked(root, taskId));
-}
-
-interface AuthorityRepairMarker {
-	contract: "assurance_kernel/authority_repair_transaction/v1";
-	task_id: string;
-	expected_projection_revision: string;
-	expected_claim_content: string;
-	at: string;
-}
-
-function readPendingAuthorityRepairMarker(root: string): AuthorityRepairMarker | null {
-	if (currentRevision(root, AUTHORITY_REPAIR_MARKER_PATH) === MISSING_REVISION) return null;
-	const raw = JSON.parse(
-		readSecureProjectFile(root, AUTHORITY_REPAIR_MARKER_PATH),
-	) as Record<string, unknown>;
-	const allowed = [
-		"contract",
-		"task_id",
-		"expected_projection_revision",
-		"expected_claim_content",
-		"at",
-	];
-	const unknown = Object.keys(raw).filter((key) => !allowed.includes(key));
-	if (unknown.length > 0)
-		throw new KernelStoreSecurityError(
-			`authority repair marker has unknown field: ${unknown[0]}`,
-		);
-	if (raw.contract !== "assurance_kernel/authority_repair_transaction/v1")
-		throw new KernelStoreSecurityError("authority repair marker contract is invalid");
-	for (const field of ["task_id", "expected_projection_revision", "expected_claim_content", "at"]) {
-		if (typeof raw[field] !== "string" || !String(raw[field]).trim())
-			throw new KernelStoreSecurityError(`authority repair marker ${field} is invalid`);
+	const projected = withKernelRead(root, (db) => {
+		const conflict = retiredFileStoreConflict(root, db, taskId);
+		if (conflict) return conflictProjection(taskId, conflict);
+		return projectKernelAuthorityLocked(db, root, taskId);
+	});
+	if (projected) return projected;
+	// A worktree without a store yet can still hold committed audit evidence
+	// (fresh clone): terminal evidence alone classifies as terminal_owner.
+	const legacy = retiredFileStoreDiagnostic(root, null, taskId);
+	if (legacy) return conflictProjection(taskId, legacy);
+	try {
+		const audit = readAuditTaskPair(root, taskId);
+		if (audit)
+			return {
+				contract: "assurance_kernel/authority_projection/v1",
+				requested_task_id: taskId,
+				state: "terminal_owner",
+				owner_task_id: taskId,
+				owner_run_id: null,
+				owner_lifecycle: null,
+				claim_lifecycle_status: null,
+				diagnostic: null,
+				revision: audit.recordRevision,
+			};
+	} catch (error) {
+		return {
+			contract: "assurance_kernel/authority_projection/v1",
+			requested_task_id: taskId,
+			state: "authority_conflict",
+			owner_task_id: taskId,
+			owner_run_id: null,
+			owner_lifecycle: null,
+			claim_lifecycle_status: null,
+			diagnostic: error instanceof Error ? error.message : String(error),
+			revision: "",
+		};
 	}
-	const marker = raw as unknown as AuthorityRepairMarker;
-	validateTaskId(marker.task_id);
-	const claim = parseBackendClaim(JSON.parse(marker.expected_claim_content));
-	if (claim.task_id !== marker.task_id)
-		throw new KernelStoreSecurityError("authority repair claim identity is inconsistent");
-	return marker;
+	return {
+		contract: "assurance_kernel/authority_projection/v1",
+		requested_task_id: taskId,
+		state: "unowned",
+		owner_task_id: null,
+		owner_run_id: null,
+		owner_lifecycle: null,
+		claim_lifecycle_status: null,
+		diagnostic: null,
+		revision: "",
+	};
 }
 
-function removeAuthorityRepairMarker(root: string): void {
-	const candidate = safeCandidate(root, AUTHORITY_REPAIR_MARKER_PATH);
-	assertNoSymlinkSegments(candidate.root, candidate.path);
-	const stat = pathStatOrNull(candidate.path);
-	if (!stat) return;
-	if (!stat.isFile())
-		throw new KernelStoreSecurityError("authority repair marker is not a regular file");
-	rmSync(candidate.path);
-	fsyncDirectory(dirname(candidate.path));
+function retiredFileStoreDiagnostic(
+	root: string,
+	db: DatabaseSync | null = null,
+	taskId: string | null = null,
+): string | null {
+	return retiredFileStoreConflict(root, db, taskId);
 }
 
-function recoverPendingAuthorityRepairLocked(root: string): void {
-	const marker = readPendingAuthorityRepairMarker(root);
-	if (!marker) return;
-	const projection = projectKernelAuthorityLocked(root, marker.task_id);
-	const claimRevision = currentRevision(root, CLAIM_RELATIVE_PATH);
-	if (claimRevision === MISSING_REVISION) {
-		if (
-			projection.state !== "terminal_owner" ||
-			projection.owner_task_id !== marker.task_id
-		)
-			throw new KernelStoreConflictError(
-				"authority repair committed claim removal but terminal proof changed",
-			);
-		removeAuthorityRepairMarker(root);
-		return;
-	}
-	if (
-		projection.state !== "repairable_stale_claim" ||
-		projection.owner_task_id !== marker.task_id ||
-		projection.revision !== marker.expected_projection_revision ||
-		claimRevision !== revisionFor(marker.expected_claim_content)
-	)
-		throw new KernelStoreConflictError(
-			"authority repair facts changed after confirmation",
-		);
-	const claimCandidate = safeCandidate(root, CLAIM_RELATIVE_PATH);
-	assertNoSymlinkSegments(claimCandidate.root, claimCandidate.path);
-	rmSync(claimCandidate.path);
-	fsyncDirectory(dirname(claimCandidate.path));
-	removeAuthorityRepairMarker(root);
-}
-
-/** Remove one exactly proven stale terminal claim through a replayable marker. */
+/**
+ * Remove one exactly proven stale terminal claim.
+ *
+ * The SQLite store derives ownership from the single active run, so a claim
+ * that disagrees with the run index cannot exist: the state this operation
+ * repaired is unreachable by construction. The entry point stays fail-closed
+ * and is retained until the coordinated major release retires the tool.
+ */
 export function repairKernelAuthority(
 	root: string,
 	taskId: string,
 	expectedProjectionRevision: string,
-	at = new Date().toISOString(),
+	_at = nowIso(),
 ): KernelAuthorityProjection {
 	validateTaskId(taskId);
-	return withKernelStoreLock(root, () => {
-		const projection = projectKernelAuthorityLocked(root, taskId);
-		if (
-			projection.state !== "repairable_stale_claim" ||
-			projection.owner_task_id !== taskId ||
-			projection.revision !== expectedProjectionRevision
-		)
-			throw new KernelStoreConflictError("authority repair requires exact stale terminal proof");
-		const marker: AuthorityRepairMarker = {
-			contract: "assurance_kernel/authority_repair_transaction/v1",
-			task_id: taskId,
-			expected_projection_revision: expectedProjectionRevision,
-			expected_claim_content: readSecureProjectFile(root, CLAIM_RELATIVE_PATH),
-			at,
-		};
-		atomicCasWrite(
-			root,
-			AUTHORITY_REPAIR_MARKER_PATH,
-			`${JSON.stringify(marker, null, 2)}\n`,
-			MISSING_REVISION,
-		);
-		try {
-			recoverPendingAuthorityRepairLocked(root);
-		} catch (error) {
-			throw new KernelStoreConflictError(
-				`authority repair failed and remains recoverable: ${error instanceof Error ? error.message : error}`,
-			);
+	return withKernelTransaction(root, (db) => {
+		assertNoRetiredFileStore(root, db, taskId);
+		const projection = projectKernelAuthorityLocked(db, root, taskId);
+		if (projection.state === "repairable_stale_claim") {
+			if (
+				projection.owner_task_id !== taskId ||
+				projection.revision !== expectedProjectionRevision
+			)
+				throw new KernelStoreConflictError(
+					"authority repair requires exact stale terminal proof",
+				);
+			return projection;
 		}
-		return projectKernelAuthorityLocked(root, taskId);
+		// The workspace owner is derived from the single active run, so a claim
+		// that contradicts the run index cannot exist. A leftover retired claim
+		// file is inert and was just retired; the current authority is the answer.
+		if (projection.state === "terminal_owner" || projection.state === "unowned")
+			return projection;
+		throw new KernelStoreConflictError(
+			`authority repair is not available while authority is ${projection.state}`,
+		);
 	});
 }
 
-// P2B0 enrollment marker. The enrollment transaction embeds the v2
-// task/workspace transaction plus the backend claim; recovery completes the
-// v2 convergence then re-writes the claim if it was not yet durable.
-// ---------------------------------------------------------------------------
-
-interface EnrollmentMarker {
-	contract: "assurance_kernel/enrollment_transaction/v1";
-	task_id: string;
-	transaction: WorkspaceTransactionV2;
-	claim: Record<string, unknown>;
-}
-
-function readPendingEnrollmentMarker(root: string): EnrollmentMarker | null {
-	if (currentRevision(root, ENROLLMENT_MARKER_PATH) === MISSING_REVISION) return null;
-	const raw = JSON.parse(
-		readSecureProjectFile(root, ENROLLMENT_MARKER_PATH),
-	) as Record<string, unknown>;
-	const allowed = ["contract", "task_id", "transaction", "claim"];
-	const unknown = Object.keys(raw).filter((key) => !allowed.includes(key));
-	if (unknown.length > 0)
-		throw new KernelStoreSecurityError(
-			`enrollment marker has unknown field: ${unknown[0]}`,
-		);
-	if (raw.contract !== "assurance_kernel/enrollment_transaction/v1")
-		throw new KernelStoreSecurityError(
-			"enrollment marker contract is invalid",
-		);
-	if (typeof raw.task_id !== "string" || !raw.task_id.trim())
-		throw new KernelStoreSecurityError(
-			"enrollment marker task_id is invalid",
-		);
-	const transaction = parseWorkspaceTransactionV2(
-		raw.transaction as Record<string, unknown>,
-	);
-	if (transaction.task_id !== raw.task_id)
-		throw new KernelStoreSecurityError(
-			"enrollment marker task identity is inconsistent",
-		);
-	return {
-		contract: "assurance_kernel/enrollment_transaction/v1",
-		task_id: raw.task_id,
-		transaction,
-		claim: raw.claim as Record<string, unknown>,
-	};
-}
-
-function removeEnrollmentMarker(root: string): void {
-	const candidate = safeCandidate(root, ENROLLMENT_MARKER_PATH);
-	assertNoSymlinkSegments(candidate.root, candidate.path);
-	const stat = pathStatOrNull(candidate.path);
-	if (!stat) return;
-	if (!stat.isFile())
-		throw new KernelStoreSecurityError(
-			"enrollment marker is not a regular file",
-		);
-	rmSync(candidate.path);
-	fsyncDirectory(dirname(candidate.path));
-}
-
-/** Recover a pending enrollment marker: complete the embedded v2 transaction, then re-write the claim. */
-function recoverPendingEnrollmentLocked(root: string): void {
-	const marker = readPendingEnrollmentMarker(root);
-	if (!marker) return;
-	const transaction = marker.transaction;
-	convergeFile(
-		root,
-		stateTaskRecordPath(transaction.task_id),
-		transaction.expected_record_hash,
-		transaction.next_record_content,
-	);
-	convergeFile(
-		root,
-		stateWorkspacePath(),
-		transaction.expected_workspace_hash,
-		transaction.next_workspace_content,
-	);
-	// re-write the backend claim (last step of the enrollment transaction)
-	atomicCasWrite(
-		root,
-		stateClaimPath(),
-		`${JSON.stringify(marker.claim, null, 2)}\n`,
-		MISSING_REVISION,
-	);
-	removeEnrollmentMarker(root);
-}
-
-/**
- * Write an enrollment marker (embedded v2 transaction + claim) and complete it
- * atomically under the store lock. Exported for the enrollment core.
- */
-export function commitEnrollmentLocked(
-	root: string,
-	taskId: string,
-	transaction: WorkspaceTransactionV2,
-	claim: Record<string, unknown>,
-): { record: TaskRecord; workspace: WorkspaceState } {
-	const marker: EnrollmentMarker = {
-		contract: "assurance_kernel/enrollment_transaction/v1",
-		task_id: taskId,
-		transaction,
-		claim,
-	};
-	atomicCasWrite(
-		root,
-		ENROLLMENT_MARKER_PATH,
-		`${JSON.stringify(marker, null, 2)}\n`,
-		MISSING_REVISION,
-	);
-	try {
-		recoverPendingEnrollmentLocked(root);
-	} catch (error) {
-		throw new KernelStoreConflictError(
-			`enrollment transaction failed and remains recoverable: ${error instanceof Error ? error.message : error}`,
-		);
-	}
-	return {
-		record: parseTaskRecord(JSON.parse(transaction.next_record_content)),
-		workspace: parseWorkspaceContent(transaction.next_workspace_content),
-	};
-}
-
-// ---------------------------------------------------------------------------
-// P2B2 drain and terminal ownership transactions. The workspace backend claim
-// has exactly one write path: these recoverable markers owned by this module.
-// `backend_claim.ts` exports no writer; enrollment uses the marker above.
-// ---------------------------------------------------------------------------
-
-interface DrainMarker {
-	contract: "assurance_kernel/drain_transaction/v1";
-	task_id: string;
-	expected_claim_content: string;
-	next_claim_content: string;
-	at: string;
-}
-
-interface TerminalMarker {
-	contract: "assurance_kernel/terminal_transaction/v2";
-	task_id: string;
-	expected_state_record_hash: string;
-	audit_record_content: string;
-	proof_content: string;
-	expected_workspace_hash: string;
-	next_workspace_content: string;
-	artifact_relocations?: ArtifactRelocationV1[];
-	expected_claim_sha256: string;
-	at: string;
-}
-
-function parseArtifactRelocationsV1(raw: unknown): ArtifactRelocationV1[] {
-	if (raw === undefined) return [];
-	if (!Array.isArray(raw))
-		throw new KernelStoreSecurityError("artifact_relocations is invalid");
-	return raw.map((item, index) => {
-		if (!item || typeof item !== "object" || Array.isArray(item))
-			throw new KernelStoreSecurityError(`artifact relocation ${index} is invalid`);
-		const value = item as Record<string, unknown>;
-		const unknownFields = Object.keys(value).filter((key) => !["from_path", "to_path", "content_hash"].includes(key));
-		if (unknownFields.length > 0)
-			throw new KernelStoreSecurityError(`artifact relocation has unknown field: ${unknownFields[0]}`);
-		for (const field of ["from_path", "to_path", "content_hash"])
-			if (typeof value[field] !== "string" || !String(value[field]).trim())
-				throw new KernelStoreSecurityError(`artifact relocation ${field} is invalid`);
-		const relocation = value as unknown as ArtifactRelocationV1;
-		assertArtifactRelocation(relocation);
-		return relocation;
-	});
-}
-
-// The workspace-active claim lives at the ignored state path (storage_paths).
-const CLAIM_RELATIVE_PATH = stateClaimPath();
-
-function parseDrainMarker(raw: Record<string, unknown>): DrainMarker {
-	const allowed = [
-		"contract",
-		"task_id",
-		"expected_claim_content",
-		"next_claim_content",
-		"at",
-	];
-	const unknown = Object.keys(raw).filter((key) => !allowed.includes(key));
-	if (unknown.length > 0)
-		throw new KernelStoreSecurityError(
-			`drain marker has unknown field: ${unknown[0]}`,
-		);
-	if (raw.contract !== "assurance_kernel/drain_transaction/v1")
-		throw new KernelStoreSecurityError("drain marker contract is invalid");
-	if (typeof raw.task_id !== "string" || !raw.task_id.trim())
-		throw new KernelStoreSecurityError("drain marker task_id is invalid");
-	for (const field of ["expected_claim_content", "next_claim_content", "at"]) {
-		if (typeof raw[field] !== "string" || !String(raw[field]).trim())
-			throw new KernelStoreSecurityError(`drain marker ${field} is invalid`);
-	}
-	const marker = raw as unknown as DrainMarker;
-	validateTaskId(marker.task_id);
-	const expected = parseBackendClaim(JSON.parse(marker.expected_claim_content));
-	const next = parseBackendClaim(JSON.parse(marker.next_claim_content));
-	if (expected.task_id !== marker.task_id || next.task_id !== marker.task_id)
-		throw new KernelStoreSecurityError("drain marker claim identity is inconsistent");
-	if (expected.lifecycle_status !== "active" || next.lifecycle_status !== "draining")
-		throw new KernelStoreSecurityError(
-			"drain marker must transition active -> draining",
-		);
-	return marker;
-}
-
-function readPendingDrainMarker(root: string): DrainMarker | null {
-	if (currentRevision(root, DRAIN_MARKER_PATH) === MISSING_REVISION) return null;
-	const raw = JSON.parse(
-		readSecureProjectFile(root, DRAIN_MARKER_PATH),
-	) as Record<string, unknown>;
-	return parseDrainMarker(raw);
-}
-
-function removeDrainMarker(root: string): void {
-	const candidate = safeCandidate(root, DRAIN_MARKER_PATH);
-	assertNoSymlinkSegments(candidate.root, candidate.path);
-	const stat = pathStatOrNull(candidate.path);
-	if (!stat) return;
-	if (!stat.isFile())
-		throw new KernelStoreSecurityError(
-			"drain marker is not a regular file",
-		);
-	rmSync(candidate.path);
-	fsyncDirectory(dirname(candidate.path));
-}
-
-/**
- * Converge the workspace claim to draining. Exact committed replay (claim
- * already equals next content) is idempotent; a conflicting claim fails
- * closed and leaves the marker recoverable.
- */
-function recoverPendingDrainLocked(root: string): void {
-	const marker = readPendingDrainMarker(root);
-	if (!marker) return;
-	convergeFile(
-		root,
-		CLAIM_RELATIVE_PATH,
-		revisionFor(marker.expected_claim_content),
-		marker.next_claim_content,
-	);
-	removeDrainMarker(root);
-}
-
-/**
- * Commit the recoverable active -> draining claim transition under the store
- * lock. Returns the committed draining claim. Caller must already hold the
- * lock, have validated task/record/workspace ownership, and have consumed the
- * user capability exactly once before the marker write.
- */
-export function commitDrainLocked(
-	root: string,
-	taskId: string,
-	expectedClaimContent: string,
-	nextClaimContent: string,
-	at: string,
-): BackendClaim {
-	validateTaskId(taskId);
-	const expected = parseBackendClaim(JSON.parse(expectedClaimContent));
-	const next = parseBackendClaim(JSON.parse(nextClaimContent));
-	if (expected.task_id !== taskId || next.task_id !== taskId)
-		throw new KernelStoreSecurityError("drain claim identity is inconsistent");
-	if (expected.lifecycle_status !== "active" || next.lifecycle_status !== "draining")
-		throw new KernelStoreSecurityError(
-			"drain transaction must transition active -> draining",
-		);
-	const marker: DrainMarker = {
-		contract: "assurance_kernel/drain_transaction/v1",
-		task_id: taskId,
-		expected_claim_content: expectedClaimContent,
-		next_claim_content: nextClaimContent,
-		at,
-	};
-	atomicCasWrite(
-		root,
-		DRAIN_MARKER_PATH,
-		`${JSON.stringify(marker, null, 2)}\n`,
-		MISSING_REVISION,
-	);
-	try {
-		recoverPendingDrainLocked(root);
-	} catch (error) {
-		throw new KernelStoreConflictError(
-			`drain transaction failed and remains recoverable: ${error instanceof Error ? error.message : error}`,
-		);
-	}
-	return next;
-}
-
-function parseTerminalMarker(raw: Record<string, unknown>): TerminalMarker {
-	const allowed = [
-		"contract",
-		"task_id",
-		"expected_state_record_hash",
-		"audit_record_content",
-		"proof_content",
-		"expected_workspace_hash",
-		"next_workspace_content",
-		"artifact_relocations",
-		"expected_claim_sha256",
-		"at",
-	];
-	const unknown = Object.keys(raw).filter((key) => !allowed.includes(key));
-	if (unknown.length > 0)
-		throw new KernelStoreSecurityError(
-			`terminal marker has unknown field: ${unknown[0]}`,
-		);
-	if (raw.contract !== "assurance_kernel/terminal_transaction/v2")
-		throw new KernelStoreSecurityError("terminal marker contract is invalid");
-	if (typeof raw.task_id !== "string" || !raw.task_id.trim())
-		throw new KernelStoreSecurityError("terminal marker task_id is invalid");
-	validateTaskId(raw.task_id);
-	for (const field of ["expected_state_record_hash", "audit_record_content", "proof_content", "expected_workspace_hash", "next_workspace_content", "at"]) {
-		if (typeof raw[field] !== "string" || !String(raw[field]).trim())
-			throw new KernelStoreSecurityError(`terminal marker ${field} is invalid`);
-	}
-	const expectedClaim = raw.expected_claim_sha256;
-	if (typeof expectedClaim !== "string" || !/^sha256:[a-f0-9]{64}$/.test(expectedClaim))
-		throw new KernelStoreSecurityError("terminal marker expected_claim_sha256 is required");
-	const marker = {
-		contract: "assurance_kernel/terminal_transaction/v2" as const,
-		task_id: raw.task_id,
-		expected_state_record_hash: raw.expected_state_record_hash as string,
-		audit_record_content: raw.audit_record_content as string,
-		proof_content: raw.proof_content as string,
-		expected_workspace_hash: raw.expected_workspace_hash as string,
-		next_workspace_content: raw.next_workspace_content as string,
-		artifact_relocations: parseArtifactRelocationsV1(raw.artifact_relocations),
-		expected_claim_sha256: expectedClaim,
-		at: raw.at as string,
-	};
-	const record = parseTaskRecord(JSON.parse(marker.audit_record_content));
-	if (record.task_id !== marker.task_id)
-		throw new KernelStoreSecurityError("terminal marker task identity is inconsistent");
-	if (record.lifecycle !== "done" && record.lifecycle !== "stopped")
-		throw new KernelStoreSecurityError("terminal marker record must be terminal");
-	const proof = parseTaskTombstone(JSON.parse(marker.proof_content) as Record<string, unknown>);
-	if (proof.task_id !== marker.task_id)
-		throw new KernelStoreSecurityError("terminal marker proof identity is inconsistent");
-	if (proof.final_record_hash !== revisionFor(marker.audit_record_content))
-		throw new KernelStoreSecurityError("terminal marker proof does not match the terminal record bytes");
-	if (proof.terminal_lifecycle !== record.lifecycle)
-		throw new KernelStoreSecurityError("terminal marker proof lifecycle contradicts the terminal record");
-	const workspaceState = parseWorkspaceContent(marker.next_workspace_content);
-	if (workspaceState.current_working !== null)
-		throw new KernelStoreSecurityError("terminal marker requires a cleared workspace owner");
-	return marker;
-}
-
-function readPendingTerminalMarker(root: string): TerminalMarker | null {
-	if (currentRevision(root, TERMINAL_MARKER_PATH) === MISSING_REVISION) return null;
-	const raw = JSON.parse(
-		readSecureProjectFile(root, TERMINAL_MARKER_PATH),
-	) as Record<string, unknown>;
-	return parseTerminalMarker(raw);
-}
-
-function removeTerminalMarker(root: string): void {
-	const candidate = safeCandidate(root, TERMINAL_MARKER_PATH);
-	assertNoSymlinkSegments(candidate.root, candidate.path);
-	const stat = pathStatOrNull(candidate.path);
-	if (!stat) return;
-	if (!stat.isFile())
-		throw new KernelStoreSecurityError(
-			"terminal marker is not a regular file",
-		);
-	rmSync(candidate.path);
-	fsyncDirectory(dirname(candidate.path));
-}
-
-/**
- * Converge terminal state: TaskRecord, workspace owner, active-claim removal,
- * and task tombstone creation. Each step is idempotent on its committed
- * result and fails closed on contradictory partial bytes.
- */
-function convergeStateRecordRemoval(root: string, taskId: string, expectedHash: string): void {
-	const relativePath = stateTaskRecordPath(taskId);
-	const actual = currentRevision(root, relativePath);
-	if (actual === MISSING_REVISION) return; // already removed
-	if (actual !== expectedHash)
-		throw new KernelStoreConflictError(
-			`state record changed during terminal settlement: expected ${expectedHash}, got ${actual}`,
-		);
-	const candidate = safeCandidate(root, relativePath);
-	assertNoSymlinkSegments(candidate.root, candidate.path);
-	const stat = pathStatOrNull(candidate.path);
-	if (!stat || !stat.isFile())
-		throw new KernelStoreSecurityError("state task record is not a regular file");
-	rmSync(candidate.path);
-	fsyncDirectory(dirname(candidate.path));
-}
-
-/**
- * Converge terminal state: create the immutable audit record/proof pair,
- * clear the workspace owner, remove the active claim and the state record,
- * and remove the marker. Each step is idempotent on its committed result and
- * fails closed on contradictory partial bytes. The state record is removed
- * only after the complete audit pair is durable.
- */
-function recoverPendingTerminalLocked(root: string, invokeStepHook = false): void {
-	const marker = readPendingTerminalMarker(root);
-	if (!marker) return;
-	for (const relocation of marker.artifact_relocations ?? [])
-		convergeArtifactRelocation(root, relocation);
-	if (invokeStepHook) runTerminalSettlementStepHook(0);
-	// Audit record: create-once; identical committed bytes are idempotent.
-	convergeFile(
-		root,
-		auditTaskRecordPath(marker.task_id),
-		MISSING_REVISION,
-		marker.audit_record_content,
-	);
-	// Terminal proof: create-once after the record is durable.
-	convergeFile(
-		root,
-		auditTerminalProofPath(marker.task_id),
-		MISSING_REVISION,
-		marker.proof_content,
-	);
-	if (invokeStepHook) runTerminalSettlementStepHook(1);
-	convergeFile(
-		root,
-		stateWorkspacePath(),
-		marker.expected_workspace_hash,
-		marker.next_workspace_content,
-	);
-	if (invokeStepHook) runTerminalSettlementStepHook(2);
-	// Active-claim removal: absence is the committed outcome. A present
-	// claim is removed only after its bytes match the marker's frozen
-	// expected hash; a foreign or changed claim fails closed and keeps the
-	// marker recoverable (review-1).
-	const claimCandidate = safeCandidate(root, stateClaimPath());
-	assertNoSymlinkSegments(claimCandidate.root, claimCandidate.path);
-	const claimStat = pathStatOrNull(claimCandidate.path);
-	if (claimStat) {
-		// review-2: a present claim at replay must byte-match the frozen
-		// claim hash; absence is the already-converged step, a foreign or
-		// changed claim fails closed instead of being destroyed.
-		if (!claimStat.isFile())
-			throw new KernelStoreSecurityError(
-				"backend claim is not a regular file",
-			);
-		const claimBytes = readSecureProjectFile(root, stateClaimPath());
-		if (revisionFor(claimBytes) !== marker.expected_claim_sha256)
-			throw new KernelStoreConflictError(
-				`backend claim changed during terminal settlement: expected ${marker.expected_claim_sha256}, got ${revisionFor(claimBytes)}`,
-			);
-		rmSync(claimCandidate.path);
-		fsyncDirectory(dirname(claimCandidate.path));
-	}
-	if (invokeStepHook) runTerminalSettlementStepHook(3);
-	// Active state record removal: only after the audit pair is verified.
-	convergeStateRecordRemoval(root, marker.task_id, marker.expected_state_record_hash);
-	if (invokeStepHook) runTerminalSettlementStepHook(4);
-	terminalSettlementStepHookForTest = null;
-	removeTerminalMarker(root);
-}
-/**
- * Commit the recoverable terminal ownership transfer under the store lock:
- * terminal TaskRecord, cleared workspace owner, removed active claim, created
- * task tombstone. Caller must already hold the lock and have validated the
- * exact before/after identities.
- */
-export function commitTerminalLocked(
-	root: string,
-	taskId: string,
-	transaction: WorkspaceTransactionV2,
-	tombstone: TaskTombstone,
-): { record: TaskRecord; workspace: WorkspaceState } {
-	validateTaskId(taskId);
-	if (transaction.task_id !== taskId)
-		throw new KernelStoreSecurityError(
-			"terminal transaction task identity is inconsistent",
-		);
-	if (tombstone.task_id !== taskId)
-		throw new KernelStoreSecurityError(
-			"terminal tombstone task identity is inconsistent",
-		);
-	const nextWorkspaceState = parseWorkspaceContent(transaction.next_workspace_content);
-	if (nextWorkspaceState.current_working !== null)
-		throw new KernelStoreSecurityError(
-			"terminal settlement requires a cleared workspace owner",
-		);
-	if (tombstone.final_record_hash !== revisionFor(transaction.next_record_content))
-		throw new KernelStoreSecurityError(
-			"terminal proof must match the terminal record bytes",
-		);
-	const terminalRecord = parseTaskRecord(
-		JSON.parse(transaction.next_record_content) as Record<string, unknown>,
-	);
-	if (tombstone.terminal_lifecycle !== terminalRecord.lifecycle)
-		throw new KernelStoreSecurityError(
-			"terminal proof lifecycle contradicts the terminal TaskRecord",
-		);
-	const claimBytes = readSecureProjectFile(root, stateClaimPath());
-	const claim = parseBackendClaim(JSON.parse(claimBytes) as Record<string, unknown>);
-	if (claim.task_id !== taskId)
-		throw new KernelStoreSecurityError(
-			`terminal settlement claim belongs to ${claim.task_id}, not ${taskId}`,
-		);
-	if (claim.lifecycle_status !== "active" && claim.lifecycle_status !== "draining")
-		throw new KernelStoreSecurityError(
-			"terminal settlement claim must be active or draining",
-		);
-	const expectedClaimSha256 = revisionFor(claimBytes);
-	const marker: TerminalMarker = {
-		contract: "assurance_kernel/terminal_transaction/v2",
-		task_id: taskId,
-		expected_state_record_hash: transaction.expected_record_hash,
-		audit_record_content: transaction.next_record_content,
-		proof_content: serializeTaskTombstone(tombstone),
-		expected_workspace_hash: transaction.expected_workspace_hash,
-		next_workspace_content: transaction.next_workspace_content,
-		...(transaction.artifact_relocations
-			? { artifact_relocations: transaction.artifact_relocations }
-			: {}),
-		expected_claim_sha256: expectedClaimSha256,
-		at: tombstone.terminalized_at,
-	};
-	atomicCasWrite(
-		root,
-		TERMINAL_MARKER_PATH,
-		`${JSON.stringify(marker, null, 2)}\n`,
-		MISSING_REVISION,
-	);
-	try {
-		recoverPendingTerminalLocked(root, true);
-	} catch (error) {
-		throw new KernelStoreConflictError(
-			`terminal transaction failed and remains recoverable: ${error instanceof Error ? error.message : error}`,
-		);
-	}
-	return {
-		record: parseTaskRecord(JSON.parse(transaction.next_record_content)),
-		workspace: parseWorkspaceContent(transaction.next_workspace_content),
-	};
-}
+export { stateDatabasePath };

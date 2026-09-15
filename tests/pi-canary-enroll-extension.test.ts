@@ -15,6 +15,8 @@ const AUTHORITY_OBSERVER_VERSION_V2 = "assurance-kernel-p2a-observer/v2";
 import { assertTaskIntentPreparationStable } from "../plugins/immune-brain/.pi-extension/imm-canary-enroll";
 import { readTaskIntent } from "../plugins/immune-brain/runtime/kernel/intent";
 import { preparePiCanary } from "../plugins/immune-brain/runtime/kernel/pi_canary_prepare";
+import { readBackendClaim } from "../plugins/immune-brain/runtime/kernel/backend_claim";
+import { readWorkspaceRow, withKernelRead } from "../plugins/immune-brain/runtime/kernel/sqlite_store";
 import {
 } from "../plugins/immune-brain/runtime/commands/kernel";
 
@@ -172,7 +174,12 @@ describe("pi canary enroll extension", () => {
 		expect(result.state).toBe("blocked");
 		expect(result.message).toMatch(/TaskIntent is required/i);
 		expect(ui.confirmCalls.length).toBe(0);
-		expect(readdirSync(join(root, ".imm/state"))).toEqual(["locks"]);
+		// Zero authority: no retired file store, no run, no claim.
+		expect(existsSync(join(root, ".imm/state/workspace.json"))).toBe(false);
+		expect(existsSync(join(root, ".imm/state/tasks"))).toBe(false);
+		expect(readBackendClaim(root)).toBeNull();
+		// The store may exist as an empty lock target, but it holds no authority.
+		expect(withKernelRead(root, (db) => readWorkspaceRow(db))?.current_run_id ?? null).toBeNull();
 	});
 
 	test("tracked malformed intent reports canonical validation before confirmation", async () => {
@@ -662,14 +669,20 @@ describe("pi canary enroll handler integration", () => {
 				"rehearsing",
 				"committing",
 			]);
-			expect(readdirSync(join(root, ".imm/state")).sort()).toEqual(["active-claim.json", "locks", "observations", "tasks", "transactions", "workspace.json"]);
-			expect(readdirSync(join(root, ".imm/state/tasks")).sort()).toEqual([`${TASK}.json`]);
+			// Authority is one SQLite transaction: no retired file store remains.
+			expect(existsSync(join(root, ".imm/state/kernel.sqlite"))).toBe(true);
+			expect(existsSync(join(root, ".imm/state/workspace.json"))).toBe(false);
+			expect(existsSync(join(root, ".imm/state/active-claim.json"))).toBe(false);
+			expect(existsSync(join(root, ".imm/state/tasks"))).toBe(false);
+			expect(existsSync(join(root, ".imm/state/transactions"))).toBe(false);
 			const second = await runTool(root, makeFakeUI(true));
 			expect(second.details.state).toBe("route_incumbent");
 			expect(second.details.next_action).toContain("imm-loop");
 			expect(second.details.summary).toMatch(/already owns/i);
-			expect(readdirSync(join(root, ".imm/state")).sort()).toEqual(["active-claim.json", "locks", "observations", "tasks", "transactions", "workspace.json"]);
-			expect(readdirSync(join(root, ".imm/state/tasks")).sort()).toEqual([`${TASK}.json`]);
+			// The refused second enrollment wrote nothing.
+			expect(existsSync(join(root, ".imm/state/workspace.json"))).toBe(false);
+			expect(existsSync(join(root, ".imm/state/tasks"))).toBe(false);
+			expect(readBackendClaim(root)?.task_id).toBe(TASK);
 		} finally {
 			rmSync(root, { recursive: true, force: true });
 		}

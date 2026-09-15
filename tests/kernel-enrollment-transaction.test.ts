@@ -1,13 +1,33 @@
 import { describe, expect, test } from "bun:test";
-import { existsSync, mkdtempSync, writeFileSync, mkdirSync, rmSync } from "node:fs";
+import {
+	existsSync,
+	mkdirSync,
+	mkdtempSync,
+	readFileSync,
+	rmSync,
+	writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 
 import {
 	readBackendClaim,
-	serializeBackendClaim,
+	parseBackendClaim,
 	type BackendClaim,
 } from "../plugins/immune-brain/runtime/kernel/backend_claim";
+import {
+	KernelStoreConflictError,
+	KernelStoreSecurityError,
+	backupKernelStore,
+	openKernelStore,
+	restoreKernelStore,
+	withKernelRead,
+	readRunRowByTask,
+	readWorkspaceRow,
+	withKernelTransaction,
+} from "../plugins/immune-brain/runtime/kernel/sqlite_store";
+import { seedKernelRunForTest } from "./fixtures/mutation-authority-test-seam";
+import { canonicalIntentHash, parseTaskIntentV1 } from "../plugins/immune-brain/runtime/kernel/intent";
 import { enrollCanaryTask, runEnrollmentRehearsal } from "../plugins/immune-brain/runtime/kernel/enrollment";
 import { preparePiCanary, readGitHead } from "../plugins/immune-brain/runtime/kernel/pi_canary_prepare";
 import {
@@ -27,8 +47,6 @@ function makeRoot(): string {
 	mkdirSync(join(root, "docs", "plans"), { recursive: true });
 	return root;
 }
-
-const CLAIM_PATH = ".imm/state/active-claim.json";
 
 function baseIntent(taskId: string, revision = 1) {
 	return {
@@ -96,28 +114,23 @@ describe("backend claim", () => {
 		expect(readBackendClaim(root)).toBeNull();
 	});
 
-	test("serialize then read round-trips through the canonical bytes", () => {
+	test("the derived claim round-trips through the canonical parser", () => {
 		const root = makeRoot();
-		const claim: BackendClaim = {
-			contract: "assurance_kernel/backend_claim/v2",
-			backend: "kernel",
-			task_id: "task-001",
-			intent_revision: 1,
-			intent_content_hash: "sha256:intent",
-			enrollment_event_id: "evt-1",
-			lifecycle_status: "active",
-			created_at: "2026-08-12T00:00:00.000Z",
-			updated_at: "2026-08-12T00:00:00.000Z",
-		};
-		writeFileSync(join(root, CLAIM_PATH), serializeBackendClaim(claim));
+		const taskId = "task-001";
+		seedEnrolledRun(root, taskId);
 		const read = readBackendClaim(root);
-		expect(read).toEqual(claim);
+		expect(read).not.toBeNull();
+		expect(read?.task_id).toBe(taskId);
+		expect(read?.lifecycle_status).toBe("active");
+		// The claim is a projection of the committed run row, so its canonical
+		// bytes re-parse to exactly the same claim.
+		expect(parseBackendClaim(read as unknown as Record<string, unknown>)).toEqual(read);
 	});
 
-	test("malformed claim fails closed", () => {
-		const root = makeRoot();
-		writeFileSync(join(root, CLAIM_PATH), `{"contract":"assurance_kernel/backend_claim/v2","backend":"v3"}\n`);
-		expect(() => readBackendClaim(root)).toThrow();
+	test("malformed claims fail closed in the parser", () => {
+		expect(() =>
+			parseBackendClaim({ contract: "assurance_kernel/backend_claim/v2", backend: "v3" }),
+		).toThrow();
 	});
 
 	test("module exports no direct claim writer or remover", () => {
@@ -126,6 +139,31 @@ describe("backend claim", () => {
 		expect(module).not.toContain("removeBackendClaim");
 	});
 });
+
+/** Seed one committed active run (the workspace owner) through the store. */
+function seedEnrolledRun(root: string, taskId: string, gitHead = "a".repeat(40)) {
+	const intent = baseIntent(taskId);
+	const record = {
+		contract: "assurance_kernel/task_record/v4",
+		task_id: taskId,
+		intent_snapshot: intent,
+		intent_ref: {
+			path: `docs/plans/${taskId}.intent.json`,
+			content_hash: canonicalIntentHash(parseTaskIntentV1(intent)),
+		},
+		lifecycle: "active",
+		artifact_state: "active",
+		baseline: `sha256:${"a".repeat(64)}`,
+		git_base_head: gitHead,
+		attestations: [],
+		findings: [],
+		history: [],
+	};
+	const intentPath = join(root, "docs", "plans", `${taskId}.intent.json`);
+	mkdirSync(dirname(intentPath), { recursive: true });
+	writeFileSync(intentPath, `${JSON.stringify(intent, null, 2)}\n`);
+	return seedKernelRunForTest(root, { task_id: taskId, record });
+}
 
 describe("enrollment transaction", () => {
 	const registry = createEnrollmentAuthorityRegistry();
@@ -230,26 +268,18 @@ describe("enrollment transaction", () => {
 		const root = makeRoot();
 		const taskId = "task-005";
 		writeIntent(root, taskId);
-		writeFileSync(
-			join(root, ".imm/state/workspace.json"),
-			`{"contract":"assurance_kernel/workspace/v1","current_working":"other-task"}\n`,
-		);
-		// Binding after the workspace is owned: preparation digest reflects the
-		// owner set, and enrollment must reject with the owned diagnostic.
-		const cap = registry.issue(bindingFor(root, taskId));
-		const prep = preparePiCanary(root, { task_id: taskId, now: "2026-08-12T00:00:00.000Z" });
-		expect(prep.workspace.current_working).toBe("other-task");
+		seedEnrolledRun(root, "other-task");
+		// The owner's sidecar must be Git-tracked like any enrolled intent.
+		gitInitAndCommit(root);
+		// Ownership is derived from the single active run, so a second task can
+		// neither prepare nor enroll against the owned worktree.
 		expect(() =>
-			enrollCanaryTask(root, {
-				task_id: taskId,
-				intent_path: `docs/plans/${taskId}.intent.json`,
-				intent_revision: 1,
-				preparation_digest: prep.digest,
-				capability: cap,
-				capability_binding: bindingFor(root, taskId),
-				now: "2026-08-12T00:00:00.000Z",
-			}, registry),
-		).toThrow(/owned/i);
+			preparePiCanary(root, { task_id: taskId, now: "2026-08-12T00:00:00.000Z" }),
+		).toThrow(/belongs to task other-task/);
+		const owner = preparePiCanary(root, { task_id: "other-task", now: "2026-08-12T00:00:00.000Z" });
+		expect(owner.workspace.current_working).toBe("other-task");
+		expect(owner.backend_claim).toMatchObject({ present: true, task_id: "other-task" });
+		expect(withKernelRead(root, (db) => readRunRowByTask(db, taskId))).toBeNull();
 	});
 
 	test("rejects same-revision intent content drift without authority writes", () => {
@@ -309,7 +339,9 @@ describe("enrollment Spec binding precondition", () => {
 		expect(readTaskRecord(root, taskId).record).toBeNull();
 		expect(readBackendClaim(root)).toBeNull();
 		expect(registry.isConsumed(capability)).toBe(false);
-		expect(existsSync(join(root, ".imm", "state", "workspace.json"))).toBe(false);
+		// Zero authority: no run row, an idle workspace and no derived claim.
+		expect(withKernelRead(root, (db) => readRunRowByTask(db, taskId))).toBeNull();
+		expect(withKernelRead(root, (db) => readWorkspaceRow(db).current_run_id)).toBeNull();
 	});
 
 	test("names the missing archive path when only the active Spec is in scope", () => {
@@ -450,10 +482,7 @@ describe("batch-derived enrollment atomicity", () => {
 		const childCapability = enrollmentRegistry.issue(derived.binding, "2026-08-12T00:00:00.000Z");
 		// A worktree that already owns another task blocks the enrollment under
 		// the same lock that would have consumed the slot.
-		writeFileSync(
-			join(root, ".imm/state/workspace.json"),
-			`{"contract":"assurance_kernel/workspace/v1","current_working":"other-task"}\n`,
-		);
+		seedEnrolledRun(root, "other-task");
 
 		expect(() =>
 			enrollCanaryTask(
@@ -473,9 +502,176 @@ describe("batch-derived enrollment atomicity", () => {
 				},
 				enrollmentRegistry,
 			),
-		).toThrow(/owned/i);
+		).toThrow(/belongs to task other-task/);
 		expect(batchRegistry.consumedChildren(capability)).toEqual([]);
 		expect(readTaskRecord(root, "task-b02").record).toBeNull();
-		expect(readBackendClaim(root)).toBeNull();
+		// The pre-existing owner still holds the workspace claim unchanged.
+		expect(readBackendClaim(root)).toMatchObject({ task_id: "other-task", lifecycle_status: "active" });
+		expect(withKernelRead(root, (db) => readRunRowByTask(db, "task-b02"))).toBeNull();
+	});
+});
+
+
+describe("SQLite enrollment authority (A2)", () => {
+	const registry = createEnrollmentAuthorityRegistry();
+
+	function transactionFor(root: string, taskId: string, expectedWorkspace: string) {
+		const intent = baseIntent(taskId);
+		const record = {
+			contract: "assurance_kernel/task_record/v4",
+			task_id: taskId,
+			intent_snapshot: intent,
+			intent_ref: {
+				path: `docs/plans/${taskId}.intent.json`,
+				content_hash: canonicalIntentHash(parseTaskIntentV1(intent)),
+			},
+			lifecycle: "active",
+			artifact_state: "active",
+			baseline: `sha256:${"a".repeat(64)}`,
+			git_base_head: "a".repeat(40),
+			attestations: [],
+			findings: [],
+			history: [],
+		};
+		const claim: BackendClaim = {
+			contract: "assurance_kernel/backend_claim/v2",
+			backend: "kernel",
+			task_id: taskId,
+			intent_revision: 1,
+			intent_content_hash: canonicalIntentHash(parseTaskIntentV1(intent)),
+			enrollment_event_id: `enroll-${taskId}`,
+			lifecycle_status: "active",
+			created_at: "2026-08-12T00:00:00.000Z",
+			updated_at: "2026-08-12T00:00:00.000Z",
+		};
+		return {
+			task_id: taskId,
+			transaction: {
+				contract: "assurance_kernel/workspace_transaction/v2" as const,
+				task_id: taskId,
+				expected_record_hash: "missing",
+				next_record_content: `${JSON.stringify(record, null, 2)}\n`,
+				expected_workspace_hash: expectedWorkspace,
+				next_workspace_content: `${JSON.stringify(
+					{ contract: "assurance_kernel/workspace/v1", current_working: taskId },
+					null,
+					2,
+				)}\n`,
+			},
+			claim,
+		};
+	}
+
+	test("a stale workspace revision refuses enrollment with zero authority writes", async () => {
+		const root = makeRoot();
+		writeIntent(root, "task-stale");
+		const { commitEnrollmentLocked } = await import(
+			"../plugins/immune-brain/runtime/kernel/storage"
+		);
+		const { transaction, claim } = transactionFor(root, "task-stale", "rev:7");
+		expect(() =>
+			commitEnrollmentLocked(
+				root,
+				"task-stale",
+				transaction,
+				claim as unknown as Record<string, unknown>,
+			),
+		).toThrow(KernelStoreConflictError);
+		expect(withKernelRead(root, (db) => readRunRowByTask(db, "task-stale"))).toBeNull();
+		expect(withKernelRead(root, (db) => readWorkspaceRow(db).current_run_id)).toBeNull();
+	});
+
+	test("replaying the same enrollment event returns the committed result once", async () => {
+		const root = makeRoot();
+		writeIntent(root, "task-replay");
+		const { commitEnrollmentLocked } = await import(
+			"../plugins/immune-brain/runtime/kernel/storage"
+		);
+		const fresh = withKernelRead(root, (db) => readWorkspaceRow(db));
+		const workspaceHash = fresh ? `rev:${fresh.revision}` : "missing";
+		const { transaction, claim } = transactionFor(root, "task-replay", workspaceHash);
+		const first = commitEnrollmentLocked(
+			root,
+			"task-replay",
+			transaction,
+			claim as unknown as Record<string, unknown>,
+		);
+		const firstRun = withKernelRead(root, (db) => readRunRowByTask(db, "task-replay"))!;
+		// A lost response replays the same operation identity: the committed
+		// result is reused and no second run or owner write appears.
+		const replay = commitEnrollmentLocked(
+			root,
+			"task-replay",
+			transaction,
+			claim as unknown as Record<string, unknown>,
+		);
+		expect(replay.record).toEqual(first.record);
+		const afterRun = withKernelRead(root, (db) => readRunRowByTask(db, "task-replay"))!;
+		expect(afterRun.run_id).toBe(firstRun.run_id);
+		expect(afterRun.revision).toBe(firstRun.revision);
+	});
+
+	test("a divergent enrollment request for the same event fails without writes", async () => {
+		const root = makeRoot();
+		writeIntent(root, "task-divergent");
+		const { commitEnrollmentLocked } = await import(
+			"../plugins/immune-brain/runtime/kernel/storage"
+		);
+		const fresh = withKernelRead(root, (db) => readWorkspaceRow(db));
+		const { transaction, claim } = transactionFor(root, "task-divergent", fresh ? `rev:${fresh.revision}` : "missing");
+		commitEnrollmentLocked(root, "task-divergent", transaction, claim as unknown as Record<string, unknown>);
+		// Same event identity, different intent content: refused, and the
+		// committed run is untouched.
+		const divergent = transactionFor(root, "task-divergent", "missing");
+		expect(() =>
+			commitEnrollmentLocked(
+				root,
+				"task-divergent",
+				{
+					...divergent.transaction,
+					next_record_content: divergent.transaction.next_record_content.replace(
+						"goal for task-divergent",
+						"divergent goal",
+					),
+				},
+				{ ...divergent.claim, intent_content_hash: `sha256:${"c".repeat(64)}` } as unknown as Record<
+					string,
+					unknown
+				>,
+			),
+		).toThrow();
+		const run = withKernelRead(root, (db) => readRunRowByTask(db, "task-divergent"))!;
+		expect(JSON.parse(run.record_json).intent_snapshot.goal).toBe("goal for task-divergent");
+	});
+
+	test("a database copied from another worktree grants no enrollment authority", async () => {
+		const rootA = makeRoot();
+		const rootB = makeRoot();
+		writeIntent(rootA, "task-copy-a");
+		seedEnrolledRun(rootA, "task-copy-a");
+		const backupPath = join(rootA, "copy.sqlite");
+		backupKernelStore(rootA, backupPath);
+		// Bypass the restore guard to prove the store itself refuses the copy.
+		mkdirSync(join(rootB, ".imm", "state"), { recursive: true });
+		writeFileSync(join(rootB, ".imm/state/kernel.sqlite"), readFileSync(backupPath));
+		const { commitEnrollmentLocked } = await import(
+			"../plugins/immune-brain/runtime/kernel/storage"
+		);
+		writeIntent(rootB, "task-copy-b");
+		// Every store access, including read-only projections, fails closed.
+		expect(() => openKernelStore(rootB, { create: false })).toThrow(KernelStoreSecurityError);
+		expect(() => withKernelRead(rootB, (db) => readWorkspaceRow(db))).toThrow(
+			KernelStoreSecurityError,
+		);
+		const { transaction, claim } = transactionFor(rootB, "task-copy-b", "missing");
+		expect(() =>
+			commitEnrollmentLocked(
+				rootB,
+				"task-copy-b",
+				transaction,
+				claim as unknown as Record<string, unknown>,
+			),
+		).toThrow(KernelStoreSecurityError);
+		expect(() => readBackendClaim(rootB)).toThrow(KernelStoreSecurityError);
 	});
 });

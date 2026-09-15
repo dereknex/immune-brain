@@ -61,14 +61,6 @@ beforeEach(() => {
 	);
 	execFileSync("git", ["add", "-A"], { cwd: root });
 	execFileSync("git", ["commit", "-qm", "intent"], { cwd: root });
-	writeFileSync(
-		join(root, ".imm/state/workspace.json"),
-		JSON.stringify(
-			{ contract: "assurance_kernel/workspace/v1", current_working: null },
-			null,
-			2,
-		) + "\n",
-	);
 	const enrollmentRegistry = createEnrollmentAuthorityRegistry();
 	const prep = preparePiCanary(root, { task_id: TASK, now: "2026-08-12T10:00:00.000Z" });
 	const binding: EnrollmentCapabilityBinding = {
@@ -306,12 +298,13 @@ describe("canary application authority pairing", () => {
 		);
 	});
 
-	test("simultaneous markers fail closed under one lock", () => {
-		// Manually plant a second marker alongside the drain marker scenario;
-		// any lock acquisition must refuse ambiguous recovery state.
-		const { writeFileSync: write, existsSync } = require("node:fs") as typeof import("node:fs");
+	test("a retired transaction marker blocks the store lock until it is settled", () => {
+		// Markers belong to the runtime that wrote them: one lock acquisition must
+		// refuse them instead of interpreting or discarding them.
+		const { writeFileSync: write, existsSync, mkdirSync: mkdir, rmSync } = require("node:fs") as typeof import("node:fs");
 		const expectedClaim = readBackendClaim(root)!;
 		const nextClaim = { ...expectedClaim, lifecycle_status: "draining", updated_at: now };
+		mkdir(join(root, ".imm/state/transactions"), { recursive: true });
 		write(
 			join(root, ".imm/state/transactions/drain-transaction.json"),
 			`${JSON.stringify({
@@ -326,8 +319,14 @@ describe("canary application authority pairing", () => {
 			join(root, ".imm/state/transactions/workspace-transaction-v2.json"),
 			'{"contract":"assurance_kernel/workspace_transaction/v2","task_id":"x","expected_record_hash":"h","next_record_content":"{}","expected_workspace_hash":"w","next_workspace_content":"{}"}\n',
 		);
-		expect(() => withKernelStoreLock(root, () => undefined)).toThrow(/markers are forbidden/i);
+		expect(() => withKernelStoreLock(root, () => undefined)).toThrow(
+			/retired file-store transaction marker/,
+		);
 		expect(existsSync(join(root, ".imm/state/transactions/drain-transaction.json"))).toBe(true);
+		// Settling the markers restores the store lock.
+		rmSync(join(root, ".imm/state/transactions"), { recursive: true, force: true });
+		expect(() => withKernelStoreLock(root, () => undefined)).not.toThrow();
+		expect(readBackendClaim(root)?.lifecycle_status).toBe("active");
 	});
 });
 

@@ -39,7 +39,7 @@ import { projectLegacyAudit } from "../kernel/legacy_audit";
 import { inspectStorageLayout } from "../kernel/storage_paths";
 import { migrateLegacyLayout } from "../kernel/storage_layout_migration";
 import { readBackendClaim } from "../kernel/backend_claim";
-import { withKernelStoreLock } from "../kernel";
+import { probeKernelStore } from "../kernel";
 
 export interface KernelCommandResult {
 	stdout: string;
@@ -114,16 +114,7 @@ function runStatus(root: string): KernelExecution {
 	try {
 		const layout = inspectStorageLayout(root);
 		const claim = readBackendClaim(root);
-		const workspace = (() => {
-			try {
-				const raw = JSON.parse(readSecureProjectFile(root, ".imm/state/workspace.json")) as {
-					current_working?: unknown;
-				};
-				return typeof raw.current_working === "string" ? raw.current_working : null;
-			} catch {
-				return null;
-			}
-		})();
+		const workspace = readWorkspaceOwner(root);
 		return {
 			result: jsonResult({
 				contract: "assurance_kernel/status/v1",
@@ -186,10 +177,7 @@ function matchingFloorEntries(intent: TaskIntentV1): string[] {
 
 function readWorkspaceOwner(root: string): string | null {
 	try {
-		const raw = JSON.parse(readSecureProjectFile(root, ".imm/state/workspace.json")) as {
-			current_working?: unknown;
-		};
-		return typeof raw.current_working === "string" ? raw.current_working : null;
+		return readWorkspaceStateRaw(root).state.current_working;
 	} catch {
 		return null;
 	}
@@ -492,7 +480,7 @@ function runIntentAuthor(args: string[], root: string): KernelExecution {
 	// its frozen manifest under both locks. The original authoring is retried
 	// only after the affected migration diff is committed.
 	try {
-		withKernelStoreLock(root, () => undefined);
+		probeKernelStore(root);
 	} catch (error) {
 		return {
 			result: errorResult(

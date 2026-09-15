@@ -21,6 +21,50 @@ import { executePiUnattendedBatch } from "../plugins/immune-brain/.pi-extension/
 import type { BatchRunnerKernelPort } from "../plugins/immune-brain/runtime/unattended/batch_runner";
 import { runBatchGitPreflight } from "../plugins/immune-brain/runtime/unattended/batch_git";
 import { readTaskTombstone } from "../plugins/immune-brain/runtime/kernel/backend_claim";
+import { canonicalIntentHash, parseTaskIntentV1 } from "../plugins/immune-brain/runtime/kernel/intent";
+import { seedKernelRunForTest } from "./fixtures/mutation-authority-test-seam";
+import { withKernelTransaction } from "../plugins/immune-brain/runtime/kernel/sqlite_store";
+
+/** Claim the workspace for a fixture task through the store. */
+function claimWorkspaceForTest(root: string, taskId: string): void {
+	const intent = {
+		contract: "assurance_kernel/task_intent/v1",
+		task_id: taskId,
+		goal: "drift fixture",
+		acceptance: [{ id: "A1", assertion: "a1", verification: "bun test tests/x.test.ts" }],
+		scope_hint: ["docs/plans"],
+		risk: "routine" as const,
+		revision: 1,
+		owner: "user",
+	};
+	seedKernelRunForTest(root, {
+		task_id: taskId,
+		record: {
+			contract: "assurance_kernel/task_record/v4",
+			task_id: taskId,
+			intent_snapshot: intent,
+			intent_ref: {
+				path: `docs/plans/${taskId}.intent.json`,
+				content_hash: canonicalIntentHash(parseTaskIntentV1(intent)),
+			},
+			lifecycle: "active",
+			artifact_state: "active",
+			baseline: `sha256:${"a".repeat(64)}`,
+			git_base_head: "a".repeat(40),
+			attestations: [],
+			findings: [],
+			history: [],
+		},
+	});
+}
+
+/** Release the workspace: the owner settles and no active run remains. */
+function releaseWorkspaceForTest(root: string): void {
+	withKernelTransaction(root, (db) => {
+		db.prepare("UPDATE workspace SET current_run_id = NULL WHERE id = 1").run();
+		db.prepare("DELETE FROM runs WHERE state = 'active'").run();
+	});
+}
 
 const ENV = { CLAUDE_CODE_VERSION: "2.1.236", CLAUDE_CODE_PERMISSION_MODE: "manual" };
 
@@ -395,10 +439,7 @@ describe("acc-claude-batch-fail-closed", () => {
 	it("active workspace claim blocks batch with state: blocked and zero writes", async () => {
 		const fixture = createBatchFixture("claim-block");
 		// Create an active workspace claim
-		writeFileSync(
-			join(fixture.root, ".imm", "state", "workspace.json"),
-			JSON.stringify({ contract: "assurance_kernel/workspace/v1", current_working: "some-active-task" }),
-		);
+		claimWorkspaceForTest(fixture.root, "some-active-task");
 		let confirmationOpened = false;
 		const runtime = createMcpRuntime({
 			cwd: fixture.root,
@@ -794,10 +835,7 @@ describe("acc-claude-batch-fail-closed", () => {
 				readCount++;
 				if (readCount === 2) {
 					// Another request claimed workspace during this re-read!
-					writeFileSync(
-						join(fixture.root, ".imm", "state", "workspace.json"),
-						JSON.stringify({ contract: "assurance_kernel/workspace/v1", current_working: "concurrent-task" }),
-					);
+					claimWorkspaceForTest(fixture.root, "concurrent-task");
 				}
 				return fixture.observation;
 			},
@@ -832,12 +870,7 @@ describe("acc-claude-batch-fail-closed", () => {
 				// DO NOT override enrollTask — exercise the real Kernel enrollment in createBatchKernelPort!
 				advanceTask: async () => {
 					// Clear the task's active claim upon completion so the next child can enroll cleanly
-					writeFileSync(
-						join(fixture.root, ".imm", "state", "workspace.json"),
-						JSON.stringify({ contract: "assurance_kernel/workspace/v1", current_working: null }),
-					);
-					const claimPath = join(fixture.root, ".imm", "state", "active-claim.json");
-					if (existsSync(claimPath)) rmSync(claimPath, { force: true });
+					releaseWorkspaceForTest(fixture.root);
 					return { state: "completed" };
 				},
 				commitChild: async () => {
@@ -918,12 +951,7 @@ describe("acc-claude-batch-fail-closed", () => {
 					if (step === 1) return { state: "review_ready", operation_id: "op-cr", agent_params: { prompt: "review" } as never };
 					// Settlement clears the live claim and the workspace owner; the resume
 					// seam mirrors that so the next child can be projected.
-					writeFileSync(
-						join(fixture.root, ".imm", "state", "workspace.json"),
-						JSON.stringify({ contract: "assurance_kernel/workspace/v1", current_working: null }),
-					);
-					const claimPath = join(fixture.root, ".imm", "state", "active-claim.json");
-					if (existsSync(claimPath)) rmSync(claimPath, { force: true });
+					releaseWorkspaceForTest(fixture.root);
 					return { state: "completed" };
 				},
 				commitChild: async () => {

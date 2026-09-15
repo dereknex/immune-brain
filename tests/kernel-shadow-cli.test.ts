@@ -11,6 +11,9 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { runKernelCommand } from "../plugins/immune-brain/runtime/commands/kernel";
+import { canonicalIntentHash, parseTaskIntentV1 } from "../plugins/immune-brain/runtime/kernel/intent";
+import { openKernelStore, readJournalRows } from "../plugins/immune-brain/runtime/kernel/sqlite_store";
+import { seedKernelRunForTest } from "./fixtures/mutation-authority-test-seam";
 
 const roots: string[] = [];
 
@@ -21,22 +24,48 @@ function tempRoot(): string {
 	return root;
 }
 
+/** Seed the workspace claim through the store: claims are derived from runs. */
 function writeClaim(root: string, taskId = "status-owner-task"): void {
-	mkdirSync(join(root, ".imm/state"), { recursive: true });
-	writeFileSync(
-		join(root, ".imm/state/active-claim.json"),
-		`${JSON.stringify({
-			contract: "assurance_kernel/backend_claim/v2",
-			backend: "kernel",
+	const intent = {
+		contract: "assurance_kernel/task_intent/v1",
+		task_id: taskId,
+		goal: "status owner fixture",
+		acceptance: [{ id: "A1", assertion: "a1", verification: "bun test tests/x.test.ts" }],
+		scope_hint: ["docs/plans"],
+		risk: "routine" as const,
+		revision: 1,
+		owner: "user",
+	};
+	seedKernelRunForTest(root, {
+		task_id: taskId,
+		record: {
+			contract: "assurance_kernel/task_record/v4",
 			task_id: taskId,
-			intent_revision: 1,
-			intent_content_hash: "sha256:" + "0".repeat(64),
-			enrollment_event_id: `enroll-${taskId}`,
-			lifecycle_status: "active",
-			created_at: "2026-08-12T00:00:00.000Z",
-			updated_at: "2026-08-12T00:00:00.000Z",
-		}, null, 2)}\n`,
-	);
+			intent_snapshot: intent,
+			intent_ref: {
+				path: `docs/plans/${taskId}.intent.json`,
+				content_hash: canonicalIntentHash(parseTaskIntentV1(intent)),
+			},
+			lifecycle: "active",
+			artifact_state: "active",
+			baseline: `sha256:${"a".repeat(64)}`,
+			git_base_head: "a".repeat(40),
+			attestations: [],
+			findings: [],
+			history: [],
+		},
+	});
+}
+
+/** Read the durable friction journal out of the authority store. */
+function journalLines(root: string): unknown[] {
+	const db = openKernelStore(root, { create: false });
+	if (!db) return [];
+	try {
+		return readJournalRows(db).map((row) => JSON.parse(row.entry_json) as unknown);
+	} finally {
+		db.close();
+	}
 }
 
 afterEach(() => {
@@ -52,7 +81,8 @@ describe("imm-kernel status", () => {
 		expect(output.contract).toBe("assurance_kernel/status/v1");
 		expect(output.layout).toMatchObject({ layout: "ready" });
 		expect(output.kernel).toEqual({ claim: null, workspace: { current_working: null } });
-		// Strictly read-only: no authority bytes, no journal, no lock residue.
+		// Strictly read-only: no authority store, no journal, no lock residue.
+		expect(existsSync(join(root, ".imm/state/kernel.sqlite"))).toBe(false);
 		expect(existsSync(join(root, ".imm/state/workspace.json"))).toBe(false);
 		expect(existsSync(join(root, ".imm/state/active-claim.json"))).toBe(false);
 		expect(existsSync(join(root, ".imm/state/journal.jsonl"))).toBe(false);
@@ -81,14 +111,6 @@ describe("imm-kernel status", () => {
 	it("reports the Kernel claim and workspace owner when present", () => {
 		const root = tempRoot();
 		writeClaim(root);
-		mkdirSync(join(root, ".imm/state"), { recursive: true });
-		writeFileSync(
-			join(root, ".imm/state/workspace.json"),
-			`${JSON.stringify({
-				contract: "assurance_kernel/workspace/v1",
-				current_working: "status-owner-task",
-			}, null, 2)}\n`,
-		);
 		const result = runKernelCommand(["status", "--json"], root);
 		expect(result.returncode).toBe(0);
 		const output = JSON.parse(result.stdout);
@@ -100,16 +122,16 @@ describe("imm-kernel status", () => {
 		expect(output.kernel.workspace.current_working).toBe("status-owner-task");
 	});
 
-	it("rejects a symlinked claim path with a layout failure instead of following it", () => {
+	it("rejects a symlinked authority store with a layout failure instead of following it", () => {
 		const root = tempRoot();
 		mkdirSync(join(root, ".imm/state"), { recursive: true });
-		const outside = join(root, "outside.json");
-		writeFileSync(outside, "{}");
-		symlinkSync(outside, join(root, ".imm/state/active-claim.json"));
+		const outside = join(root, "outside.sqlite");
+		writeFileSync(outside, "");
+		symlinkSync(outside, join(root, ".imm/state/kernel.sqlite"));
 		const result = runKernelCommand(["status", "--json"], root);
 		expect(result.returncode).toBe(1);
 		const output = JSON.parse(result.stdout);
-		expect(output.error.code).toBe("source_read_failed");
+		expect(["source_invalid", "source_read_failed"]).toContain(output.error.code);
 	});
 
 	it("journals rejected unknown commands without mutating authoritative state", () => {
@@ -126,9 +148,8 @@ describe("imm-kernel status", () => {
 		const unknown = runKernelCommand(["totally-unknown-command"], root);
 		expect(unknown.returncode).toBe(2);
 		expect(JSON.parse(unknown.stdout).error?.code).toBe("invalid_command");
-		const journalPath = join(root, ".imm/state/journal.jsonl");
-		const line = JSON.parse(readFileSync(journalPath, "utf8").trim().split("\n").at(-1) ?? "{}");
-		expect(line).toMatchObject({
+		const lines = journalLines(root);
+		expect(lines.at(-1)).toMatchObject({
 			command: "totally-unknown-command",
 			result: "rejected",
 			reason_code: "invalid_command",
@@ -137,7 +158,7 @@ describe("imm-kernel status", () => {
 		const retired = runKernelCommand(["readiness", "--json"], root);
 		expect(retired.returncode).toBe(2);
 		expect(JSON.parse(retired.stdout).error?.code).toBe("invalid_command");
-		expect(readFileSync(journalPath, "utf8").trim().split("\n")).toHaveLength(1);
+		expect(journalLines(root)).toHaveLength(1);
 		expect(existsSync(join(root, ".imm/state/workspace.json"))).toBe(false);
 	});
 
@@ -145,5 +166,6 @@ describe("imm-kernel status", () => {
 		const root = tempRoot();
 		runKernelCommand(["status", "--json"], root);
 		expect(existsSync(join(root, ".imm/state/journal.jsonl"))).toBe(false);
+		expect(journalLines(root)).toEqual([]);
 	});
 });

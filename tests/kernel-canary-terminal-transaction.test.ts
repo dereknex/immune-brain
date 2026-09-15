@@ -30,6 +30,7 @@ import {
 	serializeTaskTombstone,
 } from "../plugins/immune-brain/runtime/kernel/backend_claim";
 import {
+	KernelStoreConflictError,
 	readTaskRecord,
 	readAuditTaskPair,
 	reconcileKernelAuthority,
@@ -37,9 +38,14 @@ import {
 	readWorkspaceStateRaw,
 	revisionForContent,
 	setAfterTaskTransactionWriteForTest,
-	setTerminalSettlementStepHookForTest,
+	setAuditExportFaultForTest,
 	withKernelStoreLock,
 } from "../plugins/immune-brain/runtime/kernel/storage";
+import {
+	readRunRowByTask,
+	readWorkspaceRow,
+	withKernelRead,
+} from "../plugins/immune-brain/runtime/kernel/sqlite_store";
 
 const TASK = "canary-terminal-task";
 const INTENT = {
@@ -76,14 +82,6 @@ beforeEach(() => {
 	writeFileSync(join(root, "docs", "specs", "canary-terminal-task.spec.md"), "# Canary terminal task\n");
 	execFileSync("git", ["add", "-A"], { cwd: root });
 	execFileSync("git", ["commit", "-qm", "intent"], { cwd: root });
-	writeFileSync(
-		join(root, ".imm/state/workspace.json"),
-		JSON.stringify(
-			{ contract: "assurance_kernel/workspace/v1", current_working: null },
-			null,
-			2,
-		) + "\n",
-	);
 	const enrollmentRegistry = createEnrollmentAuthorityRegistry();
 	const prep = preparePiCanary(root, { task_id: TASK, now: "2026-08-12T10:00:00.000Z" });
 	const binding: EnrollmentCapabilityBinding = {
@@ -116,6 +114,7 @@ beforeEach(() => {
 
 afterEach(() => {
 	setAfterTaskTransactionWriteForTest(null);
+	setAuditExportFaultForTest(null);
 	rmSync(root, { recursive: true, force: true });
 });
 
@@ -214,116 +213,115 @@ describe("terminal ownership transfer", () => {
 			owner_task_id: TASK,
 			claim_lifecycle_status: "active",
 		});
+		const run = withKernelRead(root, (db) => readRunRowByTask(db, TASK))!;
+		expect(reconcileKernelAuthority(root, TASK).owner_run_id).toBe(run.run_id);
 	});
 
-	test("shared authority reconciliation preserves terminal proof", () => {
-		completeTask();
+	test("shared authority reconciliation preserves the committed terminal run", () => {
+		const done = completeTask();
 		expect(reconcileKernelAuthority(root, TASK)).toMatchObject({
 			state: "terminal_owner",
 			owner_task_id: TASK,
 			owner_lifecycle: "done",
 			claim_lifecycle_status: null,
 		});
+		const run = withKernelRead(root, (db) => readRunRowByTask(db, TASK))!;
+		expect(run.state).toBe("done");
+		expect(reconcileKernelAuthority(root, TASK).owner_run_id).toBe(run.run_id);
+		expect(done.record.lifecycle).toBe("done");
 	});
 
-	test("shared authority reconciliation proves only an exact stale terminal claim repairable", () => {
-		const claimBytes = readFileSync(join(root, ".imm/state/active-claim.json"), "utf8");
+	test("the retired file-store claim grants nothing after settlement", () => {
 		completeTask();
-		writeFileSync(join(root, ".imm/state/active-claim.json"), claimBytes);
-		expect(reconcileKernelAuthority(root, TASK)).toMatchObject({
-			state: "repairable_stale_claim",
-			owner_task_id: TASK,
-			owner_lifecycle: "done",
-		});
-		expect(reconcileKernelAuthority(root, "other-task")).toMatchObject({
-			state: "repairable_stale_claim",
-			owner_task_id: TASK,
-		});
-	});
-
-	test("contradictory stale claim identity fails closed with zero writes", () => {
-		const claimPath = join(root, ".imm/state/active-claim.json");
-		const claim = JSON.parse(readFileSync(claimPath, "utf8"));
-		completeTask();
-		claim.intent_content_hash = "sha256:contradictory-intent";
-		const contradictoryBytes = `${JSON.stringify(claim, null, 2)}\n`;
-		writeFileSync(claimPath, contradictoryBytes);
-		const projection = reconcileKernelAuthority(root, TASK);
-		expect(projection).toMatchObject({
-			state: "authority_conflict",
-			owner_task_id: TASK,
-			diagnostic: expect.stringContaining("contradictory terminal ownership evidence"),
-		});
-		expect(() => repairKernelAuthority(root, TASK, projection.revision)).toThrow(
-			/exact stale terminal proof/,
+		const before = reconcileKernelAuthority(root, TASK);
+		writeFileSync(
+			join(root, ".imm/state/active-claim.json"),
+			`${JSON.stringify(
+				{
+					contract: "assurance_kernel/backend_claim/v2",
+					backend: "kernel",
+					task_id: "ghost-task",
+					intent_revision: 1,
+					intent_content_hash: INTENT_HASH,
+					enrollment_event_id: "ghost",
+					lifecycle_status: "active",
+					created_at: "2026-08-12T10:00:00.000Z",
+					updated_at: "2026-08-12T10:00:00.000Z",
+				},
+				null,
+				2,
+			)}\n`,
 		);
-		expect(readFileSync(claimPath, "utf8")).toBe(contradictoryBytes);
+		// The retired file is inert: the store has this task's run, so the
+		// projection still reports the committed owner instead of a conflict.
+		const projection = reconcileKernelAuthority(root, TASK);
+		expect(projection.state).toBe("terminal_owner");
+		expect(projection.diagnostic).toBeNull();
+		// The committed owner facts are untouched and the file is not rewritten.
+		expect(readTaskRecord(root, TASK).record).toBeNull();
+		expect(readAuditTaskPair(root, TASK)?.proof.terminal_lifecycle).toBe("done");
+		expect(before.owner_task_id).toBe(TASK);
+		expect(existsSync(join(root, ".imm/state/active-claim.json"))).toBe(true);
+		// A mutation retires the inert file and never resurrects its task.
+		expect(reconcileKernelAuthority(root, TASK).owner_task_id).toBe(TASK);
+	});
+
+	test("authority repair stays fail-closed because a divergent claim cannot exist", () => {
+		completeTask();
+		const projection = reconcileKernelAuthority(root, TASK);
+		expect(projection.state).toBe("terminal_owner");
+		// A divergent claim cannot exist, so repair has nothing to remove: it
+		// returns the settled authority and writes no transaction marker.
+		const repaired = repairKernelAuthority(root, TASK, projection.revision);
+		expect(repaired.state).toBe("terminal_owner");
+		expect(repaired.owner_task_id).toBe(TASK);
 		expect(existsSync(join(root, ".imm/state/transactions/authority-repair-transaction.json"))).toBe(false);
 	});
 
-	test("authorized repair removes only the exact proven stale terminal claim", () => {
-		const claimPath = join(root, ".imm/state/active-claim.json");
-		const claimBytes = readFileSync(claimPath, "utf8");
-		completeTask();
-		writeFileSync(claimPath, claimBytes);
-		const projection = reconcileKernelAuthority(root, TASK);
-		expect(projection.state).toBe("repairable_stale_claim");
-		expect(repairKernelAuthority(root, TASK, projection.revision)).toMatchObject({
-			state: "terminal_owner",
-			owner_task_id: TASK,
+	test("artifact freeze commits the relocation and the record together, and a rolled-back attempt converges on retry", () => {
+		setAfterTaskTransactionWriteForTest(() => {
+			throw new Error("simulated freeze crash");
 		});
-		expect(existsSync(claimPath)).toBe(false);
-		expect(existsSync(join(root, ".imm/state/transactions/authority-repair-transaction.json"))).toBe(false);
-	});
-
-	test("repair rejects changed claim bytes with zero repair writes", () => {
-		const claimPath = join(root, ".imm/state/active-claim.json");
-		const claimBytes = readFileSync(claimPath, "utf8");
-		completeTask();
-		writeFileSync(claimPath, claimBytes);
-		const projection = reconcileKernelAuthority(root, TASK);
-		const changed = JSON.parse(claimBytes);
-		changed.lifecycle_status = "draining";
-		writeFileSync(claimPath, `${JSON.stringify(changed, null, 2)}\n`);
-		expect(() => repairKernelAuthority(root, TASK, projection.revision)).toThrow(
-			/exact stale terminal proof/,
-		);
-		expect(readFileSync(claimPath, "utf8")).toBe(`${JSON.stringify(changed, null, 2)}\n`);
-		expect(existsSync(join(root, ".imm/state/transactions/authority-repair-transaction.json"))).toBe(false);
-	});
-
-	test("artifact freeze recovers relocation and record from the workspace marker", () => {
-		setAfterTaskTransactionWriteForTest(() => { throw new Error("simulated freeze crash"); });
-		const result = execute(
+		expect(() =>
+			execute({ op: "freeze_artifacts", actor_id: "executor-1" }, "2026-08-12T10:00:00.500Z"),
+		).toThrow(/simulated freeze crash/);
+		// The authority write rolled back: the record is still active.
+		expect(readTaskRecord(root, TASK).record?.artifact_state).toBe("active");
+		// Document relocation is a file move and is not part of the database
+		// transaction; it converges idempotently on the retry below.
+		setAfterTaskTransactionWriteForTest(null);
+		const retry = execute(
 			{ op: "freeze_artifacts", actor_id: "executor-1" },
 			"2026-08-12T10:00:00.500Z",
 		);
-		expect(result.record.artifact_state).toBe("frozen");
+		expect(retry.record.artifact_state).toBe("frozen");
 		expect(existsSync(join(root, "docs/plans", `${TASK}.intent.json`))).toBe(false);
 		expect(existsSync(join(root, "docs/plans/archive", `${TASK}.intent.json`))).toBe(true);
 		expect(existsSync(join(root, "docs/specs", "canary-terminal-task.spec.md"))).toBe(false);
 		expect(existsSync(join(root, "docs/specs/archive", "canary-terminal-task.spec.md"))).toBe(true);
-		expect(existsSync(join(root, ".imm/tasks/.workspace-transaction.json"))).toBe(false);
-
 		const recovered = readTaskRecord(root, TASK);
 		expect(recovered.record).toMatchObject({
 			artifact_state: "frozen",
 			intent_ref: { path: `docs/plans/archive/${TASK}.intent.json` },
 		});
-		expect(existsSync(join(root, ".imm/tasks/.workspace-transaction.json"))).toBe(false);
 	});
 
-	test("complete converges all four paths through one transaction", () => {
+	test("complete settles record, owner, claim and audit evidence in one transaction", () => {
 		const done = completeTask();
 		expect(done.record.lifecycle).toBe("done");
 		expect(done.workspace.state.current_working).toBeNull();
 		expect(readBackendClaim(root)).toBeNull();
 		expect(existsSync(join(root, ".imm/state/transactions/terminal-transaction.json"))).toBe(false);
+		const run = withKernelRead(root, (db) => readRunRowByTask(db, TASK))!;
+		expect(run.state).toBe("done");
+		expect(run.claim_status).toBeNull();
+		expect(run.terminal_proof_json).not.toBeNull();
+		expect(run.audit_exported_at).not.toBeNull();
+		expect(withKernelRead(root, (db) => readWorkspaceRow(db).current_run_id)).toBeNull();
 		const tombstone = readTaskTombstone(root, TASK);
 		expect(tombstone?.terminal_lifecycle).toBe("done");
 		expect(tombstone?.terminal_event_id).toBe(`complete:${TASK}:2026-08-12T10:00:04.000Z`);
 		expect(tombstone?.final_record_hash).toBe(done.revision);
-		// Record on disk matches the tombstone's final hash exactly.
 		expect(revisionForContent(`${JSON.stringify(done.record, null, 2)}\n`)).toBe(done.revision);
 	});
 
@@ -336,6 +334,7 @@ describe("terminal ownership transfer", () => {
 		expect(result.record.lifecycle).toBe("stopped");
 		expect(readBackendClaim(root)).toBeNull();
 		expect(readTaskTombstone(root, TASK)?.terminal_lifecycle).toBe("stopped");
+		expect(withKernelRead(root, (db) => readRunRowByTask(db, TASK))!.state).toBe("stopped");
 	});
 
 	test("terminalized task cannot be re-enrolled", () => {
@@ -368,180 +367,130 @@ describe("terminal ownership transfer", () => {
 				enrollmentRegistry,
 			),
 		).toThrow(/already|exists|terminal/i);
+		const run = withKernelRead(root, (db) => readRunRowByTask(db, TASK))!;
+		expect(run.state).toBe("done");
 	});
 
-	test("crash after marker write recovers record/workspace/claim/tombstone", () => {
-		// Build the marker state as if the transaction crashed after the
-		// marker write but before completion: record done in memory only.
-		const enrolledClaimHash = revisionForContent(readFileSync(join(root, ".imm/state/active-claim.json"), "utf8"));
-		freezeTask();
-		approveQa();
-		const pre = readTaskRecord(root, TASK);
-		const workspace = readWorkspaceStateRaw(root);
-		const nextRecord = {
-			...pre.record!,
-			lifecycle: "done",
-			history: [
-				...(pre.record!.history as unknown[]),
-				{
-					id: `complete:${TASK}:2026-08-12T10:00:04.000Z`,
-					at: "2026-08-12T10:00:04.000Z",
-					type: "complete",
-					from_state: "active:frozen",
-					to_state: "done:frozen",
-					reason: `action_v2_sha256:${"1".repeat(64)}`,
-				},
-			],
-		};
-		const tombstone = {
-			contract: "assurance_kernel/task_tombstone/v2",
-			task_id: TASK,
-			lifecycle_status: "terminal",
-			terminal_lifecycle: "done",
-			terminal_event_id: `complete:${TASK}:2026-08-12T10:00:04.000Z`,
-			final_record_hash: revisionForContent(`${JSON.stringify(nextRecord, null, 2)}\n`),
-			terminalized_at: "2026-08-12T10:00:04.000Z",
-		};
-		writeFileSync(
-			join(root, ".imm/state/transactions/terminal-transaction.json"),
-			`${JSON.stringify(
-				{
-					contract: "assurance_kernel/terminal_transaction/v2",
-					task_id: TASK,
-					expected_state_record_hash: pre.revision,
-					audit_record_content: `${JSON.stringify(nextRecord, null, 2)}\n`,
-					proof_content: `${JSON.stringify(tombstone, null, 2)}\n`,
-					expected_workspace_hash: workspace.revision,
-					next_workspace_content: `${JSON.stringify(
-						{ contract: "assurance_kernel/workspace/v1", current_working: null },
-						null,
-						2,
-					)}\n`,
-					expected_claim_sha256: enrolledClaimHash,
-					at: tombstone.terminalized_at,
-				},
-				null,
-				2,
-			)}\n`,
-		);
-		// Simulated restart replays the terminal marker. The state record is
-		// removed; terminal evidence lives only in the immutable audit pair.
+	test("an interrupted audit export never reactivates the settled run", () => {
+		setAuditExportFaultForTest(() => {
+			throw new Error("simulated export interruption");
+		});
+		expect(() => completeTask()).toThrow(/simulated export interruption/);
+		// Settlement is committed even though the export was interrupted.
+		const run = withKernelRead(root, (db) => readRunRowByTask(db, TASK))!;
+		expect(run.state).toBe("done");
+		expect(run.audit_exported_at).toBeNull();
+		expect(withKernelRead(root, (db) => readWorkspaceRow(db).current_run_id)).toBeNull();
+		expect(readBackendClaim(root)).toBeNull();
+		expect(reconcileKernelAuthority(root, TASK)).toMatchObject({
+			state: "terminal_owner",
+			owner_lifecycle: "done",
+		});
+		// The next locked operation retries the export without touching authority.
+		setAuditExportFaultForTest(null);
 		withKernelStoreLock(root, () => undefined);
-		expect(readTaskRecord(root, TASK).record).toBeNull();
-		const auditPair = readAuditTaskPair(root, TASK);
-		expect(auditPair?.record.lifecycle).toBe("done");
-		expect(auditPair?.proof.terminal_lifecycle).toBe("done");
 		expect(existsSync(join(root, ".imm/audit", TASK, "task-record.json"))).toBe(true);
 		expect(existsSync(join(root, ".imm/audit", TASK, "terminal-proof.json"))).toBe(true);
-		expect(existsSync(join(root, ".imm/state", "tasks", `${TASK}.json`))).toBe(false);
-		expect(readBackendClaim(root)).toBeNull();
-		expect(existsSync(join(root, ".imm/state/transactions/terminal-transaction.json"))).toBe(false);
-	});
-
-	test("crash recovery is idempotent when the terminal state already converged", () => {
-		const enrolledClaim = readFileSync(join(root, ".imm/state/active-claim.json"), "utf8");
-		const enrolledClaimHash = revisionForContent(enrolledClaim);
-		completeTask();
-		// Re-plant the marker (crash before marker removal): recovery must
-		// converge idempotently without failing. Terminal evidence lives in
-		// the audit pair after settlement, so the marker replays those bytes.
-		const auditPair = readAuditTaskPair(root, TASK)!;
-		const record = auditPair.record;
-		const workspace = readWorkspaceStateRaw(root);
-		const tombstone = auditPair.proof;
-		writeFileSync(
-			join(root, ".imm/state/transactions/terminal-transaction.json"),
-			`${JSON.stringify(
-				{
-					contract: "assurance_kernel/terminal_transaction/v2",
-					task_id: TASK,
-					expected_state_record_hash: "sha256:stale",
-					audit_record_content: `${JSON.stringify(record, null, 2)}\n`,
-					proof_content: serializeTaskTombstone(tombstone),
-					expected_workspace_hash: "sha256:stale-w",
-					next_workspace_content: `${JSON.stringify(
-						{ contract: "assurance_kernel/workspace/v1", current_working: null },
-						null,
-						2,
-					)}\n`,
-					expected_claim_sha256: enrolledClaimHash,
-					at: tombstone.terminalized_at,
-				},
-				null,
-				2,
-			)}\n`,
-		);
-		withKernelStoreLock(root, () => undefined);
+		const exported = withKernelRead(root, (db) => readRunRowByTask(db, TASK))!;
+		expect(exported.audit_exported_at).not.toBeNull();
+		expect(exported.state).toBe("done");
 		expect(readTaskRecord(root, TASK).record).toBeNull();
 		expect(readAuditTaskPair(root, TASK)?.record.lifecycle).toBe("done");
-		expect(readAuditTaskPair(root, TASK)?.proof.terminal_lifecycle).toBe("done");
 	});
 
-	test("contradictory tombstone conflict fails closed and remains recoverable", () => {
-		const enrolledClaim = readFileSync(join(root, ".imm/state/active-claim.json"), "utf8");
-		const enrolledClaimHash = revisionForContent(enrolledClaim);
+	test("replaying the same terminal event reuses the committed settlement", async () => {
+		const done = completeTask();
+		const run = withKernelRead(root, (db) => readRunRowByTask(db, TASK))!;
+		const workspace = withKernelRead(root, (db) => readWorkspaceRow(db));
+		const { commitTerminalLocked } = await import(
+			"../plugins/immune-brain/runtime/kernel/storage"
+		);
+		const tombstone = readTaskTombstone(root, TASK)!;
+		const replay = commitTerminalLocked(
+			root,
+			TASK,
+			{
+				contract: "assurance_kernel/workspace_transaction/v2",
+				task_id: TASK,
+				expected_record_hash: "rev:0",
+				next_record_content: `${JSON.stringify(done.record, null, 2)}\n`,
+				expected_workspace_hash: "rev:0",
+				next_workspace_content: `${JSON.stringify(
+					{ contract: "assurance_kernel/workspace/v1", current_working: null },
+					null,
+					2,
+				)}\n`,
+			},
+			tombstone,
+		);
+		expect(replay.record).toEqual(done.record);
+		const after = withKernelRead(root, (db) => readRunRowByTask(db, TASK))!;
+		expect(after.run_id).toBe(run.run_id);
+		expect(after.revision).toBe(run.revision);
+		expect(withKernelRead(root, (db) => readWorkspaceRow(db))).toEqual(workspace);
+	});
+
+	test("a contradictory terminal request fails closed with zero writes", async () => {
 		completeTask();
+		const run = withKernelRead(root, (db) => readRunRowByTask(db, TASK))!;
+		const workspace = withKernelRead(root, (db) => readWorkspaceRow(db));
 		const auditPair = readAuditTaskPair(root, TASK)!;
-		const record = auditPair.record;
-		const workspace = readWorkspaceStateRaw(root);
-		const conflictingTombstone = {
-			contract: "assurance_kernel/task_tombstone/v2",
-			task_id: TASK,
-			lifecycle_status: "terminal",
-			terminal_lifecycle: "stopped",
-			terminal_event_id: "stop:x",
-			final_record_hash: "sha256:" + "9".repeat(64),
-			terminalized_at: "2026-08-12T10:00:04.000Z",
+		const { commitTerminalLocked } = await import(
+			"../plugins/immune-brain/runtime/kernel/storage"
+		);
+		const conflicting = {
+			...auditPair.proof,
+			terminal_lifecycle: "stopped" as const,
+			terminal_event_id: "stop:contradiction",
 		};
-		writeFileSync(
-			join(root, ".imm/state/transactions/terminal-transaction.json"),
-			`${JSON.stringify(
+		expect(() =>
+			commitTerminalLocked(
+				root,
+				TASK,
 				{
-					contract: "assurance_kernel/terminal_transaction/v2",
+					contract: "assurance_kernel/workspace_transaction/v2",
 					task_id: TASK,
-					expected_state_record_hash: "sha256:stale",
-					audit_record_content: `${JSON.stringify(record, null, 2)}\n`,
-					proof_content: `${JSON.stringify(conflictingTombstone, null, 2)}\n`,
-					expected_workspace_hash: "sha256:stale-w",
+					expected_record_hash: run.revisionLabel,
+					next_record_content: `${JSON.stringify(auditPair.record, null, 2)}\n`,
+					expected_workspace_hash: "rev:0",
 					next_workspace_content: `${JSON.stringify(
 						{ contract: "assurance_kernel/workspace/v1", current_working: null },
 						null,
 						2,
 					)}\n`,
-					expected_claim_sha256: enrolledClaimHash,
-					at: conflictingTombstone.terminalized_at,
 				},
-				null,
-				2,
-			)}\n`,
-		);
-		expect(() => withKernelStoreLock(root, () => undefined)).toThrow(/does not match|conflict/i);
-		expect(existsSync(join(root, ".imm/state/transactions/terminal-transaction.json"))).toBe(true);
-		// The committed tombstone stays intact.
+				conflicting,
+			),
+		).toThrow(/contradicts|already|refused|proof/i);
+		expect(withKernelRead(root, (db) => readRunRowByTask(db, TASK))).toEqual(run);
+		expect(withKernelRead(root, (db) => readWorkspaceRow(db))).toEqual(workspace);
 		expect(readTaskTombstone(root, TASK)?.terminal_lifecycle).toBe("done");
 	});
 
-	for (let step = 0; step <= 4; step += 1) {
-		test(`interruption after terminal settlement step ${step} recovers exactly`, () => {
-			setTerminalSettlementStepHookForTest((at) => {
-				if (at === step) throw new Error(`injected interruption at step ${step}`);
-			});
-			try {
-				expect(() => completeTask()).toThrow(/remains recoverable/i);
-			} finally {
-				setTerminalSettlementStepHookForTest(null);
-			}
-			// The marker survives and the store-lock replay converges the
-			// settlement exactly without re-running the hook.
-			expect(existsSync(join(root, ".imm/state/transactions/terminal-transaction.json"))).toBe(true);
-			withKernelStoreLock(root, () => undefined);
-			expect(readTaskRecord(root, TASK).record).toBeNull();
-			const auditPair = readAuditTaskPair(root, TASK);
-			expect(auditPair?.record.lifecycle).toBe("done");
-			expect(auditPair?.proof.terminal_lifecycle).toBe("done");
-			expect(readBackendClaim(root)).toBeNull();
-			expect(readWorkspaceStateRaw(root).state.current_working).toBeNull();
-			expect(existsSync(join(root, ".imm/state/transactions/terminal-transaction.json"))).toBe(false);
-		});
-	}
+	test("a terminal settlement refuses to revive a run that is not active", async () => {
+		completeTask();
+		const { commitTerminalLocked } = await import(
+			"../plugins/immune-brain/runtime/kernel/storage"
+		);
+		const auditPair = readAuditTaskPair(root, TASK)!;
+		expect(() =>
+			commitTerminalLocked(
+				root,
+				TASK,
+				{
+					contract: "assurance_kernel/workspace_transaction/v2",
+					task_id: TASK,
+					expected_record_hash: "rev:0",
+					next_record_content: `${JSON.stringify(auditPair.record, null, 2)}\n`,
+					expected_workspace_hash: "rev:0",
+					next_workspace_content: `${JSON.stringify(
+						{ contract: "assurance_kernel/workspace/v1", current_working: null },
+						null,
+						2,
+					)}\n`,
+				},
+				{ ...auditPair.proof, terminal_event_id: "complete:second-event" },
+			),
+		).toThrow();
+	});
 });

@@ -2,7 +2,7 @@ import { createRequire } from "node:module";
 var __require = /* @__PURE__ */ createRequire(import.meta.url);
 
 // plugins/immune-brain/runtime/claude/mcp_server.ts
-import { randomUUID as randomUUID9 } from "node:crypto";
+import { randomUUID as randomUUID10 } from "node:crypto";
 import { createInterface } from "node:readline";
 import { stdin, stdout } from "node:process";
 
@@ -679,8 +679,8 @@ function parseHookStdin(raw) {
 }
 
 // plugins/immune-brain/runtime/claude/kernel_ports.ts
-import { randomUUID as randomUUID8 } from "node:crypto";
-import { existsSync as existsSync8, readFileSync as readFileSync10, writeFileSync as writeFileSync6 } from "node:fs";
+import { randomUUID as randomUUID9 } from "node:crypto";
+import { existsSync as existsSync10, readFileSync as readFileSync11, writeFileSync as writeFileSync7 } from "node:fs";
 import { execFileSync as execFileSync5 } from "node:child_process";
 import { join as join11 } from "node:path";
 
@@ -2665,33 +2665,26 @@ function assertReviewArtifact(path) {
 }
 
 // plugins/immune-brain/runtime/kernel/backend_claim.ts
-import { lstatSync as lstatSync3, readFileSync as readFileSync4 } from "node:fs";
-import { join as join4, resolve as resolve3 } from "node:path";
+import { lstatSync as lstatSync4, readFileSync as readFileSync5 } from "node:fs";
+import { join as join4, resolve as resolve4 } from "node:path";
 
 // plugins/immune-brain/runtime/kernel/storage_paths.ts
-var STATE_RELATIVE = ".imm/state";
+import { createHash as createHash9 } from "node:crypto";
 var AUDIT_RELATIVE = ".imm/audit";
+var KERNEL_DB_RELATIVE = ".imm/state/kernel.sqlite";
+var KERNEL_STORE_SCHEMA_VERSION = 1;
+var FILE_STORE_CLAIM_RELATIVE = ".imm/state/active-claim.json";
+var FILE_STORE_WORKSPACE_RELATIVE = ".imm/state/workspace.json";
+var FILE_STORE_TRANSACTIONS_RELATIVE = ".imm/state/transactions";
+function stateDatabasePath() {
+  return KERNEL_DB_RELATIVE;
+}
+function kernelStoreBindingDigest(canonicalRoot, workspaceId) {
+  return createHash9("sha256").update(`${canonicalRoot}\x00${workspaceId}`).digest("hex");
+}
 function validateTaskId(taskId) {
   if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(taskId))
     throw new Error(`task id must match [A-Za-z0-9][A-Za-z0-9._-]{0,127}: ${taskId}`);
-}
-function stateTaskRecordPath(taskId) {
-  validateTaskId(taskId);
-  return `${STATE_RELATIVE}/tasks/${taskId}.json`;
-}
-function stateWorkspacePath() {
-  return `${STATE_RELATIVE}/workspace.json`;
-}
-function stateClaimPath() {
-  return `${STATE_RELATIVE}/active-claim.json`;
-}
-function stateStoreLockPath() {
-  return `${STATE_RELATIVE}/locks/kernel-store.lock`;
-}
-function stateTransactionPath(name) {
-  if (!/^[A-Za-z0-9._-]+\.json$/.test(name))
-    throw new Error(`invalid transaction marker name: ${name}`);
-  return `${STATE_RELATIVE}/transactions/${name}`;
 }
 function auditTaskDirPath(taskId) {
   validateTaskId(taskId);
@@ -2704,8 +2697,465 @@ function auditTerminalProofPath(taskId) {
   return `${auditTaskDirPath(taskId)}/terminal-proof.json`;
 }
 
+// plugins/immune-brain/runtime/kernel/sqlite_store.ts
+import { randomUUID as randomUUID3 } from "node:crypto";
+import { spawnSync as spawnSync3 } from "node:child_process";
+import {
+  constants as constants2,
+  closeSync as closeSync2,
+  copyFileSync,
+  existsSync as existsSync3,
+  fsyncSync,
+  lstatSync as lstatSync3,
+  mkdirSync as mkdirSync2,
+  openSync as openSync2,
+  readFileSync as readFileSync4,
+  realpathSync as realpathSync5,
+  renameSync,
+  rmSync as rmSync3,
+  writeFileSync as writeFileSync2
+} from "node:fs";
+import { dirname as dirname3, isAbsolute as isAbsolute3, relative as relative2, resolve as resolve3, sep as sep3 } from "node:path";
+import { DatabaseSync } from "node:sqlite";
+var DEFAULT_BUSY_TIMEOUT_MS = 5000;
+
+class KernelStoreSecurityError extends Error {
+  code = "kernel_store_security_error";
+  constructor(message) {
+    super(message);
+    this.name = "KernelStoreSecurityError";
+  }
+}
+
+class KernelStoreConflictError extends Error {
+  code = "kernel_store_conflict";
+  constructor(message) {
+    super(message);
+    this.name = "KernelStoreConflictError";
+  }
+}
+
+class KernelSchemaError extends KernelStoreSecurityError {
+  code = "kernel_schema_error";
+  constructor(message) {
+    super(message);
+    this.name = "KernelSchemaError";
+  }
+}
+var openStores = new Map;
+var storeFaultForTest = null;
+function runStoreFault() {
+  const hook = storeFaultForTest;
+  storeFaultForTest = null;
+  hook?.();
+}
+function canonicalRoot(root) {
+  try {
+    return realpathSync5(root);
+  } catch {
+    throw new KernelStoreSecurityError("project root is unavailable");
+  }
+}
+function storeKey(root) {
+  return canonicalRoot(root);
+}
+function assertSafeSegments(canonical, candidate) {
+  let current = canonical;
+  for (const segment of relative2(canonical, candidate).split(sep3).filter(Boolean)) {
+    current = resolve3(current, segment);
+    let stat;
+    try {
+      stat = lstatSync3(current);
+    } catch (error) {
+      const code = error.code;
+      if (code === "ENOENT" || code === "ENOTDIR")
+        continue;
+      throw error;
+    }
+    if (stat.isSymbolicLink())
+      throw new KernelStoreSecurityError(`symlink storage segment is forbidden: ${relative2(canonical, current)}`);
+  }
+}
+function ensureStoreDirectory(canonical) {
+  const target = resolve3(canonical, KERNEL_DB_RELATIVE);
+  const directory = dirname3(target);
+  assertSafeSegments(canonical, directory);
+  let current = canonical;
+  for (const segment of relative2(canonical, directory).split(sep3).filter(Boolean)) {
+    current = resolve3(current, segment);
+    let stat;
+    try {
+      stat = lstatSync3(current);
+    } catch (error) {
+      const code = error.code;
+      if (code !== "ENOENT" && code !== "ENOTDIR")
+        throw error;
+      stat = null;
+    }
+    if (!stat) {
+      mkdirSync2(current);
+      continue;
+    }
+    if (stat.isSymbolicLink())
+      throw new KernelStoreSecurityError(`symlink storage segment is forbidden: ${relative2(canonical, current)}`);
+    if (!stat.isDirectory())
+      throw new KernelStoreSecurityError(`storage segment is not a directory: ${relative2(canonical, current)}`);
+  }
+  assertSafeSegments(canonical, target);
+  try {
+    const stat = lstatSync3(target);
+    if (!stat.isFile())
+      throw new KernelStoreSecurityError("kernel store is not a regular file");
+  } catch (error) {
+    if (error.code !== "ENOENT")
+      throw error;
+  }
+}
+var SCHEMA_SQL = `
+CREATE TABLE IF NOT EXISTS store_meta (
+	key TEXT PRIMARY KEY,
+	value TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS workspace (
+	id INTEGER PRIMARY KEY CHECK (id = 1),
+	revision INTEGER NOT NULL,
+	current_run_id TEXT,
+	updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS runs (
+	run_id TEXT PRIMARY KEY,
+	task_id TEXT NOT NULL UNIQUE,
+	state TEXT NOT NULL CHECK (state IN ('active','done','stopped')),
+	revision INTEGER NOT NULL,
+	record_json TEXT NOT NULL,
+	intent_revision INTEGER NOT NULL,
+	intent_content_hash TEXT NOT NULL,
+	enrollment_event_id TEXT NOT NULL,
+	claim_status TEXT CHECK (claim_status IN ('active','draining')),
+	created_at TEXT NOT NULL,
+	updated_at TEXT NOT NULL,
+	terminal_proof_json TEXT,
+	terminal_at TEXT,
+	audit_exported_at TEXT,
+	pending_relocations_json TEXT
+);
+CREATE UNIQUE INDEX IF NOT EXISTS runs_single_active ON runs((1)) WHERE state = 'active';
+CREATE INDEX IF NOT EXISTS runs_state ON runs(state);
+CREATE TABLE IF NOT EXISTS operations (
+	operation_id TEXT PRIMARY KEY,
+	kind TEXT NOT NULL,
+	run_id TEXT,
+	result_json TEXT NOT NULL,
+	committed_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS journal (
+	seq INTEGER PRIMARY KEY AUTOINCREMENT,
+	entry_json TEXT NOT NULL,
+	task_id TEXT,
+	observation_commit_id TEXT,
+	observation_id TEXT
+);
+CREATE UNIQUE INDEX IF NOT EXISTS journal_observation_commit ON journal(observation_commit_id) WHERE observation_commit_id IS NOT NULL;
+`;
+function workspaceBinding(root, workspaceId) {
+  return kernelStoreBindingDigest(root, workspaceId);
+}
+function gitCommonDir(root) {
+  const result = spawnSync3("git", ["-C", root, "rev-parse", "--git-common-dir"], {
+    encoding: "utf8"
+  });
+  if (result.status !== 0)
+    return null;
+  const value = result.stdout.trim();
+  if (!value)
+    return null;
+  return isAbsolute3(value) ? value : resolve3(root, value);
+}
+function readMeta(db, key) {
+  const row = db.prepare("SELECT value FROM store_meta WHERE key = ?").get(key);
+  return row && typeof row.value === "string" ? row.value : null;
+}
+function writeMeta(db, key, value) {
+  db.prepare("INSERT INTO store_meta (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").run(key, value);
+}
+function applyPragmas(db, busyTimeoutMs, writable) {
+  if (writable) {
+    db.exec("PRAGMA journal_mode = WAL");
+    db.exec("PRAGMA synchronous = FULL");
+  }
+  db.exec("PRAGMA foreign_keys = ON");
+  db.exec(`PRAGMA busy_timeout = ${Math.max(1, Math.trunc(busyTimeoutMs))}`);
+}
+function assertSchema(db, root) {
+  const rows = db.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all();
+  const tables = new Set(rows.map((row) => String(row.name)));
+  if (tables.size === 0)
+    return;
+  if (!tables.has("store_meta") || !tables.has("runs") || !tables.has("workspace")) {
+    throw new KernelSchemaError("kernel store schema is not recognizable; the database was not created by this runtime");
+  }
+  const version = readMeta(db, "schema_version");
+  if (version !== String(KERNEL_STORE_SCHEMA_VERSION)) {
+    throw new KernelSchemaError(`kernel store schema version ${version ?? "missing"} is incompatible with this runtime (${KERNEL_STORE_SCHEMA_VERSION}); run the supported migration before mutating`);
+  }
+  const workspaceId = readMeta(db, "workspace_id");
+  const binding = readMeta(db, "workspace_binding");
+  if (!workspaceId || !binding)
+    throw new KernelSchemaError("kernel store identity metadata is missing");
+  if (workspaceBinding(root, workspaceId) !== binding)
+    throw new KernelStoreSecurityError("kernel store belongs to a different worktree; restore it into its binding worktree or run the supported rebinding");
+}
+function initializeSchema(db, root, now) {
+  db.exec("BEGIN IMMEDIATE");
+  try {
+    db.exec(SCHEMA_SQL);
+    const workspaceId = readMeta(db, "workspace_id") ?? randomUUID3();
+    writeMeta(db, "workspace_id", workspaceId);
+    writeMeta(db, "schema_version", String(KERNEL_STORE_SCHEMA_VERSION));
+    writeMeta(db, "workspace_binding", workspaceBinding(root, workspaceId));
+    writeMeta(db, "created_at", readMeta(db, "created_at") ?? now);
+    const common = gitCommonDir(root);
+    if (common)
+      writeMeta(db, "git_common_dir", common);
+    db.prepare("INSERT INTO workspace (id, revision, current_run_id, updated_at) VALUES (1, 0, NULL, ?) ON CONFLICT(id) DO NOTHING").run(now);
+    db.exec("COMMIT");
+  } catch (error) {
+    try {
+      db.exec("ROLLBACK");
+    } catch {}
+    throw error;
+  }
+}
+function openKernelStore(root, options = {}) {
+  const canonical = canonicalRoot(root);
+  const path = resolve3(canonical, KERNEL_DB_RELATIVE);
+  const create = options.create ?? true;
+  if (!existsSync3(path) && !create)
+    return null;
+  if (!options.readOnly)
+    ensureStoreDirectory(canonical);
+  let db;
+  try {
+    db = new DatabaseSync(path, options.readOnly ? { readOnly: true } : {});
+  } catch (error) {
+    throw new KernelStoreSecurityError(`kernel store could not be opened at ${KERNEL_DB_RELATIVE}: ${error instanceof Error ? error.message : String(error)}`);
+  }
+  try {
+    applyPragmas(db, options.busyTimeoutMs ?? DEFAULT_BUSY_TIMEOUT_MS, !options.readOnly);
+    assertSchema(db, canonical);
+    const initialized = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='store_meta'").get() !== undefined;
+    if (!initialized)
+      initializeSchema(db, canonical, options.now ?? new Date().toISOString());
+    return db;
+  } catch (error) {
+    try {
+      db.close();
+    } catch {}
+    throw error;
+  }
+}
+function closeQuietly(db) {
+  try {
+    db.close();
+  } catch {}
+}
+function withKernelTransaction(root, operation, options = {}) {
+  const key = storeKey(root);
+  const existing = openStores.get(key);
+  if (existing) {
+    existing.depth += 1;
+    try {
+      return operation(existing.db);
+    } finally {
+      existing.depth -= 1;
+    }
+  }
+  let db = null;
+  try {
+    db = openKernelStore(root, options);
+  } catch (error) {
+    if (error instanceof Error && error.message.includes("database is locked"))
+      throw new KernelStoreConflictError("kernel store is busy: another writer holds the store lock");
+    throw error;
+  }
+  if (!db)
+    throw new KernelStoreSecurityError("kernel store could not be opened");
+  const handle = { db, depth: 1 };
+  openStores.set(key, handle);
+  try {
+    try {
+      db.exec("BEGIN IMMEDIATE");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (message.includes("locked") || message.includes("busy"))
+        throw new KernelStoreConflictError("kernel store is busy: another writer holds the store lock");
+      throw new KernelStoreConflictError(`kernel store transaction could not start: ${message}`);
+    }
+    let result;
+    try {
+      result = operation(db);
+      runStoreFault();
+      db.exec("COMMIT");
+    } catch (error) {
+      try {
+        db.exec("ROLLBACK");
+      } catch {}
+      if (error instanceof Error && error.message.startsWith("kernel store transaction failed to commit"))
+        throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      if (message.includes("SQLITE_BUSY") || message.includes("database is locked"))
+        throw new KernelStoreConflictError(`kernel store transaction failed to commit: ${message}`);
+      throw error;
+    }
+    return result;
+  } finally {
+    openStores.delete(key);
+    closeQuietly(db);
+  }
+}
+function withKernelRead(root, operation, options = {}) {
+  const existing = openStores.get(storeKey(root));
+  if (existing)
+    return operation(existing.db);
+  let db;
+  try {
+    db = openKernelStore(root, { ...options, create: false, readOnly: true });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (!/unable to open database file|CANTOPEN|readonly/i.test(message))
+      throw error;
+    db = openKernelStore(root, { ...options, create: false });
+  }
+  if (!db)
+    return null;
+  try {
+    return operation(db);
+  } finally {
+    closeQuietly(db);
+  }
+}
+function activeRunId(db) {
+  const row = db.prepare("SELECT current_run_id FROM workspace WHERE id = 1").get();
+  const value = row?.current_run_id;
+  return typeof value === "string" && value.length > 0 ? value : null;
+}
+function readWorkspaceRow(db) {
+  const row = db.prepare("SELECT revision, current_run_id, updated_at FROM workspace WHERE id = 1").get();
+  if (!row)
+    throw new KernelStoreSecurityError("kernel store workspace row is missing");
+  return {
+    revision: Number(row.revision),
+    current_run_id: typeof row.current_run_id === "string" && row.current_run_id.length > 0 ? row.current_run_id : null,
+    updated_at: String(row.updated_at ?? "")
+  };
+}
+function writeWorkspaceRow(db, expectedRevision, currentRunId, updatedAt) {
+  const result = db.prepare("UPDATE workspace SET revision = revision + 1, current_run_id = ?, updated_at = ? WHERE id = 1 AND revision = ?").run(currentRunId, updatedAt, expectedRevision);
+  if (Number(result.changes) !== 1)
+    throw new KernelStoreConflictError(`CAS mismatch for workspace: expected revision ${expectedRevision}`);
+  return expectedRevision + 1;
+}
+function mapRunRow(raw) {
+  return {
+    run_id: String(raw.run_id),
+    task_id: String(raw.task_id),
+    state: raw.state,
+    revision: Number(raw.revision),
+    record_json: String(raw.record_json),
+    intent_revision: Number(raw.intent_revision),
+    intent_content_hash: String(raw.intent_content_hash),
+    enrollment_event_id: String(raw.enrollment_event_id),
+    claim_status: raw.claim_status ?? null,
+    created_at: String(raw.created_at),
+    updated_at: String(raw.updated_at),
+    terminal_proof_json: typeof raw.terminal_proof_json === "string" ? raw.terminal_proof_json : null,
+    terminal_at: typeof raw.terminal_at === "string" ? raw.terminal_at : null,
+    audit_exported_at: typeof raw.audit_exported_at === "string" ? raw.audit_exported_at : null,
+    pending_relocations_json: typeof raw.pending_relocations_json === "string" ? raw.pending_relocations_json : null
+  };
+}
+function readRunRowByTask(db, taskId) {
+  const row = db.prepare("SELECT * FROM runs WHERE task_id = ?").get(taskId);
+  return row ? mapRunRow(row) : null;
+}
+function readRunRowById(db, runId) {
+  const row = db.prepare("SELECT * FROM runs WHERE run_id = ?").get(runId);
+  return row ? mapRunRow(row) : null;
+}
+function listPendingAuditExports(db) {
+  const rows = db.prepare("SELECT * FROM runs WHERE state <> 'active' AND terminal_proof_json IS NOT NULL AND audit_exported_at IS NULL ORDER BY updated_at, task_id").all();
+  return rows.map(mapRunRow);
+}
+function insertRunRow(db, run) {
+  try {
+    db.prepare(`INSERT INTO runs (run_id, task_id, state, revision, record_json, intent_revision, intent_content_hash, enrollment_event_id, claim_status, created_at, updated_at, terminal_proof_json, terminal_at, audit_exported_at, pending_relocations_json)
+			 VALUES (?, ?, 'active', 1, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL, NULL)`).run(run.run_id, run.task_id, run.record_json, run.intent_revision, run.intent_content_hash, run.enrollment_event_id, run.claim_status, run.created_at, run.updated_at);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (message.includes("runs_single_active") || message.includes("runs.task_id"))
+      throw new KernelStoreConflictError(`kernel store refused a second active run: ${message}`);
+    throw error;
+  }
+  const inserted = readRunRowById(db, run.run_id);
+  if (!inserted)
+    throw new KernelStoreSecurityError("kernel store run insert did not converge");
+  return inserted;
+}
+function updateRunRecord(db, runId, expectedRevision, recordJson, updatedAt) {
+  const result = db.prepare("UPDATE runs SET revision = revision + 1, record_json = ?, updated_at = ? WHERE run_id = ? AND revision = ?").run(recordJson, updatedAt, runId, expectedRevision);
+  if (Number(result.changes) !== 1)
+    throw new KernelStoreConflictError(`CAS mismatch for run ${runId}: expected revision ${expectedRevision}`);
+  return expectedRevision + 1;
+}
+function updateRunClaim(db, runId, expectedClaimStatus, nextClaimStatus, updatedAt) {
+  const result = db.prepare("UPDATE runs SET claim_status = ?, updated_at = ? WHERE run_id = ? AND claim_status = ?").run(nextClaimStatus, updatedAt, runId, expectedClaimStatus);
+  if (Number(result.changes) !== 1)
+    throw new KernelStoreConflictError(`CAS mismatch for run ${runId} claim ${expectedClaimStatus}`);
+}
+function updateRunTerminal(db, runId, state, recordJson, proofJson, updatedAt) {
+  const result = db.prepare(`UPDATE runs SET state = ?, record_json = ?, terminal_proof_json = ?, terminal_at = ?, updated_at = ?, claim_status = NULL
+			 WHERE run_id = ? AND state = 'active'`).run(state, recordJson, proofJson, updatedAt, updatedAt, runId);
+  if (Number(result.changes) !== 1)
+    throw new KernelStoreConflictError(`terminal settlement refused for run ${runId}: the run is not active`);
+}
+function setPendingRelocations(db, runId, relocationsJson) {
+  db.prepare("UPDATE runs SET pending_relocations_json = ? WHERE run_id = ?").run(relocationsJson, runId);
+}
+function listPendingRelocations(db) {
+  const rows = db.prepare("SELECT * FROM runs WHERE pending_relocations_json IS NOT NULL ORDER BY updated_at, task_id").all();
+  return rows.map(mapRunRow);
+}
+function markAuditExported(db, runId, at) {
+  db.prepare("UPDATE runs SET audit_exported_at = ? WHERE run_id = ?").run(at, runId);
+}
+function readOperationRow(db, operationId) {
+  const row = db.prepare("SELECT * FROM operations WHERE operation_id = ?").get(operationId);
+  if (!row)
+    return null;
+  return {
+    operation_id: String(row.operation_id),
+    kind: String(row.kind),
+    run_id: typeof row.run_id === "string" ? row.run_id : null,
+    result_json: String(row.result_json),
+    committed_at: String(row.committed_at)
+  };
+}
+function insertOperationRow(db, row) {
+  try {
+    db.prepare("INSERT INTO operations (operation_id, kind, run_id, result_json, committed_at) VALUES (?, ?, ?, ?, ?)").run(row.operation_id, row.kind, row.run_id, row.result_json, row.committed_at);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new KernelStoreConflictError(`operation ${row.operation_id} was already committed: ${message}`);
+  }
+}
+function workspaceIdentity(db) {
+  const value = readMeta(db, "workspace_id");
+  if (!value)
+    throw new KernelSchemaError("kernel store identity metadata is missing");
+  return value;
+}
+
 // plugins/immune-brain/runtime/kernel/backend_claim.ts
-var CLAIM_PATH = stateClaimPath();
 var ALLOWED = [
   "contract",
   "backend",
@@ -2741,7 +3191,7 @@ function validateTaskId2(taskId) {
 }
 function readJsonOrNull(path) {
   try {
-    const stat = lstatSync3(path);
+    const stat = lstatSync4(path);
     if (stat.isSymbolicLink())
       throw new KernelBackendClaimError("owner file must not be a symlink");
     if (!stat.isFile())
@@ -2751,7 +3201,7 @@ function readJsonOrNull(path) {
       return null;
     throw error;
   }
-  return JSON.parse(readFileSync4(path, "utf8"));
+  return JSON.parse(readFileSync5(path, "utf8"));
 }
 function parseBackendClaim(raw) {
   const unknown = Object.keys(raw).filter((key) => !ALLOWED.includes(key));
@@ -2775,10 +3225,25 @@ function parseBackendClaim(raw) {
   return raw;
 }
 function readBackendClaim(root) {
-  const raw = readJsonOrNull(join4(root, CLAIM_PATH));
-  if (!raw)
-    return null;
-  return parseBackendClaim(raw);
+  return withKernelRead(root, (db) => {
+    const run = readRunRowById(db, activeRunId(db) ?? "");
+    if (!run || run.state !== "active" || run.claim_status === null)
+      return null;
+    return claimFromRunRow(run);
+  }) ?? null;
+}
+function claimFromRunRow(run) {
+  return parseBackendClaim({
+    contract: "assurance_kernel/backend_claim/v2",
+    backend: "kernel",
+    task_id: run.task_id,
+    intent_revision: run.intent_revision,
+    intent_content_hash: run.intent_content_hash,
+    enrollment_event_id: run.enrollment_event_id,
+    lifecycle_status: run.claim_status ?? "active",
+    created_at: run.created_at,
+    updated_at: run.updated_at
+  });
 }
 function serializeBackendClaim(claim) {
   parseBackendClaim(claim);
@@ -2819,7 +3284,7 @@ function parseTaskTombstone(raw) {
 }
 function readTaskTombstone(root, taskId) {
   validateTaskId2(taskId);
-  const raw = readJsonOrNull(join4(resolve3(root), auditTerminalProofPath(taskId)));
+  const raw = readJsonOrNull(join4(resolve4(root), auditTerminalProofPath(taskId)));
   if (!raw)
     return null;
   const tombstone = parseTaskTombstone(raw);
@@ -2834,22 +3299,41 @@ function serializeTaskTombstone(tombstone) {
 }
 
 // plugins/immune-brain/runtime/kernel/storage.ts
-import { createHash as createHash10, randomUUID as randomUUID3 } from "node:crypto";
+import { createHash as createHash12 } from "node:crypto";
+import {
+  constants as constants3,
+  closeSync as closeSync4,
+  existsSync as existsSync4,
+  fstatSync as fstatSync3,
+  fsyncSync as fsyncSync2,
+  lstatSync as lstatSync6,
+  mkdirSync as mkdirSync3,
+  openSync as openSync4,
+  readFileSync as readFileSync7,
+  readdirSync as readdirSync2,
+  realpathSync as realpathSync7,
+  renameSync as renameSync2,
+  rmSync as rmSync4,
+  writeFileSync as writeFileSync3
+} from "node:fs";
+import { dirname as dirname4, isAbsolute as isAbsolute4, relative as relative3, resolve as resolve6, sep as sep5 } from "node:path";
+
+// plugins/immune-brain/runtime/kernel/reducer.ts
+import { createHash as createHash11 } from "node:crypto";
+
+// plugins/immune-brain/runtime/kernel/intent.ts
+import { createHash as createHash10 } from "node:crypto";
 import {
   closeSync as closeSync3,
-  constants as constants2,
-  fstatSync as fstatSync3,
-  fsyncSync,
+  constants as fsConstants,
+  fstatSync as fstatSync2,
   lstatSync as lstatSync5,
-  mkdirSync as mkdirSync2,
   openSync as openSync3,
   readFileSync as readFileSync6,
-  realpathSync as realpathSync6,
-  renameSync,
-  rmSync as rmSync3,
-  writeFileSync as writeFileSync2
+  realpathSync as realpathSync6
 } from "node:fs";
-import { basename, dirname as dirname3, isAbsolute as isAbsolute3, relative as relative2, resolve as resolve5, sep as sep4 } from "node:path";
+import { execFileSync as execFileSync3 } from "node:child_process";
+import { join as join5, resolve as resolve5, sep as sep4 } from "node:path";
 
 // plugins/immune-brain/runtime/kernel/types.ts
 var TASK_PHASES = ["working", "review", "done", "stopped"];
@@ -2866,20 +3350,6 @@ function isTaskRecordV4(record) {
 }
 var REDUCED_MUTATION_BRAND = Symbol("assurance-kernel-reduced-mutation-v2");
 var MUTATION_AUTHORITY_CAPABILITY_BRAND = Symbol("assurance-kernel-mutation-authority-capability");
-
-// plugins/immune-brain/runtime/kernel/intent.ts
-import { createHash as createHash9 } from "node:crypto";
-import {
-  closeSync as closeSync2,
-  constants as fsConstants,
-  fstatSync as fstatSync2,
-  lstatSync as lstatSync4,
-  openSync as openSync2,
-  readFileSync as readFileSync5,
-  realpathSync as realpathSync5
-} from "node:fs";
-import { execFileSync as execFileSync3 } from "node:child_process";
-import { join as join5, resolve as resolve4, sep as sep3 } from "node:path";
 
 // plugins/immune-brain/runtime/kernel/intent_token_registry.ts
 var TOKEN_BRAND = Symbol("assurance-kernel-task-intent-identity-token");
@@ -2999,7 +3469,7 @@ var portablePathCollator2 = new Intl.Collator("und", {
   ignorePunctuation: false
 });
 function sha256Hex(bytes) {
-  return createHash9("sha256").update(bytes).digest("hex");
+  return createHash10("sha256").update(bytes).digest("hex");
 }
 function objectAt(value, path, violations) {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
@@ -3179,11 +3649,11 @@ function assertSameIdentity(before, after, what) {
     throw new Error(`${what} changed while being read`);
 }
 function resolveCanonicalRoot(root) {
-  const resolved = resolve4(root);
-  const rootStat = lstatSync4(resolved);
+  const resolved = resolve5(root);
+  const rootStat = lstatSync5(resolved);
   if (rootStat.isSymbolicLink() || !rootStat.isDirectory())
     throw new Error("project root must be a real directory, not a symlink");
-  return realpathSync5(resolved);
+  return realpathSync6(resolved);
 }
 function resolveSidecarPath(canonicalRoot, activePath, archivedPath) {
   if (sidecarPresent(canonicalRoot, activePath))
@@ -3194,7 +3664,7 @@ function resolveSidecarPath(canonicalRoot, activePath, archivedPath) {
 }
 function sidecarPresent(canonicalRoot, relativePath) {
   try {
-    lstatSync4(join5(canonicalRoot, relativePath));
+    lstatSync5(join5(canonicalRoot, relativePath));
     return true;
   } catch {
     return false;
@@ -3205,7 +3675,7 @@ function collectPathIdentities(canonicalRoot, relativePath) {
   let current = canonicalRoot;
   for (const part of relativePath.split("/")) {
     current = join5(current, part);
-    const stat = lstatSync4(current);
+    const stat = lstatSync5(current);
     if (stat.isSymbolicLink())
       throw new Error("intent sidecar path contains a symlink");
     identities.push({ dev: stat.dev, ino: stat.ino });
@@ -3217,7 +3687,7 @@ function assertIdentitiesUnchanged(expected, canonicalRoot, relativePath) {
   const parts = relativePath.split("/");
   for (let index = 0;index < parts.length; index += 1) {
     current = join5(current, parts[index]);
-    const stat = lstatSync4(current);
+    const stat = lstatSync5(current);
     if (stat.dev !== expected[index].dev || stat.ino !== expected[index].ino)
       throw new Error(`path component changed while being read: ${parts.slice(0, index + 1).join("/")}`);
   }
@@ -3231,7 +3701,7 @@ function readTaskIntentSource(root, taskId, requestedPath) {
   if (sidecarPath !== activePath && sidecarPath !== archivedPath)
     throw new Error("intent sidecar path is not the active or archived task path");
   const target = join5(canonicalRoot, sidecarPath);
-  if (!target.startsWith(canonicalRoot + sep3))
+  if (!target.startsWith(canonicalRoot + sep4))
     throw new Error("intent sidecar escapes project root");
   if (!sidecarPresent(canonicalRoot, sidecarPath))
     throw new TaskIntentObservationError("missing", `TaskIntent sidecar is missing at ${sidecarPath}`);
@@ -3244,28 +3714,28 @@ function readTaskIntentSource(root, taskId, requestedPath) {
       throw new TaskIntentObservationError("invalid", "TaskIntent sidecar is not Git-tracked");
     throw error;
   }
-  const before = lstatSync4(target);
+  const before = lstatSync5(target);
   if (!before.isFile() || before.size > INTENT_MAX_BYTES)
     throw new TaskIntentObservationError("invalid", "TaskIntent sidecar must be a regular file no larger than 64 KiB");
-  const fd = openSync2(target, fsConstants.O_RDONLY | fsConstants.O_NOFOLLOW);
+  const fd = openSync3(target, fsConstants.O_RDONLY | fsConstants.O_NOFOLLOW);
   let bytes;
   try {
     const fdStat = fstatSync2(fd);
     assertSameIdentity(statIdentity(before), fdStat, "intent sidecar descriptor");
     intentReaderTestHook?.onBeforeDescriptorRead?.();
-    bytes = readFileSync5(fd);
+    bytes = readFileSync6(fd);
   } finally {
-    closeSync2(fd);
+    closeSync3(fd);
   }
   if (bytes.byteLength > INTENT_MAX_BYTES)
     throw new TaskIntentObservationError("invalid", "TaskIntent sidecar exceeds 64 KiB");
-  const after = lstatSync4(target);
+  const after = lstatSync5(target);
   assertSameIdentity(statIdentity(before), after, "intent sidecar");
   assertIdentitiesUnchanged(pathIdentities, canonicalRoot, sidecarPath);
-  const canonicalAgain = realpathSync5(root);
+  const canonicalAgain = realpathSync6(root);
   if (canonicalAgain !== canonicalRoot)
     throw new Error("canonical project root drifted while being read");
-  if (lstatSync4(canonicalAgain).isSymbolicLink())
+  if (lstatSync5(canonicalAgain).isSymbolicLink())
     throw new Error("canonical project root became a symlink while being read");
   const sourceBytesSha256 = sha256Hex(bytes);
   let intent;
@@ -4079,1088 +4549,6 @@ function assertTaskRecordUpdateV3(previousRaw, nextRaw, action) {
     throw new KernelInvariantError(violations);
 }
 
-// plugins/immune-brain/runtime/kernel/storage.ts
-var MISSING_REVISION = "missing";
-
-class KernelStoreConflictError extends Error {
-  code = "kernel_store_conflict";
-  constructor(message) {
-    super(message);
-    this.name = "KernelStoreConflictError";
-  }
-}
-
-class KernelStoreSecurityError extends Error {
-  code = "kernel_store_security_error";
-  constructor(message) {
-    super(message);
-    this.name = "KernelStoreSecurityError";
-  }
-}
-function revisionFor(content) {
-  return `sha256:${createHash10("sha256").update(content).digest("hex")}`;
-}
-function canonicalRoot(root) {
-  try {
-    return realpathSync6(root);
-  } catch {
-    throw new KernelStoreSecurityError("project root is unavailable");
-  }
-}
-function withinRoot(root, candidate) {
-  const rel = relative2(root, candidate);
-  return rel === "" || !isAbsolute3(rel) && rel !== ".." && !rel.startsWith(`..${sep4}`);
-}
-function safeCandidate(root, relativePath) {
-  if (!relativePath || relativePath.includes("\x00") || isAbsolute3(relativePath) || relativePath.includes("\\"))
-    throw new KernelStoreSecurityError("project-relative path is invalid");
-  const canonical = canonicalRoot(root);
-  const candidate = resolve5(canonical, relativePath);
-  if (!withinRoot(canonical, candidate))
-    throw new KernelStoreSecurityError("path escapes the project root");
-  return { root: canonical, path: candidate };
-}
-function pathStatOrNull(path) {
-  try {
-    return lstatSync5(path);
-  } catch (error) {
-    const code = error.code;
-    if (code === "ENOENT" || code === "ENOTDIR")
-      return null;
-    throw error;
-  }
-}
-function assertNoSymlinkSegments(root, candidate) {
-  const rel = relative2(root, candidate);
-  let current = root;
-  for (const segment of rel.split(sep4).filter(Boolean)) {
-    current = resolve5(current, segment);
-    const stat = pathStatOrNull(current);
-    if (!stat)
-      continue;
-    if (stat.isSymbolicLink())
-      throw new KernelStoreSecurityError(`symlink storage segment is forbidden: ${relative2(root, current)}`);
-  }
-}
-function capturePathIdentities(root, candidate) {
-  const paths = [root];
-  let current = root;
-  for (const segment of relative2(root, candidate).split(sep4).filter(Boolean)) {
-    current = resolve5(current, segment);
-    paths.push(current);
-  }
-  return paths.map((path) => {
-    const stat = lstatSync5(path);
-    if (stat.isSymbolicLink())
-      throw new KernelStoreSecurityError(`symlink storage segment is forbidden: ${relative2(root, path)}`);
-    return { path, dev: stat.dev, ino: stat.ino };
-  });
-}
-function assertPathIdentitiesUnchanged(before) {
-  for (const identity of before) {
-    const after = lstatSync5(identity.path);
-    if (after.isSymbolicLink() || after.dev !== identity.dev || after.ino !== identity.ino)
-      throw new KernelStoreSecurityError(`path identity changed during access: ${identity.path}`);
-  }
-}
-function ensureSecureDirectory(root, relativePath) {
-  const target = safeCandidate(root, relativePath);
-  const rel = relative2(target.root, target.path);
-  let current = target.root;
-  for (const segment of rel.split(sep4).filter(Boolean)) {
-    current = resolve5(current, segment);
-    const stat = pathStatOrNull(current);
-    if (stat) {
-      if (stat.isSymbolicLink())
-        throw new KernelStoreSecurityError(`symlink storage segment is forbidden: ${relative2(target.root, current)}`);
-      if (!stat.isDirectory())
-        throw new KernelStoreSecurityError(`storage segment is not a directory: ${relative2(target.root, current)}`);
-      continue;
-    }
-    mkdirSync2(current);
-  }
-  return target.path;
-}
-function readSecureProjectFile(root, relativePath) {
-  const candidate = safeCandidate(root, relativePath);
-  assertNoSymlinkSegments(candidate.root, candidate.path);
-  const before = pathStatOrNull(candidate.path);
-  if (!before)
-    throw new Error(`source_missing: ${relativePath}`);
-  const identities = capturePathIdentities(candidate.root, candidate.path);
-  if (!before.isFile())
-    throw new KernelStoreSecurityError(`source is not a regular file: ${relativePath}`);
-  const noFollow = constants2.O_NOFOLLOW ?? 0;
-  let fd = null;
-  try {
-    fd = openSync3(candidate.path, constants2.O_RDONLY | noFollow);
-    const opened = fstatSync3(fd);
-    if (opened.dev !== before.dev || opened.ino !== before.ino)
-      throw new KernelStoreSecurityError(`source identity changed: ${relativePath}`);
-    const content = readFileSync6(fd, "utf8");
-    const after = lstatSync5(candidate.path);
-    if (after.dev !== opened.dev || after.ino !== opened.ino)
-      throw new KernelStoreSecurityError(`source identity changed: ${relativePath}`);
-    assertPathIdentitiesUnchanged(identities);
-    return content;
-  } finally {
-    if (fd !== null)
-      closeSync3(fd);
-  }
-}
-function currentRevision(root, relativePath) {
-  const candidate = safeCandidate(root, relativePath);
-  const stat = pathStatOrNull(candidate.path);
-  if (!stat)
-    return MISSING_REVISION;
-  if (stat.isSymbolicLink())
-    throw new KernelStoreSecurityError(`symlink storage target is forbidden: ${relativePath}`);
-  return revisionFor(readSecureProjectFile(root, relativePath));
-}
-function processIsAlive(pid) {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch (error) {
-    return error.code !== "ESRCH";
-  }
-}
-function clearStaleLock(lockPath) {
-  const before = pathStatOrNull(lockPath);
-  if (!before)
-    return true;
-  if (before.isSymbolicLink() || !before.isFile())
-    throw new KernelStoreSecurityError("kernel store lock is not a regular file");
-  let stale = false;
-  let fd = null;
-  try {
-    fd = openSync3(lockPath, constants2.O_RDONLY | (constants2.O_NOFOLLOW ?? 0));
-    const raw = JSON.parse(readFileSync6(fd, "utf8"));
-    stale = Number.isInteger(raw.pid) && Number(raw.pid) > 0 && !processIsAlive(Number(raw.pid));
-  } catch {
-    stale = Date.now() - Number(before.mtimeMs) > 30000;
-  } finally {
-    if (fd !== null)
-      closeSync3(fd);
-  }
-  if (!stale)
-    return false;
-  const after = lstatSync5(lockPath);
-  if (after.isSymbolicLink() || after.dev !== before.dev || after.ino !== before.ino)
-    throw new KernelStoreSecurityError("kernel store lock identity changed during recovery");
-  rmSync3(lockPath);
-  return true;
-}
-function withExclusiveLock(lockPath, operation) {
-  const noFollow = constants2.O_NOFOLLOW ?? 0;
-  let fd = null;
-  for (let attempt = 0;attempt < 2; attempt += 1) {
-    try {
-      fd = openSync3(lockPath, constants2.O_WRONLY | constants2.O_CREAT | constants2.O_EXCL | noFollow, 384);
-      break;
-    } catch (error) {
-      if (attempt === 0 && error.code === "EEXIST" && clearStaleLock(lockPath))
-        continue;
-      throw new KernelStoreConflictError(`kernel store lock is busy: ${error instanceof Error ? error.message : error}`);
-    }
-  }
-  if (fd === null)
-    throw new KernelStoreConflictError("kernel store lock could not be acquired");
-  const identity = fstatSync3(fd);
-  try {
-    writeFileSync2(fd, `${JSON.stringify({ pid: process.pid, started_at: new Date().toISOString() })}
-`, "utf8");
-    fsyncSync(fd);
-    return operation();
-  } finally {
-    closeSync3(fd);
-    const current = pathStatOrNull(lockPath);
-    if (current && !current.isSymbolicLink() && current.dev === identity.dev && current.ino === identity.ino)
-      rmSync3(lockPath);
-  }
-}
-function fsyncDirectory(path) {
-  const fd = openSync3(path, constants2.O_RDONLY);
-  try {
-    fsyncSync(fd);
-  } finally {
-    closeSync3(fd);
-  }
-}
-function atomicCasWrite(root, relativePath, content, expectedRevision) {
-  const candidate = safeCandidate(root, relativePath);
-  const parentRelative = relative2(candidate.root, dirname3(candidate.path));
-  ensureSecureDirectory(root, parentRelative);
-  assertNoSymlinkSegments(candidate.root, candidate.path);
-  return withExclusiveLock(`${candidate.path}.lock`, () => {
-    const actualRevision = currentRevision(root, relativePath);
-    if (actualRevision !== expectedRevision)
-      throw new KernelStoreConflictError(`CAS mismatch for ${relativePath}: expected ${expectedRevision}, got ${actualRevision}`);
-    const tempPath = `${candidate.path}.${randomUUID3()}.tmp`;
-    let fd = null;
-    try {
-      fd = openSync3(tempPath, constants2.O_WRONLY | constants2.O_CREAT | constants2.O_EXCL, 384);
-      writeFileSync2(fd, content, "utf8");
-      fsyncSync(fd);
-      closeSync3(fd);
-      fd = null;
-      assertNoSymlinkSegments(candidate.root, candidate.path);
-      renameSync(tempPath, candidate.path);
-      fsyncDirectory(dirname3(candidate.path));
-    } finally {
-      if (fd !== null)
-        closeSync3(fd);
-      rmSync3(tempPath, { force: true });
-    }
-    return revisionFor(content);
-  });
-}
-function validateTaskId4(taskId) {
-  if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(taskId))
-    throw new KernelStoreSecurityError("task_id is not a safe file identity");
-}
-var JOURNAL_READ_LIMIT = 64 * 1024 * 1024;
-var TRANSACTION_PATH = ".imm/tasks/.workspace-transaction.json";
-var V1_TRANSACTION_RETIRED = "workspace_transaction/v1 is retired after v4 storage retirement; use TaskRecord v3 + workspace_transaction/v2";
-var afterTaskTransactionWriteForTest = null;
-function runAfterTaskTransactionWriteHook() {
-  const hook = afterTaskTransactionWriteForTest;
-  afterTaskTransactionWriteForTest = null;
-  hook?.();
-}
-var terminalSettlementStepHookForTest = null;
-function runTerminalSettlementStepHook(stepIndex) {
-  const hook = terminalSettlementStepHookForTest;
-  if (!hook)
-    return;
-  hook(stepIndex);
-}
-function parseWorkspaceContent(content) {
-  const raw = JSON.parse(content);
-  const unknown = Object.keys(raw).filter((key) => !["contract", "current_working"].includes(key));
-  if (unknown.length > 0)
-    throw new KernelStoreSecurityError(`workspace has unknown field: ${unknown[0]}`);
-  if (raw.contract !== "assurance_kernel/workspace/v1")
-    throw new KernelStoreSecurityError("workspace contract is invalid");
-  if (raw.current_working !== null && (typeof raw.current_working !== "string" || !raw.current_working.trim()))
-    throw new KernelStoreSecurityError("workspace current_working is invalid");
-  if (typeof raw.current_working === "string")
-    validateTaskId4(raw.current_working);
-  return raw;
-}
-function serializeWorkspace(state) {
-  return `${JSON.stringify(state, null, 2)}
-`;
-}
-function readWorkspaceStateRaw(root) {
-  const relativePath = stateWorkspacePath();
-  if (currentRevision(root, relativePath) === MISSING_REVISION)
-    return {
-      revision: MISSING_REVISION,
-      state: {
-        contract: "assurance_kernel/workspace/v1",
-        current_working: null
-      }
-    };
-  const content = readSecureProjectFile(root, relativePath);
-  return { revision: revisionFor(content), state: parseWorkspaceContent(content) };
-}
-function convergeFile(root, relativePath, expectedRevision, nextContent) {
-  const nextRevision = revisionFor(nextContent);
-  const actualRevision = currentRevision(root, relativePath);
-  if (actualRevision === nextRevision)
-    return nextRevision;
-  if (actualRevision !== expectedRevision)
-    throw new KernelStoreConflictError(`transaction conflict for ${relativePath}: expected ${expectedRevision} or ${nextRevision}, got ${actualRevision}`);
-  return atomicCasWrite(root, relativePath, nextContent, expectedRevision);
-}
-var TRANSACTION_PATH_V2 = stateTransactionPath("workspace-transaction-v2.json");
-var ENROLLMENT_MARKER_PATH = stateTransactionPath("enrollment-marker.json");
-var DRAIN_MARKER_PATH = stateTransactionPath("drain-transaction.json");
-var TERMINAL_MARKER_PATH = stateTransactionPath("terminal-transaction.json");
-var AUTHORITY_REPAIR_MARKER_PATH = stateTransactionPath("authority-repair-transaction.json");
-function revisionForContent(content) {
-  return revisionFor(content);
-}
-function parseWorkspaceTransactionV2(raw) {
-  const allowed = [
-    "contract",
-    "task_id",
-    "expected_record_hash",
-    "next_record_content",
-    "expected_workspace_hash",
-    "next_workspace_content",
-    "artifact_relocations"
-  ];
-  const unknown = Object.keys(raw).filter((key) => !allowed.includes(key));
-  if (unknown.length > 0)
-    throw new KernelStoreSecurityError(`workspace transaction v2 has unknown field: ${unknown[0]}`);
-  if (raw.contract !== "assurance_kernel/workspace_transaction/v2")
-    throw new KernelStoreSecurityError("workspace transaction v2 contract is invalid");
-  for (const field of allowed.slice(1, 6)) {
-    if (typeof raw[field] !== "string" || !String(raw[field]).trim())
-      throw new KernelStoreSecurityError(`workspace transaction v2 ${field} is invalid`);
-  }
-  const relocationRaw = raw.artifact_relocations;
-  if (relocationRaw !== undefined && !Array.isArray(relocationRaw))
-    throw new KernelStoreSecurityError("workspace transaction v2 artifact_relocations is invalid");
-  const artifactRelocations = (relocationRaw ?? []).map((item, index) => {
-    if (!item || typeof item !== "object" || Array.isArray(item))
-      throw new KernelStoreSecurityError(`artifact relocation ${index} is invalid`);
-    const value = item;
-    const unknownFields = Object.keys(value).filter((key) => !["from_path", "to_path", "content_hash"].includes(key));
-    if (unknownFields.length > 0)
-      throw new KernelStoreSecurityError(`artifact relocation has unknown field: ${unknownFields[0]}`);
-    for (const field of ["from_path", "to_path", "content_hash"])
-      if (typeof value[field] !== "string" || !String(value[field]).trim())
-        throw new KernelStoreSecurityError(`artifact relocation ${field} is invalid`);
-    const relocation = value;
-    assertArtifactRelocation(relocation);
-    return relocation;
-  });
-  const transaction = {
-    ...raw,
-    ...artifactRelocations.length > 0 ? { artifact_relocations: artifactRelocations } : {}
-  };
-  validateTaskId4(transaction.task_id);
-  const record = parseTaskRecord(JSON.parse(transaction.next_record_content));
-  if (record.task_id !== transaction.task_id)
-    throw new KernelStoreSecurityError("workspace transaction v2 task identity is inconsistent");
-  parseWorkspaceContent(transaction.next_workspace_content);
-  return transaction;
-}
-function readPendingTransactionV2(root) {
-  if (currentRevision(root, TRANSACTION_PATH_V2) === MISSING_REVISION)
-    return null;
-  const raw = JSON.parse(readSecureProjectFile(root, TRANSACTION_PATH_V2));
-  return parseWorkspaceTransactionV2(raw);
-}
-function removeTransactionMarkerV2(root) {
-  const candidate = safeCandidate(root, TRANSACTION_PATH_V2);
-  assertNoSymlinkSegments(candidate.root, candidate.path);
-  const stat = pathStatOrNull(candidate.path);
-  if (!stat)
-    return;
-  if (!stat.isFile())
-    throw new KernelStoreSecurityError("workspace transaction v2 marker is not a regular file");
-  rmSync3(candidate.path);
-  fsyncDirectory(dirname3(candidate.path));
-}
-function archiveArtifactPath(path) {
-  const matched = path.match(/^docs\/(plans|specs)\/([^/]+)$/);
-  return matched ? `docs/${matched[1]}/archive/${matched[2]}` : null;
-}
-function assertArtifactRelocation(relocation) {
-  if (!/^sha256:[a-f0-9]{64}$/.test(relocation.content_hash))
-    throw new KernelStoreSecurityError("artifact relocation content_hash is invalid");
-  if (archiveArtifactPath(relocation.from_path) !== relocation.to_path && archiveArtifactPath(relocation.to_path) !== relocation.from_path)
-    throw new KernelStoreSecurityError("artifact relocation paths must be one active/archive pair");
-}
-function convergeArtifactRelocation(root, relocation) {
-  assertArtifactRelocation(relocation);
-  const fromRevision = currentRevision(root, relocation.from_path);
-  const toRevision = currentRevision(root, relocation.to_path);
-  if (fromRevision === MISSING_REVISION && toRevision === relocation.content_hash)
-    return;
-  if (fromRevision !== relocation.content_hash || toRevision !== MISSING_REVISION)
-    throw new KernelStoreConflictError(`artifact relocation conflict for ${relocation.from_path} -> ${relocation.to_path}`);
-  const from = safeCandidate(root, relocation.from_path);
-  const to = safeCandidate(root, relocation.to_path);
-  ensureSecureDirectory(root, relative2(to.root, dirname3(to.path)));
-  assertNoSymlinkSegments(from.root, from.path);
-  assertNoSymlinkSegments(to.root, to.path);
-  renameSync(from.path, to.path);
-  fsyncDirectory(dirname3(from.path));
-  if (dirname3(from.path) !== dirname3(to.path))
-    fsyncDirectory(dirname3(to.path));
-}
-function completeTransactionV2Locked(root, transaction, invokeTestHook) {
-  for (const relocation of transaction.artifact_relocations ?? [])
-    convergeArtifactRelocation(root, relocation);
-  const taskPath = stateTaskRecordPath(transaction.task_id);
-  const taskRevision = convergeFile(root, taskPath, transaction.expected_record_hash, transaction.next_record_content);
-  if (invokeTestHook)
-    runAfterTaskTransactionWriteHook();
-  const workspaceRevision = convergeFile(root, stateWorkspacePath(), transaction.expected_workspace_hash, transaction.next_workspace_content);
-  const record = parseTaskRecord(JSON.parse(transaction.next_record_content));
-  const workspace = parseWorkspaceContent(transaction.next_workspace_content);
-  removeTransactionMarkerV2(root);
-  return {
-    revision: taskRevision,
-    record,
-    workspace: { revision: workspaceRevision, state: workspace }
-  };
-}
-function recoverPendingTransactionV2Locked(root) {
-  const transaction = readPendingTransactionV2(root);
-  if (transaction)
-    completeTransactionV2Locked(root, transaction, false);
-}
-function assertNoRetiredV1Marker(root) {
-  if (currentRevision(root, TRANSACTION_PATH) !== MISSING_REVISION)
-    throw new KernelStoreSecurityError(V1_TRANSACTION_RETIRED);
-}
-function recoverAnyPendingTransactionLocked(root) {
-  const hasV1 = currentRevision(root, TRANSACTION_PATH) !== MISSING_REVISION;
-  const hasV2 = currentRevision(root, TRANSACTION_PATH_V2) !== MISSING_REVISION;
-  const hasEnrollment = currentRevision(root, ENROLLMENT_MARKER_PATH) !== MISSING_REVISION;
-  const hasDrain = currentRevision(root, DRAIN_MARKER_PATH) !== MISSING_REVISION;
-  const hasTerminal = currentRevision(root, TERMINAL_MARKER_PATH) !== MISSING_REVISION;
-  const hasAuthorityRepair = currentRevision(root, AUTHORITY_REPAIR_MARKER_PATH) !== MISSING_REVISION;
-  if (hasV1)
-    throw new KernelStoreSecurityError(V1_TRANSACTION_RETIRED);
-  const markers = [hasV2, hasEnrollment, hasDrain, hasTerminal, hasAuthorityRepair].filter(Boolean).length;
-  if (markers > 1)
-    throw new KernelStoreSecurityError("simultaneous workspace transaction markers are forbidden");
-  if (hasV2)
-    recoverPendingTransactionV2Locked(root);
-  if (hasEnrollment)
-    recoverPendingEnrollmentLocked(root);
-  if (hasDrain)
-    recoverPendingDrainLocked(root);
-  if (hasTerminal)
-    recoverPendingTerminalLocked(root, false);
-  if (hasAuthorityRepair)
-    recoverPendingAuthorityRepairLocked(root);
-}
-function readTaskRecordRaw(root, taskId) {
-  validateTaskId4(taskId);
-  const relativePath = stateTaskRecordPath(taskId);
-  if (currentRevision(root, relativePath) === MISSING_REVISION)
-    return { revision: MISSING_REVISION, record: null };
-  const content = readSecureProjectFile(root, relativePath);
-  const raw = JSON.parse(content);
-  if (raw.contract === "assurance_kernel/task_record/v2")
-    throw new KernelStoreSecurityError("TaskRecord v2 is not supported in the state layout; v2 records belong to the historical audit layout");
-  const record = parseTaskRecord(raw);
-  if (record.task_id !== taskId)
-    throw new KernelStoreSecurityError("task record v3 identity is inconsistent");
-  return { revision: revisionFor(content), record };
-}
-function readAuditTaskPair(root, taskId) {
-  validateTaskId4(taskId);
-  const recordPath = auditTaskRecordPath(taskId);
-  const proofPath = auditTerminalProofPath(taskId);
-  const recordRevision = currentRevision(root, recordPath);
-  const proofRevision = currentRevision(root, proofPath);
-  if (recordRevision === MISSING_REVISION && proofRevision === MISSING_REVISION)
-    return null;
-  if (recordRevision === MISSING_REVISION || proofRevision === MISSING_REVISION)
-    throw new KernelStoreSecurityError("terminal audit pair is incomplete");
-  const recordContent = readSecureProjectFile(root, recordPath);
-  const proof = parseTaskTombstone(JSON.parse(readSecureProjectFile(root, proofPath)));
-  if (proof.task_id !== taskId)
-    throw new KernelStoreSecurityError("terminal audit proof identity is inconsistent");
-  if (proof.final_record_hash !== recordRevision)
-    throw new KernelStoreSecurityError("terminal audit proof does not match its task record");
-  const raw = JSON.parse(recordContent);
-  let record;
-  if (raw.contract === "assurance_kernel/task_record/v2") {
-    const legacy = parseTaskRecordV2(raw);
-    if (legacy.task_id !== taskId || legacy.phase !== "done" && legacy.phase !== "stopped")
-      throw new KernelStoreSecurityError("historical audit TaskRecord v2 must be terminal and identity-consistent");
-    record = legacy;
-  } else {
-    const current = parseTaskRecord(raw);
-    if (current.task_id !== taskId || current.lifecycle !== "done" && current.lifecycle !== "stopped")
-      throw new KernelStoreSecurityError("audit TaskRecord v3 must be terminal and identity-consistent");
-    record = current;
-  }
-  return { recordRevision, record, proof };
-}
-function readTaskRecord(root, taskId) {
-  return withKernelStoreLock(root, () => readTaskRecordRaw(root, taskId));
-}
-function commitTaskRecordLocked(root, taskId, expectedRecordHash, nextRecord, expectedWorkspaceHash, nextWorkspace, artifactRelocations = []) {
-  const transaction = {
-    contract: "assurance_kernel/workspace_transaction/v2",
-    task_id: taskId,
-    expected_record_hash: expectedRecordHash,
-    next_record_content: `${JSON.stringify(nextRecord, null, 2)}
-`,
-    expected_workspace_hash: expectedWorkspaceHash,
-    next_workspace_content: serializeWorkspace(nextWorkspace),
-    ...artifactRelocations.length > 0 ? { artifact_relocations: artifactRelocations } : {}
-  };
-  atomicCasWrite(root, TRANSACTION_PATH_V2, `${JSON.stringify(transaction, null, 2)}
-`, MISSING_REVISION);
-  try {
-    return completeTransactionV2Locked(root, transaction, true);
-  } catch (error) {
-    try {
-      return completeTransactionV2Locked(root, transaction, false);
-    } catch (recoveryError) {
-      throw new KernelStoreConflictError(`kernel v2 transaction failed and remains recoverable: ${error instanceof Error ? error.message : error}; recovery: ${recoveryError instanceof Error ? recoveryError.message : recoveryError}`);
-    }
-  }
-}
-function withKernelStoreLock(root, operation) {
-  const locksDirectory = ensureSecureDirectory(root, dirname3(stateStoreLockPath()));
-  return withExclusiveLock(resolve5(locksDirectory, basename(stateStoreLockPath())), () => {
-    assertNoRetiredV1Marker(root);
-    recoverAnyPendingTransactionLocked(root);
-    return operation();
-  });
-}
-function projectKernelAuthorityLocked(root, taskId) {
-  try {
-    const claim = readBackendClaim(root);
-    const ownerTaskId = claim?.task_id ?? null;
-    const inspectedTaskId = ownerTaskId ?? taskId;
-    const stateRecord = readTaskRecordRaw(root, inspectedTaskId);
-    const auditPair = readAuditTaskPair(root, inspectedTaskId);
-    const workspace = readWorkspaceStateRaw(root).state;
-    const record = stateRecord.record;
-    const auditRecord = auditPair?.record;
-    const authorityRecord = record ? {
-      task_id: record.task_id,
-      lifecycle: record.lifecycle,
-      intent_revision: record.intent_snapshot.revision,
-      intent_content_hash: record.intent_ref.content_hash
-    } : auditRecord ? "phase" in auditRecord ? {
-      task_id: auditRecord.task_id,
-      lifecycle: auditRecord.phase,
-      intent_revision: auditRecord.intent_revision,
-      intent_content_hash: auditRecord.intent_ref.content_hash
-    } : {
-      task_id: auditRecord.task_id,
-      lifecycle: auditRecord.lifecycle,
-      intent_revision: auditRecord.intent_snapshot.revision,
-      intent_content_hash: auditRecord.intent_ref.content_hash
-    } : null;
-    const terminal = auditPair !== null;
-    const duplicateStateAndAudit = Boolean(stateRecord.record && auditPair);
-    const matchingTerminalProof = Boolean(auditPair && workspace.current_working === null);
-    const matchingClaimIdentity = Boolean(claim && authorityRecord && claim.task_id === authorityRecord.task_id && claim.intent_revision === authorityRecord.intent_revision && claim.intent_content_hash === authorityRecord.intent_content_hash);
-    const sameOwner = claim ? workspace.current_working === claim.task_id : workspace.current_working === null;
-    const revision = revisionForContent(JSON.stringify({ claim, stateRecord, auditPair, workspace }));
-    if (duplicateStateAndAudit)
-      return {
-        contract: "assurance_kernel/authority_projection/v1",
-        requested_task_id: taskId,
-        state: "authority_conflict",
-        owner_task_id: claim?.task_id ?? null,
-        owner_lifecycle: authorityRecord?.lifecycle ?? null,
-        claim_lifecycle_status: claim?.lifecycle_status ?? null,
-        diagnostic: `simultaneous state record and terminal audit pair for ${inspectedTaskId}; resolve or recover before authority interpretation`,
-        revision
-      };
-    if (claim && !sameOwner && !matchingTerminalProof)
-      return {
-        contract: "assurance_kernel/authority_projection/v1",
-        requested_task_id: taskId,
-        state: "authority_conflict",
-        owner_task_id: claim.task_id,
-        owner_lifecycle: authorityRecord?.lifecycle ?? null,
-        claim_lifecycle_status: claim.lifecycle_status,
-        diagnostic: `workspace owner ${workspace.current_working ?? "null"} contradicts claim ${claim.task_id}`,
-        revision
-      };
-    if (claim && !authorityRecord)
-      return {
-        contract: "assurance_kernel/authority_projection/v1",
-        requested_task_id: taskId,
-        state: "authority_conflict",
-        owner_task_id: claim.task_id,
-        owner_lifecycle: null,
-        claim_lifecycle_status: claim.lifecycle_status,
-        diagnostic: `claim ${claim.task_id} has no TaskRecord`,
-        revision
-      };
-    if (claim && matchingTerminalProof && matchingClaimIdentity)
-      return {
-        contract: "assurance_kernel/authority_projection/v1",
-        requested_task_id: taskId,
-        state: "repairable_stale_claim",
-        owner_task_id: claim.task_id,
-        owner_lifecycle: authorityRecord?.lifecycle ?? null,
-        claim_lifecycle_status: claim.lifecycle_status,
-        diagnostic: null,
-        revision
-      };
-    if (claim && terminal)
-      return {
-        contract: "assurance_kernel/authority_projection/v1",
-        requested_task_id: taskId,
-        state: "authority_conflict",
-        owner_task_id: claim.task_id,
-        owner_lifecycle: authorityRecord?.lifecycle ?? null,
-        claim_lifecycle_status: claim.lifecycle_status,
-        diagnostic: `claim ${claim.task_id} has contradictory terminal ownership evidence`,
-        revision
-      };
-    if (claim)
-      return {
-        contract: "assurance_kernel/authority_projection/v1",
-        requested_task_id: taskId,
-        state: "active_owner",
-        owner_task_id: claim.task_id,
-        owner_lifecycle: authorityRecord?.lifecycle ?? null,
-        claim_lifecycle_status: claim.lifecycle_status,
-        diagnostic: null,
-        revision
-      };
-    if (matchingTerminalProof)
-      return {
-        contract: "assurance_kernel/authority_projection/v1",
-        requested_task_id: taskId,
-        state: "terminal_owner",
-        owner_task_id: inspectedTaskId,
-        owner_lifecycle: authorityRecord?.lifecycle ?? null,
-        claim_lifecycle_status: null,
-        diagnostic: null,
-        revision
-      };
-    if (authorityRecord || workspace.current_working !== null)
-      return {
-        contract: "assurance_kernel/authority_projection/v1",
-        requested_task_id: taskId,
-        state: "authority_conflict",
-        owner_task_id: workspace.current_working,
-        owner_lifecycle: authorityRecord?.lifecycle ?? null,
-        claim_lifecycle_status: null,
-        diagnostic: "nonterminal owner state exists without a backend claim",
-        revision
-      };
-    return {
-      contract: "assurance_kernel/authority_projection/v1",
-      requested_task_id: taskId,
-      state: "unowned",
-      owner_task_id: null,
-      owner_lifecycle: null,
-      claim_lifecycle_status: null,
-      diagnostic: null,
-      revision
-    };
-  } catch (error) {
-    return {
-      contract: "assurance_kernel/authority_projection/v1",
-      requested_task_id: taskId,
-      state: "authority_conflict",
-      owner_task_id: null,
-      owner_lifecycle: null,
-      claim_lifecycle_status: null,
-      diagnostic: error instanceof Error ? error.message : String(error),
-      revision: ""
-    };
-  }
-}
-function reconcileKernelAuthority(root, taskId) {
-  validateTaskId4(taskId);
-  return withKernelStoreLock(root, () => projectKernelAuthorityLocked(root, taskId));
-}
-function readPendingAuthorityRepairMarker(root) {
-  if (currentRevision(root, AUTHORITY_REPAIR_MARKER_PATH) === MISSING_REVISION)
-    return null;
-  const raw = JSON.parse(readSecureProjectFile(root, AUTHORITY_REPAIR_MARKER_PATH));
-  const allowed = [
-    "contract",
-    "task_id",
-    "expected_projection_revision",
-    "expected_claim_content",
-    "at"
-  ];
-  const unknown = Object.keys(raw).filter((key) => !allowed.includes(key));
-  if (unknown.length > 0)
-    throw new KernelStoreSecurityError(`authority repair marker has unknown field: ${unknown[0]}`);
-  if (raw.contract !== "assurance_kernel/authority_repair_transaction/v1")
-    throw new KernelStoreSecurityError("authority repair marker contract is invalid");
-  for (const field of ["task_id", "expected_projection_revision", "expected_claim_content", "at"]) {
-    if (typeof raw[field] !== "string" || !String(raw[field]).trim())
-      throw new KernelStoreSecurityError(`authority repair marker ${field} is invalid`);
-  }
-  const marker = raw;
-  validateTaskId4(marker.task_id);
-  const claim = parseBackendClaim(JSON.parse(marker.expected_claim_content));
-  if (claim.task_id !== marker.task_id)
-    throw new KernelStoreSecurityError("authority repair claim identity is inconsistent");
-  return marker;
-}
-function removeAuthorityRepairMarker(root) {
-  const candidate = safeCandidate(root, AUTHORITY_REPAIR_MARKER_PATH);
-  assertNoSymlinkSegments(candidate.root, candidate.path);
-  const stat = pathStatOrNull(candidate.path);
-  if (!stat)
-    return;
-  if (!stat.isFile())
-    throw new KernelStoreSecurityError("authority repair marker is not a regular file");
-  rmSync3(candidate.path);
-  fsyncDirectory(dirname3(candidate.path));
-}
-function recoverPendingAuthorityRepairLocked(root) {
-  const marker = readPendingAuthorityRepairMarker(root);
-  if (!marker)
-    return;
-  const projection = projectKernelAuthorityLocked(root, marker.task_id);
-  const claimRevision = currentRevision(root, CLAIM_RELATIVE_PATH);
-  if (claimRevision === MISSING_REVISION) {
-    if (projection.state !== "terminal_owner" || projection.owner_task_id !== marker.task_id)
-      throw new KernelStoreConflictError("authority repair committed claim removal but terminal proof changed");
-    removeAuthorityRepairMarker(root);
-    return;
-  }
-  if (projection.state !== "repairable_stale_claim" || projection.owner_task_id !== marker.task_id || projection.revision !== marker.expected_projection_revision || claimRevision !== revisionFor(marker.expected_claim_content))
-    throw new KernelStoreConflictError("authority repair facts changed after confirmation");
-  const claimCandidate = safeCandidate(root, CLAIM_RELATIVE_PATH);
-  assertNoSymlinkSegments(claimCandidate.root, claimCandidate.path);
-  rmSync3(claimCandidate.path);
-  fsyncDirectory(dirname3(claimCandidate.path));
-  removeAuthorityRepairMarker(root);
-}
-function repairKernelAuthority(root, taskId, expectedProjectionRevision, at = new Date().toISOString()) {
-  validateTaskId4(taskId);
-  return withKernelStoreLock(root, () => {
-    const projection = projectKernelAuthorityLocked(root, taskId);
-    if (projection.state !== "repairable_stale_claim" || projection.owner_task_id !== taskId || projection.revision !== expectedProjectionRevision)
-      throw new KernelStoreConflictError("authority repair requires exact stale terminal proof");
-    const marker = {
-      contract: "assurance_kernel/authority_repair_transaction/v1",
-      task_id: taskId,
-      expected_projection_revision: expectedProjectionRevision,
-      expected_claim_content: readSecureProjectFile(root, CLAIM_RELATIVE_PATH),
-      at
-    };
-    atomicCasWrite(root, AUTHORITY_REPAIR_MARKER_PATH, `${JSON.stringify(marker, null, 2)}
-`, MISSING_REVISION);
-    try {
-      recoverPendingAuthorityRepairLocked(root);
-    } catch (error) {
-      throw new KernelStoreConflictError(`authority repair failed and remains recoverable: ${error instanceof Error ? error.message : error}`);
-    }
-    return projectKernelAuthorityLocked(root, taskId);
-  });
-}
-function readPendingEnrollmentMarker(root) {
-  if (currentRevision(root, ENROLLMENT_MARKER_PATH) === MISSING_REVISION)
-    return null;
-  const raw = JSON.parse(readSecureProjectFile(root, ENROLLMENT_MARKER_PATH));
-  const allowed = ["contract", "task_id", "transaction", "claim"];
-  const unknown = Object.keys(raw).filter((key) => !allowed.includes(key));
-  if (unknown.length > 0)
-    throw new KernelStoreSecurityError(`enrollment marker has unknown field: ${unknown[0]}`);
-  if (raw.contract !== "assurance_kernel/enrollment_transaction/v1")
-    throw new KernelStoreSecurityError("enrollment marker contract is invalid");
-  if (typeof raw.task_id !== "string" || !raw.task_id.trim())
-    throw new KernelStoreSecurityError("enrollment marker task_id is invalid");
-  const transaction = parseWorkspaceTransactionV2(raw.transaction);
-  if (transaction.task_id !== raw.task_id)
-    throw new KernelStoreSecurityError("enrollment marker task identity is inconsistent");
-  return {
-    contract: "assurance_kernel/enrollment_transaction/v1",
-    task_id: raw.task_id,
-    transaction,
-    claim: raw.claim
-  };
-}
-function removeEnrollmentMarker(root) {
-  const candidate = safeCandidate(root, ENROLLMENT_MARKER_PATH);
-  assertNoSymlinkSegments(candidate.root, candidate.path);
-  const stat = pathStatOrNull(candidate.path);
-  if (!stat)
-    return;
-  if (!stat.isFile())
-    throw new KernelStoreSecurityError("enrollment marker is not a regular file");
-  rmSync3(candidate.path);
-  fsyncDirectory(dirname3(candidate.path));
-}
-function recoverPendingEnrollmentLocked(root) {
-  const marker = readPendingEnrollmentMarker(root);
-  if (!marker)
-    return;
-  const transaction = marker.transaction;
-  convergeFile(root, stateTaskRecordPath(transaction.task_id), transaction.expected_record_hash, transaction.next_record_content);
-  convergeFile(root, stateWorkspacePath(), transaction.expected_workspace_hash, transaction.next_workspace_content);
-  atomicCasWrite(root, stateClaimPath(), `${JSON.stringify(marker.claim, null, 2)}
-`, MISSING_REVISION);
-  removeEnrollmentMarker(root);
-}
-function commitEnrollmentLocked(root, taskId, transaction, claim) {
-  const marker = {
-    contract: "assurance_kernel/enrollment_transaction/v1",
-    task_id: taskId,
-    transaction,
-    claim
-  };
-  atomicCasWrite(root, ENROLLMENT_MARKER_PATH, `${JSON.stringify(marker, null, 2)}
-`, MISSING_REVISION);
-  try {
-    recoverPendingEnrollmentLocked(root);
-  } catch (error) {
-    throw new KernelStoreConflictError(`enrollment transaction failed and remains recoverable: ${error instanceof Error ? error.message : error}`);
-  }
-  return {
-    record: parseTaskRecord(JSON.parse(transaction.next_record_content)),
-    workspace: parseWorkspaceContent(transaction.next_workspace_content)
-  };
-}
-function parseArtifactRelocationsV1(raw) {
-  if (raw === undefined)
-    return [];
-  if (!Array.isArray(raw))
-    throw new KernelStoreSecurityError("artifact_relocations is invalid");
-  return raw.map((item, index) => {
-    if (!item || typeof item !== "object" || Array.isArray(item))
-      throw new KernelStoreSecurityError(`artifact relocation ${index} is invalid`);
-    const value = item;
-    const unknownFields = Object.keys(value).filter((key) => !["from_path", "to_path", "content_hash"].includes(key));
-    if (unknownFields.length > 0)
-      throw new KernelStoreSecurityError(`artifact relocation has unknown field: ${unknownFields[0]}`);
-    for (const field of ["from_path", "to_path", "content_hash"])
-      if (typeof value[field] !== "string" || !String(value[field]).trim())
-        throw new KernelStoreSecurityError(`artifact relocation ${field} is invalid`);
-    const relocation = value;
-    assertArtifactRelocation(relocation);
-    return relocation;
-  });
-}
-var CLAIM_RELATIVE_PATH = stateClaimPath();
-function parseDrainMarker(raw) {
-  const allowed = [
-    "contract",
-    "task_id",
-    "expected_claim_content",
-    "next_claim_content",
-    "at"
-  ];
-  const unknown = Object.keys(raw).filter((key) => !allowed.includes(key));
-  if (unknown.length > 0)
-    throw new KernelStoreSecurityError(`drain marker has unknown field: ${unknown[0]}`);
-  if (raw.contract !== "assurance_kernel/drain_transaction/v1")
-    throw new KernelStoreSecurityError("drain marker contract is invalid");
-  if (typeof raw.task_id !== "string" || !raw.task_id.trim())
-    throw new KernelStoreSecurityError("drain marker task_id is invalid");
-  for (const field of ["expected_claim_content", "next_claim_content", "at"]) {
-    if (typeof raw[field] !== "string" || !String(raw[field]).trim())
-      throw new KernelStoreSecurityError(`drain marker ${field} is invalid`);
-  }
-  const marker = raw;
-  validateTaskId4(marker.task_id);
-  const expected = parseBackendClaim(JSON.parse(marker.expected_claim_content));
-  const next = parseBackendClaim(JSON.parse(marker.next_claim_content));
-  if (expected.task_id !== marker.task_id || next.task_id !== marker.task_id)
-    throw new KernelStoreSecurityError("drain marker claim identity is inconsistent");
-  if (expected.lifecycle_status !== "active" || next.lifecycle_status !== "draining")
-    throw new KernelStoreSecurityError("drain marker must transition active -> draining");
-  return marker;
-}
-function readPendingDrainMarker(root) {
-  if (currentRevision(root, DRAIN_MARKER_PATH) === MISSING_REVISION)
-    return null;
-  const raw = JSON.parse(readSecureProjectFile(root, DRAIN_MARKER_PATH));
-  return parseDrainMarker(raw);
-}
-function removeDrainMarker(root) {
-  const candidate = safeCandidate(root, DRAIN_MARKER_PATH);
-  assertNoSymlinkSegments(candidate.root, candidate.path);
-  const stat = pathStatOrNull(candidate.path);
-  if (!stat)
-    return;
-  if (!stat.isFile())
-    throw new KernelStoreSecurityError("drain marker is not a regular file");
-  rmSync3(candidate.path);
-  fsyncDirectory(dirname3(candidate.path));
-}
-function recoverPendingDrainLocked(root) {
-  const marker = readPendingDrainMarker(root);
-  if (!marker)
-    return;
-  convergeFile(root, CLAIM_RELATIVE_PATH, revisionFor(marker.expected_claim_content), marker.next_claim_content);
-  removeDrainMarker(root);
-}
-function commitDrainLocked(root, taskId, expectedClaimContent, nextClaimContent, at) {
-  validateTaskId4(taskId);
-  const expected = parseBackendClaim(JSON.parse(expectedClaimContent));
-  const next = parseBackendClaim(JSON.parse(nextClaimContent));
-  if (expected.task_id !== taskId || next.task_id !== taskId)
-    throw new KernelStoreSecurityError("drain claim identity is inconsistent");
-  if (expected.lifecycle_status !== "active" || next.lifecycle_status !== "draining")
-    throw new KernelStoreSecurityError("drain transaction must transition active -> draining");
-  const marker = {
-    contract: "assurance_kernel/drain_transaction/v1",
-    task_id: taskId,
-    expected_claim_content: expectedClaimContent,
-    next_claim_content: nextClaimContent,
-    at
-  };
-  atomicCasWrite(root, DRAIN_MARKER_PATH, `${JSON.stringify(marker, null, 2)}
-`, MISSING_REVISION);
-  try {
-    recoverPendingDrainLocked(root);
-  } catch (error) {
-    throw new KernelStoreConflictError(`drain transaction failed and remains recoverable: ${error instanceof Error ? error.message : error}`);
-  }
-  return next;
-}
-function parseTerminalMarker(raw) {
-  const allowed = [
-    "contract",
-    "task_id",
-    "expected_state_record_hash",
-    "audit_record_content",
-    "proof_content",
-    "expected_workspace_hash",
-    "next_workspace_content",
-    "artifact_relocations",
-    "expected_claim_sha256",
-    "at"
-  ];
-  const unknown = Object.keys(raw).filter((key) => !allowed.includes(key));
-  if (unknown.length > 0)
-    throw new KernelStoreSecurityError(`terminal marker has unknown field: ${unknown[0]}`);
-  if (raw.contract !== "assurance_kernel/terminal_transaction/v2")
-    throw new KernelStoreSecurityError("terminal marker contract is invalid");
-  if (typeof raw.task_id !== "string" || !raw.task_id.trim())
-    throw new KernelStoreSecurityError("terminal marker task_id is invalid");
-  validateTaskId4(raw.task_id);
-  for (const field of ["expected_state_record_hash", "audit_record_content", "proof_content", "expected_workspace_hash", "next_workspace_content", "at"]) {
-    if (typeof raw[field] !== "string" || !String(raw[field]).trim())
-      throw new KernelStoreSecurityError(`terminal marker ${field} is invalid`);
-  }
-  const expectedClaim = raw.expected_claim_sha256;
-  if (typeof expectedClaim !== "string" || !/^sha256:[a-f0-9]{64}$/.test(expectedClaim))
-    throw new KernelStoreSecurityError("terminal marker expected_claim_sha256 is required");
-  const marker = {
-    contract: "assurance_kernel/terminal_transaction/v2",
-    task_id: raw.task_id,
-    expected_state_record_hash: raw.expected_state_record_hash,
-    audit_record_content: raw.audit_record_content,
-    proof_content: raw.proof_content,
-    expected_workspace_hash: raw.expected_workspace_hash,
-    next_workspace_content: raw.next_workspace_content,
-    artifact_relocations: parseArtifactRelocationsV1(raw.artifact_relocations),
-    expected_claim_sha256: expectedClaim,
-    at: raw.at
-  };
-  const record = parseTaskRecord(JSON.parse(marker.audit_record_content));
-  if (record.task_id !== marker.task_id)
-    throw new KernelStoreSecurityError("terminal marker task identity is inconsistent");
-  if (record.lifecycle !== "done" && record.lifecycle !== "stopped")
-    throw new KernelStoreSecurityError("terminal marker record must be terminal");
-  const proof = parseTaskTombstone(JSON.parse(marker.proof_content));
-  if (proof.task_id !== marker.task_id)
-    throw new KernelStoreSecurityError("terminal marker proof identity is inconsistent");
-  if (proof.final_record_hash !== revisionFor(marker.audit_record_content))
-    throw new KernelStoreSecurityError("terminal marker proof does not match the terminal record bytes");
-  if (proof.terminal_lifecycle !== record.lifecycle)
-    throw new KernelStoreSecurityError("terminal marker proof lifecycle contradicts the terminal record");
-  const workspaceState = parseWorkspaceContent(marker.next_workspace_content);
-  if (workspaceState.current_working !== null)
-    throw new KernelStoreSecurityError("terminal marker requires a cleared workspace owner");
-  return marker;
-}
-function readPendingTerminalMarker(root) {
-  if (currentRevision(root, TERMINAL_MARKER_PATH) === MISSING_REVISION)
-    return null;
-  const raw = JSON.parse(readSecureProjectFile(root, TERMINAL_MARKER_PATH));
-  return parseTerminalMarker(raw);
-}
-function removeTerminalMarker(root) {
-  const candidate = safeCandidate(root, TERMINAL_MARKER_PATH);
-  assertNoSymlinkSegments(candidate.root, candidate.path);
-  const stat = pathStatOrNull(candidate.path);
-  if (!stat)
-    return;
-  if (!stat.isFile())
-    throw new KernelStoreSecurityError("terminal marker is not a regular file");
-  rmSync3(candidate.path);
-  fsyncDirectory(dirname3(candidate.path));
-}
-function convergeStateRecordRemoval(root, taskId, expectedHash) {
-  const relativePath = stateTaskRecordPath(taskId);
-  const actual = currentRevision(root, relativePath);
-  if (actual === MISSING_REVISION)
-    return;
-  if (actual !== expectedHash)
-    throw new KernelStoreConflictError(`state record changed during terminal settlement: expected ${expectedHash}, got ${actual}`);
-  const candidate = safeCandidate(root, relativePath);
-  assertNoSymlinkSegments(candidate.root, candidate.path);
-  const stat = pathStatOrNull(candidate.path);
-  if (!stat || !stat.isFile())
-    throw new KernelStoreSecurityError("state task record is not a regular file");
-  rmSync3(candidate.path);
-  fsyncDirectory(dirname3(candidate.path));
-}
-function recoverPendingTerminalLocked(root, invokeStepHook = false) {
-  const marker = readPendingTerminalMarker(root);
-  if (!marker)
-    return;
-  for (const relocation of marker.artifact_relocations ?? [])
-    convergeArtifactRelocation(root, relocation);
-  if (invokeStepHook)
-    runTerminalSettlementStepHook(0);
-  convergeFile(root, auditTaskRecordPath(marker.task_id), MISSING_REVISION, marker.audit_record_content);
-  convergeFile(root, auditTerminalProofPath(marker.task_id), MISSING_REVISION, marker.proof_content);
-  if (invokeStepHook)
-    runTerminalSettlementStepHook(1);
-  convergeFile(root, stateWorkspacePath(), marker.expected_workspace_hash, marker.next_workspace_content);
-  if (invokeStepHook)
-    runTerminalSettlementStepHook(2);
-  const claimCandidate = safeCandidate(root, stateClaimPath());
-  assertNoSymlinkSegments(claimCandidate.root, claimCandidate.path);
-  const claimStat = pathStatOrNull(claimCandidate.path);
-  if (claimStat) {
-    if (!claimStat.isFile())
-      throw new KernelStoreSecurityError("backend claim is not a regular file");
-    const claimBytes = readSecureProjectFile(root, stateClaimPath());
-    if (revisionFor(claimBytes) !== marker.expected_claim_sha256)
-      throw new KernelStoreConflictError(`backend claim changed during terminal settlement: expected ${marker.expected_claim_sha256}, got ${revisionFor(claimBytes)}`);
-    rmSync3(claimCandidate.path);
-    fsyncDirectory(dirname3(claimCandidate.path));
-  }
-  if (invokeStepHook)
-    runTerminalSettlementStepHook(3);
-  convergeStateRecordRemoval(root, marker.task_id, marker.expected_state_record_hash);
-  if (invokeStepHook)
-    runTerminalSettlementStepHook(4);
-  terminalSettlementStepHookForTest = null;
-  removeTerminalMarker(root);
-}
-function commitTerminalLocked(root, taskId, transaction, tombstone) {
-  validateTaskId4(taskId);
-  if (transaction.task_id !== taskId)
-    throw new KernelStoreSecurityError("terminal transaction task identity is inconsistent");
-  if (tombstone.task_id !== taskId)
-    throw new KernelStoreSecurityError("terminal tombstone task identity is inconsistent");
-  const nextWorkspaceState = parseWorkspaceContent(transaction.next_workspace_content);
-  if (nextWorkspaceState.current_working !== null)
-    throw new KernelStoreSecurityError("terminal settlement requires a cleared workspace owner");
-  if (tombstone.final_record_hash !== revisionFor(transaction.next_record_content))
-    throw new KernelStoreSecurityError("terminal proof must match the terminal record bytes");
-  const terminalRecord = parseTaskRecord(JSON.parse(transaction.next_record_content));
-  if (tombstone.terminal_lifecycle !== terminalRecord.lifecycle)
-    throw new KernelStoreSecurityError("terminal proof lifecycle contradicts the terminal TaskRecord");
-  const claimBytes = readSecureProjectFile(root, stateClaimPath());
-  const claim = parseBackendClaim(JSON.parse(claimBytes));
-  if (claim.task_id !== taskId)
-    throw new KernelStoreSecurityError(`terminal settlement claim belongs to ${claim.task_id}, not ${taskId}`);
-  if (claim.lifecycle_status !== "active" && claim.lifecycle_status !== "draining")
-    throw new KernelStoreSecurityError("terminal settlement claim must be active or draining");
-  const expectedClaimSha256 = revisionFor(claimBytes);
-  const marker = {
-    contract: "assurance_kernel/terminal_transaction/v2",
-    task_id: taskId,
-    expected_state_record_hash: transaction.expected_record_hash,
-    audit_record_content: transaction.next_record_content,
-    proof_content: serializeTaskTombstone(tombstone),
-    expected_workspace_hash: transaction.expected_workspace_hash,
-    next_workspace_content: transaction.next_workspace_content,
-    ...transaction.artifact_relocations ? { artifact_relocations: transaction.artifact_relocations } : {},
-    expected_claim_sha256: expectedClaimSha256,
-    at: tombstone.terminalized_at
-  };
-  atomicCasWrite(root, TERMINAL_MARKER_PATH, `${JSON.stringify(marker, null, 2)}
-`, MISSING_REVISION);
-  try {
-    recoverPendingTerminalLocked(root, true);
-  } catch (error) {
-    throw new KernelStoreConflictError(`terminal transaction failed and remains recoverable: ${error instanceof Error ? error.message : error}`);
-  }
-  return {
-    record: parseTaskRecord(JSON.parse(transaction.next_record_content)),
-    workspace: parseWorkspaceContent(transaction.next_workspace_content)
-  };
-}
-
 // plugins/immune-brain/runtime/kernel/completion.ts
 var REQUIRED_ATTESTATIONS = {
   routine: ["qa"],
@@ -5291,187 +4679,7 @@ function projectTask(intent, record, currentDiffHash, currentIntentContentHash, 
   };
 }
 
-// plugins/immune-brain/runtime/kernel/assurance_projection.ts
-function deriveAssuranceAuthorization(input) {
-  if (input.open_user_decision_count === 1)
-    return { state: "resolve_user_decision", blocked: null };
-  if (input.open_user_decision_count > 1)
-    return {
-      state: "none",
-      blocked: `resolve-user-decision requires exactly one open user decision; found ${input.open_user_decision_count}`
-    };
-  if (input.next_obligation === "revise_intent")
-    return { state: "authorize_rework", blocked: null };
-  return { state: "none", blocked: null };
-}
-function emptyProjection() {
-  return {
-    record_revision: "",
-    workspace_revision: "",
-    intent_revision: 0,
-    intent_content_hash: "",
-    diff_hash: "",
-    lifecycle: "",
-    artifact_state: "",
-    risk: "",
-    next_obligation: "none",
-    fresh_acceptance_ids: [],
-    missing_acceptance_ids: [],
-    stale_attestation_ids: [],
-    fresh_approval_kinds: [],
-    missing_approval_kinds: [],
-    blocking_finding_ids: [],
-    unresolved_user_decision_ids: [],
-    replan_required_ids: [],
-    independence_violations: [],
-    open_user_decision_count: 0,
-    completion_ready: false,
-    authorization: { state: "none", blocked: null }
-  };
-}
-function projectHistoricalTerminal(record, recordRevision, workspaceRevision) {
-  const approvalKinds = [...new Set(record.approvals.map((item) => item.kind))];
-  return {
-    ...emptyProjection(),
-    record_revision: recordRevision,
-    workspace_revision: workspaceRevision,
-    intent_revision: record.intent_revision,
-    intent_content_hash: record.intent_ref.content_hash,
-    lifecycle: record.phase,
-    artifact_state: "frozen",
-    risk: record.intent_snapshot.risk,
-    fresh_acceptance_ids: [...new Set(record.evidence.filter((item) => item.status === "passed").map((item) => item.acceptance_id))],
-    fresh_approval_kinds: approvalKinds,
-    completion_ready: record.phase === "done"
-  };
-}
-function freshApprovalKinds(record, currentIntentContentHash, diffHash) {
-  const kinds = [];
-  const seen = new Set;
-  for (const approval of record.attestations) {
-    if (approval.task_revision !== record.intent_snapshot.revision || approval.intent_content_hash !== currentIntentContentHash || approval.diff_hash !== diffHash)
-      continue;
-    if (seen.has(approval.kind))
-      continue;
-    seen.add(approval.kind);
-    kinds.push(approval.kind);
-  }
-  return kinds;
-}
-function projectFromRecord(record, recordRevision, workspaceRevision, snapshot) {
-  const intent = record.intent_snapshot;
-  const decision = projectTask(intent, record, snapshot.diff_hash, record.intent_ref.content_hash, snapshot.changed_paths);
-  const approvalKinds = freshApprovalKinds(record, record.intent_ref.content_hash, snapshot.diff_hash);
-  const openUserDecisionCount = record.findings.filter((finding) => finding.kind === "unresolved_user_decision" && finding.status === "open").length;
-  return {
-    record_revision: recordRevision,
-    workspace_revision: workspaceRevision,
-    intent_revision: record.intent_snapshot.revision,
-    intent_content_hash: record.intent_ref.content_hash,
-    diff_hash: snapshot.diff_hash,
-    lifecycle: record.lifecycle,
-    artifact_state: record.artifact_state,
-    risk: resolveProjectedRisk(intent, snapshot.changed_paths),
-    next_obligation: decision.next_obligation,
-    fresh_acceptance_ids: decision.fresh_acceptance_ids,
-    missing_acceptance_ids: decision.missing_acceptance_ids,
-    stale_attestation_ids: decision.stale_attestation_ids,
-    fresh_approval_kinds: approvalKinds,
-    missing_approval_kinds: decision.missing_approval_kinds,
-    blocking_finding_ids: decision.blocking_finding_ids,
-    unresolved_user_decision_ids: decision.unresolved_user_decision_ids,
-    replan_required_ids: decision.replan_required_ids,
-    independence_violations: decision.independence_violations,
-    open_user_decision_count: openUserDecisionCount,
-    completion_ready: decision.complete,
-    authorization: deriveAssuranceAuthorization({
-      next_obligation: decision.next_obligation,
-      open_user_decision_count: openUserDecisionCount
-    })
-  };
-}
-async function projectAssurance(root, taskId, diffProvider) {
-  const fail = (error, claim = null) => ({
-    contract: "assurance_kernel/assurance_projection/v1",
-    task_id: taskId,
-    error,
-    claim,
-    projection: emptyProjection()
-  });
-  try {
-    const claim = readBackendClaim(root);
-    let terminalOwner = false;
-    if (claim?.task_id !== undefined && claim.task_id !== taskId)
-      return fail(`backend claim belongs to ${claim.task_id}, not ${taskId}`, claim);
-    if (claim) {
-      const tombstone = readTaskTombstone(root, taskId);
-      if (tombstone) {
-        const authority = reconcileKernelAuthority(root, taskId);
-        if (authority.state === "repairable_stale_claim")
-          return fail(`task ${taskId} has a repairable stale backend claim`, claim);
-        return fail(authority.diagnostic ?? `authority state conflicts for ${taskId}`, claim);
-      }
-    } else {
-      const authority = reconcileKernelAuthority(root, taskId);
-      if (authority.state === "unowned")
-        return { contract: "assurance_kernel/assurance_projection/v1", task_id: taskId, error: null, claim: null, projection: emptyProjection() };
-      if (authority.state !== "terminal_owner")
-        return fail(authority.diagnostic ?? `authority state conflicts for ${taskId}`);
-      terminalOwner = true;
-      if (readBackendClaim(root))
-        return fail(`authority state changed while projecting ${taskId}`);
-    }
-    let read;
-    try {
-      read = await readTaskRecord(root, taskId);
-    } catch (error) {
-      if (!terminalOwner || !(error instanceof Error) || !error.message.startsWith("TaskRecord v2"))
-        throw error;
-      return fail(error instanceof Error ? error.message : String(error));
-    }
-    if (!read.record) {
-      if (!terminalOwner)
-        return fail(`task ${taskId} has no TaskRecord v3`, claim);
-      const auditPair = await readAuditTaskPair(root, taskId);
-      if (!auditPair)
-        return fail(`task ${taskId} has no terminal audit pair`, claim);
-      const workspace = await readWorkspaceStateRaw(root);
-      if (auditPair.record.contract === "assurance_kernel/task_record/v2")
-        return {
-          contract: "assurance_kernel/assurance_projection/v1",
-          task_id: taskId,
-          error: null,
-          claim: null,
-          projection: projectHistoricalTerminal(auditPair.record, auditPair.recordRevision, workspace.revision)
-        };
-      return {
-        contract: "assurance_kernel/assurance_projection/v1",
-        task_id: taskId,
-        error: null,
-        claim: null,
-        projection: projectFromRecord(auditPair.record, auditPair.recordRevision, workspace.revision, diffProvider(root, auditPair.record))
-      };
-    }
-    if (read.record.task_id !== taskId)
-      return fail(`task record identity is inconsistent for ${taskId}`, claim);
-    if (claim && read.record.lifecycle !== "active")
-      return fail(`terminal task ${taskId} has no matching tombstone proof`, claim);
-    const workspace = await readWorkspaceStateRaw(root);
-    const snapshot = diffProvider(root, read.record);
-    return {
-      contract: "assurance_kernel/assurance_projection/v1",
-      task_id: taskId,
-      error: null,
-      claim,
-      projection: projectFromRecord(read.record, read.revision, workspace.revision, snapshot)
-    };
-  } catch (error) {
-    return fail(error instanceof Error ? error.message : String(error));
-  }
-}
-
 // plugins/immune-brain/runtime/kernel/reducer.ts
-import { createHash as createHash11 } from "node:crypto";
 var RISK_RANK2 = {
   routine: 0,
   material: 1,
@@ -6001,6 +5209,1073 @@ function isReducedMutation(value) {
   return !!value && typeof value === "object" && value[REDUCED_MUTATION_BRAND] === true;
 }
 
+// plugins/immune-brain/runtime/kernel/run_identity.ts
+import { randomUUID as randomUUID4 } from "node:crypto";
+function mintRunId() {
+  return `run-${randomUUID4()}`;
+}
+function runIdentity(db, row) {
+  return { workspace_id: workspaceIdentity(db), task_id: row.task_id, run_id: row.run_id };
+}
+function assertRunBinding(identity, expected, operation) {
+  if (identity.run_id !== expected.run_id || identity.task_id !== expected.task_id)
+    throw new KernelStoreSecurityError(`${operation} is bound to run ${expected.run_id} (task ${expected.task_id}) but the store holds run ${identity.run_id} (task ${identity.task_id})`);
+}
+function enrollmentOperationId(taskId, eventId) {
+  return `enroll:${taskId}:${eventId}`;
+}
+function drainOperationId(taskId, updatedAt) {
+  return `drain:${taskId}:${updatedAt}`;
+}
+function terminalOperationId(taskId, eventId) {
+  return `terminal:${taskId}:${eventId}`;
+}
+
+// plugins/immune-brain/runtime/kernel/storage.ts
+var MISSING_REVISION = "missing";
+function revisionFor(content) {
+  return `sha256:${createHash12("sha256").update(content).digest("hex")}`;
+}
+function revisionForContent(content) {
+  return revisionFor(content);
+}
+function nowIso() {
+  return new Date().toISOString();
+}
+function validateTaskId4(taskId) {
+  if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(taskId))
+    throw new KernelStoreSecurityError("task_id is not a safe file identity");
+}
+function canonicalRoot2(root) {
+  try {
+    return realpathSync7(root);
+  } catch {
+    throw new KernelStoreSecurityError("project root is unavailable");
+  }
+}
+function assertNoRetiredFileStore(root, db, taskId) {
+  const canonical = canonicalRoot2(root);
+  const derivedSuperseded = db !== undefined && typeof taskId === "string" && taskId.length > 0 && readRunRowByTask(db, taskId) !== null;
+  const retired = [
+    [".imm/tasks", "pre-cutover task store"],
+    [".imm/workspace.json", "pre-cutover workspace owner"],
+    [".imm/state/tasks", "task records"]
+  ];
+  for (const [path, label] of retired) {
+    if (existsSync4(resolve6(canonical, path)))
+      throw new KernelStoreSecurityError(`retired file-store authority is present (${label}: ${path}); import it with the supported migration before mutating this worktree`);
+  }
+  const derived = [
+    [FILE_STORE_CLAIM_RELATIVE, "workspace claim"],
+    [FILE_STORE_WORKSPACE_RELATIVE, "workspace owner"]
+  ];
+  for (const [path, label] of derived) {
+    const full = resolve6(canonical, path);
+    if (!existsSync4(full))
+      continue;
+    if (!derivedSuperseded)
+      throw new KernelStoreSecurityError(`retired file-store authority is present (${label}: ${path}); import it with the supported migration before mutating this worktree`);
+    rmSync4(full, { force: true });
+  }
+  if (existsSync4(resolve6(canonical, FILE_STORE_TRANSACTIONS_RELATIVE))) {
+    const entries = readdirNames(resolve6(canonical, FILE_STORE_TRANSACTIONS_RELATIVE));
+    const pending = entries.filter((entry) => entry.endsWith(".json") && entry !== "storage-layout-migration.json");
+    if (pending.length > 0)
+      throw new KernelStoreSecurityError(`retired file-store transaction marker is present (${pending[0]}); settle it with the runtime that wrote it before mutating this worktree`);
+  }
+}
+function retiredFileStoreConflict(root, db, taskId) {
+  const canonical = canonicalRoot2(root);
+  const authority = [
+    [".imm/tasks", "pre-cutover task store"],
+    [".imm/workspace.json", "pre-cutover workspace owner"],
+    [".imm/state/tasks", "task records"]
+  ];
+  for (const [path, label] of authority)
+    if (existsSync4(resolve6(canonical, path)))
+      return `retired file-store authority is present (${label}: ${path}); import it with the supported migration before mutating this worktree`;
+  const storeHasTask = db !== null && taskId !== null && readRunRowByTask(db, taskId) !== null;
+  if (!storeHasTask) {
+    const derived = [
+      [FILE_STORE_CLAIM_RELATIVE, "workspace claim"],
+      [FILE_STORE_WORKSPACE_RELATIVE, "workspace owner"]
+    ];
+    for (const [path, label] of derived)
+      if (existsSync4(resolve6(canonical, path)))
+        return `retired file-store authority is present (${label}: ${path}); import it with the supported migration before mutating this worktree`;
+  }
+  const transactions = resolve6(canonical, FILE_STORE_TRANSACTIONS_RELATIVE);
+  if (existsSync4(transactions)) {
+    const pending = readdirNames(transactions).filter((entry) => entry.endsWith(".json") && entry !== "storage-layout-migration.json");
+    if (pending.length > 0)
+      return `retired file-store transaction marker is present (${pending[0]}); settle it with the runtime that wrote it before mutating this worktree`;
+  }
+  return null;
+}
+function readdirNames(path) {
+  try {
+    return readdirSync2(path);
+  } catch {
+    return [];
+  }
+}
+function withinRoot(root, candidate) {
+  const rel = relative3(root, candidate);
+  return rel === "" || !isAbsolute4(rel) && rel !== ".." && !rel.startsWith(`..${sep5}`);
+}
+function safeCandidate(root, relativePath) {
+  if (!relativePath || relativePath.includes("\x00") || isAbsolute4(relativePath) || relativePath.includes("\\"))
+    throw new KernelStoreSecurityError("project-relative path is invalid");
+  const canonical = canonicalRoot2(root);
+  const candidate = resolve6(canonical, relativePath);
+  if (!withinRoot(canonical, candidate))
+    throw new KernelStoreSecurityError("path escapes the project root");
+  return { root: canonical, path: candidate };
+}
+function pathStatOrNull(path) {
+  try {
+    return lstatSync6(path);
+  } catch (error) {
+    const code = error.code;
+    if (code === "ENOENT" || code === "ENOTDIR")
+      return null;
+    throw error;
+  }
+}
+function assertNoSymlinkSegments(root, candidate) {
+  const rel = relative3(root, candidate);
+  let current = root;
+  for (const segment of rel.split(sep5).filter(Boolean)) {
+    current = resolve6(current, segment);
+    const stat = pathStatOrNull(current);
+    if (!stat)
+      continue;
+    if (stat.isSymbolicLink())
+      throw new KernelStoreSecurityError(`symlink storage segment is forbidden: ${relative3(root, current)}`);
+  }
+}
+function capturePathIdentities(root, candidate) {
+  const paths = [root];
+  let current = root;
+  for (const segment of relative3(root, candidate).split(sep5).filter(Boolean)) {
+    current = resolve6(current, segment);
+    paths.push(current);
+  }
+  return paths.map((path) => {
+    const stat = lstatSync6(path);
+    if (stat.isSymbolicLink())
+      throw new KernelStoreSecurityError(`symlink storage segment is forbidden: ${relative3(root, path)}`);
+    return { path, dev: stat.dev, ino: stat.ino };
+  });
+}
+function assertPathIdentitiesUnchanged(before) {
+  for (const identity of before) {
+    const after = lstatSync6(identity.path);
+    if (after.isSymbolicLink() || after.dev !== identity.dev || after.ino !== identity.ino)
+      throw new KernelStoreSecurityError(`path identity changed during access: ${identity.path}`);
+  }
+}
+function ensureSecureDirectory(root, relativePath) {
+  const target = safeCandidate(root, relativePath);
+  const rel = relative3(target.root, target.path);
+  let current = target.root;
+  for (const segment of rel.split(sep5).filter(Boolean)) {
+    current = resolve6(current, segment);
+    const stat = pathStatOrNull(current);
+    if (stat) {
+      if (stat.isSymbolicLink())
+        throw new KernelStoreSecurityError(`symlink storage segment is forbidden: ${relative3(target.root, current)}`);
+      if (!stat.isDirectory())
+        throw new KernelStoreSecurityError(`storage segment is not a directory: ${relative3(target.root, current)}`);
+      continue;
+    }
+    mkdirSync3(current);
+  }
+  return target.path;
+}
+function readSecureProjectFile(root, relativePath) {
+  const candidate = safeCandidate(root, relativePath);
+  assertNoSymlinkSegments(candidate.root, candidate.path);
+  const before = pathStatOrNull(candidate.path);
+  if (!before)
+    throw new Error(`source_missing: ${relativePath}`);
+  const identities = capturePathIdentities(candidate.root, candidate.path);
+  if (!before.isFile())
+    throw new KernelStoreSecurityError(`source is not a regular file: ${relativePath}`);
+  const noFollow = constants3.O_NOFOLLOW ?? 0;
+  let fd = null;
+  try {
+    fd = openSync4(candidate.path, constants3.O_RDONLY | noFollow);
+    const opened = fstatSync3(fd);
+    if (opened.dev !== before.dev || opened.ino !== before.ino)
+      throw new KernelStoreSecurityError(`source identity changed: ${relativePath}`);
+    const content = readFileSync7(fd, "utf8");
+    const after = lstatSync6(candidate.path);
+    if (after.dev !== opened.dev || after.ino !== opened.ino)
+      throw new KernelStoreSecurityError(`source identity changed: ${relativePath}`);
+    assertPathIdentitiesUnchanged(identities);
+    return content;
+  } finally {
+    if (fd !== null)
+      closeSync4(fd);
+  }
+}
+function currentRevision(root, relativePath) {
+  const candidate = safeCandidate(root, relativePath);
+  const stat = pathStatOrNull(candidate.path);
+  if (!stat)
+    return MISSING_REVISION;
+  if (stat.isSymbolicLink())
+    throw new KernelStoreSecurityError(`symlink storage target is forbidden: ${relativePath}`);
+  return revisionFor(readSecureProjectFile(root, relativePath));
+}
+function processIsAlive(pid) {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return error.code !== "ESRCH";
+  }
+}
+function clearStaleLock(lockPath) {
+  const before = pathStatOrNull(lockPath);
+  if (!before)
+    return true;
+  if (before.isSymbolicLink() || !before.isFile())
+    throw new KernelStoreSecurityError("kernel store lock is not a regular file");
+  let stale = false;
+  let fd = null;
+  try {
+    fd = openSync4(lockPath, constants3.O_RDONLY | (constants3.O_NOFOLLOW ?? 0));
+    const raw = JSON.parse(readFileSync7(fd, "utf8"));
+    stale = Number.isInteger(raw.pid) && Number(raw.pid) > 0 && !processIsAlive(Number(raw.pid));
+  } catch {
+    stale = Date.now() - Number(before.mtimeMs) > 30000;
+  } finally {
+    if (fd !== null)
+      closeSync4(fd);
+  }
+  if (!stale)
+    return false;
+  const after = lstatSync6(lockPath);
+  if (after.isSymbolicLink() || after.dev !== before.dev || after.ino !== before.ino)
+    throw new KernelStoreSecurityError("kernel store lock identity changed during recovery");
+  rmSync4(lockPath);
+  return true;
+}
+function withExclusiveLock(lockPath, operation) {
+  const noFollow = constants3.O_NOFOLLOW ?? 0;
+  let fd = null;
+  for (let attempt = 0;attempt < 2; attempt += 1) {
+    try {
+      fd = openSync4(lockPath, constants3.O_WRONLY | constants3.O_CREAT | constants3.O_EXCL | noFollow, 384);
+      break;
+    } catch (error) {
+      if (attempt === 0 && error.code === "EEXIST" && clearStaleLock(lockPath))
+        continue;
+      throw new KernelStoreConflictError(`kernel store lock is busy: ${error instanceof Error ? error.message : error}`);
+    }
+  }
+  if (fd === null)
+    throw new KernelStoreConflictError("kernel store lock could not be acquired");
+  const identity = fstatSync3(fd);
+  try {
+    writeFileSync3(fd, `${JSON.stringify({ pid: process.pid, started_at: nowIso() })}
+`, "utf8");
+    fsyncSync2(fd);
+    return operation();
+  } finally {
+    closeSync4(fd);
+    const current = pathStatOrNull(lockPath);
+    if (current && !current.isSymbolicLink() && current.dev === identity.dev && current.ino === identity.ino)
+      rmSync4(lockPath);
+  }
+}
+function fsyncDirectory(path) {
+  const fd = openSync4(path, constants3.O_RDONLY);
+  try {
+    fsyncSync2(fd);
+  } finally {
+    closeSync4(fd);
+  }
+}
+function atomicCasWrite(root, relativePath, content, expectedRevision) {
+  const candidate = safeCandidate(root, relativePath);
+  const parentRelative = relative3(candidate.root, dirname4(candidate.path));
+  ensureSecureDirectory(root, parentRelative);
+  assertNoSymlinkSegments(candidate.root, candidate.path);
+  return withExclusiveLock(`${candidate.path}.lock`, () => {
+    const actualRevision = currentRevision(root, relativePath);
+    if (actualRevision !== expectedRevision)
+      throw new KernelStoreConflictError(`CAS mismatch for ${relativePath}: expected ${expectedRevision}, got ${actualRevision}`);
+    const tempPath = `${candidate.path}.${process.pid}.tmp`;
+    let fd = null;
+    try {
+      fd = openSync4(tempPath, constants3.O_WRONLY | constants3.O_CREAT | constants3.O_EXCL, 384);
+      writeFileSync3(fd, content, "utf8");
+      fsyncSync2(fd);
+      closeSync4(fd);
+      fd = null;
+      assertNoSymlinkSegments(candidate.root, candidate.path);
+      renameSync2(tempPath, candidate.path);
+      fsyncDirectory(dirname4(candidate.path));
+    } finally {
+      if (fd !== null)
+        closeSync4(fd);
+      rmSync4(tempPath, { force: true });
+    }
+    return revisionFor(content);
+  });
+}
+function convergeFile(root, relativePath, expectedRevision, nextContent) {
+  const nextRevision = revisionFor(nextContent);
+  const actualRevision = currentRevision(root, relativePath);
+  if (actualRevision === nextRevision)
+    return nextRevision;
+  if (actualRevision !== expectedRevision)
+    throw new KernelStoreConflictError(`transaction conflict for ${relativePath}: expected ${expectedRevision} or ${nextRevision}, got ${actualRevision}`);
+  return atomicCasWrite(root, relativePath, nextContent, expectedRevision);
+}
+function archiveArtifactPath(path) {
+  const matched = path.match(/^docs\/(plans|specs)\/([^/]+)$/);
+  return matched ? `docs/${matched[1]}/archive/${matched[2]}` : null;
+}
+function assertArtifactRelocation(relocation) {
+  if (!/^sha256:[a-f0-9]{64}$/.test(relocation.content_hash))
+    throw new KernelStoreSecurityError("artifact relocation content_hash is invalid");
+  if (archiveArtifactPath(relocation.from_path) !== relocation.to_path && archiveArtifactPath(relocation.to_path) !== relocation.from_path)
+    throw new KernelStoreSecurityError("artifact relocation paths must be one active/archive pair");
+}
+function convergeArtifactRelocation(root, relocation) {
+  assertArtifactRelocation(relocation);
+  const fromRevision = currentRevision(root, relocation.from_path);
+  const toRevision = currentRevision(root, relocation.to_path);
+  if (fromRevision === MISSING_REVISION && toRevision === relocation.content_hash)
+    return;
+  if (fromRevision !== relocation.content_hash || toRevision !== MISSING_REVISION)
+    throw new KernelStoreConflictError(`artifact relocation conflict for ${relocation.from_path} -> ${relocation.to_path}`);
+  const from = safeCandidate(root, relocation.from_path);
+  const to = safeCandidate(root, relocation.to_path);
+  ensureSecureDirectory(root, relative3(to.root, dirname4(to.path)));
+  assertNoSymlinkSegments(from.root, from.path);
+  assertNoSymlinkSegments(to.root, to.path);
+  renameSync2(from.path, to.path);
+  fsyncDirectory(dirname4(from.path));
+  if (dirname4(from.path) !== dirname4(to.path))
+    fsyncDirectory(dirname4(to.path));
+}
+var auditExportFaultForTest = null;
+function runAuditExportFault() {
+  const hook = auditExportFaultForTest;
+  auditExportFaultForTest = null;
+  hook?.();
+}
+function parseWorkspaceContent(content) {
+  const raw = JSON.parse(content);
+  const unknown = Object.keys(raw).filter((key) => !["contract", "current_working"].includes(key));
+  if (unknown.length > 0)
+    throw new KernelStoreSecurityError(`workspace has unknown field: ${unknown[0]}`);
+  if (raw.contract !== "assurance_kernel/workspace/v1")
+    throw new KernelStoreSecurityError("workspace contract is invalid");
+  if (raw.current_working !== null && (typeof raw.current_working !== "string" || !raw.current_working.trim()))
+    throw new KernelStoreSecurityError("workspace current_working is invalid");
+  if (typeof raw.current_working === "string")
+    validateTaskId4(raw.current_working);
+  return raw;
+}
+function serializeWorkspace(state) {
+  return `${JSON.stringify(state, null, 2)}
+`;
+}
+function workspaceStateFromRow(db, runId) {
+  if (!runId)
+    return { contract: "assurance_kernel/workspace/v1", current_working: null };
+  const run = readRunRowById(db, runId);
+  return {
+    contract: "assurance_kernel/workspace/v1",
+    current_working: run && run.state === "active" ? run.task_id : null
+  };
+}
+function readWorkspaceStateRaw(root) {
+  const read = withKernelRead(root, (db) => {
+    const row = readWorkspaceRow(db);
+    const state = workspaceStateFromRow(db, row.current_run_id);
+    return { revision: revisionFor(serializeWorkspace(state)), state };
+  });
+  if (read)
+    return read;
+  return {
+    revision: MISSING_REVISION,
+    state: { contract: "assurance_kernel/workspace/v1", current_working: null }
+  };
+}
+function recordFromRun(run) {
+  const record = parseTaskRecord(JSON.parse(run.record_json));
+  if (record.task_id !== run.task_id)
+    throw new KernelStoreSecurityError("task record identity is inconsistent with its run");
+  return record;
+}
+function readTaskRecordRaw(root, taskId) {
+  validateTaskId4(taskId);
+  const read = withKernelRead(root, (db) => {
+    const run = readRunRowByTask(db, taskId);
+    if (!run)
+      return { revision: MISSING_REVISION, record: null };
+    if (run.state !== "active")
+      return { revision: MISSING_REVISION, record: null };
+    const record = recordFromRun(run);
+    return { revision: canonicalRecordHash(record), record };
+  });
+  return read ?? { revision: MISSING_REVISION, record: null };
+}
+function readAuditTaskPair(root, taskId) {
+  validateTaskId4(taskId);
+  const recordPath = auditTaskRecordPath(taskId);
+  const proofPath = auditTerminalProofPath(taskId);
+  const recordRevision = currentRevision(root, recordPath);
+  const proofRevision = currentRevision(root, proofPath);
+  if (recordRevision === MISSING_REVISION && proofRevision === MISSING_REVISION)
+    return null;
+  if (recordRevision === MISSING_REVISION || proofRevision === MISSING_REVISION)
+    throw new KernelStoreSecurityError("terminal audit pair is incomplete");
+  const recordContent = readSecureProjectFile(root, recordPath);
+  const proof = parseTaskTombstone(JSON.parse(readSecureProjectFile(root, proofPath)));
+  if (proof.task_id !== taskId)
+    throw new KernelStoreSecurityError("terminal audit proof identity is inconsistent");
+  if (proof.final_record_hash !== recordRevision)
+    throw new KernelStoreSecurityError("terminal audit proof does not match its task record");
+  const raw = JSON.parse(recordContent);
+  let record;
+  if (raw.contract === "assurance_kernel/task_record/v2") {
+    const legacy = parseTaskRecordV2(raw);
+    if (legacy.task_id !== taskId || legacy.phase !== "done" && legacy.phase !== "stopped")
+      throw new KernelStoreSecurityError("historical audit TaskRecord v2 must be terminal and identity-consistent");
+    record = legacy;
+  } else {
+    const current = parseTaskRecord(raw);
+    if (current.task_id !== taskId || current.lifecycle !== "done" && current.lifecycle !== "stopped")
+      throw new KernelStoreSecurityError("audit TaskRecord must be terminal and identity-consistent");
+    record = current;
+  }
+  return { recordRevision, record, proof };
+}
+function readTaskRecord(root, taskId) {
+  return readTaskRecordRaw(root, taskId);
+}
+function exportTerminalAudit(root, run) {
+  runAuditExportFault();
+  if (!run.terminal_proof_json)
+    throw new KernelStoreSecurityError(`terminal run ${run.run_id} has no committed terminal proof`);
+  convergeFile(root, auditTaskRecordPath(run.task_id), MISSING_REVISION, run.record_json);
+  convergeFile(root, auditTerminalProofPath(run.task_id), MISSING_REVISION, run.terminal_proof_json);
+}
+function retryPendingAuditExports(root, db) {
+  for (const run of listPendingAuditExports(db)) {
+    exportTerminalAudit(root, run);
+    markAuditExported(db, run.run_id, nowIso());
+  }
+}
+function convergePendingRelocations(root, db) {
+  for (const run of listPendingRelocations(db)) {
+    const relocations = JSON.parse(run.pending_relocations_json ?? "[]");
+    for (const relocation of relocations)
+      convergeArtifactRelocation(root, relocation);
+    setPendingRelocations(db, run.run_id, null);
+  }
+}
+function withKernelStoreLock(root, operation) {
+  const result = withKernelTransaction(root, (db) => {
+    assertNoRetiredFileStore(root);
+    return operation();
+  });
+  retryStoreFollowUps(root);
+  return result;
+}
+function retryStoreFollowUps(root) {
+  withKernelTransaction(root, (db) => {
+    convergePendingRelocations(root, db);
+    retryPendingAuditExports(root, db);
+  });
+}
+function assertWorkspaceExpectation(db, expected, label) {
+  const row = readWorkspaceRow(db);
+  const state = workspaceStateFromRow(db, row.current_run_id);
+  const currentRevision = revisionFor(serializeWorkspace(state));
+  if (expected === MISSING_REVISION) {
+    if (state.current_working !== null || row.revision !== 0)
+      throw new KernelStoreConflictError(`CAS mismatch for ${label}: expected ${expected}, got ${currentRevision}`);
+    return row.revision;
+  }
+  if (currentRevision !== expected)
+    throw new KernelStoreConflictError(`CAS mismatch for ${label}: expected ${expected}, got ${currentRevision}`);
+  return row.revision;
+}
+function decodeOperationResult(resultJson) {
+  const parsed = JSON.parse(resultJson);
+  return {
+    record: parseTaskRecord(JSON.parse(parsed.record_json)),
+    workspace: parseWorkspaceContent(parsed.workspace_json)
+  };
+}
+function requireActiveRun(db, taskId) {
+  const run = readRunRowByTask(db, taskId);
+  if (!run)
+    throw new KernelStoreConflictError(`task ${taskId} has no enrolled run in this worktree`);
+  if (run.state !== "active")
+    throw new KernelStoreConflictError(`task ${taskId} is ${run.state}; only an active run can be mutated`);
+  if (run.claim_status === null)
+    throw new KernelStoreConflictError(`task ${taskId} has no workspace claim to mutate`);
+  return run;
+}
+function commitTaskRecordLocked(root, taskId, expectedRecordHash, nextRecord, expectedWorkspaceHash, nextWorkspace, artifactRelocations = []) {
+  validateTaskId4(taskId);
+  const nextRecordContent = `${JSON.stringify(nextRecord, null, 2)}
+`;
+  const timestamp = nowIso();
+  const committed = withKernelTransaction(root, (db) => {
+    assertNoRetiredFileStore(root);
+    const run = requireActiveRun(db, taskId);
+    const identity = runIdentity(db, run);
+    assertRunBinding(identity, { task_id: taskId, run_id: run.run_id }, "task record commit");
+    const committedRecord = parseTaskRecord(nextRecord);
+    const currentRevision = canonicalRecordHash(recordFromRun(run));
+    if (currentRevision !== expectedRecordHash)
+      throw new KernelStoreConflictError(`CAS mismatch for run ${run.run_id}: expected ${expectedRecordHash}, got ${currentRevision}`);
+    for (const relocation of artifactRelocations)
+      assertArtifactRelocation(relocation);
+    updateRunRecord(db, run.run_id, run.revision, nextRecordContent, timestamp);
+    if (artifactRelocations.length > 0)
+      setPendingRelocations(db, run.run_id, JSON.stringify(artifactRelocations));
+    const workspaceRevision = assertWorkspaceExpectation(db, expectedWorkspaceHash, "workspace");
+    writeWorkspaceRow(db, workspaceRevision, run.run_id, timestamp);
+    return {
+      revision: canonicalRecordHash(committedRecord),
+      record: committedRecord,
+      workspace: {
+        revision: revisionFor(serializeWorkspace(nextWorkspace)),
+        state: nextWorkspace
+      }
+    };
+  });
+  return committed;
+}
+function claimBytesFromRun(run) {
+  return serializeBackendClaim(claimFromRunRow(run));
+}
+function commitEnrollmentLocked(root, taskId, transaction, claim) {
+  validateTaskId4(taskId);
+  if (transaction.task_id !== taskId)
+    throw new KernelStoreSecurityError("enrollment transaction task identity is inconsistent");
+  const parsedClaim = parseBackendClaim(claim);
+  if (parsedClaim.task_id !== taskId)
+    throw new KernelStoreSecurityError("enrollment claim task identity is inconsistent");
+  if (parsedClaim.lifecycle_status !== "active")
+    throw new KernelStoreSecurityError("enrollment claim must be active");
+  const nextRecord = parseTaskRecord(JSON.parse(transaction.next_record_content));
+  if (nextRecord.task_id !== taskId)
+    throw new KernelStoreSecurityError("enrollment task record identity is inconsistent");
+  const nextWorkspace = parseWorkspaceContent(transaction.next_workspace_content);
+  if (nextWorkspace.current_working !== taskId)
+    throw new KernelStoreSecurityError("enrollment must claim the workspace for its task");
+  return withKernelTransaction(root, (db) => {
+    assertNoRetiredFileStore(root, db, taskId);
+    const runId = mintRunId();
+    const operationId = enrollmentOperationId(taskId, parsedClaim.enrollment_event_id);
+    const replay = readOperationRow(db, operationId);
+    if (replay)
+      return decodeOperationResult(replay.result_json);
+    const existing = readRunRowByTask(db, taskId);
+    if (existing)
+      throw new KernelStoreConflictError(`task ${taskId} already has run ${existing.run_id} (${existing.state}); same-task re-enrollment is forbidden`);
+    const active = readRunRowById(db, activeRunId(db) ?? "");
+    if (active)
+      throw new KernelStoreConflictError(`workspace is already owned by ${active.task_id} (run ${active.run_id})`);
+    const workspaceRevision = assertWorkspaceExpectation(db, transaction.expected_workspace_hash, "workspace");
+    const run = insertRunRow(db, {
+      run_id: runId,
+      task_id: taskId,
+      record_json: transaction.next_record_content,
+      intent_revision: parsedClaim.intent_revision,
+      intent_content_hash: parsedClaim.intent_content_hash,
+      enrollment_event_id: parsedClaim.enrollment_event_id,
+      claim_status: "active",
+      created_at: parsedClaim.created_at,
+      updated_at: parsedClaim.updated_at
+    });
+    writeWorkspaceRow(db, workspaceRevision, run.run_id, parsedClaim.updated_at);
+    insertOperationRow(db, {
+      operation_id: operationId,
+      kind: "enrollment",
+      run_id: run.run_id,
+      result_json: JSON.stringify({
+        record_json: transaction.next_record_content,
+        workspace_json: transaction.next_workspace_content
+      }),
+      committed_at: parsedClaim.updated_at
+    });
+    return { record: nextRecord, workspace: nextWorkspace };
+  });
+}
+function commitDrainLocked(root, taskId, expectedClaimContent, nextClaimContent, at) {
+  validateTaskId4(taskId);
+  const expected = parseBackendClaim(JSON.parse(expectedClaimContent));
+  const next = parseBackendClaim(JSON.parse(nextClaimContent));
+  if (expected.task_id !== taskId || next.task_id !== taskId)
+    throw new KernelStoreSecurityError("drain claim identity is inconsistent");
+  if (expected.lifecycle_status !== "active" || next.lifecycle_status !== "draining")
+    throw new KernelStoreSecurityError("drain transaction must transition active -> draining");
+  return withKernelTransaction(root, (db) => {
+    assertNoRetiredFileStore(root);
+    const run = readRunRowByTask(db, taskId);
+    if (!run)
+      throw new KernelStoreConflictError(`task ${taskId} has no enrolled run in this worktree`);
+    const operationId = drainOperationId(taskId, next.updated_at);
+    const replay = readOperationRow(db, operationId);
+    if (replay)
+      return next;
+    const active = requireActiveRun(db, taskId);
+    const identity = runIdentity(db, active);
+    assertRunBinding(identity, { task_id: taskId, run_id: active.run_id }, "drain transaction");
+    if (claimBytesFromRun(active) !== expectedClaimContent)
+      throw new KernelStoreConflictError(`drain transaction claim bytes changed for ${taskId}`);
+    updateRunClaim(db, active.run_id, "active", "draining", at);
+    insertOperationRow(db, {
+      operation_id: operationId,
+      kind: "drain",
+      run_id: active.run_id,
+      result_json: JSON.stringify(next),
+      committed_at: at
+    });
+    return next;
+  });
+}
+function commitTerminalLocked(root, taskId, transaction, tombstone) {
+  validateTaskId4(taskId);
+  if (transaction.task_id !== taskId)
+    throw new KernelStoreSecurityError("terminal transaction task identity is inconsistent");
+  if (tombstone.task_id !== taskId)
+    throw new KernelStoreSecurityError("terminal tombstone task identity is inconsistent");
+  const nextWorkspaceState = parseWorkspaceContent(transaction.next_workspace_content);
+  if (nextWorkspaceState.current_working !== null)
+    throw new KernelStoreSecurityError("terminal settlement requires a cleared workspace owner");
+  if (tombstone.final_record_hash !== revisionFor(transaction.next_record_content))
+    throw new KernelStoreSecurityError("terminal proof must match the terminal record bytes");
+  const terminalRecord = parseTaskRecord(JSON.parse(transaction.next_record_content));
+  if (terminalRecord.task_id !== taskId)
+    throw new KernelStoreSecurityError("terminal record identity is inconsistent");
+  if (tombstone.terminal_lifecycle !== terminalRecord.lifecycle)
+    throw new KernelStoreSecurityError("terminal proof lifecycle contradicts the terminal TaskRecord");
+  const proofBytes = serializeTaskTombstone(tombstone);
+  const committed = withKernelTransaction(root, (db) => {
+    assertNoRetiredFileStore(root, db, taskId);
+    const run = readRunRowByTask(db, taskId);
+    if (!run)
+      throw new KernelStoreConflictError(`task ${taskId} has no enrolled run in this worktree`);
+    const operationId = terminalOperationId(taskId, tombstone.terminal_event_id);
+    const replay = readOperationRow(db, operationId);
+    if (replay)
+      return decodeOperationResult(replay.result_json);
+    if (run.state !== "active")
+      throw new KernelStoreConflictError(`terminal settlement refused: run ${run.run_id} is already ${run.state}`);
+    if (run.claim_status !== "active" && run.claim_status !== "draining")
+      throw new KernelStoreSecurityError("terminal settlement claim must be active or draining");
+    const identity = runIdentity(db, run);
+    assertRunBinding(identity, { task_id: taskId, run_id: run.run_id }, "terminal settlement");
+    for (const relocation of transaction.artifact_relocations ?? [])
+      assertArtifactRelocation(relocation);
+    const workspaceRevision = assertWorkspaceExpectation(db, transaction.expected_workspace_hash, "workspace");
+    const lifecycle = terminalRecord.lifecycle === "done" ? "done" : "stopped";
+    updateRunTerminal(db, run.run_id, lifecycle, transaction.next_record_content, proofBytes, tombstone.terminalized_at);
+    writeWorkspaceRow(db, workspaceRevision, null, tombstone.terminalized_at);
+    if ((transaction.artifact_relocations ?? []).length > 0)
+      setPendingRelocations(db, run.run_id, JSON.stringify(transaction.artifact_relocations));
+    insertOperationRow(db, {
+      operation_id: operationId,
+      kind: "terminal",
+      run_id: run.run_id,
+      result_json: JSON.stringify({
+        record_json: transaction.next_record_content,
+        workspace_json: transaction.next_workspace_content
+      }),
+      committed_at: tombstone.terminalized_at
+    });
+    return { record: terminalRecord, workspace: nextWorkspaceState };
+  });
+  return committed;
+}
+function authorityFacts(db, root, taskId) {
+  const workspace = readWorkspaceRow(db);
+  const active = readRunRowById(db, activeRunId(db) ?? "");
+  const requested = readRunRowByTask(db, taskId);
+  let auditRevision = null;
+  try {
+    auditRevision = readAuditTaskPair(root, taskId)?.recordRevision ?? null;
+  } catch (error) {
+    throw new KernelStoreConflictError(error instanceof Error ? error.message : String(error));
+  }
+  return {
+    workspace_revision: workspace.revision,
+    current_run_id: workspace.current_run_id,
+    active_run_id: active && active.state === "active" ? active.run_id : null,
+    requested_run_state: requested ? requested.state : null,
+    requested_run_id: requested ? requested.run_id : null,
+    audit_record_revision: auditRevision
+  };
+}
+function projectKernelAuthorityLocked(db, root, taskId) {
+  const projection = (fields) => ({
+    contract: "assurance_kernel/authority_projection/v1",
+    requested_task_id: taskId,
+    state: fields.state,
+    owner_task_id: fields.owner_task_id ?? null,
+    owner_run_id: fields.owner_run_id ?? null,
+    owner_lifecycle: fields.owner_lifecycle ?? null,
+    claim_lifecycle_status: fields.claim_lifecycle_status ?? null,
+    diagnostic: fields.diagnostic ?? null,
+    revision: fields.revision
+  });
+  try {
+    const facts = authorityFacts(db, root, taskId);
+    const revision = revisionFor(JSON.stringify(facts));
+    const active = facts.active_run_id ? readRunRowById(db, facts.active_run_id) : null;
+    if (facts.current_run_id && !active)
+      return projection({
+        state: "authority_conflict",
+        owner_task_id: facts.current_run_id,
+        diagnostic: `workspace owner references run ${facts.current_run_id}, which is not active`,
+        revision
+      });
+    if (active) {
+      if (facts.current_run_id !== active.run_id)
+        return projection({
+          state: "authority_conflict",
+          owner_task_id: active.task_id,
+          owner_run_id: active.run_id,
+          diagnostic: "workspace owner contradicts the active run",
+          revision
+        });
+      if (active.claim_status === null)
+        return projection({
+          state: "authority_conflict",
+          owner_task_id: active.task_id,
+          owner_run_id: active.run_id,
+          diagnostic: "active run carries no workspace claim",
+          revision
+        });
+      if (active.task_id === taskId && facts.audit_record_revision !== null)
+        return projection({
+          state: "authority_conflict",
+          owner_task_id: active.task_id,
+          owner_run_id: active.run_id,
+          owner_lifecycle: "active",
+          claim_lifecycle_status: active.claim_status,
+          diagnostic: `terminal audit evidence exists while ${taskId} is active`,
+          revision
+        });
+      return projection({
+        state: "active_owner",
+        owner_task_id: active.task_id,
+        owner_run_id: active.run_id,
+        owner_lifecycle: "active",
+        claim_lifecycle_status: active.claim_status,
+        revision
+      });
+    }
+    if (facts.requested_run_state && facts.requested_run_state !== "active")
+      return projection({
+        state: "terminal_owner",
+        owner_task_id: taskId,
+        owner_run_id: facts.requested_run_id,
+        owner_lifecycle: facts.requested_run_state,
+        revision
+      });
+    if (facts.audit_record_revision !== null)
+      return projection({
+        state: "terminal_owner",
+        owner_task_id: taskId,
+        owner_lifecycle: null,
+        revision
+      });
+    if (facts.requested_run_state)
+      return projection({
+        state: "authority_conflict",
+        owner_task_id: taskId,
+        owner_run_id: facts.requested_run_id,
+        diagnostic: "nonterminal run exists without a workspace owner",
+        revision
+      });
+    return projection({ state: "unowned", revision });
+  } catch (error) {
+    return projection({
+      state: "authority_conflict",
+      diagnostic: error instanceof Error ? error.message : String(error),
+      revision: ""
+    });
+  }
+}
+function conflictProjection(taskId, diagnostic) {
+  return {
+    contract: "assurance_kernel/authority_projection/v1",
+    requested_task_id: taskId,
+    state: "authority_conflict",
+    owner_task_id: null,
+    owner_run_id: null,
+    owner_lifecycle: null,
+    claim_lifecycle_status: null,
+    diagnostic,
+    revision: ""
+  };
+}
+function reconcileKernelAuthority(root, taskId) {
+  validateTaskId4(taskId);
+  const projected = withKernelRead(root, (db) => {
+    const conflict = retiredFileStoreConflict(root, db, taskId);
+    if (conflict)
+      return conflictProjection(taskId, conflict);
+    return projectKernelAuthorityLocked(db, root, taskId);
+  });
+  if (projected)
+    return projected;
+  const legacy = retiredFileStoreDiagnostic(root, null, taskId);
+  if (legacy)
+    return conflictProjection(taskId, legacy);
+  try {
+    const audit = readAuditTaskPair(root, taskId);
+    if (audit)
+      return {
+        contract: "assurance_kernel/authority_projection/v1",
+        requested_task_id: taskId,
+        state: "terminal_owner",
+        owner_task_id: taskId,
+        owner_run_id: null,
+        owner_lifecycle: null,
+        claim_lifecycle_status: null,
+        diagnostic: null,
+        revision: audit.recordRevision
+      };
+  } catch (error) {
+    return {
+      contract: "assurance_kernel/authority_projection/v1",
+      requested_task_id: taskId,
+      state: "authority_conflict",
+      owner_task_id: taskId,
+      owner_run_id: null,
+      owner_lifecycle: null,
+      claim_lifecycle_status: null,
+      diagnostic: error instanceof Error ? error.message : String(error),
+      revision: ""
+    };
+  }
+  return {
+    contract: "assurance_kernel/authority_projection/v1",
+    requested_task_id: taskId,
+    state: "unowned",
+    owner_task_id: null,
+    owner_run_id: null,
+    owner_lifecycle: null,
+    claim_lifecycle_status: null,
+    diagnostic: null,
+    revision: ""
+  };
+}
+function retiredFileStoreDiagnostic(root, db = null, taskId = null) {
+  return retiredFileStoreConflict(root, db, taskId);
+}
+function repairKernelAuthority(root, taskId, expectedProjectionRevision, _at = nowIso()) {
+  validateTaskId4(taskId);
+  return withKernelTransaction(root, (db) => {
+    assertNoRetiredFileStore(root, db, taskId);
+    const projection = projectKernelAuthorityLocked(db, root, taskId);
+    if (projection.state === "repairable_stale_claim") {
+      if (projection.owner_task_id !== taskId || projection.revision !== expectedProjectionRevision)
+        throw new KernelStoreConflictError("authority repair requires exact stale terminal proof");
+      return projection;
+    }
+    if (projection.state === "terminal_owner" || projection.state === "unowned")
+      return projection;
+    throw new KernelStoreConflictError(`authority repair is not available while authority is ${projection.state}`);
+  });
+}
+
+// plugins/immune-brain/runtime/kernel/assurance_projection.ts
+function deriveAssuranceAuthorization(input) {
+  if (input.open_user_decision_count === 1)
+    return { state: "resolve_user_decision", blocked: null };
+  if (input.open_user_decision_count > 1)
+    return {
+      state: "none",
+      blocked: `resolve-user-decision requires exactly one open user decision; found ${input.open_user_decision_count}`
+    };
+  if (input.next_obligation === "revise_intent")
+    return { state: "authorize_rework", blocked: null };
+  return { state: "none", blocked: null };
+}
+function emptyProjection() {
+  return {
+    record_revision: "",
+    workspace_revision: "",
+    intent_revision: 0,
+    intent_content_hash: "",
+    diff_hash: "",
+    lifecycle: "",
+    artifact_state: "",
+    risk: "",
+    next_obligation: "none",
+    fresh_acceptance_ids: [],
+    missing_acceptance_ids: [],
+    stale_attestation_ids: [],
+    fresh_approval_kinds: [],
+    missing_approval_kinds: [],
+    blocking_finding_ids: [],
+    unresolved_user_decision_ids: [],
+    replan_required_ids: [],
+    independence_violations: [],
+    open_user_decision_count: 0,
+    completion_ready: false,
+    authorization: { state: "none", blocked: null }
+  };
+}
+function projectHistoricalTerminal(record, recordRevision, workspaceRevision) {
+  const approvalKinds = [...new Set(record.approvals.map((item) => item.kind))];
+  return {
+    ...emptyProjection(),
+    record_revision: recordRevision,
+    workspace_revision: workspaceRevision,
+    intent_revision: record.intent_revision,
+    intent_content_hash: record.intent_ref.content_hash,
+    lifecycle: record.phase,
+    artifact_state: "frozen",
+    risk: record.intent_snapshot.risk,
+    fresh_acceptance_ids: [...new Set(record.evidence.filter((item) => item.status === "passed").map((item) => item.acceptance_id))],
+    fresh_approval_kinds: approvalKinds,
+    completion_ready: record.phase === "done"
+  };
+}
+function freshApprovalKinds(record, currentIntentContentHash, diffHash) {
+  const kinds = [];
+  const seen = new Set;
+  for (const approval of record.attestations) {
+    if (approval.task_revision !== record.intent_snapshot.revision || approval.intent_content_hash !== currentIntentContentHash || approval.diff_hash !== diffHash)
+      continue;
+    if (seen.has(approval.kind))
+      continue;
+    seen.add(approval.kind);
+    kinds.push(approval.kind);
+  }
+  return kinds;
+}
+function projectFromRecord(record, recordRevision, workspaceRevision, snapshot) {
+  const intent = record.intent_snapshot;
+  const decision = projectTask(intent, record, snapshot.diff_hash, record.intent_ref.content_hash, snapshot.changed_paths);
+  const approvalKinds = freshApprovalKinds(record, record.intent_ref.content_hash, snapshot.diff_hash);
+  const openUserDecisionCount = record.findings.filter((finding) => finding.kind === "unresolved_user_decision" && finding.status === "open").length;
+  return {
+    record_revision: recordRevision,
+    workspace_revision: workspaceRevision,
+    intent_revision: record.intent_snapshot.revision,
+    intent_content_hash: record.intent_ref.content_hash,
+    diff_hash: snapshot.diff_hash,
+    lifecycle: record.lifecycle,
+    artifact_state: record.artifact_state,
+    risk: resolveProjectedRisk(intent, snapshot.changed_paths),
+    next_obligation: decision.next_obligation,
+    fresh_acceptance_ids: decision.fresh_acceptance_ids,
+    missing_acceptance_ids: decision.missing_acceptance_ids,
+    stale_attestation_ids: decision.stale_attestation_ids,
+    fresh_approval_kinds: approvalKinds,
+    missing_approval_kinds: decision.missing_approval_kinds,
+    blocking_finding_ids: decision.blocking_finding_ids,
+    unresolved_user_decision_ids: decision.unresolved_user_decision_ids,
+    replan_required_ids: decision.replan_required_ids,
+    independence_violations: decision.independence_violations,
+    open_user_decision_count: openUserDecisionCount,
+    completion_ready: decision.complete,
+    authorization: deriveAssuranceAuthorization({
+      next_obligation: decision.next_obligation,
+      open_user_decision_count: openUserDecisionCount
+    })
+  };
+}
+async function projectAssurance(root, taskId, diffProvider) {
+  const fail = (error, claim = null) => ({
+    contract: "assurance_kernel/assurance_projection/v1",
+    task_id: taskId,
+    error,
+    claim,
+    projection: emptyProjection()
+  });
+  try {
+    const claim = readBackendClaim(root);
+    let terminalOwner = false;
+    if (claim?.task_id !== undefined && claim.task_id !== taskId)
+      return fail(`backend claim belongs to ${claim.task_id}, not ${taskId}`, claim);
+    if (claim) {
+      const tombstone = readTaskTombstone(root, taskId);
+      if (tombstone) {
+        const authority = reconcileKernelAuthority(root, taskId);
+        if (authority.state === "repairable_stale_claim")
+          return fail(`task ${taskId} has a repairable stale backend claim`, claim);
+        return fail(authority.diagnostic ?? `authority state conflicts for ${taskId}`, claim);
+      }
+    } else {
+      const authority = reconcileKernelAuthority(root, taskId);
+      if (authority.state === "unowned")
+        return { contract: "assurance_kernel/assurance_projection/v1", task_id: taskId, error: null, claim: null, projection: emptyProjection() };
+      if (authority.state !== "terminal_owner")
+        return fail(authority.diagnostic ?? `authority state conflicts for ${taskId}`);
+      terminalOwner = true;
+      if (readBackendClaim(root))
+        return fail(`authority state changed while projecting ${taskId}`);
+    }
+    let read;
+    try {
+      read = await readTaskRecord(root, taskId);
+    } catch (error) {
+      if (!terminalOwner || !(error instanceof Error) || !error.message.startsWith("TaskRecord v2"))
+        throw error;
+      return fail(error instanceof Error ? error.message : String(error));
+    }
+    if (!read.record) {
+      if (!terminalOwner)
+        return fail(`task ${taskId} has no TaskRecord v3`, claim);
+      const auditPair = await readAuditTaskPair(root, taskId);
+      if (!auditPair)
+        return fail(`task ${taskId} has no terminal audit pair`, claim);
+      const workspace = await readWorkspaceStateRaw(root);
+      if (auditPair.record.contract === "assurance_kernel/task_record/v2")
+        return {
+          contract: "assurance_kernel/assurance_projection/v1",
+          task_id: taskId,
+          error: null,
+          claim: null,
+          projection: projectHistoricalTerminal(auditPair.record, auditPair.recordRevision, workspace.revision)
+        };
+      return {
+        contract: "assurance_kernel/assurance_projection/v1",
+        task_id: taskId,
+        error: null,
+        claim: null,
+        projection: projectFromRecord(auditPair.record, auditPair.recordRevision, workspace.revision, diffProvider(root, auditPair.record))
+      };
+    }
+    if (read.record.task_id !== taskId)
+      return fail(`task record identity is inconsistent for ${taskId}`, claim);
+    if (claim && read.record.lifecycle !== "active")
+      return fail(`terminal task ${taskId} has no matching tombstone proof`, claim);
+    const workspace = await readWorkspaceStateRaw(root);
+    const snapshot = diffProvider(root, read.record);
+    return {
+      contract: "assurance_kernel/assurance_projection/v1",
+      task_id: taskId,
+      error: null,
+      claim,
+      projection: projectFromRecord(read.record, read.revision, workspace.revision, snapshot)
+    };
+  } catch (error) {
+    return fail(error instanceof Error ? error.message : String(error));
+  }
+}
+
 // plugins/immune-brain/runtime/kernel/application.ts
 function applyTaskAction(input) {
   const { root, task_id, prior_intent_token, registry, capability, diffProvider, now } = input;
@@ -6517,7 +6792,7 @@ function createCanaryApplication(registry) {
 }
 
 // plugins/immune-brain/runtime/kernel/authority_port.ts
-import { createHash as createHash12 } from "node:crypto";
+import { createHash as createHash13 } from "node:crypto";
 
 // plugins/immune-brain/runtime/kernel/actor_identity.ts
 var LITERAL_USER_ACTOR_ID = "literal-user";
@@ -6575,7 +6850,7 @@ function createCapabilityRegistry(capabilityBrand, hooks, domainLabel) {
 // plugins/immune-brain/runtime/kernel/authority_port.ts
 function digestOfAction(action) {
   const { expected_record_hash: _r, expected_workspace_hash: _w, diff_hash: _d, ...rest } = action;
-  return createHash12("sha256").update(JSON.stringify(rest)).digest("hex");
+  return createHash13("sha256").update(JSON.stringify(rest)).digest("hex");
 }
 function createMutationAuthorityRegistry() {
   const inner = createCapabilityRegistry(MUTATION_AUTHORITY_CAPABILITY_BRAND, {
@@ -6699,13 +6974,13 @@ function createEnrollmentAuthorityRegistry() {
 }
 
 // plugins/immune-brain/runtime/kernel/pi_canary_prepare.ts
-import { createHash as createHash13 } from "node:crypto";
-import { spawnSync as spawnSync3 } from "node:child_process";
-import { resolve as resolve6 } from "node:path";
-var SOURCE_PATH = ".imm/state/workspace.json";
+import { createHash as createHash14 } from "node:crypto";
+import { spawnSync as spawnSync4 } from "node:child_process";
+import { resolve as resolve7 } from "node:path";
+var SOURCE_PATH = stateDatabasePath();
 var GIT_OBJECT_ID4 = /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/;
 function readGitHead(root) {
-  const result = spawnSync3("git", ["-C", root, "rev-parse", "--verify", "HEAD^{commit}"], {
+  const result = spawnSync4("git", ["-C", root, "rev-parse", "--verify", "HEAD^{commit}"], {
     encoding: "utf8"
   });
   const head = typeof result.stdout === "string" ? result.stdout.trim() : "";
@@ -6714,7 +6989,7 @@ function readGitHead(root) {
   return head.toLowerCase();
 }
 function sha256Hex2(bytes) {
-  return createHash13("sha256").update(bytes).digest("hex");
+  return createHash14("sha256").update(bytes).digest("hex");
 }
 function stableStringify2(value) {
   if (value === null || typeof value !== "object")
@@ -6727,8 +7002,8 @@ function stableStringify2(value) {
 function preparePiCanary(root, input) {
   if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(input.task_id))
     throw new Error("task id must match [A-Za-z0-9][A-Za-z0-9._-]{0,127}");
-  const canonicalRoot = resolve6(root);
-  const statePath = resolve6(canonicalRoot, SOURCE_PATH);
+  const canonicalRoot = resolve7(root);
+  const statePath = resolve7(canonicalRoot, SOURCE_PATH);
   let intent = null;
   try {
     const read = readTaskIntent(canonicalRoot, input.task_id);
@@ -6894,53 +7169,54 @@ function runEnrollmentRehearsal(root, input, capability, registry) {
 }
 function enrollCanaryTask(root, input, registry) {
   let gitBaseHead = null;
-  return runEnrollmentPreconditionChecks(root, input, input.capability, registry, "fail_fast", () => {
-    const recomputed = preparePiCanary(root, { task_id: input.task_id, now: input.now });
-    if (recomputed.digest !== input.preparation_digest)
-      throw new Error("enrollment preparation digest mismatch");
-    gitBaseHead = recomputed.git_base_head;
-    if (!gitBaseHead)
-      throw new Error(recomputed.git_error ?? "enrollment requires a committed Git HEAD");
-  }, (checks) => {
-    if (!checks.validated || !checks.intent || !checks.workspace || !checks.current)
-      throw new Error("enrollment precondition state incomplete");
-    if (checks.intent.intent.revision !== input.intent_revision)
-      throw new Error("intent revision mismatch");
-    if (checks.intent.content_hash !== checks.validated.intent_content_hash)
-      throw new Error("intent content hash mismatch");
-    if (checks.gitBaseHead !== gitBaseHead)
-      throw new Error("Git HEAD moved after the enrollment confirmation");
-    if (input.batch) {
-      const batch = input.batch.registry.inspect(input.batch.capability, input.batch.binding, Date.parse(input.now));
-      if (input.batch.registry.consumedChildren(input.batch.capability).length === 0 && input.batch.expected_head !== batch.base_head)
-        throw new Error(`batch_head_lineage_broken: the first child must enroll on the confirmed base_head ${batch.base_head}, not ${input.batch.expected_head}`);
-      if (checks.gitBaseHead !== input.batch.expected_head)
-        throw new Error(`batch_head_lineage_broken: expected ${input.batch.expected_head}, found ${checks.gitBaseHead}`);
-    }
-    registry.consume(input.capability, input.capability_binding);
-    if (input.batch)
-      input.batch.registry.consumeChild(input.batch.capability, input.batch.binding, input.task_id, Date.parse(input.now));
-    if (!gitBaseHead)
-      throw new Error("enrollment requires a committed Git HEAD");
-    const record = buildTaskRecordV4(input, checks.intent, gitBaseHead);
-    const nextWorkspace = {
-      ...checks.workspace.state,
-      current_working: input.task_id
-    };
-    const claim = {
-      contract: "assurance_kernel/backend_claim/v2",
-      backend: "kernel",
-      task_id: input.task_id,
-      intent_revision: input.intent_revision,
-      intent_content_hash: checks.intent.content_hash,
-      enrollment_event_id: `enroll-${input.task_id}-${input.now}`,
-      lifecycle_status: "active",
-      created_at: input.now,
-      updated_at: input.now
-    };
-    let mutation;
-    try {
-      mutation = commitEnrollmentLocked(root, input.task_id, {
+  let consumed = false;
+  try {
+    return runEnrollmentPreconditionChecks(root, input, input.capability, registry, "fail_fast", () => {
+      const recomputed = preparePiCanary(root, { task_id: input.task_id, now: input.now });
+      if (recomputed.digest !== input.preparation_digest)
+        throw new Error("enrollment preparation digest mismatch");
+      gitBaseHead = recomputed.git_base_head;
+      if (!gitBaseHead)
+        throw new Error(recomputed.git_error ?? "enrollment requires a committed Git HEAD");
+    }, (checks) => {
+      if (!checks.validated || !checks.intent || !checks.workspace || !checks.current)
+        throw new Error("enrollment precondition state incomplete");
+      if (checks.intent.intent.revision !== input.intent_revision)
+        throw new Error("intent revision mismatch");
+      if (checks.intent.content_hash !== checks.validated.intent_content_hash)
+        throw new Error("intent content hash mismatch");
+      if (checks.gitBaseHead !== gitBaseHead)
+        throw new Error("Git HEAD moved after the enrollment confirmation");
+      if (input.batch) {
+        const batch = input.batch.registry.inspect(input.batch.capability, input.batch.binding, Date.parse(input.now));
+        if (input.batch.registry.consumedChildren(input.batch.capability).length === 0 && input.batch.expected_head !== batch.base_head)
+          throw new Error(`batch_head_lineage_broken: the first child must enroll on the confirmed base_head ${batch.base_head}, not ${input.batch.expected_head}`);
+        if (checks.gitBaseHead !== input.batch.expected_head)
+          throw new Error(`batch_head_lineage_broken: expected ${input.batch.expected_head}, found ${checks.gitBaseHead}`);
+      }
+      registry.consume(input.capability, input.capability_binding);
+      consumed = true;
+      if (input.batch)
+        input.batch.registry.consumeChild(input.batch.capability, input.batch.binding, input.task_id, Date.parse(input.now));
+      if (!gitBaseHead)
+        throw new Error("enrollment requires a committed Git HEAD");
+      const record = buildTaskRecordV4(input, checks.intent, gitBaseHead);
+      const nextWorkspace = {
+        ...checks.workspace.state,
+        current_working: input.task_id
+      };
+      const claim = {
+        contract: "assurance_kernel/backend_claim/v2",
+        backend: "kernel",
+        task_id: input.task_id,
+        intent_revision: input.intent_revision,
+        intent_content_hash: checks.intent.content_hash,
+        enrollment_event_id: `enroll-${input.task_id}-${input.now}`,
+        lifecycle_status: "active",
+        created_at: input.now,
+        updated_at: input.now
+      };
+      const mutation = commitEnrollmentLocked(root, input.task_id, {
         contract: "assurance_kernel/workspace_transaction/v2",
         task_id: input.task_id,
         expected_record_hash: checks.current.revision,
@@ -6950,27 +7226,27 @@ function enrollCanaryTask(root, input, registry) {
         next_workspace_content: `${JSON.stringify(nextWorkspace, null, 2)}
 `
       }, claim);
-    } catch (error) {
-      if (input.batch)
-        input.batch.registry.releaseChild(input.batch.capability, input.task_id);
-      throw error;
-    }
-    return {
-      record: mutation.record,
-      backend_claim: claim,
-      workspace: { revision: "", state: mutation.workspace }
-    };
-  });
+      return {
+        record: mutation.record,
+        backend_claim: claim,
+        workspace: { revision: "", state: mutation.workspace }
+      };
+    });
+  } catch (error) {
+    if (consumed && input.batch)
+      input.batch.registry.releaseChild(input.batch.capability, input.task_id);
+    throw error;
+  }
 }
 
 // plugins/immune-brain/runtime/assurance/qa_findings.ts
-import { randomUUID as randomUUID4 } from "node:crypto";
+import { randomUUID as randomUUID5 } from "node:crypto";
 function qaFindingId(acceptanceId, snapshotDigest) {
   return `qa-${acceptanceId}-${attemptRef(snapshotDigest)}`;
 }
 function attemptRef(snapshotDigest) {
   const digest8 = snapshotDigest.slice("sha256:".length, "sha256:".length + 8);
-  return `${digest8}-${randomUUID4().slice(0, 6)}`;
+  return `${digest8}-${randomUUID5().slice(0, 6)}`;
 }
 
 // plugins/immune-brain/runtime/assurance/qa.ts
@@ -7209,12 +7485,12 @@ function deriveAuthorizationOperation(input) {
 
 // plugins/immune-brain/runtime/staged_intent.ts
 import { execFileSync as execFileSync4 } from "node:child_process";
-import { readFileSync as readFileSync7, writeFileSync as writeFileSync3 } from "node:fs";
+import { readFileSync as readFileSync8, writeFileSync as writeFileSync4 } from "node:fs";
 import { join as join6 } from "node:path";
 function captureStagedIntent(root, relativePath) {
   return {
     path: relativePath,
-    bytes: readFileSync7(join6(root, relativePath)),
+    bytes: readFileSync8(join6(root, relativePath)),
     index_state: execFileSync4("git", ["ls-files", "--stage", "-z", "--", relativePath], {
       cwd: root,
       stdio: ["ignore", "pipe", "pipe"]
@@ -7222,7 +7498,7 @@ function captureStagedIntent(root, relativePath) {
   };
 }
 function restoreStagedIntent(root, snapshot) {
-  writeFileSync3(join6(root, snapshot.path), snapshot.bytes);
+  writeFileSync4(join6(root, snapshot.path), snapshot.bytes);
   execFileSync4("git", ["update-index", "--force-remove", "--", snapshot.path], {
     cwd: root,
     stdio: ["ignore", "pipe", "pipe"]
@@ -7234,7 +7510,7 @@ function restoreStagedIntent(root, snapshot) {
       stdio: ["pipe", "ignore", "pipe"]
     });
   }
-  const restoredBytes = readFileSync7(join6(root, snapshot.path));
+  const restoredBytes = readFileSync8(join6(root, snapshot.path));
   if (!restoredBytes.equals(snapshot.bytes)) {
     throw new Error("failed to restore prior intent bytes");
   }
@@ -7249,8 +7525,8 @@ function restoreStagedIntent(root, snapshot) {
 
 // plugins/immune-brain/runtime/github_issue_tracker.ts
 import { spawn as spawn2 } from "node:child_process";
-import { existsSync as existsSync3, readFileSync as readFileSync8 } from "node:fs";
-import { basename as basename2, relative as relative3, resolve as resolve7, sep as sep5 } from "node:path";
+import { existsSync as existsSync5, readFileSync as readFileSync9 } from "node:fs";
+import { basename, relative as relative4, resolve as resolve8, sep as sep6 } from "node:path";
 var CONTRACT = "immune_brain/github_issue_tracker_result/v1";
 var PROTOCOL_MARKER = "<!-- immune-brain-tracker:v1 -->";
 var KIND_INITIATIVE_MARKER = "<!-- immune-brain:kind=initiative -->";
@@ -7666,7 +7942,7 @@ async function readBlockedByIds(root, gh, operation, repository, childNumber) {
 }
 async function observeGithubInitiative(root, initiativeId, gh = createGhTransport()) {
   const id = identifier(initiativeId, "initiative_id");
-  const source = await snapshot(resolve7(root), gh, "create-initiative");
+  const source = await snapshot(resolve8(root), gh, "create-initiative");
   if ("contract" in source)
     throw new Error(source.message);
   const parent = initiativeLookup(source.issues, source.repository.id, id);
@@ -7755,7 +8031,7 @@ async function attachBlockedBy(root, gh, operation, repository, childNumber, blo
   return confirmed;
 }
 function carrierConflict(root, operation, initiativeId) {
-  if (!existsSync3(resolve7(root, "docs", "initiatives", `${initiativeId}.md`)))
+  if (!existsSync5(resolve8(root, "docs", "initiatives", `${initiativeId}.md`)))
     return null;
   return result(operation, "permanent_failure", `Initiative carrier conflict: docs/initiatives/${initiativeId}.md already owns this slug locally; remove the duplicate carrier before using the GitHub projection`);
 }
@@ -8327,7 +8603,7 @@ async function runGithubTrackerOperation(root, input, gh = createGhTransport()) 
   } catch (error) {
     return result(input.op, "permanent_failure", error instanceof Error ? error.message : String(error));
   }
-  const absoluteRoot = resolve7(root);
+  const absoluteRoot = resolve8(root);
   if (operation.op !== "mark-terminal") {
     const conflict = carrierConflict(absoluteRoot, operation.op, operation.initiative_id);
     if (conflict)
@@ -8542,13 +8818,13 @@ async function revalidatePendingChildBeforeWrite(root, gh, childNumber, childTas
 }
 
 // plugins/immune-brain/runtime/unattended/batch_preflight.ts
-import { existsSync as existsSync5, readdirSync as readdirSync2, readFileSync as readFileSync9 } from "node:fs";
-import { randomUUID as randomUUID6 } from "node:crypto";
+import { existsSync as existsSync7, readdirSync as readdirSync3, readFileSync as readFileSync10 } from "node:fs";
+import { randomUUID as randomUUID7 } from "node:crypto";
 import { join as join8 } from "node:path";
-import { spawnSync as spawnSync4 } from "node:child_process";
+import { spawnSync as spawnSync5 } from "node:child_process";
 
 // plugins/immune-brain/runtime/kernel/batch_authority.ts
-import { createHash as createHash14 } from "node:crypto";
+import { createHash as createHash15 } from "node:crypto";
 var BATCH_AUTHORITY_CAPABILITY_BRAND = Symbol.for("assurance-kernel.batch-authority-capability-brand");
 var GIT_COMMIT_ID2 = /^[a-f0-9]{40}$/;
 
@@ -8559,7 +8835,7 @@ class BatchAuthorizationExpiryError extends Error {
   }
 }
 function sha256Hex3(bytes) {
-  return createHash14("sha256").update(bytes).digest("hex");
+  return createHash15("sha256").update(bytes).digest("hex");
 }
 function stableStringify3(value) {
   if (value === null || typeof value !== "object")
@@ -8795,7 +9071,7 @@ function deriveChildEnrollment(root, registry, input) {
 }
 
 // plugins/immune-brain/runtime/unattended/batch_plan.ts
-import { createHash as createHash15 } from "node:crypto";
+import { createHash as createHash16 } from "node:crypto";
 var ID_PATTERN2 = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 var DEFAULT_DEADLINE_MS = 8 * 60 * 60 * 1000;
 var DEFAULT_QA_FAILURE_LIMIT = 2;
@@ -8987,7 +9263,7 @@ async function projectBatchPlan(root, initiativeSlug, input, readInitiative = ob
   }));
   if (!enrollable.length)
     throw new Error("batch plan has no enrollable children; nothing to confirm");
-  const planDigest = `sha256:${createHash15("sha256").update(stableStringify(enrollable)).digest("hex")}`;
+  const planDigest = `sha256:${createHash16("sha256").update(stableStringify(enrollable)).digest("hex")}`;
   return {
     contract: "assurance_kernel/batch_plan/v1",
     initiative_slug: initiativeSlug,
@@ -9001,9 +9277,9 @@ async function projectBatchPlan(root, initiativeSlug, input, readInitiative = ob
 }
 
 // plugins/immune-brain/runtime/unattended/batch_state.ts
-import { existsSync as existsSync4, mkdirSync as mkdirSync3, openSync as openSync4, closeSync as closeSync4, writeFileSync as writeFileSync4, renameSync as renameSync2, lstatSync as lstatSync6, constants as constants3, rmSync as rmSync4 } from "node:fs";
-import { randomUUID as randomUUID5 } from "node:crypto";
-import { dirname as dirname4, join as join7 } from "node:path";
+import { existsSync as existsSync6, mkdirSync as mkdirSync4, openSync as openSync5, closeSync as closeSync5, writeFileSync as writeFileSync5, renameSync as renameSync3, lstatSync as lstatSync7, constants as constants4, rmSync as rmSync5 } from "node:fs";
+import { randomUUID as randomUUID6 } from "node:crypto";
+import { dirname as dirname5, join as join7 } from "node:path";
 var BATCH_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 var CHILD_RUN_STATES = new Set([
   "pending",
@@ -9131,7 +9407,7 @@ function prepareBatchRunState(input) {
 }
 function readBatchRunState(root, batchId) {
   const path = statePath(batchId);
-  if (!existsSync4(join7(root, path)))
+  if (!existsSync6(join7(root, path)))
     return null;
   const parsed = JSON.parse(readSecureProjectFile(root, path));
   validateRecordShape(parsed, batchId);
@@ -9139,38 +9415,38 @@ function readBatchRunState(root, batchId) {
 }
 function ensureSecureDirectory2(root, relative) {
   const target = join7(root, relative);
-  const parent = dirname4(target);
-  if (!existsSync4(parent))
-    mkdirSync3(parent, { recursive: true });
-  if (existsSync4(target)) {
-    const stats = lstatSync6(target);
+  const parent = dirname5(target);
+  if (!existsSync6(parent))
+    mkdirSync4(parent, { recursive: true });
+  if (existsSync6(target)) {
+    const stats = lstatSync7(target);
     if (!stats.isDirectory())
       throw new Error(`${relative} exists but is not a directory`);
   } else {
-    mkdirSync3(target);
+    mkdirSync4(target);
   }
   return target;
 }
 function writeFileAtomically(root, relative, bytes) {
   const target = join7(root, relative);
-  const targetDir = dirname4(target);
-  const stats = lstatSync6(targetDir);
+  const targetDir = dirname5(target);
+  const stats = lstatSync7(targetDir);
   if (!stats.isDirectory())
-    throw new Error(`${dirname4(relative)} is not a directory`);
-  const tempPath = `${target}.${randomUUID5()}.tmp`;
+    throw new Error(`${dirname5(relative)} is not a directory`);
+  const tempPath = `${target}.${randomUUID6()}.tmp`;
   let fd = null;
   try {
-    fd = openSync4(tempPath, constants3.O_WRONLY | constants3.O_CREAT | constants3.O_EXCL, 384);
-    writeFileSync4(fd, bytes, "utf8");
-    closeSync4(fd);
+    fd = openSync5(tempPath, constants4.O_WRONLY | constants4.O_CREAT | constants4.O_EXCL, 384);
+    writeFileSync5(fd, bytes, "utf8");
+    closeSync5(fd);
     fd = null;
-    renameSync2(tempPath, target);
+    renameSync3(tempPath, target);
   } finally {
     if (fd !== null)
-      closeSync4(fd);
-    if (existsSync4(tempPath)) {
+      closeSync5(fd);
+    if (existsSync6(tempPath)) {
       try {
-        rmSync4(tempPath);
+        rmSync5(tempPath);
       } catch {}
     }
   }
@@ -9179,7 +9455,7 @@ function writeBatchRunState(root, record) {
   const path = statePath(record.batch_id);
   validateRecordShape(record, record.batch_id);
   return withKernelStoreLock(root, () => {
-    const existing = existsSync4(join7(root, path)) ? readSecureProjectFile(root, path) : null;
+    const existing = existsSync6(join7(root, path)) ? readSecureProjectFile(root, path) : null;
     if (existing !== null && existing === canonicalBytes(record))
       return record;
     const stored = {
@@ -9199,7 +9475,7 @@ function writeBatchRunReport(root, report) {
   const relative = reportPath(report.batch_id);
   return withKernelStoreLock(root, () => {
     const path = join7(root, relative);
-    if (existsSync4(path)) {
+    if (existsSync6(path)) {
       const original = JSON.parse(readSecureProjectFile(root, relative));
       if (typeof original !== "object" || original === null || original.contract !== "assurance_kernel/batch_run_report/v1")
         throw new Error(`batch run report ${report.batch_id} has an unknown contract`);
@@ -9242,14 +9518,14 @@ function readActiveClaimTaskId(root) {
 }
 function findExistingActiveBatch(root, initiativeSlug) {
   const batchesDir = join8(root, ".imm", "state", "batches");
-  if (!existsSync5(batchesDir))
+  if (!existsSync7(batchesDir))
     return null;
-  for (const file of readdirSync2(batchesDir)) {
+  for (const file of readdirSync3(batchesDir)) {
     if (!file.endsWith(".json"))
       continue;
     let record;
     try {
-      record = JSON.parse(readFileSync9(join8(batchesDir, file), "utf8"));
+      record = JSON.parse(readFileSync10(join8(batchesDir, file), "utf8"));
     } catch {
       return { corrupt: true, path: file };
     }
@@ -9278,15 +9554,15 @@ function findExistingActiveBatch(root, initiativeSlug) {
 }
 function findSettledBatchRecord(root, initiativeSlug) {
   const batchesDir = join8(root, ".imm", "state", "batches");
-  if (!existsSync5(batchesDir))
+  if (!existsSync7(batchesDir))
     return null;
   let newest = null;
-  for (const file of readdirSync2(batchesDir).sort()) {
+  for (const file of readdirSync3(batchesDir).sort()) {
     if (!file.endsWith(".json"))
       continue;
     let record;
     try {
-      record = JSON.parse(readFileSync9(join8(batchesDir, file), "utf8"));
+      record = JSON.parse(readFileSync10(join8(batchesDir, file), "utf8"));
     } catch {
       continue;
     }
@@ -9312,17 +9588,17 @@ function expectedBatchHead(record) {
 }
 function isOwnBatchClaim(root, existingBatch, taskId, batchBranch) {
   let claim = null;
-  let workspace = null;
+  let workspaceOwner = null;
   try {
-    claim = JSON.parse(readFileSync9(join8(root, ".imm", "state", "active-claim.json"), "utf8"));
-    workspace = JSON.parse(readFileSync9(join8(root, ".imm", "state", "workspace.json"), "utf8"));
+    claim = readBackendClaim(root);
+    workspaceOwner = readWorkspaceStateRaw(root).state.current_working;
   } catch {
     return false;
   }
-  const currentTaskId = workspace?.state?.current_working || (claim?.lifecycle_status === "active" ? claim?.task_id : null);
+  const currentTaskId = workspaceOwner || (claim?.lifecycle_status === "active" ? claim?.task_id : null);
   if (currentTaskId !== taskId || !claim)
     return false;
-  const branch = spawnSync4("git", ["-C", root, "branch", "--show-current"], { encoding: "utf8" }).stdout.trim();
+  const branch = spawnSync5("git", ["-C", root, "branch", "--show-current"], { encoding: "utf8" }).stdout.trim();
   if (branch !== batchBranch)
     return false;
   const childInBatch = existingBatch.children.find((c) => c.task_id === taskId);
@@ -9331,7 +9607,8 @@ function isOwnBatchClaim(root, existingBatch, taskId, batchBranch) {
   }
   let rec = null;
   try {
-    rec = JSON.parse(readFileSync9(join8(root, ".imm", "state", "tasks", `${taskId}.json`), "utf8"));
+    const run = withKernelRead(root, (db) => readRunRowByTask(db, taskId));
+    rec = run ? JSON.parse(run.record_json) : null;
   } catch {
     return false;
   }
@@ -9377,7 +9654,7 @@ function authorizedScopeOf(root, taskId, state) {
   return scope;
 }
 function porcelainEntries(root) {
-  const statusProc = spawnSync4("git", ["-C", root, "status", "--porcelain=v1", "-z", "--no-renames", "--untracked-files=all"], { encoding: "utf8" });
+  const statusProc = spawnSync5("git", ["-C", root, "status", "--porcelain=v1", "-z", "--no-renames", "--untracked-files=all"], { encoding: "utf8" });
   if (statusProc.status !== 0)
     return null;
   const entries = [];
@@ -9508,7 +9785,7 @@ async function projectBatchPreflight(options) {
   } catch (err) {
     return reject("git_head_unreadable", err instanceof Error ? err.message : String(err));
   }
-  const branchExists = spawnSync4("git", ["-C", root, "show-ref", "--verify", "--quiet", `refs/heads/${batchBranch}`]);
+  const branchExists = spawnSync5("git", ["-C", root, "show-ref", "--verify", "--quiet", `refs/heads/${batchBranch}`]);
   if (branchExists.status === 0 && !existingBatch)
     return reject("branch_already_exists", batchBranch);
   const statusEntries = porcelainEntries(root);
@@ -9627,7 +9904,7 @@ async function authorizeBatch(options) {
       reuseBlockers.push("batch_head_lineage_moved");
   }
   const reuseAuthorization = isResuming && reuseBlockers.length === 0;
-  const batchId = isResuming && existingBatch ? existingBatch.batch_id : `batch-${initiativeSlug}-${randomUUID6()}`;
+  const batchId = isResuming && existingBatch ? existingBatch.batch_id : `batch-${initiativeSlug}-${randomUUID7()}`;
   const facts = {
     initiative_slug: initiativeSlug,
     batch_branch: batchBranch,
@@ -9693,26 +9970,26 @@ async function authorizeBatch(options) {
 }
 
 // plugins/immune-brain/runtime/unattended/batch_runner.ts
-import { spawnSync as spawnSync6 } from "node:child_process";
-import { existsSync as existsSync7 } from "node:fs";
+import { spawnSync as spawnSync7 } from "node:child_process";
+import { existsSync as existsSync9 } from "node:fs";
 import { join as join10 } from "node:path";
 
 // plugins/immune-brain/runtime/unattended/batch_git.ts
-import { spawnSync as spawnSync5 } from "node:child_process";
-import { randomUUID as randomUUID7 } from "node:crypto";
+import { spawnSync as spawnSync6 } from "node:child_process";
+import { randomUUID as randomUUID8 } from "node:crypto";
 import {
-  constants as constants4,
-  closeSync as closeSync5,
-  existsSync as existsSync6,
-  lstatSync as lstatSync7,
-  mkdirSync as mkdirSync4,
-  openSync as openSync5,
-  realpathSync as realpathSync7,
-  renameSync as renameSync3,
-  rmSync as rmSync5,
-  writeFileSync as writeFileSync5
+  constants as constants5,
+  closeSync as closeSync6,
+  existsSync as existsSync8,
+  lstatSync as lstatSync8,
+  mkdirSync as mkdirSync5,
+  openSync as openSync6,
+  realpathSync as realpathSync8,
+  renameSync as renameSync4,
+  rmSync as rmSync6,
+  writeFileSync as writeFileSync6
 } from "node:fs";
-import { dirname as dirname5, join as join9 } from "node:path";
+import { dirname as dirname6, join as join9 } from "node:path";
 var DEFAULT_GIT_ENV = {
   ...process.env,
   GIT_AUTHOR_NAME: process.env.GIT_AUTHOR_NAME || "Immune-Brain Batch",
@@ -9723,7 +10000,7 @@ var DEFAULT_GIT_ENV = {
 function runBatchGitPreflight(input) {
   const { root, initiative_slug: initiativeSlug, base_head: baseHead } = input;
   const branch = `imm/${initiativeSlug}`;
-  const toplevelResult = spawnSync5("git", ["-C", root, "rev-parse", "--show-toplevel"], {
+  const toplevelResult = spawnSync6("git", ["-C", root, "rev-parse", "--show-toplevel"], {
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"]
   });
@@ -9737,8 +10014,8 @@ function runBatchGitPreflight(input) {
   let realToplevel;
   let realRoot;
   try {
-    realToplevel = realpathSync7(toplevelResult.stdout.trim());
-    realRoot = realpathSync7(root);
+    realToplevel = realpathSync8(toplevelResult.stdout.trim());
+    realRoot = realpathSync8(root);
   } catch {
     return {
       ok: false,
@@ -9761,7 +10038,7 @@ function runBatchGitPreflight(input) {
       message: `unsupported index flags (assume-unchanged/skip-worktree) detected: ${flaggedPreflight.join(", ")}`
     };
   }
-  const statusResult = spawnSync5("git", ["-C", root, "status", "--porcelain", "--untracked-files=all", "--ignore-submodules=none"], {
+  const statusResult = spawnSync6("git", ["-C", root, "status", "--porcelain", "--untracked-files=all", "--ignore-submodules=none"], {
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"]
   });
@@ -9779,7 +10056,7 @@ function runBatchGitPreflight(input) {
       message: "working tree is dirty before batch preflight"
     };
   }
-  const headResult = spawnSync5("git", ["-C", root, "rev-parse", "--verify", "HEAD^{commit}"], {
+  const headResult = spawnSync6("git", ["-C", root, "rev-parse", "--verify", "HEAD^{commit}"], {
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"]
   });
@@ -9790,11 +10067,11 @@ function runBatchGitPreflight(input) {
       message: "HEAD is uncommitted or not a valid commit"
     };
   }
-  const branchCheck = spawnSync5("git", ["-C", root, "show-ref", "--verify", "--quiet", `refs/heads/${branch}`], { stdio: ["ignore", "ignore", "ignore"] });
+  const branchCheck = spawnSync6("git", ["-C", root, "show-ref", "--verify", "--quiet", `refs/heads/${branch}`], { stdio: ["ignore", "ignore", "ignore"] });
   if (branchCheck.status === 0) {
     const settled = findSettledBatchRecord(root, initiativeSlug);
-    const currentBranch = spawnSync5("git", ["-C", root, "symbolic-ref", "--short", "HEAD"], { encoding: "utf8" });
-    if (findExistingActiveBatch(root, initiativeSlug) === null && settled?.branch === branch && currentBranch.status === 0 && currentBranch.stdout.trim() === branch && headResult.stdout.trim() === baseHead && spawnSync5("git", ["-C", root, "merge-base", "--is-ancestor", expectedBatchHead(settled), baseHead]).status === 0)
+    const currentBranch = spawnSync6("git", ["-C", root, "symbolic-ref", "--short", "HEAD"], { encoding: "utf8" });
+    if (findExistingActiveBatch(root, initiativeSlug) === null && settled?.branch === branch && currentBranch.status === 0 && currentBranch.stdout.trim() === branch && headResult.stdout.trim() === baseHead && spawnSync6("git", ["-C", root, "merge-base", "--is-ancestor", expectedBatchHead(settled), baseHead]).status === 0)
       return { ok: true, branch };
     return {
       ok: false,
@@ -9802,25 +10079,25 @@ function runBatchGitPreflight(input) {
       message: `branch refs/heads/${branch} already exists`
     };
   }
-  const originalBranchResult = spawnSync5("git", ["-C", root, "symbolic-ref", "--short", "HEAD"], {
+  const originalBranchResult = spawnSync6("git", ["-C", root, "symbolic-ref", "--short", "HEAD"], {
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"]
   });
   const originalBranch = originalBranchResult.stdout.trim();
-  const checkoutResult = spawnSync5("git", ["-C", root, "-c", "core.hooksPath=/dev/null", "checkout", "-b", branch, baseHead], {
+  const checkoutResult = spawnSync6("git", ["-C", root, "-c", "core.hooksPath=/dev/null", "checkout", "-b", branch, baseHead], {
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"],
     env: DEFAULT_GIT_ENV
   });
   if (checkoutResult.status !== 0) {
     const stderr = checkoutResult.stderr?.trim() || "";
-    const branchExists = stderr.includes("already exists") || spawnSync5("git", ["-C", root, "show-ref", "--verify", "--quiet", `refs/heads/${branch}`]).status === 0;
-    const currentBranchCheck = spawnSync5("git", ["-C", root, "symbolic-ref", "--short", "HEAD"], {
+    const branchExists = stderr.includes("already exists") || spawnSync6("git", ["-C", root, "show-ref", "--verify", "--quiet", `refs/heads/${branch}`]).status === 0;
+    const currentBranchCheck = spawnSync6("git", ["-C", root, "symbolic-ref", "--short", "HEAD"], {
       encoding: "utf8",
       stdio: ["ignore", "pipe", "pipe"]
     }).stdout.trim();
     if (currentBranchCheck === branch && originalBranch && originalBranch !== branch) {
-      spawnSync5("git", ["-C", root, "-c", "core.hooksPath=/dev/null", "checkout", originalBranch], {
+      spawnSync6("git", ["-C", root, "-c", "core.hooksPath=/dev/null", "checkout", originalBranch], {
         stdio: ["ignore", "ignore", "ignore"]
       });
     }
@@ -9843,7 +10120,7 @@ function hasBoundaryWhitespace(path) {
   return path.split("/").some((segment) => segment.trim() !== segment || segment.length === 0);
 }
 function getUnsupportedIndexFlags(root) {
-  const result = spawnSync5("git", ["-C", root, "ls-files", "-v", "-z", "--"], {
+  const result = spawnSync6("git", ["-C", root, "ls-files", "-v", "-z", "--"], {
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"]
   });
@@ -9877,13 +10154,13 @@ function isPathAllowedForChild(path, taskId, scopeHint) {
   });
 }
 function getChangedProjectPaths(root) {
-  const tracked = spawnSync5("git", ["-C", root, "diff-index", "--name-only", "-z", "--ignore-submodules=none", "HEAD", "--"], {
+  const tracked = spawnSync6("git", ["-C", root, "diff-index", "--name-only", "-z", "--ignore-submodules=none", "HEAD", "--"], {
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"]
   });
   if (tracked.status !== 0)
     throw new Error("failed to inspect tracked diff vs HEAD");
-  const untracked = spawnSync5("git", ["-C", root, "ls-files", "--others", "--exclude-standard", "-z", "--"], {
+  const untracked = spawnSync6("git", ["-C", root, "ls-files", "--others", "--exclude-standard", "-z", "--"], {
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"]
   });
@@ -9893,7 +10170,7 @@ function getChangedProjectPaths(root) {
   return [...new Set([...splitZ(tracked.stdout), ...splitZ(untracked.stdout)])];
 }
 function getStagedProjectPaths(root) {
-  const staged = spawnSync5("git", ["-C", root, "diff-index", "--cached", "--name-only", "-z", "--ignore-submodules=none", "HEAD", "--"], {
+  const staged = spawnSync6("git", ["-C", root, "diff-index", "--cached", "--name-only", "-z", "--ignore-submodules=none", "HEAD", "--"], {
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"]
   });
@@ -9902,13 +10179,13 @@ function getStagedProjectPaths(root) {
   return staged.stdout.split("\x00").filter((p) => p.length > 0);
 }
 function getUnstagedProjectPaths(root) {
-  const diffFiles = spawnSync5("git", ["-C", root, "diff-files", "--name-only", "-z", "--ignore-submodules=none", "--"], {
+  const diffFiles = spawnSync6("git", ["-C", root, "diff-files", "--name-only", "-z", "--ignore-submodules=none", "--"], {
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"]
   });
   if (diffFiles.status !== 0)
     throw new Error("failed to inspect unstaged tracked changes");
-  const untracked = spawnSync5("git", ["-C", root, "ls-files", "--others", "--exclude-standard", "-z", "--"], {
+  const untracked = spawnSync6("git", ["-C", root, "ls-files", "--others", "--exclude-standard", "-z", "--"], {
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"]
   });
@@ -9918,7 +10195,7 @@ function getUnstagedProjectPaths(root) {
   return [...new Set([...splitZ(diffFiles.stdout), ...splitZ(untracked.stdout)])];
 }
 function getCommittedDeltaPaths(root) {
-  const delta = spawnSync5("git", ["-C", root, "diff-tree", "--no-commit-id", "--name-only", "-z", "-r", "HEAD~1", "HEAD"], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+  const delta = spawnSync6("git", ["-C", root, "diff-tree", "--no-commit-id", "--name-only", "-z", "-r", "HEAD~1", "HEAD"], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
   if (delta.status !== 0)
     throw new Error("failed to inspect committed tree delta");
   return delta.stdout.split("\x00").filter((p) => p.length > 0);
@@ -9931,45 +10208,45 @@ function ensureSecureDirectory3(root, relativePath) {
   let current = root;
   for (const segment of segments) {
     current = join9(current, segment);
-    if (existsSync6(current)) {
-      const stats = lstatSync7(current);
+    if (existsSync8(current)) {
+      const stats = lstatSync8(current);
       if (stats.isSymbolicLink() || !stats.isDirectory()) {
         throw new Error(`${segment} exists but is not a real directory`);
       }
     } else {
-      mkdirSync4(current);
+      mkdirSync5(current);
     }
   }
   return current;
 }
 function writeFileAtomically2(root, relativePath, bytes) {
   const target = join9(root, relativePath);
-  const targetDir = dirname5(target);
-  ensureSecureDirectory3(root, dirname5(relativePath));
-  const stats = lstatSync7(targetDir);
+  const targetDir = dirname6(target);
+  ensureSecureDirectory3(root, dirname6(relativePath));
+  const stats = lstatSync8(targetDir);
   if (stats.isSymbolicLink() || !stats.isDirectory()) {
-    throw new Error(`${dirname5(relativePath)} is not a real directory`);
+    throw new Error(`${dirname6(relativePath)} is not a real directory`);
   }
-  if (existsSync6(target)) {
-    const targetStats = lstatSync7(target);
+  if (existsSync8(target)) {
+    const targetStats = lstatSync8(target);
     if (targetStats.isSymbolicLink()) {
       throw new Error(`${relativePath} is a symlink`);
     }
   }
-  const tempPath = `${target}.${randomUUID7()}.tmp`;
+  const tempPath = `${target}.${randomUUID8()}.tmp`;
   let fd = null;
   try {
-    fd = openSync5(tempPath, constants4.O_WRONLY | constants4.O_CREAT | constants4.O_EXCL, 384);
-    writeFileSync5(fd, bytes, "utf8");
-    closeSync5(fd);
+    fd = openSync6(tempPath, constants5.O_WRONLY | constants5.O_CREAT | constants5.O_EXCL, 384);
+    writeFileSync6(fd, bytes, "utf8");
+    closeSync6(fd);
     fd = null;
-    renameSync3(tempPath, target);
+    renameSync4(tempPath, target);
   } finally {
     if (fd !== null)
-      closeSync5(fd);
-    if (existsSync6(tempPath)) {
+      closeSync6(fd);
+    if (existsSync8(tempPath)) {
       try {
-        rmSync5(tempPath);
+        rmSync6(tempPath);
       } catch {}
     }
   }
@@ -9990,7 +10267,7 @@ function writeBatchCommitEvidence(root, evidence) {
 function readBatchCommitEvidence(root, batchId, taskId) {
   const path = commitEvidencePath(batchId, taskId);
   const fullPath = join9(root, path);
-  if (!existsSync6(fullPath))
+  if (!existsSync8(fullPath))
     return null;
   try {
     const content = readSecureProjectFile(root, path);
@@ -10023,7 +10300,7 @@ async function commitBatchChild(input) {
   const goal = typeof intentSnapshot.goal === "string" ? intentSnapshot.goal : "";
   const scopeHint = Array.isArray(intentSnapshot.scope_hint) ? intentSnapshot.scope_hint.filter((s) => typeof s === "string") : [];
   if (expectedBranch !== undefined) {
-    const currentBranchResult = spawnSync5("git", ["-C", root, "symbolic-ref", "--short", "HEAD"], {
+    const currentBranchResult = spawnSync6("git", ["-C", root, "symbolic-ref", "--short", "HEAD"], {
       encoding: "utf8",
       stdio: ["ignore", "pipe", "pipe"]
     });
@@ -10032,7 +10309,7 @@ async function commitBatchChild(input) {
       throw new Error(`batch_head_lineage_broken: current branch ${currentBranch} does not match expected branch ${expectedBranch}`);
     }
   }
-  const currentHeadResult = spawnSync5("git", ["-C", root, "rev-parse", "HEAD"], {
+  const currentHeadResult = spawnSync6("git", ["-C", root, "rev-parse", "HEAD"], {
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"]
   });
@@ -10051,7 +10328,7 @@ async function commitBatchChild(input) {
   }
   const pathsToStage = getUnstagedProjectPaths(root);
   if (pathsToStage.length > 0) {
-    const addResult = spawnSync5("git", ["-C", root, "--literal-pathspecs", "add", "-A", "--", ...pathsToStage], {
+    const addResult = spawnSync6("git", ["-C", root, "--literal-pathspecs", "add", "-A", "--", ...pathsToStage], {
       encoding: "utf8",
       stdio: ["ignore", "pipe", "pipe"]
     });
@@ -10066,7 +10343,7 @@ async function commitBatchChild(input) {
   const staged = getStagedProjectPaths(root);
   const stagedOutside = staged.filter((p) => !isPathAllowedForChild(p, taskId, scopeHint));
   if (stagedOutside.length > 0) {
-    spawnSync5("git", ["-C", root, "reset", "--quiet"], { stdio: ["ignore", "ignore", "ignore"] });
+    spawnSync6("git", ["-C", root, "reset", "--quiet"], { stdio: ["ignore", "ignore", "ignore"] });
     throw new Error("dirty_outside_scope");
   }
   const goalFirstLine = goal.trim().split(/\r?\n/)[0]?.trim() || taskId;
@@ -10074,7 +10351,7 @@ async function commitBatchChild(input) {
 
 Immune-Brain-Batch: ${batchId}
 `;
-  const commitResult = spawnSync5("git", ["-C", root, "-c", "core.hooksPath=/dev/null", "commit", "--no-verify", "-F", "-"], {
+  const commitResult = spawnSync6("git", ["-C", root, "-c", "core.hooksPath=/dev/null", "commit", "--no-verify", "-F", "-"], {
     input: commitMessage,
     encoding: "utf8",
     stdio: ["pipe", "pipe", "pipe"],
@@ -10083,7 +10360,7 @@ Immune-Brain-Batch: ${batchId}
   if (commitResult.status !== 0) {
     throw new Error(`commit failed for child ${taskId}: ${commitResult.stderr?.trim() || "git commit failed"}`);
   }
-  const newHeadResult = spawnSync5("git", ["-C", root, "rev-parse", "HEAD"], {
+  const newHeadResult = spawnSync6("git", ["-C", root, "rev-parse", "HEAD"], {
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"]
   });
@@ -10091,7 +10368,7 @@ Immune-Brain-Batch: ${batchId}
   if (newHeadResult.status !== 0 || !newHead || newHead === expectedHead) {
     throw new Error("commit_failed");
   }
-  const parentsResult = spawnSync5("git", ["-C", root, "rev-parse", "HEAD^@"], {
+  const parentsResult = spawnSync6("git", ["-C", root, "rev-parse", "HEAD^@"], {
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"]
   });
@@ -10124,7 +10401,7 @@ async function lookupBatchCommit(input) {
   let candidates = [];
   let evidenceBacked = false;
   if (evidence && evidence.commit) {
-    const direct = spawnSync5("git", ["-C", root, "log", "-n", "1", `--format=${FORMAT}`, evidence.commit, "--"], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+    const direct = spawnSync6("git", ["-C", root, "log", "-n", "1", `--format=${FORMAT}`, evidence.commit, "--"], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
     if (direct.status !== 0) {
       throw new Error(`failed to inspect batch commit for ${taskId}: ${direct.stderr?.trim() || "git log failed"}`);
     }
@@ -10137,7 +10414,7 @@ async function lookupBatchCommit(input) {
     }
   }
   if (!candidates.length) {
-    const result = spawnSync5("git", [
+    const result = spawnSync6("git", [
       "-C",
       root,
       "log",
@@ -10174,7 +10451,7 @@ async function lookupBatchCommit(input) {
     throw new Error(`batch_head_lineage_broken: adopted commit author ${match.authorName} does not match batch authority ${DEFAULT_GIT_ENV.GIT_AUTHOR_NAME}`);
   }
   if (expectedBranch !== undefined) {
-    const currentBranchResult = spawnSync5("git", ["-C", root, "symbolic-ref", "--short", "HEAD"], {
+    const currentBranchResult = spawnSync6("git", ["-C", root, "symbolic-ref", "--short", "HEAD"], {
       encoding: "utf8",
       stdio: ["ignore", "pipe", "pipe"]
     });
@@ -10184,7 +10461,7 @@ async function lookupBatchCommit(input) {
     }
   }
   if (expectedHead !== undefined) {
-    const currentHeadResult = spawnSync5("git", ["-C", root, "rev-parse", "HEAD"], {
+    const currentHeadResult = spawnSync6("git", ["-C", root, "rev-parse", "HEAD"], {
       encoding: "utf8",
       stdio: ["ignore", "pipe", "pipe"]
     });
@@ -10192,7 +10469,7 @@ async function lookupBatchCommit(input) {
     if (currentHead !== commit) {
       throw new Error(`batch_head_lineage_broken: current HEAD ${currentHead} diverged from adopted commit ${commit}`);
     }
-    const parentsResult = spawnSync5("git", ["-C", root, "rev-parse", `${commit}^@`], {
+    const parentsResult = spawnSync6("git", ["-C", root, "rev-parse", `${commit}^@`], {
       encoding: "utf8",
       stdio: ["ignore", "pipe", "pipe"]
     });
@@ -10209,7 +10486,7 @@ async function lookupBatchCommit(input) {
       throw new Error(`batch_head_lineage_broken: adopted commit task lifecycle is not done: ${lifecycle}`);
     }
     const scopeHint = Array.isArray(auditPair.record.intent_snapshot.scope_hint) ? auditPair.record.intent_snapshot.scope_hint.filter((s) => typeof s === "string") : [];
-    const deltaResult = spawnSync5("git", ["-C", root, "diff-tree", "--no-commit-id", "--name-only", "-z", "-r", expectedHead, commit], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+    const deltaResult = spawnSync6("git", ["-C", root, "diff-tree", "--no-commit-id", "--name-only", "-z", "-r", expectedHead, commit], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
     if (deltaResult.status !== 0) {
       throw new Error("batch_head_lineage_broken: failed to inspect adopted commit delta");
     }
@@ -10303,17 +10580,17 @@ function failPersistedLineage(root, existing, message) {
   return writeBatchRunState(root, record);
 }
 function externalHeadDriftMessage(root, record) {
-  if (!existsSync7(join10(root, ".git")))
+  if (!existsSync9(join10(root, ".git")))
     return null;
   const head = record.commits.length ? record.commits[record.commits.length - 1] : record.base_head;
-  const headCheck = spawnSync6("git", ["-C", root, "rev-parse", "HEAD"], {
+  const headCheck = spawnSync7("git", ["-C", root, "rev-parse", "HEAD"], {
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"]
   });
   if (headCheck.status === 0 && headCheck.stdout.trim() && headCheck.stdout.trim() !== head) {
     return `batch_head_lineage_broken: current HEAD ${headCheck.stdout.trim()} does not match expected batch head ${head}`;
   }
-  const branchCheck = spawnSync6("git", ["-C", root, "symbolic-ref", "--short", "HEAD"], {
+  const branchCheck = spawnSync7("git", ["-C", root, "symbolic-ref", "--short", "HEAD"], {
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"]
   });
@@ -10344,8 +10621,8 @@ async function validatePersistedRun(input, record) {
       branch: record.branch
     });
     if (!evidence || evidence.commit !== child.commit) {
-      if (evidence === null && typeof child.commit === "string" && child.commit.length > 0 && existsSync7(join10(input.root, ".git"))) {
-        const reach = spawnSync6("git", ["-C", input.root, "merge-base", "--is-ancestor", child.commit, "HEAD"], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+      if (evidence === null && typeof child.commit === "string" && child.commit.length > 0 && existsSync9(join10(input.root, ".git"))) {
+        const reach = spawnSync7("git", ["-C", input.root, "merge-base", "--is-ancestor", child.commit, "HEAD"], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
         if (reach.status !== 0) {
           throw new Error(`batch_head_lineage_broken: recorded commit ${child.commit} for ${child.task_id} is no longer reachable from HEAD`);
         }
@@ -10385,6 +10662,19 @@ function validateRunAuthorization(input, existing) {
     throw new Error("batch run input does not match the authorized plan or base_head");
 }
 async function startBatch(input) {
+  try {
+    return await startBatchLocked(input);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (/retired file-store|kernel store|CAS mismatch|store is busy|locked/i.test(message))
+      return rejectionReport(input, message);
+    throw error;
+  }
+}
+function rejectionReport(input, reason) {
+  return reportFor({ ...prepareBatchRunState({ ...input, children: [], now: input.now }), batch_state: "rejected" }, reason, "settle the reported kernel store condition and retry in the current Host");
+}
+async function startBatchLocked(input) {
   if (!input.children.length) {
     const rejected = prepareBatchRunState({ ...input, children: [], now: input.now });
     return reportFor({ ...rejected, batch_state: "rejected" }, "batch plan is empty", "Provide a non-empty enrollable child plan.");
@@ -11073,7 +11363,7 @@ function stagePlanningArtifactTransition(root, record) {
     intentArchive,
     ...specActive ? [specActive, specActive.replace("docs/specs/", "docs/specs/archive/")] : []
   ];
-  const paths = candidates.filter((path) => existsSync8(join11(root, path)) || execFileSync5("git", ["ls-files", "--cached", "--", path], { cwd: root, encoding: "utf8" }).trim().length > 0);
+  const paths = candidates.filter((path) => existsSync10(join11(root, path)) || execFileSync5("git", ["ls-files", "--cached", "--", path], { cwd: root, encoding: "utf8" }).trim().length > 0);
   if (paths.length === 0)
     return;
   execFileSync5("git", ["add", "--", ...paths], { cwd: root, stdio: ["ignore", "pipe", "pipe"] });
@@ -11297,6 +11587,8 @@ class ClaudeRuntime {
   async authorize(taskId, operation, meta, extra = {}) {
     if (operation === "repair_authority_state") {
       const authority = reconcileKernelAuthority(this.cwd, taskId);
+      if (authority.state === "terminal_owner" || authority.state === "unowned")
+        return repairKernelAuthority(this.cwd, taskId, authority.revision);
       if (authority.state !== "repairable_stale_claim" || authority.owner_task_id !== taskId) {
         throw new Error(authority.diagnostic ?? "authority repair requires a repairable stale claim");
       }
@@ -11343,7 +11635,7 @@ class ClaudeRuntime {
     let gate;
     try {
       if (sidecar && nextIntent) {
-        writeFileSync6(sidecar, `${JSON.stringify(nextIntent, null, 2)}
+        writeFileSync7(sidecar, `${JSON.stringify(nextIntent, null, 2)}
 `);
         execFileSync5("git", ["add", "--", priorIntent.intent_ref.path], { cwd: this.cwd, stdio: ["ignore", "pipe", "pipe"] });
         const preparedRecord = await readTaskRecord(this.cwd, taskId);
@@ -11476,7 +11768,7 @@ class ClaudeRuntime {
       return;
     }
     const approval = {
-      id: `approval-${input.snapshot.role}-${randomUUID8().slice(0, 8)}`,
+      id: `approval-${input.snapshot.role}-${randomUUID9().slice(0, 8)}`,
       kind: input.snapshot.role === "qa" ? "qa" : "review",
       authority_role: input.snapshot.role === "qa" ? "qa" : "reviewer",
       task_revision: input.snapshot.intent_revision,
@@ -11514,11 +11806,11 @@ class ClaudeRuntime {
     const operation = input.operation.op === "revise_intent" ? { ...input.operation, next_intent: await parseTaskIntentV1(input.operation.next_intent) } : input.operation;
     const priorIntent = await readTaskIntentForRecord(ctx.cwd, input.taskId);
     const sidecar = join11(ctx.cwd, priorIntent.intent_ref.path);
-    const priorBytes = operation.op === "revise_intent" ? readFileSync10(sidecar) : null;
+    const priorBytes = operation.op === "revise_intent" ? readFileSync11(sidecar) : null;
     const priorStaged = priorBytes !== null ? captureStagedIntent(ctx.cwd, priorIntent.intent_ref.path) : null;
     try {
       if (priorBytes) {
-        writeFileSync6(sidecar, `${JSON.stringify(operation.next_intent, null, 2)}
+        writeFileSync7(sidecar, `${JSON.stringify(operation.next_intent, null, 2)}
 `);
         execFileSync5("git", ["add", "--", priorIntent.intent_ref.path], {
           cwd: ctx.cwd,
@@ -11824,7 +12116,7 @@ function createMcpRuntime(options = {}) {
   });
   let negotiatedVersion;
   let negotiatedInteractive = false;
-  const connectionId = randomUUID9();
+  const connectionId = randomUUID10();
   return {
     runtime,
     host,

@@ -13,6 +13,13 @@ import { projectAssurance } from "../plugins/immune-brain/runtime/kernel/assuran
 import { readTaskRecord } from "../plugins/immune-brain/runtime/kernel/storage";
 import { canonicalIntentHash, parseTaskIntentV1 } from "../plugins/immune-brain/runtime/kernel/intent";
 import { resolveBunRunner } from "../plugins/immune-brain/runtime/assurance/verification";
+import {
+	readRunRowByTask,
+	updateRunRecord,
+	withKernelRead,
+	withKernelTransaction,
+} from "../plugins/immune-brain/runtime/kernel/sqlite_store";
+import { seedKernelRunForTest } from "./fixtures/mutation-authority-test-seam";
 
 /**
  * The submit-time Review identity check re-derives the revision and compares
@@ -93,11 +100,29 @@ function makeReviewReadyRoot(): string {
 	writeFileSync(join(root, "src", "worked.ts"), "export const value = 2;\n");
 	execFileSync("git", ["add", "--", "src/worked.ts"], { cwd: root, stdio: "ignore" });
 
-	const write = (diffHash: string) => {
-		writeFileSync(
-			join(root, ".imm", "state", "tasks", `${TASK}.json`),
-			`${JSON.stringify(taskRecord(baseHead, diffHash), null, 2)}\n`,
-		);
+	const write = (diffHash: string, expectedRunRevision?: number) => {
+		// The run row is the single authority for a record fixture.
+		const run = withKernelRead(root, (db) => readRunRowByTask(db, TASK));
+		if (!run) {
+			seedKernelRunForTest(root, {
+				task_id: TASK,
+				record: taskRecord(baseHead, diffHash),
+				intent_content_hash: INTENT_HASH,
+				enrollment_event_id: `enroll-${TASK}-${NOW}`,
+				created_at: NOW,
+				updated_at: NOW,
+			});
+			return;
+		}
+		withKernelTransaction(root, (db) => {
+			updateRunRecord(
+				db,
+				run.run_id,
+				expectedRunRevision ?? run.revision,
+				`${JSON.stringify(taskRecord(baseHead, diffHash), null, 2)}\n`,
+				NOW,
+			);
+		});
 	};
 	// The attestation is fresh only when it carries the current diff hash, which
 	// cannot be computed before a record exists to name the base and the scope.
@@ -105,25 +130,6 @@ function makeReviewReadyRoot(): string {
 	const placeholder = readTaskRecord(root, TASK);
 	if (!placeholder.record) throw new Error("fixture TaskRecord did not parse");
 	write(diffSnapshotOf(root, placeholder.record).diff_hash);
-
-	writeFileSync(
-		join(root, ".imm", "state", "workspace.json"),
-		`${JSON.stringify({ contract: "assurance_kernel/workspace/v1", current_working: null }, null, 2)}\n`,
-	);
-	writeFileSync(
-		join(root, ".imm", "state", "active-claim.json"),
-		`${JSON.stringify({
-			contract: "assurance_kernel/backend_claim/v2",
-			backend: "kernel",
-			task_id: TASK,
-			intent_revision: 1,
-			intent_content_hash: INTENT_HASH,
-			enrollment_event_id: `enroll-${TASK}-${NOW}`,
-			lifecycle_status: "active",
-			created_at: NOW,
-			updated_at: NOW,
-		}, null, 2)}\n`,
-	);
 	return root;
 }
 

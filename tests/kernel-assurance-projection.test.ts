@@ -11,7 +11,19 @@ import { canonicalIntentHash } from "../plugins/immune-brain/runtime/kernel/inte
 import * as kernelIndex from "../plugins/immune-brain/runtime/kernel/index";
 import { preparePiCanary } from "../plugins/immune-brain/runtime/kernel/pi_canary_prepare";
 import { anchorForEvidence } from "../plugins/immune-brain/runtime/kernel/refutation";
-import { revisionForContent } from "../plugins/immune-brain/runtime/kernel/storage";
+import {
+	commitTerminalLocked,
+	readWorkspaceStateRaw,
+	retryStoreFollowUps,
+	revisionForContent,
+	serializeWorkspace,
+} from "../plugins/immune-brain/runtime/kernel/storage";
+import {
+	readRunRowByTask,
+	updateRunRecord,
+	withKernelRead,
+	withKernelTransaction,
+} from "../plugins/immune-brain/runtime/kernel/sqlite_store";
 import { taskDiffIdentity } from "../plugins/immune-brain/runtime/workspace_scope";
 
 const TASK = "canary-projection-task";
@@ -48,10 +60,6 @@ function makeEnrolledRoot(): string {
 	writeFileSync(join(root, "docs", "plans", `${TASK}.intent.json`), `${JSON.stringify(INTENT, null, 2)}\n`);
 	execFileSync("git", ["add", "-A"], { cwd: root });
 	execFileSync("git", ["commit", "-qm", "intent"], { cwd: root });
-	writeFileSync(join(root, ".imm/state/workspace.json"), `${JSON.stringify({
-		contract: "assurance_kernel/workspace/v1",
-		current_working: null,
-	}, null, 2)}\n`);
 	const registry = createEnrollmentAuthorityRegistry();
 	const preparation = preparePiCanary(root, { task_id: TASK, now: "2026-08-12T10:00:00.000Z" });
 	const binding: EnrollmentCapabilityBinding = {
@@ -77,11 +85,15 @@ function makeEnrolledRoot(): string {
 	return root;
 }
 
+/** Record fixtures are store writes: the run row is the single authority. */
 function mutateRecord(root: string, mutate: (record: Record<string, any>) => void): void {
-	const path = join(root, `.imm/state/tasks/${TASK}.json`);
-	const record = JSON.parse(readFileSync(path, "utf8"));
+	const run = withKernelRead(root, (db) => readRunRowByTask(db, TASK));
+	if (!run) throw new Error("fixture run is missing");
+	const record = JSON.parse(run.record_json) as Record<string, any>;
 	mutate(record);
-	writeFileSync(path, `${JSON.stringify(record, null, 2)}\n`);
+	withKernelTransaction(root, (db) => {
+		updateRunRecord(db, run.run_id, run.revision, `${JSON.stringify(record, null, 2)}\n`, "2026-08-12T10:00:00.500Z");
+	});
 }
 
 function freezeRecord(root: string): void {
@@ -146,28 +158,38 @@ function terminalize(root: string, lifecycle: "done" | "stopped"): void {
 		record.artifact_state = "frozen";
 		record.intent_ref.path = `docs/plans/archive/${TASK}.intent.json`;
 	});
-	const recordPath = join(root, `.imm/state/tasks/${TASK}.json`);
-	const bytes = readFileSync(recordPath, "utf8");
-	const auditDir = join(root, `.imm/audit/${TASK}`);
-	mkdirSync(auditDir, { recursive: true });
-	// Terminal evidence moves to the immutable audit pair; the state record is
-	// removed once the pair is durable.
-	writeFileSync(join(auditDir, "task-record.json"), bytes);
-	writeFileSync(join(auditDir, "terminal-proof.json"), `${JSON.stringify({
-		contract: "assurance_kernel/task_tombstone/v2",
-		task_id: TASK,
-		lifecycle_status: "terminal",
-		terminal_lifecycle: lifecycle,
-		terminal_event_id: `${lifecycle}:${TASK}:fixture`,
-		final_record_hash: revisionForContent(bytes),
-		terminalized_at: "2026-08-12T10:00:01.000Z",
-	}, null, 2)}\n`);
-	rmSync(recordPath);
-	rmSync(join(root, ".imm/state/active-claim.json"));
-	writeFileSync(join(root, ".imm/state/workspace.json"), `${JSON.stringify({
-		contract: "assurance_kernel/workspace/v1",
-		current_working: null,
-	}, null, 2)}\n`);
+	// Settle through the same store transaction the runtime uses: the terminal
+	// record, cleared owner and released claim commit together, and the audit
+	// pair is exported afterwards.
+	const run = withKernelRead(root, (db) => readRunRowByTask(db, TASK))!;
+	const bytes = run.record_json;
+	const workspace = readWorkspaceStateRaw(root);
+	commitTerminalLocked(
+		root,
+		TASK,
+		{
+			contract: "assurance_kernel/workspace_transaction/v2",
+			task_id: TASK,
+			expected_record_hash: revisionForContent(bytes),
+			next_record_content: bytes,
+			expected_workspace_hash: workspace.revision,
+			next_workspace_content: serializeWorkspace({
+				contract: "assurance_kernel/workspace/v1",
+				current_working: null,
+			}),
+		},
+		{
+			contract: "assurance_kernel/task_tombstone/v2",
+			task_id: TASK,
+			lifecycle_status: "terminal",
+			terminal_lifecycle: lifecycle,
+			terminal_event_id: `${lifecycle}:${TASK}:fixture`,
+			final_record_hash: revisionForContent(bytes),
+			terminalized_at: "2026-08-12T10:00:01.000Z",
+		},
+	);
+	// The audit export is a deterministic follow-up of the committed settlement.
+	retryStoreFollowUps(root);
 }
 
 describe("kernel assurance projection v3", () => {
@@ -188,11 +210,20 @@ describe("kernel assurance projection v3", () => {
 		const root = makeEnrolledRoot();
 		try {
 			expect((await projectAssurance(root, "no-such-task", diffOf)).error).toBe(`backend claim belongs to ${TASK}, not no-such-task`);
-			const claimPath = join(root, ".imm/state/active-claim.json");
-			const claim = JSON.parse(readFileSync(claimPath, "utf8"));
-			claim.task_id = "other-task";
-			writeFileSync(claimPath, `${JSON.stringify(claim, null, 2)}\n`);
-			expect((await projectAssurance(root, TASK, diffOf)).error).toMatch(/other-task/);
+			// A record whose identity contradicts its run row fails closed instead
+			// of being projected as authority.
+			const run = withKernelRead(root, (db) => readRunRowByTask(db, TASK))!;
+			const tampered = JSON.parse(run.record_json) as Record<string, unknown>;
+			tampered.task_id = "other-task";
+			withKernelTransaction(root, (db) => {
+				db.prepare("UPDATE runs SET record_json = ? WHERE run_id = ?").run(
+					`${JSON.stringify(tampered, null, 2)}\n`,
+					run.run_id,
+				);
+			});
+			expect((await projectAssurance(root, TASK, diffOf)).error).toMatch(
+				/inconsistent|other-task|must match/,
+			);
 		} finally {
 			rmSync(root, { recursive: true, force: true });
 		}
@@ -216,9 +247,13 @@ describe("kernel assurance projection v3", () => {
 	test("incomplete or contradictory terminal proof fails closed", async () => {
 		const root = makeEnrolledRoot();
 		try {
-			rmSync(join(root, ".imm/state/active-claim.json"));
-			writeFileSync(join(root, ".imm/state/workspace.json"), `${JSON.stringify({ contract: "assurance_kernel/workspace/v1", current_working: null }, null, 2)}\n`);
-			expect((await projectAssurance(root, TASK, diffOf)).error).toMatch(/without a backend claim/);
+			// Removing the run removes the claim and the record together.
+			withKernelTransaction(root, (db) => {
+				db.prepare("DELETE FROM runs WHERE task_id = ?").run(TASK);
+			});
+			expect((await projectAssurance(root, TASK, diffOf)).error).toMatch(
+				/without a backend claim|not active/,
+			);
 		} finally {
 			rmSync(root, { recursive: true, force: true });
 		}
@@ -310,7 +345,9 @@ describe("kernel assurance projection v3", () => {
 			// The caller's current intent hash is part of the same identity
 			// `freshAttestations` filters on: a drifted on-disk intent puts the
 			// bound attestation outside that set and revives the gate.
-			const record = JSON.parse(readFileSync(join(root, ".imm", "state", "tasks", `${TASK}.json`), "utf8"));
+			const record = JSON.parse(
+				withKernelRead(root, (db) => readRunRowByTask(db, TASK))!.record_json,
+			) as Record<string, unknown>;
 			const drifted = completionDecision(record.intent_snapshot, record, diffOf(root).diff_hash, `sha256:${"f".repeat(64)}`);
 			expect(drifted.blocking_finding_ids).toEqual(["refuted-1"]);
 			// A changed diff identity leaves the bound attestation stale, so the
@@ -385,10 +422,6 @@ describe("dynamic changed-path review gate", () => {
 		writeFileSync(join(root, "docs", "plans", "archive", `${TIER_TASK}.intent.json`), `${JSON.stringify(TIER_INTENT, null, 2)}\n`);
 		execFileSync("git", ["add", "-A"], { cwd: root });
 		execFileSync("git", ["commit", "-qm", "intent"], { cwd: root });
-		writeFileSync(join(root, ".imm/state/workspace.json"), `${JSON.stringify({
-			contract: "assurance_kernel/workspace/v1",
-			current_working: null,
-		}, null, 2)}\n`);
 		const registry = createEnrollmentAuthorityRegistry();
 		const preparation = preparePiCanary(root, { task_id: TIER_TASK, now: "2026-08-12T10:00:00.000Z" });
 		const binding: EnrollmentCapabilityBinding = {
@@ -415,10 +448,13 @@ describe("dynamic changed-path review gate", () => {
 	}
 
 	function mutateTier(root: string, mutate: (record: Record<string, any>) => void): void {
-		const path = join(root, `.imm/state/tasks/${TIER_TASK}.json`);
-		const record = JSON.parse(readFileSync(path, "utf8"));
+		const run = withKernelRead(root, (db) => readRunRowByTask(db, TIER_TASK));
+		if (!run) throw new Error("tier fixture run is missing");
+		const record = JSON.parse(run.record_json) as Record<string, any>;
 		mutate(record);
-		writeFileSync(path, `${JSON.stringify(record, null, 2)}\n`);
+		withKernelTransaction(root, (db) => {
+			updateRunRecord(db, run.run_id, run.revision, `${JSON.stringify(record, null, 2)}\n`, "2026-08-12T10:00:00.500Z");
+		});
 	}
 
 	function freezeTier(root: string): void {

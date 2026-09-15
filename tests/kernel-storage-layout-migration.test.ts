@@ -127,15 +127,12 @@ describe("inspectStorageLayout failure branches", () => {
 		expect(inspection.old_authority_present).toBe(true);
 	});
 
-	it("reports migration_required for a legacy workspace.json without an owner", () => {
+	it("reports migration_required when the pre-cutover workspace owner file exists without an owner", () => {
 		const root = tempRoot();
 		mkdirSync(join(root, ".imm"), { recursive: true });
 		writeFileSync(
 			join(root, ".imm", "workspace.json"),
-			`${JSON.stringify({
-				contract: "assurance_kernel/workspace/v1",
-				current_working: null,
-			}, null, 2)}\n`,
+			`${JSON.stringify({ contract: "assurance_kernel/workspace/v1", current_working: null }, null, 2)}\n`,
 		);
 		expect(inspectStorageLayout(root).layout).toBe("migration_required");
 	});
@@ -238,28 +235,27 @@ describe("migrateLegacyLayout direct execution (review-6)", () => {
 		return migrateLegacyLayout(root);
 	}
 
-	it("relocates a terminal pair byte-for-byte under the dual lock and leaves the layout uncommitted", async () => {
+	it("refuses the retired file-target migration and leaves legacy evidence untouched", async () => {
 		const root = tempRoot();
 		writeLegacyTerminalPair(root, "2026-08-14-001-old-task");
-		// Legacy evidence is tracked so the diff shows exactly the relocation.
+		// Legacy evidence is tracked so a stray write would show up as a diff.
 		execFileSync("git", ["-C", root, "add", "-A"]);
 		execFileSync("git", ["-C", root, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "legacy evidence"]);
+		const before = readFileSync(join(root, ".imm/tasks/2026-08-14-001-old-task.json"), "utf8");
 		const outcome = await runMigration(root);
-		expect(outcome.outcome).toBe("migrated");
-		expect(existsSync(join(root, ".imm/audit/2026-08-14-001-old-task/task-record.json"))).toBe(true);
-		expect(existsSync(join(root, ".imm/audit/2026-08-14-001-old-task/terminal-proof.json"))).toBe(true);
-		expect(existsSync(join(root, ".imm/tasks"))).toBe(false);
-		// The affected diff is uncommitted; mutation stays blocked.
-		const inspection = inspectStorageLayout(root);
-		expect(inspection.layout).toBe("migration_uncommitted");
-		expect(inspection.dirty_affected_paths.length).toBeGreaterThan(0);
-		// Committing the diff makes the layout ready.
-		execFileSync("git", ["-C", root, "add", "-A"]);
-		execFileSync("git", ["-C", root, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "migrated"]);
-		expect(inspectStorageLayout(root).layout).toBe("ready");
+		// The file-target conversion would create a second authority store that no
+		// runtime reads, so the migration reports the importer requirement instead.
+		expect(outcome.outcome).toBe("invalid");
+		expect(outcome.reason).toMatch(/SQLite authority store/);
+		expect(existsSync(join(root, ".imm/audit/2026-08-14-001-old-task"))).toBe(false);
+		expect(existsSync(join(root, ".imm/tasks/2026-08-14-001-old-task.json"))).toBe(true);
+		expect(readFileSync(join(root, ".imm/tasks/2026-08-14-001-old-task.json"), "utf8")).toBe(before);
+		expect(existsSync(join(root, ".imm/state/transactions/storage-layout-migration.json"))).toBe(false);
+		// The layout keeps diagnosing the legacy authority for the operator.
+		expect(inspectStorageLayout(root).layout).toBe("migration_required");
 	});
 
-	it("replays an interrupted migration from the frozen manifest without recomputing", async () => {
+	it("still converges an interrupted file relocation from its frozen manifest", async () => {
 		const root = tempRoot();
 		writeLegacyTerminalPair(root, "2026-08-14-002-old-task");
 		execFileSync("git", ["-C", root, "add", "-A"]);
@@ -287,17 +283,17 @@ describe("migrateLegacyLayout direct execution (review-6)", () => {
 		expect(outcome.outcome).toBe("migrated");
 		expect(readFileSync(join(root, ".imm/audit/2026-08-14-002-old-task/task-record.json"), "utf8")).toBe(before);
 		expect(readFileSync(join(root, ".imm/audit/2026-08-14-002-old-task/terminal-proof.json"), "utf8")).toBe(proofBefore);
-		expect(existsSync(join(root, ".imm/tasks"))).toBe(false);
 		expect(existsSync(join(root, ".imm/state/transactions/storage-layout-migration.json"))).toBe(false);
 	});
 
-	it("stops with migration_uncommitted when affected paths are dirty before relocation", async () => {
+	it("keeps the legacy authority untouched when affected paths are dirty", async () => {
 		const root = tempRoot();
 		writeLegacyTerminalPair(root, "2026-08-14-003-old-task");
-		// Introduced after the committed baseline: dirty affected paths block.
+		// Introduced after the committed baseline: nothing may be relocated.
 		const outcome = await runMigration(root);
-		expect(outcome.outcome).toBe("migration_uncommitted");
+		expect(outcome.outcome).toBe("invalid");
 		expect(existsSync(join(root, ".imm/audit/2026-08-14-003-old-task"))).toBe(false);
+		expect(existsSync(join(root, ".imm/tasks/2026-08-14-003-old-task.json"))).toBe(true);
 	});
 });
 
@@ -348,11 +344,11 @@ describe("migrateLegacyLayout case-fold and target preflight (review round 6)", 
 		}
 	});
 
-	it("rejects an already-existing audit target as invalid with zero writes", async () => {
+	it("refuses an existing audit target with zero writes", async () => {
 		const root = tempRoot();
 		writeLegacyTerminalPair(root, "task-001");
 		// Bind the legacy proof to the record bytes so the pair passes the
-		// proof-binding check and the preflight is what rejects it.
+		// proof-binding check.
 		{
 			const recordPath = join(root, ".imm/tasks/task-001.json");
 			const recordBytes = readFileSync(recordPath, "utf8");
@@ -362,11 +358,15 @@ describe("migrateLegacyLayout case-fold and target preflight (review round 6)", 
 			writeFileSync(proofPath, `${JSON.stringify(proof, null, 2)}\n`);
 		}
 		mkdirSync(join(root, ".imm/audit/task-001"), { recursive: true });
-		writeFileSync(join(root, ".imm/audit/task-001/task-record.json"), "{\"contract\":\"assurance_kernel/task_record/v3\",\"task_id\":\"task-001\",\"lifecycle\":\"done\"}\n");
+		const existing = "{\"contract\":\"assurance_kernel/task_record/v3\",\"task_id\":\"task-001\",\"lifecycle\":\"done\"}\n";
+		writeFileSync(join(root, ".imm/audit/task-001/task-record.json"), existing);
 		execFileSync("git", ["-C", root, "add", "-A"]);
 		execFileSync("git", ["-C", root, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "legacy + conflicting target"]);
 		const outcome = await runMigration(root);
-		expect(JSON.stringify(outcome)).toMatch(/target already exists/);
+		// The retired migration refuses before any target preflight, and the
+		// conflicting target keeps its bytes.
+		expect(outcome.outcome).toBe("invalid");
+		expect(readFileSync(join(root, ".imm/audit/task-001/task-record.json"), "utf8")).toBe(existing);
 		// The legacy source stays untouched; zero writes.
 		expect(existsSync(join(root, ".imm/tasks/task-001.json"))).toBe(true);
 		expect(existsSync(join(root, ".imm/state/transactions/storage-layout-migration.json"))).toBe(false);

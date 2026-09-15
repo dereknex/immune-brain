@@ -684,6 +684,12 @@ export class ClaudeRuntime {
 	async authorize(taskId: string, operation: string, meta: ToolMeta, extra: Record<string, unknown> = {}) {
 		if (operation === "repair_authority_state") {
 			const authority = reconcileKernelAuthority(this.cwd, taskId);
+			// The workspace owner is derived from the single active run, so a claim
+			// that contradicts the run index cannot exist: a settled or unowned
+			// authority has nothing to repair, and any leftover retired claim file
+			// is inert. A live owner is a conflict the caller must resolve.
+			if (authority.state === "terminal_owner" || authority.state === "unowned")
+				return repairKernelAuthority(this.cwd, taskId, authority.revision);
 			if (authority.state !== "repairable_stale_claim" || authority.owner_task_id !== taskId) {
 				throw new Error(authority.diagnostic ?? "authority repair requires a repairable stale claim");
 			}

@@ -16,6 +16,13 @@ import {
 	createEnrollmentAuthorityRegistry,
 	type EnrollmentCapabilityBinding,
 } from "../plugins/immune-brain/runtime/kernel/enrollment_authority";
+import {
+	readRunRowByTask,
+	updateRunRecord,
+	withKernelRead,
+	withKernelTransaction,
+} from "../plugins/immune-brain/runtime/kernel/sqlite_store";
+import { readBackendClaim } from "../plugins/immune-brain/runtime/kernel/backend_claim";
 import { canonicalIntentHash, parseTaskIntentV1 } from "../plugins/immune-brain/runtime/kernel/intent";
 import { readTaskRecord, readAuditTaskPair } from "../plugins/immune-brain/runtime/kernel/storage";
 import { readBackendClaim } from "../plugins/immune-brain/runtime/kernel/backend_claim";
@@ -56,14 +63,6 @@ function makeEnrolledRoot(): string {
 	);
 	execFileSync("git", ["add", "-A"], { cwd: root });
 	execFileSync("git", ["commit", "-qm", "intent"], { cwd: root });
-	writeFileSync(
-		join(root, ".imm/state/workspace.json"),
-		JSON.stringify(
-			{ contract: "assurance_kernel/workspace/v1", current_working: null },
-			null,
-			2,
-		) + "\n",
-	);
 	const registry = createEnrollmentAuthorityRegistry();
 	const prep = preparePiCanary(root, { task_id: TASK, now: "2026-08-12T10:00:00.000Z" });
 	const binding: EnrollmentCapabilityBinding = {
@@ -95,37 +94,45 @@ function makeEnrolledRoot(): string {
 	return root;
 }
 
-function seedOpenUserDecision(root: string): string {
-	const path = join(root, ".imm/state/tasks", `${TASK}.json`);
-	const record = JSON.parse(readFileSync(path, "utf8"));
-	const id = "decision-review-limit";
-	record.findings.push({
-		id,
-		kind: "unresolved_user_decision",
-		status: "open",
-		acceptance_id: null,
-		source: "kernel",
-		review_round: 2,
-		summary: "Review returned this boundary twice",
+function mutateStoredRecord(root: string, mutate: (record: Record<string, unknown>) => void): void {
+	withKernelTransaction(root, (db) => {
+		const run = readRunRowByTask(db, TASK);
+		if (!run) throw new Error("fixture run is missing");
+		const record = JSON.parse(run.record_json) as Record<string, unknown>;
+		mutate(record);
+		updateRunRecord(db, run.run_id, run.revision, `${JSON.stringify(record, null, 2)}\n`, new Date().toISOString());
 	});
-	writeFileSync(path, JSON.stringify(record, null, 2) + "\n");
+}
+
+function seedOpenUserDecision(root: string): string {
+	const id = "decision-review-limit";
+	mutateStoredRecord(root, (record) => {
+		(record.findings as unknown[]).push({
+			id,
+			kind: "unresolved_user_decision",
+			status: "open",
+			acceptance_id: null,
+			source: "kernel",
+			review_round: 2,
+			summary: "Review returned this boundary twice",
+		});
+	});
 	return id;
 }
 
 function seedOpenReplanRequired(root: string): void {
-	const path = join(root, ".imm/state/tasks", `${TASK}.json`);
-	const record = JSON.parse(readFileSync(path, "utf8"));
-	record.artifact_state = "active";
-	record.findings.push({
-		id: "rework:review-limit:replan-required",
-		kind: "replan_required",
-		status: "open",
-		acceptance_id: null,
-		source: "kernel",
-		review_round: 3,
-		summary: "Review rework limit reached",
+	mutateStoredRecord(root, (record) => {
+		record.artifact_state = "active";
+		(record.findings as unknown[]).push({
+			id: "rework:review-limit:replan-required",
+			kind: "replan_required",
+			status: "open",
+			acceptance_id: null,
+			source: "kernel",
+			review_round: 3,
+			summary: "Review rework limit reached",
+		});
 	});
-	writeFileSync(path, JSON.stringify(record, null, 2) + "\n");
 }
 
 function loadSurface(dependencies: Record<string, unknown> = {}): {
@@ -163,10 +170,11 @@ async function captureToolFailure(promise: Promise<unknown>): Promise<Record<str
 	);
 }
 
+/** Durable authority facts for one task, read from the store. */
 function authorityBytes(root: string): { record: string; claim: string } {
 	return {
-		record: readFileSync(join(root, ".imm/state/tasks", `${TASK}.json`), "utf8"),
-		claim: readFileSync(join(root, ".imm/state/active-claim.json"), "utf8"),
+		record: withKernelRead(root, (db) => readRunRowByTask(db, TASK))?.record_json ?? "",
+		claim: JSON.stringify(readBackendClaim(root)),
 	};
 }
 
@@ -386,7 +394,9 @@ describe("pi canary user authority", () => {
 			expect(ui.confirmCalls).toHaveLength(1);
 			expect(ui.confirmCalls[0].title).toContain("resolve-user-decision");
 			expect(ui.confirmCalls[0].body).toContain(`Finding: ${findingId}`);
-			const record = JSON.parse(readFileSync(join(root, ".imm/state/tasks", `${TASK}.json`), "utf8"));
+			const record = JSON.parse(
+				withKernelRead(root, (db) => readRunRowByTask(db, TASK))!.record_json,
+			) as { findings: Array<{ id: string; status: string }> };
 			expect(record.findings.find((finding: { id: string }) => finding.id === findingId)?.status).toBe("resolved");
 		} finally {
 			rmSync(root, { recursive: true, force: true });

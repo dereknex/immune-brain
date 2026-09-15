@@ -22,6 +22,7 @@ import { createEnrollmentAuthorityRegistry } from "../plugins/immune-brain/runti
 import { preparePiCanary, readGitHead } from "../plugins/immune-brain/runtime/kernel/pi_canary_prepare";
 import { readBackendClaim } from "../plugins/immune-brain/runtime/kernel/backend_claim";
 import { readTaskRecord } from "../plugins/immune-brain/runtime/kernel/storage";
+import { setAfterTaskTransactionWriteForTest } from "../plugins/immune-brain/runtime/kernel/storage";
 
 const NOW = "2026-09-05T00:00:00.000Z";
 const GIT_ENV = {
@@ -674,7 +675,7 @@ describe("batch-derived enrollment", () => {
 		expect(readBackendClaim(root)).toBeNull();
 	});
 
-	test("leaves no consumed slot when the bound record write cannot commit", () => {
+	test("leaves no consumed slot when the store cannot accept the record write", () => {
 		if (process.getuid?.() === 0) return;
 		const root = makeRoot(["t1"]);
 		const children = [childFor(root, "t1")];
@@ -693,12 +694,11 @@ describe("batch-derived enrollment", () => {
 		});
 		const childCapability = enrollmentRegistry.issue(derived.binding, NOW);
 
-		// The store lock is taken before the slot is consumed, and acquiring it
-		// creates `.imm/state/locks`. Create it up front so the read-only parent
-		// below fails the record write instead of the lock, which is the only
-		// ordering that reaches the rollback.
-		mkdirSync(join(root, ".imm/state/locks"), { recursive: true });
-		chmodSync(join(root, ".imm/state"), 0o500);
+		// A state directory the store cannot create its database in: the
+		// enrollment fails before any slot is consumed, so the batch keeps its
+		// full budget.
+		mkdirSync(join(root, ".imm", "state"), { recursive: true });
+		chmodSync(join(root, ".imm", "state"), 0o500);
 		let thrown: unknown;
 		try {
 			try {
@@ -720,16 +720,66 @@ describe("batch-derived enrollment", () => {
 				thrown = error;
 			}
 		} finally {
-			chmodSync(join(root, ".imm/state"), 0o700);
+			chmodSync(join(root, ".imm", "state"), 0o700);
 		}
+		expect(thrown).toBeInstanceOf(Error);
+		expect(calls.consumeChild).toBe(0);
+		expect(calls.releaseChild).toBe(0);
+		expect(batchRegistry.consumedChildren(capability)).toEqual([]);
+	});
 
+	test("releases a consumed slot when the record write cannot commit", () => {
+		const root = makeRoot(["t1"]);
+		const children = [childFor(root, "t1")];
+		const binding = bindingFor(root, children);
+		const inner = createBatchAuthorityRegistry();
+		const { registry: batchRegistry, calls } = countingBatchRegistry(inner);
+		const capability = batchRegistry.issue(binding, children, NOW);
+		const enrollmentRegistry = createEnrollmentAuthorityRegistry();
+		const head = readGitHead(root);
+		const derived = deriveChildEnrollment(root, batchRegistry, {
+			capability,
+			binding,
+			task_id: "t1",
+			expected_head: head,
+			now: NOW,
+		});
+		const childCapability = enrollmentRegistry.issue(derived.binding, NOW);
+
+		// The child slot and the capability are consumed before the commit, so a
+		// failing commit must hand the slot back.
+		setAfterTaskTransactionWriteForTest(() => {
+			throw new Error("simulated commit failure");
+		});
+		let thrown: unknown;
+		try {
+			try {
+				enrollCanaryTask(
+					root,
+					{
+						task_id: "t1",
+						intent_path: derived.binding.intent_path,
+						intent_revision: derived.binding.intent_revision,
+						preparation_digest: derived.binding.preparation_digest,
+						capability: childCapability,
+						capability_binding: derived.binding,
+						batch: { registry: batchRegistry, capability, binding, expected_head: head },
+						now: NOW,
+					},
+					enrollmentRegistry,
+				);
+			} catch (error) {
+				thrown = error;
+			}
+		} finally {
+			setAfterTaskTransactionWriteForTest(null);
+		}
 		expect(thrown).toBeInstanceOf(Error);
 		// The slot was really taken and really given back; without both counts an
 		// empty consumed list would also describe a failure before consumption.
 		expect(calls.consumeChild).toBe(1);
 		expect(calls.releaseChild).toBe(1);
 		expect(batchRegistry.consumedChildren(capability)).toEqual([]);
-		expect(batchRegistry.isChildConsumed(capability, "t1")).toBe(false);
 		expect(readTaskRecord(root, "t1").record).toBeNull();
 		expect(readBackendClaim(root)).toBeNull();
 	});

@@ -8,6 +8,13 @@ import {
 	createEnrollmentAuthorityRegistry,
 	type EnrollmentCapabilityBinding,
 } from "../plugins/immune-brain/runtime/kernel/enrollment_authority";
+import { readBackendClaim } from "../plugins/immune-brain/runtime/kernel/backend_claim";
+import {
+	readRunRowByTask,
+	readWorkspaceRow,
+	withKernelRead,
+} from "../plugins/immune-brain/runtime/kernel/sqlite_store";
+import { existsSync } from "node:fs";
 
 function makeRoot(): string {
 	const root = mkdtempSync(join(tmpdir(), "p2b0-rehearsal-"));
@@ -86,10 +93,14 @@ describe("enrollment rehearsal", () => {
 		expect(result.evidence.contract).toBe("assurance_kernel/enrollment_rehearsal/v1");
 		expect(result.evidence.task_id).toBe(taskId);
 		expect(result.evidence.outcome).toBe("ready");
-		// no TaskRecord / workspace / backend claim written
-		// Only the ignored locks directory may exist; zero authority bytes are written.
-		const stateEntries = readdirSync(join(root, ".imm/state")).filter((entry) => entry !== "locks");
-		expect(stateEntries).toEqual([]);
+		// Zero authority: no run row, an idle workspace, no derived claim and no
+		// retired file. The rehearsal may open the empty store lock, nothing more.
+		expect(withKernelRead(root, (db) => readRunRowByTask(db, taskId))).toBeNull();
+		expect(withKernelRead(root, (db) => readWorkspaceRow(db))?.current_run_id ?? null).toBeNull();
+		expect(readBackendClaim(root)).toBeNull();
+		expect(existsSync(join(root, ".imm/state/workspace.json"))).toBe(false);
+		expect(existsSync(join(root, ".imm/state/active-claim.json"))).toBe(false);
+		expect(existsSync(join(root, ".imm/state/tasks"))).toBe(false);
 	});
 
 	test("rehearsal with missing intent reports not-ready without throwing", () => {

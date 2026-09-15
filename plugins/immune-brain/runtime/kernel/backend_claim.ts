@@ -1,18 +1,17 @@
 // P2B2 backend claim ownership. NOT exported from kernel/index.ts.
-// The ignored state-layout `.imm/state/active-claim.json` is the unique
-// workspace-active claim and may be `active | draining` only; terminal state
-// lives exclusively in the immutable tracked audit proof
+// The workspace-active claim is DERIVED from the single active run in the
+// worktree authority store (`.imm/state/kernel.sqlite`); terminal state lives
+// exclusively in the immutable tracked audit proof
 // `.imm/audit/<task-id>/terminal-proof.json`. No writer is exported from this
-// module: every claim change goes through the recoverable Kernel store
-// transactions owned by storage.ts (enrollment, drain, terminalization).
+// module: every claim change goes through the Kernel store transactions owned
+// by storage.ts (enrollment, drain, terminalization).
 
 import { lstatSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 
-import { auditTerminalProofPath, stateClaimPath } from "./storage_paths";
+import { auditTerminalProofPath } from "./storage_paths";
+import { activeRunId, readRunRowById, withKernelRead, type KernelRunRow } from "./sqlite_store";
 import type { TaskLifecycle } from "./types";
-
-const CLAIM_PATH = stateClaimPath();
 
 export type BackendLifecycleStatus = "active" | "draining";
 
@@ -114,9 +113,28 @@ export function parseBackendClaim(raw: Record<string, unknown>): BackendClaim {
 }
 
 export function readBackendClaim(root: string): BackendClaim | null {
-	const raw = readJsonOrNull(join(root, CLAIM_PATH));
-	if (!raw) return null;
-	return parseBackendClaim(raw);
+	return (
+		withKernelRead(root, (db) => {
+			const run = readRunRowById(db, activeRunId(db) ?? "");
+			if (!run || run.state !== "active" || run.claim_status === null) return null;
+			return claimFromRunRow(run);
+		}) ?? null
+	);
+}
+
+/** Project the workspace claim from the committed run row that owns it. */
+export function claimFromRunRow(run: KernelRunRow): BackendClaim {
+	return parseBackendClaim({
+		contract: "assurance_kernel/backend_claim/v2",
+		backend: "kernel",
+		task_id: run.task_id,
+		intent_revision: run.intent_revision,
+		intent_content_hash: run.intent_content_hash,
+		enrollment_event_id: run.enrollment_event_id,
+		lifecycle_status: run.claim_status ?? "active",
+		created_at: run.created_at,
+		updated_at: run.updated_at,
+	});
 }
 
 /** Serialize a validated claim to the canonical file bytes. Transaction-only writer consumers. */
@@ -190,8 +208,4 @@ export function assertNoKernelBackendForV3(root: string, _commandTask?: string):
 	throw new KernelBackendClaimError(
 		`backend-owned workspace: task ${claim.task_id} is managed by the Kernel backend (${claim.lifecycle_status}); v3 managed mutation is rejected`,
 	);
-}
-
-export function backendClaimPath(root: string): string {
-	return join(resolve(root), stateClaimPath());
 }

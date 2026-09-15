@@ -17,7 +17,8 @@ import { createMcpRuntime, handleJsonRpc, listMcpTools, serveStdio } from "../pl
 import { ClaudeRuntime, diffHashOf, diffSnapshotOf, submitClaudeReview, type ToolMeta } from "../plugins/immune-brain/runtime/claude/kernel_ports";
 import { createCanaryApplication, capabilityActionFor } from "../plugins/immune-brain/runtime/kernel/canary_application";
 import { createMutationAuthorityRegistry, digestOfAction } from "../plugins/immune-brain/runtime/kernel/authority_port";
-import { createMutationAuthorityCapabilityForTest } from "./fixtures/mutation-authority-test-seam";
+import { createMutationAuthorityCapabilityForTest, seedKernelRunForTest } from "./fixtures/mutation-authority-test-seam";
+import { readRunRowByTask, updateRunRecord, withKernelRead, withKernelTransaction } from "../plugins/immune-brain/runtime/kernel/sqlite_store";
 import { findingsDigestV2 } from "../plugins/immune-brain/runtime/kernel/reducer";
 import { readTaskIntent } from "../plugins/immune-brain/runtime/kernel/intent";
 import { confirmationRef, evaluateNativeGate, PRIVILEGED_OPERATIONS } from "../plugins/immune-brain/runtime/claude/interaction";
@@ -26,6 +27,8 @@ import { projectAssurance } from "../plugins/immune-brain/runtime/kernel/assuran
 import { canonicalIntentHash, parseTaskIntentV1 } from "../plugins/immune-brain/runtime/kernel/intent";
 import { probeHost } from "../plugins/immune-brain/runtime/claude/capability";
 import { PLUGIN_VERSION } from "../plugins/immune-brain/runtime/plugin_version";
+import { readWorkspaceStateRaw } from "../plugins/immune-brain/runtime/kernel/storage";
+import { readBackendClaim } from "../plugins/immune-brain/runtime/kernel/backend_claim";
 
 const TASK = "phase3-task";
 const ROOT = "/tmp/claude-host-authority";
@@ -362,7 +365,7 @@ describe("claude host authority", () => {
 		expect(message).toContain("Intent hash: sha256:");
 		expect(message).toContain("Binding digest:");
 		expect(JSON.stringify(result)).not.toContain("error");
-		expect(JSON.parse(readFileSync(join(root, ".imm", "state", "workspace.json"), "utf8")).current_working).toBe(taskId);
+		expect(readWorkspaceStateRaw(root).state.current_working).toBe(taskId);
 	});
 
 	test("decline, cancel, malformed response, unsupported elicitation, and outer cancellation mint zero authority", async () => {
@@ -1181,7 +1184,6 @@ function makeResolveFindingRoot(
 	const root = mkdtempSync(join(tmpdir(), "resolve-finding-"));
 	resolveRoots.push(root);
 	mkdirSync(join(root, "src"), { recursive: true });
-	mkdirSync(join(root, ".imm", "state", "tasks"), { recursive: true });
 	mkdirSync(join(root, "docs", "plans", ...(lifecycle === "active" ? [] : ["archive"])), { recursive: true });
 	const intentPath = lifecycle === "active"
 		? `docs/plans/${RESOLVE_TASK}.intent.json`
@@ -1193,41 +1195,32 @@ function makeResolveFindingRoot(
 	execFileSync("git", ["commit", "-qm", "base"], { cwd: root, stdio: "ignore", env: RESOLVE_GIT_ENV });
 	const baseHead = execFileSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).trim();
 
-	writeFileSync(join(root, ".imm", "state", "tasks", `${RESOLVE_TASK}.json`), `${JSON.stringify({
-		contract: "assurance_kernel/task_record/v4",
+	seedKernelRunForTest(root, {
 		task_id: RESOLVE_TASK,
-		intent_snapshot: RESOLVE_INTENT,
-		intent_ref: { path: intentPath, content_hash: RESOLVE_INTENT_HASH },
-		lifecycle,
-		artifact_state: lifecycle === "active" ? "active" : "frozen",
-		baseline: RESOLVE_INTENT_HASH,
-		git_base_head: baseHead,
-		attestations: [],
-		findings: [
-			{ id: "f-blocking", kind: "blocking", status: "open", acceptance_id: "A1", source: "review", review_round: 1, summary: "blocking finding whose cause is fixed" },
-			{ id: "f-advisory", kind: "advisory", status: "open", acceptance_id: "A1", source: "review", review_round: 1, summary: "advisory finding" },
-			...(authorityBound ? [
-				{ id: "user-decision-1", kind: "unresolved_user_decision", status: "open", acceptance_id: null, source: "kernel", review_round: null, summary: "a decision only the user may settle" },
-				{ id: "f-replan", kind: "replan_required", status: "open", acceptance_id: null, source: "review", review_round: 1, summary: "a replan boundary" },
-			] : []),
-		],
-		history: [],
-	}, null, 2)}\n`);
-	writeFileSync(join(root, ".imm", "state", "workspace.json"), `${JSON.stringify({
-		contract: "assurance_kernel/workspace/v1",
-		current_working: RESOLVE_TASK,
-	}, null, 2)}\n`);
-	writeFileSync(join(root, ".imm", "state", "active-claim.json"), `${JSON.stringify({
-		contract: "assurance_kernel/backend_claim/v2",
-		backend: "kernel",
-		task_id: RESOLVE_TASK,
-		intent_revision: 1,
-		intent_content_hash: RESOLVE_INTENT_HASH,
-		enrollment_event_id: `enroll-${RESOLVE_TASK}-${RESOLVE_NOW}`,
-		lifecycle_status: "active",
 		created_at: RESOLVE_NOW,
 		updated_at: RESOLVE_NOW,
-	}, null, 2)}\n`);
+		claim_status: "active",
+		record: {
+			contract: "assurance_kernel/task_record/v4",
+			task_id: RESOLVE_TASK,
+			intent_snapshot: RESOLVE_INTENT,
+			intent_ref: { path: intentPath, content_hash: RESOLVE_INTENT_HASH },
+			lifecycle,
+			artifact_state: lifecycle === "active" ? "active" : "frozen",
+			baseline: RESOLVE_INTENT_HASH,
+			git_base_head: baseHead,
+			attestations: [],
+			findings: [
+				{ id: "f-blocking", kind: "blocking", status: "open", acceptance_id: "A1", source: "review", review_round: 1, summary: "blocking finding whose cause is fixed" },
+				{ id: "f-advisory", kind: "advisory", status: "open", acceptance_id: "A1", source: "review", review_round: 1, summary: "advisory finding" },
+				...(authorityBound ? [
+					{ id: "user-decision-1", kind: "unresolved_user_decision", status: "open", acceptance_id: null, source: "kernel", review_round: null, summary: "a decision only the user may settle" },
+					{ id: "f-replan", kind: "replan_required", status: "open", acceptance_id: null, source: "review", review_round: 1, summary: "a replan boundary" },
+				] : []),
+			],
+			history: [],
+		},
+	});
 	return root;
 }
 
@@ -1242,19 +1235,38 @@ async function resolveFindingRuntime(root: string) {
 	return mcp;
 }
 
+/** Replace the stored record through a revision-checked store write. */
+function writeStoredRecordForTest(root: string, record: Record<string, unknown>): void {
+	const run = withKernelRead(root, (db) => readRunRowByTask(db, RESOLVE_TASK));
+	if (!run) throw new Error(`fixture run ${RESOLVE_TASK} is missing`);
+	withKernelTransaction(root, (db) => {
+		updateRunRecord(db, run.run_id, run.revision, `${JSON.stringify(record, null, 2)}\n`, "2026-08-12T10:00:02.000Z");
+	});
+}
+
 function recordBytes(root: string): string {
-	return readFileSync(join(root, ".imm", "state", "tasks", `${RESOLVE_TASK}.json`), "utf8");
+	const run = withKernelRead(root, (db) => readRunRowByTask(db, RESOLVE_TASK));
+	if (!run) throw new Error(`fixture run ${RESOLVE_TASK} is missing`);
+	return run.record_json;
 }
 
 function authorityState(root: string) {
-	return [
-		join(root, ".imm", "state", "tasks", `${RESOLVE_TASK}.json`),
-		join(root, ".imm", "state", "workspace.json"),
-		join(root, ".imm", "state", "active-claim.json"),
-	].map((path) => {
-		const stat = statSync(path);
-		return { bytes: readFileSync(path, "utf8"), ino: stat.ino, mtimeMs: stat.mtimeMs };
-	});
+	// Authority is the store: fingerprint the durable facts a rejected mutation
+	// must leave untouched, plus the retired files that must never come back.
+	const run = withKernelRead(root, (db) => readRunRowByTask(db, RESOLVE_TASK));
+	const dbPath = join(root, ".imm", "state", "kernel.sqlite");
+	const stat = statSync(dbPath);
+	return {
+		run: run ? `${run.state}/${run.claim_status}/${run.revision}/${run.record_json}` : "ENOENT",
+		claim: readBackendClaim(root),
+		workspace: readWorkspaceStateRaw(root).state.current_working ?? null,
+		db: { ino: stat.ino, size: stat.size },
+		retired: [
+			join(root, ".imm", "state", "tasks"),
+			join(root, ".imm", "state", "workspace.json"),
+			join(root, ".imm", "state", "active-claim.json"),
+		].map((path) => existsSync(path)),
+	};
 }
 
 describe("claude host resolve_finding", () => {
@@ -1394,8 +1406,7 @@ describe("claude host resolve_finding", () => {
 		expect(tool?.annotations).toEqual({ readOnlyHint: false });
 
 		const root = makeResolveFindingRoot(false);
-		const recordPath = join(root, ".imm", "state", "tasks", `${RESOLVE_TASK}.json`);
-		const record = JSON.parse(readFileSync(recordPath, "utf8"));
+		const record = JSON.parse(recordBytes(root));
 		record.attestations.push({
 			id: "qa-live",
 			kind: "qa",
@@ -1407,7 +1418,7 @@ describe("claude host resolve_finding", () => {
 			summary: "descriptor passed",
 			acceptance_results: [{ acceptance_id: "A1", status: "passed", summary: "A1 passed" }],
 		});
-		writeFileSync(recordPath, `${JSON.stringify(record, null, 2)}\n`);
+		writeStoredRecordForTest(root, record);
 		const mcp = await resolveFindingRuntime(root);
 
 		await mcp.callTool("refute_finding", { task_id: RESOLVE_TASK, finding_id: "f-blocking", attestation_id: "qa-live" });
@@ -1439,6 +1450,6 @@ describe("claude host resolve_finding", () => {
 		// covering the finding's acceptance exists in this fixture.
 		await expect(mcp.callTool("refute_finding", { task_id: RESOLVE_TASK, finding_id: "f-blocking", attestation_id: "qa-live" }))
 			.rejects.toThrow(/fresh passing QA attestation/);
-		expect(recordBytes(root)).toBe(original[0].bytes);
+		expect(recordBytes(root)).toBe(original.run.split("/").slice(3).join("/"));
 	});
 });

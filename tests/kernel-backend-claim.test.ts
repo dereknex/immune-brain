@@ -7,10 +7,48 @@ import {
 	readBackendClaim,
 	readTaskTombstone,
 	assertNoKernelBackendForV3,
+	parseBackendClaim,
 	parseTaskTombstone,
 	type BackendClaim,
 	type TaskTombstone,
 } from "../plugins/immune-brain/runtime/kernel/backend_claim";
+import { canonicalIntentHash, parseTaskIntentV1 } from "../plugins/immune-brain/runtime/kernel/intent";
+import { seedKernelRunForTest } from "./fixtures/mutation-authority-test-seam";
+
+const GUARD_INTENT = {
+	contract: "assurance_kernel/task_intent/v1",
+	task_id: "task-001",
+	goal: "claim guard fixture",
+	acceptance: [{ id: "A1", assertion: "a1", verification: "bun test tests/x.test.ts" }],
+	scope_hint: ["docs/plans"],
+	risk: "routine" as const,
+	revision: 1,
+	owner: "user",
+};
+
+/** Seed the workspace claim through the store: the claim is derived, not a file. */
+function seedClaim(root: string, claimStatus: "active" | "draining" = "active"): void {
+	seedKernelRunForTest(root, {
+		task_id: "task-001",
+		claim_status: claimStatus,
+		record: {
+			contract: "assurance_kernel/task_record/v4",
+			task_id: "task-001",
+			intent_snapshot: GUARD_INTENT,
+			intent_ref: {
+				path: "docs/plans/task-001.intent.json",
+				content_hash: canonicalIntentHash(parseTaskIntentV1(GUARD_INTENT)),
+			},
+			lifecycle: "active",
+			artifact_state: "active",
+			baseline: `sha256:${"a".repeat(64)}`,
+			git_base_head: "a".repeat(40),
+			attestations: [],
+			findings: [],
+			history: [],
+		},
+	});
+}
 
 function makeRoot(): string {
 	const root = mkdtempSync(join(tmpdir(), "p2b0-claim-"));
@@ -56,31 +94,46 @@ describe("backend claim guard", () => {
 		expect(() => assertNoKernelBackendForV3(root, "any-task")).not.toThrow();
 	});
 
-	test("active claim rejects v3 mutation for the owned task", () => {
+	test("an active run derives a workspace claim that rejects v3 mutation", () => {
 		const root = makeRoot();
-		writeFileSync(join(root, CLAIM_PATH), `${JSON.stringify(claim(), null, 2)}\n`);
+		seedClaim(root);
+		expect(readBackendClaim(root)?.lifecycle_status).toBe("active");
 		expect(() => assertNoKernelBackendForV3(root, "task-001")).toThrow(/backend-owned|kernel backend/i);
-	});
-
-	test("active claim rejects v3 mutation for any other task", () => {
-		const root = makeRoot();
-		writeFileSync(join(root, CLAIM_PATH), `${JSON.stringify(claim(), null, 2)}\n`);
 		expect(() => assertNoKernelBackendForV3(root, "task-other")).toThrow(/backend-owned|kernel backend/i);
 	});
 
 	test("draining claim rejects v3 mutation", () => {
 		const root = makeRoot();
-		writeFileSync(join(root, CLAIM_PATH), `${JSON.stringify(claim({ lifecycle_status: "draining" }), null, 2)}\n`);
+		seedClaim(root, "draining");
+		expect(readBackendClaim(root)?.lifecycle_status).toBe("draining");
 		expect(() => assertNoKernelBackendForV3(root, "task-001")).toThrow(/backend-owned|kernel backend/i);
 	});
 
-	test("workspace claim rejects terminal lifecycle_status; terminal lives in the tombstone", () => {
+	test("a settled run leaves no workspace claim and never projects a terminal claim", () => {
 		const root = makeRoot();
-		writeFileSync(join(root, CLAIM_PATH), `${JSON.stringify(claim({ lifecycle_status: "terminal" }), null, 2)}\n`);
-		// A legacy fixture-shaped global terminal claim is malformed and fails
-		// closed; it is never silently upgraded to a tombstone.
-		expect(() => readBackendClaim(root)).toThrow(/active or draining/i);
-		expect(() => assertNoKernelBackendForV3(root, "task-001")).toThrow();
+		seedKernelRunForTest(root, {
+			task_id: "task-001",
+			terminal: { lifecycle: "done" },
+			record: {
+				contract: "assurance_kernel/task_record/v4",
+				task_id: "task-001",
+				intent_snapshot: GUARD_INTENT,
+				intent_ref: {
+					path: "docs/plans/archive/task-001.intent.json",
+					content_hash: canonicalIntentHash(parseTaskIntentV1(GUARD_INTENT)),
+				},
+				lifecycle: "done",
+				artifact_state: "frozen",
+				baseline: `sha256:${"a".repeat(64)}`,
+				git_base_head: "a".repeat(40),
+				attestations: [],
+				findings: [],
+				history: [],
+			},
+		});
+		// Terminal state lives in the run/tombstone, never in a workspace claim.
+		expect(readBackendClaim(root)).toBeNull();
+		expect(() => assertNoKernelBackendForV3(root, "task-001")).not.toThrow();
 	});
 
 	test("terminal tombstone alone does not block v3 routing for any task", () => {
@@ -95,10 +148,13 @@ describe("backend claim guard", () => {
 		expect(read?.terminal_lifecycle).toBe("done");
 	});
 
-	test("malformed claim fails closed", () => {
-		const root = makeRoot();
-		writeFileSync(join(root, CLAIM_PATH), `{"contract":"assurance_kernel/backend_claim/v2","backend":"v3"}\n`);
-		expect(() => assertNoKernelBackendForV3(root, "task-001")).toThrow();
+	test("malformed claim payloads fail closed in the parser", () => {
+		expect(() =>
+			parseBackendClaim({ contract: "assurance_kernel/backend_claim/v2", backend: "v3" }),
+		).toThrow();
+		expect(() =>
+			parseBackendClaim({ ...claim(), lifecycle_status: "terminal" } as unknown as Record<string, unknown>),
+		).toThrow(/active or draining/i);
 	});
 
 	test("tombstone round-trip and fail-closed parsing", () => {

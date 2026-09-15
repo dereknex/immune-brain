@@ -59,14 +59,6 @@ beforeEach(() => {
 	);
 	execFileSync("git", ["add", "-A"], { cwd: root });
 	execFileSync("git", ["commit", "-qm", "intent"], { cwd: root });
-	writeFileSync(
-		join(root, ".imm/state/workspace.json"),
-		JSON.stringify(
-			{ contract: "assurance_kernel/workspace/v1", current_working: null },
-			null,
-			2,
-		) + "\n",
-	);
 	const enrollmentRegistry = createEnrollmentAuthorityRegistry();
 	const prep = preparePiCanary(root, { task_id: TASK, now: "2026-08-12T10:00:00.000Z" });
 	const binding: EnrollmentCapabilityBinding = {
@@ -190,17 +182,31 @@ describe("backend claim writer boundary", () => {
 		).toThrow(/active or draining/i);
 	});
 
-	test("unknown claim fields fail closed", () => {
+	test("a retired claim file never becomes authority again", () => {
 		const claim = readBackendClaim(root)!;
+		// The claim is a projection of the active run: dropping the retired file
+		// back on disk changes nothing and grants nothing.
 		writeFileSync(
 			join(root, ".imm/state/active-claim.json"),
 			`${JSON.stringify({ ...claim, forged: true }, null, 2)}\n`,
 		);
-		expect(() => readBackendClaim(root)).toThrow(/unknown field/i);
+		// A read projects the committed run and ignores the file entirely.
+		const after = readBackendClaim(root);
+		expect(after).not.toHaveProperty("forged");
+		expect(after?.task_id).toBe(claim.task_id);
+		// A mutation refuses while the retired file is present, and resumes once
+		// the file is gone: the file is a migration signal, never authority.
+		expect(() => withKernelStoreLock(root, () => undefined)).toThrow(
+			/retired file-store authority/,
+		);
+		rmSync(join(root, ".imm/state/active-claim.json"), { force: true });
+		expect(() => withKernelStoreLock(root, () => undefined)).not.toThrow();
+		expect(readBackendClaim(root)?.lifecycle_status).toBe("active");
 	});
 
-	test("lock acquisition refuses simultaneous markers of any kind", () => {
+	test("a retired transaction marker blocks mutation until it is settled", () => {
 		const claim = readBackendClaim(root)!;
+		mkdirSync(join(root, ".imm/state/transactions"), { recursive: true });
 		writeFileSync(
 			join(root, ".imm/state/transactions/drain-transaction.json"),
 			`${JSON.stringify(
@@ -215,20 +221,26 @@ describe("backend claim writer boundary", () => {
 				2,
 			)}\n`,
 		);
-		writeFileSync(
-			join(root, ".imm/state/transactions/terminal-transaction.json"),
-			'{"contract":"assurance_kernel/terminal_transaction/v1","task_id":"x","transaction":{},"tombstone":{}}\n',
+		// Markers belong to the runtime that wrote them: the SQLite store refuses
+		// to interpret or discard them, and the claim stays exactly as committed.
+		expect(() => withKernelStoreLock(root, () => undefined)).toThrow(
+			/retired file-store transaction marker/,
 		);
-		expect(() => withKernelStoreLock(root, () => undefined)).toThrow(/markers are forbidden/i);
+		expect(readBackendClaim(root)?.lifecycle_status).toBe("active");
+		rmSync(join(root, ".imm/state/transactions/drain-transaction.json"), { force: true });
+		expect(() => withKernelStoreLock(root, () => undefined)).not.toThrow();
 	});
 
-	test("malformed drain marker fails closed and remains recoverable", () => {
+	test("a malformed retired marker fails closed without touching authority", () => {
+		const claim = readBackendClaim(root)!;
+		mkdirSync(join(root, ".imm/state/transactions"), { recursive: true });
 		writeFileSync(
 			join(root, ".imm/state/transactions/drain-transaction.json"),
 			'{"contract":"assurance_kernel/drain_transaction/v1","task_id":"x","expected_claim_content":"{}","next_claim_content":"{}","at":"t"}\n',
 		);
 		expect(() => withKernelStoreLock(root, () => undefined)).toThrow();
-		// Nothing was mutated by the failed recovery.
-		expect(readBackendClaim(root)?.lifecycle_status).toBe("active");
+		// Nothing was mutated by the refused recovery.
+		rmSync(join(root, ".imm/state/transactions/drain-transaction.json"), { force: true });
+		expect(readBackendClaim(root)).toEqual(claim);
 	});
 });

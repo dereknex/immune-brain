@@ -30,10 +30,16 @@ import {
 	serializeBackendClaim,
 } from "../plugins/immune-brain/runtime/kernel/backend_claim";
 import {
+	commitDrainLocked,
 	readTaskRecord,
 	readWorkspaceStateRaw,
 	withKernelStoreLock,
 } from "../plugins/immune-brain/runtime/kernel/storage";
+import {
+	KernelStoreConflictError,
+	readRunRowByTask,
+	withKernelRead,
+} from "../plugins/immune-brain/runtime/kernel/sqlite_store";
 
 const TASK = "canary-drain-task";
 const INTENT = {
@@ -67,14 +73,6 @@ beforeEach(() => {
 	);
 	execFileSync("git", ["add", "-A"], { cwd: root });
 	execFileSync("git", ["commit", "-qm", "intent"], { cwd: root });
-	writeFileSync(
-		join(root, ".imm/state/workspace.json"),
-		JSON.stringify(
-			{ contract: "assurance_kernel/workspace/v1", current_working: null },
-			null,
-			2,
-		) + "\n",
-	);
 	const enrollmentRegistry = createEnrollmentAuthorityRegistry();
 	const prep = preparePiCanary(root, { task_id: TASK, now: "2026-08-12T10:00:00.000Z" });
 	const binding: EnrollmentCapabilityBinding = {
@@ -131,73 +129,78 @@ function drainCapability(overrides: Record<string, unknown> = {}) {
 }
 
 describe("drain transaction", () => {
-	test("begin_drain converges active -> draining with record/workspace bytes preserved", () => {
-		const recordBefore = readFileSync(join(root, `.imm/state/tasks/${TASK}.json`), "utf8");
-		const workspaceBefore = readFileSync(join(root, ".imm/state/workspace.json"), "utf8");
+	function runRow() {
+		return withKernelRead(root, (db) => readRunRowByTask(db, TASK))!;
+	}
+
+	test("begin_drain converges active -> draining with the record and workspace preserved", () => {
+		const recordBefore = readTaskRecord(root, TASK);
+		const workspaceBefore = readWorkspaceStateRaw(root);
+		const runBefore = runRow();
 		const cap = drainCapability();
 		const claim = app.beginDrain({ root, task_id: TASK, capability: cap, now });
 		expect(claim.lifecycle_status).toBe("draining");
 		expect(readBackendClaim(root)?.lifecycle_status).toBe("draining");
-		expect(readFileSync(join(root, `.imm/state/tasks/${TASK}.json`), "utf8")).toBe(recordBefore);
-		expect(readFileSync(join(root, ".imm/state/workspace.json"), "utf8")).toBe(workspaceBefore);
-		expect(existsSync(join(root, ".imm/state/transactions/.drain-transaction.json"))).toBe(false);
+		// The drain changes only the claim: record bytes and workspace identity
+		// are untouched, and no marker file is involved.
+		expect(readTaskRecord(root, TASK)).toEqual(recordBefore);
+		expect(readWorkspaceStateRaw(root)).toEqual(workspaceBefore);
+		const runAfter = runRow();
+		expect(runAfter.record_json).toBe(runBefore.record_json);
+		expect(runAfter.claim_status).toBe("draining");
+		expect(runAfter.revision).toBe(runBefore.revision);
+		expect(existsSync(join(root, ".imm/state/transactions/drain-transaction.json"))).toBe(false);
+		expect(existsSync(join(root, ".imm/state/active-claim.json"))).toBe(false);
 		expect(mutationRegistry.isConsumed(cap)).toBe(true);
 	});
 
 	test("exact committed drain replay is idempotent", () => {
 		const cap = drainCapability();
 		app.beginDrain({ root, task_id: TASK, capability: cap, now });
+		const first = readBackendClaim(root)!;
 		const second = app.beginDrain({ root, task_id: TASK, capability: cap, now });
 		expect(second.lifecycle_status).toBe("draining");
+		expect(readBackendClaim(root)).toEqual(first);
 		expect(readBackendClaim(root)?.updated_at).toBe(now);
 	});
 
-	test("draining -> active reactivation is rejected", () => {
+	test("a store-level drain replay returns the committed claim without a second write", () => {
 		const cap = drainCapability();
 		app.beginDrain({ root, task_id: TASK, capability: cap, now });
-		// A second drain with a different timestamp is still a no-op replay.
-		const cap2 = drainCapability();
-		const result = app.beginDrain({ root, task_id: TASK, capability: cap2, now: "2026-08-12T10:00:01.000Z" });
-		expect(result.lifecycle_status).toBe("draining");
-		// The drain transaction marker parser rejects any non active->draining direction.
+		const committed = readBackendClaim(root)!;
+		const before = runRow();
+		const replay = commitDrainLocked(
+			root,
+			TASK,
+			`${JSON.stringify({ ...committed, lifecycle_status: "active", updated_at: now }, null, 2)}\n`,
+			`${JSON.stringify(committed, null, 2)}\n`,
+			now,
+		);
+		expect(replay).toEqual(committed);
+		expect(runRow()).toEqual(before);
+	});
+
+	test("draining -> active reactivation is rejected with zero writes", () => {
+		const cap = drainCapability();
+		app.beginDrain({ root, task_id: TASK, capability: cap, now });
 		const claim = readBackendClaim(root)!;
+		const next = { ...claim, lifecycle_status: "draining" as const, updated_at: "2026-08-12T10:00:09.000Z" };
 		expect(() =>
-			JSON.parse(
-				`${JSON.stringify(
-					{
-						contract: "assurance_kernel/drain_transaction/v1",
-						task_id: TASK,
-						expected_claim_content: serializeBackendClaim(claim),
-						next_claim_content: serializeBackendClaim({ ...claim, lifecycle_status: "active", updated_at: now }),
-						at: now,
-					},
-					null,
-					2,
-				)}\n`,
+			commitDrainLocked(
+				root,
+				TASK,
+				`${JSON.stringify({ ...claim, lifecycle_status: "active", updated_at: now }, null, 2)}\n`,
+				`${JSON.stringify({ ...next, lifecycle_status: "active" }, null, 2)}\n`,
+				next.updated_at,
 			),
-		);
-		writeFileSync(
-			join(root, ".imm/state/transactions/drain-transaction.json"),
-			`${JSON.stringify(
-				{
-					contract: "assurance_kernel/drain_transaction/v1",
-					task_id: TASK,
-					expected_claim_content: serializeBackendClaim(claim),
-					next_claim_content: serializeBackendClaim({ ...claim, lifecycle_status: "active", updated_at: now }),
-					at: now,
-				},
-				null,
-				2,
-			)}\n`,
-		);
-		expect(() => withKernelStoreLock(root, () => undefined)).toThrow(/active -> draining/i);
+		).toThrow(/active -> draining/i);
 		expect(readBackendClaim(root)?.lifecycle_status).toBe("draining");
 	});
 
-	test("stale drain retry with a changed claim fails closed with zero writes", () => {
+	test("a stale drain capability is refused with zero writes after the record advanced", () => {
+		// Bind the capability to the current snapshot, then advance the record so
+		// the same capability can only be stale when it is finally used.
 		const cap = drainCapability();
-		app.beginDrain({ root, task_id: TASK, capability: cap, now });
-		// Advance the record; a capability bound to the pre-drain snapshot is stale.
 		const ev = app.execute({
 			root,
 			task_id: TASK,
@@ -207,9 +210,16 @@ describe("drain transaction", () => {
 			now: "2026-08-12T10:00:02.000Z",
 		});
 		expect(ev.record.findings).toHaveLength(1);
+		const before = runRow();
+		const claimBefore = readBackendClaim(root);
+		expect(() => app.beginDrain({ root, task_id: TASK, capability: cap, now })).toThrow();
+		expect(runRow()).toEqual(before);
+		expect(readBackendClaim(root)).toEqual(claimBefore);
+		expect(readBackendClaim(root)?.lifecycle_status).toBe("active");
+		expect(mutationRegistry.isConsumed(cap)).toBe(false);
 	});
 
-	test("draining rejects same-task re-enrollment and v3-style mutation is impossible", () => {
+	test("draining rejects same-task re-enrollment and permits same-task continuation", () => {
 		const cap = drainCapability();
 		app.beginDrain({ root, task_id: TASK, capability: cap, now });
 		// Same-task continuation is permitted: ordinary facts still commit.
@@ -222,7 +232,8 @@ describe("drain transaction", () => {
 			now: "2026-08-12T10:00:01.000Z",
 		});
 		expect(result.record).toMatchObject({ lifecycle: "active", artifact_state: "active" });
-		// Re-enrollment of the same task is blocked by the existing record.
+		expect(readBackendClaim(root)?.lifecycle_status).toBe("draining");
+		// Re-enrollment of the same task is blocked by the existing run.
 		const enrollmentRegistry = createEnrollmentAuthorityRegistry();
 		const prep = preparePiCanary(root, { task_id: TASK, now: "2026-08-12T10:00:00.000Z" });
 		const binding: EnrollmentCapabilityBinding = {
@@ -253,83 +264,41 @@ describe("drain transaction", () => {
 		).toThrow(/already|exists/i);
 	});
 
-	test("crash after marker write recovers the claim on the next lock", () => {
-		const claim = readBackendClaim(root)!;
-		const nextClaim = { ...claim, lifecycle_status: "draining", updated_at: now };
-		writeFileSync(
-			join(root, ".imm/state/transactions/drain-transaction.json"),
-			`${JSON.stringify(
-				{
-					contract: "assurance_kernel/drain_transaction/v1",
-					task_id: TASK,
-					expected_claim_content: serializeBackendClaim(claim),
-					next_claim_content: serializeBackendClaim(nextClaim),
-					at: now,
-				},
-				null,
-				2,
-			)}\n`,
-		);
-		// Simulated restart: any store-lock acquisition replays the marker.
-		withKernelStoreLock(root, () => undefined);
-		expect(readBackendClaim(root)?.lifecycle_status).toBe("draining");
-		expect(existsSync(join(root, ".imm/state/transactions/drain-transaction.json"))).toBe(false);
-	});
-
-	test("crash recovery replays an already-committed drain idempotently", () => {
+	test("a committed drain survives a restart without any marker replay", () => {
 		const cap = drainCapability();
 		app.beginDrain({ root, task_id: TASK, capability: cap, now });
-		// Re-plant the marker after the commit (crash before marker removal).
-		const claim = readBackendClaim(root)!;
-		writeFileSync(
-			join(root, ".imm/state/transactions/drain-transaction.json"),
-			`${JSON.stringify(
-				{
-					contract: "assurance_kernel/drain_transaction/v1",
-					task_id: TASK,
-					expected_claim_content: serializeBackendClaim({ ...claim, lifecycle_status: "active", updated_at: "2026-08-12T09:00:00.000Z" }),
-					next_claim_content: serializeBackendClaim(claim),
-					at: now,
-				},
-				null,
-				2,
-			)}\n`,
-		);
+		const committed = readBackendClaim(root)!;
+		// Simulated restart: any locked operation observes the committed claim.
 		withKernelStoreLock(root, () => undefined);
-		expect(readBackendClaim(root)?.lifecycle_status).toBe("draining");
+		expect(readBackendClaim(root)).toEqual(committed);
+		expect(existsSync(join(root, ".imm/state/transactions/drain-transaction.json"))).toBe(false);
+		expect(existsSync(join(root, ".imm/state/active-claim.json"))).toBe(false);
+		expect(runRow().claim_status).toBe("draining");
 	});
 
-	test("conflicting claim bytes fail closed and keep the marker recoverable", () => {
-		// The claim on disk diverges from both marker expectations.
+	test("divergent drain claim bytes fail closed with zero writes", () => {
+		// The expected claim bytes must match the committed claim exactly.
 		const claim = readBackendClaim(root)!;
-		const foreign = { ...claim, task_id: "some-other-task", lifecycle_status: "active" };
-		writeFileSync(
-			join(root, ".imm/state/active-claim.json"),
-			serializeBackendClaim(foreign),
-		);
-		writeFileSync(
-			join(root, ".imm/state/transactions/drain-transaction.json"),
-			`${JSON.stringify(
-				{
-					contract: "assurance_kernel/drain_transaction/v1",
-					task_id: TASK,
-					expected_claim_content: serializeBackendClaim(claim),
-					next_claim_content: serializeBackendClaim({ ...claim, lifecycle_status: "draining", updated_at: now }),
-					at: now,
-				},
-				null,
-				2,
-			)}\n`,
-		);
-		expect(() => withKernelStoreLock(root, () => undefined)).toThrow(/conflict/i);
-		expect(existsSync(join(root, ".imm/state/transactions/drain-transaction.json"))).toBe(true);
+		const before = runRow();
+		const divergent = { ...claim, intent_content_hash: `sha256:${"7".repeat(64)}` };
+		expect(() =>
+			commitDrainLocked(
+				root,
+				TASK,
+				`${JSON.stringify(divergent, null, 2)}\n`,
+				`${JSON.stringify({ ...divergent, lifecycle_status: "draining" }, null, 2)}\n`,
+				now,
+			),
+		).toThrow(KernelStoreConflictError);
+		expect(runRow()).toEqual(before);
+		expect(readBackendClaim(root)?.lifecycle_status).toBe("active");
 	});
 
-	test("drain does not create a tombstone and tombstone does not block other tasks", () => {
+	test("drain does not create a tombstone and keeps workspace ownership", () => {
 		const cap = drainCapability();
 		app.beginDrain({ root, task_id: TASK, capability: cap, now });
 		expect(readTaskTombstone(root, TASK)).toBeNull();
-		// Workspace ownership is preserved while draining.
 		expect(readWorkspaceStateRaw(root).state.current_working).toBe(TASK);
+		expect(withKernelRead(root, (db) => readRunRowByTask(db, TASK))!.state).toBe("active");
 	});
 });

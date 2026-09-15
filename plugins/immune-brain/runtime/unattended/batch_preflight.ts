@@ -25,6 +25,7 @@ import { pathMatchesScope } from "../workspace_scope";
 import { projectBatchPlan } from "./batch_plan";
 import { batchReason, type BatchReasonKey } from "./batch_reasons";
 import { isTerminalBatchState, type BatchRunStateRecord } from "./batch_state";
+import { readRunRowByTask, withKernelRead } from "../kernel/sqlite_store";
 import type {
 	BatchPlanBudget,
 	BatchPlanChild,
@@ -197,17 +198,18 @@ export function isOwnBatchClaim(
 	taskId: string,
 	batchBranch: string,
 ): boolean {
+	// Ownership is derived from the store: the active run is the claim, and the
+	// workspace owner is the active run's task.
 	let claim: Record<string, any> | null = null;
-	let workspace: Record<string, any> | null = null;
+	let workspaceOwner: string | null = null;
 	try {
-		claim = JSON.parse(readFileSync(join(root, ".imm", "state", "active-claim.json"), "utf8"));
-		workspace = JSON.parse(readFileSync(join(root, ".imm", "state", "workspace.json"), "utf8"));
+		claim = readBackendClaim(root) as unknown as Record<string, any> | null;
+		workspaceOwner = readWorkspaceStateRaw(root).state.current_working;
 	} catch {
 		return false;
 	}
 	const currentTaskId =
-		workspace?.state?.current_working ||
-		(claim?.lifecycle_status === "active" ? claim?.task_id : null);
+		workspaceOwner || (claim?.lifecycle_status === "active" ? claim?.task_id : null);
 	if (currentTaskId !== taskId || !claim) return false;
 	const branch = spawnSync("git", ["-C", root, "branch", "--show-current"], { encoding: "utf8" }).stdout.trim();
 	if (branch !== batchBranch) return false;
@@ -217,7 +219,8 @@ export function isOwnBatchClaim(
 	}
 	let rec: Record<string, any> | null = null;
 	try {
-		rec = JSON.parse(readFileSync(join(root, ".imm", "state", "tasks", `${taskId}.json`), "utf8"));
+		const run = withKernelRead(root, (db) => readRunRowByTask(db, taskId));
+		rec = run ? (JSON.parse(run.record_json) as Record<string, any>) : null;
 	} catch {
 		return false;
 	}

@@ -17,6 +17,13 @@ import { createEnrollmentAuthorityRegistry, type EnrollmentCapabilityBinding } f
 import { canonicalIntentHash, parseTaskIntentV1 } from "../plugins/immune-brain/runtime/kernel/intent";
 import { readBackendClaim } from "../plugins/immune-brain/runtime/kernel/backend_claim";
 import { taskDiffHash } from "../plugins/immune-brain/runtime/workspace_scope";
+import { readBackendClaim } from "../plugins/immune-brain/runtime/kernel/backend_claim";
+import {
+	readRunRowByTask,
+	updateRunRecord,
+	withKernelRead,
+	withKernelTransaction,
+} from "../plugins/immune-brain/runtime/kernel/sqlite_store";
 
 const TASK = "canary-breaking-task";
 const INTENT = {
@@ -99,7 +106,6 @@ function makeEnrolledRoot(): string {
 	writeFileSync(join(root, "plugins", "immune-brain", ".pi-extension", "task.ts"), "export const task = 'baseline';\n");
 	execFileSync("git", ["add", "-A"], { cwd: root });
 	execFileSync("git", ["commit", "-qm", "intent"], { cwd: root });
-	writeFileSync(join(root, ".imm/state/workspace.json"), JSON.stringify({ contract: "assurance_kernel/workspace/v1", current_working: null }, null, 2) + "\n");
 	const registry = createEnrollmentAuthorityRegistry();
 	const prep = preparePiCanary(root, { task_id: TASK, now: "2026-08-12T10:00:00.000Z" });
 	const binding: EnrollmentCapabilityBinding = {
@@ -127,11 +133,37 @@ function makeEnrolledRoot(): string {
 	return root;
 }
 
+/** The run row owns the record; fixtures read and write it through the store. */
+function storedRecord(root: string): Record<string, any> {
+	const run = withKernelRead(root, (db) => readRunRowByTask(db, TASK));
+	if (!run) throw new Error("fixture run is missing");
+	return JSON.parse(run.record_json) as Record<string, any>;
+}
+
+function storedRecordBytes(root: string): string {
+	return withKernelRead(root, (db) => readRunRowByTask(db, TASK))!.record_json;
+}
+
+function storedClaimBytes(root: string): string {
+	const claim = readBackendClaim(root);
+	if (!claim) throw new Error("fixture claim is missing");
+	return `${JSON.stringify(claim, null, 2)}\n`;
+}
+
+function mutateStoredRecord(root: string, mutate: (record: Record<string, any>) => void): void {
+	const run = withKernelRead(root, (db) => readRunRowByTask(db, TASK));
+	if (!run) throw new Error("fixture run is missing");
+	const record = JSON.parse(run.record_json) as Record<string, any>;
+	mutate(record);
+	withKernelTransaction(root, (db) => {
+		updateRunRecord(db, run.run_id, run.revision, `${JSON.stringify(record, null, 2)}\n`, new Date().toISOString());
+	});
+}
+
 function seedParkedReplanRequired(root: string): string {
-	const path = join(root, ".imm/state/tasks", `${TASK}.json`);
-	const record = JSON.parse(readFileSync(path, "utf8"));
-	record.artifact_state = "active";
 	const findingId = "rework:review-limit:replan-required";
+	const record = storedRecord(root);
+	record.artifact_state = "active";
 	record.findings.push({
 		id: findingId,
 		kind: "replan_required",
@@ -141,7 +173,11 @@ function seedParkedReplanRequired(root: string): string {
 		review_round: 3,
 		summary: "Review rework limit reached",
 	});
-	writeFileSync(path, JSON.stringify(record, null, 2) + "\n");
+	mutateStoredRecord(root, () => undefined);
+	withKernelTransaction(root, (db) => {
+		const run = readRunRowByTask(db, TASK)!;
+		updateRunRecord(db, run.run_id, run.revision, `${JSON.stringify(record, null, 2)}\n`, new Date().toISOString());
+	});
 	return findingId;
 }
 
@@ -219,7 +255,7 @@ describe("breaking intent revision gate", () => {
 			expect(ui.dialogCalls[0].body).toMatch(/Next staged diff: sha256:[a-f0-9]{64}/);
 			expect(statSync(intentPath).ino).toBe(beforeInode);
 			expect(JSON.parse(readFileSync(intentPath, "utf8"))).toMatchObject({ revision: 2, task_id: TASK });
-			const record = JSON.parse(readFileSync(join(root, ".imm/state/tasks", `${TASK}.json`), "utf8"));
+			const record = storedRecord(root);
 			expect(record.intent_snapshot.revision).toBe(2);
 			expect(record.intent_ref.content_hash).toBe(
 				canonicalIntentHash(parseTaskIntentV1({
@@ -276,7 +312,7 @@ describe("breaking intent revision gate", () => {
 				operation: "approve-breaking-intent-revision",
 				lifecycle: "active",
 			});
-			const record = JSON.parse(readFileSync(join(root, ".imm/state/tasks", `${TASK}.json`), "utf8"));
+			const record = storedRecord(root);
 			expect(record).toMatchObject({ lifecycle: "active", artifact_state: "active" });
 			expect(record.intent_snapshot.revision).toBe(2);
 			expect(record.findings.find((finding: { id: string }) => finding.id === findingId)?.status).toBe("resolved");
@@ -309,14 +345,12 @@ describe("breaking intent revision gate", () => {
 			expect(existsSync(archivedIntent)).toBe(true);
 			expect(existsSync(archivedSpec)).toBe(true);
 
-			const recordPath = join(root, ".imm/state/tasks", `${TASK}.json`);
-			const claimPath = join(root, ".imm/state/active-claim.json");
 			const frozenSnapshot = () => ({
 				intent: readFileSync(archivedIntent, "utf8"),
 				indexIntent: execFileSync("git", ["show", `:docs/plans/archive/${TASK}.intent.json`], { cwd: root }),
 				spec: readFileSync(archivedSpec, "utf8"),
-				record: readFileSync(recordPath, "utf8"),
-				claim: readFileSync(claimPath, "utf8"),
+				record: storedRecordBytes(root),
+				claim: storedClaimBytes(root),
 				status: execFileSync("git", ["status", "--short"], { cwd: root, encoding: "utf8" }),
 			});
 			const beforeCancel = frozenSnapshot();
@@ -347,7 +381,7 @@ describe("breaking intent revision gate", () => {
 			expect(existsSync(archivedIntent)).toBe(false);
 			expect(existsSync(archivedSpec)).toBe(false);
 			expect(JSON.parse(readFileSync(activeIntent, "utf8"))).toMatchObject({ task_id: TASK, revision: 2 });
-			const record = JSON.parse(readFileSync(recordPath, "utf8"));
+			const record = storedRecord(root);
 			expect(record).toMatchObject({
 				lifecycle: "active",
 				artifact_state: "active",
@@ -379,16 +413,14 @@ describe("breaking intent revision gate", () => {
 				makeCtx(root, makeUI()),
 			);
 			const archivedSpec = join(root, "docs", "specs", "archive", `${TASK}.spec.md`);
-			const recordPath = join(root, ".imm/state/tasks", `${TASK}.json`);
-			const claimPath = join(root, ".imm/state/active-claim.json");
 			const snapshot = () => {
-				const record = readFileSync(recordPath, "utf8");
+				const record = storedRecordBytes(root);
 				return {
 					intent: readFileSync(archivedIntent, "utf8"),
 					indexIntent: execFileSync("git", ["show", `:docs/plans/archive/${TASK}.intent.json`], { cwd: root }),
 					spec: readFileSync(archivedSpec, "utf8"),
 					record,
-					claim: readFileSync(claimPath, "utf8"),
+					claim: storedClaimBytes(root),
 					status: execFileSync("git", ["status", "--short"], { cwd: root, encoding: "utf8" }),
 					diff: taskDiffHash(root, JSON.parse(record).intent_snapshot.scope_hint),
 				};
@@ -415,12 +447,10 @@ describe("breaking intent revision gate", () => {
 		try {
 			const { tool } = loadSurface();
 			const intentPath = join(root, "docs", "plans", `${TASK}.intent.json`);
-			const recordPath = join(root, ".imm/state/tasks", `${TASK}.json`);
-			const claimPath = join(root, ".imm/state/active-claim.json");
 			const snapshot = () => ({
 				intent: readFileSync(intentPath, "utf8"),
-				record: readFileSync(recordPath, "utf8"),
-				claim: readFileSync(claimPath, "utf8"),
+				record: storedRecordBytes(root),
+				claim: storedClaimBytes(root),
 			});
 			const before = snapshot();
 

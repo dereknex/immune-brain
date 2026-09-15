@@ -31,6 +31,8 @@ import { preparePiCanary } from "../plugins/immune-brain/runtime/kernel/pi_canar
 import { readBackendClaim } from "../plugins/immune-brain/runtime/kernel/backend_claim";
 import { readTaskRecord } from "../plugins/immune-brain/runtime/kernel/storage";
 import { projectBatchPlan } from "../plugins/immune-brain/runtime/unattended/batch_plan";
+import { seedKernelRunForTest } from "./fixtures/mutation-authority-test-seam";
+import { withKernelTransaction } from "../plugins/immune-brain/runtime/kernel/sqlite_store";
 
 const CONFIRMATION_TIME = "2099-01-01T00:00:00.000Z";
 
@@ -41,10 +43,6 @@ function prepareEnrollmentFixture(root: string): void {
 		"git",
 		["-c", "user.name=fixture", "-c", "user.email=fixture@example.invalid", "commit", "-qm", "fixture"],
 		{ cwd: root },
-	);
-	writeFileSync(
-		join(root, ".imm/state/workspace.json"),
-		`${JSON.stringify({ contract: "assurance_kernel/workspace/v1", current_working: null }, null, 2)}\n`,
 	);
 }
 
@@ -191,20 +189,22 @@ function fixtureRoot(): string {
 	];
 	execFileSync("git", ["add", ...paths], { cwd: root });
 	const owned = readTaskIntent(root, "owned", "docs/plans/owned.intent.json");
-	mkdirSync(join(root, ".imm/state/tasks"), { recursive: true });
-	writeFileSync(join(root, ".imm/state/tasks/owned.json"), `${JSON.stringify({
-		contract: "assurance_kernel/task_record/v4",
+	seedKernelRunForTest(root, {
 		task_id: "owned",
-		intent_snapshot: owned.intent,
-		intent_ref: { path: owned.intent_ref.path, content_hash: owned.content_hash },
-		lifecycle: "active",
-		artifact_state: "active",
-		baseline: owned.content_hash,
-		git_base_head: "a".repeat(40),
-		attestations: [],
-		findings: [],
-		history: [],
-	}, null, 2)}\n`);
+		record: {
+			contract: "assurance_kernel/task_record/v4",
+			task_id: "owned",
+			intent_snapshot: owned.intent,
+			intent_ref: { path: owned.intent_ref.path, content_hash: owned.content_hash },
+			lifecycle: "active",
+			artifact_state: "active",
+			baseline: owned.content_hash,
+			git_base_head: "a".repeat(40),
+			attestations: [],
+			findings: [],
+			history: [],
+		},
+	});
 	mkdirSync(join(root, ".imm/audit/settled"), { recursive: true });
 	writeFileSync(join(root, ".imm/audit/settled/terminal-proof.json"), `${JSON.stringify({
 		contract: "assurance_kernel/task_tombstone/v2",
@@ -216,6 +216,14 @@ function fixtureRoot(): string {
 		terminalized_at: "2099-01-01T00:00:00.000Z",
 	}, null, 2)}\n`);
 	return root;
+}
+
+/** Remove every seeded run so the worktree has no active owner. */
+function clearActiveOwner(root: string): void {
+	withKernelTransaction(root, (db) => {
+		db.prepare("UPDATE workspace SET current_run_id = NULL WHERE id = 1").run();
+		db.prepare("DELETE FROM runs").run();
+	});
 }
 
 function observation(tasks: GithubInitiativeObservation["tasks"]): GithubInitiativeObservation {
@@ -232,6 +240,10 @@ function snapshotFiles(root: string): Record<string, string> {
 	const visit = (directory: string) => {
 		for (const name of readdirSync(directory).sort()) {
 			if (name === ".git") continue;
+			// The authority store's own files are ignored mutable state; SQLite
+			// touches its shared-memory index even for a read, so only the
+			// authority and tracked files carry the zero-write meaning here.
+			if (name.startsWith("kernel.sqlite")) continue;
 			const path = join(directory, name);
 			if (statSync(path).isDirectory()) visit(path);
 			else files[relative(root, path)] = readFileSync(path).toString("base64");
@@ -453,6 +465,10 @@ describe("unattended batch plan projection", () => {
 		const root = fixtureRoot();
 		try {
 			prepareEnrollmentFixture(root);
+			// The refusal cases must run on a worktree with no active owner: the
+			// single-active-run constraint means the plan fixture's "owned" child
+			// would otherwise answer every other child with the claim mismatch.
+			clearActiveOwner(root);
 			// The refusal asserted here comes out of the enrollment path itself, not
 			// out of comparing the plan's output to the predicate `batch_plan` calls
 			// internally: one child that names no Spec path, one that names a single

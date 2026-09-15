@@ -377,6 +377,28 @@ function validateRunAuthorization(input: StartBatchInput, existing: BatchRunStat
 }
 
 export async function startBatch(input: StartBatchInput): Promise<BatchRunReport> {
+	try {
+		return await startBatchLocked(input);
+	} catch (error) {
+		const message = error instanceof Error ? error.message : String(error);
+		// A store condition the run cannot resolve (a retired file-store marker,
+		// a foreign or busy store, a revision conflict) stops the batch with one
+		// explicit recovery action instead of escaping as an unstructured crash.
+		if (/retired file-store|kernel store|CAS mismatch|store is busy|locked/i.test(message))
+			return rejectionReport(input, message);
+		throw error;
+	}
+}
+
+function rejectionReport(input: StartBatchInput, reason: string): BatchRunReport {
+	return reportFor(
+		{ ...prepareBatchRunState({ ...input, children: [], now: input.now }), batch_state: "rejected" },
+		reason,
+		"settle the reported kernel store condition and retry in the current Host",
+	);
+}
+
+async function startBatchLocked(input: StartBatchInput): Promise<BatchRunReport> {
 	// Validation failure before the first enrollment: zero writes, rejected.
 	// reportFor only builds the report object; finalize would persist it and
 	// the spec forbids any write on a pre-enrollment rejection.

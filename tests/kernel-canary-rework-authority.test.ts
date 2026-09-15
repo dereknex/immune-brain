@@ -55,7 +55,6 @@ let app: ReturnType<typeof createCanaryApplication>;
 beforeEach(() => {
 	root = mkdtempSync(join(tmpdir(), "canary-rework-"));
 	mkdirSync(join(root, "docs", "plans"), { recursive: true });
-	mkdirSync(join(root, ".imm", "tasks"), { recursive: true });
 	execFileSync("git", ["init", "-q"], { cwd: root });
 	mkdirSync(join(root, "src"), { recursive: true });
 	mkdirSync(join(root, "docs", "specs", "archive"), { recursive: true });
@@ -71,14 +70,6 @@ beforeEach(() => {
 	// fixture literal, so the capability binding must use the same
 	// content_hash enrollment recomputes inside the store lock.
 	const intentHash = readTaskIntent(root, TASK).content_hash;
-	writeFileSync(
-		join(root, ".imm", "workspace.json"),
-		JSON.stringify(
-			{ contract: "assurance_kernel/workspace/v1", current_working: null },
-			null,
-			2,
-		) + "\n",
-	);
 	const enrollmentRegistry = createEnrollmentAuthorityRegistry();
 	const prep = preparePiCanary(root, { task_id: TASK, now: "2026-08-12T10:00:00.000Z" });
 	const binding: EnrollmentCapabilityBinding = {

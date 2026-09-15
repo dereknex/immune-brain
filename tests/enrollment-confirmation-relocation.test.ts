@@ -13,6 +13,9 @@ import { createHash } from "node:crypto";
 const AUTHORITY_OBSERVATION_GENERATION_V2 = "automatic-observation/v2";
 const AUTHORITY_OBSERVER_VERSION_V2 = "assurance-kernel-p2a-observer/v2";
 import { readTaskIntent } from "../plugins/immune-brain/runtime/kernel/intent";
+import { readBackendClaim } from "../plugins/immune-brain/runtime/kernel/backend_claim";
+import { readWorkspaceStateRaw } from "../plugins/immune-brain/runtime/kernel/storage";
+import { readRunRowByTask, withKernelRead } from "../plugins/immune-brain/runtime/kernel/sqlite_store";
 
 type Mode = "tui" | "rpc" | "json" | "print";
 
@@ -271,7 +274,6 @@ function authoritySnapshot(root: string): string {
 	for (const path of [
 		".imm/state/observations/authority_commit_receipts.jsonl",
 		".imm/state/observations/automatic_observations.jsonl",
-		".imm/state/tasks/",
 	]) {
 		const full = join(root, path);
 		try {
@@ -280,10 +282,13 @@ function authoritySnapshot(root: string): string {
 			parts.push(`${path}:ENOENT`);
 		}
 	}
-	try { parts.push(`tasks:${readdirSync(join(root, ".imm/state/tasks")).sort().join(",")}`); }
-		catch (error) { if ((error as NodeJS.ErrnoException).code === "ENOENT") parts.push("tasks:ENOENT"); else throw error; }
-	parts.push(`workspace:${existsSync(join(root, ".imm/state/workspace.json"))}`);
-	parts.push(`backend:${existsSync(join(root, ".imm/state/active-claim.json"))}`);
+	// Authority lives in the SQLite store: snapshot the durable run and owner
+	// facts rather than the retired file layout.
+	const run = withKernelRead(root, (db) => readRunRowByTask(db, "enroll-task-001"));
+	parts.push(`run:${run ? `${run.state}/${run.claim_status}/${run.revision}` : "ENOENT"}`);
+	parts.push(`claim:${readBackendClaim(root)?.lifecycle_status ?? "none"}`);
+	parts.push(`workspace:${readWorkspaceStateRaw(root).state.current_working ?? "null"}`);
+	parts.push(`retired:${existsSync(join(root, ".imm/state/workspace.json"))}`);
 	return parts.join("\n");
 }
 
@@ -320,7 +325,7 @@ describe("enrollment confirmation relocation", () => {
 		try {
 			makeEligibleRepo(root, TASK, "routine", { acceptShouldPass: true });
 			const before = authoritySnapshot(root);
-			expect(before).toContain("tasks:");
+			expect(before).toContain("run:ENOENT");
 			const ui = makeFakeUI(true);
 			const updates: string[] = [];
 			const result = await runTool(root, ui, updates, "new", TASK);
@@ -341,10 +346,15 @@ describe("enrollment confirmation relocation", () => {
 			expect(revalidateIdx).toBeGreaterThan(confirmIdx);
 			expect(rehearseIdx).toBeGreaterThan(revalidateIdx);
 			expect(updates).not.toContain("snapshotting");
-			// Authority was written exactly once
-			expect(readdirSync(join(root, ".imm/state")).sort()).toEqual(["active-claim.json", "locks", "observations", "tasks", "transactions", "workspace.json"]);
-			expect(readdirSync(join(root, ".imm/state/tasks")).sort()).toEqual([`${TASK}.json`]);
-			expect(existsSync(join(root, ".imm/state/workspace.json"))).toBe(true);
+			// Authority was written exactly once, as one SQLite transaction.
+			expect(existsSync(join(root, ".imm/state/kernel.sqlite"))).toBe(true);
+			expect(existsSync(join(root, ".imm/state/workspace.json"))).toBe(false);
+			expect(existsSync(join(root, ".imm/state/active-claim.json"))).toBe(false);
+			expect(existsSync(join(root, ".imm/state/tasks"))).toBe(false);
+			expect(existsSync(join(root, ".imm/state/transactions"))).toBe(false);
+			const run = withKernelRead(root, (db) => readRunRowByTask(db, TASK));
+			expect(run?.state).toBe("active");
+			expect(run?.claim_status).toBe("active");
 		} finally {
 			rmSync(root, { recursive: true, force: true });
 		}
@@ -360,9 +370,10 @@ describe("enrollment confirmation relocation", () => {
 			expect(ui.confirmCalls.length).toBe(1);
 			expect(ui.customCalls.length).toBe(1);
 			expect(result.details).toMatchObject({ state: "completed" });
-			expect(readdirSync(join(root, ".imm/state")).sort()).toEqual(["active-claim.json", "locks", "observations", "tasks", "transactions", "workspace.json"]);
-			expect(readdirSync(join(root, ".imm/state/tasks")).sort()).toEqual([`${TASK}.json`]);
-			expect(existsSync(join(root, ".imm/state/workspace.json"))).toBe(true);
+			const run = withKernelRead(root, (db) => readRunRowByTask(db, TASK));
+			expect(run?.state).toBe("active");
+			expect(existsSync(join(root, ".imm/state/workspace.json"))).toBe(false);
+			expect(existsSync(join(root, ".imm/state/tasks"))).toBe(false);
 		} finally {
 			rmSync(root, { recursive: true, force: true });
 		}
@@ -427,7 +438,11 @@ describe("enrollment confirmation relocation", () => {
 			});
 			// Zero writes
 			expect(authoritySnapshot(root)).toBe(before);
-			expect(readdirSync(join(root, ".imm/state")).sort()).toEqual(["locks", "observations"]);
+			// Zero authority: no run row, no claim, no workspace owner.
+			expect(withKernelRead(root, (db) => readRunRowByTask(db, TASK))).toBeNull();
+			expect(readBackendClaim(root)).toBeNull();
+			expect(existsSync(join(root, ".imm/state/workspace.json"))).toBe(false);
+			expect(existsSync(join(root, ".imm/state/tasks"))).toBe(false);
 		} finally {
 			rmSync(root, { recursive: true, force: true });
 		}

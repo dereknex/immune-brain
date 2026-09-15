@@ -104,7 +104,7 @@ import {
 	reconcileKernelAuthority,
 	repairKernelAuthority,
 	readTaskRecord,
-	withKernelStoreLock,
+	withKernelStoreLockForTask,
 	inspectStorageLayout,
 	migrateLegacyLayout,
 	readTaskIntent,
@@ -484,7 +484,9 @@ export default function (
 				if (ctx.mode !== "tui")
 					return failCanaryTool(taskId, action.op, "blocked", "tui_required", "Kernel mutation is TUI-only", "invoke the TUI Tool");
 				try {
-					await withKernelStoreLock(ctx.cwd, () => undefined);
+					// Recovery also retires a leftover derived claim/owner file whose
+					// task the store already holds: that file is inert, not authority.
+					await withKernelStoreLockForTask(ctx.cwd, taskId, () => undefined);
 				} catch (error) {
 					return failCanaryTool(taskId, action.op, "blocked", "layout_recovery_failed", `Kernel transaction recovery failed: ${error instanceof Error ? error.message : String(error)}`, "resolve the pending marker and retry");
 				}
@@ -503,6 +505,25 @@ export default function (
 			if (action.op === "repair_authority_state") {
 				if (ctx.mode !== "tui") return failCanaryTool(taskId, action.op, "blocked", "tui_required", "imm_kernel_canary mutation is TUI-only", "invoke the TUI Tool");
 				const authority = await reconcileKernelAuthority(ctx.cwd, taskId);
+				if (authority.state === "terminal_owner" || authority.state === "unowned") {
+					// Repair is unrepresentable-by-construction removal: a leftover
+					// retired claim file is inert, and the store already holds the
+					// settled answer. Report the authority and write nothing.
+					try {
+						const repaired = await repairKernelAuthority(ctx.cwd, taskId, authority.revision);
+						const result = {
+							state: "recovered_retry",
+							operation: action.op,
+							authority: repaired,
+							result: `No stale authority claim exists for ${taskId}; the store owns authority`,
+							next_action: "retry the blocked managed request once",
+						};
+						return toolResult(JSON.stringify(result, null, 2), result);
+					} catch (error) {
+						const message = error instanceof Error ? error.message : String(error);
+						return failCanaryTool(taskId, action.op, "blocked", "authority_repair_failed", message, "inspect the kernel store authority state and retry");
+					}
+				}
 				if (
 					authority.state !== "repairable_stale_claim" ||
 					authority.owner_task_id !== taskId

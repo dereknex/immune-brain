@@ -12,8 +12,9 @@ import {
 	readTaskRecordRaw,
 	readWorkspaceStateRaw,
 } from "./storage";
+import { stateDatabasePath } from "./storage_paths";
 
-const SOURCE_PATH = ".imm/state/workspace.json";
+const SOURCE_PATH = stateDatabasePath();
 const GIT_OBJECT_ID = /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/;
 
 /**

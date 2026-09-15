@@ -240,9 +240,15 @@ export function enrollCanaryTask(
 	registry: EnrollmentAuthorityRegistry,
 ): EnrollCanaryResult {
 	let gitBaseHead: string | null = null;
-	return runEnrollmentPreconditionChecks(
-		root,
-		input,
+	// The batch child slot is consumed with the capability and handed back when
+	// the enrollment call fails. The commit happens at the outer store
+	// transaction, so any throw from this call means nothing was committed and
+	// the release has to wrap the whole call rather than only the record write.
+	let consumed = false;
+	try {
+		return runEnrollmentPreconditionChecks(
+			root,
+			input,
 		input.capability,
 		registry,
 		"fail_fast",
@@ -295,8 +301,9 @@ export function enrollCanaryTask(
 					);
 			}
 
-			// consume immediately before the marker write
+			// consume immediately before the store transaction
 			registry.consume(input.capability, input.capability_binding);
+			consumed = true;
 			if (input.batch)
 				input.batch.registry.consumeChild(
 					input.batch.capability,
@@ -325,32 +332,30 @@ export function enrollCanaryTask(
 				created_at: input.now,
 				updated_at: input.now,
 			};
-			let mutation: ReturnType<typeof commitEnrollmentLocked>;
-			try {
-				mutation = commitEnrollmentLocked(
-					root,
-					input.task_id,
-					{
-						contract: "assurance_kernel/workspace_transaction/v2",
-						task_id: input.task_id,
-						expected_record_hash: checks.current.revision,
-						next_record_content: `${JSON.stringify(record, null, 2)}\n`,
-						expected_workspace_hash: checks.workspace.revision,
-						next_workspace_content: `${JSON.stringify(nextWorkspace, null, 2)}\n`,
-					},
-					claim as unknown as Record<string, unknown>,
-				);
-			} catch (error) {
-				// No TaskRecord was written, so the child slot must not stay used.
-				if (input.batch)
-					input.batch.registry.releaseChild(input.batch.capability, input.task_id);
-				throw error;
-			}
+			const mutation = commitEnrollmentLocked(
+				root,
+				input.task_id,
+				{
+					contract: "assurance_kernel/workspace_transaction/v2",
+					task_id: input.task_id,
+					expected_record_hash: checks.current.revision,
+					next_record_content: `${JSON.stringify(record, null, 2)}\n`,
+					expected_workspace_hash: checks.workspace.revision,
+					next_workspace_content: `${JSON.stringify(nextWorkspace, null, 2)}\n`,
+				},
+				claim as unknown as Record<string, unknown>,
+			);
 			return {
 				record: mutation.record,
 				backend_claim: claim,
 				workspace: { revision: "", state: mutation.workspace },
 			};
-		},
-	);
+			},
+		);
+	} catch (error) {
+		// No TaskRecord was committed, so the child slot must not stay used.
+		if (consumed && input.batch)
+			input.batch.registry.releaseChild(input.batch.capability, input.task_id);
+		throw error;
+	}
 }

@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { runKernelCommand } from "../plugins/immune-brain/runtime/commands/kernel";
 import { canonicalIntentHash, parseTaskIntentV1, RISK_FLOOR_SCOPE_PREFIXES } from "../plugins/immune-brain/runtime/kernel/intent";
+import { seedKernelRunForTest } from "./fixtures/mutation-authority-test-seam";
 
 const roots: string[] = [];
 
@@ -18,31 +19,6 @@ function tempRoot(): string {
 afterEach(() => {
 	for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
 });
-
-function writeClaim(root: string, taskId: string): void {
-	mkdirSync(join(root, ".imm/state"), { recursive: true });
-	writeFileSync(
-		join(root, ".imm/state/active-claim.json"),
-		`${JSON.stringify({
-			contract: "assurance_kernel/backend_claim/v2",
-			backend: "kernel",
-			task_id: taskId,
-			intent_revision: 1,
-			intent_content_hash: "sha256:" + "0".repeat(64),
-			enrollment_event_id: `enroll-${taskId}`,
-			lifecycle_status: "active",
-			created_at: "2026-08-12T00:00:00.000Z",
-			updated_at: "2026-08-12T00:00:00.000Z",
-		}, null, 2)}\n`,
-	);
-	writeFileSync(
-		join(root, ".imm/state/workspace.json"),
-		`${JSON.stringify({
-			contract: "assurance_kernel/workspace/v1",
-			current_working: taskId,
-		}, null, 2)}\n`,
-	);
-}
 
 function writeClaimedTask(
 	root: string,
@@ -68,26 +44,26 @@ function writeClaimedTask(
 		: `docs/plans/${taskId}.intent.json`;
 	mkdirSync(join(root, "docs/plans", artifactState === "frozen" ? "archive" : ""), { recursive: true });
 	writeFileSync(join(root, intentPath), `${JSON.stringify(intent, null, 2)}\n`);
-	writeClaim(root, taskId);
-	mkdirSync(join(root, ".imm/state/tasks"), { recursive: true });
-	writeFileSync(
-		join(root, ".imm/state/tasks", `${taskId}.json`),
-		`${JSON.stringify({
-			contract: "assurance_kernel/task_record/v3",
+	execFileSync("git", ["init", "-q"], { cwd: root });
+	execFileSync("git", ["add", "-A"], { cwd: root });
+	execFileSync("git", ["commit", "-qm", "inspect"], { cwd: root });
+	const gitBaseHead = execFileSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).trim();
+	seedKernelRunForTest(root, {
+		task_id: taskId,
+		record: {
+			contract: "assurance_kernel/task_record/v4",
 			task_id: taskId,
 			intent_snapshot: intent,
 			intent_ref: { path: intentPath, content_hash: hash },
 			lifecycle: "active",
 			artifact_state: artifactState,
 			baseline: `sha256:${"a".repeat(64)}`,
+			git_base_head: gitBaseHead,
 			attestations: [],
 			findings: [],
 			history: [],
-		}, null, 2)}\n`,
-	);
-	execFileSync("git", ["init", "-q"], { cwd: root });
-	execFileSync("git", ["add", "-A"], { cwd: root });
-	execFileSync("git", ["commit", "-qm", "inspect"], { cwd: root });
+		},
+	});
 	return parsed;
 }
 
@@ -111,8 +87,9 @@ describe("imm-kernel inspect", () => {
 			rehearsal: "unobservable",
 			cas_holder: "unobservable",
 		});
+		// A read-only inspect creates no authority state at all.
+		expect(existsSync(join(root, ".imm/state/kernel.sqlite"))).toBe(false);
 		expect(existsSync(join(root, ".imm/state/workspace.json"))).toBe(false);
-		expect(existsSync(join(root, ".imm/state/active-claim.json"))).toBe(false);
 		expect(existsSync(join(root, ".imm/state/journal.jsonl"))).toBe(false);
 		expect(existsSync(join(root, ".imm/state/locks"))).toBe(false);
 	});
@@ -186,25 +163,30 @@ describe("imm-kernel inspect", () => {
 		expect(output.risk.matching_scope_entries).toEqual([]);
 	});
 
-	it("fails closed when a claim exists without a TaskRecord", () => {
+	it("does not interpret a retired claim file as authority", () => {
 		const root = tempRoot();
-		const taskId = "inspect-missing-record";
-		const intent = {
-			contract: "assurance_kernel/task_intent/v1",
-			task_id: taskId,
-			goal: "Missing record",
-			acceptance: [{ id: "A1", assertion: "a1", verification: "v1" }],
-			scope_hint: ["docs/specs/example.spec.md"],
-			risk: "routine",
-			revision: 1,
-			owner: "user",
-		};
-		mkdirSync(join(root, "docs/plans"), { recursive: true });
-		writeFileSync(join(root, "docs/plans", `${taskId}.intent.json`), `${JSON.stringify(intent, null, 2)}\n`);
-		writeClaim(root, taskId);
+		mkdirSync(join(root, ".imm/state"), { recursive: true });
+		writeFileSync(
+			join(root, ".imm/state/active-claim.json"),
+			`${JSON.stringify({
+				contract: "assurance_kernel/backend_claim/v2",
+				backend: "kernel",
+				task_id: "retired-claim-task",
+				intent_revision: 1,
+				intent_content_hash: "sha256:" + "0".repeat(64),
+				enrollment_event_id: "enroll-retired-claim-task",
+				lifecycle_status: "active",
+				created_at: "2026-08-12T00:00:00.000Z",
+				updated_at: "2026-08-12T00:00:00.000Z",
+			}, null, 2)}\n`,
+		);
 		const result = runKernelCommand(["inspect", "--json"], root);
-		expect(result.returncode).toBe(1);
-		expect(JSON.parse(result.stdout).error.code).toBe("source_read_failed");
+		expect(result.returncode).toBe(0);
+		const output = JSON.parse(result.stdout);
+		// The retired file store grants nothing: no claim and no owner are
+		// derived from it, and the layout asks for the supported migration.
+		expect(output.kernel).toEqual({ claim: null, workspace: { current_working: null } });
+		expect(output.layout.layout).toBe("migration_blocked_active");
 		expect(existsSync(join(root, ".imm/state/journal.jsonl"))).toBe(false);
 	});
 });
