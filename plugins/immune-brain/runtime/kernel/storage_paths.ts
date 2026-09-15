@@ -469,6 +469,8 @@ function readKernelStoreFacts(root: string): { present: boolean; reason: string 
 
 interface FileStoreFacts {
 	present: boolean;
+	/** Retired per-task TaskRecords: authority no migration may ignore. */
+	records_present: boolean;
 	blocked_active: boolean;
 	pending_marker: string | null;
 	fail_reason: string | null;
@@ -484,6 +486,7 @@ const KERNEL_DB_ENTRIES = ["kernel.sqlite", "kernel.sqlite-wal", "kernel.sqlite-
 function inspectFileStoreLayout(root: string): FileStoreFacts {
 	const facts: FileStoreFacts = {
 		present: false,
+		records_present: false,
 		blocked_active: false,
 		pending_marker: null,
 		fail_reason: null,
@@ -538,6 +541,7 @@ function inspectFileStoreLayout(root: string): FileStoreFacts {
 			if (!entry.endsWith(".json"))
 				throw new Error(`unknown file under ${FILE_STORE_TASKS_RELATIVE}: ${entry}`);
 			facts.present = true;
+			facts.records_present = true;
 			const lifecycle =
 				readJsonField(root, full, "lifecycle") ?? readJsonField(root, full, "phase");
 			if (lifecycle !== "done" && lifecycle !== "stopped") facts.blocked_active = true;
@@ -592,6 +596,13 @@ export function inspectStorageLayout(root: string): StorageLayoutInspection {
 	const auditPresent = entryStatus(root, AUDIT_RELATIVE) !== "absent";
 	const dirty = gitDirtyAffected(root);
 	const legacyAuthority = oldFacts.old_authority_present || fileFacts.present;
+	// With a SQLite store present, a derived claim/owner file is decided by the
+	// task-scoped mutation path (which refuses a foreign owner), so only retired
+	// TaskRecords and pending markers make the layout itself invalid.
+	const storeConflictAuthority =
+		oldFacts.old_authority_present ||
+		fileFacts.records_present ||
+		fileFacts.pending_marker !== null;
 
 	if (store.present) {
 		if (store.reason) {
@@ -604,7 +615,7 @@ export function inspectStorageLayout(root: string): StorageLayoutInspection {
 				reason: store.reason,
 			};
 		}
-		if (legacyAuthority) {
+		if (storeConflictAuthority) {
 			return {
 				contract: "assurance_kernel/storage_layout_inspection/v1",
 				layout: "invalid",

@@ -25,6 +25,7 @@ import {
   MISSING_REVISION,
   readCommittedRecord,
   readTaskRecordRaw,
+  withKernelStoreLockForTask,
   readWorkspaceStateRaw,
   reconcileKernelAuthority,
   recoverKernelStoreFollowUps,
@@ -700,8 +701,8 @@ describe("SQLite authority store durability", () => {
         terminal: { lifecycle: "done", terminalized_at: "2026-08-12T10:00:05.000Z" },
       });
       retryStoreFollowUps(root);
-      // A leftover retired claim file is inert: the store already answers, and a
-      // mutation retires the file instead of trusting it.
+      // An authority repair retires this task's own proved-duplicate claim file;
+      // ordinary mutations (covered below) never delete retired authority.
       writeFileSync(
         join(root, ".imm/state/active-claim.json"),
         `${JSON.stringify(storeClaimFor("durability-n"), null, 2)}\n`,
@@ -1011,6 +1012,54 @@ describe("SQLite authority store durability", () => {
       );
       // A registered mutation still commits with that state present.
       expect(storeEnrollFixture(root, "durability-u").state).toBe("active");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test("a retired claim that belongs to another task is never deleted and never ignored", () => {
+    const root = storeRoot();
+    try {
+      storeEnrollFixture(root, "durability-x");
+      const retired = join(root, ".imm/state");
+      mkdirSync(retired, { recursive: true });
+      // A retired claim for a task this worktree does not own: the mutation must
+      // fail closed and the bytes must survive untouched.
+      const foreign = `${JSON.stringify(
+        {
+          contract: "assurance_kernel/backend_claim/v2",
+          backend: "kernel",
+          task_id: "some-other-task",
+          intent_revision: 1,
+          intent_content_hash: `sha256:${"a".repeat(64)}`,
+          enrollment_event_id: "enroll-some-other-task-2026-08-12T10:00:00.000Z",
+          lifecycle_status: "active",
+          created_at: "2026-08-12T10:00:00.000Z",
+          updated_at: "2026-08-12T10:00:00.000Z",
+        },
+        null,
+        2,
+      )}\n`;
+      const claimPath = join(root, ".imm/state/active-claim.json");
+      writeFileSync(claimPath, foreign);
+      expect(() =>
+        withKernelStoreLockForTask(root, "durability-x", () => undefined),
+      ).toThrow(/retired file-store authority/);
+      expect(readFileSync(claimPath, "utf8")).toBe(foreign);
+
+      // A claim that provably belongs to the same task and enrollment is inert:
+      // the mutation proceeds and the bytes are still left for the migration.
+      const own = JSON.parse(foreign) as Record<string, unknown>;
+      own.task_id = "durability-x";
+      own.enrollment_event_id = "enroll-durability-x-2026-08-12T10:00:00.000Z";
+      own.intent_content_hash = JSON.parse(
+        withKernelRead(root, (db) => readRunRowByTask(db, "durability-x"))!.record_json,
+      ).intent_ref.content_hash;
+      writeFileSync(claimPath, `${JSON.stringify(own, null, 2)}\n`);
+      expect(() =>
+        withKernelStoreLockForTask(root, "durability-x", () => undefined),
+      ).not.toThrow();
+      expect(existsSync(claimPath)).toBe(true);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

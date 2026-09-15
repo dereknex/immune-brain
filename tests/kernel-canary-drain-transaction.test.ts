@@ -301,4 +301,37 @@ describe("drain transaction", () => {
 		expect(readWorkspaceStateRaw(root).state.current_working).toBe(TASK);
 		expect(withKernelRead(root, (db) => readRunRowByTask(db, TASK))!.state).toBe("active");
 	});
+
+	test("an operation identity replay refuses a conflicting request", () => {
+		// Same task and timestamp, different content: one committed operation
+		// identity can only ever have one result.
+		const cap = drainCapability();
+		app.beginDrain({ root, task_id: TASK, capability: cap, now });
+		const committed = readBackendClaim(root)!;
+		const before = runRow();
+		const conflicting = {
+			...committed,
+			intent_content_hash: `sha256:${"7".repeat(64)}`,
+		};
+		expect(() =>
+			commitDrainLocked(
+				root,
+				TASK,
+				`${JSON.stringify({ ...committed, lifecycle_status: "active", updated_at: now }, null, 2)}\n`,
+				`${JSON.stringify(conflicting, null, 2)}\n`,
+				now,
+			),
+		).toThrow(/different facts/);
+		// The refusal wrote nothing and the committed claim still replays.
+		expect(runRow()).toEqual(before);
+		expect(
+			commitDrainLocked(
+				root,
+				TASK,
+				`${JSON.stringify({ ...committed, lifecycle_status: "active", updated_at: now }, null, 2)}\n`,
+				`${JSON.stringify(committed, null, 2)}\n`,
+				now,
+			),
+		).toEqual(committed);
+	});
 });

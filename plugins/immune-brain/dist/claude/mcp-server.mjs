@@ -5260,9 +5260,36 @@ function canonicalRoot2(root) {
     throw new KernelStoreSecurityError("project root is unavailable");
   }
 }
+function retireSupersededRetiredFiles(root, db, taskId) {
+  const canonical = canonicalRoot2(root);
+  for (const path of [FILE_STORE_CLAIM_RELATIVE, FILE_STORE_WORKSPACE_RELATIVE]) {
+    const full = resolve6(canonical, path);
+    if (!existsSync4(full))
+      continue;
+    if (isRetiredFileProvablySuperseded(full, db, taskId))
+      rmSync4(full, { force: true });
+  }
+}
+function isRetiredFileProvablySuperseded(path, db, taskId) {
+  const run = readRunRowByTask(db, taskId);
+  if (!run)
+    return false;
+  let raw;
+  try {
+    raw = JSON.parse(readFileSync7(path, "utf8"));
+  } catch {
+    return false;
+  }
+  if (raw.task_id !== taskId)
+    return false;
+  if (raw.contract !== "assurance_kernel/backend_claim/v2") {
+    if (raw.current_working !== taskId)
+      return false;
+  }
+  return true;
+}
 function assertNoRetiredFileStore(root, db, taskId) {
   const canonical = canonicalRoot2(root);
-  const derivedSuperseded = db !== undefined && typeof taskId === "string" && taskId.length > 0 && readRunRowByTask(db, taskId) !== null;
   const retired = [
     [".imm/tasks", "pre-cutover task store"],
     [".imm/workspace.json", "pre-cutover workspace owner"],
@@ -5280,9 +5307,10 @@ function assertNoRetiredFileStore(root, db, taskId) {
     const full = resolve6(canonical, path);
     if (!existsSync4(full))
       continue;
-    if (!derivedSuperseded)
+    if (db === undefined || typeof taskId !== "string" || taskId.length === 0)
       throw new KernelStoreSecurityError(`retired file-store authority is present (${label}: ${path}); import it with the supported migration before mutating this worktree`);
-    rmSync4(full, { force: true });
+    if (!isRetiredFileProvablySuperseded(full, db, taskId))
+      throw new KernelStoreSecurityError(`retired file-store authority is present (${label}: ${path}) and does not belong to this task; import it with the supported migration before mutating this worktree`);
   }
   if (existsSync4(resolve6(canonical, FILE_STORE_TRANSACTIONS_RELATIVE))) {
     const entries = readdirNames(resolve6(canonical, FILE_STORE_TRANSACTIONS_RELATIVE));
@@ -5885,8 +5913,12 @@ function commitDrainLocked(root, taskId, expectedClaimContent, nextClaimContent,
       throw new KernelStoreConflictError(`task ${taskId} has no enrolled run in this worktree`);
     const operationId = drainOperationId(taskId, next.updated_at);
     const replay = readOperationRow(db, operationId);
-    if (replay)
-      return next;
+    if (replay) {
+      const committed = parseBackendClaim(JSON.parse(replay.result_json));
+      if (committed.task_id !== next.task_id || committed.lifecycle_status !== next.lifecycle_status || committed.intent_content_hash !== next.intent_content_hash || committed.enrollment_event_id !== next.enrollment_event_id)
+        throw new KernelStoreConflictError(`drain transaction ${operationId} was already committed with different facts`);
+      return committed;
+    }
     const active = requireActiveRun(db, taskId);
     const identity = runIdentity(db, active);
     assertRunBinding(identity, { task_id: taskId, run_id: active.run_id }, "drain transaction");
@@ -6118,6 +6150,7 @@ function repairKernelAuthority(root, taskId, expectedProjectionRevision, _at = n
   validateTaskId4(taskId);
   return withKernelTransaction(root, (db) => {
     assertNoRetiredFileStore(root, db, taskId);
+    retireSupersededRetiredFiles(root, db, taskId);
     const projection = projectKernelAuthorityLocked(db, root, taskId);
     if (projection.state === "repairable_stale_claim") {
       if (projection.owner_task_id !== taskId || projection.revision !== expectedProjectionRevision)

@@ -912,10 +912,6 @@ export function restoreKernelStore(root: string, sourcePath: string): void {
 }
 
 /**
- * Fold committed write-ahead-log content into the main database file so a
- * later swap cannot lose transactions that had not reached it yet.
- */
-/**
  * Compare two paths as the filesystem sees them: a caller-supplied target may
  * name the same file through a symlinked prefix (macOS /var vs /private/var),
  * so both sides are resolved before the comparison.
@@ -931,17 +927,39 @@ function samePath(a: string, b: string): boolean {
 	return identity(a) === identity(b);
 }
 
+/**
+ * Fold committed write-ahead-log content into the main database file so a later
+ * swap cannot lose transactions that had not reached it yet. A failure here
+ * propagates: the caller must not remove sidecars it could not checkpoint.
+ */
 function checkpointLiveStore(canonical: string, target: string): void {
 	if (!existsSync(target)) return;
 	let db: DatabaseSync;
 	try {
 		db = new DatabaseSync(target);
-	} catch {
-		return;
+	} catch (error) {
+		// The live database cannot be read, so its write-ahead log cannot be
+		// folded into it: removing the sidecars would drop committed facts.
+		throw new KernelStoreConflictError(
+			`live kernel store could not be checkpointed before restore: ${error instanceof Error ? error.message : String(error)}`,
+		);
 	}
 	try {
 		db.exec("PRAGMA busy_timeout = 5000");
-		db.exec("PRAGMA wal_checkpoint(TRUNCATE)");
+		const result = db.prepare("PRAGMA wal_checkpoint(TRUNCATE)").get() as
+			| { busy?: number | bigint; log?: number | bigint; checkpointed?: number | bigint }
+			| undefined;
+		const busy = Number(result?.busy ?? 0);
+		if (busy !== 0)
+			throw new KernelStoreConflictError(
+				"live kernel store still has an active writer; retry the restore when the store is idle",
+			);
+		const log = Number(result?.log ?? 0);
+		const checkpointed = Number(result?.checkpointed ?? 0);
+		if (log > checkpointed)
+			throw new KernelStoreConflictError(
+				"live kernel store write-ahead log could not be fully checkpointed; retry the restore",
+			);
 	} finally {
 		try {
 			db.close();

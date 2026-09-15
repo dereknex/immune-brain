@@ -205,6 +205,51 @@ function canonicalRoot(root: string): string {
 // ---------------------------------------------------------------------------
 
 /**
+ * Retire the retired claim/owner files that provably duplicate this task's own
+ * committed run. Called only from an authority repair, whose proof is what
+ * authorizes the deletion; ordinary mutations never delete retired authority.
+ */
+function retireSupersededRetiredFiles(root: string, db: DatabaseSync, taskId: string): void {
+	const canonical = canonicalRoot(root);
+	for (const path of [FILE_STORE_CLAIM_RELATIVE, FILE_STORE_WORKSPACE_RELATIVE]) {
+		const full = resolve(canonical, path);
+		if (!existsSync(full)) continue;
+		if (isRetiredFileProvablySuperseded(full, db, taskId)) rmSync(full, { force: true });
+	}
+}
+
+/**
+ * True only when the retired file's own identity matches the committed run for
+ * this task: the same task id, and — when the file carries them — the same
+ * enrollment event and intent hash. An unreadable or foreign file is never
+ * treated as superseded.
+ */
+function isRetiredFileProvablySuperseded(
+	path: string,
+	db: DatabaseSync,
+	taskId: string,
+): boolean {
+	const run = readRunRowByTask(db, taskId);
+	if (!run) return false;
+	let raw: Record<string, unknown>;
+	try {
+		raw = JSON.parse(readFileSync(path, "utf8")) as Record<string, unknown>;
+	} catch {
+		return false;
+	}
+	// Ownership, not freshness: a stale copy of this task's own claim is exactly
+	// what a repair removes, while another task's claim is never this task's to
+	// retire. The store holding this task's run is what makes the file a
+	// duplicate of committed authority.
+	if (raw.task_id !== taskId) return false;
+	if (raw.contract !== "assurance_kernel/backend_claim/v2") {
+		// The retired workspace owner names its owner directly.
+		if (raw.current_working !== taskId) return false;
+	}
+	return true;
+}
+
+/**
  * Refuse mutation while the retired `.imm/state/*.json` file store (or the
  * pre-cutover `.imm/tasks` layout) still holds authority. The check is bounded
  * to `existsSync` paths so it can run on every locked mutation.
@@ -215,11 +260,6 @@ function assertNoRetiredFileStore(
 	taskId?: string | null,
 ): void {
 	const canonical = canonicalRoot(root);
-	const derivedSuperseded =
-		db !== undefined &&
-		typeof taskId === "string" &&
-		taskId.length > 0 &&
-		readRunRowByTask(db, taskId) !== null;
 	// Real authority in the retired store: must be imported, never ignored.
 	const retired: Array<[string, string]> = [
 		[".imm/tasks", "pre-cutover task store"],
@@ -232,8 +272,11 @@ function assertNoRetiredFileStore(
 				`retired file-store authority is present (${label}: ${path}); import it with the supported migration before mutating this worktree`,
 			);
 	}
-	// Derived duplicates: a leftover claim/owner file whose task the store has
-	// already superseded is provably inert, so it is retired instead of blocking.
+	// A retired claim/owner file is inert only when its own bytes prove that this
+	// exact task and enrollment already own the SQLite run: it is then a
+	// duplicate of committed authority. Nothing is deleted here — removal
+	// belongs to the supported migration — and a file whose owner is anything
+	// else keeps its authority and fails the mutation closed.
 	const derived: Array<[string, string]> = [
 		[FILE_STORE_CLAIM_RELATIVE, "workspace claim"],
 		[FILE_STORE_WORKSPACE_RELATIVE, "workspace owner"],
@@ -241,11 +284,14 @@ function assertNoRetiredFileStore(
 	for (const [path, label] of derived) {
 		const full = resolve(canonical, path);
 		if (!existsSync(full)) continue;
-		if (!derivedSuperseded)
+		if (db === undefined || typeof taskId !== "string" || taskId.length === 0)
 			throw new KernelStoreSecurityError(
 				`retired file-store authority is present (${label}: ${path}); import it with the supported migration before mutating this worktree`,
 			);
-		rmSync(full, { force: true });
+		if (!isRetiredFileProvablySuperseded(full, db, taskId))
+			throw new KernelStoreSecurityError(
+				`retired file-store authority is present (${label}: ${path}) and does not belong to this task; import it with the supported migration before mutating this worktree`,
+			);
 	}
 	if (existsSync(resolve(canonical, FILE_STORE_TRANSACTIONS_RELATIVE))) {
 		const entries = readdirNames(resolve(canonical, FILE_STORE_TRANSACTIONS_RELATIVE));
@@ -1252,7 +1298,24 @@ export function commitDrainLocked(
 			throw new KernelStoreConflictError(`task ${taskId} has no enrolled run in this worktree`);
 		const operationId = drainOperationId(taskId, next.updated_at);
 		const replay = readOperationRow(db, operationId);
-		if (replay) return next;
+		if (replay) {
+			// A replay returns the committed claim, never the caller's request:
+			// the same task and timestamp with different content is a conflicting
+			// reuse of one operation identity, not a successful replay.
+			const committed = parseBackendClaim(
+				JSON.parse(replay.result_json) as Record<string, unknown>,
+			);
+			if (
+				committed.task_id !== next.task_id ||
+				committed.lifecycle_status !== next.lifecycle_status ||
+				committed.intent_content_hash !== next.intent_content_hash ||
+				committed.enrollment_event_id !== next.enrollment_event_id
+			)
+				throw new KernelStoreConflictError(
+					`drain transaction ${operationId} was already committed with different facts`,
+				);
+			return committed;
+		}
 		const active = requireActiveRun(db, taskId);
 		const identity = runIdentity(db, active);
 		assertRunBinding(identity, { task_id: taskId, run_id: active.run_id }, "drain transaction");
@@ -1600,6 +1663,7 @@ export function repairKernelAuthority(
 	validateTaskId(taskId);
 	return withKernelTransaction(root, (db) => {
 		assertNoRetiredFileStore(root, db, taskId);
+		retireSupersededRetiredFiles(root, db, taskId);
 		const projection = projectKernelAuthorityLocked(db, root, taskId);
 		if (projection.state === "repairable_stale_claim") {
 			if (
@@ -1612,8 +1676,9 @@ export function repairKernelAuthority(
 			return projection;
 		}
 		// The workspace owner is derived from the single active run, so a claim
-		// that contradicts the run index cannot exist. A leftover retired claim
-		// file is inert and was just retired; the current authority is the answer.
+		// that contradicts the run index cannot exist. This task's own retired
+		// claim file is a proved duplicate and was just retired; the committed
+		// authority is the answer.
 		if (projection.state === "terminal_owner" || projection.state === "unowned")
 			return projection;
 		throw new KernelStoreConflictError(
