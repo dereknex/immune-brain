@@ -12,6 +12,7 @@ import {
   revalidatePiCanary,
 } from "../plugins/immune-brain/runtime/kernel/pi_canary_prepare";
 import { evaluateCanaryEligibility } from "../plugins/immune-brain/runtime/kernel/canary_eligibility";
+import { INITIAL_WORKSPACE_REVISION } from "../plugins/immune-brain/runtime/kernel/storage";
 
 const TASK = "isolated-canary-boundary";
 const AUTHORITY_PATHS = [
@@ -87,7 +88,12 @@ describe("isolated repository preparation boundary", () => {
     expect(preparation.backend_claim).toEqual({ present: false, task_id: null, lifecycle_status: null });
     expect(preparation.task_tombstone).toEqual({ present: false, terminal_lifecycle: null });
     expect(preparation.task_record_v3).toEqual({ present: false, lifecycle: null, artifact_state: null });
-    expect(preparation.workspace).toEqual({ current_working: null });
+    // The preparation also binds the workspace CAS token, so a confirmation
+    // cannot be replayed after another task owned and released this workspace.
+    expect(preparation.workspace).toEqual({
+      current_working: null,
+      revision: INITIAL_WORKSPACE_REVISION,
+    });
 
     const eligibility = evaluateCanaryEligibility({
       task: {

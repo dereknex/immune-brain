@@ -107,6 +107,14 @@ export {
 
 export const MISSING_REVISION = "missing";
 
+/**
+ * The revision token of a workspace that has recorded no write yet. A worktree
+ * whose store has not been created reports this same token, so a preparation
+ * taken before the store exists still matches the store's own bootstrap
+ * revision instead of changing identity when the first writer creates it.
+ */
+export const INITIAL_WORKSPACE_REVISION = recordRevision(0);
+
 export interface WorkspaceState {
 	contract: "assurance_kernel/workspace/v1";
 	current_working: string | null;
@@ -747,7 +755,7 @@ export function readWorkspaceStateRaw(root: string): {
 	});
 	if (read) return read;
 	return {
-		revision: MISSING_REVISION,
+		revision: INITIAL_WORKSPACE_REVISION,
 		state: { contract: "assurance_kernel/workspace/v1", current_working: null },
 	};
 }

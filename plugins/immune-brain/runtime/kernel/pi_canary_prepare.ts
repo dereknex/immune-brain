@@ -65,6 +65,13 @@ export interface PiCanaryPreparation {
 	git_error: string | null;
 	workspace: {
 		current_working: string | null;
+		/**
+		 * The workspace CAS token at preparation time. A workspace can return to
+		 * the same owner value at a different revision (another task enrolled and
+		 * settled in between), so the owner alone cannot prove the confirmed
+		 * state is still current.
+		 */
+		revision: string;
 	};
 	digest: string;
 }
@@ -153,6 +160,7 @@ export function preparePiCanary(root: string, input: PiCanaryPrepareInput): PiCa
 	const state = readWorkspaceStateRaw(canonicalRoot);
 	const workspace: PiCanaryPreparation["workspace"] = {
 		current_working: state.state.current_working,
+		revision: state.revision,
 	};
 	if (claim && state.state.current_working !== claim.task_id)
 		throw new Error(

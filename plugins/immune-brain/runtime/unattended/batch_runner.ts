@@ -381,18 +381,31 @@ export async function startBatch(input: StartBatchInput): Promise<BatchRunReport
 		return await startBatchLocked(input);
 	} catch (error) {
 		const message = error instanceof Error ? error.message : String(error);
-		// A store condition the run cannot resolve (a retired file-store marker,
-		// a foreign or busy store, a revision conflict) stops the batch with one
+		if (!/retired file-store|kernel store|CAS mismatch|store is busy|locked/i.test(message))
+			throw error;
+		// A store condition the run cannot resolve stops the batch with one
 		// explicit recovery action instead of escaping as an unstructured crash.
-		if (/retired file-store|kernel store|CAS mismatch|store is busy|locked/i.test(message))
-			return rejectionReport(input, message);
-		throw error;
+		// The rejected report keeps whatever this batch already persisted — a run
+		// resumed after partial progress reports its children and commits rather
+		// than an empty plan — and only a batch with no durable state reports the
+		// empty plan it validated.
+		return rejectionReport(input, message);
 	}
 }
 
 function rejectionReport(input: StartBatchInput, reason: string): BatchRunReport {
+	const persisted = (() => {
+		try {
+			return readBatchRunState(input.root, input.batch_id);
+		} catch {
+			return null;
+		}
+	})();
 	return reportFor(
-		{ ...prepareBatchRunState({ ...input, children: [], now: input.now }), batch_state: "rejected" },
+		{
+			...(persisted ?? prepareBatchRunState({ ...input, children: [], now: input.now })),
+			batch_state: "rejected",
+		},
 		reason,
 		"settle the reported kernel store condition and retry in the current Host",
 	);

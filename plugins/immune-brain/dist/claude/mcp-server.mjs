@@ -5236,6 +5236,7 @@ function terminalOperationId(taskId, eventId) {
 
 // plugins/immune-brain/runtime/kernel/storage.ts
 var MISSING_REVISION = "missing";
+var INITIAL_WORKSPACE_REVISION = recordRevision(0);
 function revisionFor(content) {
   return `sha256:${createHash12("sha256").update(content).digest("hex")}`;
 }
@@ -5621,7 +5622,7 @@ function readWorkspaceStateRaw(root) {
   if (read)
     return read;
   return {
-    revision: MISSING_REVISION,
+    revision: INITIAL_WORKSPACE_REVISION,
     state: { contract: "assurance_kernel/workspace/v1", current_working: null }
   };
 }
@@ -7100,7 +7101,8 @@ function preparePiCanary(root, input) {
     throw new Error(`task record identity is inconsistent for ${input.task_id}`);
   const state = readWorkspaceStateRaw(canonicalRoot);
   const workspace = {
-    current_working: state.state.current_working
+    current_working: state.state.current_working,
+    revision: state.revision
   };
   if (claim && state.state.current_working !== claim.task_id)
     throw new Error(`workspace owner ${state.state.current_working} contradicts backend claim task ${claim.task_id}`);
@@ -10736,13 +10738,23 @@ async function startBatch(input) {
     return await startBatchLocked(input);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    if (/retired file-store|kernel store|CAS mismatch|store is busy|locked/i.test(message))
-      return rejectionReport(input, message);
-    throw error;
+    if (!/retired file-store|kernel store|CAS mismatch|store is busy|locked/i.test(message))
+      throw error;
+    return rejectionReport(input, message);
   }
 }
 function rejectionReport(input, reason) {
-  return reportFor({ ...prepareBatchRunState({ ...input, children: [], now: input.now }), batch_state: "rejected" }, reason, "settle the reported kernel store condition and retry in the current Host");
+  const persisted = (() => {
+    try {
+      return readBatchRunState(input.root, input.batch_id);
+    } catch {
+      return null;
+    }
+  })();
+  return reportFor({
+    ...persisted ?? prepareBatchRunState({ ...input, children: [], now: input.now }),
+    batch_state: "rejected"
+  }, reason, "settle the reported kernel store condition and retry in the current Host");
 }
 async function startBatchLocked(input) {
   if (!input.children.length) {

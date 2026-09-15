@@ -26,15 +26,30 @@ import {
 	readWorkspaceRow,
 	withKernelTransaction,
 } from "../plugins/immune-brain/runtime/kernel/sqlite_store";
-import { seedKernelRunForTest } from "./fixtures/mutation-authority-test-seam";
-import { canonicalIntentHash, parseTaskIntentV1 } from "../plugins/immune-brain/runtime/kernel/intent";
+import {
+	createMutationAuthorityCapabilityForTest,
+	seedKernelRunForTest,
+} from "./fixtures/mutation-authority-test-seam";
+import {
+	canonicalIntentHash,
+	parseTaskIntentV1,
+	readTaskIntent,
+} from "../plugins/immune-brain/runtime/kernel/intent";
+import {
+	createMutationAuthorityRegistry,
+	digestOfAction,
+} from "../plugins/immune-brain/runtime/kernel/authority_port";
+import {
+	capabilityActionFor,
+	createCanaryApplication,
+} from "../plugins/immune-brain/runtime/kernel/canary_application";
 import { enrollCanaryTask, runEnrollmentRehearsal } from "../plugins/immune-brain/runtime/kernel/enrollment";
 import { preparePiCanary, readGitHead } from "../plugins/immune-brain/runtime/kernel/pi_canary_prepare";
 import {
 	createEnrollmentAuthorityRegistry,
 	type EnrollmentCapabilityBinding,
 } from "../plugins/immune-brain/runtime/kernel/enrollment_authority";
-import { readTaskRecord } from "../plugins/immune-brain/runtime/kernel/storage";
+import { readTaskRecord, readWorkspaceStateRaw } from "../plugins/immune-brain/runtime/kernel/storage";
 import {
 	computeBatchPlanDigest,
 	createBatchAuthorityRegistry,
@@ -164,6 +179,103 @@ function seedEnrolledRun(root: string, taskId: string, gitHead = "a".repeat(40))
 	writeFileSync(intentPath, `${JSON.stringify(intent, null, 2)}\n`);
 	return seedKernelRunForTest(root, { task_id: taskId, record });
 }
+
+describe("enrollment workspace revision binding", () => {
+	const registry = createEnrollmentAuthorityRegistry();
+	const mutationRegistry = createMutationAuthorityRegistry();
+	const app = createCanaryApplication(mutationRegistry);
+	const now = "2026-08-12T00:00:00.000Z";
+
+	function enroll(root: string, taskId: string) {
+		const binding = bindingFor(root, taskId);
+		const prepared = preparePiCanary(root, { task_id: taskId, now });
+		enrollCanaryTask(
+			root,
+			{
+				task_id: taskId,
+				intent_path: `docs/plans/${taskId}.intent.json`,
+				intent_revision: 1,
+				preparation_digest: prepared.digest,
+				capability: registry.issue(binding),
+				capability_binding: binding,
+				now,
+			},
+			registry,
+		);
+	}
+
+	test("a confirmation taken while idle is refused once the workspace has been owned and released", () => {
+		const root = makeRoot();
+		try {
+			// 1. The literal user confirms task A against an idle workspace.
+			writeIntent(root, "task-a");
+			const confirmedRevision = readWorkspaceStateRaw(root).revision;
+			const staleBinding = bindingFor(root, "task-a");
+			const staleCapability = registry.issue(staleBinding);
+
+			// 2. Another task enrolls on that same idle workspace and stops, which
+			//    returns the workspace to idle: byte-identical owner, new revision.
+			writeIntent(root, "task-b");
+			enroll(root, "task-b");
+			const recordB = readTaskRecord(root, "task-b").record!;
+			const stopAction = capabilityActionFor({
+				op: "stop",
+				task_id: "task-b",
+				at: now,
+				actor_id: "user",
+				reason: "halt",
+			});
+			const stopCapability = createMutationAuthorityCapabilityForTest(mutationRegistry, {
+				authority_kind: "user",
+				task_id: "task-b",
+				action_digest: digestOfAction(stopAction),
+				expected_record_hash: readTaskRecord(root, "task-b").revision,
+				intent_revision: recordB.intent_snapshot.revision,
+				intent_content_hash: recordB.intent_ref.content_hash,
+				diff_hash: `sha256:${"a".repeat(64)}`,
+				actor_id: "user",
+				confirmation_ref: "conf-stop",
+				expires_at: "2099-01-01T00:00:00.000Z",
+				findings_digest: null,
+			});
+			app.execute({
+				root,
+				task_id: "task-b",
+				operation: { op: "stop", capability: stopCapability, reason: "halt", actor_id: "user" },
+				prior_intent_token: readTaskIntent(root, "task-b", recordB.intent_ref.path).token,
+				diffProvider: () => ({ diff_hash: `sha256:${"a".repeat(64)}`, changed_paths: [] }),
+				now,
+			});
+			const idled = readWorkspaceStateRaw(root);
+			expect(idled.state.current_working).toBeNull();
+			// Idle again, but a different revision: the owner value alone cannot
+			// prove the confirmed state is still the current one.
+			expect(idled.revision).not.toBe(confirmedRevision);
+
+			// 3. A's stale confirmation must not commit against the newer revision.
+			const before = readWorkspaceStateRaw(root);
+			expect(() =>
+				enrollCanaryTask(
+					root,
+					{
+						task_id: "task-a",
+						intent_path: "docs/plans/task-a.intent.json",
+						intent_revision: 1,
+						preparation_digest: staleBinding.preparation_digest,
+						capability: staleCapability,
+						capability_binding: staleBinding,
+						now,
+					},
+					registry,
+				),
+			).toThrow(/preparation digest mismatch/);
+			expect(readTaskRecord(root, "task-a").record).toBeNull();
+			expect(readWorkspaceStateRaw(root).revision).toBe(before.revision);
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+});
 
 describe("enrollment transaction", () => {
 	const registry = createEnrollmentAuthorityRegistry();
