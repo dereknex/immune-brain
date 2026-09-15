@@ -1,0 +1,9 @@
+{
+  "contract": "assurance_kernel/task_tombstone/v2",
+  "task_id": "wcr-frozen-runner-loss-adr",
+  "lifecycle_status": "terminal",
+  "terminal_lifecycle": "done",
+  "terminal_event_id": "complete:wcr-frozen-runner-loss-adr:2026-09-15T02:11:38.209Z",
+  "final_record_hash": "sha256:c39a5730cec827c17f7f4f4b4fc0a02f00e2e48e2c58a28e5bae023142a630c7",
+  "terminalized_at": "2026-09-15T02:11:38.209Z"
+}

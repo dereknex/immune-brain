@@ -1,0 +1,86 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "wcr-frozen-runner-loss-adr",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "wcr-frozen-runner-loss-adr",
+    "goal": "Author docs/adr/0009-settled-slice-reverification-loss.md recording the accepted decision that settled TaskIntents (S1/S2/S3, frozen at runner_version 1.3.14) permanently lose their frozen re-verification path once the host runner moves past that version, and that re-verification protection for settled Slices going forward is main's standing test suite's responsibility, not a re-openable frozen artifact. No runtime or test code changes.",
+    "acceptance": [
+      {
+        "id": "RB14-1",
+        "assertion": "docs/adr/0009-settled-slice-reverification-loss.md exists with status: accepted, names S1 (wc-host-neutral-contract-tool-names), S2 (wc-behavioral-guardrails), and S3 (wc-batch-resume-single-gate) as the affected settled TaskIntents, names runtime/assurance/verification.ts's assertRunnerCompatible as the mechanism that fails their reverification, and records the decision that main's standing test suite carries protection for settled Slices going forward. No file outside docs/adr/ changes.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.4.2\",\n  \"argv\": [\n    \"run\",\n    \"typecheck\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 180000,\n  \"max_output_bytes\": 131072\n}\n"
+      }
+    ],
+    "scope_hint": [
+      "docs/adr/0009-settled-slice-reverification-loss.md",
+      "docs/plans/wcr-frozen-runner-loss-adr.intent.json",
+      "docs/specs/archive/workflow-consolidation-remediation.spec.md",
+      "docs/specs/workflow-consolidation-remediation.spec.md"
+    ],
+    "risk": "routine",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/archive/wcr-frozen-runner-loss-adr.intent.json",
+    "content_hash": "sha256:62868ee382c205f4e0274a9e9b2ce5c056fb70914a1d8f04c4ebc6e076068df2"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:62868ee382c205f4e0274a9e9b2ce5c056fb70914a1d8f04c4ebc6e076068df2",
+  "git_base_head": "3b7c31fb2d03ff2843189953b55c3c4ee458a178",
+  "attestations": [
+    {
+      "id": "approval-qa-2405515e",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:62868ee382c205f4e0274a9e9b2ce5c056fb70914a1d8f04c4ebc6e076068df2",
+      "diff_hash": "sha256:f683692e2a8456ee86bf517124807f442f797c18e971ea4f1532ed99c0e81d0d",
+      "actor_id": "deterministic-qa",
+      "summary": "all 1 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "RB14-1",
+          "status": "passed",
+          "summary": "host-attested QA: all 1 fixed verification descriptor(s) passed"
+        }
+      ]
+    }
+  ],
+  "findings": [],
+  "history": [
+    {
+      "id": "freeze_artifacts:wcr-frozen-runner-loss-adr:2026-09-15T02:11:35.366Z",
+      "at": "2026-09-15T02:11:35.366Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent and Spec frozen at docs/plans/archive/wcr-frozen-runner-loss-adr.intent.json"
+    },
+    {
+      "id": "record_approval:wcr-frozen-runner-loss-adr:2026-09-15T02:11:37.666Z",
+      "at": "2026-09-15T02:11:37.666Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-2405515e\naction_v2_sha256:6abc13a60dbc576547e80af4c3c3962a016805550d513b3fb0556fcd9c1b4aa6",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-9534e603abf4c5ee",
+        "issued_at": "2026-09-15T02:11:37.666Z",
+        "expires_at": "2026-09-15T02:21:37.666Z"
+      }
+    },
+    {
+      "id": "complete:wcr-frozen-runner-loss-adr:2026-09-15T02:11:38.209Z",
+      "at": "2026-09-15T02:11:38.209Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:8a28ebb98538a3129c134f8a6a65c7fe423f5e50b7b93ee2408e3359b63fdb58"
+    }
+  ]
+}
