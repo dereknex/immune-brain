@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { spawnSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -41,9 +41,14 @@ import { writeBatchRunState } from "../plugins/immune-brain/runtime/unattended/b
 import { BATCH_STATE_RELATIVE, inspectStorageLayout } from "../plugins/immune-brain/runtime/kernel/storage_paths";
 import { readAuditTaskPair } from "../plugins/immune-brain/runtime/kernel/storage";
 import { canonicalRecordHash } from "../plugins/immune-brain/runtime/kernel/reducer";
+import { applyTaskAction } from "../plugins/immune-brain/runtime/kernel/application";
 import { activeRunId, readRunRowById } from "../plugins/immune-brain/runtime/kernel/sqlite_store";
 import { seedKernelRunForTest } from "./fixtures/mutation-authority-test-seam";
-import { canonicalIntentHash, parseTaskIntentV1 } from "../plugins/immune-brain/runtime/kernel/intent";
+import {
+  canonicalIntentHash,
+  parseTaskIntentV1,
+  readTaskIntent,
+} from "../plugins/immune-brain/runtime/kernel/intent";
 
 const REPO_ROOT = resolve(import.meta.dir, "..");
 const ARCHIVE_DIR = join(REPO_ROOT, "docs/plans/archive");
@@ -817,6 +822,70 @@ describe("SQLite authority store durability", () => {
         ),
       ).toThrow(KernelStoreSecurityError);
       expect(readTaskRecordRaw(rootB, "durability-s").revision).toBe(before);
+      // The application reads the sidecar the record points at and requires it
+      // to be tracked, so the fixture materializes and stages it.
+      execFileSync("git", ["init", "-q"], { cwd: rootB, stdio: "ignore" });
+      mkdirSync(join(rootB, "docs/plans"), { recursive: true });
+      writeFileSync(
+        join(rootB, "docs/plans/durability-s.intent.json"),
+        `${JSON.stringify(JSON.parse(recordB.record_json).intent_snapshot, null, 2)}\n`,
+      );
+      execFileSync("git", ["add", "--", "docs/plans/durability-s.intent.json"], { cwd: rootB });
+      // The real application entry refuses it too: the run the worktree holds
+      // is what the registry is asked to match, so a capability tied to another
+      // run cannot pass inspection and nothing is written.
+      const runRowB = withKernelRead(rootB, (db) => readRunRowById(db, b.run_id))!;
+      const registryEntry = createMutationAuthorityRegistry();
+      const foreignCapability = registryEntry.issue({
+        authority_kind: "user",
+        task_id: "durability-s",
+        run_id: a.run_id,
+        action_digest: "irrelevant-because-the-run-check-fails-first",
+        expected_record_hash: before,
+        intent_revision: 1,
+        intent_content_hash: `sha256:${"a".repeat(64)}`,
+        diff_hash: `sha256:${"b".repeat(64)}`,
+        actor_id: "user",
+        confirmation_ref: "confirmation",
+        expires_at: "2099-01-01T00:00:00.000Z",
+        findings_digest: null,
+      });
+      expect(() =>
+        applyTaskAction({
+          root: rootB,
+          task_id: "durability-s",
+          action: {
+            type: "record_approval",
+            event_id: "event-1",
+            at: "2026-08-12T10:00:00.000Z",
+            actor_id: "user",
+            expected_record_hash: before,
+            expected_workspace_hash: readWorkspaceStateRaw(rootB).revision,
+            diff_hash: `sha256:${"b".repeat(64)}`,
+            approval: {
+              id: "approval-1",
+              kind: "qa",
+              authority_role: "qa",
+              task_revision: 1,
+              intent_content_hash: `sha256:${"a".repeat(64)}`,
+              diff_hash: `sha256:${"b".repeat(64)}`,
+              actor_id: "user",
+              summary: "cross-worktree attempt",
+            },
+          } as never,
+          registry: registryEntry,
+          capability: foreignCapability,
+          // A fresh token from this worktree, exactly as an attacker in B would hold.
+          prior_intent_token: readTaskIntent(rootB, "durability-s").token,
+          diffProvider: () => ({
+            diff_hash: `sha256:${"b".repeat(64)}`,
+            changed_paths: [],
+          }),
+        }),
+      ).toThrow(/run mismatch|authority/i);
+      expect(JSON.parse(withKernelRead(rootB, (db) => readRunRowById(db, b.run_id))!.record_json).attestations).toEqual([]);
+      expect(runRowB.run_id).toBe(b.run_id);
+
       // The registry itself refuses the cross-run inspection as well.
       const registry = createMutationAuthorityRegistry();
       const stopAction = {

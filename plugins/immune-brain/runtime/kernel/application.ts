@@ -25,6 +25,7 @@ import {
 	commitTerminalLocked,
 	readTaskRecordRaw,
 	readWorkspaceStateRaw,
+	reconcileKernelAuthority,
 	revisionForContent,
 	serializeWorkspace,
 	withKernelStoreLock,
@@ -72,12 +73,6 @@ export function applyTaskAction(
 ): StoredTaskMutationV3 {
 	const { root, task_id, prior_intent_token, registry, capability, diffProvider, now } =
 		input;
-	// The capability names the exact run it was issued for; the store refuses it
-	// anywhere else, so authority cannot cross a worktree boundary.
-	const capabilityRunId = (() => {
-		const value = (capability as { run_id?: unknown } | undefined)?.run_id;
-		return typeof value === "string" && value.length > 0 ? value : undefined;
-	})();
 	return withKernelStoreLock(root, () => {
 		const current = readTaskRecordRaw(root, task_id);
 		if (!current.record)
@@ -167,9 +162,15 @@ export function applyTaskAction(
 			action.type === "stop" ||
 			action.type === "resolve_user_decision";
 
+		// A capability is opaque: its binding lives in the issuing registry, so
+		// the run this worktree holds is read here and handed to the registry as
+		// the expected identity. Authority issued for another run is refused
+		// before any write, which is what keeps it inside the worktree that
+		// issued it even when task, record, intent and diff content are identical.
 		const expectedAuthority = privileged
 			? {
 					task_id,
+					run_id: reconcileKernelAuthority(root, task_id).owner_run_id ?? undefined,
 					action,
 					expected_record_hash: current.revision,
 					intent_revision: isRevisionAction
@@ -192,6 +193,7 @@ export function applyTaskAction(
 		const inspectedAudit = expectedAuthority
 			? registry.inspect(capability, expectedAuthority, now)
 			: null;
+		const authorityRunId = inspectedAudit?.run_id;
 		const mutation = reduceTask(
 			current.record,
 			action,
@@ -286,7 +288,7 @@ export function applyTaskAction(
 				next_workspace_content: serializeWorkspace(nextWorkspaceState),
 				...(input.artifact_transition ? { artifact_relocations: input.artifact_transition.relocations } : {}),
 			};
-			commitTerminalLocked(root, task_id, transaction, tombstone, capabilityRunId);
+			commitTerminalLocked(root, task_id, transaction, tombstone, authorityRunId);
 			return {
 				revision: canonicalRecordHash(nextRecord),
 				record: nextRecord,
@@ -305,6 +307,7 @@ export function applyTaskAction(
 			workspace.revision,
 			nextWorkspaceState,
 			input.artifact_transition?.relocations,
+			authorityRunId,
 		);
 	});
 }

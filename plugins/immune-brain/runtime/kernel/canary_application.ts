@@ -33,6 +33,7 @@ import {
 	readSecureProjectFile,
 	readTaskRecordRaw,
 	readWorkspaceStateRaw,
+	reconcileKernelAuthority,
 	revisionForContent,
 	withKernelStoreLock,
 } from "./storage";
@@ -467,9 +468,11 @@ export function createCanaryApplication(
 				throw new KernelInvariantError([
 					`workspace is not owned by task ${input.task_id}`,
 				]);
-			// The capability is bound to the canonical begin_drain action.
-			registry.consume(input.capability as never, {
+			// The capability is bound to the canonical begin_drain action *and* to
+			// the run this worktree holds.
+			const validated = registry.consume(input.capability as never, {
 				task_id: input.task_id,
+				run_id: reconcileKernelAuthority(input.root, input.task_id).owner_run_id ?? undefined,
 				action: beginDrainCapabilityAction(input.task_id, now),
 				expected_record_hash: current.revision,
 				intent_revision: current.record.intent_snapshot.revision,
@@ -487,9 +490,7 @@ export function createCanaryApplication(
 				serializeBackendClaim(claim),
 				serializeBackendClaim(nextClaim),
 				now,
-				typeof input.run_id === "string" && input.run_id.length > 0
-					? input.run_id
-					: undefined,
+				validated.run_id,
 			);
 		});
 	}

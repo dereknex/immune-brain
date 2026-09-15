@@ -6323,10 +6323,6 @@ async function projectAssurance(root, taskId, diffProvider) {
 // plugins/immune-brain/runtime/kernel/application.ts
 function applyTaskAction(input) {
   const { root, task_id, prior_intent_token, registry, capability, diffProvider, now } = input;
-  const capabilityRunId = (() => {
-    const value = capability?.run_id;
-    return typeof value === "string" && value.length > 0 ? value : undefined;
-  })();
   return withKernelStoreLock(root, () => {
     const current = readTaskRecordRaw(root, task_id);
     if (!current.record)
@@ -6369,6 +6365,7 @@ function applyTaskAction(input) {
     const privileged = action.type === "record_approval" || action.type === "approve_breaking_intent_revision" || action.type === "request_rework" || action.type === "authorize_rework" || action.type === "stop" || action.type === "resolve_user_decision";
     const expectedAuthority = privileged ? {
       task_id,
+      run_id: reconcileKernelAuthority(root, task_id).owner_run_id ?? undefined,
       action,
       expected_record_hash: current.revision,
       intent_revision: isRevisionAction ? action.next_intent.revision : current.record.intent_snapshot.revision,
@@ -6377,6 +6374,7 @@ function applyTaskAction(input) {
       ...action.type === "request_rework" ? { findings_digest: findingsDigestV2(action.findings) } : {}
     } : null;
     const inspectedAudit = expectedAuthority ? registry.inspect(capability, expectedAuthority, now) : null;
+    const authorityRunId = inspectedAudit?.run_id;
     const mutation = reduceTask(current.record, action, inspectedAudit ? inspectedAudit.audit : null, trustedDiff.changed_paths);
     if (!isReducedMutation(mutation))
       throw new KernelInvariantError(["reducer returned an invalid mutation"]);
@@ -6446,7 +6444,7 @@ function applyTaskAction(input) {
         next_workspace_content: serializeWorkspace(nextWorkspaceState),
         ...input.artifact_transition ? { artifact_relocations: input.artifact_transition.relocations } : {}
       };
-      commitTerminalLocked(root, task_id, transaction, tombstone, capabilityRunId);
+      commitTerminalLocked(root, task_id, transaction, tombstone, authorityRunId);
       return {
         revision: canonicalRecordHash(nextRecord),
         record: nextRecord,
@@ -6456,7 +6454,7 @@ function applyTaskAction(input) {
         }
       };
     }
-    return commitTaskRecordLocked(root, task_id, current.revision, nextRecord, workspace.revision, nextWorkspaceState, input.artifact_transition?.relocations);
+    return commitTaskRecordLocked(root, task_id, current.revision, nextRecord, workspace.revision, nextWorkspaceState, input.artifact_transition?.relocations, authorityRunId);
   });
 }
 
@@ -6820,8 +6818,9 @@ function createCanaryApplication(registry) {
         throw new KernelInvariantError([
           `workspace is not owned by task ${input.task_id}`
         ]);
-      registry.consume(input.capability, {
+      const validated = registry.consume(input.capability, {
         task_id: input.task_id,
+        run_id: reconcileKernelAuthority(input.root, input.task_id).owner_run_id ?? undefined,
         action: beginDrainCapabilityAction(input.task_id, now),
         expected_record_hash: current.revision,
         intent_revision: current.record.intent_snapshot.revision,
@@ -6833,7 +6832,7 @@ function createCanaryApplication(registry) {
         lifecycle_status: "draining",
         updated_at: now
       };
-      return commitDrainLocked(input.root, input.task_id, serializeBackendClaim(claim), serializeBackendClaim(nextClaim), now, typeof input.run_id === "string" && input.run_id.length > 0 ? input.run_id : undefined);
+      return commitDrainLocked(input.root, input.task_id, serializeBackendClaim(claim), serializeBackendClaim(nextClaim), now, validated.run_id);
     });
   }
   return { registry, execute, beginDrain };
@@ -7286,7 +7285,14 @@ function enrollCanaryTask(root, input, registry) {
       };
     });
   } catch (error) {
-    if (consumed && input.batch)
+    const committed = (() => {
+      try {
+        return reconcileKernelAuthority(root, input.task_id).owner_task_id === input.task_id;
+      } catch {
+        return false;
+      }
+    })();
+    if (consumed && input.batch && !committed)
       input.batch.registry.releaseChild(input.batch.capability, input.task_id);
     throw error;
   }

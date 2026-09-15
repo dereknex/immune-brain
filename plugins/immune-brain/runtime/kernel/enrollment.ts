@@ -19,6 +19,7 @@ import {
 	commitEnrollmentLocked,
 	readTaskRecordRaw,
 	readWorkspaceStateRaw,
+	reconcileKernelAuthority,
 	withKernelStoreLock,
 } from "./storage";
 import type { TaskRecord, TaskRecordV4, WorkspaceStateLike } from "./types";
@@ -353,8 +354,20 @@ export function enrollCanaryTask(
 			},
 		);
 	} catch (error) {
-		// No TaskRecord was committed, so the child slot must not stay used.
-		if (consumed && input.batch)
+		// A child slot is released only when the enrollment provably did not
+		// commit. The envelope can also fail *after* the Kernel transaction
+		// committed — a follow-up transaction that cannot start, for example —
+		// and releasing then would leave the batch view ahead of an owner the
+		// Kernel already recorded. The committed run decides, not the throw.
+		const committed = (() => {
+			try {
+				return reconcileKernelAuthority(root, input.task_id).owner_task_id === input.task_id;
+			} catch {
+				// An unreadable store is never proof of a commit.
+				return false;
+			}
+		})();
+		if (consumed && input.batch && !committed)
 			input.batch.registry.releaseChild(input.batch.capability, input.task_id);
 		throw error;
 	}
