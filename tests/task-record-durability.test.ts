@@ -17,6 +17,20 @@ import {
 	withKernelTransaction,
 	writeWorkspaceRow,
 } from "../plugins/immune-brain/runtime/kernel/sqlite_store";
+import {
+  commitEnrollmentLocked,
+  commitTerminalLocked,
+  readAuditTaskPair,
+  readTaskRecordRaw,
+  readWorkspaceStateRaw,
+  reconcileKernelAuthority,
+  repairKernelAuthority,
+  retryStoreFollowUps,
+  revisionForContent,
+  serializeWorkspace,
+} from "../plugins/immune-brain/runtime/kernel/storage";
+import { canonicalRecordHash } from "../plugins/immune-brain/runtime/kernel/reducer";
+import { activeRunId, readRunRowById } from "../plugins/immune-brain/runtime/kernel/sqlite_store";
 import { seedKernelRunForTest } from "./fixtures/mutation-authority-test-seam";
 import { canonicalIntentHash, parseTaskIntentV1 } from "../plugins/immune-brain/runtime/kernel/intent";
 
@@ -215,6 +229,59 @@ function seededRecord(taskId: string, gitHead: string) {
   };
 }
 
+/** Enroll one fixture task through the store transaction and return its run. */
+function storeEnrollFixture(root: string, taskId: string): { run_id: string; state: string } {
+  const record = seededRecord(taskId, "a".repeat(40));
+  const recordBytes = `${JSON.stringify(record, null, 2)}\n`;
+  const before = readWorkspaceStateRaw(root);
+  commitEnrollmentLocked(
+    root,
+    taskId,
+    {
+      contract: "assurance_kernel/workspace_transaction/v2",
+      task_id: taskId,
+      expected_record_hash: before.revision,
+      next_record_content: recordBytes,
+      expected_workspace_hash: before.revision,
+      next_workspace_content: serializeWorkspace({
+        contract: "assurance_kernel/workspace/v1",
+        current_working: taskId,
+      }),
+    },
+    storeClaimFor(taskId),
+  );
+  const run = withKernelRead(root, (db) => readRunRowByTask(db, taskId))!;
+  return { run_id: run.run_id, state: run.state };
+}
+
+function storeClaimFor(taskId: string): Record<string, unknown> {
+  const record = seededRecord(taskId, "a".repeat(40));
+  return {
+    contract: "assurance_kernel/backend_claim/v2",
+    backend: "kernel",
+    task_id: taskId,
+    intent_revision: 1,
+    intent_content_hash: record.intent_ref.content_hash,
+    enrollment_event_id: `enroll-${taskId}-2026-08-12T10:00:00.000Z`,
+    lifecycle_status: "active",
+    created_at: "2026-08-12T10:00:00.000Z",
+    updated_at: "2026-08-12T10:00:00.000Z",
+  };
+}
+
+function storeTerminalRecord(taskId: string): Record<string, unknown> {
+  const record = seededRecord(taskId, "a".repeat(40));
+  return {
+    ...record,
+    lifecycle: "done",
+    artifact_state: "frozen",
+    intent_ref: {
+      path: `docs/plans/archive/${taskId}.intent.json`,
+      content_hash: record.intent_ref.content_hash,
+    },
+  };
+}
+
 describe("SQLite authority store durability", () => {
   test("enforces one active run per worktree through the database constraint", () => {
     const root = storeRoot();
@@ -408,6 +475,167 @@ describe("SQLite authority store durability", () => {
           writeWorkspaceRow(b, readWorkspaceRow(b).revision, null, "2026-08-12T01:00:00.000Z");
         }),
       ).toThrow(/schema version 99 is incompatible/);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+  test("one transaction commits the run, the owner and the derived claim together", () => {
+    const root = storeRoot();
+    try {
+      const seeded = storeEnrollFixture(root, "durability-h");
+      expect(seeded.state).toBe("active");
+      expect(withKernelRead(root, (db) => activeRunId(db))).toBe(seeded.run_id);
+      expect(readWorkspaceStateRaw(root).state.current_working).toBe("durability-h");
+      // No retired file store is written by the commit.
+      expect(existsSync(join(root, ".imm/state/workspace.json"))).toBe(false);
+      expect(existsSync(join(root, ".imm/state/active-claim.json"))).toBe(false);
+      expect(existsSync(join(root, ".imm/state/tasks"))).toBe(false);
+      expect(existsSync(join(root, ".imm/state/transactions"))).toBe(false);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test("a second enrollment is refused while one owner is active", () => {
+    const root = storeRoot();
+    try {
+      storeEnrollFixture(root, "durability-i");
+      expect(() => storeEnrollFixture(root, "durability-j")).toThrow(KernelStoreConflictError);
+      expect(readWorkspaceStateRaw(root).state.current_working).toBe("durability-i");
+      expect(withKernelRead(root, (db) => readRunRowByTask(db, "durability-j"))).toBeNull();
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test("a deleted store never recovers silently", () => {
+    const root = storeRoot();
+    try {
+      storeEnrollFixture(root, "durability-k");
+      for (const name of ["kernel.sqlite", "kernel.sqlite-wal", "kernel.sqlite-shm"])
+        rmSync(join(root, ".imm/state", name), { force: true });
+      expect(readTaskRecordRaw(root, "durability-k").record).toBeNull();
+      expect(readWorkspaceStateRaw(root).state.current_working).toBeNull();
+      expect(reconcileKernelAuthority(root, "durability-k").state).toBe("unowned");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test("a replayed enrollment returns the committed run instead of writing again", () => {
+    const root = storeRoot();
+    try {
+      const seeded = storeEnrollFixture(root, "durability-l");
+      const replayed = storeEnrollFixture(root, "durability-l");
+      expect(replayed.run_id).toBe(seeded.run_id);
+      expect(withKernelRead(root, (db) => readRunRowByTask(db, "durability-l"))!.revision).toBe(1);
+      const operations = withKernelRead(root, (db) =>
+        db.prepare("SELECT operation_id FROM operations WHERE kind = 'enrollment'").all() as Array<{
+          operation_id: string;
+        }>,
+      );
+      expect(operations).toHaveLength(1);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test("settlement commits atomically and an interrupted audit export stays retryable", () => {
+    const root = storeRoot();
+    try {
+      const seeded = storeEnrollFixture(root, "durability-m");
+      const run = withKernelRead(root, (db) => readRunRowById(db, seeded.run_id))!;
+      const terminal = {
+        ...storeTerminalRecord("durability-m"),
+      };
+      const terminalBytes = `${JSON.stringify(terminal, null, 2)}\n`;
+      const workspace = readWorkspaceStateRaw(root);
+      const transaction = {
+        contract: "assurance_kernel/workspace_transaction/v2" as const,
+        task_id: "durability-m",
+        expected_record_hash: revisionForContent(run.record_json),
+        next_record_content: terminalBytes,
+        expected_workspace_hash: workspace.revision,
+        next_workspace_content: serializeWorkspace({
+          contract: "assurance_kernel/workspace/v1",
+          current_working: null,
+        }),
+      };
+      const tombstone = {
+        contract: "assurance_kernel/task_tombstone/v2" as const,
+        task_id: "durability-m",
+        lifecycle_status: "terminal" as const,
+        terminal_lifecycle: "done" as const,
+        terminal_event_id: "complete:durability-m:2026-08-12T10:00:05.000Z",
+        final_record_hash: revisionForContent(terminalBytes),
+        terminalized_at: "2026-08-12T10:00:05.000Z",
+      };
+      commitTerminalLocked(root, "durability-m", transaction, tombstone);
+      // One durable state: no active run, cleared owner, terminal proof.
+      expect(withKernelRead(root, (db) => activeRunId(db))).toBeNull();
+      expect(withKernelRead(root, (db) => readRunRowByTask(db, "durability-m"))!.state).toBe("done");
+      expect(readWorkspaceStateRaw(root).state.current_working).toBeNull();
+      // The same terminal event replays from committed facts; a different one
+      // cannot settle a settled run again.
+      const replayed = commitTerminalLocked(root, "durability-m", transaction, tombstone);
+      expect(replayed.record.lifecycle).toBe("done");
+      expect(() =>
+        commitTerminalLocked(root, "durability-m", transaction, {
+          ...tombstone,
+          terminal_event_id: "complete:durability-m:other",
+        }),
+      ).toThrow(KernelStoreConflictError);
+      // The audit export is a deterministic follow-up: it converges on the next
+      // lock and never reactivates the run.
+      retryStoreFollowUps(root);
+      expect(readAuditTaskPair(root, "durability-m")?.proof.terminal_lifecycle).toBe("done");
+      expect(withKernelRead(root, (db) => readRunRowByTask(db, "durability-m"))!.audit_exported_at).not.toBeNull();
+      expect(reconcileKernelAuthority(root, "durability-m").state).toBe("terminal_owner");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test("a proven stale claim cannot exist, so repair reports the settled authority", () => {
+    const root = storeRoot();
+    try {
+      seedKernelRunForTest(root, {
+        task_id: "durability-n",
+        record: storeTerminalRecord("durability-n"),
+        created_at: "2026-08-12T10:00:00.000Z",
+        updated_at: "2026-08-12T10:00:00.000Z",
+        terminal: { lifecycle: "done", terminalized_at: "2026-08-12T10:00:05.000Z" },
+      });
+      retryStoreFollowUps(root);
+      // A leftover retired claim file is inert: the store already answers, and a
+      // mutation retires the file instead of trusting it.
+      writeFileSync(
+        join(root, ".imm/state/active-claim.json"),
+        `${JSON.stringify(storeClaimFor("durability-n"), null, 2)}\n`,
+      );
+      const projection = reconcileKernelAuthority(root, "durability-n");
+      expect(projection.state).toBe("terminal_owner");
+      const repaired = repairKernelAuthority(root, "durability-n", projection.revision);
+      expect(repaired.state).toBe("terminal_owner");
+      expect(repaired.owner_task_id).toBe("durability-n");
+      expect(existsSync(join(root, ".imm/state/active-claim.json"))).toBe(false);
+      expect(existsSync(join(root, ".imm/state/transactions/authority-repair-transaction.json"))).toBe(false);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test("the reviewed record is the canonical revision of the committed bytes", () => {
+    const root = storeRoot();
+    try {
+      const seeded = storeEnrollFixture(root, "durability-o");
+      const record = readTaskRecordRaw(root, "durability-o");
+      const run = withKernelRead(root, (db) => readRunRowById(db, seeded.run_id))!;
+      // The reviewed revision is the canonical content hash of the committed
+      // record, derived from the parsed form so reformatting cannot split it.
+      expect(record.revision).toBe(canonicalRecordHash(record.record!));
+      expect(record.revision).toBe(canonicalRecordHash(JSON.parse(run.record_json) as never));
+      expect(record.revision).toMatch(/^sha256:[a-f0-9]{64}$/);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
