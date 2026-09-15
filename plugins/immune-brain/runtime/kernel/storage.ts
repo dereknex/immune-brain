@@ -164,6 +164,16 @@ export function revisionForContent(content: string): string {
 	return revisionFor(content);
 }
 
+/**
+ * The workspace CAS token. The contract requires a `sha256:` token, and the
+ * value must be revision-based: two workspaces with identical serialized
+ * content at different revisions are different states, so the token binds the
+ * store's monotonic revision instead of the bytes.
+ */
+function recordRevision(revision: number): string {
+	return revisionFor(`assurance_kernel/workspace_revision/v1:${revision}`);
+}
+
 function nowIso(): string {
 	return new Date().toISOString();
 }
@@ -712,8 +722,13 @@ export function readWorkspaceStateRaw(root: string): {
 } {
 	const read = withKernelRead(root, (db) => {
 		const row = readWorkspaceRow(db);
-		const state = workspaceStateFromRow(db, row.current_run_id);
-		return { revision: revisionFor(serializeWorkspace(state)), state };
+		return {
+			// The CAS token is the store's monotonic revision, never a hash of the
+			// serialized owner: two idle workspaces with identical content are
+			// still different revisions.
+			revision: recordRevision(row.revision),
+			state: workspaceStateFromRow(db, row.current_run_id),
+		};
 	});
 	if (read) return read;
 	return {
@@ -745,6 +760,31 @@ export function readTaskRecordRaw(
 		return { revision: canonicalRecordHash(record), record };
 	});
 	return read ?? { revision: MISSING_REVISION, record: null };
+}
+
+/**
+ * The committed record straight from the store, for a run of any lifecycle.
+ * This is the authority for a settled task; the audit pair is exported
+ * evidence and may still be in flight.
+ */
+export function readCommittedRecord(
+	root: string,
+	taskId: string,
+): { revision: string; record: TaskRecord } | null {
+	validateTaskId(taskId);
+	const read = withKernelRead(root, (db) => {
+		const run = readRunRowByTask(db, taskId);
+		if (!run) return null;
+		// A settled run always carries the proof its settlement committed; a store
+		// missing it is corrupt and must never project as a settled task.
+		if (run.state !== "active" && run.terminal_proof_json === null)
+			throw new KernelStoreConflictError(
+				`task ${taskId} is ${run.state} without a committed terminal proof`,
+			);
+		const record = recordFromRun(run);
+		return { revision: canonicalRecordHash(record), record };
+	});
+	return read ?? null;
 }
 
 /**
@@ -949,12 +989,11 @@ export function retryStoreFollowUps(root: string): void {
 
 function assertWorkspaceExpectation(db: DatabaseSync, expected: string, label: string): number {
 	const row = readWorkspaceRow(db);
-	const state = workspaceStateFromRow(db, row.current_run_id);
-	const currentRevision = revisionFor(serializeWorkspace(state));
+	const currentRevision = recordRevision(row.revision);
 	if (expected === MISSING_REVISION) {
 		// The store itself is created by this transaction: only the pristine
-		// idle workspace may accept a missing expectation.
-		if (state.current_working !== null || row.revision !== 0)
+		// workspace may accept a missing expectation.
+		if (row.revision !== 0)
 			throw new KernelStoreConflictError(
 				`CAS mismatch for ${label}: expected ${expected}, got ${currentRevision}`,
 			);
@@ -1034,12 +1073,17 @@ export function commitTaskRecordLocked(
 		if (artifactRelocations.length > 0)
 			setPendingRelocations(db, run.run_id, JSON.stringify(artifactRelocations));
 		const workspaceRevision = assertWorkspaceExpectation(db, expectedWorkspaceHash, "workspace");
-		writeWorkspaceRow(db, workspaceRevision, run.run_id, timestamp);
+		const workspaceRevisionAfter = writeWorkspaceRow(
+			db,
+			workspaceRevision,
+			run.run_id,
+			timestamp,
+		);
 		return {
 			revision: canonicalRecordHash(committedRecord),
 			record: committedRecord,
 			workspace: {
-				revision: revisionFor(serializeWorkspace(nextWorkspace)),
+				revision: recordRevision(workspaceRevisionAfter),
 				state: nextWorkspace,
 			},
 		};
@@ -1293,7 +1337,7 @@ interface AuthorityFacts {
 	active_run_id: string | null;
 	requested_run_state: TaskLifecycle | null;
 	requested_run_id: string | null;
-	audit_record_revision: string | null;
+	terminal_proof_present: boolean;
 }
 
 function authorityFacts(
@@ -1304,21 +1348,15 @@ function authorityFacts(
 	const workspace = readWorkspaceRow(db);
 	const active = readRunRowById(db, activeRunId(db) ?? "");
 	const requested = readRunRowByTask(db, taskId);
-	let auditRevision: string | null = null;
-	try {
-		auditRevision = readAuditTaskPair(root, taskId)?.recordRevision ?? null;
-	} catch (error) {
-		throw new KernelStoreConflictError(
-			error instanceof Error ? error.message : String(error),
-		);
-	}
 	return {
 		workspace_revision: workspace.revision,
 		current_run_id: workspace.current_run_id,
 		active_run_id: active && active.state === "active" ? active.run_id : null,
 		requested_run_state: requested ? requested.state : null,
 		requested_run_id: requested ? requested.run_id : null,
-		audit_record_revision: auditRevision,
+		// Settlement commits the terminal proof with the run. The audit export is
+		// evidence with its own retryable state, so it never gates the projection.
+		terminal_proof_present: requested?.terminal_proof_json !== null && requested !== null,
 	};
 }
 
@@ -1374,16 +1412,6 @@ function projectKernelAuthorityLocked(
 					diagnostic: "active run carries no workspace claim",
 					revision,
 				});
-			if (active.task_id === taskId && facts.audit_record_revision !== null)
-				return projection({
-					state: "authority_conflict",
-					owner_task_id: active.task_id,
-					owner_run_id: active.run_id,
-					owner_lifecycle: "active",
-					claim_lifecycle_status: active.claim_status,
-					diagnostic: `terminal audit evidence exists while ${taskId} is active`,
-					revision,
-				});
 			return projection({
 				state: "active_owner",
 				owner_task_id: active.task_id,
@@ -1399,13 +1427,6 @@ function projectKernelAuthorityLocked(
 				owner_task_id: taskId,
 				owner_run_id: facts.requested_run_id,
 				owner_lifecycle: facts.requested_run_state,
-				revision,
-			});
-		if (facts.audit_record_revision !== null)
-			return projection({
-				state: "terminal_owner",
-				owner_task_id: taskId,
-				owner_lifecycle: null,
 				revision,
 			});
 		if (facts.requested_run_state)

@@ -13,6 +13,7 @@ import { preparePiCanary } from "../plugins/immune-brain/runtime/kernel/pi_canar
 import { anchorForEvidence } from "../plugins/immune-brain/runtime/kernel/refutation";
 import {
 	commitTerminalLocked,
+	readAuditTaskPair,
 	readWorkspaceStateRaw,
 	retryStoreFollowUps,
 	revisionForContent,
@@ -258,6 +259,8 @@ describe("kernel assurance projection v3", () => {
 			rmSync(root, { recursive: true, force: true });
 		}
 
+		// A tampered *export* is refused as evidence while the committed terminal
+		// facts keep projecting: the export is retryable output, not authority.
 		const contradictory = makeEnrolledRoot();
 		try {
 			terminalize(contradictory, "done");
@@ -265,9 +268,26 @@ describe("kernel assurance projection v3", () => {
 			const tombstone = JSON.parse(readFileSync(path, "utf8"));
 			tombstone.final_record_hash = `sha256:${"f".repeat(64)}`;
 			writeFileSync(path, `${JSON.stringify(tombstone, null, 2)}\n`);
-			expect((await projectAssurance(contradictory, TASK, diffOf)).error).not.toBeNull();
+			expect(() => readAuditTaskPair(contradictory, TASK)).toThrow(
+				/terminal audit proof does not match its task record/,
+			);
+			const projected = await projectAssurance(contradictory, TASK, diffOf);
+			expect(projected.error).toBeNull();
+			expect(projected.projection).toMatchObject({ lifecycle: "done", artifact_state: "frozen" });
 		} finally {
 			rmSync(contradictory, { recursive: true, force: true });
+		}
+
+		// Corrupted committed proof facts still fail closed.
+		const corrupted = makeEnrolledRoot();
+		try {
+			terminalize(corrupted, "done");
+			withKernelTransaction(corrupted, (db) => {
+				db.prepare("UPDATE runs SET terminal_proof_json = NULL WHERE task_id = ?").run(TASK);
+			});
+			expect((await projectAssurance(corrupted, TASK, diffOf)).error).not.toBeNull();
+		} finally {
+			rmSync(corrupted, { recursive: true, force: true });
 		}
 	});
 

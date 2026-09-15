@@ -21,6 +21,7 @@ import {
 import {
   commitEnrollmentLocked,
   commitTerminalLocked,
+  MISSING_REVISION,
   readAuditTaskPair,
   readTaskRecordRaw,
   readWorkspaceStateRaw,
@@ -362,13 +363,13 @@ describe("SQLite authority store durability", () => {
     }
   });
 
-  test("a cross-process writer is bounded by the busy timeout instead of hanging", () => {
+  test("a competing writer is refused within its busy timeout while another holds the lock", async () => {
     const root = storeRoot();
     try {
       seedKernelRunForTest(root, { task_id: "durability-d", record: seededRecord("durability-d", "a".repeat(40)) });
-      const holder = spawnSync(
-        "bun",
+      const holder = Bun.spawn(
         [
+          "bun",
           "-e",
           `const { DatabaseSync } = require("node:sqlite");
            const db = new DatabaseSync(${JSON.stringify(join(root, ".imm/state/kernel.sqlite"))});
@@ -376,15 +377,49 @@ describe("SQLite authority store durability", () => {
            db.exec("BEGIN IMMEDIATE");
            db.exec("UPDATE workspace SET revision = revision WHERE id = 1");
            console.log("locked");
-           await new Promise((r) => setTimeout(r, 1200));
+           await new Promise((r) => setTimeout(r, 1500));
            db.exec("COMMIT");
-           db.close();`,
+           db.close();
+           console.log("released");`,
         ],
-        { encoding: "utf8" },
+        { stdout: "pipe", stderr: "pipe" },
       );
-      // The background holder ran to completion and never surfaced a failure.
-      expect(holder.status).toBe(0);
-      expect(holder.stdout).toContain("locked");
+      // Wait until the other process really holds the write lock.
+      const reader = holder.stdout.getReader();
+      const decoder = new TextDecoder();
+      let seen = "";
+      while (!seen.includes("locked")) {
+        const chunk = await reader.read();
+        if (chunk.done) throw new Error(`holder exited before locking: ${seen}`);
+        seen += decoder.decode(chunk.value);
+      }
+      // While the lock is held, a competing writer must fail inside its bound
+      // instead of hanging or interleaving.
+      const started = Date.now();
+      let refused: unknown = null;
+      try {
+        withKernelTransaction(
+          root,
+          (db) => writeWorkspaceRow(db, readWorkspaceRow(db).revision, null, "2026-08-12T11:00:00.000Z"),
+          { busyTimeoutMs: 100 },
+        );
+      } catch (error) {
+        refused = error;
+      }
+      const elapsed = Date.now() - started;
+      expect(refused).toBeInstanceOf(KernelStoreConflictError);
+      expect(elapsed).toBeLessThan(3000);
+      // The refused writer wrote nothing and the holder ran to completion.
+      expect(withKernelRead(root, (db) => readWorkspaceRow(db).current_run_id)).not.toBeNull();
+      await holder.exited;
+      expect(holder.exitCode).toBe(0);
+      // The lock is released: the same write now commits.
+      expect(() =>
+        withKernelTransaction(root, (db) =>
+          writeWorkspaceRow(db, readWorkspaceRow(db).revision, null, "2026-08-12T11:05:00.000Z"),
+        ),
+      ).not.toThrow();
+      expect(withKernelRead(root, (db) => readWorkspaceRow(db).current_run_id)).toBeNull();
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
@@ -453,7 +488,18 @@ describe("SQLite authority store durability", () => {
       // A database copied into another worktree is refused instead of granting authority.
       const copied = join(rootB, "copied.sqlite");
       backupKernelStore(rootA, copied);
+      // The live store must survive a refused restore byte-for-byte: validation
+      // happens on the backup copy, never after the swap.
+      const liveBefore = readFileSync(join(rootB, ".imm/state/kernel.sqlite"));
       expect(() => restoreKernelStore(rootB, copied)).toThrow(KernelStoreSecurityError);
+      expect(readFileSync(join(rootB, ".imm/state/kernel.sqlite"))).toEqual(liveBefore);
+      expect(withKernelRead(rootB, (db) => readRunRowByTask(db, "shared-logical-task"))!.run_id).toBe(b.run_id);
+      // A corrupt backup is refused the same way.
+      const corrupt = join(rootB, "corrupt.sqlite");
+      writeFileSync(corrupt, "not a database");
+      expect(() => restoreKernelStore(rootB, corrupt)).toThrow(/not a database|could not be opened/);
+      expect(readFileSync(join(rootB, ".imm/state/kernel.sqlite"))).toEqual(liveBefore);
+      expect(withKernelRead(rootB, (db) => readRunRowByTask(db, "shared-logical-task"))!.run_id).toBe(b.run_id);
     } finally {
       rmSync(rootA, { recursive: true, force: true });
       rmSync(rootB, { recursive: true, force: true });
@@ -653,6 +699,70 @@ describe("SQLite authority store durability", () => {
       expect(repaired.owner_task_id).toBe("durability-n");
       expect(existsSync(join(root, ".imm/state/active-claim.json"))).toBe(false);
       expect(existsSync(join(root, ".imm/state/transactions/authority-repair-transaction.json"))).toBe(false);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test("an idle workspace with identical content refuses a stale revision", () => {
+    const root = storeRoot();
+    try {
+      const pristine = readWorkspaceStateRaw(root);
+      storeEnrollFixture(root, "durability-q");
+      // Settle the only owner: the workspace is idle again, byte-identical to the
+      // pristine state, but it is a different revision.
+      const run = withKernelRead(root, (db) => readRunRowByTask(db, "durability-q"))!;
+      const terminalBytes = `${JSON.stringify(storeTerminalRecord("durability-q"), null, 2)}\n`;
+      commitTerminalLocked(
+        root,
+        "durability-q",
+        {
+          contract: "assurance_kernel/workspace_transaction/v2",
+          task_id: "durability-q",
+          expected_record_hash: revisionForContent(run.record_json),
+          next_record_content: terminalBytes,
+          expected_workspace_hash: readWorkspaceStateRaw(root).revision,
+          next_workspace_content: serializeWorkspace({
+            contract: "assurance_kernel/workspace/v1",
+            current_working: null,
+          }),
+        },
+        {
+          contract: "assurance_kernel/task_tombstone/v2",
+          task_id: "durability-q",
+          lifecycle_status: "terminal",
+          terminal_lifecycle: "done",
+          terminal_event_id: "complete:durability-q:2026-08-12T10:00:05.000Z",
+          final_record_hash: revisionForContent(terminalBytes),
+          terminalized_at: "2026-08-12T10:00:05.000Z",
+        },
+      );
+      const idled = readWorkspaceStateRaw(root);
+      expect(idled.state).toEqual(pristine.state);
+      expect(idled.revision).not.toBe(pristine.revision);
+      // The stale snapshot cannot enroll: the token moved with the revision even
+      // though the serialized owner is byte-identical.
+      expect(() =>
+        commitEnrollmentLocked(
+          root,
+          "durability-r",
+          {
+            contract: "assurance_kernel/workspace_transaction/v2",
+            task_id: "durability-r",
+            expected_record_hash: MISSING_REVISION,
+            next_record_content: `${JSON.stringify(seededRecord("durability-r", "a".repeat(40)), null, 2)}\n`,
+            expected_workspace_hash: pristine.revision,
+            next_workspace_content: serializeWorkspace({
+              contract: "assurance_kernel/workspace/v1",
+              current_working: "durability-r",
+            }),
+          },
+          storeClaimFor("durability-r"),
+        ),
+      ).toThrow(KernelStoreConflictError);
+      expect(withKernelRead(root, (db) => readRunRowByTask(db, "durability-r"))).toBeNull();
+      // The current revision is accepted.
+      expect(storeEnrollFixture(root, "durability-r").state).toBe("active");
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

@@ -375,6 +375,19 @@ export function openKernelStore(
 	const create = options.create ?? true;
 	if (!existsSync(path) && !create) return null;
 	if (!options.readOnly) ensureStoreDirectory(canonical);
+	return openStoreFile(canonical, path, options);
+}
+
+/**
+ * Open and validate one store file against a worktree binding. `assertSchema`
+ * runs before the caller can read or write anything, which is what lets a
+ * restore validate a backup copy in place without touching the live store.
+ */
+function openStoreFile(
+	canonical: string,
+	path: string,
+	options: { busyTimeoutMs?: number; now?: string; readOnly?: boolean } = {},
+): DatabaseSync | null {
 	let db: DatabaseSync;
 	try {
 		db = new DatabaseSync(path, options.readOnly ? { readOnly: true } : {});
@@ -839,15 +852,27 @@ export function restoreKernelStore(root: string, sourcePath: string): void {
 	if (!existsSync(source)) throw new KernelStoreConflictError("kernel store backup is missing");
 	ensureStoreDirectory(canonical);
 	const target = resolve(canonical, KERNEL_DB_RELATIVE);
-	for (const suffix of ["-wal", "-shm"]) rmSync(`${target}${suffix}`, { force: true });
 	const temp = `${target}.${randomUUID()}.restore`;
-	copyFileSync(source, temp);
-	const fd = openSync(temp, constants.O_RDONLY);
 	try {
-		fsyncSync(fd);
-	} finally {
-		closeSync(fd);
+		copyFileSync(source, temp);
+		const fd = openSync(temp, constants.O_RDONLY);
+		try {
+			fsyncSync(fd);
+		} finally {
+			closeSync(fd);
+		}
+		// Validate the backup copy *before* publishing it: an unreadable,
+		// incompatible or foreign-workspace backup must leave the live store and
+		// its sidecars exactly as they were.
+		const probe = openStoreFile(canonical, temp, { readOnly: true });
+		if (!probe) throw new KernelStoreConflictError("kernel store backup could not be opened");
+		closeQuietly(probe);
+	} catch (error) {
+		rmSync(temp, { force: true });
+		throw error;
 	}
+	// Only a validated backup reaches the swap.
+	for (const suffix of ["-wal", "-shm"]) rmSync(`${target}${suffix}`, { force: true });
 	renameSync(temp, target);
 	const directory = openSync(dirname(target), constants.O_RDONLY);
 	try {
@@ -855,7 +880,7 @@ export function restoreKernelStore(root: string, sourcePath: string): void {
 	} finally {
 		closeSync(directory);
 	}
-	const db = openKernelStore(root, { create: false });
+	const db = openStoreFile(canonical, target, {});
 	if (!db) throw new KernelStoreConflictError("restored kernel store could not be opened");
 	closeQuietly(db);
 }

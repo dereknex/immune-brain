@@ -12,7 +12,13 @@
 // "start QA" or "start Review"; it returns Kernel-owned facts only.
 
 import { readBackendClaim, readTaskTombstone } from "./backend_claim";
-import { readTaskRecord, readAuditTaskPair, readWorkspaceStateRaw, reconcileKernelAuthority } from "./storage";
+import {
+	readTaskRecord,
+	readAuditTaskPair,
+	readCommittedRecord,
+	readWorkspaceStateRaw,
+	reconcileKernelAuthority,
+} from "./storage";
 import { projectTask, resolveProjectedRisk } from "./completion";
 import type { AssuranceObligation, TaskIntentV1, TaskRecord, TaskRecordV2 } from "./types";
 
@@ -254,6 +260,24 @@ export async function projectAssurance(
 		}
 		if (!read.record) {
 			if (!terminalOwner) return fail(`task ${taskId} has no TaskRecord v3`, claim);
+			// The store keeps the terminal record itself, so a settled task projects
+			// from committed facts even while its audit export is still in flight.
+			const committed = await readCommittedRecord(root, taskId);
+			if (committed) {
+				const workspace = await readWorkspaceStateRaw(root);
+				return {
+					contract: "assurance_kernel/assurance_projection/v1",
+					task_id: taskId,
+					error: null,
+					claim: null,
+					projection: projectFromRecord(
+						committed.record,
+						committed.revision,
+						workspace.revision,
+						diffProvider(root, committed.record),
+					),
+				};
+			}
 			const auditPair = await readAuditTaskPair(root, taskId);
 			if (!auditPair) return fail(`task ${taskId} has no terminal audit pair`, claim);
 			const workspace = await readWorkspaceStateRaw(root);
