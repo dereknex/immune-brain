@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: accepted
 ---
 
 # Batch Capability Rehydration
@@ -14,7 +14,8 @@ crashed run leaves behind are the batch state record at
 and the authorization expiry), each child's TaskRecord, and the batch branch
 with its commits.
 
-Today a resumed run rebuilds its projection from those facts and reuses the
+The question this decision record settles is what a resumed run may reconstruct
+from those facts. A resumed run rebuilds its projection from them and reuses the
 authorization only while it still binds: unexpired, still running, same plan
 digest, same branch, and the expected HEAD lineage. Anything else opens one
 fresh native confirmation named with the reason, and the renewal rule requires a
@@ -22,34 +23,37 @@ strictly newer confirmation than the one it replaces.
 
 ## Decision
 
-Not settled. The options are:
-
-1. **Rebuild from durable facts and reuse only what still binds (shipped).**
-   The binding is reconstructed from Kernel facts; the capability itself is
-   re-issued in memory for the resumed process. Both Host adapters share the
-   preflight that decides this in `runtime/unattended/batch_preflight.ts`, and
-   the expiry follows the literal user's confirmed budget deadline.
-2. **Persist the capability so a crash rehydrates it directly.** The capability
-   is a bearer token: a durable copy would be replayable authority at rest, and
-   it would let a process that never saw the native confirmation mint authority
-   from bytes. It would also make the strictly-newer-confirmation renewal rule
-   unenforceable, because the old confirmation would still be valid material.
-3. **Widen the authorization window so resumes rarely trip the expiry check.**
-   This was already settled against: the expiry derives from the budget deadline
-   the literal user confirmed, and lengthening it silently pre-authorizes work
-   beyond the confirmed budget.
-
-Recommendation: keep option 1. The evidence that must survive a crash is exactly
-the durable set above, every element of which the Kernel already owns; anything
-that does not survive it opens one fresh gate rather than reconstructing
-authority from a file.
+1. **Rebuild from durable facts and reuse only what still binds.** The binding
+   is reconstructed from Kernel facts and the capability is re-issued in memory
+   for the resumed process; nothing durable carries authority.
+   `runtime/unattended/batch_preflight.ts` owns every decision on that path:
+   `projectBatchPreflight` projects the durable facts into a resume or a fresh
+   plan before any gate, `authorizeBatch` owns the reuse/expiry decision (it
+   reuses an authorization only when no blocker among
+   `batch_authorization_expired`, `batch_not_running`,
+   `batch_plan_digest_changed`, `batch_branch_changed`, and
+   `batch_head_lineage_moved` applies), and `projectBatchDrift` re-checks the
+   live claim, the plan digest, and the HEAD lineage after the literal user
+   confirmed. Both Host adapters call that shared flow and supply only their own
+   gate, confirmation reference, and nonce; rendering stays Host-specific.
+2. **The expiry is the deadline the literal user confirmed.** An intact running
+   authorization keeps its own expiry, so a child parked on a foreground Review
+   does not spend the budget twice; every other path takes the budget deadline
+   confirmed by the gate it just opened.
 
 ## Rejected Alternatives
 
-- Persisting the capability, in whole or in encrypted form, as a resume aid.
-- Treating a state file as proof that a literal user confirmed a plan, and
+- **Persisting the capability, in whole or in encrypted form, as a resume aid.**
+  The capability is a bearer token: a durable copy would be replayable authority
+  at rest, and it would let a process that never saw the native confirmation mint
+  authority from bytes. It would also make the strictly-newer-confirmation
+  renewal rule unenforceable, because the old confirmation would still be valid
+  material.
+- **Widening the authorization window so resumes rarely trip the expiry check.**
+  The expiry derives from the budget deadline the literal user confirmed, and
+  lengthening it silently pre-authorizes work beyond the confirmed budget.
+- **Treating a state file as proof that a literal user confirmed a plan**, and
   resuming without a gate on that basis.
-- Extending the expiry on resume to avoid a second gate.
 
 ## Consequences
 

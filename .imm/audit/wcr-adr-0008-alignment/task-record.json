@@ -1,0 +1,86 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "wcr-adr-0008-alignment",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "wcr-adr-0008-alignment",
+    "goal": "Update docs/adr/0008-batch-capability-rehydration.md so its description of where the batch-authorization reuse decision lives matches the shared runtime/unattended/ implementation completed by wcr-complete-shared-batch-preflight, instead of the pre-remediation claim.",
+    "acceptance": [
+      {
+        "id": "RB9-1",
+        "assertion": "docs/adr/0008-batch-capability-rehydration.md's description of the shared preflight (around the lines that name where the reuse decision lives) accurately names the function(s) and file(s) that own the reuse/expiry decision after wcr-complete-shared-batch-preflight lands.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.4.2\",\n  \"argv\": [\n    \"run\",\n    \"typecheck\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 180000,\n  \"max_output_bytes\": 131072\n}\n"
+      }
+    ],
+    "scope_hint": [
+      "docs/adr/0008-batch-capability-rehydration.md",
+      "docs/plans/wcr-adr-0008-alignment.intent.json",
+      "docs/specs/archive/workflow-consolidation-remediation.spec.md",
+      "docs/specs/workflow-consolidation-remediation.spec.md"
+    ],
+    "risk": "routine",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/archive/wcr-adr-0008-alignment.intent.json",
+    "content_hash": "sha256:ea642a01ef88b431481f075e6f746c8952cdbc9d7bc08846a8760ba2f4e7cc1b"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:ea642a01ef88b431481f075e6f746c8952cdbc9d7bc08846a8760ba2f4e7cc1b",
+  "git_base_head": "146dd1442b3cd2c259d57fa7002f28ee4f1daf1b",
+  "attestations": [
+    {
+      "id": "approval-qa-99e14ed7",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:ea642a01ef88b431481f075e6f746c8952cdbc9d7bc08846a8760ba2f4e7cc1b",
+      "diff_hash": "sha256:f03c9f29742bc319088457ef332589dd5f31b06d815eea9dc5857121915825de",
+      "actor_id": "deterministic-qa",
+      "summary": "all 1 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "RB9-1",
+          "status": "passed",
+          "summary": "host-attested QA: all 1 fixed verification descriptor(s) passed"
+        }
+      ]
+    }
+  ],
+  "findings": [],
+  "history": [
+    {
+      "id": "freeze_artifacts:wcr-adr-0008-alignment:2026-09-15T02:05:52.884Z",
+      "at": "2026-09-15T02:05:52.884Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent and Spec frozen at docs/plans/archive/wcr-adr-0008-alignment.intent.json"
+    },
+    {
+      "id": "record_approval:wcr-adr-0008-alignment:2026-09-15T02:05:55.240Z",
+      "at": "2026-09-15T02:05:55.240Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-99e14ed7\naction_v2_sha256:85f10d5d8d949a6dc03b337d0dbc078af0fdf55e884ec61e73e1d39f80fd8b0c",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-94ec258376bf3db2",
+        "issued_at": "2026-09-15T02:05:55.240Z",
+        "expires_at": "2026-09-15T02:15:55.240Z"
+      }
+    },
+    {
+      "id": "complete:wcr-adr-0008-alignment:2026-09-15T02:05:55.785Z",
+      "at": "2026-09-15T02:05:55.785Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:ab104e7b0259c0ef7053d5d2b2f0f74b2d3ae8736faf916ca051451474bc2010"
+    }
+  ]
+}
