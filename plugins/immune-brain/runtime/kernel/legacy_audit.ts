@@ -13,7 +13,7 @@
 import { createHash } from "node:crypto";
 import { lstatSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { LEGACY_V3_RELATIVE, legacyV3Path } from "./storage_paths";
+import { legacyV3Path } from "./storage_paths";
 
 const MAX_BYTES = 2 * 1024 * 1024;
 

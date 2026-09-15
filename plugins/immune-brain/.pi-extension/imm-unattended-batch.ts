@@ -1,9 +1,6 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { createHash, randomUUID } from "node:crypto";
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
-import { spawnSync } from "node:child_process";
-import { join } from "node:path";
 import {
 	createBatchAuthorityRegistry,
 	deriveChildEnrollment,
@@ -30,15 +27,12 @@ import {
 } from "../runtime/unattended/batch_preflight";
 import {
 	presentTaskRail,
-	presentTaskRailResult,
 	renderStructuredCall,
 	renderStructuredResult,
 	requestAuthorityDialog,
-	type UserAttentionReason,
 } from "./pi-canary-interaction";
-import { isToolFailureState, throwToolFailure } from "./pi-canary-tool-failure";
+import { throwToolFailure } from "./pi-canary-tool-failure";
 
-const INITIATIVE_SLUG_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 
 /**
  * Map the native dialog selection to the gate decision. The registered tool's

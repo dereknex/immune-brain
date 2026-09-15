@@ -56,9 +56,7 @@ function planLink(rawLink: string, srcFile: string): Action {
   if (/^(https?:|mailto:|#|data:|javascript:)/i.test(link)) return { kind: "skip", reason: "external/anchor" }
 
   // strip file:// scheme
-  let isFileUri = false
   if (/^file:/i.test(link)) {
-    isFileUri = true
     link = link.replace(/^file:\/\/localhost/i, "").replace(/^file:\/\//i, "")
   }
 

@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
-import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
-import { execFileSync, spawnSync } from "node:child_process";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
 import { join } from "node:path";
 import {
 	AssuranceCoordinator,
@@ -27,7 +27,7 @@ import { parseVerificationDescriptor } from "../verification_descriptor";
 import { projectAssurance, type AssuranceProjection, type AssuranceProjectionResult } from "../kernel/assurance_projection";
 import { isTaskRecordV4, type TaskApprovalV2, type TaskFinding, type TaskRecord } from "../kernel/types";
 import { findingsDigestV2 } from "../kernel/reducer";
-import { readAuditTaskPair, readTaskRecord, readTaskRecordRaw } from "../kernel/storage";
+import { readTaskRecord, readTaskRecordRaw } from "../kernel/storage";
 import { canonicalIntentHash, parseTaskIntentV1, readTaskIntent } from "../kernel/intent";
 import { capabilityActionFor, createCanaryApplication } from "../kernel/canary_application";
 import {
@@ -44,8 +44,7 @@ import { enrollCanaryTask, runEnrollmentRehearsal } from "../kernel/enrollment";
 import { reconcileKernelAuthority, repairKernelAuthority } from "../kernel/storage";
 import { preparePiCanary, revalidatePiCanary } from "../kernel/pi_canary_prepare";
 import { runDeterministicQa } from "../assurance/qa";
-import { taskDiffIdentity, taskRevisionIdentity, pathMatchesScope } from "../workspace_scope";
-import { projectBatchPlan } from "../unattended/batch_plan";
+import { taskDiffIdentity, taskRevisionIdentity } from "../workspace_scope";
 import { batchReason } from "../unattended/batch_reasons";
 import { startConfirmationDeadline } from "../unattended/confirmation_deadline";
 import { deriveAuthorizationOperation } from "../authorization_operation";
@@ -70,24 +69,17 @@ import {
 } from "../unattended/batch_runner";
 import {
 	createBatchAuthorityRegistry,
-	computeBatchPlanDigest,
 	deriveChildEnrollment,
 	type BatchAuthorityRegistry,
 	type BatchAuthorizationBinding,
 } from "../kernel/batch_authority";
 import {
-	runBatchGitPreflight,
 	type BatchRunnerGitPort,
 } from "../unattended/batch_git";
 import type {
-	BatchPlan,
-	BatchPlanChild,
 	InitiativeObservationReader,
 } from "../unattended/types";
 import { observeGithubInitiative } from "../github_issue_tracker";
-import { readWorkspaceStateRaw } from "../kernel/storage";
-import { readBackendClaim } from "../kernel/backend_claim";
-import { readGitHead } from "../kernel/pi_canary_prepare";
 import {
 	confirmationRef,
 	enrollmentNonce,
@@ -1169,7 +1161,8 @@ export class ClaudeRuntime {
 				if (!rehearsal.rehearsed || rehearsal.evidence.outcome !== "ready") {
 					throw new Error(`Kernel enrollment rehearsal failed: ${rehearsal.evidence.blockers.join("; ")}`);
 				}
-				const enrolled = enrollCanaryTask(root, input, this.enrollmentRegistry);
+				// The enrollment itself is the effect; its record is re-read below.
+				enrollCanaryTask(root, input, this.enrollmentRegistry);
 				const recordRaw = readTaskRecordRaw(root, task_id);
 				return { record_revision: recordRaw.revision };
 			},

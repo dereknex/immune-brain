@@ -1,7 +1,6 @@
 {
   "contract": "assurance_kernel/task_intent/v1",
   "task_id": "wcr-remove-orphaned-imports",
-  "owner": "user",
   "goal": "Remove the unused imports S9/S13 left behind in kernel_ports.ts, imm-unattended-batch.ts, and imm-canary-work.ts, and enable noUnusedLocals in tsconfig.json so bun run typecheck catches recurrence instead of relying on review.",
   "acceptance": [
     {
@@ -16,9 +15,25 @@
     "docs/specs/workflow-consolidation-remediation.spec.md",
     "plugins/immune-brain/.pi-extension/imm-canary-work.ts",
     "plugins/immune-brain/.pi-extension/imm-unattended-batch.ts",
+    "plugins/immune-brain/dist/claude/mcp-server.mjs",
+    "plugins/immune-brain/runtime/assurance/verification.ts",
     "plugins/immune-brain/runtime/claude/kernel_ports.ts",
+    "plugins/immune-brain/runtime/commands/kernel.ts",
+    "plugins/immune-brain/runtime/github_issue_tracker.ts",
+    "plugins/immune-brain/runtime/kernel/application.ts",
+    "plugins/immune-brain/runtime/kernel/enrollment.ts",
+    "plugins/immune-brain/runtime/kernel/enrollment_authority.ts",
+    "plugins/immune-brain/runtime/kernel/intent.ts",
+    "plugins/immune-brain/runtime/kernel/legacy_audit.ts",
+    "plugins/immune-brain/runtime/kernel/reducer.ts",
+    "plugins/immune-brain/runtime/kernel/storage.ts",
+    "plugins/immune-brain/runtime/kernel/storage_layout_migration.ts",
+    "plugins/immune-brain/runtime/managed_task_routing_policy.ts",
+    "plugins/immune-brain/runtime/unattended/batch_git.ts",
+    "scripts/fix-broken-links.ts",
     "tsconfig.json"
   ],
   "risk": "material",
-  "revision": 1
+  "revision": 2,
+  "owner": "user"
 }

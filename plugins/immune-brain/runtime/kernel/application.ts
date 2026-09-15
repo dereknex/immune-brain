@@ -6,7 +6,6 @@
 
 import {
 	type MutationAuthorityRegistry,
-	type ValidatedAuthorityV2,
 } from "./authority_port";
 import { asTaskDiffSnapshot } from "./completion";
 import { canonicalIntentHash, readTaskIntent } from "./intent";
@@ -37,8 +36,6 @@ import type {
 	AuthorityAuditDescriptor,
 	MutationAuthorityCapabilityV2,
 	StoredTaskMutationV3,
-	TaskAction,
-	TaskIntentV1,
 	TaskRecord,
 } from "./types";
 import { TASK_TOMBSTONE_CONTRACT, type TaskTombstone } from "./backend_claim";
@@ -227,9 +224,8 @@ export function applyTaskAction(
 		// All preflight passed: consume tokens and authority, then commit.
 		consumeIntentToken(prior_intent_token);
 		consumeIntentToken(freshRead.token);
-		let consumedAudit: ValidatedAuthorityV2 | null = null;
 		if (expectedAuthority) {
-			consumedAudit = registry.consume(
+			registry.consume(
 				capability as MutationAuthorityCapabilityV2,
 				expectedAuthority,
 				now,

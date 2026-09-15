@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto";
 import {
 	closeSync,
 	constants as fsConstants,
@@ -8,7 +7,7 @@ import {
 	writeFileSync,
 } from "node:fs";
 import { execFileSync } from "node:child_process";
-import { join, resolve } from "node:path";
+import { resolve } from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
 import {
@@ -63,12 +62,6 @@ function jsonResult(payload: unknown, returncode = 0): KernelCommandResult {
 
 function errorResult(code: string, message: string, returncode: number): KernelCommandResult {
 	return jsonResult({ error: { code, message } }, returncode);
-}
-
-function asRecord(value: unknown): Record<string, unknown> {
-	return value && typeof value === "object" && !Array.isArray(value)
-		? (value as Record<string, unknown>)
-		: {};
 }
 
 function journalFor(

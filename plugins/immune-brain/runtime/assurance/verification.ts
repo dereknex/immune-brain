@@ -7,7 +7,7 @@
 import { createHash } from "node:crypto";
 import { execFileSync, spawn, spawnSync } from "node:child_process";
 import { realpathSync, statSync } from "node:fs";
-import { isAbsolute, join, resolve, sep, relative } from "node:path";
+import { isAbsolute, resolve, sep, relative } from "node:path";
 
 
 export {

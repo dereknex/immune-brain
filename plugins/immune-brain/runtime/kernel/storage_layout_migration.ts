@@ -31,7 +31,7 @@ import {
 	writeFileSync,
 } from "node:fs";
 import { createHash } from "node:crypto";
-import { dirname, resolve, sep } from "node:path";
+import { dirname, resolve } from "node:path";
 import {
 	AUDIT_RELATIVE,
 	LEGACY_AUTHORITY_RELATIVE,
@@ -48,7 +48,6 @@ import {
 	auditTerminalProofPath,
 	inspectStorageLayout,
 	legacyV3Path,
-	type StorageLayoutInspection,
 } from "./storage_paths";
 
 export interface MigrationManifestEntry {
@@ -486,11 +485,6 @@ function legacyKnownNames(): Record<string, string> {
  * emits. Anything else -- broad prefixes, unknown subpaths, duplicate
  * sources, case-colliding targets -- is rejected before any relocation.
  */
-const LEGACY_TARGET_PREFIXES = [
-	`${AUDIT_RELATIVE}/`,
-	`${LEGACY_V3_RELATIVE}/`,
-];
-
 /** Sources that are delete-only entries (history is the retention source). */
 const LEGACY_DELETE_SOURCES = new Set([
 	LEGACY_CLAIM_RELATIVE,
@@ -535,9 +529,6 @@ function assertNoSymlinkParentSegments(root: string, relativePath: string): void
 			throw new Error(`migration marker path traverses a symlink parent: ${relativePath}`);
 	}
 }
-
-const TASK_OWNER_FILE_STRICT =
-	/^([A-Za-z0-9][A-Za-z0-9._-]{0,127})\.(json|backend-claim\.json)$/;
 
 function validateMarkerEntry(
 	root: string,

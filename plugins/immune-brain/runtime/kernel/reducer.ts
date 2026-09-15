@@ -163,10 +163,6 @@ function appendHistory(
 	record.history.push(entry as (typeof record.history)[number]);
 }
 
-function sha256Hex(value: string): string {
-	return createHash("sha256").update(value).digest("hex");
-}
-
 function intentRefMatches(intent: TaskIntentV1, ref: TaskIntentRefV3): boolean {
 	const activePath = `docs/plans/${intent.task_id}.intent.json`;
 	const archivedPath = `docs/plans/archive/${intent.task_id}.intent.json`;

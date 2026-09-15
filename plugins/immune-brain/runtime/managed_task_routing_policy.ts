@@ -34,7 +34,6 @@ import { type Stats,
 	openSync,
 	readFileSync,
 	realpathSync,
-	statSync,
 } from "node:fs";
 import { join, resolve, sep } from "node:path";
 

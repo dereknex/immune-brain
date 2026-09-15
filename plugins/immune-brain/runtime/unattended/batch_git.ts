@@ -11,7 +11,6 @@ import {
 	lstatSync,
 	mkdirSync,
 	openSync,
-	readFileSync,
 	realpathSync,
 	renameSync,
 	rmSync,

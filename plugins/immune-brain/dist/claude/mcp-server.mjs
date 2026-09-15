@@ -680,9 +680,9 @@ function parseHookStdin(raw) {
 
 // plugins/immune-brain/runtime/claude/kernel_ports.ts
 import { randomUUID as randomUUID7 } from "node:crypto";
-import { existsSync as existsSync8, readFileSync as readFileSync11, writeFileSync as writeFileSync6 } from "node:fs";
+import { existsSync as existsSync8, readFileSync as readFileSync10, writeFileSync as writeFileSync6 } from "node:fs";
 import { execFileSync as execFileSync5 } from "node:child_process";
-import { join as join12 } from "node:path";
+import { join as join11 } from "node:path";
 
 // plugins/immune-brain/runtime/assurance/coordinator.ts
 import { createHash as createHash6, randomUUID as randomUUID2 } from "node:crypto";
@@ -1076,7 +1076,7 @@ function createInvocationRegistry() {
 // plugins/immune-brain/runtime/role_prompt_bridge.ts
 import { createHash as createHash5 } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
-import { join as join3, dirname as dirname2 } from "node:path";
+import { join as join2, dirname as dirname2 } from "node:path";
 import { fileURLToPath } from "node:url";
 var RUNTIME_DIR = dirname2(fileURLToPath(import.meta.url));
 var INTERNAL_ROLE_PROMPTS = {
@@ -1132,14 +1132,14 @@ function roleSpec(role) {
 }
 function rolePromptSearchDirs(moduleDir) {
   return [
-    join3(moduleDir, "..", "dist", "role-prompts"),
-    join3(moduleDir, "..", "role-prompts")
+    join2(moduleDir, "..", "dist", "role-prompts"),
+    join2(moduleDir, "..", "role-prompts")
   ];
 }
 function loadRolePrompt(role) {
   const spec = roleSpec(role);
   for (const dir of rolePromptSearchDirs(RUNTIME_DIR)) {
-    const path = join3(dir, spec.file);
+    const path = join2(dir, spec.file);
     if (existsSync(path))
       return readFileSync(path, "utf8");
   }
@@ -1949,7 +1949,7 @@ import {
   chmodSync
 } from "node:fs";
 import { tmpdir as tmpdir2 } from "node:os";
-import { join as join4 } from "node:path";
+import { join as join3 } from "node:path";
 
 // plugins/immune-brain/runtime/workspace_scope.ts
 import { spawnSync as spawnSync2 } from "node:child_process";
@@ -2540,9 +2540,9 @@ function publishReviewRevision(root, snapshot, diffHash, taskId) {
     throw new Error("review revision base has invalid identity");
   if (!REVISION_DIFF_HASH.test(diffHash))
     throw new Error("review revision diff hash has invalid identity");
-  const indexDirectory = mkdtempSync(join4(tmpdir2(), "imm-review-index-"));
+  const indexDirectory = mkdtempSync(join3(tmpdir2(), "imm-review-index-"));
   try {
-    const indexFile = join4(indexDirectory, "index");
+    const indexFile = join3(indexDirectory, "index");
     const env = { GIT_INDEX_FILE: indexFile };
     gitEvidence(root, ["read-tree", snapshot.base_tree], env);
     for (const [path, entry] of Object.entries(snapshot.changed_paths)) {
@@ -2633,11 +2633,11 @@ function captureReviewManifest(root, input) {
   return manifest;
 }
 function writeNativeReviewEvidence(payload) {
-  const rawDirectory = mkdtempSync(join4(tmpdir2(), "imm-canary-native-review-"));
+  const rawDirectory = mkdtempSync(join3(tmpdir2(), "imm-canary-native-review-"));
   try {
     const directory = realpathSync4(rawDirectory);
     chmodSync(directory, 493);
-    const path = join4(directory, "evidence.json");
+    const path = join3(directory, "evidence.json");
     writeFileSync(path, JSON.stringify(payload), { encoding: "utf8", mode: 420, flag: "wx" });
     assertReviewArtifact(path);
     return {
@@ -2666,7 +2666,7 @@ function assertReviewArtifact(path) {
 
 // plugins/immune-brain/runtime/kernel/backend_claim.ts
 import { lstatSync as lstatSync3, readFileSync as readFileSync4 } from "node:fs";
-import { join as join5, resolve as resolve3 } from "node:path";
+import { join as join4, resolve as resolve3 } from "node:path";
 
 // plugins/immune-brain/runtime/kernel/storage_paths.ts
 var STATE_RELATIVE = ".imm/state";
@@ -2775,7 +2775,7 @@ function parseBackendClaim(raw) {
   return raw;
 }
 function readBackendClaim(root) {
-  const raw = readJsonOrNull(join5(root, CLAIM_PATH));
+  const raw = readJsonOrNull(join4(root, CLAIM_PATH));
   if (!raw)
     return null;
   return parseBackendClaim(raw);
@@ -2819,7 +2819,7 @@ function parseTaskTombstone(raw) {
 }
 function readTaskTombstone(root, taskId) {
   validateTaskId2(taskId);
-  const raw = readJsonOrNull(join5(resolve3(root), auditTerminalProofPath(taskId)));
+  const raw = readJsonOrNull(join4(resolve3(root), auditTerminalProofPath(taskId)));
   if (!raw)
     return null;
   const tombstone = parseTaskTombstone(raw);
@@ -2879,7 +2879,7 @@ import {
   realpathSync as realpathSync5
 } from "node:fs";
 import { execFileSync as execFileSync3 } from "node:child_process";
-import { join as join6, resolve as resolve4, sep as sep3 } from "node:path";
+import { join as join5, resolve as resolve4, sep as sep3 } from "node:path";
 
 // plugins/immune-brain/runtime/kernel/intent_token_registry.ts
 var TOKEN_BRAND = Symbol("assurance-kernel-task-intent-identity-token");
@@ -3194,7 +3194,7 @@ function resolveSidecarPath(canonicalRoot, activePath, archivedPath) {
 }
 function sidecarPresent(canonicalRoot, relativePath) {
   try {
-    lstatSync4(join6(canonicalRoot, relativePath));
+    lstatSync4(join5(canonicalRoot, relativePath));
     return true;
   } catch {
     return false;
@@ -3204,7 +3204,7 @@ function collectPathIdentities(canonicalRoot, relativePath) {
   const identities = [];
   let current = canonicalRoot;
   for (const part of relativePath.split("/")) {
-    current = join6(current, part);
+    current = join5(current, part);
     const stat = lstatSync4(current);
     if (stat.isSymbolicLink())
       throw new Error("intent sidecar path contains a symlink");
@@ -3216,7 +3216,7 @@ function assertIdentitiesUnchanged(expected, canonicalRoot, relativePath) {
   let current = canonicalRoot;
   const parts = relativePath.split("/");
   for (let index = 0;index < parts.length; index += 1) {
-    current = join6(current, parts[index]);
+    current = join5(current, parts[index]);
     const stat = lstatSync4(current);
     if (stat.dev !== expected[index].dev || stat.ino !== expected[index].ino)
       throw new Error(`path component changed while being read: ${parts.slice(0, index + 1).join("/")}`);
@@ -3230,7 +3230,7 @@ function readTaskIntentSource(root, taskId, requestedPath) {
   const sidecarPath = requestedPath ?? resolveSidecarPath(canonicalRoot, activePath, archivedPath);
   if (sidecarPath !== activePath && sidecarPath !== archivedPath)
     throw new Error("intent sidecar path is not the active or archived task path");
-  const target = join6(canonicalRoot, sidecarPath);
+  const target = join5(canonicalRoot, sidecarPath);
   if (!target.startsWith(canonicalRoot + sep3))
     throw new Error("intent sidecar escapes project root");
   if (!sidecarPresent(canonicalRoot, sidecarPath))
@@ -6077,9 +6077,8 @@ function applyTaskAction(input) {
       ]);
     consumeIntentToken(prior_intent_token);
     consumeIntentToken(freshRead.token);
-    let consumedAudit = null;
     if (expectedAuthority) {
-      consumedAudit = registry.consume(capability, expectedAuthority, now);
+      registry.consume(capability, expectedAuthority, now);
     }
     const nextWorking = mutation.next_workspace_working;
     const nextRecord = input.artifact_transition ? {
@@ -7211,11 +7210,11 @@ function deriveAuthorizationOperation(input) {
 // plugins/immune-brain/runtime/staged_intent.ts
 import { execFileSync as execFileSync4 } from "node:child_process";
 import { readFileSync as readFileSync7, writeFileSync as writeFileSync3 } from "node:fs";
-import { join as join7 } from "node:path";
+import { join as join6 } from "node:path";
 function captureStagedIntent(root, relativePath) {
   return {
     path: relativePath,
-    bytes: readFileSync7(join7(root, relativePath)),
+    bytes: readFileSync7(join6(root, relativePath)),
     index_state: execFileSync4("git", ["ls-files", "--stage", "-z", "--", relativePath], {
       cwd: root,
       stdio: ["ignore", "pipe", "pipe"]
@@ -7223,7 +7222,7 @@ function captureStagedIntent(root, relativePath) {
   };
 }
 function restoreStagedIntent(root, snapshot) {
-  writeFileSync3(join7(root, snapshot.path), snapshot.bytes);
+  writeFileSync3(join6(root, snapshot.path), snapshot.bytes);
   execFileSync4("git", ["update-index", "--force-remove", "--", snapshot.path], {
     cwd: root,
     stdio: ["ignore", "pipe", "pipe"]
@@ -7235,7 +7234,7 @@ function restoreStagedIntent(root, snapshot) {
       stdio: ["pipe", "ignore", "pipe"]
     });
   }
-  const restoredBytes = readFileSync7(join7(root, snapshot.path));
+  const restoredBytes = readFileSync7(join6(root, snapshot.path));
   if (!restoredBytes.equals(snapshot.bytes)) {
     throw new Error("failed to restore prior intent bytes");
   }
@@ -8544,7 +8543,7 @@ async function revalidatePendingChildBeforeWrite(root, gh, childNumber, childTas
 
 // plugins/immune-brain/runtime/unattended/batch_preflight.ts
 import { existsSync as existsSync5, readdirSync as readdirSync2, readFileSync as readFileSync9 } from "node:fs";
-import { join as join9 } from "node:path";
+import { join as join8 } from "node:path";
 import { spawnSync as spawnSync4 } from "node:child_process";
 
 // plugins/immune-brain/runtime/kernel/batch_authority.ts
@@ -9003,7 +9002,7 @@ async function projectBatchPlan(root, initiativeSlug, input, readInitiative = ob
 // plugins/immune-brain/runtime/unattended/batch_state.ts
 import { existsSync as existsSync4, mkdirSync as mkdirSync3, openSync as openSync4, closeSync as closeSync4, writeFileSync as writeFileSync4, renameSync as renameSync2, lstatSync as lstatSync6, constants as constants3, rmSync as rmSync4 } from "node:fs";
 import { randomUUID as randomUUID5 } from "node:crypto";
-import { dirname as dirname4, join as join8 } from "node:path";
+import { dirname as dirname4, join as join7 } from "node:path";
 var BATCH_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 var CHILD_RUN_STATES = new Set([
   "pending",
@@ -9035,7 +9034,7 @@ function validateBatchId(batchId) {
 }
 function statePath(batchId) {
   validateBatchId(batchId);
-  return join8(".imm", "state", "batches", `${batchId}.json`);
+  return join7(".imm", "state", "batches", `${batchId}.json`);
 }
 function canonicalBytes(record) {
   return `${JSON.stringify(record, null, 2)}
@@ -9131,14 +9130,14 @@ function prepareBatchRunState(input) {
 }
 function readBatchRunState(root, batchId) {
   const path = statePath(batchId);
-  if (!existsSync4(join8(root, path)))
+  if (!existsSync4(join7(root, path)))
     return null;
   const parsed = JSON.parse(readSecureProjectFile(root, path));
   validateRecordShape(parsed, batchId);
   return parsed;
 }
 function ensureSecureDirectory2(root, relative) {
-  const target = join8(root, relative);
+  const target = join7(root, relative);
   const parent = dirname4(target);
   if (!existsSync4(parent))
     mkdirSync3(parent, { recursive: true });
@@ -9152,7 +9151,7 @@ function ensureSecureDirectory2(root, relative) {
   return target;
 }
 function writeFileAtomically(root, relative, bytes) {
-  const target = join8(root, relative);
+  const target = join7(root, relative);
   const targetDir = dirname4(target);
   const stats = lstatSync6(targetDir);
   if (!stats.isDirectory())
@@ -9179,26 +9178,26 @@ function writeBatchRunState(root, record) {
   const path = statePath(record.batch_id);
   validateRecordShape(record, record.batch_id);
   return withKernelStoreLock(root, () => {
-    const existing = existsSync4(join8(root, path)) ? readSecureProjectFile(root, path) : null;
+    const existing = existsSync4(join7(root, path)) ? readSecureProjectFile(root, path) : null;
     if (existing !== null && existing === canonicalBytes(record))
       return record;
     const stored = {
       ...record,
       updated_at: new Date().toISOString()
     };
-    ensureSecureDirectory2(root, join8(".imm", "state", "batches"));
+    ensureSecureDirectory2(root, join7(".imm", "state", "batches"));
     writeFileAtomically(root, path, canonicalBytes(stored));
     return stored;
   });
 }
 function reportPath(batchId) {
   validateBatchId(batchId);
-  return join8(".imm", "state", "batches", `${batchId}.report.json`);
+  return join7(".imm", "state", "batches", `${batchId}.report.json`);
 }
 function writeBatchRunReport(root, report) {
   const relative = reportPath(report.batch_id);
   return withKernelStoreLock(root, () => {
-    const path = join8(root, relative);
+    const path = join7(root, relative);
     if (existsSync4(path)) {
       const original = JSON.parse(readSecureProjectFile(root, relative));
       if (typeof original !== "object" || original === null || original.contract !== "assurance_kernel/batch_run_report/v1")
@@ -9209,7 +9208,7 @@ function writeBatchRunReport(root, report) {
       if (prior.batch_state !== "needs_human")
         return prior;
     }
-    ensureSecureDirectory2(root, join8(".imm", "state", "batches"));
+    ensureSecureDirectory2(root, join7(".imm", "state", "batches"));
     writeFileAtomically(root, relative, canonicalReportBytes(report));
     return report;
   });
@@ -9242,7 +9241,7 @@ function readActiveClaimTaskId(root) {
   return workspace.state.current_working || (claim?.lifecycle_status === "active" ? claim.task_id : null);
 }
 function findExistingActiveBatch(root, initiativeSlug) {
-  const batchesDir = join9(root, ".imm", "state", "batches");
+  const batchesDir = join8(root, ".imm", "state", "batches");
   if (!existsSync5(batchesDir))
     return null;
   for (const file of readdirSync2(batchesDir)) {
@@ -9250,7 +9249,7 @@ function findExistingActiveBatch(root, initiativeSlug) {
       continue;
     let record;
     try {
-      record = JSON.parse(readFileSync9(join9(batchesDir, file), "utf8"));
+      record = JSON.parse(readFileSync9(join8(batchesDir, file), "utf8"));
     } catch {
       return { corrupt: true, path: file };
     }
@@ -9278,7 +9277,7 @@ function findExistingActiveBatch(root, initiativeSlug) {
   return null;
 }
 function findSettledBatchRecord(root, initiativeSlug) {
-  const batchesDir = join9(root, ".imm", "state", "batches");
+  const batchesDir = join8(root, ".imm", "state", "batches");
   if (!existsSync5(batchesDir))
     return null;
   let newest = null;
@@ -9287,7 +9286,7 @@ function findSettledBatchRecord(root, initiativeSlug) {
       continue;
     let record;
     try {
-      record = JSON.parse(readFileSync9(join9(batchesDir, file), "utf8"));
+      record = JSON.parse(readFileSync9(join8(batchesDir, file), "utf8"));
     } catch {
       continue;
     }
@@ -9315,8 +9314,8 @@ function isOwnBatchClaim(root, existingBatch, taskId, batchBranch) {
   let claim = null;
   let workspace = null;
   try {
-    claim = JSON.parse(readFileSync9(join9(root, ".imm", "state", "active-claim.json"), "utf8"));
-    workspace = JSON.parse(readFileSync9(join9(root, ".imm", "state", "workspace.json"), "utf8"));
+    claim = JSON.parse(readFileSync9(join8(root, ".imm", "state", "active-claim.json"), "utf8"));
+    workspace = JSON.parse(readFileSync9(join8(root, ".imm", "state", "workspace.json"), "utf8"));
   } catch {
     return false;
   }
@@ -9332,7 +9331,7 @@ function isOwnBatchClaim(root, existingBatch, taskId, batchBranch) {
   }
   let rec = null;
   try {
-    rec = JSON.parse(readFileSync9(join9(root, ".imm", "state", "tasks", `${taskId}.json`), "utf8"));
+    rec = JSON.parse(readFileSync9(join8(root, ".imm", "state", "tasks", `${taskId}.json`), "utf8"));
   } catch {
     return false;
   }
@@ -9695,7 +9694,7 @@ async function authorizeBatch(options) {
 // plugins/immune-brain/runtime/unattended/batch_runner.ts
 import { spawnSync as spawnSync6 } from "node:child_process";
 import { existsSync as existsSync7 } from "node:fs";
-import { join as join11 } from "node:path";
+import { join as join10 } from "node:path";
 
 // plugins/immune-brain/runtime/unattended/batch_git.ts
 import { spawnSync as spawnSync5 } from "node:child_process";
@@ -9712,7 +9711,7 @@ import {
   rmSync as rmSync5,
   writeFileSync as writeFileSync5
 } from "node:fs";
-import { dirname as dirname5, join as join10 } from "node:path";
+import { dirname as dirname5, join as join9 } from "node:path";
 var DEFAULT_GIT_ENV = {
   ...process.env,
   GIT_AUTHOR_NAME: process.env.GIT_AUTHOR_NAME || "Immune-Brain Batch",
@@ -9920,13 +9919,13 @@ function getCommittedDeltaPaths(root) {
   return delta.stdout.split("\x00").filter((p) => p.length > 0);
 }
 function commitEvidencePath(batchId, taskId) {
-  return join10(".imm", "state", "batches", "commits", `${batchId}-${taskId}.json`);
+  return join9(".imm", "state", "batches", "commits", `${batchId}-${taskId}.json`);
 }
 function ensureSecureDirectory3(root, relativePath) {
   const segments = relativePath.split("/").filter(Boolean);
   let current = root;
   for (const segment of segments) {
-    current = join10(current, segment);
+    current = join9(current, segment);
     if (existsSync6(current)) {
       const stats = lstatSync7(current);
       if (stats.isSymbolicLink() || !stats.isDirectory()) {
@@ -9939,7 +9938,7 @@ function ensureSecureDirectory3(root, relativePath) {
   return current;
 }
 function writeFileAtomically2(root, relativePath, bytes) {
-  const target = join10(root, relativePath);
+  const target = join9(root, relativePath);
   const targetDir = dirname5(target);
   ensureSecureDirectory3(root, dirname5(relativePath));
   const stats = lstatSync7(targetDir);
@@ -9985,7 +9984,7 @@ function writeBatchCommitEvidence(root, evidence) {
 }
 function readBatchCommitEvidence(root, batchId, taskId) {
   const path = commitEvidencePath(batchId, taskId);
-  const fullPath = join10(root, path);
+  const fullPath = join9(root, path);
   if (!existsSync6(fullPath))
     return null;
   try {
@@ -10299,7 +10298,7 @@ function failPersistedLineage(root, existing, message) {
   return writeBatchRunState(root, record);
 }
 function externalHeadDriftMessage(root, record) {
-  if (!existsSync7(join11(root, ".git")))
+  if (!existsSync7(join10(root, ".git")))
     return null;
   const head = record.commits.length ? record.commits[record.commits.length - 1] : record.base_head;
   const headCheck = spawnSync6("git", ["-C", root, "rev-parse", "HEAD"], {
@@ -10340,7 +10339,7 @@ async function validatePersistedRun(input, record) {
       branch: record.branch
     });
     if (!evidence || evidence.commit !== child.commit) {
-      if (evidence === null && typeof child.commit === "string" && child.commit.length > 0 && existsSync7(join11(input.root, ".git"))) {
+      if (evidence === null && typeof child.commit === "string" && child.commit.length > 0 && existsSync7(join10(input.root, ".git"))) {
         const reach = spawnSync6("git", ["-C", input.root, "merge-base", "--is-ancestor", child.commit, "HEAD"], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
         if (reach.status !== 0) {
           throw new Error(`batch_head_lineage_broken: recorded commit ${child.commit} for ${child.task_id} is no longer reachable from HEAD`);
@@ -11062,7 +11061,7 @@ function stagePlanningArtifactTransition(root, record) {
     intentArchive,
     ...specActive ? [specActive, specActive.replace("docs/specs/", "docs/specs/archive/")] : []
   ];
-  const paths = candidates.filter((path) => existsSync8(join12(root, path)) || execFileSync5("git", ["ls-files", "--cached", "--", path], { cwd: root, encoding: "utf8" }).trim().length > 0);
+  const paths = candidates.filter((path) => existsSync8(join11(root, path)) || execFileSync5("git", ["ls-files", "--cached", "--", path], { cwd: root, encoding: "utf8" }).trim().length > 0);
   if (paths.length === 0)
     return;
   execFileSync5("git", ["add", "--", ...paths], { cwd: root, stdio: ["ignore", "pipe", "pipe"] });
@@ -11319,7 +11318,7 @@ class ClaudeRuntime {
       throw new Error("approve_breaking_intent_revision requires next_intent");
     const nextIntentHash = nextIntent ? canonicalIntentHash(nextIntent) : undefined;
     const nextIntentRef = nextIntent ? { path: `docs/plans/${nextIntent.task_id}.intent.json`, content_hash: nextIntentHash } : undefined;
-    const sidecar = nextIntent ? join12(this.cwd, priorIntent.intent_ref.path) : undefined;
+    const sidecar = nextIntent ? join11(this.cwd, priorIntent.intent_ref.path) : undefined;
     const stagedSnapshot = sidecar ? captureStagedIntent(this.cwd, priorIntent.intent_ref.path) : undefined;
     const restoreStagedIntent2 = () => {
       if (!stagedSnapshot)
@@ -11500,8 +11499,8 @@ class ClaudeRuntime {
     const { app } = await this.authority();
     const operation = input.operation.op === "revise_intent" ? { ...input.operation, next_intent: await parseTaskIntentV1(input.operation.next_intent) } : input.operation;
     const priorIntent = await readTaskIntentForRecord(ctx.cwd, input.taskId);
-    const sidecar = join12(ctx.cwd, priorIntent.intent_ref.path);
-    const priorBytes = operation.op === "revise_intent" ? readFileSync11(sidecar) : null;
+    const sidecar = join11(ctx.cwd, priorIntent.intent_ref.path);
+    const priorBytes = operation.op === "revise_intent" ? readFileSync10(sidecar) : null;
     const priorStaged = priorBytes !== null ? captureStagedIntent(ctx.cwd, priorIntent.intent_ref.path) : null;
     try {
       if (priorBytes) {
@@ -11723,7 +11722,7 @@ class ClaudeRuntime {
         if (!rehearsal.rehearsed || rehearsal.evidence.outcome !== "ready") {
           throw new Error(`Kernel enrollment rehearsal failed: ${rehearsal.evidence.blockers.join("; ")}`);
         }
-        const enrolled = enrollCanaryTask(root, input, this.enrollmentRegistry);
+        enrollCanaryTask(root, input, this.enrollmentRegistry);
         const recordRaw = readTaskRecordRaw(root, task_id);
         return { record_revision: recordRaw.revision };
       },

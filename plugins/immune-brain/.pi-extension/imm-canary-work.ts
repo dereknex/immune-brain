@@ -23,10 +23,8 @@ import { Type } from "typebox";
 import { PLUGIN_VERSION } from "../runtime/plugin_version";
 import {
 	parseVerificationDescriptor,
-	canonicalDescriptorBytes,
 	resolveBunRunner,
 	assertRunnerCompatible,
-	findingsDigest,
 	type FrozenRunner,
 	type VerificationDescriptor,
 } from "./pi-canary-verification";
@@ -46,10 +44,6 @@ import {
 	captureStagedIntent,
 	restoreStagedIntent as restoreStagedIntentShared,
 } from "../runtime/staged_intent";
-import {
-	reservedAgentParams,
-	type ReservedAgentParams,
-} from "./pi-canary-native-review";
 import {
 	renderCanaryCall,
 	renderCanaryResult,
@@ -81,7 +75,6 @@ import {
 	buildReviewPrompt,
 	classifyReviewWorkload,
 	deriveQaJobTimeoutMs,
-	deriveGithubTerminalProjectionInput,
 	projectTerminalTrackerState,
 	parseAssuranceVerdict,
 	snapshotDigest,
@@ -90,12 +83,9 @@ import {
 	REVIEW_PREPARATION_TIMEOUT_MS,
 	REVIEW_TIMING_PROFILES,
 	REVIEW_VERDICT_VALIDATION_TIMEOUT_MS,
-	type AssuranceAdvanceResult,
 	type AssuranceProgressionPorts,
-	type AssuranceSubmitReviewResult,
 	type AssuranceVerdict,
 	type HostContext,
-	type QaVerificationProgress,
 	type SnapshotDescriptor,
 } from "./pi-canary-assurance-progression";
 
@@ -121,7 +111,6 @@ import {
 	parseTaskIntentV1,
 	canonicalIntentHash,
 	projectAssurance,
-	deriveAssuranceAuthorization,
 	findingsDigestV2,
 	capabilityActionFor,
 	digestOfAction,
@@ -134,7 +123,6 @@ import {
 } from "./runtime-stub";
 import { invocationRegistry } from "./pi-canary-assurance-progression";
 
-const TASK_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 const LOOP_OWNERS = ["plan", "kernel", "brainstorm", "planner", "loop"] as const;
 const LOOP_TARGETS = [
 	"step",

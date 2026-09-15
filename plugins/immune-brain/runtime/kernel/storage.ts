@@ -18,7 +18,6 @@ import {
 	parseBackendClaim,
 	readBackendClaim,
 	parseTaskTombstone,
-	readTaskTombstone,
 	serializeTaskTombstone,
 	type BackendClaim,
 	type TaskTombstone,

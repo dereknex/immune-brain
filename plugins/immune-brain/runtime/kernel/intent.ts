@@ -118,7 +118,6 @@ function riskFloorForScope(scopeHint: string[]): TaskRisk | null {
 		: null;
 }
 
-const SHA256_HEX = /^sha256:[a-f0-9]{64}$/;
 const TASK_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 const portablePathCollator = new Intl.Collator("und", {
 	usage: "search",

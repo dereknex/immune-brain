@@ -3,7 +3,7 @@
 // for one confirmed canary task. Requires a valid EnrollmentCapability.
 // No CLI, runtime route, or production issuer exists in P2B0.
 
-import { canonicalIntentHash, readTaskIntent } from "./intent";
+import { readTaskIntent } from "./intent";
 import { inspectSpecBinding } from "./spec_binding";
 import {
 	type EnrollmentAuthorityRegistry,

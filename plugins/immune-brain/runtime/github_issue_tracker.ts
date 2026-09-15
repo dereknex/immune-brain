@@ -2360,7 +2360,7 @@ export async function runGithubInitiativePublication(
 		);
 		if (!("get" in topology)) return publicationResult(topology.status, topology.message, topology);
 		const historicalRelations = new Map<string, { blocked_by: number[]; state_reason: string | null }>();
-		for (const [taskId, binding] of amendment.historical) {
+		for (const [taskId] of amendment.historical) {
 			const issue = topology.get(taskId)!;
 			const observed = await readBlockedByIds(absoluteRoot, gh, "upsert-task", initial.repository, issue.number);
 			if (!Array.isArray(observed)) return publicationResult(observed.status, observed.message, observed);

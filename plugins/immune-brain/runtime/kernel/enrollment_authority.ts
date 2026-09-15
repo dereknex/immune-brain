@@ -3,7 +3,6 @@
 // validation and projection remain here.
 
 import { createCapabilityRegistry } from "./capability_registry";
-import { MUTATION_AUTHORITY_CAPABILITY_BRAND } from "./types";
 
 export const ENROLLMENT_CAPABILITY_BRAND = Symbol.for("assurance-kernel.enrollment-capability-brand");
 

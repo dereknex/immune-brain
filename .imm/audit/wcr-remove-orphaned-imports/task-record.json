@@ -1,0 +1,152 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "wcr-remove-orphaned-imports",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "wcr-remove-orphaned-imports",
+    "goal": "Remove the unused imports S9/S13 left behind in kernel_ports.ts, imm-unattended-batch.ts, and imm-canary-work.ts, and enable noUnusedLocals in tsconfig.json so bun run typecheck catches recurrence instead of relying on review.",
+    "acceptance": [
+      {
+        "id": "RB11-1",
+        "assertion": "tsconfig.json has compilerOptions.noUnusedLocals: true, and bun run typecheck passes cleanly with it enabled after removing the unused imports in runtime/claude/kernel_ports.ts, .pi-extension/imm-unattended-batch.ts, and .pi-extension/imm-canary-work.ts left over from the S9/S13 refactor.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.4.2\",\n  \"argv\": [\n    \"run\",\n    \"typecheck\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 180000,\n  \"max_output_bytes\": 131072\n}\n"
+      }
+    ],
+    "scope_hint": [
+      "docs/plans/wcr-remove-orphaned-imports.intent.json",
+      "docs/specs/archive/workflow-consolidation-remediation.spec.md",
+      "docs/specs/workflow-consolidation-remediation.spec.md",
+      "plugins/immune-brain/.pi-extension/imm-canary-work.ts",
+      "plugins/immune-brain/.pi-extension/imm-unattended-batch.ts",
+      "plugins/immune-brain/dist/claude/mcp-server.mjs",
+      "plugins/immune-brain/runtime/assurance/verification.ts",
+      "plugins/immune-brain/runtime/claude/kernel_ports.ts",
+      "plugins/immune-brain/runtime/commands/kernel.ts",
+      "plugins/immune-brain/runtime/github_issue_tracker.ts",
+      "plugins/immune-brain/runtime/kernel/application.ts",
+      "plugins/immune-brain/runtime/kernel/enrollment.ts",
+      "plugins/immune-brain/runtime/kernel/enrollment_authority.ts",
+      "plugins/immune-brain/runtime/kernel/intent.ts",
+      "plugins/immune-brain/runtime/kernel/legacy_audit.ts",
+      "plugins/immune-brain/runtime/kernel/reducer.ts",
+      "plugins/immune-brain/runtime/kernel/storage.ts",
+      "plugins/immune-brain/runtime/kernel/storage_layout_migration.ts",
+      "plugins/immune-brain/runtime/managed_task_routing_policy.ts",
+      "plugins/immune-brain/runtime/unattended/batch_git.ts",
+      "scripts/fix-broken-links.ts",
+      "tsconfig.json"
+    ],
+    "risk": "material",
+    "revision": 2,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/archive/wcr-remove-orphaned-imports.intent.json",
+    "content_hash": "sha256:752323fa11c682a5bff50d1f9dc608b1ddc121d272308adedbc6a5281af0db9a"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:a48079c4a1cf1ecd3eee46d24c9a8c34744c82cac8ba6e14bf82f64d12c6381d",
+  "git_base_head": "5605ba6c6d5725d165d7ab96ed39c87ec5d8140b",
+  "attestations": [
+    {
+      "id": "approval-qa-c4f0b31b",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:752323fa11c682a5bff50d1f9dc608b1ddc121d272308adedbc6a5281af0db9a",
+      "diff_hash": "sha256:084379cc6a402aec84877643b43107b0305c1ca77cb809412ca6913b3901e35d",
+      "actor_id": "deterministic-qa",
+      "summary": "all 1 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "RB11-1",
+          "status": "passed",
+          "summary": "host-attested QA: all 1 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-3fa4b3ba",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:752323fa11c682a5bff50d1f9dc608b1ddc121d272308adedbc6a5281af0db9a",
+      "diff_hash": "sha256:084379cc6a402aec84877643b43107b0305c1ca77cb809412ca6913b3901e35d",
+      "actor_id": "parent-mediated-review",
+      "summary": "已核验 manifest_digest、revision 唯一父提交、tree 及全部 changed_paths 的 Git 对象；noUnusedLocals 已启用，清理保留原有副作用，生成产物差异一致，RB11-1 的 Kernel QA 证据通过，未发现阻断问题。",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "5605ba6c6d5725d165d7ab96ed39c87ec5d8140b",
+        "review_commit": "6361f6232903afc308247582a5601f12dd0a6d18",
+        "review_tree": "b367e1b1e57c74668ce14900ac6420ded7b66e7a",
+        "manifest_digest": "sha256:ecaaf85e0dd5e4bdb35badc9e6cd7903b7acfd5612e59087db6dd0d5080b84c6"
+      }
+    }
+  ],
+  "findings": [],
+  "history": [
+    {
+      "id": "approve_breaking_intent_revision:wcr-remove-orphaned-imports:2026-09-15T02:28:29.536Z",
+      "at": "2026-09-15T02:28:29.536Z",
+      "type": "approve_breaking_intent_revision",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "intent_revision_2\naction_v2_sha256:a3988e13b8c8d0cfa56a5fddb21b3b72314ec76ef66735725a3aa32eb0b1b368",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-0d963528f404372c",
+        "issued_at": "2026-09-15T02:28:29.686Z",
+        "expires_at": "2026-09-15T02:38:29.686Z"
+      }
+    },
+    {
+      "id": "freeze_artifacts:wcr-remove-orphaned-imports:2026-09-15T02:35:22.574Z",
+      "at": "2026-09-15T02:35:22.574Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent and Spec frozen at docs/plans/archive/wcr-remove-orphaned-imports.intent.json"
+    },
+    {
+      "id": "record_approval:wcr-remove-orphaned-imports:2026-09-15T02:35:26.840Z",
+      "at": "2026-09-15T02:35:26.840Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-c4f0b31b\naction_v2_sha256:95e62feeffe85943dbbd45390503ec72cc47056615f8774e41cdc2723175f8c1",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-e51d9d4326bcc5f2",
+        "issued_at": "2026-09-15T02:35:26.841Z",
+        "expires_at": "2026-09-15T02:45:26.841Z"
+      }
+    },
+    {
+      "id": "record_approval:wcr-remove-orphaned-imports:2026-09-15T02:36:58.672Z",
+      "at": "2026-09-15T02:36:58.672Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-3fa4b3ba\naction_v2_sha256:6196c5ec4247cf01bd2943c7b5f9a68a083b5674ec773386376025ae29c36e5a",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-57b119bf1b9148c9",
+        "issued_at": "2026-09-15T02:36:58.672Z",
+        "expires_at": "2026-09-15T02:46:58.672Z"
+      }
+    },
+    {
+      "id": "complete:wcr-remove-orphaned-imports:2026-09-15T02:37:00.256Z",
+      "at": "2026-09-15T02:37:00.256Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:1b11f6f0a4502044eb531d9593f30ab9e0446cc233cd066b5aae320a366aff3f"
+    }
+  ]
+}
