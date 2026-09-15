@@ -1829,8 +1829,8 @@ describe("dual-host assurance conformance", () => {
 			expect(execFileSync("git", ["rev-parse", "HEAD"], { cwd: pf.root, encoding: "utf8" }).trim()).toBe(pHeadBefore);
 		}
 
-		// 15. Parity scenario: COMPLETED BATCH REPLAY CONFORMANCE
-		// (Terminal records must not be treated as corrupt; both hosts replay completed batches idempotently)
+		// 15. A completed batch is not resumed through the Initiative entry.
+		// With no new child, both Hosts refuse without changing terminal evidence.
 		{
 			const sharedReplaySlug = "conf-replay";
 			const cf = createConformanceFixture(`${sharedReplaySlug}-c`);
@@ -1902,7 +1902,9 @@ describe("dual-host assurance conformance", () => {
 			const cHeadBefore = execFileSync("git", ["rev-parse", "HEAD"], { cwd: cf.root, encoding: "utf8" }).trim();
 			const pHeadBefore = execFileSync("git", ["rev-parse", "HEAD"], { cwd: pf.root, encoding: "utf8" }).trim();
 
-			// Calling again after completion must idempotently replay the terminal state without re-enrollment
+			// Direct startBatch(batch_id) replay remains covered by unattended-batch-run.
+			cf.observation.tasks = [];
+			pf.observation.tasks = [];
 			const cRes2 = await cr.callTool("start_unattended_batch", { initiative_slug: `${sharedReplaySlug}-c` }, { toolCallId: "toolu-rp2" });
 			const pRes2 = await executePiUnattendedBatch({
 				root: pf.root,
@@ -1915,10 +1917,10 @@ describe("dual-host assurance conformance", () => {
 				confirmBatch: async () => "accept",
 			});
 
-			expect(cRes2.state).toBe("started");
-			expect(pRes2.state).toBe("started");
-			expect(cRes2.report.batch_state).toBe("completed");
-			expect(pRes2.report.batch_state).toBe("completed");
+			expect(cRes2.state).toBe("rejected");
+			expect(pRes2.state).toBe("rejected");
+			expect(cRes2.reason).toContain("empty enrollable child set");
+			expect(pRes2.reason).toBe(cRes2.reason);
 			expect(readFileSync(cBatchPath, "utf8")).toBe(cBatchBefore);
 			expect(readFileSync(pBatchPath, "utf8")).toBe(pBatchBefore);
 			expect(execFileSync("git", ["rev-parse", "HEAD"], { cwd: cf.root, encoding: "utf8" }).trim()).toBe(cHeadBefore);

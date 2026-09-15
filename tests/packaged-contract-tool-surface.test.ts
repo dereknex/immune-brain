@@ -17,10 +17,10 @@
 //
 // A Host-specific spelling is reported whenever the token is a call target,
 // either because a Host registers it as a Tool or because the contract itself
-// names it as one (the word Tool/Operation right after it). The second source is
-// what makes a Tool no Host registers any more — the HTN-2 regression this guard
-// exists to catch — a failure instead of a silent pass: a registration that no
-// longer exists leaves nothing to derive from, but the contract still spells the
+// names it as one (Call/Invoke before it or Tool/Operation after it). This catches
+// a Tool no Host registers any more — the HTN-2 regression this guard exists to
+// catch — as a failure instead of a silent pass: a registration that no longer
+// exists leaves nothing to derive from, but the contract still spells the
 // obligation as the Tool it claims.
 
 import { describe, expect, test } from "bun:test";
@@ -41,8 +41,9 @@ const PI_OPERATION_LITERAL = /Type\.Literal\("([a-z0-9_]+)"\)/g;
 /** A Tool declaration in a Pi extension file. */
 const PI_TOOL_DECLARATION = /^\s+name: "([a-z][a-z0-9_]*)"[,]?$/gm;
 const TOOL_SPELLING = /^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$/;
-/** The word Tool/Operation right after a token marks it as a call target. */
+/** Tool/Operation after a token or Call/Invoke before it marks a call target. */
 const TOOL_WORD_AFTER = /^\s*(?:Tool|Tools|Operation|Operations)\b/;
+const CALL_WORD_BEFORE = /\b(?:call|invoke)\s+(?:the\s+)?$/i;
 
 function read(abs: string): string {
 	return readFileSync(abs, "utf8");
@@ -89,27 +90,31 @@ const SHARED_OPERATIONS = new Set([...piOperationNames()].filter((name) => CLAUD
  * registered on every Host; a call target no Host registers at all is the
  * worst case of the same rule, not an exemption from it.
  */
-function hostSpecificToolSpellings(text: string): string[] {
-	const found = new Set<string>();
+function* hostSpecificToolMatches(text: string) {
 	for (const match of text.matchAll(BACKTICKED)) {
 		const token = match[1]!;
 		if (!TOOL_SPELLING.test(token)) continue;
 		if (SHARED_OPERATIONS.has(token) || EVERY_HOST_TOOLS.has(token)) continue;
 		const index = match.index ?? 0;
 		const registered = CLAUDE_TOOLS.has(token) || PI_TOOLS.has(token);
-		const named = TOOL_WORD_AFTER.test(text.slice(index + match[0].length));
-		if (registered || named) found.add(token);
+		const named =
+			TOOL_WORD_AFTER.test(text.slice(index + match[0].length)) || CALL_WORD_BEFORE.test(text.slice(0, index));
+		if (registered || named) yield match;
 	}
-	return [...found].sort();
+}
+
+function hostSpecificToolSpellings(text: string): string[] {
+	return [...new Set([...hostSpecificToolMatches(text)].map((match) => match[1]!))].sort();
 }
 
 /** The violations one contract text contributes, in line order. */
 function contractViolationsIn(rel: string, text: string): string[] {
-	const violations: string[] = [];
-	text.split("\n").forEach((line, index) => {
-		for (const token of hostSpecificToolSpellings(line)) violations.push(`${rel}:${index + 1}: \`${token}\``);
-	});
-	return violations;
+	const violations = new Set<string>();
+	for (const match of hostSpecificToolMatches(text)) {
+		const line = text.slice(0, match.index).split("\n").length;
+		violations.add(`${rel}:${line}: \`${match[1]}\``);
+	}
+	return [...violations];
 }
 
 function contractViolations(): string[] {
@@ -155,8 +160,52 @@ describe("packaged contract tool surface", () => {
 		]);
 	});
 
+	test.each([
+		"Call `retired_host_tool` in the foreground.",
+		"On `review_ready`, invoke `retired_host_tool` directly.",
+		"Invoke the `retired_host_tool` directly.",
+		"Call\n`retired_host_tool` in the foreground.",
+	])("the guard rejects an unregistered call target: %s", (text) => {
+		expect(hostSpecificToolSpellings(text)).toEqual(["retired_host_tool"]);
+	});
+
+	test.each(["Tool", "Tools", "Operation", "Operations"])(
+		"the guard retains cross-line %s context and reports the token's line",
+		(word) => {
+			const text = [
+				"The `retired_host_tool` identifier is historical.",
+				"The `retired_host_tool`",
+				`${word} projects authority.`,
+				"Call",
+				"`retired_host_tool` in the foreground.",
+				"The `retired_host_tool` identifier is historical.",
+			].join("\n");
+			expect(contractViolationsIn("contract.md", text)).toEqual([
+				"contract.md:2: `retired_host_tool`",
+				"contract.md:5: `retired_host_tool`",
+			]);
+		},
+	);
+
+	test("ordinary domain identifiers are not call targets", () => {
+		expect(
+			contractViolationsIn(
+				"contract.md",
+				"TaskIntent defines `scope_hint`. On `review_ready`, invoke the returned `agent_params`.\n" +
+					"The `initiative_slug` parameter identifies the batch. The `retired_host_tool` identifier is historical.",
+			),
+		).toEqual([]);
+	});
+
 	test("a shared Kernel operation and an every-Host tool name stay accepted", () => {
 		expect(hostSpecificToolSpellings("Call `advance_assurance` in the foreground. Read `status` first.")).toEqual([]);
 		expect(hostSpecificToolSpellings("The only unattended batch entry is `start_unattended_batch`.")).toEqual([]);
+		expect(
+			contractViolationsIn(
+				"contract.md",
+				"Invoke `request_authorization` directly. Call the `start_unattended_batch` Tool.\n" +
+					"The `advance_assurance`\nOperation runs QA. The `start_unattended_batch`\nTool starts the batch.",
+			),
+		).toEqual([]);
 	});
 });

@@ -993,7 +993,6 @@ export class ClaudeRuntime {
 		const isResuming = preflight.projection.is_resuming;
 		const batchBranch = preflight.projection.batch_branch;
 		const existingBatch = preflight.projection.existing_batch;
-		const baseHead = preflight.projection.base_head;
 		const budget = preflight.projection.budget;
 		const planDigest = preflight.projection.plan_digest;
 		const recoveryChildren = preflight.projection.recovery_children;
@@ -1123,7 +1122,7 @@ export class ClaudeRuntime {
 			capability,
 			children: recoveryChildren,
 			plan_digest: planDigest,
-			base_head: existingBatch ? existingBatch.base_head : baseHead,
+			base_head: binding.base_head,
 			confirmation_time: now,
 			authorization_expires_at: expiresAt,
 			budget,

@@ -63,7 +63,7 @@ function writeAuditPair(root: string, taskId: string): void {
 		task_id: taskId,
 		owner: "user",
 		goal: `Goal for ${taskId}`,
-		scope_hint: [GUARD_CHANGED_PATH],
+		scope_hint: [GUARD_CHANGED_PATH, `docs/specs/${taskId}.spec.md`, `docs/specs/archive/${taskId}.spec.md`],
 		acceptance: [{ id: `acc-${taskId}`, assertion: "assert something", verification: "bun test" }],
 		risk: "material",
 		revision: 1,
@@ -150,8 +150,9 @@ case "$command" in
       *"^@"*) printf '%s\\n' "${GUARD_HEAD}" ;;
       *) if [ -f "$committed" ]; then printf '%s\\n' "${GUARD_COMMIT}"; else printf '%s\\n' "${GUARD_HEAD}"; fi ;;
     esac ;;
-  symbolic-ref) printf '%s\\n' "main" ;;
-  show-ref) exit 1 ;;
+  symbolic-ref) if [ -f "$committed.branch" ]; then printf '%s\\n' "imm/initiative-slug"; else printf '%s\\n' "main"; fi ;;
+  show-ref) if [ ! -f "$committed.branch" ]; then exit 1; fi ;;
+  checkout) : > "$committed.branch" ;;
   diff-files) if [ ! -f "$staged" ]; then printf '${GUARD_CHANGED_PATH}\\000'; fi ;;
   ls-files)
     case "$*" in
@@ -159,8 +160,17 @@ case "$command" in
       *--others*) if [ ! -f "$staged" ]; then printf '${GUARD_CHANGED_PATH}\\000'; fi ;;
     esac ;;
   add) : > "$staged" ;;
-  commit) : > "$committed" ;;
-  log) printf '%s\\000%s\\000%s\\000%s\\000%s\\n' "${GUARD_COMMIT}" "${GUARD_BATCH_ID}" "Immune-Brain Batch" "immune-brain@local" "imm(${GUARD_TASK_ID}): recorded" ;;
+  commit)
+    : > "$committed"
+    while IFS= read -r line; do
+      case "$line" in
+        "Immune-Brain-Batch: "*) printf '%s\\n' "\${line#Immune-Brain-Batch: }" > "$committed.batch" ;;
+      esac
+    done ;;
+  log)
+    batch="${GUARD_BATCH_ID}"
+    if [ -f "$committed.batch" ]; then IFS= read -r batch < "$committed.batch"; fi
+    printf '%s\\000%s\\000%s\\000%s\\000%s\\n' "${GUARD_COMMIT}" "$batch" "Immune-Brain Batch" "immune-brain@local" "imm(${GUARD_TASK_ID}): recorded" ;;
 esac
 exit 0
 `;
@@ -306,56 +316,112 @@ if (!unreachable.error || !unreachable.error.includes("lacks evidence")) {
 }
 
 /**
- * The Host-adapter leg: both adapters' batch entry points run against the
- * recording Git, so a `worktree` or `push` vector either Host could produce is
- * recorded here too. The adapters reach Git only for reads — every mutating
- * vector stays the shared runtime's business — and each leg writes its own
- * result marker so a leg that never ran cannot pass silently.
+ * Drive both Host entries through the real shared runner and Git implementation.
+ * Only the tracker and Kernel work are scripted; a Review pause leaves durable
+ * enrolled state that the next adapter call must resume without re-enrollment.
  */
 function adapterDriveSource(runtimeDir: string): string {
 	const extensionPath = JSON.stringify(join(runtimeDir, "..", ".pi-extension", "imm-unattended-batch.ts"));
 	const claudePath = JSON.stringify(join(runtimeDir, "claude", "kernel_ports.ts"));
 	const reviewHostPath = JSON.stringify(join(runtimeDir, "claude", "review_host.ts"));
-	return `import { writeFileSync } from "node:fs";
+	return `import assert from "node:assert/strict";
+import { cpSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 const { executePiUnattendedBatch } = await import(${extensionPath});
 const { ClaudeRuntime } = await import(${claudePath});
 const { ClaudeReviewHost } = await import(${reviewHostPath});
 
-const [root, markerDir] = process.argv.slice(2);
+const [root, scratch, host, scenario] = process.argv.slice(2);
+const taskId = ${JSON.stringify(GUARD_TASK_ID)};
 const slug = "initiative-slug";
+const events = [];
+let enrolled = false;
+let advances = 0;
 const observation = {
 	contract: "immune_brain/github_initiative_observation/v1",
 	initiative_id: slug,
 	issue_number: 1,
-	tasks: [],
+	tasks: [{ task_id: taskId, slice_id: "S1", issue_number: 2, blocked_by: [] }],
 };
+const batchKernel = {
+	enrollTask: async ({ root: taskRoot, task_id }) => {
+		assert.equal(taskRoot, root);
+		assert.equal(task_id, taskId);
+		assert.equal(enrolled, false);
+		events.push("enroll");
+		enrolled = true;
+		return { record_revision: "fixture-revision" };
+	},
+	projectTask: async () => ({
+		contract: "assurance_kernel/assurance_projection/v1",
+		task_id: taskId,
+		error: null,
+		claim: enrolled ? { task_id: taskId, lifecycle_status: "active" } : null,
+		projection: { lifecycle: "active", completion_ready: false },
+	}),
+	ownsTaskClaim: (id) => enrolled && id === taskId,
+	advanceTask: async (taskRoot, id) => {
+		assert.equal(taskRoot, root);
+		assert.equal(id, taskId);
+		assert.equal(enrolled, true);
+		events.push("advance");
+		if (++advances === 1 && scenario === "resume") {
+			return { state: "review_ready", operation_id: "guard-review" };
+		}
+		cpSync(join(scratch, "audit-fixture", ".imm", "audit"), join(root, ".imm", "audit"), { recursive: true });
+		return { state: "completed" };
+	},
+};
+const confirm = async (details) => {
+	assert.ok(JSON.stringify(details).includes(taskId), "confirmation must offer the fixture child");
+	events.push("confirm");
+	return "accept";
+};
+const options = { interactive: true, readInitiative: async () => observation, batchKernel };
+const invoke = host === "pi"
+	? () => executePiUnattendedBatch({
+		...options, root, initiativeSlug: slug, confirmBatch: confirm,
+	})
+	: () => {
+		// A fresh Host instance must resume the persisted runner state.
+		const claude = new ClaudeRuntime({
+			...options,
+			cwd: root,
+			env: { CLAUDE_CODE_VERSION: "2.1.236", CLAUDE_CODE_PERMISSION_MODE: "manual" },
+			host: new ClaudeReviewHost(),
+			requestConfirmation: async (details) => ({ decision: await confirm(details), requestId: "recorded" }),
+		});
+		claude.bindHostVersion("2.1.236");
+		return claude.startUnattendedBatch(slug, {
+			toolCallId: "recorded", sessionId: "recorded", interactive: true, permissionMode: "manual",
+		});
+	};
 
-const pi = await executePiUnattendedBatch({
-	root,
-	initiativeSlug: slug,
-	interactive: true,
-	readInitiative: async () => observation,
-	confirmBatch: async () => "decline",
-});
-writeFileSync(join(markerDir, "pi.json"), JSON.stringify(pi));
-
-const claude = new ClaudeRuntime({
-	cwd: root,
-	env: { CLAUDE_CODE_VERSION: "2.1.236", CLAUDE_CODE_PERMISSION_MODE: "manual" },
-	host: new ClaudeReviewHost(),
-	interactive: true,
-	readInitiative: async () => observation,
-	requestConfirmation: async () => ({ decision: "decline", requestId: "recorded" }),
-});
-claude.bindHostVersion("2.1.236");
-const result = await claude.startUnattendedBatch(slug, {
-	toolCallId: "recorded",
-	sessionId: "recorded",
-	interactive: true,
-	permissionMode: "manual",
-});
-writeFileSync(join(markerDir, "claude.json"), JSON.stringify(result));
+const initial = await invoke();
+assert.equal(initial.state, "started", JSON.stringify(initial));
+assert.deepEqual(events, ["confirm", "enroll", "advance"]);
+cpSync(join(scratch, "invocations.log"), join(scratch, "initial.log"));
+let resumed = null;
+if (scenario === "resume") {
+	assert.equal(initial.report.batch_state, "running");
+	assert.equal(initial.report.children[0].state, "enrolled");
+	assert.match(initial.report.children[0].reason, /guard-review/);
+	assert.deepEqual(initial.report.commits, []);
+	const persisted = JSON.parse(readFileSync(join(root, ".imm", "state", "batches", initial.batch_id + ".json"), "utf8"));
+	assert.equal(persisted.batch_state, "running");
+	assert.equal(persisted.children[0].state, "enrolled");
+	resumed = await invoke();
+	assert.equal(resumed.state, "started", JSON.stringify(resumed));
+	assert.equal(resumed.batch_id, initial.batch_id);
+	assert.deepEqual(events, ["confirm", "enroll", "advance", "advance"]);
+}
+const final = resumed ?? initial;
+assert.equal(final.report.batch_state, "completed", JSON.stringify(final));
+assert.equal(final.report.children.length, 1);
+assert.equal(final.report.children[0].task_id, taskId);
+assert.equal(final.report.children[0].state, "committed");
+assert.deepEqual(final.report.commits, [${JSON.stringify(GUARD_COMMIT)}]);
+writeFileSync(join(scratch, "result.json"), JSON.stringify({ initial, resumed, events }));
 `;
 }
 
@@ -613,44 +679,64 @@ describe("unattended batch contract text", () => {
 		}
 	});
 
-	it("never produces a worktree or mutating invocation from either Host adapter", () => {
-		const scratch = mkdtempSync(join(tmpdir(), "imm-adapter-git-guard-"));
-		const root = join(scratch, "repo");
-		const binDir = join(scratch, "bin");
-		const logPath = join(scratch, "invocations.log");
-		const drivePath = join(scratch, "adapter-drive.ts");
-		try {
-			mkdirSync(root);
-			mkdirSync(binDir);
-			installRecordingGit({
-				binDir,
-				logPath,
-				committedMarker: join(scratch, "committed"),
-				stagedMarker: join(scratch, "staged"),
-				root,
-			});
-			// Both Host adapters' batch entry points, against the recording Git.
-			writeFileSync(drivePath, adapterDriveSource(join(REPO_ROOT, "plugins/immune-brain/runtime")));
-			const drive = spawnSync("bun", [drivePath, root, scratch], {
-				cwd: REPO_ROOT,
-				encoding: "utf8",
-				env: { ...process.env, PATH: `${binDir}:${process.env.PATH ?? ""}` },
-			});
-			expect({ status: drive.status, stderr: drive.stderr.trim().slice(0, 2000) }).toEqual({ status: 0, stderr: "" });
-			// Both legs really ran and reached Git: one preflight read each.
-			for (const leg of ["pi", "claude"]) {
-				expect({ leg, wrote: existsSync(join(scratch, `${leg}.json`)) }).toEqual({ leg, wrote: true });
-			}
+	for (const host of ["pi", "claude"]) for (const scenario of ["initial", "resume"]) {
+		it(`never produces worktree or push from ${host} during ${scenario} execution`, () => {
+			const scratch = mkdtempSync(join(tmpdir(), "imm-adapter-git-guard-"));
+			const root = join(scratch, "repo");
+			const binDir = join(scratch, "bin");
+			const logPath = join(scratch, "invocations.log");
+			const drivePath = join(scratch, "adapter-drive.ts");
+			try {
+				mkdirSync(join(root, ".git"), { recursive: true });
+				mkdirSync(join(root, "docs/plans"), { recursive: true });
+				mkdirSync(binDir);
+				// Keep terminal evidence outside the repo until the scripted Kernel settles.
+				const auditFixture = join(scratch, "audit-fixture");
+				writeAuditPair(auditFixture, GUARD_TASK_ID);
+				const { intent_snapshot } = JSON.parse(readFileSync(
+					join(auditFixture, ".imm", "audit", GUARD_TASK_ID, "task-record.json"), "utf8",
+				));
+				writeFileSync(join(root, "docs/plans", `${GUARD_TASK_ID}.intent.json`), JSON.stringify(intent_snapshot));
+				installRecordingGit({
+					binDir,
+					logPath,
+					committedMarker: join(scratch, "committed"),
+					stagedMarker: join(scratch, "staged"),
+					root,
+				});
+				writeFileSync(drivePath, adapterDriveSource(join(REPO_ROOT, "plugins/immune-brain/runtime")));
+				const drive = spawnSync("bun", [drivePath, root, scratch, host, scenario], {
+					cwd: REPO_ROOT,
+					encoding: "utf8",
+					env: { ...process.env, PATH: `${binDir}:${process.env.PATH ?? ""}` },
+					timeout: 20_000,
+				});
+				expect({ status: drive.status, stderr: drive.stderr.trim().slice(0, 2000) }).toEqual({ status: 0, stderr: "" });
+				const { initial, resumed, events } = JSON.parse(readFileSync(join(scratch, "result.json"), "utf8"));
+				expect(events).toEqual(scenario === "resume"
+					? ["confirm", "enroll", "advance", "advance"] : ["confirm", "enroll", "advance"]);
+				expect(initial.report.batch_state).toBe(scenario === "resume" ? "running" : "completed");
+				expect((resumed ?? initial).report.commits).toEqual([GUARD_COMMIT]);
 
-			const subcommands = recordedInvocations(logPath).map(gitSubcommand);
-			expect(subcommands.filter((command) => command === "rev-parse").length).toBeGreaterThanOrEqual(2);
-			// A Host adapter reaches Git only for reads: every mutating vector a batch
-			// can produce belongs to the shared runtime the first drive covers, and
-			// `worktree`/`push` belong to no path at all.
-			const forbidden = ["worktree", "push", "add", "commit", "checkout", "reset", "branch", "update-ref"];
-			expect(subcommands.filter((command) => forbidden.includes(command))).toEqual([]);
-		} finally {
-			rmSync(scratch, { recursive: true, force: true });
-		}
-	});
+				const invocations = recordedInvocations(logPath);
+				const initialCommands = recordedInvocations(join(scratch, "initial.log")).map(gitSubcommand);
+				expect(initialCommands.filter((command) => command === "checkout")).toHaveLength(1);
+				const completionCommands = scenario === "resume"
+					? invocations.slice(initialCommands.length).map(gitSubcommand) : initialCommands;
+				if (scenario === "resume") {
+					expect(initialCommands).not.toContain("commit");
+					expect(completionCommands).not.toContain("checkout");
+					expect(resumed.batch_id).toBe(initial.batch_id);
+				}
+				for (const mutation of ["add", "commit"]) {
+					expect(completionCommands.filter((command) => command === mutation)).toHaveLength(1);
+				}
+				// Inspect every actual Git vector, including calls an adapter might add
+				// around the runner. Shared checkout/add/commit are legitimate here.
+				expect(invocations.filter((args) => ["worktree", "push"].includes(gitSubcommand(args)))).toEqual([]);
+			} finally {
+				rmSync(scratch, { recursive: true, force: true });
+			}
+		}, 30_000);
+	}
 });

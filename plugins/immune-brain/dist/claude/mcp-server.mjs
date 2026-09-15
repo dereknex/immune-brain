@@ -2,7 +2,7 @@ import { createRequire } from "node:module";
 var __require = /* @__PURE__ */ createRequire(import.meta.url);
 
 // plugins/immune-brain/runtime/claude/mcp_server.ts
-import { randomUUID as randomUUID8 } from "node:crypto";
+import { randomUUID as randomUUID9 } from "node:crypto";
 import { createInterface } from "node:readline";
 import { stdin, stdout } from "node:process";
 
@@ -679,7 +679,7 @@ function parseHookStdin(raw) {
 }
 
 // plugins/immune-brain/runtime/claude/kernel_ports.ts
-import { randomUUID as randomUUID7 } from "node:crypto";
+import { randomUUID as randomUUID8 } from "node:crypto";
 import { existsSync as existsSync8, readFileSync as readFileSync10, writeFileSync as writeFileSync6 } from "node:fs";
 import { execFileSync as execFileSync5 } from "node:child_process";
 import { join as join11 } from "node:path";
@@ -8543,6 +8543,7 @@ async function revalidatePendingChildBeforeWrite(root, gh, childNumber, childTas
 
 // plugins/immune-brain/runtime/unattended/batch_preflight.ts
 import { existsSync as existsSync5, readdirSync as readdirSync2, readFileSync as readFileSync9 } from "node:fs";
+import { randomUUID as randomUUID6 } from "node:crypto";
 import { join as join8 } from "node:path";
 import { spawnSync as spawnSync4 } from "node:child_process";
 
@@ -9223,7 +9224,6 @@ function isTerminalBatchState(state) {
 
 // plugins/immune-brain/runtime/unattended/batch_preflight.ts
 var INITIATIVE_SLUG_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
-var DEFAULT_BATCH_BUDGET_MS = 8 * 60 * 60 * 1000;
 function batchRejection(key, detail = "") {
   const resolved = batchReason(key, detail);
   return {
@@ -9394,8 +9394,9 @@ async function projectPlanSurface(input) {
   let planDigest;
   let excluded = [];
   const riskByTask = new Map;
-  let budget = isResuming && existingBatch ? existingBatch.budget : { max_children: 10, deadline_at: new Date(Date.now() + DEFAULT_BATCH_BUDGET_MS).toISOString(), qa_failure_limit: 2 };
-  if (existingBatch) {
+  let budget;
+  if (isResuming && existingBatch) {
+    budget = existingBatch.budget;
     try {
       recoveryChildren = existingBatch.children.map((c) => {
         const intentPath = `docs/plans/${c.task_id}.intent.json`;
@@ -9626,7 +9627,7 @@ async function authorizeBatch(options) {
       reuseBlockers.push("batch_head_lineage_moved");
   }
   const reuseAuthorization = isResuming && reuseBlockers.length === 0;
-  const batchId = existingBatch ? existingBatch.batch_id : `batch-${initiativeSlug}-${Date.now()}`;
+  const batchId = isResuming && existingBatch ? existingBatch.batch_id : `batch-${initiativeSlug}-${randomUUID6()}`;
   const facts = {
     initiative_slug: initiativeSlug,
     batch_branch: batchBranch,
@@ -9674,7 +9675,7 @@ async function authorizeBatch(options) {
     initiative_slug: initiativeSlug,
     plan_digest: planDigest,
     branch: batchBranch,
-    base_head: existingBatch ? existingBatch.base_head : baseHead,
+    base_head: isResuming && existingBatch ? existingBatch.base_head : baseHead,
     budget,
     actor_id: LITERAL_USER_ACTOR_ID,
     confirmation_ref: options.confirmationRef({ batch_id: batchId, request_id: requestId }),
@@ -9698,7 +9699,7 @@ import { join as join10 } from "node:path";
 
 // plugins/immune-brain/runtime/unattended/batch_git.ts
 import { spawnSync as spawnSync5 } from "node:child_process";
-import { randomUUID as randomUUID6 } from "node:crypto";
+import { randomUUID as randomUUID7 } from "node:crypto";
 import {
   constants as constants4,
   closeSync as closeSync5,
@@ -9791,6 +9792,10 @@ function runBatchGitPreflight(input) {
   }
   const branchCheck = spawnSync5("git", ["-C", root, "show-ref", "--verify", "--quiet", `refs/heads/${branch}`], { stdio: ["ignore", "ignore", "ignore"] });
   if (branchCheck.status === 0) {
+    const settled = findSettledBatchRecord(root, initiativeSlug);
+    const currentBranch = spawnSync5("git", ["-C", root, "symbolic-ref", "--short", "HEAD"], { encoding: "utf8" });
+    if (findExistingActiveBatch(root, initiativeSlug) === null && settled?.branch === branch && currentBranch.status === 0 && currentBranch.stdout.trim() === branch && headResult.stdout.trim() === baseHead && spawnSync5("git", ["-C", root, "merge-base", "--is-ancestor", expectedBatchHead(settled), baseHead]).status === 0)
+      return { ok: true, branch };
     return {
       ok: false,
       reason: "batch_branch_exists",
@@ -9951,7 +9956,7 @@ function writeFileAtomically2(root, relativePath, bytes) {
       throw new Error(`${relativePath} is a symlink`);
     }
   }
-  const tempPath = `${target}.${randomUUID6()}.tmp`;
+  const tempPath = `${target}.${randomUUID7()}.tmp`;
   let fd = null;
   try {
     fd = openSync5(tempPath, constants4.O_WRONLY | constants4.O_CREAT | constants4.O_EXCL, 384);
@@ -11471,7 +11476,7 @@ class ClaudeRuntime {
       return;
     }
     const approval = {
-      id: `approval-${input.snapshot.role}-${randomUUID7().slice(0, 8)}`,
+      id: `approval-${input.snapshot.role}-${randomUUID8().slice(0, 8)}`,
       kind: input.snapshot.role === "qa" ? "qa" : "review",
       authority_role: input.snapshot.role === "qa" ? "qa" : "reviewer",
       task_revision: input.snapshot.intent_revision,
@@ -11567,7 +11572,6 @@ class ClaudeRuntime {
     const isResuming = preflight.projection.is_resuming;
     const batchBranch = preflight.projection.batch_branch;
     const existingBatch = preflight.projection.existing_batch;
-    const baseHead = preflight.projection.base_head;
     const budget = preflight.projection.budget;
     const planDigest = preflight.projection.plan_digest;
     const recoveryChildren = preflight.projection.recovery_children;
@@ -11684,7 +11688,7 @@ class ClaudeRuntime {
       capability,
       children: recoveryChildren,
       plan_digest: planDigest,
-      base_head: existingBatch ? existingBatch.base_head : baseHead,
+      base_head: binding.base_head,
       confirmation_time: now,
       authorization_expires_at: expiresAt,
       budget,
@@ -11820,7 +11824,7 @@ function createMcpRuntime(options = {}) {
   });
   let negotiatedVersion;
   let negotiatedInteractive = false;
-  const connectionId = randomUUID8();
+  const connectionId = randomUUID9();
   return {
     runtime,
     host,

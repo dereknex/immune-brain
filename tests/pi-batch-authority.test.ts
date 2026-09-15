@@ -411,7 +411,7 @@ describe("acc-pi-batch-gate", () => {
 		});
 
 		expect(result.state).toBe("started");
-		expect(result.batch_id).toMatch(/^batch-accept-run-\d+$/);
+		expect(result.batch_id).toMatch(/^batch-accept-run-[0-9a-f-]{36}$/);
 		expect(result.report).toBeDefined();
 		expect(result.report.batch_state).toBe("completed");
 		expect(result.report.commits.length).toBe(2);

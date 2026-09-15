@@ -17,6 +17,9 @@ import {
 import type { GithubInitiativeObservation } from "../plugins/immune-brain/runtime/github_issue_tracker";
 import { ClaudeRuntime, type ToolMeta } from "../plugins/immune-brain/runtime/claude/kernel_ports";
 import { readTaskRecordRaw } from "../plugins/immune-brain/runtime/kernel/storage";
+import { executePiUnattendedBatch } from "../plugins/immune-brain/.pi-extension/imm-unattended-batch";
+import type { BatchRunnerKernelPort } from "../plugins/immune-brain/runtime/unattended/batch_runner";
+import { runBatchGitPreflight } from "../plugins/immune-brain/runtime/unattended/batch_git";
 import { readTaskTombstone } from "../plugins/immune-brain/runtime/kernel/backend_claim";
 
 const ENV = { CLAUDE_CODE_VERSION: "2.1.236", CLAUDE_CODE_PERMISSION_MODE: "manual" };
@@ -271,7 +274,7 @@ describe("acc-claude-batch-gate", () => {
 		);
 
 		expect(result.state).toBe("started");
-		expect(result.batch_id).toMatch(/^batch-accept-exec-\d+$/);
+		expect(result.batch_id).toMatch(/^batch-accept-exec-[0-9a-f-]{36}$/);
 		expect(result.report).toBeDefined();
 		expect(result.report.initiative_slug).toBe("accept-exec");
 		expect(result.report.batch_state).toBe("completed");
@@ -639,6 +642,62 @@ describe("acc-claude-batch-fail-closed", () => {
 		expect(result.state).toBe("started");
 		expect(result.report).toBeDefined();
 		expect(result.report.batch_state).not.toBe("rejected");
+	});
+
+	for (const host of ["claude", "pi"] as const) it(`${host}: starts new children after a completed batch without replaying its identity`, async () => {
+		const slug = "next-round";
+		const fixture = createBatchFixture(slug);
+		const enrolled: string[] = [];
+		const commits = new Map<string, string>();
+		let observation = { ...fixture.observation, tasks: fixture.observation.tasks.slice(0, 1) };
+		let confirmations = 0;
+		const batchKernel: Partial<BatchRunnerKernelPort> = {
+			enrollTask: async ({ task_id }) => { enrolled.push(task_id); return { record_revision: "enrolled" }; },
+			advanceTask: async () => ({ state: "completed" }),
+			commitChild: async (_root, taskId) => {
+				execFileSync("git", ["commit", "--allow-empty", "-qm", `complete ${taskId}`], { cwd: fixture.root });
+				const commit = execFileSync("git", ["rev-parse", "HEAD"], { cwd: fixture.root, encoding: "utf8" }).trim();
+				commits.set(taskId, commit);
+				return { commit };
+			},
+			lookupBatchCommit: async (_root, taskId) => commits.has(taskId) ? { commit: commits.get(taskId)! } : null,
+		};
+		const runtime = createMcpRuntime({
+			cwd: fixture.root, env: ENV, interactive: true,
+			readInitiative: async () => observation,
+			requestConfirmation: async () => ({ decision: "accept", requestId: `round-${++confirmations}` }),
+			batchKernel,
+		});
+		runtime.bindClientHandshake({ version: "2.1.236", interactive: true, protocolVersion: "2025-06-18" });
+		try {
+			const start = async (): Promise<any> => host === "claude"
+				? runtime.callTool("start_unattended_batch", { initiative_slug: slug }, { toolCallId: "round" })
+				: executePiUnattendedBatch({ root: fixture.root, initiativeSlug: slug, readInitiative: async () => observation,
+					batchKernel, confirmBatch: async () => { confirmations++; return "accept"; } });
+			const first = await start();
+			expect(first.report?.batch_state).toBe("completed");
+			const oldPath = join(fixture.root, ".imm/state/batches", `${first.batch_id}.json`);
+			const oldBytes = readFileSync(oldPath, "utf8");
+			observation = { ...fixture.observation, tasks: [{ ...fixture.observation.tasks[1]!, blocked_by: [] }] };
+			execFileSync("git", ["commit", "--allow-empty", "-qm", "publish next child"], { cwd: fixture.root });
+			const nextHead = execFileSync("git", ["rev-parse", "HEAD"], { cwd: fixture.root, encoding: "utf8" }).trim();
+			const second = await start();
+			expect(second.report?.batch_state).toBe("completed");
+			expect(second.batch_id).not.toBe(first.batch_id);
+			expect(enrolled).toEqual([`${slug}-c1`, `${slug}-c2`]);
+			expect(confirmations).toBe(2);
+			expect(readFileSync(oldPath, "utf8")).toBe(oldBytes);
+			const next = JSON.parse(readFileSync(join(fixture.root, ".imm/state/batches", `${second.batch_id}.json`), "utf8"));
+			expect(next.base_head).toBe(nextHead);
+			expect(next.children.map((child: { task_id: string }) => child.task_id)).toEqual([`${slug}-c2`]);
+			// A completed record cannot authorize moving an existing branch from
+			// another checkout or adopting a branch whose settled history was lost.
+			execFileSync("git", ["checkout", "-q", "main"], { cwd: fixture.root });
+			expect(runBatchGitPreflight({ root: fixture.root, initiative_slug: slug, base_head: fixture.head }).ok).toBe(false);
+			execFileSync("git", ["checkout", "-q", `imm/${slug}`], { cwd: fixture.root });
+			execFileSync("git", ["reset", "--hard", fixture.head], { cwd: fixture.root });
+			expect(runBatchGitPreflight({ root: fixture.root, initiative_slug: slug, base_head: fixture.head }).ok).toBe(false);
+		} finally { rmSync(fixture.root, { recursive: true, force: true }); }
 	});
 
 	it("review-3: startBatch rejection maps to rejected result with same-Host recovery", async () => {

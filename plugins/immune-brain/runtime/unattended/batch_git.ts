@@ -19,6 +19,7 @@ import {
 import { dirname, join } from "node:path";
 import { readAuditTaskPair, readSecureProjectFile } from "../kernel/storage";
 import { pathMatchesScope } from "../workspace_scope";
+import { expectedBatchHead, findExistingActiveBatch, findSettledBatchRecord } from "./batch_preflight";
 
 export type BatchGitPreflightRejectReason =
 	| "batch_branch_exists"
@@ -65,7 +66,8 @@ const DEFAULT_GIT_ENV = {
 
 /**
  * Preflight before any child is enrolled: requires clean working tree,
- * committed HEAD, and absence of refs/heads/imm/<initiative-slug>.
+ * committed HEAD, and an absent batch branch or the current branch of a settled
+ * run whose commit lineage is preserved.
  * Verifies root is the top-level repository root (Finding 5).
  * Explicitly passes --untracked-files=all so repo config cannot bypass dirty check (Finding 2).
  * Disables Git hooks during checkout (Finding 2).
@@ -162,6 +164,17 @@ export function runBatchGitPreflight(input: {
 		{ stdio: ["ignore", "ignore", "ignore"] },
 	);
 	if (branchCheck.status === 0) {
+		const settled = findSettledBatchRecord(root, initiativeSlug);
+		const currentBranch = spawnSync("git", ["-C", root, "symbolic-ref", "--short", "HEAD"], { encoding: "utf8" });
+		// Reuse only this initiative's current, settled branch. Never move or reset
+		// a ref; the new authorization binds the current HEAD, including newly
+		// committed candidate intents, and the old run's evidence stays intact.
+		if (
+			findExistingActiveBatch(root, initiativeSlug) === null &&
+			settled?.branch === branch && currentBranch.status === 0 && currentBranch.stdout.trim() === branch &&
+			headResult.stdout.trim() === baseHead &&
+			spawnSync("git", ["-C", root, "merge-base", "--is-ancestor", expectedBatchHead(settled), baseHead]).status === 0
+		) return { ok: true, branch };
 		return {
 			ok: false,
 			reason: "batch_branch_exists",

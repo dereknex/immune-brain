@@ -11,6 +11,7 @@
 // anything, including on decline, cancel, or rejection.
 
 import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 
@@ -33,7 +34,6 @@ import type {
 } from "./types";
 
 const INITIATIVE_SLUG_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
-const DEFAULT_BATCH_BUDGET_MS = 8 * 60 * 60 * 1_000;
 
 export interface BatchPreflightOptions {
 	root: string;
@@ -145,9 +145,8 @@ export function findExistingActiveBatch(root: string, initiativeSlug: string): B
 
 /**
  * The newest *settled* record for this initiative, or null. A terminal record is
- * not a batch to resume, but a later call still replays its terminal report
- * instead of starting a parallel run: the runner replays when it is handed the
- * settled record's identity, and the batch branch it created is not a conflict.
+ * not a batch to resume. Its branch and commit lineage may be reused by a new,
+ * explicitly confirmed run, while its record and terminal report stay intact.
  */
 export function findSettledBatchRecord(root: string, initiativeSlug: string): BatchRunStateRecord | null {
 	const batchesDir = join(root, ".imm", "state", "batches");
@@ -330,17 +329,14 @@ async function projectPlanSurface(input: {
 	let planDigest: string;
 	let excluded: Array<{ task_id: string; slice_id: string; reason: string }> = [];
 	const riskByTask = new Map<string, string>();
-	// A settled record is not a resume: it keeps its identity and branch, and
-	// still replays from its own children below instead of a fresh plan
-	// projection, but a fresh run over it must issue the fresh default budget
-	// rather than inherit a deadline that has already passed.
-	let budget: BatchPlanBudget = isResuming && existingBatch
-		? existingBatch.budget
-		: { max_children: 10, deadline_at: new Date(Date.now() + DEFAULT_BATCH_BUDGET_MS).toISOString(), qa_failure_limit: 2 };
+	// Only an active run supplies children and budget; a terminal record supplies
+	// branch provenance, never the plan or authorization of the next run.
+	let budget: BatchPlanBudget;
 
-	if (existingBatch) {
+	if (isResuming && existingBatch) {
+		budget = existingBatch.budget;
 		try {
-			recoveryChildren = existingBatch!.children.map((c) => {
+			recoveryChildren = existingBatch.children.map((c) => {
 				const intentPath = `docs/plans/${c.task_id}.intent.json`;
 				let read: { intent: { revision: number; risk: string }; content_hash: string } = {
 					intent: { revision: 1, risk: "material" },
@@ -457,8 +453,7 @@ export async function projectBatchPreflight(
 	const found = findExistingActiveBatch(root, initiativeSlug);
 	if (found?.corrupt)
 		return reject("batch_state_unreadable", found.path);
-	// A settled record is not a resume, but it still owns the batch branch and
-	// identity a later call replays instead of starting a parallel run.
+	// Settled records retain branch provenance; only active records are resumed.
 	const activeRecord: BatchRunStateRecord | null = found ? found.record : null;
 	const existingBatch: BatchRunStateRecord | null = activeRecord ?? findSettledBatchRecord(root, initiativeSlug);
 	const isResuming = activeRecord !== null;
@@ -696,7 +691,7 @@ export async function authorizeBatch<HostRejection>(
 	}
 	const reuseAuthorization = isResuming && reuseBlockers.length === 0;
 
-	const batchId = existingBatch ? existingBatch.batch_id : `batch-${initiativeSlug}-${Date.now()}`;
+	const batchId = isResuming && existingBatch ? existingBatch.batch_id : `batch-${initiativeSlug}-${randomUUID()}`;
 	const facts: BatchConfirmationFacts = {
 		initiative_slug: initiativeSlug,
 		batch_branch: batchBranch,
@@ -754,7 +749,7 @@ export async function authorizeBatch<HostRejection>(
 		initiative_slug: initiativeSlug,
 		plan_digest: planDigest,
 		branch: batchBranch,
-		base_head: existingBatch ? existingBatch.base_head : baseHead,
+		base_head: isResuming && existingBatch ? existingBatch.base_head : baseHead,
 		budget,
 		actor_id: LITERAL_USER_ACTOR_ID,
 		confirmation_ref: options.confirmationRef({ batch_id: batchId, request_id: requestId }),

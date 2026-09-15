@@ -80,7 +80,7 @@ Agent:
   schedule: ""
 ```
 
-Pi `Agent` has no `readonly` parameter; the empty tool policy, child type, and prompt contract enforce the read-only boundary. The Parent starts one foreground Agent at a time and consumes its direct result before deciding whether another child is needed. Advisory and discovery work does not call `get_subagent_result` or depend on completion notifications or host `followUp`. Kernel Review uses `subagent_type: "Review"`; its structured verdict is submitted by the Parent and validated against the current immutable snapshot. Loop `arch-explorer` uses `subagent_type: "Explore"`; other advisory/discovery and Loop internal roles use `general-purpose`.
+Pi `Agent` has no `readonly` parameter; the empty tool policy, child type, and prompt contract enforce the read-only boundary. The Parent starts one foreground Agent at a time and consumes its direct result before deciding whether another child is needed. Advisory and discovery work does not poll for deferred results or depend on completion notifications or host `followUp`. Kernel Review uses `subagent_type: "Review"`; its structured verdict is submitted by the Parent and validated against the current immutable snapshot. Loop `arch-explorer` uses `subagent_type: "Explore"`; other advisory/discovery and Loop internal roles use `general-purpose`.
 
 ## Scheduling And Visibility
 

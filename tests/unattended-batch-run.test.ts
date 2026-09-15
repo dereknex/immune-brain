@@ -24,6 +24,7 @@ import {
 import type { AssuranceProjectionResult } from "../plugins/immune-brain/runtime/kernel/assurance_projection";
 import {
 	projectBatchPreflight,
+	projectBatchDrift,
 	findExistingActiveBatch,
 	findSettledBatchRecord,
 } from "../plugins/immune-brain/runtime/unattended/batch_preflight";
@@ -1762,6 +1763,11 @@ describe("startBatch state machine", () => {
 describe("shared batch preflight projection", () => {
 	const SLUG = "preflight-initiative";
 	const NOW = "2026-01-01T00:00:00.000Z";
+	const readNextInitiative = async () => ({
+		contract: "immune_brain/github_initiative_observation/v1" as const,
+		initiative_id: SLUG, issue_number: 1,
+		tasks: [{ task_id: "child-b", slice_id: "S2", issue_number: 2, blocked_by: [] }],
+	});
 
 	function headOf(root: string): string {
 		return execFileSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).trim();
@@ -1817,7 +1823,7 @@ describe("shared batch preflight projection", () => {
 				updated_at: NOW,
 				children: [
 					{ task_id: "child-a", slice_id: "S1", state: "committed", blocked_by: [], commit: null, reason: null },
-					{ task_id: "child-b", slice_id: "S2", state: "pending", blocked_by: ["child-a"], commit: null, reason: null },
+					...(batchState === "completed" ? [] : [{ task_id: "child-b", slice_id: "S2", state: "pending", blocked_by: ["child-a"], commit: null, reason: null }]),
 				],
 			}, null, 2)}\n`,
 		);
@@ -1862,7 +1868,7 @@ describe("shared batch preflight projection", () => {
 		}
 	});
 
-	it("does not treat a settled batch as active but keeps the identity a replay needs", async () => {
+	it("uses a settled record only as branch provenance for the current plan", async () => {
 		const root = fixture();
 		try {
 			writeBatch(root, "completed");
@@ -1870,11 +1876,10 @@ describe("shared batch preflight projection", () => {
 			expect(findExistingActiveBatch(root, SLUG)).toBeNull();
 			expect(findSettledBatchRecord(root, SLUG)?.batch_id).toBe("batch-1");
 
-			const outcome = await projectBatchPreflight({ root, initiative_slug: SLUG, now: NOW });
+			const outcome = await projectBatchPreflight({ root, initiative_slug: SLUG, now: NOW, readInitiative: readNextInitiative });
 			if (!outcome.ok) throw new Error(`preflight rejected: ${outcome.reason}`);
 			expect(outcome.projection.is_resuming).toBe(false);
-			// The settled record still owns the branch and the identity the runner
-			// replays, so a later call is not a parallel run and not a conflict.
+			// The previous record supplies branch provenance without supplying children.
 			expect(outcome.projection.existing_batch?.batch_id).toBe("batch-1");
 			expect(outcome.projection.existing_batch?.batch_state).toBe("completed");
 			expect(outcome.projection.base_head).toBe(headOf(root));
@@ -1893,25 +1898,24 @@ describe("shared batch preflight projection", () => {
 			});
 
 			const before = Date.now();
-			const outcome = await projectBatchPreflight({ root, initiative_slug: SLUG, now: NOW });
+			const outcome = await projectBatchPreflight({ root, initiative_slug: SLUG, now: new Date().toISOString(), readInitiative: readNextInitiative });
 			if (!outcome.ok) throw new Error(`preflight rejected: ${outcome.reason}`);
 
 			expect(outcome.projection.is_resuming).toBe(false);
 			// A settled record's stale, long-expired budget must never be inherited
 			// into a fresh run: the projection issues the same default a from-scratch
 			// batch gets, not the record's own expired figures.
-			expect(outcome.projection.budget.max_children).toBe(10);
+			expect(outcome.projection.budget.max_children).toBe(1); // Fresh plan contains one child.
 			expect(outcome.projection.budget.qa_failure_limit).toBe(2);
 			const deadlineMs = Date.parse(outcome.projection.budget.deadline_at);
 			expect(deadlineMs).toBeGreaterThan(before);
 			expect(deadlineMs).toBeLessThanOrEqual(Date.now() + 8 * 60 * 60 * 1_000);
-			// The settled record still replays its own children (child-a really was
-			// committed), but that must never force every child to already_settled:
-			// child-b, never committed, stays enrollable for the replay to enroll.
+			// Only the newly projected plan participates in the fresh run.
 			expect(outcome.projection.recovery_children.map((c) => [c.task_id, c.status])).toEqual([
-				["child-a", "already_settled"],
 				["child-b", "enrollable"],
 			]);
+			const drift = await projectBatchDrift({ root, initiative_slug: SLUG, readInitiative: readNextInitiative });
+			expect(drift.plan_digest).toBe(outcome.projection.plan_digest);
 		} finally {
 			rmSync(root, { recursive: true, force: true });
 		}
