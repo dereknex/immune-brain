@@ -5684,6 +5684,11 @@ function readCommittedTerminalResult(root, taskId, eventId) {
   });
   return read ?? null;
 }
+function localRunId(root, taskId) {
+  validateTaskId4(taskId);
+  const row = withKernelRead(root, (db) => readRunRowByTask(db, taskId));
+  return row?.run_id ?? null;
+}
 function currentRunId(root, taskId) {
   validateTaskId4(taskId);
   const read = withKernelRead(root, (db) => {
@@ -9822,7 +9827,7 @@ function authorizedScopeOf(root, taskId, state) {
   } catch {}
   if (scope.length === 0 && state === "settled") {
     try {
-      const localRun = currentRunId(root, taskId);
+      const localRun = localRunId(root, taskId);
       const settled = readAuditTaskPair(root, taskId, localRun ?? undefined);
       const snapshot = settled?.record?.intent_snapshot;
       scope = snapshot?.scope_hint ?? [];
@@ -10465,7 +10470,7 @@ function readBatchCommitEvidence(root, batchId, taskId) {
 }
 async function commitBatchChild(input) {
   const { root, taskId, batchId, expectedHead, branch: expectedBranch } = input;
-  const localRun = currentRunId(root, taskId);
+  const localRun = localRunId(root, taskId);
   const auditPair = readAuditTaskPair(root, taskId, localRun ?? undefined);
   if (!auditPair) {
     throw new Error(`cannot commit child ${taskId}: task is not settled done (audit pair missing)`);
@@ -10661,7 +10666,7 @@ async function lookupBatchCommit(input) {
     if (parents.length !== 1 || parents[0] !== expectedHead) {
       throw new Error(`batch_head_lineage_broken: adopted commit parent ${parents.join(",")} does not match expected_head ${expectedHead}`);
     }
-    const adoptedRun = currentRunId(root, taskId);
+    const adoptedRun = localRunId(root, taskId);
     const auditPair = readAuditTaskPair(root, taskId, adoptedRun ?? undefined);
     if (!auditPair) {
       throw new Error(`batch_head_lineage_broken: adopted commit lacks terminal audit pair for ${taskId}`);

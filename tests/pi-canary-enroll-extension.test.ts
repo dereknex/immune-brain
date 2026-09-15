@@ -208,6 +208,42 @@ describe("pi canary enroll extension", () => {
 		expect(result.message).not.toMatch(/TaskIntent is required/i);
 	});
 
+	test("another worktree's terminal audit does not block enrollment before the intent check", async () => {
+		const root = makeRoot();
+		const ui = makeFakeUI(true);
+		// Another worktree's run of the same logical task settled and its audit
+		// reached this worktree, which has no run of its own. That evidence is not
+		// this worktree's authority, so the Tool must get past the authority gate
+		// and report the missing TaskIntent instead of an authority conflict.
+		const foreign = join(root, ".imm", "audit", "task-001", "run-foreign");
+		mkdirSync(foreign, { recursive: true });
+		const recordBytes = `${JSON.stringify(
+			{ contract: "assurance_kernel/task_record/v4", task_id: "task-001", lifecycle: "done" },
+			null,
+			2,
+		)}\n`;
+		writeFileSync(join(foreign, "task-record.json"), recordBytes);
+		writeFileSync(
+			join(foreign, "terminal-proof.json"),
+			`${JSON.stringify(
+				{
+					contract: "assurance_kernel/task_tombstone/v2",
+					task_id: "task-001",
+					lifecycle_status: "terminal",
+					terminal_lifecycle: "done",
+					terminal_event_id: "complete:task-001:2026-08-12T10:00:05.000Z",
+					final_record_hash: `sha256:${"a".repeat(64)}`,
+					terminalized_at: "2026-08-12T10:00:05.000Z",
+				},
+				null,
+				2,
+			)}\n`,
+		);
+		const result = await capturedToolFailure(directTool(root, ui, "tui", "task-001"));
+		expect(result.message).toMatch(/TaskIntent is required/i);
+		expect(result.message).not.toMatch(/authority/i);
+	});
+
 	test("malformed task id rejects before any confirm", async () => {
 		const root = makeRoot();
 		const ui = makeFakeUI(true);

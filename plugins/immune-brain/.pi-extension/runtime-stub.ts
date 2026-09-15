@@ -129,6 +129,7 @@ export interface KernelAuthorityProjection {
 	requested_task_id: string;
 	state: "unowned" | "active_owner" | "terminal_owner" | "repairable_stale_claim" | "authority_conflict";
 	owner_task_id: string | null;
+	owner_run_id: string | null;
 	owner_lifecycle: string | null;
 	claim_lifecycle_status: "active" | "draining" | null;
 	diagnostic: string | null;

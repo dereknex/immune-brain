@@ -797,6 +797,18 @@ export function readCommittedTerminalResult(
 	return read ?? null;
 }
 
+/**
+ * This worktree's run for a task, including terminal runs. Batch commit and
+ * recovery read a *settled* child's evidence, so the active-only lookup is not
+ * enough, and another worktree's run of the same logical task must never be
+ * chosen: the run identity comes from the local store.
+ */
+export function localRunId(root: string, taskId: string): string | null {
+	validateTaskId(taskId);
+	const row = withKernelRead(root, (db) => readRunRowByTask(db, taskId));
+	return row?.run_id ?? null;
+}
+
 export function currentRunId(root: string, taskId: string): string | null {
 	validateTaskId(taskId);
 	const read = withKernelRead(root, (db) => {

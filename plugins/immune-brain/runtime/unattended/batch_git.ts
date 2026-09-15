@@ -17,7 +17,7 @@ import {
 	writeFileSync,
 } from "node:fs";
 import { dirname, join } from "node:path";
-import { currentRunId, readAuditTaskPair, readSecureProjectFile } from "../kernel/storage";
+import { localRunId, readAuditTaskPair, readSecureProjectFile } from "../kernel/storage";
 import { pathMatchesScope } from "../workspace_scope";
 import { expectedBatchHead, findExistingActiveBatch, findSettledBatchRecord } from "./batch_preflight";
 
@@ -455,8 +455,9 @@ export async function commitBatchChild(input: {
 
 	// 1. Verify Kernel reports that child done via immutable terminal audit pair (Finding 2)
 	// The committed local run owns this task's evidence: another worktree's run
-	// directory for the same task is not this batch's audit pair.
-	const localRun = currentRunId(root, taskId);
+	// directory for the same task is not this batch's audit pair. Settlement
+	// clears the active run, so the lookup includes terminal runs.
+	const localRun = localRunId(root, taskId);
 	const auditPair = readAuditTaskPair(root, taskId, localRun ?? undefined);
 	if (!auditPair) {
 		throw new Error(`cannot commit child ${taskId}: task is not settled done (audit pair missing)`);
@@ -745,7 +746,7 @@ export async function lookupBatchCommit(input: {
 		}
 
 		// Verify terminal audit exists and is settled done
-		const adoptedRun = currentRunId(root, taskId);
+		const adoptedRun = localRunId(root, taskId);
 		const auditPair = readAuditTaskPair(root, taskId, adoptedRun ?? undefined);
 		if (!auditPair) {
 			throw new Error(`batch_head_lineage_broken: adopted commit lacks terminal audit pair for ${taskId}`);

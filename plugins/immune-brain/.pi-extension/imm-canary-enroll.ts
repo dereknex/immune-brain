@@ -409,13 +409,28 @@ async function executeForegroundEnrollment(
 				`Terminal task ${authority.owner_task_id} retains an exactly proven stale backend claim`,
 				`invoke imm_kernel_canary repair_authority_state for ${authority.owner_task_id}`,
 			);
-		if (authority.state === "authority_conflict" || authority.state === "terminal_owner")
+		if (authority.state === "authority_conflict")
 			return terminal(
 				action,
 				taskId,
 				"authority_conflict",
 				stage,
 				authority.diagnostic ?? `Kernel authority state is ${authority.state}`,
+				"inspect authority state; do not retry enrollment",
+			);
+		// terminal_owner with a local run is this worktree's settled task and
+		// forbids re-enrollment. terminal_owner *without* one is historical audit
+		// evidence (a fresh clone, or another worktree's run reaching here through
+		// Git): evidence is not local authority, and this worktree may enroll the
+		// task for the first time. The Kernel's own precondition check enforces
+		// the same rule against the local run.
+		if (authority.state === "terminal_owner" && authority.owner_run_id !== null)
+			return terminal(
+				action,
+				taskId,
+				"authority_conflict",
+				stage,
+				`task ${taskId} is terminal in this worktree`,
 				"inspect authority state; do not retry enrollment",
 			);
 		const preparation = await preparePiCanary(root, { task_id: taskId, now });
