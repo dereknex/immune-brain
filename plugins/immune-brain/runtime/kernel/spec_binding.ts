@@ -100,24 +100,20 @@ export function inspectSpecBinding(intent: TaskIntentV1): SpecBindingInspection 
 			missing: [],
 			message: `enrollment requires at most one scope-bound Spec; found ${bindings.length}: ${bindings.join(", ")}`,
 		};
+	// Every declared path whose counterpart is absent from scope_hint, named by
+	// the path the intent still has to add. Non-empty for every declared path
+	// that never pairs, so a refusal never discards the concrete paths it saw.
 	const missing = [
 		...active.filter((path) => !archived.includes(archivePath(path))).map((path) => archivePath(path)),
 		...archived.filter((path) => !active.includes(activePath(path))).map((path) => activePath(path)),
 	];
-	if (missing.length > 0)
-		return {
-			ok: false,
-			code: "binding_incomplete",
-			missing,
-			message: `enrollment requires the bound Spec pair in scope_hint; add ${missing.join(", ")}`,
-		};
-	if (bindings.length === 1)
-		return { ok: true, binding: { active: bindings[0]!, archive: archivePath(bindings[0]!) } };
-	return {
-		ok: false,
-		code: "binding_missing",
-		missing: [],
-		message:
-			"enrollment requires one scope-bound active Spec and its archive path in scope_hint: add docs/specs/<name>.spec.md and docs/specs/archive/<name>.spec.md",
-	};
+	const addMessage = `enrollment requires the bound Spec pair in scope_hint; add ${missing.join(", ")}`;
+	// Halves that never pair leave the binding missing outright, and the refusal
+	// names every path the intent still has to add. This is the only fallback the
+	// genuinely-empty case cannot reach: paths exist, so `missing` is never empty.
+	if (bindings.length === 0) return { ok: false, code: "binding_missing", missing, message: addMessage };
+	// A complete binding carrying an unpaired half is an incomplete pair rather
+	// than a missing one, and still names the half that has to be added.
+	if (missing.length > 0) return { ok: false, code: "binding_incomplete", missing, message: addMessage };
+	return { ok: true, binding: { active: bindings[0]!, archive: archivePath(bindings[0]!) } };
 }

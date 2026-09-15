@@ -1,7 +1,6 @@
 {
   "contract": "assurance_kernel/task_intent/v1",
   "task_id": "wcr-name-missing-spec-paths",
-  "owner": "user",
   "goal": "Make inspectSpecBinding's unpaired-path binding_missing fallback (runtime/kernel/spec_binding.ts, reached when non-empty active/archived scope_hint paths exist but never pair into exactly one binding) name the concrete unpaired paths instead of returning an empty missing array and a generic message, and make batch_plan.ts render that detail; remove the unreachable SPEC_BINDING_REASONS.binding_incomplete dead-code entry.",
   "acceptance": [
     {
@@ -19,11 +18,13 @@
     "docs/plans/wcr-name-missing-spec-paths.intent.json",
     "docs/specs/archive/workflow-consolidation-remediation.spec.md",
     "docs/specs/workflow-consolidation-remediation.spec.md",
+    "plugins/immune-brain/dist/claude/mcp-server.mjs",
     "plugins/immune-brain/runtime/kernel/spec_binding.ts",
     "plugins/immune-brain/runtime/unattended/batch_plan.ts",
     "tests/kernel-enrollment-authority.test.ts",
     "tests/unattended-batch-plan.test.ts"
   ],
   "risk": "material",
-  "revision": 1
+  "revision": 2,
+  "owner": "user"
 }

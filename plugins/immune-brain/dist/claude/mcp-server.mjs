@@ -6196,21 +6196,12 @@ function inspectSpecBinding(intent) {
     ...active.filter((path) => !archived.includes(archivePath(path))).map((path) => archivePath(path)),
     ...archived.filter((path) => !active.includes(activePath(path))).map((path) => activePath(path))
   ];
+  const addMessage = `enrollment requires the bound Spec pair in scope_hint; add ${missing.join(", ")}`;
+  if (bindings.length === 0)
+    return { ok: false, code: "binding_missing", missing, message: addMessage };
   if (missing.length > 0)
-    return {
-      ok: false,
-      code: "binding_incomplete",
-      missing,
-      message: `enrollment requires the bound Spec pair in scope_hint; add ${missing.join(", ")}`
-    };
-  if (bindings.length === 1)
-    return { ok: true, binding: { active: bindings[0], archive: archivePath(bindings[0]) } };
-  return {
-    ok: false,
-    code: "binding_missing",
-    missing: [],
-    message: "enrollment requires one scope-bound active Spec and its archive path in scope_hint: add docs/specs/<name>.spec.md and docs/specs/archive/<name>.spec.md"
-  };
+    return { ok: false, code: "binding_incomplete", missing, message: addMessage };
+  return { ok: true, binding: { active: bindings[0], archive: archivePath(bindings[0]) } };
 }
 
 // plugins/immune-brain/runtime/kernel/canary_application.ts
@@ -8808,15 +8799,10 @@ import { createHash as createHash15 } from "node:crypto";
 var ID_PATTERN2 = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 var DEFAULT_DEADLINE_MS = 8 * 60 * 60 * 1000;
 var DEFAULT_QA_FAILURE_LIMIT = 2;
-var SPEC_BINDING_REASONS = {
-  binding_missing: "spec_binding_missing",
-  binding_incomplete: "spec_binding_incomplete: ",
-  binding_ambiguous: "spec_binding_ambiguous"
-};
 function specBindingReason(inspection) {
-  if (inspection.code === "binding_incomplete" && inspection.missing.length > 0)
+  if (inspection.missing.length > 0)
     return `spec_binding_incomplete: ${inspection.missing.join(", ")}`;
-  return SPEC_BINDING_REASONS[inspection.code];
+  return inspection.code === "binding_ambiguous" ? "spec_binding_ambiguous" : "spec_binding_missing";
 }
 function compareIds(left, right) {
   return left < right ? -1 : left > right ? 1 : 0;

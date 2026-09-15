@@ -1,0 +1,9 @@
+{
+  "contract": "assurance_kernel/task_tombstone/v2",
+  "task_id": "wcr-name-missing-spec-paths",
+  "lifecycle_status": "terminal",
+  "terminal_lifecycle": "done",
+  "terminal_event_id": "complete:wcr-name-missing-spec-paths:2026-09-15T01:35:16.805Z",
+  "final_record_hash": "sha256:b08558c1ca53db9dfc20884f458920d6d48ca371c0d894e415ec46702117c729",
+  "terminalized_at": "2026-09-15T01:35:16.805Z"
+}

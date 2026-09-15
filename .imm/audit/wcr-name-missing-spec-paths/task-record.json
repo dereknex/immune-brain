@@ -1,0 +1,239 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "wcr-name-missing-spec-paths",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "wcr-name-missing-spec-paths",
+    "goal": "Make inspectSpecBinding's unpaired-path binding_missing fallback (runtime/kernel/spec_binding.ts, reached when non-empty active/archived scope_hint paths exist but never pair into exactly one binding) name the concrete unpaired paths instead of returning an empty missing array and a generic message, and make batch_plan.ts render that detail; remove the unreachable SPEC_BINDING_REASONS.binding_incomplete dead-code entry.",
+    "acceptance": [
+      {
+        "id": "RB6-1",
+        "assertion": "inspectSpecBinding's final binding_missing return (reached when active and/or archived Spec paths exist in scope_hint but do not pair into exactly one binding) populates missing with the concrete unpaired active and/or archived paths; the genuinely-empty case (no active and no archived paths at all) is unchanged, since it has no path to name.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.4.2\",\n  \"argv\": [\n    \"test\",\n    \"tests/kernel-enrollment-authority.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 60000,\n  \"max_output_bytes\": 65536\n}\n"
+      },
+      {
+        "id": "RB6-2",
+        "assertion": "batch_plan.ts's specBindingReason renders the populated missing paths for every binding_missing case that has them, through the same shared rendering branch binding_incomplete already uses; the unreachable SPEC_BINDING_REASONS.binding_incomplete map entry is removed.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.4.2\",\n  \"argv\": [\n    \"test\",\n    \"tests/unattended-batch-plan.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 60000,\n  \"max_output_bytes\": 65536\n}\n"
+      }
+    ],
+    "scope_hint": [
+      "docs/plans/wcr-name-missing-spec-paths.intent.json",
+      "docs/specs/archive/workflow-consolidation-remediation.spec.md",
+      "docs/specs/workflow-consolidation-remediation.spec.md",
+      "plugins/immune-brain/dist/claude/mcp-server.mjs",
+      "plugins/immune-brain/runtime/kernel/spec_binding.ts",
+      "plugins/immune-brain/runtime/unattended/batch_plan.ts",
+      "tests/kernel-enrollment-authority.test.ts",
+      "tests/unattended-batch-plan.test.ts"
+    ],
+    "risk": "material",
+    "revision": 2,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/archive/wcr-name-missing-spec-paths.intent.json",
+    "content_hash": "sha256:1f956c46149452092f4e82b298aebec643e65b7e2691da41cebbb2c8d131cdf8"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:d465f32829ca34ec5b8d32cd8d8c7f7cdd3fd133f46876997cdadb2ae221dc27",
+  "git_base_head": "0f034bca7b0be806a1e5b23503ca59620aa9cb0a",
+  "attestations": [
+    {
+      "id": "approval-qa-1b20f3d8",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:1f956c46149452092f4e82b298aebec643e65b7e2691da41cebbb2c8d131cdf8",
+      "diff_hash": "sha256:48a239721166857765bee79fb97eb1d4f6876b8fb33d8af56332458fd7a34f09",
+      "actor_id": "deterministic-qa",
+      "summary": "all 2 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "RB6-1",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "RB6-2",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-6eeb8556",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:1f956c46149452092f4e82b298aebec643e65b7e2691da41cebbb2c8d131cdf8",
+      "diff_hash": "sha256:ca85acdc3d567969922b82df56d2afcc35daa7f53fa0556ef0dde26ca1f947d0",
+      "actor_id": "deterministic-qa",
+      "summary": "all 2 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "RB6-1",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "RB6-2",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-44c2c451",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:1f956c46149452092f4e82b298aebec643e65b7e2691da41cebbb2c8d131cdf8",
+      "diff_hash": "sha256:ca85acdc3d567969922b82df56d2afcc35daa7f53fa0556ef0dde26ca1f947d0",
+      "actor_id": "parent-mediated-review",
+      "summary": "已核验 manifest_digest、base_head、review_commit 的唯一父提交、review_tree 及全部变更对象；实现与分发产物一致，RB6-1/RB6-2 均有对应测试且 Kernel QA 已通过，未发现阻断问题。",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "0f034bca7b0be806a1e5b23503ca59620aa9cb0a",
+        "review_commit": "b38f6ac2280c62bf153095e7a8137b637c782854",
+        "review_tree": "3a0e61583328b0de994d11565c9d800a28f3fbdf",
+        "manifest_digest": "sha256:6b9d87d66a66b6d2760bed0d499ebbb9a03a5a931aaf0f494b9bf961b55138fd"
+      }
+    }
+  ],
+  "findings": [
+    {
+      "id": "review-fa7fd1b41bbf-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "RB6-1",
+      "source": "review",
+      "review_round": 1,
+      "summary": "plugins/immune-brain/runtime/kernel/spec_binding.ts:115 将原有 binding_incomplete 分支重新分类，却没有实现验收指定的最终 fallback：最终 return 的 missing 仍必定为空，因为非空数组已在前面的分支返回。新条件还会把一个完整 binding 加一个孤立路径的输入改成 binding_missing，超出了“没有恰好一个 binding”的目标范围。应保留已有完整 binding 时的 binding_incomplete 分类，明确处理零 binding 的非空输入，并增加完整 pair 加孤立路径的回归断言；当前修改的测试不能证明最终 fallback 得到修复。",
+      "anchor": "sha256:c50f66562d7afaaa3fb835875672abcc9f4d642e5ec7d8d09aedba632c741c06",
+      "evidence": {
+        "trigger": "scope_hint 为 [\"docs/specs/a.spec.md\",\"docs/specs/archive/a.spec.md\",\"docs/specs/b.spec.md\"]：bindings.length 为 1，missing 为 [\"docs/specs/archive/b.spec.md\"]，新代码因两侧均非空返回 binding_missing，旧代码返回 binding_incomplete；任何 missing 非空的输入也都无法到达验收指定的最终 return。",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/unattended/batch_plan.ts:projectBatchPlan",
+          "plugins/immune-brain/runtime/kernel/spec_binding.ts:inspectSpecBinding"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "RB6-1"
+        }
+      },
+      "counterevidence": null
+    }
+  ],
+  "history": [
+    {
+      "id": "approve_breaking_intent_revision:wcr-name-missing-spec-paths:2026-09-15T01:23:48.021Z",
+      "at": "2026-09-15T01:23:48.021Z",
+      "type": "approve_breaking_intent_revision",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "intent_revision_2\naction_v2_sha256:fc8022c864660ae5647343645d5d3805992d9ee7e35a9b2f013fa7867d6d468b",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-124dc5337ce9cfd0",
+        "issued_at": "2026-09-15T01:23:48.281Z",
+        "expires_at": "2026-09-15T01:33:48.281Z"
+      }
+    },
+    {
+      "id": "freeze_artifacts:wcr-name-missing-spec-paths:2026-09-15T01:27:05.275Z",
+      "at": "2026-09-15T01:27:05.275Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent and Spec frozen at docs/plans/archive/wcr-name-missing-spec-paths.intent.json"
+    },
+    {
+      "id": "record_approval:wcr-name-missing-spec-paths:2026-09-15T01:27:06.957Z",
+      "at": "2026-09-15T01:27:06.957Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-1b20f3d8\naction_v2_sha256:fb26fff3a82f2d1ea41745656890f1f6fea69fdde7c3c6cb2df6960a39de6fbf",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-1420fe8559cac897",
+        "issued_at": "2026-09-15T01:27:06.958Z",
+        "expires_at": "2026-09-15T01:37:06.958Z"
+      }
+    },
+    {
+      "id": "request_rework:wcr-name-missing-spec-paths:2026-09-15T01:30:33.360Z",
+      "at": "2026-09-15T01:30:33.360Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_1\naction_v2_sha256:637d5b14257ad5749e437a825df37c6d47e0e40a353b4ee92e86b2452e6aef67",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-5796690f6ddce03f",
+        "issued_at": "2026-09-15T01:30:33.360Z",
+        "expires_at": "2026-09-15T01:40:33.360Z"
+      }
+    },
+    {
+      "id": "resolve_finding:wcr-name-missing-spec-paths:2026-09-15T01:33:44.670Z",
+      "at": "2026-09-15T01:33:44.670Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-fa7fd1b41bbf-1-review-1\naction_v2_sha256:7e5860c625759cf8e58e9460debce151db0b7482d658ccebb6a6dda6e8abdb05"
+    },
+    {
+      "id": "freeze_artifacts:wcr-name-missing-spec-paths:2026-09-15T01:33:51.264Z",
+      "at": "2026-09-15T01:33:51.264Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent and Spec frozen at docs/plans/archive/wcr-name-missing-spec-paths.intent.json"
+    },
+    {
+      "id": "record_approval:wcr-name-missing-spec-paths:2026-09-15T01:33:53.043Z",
+      "at": "2026-09-15T01:33:53.043Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-6eeb8556\naction_v2_sha256:a0d8961b132eae7157501469542e4bd42b06c7c5949ec59bff94ba6978ed7674",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-227dcded3a87cf45",
+        "issued_at": "2026-09-15T01:33:53.043Z",
+        "expires_at": "2026-09-15T01:43:53.043Z"
+      }
+    },
+    {
+      "id": "record_approval:wcr-name-missing-spec-paths:2026-09-15T01:35:15.992Z",
+      "at": "2026-09-15T01:35:15.992Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-44c2c451\naction_v2_sha256:f94e8e38d1ab405280058eb9f6e8321ad0cc65a9065569dc5ed0de9db50a64af",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-e5786f69e87ee18b",
+        "issued_at": "2026-09-15T01:35:15.992Z",
+        "expires_at": "2026-09-15T01:45:15.992Z"
+      }
+    },
+    {
+      "id": "complete:wcr-name-missing-spec-paths:2026-09-15T01:35:16.805Z",
+      "at": "2026-09-15T01:35:16.805Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:44463faf591fad4e618225e692992be14be00b4d42032fbdffd7df191e501cd2"
+    }
+  ]
+}

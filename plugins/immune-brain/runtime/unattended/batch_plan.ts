@@ -29,19 +29,12 @@ const DEFAULT_QA_FAILURE_LIMIT = 2;
  * stable code plus every path the intent must add. Advisory only: this mints,
  * alters, and consumes no authority.
  */
-const SPEC_BINDING_REASONS: Record<
-	Extract<SpecBindingInspection, { ok: false }>["code"],
-	BatchPlanChildReason
-> = {
-	binding_missing: "spec_binding_missing",
-	binding_incomplete: "spec_binding_incomplete: ",
-	binding_ambiguous: "spec_binding_ambiguous",
-};
-
 function specBindingReason(inspection: Extract<SpecBindingInspection, { ok: false }>): BatchPlanChildReason {
-	if (inspection.code === "binding_incomplete" && inspection.missing.length > 0)
-		return `spec_binding_incomplete: ${inspection.missing.join(", ")}`;
-	return SPEC_BINDING_REASONS[inspection.code];
+	// One shared branch renders the concrete paths of every refusal that carries
+	// them — a `binding_missing` whose declared halves never paired included.
+	// `binding_incomplete` always carries paths, so it has no entry of its own.
+	if (inspection.missing.length > 0) return `spec_binding_incomplete: ${inspection.missing.join(", ")}`;
+	return inspection.code === "binding_ambiguous" ? "spec_binding_ambiguous" : "spec_binding_missing";
 }
 
 function compareIds(left: string, right: string): number {

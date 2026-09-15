@@ -122,10 +122,16 @@ function fixtureRoot(): string {
 		writeIntent(root, "B-c"),
 		writeIntent(root, "a-b"),
 		writeIntent(root, "b-d"),
-		// A child that binds no Spec pair at all, and one that names only the
-		// active path: enrollment refuses both, so the plan excludes both.
+		// A child that binds no Spec pair at all, one that names only the active
+		// path, and one whose two declared halves never pair: enrollment refuses
+		// all three, so the plan excludes all three.
 		writeIntent(root, "unbound", "material", ["tests/**"]),
 		writeIntent(root, "partial", "material", ["tests/**", "docs/specs/partial.spec.md"]),
+		writeIntent(root, "mismatched", "material", [
+			"tests/**",
+			"docs/specs/mismatched.spec.md",
+			"docs/specs/archive/other.spec.md",
+		]),
 		malformedPath,
 		invalidPath,
 	];
@@ -193,6 +199,7 @@ const SHUFFLED_TASKS: GithubInitiativeObservation["tasks"] = [
 	{ task_id: "base", slice_id: "S2", issue_number: 2, blocked_by: [] },
 	{ task_id: "unbound", slice_id: "S10", issue_number: 10, blocked_by: [] },
 	{ task_id: "partial", slice_id: "S11", issue_number: 11, blocked_by: [] },
+	{ task_id: "mismatched", slice_id: "S12", issue_number: 12, blocked_by: [] },
 ];
 
 describe("unattended batch plan projection", () => {
@@ -242,6 +249,7 @@ describe("unattended batch plan projection", () => {
 				dependent: "blocked",
 				final: "enrollable",
 				partial: "needs_human",
+				mismatched: "needs_human",
 				unbound: "needs_human",
 			});
 			expect(first.children.find((child) => child.task_id === "final")?.blocked_by).toEqual(["base", "critical", "settled"]);
@@ -336,10 +344,25 @@ describe("unattended batch plan projection", () => {
 				status: "needs_human",
 				reason: "spec_binding_incomplete: docs/specs/archive/partial.spec.md",
 			});
+			// A refusal that names concrete paths renders them whichever inspection
+			// code carries them, so halves that never pair are as detailed as a
+			// half-declared pair.
+			expect(plan.children.find((child) => child.task_id === "mismatched")).toMatchObject({
+				status: "needs_human",
+				reason:
+					"spec_binding_incomplete: docs/specs/archive/mismatched.spec.md, docs/specs/other.spec.md",
+			});
+			// The refusal is the fallback, not the half-declared pair: the rendering
+			// branch keys on the paths the refusal carries, not on its code.
+			expect(inspectSpecBinding(readTaskIntent(root, "mismatched", "docs/plans/mismatched.intent.json").intent)).toMatchObject({
+				ok: false,
+				code: "binding_missing",
+			});
 			// Excluded before the confirmation offers them, so neither reaches enrollment.
 			const offered = plan.enrollable.map((child) => child.task_id);
 			expect(offered).not.toContain("unbound");
 			expect(offered).not.toContain("partial");
+			expect(offered).not.toContain("mismatched");
 			expect(snapshotFiles(root)).toEqual(before);
 		} finally {
 			rmSync(root, { recursive: true, force: true });
