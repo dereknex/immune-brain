@@ -717,6 +717,20 @@ function workspaceStateFromRow(db: DatabaseSync, runId: string | null): Workspac
 	};
 }
 
+/**
+ * The run this worktree currently holds for a task, read straight from the
+ * store. Capability validation needs only this identity, so it never pays for
+ * a full authority projection on the mutation path.
+ */
+export function currentRunId(root: string, taskId: string): string | null {
+	validateTaskId(taskId);
+	const read = withKernelRead(root, (db) => {
+		const run = readRunRowByTask(db, taskId);
+		return run && run.state === "active" ? run.run_id : null;
+	});
+	return read ?? null;
+}
+
 export function readWorkspaceStateRaw(root: string): {
 	revision: string;
 	state: WorkspaceState;

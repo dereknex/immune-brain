@@ -32,8 +32,8 @@ import {
 	commitTaskRecordLocked,
 	readSecureProjectFile,
 	readTaskRecordRaw,
+	currentRunId,
 	readWorkspaceStateRaw,
-	reconcileKernelAuthority,
 	revisionForContent,
 	withKernelStoreLock,
 } from "./storage";
@@ -472,7 +472,7 @@ export function createCanaryApplication(
 			// the run this worktree holds.
 			const validated = registry.consume(input.capability as never, {
 				task_id: input.task_id,
-				run_id: reconcileKernelAuthority(input.root, input.task_id).owner_run_id ?? undefined,
+				run_id: currentRunId(input.root, input.task_id) ?? undefined,
 				action: beginDrainCapabilityAction(input.task_id, now),
 				expected_record_hash: current.revision,
 				intent_revision: current.record.intent_snapshot.revision,

@@ -25,7 +25,6 @@ import {
 import { readBackendClaim } from "../plugins/immune-brain/runtime/kernel/backend_claim";
 import { canonicalIntentHash, parseTaskIntentV1 } from "../plugins/immune-brain/runtime/kernel/intent";
 import { readTaskRecord, readAuditTaskPair } from "../plugins/immune-brain/runtime/kernel/storage";
-import { readBackendClaim } from "../plugins/immune-brain/runtime/kernel/backend_claim";
 
 const TASK = "canary-user-task";
 const INTENT = {

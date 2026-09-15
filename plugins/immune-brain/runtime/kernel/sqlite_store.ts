@@ -826,13 +826,36 @@ export function backupKernelStore(root: string, targetPath: string): void {
 	if (!db) throw new KernelStoreConflictError("kernel store does not exist");
 	try {
 		const target = resolve(targetPath);
-		if (existsSync(target)) rmSync(target);
-		db.prepare(`VACUUM INTO '${target.replace(/'/g, "''")}'`).run();
-		const fd = openSync(target, constants.O_RDONLY);
+		const live = resolve(canonical, KERNEL_DB_RELATIVE);
+		for (const forbidden of [live, `${live}-wal`, `${live}-shm`])
+			if (samePath(target, forbidden))
+				throw new KernelStoreSecurityError(
+					"a backup target must not be the live store or its sidecars",
+				);
+		// Write the backup beside its target, durably, and only then replace any
+		// existing backup: a failed or interrupted backup must never cost the
+		// last good copy.
+		mkdirSync(dirname(target), { recursive: true });
+		const temp = `${target}.${randomUUID()}.backup`;
+		rmSync(temp, { force: true });
 		try {
-			fsyncSync(fd);
-		} finally {
-			closeSync(fd);
+			db.prepare(`VACUUM INTO '${temp.replace(/'/g, "''")}'`).run();
+			const fd = openSync(temp, constants.O_RDONLY);
+			try {
+				fsyncSync(fd);
+			} finally {
+				closeSync(fd);
+			}
+			renameSync(temp, target);
+			const directory = openSync(dirname(target), constants.O_RDONLY);
+			try {
+				fsyncSync(directory);
+			} finally {
+				closeSync(directory);
+			}
+		} catch (error) {
+			rmSync(temp, { force: true });
+			throw error;
 		}
 	} finally {
 		closeQuietly(db);
@@ -892,6 +915,22 @@ export function restoreKernelStore(root: string, sourcePath: string): void {
  * Fold committed write-ahead-log content into the main database file so a
  * later swap cannot lose transactions that had not reached it yet.
  */
+/**
+ * Compare two paths as the filesystem sees them: a caller-supplied target may
+ * name the same file through a symlinked prefix (macOS /var vs /private/var),
+ * so both sides are resolved before the comparison.
+ */
+function samePath(a: string, b: string): boolean {
+	const identity = (path: string): string => {
+		try {
+			return realpathSync(path);
+		} catch {
+			return resolve(path);
+		}
+	};
+	return identity(a) === identity(b);
+}
+
 function checkpointLiveStore(canonical: string, target: string): void {
 	if (!existsSync(target)) return;
 	let db: DatabaseSync;

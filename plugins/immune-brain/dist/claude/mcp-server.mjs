@@ -5602,6 +5602,14 @@ function workspaceStateFromRow(db, runId) {
     current_working: run && run.state === "active" ? run.task_id : null
   };
 }
+function currentRunId(root, taskId) {
+  validateTaskId4(taskId);
+  const read = withKernelRead(root, (db) => {
+    const run = readRunRowByTask(db, taskId);
+    return run && run.state === "active" ? run.run_id : null;
+  });
+  return read ?? null;
+}
 function readWorkspaceStateRaw(root) {
   const read = withKernelRead(root, (db) => {
     const row = readWorkspaceRow(db);
@@ -6365,7 +6373,7 @@ function applyTaskAction(input) {
     const privileged = action.type === "record_approval" || action.type === "approve_breaking_intent_revision" || action.type === "request_rework" || action.type === "authorize_rework" || action.type === "stop" || action.type === "resolve_user_decision";
     const expectedAuthority = privileged ? {
       task_id,
-      run_id: reconcileKernelAuthority(root, task_id).owner_run_id ?? undefined,
+      run_id: currentRunId(root, task_id) ?? undefined,
       action,
       expected_record_hash: current.revision,
       intent_revision: isRevisionAction ? action.next_intent.revision : current.record.intent_snapshot.revision,
@@ -6820,7 +6828,7 @@ function createCanaryApplication(registry) {
         ]);
       const validated = registry.consume(input.capability, {
         task_id: input.task_id,
-        run_id: reconcileKernelAuthority(input.root, input.task_id).owner_run_id ?? undefined,
+        run_id: currentRunId(input.root, input.task_id) ?? undefined,
         action: beginDrainCapabilityAction(input.task_id, now),
         expected_record_hash: current.revision,
         intent_revision: current.record.intent_snapshot.revision,
@@ -7285,14 +7293,17 @@ function enrollCanaryTask(root, input, registry) {
       };
     });
   } catch (error) {
-    const committed = (() => {
+    const ownership = (() => {
       try {
-        return reconcileKernelAuthority(root, input.task_id).owner_task_id === input.task_id;
+        return {
+          known: true,
+          owned: reconcileKernelAuthority(root, input.task_id).owner_task_id === input.task_id
+        };
       } catch {
-        return false;
+        return { known: false, owned: false };
       }
     })();
-    if (consumed && input.batch && !committed)
+    if (consumed && input.batch && ownership.known && !ownership.owned)
       input.batch.registry.releaseChild(input.batch.capability, input.task_id);
     throw error;
   }

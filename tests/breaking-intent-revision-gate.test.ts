@@ -17,7 +17,6 @@ import { createEnrollmentAuthorityRegistry, type EnrollmentCapabilityBinding } f
 import { canonicalIntentHash, parseTaskIntentV1 } from "../plugins/immune-brain/runtime/kernel/intent";
 import { readBackendClaim } from "../plugins/immune-brain/runtime/kernel/backend_claim";
 import { taskDiffHash } from "../plugins/immune-brain/runtime/workspace_scope";
-import { readBackendClaim } from "../plugins/immune-brain/runtime/kernel/backend_claim";
 import {
 	readRunRowByTask,
 	updateRunRecord,

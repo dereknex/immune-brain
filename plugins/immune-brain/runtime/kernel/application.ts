@@ -25,7 +25,7 @@ import {
 	commitTerminalLocked,
 	readTaskRecordRaw,
 	readWorkspaceStateRaw,
-	reconcileKernelAuthority,
+	currentRunId,
 	revisionForContent,
 	serializeWorkspace,
 	withKernelStoreLock,
@@ -170,7 +170,7 @@ export function applyTaskAction(
 		const expectedAuthority = privileged
 			? {
 					task_id,
-					run_id: reconcileKernelAuthority(root, task_id).owner_run_id ?? undefined,
+					run_id: currentRunId(root, task_id) ?? undefined,
 					action,
 					expected_record_hash: current.revision,
 					intent_revision: isRevisionAction

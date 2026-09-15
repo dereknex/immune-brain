@@ -13,7 +13,7 @@ import { revisionForContent } from "../plugins/immune-brain/runtime/kernel/stora
 import { canonicalIntentHash, parseTaskIntentV1 } from "../plugins/immune-brain/runtime/kernel/intent";
 import { seedKernelRunForTest } from "./fixtures/mutation-authority-test-seam";
 import { readRunRowByTask, withKernelRead, withKernelTransaction } from "../plugins/immune-brain/runtime/kernel/sqlite_store";
-import { commitTerminalLocked, readWorkspaceStateRaw, retryStoreFollowUps, revisionForContent, serializeWorkspace } from "../plugins/immune-brain/runtime/kernel/storage";
+import { commitTerminalLocked, readWorkspaceStateRaw, retryStoreFollowUps, serializeWorkspace } from "../plugins/immune-brain/runtime/kernel/storage";
 
 /** Claim the workspace for a fixture task through the store. */
 /** Make the live owner run look foreign to an approved batch lineage. */

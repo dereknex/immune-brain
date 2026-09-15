@@ -359,15 +359,21 @@ export function enrollCanaryTask(
 		// committed — a follow-up transaction that cannot start, for example —
 		// and releasing then would leave the batch view ahead of an owner the
 		// Kernel already recorded. The committed run decides, not the throw.
-		const committed = (() => {
+		const ownership = (() => {
 			try {
-				return reconcileKernelAuthority(root, input.task_id).owner_task_id === input.task_id;
+				return {
+					known: true,
+					owned:
+						reconcileKernelAuthority(root, input.task_id).owner_task_id === input.task_id,
+				};
 			} catch {
-				// An unreadable store is never proof of a commit.
-				return false;
+				return { known: false, owned: false };
 			}
 		})();
-		if (consumed && input.batch && !committed)
+		// Unknown is not "not committed". When the store cannot be read the slot
+		// stays consumed, so the batch view never runs ahead of a run that may
+		// exist, and the operator reconciles from the Kernel's own state.
+		if (consumed && input.batch && ownership.known && !ownership.owned)
 			input.batch.registry.releaseChild(input.batch.capability, input.task_id);
 		throw error;
 	}

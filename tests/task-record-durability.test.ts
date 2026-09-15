@@ -929,6 +929,33 @@ describe("SQLite authority store durability", () => {
     }
   });
 
+  test("a backup never costs the previous backup or the live store", () => {
+    const root = storeRoot();
+    const backupDir = mkdtempSync(join(tmpdir(), "imm-backup-"));
+    try {
+      const seeded = storeEnrollFixture(root, "durability-w");
+      const backup = join(backupDir, "store.sqlite");
+      backupKernelStore(root, backup);
+      const good = readFileSync(backup);
+      expect(good.length).toBeGreaterThan(0);
+      // A second backup replaces the first atomically.
+      backupKernelStore(root, backup);
+      expect(readFileSync(backup).length).toBeGreaterThan(0);
+      // The live store and its sidecars can never be a backup target.
+      for (const forbidden of [
+        join(root, ".imm/state/kernel.sqlite"),
+        join(root, ".imm/state/kernel.sqlite-wal"),
+      ])
+        expect(() => backupKernelStore(root, forbidden)).toThrow(KernelStoreSecurityError);
+      // The live authority is untouched by those refusals.
+      expect(withKernelRead(root, (db) => readRunRowByTask(db, "durability-w"))!.run_id).toBe(seeded.run_id);
+      expect(existsSync(join(root, ".imm/state/kernel.sqlite"))).toBe(true);
+    } finally {
+      rmSync(backupDir, { recursive: true, force: true });
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   test("a refused restore never costs the live store its committed facts", () => {
     // The publication boundary is the risky window: the live write-ahead log is
     // folded into the main file before any sidecar is removed, so a failure
