@@ -335,51 +335,49 @@ describe("request_rework authority", () => {
 		expect(mutationRegistry.isConsumed(cap)).toBe(false);
 	});
 
-	test("second Review rework parks on a replan boundary", () => {
+	const acceptanceFinding = (id: string, evidence: typeof REVIEW_EVIDENCE) =>
+		reviewFinding({ id, anchor: anchorForEvidence(evidence as never), evidence });
+	const SECURITY_EVIDENCE = {
+		trigger: "the descriptor writes outside the authorized directory",
+		caller_chain: ["runtime/kernel/enrollment.ts", "enrollCanaryTask()"],
+		violated: { kind: "security_boundary", ref: "boundary:authorization" },
+	} as const;
+
+	test("a repeated blocking defect on a covered acceptance returns to execution without a user gate", () => {
 		toReview();
-		const cap1 = reworkCapability("review");
-		execute(
-			{ op: "request_rework", capability: cap1, findings: [...FINDINGS] as never[], actor_id: "reviewer-1" },
+		const first = requestReviewRework(
+			[acceptanceFinding("rw-accept-1", REVIEW_EVIDENCE)],
 			"2026-08-12T10:00:03.000Z",
 		);
-		// Re-submit and re-review: round 2 escalates.
+		expect(first.record).toMatchObject({ lifecycle: "active", artifact_state: "active" });
+		expect(first.record.findings.some((f) => f.kind === "replan_required")).toBe(false);
 		toReview("2026-08-12T10:00:04.000Z");
-		const secondFindings = [
-			{
-				id: "rw-2",
-				kind: "blocking",
-				status: "open",
-				acceptance_id: "A1",
-				source: "review",
-				review_round: null,
-				summary: "still not satisfied",
-			},
-		];
-		const cap2 = reworkCapability("review", {
-			action_digest: createHash("sha256")
-				.update(
-					JSON.stringify({
-						type: "request_rework",
-						event_id: `request_rework:${TASK}:2026-08-12T10:00:05.000Z`,
-						at: "2026-08-12T10:00:05.000Z",
-						actor_id: "reviewer-1",
-						findings: secondFindings,
-					}),
-				)
-				.digest("hex"),
-			findings_digest: findingsDigestV2(secondFindings as never[]),
-		});
-		const result = execute(
-			{ op: "request_rework", capability: cap2, findings: secondFindings as never[], actor_id: "reviewer-1" },
+		const second = requestReviewRework(
+			[acceptanceFinding("rw-accept-2", OTHER_EVIDENCE)],
 			"2026-08-12T10:00:05.000Z",
 		);
-		expect(result.record).toMatchObject({ lifecycle: "active", artifact_state: "active" });
-		const boundary = result.record.findings.find(
-			(f) => f.kind === "replan_required",
-		);
+		expect(second.record).toMatchObject({ lifecycle: "active", artifact_state: "active" });
+		expect(second.record.findings.some((f) => f.kind === "replan_required")).toBe(false);
+		expect(second.record.findings.find((f) => f.id === "rw-accept-2")?.status).toBe("open");
+	});
+
+	test("a repeated security boundary parks on a replan boundary", () => {
+		const security = (id: string) =>
+			reviewFinding({
+				id,
+				acceptance_id: null,
+				anchor: anchorForEvidence(SECURITY_EVIDENCE as never),
+				evidence: SECURITY_EVIDENCE,
+			});
+		toReview();
+		const first = requestReviewRework([security("rw-boundary-1")], "2026-08-12T10:00:03.000Z");
+		expect(first.record.findings.some((f) => f.kind === "replan_required")).toBe(false);
+		toReview("2026-08-12T10:00:04.000Z");
+		const second = requestReviewRework([security("rw-boundary-2")], "2026-08-12T10:00:05.000Z");
+		const boundary = second.record.findings.find((f) => f.kind === "replan_required");
 		expect(boundary).toBeDefined();
 		expect(boundary?.review_round).toBe(2);
-		expect(result.record.findings.some((f) => f.kind === "unresolved_user_decision")).toBe(false);
+		expect(second.record.findings.some((f) => f.kind === "unresolved_user_decision")).toBe(false);
 		execFileSync("git", ["add", "-A"], { cwd: root });
 
 		const authorizedAt = "2026-08-12T10:00:06.000Z";
@@ -408,7 +406,7 @@ describe("request_rework authority", () => {
 		);
 		expect(resumed.record).toMatchObject({ lifecycle: "active", artifact_state: "active" });
 		expect(resumed.record.findings.find((f) => f.kind === "replan_required")?.status).toBe("resolved");
-		expect(resumed.record.findings.find((f) => f.id === "rw-2")?.status).toBe("open");
+		expect(resumed.record.findings.find((f) => f.id === "rw-boundary-2")?.status).toBe("open");
 		expect(resumed.record.history.at(-1)?.authority?.authority_kind).toBe("user");
 	});
 

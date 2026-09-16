@@ -660,7 +660,7 @@ export class AssuranceCoordinator {
 			if (projection.projection.lifecycle === "active") this.unknownOperations.delete(taskId);
 			const parked = await this.ports.readTaskRecord(ctx.cwd, taskId);
 			ensureOperationLive();
-			if (parked.record?.findings.some((finding) => finding.kind === "replan_required" && finding.status === "open")) return { state: "blocked", reason: "review rework limit reached; a durable replan is required" };
+			if (parked.record?.findings.some((finding) => finding.kind === "replan_required" && finding.status === "open")) return { state: "blocked", reason: "the same security boundary recurred; a durable replan is required" };
 			if (projection.projection.artifact_state === "active") {
 				if (projection.projection.next_obligation !== "submit_assurance")
 					return { state: "blocked", reason: `Kernel requires ${projection.projection.next_obligation}` };

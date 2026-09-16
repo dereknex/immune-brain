@@ -231,7 +231,7 @@ describe("canary application authority pairing", () => {
 		});
 		expect(first.record.lifecycle).toBe("stopped");
 		expect(mutationRegistryA.isConsumed(cap)).toBe(true);
-		execFileSync("git", ["add", "--", `docs/plans/archive/${TASK}.intent.json`], { cwd: root });
+		execFileSync("git", ["add", "--", `docs/plans/${TASK}.intent.json`], { cwd: root });
 		// A retry with the same single-use capability must fail closed.
 		expect(() =>
 			appA.execute({

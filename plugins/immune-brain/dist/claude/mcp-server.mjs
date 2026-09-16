@@ -1559,7 +1559,7 @@ class AssuranceCoordinator {
       const parked = await this.ports.readTaskRecord(ctx.cwd, taskId);
       ensureOperationLive();
       if (parked.record?.findings.some((finding) => finding.kind === "replan_required" && finding.status === "open"))
-        return { state: "blocked", reason: "review rework limit reached; a durable replan is required" };
+        return { state: "blocked", reason: "the same security boundary recurred; a durable replan is required" };
       if (projection.projection.artifact_state === "active") {
         if (projection.projection.next_obligation !== "submit_assurance")
           return { state: "blocked", reason: `Kernel requires ${projection.projection.next_obligation}` };
@@ -4668,15 +4668,6 @@ function findingsDigestV2(findings) {
   }));
   return `sha256:${createHash10("sha256").update(stableJson(normalized)).digest("hex")}`;
 }
-function sharesAcceptanceBoundary(left, right) {
-  if (left.acceptance_id !== null && right.acceptance_id !== null)
-    return left.acceptance_id === right.acceptance_id;
-  if (left.acceptance_id !== null || right.acceptance_id !== null)
-    return false;
-  const leftRef = left.evidence?.violated.ref ?? null;
-  const rightRef = right.evidence?.violated.ref ?? null;
-  return leftRef !== null && leftRef === rightRef;
-}
 function reduceTask(recordRaw, actionRaw, authorityAudit = null, changedPaths) {
   const previous = parseTaskRecord(recordRaw);
   assertKernelInvariantsV3(previous.intent_snapshot, previous);
@@ -4948,7 +4939,7 @@ function reduceTask(recordRaw, actionRaw, authorityAudit = null, changedPaths) {
         const inherited = finding.anchor != null ? record.findings.find((prior) => prior.source === "review" && prior.status === "refuted" && prior.anchor === finding.anchor && refutationIsLive(prior, record.attestations, identity)) : undefined;
         return { finding, inherited };
       });
-      const disputed = admissions.find(({ finding, inherited }) => finding.kind === "blocking" && inherited === undefined && priorBlockingReviewFindings.some((prior) => sharesAcceptanceBoundary(finding, prior)))?.finding;
+      const disputed = admissions.find(({ finding, inherited }) => finding.kind === "blocking" && inherited === undefined && finding.evidence?.violated.kind === "security_boundary" && priorBlockingReviewFindings.some((prior) => prior.evidence?.violated.kind === "security_boundary" && prior.evidence?.violated.ref === finding.evidence?.violated.ref))?.finding;
       const parkForReplan = authorityAudit.authority_kind === "review" && disputed !== undefined;
       if (!parkForReplan) {
         record.artifact_state = "active";
@@ -4982,7 +4973,7 @@ function reduceTask(recordRaw, actionRaw, authorityAudit = null, changedPaths) {
           acceptance_id: disputed.acceptance_id,
           source: "kernel",
           review_round: round,
-          summary: "Review returned this acceptance boundary twice; a durable replan is required."
+          summary: "Review returned the same security boundary twice; a durable replan is required."
         };
         if (findingIds.has(boundary.id))
           throw new KernelInvariantError([

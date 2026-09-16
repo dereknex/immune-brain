@@ -204,21 +204,6 @@ export function findingsDigestV2(findings: TaskFinding[]): string {
 	return `sha256:${createHash("sha256").update(stableJson(normalized)).digest("hex")}`;
 }
 
-/**
- * Two findings share an acceptance boundary when they name the same
- * acceptance, or when neither does and their review evidence names the same
- * violated reference. Null boundaries without comparable evidence are not
- * shared, so a second-round finding can no longer park the task by accident.
- */
-function sharesAcceptanceBoundary(left: TaskFinding, right: TaskFinding): boolean {
-	if (left.acceptance_id !== null && right.acceptance_id !== null)
-		return left.acceptance_id === right.acceptance_id;
-	if (left.acceptance_id !== null || right.acceptance_id !== null) return false;
-	const leftRef = left.evidence?.violated.ref ?? null;
-	const rightRef = right.evidence?.violated.ref ?? null;
-	return leftRef !== null && leftRef === rightRef;
-}
-
 export function reduceTask(
 	recordRaw: TaskRecord,
 	actionRaw: TaskAction,
@@ -563,9 +548,11 @@ export function reduceTask(
 					]);
 			}
 			const identity = refutationIdentity(record, action.diff_hash);
-			// A prior finding that is still refuted by live evidence is not an
-			// outstanding dispute, so a new claim on its boundary is not a repeat
-			// offence. Once its evidence goes stale it blocks again and counts.
+			// A prior blocking Review claim is only a repeat offence when it names the
+			// same security boundary. Ordinary defects on an already-covered
+			// acceptance return to execution: changing the plan is a human decision,
+			// fixing a bug is not. A claim still refuted by live evidence is not an
+			// outstanding dispute at all.
 			const priorBlockingReviewFindings = record.findings.filter(
 				(finding) =>
 					finding.source === "review" &&
@@ -600,8 +587,11 @@ export function reduceTask(
 				({ finding, inherited }) =>
 					finding.kind === "blocking" &&
 					inherited === undefined &&
-					priorBlockingReviewFindings.some((prior) =>
-						sharesAcceptanceBoundary(finding, prior),
+					finding.evidence?.violated.kind === "security_boundary" &&
+					priorBlockingReviewFindings.some(
+						(prior) =>
+							prior.evidence?.violated.kind === "security_boundary" &&
+							prior.evidence?.violated.ref === finding.evidence?.violated.ref,
 					),
 			)?.finding;
 			const parkForReplan =
@@ -644,7 +634,7 @@ export function reduceTask(
 					source: "kernel" as const,
 					review_round: round,
 					summary:
-						"Review returned this acceptance boundary twice; a durable replan is required.",
+						"Review returned the same security boundary twice; a durable replan is required.",
 				};
 				if (findingIds.has(boundary.id))
 					throw new KernelInvariantError([
