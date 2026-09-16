@@ -1967,7 +1967,7 @@ import {
   mkdtempSync,
   rmSync as rmSync4,
   writeFileSync as writeFileSync4,
-  statSync as statSync3,
+  statSync as statSync4,
   readFileSync as readFileSync8,
   realpathSync as realpathSync8,
   chmodSync
@@ -2570,6 +2570,7 @@ import {
   openSync as openSync3,
   readFileSync as readFileSync4,
   realpathSync as realpathSync5,
+  statSync as statSync2,
   renameSync,
   rmSync as rmSync2,
   writeFileSync as writeFileSync2
@@ -6524,7 +6525,7 @@ function assertReviewArtifact(path) {
   const targetPath = realpathSync8(path);
   let stat;
   try {
-    stat = statSync3(targetPath);
+    stat = statSync4(targetPath);
   } catch {
     throw new Error(`review evidence artifact is missing or empty: ${path}`);
   }

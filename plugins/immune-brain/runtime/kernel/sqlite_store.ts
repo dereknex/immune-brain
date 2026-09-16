@@ -26,6 +26,7 @@ import {
 	openSync,
 	readFileSync,
 	realpathSync,
+	statSync,
 	renameSync,
 	rmSync,
 	writeFileSync,
@@ -398,6 +399,84 @@ function initializeSchema(db: DatabaseSync, root: string, now: string): void {
 		}
 		throw error;
 	}
+}
+
+function fsyncPath(path: string): void {
+	const fd = openSync(path, constants.O_RDONLY);
+	try {
+		fsyncSync(fd);
+	} finally {
+		closeSync(fd);
+	}
+}
+
+function fsyncDirectory(path: string): void {
+	const fd = openSync(path, constants.O_RDONLY);
+	try {
+		fsyncSync(fd);
+	} finally {
+		closeSync(fd);
+	}
+}
+
+/**
+ * Create one fully initialized store file at an explicit in-worktree path.
+ *
+ * The explicit legacy importer builds its candidate store here — under
+ * `.imm/state/`, never at the canonical path — verifies it, and only then
+ * publishes it. Initialization runs the same schema, meta and workspace binding
+ * as a first normal open, so a published migration store passes `assertSchema`.
+ */
+export function createMigrationStoreFile(root: string, targetPath: string, now: string): void {
+	const canonical = canonicalRoot(root);
+	const resolved = resolve(targetPath);
+	assertSafeStoreTarget(canonical, resolved);
+	assertSafeSegments(canonical, resolved);
+	ensureStoreDirectory(canonical);
+	if (existsSync(resolved)) throw new KernelStoreSecurityError(`migration store already exists at ${targetPath}`);
+	const db = new DatabaseSync(resolved);
+	try {
+		applyPragmas(db, DEFAULT_BUSY_TIMEOUT_MS, true);
+		initializeSchema(db, canonical, now);
+		db.exec("PRAGMA wal_checkpoint(TRUNCATE)");
+		// Leave the candidate in rollback-journal mode: a WAL sidecar would not
+		// travel with the publication rename, and the first runtime open converts
+		// the store back to WAL.
+		db.exec("PRAGMA journal_mode=DELETE");
+	} finally {
+		db.close();
+	}
+	fsyncPath(resolved);
+}
+
+/**
+ * Publish a verified migration store at the canonical path.
+ *
+ * The rename is the publication point: a crash before it leaves the canonical
+ * store absent, and a crash after it leaves a complete store, so no reader can
+ * ever observe a half-imported database. Nothing is written to the canonical
+ * path when it already exists.
+ */
+export function publishMigrationStoreFile(root: string, sourcePath: string): void {
+	const canonical = canonicalRoot(root);
+	const target = resolve(canonical, KERNEL_DB_RELATIVE);
+	const source = resolve(sourcePath);
+	assertSafeStoreTarget(canonical, source);
+	assertSafeSegments(canonical, source);
+	if (existsSync(target)) throw new KernelStoreConflictError("kernel store already exists; refusing to overwrite authority");
+	// The candidate must be self-contained: a WAL beside the renamed database
+	// would make the published store unreadable, so only empty sidecars may
+	// remain and they are removed before publication.
+	for (const sidecar of [`${source}-wal`, `${source}-shm`]) {
+		if (!existsSync(sidecar)) continue;
+		if (statSync(sidecar).size > 0)
+			throw new KernelStoreConflictError("migration store still carries a write-ahead log; checkpoint it before publishing");
+		rmSync(sidecar, { force: true });
+	}
+	fsyncPath(source);
+	renameSync(source, target);
+	fsyncDirectory(dirname(target));
+	writeStoreIdentity(canonical);
 }
 
 /**

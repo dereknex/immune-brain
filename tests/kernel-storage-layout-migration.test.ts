@@ -11,6 +11,7 @@ import {
 import { tmpdir } from "node:os";
 import { createHash } from "node:crypto";
 import { join } from "node:path";
+import { canonicalIntentHash, parseTaskIntentV1 } from "../plugins/immune-brain/runtime/kernel/intent";
 import {
 	auditTaskRecordPath,
 	auditTerminalProofPath,
@@ -43,13 +44,30 @@ function gitDirty(root: string): string[] {
 	return out.stdout.trim() ? out.stdout.split("\n") : [];
 }
 
+function legacyIntent(taskId: string): Record<string, unknown> {
+	return {
+		contract: "assurance_kernel/task_intent/v1",
+		task_id: taskId,
+		goal: `legacy outcome for ${taskId}`,
+		acceptance: [{ id: "A1", assertion: "legacy acceptance", verification: "verify one" }],
+		scope_hint: ["path/or/domain"],
+		risk: "routine",
+		revision: 1,
+		owner: "user",
+	};
+}
+
 function writeLegacyTerminalPair(root: string, taskId: string): void {
 	mkdirSync(join(root, ".imm", "tasks"), { recursive: true });
+	const intent = legacyIntent(taskId);
 	const record = {
 		contract: "assurance_kernel/task_record/v3",
 		task_id: taskId,
-		intent_snapshot: { revision: 1, risk: "routine" },
-		intent_ref: { path: `docs/plans/${taskId}.intent.json`, content_hash: "sha256:" + "0".repeat(64) },
+		intent_snapshot: intent,
+		intent_ref: {
+			path: `docs/plans/${taskId}.intent.json`,
+			content_hash: canonicalIntentHash(parseTaskIntentV1(intent)),
+		},
 		lifecycle: "done",
 		artifact_state: "frozen",
 		baseline: "sha256:" + "0".repeat(64),
@@ -227,7 +245,7 @@ describe("inspectStorageLayout failure branches", () => {
 		expect(inspectStorageLayout(root).layout).toBe("invalid");
 	});
 });
-describe("migrateLegacyLayout direct execution (review-6)", () => {
+describe("explicit SQLite import of the retired file store (A1)", () => {
 	async function runMigration(
 		root: string,
 	): Promise<import("../plugins/immune-brain/runtime/kernel/storage_layout_migration").MigrationOutcome> {
@@ -235,110 +253,202 @@ describe("migrateLegacyLayout direct execution (review-6)", () => {
 		return migrateLegacyLayout(root);
 	}
 
-	it("refuses the retired file-target migration and leaves legacy evidence untouched", async () => {
+	function commit(root: string, message: string): void {
+		execFileSync("git", ["-C", root, "add", "-A"]);
+		execFileSync("git", ["-C", root, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", message]);
+	}
+
+	it("imports an owner-free legacy terminal task and preserves its raw bytes as evidence", async () => {
 		const root = tempRoot();
 		writeLegacyTerminalPair(root, "2026-08-14-001-old-task");
-		// Legacy evidence is tracked so a stray write would show up as a diff.
-		execFileSync("git", ["-C", root, "add", "-A"]);
-		execFileSync("git", ["-C", root, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "legacy evidence"]);
-		const before = readFileSync(join(root, ".imm/tasks/2026-08-14-001-old-task.json"), "utf8");
-		const outcome = await runMigration(root);
-		// The file-target conversion would create a second authority store that no
-		// runtime reads, so the migration reports the importer requirement instead.
-		expect(outcome.outcome).toBe("invalid");
-		expect(outcome.reason).toMatch(/SQLite authority store/);
-		expect(existsSync(join(root, ".imm/audit/2026-08-14-001-old-task"))).toBe(false);
-		expect(existsSync(join(root, ".imm/tasks/2026-08-14-001-old-task.json"))).toBe(true);
-		expect(readFileSync(join(root, ".imm/tasks/2026-08-14-001-old-task.json"), "utf8")).toBe(before);
-		expect(existsSync(join(root, ".imm/state/transactions/storage-layout-migration.json"))).toBe(false);
-		// The layout keeps diagnosing the legacy authority for the operator.
+		const recordBefore = readFileSync(join(root, ".imm/tasks/2026-08-14-001-old-task.json"));
+		const proofBefore = readFileSync(join(root, ".imm/tasks/2026-08-14-001-old-task.backend-claim.json"));
+		commit(root, "legacy evidence");
 		expect(inspectStorageLayout(root).layout).toBe("migration_required");
+
+		// Phase 1 preserves the bytes and refuses to retire the source until the
+		// audit copies are committed.
+		const first = await runMigration(root);
+		expect(first).toMatchObject({ outcome: "migration_uncommitted" });
+		expect(first.affected_paths).toEqual([
+			".imm/audit/2026-08-14-001-old-task/task-record.json",
+			".imm/audit/2026-08-14-001-old-task/terminal-proof.json",
+		]);
+		expect(existsSync(join(root, ".imm/state/kernel.sqlite"))).toBe(false);
+		expect(existsSync(join(root, ".imm/tasks/2026-08-14-001-old-task.json"))).toBe(true);
+		expect(readFileSync(join(root, ".imm/audit/2026-08-14-001-old-task/task-record.json"))).toEqual(recordBefore);
+		commit(root, "preserve evidence");
+
+		const outcome = await runMigration(root);
+		expect(outcome).toMatchObject({ outcome: "migrated" });
+		expect(outcome.reason).toMatch(/imported 1 terminal task/);
+
+		// The published authority is the SQLite store, and the historical bytes
+		// survive verbatim as tracked evidence.
+		const { openKernelStore } = await import("../plugins/immune-brain/runtime/kernel/sqlite_store");
+		const db = openKernelStore(root, { create: false });
+		expect(db).not.toBeNull();
+		const row = db!.prepare("SELECT task_id, state, record_json, claim_status FROM runs").get() as Record<string, unknown>;
+		expect(row).toMatchObject({ task_id: "2026-08-14-001-old-task", state: "done", claim_status: null });
+		db!.close();
+		expect(readFileSync(join(root, ".imm/audit/2026-08-14-001-old-task/task-record.json"))).toEqual(recordBefore);
+		expect(readFileSync(join(root, ".imm/audit/2026-08-14-001-old-task/terminal-proof.json"))).toEqual(proofBefore);
+		expect(existsSync(join(root, ".imm/state/kernel.identity.json"))).toBe(true);
+		// The retired store is gone: one authority, not two.
+		expect(existsSync(join(root, ".imm/tasks/2026-08-14-001-old-task.json"))).toBe(false);
+		commit(root, "import");
+		expect(inspectStorageLayout(root).layout).toBe("ready");
 	});
 
-	it("still converges an interrupted file relocation from its frozen manifest", async () => {
+	it("retries idempotently through the recorded import identity", async () => {
 		const root = tempRoot();
 		writeLegacyTerminalPair(root, "2026-08-14-002-old-task");
-		execFileSync("git", ["-C", root, "add", "-A"]);
-		execFileSync("git", ["-C", root, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "legacy evidence"]);
-		// Simulate a crash after marker creation: relocate just the record.
+		const recordBefore = readFileSync(join(root, ".imm/tasks/2026-08-14-002-old-task.json"));
+		commit(root, "legacy evidence");
+		expect((await runMigration(root)).outcome).toBe("migration_uncommitted");
+		commit(root, "preserve evidence");
+		expect((await runMigration(root)).outcome).toBe("migrated");
+		const storeBefore = readFileSync(join(root, ".imm/state/kernel.sqlite"));
+
+		const retry = await runMigration(root);
+		expect(retry).toMatchObject({ outcome: "already_migrated" });
+		expect(readFileSync(join(root, ".imm/state/kernel.sqlite"))).toEqual(storeBefore);
+		expect(readFileSync(join(root, ".imm/audit/2026-08-14-002-old-task/task-record.json"))).toEqual(recordBefore);
+	});
+
+	it("recovers an interrupted publication from the verified candidate store", async () => {
+		const root = tempRoot();
+		writeLegacyTerminalPair(root, "2026-08-14-003-old-task");
+		const recordBytes = readFileSync(join(root, ".imm/tasks/2026-08-14-003-old-task.json"));
+		commit(root, "legacy evidence");
+		expect((await runMigration(root)).outcome).toBe("migration_uncommitted");
+		commit(root, "preserve evidence");
+		expect((await runMigration(root)).outcome).toBe("migrated");
+		// Reproduce the crash window: a verified candidate store exists, the
+		// publication rename did not happen, and no receipt was written.
+		const candidate = join(root, ".imm/state/kernel.sqlite.importing");
+		writeFileSync(candidate, readFileSync(join(root, ".imm/state/kernel.sqlite")));
+		rmSync(join(root, ".imm/state/kernel.sqlite"));
+		rmSync(join(root, ".imm/state/kernel.sqlite-wal"), { force: true });
+		rmSync(join(root, ".imm/state/kernel.sqlite-shm"), { force: true });
+		rmSync(join(root, ".imm/state/migration-receipt.json"), { force: true });
+		// The legacy source is restored from the evidence the import preserved:
+		// both sides of the terminal pair must exist for the import to resume.
+		mkdirSync(join(root, ".imm/tasks"), { recursive: true });
+		writeFileSync(join(root, ".imm/tasks/2026-08-14-003-old-task.json"), recordBytes);
+		writeFileSync(
+			join(root, ".imm/tasks/2026-08-14-003-old-task.backend-claim.json"),
+			readFileSync(join(root, ".imm/audit/2026-08-14-003-old-task/terminal-proof.json")),
+		);
+		commit(root, "restore legacy source");
+		expect(inspectStorageLayout(root).layout).toBe("migration_required");
+
+		const recovered = await runMigration(root);
+		expect(recovered).toMatchObject({ outcome: "migrated" });
+		const { openKernelStore } = await import("../plugins/immune-brain/runtime/kernel/sqlite_store");
+		const db = openKernelStore(root, { create: false });
+		expect(db).not.toBeNull();
+		expect(db!.prepare("SELECT COUNT(*) AS n FROM runs").get()).toMatchObject({ n: 1 });
+		db!.close();
+		expect(existsSync(candidate)).toBe(false);
+	});
+
+	it("refuses to overwrite an existing SQLite store", async () => {
+		const root = tempRoot();
+		writeLegacyTerminalPair(root, "2026-08-14-004-old-task");
+		commit(root, "legacy evidence");
+		const { openKernelStore } = await import("../plugins/immune-brain/runtime/kernel/sqlite_store");
+		const db = openKernelStore(root, { create: true });
+		db!.close();
+		const storeBefore = readFileSync(join(root, ".imm/state/kernel.sqlite"));
+		const outcome = await runMigration(root);
+		expect(outcome.outcome).toBe("invalid");
+		expect(outcome.reason).toMatch(/both a SQLite authority store and retired file-store authority exist/);
+		expect(readFileSync(join(root, ".imm/state/kernel.sqlite"))).toEqual(storeBefore);
+		expect(existsSync(join(root, ".imm/tasks/2026-08-14-004-old-task.json"))).toBe(true);
+	});
+
+	it("refuses a live legacy task with zero writes", async () => {
+		const root = tempRoot();
+		writeLegacyClaim(root, "task-live");
+		commit(root, "live claim");
+		const outcome = await runMigration(root);
+		expect(outcome.outcome).toBe("migration_blocked_active");
+		expect(existsSync(join(root, ".imm/state/kernel.sqlite"))).toBe(false);
+		expect(existsSync(join(root, ".imm/tasks/.backend-claim.json"))).toBe(true);
+	});
+
+	it("refuses a recoverable batch before importing anything", async () => {
+		const root = tempRoot();
+		writeLegacyTerminalPair(root, "2026-08-14-005-old-task");
+		mkdirSync(join(root, ".imm/state/batches"), { recursive: true });
+		writeFileSync(join(root, ".imm/state/batches/batch-1.json"), `${JSON.stringify({ contract: "assurance_kernel/batch_run_state/v1", batch_state: "running" }, null, 2)}\n`);
+		commit(root, "legacy evidence and live batch");
+		const outcome = await runMigration(root);
+		expect(outcome.outcome).toBe("invalid");
+		expect(outcome.reason).toMatch(/recoverable batch/);
+		expect(existsSync(join(root, ".imm/state/kernel.sqlite"))).toBe(false);
+		expect(existsSync(join(root, ".imm/tasks/2026-08-14-005-old-task.json"))).toBe(true);
+	});
+
+	it("keeps the legacy authority untouched when affected paths are dirty", async () => {
+		const root = tempRoot();
+		writeLegacyTerminalPair(root, "2026-08-14-006-old-task");
+		// Introduced after the committed baseline: nothing may be imported yet.
+		const outcome = await runMigration(root);
+		expect(outcome.outcome).toBe("migration_uncommitted");
+		// The uncommitted historical bytes stay authoritative: nothing published,
+		// and the source is still in place until its evidence is committed.
+		expect(existsSync(join(root, ".imm/state/kernel.sqlite"))).toBe(false);
+		expect(existsSync(join(root, ".imm/tasks/2026-08-14-006-old-task.json"))).toBe(true);
+	});
+
+	it("refuses a retired relocation manifest instead of replaying it", async () => {
+		const root = tempRoot();
+		writeLegacyTerminalPair(root, "2026-08-14-007-old-task");
+		commit(root, "legacy evidence");
+		const recordBefore = readFileSync(join(root, ".imm/tasks/2026-08-14-007-old-task.json"));
+		const proofBefore = readFileSync(join(root, ".imm/tasks/2026-08-14-007-old-task.backend-claim.json"));
 		mkdirSync(join(root, ".imm/state/transactions"), { recursive: true });
-		const before = readFileSync(join(root, ".imm/tasks/2026-08-14-002-old-task.json"), "utf8");
-		const proofBefore = readFileSync(join(root, ".imm/tasks/2026-08-14-002-old-task.backend-claim.json"), "utf8");
 		writeFileSync(
 			join(root, ".imm/state/transactions/storage-layout-migration.json"),
 			`${JSON.stringify({
 				contract: "assurance_kernel/storage_layout_migration/v1",
 				version: 1,
 				entries: [
-					{ source: ".imm/tasks/2026-08-14-002-old-task.json", target: ".imm/audit/2026-08-14-002-old-task/task-record.json", sha256: createHash("sha256").update(before).digest("hex"), size: before.length },
-					{ source: ".imm/tasks/2026-08-14-002-old-task.backend-claim.json", target: ".imm/audit/2026-08-14-002-old-task/terminal-proof.json", sha256: createHash("sha256").update(proofBefore).digest("hex"), size: proofBefore.length },
+					{ source: ".imm/tasks/2026-08-14-007-old-task.json", target: ".imm/audit/2026-08-14-007-old-task/task-record.json", sha256: createHash("sha256").update(recordBefore).digest("hex"), size: recordBefore.length },
 				],
 			}, null, 2)}\n`,
 		);
-		// Interruption point: the record was relocated, the proof was not.
-		mkdirSync(join(root, ".imm/audit/2026-08-14-002-old-task"), { recursive: true });
-		writeFileSync(join(root, ".imm/audit/2026-08-14-002-old-task/task-record.json"), before);
-		rmSync(join(root, ".imm/tasks/2026-08-14-002-old-task.json"));
 		const outcome = await runMigration(root);
-		expect(outcome.outcome).toBe("migrated");
-		expect(readFileSync(join(root, ".imm/audit/2026-08-14-002-old-task/task-record.json"), "utf8")).toBe(before);
-		expect(readFileSync(join(root, ".imm/audit/2026-08-14-002-old-task/terminal-proof.json"), "utf8")).toBe(proofBefore);
-		expect(existsSync(join(root, ".imm/state/transactions/storage-layout-migration.json"))).toBe(false);
+		expect(outcome.outcome).toBe("recovery_required");
+		expect(outcome.reason).toMatch(/not replayed/);
+		// The retired writer is gone: neither side of the pair moved.
+		expect(readFileSync(join(root, ".imm/tasks/2026-08-14-007-old-task.json"))).toEqual(recordBefore);
+		expect(readFileSync(join(root, ".imm/tasks/2026-08-14-007-old-task.backend-claim.json"))).toEqual(proofBefore);
+		expect(existsSync(join(root, ".imm/audit/2026-08-14-007-old-task"))).toBe(false);
+		expect(existsSync(join(root, ".imm/state/transactions/storage-layout-migration.json"))).toBe(true);
 	});
 
-	it("keeps the legacy authority untouched when affected paths are dirty", async () => {
-		const root = tempRoot();
-		writeLegacyTerminalPair(root, "2026-08-14-003-old-task");
-		// Introduced after the committed baseline: nothing may be relocated.
-		const outcome = await runMigration(root);
-		expect(outcome.outcome).toBe("invalid");
-		expect(existsSync(join(root, ".imm/audit/2026-08-14-003-old-task"))).toBe(false);
-		expect(existsSync(join(root, ".imm/tasks/2026-08-14-003-old-task.json"))).toBe(true);
-	});
-});
-
-describe("migrateLegacyLayout case-fold and target preflight (review round 6)", () => {
-	async function runMigration(root: string): Promise<unknown> {
-		const { migrateLegacyLayout } = await import("../plugins/immune-brain/runtime/kernel/storage_layout_migration");
-		try {
-			return migrateLegacyLayout(root);
-		} catch (error) {
-			return { threw: error instanceof Error ? error.message : String(error) };
-		}
-	}
-
-	it("rejects case-colliding audit targets (Foo vs foo) before any relocation", async () => {
-		// The detector is evaluated per-axis but constructing two distinct
-		// case variants requires a case-sensitive filesystem. Skip the live
-		// collision fixture on case-insensitive filesystems (macOS/Windows
-		// default) where the two names collapse to one directory entry; the
-		// per-axis lowercase detection is additionally covered by the
-		// migration marker validation tests below.
+	it("rejects case-colliding legacy task ids before writing evidence", async () => {
 		const probe = mkdtempSync(join(tmpdir(), "imm-casefold-probe-"));
 		try {
-			const fs = require("node:fs") as typeof import("node:fs");
 			writeFileSync(join(probe, "Probe"), "a");
 			try {
 				writeFileSync(join(probe, "probe"), "b");
-				// Case-insensitive collision: "Probe" now reads "b".
-				if (fs.readFileSync(join(probe, "Probe"), "utf8") === "b") {
-					expect(true).toBe(true);
-					return;
-				}
+				if (readFileSync(join(probe, "Probe"), "utf8") === "b") return;
 			} catch {
-				// Case-insensitive collision surfaced as an error.
-				expect(true).toBe(true);
 				return;
 			}
 			const root = tempRoot();
 			writeLegacyTerminalPair(root, "Foo");
 			writeLegacyTerminalPair(root, "foo");
-			execFileSync("git", ["-C", root, "add", "-A"]);
-			execFileSync("git", ["-C", root, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "legacy evidence"]);
+			commit(root, "two case variants");
 			const outcome = await runMigration(root);
-			expect(JSON.stringify(outcome)).toMatch(/case-fold (source|target) collision/);
-			// Zero relocation happened.
+			expect(outcome.outcome).toBe("invalid");
+			expect(outcome.reason).toMatch(/case-fold source collision/);
 			expect(existsSync(join(root, ".imm/audit"))).toBe(false);
+			expect(existsSync(join(root, ".imm/state/kernel.sqlite"))).toBe(false);
 		} finally {
 			rmSync(probe, { recursive: true, force: true });
 		}
@@ -347,29 +457,16 @@ describe("migrateLegacyLayout case-fold and target preflight (review round 6)", 
 	it("refuses an existing audit target with zero writes", async () => {
 		const root = tempRoot();
 		writeLegacyTerminalPair(root, "task-001");
-		// Bind the legacy proof to the record bytes so the pair passes the
-		// proof-binding check.
-		{
-			const recordPath = join(root, ".imm/tasks/task-001.json");
-			const recordBytes = readFileSync(recordPath, "utf8");
-			const proofPath = join(root, ".imm/tasks/task-001.backend-claim.json");
-			const proof = JSON.parse(readFileSync(proofPath, "utf8"));
-			proof.final_record_hash = `sha256:${createHash("sha256").update(recordBytes).digest("hex")}`;
-			writeFileSync(proofPath, `${JSON.stringify(proof, null, 2)}\n`);
-		}
 		mkdirSync(join(root, ".imm/audit/task-001"), { recursive: true });
 		const existing = "{\"contract\":\"assurance_kernel/task_record/v3\",\"task_id\":\"task-001\",\"lifecycle\":\"done\"}\n";
 		writeFileSync(join(root, ".imm/audit/task-001/task-record.json"), existing);
-		execFileSync("git", ["-C", root, "add", "-A"]);
-		execFileSync("git", ["-C", root, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "legacy + conflicting target"]);
+		commit(root, "legacy + conflicting target");
 		const outcome = await runMigration(root);
-		// The retired migration refuses before any target preflight, and the
-		// conflicting target keeps its bytes.
 		expect(outcome.outcome).toBe("invalid");
+		expect(outcome.reason).toMatch(/different bytes/);
 		expect(readFileSync(join(root, ".imm/audit/task-001/task-record.json"), "utf8")).toBe(existing);
-		// The legacy source stays untouched; zero writes.
 		expect(existsSync(join(root, ".imm/tasks/task-001.json"))).toBe(true);
-		expect(existsSync(join(root, ".imm/state/transactions/storage-layout-migration.json"))).toBe(false);
+		expect(existsSync(join(root, ".imm/state/kernel.sqlite"))).toBe(false);
 	});
 });
 

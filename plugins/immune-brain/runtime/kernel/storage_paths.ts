@@ -71,6 +71,10 @@ export const FILE_STORE_INERT_FILES = [
 	".imm/state/journal.jsonl",
 	".imm/state/locks/kernel-store.lock",
 	".imm/state/enrollment-baseline.json",
+	// The explicit importer's candidate store and its import receipt: both are
+	// import-time machinery, and the published database is the only authority.
+	".imm/state/kernel.sqlite.importing",
+	".imm/state/migration-receipt.json",
 ] as const;
 
 /** A file-store migration manifest left by the retired migrator. */
