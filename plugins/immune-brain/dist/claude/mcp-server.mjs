@@ -4625,6 +4625,66 @@ function assertTaskRecordUpdateV3(previousRaw, nextRaw, action) {
     throw new KernelInvariantError(violations);
 }
 
+// plugins/immune-brain/runtime/kernel/spec_binding.ts
+var ACTIVE_SPEC_RE = /^docs\/specs\/(?!archive\/)[^/]+\.spec\.md$/;
+var ARCHIVED_SPEC_RE = /^docs\/specs\/archive\/[^/]+\.spec\.md$/;
+function archivePath(path) {
+  const matched = path.match(/^docs\/(plans|specs)\/([^/]+)$/);
+  if (!matched)
+    throw new KernelInvariantError([`artifact path is not active: ${path}`]);
+  return `docs/${matched[1]}/archive/${matched[2]}`;
+}
+function activePath(path) {
+  const matched = path.match(/^docs\/(plans|specs)\/archive\/([^/]+)$/);
+  if (!matched)
+    throw new KernelInvariantError([`artifact path is not archived: ${path}`]);
+  return `docs/${matched[1]}/${matched[2]}`;
+}
+function boundSpecPath(intent) {
+  const candidates = intent.scope_hint.filter((path) => ACTIVE_SPEC_RE.test(path));
+  if (candidates.length > 1)
+    throw new KernelInvariantError([`artifact transition requires at most one scope-bound Spec; found ${candidates.length}`]);
+  return candidates[0];
+}
+function readBoundActiveSpec(root, intent, required = false) {
+  const specPath = boundSpecPath(intent);
+  if (!specPath) {
+    if (required)
+      throw new KernelInvariantError(["artifact freeze requires one scope-bound active Spec"]);
+    return;
+  }
+  try {
+    return { path: specPath, content: readSecureProjectFile(root, specPath) };
+  } catch (error) {
+    if (error instanceof Error && error.message.startsWith("source_missing:") && !required)
+      return;
+    throw error;
+  }
+}
+function inspectSpecBinding(intent) {
+  const active = intent.scope_hint.filter((path) => ACTIVE_SPEC_RE.test(path));
+  const archived = intent.scope_hint.filter((path) => ARCHIVED_SPEC_RE.test(path));
+  if (active.length === 0 && archived.length === 0)
+    return { ok: true, binding: null };
+  if (active.length > 1)
+    return {
+      ok: false,
+      code: "binding_ambiguous",
+      missing: [],
+      message: `enrollment requires at most one scope-bound Spec; found ${active.length}: ${active.join(", ")}`
+    };
+  if (active.length === 0) {
+    const missing = archived.map((path) => activePath(path));
+    return {
+      ok: false,
+      code: "binding_incomplete",
+      missing,
+      message: `complex Spec binding is incomplete; add ${missing.join(", ")}`
+    };
+  }
+  return { ok: true, binding: { active: active[0], archive: archivePath(active[0]) } };
+}
+
 // plugins/immune-brain/runtime/kernel/completion.ts
 var REQUIRED_ATTESTATIONS = {
   routine: ["qa"],
@@ -4637,25 +4697,14 @@ function archiveActivePlanningPath(path) {
 }
 function ownSidecarPaths(intent) {
   const activeIntent = `docs/plans/${intent.task_id}.intent.json`;
-  const archivedIntent = archiveActivePlanningPath(activeIntent);
   const excluded = new Set([activeIntent]);
+  const archivedIntent = archiveActivePlanningPath(activeIntent);
   if (archivedIntent)
     excluded.add(archivedIntent);
-  const specs = intent.scope_hint.filter((path) => {
-    const archived = archiveActivePlanningPath(path);
-    return archived !== null && /^docs\/specs\/[^/]+\.spec\.md$/.test(path) && intent.scope_hint.includes(archived);
-  });
-  if (specs.length > 1) {
-    throw new KernelInvariantError([
-      `artifact transition requires at most one scope-bound Spec; found ${specs.length}`
-    ]);
-  }
-  const spec = specs[0];
+  const spec = boundSpecPath(intent);
   if (spec) {
     excluded.add(spec);
-    const archived = archiveActivePlanningPath(spec);
-    if (archived)
-      excluded.add(archived);
+    excluded.add(archivePath(spec));
   }
   return excluded;
 }
@@ -6668,66 +6717,6 @@ function applyTaskAction(input) {
     }
     return commitTaskRecordLocked(root, task_id, current.revision, nextRecord, workspace.revision, nextWorkspaceState, input.artifact_transition?.relocations, authorityRunId);
   });
-}
-
-// plugins/immune-brain/runtime/kernel/spec_binding.ts
-var ACTIVE_SPEC_RE = /^docs\/specs\/(?!archive\/)[^/]+\.spec\.md$/;
-var ARCHIVED_SPEC_RE = /^docs\/specs\/archive\/[^/]+\.spec\.md$/;
-function archivePath(path) {
-  const matched = path.match(/^docs\/(plans|specs)\/([^/]+)$/);
-  if (!matched)
-    throw new KernelInvariantError([`artifact path is not active: ${path}`]);
-  return `docs/${matched[1]}/archive/${matched[2]}`;
-}
-function activePath(path) {
-  const matched = path.match(/^docs\/(plans|specs)\/archive\/([^/]+)$/);
-  if (!matched)
-    throw new KernelInvariantError([`artifact path is not archived: ${path}`]);
-  return `docs/${matched[1]}/${matched[2]}`;
-}
-function boundSpecPath(intent) {
-  const candidates = intent.scope_hint.filter((path) => ACTIVE_SPEC_RE.test(path));
-  if (candidates.length > 1)
-    throw new KernelInvariantError([`artifact transition requires at most one scope-bound Spec; found ${candidates.length}`]);
-  return candidates[0];
-}
-function readBoundActiveSpec(root, intent, required = false) {
-  const specPath = boundSpecPath(intent);
-  if (!specPath) {
-    if (required)
-      throw new KernelInvariantError(["artifact freeze requires one scope-bound active Spec"]);
-    return;
-  }
-  try {
-    return { path: specPath, content: readSecureProjectFile(root, specPath) };
-  } catch (error) {
-    if (error instanceof Error && error.message.startsWith("source_missing:") && !required)
-      return;
-    throw error;
-  }
-}
-function inspectSpecBinding(intent) {
-  const active = intent.scope_hint.filter((path) => ACTIVE_SPEC_RE.test(path));
-  const archived = intent.scope_hint.filter((path) => ARCHIVED_SPEC_RE.test(path));
-  if (active.length === 0 && archived.length === 0)
-    return { ok: true, binding: null };
-  if (active.length > 1)
-    return {
-      ok: false,
-      code: "binding_ambiguous",
-      missing: [],
-      message: `enrollment requires at most one scope-bound Spec; found ${active.length}: ${active.join(", ")}`
-    };
-  if (active.length === 0) {
-    const missing = archived.map((path) => activePath(path));
-    return {
-      ok: false,
-      code: "binding_incomplete",
-      missing,
-      message: `complex Spec binding is incomplete; add ${missing.join(", ")}`
-    };
-  }
-  return { ok: true, binding: { active: active[0], archive: archivePath(active[0]) } };
 }
 
 // plugins/immune-brain/runtime/kernel/canary_application.ts

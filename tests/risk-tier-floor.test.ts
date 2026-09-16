@@ -5,6 +5,7 @@
 // tier. Covers acc-floor-enforced and acc-non-kernel-unaffected.
 
 import { describe, expect, it } from "bun:test";
+import { resolveProjectedRisk } from "../plugins/immune-brain/runtime/kernel/completion";
 import {
 	classifyTaskRisk,
 	CHANGED_PATH_RISK_FLOOR_PREFIXES,
@@ -76,6 +77,15 @@ describe("deterministic risk-tier floor", () => {
 			const parsed = parseTaskIntentV1({ ...BASE, scope_hint });
 			expect(parsed.risk).toBe("material");
 		}
+	});
+
+	it("keeps a routine task routine when only its own active Spec changed", () => {
+		const parsed = parseTaskIntentV1({
+			...BASE,
+			scope_hint: [`docs/specs/${BASE.task_id}.spec.md`],
+		});
+		expect(parsed.risk).toBe("routine");
+		expect(resolveProjectedRisk(parsed, [`docs/specs/${BASE.task_id}.spec.md`])).toBe("routine");
 	});
 
 	it("keeps the declared tier for documentation-only scope", () => {

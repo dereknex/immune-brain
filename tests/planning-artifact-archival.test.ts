@@ -1,5 +1,4 @@
 import { describe, expect, test } from "bun:test";
-import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -10,8 +9,10 @@ import { enrollCanaryTask } from "../plugins/immune-brain/runtime/kernel/enrollm
 import { createEnrollmentAuthorityRegistry } from "../plugins/immune-brain/runtime/kernel/enrollment_authority";
 import { canonicalIntentHash, parseTaskIntentV1, readTaskIntent } from "../plugins/immune-brain/runtime/kernel/intent";
 import { preparePiCanary } from "../plugins/immune-brain/runtime/kernel/pi_canary_prepare";
+import { completionDecision } from "../plugins/immune-brain/runtime/kernel/completion";
 import { findingsDigestV2 } from "../plugins/immune-brain/runtime/kernel/reducer";
 import { readTaskRecord } from "../plugins/immune-brain/runtime/kernel/storage";
+import { taskDiffIdentity } from "../plugins/immune-brain/runtime/workspace_scope";
 import { createMutationAuthorityCapabilityForTest } from "./fixtures/mutation-authority-test-seam";
 
 const REPO_ROOT = resolve(import.meta.dir, "..");
@@ -280,25 +281,30 @@ describe("planning artifact archival", () => {
       const registry = createMutationAuthorityRegistry();
       const app = createCanaryApplication(registry);
       const specPath = join(root, `docs/specs/${taskId}.spec.md`);
-      const delivery = (bytes: Buffer) => `sha256:${createHash("sha256").update(bytes).digest("hex")}`;
-      const d1 = delivery(readFileSync(specPath));
+      const liveDiff = () => {
+        execFileSync("git", ["add", "-A"], { cwd: root });
+        return taskDiffIdentity(root, intent.scope_hint);
+      };
       const token = () => readTaskIntent(root, taskId, readTaskRecord(root, taskId).record!.intent_ref.path).token;
-      const run = (operation: Parameters<typeof app.execute>[0]["operation"], at: string, diff_hash: string) =>
-        app.execute({
+      const run = (operation: Parameters<typeof app.execute>[0]["operation"], at: string) => {
+        const diff = liveDiff();
+        return app.execute({
           root,
           task_id: taskId,
           operation,
           prior_intent_token: token(),
-          diffProvider: () => ({ diff_hash, changed_paths: [`docs/specs/${taskId}.spec.md`] }),
+          diffProvider: () => diff,
           now: at,
         });
-      const frozen = run({ op: "freeze_artifacts", actor_id: "executor-1" }, now, d1);
+      };
+      const frozen = run({ op: "freeze_artifacts", actor_id: "executor-1" }, now);
       expect(frozen.record.artifact_state).toBe("frozen");
       expect(frozen.record.intent_ref.path).toBe(`docs/plans/${taskId}.intent.json`);
       expect(existsSync(join(root, `docs/plans/${taskId}.intent.json`))).toBe(true);
       expect(existsSync(specPath)).toBe(true);
       expect(existsSync(join(root, `docs/plans/archive/${taskId}.intent.json`))).toBe(false);
       expect(existsSync(join(root, `docs/specs/archive/${taskId}.spec.md`))).toBe(false);
+      const d1 = liveDiff().diff_hash;
       const qaAt = "2026-08-12T10:00:01.000Z";
       const approval = {
         id: "ap-qa",
@@ -324,11 +330,15 @@ describe("planning artifact archival", () => {
         expires_at: "2099-01-01T00:00:00.000Z",
         findings_digest: null,
       });
-      run({ op: "record_approval", approval, capability: qaCap, actor_id: "qa-1" }, qaAt, d1);
+      run({ op: "record_approval", approval, capability: qaCap, actor_id: "qa-1" }, qaAt);
+      const afterQa = readTaskRecord(root, taskId).record!;
+      const eligible = completionDecision(parseTaskIntentV1(intent), afterQa, d1, hash, liveDiff().changed_paths);
+      expect(eligible.complete).toBe(true);
       writeFileSync(specPath, "# stale spec\n");
-      const d2 = delivery(readFileSync(specPath));
-      expect(d2).not.toBe(d1);
-      expect(() => run({ op: "complete", actor_id: "executor-1" }, "2026-08-12T10:00:01.500Z", d2)).toThrow(/not eligible/);
+      const stale = liveDiff();
+      expect(stale.diff_hash).not.toBe(d1);
+      expect(completionDecision(parseTaskIntentV1(intent), afterQa, stale.diff_hash, hash, stale.changed_paths).complete).toBe(false);
+      expect(() => run({ op: "complete", actor_id: "executor-1" }, "2026-08-12T10:00:01.500Z")).toThrow(/not eligible/);
       expect(readTaskRecord(root, taskId).record).toMatchObject({ lifecycle: "active", artifact_state: "frozen" });
       const findings = [{
         id: "rw-1",
@@ -354,7 +364,7 @@ describe("planning artifact archival", () => {
         expected_record_hash: readTaskRecord(root, taskId).revision,
         intent_revision: 1,
         intent_content_hash: hash,
-        diff_hash: d2,
+        diff_hash: stale.diff_hash,
         actor_id: "reviewer-1",
         confirmation_ref: "conf-rework",
         expires_at: "2099-01-01T00:00:00.000Z",
@@ -363,7 +373,6 @@ describe("planning artifact archival", () => {
       const restored = run(
         { op: "request_rework", capability, findings: findings as never[], actor_id: "reviewer-1" },
         reworkAt,
-        d2,
       );
       expect(restored.record.artifact_state).toBe("active");
       expect(restored.record.intent_ref.path).toBe(`docs/plans/${taskId}.intent.json`);

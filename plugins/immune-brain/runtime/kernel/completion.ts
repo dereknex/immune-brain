@@ -1,4 +1,5 @@
 import { classifyTaskRisk } from "./intent";
+import { archivePath, boundSpecPath } from "./spec_binding";
 import type {
 	ApprovalKind,
 	CompletionDecision,
@@ -7,7 +8,7 @@ import type {
 	TaskProjectionV3,
 	TaskRecord,
 } from "./types";
-import { assertKernelInvariantsV3, KernelInvariantError } from "./validation";
+import { assertKernelInvariantsV3 } from "./validation";
 import { refutationIsLive } from "./refutation";
 
 const REQUIRED_ATTESTATIONS: Record<TaskIntentV1["risk"], ApprovalKind[]> = {
@@ -23,23 +24,13 @@ function archiveActivePlanningPath(path: string): string | null {
 
 function ownSidecarPaths(intent: TaskIntentV1): Set<string> {
 	const activeIntent = `docs/plans/${intent.task_id}.intent.json`;
-	const archivedIntent = archiveActivePlanningPath(activeIntent);
 	const excluded = new Set<string>([activeIntent]);
+	const archivedIntent = archiveActivePlanningPath(activeIntent);
 	if (archivedIntent) excluded.add(archivedIntent);
-	const specs = intent.scope_hint.filter((path) => {
-		const archived = archiveActivePlanningPath(path);
-		return archived !== null && /^docs\/specs\/[^/]+\.spec\.md$/.test(path) && intent.scope_hint.includes(archived);
-	});
-	if (specs.length > 1) {
-		throw new KernelInvariantError([
-			`artifact transition requires at most one scope-bound Spec; found ${specs.length}`,
-		]);
-	}
-	const spec = specs[0];
+	const spec = boundSpecPath(intent);
 	if (spec) {
 		excluded.add(spec);
-		const archived = archiveActivePlanningPath(spec);
-		if (archived) excluded.add(archived);
+		excluded.add(archivePath(spec));
 	}
 	return excluded;
 }
