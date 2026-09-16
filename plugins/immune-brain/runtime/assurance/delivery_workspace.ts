@@ -94,6 +94,15 @@ function prepareDependencies(root: string, runner?: FrozenRunner): void {
 	});
 	if (result.error || result.status !== 0)
 		throw new DeliveryWorkspaceError("delivery dependency preparation failed from the snapshot lockfile");
+	const modules = join(root, "node_modules");
+	if (existsSync(modules)) {
+		const lock = spawnSync("chmod", ["-R", "a-w", modules], {
+			encoding: "utf8",
+			stdio: ["ignore", "pipe", "pipe"],
+		});
+		if (lock.error || lock.status !== 0)
+			throw new DeliveryWorkspaceError("delivery dependencies could not be locked against mutation");
+	}
 }
 
 export function writeDeliveryTree(sourceRoot: string, snapshot: GitTaskRevisionSnapshot): string {

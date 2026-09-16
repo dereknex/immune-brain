@@ -81,9 +81,9 @@ function assertNoEnvelopeEscape(
 	if (!isGitWorkspaceSnapshot(baseline)) throw new Error("enrollment baseline is unreadable");
 	const current = captureGitWorkspaceSnapshot(root);
 	if (!current) throw new Error("enrollment baseline cannot be compared because Git is unavailable");
-	const mixed = Object.keys(current.dirty_files)
+	const mixed = [...new Set([...Object.keys(baseline.dirty_files), ...Object.keys(current.dirty_files)])]
 		.filter((path) => !isNonDeliveryPath(path) && !isPlanningSidecar(path) && !taskPathMatchesScope(path, scope))
-		.filter((path) => baseline.dirty_files[path] === undefined)
+		.filter((path) => baseline.dirty_files[path] !== current.dirty_files[path])
 		.sort(comparePaths);
 	if (mixed.length > 0)
 		throw new Error(`task delivery contains paths outside the authorization envelope: ${mixed.join(", ")}`);

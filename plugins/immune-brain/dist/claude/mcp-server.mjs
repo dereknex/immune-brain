@@ -2020,7 +2020,7 @@ function assertNoEnvelopeEscape(root, stagedPaths, scope) {
   const current = captureGitWorkspaceSnapshot(root);
   if (!current)
     throw new Error("enrollment baseline cannot be compared because Git is unavailable");
-  const mixed = Object.keys(current.dirty_files).filter((path) => !isNonDeliveryPath(path) && !isPlanningSidecar(path) && !taskPathMatchesScope(path, scope)).filter((path) => baseline.dirty_files[path] === undefined).sort(comparePaths);
+  const mixed = [...new Set([...Object.keys(baseline.dirty_files), ...Object.keys(current.dirty_files)])].filter((path) => !isNonDeliveryPath(path) && !isPlanningSidecar(path) && !taskPathMatchesScope(path, scope)).filter((path) => baseline.dirty_files[path] !== current.dirty_files[path]).sort(comparePaths);
   if (mixed.length > 0)
     throw new Error(`task delivery contains paths outside the authorization envelope: ${mixed.join(", ")}`);
 }
@@ -7729,6 +7729,15 @@ function prepareDependencies(root, runner) {
   });
   if (result.error || result.status !== 0)
     throw new DeliveryWorkspaceError("delivery dependency preparation failed from the snapshot lockfile");
+  const modules = join7(root, "node_modules");
+  if (existsSync5(modules)) {
+    const lock = spawnSync5("chmod", ["-R", "a-w", modules], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"]
+    });
+    if (lock.error || lock.status !== 0)
+      throw new DeliveryWorkspaceError("delivery dependencies could not be locked against mutation");
+  }
 }
 function writeDeliveryTree(sourceRoot, snapshot) {
   const indexDirectory = mkdtempSync2(join7(tmpdir3(), "imm-delivery-index-"));
@@ -10561,7 +10570,7 @@ import { join as join12 } from "node:path";
 
 // plugins/immune-brain/runtime/unattended/batch_git.ts
 import { spawnSync as spawnSync7 } from "node:child_process";
-import { randomUUID as randomUUID8 } from "node:crypto";
+import { createHash as createHash19, randomUUID as randomUUID8 } from "node:crypto";
 import {
   constants as constants5,
   closeSync as closeSync7,
@@ -10931,6 +10940,16 @@ async function commitBatchChild(input) {
   if (stagedOutside.length > 0) {
     spawnSync7("git", ["-C", root, "reset", "--quiet"], { stdio: ["ignore", "ignore", "ignore"] });
     throw new Error("dirty_outside_scope");
+  }
+  const record = auditPair.record;
+  const qa = [...record.attestations ?? []].reverse().find((item) => item.kind === "qa");
+  if (record.contract === "assurance_kernel/task_record/v4" && qa?.diff_hash) {
+    if (!record.git_base_head)
+      throw new Error("batch commit requires a TaskRecord v4 git_base_head");
+    const captured = captureGitTaskRevisionSnapshot(root, scopeHint, record.git_base_head);
+    const digest = `sha256:${createHash19("sha256").update(JSON.stringify(captured)).digest("hex")}`;
+    if (digest !== qa.diff_hash)
+      throw new Error("batch commit drifted from the reviewed delivery identity");
   }
   const goalFirstLine = goal.trim().split(/\r?\n/)[0]?.trim() || taskId;
   const commitMessage = `imm(${taskId}): ${goalFirstLine}

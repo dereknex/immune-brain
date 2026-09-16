@@ -71,8 +71,10 @@ describe("managed task snapshot isolation", () => {
 			writeEnrollmentBaseline(root);
 			const initial = taskDiffHash(root, ["task.ts"]);
 
-			writeFileSync(join(root, "outside.ts"), "export const outside = 'dirty-two';\n");
 			expect(taskDiffHash(root, ["task.ts"])).toBe(initial);
+			writeFileSync(join(root, "outside.ts"), "export const outside = 'dirty-two';\n");
+			expect(() => taskDiffHash(root, ["task.ts"])).toThrow(/outside the authorization envelope/);
+			writeFileSync(join(root, "outside.ts"), "export const outside = 'dirty-one';\n");
 			writeFileSync(join(root, "new-outside.ts"), "export const extra = true;\n");
 			expect(() => taskDiffHash(root, ["task.ts"])).toThrow(/outside the authorization envelope/);
 			rmSync(join(root, "new-outside.ts"));

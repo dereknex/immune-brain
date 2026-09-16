@@ -3,7 +3,7 @@
 // Invariant: The runtime never creates, switches, or deletes a Git worktree,
 // never pushes a ref, and never opens or updates a pull request.
 import { spawnSync } from "node:child_process";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import {
 	constants,
 	closeSync,
@@ -18,7 +18,7 @@ import {
 } from "node:fs";
 import { dirname, join } from "node:path";
 import { localRunId, readAuditTaskPair, readSecureProjectFile } from "../kernel/storage";
-import { pathMatchesScope } from "../workspace_scope";
+import { captureGitTaskRevisionSnapshot, pathMatchesScope } from "../workspace_scope";
 import { expectedBatchHead, findExistingActiveBatch, findSettledBatchRecord } from "./batch_preflight";
 
 export type BatchGitPreflightRejectReason =
@@ -547,6 +547,19 @@ export async function commitBatchChild(input: {
 	if (stagedOutside.length > 0) {
 		spawnSync("git", ["-C", root, "reset", "--quiet"], { stdio: ["ignore", "ignore", "ignore"] });
 		throw new Error("dirty_outside_scope");
+	}
+	const record = auditPair.record as {
+		contract?: string;
+		git_base_head?: string;
+		attestations?: Array<{ kind: string; diff_hash: string }>;
+	};
+	const qa = [...(record.attestations ?? [])].reverse().find((item) => item.kind === "qa");
+	if (record.contract === "assurance_kernel/task_record/v4" && qa?.diff_hash) {
+		if (!record.git_base_head) throw new Error("batch commit requires a TaskRecord v4 git_base_head");
+		const captured = captureGitTaskRevisionSnapshot(root, scopeHint, record.git_base_head);
+		const digest = `sha256:${createHash("sha256").update(JSON.stringify(captured)).digest("hex")}`;
+		if (digest !== qa.diff_hash)
+			throw new Error("batch commit drifted from the reviewed delivery identity");
 	}
 
 	// 6. Commit with structured message, Immune-Brain-Batch trailer, and all hooks disabled (Finding 1)
