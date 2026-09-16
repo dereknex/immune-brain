@@ -18,7 +18,7 @@ import {
 import { preparePiCanary } from "../plugins/immune-brain/runtime/kernel/pi_canary_prepare";
 import { createMutationAuthorityRegistry, digestOfAction } from "../plugins/immune-brain/runtime/kernel/authority_port";
 import { createMutationAuthorityCapabilityForTest } from "./fixtures/mutation-authority-test-seam";
-import { findingsDigestV2 } from "../plugins/immune-brain/runtime/kernel/reducer";
+import { findingsDigestV2, REVIEW_REWORK_ROUND_BUDGET } from "../plugins/immune-brain/runtime/kernel/reducer";
 import { anchorForEvidence } from "../plugins/immune-brain/runtime/kernel/refutation";
 import { enrollCanaryTask } from "../plugins/immune-brain/runtime/kernel/enrollment";
 import {
@@ -359,6 +359,22 @@ describe("request_rework authority", () => {
 		expect(second.record).toMatchObject({ lifecycle: "active", artifact_state: "active" });
 		expect(second.record.findings.some((f) => f.kind === "replan_required")).toBe(false);
 		expect(second.record.findings.find((f) => f.id === "rw-accept-2")?.status).toBe("open");
+	});
+
+	test("ordinary rework pauses once the review round budget is exhausted", () => {
+		const rounds: number[] = [];
+		for (let round = 1; round <= REVIEW_REWORK_ROUND_BUDGET + 1; round += 1) {
+			toReview(`2026-08-12T11:00:0${round}.000Z`);
+			const finding = reviewFinding({
+				id: `rw-budget-${round}`,
+				anchor: anchorForEvidence(REVIEW_EVIDENCE as never),
+				evidence: REVIEW_EVIDENCE,
+			});
+			const result = requestReviewRework([finding], `2026-08-12T11:01:0${round}.000Z`);
+			const parked = result.record.findings.some((f) => f.kind === "replan_required" && f.status === "open");
+			if (parked) rounds.push(round);
+		}
+		expect(rounds).toEqual([REVIEW_REWORK_ROUND_BUDGET + 1]);
 	});
 
 	test("a repeated security boundary parks on a replan boundary", () => {

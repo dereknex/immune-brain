@@ -204,6 +204,13 @@ export function findingsDigestV2(findings: TaskFinding[]): string {
 	return `sha256:${createHash("sha256").update(stableJson(normalized)).digest("hex")}`;
 }
 
+/**
+ * Rework rounds one Review run may demand before the Kernel pauses the task for
+ * a human decision. Ordinary defects return to execution without a user gate,
+ * but an unbounded repair/review cycle is not progress either.
+ */
+export const REVIEW_REWORK_ROUND_BUDGET = 5;
+
 export function reduceTask(
 	recordRaw: TaskRecord,
 	actionRaw: TaskAction,
@@ -595,7 +602,8 @@ export function reduceTask(
 					),
 			)?.finding;
 			const parkForReplan =
-				authorityAudit.authority_kind === "review" && disputed !== undefined;
+				authorityAudit.authority_kind === "review" &&
+				(disputed !== undefined || round > REVIEW_REWORK_ROUND_BUDGET);
 			if (!parkForReplan) {
 				record.artifact_state = "active";
 				record.intent_ref.path = `docs/plans/${record.task_id}.intent.json`;
@@ -630,11 +638,13 @@ export function reduceTask(
 					id: `${action.event_id}:replan-required`,
 					kind: "replan_required" as const,
 					status: "open" as const,
-					acceptance_id: disputed.acceptance_id,
+					acceptance_id: disputed?.acceptance_id ?? null,
 					source: "kernel" as const,
 					review_round: round,
 					summary:
-						"Review returned the same security boundary twice; a durable replan is required.",
+						disputed !== undefined
+							? "Review returned the same security boundary twice; a durable replan is required."
+							: `Review exhausted its ${REVIEW_REWORK_ROUND_BUDGET}-round rework budget; a durable replan is required.`,
 				};
 				if (findingIds.has(boundary.id))
 					throw new KernelInvariantError([

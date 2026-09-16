@@ -38,6 +38,8 @@ boundary name). Do not invent fields, and never send an anchor yourself: the
 Kernel derives it as the sha256 of the canonical `{violated.kind,
 violated.ref, caller_chain}`, so an identical claim keeps one stable identity
 across review rounds while a different call chain is a different claim. A
-passing review has no findings. If the
+passing review carries no blocking findings; non-blocking notes may ride along as
+`kind: "advisory"` findings, and every finding, advisory included, needs the
+same machine-checkable evidence. If the
 checkpoint is `awaiting_user_successor_decision`, stop without dispatch; only
 a literal user may invoke `--approve-successor`.

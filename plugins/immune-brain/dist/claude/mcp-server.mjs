@@ -1222,6 +1222,22 @@ function reviewReworkFindings(verdict) {
     counterevidence: null
   }));
 }
+function reviewAdvisoryFindings(verdict) {
+  if (verdict.decision !== "pass")
+    throw new Error("advisory findings require a pass verdict");
+  return (verdict.findings ?? []).filter((finding) => finding.kind === "advisory").map((finding) => ({
+    id: finding.id,
+    kind: "advisory",
+    status: "open",
+    acceptance_id: finding.acceptance_id,
+    source: "review",
+    review_round: null,
+    summary: finding.summary,
+    anchor: finding.anchor ?? null,
+    evidence: finding.evidence ?? null,
+    counterevidence: null
+  }));
+}
 var QA_MIN_JOB_TIMEOUT_SECONDS = 15 * 60;
 var QA_MAX_JOB_TIMEOUT_SECONDS = 60 * 60;
 var QA_JOB_OVERHEAD_SECONDS = 2 * 60;
@@ -1291,6 +1307,7 @@ function buildReviewPrompt(snapshot, evidencePath) {
     "Reserve the final turn for exactly one strict JSON verdict. Reply with ONLY that object, without markdown fences or commentary.",
     `Every rework finding must carry machine-checkable provenance: evidence.trigger (the concrete inputs or state that reach the defect), a non-empty evidence.caller_chain (ordered repository paths or symbols), and evidence.violated {kind: "acceptance"|"security_boundary", ref}. The anchor is derived from that evidence; a finding without it is rejected and the correction must be resubmitted.`,
     `PASS shape: {"contract":"assurance_kernel/assurance_verdict/v2","role":"review","task_id":"${snapshot.task_id}","snapshot_digest":"${digest}","decision":"pass","approval":{"kind":"review","authority_role":"reviewer","summary":"<one line>"}}`,
+    `A pass verdict may carry non-blocking notes as findings, but every one of them must set kind "advisory"; a blocking finding is a rework verdict and must omit approval: {"contract":"assurance_kernel/assurance_verdict/v2","role":"review","task_id":"${snapshot.task_id}","snapshot_digest":"${digest}","decision":"pass","approval":{"kind":"review","authority_role":"reviewer","summary":"<one line>"},"findings":[{"id":"review-1","kind":"advisory","acceptance_id":"<id|null>","summary":"<one line>","evidence":{"trigger":"<concrete inputs or state>","caller_chain":["<path-or-symbol>"],"violated":{"kind":"acceptance|security_boundary","ref":"<acceptance id or boundary>"}}}]}`,
     `REWORK shape: {"contract":"assurance_kernel/assurance_verdict/v2","role":"review","task_id":"${snapshot.task_id}","snapshot_digest":"${digest}","decision":"rework","findings":[{"id":"review-1","kind":"blocking|advisory","acceptance_id":"<id|null>","summary":"<one line>","evidence":{"trigger":"<concrete inputs or state>","caller_chain":["<path-or-symbol>"],"violated":{"kind":"acceptance|security_boundary","ref":"<acceptance id or boundary>"}}}]}`,
     `REWORK verdicts must omit the approval field entirely; do not emit "approval": null.`
   ].join(`
@@ -1368,15 +1385,28 @@ function parseAssuranceVerdict(input, snapshot) {
     const unknownApproval = Object.keys(approval).find((key) => !["kind", "authority_role", "summary"].includes(key));
     if (unknownApproval)
       throw new Error(`pass verdict approval has unknown field: ${unknownApproval}`);
-    if (raw.findings !== undefined)
-      throw new Error("pass verdict must omit findings");
-    return { contract: "assurance_kernel/assurance_verdict/v2", role: snapshot.role, task_id: snapshot.task_id, snapshot_digest: snapshotDigest(snapshot), decision: "pass", approval: { kind: expectedKind, authority_role: expectedRole, summary: approval.summary } };
+    const passFindings = raw.findings === undefined ? [] : parseVerdictFindings(raw.findings, snapshot);
+    if (passFindings.some((finding) => finding.kind !== "advisory"))
+      throw new Error("pass verdict findings must all be advisory");
+    return {
+      contract: "assurance_kernel/assurance_verdict/v2",
+      role: snapshot.role,
+      task_id: snapshot.task_id,
+      snapshot_digest: snapshotDigest(snapshot),
+      decision: "pass",
+      approval: { kind: expectedKind, authority_role: expectedRole, summary: approval.summary },
+      ...passFindings.length > 0 ? { findings: passFindings } : {}
+    };
   }
   if (!Array.isArray(raw.findings) || raw.findings.length === 0)
     throw new Error("rework verdict findings are invalid");
   if (raw.approval !== undefined && raw.approval !== null)
     throw new Error("rework verdict must omit approval");
-  const findings = raw.findings.map((item, index) => {
+  const findings = parseVerdictFindings(raw.findings, snapshot);
+  return { contract: "assurance_kernel/assurance_verdict/v2", role: snapshot.role, task_id: snapshot.task_id, snapshot_digest: snapshotDigest(snapshot), decision: "rework", findings };
+}
+function parseVerdictFindings(rawFindings, snapshot) {
+  return rawFindings.map((item, index) => {
     const finding = item;
     const allowedFindingKeys = snapshot.role === "review" ? ["id", "kind", "acceptance_id", "summary", "evidence"] : ["id", "kind", "acceptance_id", "summary"];
     const unknownFinding = Object.keys(finding).find((key) => !allowedFindingKeys.includes(key));
@@ -1397,7 +1427,6 @@ function parseAssuranceVerdict(input, snapshot) {
       findings_digest: findingsDigest([normalized])
     };
   });
-  return { contract: "assurance_kernel/assurance_verdict/v2", role: snapshot.role, task_id: snapshot.task_id, snapshot_digest: snapshotDigest(snapshot), decision: "rework", findings };
 }
 var invocationRegistry = createInvocationRegistry();
 
@@ -1559,7 +1588,7 @@ class AssuranceCoordinator {
       const parked = await this.ports.readTaskRecord(ctx.cwd, taskId);
       ensureOperationLive();
       if (parked.record?.findings.some((finding) => finding.kind === "replan_required" && finding.status === "open"))
-        return { state: "blocked", reason: "the same security boundary recurred; a durable replan is required" };
+        return { state: "blocked", reason: "review requires a durable replan; the task is paused for a user decision" };
       if (projection.projection.artifact_state === "active") {
         if (projection.projection.next_obligation !== "submit_assurance")
           return { state: "blocked", reason: `Kernel requires ${projection.projection.next_obligation}` };
@@ -4668,6 +4697,7 @@ function findingsDigestV2(findings) {
   }));
   return `sha256:${createHash10("sha256").update(stableJson(normalized)).digest("hex")}`;
 }
+var REVIEW_REWORK_ROUND_BUDGET = 5;
 function reduceTask(recordRaw, actionRaw, authorityAudit = null, changedPaths) {
   const previous = parseTaskRecord(recordRaw);
   assertKernelInvariantsV3(previous.intent_snapshot, previous);
@@ -4940,7 +4970,7 @@ function reduceTask(recordRaw, actionRaw, authorityAudit = null, changedPaths) {
         return { finding, inherited };
       });
       const disputed = admissions.find(({ finding, inherited }) => finding.kind === "blocking" && inherited === undefined && finding.evidence?.violated.kind === "security_boundary" && priorBlockingReviewFindings.some((prior) => prior.evidence?.violated.kind === "security_boundary" && prior.evidence?.violated.ref === finding.evidence?.violated.ref))?.finding;
-      const parkForReplan = authorityAudit.authority_kind === "review" && disputed !== undefined;
+      const parkForReplan = authorityAudit.authority_kind === "review" && (disputed !== undefined || round > REVIEW_REWORK_ROUND_BUDGET);
       if (!parkForReplan) {
         record.artifact_state = "active";
         record.intent_ref.path = `docs/plans/${record.task_id}.intent.json`;
@@ -4970,10 +5000,10 @@ function reduceTask(recordRaw, actionRaw, authorityAudit = null, changedPaths) {
           id: `${action.event_id}:replan-required`,
           kind: "replan_required",
           status: "open",
-          acceptance_id: disputed.acceptance_id,
+          acceptance_id: disputed?.acceptance_id ?? null,
           source: "kernel",
           review_round: round,
-          summary: "Review returned the same security boundary twice; a durable replan is required."
+          summary: disputed !== undefined ? "Review returned the same security boundary twice; a durable replan is required." : `Review exhausted its ${REVIEW_REWORK_ROUND_BUDGET}-round rework budget; a durable replan is required.`
         };
         if (findingIds.has(boundary.id))
           throw new KernelInvariantError([
@@ -12438,6 +12468,11 @@ class ClaudeRuntime {
       diffProvider: diffSnapshotOf,
       now
     }));
+    for (const finding of reviewAdvisoryFindings(input.verdict))
+      await this.executeOrdinary(ctx, {
+        taskId: input.taskId,
+        operation: { op: "record_finding", finding, actor_id: input.actorId }
+      });
   }
   async executeOrdinary(ctx, input) {
     const { app } = await this.authority();

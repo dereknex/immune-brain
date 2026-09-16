@@ -4,6 +4,7 @@ import { execFileSync } from "node:child_process";
 import { join } from "node:path";
 import {
 	AssuranceCoordinator,
+	reviewAdvisoryFindings,
 	reviewReworkFindings,
 	type AssuranceCoordinatorPorts,
 	type AssuranceSubmitReviewResult,
@@ -930,9 +931,16 @@ export class ClaudeRuntime {
 			diffProvider: diffSnapshotOf,
 			now,
 		}));
+		// Advisories are non-blocking notes: they land after the settlement the
+		// approval already committed, so they can never gate completion.
+		for (const finding of reviewAdvisoryFindings(input.verdict))
+			await this.executeOrdinary(ctx, {
+				taskId: input.taskId,
+				operation: { op: "record_finding", finding, actor_id: input.actorId },
+			});
 	}
 
-	private async executeOrdinary(ctx: HostContext, input: { taskId: string; operation: { op: string; actor_id: string; next_intent?: unknown; finding_id?: string; attestation_id?: string } }) {
+	private async executeOrdinary(ctx: HostContext, input: { taskId: string; operation: { op: string; actor_id: string; next_intent?: unknown; finding_id?: string; attestation_id?: string; finding?: unknown } }) {
 		const { app } = await this.authority();
 		const operation = input.operation.op === "revise_intent"
 			? { ...input.operation, next_intent: await parseTaskIntentV1(input.operation.next_intent) }

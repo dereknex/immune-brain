@@ -5,6 +5,7 @@ import {
 	AssuranceCoordinator,
 	buildReviewPrompt,
 	parseAssuranceVerdict,
+	reviewAdvisoryFindings,
 	snapshotDigest,
 	type AssuranceCoordinatorPorts,
 	type AssuranceVerdict,
@@ -174,6 +175,54 @@ describe("host-neutral assurance coordinator", () => {
 		expect((ready as { agent_params: { run_in_background: boolean } }).agent_params.run_in_background).toBe(false);
 		expect(await h.coordinator.submitReview(TASK, ctx, passVerdict(snapshot("review")))).toEqual({ state: "completed" });
 		expect(h.counts().applyCount).toBe(2);
+	});
+
+	test("an advisory pass verdict settles and keeps its notes", async () => {
+		const host = new FakeReviewHost();
+		const h = makeCoordinator({ host });
+		const ready = await h.coordinator.advance(TASK, ctx);
+		expect(ready.state).toBe("review_ready");
+		const advisory = {
+			...passVerdict(snapshot("review")),
+			findings: [{
+				id: "review-1",
+				kind: "advisory",
+				acceptance_id: "A1",
+				summary: "non-blocking provenance note",
+				evidence: {
+					trigger: "a helper is duplicated",
+					caller_chain: ["runtime/assurance/coordinator.ts"],
+					violated: { kind: "acceptance", ref: "A1" },
+				},
+			}],
+		};
+		expect(await h.coordinator.submitReview(TASK, ctx, advisory)).toEqual({ state: "completed" });
+		const parsed = parseAssuranceVerdict(advisory, snapshot("review"));
+		expect(reviewAdvisoryFindings(parsed)).toMatchObject([
+			{ kind: "advisory", status: "open", source: "review", acceptance_id: "A1", summary: "non-blocking provenance note" },
+		]);
+	});
+
+	test("a blocking finding on a pass verdict is rejected", async () => {
+		const host = new FakeReviewHost();
+		const h = makeCoordinator({ host });
+		const ready = await h.coordinator.advance(TASK, ctx);
+		expect(ready.state).toBe("review_ready");
+		const blocking = {
+			...passVerdict(snapshot("review")),
+			findings: [{
+				id: "review-1",
+				kind: "blocking",
+				acceptance_id: "A1",
+				summary: "blocking claim",
+				evidence: {
+					trigger: "a caller ignores the frozen tree",
+					caller_chain: ["runtime/assurance/coordinator.ts"],
+					violated: { kind: "acceptance", ref: "A1" },
+				},
+			}],
+		};
+		expect(await h.coordinator.submitReview(TASK, ctx, blocking)).toMatchObject({ state: "blocked", code: "verdict_invalid" });
 	});
 
 	test("critical Review completes without a second user authorization", async () => {

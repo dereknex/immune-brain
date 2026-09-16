@@ -161,6 +161,26 @@ export function reviewReworkFindings(verdict: AssuranceVerdict): TaskFinding[] {
 	}));
 }
 
+/**
+ * The advisory counterpart of `reviewReworkFindings`: a pass verdict may carry
+ * non-blocking Review notes, and both Hosts record them through one mapping.
+ */
+export function reviewAdvisoryFindings(verdict: AssuranceVerdict): TaskFinding[] {
+	if (verdict.decision !== "pass") throw new Error("advisory findings require a pass verdict");
+	return (verdict.findings ?? []).filter((finding) => finding.kind === "advisory").map((finding) => ({
+		id: finding.id,
+		kind: "advisory" as const,
+		status: "open" as const,
+		acceptance_id: finding.acceptance_id,
+		source: "review" as const,
+		review_round: null,
+		summary: finding.summary,
+		anchor: finding.anchor ?? null,
+		evidence: finding.evidence ?? null,
+		counterevidence: null,
+	}));
+}
+
 export interface ReviewRevisionIdentity {
 	contract: "assurance_kernel/review_revision_identity/v1";
 	base_head: string;
@@ -387,6 +407,7 @@ export function buildReviewPrompt(snapshot: SnapshotDescriptor, evidencePath?: s
 		"Reserve the final turn for exactly one strict JSON verdict. Reply with ONLY that object, without markdown fences or commentary.",
 		`Every rework finding must carry machine-checkable provenance: evidence.trigger (the concrete inputs or state that reach the defect), a non-empty evidence.caller_chain (ordered repository paths or symbols), and evidence.violated {kind: "acceptance"|"security_boundary", ref}. The anchor is derived from that evidence; a finding without it is rejected and the correction must be resubmitted.`,
 		`PASS shape: {"contract":"assurance_kernel/assurance_verdict/v2","role":"review","task_id":"${snapshot.task_id}","snapshot_digest":"${digest}","decision":"pass","approval":{"kind":"review","authority_role":"reviewer","summary":"<one line>"}}`,
+		`A pass verdict may carry non-blocking notes as findings, but every one of them must set kind "advisory"; a blocking finding is a rework verdict and must omit approval: {"contract":"assurance_kernel/assurance_verdict/v2","role":"review","task_id":"${snapshot.task_id}","snapshot_digest":"${digest}","decision":"pass","approval":{"kind":"review","authority_role":"reviewer","summary":"<one line>"},"findings":[{"id":"review-1","kind":"advisory","acceptance_id":"<id|null>","summary":"<one line>","evidence":{"trigger":"<concrete inputs or state>","caller_chain":["<path-or-symbol>"],"violated":{"kind":"acceptance|security_boundary","ref":"<acceptance id or boundary>"}}}]}`,
 		`REWORK shape: {"contract":"assurance_kernel/assurance_verdict/v2","role":"review","task_id":"${snapshot.task_id}","snapshot_digest":"${digest}","decision":"rework","findings":[{"id":"review-1","kind":"blocking|advisory","acceptance_id":"<id|null>","summary":"<one line>","evidence":{"trigger":"<concrete inputs or state>","caller_chain":["<path-or-symbol>"],"violated":{"kind":"acceptance|security_boundary","ref":"<acceptance id or boundary>"}}}]}`,
 		`REWORK verdicts must omit the approval field entirely; do not emit "approval": null.`,
 	].join("\n");
@@ -462,12 +483,31 @@ export function parseAssuranceVerdict(input: unknown, snapshot: SnapshotDescript
 		if (!approval || approval.kind !== expectedKind || approval.authority_role !== expectedRole || typeof approval.summary !== "string" || !approval.summary.trim()) throw new Error("pass verdict approval is invalid");
 		const unknownApproval = Object.keys(approval).find((key) => !["kind", "authority_role", "summary"].includes(key));
 		if (unknownApproval) throw new Error(`pass verdict approval has unknown field: ${unknownApproval}`);
-		if (raw.findings !== undefined) throw new Error("pass verdict must omit findings");
-		return { contract: "assurance_kernel/assurance_verdict/v2", role: snapshot.role, task_id: snapshot.task_id, snapshot_digest: snapshotDigest(snapshot), decision: "pass", approval: { kind: expectedKind, authority_role: expectedRole, summary: approval.summary } };
+		const passFindings = raw.findings === undefined ? [] : parseVerdictFindings(raw.findings as unknown[], snapshot);
+		if (passFindings.some((finding) => finding.kind !== "advisory")) throw new Error("pass verdict findings must all be advisory");
+		return {
+			contract: "assurance_kernel/assurance_verdict/v2",
+			role: snapshot.role,
+			task_id: snapshot.task_id,
+			snapshot_digest: snapshotDigest(snapshot),
+			decision: "pass",
+			approval: { kind: expectedKind, authority_role: expectedRole, summary: approval.summary },
+			...(passFindings.length > 0 ? { findings: passFindings } : {}),
+		};
 	}
 	if (!Array.isArray(raw.findings) || raw.findings.length === 0) throw new Error("rework verdict findings are invalid");
 	if (raw.approval !== undefined && raw.approval !== null) throw new Error("rework verdict must omit approval");
-	const findings = raw.findings.map((item, index) => {
+	const findings = parseVerdictFindings(raw.findings, snapshot);
+	return { contract: "assurance_kernel/assurance_verdict/v2", role: snapshot.role, task_id: snapshot.task_id, snapshot_digest: snapshotDigest(snapshot), decision: "rework", findings };
+}
+
+/**
+ * Parse one verdict's findings. Review findings carry evidence and derive their
+ * anchor here so a capability minted for one anchor set cannot be spent on
+ * another; QA findings stay identifier-only.
+ */
+function parseVerdictFindings(rawFindings: unknown[], snapshot: SnapshotDescriptor) {
+	return rawFindings.map((item, index) => {
 		const finding = item as Record<string, unknown>;
 		const allowedFindingKeys =
 			snapshot.role === "review"
@@ -497,7 +537,6 @@ export function parseAssuranceVerdict(input: unknown, snapshot: SnapshotDescript
 			findings_digest: findingsDigest([normalized]),
 		};
 	});
-	return { contract: "assurance_kernel/assurance_verdict/v2", role: snapshot.role, task_id: snapshot.task_id, snapshot_digest: snapshotDigest(snapshot), decision: "rework", findings };
 }
 
 interface ReviewReservation {
@@ -660,7 +699,7 @@ export class AssuranceCoordinator {
 			if (projection.projection.lifecycle === "active") this.unknownOperations.delete(taskId);
 			const parked = await this.ports.readTaskRecord(ctx.cwd, taskId);
 			ensureOperationLive();
-			if (parked.record?.findings.some((finding) => finding.kind === "replan_required" && finding.status === "open")) return { state: "blocked", reason: "the same security boundary recurred; a durable replan is required" };
+			if (parked.record?.findings.some((finding) => finding.kind === "replan_required" && finding.status === "open")) return { state: "blocked", reason: "review requires a durable replan; the task is paused for a user decision" };
 			if (projection.projection.artifact_state === "active") {
 				if (projection.projection.next_obligation !== "submit_assurance")
 					return { state: "blocked", reason: `Kernel requires ${projection.projection.next_obligation}` };
