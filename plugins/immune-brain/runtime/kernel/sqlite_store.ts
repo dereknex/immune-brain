@@ -450,6 +450,22 @@ export function createMigrationStoreFile(root: string, targetPath: string, now: 
 }
 
 /**
+ * Verify one store file against this worktree's schema and binding.
+ *
+ * The importer runs this on its candidate before publication, so a database
+ * built for another worktree, or by an incompatible runtime, can never replace
+ * the authority of this one.
+ */
+export function verifyStoreFile(root: string, path: string): void {
+	const canonical = canonicalRoot(root);
+	const resolved = resolve(path);
+	assertSafeStoreTarget(canonical, resolved);
+	const db = openStoreFile(canonical, resolved, { readOnly: true });
+	if (!db) throw new KernelStoreSecurityError(`store file is missing: ${path}`);
+	db.close();
+}
+
+/**
  * Publish a verified migration store at the canonical path.
  *
  * The rename is the publication point: a crash before it leaves the canonical

@@ -15,13 +15,17 @@
  * in the next major release, once no supported workspace can still carry the
  * retired file store.
  */
+import { existsSync } from "node:fs";
+import { join } from "node:path";
+
 import {
+	KERNEL_DB_RELATIVE,
 	MIGRATION_MARKER_RELATIVE,
 	auditTaskRecordPath,
 	auditTerminalProofPath,
 	inspectStorageLayout,
 } from "./storage_paths";
-import { importLegacyWorkspace } from "./sqlite_migration";
+import { hasMigrationReceipt, importLegacyWorkspace } from "./sqlite_migration";
 
 export interface MigrationOutcome {
 	contract: "immune_brain/storage_layout_migration_result/v1";
@@ -76,13 +80,34 @@ export function migrateLegacyLayout(root: string): MigrationOutcome {
 			affected_paths: affected,
 			reason: `a retired file-relocation manifest at ${MIGRATION_MARKER_RELATIVE} is not replayed: reconcile the listed legacy evidence, delete the manifest, then rerun the import`,
 		};
-	if (inspection.layout !== "migration_required")
+	if (inspection.layout !== "migration_required") {
+		// A published store beside surviving legacy files is what a crash between
+		// the publication rename and the cleanup looks like. A receipt proves this
+		// worktree imported those facts, so the importer verifies the store and
+		// finishes the cleanup instead of refusing.
+		if (inspection.layout === "invalid" && existsSync(join(root, KERNEL_DB_RELATIVE)) && hasMigrationReceipt(root)) {
+			const finished = importLegacyWorkspace(root);
+			if (finished.outcome === "already_imported")
+				return {
+					contract: CONTRACT,
+					outcome: "already_migrated",
+					affected_paths: affected,
+					reason: "finished the interrupted cleanup for an already published import",
+				};
+			return {
+				contract: CONTRACT,
+				outcome: "invalid",
+				affected_paths: affected,
+				reason: finished.reason ?? "the published store could not be verified",
+			};
+		}
 		return {
 			contract: CONTRACT,
 			outcome: "invalid",
 			affected_paths: affected,
 			reason: inspection.reason ?? `unsupported storage layout: ${inspection.layout}`,
 		};
+	}
 	const imported = importLegacyWorkspace(root);
 	if (imported.uncommitted_evidence.length > 0)
 		return {

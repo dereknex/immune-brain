@@ -13,6 +13,7 @@
 import { createHash } from "node:crypto";
 import {
 	existsSync,
+	lstatSync,
 	mkdirSync,
 	readFileSync,
 	readdirSync,
@@ -26,8 +27,12 @@ import { dirname, join, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 
 import {
+	FILE_STORE_CLAIM_RELATIVE,
+	FILE_STORE_TASKS_RELATIVE,
+	FILE_STORE_WORKSPACE_RELATIVE,
 	KERNEL_DB_RELATIVE,
 	LEGACY_TASKS_RELATIVE,
+	LEGACY_WORKSPACE_RELATIVE,
 	STATE_RELATIVE,
 	auditTaskRecordPath,
 	auditTerminalProofPath,
@@ -37,6 +42,7 @@ import {
 	insertRunRow,
 	publishMigrationStoreFile,
 	updateRunTerminal,
+	verifyStoreFile,
 } from "./sqlite_store";
 import { parseTaskRecordV3 } from "./validation";
 import { canonicalRecordHash } from "./reducer";
@@ -55,8 +61,16 @@ export interface SqliteImportOutcome {
 	uncommitted_evidence: string[];
 }
 
+interface LegacySource {
+	directory: string;
+	recordFile: string;
+	/** Beside the record in the oldest layout; null when the proof is tracked audit evidence. */
+	proofFile: string | null;
+}
+
 interface LegacyTask {
 	taskId: string;
+	sources: LegacySource[];
 	recordBytes: Buffer;
 	recordJson: string;
 	proofBytes: Buffer;
@@ -125,74 +139,116 @@ function recoverableBatch(root: string): string | null {
 	}
 	return null;
 }
-
 /**
- * Read every legacy terminal task. A record that cannot be parsed, is not
- * terminal, or has no matching terminal proof refuses the whole import: a
- * partial authority import is worse than none.
+ * Read every legacy terminal task from both retired layouts: `.imm/tasks`
+ * (pre-cutover owner files) and `.imm/state/tasks` (the v4 file store this
+ * release retires). A record that cannot be parsed, is not terminal, or has no
+ * matching terminal proof refuses the whole import: a partial authority import
+ * is worse than none.
  */
 function readLegacyTasks(root: string): { tasks: LegacyTask[]; reason: string | null } {
-	const directory = join(root, LEGACY_TASKS_RELATIVE);
-	if (!existsSync(directory)) return { tasks: [], reason: null };
 	const tasks: LegacyTask[] = [];
+	const byId = new Map<string, LegacyTask>();
 	const seenFolded = new Map<string, string>();
-	for (const entry of readdirSync(directory).sort()) {
-		if (!entry.endsWith(".json") || entry.endsWith(".backend-claim.json") || entry.startsWith(".")) continue;
-		const taskId = entry.slice(0, -".json".length);
-		const recordPath = join(directory, entry);
-		const proofPath = join(directory, `${taskId}.backend-claim.json`);
-		if (!statSync(recordPath).isFile()) return { tasks: [], reason: `${LEGACY_TASKS_RELATIVE}/${entry} is not a regular file` };
-		if (!existsSync(proofPath)) return { tasks: [], reason: `task ${taskId} has no terminal proof` };
-		const recordBytes = readFileSync(recordPath);
-		const proofBytes = readFileSync(proofPath);
-		let record: ReturnType<typeof parseTaskRecordV3>;
-		try {
-			record = parseTaskRecordV3(JSON.parse(recordBytes.toString("utf8")));
-		} catch (error) {
-			return { tasks: [], reason: `task ${taskId} is not a readable legacy record: ${error instanceof Error ? error.message : String(error)}` };
+	for (const relative of [LEGACY_TASKS_RELATIVE, FILE_STORE_TASKS_RELATIVE]) {
+		const directory = join(root, relative);
+		if (!existsSync(directory)) continue;
+		if (lstatSync(directory).isSymbolicLink()) return { tasks: [], reason: `${relative} is a symlink` };
+		for (const entry of readdirSync(directory).sort()) {
+			if (!entry.endsWith(".json") || entry.endsWith(".backend-claim.json") || entry.startsWith(".")) continue;
+			const taskId = entry.slice(0, -".json".length);
+			const recordPath = join(directory, entry);
+			// The v4 file store kept its records under .imm/state/tasks and its
+			// terminal proofs as tracked audit evidence; the older layout kept the
+			// proof beside the record.
+			const besideRecord = relative === LEGACY_TASKS_RELATIVE;
+			const proofRelative = besideRecord ? null : auditTerminalProofPath(taskId);
+			const proofPath = besideRecord ? join(directory, `${taskId}.backend-claim.json`) : join(root, proofRelative!);
+			if (!statSync(recordPath).isFile()) return { tasks: [], reason: `${relative}/${entry} is not a regular file` };
+			if (!existsSync(proofPath))
+				return {
+					tasks: [],
+					reason: besideRecord
+						? `task ${taskId} has no terminal proof`
+						: `task ${taskId} has no tracked terminal proof at ${proofRelative}`,
+				};
+			const recordBytes = readFileSync(recordPath);
+			const proofBytes = readFileSync(proofPath);
+			let record: ReturnType<typeof parseTaskRecordV3>;
+			try {
+				record = parseTaskRecordV3(JSON.parse(recordBytes.toString("utf8")));
+			} catch (error) {
+				return { tasks: [], reason: `task ${taskId} is not a readable legacy record: ${error instanceof Error ? error.message : String(error)}` };
+			}
+			if (record.lifecycle !== "done" && record.lifecycle !== "stopped")
+				return { tasks: [], reason: `task ${taskId} is ${record.lifecycle}; a live legacy task must settle on the prior runtime` };
+			let proof: Record<string, unknown>;
+			try {
+				proof = JSON.parse(proofBytes.toString("utf8")) as Record<string, unknown>;
+			} catch {
+				return { tasks: [], reason: `task ${taskId} has an unreadable terminal proof` };
+			}
+			if (proof.contract !== "assurance_kernel/task_tombstone/v2" || proof.task_id !== taskId)
+				return { tasks: [], reason: `task ${taskId} terminal proof does not match its record` };
+			// The record hash is the historical identity: the raw bytes the previous
+			// runtime committed, not a re-serialization of the parsed value.
+			const recordHash = sha256Hex(recordBytes);
+			if (proof.final_record_hash !== recordHash)
+				return { tasks: [], reason: `task ${taskId} terminal proof does not bind its record bytes` };
+			if (proof.terminal_lifecycle !== undefined && proof.terminal_lifecycle !== record.lifecycle)
+				return { tasks: [], reason: `task ${taskId} terminal proof lifecycle does not match its record` };
+			// Two task ids that differ only by case cannot keep distinct evidence on
+			// the default case-insensitive filesystem, and the same id in both
+			// layouts is an ambiguous authority, so the import refuses both.
+			const folded = taskId.toLowerCase();
+			const foldedOwner = seenFolded.get(folded);
+			if (foldedOwner !== undefined && foldedOwner !== taskId)
+				return { tasks: [], reason: `case-fold source collision between ${foldedOwner} and ${taskId}` };
+			seenFolded.set(folded, taskId);
+			if (byId.has(taskId)) return { tasks: [], reason: `task ${taskId} exists in more than one legacy layout` };
+			const task: LegacyTask = {
+				taskId,
+				sources: [{ directory: relative, recordFile: entry, proofFile: besideRecord ? `${taskId}.backend-claim.json` : null }],
+				recordBytes,
+				recordJson: `${JSON.stringify(record, null, 2)}\n`,
+				proofBytes,
+				proofJson: `${JSON.stringify(proof, null, 2)}\n`,
+				recordHash,
+				state: record.lifecycle,
+				importedAt: typeof proof.terminalized_at === "string" ? proof.terminalized_at : new Date(0).toISOString(),
+			};
+			byId.set(taskId, task);
+			tasks.push(task);
 		}
-		if (record.lifecycle !== "done" && record.lifecycle !== "stopped")
-			return { tasks: [], reason: `task ${taskId} is ${record.lifecycle}; a live legacy task must settle on the prior runtime` };
-		let proof: Record<string, unknown>;
-		try {
-			proof = JSON.parse(proofBytes.toString("utf8")) as Record<string, unknown>;
-		} catch {
-			return { tasks: [], reason: `task ${taskId} has an unreadable terminal proof` };
-		}
-		if (proof.contract !== "assurance_kernel/task_tombstone/v2" || proof.task_id !== taskId)
-			return { tasks: [], reason: `task ${taskId} terminal proof does not match its record` };
-		// The record hash is the historical identity: the raw bytes the previous
-		// runtime committed, not a re-serialization of the parsed value.
-		const recordHash = sha256Hex(recordBytes);
-		if (proof.final_record_hash !== recordHash)
-			return { tasks: [], reason: `task ${taskId} terminal proof does not bind its record bytes` };
-		if (proof.terminal_lifecycle !== undefined && proof.terminal_lifecycle !== record.lifecycle)
-			return { tasks: [], reason: `task ${taskId} terminal proof lifecycle does not match its record` };
-		// Two task ids that differ only by case cannot keep distinct evidence on
-		// the default case-insensitive filesystem, so the import refuses rather
-		// than merging or overwriting one task's history.
-		const folded = taskId.toLowerCase();
-		const previous = seenFolded.get(folded);
-		if (previous !== undefined && previous !== taskId)
-			return { tasks: [], reason: `case-fold source collision between ${previous} and ${taskId}` };
-		seenFolded.set(folded, taskId);
-		tasks.push({
-			taskId,
-			recordBytes,
-			recordJson: `${JSON.stringify(record, null, 2)}\n`,
-			proofBytes,
-			proofJson: `${JSON.stringify(proof, null, 2)}\n`,
-			recordHash,
-			state: record.lifecycle,
-			importedAt: typeof proof.terminalized_at === "string" ? proof.terminalized_at : new Date(0).toISOString(),
-		});
 	}
 	return { tasks, reason: null };
 }
 
+
 /** Deterministic run identity: the same legacy facts always import to one run. */
 function migratedRunId(task: LegacyTask): string {
 	return `run-migrated-${createHash("sha256").update(`${task.taskId}:${task.recordHash}`).digest("hex").slice(0, 24)}`;
+}
+
+/**
+ * Refuse to write through any symlinked segment of an evidence path: the audit
+ * directory is inside the worktree, and a linked subdirectory would let a
+ * legitimate-looking import write outside it.
+ */
+function assertNoSymlinkSegments(root: string, relativePath: string): void {
+	const segments = relativePath.split("/").filter(Boolean);
+	let current = root;
+	for (const segment of segments) {
+		current = join(current, segment);
+		if (!existsSync(current)) break;
+		if (lstatSync(current).isSymbolicLink())
+			throw new Error(`symlinked evidence path is forbidden during import: ${relativePath}`);
+	}
+}
+
+/** Whether this worktree already recorded a completed import identity. */
+export function hasMigrationReceipt(rootInput: string): boolean {
+	return readReceipt(realpathSync(rootInput)) !== null;
 }
 
 /**
@@ -203,6 +259,8 @@ function migratedRunId(task: LegacyTask): string {
 function writeAuditEvidence(root: string, task: LegacyTask): void {
 	const recordPath = join(root, auditTaskRecordPath(task.taskId));
 	const proofPath = join(root, auditTerminalProofPath(task.taskId));
+	for (const relative of [auditTaskRecordPath(task.taskId), auditTerminalProofPath(task.taskId)])
+		assertNoSymlinkSegments(root, relative);
 	mkdirSync(dirname(recordPath), { recursive: true });
 	for (const [path, bytes] of [[recordPath, task.recordBytes], [proofPath, task.proofBytes]] as const) {
 		if (existsSync(path)) {
@@ -252,19 +310,29 @@ function buildCandidateStore(root: string, tasks: LegacyTask[], now: string): vo
 /** Verify the candidate store row by row before anything is published. */
 function verifyCandidateStore(root: string, tasks: LegacyTask[]): void {
 	const target = join(root, MIGRATION_STORE_RELATIVE);
+	// Schema version and worktree binding are verified before any row compare, so
+	// a candidate built for another worktree can never be published here.
+	verifyStoreFile(root, target);
 	const db = new DatabaseSync(target, { readOnly: true });
 	try {
-		const rows = db.prepare("SELECT run_id, task_id, state, record_json, intent_content_hash, claim_status FROM runs ORDER BY task_id").all() as Array<Record<string, unknown>>;
+		const rows = db
+			.prepare("SELECT run_id, task_id, state, record_json, terminal_proof_json, intent_content_hash, claim_status FROM runs")
+			.all() as Array<Record<string, unknown>>;
 		if (rows.length !== tasks.length) throw new Error(`candidate store holds ${rows.length} run(s), expected ${tasks.length}`);
-		for (const [index, task] of [...tasks].sort((left, right) => left.taskId.localeCompare(right.taskId)).entries()) {
-			const row = rows[index];
-			if (row.task_id !== task.taskId) throw new Error(`candidate store row ${index} is ${String(row.task_id)}, expected ${task.taskId}`);
+		const byTask = new Map(rows.map((row) => [String(row.task_id), row]));
+		for (const task of tasks) {
+			const row = byTask.get(task.taskId);
+			if (!row) throw new Error(`candidate store is missing ${task.taskId}`);
 			if (row.run_id !== migratedRunId(task)) throw new Error(`candidate store run identity differs for ${task.taskId}`);
 			if (row.state !== task.state) throw new Error(`candidate store state differs for ${task.taskId}`);
 			if (row.claim_status !== null) throw new Error(`candidate store kept a live claim for ${task.taskId}`);
 			if (String(row.record_json) !== task.recordJson) throw new Error(`candidate store record bytes differ for ${task.taskId}`);
+			if (String(row.terminal_proof_json) !== task.proofJson) throw new Error(`candidate store terminal proof differs for ${task.taskId}`);
 			if (row.intent_content_hash !== task.recordHash) throw new Error(`candidate store record hash differs for ${task.taskId}`);
-			if (canonicalRecordHash(parseTaskRecordV3(JSON.parse(String(row.record_json)))) !== canonicalRecordHash(parseTaskRecordV3(JSON.parse(task.recordJson))))
+			if (
+				canonicalRecordHash(parseTaskRecordV3(JSON.parse(String(row.record_json)))) !==
+				canonicalRecordHash(parseTaskRecordV3(JSON.parse(task.recordJson)))
+			)
 				throw new Error(`candidate store record is not canonical for ${task.taskId}`);
 		}
 		const workspace = db.prepare("SELECT current_run_id FROM workspace WHERE id = 1").get() as Record<string, unknown> | undefined;
@@ -281,13 +349,20 @@ function verifyCandidateStore(root: string, tasks: LegacyTask[]): void {
  * source rather than history.
  */
 function removeRetiredAuthority(root: string, tasks: LegacyTask[]): void {
-	const directory = join(root, LEGACY_TASKS_RELATIVE);
 	for (const task of tasks) {
-		rmSync(join(directory, `${task.taskId}.json`), { force: true });
-		rmSync(join(directory, `${task.taskId}.backend-claim.json`), { force: true });
+		for (const source of task.sources) {
+			rmSync(join(root, source.directory, source.recordFile), { force: true });
+			// A proof that lives in the audit tree is preserved evidence, not
+			// retired authority: only a beside-the-record proof is removed.
+			if (source.proofFile) rmSync(join(root, source.directory, source.proofFile), { force: true });
+		}
 	}
-	rmSync(join(root, ".imm", "workspace.json"), { force: true });
-	if (existsSync(directory) && readdirSync(directory).length === 0) rmSync(directory, { recursive: true, force: true });
+	for (const relative of [FILE_STORE_CLAIM_RELATIVE, FILE_STORE_WORKSPACE_RELATIVE, LEGACY_WORKSPACE_RELATIVE])
+		rmSync(join(root, relative), { force: true });
+	for (const relative of [LEGACY_TASKS_RELATIVE, FILE_STORE_TASKS_RELATIVE]) {
+		const directory = join(root, relative);
+		if (existsSync(directory) && readdirSync(directory).length === 0) rmSync(directory, { recursive: true, force: true });
+	}
 }
 
 function importIdentity(tasks: LegacyTask[]): string {
@@ -304,9 +379,23 @@ export function importLegacyWorkspace(rootInput: string, now = new Date().toISOS
 	// traversal attempt to the store's path safety checks.
 	const root = realpathSync(rootInput);
 	const canonical = join(root, KERNEL_DB_RELATIVE);
+	const receipt = readReceipt(root);
 	if (existsSync(canonical)) {
-		const receipt = readReceipt(root);
 		if (!receipt) return refusal("a kernel store already exists; the importer never overwrites one");
+		// The publication rename already happened. Verify the published store and
+		// finish any cleanup the crash interrupted instead of refusing the retry.
+		try {
+			verifyStoreFile(root, canonical);
+		} catch (error) {
+			return refusal(`the published store failed verification: ${error instanceof Error ? error.message : String(error)}`);
+		}
+		const pending = readLegacyTasks(root);
+		if (pending.reason) return refusal(pending.reason);
+		if (pending.tasks.length > 0) {
+			if (importIdentity(pending.tasks) !== receipt.identity)
+				return refusal("the recorded import identity does not match the remaining legacy facts");
+			removeRetiredAuthority(root, pending.tasks);
+		}
 		return {
 			contract: "assurance_kernel/sqlite_import_result/v1",
 			outcome: "already_imported",
@@ -321,7 +410,6 @@ export function importLegacyWorkspace(rootInput: string, now = new Date().toISOS
 	if (reason) return refusal(reason);
 	if (tasks.length === 0) return refusal("no legacy terminal task is present to import");
 	const identity = importIdentity(tasks);
-	const receipt = readReceipt(root);
 	if (receipt && receipt.identity !== identity)
 		return refusal("the recorded import identity does not match the legacy facts");
 	try {
@@ -333,7 +421,9 @@ export function importLegacyWorkspace(rootInput: string, now = new Date().toISOS
 			return refusal("the preserved audit evidence is not committed yet", dirty);
 		if (!candidateReady) buildCandidateStore(root, tasks, now);
 		verifyCandidateStore(root, tasks);
-		publishMigrationStoreFile(root, join(root, MIGRATION_STORE_RELATIVE));
+		// The receipt is written before publication so a crash between the rename
+		// and the cleanup still leaves a retry that converges: the next run finds
+		// the store, verifies it, and finishes removing the retired files.
 		writeFileSync(
 			join(root, MIGRATION_RECEIPT_RELATIVE),
 			`${JSON.stringify({
@@ -343,6 +433,7 @@ export function importLegacyWorkspace(rootInput: string, now = new Date().toISOS
 				task_ids: tasks.map((task) => task.taskId).sort(),
 			}, null, 2)}\n`,
 		);
+		publishMigrationStoreFile(root, join(root, MIGRATION_STORE_RELATIVE));
 		removeRetiredAuthority(root, tasks);
 		return {
 			contract: "assurance_kernel/sqlite_import_result/v1",

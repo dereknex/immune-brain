@@ -4,7 +4,9 @@ import {
 	existsSync,
 	mkdirSync,
 	mkdtempSync,
+	readdirSync,
 	readFileSync,
+	renameSync,
 	rmSync,
 	writeFileSync,
 } from "node:fs";
@@ -452,6 +454,113 @@ describe("explicit SQLite import of the retired file store (A1)", () => {
 		} finally {
 			rmSync(probe, { recursive: true, force: true });
 		}
+	});
+
+	it("imports the retired v4 file store under .imm/state/tasks and retires it", async () => {
+		const root = tempRoot();
+		// The layout this release retires: records under .imm/state/tasks with the
+		// terminal proof already kept as tracked audit evidence.
+		writeLegacyTerminalPair(root, "2026-08-14-008-old-task");
+		mkdirSync(join(root, ".imm/state/tasks"), { recursive: true });
+		mkdirSync(join(root, ".imm/audit/2026-08-14-008-old-task"), { recursive: true });
+		renameSync(join(root, ".imm/tasks/2026-08-14-008-old-task.json"), join(root, ".imm/state/tasks/2026-08-14-008-old-task.json"));
+		renameSync(
+			join(root, ".imm/tasks/2026-08-14-008-old-task.backend-claim.json"),
+			join(root, ".imm/audit/2026-08-14-008-old-task/terminal-proof.json"),
+		);
+		rmSync(join(root, ".imm/tasks"), { recursive: true, force: true });
+		writeFileSync(join(root, ".imm/state/workspace.json"), `${JSON.stringify({ contract: "assurance_kernel/workspace/v1", current_working: null }, null, 2)}\n`);
+		commit(root, "retired file store layout");
+		expect(inspectStorageLayout(root).layout).toBe("migration_required");
+
+		expect((await runMigration(root)).outcome).toBe("migration_uncommitted");
+		commit(root, "preserve evidence");
+		const outcome = await runMigration(root);
+		expect(outcome).toMatchObject({ outcome: "migrated" });
+		expect(existsSync(join(root, ".imm/state/tasks/2026-08-14-008-old-task.json"))).toBe(false);
+		expect(existsSync(join(root, ".imm/state/workspace.json"))).toBe(false);
+		// The proof is preserved evidence, not retired authority.
+		expect(existsSync(join(root, ".imm/audit/2026-08-14-008-old-task/terminal-proof.json"))).toBe(true);
+		const { openKernelStore } = await import("../plugins/immune-brain/runtime/kernel/sqlite_store");
+		const db = openKernelStore(root, { create: false });
+		expect(db!.prepare("SELECT task_id, state FROM runs").get()).toMatchObject({ task_id: "2026-08-14-008-old-task", state: "done" });
+		db!.close();
+	});
+
+	it("imports two tasks whose ids sort differently in SQLite and in the locale", async () => {
+		const root = tempRoot();
+		writeLegacyTerminalPair(root, "Z-task");
+		writeLegacyTerminalPair(root, "a-task");
+		commit(root, "two tasks");
+		expect((await runMigration(root)).outcome).toBe("migration_uncommitted");
+		commit(root, "preserve evidence");
+		const outcome = await runMigration(root);
+		expect(outcome).toMatchObject({ outcome: "migrated" });
+		expect(outcome.reason).toMatch(/imported 2 terminal task/);
+	});
+
+	it("refuses a symlinked audit subdirectory without writing outside the worktree", async () => {
+		const root = tempRoot();
+		writeLegacyTerminalPair(root, "task-linked");
+		const outside = mkdtempSync(join(tmpdir(), "imm-outside-audit-"));
+		try {
+			mkdirSync(join(root, ".imm/audit"), { recursive: true });
+			execFileSync("ln", ["-s", outside, join(root, ".imm/audit/task-linked")]);
+			commit(root, "legacy + linked audit dir");
+			const outcome = await runMigration(root);
+			expect(outcome.outcome).toBe("invalid");
+			expect(outcome.reason).toMatch(/symlinked evidence path/);
+			expect(readdirSync(outside)).toEqual([]);
+			expect(existsSync(join(root, ".imm/state/kernel.sqlite"))).toBe(false);
+		} finally {
+			rmSync(outside, { recursive: true, force: true });
+		}
+	});
+
+	it("finishes the cleanup when a crash published the store before removing the source", async () => {
+		const root = tempRoot();
+		writeLegacyTerminalPair(root, "2026-08-14-009-old-task");
+		commit(root, "legacy evidence");
+		expect((await runMigration(root)).outcome).toBe("migration_uncommitted");
+		commit(root, "preserve evidence");
+		expect((await runMigration(root)).outcome).toBe("migrated");
+		// Reproduce the crash window: publication and receipt happened, the legacy
+		// source was not removed yet.
+		const recordBytes = readFileSync(join(root, ".imm/audit/2026-08-14-009-old-task/task-record.json"));
+		const proofBytes = readFileSync(join(root, ".imm/audit/2026-08-14-009-old-task/terminal-proof.json"));
+		mkdirSync(join(root, ".imm/tasks"), { recursive: true });
+		writeFileSync(join(root, ".imm/tasks/2026-08-14-009-old-task.json"), recordBytes);
+		writeFileSync(join(root, ".imm/tasks/2026-08-14-009-old-task.backend-claim.json"), proofBytes);
+		const finished = await runMigration(root);
+		expect(finished).toMatchObject({ outcome: "already_migrated" });
+		expect(finished.reason).toMatch(/finished the interrupted cleanup/);
+		expect(existsSync(join(root, ".imm/tasks/2026-08-14-009-old-task.json"))).toBe(false);
+		expect(existsSync(join(root, ".imm/state/kernel.sqlite"))).toBe(true);
+	});
+
+	it("refuses a candidate store built for another worktree", async () => {
+		const other = tempRoot();
+		writeLegacyTerminalPair(other, "2026-08-14-010-old-task");
+		commit(other, "legacy evidence");
+		expect((await runMigration(other)).outcome).toBe("migration_uncommitted");
+		commit(other, "preserve evidence");
+		expect((await runMigration(other)).outcome).toBe("migrated");
+		const foreignStore = readFileSync(join(other, ".imm/state/kernel.sqlite"));
+
+		const root = tempRoot();
+		writeLegacyTerminalPair(root, "2026-08-14-010-old-task");
+		commit(root, "legacy evidence");
+		expect((await runMigration(root)).outcome).toBe("migration_uncommitted");
+		commit(root, "preserve evidence");
+		// The candidate is a complete store with the same rows, but it belongs to
+		// the other worktree's binding.
+		mkdirSync(join(root, ".imm/state"), { recursive: true });
+		writeFileSync(join(root, ".imm/state/kernel.sqlite.importing"), foreignStore);
+		const outcome = await runMigration(root);
+		expect(outcome.outcome).toBe("invalid");
+		expect(outcome.reason).toMatch(/different worktree/);
+		expect(existsSync(join(root, ".imm/state/kernel.sqlite"))).toBe(false);
+		expect(existsSync(join(root, ".imm/tasks/2026-08-14-010-old-task.json"))).toBe(true);
 	});
 
 	it("refuses an existing audit target with zero writes", async () => {
