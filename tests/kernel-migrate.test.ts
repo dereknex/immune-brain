@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it } from "bun:test";
+import { execFileSync } from "node:child_process";
 import {
 	existsSync,
 	mkdirSync,
@@ -10,6 +11,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { runKernelCommand } from "../plugins/immune-brain/runtime/commands/kernel";
+import { policyV1CanonicalBytes } from "../plugins/immune-brain/runtime/managed_task_routing_policy";
 
 const roots: string[] = [];
 
@@ -100,6 +102,35 @@ describe("imm-kernel migrate is retired", () => {
 	});
 });
 
+
+describe("intent author never migrates implicitly", () => {
+	it("refuses a retired layout and names the explicit migration command", async () => {
+		const root = tempRoot();
+		execFileSync("git", ["-C", root, "init", "-q"]);
+		writeFileSync(join(root, ".gitignore"), ".imm/\n");
+		mkdirSync(join(root, "docs/plans"), { recursive: true });
+		// The authoring route needs its active policy; the retired Ledger is the
+		// layout condition under test.
+		writeFileSync(join(root, "docs/plans/managed-task-routing-policy.json"), policyV1CanonicalBytes());
+		execFileSync("git", ["-C", root, "add", "-A"]);
+		execFileSync("git", ["-C", root, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "fixture baseline"]);
+		mkdirSync(join(root, ".imm/memory"), { recursive: true });
+		const ledger = `${JSON.stringify({ schema_version: 3, runtime_status: "idle", steps: {} }, null, 2)}\n`;
+		writeFileSync(join(root, ".imm/memory/current_iteration.json"), ledger);
+
+		const result = runKernelCommand(
+			["intent", "author", "docs/plans/2026-08-14-author-task.intent.json", "--stdin", "--json"],
+			root,
+		);
+		expect(result.returncode).toBe(1);
+		expect(result.stdout).toMatch(/layout_migration_required/);
+		expect(result.stdout).toMatch(/migrate --storage-layout/);
+		// Zero migration side effects: no store, no evidence, no retired file gone.
+		expect(existsSync(join(root, ".imm/state/kernel.sqlite"))).toBe(false);
+		expect(existsSync(join(root, ".imm/audit/legacy-v3/current_iteration.json"))).toBe(false);
+		expect(readFileSync(join(root, ".imm/memory/current_iteration.json"), "utf8")).toBe(ledger);
+	});
+});
 
 describe("execution state stays out of git", () => {
 	it("keeps execution state out of git", () => {

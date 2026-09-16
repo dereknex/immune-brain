@@ -518,46 +518,13 @@ function runIntentAuthor(args: string[], root: string): KernelExecution {
 		};
 	}
 	if (layout.layout === "recovery_required" || layout.layout === "migration_required") {
-		const migration = migrateLegacyLayout(root);
-		if (migration.outcome === "migrated") {
-			return {
-				result: jsonResult({
-					contract: "assurance_kernel/migration_completed/v1",
-					operation: "intent author",
-					affected_paths: migration.affected_paths,
-					next_action: "commit the affected migration paths, then retry intent author",
-				}),
-				journal: journalFor(
-					"intent",
-					null,
-					"escalated",
-					"migration_ambiguous",
-					null,
-					"Legacy evidence was relocated without Git index writes; commit and retry.",
-				),
-			};
-		}
-		if (migration.outcome === "migration_uncommitted") {
-			return {
-				result: errorResult(
-					"migration_uncommitted",
-					`affected storage paths differ from HEAD: ${migration.affected_paths.join(", ") || "(none)"}`,
-					1,
-				),
-				journal: journalFor(
-					"intent",
-					null,
-					"rejected",
-					"migration_ambiguous",
-					null,
-					"Commit or restore the affected paths before retrying.",
-				),
-			};
-		}
+		// Authoring never migrates implicitly: the retired layout is converted by
+		// the explicit claimless command only, so creating a draft cannot publish a
+		// database or retire historical files behind the operator's back.
 		return {
 			result: errorResult(
-				layout.layout === "recovery_required" ? "layout_recovery_required" : "layout_migration_blocked",
-				migration.reason ?? layout.reason ?? "storage layout is not ready",
+				layout.layout === "recovery_required" ? "layout_recovery_required" : "layout_migration_required",
+				`${layout.reason ?? "storage layout is not ready"}; run imm-kernel migrate --storage-layout first`,
 				1,
 			),
 			journal: journalFor(
@@ -566,7 +533,7 @@ function runIntentAuthor(args: string[], root: string): KernelExecution {
 				"rejected",
 				"source_invalid",
 				null,
-				"Resolve the reported storage layout condition before authoring.",
+				"Run imm-kernel migrate --storage-layout, commit the affected paths, then retry intent author.",
 			),
 		};
 	}
