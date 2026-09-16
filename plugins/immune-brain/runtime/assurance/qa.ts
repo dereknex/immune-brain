@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { snapshotDigest, type SnapshotDescriptor, type AssuranceVerdict } from "./coordinator";
 import { assertDeliveryClean, materializeDeliveryWorkspace, writeDeliveryTree } from "./delivery_workspace";
 import { runFixedVerification, VerificationAbortedError, type FrozenRunner, type VerificationDescriptor } from "./verification";
@@ -18,10 +19,15 @@ function deliveryTreeForSnapshot(snapshot: SnapshotDescriptor): string {
 	const record = readTaskRecord(snapshot.root, snapshot.task_id).record;
 	if (!record || record.contract !== "assurance_kernel/task_record/v4" || !record.git_base_head)
 		throw new Error("QA delivery requires a TaskRecord v4 git_base_head");
-	return writeDeliveryTree(
+	const captured = captureGitTaskRevisionSnapshot(
 		snapshot.root,
-		captureGitTaskRevisionSnapshot(snapshot.root, record.intent_snapshot.scope_hint, record.git_base_head),
+		record.intent_snapshot.scope_hint,
+		record.git_base_head,
 	);
+	const digest = `sha256:${createHash("sha256").update(JSON.stringify(captured)).digest("hex")}`;
+	if (digest !== snapshot.diff_hash)
+		throw new Error("QA delivery identity does not match the frozen snapshot");
+	return writeDeliveryTree(snapshot.root, captured);
 }
 
 export async function runDeterministicQa(

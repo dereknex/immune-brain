@@ -3,11 +3,13 @@ import { createHash } from "node:crypto";
 import {
 	existsSync,
 	lstatSync,
+	mkdirSync,
 	readFileSync,
 	readlinkSync,
 	realpathSync,
+	writeFileSync,
 } from "node:fs";
-import { resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 
 export interface GitWorkspaceSnapshot {
 	kind: "git-workspace-v1";
@@ -46,12 +48,45 @@ function isPlanningSidecar(path: string): boolean {
 	return /^docs\/plans\/(?:archive\/)?[^/]+\.intent\.json$/.test(path);
 }
 
-function assertNoEnvelopeEscape(stagedPaths: readonly string[], scope: string[]): void {
+function enrollmentBaselinePath(root: string): string {
+	return join(root, ".imm/state/enrollment-baseline.json");
+}
+
+export function writeEnrollmentBaseline(root: string): void {
+	const snapshot = captureGitWorkspaceSnapshot(root);
+	if (!snapshot) return;
+	const path = enrollmentBaselinePath(root);
+	mkdirSync(dirname(path), { recursive: true });
+	writeFileSync(path, `${JSON.stringify(snapshot)}\n`);
+}
+
+function assertNoEnvelopeEscape(
+	root: string,
+	stagedPaths: readonly string[],
+	scope: string[],
+): void {
 	const escaped = [...new Set(stagedPaths)]
 		.filter((path) => !isNonDeliveryPath(path) && !isPlanningSidecar(path) && !taskPathMatchesScope(path, scope))
 		.sort(comparePaths);
 	if (escaped.length > 0)
 		throw new Error(`task delivery contains paths outside the authorization envelope: ${escaped.join(", ")}`);
+	const baselinePath = enrollmentBaselinePath(root);
+	if (!existsSync(baselinePath)) return;
+	let baseline: GitWorkspaceSnapshot;
+	try {
+		baseline = JSON.parse(readFileSync(baselinePath, "utf8")) as GitWorkspaceSnapshot;
+	} catch {
+		throw new Error("enrollment baseline is unreadable");
+	}
+	if (!isGitWorkspaceSnapshot(baseline)) throw new Error("enrollment baseline is unreadable");
+	const current = captureGitWorkspaceSnapshot(root);
+	if (!current) throw new Error("enrollment baseline cannot be compared because Git is unavailable");
+	const mixed = Object.keys(current.dirty_files)
+		.filter((path) => !isNonDeliveryPath(path) && !isPlanningSidecar(path) && !taskPathMatchesScope(path, scope))
+		.filter((path) => baseline.dirty_files[path] === undefined)
+		.sort(comparePaths);
+	if (mixed.length > 0)
+		throw new Error(`task delivery contains paths outside the authorization envelope: ${mixed.join(", ")}`);
 }
 
 function isRuntimeAuthorityPath(path: string): boolean {
@@ -363,7 +398,7 @@ function taskSnapshotOnce(root: string, scope: string[]): GitTaskSnapshot {
 		"untracked task paths",
 	);
 	assertNoCaseFoldCollisions([...stagedPaths, ...unstagedPaths, ...untrackedPaths], "Git task paths");
-	assertNoEnvelopeEscape(stagedPaths, scope);
+	assertNoEnvelopeEscape(root, stagedPaths, scope);
 	const uncommittedInScope = [...new Set([...unstagedPaths, ...untrackedPaths])]
 		.filter((path) => taskPathMatchesScope(path, scope))
 		.sort(comparePaths);
@@ -497,7 +532,7 @@ function taskRevisionSnapshotOnce(
 		gitBytes(root, ["ls-files", "--others", "--exclude-standard", "-z", "--"]),
 		"untracked task revision paths",
 	);
-	assertNoEnvelopeEscape(stagedPaths, scope);
+	assertNoEnvelopeEscape(root, stagedPaths, scope);
 	const scopedStagedPaths = stagedPaths.filter((path) => !isNonDeliveryPath(path) && taskPathMatchesScope(path, scope));
 	const scopedUnstagedPaths = unstagedPaths.filter((path) => taskPathMatchesScope(path, scope));
 	const scopedUntrackedPaths = untrackedPaths.filter((path) => taskPathMatchesScope(path, scope));

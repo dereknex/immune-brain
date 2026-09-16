@@ -2,9 +2,9 @@
 // Never binds the user's index, refs, or node_modules.
 
 import { execFileSync, spawnSync } from "node:child_process";
-import { existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readlinkSync, rmSync } from "node:fs";
+import { existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readlinkSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, relative, resolve, sep } from "node:path";
+import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import type { FrozenRunner } from "./verification";
 import type { GitTaskRevisionSnapshot } from "../workspace_scope";
 
@@ -24,16 +24,19 @@ export interface DeliveryWorkspace {
 const GIT_OBJECT_ID = /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/;
 
 function isolatedGitEnv(extra: Record<string, string> = {}): NodeJS.ProcessEnv {
-	const env = { ...process.env, ...extra };
+	const env = { ...process.env };
 	delete env.GIT_DIR;
 	delete env.GIT_WORK_TREE;
 	delete env.GIT_INDEX_FILE;
 	delete env.GIT_OBJECT_DIRECTORY;
 	delete env.GIT_ALTERNATE_OBJECT_DIRECTORIES;
-	env.GIT_CONFIG_NOSYSTEM = "1";
-	env.GIT_TERMINAL_PROMPT = "0";
-	env.GIT_OPTIONAL_LOCKS = "0";
-	return env;
+	return {
+		...env,
+		GIT_CONFIG_NOSYSTEM: "1",
+		GIT_TERMINAL_PROMPT: "0",
+		GIT_OPTIONAL_LOCKS: "0",
+		...extra,
+	};
 }
 
 function git(cwd: string, args: string[], extra: Record<string, string> = {}): string {
@@ -49,15 +52,27 @@ function assertTree(tree: string): void {
 	if (!GIT_OBJECT_ID.test(tree)) throw new DeliveryWorkspaceError("delivery tree has invalid identity");
 }
 
+function assertInside(root: string, candidate: string, label: string): void {
+	const rel = relative(root, candidate);
+	if (rel.startsWith(`..${sep}`) || rel === ".." || isAbsolute(rel))
+		throw new DeliveryWorkspaceError(`delivery ${label} escapes materialization: ${rel}`);
+}
+
 function assertNoEscapingSymlinks(root: string, dir = root): void {
+	const realRoot = realpathSync(root);
 	for (const name of readdirSync(dir)) {
 		const path = join(dir, name);
 		const stat = lstatSync(path);
 		if (stat.isSymbolicLink()) {
-			const target = resolve(dir, readlinkSync(path));
-			const rel = relative(root, target);
-			if (rel.startsWith(`..${sep}`) || rel === "..")
-				throw new DeliveryWorkspaceError(`delivery symlink escapes materialization: ${relative(root, path)}`);
+			let resolved: string;
+			try {
+				resolved = realpathSync(path);
+			} catch {
+				const target = resolve(dir, readlinkSync(path));
+				assertInside(realRoot, target, `symlink ${relative(root, path)}`);
+				continue;
+			}
+			assertInside(realRoot, resolved, `symlink ${relative(root, path)}`);
 		} else if (stat.isDirectory()) {
 			assertNoEscapingSymlinks(root, path);
 		}

@@ -7,6 +7,7 @@ import {
 	captureGitTaskSnapshot,
 	setGitTaskSnapshotTestHook,
 	taskDiffHash,
+	writeEnrollmentBaseline,
 } from "../plugins/immune-brain/runtime/workspace_scope";
 
 function git(root: string, args: string[]): string {
@@ -67,10 +68,14 @@ describe("managed task snapshot isolation", () => {
 			writeFileSync(join(root, "task.ts"), "export const task = 'staged';\n");
 			git(root, ["add", "task.ts"]);
 			writeFileSync(join(root, "outside.ts"), "export const outside = 'dirty-one';\n");
+			writeEnrollmentBaseline(root);
 			const initial = taskDiffHash(root, ["task.ts"]);
 
 			writeFileSync(join(root, "outside.ts"), "export const outside = 'dirty-two';\n");
 			expect(taskDiffHash(root, ["task.ts"])).toBe(initial);
+			writeFileSync(join(root, "new-outside.ts"), "export const extra = true;\n");
+			expect(() => taskDiffHash(root, ["task.ts"])).toThrow(/outside the authorization envelope/);
+			rmSync(join(root, "new-outside.ts"));
 			git(root, ["add", "outside.ts"]);
 			expect(() => taskDiffHash(root, ["task.ts"])).toThrow(/outside the authorization envelope/);
 		} finally {

@@ -9,7 +9,8 @@ import { execFileSync } from "node:child_process";
 import { mkdtempSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { assertDeliveryClean, DeliveryWorkspaceError, materializeDeliveryWorkspace } from "../plugins/immune-brain/runtime/assurance/delivery_workspace";
+import { assertDeliveryClean, DeliveryWorkspaceError, materializeDeliveryWorkspace, writeDeliveryTree } from "../plugins/immune-brain/runtime/assurance/delivery_workspace";
+import { captureGitTaskRevisionSnapshot } from "../plugins/immune-brain/runtime/workspace_scope";
 
 import {
 	parseVerificationDescriptor,
@@ -275,6 +276,37 @@ describe("delivery workspace materialization", () => {
 			expect(() => materializeDeliveryWorkspace(root, headTree(root))).toThrow(DeliveryWorkspaceError);
 		} finally {
 			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
+	test("writeDeliveryTree does not mutate the user index", () => {
+		const root = gitRepo();
+		try {
+			const base = execFileSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).trim();
+			const snapshot = captureGitTaskRevisionSnapshot(root, ["ok.ts"], base);
+			writeFileSync(join(root, "extra.ts"), "export const extra = 1;\n");
+			execFileSync("git", ["add", "extra.ts"], { cwd: root });
+			const before = execFileSync("git", ["diff", "--cached", "--name-only"], { cwd: root, encoding: "utf8" }).trim();
+			writeDeliveryTree(root, snapshot);
+			expect(execFileSync("git", ["diff", "--cached", "--name-only"], { cwd: root, encoding: "utf8" }).trim()).toBe(before);
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
+	test("refuses a symlink whose intermediate component escapes", () => {
+		const root = gitRepo();
+		const outside = mkdtempSync(join(tmpdir(), "imm-outside-"));
+		try {
+			writeFileSync(join(outside, "secret.txt"), "secret\n");
+			symlinkSync(".", join(root, "a"));
+			symlinkSync(join("a", "..", "..", outside.split("/").pop()!, "secret.txt"), join(root, "b"));
+			execFileSync("git", ["add", "a", "b"], { cwd: root });
+			execFileSync("git", ["commit", "-qm", "escape"], { cwd: root });
+			expect(() => materializeDeliveryWorkspace(root, headTree(root))).toThrow(DeliveryWorkspaceError);
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+			rmSync(outside, { recursive: true, force: true });
 		}
 	});
 

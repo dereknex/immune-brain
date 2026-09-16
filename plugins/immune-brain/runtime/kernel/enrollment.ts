@@ -16,6 +16,7 @@ import type {
 } from "./batch_authority";
 import type { BackendClaim } from "./backend_claim";
 import { preparePiCanary, readGitHead } from "./pi_canary_prepare";
+import { writeEnrollmentBaseline } from "../workspace_scope";
 import { enrollmentRequestDigest } from "./run_identity";
 import {
 	commitEnrollmentLocked,
@@ -400,6 +401,7 @@ export function enrollCanaryTask(
 				claim as unknown as Record<string, unknown>,
 				digest,
 			);
+			writeEnrollmentBaseline(root);
 			return {
 				record: mutation.record,
 				backend_claim: claim,
