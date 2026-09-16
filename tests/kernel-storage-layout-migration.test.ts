@@ -1058,6 +1058,62 @@ describe("explicit SQLite import of the retired file store (A1)", () => {
 		}
 	});
 
+	it("serializes concurrent migrations with an exclusive lock", async () => {
+		const root = tempRoot();
+		writeLegacyTerminalPair(root, "2026-08-14-028-old-task");
+		commit(root, "legacy evidence");
+		// A live holder blocks the migration.
+		mkdirSync(join(root, ".imm/state"), { recursive: true });
+		const lockPath = join(root, ".imm/state/migration.lock");
+		writeFileSync(lockPath, `${process.pid}\n`);
+		const blocked = await runMigration(root);
+		expect(blocked.outcome).toBe("invalid");
+		expect(blocked.reason).toMatch(/another storage layout migration is running/);
+		expect(existsSync(join(root, ".imm/state/kernel.sqlite"))).toBe(false);
+
+		// An abandoned lock, held by a process that is gone, is reclaimed.
+		writeFileSync(lockPath, "999999999\n");
+		const recovered = await runMigration(root);
+		expect(recovered.outcome).toBe("migration_uncommitted");
+		expect(existsSync(lockPath)).toBe(false);
+	});
+
+	it("refuses to retire while the retired file store still has a pending transaction marker", async () => {
+		const root = tempRoot();
+		writeLegacyTerminalPair(root, "2026-08-14-029-old-task");
+		commit(root, "legacy evidence");
+		expect((await runMigration(root)).outcome).toBe("migration_uncommitted");
+		commit(root, "preserve evidence");
+		expect((await runMigration(root)).outcome).toBe("migrated");
+		mkdirSync(join(root, ".imm/state/transactions"), { recursive: true });
+		writeFileSync(join(root, ".imm/state/transactions/terminal-transaction.json"), "{\"contract\":\"assurance_kernel/terminal_transaction/v1\"}\n");
+		const outcome = await runMigration(root);
+		expect(outcome.outcome).toBe("invalid");
+		expect(outcome.reason).toMatch(/legacy transaction marker/);
+		expect(existsSync(join(root, ".imm/state/transactions/terminal-transaction.json"))).toBe(true);
+	});
+
+	it("refuses recovery cleanup when the committed evidence left HEAD", async () => {
+		const root = tempRoot();
+		writeLegacyTerminalPair(root, "2026-08-14-030-old-task");
+		commit(root, "legacy evidence");
+		expect((await runMigration(root)).outcome).toBe("migration_uncommitted");
+		commit(root, "preserve evidence");
+		expect((await runMigration(root)).outcome).toBe("migrated");
+		// The surviving source comes back, but the committed evidence left HEAD.
+		const recordBytes = readFileSync(join(root, ".imm/audit/2026-08-14-030-old-task/task-record.json"));
+		const proofBytes = readFileSync(join(root, ".imm/audit/2026-08-14-030-old-task/terminal-proof.json"));
+		mkdirSync(join(root, ".imm/tasks"), { recursive: true });
+		writeFileSync(join(root, ".imm/tasks/2026-08-14-030-old-task.json"), recordBytes);
+		writeFileSync(join(root, ".imm/tasks/2026-08-14-030-old-task.backend-claim.json"), proofBytes);
+		execFileSync("git", ["-C", root, "rm", "-r", "-q", "--cached", ".imm/audit/2026-08-14-030-old-task"]);
+		execFileSync("git", ["-C", root, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "drop evidence from HEAD"]);
+		const outcome = await runMigration(root);
+		expect(outcome.outcome).toBe("invalid");
+		expect(outcome.reason).toMatch(/committed audit evidence .* is missing/);
+		expect(existsSync(join(root, ".imm/tasks/2026-08-14-030-old-task.json"))).toBe(true);
+	});
+
 	it("refuses an existing audit target with zero writes", async () => {
 		const root = tempRoot();
 		writeLegacyTerminalPair(root, "task-001");

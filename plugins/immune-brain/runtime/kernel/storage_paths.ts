@@ -81,6 +81,9 @@ export const FILE_STORE_INERT_FILES = [
 	".imm/state/kernel.sqlite.importing-wal",
 	".imm/state/kernel.sqlite.importing-shm",
 	".imm/state/migration-receipt.json",
+	// The importer's cross-process lock: inert by itself, and a crashed holder
+	// must not leave the worktree permanently unmigratable.
+	".imm/state/migration.lock",
 ] as const;
 
 /** A file-store migration manifest left by the retired migrator. */

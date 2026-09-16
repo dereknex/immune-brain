@@ -35,6 +35,7 @@ import {
 	FILE_STORE_TASKS_RELATIVE,
 	FILE_STORE_WORKSPACE_RELATIVE,
 	KERNEL_DB_RELATIVE,
+	KERNEL_TRANSACTION_MARKERS,
 	LEGACY_ARTIFACT_RETIREMENT,
 	LEGACY_RETIRED_DIRECTORIES,
 	LEGACY_TASKS_RELATIVE,
@@ -57,6 +58,75 @@ import {
 import { isTerminalBatchState, type BatchRunState } from "../unattended/batch_state";
 import { parseTaskRecord } from "./validation";
 import { canonicalRecordHash } from "./reducer";
+
+/** Raised when another process already holds the migration lock. */
+export class MigrationBusyError extends Error {
+	constructor(message: string) {
+		super(message);
+		this.name = "MigrationBusyError";
+	}
+}
+
+/** Exclusive cross-process lock for one migration of this worktree. */
+export const MIGRATION_LOCK_RELATIVE = `${STATE_RELATIVE}/migration.lock`;
+/** A lock older than this is treated as abandoned by a crashed process. */
+const MIGRATION_LOCK_STALE_MS = 15 * 60 * 1000;
+
+/**
+ * Serialize the whole migration — check, rebuild, verify, publish, retire — across
+ * processes. Without it two concurrent runs can publish a candidate that the
+ * other process is still rebuilding, and a half-imported database would replace
+ * the authority while the legacy sources are deleted.
+ */
+function withImportLock<T>(root: string, operation: () => T): T {
+	const lockPath = join(root, MIGRATION_LOCK_RELATIVE);
+	mkdirSync(dirname(lockPath), { recursive: true });
+	for (let attempt = 0; attempt < 2; attempt += 1) {
+		try {
+			const fd = openSync(lockPath, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL);
+			try {
+				writeFileSync(fd, `${process.pid}\n`);
+			} finally {
+				closeSync(fd);
+			}
+			break;
+		} catch (error) {
+			if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+			if (!clearAbandonedImportLock(lockPath))
+				throw new MigrationBusyError(`another storage layout migration is running (${MIGRATION_LOCK_RELATIVE})`);
+		}
+	}
+	try {
+		return operation();
+	} finally {
+		rmSync(lockPath, { force: true });
+	}
+}
+
+function clearAbandonedImportLock(lockPath: string): boolean {
+	let holder: number | null = null;
+	try {
+		holder = Number.parseInt(readFileSync(lockPath, "utf8").trim(), 10);
+	} catch {
+		holder = null;
+	}
+	// A holder that is gone can never finish; a live holder is only reclaimed
+	// once the lock is old enough that a stuck migration is the likelier story.
+	const holding = holder !== null && Number.isFinite(holder) && processIsAlive(holder);
+	const expired = Date.now() - statSync(lockPath).mtimeMs > MIGRATION_LOCK_STALE_MS;
+	if (holding && !expired) return false;
+	rmSync(lockPath, { force: true });
+	return true;
+}
+
+function processIsAlive(pid: number): boolean {
+	try {
+		process.kill(pid, 0);
+		return true;
+	} catch (error) {
+		return (error as NodeJS.ErrnoException).code !== "ESRCH";
+	}
+}
 
 /** The candidate store the importer builds before publication. */
 export const MIGRATION_STORE_RELATIVE = `${KERNEL_DB_RELATIVE}.importing`;
@@ -573,6 +643,11 @@ function liveLegacyOwnerReason(root: string): string | null {
 	for (const marker of LEGACY_TRANSACTION_MARKERS) {
 		if (existsSync(join(root, marker))) return `a legacy transaction marker is present at ${marker}`;
 	}
+	// The retired SQLite file store kept its own transaction markers.
+	for (const marker of KERNEL_TRANSACTION_MARKERS) {
+		const relative = `${STATE_RELATIVE}/transactions/${marker}`;
+		if (existsSync(join(root, relative))) return `a legacy transaction marker is present at ${relative}`;
+	}
 	for (const workspace of [LEGACY_WORKSPACE_RELATIVE, FILE_STORE_WORKSPACE_RELATIVE]) {
 		const path = join(root, workspace);
 		if (!existsSync(path)) continue;
@@ -667,6 +742,23 @@ function removeOrphanProofs(root: string, canonical: string): void {
  * store's creation metadata; it never rewrites historical evidence.
  */
 export function importLegacyWorkspace(rootInput: string, now = new Date().toISOString()): SqliteImportOutcome {
+	const canonicalInput = realpathSync(rootInput);
+	try {
+		return withImportLock(canonicalInput, () => importLegacyWorkspaceLocked(canonicalInput, now));
+	} catch (error) {
+		if (error instanceof MigrationBusyError)
+			return {
+				contract: "assurance_kernel/sqlite_import_result/v1",
+				outcome: "refused",
+				reason: error.message,
+				imported_task_ids: [],
+				uncommitted_evidence: [],
+			};
+		throw error;
+	}
+}
+
+function importLegacyWorkspaceLocked(rootInput: string, now: string): SqliteImportOutcome {
 	// Bind one canonical root: a temp-directory root on macOS reaches the same
 	// files through /var and /private/var, and mixing them would look like a
 	// traversal attempt to the store's path safety checks.
@@ -697,6 +789,16 @@ export function importLegacyWorkspace(rootInput: string, now = new Date().toISOS
 			// identity. Each survivor is verified against its published row instead,
 			// which also refuses a source file the import never published.
 			if (pending.tasks.length > 0) verifyPublishedRows(root, canonical, pending.tasks);
+			// The evidence that justifies retiring the survivors must still be in
+			// HEAD: a branch switch between publication and cleanup would otherwise
+			// delete the only copy of the historical bytes.
+			const survivingEvidence = [
+				...pending.tasks.flatMap((task) => [auditTaskRecordPath(task.taskId), auditTerminalProofPath(task.taskId)]),
+				...collectRetiredArtifacts(root).map((artifact) => artifact.evidence),
+			];
+			const missingEvidence = uncommittedEvidencePaths(root, survivingEvidence);
+			if (missingEvidence.length > 0)
+				return refusal("the committed audit evidence for the remaining legacy bytes is missing", missingEvidence);
 			removeRetiredAuthority(root, pending.tasks);
 			// The cleanup always runs to the end: an interrupted deletion can leave
 			// an orphan proof with no record, and that survivor keeps the layout
