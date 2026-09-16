@@ -275,8 +275,8 @@ descriptors or add a mandatory user confirmation. Use the smallest `timeout_ms` 
 - **Mermaid Use**: Mermaid is required only when a medium/high-risk design contains structure, sequence, data flow, or state transition relationships that a diagram materially clarifies. Mermaid is not a universal gate; a diagram supplements adjacent prose and never becomes a second design authority. Medium/High risk Specs record `**Diagram decision**: required|not_required` and a non-empty `**Diagram reason**:`. A `required` decision must have a Mermaid block; `not_required` explains why prose is sufficient. Low-risk Specs omit the empty ceremony and record neither field.
 - **Verification**: Every acceptance assertion has a concrete focused descriptor that can fail on the intended regression. Hypothetical evidence is not execution-ready.
 - **Executable Scope**: `scope_hint` is the mutation envelope, not discovery context. Close references across callers, tests, generated mirrors, and state-machine owners before authoring. Simple tasks are TaskIntent-only. A complex task binds at most one active Spec by content identity; do not add archive paths for freeze, and do not relocate artifacts. Collect all known scope gaps in one revision request; ask again only when new evidence changes the boundary.
-- **Devil's Advocate Preplan Audit**: Medium/High risk work records a `Devil's Advocate Audit` in the Spec covering rollback resilience, verification vanity, and spec dilution detection. Explain recovery from partial implementation, why verification detects the regression, and how accepted requirements remain covered. Low-risk work omits the empty template; the Spec records outcome, boundary, and concrete verification only.
-- **Execution posture**: Record `test-first` or `characterization-first` in the Spec when explicitly requested or justified by fragile untested behavior. The Executor owns the local choreography; do not create prototype or RED/GREEN/REFACTOR authority Steps. Throwaway probes must have a cleanup condition and a durable decision output.
+- **Devil's Advocate Preplan Audit**: Medium/High risk complex work records a `Devil's Advocate Audit` in the Spec covering rollback resilience, verification vanity, and spec dilution detection. Explain recovery from partial implementation, why verification detects the regression, and how accepted requirements remain covered. Simple TaskIntent-only work records outcome, boundary, and concrete verification on the Intent.
+- **Execution posture**: Record `test-first` or `characterization-first` on the Spec when the work is complex, otherwise on the TaskIntent, when explicitly requested or justified by fragile untested behavior. The Executor owns the local choreography; do not create prototype or RED/GREEN/REFACTOR authority Steps. Throwaway probes must have a cleanup condition and a durable decision output.
 
 ## Settlement-Design Contract
 
@@ -365,7 +365,7 @@ preparation does not apply the revision or authorize expanded execution.
   planning heuristic: it must not weaken acceptance-specific focused
   verification descriptors or add a mandatory user confirmation.
 - **Review Mapping**: In-scope rework stays with the enrolled TaskIntent and explicit `imm-loop` entry. Cross-scope findings become a Planner decision delta with concrete missing paths and verification evidence; do not create a successor prose Plan.
-- **Brainstorm Manifest Mapping**: Record every upstream `BR-*` item in a Spec `Brainstorm Trace`, mapped to TaskIntent acceptance, a captured decision, or an explicit reason for deferral or exclusion. Resolve every `BR-Q-*` item before handoff. Do not silently narrow confirmed framing.
+- **Brainstorm Manifest Mapping**: Record every upstream `BR-*` item in a Spec `Brainstorm Trace` when the work is complex, otherwise on the TaskIntent, mapped to acceptance, a captured decision, or an explicit reason for deferral or exclusion. Resolve every `BR-Q-*` item before handoff. Do not silently narrow confirmed framing.
 - **Session Lifecycle Ownership**: The user chooses the current or a new session. Tokens, compactions, tool counts, elapsed time, and review rounds never trigger automatic session creation or termination. Recovery uses TaskRecord and the fresh Kernel projection.
 - **Subagents**: Only when optional research is needed, read Research Dispatch and its shared dispatch reference. Default to inline evidence gathering. Plan conditional reviewers such as `security-reviewer` only if their trigger surfaces are explicit; do not manufacture them.
 - **Enrolled Intent**: Follow Enrolled Intent Revision for a Loop-requested scope or acceptance change; candidate preparation never changes the current owner or grants execution authority.
@@ -409,8 +409,7 @@ immutable content identity, not by archive relocation. The Spec records outcome,
 decisions, assumptions, Technical Design when required, output language,
 the Medium/High risk Devil's Advocate Audit, and acceptance/test mapping. Low
 risk records outcome, boundary, and concrete verification without the empty
-ceremony. Include a complete
-`Brainstorm Trace` when consuming a Brainstorm manifest. TaskIntent is authored
+ceremony. Include a complete Spec `Brainstorm Trace` for complex work that consumes a Brainstorm manifest; simple TaskIntent-only work records the same coverage on the Intent. TaskIntent is authored
 and validated through `imm-kernel`; do not write a prose iteration Plan or sync
 a State Ledger. Keep historical Plan validation strictly read-only.
 
@@ -433,7 +432,7 @@ a State Ledger. Keep historical Plan validation strictly read-only.
 
 - Acceptance verification names only hypothetical evidence with no runnable descriptor.
 - New work depends on a prose Plan validator, Step activation, or State Ledger.
-- A Brainstorm manifest lacks a complete Spec `Brainstorm Trace`.
+- A Brainstorm manifest lacks complete `BR-*` coverage on the Spec (complex) or TaskIntent (simple).
 - A Medium/High risk Spec lacks a `Devil's Advocate Audit` covering rollback resilience, verification vanity, and spec dilution detection.
 - New Spec prose ignores the document-language policy.
 - Candidate artifacts escape the approved planning scope.

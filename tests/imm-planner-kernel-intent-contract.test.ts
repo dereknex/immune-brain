@@ -79,6 +79,10 @@ describe("imm-planner kernel intent contract", () => {
 		expect(skill).toContain("Simple tasks are TaskIntent-only");
 		expect(skill).toContain("Add a Spec only for complex work");
 		expect(skill).toContain("simple TaskIntent-only work records them in `scope_hint`");
+		expect(skill).toContain("otherwise on the TaskIntent");
+		expect(skill).not.toContain("Record every upstream `BR-*` item in a Spec `Brainstorm Trace`, mapped to TaskIntent acceptance");
+		expect(skill).not.toContain("Record `test-first` or `characterization-first` in the Spec when explicitly requested");
+		expect(skill).not.toContain("A Brainstorm manifest lacks a complete Spec `Brainstorm Trace`.");
 		expect(skill).toContain("immutable content identity");
 		expect(skill).not.toContain("Include bound active and archive Spec paths needed for artifact freeze");
 		expect(skill).toContain("do not relocate artifacts");
