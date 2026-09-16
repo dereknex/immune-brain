@@ -235,4 +235,45 @@ describe("imm-kernel intent validate", () => {
 			expect(output.reason).toBeTruthy();
 		});
 	});
+
+	it("accepts a standalone simple TaskIntent with no Spec", () => {
+		withRepo((root) => {
+			const path = "docs/plans/task-002-intent-validate.intent.json";
+			writeFileSync(join(root, path), intentBytes());
+			git(root, ["add", path]);
+			const output = JSON.parse(validate(root, path).stdout);
+			expect(output.valid).toBe(true);
+			expect(output.enrollment_ready).toBe(true);
+		});
+	});
+
+	it("rejects an archive-only Spec binding", () => {
+		withRepo((root) => {
+			const path = "docs/plans/task-002-intent-validate.intent.json";
+			writeFileSync(
+				join(root, path),
+				intentBytes("task-002-intent-validate", {
+					scope_hint: [path, "docs/specs/archive/task-002-intent-validate.spec.md"],
+				}),
+			);
+			const output = JSON.parse(validate(root, path).stdout);
+			expect(output.valid).toBe(false);
+			expect(output.reason).toContain("complex Spec binding is incomplete");
+		});
+	});
+
+	it("rejects two active Specs as malformed complex binding", () => {
+		withRepo((root) => {
+			const path = "docs/plans/task-002-intent-validate.intent.json";
+			writeFileSync(
+				join(root, path),
+				intentBytes("task-002-intent-validate", {
+					scope_hint: [path, "docs/specs/one.spec.md", "docs/specs/two.spec.md"],
+				}),
+			);
+			const output = JSON.parse(validate(root, path).stdout);
+			expect(output.valid).toBe(false);
+			expect(output.reason).toContain("at most one scope-bound Spec");
+		});
+	});
 });

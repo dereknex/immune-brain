@@ -4239,8 +4239,8 @@ function parseTaskRecordV2(raw) {
     violations.push("intent_snapshot and intent_ref must match record identity");
   if (artifactRef?.state === "active" && refPath !== activeIntentPath)
     violations.push("active artifact_ref requires the active intent path");
-  if (artifactRef?.state === "frozen" && refPath !== frozenIntentPath)
-    violations.push("frozen artifact_ref requires the archived intent path");
+  if (artifactRef?.state === "frozen" && refPath !== activeIntentPath && refPath !== frozenIntentPath)
+    violations.push("frozen artifact_ref requires the active or archived intent path");
   if (snapshot && refContentHash !== "" && canonicalIntentHash(snapshot) !== refContentHash)
     violations.push("intent_ref.content_hash must equal the snapshot canonical hash");
   const baseline = stringAt(value.baseline, "record.baseline", violations);
@@ -4317,8 +4317,8 @@ function parseTaskRecordAtVersion(raw, version) {
     violations.push("intent_snapshot and intent_ref must match record identity");
   if (artifactState === "active" && refPath !== activeIntentPath)
     violations.push("active artifact_state requires the active intent path");
-  if (artifactState === "frozen" && refPath !== frozenIntentPath)
-    violations.push("frozen artifact_state requires the archived intent path");
+  if (artifactState === "frozen" && refPath !== activeIntentPath && refPath !== frozenIntentPath)
+    violations.push("frozen artifact_state requires the active or archived intent path");
   if (snapshot && refContentHash !== "" && canonicalIntentHash(snapshot) !== refContentHash)
     violations.push("intent_ref.content_hash must equal the snapshot canonical hash");
   if (lifecycle !== "active" && artifactState !== "frozen")
@@ -5218,7 +5218,6 @@ function reduceTask(recordRaw, actionRaw, authorityAudit = null, changedPaths) {
         throw new KernelInvariantError(["stop requires a reason"]);
       transitionLifecycle(record, "stopped");
       record.artifact_state = "frozen";
-      record.intent_ref.path = `docs/plans/archive/${record.task_id}.intent.json`;
       appendHistory(record, action, from, action.reason, authorityAudit);
       break;
     }
@@ -6687,12 +6686,12 @@ function activePath(path) {
   return `docs/${matched[1]}/${matched[2]}`;
 }
 function boundSpecPath(intent) {
-  const candidates = intent.scope_hint.filter((path) => ACTIVE_SPEC_RE.test(path) && intent.scope_hint.includes(archivePath(path)));
+  const candidates = intent.scope_hint.filter((path) => ACTIVE_SPEC_RE.test(path));
   if (candidates.length > 1)
     throw new KernelInvariantError([`artifact transition requires at most one scope-bound Spec; found ${candidates.length}`]);
   return candidates[0];
 }
-function readBoundActiveSpec(root, intent, required = true) {
+function readBoundActiveSpec(root, intent, required = false) {
   const specPath = boundSpecPath(intent);
   if (!specPath) {
     if (required)
@@ -6711,30 +6710,24 @@ function inspectSpecBinding(intent) {
   const active = intent.scope_hint.filter((path) => ACTIVE_SPEC_RE.test(path));
   const archived = intent.scope_hint.filter((path) => ARCHIVED_SPEC_RE.test(path));
   if (active.length === 0 && archived.length === 0)
-    return {
-      ok: false,
-      code: "binding_missing",
-      missing: [],
-      message: "enrollment requires one scope-bound active Spec and its archive path in scope_hint: add docs/specs/<name>.spec.md and docs/specs/archive/<name>.spec.md"
-    };
-  const bindings = active.filter((path) => archived.includes(archivePath(path)));
-  if (bindings.length > 1)
+    return { ok: true, binding: null };
+  if (active.length > 1)
     return {
       ok: false,
       code: "binding_ambiguous",
       missing: [],
-      message: `enrollment requires at most one scope-bound Spec; found ${bindings.length}: ${bindings.join(", ")}`
+      message: `enrollment requires at most one scope-bound Spec; found ${active.length}: ${active.join(", ")}`
     };
-  const missing = [
-    ...active.filter((path) => !archived.includes(archivePath(path))).map((path) => archivePath(path)),
-    ...archived.filter((path) => !active.includes(activePath(path))).map((path) => activePath(path))
-  ];
-  const addMessage = `enrollment requires the bound Spec pair in scope_hint; add ${missing.join(", ")}`;
-  if (bindings.length === 0)
-    return { ok: false, code: "binding_missing", missing, message: addMessage };
-  if (missing.length > 0)
-    return { ok: false, code: "binding_incomplete", missing, message: addMessage };
-  return { ok: true, binding: { active: bindings[0], archive: archivePath(bindings[0]) } };
+  if (active.length === 0) {
+    const missing = archived.map((path) => activePath(path));
+    return {
+      ok: false,
+      code: "binding_incomplete",
+      missing,
+      message: `complex Spec binding is incomplete; add ${missing.join(", ")}`
+    };
+  }
+  return { ok: true, binding: { active: active[0], archive: archivePath(active[0]) } };
 }
 
 // plugins/immune-brain/runtime/kernel/canary_application.ts
@@ -6790,31 +6783,24 @@ function capabilityActionFor(input) {
       ]);
   }
 }
-function transitionFor(root, record, direction, allowIntentOnly = false) {
+function transitionFor(root, record, direction) {
   const activeIntent = `docs/plans/${record.intent_snapshot.task_id}.intent.json`;
-  const frozenIntent = archivePath(activeIntent);
   if (direction === "freeze") {
     if (record.intent_ref.path !== activeIntent)
       throw new KernelInvariantError(["artifact freeze requires the active intent path"]);
-    const spec = readBoundActiveSpec(root, record.intent_snapshot, !allowIntentOnly);
-    const intentContent = readSecureProjectFile(root, activeIntent);
+    const spec = readBoundActiveSpec(root, record.intent_snapshot);
+    if (boundSpecPath(record.intent_snapshot) && !spec)
+      throw new KernelInvariantError([`source_missing: ${boundSpecPath(record.intent_snapshot)}`]);
     return {
-      relocations: [
-        { from_path: activeIntent, to_path: frozenIntent, content_hash: revisionForContent(intentContent) },
-        ...spec ? [{ from_path: spec.path, to_path: archivePath(spec.path), content_hash: revisionForContent(spec.content) }] : []
-      ],
-      next_intent_path: frozenIntent,
+      relocations: [],
+      next_intent_path: activeIntent,
       next_artifact_state: "frozen"
     };
   }
-  if (record.intent_ref.path !== frozenIntent || record.artifact_state !== "frozen")
+  if (record.artifact_state !== "frozen")
     throw new KernelInvariantError(["artifact restore requires a frozen TaskRecord"]);
-  const specPath = boundSpecPath(record.intent_snapshot);
   return {
-    relocations: [
-      { from_path: frozenIntent, to_path: activeIntent, content_hash: revisionForContent(readSecureProjectFile(root, frozenIntent)) },
-      ...specPath ? [{ from_path: archivePath(specPath), to_path: specPath, content_hash: revisionForContent(readSecureProjectFile(root, archivePath(specPath))) }] : []
-    ],
+    relocations: [],
     next_intent_path: activeIntent,
     next_artifact_state: "active"
   };
@@ -6852,7 +6838,7 @@ function createCanaryApplication(registry) {
             type: "freeze_artifacts",
             from_state: "active:active",
             to_state: "active:frozen",
-            reason: `TaskIntent and Spec frozen at ${transition.next_intent_path}`
+            reason: `TaskIntent frozen in place at ${transition.next_intent_path}`
           }
         ]
       });
@@ -6906,10 +6892,10 @@ function createCanaryApplication(registry) {
     const diffHash = asTaskDiffSnapshot(input.diffProvider(input.root, snapshot.record)).diff_hash;
     if (operation.op === "stop" && !("capability" in operation))
       throw new KernelInvariantError(["stop requires user authority capability"]);
-    const hasBoundSpec = snapshot.intent_snapshot.scope_hint.some((path) => /^docs\/specs\/(?!archive\/)[^/]+\.spec\.md$/.test(path) && snapshot.intent_snapshot.scope_hint.includes(archivePath(path)));
+    const hasBoundSpec = boundSpecPath(snapshot.intent_snapshot) !== undefined;
     if (operation.op === "complete" && hasBoundSpec && snapshot.record.artifact_state !== "frozen")
       throw new KernelInvariantError(["complete requires frozen planning artifacts"]);
-    const artifactTransition = snapshot.record.artifact_state === "frozen" && (operation.op === "request_rework" || operation.op === "authorize_rework" || operation.op === "approve_breaking_intent_revision") ? transitionFor(input.root, snapshot.record, "restore") : operation.op === "stop" && snapshot.record.artifact_state !== "frozen" ? transitionFor(input.root, snapshot.record, "freeze", true) : undefined;
+    const artifactTransition = snapshot.record.artifact_state === "frozen" && (operation.op === "request_rework" || operation.op === "authorize_rework" || operation.op === "approve_breaking_intent_revision") ? transitionFor(input.root, snapshot.record, "restore") : operation.op === "stop" && snapshot.record.artifact_state !== "frozen" ? transitionFor(input.root, snapshot.record, "freeze") : undefined;
     const event_id = `${operation.op}:${input.task_id}:${at}`;
     const base = {
       event_id,
@@ -6959,7 +6945,7 @@ function createCanaryApplication(registry) {
           type: "revise_intent",
           next_intent: operation.next_intent,
           next_intent_ref: {
-            path: snapshot.record.artifact_state === "frozen" ? `docs/plans/archive/${operation.next_intent.task_id}.intent.json` : `docs/plans/${operation.next_intent.task_id}.intent.json`,
+            path: `docs/plans/${operation.next_intent.task_id}.intent.json`,
             content_hash: canonicalIntentHash(operation.next_intent)
           }
         };

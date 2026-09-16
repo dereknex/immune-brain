@@ -322,7 +322,7 @@ describe("breaking intent revision gate", () => {
 		} finally { rmSync(root, { recursive: true, force: true }); }
 	});
 
-	test("frozen approval uses one active-path digest and atomically restores bound artifacts", async () => {
+	test("frozen approval uses one active-path digest without relocating artifacts", async () => {
 		const root = makeEnrolledRoot();
 		try {
 			const { tool } = loadSurface();
@@ -339,15 +339,15 @@ describe("breaking intent revision gate", () => {
 			const archivedIntent = join(root, "docs", "plans", "archive", `${TASK}.intent.json`);
 			const activeSpec = join(root, "docs", "specs", `${TASK}.spec.md`);
 			const archivedSpec = join(root, "docs", "specs", "archive", `${TASK}.spec.md`);
-			expect(existsSync(activeIntent)).toBe(false);
-			expect(existsSync(activeSpec)).toBe(false);
-			expect(existsSync(archivedIntent)).toBe(true);
-			expect(existsSync(archivedSpec)).toBe(true);
+			expect(existsSync(activeIntent)).toBe(true);
+			expect(existsSync(activeSpec)).toBe(true);
+			expect(existsSync(archivedIntent)).toBe(false);
+			expect(existsSync(archivedSpec)).toBe(false);
 
 			const frozenSnapshot = () => ({
-				intent: readFileSync(archivedIntent, "utf8"),
-				indexIntent: execFileSync("git", ["show", `:docs/plans/archive/${TASK}.intent.json`], { cwd: root }),
-				spec: readFileSync(archivedSpec, "utf8"),
+				intent: readFileSync(activeIntent, "utf8"),
+				indexIntent: execFileSync("git", ["show", `:docs/plans/${TASK}.intent.json`], { cwd: root }),
+				spec: readFileSync(activeSpec, "utf8"),
 				record: storedRecordBytes(root),
 				claim: storedClaimBytes(root),
 				status: execFileSync("git", ["status", "--short"], { cwd: root, encoding: "utf8" }),
@@ -395,12 +395,12 @@ describe("breaking intent revision gate", () => {
 		test("frozen precommit failure restores exact artifact and index state", async () => {
 			const root = makeEnrolledRoot();
 			try {
-				const archivedIntent = join(root, "docs", "plans", "archive", `${TASK}.intent.json`);
+				const activeIntent = join(root, "docs", "plans", `${TASK}.intent.json`);
 				const { tool } = loadSurface({
 					authorizationAfterSidecarStage: async () => {
-						const candidate = readFileSync(archivedIntent);
-						writeFileSync(archivedIntent, Buffer.concat([candidate, Buffer.from(" ")]));
-						execFileSync("git", ["add", "--", `docs/plans/archive/${TASK}.intent.json`], { cwd: root });
+						const candidate = readFileSync(activeIntent);
+						writeFileSync(activeIntent, Buffer.concat([candidate, Buffer.from(" ")]));
+						execFileSync("git", ["add", "--", `docs/plans/${TASK}.intent.json`], { cwd: root });
 						throw new Error("simulated precommit failure");
 					},
 				});
@@ -411,13 +411,13 @@ describe("breaking intent revision gate", () => {
 				undefined,
 				makeCtx(root, makeUI()),
 			);
-			const archivedSpec = join(root, "docs", "specs", "archive", `${TASK}.spec.md`);
+			const activeSpec = join(root, "docs", "specs", `${TASK}.spec.md`);
 			const snapshot = () => {
 				const record = storedRecordBytes(root);
 				return {
-					intent: readFileSync(archivedIntent, "utf8"),
-					indexIntent: execFileSync("git", ["show", `:docs/plans/archive/${TASK}.intent.json`], { cwd: root }),
-					spec: readFileSync(archivedSpec, "utf8"),
+					intent: readFileSync(activeIntent, "utf8"),
+					indexIntent: execFileSync("git", ["show", `:docs/plans/${TASK}.intent.json`], { cwd: root }),
+					spec: readFileSync(activeSpec, "utf8"),
 					record,
 					claim: storedClaimBytes(root),
 					status: execFileSync("git", ["status", "--short"], { cwd: root, encoding: "utf8" }),

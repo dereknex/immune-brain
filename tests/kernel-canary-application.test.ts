@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { digestOfAction } from "../plugins/immune-brain/runtime/kernel/authority_port";
@@ -179,10 +179,12 @@ describe("canary application v3 semantic operations", () => {
 		})).toThrow(KernelInvariantError);
 	});
 
-	test("freeze relocates bound artifacts and preserves active ownership", () => {
+	test("freeze binds artifacts in place and preserves active ownership", () => {
 		const result = freeze();
 		expect(result.record).toMatchObject({ lifecycle: "active", artifact_state: "frozen" });
-		expect(result.record.intent_ref.path).toBe(`docs/plans/archive/${TASK}.intent.json`);
+		expect(result.record.intent_ref.path).toBe(`docs/plans/${TASK}.intent.json`);
+		expect(existsSync(join(root, `docs/plans/${TASK}.intent.json`))).toBe(true);
+		expect(existsSync(join(root, `docs/plans/archive/${TASK}.intent.json`))).toBe(false);
 		expect(result.workspace.state.current_working).toBe(TASK);
 	});
 
@@ -280,21 +282,15 @@ describe("canary application v3 semantic operations", () => {
 	});
 });
 
-// The shared Spec-binding module owns the predicate both callers use: enrollment
-// refuses an intent whose scope_hint cannot name the pair (covered by the
-// enrollment transaction suite), and freeze keeps its unchanged behavior because
-// enrollment cannot observe post-implementation drift — including the bound
-// active Spec simply disappearing from the worktree.
 describe("Spec binding at freeze", () => {
 	function intentWith(scope_hint: string[]) {
 		return parseTaskIntentV1({ ...INTENT, scope_hint });
 	}
 
-	test("the freeze caller keeps the unchanged zero-bound and ambiguous contract", () => {
+	test("simple intents bind no Spec; two active Specs stay ambiguous", () => {
 		const bound = intentWith([
 			"docs/plans",
 			`docs/specs/${TASK}.spec.md`,
-			`docs/specs/archive/${TASK}.spec.md`,
 		]);
 		expect(boundSpecPath(bound)).toBe(`docs/specs/${TASK}.spec.md`);
 		expect(readBoundActiveSpec(root, bound)).toEqual({
@@ -304,11 +300,7 @@ describe("Spec binding at freeze", () => {
 
 		const specLess = intentWith(["docs/plans"]);
 		expect(boundSpecPath(specLess)).toBeUndefined();
-		expect(() => readBoundActiveSpec(root, specLess)).toThrow(
-			/artifact freeze requires one scope-bound active Spec/,
-		);
-		// An advisory caller may ask without failing.
-		expect(readBoundActiveSpec(root, specLess, false)).toBeUndefined();
+		expect(readBoundActiveSpec(root, specLess)).toBeUndefined();
 
 		const ambiguous = intentWith([
 			"docs/specs/one.spec.md",

@@ -26,6 +26,7 @@ import {
 	parseTaskIntentV1,
 	RISK_FLOOR_SCOPE_PREFIXES,
 } from "../kernel/intent";
+import { inspectSpecBinding } from "../kernel/spec_binding";
 import { projectTask, resolveProjectedRisk } from "../kernel/completion";
 import { deriveAssuranceAuthorization } from "../kernel/assurance_projection";
 import { taskDiffIdentity, taskRevisionIdentity } from "../workspace_scope";
@@ -1100,6 +1101,29 @@ function runIntentValidate(args: string[], root: string): KernelExecution {
 					path: relative,
 					task_id: taskId,
 					reason: `intent.task_id ${intent.task_id} does not match the sidecar filename task id`,
+				},
+				0,
+			),
+			journal: journalFor(
+				"intent",
+				null,
+				"ok",
+				"command_ok",
+				null,
+				null,
+			),
+		};
+	}
+	const specBinding = inspectSpecBinding(intent);
+	if (!specBinding.ok) {
+		return {
+			result: jsonResult(
+				{
+					contract: "assurance_kernel/intent_validation/v1",
+					valid: false,
+					path: relative,
+					task_id: intent.task_id,
+					reason: specBinding.message,
 				},
 				0,
 			),

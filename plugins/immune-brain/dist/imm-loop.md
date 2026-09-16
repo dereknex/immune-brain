@@ -56,9 +56,9 @@ Continue while the current projection has a valid action:
    `scope_hint` in the current conversation. Run focused checks. Executor checks
    are diagnostic evidence, not a QA or Review approval.
 2. Call `advance_assurance` in the foreground and consume its direct terminal
-   result. The Kernel freezes the artifacts itself before QA: it owns
-   byte-preserving archival and the frozen snapshot, and a bound active Spec and
-   its archive path must both be inside `scope_hint`. Deterministic QA runs
+   result. The Kernel freezes the artifacts itself before QA: it binds Git
+   content identity in place without relocating source paths. A simple task has
+   TaskIntent only; a complex task may bind one active Spec. Deterministic QA runs
    fixed acceptance descriptors atomically inside the Host integration. Do not
    dispatch a separate per-Step QA Agent.
 3. On `review_ready`, invoke the returned `agent_params` as one exact foreground

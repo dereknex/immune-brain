@@ -74,6 +74,15 @@ describe("imm-planner kernel intent contract", () => {
 		expect(skill).not.toContain("Other hosts");
 	});
 
+	test("Planner distinguishes simple TaskIntent-only work from a complex Spec binding", () => {
+		const skill = readFileSync(DIST_PATH, "utf8");
+		expect(skill).toContain("Simple tasks are TaskIntent-only");
+		expect(skill).toContain("immutable content identity");
+		expect(skill).not.toContain("Include bound active and archive Spec paths needed for artifact freeze");
+		expect(skill).toContain("do not relocate artifacts");
+		expect(skill).toContain("current Host's native Enrollment Tool");
+	});
+
 	test("Planner opens one native Enrollment gate without chat pre-confirmation", () => {
 		for (const path of PLANNER_CONTRACTS) {
 			const contract = readFileSync(path, "utf8").replace(/\s+/g, " ");

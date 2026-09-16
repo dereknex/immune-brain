@@ -704,7 +704,6 @@ export function reduceTask(
 				throw new KernelInvariantError(["stop requires a reason"]);
 			transitionLifecycle(record, "stopped");
 			record.artifact_state = "frozen";
-			record.intent_ref.path = `docs/plans/archive/${record.task_id}.intent.json`;
 			appendHistory(record, action, from, action.reason, authorityAudit);
 			break;
 		}

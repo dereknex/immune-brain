@@ -485,11 +485,9 @@ function resolveCanonicalRoot(root: string): string {
 
 // Resolve a path-less read to the sidecar that actually exists.
 //
-// The active path stays authoritative whenever it is present: that is the
-// pre-freeze layout every path-less caller assumes, and a leftover archived
-// sidecar from an earlier task reusing the same id must never shadow it. Only
-// when the active path is gone — the post-`freeze_artifacts` layout — does the
-// archive answer, which is exactly the case that used to fail with a raw ENOENT.
+// The active path stays authoritative whenever it is present. A leftover
+// archived sidecar from an earlier task reusing the same id must never shadow
+// it. Only when the active path is gone does the historical archive answer.
 function resolveSidecarPath(
 	canonicalRoot: string,
 	activePath: string,
@@ -553,11 +551,10 @@ function readTaskIntentSource(
 	const canonicalRoot = resolveCanonicalRoot(root);
 	const activePath = `${INTENT_SIDECAR_RELATIVE_PREFIX}${taskId}.intent.json`;
 	const archivedPath = `${INTENT_SIDECAR_RELATIVE_PREFIX}archive/${taskId}.intent.json`;
-	// `freeze_artifacts` relocates the sidecar from the active path to the archive
-	// path, so the caller's TaskRecord `intent_ref.path` is the authority. When no
-	// path is requested, resolve the single sidecar that exists rather than
-	// assuming the pre-freeze layout; a missing or ambiguous sidecar is a stable
-	// contract failure, not a raw `lstat` ENOENT.
+	// Freeze binds the sidecar in place. The caller's TaskRecord `intent_ref.path`
+	// is the authority. When no path is requested, resolve the sidecar that exists
+	// (active, else historical archive). A missing sidecar is a stable contract
+	// failure, not a raw `lstat` ENOENT.
 	const sidecarPath = requestedPath ?? resolveSidecarPath(canonicalRoot, activePath, archivedPath);
 	if (sidecarPath !== activePath && sidecarPath !== archivedPath)
 		throw new Error("intent sidecar path is not the active or archived task path");

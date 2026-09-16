@@ -1,6 +1,6 @@
 // Regression guard for the post-freeze TaskIntent settlement path.
 //
-// `freeze_artifacts` relocates the sidecar from `docs/plans/<task-id>.intent.json`
+// Historical freeze layouts relocated the sidecar from `docs/plans/<task-id>.intent.json`
 // into `docs/plans/archive/`. A Host adapter that reads the intent at the
 // pre-freeze default path can never settle QA after a freeze. The Claude Code
 // adapter carried that defect from the day the Host was added; no test covered

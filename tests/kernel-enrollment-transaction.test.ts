@@ -95,6 +95,10 @@ function baseIntent(taskId: string, revision = 1) {
 function writeIntent(root: string, taskId: string, intent = baseIntent(taskId)) {
 	const path = join(root, "docs", "plans", `${taskId}.intent.json`);
 	writeFileSync(path, `${JSON.stringify(intent, null, 2)}\n`);
+	for (const spec of intent.scope_hint.filter((item) => /^docs\/specs\/(?!archive\/)[^/]+\.spec\.md$/.test(item))) {
+		mkdirSync(join(root, dirname(spec)), { recursive: true });
+		writeFileSync(join(root, spec), `# ${taskId}\n`);
+	}
 	gitInitAndCommit(root);
 	return path;
 }
@@ -605,25 +609,18 @@ describe("enrollment Spec binding precondition", () => {
 		return { binding, capability, input };
 	}
 
-	test("refuses an intent that binds no Spec and names the required pair", () => {
+	test("enrolls a simple intent that binds no Spec", () => {
 		const root = makeRoot();
 		const taskId = "task-spec-less";
 		writeIntent(root, taskId, { ...baseIntent(taskId), scope_hint: ["docs/plans"] });
 		const { capability, input } = attempt(root, taskId);
-
-		expect(() => enrollCanaryTask(root, input, registry)).toThrow(
-			/enrollment requires one scope-bound active Spec and its archive path in scope_hint: add docs\/specs\/<name>\.spec\.md and docs\/specs\/archive\/<name>\.spec\.md/,
-		);
-		// Zero authority: no record, no claim, and the capability stays unconsumed.
-		expect(readTaskRecord(root, taskId).record).toBeNull();
-		expect(readBackendClaim(root)).toBeNull();
-		expect(registry.isConsumed(capability)).toBe(false);
-		// Zero authority: no run row, an idle workspace and no derived claim.
-		expect(withKernelRead(root, (db) => readRunRowByTask(db, taskId))).toBeNull();
-		expect(withKernelRead(root, (db) => readWorkspaceRow(db).current_run_id)).toBeNull();
+		const enrolled = enrollCanaryTask(root, input, registry);
+		expect(enrolled.record.task_id).toBe(taskId);
+		expect(readBackendClaim(root)?.task_id).toBe(taskId);
+		expect(registry.isConsumed(capability)).toBe(true);
 	});
 
-	test("names the missing archive path when only the active Spec is in scope", () => {
+	test("enrolls a complex intent that names only the active Spec", () => {
 		const root = makeRoot();
 		const taskId = "task-active-only";
 		writeIntent(root, taskId, {
@@ -631,11 +628,9 @@ describe("enrollment Spec binding precondition", () => {
 			scope_hint: ["docs/plans", `docs/specs/${taskId}.spec.md`],
 		});
 		const { capability, input } = attempt(root, taskId);
-
-		expect(() => enrollCanaryTask(root, input, registry)).toThrow(
-			`enrollment requires the bound Spec pair in scope_hint; add docs/specs/archive/${taskId}.spec.md`,
-		);
-		expect(registry.isConsumed(capability)).toBe(false);
+		const enrolled = enrollCanaryTask(root, input, registry);
+		expect(enrolled.record.task_id).toBe(taskId);
+		expect(registry.isConsumed(capability)).toBe(true);
 	});
 
 	test("names the missing active path when only the archive Spec is in scope", () => {
@@ -648,12 +643,12 @@ describe("enrollment Spec binding precondition", () => {
 		const { capability, input } = attempt(root, taskId);
 
 		expect(() => enrollCanaryTask(root, input, registry)).toThrow(
-			`enrollment requires the bound Spec pair in scope_hint; add docs/specs/${taskId}.spec.md`,
+			`complex Spec binding is incomplete; add docs/specs/${taskId}.spec.md`,
 		);
 		expect(registry.isConsumed(capability)).toBe(false);
 	});
 
-	test("the rehearsal reports the same refusal with zero writes and is idempotent", () => {
+	test("the rehearsal of a simple intent is ready with zero writes", () => {
 		const root = makeRoot();
 		const taskId = "task-rehearsal-spec-less";
 		writeIntent(root, taskId, { ...baseIntent(taskId), scope_hint: ["docs/plans"] });
@@ -662,11 +657,8 @@ describe("enrollment Spec binding precondition", () => {
 		const first = runEnrollmentRehearsal(root, input, capability, registry);
 		const second = runEnrollmentRehearsal(root, input, capability, registry);
 		expect(first.writes_performed).toBe(false);
-		expect(first.evidence.outcome).toBe("not_ready");
-		expect(first.evidence.blockers).toEqual([
-			"enrollment requires one scope-bound active Spec and its archive path in scope_hint: add docs/specs/<name>.spec.md and docs/specs/archive/<name>.spec.md",
-		]);
-		// Unchanged inputs project the same evidence, and the capability is untouched.
+		expect(first.evidence.outcome).toBe("ready");
+		expect(first.evidence.blockers).toEqual([]);
 		expect(second.evidence).toEqual(first.evidence);
 		expect(registry.isConsumed(capability)).toBe(false);
 		expect(readTaskRecord(root, taskId).record).toBeNull();

@@ -151,11 +151,8 @@ function runEnrollmentPreconditionChecks<T>(
 		} catch (error) {
 			fail(`intent: ${error instanceof Error ? error.message : String(error)}`, error);
 		}
-		// The Spec binding is an enrollment precondition, not a freeze surprise: a
-		// scope_hint that cannot name the bound active Spec and its archive path is
-		// refused here, before any Executor turn, instead of after the work exists.
-		// Freeze-time enforcement stays, because enrollment cannot observe
-		// post-implementation scope drift.
+		// A simple Intent binds no Spec. A complex binding that names a Spec must
+		// be complete and unambiguous before any Executor turn.
 		if (intent) {
 			const binding = inspectSpecBinding(intent.intent);
 			if (!binding.ok) fail(binding.message, new Error(binding.message));

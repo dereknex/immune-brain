@@ -120,23 +120,21 @@ describe("enrollment Spec binding", () => {
 		});
 	});
 
-	test("refuses an intent that binds no Spec, and is idempotent", () => {
+	test("accepts a simple intent that binds no Spec, and is idempotent", () => {
 		const intent = intentFor(["docs/plans", "plugins/immune-brain/runtime"]);
 		const first = inspectSpecBinding(intent);
 		const second = inspectSpecBinding(intent);
-		expect(first).toMatchObject({ ok: false, code: "binding_missing", missing: [] });
-		expect(first.ok === false && first.message).toMatch(/requires one scope-bound active Spec/);
+		expect(first).toEqual({ ok: true, binding: null });
 		expect(second).toEqual(first);
 	});
 
-	test("names the missing archive path for an active-only scope", () => {
+	test("accepts an active Spec without its archive counterpart", () => {
 		const inspection = inspectSpecBinding(
 			intentFor(["docs/plans", "docs/specs/two.spec.md"]),
 		);
-		expect(inspection).toMatchObject({
-			ok: false,
-			code: "binding_missing",
-			missing: ["docs/specs/archive/two.spec.md"],
+		expect(inspection).toEqual({
+			ok: true,
+			binding: { active: "docs/specs/two.spec.md", archive: "docs/specs/archive/two.spec.md" },
 		});
 	});
 
@@ -146,13 +144,13 @@ describe("enrollment Spec binding", () => {
 		);
 		expect(inspection).toMatchObject({
 			ok: false,
-			code: "binding_missing",
+			code: "binding_incomplete",
 			missing: ["docs/specs/three.spec.md"],
 		});
 		expect(inspection.ok === false && inspection.message).toContain("docs/specs/three.spec.md");
 	});
 
-	test("keeps a complete binding classified as incomplete when a half is unpaired", () => {
+	test("two active Specs are ambiguous even when one has an archive pair", () => {
 		const inspection = inspectSpecBinding(
 			intentFor([
 				"docs/plans",
@@ -161,16 +159,10 @@ describe("enrollment Spec binding", () => {
 				"docs/specs/eight.spec.md",
 			]),
 		);
-		// One pair plus an unrelated unpaired half: the binding exists, so the pair
-		// is incomplete rather than missing.
-		expect(inspection).toMatchObject({
-			ok: false,
-			code: "binding_incomplete",
-			missing: ["docs/specs/archive/eight.spec.md"],
-		});
+		expect(inspection).toMatchObject({ ok: false, code: "binding_ambiguous" });
 	});
 
-	test("names every unpaired path when both halves are declared but never pair", () => {
+	test("an active Spec plus an unrelated archive is still one bound Spec", () => {
 		const inspection = inspectSpecBinding(
 			intentFor([
 				"docs/plans",
@@ -178,35 +170,19 @@ describe("enrollment Spec binding", () => {
 				"docs/specs/archive/five.spec.md",
 			]),
 		);
-		// The fallback the empty case never reaches: both halves are declared, so
-		// the pair itself is missing rather than incomplete, and the refusal still
-		// names every path the intent has to add.
-		expect(inspection).toMatchObject({
-			ok: false,
-			code: "binding_missing",
-			missing: ["docs/specs/archive/four.spec.md", "docs/specs/five.spec.md"],
+		expect(inspection).toEqual({
+			ok: true,
+			binding: { active: "docs/specs/four.spec.md", archive: "docs/specs/archive/four.spec.md" },
 		});
-		const message = inspection.ok === false ? inspection.message : "";
-		expect(message).toContain("docs/specs/archive/four.spec.md");
-		expect(message).toContain("docs/specs/five.spec.md");
 	});
 
-	test("names what is missing for every refusal that declares a Spec path", () => {
-		// The genuine nothing-declared case is the only refusal with nothing to
-		// name; every shape that declares a Spec path reports the concrete path it
-		// has to add instead of an empty list.
-		for (const scope of [
-			["docs/specs/two.spec.md"],
-			["docs/specs/archive/three.spec.md"],
-			["docs/specs/four.spec.md", "docs/specs/archive/five.spec.md"],
-		]) {
-			const inspection = inspectSpecBinding(intentFor(scope));
-			expect({ scope, refused: !inspection.ok, names: !inspection.ok && inspection.missing.length > 0 }).toEqual({
-				scope,
-				refused: true,
-				names: true,
-			});
-		}
+	test("archive-only bindings name the missing active path", () => {
+		const inspection = inspectSpecBinding(intentFor(["docs/specs/archive/three.spec.md"]));
+		expect(inspection).toMatchObject({
+			ok: false,
+			code: "binding_incomplete",
+			missing: ["docs/specs/three.spec.md"],
+		});
 	});
 
 	test("refuses two bound pairs as ambiguous and names them", () => {

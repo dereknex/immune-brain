@@ -282,31 +282,28 @@ describe("terminal ownership transfer", () => {
 		expect(existsSync(join(root, ".imm/state/transactions/authority-repair-transaction.json"))).toBe(false);
 	});
 
-	test("artifact freeze commits the relocation and the record together, and a rolled-back attempt converges on retry", () => {
+	test("artifact freeze commits the frozen record without relocating source files, and a rolled-back attempt converges on retry", () => {
 		setAfterTaskTransactionWriteForTest(() => {
 			throw new Error("simulated freeze crash");
 		});
 		expect(() =>
 			execute({ op: "freeze_artifacts", actor_id: "executor-1" }, "2026-08-12T10:00:00.500Z"),
 		).toThrow(/simulated freeze crash/);
-		// The authority write rolled back: the record is still active.
 		expect(readTaskRecord(root, TASK).record?.artifact_state).toBe("active");
-		// Document relocation is a file move and is not part of the database
-		// transaction; it converges idempotently on the retry below.
 		setAfterTaskTransactionWriteForTest(null);
 		const retry = execute(
 			{ op: "freeze_artifacts", actor_id: "executor-1" },
 			"2026-08-12T10:00:00.500Z",
 		);
 		expect(retry.record.artifact_state).toBe("frozen");
-		expect(existsSync(join(root, "docs/plans", `${TASK}.intent.json`))).toBe(false);
-		expect(existsSync(join(root, "docs/plans/archive", `${TASK}.intent.json`))).toBe(true);
-		expect(existsSync(join(root, "docs/specs", "canary-terminal-task.spec.md"))).toBe(false);
-		expect(existsSync(join(root, "docs/specs/archive", "canary-terminal-task.spec.md"))).toBe(true);
+		expect(existsSync(join(root, "docs/plans", `${TASK}.intent.json`))).toBe(true);
+		expect(existsSync(join(root, "docs/plans/archive", `${TASK}.intent.json`))).toBe(false);
+		expect(existsSync(join(root, "docs/specs", "canary-terminal-task.spec.md"))).toBe(true);
+		expect(existsSync(join(root, "docs/specs/archive", "canary-terminal-task.spec.md"))).toBe(false);
 		const recovered = readTaskRecord(root, TASK);
 		expect(recovered.record).toMatchObject({
 			artifact_state: "frozen",
-			intent_ref: { path: `docs/plans/archive/${TASK}.intent.json` },
+			intent_ref: { path: `docs/plans/${TASK}.intent.json` },
 		});
 	});
 

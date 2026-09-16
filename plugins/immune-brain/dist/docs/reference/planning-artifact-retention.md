@@ -73,18 +73,17 @@ Non-terminal artifacts remain durable at their existing paths by default.
 
 ## Authority-Owned Lifecycle
 
-An enrolled TaskIntent and the one exact active Spec bound by its `scope_hint`
-remain under `docs/plans/` and `docs/specs/` while the task is `working`. Before
-QA, the Kernel freezes both artifacts through one recoverable transaction: bytes
-move to their `archive/` paths and `TaskRecord.intent_ref.path` changes to the
-archived sidecar. Every later Kernel action rereads that recorded path.
+An enrolled TaskIntent remains under `docs/plans/` for the whole run. A complex
+task may bind one active Spec under `docs/specs/` by content identity. Before QA,
+the Kernel freezes those artifacts in place: Git objects are bound, source paths
+do not move, and `TaskRecord.intent_ref.path` stays on the active sidecar.
+Historical files already in `archive/` remain readable. A later edit of a bound
+Spec changes the delivery identity, so prior assurance cannot be reused.
 
-Authorized Review rework restores both artifacts before returning to `working`.
-Completion is valid only from the frozen location. Stop freezes an active pair
-before terminal settlement, so both terminal outcomes leave no active planning
-artifact. A relocation conflict or crash fails closed and converges only through
-the transaction marker; no background scanner or second status writer may infer
-or repair lifecycle state.
+Authorized Review rework returns `artifact_state` to `active` without relocating
+files. Completion and stop freeze in place; they do not archive planning
+artifacts. A crash fails closed and converges only through the store transaction;
+no background scanner or second status writer may infer or repair lifecycle state.
 
 Terminal cleanup outside that lifecycle remains a bounded TaskIntent with an
 explicit candidate list and a copy-paste verification command. It may accompany

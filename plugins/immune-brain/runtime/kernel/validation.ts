@@ -602,8 +602,8 @@ export function parseTaskRecordV2(raw: unknown): TaskRecordV2 {
 		violations.push("intent_snapshot and intent_ref must match record identity");
 	if (artifactRef?.state === "active" && refPath !== activeIntentPath)
 		violations.push("active artifact_ref requires the active intent path");
-	if (artifactRef?.state === "frozen" && refPath !== frozenIntentPath)
-		violations.push("frozen artifact_ref requires the archived intent path");
+	if (artifactRef?.state === "frozen" && refPath !== activeIntentPath && refPath !== frozenIntentPath)
+		violations.push("frozen artifact_ref requires the active or archived intent path");
 	if (
 		snapshot &&
 		refContentHash !== "" &&
@@ -693,8 +693,8 @@ function parseTaskRecordAtVersion(raw: unknown, version: 3 | 4): TaskRecordV3 | 
 		violations.push("intent_snapshot and intent_ref must match record identity");
 	if (artifactState === "active" && refPath !== activeIntentPath)
 		violations.push("active artifact_state requires the active intent path");
-	if (artifactState === "frozen" && refPath !== frozenIntentPath)
-		violations.push("frozen artifact_state requires the archived intent path");
+	if (artifactState === "frozen" && refPath !== activeIntentPath && refPath !== frozenIntentPath)
+		violations.push("frozen artifact_state requires the active or archived intent path");
 	if (snapshot && refContentHash !== "" && canonicalIntentHash(snapshot) !== refContentHash)
 		violations.push("intent_ref.content_hash must equal the snapshot canonical hash");
 	if (lifecycle !== "active" && artifactState !== "frozen")

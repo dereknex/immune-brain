@@ -230,14 +230,14 @@ describe("TaskRecord v3 reducer", () => {
 		expect(mutation.next_workspace_working).toBeNull();
 	});
 
-	test("stop requires user authority and freezes the intent path", () => {
+	test("stop requires user authority and freezes artifacts in place", () => {
 		const record = recordFixture();
 		const action = { ...baseAction("stop"), reason: "cancelled" } as TaskAction;
 		expect(() => reduce(record, action)).toThrow(KernelInvariantError);
 		const mutation = reduce(record, action, audit("user"));
 		expect(mutation.record.lifecycle).toBe("stopped");
 		expect(mutation.record.artifact_state).toBe("frozen");
-		expect(mutation.record.intent_ref.path).toBe("docs/plans/archive/task-r2c2.intent.json");
+		expect(mutation.record.intent_ref.path).toBe("docs/plans/task-r2c2.intent.json");
 	});
 
 	test("compatible intent revision updates the snapshot without a mirrored revision field", () => {

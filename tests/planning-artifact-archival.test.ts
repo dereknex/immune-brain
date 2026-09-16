@@ -1,7 +1,15 @@
 import { describe, expect, test } from "bun:test";
-import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { execFileSync } from "node:child_process";
+import { createCanaryApplication } from "../plugins/immune-brain/runtime/kernel/canary_application";
+import { enrollCanaryTask } from "../plugins/immune-brain/runtime/kernel/enrollment";
+import { createEnrollmentAuthorityRegistry } from "../plugins/immune-brain/runtime/kernel/enrollment_authority";
+import { canonicalIntentHash, parseTaskIntentV1, readTaskIntent } from "../plugins/immune-brain/runtime/kernel/intent";
+import { createMutationAuthorityRegistry } from "../plugins/immune-brain/runtime/kernel/authority_port";
+import { preparePiCanary } from "../plugins/immune-brain/runtime/kernel/pi_canary_prepare";
+import { readTaskRecord } from "../plugins/immune-brain/runtime/kernel/storage";
 
 const REPO_ROOT = resolve(import.meta.dir, "..");
 
@@ -19,113 +27,25 @@ function listFiles(dir: string, suffix: string): string[] {
   return out;
 }
 
-function taskPhase(taskId: string): string | null {
-  // Cutover layout: terminal evidence lives under .imm/audit/<task-id>/.
-  // Pre-activation legacy .imm/tasks/ fallback is an expiring branch that
-  // Slice 2 deletes after this repository migrates.
-  const candidates = [
-    join(REPO_ROOT, ".imm/audit", taskId, "task-record.json"),
-    join(REPO_ROOT, ".imm/state/tasks", `${taskId}.json`),
-    join(REPO_ROOT, ".imm/tasks", `${taskId}.json`),
-  ];
-  for (const p of candidates) {
-    if (!existsSync(p)) continue;
-    try {
-      const j = JSON.parse(readFileSync(p, "utf8"));
-      return j.lifecycle ?? j.phase ?? j.record?.phase ?? null;
-    } catch { return null; }
-  }
-  return null;
-}
-
-// Bookkeeping for the archival system itself. A commit touching only these is
-// never evidence that an intent was executed, even when the intent declares
-// them in scope_hint.
-const PLANNING_PATHS = [
-  /^docs\/plans\//,
-  /^docs\/reference\/v4-roadmap-taskintent-drafts\.md$/,
-  /^tests\/planning-artifact-archival\.test\.ts$/,
-];
-
-function isPlanningPath(path: string): boolean {
-  return PLANNING_PATHS.some((pattern) => pattern.test(path));
-}
-
-// Fallback for intents whose TaskRecord is missing. Committing a sidecar is a
-// precondition of enrollment, not proof of execution, so the commit that added
-// it cannot count: an intent is implemented once a later commit touches a
-// non-planning path the intent itself declared.
-function hasImplementingCommit(intentPath: string): boolean {
-  try {
-    const intent = JSON.parse(readFileSync(join(REPO_ROOT, intentPath), "utf8"));
-    const scope: string[] = (intent.scope_hint ?? []).filter(
-      (path: string) => !isPlanningPath(path),
-    );
-    if (scope.length === 0) return false;
-    const added = (execFileSync("git", ["log", "--reverse", "--format=%H", "--", intentPath], {
-      cwd: REPO_ROOT,
-      encoding: "utf8",
-    } as any) as unknown as string).trim().split("\n")[0];
-    if (!added) return false;
-    const out = execFileSync("git", ["log", "--oneline", `${added}..HEAD`, "--", ...scope], {
-      cwd: REPO_ROOT,
-      encoding: "utf8",
-    } as any) as unknown as string;
-    // Settlement commits ("imm: settle …") move/archive shared authority
-    // artifacts and are not implementing commits for pending intents that
-    // merely list those shared paths in scope_hint. Likewise, commits that
-    // implement or settle OTHER sibling tasks ("imm: …" and "imm: settle …")
-    // legitimately touch shared scope paths and do not count as implementing
-    // commits for this still-pending intent.
-    const implementing = out
-      .split("\n")
-      .filter(
-        (line: string) =>
-          line.trim().length > 0 &&
-          !/^\w+ imm: /.test(line) &&
-          !/^\w+ imm: settle /.test(line),
-      );
-    return implementing.length > 0;
-  } catch { return false; }
-}
-
 function isCanaryFixture(taskId: string): boolean {
   return /^canary-00[1-4]$/.test(taskId);
 }
 
 describe("planning artifact archival", () => {
-  test("terminal sidecars are archived, only non-terminal and canary fixtures remain in docs/plans", () => {
-    const plansDir = join(REPO_ROOT, "docs/plans");
-    const activeIntents = listFiles(plansDir, ".intent.json").filter(p => !p.includes("/archive/"));
-    const violations: string[] = [];
-    const shouldArchive: string[] = [];
-    for (const full of activeIntents) {
-      const rel = full.replace(REPO_ROOT + "/", "");
-      const base = full.split("/").pop()!;
-      const taskId = base.replace(".intent.json", "");
-      if (isCanaryFixture(taskId)) continue;
-      const phase = taskPhase(taskId);
-      if (phase === "done" || phase === "stopped") {
-        violations.push(`${rel} is terminal ${phase} but lives in docs/plans`);
-        shouldArchive.push(rel);
-        continue;
-      }
-      if (phase === null) {
-        // no record: check second signal. Skip intents whose scope still
-        // references paths that do not exist (task not started; sibling batch
-        // tasks legitimately created shared runtime files in the meantime).
-        const taskScope: string[] = (JSON.parse(readFileSync(full, "utf8")).scope_hint ?? [])
-          .filter((p: string) => !isPlanningPath(p));
-        const missingScope = taskScope.some((p: string) => !existsSync(join(REPO_ROOT, p)));
-        if (!missingScope && hasImplementingCommit(rel)) {
-          violations.push(`${rel} has implementing commit but no record, should be archived`);
-          shouldArchive.push(rel);
-        }
-        // else pending, allow to remain
-      }
+  test("historical archived intents remain readable JSON TaskIntents", () => {
+    const archived = listFiles(join(REPO_ROOT, "docs/plans/archive"), ".intent.json");
+    expect(archived.length).toBeGreaterThan(0);
+    for (const full of archived.slice(0, 5)) {
+      const parsed = JSON.parse(readFileSync(full, "utf8"));
+      expect(parsed.contract).toBe("assurance_kernel/task_intent/v1");
+      expect(typeof parsed.task_id).toBe("string");
     }
-    // also check that nothing in archive is non-terminal (sanity)
+  });
+
+  test("terminal sidecars may remain in docs/plans after freeze-in-place", () => {
+    const plansDir = join(REPO_ROOT, "docs/plans");
     const archived = listFiles(join(plansDir, "archive"), ".intent.json");
+    const violations: string[] = [];
     for (const full of archived) {
       const base = full.split("/").pop()!.replace(".intent.json", "");
       if (isCanaryFixture(base)) violations.push(`${full} canary should not be archived`);
@@ -297,5 +217,83 @@ describe("planning artifact archival", () => {
     // ensure pinned spec is either active or archived (dual-path) and undetermined set is non-empty
     const pinnedCandidates = ["docs/specs/opencode-native-plugin.spec.md", "docs/specs/archive/opencode-native-plugin.spec.md"];
     expect(pinnedCandidates.some((p) => existsSync(join(REPO_ROOT, p)))).toBe(true);
+  });
+
+  test("freeze and rework bind content in place without relocating artifacts", () => {
+    const taskId = "freeze-inplace";
+    const now = "2026-08-12T10:00:00.000Z";
+    const root = mkdtempSync(join(tmpdir(), "imm-freeze-inplace-"));
+    try {
+      mkdirSync(join(root, "docs/plans"), { recursive: true });
+      mkdirSync(join(root, "docs/specs"), { recursive: true });
+      const intent = {
+        contract: "assurance_kernel/task_intent/v1",
+        task_id: taskId,
+        owner: "user",
+        goal: "Freeze without relocating.",
+        acceptance: [{ id: "A1", assertion: "stays put", verification: JSON.stringify({
+          contract: "assurance_kernel/verification_descriptor/v1",
+          runner_id: "bun",
+          runner_version: "1.4.2",
+          argv: ["test", "tests/x.test.ts"],
+          cwd: ".",
+          timeout_ms: 1000,
+          max_output_bytes: 1024,
+        }) }],
+        scope_hint: [`docs/plans/${taskId}.intent.json`, `docs/specs/${taskId}.spec.md`],
+        risk: "routine",
+        revision: 1,
+      };
+      writeFileSync(join(root, `docs/plans/${taskId}.intent.json`), `${JSON.stringify(intent, null, 2)}\n`);
+      writeFileSync(join(root, `docs/specs/${taskId}.spec.md`), "# bound spec\n");
+      execFileSync("git", ["init", "-q"], { cwd: root });
+      execFileSync("git", ["config", "user.email", "test@example.com"], { cwd: root });
+      execFileSync("git", ["config", "user.name", "Test"], { cwd: root });
+      execFileSync("git", ["add", "-A"], { cwd: root });
+      execFileSync("git", ["commit", "-qm", "intent"], { cwd: root });
+      const enrollmentRegistry = createEnrollmentAuthorityRegistry();
+      const hash = canonicalIntentHash(parseTaskIntentV1(intent));
+      const prep = preparePiCanary(root, { task_id: taskId, now });
+      const binding = {
+        task_id: taskId,
+        intent_path: `docs/plans/${taskId}.intent.json`,
+        intent_revision: 1,
+        intent_content_hash: hash,
+        preparation_digest: prep.digest,
+        actor_id: "user",
+        confirmation_ref: "pi-confirm-enroll",
+        expires_at: "2099-01-01T00:00:00.000Z",
+        nonce: "nonce-enroll",
+      };
+      enrollCanaryTask(root, {
+        task_id: taskId,
+        intent_path: binding.intent_path,
+        intent_revision: 1,
+        preparation_digest: prep.digest,
+        capability: enrollmentRegistry.issue(binding),
+        capability_binding: binding,
+        now,
+      }, enrollmentRegistry);
+      const app = createCanaryApplication(createMutationAuthorityRegistry());
+      const token = () => readTaskIntent(root, taskId, readTaskRecord(root, taskId).record!.intent_ref.path).token;
+      const frozen = app.execute({
+        root,
+        task_id: taskId,
+        operation: { op: "freeze_artifacts", actor_id: "executor-1" },
+        prior_intent_token: token(),
+        diffProvider: () => ({ diff_hash: `sha256:${"a".repeat(64)}`, changed_paths: [] }),
+        now,
+      });
+      expect(frozen.record.artifact_state).toBe("frozen");
+      expect(frozen.record.intent_ref.path).toBe(`docs/plans/${taskId}.intent.json`);
+      expect(existsSync(join(root, `docs/plans/${taskId}.intent.json`))).toBe(true);
+      expect(existsSync(join(root, `docs/specs/${taskId}.spec.md`))).toBe(true);
+      expect(existsSync(join(root, `docs/plans/archive/${taskId}.intent.json`))).toBe(false);
+      expect(existsSync(join(root, `docs/specs/archive/${taskId}.spec.md`))).toBe(false);
+      writeFileSync(join(root, `docs/specs/${taskId}.spec.md`), "# stale spec\n");
+      expect(readFileSync(join(root, `docs/specs/${taskId}.spec.md`), "utf8")).toBe("# stale spec\n");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 });

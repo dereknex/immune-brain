@@ -111,15 +111,13 @@ export function diffHashOf(root: string, record: TaskRecord): string {
 /**
  * Read the TaskIntent through the TaskRecord's `intent_ref.path`.
  *
- * `freeze_artifacts` relocates the sidecar from `docs/plans/<task-id>.intent.json`
- * into `docs/plans/archive/`, so every post-freeze read — QA settlement included —
- * must follow the record instead of the pre-freeze default path. The Pi adapter
- * resolves the same way in its own runtime stub; both Hosts must stay in step.
+ * `freeze_artifacts` binds the sidecar in place. Every post-freeze read — QA
+ * settlement included — must follow the record instead of guessing a default
+ * path. Historical archived sidecars remain readable. The Pi adapter resolves
+ * the same way in its own runtime stub; both Hosts must stay in step.
  */
 function readTaskIntentForRecord(root: string, taskId: string) {
-	// A committed freeze relocation may not have reached the filesystem yet, and
-	// the record already points at the archive path. Converge the follow-ups
-	// first, then follow the record.
+	// Converge committed follow-ups first, then follow the record.
 	recoverKernelStoreFollowUps(root, taskId);
 	const currentPath = readTaskRecordRaw(root, taskId).record?.intent_ref?.path;
 	return readTaskIntent(root, taskId, currentPath);

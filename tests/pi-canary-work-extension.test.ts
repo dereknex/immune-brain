@@ -234,7 +234,7 @@ function makeStaleClaimRoot(): string {
 		now: at,
 	});
 	// Terminal audit evidence is tracked; commit it so the layout is ready.
-	execFileSync("git", ["add", "--", ".imm/audit/", "docs/plans/archive/"], { cwd: root });
+	execFileSync("git", ["add", "--", ".imm/audit/"], { cwd: root });
 	execFileSync("git", ["-c", "user.email=test@example.com", "-c", "user.name=Test", "commit", "-qm", "fixture terminal"], { cwd: root });
 	writeFileSync(claimPath, claimBytes);
 	return root;
@@ -427,10 +427,10 @@ describe("registered request_stop settlement and UI", () => {
 				const proof = readFileSync(proofPath, "utf8");
 				expect(JSON.parse(record).lifecycle).toBe("stopped");
 				expect(JSON.parse(proof).terminal_lifecycle).toBe("stopped");
-				expect(existsSync(join(root, `docs/plans/archive/${TASK}.intent.json`))).toBe(true);
-				expect(existsSync(join(root, "docs/specs/archive/canary-ext-task.spec.md"))).toBe(true);
-				expect(existsSync(join(root, `docs/plans/${TASK}.intent.json`))).toBe(false);
-				expect(existsSync(join(root, "docs/specs/canary-ext-task.spec.md"))).toBe(false);
+				expect(existsSync(join(root, `docs/plans/${TASK}.intent.json`))).toBe(true);
+				expect(existsSync(join(root, "docs/specs/canary-ext-task.spec.md"))).toBe(true);
+				expect(existsSync(join(root, `docs/plans/archive/${TASK}.intent.json`))).toBe(false);
+				expect(existsSync(join(root, "docs/specs/archive/canary-ext-task.spec.md"))).toBe(false);
 				await capturedToolFailure(tool.execute("late-review", { task_id: TASK, action: { op: "submit_review", verdict: {
 					contract: "assurance_kernel/assurance_verdict/v2", role: "review", task_id: TASK,
 					snapshot_digest: ready.snapshot_digest, decision: "pass",
