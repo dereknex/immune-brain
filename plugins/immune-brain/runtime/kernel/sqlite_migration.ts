@@ -248,6 +248,10 @@ function readLegacyTasks(root: string): { tasks: LegacyTask[]; reason: string | 
 			} catch (error) {
 				return { tasks: [], reason: `task ${taskId} is not a readable legacy record: ${error instanceof Error ? error.message : String(error)}` };
 			}
+			// The file name is the task identity the rest of the runtime uses, so a
+			// record that disagrees with it would publish a self-contradictory run.
+			if (record.task_id !== taskId || record.intent_snapshot.task_id !== taskId)
+				return { tasks: [], reason: `task ${taskId} record declares a different task identity` };
 			if (record.lifecycle !== "done" && record.lifecycle !== "stopped")
 				return { tasks: [], reason: `task ${taskId} is ${record.lifecycle}; a live legacy task must settle on the prior runtime` };
 			let proof: Record<string, unknown>;
@@ -532,6 +536,29 @@ function importIdentity(tasks: LegacyTask[]): string {
 	return sha256Hex(tasks.map((task) => `${task.taskId}:${task.recordHash}`).sort().join("\n"));
 }
 
+/**
+ * Reasons a retired layout still owns live work. Retirement deletes the owner
+ * signals, so this runs before any deletion — including on the recovery path,
+ * where the layout is reported as a store conflict rather than an active owner.
+ */
+function liveLegacyOwnerReason(root: string): string | null {
+	for (const claim of [FILE_STORE_CLAIM_RELATIVE, `${LEGACY_TASKS_RELATIVE}/.backend-claim.json`]) {
+		if (existsSync(join(root, claim))) return `a legacy owner claim is present at ${claim}`;
+	}
+	for (const workspace of [LEGACY_WORKSPACE_RELATIVE, FILE_STORE_WORKSPACE_RELATIVE]) {
+		const path = join(root, workspace);
+		if (!existsSync(path)) continue;
+		assertNoSymlinkSegments(root, workspace);
+		try {
+			const owner = (JSON.parse(readFileSync(path, "utf8")) as Record<string, unknown>).current_working;
+			if (typeof owner === "string" && owner.length > 0) return `the legacy workspace owner is ${owner}`;
+		} catch {
+			return `${workspace} is unreadable`;
+		}
+	}
+	return recoverableBatch(root);
+}
+
 /** Open the published store read-only for a recovery check. */
 function openPublishedStore(root: string, canonical: string): DatabaseSync {
 	return new DatabaseSync(canonical, { readOnly: true });
@@ -628,6 +655,10 @@ export function importLegacyWorkspace(rootInput: string, now = new Date().toISOS
 			return refusal(`the published store failed verification: ${error instanceof Error ? error.message : String(error)}`);
 		}
 		try {
+			// The published branch owns deletions too, so a live legacy owner that
+			// reappeared after the import refuses the cleanup instead of losing it.
+			const live = liveLegacyOwnerReason(root);
+			if (live) return refusal(`${live}; settle or stop the live legacy owner before retiring it`);
 			const pending = readLegacyTasks(root);
 			if (pending.reason) return refusal(pending.reason);
 			// A partially finished cleanup leaves only the tasks whose files were not
@@ -655,8 +686,8 @@ export function importLegacyWorkspace(rootInput: string, now = new Date().toISOS
 			uncommitted_evidence: [],
 		};
 	}
-	const live = recoverableBatch(root);
-	if (live) return refusal(`${live}; a recoverable batch must be settled or stopped before import`);
+	const live = liveLegacyOwnerReason(root);
+	if (live) return refusal(`${live}; a live legacy owner or recoverable batch must be settled or stopped before import`);
 	const { tasks, reason } = readLegacyTasks(root);
 	if (reason) return refusal(reason);
 	// A workspace can be on the retired layout with no task at all — only an

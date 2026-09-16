@@ -945,6 +945,51 @@ describe("explicit SQLite import of the retired file store (A1)", () => {
 		expect(blocked.reason).toMatch(/recoverable batch/);
 	});
 
+	it("refuses to retire a live legacy owner that reappeared after the import", async () => {
+		const root = tempRoot();
+		writeLegacyTerminalPair(root, "2026-08-14-025-old-task");
+		commit(root, "legacy evidence");
+		expect((await runMigration(root)).outcome).toBe("migration_uncommitted");
+		commit(root, "preserve evidence");
+		expect((await runMigration(root)).outcome).toBe("migrated");
+		// A live owner reappears beside the published store: the claim and the
+		// workspace owner must survive the cleanup attempt.
+		mkdirSync(join(root, ".imm/state"), { recursive: true });
+		writeFileSync(join(root, ".imm/state/active-claim.json"), `${JSON.stringify({ contract: "assurance_kernel/backend_claim/v2", task_id: "task-live" })}\n`);
+		writeFileSync(join(root, ".imm/workspace.json"), `${JSON.stringify({ contract: "assurance_kernel/workspace/v1", current_working: "task-live" })}\n`);
+		const outcome = await runMigration(root);
+		expect(outcome.outcome).toBe("invalid");
+		expect(outcome.reason).toMatch(/live legacy owner/);
+		expect(existsSync(join(root, ".imm/state/active-claim.json"))).toBe(true);
+		expect(existsSync(join(root, ".imm/workspace.json"))).toBe(true);
+	});
+
+	it("refuses a legacy record whose file name and declared identity disagree", async () => {
+		const root = tempRoot();
+		writeLegacyTerminalPair(root, "task-owner");
+		// The record is internally consistent about being `task-other` (including
+		// its own intent hash), but it sits in `task-owner.json` with a proof that
+		// belongs to the file name.
+		const recordPath = join(root, ".imm/tasks/task-owner.json");
+		const renamed = JSON.parse(readFileSync(recordPath, "utf8")) as Record<string, any>;
+		renamed.task_id = "task-other";
+		renamed.intent_snapshot.task_id = "task-other";
+		renamed.intent_ref.path = "docs/plans/task-other.intent.json";
+		renamed.intent_ref.content_hash = canonicalIntentHash(parseTaskIntentV1(renamed.intent_snapshot));
+		const recordBytes = `${JSON.stringify(renamed, null, 2)}\n`;
+		writeFileSync(recordPath, recordBytes);
+		const proofPath = join(root, ".imm/tasks/task-owner.backend-claim.json");
+		const proof = JSON.parse(readFileSync(proofPath, "utf8")) as Record<string, unknown>;
+		proof.final_record_hash = `sha256:${createHash("sha256").update(recordBytes).digest("hex")}`;
+		writeFileSync(proofPath, `${JSON.stringify(proof, null, 2)}\n`);
+		commit(root, "identity mismatch");
+		const outcome = await runMigration(root);
+		expect(outcome.outcome).toBe("invalid");
+		expect(outcome.reason).toMatch(/declares a different task identity/);
+		expect(existsSync(join(root, ".imm/state/kernel.sqlite"))).toBe(false);
+		expect(existsSync(join(root, ".imm/tasks/task-owner.json"))).toBe(true);
+	});
+
 	it("refuses an existing audit target with zero writes", async () => {
 		const root = tempRoot();
 		writeLegacyTerminalPair(root, "task-001");
