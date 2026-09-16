@@ -1,0 +1,1274 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "mws-delivery-scope",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "mws-delivery-scope",
+    "goal": "Permit exploration inside an approved module envelope while proving complete, uncontaminated delivery through baseline comparison and immutable-snapshot QA.",
+    "acceptance": [
+      {
+        "id": "A1",
+        "assertion": "Complete baseline-to-delivery comparison permits new helpers/tests inside the authorized envelope without revision, rejects genuine escape and mixed ownership, preserves existing user edits and never imports unrelated untracked contents into Git.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.4.2\",\n  \"argv\": [\n    \"test\",\n    \"tests/managed-task-snapshot-isolation.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 60000,\n  \"max_output_bytes\": 131072\n}\n"
+      },
+      {
+        "id": "A2",
+        "assertion": "QA, Review and source delivery share one immutable identity covering generated outputs and file modes; namespaced refs retain objects across Git GC without cross-worktree collision, and terminal audit remains a separately verified attachment.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.4.2\",\n  \"argv\": [\n    \"test\",\n    \"tests/review-revision-identity-conformance.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 60000,\n  \"max_output_bytes\": 131072\n}\n"
+      },
+      {
+        "id": "A3",
+        "assertion": "QA executes all descriptors in disposable delivery materialization with isolated Git metadata, lockfile-matched dependency preparation and validated cwd/symlinks; contamination, missing prerequisites, stale runner identity, timeout and excess output fail explicitly without live-worktree fallback.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.4.2\",\n  \"argv\": [\n    \"test\",\n    \"tests/pi-canary-verification-descriptor.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 60000,\n  \"max_output_bytes\": 131072\n}\n"
+      }
+    ],
+    "scope_hint": [
+      "docs/plans/archive/mws-delivery-scope.intent.json",
+      "docs/plans/mws-delivery-scope.intent.json",
+      "docs/specs/archive/mws-delivery-scope.spec.md",
+      "docs/specs/mws-delivery-scope.spec.md",
+      "plugins/immune-brain/.pi-extension/imm-canary-work.ts",
+      "plugins/immune-brain/.pi-extension/imm-unattended-batch.ts",
+      "plugins/immune-brain/.pi-extension/pi-canary-assurance-progression.ts",
+      "plugins/immune-brain/.pi-extension/pi-canary-interaction.ts",
+      "plugins/immune-brain/.pi-extension/pi-canary-invocations.ts",
+      "plugins/immune-brain/.pi-extension/pi-canary-native-review.ts",
+      "plugins/immune-brain/.pi-extension/pi-canary-review-bundle.ts",
+      "plugins/immune-brain/.pi-extension/pi-canary-tool-failure.ts",
+      "plugins/immune-brain/.pi-extension/pi-canary-verification.ts",
+      "plugins/immune-brain/.pi-extension/runtime-stub.ts",
+      "plugins/immune-brain/dist/claude/mcp-server.mjs",
+      "plugins/immune-brain/dist/imm-loop.md",
+      "plugins/immune-brain/dist/imm-planner.md",
+      "plugins/immune-brain/dist/role-prompts/executor.md",
+      "plugins/immune-brain/runtime/assurance/coordinator.ts",
+      "plugins/immune-brain/runtime/assurance/delivery_workspace.ts",
+      "plugins/immune-brain/runtime/assurance/host_port.ts",
+      "plugins/immune-brain/runtime/assurance/invocations.ts",
+      "plugins/immune-brain/runtime/assurance/qa.ts",
+      "plugins/immune-brain/runtime/assurance/review_evidence.ts",
+      "plugins/immune-brain/runtime/assurance/verification.ts",
+      "plugins/immune-brain/runtime/authorization_operation.ts",
+      "plugins/immune-brain/runtime/claude/capability.ts",
+      "plugins/immune-brain/runtime/claude/interaction.ts",
+      "plugins/immune-brain/runtime/claude/kernel_ports.ts",
+      "plugins/immune-brain/runtime/claude/mcp_server.ts",
+      "plugins/immune-brain/runtime/claude/review_host.ts",
+      "plugins/immune-brain/runtime/commands/kernel.ts",
+      "plugins/immune-brain/runtime/kernel/application.ts",
+      "plugins/immune-brain/runtime/kernel/assurance_projection.ts",
+      "plugins/immune-brain/runtime/kernel/authority_port.ts",
+      "plugins/immune-brain/runtime/kernel/backend_claim.ts",
+      "plugins/immune-brain/runtime/kernel/batch_authority.ts",
+      "plugins/immune-brain/runtime/kernel/canary_application.ts",
+      "plugins/immune-brain/runtime/kernel/capability_registry.ts",
+      "plugins/immune-brain/runtime/kernel/completion.ts",
+      "plugins/immune-brain/runtime/kernel/enrollment.ts",
+      "plugins/immune-brain/runtime/kernel/enrollment_authority.ts",
+      "plugins/immune-brain/runtime/kernel/index.ts",
+      "plugins/immune-brain/runtime/kernel/intent.ts",
+      "plugins/immune-brain/runtime/kernel/intent_token_registry.ts",
+      "plugins/immune-brain/runtime/kernel/reducer.ts",
+      "plugins/immune-brain/runtime/kernel/refutation.ts",
+      "plugins/immune-brain/runtime/kernel/spec_binding.ts",
+      "plugins/immune-brain/runtime/kernel/storage.ts",
+      "plugins/immune-brain/runtime/kernel/storage_layout_migration.ts",
+      "plugins/immune-brain/runtime/kernel/storage_paths.ts",
+      "plugins/immune-brain/runtime/kernel/types.ts",
+      "plugins/immune-brain/runtime/kernel/validation.ts",
+      "plugins/immune-brain/runtime/prompts/executor.md",
+      "plugins/immune-brain/runtime/unattended/batch_git.ts",
+      "plugins/immune-brain/runtime/unattended/batch_preflight.ts",
+      "plugins/immune-brain/runtime/unattended/batch_runner.ts",
+      "plugins/immune-brain/runtime/v4_runtime.ts",
+      "plugins/immune-brain/runtime/verification_descriptor.ts",
+      "plugins/immune-brain/runtime/workspace_scope.ts",
+      "scripts/build-claude-plugin.ts",
+      "tests/__snapshots__/plugin-package-runtime.test.ts.snap",
+      "tests/breaking-intent-revision-gate.test.ts",
+      "tests/carrier-enrollment-gate-contract.test.ts",
+      "tests/claude-batch-authority.test.ts",
+      "tests/claude-host-authority.test.ts",
+      "tests/claude-host-package.test.ts",
+      "tests/dual-host-assurance-conformance.test.ts",
+      "tests/github-issue-projection-contract.test.ts",
+      "tests/handoff-scope-exclusion.test.ts",
+      "tests/helpers/pi-canary-assurance-harness.ts",
+      "tests/host-neutral-assurance-coordinator.test.ts",
+      "tests/imm-planner-kernel-intent-contract.test.ts",
+      "tests/kernel-assurance-obligation.test.ts",
+      "tests/kernel-assurance-projection.test.ts",
+      "tests/kernel-canary-application.test.ts",
+      "tests/kernel-canary-authority.test.ts",
+      "tests/kernel-canary-claim-writer-boundary.test.ts",
+      "tests/kernel-canary-drain-transaction.test.ts",
+      "tests/kernel-canary-rework-authority.test.ts",
+      "tests/kernel-canary-terminal-transaction.test.ts",
+      "tests/kernel-inspect.test.ts",
+      "tests/kernel-intent-authoring.test.ts",
+      "tests/kernel-intent-validation.test.ts",
+      "tests/kernel-migrate.test.ts",
+      "tests/kernel-p2b0-boundary.test.ts",
+      "tests/kernel-r2c1-boundary.test.ts",
+      "tests/kernel-r2c2-boundary.test.ts",
+      "tests/kernel-r2c2-reducer.test.ts",
+      "tests/kernel-record-v3.test.ts",
+      "tests/kernel-shadow-cli.test.ts",
+      "tests/kernel-verification-descriptor.test.ts",
+      "tests/managed-task-snapshot-isolation.test.ts",
+      "tests/pi-canary-assurance-advance.test.ts",
+      "tests/pi-canary-assurance-authority.test.ts",
+      "tests/pi-canary-enroll-extension.test.ts",
+      "tests/pi-canary-lifecycle-package.test.ts",
+      "tests/pi-canary-review-bundle.test.ts",
+      "tests/pi-canary-review-dispatch-resilience.test.ts",
+      "tests/pi-canary-review-neighborhood.test.ts",
+      "tests/pi-canary-review-outcome-evidence.test.ts",
+      "tests/pi-canary-user-authority.test.ts",
+      "tests/pi-canary-verification-descriptor.test.ts",
+      "tests/pi-canary-work-extension.test.ts",
+      "tests/plugin-package-runtime.test.ts",
+      "tests/review-revision-identity-conformance.test.ts",
+      "tests/risk-downgrade-guard.test.ts",
+      "tests/shared-deterministic-qa.test.ts",
+      "tests/unattended-batch-commit.test.ts",
+      "tests/unattended-batch-run.test.ts",
+      "tests/v4-storage-retirement-legacy-audit.test.ts"
+    ],
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/archive/mws-delivery-scope.intent.json",
+    "content_hash": "sha256:a4203bf9f53171b8212f1491017ab7bc8409418fbe63a4bbe4281a2fb7327780"
+  },
+  "lifecycle": "stopped",
+  "artifact_state": "frozen",
+  "baseline": "sha256:a4203bf9f53171b8212f1491017ab7bc8409418fbe63a4bbe4281a2fb7327780",
+  "git_base_head": "73bb939a80397333bd2bccd4bd0dd9f85d7ad570",
+  "attestations": [
+    {
+      "id": "approval-qa-c56e414d",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:a4203bf9f53171b8212f1491017ab7bc8409418fbe63a4bbe4281a2fb7327780",
+      "diff_hash": "sha256:4889cf30f34bbc4b5aed27bd98141269eabe253b1ef5d9e0e448ae6a3d7d35a5",
+      "actor_id": "deterministic-qa",
+      "summary": "all 3 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "A2",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "A3",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-8d178820",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:a4203bf9f53171b8212f1491017ab7bc8409418fbe63a4bbe4281a2fb7327780",
+      "diff_hash": "sha256:2bcc70c254523440b1527d5d3a0930890e2d404227128bf5a677df16dc926838",
+      "actor_id": "deterministic-qa",
+      "summary": "all 3 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "A2",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "A3",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-7e18e079",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:a4203bf9f53171b8212f1491017ab7bc8409418fbe63a4bbe4281a2fb7327780",
+      "diff_hash": "sha256:e9123bf386d637c7fce45b62523f3102912454ff430996966bf9f2b710a8903b",
+      "actor_id": "deterministic-qa",
+      "summary": "all 3 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "A2",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "A3",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-5efc9267",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:a4203bf9f53171b8212f1491017ab7bc8409418fbe63a4bbe4281a2fb7327780",
+      "diff_hash": "sha256:01ec749de5f739c522d70b93a7f2021da5dbe646b1a4a268674395a033da821a",
+      "actor_id": "deterministic-qa",
+      "summary": "all 3 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "A2",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "A3",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-a2314e73",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:a4203bf9f53171b8212f1491017ab7bc8409418fbe63a4bbe4281a2fb7327780",
+      "diff_hash": "sha256:020362bd731c4ebf2024bf2aa85c0ec61afda68bbccfeac1dc177f8b0959c57f",
+      "actor_id": "deterministic-qa",
+      "summary": "all 3 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "A2",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "A3",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 fixed verification descriptor(s) passed"
+        }
+      ]
+    }
+  ],
+  "findings": [
+    {
+      "id": "qa-A2-d5f2c36a-ab6882",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "A2",
+      "source": "execution",
+      "review_round": null,
+      "summary": "verification failed (exit 1) stdout=28B stderr=2032B",
+      "anchor": null,
+      "evidence": null,
+      "counterevidence": null
+    },
+    {
+      "id": "review-89c7a9fba161-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "A3",
+      "source": "review",
+      "review_round": 1,
+      "summary": "delivery_workspace.ts 继承 GIT_DIR/GIT_WORK_TREE/GIT_INDEX_FILE，临时目录不能保证 Git 隔离。",
+      "anchor": "sha256:d35dde5cb2d8732932103065efbccd357f0f1276faadb05cd915f41fa9e46562",
+      "evidence": {
+        "trigger": "宿主环境包含指向用户仓库的 GIT_DIR 和 GIT_WORK_TREE；materializeDeliveryWorkspace 继承整个 process.env。",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/assurance/qa.ts:runDeterministicQa",
+          "plugins/immune-brain/runtime/assurance/delivery_workspace.ts:materializeDeliveryWorkspace",
+          "plugins/immune-brain/runtime/assurance/delivery_workspace.ts:git"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "A3"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-89c7a9fba161-2-review-2",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "A2",
+      "source": "review",
+      "review_round": 1,
+      "summary": "QA 在缺少 review_revision 时读取整个当前 index，而非已绑定的 delivery tree。",
+      "anchor": "sha256:018ca40efb92b12e97655b284850b32a8497f1f8bb65ffb866871ce4118e0f86",
+      "evidence": {
+        "trigger": "Claude QA 缺少 review_revision 时用当前 index write-tree，把已排除的 audit/sidecar 带进 QA。",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/claude/kernel_ports.ts:buildAssuranceSnapshot",
+          "plugins/immune-brain/runtime/assurance/qa.ts:runDeterministicQa",
+          "plugins/immune-brain/runtime/assurance/delivery_workspace.ts:deliveryTreeFromIndex"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "A2"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-89c7a9fba161-3-review-3",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "A2",
+      "source": "review",
+      "review_round": 1,
+      "summary": "review ref 清理未限定当前 workspace namespace，可删除其他 worktree 的活动 ref。",
+      "anchor": "sha256:e4f76f57511eee64bafd9afff5160fdd69b7bbabadc009af9f7dc8653ba76724",
+      "evidence": {
+        "trigger": "worktree A 清理 refs 时枚举全部 worktree 的 refs，会删掉 worktree B 的活动 review ref。",
+        "caller_chain": [
+          "plugins/immune-brain/.pi-extension/imm-canary-work.ts:1322",
+          "plugins/immune-brain/runtime/assurance/review_evidence.ts:reconcileReviewRefs",
+          "plugins/immune-brain/runtime/assurance/review_evidence.ts:listReviewRefs"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "A2"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-89c7a9fba161-4-review-4",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "A2",
+      "source": "review",
+      "review_round": 1,
+      "summary": "git archive 后重新 add/commit，不能证明 materialization 与输入 tree 相同。",
+      "anchor": "sha256:b458adadccf78f728aff59bf24e0c81df8837298edac81baa626418630c7a7bd",
+      "evidence": {
+        "trigger": ".gitattributes export-ignore 会让 git archive 省略受审文件。",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/assurance/qa.ts:runDeterministicQa",
+          "plugins/immune-brain/runtime/assurance/delivery_workspace.ts:materializeDeliveryWorkspace"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "A2"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-89c7a9fba161-5-review-5",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "A3",
+      "source": "review",
+      "review_round": 1,
+      "summary": "bun install 未禁用 lifecycle scripts，也没有 timeout。",
+      "anchor": "sha256:0d6300b66b37406ce44c0721a4c5f634c829cd92228b2deffb4fb5bf24c7ddb7",
+      "evidence": {
+        "trigger": "含 postinstall 的 lockfile 会在无 preparation contract 下跑脚本。",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/assurance/qa.ts:runDeterministicQa",
+          "plugins/immune-brain/runtime/assurance/delivery_workspace.ts:prepareDependencies"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "A3"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-89c7a9fba161-6-review-6",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "A3",
+      "source": "review",
+      "review_round": 1,
+      "summary": "QA 复用可写目录且不检查跨 descriptor 污染。",
+      "anchor": "sha256:5b461c86ab77e0abad6a58d82f6170302fbfa4402aeada3e86adc36354feaa38",
+      "evidence": {
+        "trigger": "前一个 descriptor 改源文件后，后续 descriptor 在同一可写目录上继续。",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/assurance/qa.ts:runDeterministicQa",
+          "plugins/immune-brain/runtime/assurance/qa.ts:runVerification"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "A3"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-89c7a9fba161-7-review-7",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "A3",
+      "source": "review",
+      "review_round": 1,
+      "summary": "丢弃 tar 退出状态，解包失败仍可能得到虚假 QA pass。",
+      "anchor": "sha256:df76efa69575786078ec564415ecfca2807fa582c68663ae62fcc19eff03985c",
+      "evidence": {
+        "trigger": "tar 失败被忽略，空仓库仍可让简单 descriptor 通过。",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/assurance/qa.ts:runDeterministicQa",
+          "plugins/immune-brain/runtime/assurance/delivery_workspace.ts:materializeDeliveryWorkspace"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "A3"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-bf6eab3cb52b-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "A3",
+      "source": "review",
+      "review_round": 2,
+      "summary": "isolatedGitEnv 删除 extra 里的 GIT_INDEX_FILE，writeDeliveryTree 会改用户索引。",
+      "anchor": "sha256:9ad7a9857c3fc60dddce3ba7c2c08c5c1dbb10d70cf4340e79338d83b6416617",
+      "evidence": {
+        "trigger": "isolatedGitEnv 在合并 extra 后删除 GIT_INDEX_FILE，writeDeliveryTree 实际写入用户索引。",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/assurance/qa.ts:deliveryTreeForSnapshot",
+          "plugins/immune-brain/runtime/assurance/delivery_workspace.ts:writeDeliveryTree",
+          "plugins/immune-brain/runtime/assurance/delivery_workspace.ts:isolatedGitEnv"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "A3"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-bf6eab3cb52b-2-review-2",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "A3",
+      "source": "review",
+      "review_round": 2,
+      "summary": "symlink 检查只用词法 resolve，无法拦住中间组件逃逸。",
+      "anchor": "sha256:e9c13ff2b25c69320bda3eef9ed23f468b811bc3f745d6695fc1739cd8b90ac9",
+      "evidence": {
+        "trigger": "中间 symlink 加 '..' 的逃逸路径被词法 resolve 放行。",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/assurance/delivery_workspace.ts:assertNoEscapingSymlinks",
+          "plugins/immune-brain/runtime/assurance/verification.ts:runFixedVerification"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "A3"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-bf6eab3cb52b-3-review-3",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "A2",
+      "source": "review",
+      "review_round": 2,
+      "summary": "QA 重新捕获交付树时未核对其与 snapshot.diff_hash 一致。",
+      "anchor": "sha256:dff21785043ea627e524ef6424756407432e031b2f645e0d370311aee251f6c9",
+      "evidence": {
+        "trigger": "缺少 review_revision 时重新读实时索引，不与 snapshot.diff_hash 核对。",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/assurance/qa.ts:deliveryTreeForSnapshot",
+          "plugins/immune-brain/runtime/workspace_scope.ts:captureGitTaskRevisionSnapshot"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "A2"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-bf6eab3cb52b-4-review-4",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "A1",
+      "source": "review",
+      "review_round": 2,
+      "summary": "未按 Enrollment 指纹区分原有用户改动和任务期间新增越界。",
+      "anchor": "sha256:1945a0f667afafb73c889957c62612b7c165a57b15f2651995aa6715b048fdaa",
+      "evidence": {
+        "trigger": "未暂存的越界改动被直接过滤，任务期间新增越界不会失败。",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/workspace_scope.ts:captureGitTaskRevisionSnapshot",
+          "plugins/immune-brain/runtime/workspace_scope.ts:assertNoEnvelopeEscape"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "A1"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "request_rework:mws-delivery-scope:2026-09-16T04:10:54.054Z:replan-required",
+      "kind": "replan_required",
+      "status": "resolved",
+      "acceptance_id": "A3",
+      "source": "kernel",
+      "review_round": 2,
+      "summary": "Review returned this acceptance boundary twice; a durable replan is required."
+    },
+    {
+      "id": "review-500a775347ed-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "A1",
+      "source": "review",
+      "review_round": 3,
+      "summary": "Enrollment 基线未比较指纹，覆盖或删除用户脏文件仍可通过。",
+      "anchor": "sha256:f687d20a3cf0d66bf2d91f320f6c5c1f04c47ef5af2690327c1d9b863a873204",
+      "evidence": {
+        "trigger": "只判断基线路径是否存在，覆盖或删除已有用户脏文件会被放过。",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/workspace_scope.ts:writeEnrollmentBaseline",
+          "plugins/immune-brain/runtime/workspace_scope.ts:assertNoEnvelopeEscape"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "A1"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-500a775347ed-2-review-2",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "A2",
+      "source": "review",
+      "review_round": 3,
+      "summary": "batch 提交未将候选树与已审核 delivery 身份比较。",
+      "anchor": "sha256:04ebdf9e43f810050ae2d28a54937fb681a68abea33dd777cdacf492d0bd4f5e",
+      "evidence": {
+        "trigger": "batch 提交只检查路径授权，不核对已审核 OID 和模式。",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/unattended/batch_git.ts:commitBatchChild"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "A2"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-500a775347ed-3-review-3",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "A3",
+      "source": "review",
+      "review_round": 3,
+      "summary": "assertDeliveryClean 发现不了被 Git 忽略的依赖污染。",
+      "anchor": "sha256:b2bce502d0cf9a14bcf742c9b3963435752f5c0afceb1cb02fe2017762af0eca",
+      "evidence": {
+        "trigger": "git status 看不到 node_modules 被前一个 descriptor 改写。",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/assurance/qa.ts:runDeterministicQa",
+          "plugins/immune-brain/runtime/assurance/delivery_workspace.ts:assertDeliveryClean"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "A3"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "request_rework:mws-delivery-scope:2026-09-16T04:52:19.449Z:replan-required",
+      "kind": "replan_required",
+      "status": "resolved",
+      "acceptance_id": "A1",
+      "source": "kernel",
+      "review_round": 3,
+      "summary": "Review returned this acceptance boundary twice; a durable replan is required."
+    },
+    {
+      "id": "review-0778c43cc1ee-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "A1",
+      "source": "review",
+      "review_round": 4,
+      "summary": "scope 内用户已有改动未从交付中区分，可能造成 mixed ownership。",
+      "anchor": "sha256:3d81003b795c2fc02f48d5b92e177fbb0c00f90bc8ca3af85d9b7e282b1cac63",
+      "evidence": {
+        "trigger": "scope 内路径在 baseline 比较前被排除，用户已有改动与任务改动被一起交付。",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/workspace_scope.ts:assertNoEnvelopeEscape"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "A1"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-0778c43cc1ee-2-review-2",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "A3",
+      "source": "review",
+      "review_round": 4,
+      "summary": "锁定 node_modules 写权限后，QA cleanup 无法删除临时目录。",
+      "anchor": "sha256:5ea5ea662b2f617f515856846223a122b301fc765e5ca848abe93723a6c47383",
+      "evidence": {
+        "trigger": "chmod -R a-w 后 rmSync 无法删除 node_modules。",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/assurance/delivery_workspace.ts:prepareDependencies",
+          "plugins/immune-brain/runtime/assurance/delivery_workspace.ts:cleanup"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "A3"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-0778c43cc1ee-3-review-3",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "A1",
+      "source": "review",
+      "review_round": 4,
+      "summary": "isPlanningSidecar 豁免所有任务的 intent 文件，不只当前任务。",
+      "anchor": "sha256:0b9f0710569688bc9c44abf39b01c13b5b310fcd930796c6068e87e4c8ebcb9a",
+      "evidence": {
+        "trigger": "任意 task 的 intent sidecar 都被豁免。",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/workspace_scope.ts:isPlanningSidecar"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "A1"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-0778c43cc1ee-4-review-4",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "A1",
+      "source": "review",
+      "review_round": 4,
+      "summary": "基线中已暂存的用户越界编辑会阻塞任务。",
+      "anchor": "sha256:3d81003b795c2fc02f48d5b92e177fbb0c00f90bc8ca3af85d9b7e282b1cac63",
+      "evidence": {
+        "trigger": "Enrollment 前已暂存的越界用户文件被当成 escape。",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/workspace_scope.ts:assertNoEnvelopeEscape"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "A1"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-0778c43cc1ee-5-review-5",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "A3",
+      "source": "review",
+      "review_round": 4,
+      "summary": "assertDeliveryClean 漏掉 ignored 生成文件的跨 descriptor 污染。",
+      "anchor": "sha256:9ca431c486f2e847bd8a64b0ca13c49e3eccf92d0b8bc44d70a9988d3a147593",
+      "evidence": {
+        "trigger": "git status 看不到 ignored 生成文件，后续 descriptor 可依赖它。",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/assurance/delivery_workspace.ts:assertDeliveryClean"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "A3"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "request_rework:mws-delivery-scope:2026-09-16T05:09:54.874Z:replan-required",
+      "kind": "replan_required",
+      "status": "resolved",
+      "acceptance_id": "A1",
+      "source": "kernel",
+      "review_round": 4,
+      "summary": "Review returned this acceptance boundary twice; a durable replan is required."
+    },
+    {
+      "id": "review-78ea958b2c43-1-review-1",
+      "kind": "blocking",
+      "status": "open",
+      "acceptance_id": "A1",
+      "source": "review",
+      "review_round": 5,
+      "summary": "已提交的越界改动因 undefined dirty 指纹被豁免。",
+      "anchor": "sha256:3d81003b795c2fc02f48d5b92e177fbb0c00f90bc8ca3af85d9b7e282b1cac63",
+      "evidence": {
+        "trigger": "已提交的越界路径在 dirty_files 中为 undefined===undefined，被当成用户改动豁免。",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/workspace_scope.ts:assertNoEnvelopeEscape"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "A1"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-78ea958b2c43-2-review-2",
+      "kind": "blocking",
+      "status": "open",
+      "acceptance_id": "A1",
+      "source": "review",
+      "review_round": 5,
+      "summary": "scope 内用户脏文件被任务再次修改后整文件进入交付。",
+      "anchor": "sha256:27c5b32942676587dd6bbe74e332a34b47b96cad5b536f37b9f73428428beaf0",
+      "evidence": {
+        "trigger": "Executor 在用户已脏的 scope 内文件上追加改动并整文件交付。",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/workspace_scope.ts:taskRevisionSnapshotOnce"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "A1"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-78ea958b2c43-3-review-3",
+      "kind": "blocking",
+      "status": "open",
+      "acceptance_id": "A3",
+      "source": "review",
+      "review_round": 5,
+      "summary": "symlink 在 realpath 失败时回退到词法 resolve。",
+      "anchor": "sha256:8b47a64be2a5b67e7dd06157af01ffe58afd05ab7d889049fe4660e7cff4b307",
+      "evidence": {
+        "trigger": "realpath 失败后词法 resolve 放行经中间 symlink 越界的悬空目标。",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/assurance/delivery_workspace.ts:assertNoEscapingSymlinks"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "A3"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-78ea958b2c43-4-review-4",
+      "kind": "blocking",
+      "status": "open",
+      "acceptance_id": "A1",
+      "source": "review",
+      "review_round": 5,
+      "summary": "Enrollment baseline 不在提交事务内，缺失时比较被跳过。",
+      "anchor": "sha256:3e92339888d546ce472e91a6d5183f877673a0882c2f40518ca93249916b2bf6",
+      "evidence": {
+        "trigger": "Enrollment 提交后才写 baseline；中断后重放不会补写。",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/kernel/enrollment.ts:enrollCanaryTask",
+          "plugins/immune-brain/runtime/workspace_scope.ts:writeEnrollmentBaseline"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "A1"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "request_rework:mws-delivery-scope:2026-09-16T05:52:14.560Z:replan-required",
+      "kind": "replan_required",
+      "status": "open",
+      "acceptance_id": "A1",
+      "source": "kernel",
+      "review_round": 5,
+      "summary": "Review returned this acceptance boundary twice; a durable replan is required."
+    }
+  ],
+  "history": [
+    {
+      "id": "freeze_artifacts:mws-delivery-scope:2026-09-16T03:48:00.669Z",
+      "at": "2026-09-16T03:48:00.669Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent and Spec frozen at docs/plans/archive/mws-delivery-scope.intent.json"
+    },
+    {
+      "id": "request_rework:mws-delivery-scope:2026-09-16T03:48:58.681Z",
+      "at": "2026-09-16T03:48:58.681Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_1\naction_v2_sha256:7a7da5b7d02c7fa347d960178ffe63ed3ca2742b595fd1fed7f3d42a1fc1a3f4",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-fdea3e3710cd1ba9",
+        "issued_at": "2026-09-16T03:48:58.683Z",
+        "expires_at": "2026-09-16T03:58:58.682Z"
+      }
+    },
+    {
+      "id": "resolve_finding:mws-delivery-scope:2026-09-16T03:50:40.310Z",
+      "at": "2026-09-16T03:50:40.310Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "qa-A2-d5f2c36a-ab6882\naction_v2_sha256:d117b418b40cd9d0a73614d73c8197c80db9b6a40bbd5d2c6ba3e879af3a8b3b"
+    },
+    {
+      "id": "freeze_artifacts:mws-delivery-scope:2026-09-16T03:51:31.683Z",
+      "at": "2026-09-16T03:51:31.683Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent and Spec frozen at docs/plans/archive/mws-delivery-scope.intent.json"
+    },
+    {
+      "id": "record_approval:mws-delivery-scope:2026-09-16T03:52:18.291Z",
+      "at": "2026-09-16T03:52:18.291Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-c56e414d\naction_v2_sha256:76132c377b7c9db9e5c343f550fe4f9f1d42612ea35854d7fe93443c3e0b2828",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-8f8cf8858cd5f15e",
+        "issued_at": "2026-09-16T03:52:18.292Z",
+        "expires_at": "2026-09-16T04:02:18.292Z"
+      }
+    },
+    {
+      "id": "request_rework:mws-delivery-scope:2026-09-16T03:57:56.403Z",
+      "at": "2026-09-16T03:57:56.403Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_1\naction_v2_sha256:59d5508969b86c7d2c1cfe7f1c97092d8c982a0c4c8f65b67fd1b318b9be154c",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-420d13a99651a5d4",
+        "issued_at": "2026-09-16T03:57:56.404Z",
+        "expires_at": "2026-09-16T04:07:56.403Z"
+      }
+    },
+    {
+      "id": "resolve_finding:mws-delivery-scope:2026-09-16T04:03:52.014Z",
+      "at": "2026-09-16T04:03:52.014Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-89c7a9fba161-1-review-1\naction_v2_sha256:4c214dfbc08043220ff14627297cfc630c53fb0b1e6867ed224cdd6a63d7cd05"
+    },
+    {
+      "id": "resolve_finding:mws-delivery-scope:2026-09-16T04:04:06.563Z",
+      "at": "2026-09-16T04:04:06.563Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-89c7a9fba161-2-review-2\naction_v2_sha256:176bb1151d68874a91aac4638f548bd5c3be1ce5d66c3569f83b08b5d52934e9"
+    },
+    {
+      "id": "resolve_finding:mws-delivery-scope:2026-09-16T04:04:32.403Z",
+      "at": "2026-09-16T04:04:32.403Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-89c7a9fba161-3-review-3\naction_v2_sha256:d62e6652c3bb7c1ec6a51d468042b900847b7cd099be877c255859cb3b47febf"
+    },
+    {
+      "id": "resolve_finding:mws-delivery-scope:2026-09-16T04:04:50.689Z",
+      "at": "2026-09-16T04:04:50.689Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-89c7a9fba161-4-review-4\naction_v2_sha256:db1801be57f856b4d968073188114b065273f7f2e9c37dfeb325208a3162e246"
+    },
+    {
+      "id": "resolve_finding:mws-delivery-scope:2026-09-16T04:05:05.128Z",
+      "at": "2026-09-16T04:05:05.128Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-89c7a9fba161-5-review-5\naction_v2_sha256:a6583f02f19274e2b0df175f96021f359d7d7f19727ba040c3bcece631476dda"
+    },
+    {
+      "id": "resolve_finding:mws-delivery-scope:2026-09-16T04:05:20.863Z",
+      "at": "2026-09-16T04:05:20.863Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-89c7a9fba161-6-review-6\naction_v2_sha256:fa77b80679e5e1105f2c2b6f16101be1d18ad4686080f4f338263cda0878117f"
+    },
+    {
+      "id": "resolve_finding:mws-delivery-scope:2026-09-16T04:05:41.953Z",
+      "at": "2026-09-16T04:05:41.953Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-89c7a9fba161-7-review-7\naction_v2_sha256:c0447d9560bf14085ee185f6168336cfb9ecaf1b504c05bec1e04579e86ce6c8"
+    },
+    {
+      "id": "freeze_artifacts:mws-delivery-scope:2026-09-16T04:05:51.087Z",
+      "at": "2026-09-16T04:05:51.087Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent and Spec frozen at docs/plans/archive/mws-delivery-scope.intent.json"
+    },
+    {
+      "id": "record_approval:mws-delivery-scope:2026-09-16T04:06:10.625Z",
+      "at": "2026-09-16T04:06:10.625Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-8d178820\naction_v2_sha256:66e66cd81c4cb8b9ff098d82abf8e8d4abf9e2b509c708695d69a0387bb54e54",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-5c424377232979b5",
+        "issued_at": "2026-09-16T04:06:10.626Z",
+        "expires_at": "2026-09-16T04:16:10.626Z"
+      }
+    },
+    {
+      "id": "request_rework:mws-delivery-scope:2026-09-16T04:10:54.054Z",
+      "at": "2026-09-16T04:10:54.054Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "review_round_2\naction_v2_sha256:d8cfec37e4021b39237868fef483eda1b7ea8f50803789b399d0498a5aec5f38",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-00e65bf4df067101",
+        "issued_at": "2026-09-16T04:10:54.055Z",
+        "expires_at": "2026-09-16T04:20:54.055Z"
+      }
+    },
+    {
+      "id": "authorize_rework:mws-delivery-scope:2026-09-16T04:36:50.404Z",
+      "at": "2026-09-16T04:36:50.404Z",
+      "type": "authorize_rework",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "request_rework:mws-delivery-scope:2026-09-16T04:10:54.054Z:replan-required\naction_v2_sha256:9b31f1521ac5ebcce6c130870ea91a923b18d7a63620a4489364f7b99054c024",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-fad558b2dae3d9df",
+        "issued_at": "2026-09-16T04:36:50.404Z",
+        "expires_at": "2026-09-16T04:46:50.404Z"
+      }
+    },
+    {
+      "id": "resolve_finding:mws-delivery-scope:2026-09-16T04:45:11.463Z",
+      "at": "2026-09-16T04:45:11.463Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-bf6eab3cb52b-1-review-1\naction_v2_sha256:93bf87f0475789bb1ae70d6054371320e4d1e0e90deb0435cdfeeecdb85d4af7"
+    },
+    {
+      "id": "resolve_finding:mws-delivery-scope:2026-09-16T04:45:29.889Z",
+      "at": "2026-09-16T04:45:29.889Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-bf6eab3cb52b-2-review-2\naction_v2_sha256:64a3cb2279339c68a3df62d0c214baa59de701c4d5eaf23e46595ba234be3361"
+    },
+    {
+      "id": "resolve_finding:mws-delivery-scope:2026-09-16T04:45:49.072Z",
+      "at": "2026-09-16T04:45:49.072Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-bf6eab3cb52b-3-review-3\naction_v2_sha256:738042af859b9ffb69b581643c00dc210558c19f7a270665fd4cd6973971fd33"
+    },
+    {
+      "id": "resolve_finding:mws-delivery-scope:2026-09-16T04:46:06.938Z",
+      "at": "2026-09-16T04:46:06.938Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-bf6eab3cb52b-4-review-4\naction_v2_sha256:edbc80005dd767daff38b773715b313d6a683ecbcd9ffb18585293fda2e66fe3"
+    },
+    {
+      "id": "freeze_artifacts:mws-delivery-scope:2026-09-16T04:46:24.547Z",
+      "at": "2026-09-16T04:46:24.547Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent and Spec frozen at docs/plans/archive/mws-delivery-scope.intent.json"
+    },
+    {
+      "id": "record_approval:mws-delivery-scope:2026-09-16T04:47:13.815Z",
+      "at": "2026-09-16T04:47:13.815Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-7e18e079\naction_v2_sha256:22d44117d0b882d0c039a565c234469bf8fa265f0dcddbc7a13d4cb692429ec3",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-41df2788bb0a478b",
+        "issued_at": "2026-09-16T04:47:13.815Z",
+        "expires_at": "2026-09-16T04:57:13.815Z"
+      }
+    },
+    {
+      "id": "request_rework:mws-delivery-scope:2026-09-16T04:52:19.449Z",
+      "at": "2026-09-16T04:52:19.449Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "review_round_3\naction_v2_sha256:e2dd84eec8c4c28851800099357c395bc4bd30570b81fc8836aa3815ea6f07c5",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-0ad031480a888856",
+        "issued_at": "2026-09-16T04:52:19.450Z",
+        "expires_at": "2026-09-16T05:02:19.449Z"
+      }
+    },
+    {
+      "id": "authorize_rework:mws-delivery-scope:2026-09-16T04:56:51.565Z",
+      "at": "2026-09-16T04:56:51.565Z",
+      "type": "authorize_rework",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "request_rework:mws-delivery-scope:2026-09-16T04:52:19.449Z:replan-required\naction_v2_sha256:14977c9639fedb26aa63c2a8fd290350409c3fc334cec77ceaf8fabce4f17790",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-862ce6e8e71de996",
+        "issued_at": "2026-09-16T04:56:51.566Z",
+        "expires_at": "2026-09-16T05:06:51.566Z"
+      }
+    },
+    {
+      "id": "resolve_finding:mws-delivery-scope:2026-09-16T05:02:24.384Z",
+      "at": "2026-09-16T05:02:24.384Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-500a775347ed-1-review-1\naction_v2_sha256:2bc185bed882adbb033ef80ae4db600e9d233cc60ad305a8b9c60a8bfb171eda"
+    },
+    {
+      "id": "resolve_finding:mws-delivery-scope:2026-09-16T05:02:44.267Z",
+      "at": "2026-09-16T05:02:44.267Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-500a775347ed-2-review-2\naction_v2_sha256:73383e8b1f60f6e2c49c5bf7ad6bb315f0557282524df56c7a34b4cf0c41df2f"
+    },
+    {
+      "id": "resolve_finding:mws-delivery-scope:2026-09-16T05:03:02.568Z",
+      "at": "2026-09-16T05:03:02.568Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-500a775347ed-3-review-3\naction_v2_sha256:0af88a5633cb9504343eed875380ad51db2bcb97668e4467f0b175a74d30805b"
+    },
+    {
+      "id": "freeze_artifacts:mws-delivery-scope:2026-09-16T05:03:17.696Z",
+      "at": "2026-09-16T05:03:17.696Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent and Spec frozen at docs/plans/archive/mws-delivery-scope.intent.json"
+    },
+    {
+      "id": "record_approval:mws-delivery-scope:2026-09-16T05:03:44.727Z",
+      "at": "2026-09-16T05:03:44.727Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-5efc9267\naction_v2_sha256:8a63c28ae3b34a38972574e64130ac60aaf904692a1e0da7078fcad31bfe1b94",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-e6e48ca0337ba041",
+        "issued_at": "2026-09-16T05:03:44.728Z",
+        "expires_at": "2026-09-16T05:13:44.728Z"
+      }
+    },
+    {
+      "id": "request_rework:mws-delivery-scope:2026-09-16T05:09:54.874Z",
+      "at": "2026-09-16T05:09:54.874Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "review_round_4\naction_v2_sha256:ff4f4934e11897ea3628dd8d0e24847479a663d8b16272d2d32f5725f59105b4",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-77019985baaa196f",
+        "issued_at": "2026-09-16T05:09:54.875Z",
+        "expires_at": "2026-09-16T05:19:54.875Z"
+      }
+    },
+    {
+      "id": "authorize_rework:mws-delivery-scope:2026-09-16T05:23:09.809Z",
+      "at": "2026-09-16T05:23:09.809Z",
+      "type": "authorize_rework",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "request_rework:mws-delivery-scope:2026-09-16T05:09:54.874Z:replan-required\naction_v2_sha256:17711dad6442de9c408e1c6ff2926d6275cf5fd69d1ebedba27334fd3531be9b",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-ef7c3d78b31e872d",
+        "issued_at": "2026-09-16T05:23:09.810Z",
+        "expires_at": "2026-09-16T05:33:09.810Z"
+      }
+    },
+    {
+      "id": "resolve_finding:mws-delivery-scope:2026-09-16T05:45:36.960Z",
+      "at": "2026-09-16T05:45:36.960Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-0778c43cc1ee-1-review-1\naction_v2_sha256:4b61d1ecac7ebe34187b81b8019991f7f8b90199b3db8bbfcaec6b5200a1ad78"
+    },
+    {
+      "id": "resolve_finding:mws-delivery-scope:2026-09-16T05:45:51.548Z",
+      "at": "2026-09-16T05:45:51.548Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-0778c43cc1ee-2-review-2\naction_v2_sha256:e110ad767c2f4ec9fc6c753c77377d008de1c3670ac6943d291441e968c21310"
+    },
+    {
+      "id": "resolve_finding:mws-delivery-scope:2026-09-16T05:46:03.400Z",
+      "at": "2026-09-16T05:46:03.400Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-0778c43cc1ee-3-review-3\naction_v2_sha256:6dad0eda9af038ccb5b655f9349ace93a8a2976fb0f52759cae6873c8a58675a"
+    },
+    {
+      "id": "resolve_finding:mws-delivery-scope:2026-09-16T05:46:14.493Z",
+      "at": "2026-09-16T05:46:14.493Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-0778c43cc1ee-4-review-4\naction_v2_sha256:7ca4f5bbdda90043d661cb1c880a309116e2d6b8ae3034eaa44321a5f2f61382"
+    },
+    {
+      "id": "resolve_finding:mws-delivery-scope:2026-09-16T05:46:37.492Z",
+      "at": "2026-09-16T05:46:37.492Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-0778c43cc1ee-5-review-5\naction_v2_sha256:b422382d2256d2c41e6cc54c7d7632a8b14b852ba372d8f28e7cd16f36de54fb"
+    },
+    {
+      "id": "freeze_artifacts:mws-delivery-scope:2026-09-16T05:46:56.071Z",
+      "at": "2026-09-16T05:46:56.071Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent and Spec frozen at docs/plans/archive/mws-delivery-scope.intent.json"
+    },
+    {
+      "id": "record_approval:mws-delivery-scope:2026-09-16T05:47:11.600Z",
+      "at": "2026-09-16T05:47:11.600Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-a2314e73\naction_v2_sha256:30ddb0d30a316a77d74b7cbb8bd701ce00e4cccc973db603f0f8302c6610fc64",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-59c1da9d78dc7577",
+        "issued_at": "2026-09-16T05:47:11.601Z",
+        "expires_at": "2026-09-16T05:57:11.601Z"
+      }
+    },
+    {
+      "id": "request_rework:mws-delivery-scope:2026-09-16T05:52:14.560Z",
+      "at": "2026-09-16T05:52:14.560Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "review_round_5\naction_v2_sha256:7ec12534eaa32c810cad83598869428f47b9572f6890491329255049f25c9df5",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-0517b8aefe0493a3",
+        "issued_at": "2026-09-16T05:52:14.562Z",
+        "expires_at": "2026-09-16T06:02:14.561Z"
+      }
+    },
+    {
+      "id": "stop:mws-delivery-scope:2026-09-16T05:59:28.110Z",
+      "at": "2026-09-16T05:59:28.110Z",
+      "type": "stop",
+      "from_state": "active:active",
+      "to_state": "stopped:frozen",
+      "reason": "literal user requested task stop\naction_v2_sha256:8ad23f1b8b2523f5c67126d6c3f6b56e7f580bec14dec0119702f8091349d87f",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-4933da1e97fb9b40",
+        "issued_at": "2026-09-16T05:59:28.112Z",
+        "expires_at": "2026-09-16T06:09:28.112Z"
+      }
+    }
+  ]
+}
