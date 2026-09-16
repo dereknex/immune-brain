@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { execFileSync } from "node:child_process";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -189,6 +190,10 @@ describe("canary assurance authority", () => {
 	test("deterministic QA runs fixed descriptors without executor-authored evidence", async () => {
 		const root = mkdtempSync(join(tmpdir(), "canary-qa-"));
 		try {
+			execFileSync("git", ["init", "-q"], { cwd: root });
+			execFileSync("git", ["config", "user.email", "test@example.com"], { cwd: root });
+			execFileSync("git", ["config", "user.name", "Test"], { cwd: root });
+			execFileSync("git", ["commit", "--allow-empty", "-qm", "base"], { cwd: root });
 			const runner = resolveBunRunner();
 			const s = snapshot({ root, role: "qa", acceptance: [{ id: "A1", assertion: "passes", verification: "descriptor" }] });
 			const passed = await runDeterministicQa(s, new Map([["A1", descriptor(["-e", "1"])]]), runner);

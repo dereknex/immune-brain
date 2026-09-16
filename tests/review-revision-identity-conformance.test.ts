@@ -224,5 +224,6 @@ describe("Review revision identity conformance", () => {
 		const claude = await ensureClaudeReviewRevision(root, TASK, projection);
 		const pi = await ensureTaskReviewRevision(root, TASK, projection);
 		expect(claude).toEqual(pi);
+		expect(claude?.review_ref).toMatch(/^refs\/immune-brain\/reviews\/[a-f0-9]{16}\/[^/]+\/[^/]+\/[a-f0-9]+$/);
 	});
 });

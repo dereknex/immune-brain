@@ -1,4 +1,5 @@
 import { snapshotDigest, type SnapshotDescriptor, type AssuranceVerdict } from "./coordinator";
+import { deliveryTreeFromIndex, materializeDeliveryWorkspace } from "./delivery_workspace";
 import { runFixedVerification, VerificationAbortedError, type FrozenRunner, type VerificationDescriptor } from "./verification";
 import { qaFindingId } from "./qa_findings";
 
@@ -22,12 +23,22 @@ export async function runDeterministicQa(
 ): Promise<AssuranceVerdict> {
 	if (snapshot.role !== "qa") throw new Error("deterministic QA requires qa role");
 	if (options.signal?.aborted) throw new VerificationAbortedError();
+	for (const item of snapshot.acceptance) {
+		if (!descriptors.get(item.id)) throw new Error(`verification descriptor missing for ${item.id}`);
+	}
 	const findings: NonNullable<AssuranceVerdict["findings"]> = [];
 	const runVerification = options.runVerification ?? runFixedVerification;
+	const delivery = options.runVerification
+		? null
+		: materializeDeliveryWorkspace(
+				snapshot.root,
+				snapshot.review_revision?.review_tree ?? deliveryTreeFromIndex(snapshot.root),
+			);
+	const qaRoot = delivery?.root ?? snapshot.root;
+	try {
 	for (const [offset, item] of snapshot.acceptance.entries()) {
 		if (options.signal?.aborted) throw new VerificationAbortedError();
-		const descriptor = descriptors.get(item.id);
-		if (!descriptor) throw new Error(`verification descriptor missing for ${item.id}`);
+		const descriptor = descriptors.get(item.id)!;
 		const startedAt = Date.now();
 		options.onProgress?.({
 			index: offset + 1,
@@ -36,7 +47,7 @@ export async function runDeterministicQa(
 			phase: "running",
 			elapsed_ms: 0,
 		});
-		const result = await runVerification(snapshot.root, descriptor, runner, {
+		const result = await runVerification(qaRoot, descriptor, runner, {
 			signal: options.signal,
 		});
 		if (options.signal?.aborted) throw new VerificationAbortedError();
@@ -81,5 +92,8 @@ export async function runDeterministicQa(
 			summary: `all ${snapshot.acceptance.length} fixed verification descriptor(s) passed`,
 		},
 	};
+	} finally {
+		delivery?.cleanup();
+	}
 }
 

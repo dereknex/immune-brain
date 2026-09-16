@@ -52,15 +52,16 @@ and `pr-fix` repairs remain bounded by the enrolled TaskIntent.
 
 Continue while the current projection has a valid action:
 
-1. For active artifacts, implement only the enrolled acceptance within
-   `scope_hint` in the current conversation. Run focused checks. Executor checks
-   are diagnostic evidence, not a QA or Review approval.
+1. For active artifacts, implement only the enrolled acceptance within the
+   `scope_hint` envelope in the current conversation. New helpers or tests
+   inside an approved directory or glob do not require a revision. Run focused
+   checks. Executor checks are diagnostic evidence, not a QA or Review approval.
 2. Call `advance_assurance` in the foreground and consume its direct terminal
    result. The Kernel freezes the artifacts itself before QA: it binds Git
    content identity in place without relocating source paths. A simple task has
-   TaskIntent only; a complex task may bind one active Spec. Deterministic QA runs
-   fixed acceptance descriptors atomically inside the Host integration. Do not
-   dispatch a separate per-Step QA Agent.
+   TaskIntent only; a complex task may bind one active Spec. Deterministic QA
+   runs all descriptors in a disposable delivery materialization, never against
+   unchecked live worktree source. Do not dispatch a separate per-Step QA Agent.
 3. On `review_ready`, invoke the returned `agent_params` as one exact foreground
    Agent call, then pass its structured verdict to `submit_review`. Do not
    replace this snapshot-bound reviewer with a generic role dispatch. The Parent

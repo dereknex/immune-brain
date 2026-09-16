@@ -21,6 +21,7 @@ import {
 	type GitTaskIndexEntry,
 	type GitTaskRevisionSnapshot,
 } from "../workspace_scope";
+import { currentRunId } from "../kernel/storage";
 
 const MAX_REVIEW_BUNDLE_BYTES = 2 * 1024 * 1024;
 
@@ -346,10 +347,16 @@ function taskIdFromReviewRefSegment(segment: string): string {
 	return taskId;
 }
 
-function reviewRef(taskId: string, reviewCommit: string): string {
+function workspaceRefSegment(root: string): string {
+	return createHash("sha256").update(realpathSync(root)).digest("hex").slice(0, 16);
+}
+
+function reviewRef(root: string, taskId: string, reviewCommit: string): string {
 	const taskSegment = reviewRefTaskSegment(taskId);
 	if (!GIT_COMMIT_ID.test(reviewCommit)) throw new Error("review commit has invalid identity");
-	return `${REVIEW_REF_NAMESPACE}/${taskSegment}/${reviewCommit}`;
+	const runId = currentRunId(root, taskId) ?? "none";
+	if (!REVIEW_TASK_ID.test(runId) && runId !== "none") throw new Error("review run id has invalid identity");
+	return `${REVIEW_REF_NAMESPACE}/${workspaceRefSegment(root)}/${runId}/${taskSegment}/${reviewCommit}`;
 }
 
 /** The scoped delta of one captured revision, as base->tree paths. */
@@ -406,7 +413,7 @@ export function publishReviewRevision(
 		// Determinism proof: the synthetic commit's tree-to-tree delta against the
 		// Enrollment base must be exactly the captured scoped delta, nothing more.
 		if (!GIT_COMMIT_ID.test(reviewCommit)) throw new Error("review synthetic commit write failed");
-		const ref = reviewRef(taskId, reviewCommit);
+		const ref = reviewRef(root, taskId, reviewCommit);
 		const expected = revisionDelta(snapshot);
 		const actual = decodeNullPaths(
 			gitEvidenceBytes(root, ["diff", "--no-renames", "--name-only", "-z", snapshot.base_head, reviewCommit]),
@@ -509,10 +516,11 @@ export function listReviewRefs(root: string): Array<{ ref: string; commit: strin
 	const refs: Array<{ ref: string; commit: string; taskId: string }> = [];
 	for (const line of output.split("\n").filter(Boolean)) {
 		const [ref, commit] = line.split(" ");
-		const segment = ref?.slice(REVIEW_REF_NAMESPACE.length + 1).split("/")[0] ?? "";
+		const parts = ref?.slice(REVIEW_REF_NAMESPACE.length + 1).split("/") ?? [];
+		const segment = parts.length >= 4 ? parts[parts.length - 2] : parts[0] ?? "";
 		let taskId: string;
 		try {
-			taskId = taskIdFromReviewRefSegment(segment);
+			taskId = taskIdFromReviewRefSegment(segment ?? "");
 		} catch {
 			continue;
 		}

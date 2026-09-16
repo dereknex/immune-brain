@@ -1,6 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { describe, expect, test } from "bun:test";
-import { chmodSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -61,7 +61,7 @@ describe("managed task snapshot isolation", () => {
 		}
 	});
 
-	test("ignores out-of-scope worktree and index changes", () => {
+	test("preserves out-of-scope worktree edits and rejects staged envelope escape", () => {
 		const root = repo();
 		try {
 			writeFileSync(join(root, "task.ts"), "export const task = 'staged';\n");
@@ -72,7 +72,49 @@ describe("managed task snapshot isolation", () => {
 			writeFileSync(join(root, "outside.ts"), "export const outside = 'dirty-two';\n");
 			expect(taskDiffHash(root, ["task.ts"])).toBe(initial);
 			git(root, ["add", "outside.ts"]);
-			expect(taskDiffHash(root, ["task.ts"])).toBe(initial);
+			expect(() => taskDiffHash(root, ["task.ts"])).toThrow(/outside the authorization envelope/);
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
+	test("includes a new helper inside a directory envelope without listing it", () => {
+		const root = repo();
+		try {
+			mkdirSync(join(root, "src"), { recursive: true });
+			writeFileSync(join(root, "src/task.ts"), "export const task = 'ok';\n");
+			writeFileSync(join(root, "src/helper.ts"), "export const helper = true;\n");
+			git(root, ["add", "src/task.ts", "src/helper.ts"]);
+			const snapshot = captureGitTaskSnapshot(root, ["src"]);
+			expect(Object.keys(snapshot.staged_files).sort()).toEqual(["src/helper.ts", "src/task.ts"]);
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
+	test("excludes staged terminal audit from the source delivery snapshot", () => {
+		const root = repo();
+		try {
+			mkdirSync(join(root, ".imm/audit/task-1"), { recursive: true });
+			writeFileSync(join(root, ".imm/audit/task-1/terminal-proof.json"), "{}\n");
+			writeFileSync(join(root, "task.ts"), "export const task = 'staged';\n");
+			git(root, ["add", "task.ts", ".imm/audit/task-1/terminal-proof.json"]);
+			const snapshot = captureGitTaskSnapshot(root, ["task.ts"]);
+			expect(Object.keys(snapshot.staged_files)).toEqual(["task.ts"]);
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
+	test("does not import unrelated untracked files into Git", () => {
+		const root = repo();
+		try {
+			writeFileSync(join(root, "task.ts"), "export const task = 'staged';\n");
+			git(root, ["add", "task.ts"]);
+			writeFileSync(join(root, "scratch.ts"), "export const scratch = true;\n");
+			const snapshot = captureGitTaskSnapshot(root, ["task.ts"]);
+			expect(Object.keys(snapshot.staged_files)).toEqual(["task.ts"]);
+			expect(() => git(root, ["ls-files", "--error-unmatch", "scratch.ts"])).toThrow();
 		} finally {
 			rmSync(root, { recursive: true, force: true });
 		}

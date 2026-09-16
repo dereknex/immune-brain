@@ -5,9 +5,11 @@
 // digest.
 
 import { describe, expect, test } from "bun:test";
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { DeliveryWorkspaceError, deliveryTreeFromIndex, materializeDeliveryWorkspace } from "../plugins/immune-brain/runtime/assurance/delivery_workspace";
 
 import {
 	parseVerificationDescriptor,
@@ -207,5 +209,47 @@ describe("findings digest algorithm parity", () => {
 		expect(findingsDigest(findings as never)).toBe(
 			findingsDigestV2(findings as never),
 		);
+	});
+});
+
+describe("delivery workspace materialization", () => {
+	function gitRepo(): string {
+		const root = mkdtempSync(join(tmpdir(), "imm-delivery-"));
+		execFileSync("git", ["init", "-q"], { cwd: root });
+		execFileSync("git", ["config", "user.email", "test@example.com"], { cwd: root });
+		execFileSync("git", ["config", "user.name", "Test"], { cwd: root });
+		writeFileSync(join(root, "ok.ts"), "export const ok = 1;\n");
+		execFileSync("git", ["add", "ok.ts"], { cwd: root });
+		execFileSync("git", ["commit", "-qm", "base"], { cwd: root });
+		return root;
+	}
+
+	test("QA sees the frozen tree, not later live worktree edits", () => {
+		const root = gitRepo();
+		try {
+			const tree = deliveryTreeFromIndex(root);
+			const delivery = materializeDeliveryWorkspace(root, tree);
+			try {
+				writeFileSync(join(root, "ok.ts"), "export const ok = 2;\n");
+				expect(readFileSync(join(delivery.root, "ok.ts"), "utf8")).toBe("export const ok = 1;\n");
+			} finally {
+				delivery.cleanup();
+			}
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
+	test("refuses a symlink that escapes the materialization", () => {
+		const root = gitRepo();
+		try {
+			symlinkSync("/etc/passwd", join(root, "escape"));
+			execFileSync("git", ["add", "escape"], { cwd: root });
+			execFileSync("git", ["commit", "-qm", "escape"], { cwd: root });
+			const tree = deliveryTreeFromIndex(root);
+			expect(() => materializeDeliveryWorkspace(root, tree)).toThrow(DeliveryWorkspaceError);
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
 	});
 });

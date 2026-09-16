@@ -34,6 +34,26 @@ function comparePaths(left: string, right: string): number {
 	return 0;
 }
 
+function isDeliveryAttachment(path: string): boolean {
+	return path === ".imm/audit" || path.startsWith(".imm/audit/");
+}
+
+function isNonDeliveryPath(path: string): boolean {
+	return isDeliveryAttachment(path) || isRuntimeAuthorityPath(path);
+}
+
+function isPlanningSidecar(path: string): boolean {
+	return /^docs\/plans\/(?:archive\/)?[^/]+\.intent\.json$/.test(path);
+}
+
+function assertNoEnvelopeEscape(stagedPaths: readonly string[], scope: string[]): void {
+	const escaped = [...new Set(stagedPaths)]
+		.filter((path) => !isNonDeliveryPath(path) && !isPlanningSidecar(path) && !taskPathMatchesScope(path, scope))
+		.sort(comparePaths);
+	if (escaped.length > 0)
+		throw new Error(`task delivery contains paths outside the authorization envelope: ${escaped.join(", ")}`);
+}
+
 function isRuntimeAuthorityPath(path: string): boolean {
 	return (
 		// Kernel v2 task state, workspace coordination, and authority journals are
@@ -343,6 +363,7 @@ function taskSnapshotOnce(root: string, scope: string[]): GitTaskSnapshot {
 		"untracked task paths",
 	);
 	assertNoCaseFoldCollisions([...stagedPaths, ...unstagedPaths, ...untrackedPaths], "Git task paths");
+	assertNoEnvelopeEscape(stagedPaths, scope);
 	const uncommittedInScope = [...new Set([...unstagedPaths, ...untrackedPaths])]
 		.filter((path) => taskPathMatchesScope(path, scope))
 		.sort(comparePaths);
@@ -350,7 +371,7 @@ function taskSnapshotOnce(root: string, scope: string[]): GitTaskSnapshot {
 		throw new Error(`task scope contains unstaged or untracked changes: ${uncommittedInScope.join(", ")}`);
 
 	const taskPaths = [...new Set(stagedPaths)]
-		.filter((path) => taskPathMatchesScope(path, scope))
+		.filter((path) => !isNonDeliveryPath(path) && taskPathMatchesScope(path, scope))
 		.sort(comparePaths);
 	const stagedFiles: Record<string, GitTaskIndexEntry> = {};
 	for (const path of taskPaths) {
@@ -476,7 +497,8 @@ function taskRevisionSnapshotOnce(
 		gitBytes(root, ["ls-files", "--others", "--exclude-standard", "-z", "--"]),
 		"untracked task revision paths",
 	);
-	const scopedStagedPaths = stagedPaths.filter((path) => taskPathMatchesScope(path, scope));
+	assertNoEnvelopeEscape(stagedPaths, scope);
+	const scopedStagedPaths = stagedPaths.filter((path) => !isNonDeliveryPath(path) && taskPathMatchesScope(path, scope));
 	const scopedUnstagedPaths = unstagedPaths.filter((path) => taskPathMatchesScope(path, scope));
 	const scopedUntrackedPaths = untrackedPaths.filter((path) => taskPathMatchesScope(path, scope));
 	assertNoCaseFoldCollisions(
