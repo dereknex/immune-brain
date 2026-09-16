@@ -1,0 +1,885 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "mws-assurance-review",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "mws-assurance-review",
+    "goal": "Complete the shortest evidence-driven assurance path with advisory-capable pass verdicts, one independent Reviewer per round and no repeated fresh QA or unsupported rework loops.",
+    "acceptance": [
+      {
+        "id": "A1",
+        "assertion": "Routine completes after deterministic QA without Review; material/critical prepare one independent Reviewer per round; pass with advisory settles while valid blocking causes rework and every changed snapshot reruns all acceptance descriptors.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.4.2\",\n  \"argv\": [\n    \"test\",\n    \"tests/host-neutral-assurance-coordinator.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 60000,\n  \"max_output_bytes\": 131072\n}\n"
+      },
+      {
+        "id": "A2",
+        "assertion": "Unchanged refuted evidence cannot repeatedly block, new evidence may re-enter review, budget exhaustion pauses instead of passing, and unknown/failed attempts cannot settle the task.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.4.2\",\n  \"argv\": [\n    \"test\",\n    \"tests/kernel-canary-rework-authority.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 60000,\n  \"max_output_bytes\": 131072\n}\n"
+      },
+      {
+        "id": "A3",
+        "assertion": "Both Hosts bind equivalent verdict/run/freshness identities, reuse unchanged committed QA during recovery and preserve required independent Review and native exception decisions.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.4.2\",\n  \"argv\": [\n    \"test\",\n    \"tests/dual-host-assurance-conformance.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 60000,\n  \"max_output_bytes\": 131072\n}\n"
+      }
+    ],
+    "scope_hint": [
+      "docs/plans/archive/mws-assurance-review.intent.json",
+      "docs/plans/mws-assurance-review.intent.json",
+      "docs/specs/archive/mws-assurance-review.spec.md",
+      "docs/specs/mws-assurance-review.spec.md",
+      "plugins/immune-brain/.pi-extension/imm-canary-work.ts",
+      "plugins/immune-brain/.pi-extension/pi-canary-assurance-progression.ts",
+      "plugins/immune-brain/.pi-extension/pi-canary-interaction.ts",
+      "plugins/immune-brain/.pi-extension/pi-canary-invocations.ts",
+      "plugins/immune-brain/.pi-extension/pi-canary-native-review.ts",
+      "plugins/immune-brain/.pi-extension/pi-canary-qa-findings.ts",
+      "plugins/immune-brain/.pi-extension/pi-canary-tool-failure.ts",
+      "plugins/immune-brain/.pi-extension/pi-canary-verification.ts",
+      "plugins/immune-brain/.pi-extension/runtime-stub.ts",
+      "plugins/immune-brain/dist/claude/mcp-server.mjs",
+      "plugins/immune-brain/dist/imm-loop.md",
+      "plugins/immune-brain/dist/role-prompts/code-review.md",
+      "plugins/immune-brain/dist/role-prompts/qa.md",
+      "plugins/immune-brain/runtime/assurance/coordinator.ts",
+      "plugins/immune-brain/runtime/assurance/host_port.ts",
+      "plugins/immune-brain/runtime/assurance/invocations.ts",
+      "plugins/immune-brain/runtime/assurance/qa.ts",
+      "plugins/immune-brain/runtime/assurance/qa_findings.ts",
+      "plugins/immune-brain/runtime/assurance/verification.ts",
+      "plugins/immune-brain/runtime/authorization_operation.ts",
+      "plugins/immune-brain/runtime/claude/capability.ts",
+      "plugins/immune-brain/runtime/claude/interaction.ts",
+      "plugins/immune-brain/runtime/claude/kernel_ports.ts",
+      "plugins/immune-brain/runtime/claude/mcp_server.ts",
+      "plugins/immune-brain/runtime/claude/review_host.ts",
+      "plugins/immune-brain/runtime/commands/kernel.ts",
+      "plugins/immune-brain/runtime/kernel/application.ts",
+      "plugins/immune-brain/runtime/kernel/assurance_projection.ts",
+      "plugins/immune-brain/runtime/kernel/authority_port.ts",
+      "plugins/immune-brain/runtime/kernel/backend_claim.ts",
+      "plugins/immune-brain/runtime/kernel/batch_authority.ts",
+      "plugins/immune-brain/runtime/kernel/canary_application.ts",
+      "plugins/immune-brain/runtime/kernel/capability_registry.ts",
+      "plugins/immune-brain/runtime/kernel/completion.ts",
+      "plugins/immune-brain/runtime/kernel/enrollment.ts",
+      "plugins/immune-brain/runtime/kernel/enrollment_authority.ts",
+      "plugins/immune-brain/runtime/kernel/index.ts",
+      "plugins/immune-brain/runtime/kernel/intent.ts",
+      "plugins/immune-brain/runtime/kernel/intent_token_registry.ts",
+      "plugins/immune-brain/runtime/kernel/reducer.ts",
+      "plugins/immune-brain/runtime/kernel/refutation.ts",
+      "plugins/immune-brain/runtime/kernel/spec_binding.ts",
+      "plugins/immune-brain/runtime/kernel/storage.ts",
+      "plugins/immune-brain/runtime/kernel/storage_layout_migration.ts",
+      "plugins/immune-brain/runtime/kernel/storage_paths.ts",
+      "plugins/immune-brain/runtime/kernel/types.ts",
+      "plugins/immune-brain/runtime/kernel/validation.ts",
+      "plugins/immune-brain/runtime/loop_contract.ts",
+      "plugins/immune-brain/runtime/prompts/code-review.md",
+      "plugins/immune-brain/runtime/prompts/qa.md",
+      "plugins/immune-brain/runtime/role_prompt_bridge.ts",
+      "plugins/immune-brain/runtime/unattended/batch_runner.ts",
+      "plugins/immune-brain/runtime/v4_runtime.ts",
+      "scripts/build-claude-plugin.ts",
+      "tests/__snapshots__/plugin-package-runtime.test.ts.snap",
+      "tests/breaking-intent-revision-gate.test.ts",
+      "tests/carrier-enrollment-gate-contract.test.ts",
+      "tests/claude-batch-authority.test.ts",
+      "tests/claude-host-authority.test.ts",
+      "tests/claude-host-package.test.ts",
+      "tests/dual-host-assurance-conformance.test.ts",
+      "tests/github-issue-projection-contract.test.ts",
+      "tests/helpers/pi-canary-assurance-harness.ts",
+      "tests/host-neutral-assurance-coordinator.test.ts",
+      "tests/kernel-assurance-obligation.test.ts",
+      "tests/kernel-assurance-projection.test.ts",
+      "tests/kernel-canary-application.test.ts",
+      "tests/kernel-canary-authority.test.ts",
+      "tests/kernel-canary-claim-writer-boundary.test.ts",
+      "tests/kernel-canary-drain-transaction.test.ts",
+      "tests/kernel-canary-rework-authority.test.ts",
+      "tests/kernel-canary-terminal-transaction.test.ts",
+      "tests/kernel-inspect.test.ts",
+      "tests/kernel-intent-authoring.test.ts",
+      "tests/kernel-intent-validation.test.ts",
+      "tests/kernel-migrate.test.ts",
+      "tests/kernel-p2b0-boundary.test.ts",
+      "tests/kernel-r2c1-boundary.test.ts",
+      "tests/kernel-r2c2-boundary.test.ts",
+      "tests/kernel-r2c2-reducer.test.ts",
+      "tests/kernel-record-v3.test.ts",
+      "tests/kernel-record-v4.test.ts",
+      "tests/kernel-shadow-cli.test.ts",
+      "tests/kernel-verification-descriptor.test.ts",
+      "tests/packaged-contract-tool-surface.test.ts",
+      "tests/pi-canary-assurance-advance.test.ts",
+      "tests/pi-canary-assurance-authority.test.ts",
+      "tests/pi-canary-assurance-progression.test.ts",
+      "tests/pi-canary-enroll-extension.test.ts",
+      "tests/pi-canary-lifecycle-package.test.ts",
+      "tests/pi-canary-review-outcome-evidence.test.ts",
+      "tests/pi-canary-user-authority.test.ts",
+      "tests/pi-canary-verification-descriptor.test.ts",
+      "tests/pi-canary-work-extension.test.ts",
+      "tests/plugin-package-runtime.test.ts",
+      "tests/review-revision-identity-conformance.test.ts",
+      "tests/risk-downgrade-guard.test.ts",
+      "tests/shared-deterministic-qa.test.ts",
+      "tests/unattended-batch-run.test.ts",
+      "tests/v4-storage-retirement-legacy-audit.test.ts"
+    ],
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/archive/mws-assurance-review.intent.json",
+    "content_hash": "sha256:0bb4eb8e9634a951deb417f4042b07f5c8a534bb27e35c219153b88165564739"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:0bb4eb8e9634a951deb417f4042b07f5c8a534bb27e35c219153b88165564739",
+  "git_base_head": "4b267c84de5dc526edb11f4e70108a8b61d3a8ed",
+  "attestations": [
+    {
+      "id": "approval-qa-63b6e711",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:0bb4eb8e9634a951deb417f4042b07f5c8a534bb27e35c219153b88165564739",
+      "diff_hash": "sha256:5422aa8cbbcc43b44a3c322235c7a7002ab908d6ea2f553294ac5e853e0bf2f6",
+      "actor_id": "deterministic-qa",
+      "summary": "all 3 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "A2",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "A3",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-854a64d3",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:0bb4eb8e9634a951deb417f4042b07f5c8a534bb27e35c219153b88165564739",
+      "diff_hash": "sha256:10597ace8b329f502395a106b20616ce7bb0dc42f6a7d50d914a5d8a9a74a249",
+      "actor_id": "deterministic-qa",
+      "summary": "all 3 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "A2",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "A3",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-ef1664ed",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:0bb4eb8e9634a951deb417f4042b07f5c8a534bb27e35c219153b88165564739",
+      "diff_hash": "sha256:bd8bd72c4106b2096e3e1684c8233fd0b00956b9f5f34d46dd1e5cc938b54471",
+      "actor_id": "deterministic-qa",
+      "summary": "all 3 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "A2",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "A3",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-3d11722c",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:0bb4eb8e9634a951deb417f4042b07f5c8a534bb27e35c219153b88165564739",
+      "diff_hash": "sha256:41f60f47b9effa4934d13ac2819fd9eec61a28edc1f89afa786c9368648db0b4",
+      "actor_id": "deterministic-qa",
+      "summary": "all 3 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "A2",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "A3",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-86fa3cf2",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:0bb4eb8e9634a951deb417f4042b07f5c8a534bb27e35c219153b88165564739",
+      "diff_hash": "sha256:9f6ccdc3a1b800eb04500ba6e4f8706db51c55ad55340557ba19f63d63966319",
+      "actor_id": "deterministic-qa",
+      "summary": "all 3 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "A2",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "A3",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-ceb8d9ea",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:0bb4eb8e9634a951deb417f4042b07f5c8a534bb27e35c219153b88165564739",
+      "diff_hash": "sha256:6695104c6dca708f4ea5d85b217064af239c38fa288ac868d87a5722a97f0506",
+      "actor_id": "deterministic-qa",
+      "summary": "all 3 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "A2",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "A3",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-c4ca5820",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:0bb4eb8e9634a951deb417f4042b07f5c8a534bb27e35c219153b88165564739",
+      "diff_hash": "sha256:6695104c6dca708f4ea5d85b217064af239c38fa288ac868d87a5722a97f0506",
+      "actor_id": "parent-mediated-review",
+      "summary": "Verified the immutable revision's single parent, tree, manifest digest, and changed blobs; advisories persist inside the attestation on both Hosts with no rework-worthy defect found.",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "4b267c84de5dc526edb11f4e70108a8b61d3a8ed",
+        "review_commit": "4fb520017b40f064a08b76bd82f7ba96069e0aea",
+        "review_tree": "1cbce707a9edb83d4737e7c0eff25f7d0f9cdd4b",
+        "manifest_digest": "sha256:2bc31b64e0eb8f52ed21e346912e3ce02d8be84bc322507c4892797b801ee5b1"
+      }
+    }
+  ],
+  "findings": [
+    {
+      "id": "review-6eeef9d42c2b-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "A1",
+      "source": "review",
+      "review_round": 1,
+      "summary": "A pass verdict carrying advisory findings is rejected, so advisory-capable settlement is unimplemented.",
+      "anchor": "sha256:90c79d21c0e35039212214384b61fcda5d9c25c9d544849ed04458c0fe8dfdf6",
+      "evidence": {
+        "trigger": "An independent Reviewer submits a correctly bound decision=pass verdict with a valid review approval and one advisory finding. parseAssuranceVerdict throws 'pass verdict must omit findings'; submitReview returns verdict_invalid instead of settling.",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/assurance/coordinator.ts:AssuranceCoordinator.submitReview",
+          "plugins/immune-brain/runtime/assurance/coordinator.ts:parseAssuranceVerdict"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "A1"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-6eeef9d42c2b-2-review-2",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "A2",
+      "source": "review",
+      "review_round": 1,
+      "summary": "Repeated acceptance rework has no bounded budget, so ordinary repair and review can cycle indefinitely.",
+      "anchor": "sha256:bcfdfd8707e41ae23a1b1a3fa6bfd98134ee0a2a75acfcfd09443e8287238545",
+      "evidence": {
+        "trigger": "Successive Review rounds report non-refuted blocking findings with violated.kind=acceptance on A1. After each repair the Executor resolves the previous finding and freezes a new snapshot. Regardless of round count, request_rework sets artifacts active and never creates a budget-exhaustion obligation.",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/assurance/coordinator.ts:AssuranceCoordinator.submitReview",
+          "plugins/immune-brain/runtime/kernel/reducer.ts:reduceTask(request_rework)",
+          "plugins/immune-brain/runtime/kernel/completion.ts:projectTask",
+          "plugins/immune-brain/runtime/kernel/assurance_projection.ts:projectFromRecord",
+          "plugins/immune-brain/runtime/assurance/coordinator.ts:AssuranceCoordinator.advance"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "A2"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-343e11a51352-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "A2",
+      "source": "review",
+      "review_round": 2,
+      "summary": "The rework budget counts every review round, so repeated refuted claims eventually park the task.",
+      "anchor": "sha256:1f5ca292bd423201822499eddf12d83fa0b83baca686000583608cc1249f8e20",
+      "evidence": {
+        "trigger": "A first-round blocking finding is refuted by a fresh passing QA attestation; intent, diff, and counterevidence stay valid, then the same anchor is re-submitted with new finding ids. Every admission is refuted, yet reviewRound keeps growing until round 6 trips the budget and writes a replan boundary.",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/assurance/coordinator.ts:AssuranceCoordinator.submitReview",
+          "plugins/immune-brain/runtime/claude/kernel_ports.ts:ClaudeRuntime.applyVerdict",
+          "plugins/immune-brain/runtime/kernel/reducer.ts:reduceTask(request_rework)",
+          "plugins/immune-brain/runtime/assurance/coordinator.ts:AssuranceCoordinator.advance"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "A2"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "request_rework:mws-assurance-review:2026-09-16T07:05:41.616Z:replan-required",
+      "kind": "replan_required",
+      "status": "resolved",
+      "acceptance_id": "A2",
+      "source": "kernel",
+      "review_round": 2,
+      "summary": "Review returned this acceptance boundary twice; a durable replan is required."
+    },
+    {
+      "id": "review-03f8db20e12e-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "A2",
+      "source": "review",
+      "review_round": 3,
+      "summary": "Budget exhaustion parks even when the current round raised no effective blocking claim.",
+      "anchor": "sha256:d51b005789f324c0c968b4317bb789ba7a1a029d671467d9abb4f8fee012df03",
+      "evidence": {
+        "trigger": "The record already carries five resolved blocking rounds plus one still-live refuted claim; a rework whose findings are all inherited as refuted still trips the budget and parks the task.",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/assurance/coordinator.ts:AssuranceCoordinator.submitReview",
+          "plugins/immune-brain/runtime/claude/kernel_ports.ts:ClaudeRuntime.applyVerdict",
+          "plugins/immune-brain/runtime/kernel/reducer.ts:reduceTask(request_rework)"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "A2"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-03f8db20e12e-2-review-2",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "A3",
+      "source": "review",
+      "review_round": 3,
+      "summary": "Advisories are persisted in a separate transaction from the approval, so a crash between them loses them.",
+      "anchor": "sha256:03f0f03bd41ed5ae8d976d28c1ab058befddad7fd5e697a82f899af693773631",
+      "evidence": {
+        "trigger": "A pass verdict with advisories commits record_approval, then the process exits before the record_finding writes; recovery projects complete from the committed approval and the advisories are lost.",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/assurance/coordinator.ts:AssuranceCoordinator.submitReview",
+          "plugins/immune-brain/runtime/claude/kernel_ports.ts:ClaudeRuntime.applyVerdict",
+          "plugins/immune-brain/.pi-extension/imm-canary-work.ts:applyAssuranceVerdict",
+          "plugins/immune-brain/runtime/assurance/coordinator.ts:AssuranceCoordinator.advance"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "A3"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "request_rework:mws-assurance-review:2026-09-16T07:11:35.692Z:replan-required",
+      "kind": "replan_required",
+      "status": "resolved",
+      "acceptance_id": "A2",
+      "source": "kernel",
+      "review_round": 3,
+      "summary": "Review returned this acceptance boundary twice; a durable replan is required."
+    },
+    {
+      "id": "review-305b261dc841-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "A1",
+      "source": "review",
+      "review_round": 4,
+      "summary": "Advisory pass cannot persist: parseAttestationV3 rejects approval.advisory_findings as an unknown field.",
+      "anchor": "sha256:0932b6a823edaa1f590bc856e7a2f04d95b41f44d70899130734ca4dd1c316ab",
+      "evidence": {
+        "trigger": "A material task's legal Review pass carries one advisory with full evidence; record_approval copies advisory_findings onto the attestation, whose strict parser whitelist rejects the field, so the write fails.",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/assurance/coordinator.ts:AssuranceCoordinator.submitReview",
+          "plugins/immune-brain/runtime/claude/kernel_ports.ts:ClaudeRuntime.applyVerdict",
+          "plugins/immune-brain/runtime/kernel/reducer.ts:reduceTask(record_approval)",
+          "plugins/immune-brain/runtime/kernel/validation.ts:assertTaskRecordUpdateV3",
+          "plugins/immune-brain/runtime/kernel/validation.ts:parseAttestationV3"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "A1"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "request_rework:mws-assurance-review:2026-09-16T07:23:29.062Z:replan-required",
+      "kind": "replan_required",
+      "status": "resolved",
+      "acceptance_id": "A1",
+      "source": "kernel",
+      "review_round": 4,
+      "summary": "Review returned this acceptance boundary twice; a durable replan is required."
+    },
+    {
+      "id": "review-4ffd4f9f0f6b-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "A1",
+      "source": "review",
+      "review_round": 5,
+      "summary": "v3 review attestations cannot carry advisory_findings because the field is gated behind the v4-only review_revision switch.",
+      "anchor": "sha256:0932b6a823edaa1f590bc856e7a2f04d95b41f44d70899130734ca4dd1c316ab",
+      "evidence": {
+        "trigger": "A supported v3 material task is active, frozen, QA-passed; the Reviewer returns a legal pass verdict with one fully evidenced advisory. Both Hosts write advisory_findings, but the v3 record update re-parses the attestation with the v4-only field gate and rejects it.",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/assurance/coordinator.ts:AssuranceCoordinator.submitReview",
+          "plugins/immune-brain/runtime/claude/kernel_ports.ts:ClaudeRuntime.applyVerdict",
+          "plugins/immune-brain/runtime/kernel/reducer.ts:reduceTask(record_approval)",
+          "plugins/immune-brain/runtime/kernel/validation.ts:assertTaskRecordUpdateV3",
+          "plugins/immune-brain/runtime/kernel/validation.ts:parseAttestationV3"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "A1"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "request_rework:mws-assurance-review:2026-09-16T07:32:31.085Z:replan-required",
+      "kind": "replan_required",
+      "status": "resolved",
+      "acceptance_id": "A1",
+      "source": "kernel",
+      "review_round": 5,
+      "summary": "Review returned this acceptance boundary twice; a durable replan is required."
+    }
+  ],
+  "history": [
+    {
+      "id": "freeze_artifacts:mws-assurance-review:2026-09-16T06:19:25.195Z",
+      "at": "2026-09-16T06:19:25.195Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent and Spec frozen at docs/plans/archive/mws-assurance-review.intent.json"
+    },
+    {
+      "id": "record_approval:mws-assurance-review:2026-09-16T06:20:15.053Z",
+      "at": "2026-09-16T06:20:15.053Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-63b6e711\naction_v2_sha256:91684b182ee744718c9695d51daf3cdf1e0af59c95db8f2518c7cb79d10bbf1a",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-257cf0ca346a96d4",
+        "issued_at": "2026-09-16T06:20:15.053Z",
+        "expires_at": "2026-09-16T06:30:15.053Z"
+      }
+    },
+    {
+      "id": "request_rework:mws-assurance-review:2026-09-16T06:24:47.169Z",
+      "at": "2026-09-16T06:24:47.169Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_1\naction_v2_sha256:b7e799e248dc3fd0d3cb5d231af6a39e71f87c180befd138e72b6f6096102297",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-06e8462c7a8f41b1",
+        "issued_at": "2026-09-16T06:24:47.170Z",
+        "expires_at": "2026-09-16T06:34:47.170Z"
+      }
+    },
+    {
+      "id": "resolve_finding:mws-assurance-review:2026-09-16T07:00:05.689Z",
+      "at": "2026-09-16T07:00:05.689Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-6eeef9d42c2b-1-review-1\naction_v2_sha256:88643fad1d8a457ccf68e3dbdd0015afabdafdd14286c9b8c23b37a518bee9ad"
+    },
+    {
+      "id": "resolve_finding:mws-assurance-review:2026-09-16T07:00:32.077Z",
+      "at": "2026-09-16T07:00:32.077Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-6eeef9d42c2b-2-review-2\naction_v2_sha256:47487ee20ff881a07e8c3dc1c5400ec2a0ceafad83295af79b4eeb7e2c8dcfce"
+    },
+    {
+      "id": "freeze_artifacts:mws-assurance-review:2026-09-16T07:01:33.465Z",
+      "at": "2026-09-16T07:01:33.465Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent and Spec frozen at docs/plans/archive/mws-assurance-review.intent.json"
+    },
+    {
+      "id": "record_approval:mws-assurance-review:2026-09-16T07:02:12.760Z",
+      "at": "2026-09-16T07:02:12.760Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-854a64d3\naction_v2_sha256:24b8e2518ae80b3a997e1f706d05b69bdc8b7037df03789abff4363170bd7b9e",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-d560e60be842a1d1",
+        "issued_at": "2026-09-16T07:02:12.760Z",
+        "expires_at": "2026-09-16T07:12:12.760Z"
+      }
+    },
+    {
+      "id": "request_rework:mws-assurance-review:2026-09-16T07:05:41.616Z",
+      "at": "2026-09-16T07:05:41.616Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "review_round_2\naction_v2_sha256:605006f42a0c076ce3104639866370bfb3b3acb18f617611fe8442d347e27a3a",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-2580c7f6efed56e4",
+        "issued_at": "2026-09-16T07:05:41.616Z",
+        "expires_at": "2026-09-16T07:15:41.616Z"
+      }
+    },
+    {
+      "id": "authorize_rework:mws-assurance-review:2026-09-16T07:06:26.556Z",
+      "at": "2026-09-16T07:06:26.556Z",
+      "type": "authorize_rework",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "request_rework:mws-assurance-review:2026-09-16T07:05:41.616Z:replan-required\naction_v2_sha256:af8e37f4bdc4d5a33f0be7fa61a2b7535d52942209904921bc41151401901dc0",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-9a6fe604bcbabf8b",
+        "issued_at": "2026-09-16T07:06:26.556Z",
+        "expires_at": "2026-09-16T07:16:26.556Z"
+      }
+    },
+    {
+      "id": "resolve_finding:mws-assurance-review:2026-09-16T07:07:46.402Z",
+      "at": "2026-09-16T07:07:46.402Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-343e11a51352-1-review-1\naction_v2_sha256:043d10c7a9dfa45ad2999a429ed3fb8252bf94acdd199f4de6b3795fddbb1d1f"
+    },
+    {
+      "id": "freeze_artifacts:mws-assurance-review:2026-09-16T07:07:56.840Z",
+      "at": "2026-09-16T07:07:56.840Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent and Spec frozen at docs/plans/archive/mws-assurance-review.intent.json"
+    },
+    {
+      "id": "record_approval:mws-assurance-review:2026-09-16T07:08:37.120Z",
+      "at": "2026-09-16T07:08:37.120Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-ef1664ed\naction_v2_sha256:78371be775221b08bc7647c948c3863f66808053fd7f407dc5dcfa552db13222",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-43bbd5dadf69b72c",
+        "issued_at": "2026-09-16T07:08:37.121Z",
+        "expires_at": "2026-09-16T07:18:37.121Z"
+      }
+    },
+    {
+      "id": "request_rework:mws-assurance-review:2026-09-16T07:11:35.692Z",
+      "at": "2026-09-16T07:11:35.692Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "review_round_3\naction_v2_sha256:986c9836d00d6f7ec6dd74a02a7dfa61be9e17aa59af36f7710a9e784fec054b",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-dfa9174136b7929c",
+        "issued_at": "2026-09-16T07:11:35.692Z",
+        "expires_at": "2026-09-16T07:21:35.692Z"
+      }
+    },
+    {
+      "id": "authorize_rework:mws-assurance-review:2026-09-16T07:14:27.299Z",
+      "at": "2026-09-16T07:14:27.299Z",
+      "type": "authorize_rework",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "request_rework:mws-assurance-review:2026-09-16T07:11:35.692Z:replan-required\naction_v2_sha256:b61da8bff9f90f1833c90dc6ef7f9c4b3e9951db592d926332611e08ffc4b479",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-f9b1b055471404d3",
+        "issued_at": "2026-09-16T07:14:27.300Z",
+        "expires_at": "2026-09-16T07:24:27.300Z"
+      }
+    },
+    {
+      "id": "resolve_finding:mws-assurance-review:2026-09-16T07:17:20.096Z",
+      "at": "2026-09-16T07:17:20.096Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-03f8db20e12e-1-review-1\naction_v2_sha256:11504c0996c114bc2dd03866ccf30b60c00f614b03c74337ab1a351a75bbeb6b"
+    },
+    {
+      "id": "resolve_finding:mws-assurance-review:2026-09-16T07:17:36.554Z",
+      "at": "2026-09-16T07:17:36.554Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-03f8db20e12e-2-review-2\naction_v2_sha256:4754cc7ffafe4828408eb3c91f056e4bb97fe34f35861dae9c04e01f3170e16a"
+    },
+    {
+      "id": "freeze_artifacts:mws-assurance-review:2026-09-16T07:18:10.429Z",
+      "at": "2026-09-16T07:18:10.429Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent and Spec frozen at docs/plans/archive/mws-assurance-review.intent.json"
+    },
+    {
+      "id": "record_approval:mws-assurance-review:2026-09-16T07:19:39.053Z",
+      "at": "2026-09-16T07:19:39.053Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-3d11722c\naction_v2_sha256:3b6365b961c07c9dfa16cef2e3d6f22eba2b7c4e09bf7b6ef677d8605457d0fb",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-7127f395f5792eb4",
+        "issued_at": "2026-09-16T07:19:39.053Z",
+        "expires_at": "2026-09-16T07:29:39.053Z"
+      }
+    },
+    {
+      "id": "request_rework:mws-assurance-review:2026-09-16T07:23:29.062Z",
+      "at": "2026-09-16T07:23:29.062Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "review_round_4\naction_v2_sha256:df738488d81190f849e3eda78901b97ec4255db663147fe745cc0437092bce35",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-e4e439b22b7f8c40",
+        "issued_at": "2026-09-16T07:23:29.062Z",
+        "expires_at": "2026-09-16T07:33:29.062Z"
+      }
+    },
+    {
+      "id": "authorize_rework:mws-assurance-review:2026-09-16T07:25:08.490Z",
+      "at": "2026-09-16T07:25:08.490Z",
+      "type": "authorize_rework",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "request_rework:mws-assurance-review:2026-09-16T07:23:29.062Z:replan-required\naction_v2_sha256:15835d6f99696f19092f11e8a380d866773252aaff2cc076289f672430013528",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-6d8dd66cbbe2f67c",
+        "issued_at": "2026-09-16T07:25:08.490Z",
+        "expires_at": "2026-09-16T07:35:08.490Z"
+      }
+    },
+    {
+      "id": "resolve_finding:mws-assurance-review:2026-09-16T07:27:15.010Z",
+      "at": "2026-09-16T07:27:15.010Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-305b261dc841-1-review-1\naction_v2_sha256:652b8d61e9da6f7108d2d546cfa484c57b0b308a7c679470d198cea498809c3a"
+    },
+    {
+      "id": "freeze_artifacts:mws-assurance-review:2026-09-16T07:27:42.990Z",
+      "at": "2026-09-16T07:27:42.990Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent and Spec frozen at docs/plans/archive/mws-assurance-review.intent.json"
+    },
+    {
+      "id": "record_approval:mws-assurance-review:2026-09-16T07:28:16.829Z",
+      "at": "2026-09-16T07:28:16.829Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-86fa3cf2\naction_v2_sha256:89f809e75b99b7297a7ef91a5a13e57739aa1fa13df04cee8c687bbf1ff6b7a9",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-71a9084e09c23850",
+        "issued_at": "2026-09-16T07:28:16.829Z",
+        "expires_at": "2026-09-16T07:38:16.829Z"
+      }
+    },
+    {
+      "id": "request_rework:mws-assurance-review:2026-09-16T07:32:31.085Z",
+      "at": "2026-09-16T07:32:31.085Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "review_round_5\naction_v2_sha256:753d31ef0b3491dd9f523db9cb5aae3c679305567a03b3df41fff508a6614863",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-7ff649e8efc78b4c",
+        "issued_at": "2026-09-16T07:32:31.086Z",
+        "expires_at": "2026-09-16T07:42:31.085Z"
+      }
+    },
+    {
+      "id": "authorize_rework:mws-assurance-review:2026-09-16T07:34:57.460Z",
+      "at": "2026-09-16T07:34:57.460Z",
+      "type": "authorize_rework",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "request_rework:mws-assurance-review:2026-09-16T07:32:31.085Z:replan-required\naction_v2_sha256:6049e34d08b8672b9876724062e868b7f5df2a81c5582bd9d8ffe03b4ed91fd6",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-6a384a6a46181e5d",
+        "issued_at": "2026-09-16T07:34:57.461Z",
+        "expires_at": "2026-09-16T07:44:57.461Z"
+      }
+    },
+    {
+      "id": "resolve_finding:mws-assurance-review:2026-09-16T07:36:31.278Z",
+      "at": "2026-09-16T07:36:31.278Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-4ffd4f9f0f6b-1-review-1\naction_v2_sha256:c61020d713066357274df8d9179b350bc62eaa52bef31366f00c459ce2ce50d6"
+    },
+    {
+      "id": "freeze_artifacts:mws-assurance-review:2026-09-16T07:36:39.678Z",
+      "at": "2026-09-16T07:36:39.678Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent and Spec frozen at docs/plans/archive/mws-assurance-review.intent.json"
+    },
+    {
+      "id": "record_approval:mws-assurance-review:2026-09-16T07:37:19.707Z",
+      "at": "2026-09-16T07:37:19.707Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-ceb8d9ea\naction_v2_sha256:f6512eb108e5acb0010d29184f5550eabc21b4ec3e406c6170b5862c9944ab80",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-f11fb24c52e3aa06",
+        "issued_at": "2026-09-16T07:37:19.707Z",
+        "expires_at": "2026-09-16T07:47:19.707Z"
+      }
+    },
+    {
+      "id": "record_approval:mws-assurance-review:2026-09-16T07:40:01.998Z",
+      "at": "2026-09-16T07:40:01.998Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-c4ca5820\naction_v2_sha256:5b1b5b9b01a94df7a62d47bd9920b5823dca37a264bc30b2b223ceebd937e031",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-20ace7932dd4be5b",
+        "issued_at": "2026-09-16T07:40:01.998Z",
+        "expires_at": "2026-09-16T07:50:01.998Z"
+      }
+    },
+    {
+      "id": "complete:mws-assurance-review:2026-09-16T07:40:04.035Z",
+      "at": "2026-09-16T07:40:04.035Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:d3ae173fcae182344dfa06473ed34be450c2ed75ddee3686fbe04ea27ae952f4"
+    }
+  ]
+}
