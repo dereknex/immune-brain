@@ -1,0 +1,851 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "mws-minimal-intent",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "mws-minimal-intent",
+    "goal": "Make TaskIntent sufficient for simple future work and bind optional complex Specs by immutable identity without automatic artifact relocation.",
+    "acceptance": [
+      {
+        "id": "A1",
+        "assertion": "The new author/validator contract accepts standalone simple-task Intents, rejects malformed or incomplete complex Spec binding and preserves goal, acceptance, scope and risk revision rules.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.4.2\",\n  \"argv\": [\n    \"test\",\n    \"tests/kernel-intent-validation.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 60000,\n  \"max_output_bytes\": 131072\n}\n"
+      },
+      {
+        "id": "A2",
+        "assertion": "Freeze and rework bind immutable content without relocating active artifacts; historical archive evidence remains readable and stale Spec content cannot reuse prior assurance.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.4.2\",\n  \"argv\": [\n    \"test\",\n    \"tests/planning-artifact-archival.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 60000,\n  \"max_output_bytes\": 131072\n}\n"
+      },
+      {
+        "id": "A3",
+        "assertion": "Planner and Loop contracts express the simple/complex distinction consistently, remove mandatory duplicate Spec and manual relocation instructions, and retain one native Enrollment boundary.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.4.2\",\n  \"argv\": [\n    \"test\",\n    \"tests/imm-planner-kernel-intent-contract.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 60000,\n  \"max_output_bytes\": 131072\n}\n"
+      }
+    ],
+    "scope_hint": [
+      "docs/plans/archive/mws-minimal-intent.intent.json",
+      "docs/plans/mws-minimal-intent.intent.json",
+      "docs/reference/planning-artifact-retention.md",
+      "docs/specs/archive/mws-minimal-intent.spec.md",
+      "docs/specs/mws-minimal-intent.spec.md",
+      "plugins/immune-brain/.pi-extension/imm-canary-enroll.ts",
+      "plugins/immune-brain/.pi-extension/imm-canary-work.ts",
+      "plugins/immune-brain/.pi-extension/imm-unattended-batch.ts",
+      "plugins/immune-brain/.pi-extension/pi-canary-assurance-progression.ts",
+      "plugins/immune-brain/.pi-extension/pi-canary-interaction.ts",
+      "plugins/immune-brain/.pi-extension/pi-canary-invocations.ts",
+      "plugins/immune-brain/.pi-extension/pi-canary-native-review.ts",
+      "plugins/immune-brain/.pi-extension/pi-canary-tool-failure.ts",
+      "plugins/immune-brain/.pi-extension/runtime-stub.ts",
+      "plugins/immune-brain/BASELINE.md",
+      "plugins/immune-brain/dist/BASELINE.md",
+      "plugins/immune-brain/dist/claude/mcp-server.mjs",
+      "plugins/immune-brain/dist/docs/reference/planning-artifact-retention.md",
+      "plugins/immune-brain/dist/imm-loop.md",
+      "plugins/immune-brain/dist/imm-planner.md",
+      "plugins/immune-brain/runtime/assurance/coordinator.ts",
+      "plugins/immune-brain/runtime/assurance/enrollment.ts",
+      "plugins/immune-brain/runtime/assurance/host_port.ts",
+      "plugins/immune-brain/runtime/assurance/invocations.ts",
+      "plugins/immune-brain/runtime/assurance/qa.ts",
+      "plugins/immune-brain/runtime/authorization_operation.ts",
+      "plugins/immune-brain/runtime/claude/capability.ts",
+      "plugins/immune-brain/runtime/claude/interaction.ts",
+      "plugins/immune-brain/runtime/claude/kernel_ports.ts",
+      "plugins/immune-brain/runtime/claude/mcp_server.ts",
+      "plugins/immune-brain/runtime/claude/review_host.ts",
+      "plugins/immune-brain/runtime/commands/kernel.ts",
+      "plugins/immune-brain/runtime/github_issue_tracker.ts",
+      "plugins/immune-brain/runtime/kernel/application.ts",
+      "plugins/immune-brain/runtime/kernel/assurance_projection.ts",
+      "plugins/immune-brain/runtime/kernel/authority_port.ts",
+      "plugins/immune-brain/runtime/kernel/backend_claim.ts",
+      "plugins/immune-brain/runtime/kernel/batch_authority.ts",
+      "plugins/immune-brain/runtime/kernel/canary_application.ts",
+      "plugins/immune-brain/runtime/kernel/capability_registry.ts",
+      "plugins/immune-brain/runtime/kernel/completion.ts",
+      "plugins/immune-brain/runtime/kernel/enrollment.ts",
+      "plugins/immune-brain/runtime/kernel/enrollment_authority.ts",
+      "plugins/immune-brain/runtime/kernel/index.ts",
+      "plugins/immune-brain/runtime/kernel/intent.ts",
+      "plugins/immune-brain/runtime/kernel/intent_token_registry.ts",
+      "plugins/immune-brain/runtime/kernel/pi_canary_prepare.ts",
+      "plugins/immune-brain/runtime/kernel/reducer.ts",
+      "plugins/immune-brain/runtime/kernel/refutation.ts",
+      "plugins/immune-brain/runtime/kernel/spec_binding.ts",
+      "plugins/immune-brain/runtime/kernel/storage.ts",
+      "plugins/immune-brain/runtime/kernel/storage_layout_migration.ts",
+      "plugins/immune-brain/runtime/kernel/storage_paths.ts",
+      "plugins/immune-brain/runtime/kernel/types.ts",
+      "plugins/immune-brain/runtime/kernel/validation.ts",
+      "plugins/immune-brain/runtime/unattended/batch_git.ts",
+      "plugins/immune-brain/runtime/unattended/batch_plan.ts",
+      "plugins/immune-brain/runtime/unattended/batch_preflight.ts",
+      "plugins/immune-brain/runtime/unattended/batch_runner.ts",
+      "plugins/immune-brain/runtime/unattended/batch_state.ts",
+      "plugins/immune-brain/runtime/unattended/types.ts",
+      "plugins/immune-brain/runtime/v4_runtime.ts",
+      "plugins/immune-brain/skills/BASELINE.md",
+      "plugins/immune-brain/skills/imm-loop/SKILL.md",
+      "plugins/immune-brain/skills/imm-planner/SKILL.md",
+      "scripts/build-claude-plugin.ts",
+      "scripts/dist-sync-manifest.ts",
+      "scripts/sync-dist-docs.ts",
+      "tests/__snapshots__/plugin-package-runtime.test.ts.snap",
+      "tests/baseline-packaging-contract.test.ts",
+      "tests/breaking-intent-revision-gate.test.ts",
+      "tests/carrier-enrollment-gate-contract.test.ts",
+      "tests/claude-batch-authority.test.ts",
+      "tests/claude-host-authority.test.ts",
+      "tests/claude-host-package.test.ts",
+      "tests/dist-docs-sync-contract.test.ts",
+      "tests/dual-host-assurance-conformance.test.ts",
+      "tests/enrollment-confirmation-relocation.test.ts",
+      "tests/fixtures/mutation-authority-test-seam.ts",
+      "tests/github-issue-projection-contract.test.ts",
+      "tests/helpers/pi-canary-assurance-harness.ts",
+      "tests/host-neutral-assurance-coordinator.test.ts",
+      "tests/imm-planner-kernel-intent-contract.test.ts",
+      "tests/kernel-assurance-obligation.test.ts",
+      "tests/kernel-assurance-projection.test.ts",
+      "tests/kernel-backend-claim.test.ts",
+      "tests/kernel-batch-authority.test.ts",
+      "tests/kernel-canary-application.test.ts",
+      "tests/kernel-canary-authority.test.ts",
+      "tests/kernel-canary-claim-writer-boundary.test.ts",
+      "tests/kernel-canary-drain-transaction.test.ts",
+      "tests/kernel-canary-eligibility.test.ts",
+      "tests/kernel-canary-rehearsal.test.ts",
+      "tests/kernel-canary-rework-authority.test.ts",
+      "tests/kernel-canary-terminal-transaction.test.ts",
+      "tests/kernel-capability-registry-contract.test.ts",
+      "tests/kernel-enrollment-authority.test.ts",
+      "tests/kernel-enrollment-transaction.test.ts",
+      "tests/kernel-inspect.test.ts",
+      "tests/kernel-intent-authoring.test.ts",
+      "tests/kernel-intent-v2.test.ts",
+      "tests/kernel-intent-validation.test.ts",
+      "tests/kernel-migrate.test.ts",
+      "tests/kernel-p2b0-boundary.test.ts",
+      "tests/kernel-pi-canary-live-boundary.test.ts",
+      "tests/kernel-pi-canary-prepare.test.ts",
+      "tests/kernel-r2c1-boundary.test.ts",
+      "tests/kernel-r2c2-authority.test.ts",
+      "tests/kernel-r2c2-boundary.test.ts",
+      "tests/kernel-r2c2-reducer.test.ts",
+      "tests/kernel-record-v3.test.ts",
+      "tests/kernel-record-v4.test.ts",
+      "tests/kernel-shadow-cli.test.ts",
+      "tests/loop-contract-v4-alignment.test.ts",
+      "tests/pi-batch-authority.test.ts",
+      "tests/pi-canary-assurance-authority.test.ts",
+      "tests/pi-canary-enroll-extension.test.ts",
+      "tests/pi-canary-lifecycle-package.test.ts",
+      "tests/pi-canary-user-authority.test.ts",
+      "tests/pi-canary-verification-descriptor.test.ts",
+      "tests/pi-canary-work-extension.test.ts",
+      "tests/planning-artifact-archival.test.ts",
+      "tests/plugin-package-runtime.test.ts",
+      "tests/post-freeze-intent-resolution.test.ts",
+      "tests/review-revision-identity-conformance.test.ts",
+      "tests/risk-downgrade-guard.test.ts",
+      "tests/risk-tier-floor.test.ts",
+      "tests/shared-deterministic-qa.test.ts",
+      "tests/unattended-batch-commit.test.ts",
+      "tests/unattended-batch-plan.test.ts",
+      "tests/unattended-batch-run.test.ts",
+      "tests/unattended-contracts.test.ts",
+      "tests/v4-storage-retirement-legacy-audit.test.ts"
+    ],
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/archive/mws-minimal-intent.intent.json",
+    "content_hash": "sha256:ed0210c9d4458e66a2c578a79f57065b6323afe0f432f7603dbaf620e2465526"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:ed0210c9d4458e66a2c578a79f57065b6323afe0f432f7603dbaf620e2465526",
+  "git_base_head": "e3dbd0046937571ddaf9f4bf621d2a46f7dcd08d",
+  "attestations": [
+    {
+      "id": "approval-qa-0598e103",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:ed0210c9d4458e66a2c578a79f57065b6323afe0f432f7603dbaf620e2465526",
+      "diff_hash": "sha256:7ec2a9b5e2ec246a29200f61f1d8f133f11881d5587cc848a7b78af2e2845adb",
+      "actor_id": "deterministic-qa",
+      "summary": "all 3 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "A2",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "A3",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-bde96021",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:ed0210c9d4458e66a2c578a79f57065b6323afe0f432f7603dbaf620e2465526",
+      "diff_hash": "sha256:d058d746f848dcd274fb2f5d0a938ccbaffd0a4144cbfdcbd09e4143de924cac",
+      "actor_id": "deterministic-qa",
+      "summary": "all 3 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "A2",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "A3",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-635c9e28",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:ed0210c9d4458e66a2c578a79f57065b6323afe0f432f7603dbaf620e2465526",
+      "diff_hash": "sha256:a698375c47d98af8b4d561fc448c8feb9a752d5c9eb37656e8cbf27bb21e6d27",
+      "actor_id": "deterministic-qa",
+      "summary": "all 3 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "A2",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "A3",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-dd371da9",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:ed0210c9d4458e66a2c578a79f57065b6323afe0f432f7603dbaf620e2465526",
+      "diff_hash": "sha256:145d3b6ff00dd94179d10d1b20670f2bc3f4c9fcab10ecc7bf30daf3bd02ddae",
+      "actor_id": "deterministic-qa",
+      "summary": "all 3 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "A2",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "A3",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-900b03c0",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:ed0210c9d4458e66a2c578a79f57065b6323afe0f432f7603dbaf620e2465526",
+      "diff_hash": "sha256:88c858cc2fdc71bb546d27aa89e50cd3cf4dbd9d377440210c8f1efabad9b15d",
+      "actor_id": "deterministic-qa",
+      "summary": "all 3 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "A2",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "A3",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-1af58eae",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:ed0210c9d4458e66a2c578a79f57065b6323afe0f432f7603dbaf620e2465526",
+      "diff_hash": "sha256:88c858cc2fdc71bb546d27aa89e50cd3cf4dbd9d377440210c8f1efabad9b15d",
+      "actor_id": "parent-mediated-review",
+      "summary": "已核对 manifest_digest、唯一父提交、review_tree 和全部变更路径；结合 A1–A3 的 Kernel QA 通过证据，未发现需要返工的正确性、安全或回归问题。",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "e3dbd0046937571ddaf9f4bf621d2a46f7dcd08d",
+        "review_commit": "09f7b2f2e99853b632f9569ef28c3f4330c76260",
+        "review_tree": "c33f7565fe294dba725ec41c2e87c864e7ddca3b",
+        "manifest_digest": "sha256:635791a05990d4bd0616bcf7f10bcedc3f49024f00ac733240df53ae3f9fda4f"
+      }
+    }
+  ],
+  "findings": [
+    {
+      "id": "review-a03830c914f6-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "A2",
+      "source": "review",
+      "review_round": 1,
+      "summary": "A bound Spec that is missing blocks user-authorized stop, so the worktree cannot be released.",
+      "anchor": "sha256:20cef68eb4944d5cc873159de5869f9ded6f25e5e2c9a0758f89add3ee66ea82",
+      "evidence": {
+        "trigger": "Intent names docs/specs/T.spec.md, the file is missing, user stop is authorized; transitionFor freeze throws source_missing and the owner is not released.",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/kernel/canary_application.ts:execute",
+          "plugins/immune-brain/runtime/kernel/canary_application.ts:transitionFor",
+          "plugins/immune-brain/runtime/kernel/spec_binding.ts:readBoundActiveSpec"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "A2"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-a03830c914f6-2-review-2",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "A2",
+      "source": "review",
+      "review_round": 1,
+      "summary": "A2 tests do not execute rework or prove stale Spec content cannot reuse prior assurance.",
+      "anchor": "sha256:7da6104638b011aee839f63f53d4a1ebfde8879c399715d123bac61d441f2259",
+      "evidence": {
+        "trigger": "The A2 fixture freezes, asserts files remain, then overwrites the Spec; it never calls rework and never shows prior assurance becoming unusable.",
+        "caller_chain": [
+          "tests/planning-artifact-archival.test.ts:freeze and rework bind content in place without relocating artifacts"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "A2"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-a03830c914f6-3-review-3",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "A3",
+      "source": "review",
+      "review_round": 1,
+      "summary": "Planner still has unconditional Spec-creation instructions that conflict with simple TaskIntent-only work.",
+      "anchor": "sha256:e3643648cfe70cad5baa8d80842f12ac1735807abf75ab7b4b5edb75bbe9f58d",
+      "evidence": {
+        "trigger": "Planner still tells the author to write a Spec under docs/specs/ and lists Specs as an allowed default artifact, which conflicts with TaskIntent-only simple work.",
+        "caller_chain": [
+          "plugins/immune-brain/dist/imm-planner.md:Output artifact",
+          "plugins/immune-brain/dist/imm-planner.md:Allowed"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "A3"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-59da7a0f779e-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "A3",
+      "source": "review",
+      "review_round": 2,
+      "summary": "plugins/immune-brain/dist/imm-planner.md:119、264 的 Candidate Authoring 与 Decomposition 仍无条件要求把发现记录在 Spec 并生成 Spec；Verification 也无条件检查 Spec 元数据，与新增 TaskIntent-only 分支冲突。请将这些要求限定于复杂任务，并明确简单任务的记录及验证位置。",
+      "anchor": "sha256:5249f59191b31a80a14b266cb65c416b284180318fdb0b0daa7afb9cf705d3fb",
+      "evidence": {
+        "trigger": "用户通过 Planner 请求一个简单局部修改，按标准 prepare candidates 和 validate candidates 路由执行；即使选择 TaskIntent-only，仍会遇到必须生成、填写和检查 Spec 的指令。",
+        "caller_chain": [
+          "plugins/immune-brain/skills/imm-planner/SKILL.md",
+          "plugins/immune-brain/dist/imm-planner.md#candidate-authoring",
+          "plugins/immune-brain/dist/imm-planner.md#core-responsibilities",
+          "plugins/immune-brain/dist/imm-planner.md#verification"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "A3"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-59da7a0f779e-2-review-2",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "A2",
+      "source": "review",
+      "review_round": 2,
+      "summary": "tests/planning-artifact-archival.test.ts:295 的 stale Spec 检查仅证明修改文件后 SHA-256 不同；前后 diffProvider 都固定返回相同哈希，且未创建或尝试复用任何 QA/Review assurance，因此无法保护 A2 明确要求的旧证据失效行为。请使用真实 delivery identity，记录通过证据后修改 Spec，再断言旧证据失效且不能完成任务。",
+      "anchor": "sha256:79b50c67f985b450c3d98e7a5435a40c60cd33da00ebb10eb0a1664a33fe672e",
+      "evidence": {
+        "trigger": "freeze and rework 测试将 Spec 从 '# bound spec' 改成 '# stale spec'，随后直接提交手工构造的 rework finding；即使生产代码完全忽略 Spec 对 assurance freshness 的影响，这个测试仍会通过。",
+        "caller_chain": [
+          "tests/planning-artifact-archival.test.ts",
+          "createCanaryApplication.execute",
+          "tests/planning-artifact-archival.test.ts::diffProvider"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "A2"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "request_rework:mws-minimal-intent:2026-09-16T02:52:26.940Z:replan-required",
+      "kind": "replan_required",
+      "status": "resolved",
+      "acceptance_id": "A3",
+      "source": "kernel",
+      "review_round": 2,
+      "summary": "Review returned this acceptance boundary twice; a durable replan is required."
+    },
+    {
+      "id": "review-23fad4734f54-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "A1",
+      "source": "review",
+      "review_round": 3,
+      "summary": "plugins/immune-brain/runtime/kernel/spec_binding.ts:31 已允许只绑定 active Spec，但风险投影仍要求 archive 配对，导致 routine 任务仅修改自身 Spec 就被提升为 material 并额外要求 Review。应让风险投影复用新的绑定判定，保留既有自身规划产物豁免。",
+      "anchor": "sha256:5b34269298647c0e3f0dfbc85e64b0c5b3eca93c0efc2daf0efaa9996f742aaf",
+      "evidence": {
+        "trigger": "routine Intent 的 scope_hint 包含 docs/specs/task.spec.md、不包含其 archive 路径，且 changed_paths 包含该 active Spec。新的绑定校验接受此 Intent，但 completion.ts 的 ownSidecarPaths 不排除此 Spec；风险下限将其提升为 material。",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/kernel/spec_binding.ts:boundSpecPath",
+          "plugins/immune-brain/runtime/kernel/canary_application.ts:createCanaryApplication.execute",
+          "plugins/immune-brain/runtime/kernel/reducer.ts:reduceTask complete",
+          "plugins/immune-brain/runtime/kernel/completion.ts:completionDecision → resolveProjectedRisk → ownSidecarPaths",
+          "plugins/immune-brain/runtime/kernel/intent.ts:classifyTaskRisk"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "A1"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-23fad4734f54-2-review-2",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "A2",
+      "source": "review",
+      "review_round": 3,
+      "summary": "tests/planning-artifact-archival.test.ts:283-331 的 stale Spec 检查可以因缺失 Review 而通过，且使用自制 diff_hash，无法证明真实 Git 内容绑定。应使用生产 revision identity，先确认原内容具备完成资格，再修改并 stage Spec，断言原 assurance 因内容变化而过期。",
+      "anchor": "sha256:1413d9cf47e970f74bd1789163df01233cbd11a0b60af7e3e464827f5de87fc1",
+      "evidence": {
+        "trigger": "新增测试只记录 QA，并始终把 active-only Spec 放入 changed_paths；当前风险投影因此要求尚不存在的 Review。即使将 complete 调用的 d2 改回 d1，仍会抛出相同的 not eligible。d1/d2 是测试注入的文件哈希，不是生产 Git identity。",
+        "caller_chain": [
+          "tests/planning-artifact-archival.test.ts:run / stale Spec assertion",
+          "plugins/immune-brain/runtime/kernel/canary_application.ts:createCanaryApplication.execute",
+          "plugins/immune-brain/runtime/kernel/reducer.ts:reduceTask complete",
+          "plugins/immune-brain/runtime/kernel/completion.ts:completionDecision"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "A2"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "request_rework:mws-minimal-intent:2026-09-16T02:59:57.889Z:replan-required",
+      "kind": "replan_required",
+      "status": "resolved",
+      "acceptance_id": "A2",
+      "source": "kernel",
+      "review_round": 3,
+      "summary": "Review returned this acceptance boundary twice; a durable replan is required."
+    },
+    {
+      "id": "review-2e0690514885-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "A3",
+      "source": "review",
+      "review_round": 4,
+      "summary": "plugins/immune-brain/dist/imm-planner.md:368、436 仍要求所有 Brainstorm 输入具有 Spec Brainstorm Trace；第279行也要求显式 test-first 请求写入 Spec。简单任务在这些入口下仍被要求创建重复 Spec。应为这些要求补上 simple/complex 分支。",
+      "anchor": "sha256:671029a3fccce0fc62bbd55e1905c62d894943c66804a6ebc3e15ec68b4bf640",
+      "evidence": {
+        "trigger": "无需复杂设计文档的局部修复，通过已确认的 Brainstorm manifest 进入 Planner，或用户明确要求 test-first。必读 Planning Rules/Core Responsibilities 仍要求写 Spec。",
+        "caller_chain": [
+          "plugins/immune-brain/skills/imm-planner/SKILL.md:standard planning section routes",
+          "plugins/immune-brain/dist/imm-planner.md:Planning Rules / Brainstorm Manifest Mapping",
+          "plugins/immune-brain/dist/imm-planner.md:Core Responsibilities / Execution posture",
+          "plugins/immune-brain/dist/imm-planner.md:Red Flags"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "A3"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "request_rework:mws-minimal-intent:2026-09-16T03:14:18.087Z:replan-required",
+      "kind": "replan_required",
+      "status": "resolved",
+      "acceptance_id": "A3",
+      "source": "kernel",
+      "review_round": 4,
+      "summary": "Review returned this acceptance boundary twice; a durable replan is required."
+    }
+  ],
+  "history": [
+    {
+      "id": "freeze_artifacts:mws-minimal-intent:2026-09-16T02:36:46.189Z",
+      "at": "2026-09-16T02:36:46.189Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent and Spec frozen at docs/plans/archive/mws-minimal-intent.intent.json"
+    },
+    {
+      "id": "record_approval:mws-minimal-intent:2026-09-16T02:36:50.330Z",
+      "at": "2026-09-16T02:36:50.330Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-0598e103\naction_v2_sha256:efe7be877d283a9b45574712b87852183f9f9b1e7c33cb1b99ac5a4057e1c6e8",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-2d242359b663832d",
+        "issued_at": "2026-09-16T02:36:50.330Z",
+        "expires_at": "2026-09-16T02:46:50.330Z"
+      }
+    },
+    {
+      "id": "request_rework:mws-minimal-intent:2026-09-16T02:42:35.010Z",
+      "at": "2026-09-16T02:42:35.010Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_1\naction_v2_sha256:73d157f4a2df419e59c0d1be21e3e37494762a92e8289881578b2f4c941edbaf",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-bc408ed67627f303",
+        "issued_at": "2026-09-16T02:42:35.010Z",
+        "expires_at": "2026-09-16T02:52:35.010Z"
+      }
+    },
+    {
+      "id": "resolve_finding:mws-minimal-intent:2026-09-16T02:47:46.059Z",
+      "at": "2026-09-16T02:47:46.059Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-a03830c914f6-1-review-1\naction_v2_sha256:7804547b12011222844d87653a55c0979e06fa33bd5ee0232a9c67845ef7325a"
+    },
+    {
+      "id": "resolve_finding:mws-minimal-intent:2026-09-16T02:47:55.931Z",
+      "at": "2026-09-16T02:47:55.931Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-a03830c914f6-2-review-2\naction_v2_sha256:0dc34dce8754eaaf190e40b98982848c62ed9b2a90b101164e9c060220a2d880"
+    },
+    {
+      "id": "resolve_finding:mws-minimal-intent:2026-09-16T02:48:12.972Z",
+      "at": "2026-09-16T02:48:12.972Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-a03830c914f6-3-review-3\naction_v2_sha256:bfb674c75535c63f31846413e7ff41944213c9af9ed55220110e6b26afa8225c"
+    },
+    {
+      "id": "freeze_artifacts:mws-minimal-intent:2026-09-16T02:48:22.567Z",
+      "at": "2026-09-16T02:48:22.567Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent and Spec frozen at docs/plans/archive/mws-minimal-intent.intent.json"
+    },
+    {
+      "id": "record_approval:mws-minimal-intent:2026-09-16T02:48:26.647Z",
+      "at": "2026-09-16T02:48:26.647Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-bde96021\naction_v2_sha256:d6b04cce91a8999dd1a406fb0867b85b47b9540816667dc4f13f486b3d86a31f",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-7191783275db6084",
+        "issued_at": "2026-09-16T02:48:26.647Z",
+        "expires_at": "2026-09-16T02:58:26.647Z"
+      }
+    },
+    {
+      "id": "request_rework:mws-minimal-intent:2026-09-16T02:52:26.940Z",
+      "at": "2026-09-16T02:52:26.940Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "review_round_2\naction_v2_sha256:56e942ce4d50951e2c602eae4fedc08e311e264ac8ab1844374e6e1ae7f116d5",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-5ba5e4594914dc6b",
+        "issued_at": "2026-09-16T02:52:26.940Z",
+        "expires_at": "2026-09-16T03:02:26.940Z"
+      }
+    },
+    {
+      "id": "authorize_rework:mws-minimal-intent:2026-09-16T02:52:45.836Z",
+      "at": "2026-09-16T02:52:45.836Z",
+      "type": "authorize_rework",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "request_rework:mws-minimal-intent:2026-09-16T02:52:26.940Z:replan-required\naction_v2_sha256:271a37e72c44b7b2a096131249bd30b482ce25b15cadd968e0986fcfc2758d1b",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-7b4766692b2ad3a0",
+        "issued_at": "2026-09-16T02:52:45.837Z",
+        "expires_at": "2026-09-16T03:02:45.837Z"
+      }
+    },
+    {
+      "id": "resolve_finding:mws-minimal-intent:2026-09-16T02:55:22.887Z",
+      "at": "2026-09-16T02:55:22.887Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-59da7a0f779e-1-review-1\naction_v2_sha256:92e9b64541a313fd736c9d7dcaa7743dcee4ff6b8d753400b0b8d3bc7d89bec3"
+    },
+    {
+      "id": "resolve_finding:mws-minimal-intent:2026-09-16T02:55:33.152Z",
+      "at": "2026-09-16T02:55:33.152Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-59da7a0f779e-2-review-2\naction_v2_sha256:b903d25f915d1f76b7b4926337145704eadcd623dce308251f3206383fdaaea5"
+    },
+    {
+      "id": "freeze_artifacts:mws-minimal-intent:2026-09-16T02:55:51.710Z",
+      "at": "2026-09-16T02:55:51.710Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent and Spec frozen at docs/plans/archive/mws-minimal-intent.intent.json"
+    },
+    {
+      "id": "record_approval:mws-minimal-intent:2026-09-16T02:55:55.659Z",
+      "at": "2026-09-16T02:55:55.659Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-635c9e28\naction_v2_sha256:fe62273ffe3c347e6d0191a8e703c24051cbe5316a8a058b9dc8621a397760ad",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-e81e2962e56ccf11",
+        "issued_at": "2026-09-16T02:55:55.660Z",
+        "expires_at": "2026-09-16T03:05:55.660Z"
+      }
+    },
+    {
+      "id": "request_rework:mws-minimal-intent:2026-09-16T02:59:57.889Z",
+      "at": "2026-09-16T02:59:57.889Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "review_round_3\naction_v2_sha256:9690765389b4507176d70e6783164227891c1de968d5aa4415da872920cbdc67",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-ec9135db3b7abd81",
+        "issued_at": "2026-09-16T02:59:57.889Z",
+        "expires_at": "2026-09-16T03:09:57.889Z"
+      }
+    },
+    {
+      "id": "authorize_rework:mws-minimal-intent:2026-09-16T03:02:27.535Z",
+      "at": "2026-09-16T03:02:27.535Z",
+      "type": "authorize_rework",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "request_rework:mws-minimal-intent:2026-09-16T02:59:57.889Z:replan-required\naction_v2_sha256:63682db6579e6720e7dfa34e78fe45d5d88843690b246cf03a64d59a0b786aaf",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-8f8cdf621cb9ceb4",
+        "issued_at": "2026-09-16T03:02:27.535Z",
+        "expires_at": "2026-09-16T03:12:27.535Z"
+      }
+    },
+    {
+      "id": "resolve_finding:mws-minimal-intent:2026-09-16T03:07:27.049Z",
+      "at": "2026-09-16T03:07:27.049Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-23fad4734f54-1-review-1\naction_v2_sha256:b8d48543cf7d28f268dac3be8e37a639a69191bc252ad35cdbd562b3d2e24cd4"
+    },
+    {
+      "id": "resolve_finding:mws-minimal-intent:2026-09-16T03:08:06.029Z",
+      "at": "2026-09-16T03:08:06.029Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-23fad4734f54-2-review-2\naction_v2_sha256:dc0cb54909a2dd846cfb3a75a6bc44c786f5ba5f2e58f4dc152f437010f82e68"
+    },
+    {
+      "id": "freeze_artifacts:mws-minimal-intent:2026-09-16T03:08:23.881Z",
+      "at": "2026-09-16T03:08:23.881Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent and Spec frozen at docs/plans/archive/mws-minimal-intent.intent.json"
+    },
+    {
+      "id": "record_approval:mws-minimal-intent:2026-09-16T03:08:31.679Z",
+      "at": "2026-09-16T03:08:31.679Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-dd371da9\naction_v2_sha256:438588dda201c60902ec1a32713717a9adf5f68290516c84769ff4d75a82f6b2",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-663b4ac76e7b200d",
+        "issued_at": "2026-09-16T03:08:31.679Z",
+        "expires_at": "2026-09-16T03:18:31.679Z"
+      }
+    },
+    {
+      "id": "request_rework:mws-minimal-intent:2026-09-16T03:14:18.087Z",
+      "at": "2026-09-16T03:14:18.087Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "review_round_4\naction_v2_sha256:b1ec8a99fe887bd24f4b3ecf81957e85247e57c5a80383ab334151c5c4d44e4f",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-55af102383f34ec7",
+        "issued_at": "2026-09-16T03:14:18.089Z",
+        "expires_at": "2026-09-16T03:24:18.088Z"
+      }
+    },
+    {
+      "id": "authorize_rework:mws-minimal-intent:2026-09-16T03:19:04.240Z",
+      "at": "2026-09-16T03:19:04.240Z",
+      "type": "authorize_rework",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "request_rework:mws-minimal-intent:2026-09-16T03:14:18.087Z:replan-required\naction_v2_sha256:66e18087ab5f9dcd3df8dc6d17a3b94d687a73bc1aec9fa1b0c12bb65c6d452f",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-c042f9f7e8501103",
+        "issued_at": "2026-09-16T03:19:04.240Z",
+        "expires_at": "2026-09-16T03:29:04.240Z"
+      }
+    },
+    {
+      "id": "resolve_finding:mws-minimal-intent:2026-09-16T03:20:30.585Z",
+      "at": "2026-09-16T03:20:30.585Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-2e0690514885-1-review-1\naction_v2_sha256:f7d8652f6a4cd415ae600b305bf045dddbc8b216de0f5fc510dd63bfa047f618"
+    },
+    {
+      "id": "freeze_artifacts:mws-minimal-intent:2026-09-16T03:20:52.530Z",
+      "at": "2026-09-16T03:20:52.530Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent and Spec frozen at docs/plans/archive/mws-minimal-intent.intent.json"
+    },
+    {
+      "id": "record_approval:mws-minimal-intent:2026-09-16T03:20:57.474Z",
+      "at": "2026-09-16T03:20:57.474Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-900b03c0\naction_v2_sha256:c47e2821119a66bb04da09058f351270834fbf099cebe4f3a369d97def9bf13e",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-805f5d7834373601",
+        "issued_at": "2026-09-16T03:20:57.474Z",
+        "expires_at": "2026-09-16T03:30:57.474Z"
+      }
+    },
+    {
+      "id": "record_approval:mws-minimal-intent:2026-09-16T03:24:21.097Z",
+      "at": "2026-09-16T03:24:21.097Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-1af58eae\naction_v2_sha256:d9eba61a543cdffd45485db6f513a7b1a2ca7d1d04f6e228af376e13a1a97d83",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-f7d60636bc4543ac",
+        "issued_at": "2026-09-16T03:24:21.098Z",
+        "expires_at": "2026-09-16T03:34:21.098Z"
+      }
+    },
+    {
+      "id": "complete:mws-minimal-intent:2026-09-16T03:24:23.445Z",
+      "at": "2026-09-16T03:24:23.445Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:9537bf38cbcb9a1dcb9d933da5d53b7f2906fa514574c1f6e4514ae9b5f06408"
+    }
+  ]
+}
