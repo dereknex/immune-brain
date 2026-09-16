@@ -69,7 +69,7 @@ import {
 } from "./pi-canary-interaction";
 import { isToolFailureState, throwToolFailure, type ToolFailureV1 } from "./pi-canary-tool-failure";
 import { taskDiffIdentity, taskRevisionIdentity, captureGitTaskSnapshot } from "../runtime/workspace_scope";
-import { reviewAdvisoryFindings, reviewReworkFindings } from "../runtime/assurance/coordinator";
+import { reviewAdvisoryRecords, reviewReworkFindings } from "../runtime/assurance/coordinator";
 import {
 	AssuranceProgression,
 	buildReviewPrompt,
@@ -1424,6 +1424,7 @@ async function applyAssuranceVerdict(
 		return;
 	}
 	const now = new Date().toISOString();
+	const advisories = verdict.decision === "pass" ? reviewAdvisoryRecords(verdict) : [];
 	const approval = {
 		id: `approval-${snapshot.role}-${randomUUID().slice(0, 8)}`,
 		kind: snapshot.role === "qa" ? "qa" : "review",
@@ -1437,6 +1438,9 @@ async function applyAssuranceVerdict(
 		// from the reviewer payload.
 		...(snapshot.role === "review" && snapshot.review_revision
 			? { review_revision: snapshot.review_revision }
+			: {}),
+		...(snapshot.role === "review" && advisories.length > 0
+			? { advisory_findings: advisories }
 			: {}),
 	};
 	const capability = await mintCapability(registry, {
@@ -1461,13 +1465,6 @@ async function applyAssuranceVerdict(
 		diffProvider: (root: string, record: NonNullable<TaskRecordRead["record"]>) => diffSnapshotOf(root, record),
 		now,
 	}));
-	// Advisories are non-blocking notes: they land after the settlement the
-	// approval already committed, so they can never gate completion.
-	for (const finding of reviewAdvisoryFindings(verdict))
-		await executeOrdinaryOperation(ctx, {
-			taskId: snapshot.task_id,
-			operation: { op: "record_finding", finding, actor_id: actorId },
-		});
 }
 
 async function buildAssuranceSnapshot(
@@ -1683,7 +1680,7 @@ function authorityPair(): Promise<{ registry: MutationAuthorityRegistry; app: Ca
 
 async function executeOrdinaryOperation(
 	ctx: HostContext,
-	input: { taskId: string; operation: { op: string; actor_id: string; next_intent?: unknown; finding?: unknown } },
+	input: { taskId: string; operation: { op: string; actor_id: string; next_intent?: unknown } },
 ): Promise<unknown> {
 	const { app } = await authorityPair();
 	const operation = input.operation.op === "revise_intent"

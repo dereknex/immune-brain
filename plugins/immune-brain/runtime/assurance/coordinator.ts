@@ -7,7 +7,7 @@
 // evidence reservation.
 
 import { createHash, randomUUID } from "node:crypto";
-import type { FindingEvidence, TaskFinding } from "../kernel/types";
+import type { FindingEvidence, ReviewAdvisoryFindingV1, TaskFinding } from "../kernel/types";
 import { anchorForEvidence } from "../kernel/refutation";
 import {
 	findingsDigest,
@@ -128,8 +128,8 @@ export interface AssuranceVerdict {
 		acceptance_id: string | null;
 		summary: string;
 		/**
-		 * Derived by `parseAssuranceVerdict` for Review-role rework findings. QA
-		 * findings and pass verdicts never carry it.
+		 * Derived by `parseAssuranceVerdict` for every Review-role finding, the
+		 * advisory notes of a pass verdict included. QA findings never carry it.
 		 */
 		anchor?: string;
 		evidence?: FindingEvidence;
@@ -163,22 +163,20 @@ export function reviewReworkFindings(verdict: AssuranceVerdict): TaskFinding[] {
 
 /**
  * The advisory counterpart of `reviewReworkFindings`: a pass verdict may carry
- * non-blocking Review notes, and both Hosts record them through one mapping.
+ * non-blocking Review notes, and both Hosts record them on the review
+ * attestation itself so settlement can never separate the two.
  */
-export function reviewAdvisoryFindings(verdict: AssuranceVerdict): TaskFinding[] {
+export function reviewAdvisoryRecords(verdict: AssuranceVerdict): ReviewAdvisoryFindingV1[] {
 	if (verdict.decision !== "pass") throw new Error("advisory findings require a pass verdict");
-	return (verdict.findings ?? []).filter((finding) => finding.kind === "advisory").map((finding) => ({
-		id: finding.id,
-		kind: "advisory" as const,
-		status: "open" as const,
-		acceptance_id: finding.acceptance_id,
-		source: "review" as const,
-		review_round: null,
-		summary: finding.summary,
-		anchor: finding.anchor ?? null,
-		evidence: finding.evidence ?? null,
-		counterevidence: null,
-	}));
+	return (verdict.findings ?? [])
+		.filter((finding) => finding.kind === "advisory")
+		.map((finding) => ({
+			id: finding.id,
+			acceptance_id: finding.acceptance_id,
+			summary: finding.summary,
+			anchor: finding.anchor ?? null,
+			evidence: finding.evidence ?? null,
+		}));
 }
 
 export interface ReviewRevisionIdentity {

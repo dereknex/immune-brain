@@ -607,9 +607,13 @@ export function reduceTask(
 			const effectiveBlockingRounds = new Set(
 				priorBlockingReviewFindings.map((finding) => finding.review_round),
 			).size;
+			const hasEffectiveBlockingNow = admissions.some(
+				({ finding, inherited }) => finding.kind === "blocking" && inherited === undefined,
+			);
 			const parkForReplan =
 				authorityAudit.authority_kind === "review" &&
-				(disputed !== undefined || effectiveBlockingRounds >= REVIEW_REWORK_ROUND_BUDGET);
+				(disputed !== undefined ||
+					(hasEffectiveBlockingNow && effectiveBlockingRounds >= REVIEW_REWORK_ROUND_BUDGET));
 			if (!parkForReplan) {
 				record.artifact_state = "active";
 				record.intent_ref.path = `docs/plans/${record.task_id}.intent.json`;

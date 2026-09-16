@@ -1222,20 +1222,15 @@ function reviewReworkFindings(verdict) {
     counterevidence: null
   }));
 }
-function reviewAdvisoryFindings(verdict) {
+function reviewAdvisoryRecords(verdict) {
   if (verdict.decision !== "pass")
     throw new Error("advisory findings require a pass verdict");
   return (verdict.findings ?? []).filter((finding) => finding.kind === "advisory").map((finding) => ({
     id: finding.id,
-    kind: "advisory",
-    status: "open",
     acceptance_id: finding.acceptance_id,
-    source: "review",
-    review_round: null,
     summary: finding.summary,
     anchor: finding.anchor ?? null,
-    evidence: finding.evidence ?? null,
-    counterevidence: null
+    evidence: finding.evidence ?? null
   }));
 }
 var QA_MIN_JOB_TIMEOUT_SECONDS = 15 * 60;
@@ -3900,7 +3895,7 @@ function parseApprovalV2(value, index, violations, allowReviewRevision = false) 
     "diff_hash",
     "actor_id",
     "summary",
-    ...allowReviewRevision ? ["review_revision"] : []
+    ...allowReviewRevision ? ["review_revision", "advisory_findings"] : []
   ], `record.approvals[${index}]`, violations);
   const intentContentHash = stringAt(item.intent_content_hash, `record.approvals[${index}].intent_content_hash`, violations);
   if (!SHA256_HEX.test(intentContentHash))
@@ -3917,7 +3912,21 @@ function parseApprovalV2(value, index, violations, allowReviewRevision = false) 
     diff_hash: diffHash,
     actor_id: stringAt(item.actor_id, `record.approvals[${index}].actor_id`, violations),
     summary: stringAt(item.summary, `record.approvals[${index}].summary`, violations),
-    ...allowReviewRevision && item.review_revision !== undefined ? { review_revision: parseReviewRevisionIdentity(item.review_revision, `record.approvals[${index}].review_revision`, violations) } : {}
+    ...allowReviewRevision && item.review_revision !== undefined ? { review_revision: parseReviewRevisionIdentity(item.review_revision, `record.approvals[${index}].review_revision`, violations) } : {},
+    ...allowReviewRevision && item.advisory_findings !== undefined ? {
+      advisory_findings: arrayAt(item.advisory_findings, `record.approvals[${index}].advisory_findings`, violations).map((entry, advisoryIndex) => parseAdvisoryFinding(entry, `record.approvals[${index}].advisory_findings[${advisoryIndex}]`, violations))
+    } : {}
+  };
+}
+function parseAdvisoryFinding(value, path, violations) {
+  const item = objectAt2(value, path, violations);
+  rejectUnknown2(item, ["id", "acceptance_id", "summary", "anchor", "evidence"], path, violations);
+  return {
+    id: stringAt(item.id, `${path}.id`, violations),
+    acceptance_id: nullableString(item.acceptance_id, `${path}.acceptance_id`, violations),
+    summary: stringAt(item.summary, `${path}.summary`, violations),
+    anchor: item.anchor === undefined ? null : nullableAnchor(item.anchor, `${path}.anchor`, violations),
+    evidence: parseFindingEvidence(item.evidence ?? null, `${path}.evidence`, violations)
   };
 }
 function parseReviewRevisionIdentity(value, path, violations) {
@@ -4971,7 +4980,8 @@ function reduceTask(recordRaw, actionRaw, authorityAudit = null, changedPaths) {
       });
       const disputed = admissions.find(({ finding, inherited }) => finding.kind === "blocking" && inherited === undefined && finding.evidence?.violated.kind === "security_boundary" && priorBlockingReviewFindings.some((prior) => prior.evidence?.violated.kind === "security_boundary" && prior.evidence?.violated.ref === finding.evidence?.violated.ref))?.finding;
       const effectiveBlockingRounds = new Set(priorBlockingReviewFindings.map((finding) => finding.review_round)).size;
-      const parkForReplan = authorityAudit.authority_kind === "review" && (disputed !== undefined || effectiveBlockingRounds >= REVIEW_REWORK_ROUND_BUDGET);
+      const hasEffectiveBlockingNow = admissions.some(({ finding, inherited }) => finding.kind === "blocking" && inherited === undefined);
+      const parkForReplan = authorityAudit.authority_kind === "review" && (disputed !== undefined || hasEffectiveBlockingNow && effectiveBlockingRounds >= REVIEW_REWORK_ROUND_BUDGET);
       if (!parkForReplan) {
         record.artifact_state = "active";
         record.intent_ref.path = `docs/plans/${record.task_id}.intent.json`;
@@ -12435,6 +12445,7 @@ class ClaudeRuntime {
       stagePlanningArtifactTransition(ctx.cwd, result.record);
       return;
     }
+    const advisories = input.verdict.decision === "pass" ? reviewAdvisoryRecords(input.verdict) : [];
     const approval = {
       id: `approval-${input.snapshot.role}-${randomUUID9().slice(0, 8)}`,
       kind: input.snapshot.role === "qa" ? "qa" : "review",
@@ -12444,7 +12455,8 @@ class ClaudeRuntime {
       diff_hash: input.snapshot.diff_hash,
       actor_id: input.actorId,
       summary: input.verdict.approval.summary,
-      ...input.snapshot.role === "review" && input.snapshot.review_revision ? { review_revision: input.snapshot.review_revision } : {}
+      ...input.snapshot.role === "review" && input.snapshot.review_revision ? { review_revision: input.snapshot.review_revision } : {},
+      ...input.snapshot.role === "review" && advisories.length > 0 ? { advisory_findings: advisories } : {}
     };
     const capability = await mintCapability(registry, {
       authority_kind: input.snapshot.role,
@@ -12469,11 +12481,6 @@ class ClaudeRuntime {
       diffProvider: diffSnapshotOf,
       now
     }));
-    for (const finding of reviewAdvisoryFindings(input.verdict))
-      await this.executeOrdinary(ctx, {
-        taskId: input.taskId,
-        operation: { op: "record_finding", finding, actor_id: input.actorId }
-      });
   }
   async executeOrdinary(ctx, input) {
     const { app } = await this.authority();

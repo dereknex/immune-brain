@@ -15,6 +15,7 @@ import {
 	type FindingSource,
 	type FindingStatus,
 	type TaskAction,
+	type ReviewAdvisoryFindingV1,
 	type TaskApprovalV2,
 	type TaskAttestationV3,
 	type AuthorityAuditDescriptor,
@@ -412,7 +413,7 @@ function parseApprovalV2(
 	rejectUnknown(
 		item,
 		["id", "kind", "authority_role", "task_revision", "intent_content_hash", "diff_hash", "actor_id", "summary",
-			...(allowReviewRevision ? ["review_revision"] : [])],
+			...(allowReviewRevision ? ["review_revision", "advisory_findings"] : [])],
 		`record.approvals[${index}]`,
 		violations,
 	);
@@ -447,6 +448,37 @@ function parseApprovalV2(
 		...(allowReviewRevision && item.review_revision !== undefined
 			? { review_revision: parseReviewRevisionIdentity(item.review_revision, `record.approvals[${index}].review_revision`, violations) }
 			: {}),
+		...(allowReviewRevision && item.advisory_findings !== undefined
+			? {
+					advisory_findings: arrayAt(
+						item.advisory_findings,
+						`record.approvals[${index}].advisory_findings`,
+						violations,
+					).map((entry, advisoryIndex) =>
+						parseAdvisoryFinding(
+							entry,
+							`record.approvals[${index}].advisory_findings[${advisoryIndex}]`,
+							violations,
+						),
+					),
+				}
+			: {}),
+	};
+}
+
+/**
+ * An advisory is recorded inside the review attestation, so it needs the same
+ * machine-checkable provenance a blocking finding carries but no lifecycle.
+ */
+function parseAdvisoryFinding(value: unknown, path: string, violations: string[]): ReviewAdvisoryFindingV1 {
+	const item = objectAt(value, path, violations);
+	rejectUnknown(item, ["id", "acceptance_id", "summary", "anchor", "evidence"], path, violations);
+	return {
+		id: stringAt(item.id, `${path}.id`, violations),
+		acceptance_id: nullableString(item.acceptance_id, `${path}.acceptance_id`, violations),
+		summary: stringAt(item.summary, `${path}.summary`, violations),
+		anchor: item.anchor === undefined ? null : nullableAnchor(item.anchor, `${path}.anchor`, violations),
+		evidence: parseFindingEvidence(item.evidence ?? null, `${path}.evidence`, violations),
 	};
 }
 

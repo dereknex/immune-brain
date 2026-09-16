@@ -169,6 +169,18 @@ export interface TaskEvidenceV2 {
 	summary: string;
 }
 
+/**
+ * One non-blocking Review note. Advisories travel inside the attestation itself
+ * so a crash can never commit a pass verdict without its notes.
+ */
+export interface ReviewAdvisoryFindingV1 {
+	id: string;
+	acceptance_id: string | null;
+	summary: string;
+	anchor: string | null;
+	evidence: FindingEvidence | null;
+}
+
 export interface TaskApprovalV2 {
 	id: string;
 	kind: ApprovalKind;
@@ -184,6 +196,8 @@ export interface TaskApprovalV2 {
 	 * anywhere else, so QA and user attestations never carry revision bytes.
 	 */
 	review_revision?: ReviewRevisionIdentityV1;
+	/** Legal only on a review attestation, alongside its revision identity. */
+	advisory_findings?: ReviewAdvisoryFindingV1[];
 }
 
 export interface ReviewRevisionIdentityV1 {

@@ -5,7 +5,7 @@ import {
 	AssuranceCoordinator,
 	buildReviewPrompt,
 	parseAssuranceVerdict,
-	reviewAdvisoryFindings,
+	reviewAdvisoryRecords,
 	snapshotDigest,
 	type AssuranceCoordinatorPorts,
 	type AssuranceVerdict,
@@ -198,9 +198,13 @@ describe("host-neutral assurance coordinator", () => {
 		};
 		expect(await h.coordinator.submitReview(TASK, ctx, advisory)).toEqual({ state: "completed" });
 		const parsed = parseAssuranceVerdict(advisory, snapshot("review"));
-		expect(reviewAdvisoryFindings(parsed)).toMatchObject([
-			{ kind: "advisory", status: "open", source: "review", acceptance_id: "A1", summary: "non-blocking provenance note" },
-		]);
+		const records = reviewAdvisoryRecords(parsed);
+		expect(records).toHaveLength(1);
+		expect(records[0]).toMatchObject({ acceptance_id: "A1", summary: "non-blocking provenance note" });
+		// The advisory rides on the attestation, so its anchor is derived from the
+		// same evidence a blocking finding would carry.
+		expect(records[0].anchor).toMatch(/^sha256:[0-9a-f]{64}$/);
+		expect(records[0].evidence).toMatchObject({ violated: { kind: "acceptance", ref: "A1" } });
 	});
 
 	test("a blocking finding on a pass verdict is rejected", async () => {

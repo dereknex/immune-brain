@@ -4,7 +4,7 @@ import { execFileSync } from "node:child_process";
 import { join } from "node:path";
 import {
 	AssuranceCoordinator,
-	reviewAdvisoryFindings,
+	reviewAdvisoryRecords,
 	reviewReworkFindings,
 	type AssuranceCoordinatorPorts,
 	type AssuranceSubmitReviewResult,
@@ -897,6 +897,7 @@ export class ClaudeRuntime {
 			stagePlanningArtifactTransition(ctx.cwd, result.record);
 			return;
 		}
+		const advisories = input.verdict.decision === "pass" ? reviewAdvisoryRecords(input.verdict) : [];
 		const approval: TaskApprovalV2 = {
 			id: `approval-${input.snapshot.role}-${randomUUID().slice(0, 8)}`,
 			kind: input.snapshot.role === "qa" ? "qa" : "review",
@@ -907,6 +908,7 @@ export class ClaudeRuntime {
 			actor_id: input.actorId,
 			summary: input.verdict.approval!.summary,
 			...(input.snapshot.role === "review" && input.snapshot.review_revision ? { review_revision: input.snapshot.review_revision } : {}),
+			...(input.snapshot.role === "review" && advisories.length > 0 ? { advisory_findings: advisories } : {}),
 		};
 		const capability = await mintCapability(registry, {
 			authority_kind: input.snapshot.role,
@@ -931,16 +933,9 @@ export class ClaudeRuntime {
 			diffProvider: diffSnapshotOf,
 			now,
 		}));
-		// Advisories are non-blocking notes: they land after the settlement the
-		// approval already committed, so they can never gate completion.
-		for (const finding of reviewAdvisoryFindings(input.verdict))
-			await this.executeOrdinary(ctx, {
-				taskId: input.taskId,
-				operation: { op: "record_finding", finding, actor_id: input.actorId },
-			});
 	}
 
-	private async executeOrdinary(ctx: HostContext, input: { taskId: string; operation: { op: string; actor_id: string; next_intent?: unknown; finding_id?: string; attestation_id?: string; finding?: unknown } }) {
+	private async executeOrdinary(ctx: HostContext, input: { taskId: string; operation: { op: string; actor_id: string; next_intent?: unknown; finding_id?: string; attestation_id?: string } }) {
 		const { app } = await this.authority();
 		const operation = input.operation.op === "revise_intent"
 			? { ...input.operation, next_intent: await parseTaskIntentV1(input.operation.next_intent) }
