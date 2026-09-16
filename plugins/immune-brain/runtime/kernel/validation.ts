@@ -412,8 +412,8 @@ function parseApprovalV2(
 	const item = objectAt(value, `record.approvals[${index}]`, violations);
 	rejectUnknown(
 		item,
-		["id", "kind", "authority_role", "task_revision", "intent_content_hash", "diff_hash", "actor_id", "summary",
-			...(allowReviewRevision ? ["review_revision", "advisory_findings"] : [])],
+		["id", "kind", "authority_role", "task_revision", "intent_content_hash", "diff_hash", "actor_id", "summary", "advisory_findings",
+			...(allowReviewRevision ? ["review_revision"] : [])],
 		`record.approvals[${index}]`,
 		violations,
 	);
@@ -448,7 +448,7 @@ function parseApprovalV2(
 		...(allowReviewRevision && item.review_revision !== undefined
 			? { review_revision: parseReviewRevisionIdentity(item.review_revision, `record.approvals[${index}].review_revision`, violations) }
 			: {}),
-		...(allowReviewRevision && item.advisory_findings !== undefined
+		...(item.advisory_findings !== undefined
 			? {
 					advisory_findings: arrayAt(
 						item.advisory_findings,
@@ -517,8 +517,8 @@ function parseAttestationV3(
 	const item = objectAt(value, path, violations);
 	rejectUnknown(
 		item,
-		["id", "kind", "authority_role", "task_revision", "intent_content_hash", "diff_hash", "actor_id", "summary", "acceptance_results",
-			...(allowReviewRevision ? ["review_revision", "advisory_findings"] : [])],
+		["id", "kind", "authority_role", "task_revision", "intent_content_hash", "diff_hash", "actor_id", "summary", "acceptance_results", "advisory_findings",
+			...(allowReviewRevision ? ["review_revision"] : [])],
 		path,
 		violations,
 	);

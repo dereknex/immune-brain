@@ -3895,7 +3895,8 @@ function parseApprovalV2(value, index, violations, allowReviewRevision = false) 
     "diff_hash",
     "actor_id",
     "summary",
-    ...allowReviewRevision ? ["review_revision", "advisory_findings"] : []
+    "advisory_findings",
+    ...allowReviewRevision ? ["review_revision"] : []
   ], `record.approvals[${index}]`, violations);
   const intentContentHash = stringAt(item.intent_content_hash, `record.approvals[${index}].intent_content_hash`, violations);
   if (!SHA256_HEX.test(intentContentHash))
@@ -3913,7 +3914,7 @@ function parseApprovalV2(value, index, violations, allowReviewRevision = false) 
     actor_id: stringAt(item.actor_id, `record.approvals[${index}].actor_id`, violations),
     summary: stringAt(item.summary, `record.approvals[${index}].summary`, violations),
     ...allowReviewRevision && item.review_revision !== undefined ? { review_revision: parseReviewRevisionIdentity(item.review_revision, `record.approvals[${index}].review_revision`, violations) } : {},
-    ...allowReviewRevision && item.advisory_findings !== undefined ? {
+    ...item.advisory_findings !== undefined ? {
       advisory_findings: arrayAt(item.advisory_findings, `record.approvals[${index}].advisory_findings`, violations).map((entry, advisoryIndex) => parseAdvisoryFinding(entry, `record.approvals[${index}].advisory_findings[${advisoryIndex}]`, violations))
     } : {}
   };
@@ -3961,7 +3962,8 @@ function parseAttestationV3(value, index, acceptanceIds, violations, allowReview
     "actor_id",
     "summary",
     "acceptance_results",
-    ...allowReviewRevision ? ["review_revision", "advisory_findings"] : []
+    "advisory_findings",
+    ...allowReviewRevision ? ["review_revision"] : []
   ], path, violations);
   const kind = enumAt(item.kind, APPROVAL_KINDS, `${path}.kind`, violations);
   const intentContentHash = stringAt(item.intent_content_hash, `${path}.intent_content_hash`, violations);

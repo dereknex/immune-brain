@@ -72,6 +72,23 @@ describe("TaskRecord v3 schema", () => {
 		expect(() => assertKernelInvariantsV3(intent, parsed)).not.toThrow();
 	});
 
+	test("a v3 review attestation keeps advisory findings", () => {
+		const advisory = {
+			id: "review-1",
+			acceptance_id: "A1",
+			summary: "duplicated helper",
+			anchor: null,
+			evidence: null,
+		};
+		const parsed = parseTaskRecordV3(v3Record({
+			attestations: [attestation("review", { acceptance_results: [], advisory_findings: [advisory] })],
+		}));
+		expect(parsed.attestations[0].advisory_findings).toEqual([advisory]);
+		expect(() => parseTaskRecordV3(v3Record({
+			attestations: [attestation("qa", { advisory_findings: [advisory] })],
+		}))).toThrow(/only valid/);
+	});
+
 	test("rejects unknown fields, invalid state axes, hashes, and intent identity drift", () => {
 		expect(() => parseTaskRecordV3(v3Record({ extra: 1 }))).toThrow();
 		expect(() => parseTaskRecordV3(v3Record({ contract: "assurance_kernel/task_record/v2" }))).toThrow();
