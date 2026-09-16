@@ -37,6 +37,7 @@ import {
 	KERNEL_DB_RELATIVE,
 	KERNEL_TRANSACTION_MARKERS,
 	LEGACY_ARTIFACT_RETIREMENT,
+	LEGACY_MEMORY_RELATIVE,
 	LEGACY_RETIRED_DIRECTORIES,
 	LEGACY_TASKS_RELATIVE,
 	LEGACY_TRANSACTION_MARKERS,
@@ -81,7 +82,8 @@ const MIGRATION_LOCK_STALE_MS = 15 * 60 * 1000;
 function withImportLock<T>(root: string, operation: () => T): T {
 	const lockPath = join(root, MIGRATION_LOCK_RELATIVE);
 	mkdirSync(dirname(lockPath), { recursive: true });
-	for (let attempt = 0; attempt < 2; attempt += 1) {
+	let acquired = false;
+	for (let attempt = 0; attempt < 3 && !acquired; attempt += 1) {
 		try {
 			const fd = openSync(lockPath, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL);
 			try {
@@ -89,13 +91,17 @@ function withImportLock<T>(root: string, operation: () => T): T {
 			} finally {
 				closeSync(fd);
 			}
-			break;
+			acquired = true;
 		} catch (error) {
 			if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
-			if (!clearAbandonedImportLock(lockPath))
+			if (!clearAbandonedImportLock(lockPath)) {
 				throw new MigrationBusyError(`another storage layout migration is running (${MIGRATION_LOCK_RELATIVE})`);
+			}
 		}
 	}
+	// The operation runs only after this process holds the lock: a retry that
+	// loses the race again must not fall through into the migration.
+	if (!acquired) throw new MigrationBusyError(`another storage layout migration is running (${MIGRATION_LOCK_RELATIVE})`);
 	try {
 		return operation();
 	} finally {
@@ -104,17 +110,24 @@ function withImportLock<T>(root: string, operation: () => T): T {
 }
 
 function clearAbandonedImportLock(lockPath: string): boolean {
-	let holder: number | null = null;
+	let raw = "";
 	try {
-		holder = Number.parseInt(readFileSync(lockPath, "utf8").trim(), 10);
+		raw = readFileSync(lockPath, "utf8").trim();
 	} catch {
-		holder = null;
+		raw = "";
 	}
-	// A holder that is gone can never finish; a live holder is only reclaimed
-	// once the lock is old enough that a stuck migration is the likelier story.
-	const holding = holder !== null && Number.isFinite(holder) && processIsAlive(holder);
-	const expired = Date.now() - statSync(lockPath).mtimeMs > MIGRATION_LOCK_STALE_MS;
-	if (holding && !expired) return false;
+	const ageMs = Date.now() - statSync(lockPath).mtimeMs;
+	const holder = raw.length > 0 ? Number.parseInt(raw, 10) : Number.NaN;
+	if (Number.isFinite(holder)) {
+		// A live holder is never stolen, however long it takes: it may be a slow
+		// migration, and stealing would let two importers publish at once.
+		if (processIsAlive(holder)) return false;
+		rmSync(lockPath, { force: true });
+		return true;
+	}
+	// An unreadable or still-empty lock may belong to a creator that has not
+	// written its pid yet, so only an old one is provably abandoned.
+	if (ageMs <= MIGRATION_LOCK_STALE_MS) return false;
 	rmSync(lockPath, { force: true });
 	return true;
 }
@@ -643,6 +656,17 @@ function liveLegacyOwnerReason(root: string): string | null {
 	for (const marker of LEGACY_TRANSACTION_MARKERS) {
 		if (existsSync(join(root, marker))) return `a legacy transaction marker is present at ${marker}`;
 	}
+	// A ledger that is not idle describes work the prior runtime still owns.
+	const ledger = `${LEGACY_MEMORY_RELATIVE}/current_iteration.json`;
+	if (existsSync(join(root, ledger))) {
+		assertNoSymlinkSegments(root, ledger);
+		try {
+			const status = (JSON.parse(readFileSync(join(root, ledger), "utf8")) as Record<string, unknown>).runtime_status;
+			if (typeof status === "string" && status !== "idle") return `the legacy ledger is ${status}`;
+		} catch {
+			return `${ledger} is unreadable`;
+		}
+	}
 	// The retired SQLite file store kept its own transaction markers.
 	for (const marker of KERNEL_TRANSACTION_MARKERS) {
 		const relative = `${STATE_RELATIVE}/transactions/${marker}`;
@@ -697,12 +721,20 @@ function verifyPublishedRows(root: string, canonical: string, tasks: LegacyTask[
 	}
 }
 
+interface OrphanProof {
+	path: string;
+	taskId: string;
+	bytes: Buffer;
+	proofJson: string;
+	evidence: string;
+}
+
 /**
- * Remove a proof whose record was already retired by an interrupted cleanup.
- * The proof is only deleted when the published store carries the identical one.
+ * Collect proofs whose record was already retired by an interrupted cleanup.
+ * The proof is deleted below, so its path must stay inside the worktree.
  */
-function removeOrphanProofs(root: string, canonical: string): void {
-	const orphans: Array<{ path: string; taskId: string; proofJson: string }> = [];
+function collectOrphanProofs(root: string): OrphanProof[] {
+	const orphans: OrphanProof[] = [];
 	for (const relative of [LEGACY_TASKS_RELATIVE, FILE_STORE_TASKS_RELATIVE]) {
 		const directory = join(root, relative);
 		if (!existsSync(directory)) continue;
@@ -710,7 +742,6 @@ function removeOrphanProofs(root: string, canonical: string): void {
 			if (!entry.endsWith(".backend-claim.json")) continue;
 			const taskId = entry.slice(0, -".backend-claim.json".length);
 			if (existsSync(join(directory, `${taskId}.json`))) continue;
-			// The proof is deleted below, so its path must stay inside the worktree.
 			assertNoSymlinkSegments(root, `${relative}/${entry}`);
 			const bytes = readRegularFileOrNull(join(directory, entry));
 			if (!bytes) continue;
@@ -720,16 +751,32 @@ function removeOrphanProofs(root: string, canonical: string): void {
 			} catch {
 				continue;
 			}
-			orphans.push({ path: join(directory, entry), taskId, proofJson: `${JSON.stringify(proof, null, 2)}\n` });
+			orphans.push({
+				path: join(directory, entry),
+				taskId,
+				bytes,
+				proofJson: `${JSON.stringify(proof, null, 2)}\n`,
+				evidence: auditTerminalProofPath(taskId),
+			});
 		}
 	}
+	return orphans;
+}
+
+/**
+ * Retire an orphan proof only when the published store carries the identical one
+ * and the committed evidence still holds its exact bytes.
+ */
+function retireOrphanProofs(root: string, canonical: string, orphans: OrphanProof[]): void {
 	if (orphans.length === 0) return;
 	const db = openPublishedStore(root, canonical);
 	try {
 		for (const orphan of orphans) {
 			const row = publishedRow(db, orphan.taskId);
-			if (!row) continue;
-			if (String(row.terminal_proof_json) !== orphan.proofJson) continue;
+			if (!row || String(row.terminal_proof_json) !== orphan.proofJson) continue;
+			const evidence = readRegularFileOrNull(join(root, orphan.evidence));
+			if (!evidence || !evidence.equals(orphan.bytes))
+				throw new Error(`${orphan.evidence} does not hold the committed bytes of the orphan proof; refusing to retire it`);
 			rmSync(orphan.path, { force: true });
 		}
 	} finally {
@@ -792,9 +839,11 @@ function importLegacyWorkspaceLocked(rootInput: string, now: string): SqliteImpo
 			// The evidence that justifies retiring the survivors must still be in
 			// HEAD: a branch switch between publication and cleanup would otherwise
 			// delete the only copy of the historical bytes.
+			const orphans = collectOrphanProofs(root);
 			const survivingEvidence = [
 				...pending.tasks.flatMap((task) => [auditTaskRecordPath(task.taskId), auditTerminalProofPath(task.taskId)]),
 				...collectRetiredArtifacts(root).map((artifact) => artifact.evidence),
+				...orphans.map((orphan) => orphan.evidence),
 			];
 			const missingEvidence = uncommittedEvidencePaths(root, survivingEvidence);
 			if (missingEvidence.length > 0)
@@ -803,7 +852,7 @@ function importLegacyWorkspaceLocked(rootInput: string, now: string): SqliteImpo
 			// The cleanup always runs to the end: an interrupted deletion can leave
 			// an orphan proof with no record, and that survivor keeps the layout
 			// invalid even though every task is already published.
-			removeOrphanProofs(root, canonical);
+			retireOrphanProofs(root, canonical, orphans);
 			const surviving = collectRetiredArtifacts(root);
 			verifyArtifactEvidence(root, surviving);
 			removeRetiredArtifacts(root, surviving);

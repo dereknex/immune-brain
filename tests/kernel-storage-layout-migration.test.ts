@@ -918,7 +918,9 @@ describe("explicit SQLite import of the retired file store (A1)", () => {
 	});
 
 	it("treats every terminal batch state as settled and every live one as blocking", async () => {
-		for (const state of ["completed", "budget_stopped", "failed", "rejected"]) {
+		// Two of the four terminal states are enough here: the predicate itself is
+		// owned and covered by the batch state module's own tests.
+		for (const state of ["completed", "budget_stopped"]) {
 			const root = tempRoot();
 			writeLegacyTerminalPair(root, "2026-08-14-023-old-task");
 			mkdirSync(join(root, ".imm/state/batches"), { recursive: true });
@@ -1112,6 +1114,63 @@ describe("explicit SQLite import of the retired file store (A1)", () => {
 		expect(outcome.outcome).toBe("invalid");
 		expect(outcome.reason).toMatch(/committed audit evidence .* is missing/);
 		expect(existsSync(join(root, ".imm/tasks/2026-08-14-030-old-task.json"))).toBe(true);
+	});
+
+	it("treats an empty lock as held until it is provably abandoned", async () => {
+		const root = tempRoot();
+		writeLegacyTerminalPair(root, "2026-08-14-031-old-task");
+		commit(root, "legacy evidence");
+		mkdirSync(join(root, ".imm/state"), { recursive: true });
+		const lockPath = join(root, ".imm/state/migration.lock");
+		// A creator that created the lock but has not written its pid yet.
+		writeFileSync(lockPath, "");
+		execFileSync("touch", [lockPath]);
+		const blocked = await runMigration(root);
+		expect(blocked.outcome).toBe("invalid");
+		expect(blocked.reason).toMatch(/another storage layout migration is running/);
+		expect(existsSync(join(root, ".imm/state/kernel.sqlite"))).toBe(false);
+	});
+
+	it("refuses to retire an orphan proof whose committed evidence is gone", async () => {
+		const root = tempRoot();
+		writeLegacyTerminalPair(root, "2026-08-14-032-old-task");
+		commit(root, "legacy evidence");
+		expect((await runMigration(root)).outcome).toBe("migration_uncommitted");
+		commit(root, "preserve evidence");
+		expect((await runMigration(root)).outcome).toBe("migrated");
+		// The cleanup died after removing the record but before its proof, and the
+		// committed evidence for that task left HEAD.
+		const proofBytes = readFileSync(join(root, ".imm/audit/2026-08-14-032-old-task/terminal-proof.json"));
+		mkdirSync(join(root, ".imm/tasks"), { recursive: true });
+		writeFileSync(join(root, ".imm/tasks/2026-08-14-032-old-task.backend-claim.json"), proofBytes);
+		execFileSync("git", ["-C", root, "rm", "-r", "-q", "--cached", ".imm/audit/2026-08-14-032-old-task"]);
+		execFileSync("git", ["-C", root, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "drop evidence from HEAD"]);
+		const outcome = await runMigration(root);
+		expect(outcome.outcome).toBe("invalid");
+		expect(outcome.reason).toMatch(/committed audit evidence .* is missing/);
+		expect(existsSync(join(root, ".imm/tasks/2026-08-14-032-old-task.backend-claim.json"))).toBe(true);
+	});
+
+	it("refuses to retire a legacy ledger that is still working", async () => {
+		const root = tempRoot();
+		const idle = `${JSON.stringify({ schema_version: 3, runtime_status: "idle", steps: {} }, null, 2)}\n`;
+		mkdirSync(join(root, ".imm/memory"), { recursive: true });
+		writeFileSync(join(root, ".imm/memory/current_iteration.json"), idle);
+		commit(root, "idle ledger");
+		expect((await runMigration(root)).outcome).toBe("migration_uncommitted");
+		commit(root, "preserve ledger");
+		expect((await runMigration(root)).outcome).toBe("migrated");
+		// A ledger that came back mid-work beside the published store still owns
+		// execution, so the cleanup must refuse it.
+		mkdirSync(join(root, ".imm/memory"), { recursive: true });
+		writeFileSync(
+			join(root, ".imm/memory/current_iteration.json"),
+			`${JSON.stringify({ schema_version: 3, runtime_status: "working", steps: {} }, null, 2)}\n`,
+		);
+		const outcome = await runMigration(root);
+		expect(outcome.outcome).toBe("invalid");
+		expect(outcome.reason).toMatch(/legacy ledger is working/);
+		expect(existsSync(join(root, ".imm/memory/current_iteration.json"))).toBe(true);
 	});
 
 	it("refuses an existing audit target with zero writes", async () => {
