@@ -274,21 +274,29 @@ export const LEGACY_ARTIFACT_RETIREMENT: ReadonlyArray<{ source: string; evidenc
 	{ source: ".imm/tasks/.journal.lock", evidence: ".imm/audit/legacy-v3/.journal.lock" },
 ] as const;
 
-/** Retired transaction markers: no bytes worth keeping, removed with the layout. */
-export const LEGACY_MARKER_RETIREMENT: ReadonlyArray<string> = [
+/**
+ * Retired transaction markers. They are never deleted by the import: each one
+ * records a transaction the prior runtime must settle, so their presence blocks
+ * retirement (and the layout inspector already treats them as a live owner).
+ */
+export const LEGACY_TRANSACTION_MARKERS: ReadonlyArray<string> = [
 	".imm/tasks/.workspace-transaction.json",
 	".imm/tasks/.workspace-transaction-v2.json",
 	".imm/tasks/.enrollment-marker.json",
 	".imm/tasks/.drain-transaction.json",
 	".imm/tasks/.terminal-transaction.json",
 	".imm/tasks/.authority-repair-transaction.json",
-	".imm/tasks/.backend-claim.json",
 ] as const;
 
-/** Directories that only ever held retired artifacts. */
+/**
+ * Directories that only ever held retired artifacts. Only an empty one is
+ * removed, so a directory this import cannot interpret stays reported instead of
+ * being deleted.
+ */
 export const LEGACY_RETIRED_DIRECTORIES: ReadonlyArray<string> = [
 	".imm/memory",
 	".imm/templates",
+	".imm/authority",
 ] as const;
 
 /** Old task-scoped owner files: `<task-id>.json` and `<task-id>.backend-claim.json`. */

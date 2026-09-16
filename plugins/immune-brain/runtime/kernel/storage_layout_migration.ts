@@ -52,6 +52,22 @@ const CONTRACT = "immune_brain/storage_layout_migration_result/v1";
 export function migrateLegacyLayout(root: string): MigrationOutcome {
 	const inspection = inspectStorageLayout(root);
 	const affected = inspection.dirty_affected_paths;
+	/**
+	 * A migration only reports success when the worktree really left the retired
+	 * layout: anything the import could not interpret — an unknown file in a
+	 * retired directory, for example — is reported instead of being hidden behind
+	 * a success that the next layout check would immediately contradict.
+	 */
+	const confirmRetired = (outcome: MigrationOutcome): MigrationOutcome => {
+		const after = inspectStorageLayout(root);
+		if (after.layout === "ready" || after.layout === "migration_required") return outcome;
+		return {
+			contract: CONTRACT,
+			outcome: "invalid",
+			affected_paths: outcome.affected_paths,
+			reason: `the retired layout is still present after migration: ${after.reason ?? after.layout}`,
+		};
+	};
 	if (inspection.layout === "ready")
 		return {
 			contract: CONTRACT,
@@ -88,12 +104,12 @@ export function migrateLegacyLayout(root: string): MigrationOutcome {
 		if (inspection.layout === "invalid" && existsSync(join(root, KERNEL_DB_RELATIVE)) && hasMigrationReceipt(root)) {
 			const finished = importLegacyWorkspace(root);
 			if (finished.outcome === "already_imported")
-				return {
+				return confirmRetired({
 					contract: CONTRACT,
 					outcome: "already_migrated",
 					affected_paths: affected,
 					reason: "finished the interrupted cleanup for an already published import",
-				};
+				});
 			return {
 				contract: CONTRACT,
 				outcome: "invalid",
@@ -117,7 +133,7 @@ export function migrateLegacyLayout(root: string): MigrationOutcome {
 			reason: imported.reason ?? "the preserved audit evidence must be committed before the legacy authority is retired",
 		};
 	if (imported.outcome === "imported" || imported.outcome === "already_imported")
-		return {
+		return confirmRetired({
 			contract: CONTRACT,
 			outcome: "migrated",
 			affected_paths: imported.imported_task_ids.flatMap((taskId) => [auditTaskRecordPath(taskId), auditTerminalProofPath(taskId)]),
@@ -125,7 +141,7 @@ export function migrateLegacyLayout(root: string): MigrationOutcome {
 				imported.outcome === "imported"
 					? `imported ${imported.imported_task_ids.length} terminal task(s) into the SQLite authority; commit the affected audit paths`
 					: "the recorded import identity already matches these legacy facts; nothing to do",
-		};
+		});
 	return {
 		contract: CONTRACT,
 		outcome: "invalid",

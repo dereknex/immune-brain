@@ -371,9 +371,27 @@ function assertSchema(db: DatabaseSync, root: string): void {
 function writeStoreIdentity(root: string): void {
 	const path = resolve(root, kernelStoreIdentityPath());
 	if (existsSync(path)) return;
-	writeFileSync(path, `${JSON.stringify({ contract: "assurance_kernel/store_identity/v1", created_at: new Date().toISOString() }, null, 2)}\n`, {
-		flag: "wx",
-	});
+	// Durable creation: the marker is the only evidence that a later tableless
+	// database is a damaged store rather than a new one.
+	const fd = openSync(path, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL);
+	try {
+		writeFileSync(fd, `${JSON.stringify({ contract: "assurance_kernel/store_identity/v1", created_at: new Date().toISOString() }, null, 2)}\n`);
+		fsyncSync(fd);
+	} finally {
+		closeSync(fd);
+	}
+	const directory = openSync(dirname(path), constants.O_RDONLY);
+	try {
+		fsyncSync(directory);
+	} finally {
+		closeSync(directory);
+	}
+}
+
+/** Ensure the store identity marker exists; idempotent and durable. */
+export function ensureStoreIdentity(root: string): void {
+	assertSafeStoreTarget(canonicalRoot(root), resolve(root, kernelStoreIdentityPath()));
+	writeStoreIdentity(canonicalRoot(root));
 }
 
 function initializeSchema(db: DatabaseSync, root: string, now: string): void {

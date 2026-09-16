@@ -36,9 +36,9 @@ import {
 	FILE_STORE_WORKSPACE_RELATIVE,
 	KERNEL_DB_RELATIVE,
 	LEGACY_ARTIFACT_RETIREMENT,
-	LEGACY_MARKER_RETIREMENT,
 	LEGACY_RETIRED_DIRECTORIES,
 	LEGACY_TASKS_RELATIVE,
+	LEGACY_TRANSACTION_MARKERS,
 	LEGACY_WORKSPACE_RELATIVE,
 	STATE_RELATIVE,
 	auditTaskRecordPath,
@@ -47,6 +47,7 @@ import {
 import {
 	classifyStoreFile,
 	createMigrationStoreFile,
+	ensureStoreIdentity,
 	insertRunRow,
 	markAuditExported,
 	publishMigrationStoreFile,
@@ -387,7 +388,6 @@ function removeRetiredArtifacts(root: string, artifacts: Array<{ source: string;
 		assertNoSymlinkSegments(root, artifact.source);
 		rmSync(join(root, artifact.source), { force: true });
 	}
-	for (const relative of LEGACY_MARKER_RETIREMENT) rmSync(join(root, relative), { force: true });
 }
 
 /** Remove the directories that only ever held retired artifacts. */
@@ -545,6 +545,11 @@ function liveLegacyOwnerReason(root: string): string | null {
 	for (const claim of [FILE_STORE_CLAIM_RELATIVE, `${LEGACY_TASKS_RELATIVE}/.backend-claim.json`]) {
 		if (existsSync(join(root, claim))) return `a legacy owner claim is present at ${claim}`;
 	}
+	// A transaction marker means the prior runtime has an unfinished transaction
+	// to settle: its recovery state is not ours to delete.
+	for (const marker of LEGACY_TRANSACTION_MARKERS) {
+		if (existsSync(join(root, marker))) return `a legacy transaction marker is present at ${marker}`;
+	}
 	for (const workspace of [LEGACY_WORKSPACE_RELATIVE, FILE_STORE_WORKSPACE_RELATIVE]) {
 		const path = join(root, workspace);
 		if (!existsSync(path)) continue;
@@ -651,6 +656,9 @@ export function importLegacyWorkspace(rootInput: string, now = new Date().toISOS
 		// finish any cleanup the crash interrupted instead of refusing the retry.
 		try {
 			verifyStoreFile(root, canonical);
+			// A crash between the publication rename and the identity marker would
+			// otherwise leave a store that a later truncation cannot be detected for.
+			ensureStoreIdentity(root);
 		} catch (error) {
 			return refusal(`the published store failed verification: ${error instanceof Error ? error.message : String(error)}`);
 		}

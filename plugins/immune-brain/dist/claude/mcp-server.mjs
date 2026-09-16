@@ -2777,10 +2777,20 @@ function writeStoreIdentity(root) {
   const path = resolve4(root, kernelStoreIdentityPath());
   if (existsSync3(path))
     return;
-  writeFileSync2(path, `${JSON.stringify({ contract: "assurance_kernel/store_identity/v1", created_at: new Date().toISOString() }, null, 2)}
-`, {
-    flag: "wx"
-  });
+  const fd = openSync3(path, constants2.O_WRONLY | constants2.O_CREAT | constants2.O_EXCL);
+  try {
+    writeFileSync2(fd, `${JSON.stringify({ contract: "assurance_kernel/store_identity/v1", created_at: new Date().toISOString() }, null, 2)}
+`);
+    fsyncSync(fd);
+  } finally {
+    closeSync3(fd);
+  }
+  const directory = openSync3(dirname4(path), constants2.O_RDONLY);
+  try {
+    fsyncSync(directory);
+  } finally {
+    closeSync3(directory);
+  }
 }
 function initializeSchema(db, root, now) {
   db.exec("BEGIN IMMEDIATE");

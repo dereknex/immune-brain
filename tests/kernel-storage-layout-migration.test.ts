@@ -990,6 +990,54 @@ describe("explicit SQLite import of the retired file store (A1)", () => {
 		expect(existsSync(join(root, ".imm/tasks/task-owner.json"))).toBe(true);
 	});
 
+	it("refuses to retire a legacy transaction marker the prior runtime must settle", async () => {
+		const root = tempRoot();
+		writeLegacyTerminalPair(root, "2026-08-14-026-old-task");
+		commit(root, "legacy evidence");
+		expect((await runMigration(root)).outcome).toBe("migration_uncommitted");
+		commit(root, "preserve evidence");
+		expect((await runMigration(root)).outcome).toBe("migrated");
+		// The prior runtime left an unfinished transaction behind.
+		mkdirSync(join(root, ".imm/tasks"), { recursive: true });
+		writeFileSync(join(root, ".imm/tasks/.terminal-transaction.json"), "{\"contract\":\"assurance_kernel/terminal_transaction/v1\"}\n");
+		const outcome = await runMigration(root);
+		expect(outcome.outcome).toBe("invalid");
+		expect(outcome.reason).toMatch(/legacy transaction marker/);
+		expect(existsSync(join(root, ".imm/tasks/.terminal-transaction.json"))).toBe(true);
+	});
+
+	it("restores the store identity marker on the recovery path", async () => {
+		const root = tempRoot();
+		writeLegacyTerminalPair(root, "2026-08-14-027-old-task");
+		commit(root, "legacy evidence");
+		expect((await runMigration(root)).outcome).toBe("migration_uncommitted");
+		commit(root, "preserve evidence");
+		expect((await runMigration(root)).outcome).toBe("migrated");
+		// A crash between the publication rename and the identity marker.
+		rmSync(join(root, ".imm/state/kernel.identity.json"), { force: true });
+		const recordBytes = readFileSync(join(root, ".imm/audit/2026-08-14-027-old-task/task-record.json"));
+		const proofBytes = readFileSync(join(root, ".imm/audit/2026-08-14-027-old-task/terminal-proof.json"));
+		mkdirSync(join(root, ".imm/tasks"), { recursive: true });
+		writeFileSync(join(root, ".imm/tasks/2026-08-14-027-old-task.json"), recordBytes);
+		writeFileSync(join(root, ".imm/tasks/2026-08-14-027-old-task.backend-claim.json"), proofBytes);
+		expect((await runMigration(root)).outcome).toBe("already_migrated");
+		expect(existsSync(join(root, ".imm/state/kernel.identity.json"))).toBe(true);
+	});
+
+	it("removes an empty retired authority directory so the layout ends up ready", async () => {
+		const root = tempRoot();
+		mkdirSync(join(root, ".imm/authority"), { recursive: true });
+		mkdirSync(join(root, ".imm/state"), { recursive: true });
+		writeFileSync(join(root, ".imm/state/workspace.json"), `${JSON.stringify({ contract: "assurance_kernel/workspace/v1", current_working: null })}\n`);
+		commit(root, "empty retired authority");
+		expect(inspectStorageLayout(root).layout).toBe("migration_required");
+		const outcome = await runMigration(root);
+		expect(outcome).toMatchObject({ outcome: "migrated" });
+		expect(existsSync(join(root, ".imm/authority"))).toBe(false);
+		commit(root, "migrated");
+		expect(inspectStorageLayout(root).layout).toBe("ready");
+	});
+
 	it("refuses an existing audit target with zero writes", async () => {
 		const root = tempRoot();
 		writeLegacyTerminalPair(root, "task-001");
