@@ -310,13 +310,32 @@ describe("delivery workspace materialization", () => {
 		}
 	});
 
+	test("fails closed when an ignored generated file contaminates later descriptors", () => {
+		const root = gitRepo();
+		try {
+			writeFileSync(join(root, ".gitignore"), "generated/\n");
+			execFileSync("git", ["add", ".gitignore"], { cwd: root });
+			execFileSync("git", ["commit", "-qm", "ignore"], { cwd: root });
+			const delivery = materializeDeliveryWorkspace(root, headTree(root));
+			try {
+				mkdirSync(join(delivery.root, "generated"));
+				writeFileSync(join(delivery.root, "generated/result.json"), "{}\n");
+				expect(() => assertDeliveryClean(delivery.root, delivery.tree, delivery.seal)).toThrow(/contaminated/);
+			} finally {
+				delivery.cleanup();
+			}
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
 	test("fails closed when a descriptor contaminates the delivery workspace", () => {
 		const root = gitRepo();
 		try {
 			const delivery = materializeDeliveryWorkspace(root, headTree(root));
 			try {
 				writeFileSync(join(delivery.root, "ok.ts"), "export const ok = 2;\n");
-				expect(() => assertDeliveryClean(delivery.root, delivery.tree)).toThrow(/contaminated/);
+				expect(() => assertDeliveryClean(delivery.root, delivery.tree, delivery.seal)).toThrow(/contaminated/);
 			} finally {
 				delivery.cleanup();
 			}

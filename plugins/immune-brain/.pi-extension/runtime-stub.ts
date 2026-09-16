@@ -568,9 +568,9 @@ export async function projectAssuranceForTask(root: string, taskId: string): Pro
 		if (record.contract === "assurance_kernel/task_record/v4") {
 			if (!record.git_base_head)
 				throw new Error("TaskRecord v4 is missing git_base_head");
-			return scopeMod.taskRevisionIdentity(r, record.intent_snapshot.scope_hint, record.git_base_head);
+			return scopeMod.taskRevisionIdentity(r, record.intent_snapshot.scope_hint, record.git_base_head, record.task_id);
 		}
-		return scopeMod.taskDiffIdentity(r, record.intent_snapshot.scope_hint);
+		return scopeMod.taskDiffIdentity(r, record.intent_snapshot.scope_hint, record.task_id);
 	};
 	return assuranceMod.projectAssurance(root, taskId, diffSnapshotOf);
 }

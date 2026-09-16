@@ -556,7 +556,7 @@ export async function commitBatchChild(input: {
 	const qa = [...(record.attestations ?? [])].reverse().find((item) => item.kind === "qa");
 	if (record.contract === "assurance_kernel/task_record/v4" && qa?.diff_hash) {
 		if (!record.git_base_head) throw new Error("batch commit requires a TaskRecord v4 git_base_head");
-		const captured = captureGitTaskRevisionSnapshot(root, scopeHint, record.git_base_head);
+		const captured = captureGitTaskRevisionSnapshot(root, scopeHint, record.git_base_head, taskId);
 		const digest = `sha256:${createHash("sha256").update(JSON.stringify(captured)).digest("hex")}`;
 		if (digest !== qa.diff_hash)
 			throw new Error("batch commit drifted from the reviewed delivery identity");

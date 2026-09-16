@@ -1987,8 +1987,14 @@ function isDeliveryAttachment(path) {
 function isNonDeliveryPath(path) {
   return isDeliveryAttachment(path) || isRuntimeAuthorityPath(path);
 }
-function isPlanningSidecar(path) {
-  return /^docs\/plans\/(?:archive\/)?[^/]+\.intent\.json$/.test(path);
+function isOwnPlanningSidecar(path, taskId) {
+  return Boolean(taskId) && (path === `docs/plans/${taskId}.intent.json` || path === `docs/plans/archive/${taskId}.intent.json`);
+}
+function isOtherTaskSidecar(path, taskId) {
+  return /^docs\/plans\/(?:archive\/)?[^/]+\.intent\.json$/.test(path) && !isOwnPlanningSidecar(path, taskId);
+}
+function isPlanningNoise(path, taskId) {
+  return path.startsWith("docs/plans/") && !isOtherTaskSidecar(path, taskId) && !isOwnPlanningSidecar(path, taskId);
 }
 function enrollmentBaselinePath(root) {
   return join3(root, ".imm/state/enrollment-baseline.json");
@@ -2002,25 +2008,29 @@ function writeEnrollmentBaseline(root) {
   writeFileSync(path, `${JSON.stringify(snapshot)}
 `);
 }
-function assertNoEnvelopeEscape(root, stagedPaths, scope) {
-  const escaped = [...new Set(stagedPaths)].filter((path) => !isNonDeliveryPath(path) && !isPlanningSidecar(path) && !taskPathMatchesScope(path, scope)).sort(comparePaths);
-  if (escaped.length > 0)
-    throw new Error(`task delivery contains paths outside the authorization envelope: ${escaped.join(", ")}`);
+function readEnrollmentBaseline(root) {
   const baselinePath = enrollmentBaselinePath(root);
   if (!existsSync2(baselinePath))
-    return;
-  let baseline;
+    return null;
   try {
-    baseline = JSON.parse(readFileSync2(baselinePath, "utf8"));
+    const baseline = JSON.parse(readFileSync2(baselinePath, "utf8"));
+    return isGitWorkspaceSnapshot(baseline) ? baseline : null;
   } catch {
     throw new Error("enrollment baseline is unreadable");
   }
-  if (!isGitWorkspaceSnapshot(baseline))
-    throw new Error("enrollment baseline is unreadable");
-  const current = captureGitWorkspaceSnapshot(root);
-  if (!current)
+}
+function assertNoEnvelopeEscape(root, stagedPaths, scope, taskId) {
+  const baseline = readEnrollmentBaseline(root);
+  const current = baseline ? captureGitWorkspaceSnapshot(root) : null;
+  if (baseline && !current)
     throw new Error("enrollment baseline cannot be compared because Git is unavailable");
-  const mixed = [...new Set([...Object.keys(baseline.dirty_files), ...Object.keys(current.dirty_files)])].filter((path) => !isNonDeliveryPath(path) && !isPlanningSidecar(path) && !taskPathMatchesScope(path, scope)).filter((path) => baseline.dirty_files[path] !== current.dirty_files[path]).sort(comparePaths);
+  const escaped = [...new Set(stagedPaths)].filter((path) => !isNonDeliveryPath(path) && !isOwnPlanningSidecar(path, taskId) && !isPlanningNoise(path, taskId) && !taskPathMatchesScope(path, scope)).filter((path) => !baseline || baseline.dirty_files[path] !== current?.dirty_files[path]).sort(comparePaths);
+  if (escaped.length > 0)
+    throw new Error(`task delivery contains paths outside the authorization envelope: ${escaped.join(", ")}`);
+  if (!baseline || !current)
+    return;
+  const staged = new Set(stagedPaths);
+  const mixed = [...new Set([...Object.keys(baseline.dirty_files), ...Object.keys(current.dirty_files)])].filter((path) => !isNonDeliveryPath(path) && !isOwnPlanningSidecar(path, taskId) && !isPlanningNoise(path, taskId) && !taskPathMatchesScope(path, scope)).filter((path) => !isOtherTaskSidecar(path, taskId) || staged.has(path)).filter((path) => baseline.dirty_files[path] !== current.dirty_files[path]).sort(comparePaths);
   if (mixed.length > 0)
     throw new Error(`task delivery contains paths outside the authorization envelope: ${mixed.join(", ")}`);
 }
@@ -2212,7 +2222,7 @@ function headEntry(root, head, path) {
 function taskPathMatchesScope(path, scope) {
   return scope.some((scopePath) => pathMatchesScope(path, scopePath));
 }
-function taskSnapshotOnce(root, scope) {
+function taskSnapshotOnce(root, scope, taskId) {
   const repositoryRoot = git(root, ["rev-parse", "--show-toplevel"])?.trim();
   const head = git(root, ["rev-parse", "--verify", "HEAD^{commit}"])?.trim();
   if (!repositoryRoot || !head || !GIT_OBJECT_ID.test(head))
@@ -2230,11 +2240,13 @@ function taskSnapshotOnce(root, scope) {
   const unstagedPaths = decodeNullPaths(gitBytes(root, ["diff", "--no-renames", "--name-only", "-z", "--"]), "unstaged task paths");
   const untrackedPaths = decodeNullPaths(gitBytes(root, ["ls-files", "--others", "--exclude-standard", "-z", "--"]), "untracked task paths");
   assertNoCaseFoldCollisions([...stagedPaths, ...unstagedPaths, ...untrackedPaths], "Git task paths");
-  assertNoEnvelopeEscape(root, stagedPaths, scope);
+  assertNoEnvelopeEscape(root, stagedPaths, scope, taskId);
   const uncommittedInScope = [...new Set([...unstagedPaths, ...untrackedPaths])].filter((path) => taskPathMatchesScope(path, scope)).sort(comparePaths);
   if (uncommittedInScope.length > 0)
     throw new Error(`task scope contains unstaged or untracked changes: ${uncommittedInScope.join(", ")}`);
-  const taskPaths = [...new Set(stagedPaths)].filter((path) => !isNonDeliveryPath(path) && taskPathMatchesScope(path, scope)).sort(comparePaths);
+  const baseline = readEnrollmentBaseline(root);
+  const current = baseline ? captureGitWorkspaceSnapshot(root) : null;
+  const taskPaths = [...new Set(stagedPaths)].filter((path) => !isNonDeliveryPath(path) && taskPathMatchesScope(path, scope)).filter((path) => !(baseline && current && baseline.dirty_files[path] === current.dirty_files[path] && baseline.dirty_files[path] !== undefined)).sort(comparePaths);
   const stagedFiles = {};
   for (const path of taskPaths) {
     const current = indexEntry(root, path);
@@ -2257,16 +2269,16 @@ function taskSnapshotOnce(root, scope) {
     staged_files: stagedFiles
   };
 }
-function captureGitTaskSnapshot(projectRoot, scopeHint) {
+function captureGitTaskSnapshot(projectRoot, scopeHint, taskId) {
   const requestedRoot = resolve2(projectRoot);
   const requestedStat = lstatSync2(requestedRoot);
   if (requestedStat.isSymbolicLink() || !requestedStat.isDirectory())
     throw new Error("task snapshot root must be a real directory");
   const root = realpathSync3(requestedRoot);
   const scope = assertCanonicalTaskScope(scopeHint);
-  const before = taskSnapshotOnce(root, scope);
+  const before = taskSnapshotOnce(root, scope, taskId);
   gitTaskSnapshotTestHook?.();
-  const after = taskSnapshotOnce(root, scope);
+  const after = taskSnapshotOnce(root, scope, taskId);
   if (JSON.stringify(after) !== JSON.stringify(before))
     throw new Error("Git task snapshot changed while being captured");
   return before;
@@ -2274,15 +2286,15 @@ function captureGitTaskSnapshot(projectRoot, scopeHint) {
 function hashTaskSnapshot(snapshot) {
   return `sha256:${createHash7("sha256").update(JSON.stringify(snapshot)).digest("hex")}`;
 }
-function taskDiffIdentity(projectRoot, scopeHint) {
-  const snapshot = captureGitTaskSnapshot(projectRoot, scopeHint);
+function taskDiffIdentity(projectRoot, scopeHint, taskId) {
+  const snapshot = captureGitTaskSnapshot(projectRoot, scopeHint, taskId);
   return {
     diff_hash: hashTaskSnapshot(snapshot),
     changed_paths: Object.keys(snapshot.staged_files).sort(comparePaths)
   };
 }
-function taskDiffHash(projectRoot, scopeHint) {
-  return taskDiffIdentity(projectRoot, scopeHint).diff_hash;
+function taskDiffHash(projectRoot, scopeHint, taskId) {
+  return taskDiffIdentity(projectRoot, scopeHint, taskId).diff_hash;
 }
 function gitRequired(root, args, failure) {
   const output = git(root, args);
@@ -2290,7 +2302,7 @@ function gitRequired(root, args, failure) {
     throw new Error(failure);
   return output.trim();
 }
-function taskRevisionSnapshotOnce(root, scope, baseHead) {
+function taskRevisionSnapshotOnce(root, scope, baseHead, taskId) {
   const repositoryRoot = git(root, ["rev-parse", "--show-toplevel"])?.trim();
   const head = git(root, ["rev-parse", "--verify", "HEAD^{commit}"])?.trim();
   if (!repositoryRoot || !head || !GIT_OBJECT_ID.test(head))
@@ -2314,8 +2326,10 @@ function taskRevisionSnapshotOnce(root, scope, baseHead) {
   const stagedPaths = decodeNullPaths(gitBytes(root, ["diff", "--cached", "--no-renames", "--name-only", "-z", baseHead, "--"]), "task revision paths");
   const unstagedPaths = decodeNullPaths(gitBytes(root, ["diff", "--no-renames", "--name-only", "-z", "--"]), "unstaged task revision paths");
   const untrackedPaths = decodeNullPaths(gitBytes(root, ["ls-files", "--others", "--exclude-standard", "-z", "--"]), "untracked task revision paths");
-  assertNoEnvelopeEscape(root, stagedPaths, scope);
-  const scopedStagedPaths = stagedPaths.filter((path) => !isNonDeliveryPath(path) && taskPathMatchesScope(path, scope));
+  assertNoEnvelopeEscape(root, stagedPaths, scope, taskId);
+  const baseline = readEnrollmentBaseline(root);
+  const current = baseline ? captureGitWorkspaceSnapshot(root) : null;
+  const scopedStagedPaths = stagedPaths.filter((path) => !isNonDeliveryPath(path) && taskPathMatchesScope(path, scope)).filter((path) => !(baseline && current && baseline.dirty_files[path] === current.dirty_files[path] && baseline.dirty_files[path] !== undefined));
   const scopedUnstagedPaths = unstagedPaths.filter((path) => taskPathMatchesScope(path, scope));
   const scopedUntrackedPaths = untrackedPaths.filter((path) => taskPathMatchesScope(path, scope));
   assertNoCaseFoldCollisions([...scopedStagedPaths, ...scopedUnstagedPaths, ...scopedUntrackedPaths], "Git task revision paths");
@@ -2348,7 +2362,7 @@ function taskRevisionSnapshotOnce(root, scope, baseHead) {
     changed_paths: changedPaths
   };
 }
-function captureGitTaskRevisionSnapshot(projectRoot, scopeHint, baseHead) {
+function captureGitTaskRevisionSnapshot(projectRoot, scopeHint, baseHead, taskId) {
   const requestedRoot = resolve2(projectRoot);
   const requestedStat = lstatSync2(requestedRoot);
   if (requestedStat.isSymbolicLink() || !requestedStat.isDirectory())
@@ -2358,15 +2372,15 @@ function captureGitTaskRevisionSnapshot(projectRoot, scopeHint, baseHead) {
     throw new Error("task revision base must be a Git commit id");
   const scope = assertCanonicalTaskScope(scopeHint);
   const normalizedBase = baseHead.toLowerCase();
-  const before = taskRevisionSnapshotOnce(root, scope, normalizedBase);
+  const before = taskRevisionSnapshotOnce(root, scope, normalizedBase, taskId);
   gitTaskSnapshotTestHook?.();
-  const after = taskRevisionSnapshotOnce(root, scope, normalizedBase);
+  const after = taskRevisionSnapshotOnce(root, scope, normalizedBase, taskId);
   if (JSON.stringify(after) !== JSON.stringify(before))
     throw new Error("Git task revision changed while being captured");
   return before;
 }
-function taskRevisionIdentity(projectRoot, scopeHint, baseHead) {
-  const snapshot = captureGitTaskRevisionSnapshot(projectRoot, scopeHint, baseHead);
+function taskRevisionIdentity(projectRoot, scopeHint, baseHead, taskId) {
+  const snapshot = captureGitTaskRevisionSnapshot(projectRoot, scopeHint, baseHead, taskId);
   return {
     diff_hash: hashTaskSnapshot(snapshot),
     changed_paths: Object.keys(snapshot.changed_paths).sort(comparePaths)
@@ -6419,7 +6433,7 @@ function publishInput(root, input) {
     throw new Error("review requires a TaskRecord v4 git_base_head");
   if (!REVISION_DIFF_HASH.test(input.expectedDiffHash))
     throw new Error("review task revision hash has invalid identity");
-  const snapshot = captureGitTaskRevisionSnapshot(root, input.scopeHint, input.baseHead);
+  const snapshot = captureGitTaskRevisionSnapshot(root, input.scopeHint, input.baseHead, input.taskId);
   const recomputed = `sha256:${createHash13("sha256").update(JSON.stringify(snapshot)).digest("hex")}`;
   if (recomputed !== input.expectedDiffHash)
     throw new Error("review task revision does not match assurance snapshot");
@@ -7769,10 +7783,17 @@ function writeDeliveryTree(sourceRoot, snapshot) {
     rmSync5(indexDirectory, { recursive: true, force: true });
   }
 }
-function assertDeliveryClean(root, tree) {
-  const porcelain = git2(root, ["status", "--porcelain", "-z"]);
-  if (porcelain.length > 0)
+function workspaceSeal(root) {
+  return git2(root, ["status", "--porcelain", "-z", "--untracked-files=all", "--ignored=matching"]);
+}
+function assertDeliveryClean(root, tree, seal) {
+  const porcelain = workspaceSeal(root);
+  if (seal !== undefined) {
+    if (porcelain !== seal)
+      throw new DeliveryWorkspaceError("delivery workspace was contaminated");
+  } else if (porcelain.length > 0) {
     throw new DeliveryWorkspaceError("delivery workspace was contaminated");
+  }
   const current = git2(root, ["rev-parse", "HEAD^{tree}"]);
   if (current !== tree)
     throw new DeliveryWorkspaceError("delivery workspace tree drifted from the frozen identity");
@@ -7780,7 +7801,10 @@ function assertDeliveryClean(root, tree) {
 function materializeDeliveryWorkspace(sourceRoot, tree, runner) {
   assertTree(tree);
   const dest = mkdtempSync2(join7(tmpdir3(), "imm-delivery-"));
-  const cleanup = () => rmSync5(dest, { recursive: true, force: true });
+  const cleanup = () => {
+    spawnSync5("chmod", ["-R", "u+w", dest], { stdio: ["ignore", "ignore", "ignore"] });
+    rmSync5(dest, { recursive: true, force: true });
+  };
   try {
     mkdirSync5(dest, { recursive: true });
     const commit = git2(sourceRoot, ["commit-tree", tree, "-m", `delivery ${tree}`], {
@@ -7802,8 +7826,9 @@ function materializeDeliveryWorkspace(sourceRoot, tree, runner) {
       throw new DeliveryWorkspaceError("delivery materialization does not match the frozen tree");
     assertNoEscapingSymlinks(dest);
     prepareDependencies(dest, runner);
-    assertDeliveryClean(dest, tree);
-    return { root: dest, tree, cleanup };
+    const seal = workspaceSeal(dest);
+    assertDeliveryClean(dest, tree, seal);
+    return { root: dest, tree, seal, cleanup };
   } catch (error) {
     cleanup();
     throw error;
@@ -7827,7 +7852,7 @@ function deliveryTreeForSnapshot(snapshot) {
   const record = readTaskRecord(snapshot.root, snapshot.task_id).record;
   if (!record || record.contract !== "assurance_kernel/task_record/v4" || !record.git_base_head)
     throw new Error("QA delivery requires a TaskRecord v4 git_base_head");
-  const captured = captureGitTaskRevisionSnapshot(snapshot.root, record.intent_snapshot.scope_hint, record.git_base_head);
+  const captured = captureGitTaskRevisionSnapshot(snapshot.root, record.intent_snapshot.scope_hint, record.git_base_head, snapshot.task_id);
   const digest = `sha256:${createHash16("sha256").update(JSON.stringify(captured)).digest("hex")}`;
   if (digest !== snapshot.diff_hash)
     throw new Error("QA delivery identity does not match the frozen snapshot");
@@ -7865,7 +7890,7 @@ async function runDeterministicQa(snapshot, descriptors, runner, options = {}) {
       if (options.signal?.aborted)
         throw new VerificationAbortedError;
       if (delivery)
-        assertDeliveryClean(delivery.root, delivery.tree);
+        assertDeliveryClean(delivery.root, delivery.tree, delivery.seal);
       const failed = result.exit_code !== 0 || result.timed_out;
       options.onProgress?.({
         index: offset + 1,
@@ -10946,7 +10971,7 @@ async function commitBatchChild(input) {
   if (record.contract === "assurance_kernel/task_record/v4" && qa?.diff_hash) {
     if (!record.git_base_head)
       throw new Error("batch commit requires a TaskRecord v4 git_base_head");
-    const captured = captureGitTaskRevisionSnapshot(root, scopeHint, record.git_base_head);
+    const captured = captureGitTaskRevisionSnapshot(root, scopeHint, record.git_base_head, taskId);
     const digest = `sha256:${createHash19("sha256").update(JSON.stringify(captured)).digest("hex")}`;
     if (digest !== qa.diff_hash)
       throw new Error("batch commit drifted from the reviewed delivery identity");
@@ -11796,9 +11821,9 @@ function diffSnapshotOf(root, record) {
   if (record.contract === "assurance_kernel/task_record/v4") {
     if (!record.git_base_head)
       throw new Error("TaskRecord v4 is missing git_base_head");
-    return taskRevisionIdentity(root, record.intent_snapshot.scope_hint, record.git_base_head);
+    return taskRevisionIdentity(root, record.intent_snapshot.scope_hint, record.git_base_head, record.task_id);
   }
-  return taskDiffIdentity(root, record.intent_snapshot.scope_hint);
+  return taskDiffIdentity(root, record.intent_snapshot.scope_hint, record.task_id);
 }
 function diffHashOf(root, record) {
   return diffSnapshotOf(root, record).diff_hash;

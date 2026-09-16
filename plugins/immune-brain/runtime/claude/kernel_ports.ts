@@ -99,9 +99,9 @@ export function diffSnapshotOf(root: string, record: TaskRecord): {
 } {
 	if (record.contract === "assurance_kernel/task_record/v4") {
 		if (!record.git_base_head) throw new Error("TaskRecord v4 is missing git_base_head");
-		return taskRevisionIdentity(root, record.intent_snapshot.scope_hint, record.git_base_head);
+		return taskRevisionIdentity(root, record.intent_snapshot.scope_hint, record.git_base_head, record.task_id);
 	}
-	return taskDiffIdentity(root, record.intent_snapshot.scope_hint);
+	return taskDiffIdentity(root, record.intent_snapshot.scope_hint, record.task_id);
 }
 
 export function diffHashOf(root: string, record: TaskRecord): string {

@@ -459,7 +459,7 @@ function publishInput(
 		throw new Error("review requires a TaskRecord v4 git_base_head");
 	if (!REVISION_DIFF_HASH.test(input.expectedDiffHash))
 		throw new Error("review task revision hash has invalid identity");
-	const snapshot = captureGitTaskRevisionSnapshot(root, input.scopeHint, input.baseHead);
+	const snapshot = captureGitTaskRevisionSnapshot(root, input.scopeHint, input.baseHead, input.taskId);
 	const recomputed = `sha256:${createHash("sha256").update(JSON.stringify(snapshot)).digest("hex")}`;
 	if (recomputed !== input.expectedDiffHash)
 		throw new Error("review task revision does not match assurance snapshot");

@@ -79,6 +79,9 @@ describe("managed task snapshot isolation", () => {
 			expect(() => taskDiffHash(root, ["task.ts"])).toThrow(/outside the authorization envelope/);
 			rmSync(join(root, "new-outside.ts"));
 			git(root, ["add", "outside.ts"]);
+			expect(taskDiffHash(root, ["task.ts"])).toBe(initial);
+			writeFileSync(join(root, "outside.ts"), "export const outside = 'dirty-two';\n");
+			git(root, ["add", "outside.ts"]);
 			expect(() => taskDiffHash(root, ["task.ts"])).toThrow(/outside the authorization envelope/);
 		} finally {
 			rmSync(root, { recursive: true, force: true });

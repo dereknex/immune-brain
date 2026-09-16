@@ -23,6 +23,7 @@ function deliveryTreeForSnapshot(snapshot: SnapshotDescriptor): string {
 		snapshot.root,
 		record.intent_snapshot.scope_hint,
 		record.git_base_head,
+		snapshot.task_id,
 	);
 	const digest = `sha256:${createHash("sha256").update(JSON.stringify(captured)).digest("hex")}`;
 	if (digest !== snapshot.diff_hash)
@@ -67,7 +68,7 @@ export async function runDeterministicQa(
 			signal: options.signal,
 		});
 		if (options.signal?.aborted) throw new VerificationAbortedError();
-		if (delivery) assertDeliveryClean(delivery.root, delivery.tree);
+		if (delivery) assertDeliveryClean(delivery.root, delivery.tree, delivery.seal);
 		const failed = result.exit_code !== 0 || result.timed_out;
 		options.onProgress?.({
 			index: offset + 1,

@@ -18,6 +18,7 @@ export class DeliveryWorkspaceError extends Error {
 export interface DeliveryWorkspace {
 	root: string;
 	tree: string;
+	seal: string;
 	cleanup: () => void;
 }
 
@@ -136,9 +137,17 @@ export function writeDeliveryTree(sourceRoot: string, snapshot: GitTaskRevisionS
 	}
 }
 
-export function assertDeliveryClean(root: string, tree: string): void {
-	const porcelain = git(root, ["status", "--porcelain", "-z"]);
-	if (porcelain.length > 0) throw new DeliveryWorkspaceError("delivery workspace was contaminated");
+function workspaceSeal(root: string): string {
+	return git(root, ["status", "--porcelain", "-z", "--untracked-files=all", "--ignored=matching"]);
+}
+
+export function assertDeliveryClean(root: string, tree: string, seal?: string): void {
+	const porcelain = workspaceSeal(root);
+	if (seal !== undefined) {
+		if (porcelain !== seal) throw new DeliveryWorkspaceError("delivery workspace was contaminated");
+	} else if (porcelain.length > 0) {
+		throw new DeliveryWorkspaceError("delivery workspace was contaminated");
+	}
 	const current = git(root, ["rev-parse", "HEAD^{tree}"]);
 	if (current !== tree) throw new DeliveryWorkspaceError("delivery workspace tree drifted from the frozen identity");
 }
@@ -150,7 +159,10 @@ export function materializeDeliveryWorkspace(
 ): DeliveryWorkspace {
 	assertTree(tree);
 	const dest = mkdtempSync(join(tmpdir(), "imm-delivery-"));
-	const cleanup = () => rmSync(dest, { recursive: true, force: true });
+	const cleanup = () => {
+		spawnSync("chmod", ["-R", "u+w", dest], { stdio: ["ignore", "ignore", "ignore"] });
+		rmSync(dest, { recursive: true, force: true });
+	};
 	try {
 		mkdirSync(dest, { recursive: true });
 		const commit = git(sourceRoot, ["commit-tree", tree, "-m", `delivery ${tree}`], {
@@ -170,8 +182,9 @@ export function materializeDeliveryWorkspace(
 		if (got !== tree) throw new DeliveryWorkspaceError("delivery materialization does not match the frozen tree");
 		assertNoEscapingSymlinks(dest);
 		prepareDependencies(dest, runner);
-		assertDeliveryClean(dest, tree);
-		return { root: dest, tree, cleanup };
+		const seal = workspaceSeal(dest);
+		assertDeliveryClean(dest, tree, seal);
+		return { root: dest, tree, seal, cleanup };
 	} catch (error) {
 		cleanup();
 		throw error;

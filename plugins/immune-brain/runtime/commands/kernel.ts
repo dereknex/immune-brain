@@ -274,8 +274,8 @@ function runInspect(root: string): KernelExecution {
 		try {
 			identity =
 				record.contract === "assurance_kernel/task_record/v4"
-					? taskRevisionIdentity(root, intent.scope_hint, record.git_base_head)
-					: taskDiffIdentity(root, intent.scope_hint);
+					? taskRevisionIdentity(root, intent.scope_hint, record.git_base_head, intent.task_id)
+					: taskDiffIdentity(root, intent.scope_hint, intent.task_id);
 		} catch (error) {
 			return sourceFailure("inspect", error);
 		}
