@@ -71,8 +71,16 @@ The TaskRecord's terminality dimension: `active`, `done`, or `stopped`. It is in
 _Avoid_: phase, stage, status prose
 
 **Artifact State**:
-The planning-artifact mutability dimension: `active` or `frozen`. Freezing binds the assurance snapshot and relocates the scope-bound Spec and TaskIntent to their archive paths.
+The planning-artifact mutability dimension: `active` or `frozen`. Freezing binds the assurance snapshot to the TaskIntent and any bound Spec content in place; source paths do not move, and historical files already under `archive/` stay readable as evidence.
 _Avoid_: review phase, lifecycle
+
+**Authority Store**:
+The worktree-local SQLite database `.imm/state/kernel.sqlite` holding each run's TaskRecord, claim state, run identity, committed operation results and terminal proof. One transaction per Kernel mutation makes it the mutation authority, while Git keeps sole ownership of code identity.
+_Avoid_: state ledger, shared database, second source of truth
+
+**Run**:
+One enrollment of a TaskIntent: a run identity bound at Enrollment and carried by every later attempt, verdict, batch recovery and terminal tracker publication. A task id can have more than one run over time, and only the run that owns the committed work may close it.
+_Avoid_: attempt counter, session id, task id alias
 
 **Workspace Claim**:
 The worktree-local exclusive ownership binding between one active Managed task and the workspace. It persists through implementation, QA, and Review until terminal settlement.
@@ -209,7 +217,7 @@ _Avoid_: current acceptance field, QA attestation
 - Public entries: `plugins/immune-brain/skills/imm-brainstorm/`, `imm-planner/`, and `imm-loop/` enter or continue the Managed Path; `imm-pr-fix/` is the standalone host-native PR repair Skill, `imm-doc-prune/` is the standalone host-native document maintenance Skill, `imm-agent-doc-maintain/` is the standalone host-native agent-instruction maintenance Skill, and `imm-review-retro/` is the standalone host-native review-load and project-usage retro Skill.
 - Planning artifacts: `docs/specs/` stores active Specs; `docs/plans/*.intent.json` stores active TaskIntents despite the historical directory name. Frozen artifacts move under the corresponding `archive/` directories.
 - Kernel authority: `plugins/immune-brain/runtime/kernel/` owns TaskIntent parsing, Enrollment, TaskRecord reduction/storage, claims, projections, and completion.
-- Worktree state: `.imm/state/tasks/<task-id>.json` stores the current-production TaskRecord v4 (v3 records are read-only drain-only), `.imm/state/workspace.json` stores workspace ownership, and `.imm/audit/<task-id>/` stores settled terminal evidence (tracked); `.imm/state/` is wholly Git-ignored runtime state.
+- Worktree state: `.imm/state/kernel.sqlite` holds current authority — each run's TaskRecord, workspace ownership, claim state, run identity and terminal proof, written in one transaction per mutation. `.imm/audit/<task-id>/` stores settled terminal evidence (tracked); the database, its WAL/SHM siblings and backups are Git-ignored runtime state, and `.imm/state/tasks/*.json` survives only as retired layout that the explicit migration diagnoses.
 - Host integration: `plugins/immune-brain/.pi-extension/` owns Pi native Enrollment, deterministic QA, foreground Review dispatch, authorization dialogs, and Task Rail presentation. `plugins/immune-brain/runtime/claude/` owns the Claude Code MCP/Hook adapter; the plugin manifests live under `plugins/immune-brain/.claude-plugin/`, `.mcp.json`, `hooks/`, and `agents/`.
 - Loop dispatch: `plugins/immune-brain/runtime/loop_contract.ts`, `role_prompt_bridge.ts`, and `runtime/prompts/` define internal role routing and bounded delegation contracts.
 - Batch execution: `plugins/immune-brain/runtime/unattended/` and `plugins/immune-brain/runtime/kernel/batch_authority.ts` alone own every batch state transition, plan projection, Git branch and per-child commit, and Batch Authorization; the Claude and Pi host adapters are callers only.

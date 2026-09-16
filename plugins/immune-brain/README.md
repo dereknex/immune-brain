@@ -70,6 +70,24 @@ Managed invariants (see `BASELINE.md`):
 - Advisory roles never implement; execution roles never close QA.
 - Scope changes return to `imm-planner`.
 
+### Authority store
+
+Kernel authority is one SQLite database per worktree at `.imm/state/kernel.sqlite`,
+opened under a store lock. Enrollment, freeze, QA, Review, settlement and audit
+export are single transactions over a run row, and Git keeps sole ownership of
+code identity. Settled terminal evidence stays tracked under
+`.imm/audit/<task-id>/`; the database, its WAL/SHM siblings and backups stay
+Git-ignored.
+
+A workspace still carrying the retired `.imm/state/*.json` file store is diagnosed
+rather than migrated automatically: the explicit migration refuses to run with an
+active task or recoverable batch, imports raw historical facts into a temporary
+database, verifies identities and digests, and publishes atomically. Rolling back
+after new writes means forward repair or a designed recovery — never overwriting
+the database with an older backup. The read-only `bin/imm-kernel audit --legacy`
+projection is the only remaining reader of historical v3 artifacts and is removed
+in the next major release.
+
 ## Skill roles
 
 <!-- GENERATED: skill-registry-role-map -->
@@ -146,7 +164,9 @@ confirmation. Successful Kernel settlement preserves implementation files and
 releases the claim. Dialog or Tool cancellation is not task termination. A busy
 invocation must finish or be cancelled with existing Host controls first;
 `request_stop` does not force-kill QA. `request_authorization` remains reserved
-for unresolved decisions and rework authorization.
+for unresolved decisions and for the exception rework cases Kernel pauses on
+(a recurring security boundary, or an exhausted rework budget); ordinary rework
+and ordinary completion settle without a new user gate.
 
 On Claude Code, privileged operations use server-initiated MCP
 `elicitation/create` after preparation has produced the exact revision, content

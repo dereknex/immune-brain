@@ -194,8 +194,8 @@ describe("TaskRecord v3 reducer", () => {
 		} as TaskAction)).toThrow(KernelInvariantError);
 	});
 
-	test("review rework restores active artifacts and parks the second review round", () => {
-		const rework = (id: string) => ({
+	test("review rework restores active artifacts and parks only a recurring security boundary", () => {
+		const rework = (id: string, extra: Record<string, unknown> = {}) => ({
 			...baseAction("request_rework"),
 			findings: [{
 				id,
@@ -205,19 +205,42 @@ describe("TaskRecord v3 reducer", () => {
 				source: "review",
 				review_round: 1,
 				summary: "rework",
+				...extra,
 			}],
 		}) as TaskAction;
 		const afterRound1 = reduce(frozenFixture(), rework("f-1"), audit("review")).record;
 		expect(afterRound1.artifact_state).toBe("active");
 		expect(afterRound1.intent_ref.path).toBe("docs/plans/task-r2c2.intent.json");
 
+		// A second blocking defect on an acceptance a previous round already
+		// covered returns to execution instead of demanding a user decision.
 		const round2Input = frozenFixture({
 			findings: afterRound1.findings,
 			history: afterRound1.history,
 		});
 		const afterRound2 = reduce(round2Input, rework("f-2"), audit("review")).record;
-		expect(afterRound2.artifact_state).toBe("frozen");
-		expect(afterRound2.findings.some((item) => item.kind === "replan_required" && item.status === "open")).toBe(true);
+		expect(afterRound2.artifact_state).toBe("active");
+		expect(afterRound2.findings.some((item) => item.kind === "replan_required")).toBe(false);
+
+		const evidence = {
+			trigger: "the descriptor writes outside the authorized directory",
+			caller_chain: ["runtime/kernel/enrollment.ts"],
+			violated: { kind: "security_boundary" as const, ref: "boundary:authorization" },
+		};
+		const boundary = (id: string) => rework(id, {
+			acceptance_id: null,
+			anchor: anchorForEvidence(evidence),
+			evidence,
+		});
+		const afterBoundary1 = reduce(round2Input, boundary("b-1"), audit("review")).record;
+		expect(afterBoundary1.findings.some((item) => item.kind === "replan_required")).toBe(false);
+		const boundary2Input = frozenFixture({
+			findings: afterBoundary1.findings,
+			history: afterBoundary1.history,
+		});
+		const afterBoundary2 = reduce(boundary2Input, boundary("b-2"), audit("review")).record;
+		expect(afterBoundary2.artifact_state).toBe("frozen");
+		expect(afterBoundary2.findings.some((item) => item.kind === "replan_required" && item.status === "open")).toBe(true);
 	});
 
 	test("material completion requires QA and Review attestations", () => {

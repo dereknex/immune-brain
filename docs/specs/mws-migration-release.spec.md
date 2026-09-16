@@ -241,6 +241,7 @@ The source-to-bundle path is `runtime/*` â†’ `scripts/build-claude-plugin.ts` â†
 - `tests/kernel-canary-terminal-transaction.test.ts`
 - `tests/kernel-enrollment-transaction.test.ts`
 - `tests/kernel-inspect.test.ts`
+- `tests/kernel-r2c2-reducer.test.ts`
 - `tests/kernel-intent-authoring.test.ts`
 - `tests/kernel-intent-validation.test.ts`
 - `tests/kernel-migrate.test.ts`
@@ -253,6 +254,7 @@ The source-to-bundle path is `runtime/*` â†’ `scripts/build-claude-plugin.ts` â†
 - `tests/pi-batch-authority.test.ts`
 - `tests/pi-canary-enroll-extension.test.ts`
 - `tests/pi-canary-lifecycle-package.test.ts`
+- `tests/pi-canary-review-bundle.test.ts`
 - `tests/pi-canary-user-authority.test.ts`
 - `tests/pi-canary-work-extension.test.ts`
 - `tests/plugin-package-runtime.test.ts`

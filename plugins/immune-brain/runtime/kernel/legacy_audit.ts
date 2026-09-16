@@ -7,6 +7,9 @@
  * observation, TaskRecord, or workspace state. It never imports, synthesizes,
  * or activates a Kernel TaskRecord from legacy data.
  *
+ * Removal milestone: read-only transitional code. It is deleted in the next
+ * major release, after the release that removes the retired file store.
+ *
  * Not exported from kernel/index.ts; reached only through the v4 CLI
  * `imm-kernel audit --legacy` surface.
  */

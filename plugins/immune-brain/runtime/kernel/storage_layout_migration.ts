@@ -690,6 +690,10 @@ function removeMigrationMarker(root: string): void {
  * Read-only inspection first; every non-ready layout reports its stable
  * diagnosis, and a legacy layout that would once have migrated reports
  * `invalid` with the importer requirement instead of writing anything.
+ *
+ * Removal milestone: this diagnosis module and its relocation helpers are
+ * transitional release machinery and are deleted in the next major release,
+ * once no supported workspace can still carry the retired file store.
  */
 export function migrateLegacyLayout(root: string): MigrationOutcome {
 	const initial = inspectStorageLayout(root);

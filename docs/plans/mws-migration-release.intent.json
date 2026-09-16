@@ -1,7 +1,6 @@
 {
   "contract": "assurance_kernel/task_intent/v1",
   "task_id": "mws-migration-release",
-  "owner": "user",
   "goal": "Deliver explicit claimless SQLite migration, remove obsolete authority and relocation writers, and prove dual-host/worktree/batch/tracker and package readiness for one coordinated major release.",
   "acceptance": [
     {
@@ -149,12 +148,14 @@
     "tests/kernel-pi-canary-live-boundary.test.ts",
     "tests/kernel-pi-canary-prepare.test.ts",
     "tests/kernel-r2c2-boundary.test.ts",
+    "tests/kernel-r2c2-reducer.test.ts",
     "tests/kernel-shadow-cli.test.ts",
     "tests/kernel-storage-layout-migration.test.ts",
     "tests/packaged-contract-tool-surface.test.ts",
     "tests/pi-batch-authority.test.ts",
     "tests/pi-canary-enroll-extension.test.ts",
     "tests/pi-canary-lifecycle-package.test.ts",
+    "tests/pi-canary-review-bundle.test.ts",
     "tests/pi-canary-user-authority.test.ts",
     "tests/pi-canary-work-extension.test.ts",
     "tests/plugin-package-runtime.test.ts",
@@ -167,5 +168,6 @@
     "tests/v4-storage-retirement-legacy-audit.test.ts"
   ],
   "risk": "critical",
-  "revision": 1
+  "revision": 2,
+  "owner": "user"
 }

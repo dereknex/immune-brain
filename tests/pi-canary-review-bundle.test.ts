@@ -117,7 +117,10 @@ describe("native canary review evidence", () => {
 			symlinkSync("change.ts", join(root, "src", "link.ts"));
 			writeFileSync(join(root, "src", "large.bin"), Buffer.alloc(3 * 1024 * 1024, 0xff));
 			writeFileSync(join(root, "outside.txt"), "out of scope\n");
-			execFileSync("git", ["add", "-A"], { cwd: root });
+			// Stage only the task's own scope: an out-of-scope path left as
+			// worktree dirt stays available to the user but never enters the
+			// delivery revision.
+			execFileSync("git", ["add", "--", "src"], { cwd: root });
 
 			const scope = ["src"];
 			const diffHash = taskRevisionDiffHash(root, scope, baseHead);
@@ -225,7 +228,7 @@ describe("native canary review evidence", () => {
 		}
 	});
 
-	test("v4 revision ignores case-fold collisions outside the task scope", () => {
+	test("v4 revision rejects staged escape including case-fold collisions outside the task scope", () => {
 		const root = revisionRepo();
 		try {
 			const baseHead = gitOutput(root, ["rev-parse", "HEAD"]);
@@ -233,8 +236,9 @@ describe("native canary review evidence", () => {
 			const second = execFileSync("git", ["hash-object", "-w", "--stdin"], { cwd: root, input: "second\n", encoding: "utf8" }).trim();
 			execFileSync("git", ["update-index", "--add", "--cacheinfo", `100644,${first},outside/Case.ts`], { cwd: root });
 			execFileSync("git", ["update-index", "--add", "--cacheinfo", `100644,${second},outside/case.ts`], { cwd: root });
-			const snapshot = captureGitTaskRevisionSnapshot(root, ["src"], baseHead);
-			expect(snapshot.changed_paths).toEqual({});
+			expect(() => captureGitTaskRevisionSnapshot(root, ["src"], baseHead)).toThrow(
+				/outside the authorization envelope: outside\/Case\.ts, outside\/case\.ts/,
+			);
 		} finally {
 			rmSync(root, { recursive: true, force: true });
 		}

@@ -20,6 +20,7 @@ import { createMutationAuthorityRegistry, digestOfAction } from "../plugins/immu
 import { createMutationAuthorityCapabilityForTest, seedKernelRunForTest } from "./fixtures/mutation-authority-test-seam";
 import { readRunRowByTask, updateRunRecord, withKernelRead, withKernelTransaction } from "../plugins/immune-brain/runtime/kernel/sqlite_store";
 import { findingsDigestV2 } from "../plugins/immune-brain/runtime/kernel/reducer";
+import { anchorForEvidence } from "../plugins/immune-brain/runtime/kernel/refutation";
 import { readTaskIntent } from "../plugins/immune-brain/runtime/kernel/intent";
 import { confirmationRef, evaluateNativeGate, PRIVILEGED_OPERATIONS } from "../plugins/immune-brain/runtime/claude/interaction";
 import { readTaskRecord } from "../plugins/immune-brain/runtime/kernel/storage";
@@ -686,7 +687,11 @@ describe("claude host authority", () => {
 		});
 		expect(h.counts().applyCount).toBe(1);
 		expect(await mcp.callTool("advance_assurance", { task_id: TASK })).toMatchObject({ code: "verdict_invalid" });
-		expect(await mcp.callTool("submit_review", { task_id: TASK, verdict })).toEqual({ state: "completed" });
+		// Settlement projects the terminal tracker state alongside the outcome.
+		expect(await mcp.callTool("submit_review", { task_id: TASK, verdict })).toMatchObject({
+			state: "completed",
+			tracker: { contract: "immune_brain/github_issue_tracker_result/v1", operation: "mark-terminal" },
+		});
 		expect(h.counts().applyCount).toBe(2);
 		expect(await mcp.callTool("submit_review", { task_id: TASK, verdict })).toMatchObject({ state: "blocked" });
 	});
@@ -753,7 +758,24 @@ describe("claude host authority", () => {
 			await apply({ op: "freeze_artifacts", actor_id: "executor" }, at);
 			execFileSync("git", ["add", "-A"], { cwd: fixture.root });
 			const record = readTaskRecord(fixture.root, taskId);
-			const finding = { id, kind: "blocking", status: "open", acceptance_id: "A1", source: "review", review_round: null, summary: "review needs rework" };
+			// Only a recurring security boundary parks a task for a user decision, so
+		// the authorization path is exercised through that supported trigger.
+		const evidence = {
+			trigger: "the descriptor writes outside the authorized directory",
+			caller_chain: ["runtime/kernel/enrollment.ts"],
+			violated: { kind: "security_boundary" as const, ref: "boundary:authorization" },
+		};
+		const finding = {
+			id,
+			kind: "blocking",
+			status: "open",
+			acceptance_id: null,
+			source: "review",
+			review_round: null,
+			summary: "review needs rework",
+			anchor: anchorForEvidence(evidence),
+			evidence,
+		};
 			const action = capabilityActionFor({ op: "request_rework", task_id: taskId, at, actor_id: "reviewer", findings: [finding] });
 			const capability = createMutationAuthorityCapabilityForTest(registry, {
 				authority_kind: "review",

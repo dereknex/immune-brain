@@ -713,11 +713,12 @@ describe("acc-pi-batch-gate", () => {
 		expect(result1.review_dispatch?.agent_params).toBeDefined();
 		const batchId = result1.batch_id;
 
-		// Simulate in-flight staged changes strictly within authorized child scope (spec artifact)
-		const inScopeSpecPath = join(fixture.root, "docs", "specs", "unattended-initiative-batch-run.spec.md");
+		// Simulate in-flight staged changes strictly within authorized child scope: the
+		// child's own spec path is in its scope_hint, a shared spec path is not.
+		const inScopeSpecPath = join(fixture.root, "docs", "specs", "review-resume-c1.spec.md");
 		mkdirSync(join(fixture.root, "docs", "specs"), { recursive: true });
 		writeFileSync(inScopeSpecPath, "# Staged in-flight spec modification\n");
-		execFileSync("git", ["add", "docs/specs/unattended-initiative-batch-run.spec.md"], { cwd: fixture.root });
+		execFileSync("git", ["add", "docs/specs/review-resume-c1.spec.md"], { cwd: fixture.root });
 
 		// Resuming the same batch with frozen/archived child sidecar and in-flight authorized uncommitted changes must succeed!
 		const result2 = await executePiUnattendedBatch({
