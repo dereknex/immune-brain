@@ -1,0 +1,2420 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "mws-sqlite-authority",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "mws-sqlite-authority",
+    "goal": "Replace multi-file authority persistence with one worktree-local SQLite transaction boundary and exact execution identities while preserving Kernel authorization.",
+    "acceptance": [
+      {
+        "id": "A1",
+        "assertion": "SQLite persistence enforces one active run per worktree, revision-checked concurrent writes, bounded locks and crash/disk-error recovery without JSON-byte CAS; isolated worktrees and consistent backup/restore preserve exact workspace/run identity.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.4.2\",\n  \"argv\": [\n    \"test\",\n    \"tests/task-record-durability.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 180000,\n  \"max_output_bytes\": 131072\n}\n"
+      },
+      {
+        "id": "A2",
+        "assertion": "Enrollment binds a fresh exact run to validated native authority atomically; competing enrollment, wrong-workspace database copies and stale revisions produce no authority writes.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.4.2\",\n  \"argv\": [\n    \"test\",\n    \"tests/kernel-enrollment-transaction.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 131072\n}\n"
+      },
+      {
+        "id": "A3",
+        "assertion": "Terminal settlement and operation replay are atomic; response loss reuses durable facts, unknown command outcomes remain unknown, and audit-export failure cannot reactivate a settled run.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.4.2\",\n  \"argv\": [\n    \"test\",\n    \"tests/kernel-canary-drain-transaction.test.ts\",\n    \"tests/kernel-canary-terminal-transaction.test.ts\",\n    \"tests/unattended-batch-commit.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 131072\n}\n"
+      },
+      {
+        "id": "A4",
+        "assertion": "Pi and Claude expose the same exact-run authority projection, reject incompatible schema and retain native receipt/freshness boundaries using the SQLite store.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.4.2\",\n  \"argv\": [\n    \"test\",\n    \"tests/dual-host-assurance-conformance.test.ts\",\n    \"tests/kernel-assurance-projection.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 180000,\n  \"max_output_bytes\": 131072\n}\n"
+      }
+    ],
+    "scope_hint": [
+      "docs/plans/archive/mws-sqlite-authority.intent.json",
+      "docs/plans/mws-sqlite-authority.intent.json",
+      "docs/specs/archive/mws-sqlite-authority.spec.md",
+      "docs/specs/mws-sqlite-authority.spec.md",
+      "plugins/immune-brain/.pi-extension/imm-canary-enroll.ts",
+      "plugins/immune-brain/.pi-extension/imm-canary-work.ts",
+      "plugins/immune-brain/.pi-extension/imm-unattended-batch.ts",
+      "plugins/immune-brain/.pi-extension/pi-canary-assurance-progression.ts",
+      "plugins/immune-brain/.pi-extension/pi-canary-interaction.ts",
+      "plugins/immune-brain/.pi-extension/pi-canary-invocations.ts",
+      "plugins/immune-brain/.pi-extension/pi-canary-native-review.ts",
+      "plugins/immune-brain/.pi-extension/pi-canary-tool-failure.ts",
+      "plugins/immune-brain/.pi-extension/runtime-stub.ts",
+      "plugins/immune-brain/dist/claude/mcp-server.mjs",
+      "plugins/immune-brain/runtime/assurance/coordinator.ts",
+      "plugins/immune-brain/runtime/assurance/enrollment.ts",
+      "plugins/immune-brain/runtime/assurance/host_port.ts",
+      "plugins/immune-brain/runtime/assurance/invocations.ts",
+      "plugins/immune-brain/runtime/assurance/qa.ts",
+      "plugins/immune-brain/runtime/authorization_operation.ts",
+      "plugins/immune-brain/runtime/claude/capability.ts",
+      "plugins/immune-brain/runtime/claude/interaction.ts",
+      "plugins/immune-brain/runtime/claude/kernel_ports.ts",
+      "plugins/immune-brain/runtime/claude/mcp_server.ts",
+      "plugins/immune-brain/runtime/claude/review_host.ts",
+      "plugins/immune-brain/runtime/commands/kernel.ts",
+      "plugins/immune-brain/runtime/github_issue_tracker.ts",
+      "plugins/immune-brain/runtime/kernel/application.ts",
+      "plugins/immune-brain/runtime/kernel/assurance_projection.ts",
+      "plugins/immune-brain/runtime/kernel/authority_port.ts",
+      "plugins/immune-brain/runtime/kernel/backend_claim.ts",
+      "plugins/immune-brain/runtime/kernel/batch_authority.ts",
+      "plugins/immune-brain/runtime/kernel/canary_application.ts",
+      "plugins/immune-brain/runtime/kernel/capability_registry.ts",
+      "plugins/immune-brain/runtime/kernel/completion.ts",
+      "plugins/immune-brain/runtime/kernel/enrollment.ts",
+      "plugins/immune-brain/runtime/kernel/enrollment_authority.ts",
+      "plugins/immune-brain/runtime/kernel/index.ts",
+      "plugins/immune-brain/runtime/kernel/intent.ts",
+      "plugins/immune-brain/runtime/kernel/intent_token_registry.ts",
+      "plugins/immune-brain/runtime/kernel/legacy_audit.ts",
+      "plugins/immune-brain/runtime/kernel/pi_canary_prepare.ts",
+      "plugins/immune-brain/runtime/kernel/reducer.ts",
+      "plugins/immune-brain/runtime/kernel/refutation.ts",
+      "plugins/immune-brain/runtime/kernel/run_identity.ts",
+      "plugins/immune-brain/runtime/kernel/spec_binding.ts",
+      "plugins/immune-brain/runtime/kernel/sqlite_store.ts",
+      "plugins/immune-brain/runtime/kernel/storage.ts",
+      "plugins/immune-brain/runtime/kernel/storage_layout_migration.ts",
+      "plugins/immune-brain/runtime/kernel/storage_paths.ts",
+      "plugins/immune-brain/runtime/kernel/types.ts",
+      "plugins/immune-brain/runtime/kernel/validation.ts",
+      "plugins/immune-brain/runtime/unattended/batch_git.ts",
+      "plugins/immune-brain/runtime/unattended/batch_plan.ts",
+      "plugins/immune-brain/runtime/unattended/batch_preflight.ts",
+      "plugins/immune-brain/runtime/unattended/batch_runner.ts",
+      "plugins/immune-brain/runtime/unattended/batch_state.ts",
+      "plugins/immune-brain/runtime/v4_runtime.ts",
+      "scripts/build-claude-plugin.ts",
+      "tests/__snapshots__/plugin-package-runtime.test.ts.snap",
+      "tests/breaking-intent-revision-gate.test.ts",
+      "tests/carrier-enrollment-gate-contract.test.ts",
+      "tests/claude-batch-authority.test.ts",
+      "tests/claude-host-authority.test.ts",
+      "tests/claude-host-package.test.ts",
+      "tests/dual-host-assurance-conformance.test.ts",
+      "tests/enrollment-confirmation-relocation.test.ts",
+      "tests/fixtures/mutation-authority-test-seam.ts",
+      "tests/github-issue-projection-contract.test.ts",
+      "tests/helpers/pi-canary-assurance-harness.ts",
+      "tests/host-neutral-assurance-coordinator.test.ts",
+      "tests/kernel-assurance-obligation.test.ts",
+      "tests/kernel-assurance-projection.test.ts",
+      "tests/kernel-backend-claim.test.ts",
+      "tests/kernel-batch-authority.test.ts",
+      "tests/kernel-canary-application.test.ts",
+      "tests/kernel-canary-authority.test.ts",
+      "tests/kernel-canary-claim-writer-boundary.test.ts",
+      "tests/kernel-canary-drain-transaction.test.ts",
+      "tests/kernel-canary-eligibility.test.ts",
+      "tests/kernel-canary-rehearsal.test.ts",
+      "tests/kernel-canary-rework-authority.test.ts",
+      "tests/kernel-canary-terminal-transaction.test.ts",
+      "tests/kernel-capability-registry-contract.test.ts",
+      "tests/kernel-enrollment-authority.test.ts",
+      "tests/kernel-enrollment-transaction.test.ts",
+      "tests/kernel-inspect.test.ts",
+      "tests/kernel-intent-authoring.test.ts",
+      "tests/kernel-intent-v2.test.ts",
+      "tests/kernel-intent-validation.test.ts",
+      "tests/kernel-migrate.test.ts",
+      "tests/kernel-p2b0-boundary.test.ts",
+      "tests/kernel-pi-canary-live-boundary.test.ts",
+      "tests/kernel-pi-canary-prepare.test.ts",
+      "tests/kernel-r2c1-boundary.test.ts",
+      "tests/kernel-r2c2-authority.test.ts",
+      "tests/kernel-r2c2-boundary.test.ts",
+      "tests/kernel-r2c2-reducer.test.ts",
+      "tests/kernel-record-v3.test.ts",
+      "tests/kernel-record-v4.test.ts",
+      "tests/kernel-shadow-cli.test.ts",
+      "tests/kernel-storage-layout-migration.test.ts",
+      "tests/pi-batch-authority.test.ts",
+      "tests/pi-canary-assurance-authority.test.ts",
+      "tests/pi-canary-enroll-extension.test.ts",
+      "tests/pi-canary-lifecycle-package.test.ts",
+      "tests/pi-canary-user-authority.test.ts",
+      "tests/pi-canary-verification-descriptor.test.ts",
+      "tests/pi-canary-work-extension.test.ts",
+      "tests/plugin-package-runtime.test.ts",
+      "tests/post-freeze-intent-resolution.test.ts",
+      "tests/review-revision-identity-conformance.test.ts",
+      "tests/risk-downgrade-guard.test.ts",
+      "tests/risk-tier-floor.test.ts",
+      "tests/shared-deterministic-qa.test.ts",
+      "tests/task-record-durability.test.ts",
+      "tests/unattended-batch-commit.test.ts",
+      "tests/unattended-batch-plan.test.ts",
+      "tests/unattended-batch-run.test.ts",
+      "tests/unattended-contracts.test.ts",
+      "tests/v4-storage-retirement-legacy-audit.test.ts"
+    ],
+    "risk": "critical",
+    "revision": 10,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/archive/mws-sqlite-authority.intent.json",
+    "content_hash": "sha256:c081d4616dae4ee77e50ad2b934840654f23d447f943c23971a251e5cd1d2c2e"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:3e39174c7a4690603593407a3e68f50ada1b68d8654a4e145e657a82db22c8d4",
+  "git_base_head": "dcf03db733c62c0358651b00b6fbe8f14c8f396a",
+  "attestations": [
+    {
+      "id": "approval-qa-a680cfa7",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:a9ba21ef98af5c8529bd36ebf4081cddd0aa734f4c5c37dfa3c707106972fa9b",
+      "diff_hash": "sha256:3ad7b4bf351cfcaf7eee22f4be51d48f620771448a57b95c84c61221a93e8a58",
+      "actor_id": "deterministic-qa",
+      "summary": "all 4 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "A2",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "A3",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "A4",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-dbef6e17",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:a9ba21ef98af5c8529bd36ebf4081cddd0aa734f4c5c37dfa3c707106972fa9b",
+      "diff_hash": "sha256:d5177def0d29a4a7ee903329eb7e85cd31fb1df7ae84dfacdb936c44f70e89a6",
+      "actor_id": "deterministic-qa",
+      "summary": "all 4 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "A2",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "A3",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "A4",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-d51aed15",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:a9ba21ef98af5c8529bd36ebf4081cddd0aa734f4c5c37dfa3c707106972fa9b",
+      "diff_hash": "sha256:22e8e871262fe11e13979c6b64141d4164f87d1cdf45ba52c454b83a1272cada",
+      "actor_id": "deterministic-qa",
+      "summary": "all 4 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "A2",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "A3",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "A4",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-3ad84527",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:a9ba21ef98af5c8529bd36ebf4081cddd0aa734f4c5c37dfa3c707106972fa9b",
+      "diff_hash": "sha256:d10ea09d01ee48bdcd0ed2b2daea0419c4f4c0e68e738748241c67491d2d4d7d",
+      "actor_id": "deterministic-qa",
+      "summary": "all 4 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "A2",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "A3",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "A4",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-dfab3cb7",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:a9ba21ef98af5c8529bd36ebf4081cddd0aa734f4c5c37dfa3c707106972fa9b",
+      "diff_hash": "sha256:f863d25cdf03d2b34e4768f28c8c88348159bc1a4d1c5cffade004e8aa496f33",
+      "actor_id": "deterministic-qa",
+      "summary": "all 4 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "A2",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "A3",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "A4",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-7361f37c",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:a9ba21ef98af5c8529bd36ebf4081cddd0aa734f4c5c37dfa3c707106972fa9b",
+      "diff_hash": "sha256:20af64bfb22e7cc207123d817047918916d1430a1c1680e823920af6ddbeeef0",
+      "actor_id": "deterministic-qa",
+      "summary": "all 4 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "A2",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "A3",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "A4",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-ac4c2eac",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 3,
+      "intent_content_hash": "sha256:cf4521d902142a472066f6a0a23c0976731ebb81148e67d830a413a8920282c9",
+      "diff_hash": "sha256:4aab6c9dbe963ae1bae43ef219a0d2b1b58cce2c7ae412054adf4441cbafa2ca",
+      "actor_id": "deterministic-qa",
+      "summary": "all 4 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "A2",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "A3",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "A4",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-5bad07e7",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 4,
+      "intent_content_hash": "sha256:9eb40b4273ba769ba92d051a5523d9305f137ab81669c5d4f86dc43d49893698",
+      "diff_hash": "sha256:a8e57d4f05b3a3dfcb9b3c260edfbccd40944f2d9d3968a45060fb2f2d767d88",
+      "actor_id": "deterministic-qa",
+      "summary": "all 4 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "A2",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "A3",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "A4",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-623c7a5a",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 5,
+      "intent_content_hash": "sha256:0846e8709687b9b65609b561eedbff8d50e74d6bd995ba52ebc8f3d2a5b6b9fc",
+      "diff_hash": "sha256:04d828473986cfc3d8e4805d2b756a9d970088bc12cc5438e7d2a6df42ef06a3",
+      "actor_id": "deterministic-qa",
+      "summary": "all 4 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "A2",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "A3",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "A4",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-0144efec",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 6,
+      "intent_content_hash": "sha256:49ec9b140288ed37a59cfcaeff4a684a6b9873eef3d79222282140f1ebfcbb9c",
+      "diff_hash": "sha256:f38e4a54871e151d2b723a1990800f7f96d76e1eadae2d1e738df3686ab205b5",
+      "actor_id": "deterministic-qa",
+      "summary": "all 4 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "A2",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "A3",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "A4",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-fe3bc2dc",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 7,
+      "intent_content_hash": "sha256:863c55aad17a74e89d9b21d45fce5e367a0dc7814c23d419f71c60281ddaf53f",
+      "diff_hash": "sha256:9097d6c772652f9d0fc966a9d569f406815788684704d04423fa950a21d33289",
+      "actor_id": "deterministic-qa",
+      "summary": "all 4 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "A2",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "A3",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "A4",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-2a39d45f",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 8,
+      "intent_content_hash": "sha256:40c9c45078fa0f87a7a5a6441fb0464b555357f24964d3d6c0db2e31218d0243",
+      "diff_hash": "sha256:786847c76d854f466065093260c0909a2cf4742e1c65756b388488c12efef823",
+      "actor_id": "deterministic-qa",
+      "summary": "all 4 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "A2",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "A3",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "A4",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-66ec4845",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 9,
+      "intent_content_hash": "sha256:c1ee297027aa5cd92366413e32b608a0ea717eaaea2d8a2ca20cd123374b088b",
+      "diff_hash": "sha256:075fc26669257f7f93098cb488465b59b7b8ec1e18948a9e493652d3e9f9aa00",
+      "actor_id": "deterministic-qa",
+      "summary": "all 4 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "A2",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "A3",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "A4",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-d777effd",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 10,
+      "intent_content_hash": "sha256:c081d4616dae4ee77e50ad2b934840654f23d447f943c23971a251e5cd1d2c2e",
+      "diff_hash": "sha256:51f55af6a733357c1e769e2f90cd801fb684aee986724ea8d69e70da41acb7d7",
+      "actor_id": "deterministic-qa",
+      "summary": "all 4 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "A2",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "A3",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "A4",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-bdd76dd1",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 10,
+      "intent_content_hash": "sha256:c081d4616dae4ee77e50ad2b934840654f23d447f943c23971a251e5cd1d2c2e",
+      "diff_hash": "sha256:0931a4ee3e772c5697a16970e77694944925105cd107f3e21a483fc5bb18a4d9",
+      "actor_id": "deterministic-qa",
+      "summary": "all 4 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "A2",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "A3",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "A4",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-663445af",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 10,
+      "intent_content_hash": "sha256:c081d4616dae4ee77e50ad2b934840654f23d447f943c23971a251e5cd1d2c2e",
+      "diff_hash": "sha256:5bbbe9d3d317ac4aa74e723ecef05a77b1e1086cd2f1535490654468c7632c14",
+      "actor_id": "deterministic-qa",
+      "summary": "all 4 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "A2",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "A3",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "A4",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-b7ba899c",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 10,
+      "intent_content_hash": "sha256:c081d4616dae4ee77e50ad2b934840654f23d447f943c23971a251e5cd1d2c2e",
+      "diff_hash": "sha256:5bbbe9d3d317ac4aa74e723ecef05a77b1e1086cd2f1535490654468c7632c14",
+      "actor_id": "parent-mediated-review",
+      "summary": "已核验 base、review commit、唯一父节点、tree 与 manifest digest；依据不可变 Git 变更及 Kernel 提供的 A1–A4 通过证据，未发现可确认的阻断性正确性或安全问题。本轮未重新执行验收命令。",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "dcf03db733c62c0358651b00b6fbe8f14c8f396a",
+        "review_commit": "bcded7eb3b5bbf4c0e5232470015e459208a2962",
+        "review_tree": "299732c65d77bce3977d523d5727ed67213fb75e",
+        "manifest_digest": "sha256:cd86cc98187dc3e622b44107b84c5b2b7cad03bc731c03b5985d933bf596d29d"
+      }
+    }
+  ],
+  "findings": [
+    {
+      "id": "qa-A1-b5e03471-eab5e4",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "A1",
+      "source": "execution",
+      "review_round": null,
+      "summary": "verification failed (exit 1) stdout=28B stderr=2947B",
+      "anchor": null,
+      "evidence": null,
+      "counterevidence": null
+    },
+    {
+      "id": "qa-A4-b5e03471-50167e",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "A4",
+      "source": "execution",
+      "review_round": null,
+      "summary": "verification failed (exit 1, timed out) stdout=28B stderr=25619B",
+      "anchor": null,
+      "evidence": null,
+      "counterevidence": null
+    },
+    {
+      "id": "qa-A4-3e01538b-29516f",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "A4",
+      "source": "execution",
+      "review_round": null,
+      "summary": "verification failed (exit 1) stdout=28B stderr=38366B",
+      "anchor": null,
+      "evidence": null,
+      "counterevidence": null
+    },
+    {
+      "id": "review-45dfc6b20f29-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "A2",
+      "source": "review",
+      "review_round": 1,
+      "summary": "The enrollment preparation binds only workspace.current_working, not the SQLite workspace revision. After another task enrolls and stops the workspace returns to idle, so the stale preparation still validates while enrollment commits against the freshly read revision, bypassing the stale-revision refusal the confirmation should have triggered. Bind the confirmed workspace revision into the preparation digest and verify it inside the lock; add an idle->owned->idle regression test through the real enrollCanaryTask entry.",
+      "anchor": "sha256:f513dd87ff5abff28bd15bf3c830bffa0ae9b1f139b75be4092f9a528d9e237b",
+      "evidence": {
+        "trigger": "A preparation is issued for task A while the workspace is idle; task B then enrolls and stops without committing Git, so HEAD and A's intent are unchanged and the workspace is idle again; A enrolls with its original preparation and capability.",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/kernel/pi_canary_prepare.ts:preparePiCanary",
+          "plugins/immune-brain/runtime/kernel/enrollment.ts:enrollCanaryTask",
+          "plugins/immune-brain/runtime/kernel/enrollment.ts:runEnrollmentPreconditionChecks",
+          "plugins/immune-brain/runtime/kernel/storage.ts:commitEnrollmentLocked"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "A2"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-45dfc6b20f29-2-review-2",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "A3",
+      "source": "review",
+      "review_round": 1,
+      "summary": "The added outer catch wraps all of startBatchLocked and builds a rejected report with children: [], so a durable batch resuming through a store error is reported as an empty-plan rejection, losing the committed commits and child states recorded in the batch state. Return a preflight rejection only when the run provably has no durable progress; otherwise keep the persisted progress and report the recovery block.",
+      "anchor": "sha256:28c85710a0834423b8029eff3af098f5348d5a2e4f0963cfb0b3dcff686b27cf",
+      "evidence": {
+        "trigger": "An already persisted batch with committed or enrolled children resumes; validatePersistedRun, resumeBatch or a later Kernel projection throws a store error, and the new outer catch turns it into a rejected report with children: [].",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/unattended/batch_runner.ts:startBatch",
+          "plugins/immune-brain/runtime/unattended/batch_runner.ts:startBatchLocked",
+          "plugins/immune-brain/runtime/unattended/batch_runner.ts:rejectionReport"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "A3"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-bb17bf492f1c-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "A2",
+      "source": "review",
+      "review_round": 2,
+      "summary": "The retired-file cleanup deletes active-claim.json and workspace.json merely because the requested task exists in SQLite, without verifying that the retired owner belongs to that task or enrollment. Removing another task's authority from a normal mutation path is unauthorized and unrecoverable; keep unverified retired authority and refuse it, leaving deletion to an explicit migration or an identity-verified proof.",
+      "anchor": "sha256:e42f8582f6e17c30dd574363eb9912600e908ada78c8bd8e277fd8e7e121d19b",
+      "evidence": {
+        "trigger": "The SQLite store holds task A's run while a retired active-claim.json or workspace.json names task B; an ordinary host recovery for A deletes B's retired authority without reading its identity, and the deletion is not undone if the transaction then fails.",
+        "caller_chain": [
+          "plugins/immune-brain/.pi-extension/imm-canary-work.ts: registered mutation recovery",
+          "plugins/immune-brain/runtime/kernel/storage.ts:withKernelStoreLockForTask",
+          "plugins/immune-brain/runtime/kernel/storage.ts:assertNoRetiredFileStore",
+          "plugins/immune-brain/runtime/kernel/storage.ts:removeDerivedSupersededFiles"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "A2"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-bb17bf492f1c-2-review-2",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "A1",
+      "source": "review",
+      "review_round": 2,
+      "summary": "checkpointLiveStore swallows an open failure and discards the checkpoint's busy result, so a failed checkpoint still allows restoreKernelStore to delete the write-ahead log; a crash between that deletion and the rename loses committed facts that only existed in the WAL. Propagate the open failure, verify the checkpoint result, and remove sidecars only after a confirmed checkpoint.",
+      "anchor": "sha256:2d8ef0734835896c56784b03aa68b20855578e41295d5a71fd7cd4ccd751ce9e",
+      "evidence": {
+        "trigger": "A crash leaves committed transactions in kernel.sqlite-wal; restoring a valid backup of the same worktree finds the live database unopenable, so the checkpoint silently returns and the restore still removes the WAL and SHM before the rename.",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/kernel/sqlite_store.ts:restoreKernelStore",
+          "plugins/immune-brain/runtime/kernel/sqlite_store.ts:checkpointLiveStore",
+          "plugins/immune-brain/runtime/kernel/sqlite_store.ts:restoreKernelStore sidecar removal"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "A1"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-bb17bf492f1c-3-review-3",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "A3",
+      "source": "review",
+      "review_round": 2,
+      "summary": "The drain replay returns the request's claim (next) instead of the committed result, so a same-identity request with different content is reported as a successful replay. Parse the durable result_json and return the committed claim, and refuse a request whose identity conflicts with the committed operation.",
+      "anchor": "sha256:849937ea9f60cdc138476578f466fa66de3a8041428900182eabc4c24546918e",
+      "evidence": {
+        "trigger": "A drain commits for task T at time t; the same call is repeated with the same task and timestamp but a different valid intent_content_hash or enrollment_event_id, and the function returns the request's claim as a successful replay although those fields were never committed.",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/kernel/storage.ts:commitDrainLocked",
+          "plugins/immune-brain/runtime/kernel/run_identity.ts:drainOperationId",
+          "plugins/immune-brain/runtime/kernel/sqlite_store.ts:readOperationRow",
+          "plugins/immune-brain/runtime/kernel/storage.ts:commitDrainLocked replay return"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "A3"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "request_rework:mws-sqlite-authority:2026-09-15T13:20:33.892Z:replan-required",
+      "kind": "replan_required",
+      "status": "resolved",
+      "acceptance_id": "A2",
+      "source": "kernel",
+      "review_round": 2,
+      "summary": "Review returned this acceptance boundary twice; a durable replan is required."
+    },
+    {
+      "id": "review-35a63b7ba77a-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "A1",
+      "source": "review",
+      "review_round": 3,
+      "summary": "Audit evidence is keyed by task_id rather than the exact run, so a terminal proof exported by another worktree's run of the same task enters this worktree's audit path and makes a legitimate local active run project as an authority conflict. Bind the exported proof to the run identity and let the terminal decision read the local exact run, while keeping historical audit evidence readable.",
+      "anchor": "sha256:a9b0ba0a98444eff8b967249caeb481db89eb8178733e4286a5c70e7d6c2c959",
+      "evidence": {
+        "trigger": "Worktrees A and B each enroll the same task_id with different run ids; A's terminal audit at .imm/audit/<task_id>/terminal-proof.json reaches B through Git while B holds its own active run, and B's projection reports an authority conflict against a tombstone that is not its own run's evidence.",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/kernel/storage.ts:exportTerminalAudit",
+          "plugins/immune-brain/runtime/kernel/storage_paths.ts:auditTerminalProofPath",
+          "plugins/immune-brain/runtime/kernel/backend_claim.ts:readTaskTombstone",
+          "plugins/immune-brain/runtime/kernel/assurance_projection.ts:projectAssurance"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "A1"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-35a63b7ba77a-2-review-2",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "A3",
+      "source": "review",
+      "review_round": 3,
+      "summary": "The terminal operation replay branch cannot be reached through the real mutation entry: once the run is terminal, the preflight refuses before any durable operation lookup, so a lost response cannot be replayed and the committed result is never returned. Recognize an already-committed exact run and operation before the record, token and capability checks, and cover the retry through the application entry.",
+      "anchor": "sha256:38f79801d1565edba049ad5fe8ea1ebd8f44c03b1c431ace5323d127703188bd",
+      "evidence": {
+        "trigger": "A complete or stop operation commits the terminal run and its operation row; the response is lost and the caller retries with the same task, operation and time. readTaskRecordRaw returns null because the run is no longer active, so execute rejects with 'has no TaskRecord' before the durable replay branch is reached.",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/kernel/canary_application.ts:createCanaryApplication.execute",
+          "plugins/immune-brain/runtime/kernel/storage.ts:readTaskRecordRaw"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "A3"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "request_rework:mws-sqlite-authority:2026-09-15T14:29:55.898Z:replan-required",
+      "kind": "replan_required",
+      "status": "resolved",
+      "acceptance_id": "A1",
+      "source": "kernel",
+      "review_round": 3,
+      "summary": "Review returned this acceptance boundary twice; a durable replan is required."
+    },
+    {
+      "id": "review-56a69c74a545-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "A1",
+      "source": "review",
+      "review_round": 4,
+      "summary": "New audit evidence is still located by task_id, so two runs of the same logical task share one export path: a foreign run's audit arriving through Git blocks the local settlement's export permanently, and every later mutation retries and fails the same CAS. Isolate each run's audit by its run identity and update the readers and batch attachment selection accordingly.",
+      "anchor": "sha256:02ec4bf4bce67940d8a42a1ce8676896132f4b13443fd3fdc26d709e1671fa70",
+      "evidence": {
+        "trigger": "Worktrees A and B each enroll the same task_id with different run ids; A's terminal audit reaches B through Git while B is still active; B then settles with a different terminal time or record content. exportTerminalAudit CASes the existing path against MISSING_REVISION, convergeFile refuses the differing bytes, audit_exported_at stays null, and every later host mutation retries and throws the same conflict.",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/kernel/application.ts:applyTaskAction",
+          "plugins/immune-brain/runtime/kernel/storage.ts:commitTerminalLocked",
+          "plugins/immune-brain/runtime/kernel/storage.ts:withKernelStoreLock",
+          "plugins/immune-brain/runtime/kernel/storage.ts:retryPendingAuditExports",
+          "plugins/immune-brain/runtime/kernel/storage.ts:exportTerminalAudit",
+          "plugins/immune-brain/runtime/kernel/storage_paths.ts:auditTaskDirPath"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "A1"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-56a69c74a545-2-review-2",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "A4",
+      "source": "review",
+      "review_round": 4,
+      "summary": "Once any SQLite projection exists the authority read returns immediately, so a historical terminal audit is only visible while the database file does not exist. A new clone that records one mutation turns the same task from done into an empty projection. Keep the historical audit fallback when the database confirms no local run for that task and no authority conflict, and cover both database states.",
+      "anchor": "sha256:9b85bbd6ae3f226b7f55d2702e4349db32a32ab33d37cd96e0e0df30b28f3026",
+      "evidence": {
+        "trigger": "A fresh clone carries a valid terminal audit pair for a task and no SQLite run row. While the database file is absent, reconcileKernelAuthority reads the audit and reports terminal_owner; any host mutation creates the empty database, after which the same projection reports unowned and projectAssurance returns an empty projection.",
+        "caller_chain": [
+          "plugins/immune-brain/.pi-extension/imm-canary-work.ts:execute",
+          "plugins/immune-brain/.pi-extension/runtime-stub.ts:withKernelStoreLockForTask",
+          "plugins/immune-brain/runtime/kernel/storage.ts:withKernelStoreLockForTask",
+          "plugins/immune-brain/runtime/kernel/assurance_projection.ts:projectAssurance",
+          "plugins/immune-brain/runtime/kernel/storage.ts:reconcileKernelAuthority",
+          "plugins/immune-brain/runtime/kernel/storage.ts:projectKernelAuthorityLocked"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "A4"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "request_rework:mws-sqlite-authority:2026-09-15T14:55:20.895Z:replan-required",
+      "kind": "replan_required",
+      "status": "resolved",
+      "acceptance_id": "A1",
+      "source": "kernel",
+      "review_round": 4,
+      "summary": "Review returned this acceptance boundary twice; a durable replan is required."
+    },
+    {
+      "id": "review-fa081507e872-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "A2",
+      "source": "review",
+      "review_round": 5,
+      "summary": "Enrollment protection still reads terminal evidence through task-level audit discovery, so another worktree's run directory is treated as this task's tombstone and a worktree that never enrolled the task refuses to enroll it. Resolve enrollment protection from the local committed run, keeping historical evidence handling without promoting a foreign run to local authority.",
+      "anchor": "sha256:57e49ef52c46dced35c5bd8fccacdc4fcb49303be8113e1f7f4939f4992cb090",
+      "evidence": {
+        "trigger": "Worktree A settles task T and commits .imm/audit/T/<run-A>/. Worktree B receives that commit and attempts its first enrollment of T with no local run and an idle workspace; auditEvidencePaths selects run-A and the precondition check rejects T as already terminal.",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/kernel/enrollment.ts:enrollCanaryTask",
+          "plugins/immune-brain/runtime/kernel/enrollment.ts:runEnrollmentPreconditionChecks",
+          "plugins/immune-brain/runtime/kernel/backend_claim.ts:readTaskTombstone",
+          "plugins/immune-brain/runtime/kernel/storage_paths.ts:auditEvidencePaths"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "A2"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-fa081507e872-2-review-2",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "A3",
+      "source": "review",
+      "review_round": 5,
+      "summary": "Run-scoped audit export is not connected to the batch commit and recovery readers: they still discover evidence by task alone, which returns null once more than one run directory exists. Pass the committed local run identity through those readers.",
+      "anchor": "sha256:257a9a2bd68efb5cbe461b7aae9f3bc9e39ec5aff7345a28056aeedd19381d85",
+      "evidence": {
+        "trigger": "Two worktrees enroll the same logical task; after A's run-scoped audit reaches B, B settles and exports its own pair. Two run directories exist and no flat pair does, so the batch commit path reads the pair without a run identity, gets null, and fails with audit pair missing despite the durable settlement.",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/unattended/batch_runner.ts:startBatchLocked",
+          "plugins/immune-brain/runtime/unattended/batch_git.ts:commitBatchChild",
+          "plugins/immune-brain/runtime/kernel/storage.ts:readAuditTaskPair",
+          "plugins/immune-brain/runtime/kernel/storage_paths.ts:auditEvidencePaths"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "A3"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-fa081507e872-3-review-3",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "A1",
+      "source": "review",
+      "review_round": 5,
+      "summary": "The durability guard's own archive-evidence check still validates only the flat and legacy audit layouts, so a correctly exported run-scoped pair reads as missing evidence. Update the guard to validate the run-scoped pair and cover a settled task outside the historical baseline.",
+      "anchor": "sha256:d52f86f141c65f4d489d26016fbbf108414780807d587e15e50eef6109b6b534",
+      "evidence": {
+        "trigger": "A newly completed task outside the historical baseline has an archived intent, a terminal run, and a valid .imm/audit/<task>/<run>/ pair; the durability guard's pair lookup only knows the flat and legacy layouts, finds nothing, and reports evidence loss, failing later durability QA.",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/kernel/storage.ts:exportTerminalAudit",
+          "tests/task-record-durability.test.ts:terminalPair",
+          "tests/task-record-durability.test.ts:Durability guard enumerates the repository's archived sidecars"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "A1"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "request_rework:mws-sqlite-authority:2026-09-15T15:28:00.229Z:replan-required",
+      "kind": "replan_required",
+      "status": "resolved",
+      "acceptance_id": "A2",
+      "source": "kernel",
+      "review_round": 5,
+      "summary": "Review returned this acceptance boundary twice; a durable replan is required."
+    },
+    {
+      "id": "qa-A4-4ed6dff9-0ced88",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "A4",
+      "source": "execution",
+      "review_round": null,
+      "summary": "verification failed (exit 1) stdout=28B stderr=52207B",
+      "anchor": null,
+      "evidence": null,
+      "counterevidence": null
+    },
+    {
+      "id": "review-427df93f3fa2-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "A1",
+      "source": "review",
+      "review_round": 6,
+      "summary": "The batch commit and recovery readers ask for the active run, which is null once the run is terminal, so they fall back to directory guessing: with two run directories the local settlement cannot be committed, and with only a foreign directory the wrong run's evidence can be adopted. Read the local run identity including terminal runs and use it for the exact audit path.",
+      "anchor": "sha256:42e240b44fdd06817a7f80a3e95c43c5e10df06c2e41724d64a11ae1d74956e7",
+      "evidence": {
+        "trigger": "Worktree B settles task T and exports run-B, then receives another worktree's run-A audit through Git. .imm/audit/T/ holds two run directories and no flat pair; startBatch commits the settled child, currentRunId returns null for a terminal run, auditEvidencePaths falls back to a nonexistent flat pair, and the commit fails with audit pair missing.",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/unattended/batch_runner.ts:startBatchLocked",
+          "plugins/immune-brain/runtime/unattended/batch_git.ts:commitBatchChild",
+          "plugins/immune-brain/runtime/kernel/storage.ts:currentRunId",
+          "plugins/immune-brain/runtime/kernel/storage.ts:readAuditTaskPair",
+          "plugins/immune-brain/runtime/kernel/storage_paths.ts:auditEvidencePaths"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "A1"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-427df93f3fa2-2-review-2",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "A2",
+      "source": "review",
+      "review_round": 6,
+      "summary": "The historical audit fallback projects terminal_owner without a local run, and the Pi enrollment entry rejects any terminal_owner before reaching the local-run check, so a foreign audit still blocks a first enrollment through the real entry. Distinguish a local terminal run from audit-only history at that entry, keeping the local re-enrollment prohibition, and verify it through the registered Pi enrollment tool.",
+      "anchor": "sha256:29011d3ac3f6c0cee6fc8c0c5fd33cace1adeafd0b9ec90b08b2a64122ca358c",
+      "evidence": {
+        "trigger": "Worktree B has no local run for task T but holds a valid tracked TaskIntent and receives worktree A's complete terminal audit through Git. The Pi enrollment tool reads the authority projection, gets terminal_owner with owner_run_id null, and returns authority_conflict before the native gate or the local-run check.",
+        "caller_chain": [
+          "plugins/immune-brain/.pi-extension/imm-canary-enroll.ts",
+          "plugins/immune-brain/runtime/kernel/storage.ts:reconcileKernelAuthority",
+          "plugins/immune-brain/runtime/kernel/storage.ts:readAuditTaskPair",
+          "plugins/immune-brain/runtime/kernel/storage_paths.ts:auditEvidencePaths"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "A2"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "request_rework:mws-sqlite-authority:2026-09-15T15:57:17.948Z:replan-required",
+      "kind": "replan_required",
+      "status": "resolved",
+      "acceptance_id": "A1",
+      "source": "kernel",
+      "review_round": 6,
+      "summary": "Review returned this acceptance boundary twice; a durable replan is required."
+    },
+    {
+      "id": "review-c49d8b066c67-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "A1",
+      "source": "review",
+      "review_round": 7,
+      "summary": "An existing store that has lost its tables is silently re-created as a fresh workspace instead of failing closed, so corruption reads as an unowned idle worktree. Record the store's creation identity durably and refuse to initialize a store that was created before but no longer carries its workspace identity.",
+      "anchor": "sha256:a4ff59497ccef93c55e1e7f05286d96f1a384977509145f3e7e9493c67a765dd",
+      "evidence": {
+        "trigger": "A .imm/state/kernel.sqlite that holds an enrolled run is truncated to an empty file and there is no recoverable WAL. A read path then sees zero tables, treats the file as a brand-new store, and the readonly fallback opens it writable and re-initializes it, returning an idle workspace with no run.",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/kernel/assurance_projection.ts:projectAssurance",
+          "plugins/immune-brain/runtime/kernel/backend_claim.ts:readBackendClaim",
+          "plugins/immune-brain/runtime/kernel/sqlite_store.ts:withKernelRead",
+          "plugins/immune-brain/runtime/kernel/sqlite_store.ts:openStoreFile",
+          "plugins/immune-brain/runtime/kernel/sqlite_store.ts:assertSchema",
+          "plugins/immune-brain/runtime/kernel/sqlite_store.ts:initializeSchema"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "A1"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-c49d8b066c67-2-review-2",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "A3",
+      "source": "review",
+      "review_round": 7,
+      "summary": "Terminal replay matches only operation, task and time, so a different request for the same settled event is answered with the earlier result without any capability check. Bind the committed operation to its request digest and replay only an identical request.",
+      "anchor": "sha256:917d69ad1d949641592b9b5044ecfdb740a6e59979baf33eedc8abbd541f56be",
+      "evidence": {
+        "trigger": "Task T stops successfully at time t with reason R1 and actor U1. A second stop for the same T and t is submitted with reason R2 or actor U2: the replay lookup keys only on op, task and time, finds the committed result, and returns success for a request that was never authorized, skipping the action and capability checks.",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/kernel/canary_application.ts:createCanaryApplication.execute",
+          "plugins/immune-brain/runtime/kernel/storage.ts:readCommittedTerminalResult",
+          "plugins/immune-brain/runtime/kernel/run_identity.ts:terminalOperationId",
+          "plugins/immune-brain/runtime/kernel/sqlite_store.ts:readOperationRow"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "A3"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "request_rework:mws-sqlite-authority:2026-09-15T16:24:05.286Z:replan-required",
+      "kind": "replan_required",
+      "status": "resolved",
+      "acceptance_id": "A1",
+      "source": "kernel",
+      "review_round": 7,
+      "summary": "Review returned this acceptance boundary twice; a durable replan is required."
+    },
+    {
+      "id": "review-16ebd9a6d0dc-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "A4",
+      "source": "review",
+      "review_round": 8,
+      "summary": "Retired files are retired on a task-id match alone, so a claim belonging to a different enrollment of the same task is deleted by a repair that never proved it superseded. Require the full run identity (enrollment event, intent revision and content hash) to match before removing a retired file, and cover the same-task different-enrollment case.",
+      "anchor": "sha256:1aadcc3f2fb981df4520934ac884b4fe38d52044baa2a2a11d62da57ce4e7b3a",
+      "evidence": {
+        "trigger": "A task T is terminal in SQLite with enrollment_event_id E1, and a retired active-claim.json names the same task T but carries enrollment_event_id E2 or a different intent_content_hash. repair_authority_state treats it as this run's duplicate and the repair deletes it; the terminal_owner branch also does not check the expected projection revision.",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/claude/kernel_ports.ts:ClaudeRuntime.authorize",
+          "plugins/immune-brain/runtime/kernel/storage.ts:repairKernelAuthority",
+          "plugins/immune-brain/runtime/kernel/storage.ts:retireSupersededRetiredFiles",
+          "plugins/immune-brain/runtime/kernel/storage.ts:isRetiredFileProvablySuperseded"
+        ],
+        "violated": {
+          "kind": "security_boundary",
+          "ref": "exact-run authority repair"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-16ebd9a6d0dc-2-review-2",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "A2",
+      "source": "review",
+      "review_round": 8,
+      "summary": "Every directory read error is flattened into an empty listing, so a retired transaction directory that cannot be read is treated as absent rather than as unverifiable authority. Propagate inconclusive read failures and report them as a blocking layout condition.",
+      "anchor": "sha256:415e444fd6ec9943b9919f851ec842821dd3eb7d146245c64eb9e9b9e45347fc",
+      "evidence": {
+        "trigger": "A worktree with a usable SQLite store keeps retired transaction markers under .imm/state/transactions, but the directory read fails (permissions or I/O). assertNoRetiredFileStore sees the directory exists, receives an empty listing, and lets a new enrollment commit, bypassing the retired-transaction isolation boundary.",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/kernel/enrollment.ts:enrollCanaryTask",
+          "plugins/immune-brain/runtime/kernel/storage.ts:assertNoRetiredFileStore",
+          "plugins/immune-brain/runtime/kernel/storage.ts:readdirNames"
+        ],
+        "violated": {
+          "kind": "security_boundary",
+          "ref": "retired authority transaction isolation"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "request_rework:mws-sqlite-authority:2026-09-16T00:01:27.804Z:replan-required",
+      "kind": "replan_required",
+      "status": "resolved",
+      "acceptance_id": "A4",
+      "source": "kernel",
+      "review_round": 8,
+      "summary": "Review returned this acceptance boundary twice; a durable replan is required."
+    },
+    {
+      "id": "review-8ae45ce29def-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "A3",
+      "source": "review",
+      "review_round": 9,
+      "summary": "Enrollment's durable replay is unreachable from the real entry: the retry hits the consumed-capability and existing-record preconditions before any committed-operation lookup. Recognize a committed enrollment for the exact same request before those first-execution checks and cover the retry through enrollCanaryTask.",
+      "anchor": "sha256:4b940e433bf767bd944534a89872561141ff2a44d0929bdffbc0561bc4773947",
+      "evidence": {
+        "trigger": "enrollCanaryTask commits the run, workspace and enrollment operation but the caller loses the response. Retrying the same request with the same task, event time and binding fails on the already-consumed capability and then on the existing TaskRecord, so the committed result is never returned.",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/kernel/enrollment.ts:enrollCanaryTask",
+          "plugins/immune-brain/runtime/kernel/enrollment.ts:runEnrollmentPreconditionChecks",
+          "plugins/immune-brain/runtime/kernel/storage.ts:commitEnrollmentLocked"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "A3"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "request_rework:mws-sqlite-authority:2026-09-16T00:56:12.648Z:replan-required",
+      "kind": "replan_required",
+      "status": "resolved",
+      "acceptance_id": "A3",
+      "source": "kernel",
+      "review_round": 9,
+      "summary": "Review returned this acceptance boundary twice; a durable replan is required."
+    },
+    {
+      "id": "review-84a16f09be84-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "A4",
+      "source": "review",
+      "review_round": 10,
+      "summary": "plugins/immune-brain/runtime/kernel/backend_claim.ts:184 的 readTaskTombstone 仍按目录数量选择终态证据，没有绑定本地 run。同一 task 的外国 run 和本地 run 都已导出时，auditEvidencePaths 返回不存在的旧版平铺路径，导致两端宿主跳过 GitHub 终态同步。应让当前运行的终态读取绑定本地 run_id，并覆盖多 run 审计目录场景。",
+      "anchor": "sha256:d7750af158b89f341af90419ffc46fb7c7726a28531c1f0df04ae98bb14c26f7",
+      "evidence": {
+        "trigger": "工作区先通过 Git 获得 task T 的 run-A 审计目录，再将本地 run-B 正常结算并导出；两个目录同时存在，且没有旧版平铺 terminal-proof.json。projectAssurance 正确返回 run-B 的终态，但 readTaskTombstone 返回 null，projectTerminalTrackerState 不调用 markTerminal。若仅外国审计存在而本地导出尚未完成，该选择逻辑还会返回外国运行的 terminal_event_id。",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/claude/kernel_ports.ts:ClaudeRuntime.withTerminalTracker",
+          "plugins/immune-brain/runtime/kernel/backend_claim.ts:readTaskTombstone",
+          "plugins/immune-brain/runtime/kernel/storage_paths.ts:auditEvidencePaths",
+          "plugins/immune-brain/runtime/assurance/coordinator.ts:projectTerminalTrackerState"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "A4"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-84a16f09be84-2-review-2",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "A3",
+      "source": "review",
+      "review_round": 10,
+      "summary": "plugins/immune-brain/runtime/kernel/storage.ts:readCommittedEnrollmentResult 从当前可变 run 重建 claim，却从 operation 读取原始 record/workspace，因此延迟重放不能返回原提交结果。drain 后会返回 draining claim，结算后则通过 claimFromRunRow 的空值回退构造 active claim。应将 enrollment claim 一并持久化到 operation result，重放完整原始结果，并测试运行推进后的重放。",
+      "anchor": "sha256:a472590a2392b2eb6efe3dc89eaaac5954f69b40f49ec03f73cbbd5e3e4e3151",
+      "evidence": {
+        "trigger": "enrollCanaryTask 成功提交后，另一宿主对同一 run 执行 beginDrain 或 terminal settlement；随后使用原始 now、nonce、confirmation_ref 和 preparation_digest 重试 enrollment。请求摘要匹配，readCommittedEnrollmentResult 读取原始 enrollment record/workspace，但 claimFromRunRow 使用已经变化的 claim_status 和 updated_at，返回与首次响应不同、甚至相互矛盾的结果。",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/kernel/enrollment.ts:enrollCanaryTask",
+          "plugins/immune-brain/runtime/kernel/storage.ts:readCommittedEnrollmentResult",
+          "plugins/immune-brain/runtime/kernel/backend_claim.ts:claimFromRunRow"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "A3"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "request_rework:mws-sqlite-authority:2026-09-16T01:21:17.634Z:replan-required",
+      "kind": "replan_required",
+      "status": "resolved",
+      "acceptance_id": "A4",
+      "source": "kernel",
+      "review_round": 10,
+      "summary": "Review returned this acceptance boundary twice; a durable replan is required."
+    },
+    {
+      "id": "review-f9f1784f6df7-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "A2",
+      "source": "review",
+      "review_round": 11,
+      "summary": "enrollment.ts:310 的 preparation 校验发生在取得 SQLite 写锁之前，而 :394 使用锁内重新读取的 workspace revision 提交。因此另一进程在两者之间完成一次 enrollment→settlement 后，旧确认仍能创建新 authority。应在同一写事务内重新校验 preparation digest，或将已验证的 workspace revision 保留并作为提交前置条件；补充跨进程交错测试。",
+      "anchor": "sha256:96160749f67a205f2cda2e778ea235fd81395bd123f5ca1ae4946d3b3ccd1c17",
+      "evidence": {
+        "trigger": "任务 A 的原生确认绑定 idle workspace revision R。enrollCanaryTask 的 beforeLock 回调验证该 preparation 后，进程暂停；另一进程在相同 Git HEAD 上 enrollment 并停止任务 B，使 workspace 回到 idle、revision 变为 R+2。A 恢复后取得写锁，读取 R+2 并将它作为 expected_workspace_hash；没有再次比较确认绑定的 R，最终提交 A。现有 stale-confirmation 测试只覆盖其他任务在调用 enrollCanaryTask 之前完成的情况，未覆盖校验与取得写锁之间的窗口。",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/kernel/enrollment.ts::enrollCanaryTask",
+          "plugins/immune-brain/runtime/kernel/enrollment.ts::runEnrollmentPreconditionChecks",
+          "plugins/immune-brain/runtime/kernel/storage.ts::withKernelStoreLock",
+          "plugins/immune-brain/runtime/kernel/storage.ts::commitEnrollmentLocked",
+          "plugins/immune-brain/runtime/kernel/storage.ts::assertWorkspaceExpectation"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "A2"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-f9f1784f6df7-2-review-2",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "A1",
+      "source": "review",
+      "review_round": 11,
+      "summary": "sqlite_store.ts:951 在发布已验证备份之前无条件打开并 checkpoint 原数据库；若原数据库因磁盘损坏而不再是有效 SQLite 文件，即使不存在 WAL 且所有访问者已停止，:1000 也会抛错，导致有效备份无法恢复。至少在不存在 WAL 时允许直接替换损坏主文件；存在不可读 WAL 时保留损坏文件供恢复，并明确处理。补充损坏 live DB、有效 backup 的恢复测试。",
+      "anchor": "sha256:30a9af8f6b9d9ebbfeb3484aded4a927663a3a16f1e5c905b3c4f6b83806ee24",
+      "evidence": {
+        "trigger": "已通过 backupKernelStore 生成属于当前 worktree 的一致备份，关闭全部访问者后，live kernel.sqlite 的头部损坏且没有 -wal/-shm 文件。restoreKernelStore 成功复制并验证备份，但随后 checkpointLiveStore 对损坏主文件执行 PRAGMA wal_checkpoint(TRUNCATE)，抛出数据库格式错误；renameSync(temp, target) 永远不会执行。现有测试覆盖损坏备份和删除 live DB 后恢复，没有覆盖此损坏 live DB 场景。",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/kernel/sqlite_store.ts::restoreKernelStore",
+          "plugins/immune-brain/runtime/kernel/sqlite_store.ts::checkpointLiveStore"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "A1"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "request_rework:mws-sqlite-authority:2026-09-16T01:33:02.110Z:replan-required",
+      "kind": "replan_required",
+      "status": "resolved",
+      "acceptance_id": "A2",
+      "source": "kernel",
+      "review_round": 11,
+      "summary": "Review returned this acceptance boundary twice; a durable replan is required."
+    }
+  ],
+  "history": [
+    {
+      "id": "freeze_artifacts:mws-sqlite-authority:2026-09-15T08:06:13.660Z",
+      "at": "2026-09-15T08:06:13.660Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent and Spec frozen at docs/plans/archive/mws-sqlite-authority.intent.json"
+    },
+    {
+      "id": "request_rework:mws-sqlite-authority:2026-09-15T08:07:47.322Z",
+      "at": "2026-09-15T08:07:47.322Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_1\naction_v2_sha256:3a62639062fff503ab6ecd900e353b9279172e6ae244a3e1f93be3534484262e",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-d3cf46e2932c5439",
+        "issued_at": "2026-09-15T08:07:47.323Z",
+        "expires_at": "2026-09-15T08:17:47.322Z"
+      }
+    },
+    {
+      "id": "revise_intent:mws-sqlite-authority:2026-09-15T08:14:36.428Z",
+      "at": "2026-09-15T08:14:36.428Z",
+      "type": "revise_intent",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "intent_revision_2\naction_v2_sha256:1df5edf2b979842300b6a0779f49cb6e40b96ad2a4504137f8c479a6adbde927"
+    },
+    {
+      "id": "resolve_finding:mws-sqlite-authority:2026-09-15T08:18:08.351Z",
+      "at": "2026-09-15T08:18:08.351Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "qa-A1-b5e03471-eab5e4\naction_v2_sha256:f9d1e72f44aaa2b08d86d4dec9131fa40831680d329a4b56845e26dede15929f"
+    },
+    {
+      "id": "resolve_finding:mws-sqlite-authority:2026-09-15T08:18:21.929Z",
+      "at": "2026-09-15T08:18:21.929Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "qa-A4-b5e03471-50167e\naction_v2_sha256:6553abe9fe7f55a7fae689aba5faaf90b9b780398ad375d7ab02611f4e6104dd"
+    },
+    {
+      "id": "freeze_artifacts:mws-sqlite-authority:2026-09-15T08:18:34.384Z",
+      "at": "2026-09-15T08:18:34.384Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent and Spec frozen at docs/plans/archive/mws-sqlite-authority.intent.json"
+    },
+    {
+      "id": "record_approval:mws-sqlite-authority:2026-09-15T08:20:06.089Z",
+      "at": "2026-09-15T08:20:06.089Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-a680cfa7\naction_v2_sha256:1c04e67fbd421ffb7b93092ce4473d04c886166a2386c74ac37b727a583e0d13",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-f0cce82a2ff3f79d",
+        "issued_at": "2026-09-15T08:20:06.089Z",
+        "expires_at": "2026-09-15T08:30:06.089Z"
+      }
+    },
+    {
+      "id": "request_rework:mws-sqlite-authority:2026-09-15T09:07:47.536Z",
+      "at": "2026-09-15T09:07:47.536Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_1\naction_v2_sha256:188e55c18b5f56810a585f0df4c5c6636d14227146307af99c569cc27d1cd78a",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-01cdf8695eeeb117",
+        "issued_at": "2026-09-15T09:07:47.538Z",
+        "expires_at": "2026-09-15T09:17:47.537Z"
+      }
+    },
+    {
+      "id": "resolve_finding:mws-sqlite-authority:2026-09-15T09:25:08.086Z",
+      "at": "2026-09-15T09:25:08.086Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "qa-A4-3e01538b-29516f\naction_v2_sha256:55ecd3fca60de58bcff3a6d61fe919ea0d863019fdef58d649faa4d6dfa9b932"
+    },
+    {
+      "id": "freeze_artifacts:mws-sqlite-authority:2026-09-15T09:25:19.677Z",
+      "at": "2026-09-15T09:25:19.677Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent and Spec frozen at docs/plans/archive/mws-sqlite-authority.intent.json"
+    },
+    {
+      "id": "record_approval:mws-sqlite-authority:2026-09-15T09:26:10.365Z",
+      "at": "2026-09-15T09:26:10.365Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-dbef6e17\naction_v2_sha256:a6ebe3b01d028a6e15781a130cc34eece9bd8787cbab03782783a0d64078d456",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-fa7bf4aad69cdfdb",
+        "issued_at": "2026-09-15T09:26:10.366Z",
+        "expires_at": "2026-09-15T09:36:10.366Z"
+      }
+    },
+    {
+      "id": "record_approval:mws-sqlite-authority:2026-09-15T10:00:54.695Z",
+      "at": "2026-09-15T10:00:54.695Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-d51aed15\naction_v2_sha256:45ba73c856af4bae984873332198ec2b8c05bcec067849cfeb07fb093c759e14",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-e94e22a496e7ded1",
+        "issued_at": "2026-09-15T10:00:54.695Z",
+        "expires_at": "2026-09-15T10:10:54.695Z"
+      }
+    },
+    {
+      "id": "record_approval:mws-sqlite-authority:2026-09-15T10:23:55.768Z",
+      "at": "2026-09-15T10:23:55.768Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-3ad84527\naction_v2_sha256:cb5035492c47750da895b459e58c56b6eb5c48d39867356f271b7d2ee6d96d20",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-f0bcf482478e98b8",
+        "issued_at": "2026-09-15T10:23:55.769Z",
+        "expires_at": "2026-09-15T10:33:55.769Z"
+      }
+    },
+    {
+      "id": "record_approval:mws-sqlite-authority:2026-09-15T11:00:41.654Z",
+      "at": "2026-09-15T11:00:41.654Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-dfab3cb7\naction_v2_sha256:a396fb56144d6105857b0ee71aeaa183d01a59d4e4e74ba689afa6bdcb7a14dc",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-94692ccedb3faa1f",
+        "issued_at": "2026-09-15T11:00:41.654Z",
+        "expires_at": "2026-09-15T11:10:41.654Z"
+      }
+    },
+    {
+      "id": "request_rework:mws-sqlite-authority:2026-09-15T11:06:58.701Z",
+      "at": "2026-09-15T11:06:58.701Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_1\naction_v2_sha256:2ba21e6ae16618703655d069ee33bead5df6966822eaf1150639dd1a2d9d0e0f",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-16e8e0bb0e6808cd",
+        "issued_at": "2026-09-15T11:06:58.701Z",
+        "expires_at": "2026-09-15T11:16:58.701Z"
+      }
+    },
+    {
+      "id": "resolve_finding:mws-sqlite-authority:2026-09-15T13:14:54.274Z",
+      "at": "2026-09-15T13:14:54.274Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-45dfc6b20f29-1-review-1\naction_v2_sha256:20ad59f2c24bce2a9b92445f2330b61c9d81d9b4660c61fe5645703874758c88"
+    },
+    {
+      "id": "resolve_finding:mws-sqlite-authority:2026-09-15T13:15:04.232Z",
+      "at": "2026-09-15T13:15:04.232Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-45dfc6b20f29-2-review-2\naction_v2_sha256:a0989888731791556ea4552bcdfffc78b809483d8f2c77c952444c3708c204ad"
+    },
+    {
+      "id": "freeze_artifacts:mws-sqlite-authority:2026-09-15T13:15:12.378Z",
+      "at": "2026-09-15T13:15:12.378Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent and Spec frozen at docs/plans/archive/mws-sqlite-authority.intent.json"
+    },
+    {
+      "id": "record_approval:mws-sqlite-authority:2026-09-15T13:15:49.918Z",
+      "at": "2026-09-15T13:15:49.918Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-7361f37c\naction_v2_sha256:2cbf26fb93d33240296b4045962b8471ee6f76e68da09be12bfdcfb4ce54d2eb",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-043b3df720e10ff8",
+        "issued_at": "2026-09-15T13:15:49.919Z",
+        "expires_at": "2026-09-15T13:25:49.918Z"
+      }
+    },
+    {
+      "id": "request_rework:mws-sqlite-authority:2026-09-15T13:20:33.892Z",
+      "at": "2026-09-15T13:20:33.892Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "review_round_2\naction_v2_sha256:3950d0c9d7973353a59feced9fd815fd71d208157651bd25fece7559bee82c3b",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-8273ab301bf34c06",
+        "issued_at": "2026-09-15T13:20:33.892Z",
+        "expires_at": "2026-09-15T13:30:33.892Z"
+      }
+    },
+    {
+      "id": "revise_intent:mws-sqlite-authority:2026-09-15T13:22:28.736Z",
+      "at": "2026-09-15T13:22:28.736Z",
+      "type": "revise_intent",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "intent_revision_3\naction_v2_sha256:0821622d66cdc25b8d7784247c5927b2dbe039cb6bcff8440006856de8435f0d"
+    },
+    {
+      "id": "authorize_rework:mws-sqlite-authority:2026-09-15T13:57:30.735Z",
+      "at": "2026-09-15T13:57:30.735Z",
+      "type": "authorize_rework",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "request_rework:mws-sqlite-authority:2026-09-15T13:20:33.892Z:replan-required\naction_v2_sha256:08ef01397ccb8a496d4e6ed31fcae4532c1a67c7ffeca2cf5f69b9435132ad80",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-0038debfe4542637",
+        "issued_at": "2026-09-15T13:57:30.736Z",
+        "expires_at": "2026-09-15T14:07:30.736Z"
+      }
+    },
+    {
+      "id": "resolve_finding:mws-sqlite-authority:2026-09-15T14:20:44.156Z",
+      "at": "2026-09-15T14:20:44.156Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-bb17bf492f1c-1-review-1\naction_v2_sha256:d84ebe72021dbfeb98053aba2442534bfc3590cc505ff17f3e4ec982ef56e42e"
+    },
+    {
+      "id": "resolve_finding:mws-sqlite-authority:2026-09-15T14:20:53.549Z",
+      "at": "2026-09-15T14:20:53.549Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-bb17bf492f1c-2-review-2\naction_v2_sha256:0da6890fa9f45ccf1b60dfb93f80c4d090ab9a9453410651c8a8f7b1997c3618"
+    },
+    {
+      "id": "resolve_finding:mws-sqlite-authority:2026-09-15T14:21:03.494Z",
+      "at": "2026-09-15T14:21:03.494Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-bb17bf492f1c-3-review-3\naction_v2_sha256:b31a4c3911fd8d8458cc97be4d32defddbb38a22df964b2a2bff25a7b53dad0a"
+    },
+    {
+      "id": "freeze_artifacts:mws-sqlite-authority:2026-09-15T14:21:13.005Z",
+      "at": "2026-09-15T14:21:13.005Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent and Spec frozen at docs/plans/archive/mws-sqlite-authority.intent.json"
+    },
+    {
+      "id": "record_approval:mws-sqlite-authority:2026-09-15T14:21:45.736Z",
+      "at": "2026-09-15T14:21:45.736Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-ac4c2eac\naction_v2_sha256:b92149364d916500eb95a0dbd623566da348bc97db90e2b803548bb1f5b0e494",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-d6914c5fbf1f48a4",
+        "issued_at": "2026-09-15T14:21:45.737Z",
+        "expires_at": "2026-09-15T14:31:45.737Z"
+      }
+    },
+    {
+      "id": "request_rework:mws-sqlite-authority:2026-09-15T14:29:55.898Z",
+      "at": "2026-09-15T14:29:55.898Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "review_round_3\naction_v2_sha256:33f679e546f402a287b8758f1ba9c19722cd249dc6fc62cc5add0d08ef6cf815",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-8c31a8023f42f771",
+        "issued_at": "2026-09-15T14:29:55.898Z",
+        "expires_at": "2026-09-15T14:39:55.898Z"
+      }
+    },
+    {
+      "id": "revise_intent:mws-sqlite-authority:2026-09-15T14:30:32.683Z",
+      "at": "2026-09-15T14:30:32.683Z",
+      "type": "revise_intent",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "intent_revision_4\naction_v2_sha256:6a5e654110976a195858dc1583a8204742cce54e3f1f555d64b988b8c88b8ac5"
+    },
+    {
+      "id": "authorize_rework:mws-sqlite-authority:2026-09-15T14:36:29.814Z",
+      "at": "2026-09-15T14:36:29.814Z",
+      "type": "authorize_rework",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "request_rework:mws-sqlite-authority:2026-09-15T14:29:55.898Z:replan-required\naction_v2_sha256:4b37f789442878af439e8d6560edc1e6fe0158970e9c730d8a7b17ccb2f920a0",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-345f82d98879f06d",
+        "issued_at": "2026-09-15T14:36:29.815Z",
+        "expires_at": "2026-09-15T14:46:29.815Z"
+      }
+    },
+    {
+      "id": "resolve_finding:mws-sqlite-authority:2026-09-15T14:48:36.944Z",
+      "at": "2026-09-15T14:48:36.944Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-35a63b7ba77a-1-review-1\naction_v2_sha256:a35a26f348cf673cd3c4fd2e1ed61aebea42a36c2e07ff433d50ff9464b0eefc"
+    },
+    {
+      "id": "resolve_finding:mws-sqlite-authority:2026-09-15T14:48:46.392Z",
+      "at": "2026-09-15T14:48:46.392Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-35a63b7ba77a-2-review-2\naction_v2_sha256:4f28876a708a269f32ff6ef5e6d23ba8fce6f503ccce1fdd31544666a723eb0a"
+    },
+    {
+      "id": "freeze_artifacts:mws-sqlite-authority:2026-09-15T14:48:56.383Z",
+      "at": "2026-09-15T14:48:56.383Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent and Spec frozen at docs/plans/archive/mws-sqlite-authority.intent.json"
+    },
+    {
+      "id": "record_approval:mws-sqlite-authority:2026-09-15T14:49:36.395Z",
+      "at": "2026-09-15T14:49:36.395Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-5bad07e7\naction_v2_sha256:81f7712d83893c506b0109bf79d5f4101c3bc5dbe90c003b5e8146bf9ecdb8ac",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-cd19f2b0e34395b8",
+        "issued_at": "2026-09-15T14:49:36.395Z",
+        "expires_at": "2026-09-15T14:59:36.395Z"
+      }
+    },
+    {
+      "id": "request_rework:mws-sqlite-authority:2026-09-15T14:55:20.895Z",
+      "at": "2026-09-15T14:55:20.895Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "review_round_4\naction_v2_sha256:14fc64cb74e1b05dacd160e4f0279efa39ec5ab2777fa5c7a11653539ac6a021",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-b36422ae6b69190a",
+        "issued_at": "2026-09-15T14:55:20.896Z",
+        "expires_at": "2026-09-15T15:05:20.896Z"
+      }
+    },
+    {
+      "id": "revise_intent:mws-sqlite-authority:2026-09-15T14:56:45.964Z",
+      "at": "2026-09-15T14:56:45.964Z",
+      "type": "revise_intent",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "intent_revision_5\naction_v2_sha256:fa556a7d9ac4f6c5ed55ef0d68dfeca3b832b7ac6fbd1f787650e4f2d33ec5d4"
+    },
+    {
+      "id": "authorize_rework:mws-sqlite-authority:2026-09-15T14:57:18.708Z",
+      "at": "2026-09-15T14:57:18.708Z",
+      "type": "authorize_rework",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "request_rework:mws-sqlite-authority:2026-09-15T14:55:20.895Z:replan-required\naction_v2_sha256:d2b5616425689ff0c42ba6997c2fb961226bc855addc067d5492b54c2516c826",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-c88fe718c3b24114",
+        "issued_at": "2026-09-15T14:57:18.709Z",
+        "expires_at": "2026-09-15T15:07:18.709Z"
+      }
+    },
+    {
+      "id": "resolve_finding:mws-sqlite-authority:2026-09-15T15:20:04.019Z",
+      "at": "2026-09-15T15:20:04.019Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-56a69c74a545-1-review-1\naction_v2_sha256:fab969a182f4b687a219a8a8f2e6f8627bb94cc2672e9af9188df43db754a744"
+    },
+    {
+      "id": "resolve_finding:mws-sqlite-authority:2026-09-15T15:20:18.784Z",
+      "at": "2026-09-15T15:20:18.784Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-56a69c74a545-2-review-2\naction_v2_sha256:f25c4a484eeaf1d49caaef79184ef44e54eb865a8a18a6ac4e4e8d33ba718cac"
+    },
+    {
+      "id": "freeze_artifacts:mws-sqlite-authority:2026-09-15T15:20:31.609Z",
+      "at": "2026-09-15T15:20:31.609Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent and Spec frozen at docs/plans/archive/mws-sqlite-authority.intent.json"
+    },
+    {
+      "id": "record_approval:mws-sqlite-authority:2026-09-15T15:21:48.939Z",
+      "at": "2026-09-15T15:21:48.939Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-623c7a5a\naction_v2_sha256:ab3e46cd965e6fa327cafbae1b68e8174144bbc60ece36679794a286bf04ac34",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-1bdd4b287bcddcf3",
+        "issued_at": "2026-09-15T15:21:48.939Z",
+        "expires_at": "2026-09-15T15:31:48.939Z"
+      }
+    },
+    {
+      "id": "request_rework:mws-sqlite-authority:2026-09-15T15:28:00.229Z",
+      "at": "2026-09-15T15:28:00.229Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "review_round_5\naction_v2_sha256:95e6a4625588f3802cb7a396ab965fa82319e84026e87ca2f6e0654ef185900b",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-7cade0b33f3a9f47",
+        "issued_at": "2026-09-15T15:28:00.230Z",
+        "expires_at": "2026-09-15T15:38:00.230Z"
+      }
+    },
+    {
+      "id": "revise_intent:mws-sqlite-authority:2026-09-15T15:28:27.870Z",
+      "at": "2026-09-15T15:28:27.870Z",
+      "type": "revise_intent",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "intent_revision_6\naction_v2_sha256:ef64ddb9e7a2c5467cabc6dc8897cd23c3b2b9cbacf7dc9e24ee8c81d8fee707"
+    },
+    {
+      "id": "authorize_rework:mws-sqlite-authority:2026-09-15T15:29:09.135Z",
+      "at": "2026-09-15T15:29:09.135Z",
+      "type": "authorize_rework",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "request_rework:mws-sqlite-authority:2026-09-15T15:28:00.229Z:replan-required\naction_v2_sha256:b2d861f4cf091ea8585e3dc7caf3f683391898d937869b2a20f21cfc4d1defe6",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-19056458306941a2",
+        "issued_at": "2026-09-15T15:29:09.136Z",
+        "expires_at": "2026-09-15T15:39:09.136Z"
+      }
+    },
+    {
+      "id": "resolve_finding:mws-sqlite-authority:2026-09-15T15:48:16.134Z",
+      "at": "2026-09-15T15:48:16.134Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-fa081507e872-1-review-1\naction_v2_sha256:b6a044e756d94a84c8899631984b4d27122a2abd8ff396a0912a49e706181ac7"
+    },
+    {
+      "id": "resolve_finding:mws-sqlite-authority:2026-09-15T15:48:29.651Z",
+      "at": "2026-09-15T15:48:29.651Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-fa081507e872-2-review-2\naction_v2_sha256:56c356116bfcade005db247b5a10619d3f07b1a4297397bdd1ce167970d09182"
+    },
+    {
+      "id": "resolve_finding:mws-sqlite-authority:2026-09-15T15:48:42.181Z",
+      "at": "2026-09-15T15:48:42.181Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-fa081507e872-3-review-3\naction_v2_sha256:8ba13fb8f34cf08f276eb4c05d2b770c20f2718a988bbeccee7fcbe095d0fe3b"
+    },
+    {
+      "id": "freeze_artifacts:mws-sqlite-authority:2026-09-15T15:48:55.344Z",
+      "at": "2026-09-15T15:48:55.344Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent and Spec frozen at docs/plans/archive/mws-sqlite-authority.intent.json"
+    },
+    {
+      "id": "request_rework:mws-sqlite-authority:2026-09-15T15:49:56.413Z",
+      "at": "2026-09-15T15:49:56.413Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_6\naction_v2_sha256:810759b1196c511bd0d7d488df5874b6c592a0dfe18150f138426c9746b88004",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-d71b9f4890fcdc66",
+        "issued_at": "2026-09-15T15:49:56.413Z",
+        "expires_at": "2026-09-15T15:59:56.413Z"
+      }
+    },
+    {
+      "id": "resolve_finding:mws-sqlite-authority:2026-09-15T15:50:59.721Z",
+      "at": "2026-09-15T15:50:59.721Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "qa-A4-4ed6dff9-0ced88\naction_v2_sha256:bea0ff3cf3e6761761a4a98ec9a8434e1346074be54c062142a67ae72569678d"
+    },
+    {
+      "id": "freeze_artifacts:mws-sqlite-authority:2026-09-15T15:51:12.343Z",
+      "at": "2026-09-15T15:51:12.343Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent and Spec frozen at docs/plans/archive/mws-sqlite-authority.intent.json"
+    },
+    {
+      "id": "record_approval:mws-sqlite-authority:2026-09-15T15:52:15.814Z",
+      "at": "2026-09-15T15:52:15.814Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-0144efec\naction_v2_sha256:d15df36c9652c489a824b5c27d7a3cafd2f5e46fcc89655dd74f8d3de886a051",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-5b04dedb24392024",
+        "issued_at": "2026-09-15T15:52:15.815Z",
+        "expires_at": "2026-09-15T16:02:15.815Z"
+      }
+    },
+    {
+      "id": "request_rework:mws-sqlite-authority:2026-09-15T15:57:17.948Z",
+      "at": "2026-09-15T15:57:17.948Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "review_round_6\naction_v2_sha256:015954d253de8ccc8bf0a53c0aa53943fccb79ce6b3ffbe3534f42dcc5314630",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-6a77636fe4fda016",
+        "issued_at": "2026-09-15T15:57:17.948Z",
+        "expires_at": "2026-09-15T16:07:17.948Z"
+      }
+    },
+    {
+      "id": "revise_intent:mws-sqlite-authority:2026-09-15T15:58:45.331Z",
+      "at": "2026-09-15T15:58:45.331Z",
+      "type": "revise_intent",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "intent_revision_7\naction_v2_sha256:cb37c5140a77289d12345f592f2a90def83525c66457a0b2bf6ee74f95ce6d81"
+    },
+    {
+      "id": "authorize_rework:mws-sqlite-authority:2026-09-15T15:59:33.332Z",
+      "at": "2026-09-15T15:59:33.332Z",
+      "type": "authorize_rework",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "request_rework:mws-sqlite-authority:2026-09-15T15:57:17.948Z:replan-required\naction_v2_sha256:8bf6d7019265d5d29db5aa14e78ffa6292d934d6f32ca95ef8aef6fbc06afcdc",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-2e53da0460091542",
+        "issued_at": "2026-09-15T15:59:33.333Z",
+        "expires_at": "2026-09-15T16:09:33.333Z"
+      }
+    },
+    {
+      "id": "resolve_finding:mws-sqlite-authority:2026-09-15T16:14:39.733Z",
+      "at": "2026-09-15T16:14:39.733Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-427df93f3fa2-1-review-1\naction_v2_sha256:84e539860d820fa61fcc8220df8e7fe65df2224896bbc2e9f2f0598b82cdf650"
+    },
+    {
+      "id": "resolve_finding:mws-sqlite-authority:2026-09-15T16:15:04.255Z",
+      "at": "2026-09-15T16:15:04.255Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-427df93f3fa2-2-review-2\naction_v2_sha256:95c9da10956932638fa79d7188e9ab39a23efd8c26badbda4102415e5521e5f4"
+    },
+    {
+      "id": "freeze_artifacts:mws-sqlite-authority:2026-09-15T16:15:14.172Z",
+      "at": "2026-09-15T16:15:14.172Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent and Spec frozen at docs/plans/archive/mws-sqlite-authority.intent.json"
+    },
+    {
+      "id": "record_approval:mws-sqlite-authority:2026-09-15T16:16:43.784Z",
+      "at": "2026-09-15T16:16:43.784Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-fe3bc2dc\naction_v2_sha256:c5b704066dfad52ba2d6093738937a615621debafaca9c8c9b753d1096cc3fa4",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-d971358220f43395",
+        "issued_at": "2026-09-15T16:16:43.785Z",
+        "expires_at": "2026-09-15T16:26:43.785Z"
+      }
+    },
+    {
+      "id": "request_rework:mws-sqlite-authority:2026-09-15T16:24:05.286Z",
+      "at": "2026-09-15T16:24:05.286Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "review_round_7\naction_v2_sha256:4b15f4fde6e77698542766f02c5fba96a85b2983299d810350b6dbc5e433f5a6",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-e89e9e209a6f8dc1",
+        "issued_at": "2026-09-15T16:24:05.287Z",
+        "expires_at": "2026-09-15T16:34:05.287Z"
+      }
+    },
+    {
+      "id": "revise_intent:mws-sqlite-authority:2026-09-15T16:24:34.831Z",
+      "at": "2026-09-15T16:24:34.831Z",
+      "type": "revise_intent",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "intent_revision_8\naction_v2_sha256:23e363ee39509b853b9ceaa126daef5d8ae241282aad39d158ec6ecae35978f1"
+    },
+    {
+      "id": "authorize_rework:mws-sqlite-authority:2026-09-15T23:28:24.616Z",
+      "at": "2026-09-15T23:28:24.616Z",
+      "type": "authorize_rework",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "request_rework:mws-sqlite-authority:2026-09-15T16:24:05.286Z:replan-required\naction_v2_sha256:c979561107c586ccc9409dd787c9b460217bb94ae8fd1e262dea961718ff457d",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-625485af5661564f",
+        "issued_at": "2026-09-15T23:28:24.617Z",
+        "expires_at": "2026-09-15T23:38:24.617Z"
+      }
+    },
+    {
+      "id": "resolve_finding:mws-sqlite-authority:2026-09-15T23:53:15.477Z",
+      "at": "2026-09-15T23:53:15.477Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-c49d8b066c67-1-review-1\naction_v2_sha256:d1c457bd244806edc1eabb6b4409b2facc915ba0368070376d473c95ba90b17f"
+    },
+    {
+      "id": "resolve_finding:mws-sqlite-authority:2026-09-15T23:53:24.593Z",
+      "at": "2026-09-15T23:53:24.593Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-c49d8b066c67-2-review-2\naction_v2_sha256:6bd54260661bb5f0c59f15ffecf278dfa9a3fc4be417d0532b6cb7c98586d03c"
+    },
+    {
+      "id": "freeze_artifacts:mws-sqlite-authority:2026-09-15T23:53:33.928Z",
+      "at": "2026-09-15T23:53:33.928Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent and Spec frozen at docs/plans/archive/mws-sqlite-authority.intent.json"
+    },
+    {
+      "id": "record_approval:mws-sqlite-authority:2026-09-15T23:54:23.095Z",
+      "at": "2026-09-15T23:54:23.095Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-2a39d45f\naction_v2_sha256:f68ec567354687803f0ba42870890755f40f6dac3925f93a444deed889ce59f6",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-84ce3a360e2b62f1",
+        "issued_at": "2026-09-15T23:54:23.095Z",
+        "expires_at": "2026-09-16T00:04:23.095Z"
+      }
+    },
+    {
+      "id": "request_rework:mws-sqlite-authority:2026-09-16T00:01:27.804Z",
+      "at": "2026-09-16T00:01:27.804Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "review_round_8\naction_v2_sha256:beb5bbe3780b4592fae31b1efe20536b694f374d3d3fb17b5f437e0c0e1b2a54",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-9ec0d5f7385fd388",
+        "issued_at": "2026-09-16T00:01:27.804Z",
+        "expires_at": "2026-09-16T00:11:27.804Z"
+      }
+    },
+    {
+      "id": "revise_intent:mws-sqlite-authority:2026-09-16T00:01:49.364Z",
+      "at": "2026-09-16T00:01:49.364Z",
+      "type": "revise_intent",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "intent_revision_9\naction_v2_sha256:f321616dc6e4897c4dab3736da8823644f15816df8b4a2c19f026bc9e131351c"
+    },
+    {
+      "id": "authorize_rework:mws-sqlite-authority:2026-09-16T00:42:11.992Z",
+      "at": "2026-09-16T00:42:11.992Z",
+      "type": "authorize_rework",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "request_rework:mws-sqlite-authority:2026-09-16T00:01:27.804Z:replan-required\naction_v2_sha256:91833bf882452feeb9b85ccafab5231ac6ef0fcc4f11b68d4168e5a6c00ac706",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-9507ba441b98f7e8",
+        "issued_at": "2026-09-16T00:42:11.993Z",
+        "expires_at": "2026-09-16T00:52:11.993Z"
+      }
+    },
+    {
+      "id": "resolve_finding:mws-sqlite-authority:2026-09-16T00:49:24.766Z",
+      "at": "2026-09-16T00:49:24.766Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-16ebd9a6d0dc-1-review-1\naction_v2_sha256:415fcc1ecbb8a2754b3f2bed277df9261f484ea9d73b5199bb6503426b19cc3a"
+    },
+    {
+      "id": "resolve_finding:mws-sqlite-authority:2026-09-16T00:49:36.182Z",
+      "at": "2026-09-16T00:49:36.182Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-16ebd9a6d0dc-2-review-2\naction_v2_sha256:e24d99ab8474b4e81937604c3fa110a50f0b1c4dd3082d45aea1e3de8eda4342"
+    },
+    {
+      "id": "freeze_artifacts:mws-sqlite-authority:2026-09-16T00:49:46.867Z",
+      "at": "2026-09-16T00:49:46.867Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent and Spec frozen at docs/plans/archive/mws-sqlite-authority.intent.json"
+    },
+    {
+      "id": "record_approval:mws-sqlite-authority:2026-09-16T00:50:59.009Z",
+      "at": "2026-09-16T00:50:59.009Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-66ec4845\naction_v2_sha256:a873ceceb39c5da9cb920989e7d0a0a4ae0213f11fe278bb0d00ff37f6026edf",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-386414803abe67dd",
+        "issued_at": "2026-09-16T00:50:59.009Z",
+        "expires_at": "2026-09-16T01:00:59.009Z"
+      }
+    },
+    {
+      "id": "request_rework:mws-sqlite-authority:2026-09-16T00:56:12.648Z",
+      "at": "2026-09-16T00:56:12.648Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "review_round_9\naction_v2_sha256:26fd1b8ccd8c0ab749d2fe40e2cb01c5857cc71466df0543cff4e0473ff88a45",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-9b5a2b0d0606e265",
+        "issued_at": "2026-09-16T00:56:12.651Z",
+        "expires_at": "2026-09-16T01:06:12.648Z"
+      }
+    },
+    {
+      "id": "revise_intent:mws-sqlite-authority:2026-09-16T00:56:43.763Z",
+      "at": "2026-09-16T00:56:43.763Z",
+      "type": "revise_intent",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "intent_revision_10\naction_v2_sha256:790489699ba49da025ebbf4725921d0f1e6796f2ea84abb1fbf5cc629f04b70a"
+    },
+    {
+      "id": "authorize_rework:mws-sqlite-authority:2026-09-16T01:01:55.451Z",
+      "at": "2026-09-16T01:01:55.451Z",
+      "type": "authorize_rework",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "request_rework:mws-sqlite-authority:2026-09-16T00:56:12.648Z:replan-required\naction_v2_sha256:b4cd8675de9237358136b15fa9229949263636c12bf9b82a0cb1d53848353ba6",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-8fc45b5ff2a8cf81",
+        "issued_at": "2026-09-16T01:01:55.452Z",
+        "expires_at": "2026-09-16T01:11:55.452Z"
+      }
+    },
+    {
+      "id": "resolve_finding:mws-sqlite-authority:2026-09-16T01:13:37.920Z",
+      "at": "2026-09-16T01:13:37.920Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-8ae45ce29def-1-review-1\naction_v2_sha256:d35af8f826cd68fb23009b806640c3923f67618a58faa75534a2f6bd8858cc43"
+    },
+    {
+      "id": "freeze_artifacts:mws-sqlite-authority:2026-09-16T01:14:06.247Z",
+      "at": "2026-09-16T01:14:06.247Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent and Spec frozen at docs/plans/archive/mws-sqlite-authority.intent.json"
+    },
+    {
+      "id": "record_approval:mws-sqlite-authority:2026-09-16T01:15:17.442Z",
+      "at": "2026-09-16T01:15:17.442Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-d777effd\naction_v2_sha256:b352be31c485609126126eac8f8a063a280a432de14fc883db4f81f352f94d6d",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-8e566cad09de8320",
+        "issued_at": "2026-09-16T01:15:17.442Z",
+        "expires_at": "2026-09-16T01:25:17.442Z"
+      }
+    },
+    {
+      "id": "request_rework:mws-sqlite-authority:2026-09-16T01:21:17.634Z",
+      "at": "2026-09-16T01:21:17.634Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "review_round_10\naction_v2_sha256:295ba158fc8d21032b46b1019409b0bd8f5d02f0a233cb75029f1aad793e1798",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-b69faaa702150358",
+        "issued_at": "2026-09-16T01:21:17.635Z",
+        "expires_at": "2026-09-16T01:31:17.635Z"
+      }
+    },
+    {
+      "id": "authorize_rework:mws-sqlite-authority:2026-09-16T01:22:09.652Z",
+      "at": "2026-09-16T01:22:09.652Z",
+      "type": "authorize_rework",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "request_rework:mws-sqlite-authority:2026-09-16T01:21:17.634Z:replan-required\naction_v2_sha256:03e229c646870272d338b5e7e2e9c5ef457434e71e9fce9fabf4a16e9932e837",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-fed8205a545b17bc",
+        "issued_at": "2026-09-16T01:22:09.652Z",
+        "expires_at": "2026-09-16T01:32:09.652Z"
+      }
+    },
+    {
+      "id": "resolve_finding:mws-sqlite-authority:2026-09-16T01:25:51.101Z",
+      "at": "2026-09-16T01:25:51.101Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-84a16f09be84-1-review-1\naction_v2_sha256:a8a18c099752ee651c87aab6fcec34b596fb0f8ea81411f82f472ae39a7a2c1d"
+    },
+    {
+      "id": "resolve_finding:mws-sqlite-authority:2026-09-16T01:26:00.331Z",
+      "at": "2026-09-16T01:26:00.331Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-84a16f09be84-2-review-2\naction_v2_sha256:ccba4fa610f43b2d234a1e32b4e156aa04eb5b1dbb03d2cb0ca51b5c8244cb94"
+    },
+    {
+      "id": "freeze_artifacts:mws-sqlite-authority:2026-09-16T01:26:08.882Z",
+      "at": "2026-09-16T01:26:08.882Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent and Spec frozen at docs/plans/archive/mws-sqlite-authority.intent.json"
+    },
+    {
+      "id": "record_approval:mws-sqlite-authority:2026-09-16T01:27:00.792Z",
+      "at": "2026-09-16T01:27:00.792Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-bdd76dd1\naction_v2_sha256:aa70c687fbbe7b30107b30a2ce9184b0537e52b2239eca272e45426c17d9fc2b",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-008718b5b885faea",
+        "issued_at": "2026-09-16T01:27:00.792Z",
+        "expires_at": "2026-09-16T01:37:00.792Z"
+      }
+    },
+    {
+      "id": "request_rework:mws-sqlite-authority:2026-09-16T01:33:02.110Z",
+      "at": "2026-09-16T01:33:02.110Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "review_round_11\naction_v2_sha256:8ebb241bdce75dee8418cf78e745940d865224e623fe36c61fcb35b9a3b3c997",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-1bfb8171365d9673",
+        "issued_at": "2026-09-16T01:33:02.110Z",
+        "expires_at": "2026-09-16T01:43:02.110Z"
+      }
+    },
+    {
+      "id": "authorize_rework:mws-sqlite-authority:2026-09-16T01:33:19.548Z",
+      "at": "2026-09-16T01:33:19.548Z",
+      "type": "authorize_rework",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "request_rework:mws-sqlite-authority:2026-09-16T01:33:02.110Z:replan-required\naction_v2_sha256:cc5540de3611bebcde57f1252bfb678c4312d2138fbe129a6de4648edda6efd4",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-45cae84d11898007",
+        "issued_at": "2026-09-16T01:33:19.549Z",
+        "expires_at": "2026-09-16T01:43:19.549Z"
+      }
+    },
+    {
+      "id": "resolve_finding:mws-sqlite-authority:2026-09-16T01:40:10.887Z",
+      "at": "2026-09-16T01:40:10.887Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-f9f1784f6df7-1-review-1\naction_v2_sha256:f6cd9388b6037ba0cc4b52d9a707caed69554ce954a0282305cdee0d4c396152"
+    },
+    {
+      "id": "resolve_finding:mws-sqlite-authority:2026-09-16T01:41:24.670Z",
+      "at": "2026-09-16T01:41:24.670Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-f9f1784f6df7-2-review-2\naction_v2_sha256:be98dade676701a1f09b2d3c3e3592afd8e2fcd73010028bd5b895fbfff800da"
+    },
+    {
+      "id": "freeze_artifacts:mws-sqlite-authority:2026-09-16T01:42:33.652Z",
+      "at": "2026-09-16T01:42:33.652Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent and Spec frozen at docs/plans/archive/mws-sqlite-authority.intent.json"
+    },
+    {
+      "id": "record_approval:mws-sqlite-authority:2026-09-16T01:43:31.570Z",
+      "at": "2026-09-16T01:43:31.570Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-663445af\naction_v2_sha256:80d1a5ef8a7a4e69e71d6c9609b7f293d5069cb4754124b1ae31ef33402849f9",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-cc117877a0fbc887",
+        "issued_at": "2026-09-16T01:43:31.571Z",
+        "expires_at": "2026-09-16T01:53:31.571Z"
+      }
+    },
+    {
+      "id": "record_approval:mws-sqlite-authority:2026-09-16T01:56:58.164Z",
+      "at": "2026-09-16T01:56:58.164Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-b7ba899c\naction_v2_sha256:7cfa1c06bcf98fbbb14f459bf2547685625a1cb0b16c7a7413bd5d7b70096b0a",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-58f05bb839f1df68",
+        "issued_at": "2026-09-16T01:56:58.164Z",
+        "expires_at": "2026-09-16T02:06:58.164Z"
+      }
+    },
+    {
+      "id": "complete:mws-sqlite-authority:2026-09-16T01:57:03.746Z",
+      "at": "2026-09-16T01:57:03.746Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:b40ddfbcc7b5dc4342e5c3a2d5cf5b57d8840ede3740da2fe201c588a9e59a07"
+    }
+  ]
+}
