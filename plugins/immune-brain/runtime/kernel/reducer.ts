@@ -601,9 +601,15 @@ export function reduceTask(
 							prior.evidence?.violated.ref === finding.evidence?.violated.ref,
 					),
 			)?.finding;
+			// Only rounds that actually raised an unrefuted blocking claim count
+			// against the budget: a claim live QA evidence already answers is not
+			// progress lost, so repeating it can never park the task.
+			const effectiveBlockingRounds = new Set(
+				priorBlockingReviewFindings.map((finding) => finding.review_round),
+			).size;
 			const parkForReplan =
 				authorityAudit.authority_kind === "review" &&
-				(disputed !== undefined || round > REVIEW_REWORK_ROUND_BUDGET);
+				(disputed !== undefined || effectiveBlockingRounds >= REVIEW_REWORK_ROUND_BUDGET);
 			if (!parkForReplan) {
 				record.artifact_state = "active";
 				record.intent_ref.path = `docs/plans/${record.task_id}.intent.json`;

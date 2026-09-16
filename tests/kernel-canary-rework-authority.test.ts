@@ -426,6 +426,31 @@ describe("request_rework authority", () => {
 		expect(resumed.record.history.at(-1)?.authority?.authority_kind).toBe("user");
 	});
 
+	test("repeating a live-refuted claim never exhausts the rework budget", () => {
+		toReview();
+		requestReviewRework(
+			[reviewFinding({ id: "rw-refuted-base", anchor: ANCHOR, evidence: REVIEW_EVIDENCE })],
+			"2026-08-12T10:00:03.000Z",
+		);
+		execFileSync("git", ["add", "-A"], { cwd: root });
+		execute(
+			{ op: "refute_finding", finding_id: "rw-refuted-base", attestation_id: QA_ATTESTATION_ID, actor_id: "executor-1" },
+			"2026-08-12T10:00:03.500Z",
+		);
+		let parked = false;
+		for (let round = 1; round <= REVIEW_REWORK_ROUND_BUDGET + 2; round += 1) {
+			toReview(`2026-08-12T12:00:0${round}.000Z`);
+			const repeat = requestReviewRework(
+				[reviewFinding({ id: `rw-refuted-${round}`, anchor: ANCHOR, evidence: REVIEW_EVIDENCE })],
+				`2026-08-12T12:01:0${round}.000Z`,
+			);
+			expect(repeat.record.findings.find((finding) => finding.id === `rw-refuted-${round}`)?.status).toBe("refuted");
+			if (repeat.record.findings.some((finding) => finding.kind === "replan_required" && finding.status === "open"))
+				parked = true;
+		}
+		expect(parked).toBe(false);
+	});
+
 	test("a repeated advisory Review does not force a replan", () => {
 		const advisory = (id: string) => [{
 			id,
