@@ -314,9 +314,32 @@ function assertNoSymlinkSegments(root: string, relativePath: string): void {
 	let current = root;
 	for (const segment of segments) {
 		current = join(current, segment);
-		if (!existsSync(current)) break;
-		if (lstatSync(current).isSymbolicLink())
+		let stat: ReturnType<typeof lstatSync>;
+		try {
+			stat = lstatSync(current);
+		} catch (error) {
+			// Only a genuinely missing segment ends the walk. `existsSync` would
+			// also report a dangling symlink as absent, and the write that follows
+			// would then create its target outside the worktree.
+			const code = (error as NodeJS.ErrnoException).code;
+			if (code === "ENOENT" || code === "ENOTDIR") break;
+			throw error;
+		}
+		if (stat.isSymbolicLink())
 			throw new Error(`symlinked evidence path is forbidden during import: ${relativePath}`);
+	}
+}
+
+/**
+ * Create an evidence file without ever following a link: the exclusive,
+ * no-follow open is what makes the containment check race-free.
+ */
+function createEvidenceFile(path: string, bytes: Buffer): void {
+	const fd = openSync(path, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | (constants.O_NOFOLLOW ?? 0));
+	try {
+		writeFileSync(fd, bytes);
+	} finally {
+		closeSync(fd);
 	}
 }
 
@@ -338,7 +361,7 @@ function writeEvidenceCopy(root: string, relativeSource: string, relativeEvidenc
 			throw new Error(`audit evidence already exists with different bytes: ${relativeEvidence} (from ${relativeSource})`);
 		return;
 	}
-	writeFileSync(target, bytes);
+	createEvidenceFile(target, bytes);
 }
 
 /** The retired artifacts this worktree still holds, with their evidence paths. */

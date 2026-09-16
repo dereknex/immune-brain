@@ -1038,6 +1038,26 @@ describe("explicit SQLite import of the retired file store (A1)", () => {
 		expect(inspectStorageLayout(root).layout).toBe("ready");
 	});
 
+	it("refuses a dangling symlink at the evidence target", async () => {
+		const root = tempRoot();
+		writeLegacyTerminalPair(root, "task-dangling");
+		const outside = mkdtempSync(join(tmpdir(), "imm-outside-dangling-"));
+		try {
+			mkdirSync(join(root, ".imm/audit/task-dangling"), { recursive: true });
+			// A link whose target does not exist yet: existsSync reports it absent,
+			// so only an lstat walk can see it.
+			execFileSync("ln", ["-s", join(outside, "task-record.json"), join(root, ".imm/audit/task-dangling/task-record.json")]);
+			commit(root, "legacy + dangling link");
+			const outcome = await runMigration(root);
+			expect(outcome.outcome).toBe("invalid");
+			expect(outcome.reason).toMatch(/symlinked evidence path is forbidden/);
+			expect(existsSync(join(outside, "task-record.json"))).toBe(false);
+			expect(existsSync(join(root, ".imm/state/kernel.sqlite"))).toBe(false);
+		} finally {
+			rmSync(outside, { recursive: true, force: true });
+		}
+	});
+
 	it("refuses an existing audit target with zero writes", async () => {
 		const root = tempRoot();
 		writeLegacyTerminalPair(root, "task-001");
