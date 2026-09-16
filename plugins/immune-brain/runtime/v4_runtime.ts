@@ -183,6 +183,10 @@ async function runKernelCli(args: string[], root: string): Promise<{
 	// status --json, and the explicit audit command. All other kernel
 	// subcommands (readiness, journal, migrate) are retired.
 	const sub = args[0] ?? "";
+	// The explicit claimless storage-layout migration is reachable here: a
+	// worktree still on the retired file store has no other entry point, and
+	// every mutating subcommand stays fail-closed behind it.
+	if (sub === "migrate") return runKernelCommand(args, root);
 	if (sub === "intent") return runKernelCommand(args, root);
 	if (sub === "status" && args.includes("--json")) return runKernelCommand(args, root);
 	if (sub === "inspect" && args.includes("--json")) return runKernelCommand(args, root);
@@ -207,7 +211,7 @@ async function runKernelCli(args: string[], root: string): Promise<{
 	}
 	return {
 		stdout: "",
-		stderr: "invalid_kernel_command: imm-kernel supports intent author|validate, status --json, inspect --json, and audit --legacy only\n",
+		stderr: "invalid_kernel_command: imm-kernel supports intent author|validate, migrate --storage-layout, status --json, inspect --json, and audit --legacy only\n",
 		returncode: 2,
 	};
 }

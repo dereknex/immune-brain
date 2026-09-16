@@ -661,6 +661,107 @@ describe("explicit SQLite import of the retired file store (A1)", () => {
 		expect(existsSync(join(root, ".imm/tasks/2026-08-14-013-old-task.backend-claim.json"))).toBe(false);
 	});
 
+	it("migrates through the explicit claimless CLI entry point", async () => {
+		const root = tempRoot();
+		const baseHead = execFileSync("git", ["-C", root, "rev-parse", "HEAD"], { encoding: "utf8" }).trim();
+		writeLegacyV4Pair(root, "2026-08-14-015-old-task", baseHead);
+		commit(root, "v4 record");
+		// Every mutating path stays fail-closed until the layout is migrated.
+		const { probeKernelStore } = await import("../plugins/immune-brain/runtime/kernel/storage");
+		expect(() => probeKernelStore(root)).toThrow();
+		const { runKernelCli } = await import("../plugins/immune-brain/runtime/v4_runtime");
+		const first = await runKernelCli(["migrate", "--storage-layout"], root);
+		expect(first.returncode).toBe(0);
+		expect(JSON.parse(first.stdout)).toMatchObject({
+			contract: "assurance_kernel/migration_pending_commit/v1",
+			affected_paths: [".imm/audit/2026-08-14-015-old-task/task-record.json"],
+		});
+		commit(root, "preserve evidence");
+		const second = await runKernelCli(["migrate", "--storage-layout"], root);
+		expect(second.returncode).toBe(0);
+		expect(JSON.parse(second.stdout)).toMatchObject({ contract: "assurance_kernel/migration_completed/v1" });
+		expect(existsSync(join(root, ".imm/state/kernel.sqlite"))).toBe(true);
+		expect(inspectStorageLayout(root).layout).toBe("ready");
+		// The gate is resolved once the layout is the SQLite one.
+		expect(() => probeKernelStore(root)).not.toThrow();
+	});
+
+	it("refuses to publish while the preserved evidence is not in HEAD", async () => {
+		const root = tempRoot();
+		const baseHead = execFileSync("git", ["-C", root, "rev-parse", "HEAD"], { encoding: "utf8" }).trim();
+		writeLegacyV4Pair(root, "2026-08-14-016-old-task", baseHead);
+		commit(root, "v4 record");
+		// A broad ignore rule hides the evidence from git status, so only a
+		// HEAD-content check can tell that it is unprotected.
+		writeFileSync(join(root, ".gitignore"), ".imm/audit/\n");
+		commit(root, ".gitignore");
+		const preserved = await runMigration(root);
+		expect(preserved.outcome).toBe("migration_uncommitted");
+		expect(preserved.affected_paths).toEqual([".imm/audit/2026-08-14-016-old-task/task-record.json"]);
+
+		// Even with a verified candidate already built, publication stays blocked.
+		mkdirSync(join(root, ".imm/state"), { recursive: true });
+		writeFileSync(join(root, ".imm/state/kernel.sqlite.importing"), "not a real store");
+		const blocked = await runMigration(root);
+		expect(blocked.outcome).toBe("migration_uncommitted");
+		expect(existsSync(join(root, ".imm/state/tasks/2026-08-14-016-old-task.json"))).toBe(true);
+		expect(existsSync(join(root, ".imm/state/kernel.sqlite"))).toBe(false);
+	});
+
+	it("cleans an orphan proof left after the last record was removed", async () => {
+		const root = tempRoot();
+		writeLegacyTerminalPair(root, "2026-08-14-017-old-task");
+		commit(root, "legacy evidence");
+		expect((await runMigration(root)).outcome).toBe("migration_uncommitted");
+		commit(root, "preserve evidence");
+		expect((await runMigration(root)).outcome).toBe("migrated");
+		// The crash window: the record is gone, its proof is not.
+		const proofBytes = readFileSync(join(root, ".imm/audit/2026-08-14-017-old-task/terminal-proof.json"));
+		mkdirSync(join(root, ".imm/tasks"), { recursive: true });
+		writeFileSync(join(root, ".imm/tasks/2026-08-14-017-old-task.backend-claim.json"), proofBytes);
+		const finished = await runMigration(root);
+		expect(finished).toMatchObject({ outcome: "already_migrated" });
+		expect(existsSync(join(root, ".imm/tasks/2026-08-14-017-old-task.backend-claim.json"))).toBe(false);
+		commit(root, "cleanup");
+		expect(inspectStorageLayout(root).layout).toBe("ready");
+	});
+
+	it("preserves the retired ledger and other artifacts, then retires the layout", async () => {
+		const root = tempRoot();
+		const baseHead = execFileSync("git", ["-C", root, "rev-parse", "HEAD"], { encoding: "utf8" }).trim();
+		writeLegacyV4Pair(root, "2026-08-14-018-old-task", baseHead);
+		const ledger = `${JSON.stringify({ schema_version: 3, runtime_status: "idle", steps: {} }, null, 2)}\n`;
+		const history = "{\"event\":\"one\"}\n";
+		const journal = "{\"entry\":\"one\"}\n";
+		mkdirSync(join(root, ".imm/memory"), { recursive: true });
+		mkdirSync(join(root, ".imm/templates"), { recursive: true });
+		writeFileSync(join(root, ".imm", "memory", "current_iteration.json"), ledger);
+		writeFileSync(join(root, ".imm", "memory", "current_iteration_history.jsonl"), history);
+		writeFileSync(join(root, ".imm", "templates", "iteration-plan-template.md"), "# plan\n");
+		writeFileSync(join(root, ".imm", "journal.jsonl"), journal);
+		mkdirSync(join(root, ".imm/tasks"), { recursive: true });
+		writeFileSync(join(root, ".imm", "tasks", ".workspace.lock"), "");
+		commit(root, "full retired layout");
+
+		const first = await runMigration(root);
+		expect(first.outcome).toBe("migration_uncommitted");
+		expect(first.affected_paths).toContain(".imm/audit/legacy-v3/current_iteration.json");
+		expect(first.affected_paths).toContain(".imm/audit/legacy-v3/journal.jsonl");
+		commit(root, "preserve evidence");
+		const outcome = await runMigration(root);
+		expect(outcome).toMatchObject({ outcome: "migrated" });
+
+		// The historical Ledger is readable at the path the legacy audit reads.
+		expect(readFileSync(join(root, ".imm/audit/legacy-v3/current_iteration.json"), "utf8")).toBe(ledger);
+		expect(readFileSync(join(root, ".imm/audit/legacy-v3/current_iteration_history.jsonl"), "utf8")).toBe(history);
+		expect(readFileSync(join(root, ".imm/audit/legacy-v3/journal.jsonl"), "utf8")).toBe(journal);
+		// The retired layout is gone, so the worktree is usable again.
+		for (const retired of [".imm/memory", ".imm/templates", ".imm/journal.jsonl", ".imm/tasks/.workspace.lock", ".imm/state/tasks"]) {
+			expect(existsSync(join(root, retired))).toBe(false);
+		}
+		expect(inspectStorageLayout(root).layout).toBe("ready");
+	});
+
 	it("refuses an existing audit target with zero writes", async () => {
 		const root = tempRoot();
 		writeLegacyTerminalPair(root, "task-001");

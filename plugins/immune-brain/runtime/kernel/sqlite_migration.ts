@@ -31,6 +31,9 @@ import {
 	FILE_STORE_TASKS_RELATIVE,
 	FILE_STORE_WORKSPACE_RELATIVE,
 	KERNEL_DB_RELATIVE,
+	LEGACY_ARTIFACT_RETIREMENT,
+	LEGACY_MARKER_RETIREMENT,
+	LEGACY_RETIRED_DIRECTORIES,
 	LEGACY_TASKS_RELATIVE,
 	LEGACY_WORKSPACE_RELATIVE,
 	STATE_RELATIVE,
@@ -98,15 +101,31 @@ function refusal(reason: string, uncommitted: string[] = []): SqliteImportOutcom
  * Historical bytes are only safe to retire once the audit copies that preserve
  * them are committed, so the import stops after writing evidence and the
  * operator commits those paths before rerunning it.
+ *
+ * The committed copy is verified against `HEAD` byte-for-byte rather than
+ * through `git status`: a status check cannot see a copy that is untracked
+ * because a broad ignore rule covers it, and a file that is not in `HEAD` is
+ * not protected by anything.
  */
 function uncommittedEvidencePaths(root: string, paths: string[]): string[] {
-	const result = spawnSync("git", ["-C", root, "status", "--porcelain", "--", ...paths], { encoding: "utf8" });
-	if (result.status !== 0) return paths;
-	return result.stdout
-		.split("\n")
-		.map((line) => line.trim())
-		.filter(Boolean)
-		.map((line) => line.replace(/^\S+\s+/, ""));
+	const dirty: string[] = [];
+	for (const relative of paths) {
+		const committed = spawnSync("git", ["-C", root, "cat-file", "blob", `HEAD:${relative}`]);
+		if (committed.status !== 0) {
+			dirty.push(relative);
+			continue;
+		}
+		let working: Buffer;
+		try {
+			working = readFileSync(join(root, relative));
+		} catch {
+			dirty.push(relative);
+			continue;
+		}
+		const head = Buffer.isBuffer(committed.stdout) ? committed.stdout : Buffer.from(String(committed.stdout ?? ""));
+		if (!head.equals(working)) dirty.push(relative);
+	}
+	return dirty;
 }
 
 function readRegularFileOrNull(path: string): Buffer | null {
@@ -263,6 +282,61 @@ function assertNoSymlinkSegments(root: string, relativePath: string): void {
 /** Whether this worktree already recorded a completed import identity. */
 export function hasMigrationReceipt(rootInput: string): boolean {
 	return readReceipt(realpathSync(rootInput)) !== null;
+}
+
+/**
+ * Copy one historical file into tracked evidence, byte for byte, and refuse a
+ * path that already exists with different content.
+ */
+function writeEvidenceCopy(root: string, relativeSource: string, relativeEvidence: string, bytes: Buffer): void {
+	assertNoSymlinkSegments(root, relativeEvidence);
+	const target = join(root, relativeEvidence);
+	mkdirSync(dirname(target), { recursive: true });
+	if (existsSync(target)) {
+		if (!readFileSync(target).equals(bytes))
+			throw new Error(`audit evidence already exists with different bytes: ${relativeEvidence} (from ${relativeSource})`);
+		return;
+	}
+	writeFileSync(target, bytes);
+}
+
+/** The retired artifacts this worktree still holds, with their evidence paths. */
+function collectRetiredArtifacts(root: string): Array<{ source: string; evidence: string }> {
+	const present: Array<{ source: string; evidence: string }> = [];
+	for (const entry of LEGACY_ARTIFACT_RETIREMENT) {
+		const absolute = join(root, entry.source);
+		if (!existsSync(absolute)) continue;
+		if (!statSync(absolute).isFile()) throw new Error(`${entry.source} is not a regular file`);
+		present.push(entry);
+	}
+	return present;
+}
+
+/**
+ * Preserve the recognized retired artifacts as historical evidence. Their bytes
+ * are copied before anything is deleted, and the copies must be committed
+ * before publication removes the sources.
+ */
+function preserveRetiredArtifacts(root: string, artifacts: Array<{ source: string; evidence: string }>): void {
+	for (const artifact of artifacts) {
+		assertNoSymlinkSegments(root, artifact.source);
+		writeEvidenceCopy(root, artifact.source, artifact.evidence, readFileSync(join(root, artifact.source)));
+	}
+}
+
+/** Retire the artifacts whose bytes are already preserved as evidence. */
+function removeRetiredArtifacts(root: string, artifacts: Array<{ source: string; evidence: string }>): void {
+	for (const artifact of artifacts) rmSync(join(root, artifact.source), { force: true });
+	for (const relative of LEGACY_MARKER_RETIREMENT) rmSync(join(root, relative), { force: true });
+}
+
+/** Remove the directories that only ever held retired artifacts. */
+function removeEmptyRetiredDirectories(root: string): void {
+	for (const relative of [...LEGACY_RETIRED_DIRECTORIES, LEGACY_TASKS_RELATIVE, FILE_STORE_TASKS_RELATIVE]) {
+		const directory = join(root, relative);
+		if (!existsSync(directory)) continue;
+		if (readdirSync(directory).length === 0) rmSync(directory, { recursive: true, force: true });
+	}
 }
 
 /**
@@ -481,20 +555,21 @@ export function importLegacyWorkspace(rootInput: string, now = new Date().toISOS
 		} catch (error) {
 			return refusal(`the published store failed verification: ${error instanceof Error ? error.message : String(error)}`);
 		}
-		let remaining: LegacyTask[] = [];
 		try {
 			const pending = readLegacyTasks(root);
 			if (pending.reason) return refusal(pending.reason);
-			remaining = pending.tasks;
 			// A partially finished cleanup leaves only the tasks whose files were not
 			// removed yet, so the remaining subset never matches the full receipt
 			// identity. Each survivor is verified against its published row instead,
 			// which also refuses a source file the import never published.
-			if (remaining.length > 0) {
-				verifyPublishedRows(root, canonical, remaining);
-				removeRetiredAuthority(root, remaining);
-				removeOrphanProofs(root, canonical);
-			}
+			if (pending.tasks.length > 0) verifyPublishedRows(root, canonical, pending.tasks);
+			removeRetiredAuthority(root, pending.tasks);
+			// The cleanup always runs to the end: an interrupted deletion can leave
+			// an orphan proof with no record, and that survivor keeps the layout
+			// invalid even though every task is already published.
+			removeOrphanProofs(root, canonical);
+			removeRetiredArtifacts(root, collectRetiredArtifacts(root));
+			removeEmptyRetiredDirectories(root);
 		} catch (error) {
 			return refusal(error instanceof Error ? error.message : String(error));
 		}
@@ -516,11 +591,18 @@ export function importLegacyWorkspace(rootInput: string, now = new Date().toISOS
 		return refusal("the recorded import identity does not match the legacy facts");
 	try {
 		for (const task of tasks) writeAuditEvidence(root, task);
-		const evidencePaths = tasks.flatMap((task) => [auditTaskRecordPath(task.taskId), auditTerminalProofPath(task.taskId)]);
+		const artifacts = collectRetiredArtifacts(root);
+		preserveRetiredArtifacts(root, artifacts);
+		const evidencePaths = [
+			...tasks.flatMap((task) => [auditTaskRecordPath(task.taskId), auditTerminalProofPath(task.taskId)]),
+			...artifacts.map((artifact) => artifact.evidence),
+		];
 		const dirty = uncommittedEvidencePaths(root, evidencePaths);
 		const candidateReady = existsSync(join(root, MIGRATION_STORE_RELATIVE));
-		if (dirty.length > 0 && !candidateReady)
-			return refusal("the preserved audit evidence is not committed yet", dirty);
+		// The commit check is never waived: publication deletes the sources, so
+		// the committed evidence must exist even when a candidate is already
+		// built.
+		if (dirty.length > 0) return refusal("the preserved audit evidence is not committed yet", dirty);
 		if (!candidateReady) buildCandidateStore(root, tasks, now);
 		verifyCandidateStore(root, tasks);
 		// The receipt is written before publication so a crash between the rename
@@ -537,6 +619,8 @@ export function importLegacyWorkspace(rootInput: string, now = new Date().toISOS
 		);
 		publishMigrationStoreFile(root, join(root, MIGRATION_STORE_RELATIVE));
 		removeRetiredAuthority(root, tasks);
+		removeRetiredArtifacts(root, artifacts);
+		removeEmptyRetiredDirectories(root);
 		return {
 			contract: "assurance_kernel/sqlite_import_result/v1",
 			outcome: "imported",

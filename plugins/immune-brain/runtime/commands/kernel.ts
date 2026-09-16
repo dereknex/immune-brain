@@ -1249,6 +1249,25 @@ function executeKernelCommand(args: string[], root: string): KernelExecution {
 			};
 		return runInspect(root);
 	}
+	if (command === "migrate") {
+		if (flags.length !== 1 || flags[0] !== "--storage-layout")
+			return {
+				result: errorResult(
+					"invalid_command",
+					"migrate accepts only --storage-layout",
+					2,
+				),
+				journal: journalFor(
+					command,
+					null,
+					"rejected",
+					"invalid_command",
+					null,
+					"Run imm-kernel migrate --storage-layout.",
+				),
+			};
+		return runStorageLayoutMigration(root);
+	}
 	if (command === "audit") {
 		if (args.length !== 2 || args[1] !== "--legacy")
 			return {
@@ -1342,6 +1361,103 @@ function executeKernelCommand(args: string[], root: string): KernelExecution {
 			"invalid_command",
 			null,
 			"Run imm-kernel --help.",
+		),
+	};
+}
+
+/**
+ * Explicit claimless storage-layout migration.
+ *
+ * The retired file store is converted here and nowhere else: this command never
+ * authors an intent, never opens a task, and never needs an active claim, so a
+ * worktree that is still on the retired layout has one reachable entry point.
+ * Mutating commands keep their fail-closed gate; this is the command that
+ * resolves it.
+ */
+function runStorageLayoutMigration(root: string): KernelExecution {
+	const inspection = inspectStorageLayout(root);
+	if (inspection.layout === "migration_blocked_active" || inspection.layout === "invalid")
+		return {
+			result: errorResult(
+				"layout_migration_blocked",
+				inspection.reason ?? "the retired storage layout cannot be migrated as it stands",
+				1,
+			),
+			journal: journalFor(
+				"migrate",
+				null,
+				"rejected",
+				"source_invalid",
+				null,
+				"Resolve the reported layout condition, then rerun imm-kernel migrate --storage-layout.",
+			),
+		};
+	const migration = migrateLegacyLayout(root);
+	if (migration.outcome === "migrated")
+		return {
+			result: jsonResult({
+				contract: "assurance_kernel/migration_completed/v1",
+				operation: "storage layout migration",
+				affected_paths: migration.affected_paths,
+				next_action: "commit the affected migration paths, then retry the original command",
+			}),
+			journal: journalFor(
+				"migrate",
+				null,
+				"escalated",
+				"migration_ambiguous",
+				null,
+				"Commit the affected migration paths, then retry the original command.",
+			),
+		};
+	if (migration.outcome === "migration_uncommitted")
+		return {
+			result: jsonResult({
+				contract: "assurance_kernel/migration_pending_commit/v1",
+				operation: "storage layout migration",
+				affected_paths: migration.affected_paths,
+				reason: migration.reason,
+				next_action: "commit the preserved audit evidence, then rerun imm-kernel migrate --storage-layout",
+			}),
+			journal: journalFor(
+				"migrate",
+				null,
+				"escalated",
+				"migration_ambiguous",
+				null,
+				"Commit the preserved audit evidence, then rerun imm-kernel migrate --storage-layout.",
+			),
+		};
+	if (migration.outcome === "already_migrated")
+		return {
+			result: jsonResult({
+				contract: "assurance_kernel/migration_completed/v1",
+				operation: "storage layout migration",
+				affected_paths: [],
+				next_action: "retry the original command",
+			}),
+			journal: journalFor(
+				"migrate",
+				null,
+				"ok",
+				"command_ok",
+				null,
+				"Retry the original command.",
+			),
+		};
+	return {
+		result: errorResult(
+			"layout_migration_blocked",
+			migration.reason ?? "the storage layout migration did not complete",
+			1,
+		),
+		journal: journalFor(
+			"migrate",
+			null,
+			"rejected",
+			"source_invalid",
+			null,
+			"Resolve the reported layout condition, then rerun imm-kernel migrate --storage-layout.",
 		),
 	};
 }

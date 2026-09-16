@@ -244,6 +244,47 @@ export const LEGACY_KNOWN_FILES = {
 	".imm/templates/review-report-template.md": "retired",
 } as const;
 
+/**
+ * Retired artifacts that carry no authority but must survive as historical
+ * evidence. The importer copies each present source byte-for-byte into its
+ * `evidence` path — `.imm/audit/legacy-v3/` is the layout the read-only legacy
+ * audit reads — and only then retires the old path.
+ *
+ * The v3 Ledger keeps its own name because `legacy_audit.ts` reads exactly that
+ * path; every other artifact keeps its basename under the same evidence root.
+ */
+export const LEGACY_ARTIFACT_RETIREMENT: ReadonlyArray<{ source: string; evidence: string }> = [
+	{ source: ".imm/memory/current_iteration.json", evidence: ".imm/audit/legacy-v3/current_iteration.json" },
+	{ source: ".imm/memory/current_iteration_history.jsonl", evidence: ".imm/audit/legacy-v3/current_iteration_history.jsonl" },
+	{ source: ".imm/memory/dispatch_telemetry.jsonl", evidence: ".imm/audit/legacy-v3/dispatch_telemetry.jsonl" },
+	{ source: ".imm/memory/.current_iteration.authority_commit_receipts.jsonl", evidence: ".imm/audit/legacy-v3/.current_iteration.authority_commit_receipts.jsonl" },
+	{ source: ".imm/memory/.current_iteration.automatic_observations.jsonl", evidence: ".imm/audit/legacy-v3/.current_iteration.automatic_observations.jsonl" },
+	{ source: ".imm/memory/.current_iteration.automatic_observations.lock", evidence: ".imm/audit/legacy-v3/.current_iteration.automatic_observations.lock" },
+	{ source: ".imm/memory/MEMORY.md", evidence: ".imm/audit/legacy-v3/MEMORY.md" },
+	{ source: ".imm/templates/iteration-plan-template.md", evidence: ".imm/audit/legacy-v3/iteration-plan-template.md" },
+	{ source: ".imm/templates/review-report-template.md", evidence: ".imm/audit/legacy-v3/review-report-template.md" },
+	{ source: ".imm/journal.jsonl", evidence: ".imm/audit/legacy-v3/journal.jsonl" },
+	{ source: ".imm/tasks/.workspace.lock", evidence: ".imm/audit/legacy-v3/.workspace.lock" },
+	{ source: ".imm/tasks/.journal.lock", evidence: ".imm/audit/legacy-v3/.journal.lock" },
+] as const;
+
+/** Retired transaction markers: no bytes worth keeping, removed with the layout. */
+export const LEGACY_MARKER_RETIREMENT: ReadonlyArray<string> = [
+	".imm/tasks/.workspace-transaction.json",
+	".imm/tasks/.workspace-transaction-v2.json",
+	".imm/tasks/.enrollment-marker.json",
+	".imm/tasks/.drain-transaction.json",
+	".imm/tasks/.terminal-transaction.json",
+	".imm/tasks/.authority-repair-transaction.json",
+	".imm/tasks/.backend-claim.json",
+] as const;
+
+/** Directories that only ever held retired artifacts. */
+export const LEGACY_RETIRED_DIRECTORIES: ReadonlyArray<string> = [
+	".imm/memory",
+	".imm/templates",
+] as const;
+
 /** Old task-scoped owner files: `<task-id>.json` and `<task-id>.backend-claim.json`. */
 const TASK_OWNER_FILE = /^([A-Za-z0-9][A-Za-z0-9._-]{0,127})\.(json|backend-claim\.json)$/;
 
