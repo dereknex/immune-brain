@@ -317,6 +317,12 @@ export function enrollCanaryTask(
 		(checks) => {
 			if (!checks.validated || !checks.intent || !checks.workspace || !checks.current)
 				throw new Error("enrollment precondition state incomplete");
+			// Recompute under the store lock: a confirmation bound to an older
+			// workspace revision must not commit after another enrollment and
+			// settlement raced between beforeLock and this callback.
+			const locked = preparePiCanary(root, { task_id: input.task_id, now: input.now });
+			if (locked.digest !== input.preparation_digest)
+				throw new Error("enrollment preparation digest mismatch");
 			if (checks.intent.intent.revision !== input.intent_revision)
 				throw new Error("intent revision mismatch");
 			if (checks.intent.content_hash !== checks.validated.intent_content_hash)

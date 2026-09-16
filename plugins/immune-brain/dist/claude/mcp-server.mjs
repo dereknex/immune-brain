@@ -7496,6 +7496,9 @@ function enrollCanaryTask(root, input, registry) {
     }, (checks) => {
       if (!checks.validated || !checks.intent || !checks.workspace || !checks.current)
         throw new Error("enrollment precondition state incomplete");
+      const locked = preparePiCanary(root, { task_id: input.task_id, now: input.now });
+      if (locked.digest !== input.preparation_digest)
+        throw new Error("enrollment preparation digest mismatch");
       if (checks.intent.intent.revision !== input.intent_revision)
         throw new Error("intent revision mismatch");
       if (checks.intent.content_hash !== checks.validated.intent_content_hash)

@@ -569,6 +569,28 @@ describe("SQLite authority store durability", () => {
     }
   });
 
+  test("a valid backup replaces a corrupt live database that has no WAL", () => {
+    const root = storeRoot();
+    const backupPath = `${root}-backup.sqlite`;
+    try {
+      const seeded = seedKernelRunForTest(root, {
+        task_id: "durability-corrupt-live",
+        record: seededRecord("durability-corrupt-live", "a".repeat(40)),
+      });
+      backupKernelStore(root, backupPath);
+      const live = join(root, ".imm/state/kernel.sqlite");
+      rmSync(`${live}-wal`, { force: true });
+      rmSync(`${live}-shm`, { force: true });
+      writeFileSync(live, "not a database");
+      restoreKernelStore(root, backupPath);
+      const restored = withKernelRead(root, (db) => readRunRowByTask(db, "durability-corrupt-live"));
+      expect(restored?.run_id).toBe(seeded.run_id);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+      rmSync(backupPath, { force: true });
+    }
+  });
+
   test("an incompatible schema is rejected before any authority write", () => {
     const root = storeRoot();
     try {

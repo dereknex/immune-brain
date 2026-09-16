@@ -947,10 +947,23 @@ export function restoreKernelStore(root: string, sourcePath: string): void {
 	}
 	// Only a validated backup reaches the swap. Fold the live database's write
 	// ahead log into its main file first: deleting the sidecars is otherwise a
-	// window in which committed transactions only exist in the WAL.
-	checkpointLiveStore(canonical, target);
-	for (const suffix of ["-wal", "-shm"]) rmSync(`${target}${suffix}`, { force: true });
-	renameSync(temp, target);
+	// window in which committed transactions only exist in the WAL. An
+	// unreadable main file with no WAL is just a dead file: replace it. An
+	// unreadable main file that still has a WAL must stay put so those
+	// committed facts can be recovered.
+	try {
+		const walPresent = existsSync(`${target}-wal`);
+		try {
+			checkpointLiveStore(canonical, target);
+			for (const suffix of ["-wal", "-shm"]) rmSync(`${target}${suffix}`, { force: true });
+		} catch (error) {
+			if (walPresent) throw error;
+		}
+		renameSync(temp, target);
+	} catch (error) {
+		rmSync(temp, { force: true });
+		throw error;
+	}
 	const directory = openSync(dirname(target), constants.O_RDONLY);
 	try {
 		fsyncSync(directory);
