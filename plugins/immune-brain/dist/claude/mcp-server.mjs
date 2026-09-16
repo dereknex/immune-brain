@@ -5298,6 +5298,20 @@ function assertRunBinding(identity, expected, operation) {
 function enrollmentOperationId(taskId, eventId) {
   return `enroll:${taskId}:${eventId}`;
 }
+function enrollmentRequestDigest(request) {
+  const canonical = JSON.stringify({
+    task_id: request.task_id,
+    intent_path: request.intent_path,
+    intent_revision: request.intent_revision,
+    intent_content_hash: request.intent_content_hash,
+    preparation_digest: request.preparation_digest,
+    enrollment_event_id: request.enrollment_event_id,
+    actor_id: request.actor_id,
+    confirmation_ref: request.confirmation_ref,
+    nonce: request.nonce
+  });
+  return `sha256:${createHash12("sha256").update(canonical).digest("hex")}`;
+}
 function drainOperationId(taskId, updatedAt) {
   return `drain:${taskId}:${updatedAt}`;
 }
@@ -5735,6 +5749,23 @@ function readCommittedTerminalResult(root, taskId, eventId, requestDigest) {
   });
   return read ?? null;
 }
+function readCommittedEnrollmentResult(root, taskId, eventId, requestDigest) {
+  validateTaskId4(taskId);
+  const read = withKernelRead(root, (db) => {
+    const row = readOperationRow(db, enrollmentOperationId(taskId, eventId));
+    if (!row)
+      return null;
+    const parsed = JSON.parse(row.result_json);
+    if ((parsed.request_digest ?? null) !== (requestDigest ?? null))
+      throw new KernelStoreConflictError(`enrollment operation for ${taskId} was committed for a different request; resubmit the exact request that enrolled it`);
+    const decoded = decodeOperationResult(row.result_json);
+    const run = readRunRowByTask(db, taskId);
+    if (!run)
+      throw new KernelStoreConflictError(`enrollment operation for ${taskId} has no committed run`);
+    return { ...decoded, claim: claimFromRunRow(run) };
+  });
+  return read ?? null;
+}
 function localRunId(root, taskId) {
   validateTaskId4(taskId);
   const row = withKernelRead(root, (db) => readRunRowByTask(db, taskId));
@@ -5961,7 +5992,7 @@ function assertCapabilityRun(current, capabilityRunId, operation) {
 function claimBytesFromRun(run) {
   return serializeBackendClaim(claimFromRunRow(run));
 }
-function commitEnrollmentLocked(root, taskId, transaction, claim) {
+function commitEnrollmentLocked(root, taskId, transaction, claim, requestDigest) {
   validateTaskId4(taskId);
   if (transaction.task_id !== taskId)
     throw new KernelStoreSecurityError("enrollment transaction task identity is inconsistent");
@@ -5976,13 +6007,28 @@ function commitEnrollmentLocked(root, taskId, transaction, claim) {
   const nextWorkspace = parseWorkspaceContent(transaction.next_workspace_content);
   if (nextWorkspace.current_working !== taskId)
     throw new KernelStoreSecurityError("enrollment must claim the workspace for its task");
+  const digest = requestDigest ?? enrollmentRequestDigest({
+    task_id: parsedClaim.task_id,
+    intent_path: "",
+    intent_revision: parsedClaim.intent_revision,
+    intent_content_hash: parsedClaim.intent_content_hash,
+    preparation_digest: "",
+    enrollment_event_id: parsedClaim.enrollment_event_id,
+    actor_id: "",
+    confirmation_ref: "",
+    nonce: ""
+  });
   return withKernelTransaction(root, (db) => {
     assertNoRetiredFileStore(root, db, taskId);
     const runId = mintRunId();
     const operationId = enrollmentOperationId(taskId, parsedClaim.enrollment_event_id);
     const replay = readOperationRow(db, operationId);
-    if (replay)
+    if (replay) {
+      const parsed = JSON.parse(replay.result_json);
+      if ((parsed.request_digest ?? null) !== digest)
+        throw new KernelStoreConflictError(`enrollment operation for ${taskId} was committed for a different request; resubmit the exact request that enrolled it`);
       return decodeOperationResult(replay.result_json);
+    }
     const existing = readRunRowByTask(db, taskId);
     if (existing)
       throw new KernelStoreConflictError(`task ${taskId} already has run ${existing.run_id} (${existing.state}); same-task re-enrollment is forbidden`);
@@ -6008,7 +6054,8 @@ function commitEnrollmentLocked(root, taskId, transaction, claim) {
       run_id: run.run_id,
       result_json: JSON.stringify({
         record_json: transaction.next_record_content,
-        workspace_json: transaction.next_workspace_content
+        workspace_json: transaction.next_workspace_content,
+        request_digest: digest
       }),
       committed_at: parsedClaim.updated_at
     });
@@ -7402,7 +7449,35 @@ function runEnrollmentRehearsal(root, input, capability, registry) {
     }
   };
 }
+function enrollmentEventId(taskId, now) {
+  return `enroll-${taskId}-${now}`;
+}
+function digestForEnrollment(input) {
+  const eventId = enrollmentEventId(input.task_id, input.now);
+  return {
+    eventId,
+    digest: enrollmentRequestDigest({
+      task_id: input.task_id,
+      intent_path: input.intent_path,
+      intent_revision: input.intent_revision,
+      intent_content_hash: input.capability_binding.intent_content_hash,
+      preparation_digest: input.preparation_digest,
+      enrollment_event_id: eventId,
+      actor_id: input.capability_binding.actor_id,
+      confirmation_ref: input.capability_binding.confirmation_ref,
+      nonce: input.capability_binding.nonce
+    })
+  };
+}
 function enrollCanaryTask(root, input, registry) {
+  const { eventId, digest } = digestForEnrollment(input);
+  const replayed = readCommittedEnrollmentResult(root, input.task_id, eventId, digest);
+  if (replayed)
+    return {
+      record: replayed.record,
+      backend_claim: replayed.claim,
+      workspace: { revision: "", state: replayed.workspace }
+    };
   let gitBaseHead = null;
   let consumed = false;
   try {
@@ -7446,7 +7521,7 @@ function enrollCanaryTask(root, input, registry) {
         task_id: input.task_id,
         intent_revision: input.intent_revision,
         intent_content_hash: checks.intent.content_hash,
-        enrollment_event_id: `enroll-${input.task_id}-${input.now}`,
+        enrollment_event_id: eventId,
         lifecycle_status: "active",
         created_at: input.now,
         updated_at: input.now
@@ -7460,7 +7535,7 @@ function enrollCanaryTask(root, input, registry) {
         expected_workspace_hash: checks.workspace.revision,
         next_workspace_content: `${JSON.stringify(nextWorkspace, null, 2)}
 `
-      }, claim);
+      }, claim, digest);
       return {
         record: mutation.record,
         backend_claim: claim,

@@ -57,6 +57,37 @@ export function enrollmentOperationId(taskId: string, eventId: string): string {
 	return `enroll:${taskId}:${eventId}`;
 }
 
+/**
+ * Digest of an enrollment request's own content. The capability object is
+ * opaque and excluded, so a lost-response retry of the *same* confirmation
+ * matches, while a different path, digest, actor, nonce or event time is a
+ * different request and must not be answered from the committed operation.
+ */
+export function enrollmentRequestDigest(request: {
+	task_id: string;
+	intent_path: string;
+	intent_revision: number;
+	intent_content_hash: string;
+	preparation_digest: string;
+	enrollment_event_id: string;
+	actor_id: string;
+	confirmation_ref: string;
+	nonce: string;
+}): string {
+	const canonical = JSON.stringify({
+		task_id: request.task_id,
+		intent_path: request.intent_path,
+		intent_revision: request.intent_revision,
+		intent_content_hash: request.intent_content_hash,
+		preparation_digest: request.preparation_digest,
+		enrollment_event_id: request.enrollment_event_id,
+		actor_id: request.actor_id,
+		confirmation_ref: request.confirmation_ref,
+		nonce: request.nonce,
+	});
+	return `sha256:${createHash("sha256").update(canonical).digest("hex")}`;
+}
+
 export function drainOperationId(taskId: string, updatedAt: string): string {
 	return `drain:${taskId}:${updatedAt}`;
 }

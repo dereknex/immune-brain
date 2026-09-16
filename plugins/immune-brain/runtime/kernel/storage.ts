@@ -61,6 +61,7 @@ import {
 	assertRunBinding,
 	drainOperationId,
 	enrollmentOperationId,
+	enrollmentRequestDigest,
 	mintRunId,
 	runIdentity,
 	terminalOperationId,
@@ -816,6 +817,38 @@ export function readCommittedTerminalResult(
 }
 
 /**
+ * The committed result of an enrollment, if this worktree already committed
+ * it. A lost response cannot pass the first-execution checks (the capability
+ * is consumed and the record exists), so the durable operation is the only
+ * correct answer — and only for the exact request that enrolled it.
+ */
+export function readCommittedEnrollmentResult(
+	root: string,
+	taskId: string,
+	eventId: string,
+	requestDigest?: string,
+): { record: TaskRecord; workspace: WorkspaceState; claim: BackendClaim } | null {
+	validateTaskId(taskId);
+	const read = withKernelRead(root, (db) => {
+		const row = readOperationRow(db, enrollmentOperationId(taskId, eventId));
+		if (!row) return null;
+		const parsed = JSON.parse(row.result_json) as CommittedOperationResult;
+		if ((parsed.request_digest ?? null) !== (requestDigest ?? null))
+			throw new KernelStoreConflictError(
+				`enrollment operation for ${taskId} was committed for a different request; resubmit the exact request that enrolled it`,
+			);
+		const decoded = decodeOperationResult(row.result_json);
+		const run = readRunRowByTask(db, taskId);
+		if (!run)
+			throw new KernelStoreConflictError(
+				`enrollment operation for ${taskId} has no committed run`,
+			);
+		return { ...decoded, claim: claimFromRunRow(run) };
+	});
+	return read ?? null;
+}
+
+/**
  * This worktree's run for a task, including terminal runs. Batch commit and
  * recovery read a *settled* child's evidence, so the active-only lookup is not
  * enough, and another worktree's run of the same logical task must never be
@@ -1283,6 +1316,7 @@ export function commitEnrollmentLocked(
 	taskId: string,
 	transaction: WorkspaceTransactionV2,
 	claim: Record<string, unknown>,
+	requestDigest?: string,
 ): { record: TaskRecord; workspace: WorkspaceState } {
 	validateTaskId(taskId);
 	if (transaction.task_id !== taskId)
@@ -1301,12 +1335,32 @@ export function commitEnrollmentLocked(
 	if (nextWorkspace.current_working !== taskId)
 		throw new KernelStoreSecurityError("enrollment must claim the workspace for its task");
 
+	const digest =
+		requestDigest ??
+		enrollmentRequestDigest({
+			task_id: parsedClaim.task_id,
+			intent_path: "",
+			intent_revision: parsedClaim.intent_revision,
+			intent_content_hash: parsedClaim.intent_content_hash,
+			preparation_digest: "",
+			enrollment_event_id: parsedClaim.enrollment_event_id,
+			actor_id: "",
+			confirmation_ref: "",
+			nonce: "",
+		});
 	return withKernelTransaction(root, (db) => {
 		assertNoRetiredFileStore(root, db, taskId);
 		const runId = mintRunId();
 		const operationId = enrollmentOperationId(taskId, parsedClaim.enrollment_event_id);
 		const replay = readOperationRow(db, operationId);
-		if (replay) return decodeOperationResult(replay.result_json);
+		if (replay) {
+			const parsed = JSON.parse(replay.result_json) as CommittedOperationResult;
+			if ((parsed.request_digest ?? null) !== digest)
+				throw new KernelStoreConflictError(
+					`enrollment operation for ${taskId} was committed for a different request; resubmit the exact request that enrolled it`,
+				);
+			return decodeOperationResult(replay.result_json);
+		}
 		const existing = readRunRowByTask(db, taskId);
 		if (existing)
 			throw new KernelStoreConflictError(
@@ -1341,6 +1395,7 @@ export function commitEnrollmentLocked(
 			result_json: JSON.stringify({
 				record_json: transaction.next_record_content,
 				workspace_json: transaction.next_workspace_content,
+				request_digest: digest,
 			} satisfies CommittedOperationResult),
 			committed_at: parsedClaim.updated_at,
 		});

@@ -370,15 +370,113 @@ describe("enrollment transaction", () => {
 		const claim = readBackendClaim(root);
 		expect(claim?.task_id).toBe(taskId);
 		expect(claim?.lifecycle_status).toBe("active");
-		// capability consumed
-		expect(() => enrollCanaryTask(root, {
+		expect(registry.isConsumed(cap)).toBe(true);
+	});
+
+	test("a lost enrollment response replays through enrollCanaryTask", () => {
+		const root = makeRoot();
+		const taskId = "task-entry-replay";
+		writeIntent(root, taskId);
+		const binding = bindingFor(root, taskId);
+		const cap = registry.issue(binding);
+		const input = {
 			task_id: taskId,
 			intent_path: `docs/plans/${taskId}.intent.json`,
 			intent_revision: 1,
+			preparation_digest: binding.preparation_digest,
 			capability: cap,
-			capability_binding: bindingFor(root, taskId),
+			capability_binding: binding,
 			now: "2026-08-12T00:00:00.000Z",
-		}, registry)).toThrow(/consumed/i);
+		};
+		const first = enrollCanaryTask(root, input, registry);
+		const runBefore = withKernelRead(root, (db) => readRunRowByTask(db, taskId));
+		const replayed = enrollCanaryTask(root, input, registry);
+		expect(replayed.record).toEqual(first.record);
+		expect(replayed.backend_claim).toEqual(first.backend_claim);
+		expect(withKernelRead(root, (db) => readRunRowByTask(db, taskId))).toEqual(runBefore);
+		expect(registry.isConsumed(cap)).toBe(true);
+	});
+
+	test("a different enrollment request for the same event is refused through enrollCanaryTask", () => {
+		const root = makeRoot();
+		const taskId = "task-entry-divergent";
+		writeIntent(root, taskId);
+		const binding = bindingFor(root, taskId);
+		const cap = registry.issue(binding);
+		const first = enrollCanaryTask(
+			root,
+			{
+				task_id: taskId,
+				intent_path: `docs/plans/${taskId}.intent.json`,
+				intent_revision: 1,
+				preparation_digest: binding.preparation_digest,
+				capability: cap,
+				capability_binding: binding,
+				now: "2026-08-12T00:00:00.000Z",
+			},
+			registry,
+		);
+		const runBefore = withKernelRead(root, (db) => readRunRowByTask(db, taskId));
+		const other = { ...binding, nonce: "nonce-other" };
+		expect(() =>
+			enrollCanaryTask(
+				root,
+				{
+					task_id: taskId,
+					intent_path: `docs/plans/${taskId}.intent.json`,
+					intent_revision: 1,
+					preparation_digest: binding.preparation_digest,
+					capability: registry.issue(other),
+					capability_binding: other,
+					now: "2026-08-12T00:00:00.000Z",
+				},
+				registry,
+			),
+		).toThrow(/different request/i);
+		expect(withKernelRead(root, (db) => readRunRowByTask(db, taskId))).toEqual(runBefore);
+		expect(readBackendClaim(root)).toEqual(first.backend_claim);
+	});
+
+	test("a consumed enrollment capability cannot enroll a different task", () => {
+		const root = makeRoot();
+		writeIntent(root, "task-a");
+		writeIntent(root, "task-b");
+		const binding = bindingFor(root, "task-a");
+		const cap = registry.issue(binding);
+		enrollCanaryTask(
+			root,
+			{
+				task_id: "task-a",
+				intent_path: "docs/plans/task-a.intent.json",
+				intent_revision: 1,
+				preparation_digest: binding.preparation_digest,
+				capability: cap,
+				capability_binding: binding,
+				now: "2026-08-12T00:00:00.000Z",
+			},
+			registry,
+		);
+		const other = {
+			...binding,
+			task_id: "task-b",
+			intent_path: "docs/plans/task-b.intent.json",
+		};
+		expect(() =>
+			enrollCanaryTask(
+				root,
+				{
+					task_id: "task-b",
+					intent_path: "docs/plans/task-b.intent.json",
+					intent_revision: 1,
+					preparation_digest: other.preparation_digest,
+					capability: cap,
+					capability_binding: other,
+					now: "2026-08-12T00:00:01.000Z",
+				},
+				registry,
+			),
+		).toThrow(/consumed/i);
+		expect(readTaskRecord(root, "task-b").record).toBeNull();
 	});
 
 	test("rejects when capability binding mismatches", () => {
@@ -428,8 +526,10 @@ describe("enrollment transaction", () => {
 			capability_binding: bindingFor(root, taskId),
 			now: "2026-08-12T00:00:00.000Z",
 		}, registry);
-		const cap2 = registry.issue(bindingFor(root, taskId));
-		const prep2 = preparePiCanary(root, { task_id: taskId, now: "2026-08-12T00:00:00.000Z" });
+		const later = "2026-08-12T00:00:01.000Z";
+		const binding2 = { ...bindingFor(root, taskId), nonce: "nonce-002" };
+		const cap2 = registry.issue(binding2);
+		const prep2 = preparePiCanary(root, { task_id: taskId, now: later });
 		expect(() =>
 			enrollCanaryTask(root, {
 				task_id: taskId,
@@ -437,8 +537,8 @@ describe("enrollment transaction", () => {
 				intent_revision: 1,
 				preparation_digest: prep2.digest,
 				capability: cap2,
-				capability_binding: bindingFor(root, taskId),
-				now: "2026-08-12T00:00:00.000Z",
+				capability_binding: binding2,
+				now: later,
 			}, registry),
 		).toThrow(/already|exists/i);
 	});
@@ -799,26 +899,19 @@ describe("SQLite enrollment authority (A2)", () => {
 		const fresh = withKernelRead(root, (db) => readWorkspaceRow(db));
 		const { transaction, claim } = transactionFor(root, "task-divergent", fresh ? `rev:${fresh.revision}` : "missing");
 		commitEnrollmentLocked(root, "task-divergent", transaction, claim as unknown as Record<string, unknown>);
-		// Same event identity, different intent content: refused, and the
-		// committed run is untouched.
-		const divergent = transactionFor(root, "task-divergent", "missing");
+		// Same event identity and valid record, different claim identity: the
+		// committed operation must not answer a request it never authorized.
 		expect(() =>
 			commitEnrollmentLocked(
 				root,
 				"task-divergent",
-				{
-					...divergent.transaction,
-					next_record_content: divergent.transaction.next_record_content.replace(
-						"goal for task-divergent",
-						"divergent goal",
-					),
-				},
-				{ ...divergent.claim, intent_content_hash: `sha256:${"c".repeat(64)}` } as unknown as Record<
+				transaction,
+				{ ...claim, intent_content_hash: `sha256:${"c".repeat(64)}` } as unknown as Record<
 					string,
 					unknown
 				>,
 			),
-		).toThrow();
+		).toThrow(/different request/i);
 		const run = withKernelRead(root, (db) => readRunRowByTask(db, "task-divergent"))!;
 		expect(JSON.parse(run.record_json).intent_snapshot.goal).toBe("goal for task-divergent");
 	});

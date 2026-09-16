@@ -16,8 +16,10 @@ import type {
 } from "./batch_authority";
 import type { BackendClaim } from "./backend_claim";
 import { preparePiCanary, readGitHead } from "./pi_canary_prepare";
+import { enrollmentRequestDigest } from "./run_identity";
 import {
 	commitEnrollmentLocked,
+	readCommittedEnrollmentResult,
 	readTaskRecordRaw,
 	readWorkspaceStateRaw,
 	reconcileKernelAuthority,
@@ -239,16 +241,55 @@ export function runEnrollmentRehearsal(
 	};
 }
 
+function enrollmentEventId(taskId: string, now: string): string {
+	return `enroll-${taskId}-${now}`;
+}
+
+function digestForEnrollment(input: EnrollCanaryInput): {
+	eventId: string;
+	digest: string;
+} {
+	const eventId = enrollmentEventId(input.task_id, input.now);
+	return {
+		eventId,
+		digest: enrollmentRequestDigest({
+			task_id: input.task_id,
+			intent_path: input.intent_path,
+			intent_revision: input.intent_revision,
+			intent_content_hash: input.capability_binding.intent_content_hash,
+			preparation_digest: input.preparation_digest,
+			enrollment_event_id: eventId,
+			actor_id: input.capability_binding.actor_id,
+			confirmation_ref: input.capability_binding.confirmation_ref,
+			nonce: input.capability_binding.nonce,
+		}),
+	};
+}
+
 /**
  * Atomic canary enrollment. Runs inside the same store lock as v1/v2
  * transactions; consumes the capability only after every precondition
- * passes, immediately before writing the enrollment marker.
+ * passes, immediately before writing the enrollment marker. A lost
+ * response of the exact same request returns the committed result
+ * without repeating those first-execution checks.
  */
 export function enrollCanaryTask(
 	root: string,
 	input: EnrollCanaryInput,
 	registry: EnrollmentAuthorityRegistry,
 ): EnrollCanaryResult {
+	const { eventId, digest } = digestForEnrollment(input);
+	// A committed enrollment answers the exact same request: the retry cannot
+	// pass the first-execution checks (the capability is consumed and the
+	// record now exists), so the durable operation is the only correct answer.
+	const replayed = readCommittedEnrollmentResult(root, input.task_id, eventId, digest);
+	if (replayed)
+		return {
+			record: replayed.record,
+			backend_claim: replayed.claim,
+			workspace: { revision: "", state: replayed.workspace },
+		};
+
 	let gitBaseHead: string | null = null;
 	// The batch child slot is consumed with the capability and handed back when
 	// the enrollment call fails. The commit happens at the outer store
@@ -337,7 +378,7 @@ export function enrollCanaryTask(
 				task_id: input.task_id,
 				intent_revision: input.intent_revision,
 				intent_content_hash: checks.intent.content_hash,
-				enrollment_event_id: `enroll-${input.task_id}-${input.now}`,
+				enrollment_event_id: eventId,
 				lifecycle_status: "active",
 				created_at: input.now,
 				updated_at: input.now,
@@ -354,6 +395,7 @@ export function enrollCanaryTask(
 					next_workspace_content: `${JSON.stringify(nextWorkspace, null, 2)}\n`,
 				},
 				claim as unknown as Record<string, unknown>,
+				digest,
 			);
 			return {
 				record: mutation.record,
