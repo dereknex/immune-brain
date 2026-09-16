@@ -5,6 +5,8 @@ import { execFileSync, spawnSync } from "node:child_process";
 import { existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readlinkSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, relative, resolve, sep } from "node:path";
+import type { FrozenRunner } from "./verification";
+import type { GitTaskRevisionSnapshot } from "../workspace_scope";
 
 export class DeliveryWorkspaceError extends Error {
 	constructor(message: string) {
@@ -15,21 +17,36 @@ export class DeliveryWorkspaceError extends Error {
 
 export interface DeliveryWorkspace {
 	root: string;
+	tree: string;
 	cleanup: () => void;
 }
 
-function git(root: string, args: string[], extra: Record<string, string> = {}): string {
+const GIT_OBJECT_ID = /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/;
+
+function isolatedGitEnv(extra: Record<string, string> = {}): NodeJS.ProcessEnv {
+	const env = { ...process.env, ...extra };
+	delete env.GIT_DIR;
+	delete env.GIT_WORK_TREE;
+	delete env.GIT_INDEX_FILE;
+	delete env.GIT_OBJECT_DIRECTORY;
+	delete env.GIT_ALTERNATE_OBJECT_DIRECTORIES;
+	env.GIT_CONFIG_NOSYSTEM = "1";
+	env.GIT_TERMINAL_PROMPT = "0";
+	env.GIT_OPTIONAL_LOCKS = "0";
+	return env;
+}
+
+function git(cwd: string, args: string[], extra: Record<string, string> = {}): string {
 	return execFileSync("git", args, {
-		cwd: root,
+		cwd,
 		encoding: "utf8",
 		stdio: ["ignore", "pipe", "pipe"],
-		env: { ...process.env, ...extra },
+		env: isolatedGitEnv(extra),
 	}).trim();
 }
 
 function assertTree(tree: string): void {
-	if (!/^[a-f0-9]{40}$|^[a-f0-9]{64}$/.test(tree))
-		throw new DeliveryWorkspaceError("delivery tree has invalid identity");
+	if (!GIT_OBJECT_ID.test(tree)) throw new DeliveryWorkspaceError("delivery tree has invalid identity");
 }
 
 function assertNoEscapingSymlinks(root: string, dir = root): void {
@@ -47,49 +64,92 @@ function assertNoEscapingSymlinks(root: string, dir = root): void {
 	}
 }
 
-function prepareDependencies(root: string): void {
-	const lockfile = ["bun.lock", "bun.lockb", "package-lock.json"].find((name) => existsSync(join(root, name)));
+function prepareDependencies(root: string, runner?: FrozenRunner): void {
+	const lockfile = ["bun.lock", "bun.lockb"].find((name) => existsSync(join(root, name)));
 	if (!lockfile) return;
 	if (!existsSync(join(root, "package.json")))
 		throw new DeliveryWorkspaceError("delivery lockfile is missing package.json");
-	const result = spawnSync("bun", ["install", "--frozen-lockfile", "--offline"], {
+	const bun = runner?.path ?? "bun";
+	const result = spawnSync(bun, ["install", "--frozen-lockfile", "--offline", "--ignore-scripts"], {
 		cwd: root,
 		encoding: "utf8",
 		stdio: ["ignore", "pipe", "pipe"],
+		timeout: 60_000,
+		env: isolatedGitEnv(),
 	});
-	if (result.status !== 0)
+	if (result.error || result.status !== 0)
 		throw new DeliveryWorkspaceError("delivery dependency preparation failed from the snapshot lockfile");
 }
 
-export function materializeDeliveryWorkspace(sourceRoot: string, tree: string): DeliveryWorkspace {
+export function writeDeliveryTree(sourceRoot: string, snapshot: GitTaskRevisionSnapshot): string {
+	const indexDirectory = mkdtempSync(join(tmpdir(), "imm-delivery-index-"));
+	try {
+		git(sourceRoot, ["read-tree", snapshot.base_tree], {
+			GIT_INDEX_FILE: join(indexDirectory, "index"),
+			GIT_DIR: join(sourceRoot, ".git"),
+		});
+		for (const [path, entry] of Object.entries(snapshot.changed_paths)) {
+			if (entry.oid && entry.mode) {
+				git(sourceRoot, ["update-index", "--add", "--cacheinfo", `${entry.mode},${entry.oid},${path}`], {
+					GIT_INDEX_FILE: join(indexDirectory, "index"),
+					GIT_DIR: join(sourceRoot, ".git"),
+				});
+			} else {
+				git(sourceRoot, ["update-index", "--force-remove", "--", path], {
+					GIT_INDEX_FILE: join(indexDirectory, "index"),
+					GIT_DIR: join(sourceRoot, ".git"),
+				});
+			}
+		}
+		const next = git(sourceRoot, ["write-tree"], {
+			GIT_INDEX_FILE: join(indexDirectory, "index"),
+			GIT_DIR: join(sourceRoot, ".git"),
+		});
+		assertTree(next);
+		return next;
+	} finally {
+		rmSync(indexDirectory, { recursive: true, force: true });
+	}
+}
+
+export function assertDeliveryClean(root: string, tree: string): void {
+	const porcelain = git(root, ["status", "--porcelain", "-z"]);
+	if (porcelain.length > 0) throw new DeliveryWorkspaceError("delivery workspace was contaminated");
+	const current = git(root, ["rev-parse", "HEAD^{tree}"]);
+	if (current !== tree) throw new DeliveryWorkspaceError("delivery workspace tree drifted from the frozen identity");
+}
+
+export function materializeDeliveryWorkspace(
+	sourceRoot: string,
+	tree: string,
+	runner?: FrozenRunner,
+): DeliveryWorkspace {
 	assertTree(tree);
 	const dest = mkdtempSync(join(tmpdir(), "imm-delivery-"));
 	const cleanup = () => rmSync(dest, { recursive: true, force: true });
 	try {
 		mkdirSync(dest, { recursive: true });
-		const archive = execFileSync("git", ["archive", "--format=tar", tree], {
-			cwd: sourceRoot,
-			encoding: "buffer",
-			stdio: ["ignore", "pipe", "pipe"],
-			maxBuffer: 64 * 1024 * 1024,
+		const commit = git(sourceRoot, ["commit-tree", tree, "-m", `delivery ${tree}`], {
+			GIT_DIR: join(sourceRoot, ".git"),
+			GIT_AUTHOR_NAME: "Immune-Brain Assurance",
+			GIT_AUTHOR_EMAIL: "assurance@immune-brain.local",
+			GIT_AUTHOR_DATE: "1970-01-01T00:00:00 +0000",
+			GIT_COMMITTER_NAME: "Immune-Brain Assurance",
+			GIT_COMMITTER_EMAIL: "assurance@immune-brain.local",
+			GIT_COMMITTER_DATE: "1970-01-01T00:00:00 +0000",
 		});
-		spawnSync("tar", ["-xf", "-"], { cwd: dest, input: archive, stdio: ["pipe", "ignore", "pipe"] });
-		assertNoEscapingSymlinks(dest);
+		if (!GIT_OBJECT_ID.test(commit)) throw new DeliveryWorkspaceError("delivery commit write failed");
 		git(dest, ["init", "-q"]);
-		git(dest, ["config", "user.email", "assurance@immune-brain.local"]);
-		git(dest, ["config", "user.name", "Immune-Brain Assurance"]);
-		git(dest, ["add", "-A"]);
-		git(dest, ["commit", "--allow-empty", "-qm", `delivery ${tree}`]);
-		prepareDependencies(dest);
-		return { root: dest, cleanup };
+		git(dest, ["fetch", "--depth=1", `file://${resolve(sourceRoot)}`, `${commit}:refs/heads/delivery`]);
+		git(dest, ["checkout", "-q", "delivery"]);
+		const got = git(dest, ["rev-parse", "HEAD^{tree}"]);
+		if (got !== tree) throw new DeliveryWorkspaceError("delivery materialization does not match the frozen tree");
+		assertNoEscapingSymlinks(dest);
+		prepareDependencies(dest, runner);
+		assertDeliveryClean(dest, tree);
+		return { root: dest, tree, cleanup };
 	} catch (error) {
 		cleanup();
 		throw error;
 	}
-}
-
-export function deliveryTreeFromIndex(sourceRoot: string): string {
-	const tree = git(sourceRoot, ["write-tree"]);
-	assertTree(tree);
-	return tree;
 }

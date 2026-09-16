@@ -1,7 +1,9 @@
 import { snapshotDigest, type SnapshotDescriptor, type AssuranceVerdict } from "./coordinator";
-import { deliveryTreeFromIndex, materializeDeliveryWorkspace } from "./delivery_workspace";
+import { assertDeliveryClean, materializeDeliveryWorkspace, writeDeliveryTree } from "./delivery_workspace";
 import { runFixedVerification, VerificationAbortedError, type FrozenRunner, type VerificationDescriptor } from "./verification";
 import { qaFindingId } from "./qa_findings";
+import { captureGitTaskRevisionSnapshot } from "../workspace_scope";
+import { readTaskRecord } from "../kernel/storage";
 
 export interface QaVerificationProgressInput {
 	index: number;
@@ -9,6 +11,17 @@ export interface QaVerificationProgressInput {
 	acceptance_id: string;
 	phase: "running" | "passed" | "failed";
 	elapsed_ms: number;
+}
+
+function deliveryTreeForSnapshot(snapshot: SnapshotDescriptor): string {
+	if (snapshot.review_revision?.review_tree) return snapshot.review_revision.review_tree;
+	const record = readTaskRecord(snapshot.root, snapshot.task_id).record;
+	if (!record || record.contract !== "assurance_kernel/task_record/v4" || !record.git_base_head)
+		throw new Error("QA delivery requires a TaskRecord v4 git_base_head");
+	return writeDeliveryTree(
+		snapshot.root,
+		captureGitTaskRevisionSnapshot(snapshot.root, record.intent_snapshot.scope_hint, record.git_base_head),
+	);
 }
 
 export async function runDeterministicQa(
@@ -30,10 +43,7 @@ export async function runDeterministicQa(
 	const runVerification = options.runVerification ?? runFixedVerification;
 	const delivery = options.runVerification
 		? null
-		: materializeDeliveryWorkspace(
-				snapshot.root,
-				snapshot.review_revision?.review_tree ?? deliveryTreeFromIndex(snapshot.root),
-			);
+		: materializeDeliveryWorkspace(snapshot.root, deliveryTreeForSnapshot(snapshot), runner);
 	const qaRoot = delivery?.root ?? snapshot.root;
 	try {
 	for (const [offset, item] of snapshot.acceptance.entries()) {
@@ -51,6 +61,7 @@ export async function runDeterministicQa(
 			signal: options.signal,
 		});
 		if (options.signal?.aborted) throw new VerificationAbortedError();
+		if (delivery) assertDeliveryClean(delivery.root, delivery.tree);
 		const failed = result.exit_code !== 0 || result.timed_out;
 		options.onProgress?.({
 			index: offset + 1,

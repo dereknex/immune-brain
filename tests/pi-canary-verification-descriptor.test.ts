@@ -9,7 +9,7 @@ import { execFileSync } from "node:child_process";
 import { mkdtempSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { DeliveryWorkspaceError, deliveryTreeFromIndex, materializeDeliveryWorkspace } from "../plugins/immune-brain/runtime/assurance/delivery_workspace";
+import { assertDeliveryClean, DeliveryWorkspaceError, materializeDeliveryWorkspace } from "../plugins/immune-brain/runtime/assurance/delivery_workspace";
 
 import {
 	parseVerificationDescriptor,
@@ -224,19 +224,45 @@ describe("delivery workspace materialization", () => {
 		return root;
 	}
 
+	function headTree(root: string): string {
+		return execFileSync("git", ["rev-parse", "HEAD^{tree}"], { cwd: root, encoding: "utf8" }).trim();
+	}
+
 	test("QA sees the frozen tree, not later live worktree edits", () => {
 		const root = gitRepo();
 		try {
-			const tree = deliveryTreeFromIndex(root);
+			const tree = headTree(root);
 			const delivery = materializeDeliveryWorkspace(root, tree);
 			try {
 				writeFileSync(join(root, "ok.ts"), "export const ok = 2;\n");
 				expect(readFileSync(join(delivery.root, "ok.ts"), "utf8")).toBe("export const ok = 1;\n");
+				expect(delivery.tree).toBe(tree);
 			} finally {
 				delivery.cleanup();
 			}
 		} finally {
 			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
+	test("does not follow the caller's GIT_DIR", () => {
+		const root = gitRepo();
+		const other = gitRepo();
+		try {
+			const before = execFileSync("git", ["rev-parse", "HEAD"], { cwd: other, encoding: "utf8" }).trim();
+			const previous = process.env.GIT_DIR;
+			process.env.GIT_DIR = join(other, ".git");
+			try {
+				const delivery = materializeDeliveryWorkspace(root, headTree(root));
+				delivery.cleanup();
+			} finally {
+				if (previous === undefined) delete process.env.GIT_DIR;
+				else process.env.GIT_DIR = previous;
+			}
+			expect(execFileSync("git", ["rev-parse", "HEAD"], { cwd: other, encoding: "utf8" }).trim()).toBe(before);
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+			rmSync(other, { recursive: true, force: true });
 		}
 	});
 
@@ -246,8 +272,22 @@ describe("delivery workspace materialization", () => {
 			symlinkSync("/etc/passwd", join(root, "escape"));
 			execFileSync("git", ["add", "escape"], { cwd: root });
 			execFileSync("git", ["commit", "-qm", "escape"], { cwd: root });
-			const tree = deliveryTreeFromIndex(root);
-			expect(() => materializeDeliveryWorkspace(root, tree)).toThrow(DeliveryWorkspaceError);
+			expect(() => materializeDeliveryWorkspace(root, headTree(root))).toThrow(DeliveryWorkspaceError);
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
+	test("fails closed when a descriptor contaminates the delivery workspace", () => {
+		const root = gitRepo();
+		try {
+			const delivery = materializeDeliveryWorkspace(root, headTree(root));
+			try {
+				writeFileSync(join(delivery.root, "ok.ts"), "export const ok = 2;\n");
+				expect(() => assertDeliveryClean(delivery.root, delivery.tree)).toThrow(/contaminated/);
+			} finally {
+				delivery.cleanup();
+			}
 		} finally {
 			rmSync(root, { recursive: true, force: true });
 		}

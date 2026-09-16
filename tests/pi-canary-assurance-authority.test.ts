@@ -16,6 +16,7 @@ import { runDeterministicQa } from "../plugins/immune-brain/runtime/assurance/qa
 import {
 	parseVerificationDescriptor,
 	resolveBunRunner,
+	runFixedVerification,
 	type VerificationDescriptor,
 } from "../plugins/immune-brain/.pi-extension/pi-canary-verification.ts";
 
@@ -196,12 +197,15 @@ describe("canary assurance authority", () => {
 			execFileSync("git", ["commit", "--allow-empty", "-qm", "base"], { cwd: root });
 			const runner = resolveBunRunner();
 			const s = snapshot({ root, role: "qa", acceptance: [{ id: "A1", assertion: "passes", verification: "descriptor" }] });
-			const passed = await runDeterministicQa(s, new Map([["A1", descriptor(["-e", "1"])]]), runner);
+			const passed = await runDeterministicQa(s, new Map([["A1", descriptor(["-e", "1"])]]), runner, {
+				runVerification: runFixedVerification,
+			});
 			expect(passed.decision).toBe("pass");
 			const withoutExecutorEvidence = await runDeterministicQa(
 				snapshot({ ...s, missing_acceptance_ids: ["A1"], fresh_acceptance_ids: [] }),
 				new Map([["A1", descriptor(["-e", "1"])]]),
 				runner,
+				{ runVerification: runFixedVerification },
 			);
 			expect(withoutExecutorEvidence.decision).toBe("pass");
 		} finally {

@@ -512,7 +512,7 @@ export function captureReviewManifest(
 }
 
 export function listReviewRefs(root: string): Array<{ ref: string; commit: string; taskId: string }> {
-	const output = gitEvidence(root, ["for-each-ref", "--format=%(refname) %(objectname)", `${REVIEW_REF_NAMESPACE}/`]);
+	const output = gitEvidence(root, ["for-each-ref", "--format=%(refname) %(objectname)", `${REVIEW_REF_NAMESPACE}/${workspaceRefSegment(root)}/`]);
 	const refs: Array<{ ref: string; commit: string; taskId: string }> = [];
 	for (const line of output.split("\n").filter(Boolean)) {
 		const [ref, commit] = line.split(" ");

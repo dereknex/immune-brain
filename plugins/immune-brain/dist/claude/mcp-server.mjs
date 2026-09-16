@@ -7579,16 +7579,29 @@ class DeliveryWorkspaceError extends Error {
     this.name = "DeliveryWorkspaceError";
   }
 }
-function git2(root, args, extra = {}) {
+var GIT_OBJECT_ID5 = /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/;
+function isolatedGitEnv(extra = {}) {
+  const env = { ...process.env, ...extra };
+  delete env.GIT_DIR;
+  delete env.GIT_WORK_TREE;
+  delete env.GIT_INDEX_FILE;
+  delete env.GIT_OBJECT_DIRECTORY;
+  delete env.GIT_ALTERNATE_OBJECT_DIRECTORIES;
+  env.GIT_CONFIG_NOSYSTEM = "1";
+  env.GIT_TERMINAL_PROMPT = "0";
+  env.GIT_OPTIONAL_LOCKS = "0";
+  return env;
+}
+function git2(cwd, args, extra = {}) {
   return execFileSync4("git", args, {
-    cwd: root,
+    cwd,
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"],
-    env: { ...process.env, ...extra }
+    env: isolatedGitEnv(extra)
   }).trim();
 }
 function assertTree(tree) {
-  if (!/^[a-f0-9]{40}$|^[a-f0-9]{64}$/.test(tree))
+  if (!GIT_OBJECT_ID5.test(tree))
     throw new DeliveryWorkspaceError("delivery tree has invalid identity");
 }
 function assertNoEscapingSymlinks(root, dir = root) {
@@ -7605,50 +7618,92 @@ function assertNoEscapingSymlinks(root, dir = root) {
     }
   }
 }
-function prepareDependencies(root) {
-  const lockfile = ["bun.lock", "bun.lockb", "package-lock.json"].find((name) => existsSync5(join6(root, name)));
+function prepareDependencies(root, runner) {
+  const lockfile = ["bun.lock", "bun.lockb"].find((name) => existsSync5(join6(root, name)));
   if (!lockfile)
     return;
   if (!existsSync5(join6(root, "package.json")))
     throw new DeliveryWorkspaceError("delivery lockfile is missing package.json");
-  const result = spawnSync5("bun", ["install", "--frozen-lockfile", "--offline"], {
+  const bun = runner?.path ?? "bun";
+  const result = spawnSync5(bun, ["install", "--frozen-lockfile", "--offline", "--ignore-scripts"], {
     cwd: root,
     encoding: "utf8",
-    stdio: ["ignore", "pipe", "pipe"]
+    stdio: ["ignore", "pipe", "pipe"],
+    timeout: 60000,
+    env: isolatedGitEnv()
   });
-  if (result.status !== 0)
+  if (result.error || result.status !== 0)
     throw new DeliveryWorkspaceError("delivery dependency preparation failed from the snapshot lockfile");
 }
-function materializeDeliveryWorkspace(sourceRoot, tree) {
+function writeDeliveryTree(sourceRoot, snapshot) {
+  const indexDirectory = mkdtempSync2(join6(tmpdir3(), "imm-delivery-index-"));
+  try {
+    git2(sourceRoot, ["read-tree", snapshot.base_tree], {
+      GIT_INDEX_FILE: join6(indexDirectory, "index"),
+      GIT_DIR: join6(sourceRoot, ".git")
+    });
+    for (const [path, entry] of Object.entries(snapshot.changed_paths)) {
+      if (entry.oid && entry.mode) {
+        git2(sourceRoot, ["update-index", "--add", "--cacheinfo", `${entry.mode},${entry.oid},${path}`], {
+          GIT_INDEX_FILE: join6(indexDirectory, "index"),
+          GIT_DIR: join6(sourceRoot, ".git")
+        });
+      } else {
+        git2(sourceRoot, ["update-index", "--force-remove", "--", path], {
+          GIT_INDEX_FILE: join6(indexDirectory, "index"),
+          GIT_DIR: join6(sourceRoot, ".git")
+        });
+      }
+    }
+    const next = git2(sourceRoot, ["write-tree"], {
+      GIT_INDEX_FILE: join6(indexDirectory, "index"),
+      GIT_DIR: join6(sourceRoot, ".git")
+    });
+    assertTree(next);
+    return next;
+  } finally {
+    rmSync5(indexDirectory, { recursive: true, force: true });
+  }
+}
+function assertDeliveryClean(root, tree) {
+  const porcelain = git2(root, ["status", "--porcelain", "-z"]);
+  if (porcelain.length > 0)
+    throw new DeliveryWorkspaceError("delivery workspace was contaminated");
+  const current = git2(root, ["rev-parse", "HEAD^{tree}"]);
+  if (current !== tree)
+    throw new DeliveryWorkspaceError("delivery workspace tree drifted from the frozen identity");
+}
+function materializeDeliveryWorkspace(sourceRoot, tree, runner) {
   assertTree(tree);
   const dest = mkdtempSync2(join6(tmpdir3(), "imm-delivery-"));
   const cleanup = () => rmSync5(dest, { recursive: true, force: true });
   try {
     mkdirSync4(dest, { recursive: true });
-    const archive = execFileSync4("git", ["archive", "--format=tar", tree], {
-      cwd: sourceRoot,
-      encoding: "buffer",
-      stdio: ["ignore", "pipe", "pipe"],
-      maxBuffer: 64 * 1024 * 1024
+    const commit = git2(sourceRoot, ["commit-tree", tree, "-m", `delivery ${tree}`], {
+      GIT_DIR: join6(sourceRoot, ".git"),
+      GIT_AUTHOR_NAME: "Immune-Brain Assurance",
+      GIT_AUTHOR_EMAIL: "assurance@immune-brain.local",
+      GIT_AUTHOR_DATE: "1970-01-01T00:00:00 +0000",
+      GIT_COMMITTER_NAME: "Immune-Brain Assurance",
+      GIT_COMMITTER_EMAIL: "assurance@immune-brain.local",
+      GIT_COMMITTER_DATE: "1970-01-01T00:00:00 +0000"
     });
-    spawnSync5("tar", ["-xf", "-"], { cwd: dest, input: archive, stdio: ["pipe", "ignore", "pipe"] });
-    assertNoEscapingSymlinks(dest);
+    if (!GIT_OBJECT_ID5.test(commit))
+      throw new DeliveryWorkspaceError("delivery commit write failed");
     git2(dest, ["init", "-q"]);
-    git2(dest, ["config", "user.email", "assurance@immune-brain.local"]);
-    git2(dest, ["config", "user.name", "Immune-Brain Assurance"]);
-    git2(dest, ["add", "-A"]);
-    git2(dest, ["commit", "--allow-empty", "-qm", `delivery ${tree}`]);
-    prepareDependencies(dest);
-    return { root: dest, cleanup };
+    git2(dest, ["fetch", "--depth=1", `file://${resolve9(sourceRoot)}`, `${commit}:refs/heads/delivery`]);
+    git2(dest, ["checkout", "-q", "delivery"]);
+    const got = git2(dest, ["rev-parse", "HEAD^{tree}"]);
+    if (got !== tree)
+      throw new DeliveryWorkspaceError("delivery materialization does not match the frozen tree");
+    assertNoEscapingSymlinks(dest);
+    prepareDependencies(dest, runner);
+    assertDeliveryClean(dest, tree);
+    return { root: dest, tree, cleanup };
   } catch (error) {
     cleanup();
     throw error;
   }
-}
-function deliveryTreeFromIndex(sourceRoot) {
-  const tree = git2(sourceRoot, ["write-tree"]);
-  assertTree(tree);
-  return tree;
 }
 
 // plugins/immune-brain/runtime/assurance/qa_findings.ts
@@ -7662,6 +7717,14 @@ function attemptRef(snapshotDigest) {
 }
 
 // plugins/immune-brain/runtime/assurance/qa.ts
+function deliveryTreeForSnapshot(snapshot) {
+  if (snapshot.review_revision?.review_tree)
+    return snapshot.review_revision.review_tree;
+  const record = readTaskRecord(snapshot.root, snapshot.task_id).record;
+  if (!record || record.contract !== "assurance_kernel/task_record/v4" || !record.git_base_head)
+    throw new Error("QA delivery requires a TaskRecord v4 git_base_head");
+  return writeDeliveryTree(snapshot.root, captureGitTaskRevisionSnapshot(snapshot.root, record.intent_snapshot.scope_hint, record.git_base_head));
+}
 async function runDeterministicQa(snapshot, descriptors, runner, options = {}) {
   if (snapshot.role !== "qa")
     throw new Error("deterministic QA requires qa role");
@@ -7673,7 +7736,7 @@ async function runDeterministicQa(snapshot, descriptors, runner, options = {}) {
   }
   const findings = [];
   const runVerification = options.runVerification ?? runFixedVerification;
-  const delivery = options.runVerification ? null : materializeDeliveryWorkspace(snapshot.root, snapshot.review_revision?.review_tree ?? deliveryTreeFromIndex(snapshot.root));
+  const delivery = options.runVerification ? null : materializeDeliveryWorkspace(snapshot.root, deliveryTreeForSnapshot(snapshot), runner);
   const qaRoot = delivery?.root ?? snapshot.root;
   try {
     for (const [offset, item] of snapshot.acceptance.entries()) {
@@ -7693,6 +7756,8 @@ async function runDeterministicQa(snapshot, descriptors, runner, options = {}) {
       });
       if (options.signal?.aborted)
         throw new VerificationAbortedError;
+      if (delivery)
+        assertDeliveryClean(delivery.root, delivery.tree);
       const failed = result.exit_code !== 0 || result.timed_out;
       options.onProgress?.({
         index: offset + 1,
