@@ -6,7 +6,7 @@
     {
       "id": "A1",
       "assertion": "Explicit migration refuses active tasks or recoverable old batches, preserves raw historical evidence, imports into a verified temporary SQLite database and recovers interrupted publication without dual writes; schema mismatch, consistent restore and worktree rebinding reject unsafe access.",
-      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.4.2\",\n  \"argv\": [\n    \"test\",\n    \"tests/kernel-storage-layout-migration.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 60000,\n  \"max_output_bytes\": 131072\n}\n"
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.4.2\",\n  \"argv\": [\n    \"test\",\n    \"tests/kernel-storage-layout-migration.test.ts\",\n    \"tests/kernel-migrate.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 60000,\n  \"max_output_bytes\": 131072\n}\n"
     },
     {
       "id": "A2",
@@ -168,6 +168,6 @@
     "tests/v4-storage-retirement-legacy-audit.test.ts"
   ],
   "risk": "critical",
-  "revision": 2,
+  "revision": 3,
   "owner": "user"
 }
