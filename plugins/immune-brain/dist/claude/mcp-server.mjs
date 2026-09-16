@@ -5364,9 +5364,16 @@ function isRetiredFileProvablySuperseded(path, db, taskId) {
   if (raw.task_id !== taskId)
     return false;
   if (raw.contract !== "assurance_kernel/backend_claim/v2") {
-    if (raw.current_working !== taskId)
-      return false;
+    return raw.current_working === taskId;
   }
+  if (raw.backend !== "kernel")
+    return false;
+  if (raw.enrollment_event_id !== run.enrollment_event_id)
+    return false;
+  if (raw.intent_revision !== run.intent_revision)
+    return false;
+  if (raw.intent_content_hash !== run.intent_content_hash)
+    return false;
   return true;
 }
 function assertNoRetiredFileStore(root, db, taskId) {
@@ -5431,8 +5438,11 @@ function retiredFileStoreConflict(root, db, taskId) {
 function readdirNames(path) {
   try {
     return readdirSync3(path);
-  } catch {
-    return [];
+  } catch (error) {
+    const code = error.code;
+    if (code === "ENOENT" || code === "ENOTDIR")
+      return [];
+    throw new KernelStoreSecurityError(`retired store directory ${path} could not be listed (${code ?? "unknown"}); resolve the filesystem condition before mutating`);
   }
 }
 function withinRoot(root, candidate) {

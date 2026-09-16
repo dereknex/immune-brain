@@ -703,14 +703,56 @@ describe("SQLite authority store durability", () => {
     }
   });
 
+  test("a claim from a different enrollment of the same task is never retired", () => {
+    const root = storeRoot();
+    try {
+      const claim = storeClaimFor("durability-o");
+      seedKernelRunForTest(root, {
+        task_id: "durability-o",
+        record: storeTerminalRecord("durability-o"),
+        created_at: "2026-08-12T10:00:00.000Z",
+        updated_at: "2026-08-12T10:00:00.000Z",
+        intent_revision: Number(claim.intent_revision),
+        intent_content_hash: String(claim.intent_content_hash),
+        enrollment_event_id: String(claim.enrollment_event_id),
+        terminal: { lifecycle: "done", terminalized_at: "2026-08-12T10:00:05.000Z" },
+      });
+      retryStoreFollowUps(root);
+      // Same task, different enrollment: this file is another authority
+      // decision, not a duplicate of the committed run, so a repair must not
+      // delete it.
+      const other = { ...claim, enrollment_event_id: "enroll-durability-o-other" };
+      const claimPath = join(root, ".imm/state/active-claim.json");
+      writeFileSync(claimPath, `${JSON.stringify(other, null, 2)}\n`);
+      const projection = reconcileKernelAuthority(root, "durability-o");
+      // The unverifiable file stays: either the repair reports a conflict or the
+      // mutation is refused outright, and neither path deletes it.
+      try {
+        repairKernelAuthority(root, "durability-o", projection.revision);
+      } catch (error) {
+        expect(String(error)).toMatch(/retired file-store authority is present/);
+      }
+      expect(existsSync(claimPath)).toBe(true);
+      expect(JSON.parse(readFileSync(claimPath, "utf8")).enrollment_event_id).toBe(
+        "enroll-durability-o-other",
+      );
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   test("a proven stale claim cannot exist, so repair reports the settled authority", () => {
     const root = storeRoot();
     try {
+      const claim = storeClaimFor("durability-n");
       seedKernelRunForTest(root, {
         task_id: "durability-n",
         record: storeTerminalRecord("durability-n"),
         created_at: "2026-08-12T10:00:00.000Z",
         updated_at: "2026-08-12T10:00:00.000Z",
+        intent_revision: Number(claim.intent_revision),
+        intent_content_hash: String(claim.intent_content_hash),
+        enrollment_event_id: String(claim.enrollment_event_id),
         terminal: { lifecycle: "done", terminalized_at: "2026-08-12T10:00:05.000Z" },
       });
       retryStoreFollowUps(root);

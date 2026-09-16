@@ -241,12 +241,18 @@ function isRetiredFileProvablySuperseded(
 	// Ownership, not freshness: a stale copy of this task's own claim is exactly
 	// what a repair removes, while another task's claim is never this task's to
 	// retire. The store holding this task's run is what makes the file a
-	// duplicate of committed authority.
+	// duplicate of committed authority — but only the *same execution* proves it:
+	// another enrollment of the same task (different event, revision or content
+	// hash) is a different authority decision and must survive.
 	if (raw.task_id !== taskId) return false;
 	if (raw.contract !== "assurance_kernel/backend_claim/v2") {
 		// The retired workspace owner names its owner directly.
-		if (raw.current_working !== taskId) return false;
+		return raw.current_working === taskId;
 	}
+	if (raw.backend !== "kernel") return false;
+	if (raw.enrollment_event_id !== run.enrollment_event_id) return false;
+	if (raw.intent_revision !== run.intent_revision) return false;
+	if (raw.intent_content_hash !== run.intent_content_hash) return false;
 	return true;
 }
 
@@ -348,8 +354,14 @@ function retiredFileStoreConflict(
 function readdirNames(path: string): string[] {
 	try {
 		return readdirSync(path);
-	} catch {
-		return [];
+	} catch (error) {
+		const code = (error as NodeJS.ErrnoException).code;
+		// A missing directory is an empty one; anything else (permissions, I/O) is
+		// an unverifiable listing and must never be read as "no retired authority".
+		if (code === "ENOENT" || code === "ENOTDIR") return [];
+		throw new KernelStoreSecurityError(
+			`retired store directory ${path} could not be listed (${code ?? "unknown"}); resolve the filesystem condition before mutating`,
+		);
 	}
 }
 
