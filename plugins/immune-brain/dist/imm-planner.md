@@ -396,7 +396,7 @@ optional advisory dispatch fails, continue inline and record the reason.
 
 ## Boundary
 
-- **Allowed**: Write candidate Specs and TaskIntents, Initiative planning carriers, and necessary domain vocabulary.
+- **Allowed**: Write a TaskIntent. Add a Spec only for complex work. Initiative planning carriers and necessary domain vocabulary.
 - **Blocked**: Implementation edits, direct Kernel-store writes, enrolled intent overwrites, and QA/Review decisions.
 - **Workflow guard**: Execution continues through native Enrollment and explicit `imm-loop`. Planner owns design and decomposition, not execution authority.
 

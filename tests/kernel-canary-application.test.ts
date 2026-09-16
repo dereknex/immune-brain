@@ -324,4 +324,12 @@ describe("Spec binding at freeze", () => {
 			artifact_state: "active",
 		});
 	});
+
+	test("user stop still terminalizes when a bound Spec file is missing", () => {
+		rmSync(join(root, "docs", "specs", `${TASK}.spec.md`), { force: true });
+		const capability = capabilityFor("user", "stop", now, { reason: "halt" });
+		const result = execute({ op: "stop", capability, reason: "halt", actor_id: "user" });
+		expect(result.record).toMatchObject({ lifecycle: "stopped", artifact_state: "frozen" });
+		expect(result.workspace.state.current_working).toBeNull();
+	});
 });

@@ -6783,13 +6783,13 @@ function capabilityActionFor(input) {
       ]);
   }
 }
-function transitionFor(root, record, direction) {
+function transitionFor(root, record, direction, allowMissingSpec = false) {
   const activeIntent = `docs/plans/${record.intent_snapshot.task_id}.intent.json`;
   if (direction === "freeze") {
     if (record.intent_ref.path !== activeIntent)
       throw new KernelInvariantError(["artifact freeze requires the active intent path"]);
     const spec = readBoundActiveSpec(root, record.intent_snapshot);
-    if (boundSpecPath(record.intent_snapshot) && !spec)
+    if (boundSpecPath(record.intent_snapshot) && !spec && !allowMissingSpec)
       throw new KernelInvariantError([`source_missing: ${boundSpecPath(record.intent_snapshot)}`]);
     return {
       relocations: [],
@@ -6895,7 +6895,7 @@ function createCanaryApplication(registry) {
     const hasBoundSpec = boundSpecPath(snapshot.intent_snapshot) !== undefined;
     if (operation.op === "complete" && hasBoundSpec && snapshot.record.artifact_state !== "frozen")
       throw new KernelInvariantError(["complete requires frozen planning artifacts"]);
-    const artifactTransition = snapshot.record.artifact_state === "frozen" && (operation.op === "request_rework" || operation.op === "authorize_rework" || operation.op === "approve_breaking_intent_revision") ? transitionFor(input.root, snapshot.record, "restore") : operation.op === "stop" && snapshot.record.artifact_state !== "frozen" ? transitionFor(input.root, snapshot.record, "freeze") : undefined;
+    const artifactTransition = snapshot.record.artifact_state === "frozen" && (operation.op === "request_rework" || operation.op === "authorize_rework" || operation.op === "approve_breaking_intent_revision") ? transitionFor(input.root, snapshot.record, "restore") : operation.op === "stop" && snapshot.record.artifact_state !== "frozen" ? transitionFor(input.root, snapshot.record, "freeze", true) : undefined;
     const event_id = `${operation.op}:${input.task_id}:${at}`;
     const base = {
       event_id,

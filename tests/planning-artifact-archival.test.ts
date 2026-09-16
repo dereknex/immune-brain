@@ -1,15 +1,18 @@
 import { describe, expect, test } from "bun:test";
+import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { execFileSync } from "node:child_process";
-import { createCanaryApplication } from "../plugins/immune-brain/runtime/kernel/canary_application";
+import { capabilityActionFor, createCanaryApplication } from "../plugins/immune-brain/runtime/kernel/canary_application";
+import { createMutationAuthorityRegistry, digestOfAction } from "../plugins/immune-brain/runtime/kernel/authority_port";
 import { enrollCanaryTask } from "../plugins/immune-brain/runtime/kernel/enrollment";
 import { createEnrollmentAuthorityRegistry } from "../plugins/immune-brain/runtime/kernel/enrollment_authority";
 import { canonicalIntentHash, parseTaskIntentV1, readTaskIntent } from "../plugins/immune-brain/runtime/kernel/intent";
-import { createMutationAuthorityRegistry } from "../plugins/immune-brain/runtime/kernel/authority_port";
 import { preparePiCanary } from "../plugins/immune-brain/runtime/kernel/pi_canary_prepare";
+import { findingsDigestV2 } from "../plugins/immune-brain/runtime/kernel/reducer";
 import { readTaskRecord } from "../plugins/immune-brain/runtime/kernel/storage";
+import { createMutationAuthorityCapabilityForTest } from "./fixtures/mutation-authority-test-seam";
 
 const REPO_ROOT = resolve(import.meta.dir, "..");
 
@@ -290,8 +293,55 @@ describe("planning artifact archival", () => {
       expect(existsSync(join(root, `docs/specs/${taskId}.spec.md`))).toBe(true);
       expect(existsSync(join(root, `docs/plans/archive/${taskId}.intent.json`))).toBe(false);
       expect(existsSync(join(root, `docs/specs/archive/${taskId}.spec.md`))).toBe(false);
-      writeFileSync(join(root, `docs/specs/${taskId}.spec.md`), "# stale spec\n");
-      expect(readFileSync(join(root, `docs/specs/${taskId}.spec.md`), "utf8")).toBe("# stale spec\n");
+      const specPath = join(root, `docs/specs/${taskId}.spec.md`);
+      const boundHash = createHash("sha256").update(readFileSync(specPath)).digest("hex");
+      writeFileSync(specPath, "# stale spec\n");
+      expect(createHash("sha256").update(readFileSync(specPath)).digest("hex")).not.toBe(boundHash);
+      const findings = [{
+        id: "rw-1",
+        kind: "blocking" as const,
+        status: "open" as const,
+        acceptance_id: "A1",
+        source: "review" as const,
+        review_round: null,
+        summary: "stale spec",
+      }];
+      const registry = createMutationAuthorityRegistry();
+      const appRework = createCanaryApplication(registry);
+      const reworkAt = "2026-08-12T10:00:02.000Z";
+      const action = capabilityActionFor({
+        op: "request_rework",
+        task_id: taskId,
+        at: reworkAt,
+        actor_id: "reviewer-1",
+        findings: findings as never[],
+      });
+      const capability = createMutationAuthorityCapabilityForTest(registry, {
+        authority_kind: "review",
+        task_id: taskId,
+        action_digest: digestOfAction(action),
+        expected_record_hash: readTaskRecord(root, taskId).revision,
+        intent_revision: 1,
+        intent_content_hash: hash,
+        diff_hash: `sha256:${"a".repeat(64)}`,
+        actor_id: "reviewer-1",
+        confirmation_ref: "conf-rework",
+        expires_at: "2099-01-01T00:00:00.000Z",
+        findings_digest: findingsDigestV2(findings as never[]),
+      });
+      const restored = appRework.execute({
+        root,
+        task_id: taskId,
+        operation: { op: "request_rework", capability, findings: findings as never[], actor_id: "reviewer-1" },
+        prior_intent_token: token(),
+        diffProvider: () => ({ diff_hash: `sha256:${"a".repeat(64)}`, changed_paths: [] }),
+        now: reworkAt,
+      });
+      expect(restored.record.artifact_state).toBe("active");
+      expect(restored.record.intent_ref.path).toBe(`docs/plans/${taskId}.intent.json`);
+      expect(existsSync(join(root, `docs/plans/${taskId}.intent.json`))).toBe(true);
+      expect(existsSync(specPath)).toBe(true);
+      expect(existsSync(join(root, `docs/plans/archive/${taskId}.intent.json`))).toBe(false);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

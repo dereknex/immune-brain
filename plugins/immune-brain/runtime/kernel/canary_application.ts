@@ -174,13 +174,14 @@ function transitionFor(
 	root: string,
 	record: { intent_ref: { path: string }; intent_snapshot: TaskIntentV1; artifact_state: "active" | "frozen" },
 	direction: "freeze" | "restore",
+	allowMissingSpec = false,
 ) {
 	const activeIntent = `docs/plans/${record.intent_snapshot.task_id}.intent.json`;
 	if (direction === "freeze") {
 		if (record.intent_ref.path !== activeIntent)
 			throw new KernelInvariantError(["artifact freeze requires the active intent path"]);
 		const spec = readBoundActiveSpec(root, record.intent_snapshot);
-		if (boundSpecPath(record.intent_snapshot) && !spec)
+		if (boundSpecPath(record.intent_snapshot) && !spec && !allowMissingSpec)
 			throw new KernelInvariantError([`source_missing: ${boundSpecPath(record.intent_snapshot)}`]);
 		return {
 			relocations: [] as { from_path: string; to_path: string; content_hash: string }[],
@@ -327,7 +328,7 @@ export function createCanaryApplication(
 			)
 				? transitionFor(input.root, snapshot.record, "restore")
 				: operation.op === "stop" && snapshot.record.artifact_state !== "frozen"
-					? transitionFor(input.root, snapshot.record, "freeze")
+					? transitionFor(input.root, snapshot.record, "freeze", true)
 					: undefined;
 		const event_id = `${operation.op}:${input.task_id}:${at}`;
 		const base = {
