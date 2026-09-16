@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { canonicalIntentHash, parseTaskIntentV1 } from "../plugins/immune-brain/runtime/kernel/intent";
 import { parseTaskRecordV3, parseTaskRecordV4 } from "../plugins/immune-brain/runtime/kernel/validation";
+import { canonicalRecordHash } from "../plugins/immune-brain/runtime/kernel/reducer";
 import {
 	LITERAL_USER_ACTOR_ID,
 	canonicalActorId,
@@ -69,6 +70,29 @@ describe("TaskRecord v4 schema", () => {
 		expect(parsed.contract).toBe("assurance_kernel/task_record/v4");
 		expect(parsed.git_base_head).toBe("a".repeat(40));
 		expect(parsed.attestations[0]).toHaveProperty("review_revision");
+	});
+
+	test("records Review advisories inside the attestation and round-trips them", () => {
+		const advisory = {
+			id: "review-1",
+			acceptance_id: "A1",
+			summary: "duplicated helper",
+			anchor: `sha256:${"c".repeat(64)}`,
+			evidence: {
+				trigger: "duplicated helper",
+				caller_chain: ["runtime/a.ts"],
+				violated: { kind: "acceptance", ref: "A1" },
+			},
+		};
+		const parsed = parseTaskRecordV4(record({
+			attestations: [attestation("review", { review_revision: reviewRevision(), advisory_findings: [advisory] })],
+		}));
+		expect(parsed.attestations[0].advisory_findings).toEqual([advisory]);
+		expect(canonicalRecordHash(parsed)).toBe(canonicalRecordHash(parseTaskRecordV4(JSON.parse(JSON.stringify(parsed)))));
+		expect(() => parseTaskRecordV4(record({ attestations: [attestation("qa", { advisory_findings: [advisory] })] }))).toThrow(/only valid/);
+		expect(() => parseTaskRecordV4(record({
+			attestations: [attestation("review", { review_revision: reviewRevision(), advisory_findings: [{ ...advisory, summary: 7 }] })],
+		}))).toThrow(/summary/);
 	});
 
 	test("rejects missing or malformed base and cross-version identity fields", () => {

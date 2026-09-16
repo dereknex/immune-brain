@@ -3961,7 +3961,7 @@ function parseAttestationV3(value, index, acceptanceIds, violations, allowReview
     "actor_id",
     "summary",
     "acceptance_results",
-    ...allowReviewRevision ? ["review_revision"] : []
+    ...allowReviewRevision ? ["review_revision", "advisory_findings"] : []
   ], path, violations);
   const kind = enumAt(item.kind, APPROVAL_KINDS, `${path}.kind`, violations);
   const intentContentHash = stringAt(item.intent_content_hash, `${path}.intent_content_hash`, violations);
@@ -3995,6 +3995,9 @@ function parseAttestationV3(value, index, acceptanceIds, violations, allowReview
     violations.push(`${path}.review_revision is only valid on review attestations`);
   if (allowReviewRevision && kind === "review" && !reviewRevision)
     violations.push(`${path}.review_revision is required for v4 review attestations`);
+  const advisoryFindings = item.advisory_findings === undefined ? undefined : arrayAt(item.advisory_findings, `${path}.advisory_findings`, violations).map((entry, advisoryIndex) => parseAdvisoryFinding(entry, `${path}.advisory_findings[${advisoryIndex}]`, violations));
+  if (advisoryFindings !== undefined && kind !== "review")
+    violations.push(`${path}.advisory_findings is only valid on review attestations`);
   return {
     id: stringAt(item.id, `${path}.id`, violations),
     kind,
@@ -4005,7 +4008,8 @@ function parseAttestationV3(value, index, acceptanceIds, violations, allowReview
     actor_id: stringAt(item.actor_id, `${path}.actor_id`, violations),
     summary: stringAt(item.summary, `${path}.summary`, violations),
     acceptance_results: acceptanceResults,
-    ...reviewRevision ? { review_revision: reviewRevision } : {}
+    ...reviewRevision ? { review_revision: reviewRevision } : {},
+    ...advisoryFindings !== undefined ? { advisory_findings: advisoryFindings } : {}
   };
 }
 function parseTaskRecordV2(raw) {

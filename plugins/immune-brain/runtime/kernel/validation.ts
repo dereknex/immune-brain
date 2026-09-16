@@ -518,7 +518,7 @@ function parseAttestationV3(
 	rejectUnknown(
 		item,
 		["id", "kind", "authority_role", "task_revision", "intent_content_hash", "diff_hash", "actor_id", "summary", "acceptance_results",
-			...(allowReviewRevision ? ["review_revision"] : [])],
+			...(allowReviewRevision ? ["review_revision", "advisory_findings"] : [])],
 		path,
 		violations,
 	);
@@ -553,6 +553,13 @@ function parseAttestationV3(
 		violations.push(`${path}.review_revision is only valid on review attestations`);
 	if (allowReviewRevision && kind === "review" && !reviewRevision)
 		violations.push(`${path}.review_revision is required for v4 review attestations`);
+	const advisoryFindings = item.advisory_findings === undefined
+		? undefined
+		: arrayAt(item.advisory_findings, `${path}.advisory_findings`, violations).map((entry, advisoryIndex) =>
+				parseAdvisoryFinding(entry, `${path}.advisory_findings[${advisoryIndex}]`, violations),
+			);
+	if (advisoryFindings !== undefined && kind !== "review")
+		violations.push(`${path}.advisory_findings is only valid on review attestations`);
 	return {
 		id: stringAt(item.id, `${path}.id`, violations),
 		kind,
@@ -564,6 +571,7 @@ function parseAttestationV3(
 		summary: stringAt(item.summary, `${path}.summary`, violations),
 		acceptance_results: acceptanceResults,
 		...(reviewRevision ? { review_revision: reviewRevision } : {}),
+		...(advisoryFindings !== undefined ? { advisory_findings: advisoryFindings } : {}),
 	};
 }
 
