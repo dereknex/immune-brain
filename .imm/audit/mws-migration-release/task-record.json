@@ -1,0 +1,1360 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "mws-migration-release",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "mws-migration-release",
+    "goal": "Deliver explicit claimless SQLite migration, remove obsolete authority and relocation writers, and prove dual-host/worktree/batch/tracker and package readiness for one coordinated major release.",
+    "acceptance": [
+      {
+        "id": "A1",
+        "assertion": "Explicit migration refuses active tasks or recoverable old batches, preserves raw historical evidence, imports into a verified temporary SQLite database and recovers interrupted publication without dual writes; schema mismatch, consistent restore and worktree rebinding reject unsafe access.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.4.2\",\n  \"argv\": [\n    \"test\",\n    \"tests/kernel-storage-layout-migration.test.ts\",\n    \"tests/kernel-migrate.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 60000,\n  \"max_output_bytes\": 131072\n}\n"
+      },
+      {
+        "id": "A2",
+        "assertion": "Legacy JSON authority writers, byte-CAS journals and duplicate claim/tombstone/relocation runtime paths are removed; historical audit remains readable solely as evidence, with the read-only importer carrying its next-major removal milestone.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.4.2\",\n  \"argv\": [\n    \"test\",\n    \"tests/v4-storage-retirement-legacy-audit.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 60000,\n  \"max_output_bytes\": 131072\n}\n"
+      },
+      {
+        "id": "A3",
+        "assertion": "Batch recovery binds the approved child to its exact run, preserves single-task ownership/base/budget/critical restrictions and requires the correct exported terminal attachment before commit.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.4.2\",\n  \"argv\": [\n    \"test\",\n    \"tests/unattended-batch-run.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 60000,\n  \"max_output_bytes\": 131072\n}\n"
+      },
+      {
+        "id": "A4",
+        "assertion": "Packaged Claude and Pi consumers remain coherent with the new runtime and documented support floor; the checked-in bundle matches the implementation and required release artifacts contain no legacy fallback.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.4.2\",\n  \"argv\": [\n    \"test\",\n    \"tests/claude-host-package.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 60000,\n  \"max_output_bytes\": 131072\n}\n"
+      },
+      {
+        "id": "A5",
+        "assertion": "Tracker terminal projection validates the assigned exact run before changing an Issue; another run with the same task_id cannot close it, and shared-worktree publication remains idempotent without changing canonical authority.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.4.2\",\n  \"argv\": [\n    \"test\",\n    \"tests/github-issue-projection-contract.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 60000,\n  \"max_output_bytes\": 131072\n}\n"
+      }
+    ],
+    "scope_hint": [
+      ".changeset/mws-major.md",
+      ".claude-plugin/marketplace.json",
+      ".gitignore",
+      "CONTEXT.md",
+      "README.md",
+      "bun.lock",
+      "docs/adr/0004-dual-host-assurance-adapters.md",
+      "docs/adr/0005-unattended-initiative-batch-run.md",
+      "docs/adr/0007-parked-child-claim-release.md",
+      "docs/adr/0009-settled-slice-reverification-loss.md",
+      "docs/adr/0010-sqlite-workflow-authority.md",
+      "docs/agents/domain.md",
+      "docs/agents/issue-tracker.md",
+      "docs/plans/archive/mws-migration-release.intent.json",
+      "docs/plans/mws-migration-release.intent.json",
+      "docs/reference/planning-artifact-retention.md",
+      "docs/specs/archive/mws-migration-release.spec.md",
+      "docs/specs/mws-migration-release.spec.md",
+      "package.json",
+      "plugins/immune-brain/.claude-plugin/plugin.json",
+      "plugins/immune-brain/.mcp.json",
+      "plugins/immune-brain/.pi-extension/imm-canary-enroll.ts",
+      "plugins/immune-brain/.pi-extension/imm-canary-work.ts",
+      "plugins/immune-brain/.pi-extension/imm-unattended-batch.ts",
+      "plugins/immune-brain/.pi-extension/pi-canary-assurance-progression.ts",
+      "plugins/immune-brain/.pi-extension/pi-canary-interaction.ts",
+      "plugins/immune-brain/.pi-extension/pi-canary-invocations.ts",
+      "plugins/immune-brain/.pi-extension/pi-canary-native-review.ts",
+      "plugins/immune-brain/.pi-extension/pi-canary-tool-failure.ts",
+      "plugins/immune-brain/.pi-extension/runtime-stub.ts",
+      "plugins/immune-brain/BASELINE.md",
+      "plugins/immune-brain/README.md",
+      "plugins/immune-brain/bin/imm-kernel",
+      "plugins/immune-brain/bin/imm-tracker",
+      "plugins/immune-brain/dist/BASELINE.md",
+      "plugins/immune-brain/dist/claude/mcp-server.mjs",
+      "plugins/immune-brain/dist/docs/reference/planning-artifact-retention.md",
+      "plugins/immune-brain/dist/imm-loop.md",
+      "plugins/immune-brain/dist/imm-planner.md",
+      "plugins/immune-brain/runtime/assurance/coordinator.ts",
+      "plugins/immune-brain/runtime/assurance/enrollment.ts",
+      "plugins/immune-brain/runtime/assurance/host_port.ts",
+      "plugins/immune-brain/runtime/assurance/invocations.ts",
+      "plugins/immune-brain/runtime/assurance/qa.ts",
+      "plugins/immune-brain/runtime/authorization_operation.ts",
+      "plugins/immune-brain/runtime/claude/capability.ts",
+      "plugins/immune-brain/runtime/claude/interaction.ts",
+      "plugins/immune-brain/runtime/claude/kernel_ports.ts",
+      "plugins/immune-brain/runtime/claude/mcp_server.ts",
+      "plugins/immune-brain/runtime/claude/review_host.ts",
+      "plugins/immune-brain/runtime/commands/kernel.ts",
+      "plugins/immune-brain/runtime/github_issue_tracker.ts",
+      "plugins/immune-brain/runtime/kernel/application.ts",
+      "plugins/immune-brain/runtime/kernel/assurance_projection.ts",
+      "plugins/immune-brain/runtime/kernel/authority_port.ts",
+      "plugins/immune-brain/runtime/kernel/backend_claim.ts",
+      "plugins/immune-brain/runtime/kernel/batch_authority.ts",
+      "plugins/immune-brain/runtime/kernel/canary_application.ts",
+      "plugins/immune-brain/runtime/kernel/capability_registry.ts",
+      "plugins/immune-brain/runtime/kernel/completion.ts",
+      "plugins/immune-brain/runtime/kernel/enrollment.ts",
+      "plugins/immune-brain/runtime/kernel/enrollment_authority.ts",
+      "plugins/immune-brain/runtime/kernel/index.ts",
+      "plugins/immune-brain/runtime/kernel/intent_token_registry.ts",
+      "plugins/immune-brain/runtime/kernel/legacy_audit.ts",
+      "plugins/immune-brain/runtime/kernel/pi_canary_prepare.ts",
+      "plugins/immune-brain/runtime/kernel/reducer.ts",
+      "plugins/immune-brain/runtime/kernel/refutation.ts",
+      "plugins/immune-brain/runtime/kernel/run_identity.ts",
+      "plugins/immune-brain/runtime/kernel/spec_binding.ts",
+      "plugins/immune-brain/runtime/kernel/sqlite_migration.ts",
+      "plugins/immune-brain/runtime/kernel/sqlite_store.ts",
+      "plugins/immune-brain/runtime/kernel/storage.ts",
+      "plugins/immune-brain/runtime/kernel/storage_layout_migration.ts",
+      "plugins/immune-brain/runtime/kernel/storage_paths.ts",
+      "plugins/immune-brain/runtime/kernel/types.ts",
+      "plugins/immune-brain/runtime/kernel/validation.ts",
+      "plugins/immune-brain/runtime/plan_core.ts",
+      "plugins/immune-brain/runtime/unattended/batch_git.ts",
+      "plugins/immune-brain/runtime/unattended/batch_plan.ts",
+      "plugins/immune-brain/runtime/unattended/batch_preflight.ts",
+      "plugins/immune-brain/runtime/unattended/batch_runner.ts",
+      "plugins/immune-brain/runtime/unattended/batch_state.ts",
+      "plugins/immune-brain/runtime/unattended/types.ts",
+      "plugins/immune-brain/runtime/v4_runtime.ts",
+      "plugins/immune-brain/skills/BASELINE.md",
+      "scripts/build-claude-plugin.ts",
+      "scripts/dist-sync-manifest.ts",
+      "scripts/plugin_versioning.ts",
+      "scripts/sync-dist-docs.ts",
+      "tests/__snapshots__/plugin-package-runtime.test.ts.snap",
+      "tests/breaking-intent-revision-gate.test.ts",
+      "tests/carrier-enrollment-gate-contract.test.ts",
+      "tests/claude-batch-authority.test.ts",
+      "tests/claude-host-authority.test.ts",
+      "tests/claude-host-package.test.ts",
+      "tests/dual-host-assurance-conformance.test.ts",
+      "tests/github-issue-projection-contract.test.ts",
+      "tests/helpers/pi-canary-assurance-harness.ts",
+      "tests/host-neutral-assurance-coordinator.test.ts",
+      "tests/kernel-assurance-projection.test.ts",
+      "tests/kernel-backend-claim.test.ts",
+      "tests/kernel-batch-authority.test.ts",
+      "tests/kernel-canary-application.test.ts",
+      "tests/kernel-canary-authority.test.ts",
+      "tests/kernel-canary-claim-writer-boundary.test.ts",
+      "tests/kernel-canary-drain-transaction.test.ts",
+      "tests/kernel-canary-rehearsal.test.ts",
+      "tests/kernel-canary-rework-authority.test.ts",
+      "tests/kernel-canary-terminal-transaction.test.ts",
+      "tests/kernel-enrollment-transaction.test.ts",
+      "tests/kernel-inspect.test.ts",
+      "tests/kernel-intent-authoring.test.ts",
+      "tests/kernel-intent-validation.test.ts",
+      "tests/kernel-migrate.test.ts",
+      "tests/kernel-pi-canary-live-boundary.test.ts",
+      "tests/kernel-pi-canary-prepare.test.ts",
+      "tests/kernel-r2c2-boundary.test.ts",
+      "tests/kernel-r2c2-reducer.test.ts",
+      "tests/kernel-shadow-cli.test.ts",
+      "tests/kernel-storage-layout-migration.test.ts",
+      "tests/packaged-contract-tool-surface.test.ts",
+      "tests/pi-batch-authority.test.ts",
+      "tests/pi-canary-enroll-extension.test.ts",
+      "tests/pi-canary-lifecycle-package.test.ts",
+      "tests/pi-canary-review-bundle.test.ts",
+      "tests/pi-canary-user-authority.test.ts",
+      "tests/pi-canary-work-extension.test.ts",
+      "tests/plugin-package-runtime.test.ts",
+      "tests/review-revision-identity-conformance.test.ts",
+      "tests/shared-deterministic-qa.test.ts",
+      "tests/unattended-batch-commit.test.ts",
+      "tests/unattended-batch-plan.test.ts",
+      "tests/unattended-batch-run.test.ts",
+      "tests/unattended-contracts.test.ts",
+      "tests/v4-storage-retirement-legacy-audit.test.ts"
+    ],
+    "risk": "critical",
+    "revision": 3,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/archive/mws-migration-release.intent.json",
+    "content_hash": "sha256:a0993690201e3bc11726959389870ca7bb9068de61e866e1992e8e67cee4465b"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:ed3eee03ad0393ffc6759dc87d180ad3ee1b5caba05113443d9bbaf2419b7480",
+  "git_base_head": "81a95a4cec16f86cb16d47aea86da1f792d278a3",
+  "attestations": [
+    {
+      "id": "approval-qa-6076f609",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:c4d586aad99e9056f6108f730e0e2b8d7b5b987545891b5c5db3a5af3c82e7c6",
+      "diff_hash": "sha256:bc236fa71140e7842de42d5e329305b7847f16e55c38a0cc8b37c7a7c74ec53c",
+      "actor_id": "deterministic-qa",
+      "summary": "all 5 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "A2",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "A3",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "A4",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "A5",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-567b721d",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:c4d586aad99e9056f6108f730e0e2b8d7b5b987545891b5c5db3a5af3c82e7c6",
+      "diff_hash": "sha256:3c9f0e9030c6b4807171a3dcd1a99ee77ceb0147e8adda3ec6d60400760a1d61",
+      "actor_id": "deterministic-qa",
+      "summary": "all 5 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "A2",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "A3",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "A4",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "A5",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-088f2bf1",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:c4d586aad99e9056f6108f730e0e2b8d7b5b987545891b5c5db3a5af3c82e7c6",
+      "diff_hash": "sha256:8e0d6c7a6b3287e33103d6cde273d6eaf8c21baab605eda218ab743a00cf889b",
+      "actor_id": "deterministic-qa",
+      "summary": "all 5 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "A2",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "A3",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "A4",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "A5",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-a0a9e8de",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:c4d586aad99e9056f6108f730e0e2b8d7b5b987545891b5c5db3a5af3c82e7c6",
+      "diff_hash": "sha256:e4d7341eeb3a37833f9184e3a70e45dbd0d3e8063085cb6da9f58566fa08d789",
+      "actor_id": "deterministic-qa",
+      "summary": "all 5 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "A2",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "A3",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "A4",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "A5",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-0bdacdb7",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 3,
+      "intent_content_hash": "sha256:a0993690201e3bc11726959389870ca7bb9068de61e866e1992e8e67cee4465b",
+      "diff_hash": "sha256:601580265f99752699e1539e88267fdb392da5106596cc84faff84746dbbf142",
+      "actor_id": "deterministic-qa",
+      "summary": "all 5 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "A2",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "A3",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "A4",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "A5",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-d4c260be",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 3,
+      "intent_content_hash": "sha256:a0993690201e3bc11726959389870ca7bb9068de61e866e1992e8e67cee4465b",
+      "diff_hash": "sha256:d7f37b7d38445759bd235deab9a2d4bfb3fc9400786d1e995017b7e2d480cea3",
+      "actor_id": "deterministic-qa",
+      "summary": "all 5 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "A2",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "A3",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "A4",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "A5",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-ba6e7202",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 3,
+      "intent_content_hash": "sha256:a0993690201e3bc11726959389870ca7bb9068de61e866e1992e8e67cee4465b",
+      "diff_hash": "sha256:e566acba162ff6d639edf7ad53b54614f6ef5fabadd3e64263aae92249d692e0",
+      "actor_id": "deterministic-qa",
+      "summary": "all 5 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "A2",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "A3",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "A4",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "A5",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-0b236620",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 3,
+      "intent_content_hash": "sha256:a0993690201e3bc11726959389870ca7bb9068de61e866e1992e8e67cee4465b",
+      "diff_hash": "sha256:de2effc408a35ea68d8a0d2f02c909b784eff1ca98c7472dfeb62f950a4f1dc7",
+      "actor_id": "deterministic-qa",
+      "summary": "all 5 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "A2",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "A3",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "A4",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "A5",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-b29258c9",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 3,
+      "intent_content_hash": "sha256:a0993690201e3bc11726959389870ca7bb9068de61e866e1992e8e67cee4465b",
+      "diff_hash": "sha256:b315423ccb10d2989da32a683b2034ffceddfa8f29c71d64284cb1841abc92f1",
+      "actor_id": "deterministic-qa",
+      "summary": "all 5 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "A2",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "A3",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "A4",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "A5",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-7f97269a",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 3,
+      "intent_content_hash": "sha256:a0993690201e3bc11726959389870ca7bb9068de61e866e1992e8e67cee4465b",
+      "diff_hash": "sha256:f6100325e1485a23665bb0fd7cf8e6ae116f980c22e543bd73939ad40d0d26bc",
+      "actor_id": "deterministic-qa",
+      "summary": "all 5 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "A2",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "A3",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "A4",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "A5",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-e0b316df",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 3,
+      "intent_content_hash": "sha256:a0993690201e3bc11726959389870ca7bb9068de61e866e1992e8e67cee4465b",
+      "diff_hash": "sha256:88df40d49fde2d2fe39cb3571aab7cca7c39ee17c2781c3377a6c033c2951a6a",
+      "actor_id": "deterministic-qa",
+      "summary": "all 5 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "A2",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "A3",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "A4",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "A5",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-190848d8",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 3,
+      "intent_content_hash": "sha256:a0993690201e3bc11726959389870ca7bb9068de61e866e1992e8e67cee4465b",
+      "diff_hash": "sha256:6378630ea99eb4c8732945687d42ab3b4baae8de9950dfd88deaa3b299ebfb00",
+      "actor_id": "deterministic-qa",
+      "summary": "all 5 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "A2",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "A3",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "A4",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "A5",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-1aef9804",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 3,
+      "intent_content_hash": "sha256:a0993690201e3bc11726959389870ca7bb9068de61e866e1992e8e67cee4465b",
+      "diff_hash": "sha256:0bf513fb9e42b0c6f4994a6f0fcff668f6aa986d0ebdc9c475559e6324d5134e",
+      "actor_id": "deterministic-qa",
+      "summary": "all 5 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "A2",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "A3",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "A4",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "A5",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-221cc7b8",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 3,
+      "intent_content_hash": "sha256:a0993690201e3bc11726959389870ca7bb9068de61e866e1992e8e67cee4465b",
+      "diff_hash": "sha256:599233a9310babb40c9bb68d960dfff26b46a8e743c9b46df099f807ea60edec",
+      "actor_id": "deterministic-qa",
+      "summary": "all 5 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "A2",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "A3",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "A4",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "A5",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-57724a6e",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 3,
+      "intent_content_hash": "sha256:a0993690201e3bc11726959389870ca7bb9068de61e866e1992e8e67cee4465b",
+      "diff_hash": "sha256:ded0ebac33373604c85ea6c60180ffe162e02bba4eb14911d9c01712bfca885f",
+      "actor_id": "deterministic-qa",
+      "summary": "all 5 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "A2",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "A3",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "A4",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "A5",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-32dada81",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 3,
+      "intent_content_hash": "sha256:a0993690201e3bc11726959389870ca7bb9068de61e866e1992e8e67cee4465b",
+      "diff_hash": "sha256:a754859a4fc8db98e26400b9151a888c9ad46e7859a7e595098c57df7cab1a62",
+      "actor_id": "deterministic-qa",
+      "summary": "all 5 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "A2",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "A3",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "A4",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "A5",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-2518acd4",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 3,
+      "intent_content_hash": "sha256:a0993690201e3bc11726959389870ca7bb9068de61e866e1992e8e67cee4465b",
+      "diff_hash": "sha256:a754859a4fc8db98e26400b9151a888c9ad46e7859a7e595098c57df7cab1a62",
+      "actor_id": "parent-mediated-review",
+      "summary": "Verified the manifest digest, the commit's single parent, its tree and every changed path object; the migration, recovery and evidence-preservation paths and their contracts show no blocking defect, and A1-A5 rely on the embedded Kernel QA outcomes.",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "81a95a4cec16f86cb16d47aea86da1f792d278a3",
+        "review_commit": "b7c3a126bb198a417971b80b4f810e0327584211",
+        "review_tree": "8743395cd4c696d0d5ed36c616a33856decec7ff",
+        "manifest_digest": "sha256:a2aee9bc3c63020a1c4da6db87d96dc76997046fd0523d34f8c6ec8b9645c7e3"
+      }
+    }
+  ],
+  "findings": [
+    {
+      "id": "review-2bbbbc9d4513-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "A1",
+      "source": "review",
+      "review_round": 1,
+      "summary": "The explicit SQLite importer named by the slice does not exist, so a migratable legacy workspace cannot be migrated.",
+      "anchor": "sha256:ddbbe66fe92b596c28e701f98d5db74b5c38d8d39a5ed1f2e22c93b992288d54",
+      "evidence": {
+        "trigger": "A legacy workspace with no active owner and complete committed terminal evidence is diagnosed as migration_required; migrateLegacyLayout returns invalid instead of importing into a temporary SQLite database and publishing it.",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/commands/kernel.ts:521",
+          "plugins/immune-brain/runtime/kernel/storage_layout_migration.ts:migrateLegacyLayout"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "A1"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-2bbbbc9d4513-2-review-2",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "A2",
+      "source": "review",
+      "review_round": 1,
+      "summary": "The legacy relocation writer path is still live, contrary to the retirement this slice claims.",
+      "anchor": "sha256:ad5a2b4fe1f2409949b3f3d8c3a55ed604a642de89787aef0e98fdceee1fcca7",
+      "evidence": {
+        "trigger": "A workspace carrying a valid storage-layout-migration.json marker still replays relocations and deletes legacy files inside the dual-locked recovery branch.",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/kernel/storage_layout_migration.ts:migrateLegacyLayout",
+          "plugins/immune-brain/runtime/kernel/storage_layout_migration.ts:convergeRelocation",
+          "plugins/immune-brain/runtime/kernel/storage_layout_migration.ts:removeMigrationMarker"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "A2"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-191529666252-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "A1",
+      "source": "review",
+      "review_round": 2,
+      "summary": "The new migration has no reachable public entry point: probeKernelStore throws on any retired tasks directory before kernel.ts reaches migrateLegacyLayout, and v4_runtime.ts still rejects migrate.",
+      "anchor": "sha256:ccf51da4b101ce5849600f0d424e38cfa39903404572a8239cd20dfd6b359dad",
+      "evidence": {
+        "trigger": "A worktree has no SQLite store and holds a valid terminal .imm/state/tasks/<task-id>.json plus its matching terminal proof; the operator runs imm-kernel to migrate or author an intent.",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/v4_runtime.ts::runKernelCli",
+          "plugins/immune-brain/runtime/commands/kernel.ts::probeKernelStore call",
+          "plugins/immune-brain/runtime/kernel/storage.ts::probeKernelStore",
+          "plugins/immune-brain/runtime/kernel/storage.ts::assertNoRetiredFileStore",
+          "plugins/immune-brain/runtime/kernel/storage_layout_migration.ts::migrateLegacyLayout"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "A1"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-191529666252-2-review-2",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "A1",
+      "source": "review",
+      "review_round": 2,
+      "summary": "candidateReady is treated as an exemption from the evidence-commit check, and git status cannot see ignored untracked copies, so publication can delete the only copy of the historical bytes.",
+      "anchor": "sha256:4dff2166479c6f0437e6f8bce01c4e1469dcb8487b81506a2eb0f05eeee18ae2",
+      "evidence": {
+        "trigger": "A verified candidate store exists but was not published; the committed audit copies are then deleted from HEAD while the legacy sources stay, and the migration runs again.",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/kernel/storage_layout_migration.ts::migrateLegacyLayout",
+          "plugins/immune-brain/runtime/kernel/sqlite_migration.ts::importLegacyWorkspace",
+          "plugins/immune-brain/runtime/kernel/sqlite_migration.ts::writeAuditEvidence",
+          "plugins/immune-brain/runtime/kernel/sqlite_migration.ts::uncommittedEvidencePaths",
+          "plugins/immune-brain/runtime/kernel/sqlite_store.ts::publishMigrationStoreFile",
+          "plugins/immune-brain/runtime/kernel/sqlite_migration.ts::removeRetiredAuthority"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "A1"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-191529666252-3-review-3",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "A1",
+      "source": "review",
+      "review_round": 2,
+      "summary": "Cleanup only runs when remaining tasks exist, so an interrupted final deletion leaves an orphan proof that keeps the layout invalid while the retry reports success.",
+      "anchor": "sha256:4463a0ea474d89fac436f468e6769aa2fef34c8bd5da95db7017e21c0f3f1057",
+      "evidence": {
+        "trigger": "The store and receipt are published; the last legacy record was deleted but its proof was not, and the process exits before removing it.",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/kernel/storage_layout_migration.ts::migrateLegacyLayout",
+          "plugins/immune-brain/runtime/kernel/sqlite_migration.ts::importLegacyWorkspace",
+          "plugins/immune-brain/runtime/kernel/sqlite_migration.ts::readLegacyTasks",
+          "plugins/immune-brain/runtime/kernel/sqlite_migration.ts::removeOrphanProofs",
+          "plugins/immune-brain/runtime/kernel/storage_paths.ts::inspectStorageLayout"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "A1"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-191529666252-4-review-4",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "A2",
+      "source": "review",
+      "review_round": 2,
+      "summary": "Cleanup ignores the other retired artifacts the inspector still reads, so a migrated worktree keeps an invalid layout and the ledger never reaches the legacy audit path.",
+      "anchor": "sha256:f313aaf637a59c8b0d268cc22050f6dff88304984e7d4cc0bb8ee9ea4f861040",
+      "evidence": {
+        "trigger": "An owner-free retired worktree holds a valid terminal task plus a committed .imm/memory/current_iteration.json with runtime_status idle, or a .imm/tasks/.workspace.lock; the migration runs after the audit evidence is committed.",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/kernel/storage_layout_migration.ts::migrateLegacyLayout",
+          "plugins/immune-brain/runtime/kernel/storage_paths.ts::inspectOldLayout",
+          "plugins/immune-brain/runtime/kernel/sqlite_migration.ts::importLegacyWorkspace",
+          "plugins/immune-brain/runtime/kernel/sqlite_migration.ts::removeRetiredAuthority",
+          "plugins/immune-brain/runtime/kernel/storage_paths.ts::inspectStorageLayout",
+          "plugins/immune-brain/runtime/kernel/legacy_audit.ts::legacyLedgerSourceRelative"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "A2"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "request_rework:mws-migration-release:2026-09-16T08:58:37.799Z:replan-required",
+      "kind": "replan_required",
+      "status": "resolved",
+      "acceptance_id": "A1",
+      "source": "kernel",
+      "review_round": 2,
+      "summary": "Review returned this acceptance boundary twice; a durable replan is required."
+    }
+  ],
+  "history": [
+    {
+      "id": "approve_breaking_intent_revision:mws-migration-release:2026-09-16T08:10:33.778Z",
+      "at": "2026-09-16T08:10:33.778Z",
+      "type": "approve_breaking_intent_revision",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "intent_revision_2\naction_v2_sha256:af9eacf357769e20d477153c8643005761bd4667b78a0fc1d526319336bac495",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-da71e5445de4f091",
+        "issued_at": "2026-09-16T08:10:34.119Z",
+        "expires_at": "2026-09-16T08:20:34.119Z"
+      }
+    },
+    {
+      "id": "freeze_artifacts:mws-migration-release:2026-09-16T08:11:31.303Z",
+      "at": "2026-09-16T08:11:31.303Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent and Spec frozen at docs/plans/archive/mws-migration-release.intent.json"
+    },
+    {
+      "id": "record_approval:mws-migration-release:2026-09-16T08:11:41.566Z",
+      "at": "2026-09-16T08:11:41.566Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-6076f609\naction_v2_sha256:d5c5135e97febe08333cf135214054a8b73d3c26c19b616c65c8007a75911e8b",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-886cbb50e3403c40",
+        "issued_at": "2026-09-16T08:11:41.566Z",
+        "expires_at": "2026-09-16T08:21:41.566Z"
+      }
+    },
+    {
+      "id": "request_rework:mws-migration-release:2026-09-16T08:15:20.866Z",
+      "at": "2026-09-16T08:15:20.866Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_1\naction_v2_sha256:b724534f69c202341f3d6c53930b77770df65d3c3364c784f7988dcdf06e2fc2",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-fb4aca8d2513c5cb",
+        "issued_at": "2026-09-16T08:15:20.867Z",
+        "expires_at": "2026-09-16T08:25:20.866Z"
+      }
+    },
+    {
+      "id": "resolve_finding:mws-migration-release:2026-09-16T08:26:44.486Z",
+      "at": "2026-09-16T08:26:44.486Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-2bbbbc9d4513-1-review-1\naction_v2_sha256:7ca39006b2e9e424a77e1b1e6f10f46a2629da781b9ed1b5265a3d4fdd220d09"
+    },
+    {
+      "id": "resolve_finding:mws-migration-release:2026-09-16T08:26:58.064Z",
+      "at": "2026-09-16T08:26:58.064Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-2bbbbc9d4513-2-review-2\naction_v2_sha256:a0cf09b5004678356385ba91666e5889d39db722de20a735edf1d8ade15cd24a"
+    },
+    {
+      "id": "freeze_artifacts:mws-migration-release:2026-09-16T08:27:11.004Z",
+      "at": "2026-09-16T08:27:11.004Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent and Spec frozen at docs/plans/archive/mws-migration-release.intent.json"
+    },
+    {
+      "id": "record_approval:mws-migration-release:2026-09-16T08:27:22.076Z",
+      "at": "2026-09-16T08:27:22.076Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-567b721d\naction_v2_sha256:1ac7de1c15244b90bd9f76e06dda0d8ada8e3f12aeac04c5a0f65655f448e0d0",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-27fc5047d81bd20b",
+        "issued_at": "2026-09-16T08:27:22.076Z",
+        "expires_at": "2026-09-16T08:37:22.076Z"
+      }
+    },
+    {
+      "id": "record_approval:mws-migration-release:2026-09-16T08:38:30.200Z",
+      "at": "2026-09-16T08:38:30.200Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-088f2bf1\naction_v2_sha256:e68153a7088fb56968983c490720e46bb6b4fccbbf086a0673945e4752d30402",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-d3c1f663720a77e9",
+        "issued_at": "2026-09-16T08:38:30.200Z",
+        "expires_at": "2026-09-16T08:48:30.200Z"
+      }
+    },
+    {
+      "id": "record_approval:mws-migration-release:2026-09-16T08:47:11.204Z",
+      "at": "2026-09-16T08:47:11.204Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-a0a9e8de\naction_v2_sha256:b94f5f740799f3ab8a120429ede1d3f1b97a4fe561c68805f68f501bdc8e1401",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-27e8cb6970aa1d3d",
+        "issued_at": "2026-09-16T08:47:11.204Z",
+        "expires_at": "2026-09-16T08:57:11.204Z"
+      }
+    },
+    {
+      "id": "request_rework:mws-migration-release:2026-09-16T08:58:37.799Z",
+      "at": "2026-09-16T08:58:37.799Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "review_round_2\naction_v2_sha256:d2613d7cf6af80ed6609b2206a4329bedf3c4b1d3efb02fb536fe95384b4a406",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-9c4b6810c17d86b0",
+        "issued_at": "2026-09-16T08:58:37.800Z",
+        "expires_at": "2026-09-16T09:08:37.800Z"
+      }
+    },
+    {
+      "id": "revise_intent:mws-migration-release:2026-09-16T09:08:31.116Z",
+      "at": "2026-09-16T09:08:31.116Z",
+      "type": "revise_intent",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "intent_revision_3\naction_v2_sha256:bbe3a7e669225dd7b575bdfac612aa324f7819c353332820e55acd1046e47782"
+    },
+    {
+      "id": "authorize_rework:mws-migration-release:2026-09-16T09:17:08.205Z",
+      "at": "2026-09-16T09:17:08.205Z",
+      "type": "authorize_rework",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "request_rework:mws-migration-release:2026-09-16T08:58:37.799Z:replan-required\naction_v2_sha256:2899f5c7aeb344b3c3a68dfd09253513f29c91c4698e996c1601441f5881d406",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-9842b7bc335b7093",
+        "issued_at": "2026-09-16T09:17:08.205Z",
+        "expires_at": "2026-09-16T09:27:08.205Z"
+      }
+    },
+    {
+      "id": "resolve_finding:mws-migration-release:2026-09-16T09:17:17.855Z",
+      "at": "2026-09-16T09:17:17.855Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-191529666252-1-review-1\naction_v2_sha256:cdb43fafe76c8c1e8ed17022d8ec58d20ac496b4c11de9839b3a67c83499665a"
+    },
+    {
+      "id": "resolve_finding:mws-migration-release:2026-09-16T09:17:33.385Z",
+      "at": "2026-09-16T09:17:33.385Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-191529666252-2-review-2\naction_v2_sha256:78f73f1d8fd7ecc40667281a68faf8adfd2adf0595281e9c8cba54f0047b2d6f"
+    },
+    {
+      "id": "resolve_finding:mws-migration-release:2026-09-16T09:17:42.333Z",
+      "at": "2026-09-16T09:17:42.333Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-191529666252-3-review-3\naction_v2_sha256:f48e1c74d5521e121fdaaf5edbe922d5b26442e98fe3eb10022cfaf93dad7beb"
+    },
+    {
+      "id": "resolve_finding:mws-migration-release:2026-09-16T09:17:52.470Z",
+      "at": "2026-09-16T09:17:52.470Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-191529666252-4-review-4\naction_v2_sha256:5e005475e0d486a32e6091c425adea4b591078f119679f104c1f0afe20941abb"
+    },
+    {
+      "id": "freeze_artifacts:mws-migration-release:2026-09-16T09:18:24.493Z",
+      "at": "2026-09-16T09:18:24.493Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent and Spec frozen at docs/plans/archive/mws-migration-release.intent.json"
+    },
+    {
+      "id": "record_approval:mws-migration-release:2026-09-16T09:18:37.417Z",
+      "at": "2026-09-16T09:18:37.417Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-0bdacdb7\naction_v2_sha256:7e7970d86e4a4f762c334cb3e6cd7b4ac8b09794f49fb8906b485a4225605aed",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-e9fb0926130add8e",
+        "issued_at": "2026-09-16T09:18:37.417Z",
+        "expires_at": "2026-09-16T09:28:37.417Z"
+      }
+    },
+    {
+      "id": "record_approval:mws-migration-release:2026-09-16T09:27:44.760Z",
+      "at": "2026-09-16T09:27:44.760Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-d4c260be\naction_v2_sha256:6cf2bb2db0c76d1a916edcb0cbe8547b846e32eedf38726a46cf2203be356aa4",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-21a0c460984e76da",
+        "issued_at": "2026-09-16T09:27:44.760Z",
+        "expires_at": "2026-09-16T09:37:44.760Z"
+      }
+    },
+    {
+      "id": "record_approval:mws-migration-release:2026-09-16T09:35:13.409Z",
+      "at": "2026-09-16T09:35:13.409Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-ba6e7202\naction_v2_sha256:724c76f11943640813801a339b1de811c5ff4a83b719b19c0b41c186fe6c33bc",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-b1d84c5082e903d2",
+        "issued_at": "2026-09-16T09:35:13.410Z",
+        "expires_at": "2026-09-16T09:45:13.410Z"
+      }
+    },
+    {
+      "id": "record_approval:mws-migration-release:2026-09-16T09:45:29.985Z",
+      "at": "2026-09-16T09:45:29.985Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-0b236620\naction_v2_sha256:422e40efafd0cbd5ead08578d6521d7d54ab586e1437799ea021b2cd7f38331b",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-39a25a2a853e9dd5",
+        "issued_at": "2026-09-16T09:45:29.985Z",
+        "expires_at": "2026-09-16T09:55:29.985Z"
+      }
+    },
+    {
+      "id": "record_approval:mws-migration-release:2026-09-16T09:57:11.784Z",
+      "at": "2026-09-16T09:57:11.784Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-b29258c9\naction_v2_sha256:fc870ee78a03ef5717a1cf647dbbcc39e48b9687dd314a33289fbdcecfd80527",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-4b7d2450cb8fe8df",
+        "issued_at": "2026-09-16T09:57:11.784Z",
+        "expires_at": "2026-09-16T10:07:11.784Z"
+      }
+    },
+    {
+      "id": "record_approval:mws-migration-release:2026-09-16T10:17:37.931Z",
+      "at": "2026-09-16T10:17:37.931Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-7f97269a\naction_v2_sha256:58c87e54e7b13faf6c3ef90b066a4f2932ee5585b87ac74d2f4d0df6cbf1cc14",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-5277cd51a6f7c3b5",
+        "issued_at": "2026-09-16T10:17:37.931Z",
+        "expires_at": "2026-09-16T10:27:37.931Z"
+      }
+    },
+    {
+      "id": "record_approval:mws-migration-release:2026-09-16T14:33:28.917Z",
+      "at": "2026-09-16T14:33:28.917Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-e0b316df\naction_v2_sha256:73f3f6cd15b4085e41e2a1b8d3ef43852452c4a1995e1595fdbab4c58521b803",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-3a75f450dccd4a23",
+        "issued_at": "2026-09-16T14:33:28.917Z",
+        "expires_at": "2026-09-16T14:43:28.917Z"
+      }
+    },
+    {
+      "id": "record_approval:mws-migration-release:2026-09-16T14:46:58.482Z",
+      "at": "2026-09-16T14:46:58.482Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-190848d8\naction_v2_sha256:7bfd986b28548cc4a36ec94acc658a0c21c55e3245fbc91639d3e06791a28869",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-5113388788707afc",
+        "issued_at": "2026-09-16T14:46:58.483Z",
+        "expires_at": "2026-09-16T14:56:58.483Z"
+      }
+    },
+    {
+      "id": "record_approval:mws-migration-release:2026-09-16T15:11:17.927Z",
+      "at": "2026-09-16T15:11:17.927Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-1aef9804\naction_v2_sha256:82c20b8bfb32dfaec7ff06d6d2ba6108ae21dda3912384441604ea1730ffa3b0",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-1997d234784ceb74",
+        "issued_at": "2026-09-16T15:11:17.927Z",
+        "expires_at": "2026-09-16T15:21:17.927Z"
+      }
+    },
+    {
+      "id": "record_approval:mws-migration-release:2026-09-16T15:21:46.323Z",
+      "at": "2026-09-16T15:21:46.323Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-221cc7b8\naction_v2_sha256:11b5ab09c86e6e9ab080a93dbf5bc767a69e854c03594366f965d0c673b46b64",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-5b6d108668315ad7",
+        "issued_at": "2026-09-16T15:21:46.323Z",
+        "expires_at": "2026-09-16T15:31:46.323Z"
+      }
+    },
+    {
+      "id": "record_approval:mws-migration-release:2026-09-16T15:28:07.705Z",
+      "at": "2026-09-16T15:28:07.705Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-57724a6e\naction_v2_sha256:ac19a8fd7cb9dea5d6ad107ec7130bb5a332fdced85246ea608bec0894b07ea9",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-3cc64ca2e4f4c695",
+        "issued_at": "2026-09-16T15:28:07.705Z",
+        "expires_at": "2026-09-16T15:38:07.705Z"
+      }
+    },
+    {
+      "id": "record_approval:mws-migration-release:2026-09-16T15:36:50.913Z",
+      "at": "2026-09-16T15:36:50.913Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-32dada81\naction_v2_sha256:8403770e42473d52025c3497971844c638af5ac1f3d3929825782d5de50460bc",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-d76d4e83b3ad5991",
+        "issued_at": "2026-09-16T15:36:50.914Z",
+        "expires_at": "2026-09-16T15:46:50.914Z"
+      }
+    },
+    {
+      "id": "record_approval:mws-migration-release:2026-09-16T15:41:28.854Z",
+      "at": "2026-09-16T15:41:28.854Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-2518acd4\naction_v2_sha256:480c760cb6e32a638968345f1b5c2a7e45161ffcaf23cd80b536943df83db85e",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-fd6fa8437334b6d3",
+        "issued_at": "2026-09-16T15:41:28.854Z",
+        "expires_at": "2026-09-16T15:51:28.854Z"
+      }
+    },
+    {
+      "id": "complete:mws-migration-release:2026-09-16T15:41:30.436Z",
+      "at": "2026-09-16T15:41:30.436Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:82edcc01c5ac8be48796a129f89e2fe1c1534e27439335836607aa6943ca9d8b"
+    }
+  ]
+}
