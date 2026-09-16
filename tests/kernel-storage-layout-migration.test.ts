@@ -93,6 +93,45 @@ function writeLegacyTerminalPair(root: string, taskId: string): void {
 	);
 }
 
+/**
+ * Write the v4 file-store pair: the record contract the retired store actually
+ * wrote, with the Enrollment base commit. `compact` reproduces historical bytes
+ * whose formatting is not the canonical pretty-print.
+ */
+function writeLegacyV4Pair(root: string, taskId: string, baseHead: string, compact = false): void {
+	mkdirSync(join(root, ".imm/state/tasks"), { recursive: true });
+	const intent = legacyIntent(taskId);
+	const record = {
+		contract: "assurance_kernel/task_record/v4",
+		task_id: taskId,
+		intent_snapshot: intent,
+		intent_ref: {
+			path: `docs/plans/${taskId}.intent.json`,
+			content_hash: canonicalIntentHash(parseTaskIntentV1(intent)),
+		},
+		lifecycle: "done",
+		artifact_state: "frozen",
+		git_base_head: baseHead,
+		baseline: "sha256:" + "0".repeat(64),
+		attestations: [],
+		findings: [],
+		history: [],
+	};
+	const recordBytes = `${compact ? JSON.stringify(record) : JSON.stringify(record, null, 2)}\n`;
+	writeFileSync(join(root, ".imm/state/tasks", `${taskId}.json`), recordBytes);
+	const proof = {
+		contract: "assurance_kernel/task_tombstone/v2",
+		task_id: taskId,
+		lifecycle_status: "terminal",
+		terminal_lifecycle: "done",
+		terminal_event_id: `stop-${taskId}`,
+		final_record_hash: `sha256:${createHash("sha256").update(recordBytes).digest("hex")}`,
+		terminalized_at: "2026-08-26T00:00:00.000Z",
+	};
+	mkdirSync(join(root, ".imm/audit", taskId), { recursive: true });
+	writeFileSync(join(root, ".imm/audit", taskId, "terminal-proof.json"), `${JSON.stringify(proof, null, 2)}\n`);
+}
+
 function writeLegacyClaim(root: string, taskId: string): void {
 	mkdirSync(join(root, ".imm", "tasks"), { recursive: true });
 	writeFileSync(
@@ -561,6 +600,65 @@ describe("explicit SQLite import of the retired file store (A1)", () => {
 		expect(outcome.reason).toMatch(/different worktree/);
 		expect(existsSync(join(root, ".imm/state/kernel.sqlite"))).toBe(false);
 		expect(existsSync(join(root, ".imm/tasks/2026-08-14-010-old-task.json"))).toBe(true);
+	});
+
+	it("imports a terminal v4 TaskRecord from the retired file store", async () => {
+		const root = tempRoot();
+		const baseHead = execFileSync("git", ["-C", root, "rev-parse", "HEAD"], { encoding: "utf8" }).trim();
+		writeLegacyV4Pair(root, "2026-08-14-011-old-task", baseHead);
+		commit(root, "v4 record");
+		expect((await runMigration(root)).outcome).toBe("migration_uncommitted");
+		commit(root, "preserve evidence");
+		const outcome = await runMigration(root);
+		expect(outcome).toMatchObject({ outcome: "migrated" });
+		const { openKernelStore } = await import("../plugins/immune-brain/runtime/kernel/sqlite_store");
+		const db = openKernelStore(root, { create: false });
+		expect(db!.prepare("SELECT task_id, state FROM runs").get()).toMatchObject({ task_id: "2026-08-14-011-old-task", state: "done" });
+		db!.close();
+	});
+
+	it("keeps the historical record bytes the terminal proof binds", async () => {
+		const root = tempRoot();
+		const baseHead = execFileSync("git", ["-C", root, "rev-parse", "HEAD"], { encoding: "utf8" }).trim();
+		// Compact JSON: not the canonical pretty-print, and exactly what the proof
+		// hashes, so the import must not re-serialize it.
+		writeLegacyV4Pair(root, "2026-08-14-012-old-task", baseHead, true);
+		const rawBytes = readFileSync(join(root, ".imm/state/tasks/2026-08-14-012-old-task.json"));
+		const proof = JSON.parse(readFileSync(join(root, ".imm/audit/2026-08-14-012-old-task/terminal-proof.json"), "utf8")) as { final_record_hash: string };
+		commit(root, "compact record");
+		expect((await runMigration(root)).outcome).toBe("migration_uncommitted");
+		commit(root, "preserve evidence");
+		expect((await runMigration(root)).outcome).toBe("migrated");
+
+		const { openKernelStore } = await import("../plugins/immune-brain/runtime/kernel/sqlite_store");
+		const db = openKernelStore(root, { create: false });
+		const row = db!.prepare("SELECT record_json, audit_exported_at FROM runs").get() as Record<string, unknown>;
+		expect(String(row.record_json)).toBe(rawBytes.toString("utf8"));
+		expect(`sha256:${createHash("sha256").update(String(row.record_json)).digest("hex")}`).toBe(proof.final_record_hash);
+		// The historical evidence is the export, so no follow-up rewrites it.
+		expect(row.audit_exported_at).not.toBeNull();
+		db!.close();
+	});
+
+	it("finishes a cleanup that stopped between two tasks", async () => {
+		const root = tempRoot();
+		writeLegacyTerminalPair(root, "2026-08-14-013-old-task");
+		writeLegacyTerminalPair(root, "2026-08-14-014-old-task");
+		const recordBytes = readFileSync(join(root, ".imm/tasks/2026-08-14-013-old-task.json"));
+		const proofBytes = readFileSync(join(root, ".imm/tasks/2026-08-14-013-old-task.backend-claim.json"));
+		commit(root, "legacy evidence");
+		expect((await runMigration(root)).outcome).toBe("migration_uncommitted");
+		commit(root, "preserve evidence");
+		expect((await runMigration(root)).outcome).toBe("migrated");
+		// Simulate the crash after the first task's files were removed: the
+		// remaining subset can never match the original import digest.
+		mkdirSync(join(root, ".imm/tasks"), { recursive: true });
+		writeFileSync(join(root, ".imm/tasks/2026-08-14-013-old-task.json"), recordBytes);
+		writeFileSync(join(root, ".imm/tasks/2026-08-14-013-old-task.backend-claim.json"), proofBytes);
+		const finished = await runMigration(root);
+		expect(finished).toMatchObject({ outcome: "already_migrated" });
+		expect(existsSync(join(root, ".imm/tasks/2026-08-14-013-old-task.json"))).toBe(false);
+		expect(existsSync(join(root, ".imm/tasks/2026-08-14-013-old-task.backend-claim.json"))).toBe(false);
 	});
 
 	it("refuses an existing audit target with zero writes", async () => {

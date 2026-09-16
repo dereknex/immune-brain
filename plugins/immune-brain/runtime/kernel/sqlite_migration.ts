@@ -40,11 +40,12 @@ import {
 import {
 	createMigrationStoreFile,
 	insertRunRow,
+	markAuditExported,
 	publishMigrationStoreFile,
 	updateRunTerminal,
 	verifyStoreFile,
 } from "./sqlite_store";
-import { parseTaskRecordV3 } from "./validation";
+import { parseTaskRecord } from "./validation";
 import { canonicalRecordHash } from "./reducer";
 
 /** The candidate store the importer builds before publication. */
@@ -72,7 +73,10 @@ interface LegacyTask {
 	taskId: string;
 	sources: LegacySource[];
 	recordBytes: Buffer;
+	/** Canonical text, used only for comparison. */
 	recordJson: string;
+	/** The exact historical bytes the terminal proof binds. */
+	recordText: string;
 	proofBytes: Buffer;
 	proofJson: string;
 	recordHash: string;
@@ -103,6 +107,15 @@ function uncommittedEvidencePaths(root: string, paths: string[]): string[] {
 		.map((line) => line.trim())
 		.filter(Boolean)
 		.map((line) => line.replace(/^\S+\s+/, ""));
+}
+
+function readRegularFileOrNull(path: string): Buffer | null {
+	try {
+		if (!statSync(path).isFile()) return null;
+		return readFileSync(path);
+	} catch {
+		return null;
+	}
 }
 
 function sha256Hex(bytes: Buffer | string): string {
@@ -174,9 +187,9 @@ function readLegacyTasks(root: string): { tasks: LegacyTask[]; reason: string | 
 				};
 			const recordBytes = readFileSync(recordPath);
 			const proofBytes = readFileSync(proofPath);
-			let record: ReturnType<typeof parseTaskRecordV3>;
+			let record: ReturnType<typeof parseTaskRecord>;
 			try {
-				record = parseTaskRecordV3(JSON.parse(recordBytes.toString("utf8")));
+				record = parseTaskRecord(JSON.parse(recordBytes.toString("utf8")));
 			} catch (error) {
 				return { tasks: [], reason: `task ${taskId} is not a readable legacy record: ${error instanceof Error ? error.message : String(error)}` };
 			}
@@ -211,6 +224,7 @@ function readLegacyTasks(root: string): { tasks: LegacyTask[]; reason: string | 
 				sources: [{ directory: relative, recordFile: entry, proofFile: besideRecord ? `${taskId}.backend-claim.json` : null }],
 				recordBytes,
 				recordJson: `${JSON.stringify(record, null, 2)}\n`,
+				recordText: recordBytes.toString("utf8"),
 				proofBytes,
 				proofJson: `${JSON.stringify(proof, null, 2)}\n`,
 				recordHash,
@@ -283,7 +297,7 @@ function buildCandidateStore(root: string, tasks: LegacyTask[], now: string): vo
 				insertRunRow(db, {
 					run_id: migratedRunId(task),
 					task_id: task.taskId,
-					record_json: task.recordJson,
+					record_json: task.recordText,
 					intent_revision: 1,
 					intent_content_hash: task.recordHash,
 					enrollment_event_id: `migrated:${task.taskId}`,
@@ -291,7 +305,11 @@ function buildCandidateStore(root: string, tasks: LegacyTask[], now: string): vo
 					created_at: task.importedAt,
 					updated_at: task.importedAt,
 				});
-				updateRunTerminal(db, migratedRunId(task), task.state, task.recordJson, `${task.proofJson}`, task.importedAt);
+				updateRunTerminal(db, migratedRunId(task), task.state, task.recordText, task.proofJson, task.importedAt);
+				// The historical audit already holds exactly these bytes: the task's
+				// own tracked evidence is the export, so a later follow-up must not
+				// write a second copy that could drift from the bound proof.
+				markAuditExported(db, migratedRunId(task), task.importedAt);
 			}
 			db.exec("COMMIT");
 			// Fold the WAL back into the main file so publication moves exactly
@@ -316,7 +334,7 @@ function verifyCandidateStore(root: string, tasks: LegacyTask[]): void {
 	const db = new DatabaseSync(target, { readOnly: true });
 	try {
 		const rows = db
-			.prepare("SELECT run_id, task_id, state, record_json, terminal_proof_json, intent_content_hash, claim_status FROM runs")
+			.prepare("SELECT run_id, task_id, state, record_json, terminal_proof_json, intent_content_hash, claim_status, audit_exported_at FROM runs")
 			.all() as Array<Record<string, unknown>>;
 		if (rows.length !== tasks.length) throw new Error(`candidate store holds ${rows.length} run(s), expected ${tasks.length}`);
 		const byTask = new Map(rows.map((row) => [String(row.task_id), row]));
@@ -326,12 +344,13 @@ function verifyCandidateStore(root: string, tasks: LegacyTask[]): void {
 			if (row.run_id !== migratedRunId(task)) throw new Error(`candidate store run identity differs for ${task.taskId}`);
 			if (row.state !== task.state) throw new Error(`candidate store state differs for ${task.taskId}`);
 			if (row.claim_status !== null) throw new Error(`candidate store kept a live claim for ${task.taskId}`);
-			if (String(row.record_json) !== task.recordJson) throw new Error(`candidate store record bytes differ for ${task.taskId}`);
+			if (String(row.record_json) !== task.recordText) throw new Error(`candidate store record bytes differ for ${task.taskId}`);
+			if (!row.audit_exported_at) throw new Error(`candidate store run ${task.taskId} would re-export its audit`);
 			if (String(row.terminal_proof_json) !== task.proofJson) throw new Error(`candidate store terminal proof differs for ${task.taskId}`);
 			if (row.intent_content_hash !== task.recordHash) throw new Error(`candidate store record hash differs for ${task.taskId}`);
 			if (
-				canonicalRecordHash(parseTaskRecordV3(JSON.parse(String(row.record_json)))) !==
-				canonicalRecordHash(parseTaskRecordV3(JSON.parse(task.recordJson)))
+				canonicalRecordHash(parseTaskRecord(JSON.parse(String(row.record_json)))) !==
+				canonicalRecordHash(parseTaskRecord(JSON.parse(task.recordJson)))
 			)
 				throw new Error(`candidate store record is not canonical for ${task.taskId}`);
 		}
@@ -369,6 +388,79 @@ function importIdentity(tasks: LegacyTask[]): string {
 	return sha256Hex(tasks.map((task) => `${task.taskId}:${task.recordHash}`).sort().join("\n"));
 }
 
+/** Open the published store read-only for a recovery check. */
+function openPublishedStore(root: string, canonical: string): DatabaseSync {
+	return new DatabaseSync(canonical, { readOnly: true });
+}
+
+function publishedRow(db: DatabaseSync, taskId: string): Record<string, unknown> | null {
+	const row = db
+		.prepare("SELECT run_id, state, record_json, terminal_proof_json, intent_content_hash FROM runs WHERE task_id = ?")
+		.get(taskId) as Record<string, unknown> | undefined;
+	return row ?? null;
+}
+
+/**
+ * Verify the surviving legacy sources against the published store instead of
+ * against the original import digest: an interrupted cleanup has already
+ * removed part of them, and every survivor must still be exactly the authority
+ * the store published.
+ */
+function verifyPublishedRows(root: string, canonical: string, tasks: LegacyTask[]): void {
+	const db = openPublishedStore(root, canonical);
+	try {
+		for (const task of tasks) {
+			const row = publishedRow(db, task.taskId);
+			if (!row) throw new Error(`the surviving legacy task ${task.taskId} is not part of the published import`);
+			if (row.run_id !== migratedRunId(task)) throw new Error(`the surviving legacy task ${task.taskId} does not match its published run`);
+			if (row.state !== task.state) throw new Error(`the surviving legacy task ${task.taskId} does not match its published state`);
+			if (String(row.record_json) !== task.recordText) throw new Error(`the surviving legacy task ${task.taskId} differs from the published record`);
+			if (row.intent_content_hash !== task.recordHash) throw new Error(`the surviving legacy task ${task.taskId} differs from the published record hash`);
+			if (String(row.terminal_proof_json) !== task.proofJson) throw new Error(`the surviving legacy task ${task.taskId} differs from the published proof`);
+		}
+	} finally {
+		db.close();
+	}
+}
+
+/**
+ * Remove a proof whose record was already retired by an interrupted cleanup.
+ * The proof is only deleted when the published store carries the identical one.
+ */
+function removeOrphanProofs(root: string, canonical: string): void {
+	const orphans: Array<{ path: string; taskId: string; proofJson: string }> = [];
+	for (const relative of [LEGACY_TASKS_RELATIVE, FILE_STORE_TASKS_RELATIVE]) {
+		const directory = join(root, relative);
+		if (!existsSync(directory)) continue;
+		for (const entry of readdirSync(directory)) {
+			if (!entry.endsWith(".backend-claim.json")) continue;
+			const taskId = entry.slice(0, -".backend-claim.json".length);
+			if (existsSync(join(directory, `${taskId}.json`))) continue;
+			const bytes = readRegularFileOrNull(join(directory, entry));
+			if (!bytes) continue;
+			let proof: Record<string, unknown>;
+			try {
+				proof = JSON.parse(bytes.toString("utf8")) as Record<string, unknown>;
+			} catch {
+				continue;
+			}
+			orphans.push({ path: join(directory, entry), taskId, proofJson: `${JSON.stringify(proof, null, 2)}\n` });
+		}
+	}
+	if (orphans.length === 0) return;
+	const db = openPublishedStore(root, canonical);
+	try {
+		for (const orphan of orphans) {
+			const row = publishedRow(db, orphan.taskId);
+			if (!row) continue;
+			if (String(row.terminal_proof_json) !== orphan.proofJson) continue;
+			rmSync(orphan.path, { force: true });
+		}
+	} finally {
+		db.close();
+	}
+}
+
 /**
  * Import the retired file store into the SQLite authority. `now` stamps the
  * store's creation metadata; it never rewrites historical evidence.
@@ -389,12 +481,22 @@ export function importLegacyWorkspace(rootInput: string, now = new Date().toISOS
 		} catch (error) {
 			return refusal(`the published store failed verification: ${error instanceof Error ? error.message : String(error)}`);
 		}
-		const pending = readLegacyTasks(root);
-		if (pending.reason) return refusal(pending.reason);
-		if (pending.tasks.length > 0) {
-			if (importIdentity(pending.tasks) !== receipt.identity)
-				return refusal("the recorded import identity does not match the remaining legacy facts");
-			removeRetiredAuthority(root, pending.tasks);
+		let remaining: LegacyTask[] = [];
+		try {
+			const pending = readLegacyTasks(root);
+			if (pending.reason) return refusal(pending.reason);
+			remaining = pending.tasks;
+			// A partially finished cleanup leaves only the tasks whose files were not
+			// removed yet, so the remaining subset never matches the full receipt
+			// identity. Each survivor is verified against its published row instead,
+			// which also refuses a source file the import never published.
+			if (remaining.length > 0) {
+				verifyPublishedRows(root, canonical, remaining);
+				removeRetiredAuthority(root, remaining);
+				removeOrphanProofs(root, canonical);
+			}
+		} catch (error) {
+			return refusal(error instanceof Error ? error.message : String(error));
 		}
 		return {
 			contract: "assurance_kernel/sqlite_import_result/v1",
