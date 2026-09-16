@@ -12,12 +12,16 @@
  */
 import { createHash } from "node:crypto";
 import {
+	closeSync,
+	constants,
 	existsSync,
+	fsyncSync,
 	lstatSync,
 	mkdirSync,
 	readFileSync,
 	readdirSync,
 	realpathSync,
+	openSync,
 	rmSync,
 	statSync,
 	writeFileSync,
@@ -41,7 +45,7 @@ import {
 	auditTerminalProofPath,
 } from "./storage_paths";
 import {
-	KernelStoreSecurityError,
+	classifyStoreFile,
 	createMigrationStoreFile,
 	insertRunRow,
 	markAuditExported,
@@ -49,6 +53,7 @@ import {
 	updateRunTerminal,
 	verifyStoreFile,
 } from "./sqlite_store";
+import { isTerminalBatchState, type BatchRunState } from "../unattended/batch_state";
 import { parseTaskRecord } from "./validation";
 import { canonicalRecordHash } from "./reducer";
 
@@ -142,6 +147,31 @@ function sha256Hex(bytes: Buffer | string): string {
 	return `sha256:${createHash("sha256").update(bytes).digest("hex")}`;
 }
 
+/**
+ * Durably write the import receipt: the file is flushed and its directory is
+ * fsynced before the database is published, so a power loss can never leave a
+ * published store whose import identity was never recorded.
+ */
+function writeReceiptDurably(root: string, receipt: string): void {
+	const relative = MIGRATION_RECEIPT_RELATIVE;
+	const target = join(root, relative);
+	assertNoSymlinkSegments(root, relative);
+	mkdirSync(dirname(target), { recursive: true });
+	const fd = openSync(target, "w");
+	try {
+		writeFileSync(fd, receipt);
+		fsyncSync(fd);
+	} finally {
+		closeSync(fd);
+	}
+	const directory = openSync(dirname(target), constants.O_RDONLY);
+	try {
+		fsyncSync(directory);
+	} finally {
+		closeSync(directory);
+	}
+}
+
 function readReceipt(root: string): { identity: string; task_ids: string[] } | null {
 	const path = join(root, MIGRATION_RECEIPT_RELATIVE);
 	if (!existsSync(path)) return null;
@@ -155,16 +185,21 @@ function readReceipt(root: string): { identity: string; task_ids: string[] } | n
 	}
 }
 
-/** Any batch state that is not terminal still owns work, so the layout is live. */
+/**
+ * Any batch state that is not terminal still owns work, so the layout is live.
+ * Terminality is decided by the batch state owner's own predicate rather than a
+ * local list, so a state added by that module cannot silently block migration.
+ */
 function recoverableBatch(root: string): string | null {
 	const directory = join(root, STATE_RELATIVE, "batches");
 	if (!existsSync(directory)) return null;
 	for (const entry of readdirSync(directory).sort()) {
-		if (!entry.endsWith(".json")) continue;
+		// Reports describe a state that the state file already carries.
+		if (!entry.endsWith(".json") || entry.endsWith(".report.json")) continue;
 		try {
 			const parsed = JSON.parse(readFileSync(join(directory, entry), "utf8")) as Record<string, unknown>;
 			const state = typeof parsed.batch_state === "string" ? parsed.batch_state : null;
-			if (state === "completed" || state === "stopped") continue;
+			if (state !== null && isTerminalBatchState(state as BatchRunState)) continue;
 			return `batch ${entry} is not terminal (${state ?? "unknown"})`;
 		} catch {
 			return `batch ${entry} is unreadable`;
@@ -650,18 +685,18 @@ export function importLegacyWorkspace(rootInput: string, now = new Date().toISOS
 			verifyCandidateStore(root, tasks);
 		} catch (error) {
 			// A candidate this worktree built but never finished — the process died
-			// between creating the store file and writing its rows — is rebuilt from
-			// the source facts. A candidate bound to another worktree stays refused:
-			// that failure is a store-identity error, not a content mismatch.
-			if (error instanceof KernelStoreSecurityError) throw error;
+			// before the schema committed, or before its rows were written — is
+			// rebuilt from the source facts. A candidate bound to another worktree
+			// stays refused: that identity is never ours to overwrite.
+			if (classifyStoreFile(root, join(root, MIGRATION_STORE_RELATIVE)) === "foreign") throw error;
 			rebuildCandidateStore(root, tasks, now);
 			verifyCandidateStore(root, tasks);
 		}
 		// The receipt is written before publication so a crash between the rename
 		// and the cleanup still leaves a retry that converges: the next run finds
 		// the store, verifies it, and finishes removing the retired files.
-		writeFileSync(
-			join(root, MIGRATION_RECEIPT_RELATIVE),
+		writeReceiptDurably(
+			root,
 			`${JSON.stringify({
 				contract: "assurance_kernel/sqlite_import_receipt/v1",
 				imported_at: now,

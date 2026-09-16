@@ -466,6 +466,38 @@ export function verifyStoreFile(root: string, path: string): void {
 }
 
 /**
+ * Classify a store file's identity without asserting anything about its rows.
+ *
+ * The importer needs to tell three states apart: a file whose schema never
+ * committed (safe to rebuild), a file that belongs to another worktree (never
+ * ours), and a file that is bound to this worktree (its content is the only
+ * question left).
+ */
+export function classifyStoreFile(root: string, path: string): "uninitialized" | "foreign" | "binding_ok" {
+	const canonical = canonicalRoot(root);
+	const resolved = resolve(path);
+	assertSafeStoreTarget(canonical, resolved);
+	let db: DatabaseSync;
+	try {
+		db = new DatabaseSync(resolved, { readOnly: true });
+	} catch {
+		return "uninitialized";
+	}
+	try {
+		const rows = db.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all() as Array<{ name?: unknown }>;
+		if (!new Set(rows.map((row) => String(row.name))).has("store_meta")) return "uninitialized";
+		const workspaceId = readMeta(db, "workspace_id");
+		const binding = readMeta(db, "workspace_binding");
+		if (!workspaceId || !binding) return "uninitialized";
+		return workspaceBinding(canonical, workspaceId) === binding ? "binding_ok" : "foreign";
+	} catch {
+		return "uninitialized";
+	} finally {
+		db.close();
+	}
+}
+
+/**
  * Publish a verified migration store at the canonical path.
  *
  * The rename is the publication point: a crash before it leaves the canonical

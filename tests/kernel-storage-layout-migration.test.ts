@@ -900,6 +900,51 @@ describe("explicit SQLite import of the retired file store (A1)", () => {
 		expect(existsSync(join(root, ".imm/state/kernel.sqlite"))).toBe(true);
 	});
 
+	it("rebuilds a candidate whose schema never committed", async () => {
+		const root = tempRoot();
+		writeLegacyTerminalPair(root, "2026-08-14-022-old-task");
+		commit(root, "legacy evidence");
+		expect((await runMigration(root)).outcome).toBe("migration_uncommitted");
+		commit(root, "preserve evidence");
+		// The crash window: the candidate file exists, the schema never committed.
+		mkdirSync(join(root, ".imm/state"), { recursive: true });
+		writeFileSync(join(root, ".imm/state/kernel.sqlite.importing"), "");
+		const outcome = await runMigration(root);
+		expect(outcome).toMatchObject({ outcome: "migrated" });
+		const { openKernelStore } = await import("../plugins/immune-brain/runtime/kernel/sqlite_store");
+		const db = openKernelStore(root, { create: false });
+		expect(db!.prepare("SELECT COUNT(*) AS n FROM runs").get()).toMatchObject({ n: 1 });
+		db!.close();
+	});
+
+	it("treats every terminal batch state as settled and every live one as blocking", async () => {
+		for (const state of ["completed", "budget_stopped", "failed", "rejected"]) {
+			const root = tempRoot();
+			writeLegacyTerminalPair(root, "2026-08-14-023-old-task");
+			mkdirSync(join(root, ".imm/state/batches"), { recursive: true });
+			writeFileSync(
+				join(root, ".imm/state/batches/batch-1.json"),
+				`${JSON.stringify({ contract: "assurance_kernel/batch_run_state/v1", batch_state: state }, null, 2)}\n`,
+			);
+			commit(root, "legacy evidence and terminal batch");
+			expect((await runMigration(root)).outcome, state).toBe("migration_uncommitted");
+			commit(root, "preserve evidence");
+			expect((await runMigration(root)).outcome, state).toBe("migrated");
+		}
+		// A live batch still blocks the import, including from its report file.
+		const root = tempRoot();
+		writeLegacyTerminalPair(root, "2026-08-14-024-old-task");
+		mkdirSync(join(root, ".imm/state/batches"), { recursive: true });
+		writeFileSync(
+			join(root, ".imm/state/batches/batch-2.json"),
+			`${JSON.stringify({ contract: "assurance_kernel/batch_run_state/v1", batch_state: "needs_human" }, null, 2)}\n`,
+		);
+		commit(root, "legacy evidence and live batch");
+		const blocked = await runMigration(root);
+		expect(blocked.outcome).toBe("invalid");
+		expect(blocked.reason).toMatch(/recoverable batch/);
+	});
+
 	it("refuses an existing audit target with zero writes", async () => {
 		const root = tempRoot();
 		writeLegacyTerminalPair(root, "task-001");
