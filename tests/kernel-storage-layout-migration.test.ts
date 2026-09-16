@@ -1221,6 +1221,24 @@ describe("explicit SQLite import of the retired file store (A1)", () => {
 		expect(existsSync(join(root, ".imm/tasks/2026-08-14-034-old-task.json"))).toBe(true);
 	});
 
+	it("finishes a published import whose cleanup never ran", async () => {
+		const root = tempRoot();
+		mkdirSync(join(root, ".imm/state"), { recursive: true });
+		writeFileSync(join(root, ".imm/state/workspace.json"), `${JSON.stringify({ contract: "assurance_kernel/workspace/v1", current_working: null })}\n`);
+		commit(root, "owner-free retired workspace");
+		expect((await runMigration(root)).outcome).toBe("migrated");
+		// Re-create the crash window: the owner file is back, the identity marker is
+		// missing, and the receipt proves the import already happened.
+		writeFileSync(join(root, ".imm/state/workspace.json"), `${JSON.stringify({ contract: "assurance_kernel/workspace/v1", current_working: null })}\n`);
+		rmSync(join(root, ".imm/state/kernel.identity.json"), { force: true });
+		expect(inspectStorageLayout(root).layout).toBe("ready");
+		const finished = await runMigration(root);
+		expect(finished).toMatchObject({ outcome: "already_migrated" });
+		expect(finished.reason).toMatch(/finished the interrupted cleanup/);
+		expect(existsSync(join(root, ".imm/state/workspace.json"))).toBe(false);
+		expect(existsSync(join(root, ".imm/state/kernel.identity.json"))).toBe(true);
+	});
+
 	it("refuses an existing audit target with zero writes", async () => {
 		const root = tempRoot();
 		writeLegacyTerminalPair(root, "task-001");

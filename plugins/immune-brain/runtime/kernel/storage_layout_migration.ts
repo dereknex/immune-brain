@@ -68,13 +68,39 @@ export function migrateLegacyLayout(root: string): MigrationOutcome {
 			reason: `the retired layout is still present after migration: ${after.reason ?? after.layout}`,
 		};
 	};
-	if (inspection.layout === "ready")
+	/**
+	 * Finish a published import whose cleanup or identity marker never completed.
+	 * The layout can already look `ready` — a leftover owner-free workspace file
+	 * does not make it conflict — so the receipt, not the diagnosis, decides
+	 * whether there is still something to finish.
+	 */
+	const finishPublishedImport = (): MigrationOutcome | null => {
+		if (!existsSync(join(root, KERNEL_DB_RELATIVE)) || !hasMigrationReceipt(root)) return null;
+		const finished = importLegacyWorkspace(root);
+		if (finished.outcome === "already_imported")
+			return confirmRetired({
+				contract: CONTRACT,
+				outcome: "already_migrated",
+				affected_paths: affected,
+				reason: "finished the interrupted cleanup for an already published import",
+			});
+		return {
+			contract: CONTRACT,
+			outcome: "invalid",
+			affected_paths: affected,
+			reason: finished.reason ?? "the published store could not be verified",
+		};
+	};
+	if (inspection.layout === "ready") {
+		const finished = finishPublishedImport();
+		if (finished) return finished;
 		return {
 			contract: CONTRACT,
 			outcome: "already_migrated",
 			affected_paths: affected,
 			reason: "the worktree already uses the SQLite authority store",
 		};
+	}
 	if (inspection.layout === "migration_uncommitted")
 		return {
 			contract: CONTRACT,
@@ -101,21 +127,9 @@ export function migrateLegacyLayout(root: string): MigrationOutcome {
 		// the publication rename and the cleanup looks like. A receipt proves this
 		// worktree imported those facts, so the importer verifies the store and
 		// finishes the cleanup instead of refusing.
-		if (inspection.layout === "invalid" && existsSync(join(root, KERNEL_DB_RELATIVE)) && hasMigrationReceipt(root)) {
-			const finished = importLegacyWorkspace(root);
-			if (finished.outcome === "already_imported")
-				return confirmRetired({
-					contract: CONTRACT,
-					outcome: "already_migrated",
-					affected_paths: affected,
-					reason: "finished the interrupted cleanup for an already published import",
-				});
-			return {
-				contract: CONTRACT,
-				outcome: "invalid",
-				affected_paths: affected,
-				reason: finished.reason ?? "the published store could not be verified",
-			};
+		if (inspection.layout === "invalid") {
+			const finished = finishPublishedImport();
+			if (finished) return finished;
 		}
 		return {
 			contract: CONTRACT,
