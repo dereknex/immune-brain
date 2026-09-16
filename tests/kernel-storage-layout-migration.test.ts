@@ -841,6 +841,65 @@ describe("explicit SQLite import of the retired file store (A1)", () => {
 		expect(inspectStorageLayout(root).layout).toBe("ready");
 	});
 
+	it("refuses to retire through a symlinked artifact directory", async () => {
+		const root = tempRoot();
+		const ledger = `${JSON.stringify({ schema_version: 3, runtime_status: "idle", steps: {} }, null, 2)}\n`;
+		mkdirSync(join(root, ".imm/memory"), { recursive: true });
+		writeFileSync(join(root, ".imm/memory/current_iteration.json"), ledger);
+		commit(root, "idle ledger");
+		expect((await runMigration(root)).outcome).toBe("migration_uncommitted");
+		commit(root, "preserve ledger");
+		expect((await runMigration(root)).outcome).toBe("migrated");
+		// The store and receipt exist; the retired directory is replaced by a link
+		// to an outside directory holding a file of the same name.
+		const outside = mkdtempSync(join(tmpdir(), "imm-outside-memory-"));
+		try {
+			writeFileSync(join(outside, "MEMORY.md"), "outside bytes\n");
+			rmSync(join(root, ".imm/memory"), { recursive: true, force: true });
+			execFileSync("ln", ["-s", outside, join(root, ".imm/memory")]);
+			const outcome = await runMigration(root);
+			expect(outcome.outcome).toBe("invalid");
+			expect(outcome.reason).toMatch(/symlinked evidence path is forbidden/);
+			expect(readFileSync(join(outside, "MEMORY.md"), "utf8")).toBe("outside bytes\n");
+		} finally {
+			rmSync(outside, { recursive: true, force: true });
+		}
+	});
+
+	it("refuses to retire historical bytes that changed after the evidence was committed", async () => {
+		const root = tempRoot();
+		const journal = "{\"entry\":\"one\"}\n";
+		mkdirSync(join(root, ".imm"), { recursive: true });
+		writeFileSync(join(root, ".imm/journal.jsonl"), journal);
+		commit(root, "retired journal");
+		expect((await runMigration(root)).outcome).toBe("migration_uncommitted");
+		commit(root, "preserve journal");
+		expect((await runMigration(root)).outcome).toBe("migrated");
+		// The source reappears with different bytes while the store is published.
+		writeFileSync(join(root, ".imm/journal.jsonl"), "{\"entry\":\"two\"}\n");
+		const outcome = await runMigration(root);
+		expect(outcome.outcome).toBe("invalid");
+		expect(outcome.reason).toMatch(/differs from its committed evidence/);
+		expect(readFileSync(join(root, ".imm/journal.jsonl"), "utf8")).toBe("{\"entry\":\"two\"}\n");
+		expect(readFileSync(join(root, ".imm/audit/legacy-v3/journal.jsonl"), "utf8")).toBe(journal);
+	});
+
+	it("recognizes candidate sidecars so an interrupted transaction stays migratable", async () => {
+		const root = tempRoot();
+		writeLegacyTerminalPair(root, "2026-08-14-021-old-task");
+		commit(root, "legacy evidence");
+		expect((await runMigration(root)).outcome).toBe("migration_uncommitted");
+		commit(root, "preserve evidence");
+		// A transaction that died mid-import leaves the candidate plus its journal.
+		mkdirSync(join(root, ".imm/state"), { recursive: true });
+		writeFileSync(join(root, ".imm/state/kernel.sqlite.importing"), "partial");
+		writeFileSync(join(root, ".imm/state/kernel.sqlite.importing-journal"), "txn");
+		expect(inspectStorageLayout(root).layout).toBe("migration_required");
+		const outcome = await runMigration(root);
+		expect(outcome).toMatchObject({ outcome: "migrated" });
+		expect(existsSync(join(root, ".imm/state/kernel.sqlite"))).toBe(true);
+	});
+
 	it("refuses an existing audit target with zero writes", async () => {
 		const root = tempRoot();
 		writeLegacyTerminalPair(root, "task-001");

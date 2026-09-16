@@ -307,10 +307,27 @@ function collectRetiredArtifacts(root: string): Array<{ source: string; evidence
 	for (const entry of LEGACY_ARTIFACT_RETIREMENT) {
 		const absolute = join(root, entry.source);
 		if (!existsSync(absolute)) continue;
+		// A symlinked parent would let retirement delete a file outside the
+		// worktree, so every source path is checked segment by segment first.
+		assertNoSymlinkSegments(root, entry.source);
 		if (!statSync(absolute).isFile()) throw new Error(`${entry.source} is not a regular file`);
 		present.push(entry);
 	}
 	return present;
+}
+
+/**
+ * Verify surviving historical sources still match their committed evidence
+ * before anything is retired. Bytes added or changed after the import committed
+ * its evidence would otherwise be deleted without ever being preserved.
+ */
+function verifyArtifactEvidence(root: string, artifacts: Array<{ source: string; evidence: string }>): void {
+	for (const artifact of artifacts) {
+		const evidence = readRegularFileOrNull(join(root, artifact.evidence));
+		if (!evidence) throw new Error(`the committed evidence for ${artifact.source} is missing; refusing to retire it`);
+		if (!evidence.equals(readFileSync(join(root, artifact.source))))
+			throw new Error(`the surviving legacy artifact ${artifact.source} differs from its committed evidence; refusing to retire it`);
+	}
 }
 
 /**
@@ -327,7 +344,10 @@ function preserveRetiredArtifacts(root: string, artifacts: Array<{ source: strin
 
 /** Retire the artifacts whose bytes are already preserved as evidence. */
 function removeRetiredArtifacts(root: string, artifacts: Array<{ source: string; evidence: string }>): void {
-	for (const artifact of artifacts) rmSync(join(root, artifact.source), { force: true });
+	for (const artifact of artifacts) {
+		assertNoSymlinkSegments(root, artifact.source);
+		rmSync(join(root, artifact.source), { force: true });
+	}
 	for (const relative of LEGACY_MARKER_RETIREMENT) rmSync(join(root, relative), { force: true });
 }
 
@@ -336,6 +356,9 @@ function removeEmptyRetiredDirectories(root: string): void {
 	for (const relative of [...LEGACY_RETIRED_DIRECTORIES, LEGACY_TASKS_RELATIVE, FILE_STORE_TASKS_RELATIVE]) {
 		const directory = join(root, relative);
 		if (!existsSync(directory)) continue;
+		// A linked directory is left alone: removing it would act on a path the
+		// layout never owned.
+		if (lstatSync(directory).isSymbolicLink()) continue;
 		if (readdirSync(directory).length === 0) rmSync(directory, { recursive: true, force: true });
 	}
 }
@@ -452,14 +475,18 @@ function verifyCandidateStore(root: string, tasks: LegacyTask[]): void {
 function removeRetiredAuthority(root: string, tasks: LegacyTask[]): void {
 	for (const task of tasks) {
 		for (const source of task.sources) {
+			assertNoSymlinkSegments(root, `${source.directory}/${source.recordFile}`);
 			rmSync(join(root, source.directory, source.recordFile), { force: true });
 			// A proof that lives in the audit tree is preserved evidence, not
 			// retired authority: only a beside-the-record proof is removed.
 			if (source.proofFile) rmSync(join(root, source.directory, source.proofFile), { force: true });
 		}
 	}
-	for (const relative of [FILE_STORE_CLAIM_RELATIVE, FILE_STORE_WORKSPACE_RELATIVE, LEGACY_WORKSPACE_RELATIVE])
+	for (const relative of [FILE_STORE_CLAIM_RELATIVE, FILE_STORE_WORKSPACE_RELATIVE, LEGACY_WORKSPACE_RELATIVE]) {
+		if (!existsSync(join(root, relative))) continue;
+		assertNoSymlinkSegments(root, relative);
 		rmSync(join(root, relative), { force: true });
+	}
 	for (const relative of [LEGACY_TASKS_RELATIVE, FILE_STORE_TASKS_RELATIVE]) {
 		const directory = join(root, relative);
 		if (existsSync(directory) && readdirSync(directory).length === 0) rmSync(directory, { recursive: true, force: true });
@@ -518,6 +545,8 @@ function removeOrphanProofs(root: string, canonical: string): void {
 			if (!entry.endsWith(".backend-claim.json")) continue;
 			const taskId = entry.slice(0, -".backend-claim.json".length);
 			if (existsSync(join(directory, `${taskId}.json`))) continue;
+			// The proof is deleted below, so its path must stay inside the worktree.
+			assertNoSymlinkSegments(root, `${relative}/${entry}`);
 			const bytes = readRegularFileOrNull(join(directory, entry));
 			if (!bytes) continue;
 			let proof: Record<string, unknown>;
@@ -576,7 +605,9 @@ export function importLegacyWorkspace(rootInput: string, now = new Date().toISOS
 			// an orphan proof with no record, and that survivor keeps the layout
 			// invalid even though every task is already published.
 			removeOrphanProofs(root, canonical);
-			removeRetiredArtifacts(root, collectRetiredArtifacts(root));
+			const surviving = collectRetiredArtifacts(root);
+			verifyArtifactEvidence(root, surviving);
+			removeRetiredArtifacts(root, surviving);
 			removeEmptyRetiredDirectories(root);
 		} catch (error) {
 			return refusal(error instanceof Error ? error.message : String(error));

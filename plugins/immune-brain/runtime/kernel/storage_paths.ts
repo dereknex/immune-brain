@@ -71,9 +71,15 @@ export const FILE_STORE_INERT_FILES = [
 	".imm/state/journal.jsonl",
 	".imm/state/locks/kernel-store.lock",
 	".imm/state/enrollment-baseline.json",
-	// The explicit importer's candidate store and its import receipt: both are
-	// import-time machinery, and the published database is the only authority.
+	// The explicit importer's candidate store, its SQLite sidecars and its
+	// import receipt: all import-time machinery, and the published database is
+	// the only authority. A transaction that died mid-import leaves a rollback
+	// journal or a write-ahead log beside the candidate, and the layout must stay
+	// migratable so the retry can rebuild it.
 	".imm/state/kernel.sqlite.importing",
+	".imm/state/kernel.sqlite.importing-journal",
+	".imm/state/kernel.sqlite.importing-wal",
+	".imm/state/kernel.sqlite.importing-shm",
 	".imm/state/migration-receipt.json",
 ] as const;
 
