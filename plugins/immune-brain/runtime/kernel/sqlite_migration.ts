@@ -10,7 +10,7 @@
  * store absent; a crash after it leaves a complete store, so no reader observes
  * a half-imported database. Retry is idempotent through the recorded receipt.
  */
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import {
 	closeSync,
 	constants,
@@ -70,78 +70,54 @@ export class MigrationBusyError extends Error {
 
 /** Exclusive cross-process lock for one migration of this worktree. */
 export const MIGRATION_LOCK_RELATIVE = `${STATE_RELATIVE}/migration.lock`;
-/** A lock older than this is treated as abandoned by a crashed process. */
-const MIGRATION_LOCK_STALE_MS = 15 * 60 * 1000;
 
 /**
  * Serialize the whole migration — check, rebuild, verify, publish, retire — across
  * processes. Without it two concurrent runs can publish a candidate that the
  * other process is still rebuilding, and a half-imported database would replace
  * the authority while the legacy sources are deleted.
+ *
+ * The lock is never stolen: reclaiming a lock by path is itself a race (two
+ * reclaimers can each delete the other's fresh lock), so an existing lock is
+ * reported with the exact recovery action instead. Release removes the lock only
+ * while it still carries this process's own token.
  */
 function withImportLock<T>(root: string, operation: () => T): T {
 	const lockPath = join(root, MIGRATION_LOCK_RELATIVE);
+	// The lock lives inside the worktree, so its own path is validated before
+	// anything is created: a symlinked .imm/state must not receive the lock.
+	assertNoSymlinkSegments(root, MIGRATION_LOCK_RELATIVE);
 	mkdirSync(dirname(lockPath), { recursive: true });
-	let acquired = false;
-	for (let attempt = 0; attempt < 3 && !acquired; attempt += 1) {
-		try {
-			const fd = openSync(lockPath, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL);
-			try {
-				writeFileSync(fd, `${process.pid}\n`);
-			} finally {
-				closeSync(fd);
-			}
-			acquired = true;
-		} catch (error) {
-			if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
-			if (!clearAbandonedImportLock(lockPath)) {
-				throw new MigrationBusyError(`another storage layout migration is running (${MIGRATION_LOCK_RELATIVE})`);
-			}
-		}
+	const token = `${process.pid} ${randomUUID()}`;
+	let fd: number;
+	try {
+		fd = openSync(lockPath, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL);
+	} catch (error) {
+		if ((error as NodeJS.ErrnoException).code === "EEXIST")
+			throw new MigrationBusyError(
+				`another storage layout migration is running; if no migration is running, delete ${MIGRATION_LOCK_RELATIVE} and retry`,
+			);
+		throw error;
 	}
-	// The operation runs only after this process holds the lock: a retry that
-	// loses the race again must not fall through into the migration.
-	if (!acquired) throw new MigrationBusyError(`another storage layout migration is running (${MIGRATION_LOCK_RELATIVE})`);
+	try {
+		writeFileSync(fd, `${token}\n`);
+	} finally {
+		closeSync(fd);
+	}
 	try {
 		return operation();
 	} finally {
-		rmSync(lockPath, { force: true });
+		let held = "";
+		try {
+			held = readFileSync(lockPath, "utf8").trim();
+		} catch {
+			held = "";
+		}
+		if (held === token) rmSync(lockPath, { force: true });
 	}
 }
 
-function clearAbandonedImportLock(lockPath: string): boolean {
-	let raw = "";
-	try {
-		raw = readFileSync(lockPath, "utf8").trim();
-	} catch {
-		raw = "";
-	}
-	const ageMs = Date.now() - statSync(lockPath).mtimeMs;
-	const holder = raw.length > 0 ? Number.parseInt(raw, 10) : Number.NaN;
-	if (Number.isFinite(holder)) {
-		// A live holder is never stolen, however long it takes: it may be a slow
-		// migration, and stealing would let two importers publish at once.
-		if (processIsAlive(holder)) return false;
-		rmSync(lockPath, { force: true });
-		return true;
-	}
-	// An unreadable or still-empty lock may belong to a creator that has not
-	// written its pid yet, so only an old one is provably abandoned.
-	if (ageMs <= MIGRATION_LOCK_STALE_MS) return false;
-	rmSync(lockPath, { force: true });
-	return true;
-}
-
-function processIsAlive(pid: number): boolean {
-	try {
-		process.kill(pid, 0);
-		return true;
-	} catch (error) {
-		return (error as NodeJS.ErrnoException).code !== "ESRCH";
-	}
-}
-
-/** The candidate store the importer builds before publication. */
+/** The candidate store the importer builds before publication. *//** The candidate store the importer builds before publication. */
 export const MIGRATION_STORE_RELATIVE = `${KERNEL_DB_RELATIVE}.importing`;
 /** Import identity of a published migration, used to make retry idempotent. */
 export const MIGRATION_RECEIPT_RELATIVE = `${STATE_RELATIVE}/migration-receipt.json`;
@@ -793,15 +769,13 @@ export function importLegacyWorkspace(rootInput: string, now = new Date().toISOS
 	try {
 		return withImportLock(canonicalInput, () => importLegacyWorkspaceLocked(canonicalInput, now));
 	} catch (error) {
-		if (error instanceof MigrationBusyError)
-			return {
-				contract: "assurance_kernel/sqlite_import_result/v1",
-				outcome: "refused",
-				reason: error.message,
-				imported_task_ids: [],
-				uncommitted_evidence: [],
-			};
-		throw error;
+		return {
+			contract: "assurance_kernel/sqlite_import_result/v1",
+			outcome: error instanceof MigrationBusyError ? "refused" : "failed",
+			reason: error instanceof Error ? error.message : String(error),
+			imported_task_ids: [],
+			uncommitted_evidence: [],
+		};
 	}
 }
 
@@ -836,6 +810,10 @@ function importLegacyWorkspaceLocked(rootInput: string, now: string): SqliteImpo
 			// identity. Each survivor is verified against its published row instead,
 			// which also refuses a source file the import never published.
 			if (pending.tasks.length > 0) verifyPublishedRows(root, canonical, pending.tasks);
+			// Retiring a source is only safe while the committed evidence holds its
+			// exact bytes, so this re-runs the same preservation check the import
+			// performed and repairs a missing copy instead of deleting the only one.
+			for (const task of pending.tasks) writeAuditEvidence(root, task);
 			// The evidence that justifies retiring the survivors must still be in
 			// HEAD: a branch switch between publication and cleanup would otherwise
 			// delete the only copy of the historical bytes.

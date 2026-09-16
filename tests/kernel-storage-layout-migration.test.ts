@@ -1064,17 +1064,20 @@ describe("explicit SQLite import of the retired file store (A1)", () => {
 		const root = tempRoot();
 		writeLegacyTerminalPair(root, "2026-08-14-028-old-task");
 		commit(root, "legacy evidence");
-		// A live holder blocks the migration.
 		mkdirSync(join(root, ".imm/state"), { recursive: true });
 		const lockPath = join(root, ".imm/state/migration.lock");
-		writeFileSync(lockPath, `${process.pid}\n`);
+		// A held lock blocks: the importer never steals it, not even from a dead
+		// holder, because path-based reclaiming is itself a race.
+		writeFileSync(lockPath, `${process.pid} 00000000-0000-4000-8000-000000000000\n`);
 		const blocked = await runMigration(root);
 		expect(blocked.outcome).toBe("invalid");
 		expect(blocked.reason).toMatch(/another storage layout migration is running/);
+		expect(blocked.reason).toMatch(/delete .imm\/state\/migration.lock and retry/);
+		expect(existsSync(lockPath)).toBe(true);
 		expect(existsSync(join(root, ".imm/state/kernel.sqlite"))).toBe(false);
 
-		// An abandoned lock, held by a process that is gone, is reclaimed.
-		writeFileSync(lockPath, "999999999\n");
+		// The documented recovery: an operator removes the abandoned lock.
+		rmSync(lockPath);
 		const recovered = await runMigration(root);
 		expect(recovered.outcome).toBe("migration_uncommitted");
 		expect(existsSync(lockPath)).toBe(false);
@@ -1171,6 +1174,51 @@ describe("explicit SQLite import of the retired file store (A1)", () => {
 		expect(outcome.outcome).toBe("invalid");
 		expect(outcome.reason).toMatch(/legacy ledger is working/);
 		expect(existsSync(join(root, ".imm/memory/current_iteration.json"))).toBe(true);
+	});
+
+	it("refuses to lock through a symlinked state directory", async () => {
+		const root = tempRoot();
+		const outside = mkdtempSync(join(tmpdir(), "imm-outside-state-"));
+		try {
+			// The published store and its receipt appear to live in the worktree but
+			// resolve outside it: the recovery path must not touch that state.
+			writeFileSync(join(outside, "kernel.sqlite"), "not a real store");
+			writeFileSync(
+				join(outside, "migration-receipt.json"),
+				`${JSON.stringify({ contract: "assurance_kernel/sqlite_import_receipt/v1", imported_at: "2026-08-26T00:00:00.000Z", identity: "sha256:" + "0".repeat(64), task_ids: [] })}\n`,
+			);
+			mkdirSync(join(root, ".imm"), { recursive: true });
+			execFileSync("ln", ["-s", outside, join(root, ".imm/state")]);
+			const outcome = await runMigration(root);
+			expect(outcome.outcome).toBe("invalid");
+			expect(outcome.reason).toMatch(/symlinked evidence path is forbidden/);
+			// The external directory keeps exactly what it had: no lock, no changes.
+			expect(readdirSync(outside).sort()).toEqual(["kernel.sqlite", "migration-receipt.json"]);
+		} finally {
+			rmSync(outside, { recursive: true, force: true });
+		}
+	});
+
+	it("refuses to retire a source whose committed evidence changed", async () => {
+		const root = tempRoot();
+		writeLegacyTerminalPair(root, "2026-08-14-034-old-task");
+		commit(root, "legacy evidence");
+		expect((await runMigration(root)).outcome).toBe("migration_uncommitted");
+		commit(root, "preserve evidence");
+		expect((await runMigration(root)).outcome).toBe("migrated");
+		// The record comes back, but the committed evidence now holds different
+		// bytes while still being in HEAD.
+		const recordBytes = readFileSync(join(root, ".imm/audit/2026-08-14-034-old-task/task-record.json"));
+		const proofBytes = readFileSync(join(root, ".imm/audit/2026-08-14-034-old-task/terminal-proof.json"));
+		mkdirSync(join(root, ".imm/tasks"), { recursive: true });
+		writeFileSync(join(root, ".imm/tasks/2026-08-14-034-old-task.json"), recordBytes);
+		writeFileSync(join(root, ".imm/tasks/2026-08-14-034-old-task.backend-claim.json"), proofBytes);
+		writeFileSync(join(root, ".imm/audit/2026-08-14-034-old-task/task-record.json"), `{"changed":true}\n`);
+		commit(root, "changed evidence");
+		const outcome = await runMigration(root);
+		expect(outcome.outcome).toBe("invalid");
+		expect(outcome.reason).toMatch(/audit evidence already exists with different bytes/);
+		expect(existsSync(join(root, ".imm/tasks/2026-08-14-034-old-task.json"))).toBe(true);
 	});
 
 	it("refuses an existing audit target with zero writes", async () => {
