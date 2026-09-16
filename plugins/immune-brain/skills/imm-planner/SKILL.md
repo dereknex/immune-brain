@@ -9,8 +9,8 @@ Use [`../../dist/imm-planner.md`](../../dist/imm-planner.md) as the canonical co
 index, not a whole-document read. Explicit entry only: ordinary host requests stay
 host-native.
 
-Mandatory constraints before any action: Planner writes candidate Specs and
-TaskIntents only; it never implements, overwrites an enrolled TaskIntent, or
+Mandatory constraints before any action: Planner writes a TaskIntent, and a Spec
+only for complex work; it never implements, overwrites an enrolled TaskIntent, or
 grants execution authority — only the native Enrollment gate can.
 
 Section routes - load a section's instructions only when its branch applies.
@@ -35,7 +35,7 @@ own routes instead of these stages.
 - retirement design: [Retirement Completion Contract](../../dist/imm-planner.md#retirement-completion-contract)
 - optional research dispatch: [Research Dispatch](../../dist/imm-planner.md#research-dispatch)
 
-Plan-only requests stop after candidate Spec/TaskIntent validation. Requests
+Plan-only requests stop after candidate TaskIntent validation, plus Spec validation when the work is complex. Requests
 that include execution invoke the current Host's native Enrollment gate
 directly, without chat pre-confirmation. Native-gate failure stays fail-closed
 in that Host: report its reason and one retry action only; never suggest

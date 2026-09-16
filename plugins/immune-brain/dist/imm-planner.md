@@ -115,8 +115,9 @@ and clarification. It does not apply to Enrolled Intent Revision.
 Before authoring a TaskIntent, trace each expected behavior from its public or
 runtime entry point through existing imports and callers to the highest focused
 behavioral tests. Include generated or packaged mirrors and every owner of the
-same state machine. Record the concrete paths in the Spec's discovery evidence;
-do not author while a referenced sibling is unresolved. Use the smallest
+same state machine. Record the concrete paths in the Spec's discovery evidence when the work is
+complex; simple TaskIntent-only work records them in `scope_hint`.
+Do not author while a referenced sibling is unresolved. Use the smallest
 coherent module directory for ordinary implementation scope. Keep Kernel,
 authority, migration, secret, and security-sensitive scope exact to the files
 proved necessary by the trace. Scope is closed by reference evidence, not by an
@@ -261,7 +262,7 @@ descriptors or add a mandatory user confirmation. Use the smallest `timeout_ms` 
 
 ## Core Responsibilities
 
-- **Decomposition**: Convert requirements into a concrete spec under `docs/specs/` and one or more TaskIntents. Treat Technical Design as one TaskIntent decomposition dimension alongside outcome, Verification, dependency, risk, rollback, compatibility, and authority.
+- **Decomposition**: Convert requirements into one or more TaskIntents. Add a Spec under `docs/specs/` only for complex work. Treat Technical Design as one TaskIntent decomposition dimension alongside outcome, Verification, dependency, risk, rollback, compatibility, and authority.
 - **Outcome Focus**: Each TaskIntent owns one independently verifiable outcome. Implementation batches are Executor work, not separately authorized read/edit/run Steps.
 - **Planning granularity**: Keep a coherent outcome together when acceptance, risk, rollback, and authority can settle together. Use the TaskIntent decomposition rules below for independent outcomes. File count, tokens, compactions, elapsed time, and review rounds are evidence for judgment, not universal gates.
 - **Historical artifacts**: v3 prose Plan mutation is retired. `imm-plan` is a read-only validator for archived Plans; create no new Roadmap, Phase, successor Plan, or State Ledger.
@@ -369,8 +370,8 @@ preparation does not apply the revision or authorize expanded execution.
 - **Subagents**: Only when optional research is needed, read Research Dispatch and its shared dispatch reference. Default to inline evidence gathering. Plan conditional reviewers such as `security-reviewer` only if their trigger surfaces are explicit; do not manufacture them.
 - **Enrolled Intent**: Follow Enrolled Intent Revision for a Loop-requested scope or acceptance change; candidate preparation never changes the current owner or grants execution authority.
 - **CONTEXT.md Vocabulary**: Consult the relevant `CONTEXT.md` terms when domain meaning is unclear or changes; known file-local tasks do not require a full root-document read. `CONTEXT.md` is vocabulary and architecture navigation, not execution state.
-- **Discovery Protocol**: Read `CONTEXT.md` `## Architecture Map` before broad searching; consult relevant `docs/solutions/` evidence under Clarification supplement's history trigger. Record concrete file pointers and reasons in the Spec. Do not read or write a legacy Step discovery cache.
-- **Planning Quality Gate**: For elevated-risk work, verify contract surfaces, compatibility, interruption recovery, rollback, verification strength, and Brainstorm traceability in the Spec. Do not invoke retired Plan mutation or State Ledger synchronization.
+- **Discovery Protocol**: Read `CONTEXT.md` `## Architecture Map` before broad searching; consult relevant `docs/solutions/` evidence under Clarification supplement's history trigger. Record concrete file pointers and reasons in the Spec when one exists, otherwise on the TaskIntent. Do not read or write a legacy Step discovery cache.
+- **Planning Quality Gate**: For elevated-risk complex work, verify contract surfaces, compatibility, interruption recovery, rollback, verification strength, and Brainstorm traceability in the Spec. Simple TaskIntent-only work verifies those properties on the Intent. Do not invoke retired Plan mutation or State Ledger synchronization.
 - **Parallel Probes**: Optional read-only probes must have bounded non-overlapping scopes, expected evidence, and no file or authority writes. They are advisory discovery, not persisted Step annotations. Probe failure falls back to inline investigation with a recorded reason.
 
 ## Research Dispatch
@@ -440,7 +441,7 @@ a State Ledger. Keep historical Plan validation strictly read-only.
 ## Verification
 
 - Validate every candidate through `imm-kernel intent validate <path> --json` after authoring and staging. Require `valid: true` and `enrollment_ready: true` before Enrollment.
-- Verify Spec design metadata, document language, reference closure, concrete descriptor paths, and complete Brainstorm traceability before handoff.
+- For complex work, verify Spec design metadata, document language, reference closure, concrete descriptor paths, and complete Brainstorm traceability before handoff. Simple TaskIntent-only work verifies those properties on the Intent.
 - Enrollment validates descriptor structure only. Deterministic QA owns descriptor execution after implementation; planning does not run the acceptance suite.
 - Managed execution handoff is Git-tracked TaskIntent author/validate plus current-Host native Enrollment. Do not sync a v3 State Ledger or invoke a missing dispatcher.
 

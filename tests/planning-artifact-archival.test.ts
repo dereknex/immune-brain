@@ -277,26 +277,59 @@ describe("planning artifact archival", () => {
         capability_binding: binding,
         now,
       }, enrollmentRegistry);
-      const app = createCanaryApplication(createMutationAuthorityRegistry());
+      const registry = createMutationAuthorityRegistry();
+      const app = createCanaryApplication(registry);
+      const specPath = join(root, `docs/specs/${taskId}.spec.md`);
+      const delivery = (bytes: Buffer) => `sha256:${createHash("sha256").update(bytes).digest("hex")}`;
+      const d1 = delivery(readFileSync(specPath));
       const token = () => readTaskIntent(root, taskId, readTaskRecord(root, taskId).record!.intent_ref.path).token;
-      const frozen = app.execute({
-        root,
-        task_id: taskId,
-        operation: { op: "freeze_artifacts", actor_id: "executor-1" },
-        prior_intent_token: token(),
-        diffProvider: () => ({ diff_hash: `sha256:${"a".repeat(64)}`, changed_paths: [] }),
-        now,
-      });
+      const run = (operation: Parameters<typeof app.execute>[0]["operation"], at: string, diff_hash: string) =>
+        app.execute({
+          root,
+          task_id: taskId,
+          operation,
+          prior_intent_token: token(),
+          diffProvider: () => ({ diff_hash, changed_paths: [`docs/specs/${taskId}.spec.md`] }),
+          now: at,
+        });
+      const frozen = run({ op: "freeze_artifacts", actor_id: "executor-1" }, now, d1);
       expect(frozen.record.artifact_state).toBe("frozen");
       expect(frozen.record.intent_ref.path).toBe(`docs/plans/${taskId}.intent.json`);
       expect(existsSync(join(root, `docs/plans/${taskId}.intent.json`))).toBe(true);
-      expect(existsSync(join(root, `docs/specs/${taskId}.spec.md`))).toBe(true);
+      expect(existsSync(specPath)).toBe(true);
       expect(existsSync(join(root, `docs/plans/archive/${taskId}.intent.json`))).toBe(false);
       expect(existsSync(join(root, `docs/specs/archive/${taskId}.spec.md`))).toBe(false);
-      const specPath = join(root, `docs/specs/${taskId}.spec.md`);
-      const boundHash = createHash("sha256").update(readFileSync(specPath)).digest("hex");
+      const qaAt = "2026-08-12T10:00:01.000Z";
+      const approval = {
+        id: "ap-qa",
+        kind: "qa" as const,
+        authority_role: "qa" as const,
+        task_revision: 1,
+        intent_content_hash: hash,
+        diff_hash: d1,
+        actor_id: "qa-1",
+        summary: "passed",
+      };
+      const qaAction = capabilityActionFor({ op: "record_approval", task_id: taskId, at: qaAt, actor_id: "qa-1", approval });
+      const qaCap = createMutationAuthorityCapabilityForTest(registry, {
+        authority_kind: "qa",
+        task_id: taskId,
+        action_digest: digestOfAction(qaAction),
+        expected_record_hash: readTaskRecord(root, taskId).revision,
+        intent_revision: 1,
+        intent_content_hash: hash,
+        diff_hash: d1,
+        actor_id: "qa-1",
+        confirmation_ref: "conf-qa",
+        expires_at: "2099-01-01T00:00:00.000Z",
+        findings_digest: null,
+      });
+      run({ op: "record_approval", approval, capability: qaCap, actor_id: "qa-1" }, qaAt, d1);
       writeFileSync(specPath, "# stale spec\n");
-      expect(createHash("sha256").update(readFileSync(specPath)).digest("hex")).not.toBe(boundHash);
+      const d2 = delivery(readFileSync(specPath));
+      expect(d2).not.toBe(d1);
+      expect(() => run({ op: "complete", actor_id: "executor-1" }, "2026-08-12T10:00:01.500Z", d2)).toThrow(/not eligible/);
+      expect(readTaskRecord(root, taskId).record).toMatchObject({ lifecycle: "active", artifact_state: "frozen" });
       const findings = [{
         id: "rw-1",
         kind: "blocking" as const,
@@ -306,8 +339,6 @@ describe("planning artifact archival", () => {
         review_round: null,
         summary: "stale spec",
       }];
-      const registry = createMutationAuthorityRegistry();
-      const appRework = createCanaryApplication(registry);
       const reworkAt = "2026-08-12T10:00:02.000Z";
       const action = capabilityActionFor({
         op: "request_rework",
@@ -323,20 +354,17 @@ describe("planning artifact archival", () => {
         expected_record_hash: readTaskRecord(root, taskId).revision,
         intent_revision: 1,
         intent_content_hash: hash,
-        diff_hash: `sha256:${"a".repeat(64)}`,
+        diff_hash: d2,
         actor_id: "reviewer-1",
         confirmation_ref: "conf-rework",
         expires_at: "2099-01-01T00:00:00.000Z",
         findings_digest: findingsDigestV2(findings as never[]),
       });
-      const restored = appRework.execute({
-        root,
-        task_id: taskId,
-        operation: { op: "request_rework", capability, findings: findings as never[], actor_id: "reviewer-1" },
-        prior_intent_token: token(),
-        diffProvider: () => ({ diff_hash: `sha256:${"a".repeat(64)}`, changed_paths: [] }),
-        now: reworkAt,
-      });
+      const restored = run(
+        { op: "request_rework", capability, findings: findings as never[], actor_id: "reviewer-1" },
+        reworkAt,
+        d2,
+      );
       expect(restored.record.artifact_state).toBe("active");
       expect(restored.record.intent_ref.path).toBe(`docs/plans/${taskId}.intent.json`);
       expect(existsSync(join(root, `docs/plans/${taskId}.intent.json`))).toBe(true);

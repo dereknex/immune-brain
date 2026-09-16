@@ -78,6 +78,7 @@ describe("imm-planner kernel intent contract", () => {
 		const skill = readFileSync(DIST_PATH, "utf8");
 		expect(skill).toContain("Simple tasks are TaskIntent-only");
 		expect(skill).toContain("Add a Spec only for complex work");
+		expect(skill).toContain("simple TaskIntent-only work records them in `scope_hint`");
 		expect(skill).toContain("immutable content identity");
 		expect(skill).not.toContain("Include bound active and archive Spec paths needed for artifact freeze");
 		expect(skill).toContain("do not relocate artifacts");
