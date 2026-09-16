@@ -1376,11 +1376,14 @@ function executeKernelCommand(args: string[], root: string): KernelExecution {
  */
 function runStorageLayoutMigration(root: string): KernelExecution {
 	const inspection = inspectStorageLayout(root);
-	if (inspection.layout === "migration_blocked_active" || inspection.layout === "invalid")
+	// Only a live owner blocks the command. Every other diagnosis is handed to
+	// the migrator, which owns the recovery decisions: an interrupted
+	// publication shows both stores and must stay reachable through this CLI.
+	if (inspection.layout === "migration_blocked_active")
 		return {
 			result: errorResult(
 				"layout_migration_blocked",
-				inspection.reason ?? "the retired storage layout cannot be migrated as it stands",
+				inspection.reason ?? "a live legacy task still owns work; settle or stop it on the prior runtime first",
 				1,
 			),
 			journal: journalFor(

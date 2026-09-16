@@ -41,6 +41,7 @@ import {
 	auditTerminalProofPath,
 } from "./storage_paths";
 import {
+	KernelStoreSecurityError,
 	createMigrationStoreFile,
 	insertRunRow,
 	markAuditExported,
@@ -399,6 +400,13 @@ function buildCandidateStore(root: string, tasks: LegacyTask[], now: string): vo
 	}
 }
 
+/** Discard an unfinished candidate and build it again from the source facts. */
+function rebuildCandidateStore(root: string, tasks: LegacyTask[], now: string): void {
+	const target = join(root, MIGRATION_STORE_RELATIVE);
+	for (const suffix of ["", "-wal", "-shm"]) rmSync(`${target}${suffix}`, { force: true });
+	buildCandidateStore(root, tasks, now);
+}
+
 /** Verify the candidate store row by row before anything is published. */
 function verifyCandidateStore(root: string, tasks: LegacyTask[]): void {
 	const target = join(root, MIGRATION_STORE_RELATIVE);
@@ -585,7 +593,10 @@ export function importLegacyWorkspace(rootInput: string, now = new Date().toISOS
 	if (live) return refusal(`${live}; a recoverable batch must be settled or stopped before import`);
 	const { tasks, reason } = readLegacyTasks(root);
 	if (reason) return refusal(reason);
-	if (tasks.length === 0) return refusal("no legacy terminal task is present to import");
+	// A workspace can be on the retired layout with no task at all — only an
+	// owner-free workspace file or an idle Ledger. Migrating it still publishes
+	// the store, preserves the historical evidence, and retires the old paths,
+	// so a zero-run import is a normal outcome rather than a refusal.
 	const identity = importIdentity(tasks);
 	if (receipt && receipt.identity !== identity)
 		return refusal("the recorded import identity does not match the legacy facts");
@@ -604,7 +615,17 @@ export function importLegacyWorkspace(rootInput: string, now = new Date().toISOS
 		// built.
 		if (dirty.length > 0) return refusal("the preserved audit evidence is not committed yet", dirty);
 		if (!candidateReady) buildCandidateStore(root, tasks, now);
-		verifyCandidateStore(root, tasks);
+		try {
+			verifyCandidateStore(root, tasks);
+		} catch (error) {
+			// A candidate this worktree built but never finished — the process died
+			// between creating the store file and writing its rows — is rebuilt from
+			// the source facts. A candidate bound to another worktree stays refused:
+			// that failure is a store-identity error, not a content mismatch.
+			if (error instanceof KernelStoreSecurityError) throw error;
+			rebuildCandidateStore(root, tasks, now);
+			verifyCandidateStore(root, tasks);
+		}
 		// The receipt is written before publication so a crash between the rename
 		// and the cleanup still leaves a retry that converges: the next run finds
 		// the store, verifies it, and finishes removing the retired files.

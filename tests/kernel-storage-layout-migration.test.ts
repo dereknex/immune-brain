@@ -5,6 +5,7 @@ import {
 	mkdirSync,
 	mkdtempSync,
 	readdirSync,
+	realpathSync,
 	readFileSync,
 	renameSync,
 	rmSync,
@@ -759,6 +760,84 @@ describe("explicit SQLite import of the retired file store (A1)", () => {
 		for (const retired of [".imm/memory", ".imm/templates", ".imm/journal.jsonl", ".imm/tasks/.workspace.lock", ".imm/state/tasks"]) {
 			expect(existsSync(join(root, retired))).toBe(false);
 		}
+		expect(inspectStorageLayout(root).layout).toBe("ready");
+	});
+
+	it("recovers a post-publication interruption through the CLI", async () => {
+		const root = tempRoot();
+		writeLegacyTerminalPair(root, "2026-08-14-019-old-task");
+		commit(root, "legacy evidence");
+		expect((await runMigration(root)).outcome).toBe("migration_uncommitted");
+		commit(root, "preserve evidence");
+		expect((await runMigration(root)).outcome).toBe("migrated");
+		// Publication happened, the source removal did not: the layout now shows
+		// both stores, and that state must stay reachable through the command.
+		const recordBytes = readFileSync(join(root, ".imm/audit/2026-08-14-019-old-task/task-record.json"));
+		const proofBytes = readFileSync(join(root, ".imm/audit/2026-08-14-019-old-task/terminal-proof.json"));
+		mkdirSync(join(root, ".imm/tasks"), { recursive: true });
+		writeFileSync(join(root, ".imm/tasks/2026-08-14-019-old-task.json"), recordBytes);
+		writeFileSync(join(root, ".imm/tasks/2026-08-14-019-old-task.backend-claim.json"), proofBytes);
+		commit(root, "restore legacy source");
+
+		const { runKernelCli } = await import("../plugins/immune-brain/runtime/v4_runtime");
+		const recovered = await runKernelCli(["migrate", "--storage-layout"], root);
+		expect(recovered.returncode).toBe(0);
+		expect(JSON.parse(recovered.stdout)).toMatchObject({ contract: "assurance_kernel/migration_completed/v1" });
+		expect(existsSync(join(root, ".imm/tasks/2026-08-14-019-old-task.json"))).toBe(false);
+	});
+
+	it("rebuilds an unfinished candidate instead of failing forever", async () => {
+		const root = tempRoot();
+		writeLegacyTerminalPair(root, "2026-08-14-020-old-task");
+		commit(root, "legacy evidence");
+		expect((await runMigration(root)).outcome).toBe("migration_uncommitted");
+		commit(root, "preserve evidence");
+		// The crash window: the candidate store file exists with its schema but the
+		// run rows were never written.
+		const { createMigrationStoreFile } = await import("../plugins/immune-brain/runtime/kernel/sqlite_store");
+		mkdirSync(join(root, ".imm/state"), { recursive: true });
+		const canonical = realpathSync(root);
+		createMigrationStoreFile(canonical, join(canonical, ".imm/state/kernel.sqlite.importing"), new Date(0).toISOString());
+		const outcome = await runMigration(root);
+		expect(outcome).toMatchObject({ outcome: "migrated" });
+		const { openKernelStore } = await import("../plugins/immune-brain/runtime/kernel/sqlite_store");
+		const db = openKernelStore(root, { create: false });
+		expect(db!.prepare("SELECT COUNT(*) AS n FROM runs").get()).toMatchObject({ n: 1 });
+		db!.close();
+	});
+
+	it("migrates a retired workspace that holds no task at all", async () => {
+		const root = tempRoot();
+		mkdirSync(join(root, ".imm/state"), { recursive: true });
+		writeFileSync(
+			join(root, ".imm/state/workspace.json"),
+			`${JSON.stringify({ contract: "assurance_kernel/workspace/v1", current_working: null }, null, 2)}\n`,
+		);
+		commit(root, "owner-free retired workspace");
+		expect(inspectStorageLayout(root).layout).toBe("migration_required");
+		const outcome = await runMigration(root);
+		expect(outcome).toMatchObject({ outcome: "migrated" });
+		expect(existsSync(join(root, ".imm/state/workspace.json"))).toBe(false);
+		expect(existsSync(join(root, ".imm/state/kernel.sqlite"))).toBe(true);
+		commit(root, "migrated");
+		expect(inspectStorageLayout(root).layout).toBe("ready");
+	});
+
+	it("migrates an idle Ledger workspace with no task and keeps the ledger readable", async () => {
+		const root = tempRoot();
+		const ledger = `${JSON.stringify({ schema_version: 3, runtime_status: "idle", steps: {} }, null, 2)}\n`;
+		mkdirSync(join(root, ".imm/memory"), { recursive: true });
+		writeFileSync(join(root, ".imm/memory/current_iteration.json"), ledger);
+		commit(root, "idle ledger");
+		expect(inspectStorageLayout(root).layout).toBe("migration_required");
+		const first = await runMigration(root);
+		expect(first.outcome).toBe("migration_uncommitted");
+		expect(first.affected_paths).toEqual([".imm/audit/legacy-v3/current_iteration.json"]);
+		commit(root, "preserve ledger");
+		expect((await runMigration(root)).outcome).toBe("migrated");
+		expect(readFileSync(join(root, ".imm/audit/legacy-v3/current_iteration.json"), "utf8")).toBe(ledger);
+		expect(existsSync(join(root, ".imm/memory"))).toBe(false);
+		commit(root, "migrated");
 		expect(inspectStorageLayout(root).layout).toBe("ready");
 	});
 
