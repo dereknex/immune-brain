@@ -838,12 +838,14 @@ export function readCommittedEnrollmentResult(
 				`enrollment operation for ${taskId} was committed for a different request; resubmit the exact request that enrolled it`,
 			);
 		const decoded = decodeOperationResult(row.result_json);
-		const run = readRunRowByTask(db, taskId);
-		if (!run)
+		if (typeof parsed.claim_json !== "string")
 			throw new KernelStoreConflictError(
-				`enrollment operation for ${taskId} has no committed run`,
+				`enrollment operation for ${taskId} has no committed claim`,
 			);
-		return { ...decoded, claim: claimFromRunRow(run) };
+		return {
+			...decoded,
+			claim: parseBackendClaim(JSON.parse(parsed.claim_json) as Record<string, unknown>),
+		};
 	});
 	return read ?? null;
 }
@@ -1195,6 +1197,12 @@ interface CommittedOperationResult {
 	 * this field existed; absence never authorizes a different request.
 	 */
 	request_digest?: string;
+	/**
+	 * Enrollment's committed claim. Replays must return these bytes, not a
+	 * projection of the live run: drain or settlement can change claim_status
+	 * after the enrollment committed.
+	 */
+	claim_json?: string;
 }
 
 function decodeOperationResult(
@@ -1396,6 +1404,7 @@ export function commitEnrollmentLocked(
 				record_json: transaction.next_record_content,
 				workspace_json: transaction.next_workspace_content,
 				request_digest: digest,
+				claim_json: JSON.stringify(parsedClaim),
 			} satisfies CommittedOperationResult),
 			committed_at: parsedClaim.updated_at,
 		});

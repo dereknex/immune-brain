@@ -58,6 +58,9 @@ const ZERO_DIFF = "sha256:" + "0".repeat(64);
 
 let root: string;
 let mutationRegistry: ReturnType<typeof createMutationAuthorityRegistry>;
+let enrollmentRegistry: ReturnType<typeof createEnrollmentAuthorityRegistry>;
+let enrollBinding: EnrollmentCapabilityBinding;
+let enrollCap: object;
 let app: ReturnType<typeof createCanaryApplication>;
 let now: string;
 
@@ -73,9 +76,9 @@ beforeEach(() => {
 	);
 	execFileSync("git", ["add", "-A"], { cwd: root });
 	execFileSync("git", ["commit", "-qm", "intent"], { cwd: root });
-	const enrollmentRegistry = createEnrollmentAuthorityRegistry();
+	enrollmentRegistry = createEnrollmentAuthorityRegistry();
 	const prep = preparePiCanary(root, { task_id: TASK, now: "2026-08-12T10:00:00.000Z" });
-	const binding: EnrollmentCapabilityBinding = {
+	enrollBinding = {
 		task_id: TASK,
 		intent_path: `docs/plans/${TASK}.intent.json`,
 		intent_revision: 1,
@@ -86,15 +89,16 @@ beforeEach(() => {
 		expires_at: "2099-01-01T00:00:00.000Z",
 		nonce: "nonce-enroll",
 	};
+	enrollCap = enrollmentRegistry.issue(enrollBinding);
 	enrollCanaryTask(
 		root,
 		{
 			task_id: TASK,
 			intent_path: `docs/plans/${TASK}.intent.json`,
 			intent_revision: 1,
-			preparation_digest: binding.preparation_digest,
-			capability: enrollmentRegistry.issue(binding),
-			capability_binding: binding,
+			preparation_digest: enrollBinding.preparation_digest,
+			capability: enrollCap,
+			capability_binding: enrollBinding,
 			now,
 		},
 		enrollmentRegistry,
@@ -152,6 +156,29 @@ describe("drain transaction", () => {
 		expect(existsSync(join(root, ".imm/state/transactions/drain-transaction.json"))).toBe(false);
 		expect(existsSync(join(root, ".imm/state/active-claim.json"))).toBe(false);
 		expect(mutationRegistry.isConsumed(cap)).toBe(true);
+	});
+
+	test("a lost enrollment response still returns the enrolled claim after drain", () => {
+		const enrolled = readBackendClaim(root)!;
+		expect(enrolled.lifecycle_status).toBe("active");
+		app.beginDrain({ root, task_id: TASK, capability: drainCapability(), now });
+		expect(readBackendClaim(root)?.lifecycle_status).toBe("draining");
+		const replayed = enrollCanaryTask(
+			root,
+			{
+				task_id: TASK,
+				intent_path: `docs/plans/${TASK}.intent.json`,
+				intent_revision: 1,
+				preparation_digest: enrollBinding.preparation_digest,
+				capability: enrollCap,
+				capability_binding: enrollBinding,
+				now,
+			},
+			enrollmentRegistry,
+		);
+		expect(replayed.backend_claim).toEqual(enrolled);
+		expect(replayed.backend_claim.lifecycle_status).toBe("active");
+		expect(readBackendClaim(root)?.lifecycle_status).toBe("draining");
 	});
 
 	test("exact committed drain replay is idempotent", () => {

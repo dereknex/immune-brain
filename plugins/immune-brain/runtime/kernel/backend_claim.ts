@@ -9,8 +9,14 @@
 import { lstatSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 
-import { auditEvidencePaths } from "./storage_paths";
-import { activeRunId, readRunRowById, withKernelRead, type KernelRunRow } from "./sqlite_store";
+import { auditEvidencePaths, auditRunTerminalProofPath } from "./storage_paths";
+import {
+	activeRunId,
+	readRunRowById,
+	readRunRowByTask,
+	withKernelRead,
+	type KernelRunRow,
+} from "./sqlite_store";
 import type { TaskLifecycle } from "./types";
 
 export type BackendLifecycleStatus = "active" | "draining";
@@ -181,7 +187,14 @@ export function parseTaskTombstone(raw: Record<string, unknown>): TaskTombstone 
 /** Fail-closed task-scoped tombstone read. Malformed/unreadable/symlinked state throws; only ENOENT means absent. */
 export function readTaskTombstone(root: string, taskId: string): TaskTombstone | null {
 	validateTaskId(taskId);
-	const raw = readJsonOrNull(join(resolve(root), auditEvidencePaths(root, taskId).proof));
+	// A local run's proof is that run's evidence. Directory counting cannot
+	// choose among several run directories, and a foreign run must not be
+	// adopted while this worktree has its own run.
+	const localRun = withKernelRead(root, (db) => readRunRowByTask(db, taskId));
+	const proofPath = localRun
+		? auditRunTerminalProofPath(taskId, localRun.run_id)
+		: auditEvidencePaths(root, taskId).proof;
+	const raw = readJsonOrNull(join(resolve(root), proofPath));
 	if (!raw) return null;
 	const tombstone = parseTaskTombstone(raw);
 	if (tombstone.task_id !== taskId)

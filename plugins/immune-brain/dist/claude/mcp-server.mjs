@@ -3358,7 +3358,9 @@ function parseTaskTombstone(raw) {
 }
 function readTaskTombstone(root, taskId) {
   validateTaskId2(taskId);
-  const raw = readJsonOrNull(join4(resolve5(root), auditEvidencePaths(root, taskId).proof));
+  const localRun = withKernelRead(root, (db) => readRunRowByTask(db, taskId));
+  const proofPath = localRun ? auditRunTerminalProofPath(taskId, localRun.run_id) : auditEvidencePaths(root, taskId).proof;
+  const raw = readJsonOrNull(join4(resolve5(root), proofPath));
   if (!raw)
     return null;
   const tombstone = parseTaskTombstone(raw);
@@ -5759,10 +5761,12 @@ function readCommittedEnrollmentResult(root, taskId, eventId, requestDigest) {
     if ((parsed.request_digest ?? null) !== (requestDigest ?? null))
       throw new KernelStoreConflictError(`enrollment operation for ${taskId} was committed for a different request; resubmit the exact request that enrolled it`);
     const decoded = decodeOperationResult(row.result_json);
-    const run = readRunRowByTask(db, taskId);
-    if (!run)
-      throw new KernelStoreConflictError(`enrollment operation for ${taskId} has no committed run`);
-    return { ...decoded, claim: claimFromRunRow(run) };
+    if (typeof parsed.claim_json !== "string")
+      throw new KernelStoreConflictError(`enrollment operation for ${taskId} has no committed claim`);
+    return {
+      ...decoded,
+      claim: parseBackendClaim(JSON.parse(parsed.claim_json))
+    };
   });
   return read ?? null;
 }
@@ -6055,7 +6059,8 @@ function commitEnrollmentLocked(root, taskId, transaction, claim, requestDigest)
       result_json: JSON.stringify({
         record_json: transaction.next_record_content,
         workspace_json: transaction.next_workspace_content,
-        request_digest: digest
+        request_digest: digest,
+        claim_json: JSON.stringify(parsedClaim)
       }),
       committed_at: parsedClaim.updated_at
     });

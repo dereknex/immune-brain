@@ -329,6 +329,32 @@ describe("terminal ownership transfer", () => {
 		expect(revisionForContent(`${JSON.stringify(done.record, null, 2)}\n`)).toBe(done.revision);
 	});
 
+	test("readTaskTombstone binds the local run when another run directory is present", () => {
+		const done = completeTask();
+		const local = readTaskTombstone(root, TASK);
+		expect(local?.terminal_event_id).toBe(`complete:${TASK}:2026-08-12T10:00:04.000Z`);
+		const foreignDir = join(root, ".imm/audit", TASK, "run-foreign");
+		mkdirSync(foreignDir, { recursive: true });
+		writeFileSync(
+			join(foreignDir, "terminal-proof.json"),
+			`${JSON.stringify(
+				{
+					contract: "assurance_kernel/task_tombstone/v2",
+					task_id: TASK,
+					lifecycle_status: "terminal",
+					terminal_lifecycle: "stopped",
+					terminal_event_id: `stop:${TASK}:foreign`,
+					final_record_hash: done.revision,
+					terminalized_at: "2026-08-12T09:00:00.000Z",
+				},
+				null,
+				2,
+			)}\n`,
+		);
+		writeFileSync(join(foreignDir, "task-record.json"), `${JSON.stringify(done.record, null, 2)}\n`);
+		expect(readTaskTombstone(root, TASK)).toEqual(local);
+	});
+
 	test("user-confirmed stop terminalizes through the same transaction", () => {
 		const cap = stopCapability("2026-08-12T10:00:01.000Z");
 		const result = execute(
