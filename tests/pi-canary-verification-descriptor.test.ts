@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { execFileSync } from "node:child_process";
-import { chmodSync, existsSync, lstatSync, mkdtempSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { execFileSync, spawn } from "node:child_process";
+import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { assertDeliveryClean, DeliveryWorkspaceError, materializeDeliveryWorkspace, removeTaskOwnedTree, writeDeliveryTree } from "../plugins/immune-brain/runtime/assurance/delivery_workspace";
@@ -10,7 +10,7 @@ import { VerificationCleanupError, verificationPath } from "../plugins/immune-br
 
 const command = (overrides = {}) => ({ executable: "bun", argv: ["-e", "1"], cwd: ".", timeout_ms: 30000, max_output_bytes: 8192, ...overrides });
 const good = (overrides = {}) => parseVerificationDescriptor(JSON.stringify({ contract: "assurance_kernel/verification_descriptor/v2", command: command(overrides) }));
-function temp() { return mkdtempSync(join(tmpdir(), "imm-command-test-")); }
+function temp(prefix = "imm-command-test-") { return mkdtempSync(join(tmpdir(), prefix)); }
 function remove(root: string) { rmSync(root, { recursive: true, force: true }); }
 function git(root: string, args: string[]) { return execFileSync("git", args, { cwd: root, encoding: "utf8" }).trim(); }
 function gitRepo() {
@@ -135,6 +135,8 @@ describe("project command verification", () => {
 			expect(() => process.kill(pid, 0)).toThrow();
 		} finally { remove(root); }
 	});
+	// The `ps` scanner seam only exists off Linux: procfs discovery ignores it.
+	if (process.platform === "darwin") {
 	test("process discovery failure blocks success instead of leaking QA authority", async () => {
 		const root = temp(); let pid = 0;
 		try {
@@ -175,6 +177,94 @@ describe("project command verification", () => {
 			const pid = Number(readFileSync(join(root, "scanner-failure-running.pid"), "utf8"));
 			expect(() => process.kill(pid, 0)).toThrow();
 		} finally { remove(root); }
+	});
+	}
+	test("procfs discovery ignores table entries that do not carry the run token", async () => {
+		// Two live bystanders are placed in the table with environments that only
+		// resemble the marker. They must survive, which proves selection happens on the
+		// exact inherited environment rather than on a table entry or a command line.
+		const root = temp(), proc = join(root, "proc");
+		const bystanders = [
+			spawn(process.execPath, ["-e", "setTimeout(() => {}, 30000)"], { stdio: "ignore" }),
+			spawn(process.execPath, ["-e", "setTimeout(() => {}, 30000)"], { stdio: "ignore" }),
+		];
+		try {
+			const entry = (pid: number, environment: string) => {
+				mkdirSync(join(proc, String(pid)), { recursive: true });
+				writeFileSync(join(proc, String(pid), "environ"), environment);
+			};
+			entry(bystanders[0]!.pid!, "IMM_VERIFICATION_PROCESS_TOK=near-miss");
+			entry(bystanders[1]!.pid!, "PATH=/usr/bin\0SOME_OTHER=x");
+			mkdirSync(join(proc, "not-a-pid"), { recursive: true });
+			mkdirSync(join(proc, "999996"), { recursive: true }); // an exited process keeps no readable environ
+			const c = good({ argv: ["-e", "1"] }).command, path = verificationPath();
+			const result = await runFixedVerification(root, c, resolveVerificationCommand(root, c, path), {
+				home: root, path, _procRoot: proc,
+			});
+			expect(result.exit_code).toBe(0);
+			for (const bystander of bystanders) expect(() => process.kill(bystander.pid!, 0)).not.toThrow();
+		} finally {
+			for (const bystander of bystanders) { try { bystander.kill("SIGKILL"); } catch { /* Already exited. */ } }
+			remove(root);
+		}
+	});
+	test("an unreadable process table fails cleanup closed and still kills the known child", async () => {
+		const root = temp();
+		try {
+			const script = join(root, "unreadable-table-running.ts"), scanner = join(root, "broken-ps");
+			writeFileSync(script, [
+				'import { writeFileSync } from "node:fs";',
+				'writeFileSync("unreadable-table.pid", String(process.pid));',
+				'setInterval(() => {}, 10000);',
+			].join("\n"));
+			writeFileSync(scanner, "#!/bin/sh\nexit 1\n"); chmodSync(scanner, 0o755);
+			const c = good({ argv: ["run", script], timeout_ms: 1000 }).command, path = verificationPath();
+			// Neither platform can prove anything about the table here, so the run must
+			// fail closed while the directly known child is still terminated first.
+			await expect(runFixedVerification(root, c, resolveVerificationCommand(root, c, path), {
+				home: root, path, _procRoot: join(root, "missing-proc"), _processScanner: scanner,
+			})).rejects.toBeInstanceOf(VerificationCleanupError);
+			expect(() => process.kill(Number(readFileSync(join(root, "unreadable-table.pid"), "utf8")), 0)).toThrow();
+		} finally { remove(root); }
+	});
+	test("procfs discovery cleans an inherited token carrier and fails closed without a table", async () => {
+		// Linux cannot use the BSD `ps` environment modifier, so the procfs branch is
+		// proved on every host by emulating the platform against a synthetic process
+		// table: a detached carrier found only through the table must be killed before
+		// the result settles, and a table that cannot be read must fail closed.
+		const root = temp();
+		const platform = Object.getOwnPropertyDescriptor(process, "platform");
+		let carrierPid = 0;
+		try {
+			Object.defineProperty(process, "platform", { value: "linux", configurable: true });
+			const proc = join(root, "proc");
+			mkdirSync(proc, { recursive: true });
+			const script = join(root, "procfs-carrier.ts");
+			writeFileSync(script, [
+				'import { spawn } from "node:child_process";',
+				'import { mkdirSync, writeFileSync } from "node:fs";',
+				'const proc = process.argv[2];',
+				'const child = spawn(process.execPath, ["-e", "setTimeout(() => {}, 30000)"], { detached: true, stdio: "ignore" });',
+				'mkdirSync(proc + "/" + child.pid, { recursive: true });',
+				'writeFileSync(proc + "/" + child.pid + "/environ", Object.entries(process.env).map(([key, value]) => key + "=" + value).join("\\0"));',
+				'writeFileSync("procfs-carrier.pid", String(child.pid)); child.unref();',
+			].join("\n"));
+			const c = good({ argv: ["run", script, proc] }).command, path = verificationPath();
+			expect((await runFixedVerification(root, c, resolveVerificationCommand(root, c, path), {
+				home: root, path, _procRoot: proc,
+			})).exit_code).toBe(0);
+			carrierPid = Number(readFileSync(join(root, "procfs-carrier.pid"), "utf8"));
+			expect(carrierPid).not.toBe(0);
+			expect(() => process.kill(carrierPid, 0)).toThrow();
+			await expect(runFixedVerification(root, c, resolveVerificationCommand(root, c, path), {
+				home: root, path, _procRoot: join(root, "absent-proc"),
+			})).rejects.toBeInstanceOf(VerificationCleanupError);
+			carrierPid = Number(readFileSync(join(root, "procfs-carrier.pid"), "utf8"));
+		} finally {
+			if (platform) Object.defineProperty(process, "platform", platform);
+			if (carrierPid) { try { process.kill(carrierPid, "SIGKILL"); } catch { /* Already exited. */ } }
+			remove(root);
+		}
 	});
 	test("findings digest remains identical to the Kernel algorithm", async () => {
 		const { findingsDigestV2 } = await import("../plugins/immune-brain/runtime/kernel/reducer");

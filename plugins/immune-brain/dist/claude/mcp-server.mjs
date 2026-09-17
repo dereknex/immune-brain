@@ -735,7 +735,7 @@ function refutationIsLive(finding, attestations, identity) {
 // plugins/immune-brain/runtime/assurance/verification.ts
 import { createHash as createHash4, randomBytes } from "node:crypto";
 import { execFileSync, spawn } from "node:child_process";
-import { accessSync, constants as constants2, readFileSync, realpathSync as realpathSync2, statSync } from "node:fs";
+import { accessSync, constants as constants2, readFileSync, readdirSync as readdirSync2, realpathSync as realpathSync2, statSync } from "node:fs";
 import { delimiter, isAbsolute as isAbsolute2, join as join2, relative, resolve, sep } from "node:path";
 
 // plugins/immune-brain/runtime/verification_descriptor.ts
@@ -930,7 +930,8 @@ async function runFixedVerification(root, command, frozen, options) {
     throw new VerificationDescriptorError("fixed verification process-group isolation requires a POSIX host");
   const cwd = insideVerificationRoot(root, resolve(root, command.cwd));
   assertCommandIdentity(frozen);
-  const processScanner = identity(options._processScanner ?? toolPath("ps", verificationPath()));
+  const processScanner = process.platform === "linux" ? null : identity(options._processScanner ?? toolPath("ps", verificationPath()));
+  const procRoot = options._procRoot ?? "/proc";
   const maxOutput = Math.min(command.max_output_bytes, VERIFICATION_DESCRIPTOR_BOUNDS.max_output_bytes);
   return new Promise((resolvePromise, rejectPromise) => {
     let stdout = Buffer.alloc(0), stderr = Buffer.alloc(0), captured = 0;
@@ -972,12 +973,30 @@ async function runFixedVerification(root, command, frozen, options) {
         return error?.code !== "ESRCH";
       }
     };
-    const scanTokenPids = () => {
-      const pids = new Set;
-      if (child.pid !== undefined)
-        pids.add(child.pid);
+    const procEnviron = (pid) => {
       try {
-        if (JSON.stringify(identity(processScanner.invocation_path)) !== JSON.stringify(processScanner))
+        return readFileSync(join2(procRoot, String(pid), "environ"), "utf8");
+      } catch {
+        return null;
+      }
+    };
+    const scanTokenPids = () => {
+      if (child.pid === undefined)
+        return null;
+      try {
+        const pids = new Set([child.pid]);
+        if (process.platform === "linux") {
+          const marker = `IMM_VERIFICATION_PROCESS_TOKEN=${processToken}`;
+          for (const entry of readdirSync2(procRoot)) {
+            if (!/^\d+$/.test(entry))
+              continue;
+            const environ = procEnviron(Number(entry));
+            if (environ !== null && environ.split("\x00").includes(marker))
+              pids.add(Number(entry));
+          }
+          return pids;
+        }
+        if (processScanner === null || JSON.stringify(identity(processScanner.invocation_path)) !== JSON.stringify(processScanner))
           throw new Error("process scanner identity changed");
         for (const line of execFileSync(processScanner.invocation_path, ["eww", "-axo", "pid=,command="], {
           encoding: "utf8",
@@ -2583,7 +2602,7 @@ import {
   mkdirSync as mkdirSync4,
   openSync as openSync5,
   readFileSync as readFileSync8,
-  readdirSync as readdirSync3,
+  readdirSync as readdirSync4,
   realpathSync as realpathSync7,
   renameSync as renameSync2,
   rmSync as rmSync3,
@@ -2603,7 +2622,7 @@ import {
   openSync as openSync2,
   readFileSync as readFileSync4,
   realpathSync as realpathSync4,
-  readdirSync as readdirSync2,
+  readdirSync as readdirSync3,
   closeSync as closeSync2,
   fstatSync as fstatSync2
 } from "node:fs";
@@ -2665,7 +2684,7 @@ function auditTerminalProofPath(taskId) {
 function listEntries(root, relativePath) {
   const candidate = resolve3(root, relativePath);
   try {
-    return readdirSync2(candidate).sort();
+    return readdirSync3(candidate).sort();
   } catch {
     return null;
   }
@@ -5433,7 +5452,7 @@ function retiredFileStoreConflict(root, db, taskId) {
 }
 function readdirNames(path) {
   try {
-    return readdirSync3(path);
+    return readdirSync4(path);
   } catch (error) {
     const code = error.code;
     if (code === "ENOENT" || code === "ENOTDIR")
@@ -7829,7 +7848,7 @@ import { createHash as createHash17 } from "node:crypto";
 // plugins/immune-brain/runtime/assurance/delivery_workspace.ts
 import { execFileSync as execFileSync4 } from "node:child_process";
 import { createHash as createHash16 } from "node:crypto";
-import { chmodSync as chmodSync2, lstatSync as lstatSync8, mkdirSync as mkdirSync5, mkdtempSync as mkdtempSync2, readdirSync as readdirSync4, readFileSync as readFileSync10, readlinkSync as readlinkSync2, realpathSync as realpathSync9, rmSync as rmSync5 } from "node:fs";
+import { chmodSync as chmodSync2, lstatSync as lstatSync8, mkdirSync as mkdirSync5, mkdtempSync as mkdtempSync2, readdirSync as readdirSync5, readFileSync as readFileSync10, readlinkSync as readlinkSync2, realpathSync as realpathSync9, rmSync as rmSync5 } from "node:fs";
 import { tmpdir as tmpdir3 } from "node:os";
 import { dirname as dirname6, isAbsolute as isAbsolute5, join as join8, parse, relative as relative4, resolve as resolve9, sep as sep5 } from "node:path";
 
@@ -7852,7 +7871,7 @@ function removeTaskOwnedTree(root) {
     if (!stat.isDirectory() || stat.isSymbolicLink())
       return;
     chmodSync2(path, stat.mode & 4095 | 448);
-    for (const name of readdirSync4(path))
+    for (const name of readdirSync5(path))
       makeDirectoriesWritable(join8(path, name));
   };
   makeDirectoriesWritable(root);
@@ -7926,7 +7945,7 @@ function resolvedSymlinkTarget(path) {
 }
 function assertNoEscapingSymlinks(root, dir = root) {
   const realRoot = realpathSync9(root);
-  for (const name of readdirSync4(dir)) {
+  for (const name of readdirSync5(dir)) {
     const path = join8(dir, name);
     const stat = lstatSync8(path);
     if (stat.isSymbolicLink()) {
@@ -7969,7 +7988,7 @@ function writeDeliveryTree(sourceRoot, snapshot) {
 function workspaceFiles(root, dir = root, result = Object.create(null)) {
   if (dir === root)
     result["."] = `${lstatSync8(root).mode & 4095}:directory`;
-  for (const name of readdirSync4(dir).sort()) {
+  for (const name of readdirSync5(dir).sort()) {
     const path = join8(dir, name), rel = relative4(root, path);
     const stat = lstatSync8(path);
     if (stat.isSymbolicLink())
@@ -7997,7 +8016,7 @@ function assertDeliveryClean(root, tree, seal, writablePaths = []) {
     return;
   }
   if (seal === "[]") {
-    for (const name of readdirSync4(root)) {
+    for (const name of readdirSync5(root)) {
       const stat = lstatSync8(join8(root, name));
       if (!stat.isDirectory() || name !== ".git")
         throw new DeliveryWorkspaceError("delivery workspace was contaminated");
@@ -9747,7 +9766,7 @@ async function revalidatePendingChildBeforeWrite(root, gh, childNumber, childTas
 }
 
 // plugins/immune-brain/runtime/unattended/batch_preflight.ts
-import { existsSync as existsSync7, readdirSync as readdirSync5, readFileSync as readFileSync13 } from "node:fs";
+import { existsSync as existsSync7, readdirSync as readdirSync6, readFileSync as readFileSync13 } from "node:fs";
 import { randomUUID as randomUUID7 } from "node:crypto";
 import { join as join12 } from "node:path";
 import { spawnSync as spawnSync4 } from "node:child_process";
@@ -10449,7 +10468,7 @@ function findExistingActiveBatch(root, initiativeSlug) {
   const batchesDir = join12(root, ".imm", "state", "batches");
   if (!existsSync7(batchesDir))
     return null;
-  for (const file of readdirSync5(batchesDir)) {
+  for (const file of readdirSync6(batchesDir)) {
     if (!file.endsWith(".json"))
       continue;
     let record;
@@ -10486,7 +10505,7 @@ function findSettledBatchRecord(root, initiativeSlug) {
   if (!existsSync7(batchesDir))
     return null;
   let newest = null;
-  for (const file of readdirSync5(batchesDir).sort()) {
+  for (const file of readdirSync6(batchesDir).sort()) {
     if (!file.endsWith(".json"))
       continue;
     let record;

@@ -1,7 +1,7 @@
 // Shared, bounded execution of project commands. No language/tool registry.
 import { createHash, randomBytes } from "node:crypto";
 import { execFileSync, spawn } from "node:child_process";
-import { accessSync, constants, readFileSync, realpathSync, statSync } from "node:fs";
+import { accessSync, constants, readFileSync, readdirSync, realpathSync, statSync } from "node:fs";
 import { delimiter, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { VERIFICATION_DESCRIPTOR_BOUNDS, VerificationDescriptorError, type VerificationCommand } from "../verification_descriptor";
 export * from "../verification_descriptor";
@@ -112,13 +112,18 @@ export async function runFixedVerification(
 	root: string,
 	command: VerificationCommand,
 	frozen: FrozenCommand,
-	options: { signal?: AbortSignal; home: string; path: string; _processScanner?: string } ,
+	options: { signal?: AbortSignal; home: string; path: string; _processScanner?: string; _procRoot?: string } ,
 ): Promise<VerificationResult> {
 	if (options.signal?.aborted) throw new VerificationAbortedError();
 	if (process.platform === "win32") throw new VerificationDescriptorError("fixed verification process-group isolation requires a POSIX host");
 	const cwd = insideVerificationRoot(root, resolve(root, command.cwd));
 	assertCommandIdentity(frozen);
-	const processScanner = identity(options._processScanner ?? toolPath("ps", verificationPath()));
+	// Token discovery is platform native. Only the BSD path needs `ps`, whose
+	// environment modifier procps-ng rejects on Linux, and resolving it is a
+	// hard requirement there but pointless here.
+	const processScanner = process.platform === "linux" ? null
+		: identity(options._processScanner ?? toolPath("ps", verificationPath()));
+	const procRoot = options._procRoot ?? "/proc";
 	const maxOutput = Math.min(command.max_output_bytes, VERIFICATION_DESCRIPTOR_BOUNDS.max_output_bytes);
 	return new Promise((resolvePromise, rejectPromise) => {
 		let stdout = Buffer.alloc(0), stderr = Buffer.alloc(0), captured = 0;
@@ -148,11 +153,27 @@ export async function runFixedVerification(
 			try { process.kill(pid, 0); return true; }
 			catch (error) { return (error as NodeJS.ErrnoException | undefined)?.code !== "ESRCH"; }
 		};
+		const procEnviron = (pid: number): string | null => {
+			try { return readFileSync(join(procRoot, String(pid), "environ"), "utf8"); }
+			catch { return null; }
+		};
 		const scanTokenPids = (): Set<number> | null => {
-			const pids = new Set<number>();
-			if (child.pid !== undefined) pids.add(child.pid);
+			if (child.pid === undefined) return null;
 			try {
-				if (JSON.stringify(identity(processScanner.invocation_path)) !== JSON.stringify(processScanner))
+				// The direct child is known without discovery, so it is always a candidate.
+				const pids = new Set<number>([child.pid]);
+				if (process.platform === "linux") {
+					// procfs keeps each process's exec-time environment, which is where the
+					// inherited token lives; `ps` cannot print it on this platform.
+					const marker = `IMM_VERIFICATION_PROCESS_TOKEN=${processToken}`;
+					for (const entry of readdirSync(procRoot)) {
+						if (!/^\d+$/.test(entry)) continue;
+						const environ = procEnviron(Number(entry));
+						if (environ !== null && environ.split("\0").includes(marker)) pids.add(Number(entry));
+					}
+					return pids;
+				}
+				if (processScanner === null || JSON.stringify(identity(processScanner.invocation_path)) !== JSON.stringify(processScanner))
 					throw new Error("process scanner identity changed");
 				for (const line of execFileSync(processScanner.invocation_path, ["eww", "-axo", "pid=,command="], {
 					encoding: "utf8", maxBuffer: 16 * 1024 * 1024, timeout: 5000,
