@@ -973,24 +973,25 @@ async function runFixedVerification(root, command, frozen, options) {
         return error?.code !== "ESRCH";
       }
     };
-    const procUid = (entry) => {
-      try {
-        const uid = /^Uid:[ \t]+(\d+)/m.exec(readFileSync(join2(procRoot, entry, "status"), "utf8"))?.[1];
-        return uid === undefined ? undefined : Number(uid);
-      } catch (error) {
-        if (error.code === "ENOENT")
-          return null;
-        return;
-      }
-    };
     const procEnviron = (pid) => {
       try {
         return readFileSync(join2(procRoot, String(pid), "environ"), "utf8");
+      } catch {
+        return null;
+      }
+    };
+    const procSession = (entry) => {
+      let stat;
+      try {
+        stat = readFileSync(join2(procRoot, entry, "stat"), "utf8");
       } catch (error) {
         if (error.code === "ENOENT")
           return null;
         return;
       }
+      const fields = stat.slice(stat.lastIndexOf(")") + 1).trim().split(/\s+/);
+      const session = Number(fields[3]);
+      return Number.isSafeInteger(session) && session > 0 ? session : undefined;
     };
     const scanTokenPids = () => {
       if (child.pid === undefined)
@@ -999,21 +1000,19 @@ async function runFixedVerification(root, command, frozen, options) {
         const pids = new Set([child.pid]);
         if (process.platform === "linux") {
           const marker = `IMM_VERIFICATION_PROCESS_TOKEN=${processToken}`;
-          const selfUid = process.getuid();
           for (const entry of readdirSync2(procRoot)) {
             if (!/^\d+$/.test(entry))
               continue;
-            const owner = procUid(entry);
-            if (owner === undefined)
-              throw new Error("verification process ownership is unreadable");
-            if (owner === null)
+            const session = procSession(entry);
+            if (session === undefined)
+              throw new Error("verification process session is unreadable");
+            if (session === null)
               continue;
-            const environ = procEnviron(Number(entry));
-            if (environ === undefined) {
-              if (owner === selfUid)
-                throw new Error("verification process environment is unreadable");
+            if (session === child.pid) {
+              pids.add(Number(entry));
               continue;
             }
+            const environ = procEnviron(Number(entry));
             if (environ !== null && environ.split("\x00").includes(marker))
               pids.add(Number(entry));
           }

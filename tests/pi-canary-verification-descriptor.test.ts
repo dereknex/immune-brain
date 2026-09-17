@@ -179,55 +179,68 @@ describe("project command verification", () => {
 		} finally { remove(root); }
 	});
 	}
+	test("procfs discovery attributes a descendant by session, not by uid", async () => {
+		// The check runs as its own session leader, so an entry that still reports that
+		// session belongs to it even when the uid changed and no environment can be read;
+		// an entry that left the session and cannot be read at all must never block
+		// verification on behalf of an unrelated privileged process.
+		const root = temp(), proc = join(root, "proc");
+		const inSession = spawn(process.execPath, ["-e", "setTimeout(() => {}, 30000)"], { stdio: "ignore" });
+		const unrelated = spawn(process.execPath, ["-e", "setTimeout(() => {}, 30000)"], { stdio: "ignore" });
+		const platform = Object.getOwnPropertyDescriptor(process, "platform");
+		try {
+			Object.defineProperty(process, "platform", { value: "linux", configurable: true });
+			const script = join(root, "procfs-session.ts");
+			writeFileSync(script, [
+				'import { mkdirSync, writeFileSync } from "node:fs";',
+				'const proc = process.argv[2];',
+				'const ours = process.argv[3], foreign = process.argv[4];',
+				'mkdirSync(proc + "/" + ours, { recursive: true });',
+				'writeFileSync(proc + "/" + ours + "/stat", ours + " (bystander) S 1 1 " + process.pid + " 0");',
+				'mkdirSync(proc + "/" + foreign + "/environ", { recursive: true });',
+				'writeFileSync(proc + "/" + foreign + "/stat", foreign + " (other) S 1 1 1 0");',
+			].join("\n"));
+			const c = good({ argv: ["run", script, proc, String(inSession.pid), String(unrelated.pid)] }).command, path = verificationPath();
+			expect((await runFixedVerification(root, c, resolveVerificationCommand(root, c, path), {
+				home: root, path, _procRoot: proc,
+			})).exit_code).toBe(0);
+			expect(() => process.kill(inSession.pid!, 0)).toThrow();
+			expect(() => process.kill(unrelated.pid!, 0)).not.toThrow();
+		} finally {
+			if (platform) Object.defineProperty(process, "platform", platform);
+			for (const item of [inSession, unrelated]) { try { item.kill("SIGKILL"); } catch { /* Already exited. */ } }
+			remove(root);
+		}
+	});
 	test("procfs discovery ignores table entries that do not carry the run token", async () => {
-		// Two live bystanders are attributed to our own uid and placed in the table with
-		// environments that only resemble the marker. They must survive, which proves
-		// selection happens on the exact inherited environment rather than on a table
-		// entry or a command line.
+		// An entry outside this session is only ours when its inherited environment really
+		// carries the token, so a look-alike value, a non-numeric entry and an entry that
+		// vanished before it could be read must all leave a live bystander alone.
 		const root = temp(), proc = join(root, "proc");
 		const bystanders = [
 			spawn(process.execPath, ["-e", "setTimeout(() => {}, 30000)"], { stdio: "ignore" }),
 			spawn(process.execPath, ["-e", "setTimeout(() => {}, 30000)"], { stdio: "ignore" }),
 		];
+		const platform = Object.getOwnPropertyDescriptor(process, "platform");
 		try {
+			Object.defineProperty(process, "platform", { value: "linux", configurable: true });
 			const entry = (pid: number, environment: string) => {
 				mkdirSync(join(proc, String(pid)), { recursive: true });
-				writeFileSync(join(proc, String(pid), "status"), `Uid:\t${process.getuid!()}\t${process.getuid!()}\t${process.getuid!()}\t${process.getuid!()}\n`);
+				writeFileSync(join(proc, String(pid), "stat"), `${pid} (bystander) S 1 1 1 0`);
 				writeFileSync(join(proc, String(pid), "environ"), environment);
 			};
 			entry(bystanders[0]!.pid!, "IMM_VERIFICATION_PROCESS_TOK=near-miss");
 			entry(bystanders[1]!.pid!, "PATH=/usr/bin\0SOME_OTHER=x");
 			mkdirSync(join(proc, "not-a-pid"), { recursive: true });
-			mkdirSync(join(proc, "999996"), { recursive: true }); // an entry with neither status nor environ
+			mkdirSync(join(proc, "999996"), { recursive: true }); // vanished before it could be read
 			const c = good({ argv: ["-e", "1"] }).command, path = verificationPath();
-			const result = await runFixedVerification(root, c, resolveVerificationCommand(root, c, path), {
+			expect((await runFixedVerification(root, c, resolveVerificationCommand(root, c, path), {
 				home: root, path, _procRoot: proc,
-			});
-			expect(result.exit_code).toBe(0);
+			})).exit_code).toBe(0);
 			for (const bystander of bystanders) expect(() => process.kill(bystander.pid!, 0)).not.toThrow();
 		} finally {
-			for (const bystander of bystanders) { try { bystander.kill("SIGKILL"); } catch { /* Already exited. */ } }
-			remove(root);
-		}
-	});
-	test("a listed process whose environment cannot be read refuses a confirmed cleanup", async () => {
-		// An entry that exists but cannot be read leaves the run token unknown. Discovery
-		// must fail closed instead of counting that process as a non-carrier, even though
-		// the check itself exited successfully and nothing else is outstanding.
-		const root = temp();
-		const platform = Object.getOwnPropertyDescriptor(process, "platform");
-		try {
-			Object.defineProperty(process, "platform", { value: "linux", configurable: true });
-			const proc = join(root, "proc");
-			mkdirSync(join(proc, "999994"), { recursive: true });
-			writeFileSync(join(proc, "999994", "status"), `Uid:\t${process.getuid!()}\t${process.getuid!()}\t${process.getuid!()}\t${process.getuid!()}\n`);
-			mkdirSync(join(proc, "999994", "environ")); // a directory is no environment blob
-			const c = good({ argv: ["-e", "1"] }).command, path = verificationPath();
-			await expect(runFixedVerification(root, c, resolveVerificationCommand(root, c, path), {
-				home: root, path, _procRoot: proc,
-			})).rejects.toBeInstanceOf(VerificationCleanupError);
-		} finally {
 			if (platform) Object.defineProperty(process, "platform", platform);
+			for (const bystander of bystanders) { try { bystander.kill("SIGKILL"); } catch { /* Already exited. */ } }
 			remove(root);
 		}
 	});
@@ -253,12 +266,12 @@ describe("project command verification", () => {
 	test("procfs discovery cleans an inherited token carrier and fails closed without a table", async () => {
 		// Linux cannot use the BSD `ps` environment modifier, so the procfs branch is
 		// proved on every host by emulating the platform against a synthetic process
-		// table: a detached carrier found only through the table must be killed before
-		// the result settles, and a table that cannot be read must fail closed.
+		// table: a detached carrier that left the session but kept the inherited token
+		// must be killed before the result settles, and a table that cannot be read at
+		// all must fail closed.
 		const root = temp();
 		const platform = Object.getOwnPropertyDescriptor(process, "platform");
 		let carrierPid = 0;
-		let droppedPid = 0;
 		try {
 			Object.defineProperty(process, "platform", { value: "linux", configurable: true });
 			const proc = join(root, "proc");
@@ -268,37 +281,30 @@ describe("project command verification", () => {
 				'import { spawn } from "node:child_process";',
 				'import { mkdirSync, writeFileSync } from "node:fs";',
 				'const proc = process.argv[2];',
-				'const uid = process.getuid();',
-				'const status = (path: string, owner: number) => writeFileSync(path + "/status", "Uid:\\t" + owner + "\\t" + owner + "\\t" + owner + "\\t" + owner + "\\n");',
 				'const envList = Object.entries(process.env).map(([key, value]) => key + "=" + value).join("\\0");',
-				'const carrier = () => { const child = spawn(process.execPath, ["-e", "setTimeout(() => {}, 30000)"], { detached: true, stdio: "ignore" }); mkdirSync(proc + "/" + child.pid, { recursive: true }); writeFileSync(proc + "/" + child.pid + "/environ", envList); child.unref(); return child.pid; };',
-				'const own = carrier(); status(proc + "/" + own, uid);',
-				// Dropping privileges keeps the inherited token, so a different owner is not
-				// evidence of an unrelated process.
-				'const dropped = carrier(); status(proc + "/" + dropped, uid + 1);',
-				// An unrelated process that cannot be inspected at all must never block
-				// verification of our own tree.
+				'const child = spawn(process.execPath, ["-e", "setTimeout(() => {}, 30000)"], { detached: true, stdio: "ignore" });',
+				'mkdirSync(proc + "/" + child.pid, { recursive: true });',
+				'writeFileSync(proc + "/" + child.pid + "/stat", child.pid + " (carrier) S " + process.pid + " " + child.pid + " " + child.pid + " 0");',
+				'writeFileSync(proc + "/" + child.pid + "/environ", envList);',
+				// An unrelated process that left no readable evidence at all must not block us.
 				'mkdirSync(proc + "/999990/environ", { recursive: true });',
-				'status(proc + "/999990", uid + 1);',
-				'writeFileSync("procfs-carrier.pid", own + " " + dropped);',
+				'writeFileSync(proc + "/999990/stat", "999990 (other) S 1 1 1 0");',
+				'writeFileSync("procfs-carrier.pid", String(child.pid)); child.unref();',
 			].join("\n"));
 			const c = good({ argv: ["run", script, proc] }).command, path = verificationPath();
 			expect((await runFixedVerification(root, c, resolveVerificationCommand(root, c, path), {
 				home: root, path, _procRoot: proc,
 			})).exit_code).toBe(0);
-			const [ownPid, droppedChildPid] = readFileSync(join(root, "procfs-carrier.pid"), "utf8").split(" ").map(Number);
-			carrierPid = ownPid; droppedPid = droppedChildPid;
-			expect(ownPid).not.toBe(0); expect(droppedChildPid).not.toBe(0);
-			expect(() => process.kill(ownPid, 0)).toThrow();
-			expect(() => process.kill(droppedChildPid, 0)).toThrow();
+			carrierPid = Number(readFileSync(join(root, "procfs-carrier.pid"), "utf8"));
+			expect(carrierPid).not.toBe(0);
+			expect(() => process.kill(carrierPid, 0)).toThrow();
 			await expect(runFixedVerification(root, c, resolveVerificationCommand(root, c, path), {
 				home: root, path, _procRoot: join(root, "absent-proc"),
 			})).rejects.toBeInstanceOf(VerificationCleanupError);
-			const [lateOwn, lateDropped] = readFileSync(join(root, "procfs-carrier.pid"), "utf8").split(" ").map(Number);
-			carrierPid = lateOwn; droppedPid = lateDropped;
+			carrierPid = Number(readFileSync(join(root, "procfs-carrier.pid"), "utf8"));
 		} finally {
 			if (platform) Object.defineProperty(process, "platform", platform);
-			for (const pid of [carrierPid, droppedPid]) { if (pid) try { process.kill(pid, "SIGKILL"); } catch { /* Already exited. */ } }
+			if (carrierPid) { try { process.kill(carrierPid, "SIGKILL"); } catch { /* Already exited. */ } }
 			remove(root);
 		}
 	});

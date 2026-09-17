@@ -153,26 +153,27 @@ export async function runFixedVerification(
 			try { process.kill(pid, 0); return true; }
 			catch (error) { return (error as NodeJS.ErrnoException | undefined)?.code !== "ESRCH"; }
 		};
-		// A vanished process has nothing left to clean, so a missing entry is expected.
-		// Any other refusal leaves that ownership unknown, and an unknown entry must
-		// fail the whole scan rather than be assumed unrelated.
-		const procUid = (entry: string): number | null | undefined => {
-			try {
-				const uid = /^Uid:[ \t]+(\d+)/m.exec(readFileSync(join(procRoot, entry, "status"), "utf8"))?.[1];
-				return uid === undefined ? undefined : Number(uid);
-			} catch (error) {
-				if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
-				return undefined;
-			}
-		};
-		// A missing environment means the process vanished or exposes none; any other
-		// refusal leaves its contents unknown rather than absent.
-		const procEnviron = (pid: number): string | null | undefined => {
+		// An environment we cannot read is only missing evidence about a process that
+		// already left this run's session; in-session processes are cleaned without it.
+		const procEnviron = (pid: number): string | null => {
 			try { return readFileSync(join(procRoot, String(pid), "environ"), "utf8"); }
+			catch { return null; }
+		};
+		// Session membership is the attribution evidence: /proc/<pid>/stat needs no
+		// ptrace privilege and stays truthful when a process changes its uid, so a
+		// descendant that drops privileges is still recognised as ours while an
+		// unrelated privileged process never blocks verification.
+		const procSession = (entry: string): number | null | undefined => {
+			let stat: string;
+			try { stat = readFileSync(join(procRoot, entry, "stat"), "utf8"); }
 			catch (error) {
 				if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
 				return undefined;
 			}
+			// The quoted comm field may contain spaces and parentheses, so parse after it.
+			const fields = stat.slice(stat.lastIndexOf(")") + 1).trim().split(/\s+/);
+			const session = Number(fields[3]);
+			return Number.isSafeInteger(session) && session > 0 ? session : undefined;
 		};
 		const scanTokenPids = (): Set<number> | null => {
 			if (child.pid === undefined) return null;
@@ -180,24 +181,18 @@ export async function runFixedVerification(
 				// The direct child is known without discovery, so it is always a candidate.
 				const pids = new Set<number>([child.pid]);
 				if (process.platform === "linux") {
-					// procfs keeps each process's exec-time environment, which is where the
-					// inherited token lives; `ps` cannot print it on this platform.
 					const marker = `IMM_VERIFICATION_PROCESS_TOKEN=${processToken}`;
-					const selfUid = process.getuid!();
 					for (const entry of readdirSync(procRoot)) {
 						if (!/^\d+$/.test(entry)) continue;
-						const owner = procUid(entry);
-						if (owner === undefined) throw new Error("verification process ownership is unreadable");
-						if (owner === null) continue; // the process vanished mid-scan
-						// A different owner is never proof of innocence: a descendant can keep
-						// the inherited token while dropping privileges, so its environment is
-						// inspected whenever the host lets us, and only an entry that is both
-						// uninspectable and not ours may pass unexamined.
+						const session = procSession(entry);
+						if (session === undefined) throw new Error("verification process session is unreadable");
+						if (session === null) continue; // the process vanished mid-scan
+						// The command runs as its own session leader, so everything still in that
+						// session belongs to it whatever uid it has taken on since.
+						if (session === child.pid) { pids.add(Number(entry)); continue; }
+						// A process that left the session is only ours if it still carries the
+						// inherited token, which is checkable whenever the host lets us read it.
 						const environ = procEnviron(Number(entry));
-						if (environ === undefined) {
-							if (owner === selfUid) throw new Error("verification process environment is unreadable");
-							continue;
-						}
 						if (environ !== null && environ.split("\0").includes(marker)) pids.add(Number(entry));
 					}
 					return pids;
