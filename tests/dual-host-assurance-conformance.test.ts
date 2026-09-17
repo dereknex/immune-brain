@@ -1,4 +1,4 @@
-import { describe, expect, setDefaultTimeout, test } from "bun:test";
+import { describe, expect, mock, setDefaultTimeout, test } from "bun:test";
 import { execFileSync } from "node:child_process";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -10,7 +10,6 @@ import {
 	type AssuranceVerdict,
 	type SnapshotDescriptor,
 } from "../plugins/immune-brain/runtime/assurance/coordinator";
-import { AssuranceProgression } from "../plugins/immune-brain/.pi-extension/pi-canary-assurance-progression.ts";
 import { revisionForContent } from "../plugins/immune-brain/runtime/kernel/storage";
 import { PassThrough } from "node:stream";
 import { ClaudeReviewHost, REVIEWER_AGENT, AGENT_TOOL } from "../plugins/immune-brain/runtime/claude/review_host";
@@ -18,7 +17,6 @@ import { submitClaudeReview, ClaudeRuntime, settledKernelResult, type ToolMeta }
 import { probeHost } from "../plugins/immune-brain/runtime/claude/capability";
 import { createMcpRuntime, serveStdio } from "../plugins/immune-brain/runtime/claude/mcp_server";
 import type { ReviewBundle } from "../plugins/immune-brain/runtime/assurance/review_evidence";
-import { executePiUnattendedBatch } from "../plugins/immune-brain/.pi-extension/imm-unattended-batch";
 import { BATCH_REASONS, batchReason } from "../plugins/immune-brain/runtime/unattended/batch_reasons";
 import {
 	captureStagedIntent,
@@ -44,7 +42,26 @@ import { readTaskIntent } from "../plugins/immune-brain/runtime/kernel/intent";
 import { withKernelTransaction } from "../plugins/immune-brain/runtime/kernel/sqlite_store";
 import { canonicalIntentHash, parseTaskIntentV1 } from "../plugins/immune-brain/runtime/kernel/intent";
 import { seedKernelRunForTest } from "./fixtures/mutation-authority-test-seam";
-import { createPiAssuranceProgressionPorts } from "../plugins/immune-brain/.pi-extension/imm-canary-work";
+
+// The Kernel QA delivery workspace is a dependency-free checkout of the frozen
+// tree: `typebox` and the Pi host packages belong to the running Host, not to
+// this repository, so this suite registers the exports the extension modules
+// link against before loading them. None of these seams is exercised by the
+// host-neutral behavior asserted below.
+const hostClass = (): unknown => class {};
+mock.module("typebox", () => ({ Type: new Proxy({}, { get: () => () => ({}) }) }));
+mock.module("@earendil-works/pi-coding-agent", () => ({ DynamicBorder: hostClass() }));
+mock.module("@earendil-works/pi-tui", () => ({
+	Container: hostClass(),
+	SelectList: hostClass(),
+	Text: hostClass(),
+	sliceByColumn: () => "",
+	truncateToWidth: (text: string) => text,
+	visibleWidth: () => 0,
+}));
+const { AssuranceProgression } = await import("../plugins/immune-brain/.pi-extension/pi-canary-assurance-progression.ts");
+const { executePiUnattendedBatch } = await import("../plugins/immune-brain/.pi-extension/imm-unattended-batch");
+const { createPiAssuranceProgressionPorts } = await import("../plugins/immune-brain/.pi-extension/imm-canary-work");
 
 const FIXTURE_NOW = "2026-08-12T10:00:00.000Z";
 const HOST_ENV = { CLAUDE_CODE_VERSION: "2.1.236", CLAUDE_CODE_PERMISSION_MODE: "manual" };

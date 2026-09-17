@@ -539,6 +539,57 @@ function parseVerdictFindings(rawFindings: unknown[], snapshot: SnapshotDescript
 	});
 }
 
+/**
+ * The five snapshot fields one Review reservation binds. A reservation is only
+ * reusable while all five still match the live projection; each call site adds
+ * its own conditions on top of this comparison.
+ */
+export interface ReservationSnapshot {
+	record_revision: string;
+	workspace_revision: string;
+	intent_revision: number;
+	intent_content_hash: string;
+	diff_hash: string;
+}
+
+/**
+ * Field names where the reserved snapshot differs from the live projection;
+ * an empty result is an exact match on all five. BR-DEC-06 keeps the five
+ * fields distinct, so this compares each one instead of a merged digest.
+ */
+export function compareReservationSnapshot(
+	snapshot: ReservationSnapshot,
+	current: ReservationSnapshot,
+): string[] {
+	const fields: Array<keyof ReservationSnapshot> = [
+		"record_revision",
+		"workspace_revision",
+		"intent_revision",
+		"intent_content_hash",
+		"diff_hash",
+	];
+	return fields.filter((field) => snapshot[field] !== current[field]);
+}
+
+/**
+ * `advance()`'s complete Review-ready predicate: claim identity, an active task
+ * still awaiting Review, and an exactly matching reservation snapshot. The
+ * release-on-mismatch cleanup that follows stays with the caller, because it is
+ * a side effect rather than part of this pure decision.
+ */
+export function reservationStillValid(
+	reservation: { snapshot: ReservationSnapshot } | undefined,
+	projection: AssuranceProjectionResult,
+	taskId: string,
+): boolean {
+	if (projection.error) return false;
+	if (projection.claim?.task_id !== taskId) return false;
+	const current = projection.projection;
+	if (current.lifecycle !== "active" || current.next_obligation !== "run_review") return false;
+	if (!reservation) return false;
+	return compareReservationSnapshot(reservation.snapshot, current).length === 0;
+}
+
 interface ReviewReservation {
 	taskId: string;
 	operationId: string;
@@ -622,17 +673,7 @@ export class AssuranceCoordinator {
 			} catch (error) {
 				return { state: "blocked", reason: `cannot validate Review reservation: ${boundedAssuranceError(error)}` };
 			}
-			const current = projection.projection;
-			const matches = !projection.error
-				&& projection.claim?.task_id === taskId
-				&& current.lifecycle === "active"
-				&& current.next_obligation === "run_review"
-				&& reservation !== undefined
-				&& reservation.snapshot.record_revision === current.record_revision
-				&& reservation.snapshot.workspace_revision === current.workspace_revision
-				&& reservation.snapshot.intent_revision === current.intent_revision
-				&& reservation.snapshot.intent_content_hash === current.intent_content_hash
-				&& reservation.snapshot.diff_hash === current.diff_hash;
+			const matches = reservationStillValid(reservation, projection, taskId);
 			if (matches) return this.reviewReadyResult(taskId);
 			if (reservation) this.releaseReviewReservation(taskId, reservation);
 			this.rejectedReviewOperations.delete(taskId);
@@ -953,7 +994,7 @@ export class AssuranceCoordinator {
 			this.releaseReviewReservation(taskId, reservation, reason);
 			return { state: "blocked", reason };
 		}
-		if (fresh.error || !fresh.claim || fresh.claim.task_id !== taskId || fresh.projection.record_revision !== reservation.snapshot.record_revision || fresh.projection.workspace_revision !== reservation.snapshot.workspace_revision || fresh.projection.intent_revision !== reservation.snapshot.intent_revision || fresh.projection.intent_content_hash !== reservation.snapshot.intent_content_hash || fresh.projection.diff_hash !== reservation.snapshot.diff_hash || fresh.projection.lifecycle !== reservation.snapshot.lifecycle || fresh.projection.artifact_state !== reservation.snapshot.artifact_state) {
+		if (fresh.error || !fresh.claim || fresh.claim.task_id !== taskId || compareReservationSnapshot(reservation.snapshot, fresh.projection).length > 0 || fresh.projection.lifecycle !== reservation.snapshot.lifecycle || fresh.projection.artifact_state !== reservation.snapshot.artifact_state) {
 			const reason = fresh.error ?? "assurance snapshot changed before Review submission";
 			this.releaseReviewReservation(taskId, reservation, reason);
 			return { state: "blocked", reason };
