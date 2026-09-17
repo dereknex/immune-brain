@@ -1,4 +1,4 @@
-import { describe, expect, mock, setDefaultTimeout, test } from "bun:test";
+import { afterAll, describe, expect, mock, setDefaultTimeout, test } from "bun:test";
 import { execFileSync } from "node:child_process";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -45,23 +45,47 @@ import { seedKernelRunForTest } from "./fixtures/mutation-authority-test-seam";
 
 // The Kernel QA delivery workspace is a dependency-free checkout of the frozen
 // tree: `typebox` and the Pi host packages belong to the running Host, not to
-// this repository, so this suite registers the exports the extension modules
-// link against before loading them. None of these seams is exercised by the
-// host-neutral behavior asserted below.
-const hostClass = (): unknown => class {};
-mock.module("typebox", () => ({ Type: new Proxy({}, { get: () => () => ({}) }) }));
-mock.module("@earendil-works/pi-coding-agent", () => ({ DynamicBorder: hostClass() }));
-mock.module("@earendil-works/pi-tui", () => ({
-	Container: hostClass(),
-	SelectList: hostClass(),
-	Text: hostClass(),
-	sliceByColumn: () => "",
-	truncateToWidth: (text: string) => text,
-	visibleWidth: () => 0,
-}));
+// this repository. Register the seams they provide only when they cannot be
+// imported here, so an ordinary suite run keeps the real modules and never
+// hands a Host-facing sibling test file a mocked Host package.
+async function hostPackagesAvailable(): Promise<boolean> {
+	for (const specifier of [
+		"typebox",
+		"@earendil-works/pi-coding-agent",
+		"@earendil-works/pi-tui",
+	]) {
+		try {
+			await import(specifier);
+		} catch {
+			return false;
+		}
+	}
+	return true;
+}
+
+if (!(await hostPackagesAvailable())) {
+	const hostClass = (): unknown => class {};
+	mock.module("typebox", () => ({ Type: new Proxy({}, { get: () => () => ({}) }) }));
+	mock.module("@earendil-works/pi-coding-agent", () => ({ DynamicBorder: hostClass() }));
+	mock.module("@earendil-works/pi-tui", () => ({
+		Container: hostClass(),
+		SelectList: hostClass(),
+		Text: hostClass(),
+		sliceByColumn: () => "",
+		truncateToWidth: (text: string) => text,
+		visibleWidth: () => 0,
+	}));
+}
+
 const { AssuranceProgression } = await import("../plugins/immune-brain/.pi-extension/pi-canary-assurance-progression.ts");
 const { executePiUnattendedBatch } = await import("../plugins/immune-brain/.pi-extension/imm-unattended-batch");
 const { createPiAssuranceProgressionPorts } = await import("../plugins/immune-brain/.pi-extension/imm-canary-work");
+
+// Registered seams are process-global; drop them when this file finishes so a
+// later file in the same process starts from the real module registry.
+afterAll(() => {
+	mock.restore();
+});
 
 const FIXTURE_NOW = "2026-08-12T10:00:00.000Z";
 const HOST_ENV = { CLAUDE_CODE_VERSION: "2.1.236", CLAUDE_CODE_PERMISSION_MODE: "manual" };

@@ -1,0 +1,9 @@
+{
+  "contract": "assurance_kernel/task_tombstone/v2",
+  "task_id": "retire-drained-v4-cli-surface",
+  "lifecycle_status": "terminal",
+  "terminal_lifecycle": "done",
+  "terminal_event_id": "complete:retire-drained-v4-cli-surface:2026-09-17T15:59:20.821Z",
+  "final_record_hash": "sha256:2cf96b67e2ee09852df528dbc41bacf28cbd0b6c8e2d5381c8cc98e81a68f49d",
+  "terminalized_at": "2026-09-17T15:59:20.821Z"
+}

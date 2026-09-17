@@ -1559,6 +1559,28 @@ function parseVerdictFindings(rawFindings, snapshot) {
     };
   });
 }
+function compareReservationSnapshot(snapshot, current) {
+  const fields = [
+    "record_revision",
+    "workspace_revision",
+    "intent_revision",
+    "intent_content_hash",
+    "diff_hash"
+  ];
+  return fields.filter((field) => snapshot[field] !== current[field]);
+}
+function reservationStillValid(reservation, projection, taskId) {
+  if (projection.error)
+    return false;
+  if (projection.claim?.task_id !== taskId)
+    return false;
+  const current = projection.projection;
+  if (current.lifecycle !== "active" || current.next_obligation !== "run_review")
+    return false;
+  if (!reservation)
+    return false;
+  return compareReservationSnapshot(reservation.snapshot, current).length === 0;
+}
 var invocationRegistry = createInvocationRegistry();
 
 class AssuranceCoordinator {
@@ -1651,8 +1673,7 @@ class AssuranceCoordinator {
       } catch (error) {
         return { state: "blocked", reason: `cannot validate Review reservation: ${boundedAssuranceError(error)}` };
       }
-      const current = projection.projection;
-      const matches = !projection.error && projection.claim?.task_id === taskId && current.lifecycle === "active" && current.next_obligation === "run_review" && reservation !== undefined && reservation.snapshot.record_revision === current.record_revision && reservation.snapshot.workspace_revision === current.workspace_revision && reservation.snapshot.intent_revision === current.intent_revision && reservation.snapshot.intent_content_hash === current.intent_content_hash && reservation.snapshot.diff_hash === current.diff_hash;
+      const matches = reservationStillValid(reservation, projection, taskId);
       if (matches)
         return this.reviewReadyResult(taskId);
       if (reservation)
@@ -1974,7 +1995,7 @@ class AssuranceCoordinator {
       this.releaseReviewReservation(taskId, reservation, reason);
       return { state: "blocked", reason };
     }
-    if (fresh.error || !fresh.claim || fresh.claim.task_id !== taskId || fresh.projection.record_revision !== reservation.snapshot.record_revision || fresh.projection.workspace_revision !== reservation.snapshot.workspace_revision || fresh.projection.intent_revision !== reservation.snapshot.intent_revision || fresh.projection.intent_content_hash !== reservation.snapshot.intent_content_hash || fresh.projection.diff_hash !== reservation.snapshot.diff_hash || fresh.projection.lifecycle !== reservation.snapshot.lifecycle || fresh.projection.artifact_state !== reservation.snapshot.artifact_state) {
+    if (fresh.error || !fresh.claim || fresh.claim.task_id !== taskId || compareReservationSnapshot(reservation.snapshot, fresh.projection).length > 0 || fresh.projection.lifecycle !== reservation.snapshot.lifecycle || fresh.projection.artifact_state !== reservation.snapshot.artifact_state) {
       const reason = fresh.error ?? "assurance snapshot changed before Review submission";
       this.releaseReviewReservation(taskId, reservation, reason);
       return { state: "blocked", reason };

@@ -34,11 +34,11 @@ describe("loop contract v4 alignment", () => {
 		expect(dist).not.toMatch(/Consume `imm-autowork --json`/);
 	});
 
-	test("plugin README no longer both consumes and retires imm-autowork", () => {
+	test("plugin README no longer names the removed imm-autowork command", () => {
 		const readme = read("plugins/immune-brain/README.md");
 		expect(readme).not.toMatch(/imm-loop` consumes `imm-autowork/);
-		expect(readme).toContain("bin/imm-autowork");
-		expect(readme).toMatch(/Retired after v4 storage retirement/);
+		expect(readme).not.toContain("imm-autowork");
+		expect(readme).not.toMatch(/Retired after v4 storage retirement/);
 	});
 
 	test("public Loop loader points to the packaged Kernel surface", () => {

@@ -10,8 +10,12 @@
  *   - `imm-plan --routing-status --json` (strict Git-owned route projection)
  *   - `imm-plan <plan-path> [--json]` (read-only Plan validation)
  *   - `imm-tracker` (opt-in, one-way, non-authoritative GitHub Issue projection)
- *   - a stable `drain_required` / `v3_storage_retired` wall for every v3
- *     mutating command (work/review/migrate/finish/autowork/heal/...).
+ *
+ * Every retired v3 mutating command (`imm-work`, `imm-review`, `imm-migrate`,
+ * `imm-finish`, `imm-autowork`, `imm-heal`, `imm-check-child-output`,
+ * `imm-retire-stale-wrapper`) and its `bin/` wrapper is fully removed: the name
+ * falls through to the generic unknown-command response instead of a
+ * per-command diagnostic. Only the retired *option* wall on `imm-plan` remains.
  *
  * v3 State Ledger mutations, migrations, authority receipts, automatic
  * observations, and TaskRecord v1 writers are NOT reachable from any shipped
@@ -33,19 +37,8 @@ import {
 } from "./plan_core";
 import { runGithubTrackerCli } from "./github_issue_tracker";
 
-// Retired v3 mutating command wall. Read-only v3 commands that only project
-// state (imm-plan validate) stay available; every writer is retired.
-const RETIRED_MUTATING_COMMANDS = new Set([
-	"imm-work",
-	"imm-review",
-	"imm-migrate",
-	"imm-finish",
-	"imm-autowork",
-	"imm-heal",
-	"imm-check-child-output",
-	"imm-retire-stale-wrapper",
-]);
-
+// The retired *option* wall on imm-plan: the command stays available for
+// read-only validation, while its v3 mutating options keep this rejection.
 const RETIRED_PLAN_OPTIONS = new Set([
 	"--sync",
 	"--terminate-current",
@@ -83,10 +76,10 @@ function unavailableRoutingProjection(): RoutingPolicyProjection {
 	};
 }
 
-// The read-only v3 CLI wall: retired mutating commands and retired plan
-// options keep this exact rejection, so the message shape is deliberately not
-// a parameter of the callers' command name or arguments.
-function retiredResponse(root: string): {
+// The read-only v3 option wall: retired plan options keep this exact
+// rejection, so the message shape is deliberately not a parameter of the
+// caller's option name or arguments.
+function retiredPlanOptionResponse(root: string): {
 	stdout: string;
 	stderr: string;
 	returncode: number;
@@ -125,7 +118,7 @@ function runPlanCli(args: string[], root: string): {
 	stderr: string;
 	returncode: number;
 } {
-	if (hasRetiredPlanOption(args)) return retiredResponse(root);
+	if (hasRetiredPlanOption(args)) return retiredPlanOptionResponse(root);
 	if (
 		args.length === 2 &&
 		args[0] === "--routing-status" &&
@@ -224,7 +217,6 @@ async function runCli(command: string, args: string[], root: string): Promise<{
 	if (command === "imm-kernel") return runKernelCli(args, root);
 	if (command === "imm-plan") return runPlanCli(args, root);
 	if (command === "imm-tracker") return runGithubTrackerCli(args, root);
-	if (RETIRED_MUTATING_COMMANDS.has(command)) return retiredResponse(root);
 	return {
 		stdout: "",
 		stderr: `Unknown Immune-Brain v4 command: ${command}\n`,
@@ -273,7 +265,6 @@ async function main(argv: string[]): Promise<number> {
 							],
 						},
 					],
-					retired: [...RETIRED_MUTATING_COMMANDS].sort(),
 				},
 				null,
 				2,
@@ -299,4 +290,4 @@ if (fileURLToPath(import.meta.url) === process.argv[1]) {
 	process.exit(code);
 }
 
-export { main, runCli, runKernelCli, runGithubTrackerCli, RETIRED_MUTATING_COMMANDS };
+export { main, runCli, runKernelCli, runGithubTrackerCli };

@@ -115,6 +115,7 @@ describe("planning artifact archival", () => {
       "docs/specs/autowork-workflow-refinement.spec.md",
       "docs/specs/analyze-gstack-skills-borrow-insights.spec.md",
       "docs/specs/architecture-deepening-wave-1.spec.md",
+      "docs/specs/retire-drained-v4-cli-surface.spec.md",
     ]);
     const instructionalViolations: string[] = [];
     const exemptionMissing: string[] = [];

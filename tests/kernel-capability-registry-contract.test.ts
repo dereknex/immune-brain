@@ -57,11 +57,11 @@ describe("capability registry contract", () => {
 		const binding: ComposedBinding = {
 			actor_id: "literal-user",
 			confirmation_ref: "pi-confirm-composed",
-			expires_at: "2026-09-17T23:00:00.000Z",
+			expires_at: "2026-06-01T00:00:00.000Z",
 			task_id: "capability-registry-contract-composed",
 			nonce: "nonce-composed",
 		};
-		const capability = registry.issue(binding, "2026-09-17T22:00:00.000Z");
+		const capability = registry.issue(binding, "2026-01-01T00:00:00.000Z");
 		expect(registry.inspect(capability, { ...binding })).toBe("nonce-composed");
 		expect(registry.consume(capability, { ...binding })).toBe("nonce-composed");
 		expect(registry.isConsumed(capability)).toBe(true);

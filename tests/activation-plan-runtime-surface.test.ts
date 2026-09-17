@@ -41,7 +41,7 @@ function parseActivationText(text: string): any {
 }
 
 describe("activation plan runtime surface", () => {
-	it("exposes imm-activation-plan through the CLI command manifest", () => {
+	it("does not expose imm-activation-plan through the CLI command manifest", () => {
 		const result = spawnSync("bun", [TS_RUNTIME, "list-commands", "--json"], {
 			cwd: REPO_ROOT,
 			encoding: "utf-8",
@@ -51,10 +51,8 @@ describe("activation plan runtime surface", () => {
 		const commands = JSON.parse(result.stdout).commands;
 		const names = commands.map((command: any) => command.name);
 		expect(names).not.toContain("imm-activation-plan");
-		const retired = JSON.parse(result.stdout).retired as string[];
-		expect(retired).toContain("imm-autowork");
-		expect(retired).toContain("imm-work");
-		expect(names).not.toContain("imm-activation-plan");
+		// The removed command names are no longer advertised in any form.
+		expect(JSON.parse(result.stdout).retired).toBeUndefined();
 	});
 
 	it("imm-activation-plan has no wrapper and is not a v4 command", () => {

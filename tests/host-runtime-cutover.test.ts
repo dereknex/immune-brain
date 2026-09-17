@@ -88,14 +88,26 @@ describe("host runtime cutover", () => {
 		expect(json.contract).toBeUndefined();
 	});
 
-	it("bin imm-work status is retired after v4 storage retirement", () => {
-		const wrapper = resolve(BIN_DIR, "imm-work");
-		const result = spawnSync(wrapper, ["status", "--json"], {
+	it("retired command names are absent and fall through to the generic unknown-command response", () => {
+		const retired = [
+			"imm-work",
+			"imm-review",
+			"imm-autowork",
+			"imm-heal",
+			"imm-migrate",
+			"imm-finish",
+			"imm-check-child-output",
+			"imm-retire-stale-wrapper",
+			"imm-retired",
+		];
+		for (const name of retired)
+			expect(existsSync(resolve(BIN_DIR, name))).toBe(false);
+		const result = spawnSync("bun", [TS_RUNTIME, "cli", "imm-work", "status", "--json"], {
 			encoding: "utf-8",
 			cwd: REPO_ROOT,
 		});
-		expect(result.status).toBe(1);
-		expect(result.stderr).toMatch(/v3_storage_retired|drain_required/);
+		expect(result.status).toBe(2);
+		expect(result.stderr).toContain("Unknown Immune-Brain v4 command: imm-work");
 	});
 
 	it("documents host runtime and Pi package installation without leaking unavailable task tools", () => {

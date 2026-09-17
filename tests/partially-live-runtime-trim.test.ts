@@ -53,7 +53,7 @@ describe("partially live runtime trim", () => {
 		expect(planCore).not.toContain("buildLegacyPlanSignature");
 
 		expect(existsSync(join(BIN_DIR, "imm-activation-plan"))).toBe(false);
-		expect(existsSync(join(BIN_DIR, "imm-retired"))).toBe(true);
+		expect(existsSync(join(BIN_DIR, "imm-retired"))).toBe(false);
 	});
 
 	it("keeps the live halves intact: imm-plan projection and Loop action routing", () => {
@@ -86,15 +86,14 @@ describe("partially live runtime trim", () => {
 		}
 	});
 
-	it("keeps every retired command name printing retirement guidance, with retained commands unaffected", () => {
+	it("removes every retired command name while the retained commands stay live", () => {
 		for (const name of RETIRED_WRAPPERS) {
-			const result = spawnWrapper(name, ["status", "--json"]);
-			expect({ name, status: result.status }).toMatchObject({
+			expect({ name, present: existsSync(join(BIN_DIR, name)) }).toEqual({
 				name,
-				status: 1,
+				present: false,
 			});
-			expect(result.stderr).toMatch(/v3_storage_retired|drain_required/);
 		}
+		expect(existsSync(join(BIN_DIR, "imm-retire-stale-wrapper"))).toBe(false);
 
 		const kernel = spawnWrapper(
 			"imm-kernel",
@@ -104,14 +103,6 @@ describe("partially live runtime trim", () => {
 		expect(JSON.parse(kernel.stdout).contract).toBe(
 			"assurance_kernel/status/v1",
 		);
-
-		const retireStale = spawnWrapper("imm-retire-stale-wrapper", [
-			"--path",
-			"/tmp/imm-nonexistent-wrapper",
-			"--json",
-		]);
-		expect(retireStale.status).toBe(1);
-		expect(retireStale.stderr).toMatch(/v3_storage_retired|drain_required/);
 
 		for (const name of ["imm-pr-diag", "imm-kernel", "imm-plan"]) {
 			expect(existsSync(join(BIN_DIR, name))).toBe(true);

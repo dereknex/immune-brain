@@ -1,7 +1,6 @@
 {
   "contract": "assurance_kernel/task_intent/v1",
   "task_id": "retire-drained-v4-cli-surface",
-  "owner": "user",
   "goal": "Physically delete every CLI command marked \"Retired after v4 storage retirement\" (bin/ wrappers and the runtime's per-command diagnostic wall) so a retired name falls through to the generic unknown-command response instead of a special-cased drain_required/v3_storage_retired diagnostic.",
   "acceptance": [
     {
@@ -33,14 +32,25 @@
     "plugins/immune-brain/bin/imm-retired",
     "plugins/immune-brain/bin/imm-review",
     "plugins/immune-brain/bin/imm-work",
+    "plugins/immune-brain/dist/claude/mcp-server.mjs",
     "plugins/immune-brain/runtime/v4_runtime.ts",
     "plugins/immune-brain/tests/host-manifest-consistency.test.ts",
     "plugins/immune-brain/tests/skill-registry-consistency.test.ts",
+    "tests/activation-plan-runtime-surface.test.ts",
+    "tests/dual-host-assurance-conformance.test.ts",
     "tests/host-runtime-cutover.test.ts",
+    "tests/kernel-capability-registry-contract.test.ts",
     "tests/loop-contract-v4-alignment.test.ts",
+    "tests/partially-live-runtime-trim.test.ts",
+    "tests/planning-artifact-archival.test.ts",
+    "tests/plugin-package-runtime.test.ts",
+    "tests/python-reference-boundary.test.ts",
+    "tests/roadmap-plan-e2e.test.ts",
+    "tests/roadmap-plan-host-acceptance.test.ts",
     "tests/v4-runtime-launchers.test.ts",
     "tests/wrapper-retirement.test.ts"
   ],
   "risk": "material",
-  "revision": 1
+  "revision": 4,
+  "owner": "user"
 }

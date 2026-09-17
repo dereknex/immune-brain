@@ -144,8 +144,9 @@ follow-up that alters the signature reopens the gate.
 `bin/*` wrappers shell into the v4-only CLI entrypoint
 `runtime/v4_runtime.ts` via Bun. The v4 runtime keeps the Kernel
 `imm-kernel` surface (intent author/validate, status, inspect, explicit legacy audit)
-and read-only legacy validation, and rejects every v3 mutating command with a
-stable `drain_required` / `v3_storage_retired` diagnostic. Common entry points:
+and read-only legacy validation, and keeps the retired `imm-plan` *option*
+wall (`--sync`, `--terminate-current`, …) with its stable `drain_required` /
+`v3_storage_retired` diagnostic. Common entry points:
 
 | Command | Purpose |
 | --------- | --------- |
@@ -154,15 +155,13 @@ stable `drain_required` / `v3_storage_retired` diagnostic. Common entry points:
 | `bin/imm-kernel inspect --json` | Read-only Inspect Projection of current Kernel facts. |
 | `bin/imm-kernel audit --legacy` | Explicit read-only legacy audit projection. |
 | `bin/imm-plan <plan> [--json]` | Read-only legacy validation (mutation `--sync` is retired). |
-| `bin/imm-work` | Retired after v4 storage retirement; returns `drain_required`/`v3_storage_retired`. |
-| `bin/imm-review pass\|rework\|replan` | Retired after v4 storage retirement; v3 QA closure is no longer a production route. |
-| `bin/imm-autowork` | Retired after v4 storage retirement. |
-| `bin/imm-activation-plan` | Retired after v4 storage retirement. |
-| `bin/imm-heal` | Retired after v4 storage retirement. |
-| `bin/imm-migrate [--check] [--json]` | Retired after v4 storage retirement; legacy v3 projects must drain with the prior runtime first. |
-| `bin/imm-finish` | Retired after v4 storage retirement. |
+| `bin/imm-tracker publish-initiative` | Opt-in, one-way GitHub Issue projection; never grants Kernel authority. |
 
-The table above describes the legacy CLI surface. Current Managed execution
+The eight retired v3 mutating command names and their `bin/` wrappers are fully
+removed, so invoking one now returns the generic
+`Unknown Immune-Brain v4 command` response instead of a per-command diagnostic.
+
+Current Managed execution
 runs through the Pi host extension or the Claude Code plugin and `runtime/kernel`:
 TaskRecord v4 is the current production workflow authority (lifecycle,
 artifact_state, and a single `attestations[]` collection). v3 records are
