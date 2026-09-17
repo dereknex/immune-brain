@@ -173,7 +173,9 @@ export async function runFixedVerification(
 			// The quoted comm field may contain spaces and parentheses, so parse after it.
 			const fields = stat.slice(stat.lastIndexOf(")") + 1).trim().split(/\s+/);
 			const session = Number(fields[3]);
-			return Number.isSafeInteger(session) && session > 0 ? session : undefined;
+			// Session zero is a legitimate value that kernel threads carry, so only a
+			// missing or unobservable number means the session could not be read.
+			return Number.isSafeInteger(session) && session >= 0 ? session : undefined;
 		};
 		const scanTokenPids = (): Set<number> | null => {
 			if (child.pid === undefined) return null;

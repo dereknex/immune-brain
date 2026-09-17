@@ -991,7 +991,7 @@ async function runFixedVerification(root, command, frozen, options) {
       }
       const fields = stat.slice(stat.lastIndexOf(")") + 1).trim().split(/\s+/);
       const session = Number(fields[3]);
-      return Number.isSafeInteger(session) && session > 0 ? session : undefined;
+      return Number.isSafeInteger(session) && session >= 0 ? session : undefined;
     };
     const scanTokenPids = () => {
       if (child.pid === undefined)

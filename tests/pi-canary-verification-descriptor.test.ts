@@ -233,6 +233,10 @@ describe("project command verification", () => {
 			entry(bystanders[1]!.pid!, "PATH=/usr/bin\0SOME_OTHER=x");
 			mkdirSync(join(proc, "not-a-pid"), { recursive: true });
 			mkdirSync(join(proc, "999996"), { recursive: true }); // vanished before it could be read
+			// Kernel threads carry session zero on an ordinary Linux host and expose no
+			// environment, so that entry must read as unrelated rather than as a failure.
+			mkdirSync(join(proc, "999991", "environ"), { recursive: true });
+			writeFileSync(join(proc, "999991", "stat"), "999991 (kthreadd) S 0 0 0 0");
 			const c = good({ argv: ["-e", "1"] }).command, path = verificationPath();
 			expect((await runFixedVerification(root, c, resolveVerificationCommand(root, c, path), {
 				home: root, path, _procRoot: proc,
