@@ -976,8 +976,10 @@ async function runFixedVerification(root, command, frozen, options) {
     const procEnviron = (pid) => {
       try {
         return readFileSync(join2(procRoot, String(pid), "environ"), "utf8");
-      } catch {
-        return null;
+      } catch (error) {
+        if (error.code === "ENOENT")
+          return null;
+        return;
       }
     };
     const scanTokenPids = () => {
@@ -991,6 +993,8 @@ async function runFixedVerification(root, command, frozen, options) {
             if (!/^\d+$/.test(entry))
               continue;
             const environ = procEnviron(Number(entry));
+            if (environ === undefined)
+              throw new Error("verification process environment is unreadable");
             if (environ !== null && environ.split("\x00").includes(marker))
               pids.add(Number(entry));
           }

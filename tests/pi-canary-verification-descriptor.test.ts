@@ -208,6 +208,25 @@ describe("project command verification", () => {
 			remove(root);
 		}
 	});
+	test("a listed process whose environment cannot be read refuses a confirmed cleanup", async () => {
+		// An entry that exists but cannot be read leaves the run token unknown. Discovery
+		// must fail closed instead of counting that process as a non-carrier, even though
+		// the check itself exited successfully and nothing else is outstanding.
+		const root = temp();
+		const platform = Object.getOwnPropertyDescriptor(process, "platform");
+		try {
+			Object.defineProperty(process, "platform", { value: "linux", configurable: true });
+			const proc = join(root, "proc");
+			mkdirSync(join(proc, "999994", "environ"), { recursive: true }); // a directory is no environment blob
+			const c = good({ argv: ["-e", "1"] }).command, path = verificationPath();
+			await expect(runFixedVerification(root, c, resolveVerificationCommand(root, c, path), {
+				home: root, path, _procRoot: proc,
+			})).rejects.toBeInstanceOf(VerificationCleanupError);
+		} finally {
+			if (platform) Object.defineProperty(process, "platform", platform);
+			remove(root);
+		}
+	});
 	test("an unreadable process table fails cleanup closed and still kills the known child", async () => {
 		const root = temp();
 		try {

@@ -153,9 +153,15 @@ export async function runFixedVerification(
 			try { process.kill(pid, 0); return true; }
 			catch (error) { return (error as NodeJS.ErrnoException | undefined)?.code !== "ESRCH"; }
 		};
-		const procEnviron = (pid: number): string | null => {
+		// A vanished process has nothing left to clean, so a missing entry is expected.
+		// Any other refusal leaves that environment unknown, and an unknown entry must
+		// fail the whole scan rather than be counted as a non-carrier.
+		const procEnviron = (pid: number): string | null | undefined => {
 			try { return readFileSync(join(procRoot, String(pid), "environ"), "utf8"); }
-			catch { return null; }
+			catch (error) {
+				if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
+				return undefined;
+			}
 		};
 		const scanTokenPids = (): Set<number> | null => {
 			if (child.pid === undefined) return null;
@@ -169,6 +175,7 @@ export async function runFixedVerification(
 					for (const entry of readdirSync(procRoot)) {
 						if (!/^\d+$/.test(entry)) continue;
 						const environ = procEnviron(Number(entry));
+						if (environ === undefined) throw new Error("verification process environment is unreadable");
 						if (environ !== null && environ.split("\0").includes(marker)) pids.add(Number(entry));
 					}
 					return pids;
