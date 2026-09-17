@@ -154,23 +154,22 @@ export async function runFixedVerification(
 			catch (error) { return (error as NodeJS.ErrnoException | undefined)?.code !== "ESRCH"; }
 		};
 		// A vanished process has nothing left to clean, so a missing entry is expected.
-		// Any other refusal leaves that environment unknown, and an unknown entry must
-		// fail the whole scan rather than be counted as a non-carrier.
-		const procEnviron = (pid: number): string | null | undefined => {
-			try { return readFileSync(join(procRoot, String(pid), "environ"), "utf8"); }
-			catch (error) {
-				if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
-				return undefined;
-			}
-		};
-		// Only a process that inherited our own real uid can carry the run token, so an
-		// unrelated privileged entry is excluded by verifiable ownership instead of
-		// turning its unreadable environment into a scan failure for every check.
+		// Any other refusal leaves that ownership unknown, and an unknown entry must
+		// fail the whole scan rather than be assumed unrelated.
 		const procUid = (entry: string): number | null | undefined => {
 			try {
 				const uid = /^Uid:[ \t]+(\d+)/m.exec(readFileSync(join(procRoot, entry, "status"), "utf8"))?.[1];
 				return uid === undefined ? undefined : Number(uid);
 			} catch (error) {
+				if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
+				return undefined;
+			}
+		};
+		// A missing environment means the process vanished or exposes none; any other
+		// refusal leaves its contents unknown rather than absent.
+		const procEnviron = (pid: number): string | null | undefined => {
+			try { return readFileSync(join(procRoot, String(pid), "environ"), "utf8"); }
+			catch (error) {
 				if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
 				return undefined;
 			}
@@ -189,10 +188,16 @@ export async function runFixedVerification(
 						if (!/^\d+$/.test(entry)) continue;
 						const owner = procUid(entry);
 						if (owner === undefined) throw new Error("verification process ownership is unreadable");
-						// null means the entry vanished and a foreign uid never held the token.
-						if (owner === null || owner !== selfUid) continue;
+						if (owner === null) continue; // the process vanished mid-scan
+						// A different owner is never proof of innocence: a descendant can keep
+						// the inherited token while dropping privileges, so its environment is
+						// inspected whenever the host lets us, and only an entry that is both
+						// uninspectable and not ours may pass unexamined.
 						const environ = procEnviron(Number(entry));
-						if (environ === undefined) throw new Error("verification process environment is unreadable");
+						if (environ === undefined) {
+							if (owner === selfUid) throw new Error("verification process environment is unreadable");
+							continue;
+						}
 						if (environ !== null && environ.split("\0").includes(marker)) pids.add(Number(entry));
 					}
 					return pids;

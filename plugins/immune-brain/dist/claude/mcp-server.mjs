@@ -973,19 +973,19 @@ async function runFixedVerification(root, command, frozen, options) {
         return error?.code !== "ESRCH";
       }
     };
-    const procEnviron = (pid) => {
+    const procUid = (entry) => {
       try {
-        return readFileSync(join2(procRoot, String(pid), "environ"), "utf8");
+        const uid = /^Uid:[ \t]+(\d+)/m.exec(readFileSync(join2(procRoot, entry, "status"), "utf8"))?.[1];
+        return uid === undefined ? undefined : Number(uid);
       } catch (error) {
         if (error.code === "ENOENT")
           return null;
         return;
       }
     };
-    const procUid = (entry) => {
+    const procEnviron = (pid) => {
       try {
-        const uid = /^Uid:[ \t]+(\d+)/m.exec(readFileSync(join2(procRoot, entry, "status"), "utf8"))?.[1];
-        return uid === undefined ? undefined : Number(uid);
+        return readFileSync(join2(procRoot, String(pid), "environ"), "utf8");
       } catch (error) {
         if (error.code === "ENOENT")
           return null;
@@ -1006,11 +1006,14 @@ async function runFixedVerification(root, command, frozen, options) {
             const owner = procUid(entry);
             if (owner === undefined)
               throw new Error("verification process ownership is unreadable");
-            if (owner === null || owner !== selfUid)
+            if (owner === null)
               continue;
             const environ = procEnviron(Number(entry));
-            if (environ === undefined)
-              throw new Error("verification process environment is unreadable");
+            if (environ === undefined) {
+              if (owner === selfUid)
+                throw new Error("verification process environment is unreadable");
+              continue;
+            }
             if (environ !== null && environ.split("\x00").includes(marker))
               pids.add(Number(entry));
           }
