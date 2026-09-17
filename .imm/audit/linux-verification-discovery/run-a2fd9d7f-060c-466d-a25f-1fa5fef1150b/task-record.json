@@ -1,0 +1,819 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "linux-verification-discovery",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "linux-verification-discovery",
+    "goal": "Make project-owned verification process discovery work on Linux hosts so deterministic QA can prove cleanup there, without weakening the macOS/BSD scanner path or the fail-closed cleanup guarantee.",
+    "acceptance": [
+      {
+        "id": "A1",
+        "assertion": "Token discovery is platform-native: Linux discovery reads each candidate process environment from procfs instead of invoking ps, so the real-execution verification suites pass on the existing tests, while a synthetic procfs fixture proves the Linux branch selects exactly the token-carrying processes and an unreadable proc root still yields a cleanup failure instead of a passed check.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.4.2\",\n  \"argv\": [\n    \"test\",\n    \"tests/pi-canary-verification-descriptor.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 180000,\n  \"max_output_bytes\": 131072\n}\n"
+      },
+      {
+        "id": "A2",
+        "assertion": "Deterministic QA aggregation and the Pi/Claude real-port conformance group named project-owned-verification execute unknown project commands with explicit bounded preparation and pass on the fixed discovery path.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.4.2\",\n  \"argv\": [\n    \"test\",\n    \"tests/shared-deterministic-qa.test.ts\",\n    \"tests/dual-host-assurance-conformance.test.ts\",\n    \"--test-name-pattern\",\n    \"project-owned-verification\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 180000,\n  \"max_output_bytes\": 131072\n}\n"
+      },
+      {
+        "id": "A3",
+        "assertion": "The canary assurance authority seam runs fixed verification descriptors end to end and still produces only host-attested QA evidence.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.4.2\",\n  \"argv\": [\n    \"test\",\n    \"tests/pi-canary-assurance-authority.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 180000,\n  \"max_output_bytes\": 131072\n}\n"
+      },
+      {
+        "id": "A4",
+        "assertion": "The generated Claude host bundle is byte-in-sync with the runtime source that carries the platform-native discovery branch.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.4.2\",\n  \"argv\": [\n    \"test\",\n    \"tests/claude-host-package.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 65536\n}\n"
+      },
+      {
+        "id": "A5",
+        "assertion": "Workspace type checking passes with the platform branch and the injected proc-root discovery seam.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.4.2\",\n  \"argv\": [\n    \"run\",\n    \"typecheck\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 180000,\n  \"max_output_bytes\": 65536\n}\n"
+      }
+    ],
+    "scope_hint": [
+      ".changeset/linux-verification-discovery.md",
+      "docs/plans/linux-verification-discovery.intent.json",
+      "plugins/immune-brain/dist/claude/mcp-server.mjs",
+      "plugins/immune-brain/runtime/assurance/verification.ts",
+      "tests/pi-canary-verification-descriptor.test.ts"
+    ],
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/linux-verification-discovery.intent.json",
+    "content_hash": "sha256:ffda8cd30c776825a53ffc8d5b64688d5ef5800f1630ee6351a24a63b0ee97ee"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:ffda8cd30c776825a53ffc8d5b64688d5ef5800f1630ee6351a24a63b0ee97ee",
+  "git_base_head": "ba5786a6bdff039d256ec33f405e40378e3f187a",
+  "attestations": [
+    {
+      "id": "approval-qa-997c159a",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:ffda8cd30c776825a53ffc8d5b64688d5ef5800f1630ee6351a24a63b0ee97ee",
+      "diff_hash": "sha256:70ccba18031e2e0d1cc2fb18bbfbe4772aeddaadb2199ae6e25787d4f0abdc2f",
+      "actor_id": "deterministic-qa",
+      "summary": "all 5 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "A2",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "A3",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "A4",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "A5",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-89c2e64e",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:ffda8cd30c776825a53ffc8d5b64688d5ef5800f1630ee6351a24a63b0ee97ee",
+      "diff_hash": "sha256:56ae2884ccc61c8ed513b9525aa9042004708f242a3ec7c647e9e34d452207d4",
+      "actor_id": "deterministic-qa",
+      "summary": "all 5 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "A2",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "A3",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "A4",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "A5",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-97aeaf8d",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:ffda8cd30c776825a53ffc8d5b64688d5ef5800f1630ee6351a24a63b0ee97ee",
+      "diff_hash": "sha256:86cc5473b8cc2bf77b4828f586affd610235761b0360ecf9e0ffbabd63a932c4",
+      "actor_id": "deterministic-qa",
+      "summary": "all 5 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "A2",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "A3",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "A4",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "A5",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-245a520a",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:ffda8cd30c776825a53ffc8d5b64688d5ef5800f1630ee6351a24a63b0ee97ee",
+      "diff_hash": "sha256:3951664544e5734d0d49280978054f7270ccdb1d7b376e081a4581905a17bb89",
+      "actor_id": "deterministic-qa",
+      "summary": "all 5 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "A2",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "A3",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "A4",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "A5",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-722b7b53",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:ffda8cd30c776825a53ffc8d5b64688d5ef5800f1630ee6351a24a63b0ee97ee",
+      "diff_hash": "sha256:9ce6178801e65fe49cfe4badbb684770eb34efde15c0faed1090e424f54e7855",
+      "actor_id": "deterministic-qa",
+      "summary": "all 5 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "A2",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "A3",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "A4",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "A5",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-337ea5a0",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:ffda8cd30c776825a53ffc8d5b64688d5ef5800f1630ee6351a24a63b0ee97ee",
+      "diff_hash": "sha256:7d12d50dedffbd18f89625bdcc65dc188fe62eb12ac3f567926720ad9db8eaf8",
+      "actor_id": "deterministic-qa",
+      "summary": "all 5 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "A2",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "A3",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "A4",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "A5",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-cf970882",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:ffda8cd30c776825a53ffc8d5b64688d5ef5800f1630ee6351a24a63b0ee97ee",
+      "diff_hash": "sha256:7d12d50dedffbd18f89625bdcc65dc188fe62eb12ac3f567926720ad9db8eaf8",
+      "actor_id": "parent-mediated-review",
+      "summary": "已验证 review_commit 单一父提交、tree 与 manifest digest；procfs 会话归属与 token 环境选择在 Linux/BSD 双路径上均保持 fail-closed，A1-A5 均有确定性 QA 证据，未发现阻断性正确性、安全或回归缺陷。",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "ba5786a6bdff039d256ec33f405e40378e3f187a",
+        "review_commit": "da29fc6f83e5bd52d87def51625ccbea3dc53814",
+        "review_tree": "a0a2e8cd4c5dfa7fb6c76532a9132fc123a12e1d",
+        "manifest_digest": "sha256:5f1323c9f718b98c54363da81a2996de5984ac947756a6894b29aa9debc18929"
+      },
+      "advisory_findings": [
+        {
+          "id": "review-35dcb9758486-1-review-1",
+          "acceptance_id": "A1",
+          "summary": "advisory: 真实 /proc 集成路径仅覆盖 uid 过滤，未观测到 out-of-session token 载体进入 pids 的分支；建议在后续任务中补充可注入的 fake-proc 集成 seam。",
+          "anchor": "sha256:ec97de830a4c15af041f7bfc28d5d0c72b1eca7856ce642c258f2040bba876b4",
+          "evidence": {
+            "trigger": "任何 Linux QA 运行：宿主 /proc 中的无关进程均被 uid 过滤跳过，marker 匹配分支未被真实进程表执行。",
+            "caller_chain": [
+              "plugins/immune-brain/runtime/assurance/verification.ts:scanTokenPids",
+              "tests/pi-canary-verification-descriptor.test.ts"
+            ],
+            "violated": {
+              "kind": "acceptance",
+              "ref": "A1"
+            }
+          }
+        },
+        {
+          "id": "review-35dcb9758486-2-review-2",
+          "acceptance_id": "A1",
+          "summary": "advisory: procfs 不可读时 fail-closed 语义正确，但无降级路径的运维诊断提示；后续可在 QaPreparationError reason 中区分 table-unreadable 与 carrier-survives。",
+          "anchor": "sha256:62a4c165093a1f72c7585126e1fcf255620b0e6af5e435fcd6c8700e4a9dbd53",
+          "evidence": {
+            "trigger": "Pi 或 Claude 宿主在容器/PID namespace 或 hidepid 挂载下执行确定性 QA：readdirSync(/proc) 或 stat 读取失败，检查本身成功仍被判 VerificationCleanupError。",
+            "caller_chain": [
+              "plugins/immune-brain/runtime/assurance/verification.ts:scanTokenPids",
+              "plugins/immune-brain/runtime/claude/kernel_ports.ts",
+              "plugins/immune-brain/dist/claude/mcp-server.mjs"
+            ],
+            "violated": {
+              "kind": "acceptance",
+              "ref": "A1"
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "findings": [
+    {
+      "id": "review-3227f7e23574-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "A1",
+      "source": "review",
+      "review_round": 1,
+      "summary": "plugins/immune-brain/runtime/assurance/verification.ts:156-158 procEnviron swallows every read error, so a process that cannot be checked is treated as not carrying the token. If an enumerable live detached descendant's environ read fails with EIO or any unexpected error, scanTokenPids still returns a success set, killTree can confirm cleanup while that descendant is alive, and the check returns exit_code 0; the generated bundle carries the same defect. Distinguish an expected vanished process (ENOENT) and explicitly permitted access refusals from unknown read errors, let unknown errors propagate into the scan-failure path, and add a test that a readable process table whose single environ read fails must refuse success.",
+      "anchor": "sha256:3759967201dfb3dfe759b91845c0057c75113a473796d21e7bd278d85263897a",
+      "evidence": {
+        "trigger": "On Linux a verification parent exits successfully, leaving a live detached descendant that inherited the token and closed its inherited pipes; readdirSync(procRoot) succeeds and includes that PID, but reading its environ throws EIO. The error is converted to null, so the PID is never added to the cleanup set.",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/assurance/verification.ts:runFixedVerification.finish",
+          "plugins/immune-brain/runtime/assurance/verification.ts:runFixedVerification.killTree",
+          "plugins/immune-brain/runtime/assurance/verification.ts:runFixedVerification.scanTokenPids",
+          "plugins/immune-brain/runtime/assurance/verification.ts:runFixedVerification.procEnviron"
+        ],
+        "violated": {
+          "kind": "security_boundary",
+          "ref": "verification-cleanup-before-success"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-26e0ecff4818-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "A1",
+      "source": "review",
+      "review_round": 2,
+      "summary": "plugins/immune-brain/runtime/assurance/verification.ts:175-178 reads environ for every numeric PID unconditionally, so verification on an ordinary non-root Linux host is blocked by unrelated privileged processes: /proc/1/environ returns EACCES, the whole scan returns null, and VerificationCleanupError is thrown even when the command succeeded and left nothing behind; an existing detached token carrier also never reaches signalPids because the scan failed first. Narrow the candidate set by verifiable process ownership first, exclude definitively unrelated privileged processes, keep failing closed for real candidates and an unreadable proc root, add tests holding both an unrelated unreadable process and a readable token carrier, and resync the generated bundle.",
+      "anchor": "sha256:2b80086112f5a8e35b4baeae8d0a904705606ffeca4488f27ec5e5d5c4cf9afe",
+      "evidence": {
+        "trigger": "An unprivileged user runs a successful command on Linux with the default /proc, where the table contains root-owned PID 1 whose environ returns EACCES. The scan therefore returns null and VerificationCleanupError is thrown even though the command succeeded and nothing was left behind; if the command also had a detached descendant, the failed scan additionally prevents that descendant from being signalled.",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/assurance/verification.ts:runFixedVerification",
+          "plugins/immune-brain/runtime/assurance/verification.ts:finish",
+          "plugins/immune-brain/runtime/assurance/verification.ts:killTree",
+          "plugins/immune-brain/runtime/assurance/verification.ts:scanTokenPids",
+          "plugins/immune-brain/runtime/assurance/verification.ts:procEnviron"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "A1"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-3600f28f26fc-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "A1",
+      "source": "review",
+      "review_round": 3,
+      "summary": "plugins/immune-brain/runtime/assurance/verification.ts:199 excludes processes by current real UID, which cannot prove they did not inherit the token. When verification runs as root, a detached descendant can keep the environment, drop its UID and continue running; the scan skips it, killTree then returns success and a process that can still mutate the verification outputs is left behind. At minimum, inspect other UIDs' environments whenever the host grants cross-UID reads, never treat a different UID alone as proof of irrelevance, add a cleanup test for a token-retaining descendant that dropped privileges, and resync the generated bundle.",
+      "anchor": "sha256:8557d4b4247bfd3547b17864d935b334d19695dd831327e068b0eabe0bf5d5b0",
+      "evidence": {
+        "trigger": "A fixed verification command runs as root on Linux and creates a detached descendant that keeps IMM_VERIFICATION_PROCESS_TOKEN in its environment, calls setuid to a different uid and keeps running; the direct child exits successfully. scanTokenPids skips that entry because its uid differs, so killTree sees no survivor and confirms cleanup while the token carrier is still alive.",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/assurance/verification.ts:runFixedVerification",
+          "plugins/immune-brain/runtime/assurance/verification.ts:finish",
+          "plugins/immune-brain/runtime/assurance/verification.ts:killTree",
+          "plugins/immune-brain/runtime/assurance/verification.ts:scanTokenPids"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "A1"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-783743403bc3-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "A1",
+      "source": "review",
+      "review_round": 4,
+      "summary": "plugins/immune-brain/runtime/assurance/verification.ts:204-207 skips any process whose uid differs when its environ cannot be read, so cleanup can be confirmed while a token-carrying detached descendant is still running: on Linux a root run that holds CAP_SETUID but lacks CAP_SYS_PTRACE can spawn a descendant that drops its uid, whose environ read is refused, yet which the scan treats as unrelated. Keep trustworthy attribution evidence for cross-uid descendants and refuse a confirmed cleanup when their ownership cannot be excluded; add the matching regression test and resync the generated bundle. The existing synthetic tests only cover a cross-uid carrier whose environ is readable, so they cannot protect this path.",
+      "anchor": "sha256:e56d76b2cdf5e689ca4e51ef6c298f6a55868e69a2c0d50422a810373a24833b",
+      "evidence": {
+        "trigger": "A Linux host runs the fixed verification command as UID 0 with CAP_SETUID but without CAP_SYS_PTRACE; the command creates a detached descendant that inherits the token, calls setuid to another UID and keeps running while the parent exits successfully. Reading that descendant's status succeeds, but reading its environ returns EACCES, so the scan skips it and cleanup is confirmed.",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/assurance/verification.ts:runFixedVerification",
+          "plugins/immune-brain/runtime/assurance/verification.ts:finish",
+          "plugins/immune-brain/runtime/assurance/verification.ts:killTree",
+          "plugins/immune-brain/runtime/assurance/verification.ts:scanTokenPids",
+          "plugins/immune-brain/runtime/assurance/verification.ts:procEnviron"
+        ],
+        "violated": {
+          "kind": "security_boundary",
+          "ref": "verification-process-cleanup-proof"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-7e0684a5c500-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "A1",
+      "source": "review",
+      "review_round": 5,
+      "summary": "[P1] plugins/immune-brain/runtime/assurance/verification.ts:176 treats a legitimate session 0 as a read failure. On an ordinary Linux host with visible kernel threads, processes such as kthreadd report session 0 in /proc/<pid>/stat, so every scan aborts at line 188 and even a successfully exited check ends in VerificationCleanupError. Accept a non-negative session, handle 0 as a session that is not this run's, add a synthetic procfs regression test containing a session 0 entry, and resync the generated bundle. The current fixtures only cover positive sessions, so a green QA cannot rule this defect out.",
+      "anchor": "sha256:7ce06c04acc85bac2482db891094110738f093a78ab8afc02654ce8efe245758",
+      "evidence": {
+        "trigger": "A Linux host's procfs contains legitimate session 0 processes, for example /proc/2/stat for kthreadd, and any verification command reaches cleanup after exiting.",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/assurance/verification.ts:runFixedVerification",
+          "plugins/immune-brain/runtime/assurance/verification.ts:finish",
+          "plugins/immune-brain/runtime/assurance/verification.ts:killTree",
+          "plugins/immune-brain/runtime/assurance/verification.ts:scanTokenPids",
+          "plugins/immune-brain/runtime/assurance/verification.ts:procSession"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "A1"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-f922aadd5e39-1-review-1",
+      "kind": "blocking",
+      "status": "refuted",
+      "acceptance_id": "A1",
+      "source": "review",
+      "review_round": 6,
+      "summary": "plugins/immune-brain/runtime/assurance/verification.ts:156-158 and 198-199 treat an unreadable environ as a non-candidate, so cleanup can be reported successful while a token-carrying descendant is still alive: on Linux a descendant that leaves the session and calls prctl(PR_SET_DUMPABLE, 0) keeps the inherited token yet cannot be read by a same-uid unprivileged host, and the current code skips it silently so killTree can still return true. Keep independently verifiable descendant attribution and return VerificationCleanupError when such a descendant cannot be confirmed exited; add a test for an independent-session descendant with an unreadable environ and resync the generated bundle.",
+      "anchor": "sha256:c7be8534748f5972514ab17e8606770811b0f2dd052db95d7c8837a802754f3a",
+      "evidence": {
+        "trigger": "A project command on an unprivileged Linux host spawns a detached descendant; the descendant keeps IMM_VERIFICATION_PROCESS_TOKEN, calls prctl(PR_SET_DUMPABLE, 0), closes its inherited pipes and keeps running while the parent command exits 0. Its stat remains readable and its session differs from the direct child pid, but reading its environ returns EACCES.",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/assurance/verification.ts:runFixedVerification",
+          "plugins/immune-brain/runtime/assurance/verification.ts:finish",
+          "plugins/immune-brain/runtime/assurance/verification.ts:killTree",
+          "plugins/immune-brain/runtime/assurance/verification.ts:scanTokenPids",
+          "plugins/immune-brain/runtime/assurance/verification.ts:procEnviron"
+        ],
+        "violated": {
+          "kind": "security_boundary",
+          "ref": "verification-process-cleanup-before-success"
+        }
+      },
+      "counterevidence": {
+        "attestation_id": "approval-qa-337ea5a0",
+        "acceptance_id": "A1"
+      }
+    },
+    {
+      "id": "request_rework:linux-verification-discovery:2026-09-17T10:19:40.196Z:replan-required",
+      "kind": "replan_required",
+      "status": "resolved",
+      "acceptance_id": null,
+      "source": "kernel",
+      "review_round": 6,
+      "summary": "Review exhausted its 5-round rework budget; a durable replan is required."
+    }
+  ],
+  "history": [
+    {
+      "id": "freeze_artifacts:linux-verification-discovery:2026-09-17T08:30:18.718Z",
+      "at": "2026-09-17T08:30:18.718Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/linux-verification-discovery.intent.json"
+    },
+    {
+      "id": "record_approval:linux-verification-discovery:2026-09-17T08:30:57.488Z",
+      "at": "2026-09-17T08:30:57.488Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-997c159a\naction_v2_sha256:6414a7dd4e85a6c1de4b1fc73fc04169d675d2bd179a0dce5e9a400fdca89dc8",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-0d894e8053122cdb",
+        "issued_at": "2026-09-17T08:30:57.488Z",
+        "expires_at": "2026-09-17T08:40:57.488Z"
+      }
+    },
+    {
+      "id": "request_rework:linux-verification-discovery:2026-09-17T08:33:30.329Z",
+      "at": "2026-09-17T08:33:30.329Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_1\naction_v2_sha256:f25f381b5d166f71f671c4af48eee656ecebcf3cf4b8ce91eab9effd395dbb16",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-c3f2c62918736fa7",
+        "issued_at": "2026-09-17T08:33:30.329Z",
+        "expires_at": "2026-09-17T08:43:30.329Z"
+      }
+    },
+    {
+      "id": "resolve_finding:linux-verification-discovery:2026-09-17T08:42:38.269Z",
+      "at": "2026-09-17T08:42:38.269Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-3227f7e23574-1-review-1\naction_v2_sha256:f11629635dc79f7575be4fb4fd6cfd88e01861cca653e7b621a2b556b8f14465"
+    },
+    {
+      "id": "freeze_artifacts:linux-verification-discovery:2026-09-17T08:42:50.022Z",
+      "at": "2026-09-17T08:42:50.022Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/linux-verification-discovery.intent.json"
+    },
+    {
+      "id": "record_approval:linux-verification-discovery:2026-09-17T08:43:27.619Z",
+      "at": "2026-09-17T08:43:27.619Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-89c2e64e\naction_v2_sha256:ad9279b64ea5374ec1a09633d65eb921c2cf7ec5395c011437329ff4637b44f2",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-f461c6096882b274",
+        "issued_at": "2026-09-17T08:43:27.620Z",
+        "expires_at": "2026-09-17T08:53:27.619Z"
+      }
+    },
+    {
+      "id": "request_rework:linux-verification-discovery:2026-09-17T08:46:50.492Z",
+      "at": "2026-09-17T08:46:50.492Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_2\naction_v2_sha256:a77ac3eccfdd9124909aa2ce89dbb552bb0debe0b17b5b6e422becb260471946",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-0482ad041d374349",
+        "issued_at": "2026-09-17T08:46:50.493Z",
+        "expires_at": "2026-09-17T08:56:50.492Z"
+      }
+    },
+    {
+      "id": "resolve_finding:linux-verification-discovery:2026-09-17T08:56:36.134Z",
+      "at": "2026-09-17T08:56:36.134Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-26e0ecff4818-1-review-1\naction_v2_sha256:a907c72587a990492bd4ca1064cfac4c2794fed45224d1b8c4e7dd1db2368aa2"
+    },
+    {
+      "id": "freeze_artifacts:linux-verification-discovery:2026-09-17T08:58:07.532Z",
+      "at": "2026-09-17T08:58:07.532Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/linux-verification-discovery.intent.json"
+    },
+    {
+      "id": "record_approval:linux-verification-discovery:2026-09-17T08:58:48.331Z",
+      "at": "2026-09-17T08:58:48.331Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-97aeaf8d\naction_v2_sha256:faa76ccd86c06a39e9d021cc09cd7ccef90b8e65e2031f9c059c3f2eedd0ca52",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-0dd30fd842ae6310",
+        "issued_at": "2026-09-17T08:58:48.331Z",
+        "expires_at": "2026-09-17T09:08:48.331Z"
+      }
+    },
+    {
+      "id": "request_rework:linux-verification-discovery:2026-09-17T09:04:19.704Z",
+      "at": "2026-09-17T09:04:19.704Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_3\naction_v2_sha256:db119028ae6341aa843af1a060e99955a99954100bb8bc746e55b2c9606160df",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-c14a2d1e413b78c3",
+        "issued_at": "2026-09-17T09:04:19.705Z",
+        "expires_at": "2026-09-17T09:14:19.704Z"
+      }
+    },
+    {
+      "id": "resolve_finding:linux-verification-discovery:2026-09-17T09:12:25.581Z",
+      "at": "2026-09-17T09:12:25.581Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-3600f28f26fc-1-review-1\naction_v2_sha256:35d64713eb8f720d2480b59d8481f9296620ff83a3d83626f6f917d7fe147cf1"
+    },
+    {
+      "id": "freeze_artifacts:linux-verification-discovery:2026-09-17T09:13:01.953Z",
+      "at": "2026-09-17T09:13:01.953Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/linux-verification-discovery.intent.json"
+    },
+    {
+      "id": "record_approval:linux-verification-discovery:2026-09-17T09:13:39.192Z",
+      "at": "2026-09-17T09:13:39.192Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-245a520a\naction_v2_sha256:97fd41d4ae275ce7efae29407e89c887dbfd462e0acd0f10e1d760265962eb14",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-c3bbaa2c30f84477",
+        "issued_at": "2026-09-17T09:13:39.193Z",
+        "expires_at": "2026-09-17T09:23:39.193Z"
+      }
+    },
+    {
+      "id": "request_rework:linux-verification-discovery:2026-09-17T09:23:14.152Z",
+      "at": "2026-09-17T09:23:14.152Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_4\naction_v2_sha256:b35c9729ba5a6a04d92f357ad6fd4462930a412fa0ab3e2d8ed463808d6e564b",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-aebee111c70cbbaa",
+        "issued_at": "2026-09-17T09:23:14.152Z",
+        "expires_at": "2026-09-17T09:33:14.152Z"
+      }
+    },
+    {
+      "id": "resolve_finding:linux-verification-discovery:2026-09-17T09:42:30.831Z",
+      "at": "2026-09-17T09:42:30.831Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-783743403bc3-1-review-1\naction_v2_sha256:22b1aea02ab0b4c3cedfce3d5b94f268bbba2fb5697520d46deb063803502cbc"
+    },
+    {
+      "id": "freeze_artifacts:linux-verification-discovery:2026-09-17T09:42:47.223Z",
+      "at": "2026-09-17T09:42:47.223Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/linux-verification-discovery.intent.json"
+    },
+    {
+      "id": "record_approval:linux-verification-discovery:2026-09-17T09:43:33.947Z",
+      "at": "2026-09-17T09:43:33.947Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-722b7b53\naction_v2_sha256:805a4923008a448355ea9c523a0c6c4072ec46ed03de43625341975e96e144e5",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-e61db924ac957173",
+        "issued_at": "2026-09-17T09:43:33.948Z",
+        "expires_at": "2026-09-17T09:53:33.948Z"
+      }
+    },
+    {
+      "id": "request_rework:linux-verification-discovery:2026-09-17T09:51:30.287Z",
+      "at": "2026-09-17T09:51:30.287Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_5\naction_v2_sha256:1dd855461167b88f6e9aef867cf1a1f140892689cb7ab1020027e0dde1745014",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-d21de39ec8c46296",
+        "issued_at": "2026-09-17T09:51:30.287Z",
+        "expires_at": "2026-09-17T10:01:30.287Z"
+      }
+    },
+    {
+      "id": "resolve_finding:linux-verification-discovery:2026-09-17T10:07:44.509Z",
+      "at": "2026-09-17T10:07:44.509Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-7e0684a5c500-1-review-1\naction_v2_sha256:53cda5dd90caec9127a855bd1dfe1297fc19114dfdbab2e9706bcddc4871ed7e"
+    },
+    {
+      "id": "freeze_artifacts:linux-verification-discovery:2026-09-17T10:07:52.536Z",
+      "at": "2026-09-17T10:07:52.536Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/linux-verification-discovery.intent.json"
+    },
+    {
+      "id": "record_approval:linux-verification-discovery:2026-09-17T10:08:27.298Z",
+      "at": "2026-09-17T10:08:27.298Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-337ea5a0\naction_v2_sha256:93559e94e4d2f9250ff37753da8ba4e73be95b1da9af99b2ef7325cb76d4d820",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-a35ce352f2a6f108",
+        "issued_at": "2026-09-17T10:08:27.299Z",
+        "expires_at": "2026-09-17T10:18:27.299Z"
+      }
+    },
+    {
+      "id": "request_rework:linux-verification-discovery:2026-09-17T10:19:40.196Z",
+      "at": "2026-09-17T10:19:40.196Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "review_round_6\naction_v2_sha256:9726de09b8830c939a26aad65bdbf17d2e10f567238acd1fda95832cad9aa6bd",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-cccbe8913426602a",
+        "issued_at": "2026-09-17T10:19:40.196Z",
+        "expires_at": "2026-09-17T10:29:40.196Z"
+      }
+    },
+    {
+      "id": "authorize_rework:linux-verification-discovery:2026-09-17T10:20:20.178Z",
+      "at": "2026-09-17T10:20:20.178Z",
+      "type": "authorize_rework",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "request_rework:linux-verification-discovery:2026-09-17T10:19:40.196Z:replan-required\naction_v2_sha256:b83f7208e63d2cca08f55cb377e3813886ddd634d576e4b7b533f134a6aa4181",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-53136805d7b8c361",
+        "issued_at": "2026-09-17T10:20:20.178Z",
+        "expires_at": "2026-09-17T10:30:20.178Z"
+      }
+    },
+    {
+      "id": "refute_finding:linux-verification-discovery:2026-09-17T10:22:51.750Z",
+      "at": "2026-09-17T10:22:51.750Z",
+      "type": "refute_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-f922aadd5e39-1-review-1\naction_v2_sha256:657c67ba3a496bfc07e4b0c06924eba9c293f44549b389d0d2b22f1c1705e597"
+    },
+    {
+      "id": "freeze_artifacts:linux-verification-discovery:2026-09-17T10:24:36.659Z",
+      "at": "2026-09-17T10:24:36.659Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/linux-verification-discovery.intent.json"
+    },
+    {
+      "id": "record_approval:linux-verification-discovery:2026-09-17T10:31:23.507Z",
+      "at": "2026-09-17T10:31:23.507Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-cf970882\naction_v2_sha256:667238c08774ab575367f2bdcea2027f236a40d6fb647a382725c1c1c771694b",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-a7c812ca5ff4ee8a",
+        "issued_at": "2026-09-17T10:31:23.508Z",
+        "expires_at": "2026-09-17T10:41:23.508Z"
+      }
+    },
+    {
+      "id": "complete:linux-verification-discovery:2026-09-17T10:31:24.455Z",
+      "at": "2026-09-17T10:31:24.455Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:cc8937d0bab3ddc826cb85468537994047504b568e4d0c9f52493ce4549171be"
+    }
+  ]
+}

@@ -1,0 +1,42 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "linux-verification-discovery",
+  "owner": "user",
+  "goal": "Make project-owned verification process discovery work on Linux hosts so deterministic QA can prove cleanup there, without weakening the macOS/BSD scanner path or the fail-closed cleanup guarantee.",
+  "acceptance": [
+    {
+      "id": "A1",
+      "assertion": "Token discovery is platform-native: Linux discovery reads each candidate process environment from procfs instead of invoking ps, so the real-execution verification suites pass on the existing tests, while a synthetic procfs fixture proves the Linux branch selects exactly the token-carrying processes and an unreadable proc root still yields a cleanup failure instead of a passed check.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.4.2\",\n  \"argv\": [\n    \"test\",\n    \"tests/pi-canary-verification-descriptor.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 180000,\n  \"max_output_bytes\": 131072\n}\n"
+    },
+    {
+      "id": "A2",
+      "assertion": "Deterministic QA aggregation and the Pi/Claude real-port conformance group named project-owned-verification execute unknown project commands with explicit bounded preparation and pass on the fixed discovery path.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.4.2\",\n  \"argv\": [\n    \"test\",\n    \"tests/shared-deterministic-qa.test.ts\",\n    \"tests/dual-host-assurance-conformance.test.ts\",\n    \"--test-name-pattern\",\n    \"project-owned-verification\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 180000,\n  \"max_output_bytes\": 131072\n}\n"
+    },
+    {
+      "id": "A3",
+      "assertion": "The canary assurance authority seam runs fixed verification descriptors end to end and still produces only host-attested QA evidence.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.4.2\",\n  \"argv\": [\n    \"test\",\n    \"tests/pi-canary-assurance-authority.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 180000,\n  \"max_output_bytes\": 131072\n}\n"
+    },
+    {
+      "id": "A4",
+      "assertion": "The generated Claude host bundle is byte-in-sync with the runtime source that carries the platform-native discovery branch.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.4.2\",\n  \"argv\": [\n    \"test\",\n    \"tests/claude-host-package.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 65536\n}\n"
+    },
+    {
+      "id": "A5",
+      "assertion": "Workspace type checking passes with the platform branch and the injected proc-root discovery seam.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.4.2\",\n  \"argv\": [\n    \"run\",\n    \"typecheck\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 180000,\n  \"max_output_bytes\": 65536\n}\n"
+    }
+  ],
+  "scope_hint": [
+    ".changeset/linux-verification-discovery.md",
+    "docs/plans/linux-verification-discovery.intent.json",
+    "plugins/immune-brain/dist/claude/mcp-server.mjs",
+    "plugins/immune-brain/runtime/assurance/verification.ts",
+    "tests/pi-canary-verification-descriptor.test.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}
