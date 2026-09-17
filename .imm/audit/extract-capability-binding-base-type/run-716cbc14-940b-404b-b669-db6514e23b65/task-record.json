@@ -1,0 +1,186 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "extract-capability-binding-base-type",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "extract-capability-binding-base-type",
+    "goal": "Extract the actor_id/confirmation_ref/expires_at fields that EnrollmentCapabilityBinding, BatchAuthorizationBinding, and CapabilityBindingV2 each repeat into a shared BaseCapabilityBinding interface, without touching createCapabilityRegistry, nonce, or any other per-binding field.",
+    "acceptance": [
+      {
+        "id": "AC1",
+        "assertion": "The generic capability registry factory issues, inspects, and consumes capabilities identically for binding shapes composed from BaseCapabilityBinding as it did for the previous flat interfaces.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/kernel-capability-registry-contract.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 60000,\n    \"max_output_bytes\": 65536\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC2",
+        "assertion": "Enrollment and batch capability issue/inspect/consume behavior, including nonce presence and expiry validation, is unchanged after EnrollmentCapabilityBinding and BatchAuthorizationBinding extend BaseCapabilityBinding.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/kernel-enrollment-authority.test.ts\",\n      \"tests/kernel-batch-authority.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC3",
+        "assertion": "Mutation-authority (CapabilityBindingV2) issue/inspect/consume behavior, including action_digest and findings_digest handling, is unchanged after it extends BaseCapabilityBinding.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/kernel-r2c2-authority.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 60000,\n    \"max_output_bytes\": 65536\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      "docs/plans/extract-capability-binding-base-type.intent.json",
+      "docs/specs/extract-capability-binding-base-type.spec.md",
+      "plugins/immune-brain/runtime/kernel/authority_port.ts",
+      "plugins/immune-brain/runtime/kernel/batch_authority.ts",
+      "plugins/immune-brain/runtime/kernel/enrollment_authority.ts",
+      "tests/kernel-batch-authority.test.ts",
+      "tests/kernel-capability-registry-contract.test.ts",
+      "tests/kernel-enrollment-authority.test.ts",
+      "tests/kernel-r2c2-authority.test.ts"
+    ],
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/extract-capability-binding-base-type.intent.json",
+    "content_hash": "sha256:66f18ab9cc5e93627f4f4263a5ccd5062843e4d7cb437973b8c185db40087674"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:66f18ab9cc5e93627f4f4263a5ccd5062843e4d7cb437973b8c185db40087674",
+  "git_base_head": "c1380e369a2edcd429b42382a7dfa566c6bc386e",
+  "attestations": [
+    {
+      "id": "approval-qa-44138508",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:66f18ab9cc5e93627f4f4263a5ccd5062843e4d7cb437973b8c185db40087674",
+      "diff_hash": "sha256:0553f803639e26a8985eee9cf49fc14c94db770dcff02ea1876b538a29198365",
+      "actor_id": "deterministic-qa",
+      "summary": "all 3 project verification check(s) passed; execution=sha256:3401a50bdf17220b57c8a9dcc174e6afed88d091d77baec5b97a5d8838f967e6",
+      "acceptance_results": [
+        {
+          "acceptance_id": "AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:3401a50bdf17220b57c8a9dcc174e6afed88d091d77baec5b97a5d8838f967e6"
+        },
+        {
+          "acceptance_id": "AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:3401a50bdf17220b57c8a9dcc174e6afed88d091d77baec5b97a5d8838f967e6"
+        },
+        {
+          "acceptance_id": "AC3",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:3401a50bdf17220b57c8a9dcc174e6afed88d091d77baec5b97a5d8838f967e6"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-5657f631",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:66f18ab9cc5e93627f4f4263a5ccd5062843e4d7cb437973b8c185db40087674",
+      "diff_hash": "sha256:9bb3ac7ef8fa4d6b2ebcf88b8807879be2f2d9d4e61e721cee1137e586192c37",
+      "actor_id": "deterministic-qa",
+      "summary": "all 3 project verification check(s) passed; execution=sha256:4ed53534941e6def3c17675ed563da36213b4c0d65d48037a92e9bc213d7ca41",
+      "acceptance_results": [
+        {
+          "acceptance_id": "AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:4ed53534941e6def3c17675ed563da36213b4c0d65d48037a92e9bc213d7ca41"
+        },
+        {
+          "acceptance_id": "AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:4ed53534941e6def3c17675ed563da36213b4c0d65d48037a92e9bc213d7ca41"
+        },
+        {
+          "acceptance_id": "AC3",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:4ed53534941e6def3c17675ed563da36213b4c0d65d48037a92e9bc213d7ca41"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-89b3d7fd",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:66f18ab9cc5e93627f4f4263a5ccd5062843e4d7cb437973b8c185db40087674",
+      "diff_hash": "sha256:9bb3ac7ef8fa4d6b2ebcf88b8807879be2f2d9d4e61e721cee1137e586192c37",
+      "actor_id": "parent-mediated-review",
+      "summary": "已核验 manifest_digest、base_head、review_commit 的唯一父提交、review_tree 及全部变更对象；此次类型提取保持三个 binding 的字段与运行时行为不变，新增测试覆盖组合 binding 的签发、检查、消费和无效输入，Kernel QA 已验证 AC1–AC3 通过，未发现阻断问题。",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "c1380e369a2edcd429b42382a7dfa566c6bc386e",
+        "review_commit": "a2f5b0f4527ea6cfe61a4ad79fc18726a7426895",
+        "review_tree": "4f6468f72623a168c41bcea7bf11f6a29fdc435a",
+        "manifest_digest": "sha256:2cfb80894a792eb26c5b5db98f96814abbf0d758848064e5201e29f334802079"
+      }
+    }
+  ],
+  "findings": [],
+  "history": [
+    {
+      "id": "freeze_artifacts:extract-capability-binding-base-type:2026-09-17T14:15:11.130Z",
+      "at": "2026-09-17T14:15:11.130Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/extract-capability-binding-base-type.intent.json"
+    },
+    {
+      "id": "record_approval:extract-capability-binding-base-type:2026-09-17T14:15:16.645Z",
+      "at": "2026-09-17T14:15:16.645Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-44138508\naction_v2_sha256:141a65f99085ac70b49e8e79939aa6cdfaa575e82f7ffdd244d1a306238bdf31",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-888ad6a1a4a498e8",
+        "issued_at": "2026-09-17T14:15:16.646Z",
+        "expires_at": "2026-09-17T14:25:16.646Z"
+      }
+    },
+    {
+      "id": "record_approval:extract-capability-binding-base-type:2026-09-17T14:20:11.969Z",
+      "at": "2026-09-17T14:20:11.969Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-5657f631\naction_v2_sha256:04bcf1912dbdd0f07763420b713f1896832cc03a71a4762b4d1b98c52e152ac1",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-e3643c301fc5f70e",
+        "issued_at": "2026-09-17T14:20:11.969Z",
+        "expires_at": "2026-09-17T14:30:11.969Z"
+      }
+    },
+    {
+      "id": "record_approval:extract-capability-binding-base-type:2026-09-17T14:21:34.876Z",
+      "at": "2026-09-17T14:21:34.876Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-89b3d7fd\naction_v2_sha256:4bf0177a6580c08f7446731344d3b58136ef24c448a0cfbbb5a007f8bb4b7061",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-2d995a5b40938c34",
+        "issued_at": "2026-09-17T14:21:34.876Z",
+        "expires_at": "2026-09-17T14:31:34.876Z"
+      }
+    },
+    {
+      "id": "complete:extract-capability-binding-base-type:2026-09-17T14:21:35.831Z",
+      "at": "2026-09-17T14:21:35.831Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:91a7012261f552df4d07dea13931647647343445d18150ab3659bcdeefe07168"
+    }
+  ]
+}

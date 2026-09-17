@@ -10,7 +10,7 @@
 import { createHash } from "node:crypto";
 import { createCapabilityRegistry } from "./capability_registry";
 import { isLiteralUserActor } from "./actor_identity";
-import type { EnrollmentCapabilityBinding } from "./enrollment_authority";
+import type { BaseCapabilityBinding, EnrollmentCapabilityBinding } from "./enrollment_authority";
 import { preparePiCanary, type PiCanaryPreparation } from "./pi_canary_prepare";
 
 export const BATCH_AUTHORITY_CAPABILITY_BRAND = Symbol.for(
@@ -43,16 +43,13 @@ export interface BatchBudget {
 	qa_failure_limit: number;
 }
 
-export interface BatchAuthorizationBinding {
+export interface BatchAuthorizationBinding extends BaseCapabilityBinding {
 	batch_id: string;
 	initiative_slug: string;
 	plan_digest: string;
 	branch: string;
 	base_head: string;
 	budget: BatchBudget;
-	actor_id: string;
-	confirmation_ref: string;
-	expires_at: string;
 	nonce: string;
 }
 

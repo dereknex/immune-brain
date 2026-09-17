@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, test } from "bun:test";
 import { createCapabilityRegistry } from "../plugins/immune-brain/runtime/kernel/capability_registry";
+import type { BaseCapabilityBinding } from "../plugins/immune-brain/runtime/kernel/enrollment_authority";
 import {
 	createMutationAuthorityRegistry,
 	type MutationAuthorityCapabilityV2,
@@ -32,6 +33,39 @@ describe("capability registry contract", () => {
 		const capability = registry.issue(binding);
 		binding.value = "mutated";
 		expect(registry.inspect(capability, { value: "issued" })).toBe("issued");
+	});
+
+	test("a binding composed from BaseCapabilityBinding drives the generic factory unchanged", () => {
+		interface ComposedBinding extends BaseCapabilityBinding {
+			task_id: string;
+			nonce: string;
+		}
+		const registry = createCapabilityRegistry<ComposedBinding, ComposedBinding, string>(
+			Symbol("contract-test-composed-capability"),
+			{
+				validateBinding: (binding) => {
+					if (Object.values(binding).some((value) => value === ""))
+						throw new Error("composed capability binding is incomplete");
+				},
+				validateAndProject: (state, expected) => {
+					if (state.nonce !== expected.nonce) throw new Error("binding changed");
+					return state.nonce;
+				},
+			},
+			"contract-test-composed",
+		);
+		const binding: ComposedBinding = {
+			actor_id: "literal-user",
+			confirmation_ref: "pi-confirm-composed",
+			expires_at: "2026-09-17T23:00:00.000Z",
+			task_id: "capability-registry-contract-composed",
+			nonce: "nonce-composed",
+		};
+		const capability = registry.issue(binding, "2026-09-17T22:00:00.000Z");
+		expect(registry.inspect(capability, { ...binding })).toBe("nonce-composed");
+		expect(registry.consume(capability, { ...binding })).toBe("nonce-composed");
+		expect(registry.isConsumed(capability)).toBe(true);
+		expect(() => registry.issue({ ...binding, actor_id: "" })).toThrow(/incomplete/);
 	});
 
 	test("mutation adapter normalizes fabricated consume failures", () => {
