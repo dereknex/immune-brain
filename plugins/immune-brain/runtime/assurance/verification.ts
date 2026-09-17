@@ -163,6 +163,18 @@ export async function runFixedVerification(
 				return undefined;
 			}
 		};
+		// Only a process that inherited our own real uid can carry the run token, so an
+		// unrelated privileged entry is excluded by verifiable ownership instead of
+		// turning its unreadable environment into a scan failure for every check.
+		const procUid = (entry: string): number | null | undefined => {
+			try {
+				const uid = /^Uid:[ \t]+(\d+)/m.exec(readFileSync(join(procRoot, entry, "status"), "utf8"))?.[1];
+				return uid === undefined ? undefined : Number(uid);
+			} catch (error) {
+				if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
+				return undefined;
+			}
+		};
 		const scanTokenPids = (): Set<number> | null => {
 			if (child.pid === undefined) return null;
 			try {
@@ -172,8 +184,13 @@ export async function runFixedVerification(
 					// procfs keeps each process's exec-time environment, which is where the
 					// inherited token lives; `ps` cannot print it on this platform.
 					const marker = `IMM_VERIFICATION_PROCESS_TOKEN=${processToken}`;
+					const selfUid = process.getuid!();
 					for (const entry of readdirSync(procRoot)) {
 						if (!/^\d+$/.test(entry)) continue;
+						const owner = procUid(entry);
+						if (owner === undefined) throw new Error("verification process ownership is unreadable");
+						// null means the entry vanished and a foreign uid never held the token.
+						if (owner === null || owner !== selfUid) continue;
 						const environ = procEnviron(Number(entry));
 						if (environ === undefined) throw new Error("verification process environment is unreadable");
 						if (environ !== null && environ.split("\0").includes(marker)) pids.add(Number(entry));

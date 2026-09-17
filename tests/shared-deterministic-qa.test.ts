@@ -114,8 +114,10 @@ describe("shared deterministic QA", () => {
 		const prepare = join(root, "prepare");
 		writeFileSync(prepare, `#!/bin/sh\nmkdir -p generated\ncp ${JSON.stringify(process.execPath)} generated/local-bun\nprintf '#!%s/generated/local-bun\\nprocess.exit(0)\\n' "$PWD" > generated/check\nchmod +x generated/local-bun generated/check\n`);
 		chmodSync(prepare, 0o755);
-		const check = { executable: "./generated/check", argv: [], cwd: ".", timeout_ms: 1000, max_output_bytes: 8192 };
-		const prepareCommand = { ...check, executable: "./prepare" };
+		const check = { executable: "./generated/check", argv: [], cwd: ".", timeout_ms: 5000, max_output_bytes: 8192 };
+		// Preparation copies the whole host binary, so it needs a budget that does not
+		// turn a loaded machine into a spurious verification failure.
+		const prepareCommand = { ...check, executable: "./prepare", timeout_ms: 20000 };
 		const parsed = parseVerificationDescriptor(JSON.stringify({ contract: "assurance_kernel/verification_descriptor/v2", command: check,
 			environment: { prepare: prepareCommand, writable_paths: ["generated"] } }));
 		const s = snapshot("prepared-interpreter", [{ id: "A1" }]);

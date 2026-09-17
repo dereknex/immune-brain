@@ -982,6 +982,16 @@ async function runFixedVerification(root, command, frozen, options) {
         return;
       }
     };
+    const procUid = (entry) => {
+      try {
+        const uid = /^Uid:[ \t]+(\d+)/m.exec(readFileSync(join2(procRoot, entry, "status"), "utf8"))?.[1];
+        return uid === undefined ? undefined : Number(uid);
+      } catch (error) {
+        if (error.code === "ENOENT")
+          return null;
+        return;
+      }
+    };
     const scanTokenPids = () => {
       if (child.pid === undefined)
         return null;
@@ -989,8 +999,14 @@ async function runFixedVerification(root, command, frozen, options) {
         const pids = new Set([child.pid]);
         if (process.platform === "linux") {
           const marker = `IMM_VERIFICATION_PROCESS_TOKEN=${processToken}`;
+          const selfUid = process.getuid();
           for (const entry of readdirSync2(procRoot)) {
             if (!/^\d+$/.test(entry))
+              continue;
+            const owner = procUid(entry);
+            if (owner === undefined)
+              throw new Error("verification process ownership is unreadable");
+            if (owner === null || owner !== selfUid)
               continue;
             const environ = procEnviron(Number(entry));
             if (environ === undefined)

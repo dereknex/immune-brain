@@ -180,9 +180,10 @@ describe("project command verification", () => {
 	});
 	}
 	test("procfs discovery ignores table entries that do not carry the run token", async () => {
-		// Two live bystanders are placed in the table with environments that only
-		// resemble the marker. They must survive, which proves selection happens on the
-		// exact inherited environment rather than on a table entry or a command line.
+		// Two live bystanders are attributed to our own uid and placed in the table with
+		// environments that only resemble the marker. They must survive, which proves
+		// selection happens on the exact inherited environment rather than on a table
+		// entry or a command line.
 		const root = temp(), proc = join(root, "proc");
 		const bystanders = [
 			spawn(process.execPath, ["-e", "setTimeout(() => {}, 30000)"], { stdio: "ignore" }),
@@ -191,12 +192,13 @@ describe("project command verification", () => {
 		try {
 			const entry = (pid: number, environment: string) => {
 				mkdirSync(join(proc, String(pid)), { recursive: true });
+				writeFileSync(join(proc, String(pid), "status"), `Uid:\t${process.getuid!()}\t${process.getuid!()}\t${process.getuid!()}\t${process.getuid!()}\n`);
 				writeFileSync(join(proc, String(pid), "environ"), environment);
 			};
 			entry(bystanders[0]!.pid!, "IMM_VERIFICATION_PROCESS_TOK=near-miss");
 			entry(bystanders[1]!.pid!, "PATH=/usr/bin\0SOME_OTHER=x");
 			mkdirSync(join(proc, "not-a-pid"), { recursive: true });
-			mkdirSync(join(proc, "999996"), { recursive: true }); // an exited process keeps no readable environ
+			mkdirSync(join(proc, "999996"), { recursive: true }); // an entry with neither status nor environ
 			const c = good({ argv: ["-e", "1"] }).command, path = verificationPath();
 			const result = await runFixedVerification(root, c, resolveVerificationCommand(root, c, path), {
 				home: root, path, _procRoot: proc,
@@ -217,7 +219,9 @@ describe("project command verification", () => {
 		try {
 			Object.defineProperty(process, "platform", { value: "linux", configurable: true });
 			const proc = join(root, "proc");
-			mkdirSync(join(proc, "999994", "environ"), { recursive: true }); // a directory is no environment blob
+			mkdirSync(join(proc, "999994"), { recursive: true });
+			writeFileSync(join(proc, "999994", "status"), `Uid:\t${process.getuid!()}\t${process.getuid!()}\t${process.getuid!()}\t${process.getuid!()}\n`);
+			mkdirSync(join(proc, "999994", "environ")); // a directory is no environment blob
 			const c = good({ argv: ["-e", "1"] }).command, path = verificationPath();
 			await expect(runFixedVerification(root, c, resolveVerificationCommand(root, c, path), {
 				home: root, path, _procRoot: proc,
@@ -263,9 +267,16 @@ describe("project command verification", () => {
 				'import { spawn } from "node:child_process";',
 				'import { mkdirSync, writeFileSync } from "node:fs";',
 				'const proc = process.argv[2];',
+				'const uid = process.getuid();',
+				'const status = (path: string, owner: number) => writeFileSync(path + "/status", "Uid:\\t" + owner + "\\t" + owner + "\\t" + owner + "\\t" + owner + "\\n");',
 				'const child = spawn(process.execPath, ["-e", "setTimeout(() => {}, 30000)"], { detached: true, stdio: "ignore" });',
 				'mkdirSync(proc + "/" + child.pid, { recursive: true });',
+				'status(proc + "/" + child.pid, uid);',
 				'writeFileSync(proc + "/" + child.pid + "/environ", Object.entries(process.env).map(([key, value]) => key + "=" + value).join("\\0"));',
+				// A privileged process that cannot be read is definitively unrelated, so it
+				// must never block verification of our own tree.
+				'mkdirSync(proc + "/999990/environ", { recursive: true });',
+				'status(proc + "/999990", uid + 1);',
 				'writeFileSync("procfs-carrier.pid", String(child.pid)); child.unref();',
 			].join("\n"));
 			const c = good({ argv: ["run", script, proc] }).command, path = verificationPath();
