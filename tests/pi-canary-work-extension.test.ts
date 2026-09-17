@@ -47,7 +47,7 @@ const INTENT = {
 	acceptance: [{
 		id: "A1",
 		assertion: "a1",
-		verification: JSON.stringify({ contract: "assurance_kernel/verification_descriptor/v1", runner_id: "bun", runner_version: "1.4.2", argv: ["test"], cwd: ".", timeout_ms: 1_000, max_output_bytes: 1_024 }),
+		verification: JSON.stringify({ contract: "assurance_kernel/verification_descriptor/v2", command: { executable: "bun", argv: ["test"], cwd: ".", timeout_ms: 1_000, max_output_bytes: 1_024 } }),
 	}],
 	scope_hint: [
 		"plugins/immune-brain/.pi-extension",
@@ -1165,7 +1165,7 @@ async function capturedToolFailure(promise: Promise<unknown>): Promise<Record<st
 				descriptors: new Map(),
 				reviewBundle: role === "review" ? ({ dirty_files: {}, outcomes: {}, bundle_digest: "sha256:bundle" } as never) : null,
 			}),
-			runQa: async (snapshot: SnapshotDescriptor, _descriptors: Map<string, unknown>, _runner: unknown, options: { onProgress?: (value: unknown) => void }) => {
+		runQa: async (snapshot: SnapshotDescriptor, _descriptors: Map<string, unknown>, options: { onProgress?: (value: unknown) => void }) => {
 				options.onProgress?.({ index: 1, total: 1, acceptance_id: "A1", phase: "passed", elapsed_ms: 1 });
 				return { contract: "assurance_kernel/assurance_verdict/v2", role: "qa", task_id: TASK, snapshot_digest: snapshotDigest(snapshot), decision: "pass", approval: { kind: "qa", authority_role: "qa", summary: "passed" } };
 			},

@@ -14,6 +14,7 @@ import {
 import type { AssuranceHostPort, HostReviewReservation, ReviewRequest } from "../plugins/immune-brain/runtime/assurance/host_port";
 import type { AssuranceProjectionResult } from "../plugins/immune-brain/runtime/kernel/assurance_projection";
 import type { ReviewBundle } from "../plugins/immune-brain/runtime/assurance/review_evidence";
+import { VerificationAbortedError } from "../plugins/immune-brain/runtime/assurance/verification";
 
 const TASK = "phase3-task";
 const ROOT = "/tmp/phase3-assurance";
@@ -113,8 +114,12 @@ function makeCoordinator(overrides: {
 	risk?: "routine" | "material" | "critical";
 	host?: FakeReviewHost;
 	project?: AssuranceCoordinatorPorts["projectTask"];
+	assurance?: AssuranceCoordinatorPorts["buildAssurance"];
+	qa?: AssuranceCoordinatorPorts["runQa"];
+	qaJobTimeoutMs?: number;
 } = {}) {
 	let applyCount = 0;
+	let qaRuns = 0;
 	const risk = overrides.risk ?? "material";
 	let currentLifecycle: "active" | "done" | "stopped" = "active";
 	let artifactState: "active" | "frozen" = "frozen";
@@ -125,16 +130,19 @@ function makeCoordinator(overrides: {
 		projectTask: overrides.project ?? (async () => projection(currentLifecycle, nextObligation, risk, artifactState)),
 		readTaskRecord: async () => ({ record: { findings: [] } }),
 		readTaskIntent: async () => ({ token: "intent-token" }),
-		frozenRunner: async () => ({ runner_id: "bun", path: "/bun", dev: 1, ino: 1, content_hash: "sha256:x", version: "1.4.2" }),
-		buildAssurance: async (_root, _task, role) => ({
+		buildAssurance: overrides.assurance ?? (async (_root, _task, role) => ({
 			snapshot: snapshot(role),
 			descriptors: new Map([[
 				"A1",
-				{ contract: "assurance_kernel/verification_descriptor/v1", runner_id: "bun", runner_version: "1.4.2", argv: ["test"], cwd: ".", timeout_ms: 1000, max_output_bytes: 1024 },
+				{ contract: "assurance_kernel/verification_descriptor/v2", command: { executable: "tool", argv: ["test"], cwd: ".", timeout_ms: 1000, max_output_bytes: 1024 }, environment: { prepare: null, writable_paths: [] } },
 			]] as never),
 			reviewBundle: role === "review" ? reviewBundle() : null,
-		}),
-		runQa: async (s) => passVerdict(s),
+		})),
+		runQa: async (s, descriptors, options) => {
+			qaRuns += 1;
+			return overrides.qa ? overrides.qa(s, descriptors, options) : passVerdict(s);
+		},
+		...(overrides.qaJobTimeoutMs !== undefined ? { qaJobTimeoutMs: overrides.qaJobTimeoutMs } : {}),
 		writeReviewEvidence: () => ({ path: `${ROOT}/review.json`, remove: () => undefined }),
 		applyVerdict: async (_ctx, input) => {
 			applyCount += 1;
@@ -157,7 +165,7 @@ function makeCoordinator(overrides: {
 			}
 		},
 	};
-	return { coordinator: new AssuranceCoordinator(ports), host, counts: () => ({ applyCount }) };
+	return { coordinator: new AssuranceCoordinator(ports), host, counts: () => ({ applyCount }), qaRuns: () => qaRuns };
 }
 
 describe("host-neutral assurance coordinator", () => {
@@ -353,5 +361,49 @@ describe("host-neutral assurance coordinator", () => {
 		expect(prompt).toContain("security_boundary");
 		expect(prompt).not.toContain("counterevidence");
 		expect(prompt).not.toContain("refuted");
+	});
+
+	test("a declared QA budget over the ceiling is refused before any preparation runs", async () => {
+		const command = (environment: string) => ({
+			executable: "project-tool",
+			argv: [environment],
+			cwd: ".",
+			timeout_ms: 600_000,
+			max_output_bytes: 1024,
+		});
+		// Four distinct environments, each declaring a prepare and a check at the
+		// per-command ceiling: every command is legal on its own, the aggregate is
+		// 82 minutes with overhead.
+		const descriptors = new Map(["A1", "A2", "A3", "A4"].map((id) => [id, {
+			contract: "assurance_kernel/verification_descriptor/v2",
+			command: command(id),
+			environment: { prepare: command(`prepare-${id}`), writable_paths: [] },
+		}])) as never;
+		const h = makeCoordinator({
+			assurance: async (_root, _task, role) => ({ snapshot: snapshot(role), descriptors, reviewBundle: null }),
+		});
+		const result = await h.coordinator.advance(TASK, ctx);
+		expect(result).toMatchObject({ state: "failed", operation: "qa" });
+		expect((result as { reason: string }).reason).toContain("exceeds the maximum of 60 minutes");
+		// The rejection precedes preparation: no check ran and no authority was written.
+		expect(h.qaRuns()).toBe(0);
+		expect(h.counts().applyCount).toBe(0);
+	});
+
+	test("the declared QA budget bounds preparation and checks together", async () => {
+		// A host may tighten the derived budget. The deadline is wired into the
+		// operation controller, so an in-flight QA is aborted and settles as a
+		// failed operation instead of running past its declaration.
+		const h = makeCoordinator({
+			qaJobTimeoutMs: 50,
+			qa: async (_snapshot, _descriptors, options) => new Promise((_resolve, reject) => {
+				options.signal?.addEventListener("abort", () => reject(new VerificationAbortedError()), { once: true });
+			}),
+		});
+		const result = await h.coordinator.advance(TASK, ctx);
+		expect(result).toMatchObject({ state: "failed", operation: "qa" });
+		expect((result as { reason: string }).reason).toContain("exceeded its declared job budget");
+		expect(h.qaRuns()).toBe(1);
+		expect(h.counts().applyCount).toBe(0);
 	});
 });

@@ -62,6 +62,27 @@ flowchart LR
   review -->|pass| done[completion]
 ```
 
+### Project-owned verification
+
+Immune-Brain executes project-defined verification commands from a frozen Git
+delivery tree. The verification contract names an executable, literal arguments,
+working directory, resource bounds, and an optional preparation command. It does
+not select a language, package manager, or test framework. Projects may reuse
+their existing tracked scripts or host tools; adding an ecosystem does not
+require an Immune-Brain adapter.
+
+Preparation and checks run in a disposable workspace with an isolated HOME.
+Tracked delivery inputs are immutable, while generated output is allowed only
+under explicitly declared `writable_paths`. Missing tools and preparation or
+integrity failures block QA separately from acceptance failures. Local process
+execution is not a malicious-code sandbox and does not prove that transitive
+tools or external services are reproducible.
+
+New and revised TaskIntents use
+`assurance_kernel/verification_descriptor/v2`. Version 1 descriptors remain
+readable as historical TaskRecord data but must be explicitly revised before
+execution; no prior QA result is inferred during migration.
+
 Managed invariants (see `BASELINE.md`):
 
 - One active step at a time; edits only inside the activated step boundary.

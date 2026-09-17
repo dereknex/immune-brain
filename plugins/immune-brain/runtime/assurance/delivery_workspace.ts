@@ -1,11 +1,12 @@
 // Disposable QA materialization of one immutable delivery tree.
 // Never binds the user's index, refs, or node_modules.
 
-import { execFileSync, spawnSync } from "node:child_process";
-import { existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readlinkSync, realpathSync, rmSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
+import { chmodSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, readlinkSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { isAbsolute, join, relative, resolve, sep } from "node:path";
-import type { FrozenRunner } from "./verification";
+import { dirname, isAbsolute, join, parse, relative, resolve, sep } from "node:path";
+
 import type { GitTaskRevisionSnapshot } from "../workspace_scope";
 
 export class DeliveryWorkspaceError extends Error {
@@ -20,6 +21,19 @@ export interface DeliveryWorkspace {
 	tree: string;
 	seal: string;
 	cleanup: () => void;
+}
+
+export function removeTaskOwnedTree(root: string): void {
+	const makeDirectoriesWritable = (path: string): void => {
+		let stat;
+		try { stat = lstatSync(path); }
+		catch (error) { if ((error as NodeJS.ErrnoException).code === "ENOENT") return; throw error; }
+		if (!stat.isDirectory() || stat.isSymbolicLink()) return;
+		chmodSync(path, (stat.mode & 0o7777) | 0o700);
+		for (const name of readdirSync(path)) makeDirectoriesWritable(join(path, name));
+	};
+	makeDirectoriesWritable(root);
+	rmSync(root, { recursive: true, force: true });
 }
 
 const GIT_OBJECT_ID = /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/;
@@ -59,52 +73,46 @@ function assertInside(root: string, candidate: string, label: string): void {
 		throw new DeliveryWorkspaceError(`delivery ${label} escapes materialization: ${rel}`);
 }
 
+function resolvedSymlinkTarget(path: string): string {
+	const target = readlinkSync(path);
+	let current = isAbsolute(target) ? parse(target).root : parse(path).root;
+	let pending = (isAbsolute(target)
+		? target.split(sep)
+		: [...relative(current, dirname(path)).split(sep), ...target.split(sep)]
+	).filter(Boolean);
+	let links = 0;
+	while (pending.length) {
+		const part = pending.shift()!;
+		if (part === ".") continue;
+		if (part === "..") { current = dirname(current); continue; }
+		const next = join(current, part);
+		try {
+			if (!lstatSync(next).isSymbolicLink()) { current = next; continue; }
+			if (++links > 40) throw new DeliveryWorkspaceError("delivery symlink chain is too deep");
+			const nested = readlinkSync(next);
+			if (isAbsolute(nested)) current = parse(nested).root;
+			pending = [...nested.split(sep).filter(Boolean), ...pending];
+		} catch (error) {
+			if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+			current = next;
+		}
+	}
+	return current;
+}
+
 function assertNoEscapingSymlinks(root: string, dir = root): void {
 	const realRoot = realpathSync(root);
 	for (const name of readdirSync(dir)) {
 		const path = join(dir, name);
 		const stat = lstatSync(path);
 		if (stat.isSymbolicLink()) {
-			let resolved: string;
-			try {
-				resolved = realpathSync(path);
-			} catch {
-				const target = resolve(dir, readlinkSync(path));
-				assertInside(realRoot, target, `symlink ${relative(root, path)}`);
-				continue;
-			}
-			assertInside(realRoot, resolved, `symlink ${relative(root, path)}`);
+			assertInside(realRoot, resolvedSymlinkTarget(path), `symlink ${relative(root, path)}`);
 		} else if (stat.isDirectory()) {
 			assertNoEscapingSymlinks(root, path);
 		}
 	}
 }
 
-function prepareDependencies(root: string, runner?: FrozenRunner): void {
-	const lockfile = ["bun.lock", "bun.lockb"].find((name) => existsSync(join(root, name)));
-	if (!lockfile) return;
-	if (!existsSync(join(root, "package.json")))
-		throw new DeliveryWorkspaceError("delivery lockfile is missing package.json");
-	const bun = runner?.path ?? "bun";
-	const result = spawnSync(bun, ["install", "--frozen-lockfile", "--offline", "--ignore-scripts"], {
-		cwd: root,
-		encoding: "utf8",
-		stdio: ["ignore", "pipe", "pipe"],
-		timeout: 60_000,
-		env: isolatedGitEnv(),
-	});
-	if (result.error || result.status !== 0)
-		throw new DeliveryWorkspaceError("delivery dependency preparation failed from the snapshot lockfile");
-	const modules = join(root, "node_modules");
-	if (existsSync(modules)) {
-		const lock = spawnSync("chmod", ["-R", "a-w", modules], {
-			encoding: "utf8",
-			stdio: ["ignore", "pipe", "pipe"],
-		});
-		if (lock.error || lock.status !== 0)
-			throw new DeliveryWorkspaceError("delivery dependencies could not be locked against mutation");
-	}
-}
 
 export function writeDeliveryTree(sourceRoot: string, snapshot: GitTaskRevisionSnapshot): string {
 	const indexDirectory = mkdtempSync(join(tmpdir(), "imm-delivery-index-"));
@@ -137,32 +145,73 @@ export function writeDeliveryTree(sourceRoot: string, snapshot: GitTaskRevisionS
 	}
 }
 
-function workspaceSeal(root: string): string {
-	return git(root, ["status", "--porcelain", "-z", "--untracked-files=all", "--ignored=matching"]);
+// The seal lives in host memory, outside the project. Compare bytes directly:
+// project commands can rewrite their disposable index or porcelain state.
+function workspaceFiles(
+	root: string,
+	dir = root,
+	result: Record<string, string> = Object.create(null) as Record<string, string>,
+): Record<string, string> {
+	if (dir === root) result["."] = `${lstatSync(root).mode & 0o7777}:directory`;
+	for (const name of readdirSync(dir).sort()) {
+		const path = join(dir, name), rel = relative(root, path);
+		const stat = lstatSync(path);
+		if (stat.isSymbolicLink()) result[rel] = `link:${stat.mode & 0o7777}:${readlinkSync(path)}`;
+		else if (stat.isDirectory()) { result[rel] = `${stat.mode & 0o7777}:directory`; workspaceFiles(root, path, result); }
+		else if (stat.isFile()) result[rel] = `${stat.mode & 0o7777}:${createHash("sha256").update(readFileSync(path)).digest("hex")}`;
+		else throw new DeliveryWorkspaceError("delivery contains an unsupported filesystem entry");
+	}
+	return result;
 }
 
-export function assertDeliveryClean(root: string, tree: string, seal?: string): void {
-	const porcelain = workspaceSeal(root);
-	if (seal !== undefined) {
-		if (porcelain !== seal) throw new DeliveryWorkspaceError("delivery workspace was contaminated");
-	} else if (porcelain.length > 0) {
-		throw new DeliveryWorkspaceError("delivery workspace was contaminated");
-	}
-	const current = git(root, ["rev-parse", "HEAD^{tree}"]);
-	if (current !== tree) throw new DeliveryWorkspaceError("delivery workspace tree drifted from the frozen identity");
+function workspaceSeal(root: string): string {
+	return JSON.stringify(workspaceFiles(root));
 }
+
+export function assertDeliveryClean(root: string, tree: string, seal?: string, writablePaths: string[] = []): void {
+	assertTree(tree);
+	if (seal === undefined) {
+		if (git(root, ["status", "--porcelain", "--untracked-files=all", "--ignored=matching"]))
+			throw new DeliveryWorkspaceError("delivery workspace was contaminated");
+		if (git(root, ["rev-parse", "HEAD^{tree}"]) !== tree)
+			throw new DeliveryWorkspaceError("delivery workspace tree drifted from the frozen identity");
+		return;
+	}
+	if (seal === "[]") {
+		for (const name of readdirSync(root)) {
+			const stat = lstatSync(join(root, name));
+			if (!stat.isDirectory() || name !== ".git") throw new DeliveryWorkspaceError("delivery workspace was contaminated");
+		}
+		return;
+	}
+	const expected = JSON.parse(seal) as Record<string, string>;
+	for (const path of writablePaths) {
+		if (path === "." || path === ".git" || path.startsWith(".git/") || isAbsolute(path) || path.split("/").includes("..")
+			|| Object.keys(expected).some(p => p === path || p.startsWith(`${path}/`)))
+			throw new DeliveryWorkspaceError("delivery writable path overlaps protected inputs");
+	}
+	const current = workspaceFiles(root);
+	for (const [path, bytes] of Object.entries(expected))
+		if (current[path] !== bytes) throw new DeliveryWorkspaceError("delivery protected input was contaminated");
+	for (const [path, bytes] of Object.entries(current)) {
+		if (Object.hasOwn(expected, path)) continue;
+		const permitted = writablePaths.some(p => path === p || path.startsWith(`${p}/`)
+			|| (bytes.endsWith(":directory") && p.startsWith(`${path}/`)));
+		if (!permitted) throw new DeliveryWorkspaceError("delivery undeclared output was contaminated");
+		if (bytes.startsWith("link:")) {
+			assertInside(realpathSync(root), resolvedSymlinkTarget(join(root, path)), "generated symlink");
+		}
+	}
+}
+
 
 export function materializeDeliveryWorkspace(
 	sourceRoot: string,
 	tree: string,
-	runner?: FrozenRunner,
 ): DeliveryWorkspace {
 	assertTree(tree);
 	const dest = mkdtempSync(join(tmpdir(), "imm-delivery-"));
-	const cleanup = () => {
-		spawnSync("chmod", ["-R", "u+w", dest], { stdio: ["ignore", "ignore", "ignore"] });
-		rmSync(dest, { recursive: true, force: true });
-	};
+	const cleanup = () => removeTaskOwnedTree(dest);
 	try {
 		mkdirSync(dest, { recursive: true });
 		const commit = git(sourceRoot, ["commit-tree", tree, "-m", `delivery ${tree}`], {
@@ -181,7 +230,6 @@ export function materializeDeliveryWorkspace(
 		const got = git(dest, ["rev-parse", "HEAD^{tree}"]);
 		if (got !== tree) throw new DeliveryWorkspaceError("delivery materialization does not match the frozen tree");
 		assertNoEscapingSymlinks(dest);
-		prepareDependencies(dest, runner);
 		const seal = workspaceSeal(dest);
 		assertDeliveryClean(dest, tree, seal);
 		return { root: dest, tree, seal, cleanup };

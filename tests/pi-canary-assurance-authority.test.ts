@@ -15,7 +15,6 @@ import { findingsDigestV2 } from "../plugins/immune-brain/runtime/kernel/reducer
 import { runDeterministicQa } from "../plugins/immune-brain/runtime/assurance/qa";
 import {
 	parseVerificationDescriptor,
-	resolveBunRunner,
 	runFixedVerification,
 	type VerificationDescriptor,
 } from "../plugins/immune-brain/.pi-extension/pi-canary-verification.ts";
@@ -76,16 +75,10 @@ function passVerdict(s: SnapshotDescriptor) {
 }
 
 function descriptor(argv: string[]): VerificationDescriptor {
-	const runner = resolveBunRunner();
 	return parseVerificationDescriptor(
 		JSON.stringify({
-			contract: "assurance_kernel/verification_descriptor/v1",
-			runner_id: "bun",
-			runner_version: runner.version,
-			argv,
-			cwd: ".",
-			timeout_ms: 30000,
-			max_output_bytes: 8192,
+			contract: "assurance_kernel/verification_descriptor/v2",
+			command: { executable: "bun", argv, cwd: ".", timeout_ms: 30000, max_output_bytes: 8192 },
 		}),
 	);
 }
@@ -195,17 +188,20 @@ describe("canary assurance authority", () => {
 			execFileSync("git", ["config", "user.email", "test@example.com"], { cwd: root });
 			execFileSync("git", ["config", "user.name", "Test"], { cwd: root });
 			execFileSync("git", ["commit", "--allow-empty", "-qm", "base"], { cwd: root });
-			const runner = resolveBunRunner();
 			const s = snapshot({ root, role: "qa", acceptance: [{ id: "A1", assertion: "passes", verification: "descriptor" }] });
-			const passed = await runDeterministicQa(s, new Map([["A1", descriptor(["-e", "1"])]]), runner, {
-				runVerification: runFixedVerification,
+			const options = {
+				_writeDeliveryTree: () => "0".repeat(40),
+				_materializeDeliveryWorkspace: () => ({ root, tree: "0".repeat(40), seal: "[]", cleanup: () => undefined }),
+				_runFixedVerification: runFixedVerification,
+			} as const;
+			const passed = await runDeterministicQa(s, new Map([["A1", descriptor(["-e", "1"])]]), {
+				...options,
 			});
 			expect(passed.decision).toBe("pass");
 			const withoutExecutorEvidence = await runDeterministicQa(
 				snapshot({ ...s, missing_acceptance_ids: ["A1"], fresh_acceptance_ids: [] }),
 				new Map([["A1", descriptor(["-e", "1"])]]),
-				runner,
-				{ runVerification: runFixedVerification },
+				options,
 			);
 			expect(withoutExecutorEvidence.decision).toBe("pass");
 		} finally {

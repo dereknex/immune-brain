@@ -1,4 +1,4 @@
-// P3 U2: the strict verification_descriptor/v1 parser has exactly ONE
+// The strict verification_descriptor/v2 parser has exactly one
 // implementation, in the shared runtime module
 // `plugins/immune-brain/runtime/verification_descriptor.ts`. Pi assurance and
 // Kernel intent author/validate both consume it; no second parser exists.
@@ -33,9 +33,9 @@ describe("shared verification descriptor parser", () => {
 		expect(extension).toContain(
 			'from "../runtime/verification_descriptor"',
 		);
-		// The parser body must not be duplicated in the extension.
 		const parserBody = extension.match(/export function parseVerificationDescriptor/);
 		expect(parserBody).toBeNull();
+		// project-owned verification: command descriptors plus optional bounded environment preparation.
 		const fieldList = extension.match(/DESCRIPTOR_FIELDS/);
 		expect(fieldList).toBeNull();
 	});
@@ -71,10 +71,9 @@ describe("shared verification descriptor parser", () => {
 	test("canonical bytes are deterministic and whitespace-independent parsing", () => {
 		const { parseVerificationDescriptor, canonicalDescriptorBytes } =
 			require("../plugins/immune-brain/runtime/verification_descriptor");
-		const compact =
-			'{"contract":"assurance_kernel/verification_descriptor/v1","runner_id":"bun","runner_version":"1.4.2","argv":["test","tests/x.test.ts"],"cwd":".","timeout_ms":120000,"max_output_bytes":262144}';
+		const compact = '{"contract":"assurance_kernel/verification_descriptor/v2","command":{"executable":"bun","argv":["test"],"cwd":".","timeout_ms":120000,"max_output_bytes":262144}}';
 		const pretty =
-			'{\n  "contract": "assurance_kernel/verification_descriptor/v1",\n  "runner_id": "bun",\n  "runner_version": "1.4.2",\n  "argv": ["test", "tests/x.test.ts"],\n  "cwd": ".",\n  "timeout_ms": 120000,\n  "max_output_bytes": 262144\n}';
+			'{\n  "contract": "assurance_kernel/verification_descriptor/v2",\n  "command": {\n    "executable": "bun",\n    "argv": ["test"],\n    "cwd": ".",\n    "timeout_ms": 120000,\n    "max_output_bytes": 262144\n  }\n}';
 		const a = parseVerificationDescriptor(compact);
 		const b = parseVerificationDescriptor(pretty);
 		expect(canonicalDescriptorBytes(a)).toBe(canonicalDescriptorBytes(b));

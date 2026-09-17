@@ -240,12 +240,11 @@ function makeCoordinator(overrides: {
 		projectTask: overrides.project ?? (async () => projection(currentLifecycle, nextObligation, risk, artifactState)),
 		readTaskRecord: async () => ({ record: { findings: [] } }),
 		readTaskIntent: async () => ({ token: "intent-token" }),
-		frozenRunner: async () => ({ runner_id: "bun", path: "/bun", dev: 1, ino: 1, content_hash: "sha256:x", version: "1.4.2" }),
 		buildAssurance: async (_root, _task, role) => ({
 			snapshot: snapshot(role),
 			descriptors: new Map([[
 				"A1",
-				{ contract: "assurance_kernel/verification_descriptor/v1", runner_id: "bun", runner_version: "1.4.2", argv: ["test"], cwd: ".", timeout_ms: 1000, max_output_bytes: 1024 },
+				{ contract: "assurance_kernel/verification_descriptor/v2", command: { executable: "bun", argv: ["test"], cwd: ".", timeout_ms: 1000, max_output_bytes: 1024 }, environment: { prepare: null, writable_paths: [] } },
 			]] as never),
 			reviewBundle: role === "review" ? reviewBundle() : null,
 		}),

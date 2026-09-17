@@ -1,6 +1,6 @@
 import { describe, expect, setDefaultTimeout, test } from "bun:test";
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import {
@@ -44,6 +44,7 @@ import { readTaskIntent } from "../plugins/immune-brain/runtime/kernel/intent";
 import { withKernelTransaction } from "../plugins/immune-brain/runtime/kernel/sqlite_store";
 import { canonicalIntentHash, parseTaskIntentV1 } from "../plugins/immune-brain/runtime/kernel/intent";
 import { seedKernelRunForTest } from "./fixtures/mutation-authority-test-seam";
+import { createPiAssuranceProgressionPorts } from "../plugins/immune-brain/.pi-extension/imm-canary-work";
 
 const FIXTURE_NOW = "2026-08-12T10:00:00.000Z";
 const HOST_ENV = { CLAUDE_CODE_VERSION: "2.1.236", CLAUDE_CODE_PERMISSION_MODE: "manual" };
@@ -426,16 +427,15 @@ function sharedKernel(
 		},
 		readTaskRecord: async () => ({ record: { ...(contract ? { contract } : {}), findings: [] } }),
 		readTaskIntent: async () => ({ token: "intent-token" }),
-		frozenRunner: async () => ({ runner_id: "bun", path: "/bun", dev: 1, ino: 1, content_hash: "sha256:x", version: "1.4.2" }),
 		buildAssurance: async (_root, _task, role) => ({
 			snapshot: snapshot(role, risk),
 			descriptors: new Map([[
 				"A1",
-				{ contract: "assurance_kernel/verification_descriptor/v1", runner_id: "bun", runner_version: "1.4.2", argv: ["test"], cwd: ".", timeout_ms: 1000, max_output_bytes: 1024 },
+				{ contract: "assurance_kernel/verification_descriptor/v2", command: { executable: "bun", argv: ["test"], cwd: ".", timeout_ms: 1000, max_output_bytes: 1024 }, environment: { prepare: null, writable_paths: [] } },
 			]] as never),
 			reviewBundle: role === "review" ? reviewBundle() : null,
 		}),
-		runQa: async (s, _descriptors, _runner, options) => {
+		runQa: async (s, _descriptors, options) => {
 			executionCounts.qa += 1;
 			hooks.onQaStart?.();
 			if (hooks.holdQa) await hooks.holdQa(options?.signal);
@@ -494,6 +494,113 @@ function sharedKernel(
 		},
 	};
 }
+
+function projectVerificationFixture(taskId: string, mode: "pass" | "prepare-fail" | "sleep" | "v1"): string {
+	const root = mkdtempSync(join(tmpdir(), "imm-project-verification-"));
+	mkdirSync(join(root, ".imm/state"), { recursive: true });
+	mkdirSync(join(root, "docs/plans"), { recursive: true });
+	mkdirSync(join(root, "tools"), { recursive: true });
+	const tool = join(root, "tools/future-pm");
+	writeFileSync(tool, `#!/bin/sh
+case "$1" in
+  prepare) [ "$2" != "fail" ] || exit 7; mkdir -p generated; printf ready > generated/ready ;;
+  check) test -f generated/ready ;;
+  sleep) sleep 10 ;;
+esac
+`);
+	chmodSync(tool, 0o755);
+	const command = (argv: string[]) => ({ executable: "./tools/future-pm", argv, cwd: ".", timeout_ms: 5_000, max_output_bytes: 8_192 });
+	const verification = mode === "v1"
+		? JSON.stringify({ contract: "assurance_kernel/verification_descriptor/v1", runner_id: "bun", runner_version: "1.4.2", argv: ["test"], cwd: ".", timeout_ms: 5_000, max_output_bytes: 8_192 })
+		: JSON.stringify({
+			contract: "assurance_kernel/verification_descriptor/v2",
+			command: command([mode === "sleep" ? "sleep" : "check"]),
+			environment: { prepare: command(["prepare", ...(mode === "prepare-fail" ? ["fail"] : [])]), writable_paths: ["generated"] },
+		});
+	const intent = {
+		contract: "assurance_kernel/task_intent/v1", task_id: taskId, owner: "user",
+		goal: "exercise project-owned verification through the real host port",
+		acceptance: [{ id: "acc-1", assertion: "project command passes", verification }],
+		scope_hint: [`docs/plans/${taskId}.intent.json`, "tools/future-pm"], risk: "material", revision: 1,
+	};
+	writeFileSync(join(root, "docs/plans", `${taskId}.intent.json`), `${JSON.stringify(intent, null, 2)}\n`);
+	execFileSync("git", ["init", "-q"], { cwd: root });
+	execFileSync("git", ["add", "-A"], { cwd: root });
+	execFileSync("git", ["-c", "user.name=test", "-c", "user.email=test@example.com", "commit", "-q", "-m", "fixture"], { cwd: root });
+	const read = readTaskIntent(root, taskId, `docs/plans/${taskId}.intent.json`);
+	seedKernelRunForTest(root, {
+		task_id: taskId,
+		record: {
+			contract: "assurance_kernel/task_record/v4", task_id: taskId,
+			intent_snapshot: read.intent,
+			intent_ref: { path: `docs/plans/${taskId}.intent.json`, content_hash: read.content_hash },
+			lifecycle: "active", artifact_state: "active",
+			baseline: `sha256:${"b".repeat(64)}`, git_base_head: execFileSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).trim(),
+			attestations: [], findings: [], history: [],
+		},
+	});
+	return root;
+}
+
+function projectVerificationCoordinator(root: string, host: "pi" | "claude") {
+	const ports = host === "pi"
+		? createPiAssuranceProgressionPorts()
+		: new ClaudeRuntime({ cwd: root, env: HOST_ENV, host: new ClaudeReviewHost(), interactive: true }).kernelPorts();
+	return {
+		coordinator: host === "pi" ? new AssuranceProgression(ports) : new AssuranceCoordinator(ports),
+		ports,
+	};
+}
+
+describe("project-owned-verification", () => {
+	test("Pi and Claude actual ports execute the same unknown project command and record evidence", async () => {
+		for (const host of ["pi", "claude"] as const) {
+			const taskId = `project-command-${host}`, root = projectVerificationFixture(taskId, "pass");
+			try {
+				const driven = projectVerificationCoordinator(root, host);
+				const result = await driven.coordinator.advance(taskId, { cwd: root } as never);
+				expect(result.state).toBe("review_ready");
+				const record = await driven.ports.readTaskRecord(root, taskId);
+				expect(JSON.stringify(record)).toContain("execution=sha256:");
+				await driven.coordinator.onSessionShutdown();
+			} finally { rmSync(root, { recursive: true, force: true }); }
+		}
+	});
+
+	test("Pi and Claude actual ports preserve preparation and v1 migration failures", async () => {
+		const results: unknown[] = [];
+		for (const host of ["pi", "claude"] as const) {
+			const taskId = `prepare-failure-${host}`, root = projectVerificationFixture(taskId, "prepare-fail");
+			try { results.push(await projectVerificationCoordinator(root, host).coordinator.advance(taskId, { cwd: root } as never)); }
+			finally { rmSync(root, { recursive: true, force: true }); }
+		}
+		const comparable = (results as Array<Record<string, unknown>>).map(({ operation_id: _operationId, ...result }) => result);
+		expect(comparable[0]).toEqual(comparable[1]);
+		expect(comparable[0]).toMatchObject({ state: "failed", operation: "qa" });
+		expect(JSON.stringify(comparable[0])).toContain("QA prepare failed");
+		for (const host of ["pi", "claude"] as const) {
+			const taskId = `v1-migration-${host}`, root = projectVerificationFixture(taskId, "v1");
+			try {
+				const result = await projectVerificationCoordinator(root, host).coordinator.advance(taskId, { cwd: root } as never);
+				expect(result).toMatchObject({ state: "failed", operation: "qa" });
+				expect(JSON.stringify(result)).toContain("verification_contract_migration_required");
+			} finally { rmSync(root, { recursive: true, force: true }); }
+		}
+	});
+
+	test("Pi and Claude actual ports cancel project verification before authority settlement", async () => {
+		for (const host of ["pi", "claude"] as const) {
+			const taskId = `cancel-command-${host}`, root = projectVerificationFixture(taskId, "sleep");
+			try {
+				const controller = new AbortController();
+				setTimeout(() => controller.abort(), 100);
+				const result = await projectVerificationCoordinator(root, host).coordinator.advance(taskId, { cwd: root } as never, controller.signal);
+				expect(result.state).toBe("cancelled");
+				expect(existsSync(join(root, ".imm/audit", taskId))).toBe(false);
+			} finally { rmSync(root, { recursive: true, force: true }); }
+		}
+	});
+});
 
 describe("dual-host assurance conformance", () => {
 	test("Claude independently completes routine, material, and critical projections", async () => {

@@ -56,13 +56,9 @@ function activateRetiredPolicy(root: string): void {
 }
 
 const GOOD_DESCRIPTOR = JSON.stringify({
-	contract: "assurance_kernel/verification_descriptor/v1",
-	runner_id: "bun",
-	runner_version: "1.4.2",
-	argv: ["test", "tests/fixture.test.ts"],
-	cwd: ".",
-	timeout_ms: 120000,
-	max_output_bytes: 262144,
+	contract: "assurance_kernel/verification_descriptor/v2",
+	command: { executable: "bun", argv: ["test", "tests/fixture.test.ts"], cwd: ".", timeout_ms: 120000, max_output_bytes: 262144 },
+	environment: { prepare: null, writable_paths: [] },
 });
 
 function candidate(overrides: Record<string, unknown> = {}): string {

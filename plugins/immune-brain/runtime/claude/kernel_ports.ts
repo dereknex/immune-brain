@@ -13,9 +13,6 @@ import {
 	type SnapshotDescriptor,
 } from "../assurance/coordinator";
 import {
-	assertRunnerCompatible,
-	resolveBunRunner,
-	type FrozenRunner,
 	type VerificationDescriptor,
 } from "../assurance/verification";
 import {
@@ -266,16 +263,14 @@ async function buildAssuranceSnapshot(
 	taskId: string,
 	role: "qa" | "review",
 	projection: AssuranceProjectionResult,
-	runner: FrozenRunner,
 ) {
 	const read = await readTaskRecord(root, taskId);
 	const record = read.record;
 	if (!record || read.revision !== projection.projection.record_revision) throw new Error("TaskRecord changed before assurance snapshot capture");
 	const intent = record.intent_snapshot;
 	const descriptors = new Map<string, VerificationDescriptor>();
-	for (const item of intent.acceptance) {
+	for (const item of role === "qa" ? intent.acceptance : []) {
 		const descriptor = parseVerificationDescriptor(item.verification);
-		assertRunnerCompatible(descriptor, runner);
 		descriptors.set(item.id, descriptor);
 	}
 	// `git_base_head` exists only on TaskRecord v4, so this must narrow the union
@@ -514,10 +509,9 @@ export class ClaudeRuntime {
 			projectTask: (root, taskId) => projectAssurance(root, taskId, diffSnapshotOf),
 			readTaskRecord: async (root, taskId) => readTaskRecord(root, taskId),
 			readTaskIntent: async (root, taskId) => readTaskIntentForRecord(root, taskId),
-			frozenRunner: async () => resolveBunRunner(),
-			buildAssurance: (root, taskId, role, projection, runner) => buildAssuranceSnapshot(root, taskId, role, projection, runner),
+			buildAssurance: (root, taskId, role, projection) => buildAssuranceSnapshot(root, taskId, role, projection),
 			ensureReviewRevision: (root, taskId, projection) => ensureClaudeReviewRevision(root, taskId, projection),
-			runQa: (snapshot, descriptors, runner, options) => runDeterministicQa(snapshot, descriptors, runner, options),
+			runQa: (snapshot, descriptors, options) => runDeterministicQa(snapshot, descriptors, options),
 			writeReviewEvidence: (input) => writeNativeReviewEvidence(input.evidence),
 			applyVerdict: (ctx, input) => this.applyVerdict(ctx, input),
 			applyOrdinaryOperation: (ctx, input) => this.executeOrdinary(ctx, input),

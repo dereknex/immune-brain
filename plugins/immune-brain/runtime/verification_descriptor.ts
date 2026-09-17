@@ -1,50 +1,34 @@
-// Shared verification_descriptor/v1 pure parser.
-//
-// The complete `acceptance[].verification` string of a TaskIntent is accepted
-// only as strict canonical JSON for `assurance_kernel/verification_descriptor/v1`.
-// Never execute free text, an executable path, a shell string, PATH lookup,
-// environment overrides, or a cwd outside the repository. The production runner
-// registry contains only the host-resolved `bun` runner.
-//
-// This module is the single parser implementation for the wire contract. Pi
-// assurance (`.pi-extension/pi-canary-verification.ts`) re-exports it and keeps
-// runner resolution/execution extension-owned. Kernel intent author/validate
-// consume the same implementation, so the two consumers cannot drift.
-//
-// JSON whitespace and key ordering are NOT eligibility conditions: parsing is
-// whitespace/order-insensitive. `canonicalDescriptorBytes` produces the
-// deterministic bytes that Planner authoring binds.
+// One host-neutral parser for project-owned verification. Historical TaskRecords
+// retain their verification strings; only v2 descriptors are executable.
+import { isAbsolute } from "node:path";
 
-import { isAbsolute, sep } from "node:path";
+export const VERIFICATION_DESCRIPTOR_CONTRACT = "assurance_kernel/verification_descriptor/v2" as const;
+export const VERIFICATION_DESCRIPTOR_BOUNDS = {
+	max_arg_tokens: 64,
+	max_arg_token_bytes: 512,
+	max_cwd_depth: 32,
+	max_timeout_ms: 600_000,
+	max_output_bytes: 262_144,
+	max_descriptor_bytes: 65_536,
+	max_writable_paths: 32,
+} as const;
 
-export const VERIFICATION_DESCRIPTOR_CONTRACT =
-	"assurance_kernel/verification_descriptor/v1" as const;
-
-export interface VerificationDescriptor {
-	contract: typeof VERIFICATION_DESCRIPTOR_CONTRACT;
-	runner_id: "bun";
-	runner_version: string;
+export interface VerificationCommand {
+	executable: string;
 	argv: string[];
 	cwd: string;
 	timeout_ms: number;
 	max_output_bytes: number;
 }
-
-const DESCRIPTOR_FIELDS = [
-	"contract",
-	"runner_id",
-	"runner_version",
-	"argv",
-	"cwd",
-	"timeout_ms",
-	"max_output_bytes",
-] as const;
-
-const MAX_ARGV_TOKENS = 64;
-const MAX_ARGV_TOKEN_BYTES = 512;
-const MAX_CWD_DEPTH = 32;
-const MAX_TIMEOUT_MS = 600_000;
-const MAX_OUTPUT_BYTES = 262_144;
+export interface VerificationEnvironment {
+	prepare: VerificationCommand | null;
+	writable_paths: string[];
+}
+export interface VerificationDescriptor {
+	contract: typeof VERIFICATION_DESCRIPTOR_CONTRACT;
+	command: VerificationCommand;
+	environment: VerificationEnvironment;
+}
 
 export class VerificationDescriptorError extends Error {
 	constructor(message: string) {
@@ -53,110 +37,82 @@ export class VerificationDescriptorError extends Error {
 	}
 }
 
-/** Parse the complete verification string as strict canonical JSON. */
-export function parseVerificationDescriptor(text: string): VerificationDescriptor {
-	const trimmed = text.trim();
-	if (!trimmed) throw new VerificationDescriptorError("verification string is empty");
-	let raw: Record<string, unknown>;
-	try {
-		raw = JSON.parse(trimmed) as Record<string, unknown>;
-	} catch {
-		throw new VerificationDescriptorError("verification string is not valid JSON");
+function object(value: unknown, fields: readonly string[], label: string): Record<string, unknown> {
+	if (!value || typeof value !== "object" || Array.isArray(value))
+		throw new VerificationDescriptorError(`${label} must be an object`);
+	const raw = value as Record<string, unknown>;
+	if (Object.keys(raw).some(key => !fields.includes(key)))
+		throw new VerificationDescriptorError(`${label} has an unknown field`);
+	return raw;
+}
+
+export function verificationRelativePath(value: unknown, label: string): string {
+	if (typeof value !== "string" || !value || value.length > 512 || /[\x00-\x1f\x7f\\]/.test(value)
+		|| isAbsolute(value) || value.startsWith("~") || value.split("/").includes("..")
+		|| value.split("/").includes(".git") || value.split("/").length > VERIFICATION_DESCRIPTOR_BOUNDS.max_cwd_depth)
+		throw new VerificationDescriptorError(`${label} must stay inside the repository`);
+	return value.split("/").filter(part => part && part !== ".").join("/") || ".";
+}
+
+function bound(value: unknown, max: number, label: string): number {
+	if (typeof value !== "number" || !Number.isInteger(value) || value < 1 || value > max)
+		throw new VerificationDescriptorError(`${label} exceeds the host bound`);
+	return value;
+}
+
+function command(value: unknown): VerificationCommand {
+	const raw = object(value, ["executable", "argv", "cwd", "timeout_ms", "max_output_bytes"], "verification command");
+	if (typeof raw.executable !== "string") throw new VerificationDescriptorError("verification executable is invalid");
+	let executable: string = raw.executable;
+	if (executable.startsWith("./")) {
+		const path = verificationRelativePath(executable, "verification executable");
+		if (path === ".") throw new VerificationDescriptorError("verification executable must be a file");
+		executable = `./${path}`;
+	} else if (!/^[A-Za-z0-9_][A-Za-z0-9_.+-]{0,127}$/.test(executable)) {
+		throw new VerificationDescriptorError("verification executable must be a host tool name or ./project-file");
 	}
-	const unknown = Object.keys(raw).filter((key) => !DESCRIPTOR_FIELDS.includes(key as never));
-	if (unknown.length > 0)
-		throw new VerificationDescriptorError(`verification descriptor has unknown field: ${unknown[0]}`);
-	if (raw.contract !== VERIFICATION_DESCRIPTOR_CONTRACT)
-		throw new VerificationDescriptorError("verification descriptor contract is invalid");
-	if (raw.runner_id !== "bun")
-		throw new VerificationDescriptorError(
-			`verification runner must be bun; got ${String(raw.runner_id)}`,
-		);
-	if (typeof raw.runner_version !== "string" || !raw.runner_version.trim())
-		throw new VerificationDescriptorError("verification runner_version is invalid");
-	if (!Array.isArray(raw.argv) || raw.argv.length === 0)
-		throw new VerificationDescriptorError("verification argv must be a non-empty array");
-	if (raw.argv.length > MAX_ARGV_TOKENS)
-		throw new VerificationDescriptorError("verification argv exceeds the token bound");
-	for (const token of raw.argv) {
-		if (typeof token !== "string" || !token.trim())
-			throw new VerificationDescriptorError("verification argv tokens must be non-empty strings");
-		if (Buffer.byteLength(token) > MAX_ARGV_TOKEN_BYTES)
-			throw new VerificationDescriptorError("verification argv token exceeds the byte bound");
-		if (/[\x00-\x1f\x7f]/.test(token))
-			throw new VerificationDescriptorError("verification argv token contains control characters");
-		if (
-			token.includes("..") ||
-			token.includes("\\") ||
-			token.startsWith("/") ||
-			token.startsWith("~") ||
-			token.includes("$") ||
-			token.includes(";") ||
-			token.includes("&") ||
-			token.includes("|") ||
-			token.includes(">") ||
-			token.includes("<") ||
-			token.includes("`") ||
-			token.includes("*") ||
-			token.includes("?") ||
-			token.includes("[") ||
-			token.includes("]") ||
-			token.includes("{") ||
-			token.includes("}") ||
-			token.includes("(") ||
-			token.includes(")") ||
-			token.includes(" ") ||
-			token.includes("\t")
-		)
-			throw new VerificationDescriptorError(
-				`verification argv token is not a safe literal: ${token}`,
-			);
+	if (!Array.isArray(raw.argv) || raw.argv.length > VERIFICATION_DESCRIPTOR_BOUNDS.max_arg_tokens)
+		throw new VerificationDescriptorError("verification argv must be a bounded array");
+	for (const arg of raw.argv) {
+		if (typeof arg !== "string" || Buffer.byteLength(arg) > VERIFICATION_DESCRIPTOR_BOUNDS.max_arg_token_bytes || /[\x00-\x1f\x7f]/.test(arg))
+			throw new VerificationDescriptorError("verification argv must contain bounded literal strings");
 	}
-	if (typeof raw.cwd !== "string" || !raw.cwd.trim())
-		throw new VerificationDescriptorError("verification cwd is invalid");
-	if (isAbsolute(raw.cwd) || raw.cwd.includes("\\"))
-		throw new VerificationDescriptorError("verification cwd must be repository-relative");
-	if (raw.cwd === ".." || raw.cwd.startsWith(`..${sep}`) || raw.cwd.split(sep).includes(".."))
-		throw new VerificationDescriptorError("verification cwd escapes the repository");
-	if (raw.cwd.split(sep).filter(Boolean).length > MAX_CWD_DEPTH)
-		throw new VerificationDescriptorError("verification cwd exceeds the depth bound");
-	if (typeof raw.timeout_ms !== "number" || !Number.isFinite(raw.timeout_ms) || raw.timeout_ms < 1)
-		throw new VerificationDescriptorError("verification timeout_ms must be a finite positive integer");
-	if (!Number.isInteger(raw.timeout_ms) || raw.timeout_ms > MAX_TIMEOUT_MS)
-		throw new VerificationDescriptorError("verification timeout_ms exceeds the host ceiling");
-	if (
-		typeof raw.max_output_bytes !== "number" ||
-		!Number.isFinite(raw.max_output_bytes) ||
-		raw.max_output_bytes < 1
-	)
-		throw new VerificationDescriptorError(
-			"verification max_output_bytes must be a finite positive integer",
-		);
-	if (!Number.isInteger(raw.max_output_bytes) || raw.max_output_bytes > MAX_OUTPUT_BYTES)
-		throw new VerificationDescriptorError(
-			"verification max_output_bytes exceeds the host ceiling",
-		);
 	return {
-		contract: VERIFICATION_DESCRIPTOR_CONTRACT,
-		runner_id: "bun",
-		runner_version: raw.runner_version,
+		executable,
 		argv: raw.argv as string[],
-		cwd: raw.cwd,
-		timeout_ms: raw.timeout_ms,
-		max_output_bytes: raw.max_output_bytes,
+		cwd: verificationRelativePath(raw.cwd, "verification cwd"),
+		timeout_ms: bound(raw.timeout_ms, VERIFICATION_DESCRIPTOR_BOUNDS.max_timeout_ms, "verification timeout_ms"),
+		max_output_bytes: bound(raw.max_output_bytes, VERIFICATION_DESCRIPTOR_BOUNDS.max_output_bytes, "verification max_output_bytes"),
 	};
 }
 
-/** Canonical bytes of the parsed descriptor (for digest binding). */
+export function parseVerificationDescriptor(text: string): VerificationDescriptor {
+	if (Buffer.byteLength(text) > VERIFICATION_DESCRIPTOR_BOUNDS.max_descriptor_bytes)
+		throw new VerificationDescriptorError("verification descriptor exceeds the byte bound");
+	let value: unknown;
+	try { value = JSON.parse(text); }
+	catch { throw new VerificationDescriptorError("verification string is not valid JSON"); }
+	if (value && typeof value === "object" && "contract" in value
+		&& value.contract === "assurance_kernel/verification_descriptor/v1")
+		throw new VerificationDescriptorError("verification_contract_migration_required: revise the verification definition to v2 before execution");
+	const raw = object(value, ["contract", "command", "environment"], "verification descriptor");
+	if (raw.contract !== VERIFICATION_DESCRIPTOR_CONTRACT)
+		throw new VerificationDescriptorError("verification descriptor contract is invalid");
+	const env = raw.environment === undefined ? {} : object(raw.environment, ["prepare", "writable_paths"], "verification environment");
+	const writable = env.writable_paths ?? [];
+	if (!Array.isArray(writable) || writable.length > VERIFICATION_DESCRIPTOR_BOUNDS.max_writable_paths)
+		throw new VerificationDescriptorError("verification writable_paths exceeds the host bound");
+	const paths = writable.map(path => verificationRelativePath(path, "verification writable path")).sort();
+	if (paths.includes(".") || new Set(paths).size !== paths.length
+		|| paths.some((path, i) => paths.some((other, j) => j !== i && path.startsWith(`${other}/`))))
+		throw new VerificationDescriptorError("verification writable paths must be distinct non-overlapping directories");
+	return {
+		contract: VERIFICATION_DESCRIPTOR_CONTRACT,
+		command: command(raw.command),
+		environment: { prepare: env.prepare === undefined || env.prepare === null ? null : command(env.prepare), writable_paths: paths },
+	};
+}
+
 export function canonicalDescriptorBytes(descriptor: VerificationDescriptor): string {
 	return `${JSON.stringify(descriptor, null, 2)}\n`;
 }
-
-/** Re-exported bounds for host-side consistency checks. */
-export const VERIFICATION_DESCRIPTOR_BOUNDS = {
-	max_arg_tokens: MAX_ARGV_TOKENS,
-	max_arg_token_bytes: MAX_ARGV_TOKEN_BYTES,
-	max_cwd_depth: MAX_CWD_DEPTH,
-	max_timeout_ms: MAX_TIMEOUT_MS,
-	max_output_bytes: MAX_OUTPUT_BYTES,
-} as const;

@@ -250,15 +250,21 @@ and an exact retry action; the strict no-amendment default is unchanged.
 ### Verification Descriptor Discipline
 
 Every acceptance verification descriptor must be a focused, deterministic,
-repository-local check that exercises only its acceptance assertion. Prefer one
-small `bun test <focused-file>` or `bun run <focused-script>` per acceptance;
-never use the full test suite, a build, package installation, network access, or
-redundant heavyweight checks. Prefer the highest existing observable behavioral
-test seam and the fewest sufficient seams. Cite relevant test prior art and
-explain how the selected seam catches the intended regression. This is a
-planning heuristic: it must not weaken acceptance-specific focused verification
-descriptors or add a mandatory user confirmation. Use the smallest `timeout_ms` and
-`max_output_bytes` that cover deterministic post-implementation QA.
+project-owned check that exercises only its acceptance assertion. Use
+`assurance_kernel/verification_descriptor/v2` and reuse an existing project
+script or host tool through its literal `command`; do not infer a language,
+package manager, or runner. Add `environment.prepare` only when the check needs
+explicit setup, and declare only the generated directories it needs in
+`environment.writable_paths`. Never hide package installation inside an
+acceptance command. Prefer the highest existing observable behavioral test seam
+and the fewest sufficient seams; never use the full test suite, a build, network
+access, or redundant heavyweight checks as acceptance. Cite relevant test prior
+art and explain how the selected seam catches the intended regression. This is
+a planning heuristic: it must not weaken acceptance-specific focused
+verification descriptors or add a mandatory user confirmation. Use the smallest
+`timeout_ms` and `max_output_bytes` that cover deterministic post-implementation
+QA. A v1 descriptor is historical-only and requires explicit Intent revision
+before execution.
 
 ## Core Responsibilities
 

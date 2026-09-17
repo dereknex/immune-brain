@@ -1,346 +1,310 @@
-// P2B2 U2: verification descriptor v1 authority. Covers strict canonical JSON
-// parsing (unknown fields rejected), the bun-only runner registry, argv/cwd/
-// numeric bounds, shell/PATH/executable-path rejection, frozen runner binding
-// (realpath/device/inode/content hash/version), and the normalized findings
-// digest.
-
 import { describe, expect, test } from "bun:test";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, lstatSync, mkdtempSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { assertDeliveryClean, DeliveryWorkspaceError, materializeDeliveryWorkspace, writeDeliveryTree } from "../plugins/immune-brain/runtime/assurance/delivery_workspace";
+import { assertDeliveryClean, DeliveryWorkspaceError, materializeDeliveryWorkspace, removeTaskOwnedTree, writeDeliveryTree } from "../plugins/immune-brain/runtime/assurance/delivery_workspace";
 import { captureGitTaskRevisionSnapshot } from "../plugins/immune-brain/runtime/workspace_scope";
+import { parseVerificationDescriptor, canonicalDescriptorBytes, resolveVerificationCommand, assertCommandIdentity, runFixedVerification, findingsDigest } from "../plugins/immune-brain/.pi-extension/pi-canary-verification";
+import { VerificationCleanupError, verificationPath } from "../plugins/immune-brain/runtime/assurance/verification";
 
-import {
-	parseVerificationDescriptor,
-	canonicalDescriptorBytes,
-	resolveBunRunner,
-	assertRunnerCompatible,
-	runFixedVerification,
-	findingsDigest,
-	type VerificationDescriptor,
-} from "../plugins/immune-brain/.pi-extension/pi-canary-verification.ts";
-
-const GOOD = {
-	contract: "assurance_kernel/verification_descriptor/v1",
-	runner_id: "bun",
-	runner_version: "1.4.2",
-	argv: ["test", "tests/focused.test.ts"],
-	cwd: ".",
-	timeout_ms: 120000,
-	max_output_bytes: 262144,
-};
-
-function good(overrides: Record<string, unknown> = {}): VerificationDescriptor {
-	return parseVerificationDescriptor(JSON.stringify({ ...GOOD, ...overrides }));
+const command = (overrides = {}) => ({ executable: "bun", argv: ["-e", "1"], cwd: ".", timeout_ms: 30000, max_output_bytes: 8192, ...overrides });
+const good = (overrides = {}) => parseVerificationDescriptor(JSON.stringify({ contract: "assurance_kernel/verification_descriptor/v2", command: command(overrides) }));
+function temp() { return mkdtempSync(join(tmpdir(), "imm-command-test-")); }
+function remove(root: string) { rmSync(root, { recursive: true, force: true }); }
+function git(root: string, args: string[]) { return execFileSync("git", args, { cwd: root, encoding: "utf8" }).trim(); }
+function gitRepo() {
+	const root = temp(); git(root, ["init", "-q"]); git(root, ["config", "user.email", "test@example.com"]); git(root, ["config", "user.name", "Test"]);
+	writeFileSync(join(root, "ok.ts"), "export const ok = 1;\n"); git(root, ["add", "ok.ts"]); git(root, ["commit", "-qm", "base"]); return root;
+}
+function tree(root: string) { return git(root, ["rev-parse", "HEAD^{tree}"]); }
+async function run(root: string, overrides = {}, signal?: AbortSignal) {
+	const c = good(overrides).command, path = verificationPath();
+	return runFixedVerification(root, c, resolveVerificationCommand(root, c, path), { home: root, path, signal });
 }
 
-describe("verification descriptor v1", () => {
-	test("canonical JSON parses and canonical bytes are deterministic", () => {
-		const a = good();
-		const b = good();
-		expect(a.contract).toBe("assurance_kernel/verification_descriptor/v1");
-		expect(a.runner_id).toBe("bun");
-		expect(canonicalDescriptorBytes(a)).toBe(canonicalDescriptorBytes(b));
+describe("project command verification", () => {
+	test("canonical v2 descriptors have explicit empty environment defaults", () => {
+		expect(canonicalDescriptorBytes(good())).toBe(canonicalDescriptorBytes(good()));
+		expect(good().environment).toEqual({ prepare: null, writable_paths: [] });
+		for (const executable of ["novel-tool-2099", "python3", "go", "pnpm", "./tools/custom"])
+			expect(good({ executable }).command.executable).toBe(executable);
 	});
-
-	test("unknown fields and wrong contract are rejected", () => {
-		expect(() => parseVerificationDescriptor(JSON.stringify({ ...GOOD, forged: 1 }))).toThrow(/unknown field/i);
-		expect(() => parseVerificationDescriptor(JSON.stringify({ ...GOOD, contract: "x" }))).toThrow(/contract is invalid/i);
+	test("retired descriptors, malformed objects and unknown fields fail closed", () => {
+		for (const raw of ["null", "[]", "1", "bun test", "", JSON.stringify({ contract: "invalid" }), JSON.stringify({ ...good(), forged: true })])
+			expect(() => parseVerificationDescriptor(raw)).toThrow();
+		expect(() => parseVerificationDescriptor(JSON.stringify({ contract: "assurance_kernel/verification_descriptor/v1" }))).toThrow("verification_contract_migration_required");
 	});
-
-	test("only the bun runner id is accepted", () => {
-		for (const runner of ["bash", "sh", "python3", "node", "git", "ruby", "perl"]) {
-			expect(() => good({ runner_id: runner })).toThrow(/runner must be bun/i);
-		}
-	});
-
-	test("argv bounds and shell/executable-path tokens are rejected", () => {
-		expect(() => good({ argv: [] })).toThrow(/non-empty/i);
-		expect(() => good({ argv: ["test", "a b"] })).toThrow(/safe literal/i);
-		expect(() => good({ argv: ["test", "a;b"] })).toThrow(/safe literal/i);
-		expect(() => good({ argv: ["test", "$(rm -rf)"] })).toThrow(/safe literal/i);
-		expect(() => good({ argv: ["test", "../escape"] })).toThrow(/safe literal/i);
-		expect(() => good({ argv: ["test", "/abs/path"] })).toThrow(/safe literal/i);
-		expect(() => good({ argv: ["test", ".."] })).toThrow(/safe literal/i);
-		expect(() => good({ argv: ["test", "a|b"] })).toThrow(/safe literal/i);
-		expect(() => good({ argv: ["test", "a>b"] })).toThrow(/safe literal/i);
-		expect(() => good({ argv: ["test", "a`b"] })).toThrow(/safe literal/i);
-		expect(() => good({ argv: ["test", "a*b"] })).toThrow(/safe literal/i);
-		expect(() => good({ argv: Array(65).fill("x") })).toThrow(/token bound/i);
-		expect(() => good({ argv: ["test", "x".repeat(600)] })).toThrow(/byte bound/i);
-	});
-
-	test("cwd must be repository-relative and bounded", () => {
-		expect(() => good({ cwd: "/abs" })).toThrow(/repository-relative/i);
-		expect(() => good({ cwd: "../up" })).toThrow(/escapes/i);
-		expect(() => good({ cwd: "a/../../b" })).toThrow(/escapes/i);
-		expect(() => good({ cwd: "a\\b" })).toThrow(/repository-relative|escapes/i);
-		expect(() => good({ cwd: "" })).toThrow(/cwd is invalid/i);
-	});
-
-	test("numeric bounds are finite positive integers within host ceilings", () => {
-		expect(() => good({ timeout_ms: 0 })).toThrow(/finite positive/i);
-		expect(() => good({ timeout_ms: -1 })).toThrow(/finite positive/i);
-		expect(() => good({ timeout_ms: 1.5 })).toThrow(/host ceiling|finite positive/i);
-		expect(() => good({ timeout_ms: 999999999 })).toThrow(/host ceiling/i);
-		expect(() => good({ max_output_bytes: 0 })).toThrow(/finite positive/i);
-		expect(() => good({ max_output_bytes: 999999999 })).toThrow(/host ceiling/i);
-	});
-
-	test("free-form verification text is never executable", () => {
-		expect(() => parseVerificationDescriptor("bun test tests/x.test.ts")).toThrow(/not valid JSON/i);
-		expect(() => parseVerificationDescriptor("test -f artifact")).toThrow(/not valid JSON/i);
-		expect(() => parseVerificationDescriptor("")).toThrow(/empty/i);
-		expect(() => parseVerificationDescriptor("   ")).toThrow(/empty/i);
-	});
-
-	test("frozen runner identity binds realpath/device/inode/content hash/version", () => {
-		const runner = resolveBunRunner();
-		expect(runner.runner_id).toBe("bun");
-		expect(runner.path).toMatch(/bun$/);
-		expect(runner.dev).toBeGreaterThan(0);
-		expect(runner.ino).toBeGreaterThan(0);
-		expect(runner.content_hash).toMatch(/^sha256:[a-f0-9]{64}$/);
-		expect(runner.version).toMatch(/^\d+\.\d+\.\d+/);
-	});
-
-	test("runner version compatibility gates assurance", () => {
-		const runner = resolveBunRunner();
-		expect(() => assertRunnerCompatible(good({ runner_version: runner.version }), runner)).not.toThrow();
-		expect(() => assertRunnerCompatible(good({ runner_version: "0.0.0" }), runner)).toThrow(/version mismatch/i);
-	});
-
-	test("fixed verification executes under the frozen runner with bounded output", async () => {
-		const root = mkdtempSync(join(tmpdir(), "p2b2-vd-run-"));
+	test("literal argument arrays preserve shell characters without evaluation", async () => {
+		const root = temp();
 		try {
-			const runner = resolveBunRunner();
-			const ok = await runFixedVerification(
-				root,
-				good({ runner_version: runner.version, argv: ["-e", "1"], timeout_ms: 30000, max_output_bytes: 8192 }),
-				runner,
-			);
-			expect(ok.exit_code).toBe(0);
-			const fail = await runFixedVerification(
-				root,
-				good({ runner_version: runner.version, argv: ["test", "nonexistent-xyz.test.ts"], timeout_ms: 30000, max_output_bytes: 8192 }),
-				runner,
-			);
-			expect(fail.exit_code).not.toBe(0);
-		} finally {
-			rmSync(root, { recursive: true, force: true });
-		}
+			const literals = ["a b", "$(touch stolen)", "a;b", "*.ts", "", "../input"];
+			const result = await run(root, { argv: ["-e", "console.log(JSON.stringify(process.argv.slice(1)))", ...literals] });
+			expect(JSON.parse(result.stdout)).toEqual(literals);
+			expect(result.exit_code).toBe(0);
+		} finally { remove(root); }
 	});
-
-	test("fixed verification abort settles promptly", async () => {
-		const root = mkdtempSync(join(tmpdir(), "p2b2-vd-abort-"));
+	test("path, argument, output and deadline bounds are enforced", () => {
+		for (const cwd of ["/absolute", "../escape", "a/../../b", "a\\b", ".git", ""])
+			expect(() => good({ cwd })).toThrow();
+		for (const executable of ["/bin/sh", "../tool", "a/b", "./../tool"])
+			expect(() => good({ executable })).toThrow();
+		for (const argv of [Array(65).fill("x"), ["x".repeat(513)], ["a\nb"]]) expect(() => good({ argv })).toThrow();
+		for (const timeout_ms of [0, -1, 1.5, 600001]) expect(() => good({ timeout_ms })).toThrow();
+		for (const max_output_bytes of [0, 262145]) expect(() => good({ max_output_bytes })).toThrow();
+	});
+	test("unknown project executable is bound by bytes and its interpreter", async () => {
+		const root = temp();
 		try {
-			writeFileSync(join(root, "hang.ts"), "setInterval(() => {}, 1000);\n");
-			const runner = resolveBunRunner();
+			const file = join(root, "unheard-of-tool"); writeFileSync(file, "#!/bin/sh\nprintf unknown-tool\n"); chmodSync(file, 0o755);
+			const c = good({ executable: "./unheard-of-tool", argv: [] }).command;
+			const frozen = resolveVerificationCommand(root, c);
+			expect(frozen.entry.content_hash).toMatch(/^sha256:/); expect(frozen.interpreter).not.toBeNull();
+			const result = await runFixedVerification(root, c, frozen, { home: root, path: verificationPath() });
+			expect(result.stdout).toBe("unknown-tool"); expect(result.exit_code).toBe(0);
+			writeFileSync(file, "#!/bin/sh\nexit 1\n"); expect(() => assertCommandIdentity(frozen)).toThrow("identity changed");
+		} finally { remove(root); }
+	});
+	test("resolved host tools retain their invocation path while binding real bytes", () => {
+		const root = temp();
+		try {
+			const alias = join(root, "tool-alias");
+			symlinkSync("/bin/sh", alias);
+			const frozen = resolveVerificationCommand(root, good({ executable: "tool-alias", argv: ["-c", "exit 0"] }).command, root);
+			expect(frozen.entry.invocation_path).toBe(alias);
+			expect(frozen.entry.path).not.toBe(alias);
+			expect(() => assertCommandIdentity(frozen)).not.toThrow();
+		} finally { remove(root); }
+	});
+	test("missing tools and escaping cwd or executable links are rejected", () => {
+		const root = temp();
+		try {
+			expect(() => resolveVerificationCommand(root, good({ executable: "missing-tool-2099" }).command)).toThrow("unavailable");
+			symlinkSync("/", join(root, "escape"));
+			expect(() => resolveVerificationCommand(root, good({ cwd: "escape" }).command)).toThrow("escapes");
+			expect(() => resolveVerificationCommand(root, good({ executable: "./escape/bin/sh" }).command)).toThrow("escapes");
+		} finally { remove(root); }
+	});
+	test("nonzero exits, cancellation, deadlines and combined output limits survive generalization", async () => {
+		const root = temp();
+		try {
+			expect((await run(root, { argv: ["-e", "process.exit(9)"] })).exit_code).toBe(9);
 			const controller = new AbortController();
-			const startedAt = Date.now();
-			const pending = runFixedVerification(
-				root,
-				good({
-					runner_version: runner.version,
-					argv: ["run", "hang.ts"],
-					timeout_ms: 30_000,
-					max_output_bytes: 8192,
-				}),
-				runner,
-				{ signal: controller.signal },
-			);
-			setTimeout(() => controller.abort(), 25);
-			await expect(pending).rejects.toThrow(/abort/i);
-			expect(Date.now() - startedAt).toBeLessThan(500);
-		} finally {
-			rmSync(root, { recursive: true, force: true });
-		}
+			const pending = run(root, { argv: ["-e", "setInterval(()=>{},1000)"] }, controller.signal);
+			setTimeout(() => controller.abort(), 30); await expect(pending).rejects.toThrow("aborted");
+			expect((await run(root, { argv: ["-e", "setInterval(()=>{},1000)"], timeout_ms: 40 })).timed_out).toBe(true);
+			const loud = await run(root, { argv: ["-e", "process.stdout.write('x'.repeat(5000));process.stderr.write('y'.repeat(5000));setInterval(()=>{},1000)"], max_output_bytes: 8192 });
+			expect(loud.output_limited).toBe(true); expect(loud.exit_code).not.toBe(0);
+			expect(Buffer.byteLength(loud.stdout) + Buffer.byteLength(loud.stderr)).toBeLessThanOrEqual(8192);
+		} finally { remove(root); }
 	});
-
-	test("fixed verification enforces one shared stdout and stderr output bound", async () => {
-		const root = mkdtempSync(join(tmpdir(), "p2b2-vd-output-"));
+	test("deadline settles when a detached descendant keeps inherited pipes open", async () => {
+		const root = temp();
 		try {
-			writeFileSync(
-				join(root, "loud.ts"),
-				"process.stdout.write('x'.repeat(5000)); process.stderr.write('y'.repeat(5000)); setInterval(() => {}, 1000);\n",
-			);
-			const runner = resolveBunRunner();
-			const startedAt = Date.now();
-			const result = await runFixedVerification(
-				root,
-				good({
-					runner_version: runner.version,
-					argv: ["run", "loud.ts"],
-					timeout_ms: 30_000,
-					max_output_bytes: 8192,
-				}),
-				runner,
-			);
-			expect(result.exit_code).not.toBe(0);
-			expect(Buffer.byteLength(result.stdout) + Buffer.byteLength(result.stderr)).toBeLessThanOrEqual(8192);
-			expect(result.stderr).toContain("output limit exceeded");
-			expect(Date.now() - startedAt).toBeLessThan(1000);
+			const script = join(root, "detached.ts");
+			writeFileSync(script, [
+				'import { spawn } from "node:child_process";',
+				'import { writeFileSync } from "node:fs";',
+				'const child = spawn(process.execPath, ["-e", "setTimeout(()=>{},10000)"], { detached: true, stdio: ["ignore", "inherit", "inherit"] });',
+				'writeFileSync("detached.pid", String(child.pid)); child.unref();',
+			].join("\n"));
+			const started = performance.now();
+			const result = await run(root, { argv: ["run", script], timeout_ms: 80 });
+			expect(result.timed_out).toBe(true);
+			expect(performance.now() - started).toBeLessThan(6000);
+			const pid = Number(readFileSync(join(root, "detached.pid"), "utf8"));
+			// The result settles only once cleanup is confirmed, so no grace period
+			// is needed before the descendant is proven gone.
+			expect(() => process.kill(pid, 0)).toThrow();
+		} finally { remove(root); }
+	});
+	test("successful checks clean detached descendants with closed pipes", async () => {
+		const root = temp();
+		try {
+			const script = join(root, "detached-success.ts");
+			writeFileSync(script, [
+				'import { spawn } from "node:child_process";',
+				'import { writeFileSync } from "node:fs";',
+				'const child = spawn(process.execPath, ["-e", "setTimeout(()=>{},10000)"], { detached: true, stdio: "ignore" });',
+				'writeFileSync("detached-success.pid", String(child.pid)); child.unref();',
+			].join("\n"));
+			const result = await run(root, { argv: ["run", script] });
+			expect(result.exit_code).toBe(0);
+			const pid = Number(readFileSync(join(root, "detached-success.pid"), "utf8"));
+			// Cleanup is proven before the successful result is returned.
+			expect(() => process.kill(pid, 0)).toThrow();
+		} finally { remove(root); }
+	});
+	test("process discovery failure blocks success instead of leaking QA authority", async () => {
+		const root = temp(); let pid = 0;
+		try {
+			const script = join(root, "detached-scanner-failure.ts"), scanner = join(root, "broken-ps");
+			writeFileSync(script, [
+				'import { spawn } from "node:child_process";',
+				'import { writeFileSync } from "node:fs";',
+				'const child = spawn(process.execPath, ["-e", "setTimeout(()=>{},10000)"], { detached: true, stdio: "ignore" });',
+				'writeFileSync("detached-scanner-failure.pid", String(child.pid)); child.unref();',
+			].join("\n"));
+			writeFileSync(scanner, "#!/bin/sh\nexit 1\n"); chmodSync(scanner, 0o755);
+			const c = good({ argv: ["run", script] }).command, path = verificationPath();
+			await expect(runFixedVerification(root, c, resolveVerificationCommand(root, c, path), {
+				home: root, path, _processScanner: scanner,
+			})).rejects.toBeInstanceOf(VerificationCleanupError);
+			pid = Number(readFileSync(join(root, "detached-scanner-failure.pid"), "utf8"));
 		} finally {
-			rmSync(root, { recursive: true, force: true });
+			if (pid) try { process.kill(pid, "SIGKILL"); } catch { /* Already exited. */ }
+			remove(root);
 		}
 	});
-
-	test("findings digest is stable across key orders", () => {
-		const a = findingsDigest([{ id: "f-1", kind: "blocking", acceptance_id: "A1", summary: "x" }]);
-		const b = findingsDigest([{ summary: "x", kind: "blocking", id: "f-1", acceptance_id: "A1" }]);
-		expect(a).toBe(b);
-		expect(a).toMatch(/^sha256:[a-f0-9]{64}$/);
+	test("a scanner failure still kills a running check and fails cleanup closed", async () => {
+		const root = temp();
+		try {
+			const script = join(root, "scanner-failure-running.ts"), scanner = join(root, "broken-ps");
+			writeFileSync(script, [
+				'import { writeFileSync } from "node:fs";',
+				'writeFileSync("scanner-failure-running.pid", String(process.pid));',
+				'setInterval(() => {}, 10000);',
+			].join("\n"));
+			writeFileSync(scanner, "#!/bin/sh\nexit 1\n"); chmodSync(scanner, 0o755);
+			const c = good({ argv: ["run", script], timeout_ms: 1000 }).command, path = verificationPath();
+			// Discovery is broken while the check is still running: the known child is
+			// killed anyway, and the unproven cleanup outranks the timeout outcome.
+			await expect(runFixedVerification(root, c, resolveVerificationCommand(root, c, path), {
+				home: root, path, _processScanner: scanner,
+			})).rejects.toBeInstanceOf(VerificationCleanupError);
+			const pid = Number(readFileSync(join(root, "scanner-failure-running.pid"), "utf8"));
+			expect(() => process.kill(pid, 0)).toThrow();
+		} finally { remove(root); }
 	});
-});
-
-describe("findings digest algorithm parity", () => {
-	test("extension findingsDigest equals kernel findingsDigestV2 for identical findings", async () => {
-		const { findingsDigest } = await import(
-			"../plugins/immune-brain/.pi-extension/pi-canary-verification"
-		);
-		const { findingsDigestV2 } = await import(
-			"../plugins/immune-brain/runtime/kernel/reducer"
-		);
-		const findings = [
-			{ id: "f-1", kind: "blocking", acceptance_id: "A1", summary: "broken gate" },
-			{ id: "f-2", kind: "advisory", acceptance_id: null, summary: "nit" },
-		];
-		expect(findingsDigest(findings as never)).toBe(
-			findingsDigestV2(findings as never),
-		);
+	test("findings digest remains identical to the Kernel algorithm", async () => {
+		const { findingsDigestV2 } = await import("../plugins/immune-brain/runtime/kernel/reducer");
+		const values = [{ id: "f-1", kind: "blocking", acceptance_id: "A1", summary: "broken" }, { id: "f-2", kind: "advisory", acceptance_id: null, summary: "nit" }];
+		expect(findingsDigest(values)).toBe(findingsDigestV2(values as never));
 	});
 });
 
 describe("delivery workspace materialization", () => {
-	function gitRepo(): string {
-		const root = mkdtempSync(join(tmpdir(), "imm-delivery-"));
-		execFileSync("git", ["init", "-q"], { cwd: root });
-		execFileSync("git", ["config", "user.email", "test@example.com"], { cwd: root });
-		execFileSync("git", ["config", "user.name", "Test"], { cwd: root });
-		writeFileSync(join(root, "ok.ts"), "export const ok = 1;\n");
-		execFileSync("git", ["add", "ok.ts"], { cwd: root });
-		execFileSync("git", ["commit", "-qm", "base"], { cwd: root });
-		return root;
-	}
-
-	function headTree(root: string): string {
-		return execFileSync("git", ["rev-parse", "HEAD^{tree}"], { cwd: root, encoding: "utf8" }).trim();
-	}
-
-	test("QA sees the frozen tree, not later live worktree edits", () => {
+	test("QA sees frozen tree bytes, preserving the live worktree and index", () => {
 		const root = gitRepo();
 		try {
-			const tree = headTree(root);
-			const delivery = materializeDeliveryWorkspace(root, tree);
-			try {
-				writeFileSync(join(root, "ok.ts"), "export const ok = 2;\n");
-				expect(readFileSync(join(delivery.root, "ok.ts"), "utf8")).toBe("export const ok = 1;\n");
-				expect(delivery.tree).toBe(tree);
-			} finally {
-				delivery.cleanup();
-			}
-		} finally {
-			rmSync(root, { recursive: true, force: true });
-		}
+			const base = git(root, ["rev-parse", "HEAD"]), snapshot = captureGitTaskRevisionSnapshot(root, ["ok.ts"], base);
+			writeFileSync(join(root, "extra.ts"), "extra"); git(root, ["add", "extra.ts"]);
+			const before = git(root, ["diff", "--cached", "--name-only"]);
+			writeDeliveryTree(root, snapshot); expect(git(root, ["diff", "--cached", "--name-only"])).toBe(before);
+			const delivery = materializeDeliveryWorkspace(root, tree(root));
+			try { writeFileSync(join(root, "ok.ts"), "changed"); expect(readFileSync(join(delivery.root, "ok.ts"), "utf8")).toBe("export const ok = 1;\n"); }
+			finally { delivery.cleanup(); }
+		} finally { remove(root); }
 	});
-
-	test("does not follow the caller's GIT_DIR", () => {
-		const root = gitRepo();
-		const other = gitRepo();
+	test("ignores caller GIT_DIR and refuses tracked symlink escapes", () => {
+		const root = gitRepo(), other = gitRepo(), previous = process.env.GIT_DIR;
 		try {
-			const before = execFileSync("git", ["rev-parse", "HEAD"], { cwd: other, encoding: "utf8" }).trim();
-			const previous = process.env.GIT_DIR;
-			process.env.GIT_DIR = join(other, ".git");
-			try {
-				const delivery = materializeDeliveryWorkspace(root, headTree(root));
-				delivery.cleanup();
-			} finally {
-				if (previous === undefined) delete process.env.GIT_DIR;
-				else process.env.GIT_DIR = previous;
-			}
-			expect(execFileSync("git", ["rev-parse", "HEAD"], { cwd: other, encoding: "utf8" }).trim()).toBe(before);
-		} finally {
-			rmSync(root, { recursive: true, force: true });
-			rmSync(other, { recursive: true, force: true });
-		}
+			const original = tree(root); process.env.GIT_DIR = join(other, ".git");
+			const delivery = materializeDeliveryWorkspace(root, original); delivery.cleanup();
+			if (previous === undefined) delete process.env.GIT_DIR; else process.env.GIT_DIR = previous;
+			symlinkSync("/etc/passwd", join(root, "escape")); git(root, ["add", "escape"]); git(root, ["commit", "-qm", "escape"]);
+			expect(() => materializeDeliveryWorkspace(root, tree(root))).toThrow(DeliveryWorkspaceError);
+		} finally { if (previous === undefined) delete process.env.GIT_DIR; else process.env.GIT_DIR = previous; remove(root); remove(other); }
 	});
-
-	test("refuses a symlink that escapes the materialization", () => {
-		const root = gitRepo();
+	test("refuses intermediate symlink escapes", () => {
+		const root = gitRepo(), outside = temp();
 		try {
-			symlinkSync("/etc/passwd", join(root, "escape"));
-			execFileSync("git", ["add", "escape"], { cwd: root });
-			execFileSync("git", ["commit", "-qm", "escape"], { cwd: root });
-			expect(() => materializeDeliveryWorkspace(root, headTree(root))).toThrow(DeliveryWorkspaceError);
-		} finally {
-			rmSync(root, { recursive: true, force: true });
-		}
-	});
-
-	test("writeDeliveryTree does not mutate the user index", () => {
-		const root = gitRepo();
-		try {
-			const base = execFileSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).trim();
-			const snapshot = captureGitTaskRevisionSnapshot(root, ["ok.ts"], base);
-			writeFileSync(join(root, "extra.ts"), "export const extra = 1;\n");
-			execFileSync("git", ["add", "extra.ts"], { cwd: root });
-			const before = execFileSync("git", ["diff", "--cached", "--name-only"], { cwd: root, encoding: "utf8" }).trim();
-			writeDeliveryTree(root, snapshot);
-			expect(execFileSync("git", ["diff", "--cached", "--name-only"], { cwd: root, encoding: "utf8" }).trim()).toBe(before);
-		} finally {
-			rmSync(root, { recursive: true, force: true });
-		}
-	});
-
-	test("refuses a symlink whose intermediate component escapes", () => {
-		const root = gitRepo();
-		const outside = mkdtempSync(join(tmpdir(), "imm-outside-"));
-		try {
-			writeFileSync(join(outside, "secret.txt"), "secret\n");
-			symlinkSync(".", join(root, "a"));
+			writeFileSync(join(outside, "secret.txt"), "secret"); symlinkSync(".", join(root, "a"));
 			symlinkSync(join("a", "..", "..", outside.split("/").pop()!, "secret.txt"), join(root, "b"));
-			execFileSync("git", ["add", "a", "b"], { cwd: root });
-			execFileSync("git", ["commit", "-qm", "escape"], { cwd: root });
-			expect(() => materializeDeliveryWorkspace(root, headTree(root))).toThrow(DeliveryWorkspaceError);
-		} finally {
-			rmSync(root, { recursive: true, force: true });
-			rmSync(outside, { recursive: true, force: true });
-		}
+			git(root, ["add", "a", "b"]); git(root, ["commit", "-qm", "escape"]);
+			expect(() => materializeDeliveryWorkspace(root, tree(root))).toThrow(DeliveryWorkspaceError);
+		} finally { remove(root); remove(outside); }
 	});
-
-	test("fails closed when an ignored generated file contaminates later descriptors", () => {
+	test("permits declared output but rejects ignored undeclared output and input changes", () => {
 		const root = gitRepo();
 		try {
-			writeFileSync(join(root, ".gitignore"), "generated/\n");
-			execFileSync("git", ["add", ".gitignore"], { cwd: root });
-			execFileSync("git", ["commit", "-qm", "ignore"], { cwd: root });
-			const delivery = materializeDeliveryWorkspace(root, headTree(root));
+			writeFileSync(join(root, ".gitignore"), "generated/\n"); git(root, ["add", ".gitignore"]); git(root, ["commit", "-qm", "ignore"]);
+			const delivery = materializeDeliveryWorkspace(root, tree(root));
 			try {
-				mkdirSync(join(delivery.root, "generated"));
-				writeFileSync(join(delivery.root, "generated/result.json"), "{}\n");
-				expect(() => assertDeliveryClean(delivery.root, delivery.tree, delivery.seal)).toThrow(/contaminated/);
-			} finally {
-				delivery.cleanup();
-			}
-		} finally {
-			rmSync(root, { recursive: true, force: true });
-		}
+				mkdirSync(join(delivery.root, "generated")); writeFileSync(join(delivery.root, "generated/result"), "ok");
+				expect(() => assertDeliveryClean(delivery.root, delivery.tree, delivery.seal)).toThrow("contaminated");
+				expect(() => assertDeliveryClean(delivery.root, delivery.tree, delivery.seal, ["generated"])).not.toThrow();
+				writeFileSync(join(delivery.root, "ok.ts"), "changed");
+				expect(() => assertDeliveryClean(delivery.root, delivery.tree, delivery.seal, ["generated"])).toThrow("contaminated");
+			} finally { delivery.cleanup(); }
+		} finally { remove(root); }
 	});
-
-	test("fails closed when a descriptor contaminates the delivery workspace", () => {
+	test("rejects prototype-named undeclared output", () => {
 		const root = gitRepo();
 		try {
-			const delivery = materializeDeliveryWorkspace(root, headTree(root));
+			const delivery = materializeDeliveryWorkspace(root, tree(root));
 			try {
-				writeFileSync(join(delivery.root, "ok.ts"), "export const ok = 2;\n");
-				expect(() => assertDeliveryClean(delivery.root, delivery.tree, delivery.seal)).toThrow(/contaminated/);
-			} finally {
-				delivery.cleanup();
-			}
-		} finally {
-			rmSync(root, { recursive: true, force: true });
-		}
+				writeFileSync(join(delivery.root, "__proto__"), "undeclared");
+				expect(() => assertDeliveryClean(delivery.root, delivery.tree, delivery.seal)).toThrow("contaminated");
+			} finally { delivery.cleanup(); }
+		} finally { remove(root); }
+	});
+	test("rejects a dangling generated symlink that escapes through an intermediate symlink", () => {
+		const root = gitRepo();
+		try {
+			const delivery = materializeDeliveryWorkspace(root, tree(root));
+			try {
+				mkdirSync(join(delivery.root, "out"));
+				symlinkSync("..", join(delivery.root, "out/a"));
+				symlinkSync("a/../imm-missing-target", join(delivery.root, "out/escape"));
+				expect(() => assertDeliveryClean(delivery.root, delivery.tree, delivery.seal, ["out"])).toThrow("escapes");
+			} finally { delivery.cleanup(); }
+		} finally { remove(root); }
+	});
+	test("rejects protected directory mode drift", () => {
+		const root = gitRepo();
+		try {
+			mkdirSync(join(root, "src")); writeFileSync(join(root, "src/input"), "protected");
+			git(root, ["add", "src/input"]); git(root, ["commit", "-qm", "directory"]);
+			const delivery = materializeDeliveryWorkspace(root, tree(root));
+			try {
+				chmodSync(join(delivery.root, "src"), 0o700);
+				expect(() => assertDeliveryClean(delivery.root, delivery.tree, delivery.seal)).toThrow("contaminated");
+			} finally { delivery.cleanup(); }
+		} finally { remove(root); }
+	});
+	test("rejects protected directory special-mode drift", () => {
+		const root = gitRepo();
+		try {
+			mkdirSync(join(root, "src")); writeFileSync(join(root, "src/input"), "protected");
+			git(root, ["add", "src/input"]); git(root, ["commit", "-qm", "directory"]);
+			const delivery = materializeDeliveryWorkspace(root, tree(root));
+			try {
+				chmodSync(join(delivery.root, "src"), 0o1755);
+				expect(() => assertDeliveryClean(delivery.root, delivery.tree, delivery.seal)).toThrow("contaminated");
+			} finally { delivery.cleanup(); }
+		} finally { remove(root); }
+	});
+	test("rejects delivery root mode drift", () => {
+		const root = gitRepo();
+		try {
+			const delivery = materializeDeliveryWorkspace(root, tree(root));
+			try {
+				chmodSync(delivery.root, 0o777);
+				expect(() => assertDeliveryClean(delivery.root, delivery.tree, delivery.seal)).toThrow("contaminated");
+			} finally { delivery.cleanup(); }
+		} finally { remove(root); }
+	});
+	test.skipIf(process.platform !== "darwin")("rejects tracked symlink mode drift", () => {
+		const root = gitRepo();
+		try {
+			symlinkSync("ok.ts", join(root, "ok-link")); git(root, ["add", "ok-link"]); git(root, ["commit", "-qm", "link"]);
+			const delivery = materializeDeliveryWorkspace(root, tree(root));
+			try {
+				execFileSync("chmod", ["-h", "700", join(delivery.root, "ok-link")]);
+				expect(() => assertDeliveryClean(delivery.root, delivery.tree, delivery.seal)).toThrow("contaminated");
+			} finally { delivery.cleanup(); }
+		} finally { remove(root); }
+	});
+	test("cleans read-only task output without following external symlinks", () => {
+		const root = temp(), outside = temp();
+		try {
+			mkdirSync(join(root, "generated")); writeFileSync(join(root, "generated/result"), "ok");
+			chmodSync(outside, 0o500); symlinkSync(outside, join(root, "generated/external"));
+			chmodSync(join(root, "generated"), 0o555);
+			removeTaskOwnedTree(root);
+			expect(existsSync(root)).toBe(false);
+			expect(lstatSync(outside).mode & 0o7777).toBe(0o500);
+		} finally { chmodSync(outside, 0o700); remove(root); remove(outside); }
 	});
 });

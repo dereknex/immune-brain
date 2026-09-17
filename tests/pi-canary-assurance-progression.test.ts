@@ -22,7 +22,7 @@ describe("foreground assurance progression", () => {
 		let released!: () => void;
 		const gate = new Promise<void>((resolve) => { released = resolve; });
 		let qaFinished = false;
-		const h = makeHarness({ runQa: async (s, _descriptors, _runner, options) => { options.onProgress?.({ index: 1, total: 1, acceptance_id: "A1", phase: "passed", elapsed_ms: 1 }); await gate; qaFinished = true; return passVerdict(s); } });
+		const h = makeHarness({ runQa: async (s, _descriptors, options) => { options.onProgress?.({ index: 1, total: 1, acceptance_id: "A1", phase: "passed", elapsed_ms: 1 }); await gate; qaFinished = true; return passVerdict(s); } });
 		const updates: unknown[] = [];
 		const advancing = h.progression.advance(TASK, ctx, undefined, (update) => updates.push(update));
 		await new Promise((resolve) => setTimeout(resolve, 0));
@@ -193,9 +193,9 @@ describe("foreground assurance progression", () => {
 	test("post-QA Review preparation is retryable and preserves run_review", async () => {
 		const h = makeHarness();
 		const originalBuild = h.ports.buildAssurance;
-		h.ports.buildAssurance = async (root, taskId, role, current, runner) => {
+		h.ports.buildAssurance = async (root, taskId, role, current) => {
 			if (role === "review") throw new Error("manifest unavailable");
-			return originalBuild(root, taskId, role, current, runner);
+			return originalBuild(root, taskId, role, current);
 		};
 		const result = await h.progression.advance(TASK, ctx);
 		expect(result).toMatchObject({ state: "review_preparation_failed", operation: "review", reason: "manifest unavailable" });
@@ -203,9 +203,9 @@ describe("foreground assurance progression", () => {
 		expect((await h.ports.projectTask(ctx.cwd, TASK)).projection.next_obligation).toBe("run_review");
 	});
 
-	test("already-settled Review frozenRunner failure is retryable and preserves run_review", async () => {
+	test("already-settled Review snapshot failure is retryable and preserves run_review", async () => {
 		const h = makeHarness({ project: async () => projection("active", "run_review") });
-		h.ports.frozenRunner = async () => { throw new Error("runner unavailable"); };
+		h.ports.buildAssurance = async () => { throw new Error("snapshot unavailable"); };
 		const result = await h.progression.advance(TASK, ctx);
 		expect(result).toMatchObject({ state: "review_preparation_failed", operation: "review" });
 		expect(h.counts().applyCount).toBe(0);
@@ -215,9 +215,10 @@ describe("foreground assurance progression", () => {
 	test("already-settled Review cancellation before reservation is retryable", async () => {
 		const controller = new AbortController();
 		const h = makeHarness({ project: async () => projection("active", "run_review") });
-		h.ports.frozenRunner = async () => {
+		const originalBuild = h.ports.buildAssurance;
+		h.ports.buildAssurance = async (...args) => {
 			controller.abort();
-			return { id: "bun", version: "1.4.2" } as never;
+			return originalBuild(...args);
 		};
 		const result = await h.progression.advance(TASK, ctx, controller.signal);
 		expect(result).toMatchObject({ state: "review_preparation_failed", operation: "review" });
@@ -320,7 +321,7 @@ describe("foreground assurance progression", () => {
 		let release!: () => void;
 		const gate = new Promise<void>((resolve) => { release = resolve; });
 		let qaSignal: AbortSignal | undefined;
-		const h = makeHarness({ runQa: async (s, _descriptors, _runner, options) => {
+		const h = makeHarness({ runQa: async (s, _descriptors, options) => {
 			qaSignal = options.signal;
 			await gate;
 			return passVerdict(s);

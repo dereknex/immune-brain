@@ -12,7 +12,6 @@ import { ensureTaskReviewRevision } from "../plugins/immune-brain/.pi-extension/
 import { projectAssurance } from "../plugins/immune-brain/runtime/kernel/assurance_projection";
 import { readTaskRecord } from "../plugins/immune-brain/runtime/kernel/storage";
 import { canonicalIntentHash, parseTaskIntentV1 } from "../plugins/immune-brain/runtime/kernel/intent";
-import { resolveBunRunner } from "../plugins/immune-brain/runtime/assurance/verification";
 import {
 	readRunRowByTask,
 	updateRunRecord,
@@ -44,11 +43,6 @@ const GIT_ENV = {
 	GIT_COMMITTER_EMAIL: "fixture@example.com",
 };
 
-// The descriptor is bound to the runner this host actually resolves, because the
-// snapshot builder refuses a version it cannot execute. No descriptor is ever
-// run here: the fixture settles QA up front so the Loop resumes at Review.
-const RUNNER = resolveBunRunner();
-
 const INTENT = {
 	contract: "assurance_kernel/task_intent/v1",
 	task_id: TASK,
@@ -58,13 +52,8 @@ const INTENT = {
 			id: "A1",
 			assertion: "The published revision identity matches the reserved snapshot",
 			verification: JSON.stringify({
-				contract: "assurance_kernel/verification_descriptor/v1",
-				runner_id: "bun",
-				runner_version: RUNNER.version,
-				argv: ["test", "src/worked.ts"],
-				cwd: ".",
-				timeout_ms: 60_000,
-				max_output_bytes: 65_536,
+				contract: "assurance_kernel/verification_descriptor/v2",
+				command: { executable: "bun", argv: ["test", "src/worked.ts"], cwd: ".", timeout_ms: 60_000, max_output_bytes: 65_536 },
 			}),
 		},
 	],

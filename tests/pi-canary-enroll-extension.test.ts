@@ -314,13 +314,8 @@ describe("pi canary enroll handler integration", () => {
 					scope_hint: ["publish", `docs/specs/${taskId}.spec.md`, `docs/specs/archive/${taskId}.spec.md`],
 					acceptance: [
 						{ id: "A1", assertion: "artifact exists", verification: JSON.stringify({
-							contract: "assurance_kernel/verification_descriptor/v1",
-							runner_id: "bun",
-							runner_version: "1.4.2",
-							argv: ["run", "scripts/accept.ts"],
-							cwd: ".",
-							timeout_ms: 5_000,
-							max_output_bytes: 16_384,
+							contract: "assurance_kernel/verification_descriptor/v2",
+							command: { executable: "bun", argv: ["run", "scripts/accept.ts"], cwd: ".", timeout_ms: 5_000, max_output_bytes: 16_384 },
 						}) },
 					],
 				},

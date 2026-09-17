@@ -11,7 +11,6 @@ import type { FindingEvidence, ReviewAdvisoryFindingV1, TaskFinding } from "../k
 import { anchorForEvidence } from "../kernel/refutation";
 import {
 	findingsDigest,
-	type FrozenRunner,
 	type VerificationDescriptor,
 	VerificationAbortedError,
 } from "./verification";
@@ -258,13 +257,11 @@ export interface AssuranceCoordinatorPorts {
 	projectTask(root: string, taskId: string): Promise<AssuranceProjectionResult>;
 	readTaskRecord(root: string, taskId: string): Promise<TaskRecordRead>;
 	readTaskIntent(root: string, taskId: string): Promise<TaskIntentRead>;
-	frozenRunner(): Promise<FrozenRunner>;
 	buildAssurance(
 		root: string,
 		taskId: string,
 		role: AssuranceRole,
 		projection: AssuranceProjectionResult,
-		runner: FrozenRunner,
 	): Promise<{
 		snapshot: SnapshotDescriptor;
 		descriptors: Map<string, VerificationDescriptor>;
@@ -284,7 +281,6 @@ export interface AssuranceCoordinatorPorts {
 	runQa(
 		snapshot: SnapshotDescriptor,
 		descriptors: Map<string, VerificationDescriptor>,
-		runner: FrozenRunner,
 		options: { signal?: AbortSignal; onProgress?: (progress: QaVerificationProgress) => void },
 	): Promise<AssuranceVerdict>;
 	writeReviewEvidence(input: { snapshot: SnapshotDescriptor; evidence: ReviewBundle | ReviewManifestV5 }): { path: string; remove(): void };
@@ -329,13 +325,19 @@ export const REVIEW_TIMING_PROFILES: Readonly<Record<ReviewWorkload, ReviewTimin
 	heavy: { softDeadlineSeconds: 20 * 60, stopThresholdSeconds: 60 * 60 },
 };
 
-function declaredQaJobTimeoutMs(descriptors: Iterable<Pick<VerificationDescriptor, "timeout_ms">>): number {
+function declaredQaJobTimeoutMs(descriptors: Iterable<VerificationDescriptor>): number {
 	let declaredMs = 0;
-	for (const descriptor of descriptors) declaredMs += descriptor.timeout_ms;
+	const prepared = new Set<string>();
+	for (const descriptor of descriptors) {
+		declaredMs += descriptor.command.timeout_ms;
+		const key = JSON.stringify(descriptor.environment);
+		if (!prepared.has(key)) declaredMs += descriptor.environment.prepare?.timeout_ms ?? 0;
+		prepared.add(key);
+	}
 	return Math.max(QA_MIN_JOB_TIMEOUT_SECONDS * 1000, declaredMs + QA_JOB_OVERHEAD_SECONDS * 1000);
 }
 
-export function deriveQaJobTimeoutMs(descriptors: Iterable<Pick<VerificationDescriptor, "timeout_ms">>): number {
+export function deriveQaJobTimeoutMs(descriptors: Iterable<VerificationDescriptor>): number {
 	const derivedMs = declaredQaJobTimeoutMs(descriptors);
 	if (derivedMs > QA_MAX_JOB_TIMEOUT_SECONDS * 1000)
 		throw new Error(`declared QA budget ${Math.ceil(derivedMs / 60_000)} minutes exceeds the maximum of 60 minutes`);
@@ -655,6 +657,8 @@ export class AssuranceCoordinator {
 		// nothing instead of being reported as an unknown settlement.
 		let boundaryBaseline: string | null = null;
 		let reviewPreparationStarted = false;
+		// Set only by the QA job-budget deadline, which is not a host cancellation.
+		let qaJobBudgetExceeded = false;
 		let phase = "preparing";
 		const operationLive = () => this.sessionActive
 			&& this.sessionGeneration === operationGeneration
@@ -668,6 +672,14 @@ export class AssuranceCoordinator {
 			onUpdate?.({ content: [{ type: "text", text: summary }], details: { state: "running", operation: "qa", operation_id: operationId, stage, ...details } });
 		};
 		const aborted = () => operationController.signal.aborted;
+		// A declared job budget past the ceiling is refused here, before any
+		// preparation command runs or any snapshot is captured.
+		const qaBudgetFailure = () => ({
+			state: "failed" as const,
+			operation: "qa" as const,
+			operation_id: operationId,
+			reason: `${phase}: deterministic QA exceeded its declared job budget before settlement`,
+		});
 		try {
 			ensureOperationLive();
 			progress(phase, `Preparing deterministic QA for ${taskId}`);
@@ -733,7 +745,6 @@ export class AssuranceCoordinator {
 				return { state: "blocked", reason: `Kernel requires ${projection.projection.next_obligation}` };
 			const qaAlreadySettled = projection.projection.next_obligation === "run_review";
 			if (qaAlreadySettled) reviewPreparationStarted = true;
-			const runner = await this.ports.frozenRunner();
 			ensureOperationLive();
 			// Prove the immutable Review revision before any descriptor runs. A task
 			// that cannot publish its revision must stop with zero QA attestation
@@ -758,18 +769,31 @@ export class AssuranceCoordinator {
 				progress("capturing_snapshot", "Capturing the immutable QA snapshot");
 				await this.ports.qaBeforeProjection?.();
 				ensureOperationLive();
-				const assurance = await this.ports.buildAssurance(ctx.cwd, taskId, "qa", projection, runner);
+				const assurance = await this.ports.buildAssurance(ctx.cwd, taskId, "qa", projection);
 				ensureOperationLive();
-				qaVerdict = await this.ports.runQa(assurance.snapshot, assurance.descriptors, runner, {
-					signal: operationController.signal,
-					onProgress: (item) => progress("verifying", `QA ${item.index}/${item.total} ${item.acceptance_id} ${item.phase}`, {
-						current: item.index,
-						total: item.total,
-						acceptance_id: item.acceptance_id,
-						acceptance_phase: item.phase,
-						elapsed_ms: item.elapsed_ms,
-					}),
-				});
+				// Preparation counts against the same ceiling as the checks, so the
+				// aggregate clock starts before the first prepared group runs. A host
+				// may only tighten the derived budget, never raise it past the ceiling.
+				const declaredQaJobMs = deriveQaJobTimeoutMs(assurance.descriptors.values());
+				const qaJobTimeoutMs = Math.min(declaredQaJobMs, this.ports.qaJobTimeoutMs ?? declaredQaJobMs);
+				const qaJobDeadline = setTimeout(() => {
+					qaJobBudgetExceeded = true;
+					operationController.abort(new Error(`deterministic QA exceeded its declared ${Math.ceil(qaJobTimeoutMs / 60_000)} minute job budget`));
+				}, qaJobTimeoutMs);
+				try {
+					qaVerdict = await this.ports.runQa(assurance.snapshot, assurance.descriptors, {
+						signal: operationController.signal,
+						onProgress: (item) => progress("verifying", `QA ${item.index}/${item.total} ${item.acceptance_id} ${item.phase}`, {
+							current: item.index,
+							total: item.total,
+							acceptance_id: item.acceptance_id,
+							acceptance_phase: item.phase,
+							elapsed_ms: item.elapsed_ms,
+						}),
+					});
+				} finally {
+					clearTimeout(qaJobDeadline);
+				}
 				ensureOperationLive();
 				const invocation = this.openInvocation(taskId);
 				try {
@@ -798,6 +822,7 @@ export class AssuranceCoordinator {
 						authorityBoundaryStarted = false;
 					}
 				} catch (error) {
+					if (qaJobBudgetExceeded) return qaBudgetFailure();
 					if (!authorityCommitted && (aborted() || error instanceof VerificationAbortedError)) return this.cancelled("qa", operationId, "host cancellation before QA authority commit");
 					return authorityCommitted
 						? this.unknownAfterCommit(taskId, "qa", operationId, boundedAssuranceError(error))
@@ -840,7 +865,7 @@ export class AssuranceCoordinator {
 			let review: Awaited<ReturnType<AssuranceCoordinatorPorts["buildAssurance"]>>;
 			let evidence: { path: string; remove(): void };
 			try {
-				review = await this.ports.buildAssurance(ctx.cwd, taskId, "review", fresh, runner);
+				review = await this.ports.buildAssurance(ctx.cwd, taskId, "review", fresh);
 				const payload = review.reviewManifest ?? review.reviewBundle;
 				if (!payload) throw new Error("review evidence is missing after QA settlement");
 				evidence = this.ports.writeReviewEvidence({ snapshot: review.snapshot, evidence: payload });
@@ -902,6 +927,7 @@ export class AssuranceCoordinator {
 					return { state: "failed", operation: "qa", operation_id: operationId, reason: `${phase}: ${boundedAssuranceError(error)}` };
 				return this.unknownAfterCommit(taskId, "qa", operationId, `${phase}: ${boundedAssuranceError(error)}`);
 			}
+			if (qaJobBudgetExceeded) return qaBudgetFailure();
 			if (aborted() || error instanceof VerificationAbortedError) return this.cancelled("qa", operationId, `${phase}: host cancellation`);
 			return { state: "failed", operation: "qa", operation_id: operationId, reason: `${phase}: ${boundedAssuranceError(error)}` };
 		} finally {

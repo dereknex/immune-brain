@@ -7,10 +7,10 @@ export {
 	type VerificationDescriptor,
 } from "../runtime/verification_descriptor";
 export {
-	resolveBunRunner,
-	assertRunnerCompatible,
+	resolveVerificationCommand,
+	assertCommandIdentity,
 	runFixedVerification,
 	findingsDigest,
 	VerificationAbortedError,
-	type FrozenRunner,
+	type FrozenCommand,
 } from "../runtime/assurance/verification";

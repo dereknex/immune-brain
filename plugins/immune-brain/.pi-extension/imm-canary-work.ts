@@ -23,9 +23,6 @@ import { Type } from "typebox";
 import { PLUGIN_VERSION } from "../runtime/plugin_version";
 import {
 	parseVerificationDescriptor,
-	resolveBunRunner,
-	assertRunnerCompatible,
-	type FrozenRunner,
 	type VerificationDescriptor,
 } from "./pi-canary-verification";
 import {
@@ -277,12 +274,11 @@ export function createPiAssuranceProgressionPorts(
 		projectTask: (root, taskId) => projectAssuranceState(root, taskId),
 		readTaskRecord: (root, taskId) => readTaskRecord(root, taskId),
 		readTaskIntent: (root, taskId) => readTaskIntent(root, taskId),
-		frozenRunner: () => frozenRunner(),
-		buildAssurance: (root, taskId, role, projection, runner) =>
-			(dependencies.buildAssurance ?? buildAssuranceSnapshot)(root, taskId, role, projection, runner),
+		buildAssurance: (root, taskId, role, projection) =>
+			(dependencies.buildAssurance ?? buildAssuranceSnapshot)(root, taskId, role, projection),
 		ensureReviewRevision: (root, taskId, projection) => ensureTaskReviewRevision(root, taskId, projection),
-		runQa: (snapshot, descriptors, runner, options) =>
-			(dependencies.runQa ?? runDeterministicQa)(snapshot, descriptors, runner, options),
+		runQa: (snapshot, descriptors, options) =>
+			(dependencies.runQa ?? runDeterministicQa)(snapshot, descriptors, options),
 		writeReviewEvidence: (input) =>
 			(dependencies.writeReviewEvidence ?? writeNativeReviewEvidence)(input),
 		applyVerdict: (ctx, input) =>
@@ -1472,7 +1468,6 @@ async function buildAssuranceSnapshot(
 	taskId: string,
 	role: AssuranceRole,
 	projection: AssuranceProjectionResult,
-	runner: FrozenRunner,
 ): Promise<{
 	snapshot: SnapshotDescriptor;
 	descriptors: Map<string, VerificationDescriptor>;
@@ -1491,12 +1486,9 @@ async function buildAssuranceSnapshot(
 	const intent = record.record.intent_snapshot;
 	const acceptance = intent.acceptance;
 	const descriptors = new Map<string, VerificationDescriptor>();
-		// Every verification string must parse as strict canonical JSON
-		// verification_descriptor/v1 and claim the frozen runner version;
-		// a free-form or version-mismatched string is ineligible.
-	for (const item of acceptance) {
+	// Review resumes from settled outcomes without resolving verification tools.
+	for (const item of role === "qa" ? acceptance : []) {
 		const descriptor = parseVerificationDescriptor(item.verification);
-		assertRunnerCompatible(descriptor, runner);
 		descriptors.set(item.id, descriptor);
 	}
 	// `git_base_head` is optional on the read shape because v3 records carry
@@ -1592,12 +1584,6 @@ function qaOutcomes(
 			.flatMap((item) => item.acceptance_results)
 			.map((result) => [result.acceptance_id, { status: result.status, summary: result.summary }]),
 	);
-}
-
-let frozenRunnerValue: FrozenRunner | undefined;
-async function frozenRunner(): Promise<FrozenRunner> {
-	frozenRunnerValue ??= resolveBunRunner();
-	return frozenRunnerValue;
 }
 
 // The invocation registry is shared with the progression module's

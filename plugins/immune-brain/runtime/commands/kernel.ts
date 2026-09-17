@@ -709,7 +709,7 @@ function runIntentAuthor(args: string[], root: string): KernelExecution {
 		return {
 			result: errorResult(
 				"intent_invalid",
-				`candidate acceptance verification failed strict verification_descriptor/v1 parsing: ${error instanceof Error ? error.message : error}`,
+				`candidate acceptance verification failed strict verification_descriptor/v2 parsing: ${error instanceof Error ? error.message : error}`,
 				1,
 			),
 			journal: journalFor(
@@ -718,7 +718,7 @@ function runIntentAuthor(args: string[], root: string): KernelExecution {
 				"rejected",
 				"intent_invalid",
 				null,
-				"Fix the reported verification_descriptor/v1 violations and retry.",
+				"Fix the reported verification_descriptor/v2 violations and retry.",
 			),
 		};
 	}
