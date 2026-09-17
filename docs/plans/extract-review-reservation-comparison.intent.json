@@ -1,0 +1,35 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "extract-review-reservation-comparison",
+  "owner": "user",
+  "goal": "Extract the duplicated inline five-field reservation snapshot comparison in coordinator.ts's advance() and submitReview() into a shared pure compareReservationSnapshot function, and extract advance()'s full review-ready validity check into a pure reservationStillValid function, with no change to which requests are accepted or rejected.",
+  "acceptance": [
+    {
+      "id": "AC1",
+      "assertion": "advance() still reuses a matching Review reservation and still releases a stale one when any one of the five snapshot fields (record_revision, workspace_revision, intent_revision, intent_content_hash, diff_hash) changes, using the new reservationStillValid/compareReservationSnapshot functions with identical accept/reject outcomes to before the extraction.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/host-neutral-assurance-coordinator.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC2",
+      "assertion": "Both the Pi and Claude host adapters observe the same reservation-validity outcomes through their real ports after the extraction; no host-specific divergence is introduced.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/claude-host-authority.test.ts\",\n      \"tests/pi-canary-assurance-progression.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC3",
+      "assertion": "submitReview()'s stale-snapshot rejection, including its lifecycle/artifact_state conditions that stay outside the shared compareReservationSnapshot function, is unchanged for both hosts.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/dual-host-assurance-conformance.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    "docs/plans/extract-review-reservation-comparison.intent.json",
+    "docs/specs/extract-review-reservation-comparison.spec.md",
+    "plugins/immune-brain/runtime/assurance/coordinator.ts",
+    "tests/claude-host-authority.test.ts",
+    "tests/dual-host-assurance-conformance.test.ts",
+    "tests/helpers/pi-canary-assurance-harness.ts",
+    "tests/host-neutral-assurance-coordinator.test.ts",
+    "tests/pi-canary-assurance-progression.test.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}

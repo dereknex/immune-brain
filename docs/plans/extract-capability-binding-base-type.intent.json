@@ -1,0 +1,36 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "extract-capability-binding-base-type",
+  "owner": "user",
+  "goal": "Extract the actor_id/confirmation_ref/expires_at fields that EnrollmentCapabilityBinding, BatchAuthorizationBinding, and CapabilityBindingV2 each repeat into a shared BaseCapabilityBinding interface, without touching createCapabilityRegistry, nonce, or any other per-binding field.",
+  "acceptance": [
+    {
+      "id": "AC1",
+      "assertion": "The generic capability registry factory issues, inspects, and consumes capabilities identically for binding shapes composed from BaseCapabilityBinding as it did for the previous flat interfaces.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/kernel-capability-registry-contract.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 60000,\n    \"max_output_bytes\": 65536\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC2",
+      "assertion": "Enrollment and batch capability issue/inspect/consume behavior, including nonce presence and expiry validation, is unchanged after EnrollmentCapabilityBinding and BatchAuthorizationBinding extend BaseCapabilityBinding.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/kernel-enrollment-authority.test.ts\",\n      \"tests/kernel-batch-authority.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC3",
+      "assertion": "Mutation-authority (CapabilityBindingV2) issue/inspect/consume behavior, including action_digest and findings_digest handling, is unchanged after it extends BaseCapabilityBinding.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/kernel-r2c2-authority.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 60000,\n    \"max_output_bytes\": 65536\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    "docs/plans/extract-capability-binding-base-type.intent.json",
+    "docs/specs/extract-capability-binding-base-type.spec.md",
+    "plugins/immune-brain/runtime/kernel/authority_port.ts",
+    "plugins/immune-brain/runtime/kernel/batch_authority.ts",
+    "plugins/immune-brain/runtime/kernel/enrollment_authority.ts",
+    "tests/kernel-batch-authority.test.ts",
+    "tests/kernel-capability-registry-contract.test.ts",
+    "tests/kernel-enrollment-authority.test.ts",
+    "tests/kernel-r2c2-authority.test.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}
