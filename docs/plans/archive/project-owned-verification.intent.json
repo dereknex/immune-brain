@@ -1,0 +1,79 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "project-owned-verification",
+  "goal": "Enable project-owned verification for unknown languages and package managers through one host-neutral bounded command and preparation contract, preserving frozen delivery inputs and Kernel QA authority.",
+  "acceptance": [
+    {
+      "id": "AC1",
+      "assertion": "BR-REQ-1 and BR-REQ-2: canonical v2 command descriptors accept previously unknown tool names and literal argument arrays without a language or package-manager registry, while enforcing path and resource bounds.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.4.2\",\n  \"argv\": [\n    \"test\",\n    \"tests/kernel-verification-descriptor.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 60000,\n  \"max_output_bytes\": 65536\n}\n"
+    },
+    {
+      "id": "AC2",
+      "assertion": "BR-REQ-1 through BR-REQ-4: real frozen-snapshot QA runs an unknown project tool using explicit bounded preparation, prepares each identical environment once, isolates distinct environments, and distinguishes preparation failure from executed-check failure.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.4.2\",\n  \"argv\": [\n    \"test\",\n    \"tests/pi-canary-verification-descriptor.test.ts\",\n    \"tests/shared-deterministic-qa.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 131072\n}\n"
+    },
+    {
+      "id": "AC3",
+      "assertion": "BR-REQ-3: verification permits declared generated output but rejects protected-input byte or mode drift, metadata spoofing, undeclared output and escaping paths without modifying the live source workspace or shared dependency store.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.4.2\",\n  \"argv\": [\n    \"test\",\n    \"tests/managed-task-snapshot-isolation.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 60000,\n  \"max_output_bytes\": 65536\n}\n"
+    },
+    {
+      "id": "AC4",
+      "assertion": "BR-REQ-3 and BR-REQ-4: for trusted project commands, preparation and checks enforce foreground process-group cancellation and resource limits, clean descendants retaining host execution identity and task-owned read-only output, create no partial QA authority, bind host-observed execution metadata without raw output, and resume Review without re-preparation; the local executor does not claim sandbox containment against deliberate identity stripping.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.4.2\",\n  \"argv\": [\n    \"test\",\n    \"tests/host-neutral-assurance-coordinator.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 131072\n}\n"
+    },
+    {
+      "id": "AC5",
+      "assertion": "BR-REQ-2 and BR-REQ-3: canonical authoring and validation support v2 and give a migration-required result for v1 execution eligibility while historical TaskRecords remain byte-stable and candidate operations grant no authority.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.4.2\",\n  \"argv\": [\n    \"test\",\n    \"tests/kernel-intent-authoring.test.ts\",\n    \"tests/kernel-intent-validation.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 60000,\n  \"max_output_bytes\": 65536\n}\n"
+    },
+    {
+      "id": "AC6",
+      "assertion": "BR-REQ-1 through BR-REQ-4: Pi and Claude actual assurance ports produce equivalent project-owned-verification outcomes for unknown commands, preparation failure, cancellation, evidence and descriptor revision; the named conformance group executes nonzero tests.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.4.2\",\n  \"argv\": [\n    \"test\",\n    \"tests/dual-host-assurance-conformance.test.ts\",\n    \"--test-name-pattern\",\n    \"project-owned-verification\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 131072\n}\n"
+    }
+  ],
+  "scope_hint": [
+    ".changeset/project-owned-verification.md",
+    "docs/plans/project-owned-verification.intent.json",
+    "docs/specs/project-owned-verification.spec.md",
+    "plugins/immune-brain/.pi-extension/imm-canary-work.ts",
+    "plugins/immune-brain/.pi-extension/pi-canary-verification.ts",
+    "plugins/immune-brain/README.md",
+    "plugins/immune-brain/dist/claude/mcp-server.mjs",
+    "plugins/immune-brain/dist/imm-planner.md",
+    "plugins/immune-brain/runtime/assurance/coordinator.ts",
+    "plugins/immune-brain/runtime/assurance/delivery_workspace.ts",
+    "plugins/immune-brain/runtime/assurance/qa.ts",
+    "plugins/immune-brain/runtime/assurance/verification.ts",
+    "plugins/immune-brain/runtime/claude/kernel_ports.ts",
+    "plugins/immune-brain/runtime/commands/kernel.ts",
+    "plugins/immune-brain/runtime/verification_descriptor.ts",
+    "tests/breaking-intent-revision-gate.test.ts",
+    "tests/claude-host-authority.test.ts",
+    "tests/dual-host-assurance-conformance.test.ts",
+    "tests/enrollment-confirmation-relocation.test.ts",
+    "tests/helpers/pi-canary-assurance-harness.ts",
+    "tests/host-neutral-assurance-coordinator.test.ts",
+    "tests/host-tool-policy-contract.test.ts",
+    "tests/imm-canary-work-contract.test.ts",
+    "tests/imm-planner-kernel-intent-contract.test.ts",
+    "tests/kernel-intent-authoring.test.ts",
+    "tests/kernel-intent-validation.test.ts",
+    "tests/kernel-verification-descriptor.test.ts",
+    "tests/managed-task-snapshot-isolation.test.ts",
+    "tests/pi-canary-assurance-authority.test.ts",
+    "tests/pi-canary-assurance-progression.test.ts",
+    "tests/pi-canary-enroll-extension.test.ts",
+    "tests/pi-canary-lifecycle-package.test.ts",
+    "tests/pi-canary-verification-descriptor.test.ts",
+    "tests/pi-canary-work-extension.test.ts",
+    "tests/planning-artifact-archival.test.ts",
+    "tests/review-revision-identity-conformance.test.ts",
+    "tests/shared-deterministic-qa.test.ts"
+  ],
+  "risk": "material",
+  "revision": 2,
+  "owner": "user"
+}
