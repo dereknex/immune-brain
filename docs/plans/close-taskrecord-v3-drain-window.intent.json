@@ -28,6 +28,7 @@
   "scope_hint": [
     "docs/plans/close-taskrecord-v3-drain-window.intent.json",
     "docs/specs/close-taskrecord-v3-drain-window.spec.md",
+    "docs/specs/archive/close-taskrecord-v3-drain-window.spec.md",
     "plugins/immune-brain/runtime/claude/kernel_ports.ts",
     "plugins/immune-brain/runtime/kernel/assurance_projection.ts",
     "plugins/immune-brain/runtime/kernel/reducer.ts",
@@ -46,5 +47,5 @@
     "tests/task-record-durability.test.ts"
   ],
   "risk": "critical",
-  "revision": 1
+  "revision": 2
 }
