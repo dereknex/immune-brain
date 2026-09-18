@@ -28,11 +28,13 @@
     "docs/plans/close-taskrecord-v3-drain-window.intent.json",
     "docs/specs/archive/close-taskrecord-v3-drain-window.spec.md",
     "docs/specs/close-taskrecord-v3-drain-window.spec.md",
+    "plugins/immune-brain/dist/claude/mcp-server.mjs",
     "plugins/immune-brain/runtime/claude/kernel_ports.ts",
     "plugins/immune-brain/runtime/kernel/assurance_projection.ts",
     "plugins/immune-brain/runtime/kernel/index.ts",
     "plugins/immune-brain/runtime/kernel/legacy_task_record.ts",
     "plugins/immune-brain/runtime/kernel/reducer.ts",
+    "plugins/immune-brain/runtime/kernel/sqlite_migration.ts",
     "plugins/immune-brain/runtime/kernel/storage.ts",
     "plugins/immune-brain/runtime/kernel/types.ts",
     "plugins/immune-brain/runtime/kernel/validation.ts",
@@ -49,6 +51,6 @@
     "tests/task-record-durability.test.ts"
   ],
   "risk": "critical",
-  "revision": 4,
+  "revision": 5,
   "owner": "user"
 }
