@@ -71,7 +71,13 @@ Continue while the current projection has a valid action:
    Normal completion does not require a second user confirmation.
 5. For rework, follow the projected artifact state before editing. Resolve
    findings only after fixing and verifying their cause. Changed snapshots
-   invalidate old evidence; run the newly required obligations.
+   invalidate old evidence; run the newly required obligations. On the second
+   rework of one acceptance id or anchor, the fix response must either state why
+   it covers every known trigger class of the violated invariant — the shared
+   guard, not only the reported path — or declare the trigger outside the
+   accepted contract and answer with `refute_finding` bound to fresh QA evidence
+   for that acceptance. Escalating a local heuristic a third time instead of
+   choosing one of those two responses is the loop this step exists to break.
 6. An unresolved decision pauses only dependent execution. On `awaiting_user`,
    invoke `request_authorization` directly before ending the turn; use the
    Decisions and Recovery route for its native-gate handling. End the turn if

@@ -1,0 +1,40 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "codify-rework-root-cause-lessons",
+  "owner": "user",
+  "goal": "Codify the review-retro root-cause lessons into the reviewer prompt, Loop and Planner contracts, one ADR, and the workflow-evidence-retro skill, so repeated same-invariant rework demands a generalization argument (or a contract-boundary refutation) instead of another single-trigger patch. Brainstorm trace: BR-REQ-1 -> AC1, BR-REQ-3 -> AC2, BR-REQ-2 -> AC3, BR-REQ-4 -> AC4; BR-DEC-1/2/3 are captured by the AC1/AC3 wording; BR-OUT-1 (host-side subagent lifecycle repair), BR-OUT-2 (evasive-code sandbox containment) and BR-OUT-3 (any writes during framing) are excluded.",
+  "acceptance": [
+    {
+      "id": "AC1",
+      "assertion": "The reviewer prompt plugins/immune-brain/runtime/prompts/code-review.md and its exact mirror plugins/immune-brain/dist/role-prompts/code-review.md carry a rule that a rework finding repeating an acceptance or anchor already reworked in the same task must demand a generalization argument covering every known trigger class of the violated invariant; and the Loop contract plugins/immune-brain/dist/imm-loop.md rework guidance requires the fix response to either justify that the fix covers all known triggers of that invariant or declare the trigger out-of-contract and answer with refute_finding bound to fresh QA evidence, instead of patching only the reported trigger.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/rework-root-cause-contract.test.ts\",\n      \"tests/dist-docs-sync-contract.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 60000,\n    \"max_output_bytes\": 65536\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC2",
+      "assertion": "The Planner contract plugins/immune-brain/dist/imm-planner.md requires that adding a field or verdict branch to a state machine first enumerates every consuming union/version-gate branch across its owners (for example reducer.ts, validation.ts, coordinator.ts) and records them in scope discovery before authoring, instead of changing only the producing side.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/rework-root-cause-contract.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 60000,\n    \"max_output_bytes\": 65536\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC3",
+      "assertion": "docs/adr/0012-authority-uniqueness-keys.md exists with status frontmatter and records the settled principle that authority and audit uniqueness judgments use run_id plus enrollment_event_id or intent_content_hash (with task_id display-only, never a sole dedup or delete basis), and enumerates the remaining coarse-grained key sites as an explicit tech-debt list.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/rework-root-cause-contract.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 60000,\n    \"max_output_bytes\": 65536\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC4",
+      "assertion": ".agents/skills/workflow-evidence-retro/SKILL.md gains a task-level aggregation step: group review rounds by (cwd, task_id), flag tasks with three or more rounds for acceptance_id repetition analysis, and annotate infrastructure-jitter rounds (cleaned-up subagent or empty verdict) instead of counting them as content rework.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/rework-root-cause-contract.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 60000,\n    \"max_output_bytes\": 65536\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    ".agents/skills/workflow-evidence-retro/SKILL.md",
+    "docs/adr/0012-authority-uniqueness-keys.md",
+    "docs/plans/codify-rework-root-cause-lessons.intent.json",
+    "plugins/immune-brain/dist/imm-loop.md",
+    "plugins/immune-brain/dist/imm-planner.md",
+    "plugins/immune-brain/dist/role-prompts/code-review.md",
+    "plugins/immune-brain/runtime/prompts/code-review.md",
+    "tests/rework-root-cause-contract.test.ts"
+  ],
+  "risk": "routine",
+  "revision": 1
+}

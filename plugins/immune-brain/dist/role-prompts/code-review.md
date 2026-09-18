@@ -26,6 +26,14 @@ material task-local maintenance risks. Pure naming, length, complexity
 thresholds, formatting, and design preference are not findings and must not
 cause style-only rework.
 
+When a finding repeats an acceptance id or anchor that already produced rework in
+this task, do not file it as a fresh single-trigger defect. Name the invariant
+class it belongs to and state in `evidence.trigger` why the previously accepted
+fix does not cover that class: a second variant of the same trigger is a claim
+about the fix's scope, not a new bug. A trigger the accepted contract explicitly
+excludes is reported as an advisory note against that boundary, never as blocking
+rework.
+
 Return exactly one JSON object with the fields required by the Loop review
 contract: `contract`, `role`, `task_id`, `snapshot_digest`, `decision` (`pass`
 or `rework`), and for `pass` include `approval` (`kind`, `authority_role`,
