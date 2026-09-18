@@ -30,6 +30,7 @@
     "docs/specs/close-taskrecord-v3-drain-window.spec.md",
     "plugins/immune-brain/runtime/claude/kernel_ports.ts",
     "plugins/immune-brain/runtime/kernel/assurance_projection.ts",
+    "plugins/immune-brain/runtime/kernel/index.ts",
     "plugins/immune-brain/runtime/kernel/legacy_task_record.ts",
     "plugins/immune-brain/runtime/kernel/reducer.ts",
     "plugins/immune-brain/runtime/kernel/storage.ts",
@@ -39,6 +40,7 @@
     "plugins/immune-brain/runtime/unattended/batch_preflight.ts",
     "tests/dual-host-assurance-conformance.test.ts",
     "tests/kernel-assurance-obligation.test.ts",
+    "tests/kernel-r2c2-boundary.test.ts",
     "tests/kernel-r2c2-reducer.test.ts",
     "tests/kernel-record-v3.test.ts",
     "tests/kernel-record-v4.test.ts",
@@ -47,6 +49,6 @@
     "tests/task-record-durability.test.ts"
   ],
   "risk": "critical",
-  "revision": 3,
+  "revision": 4,
   "owner": "user"
 }
