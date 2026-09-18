@@ -1,5 +1,179 @@
 # Changelog
 
+## 4.0.0
+
+### Major Changes
+
+- [#109](https://github.com/dereknex/immune-brain/pull/109) [`5f9da27`](https://github.com/dereknex/immune-brain/commit/5f9da279a28ff5953cf68a5a94f98df18fc9d2cb) Thanks [@dereknex](https://github.com/dereknex)! - Close the TaskRecord v3 drain window and delete the drained v4 CLI surface.
+
+  The live `TaskRecord` contract is v4 only: `parseTaskRecord` and every entry
+  point that mutates authority now reject a v2/v3 record, and the frozen parsers
+  for those contracts moved to `kernel/legacy_task_record.ts`, where the audit and
+  storage-layout readers reach them as a fallback. Settled pre-v4 evidence under
+  `.imm/audit/` stays exactly as it was written — it is read through those frozen
+  parsers rather than rewritten (see `docs/adr/0011-frozen-readers-for-pre-v4-terminal-evidence.md`), so no existing workspace needs a new migration step.
+
+  The eight commands marked "Retired after v4 storage retirement" (`imm-work`,
+  `imm-review`, `imm-autowork`, `imm-heal`, `imm-migrate`, `imm-finish`,
+  `imm-check-child-output`, `imm-retire-stale-wrapper`) are gone: their `bin/`
+  wrappers and the runtime's per-command `drain_required` / `v3_storage_retired`
+  wall are deleted, a retired name now returns the generic
+  `Unknown Immune-Brain v4 command` response, and `list-commands --json` no longer
+  publishes a `retired` list. The retired _option_ wall on `imm-plan --sync` and
+  friends is unchanged.
+
+- [`60d310d`](https://github.com/dereknex/immune-brain/commit/60d310d587dbe8bc8c4983f5410ca59e6587942f) Thanks [@dereknex](https://github.com/dereknex)! - Replace the multi-file JSON authority store with one SQLite database per
+  worktree (`.imm/state/kernel.sqlite`), and remove the retired file store, its
+  byte-CAS journals, the duplicate claim/tombstone/relocation writers and the
+  manual repair instructions that existed to reconcile them.
+
+  Enrollment, freeze, QA, Review, settlement and audit export now run as Kernel
+  transactions over that store; Git keeps sole ownership of code identity and
+  terminal audit evidence stays tracked under `.imm/audit/<task-id>/`.
+
+  Behavior that becomes simpler or stricter in the same release:
+
+  - A simple TaskIntent no longer needs a Spec, and freeze, rework and stop bind
+    artifacts in place instead of relocating them into `archive/`.
+  - Delivery scope is an authorization envelope: new helpers and tests inside an
+    approved directory need no revision, while staged work outside the envelope
+    is rejected and each task's own dirt is preserved.
+  - Deterministic QA runs every descriptor in a disposable materialization of the
+    frozen tree with isolated Git metadata, so a descriptor can no longer observe
+    or contaminate the live worktree.
+  - Ordinary Review rework returns straight to execution. Only a recurring
+    security boundary, or five effective rework rounds, pauses a task for a user
+    decision, and a passing Review may carry non-blocking advisories that settle
+    the task with the notes recorded on the attestation.
+
+  The legacy audit projection stays read-only and is scheduled for removal in the
+  next major release; migration of an existing workspace is explicit, claimless
+  and validated against a temporary database before publication.
+
+- [`ea5c6b6`](https://github.com/dereknex/immune-brain/commit/ea5c6b69b8f96da121d33876f885179f7283dfcb) Thanks [@dereknex](https://github.com/dereknex)! - Replace Bun-specific QA execution with project-owned preparation and verification commands for arbitrary toolchains.
+
+  Deterministic QA now proves that every project process is gone before a result settles, and the declared 60-minute aggregate budget covers preparation and checks together.
+
+### Patch Changes
+
+- [`47fefda`](https://github.com/dereknex/immune-brain/commit/47fefda339def7e850113679f812bf79e81c4d79) Thanks [@dereknex](https://github.com/dereknex)! - Bind a Batch Authorization's expiry to the budget deadline the literal user confirmed instead of a fixed ten-minute window. A batch parked on a foreground Review inside its confirmed budget no longer lapses and demands a second native gate, while the fail-closed expiry, deadline, clock, and renewal checks are unchanged on both Hosts.
+
+- [`b2a8e0a`](https://github.com/dereknex/immune-brain/commit/b2a8e0a89e660b3243262d920ca400058ec3afe9) Thanks [@dereknex](https://github.com/dereknex)! - Resume an authorized unattended batch without a second native gate. Pi and Claude Code reuse an intact, still-binding Batch Authorization — unexpired, same plan digest, batch branch, and HEAD lineage, batch still running — and open a fresh confirmation, named with the reason, whenever any of those no longer binds.
+
+- [`dcf03db`](https://github.com/dereknex/immune-brain/commit/dcf03db733c62c0358651b00b6fbe8f14c8f396a) Thanks [@dereknex](https://github.com/dereknex)! - Start a new confirmed batch from the current Initiative plan after the previous run settles, with a fresh run identity and current HEAD binding. Reuse the existing batch branch only when its settled lineage is intact, retaining prior run evidence.
+
+  Strengthen contract tool-name checks and exercise successful and resumed Host batch paths in the Git safety guards.
+
+- [`aecf5dd`](https://github.com/dereknex/immune-brain/commit/aecf5ddab3b608dbf06023ef9f87662e45812667) Thanks [@dereknex](https://github.com/dereknex)! - Make the packaged contracts Host-neutral about tool identity: drop the stale `freeze_artifacts` step the Kernel already performs inside `advance_assurance`, restate every remaining Pi-only tool spelling as the obligation it stands for, and add a guard test that fails whenever a packaged contract names a tool absent from every Host tool surface.
+
+- [`978fe57`](https://github.com/dereknex/immune-brain/commit/978fe57211c10f237251ed0070d64d998d4f71f0) Thanks [@dereknex](https://github.com/dereknex)! - Fix project-owned verification process discovery on Linux: the token search reads procfs instead of invoking `ps` with BSD modifiers, so deterministic QA can prove and complete process cleanup on Linux hosts.
+
+  Descendants are attributed by session membership rather than by uid, so a command that drops its privileges while staying in the verification session is still cleaned up, and unrelated system processes with unreadable information can no longer fail every check on an ordinary Linux host.
+
+- [`9bb43e3`](https://github.com/dereknex/immune-brain/commit/9bb43e34ca64abdc1aa326a509921681a5df2b12) Thanks [@dereknex](https://github.com/dereknex)! - Exclude a batch Child at planning time when its TaskIntent cannot name its bound Spec pair, instead of offering it for confirmation and having enrollment refuse it later. The batch plan reuses the same shared `spec_binding` predicate enrollment uses and reports a stable reason that names every path the intent must add; critical-child exclusion, dependency order, skipping, and the plan digest are unchanged.
+
+- [`09c461a`](https://github.com/dereknex/immune-brain/commit/09c461ada89a6e35f2ce1e7b0a921f5fa4b973fa) Thanks [@dereknex](https://github.com/dereknex)! - Give the Claude Code Host the post-settlement GitHub tracker projection the Pi Host already performs, so an opted-in terminal projection no longer depends on which Host settled the task. The step lives in the shared coordinator (`projectTerminalTrackerState`) and both Hosts call it: it derives the projection input only for a fresh claimless done/stopped task with its exact terminal tombstone, forwards to the tracker, and reports a tracker failure as `tracker` beside the authoritative result instead of turning it into evidence, a Loop blocker, or a reason to repeat the settling Kernel mutation. Enrollment still performs no projection.
+
+- [`70c3adc`](https://github.com/dereknex/immune-brain/commit/70c3adc469a7b7fe7862defd89dd6829b35681e9) Thanks [@dereknex](https://github.com/dereknex)! - Record one literal-user actor identity instead of two. A survey of the 122 settled records under `.imm/audit/` counted `literal-user` 220 times across 54 records against `user` 4 times in three Claude-Host-era records, so `literal-user` (which the Kernel's own batch validation already named in its error text) is the converged spelling: both Hosts now mint it for a batch or enrollment authorization, and the Kernel canonicalizes the actor where the audit identity is written, so a Host that still supplies the historical spelling is recorded as the literal user.
+
+  Nothing is rewritten in place: the reader accepts both spellings, so a settled record or a batch capability issued under the old spelling keeps validating and stays byte-identical, and the batch authorization projection stays faithful to the state it read. The extension's mirrored constant is pinned to the Kernel's by a conformance assertion.
+
+- [`9d61307`](https://github.com/dereknex/immune-brain/commit/9d61307a4e7249327e8d293a137c58b9d2c73dee) Thanks [@dereknex](https://github.com/dereknex)! - Converge three Host divergences onto the safer branch. Restoring a staged TaskIntent is now one shared, verifying implementation, so a restore that leaves the bytes or the index inconsistent fails closed on both Hosts instead of only on Pi. The bounded native-confirmation deadline is shared too: an unanswered confirmation ends on the same `IMMUNE_BRAIN_BATCH_TIMEOUT_MS` setting with the same default, and reports a stable timeout reason rather than a cancellation. Claude now imports the shared authorization-operation derivation instead of re-deriving it inline, so the mapping from Kernel readiness cannot drift between Hosts.
+
+- [`ed64724`](https://github.com/dereknex/immune-brain/commit/ed64724ab7cd69a933d76df02be6765a0b7c7b01) Thanks [@dereknex](https://github.com/dereknex)! - Make the Spec binding an enrollment precondition instead of a freeze surprise. A new shared `runtime/kernel/spec_binding.ts` owns the "one scope-bound active Spec and its archive path" predicate; enrollment and its zero-write rehearsal now refuse an intent whose `scope_hint` cannot name that pair, naming every path the intent must add, while freeze-time enforcement is retained unchanged because enrollment cannot observe post-implementation scope drift.
+
+- [`b284e65`](https://github.com/dereknex/immune-brain/commit/b284e653f4df2a5f2422b0097bb03d51c389dde7) Thanks [@dereknex](https://github.com/dereknex)! - Reduce `runtime/plan_core.ts` to the validator surface production reaches — `PlanValidationError` and `projectPlanValidation` — with the compiler deciding which bodies were genuinely unreachable, and remove the two orphans in `runtime/v4_runtime.ts` (the unused `READ_ONLY_V3_COMMANDS` set and `retiredResponse`'s unused `command` and `args` parameters). Plan validation behavior, the `imm-plan` projection, and the v3 retirement messages are unchanged; the plan-signature helpers, which no production caller reached, are gone.
+
+- [`6ea8283`](https://github.com/dereknex/immune-brain/commit/6ea82832decddf847c420a643e5310b847287c46) Thanks [@dereknex](https://github.com/dereknex)! - Remove the retired authority-observation island — observation, automatic observations, legacy state mapping, readiness, readiness evidence, and authority commit receipts — together with the tests whose only subject was that code, and narrow the published `files` list to match. The TaskRecord v3 read path, the `imm-kernel audit --legacy` reader, and the storage-layout migration stay.
+
+- [`059786f`](https://github.com/dereknex/immune-brain/commit/059786fa462b253f84981901c1e0515824fd12a3) Thanks [@dereknex](https://github.com/dereknex)! - Move the batch preflight both Host adapters duplicated into one shared projection (`runtime/unattended/batch_preflight.ts`): claim ownership, branch availability, working-tree cleanliness against the authorized child scope, reconstructed recovery children, plan digest, and base HEAD are now decided once below the Host boundary, and the post-confirmation drift check re-runs the same implementations. Each adapter keeps only its confirmation transport, failure envelope, and non-interactive refusal. `findExistingActiveBatch` now filters terminal states and has a single implementation, so a settled batch is no longer treated as active — while the settled record's identity still drives the runner's idempotent terminal replay instead of a parallel run.
+
+- [`482b132`](https://github.com/dereknex/immune-brain/commit/482b1321bd49ca32e8bd00713f8f9805254280c5) Thanks [@dereknex](https://github.com/dereknex)! - Make one frozen table (`runtime/unattended/batch_reasons.ts`) the only producer of batch-gate reason and recovery prose on both Hosts, so the same condition reads identically by construction instead of because two copies still agree. Every migrated message keeps its exact text and recovery action; only a Host's own transport form (a returned envelope versus a thrown native error) stays with that Host. The dual-host parity assertions that compared the two adapters' reason strings are retired and restated as the property that can still fail: no adapter may carry a copy of the table's prose again.
+
+- [`3635893`](https://github.com/dereknex/immune-brain/commit/36358931becdc469daa379535093982170a80b02) Thanks [@dereknex](https://github.com/dereknex)! - ADR-0008 now matches the batch runtime it describes and is settled. Its
+  reuse/expiry decision is attributed to the shared implementation that owns it —
+  `projectBatchPreflight`, `authorizeBatch`, and `projectBatchDrift` in
+  `runtime/unattended/batch_preflight.ts`, with the blocker names it reuses nothing
+  for — instead of the pre-extraction claim, and the record states the shipped
+  decision (status `accepted`) with the persisted-capability and widened-window
+  options kept as rejected alternatives.
+
+- [`5b2b9e4`](https://github.com/dereknex/immune-brain/commit/5b2b9e4870f125acbdae1b159875d2a5d0afa098) Thanks [@dereknex](https://github.com/dereknex)! - A settled Initiative is no longer treated as a resume: `projectBatchPreflight` and `projectBatchDrift` now derive `is_resuming` once from the active batch record, so a fresh batch over a settled record issues the default 8h budget instead of inheriting an expired deadline from the old run (which made authorization impossible), while the settled record's children still replay from their own states instead of every child being reconstructed as `already_settled`.
+
+- [`6c66311`](https://github.com/dereknex/immune-brain/commit/6c6631157ed70f7afeb278fec4961c87ed015710) Thanks [@dereknex](https://github.com/dereknex)! - Both Host adapters now call one shared authorization flow (`authorizeBatch` in `runtime/unattended/batch_preflight.ts`) after the shared preflight: the ADR-0005 reuse/expiry decision, the literal-user gate, the post-gate claim/drift cascade, and the `BatchAuthorizationBinding` construction live below the Host boundary. The Pi and Claude adapters keep only their own gate transport, confirmation reference, and failure-envelope shape, so a batch decision can no longer drift between the two Hosts.
+
+- [`9180330`](https://github.com/dereknex/immune-brain/commit/9180330144529e7f34048cf721e1433f84a9ac1f) Thanks [@dereknex](https://github.com/dereknex)! - The non-interactive refusal in the Pi batch entry point lives in one helper the
+  registered tool surface and the batch entry point both call, so the refusal text
+  and its recovery hint cannot drift between them. The comment that described
+  `isOwnBatchClaim` while sitting above an unrelated interface moves to the
+  function's own definition in `runtime/unattended/batch_preflight.ts`, where it
+  also records the evidence it checks and why `confirmation_time` is deliberately
+  not part of it.
+
+- [`fe9b2fe`](https://github.com/dereknex/immune-brain/commit/fe9b2fe5ced50188d7cc2c9e12f1bbe3403268c5) Thanks [@dereknex](https://github.com/dereknex)! - Two suites now prove behavior by running it. The batch-plan Spec-binding refusal
+  is driven through `enrollCanaryTask` itself — for a child with no Spec path, one
+  with a single declared half, and one whose two halves never pair — and asserted
+  on the refusal the enrollment path returns, with no TaskRecord or claim written.
+  The dual-host conformance scenarios that proved adapter routing by matching
+  adapter source text now drive the real entry points: a cancelled breaking
+  revision against a git that lies about `update-index` must surface the shared
+  restore failure on both Hosts, and `request_authorization` on each Host must
+  answer with the shared authorization derivation.
+
+- [`3b7c31f`](https://github.com/dereknex/immune-brain/commit/3b7c31fb2d03ff2843189953b55c3c4ee458a178) Thanks [@dereknex](https://github.com/dereknex)! - ADR-0006 and ADR-0007 record the decisions they were drafted around instead of
+  an open options list: the Review handoff stays a foreground obligation of the
+  literal user's Host session and the runtime never dispatches or receipts a
+  reviewer, and a parked child keeps its claim with no second record introduced.
+  Both records carry `status: accepted`, and their unimplemented options move to
+  rejected alternatives with the reasons that keep them rejected.
+
+- [`5605ba6`](https://github.com/dereknex/immune-brain/commit/5605ba6c6d5725d165d7ab96ed39c87ec5d8140b) Thanks [@dereknex](https://github.com/dereknex)! - ADR-0009 records the accepted decision that the three settled Slices frozen on
+  bun `1.3.14` — `wc-host-neutral-contract-tool-names`, `wc-behavioral-guardrails`,
+  and `wc-batch-resume-single-gate` — permanently lose their frozen re-verification
+  path once the host runner moved to `1.4.2`, which
+  `runtime/assurance/verification.ts`'s `assertRunnerCompatible` now refuses. Their
+  `1.3.14` descriptors stay as historical evidence, and protection for shipped
+  Slices is `main`'s standing test suite rather than a re-openable frozen artifact.
+
+- [`d5db962`](https://github.com/dereknex/immune-brain/commit/d5db962312f9283f17cde4066df35611e4fcce5f) Thanks [@dereknex](https://github.com/dereknex)! - The Claude Host pays for the post-settlement GitHub tracker projection only when
+  the call actually settled its task. `withTerminalTracker` reads the Kernel
+  identity the shared step needs through `settledKernelResult`, which admits the
+  coordinator's `completed`/`stopped` outcomes and a committed `done`/`stopped`
+  lifecycle, so an advance, review submission, or privileged mutation that leaves
+  the task active no longer spends a full projection read on a tracker step that
+  could not have marked anything.
+
+- [`8ad09cb`](https://github.com/dereknex/immune-brain/commit/8ad09cba2ffac0fdf2f735694c42f463a5e8cc36) Thanks [@dereknex](https://github.com/dereknex)! - The Spec-binding refusal now names what the TaskIntent still has to add, and the
+  Claude bundle is regenerated with it. `inspectSpecBinding`'s binding_missing
+  fallback is reachable for the scope_hint shapes that declare Spec halves which
+  never pair, and it returns those concrete unpaired paths instead of an empty
+  `missing` and a generic message; the genuinely-empty case keeps its generic
+  message because it has no path to name, and a complete pair carrying an unpaired
+  half stays `binding_incomplete`. `batch_plan.ts` renders the paths of every
+  refusal that carries them through one branch, so its unreachable
+  `SPEC_BINDING_REASONS.binding_incomplete` entry is gone.
+
+- [`146dd14`](https://github.com/dereknex/immune-brain/commit/146dd1442b3cd2c259d57fa7002f28ee4f1daf1b) Thanks [@dereknex](https://github.com/dereknex)! - The coverage retired with `tests/kernel-r2a-boundary.test.ts` has a named
+  successor in `tests/kernel-shadow-cli.test.ts`: the unknown-command case now
+  also exercises the literal `readiness --json` invocation, asserting the same
+  `invalid_command` refusal with `.imm/state/workspace.json` left uncreated, and
+  records that the retired top-level token deliberately appends no friction journal
+  entry while the arbitrary unknown token still does.
+
+- [`ab02218`](https://github.com/dereknex/immune-brain/commit/ab02218469926f49cdd4a2b6dee4e4580849d805) Thanks [@dereknex](https://github.com/dereknex)! - `noUnusedLocals` is enabled, so an unused import or local now fails
+  `bun run typecheck` instead of surviving review, and the unused symbols it
+  surfaced are gone: the orphaned imports S9/S13 left behind in the Claude port and
+  both Pi extension entries, plus the pre-existing unused imports, constants, and
+  locals in the rest of the runtime and scripts. Two removals keep the effect they
+  had — the Claude enrollment call and the Kernel authority consume still run as
+  statements — and the checked-in Claude bundle is regenerated.
+
+- [`0f034bc`](https://github.com/dereknex/immune-brain/commit/0f034bca7b0be806a1e5b23503ca59620aa9cb0a) Thanks [@dereknex](https://github.com/dereknex)! - The superseded source-text guards are retired now that the behavioral guards cover the same regressions across both Host adapters. The batch worktree/push prohibition no longer scans runner sources for the words: a second behavioral leg drives the Pi and Claude batch entry points against a recording `git` and asserts neither adapter emits a mutating, `worktree`, or `push` vector, alongside the existing runtime leg. The v3-island suite drops its test-file-path coverage table in favour of the production import closure, and its retirement scans now cover `plugins/immune-brain/.pi-extension/` as well as `runtime/claude/`, asserted explicitly so neither adapter can fall out of scope.
+
+- [`760d3ee`](https://github.com/dereknex/immune-brain/commit/760d3ee73abc05b947a406295e6c296dab44eada) Thanks [@dereknex](https://github.com/dereknex)! - The Claude Host's post-settlement GitHub tracker projection no longer runs inside the `authorize` try/catch that owns Kernel-mutation rollback: a projection failure that happens after `app.execute` has already committed can no longer restore the staged intent or rethrow an error a caller could read as "the mutation did not happen" and retry. The committed result is returned unchanged, with the tracker failure reported beside it as a retryable observation failure.
+
+- [`be260b2`](https://github.com/dereknex/immune-brain/commit/be260b203a294dc58c62bb5e494ec76d215840d2) Thanks [@dereknex](https://github.com/dereknex)! - The packaged-contract tool-surface guard no longer passes silently when a contract names a Tool that no Host registers: a backticked name the contract itself spells as a `Tool`/`Operation` is now a failure when it resolves on zero Host surfaces, not only when it resolves on one. Its pre-change comparison also reads the actual pre-change contract text at test time (`git show aecf5dd^:<path>`) instead of a hardcoded paraphrase, so the case that proves the guard catches the HTN-2 regression cannot drift from what the guard really rejected.
+
 ## 3.6.9
 
 ### Patch Changes
