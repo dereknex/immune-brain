@@ -124,6 +124,17 @@ always run sequentially.
 - Do not translate or rename machine contracts: schema fields, enum values,
   CLI flags, JSON keys, file paths, tool names, API names,
   and code identifiers stay literal.
+- Host-native UI text (Task Rail sentences, authority dialog titles and
+  actions, enrollment progress summaries) is deterministic extension code and
+  cannot follow conversational rules; users localize it with the
+  `IMM_UX_LANGUAGE` environment variable (for example `IMM_UX_LANGUAGE=zh`).
+  Only sentence-level interaction text follows it; machine contracts, domain
+  field labels, and agent-facing Tool result reasons stay literal English.
+- Internal role dispatches (`dispatch_role` and routed role contexts) carry
+  the user-facing interaction language as `interaction_language` in the
+  delegation context, so QA/Review/Explorer roles report in the user's
+  language while keeping machine contracts literal. Omit it to keep English
+  role output.
 - Preserve `CONTEXT.md` canonical terms such as `Step`, `Plan`, `Spec`,
   `Skill`, `Brainstorm`, `Executor`, `QA`, `Compounder`, `Learning`, and `ADR`;
   add local-language explanations around them when helpful.

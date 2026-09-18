@@ -65,6 +65,10 @@ import {
 	type UserAttentionReason,
 } from "./pi-canary-interaction";
 import { isToolFailureState, throwToolFailure, type ToolFailureV1 } from "./pi-canary-tool-failure";
+import { resolveUxLanguage, uxText } from "./ux-language";
+
+/** Host-native UI language; see ux-language.ts. Resolved once per process. */
+const UX_LANG = resolveUxLanguage();
 import { taskDiffIdentity, taskRevisionIdentity, captureGitTaskSnapshot } from "../runtime/workspace_scope";
 import { reviewAdvisoryRecords, reviewReworkFindings } from "../runtime/assurance/coordinator";
 import {
@@ -323,7 +327,7 @@ export default function (
 					task_id: claim.task_id,
 					state: "Blocked",
 					result: projection.error,
-					next: "Inspect authority state",
+					next: uxText(UX_LANG, "Inspect authority state", "检查权限状态"),
 				});
 				return;
 			}
@@ -395,8 +399,8 @@ export default function (
 			if (input?.task_id) presentTaskRail(ctx, {
 				task_id: input.task_id,
 				state: "Planning",
-				result: "Preparing enrollment",
-				next: "Review the native enrollment decision",
+				result: uxText(UX_LANG, "Preparing enrollment", "正在准备 Enrollment"),
+				next: uxText(UX_LANG, "Review the native enrollment decision", "请审查原生 Enrollment 决策"),
 			});
 		}
 	});
@@ -871,24 +875,24 @@ export default function (
 		presentTaskRail(ctx, {
 			task_id: taskId,
 			state: "Approval required",
-			result: `${operation} requires your confirmation`,
-			next: `Decide ${operation}`,
+			result: uxText(UX_LANG, `${operation} requires your confirmation`, `${operation} 需要您的确认`),
+			next: uxText(UX_LANG, `Decide ${operation}`, `请决策 ${operation}`),
 		});
 		const attention = {
 			attention_id: randomUUID(),
 			task_id: taskId,
 			reason: attentionReason,
-			label: `${operation} approval required`,
+			label: uxText(UX_LANG, `${operation} approval required`, `${operation} 待您批准`),
 		};
 		try {
 			const selected = await requestAuthorityDialog(pi, ctx, attention, {
-				title: `Authorize ${operation}?`,
+				title: uxText(UX_LANG, `Authorize ${operation}?`, `是否批准 ${operation}？`),
 				summary: dialogSummary,
 				details: dialogDetails,
 				signal: ctx.signal,
 				actions: [
-					{ value: "authorize", label: "Authorize", description: `Apply ${operation} after re-checking state` },
-					{ value: "cancel", label: "Cancel", description: "Leave managed authority unchanged" },
+					{ value: "authorize", label: uxText(UX_LANG, "Authorize", "批准"), description: uxText(UX_LANG, `Apply ${operation} after re-checking state`, `重新校验状态后应用 ${operation}`) },
+					{ value: "cancel", label: uxText(UX_LANG, "Cancel", "取消"), description: uxText(UX_LANG, "Leave managed authority unchanged", "保持托管权限状态不变") },
 				],
 			});
 			confirmed = selected === "authorize";

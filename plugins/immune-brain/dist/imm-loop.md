@@ -164,6 +164,14 @@ explicit runtime-supported role boundary requests it, followed by the returned
 foreground Agent envelope exactly. It is not an extra gate on Kernel Assurance.
 All internal Agent envelopes use `run_in_background: false`.
 
+Role dispatches follow the user's interaction language: include
+`"interaction_language"` in the `dispatch_role` or routed role context with
+the current reply language (the current explicit user instruction, else the
+project `AGENTS.md` reply-language default, for example `"中文"` or
+`"English"`), so role findings and summaries arrive in the user's language.
+Machine contracts stay literal regardless. Omit the field to keep English
+role output.
+
 The internal Compounder is optional: only closed work with structured evidence
 of a reusable Learning may route to it. Routine completion creates no Learning.
 It cannot approve successors or delay terminal settlement. A projection with
