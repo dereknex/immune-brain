@@ -1,7 +1,6 @@
 {
   "contract": "assurance_kernel/task_intent/v1",
   "task_id": "close-taskrecord-v3-drain-window",
-  "owner": "user",
   "goal": "Narrow the live TaskRecord union from TaskRecordV3 | TaskRecordV4 to TaskRecordV4 alone, rejecting a v3-contract record at every live reducer/coordinator entry point instead of letting it progress to completion, while extracting TaskRecordV2/TaskRecordV3 and their frozen parsers into a dedicated historical-only module that readAuditTaskPair keeps using to read existing .imm/audit/ v2 and v3 terminal records unchanged.",
   "acceptance": [
     {
@@ -27,6 +26,7 @@
   ],
   "scope_hint": [
     "docs/plans/close-taskrecord-v3-drain-window.intent.json",
+    "docs/specs/archive/close-taskrecord-v3-drain-window.spec.md",
     "docs/specs/close-taskrecord-v3-drain-window.spec.md",
     "plugins/immune-brain/runtime/claude/kernel_ports.ts",
     "plugins/immune-brain/runtime/kernel/assurance_projection.ts",
@@ -46,5 +46,6 @@
     "tests/task-record-durability.test.ts"
   ],
   "risk": "critical",
-  "revision": 1
+  "revision": 2,
+  "owner": "user"
 }
