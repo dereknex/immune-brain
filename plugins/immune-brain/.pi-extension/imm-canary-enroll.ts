@@ -37,6 +37,10 @@ import {
 	type UserAttentionReason,
 } from "./pi-canary-interaction";
 import { isToolFailureState, throwToolFailure } from "./pi-canary-tool-failure";
+import { resolveUxLanguage, uxText } from "./ux-language";
+
+/** Host-native UI language; see ux-language.ts. Resolved once per process. */
+const UX_LANG = resolveUxLanguage();
 
 const TASK_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 
@@ -62,7 +66,7 @@ async function requestEnrollmentConfirmation(
 		task_id: taskId,
 		state: "Approval required",
 		result: title,
-		next: "Review enrollment evidence",
+		next: uxText(UX_LANG, "Review enrollment evidence", "请审查 Enrollment 证据"),
 	});
 	const selected = await requestAuthorityDialog(pi, ctx, {
 		attention_id: randomUUID(),
@@ -75,8 +79,8 @@ async function requestEnrollmentConfirmation(
 		details,
 		signal,
 		actions: [
-			{ value: "confirm", label: "Confirm enrollment", description: "Create the Kernel-managed task" },
-			{ value: "cancel", label: "Cancel", description: "Leave planning artifacts and authority unchanged" },
+			{ value: "confirm", label: uxText(UX_LANG, "Confirm enrollment", "确认 Enrollment"), description: uxText(UX_LANG, "Create the Kernel-managed task", "创建 Kernel 托管任务") },
+			{ value: "cancel", label: uxText(UX_LANG, "Cancel", "取消"), description: uxText(UX_LANG, "Leave planning artifacts and authority unchanged", "不改动规划产物与权限状态") },
 		],
 	});
 	return selected === "confirm";
@@ -305,7 +309,7 @@ async function executeForegroundEnrollment(
 
 	try {
 		signal.throwIfAborted();
-		progress("preparing", `Preparing immutable Kernel owners for ${taskId}`);
+		progress("preparing", uxText(UX_LANG, `Preparing immutable Kernel owners for ${taskId}`, `正在为 ${taskId} 准备不可变 Kernel 所有者`));
 		const now = new Date().toISOString();
 		let taskIntent: Awaited<ReturnType<typeof readTaskIntent>>;
 
@@ -489,13 +493,13 @@ async function executeForegroundEnrollment(
 				`Owners: intent+workspace+claim+record checked`,
 				`Route: Kernel enrollment`,
 			].join("\n");
-			progress("awaiting_confirmation", "Waiting for exact literal-user confirmation");
+			progress("awaiting_confirmation", uxText(UX_LANG, "Waiting for exact literal-user confirmation", "等待本人确认"));
 			const confirmed = await requestEnrollmentConfirmation(
 				pi,
 				ctx,
 				taskId,
 				"enrollment",
-				"Create Kernel-managed task?",
+				uxText(UX_LANG, "Create Kernel-managed task?", "创建 Kernel 托管任务？"),
 				confirmationSummary,
 				confirmationDetails,
 				signal,
@@ -526,7 +530,7 @@ async function executeForegroundEnrollment(
 				return terminal(action, taskId, "blocked", stage, "Intent changed after confirmation; enrollment aborted before authority", "restore the intended snapshot and rerun enrollment");
 		}
 
-		progress("revalidating", "Revalidating immutable owners and the confirmed TaskIntent");
+		progress("revalidating", uxText(UX_LANG, "Revalidating immutable owners and the confirmed TaskIntent", "正在重新校验不可变所有者与已确认的 TaskIntent"));
 		const { unchanged } = await revalidatePiCanary(root, { task_id: taskId, now }, preparation);
 		if (!unchanged)
 			return terminal(action, taskId, "blocked", stage, "Workspace changed after confirmation; enrollment aborted before authority", "restore the intended snapshot and rerun enrollment");
@@ -555,7 +559,7 @@ async function executeForegroundEnrollment(
 			now,
 		};
 
-		progress("rehearsing", "Running the zero-write Kernel owner rehearsal");
+		progress("rehearsing", uxText(UX_LANG, "Running the zero-write Kernel owner rehearsal", "正在执行 Kernel 所有者零写入预演"));
 		const rehearsal = await runEnrollmentRehearsal(root, input, capability, registry);
 		if (!rehearsal.rehearsed || rehearsal.evidence.outcome !== "ready")
 			return terminal(action, taskId, "failed", stage, `Kernel enrollment rehearsal failed: ${rehearsal.evidence.blockers.join("; ")}`, "resolve the final-lock preconditions and retry");

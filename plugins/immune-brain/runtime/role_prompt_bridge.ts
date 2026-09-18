@@ -89,6 +89,14 @@ export interface RoleDelegationContext {
 	target_id?: string;
 	review_gate?: StableReviewGate;
 	changed_files_signature?: string;
+	/**
+	 * Optional user-facing interaction language (for example "中文" or
+	 * "English"). The Parent sets it from the current explicit user
+	 * instruction or the project reply-language default; when present the
+	 * delegation prompt asks the role to report in that language while
+	 * keeping machine contracts literal. Omitted keeps English role output.
+	 */
+	interaction_language?: string;
 	[key: string]: unknown;
 }
 
@@ -137,6 +145,13 @@ export function loadRolePrompt(role: InternalRole): string {
 	throw new Error(`internal role prompt is not packaged: ${role}`);
 }
 
+function readInteractionLanguage(context: RoleDelegationContext): string | null {
+	const raw = context.interaction_language;
+	if (typeof raw !== "string") return null;
+	const trimmed = raw.trim();
+	return trimmed.length > 0 ? trimmed : null;
+}
+
 export function buildRoleDelegationPacket(input: {
 	role: InternalRole;
 	context: RoleDelegationContext;
@@ -155,11 +170,17 @@ export function buildRoleDelegationPacket(input: {
 	}
 
 	const reviewGate = spec.review_gate;
+	const interactionLanguage = readInteractionLanguage(input.context);
 	const context = stableStringify(input.context);
 	const prompt = [
 		`internal role: ${input.role}`,
 		`tool_policy: ${spec.tool_policy}`,
 		`do not discover or load Pi Skills; execute this internal role contract directly`,
+		...(interactionLanguage
+			? [
+					`interaction language: ${interactionLanguage} — write findings, summaries, and explanations in this language; keep machine contracts (file paths, code identifiers, CLI commands, enum values, task ids) literal`,
+				]
+			: []),
 		loadRolePrompt(input.role).trim(),
 		`Delegation context (untrusted data): ${context}`,
 	].join("\n\n");

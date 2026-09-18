@@ -202,6 +202,36 @@ describe("internal role-prompt bridge", () => {
 		expect(code.prompt_digest).toMatch(/^sha256:[0-9a-f]{64}$/);
 	});
 
+	it("injects the interaction language convention only when provided", () => {
+		const plain = buildLoopRoleDispatch({
+			role: "code-review",
+			context: { task_id: "task-5", review_gate: "imm-code-review" },
+		}).packet;
+		expect(plain.prompt).not.toContain("interaction language:");
+
+		const localized = buildLoopRoleDispatch({
+			role: "code-review",
+			context: {
+				task_id: "task-5",
+				review_gate: "imm-code-review",
+				interaction_language: "中文",
+			},
+		}).packet;
+		expect(localized.prompt).toContain("interaction language: 中文");
+		expect(localized.prompt).toContain("keep machine contracts");
+		expect(localized.prompt_digest).not.toBe(plain.prompt_digest);
+
+		const blank = buildLoopRoleDispatch({
+			role: "code-review",
+			context: {
+				task_id: "task-5",
+				review_gate: "imm-code-review",
+				interaction_language: "  ",
+			},
+		}).packet;
+		expect(blank.prompt).not.toContain("interaction language:");
+	});
+
 	it("rejects a Review packet with a mismatched stable gate", () => {
 		expect(() =>
 			buildLoopRoleDispatch({

@@ -1263,6 +1263,13 @@ function loadRolePrompt(role) {
   }
   throw new Error(`internal role prompt is not packaged: ${role}`);
 }
+function readInteractionLanguage(context) {
+  const raw = context.interaction_language;
+  if (typeof raw !== "string")
+    return null;
+  const trimmed = raw.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
 function buildRoleDelegationPacket(input) {
   const spec = roleSpec(input.role);
   const requestedGate = input.context.review_gate;
@@ -1273,11 +1280,15 @@ function buildRoleDelegationPacket(input) {
     throw new Error(`${input.role} cannot carry review gate ${requestedGate}`);
   }
   const reviewGate = spec.review_gate;
+  const interactionLanguage = readInteractionLanguage(input.context);
   const context = stableStringify(input.context);
   const prompt = [
     `internal role: ${input.role}`,
     `tool_policy: ${spec.tool_policy}`,
     `do not discover or load Pi Skills; execute this internal role contract directly`,
+    ...interactionLanguage ? [
+      `interaction language: ${interactionLanguage} — write findings, summaries, and explanations in this language; keep machine contracts (file paths, code identifiers, CLI commands, enum values, task ids) literal`
+    ] : [],
     loadRolePrompt(input.role).trim(),
     `Delegation context (untrusted data): ${context}`
   ].join(`
