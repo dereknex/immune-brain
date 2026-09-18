@@ -1,0 +1,495 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "close-taskrecord-v3-drain-window",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "close-taskrecord-v3-drain-window",
+    "goal": "Narrow the live TaskRecord union from TaskRecordV3 | TaskRecordV4 to TaskRecordV4 alone, rejecting a v3-contract record at every live reducer/coordinator entry point instead of letting it progress to completion, while extracting TaskRecordV2/TaskRecordV3 and their frozen parsers into a dedicated historical-only module that readAuditTaskPair keeps using to read existing .imm/audit/ v2 and v3 terminal records unchanged.",
+    "acceptance": [
+      {
+        "id": "AC1",
+        "assertion": "A v3-contract TaskRecord fed through the live reducer (reduceTask) is rejected instead of progressing its lifecycle to done; the existing test's core assertion is rewritten to prove rejection, not deleted.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.4.2\",\n  \"argv\": [\n    \"test\",\n    \"tests/kernel-assurance-obligation.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 60000,\n  \"max_output_bytes\": 65536\n}\n"
+      },
+      {
+        "id": "AC2",
+        "assertion": "The dual-host conformance test's v3 case is rewritten (title and body) so a v3-contract record fails closed through coordinator.advance()/submitReview() for both the Claude and Pi host adapters, identically to how vFuture, stale identity, and concurrent continuation already fail closed in the same test.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.4.2\",\n  \"argv\": [\n    \"test\",\n    \"tests/dual-host-assurance-conformance.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 131072\n}\n"
+      },
+      {
+        "id": "AC3",
+        "assertion": "readAuditTaskPair and its callers continue reading existing .imm/audit/ v2 and v3 terminal records unchanged through the relocated frozen historical reader module.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.4.2\",\n  \"argv\": [\n    \"test\",\n    \"tests/kernel-storage-layout-migration.test.ts\",\n    \"tests/task-record-durability.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 131072\n}\n"
+      },
+      {
+        "id": "AC4",
+        "assertion": "v4-only live-path reducer and risk-downgrade-guard behavior is unaffected by the narrowing, and the frozen parseTaskRecordV3/parseTaskRecordV2 parser-level tests keep passing from their new historical-only module location.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.4.2\",\n  \"argv\": [\n    \"test\",\n    \"tests/kernel-r2c2-reducer.test.ts\",\n    \"tests/risk-downgrade-guard.test.ts\",\n    \"tests/kernel-record-v3.test.ts\",\n    \"tests/kernel-record-v4.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 131072\n}\n"
+      }
+    ],
+    "scope_hint": [
+      "docs/plans/close-taskrecord-v3-drain-window.intent.json",
+      "docs/specs/archive/close-taskrecord-v3-drain-window.spec.md",
+      "docs/specs/close-taskrecord-v3-drain-window.spec.md",
+      "plugins/immune-brain/dist/claude/mcp-server.mjs",
+      "plugins/immune-brain/runtime/claude/kernel_ports.ts",
+      "plugins/immune-brain/runtime/kernel/assurance_projection.ts",
+      "plugins/immune-brain/runtime/kernel/index.ts",
+      "plugins/immune-brain/runtime/kernel/legacy_task_record.ts",
+      "plugins/immune-brain/runtime/kernel/reducer.ts",
+      "plugins/immune-brain/runtime/kernel/sqlite_migration.ts",
+      "plugins/immune-brain/runtime/kernel/storage.ts",
+      "plugins/immune-brain/runtime/kernel/types.ts",
+      "plugins/immune-brain/runtime/kernel/validation.ts",
+      "plugins/immune-brain/runtime/unattended/batch_git.ts",
+      "plugins/immune-brain/runtime/unattended/batch_preflight.ts",
+      "tests/dual-host-assurance-conformance.test.ts",
+      "tests/kernel-assurance-obligation.test.ts",
+      "tests/kernel-r2c2-boundary.test.ts",
+      "tests/kernel-r2c2-reducer.test.ts",
+      "tests/kernel-record-v3.test.ts",
+      "tests/kernel-record-v4.test.ts",
+      "tests/kernel-storage-layout-migration.test.ts",
+      "tests/risk-downgrade-guard.test.ts",
+      "tests/task-record-durability.test.ts"
+    ],
+    "risk": "critical",
+    "revision": 5,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/archive/close-taskrecord-v3-drain-window.intent.json",
+    "content_hash": "sha256:8abbc03aec047544c4cf4532a5278348627bfc033f4c2019be8eb11f48264f84"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:07a03579b6dcfa6ee3362a1dd16c566ea0dec9ce12ed9b9a07a0a60c17411645",
+  "git_base_head": "754105dc5abd1a1007d6df5d1c101b612ab38b8a",
+  "attestations": [
+    {
+      "id": "approval-qa-264c7494",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:835e3b128bf69f35adefbf582d96f519d605597588d25c2b4c68f9840c253a42",
+      "diff_hash": "sha256:42de73330a0d0293dadb27b2d5f92f9b4ca8be2a4778200c27cc1059ff4aa349",
+      "actor_id": "deterministic-qa",
+      "summary": "all 4 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "AC3",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "AC4",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-3748fa1f",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 3,
+      "intent_content_hash": "sha256:c08f2b2f1897c5770238b738d48d0399eec3304e7719202f62177c9872a33627",
+      "diff_hash": "sha256:471e8c8e21ebd882caa9ee80de4130befb09713f6550313879a6bac3d3b35fbc",
+      "actor_id": "deterministic-qa",
+      "summary": "all 4 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "AC3",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "AC4",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-98609b3e",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 4,
+      "intent_content_hash": "sha256:5b3cbb3682e95d6d9b32a9395cbd81a9d4ea242f588446f4c2196a8b5095be1a",
+      "diff_hash": "sha256:6f4c2f2aafab00bf1aff392f5c4bb9f8dc857997e092f964925dd997ef1c740e",
+      "actor_id": "deterministic-qa",
+      "summary": "all 4 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "AC3",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "AC4",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-1ecfb349",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 5,
+      "intent_content_hash": "sha256:8abbc03aec047544c4cf4532a5278348627bfc033f4c2019be8eb11f48264f84",
+      "diff_hash": "sha256:7562311f1b32ac7b0177461e795b1d70e22dec797833f208dc0671bb01fe12a4",
+      "actor_id": "deterministic-qa",
+      "summary": "all 4 fixed verification descriptor(s) passed",
+      "acceptance_results": [
+        {
+          "acceptance_id": "AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "AC3",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 fixed verification descriptor(s) passed"
+        },
+        {
+          "acceptance_id": "AC4",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 fixed verification descriptor(s) passed"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-d623acd0",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 5,
+      "intent_content_hash": "sha256:8abbc03aec047544c4cf4532a5278348627bfc033f4c2019be8eb11f48264f84",
+      "diff_hash": "sha256:7562311f1b32ac7b0177461e795b1d70e22dec797833f208dc0671bb01fe12a4",
+      "actor_id": "parent-mediated-review",
+      "summary": "TaskRecord live-path narrowed to v4-only with reduceTask/parseTaskRecord rejecting v3 at entry, dual-host fail-closed test rewritten for both adapters, and readAuditTaskPair's v2/v3 historical read path cleanly relocated to legacy_task_record.ts with no dangling imports or coverage loss.",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "754105dc5abd1a1007d6df5d1c101b612ab38b8a",
+        "review_commit": "4ee522a702c950f4ae9bc72dbf08dacdc975f9e9",
+        "review_tree": "66909c22a8b740265e8ecca7bd5c0cb38a775074",
+        "manifest_digest": "sha256:cd31f176939da6e4d35b9d610e0d9ad138e644639375f0474f71473de764a065"
+      }
+    }
+  ],
+  "findings": [
+    {
+      "id": "review-f2d76cd720a6-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "AC3",
+      "source": "review",
+      "review_round": 1,
+      "summary": "storage.ts's readAuditTaskPair (and assurance_projection.ts) import parseTaskRecordV2/parseTaskRecordV3/TaskRecordV2 from ./legacy_task_record, but that module is absent from the pinned review tree, so the 'relocated frozen historical reader module' AC3 requires does not exist and the import cannot resolve.",
+      "anchor": "sha256:413a0506cc6e1fc1de66516d31405620819a2fb82ba72d7213514b7bb3f89592",
+      "evidence": {
+        "trigger": "Resolving the import at plugins/immune-brain/runtime/kernel/storage.ts:60 (`import { parseTaskRecordV2, parseTaskRecordV3, type TaskRecordV2 } from \"./legacy_task_record\"`) against review tree 305365aec0b8d08d4e8c39db3a4299a2089efd6f; `git cat-file -e 7ff528f7f7eb59f0d8e87aff9ec912b40f7c1c5c:plugins/immune-brain/runtime/kernel/legacy_task_record.ts` returns 'fatal: path plugins/immune-brain/runtime/kernel/legacy_task_record.ts exists on disk, but not in 7ff528f7f7eb59f0d8e87aff9ec912b40f7c1c5c', confirming the file is only present in the live worktree/branch history (e.g. commit e2ca9d2), not in this review's base_head..review_commit diff or its changed_paths/scope.",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/kernel/storage.ts:60 (readAuditTaskPair)",
+          "plugins/immune-brain/runtime/kernel/assurance_projection.ts:24",
+          "plugins/immune-brain/runtime/kernel/legacy_task_record.ts (missing from review tree 305365aec0b8d08d4e8c39db3a4299a2089efd6f)"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "AC3"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-f2d76cd720a6-2-review-2",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "AC4",
+      "source": "review",
+      "review_round": 1,
+      "summary": "tests/kernel-record-v3.test.ts and tests/kernel-record-v4.test.ts import parseTaskRecordV3 from a legacy_task_record module that does not exist in the reviewed revision, so the embedded 'passed' QA outcome for AC4 cannot reflect this pinned diff/tree; module resolution fails before any assertion runs.",
+      "anchor": "sha256:70270e819e85f36cebec8f70a13144c26203e13e862986bcbcb75fa82358fdfd",
+      "evidence": {
+        "trigger": "Loading tests/kernel-record-v3.test.ts:4 (`import { parseTaskRecordV3 } from \"../plugins/immune-brain/runtime/kernel/legacy_task_record\"`) and the identical import in tests/kernel-record-v4.test.ts:4 against review tree 305365aec0b8d08d4e8c39db3a4299a2089efd6f, where `git cat-file -e 7ff528f7f7eb59f0d8e87aff9ec912b40f7c1c5c:plugins/immune-brain/runtime/kernel/legacy_task_record.ts` fails with 'fatal: path ... exists on disk, but not in <commit>'.",
+        "caller_chain": [
+          "tests/kernel-record-v3.test.ts:4",
+          "tests/kernel-record-v4.test.ts:4",
+          "plugins/immune-brain/runtime/kernel/legacy_task_record.ts (missing from review tree 305365aec0b8d08d4e8c39db3a4299a2089efd6f)"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "AC4"
+        }
+      },
+      "counterevidence": null
+    }
+  ],
+  "history": [
+    {
+      "id": "approve_breaking_intent_revision:close-taskrecord-v3-drain-window:2026-09-18T01:00:06.101Z",
+      "at": "2026-09-18T01:00:06.101Z",
+      "type": "approve_breaking_intent_revision",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "intent_revision_2\naction_v2_sha256:b176c4f640a072c27af9bbb72b3502abb0ed841cee2cc790d7295f0b19fcfca0",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "user",
+        "confirmation_ref": "claude-confirm-c80eacc799e53acf",
+        "issued_at": "2026-09-18T01:02:09.125Z",
+        "expires_at": "2026-09-18T01:12:09.125Z"
+      }
+    },
+    {
+      "id": "freeze_artifacts:close-taskrecord-v3-drain-window:2026-09-18T01:02:27.800Z",
+      "at": "2026-09-18T01:02:27.800Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent and Spec frozen at docs/plans/archive/close-taskrecord-v3-drain-window.intent.json"
+    },
+    {
+      "id": "approve_breaking_intent_revision:close-taskrecord-v3-drain-window:2026-09-18T01:11:47.134Z",
+      "at": "2026-09-18T01:11:47.134Z",
+      "type": "approve_breaking_intent_revision",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "intent_revision_2\naction_v2_sha256:a26e086ec30e936c67b258c8016a660185f778ca7d8315801724c92942506f08",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "user",
+        "confirmation_ref": "claude-confirm-7bab40fb491cf23b",
+        "issued_at": "2026-09-18T01:22:50.644Z",
+        "expires_at": "2026-09-18T01:32:50.644Z"
+      }
+    },
+    {
+      "id": "freeze_artifacts:close-taskrecord-v3-drain-window:2026-09-18T01:23:10.015Z",
+      "at": "2026-09-18T01:23:10.015Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent and Spec frozen at docs/plans/archive/close-taskrecord-v3-drain-window.intent.json"
+    },
+    {
+      "id": "record_approval:close-taskrecord-v3-drain-window:2026-09-18T01:23:59.397Z",
+      "at": "2026-09-18T01:23:59.397Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-264c7494\naction_v2_sha256:1d379460b6e50f10087d15ba4ac01342393b104d3c6685985f43b51a65c5a2e7",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "claude:deterministic-qa",
+        "issued_at": "2026-09-18T01:23:59.397Z",
+        "expires_at": "2026-09-18T01:33:59.397Z"
+      }
+    },
+    {
+      "id": "request_rework:close-taskrecord-v3-drain-window:2026-09-18T01:42:14.683Z",
+      "at": "2026-09-18T01:42:14.683Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_1\naction_v2_sha256:c94e2925c78b54d60aa4b45b397002b250e518cd790c0ca869b71aae309e3314",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "claude:parent-mediated-review",
+        "issued_at": "2026-09-18T01:42:14.684Z",
+        "expires_at": "2026-09-18T01:52:14.683Z"
+      }
+    },
+    {
+      "id": "approve_breaking_intent_revision:close-taskrecord-v3-drain-window:2026-09-18T01:42:50.805Z",
+      "at": "2026-09-18T01:42:50.805Z",
+      "type": "approve_breaking_intent_revision",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "intent_revision_3\naction_v2_sha256:d7d55758eb57a9c2e9728f4c3d114ed669742f198c5d29fe3fcb28992e736a32",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "user",
+        "confirmation_ref": "claude-confirm-e45ee9d8e8a01b8f",
+        "issued_at": "2026-09-18T01:43:03.705Z",
+        "expires_at": "2026-09-18T01:53:03.705Z"
+      }
+    },
+    {
+      "id": "resolve_finding:close-taskrecord-v3-drain-window:2026-09-18T01:43:26.923Z",
+      "at": "2026-09-18T01:43:26.923Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-f2d76cd720a6-1-review-1\naction_v2_sha256:cfadb939993602659f6c00076304764289536baca757072a835c504153582b25"
+    },
+    {
+      "id": "resolve_finding:close-taskrecord-v3-drain-window:2026-09-18T01:43:27.714Z",
+      "at": "2026-09-18T01:43:27.714Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-f2d76cd720a6-2-review-2\naction_v2_sha256:849afec43bd9e94df0ae00fdc7330b3a3c87ebf776373ee66770218692159471"
+    },
+    {
+      "id": "freeze_artifacts:close-taskrecord-v3-drain-window:2026-09-18T01:43:37.625Z",
+      "at": "2026-09-18T01:43:37.625Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent and Spec frozen at docs/plans/archive/close-taskrecord-v3-drain-window.intent.json"
+    },
+    {
+      "id": "record_approval:close-taskrecord-v3-drain-window:2026-09-18T01:44:27.751Z",
+      "at": "2026-09-18T01:44:27.751Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-3748fa1f\naction_v2_sha256:9d0cfba41af38caddecfe55b782765d23e57c2a3e71b9227f767f0c4454efaa0",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "claude:deterministic-qa",
+        "issued_at": "2026-09-18T01:44:27.751Z",
+        "expires_at": "2026-09-18T01:54:27.751Z"
+      }
+    },
+    {
+      "id": "approve_breaking_intent_revision:close-taskrecord-v3-drain-window:2026-09-18T01:52:26.291Z",
+      "at": "2026-09-18T01:52:26.291Z",
+      "type": "approve_breaking_intent_revision",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "intent_revision_4\naction_v2_sha256:06ca8f95881d9b35a994993683579045dd8f4aeaefb32b188afdf7d207bea9fb",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "user",
+        "confirmation_ref": "claude-confirm-7e47c601cb97ac7c",
+        "issued_at": "2026-09-18T01:53:46.102Z",
+        "expires_at": "2026-09-18T02:03:46.101Z"
+      }
+    },
+    {
+      "id": "freeze_artifacts:close-taskrecord-v3-drain-window:2026-09-18T01:54:26.531Z",
+      "at": "2026-09-18T01:54:26.531Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent and Spec frozen at docs/plans/archive/close-taskrecord-v3-drain-window.intent.json"
+    },
+    {
+      "id": "record_approval:close-taskrecord-v3-drain-window:2026-09-18T01:55:17.335Z",
+      "at": "2026-09-18T01:55:17.335Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-98609b3e\naction_v2_sha256:bb66245e98d8c3d52010b240284d86b70ea08d6931e9e1da9ec0ee50d952f287",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "claude:deterministic-qa",
+        "issued_at": "2026-09-18T01:55:17.335Z",
+        "expires_at": "2026-09-18T02:05:17.335Z"
+      }
+    },
+    {
+      "id": "approve_breaking_intent_revision:close-taskrecord-v3-drain-window:2026-09-18T02:03:29.934Z",
+      "at": "2026-09-18T02:03:29.934Z",
+      "type": "approve_breaking_intent_revision",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "intent_revision_5\naction_v2_sha256:1d2c874cc685db2c5795a77ec9eb1cad3389da8b38e7505024c15206aa5c2d33",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "user",
+        "confirmation_ref": "claude-confirm-f8198344af932ac2",
+        "issued_at": "2026-09-18T02:03:37.301Z",
+        "expires_at": "2026-09-18T02:13:37.301Z"
+      }
+    },
+    {
+      "id": "freeze_artifacts:close-taskrecord-v3-drain-window:2026-09-18T02:03:55.089Z",
+      "at": "2026-09-18T02:03:55.089Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent and Spec frozen at docs/plans/archive/close-taskrecord-v3-drain-window.intent.json"
+    },
+    {
+      "id": "record_approval:close-taskrecord-v3-drain-window:2026-09-18T02:04:50.913Z",
+      "at": "2026-09-18T02:04:50.913Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-1ecfb349\naction_v2_sha256:5efdc1b9c73261bde283db3b6214b74ab154fa3f33ee3468ae117c2a245ef9b4",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "claude:deterministic-qa",
+        "issued_at": "2026-09-18T02:04:50.914Z",
+        "expires_at": "2026-09-18T02:14:50.914Z"
+      }
+    },
+    {
+      "id": "record_approval:close-taskrecord-v3-drain-window:2026-09-18T02:11:23.968Z",
+      "at": "2026-09-18T02:11:23.968Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-d623acd0\naction_v2_sha256:97c974f1e18c32c2ad4a92726893c9650327b70b6ba10c67919e382c6d17148f",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "claude:parent-mediated-review",
+        "issued_at": "2026-09-18T02:11:23.968Z",
+        "expires_at": "2026-09-18T02:21:23.968Z"
+      }
+    },
+    {
+      "id": "complete:close-taskrecord-v3-drain-window:2026-09-18T02:11:25.327Z",
+      "at": "2026-09-18T02:11:25.327Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:ed2fed4445c83ea54a71aafdebf558678121c231ca14bf24eaf749ee1ed5dae2"
+    }
+  ]
+}
