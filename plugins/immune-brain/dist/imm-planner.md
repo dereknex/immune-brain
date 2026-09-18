@@ -133,6 +133,13 @@ file creation; then it validates the created artifact with
 continue through Kernel `revise_intent` authority and are not a Planner
 overwrite path.
 
+Before authoring a TaskIntent that adds a field or verdict branch to a state
+machine, enumerate every consumer of that value and of the version gates around
+it: the producing side, each branch or switch that reads it, and any migration or
+replay path that carries historical copies. Name all of them in `scope_hint`. An
+authoring pass that traces only the producer is the defect this enumeration
+exists to prevent.
+
 ### Initiative Carrier Preference
 
 For a large proposal split across multiple TaskIntents, exactly one planning

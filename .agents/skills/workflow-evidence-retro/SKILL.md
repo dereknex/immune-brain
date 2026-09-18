@@ -34,6 +34,8 @@ Completion: every displayed count is reproducible with a bounded read-only comma
 
 Read all findings and relevant event sequences for the sample, not only keyword matches. For each proposed pattern, cite exact record paths and finding/event IDs; separate observed facts, plausible explanations and unknowns. Classify useful quality catches separately from process faults and literal user decisions. Check counterexamples before ranking.
 
+Aggregate per task before proposing any pattern: group rounds by task identity (working directory plus task id), report rounds per task, and for every task at three or more rounds list each round's finding acceptance ids and mark which ids repeat. Label a round whose recorded cause is a missing or cleaned-up reviewer agent, or an empty verdict, as infrastructure jitter and keep it out of the content-rework count. Zero-valued block or advisory columns in an aggregate table do not describe a clean run; read the per-round findings for any task with a high rounds-per-task value.
+
 For repeated cross-boundary findings, trace the evidence through:
 
 ```text
