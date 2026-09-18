@@ -5,7 +5,8 @@ import {
 	canonicalIntentHash,
 	readTaskIntent,
 } from "../plugins/immune-brain/runtime/kernel/intent";
-import type { TaskAction, TaskRecordV2 } from "../plugins/immune-brain/runtime/kernel/types";
+import type { TaskAction } from "../plugins/immune-brain/runtime/kernel/types";
+import type { TaskRecordV2 } from "../plugins/immune-brain/runtime/kernel/legacy_task_record";
 import { applyTaskAction } from "../plugins/immune-brain/runtime/kernel/application";
 import * as applicationV2 from "../plugins/immune-brain/runtime/kernel/application";
 

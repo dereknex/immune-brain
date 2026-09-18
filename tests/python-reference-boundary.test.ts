@@ -113,8 +113,9 @@ describe("python reference boundary", () => {
 		]);
 	});
 
-	it("canonical Bun checks cover retired v3 surfaces fail-closed", () => {
-		// imm-work status is a retired v3 mutating command through the v4 router.
+	it("canonical Bun checks cover removed v3 command names", () => {
+		// imm-work was fully removed with v4 storage retirement: the name falls
+		// through to the generic unknown-command response.
 		const status = spawnSync(
 			"bun",
 			[TS_RUNTIME, "cli", "imm-work", "status", "--json"],
@@ -123,8 +124,8 @@ describe("python reference boundary", () => {
 				cwd: REPO_ROOT,
 			},
 		);
-		expect(status.status).toBe(1);
-		expect(status.stderr).toMatch(/v3_storage_retired|drain_required/);
+		expect(status.status).toBe(2);
+		expect(status.stderr).toContain("Unknown Immune-Brain v4 command: imm-work");
 
 		// imm-activation-plan is not a v4 command at all.
 		const activation = spawnSync(
@@ -138,13 +139,13 @@ describe("python reference boundary", () => {
 		expect(activation.status).toBe(2);
 		expect(activation.stderr).toContain("Unknown Immune-Brain v4 command");
 
-		// imm-heal is a retired v3 mutating command through the v4 router.
+		// imm-heal was fully removed with v4 storage retirement.
 		const heal = spawnSync("bun", [TS_RUNTIME, "cli", "imm-heal"], {
 			encoding: "utf-8",
 			cwd: REPO_ROOT,
 		});
-		expect(heal.status).toBe(1);
-		expect(heal.stderr).toMatch(/v3_storage_retired|drain_required/);
+		expect(heal.status).toBe(2);
+		expect(heal.stderr).toContain("Unknown Immune-Brain v4 command: imm-heal");
 	});
 
 	it("canonical command manifest covers the v4 router surface", () => {
@@ -156,18 +157,8 @@ describe("python reference boundary", () => {
 		const manifest = JSON.parse(result.stdout);
 		const commands = manifest.commands.map((command: any) => command.name).sort();
 		expect(commands).toEqual(["imm-kernel", "imm-plan", "imm-tracker"]);
-		for (const retired of [
-			"imm-autowork",
-			"imm-check-child-output",
-			"imm-finish",
-			"imm-heal",
-			"imm-migrate",
-			"imm-retire-stale-wrapper",
-			"imm-review",
-			"imm-work",
-		]) {
-			expect(manifest.retired).toContain(retired);
-		}
+		// The removed command names are no longer advertised in any form.
+		expect(manifest.retired).toBeUndefined();
 	});
 
 	it("python reference runtime files are retired with no repo-local Python exceptions", () => {

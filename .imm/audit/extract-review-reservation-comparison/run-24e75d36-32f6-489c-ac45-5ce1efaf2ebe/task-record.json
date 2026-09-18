@@ -1,0 +1,187 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "extract-review-reservation-comparison",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "extract-review-reservation-comparison",
+    "goal": "Extract the duplicated inline five-field reservation snapshot comparison in coordinator.ts's advance() and submitReview() into a shared pure compareReservationSnapshot function, and extract advance()'s full review-ready validity check into a pure reservationStillValid function, with no change to which requests are accepted or rejected.",
+    "acceptance": [
+      {
+        "id": "AC1",
+        "assertion": "advance() still reuses a matching Review reservation and still releases a stale one when any one of the five snapshot fields (record_revision, workspace_revision, intent_revision, intent_content_hash, diff_hash) changes, using the new reservationStillValid/compareReservationSnapshot functions with identical accept/reject outcomes to before the extraction.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/host-neutral-assurance-coordinator.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC2",
+        "assertion": "Both the Pi and Claude host adapters observe the same reservation-validity outcomes through their real ports after the extraction; no host-specific divergence is introduced.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/claude-host-authority.test.ts\",\n      \"tests/pi-canary-assurance-progression.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC3",
+        "assertion": "submitReview()'s stale-snapshot rejection, including its lifecycle/artifact_state conditions that stay outside the shared compareReservationSnapshot function, is unchanged for both hosts.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/dual-host-assurance-conformance.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      "docs/plans/extract-review-reservation-comparison.intent.json",
+      "docs/specs/extract-review-reservation-comparison.spec.md",
+      "plugins/immune-brain/runtime/assurance/coordinator.ts",
+      "tests/claude-host-authority.test.ts",
+      "tests/dual-host-assurance-conformance.test.ts",
+      "tests/helpers/pi-canary-assurance-harness.ts",
+      "tests/host-neutral-assurance-coordinator.test.ts",
+      "tests/pi-canary-assurance-progression.test.ts"
+    ],
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/extract-review-reservation-comparison.intent.json",
+    "content_hash": "sha256:0086b3eb00e8bd551f37d56b18a9d702e6a1e2768e6681d43063d9089cfabb15"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:0086b3eb00e8bd551f37d56b18a9d702e6a1e2768e6681d43063d9089cfabb15",
+  "git_base_head": "bcec290170f3ab7e7b2da07110a5c6ae537f7140",
+  "attestations": [
+    {
+      "id": "approval-qa-16bd19be",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:0086b3eb00e8bd551f37d56b18a9d702e6a1e2768e6681d43063d9089cfabb15",
+      "diff_hash": "sha256:e9fd8708dbb6ae529ffa963fb00d7d7ec3c0415f46a8913d88ce2132ba49e308",
+      "actor_id": "deterministic-qa",
+      "summary": "all 3 project verification check(s) passed; execution=sha256:95b15704a0d30b0ee28a59cb7903b5856ab16e1a03c10bad88c0aefaa09cf229",
+      "acceptance_results": [
+        {
+          "acceptance_id": "AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:95b15704a0d30b0ee28a59cb7903b5856ab16e1a03c10bad88c0aefaa09cf229"
+        },
+        {
+          "acceptance_id": "AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:95b15704a0d30b0ee28a59cb7903b5856ab16e1a03c10bad88c0aefaa09cf229"
+        },
+        {
+          "acceptance_id": "AC3",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:95b15704a0d30b0ee28a59cb7903b5856ab16e1a03c10bad88c0aefaa09cf229"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-be42118e",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:0086b3eb00e8bd551f37d56b18a9d702e6a1e2768e6681d43063d9089cfabb15",
+      "diff_hash": "sha256:e9fd8708dbb6ae529ffa963fb00d7d7ec3c0415f46a8913d88ce2132ba49e308",
+      "actor_id": "parent-mediated-review",
+      "summary": "已核验 immutable revision 的唯一 parent、tree 与 manifest digest；五字段比较提取保持原有判定，reservation 释放及 submitReview 的 lifecycle/artifact_state 条件未变。Kernel 提供的 AC1–AC3 QA 结果均通过，未发现阻断性缺陷。",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "bcec290170f3ab7e7b2da07110a5c6ae537f7140",
+        "review_commit": "60f9a714966a3caadda8719c8333613a17e20d46",
+        "review_tree": "ed95b69c36be09ad555d7bf0ad95ecf4be79f5d8",
+        "manifest_digest": "sha256:8e4e762b7fbc9ce0a973b12daddf5e7ae8b13cb41c78f444ea7f6cfacef83dfd"
+      }
+    }
+  ],
+  "findings": [
+    {
+      "id": "qa-AC3-9bdaa202-3924ae",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "AC3",
+      "source": "execution",
+      "review_round": null,
+      "summary": "verification failed (exit 1) stdout=28B stderr=388B",
+      "anchor": null,
+      "evidence": null,
+      "counterevidence": null
+    }
+  ],
+  "history": [
+    {
+      "id": "freeze_artifacts:extract-review-reservation-comparison:2026-09-17T14:22:38.241Z",
+      "at": "2026-09-17T14:22:38.241Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/extract-review-reservation-comparison.intent.json"
+    },
+    {
+      "id": "request_rework:extract-review-reservation-comparison:2026-09-17T14:22:53.538Z",
+      "at": "2026-09-17T14:22:53.538Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_1\naction_v2_sha256:679e9abf40ab88effa836f59debf60a80c89d431ce6f299503c92810f2043f30",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-129e98f1c0b321d2",
+        "issued_at": "2026-09-17T14:22:53.538Z",
+        "expires_at": "2026-09-17T14:32:53.538Z"
+      }
+    },
+    {
+      "id": "resolve_finding:extract-review-reservation-comparison:2026-09-17T14:35:49.487Z",
+      "at": "2026-09-17T14:35:49.487Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "qa-AC3-9bdaa202-3924ae\naction_v2_sha256:9a8b5abaa5348c7fcb83c6f3c85829ff747f93feba76bbe563b85e48ef8c236e"
+    },
+    {
+      "id": "freeze_artifacts:extract-review-reservation-comparison:2026-09-17T14:37:22.415Z",
+      "at": "2026-09-17T14:37:22.415Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/extract-review-reservation-comparison.intent.json"
+    },
+    {
+      "id": "record_approval:extract-review-reservation-comparison:2026-09-17T14:38:06.231Z",
+      "at": "2026-09-17T14:38:06.231Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-16bd19be\naction_v2_sha256:19f6d9208fa246d75dd4bf2045f0bc4ba297e57a9fa110b8ebd8353ef7ffa2b6",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-0257b355e7bb0b04",
+        "issued_at": "2026-09-17T14:38:06.231Z",
+        "expires_at": "2026-09-17T14:48:06.231Z"
+      }
+    },
+    {
+      "id": "record_approval:extract-review-reservation-comparison:2026-09-17T14:39:52.828Z",
+      "at": "2026-09-17T14:39:52.828Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-be42118e\naction_v2_sha256:8121031b2a95d3630f3b5290bcb2777ff25b9a05289541b05cdf056f7186ff4f",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-7df678e8ee5597a8",
+        "issued_at": "2026-09-17T14:39:52.828Z",
+        "expires_at": "2026-09-17T14:49:52.828Z"
+      }
+    },
+    {
+      "id": "complete:extract-review-reservation-comparison:2026-09-17T14:39:53.661Z",
+      "at": "2026-09-17T14:39:53.661Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:633ed4eb3e328517fb9df897147cd29b5aa1d8ed1803388272efae4093780264"
+    }
+  ]
+}

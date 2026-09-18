@@ -58,7 +58,31 @@ import {
 } from "./sqlite_store";
 import { isTerminalBatchState, type BatchRunState } from "../unattended/batch_state";
 import { parseTaskRecord } from "./validation";
+import { parseTaskRecordV3 } from "./legacy_task_record";
 import { canonicalRecordHash } from "./reducer";
+import type { TaskRecord, TaskRecordV3 } from "./types";
+
+/**
+ * The retired file-store layouts may still hold genuine historical v3-contract
+ * records (the live parser only accepts v4). A record that satisfies neither
+ * parser is unreadable, not a legacy v3 record, and refuses the import.
+ */
+function parseLegacyTaskRecord(raw: unknown): TaskRecord | TaskRecordV3 {
+	try {
+		return parseTaskRecord(raw);
+	} catch {
+		return parseTaskRecordV3(raw);
+	}
+}
+
+/**
+ * `canonicalRecordHash` only serializes its input; the v4-only parameter type
+ * exists for live call sites, not because the hash itself is v4-specific. A
+ * legacy v3 record canonicalizes the same way.
+ */
+function canonicalLegacyRecordHash(record: TaskRecord | TaskRecordV3): string {
+	return canonicalRecordHash(record as TaskRecord);
+}
 
 /** Raised when another process already holds the migration lock. */
 export class MigrationBusyError extends Error {
@@ -302,9 +326,9 @@ function readLegacyTasks(root: string): { tasks: LegacyTask[]; reason: string | 
 				};
 			const recordBytes = readFileSync(recordPath);
 			const proofBytes = readFileSync(proofPath);
-			let record: ReturnType<typeof parseTaskRecord>;
+			let record: TaskRecord | TaskRecordV3;
 			try {
-				record = parseTaskRecord(JSON.parse(recordBytes.toString("utf8")));
+				record = parseLegacyTaskRecord(JSON.parse(recordBytes.toString("utf8")));
 			} catch (error) {
 				return { tasks: [], reason: `task ${taskId} is not a readable legacy record: ${error instanceof Error ? error.message : String(error)}` };
 			}
@@ -575,8 +599,8 @@ function verifyCandidateStore(root: string, tasks: LegacyTask[]): void {
 			if (String(row.terminal_proof_json) !== task.proofJson) throw new Error(`candidate store terminal proof differs for ${task.taskId}`);
 			if (row.intent_content_hash !== task.recordHash) throw new Error(`candidate store record hash differs for ${task.taskId}`);
 			if (
-				canonicalRecordHash(parseTaskRecord(JSON.parse(String(row.record_json)))) !==
-				canonicalRecordHash(parseTaskRecord(JSON.parse(task.recordJson)))
+				canonicalLegacyRecordHash(parseLegacyTaskRecord(JSON.parse(String(row.record_json)))) !==
+				canonicalLegacyRecordHash(parseLegacyTaskRecord(JSON.parse(task.recordJson)))
 			)
 				throw new Error(`candidate store record is not canonical for ${task.taskId}`);
 		}

@@ -1,5 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import { rmSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { join, resolve } from "node:path";
 import {
 	authoritySnapshot,
 	cleanupE2ERoot,
@@ -15,6 +17,28 @@ import {
 const PRED = E2E_PATHS.predecessor;
 const TERMINAL = E2E_PATHS.terminal;
 const ALTERNATIVE = E2E_PATHS.alternative;
+const TS_RUNTIME = resolve(
+	import.meta.dir,
+	"..",
+	"plugins/immune-brain/runtime/v4_runtime.ts",
+);
+
+/**
+ * The removed v3 mutating names no longer have a `bin/` wrapper, so they are
+ * driven through the runtime's own `cli` dispatch.
+ */
+function runRemoved(root: string, command: string, args: string[]) {
+	return spawnSync("bun", [TS_RUNTIME, "cli", command, ...args], {
+		cwd: root,
+		env: {
+			...process.env,
+			HOME: join(root, ".home"),
+			XDG_CONFIG_HOME: join(root, ".home", "config"),
+		},
+		encoding: "utf8",
+		maxBuffer: 512 * 1024,
+	});
+}
 
 function expectOk(result: CliResult): CliResult {
 	if (result.status !== 0) {
@@ -123,9 +147,11 @@ describe("Roadmap fresh-process linear acceptance", () => {
 				["imm-review", ["pass", "--evidence", "fixture"]],
 				["imm-finish", ["closed", "next"]],
 			] as Array<[string, string[]]>) {
-				const result = runPlugin(root, cmd, args);
-				expect(result.status).toBe(1);
-				expect(result.stderr).toMatch(/v3_storage_retired|drain_required/);
+				const result = runRemoved(root, cmd, args);
+				expect(result.status).toBe(2);
+				expect(result.stderr).toContain(
+					`Unknown Immune-Brain v4 command: ${cmd}`,
+				);
 			}
 			// imm-plan --sync is retired (v3 mutation); read-only validation
 			// without --sync stays allowed and reports legacy_validation.

@@ -1,0 +1,9 @@
+{
+  "contract": "assurance_kernel/task_tombstone/v2",
+  "task_id": "add-migrate-to-vnext-command",
+  "lifecycle_status": "terminal",
+  "terminal_lifecycle": "stopped",
+  "terminal_event_id": "stop:add-migrate-to-vnext-command:2026-09-18T02:57:47.657Z",
+  "final_record_hash": "sha256:e7e56c8b60fb77832f896b2041f4d21a1279ffad7c049388f9f8d35a1d1f6414",
+  "terminalized_at": "2026-09-18T02:57:47.657Z"
+}

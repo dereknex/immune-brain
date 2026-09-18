@@ -1,0 +1,253 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "retire-drained-v4-cli-surface",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "retire-drained-v4-cli-surface",
+    "goal": "Physically delete every CLI command marked \"Retired after v4 storage retirement\" (bin/ wrappers and the runtime's per-command diagnostic wall) so a retired name falls through to the generic unknown-command response instead of a special-cased drain_required/v3_storage_retired diagnostic.",
+    "acceptance": [
+      {
+        "id": "AC1",
+        "assertion": "The eight bin/ wrapper files for retired commands (imm-work, imm-review, imm-autowork, imm-heal, imm-migrate, imm-finish, imm-check-child-output, imm-retire-stale-wrapper) and the shared imm-retired script are absent, and invoking a retired name through the runtime CLI returns the same generic 'Unknown Immune-Brain v4 command' response as any name that never existed.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/host-runtime-cutover.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 60000,\n    \"max_output_bytes\": 65536\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC2",
+        "assertion": "RETIRED_MUTATING_COMMANDS, retiredResponse, its dispatch branch, and the list-commands --json manifest's retired field are removed from runtime/v4_runtime.ts; no test asserts the deleted per-command diagnostic as current behavior.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/wrapper-retirement.test.ts\",\n      \"tests/v4-runtime-launchers.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC3",
+        "assertion": "README.md no longer documents any of the eight retired command names as a present-but-retired CLI table row, and the packaged imm-loop contract check remains unaffected.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/loop-contract-v4-alignment.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 60000,\n    \"max_output_bytes\": 65536\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      "docs/plans/retire-drained-v4-cli-surface.intent.json",
+      "docs/specs/retire-drained-v4-cli-surface.spec.md",
+      "plugins/immune-brain/README.md",
+      "plugins/immune-brain/bin/imm-autowork",
+      "plugins/immune-brain/bin/imm-check-child-output",
+      "plugins/immune-brain/bin/imm-finish",
+      "plugins/immune-brain/bin/imm-heal",
+      "plugins/immune-brain/bin/imm-migrate",
+      "plugins/immune-brain/bin/imm-retire-stale-wrapper",
+      "plugins/immune-brain/bin/imm-retired",
+      "plugins/immune-brain/bin/imm-review",
+      "plugins/immune-brain/bin/imm-work",
+      "plugins/immune-brain/dist/claude/mcp-server.mjs",
+      "plugins/immune-brain/runtime/v4_runtime.ts",
+      "plugins/immune-brain/tests/host-manifest-consistency.test.ts",
+      "plugins/immune-brain/tests/skill-registry-consistency.test.ts",
+      "tests/activation-plan-runtime-surface.test.ts",
+      "tests/dual-host-assurance-conformance.test.ts",
+      "tests/host-runtime-cutover.test.ts",
+      "tests/kernel-capability-registry-contract.test.ts",
+      "tests/loop-contract-v4-alignment.test.ts",
+      "tests/partially-live-runtime-trim.test.ts",
+      "tests/planning-artifact-archival.test.ts",
+      "tests/plugin-package-runtime.test.ts",
+      "tests/python-reference-boundary.test.ts",
+      "tests/roadmap-plan-e2e.test.ts",
+      "tests/roadmap-plan-host-acceptance.test.ts",
+      "tests/v4-runtime-launchers.test.ts",
+      "tests/wrapper-retirement.test.ts"
+    ],
+    "risk": "material",
+    "revision": 4,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/retire-drained-v4-cli-surface.intent.json",
+    "content_hash": "sha256:802a36d0872bc8c535727742b2998f88fc5db7aa8fd10ec52d6c6ef275f3c32e"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:1af946a80118c9efed4d70766956ac80ad846dfbe3f788040f31681150dc8210",
+  "git_base_head": "a87f4c52c6859d85e6467558cfbf0b2691eaf22e",
+  "attestations": [
+    {
+      "id": "approval-qa-91ed0ab3",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 4,
+      "intent_content_hash": "sha256:802a36d0872bc8c535727742b2998f88fc5db7aa8fd10ec52d6c6ef275f3c32e",
+      "diff_hash": "sha256:aa4f17c926600214768499c70f643c2e0f602d07d8ef6b9183d85f4c6f1603fa",
+      "actor_id": "deterministic-qa",
+      "summary": "all 3 project verification check(s) passed; execution=sha256:20a0cca825dd43a2abd9d32eda5f39cf292075a2ac29fd360818ca1360aa9110",
+      "acceptance_results": [
+        {
+          "acceptance_id": "AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:20a0cca825dd43a2abd9d32eda5f39cf292075a2ac29fd360818ca1360aa9110"
+        },
+        {
+          "acceptance_id": "AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:20a0cca825dd43a2abd9d32eda5f39cf292075a2ac29fd360818ca1360aa9110"
+        },
+        {
+          "acceptance_id": "AC3",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:20a0cca825dd43a2abd9d32eda5f39cf292075a2ac29fd360818ca1360aa9110"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-fa7b7c34",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 4,
+      "intent_content_hash": "sha256:802a36d0872bc8c535727742b2998f88fc5db7aa8fd10ec52d6c6ef275f3c32e",
+      "diff_hash": "sha256:aa4f17c926600214768499c70f643c2e0f602d07d8ef6b9183d85f4c6f1603fa",
+      "actor_id": "parent-mediated-review",
+      "summary": "已核验 manifest 摘要、固定提交的唯一父提交、tree 及全部变更路径的 blob 身份；变更满足 AC1–AC3，保留 imm-plan 选项拒绝行为，未发现阻断问题。验收执行结果采用所附 Kernel QA 全部通过的证据，未重新运行测试。",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "a87f4c52c6859d85e6467558cfbf0b2691eaf22e",
+        "review_commit": "81077463e2c22377b6b727f22718f1a29d7cb81d",
+        "review_tree": "ecd99a4f0a68e6d8bad5f3a9914999d87a213203",
+        "manifest_digest": "sha256:114809f5207c194da416b03faca958fc396e4cf10369c30b5076712527017dae"
+      }
+    }
+  ],
+  "findings": [
+    {
+      "id": "qa-AC2-e21a643a-80c283",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "AC2",
+      "source": "execution",
+      "review_round": null,
+      "summary": "verification failed (exit 1) stdout=28B stderr=2852B",
+      "anchor": null,
+      "evidence": null,
+      "counterevidence": null
+    }
+  ],
+  "history": [
+    {
+      "id": "freeze_artifacts:retire-drained-v4-cli-surface:2026-09-17T14:40:30.511Z",
+      "at": "2026-09-17T14:40:30.511Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/retire-drained-v4-cli-surface.intent.json"
+    },
+    {
+      "id": "request_rework:retire-drained-v4-cli-surface:2026-09-17T14:40:49.294Z",
+      "at": "2026-09-17T14:40:49.294Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_1\naction_v2_sha256:e90cc46821afdc241aa81fe43329ca3e67947cee8a53eea2e424aba663befc1e",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-2115bcd804c7da08",
+        "issued_at": "2026-09-17T14:40:49.294Z",
+        "expires_at": "2026-09-17T14:50:49.294Z"
+      }
+    },
+    {
+      "id": "approve_breaking_intent_revision:retire-drained-v4-cli-surface:2026-09-17T14:51:09.924Z",
+      "at": "2026-09-17T14:51:09.924Z",
+      "type": "approve_breaking_intent_revision",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "intent_revision_2\naction_v2_sha256:52269b317d5dc56ba6c08feb520886940b2d44e23bb5bb2a947ff85bca6190b2",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-89c6f296467d4ef8",
+        "issued_at": "2026-09-17T14:51:10.493Z",
+        "expires_at": "2026-09-17T15:01:10.493Z"
+      }
+    },
+    {
+      "id": "approve_breaking_intent_revision:retire-drained-v4-cli-surface:2026-09-17T15:07:19.832Z",
+      "at": "2026-09-17T15:07:19.832Z",
+      "type": "approve_breaking_intent_revision",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "intent_revision_3\naction_v2_sha256:4151c7b6d54c798726f4de0714beb5a71288711931c41e0e11095de8a9832516",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-f103e55b824057ac",
+        "issued_at": "2026-09-17T15:07:20.534Z",
+        "expires_at": "2026-09-17T15:17:20.534Z"
+      }
+    },
+    {
+      "id": "approve_breaking_intent_revision:retire-drained-v4-cli-surface:2026-09-17T15:51:29.730Z",
+      "at": "2026-09-17T15:51:29.730Z",
+      "type": "approve_breaking_intent_revision",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "intent_revision_4\naction_v2_sha256:45ef72e4426a2eaf5d7314b3d0ba1d02bc1874ff067693c009772f59ce12d8bd",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-a4c40760f2cef57b",
+        "issued_at": "2026-09-17T15:51:30.383Z",
+        "expires_at": "2026-09-17T16:01:30.383Z"
+      }
+    },
+    {
+      "id": "resolve_finding:retire-drained-v4-cli-surface:2026-09-17T15:56:17.915Z",
+      "at": "2026-09-17T15:56:17.915Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "qa-AC2-e21a643a-80c283\naction_v2_sha256:876aa515c606c1377ef4d1c0c329c311157527b3428f722d8309a34f9c750b04"
+    },
+    {
+      "id": "freeze_artifacts:retire-drained-v4-cli-surface:2026-09-17T15:56:27.654Z",
+      "at": "2026-09-17T15:56:27.654Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/retire-drained-v4-cli-surface.intent.json"
+    },
+    {
+      "id": "record_approval:retire-drained-v4-cli-surface:2026-09-17T15:57:22.960Z",
+      "at": "2026-09-17T15:57:22.960Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-91ed0ab3\naction_v2_sha256:9b8a0c0b7188f7b44b836d84c987db36a2fed5f6bad49814ac03d5e010f6cf2b",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-be16825e0de2490b",
+        "issued_at": "2026-09-17T15:57:22.961Z",
+        "expires_at": "2026-09-17T16:07:22.961Z"
+      }
+    },
+    {
+      "id": "record_approval:retire-drained-v4-cli-surface:2026-09-17T15:59:17.571Z",
+      "at": "2026-09-17T15:59:17.571Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-fa7b7c34\naction_v2_sha256:1b00ddb8abed9b206e1c00b79053d4e3908e7c87fdacdf9c528dff7a02c58014",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-e8d6c2469f3db635",
+        "issued_at": "2026-09-17T15:59:17.571Z",
+        "expires_at": "2026-09-17T16:09:17.571Z"
+      }
+    },
+    {
+      "id": "complete:retire-drained-v4-cli-surface:2026-09-17T15:59:20.821Z",
+      "at": "2026-09-17T15:59:20.821Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:56fb6a3bf603b938cad3f4ae15ad17761f13e77b790e3443b4aab94cb53a041f"
+    }
+  ]
+}

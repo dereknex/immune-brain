@@ -26,14 +26,6 @@ const TS_RUNTIME = resolve(
 	REPO_ROOT,
 	"plugins/immune-brain/runtime/v4_runtime.ts",
 );
-const FINISH_WRAPPER = resolve(
-	REPO_ROOT,
-	"plugins/immune-brain/bin/imm-finish",
-);
-const IMM_WORK_WRAPPER = resolve(
-	REPO_ROOT,
-	"plugins/immune-brain/bin/imm-work",
-);
 const IMM_KERNEL_WRAPPER = resolve(
 	REPO_ROOT,
 	"plugins/immune-brain/bin/imm-kernel",
@@ -198,13 +190,6 @@ function passedEvidence(
 
 function cli(root: string, args: string[]) {
 	return spawnSync("bun", [TS_RUNTIME, "cli", ...args], {
-		encoding: "utf-8",
-		cwd: root,
-	});
-}
-
-function immWork(root: string, args: string[]) {
-	return spawnSync(IMM_WORK_WRAPPER, args, {
 		encoding: "utf-8",
 		cwd: root,
 	});
@@ -474,11 +459,8 @@ describe("plugin package runtime cutover parity", () => {
 		const commands = JSON.parse(ts.stdout).commands;
 		const names = commands.map((command: any) => command.name).sort();
 		expect(names).toEqual(["imm-kernel", "imm-plan", "imm-tracker"]);
-		const retired = JSON.parse(ts.stdout).retired as string[];
-		expect(retired).toContain("imm-work");
-		expect(retired).toContain("imm-review");
-		expect(retired).toContain("imm-migrate");
-		expect(retired).toContain("imm-finish");
+		// The removed command names are no longer advertised in any form.
+		expect(JSON.parse(ts.stdout).retired).toBeUndefined();
 		const kernel = commands.find(
 			(command: any) => command.name === "imm-kernel",
 		);
@@ -589,7 +571,7 @@ describe("plugin package runtime cutover parity", () => {
 		expect(tsJson.contract).toBeUndefined();
 	});
 
-	it("cli imm-work status is retired after v4 storage retirement", () => {
+	it("cli imm-work is unknown after the retired surface was removed", () => {
 		const ts = spawnSync(
 			"bun",
 			[TS_RUNTIME, "cli", "imm-work", "status", "--json"],
@@ -598,8 +580,8 @@ describe("plugin package runtime cutover parity", () => {
 				cwd: REPO_ROOT,
 			},
 		);
-		expect(ts.status).toBe(1);
-		expect(ts.stderr).toMatch(/v3_storage_retired|drain_required/);
+		expect(ts.status).toBe(2);
+		expect(ts.stderr).toContain("Unknown Immune-Brain v4 command: imm-work");
 	});
 
 	it("executes the read-only legacy audit through isolated package fixtures", () => {
@@ -664,27 +646,28 @@ describe("plugin package runtime cutover parity", () => {
 		});
 	});
 
-	it("prints retired wall for imm-work record-execution", () => {
+	it("falls through to the generic response for imm-work record-execution", () => {
 		withIsolatedRoot((root) => {
 			const help = cli(root, ["imm-work", "record-execution", "--help"]);
-			expect(help.status).toBe(1);
-			expect(help.stderr).toMatch(/v3_storage_retired|drain_required/);
+			expect(help.status).toBe(2);
+			expect(help.stderr).toContain("Unknown Immune-Brain v4 command: imm-work");
 		});
 	});
 
-	it("executes work-probe handoff is retired after v4 storage retirement", () => {
+	it("executes work-probe handoff is unknown after v4 storage retirement", () => {
 		withIsolatedRoot((root) => {
 			expect(
 				cli(root, ["imm-work", "activate", "docs/plans/plan.md", "1"])
 					.status,
-			).toBe(1);
-			const continued = immWork(root, [
+			).toBe(2);
+			const continued = cli(root, [
+				"imm-work",
 				"continue",
 				"--dispatch-available",
 				"--authorized",
 			]);
-			expect(continued.status).toBe(1);
-			expect(continued.stderr).toMatch(/v3_storage_retired|drain_required/);
+			expect(continued.status).toBe(2);
+			expect(continued.stderr).toContain("Unknown Immune-Brain v4 command: imm-work");
 		});
 	});
 
@@ -695,20 +678,20 @@ describe("plugin package runtime cutover parity", () => {
 				"record-execution",
 				"--evidence-json={\"checks\":[]}",
 			]);
-			expect(retired.status).toBe(1);
-			expect(retired.stderr).toMatch(/v3_storage_retired|drain_required/);
+			expect(retired.status).toBe(2);
+			expect(retired.stderr).toContain("Unknown Immune-Brain v4 command: imm-work");
 		});
 	});
 
-	it("cli imm-heal is retired after v4 storage retirement", () => {
+	it("cli imm-heal is unknown after v4 storage retirement", () => {
 		withIsolatedRoot((root) => {
 			const heal = cli(root, ["imm-heal"]);
-			expect(heal.status).toBe(1);
-			expect(heal.stderr).toMatch(/v3_storage_retired|drain_required/);
+			expect(heal.status).toBe(2);
+			expect(heal.stderr).toContain("Unknown Immune-Brain v4 command: imm-heal");
 		});
 	});
 
-	it("v3 mutating commands are retired (evidence/review/finish)", () => {
+	it("v3 mutating commands are unknown (evidence/review/finish)", () => {
 		withIsolatedRoot((root) => {
 			for (const cmd of [
 				["imm-work", "record-execution"],
@@ -716,8 +699,8 @@ describe("plugin package runtime cutover parity", () => {
 				["imm-finish", "summary", "next"],
 			]) {
 				const r = cli(root, cmd);
-				expect(r.status).toBe(1);
-				expect(r.stderr).toMatch(/v3_storage_retired|drain_required/);
+				expect(r.status).toBe(2);
+				expect(r.stderr).toContain(`Unknown Immune-Brain v4 command: ${cmd[0]}`);
 			}
 		});
 	});

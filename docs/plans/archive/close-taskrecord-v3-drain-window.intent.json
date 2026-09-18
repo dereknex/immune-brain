@@ -1,0 +1,56 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "close-taskrecord-v3-drain-window",
+  "goal": "Narrow the live TaskRecord union from TaskRecordV3 | TaskRecordV4 to TaskRecordV4 alone, rejecting a v3-contract record at every live reducer/coordinator entry point instead of letting it progress to completion, while extracting TaskRecordV2/TaskRecordV3 and their frozen parsers into a dedicated historical-only module that readAuditTaskPair keeps using to read existing .imm/audit/ v2 and v3 terminal records unchanged.",
+  "acceptance": [
+    {
+      "id": "AC1",
+      "assertion": "A v3-contract TaskRecord fed through the live reducer (reduceTask) is rejected instead of progressing its lifecycle to done; the existing test's core assertion is rewritten to prove rejection, not deleted.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.4.2\",\n  \"argv\": [\n    \"test\",\n    \"tests/kernel-assurance-obligation.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 60000,\n  \"max_output_bytes\": 65536\n}\n"
+    },
+    {
+      "id": "AC2",
+      "assertion": "The dual-host conformance test's v3 case is rewritten (title and body) so a v3-contract record fails closed through coordinator.advance()/submitReview() for both the Claude and Pi host adapters, identically to how vFuture, stale identity, and concurrent continuation already fail closed in the same test.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.4.2\",\n  \"argv\": [\n    \"test\",\n    \"tests/dual-host-assurance-conformance.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 131072\n}\n"
+    },
+    {
+      "id": "AC3",
+      "assertion": "readAuditTaskPair and its callers continue reading existing .imm/audit/ v2 and v3 terminal records unchanged through the relocated frozen historical reader module.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.4.2\",\n  \"argv\": [\n    \"test\",\n    \"tests/kernel-storage-layout-migration.test.ts\",\n    \"tests/task-record-durability.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 131072\n}\n"
+    },
+    {
+      "id": "AC4",
+      "assertion": "v4-only live-path reducer and risk-downgrade-guard behavior is unaffected by the narrowing, and the frozen parseTaskRecordV3/parseTaskRecordV2 parser-level tests keep passing from their new historical-only module location.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v1\",\n  \"runner_id\": \"bun\",\n  \"runner_version\": \"1.4.2\",\n  \"argv\": [\n    \"test\",\n    \"tests/kernel-r2c2-reducer.test.ts\",\n    \"tests/risk-downgrade-guard.test.ts\",\n    \"tests/kernel-record-v3.test.ts\",\n    \"tests/kernel-record-v4.test.ts\"\n  ],\n  \"cwd\": \".\",\n  \"timeout_ms\": 120000,\n  \"max_output_bytes\": 131072\n}\n"
+    }
+  ],
+  "scope_hint": [
+    "docs/plans/close-taskrecord-v3-drain-window.intent.json",
+    "docs/specs/archive/close-taskrecord-v3-drain-window.spec.md",
+    "docs/specs/close-taskrecord-v3-drain-window.spec.md",
+    "plugins/immune-brain/dist/claude/mcp-server.mjs",
+    "plugins/immune-brain/runtime/claude/kernel_ports.ts",
+    "plugins/immune-brain/runtime/kernel/assurance_projection.ts",
+    "plugins/immune-brain/runtime/kernel/index.ts",
+    "plugins/immune-brain/runtime/kernel/legacy_task_record.ts",
+    "plugins/immune-brain/runtime/kernel/reducer.ts",
+    "plugins/immune-brain/runtime/kernel/sqlite_migration.ts",
+    "plugins/immune-brain/runtime/kernel/storage.ts",
+    "plugins/immune-brain/runtime/kernel/types.ts",
+    "plugins/immune-brain/runtime/kernel/validation.ts",
+    "plugins/immune-brain/runtime/unattended/batch_git.ts",
+    "plugins/immune-brain/runtime/unattended/batch_preflight.ts",
+    "tests/dual-host-assurance-conformance.test.ts",
+    "tests/kernel-assurance-obligation.test.ts",
+    "tests/kernel-r2c2-boundary.test.ts",
+    "tests/kernel-r2c2-reducer.test.ts",
+    "tests/kernel-record-v3.test.ts",
+    "tests/kernel-record-v4.test.ts",
+    "tests/kernel-storage-layout-migration.test.ts",
+    "tests/risk-downgrade-guard.test.ts",
+    "tests/task-record-durability.test.ts"
+  ],
+  "risk": "critical",
+  "revision": 5,
+  "owner": "user"
+}

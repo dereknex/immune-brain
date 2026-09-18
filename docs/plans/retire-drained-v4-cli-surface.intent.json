@@ -1,0 +1,56 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "retire-drained-v4-cli-surface",
+  "goal": "Physically delete every CLI command marked \"Retired after v4 storage retirement\" (bin/ wrappers and the runtime's per-command diagnostic wall) so a retired name falls through to the generic unknown-command response instead of a special-cased drain_required/v3_storage_retired diagnostic.",
+  "acceptance": [
+    {
+      "id": "AC1",
+      "assertion": "The eight bin/ wrapper files for retired commands (imm-work, imm-review, imm-autowork, imm-heal, imm-migrate, imm-finish, imm-check-child-output, imm-retire-stale-wrapper) and the shared imm-retired script are absent, and invoking a retired name through the runtime CLI returns the same generic 'Unknown Immune-Brain v4 command' response as any name that never existed.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/host-runtime-cutover.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 60000,\n    \"max_output_bytes\": 65536\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC2",
+      "assertion": "RETIRED_MUTATING_COMMANDS, retiredResponse, its dispatch branch, and the list-commands --json manifest's retired field are removed from runtime/v4_runtime.ts; no test asserts the deleted per-command diagnostic as current behavior.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/wrapper-retirement.test.ts\",\n      \"tests/v4-runtime-launchers.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC3",
+      "assertion": "README.md no longer documents any of the eight retired command names as a present-but-retired CLI table row, and the packaged imm-loop contract check remains unaffected.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/loop-contract-v4-alignment.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 60000,\n    \"max_output_bytes\": 65536\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    "docs/plans/retire-drained-v4-cli-surface.intent.json",
+    "docs/specs/retire-drained-v4-cli-surface.spec.md",
+    "plugins/immune-brain/README.md",
+    "plugins/immune-brain/bin/imm-autowork",
+    "plugins/immune-brain/bin/imm-check-child-output",
+    "plugins/immune-brain/bin/imm-finish",
+    "plugins/immune-brain/bin/imm-heal",
+    "plugins/immune-brain/bin/imm-migrate",
+    "plugins/immune-brain/bin/imm-retire-stale-wrapper",
+    "plugins/immune-brain/bin/imm-retired",
+    "plugins/immune-brain/bin/imm-review",
+    "plugins/immune-brain/bin/imm-work",
+    "plugins/immune-brain/dist/claude/mcp-server.mjs",
+    "plugins/immune-brain/runtime/v4_runtime.ts",
+    "plugins/immune-brain/tests/host-manifest-consistency.test.ts",
+    "plugins/immune-brain/tests/skill-registry-consistency.test.ts",
+    "tests/activation-plan-runtime-surface.test.ts",
+    "tests/dual-host-assurance-conformance.test.ts",
+    "tests/host-runtime-cutover.test.ts",
+    "tests/kernel-capability-registry-contract.test.ts",
+    "tests/loop-contract-v4-alignment.test.ts",
+    "tests/partially-live-runtime-trim.test.ts",
+    "tests/planning-artifact-archival.test.ts",
+    "tests/plugin-package-runtime.test.ts",
+    "tests/python-reference-boundary.test.ts",
+    "tests/roadmap-plan-e2e.test.ts",
+    "tests/roadmap-plan-host-acceptance.test.ts",
+    "tests/v4-runtime-launchers.test.ts",
+    "tests/wrapper-retirement.test.ts"
+  ],
+  "risk": "material",
+  "revision": 4,
+  "owner": "user"
+}

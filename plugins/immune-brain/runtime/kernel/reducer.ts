@@ -1,4 +1,4 @@
-// Pure TaskRecord v3 reducer with a closed factual action vocabulary.
+// Pure TaskRecord v4 reducer with a closed factual action vocabulary.
 // Never reads files, Git, workspace, or host context. Returns a branded
 // ReducedTaskMutation; the caller cannot construct or serialize it.
 
@@ -7,7 +7,6 @@ import { completionDecision } from "./completion";
 import { anchorForEvidence, isFreshPassingQaAttestation, refutationIdentity, refutationIsLive } from "./refutation";
 import {
 	REDUCED_MUTATION_BRAND,
-	TASK_RECORD_CONTRACT_V4,
 	type AuthorityAuditDescriptor,
 	type ReducedTaskMutation,
 	type TaskAction,
@@ -432,10 +431,7 @@ export function reduceTask(
 			const reviewRevision = approval.review_revision;
 			if (reviewRevision && approval.kind !== "review")
 				throw new KernelInvariantError(["review_revision is only valid on review approvals"]);
-			if (record.contract !== TASK_RECORD_CONTRACT_V4) {
-				if (reviewRevision)
-					throw new KernelInvariantError(["review_revision requires a TaskRecord v4"]);
-			} else if (approval.kind === "review") {
+			if (approval.kind === "review") {
 				if (!reviewRevision)
 					throw new KernelInvariantError(["v4 review approval requires review_revision"]);
 				if (reviewRevision.base_head !== record.git_base_head)

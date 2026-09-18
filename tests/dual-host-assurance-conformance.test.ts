@@ -1,4 +1,4 @@
-import { describe, expect, setDefaultTimeout, test } from "bun:test";
+import { afterAll, describe, expect, mock, setDefaultTimeout, test } from "bun:test";
 import { execFileSync } from "node:child_process";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -10,7 +10,6 @@ import {
 	type AssuranceVerdict,
 	type SnapshotDescriptor,
 } from "../plugins/immune-brain/runtime/assurance/coordinator";
-import { AssuranceProgression } from "../plugins/immune-brain/.pi-extension/pi-canary-assurance-progression.ts";
 import { revisionForContent } from "../plugins/immune-brain/runtime/kernel/storage";
 import { PassThrough } from "node:stream";
 import { ClaudeReviewHost, REVIEWER_AGENT, AGENT_TOOL } from "../plugins/immune-brain/runtime/claude/review_host";
@@ -18,7 +17,6 @@ import { submitClaudeReview, ClaudeRuntime, settledKernelResult, type ToolMeta }
 import { probeHost } from "../plugins/immune-brain/runtime/claude/capability";
 import { createMcpRuntime, serveStdio } from "../plugins/immune-brain/runtime/claude/mcp_server";
 import type { ReviewBundle } from "../plugins/immune-brain/runtime/assurance/review_evidence";
-import { executePiUnattendedBatch } from "../plugins/immune-brain/.pi-extension/imm-unattended-batch";
 import { BATCH_REASONS, batchReason } from "../plugins/immune-brain/runtime/unattended/batch_reasons";
 import {
 	captureStagedIntent,
@@ -44,7 +42,50 @@ import { readTaskIntent } from "../plugins/immune-brain/runtime/kernel/intent";
 import { withKernelTransaction } from "../plugins/immune-brain/runtime/kernel/sqlite_store";
 import { canonicalIntentHash, parseTaskIntentV1 } from "../plugins/immune-brain/runtime/kernel/intent";
 import { seedKernelRunForTest } from "./fixtures/mutation-authority-test-seam";
-import { createPiAssuranceProgressionPorts } from "../plugins/immune-brain/.pi-extension/imm-canary-work";
+
+// The Kernel QA delivery workspace is a dependency-free checkout of the frozen
+// tree: `typebox` and the Pi host packages belong to the running Host, not to
+// this repository. Register the seams they provide only when they cannot be
+// imported here, so an ordinary suite run keeps the real modules and never
+// hands a Host-facing sibling test file a mocked Host package.
+async function hostPackagesAvailable(): Promise<boolean> {
+	for (const specifier of [
+		"typebox",
+		"@earendil-works/pi-coding-agent",
+		"@earendil-works/pi-tui",
+	]) {
+		try {
+			await import(specifier);
+		} catch {
+			return false;
+		}
+	}
+	return true;
+}
+
+if (!(await hostPackagesAvailable())) {
+	const hostClass = (): unknown => class {};
+	mock.module("typebox", () => ({ Type: new Proxy({}, { get: () => () => ({}) }) }));
+	mock.module("@earendil-works/pi-coding-agent", () => ({ DynamicBorder: hostClass() }));
+	mock.module("@earendil-works/pi-tui", () => ({
+		Container: hostClass(),
+		SelectList: hostClass(),
+		Text: hostClass(),
+		sliceByColumn: () => "",
+		truncateToWidth: (text: string) => text,
+		visibleWidth: () => 0,
+	}));
+}
+
+const { AssuranceProgression } = await import("../plugins/immune-brain/.pi-extension/pi-canary-assurance-progression.ts");
+const { executePiUnattendedBatch } = await import("../plugins/immune-brain/.pi-extension/imm-unattended-batch");
+const { createPiAssuranceProgressionPorts } = await import("../plugins/immune-brain/.pi-extension/imm-canary-work");
+
+// Registered seams are process-global; drop them when this file finishes so a
+// later file in the same process starts from the real module registry.
+afterAll(() => {
+	mock.restore();
+});
 
 const FIXTURE_NOW = "2026-08-12T10:00:00.000Z";
 const HOST_ENV = { CLAUDE_CODE_VERSION: "2.1.236", CLAUDE_CODE_PERMISSION_MODE: "manual" };
@@ -298,7 +339,11 @@ function projection(
 	},
 ) {
 	return {
-		error: state.contract?.startsWith("assurance_kernel/task_record/v99") ? "unsupported TaskRecord contract" : null,
+		error:
+			state.contract?.startsWith("assurance_kernel/task_record/v99") ||
+			state.contract === "assurance_kernel/task_record/v3"
+				? "unsupported TaskRecord contract"
+				: null,
 		claim: state.lifecycle === "active" ? { task_id: TASK, lifecycle_status: "active" } : { task_id: TASK, lifecycle_status: "terminal" },
 		projection: {
 			lifecycle: state.lifecycle,
@@ -758,16 +803,14 @@ describe("dual-host assurance conformance", () => {
 		});
 	}
 
-	test("v3 drain remains readable while vFuture, stale identity, and concurrent continuation fail closed", async () => {
+	test("v3 identity, vFuture, stale identity, and concurrent continuation all fail closed", async () => {
 		const v3 = sharedKernel("routine");
 		v3.v3();
-		expect((await v3.claude().coordinator.advance(TASK, ctx)).state).toBe("completed");
+		expect(await v3.claude().coordinator.advance(TASK, ctx)).toMatchObject({ state: "blocked" });
 		const v3pi = sharedKernel("material");
 		v3pi.v3();
 		const v3piHost = v3pi.pi();
-		const v3ready = await v3piHost.advance(TASK, ctx as never);
-		expect(v3ready.state).toBe("review_ready");
-		expect(await v3piHost.submitReview(TASK, ctx, passVerdict(snapshot("review")))).toEqual({ state: "completed" });
+		expect(await v3piHost.advance(TASK, ctx as never)).toMatchObject({ state: "blocked" });
 		const future = sharedKernel("routine");
 		future.future();
 		expect(await future.claude().coordinator.advance(TASK, ctx)).toMatchObject({ state: "blocked" });

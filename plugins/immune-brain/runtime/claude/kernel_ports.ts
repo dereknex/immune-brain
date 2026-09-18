@@ -16,14 +16,13 @@ import {
 	type VerificationDescriptor,
 } from "../assurance/verification";
 import {
-	captureReviewBundle,
 	captureReviewManifest,
 	writeNativeReviewEvidence,
 	type ReviewRevision,
 } from "../assurance/review_evidence";
 import { parseVerificationDescriptor } from "../verification_descriptor";
 import { projectAssurance, type AssuranceProjection, type AssuranceProjectionResult } from "../kernel/assurance_projection";
-import { isTaskRecordV4, type TaskApprovalV2, type TaskFinding, type TaskRecord } from "../kernel/types";
+import { type TaskApprovalV2, type TaskFinding, type TaskRecord } from "../kernel/types";
 import { findingsDigestV2 } from "../kernel/reducer";
 import { readTaskRecord, readTaskRecordRaw, recoverKernelStoreFollowUps } from "../kernel/storage";
 import { canonicalIntentHash, parseTaskIntentV1, readTaskIntent } from "../kernel/intent";
@@ -273,12 +272,8 @@ async function buildAssuranceSnapshot(
 		const descriptor = parseVerificationDescriptor(item.verification);
 		descriptors.set(item.id, descriptor);
 	}
-	// `git_base_head` exists only on TaskRecord v4, so this must narrow the union
-	// rather than test the contract string into a plain boolean.
-	const reviewBundle = role === "review" && !isTaskRecordV4(record)
-		? captureReviewBundle(root, intent.scope_hint, projection.projection.diff_hash, qaOutcomes(record))
-		: null;
-	const reviewManifest = role === "review" && isTaskRecordV4(record)
+	const reviewBundle = null;
+	const reviewManifest = role === "review"
 		? captureReviewManifest(root, {
 			taskId,
 			baseHead: record.git_base_head,
@@ -294,7 +289,7 @@ async function buildAssuranceSnapshot(
 			outcomes: qaOutcomes(record),
 		})
 		: null;
-	const dirtyFiles = reviewManifest ? Object.keys(reviewManifest.changed_paths) : reviewBundle ? Object.keys(reviewBundle.dirty_files) : [];
+	const dirtyFiles = reviewManifest ? Object.keys(reviewManifest.changed_paths) : [];
 	const snapshot: SnapshotDescriptor = {
 		contract: "assurance_kernel/assurance_snapshot/v2",
 		task_id: taskId,
@@ -313,7 +308,7 @@ async function buildAssuranceSnapshot(
 		stale_attestation_ids: projection.projection.stale_attestation_ids,
 		acceptance: intent.acceptance,
 		dirty_files: dirtyFiles,
-		review_bundle_digest: reviewManifest?.manifest_digest ?? reviewBundle?.bundle_digest ?? null,
+		review_bundle_digest: reviewManifest?.manifest_digest ?? null,
 		root,
 		...(reviewManifest
 			? {

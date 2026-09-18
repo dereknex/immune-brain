@@ -1,4 +1,4 @@
-import { describe, expect, it } from "bun:test";
+import { describe, expect, it, setDefaultTimeout } from "bun:test";
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -18,6 +18,10 @@ function runMise(task: string): { stdout: string; stderr: string } {
 		cwd: REPO_ROOT,
 		stdout: "pipe",
 		stderr: "pipe",
+		// Never install the pinned toolchain inside a verification run: a machine
+		// that has not provisioned it must use the bun already on PATH. Kernels QA
+		// materializes a dependency-free, sanitized-HOME delivery tree.
+		env: { ...process.env, MISE_TASK_RUN_AUTO_INSTALL: "false" },
 	});
 	const stdout = result.stdout.toString();
 	const stderr = result.stderr.toString();
@@ -42,10 +46,11 @@ function expectV4Manifest(output: string): void {
 		"imm-plan",
 		"imm-tracker",
 	]);
-	expect(manifest.retired).toContain("imm-heal");
+	expect(manifest.retired).toBeUndefined();
 }
 
 describe("repository v4 runtime launchers", () => {
+	setDefaultTimeout(120_000);
 	it("removes the legacy launcher and obsolete heal task from mise", () => {
 		const mise = readFileSync(resolve(REPO_ROOT, "mise.toml"), "utf8");
 		expect(mise).not.toContain("immune_brain_runtime.ts");

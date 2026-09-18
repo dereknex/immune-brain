@@ -6,15 +6,24 @@ import { createCapabilityRegistry } from "./capability_registry";
 
 export const ENROLLMENT_CAPABILITY_BRAND = Symbol.for("assurance-kernel.enrollment-capability-brand");
 
-export interface EnrollmentCapabilityBinding {
+/**
+ * The three fields every capability binding shares, whichever authority issues
+ * it. `nonce` is deliberately not part of this base: the enrollment and batch
+ * bindings carry it for their own replay digest, while `CapabilityBindingV2`
+ * uses `action_digest` instead and has no `nonce` field at all.
+ */
+export interface BaseCapabilityBinding {
+	actor_id: string;
+	confirmation_ref: string;
+	expires_at: string;
+}
+
+export interface EnrollmentCapabilityBinding extends BaseCapabilityBinding {
 	task_id: string;
 	intent_path: string;
 	intent_revision: number;
 	intent_content_hash: string;
 	preparation_digest: string;
-	actor_id: string;
-	confirmation_ref: string;
-	expires_at: string;
 	nonce: string;
 }
 

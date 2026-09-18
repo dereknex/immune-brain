@@ -3,10 +3,11 @@ import { describe, expect, test } from "bun:test";
 import { completionDecision } from "../plugins/immune-brain/runtime/kernel/completion";
 import { canonicalIntentHash } from "../plugins/immune-brain/runtime/kernel/intent";
 import { canonicalRecordHash, reduceTask } from "../plugins/immune-brain/runtime/kernel/reducer";
-import type { TaskAction, TaskIntentV1, TaskRecordV3 } from "../plugins/immune-brain/runtime/kernel/types";
+import type { TaskAction, TaskIntentV1, TaskRecordV4 } from "../plugins/immune-brain/runtime/kernel/types";
 
 const DIFF = `sha256:${"a".repeat(64)}`;
 const WS = `sha256:${"b".repeat(64)}`;
+const GIT_BASE_HEAD = "a".repeat(40);
 const INTENT: TaskIntentV1 = {
 	contract: "assurance_kernel/task_intent/v1",
 	task_id: "task-risk-guard",
@@ -18,22 +19,23 @@ const INTENT: TaskIntentV1 = {
 	owner: "user",
 };
 
-function record(intent: TaskIntentV1 = INTENT): TaskRecordV3 {
+function record(intent: TaskIntentV1 = INTENT): TaskRecordV4 {
 	return {
-		contract: "assurance_kernel/task_record/v3",
+		contract: "assurance_kernel/task_record/v4",
 		task_id: intent.task_id,
 		intent_snapshot: intent,
 		intent_ref: { path: `docs/plans/${intent.task_id}.intent.json`, content_hash: canonicalIntentHash(intent) },
 		lifecycle: "active",
 		artifact_state: "active",
 		baseline: `sha256:${"0".repeat(64)}`,
+		git_base_head: GIT_BASE_HEAD,
 		attestations: [],
 		findings: [],
 		history: [],
 	};
 }
 
-function revise(current: TaskRecordV3, next: TaskIntentV1) {
+function revise(current: TaskRecordV4, next: TaskIntentV1) {
 	const action = {
 		type: "approve_breaking_intent_revision",
 		event_id: `revise-${next.risk}`,

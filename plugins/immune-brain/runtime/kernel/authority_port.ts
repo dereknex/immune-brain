@@ -14,8 +14,9 @@ import {
 	type TaskAction,
 } from "./types";
 import { createCapabilityRegistry } from "./capability_registry";
+import type { BaseCapabilityBinding } from "./enrollment_authority";
 
-export interface CapabilityBindingV2 {
+export interface CapabilityBindingV2 extends BaseCapabilityBinding {
 	authority_kind: MutationAuthorityKind;
 	task_id: string;
 	/**
@@ -30,9 +31,6 @@ export interface CapabilityBindingV2 {
 	intent_revision: number;
 	intent_content_hash: string;
 	diff_hash: string;
-	actor_id: string;
-	confirmation_ref: string;
-	expires_at: string;
 	/** Normalized findings digest required for request_rework; null for other operations. */
 	findings_digest: string | null;
 }

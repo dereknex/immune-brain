@@ -1,0 +1,68 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "add-migrate-to-vnext-command",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "add-migrate-to-vnext-command",
+    "goal": "Add a one-time imm-kernel migrate --to-vNext [--check] command that flattens historical .imm/audit/ TaskRecord v2/v3/v4 evidence (and any residual verification_descriptor v1-shaped payload) into pure v4-shaped JSON via the existing verified-import-then-atomic-publish pattern, writes a distinct receipt and schema marker, and adds a startup gate on this version refusing to run against a workspace missing that marker.",
+    "acceptance": [
+      {
+        "id": "AC1",
+        "assertion": "migrate --to-vNext refuses to run with an active Kernel claim or unsettled unattended batch present; --check diagnoses preconditions and record inventory without publishing; a real run flattens historical .imm/audit/ evidence to pure v4-shaped JSON, verifies its identity digest before publish, and writes a receipt distinct from the storage-layout migration's own.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/kernel-migrate-to-vnext.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC2",
+        "assertion": "The existing --storage-layout migration's own receipt, marker, and behavior are completely unaffected by the new --to-vNext migration's presence.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/kernel-storage-layout-migration.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC3",
+        "assertion": "Kernel startup refuses to operate on a workspace missing the vNext marker, naming imm-kernel migrate --to-vNext as the recovery action, and proceeds normally once the marker is present.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/kernel-migrate-to-vnext.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      "docs/plans/add-migrate-to-vnext-command.intent.json",
+      "docs/specs/add-migrate-to-vnext-command.spec.md",
+      "plugins/immune-brain/dist/claude/mcp-server.mjs",
+      "plugins/immune-brain/runtime/commands/kernel.ts",
+      "plugins/immune-brain/runtime/kernel/sqlite_migration.ts",
+      "plugins/immune-brain/runtime/kernel/sqlite_store.ts",
+      "plugins/immune-brain/runtime/kernel/storage_paths.ts",
+      "plugins/immune-brain/runtime/kernel/vnext_migration.ts",
+      "tests/kernel-migrate-to-vnext.test.ts",
+      "tests/kernel-storage-layout-migration.test.ts"
+    ],
+    "risk": "critical",
+    "revision": 2,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/add-migrate-to-vnext-command.intent.json",
+    "content_hash": "sha256:6c2dbf340fd58181f8397002c98cbe6d18244b55b78a8bf73f26f2653ffa8653"
+  },
+  "lifecycle": "stopped",
+  "artifact_state": "frozen",
+  "baseline": "sha256:6c2dbf340fd58181f8397002c98cbe6d18244b55b78a8bf73f26f2653ffa8653",
+  "git_base_head": "7bbe3ad833e2019d2b5ce37be6fa361740538b6c",
+  "attestations": [],
+  "findings": [],
+  "history": [
+    {
+      "id": "stop:add-migrate-to-vnext-command:2026-09-18T02:57:47.657Z",
+      "at": "2026-09-18T02:57:47.657Z",
+      "type": "stop",
+      "from_state": "active:active",
+      "to_state": "stopped:frozen",
+      "reason": "literal user requested task stop\naction_v2_sha256:0658ab3b58dfd0e91d9a5c7303e6843fe1223eb3b4ac9c4c2c687b73575e5189",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-c9f911609f845a2f",
+        "issued_at": "2026-09-18T02:57:47.657Z",
+        "expires_at": "2026-09-18T03:07:47.657Z"
+      }
+    }
+  ]
+}

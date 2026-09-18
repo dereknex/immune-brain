@@ -158,17 +158,6 @@ export interface TaskIntentRefV3 {
 	content_hash: string;
 }
 
-export interface TaskEvidenceV2 {
-	id: string;
-	acceptance_id: string;
-	task_revision: number;
-	intent_content_hash: string;
-	diff_hash: string;
-	status: EvidenceStatus;
-	actor_id: string;
-	summary: string;
-}
-
 /**
  * One non-blocking Review note. Advisories travel inside the attestation itself
  * so a crash can never commit a pass verdict without its notes.
@@ -208,16 +197,6 @@ export interface ReviewRevisionIdentityV1 {
 	manifest_digest: string;
 }
 
-export interface TaskHistoryEntryV2 {
-	id: string;
-	at: string;
-	type: string;
-	from_phase: TaskPhase;
-	to_phase: TaskPhase;
-	reason: string;
-	authority?: AuthorityAuditDescriptor;
-}
-
 export interface TaskAttestationV3 extends TaskApprovalV2 {
 	acceptance_results: Array<{
 		acceptance_id: string;
@@ -234,21 +213,6 @@ export interface TaskHistoryEntryV3 {
 	to_state: string;
 	reason: string;
 	authority?: AuthorityAuditDescriptor;
-}
-
-export interface TaskRecordV2 {
-	contract: typeof TASK_RECORD_CONTRACT_V2;
-	task_id: string;
-	intent_revision: number;
-	intent_snapshot: TaskIntentV1;
-	intent_ref: TaskIntentRefV1;
-	artifact_ref?: { state: "active" | "frozen"; spec_path?: string };
-	phase: TaskPhase;
-	baseline: string;
-	evidence: TaskEvidenceV2[];
-	findings: TaskFinding[];
-	approvals: TaskApprovalV2[];
-	history: TaskHistoryEntryV2[];
 }
 
 export interface TaskRecordV3 {
@@ -274,17 +238,8 @@ export interface TaskRecordV4 extends Omit<TaskRecordV3, "contract"> {
 	git_base_head: string;
 }
 
-/** The record shape every Kernel owner passes around during the v3 drain window. */
-export type TaskRecord = TaskRecordV3 | TaskRecordV4;
-
-/**
- * Narrow the stored record union before reading a v4-only field such as
- * `git_base_head`. Comparing `record.contract` into a plain boolean does not
- * narrow, which let adapters read v4 fields off a v3-shaped value unchecked.
- */
-export function isTaskRecordV4(record: TaskRecord): record is TaskRecordV4 {
-	return record.contract === TASK_RECORD_CONTRACT_V4;
-}
+/** The live record shape every Kernel owner passes around. The v3 drain window is closed: `TaskRecordV2`/`TaskRecordV3` remain only as the frozen historical shapes `readAuditTaskPair` reads from `.imm/audit/`. */
+export type TaskRecord = TaskRecordV4;
 
 export interface TaskProjectionV3 extends CompletionDecision {
 	contract: "assurance_kernel/projection/v3";

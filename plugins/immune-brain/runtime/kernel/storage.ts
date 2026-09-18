@@ -56,7 +56,8 @@ import {
 	stateDatabasePath,
 } from "./storage_paths";
 import { canonicalRecordHash } from "./reducer";
-import { parseTaskRecord, parseTaskRecordV2 } from "./validation";
+import { parseTaskRecord } from "./validation";
+import { parseTaskRecordV2, parseTaskRecordV3, type TaskRecordV2 } from "./legacy_task_record";
 import {
 	assertRunBinding,
 	drainOperationId,
@@ -95,8 +96,8 @@ import {
 import type {
 	TaskLifecycle,
 	TaskPhase,
-	TaskRecordV2,
 	TaskRecord,
+	TaskRecordV3,
 	StoredTaskMutationV3,
 	V3AuthorityObservation,
 } from "./types";
@@ -956,7 +957,7 @@ export function readAuditTaskPair(
 	runId?: string,
 ): {
 	recordRevision: string;
-	record: TaskRecord | TaskRecordV2;
+	record: TaskRecordV2 | TaskRecordV3 | TaskRecord;
 	proof: TaskTombstone;
 } | null {
 	validateTaskId(taskId);
@@ -987,7 +988,7 @@ export function readAuditTaskPair(
 	if (proof.final_record_hash !== recordRevision)
 		throw new KernelStoreSecurityError("terminal audit proof does not match its task record");
 	const raw = JSON.parse(recordContent) as { contract?: unknown };
-	let record: TaskRecord | TaskRecordV2;
+	let record: TaskRecordV2 | TaskRecordV3 | TaskRecord;
 	if (raw.contract === "assurance_kernel/task_record/v2") {
 		const legacy = parseTaskRecordV2(raw);
 		if (
@@ -999,7 +1000,12 @@ export function readAuditTaskPair(
 			);
 		record = legacy;
 	} else {
-		const current = parseTaskRecord(raw);
+		let current: TaskRecordV3 | TaskRecord;
+		try {
+			current = parseTaskRecord(raw);
+		} catch {
+			current = parseTaskRecordV3(raw);
+		}
 		if (
 			current.task_id !== taskId ||
 			(current.lifecycle !== "done" && current.lifecycle !== "stopped")

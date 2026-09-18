@@ -76,6 +76,34 @@ function expectOk(result: ReturnType<typeof spawnSync>): void {
 	}
 }
 
+/**
+ * The removed v3 mutating names no longer have a `bin/` wrapper, so the copied
+ * plugin is driven through the runtime's own `cli` dispatch.
+ */
+function runCli(
+	pluginRoot: string,
+	targetRoot: string,
+	command: string,
+	args: string[],
+	home: string,
+) {
+	return spawnSync(
+		"bun",
+		[join(pluginRoot, "runtime", "v4_runtime.ts"), "cli", command, ...args],
+		{
+			cwd: targetRoot,
+			env: {
+				...process.env,
+				HOME: home,
+				XDG_CONFIG_HOME: join(home, "config"),
+				IMM_DEV_INSIGHTS: "0",
+			},
+			encoding: "utf8",
+			maxBuffer: 512 * 1024,
+		},
+	);
+}
+
 function withCopiedPlugin<T>(
 	fn: (args: {
 		pluginRoot: string;
@@ -118,7 +146,7 @@ describe("Roadmap shipped host and package acceptance", () => {
 		});
 		expect(existsSync(join(PLUGIN_ROOT, "skills"))).toBe(true);
 		expect(existsSync(join(PLUGIN_ROOT, ".pi-extension"))).toBe(true);
-		expect(existsSync(join(PLUGIN_ROOT, "bin", "imm-work"))).toBe(true);
+		expect(existsSync(join(PLUGIN_ROOT, "bin", "imm-work"))).toBe(false);
 		expect(
 			existsSync(join(PLUGIN_ROOT, "runtime", "immune_brain_runtime.ts")),
 		).toBe(false);
@@ -134,23 +162,17 @@ describe("Roadmap shipped host and package acceptance", () => {
 
 	it("runs the copied plugin outside checkout through terminal U1 semantics", () => {
 		withCopiedPlugin(({ pluginRoot, targetRoot, home, runtime }) => {
-			// v4 storage retirement: every v3 mutating command in the copied
-			// plugin returns the retired wall; read-only commands stay usable.
+			// v4 storage retirement: the removed v3 mutating names are unknown to the
+			// copied runtime, while the retired imm-plan option wall stays in place.
 			const plan = run(pluginRoot, targetRoot, "imm-plan", [PLAN_PATH, "--sync"], home);
 			expect(plan.status).toBe(1);
 			expect(plan.stderr).toMatch(/v3_storage_retired|drain_required/);
 
-			const work = run(pluginRoot, targetRoot, "imm-work", ["activate", PLAN_PATH, "1"], home);
-			expect(work.status).toBe(1);
-			expect(work.stderr).toMatch(/v3_storage_retired|drain_required/);
-
-			const review = run(pluginRoot, targetRoot, "imm-review", ["pass", "--evidence", "copied QA"], home);
-			expect(review.status).toBe(1);
-			expect(review.stderr).toMatch(/v3_storage_retired|drain_required/);
-
-			const finish = run(pluginRoot, targetRoot, "imm-finish", ["copied closed", "none"], home);
-			expect(finish.status).toBe(1);
-			expect(finish.stderr).toMatch(/v3_storage_retired|drain_required/);
+			for (const command of ["imm-work", "imm-review", "imm-finish"]) {
+				const removed = runCli(pluginRoot, targetRoot, command, ["status"], home);
+				expect(removed.status).toBe(2);
+				expect(removed.stderr).toContain(`Unknown Immune-Brain v4 command: ${command}`);
+			}
 
 			const status = run(pluginRoot, targetRoot, "imm-plan", [PLAN_PATH, "--json"], home);
 			expect([0, 1]).toContain(status.status);
