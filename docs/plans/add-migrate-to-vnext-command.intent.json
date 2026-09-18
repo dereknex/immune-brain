@@ -23,12 +23,15 @@
   "scope_hint": [
     "docs/plans/add-migrate-to-vnext-command.intent.json",
     "docs/specs/add-migrate-to-vnext-command.spec.md",
+    "plugins/immune-brain/dist/claude/mcp-server.mjs",
     "plugins/immune-brain/runtime/commands/kernel.ts",
     "plugins/immune-brain/runtime/kernel/sqlite_migration.ts",
     "plugins/immune-brain/runtime/kernel/sqlite_store.ts",
+    "plugins/immune-brain/runtime/kernel/storage_paths.ts",
+    "plugins/immune-brain/runtime/kernel/vnext_migration.ts",
     "tests/kernel-migrate-to-vnext.test.ts",
     "tests/kernel-storage-layout-migration.test.ts"
   ],
   "risk": "critical",
-  "revision": 1
+  "revision": 2
 }
