@@ -30,6 +30,7 @@
     "docs/specs/close-taskrecord-v3-drain-window.spec.md",
     "plugins/immune-brain/runtime/claude/kernel_ports.ts",
     "plugins/immune-brain/runtime/kernel/assurance_projection.ts",
+    "plugins/immune-brain/runtime/kernel/legacy_task_record.ts",
     "plugins/immune-brain/runtime/kernel/reducer.ts",
     "plugins/immune-brain/runtime/kernel/storage.ts",
     "plugins/immune-brain/runtime/kernel/types.ts",
@@ -46,6 +47,6 @@
     "tests/task-record-durability.test.ts"
   ],
   "risk": "critical",
-  "revision": 2,
+  "revision": 3,
   "owner": "user"
 }
