@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { canonicalIntentHash, parseTaskIntentV1 } from "../plugins/immune-brain/runtime/kernel/intent";
-import { parseTaskRecordV3, parseTaskRecordV4 } from "../plugins/immune-brain/runtime/kernel/validation";
+import { parseTaskRecordV4 } from "../plugins/immune-brain/runtime/kernel/validation";
+import { parseTaskRecordV3 } from "../plugins/immune-brain/runtime/kernel/legacy_task_record";
 import { canonicalRecordHash } from "../plugins/immune-brain/runtime/kernel/reducer";
 import {
 	LITERAL_USER_ACTOR_ID,

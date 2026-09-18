@@ -8,10 +8,17 @@ import { canonicalIntentHash } from "../plugins/immune-brain/runtime/kernel/inte
 import type {
 	AuthorityAuditDescriptor,
 	TaskAction,
-	TaskRecordV3,
+	TaskRecordV4,
 } from "../plugins/immune-brain/runtime/kernel/types";
-import { KernelInvariantError, KernelValidationError, assertTaskRecordUpdateV3, parseTaskRecordV3 } from "../plugins/immune-brain/runtime/kernel/validation";
+import {
+	KernelInvariantError,
+	KernelValidationError,
+	assertTaskRecordUpdateV3,
+	parseTaskRecordV4,
+} from "../plugins/immune-brain/runtime/kernel/validation";
 import { anchorForEvidence } from "../plugins/immune-brain/runtime/kernel/refutation";
+
+const GIT_BASE_HEAD = "a".repeat(40);
 
 const INTENT = {
 	contract: "assurance_kernel/task_intent/v1",
@@ -32,7 +39,7 @@ const WS = `sha256:${"b".repeat(64)}`;
 
 function rawRecordFixture(overrides: Record<string, unknown> = {}): Record<string, unknown> {
 	return {
-		contract: "assurance_kernel/task_record/v3",
+		contract: "assurance_kernel/task_record/v4",
 		task_id: "task-r2c2",
 		intent_snapshot: INTENT,
 		intent_ref: {
@@ -42,6 +49,7 @@ function rawRecordFixture(overrides: Record<string, unknown> = {}): Record<strin
 		lifecycle: "active",
 		artifact_state: "active",
 		baseline: `sha256:${"0".repeat(64)}`,
+		git_base_head: GIT_BASE_HEAD,
 		attestations: [],
 		findings: [],
 		history: [],
@@ -49,8 +57,8 @@ function rawRecordFixture(overrides: Record<string, unknown> = {}): Record<strin
 	};
 }
 
-function recordFixture(overrides: Partial<TaskRecordV3> = {}): TaskRecordV3 {
-	return parseTaskRecordV3(rawRecordFixture(overrides as Record<string, unknown>));
+function recordFixture(overrides: Partial<TaskRecordV4> = {}): TaskRecordV4 {
+	return parseTaskRecordV4(rawRecordFixture(overrides as Record<string, unknown>));
 }
 
 function qaAttestation(overrides: Record<string, unknown> = {}) {
@@ -68,7 +76,7 @@ function qaAttestation(overrides: Record<string, unknown> = {}) {
 	};
 }
 
-function frozenFixture(overrides: Partial<TaskRecordV3> = {}): TaskRecordV3 {
+function frozenFixture(overrides: Partial<TaskRecordV4> = {}): TaskRecordV4 {
 	return recordFixture({
 		artifact_state: "frozen",
 		intent_ref: {
@@ -101,7 +109,7 @@ function audit(authority_kind: "qa" | "review" | "user", actor_id = `${authority
 	};
 }
 
-function reduce(record: TaskRecordV3, action: TaskAction, authority: AuthorityAuditDescriptor | null = null) {
+function reduce(record: TaskRecordV4, action: TaskAction, authority: AuthorityAuditDescriptor | null = null) {
 	return reduceTask(record, {
 		...action,
 		expected_record_hash: canonicalRecordHash(record),
@@ -118,17 +126,28 @@ function approval(kind: "qa" | "review" | "user", id = `ap-${kind}`) {
 		diff_hash: DIFF,
 		actor_id: `${kind}-1`,
 		summary: `${kind} approved`,
+		...(kind === "review"
+			? {
+				review_revision: {
+					contract: "assurance_kernel/review_revision_identity/v1",
+					base_head: GIT_BASE_HEAD,
+					review_commit: "b".repeat(40),
+					review_tree: "c".repeat(40),
+					manifest_digest: `sha256:${"d".repeat(64)}`,
+				},
+			}
+			: {}),
 	};
 }
 
-function approve(record: TaskRecordV3, kind: "qa" | "review" | "user"): TaskRecordV3 {
+function approve(record: TaskRecordV4, kind: "qa" | "review" | "user"): TaskRecordV4 {
 	return reduce(record, {
 		...baseAction("record_approval"),
 		approval: approval(kind),
 	} as TaskAction, audit(kind)).record;
 }
 
-describe("TaskRecord v3 reducer", () => {
+describe("TaskRecord v4 reducer", () => {
 	test("QA approval atomically attests every acceptance", () => {
 		const record = frozenFixture();
 		const mutation = reduce(record, {
@@ -353,13 +372,13 @@ describe("TaskRecord v3 reducer", () => {
 		const attestation = qaAttestation;
 		const fixture = (findings: unknown[], attestations: unknown[] = []) =>
 			recordFixture({ findings, attestations } as never);
-		const refute = (record: TaskRecordV3) =>
+		const refute = (record: TaskRecordV4) =>
 			reduce(record, {
 				...baseAction("refute_finding"),
 				finding_id: "f-1",
 				attestation_id: "ap-qa",
 			} as TaskAction);
-		const resolve = (record: TaskRecordV3) =>
+		const resolve = (record: TaskRecordV4) =>
 			reduce(record, {
 				...baseAction("resolve_finding"),
 				finding_id: "f-1",
@@ -408,7 +427,7 @@ describe("TaskRecord v3 reducer", () => {
 			counterevidence: { attestation_id: "ap-qa", acceptance_id: "A1" },
 		};
 		const parse = (findings: unknown[], attestations: unknown[] = []) =>
-			parseTaskRecordV3(rawRecordFixture({ findings, attestations }));
+			parseTaskRecordV4(rawRecordFixture({ findings, attestations }));
 		// The record a live refutation is written as stays parseable.
 		expect(parse([refutedFinding], [qaAttestation()])).toBeTruthy();
 		// A refuted finding without the evidence it claims is not authority.
@@ -492,7 +511,7 @@ describe("TaskRecord v3 reducer", () => {
 			findings: mutation.record.findings.map((item) =>
 				item.id === "f-1" ? { ...item, summary: "rewritten" } : item,
 			),
-		} as TaskRecordV3;
+		} as TaskRecordV4;
 		expect(() => assertTaskRecordUpdateV3(previous, tampered, action)).toThrow(KernelInvariantError);
 	});
 
@@ -514,7 +533,7 @@ describe("TaskRecord v3 reducer", () => {
 			attestation_id: "ap-qa",
 		} as TaskAction;
 		// The Spec's stale -> refuted renewal is a legal write.
-		const stalePrior = parseTaskRecordV3(rawRecordFixture({
+		const stalePrior = parseTaskRecordV4(rawRecordFixture({
 			findings: [{
 				...finding,
 				status: "refuted",
@@ -525,7 +544,7 @@ describe("TaskRecord v3 reducer", () => {
 		const renewed = reduce(stalePrior, action).record;
 		expect(() => assertTaskRecordUpdateV3(stalePrior, renewed, action)).not.toThrow();
 		// Rebinding a refutation that is still live is not.
-		const livePrior = parseTaskRecordV3(rawRecordFixture({
+		const livePrior = parseTaskRecordV4(rawRecordFixture({
 			findings: [{
 				...finding,
 				status: "refuted",
@@ -544,7 +563,7 @@ describe("TaskRecord v3 reducer", () => {
 		expect(() => assertTaskRecordUpdateV3(livePrior, rebound as never, action)).toThrow(KernelInvariantError);
 		// The refutation binds the acceptance the finding names, not another
 		// acceptance the same attestation happens to pass.
-		const mismatched = parseTaskRecordV3(rawRecordFixture({
+		const mismatched = parseTaskRecordV4(rawRecordFixture({
 			findings: [{ ...finding, acceptance_id: "A0" }],
 			attestations,
 		}));

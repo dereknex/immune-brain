@@ -2494,9 +2494,6 @@ function taskDiffIdentity(projectRoot, scopeHint, taskId) {
     changed_paths: Object.keys(snapshot.staged_files).sort(comparePaths)
   };
 }
-function taskDiffHash(projectRoot, scopeHint, taskId) {
-  return taskDiffIdentity(projectRoot, scopeHint, taskId).diff_hash;
-}
 function gitRequired(root, args, failure) {
   const output = git(root, args);
   if (output === null)
@@ -3401,9 +3398,6 @@ var TASK_RECORD_CONTRACT_V2 = "assurance_kernel/task_record/v2";
 var TASK_RECORD_CONTRACT_V3 = "assurance_kernel/task_record/v3";
 var TASK_RECORD_CONTRACT_V4 = "assurance_kernel/task_record/v4";
 var REVIEW_REVISION_IDENTITY_CONTRACT = "assurance_kernel/review_revision_identity/v1";
-function isTaskRecordV4(record) {
-  return record.contract === TASK_RECORD_CONTRACT_V4;
-}
 var REDUCED_MUTATION_BRAND = Symbol("assurance-kernel-reduced-mutation-v2");
 var MUTATION_AUTHORITY_CAPABILITY_BRAND = Symbol("assurance-kernel-mutation-authority-capability");
 
@@ -3996,32 +3990,6 @@ function parseFinding(value, index, violations) {
     } : {}
   };
 }
-function parseHistoryV2(value, index, violations) {
-  const item = objectAt2(value, `record.history[${index}]`, violations);
-  rejectUnknown2(item, ["id", "at", "type", "from_phase", "to_phase", "reason", "authority"], `record.history[${index}]`, violations);
-  let authority;
-  if (item.authority !== undefined) {
-    const auth = objectAt2(item.authority, `record.history[${index}].authority`, violations);
-    rejectUnknown2(auth, ["authority_kind", "actor_id", "confirmation_ref", "issued_at", "expires_at"], `record.history[${index}].authority`, violations);
-    const kind = enumAt(auth.authority_kind, ["review", "qa", "user"], `record.history[${index}].authority.authority_kind`, violations);
-    authority = {
-      authority_kind: kind,
-      actor_id: stringAt(auth.actor_id, `record.history[${index}].authority.actor_id`, violations),
-      confirmation_ref: stringAt(auth.confirmation_ref, `record.history[${index}].authority.confirmation_ref`, violations),
-      issued_at: stringAt(auth.issued_at, `record.history[${index}].authority.issued_at`, violations),
-      expires_at: stringAt(auth.expires_at, `record.history[${index}].authority.expires_at`, violations)
-    };
-  }
-  return {
-    id: stringAt(item.id, `record.history[${index}].id`, violations),
-    at: stringAt(item.at, `record.history[${index}].at`, violations),
-    type: stringAt(item.type, `record.history[${index}].type`, violations),
-    from_phase: enumAt(item.from_phase, TASK_PHASES, `record.history[${index}].from_phase`, violations),
-    to_phase: enumAt(item.to_phase, TASK_PHASES, `record.history[${index}].to_phase`, violations),
-    reason: stringAt(item.reason, `record.history[${index}].reason`, violations),
-    ...authority ? { authority } : {}
-  };
-}
 function parseHistoryV3(value, index, violations) {
   const path = `record.history[${index}]`;
   const item = objectAt2(value, path, violations);
@@ -4049,29 +4017,6 @@ function parseHistoryV3(value, index, violations) {
   };
 }
 var SHA256_HEX = /^sha256:[a-f0-9]{64}$/;
-function parseEvidenceV2(value, index, acceptanceIds, violations) {
-  const item = objectAt2(value, `record.evidence[${index}]`, violations);
-  rejectUnknown2(item, ["id", "acceptance_id", "task_revision", "intent_content_hash", "diff_hash", "status", "actor_id", "summary"], `record.evidence[${index}]`, violations);
-  const acceptanceId = stringAt(item.acceptance_id, `record.evidence[${index}].acceptance_id`, violations);
-  if (acceptanceIds && !acceptanceIds.has(acceptanceId))
-    violations.push(`evidence ${String(item.id)} references unknown acceptance ${acceptanceId}`);
-  const intentContentHash = stringAt(item.intent_content_hash, `record.evidence[${index}].intent_content_hash`, violations);
-  if (!SHA256_HEX.test(intentContentHash))
-    violations.push(`record.evidence[${index}].intent_content_hash must be sha256:<64 hex>`);
-  const diffHash = stringAt(item.diff_hash, `record.evidence[${index}].diff_hash`, violations);
-  if (!SHA256_HEX.test(diffHash))
-    violations.push(`record.evidence[${index}].diff_hash must be sha256:<64 hex>`);
-  return {
-    id: stringAt(item.id, `record.evidence[${index}].id`, violations),
-    acceptance_id: acceptanceId,
-    task_revision: positiveInteger2(item.task_revision, `record.evidence[${index}].task_revision`, violations),
-    intent_content_hash: intentContentHash,
-    diff_hash: diffHash,
-    status: enumAt(item.status, EVIDENCE_STATUSES, `record.evidence[${index}].status`, violations),
-    actor_id: stringAt(item.actor_id, `record.evidence[${index}].actor_id`, violations),
-    summary: stringAt(item.summary, `record.evidence[${index}].summary`, violations)
-  };
-}
 function parseApprovalV2(value, index, violations, allowReviewRevision = false) {
   const item = objectAt2(value, `record.approvals[${index}]`, violations);
   rejectUnknown2(item, [
@@ -4202,81 +4147,6 @@ function parseAttestationV3(value, index, acceptanceIds, violations, allowReview
     ...advisoryFindings !== undefined ? { advisory_findings: advisoryFindings } : {}
   };
 }
-function parseTaskRecordV2(raw) {
-  const violations = [];
-  const value = objectAt2(raw, "record", violations);
-  rejectUnknown2(value, ["contract", "task_id", "intent_revision", "intent_snapshot", "intent_ref", "artifact_ref", "phase", "baseline", "evidence", "findings", "approvals", "history"], "record", violations);
-  if (value.contract !== TASK_RECORD_CONTRACT_V2)
-    violations.push(`contract must equal ${TASK_RECORD_CONTRACT_V2}`);
-  let snapshot = null;
-  try {
-    snapshot = parseTaskIntentV1(value.intent_snapshot);
-  } catch {
-    violations.push("record.intent_snapshot must be a valid TaskIntent v1");
-  }
-  const taskId = stringAt(value.task_id, "record.task_id", violations);
-  const intentRevision = positiveInteger2(value.intent_revision, "record.intent_revision", violations);
-  const refRaw = objectAt2(value.intent_ref, "record.intent_ref", violations);
-  rejectUnknown2(refRaw, ["path", "revision", "content_hash"], "record.intent_ref", violations);
-  const refPath = stringAt(refRaw.path, "record.intent_ref.path", violations);
-  const refRevision = positiveInteger2(refRaw.revision, "record.intent_ref.revision", violations);
-  const refContentHash = stringAt(refRaw.content_hash, "record.intent_ref.content_hash", violations);
-  if (!SHA256_HEX.test(refContentHash))
-    violations.push("record.intent_ref.content_hash must be sha256:<64 hex>");
-  let artifactRef;
-  if (value.artifact_ref !== undefined) {
-    const artifactRaw = objectAt2(value.artifact_ref, "record.artifact_ref", violations);
-    rejectUnknown2(artifactRaw, ["state", "spec_path"], "record.artifact_ref", violations);
-    const state = enumAt(artifactRaw.state, ["active", "frozen"], "record.artifact_ref.state", violations);
-    const specPath = artifactRaw.spec_path === undefined ? undefined : stringAt(artifactRaw.spec_path, "record.artifact_ref.spec_path", violations);
-    if (specPath !== undefined && (!/^docs\/specs\/(?!archive\/)[A-Za-z0-9._/-]+\.spec\.md$/.test(specPath) || specPath.includes("..")))
-      violations.push("record.artifact_ref.spec_path must be one canonical active Spec path");
-    artifactRef = { state, ...specPath === undefined ? {} : { spec_path: specPath } };
-  }
-  const activeIntentPath = `docs/plans/${taskId}.intent.json`;
-  const frozenIntentPath = `docs/plans/archive/${taskId}.intent.json`;
-  if (snapshot && (snapshot.task_id !== taskId || snapshot.revision !== intentRevision || snapshot.revision !== refRevision || refPath !== activeIntentPath && refPath !== frozenIntentPath))
-    violations.push("intent_snapshot and intent_ref must match record identity");
-  if (artifactRef?.state === "active" && refPath !== activeIntentPath)
-    violations.push("active artifact_ref requires the active intent path");
-  if (artifactRef?.state === "frozen" && refPath !== activeIntentPath && refPath !== frozenIntentPath)
-    violations.push("frozen artifact_ref requires the active or archived intent path");
-  if (snapshot && refContentHash !== "" && canonicalIntentHash(snapshot) !== refContentHash)
-    violations.push("intent_ref.content_hash must equal the snapshot canonical hash");
-  const baseline = stringAt(value.baseline, "record.baseline", violations);
-  if (!SHA256_HEX.test(baseline))
-    violations.push("record.baseline must be sha256:<64 hex>");
-  const acceptanceIds = new Set(snapshot ? snapshot.acceptance.map((item) => item.id) : []);
-  const evidence = arrayAt(value.evidence, "record.evidence", violations).map((item, index) => parseEvidenceV2(item, index, acceptanceIds, violations));
-  const findings = arrayAt(value.findings, "record.findings", violations).map((item, index) => parseFinding(item, index, violations));
-  const approvals = arrayAt(value.approvals, "record.approvals", violations).map((item, index) => parseApprovalV2(item, index, violations));
-  const history = arrayAt(value.history, "record.history", violations).map((item, index) => parseHistoryV2(item, index, violations));
-  uniqueIds(evidence, "record.evidence", violations);
-  uniqueIds(findings, "record.findings", violations);
-  uniqueIds(approvals, "record.approvals", violations);
-  uniqueIds(history, "record.history", violations);
-  const phase = enumAt(value.phase, TASK_PHASES, "phase", violations);
-  if (violations.length > 0)
-    throw new KernelValidationError(violations);
-  return {
-    contract: TASK_RECORD_CONTRACT_V2,
-    task_id: taskId,
-    intent_revision: intentRevision,
-    intent_snapshot: snapshot,
-    intent_ref: {
-      path: refPath,
-      revision: refRevision,
-      content_hash: refContentHash
-    },
-    ...artifactRef ? { artifact_ref: artifactRef } : {},
-    phase,
-    baseline,
-    evidence,
-    findings,
-    approvals,
-    history
-  };
-}
 function parseTaskRecordAtVersion(raw, version) {
   const violations = [];
   const value = objectAt2(raw, "record", violations);
@@ -4390,17 +4260,14 @@ function parseTaskRecordAtVersion(raw, version) {
   };
   return record;
 }
-function parseTaskRecordV3(raw) {
-  return parseTaskRecordAtVersion(raw, 3);
-}
 function parseTaskRecordV4(raw) {
   return parseTaskRecordAtVersion(raw, 4);
 }
 function parseTaskRecord(raw) {
   const contract = raw?.contract;
-  if (contract === TASK_RECORD_CONTRACT_V4)
-    return parseTaskRecordV4(raw);
-  return parseTaskRecordV3(raw);
+  if (contract !== TASK_RECORD_CONTRACT_V4)
+    throw new KernelValidationError([`contract must equal ${TASK_RECORD_CONTRACT_V4}`]);
+  return parseTaskRecordV4(raw);
 }
 function assertKernelInvariantsV3(intentRaw, recordRaw) {
   const intent = parseTaskIntentV1(intentRaw);
@@ -5062,10 +4929,7 @@ function reduceTask(recordRaw, actionRaw, authorityAudit = null, changedPaths) {
       const reviewRevision = approval.review_revision;
       if (reviewRevision && approval.kind !== "review")
         throw new KernelInvariantError(["review_revision is only valid on review approvals"]);
-      if (record.contract !== TASK_RECORD_CONTRACT_V4) {
-        if (reviewRevision)
-          throw new KernelInvariantError(["review_revision requires a TaskRecord v4"]);
-      } else if (approval.kind === "review") {
+      if (approval.kind === "review") {
         if (!reviewRevision)
           throw new KernelInvariantError(["v4 review approval requires review_revision"]);
         if (reviewRevision.base_head !== record.git_base_head)
@@ -5325,6 +5189,135 @@ function brandResult(record, nextWorking) {
 }
 function isReducedMutation(value) {
   return !!value && typeof value === "object" && value[REDUCED_MUTATION_BRAND] === true;
+}
+
+// plugins/immune-brain/runtime/kernel/legacy_task_record.ts
+function parseHistoryV2(value, index, violations) {
+  const item = objectAt2(value, `record.history[${index}]`, violations);
+  rejectUnknown2(item, ["id", "at", "type", "from_phase", "to_phase", "reason", "authority"], `record.history[${index}]`, violations);
+  let authority;
+  if (item.authority !== undefined) {
+    const auth = objectAt2(item.authority, `record.history[${index}].authority`, violations);
+    rejectUnknown2(auth, ["authority_kind", "actor_id", "confirmation_ref", "issued_at", "expires_at"], `record.history[${index}].authority`, violations);
+    const kind = enumAt(auth.authority_kind, ["review", "qa", "user"], `record.history[${index}].authority.authority_kind`, violations);
+    authority = {
+      authority_kind: kind,
+      actor_id: stringAt(auth.actor_id, `record.history[${index}].authority.actor_id`, violations),
+      confirmation_ref: stringAt(auth.confirmation_ref, `record.history[${index}].authority.confirmation_ref`, violations),
+      issued_at: stringAt(auth.issued_at, `record.history[${index}].authority.issued_at`, violations),
+      expires_at: stringAt(auth.expires_at, `record.history[${index}].authority.expires_at`, violations)
+    };
+  }
+  return {
+    id: stringAt(item.id, `record.history[${index}].id`, violations),
+    at: stringAt(item.at, `record.history[${index}].at`, violations),
+    type: stringAt(item.type, `record.history[${index}].type`, violations),
+    from_phase: enumAt(item.from_phase, TASK_PHASES, `record.history[${index}].from_phase`, violations),
+    to_phase: enumAt(item.to_phase, TASK_PHASES, `record.history[${index}].to_phase`, violations),
+    reason: stringAt(item.reason, `record.history[${index}].reason`, violations),
+    ...authority ? { authority } : {}
+  };
+}
+function parseEvidenceV2(value, index, acceptanceIds, violations) {
+  const item = objectAt2(value, `record.evidence[${index}]`, violations);
+  rejectUnknown2(item, ["id", "acceptance_id", "task_revision", "intent_content_hash", "diff_hash", "status", "actor_id", "summary"], `record.evidence[${index}]`, violations);
+  const acceptanceId = stringAt(item.acceptance_id, `record.evidence[${index}].acceptance_id`, violations);
+  if (acceptanceIds && !acceptanceIds.has(acceptanceId))
+    violations.push(`evidence ${String(item.id)} references unknown acceptance ${acceptanceId}`);
+  const intentContentHash = stringAt(item.intent_content_hash, `record.evidence[${index}].intent_content_hash`, violations);
+  if (!SHA256_HEX.test(intentContentHash))
+    violations.push(`record.evidence[${index}].intent_content_hash must be sha256:<64 hex>`);
+  const diffHash = stringAt(item.diff_hash, `record.evidence[${index}].diff_hash`, violations);
+  if (!SHA256_HEX.test(diffHash))
+    violations.push(`record.evidence[${index}].diff_hash must be sha256:<64 hex>`);
+  return {
+    id: stringAt(item.id, `record.evidence[${index}].id`, violations),
+    acceptance_id: acceptanceId,
+    task_revision: positiveInteger2(item.task_revision, `record.evidence[${index}].task_revision`, violations),
+    intent_content_hash: intentContentHash,
+    diff_hash: diffHash,
+    status: enumAt(item.status, EVIDENCE_STATUSES, `record.evidence[${index}].status`, violations),
+    actor_id: stringAt(item.actor_id, `record.evidence[${index}].actor_id`, violations),
+    summary: stringAt(item.summary, `record.evidence[${index}].summary`, violations)
+  };
+}
+function parseTaskRecordV2(raw) {
+  const violations = [];
+  const value = objectAt2(raw, "record", violations);
+  rejectUnknown2(value, ["contract", "task_id", "intent_revision", "intent_snapshot", "intent_ref", "artifact_ref", "phase", "baseline", "evidence", "findings", "approvals", "history"], "record", violations);
+  if (value.contract !== TASK_RECORD_CONTRACT_V2)
+    violations.push(`contract must equal ${TASK_RECORD_CONTRACT_V2}`);
+  let snapshot = null;
+  try {
+    snapshot = parseTaskIntentV1(value.intent_snapshot);
+  } catch {
+    violations.push("record.intent_snapshot must be a valid TaskIntent v1");
+  }
+  const taskId = stringAt(value.task_id, "record.task_id", violations);
+  const intentRevision = positiveInteger2(value.intent_revision, "record.intent_revision", violations);
+  const refRaw = objectAt2(value.intent_ref, "record.intent_ref", violations);
+  rejectUnknown2(refRaw, ["path", "revision", "content_hash"], "record.intent_ref", violations);
+  const refPath = stringAt(refRaw.path, "record.intent_ref.path", violations);
+  const refRevision = positiveInteger2(refRaw.revision, "record.intent_ref.revision", violations);
+  const refContentHash = stringAt(refRaw.content_hash, "record.intent_ref.content_hash", violations);
+  if (!SHA256_HEX.test(refContentHash))
+    violations.push("record.intent_ref.content_hash must be sha256:<64 hex>");
+  let artifactRef;
+  if (value.artifact_ref !== undefined) {
+    const artifactRaw = objectAt2(value.artifact_ref, "record.artifact_ref", violations);
+    rejectUnknown2(artifactRaw, ["state", "spec_path"], "record.artifact_ref", violations);
+    const state = enumAt(artifactRaw.state, ["active", "frozen"], "record.artifact_ref.state", violations);
+    const specPath = artifactRaw.spec_path === undefined ? undefined : stringAt(artifactRaw.spec_path, "record.artifact_ref.spec_path", violations);
+    if (specPath !== undefined && (!/^docs\/specs\/(?!archive\/)[A-Za-z0-9._/-]+\.spec\.md$/.test(specPath) || specPath.includes("..")))
+      violations.push("record.artifact_ref.spec_path must be one canonical active Spec path");
+    artifactRef = { state, ...specPath === undefined ? {} : { spec_path: specPath } };
+  }
+  const activeIntentPath = `docs/plans/${taskId}.intent.json`;
+  const frozenIntentPath = `docs/plans/archive/${taskId}.intent.json`;
+  if (snapshot && (snapshot.task_id !== taskId || snapshot.revision !== intentRevision || snapshot.revision !== refRevision || refPath !== activeIntentPath && refPath !== frozenIntentPath))
+    violations.push("intent_snapshot and intent_ref must match record identity");
+  if (artifactRef?.state === "active" && refPath !== activeIntentPath)
+    violations.push("active artifact_ref requires the active intent path");
+  if (artifactRef?.state === "frozen" && refPath !== activeIntentPath && refPath !== frozenIntentPath)
+    violations.push("frozen artifact_ref requires the active or archived intent path");
+  if (snapshot && refContentHash !== "" && canonicalIntentHash(snapshot) !== refContentHash)
+    violations.push("intent_ref.content_hash must equal the snapshot canonical hash");
+  const baseline = stringAt(value.baseline, "record.baseline", violations);
+  if (!SHA256_HEX.test(baseline))
+    violations.push("record.baseline must be sha256:<64 hex>");
+  const acceptanceIds = new Set(snapshot ? snapshot.acceptance.map((item) => item.id) : []);
+  const evidence = arrayAt(value.evidence, "record.evidence", violations).map((item, index) => parseEvidenceV2(item, index, acceptanceIds, violations));
+  const findings = arrayAt(value.findings, "record.findings", violations).map((item, index) => parseFinding(item, index, violations));
+  const approvals = arrayAt(value.approvals, "record.approvals", violations).map((item, index) => parseApprovalV2(item, index, violations));
+  const history = arrayAt(value.history, "record.history", violations).map((item, index) => parseHistoryV2(item, index, violations));
+  uniqueIds(evidence, "record.evidence", violations);
+  uniqueIds(findings, "record.findings", violations);
+  uniqueIds(approvals, "record.approvals", violations);
+  uniqueIds(history, "record.history", violations);
+  const phase = enumAt(value.phase, TASK_PHASES, "phase", violations);
+  if (violations.length > 0)
+    throw new KernelValidationError(violations);
+  return {
+    contract: TASK_RECORD_CONTRACT_V2,
+    task_id: taskId,
+    intent_revision: intentRevision,
+    intent_snapshot: snapshot,
+    intent_ref: {
+      path: refPath,
+      revision: refRevision,
+      content_hash: refContentHash
+    },
+    ...artifactRef ? { artifact_ref: artifactRef } : {},
+    phase,
+    baseline,
+    evidence,
+    findings,
+    approvals,
+    history
+  };
+}
+function parseTaskRecordV3(raw) {
+  return parseTaskRecordAtVersion(raw, 3);
 }
 
 // plugins/immune-brain/runtime/kernel/run_identity.ts
@@ -5904,7 +5897,12 @@ function readAuditTaskPair(root, taskId, runId) {
       throw new KernelStoreSecurityError("historical audit TaskRecord v2 must be terminal and identity-consistent");
     record = legacy;
   } else {
-    const current = parseTaskRecord(raw);
+    let current;
+    try {
+      current = parseTaskRecord(raw);
+    } catch {
+      current = parseTaskRecordV3(raw);
+    }
     if (current.task_id !== taskId || current.lifecycle !== "done" && current.lifecycle !== "stopped")
       throw new KernelStoreSecurityError("audit TaskRecord must be terminal and identity-consistent");
     record = current;
@@ -6377,147 +6375,8 @@ function repairKernelAuthority(root, taskId, expectedProjectionRevision, _at = n
 
 // plugins/immune-brain/runtime/assurance/review_evidence.ts
 var MAX_REVIEW_BUNDLE_BYTES = 2 * 1024 * 1024;
-function bundleDigest(bundle) {
-  return `sha256:${createHash13("sha256").update(JSON.stringify(bundle)).digest("hex")}`;
-}
 var reviewUtf8 = new TextDecoder("utf-8", { fatal: true });
-function readIndexBlob(root, path, entry) {
-  if (!entry.oid)
-    return null;
-  const type = execFileSync3("git", ["cat-file", "-t", entry.oid], {
-    cwd: root,
-    encoding: "utf8",
-    stdio: ["ignore", "pipe", "ignore"],
-    maxBuffer: 16,
-    timeout: 1e4
-  }).trim();
-  if (type !== "blob")
-    throw new Error(`index object is not a blob for ${path}`);
-  const sizeText = execFileSync3("git", ["cat-file", "-s", entry.oid], {
-    cwd: root,
-    encoding: "utf8",
-    stdio: ["ignore", "pipe", "ignore"],
-    maxBuffer: 64,
-    timeout: 1e4
-  }).trim();
-  const size = Number(sizeText);
-  if (!Number.isSafeInteger(size) || size < 0 || size > MAX_REVIEW_BUNDLE_BYTES)
-    throw new Error(`review file exceeds bounded size: ${path}`);
-  const bytes = execFileSync3("git", ["cat-file", "blob", entry.oid], {
-    cwd: root,
-    encoding: "buffer",
-    stdio: ["ignore", "pipe", "ignore"],
-    maxBuffer: MAX_REVIEW_BUNDLE_BYTES + 1,
-    timeout: 1e4
-  });
-  if (bytes.length !== size)
-    throw new Error(`index blob size changed during capture: ${path}`);
-  let content;
-  try {
-    content = reviewUtf8.decode(bytes);
-  } catch {
-    throw new Error(`review file is not valid UTF-8: ${path}`);
-  }
-  if (!Buffer.from(content, "utf8").equals(bytes))
-    throw new Error(`review file does not round-trip through UTF-8: ${path}`);
-  return content;
-}
-var GIT_OBJECT_ID3 = /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/;
 var REVIEW_MODES = new Set(["100644", "100755", "120000"]);
-function nullRecords(bytes) {
-  if (bytes.length === 0)
-    return [];
-  if (bytes[bytes.length - 1] !== 0)
-    throw new Error("git index listing is not NUL-terminated");
-  const records = [];
-  let start = 0;
-  for (let index = 0;index < bytes.length; index += 1) {
-    if (bytes[index] !== 0)
-      continue;
-    if (index === start)
-      throw new Error("git index listing contains an empty record");
-    records.push(bytes.subarray(start, index));
-    start = index + 1;
-  }
-  return records;
-}
-function scopedNeighborhoodFiles(root, scope, dirtyPaths) {
-  const listing = execFileSync3("git", ["ls-files", "--stage", "-z"], {
-    cwd: root,
-    encoding: "buffer",
-    stdio: ["ignore", "pipe", "ignore"],
-    maxBuffer: 32 * 1024 * 1024,
-    timeout: 1e4
-  });
-  const entries = [];
-  for (const record of nullRecords(listing)) {
-    const tab = record.indexOf(9);
-    if (tab < 0)
-      throw new Error("git index entry is malformed");
-    const [mode, oid, stage] = record.subarray(0, tab).toString("ascii").split(" ");
-    let path;
-    try {
-      path = reviewUtf8.decode(record.subarray(tab + 1));
-    } catch {
-      throw new Error("git index path is not valid UTF-8");
-    }
-    if (!Buffer.from(path, "utf8").equals(record.subarray(tab + 1)))
-      throw new Error("git index path does not round-trip through UTF-8");
-    if (!scope.some((scopePath) => pathMatchesScope(path, scopePath)) || dirtyPaths.has(path))
-      continue;
-    if (!REVIEW_MODES.has(mode))
-      throw new Error(`review neighborhood file has unsupported mode: ${path}`);
-    if (!GIT_OBJECT_ID3.test(oid ?? "") || /^0+$/.test(oid ?? "") || stage !== "0")
-      throw new Error(`review neighborhood file has invalid index identity: ${path}`);
-    const content = readIndexBlob(root, path, { oid });
-    if (content === null)
-      throw new Error(`review neighborhood file is missing index content: ${path}`);
-    entries.push([path, {
-      mode,
-      oid,
-      base_mode: mode,
-      base_oid: oid,
-      fingerprint: `index:${mode}:${oid}`,
-      current_content: content
-    }]);
-  }
-  entries.sort(([left], [right]) => left.localeCompare(right));
-  return Object.fromEntries(entries);
-}
-function captureReviewBundle(root, scopeHint, expectedDiffHash, outcomes) {
-  const before = captureGitTaskSnapshot(root, scopeHint);
-  if (taskDiffHash(root, before.scope) !== expectedDiffHash)
-    throw new Error("review task snapshot does not match assurance snapshot");
-  const dirtyFiles = Object.fromEntries(Object.entries(before.staged_files).map(([path, entry]) => [path, {
-    ...entry,
-    fingerprint: `index:${entry.mode ?? "missing"}:${entry.oid ?? "missing"}`,
-    current_content: readIndexBlob(before.repository_root, path, entry)
-  }]));
-  const neighborhoodFiles = scopedNeighborhoodFiles(before.repository_root, before.scope, new Set(Object.keys(dirtyFiles)));
-  const pathProvenance = Object.fromEntries([
-    ...Object.keys(dirtyFiles).map((path) => [path, "diff"]),
-    ...Object.keys(neighborhoodFiles).map((path) => [path, "neighborhood"])
-  ].sort(([left], [right]) => left.localeCompare(right)));
-  const after = captureGitTaskSnapshot(root, before.scope);
-  if (JSON.stringify(after) !== JSON.stringify(before) || taskDiffHash(root, before.scope) !== expectedDiffHash) {
-    throw new Error("task snapshot changed while capturing immutable review bundle");
-  }
-  const unsigned = {
-    contract: "assurance_kernel/review_bundle/v4",
-    root: before.repository_root,
-    head: before.head,
-    scope: before.scope,
-    diff_hash: expectedDiffHash,
-    dirty_files: dirtyFiles,
-    neighborhood_files: neighborhoodFiles,
-    path_provenance: pathProvenance,
-    outcomes: Object.fromEntries(Object.entries(outcomes).map(([id, outcome]) => [id, { ...outcome }]))
-  };
-  if (Buffer.byteLength(JSON.stringify(unsigned)) > MAX_REVIEW_BUNDLE_BYTES) {
-    throw new Error("immutable review bundle exceeds bounded output limit");
-  }
-  return { ...unsigned, bundle_digest: bundleDigest(unsigned) };
-}
 var GIT_COMMIT_ID = /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/;
 var REVIEW_TASK_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 var REVISION_DIFF_HASH = /^sha256:[a-f0-9]{64}$/;
@@ -6778,6 +6637,25 @@ function projectHistoricalTerminal(record, recordRevision, workspaceRevision) {
     completion_ready: record.phase === "done"
   };
 }
+function projectHistoricalTerminalV3(record, recordRevision, workspaceRevision) {
+  const freshAcceptanceIds = [
+    ...new Set(record.attestations.filter((item) => item.kind === "qa").flatMap((item) => item.acceptance_results).filter((item) => item.status === "passed").map((item) => item.acceptance_id))
+  ];
+  const approvalKinds = [...new Set(record.attestations.map((item) => item.kind))];
+  return {
+    ...emptyProjection(),
+    record_revision: recordRevision,
+    workspace_revision: workspaceRevision,
+    intent_revision: record.intent_snapshot.revision,
+    intent_content_hash: record.intent_ref.content_hash,
+    lifecycle: record.lifecycle,
+    artifact_state: "frozen",
+    risk: record.intent_snapshot.risk,
+    fresh_acceptance_ids: freshAcceptanceIds,
+    fresh_approval_kinds: approvalKinds,
+    completion_ready: record.lifecycle === "done"
+  };
+}
 function freshApprovalKinds(record, currentIntentContentHash, diffHash) {
   const kinds = [];
   const seen = new Set;
@@ -6893,6 +6771,14 @@ async function projectAssurance(root, taskId, diffProvider) {
           error: null,
           claim: null,
           projection: projectHistoricalTerminal(auditPair.record, auditPair.recordRevision, workspace.revision)
+        };
+      if (auditPair.record.contract === "assurance_kernel/task_record/v3")
+        return {
+          contract: "assurance_kernel/assurance_projection/v1",
+          task_id: taskId,
+          error: null,
+          claim: null,
+          projection: projectHistoricalTerminalV3(auditPair.record, auditPair.recordRevision, workspace.revision)
         };
       return {
         contract: "assurance_kernel/assurance_projection/v1",
@@ -7580,13 +7466,13 @@ import { createHash as createHash15 } from "node:crypto";
 import { spawnSync as spawnSync3 } from "node:child_process";
 import { resolve as resolve8 } from "node:path";
 var SOURCE_PATH = stateDatabasePath();
-var GIT_OBJECT_ID4 = /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/;
+var GIT_OBJECT_ID3 = /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/;
 function readGitHead(root) {
   const result = spawnSync3("git", ["-C", root, "rev-parse", "--verify", "HEAD^{commit}"], {
     encoding: "utf8"
   });
   const head = typeof result.stdout === "string" ? result.stdout.trim() : "";
-  if (result.status !== 0 || !GIT_OBJECT_ID4.test(head))
+  if (result.status !== 0 || !GIT_OBJECT_ID3.test(head))
     throw new Error("enrollment requires a committed Git HEAD in the project root");
   return head.toLowerCase();
 }
@@ -7920,7 +7806,7 @@ function removeTaskOwnedTree(root) {
   makeDirectoriesWritable(root);
   rmSync5(root, { recursive: true, force: true });
 }
-var GIT_OBJECT_ID5 = /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/;
+var GIT_OBJECT_ID4 = /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/;
 function isolatedGitEnv(extra = {}) {
   const env = { ...process.env };
   delete env.GIT_DIR;
@@ -7945,7 +7831,7 @@ function git2(cwd, args, extra = {}) {
   }).trim();
 }
 function assertTree(tree) {
-  if (!GIT_OBJECT_ID5.test(tree))
+  if (!GIT_OBJECT_ID4.test(tree))
     throw new DeliveryWorkspaceError("delivery tree has invalid identity");
 }
 function assertInside(root, candidate, label) {
@@ -8101,7 +7987,7 @@ function materializeDeliveryWorkspace(sourceRoot, tree) {
       GIT_COMMITTER_EMAIL: "assurance@immune-brain.local",
       GIT_COMMITTER_DATE: "1970-01-01T00:00:00 +0000"
     });
-    if (!GIT_OBJECT_ID5.test(commit))
+    if (!GIT_OBJECT_ID4.test(commit))
       throw new DeliveryWorkspaceError("delivery commit write failed");
     git2(dest, ["init", "-q"]);
     git2(dest, ["fetch", "--depth=1", `file://${resolve9(sourceRoot)}`, `${commit}:refs/heads/delivery`]);
@@ -12321,8 +12207,8 @@ async function buildAssuranceSnapshot(root, taskId, role, projection) {
     const descriptor = parseVerificationDescriptor(item.verification);
     descriptors.set(item.id, descriptor);
   }
-  const reviewBundle = role === "review" && !isTaskRecordV4(record) ? captureReviewBundle(root, intent.scope_hint, projection.projection.diff_hash, qaOutcomes(record)) : null;
-  const reviewManifest = role === "review" && isTaskRecordV4(record) ? captureReviewManifest(root, {
+  const reviewBundle = null;
+  const reviewManifest = role === "review" ? captureReviewManifest(root, {
     taskId,
     baseHead: record.git_base_head,
     scopeHint: intent.scope_hint,
@@ -12336,7 +12222,7 @@ async function buildAssuranceSnapshot(root, taskId, role, projection) {
     risk: intent.risk,
     outcomes: qaOutcomes(record)
   }) : null;
-  const dirtyFiles = reviewManifest ? Object.keys(reviewManifest.changed_paths) : reviewBundle ? Object.keys(reviewBundle.dirty_files) : [];
+  const dirtyFiles = reviewManifest ? Object.keys(reviewManifest.changed_paths) : [];
   const snapshot = {
     contract: "assurance_kernel/assurance_snapshot/v2",
     task_id: taskId,
@@ -12355,7 +12241,7 @@ async function buildAssuranceSnapshot(root, taskId, role, projection) {
     stale_attestation_ids: projection.projection.stale_attestation_ids,
     acceptance: intent.acceptance,
     dirty_files: dirtyFiles,
-    review_bundle_digest: reviewManifest?.manifest_digest ?? reviewBundle?.bundle_digest ?? null,
+    review_bundle_digest: reviewManifest?.manifest_digest ?? null,
     root,
     ...reviewManifest ? {
       review_revision: {

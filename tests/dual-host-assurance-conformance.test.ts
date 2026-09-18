@@ -339,7 +339,11 @@ function projection(
 	},
 ) {
 	return {
-		error: state.contract?.startsWith("assurance_kernel/task_record/v99") ? "unsupported TaskRecord contract" : null,
+		error:
+			state.contract?.startsWith("assurance_kernel/task_record/v99") ||
+			state.contract === "assurance_kernel/task_record/v3"
+				? "unsupported TaskRecord contract"
+				: null,
 		claim: state.lifecycle === "active" ? { task_id: TASK, lifecycle_status: "active" } : { task_id: TASK, lifecycle_status: "terminal" },
 		projection: {
 			lifecycle: state.lifecycle,
@@ -799,16 +803,14 @@ describe("dual-host assurance conformance", () => {
 		});
 	}
 
-	test("v3 drain remains readable while vFuture, stale identity, and concurrent continuation fail closed", async () => {
+	test("v3 identity, vFuture, stale identity, and concurrent continuation all fail closed", async () => {
 		const v3 = sharedKernel("routine");
 		v3.v3();
-		expect((await v3.claude().coordinator.advance(TASK, ctx)).state).toBe("completed");
+		expect(await v3.claude().coordinator.advance(TASK, ctx)).toMatchObject({ state: "blocked" });
 		const v3pi = sharedKernel("material");
 		v3pi.v3();
 		const v3piHost = v3pi.pi();
-		const v3ready = await v3piHost.advance(TASK, ctx as never);
-		expect(v3ready.state).toBe("review_ready");
-		expect(await v3piHost.submitReview(TASK, ctx, passVerdict(snapshot("review")))).toEqual({ state: "completed" });
+		expect(await v3piHost.advance(TASK, ctx as never)).toMatchObject({ state: "blocked" });
 		const future = sharedKernel("routine");
 		future.future();
 		expect(await future.claude().coordinator.advance(TASK, ctx)).toMatchObject({ state: "blocked" });

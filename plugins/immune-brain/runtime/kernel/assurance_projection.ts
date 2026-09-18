@@ -20,7 +20,8 @@ import {
 	reconcileKernelAuthority,
 } from "./storage";
 import { projectTask, resolveProjectedRisk } from "./completion";
-import type { AssuranceObligation, TaskIntentV1, TaskRecord, TaskRecordV2 } from "./types";
+import type { AssuranceObligation, TaskIntentV1, TaskRecord, TaskRecordV3 } from "./types";
+import type { TaskRecordV2 } from "./legacy_task_record";
 
 export interface TaskDiffSnapshot {
 	diff_hash: string;
@@ -138,6 +139,36 @@ function projectHistoricalTerminal(
 		fresh_acceptance_ids: [...new Set(record.evidence.filter((item) => item.status === "passed").map((item) => item.acceptance_id))],
 		fresh_approval_kinds: approvalKinds,
 		completion_ready: record.phase === "done",
+	};
+}
+
+function projectHistoricalTerminalV3(
+	record: TaskRecordV3,
+	recordRevision: string,
+	workspaceRevision: string,
+): AssuranceProjection {
+	const freshAcceptanceIds = [
+		...new Set(
+			record.attestations
+				.filter((item) => item.kind === "qa")
+				.flatMap((item) => item.acceptance_results)
+				.filter((item) => item.status === "passed")
+				.map((item) => item.acceptance_id),
+		),
+	];
+	const approvalKinds = [...new Set(record.attestations.map((item) => item.kind))];
+	return {
+		...emptyProjection(),
+		record_revision: recordRevision,
+		workspace_revision: workspaceRevision,
+		intent_revision: record.intent_snapshot.revision,
+		intent_content_hash: record.intent_ref.content_hash,
+		lifecycle: record.lifecycle,
+		artifact_state: "frozen",
+		risk: record.intent_snapshot.risk,
+		fresh_acceptance_ids: freshAcceptanceIds,
+		fresh_approval_kinds: approvalKinds,
+		completion_ready: record.lifecycle === "done",
 	};
 }
 
@@ -311,6 +342,14 @@ export async function projectAssurance(
 					error: null,
 					claim: null,
 					projection: projectHistoricalTerminal(auditPair.record, auditPair.recordRevision, workspace.revision),
+				};
+			if (auditPair.record.contract === "assurance_kernel/task_record/v3")
+				return {
+					contract: "assurance_kernel/assurance_projection/v1",
+					task_id: taskId,
+					error: null,
+					claim: null,
+					projection: projectHistoricalTerminalV3(auditPair.record, auditPair.recordRevision, workspace.revision),
 				};
 			return {
 				contract: "assurance_kernel/assurance_projection/v1",
