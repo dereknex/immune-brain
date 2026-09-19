@@ -200,36 +200,36 @@ The three repair/maintenance skills are host-native: they never create a managed
 
 ```mermaid
 flowchart TD
-    subgraph 1_Planning [1. Planning Phase]
-        B[imm-brainstorm<br/>Clarify Requirements & Constraints] --> P[imm-planner<br/>Author Spec & TaskIntent]
-        P --> TI[TaskIntent .intent.json<br/>- goal / scope_hint<br/>- risk tier<br/>- acceptance descriptors]
+    subgraph Planning ["1. Planning Phase"]
+        B["imm-brainstorm<br/>Clarify Requirements & Constraints"] --> P["imm-planner<br/>Author Spec & TaskIntent"]
+        P --> TI["TaskIntent (.intent.json)<br/>• goal / scope_hint<br/>• risk tier<br/>• acceptance descriptors"]
     end
 
-    subgraph 2_Enrollment [2. Enrollment Gate]
-        TI --> EG{Native User Gate<br/>Host Modal Confirmation}
-        EG -->|Confirm| KS[(.imm/state/kernel.sqlite<br/>Atomic TaskRecord<br/>Exclusive Workspace Claim)]
+    subgraph Enrollment ["2. Enrollment Gate"]
+        TI --> EG{"Native User Gate<br/>Host Modal Confirmation"}
+        EG -->|Confirm| KS[(".imm/state/kernel.sqlite<br/>Atomic TaskRecord<br/>Exclusive Workspace Claim")]
     end
 
-    subgraph 3_Loop [3. Execution & Assurance Loop imm-loop]
-        KS --> EX[Executor Role<br/>Edit code strictly inside scope_hint]
-        EX --> FRZ[advance_assurance<br/>Artifacts frozen active:frozen]
-        FRZ --> QA[Deterministic QA Engine<br/>Run acceptance verification commands<br/>Generate QA Attestation]
+    subgraph Loop ["3. Execution & Assurance Loop (imm-loop)"]
+        KS --> EX["Executor Role<br/>Edit code strictly inside scope_hint"]
+        EX --> FRZ["advance_assurance<br/>Artifacts frozen (active:frozen)"]
+        FRZ --> QA["Deterministic QA Engine<br/>Run acceptance verification commands<br/>Generate QA Attestation"]
         
-        QA -->|Fail| RW1[Rework / Fix]
+        QA -->|Fail| RW1["Rework / Fix"]
         RW1 --> EX
         
-        QA -->|Pass| RK{Risk Tier?}
-        RK -->|routine| ST[Settlement]
-        RK -->|material / critical| RV[Review Role<br/>Structured verdict Pass / Rework]
+        QA -->|Pass| RK{"Risk Tier?"}
+        RK -->|routine| ST["Settlement"]
+        RK -->|material / critical| RV["Review Role<br/>Structured verdict (Pass / Rework)"]
         
-        RV -->|Rework| RW2[Rework]
+        RV -->|Rework| RW2["Rework"]
         RW2 --> EX
         RV -->|Pass| ST
     end
 
-    subgraph 4_Settlement [4. Settlement & Learnings]
-        ST --> CLS[Atomic Closure<br/>- Lifecycle: done<br/>- Audit evidence in .imm/audit/<br/>- Release Workspace Claim]
-        CLS -.-> CP[Compounder Role<br/>Extract Learnings to docs/solutions/]
+    subgraph Settlement ["4. Settlement & Learnings"]
+        ST --> CLS["Atomic Closure<br/>• Lifecycle: done<br/>• Audit evidence in .imm/audit/<br/>• Release Workspace Claim"]
+        CLS -.-> CP["Compounder Role<br/>Extract Learnings to docs/solutions/"]
     end
 ```
 

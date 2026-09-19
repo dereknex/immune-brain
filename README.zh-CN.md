@@ -200,36 +200,36 @@ Executor、QA、Review、Compounder 等为 `imm-loop` 内部调度的角色，�
 
 ```mermaid
 flowchart TD
-    subgraph 1_Planning [1. 规划阶段]
-        B[imm-brainstorm<br/>需求澄清/约束] --> P[imm-planner<br/>编写 Spec & TaskIntent]
-        P --> TI[TaskIntent .intent.json<br/>- goal / scope_hint<br/>- risk tier<br/>- acceptance descriptors]
+    subgraph Planning ["1. 规划阶段"]
+        B["imm-brainstorm<br/>需求澄清/约束"] --> P["imm-planner<br/>编写 Spec & TaskIntent"]
+        P --> TI["TaskIntent (.intent.json)<br/>• goal / scope_hint<br/>• risk tier<br/>• acceptance descriptors"]
     end
 
-    subgraph 2_Enrollment [2. 准入登记]
-        TI --> EG{Native User Gate<br/>当前 Host 弹窗确认}
-        EG -->|确认| KS[(.imm/state/kernel.sqlite<br/>原子生成 TaskRecord<br/>独占 Workspace Claim)]
+    subgraph Enrollment ["2. 准入登记"]
+        TI --> EG{"Native User Gate<br/>当前 Host 弹窗确认"}
+        EG -->|确认| KS[(".imm/state/kernel.sqlite<br/>原子生成 TaskRecord<br/>独占 Workspace Claim")]
     end
 
-    subgraph 3_Loop [3. 执行与验证循环 imm-loop]
-        KS --> EX[Executor 角色<br/>在 scope_hint 范围内修改代码]
-        EX --> FRZ[advance_assurance<br/>制品冻结 active:frozen]
-        FRZ --> QA[确定性 QA 引擎<br/>原子运行 acceptance 校验命令<br/>生成 QA Attestation]
+    subgraph Loop ["3. 执行与验证循环 (imm-loop)"]
+        KS --> EX["Executor 角色<br/>在 scope_hint 范围内修改代码"]
+        EX --> FRZ["advance_assurance<br/>制品冻结 (active:frozen)"]
+        FRZ --> QA["确定性 QA 引擎<br/>原子运行 acceptance 校验命令<br/>生成 QA Attestation"]
         
-        QA -->|失败| RW1[Rework 返工修正]
+        QA -->|失败| RW1["Rework 返工修正"]
         RW1 --> EX
         
-        QA -->|通过| RK{Risk 等级?}
-        RK -->|routine| ST[Settlement 结算]
-        RK -->|material / critical| RV[Review 审查角色<br/>结构化裁决 Pass / Rework]
+        QA -->|通过| RK{"Risk 等级?"}
+        RK -->|routine| ST["Settlement 结算"]
+        RK -->|material / critical| RV["Review 审查角色<br/>结构化裁决 (Pass / Rework)"]
         
-        RV -->|Rework| RW2[Rework 驳回]
+        RV -->|Rework| RW2["Rework 驳回"]
         RW2 --> EX
         RV -->|Pass| ST
     end
 
-    subgraph 4_Settlement [4. 结算与沉淀]
-        ST --> CLS[原子结项<br/>- Lifecycle: done<br/>- 写入审计日志 .imm/audit/<br/>- 释放 Workspace Claim]
-        CLS -.-> CP[Compounder 角色<br/>提取经验至 docs/solutions/]
+    subgraph Settlement ["4. 结算与沉淀"]
+        ST --> CLS["原子结项<br/>• Lifecycle: done<br/>• 写入审计日志 .imm/audit/<br/>• 释放 Workspace Claim"]
+        CLS -.-> CP["Compounder 角色<br/>提取经验至 docs/solutions/"]
     end
 ```
 
