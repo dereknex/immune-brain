@@ -198,29 +198,55 @@ Executor、QA、Review、Compounder 等为 `imm-loop` 内部调度的角色，�
 
 ## 生命周期
 
+```mermaid
+flowchart TD
+    subgraph 1_Planning [1. 规划阶段]
+        B[imm-brainstorm<br/>需求澄清/约束] --> P[imm-planner<br/>编写 Spec & TaskIntent]
+        P --> TI[TaskIntent .intent.json<br/>- goal / scope_hint<br/>- risk tier<br/>- acceptance descriptors]
+    end
+
+    subgraph 2_Enrollment [2. 准入登记]
+        TI --> EG{Native User Gate<br/>当前 Host 弹窗确认}
+        EG -->|确认| KS[(.imm/state/kernel.sqlite<br/>原子生成 TaskRecord<br/>独占 Workspace Claim)]
+    end
+
+    subgraph 3_Loop [3. 执行与验证循环 imm-loop]
+        KS --> EX[Executor 角色<br/>在 scope_hint 范围内修改代码]
+        EX --> FRZ[advance_assurance<br/>制品冻结 active:frozen]
+        FRZ --> QA[确定性 QA 引擎<br/>原子运行 acceptance 校验命令<br/>生成 QA Attestation]
+        
+        QA -->|失败| RW1[Rework 返工修正]
+        RW1 --> EX
+        
+        QA -->|通过| RK{Risk 等级?}
+        RK -->|routine| ST[Settlement 结算]
+        RK -->|material / critical| RV[Review 审查角色<br/>结构化裁决 Pass / Rework]
+        
+        RV -->|Rework| RW2[Rework 驳回]
+        RW2 --> EX
+        RV -->|Pass| ST
+    end
+
+    subgraph 4_Settlement [4. 结算与沉淀]
+        ST --> CLS[原子结项<br/>- Lifecycle: done<br/>- 写入审计日志 .imm/audit/<br/>- 释放 Workspace Claim]
+        CLS -.-> CP[Compounder 角色<br/>提取经验至 docs/solutions/]
+    end
 ```
-普通请求：日常编程 / 问答（Host-native，零流程开销）
-                       │
-显式调用 Skill（/imm-brainstorm 或 /imm-planner）
-                       │
-        ┌──────────────┴──────────────┐
-        ▼                             ▼
-  imm-brainstorm                 imm-planner
-（澄清需求、约束与风险，        （编写 Spec + TaskIntent，
-  只读输出 framing）             定义可自动化验证的验收条件）
-        │                             │
-        └──────────────┬──────────────┘
-                       ▼
-               当前 Host 原生确认
-        （Pi TUI 弹窗 / Claude MCP elicitation）
-                       │
-                       ▼
-                    imm-loop
-        ├── Executor（严格在 scope 内修改代码）
-        ├── 确定性 QA（前台逐项执行验收命令）
-        ├── 隔离式 Review（独立 subagent 审查代码）
-        └── 落盘结算（.imm/audit/<task-id>/）
-```
+
+### 核心逻辑三要素
+
+1. **双轨制 (Two Paths)**
+   - **Host-native Path**：日常对话、代码检视、单点修改，不触碰 Kernel 权限，零流程开销。
+   - **Managed Path**：由 `imm-brainstorm` / `imm-planner` / `imm-loop` 显式驱动，全程受 Kernel 约束。
+
+2. **权限与契约 (Authority & Contract)**
+   - **TaskIntent (`.intent.json`)**：机器契约本体，严格锁定 `scope_hint`（文件修改范围）、`risk`（风险层级）与 `acceptance`（确定性断言）。
+   - **Native Gate (Enrollment)**：唯一一次人工介入确认，Kernel 原子抢占工作区所有权（SQLite CAS），防止多任务并发冲突与范围漂移。
+
+3. **客观验证 (Deterministic Assurance)**
+   - **QA 优先**：由 Kernel 直接前台执行命令并校验退出码/输出，不依赖 LLM 口头汇报。
+   - **按险定级**：`routine` 仅需 QA；`material`/`critical` 必须追加独立只读 Reviewer 产出结构化裁决。
+   - **批处理 (Unattended Batch)**：基于 GitHub Issue / `plan_digest` 串行推进，每个子任务独立走完 Enrollment → QA → Review → Commit 闭环。
 
 核心不变量：
 

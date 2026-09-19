@@ -198,29 +198,55 @@ The three repair/maintenance skills are host-native: they never create a managed
 
 ## Lifecycle
 
+```mermaid
+flowchart TD
+    subgraph 1_Planning [1. Planning Phase]
+        B[imm-brainstorm<br/>Clarify Requirements & Constraints] --> P[imm-planner<br/>Author Spec & TaskIntent]
+        P --> TI[TaskIntent .intent.json<br/>- goal / scope_hint<br/>- risk tier<br/>- acceptance descriptors]
+    end
+
+    subgraph 2_Enrollment [2. Enrollment Gate]
+        TI --> EG{Native User Gate<br/>Host Modal Confirmation}
+        EG -->|Confirm| KS[(.imm/state/kernel.sqlite<br/>Atomic TaskRecord<br/>Exclusive Workspace Claim)]
+    end
+
+    subgraph 3_Loop [3. Execution & Assurance Loop imm-loop]
+        KS --> EX[Executor Role<br/>Edit code strictly inside scope_hint]
+        EX --> FRZ[advance_assurance<br/>Artifacts frozen active:frozen]
+        FRZ --> QA[Deterministic QA Engine<br/>Run acceptance verification commands<br/>Generate QA Attestation]
+        
+        QA -->|Fail| RW1[Rework / Fix]
+        RW1 --> EX
+        
+        QA -->|Pass| RK{Risk Tier?}
+        RK -->|routine| ST[Settlement]
+        RK -->|material / critical| RV[Review Role<br/>Structured verdict Pass / Rework]
+        
+        RV -->|Rework| RW2[Rework]
+        RW2 --> EX
+        RV -->|Pass| ST
+    end
+
+    subgraph 4_Settlement [4. Settlement & Learnings]
+        ST --> CLS[Atomic Closure<br/>- Lifecycle: done<br/>- Audit evidence in .imm/audit/<br/>- Release Workspace Claim]
+        CLS -.-> CP[Compounder Role<br/>Extract Learnings to docs/solutions/]
+    end
 ```
-Ordinary request: normal coding / Q&A (Host-native, zero overhead)
-                       │
-Explicit skill call (/imm-brainstorm or /imm-planner)
-                       │
-        ┌──────────────┴──────────────┐
-        ▼                             ▼
-  imm-brainstorm                 imm-planner
-(clarify requirements,         (author Spec + TaskIntent,
-  read-only framing)             define acceptance checks)
-        │                             │
-        └──────────────┬──────────────┘
-                       ▼
-            Native Host Confirmation
-        (Pi TUI dialog / Claude MCP elicitation)
-                       │
-                       ▼
-                    imm-loop
-        ├── Executor (edits strictly inside scope)
-        ├── Deterministic QA (runs all acceptance checks)
-        ├── Isolated Review (independent subagent audit)
-        └── Settled (.imm/audit/<task-id>/)
-```
+
+### Core Logic: Three Pillars
+
+1. **Two Paths**
+   - **Host-native Path**: Daily conversation, code inspections, and ad-hoc fixes stay 100% native with zero workflow overhead.
+   - **Managed Path**: Explicitly entered via `imm-brainstorm`, `imm-planner`, or `imm-loop`, strictly governed by the Assurance Kernel.
+
+2. **Authority & Contract**
+   - **TaskIntent (`.intent.json`)**: Machine-readable behavioral contract locking `scope_hint` (file boundaries), `risk` tier, and `acceptance` descriptors.
+   - **Native Gate (Enrollment)**: The single human-authority confirmation gate; Kernel atomically acquires exclusive workspace ownership (`.imm/state/kernel.sqlite` CAS) to prevent concurrency conflicts and scope drift.
+
+3. **Deterministic Assurance**
+   - **QA-First**: The Kernel directly runs verification commands and checks exit codes/byte bounds; never relies on conversational claims.
+   - **Risk-Tiered Gates**: `routine` tasks complete upon QA pass; `material` and `critical` tasks require an isolated Review subagent to issue a structured verdict.
+   - **Unattended Batch**: Serial execution driven by GitHub Issues and bound by `plan_digest`, where each child independently completes its own Enrollment → QA → Review → Commit cycle.
 
 Key invariants:
 
