@@ -1,12 +1,11 @@
 // Phase 3 foreground Tool and native Review bridge contract.
 
-import { describe, expect, setDefaultTimeout, test } from "bun:test";
+import { afterAll, describe, expect, mock, setDefaultTimeout, test } from "bun:test";
 
 // Several of these tests drive real git repositories and full Kernel flows and
 // run 3-4s interactively, so bun's 5s default makes them flake under load (a CI
 // runner or the Kernel QA environment). Bound them explicitly instead.
 setDefaultTimeout(60_000);
-import { Check } from "typebox/value";
 import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync, existsSync, statSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -28,7 +27,104 @@ import { createMcpRuntime } from "../plugins/immune-brain/runtime/claude/mcp_ser
 import { captureReviewManifest } from "../plugins/immune-brain/.pi-extension/pi-canary-review-bundle";
 import { snapshotDigest, type SnapshotDescriptor } from "../plugins/immune-brain/.pi-extension/pi-canary-assurance-progression.ts";
 import { readRunRowByTask, updateRunRecord, withKernelRead, withKernelTransaction } from "../plugins/immune-brain/runtime/kernel/sqlite_store";
-import {
+
+async function hostPackagesAvailable(): Promise<boolean> {
+	for (const specifier of [
+		"typebox",
+		"typebox/value",
+		"@earendil-works/pi-coding-agent",
+		"@earendil-works/pi-tui",
+	]) {
+		try { await import(specifier); }
+		catch { return false; }
+	}
+	return true;
+}
+
+if (!(await hostPackagesAvailable())) {
+	const optional = Symbol("optional");
+	const Type = {
+		Array: (items: object) => ({ type: "array", items }),
+		Boolean: () => ({ type: "boolean" }),
+		Literal: (value: unknown) => ({ const: value }),
+		Null: () => ({ type: "null" }),
+		Number: () => ({ type: "number" }),
+		Object: (properties: Record<string, any>, options: Record<string, unknown> = {}) => ({
+			type: "object",
+			properties,
+			required: Object.entries(properties).filter(([, value]) => !value[optional]).map(([key]) => key),
+			...options,
+		}),
+		Optional: (schema: Record<string, unknown>) => ({ ...schema, [optional]: true }),
+		Record: (_key: object, value: object) => ({ type: "object", additionalProperties: value }),
+		String: () => ({ type: "string" }),
+		Union: (anyOf: object[]) => ({ anyOf }),
+		Unknown: () => ({}),
+	};
+	const Check = (schema: any, value: any): boolean => {
+		if (schema.anyOf) return schema.anyOf.some((item: any) => Check(item, value));
+		if ("const" in schema) return value === schema.const;
+		if (schema.type === "null") return value === null;
+		if (schema.type === "array") return Array.isArray(value) && value.every((item) => Check(schema.items, item));
+		if (schema.type === "object") {
+			if (value === null || typeof value !== "object" || Array.isArray(value)) return false;
+			if ((schema.required ?? []).some((key: string) => !(key in value))) return false;
+			for (const [key, child] of Object.entries(schema.properties ?? {}))
+				if (key in value && !Check(child, value[key])) return false;
+			if (schema.additionalProperties === false
+				&& Object.keys(value).some((key) => !(key in (schema.properties ?? {})))) return false;
+			if (schema.additionalProperties && typeof schema.additionalProperties === "object")
+				return Object.values(value).every((item) => Check(schema.additionalProperties, item));
+			return true;
+		}
+		return schema.type === undefined || typeof value === schema.type;
+	};
+	class Text {
+		constructor(private text: string) {}
+		setText(text: string) { this.text = text; }
+		render() { return this.text.split("\n"); }
+		invalidate() {}
+	}
+	class Container {
+		private children: Array<{ render(width: number): string[] }> = [];
+		addChild(child: { render(width: number): string[] }) { this.children.push(child); }
+		render(width: number) { return this.children.flatMap((child) => child.render(width)); }
+		invalidate() { for (const child of this.children) (child as any).invalidate?.(); }
+	}
+	class DynamicBorder {
+		constructor(private style: (text: string) => string) {}
+		render(width: number) { return [this.style("─".repeat(Math.max(0, width)))]; }
+	}
+	class SelectList {
+		onSelect?: (item: any) => void;
+		onCancel?: () => void;
+		private selected = 0;
+		constructor(private items: any[]) {}
+		render() { return this.items.map((item, index) => `${index === this.selected ? "> " : "  "}${item.label}`); }
+		handleInput(input: string) {
+			if (input === "\u001b[B") this.selected = Math.min(this.items.length - 1, this.selected + 1);
+			else if (input === "\u001b[A") this.selected = Math.max(0, this.selected - 1);
+			else if (input === "\r") this.onSelect?.(this.items[this.selected]);
+			else if (input === "\u001b") this.onCancel?.();
+		}
+	}
+	mock.module("typebox", () => ({ Type }));
+	mock.module("typebox/value", () => ({ Check }));
+	mock.module("@earendil-works/pi-coding-agent", () => ({ DynamicBorder }));
+	mock.module("@earendil-works/pi-tui", () => ({
+		Container,
+		SelectList,
+		Text,
+		sliceByColumn: (text: string, start: number, width?: number) => text.slice(start, width === undefined ? undefined : start + width),
+		truncateToWidth: (text: string, width: number, marker = "") => text.length <= width
+			? text
+			: `${text.slice(0, Math.max(0, width - marker.length))}${marker}`,
+		visibleWidth: (text: string) => text.length,
+	}));
+}
+
+const { Check } = await import("typebox/value");
+const {
 	TASK_RAIL_KEY,
 	USER_ATTENTION_EVENT,
 	clearTerminalTaskRailOnInput,
@@ -37,7 +133,9 @@ import {
 	renderPipelineMilestones,
 	boundedPath,
 	requestAuthorityDialog,
-} from "../plugins/immune-brain/.pi-extension/pi-canary-interaction";
+} = await import("../plugins/immune-brain/.pi-extension/pi-canary-interaction");
+
+afterAll(() => mock.restore());
 
 const TASK = "canary-ext-task";
 const INTENT = {
@@ -1152,6 +1250,108 @@ async function capturedToolFailure(promise: Promise<unknown>): Promise<Record<st
 		} finally {
 			rmSync(successRoot, { recursive: true, force: true });
 			rmSync(failureRoot, { recursive: true, force: true });
+		}
+	});
+
+	test("QA snapshot keeps current-task sidecar ownership after Intent revision", { timeout: 15000 }, async () => {
+		const ownRoot = makeEnrolledRoot();
+		const foreignRoot = makeEnrolledRoot();
+		const dependencyFreeVerification = JSON.stringify({
+			contract: "assurance_kernel/verification_descriptor/v2",
+			command: {
+				executable: "git",
+				argv: ["diff", "--check", "--cached"],
+				cwd: ".",
+				timeout_ms: 1_000,
+				max_output_bytes: 1_024,
+			},
+		});
+		try {
+			const ownTool = loadSurface({
+				writeReviewEvidence: () => ({ path: join(ownRoot, "review.json"), remove: () => {} }),
+			}).tools[0];
+			await ownTool.execute("revise", {
+				task_id: TASK,
+				action: {
+					op: "revise_intent",
+					next_intent: {
+						...INTENT,
+						revision: 2,
+						acceptance: [{
+							...INTENT.acceptance[0],
+							verification: dependencyFreeVerification,
+						}, {
+							id: "A2",
+							assertion: "a2",
+							verification: dependencyFreeVerification,
+						}],
+					},
+				},
+			}, undefined, undefined, makeCtx(ownRoot, makeUI()));
+			const ready = await ownTool.execute(
+				"advance",
+				{ task_id: TASK, action: { op: "advance_assurance" } },
+				undefined,
+				undefined,
+				makeCtx(ownRoot, makeUI()),
+			);
+			expect(JSON.parse(ready.content[0].text)).toMatchObject({
+				state: "review_ready",
+				next_action: "invoke the foreground reviewer and submit its verdict",
+			});
+
+			writeFileSync(join(foreignRoot, "docs", "plans", "other-task.intent.json"), "{}\n");
+			execFileSync("git", ["add", "--", "docs/plans/other-task.intent.json"], { cwd: foreignRoot });
+			const foreignTool = loadSurface().tools[0];
+			const blocked = await capturedToolFailure(foreignTool.execute(
+				"advance",
+				{ task_id: TASK, action: { op: "advance_assurance" } },
+				undefined,
+				undefined,
+				makeCtx(foreignRoot, makeUI()),
+			));
+			expect(blocked.message).toContain("task delivery contains paths outside the authorization envelope");
+			expect(blocked.next_action).toBe("reconcile the listed paths: unstage unrelated paths or revise TaskIntent scope for task-owned paths, then retry advance_assurance");
+		} finally {
+			rmSync(ownRoot, { recursive: true, force: true });
+			rmSync(foreignRoot, { recursive: true, force: true });
+		}
+	});
+
+	test("registered Tool returns prerequisite-changing recovery actions", { timeout: 15000 }, async () => {
+		const unstagedRoot = makeEnrolledRoot();
+		const resolutionReasons = ["executable_or_cwd_unavailable", "process_launch_failed", "process_cleanup_failed"];
+		const resolutionRoots = resolutionReasons.map(() => makeEnrolledRoot());
+		try {
+			writeFileSync(join(unstagedRoot, "plugins", "immune-brain", ".pi-extension", "task.ts"), "export const task = 'changed';\n");
+			const unstaged = await capturedToolFailure(loadSurface().tools[0].execute(
+				"status",
+				{ task_id: TASK, action: { op: "status" } },
+				undefined,
+				undefined,
+				makeCtx(unstagedRoot, makeUI()),
+			));
+			expect(unstaged).toMatchObject({
+				code: "projection_unavailable",
+				next_action: "stage only the listed task-owned paths, then retry the blocked operation",
+			});
+
+			for (const [index, reason] of resolutionReasons.entries()) {
+				const resolutionTool = loadSurface({
+					runQa: async () => { throw new Error(`QA resolution failed (${reason}); affected checks=A1`); },
+				}).tools[0];
+				const resolution = await capturedToolFailure(resolutionTool.execute(
+					"advance",
+					{ task_id: TASK, action: { op: "advance_assurance" } },
+					undefined,
+					undefined,
+					makeCtx(resolutionRoots[index], makeUI()),
+				));
+				expect(resolution.next_action).toBe("repair the verification command or delivery environment, then retry advance_assurance");
+			}
+		} finally {
+			rmSync(unstagedRoot, { recursive: true, force: true });
+			for (const root of resolutionRoots) rmSync(root, { recursive: true, force: true });
 		}
 	});
 

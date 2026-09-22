@@ -92,6 +92,19 @@ describe("Managed native authority failure contract", () => {
 		expect(loop).toContain("Planner prepares the complete proposed revision without replacing the active owner");
 	});
 
+	test("Planner and Loop own exact delivery preparation without widening Git authority", () => {
+		const baseline = read("plugins/immune-brain/BASELINE.md").replace(/\s+/g, " ");
+		const loop = read("plugins/immune-brain/dist/imm-loop.md").replace(/\s+/g, " ");
+		const planner = read("plugins/immune-brain/dist/imm-planner.md").replace(/\s+/g, " ");
+		expect(baseline).toContain("This staging authority does not grant commit, push, broad staging, or authority over pre-existing user changes");
+		expect(loop).toContain("Before `advance_assurance`, inspect ownership and stage only the exact task-owned paths needed for delivery");
+		expect(loop).toContain("Do not hand routine task-owned staging to the user");
+		expect(planner).toContain("stage only the exact Planner-produced Spec and TaskIntent paths before validation and handoff");
+		expect(planner).toContain("whether its executable is provided by the QA host or by tracked delivery content");
+		expect(planner).toContain("A dependency found only in the Planner's live worktree");
+		expect(planner).toContain("only a completed deterministic QA result proves that a descriptor executed and passed");
+	});
+
 	test("advisory scheduling distinguishes eligibility from the one-foreground-child limit", () => {
 		const baseline = read("plugins/immune-brain/BASELINE.md").replace(/\s+/g, " ");
 		const protocol = read("docs/reference/subagent-dispatch-protocol.md").replace(/\s+/g, " ");

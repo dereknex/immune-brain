@@ -133,6 +133,12 @@ file creation; then it validates the created artifact with
 continue through Kernel `revise_intent` authority and are not a Planner
 overwrite path.
 
+After authoring, inspect ownership and stage only the exact Planner-produced
+Spec and TaskIntent paths before validation and handoff. Do not hand routine
+Planner-owned staging to the user. This grants no commit, push, broad staging,
+or authority over pre-existing user changes; a mixed-change ownership conflict
+stops only the affected handoff.
+
 Before authoring a TaskIntent that adds a field or verdict branch to a state
 machine, enumerate every consumer of that value and of the version gates around
 it: the producing side, each branch or switch that reads it, and any migration or
@@ -263,7 +269,12 @@ script or host tool through its literal `command`; do not infer a language,
 package manager, or runner. Add `environment.prepare` only when the check needs
 explicit setup, and declare only the generated directories it needs in
 `environment.writable_paths`. Never hide package installation inside an
-acceptance command. Prefer the highest existing observable behavioral test seam
+acceptance command. For every descriptor, identify whether its executable is
+provided by the QA host or by tracked delivery content, where every dependency
+comes from in the disposable delivery, what explicit setup is required, and
+which declared writable paths that setup or check creates. A dependency found
+only in the Planner's live worktree, including an absolute local `node_modules`
+path, is not delivery provenance. Prefer the highest existing observable behavioral test seam
 and the fewest sufficient seams; never use the full test suite, a build, network
 access, or redundant heavyweight checks as acceptance. Cite relevant test prior
 art and explain how the selected seam catches the intended regression. This is
@@ -271,7 +282,9 @@ a planning heuristic: it must not weaken acceptance-specific focused
 verification descriptors or add a mandatory user confirmation. Use the smallest
 `timeout_ms` and `max_output_bytes` that cover deterministic post-implementation
 QA. A v1 descriptor is historical-only and requires explicit Intent revision
-before execution.
+before execution. Report `valid` and `enrollment_ready` only as structural and
+Enrollment readiness; only a completed deterministic QA result proves that a
+descriptor executed and passed.
 
 ## Core Responsibilities
 

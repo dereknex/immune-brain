@@ -6,7 +6,9 @@
   from `dist/`; nested modes, examples, recovery, and references load on demand.
 - Ask only when missing information would change the goal, scope, observable behavior, compatibility, risk acceptance, a protected effect, or a fact only the user can supply. Resolve repository facts and delegated technical choices with bounded evidence instead of asking.
 - Keep edits inside the user-requested Direct scope or the enrolled TaskIntent acceptance and `scope_hint`.
-- Stage only explicit task-owned paths. Never use `git add .` or `git add -A` in a dirty worktree.
+- Stage only explicit task-owned paths. This staging authority does not grant
+  commit, push, broad staging, or authority over pre-existing user changes.
+  Never use `git add .` or `git add -A` in a dirty worktree.
 - Do not create, switch, or delete Git worktrees; operate only in the Host launch directory.
 - Record reproducible evidence before reporting closure.
 - Required verification must pass before reporting completion; disclosing a gap is not a substitute. Autonomously diagnose, repair, and rerun failing conventional local checks within the authorized scope; never delete, skip, or weaken a valid check to manufacture a pass. If a required check remains failing or cannot run, report the work as incomplete with the concrete blocker.

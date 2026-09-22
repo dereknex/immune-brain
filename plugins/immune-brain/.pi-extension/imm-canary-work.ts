@@ -588,11 +588,12 @@ export default function (
 			}
 			const projection = await projectAssuranceState(ctx.cwd, taskId);
 			if (projection.error) {
+				const nextAction = recoveryActionForAssuranceFailure(projection.error) ?? "inspect authority state";
 				const details = {
 					state: "blocked",
 					operation: action.op,
 					result: projection.error,
-					next_action: "inspect authority state",
+					next_action: nextAction,
 				};
 				presentTaskRailResult(ctx, taskId, details);
 				return failCanaryTool(taskId, action.op, "blocked", "projection_unavailable", projection.error, details.next_action);
@@ -1536,7 +1537,7 @@ async function buildAssuranceSnapshot(
 			})
 		: null;
 	const taskSnapshot = !reviewBundle && !reviewManifest
-		? captureGitTaskSnapshot(root, intent.scope_hint)
+		? captureGitTaskSnapshot(root, intent.scope_hint, taskId)
 		: null;
 	const dirtyFiles = reviewManifest
 		? Object.keys(reviewManifest.changed_paths)
@@ -1760,6 +1761,10 @@ async function enrichAssuranceResult(
 }
 
 function nextActionForAssuranceResult(result: Record<string, unknown>, taskState: AssuranceTaskState): string {
+	const recovery = recoveryActionForAssuranceFailure(
+		"error" in taskState ? taskState.error : result.reason,
+	);
+	if (recovery) return recovery;
 	if ("error" in taskState) return "inspect authority state";
 	if (result.state === "review_preparation_failed") return "repair Review preparation, then retry advance_assurance; QA is already committed";
 	if (result.code === "verdict_invalid") return "fix the verdict payload and resubmit submit_review; the Review reservation remains active; do not re-dispatch the reviewer";
@@ -1777,6 +1782,17 @@ function nextActionForAssuranceResult(result: Record<string, unknown>, taskState
 		case "failed":
 		default: return taskState.next_obligation;
 	}
+}
+
+function recoveryActionForAssuranceFailure(reason: unknown): string | null {
+	if (typeof reason !== "string") return null;
+	if (reason.includes("task scope contains unstaged or untracked changes:"))
+		return "stage only the listed task-owned paths, then retry the blocked operation";
+	if (reason.includes("QA resolution failed ("))
+		return "repair the verification command or delivery environment, then retry advance_assurance";
+	if (reason.includes("task delivery contains paths outside the authorization envelope:"))
+		return "reconcile the listed paths: unstage unrelated paths or revise TaskIntent scope for task-owned paths, then retry advance_assurance";
+	return null;
 }
 
 function toolResult(text: string, details?: Record<string, unknown>) {

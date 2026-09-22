@@ -1,0 +1,291 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "assurance-blocker-repair",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "assurance-blocker-repair",
+    "goal": "Make Managed Pi execution recover from routine delivery-preparation blockers by using consistent task identity, exact task-owned staging, delivery-valid verification planning, and actionable failure recovery without weakening authority boundaries.",
+    "acceptance": [
+      {
+        "id": "AC1",
+        "assertion": "After a compatible Intent revision changes the current task sidecar, the registered Pi assurance Tool captures QA with the enrolled task identity without requiring that sidecar in scope_hint, still rejects another task's staged sidecar, and maps recognized unstaged-path, verification-resolution, and authorization-envelope failures to one prerequisite-changing recovery action while unknown authority failures remain fail-closed.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/pi-canary-work-extension.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC2",
+        "assertion": "Packaged Planner and Loop contracts require exact task-owned staging before Enrollment or Assurance without granting commit, broad staging, or mixed-user-change authority, and require each verification descriptor to identify delivery command and dependency provenance, explicit setup and writable outputs, and the distinction between structural readiness and deterministic QA execution.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/managed-authority-failure-contract.test.ts\",\n      \"tests/baseline-packaging-contract.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 65536\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      "docs/plans/assurance-blocker-repair.intent.json",
+      "docs/specs/assurance-blocker-repair.spec.md",
+      "plugins/immune-brain/.pi-extension/imm-canary-work.ts",
+      "plugins/immune-brain/BASELINE.md",
+      "plugins/immune-brain/dist/BASELINE.md",
+      "plugins/immune-brain/dist/imm-loop.md",
+      "plugins/immune-brain/dist/imm-planner.md",
+      "plugins/immune-brain/skills/BASELINE.md",
+      "tests/managed-authority-failure-contract.test.ts",
+      "tests/pi-canary-work-extension.test.ts"
+    ],
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/assurance-blocker-repair.intent.json",
+    "content_hash": "sha256:9d30bc86d7ba884f4c8a38bf03b8513400f2a563ab6bedc5562bddd6e20d4e48"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:9d30bc86d7ba884f4c8a38bf03b8513400f2a563ab6bedc5562bddd6e20d4e48",
+  "git_base_head": "60ad1367e18f9a07a714717ed041b06fdfcb67c1",
+  "attestations": [
+    {
+      "id": "approval-qa-a21d63cf",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:9d30bc86d7ba884f4c8a38bf03b8513400f2a563ab6bedc5562bddd6e20d4e48",
+      "diff_hash": "sha256:d10eae65d474f7dd78e736eafefb012a8ba34c3437334bec4aad0af3d426dc30",
+      "actor_id": "deterministic-qa",
+      "summary": "all 2 project verification check(s) passed; execution=sha256:2d11bce27b29ee65ffd22117b49566b07205b091d04ac2d4efe69ecbf347d383",
+      "acceptance_results": [
+        {
+          "acceptance_id": "AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 project verification check(s) passed; execution=sha256:2d11bce27b29ee65ffd22117b49566b07205b091d04ac2d4efe69ecbf347d383"
+        },
+        {
+          "acceptance_id": "AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 project verification check(s) passed; execution=sha256:2d11bce27b29ee65ffd22117b49566b07205b091d04ac2d4efe69ecbf347d383"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-5455bba2",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:9d30bc86d7ba884f4c8a38bf03b8513400f2a563ab6bedc5562bddd6e20d4e48",
+      "diff_hash": "sha256:4c5805ea7d5f2aabccf222f0a7c68cab00b5ad347af3ee60ce26fca9e066e7eb",
+      "actor_id": "deterministic-qa",
+      "summary": "all 2 project verification check(s) passed; execution=sha256:8cb466e27adce8732e8c059463c983c3ab151afd7eb90d3cd337c89a21e6042c",
+      "acceptance_results": [
+        {
+          "acceptance_id": "AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 project verification check(s) passed; execution=sha256:8cb466e27adce8732e8c059463c983c3ab151afd7eb90d3cd337c89a21e6042c"
+        },
+        {
+          "acceptance_id": "AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 project verification check(s) passed; execution=sha256:8cb466e27adce8732e8c059463c983c3ab151afd7eb90d3cd337c89a21e6042c"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-1bb4195d",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:9d30bc86d7ba884f4c8a38bf03b8513400f2a563ab6bedc5562bddd6e20d4e48",
+      "diff_hash": "sha256:4c5805ea7d5f2aabccf222f0a7c68cab00b5ad347af3ee60ce26fca9e066e7eb",
+      "actor_id": "parent-mediated-review",
+      "summary": "Immutable revision, parent, tree, manifest identity, changed paths, and acceptance behavior reviewed; no blocking correctness or security defects found.",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "60ad1367e18f9a07a714717ed041b06fdfcb67c1",
+        "review_commit": "693371218d459cda6a9a921da547f085a2517cc1",
+        "review_tree": "34ece081a4ee82511d9d0da70b0ff476fba2867a",
+        "manifest_digest": "sha256:186dbd1fe158a2ca99d1d550e9f9c98b477688d9d6ffe419db787f6141191300"
+      },
+      "advisory_findings": [
+        {
+          "id": "review-3a382f6912c4-1-review-1",
+          "acceptance_id": null,
+          "summary": "The dependency-free test fallback implements only a partial TypeBox validator and ignores constraints such as the task_id pattern, so schema tests are weaker when host packages are unavailable.",
+          "anchor": "sha256:04a43fb2db791d2d53f298450483e7383de37eff1b1a35500d5429c8a571a7e7",
+          "evidence": {
+            "trigger": "When any checked host package is unavailable, tests/pi-canary-work-extension.test.ts installs the fallback at lines 44-80; Type.String ignores its options at line 60, allowing invalid task IDs to pass fallback Check validation.",
+            "caller_chain": [
+              "tests/pi-canary-work-extension.test.ts:hostPackagesAvailable",
+              "tests/pi-canary-work-extension.test.ts:Check",
+              "plugins/immune-brain/.pi-extension/imm-canary-work.ts:imm_kernel_canary.parameters"
+            ],
+            "violated": {
+              "kind": "security_boundary",
+              "ref": "Tool-schema input validation"
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "findings": [
+    {
+      "id": "qa-AC1-d9b58b36-e5d148",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "AC1",
+      "source": "execution",
+      "review_round": null,
+      "summary": "verification failed (exit 1) stdout=28B stderr=366B",
+      "anchor": null,
+      "evidence": null,
+      "counterevidence": null
+    },
+    {
+      "id": "review-42b6f36c5e8e-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "AC1",
+      "source": "review",
+      "review_round": 1,
+      "summary": "Recovery mapping handles only executable_or_cwd_unavailable and leaves other recognized verification-resolution failures without the required prerequisite-changing action.",
+      "anchor": "sha256:31d61261f558ef3544265d1c7b36947a505024a6dd5d19a807fd86e6e68dd9de",
+      "evidence": {
+        "trigger": "A deterministic QA descriptor reaches resolution failure with reason process_launch_failed or process_cleanup_failed, producing a reason such as `QA resolution failed (process_launch_failed)` or `QA resolution failed (process_cleanup_failed)`. `recoveryActionForAssuranceFailure` checks for `executable_or_cwd_unavailable` only, so the registered Tool falls through to the generic retry guidance instead of the shared verification-environment repair action.",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/assurance/qa.ts:QaPreparationError",
+          "plugins/immune-brain/runtime/assurance/coordinator.ts:AssuranceCoordinator.advance",
+          "plugins/immune-brain/.pi-extension/imm-canary-work.ts:enrichAssuranceResult",
+          "plugins/immune-brain/.pi-extension/imm-canary-work.ts:recoveryActionForAssuranceFailure"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "AC1"
+        }
+      },
+      "counterevidence": null
+    }
+  ],
+  "history": [
+    {
+      "id": "freeze_artifacts:assurance-blocker-repair:2026-09-22T10:20:15.874Z",
+      "at": "2026-09-22T10:20:15.874Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/assurance-blocker-repair.intent.json"
+    },
+    {
+      "id": "request_rework:assurance-blocker-repair:2026-09-22T10:20:19.575Z",
+      "at": "2026-09-22T10:20:19.575Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_1\naction_v2_sha256:e46f13787d6abff2782c36aae0f948405814043a1d639422f9d78212ed23d98a",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-05f61d4a815d8120",
+        "issued_at": "2026-09-22T10:20:19.575Z",
+        "expires_at": "2026-09-22T10:30:19.575Z"
+      }
+    },
+    {
+      "id": "resolve_finding:assurance-blocker-repair:2026-09-22T10:30:39.082Z",
+      "at": "2026-09-22T10:30:39.082Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "qa-AC1-d9b58b36-e5d148\naction_v2_sha256:f911826d960ecd11dabe8b4751bc0f749d9f895d6a9beb4d4953b7cf2b4aa112"
+    },
+    {
+      "id": "freeze_artifacts:assurance-blocker-repair:2026-09-22T10:30:46.535Z",
+      "at": "2026-09-22T10:30:46.535Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/assurance-blocker-repair.intent.json"
+    },
+    {
+      "id": "record_approval:assurance-blocker-repair:2026-09-22T10:31:26.498Z",
+      "at": "2026-09-22T10:31:26.498Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-a21d63cf\naction_v2_sha256:398a9f58bb54e8348cb91fca4b2ef77ca1580364f563910ccce4bc731cfd0de2",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-f7cf02c53ab73a7a",
+        "issued_at": "2026-09-22T10:31:26.498Z",
+        "expires_at": "2026-09-22T10:41:26.498Z"
+      }
+    },
+    {
+      "id": "request_rework:assurance-blocker-repair:2026-09-22T10:35:33.572Z",
+      "at": "2026-09-22T10:35:33.572Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_1\naction_v2_sha256:396ef9b26728ceab15e3840e4d6a7f50315a5703a92f656e91a4a09f31d43841",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-ef4138b4a8169b5d",
+        "issued_at": "2026-09-22T10:35:33.572Z",
+        "expires_at": "2026-09-22T10:45:33.572Z"
+      }
+    },
+    {
+      "id": "resolve_finding:assurance-blocker-repair:2026-09-22T10:37:40.251Z",
+      "at": "2026-09-22T10:37:40.251Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-42b6f36c5e8e-1-review-1\naction_v2_sha256:5bfa62d358e50bc40123c0bebf5f1d785057293876c1921e64b045bacca680d0"
+    },
+    {
+      "id": "freeze_artifacts:assurance-blocker-repair:2026-09-22T10:37:49.695Z",
+      "at": "2026-09-22T10:37:49.695Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/assurance-blocker-repair.intent.json"
+    },
+    {
+      "id": "record_approval:assurance-blocker-repair:2026-09-22T10:38:36.309Z",
+      "at": "2026-09-22T10:38:36.309Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-5455bba2\naction_v2_sha256:4c67ad05fd93bda2458470b18c13441d88f4a4aa306bbff90c282b2f2fbfe739",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-c51766687bf80128",
+        "issued_at": "2026-09-22T10:38:36.309Z",
+        "expires_at": "2026-09-22T10:48:36.309Z"
+      }
+    },
+    {
+      "id": "record_approval:assurance-blocker-repair:2026-09-22T10:42:15.968Z",
+      "at": "2026-09-22T10:42:15.968Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-1bb4195d\naction_v2_sha256:187bae109a33b0a3c5f18bc9970a0882776f86a885448d4a7fe1e455354a57eb",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-3c85720432880e81",
+        "issued_at": "2026-09-22T10:42:15.968Z",
+        "expires_at": "2026-09-22T10:52:15.968Z"
+      }
+    },
+    {
+      "id": "complete:assurance-blocker-repair:2026-09-22T10:42:17.158Z",
+      "at": "2026-09-22T10:42:17.158Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:86d1ab05a3b676d9d36f406c8c8944121e5e069995a0eb184bf064919f4a3076"
+    }
+  ]
+}

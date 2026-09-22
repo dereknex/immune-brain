@@ -1,0 +1,32 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "assurance-blocker-repair",
+  "owner": "user",
+  "goal": "Make Managed Pi execution recover from routine delivery-preparation blockers by using consistent task identity, exact task-owned staging, delivery-valid verification planning, and actionable failure recovery without weakening authority boundaries.",
+  "acceptance": [
+    {
+      "id": "AC1",
+      "assertion": "After a compatible Intent revision changes the current task sidecar, the registered Pi assurance Tool captures QA with the enrolled task identity without requiring that sidecar in scope_hint, still rejects another task's staged sidecar, and maps recognized unstaged-path, verification-resolution, and authorization-envelope failures to one prerequisite-changing recovery action while unknown authority failures remain fail-closed.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/pi-canary-work-extension.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC2",
+      "assertion": "Packaged Planner and Loop contracts require exact task-owned staging before Enrollment or Assurance without granting commit, broad staging, or mixed-user-change authority, and require each verification descriptor to identify delivery command and dependency provenance, explicit setup and writable outputs, and the distinction between structural readiness and deterministic QA execution.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/managed-authority-failure-contract.test.ts\",\n      \"tests/baseline-packaging-contract.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 65536\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    "docs/plans/assurance-blocker-repair.intent.json",
+    "docs/specs/assurance-blocker-repair.spec.md",
+    "plugins/immune-brain/.pi-extension/imm-canary-work.ts",
+    "plugins/immune-brain/BASELINE.md",
+    "plugins/immune-brain/dist/BASELINE.md",
+    "plugins/immune-brain/dist/imm-loop.md",
+    "plugins/immune-brain/dist/imm-planner.md",
+    "plugins/immune-brain/skills/BASELINE.md",
+    "tests/managed-authority-failure-contract.test.ts",
+    "tests/pi-canary-work-extension.test.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}
