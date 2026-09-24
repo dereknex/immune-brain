@@ -3,8 +3,11 @@
 // must never write the TaskIntent artifact directly.
 
 import { describe, expect, test } from "bun:test";
-import { readFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { inspectRoutingPolicy, policyV1CanonicalBytes } from "../plugins/immune-brain/runtime/managed_task_routing_policy";
 
 const REPO_ROOT = join(__dirname, "..");
 
@@ -51,6 +54,52 @@ describe("imm-planner kernel intent contract", () => {
 		expect(skill).not.toContain("it never enrolls a task");
 		expect(skill).toContain("Planner may request the native Enrollment gate");
 		expect(skill).toContain("only that gate grants execution authority");
+	});
+
+	test("Planner activates only an absent policy before authoring without another approval", () => {
+		const contract = readFileSync(DIST_PATH, "utf8").replace(/\s+/g, " ");
+		expect(contract).toContain("including for plan-only requests");
+		expect(contract).toContain("policy_status: legacy_v3");
+		expect(contract).toContain("ownership: absent");
+		expect(contract).toContain("neither Kernel nor nonterminal v3 ownership exists");
+		expect(contract).toContain("without a separate enablement question");
+		expect(contract).toContain("fail if it already exists");
+		expect(contract).toContain("git add -- docs/plans/managed-task-routing-policy.json");
+		expect(contract).toContain("An already active policy needs no write or staging");
+		expect(contract).toContain("preserve it and report `routing_policy_invalid`");
+		expect(contract).toContain("stop before authoring");
+		expect(contract).not.toContain("no routing policy preserves the legacy v3 Planner behavior");
+	});
+
+	test("documented policy activates in an unborn Git repository without staging unrelated work", () => {
+		const skill = readFileSync(DIST_PATH, "utf8");
+		const bytes = skill.match(/```json\n([\s\S]*?)```/)?.[1];
+		expect(bytes).toBe(policyV1CanonicalBytes());
+		const root = mkdtempSync(join(tmpdir(), "imm-planner-activation-"));
+		const git = (...args: string[]) => {
+			const result = spawnSync("git", args, { cwd: root, encoding: "utf8" });
+			expect(result.status).toBe(0);
+			return result.stdout;
+		};
+		try {
+			git("init", "-q");
+			writeFileSync(join(root, "staged.txt"), "original\n");
+			git("add", "staged.txt");
+			writeFileSync(join(root, "staged.txt"), "local edit\n");
+			writeFileSync(join(root, "untracked.txt"), "user draft\n");
+			expect(inspectRoutingPolicy(root).ownership).toBe("absent");
+			mkdirSync(join(root, "docs/plans"), { recursive: true });
+			writeFileSync(join(root, "docs/plans/managed-task-routing-policy.json"), bytes!, { flag: "wx" });
+			git("add", "--", "docs/plans/managed-task-routing-policy.json");
+			expect(inspectRoutingPolicy(root)).toMatchObject({
+				policy_status: "active", route: "kernel_task_intent", ownership: "tracked_clean",
+			});
+			expect(git("show", ":staged.txt")).toBe("original\n");
+			expect(readFileSync(join(root, "staged.txt"), "utf8")).toBe("local edit\n");
+			expect(git("ls-files", "untracked.txt")).toBe("");
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
 	});
 
 	test("canonical contract forbids direct artifact writes and names the canonical author command", () => {

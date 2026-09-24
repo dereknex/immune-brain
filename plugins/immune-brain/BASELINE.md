@@ -48,7 +48,9 @@ routing. A new Managed workflow starts only from explicit `imm-brainstorm`,
    Managed owner remains authoritative; the user resumes it with `imm-loop`.
 2. **Start explicitly**: the selected Immune-Brain Skill owns its planning or
    coordination work. It creates only requested artifacts and their required
-   parent directories; it does not install project-wide contract files.
+   parent directories. Explicit Planner entry also owns absent routing-policy
+   activation under Planner's Kernel TaskIntent Routing section;
+   it does not otherwise install project-wide contract files.
 3. **Preserve authority**: Planner output is a candidate for later literal-user
    Enrollment, and Fast-Track preserves TaskIntent scope, Enrollment, QA,
    Review, authorization, and completion boundaries.
