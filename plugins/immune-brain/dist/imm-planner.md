@@ -76,7 +76,8 @@ Then route deterministically:
   coordination, except a Loop-requested revision follows Enrolled Intent Revision
   below to prepare a non-authoritative proposal for that same owner;
 - an active or otherwise nonterminal v3 Plan remains on its existing v3 route;
-- no routing policy preserves the legacy v3 Planner behavior;
+- no routing policy on an otherwise unowned workspace triggers automatic policy
+  activation below before producing any planning artifact;
 - a valid `kernel_task_intent` retirement policy produces one TaskIntent draft
   through the current Host's explicit `imm-planner`;
 - an invalid, unreadable, untracked, or tracked-deleted policy rejects new
@@ -106,6 +107,46 @@ and preparation digest. Enrollment validates the intent, Git ownership, scope,
 workspace claim, and final authority preconditions without executing acceptance
 descriptors. A routine task proceeds from that single confirmation through
 enrollment, execution and QA without a second human stop.
+
+**Automatic policy activation**
+
+Explicit `imm-planner` entry includes local routing setup, including for plan-only
+requests. When the routing projection reports `policy_status: legacy_v3` and
+`ownership: absent`, and neither Kernel nor nonterminal v3 ownership exists,
+perform these steps without a separate enablement question:
+
+1. Create `docs/plans/` if needed. Require real directories without symlink
+   components; create `docs/plans/managed-task-routing-policy.json` exclusively
+   (fail if it already exists), using exactly the JSON below with two-space
+   indentation, the shown field order, and one trailing newline.
+2. Run `git add -- docs/plans/managed-task-routing-policy.json` only for the file
+   created in this activation. Preserve all other worktree and index changes;
+   do not commit, force-add an ignored file, or alter Git configuration.
+3. Re-run `imm-plan --routing-status --json` through the resolved wrapper.
+   Continue canonical TaskIntent authoring only when `policy_status: active`,
+   `route: kernel_task_intent`, and `ownership: tracked_clean` all hold. Report
+   automatic activation briefly and continue planning in the same turn.
+
+```json
+{
+  "contract": "immune_brain/managed_task_routing_policy/v1",
+  "revision": 1,
+  "new_task_route": "kernel_task_intent",
+  "v3_new_plan_sync": "retired",
+  "legacy_v3_mode": "drain_read_only",
+  "terminal_import": "disabled"
+}
+```
+
+An already active policy needs no write or staging. An existing invalid,
+untracked, unreadable, tracked-deleted, or divergent policy is not an activation
+candidate: preserve it and report `routing_policy_invalid`. If creation,
+staging, or verification fails, report the concrete blocker and retain any
+created file; stop before authoring, without overwriting existing bytes or
+falling back to v3. A repository/user prohibition on policy setup or staging
+blocks only this dependent planning step. Activation grants no execution
+authority; the native Enrollment gate remains required. Read-only routing
+queries and the canonical author command retain their existing runtime behavior.
 
 ## Candidate Authoring
 
@@ -423,7 +464,7 @@ optional advisory dispatch fails, continue inline and record the reason.
 
 ## Boundary
 
-- **Allowed**: Write a TaskIntent. Add a Spec only for complex work. Initiative planning carriers and necessary domain vocabulary.
+- **Allowed**: Write a TaskIntent. Add a Spec only for complex work. Activate an absent routing policy under Kernel TaskIntent Routing. Initiative planning carriers and necessary domain vocabulary.
 - **Blocked**: Implementation edits, direct Kernel-store writes, enrolled intent overwrites, and QA/Review decisions.
 - **Workflow guard**: Execution continues through native Enrollment and explicit `imm-loop`. Planner owns design and decomposition, not execution authority.
 
