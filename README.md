@@ -116,6 +116,7 @@ Immune-Brain provides two clean modes: **Host-native** for daily coding, and **M
 | Plan confirmed, ready to build & verify | `/imm-loop` | → Executor builds within scope → deterministic QA verifies → isolated Review checks → task settles |
 | Session interrupted or resuming a task | `/imm-loop` | → Resumes existing task seamlessly from on-disk state (`.imm/`) |
 | Ready Initiative to run unattended | "Run initiative `<slug>` unattended" | → Host's `start_unattended_batch`: one native confirmation covers ordered plan digest, children run serially |
+| Cross-host workflow (Claude plan + Pi code) | Run `/imm-planner` in Claude Code, switch to Pi and run `/imm-loop` | → Staged Spec & TaskIntent are shared on disk; Pi confirms via native TUI and executes loop |
 | PR has review comments or failing CI | `/imm-pr-fix` on that PR | → Standalone repair: minimal scoped fix in place, no managed task created |
 | Project docs out of date | `/imm-doc-prune` | → Read-only audit; deletes only user-approved stale docs from manifest |
 | Agent instructions bloated | `/imm-agent-doc-maintain` | → Minimizes tracked `AGENTS.md` / `CLAUDE.md` to essential non-discoverable rules |
@@ -124,6 +125,40 @@ Immune-Brain provides two clean modes: **Host-native** for daily coding, and **M
 > **Core Principle: Skill-Explicit Entry**
 > - **Ordinary input stays host-native**: Natural language queries never automatically start planning or task enrollment. You choose when to turn on engineering rigor.
 > - **Managed work starts with explicit skills**: Use `imm-brainstorm` to clarify, `imm-planner` to plan, and `imm-loop` to execute and resume.
+
+### Cross-Host Workflow: Plan in Claude Code, Build in Pi
+
+Immune-Brain is architected to be completely session-neutral. All task contracts, specifications, and assurance evidence live on disk in Git-tracked files (`docs/plans/`, `docs/specs/`) and `.imm/`. Pi and Claude Code share the exact same deterministic Kernel authority and state machine.
+
+This enables a best-of-both-worlds workflow: **leverage Claude Code's deep reasoning and large context window for requirement analysis and Spec planning, then switch to Pi for fast, focused foreground coding and execution loops**.
+
+```text
+┌───────────────────────────────────┐    Git-Tracked Artifacts on Disk   ┌───────────────────────────────────┐
+│            Claude Code            │ ─────────────────────────────────> │                Pi                 │
+│  1. /imm-brainstorm (Clarify)     │        docs/specs/*.spec.md        │  1. /imm-loop (Native TUI Modal)  │
+│  2. /imm-planner    (Spec/Intent) │       docs/plans/*.intent.json     │  2. Executor (Code) + QA Engine   │
+└───────────────────────────────────┘                                    └───────────────────────────────────┘
+```
+
+#### Recommended Workflow
+
+1. **Phase 1: Spec Authoring & Planning in Claude Code**
+   - **Clarify requirements (optional)**: If the problem is fuzzy or has unknown boundaries, run `/imm-brainstorm` in Claude Code to frame goals, constraints, and architecture risks.
+   - **Author the plan and spec**: Run `/imm-planner "Plan <feature>"`. Planner generates:
+     - Living Spec (`docs/specs/<name>.spec.md`): records the technical design and architectural trade-offs.
+     - `TaskIntent` (`docs/plans/<task-id>.intent.json`): strictly locks down the editable file boundary (`scope_hint`), risk tier (`routine` / `material` / `critical`), and deterministic test verification commands (`acceptance`).
+   - **Stage in Git**: Stage the generated artifacts (`git add docs/`). You can stop before Enrollment without executing.
+2. **Phase 2: Code Implementation & Execution in Pi**
+   - **Launch Pi**: Open Pi in the same repository workspace.
+   - **Enroll & run**: Enter `/imm-loop`. Pi discovers the staged `TaskIntent` and opens its native TUI modal confirmation for Enrollment.
+   - **Automated loop**:
+     - **Executor** writes implementation code strictly inside `scope_hint`.
+     - **Deterministic QA engine** directly runs acceptance commands against exit codes.
+     - For `material` or `critical` tasks, Pi foreground Reviewer audits changes.
+     - Upon pass, Kernel atomically settles terminal audit records in `.imm/audit/<task-id>/` and releases the workspace claim.
+3. **Why Cross-Host Switching Works Seamlessly**
+   - **Session-neutral state**: All contracts and authority records live in the repository and local SQLite CAS, completely independent of any individual AI chat session.
+   - **Bidirectional resumption**: Interrupted tasks can be resumed at any point in either Pi or Claude Code with `/imm-loop`.
 
 ---
 
@@ -327,6 +362,8 @@ docs/specs/                           # Living specs (updated in place)
 **A review finding stopped blocking — why?** It was refuted: fresh deterministic QA evidence shows the acceptance it names passes. The refutation is bound to that exact evidence, so the finding blocks again the moment the evidence goes stale for the current revision, intent hash, or diff.
 
 **Can it run a whole Initiative without me?** Only as far as you authorize. Confirm `start_unattended_batch` with the Initiative slug and the runner works through the published, non-`critical` children serially on one batch branch — parking as soon as a child needs a human decision or the run hits a budget, deadline, authorization, or commit failure. It never pushes, opens PRs, or settles user decisions for you.
+
+**Can I switch between hosts (e.g. plan in Claude Code, code in Pi)?** Yes. Immune-Brain's contracts and state live entirely on disk in the repository, decoupled from conversation sessions. You can leverage Claude Code for deep architectural thinking and Spec planning, then switch to Pi to run `imm-loop` for code execution and deterministic QA. Interrupted tasks can be resumed in either host at any time.
 
 **Which AI coding assistants are supported?** Pi and Claude Code are the supported hosts (Claude Code version >= `2.1.236`). Both hosts run on the exact same Kernel authority, assurance guarantees, and multi-skill pipeline.
 

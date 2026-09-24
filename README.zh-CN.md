@@ -116,6 +116,7 @@ Immune-Brain 提供两种清晰的工作模式：日常轻量编码走 **Host-na
 | 计划已确认，准备执行与验证 | `/imm-loop` | → Executor 在范围内实现 → 确定性 QA 验收 → 隔离 Review 审查 → 任务结算 |
 | 会话中断或需恢复未完成任务 | `/imm-loop` | → 从磁盘状态（`.imm/`）无缝恢复，以 Kernel projection 为准 |
 | 已发布的 Initiative 可以整批跑了 | "把 initiative `<slug>` 无人值守跑完" | → Host 的 `start_unattended_batch`：一次原生确认绑定有序 plan digest，child 串行执行 |
+| 跨 Host 协作（Claude 规划 + Pi 编码） | 在 Claude Code 中调 `/imm-planner`，切到 Pi 输入 `/imm-loop` | → Spec 与 TaskIntent 共享于 Git，Pi 原生弹窗准入并执行 QA/Review 闭环 |
 | PR 被评论 / CI 挂了 | 对该 PR 使用 `/imm-pr-fix` | → 独立修复：在当前 PR 内针对性修复，不创建新 managed 任务 |
 | 文档过时需要清理 | `/imm-doc-prune` | → 只读审计过时文档，仅删除经哈希审批的条目 |
 | Agent 指令文件膨胀 | `/imm-agent-doc-maintain` | → 将 tracked `AGENTS.md` / `CLAUDE.md` 压到最小必要上下文 |
@@ -124,6 +125,40 @@ Immune-Brain 提供两种清晰的工作模式：日常轻量编码走 **Host-na
 > **核心原则：Skill 显式调用**
 > - **普通输入保持 Host-native**：自然语言提问绝不自动绑架流程或发起 Enrollment。你完全自主决定何时开启严格工程保障。
 > - **Managed 工作流显式启动**：需要澄清用 `imm-brainstorm`，制定计划用 `imm-planner`，执行与恢复用 `imm-loop`。
+
+### 跨 Host 协作：Claude Code 规划 + Pi 编码执行
+
+Immune-Brain 的核心状态与契约完全去会话化（Session-neutral），所有规划与审计证据均落盘在 Git 仓库（`docs/plans/`、`docs/specs/`）与 `.imm/` 中。Pi 与 Claude Code 共享完全一致的确定性 Kernel 核心与状态机。
+
+你可以自由组合两个宿主的优势：**利用 Claude Code 的深度推理与长上下文能力进行需求澄清、Spec 撰写与任务规划，切换到 Pi 中进行极速的前台编码、确定性 QA 验收与审查闭环**。
+
+```text
+┌───────────────────────────────────┐    Git 追踪制品（落盘共享）    ┌───────────────────────────────────┐
+│         Claude Code 终端          │ ───────────────────────────> │              Pi 终端              │
+│  1. /imm-brainstorm (澄清与约束)    │     docs/specs/*.spec.md     │  1. /imm-loop (原生 TUI 弹窗准入)   │
+│  2. /imm-planner    (编写计划/规格) │    docs/plans/*.intent.json  │  2. Executor 编码 + QA 自动化验收   │
+└───────────────────────────────────┘                              └───────────────────────────────────┘
+```
+
+#### 推荐协作步骤
+
+1. **在 Claude Code 中制定 Spec 与任务规划**
+   - **需求澄清（可选）**：若需求复杂或边界模糊，先在 Claude Code 中运行 `/imm-brainstorm`，梳理目标、约束与架构风险。
+   - **编写计划与规格**：运行 `/imm-planner "规划 <需求名称>"`。Planner 会生成：
+     - Living Spec（`docs/specs/<name>.spec.md`）：记录设计方案、架构决策与模块边界。
+     - `TaskIntent`（`docs/plans/<task-id>.intent.json`）：严格锁定可修改的文件范围（`scope_hint`）、风险等级（`routine` / `material` / `critical`）以及可执行的自动化验收命令（`acceptance`）。
+   - **暂存至 Git**：规划完成后停在 Enrollment 之前，将生成的 Spec 和 TaskIntent 加入 Git 暂存（`git add docs/`）。
+2. **切换到 Pi 中进行代码编写与闭环执行**
+   - **启动 Pi**：在同一个项目工作区中打开 Pi。
+   - **确认准入并执行**：运行 `/imm-loop`。Pi 会自动检测到暂存的 `TaskIntent`，并在 Pi 原生 TUI 弹窗中提示 Enrollment 确认。
+   - **自动执行与验收**：
+     - Executor 角色严格在 `scope_hint` 限定的文件内编写代码。
+     - Kernel 自动运行 acceptance 命令进行确定性 QA 验收，不依赖口头汇报。
+     - 若为 `material` 或 `critical` 任务，自动调度前台 Reviewer 审查。
+     - 验证全部通过后，Kernel 原子落盘证据至 `.imm/audit/<task-id>/` 并释放工作区锁定。
+3. **为什么可以无缝切换？**
+   - **状态落盘，解耦会话**：所有任务契约（TaskIntent）、设计规格（Spec）和执行状态（`.imm/state/kernel.sqlite`）均持久化在磁盘上，不绑定任何特定 AI 会话的上下文。
+   - **双向断点恢复**：无论在哪个 Host 暂停或关闭会话，随时可以在 Pi 或 Claude Code 中重新输入 `/imm-loop` 无缝恢复，Kernel projection 确保进度与证据不丢失。
 
 ---
 
@@ -327,6 +362,8 @@ docs/specs/                           # Living specs（原地更新）
 **Review finding 突然不再阻塞了？** 它被反证了：新鲜的确定性 QA 证据表明它声称的 acceptance 是通过的。反证绑定到那份具体证据，所以证据一旦对当前 revision、intent hash 或 diff 失效，该 finding 会重新阻塞。
 
 **能不能整个 Initiative 不用我盯着？** 只能在你授权范围内。用 Initiative slug 确认 `start_unattended_batch` 后，runner 会在一个 batch 分支上串行推进已发布且非 `critical` 的 child — 一旦某个 child 需要人决策，或遇到预算/截止时间/授权/提交失败就暂停。它不会替你 push、开 PR 或结算用户决策。
+
+**可以在不同 Host 之间切换吗（例如 Claude Code 规划、Pi 编码）？** 可以。Immune-Brain 的契约与状态完全落盘于代码仓库，解耦了会话上下文。你可以用 Claude Code 进行深度推理与制定 Spec，再切换到 Pi 跑 `imm-loop` 编码并完成 QA 闭环；中途随时可以用 `/imm-loop` 双向恢复。
 
 **支持哪些 AI 编程工具？** Pi 与 Claude Code 是支持的宿主（Claude Code 最低版本为 `2.1.236`）。两者共享同一套确定性 Kernel 核心、质量保障机制与工具链。
 
