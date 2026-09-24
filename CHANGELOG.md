@@ -1,5 +1,11 @@
 # Changelog
 
+## 4.3.0
+
+### Minor Changes
+
+- [`50b1b7d`](https://github.com/dereknex/immune-brain/commit/50b1b7d85d1c4b83e583a1cb382ae9eff1bc2530) Thanks [@dereknex](https://github.com/dereknex)! - Allow Pi and Claude Enrollment in Git repositories with an unborn HEAD. The existing native confirmation includes creating an empty initial commit without staging project files or modifying Git configuration. Revalidate Git and workspace ownership around initialization, and expose the required initialization in TaskIntent validation.
+
 ## 4.2.0
 
 ### Minor Changes
