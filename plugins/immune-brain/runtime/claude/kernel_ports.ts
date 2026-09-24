@@ -39,6 +39,7 @@ import {
 } from "../kernel/enrollment_authority";
 import { enrollCanaryTask, runEnrollmentRehearsal } from "../kernel/enrollment";
 import { reconcileKernelAuthority, repairKernelAuthority } from "../kernel/storage";
+import { inspectEnrollmentGitBase, enrollmentGitBaseNotice, initializeEnrollmentGitBase } from "../assurance/enrollment_git_base";
 import { preparePiCanary, revalidatePiCanary } from "../kernel/pi_canary_prepare";
 import { runDeterministicQa } from "../assurance/qa";
 import { taskDiffIdentity, taskRevisionIdentity } from "../workspace_scope";
@@ -524,6 +525,7 @@ export class ClaudeRuntime {
 		intentRevision?: number;
 		intentContentHash?: string;
 		bindingDigest?: string;
+		gitBaseNotice?: string;
 	} = {}): Promise<{ confirmation_ref: string }> {
 		throwIfCancelled(meta.signal);
 		const probe = probeHost(this.env, process.platform, this.hostVersion);
@@ -557,45 +559,55 @@ export class ClaudeRuntime {
 
 	async enroll(taskId: string, meta: ToolMeta) {
 		const now = new Date().toISOString();
-		const preparation = await preparePiCanary(this.cwd, { task_id: taskId, now });
+		let preparation = await preparePiCanary(this.cwd, { task_id: taskId, now });
 		const intent = await readTaskIntentForRecord(this.cwd, taskId);
+		const gitBase = inspectEnrollmentGitBase(this.cwd);
 		const gate = await this.gate("enroll", { ...meta, taskId }, {
 			risk: intent.intent.risk,
 			intentRevision: preparation.intent?.revision,
 			intentContentHash: preparation.intent?.content_hash,
 			bindingDigest: preparation.digest,
+			gitBaseNotice: enrollmentGitBaseNotice(gitBase),
 		});
 		const { unchanged } = await revalidatePiCanary(this.cwd, { task_id: taskId, now }, preparation);
 		if (!unchanged) throw new NativeAuthorityError("workspace_changed", "workspace changed after native confirmation");
 		if (!preparation.intent) throw new Error("enrollment requires a readable TaskIntent");
 		throwIfCancelled(meta.signal);
-		const nonce = enrollmentNonce();
-		const binding: EnrollmentCapabilityBinding = {
-			task_id: taskId,
-			intent_path: preparation.intent.path,
-			intent_revision: preparation.intent.revision,
-			intent_content_hash: preparation.intent.content_hash,
-			preparation_digest: preparation.digest,
-			actor_id: LITERAL_USER_ACTOR_ID,
-			confirmation_ref: gate.confirmation_ref,
-			expires_at: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
-			nonce,
-		};
-		const capability = this.enrollmentRegistry.issue(binding);
-		const input = {
-			task_id: taskId,
-			intent_path: binding.intent_path,
-			intent_revision: binding.intent_revision,
-			preparation_digest: binding.preparation_digest,
-			capability,
-			capability_binding: binding,
-			now,
-		};
-		const rehearsal = runEnrollmentRehearsal(this.cwd, input, capability, this.enrollmentRegistry);
-		if (!rehearsal.rehearsed || rehearsal.evidence.outcome !== "ready") {
-			throw new Error(`Kernel enrollment rehearsal failed: ${rehearsal.evidence.blockers.join("; ")}`);
+		preparation = initializeEnrollmentGitBase(this.cwd, { task_id: taskId, now }, preparation, gitBase, meta.signal);
+		const gitBaseNote = gitBase.state === "unborn" ? `; empty initial commit ${preparation.git_base_head} remains` : "";
+		try {
+			if (!preparation.intent) throw new Error("Enrollment requires a readable TaskIntent");
+			const nonce = enrollmentNonce();
+			const binding: EnrollmentCapabilityBinding = {
+				task_id: taskId,
+				intent_path: preparation.intent.path,
+				intent_revision: preparation.intent.revision,
+				intent_content_hash: preparation.intent.content_hash,
+				preparation_digest: preparation.digest,
+				actor_id: LITERAL_USER_ACTOR_ID,
+				confirmation_ref: gate.confirmation_ref,
+				expires_at: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
+				nonce,
+			};
+			const capability = this.enrollmentRegistry.issue(binding);
+			const input = {
+				task_id: taskId,
+				intent_path: binding.intent_path,
+				intent_revision: binding.intent_revision,
+				preparation_digest: binding.preparation_digest,
+				capability,
+				capability_binding: binding,
+				now,
+			};
+			const rehearsal = runEnrollmentRehearsal(this.cwd, input, capability, this.enrollmentRegistry);
+			if (!rehearsal.rehearsed || rehearsal.evidence.outcome !== "ready") {
+				throw new Error(`Kernel enrollment rehearsal failed: ${rehearsal.evidence.blockers.join("; ")}`);
+			}
+			return enrollCanaryTask(this.cwd, input, this.enrollmentRegistry);
+		} catch (error) {
+			if (gitBaseNote) throw new Error(`${error instanceof Error ? error.message : String(error)}${gitBaseNote}`);
+			throw error;
 		}
-		return enrollCanaryTask(this.cwd, input, this.enrollmentRegistry);
 	}
 
 	async advance(taskId: string, signal?: AbortSignal) {

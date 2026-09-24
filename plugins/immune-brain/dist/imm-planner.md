@@ -506,7 +506,7 @@ a State Ledger. Keep historical Plan validation strictly read-only.
 
 ## Verification
 
-- Validate every candidate through `imm-kernel intent validate <path> --json` after authoring and staging. Require `valid: true` and `enrollment_ready: true` before Enrollment.
+- Validate every candidate through `imm-kernel intent validate <path> --json` after authoring and staging. Require `valid: true` and `enrollment_ready: true` before Enrollment. When `git_base_initialization_required: true`, report that the existing native Enrollment confirmation includes an empty root commit; leave initialization to the Host. An invalid `git_base` blocks Enrollment and requires Git repair.
 - For complex work, verify Spec design metadata, document language, reference closure, concrete descriptor paths, and complete Brainstorm traceability before handoff. Simple TaskIntent-only work verifies those properties on the Intent.
 - Enrollment validates descriptor structure only. Deterministic QA owns descriptor execution after implementation; planning does not run the acceptance suite.
 - Managed execution handoff is Git-tracked TaskIntent author/validate plus current-Host native Enrollment. Do not sync a v3 State Ledger or invoke a missing dispatcher.

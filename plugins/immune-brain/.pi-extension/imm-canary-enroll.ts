@@ -26,6 +26,9 @@ import {
 	withKernelStoreLock,
 	inspectStorageLayout,
 	migrateLegacyLayout,
+	inspectEnrollmentGitBase,
+	enrollmentGitBaseNotice,
+	initializeEnrollmentGitBase,
 } from "./runtime-stub";
 import {
 	presentTaskRail,
@@ -292,6 +295,7 @@ async function executeForegroundEnrollment(
 	pi: Pick<ExtensionAPI, "events">,
 ): Promise<EnrollmentTerminal> {
 	let stage = "preparing";
+	let gitBaseNote = "";
 	const progress = (nextStage: string, summary: string) => {
 		stage = nextStage;
 		const update = updateResult(action, taskId, nextStage, summary);
@@ -303,7 +307,7 @@ async function executeForegroundEnrollment(
 		taskId,
 		"cancelled",
 		stage,
-		`Foreground enrollment cancelled during ${stage}; zero authority writes were requested`,
+		`Foreground enrollment cancelled during ${stage}; zero authority writes were requested${gitBaseNote}`,
 		"retry by invoking the launcher again",
 	);
 
@@ -437,7 +441,7 @@ async function executeForegroundEnrollment(
 				`task ${taskId} is terminal in this worktree`,
 				"inspect authority state; do not retry enrollment",
 			);
-		const preparation = await preparePiCanary(root, { task_id: taskId, now });
+		let preparation = await preparePiCanary(root, { task_id: taskId, now });
 		signal.throwIfAborted();
 		if (!preparation.intent)
 			return terminal(action, taskId, "blocked", stage, "A Git-tracked TaskIntent is required for Kernel enrollment", "author and stage the canonical TaskIntent");
@@ -468,6 +472,8 @@ async function executeForegroundEnrollment(
 			return terminal(action, taskId, "blocked", stage, `Enrollment is ineligible: ${reasons}`, "resolve the eligibility blockers");
 		}
 
+		const gitBase = await inspectEnrollmentGitBase(root);
+		const gitNotice = await enrollmentGitBaseNotice(gitBase);
 		const acceptanceDetails = taskIntent.intent.acceptance.length === 0
 			? "(none)"
 			: taskIntent.intent.acceptance
@@ -483,6 +489,7 @@ async function executeForegroundEnrollment(
 				`Risk: ${taskIntent.intent.risk}`,
 				`Scope: ${taskIntent.intent.scope_hint.length > 0 ? taskIntent.intent.scope_hint.join(", ") : "(none)"}`,
 				`Acceptance: ${taskIntent.intent.acceptance.length} descriptor(s)`,
+				...(gitNotice ? [gitNotice] : []),
 			].join("\n");
 			const confirmationDetails = [
 				`Acceptance descriptors:`,
@@ -536,6 +543,11 @@ async function executeForegroundEnrollment(
 			return terminal(action, taskId, "blocked", stage, "Workspace changed after confirmation; enrollment aborted before authority", "restore the intended snapshot and rerun enrollment");
 		signal.throwIfAborted();
 
+		preparation = await initializeEnrollmentGitBase(root, { task_id: taskId, now }, preparation, gitBase, signal);
+		if (gitBase.state === "unborn") gitBaseNote = `; empty initial commit ${preparation.git_base_head} remains`;
+		if (!preparation.intent) throw new Error("Enrollment requires a readable TaskIntent");
+		signal.throwIfAborted();
+
 		const nonce = randomUUID();
 		const binding = {
 			task_id: taskId,
@@ -562,7 +574,7 @@ async function executeForegroundEnrollment(
 		progress("rehearsing", uxText(UX_LANG, "Running the zero-write Kernel owner rehearsal", "正在执行 Kernel 所有者零写入预演"));
 		const rehearsal = await runEnrollmentRehearsal(root, input, capability, registry);
 		if (!rehearsal.rehearsed || rehearsal.evidence.outcome !== "ready")
-			return terminal(action, taskId, "failed", stage, `Kernel enrollment rehearsal failed: ${rehearsal.evidence.blockers.join("; ")}`, "resolve the final-lock preconditions and retry");
+			return terminal(action, taskId, "failed", stage, `Kernel enrollment rehearsal failed: ${rehearsal.evidence.blockers.join("; ")}${gitBaseNote}`, "resolve the final-lock preconditions and retry");
 		if (signal.aborted) return cancelled();
 		if (!beginCommit()) return cancelled();
 
@@ -579,11 +591,13 @@ async function executeForegroundEnrollment(
 				"continue with imm-loop",
 			);
 		} catch (error) {
-			return classifyCommitFailure(root, action, taskId, now, error);
+			const failure = await classifyCommitFailure(root, action, taskId, now, error);
+			failure.summary += gitBaseNote;
+			return failure;
 		}
 	} catch (error) {
 		if (signal.aborted) return cancelled();
-		return terminal(action, taskId, "failed", stage, `Foreground enrollment failed during ${stage}: ${errorMessage(error)}`, "correct the reported failure and retry");
+		return terminal(action, taskId, "failed", stage, `Foreground enrollment failed during ${stage}: ${errorMessage(error)}${gitBaseNote}`, "correct the reported failure and retry");
 	}
 }
 

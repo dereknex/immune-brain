@@ -43,18 +43,8 @@ export interface PiCanaryPrepareInput {
 	task_id: string;
 	now: string;
 }
-export interface PiCanaryPreparation {
-	contract: "assurance_kernel/pi_canary_preparation/v1";
-	task_id: string;
-	generated_at: string;
-	root_state_path: string;
-	intent: { path: string; revision: number; content_hash: string } | null;
-	backend_claim: { present: boolean; task_id: string | null; lifecycle_status: string | null };
-	task_tombstone: { present: boolean; terminal_lifecycle: string | null };
-	task_record_v3: { present: boolean; lifecycle: string | null; artifact_state: string | null } | null;
-	workspace: { current_working: string | null };
-	digest: string;
-}
+export type PiCanaryPreparation = import("../runtime/kernel/pi_canary_prepare").PiCanaryPreparation;
+export type EnrollmentGitBase = import("../runtime/assurance/enrollment_git_base").EnrollmentGitBase;
 export interface EnrollCanaryInput {
 	task_id: string;
 	intent_path: string;
@@ -241,6 +231,18 @@ export async function markGithubTaskTerminal(
 export async function createEnrollmentAuthorityRegistry(): Promise<EnrollmentAuthorityRegistry> {
 	const mod = await import(/* @vite-ignore */ kernelPath("enrollment_authority"));
 	return mod.createEnrollmentAuthorityRegistry();
+}
+export async function inspectEnrollmentGitBase(root: string): Promise<EnrollmentGitBase> {
+	const mod = await import(/* @vite-ignore */ runtimePath("assurance/enrollment_git_base"));
+	return mod.inspectEnrollmentGitBase(root);
+}
+export async function enrollmentGitBaseNotice(base: EnrollmentGitBase): Promise<string | undefined> {
+	const mod = await import(/* @vite-ignore */ runtimePath("assurance/enrollment_git_base"));
+	return mod.enrollmentGitBaseNotice(base);
+}
+export async function initializeEnrollmentGitBase(root: string, input: PiCanaryPrepareInput, previous: PiCanaryPreparation, base: EnrollmentGitBase, signal?: AbortSignal): Promise<PiCanaryPreparation> {
+	const mod = await import(/* @vite-ignore */ runtimePath("assurance/enrollment_git_base"));
+	return mod.initializeEnrollmentGitBase(root, input, previous, base, signal);
 }
 export async function preparePiCanary(
 	root: string,

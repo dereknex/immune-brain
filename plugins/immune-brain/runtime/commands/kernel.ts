@@ -40,6 +40,7 @@ import { projectLegacyAudit } from "../kernel/legacy_audit";
 import { inspectStorageLayout } from "../kernel/storage_paths";
 import { migrateLegacyLayout } from "../kernel/storage_layout_migration";
 import { readBackendClaim } from "../kernel/backend_claim";
+import { inspectEnrollmentGitBase, type EnrollmentGitBase } from "../assurance/enrollment_git_base";
 import { probeKernelStore } from "../kernel";
 
 export interface KernelCommandResult {
@@ -1134,8 +1135,11 @@ function runIntentValidate(args: string[], root: string): KernelExecution {
 		gitTracked = false;
 	}
 
+	let gitBase: EnrollmentGitBase | { state: "invalid"; reason: string };
+	try { gitBase = inspectEnrollmentGitBase(canonicalRoot); }
+	catch (error) { gitBase = { state: "invalid", reason: error instanceof Error ? error.message : String(error) }; }
 	const contentHash = canonicalIntentHash(intent);
-	const enrollmentReady = gitTracked && allEligible;
+	const enrollmentReady = gitTracked && allEligible && gitBase.state !== "invalid";
 	return {
 		result: jsonResult(
 			{
@@ -1148,6 +1152,8 @@ function runIntentValidate(args: string[], root: string): KernelExecution {
 				acceptance_ids: intent.acceptance.map((item) => item.id),
 				verification: verification,
 				git_ownership: gitTracked ? "tracked" : "untracked",
+				git_base: gitBase,
+				git_base_initialization_required: gitBase.state === "unborn",
 				enrollment_ready: enrollmentReady,
 			},
 			0,

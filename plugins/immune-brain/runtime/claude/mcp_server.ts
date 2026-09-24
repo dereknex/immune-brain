@@ -378,6 +378,7 @@ export function elicitationParams(input: NativeConfirmationInput) {
 		input.intentRevision !== undefined ? `Intent revision: ${input.intentRevision}` : null,
 		input.intentContentHash ? `Intent hash: ${input.intentContentHash}` : null,
 		input.bindingDigest ? `Binding digest: ${input.bindingDigest}` : null,
+		input.gitBaseNotice,
 	].filter(Boolean);
 	return {
 		mode: "form",

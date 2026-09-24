@@ -118,7 +118,29 @@ describe("imm-kernel intent validate", () => {
 			expect(output.valid).toBe(true);
 			expect(output.git_ownership).toBe("tracked");
 			expect(output.enrollment_ready).toBe(true);
+			expect(output.git_base.state).toBe("committed");
+			expect(output.git_base_initialization_required).toBe(false);
 			expect(output).not.toHaveProperty("descriptor_rehearsal");
+		});
+	});
+
+	it("reports an unborn base as ready with initialization required, without writing HEAD", () => {
+		withRepo((root) => {
+			const path = "docs/plans/task-002-intent-validate.intent.json";
+			writeFileSync(join(root, path), intentBytes());
+			git(root, ["add", path]);
+			git(root, ["symbolic-ref", "HEAD", "refs/heads/unborn"]);
+			const index = readFileSync(join(root, ".git/index"));
+			const output = JSON.parse(validate(root, path).stdout);
+			expect(output.enrollment_ready).toBe(true);
+			expect(output.git_base).toEqual({ state: "unborn", branch: "refs/heads/unborn" });
+			expect(output.git_base_initialization_required).toBe(true);
+			expect(existsSync(join(root, ".git/refs/heads/unborn"))).toBe(false);
+			expect(readFileSync(join(root, ".git/index"))).toEqual(index);
+			writeFileSync(join(root, ".git/refs/heads/unborn"), `${"a".repeat(40)}\n`);
+			const corrupt = JSON.parse(validate(root, path).stdout);
+			expect(corrupt.enrollment_ready).toBe(false);
+			expect(corrupt.git_base.state).toBe("invalid");
 		});
 	});
 

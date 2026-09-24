@@ -74,6 +74,7 @@ export interface NativeConfirmationInput {
 	intentRevision?: number;
 	intentContentHash?: string;
 	bindingDigest?: string;
+	gitBaseNotice?: string;
 	planDigest?: string;
 	batchDetails?: {
 		initiative_slug: string;
