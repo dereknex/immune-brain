@@ -83,5 +83,6 @@ MobileBackups.trash
 tmbootpicker.efi
 node_modules/
 .pi/
+.claude/
 .ua/
 .codegraph/
