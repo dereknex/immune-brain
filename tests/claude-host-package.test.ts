@@ -141,6 +141,7 @@ describe("claude host package", () => {
       "advance_assurance",
       "submit_review",
       "request_authorization",
+      "revise_intent",
       "approve_breaking_intent_revision",
       "stop",
       "start_unattended_batch",

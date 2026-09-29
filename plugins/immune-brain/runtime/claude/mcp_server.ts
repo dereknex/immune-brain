@@ -23,6 +23,7 @@ export const TOOLS = [
 	{ name: "advance_assurance", description: "Advance frozen Assurance through deterministic QA and Review reservation.", privileged: false },
 	{ name: "submit_review", description: "Submit the Parent-mediated Review verdict bound to the correlated receipt.", privileged: false },
 	{ name: "request_authorization", description: "Apply exact literal-user authorization.", privileged: true },
+	{ name: "revise_intent", description: "Apply a compatible TaskIntent revision.", privileged: false },
 	{ name: "approve_breaking_intent_revision", description: "Approve a breaking TaskIntent revision.", privileged: true },
 	{ name: "stop", description: "Stop the active task with literal-user authority.", privileged: true },
 	{ name: "start_unattended_batch", description: "Start an unattended serial batch run for an Initiative after native confirmation.", privileged: true },
@@ -42,7 +43,7 @@ export function listMcpTools() {
 					? { initiative_slug: { type: "string" } }
 					: {
 						task_id: { type: "string" },
-						...(tool.name === "approve_breaking_intent_revision" ? { next_intent: { type: "object" } } : {}),
+						...(tool.name === "approve_breaking_intent_revision" || tool.name === "revise_intent" ? { next_intent: { type: "object" } } : {}),
 						...(tool.name === "stop" ? { reason: { type: "string" } } : {}),
 						...(tool.name === "submit_review" ? { verdict: { type: "object" } } : {}),
 						...(tool.name === "resolve_finding" ? { finding_id: { type: "string" } } : {}),
@@ -57,7 +58,9 @@ export function listMcpTools() {
 						? ["task_id", "finding_id"]
 						: tool.name === "refute_finding"
 							? ["task_id", "finding_id", "attestation_id"]
-							: ["task_id"],
+							: tool.name === "revise_intent"
+								? ["task_id", "next_intent"]
+								: ["task_id"],
 		},
 		annotations: tool.privileged ? privilegedAnnotations() : { readOnlyHint: tool.name === "status" },
 	}));
@@ -161,6 +164,10 @@ export function createMcpRuntime(options: McpRuntimeOptions = {}) {
 			if (name === "submit_review") {
 				if (!Object.hasOwn(args, "verdict")) throw new Error("verdict is required");
 				return runtime.submitReview(taskId, args.verdict);
+			}
+			if (name === "revise_intent") {
+				if (!Object.hasOwn(args, "next_intent")) throw new Error("next_intent is required");
+				return runtime.reviseIntent(taskId, args.next_intent);
 			}
 			if (name === "resolve_finding") {
 				// Structural only. Which findings may be resolved, and when, stays

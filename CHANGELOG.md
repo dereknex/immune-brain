@@ -1,5 +1,11 @@
 # Changelog
 
+## 4.4.0
+
+### Minor Changes
+
+- Expose `revise_intent` in the Claude MCP tool surface and `ClaudeRuntime` to allow compatible TaskIntent revisions to be submitted and persisted directly, restoring the sidecar file and Git index on failure.
+
 ## 4.3.0
 
 ### Minor Changes

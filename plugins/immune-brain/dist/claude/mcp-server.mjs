@@ -39,7 +39,7 @@ function probeHost(env = process.env, platform = process.platform, hostVersion) 
 }
 
 // plugins/immune-brain/runtime/plugin_version.ts
-var PLUGIN_VERSION = "4.3.0";
+var PLUGIN_VERSION = "4.4.0";
 
 // plugins/immune-brain/runtime/claude/interaction.ts
 import { createHash, randomUUID } from "node:crypto";
@@ -12564,6 +12564,12 @@ class ClaudeRuntime {
       return { ...result, tracker: TRACKER_PROJECTION_FAILURE };
     }
   }
+  async reviseIntent(taskId, nextIntent) {
+    return this.executeOrdinary({ cwd: this.cwd }, {
+      taskId,
+      operation: { op: "revise_intent", next_intent: nextIntent, actor_id: "executor" }
+    });
+  }
   async resolveFinding(taskId, findingId) {
     return this.executeOrdinary({ cwd: this.cwd }, {
       taskId,
@@ -13072,6 +13078,7 @@ var TOOLS = [
   { name: "advance_assurance", description: "Advance frozen Assurance through deterministic QA and Review reservation.", privileged: false },
   { name: "submit_review", description: "Submit the Parent-mediated Review verdict bound to the correlated receipt.", privileged: false },
   { name: "request_authorization", description: "Apply exact literal-user authorization.", privileged: true },
+  { name: "revise_intent", description: "Apply a compatible TaskIntent revision.", privileged: false },
   { name: "approve_breaking_intent_revision", description: "Approve a breaking TaskIntent revision.", privileged: true },
   { name: "stop", description: "Stop the active task with literal-user authority.", privileged: true },
   { name: "start_unattended_batch", description: "Start an unattended serial batch run for an Initiative after native confirmation.", privileged: true },
@@ -13088,14 +13095,14 @@ function listMcpTools() {
       properties: {
         ...tool.name === "start_unattended_batch" ? { initiative_slug: { type: "string" } } : {
           task_id: { type: "string" },
-          ...tool.name === "approve_breaking_intent_revision" ? { next_intent: { type: "object" } } : {},
+          ...tool.name === "approve_breaking_intent_revision" || tool.name === "revise_intent" ? { next_intent: { type: "object" } } : {},
           ...tool.name === "stop" ? { reason: { type: "string" } } : {},
           ...tool.name === "submit_review" ? { verdict: { type: "object" } } : {},
           ...tool.name === "resolve_finding" ? { finding_id: { type: "string" } } : {},
           ...tool.name === "refute_finding" ? { finding_id: { type: "string" }, attestation_id: { type: "string" } } : {}
         }
       },
-      required: tool.name === "start_unattended_batch" ? ["initiative_slug"] : tool.name === "submit_review" ? ["task_id", "verdict"] : tool.name === "resolve_finding" ? ["task_id", "finding_id"] : tool.name === "refute_finding" ? ["task_id", "finding_id", "attestation_id"] : ["task_id"]
+      required: tool.name === "start_unattended_batch" ? ["initiative_slug"] : tool.name === "submit_review" ? ["task_id", "verdict"] : tool.name === "resolve_finding" ? ["task_id", "finding_id"] : tool.name === "refute_finding" ? ["task_id", "finding_id", "attestation_id"] : tool.name === "revise_intent" ? ["task_id", "next_intent"] : ["task_id"]
     },
     annotations: tool.privileged ? privilegedAnnotations() : { readOnlyHint: tool.name === "status" }
   }));
@@ -13188,6 +13195,11 @@ function createMcpRuntime(options = {}) {
         if (!Object.hasOwn(args, "verdict"))
           throw new Error("verdict is required");
         return runtime.submitReview(taskId, args.verdict);
+      }
+      if (name === "revise_intent") {
+        if (!Object.hasOwn(args, "next_intent"))
+          throw new Error("next_intent is required");
+        return runtime.reviseIntent(taskId, args.next_intent);
       }
       if (name === "resolve_finding") {
         if (typeof args.finding_id !== "string" || !args.finding_id)

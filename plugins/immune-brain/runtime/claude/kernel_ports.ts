@@ -658,6 +658,13 @@ export class ClaudeRuntime {
 		}
 	}
 
+	async reviseIntent(taskId: string, nextIntent: unknown) {
+		return this.executeOrdinary({ cwd: this.cwd }, {
+			taskId,
+			operation: { op: "revise_intent", next_intent: nextIntent, actor_id: "executor" },
+		});
+	}
+
 	/**
 	 * Ordinary Kernel operation, not a privileged one: canary_application builds
 	 * the action without a capability and the Pi Host lists resolve_finding in

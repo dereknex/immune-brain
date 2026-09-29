@@ -1290,6 +1290,66 @@ function authorityState(root: string) {
 	};
 }
 
+describe("claude host revise_intent", () => {
+	test("persists compatible revisions and restores sidecar and index on rejection", async () => {
+		const root = makeResolveFindingRoot(false);
+		const mcp = await resolveFindingRuntime(root);
+		const path = `docs/plans/${RESOLVE_TASK}.intent.json`;
+		const next = { ...RESOLVE_INTENT, revision: 2, acceptance: [{ ...RESOLVE_INTENT.acceptance[0], verification: "bun test src/revised.ts" }] };
+		const tool = listMcpTools().find((entry) => String(entry.name) === "revise_intent");
+		expect(tool?.inputSchema.required).toEqual(["task_id", "next_intent"]);
+		expect(tool?.annotations).toEqual({ readOnlyHint: false });
+		await mcp.callTool("revise_intent", { task_id: RESOLVE_TASK, next_intent: next });
+		expect(readTaskRecord(root, RESOLVE_TASK).record?.intent_snapshot).toEqual(next);
+		const bytes = readFileSync(join(root, path), "utf8");
+		const staged = () => execFileSync("git", ["show", `:${path}`], { cwd: root, encoding: "utf8" });
+		expect(JSON.parse(bytes)).toEqual(next);
+		expect(staged()).toBe(bytes);
+		const record = recordBytes(root);
+		await expect(mcp.callTool("revise_intent", { task_id: RESOLVE_TASK, next_intent: { ...next, revision: 3, goal: "breaking" } })).rejects.toThrow("revise_intent requires a compatible revision");
+		expect(recordBytes(root)).toBe(record);
+		expect(readFileSync(join(root, path), "utf8")).toBe(bytes);
+		expect(staged()).toBe(bytes);
+		await expect(mcp.callTool("revise_intent", { task_id: RESOLVE_TASK })).rejects.toThrow("next_intent is required");
+		await expect(mcp.callTool("revise_intent", { task_id: RESOLVE_TASK, next_intent: {} })).rejects.toThrow();
+		expect(recordBytes(root)).toBe(record);
+		expect(staged()).toBe(bytes);
+	});
+
+	test.each(["active", "frozen"] as const)("invalidates old QA with %s artifacts", async (artifactState) => {
+		const root = makeResolveFindingRoot(false);
+		const record = JSON.parse(recordBytes(root));
+		record.artifact_state = artifactState;
+		record.attestations.push({
+			id: "qa-before-revision", kind: "qa", authority_role: "qa", task_revision: 1,
+			intent_content_hash: RESOLVE_INTENT_HASH,
+			diff_hash: diffHashOf(root, readTaskRecord(root, RESOLVE_TASK).record!),
+			actor_id: "qa-host", summary: "descriptor passed",
+			acceptance_results: [{ acceptance_id: "A1", status: "passed", summary: "A1 passed" }],
+		});
+		writeStoredRecordForTest(root, record);
+		expect((await projectAssurance(root, RESOLVE_TASK, diffSnapshotOf)).projection.fresh_acceptance_ids).toEqual(["A1"]);
+		const mcp = await resolveFindingRuntime(root);
+		await mcp.callTool("revise_intent", { task_id: RESOLVE_TASK, next_intent: {
+			...RESOLVE_INTENT, revision: 2,
+			acceptance: [{ ...RESOLVE_INTENT.acceptance[0], verification: "bun test src/revised.ts" }],
+		} });
+		const projection = (await projectAssurance(root, RESOLVE_TASK, diffSnapshotOf)).projection;
+		expect(projection.fresh_acceptance_ids).toEqual([]);
+		expect(projection.stale_attestation_ids).toContain("qa-before-revision");
+		expect(projection.completion_ready).toBe(false);
+	});
+
+	test("requires trusted interactive host evidence", async () => {
+		const root = makeResolveFindingRoot(false);
+		const mcp = createMcpRuntime({ cwd: root, env: ENV, host: new ClaudeReviewHost() });
+		const args = { task_id: RESOLVE_TASK, next_intent: { ...RESOLVE_INTENT, revision: 2 } };
+		await expect(mcp.callTool("revise_intent", args)).rejects.toThrow("Claude Code version is unavailable");
+		mcp.bindClientHandshake({ version: "2.1.236", interactive: false });
+		await expect(mcp.callTool("revise_intent", args)).rejects.toThrow("interactive MCP elicitation is unavailable");
+	});
+});
+
 describe("claude host resolve_finding", () => {
 	test("publishes an ordinary resolve_finding tool that actually clears the finding", async () => {
 		const tools = listMcpTools();
@@ -1393,6 +1453,7 @@ describe("claude host resolve_finding", () => {
 			"advance_assurance",
 			"submit_review",
 			"request_authorization",
+			"revise_intent",
 			"approve_breaking_intent_revision",
 			"stop",
 			"start_unattended_batch",
