@@ -684,7 +684,7 @@ describe("batch boundary regressions", () => {
 		} finally { rmSync(root, { recursive: true, force: true }); }
 	});
 
-	it.each(["start", "resume"])("%s grants a fresh QA retry budget and resumes dependents after reauthorization", async (entry) => {
+	it.each(["start", "resume"])("%s preserves QA failure accounting and resumes dependents only after success", async (entry) => {
 		const root = tempRoot();
 		try {
 			const children = [child("task-a", "S1"), child("task-b", "S2", ["task-a"])];
@@ -706,8 +706,16 @@ describe("batch boundary regressions", () => {
 			expect(repeated.batch_state).toBe("needs_human");
 			expect(readBatchRunState(root, "batch-001")!.consecutive_qa_failures).toBe(2);
 			const renewed = input(root, children, kernel, { budget, confirmation_time: "2026-01-02T00:00:00.000Z" });
-			const report = entry === "start" ? await startBatch(renewed) : await resumeBatch(renewed, kernel.projectTask);
+			const retried = entry === "start" ? await startBatch(renewed) : await resumeBatch(renewed, kernel.projectTask);
+			expect(retried.batch_state).toBe("needs_human");
+			expect(readBatchRunState(root, "batch-001")!.consecutive_qa_failures).toBe(3);
+			expect(retried.children.map((c) => c.state)).toEqual(["needs_human", "skipped_blocked"]);
+			expect(kernel.enrolled).toEqual(["task-a"]);
+			expect(kernel.commits).toEqual([]);
+			const repaired = input(root, children, kernel, { budget, confirmation_time: "2026-01-03T00:00:00.000Z" });
+			const report = entry === "start" ? await startBatch(repaired) : await resumeBatch(repaired, kernel.projectTask);
 			expect(report.batch_state).toBe("completed");
+			expect(readBatchRunState(root, "batch-001")!.consecutive_qa_failures).toBe(0);
 			expect(report.children.map((c) => c.state)).toEqual(["committed", "committed"]);
 			expect(kernel.enrolled).toEqual(["task-a", "task-b"]);
 		} finally { rmSync(root, { recursive: true, force: true }); }
@@ -1814,15 +1822,19 @@ describe("shared batch preflight projection", () => {
 				contract: "assurance_kernel/batch_run_state/v1",
 				batch_id: "batch-1",
 				initiative_slug: SLUG,
+				plan_digest: computeBatchPlanDigest([child("child-a", "S1"), child("child-b", "S2", ["child-a"])]),
 				batch_state: batchState,
 				branch: `imm/${SLUG}`,
 				base_head: headOf(root),
-				commits: [],
+				commits: [headOf(root)],
+				confirmation_time: NOW,
+				created_at: NOW,
+				consecutive_qa_failures: 0,
 				authorization_expires_at: overrides.authorization_expires_at ?? FAR_FUTURE,
 				budget: overrides.budget ?? { max_children: 2, deadline_at: FAR_FUTURE, qa_failure_limit: 2 },
 				updated_at: NOW,
 				children: [
-					{ task_id: "child-a", slice_id: "S1", state: "committed", blocked_by: [], commit: null, reason: null },
+					{ task_id: "child-a", slice_id: "S1", state: "committed", blocked_by: [], commit: headOf(root), reason: null },
 					...(batchState === "completed" ? [] : [{ task_id: "child-b", slice_id: "S2", state: "pending", blocked_by: ["child-a"], commit: null, reason: null }]),
 				],
 			}, null, 2)}\n`,

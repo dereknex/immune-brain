@@ -19,7 +19,7 @@ import type {
 } from "./types";
 
 const ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
-const DEFAULT_DEADLINE_MS = 8 * 60 * 60 * 1_000;
+export const DEFAULT_DEADLINE_MS = 8 * 60 * 60 * 1_000;
 const DEFAULT_QA_FAILURE_LIMIT = 2;
 
 /**

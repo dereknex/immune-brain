@@ -10509,7 +10509,12 @@ function findExistingActiveBatch(root, initiativeSlug) {
     }
     if (isTerminalBatchState(candidate.batch_state))
       continue;
-    return { corrupt: false, record: candidate };
+    try {
+      const record = readBatchRunState(root, file.slice(0, -5));
+      if (record)
+        return { corrupt: false, record };
+    } catch {}
+    return { corrupt: true, path: file };
   }
   return null;
 }
@@ -10635,7 +10640,9 @@ async function projectPlanSurface(input) {
   const riskByTask = new Map;
   let budget;
   if (isResuming && existingBatch) {
-    budget = existingBatch.budget;
+    budget = { ...existingBatch.budget };
+    if (Date.parse(budget.deadline_at) <= Date.parse(now))
+      budget.deadline_at = new Date(Date.parse(now) + DEFAULT_DEADLINE_MS).toISOString();
     try {
       recoveryChildren = existingBatch.children.map((c) => {
         const intentPath = `docs/plans/${c.task_id}.intent.json`;
@@ -10851,11 +10858,15 @@ async function authorizeBatch(options) {
   } = projection;
   const existingBatch = projection.existing_batch;
   const isExistingExpired = isResuming && Date.parse(existingBatch.authorization_expires_at) <= Date.now();
-  const expiresAt = isResuming && !isExistingExpired && existingBatch.batch_state === "running" ? existingBatch.authorization_expires_at : budget.deadline_at;
+  const branchBefore = spawnSync5("git", ["-C", root, "branch", "--show-current"], { encoding: "utf8" });
+  if (branchBefore.status !== 0)
+    return { outcome: "rejected", rejection: batchRejection("repository_became_unreadable") };
   const reuseBlockers = [];
   if (isResuming && existingBatch) {
     if (isExistingExpired)
       reuseBlockers.push("batch_authorization_expired");
+    if (Date.parse(existingBatch.budget.deadline_at) <= Date.now())
+      reuseBlockers.push("batch_budget_expired");
     if (existingBatch.batch_state !== "running")
       reuseBlockers.push("batch_not_running");
     if (existingBatch.plan_digest !== planDigest)
@@ -10866,6 +10877,7 @@ async function authorizeBatch(options) {
       reuseBlockers.push("batch_head_lineage_moved");
   }
   const reuseAuthorization = isResuming && reuseBlockers.length === 0;
+  const expiresAt = reuseAuthorization ? existingBatch.authorization_expires_at : budget.deadline_at;
   const batchId = isResuming && existingBatch ? existingBatch.batch_id : `batch-${initiativeSlug}-${randomUUID7()}`;
   const facts = {
     initiative_slug: initiativeSlug,
@@ -10909,6 +10921,16 @@ async function authorizeBatch(options) {
   const finalOwnClaim = isResuming && finalClaimTaskId !== null && isOwnBatchClaim(root, existingBatch, finalClaimTaskId, batchBranch);
   if (finalClaimTaskId && !finalOwnClaim)
     return { outcome: "rejected", rejection: batchRejection("claim_appeared_during_confirmation", finalClaimTaskId) };
+  if (isResuming) {
+    const current = findExistingActiveBatch(root, initiativeSlug);
+    if (!current || current.corrupt || JSON.stringify(current.record) !== JSON.stringify(existingBatch))
+      return { outcome: "rejected", rejection: batchRejection("plan_changed") };
+  }
+  const branchAfter = spawnSync5("git", ["-C", root, "branch", "--show-current"], { encoding: "utf8" });
+  if (branchAfter.status !== 0 || branchAfter.stdout !== branchBefore.stdout)
+    return { outcome: "rejected", rejection: batchRejection("confirmation_failed", "Git branch moved after native confirmation") };
+  if (Date.parse(expiresAt) <= Date.now())
+    return { outcome: "rejected", rejection: batchRejection("confirmation_failed", "confirmed batch deadline expired before authorization issuance") };
   const binding = {
     batch_id: batchId,
     initiative_slug: initiativeSlug,
@@ -11724,7 +11746,6 @@ async function startBatchLocked(input) {
       authorization_expires_at: input.authorization_expires_at,
       budget: input.budget,
       batch_state: "running",
-      consecutive_qa_failures: 0,
       children: resumedChildren
     });
   }
@@ -12855,7 +12876,7 @@ class ClaudeRuntime {
       throw new NativeAuthorityError("unsupported_host", "interactive MCP elicitation is unavailable");
     if (!this.requestConfirmation)
       throw new NativeAuthorityError("interaction_not_opened", batchReason("confirmation_port_unavailable").reason);
-    const now = new Date().toISOString();
+    let now = new Date().toISOString();
     const preflight = await projectBatchPreflight({
       root: this.cwd,
       initiative_slug: initiativeSlug,
@@ -12969,6 +12990,9 @@ class ClaudeRuntime {
     const { binding, batch_id: batchId, expires_at: expiresAt } = authorization;
     if (meta.signal?.aborted)
       return batchReason("cancelled_before_execution");
+    now = new Date().toISOString();
+    if (Date.parse(expiresAt) <= Date.parse(now))
+      return batchReason("confirmation_failed", "confirmed batch deadline expired before authorization issuance");
     const capability = this.batchRegistry.issue(binding, recoveryChildren, now);
     const basePort = this.createBatchKernelPort(this.batchRegistry, capability, binding);
     const kernelPort = {
