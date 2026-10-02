@@ -361,7 +361,15 @@ function loadSurface(dependencies: Record<string, unknown> = {}) {
 		registerMessageRenderer: () => { throw new Error("follow-up renderer must not be registered"); },
 		sendMessage: () => { throw new Error("assurance follow-up must not be sent"); },
 	} as unknown as ExtensionAPI;
-	factory(pi, dependencies);
+	// Registration publishes a session singleton; fixture ports must not leak
+	// into sibling tests that drive the real shared Pi progression.
+	const key = Symbol.for("immune_brain.pi_assurance_progression");
+	const previous = Object.getOwnPropertyDescriptor(globalThis, key);
+	try { factory(pi, dependencies); }
+	finally {
+		if (previous) Object.defineProperty(globalThis, key, previous);
+		else Reflect.deleteProperty(globalThis, key);
+	}
 	return { tools, commands, events, emitted };
 }
 
@@ -599,6 +607,23 @@ async function capturedToolFailure(promise: Promise<unknown>): Promise<Record<st
 	});
 
 	describe("foreground canary assurance extension", () => {
+	test("fixture registration preserves the shared Pi progression", () => {
+		const key = Symbol.for("immune_brain.pi_assurance_progression");
+		const previous = Object.getOwnPropertyDescriptor(globalThis, key);
+		try {
+			Reflect.deleteProperty(globalThis, key);
+			loadSurface({ runQa: async () => { throw new Error("fixture QA"); } });
+			expect(Object.hasOwn(globalThis, key)).toBe(false);
+			const shared = {};
+			Object.defineProperty(globalThis, key, { value: shared, configurable: true, writable: true });
+			loadSurface();
+			expect(Reflect.get(globalThis, key)).toBe(shared);
+		} finally {
+			if (previous) Object.defineProperty(globalThis, key, previous);
+			else Reflect.deleteProperty(globalThis, key);
+		}
+	});
+
 	test("registers assurance and Loop routing Tools plus the read-only /imm-tasks command", () => {
 		const { tools, commands } = loadSurface();
 		expect(tools.map((tool) => tool.name)).toEqual(["imm_kernel_canary", "imm_loop_action"]);
