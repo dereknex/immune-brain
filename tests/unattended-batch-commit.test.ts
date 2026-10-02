@@ -12,6 +12,7 @@ import {
 	startBatch,
 	resumeBatch,
 	type BatchRunnerKernelPort,
+	type StartBatchInput,
 } from "../plugins/immune-brain/runtime/unattended/batch_runner";
 import { readBatchRunState } from "../plugins/immune-brain/runtime/unattended/batch_state";
 import {
@@ -21,6 +22,24 @@ import {
 import type { BatchPlanChild } from "../plugins/immune-brain/runtime/unattended/types";
 import { readAuditTaskPair } from "../plugins/immune-brain/runtime/kernel/storage";
 import { canonicalIntentHash, parseTaskIntentV1 } from "../plugins/immune-brain/runtime/kernel/intent";
+
+// Commit-safety fixtures script settlement; explicitly model Parent-ready turns.
+async function finishScriptedHandoffs(input: StartBatchInput, report: Awaited<ReturnType<typeof startBatch>>) {
+	for (let turns = 0; report.handoff && turns < input.children.length; turns++) {
+		const taskId = report.handoff.task_id;
+		const owns = input.kernel.ownsTaskClaim.bind(input.kernel);
+		input.kernel.ownsTaskClaim = (id) => id === taskId || owns(id);
+		const project = input.kernel.projectTask.bind(input.kernel);
+		input.kernel.projectTask = async (root, id) => {
+			const fresh = await project(root, id);
+			return id === taskId ? { ...fresh, claim: { task_id: id, lifecycle_status: "active" },
+				projection: { ...fresh.projection, lifecycle: "active", artifact_state: "frozen" } } as typeof fresh : fresh;
+		};
+		report = await startBatch(input);
+	}
+	expect(report.handoff).toBeUndefined();
+	return report;
+}
 
 const CONFIRMATION_TIME = "2026-01-01T00:00:00.000Z";
 const FAR_FUTURE = "2099-01-01T00:00:00.000Z";
@@ -1074,7 +1093,7 @@ describe("batch runner integration: branch and scope-bounded commit", () => {
 		};
 
 		const input = makeBatchInput(children, kernel, slug, "batch-flow-1");
-		const report = await startBatch(input);
+		const report = await finishScriptedHandoffs(input, await startBatch(input));
 
 		expect(report.batch_state).toBe("completed");
 		expect(report.commits).toHaveLength(2);
@@ -1159,7 +1178,7 @@ describe("batch runner integration: branch and scope-bounded commit", () => {
 		};
 
 		const input = makeBatchInput(children, kernel, slug, "batch-leak-1");
-		const report = await startBatch(input);
+		const report = await finishScriptedHandoffs(input, await startBatch(input));
 
 		expect(report.batch_state).toBe("failed");
 		expect(report.reason).toContain("dirty_outside_scope");
@@ -2469,7 +2488,7 @@ describe("batch runner integration: branch and scope-bounded commit", () => {
 
 		const batchInput = makeBatchInput(children, kernel, slug, "batch-enroll-drift-1");
 
-		const report = await startBatch(batchInput);
+		const report = await finishScriptedHandoffs(batchInput, await startBatch(batchInput));
 
 		expect(report.batch_state).toBe("failed");
 		expect(report.reason).toContain("batch_head_lineage_broken");
@@ -2810,7 +2829,7 @@ describe("batch runner integration: branch and scope-bounded commit", () => {
 		const { writeBatchRunState } = await import("../plugins/immune-brain/runtime/unattended/batch_state");
 		writeBatchRunState(repo.root, stateRecord);
 
-		const report = await resumeBatch(batchInput, kernel.projectTask.bind(kernel));
+		const report = await finishScriptedHandoffs(batchInput, await resumeBatch(batchInput, kernel.projectTask.bind(kernel)));
 
 		expect(report.batch_state).toBe("completed");
 		const stored = readBatchRunState(repo.root, "batch-adopt-1");

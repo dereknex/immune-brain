@@ -315,6 +315,14 @@ export interface BatchRunReport {
 	children: BatchChildRun[];
 	commits: string[];
 	reason: string | null;
+	/** Non-authoritative foreground implementation obligation, never persisted as readiness. */
+	handoff?: {
+		role: "executor";
+		task_id: string;
+		run_id: string | null;
+		record_revision: string;
+		next_obligation: import("../kernel/types").AssuranceObligation;
+	};
 	/** The single next action for the operator. */
 	next_action: string;
 	created_at: string;

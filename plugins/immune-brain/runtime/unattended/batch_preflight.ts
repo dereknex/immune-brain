@@ -20,7 +20,7 @@ import { readBackendClaim } from "../kernel/backend_claim";
 import { computeBatchPlanDigest, type BatchAuthorizationBinding } from "../kernel/batch_authority";
 import { readGitHead } from "../kernel/pi_canary_prepare";
 import { readTaskIntent } from "../kernel/intent";
-import { localRunId, readAuditTaskPair, readTaskRecordRaw, readWorkspaceStateRaw } from "../kernel/storage";
+import { localRunId, readAuditTaskPair, readTaskRecordRaw, readWorkspaceStateRaw, reconcileKernelAuthority } from "../kernel/storage";
 import { pathMatchesScope } from "../workspace_scope";
 import { DEFAULT_DEADLINE_MS, projectBatchPlan } from "./batch_plan";
 import { batchReason, type BatchReasonKey } from "./batch_reasons";
@@ -475,6 +475,11 @@ export async function projectBatchPreflight(
 
 	// 1. Active workspace claim (pre-confirmation).
 	const activeTaskId = readActiveClaimTaskId(root);
+	if (activeTaskId) {
+		const authority = reconcileKernelAuthority(root, activeTaskId);
+		if (authority.state === "authority_conflict")
+			return reject("kernel_authority_conflict", authority.diagnostic ?? "unverifiable workspace authority");
+	}
 	const ownClaim =
 		isResuming && activeTaskId !== null && isOwnBatchClaim(root, activeRecord!, activeTaskId, batchBranch);
 	if (activeTaskId && !ownClaim)

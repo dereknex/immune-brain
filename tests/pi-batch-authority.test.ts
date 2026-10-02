@@ -69,9 +69,32 @@ try { await import("@earendil-works/pi-tui"); } catch {
 afterAll(() => mock.restore());
 
 const {
-	executePiUnattendedBatch,
+	executePiUnattendedBatch: executePiBatchOnce,
 	default: registerBatchExtension,
 } = await import("../plugins/immune-brain/.pi-extension/imm-unattended-batch");
+import { projectAssurance } from "../plugins/immune-brain/runtime/kernel/assurance_projection";
+import { diffSnapshotOf } from "../plugins/immune-brain/runtime/claude/kernel_ports";
+
+// These authority fixtures script Assurance. Model the explicit Parent turn
+// between Tool returns; integration coverage uses real QA instead of this seam.
+async function executePiUnattendedBatch(options: Parameters<typeof executePiBatchOnce>[0]) {
+	if (!options.batchKernel?.advanceTask || options.batchKernel.enrollTask) return executePiBatchOnce(options);
+	const ready = new Set<string>();
+	const project = options.batchKernel.projectTask ?? ((root: string, task: string) => projectAssurance(root, task, diffSnapshotOf));
+	const staged = { ...options, batchKernel: { ...options.batchKernel, projectTask: async (root: string, task: string) => {
+		const fresh = await project(root, task);
+		return ready.has(task) && fresh.claim?.task_id === task
+			? { ...fresh, projection: { ...fresh.projection, artifact_state: "frozen" } } : fresh;
+	} } };
+	let result = await executePiBatchOnce(staged);
+	while (result.state === "started" && result.report.handoff) {
+		expect(result.report.batch_state).toBe("running");
+		ready.add(result.report.handoff.task_id);
+		result = await executePiBatchOnce(staged);
+	}
+	return result;
+}
+
 import type { GithubInitiativeObservation } from "../plugins/immune-brain/runtime/github_issue_tracker";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { revisionForContent } from "../plugins/immune-brain/runtime/kernel/storage";
@@ -344,12 +367,32 @@ function registerBatchTool(dependencies: {
 	batchKernel?: Record<string, unknown>;
 }): BatchToolDouble {
 	const tools: BatchToolDouble[] = [];
+	const ready = new Set<string>();
+	const project = (dependencies.batchKernel?.projectTask as any) ?? ((root: string, task: string) => projectAssurance(root, task, diffSnapshotOf));
+	const configured = dependencies.batchKernel?.advanceTask ? { ...dependencies, batchKernel: {
+		...dependencies.batchKernel, projectTask: async (root: string, task: string) => {
+			const fresh = await project(root, task);
+			return ready.has(task) && fresh.claim?.task_id === task
+				? { ...fresh, projection: { ...fresh.projection, artifact_state: "frozen" } } : fresh;
+		},
+	} } : dependencies;
 	registerBatchExtension(
 		{ registerTool: (tool: BatchToolDouble) => tools.push(tool), events: { emit: () => {} } } as unknown as ExtensionAPI,
-		dependencies as never,
+		configured as never,
 	);
 	const tool = tools.find((t) => t.name === "start_unattended_batch");
 	if (!tool) throw new Error("start_unattended_batch was not registered");
+	const execute = tool.execute.bind(tool);
+	tool.execute = async (...args: Parameters<typeof execute>) => {
+		let result = await execute(...args);
+		let content = JSON.parse(textOf(result));
+		while (dependencies.batchKernel?.advanceTask && content.report?.handoff) {
+			ready.add(content.report.handoff.task_id);
+			result = await execute(...args);
+			content = JSON.parse(textOf(result));
+		}
+		return result;
+	};
 	return tool;
 }
 
@@ -598,7 +641,7 @@ describe("acc-pi-batch-gate", () => {
 
 	it("on accept, issues exactly one Batch Authorization and runs startBatch to completion", async () => {
 		const fixture = createBatchFixture("accept-run");
-		let lastCommit: string | null = null;
+		const commitsByTask = new Map<string, string>();
 
 		const result = await executePiUnattendedBatch({
 			root: fixture.root,
@@ -610,15 +653,15 @@ describe("acc-pi-batch-gate", () => {
 					releaseWorkspaceForTest(fixture.root);
 					return { state: "completed" };
 				},
-				commitChild: async () => {
+				commitChild: async (_root: string, taskId: string) => {
 					writeFileSync(join(fixture.root, "dummy.txt"), `${Date.now()}`);
 					execFileSync("git", ["add", "dummy.txt"], { cwd: fixture.root });
 					execFileSync("git", ["commit", "-q", "-m", "child commit"], { cwd: fixture.root });
 					const commit = execFileSync("git", ["rev-parse", "HEAD"], { cwd: fixture.root, encoding: "utf8" }).trim();
-					lastCommit = commit;
+					commitsByTask.set(taskId, commit);
 					return { commit };
 				},
-				lookupBatchCommit: async () => (lastCommit ? { commit: lastCommit } : null),
+				lookupBatchCommit: async (_root: string, taskId: string) => (commitsByTask.has(taskId) ? { commit: commitsByTask.get(taskId)! } : null),
 			},
 			confirmBatch: async () => "accept",
 		});
@@ -632,7 +675,7 @@ describe("acc-pi-batch-gate", () => {
 
 	it("TTL-1: authorization expiry is the confirmed budget deadline, not a fixed ten-minute window", async () => {
 		const fixture = createBatchFixture("pi-ttl");
-		let lastCommit: string | null = null;
+		const commitsByTask = new Map<string, string>();
 		const confirmed: Array<{ summary: string }> = [];
 
 		const result = await executePiUnattendedBatch({
@@ -645,15 +688,15 @@ describe("acc-pi-batch-gate", () => {
 					releaseWorkspaceForTest(fixture.root);
 					return { state: "completed" };
 				},
-				commitChild: async () => {
+				commitChild: async (_root: string, taskId: string) => {
 					writeFileSync(join(fixture.root, "dummy.txt"), `${Date.now()}`);
 					execFileSync("git", ["add", "dummy.txt"], { cwd: fixture.root });
 					execFileSync("git", ["commit", "-q", "-m", "child commit"], { cwd: fixture.root });
 					const commit = execFileSync("git", ["rev-parse", "HEAD"], { cwd: fixture.root, encoding: "utf8" }).trim();
-					lastCommit = commit;
+					commitsByTask.set(taskId, commit);
 					return { commit };
 				},
-				lookupBatchCommit: async () => (lastCommit ? { commit: lastCommit } : null),
+				lookupBatchCommit: async (_root: string, taskId: string) => (commitsByTask.has(taskId) ? { commit: commitsByTask.get(taskId)! } : null),
 			},
 			confirmBatch: async (details) => {
 				confirmed.push(details);
@@ -726,7 +769,7 @@ describe("acc-pi-batch-gate", () => {
 
 	it("review-pi-batch-review-handoff: batch pausing for review resumes under same batch identity", async () => {
 		const fixture = createBatchFixture("review-resume");
-		let lastCommit: string | null = null;
+		const commitsByTask = new Map<string, string>();
 		let step = 0;
 
 		const result1 = await executePiUnattendedBatch({
@@ -742,7 +785,7 @@ describe("acc-pi-batch-gate", () => {
 					}
 					return { state: "completed" };
 				},
-				commitChild: async () => {
+				commitChild: async (_root: string, taskId: string) => {
 					// Simulate artifact freeze transition during review
 					const activePath = join(fixture.root, "docs", "plans", "review-resume-c1.intent.json");
 					const archiveDir = join(fixture.root, "docs", "plans", "archive");
@@ -762,10 +805,10 @@ describe("acc-pi-batch-gate", () => {
 					execFileSync("git", ["add", "-A"], { cwd: fixture.root });
 					execFileSync("git", ["commit", "-q", "-m", "child commit with frozen artifacts"], { cwd: fixture.root });
 					const commit = execFileSync("git", ["rev-parse", "HEAD"], { cwd: fixture.root, encoding: "utf8" }).trim();
-					lastCommit = commit;
+					commitsByTask.set(taskId, commit);
 					return { commit };
 				},
-				lookupBatchCommit: async () => (lastCommit ? { commit: lastCommit } : null),
+				lookupBatchCommit: async (_root: string, taskId: string) => (commitsByTask.has(taskId) ? { commit: commitsByTask.get(taskId)! } : null),
 			},
 			confirmBatch: async () => "accept",
 		});
@@ -795,15 +838,15 @@ describe("acc-pi-batch-gate", () => {
 					releaseWorkspaceForTest(fixture.root);
 					return { state: "completed" };
 				},
-				commitChild: async () => {
+				commitChild: async (_root: string, taskId: string) => {
 					writeFileSync(join(fixture.root, "dummy.txt"), `${Date.now()}`);
 					execFileSync("git", ["add", "dummy.txt"], { cwd: fixture.root });
 					execFileSync("git", ["commit", "-q", "-m", "child commit 2"], { cwd: fixture.root });
 					const commit = execFileSync("git", ["rev-parse", "HEAD"], { cwd: fixture.root, encoding: "utf8" }).trim();
-					lastCommit = commit;
+					commitsByTask.set(taskId, commit);
 					return { commit };
 				},
-				lookupBatchCommit: async () => (lastCommit ? { commit: lastCommit } : null),
+				lookupBatchCommit: async (_root: string, taskId: string) => (commitsByTask.has(taskId) ? { commit: commitsByTask.get(taskId)! } : null),
 			},
 			confirmBatch: async () => "accept",
 		});
@@ -815,7 +858,7 @@ describe("acc-pi-batch-gate", () => {
 
 	it("review-3: batch resumption succeeds with fresh future expiry even after prior expiry has elapsed", async () => {
 		const fixture = createBatchFixture("expiry-resume");
-		let lastCommit: string | null = null;
+		const commitsByTask = new Map<string, string>();
 		let step = 0;
 
 		const result1 = await executePiUnattendedBatch({
@@ -830,15 +873,15 @@ describe("acc-pi-batch-gate", () => {
 					}
 					return { state: "completed" };
 				},
-				commitChild: async () => {
+				commitChild: async (_root: string, taskId: string) => {
 					writeFileSync(join(fixture.root, "dummy.txt"), `${Date.now()}`);
 					execFileSync("git", ["add", "dummy.txt"], { cwd: fixture.root });
 					execFileSync("git", ["commit", "-q", "-m", "child commit"], { cwd: fixture.root });
 					const commit = execFileSync("git", ["rev-parse", "HEAD"], { cwd: fixture.root, encoding: "utf8" }).trim();
-					lastCommit = commit;
+					commitsByTask.set(taskId, commit);
 					return { commit };
 				},
-				lookupBatchCommit: async () => (lastCommit ? { commit: lastCommit } : null),
+				lookupBatchCommit: async (_root: string, taskId: string) => (commitsByTask.has(taskId) ? { commit: commitsByTask.get(taskId)! } : null),
 			},
 			confirmBatch: async () => "accept",
 		});
@@ -874,15 +917,15 @@ describe("acc-pi-batch-gate", () => {
 					releaseWorkspaceForTest(fixture.root);
 					return { state: "completed" };
 				},
-				commitChild: async () => {
+				commitChild: async (_root: string, taskId: string) => {
 					writeFileSync(join(fixture.root, "dummy.txt"), `${Date.now()}`);
 					execFileSync("git", ["add", "dummy.txt"], { cwd: fixture.root });
 					execFileSync("git", ["commit", "-q", "-m", "child commit 2"], { cwd: fixture.root });
 					const commit = execFileSync("git", ["rev-parse", "HEAD"], { cwd: fixture.root, encoding: "utf8" }).trim();
-					lastCommit = commit;
+					commitsByTask.set(taskId, commit);
 					return { commit };
 				},
-				lookupBatchCommit: async () => (lastCommit ? { commit: lastCommit } : null),
+				lookupBatchCommit: async (_root: string, taskId: string) => (commitsByTask.has(taskId) ? { commit: commitsByTask.get(taskId)! } : null),
 			},
 			confirmBatch: async () => "accept",
 		});
@@ -894,7 +937,7 @@ describe("acc-pi-batch-gate", () => {
 
 	it("review-3: foreign claim on child task blocks resumption with zero writes", async () => {
 		const fixture = createBatchFixture("foreign-claim");
-		let lastCommit: string | null = null;
+		const commitsByTask = new Map<string, string>();
 		let step = 0;
 
 		const result1 = await executePiUnattendedBatch({
@@ -909,15 +952,15 @@ describe("acc-pi-batch-gate", () => {
 					}
 					return { state: "completed" };
 				},
-				commitChild: async () => {
+				commitChild: async (_root: string, taskId: string) => {
 					writeFileSync(join(fixture.root, "dummy.txt"), `${Date.now()}`);
 					execFileSync("git", ["add", "dummy.txt"], { cwd: fixture.root });
 					execFileSync("git", ["commit", "-q", "-m", "child commit"], { cwd: fixture.root });
 					const commit = execFileSync("git", ["rev-parse", "HEAD"], { cwd: fixture.root, encoding: "utf8" }).trim();
-					lastCommit = commit;
+					commitsByTask.set(taskId, commit);
 					return { commit };
 				},
-				lookupBatchCommit: async () => (lastCommit ? { commit: lastCommit } : null),
+				lookupBatchCommit: async (_root: string, taskId: string) => (commitsByTask.has(taskId) ? { commit: commitsByTask.get(taskId)! } : null),
 			},
 			confirmBatch: async () => "accept",
 		});
@@ -960,7 +1003,7 @@ describe("acc-pi-batch-gate", () => {
 
 	it("review-3b: unproven enrolled/needs_human claim keeps resumption blocked with zero writes", async () => {
 		const fixture = createBatchFixture("unproven-claim");
-		let lastCommit: string | null = null;
+		const commitsByTask = new Map<string, string>();
 		let step = 0;
 
 		const result1 = await executePiUnattendedBatch({
@@ -975,15 +1018,15 @@ describe("acc-pi-batch-gate", () => {
 					}
 					return { state: "completed" };
 				},
-				commitChild: async () => {
+				commitChild: async (_root: string, taskId: string) => {
 					writeFileSync(join(fixture.root, "dummy.txt"), `${Date.now()}`);
 					execFileSync("git", ["add", "dummy.txt"], { cwd: fixture.root });
 					execFileSync("git", ["commit", "-q", "-m", "child commit"], { cwd: fixture.root });
 					const commit = execFileSync("git", ["rev-parse", "HEAD"], { cwd: fixture.root, encoding: "utf8" }).trim();
-					lastCommit = commit;
+					commitsByTask.set(taskId, commit);
 					return { commit };
 				},
-				lookupBatchCommit: async () => (lastCommit ? { commit: lastCommit } : null),
+				lookupBatchCommit: async (_root: string, taskId: string) => (commitsByTask.has(taskId) ? { commit: commitsByTask.get(taskId)! } : null),
 			},
 			confirmBatch: async () => "accept",
 		});
@@ -1101,7 +1144,7 @@ describe("acc-pi-batch-gate", () => {
 
 	it("frozen-child-risk-fallback: archived routine sidecar keeps routine risk in resume confirmation", async () => {
 		const fixture = createBatchFixture("frozen-risk");
-		let lastCommit: string | null = null;
+		const commitsByTask = new Map<string, string>();
 		let step = 0;
 
 		const result1 = await executePiUnattendedBatch({
@@ -1114,15 +1157,15 @@ describe("acc-pi-batch-gate", () => {
 					if (step === 1) return { state: "review_ready", operation_id: "op-fr", agent_params: { prompt: "review" } as never };
 					return { state: "completed" };
 				},
-				commitChild: async () => {
+				commitChild: async (_root: string, taskId: string) => {
 					writeFileSync(join(fixture.root, "dummy.txt"), `${Date.now()}`);
 					execFileSync("git", ["add", "dummy.txt"], { cwd: fixture.root });
 					execFileSync("git", ["commit", "-q", "-m", "child commit"], { cwd: fixture.root });
 					const commit = execFileSync("git", ["rev-parse", "HEAD"], { cwd: fixture.root, encoding: "utf8" }).trim();
-					lastCommit = commit;
+					commitsByTask.set(taskId, commit);
 					return { commit };
 				},
-				lookupBatchCommit: async () => (lastCommit ? { commit: lastCommit } : null),
+				lookupBatchCommit: async (_root: string, taskId: string) => (commitsByTask.has(taskId) ? { commit: commitsByTask.get(taskId)! } : null),
 			},
 			confirmBatch: async () => "accept",
 		});
@@ -1180,7 +1223,7 @@ describe("acc-pi-batch-gate", () => {
 	// through Tool details. These tests drive the registered Tool `execute`.
 	it("review-tool-content-review-dispatch: registered Tool content carries report and review_dispatch", async () => {
 		const fixture = createBatchFixture("tool-content-review");
-		let lastCommit: string | null = null;
+		const commitsByTask = new Map<string, string>();
 		let step = 0;
 
 		const tool = registerBatchTool({
@@ -1191,14 +1234,15 @@ describe("acc-pi-batch-gate", () => {
 					if (step === 1) return { state: "review_ready", operation_id: "op-content", agent_params: { prompt: "review" } as never };
 					return { state: "completed" };
 				},
-				commitChild: async () => {
+				commitChild: async (_root: string, taskId: string) => {
 					writeFileSync(join(fixture.root, "dummy.txt"), `${Date.now()}`);
 					execFileSync("git", ["add", "dummy.txt"], { cwd: fixture.root });
 					execFileSync("git", ["commit", "-q", "-m", "tool content commit"], { cwd: fixture.root });
-					lastCommit = execFileSync("git", ["rev-parse", "HEAD"], { cwd: fixture.root, encoding: "utf8" }).trim();
-					return { commit: lastCommit };
+					const commit = execFileSync("git", ["rev-parse", "HEAD"], { cwd: fixture.root, encoding: "utf8" }).trim();
+					commitsByTask.set(taskId, commit);
+					return { commit };
 				},
-				lookupBatchCommit: async () => (lastCommit ? { commit: lastCommit } : null),
+				lookupBatchCommit: async (_root: string, taskId: string) => (commitsByTask.has(taskId) ? { commit: commitsByTask.get(taskId)! } : null),
 			},
 		});
 
@@ -1244,7 +1288,7 @@ describe("settled-child resume preflight", () => {
 		execFileSync("git", ["commit", "-q", "-m", "widen child scope"], { cwd: fixture.root });
 
 		let step = 0;
-		let lastCommit: string | null = null;
+		const commitsByTask = new Map<string, string>();
 
 		// First run pauses on the reserved Review, so the child stays in-flight.
 		const first = await executePiUnattendedBatch({
@@ -1257,14 +1301,15 @@ describe("settled-child resume preflight", () => {
 					if (step === 1) return { state: "review_ready", operation_id: "op-settled", agent_params: { prompt: "review" } as never };
 					return { state: "completed" };
 				},
-				commitChild: async () => {
+				commitChild: async (_root: string, taskId: string) => {
 					writeFileSync(join(fixture.root, "dummy.txt"), `${Date.now()}`);
 					execFileSync("git", ["add", "dummy.txt"], { cwd: fixture.root });
 					execFileSync("git", ["commit", "-q", "-m", "settled commit"], { cwd: fixture.root });
-					lastCommit = execFileSync("git", ["rev-parse", "HEAD"], { cwd: fixture.root, encoding: "utf8" }).trim();
-					return { commit: lastCommit };
+					const commit = execFileSync("git", ["rev-parse", "HEAD"], { cwd: fixture.root, encoding: "utf8" }).trim();
+					commitsByTask.set(taskId, commit);
+					return { commit };
 				},
-				lookupBatchCommit: async () => (lastCommit ? { commit: lastCommit } : null),
+				lookupBatchCommit: async (_root: string, taskId: string) => (commitsByTask.has(taskId) ? { commit: commitsByTask.get(taskId)! } : null),
 			},
 			confirmBatch: async () => "accept",
 		});
@@ -1292,13 +1337,14 @@ describe("settled-child resume preflight", () => {
 			readInitiative: async () => fixture.observation,
 			batchKernel: {
 				advanceTask: async () => ({ state: "completed" }),
-				commitChild: async () => {
+				commitChild: async (_root: string, taskId: string) => {
 					execFileSync("git", ["add", "-A"], { cwd: fixture.root });
 					execFileSync("git", ["commit", "-q", "-m", "settled resume commit"], { cwd: fixture.root });
-					lastCommit = execFileSync("git", ["rev-parse", "HEAD"], { cwd: fixture.root, encoding: "utf8" }).trim();
-					return { commit: lastCommit };
+					const commit = execFileSync("git", ["rev-parse", "HEAD"], { cwd: fixture.root, encoding: "utf8" }).trim();
+					commitsByTask.set(taskId, commit);
+					return { commit };
 				},
-				lookupBatchCommit: async () => (lastCommit ? { commit: lastCommit } : null),
+				lookupBatchCommit: async (_root: string, taskId: string) => (commitsByTask.has(taskId) ? { commit: commitsByTask.get(taskId)! } : null),
 			},
 			confirmBatch: async () => "accept",
 		});
@@ -1312,7 +1358,7 @@ describe("batch authorization reuse (ADR-0005 Decision 1)", () => {
 	/** Round 1 leaves a running batch whose child paused for foreground Review. */
 	async function startRunningBatch(slug: string) {
 		const fixture = createBatchFixture(slug);
-		let lastCommit: string | null = null;
+		const commitsByTask = new Map<string, string>();
 		let step = 0;
 		const result = await executePiUnattendedBatch({
 			root: fixture.root,
@@ -1324,14 +1370,15 @@ describe("batch authorization reuse (ADR-0005 Decision 1)", () => {
 					if (step === 1) return { state: "review_ready", operation_id: "op-reuse", agent_params: { prompt: "review" } as never };
 					return { state: "completed" };
 				},
-				commitChild: async () => {
+				commitChild: async (_root: string, taskId: string) => {
 					writeFileSync(join(fixture.root, "dummy.txt"), `${Date.now()}`);
 					execFileSync("git", ["add", "dummy.txt"], { cwd: fixture.root });
 					execFileSync("git", ["commit", "-q", "-m", "child commit"], { cwd: fixture.root });
-					lastCommit = execFileSync("git", ["rev-parse", "HEAD"], { cwd: fixture.root, encoding: "utf8" }).trim();
-					return { commit: lastCommit };
+					const commit = execFileSync("git", ["rev-parse", "HEAD"], { cwd: fixture.root, encoding: "utf8" }).trim();
+					commitsByTask.set(taskId, commit);
+					return { commit };
 				},
-				lookupBatchCommit: async () => (lastCommit ? { commit: lastCommit } : null),
+				lookupBatchCommit: async (_root: string, taskId: string) => (commitsByTask.has(taskId) ? { commit: commitsByTask.get(taskId)! } : null),
 			},
 			confirmBatch: async () => "accept",
 		});
@@ -1345,7 +1392,7 @@ describe("batch authorization reuse (ADR-0005 Decision 1)", () => {
 		slug: string,
 		confirmBatch: (details: { details: string }) => Promise<"accept" | "decline" | "cancel">,
 	) {
-		let lastCommit: string | null = null;
+		const commitsByTask = new Map<string, string>();
 		return executePiUnattendedBatch({
 			root: fixture.root,
 			initiativeSlug: slug,
@@ -1355,14 +1402,15 @@ describe("batch authorization reuse (ADR-0005 Decision 1)", () => {
 					releaseWorkspaceForTest(fixture.root);
 					return { state: "completed" };
 				},
-				commitChild: async () => {
+				commitChild: async (_root: string, taskId: string) => {
 					writeFileSync(join(fixture.root, "dummy.txt"), `${Date.now()}`);
 					execFileSync("git", ["add", "dummy.txt"], { cwd: fixture.root });
 					execFileSync("git", ["commit", "-q", "-m", "child commit 2"], { cwd: fixture.root });
-					lastCommit = execFileSync("git", ["rev-parse", "HEAD"], { cwd: fixture.root, encoding: "utf8" }).trim();
-					return { commit: lastCommit };
+					const commit = execFileSync("git", ["rev-parse", "HEAD"], { cwd: fixture.root, encoding: "utf8" }).trim();
+					commitsByTask.set(taskId, commit);
+					return { commit };
 				},
-				lookupBatchCommit: async () => (lastCommit ? { commit: lastCommit } : null),
+				lookupBatchCommit: async (_root: string, taskId: string) => (commitsByTask.has(taskId) ? { commit: commitsByTask.get(taskId)! } : null),
 			},
 			confirmBatch,
 		});

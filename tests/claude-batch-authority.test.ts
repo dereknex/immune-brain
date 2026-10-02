@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PassThrough } from "node:stream";
 import {
-	createMcpRuntime,
+	createMcpRuntime as createMcpRuntimeOnce,
 	elicitationParams,
 	listMcpTools,
 	serveStdio,
@@ -82,7 +82,48 @@ try { await import("@earendil-works/pi-tui"); } catch {
 }
 afterAll(() => mock.restore());
 
-const { executePiUnattendedBatch } = await import("../plugins/immune-brain/.pi-extension/imm-unattended-batch");
+const { executePiUnattendedBatch: executePiBatchOnce } = await import("../plugins/immune-brain/.pi-extension/imm-unattended-batch");
+import { projectAssurance } from "../plugins/immune-brain/runtime/kernel/assurance_projection";
+import { diffSnapshotOf } from "../plugins/immune-brain/runtime/claude/kernel_ports";
+
+// Scripted authority fixtures have an explicit Parent-ready phase; the real
+// two-child regression below does not use these scripted Assurance wrappers.
+function parentReadyProject(kernel: Partial<BatchRunnerKernelPort>, ready: Set<string>) {
+	const project = kernel.projectTask ?? ((root: string, task: string) => projectAssurance(root, task, diffSnapshotOf));
+	return async (root: string, task: string) => {
+		const fresh = await project(root, task);
+		return ready.has(task) && fresh.claim?.task_id === task
+			? { ...fresh, projection: { ...fresh.projection, artifact_state: "frozen" } } : fresh;
+	};
+}
+function createMcpRuntime(options: Parameters<typeof createMcpRuntimeOnce>[0]) {
+	if (!options.batchKernel?.advanceTask || options.batchKernel.enrollTask) return createMcpRuntimeOnce(options);
+	const ready = new Set<string>();
+	const client = createMcpRuntimeOnce({ ...options, batchKernel: { ...options.batchKernel, projectTask: parentReadyProject(options.batchKernel, ready) } });
+	const call = client.callTool.bind(client);
+	client.callTool = async (...args: Parameters<typeof call>) => {
+		let result = await call(...args);
+		while (args[0] === "start_unattended_batch" && result.state === "started" && result.report.handoff) {
+			expect(result.report.batch_state).toBe("running");
+			ready.add(result.report.handoff.task_id);
+			result = await call(...args);
+		}
+		return result;
+	};
+	return client;
+}
+async function executePiUnattendedBatch(options: Parameters<typeof executePiBatchOnce>[0]) {
+	if (!options.batchKernel?.advanceTask || options.batchKernel.enrollTask) return executePiBatchOnce(options);
+	const ready = new Set<string>();
+	const staged = { ...options, batchKernel: { ...options.batchKernel, projectTask: parentReadyProject(options.batchKernel, ready) } };
+	let result = await executePiBatchOnce(staged);
+	while (result.state === "started" && result.report.handoff) {
+		ready.add(result.report.handoff.task_id);
+		result = await executePiBatchOnce(staged);
+	}
+	return result;
+}
+
 import type { BatchRunnerKernelPort } from "../plugins/immune-brain/runtime/unattended/batch_runner";
 import { runBatchGitPreflight } from "../plugins/immune-brain/runtime/unattended/batch_git";
 import { readTaskTombstone } from "../plugins/immune-brain/runtime/kernel/backend_claim";
@@ -238,7 +279,7 @@ for (const host of ["Pi", "Claude"] as const) {
 			const fixture = createBatchFixture(slug);
 			let gate: RenewalGate = async () => "accept";
 			let advances = 0;
-			let lastCommit: string | null = null;
+			const commitsByTask = new Map<string, string>();
 			const batchKernel = {
 				advanceTask: async () => {
 					if (++advances === 1) {
@@ -247,16 +288,17 @@ for (const host of ["Pi", "Claude"] as const) {
 					}
 					return { state: "review_ready" as const, operation_id: "op-renew", agent_params: { prompt: "review" } as never };
 				},
-				commitChild: async () => {
+				commitChild: async (_root: string, taskId: string) => {
 					const path = `docs/specs/${slug}-c1.spec.md`;
 					mkdirSync(join(fixture.root, "docs", "specs"), { recursive: true });
 					writeFileSync(join(fixture.root, path), "# Completed fixture\n");
 					execFileSync("git", ["add", path], { cwd: fixture.root });
 					execFileSync("git", ["commit", "-q", "-m", "child progress"], { cwd: fixture.root });
-					lastCommit = execFileSync("git", ["rev-parse", "HEAD"], { cwd: fixture.root, encoding: "utf8" }).trim();
-					return { commit: lastCommit };
+					const commit = execFileSync("git", ["rev-parse", "HEAD"], { cwd: fixture.root, encoding: "utf8" }).trim();
+					commitsByTask.set(taskId, commit);
+					return { commit };
 				},
-				lookupBatchCommit: async (_root: string, taskId: string) => taskId === `${slug}-c1` && lastCommit ? { commit: lastCommit } : null,
+				lookupBatchCommit: async (_root: string, taskId: string) => (commitsByTask.has(taskId) ? { commit: commitsByTask.get(taskId)! } : null),
 			};
 			const env = { ...ENV, IMMUNE_BRAIN_BATCH_TIMEOUT_MS: suffix === "timeout" ? "20" : "60000" };
 			const runtime = createMcpRuntime({
@@ -394,6 +436,119 @@ for (const host of ["Pi", "Claude"] as const) {
 	});
 }
 
+describe("batch foreground Executor integration", () => {
+	for (const host of ["claude", "pi"] as const) it(`${host}: implements two children, runs real QA and Review, then commits each once`, async () => {
+		const slug = `foreground-${host}`;
+		const fixture = createBatchFixture(slug);
+		writeFileSync(join(fixture.root, "verify.ts"), 'import { strict as assert } from "node:assert"; assert.equal(await Bun.file(process.argv[2]).text(), "implemented");\n');
+		for (const n of [1, 2]) {
+			const path = join(fixture.root, `docs/plans/${slug}-c${n}.intent.json`);
+			const intent = JSON.parse(readFileSync(path, "utf8"));
+			intent.risk = "material";
+			intent.scope_hint = [`docs/plans/${slug}-c${n}.intent.json`, "verify.ts", `impl-${n}.txt`];
+			intent.acceptance[0].verification = JSON.stringify({
+				contract: "assurance_kernel/verification_descriptor/v2",
+				command: { executable: "bun", argv: ["verify.ts", `impl-${n}.txt`], cwd: ".", timeout_ms: 10000, max_output_bytes: 8192 },
+				environment: { prepare: null, writable_paths: [] },
+			});
+			writeFileSync(path, `${JSON.stringify(intent, null, 2)}\n`);
+		}
+		execFileSync("git", ["add", "-A"], { cwd: fixture.root });
+		execFileSync("git", ["commit", "-qm", "material two-child fixture"], { cwd: fixture.root });
+		let confirmations = 0;
+		const client = createMcpRuntimeOnce({ cwd: fixture.root, env: ENV, interactive: true,
+			readInitiative: async () => fixture.observation,
+			requestConfirmation: async () => ({ decision: "accept", requestId: `real-${++confirmations}` }),
+		});
+		client.bindClientHandshake({ version: "2.1.236", interactive: true, protocolVersion: "2025-06-18" });
+		const start = async (): Promise<any> => host === "claude"
+			? client.callTool("start_unattended_batch", { initiative_slug: slug })
+			: executePiBatchOnce({ root: fixture.root, initiativeSlug: slug, readInitiative: async () => fixture.observation,
+				confirmBatch: async () => { confirmations++; return "accept"; } });
+		const { getSharedPiProgression } = await import("../plugins/immune-brain/.pi-extension/runtime-stub");
+		const { createPiAssuranceProgressionPorts } = await import("../plugins/immune-brain/.pi-extension/imm-canary-work");
+		const { REVIEWER_AGENT, AGENT_TOOL } = await import("../plugins/immune-brain/runtime/claude/review_host");
+		const progression = host === "pi" ? await getSharedPiProgression() : client.runtime.coordinator;
+		try {
+			let result = await start();
+			const batchId = result.batch_id;
+			for (const n of [1, 2]) {
+				const task = `${slug}-c${n}`;
+				expect(result.state).toBe("started");
+				expect(result.report.batch_state).toBe("running");
+				expect(result.report.handoff).toMatchObject({ role: "executor", task_id: task });
+				expect(readTaskRecordRaw(fixture.root, task).record?.attestations).toEqual([]);
+				expect(existsSync(join(fixture.root, `impl-${n}.txt`))).toBe(false);
+				const statePath = join(fixture.root, `.imm/state/batches/${batchId}.json`);
+				const bytes = readFileSync(statePath, "utf8");
+				result = await start(); // Simulate returning after Enrollment without implementation.
+				expect(result.report.handoff.task_id).toBe(task);
+				expect(readFileSync(statePath, "utf8")).toBe(bytes);
+				expect(readTaskRecordRaw(fixture.root, task).record?.attestations).toEqual([]);
+				expect(confirmations).toBe(1);
+				if (n === 1) {
+					writeFileSync(join(fixture.root, "impl-1.txt"), "incorrect");
+					execFileSync("git", ["add", "impl-1.txt"], { cwd: fixture.root });
+					expect((await progression.advance(task, { cwd: fixture.root })).state).toBe("rework");
+					const repair = await start();
+					expect(repair.report.handoff).toMatchObject({ role: "executor", task_id: task, next_obligation: "resolve_findings" });
+					expect(repair.report.batch_state).toBe("running");
+					expect(JSON.parse(readFileSync(statePath, "utf8")).consecutive_qa_failures).toBe(1);
+					const parkedBytes = readFileSync(statePath, "utf8");
+					expect((await start()).report.handoff.task_id).toBe(task);
+					expect(readFileSync(statePath, "utf8")).toBe(parkedBytes);
+					writeFileSync(join(fixture.root, "impl-1.txt"), "implemented");
+					execFileSync("git", ["add", "impl-1.txt"], { cwd: fixture.root });
+					const finding = readTaskRecordRaw(fixture.root, task).record!.findings.find((f) => f.kind === "blocking" && f.status === "open")!;
+					if (host === "claude") await client.runtime.resolveFinding(task, finding.id);
+					else await createPiAssuranceProgressionPorts().applyOrdinaryOperation({ cwd: fixture.root },
+						{ taskId: task, operation: { op: "resolve_finding", finding_id: finding.id, actor_id: "executor" } });
+				}
+				writeFileSync(join(fixture.root, `impl-${n}.txt`), "implemented");
+				execFileSync("git", ["add", `impl-${n}.txt`], { cwd: fixture.root });
+				const ready = await progression.advance(task, { cwd: fixture.root });
+				expect(ready.state).toBe("review_ready");
+				expect(readTaskRecordRaw(fixture.root, task).record?.attestations.some((a) => a.kind === "qa" && a.acceptance_results.every((r) => r.status === "passed"))).toBe(true);
+				result = await start();
+				expect(result.report.batch_state).toBe("running");
+				expect(result.report.reason).toContain("open Review reservation");
+				expect(progression.active(task)?.operation_id).toBe(ready.operation_id);
+				const verdict = { contract: "assurance_kernel/assurance_verdict/v2", role: "review", task_id: task,
+					snapshot_digest: ready.snapshot_digest, decision: "pass",
+					approval: { kind: "review", authority_role: "reviewer", summary: "fixture implementation verified" } };
+				if (host === "claude") {
+					const agentId = `agent-${n}`, sessionId = `review-${slug}`;
+					client.host.observe({ type: "SubagentStart", sessionId, agentId, agent: REVIEWER_AGENT, taskId: task, operationId: ready.operation_id });
+					client.host.observe({ type: "PostToolUse", sessionId, agentId, toolName: AGENT_TOOL, result: JSON.stringify(verdict), taskId: task, operationId: ready.operation_id });
+					client.host.observe({ type: "SubagentStop", sessionId, agentId, agent: REVIEWER_AGENT, taskId: task, operationId: ready.operation_id });
+					expect(await client.runtime.submitReview(task, verdict)).toMatchObject({ state: "completed" });
+				} else {
+					expect(ready.agent_params.run_in_background).toBe(false);
+					expect(await progression.submitReview(task, { cwd: fixture.root }, verdict)).toMatchObject({ state: "completed" });
+				}
+				expect(readTaskTombstone(fixture.root, task)?.terminal_lifecycle).toBe("done");
+				const auditDir = join(fixture.root, `.imm/audit/${task}`);
+				const audit = JSON.parse(readFileSync(join(auditDir, readdirSync(auditDir).find((name) => name.startsWith("run-"))!, "task-record.json"), "utf8"));
+				expect(audit.attestations.some((a: any) => a.kind === "review" && a.review_revision)).toBe(true);
+				execFileSync("git", ["add", `.imm/audit/${task}`], { cwd: fixture.root });
+				result = await start();
+				expect(result).toMatchObject({ state: "started" });
+				expect(result.report.children.find((c: any) => c.task_id === task)).toMatchObject({ state: "committed" });
+				expect(result.report.commits).toHaveLength(n);
+			}
+			expect(result.report.batch_state).toBe("completed");
+			expect(result.report.commits).toHaveLength(2);
+			expect(new Set(result.report.commits).size).toBe(2);
+			expect(confirmations).toBe(1);
+			const head = execFileSync("git", ["rev-parse", "HEAD"], { cwd: fixture.root, encoding: "utf8" });
+			const replay = await start();
+			expect(replay).toMatchObject({ state: "rejected" }); // No remaining eligible children, no second commit.
+			expect(confirmations).toBe(1);
+			expect(execFileSync("git", ["rev-parse", "HEAD"], { cwd: fixture.root, encoding: "utf8" })).toBe(head);
+		} finally { await progression.onSessionShutdown(); }
+	}, 60000);
+});
+
 describe("acc-claude-batch-gate", () => {
 	it("start_unattended_batch joins PRIVILEGED_OPERATIONS and has destructiveHint annotation", () => {
 		expect(PRIVILEGED_OPERATIONS).toContain("start_unattended_batch");
@@ -513,25 +668,23 @@ describe("acc-claude-batch-gate", () => {
 
 	it("on accept, issues exactly one Batch Authorization and calls startBatch", async () => {
 		const fixture = createBatchFixture("accept-exec");
-		let startBatchCalled = false;
-		let lastCommit: string | null = null;
+		const commitsByTask = new Map<string, string>();
 		const runtime = createMcpRuntime({
 			cwd: fixture.root,
 			env: ENV,
 			interactive: true,
 			readInitiative: async () => fixture.observation,
 			batchKernel: {
-				enrollTask: async () => ({ record_revision: "rev-1" }),
-				advanceTask: async () => ({ state: "completed" }),
-				commitChild: async () => {
+				advanceTask: async () => { releaseWorkspaceForTest(fixture.root); return { state: "completed" }; },
+				commitChild: async (_root: string, taskId: string) => {
 					writeFileSync(join(fixture.root, "dummy.txt"), `${Date.now()}`);
 					execFileSync("git", ["add", "dummy.txt"], { cwd: fixture.root });
 					execFileSync("git", ["commit", "-q", "-m", "child commit"], { cwd: fixture.root });
 					const commit = execFileSync("git", ["rev-parse", "HEAD"], { cwd: fixture.root, encoding: "utf8" }).trim();
-					lastCommit = commit;
+					commitsByTask.set(taskId, commit);
 					return { commit };
 				},
-				lookupBatchCommit: async () => (lastCommit ? { commit: lastCommit } : null),
+				lookupBatchCommit: async (_root: string, taskId: string) => (commitsByTask.has(taskId) ? { commit: commitsByTask.get(taskId)! } : null),
 			},
 			requestConfirmation: async () => ({ decision: "accept", requestId: "req-accept" }),
 		});
@@ -557,7 +710,7 @@ describe("acc-claude-batch-gate", () => {
 	it("TTL-1: authorization expiry is the confirmed budget deadline, not a fixed ten-minute window", async () => {
 		const fixture = createBatchFixture("claude-ttl");
 		const batchDetails: Record<string, unknown>[] = [];
-		let lastCommit: string | null = null;
+		const commitsByTask = new Map<string, string>();
 		const runtime = createMcpRuntime({
 			cwd: fixture.root,
 			env: ENV,
@@ -566,14 +719,15 @@ describe("acc-claude-batch-gate", () => {
 			batchKernel: {
 				enrollTask: async () => ({ record_revision: "rev-1" }),
 				advanceTask: async () => ({ state: "completed" }),
-				commitChild: async () => {
+				commitChild: async (_root: string, taskId: string) => {
 					writeFileSync(join(fixture.root, "dummy.txt"), `${Date.now()}`);
 					execFileSync("git", ["add", "dummy.txt"], { cwd: fixture.root });
 					execFileSync("git", ["commit", "-q", "-m", "child commit"], { cwd: fixture.root });
-					lastCommit = execFileSync("git", ["rev-parse", "HEAD"], { cwd: fixture.root, encoding: "utf8" }).trim();
-					return { commit: lastCommit };
+					const commit = execFileSync("git", ["rev-parse", "HEAD"], { cwd: fixture.root, encoding: "utf8" }).trim();
+					commitsByTask.set(taskId, commit);
+					return { commit };
 				},
-				lookupBatchCommit: async () => (lastCommit ? { commit: lastCommit } : null),
+				lookupBatchCommit: async (_root: string, taskId: string) => (commitsByTask.has(taskId) ? { commit: commitsByTask.get(taskId)! } : null),
 			},
 			requestConfirmation: async (request) => {
 				batchDetails.push(request.batchDetails as Record<string, unknown>);
@@ -881,7 +1035,7 @@ describe("acc-claude-batch-fail-closed", () => {
 		execFileSync("git", ["add", ".imm/audit/"], { cwd: fixture.root });
 		execFileSync("git", ["commit", "-q", "-m", "audit c1"], { cwd: fixture.root });
 
-		let lastCommit: string | null = null;
+		const commitsByTask = new Map<string, string>();
 		const runtime = createMcpRuntime({
 			cwd: fixture.root,
 			env: ENV,
@@ -890,15 +1044,15 @@ describe("acc-claude-batch-fail-closed", () => {
 			batchKernel: {
 				enrollTask: async () => ({ record_revision: "rev-settled" }),
 				advanceTask: async () => ({ state: "completed" }),
-				commitChild: async () => {
+				commitChild: async (_root: string, taskId: string) => {
 					writeFileSync(join(fixture.root, "dummy.txt"), `${Date.now()}`);
 					execFileSync("git", ["add", "dummy.txt"], { cwd: fixture.root });
 					execFileSync("git", ["commit", "-q", "-m", "child commit"], { cwd: fixture.root });
 					const commit = execFileSync("git", ["rev-parse", "HEAD"], { cwd: fixture.root, encoding: "utf8" }).trim();
-					lastCommit = commit;
+					commitsByTask.set(taskId, commit);
 					return { commit };
 				},
-				lookupBatchCommit: async () => (lastCommit ? { commit: lastCommit } : null),
+				lookupBatchCommit: async (_root: string, taskId: string) => (commitsByTask.has(taskId) ? { commit: commitsByTask.get(taskId)! } : null),
 			},
 			requestConfirmation: async () => ({ decision: "accept", requestId: "req-settled" }),
 		});
@@ -923,8 +1077,11 @@ describe("acc-claude-batch-fail-closed", () => {
 		let observation = { ...fixture.observation, tasks: fixture.observation.tasks.slice(0, 1) };
 		let confirmations = 0;
 		const batchKernel: Partial<BatchRunnerKernelPort> = {
-			enrollTask: async ({ task_id }) => { enrolled.push(task_id); return { record_revision: "enrolled" }; },
-			advanceTask: async () => ({ state: "completed" }),
+			advanceTask: async (_root, taskId) => {
+				enrolled.push(taskId);
+				releaseWorkspaceForTest(fixture.root);
+				return { state: "completed" };
+			},
 			commitChild: async (_root, taskId) => {
 				execFileSync("git", ["commit", "--allow-empty", "-qm", `complete ${taskId}`], { cwd: fixture.root });
 				const commit = execFileSync("git", ["rev-parse", "HEAD"], { cwd: fixture.root, encoding: "utf8" }).trim();
@@ -1090,7 +1247,7 @@ describe("acc-claude-batch-fail-closed", () => {
 
 	it("review-batch-enrollment-context: real Kernel enrollment derives batch context and consumes child slot", async () => {
 		const fixture = createBatchFixture("real-enroll");
-		let lastCommit: string | null = null;
+		const commitsByTask = new Map<string, string>();
 		const runtime = createMcpRuntime({
 			cwd: fixture.root,
 			env: ENV,
@@ -1103,15 +1260,15 @@ describe("acc-claude-batch-fail-closed", () => {
 					releaseWorkspaceForTest(fixture.root);
 					return { state: "completed" };
 				},
-				commitChild: async () => {
+				commitChild: async (_root: string, taskId: string) => {
 					writeFileSync(join(fixture.root, "dummy.txt"), `${Date.now()}`);
 					execFileSync("git", ["add", "dummy.txt"], { cwd: fixture.root });
 					execFileSync("git", ["commit", "-q", "-m", "child commit"], { cwd: fixture.root });
 					const commit = execFileSync("git", ["rev-parse", "HEAD"], { cwd: fixture.root, encoding: "utf8" }).trim();
-					lastCommit = commit;
+					commitsByTask.set(taskId, commit);
 					return { commit };
 				},
-				lookupBatchCommit: async () => (lastCommit ? { commit: lastCommit } : null),
+				lookupBatchCommit: async (_root: string, taskId: string) => (commitsByTask.has(taskId) ? { commit: commitsByTask.get(taskId)! } : null),
 			},
 			requestConfirmation: async () => ({ decision: "accept", requestId: "req-real-enroll" }),
 		});
@@ -1168,7 +1325,7 @@ describe("acc-claude-batch-fail-closed", () => {
 	it("reuses an intact, still-binding authorization with zero additional elicitations", async () => {
 		const fixture = createBatchFixture("claude-reuse");
 		let elicitations = 0;
-		let lastCommit: string | null = null;
+		const commitsByTask = new Map<string, string>();
 		let step = 0;
 		const runtime = createMcpRuntime({
 			cwd: fixture.root,
@@ -1184,14 +1341,15 @@ describe("acc-claude-batch-fail-closed", () => {
 					releaseWorkspaceForTest(fixture.root);
 					return { state: "completed" };
 				},
-				commitChild: async () => {
+				commitChild: async (_root: string, taskId: string) => {
 					writeFileSync(join(fixture.root, "dummy.txt"), `${Date.now()}`);
 					execFileSync("git", ["add", "dummy.txt"], { cwd: fixture.root });
 					execFileSync("git", ["commit", "-q", "-m", "child commit"], { cwd: fixture.root });
-					lastCommit = execFileSync("git", ["rev-parse", "HEAD"], { cwd: fixture.root, encoding: "utf8" }).trim();
-					return { commit: lastCommit };
+					const commit = execFileSync("git", ["rev-parse", "HEAD"], { cwd: fixture.root, encoding: "utf8" }).trim();
+					commitsByTask.set(taskId, commit);
+					return { commit };
 				},
-				lookupBatchCommit: async () => (lastCommit ? { commit: lastCommit } : null),
+				lookupBatchCommit: async (_root: string, taskId: string) => (commitsByTask.has(taskId) ? { commit: commitsByTask.get(taskId)! } : null),
 			},
 			requestConfirmation: async () => {
 				elicitations++;

@@ -1,0 +1,49 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "batch-execution-recovery-s1-executor-handoff",
+  "goal": "Make each enrolled batch child return to foreground Parent implementation before Assurance, then continue the same valid serial batch through Kernel settlement and exactly-once scope-bound commit.",
+  "acceptance": [
+    {
+      "id": "BER-S1-A1",
+      "assertion": "Meet S1 in docs/specs/batch-execution-recovery.spec.md: on both Hosts, a newly enrolled child returns a running foreground Executor handoff before any QA. A two-child behavioral fixture actually writes implementation and passes deterministic QA plus required Host-attested Review before Kernel settlement and exactly-once scope-bound commit; mocked terminal reports alone do not qualify. Own valid authorization continues without a redundant gate; genuine park, expiry, foreign claim, drift, open Review reservation, and Enrollment/settlement/commit interruption retain their existing fail-closed recovery boundaries. Normal handoff adds no persisted lifecycle or model invocation service.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/unattended-batch-run.test.ts\",\n      \"tests/pi-batch-authority.test.ts\",\n      \"tests/claude-batch-authority.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    "docs/adr/0006-unattended-review-dispatch-authority.md",
+    "docs/plans/batch-execution-recovery-s0-renewal.intent.json",
+    "docs/plans/batch-execution-recovery-s1-executor-handoff.intent.json",
+    "docs/specs/batch-execution-recovery.spec.md",
+    "plugins/immune-brain/.pi-extension/imm-unattended-batch.ts",
+    "plugins/immune-brain/.pi-extension/runtime-stub.ts",
+    "plugins/immune-brain/README.md",
+    "plugins/immune-brain/dist/claude/mcp-server.mjs",
+    "plugins/immune-brain/dist/imm-loop.md",
+    "plugins/immune-brain/dist/role-prompts/executor.md",
+    "plugins/immune-brain/runtime/claude/kernel_ports.ts",
+    "plugins/immune-brain/runtime/claude/mcp_server.ts",
+    "plugins/immune-brain/runtime/prompts/executor.md",
+    "plugins/immune-brain/runtime/unattended/batch_git.ts",
+    "plugins/immune-brain/runtime/unattended/batch_plan.ts",
+    "plugins/immune-brain/runtime/unattended/batch_preflight.ts",
+    "plugins/immune-brain/runtime/unattended/batch_reasons.ts",
+    "plugins/immune-brain/runtime/unattended/batch_runner.ts",
+    "plugins/immune-brain/runtime/unattended/batch_state.ts",
+    "plugins/immune-brain/runtime/unattended/confirmation_deadline.ts",
+    "plugins/immune-brain/runtime/unattended/types.ts",
+    "tests/claude-batch-authority.test.ts",
+    "tests/claude-host-package.test.ts",
+    "tests/dist-docs-sync-contract.test.ts",
+    "tests/dual-host-assurance-conformance.test.ts",
+    "tests/kernel-batch-authority.test.ts",
+    "tests/loop-execution-routing.test.ts",
+    "tests/packaged-contract-tool-surface.test.ts",
+    "tests/pi-batch-authority.test.ts",
+    "tests/unattended-batch-commit.test.ts",
+    "tests/unattended-batch-run.test.ts",
+    "tests/unattended-contracts.test.ts"
+  ],
+  "risk": "material",
+  "revision": 2,
+  "owner": "user"
+}

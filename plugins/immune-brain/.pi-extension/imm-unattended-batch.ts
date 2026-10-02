@@ -5,6 +5,7 @@ import {
 	createBatchAuthorityRegistry,
 	deriveChildEnrollment,
 	startBatch,
+	batchQaFailureFacts,
 	readTaskRecord,
 	advancePiTask,
 	projectAssuranceForTask,
@@ -254,7 +255,11 @@ export async function executePiUnattendedBatch(
 			return res;
 		},
 		projectTask: async (taskRoot, taskId) => {
-			return projectAssuranceForTask(taskRoot, taskId);
+			const fresh = await projectAssuranceForTask(taskRoot, taskId);
+			if (!fresh.claim || fresh.projection.lifecycle !== "active" || fresh.error !== null) return fresh;
+			const { record } = await readTaskRecord(taskRoot, taskId);
+			if (!record) throw new Error(`Kernel record disappeared for ${taskId}`);
+			return { ...fresh, ...batchQaFailureFacts(record) };
 		},
 		ownsTaskClaim: (taskId) => {
 			if (isResuming && taskId === readActiveClaimTaskId(root)) {

@@ -1,0 +1,9 @@
+{
+  "contract": "assurance_kernel/task_tombstone/v2",
+  "task_id": "batch-execution-recovery-s1-executor-handoff",
+  "lifecycle_status": "terminal",
+  "terminal_lifecycle": "done",
+  "terminal_event_id": "complete:batch-execution-recovery-s1-executor-handoff:2026-10-02T09:36:39.951Z",
+  "final_record_hash": "sha256:8c7f67b67c5ab44e2dcfa20c57075567b116fb31cc01171ee4f0d57395d793c4",
+  "terminalized_at": "2026-10-02T09:36:39.951Z"
+}

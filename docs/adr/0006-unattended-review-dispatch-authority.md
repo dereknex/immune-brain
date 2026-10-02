@@ -6,54 +6,50 @@ status: accepted
 
 ## Context
 
-A child settled by an unattended batch run reaches its Review obligation and
-stops there: `runtime/assurance/coordinator.ts` returns `review_ready` with an
-`agent_params` payload, and the child is parked as `needs_human` until a
-foreground Host turn dispatches a reviewer and submits the verdict. Every other
-Assurance step runs to completion inside one Tool execution, so Review is the
-single point where a batch run cannot continue on its own.
-
-Two facts constrain the decision. First, the Kernel already requires the reviewer
-identity to come from the Host: `runtime/claude/review_host.ts` and the Pi
-Review reservation bind a verdict to an observed Host execution event, and
-`runtime/assurance/coordinator.ts` rejects a verdict whose identity it cannot
-attribute. Second, an extension Tool callback cannot drive the Parent to invoke
-another Agent in the same turn, so a runtime that wanted to dispatch a reviewer
-would have to own model invocation itself.
+An opted-in serial batch cannot implement a newly enrolled child inside its
+extension Tool callback: that callback cannot invoke a Parent Agent in the same
+turn. Enrollment authorizes work; it does not prove that implementation exists.
+The same foreground boundary applies to independent Review. Owning model
+invocation inside the runtime would introduce another execution/authority path.
 
 ## Decision
 
-1. **Review stays a foreground obligation of the literal user's Host session.**
-   The Kernel reserves the Review, returns `agent_params`, and the Parent
-   dispatches the reviewer in a later foreground turn; `submit_review` consumes
-   the verdict against the frozen snapshot. A batch run parks the child as
-   `needs_human` at that point with the reason and the reserved `agent_params`,
-   and continues only after a foreground verdict.
-2. **The runtime never dispatches a reviewer and never synthesizes a receipt for
-   one.** Reviewer identity remains a Host-attested fact — the property
-   `runtime/assurance/coordinator.ts` and the Review reservation exist to
-   protect — so a batch pause at Review is the designed cost of that
-   independence rather than a gap to be closed.
+1. **Implementation stays with the foreground Parent.** After child Enrollment,
+   the driver returns a `running` report with an Executor handoff and keeps the
+   child `enrolled`. The Parent implements and stages scoped changes and runs
+   focused diagnostics before advancing Kernel Assurance. Re-entry while
+   artifacts remain active returns the same handoff without invoking QA.
+2. **Review stays a foreground obligation of the literal user's Host session.**
+   The Kernel reserves Review and returns `agent_params`; the Parent dispatches
+   that reviewer once in a later foreground turn and `submit_review` consumes
+   the structured verdict against the frozen snapshot. The batch remains
+   `running` with its child `enrolled` during an open reservation. Re-entry
+   waits for that reservation rather than replacing or redispatching it.
+3. **The runtime never invokes an Executor or reviewer model and never
+   synthesizes reviewer receipts.** Host review authority and frozen snapshot
+   binding remain unchanged. After Kernel settlement, the Parent stages the
+   child's terminal audit evidence and re-enters the same batch. The shared
+   driver reconciles settlement, adopts or creates exactly one scope-bound
+   commit, and enrolls the next ready child under valid authorization.
 
 ## Rejected Alternatives
 
-- **Runtime-invoked reviewer.** Calling a model with the bundled review prompt
-  from the runtime, and submitting the verdict in the same process that produced
-  the work, would leave the Kernel unable to distinguish a Host-attested
-  reviewer from a self-review.
-- **Out-of-process reviewer service.** A separate process owning reviewer
-  invocation and returning a signed verdict introduces a second authority path
-  the Kernel cannot verify from Host events, and would need its own identity,
-  transport, and failure contract.
-- Making the runtime dispatch reviewers to remove the `needs_human` park: that
-  would trade an auditable independence boundary for unattended throughput.
-- Letting the runtime synthesize a reviewer receipt for a review it performed
-  itself, in any form.
+- **Runtime-invoked Executor or reviewer.** Owning model invocation adds an
+  execution service; runtime-produced reviewer receipts undermine independent
+  Host review authority.
+- **Out-of-process reviewer service.** A second identity, transport and failure
+  contract is unnecessary for this serial foreground handoff.
+- **New persisted execution lifecycle.** Existing `running` batch and `enrolled`
+  child states plus fresh Kernel obligations already describe recovery.
+- **Treating every foreground handoff as `needs_human`.** Ordinary implementation
+  and an open Review reservation need no additional literal-user decision.
 
 ## Consequences
 
-- A batch run remains non-autonomous across Review: it parks the child with the
-  reason and the reserved `agent_params`, and continues only after a foreground
-  verdict.
-- Any future change here must preserve the property that `submit_review`
-  attributes the verdict to an observed Host execution.
+- Batch throughput remains Parent-driven across implementation and Review; no
+  recursive, parallel or detached Managed task dispatch is introduced.
+- Ordinary handoff and below-limit QA repair reuse valid authorization. Genuine
+  budget stops, user decisions, stale/foreign claims and identity drift retain
+  their fail-closed recovery boundaries.
+- A fresh settled projection reconciles an interrupted `enrolled` child at
+  commit; an existing scope-bound commit is adopted instead of replayed.

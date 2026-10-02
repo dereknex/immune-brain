@@ -14,8 +14,8 @@ import {
 	type BatchRunStateRecord,
 } from "../plugins/immune-brain/runtime/unattended/batch_state";
 import {
-	startBatch,
-	resumeBatch,
+	startBatch as startBatchOnce,
+	resumeBatch as resumeBatchOnce,
 	BatchAuthorizationExpiryError,
 	type BatchRunnerKernelPort,
 	type StartBatchInput,
@@ -37,6 +37,31 @@ import {
 } from "../plugins/immune-brain/runtime/kernel/batch_authority";
 
 const FAR_FUTURE = "2099-01-01T00:00:00.000Z";
+
+// Scripted unit fixtures model a Parent-ready snapshot between foreground calls.
+// The implementation/QA integration below uses the raw driver instead.
+async function consumeScriptedHandoffs(request: StartBatchInput, report: Awaited<ReturnType<typeof startBatchOnce>>) {
+	while (report.handoff) {
+		const taskId = report.handoff.task_id;
+		expect(report.batch_state).toBe("running");
+		expect(report.children.find((c) => c.task_id === taskId)?.state).toBe("enrolled");
+		const project = request.kernel.projectTask.bind(request.kernel);
+		request.kernel.projectTask = async (root, id) => {
+			const fresh = await project(root, id);
+			return id === taskId && fresh.claim?.task_id === id
+				? { ...fresh, projection: { ...fresh.projection, artifact_state: "frozen" } }
+				: fresh;
+		};
+		report = await startBatchOnce(request);
+	}
+	return report;
+}
+async function startBatch(request: StartBatchInput) {
+	return consumeScriptedHandoffs(request, await startBatchOnce(request));
+}
+async function resumeBatch(request: StartBatchInput, project: Parameters<typeof resumeBatchOnce>[1]) {
+	return consumeScriptedHandoffs(request, await resumeBatchOnce(request, project));
+}
 
 function child(taskId: string, sliceId: string, blockedBy: string[] = []): BatchPlanChild {
 	return {
@@ -175,6 +200,39 @@ function scriptedKernel(advances: Record<string, BatchChildAdvanceResult[]>): Ba
 		},
 	} as BatchRunnerKernelPort & { enrolled: string[]; commits: { task_id: string; batch_id: string }[]; foreignClaims: Set<string> };
 }
+
+describe("foreground Executor handoff", () => {
+	it("returns the enrolled child before QA and repeats the handoff until Parent freezes implementation", async () => {
+		const root = tempRoot();
+		try {
+			const kernel = scriptedKernel({ "task-a": [{ state: "completed" }] });
+			const advance = spyOn(kernel, "advanceTask");
+			kernel.projectTask = async (_root, taskId) => ({
+				contract: "assurance_kernel/assurance_projection/v1", task_id: taskId, error: null,
+				claim: kernel.enrolled.includes(taskId) ? { task_id: taskId, lifecycle_status: "active" } : null,
+				projection: {
+					run_id: kernel.enrolled.includes(taskId) ? "run-parent-handoff" : null,
+					record_revision: "revision-parent-handoff", lifecycle: "active", artifact_state: "active",
+					next_obligation: "submit_assurance", completion_ready: false,
+				} as never,
+			});
+			const args = input(root, [child("task-a", "S1"), child("task-b", "S2", ["task-a"])], kernel);
+			for (let attempt = 0; attempt < 2; attempt++) {
+				const report = await startBatchOnce(args);
+				expect(report.batch_state).toBe("running");
+				expect(report.handoff).toEqual({
+					role: "executor", task_id: "task-a", run_id: "run-parent-handoff",
+					record_revision: "revision-parent-handoff", next_obligation: "submit_assurance",
+				});
+				expect(report.children.map((c) => c.state)).toEqual(["enrolled", "pending"]);
+				expect(existsSync(join(root, ".imm/state/batches/batch-001.report.json"))).toBe(false);
+			}
+			expect(advance).not.toHaveBeenCalled();
+			expect(kernel.enrolled).toEqual(["task-a"]);
+			expect(kernel.commits).toEqual([]);
+		} finally { rmSync(root, { recursive: true, force: true }); }
+	});
+});
 
 describe("renewed authorization with real enrollment derivation", () => {
 	for (const recoveredClaim of [false, true]) {
@@ -1989,6 +2047,7 @@ describe("shared batch preflight projection", () => {
 			invalid_slug: ["invalid initiative slug: <detail>", "specify a valid initiative slug and retry in the current Host"],
 			batch_state_unreadable: ["batch run state is unreadable or invalid: <detail>", "resolve or remove the invalid batch state file, then retry in the current Host"],
 			claim_already_active: ["an active workspace claim already exists for task: <detail>", "resolve or stop the active task before starting a batch in the current Host"],
+			kernel_authority_conflict: ["Kernel authority conflict: <detail>", "resolve the Kernel storage conflict before resuming in the current Host"],
 			git_head_unreadable: ["<detail>", "commit working changes and ensure a committed Git HEAD exists in the current Host"],
 			branch_already_exists: ["branch preflight failed: branch refs/heads/<detail> already exists", "delete or rename the conflicting branch, or commit working changes in the current Host"],
 			git_status_unreadable: ["branch preflight failed: git status is unreadable", "check the repository integrity and retry in the current Host"],

@@ -2023,10 +2023,18 @@ describe("dual-host assurance conformance", () => {
 				requestConfirmation: async () => ({ decision: "accept", requestId: "r-rp1" }),
 			});
 			cr.bindClientHandshake({ version: "2.1.236", interactive: true, protocolVersion: "2025-06-18" });
-			const cRes1 = await cr.callTool("start_unattended_batch", { initiative_slug: `${sharedReplaySlug}-c` }, { toolCallId: "toolu-rp1" });
+			let cRes1 = await cr.callTool("start_unattended_batch", { initiative_slug: `${sharedReplaySlug}-c` }, { toolCallId: "toolu-rp1" });
+			expect(cRes1.report.handoff.role).toBe("executor");
+			mkdirSync(join(cf.root, "docs/specs"), { recursive: true });
+			writeFileSync(join(cf.root, `docs/specs/${sharedReplaySlug}-c-c1.spec.md`), "# Replay fixture Spec\n");
+			execFileSync("git", ["add", `docs/specs/${sharedReplaySlug}-c-c1.spec.md`], { cwd: cf.root });
+			await cr.runtime.kernelPorts().applyOrdinaryOperation({ cwd: cf.root }, {
+				taskId: `${sharedReplaySlug}-c-c1`, operation: { op: "freeze_artifacts", actor_id: "executor" },
+			});
+			cRes1 = await cr.callTool("start_unattended_batch", { initiative_slug: `${sharedReplaySlug}-c` }, { toolCallId: "toolu-rp-ready" });
 
 			let pLastCommit: string | null = null;
-			const pRes1 = await executePiUnattendedBatch({
+			const replayOptions: Parameters<typeof executePiUnattendedBatch>[0] = {
 				root: pf.root,
 				initiativeSlug: `${sharedReplaySlug}-p`,
 				interactive: true,
@@ -2049,7 +2057,16 @@ describe("dual-host assurance conformance", () => {
 					lookupBatchCommit: async () => (pLastCommit ? { commit: pLastCommit } : null),
 				},
 				confirmBatch: async () => "accept",
+			};
+			let pRes1 = await executePiUnattendedBatch(replayOptions);
+			expect(pRes1.report.handoff.role).toBe("executor");
+			mkdirSync(join(pf.root, "docs/specs"), { recursive: true });
+			writeFileSync(join(pf.root, `docs/specs/${sharedReplaySlug}-p-c1.spec.md`), "# Replay fixture Spec\n");
+			execFileSync("git", ["add", `docs/specs/${sharedReplaySlug}-p-c1.spec.md`], { cwd: pf.root });
+			await createPiAssuranceProgressionPorts().applyOrdinaryOperation({ cwd: pf.root }, {
+				taskId: `${sharedReplaySlug}-p-c1`, operation: { op: "freeze_artifacts", actor_id: "executor" },
 			});
+			pRes1 = await executePiUnattendedBatch(replayOptions);
 
 			expect(cRes1.state).toBe("started");
 			expect(pRes1.state).toBe("started");
@@ -2323,9 +2340,9 @@ describe("dual-host assurance conformance", () => {
 		}
 
 		// 18. Parity scenario: RUNNING BATCH RESUMES AFTER ITS AUTHORIZATION EXPIRED
-		// (two children; the batch pauses on child 1's Review past expiry, then the
-		// user re-confirms: both hosts must complete both children instead of
-		// stopping the second as budget_stopped on a stale stamp)
+		// Two children: renewal while waiting on Executor must preserve the first
+		// handoff without starting QA. Real two-child settlement/commit coverage
+		// lives in claude-batch-authority's foreground Executor integration.
 		{
 			const sharedRenewSlug = "conf-renew";
 			const cf = createConformanceFixture(`${sharedRenewSlug}-c`, ["src/impl.ts"], true);
@@ -2395,7 +2412,7 @@ describe("dual-host assurance conformance", () => {
 			expect(cRes1.report.batch_state).toBe("running");
 			expect(pRes1.report.batch_state).toBe("running");
 
-			// The authorization elapses while the batch waits on the reserved Review.
+			// The authorization elapses while the batch waits on implementation.
 			for (const [root, batchId] of [[cf.root, cRes1.batch_id], [pf.root, pRes1.batch_id]] as const) {
 				const batchPath = join(root, ".imm", "state", "batches", `${batchId}.json`);
 				const record = JSON.parse(readFileSync(batchPath, "utf8"));
@@ -2415,9 +2432,16 @@ describe("dual-host assurance conformance", () => {
 
 			expect(cRes2.state).toBe("started");
 			expect(pRes2.state).toBe("started");
-			expect(cRes2.report.batch_state).toBe("completed");
-			expect(pRes2.report.batch_state).toBe("completed");
-			expect(cRes2.report.children.map((child: { state: string }) => child.state)).toEqual(pRes2.report.children.map((child: { state: string }) => child.state));
+			expect(cRes2.report.batch_state).toBe("running");
+			expect(pRes2.report.batch_state).toBe("running");
+			expect(cRes2.report.handoff).toMatchObject({ role: "executor", task_id: `${sharedRenewSlug}-c-c1` });
+			expect(pRes2.report.handoff).toMatchObject({ role: "executor", task_id: `${sharedRenewSlug}-p-c1` });
+			for (const result of [cRes2, pRes2]) {
+				expect(result.report.children.map((child: { state: string }) => child.state)).toEqual(["enrolled", "pending"]);
+				expect(result.report.commits).toEqual([]);
+			}
+			expect(cStep).toBe(0);
+			expect(pStep).toBe(0);
 		}
 	},
 		120_000,

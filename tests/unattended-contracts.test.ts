@@ -336,6 +336,7 @@ const taskId = ${JSON.stringify(GUARD_TASK_ID)};
 const slug = "initiative-slug";
 const events = [];
 let enrolled = false;
+let implementationReady = false;
 let advances = 0;
 const observation = {
 	contract: "immune_brain/github_initiative_observation/v1",
@@ -357,7 +358,7 @@ const batchKernel = {
 		task_id: taskId,
 		error: null,
 		claim: enrolled ? { task_id: taskId, lifecycle_status: "active" } : null,
-		projection: { lifecycle: "active", completion_ready: false },
+		projection: { lifecycle: "active", artifact_state: implementationReady ? "frozen" : "active", next_obligation: "run_qa", completion_ready: false },
 	}),
 	ownsTaskClaim: (id) => enrolled && id === taskId,
 	advanceTask: async (taskRoot, id) => {
@@ -397,6 +398,11 @@ const invoke = host === "pi"
 		});
 	};
 
+const handoff = await invoke();
+assert.equal(handoff.state, "started", JSON.stringify(handoff));
+assert.equal(handoff.report.handoff.role, "executor");
+assert.deepEqual(events, ["confirm", "enroll"]);
+implementationReady = true;
 const initial = await invoke();
 assert.equal(initial.state, "started", JSON.stringify(initial));
 assert.deepEqual(events, ["confirm", "enroll", "advance"]);

@@ -171,6 +171,7 @@ export interface TaskRecordRead {
 				manifest_digest: string;
 			};
 		}>;
+		history: import("../runtime/kernel/types").TaskRecord["history"];
 		findings: Array<{
 			id: string;
 			kind: string;
@@ -451,6 +452,7 @@ export type {
 	BatchAuthorizationBinding,
 	ValidatedBatchAuthorization,
 } from "../runtime/kernel/batch_authority";
+export { batchQaFailureFacts } from "../runtime/unattended/batch_runner";
 export type {
 	BatchRunnerKernelPort,
 	StartBatchInput,

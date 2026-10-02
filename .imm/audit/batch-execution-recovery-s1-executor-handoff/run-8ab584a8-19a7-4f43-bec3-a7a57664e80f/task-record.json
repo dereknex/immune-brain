@@ -1,0 +1,206 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "batch-execution-recovery-s1-executor-handoff",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "batch-execution-recovery-s1-executor-handoff",
+    "goal": "Make each enrolled batch child return to foreground Parent implementation before Assurance, then continue the same valid serial batch through Kernel settlement and exactly-once scope-bound commit.",
+    "acceptance": [
+      {
+        "id": "BER-S1-A1",
+        "assertion": "Meet S1 in docs/specs/batch-execution-recovery.spec.md: on both Hosts, a newly enrolled child returns a running foreground Executor handoff before any QA. A two-child behavioral fixture actually writes implementation and passes deterministic QA plus required Host-attested Review before Kernel settlement and exactly-once scope-bound commit; mocked terminal reports alone do not qualify. Own valid authorization continues without a redundant gate; genuine park, expiry, foreign claim, drift, open Review reservation, and Enrollment/settlement/commit interruption retain their existing fail-closed recovery boundaries. Normal handoff adds no persisted lifecycle or model invocation service.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/unattended-batch-run.test.ts\",\n      \"tests/pi-batch-authority.test.ts\",\n      \"tests/claude-batch-authority.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      "docs/adr/0006-unattended-review-dispatch-authority.md",
+      "docs/plans/batch-execution-recovery-s0-renewal.intent.json",
+      "docs/plans/batch-execution-recovery-s1-executor-handoff.intent.json",
+      "docs/specs/batch-execution-recovery.spec.md",
+      "plugins/immune-brain/.pi-extension/imm-unattended-batch.ts",
+      "plugins/immune-brain/.pi-extension/runtime-stub.ts",
+      "plugins/immune-brain/README.md",
+      "plugins/immune-brain/dist/claude/mcp-server.mjs",
+      "plugins/immune-brain/dist/imm-loop.md",
+      "plugins/immune-brain/dist/role-prompts/executor.md",
+      "plugins/immune-brain/runtime/claude/kernel_ports.ts",
+      "plugins/immune-brain/runtime/claude/mcp_server.ts",
+      "plugins/immune-brain/runtime/prompts/executor.md",
+      "plugins/immune-brain/runtime/unattended/batch_git.ts",
+      "plugins/immune-brain/runtime/unattended/batch_plan.ts",
+      "plugins/immune-brain/runtime/unattended/batch_preflight.ts",
+      "plugins/immune-brain/runtime/unattended/batch_reasons.ts",
+      "plugins/immune-brain/runtime/unattended/batch_runner.ts",
+      "plugins/immune-brain/runtime/unattended/batch_state.ts",
+      "plugins/immune-brain/runtime/unattended/confirmation_deadline.ts",
+      "plugins/immune-brain/runtime/unattended/types.ts",
+      "tests/claude-batch-authority.test.ts",
+      "tests/claude-host-package.test.ts",
+      "tests/dist-docs-sync-contract.test.ts",
+      "tests/dual-host-assurance-conformance.test.ts",
+      "tests/kernel-batch-authority.test.ts",
+      "tests/loop-execution-routing.test.ts",
+      "tests/packaged-contract-tool-surface.test.ts",
+      "tests/pi-batch-authority.test.ts",
+      "tests/unattended-batch-commit.test.ts",
+      "tests/unattended-batch-run.test.ts",
+      "tests/unattended-contracts.test.ts"
+    ],
+    "risk": "material",
+    "revision": 2,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/batch-execution-recovery-s1-executor-handoff.intent.json",
+    "content_hash": "sha256:b206882e6c84e229c54f1d992a2a558dd024e469ce38427a48a9b105caf268a7"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:d13d72e175b5964186c47a388f44e296f76ecca246c3e90065058f5abf62843b",
+  "git_base_head": "d358f83c7c2481f06b40a3bebfe541e64a1e9abc",
+  "attestations": [
+    {
+      "id": "approval-qa-64366785",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:b206882e6c84e229c54f1d992a2a558dd024e469ce38427a48a9b105caf268a7",
+      "diff_hash": "sha256:6c95fdd148eb72cfd9e1b9ca7b75b287156135461e61009913ca01e1e8904cf2",
+      "actor_id": "deterministic-qa",
+      "summary": "all 1 project verification check(s) passed; execution=sha256:01203e24ed9df428b74c848d7c1fb8db76b028bd65de6197092bc5d378b76734",
+      "acceptance_results": [
+        {
+          "acceptance_id": "BER-S1-A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 1 project verification check(s) passed; execution=sha256:01203e24ed9df428b74c848d7c1fb8db76b028bd65de6197092bc5d378b76734"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-88c0cbc0",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:b206882e6c84e229c54f1d992a2a558dd024e469ce38427a48a9b105caf268a7",
+      "diff_hash": "sha256:6c95fdd148eb72cfd9e1b9ca7b75b287156135461e61009913ca01e1e8904cf2",
+      "actor_id": "parent-mediated-review",
+      "summary": "已验证不可变修订（父级、树、清单摘要均匹配）：在 enrollment 后，共享运行程序现在会返回一个正在运行的 `executorHandoff`，且在任何 `advanceTask`/QA 之前，不会持久化 lifecycle 报告；两个 Host 适配器都使用 `batchQaFailureFacts` 丰富了 `projectTask`，并重新检查了授权发布前的过期时间；`resumeBatch`/`driveInterruptedChild` 中保留了 fail-closed 边界（对 foreign-claim 停止、lineage 失败、具有 exactly-once `commit adoption` 的保留 Review 预订），并且 acceptance fixture 在两子元素提交流上驱动实际的 Git 实现，这由嵌入的 host-attested QA 结果覆盖（所有检查均已通过）。",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "d358f83c7c2481f06b40a3bebfe541e64a1e9abc",
+        "review_commit": "510d9f4b4bf2d700faf34d37bc71d247ca3756be",
+        "review_tree": "1557747bfed2042bb64cd142094db9cd4e8d8132",
+        "manifest_digest": "sha256:3848592e7d93600561991e05279f573c33e463b4a4e798776f5c66ad35ef9d4a"
+      }
+    }
+  ],
+  "findings": [
+    {
+      "id": "qa-BER-S1-A1-41d76a57-b51a87",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "BER-S1-A1",
+      "source": "execution",
+      "review_round": null,
+      "summary": "verification failed (exit 1) stdout=28B stderr=1076B",
+      "anchor": null,
+      "evidence": null,
+      "counterevidence": null
+    }
+  ],
+  "history": [
+    {
+      "id": "freeze_artifacts:batch-execution-recovery-s1-executor-handoff:2026-10-02T08:33:07.783Z",
+      "at": "2026-10-02T08:33:07.783Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/batch-execution-recovery-s1-executor-handoff.intent.json"
+    },
+    {
+      "id": "request_rework:batch-execution-recovery-s1-executor-handoff:2026-10-02T08:33:20.514Z",
+      "at": "2026-10-02T08:33:20.514Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_1\naction_v2_sha256:edd8d79f4b270636a977c906e83d3903a628d5a300769cff2abdeab4b099f4a0",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-25b793fac2fae985",
+        "issued_at": "2026-10-02T08:33:20.515Z",
+        "expires_at": "2026-10-02T08:43:20.514Z"
+      }
+    },
+    {
+      "id": "approve_breaking_intent_revision:batch-execution-recovery-s1-executor-handoff:2026-10-02T09:21:49.166Z",
+      "at": "2026-10-02T09:21:49.166Z",
+      "type": "approve_breaking_intent_revision",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "intent_revision_2\naction_v2_sha256:dbe1d7710b1bcde5cb99dc08f447c931ae65d045ab682f10f5599553d58e8899",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-733e7722a83f5499",
+        "issued_at": "2026-10-02T09:21:49.795Z",
+        "expires_at": "2026-10-02T09:31:49.795Z"
+      }
+    },
+    {
+      "id": "resolve_finding:batch-execution-recovery-s1-executor-handoff:2026-10-02T09:26:30.380Z",
+      "at": "2026-10-02T09:26:30.380Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "qa-BER-S1-A1-41d76a57-b51a87\naction_v2_sha256:ae2c118ac7b9eb05e8ee554a078be54719de02a9d4cbd8df354292c4e6325579"
+    },
+    {
+      "id": "freeze_artifacts:batch-execution-recovery-s1-executor-handoff:2026-10-02T09:26:40.536Z",
+      "at": "2026-10-02T09:26:40.536Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/batch-execution-recovery-s1-executor-handoff.intent.json"
+    },
+    {
+      "id": "record_approval:batch-execution-recovery-s1-executor-handoff:2026-10-02T09:30:12.971Z",
+      "at": "2026-10-02T09:30:12.971Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-64366785\naction_v2_sha256:b3556e41e24333b1cb9eaa5e1838a8fc48309be4d19d70489de3946fc0b10970",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-84ba0d5e8c4082c0",
+        "issued_at": "2026-10-02T09:30:12.971Z",
+        "expires_at": "2026-10-02T09:40:12.971Z"
+      }
+    },
+    {
+      "id": "record_approval:batch-execution-recovery-s1-executor-handoff:2026-10-02T09:36:38.114Z",
+      "at": "2026-10-02T09:36:38.114Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-88c0cbc0\naction_v2_sha256:6ced1e56c3ac213f1977cf5a91a194c83780202120c488c13f4c2e8533fdc5ab",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-56e5721afe3b7f5b",
+        "issued_at": "2026-10-02T09:36:38.115Z",
+        "expires_at": "2026-10-02T09:46:38.114Z"
+      }
+    },
+    {
+      "id": "complete:batch-execution-recovery-s1-executor-handoff:2026-10-02T09:36:39.951Z",
+      "at": "2026-10-02T09:36:39.951Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:4a445000d4465c59bc3519922f0990647f1284db3e3bd802842fafc72006b736"
+    }
+  ]
+}

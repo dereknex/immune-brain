@@ -62,6 +62,7 @@ import {
 } from "../unattended/batch_preflight";
 import {
 	startBatch,
+	batchQaFailureFacts,
 	type BatchRunnerKernelPort,
 	type BatchRunReport,
 } from "../unattended/batch_runner";
@@ -1219,7 +1220,13 @@ export class ClaudeRuntime {
 				if (result.state === "blocked") return { state: "blocked", reason: result.reason };
 				return { state: "failed", reason: (result as { reason?: string }).reason ?? "advance failed" };
 			},
-			projectTask: async (root, taskId) => projectAssurance(root, taskId, diffSnapshotOf),
+			projectTask: async (root, taskId) => {
+				const fresh = await projectAssurance(root, taskId, diffSnapshotOf);
+				if (!fresh.claim || fresh.projection.lifecycle !== "active" || fresh.error !== null) return fresh;
+				const { record } = readTaskRecordRaw(root, taskId);
+				if (!record) throw new Error(`Kernel record disappeared for ${taskId}`);
+				return { ...fresh, ...batchQaFailureFacts(record) };
+			},
 			ownsTaskClaim: (taskId) => {
 				return registry.isChildConsumed(capability, taskId);
 			},

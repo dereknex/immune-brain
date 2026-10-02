@@ -13,6 +13,7 @@ export type BatchReasonKey =
 	| "invalid_slug"
 	| "batch_state_unreadable"
 	| "claim_already_active"
+	| "kernel_authority_conflict"
 	| "git_head_unreadable"
 	| "branch_already_exists"
 	| "git_status_unreadable"
@@ -58,6 +59,11 @@ export const BATCH_REASONS: Readonly<Record<BatchReasonKey, BatchReasonSpec>> = 
 		state: "blocked",
 		reason: (detail: string) => `an active workspace claim already exists for task: ${detail}`,
 		recovery_action: "resolve or stop the active task before starting a batch in the current Host",
+	},
+	kernel_authority_conflict: {
+		state: "rejected",
+		reason: (detail: string) => `Kernel authority conflict: ${detail}`,
+		recovery_action: "resolve the Kernel storage conflict before resuming in the current Host",
 	},
 	git_head_unreadable: {
 		state: "rejected",

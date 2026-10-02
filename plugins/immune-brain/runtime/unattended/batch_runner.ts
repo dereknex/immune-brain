@@ -12,6 +12,13 @@ import {
 	computeBatchPlanDigest,
 } from "../kernel/batch_authority";
 import type { AssuranceProjectionResult } from "../kernel/assurance_projection";
+import type { TaskRecord } from "../kernel/types";
+
+/** Failed atomic QA attempts observed through Kernel history, including Parent-driven QA. */
+export function batchQaFailureFacts(record: Pick<TaskRecord, "history">) {
+	const failed = record.history.filter((event) => event.type === "request_rework" && event.authority?.authority_kind === "qa");
+	return { qa_failure_count: failed.length, last_qa_failure_at: failed.at(-1)?.at ?? null };
+}
 import type { BatchPlanChild } from "./types";
 import {
 	type BatchRunnerGitPort,
@@ -75,7 +82,7 @@ export interface BatchRunnerKernelPort {
 	 * persistence. Uses the real AssuranceProjectionResult contract; batch
 	 * ownership of the claim is verified separately through the authoritative
 	 * batch registry, because the Kernel claim carries no batch id. */
-	projectTask(root: string, taskId: string): Promise<AssuranceProjectionResult>;
+	projectTask(root: string, taskId: string): Promise<AssuranceProjectionResult & { qa_failure_count?: number; last_qa_failure_at?: string | null }>;
 	/** Authoritative batch ownership check: true when the task's Kernel claim
 	 * is held under this batch's derived capability (consumed child slot). */
 	ownsTaskClaim(taskId: string): boolean;
@@ -166,13 +173,13 @@ function isAuthorizationExpiryError(error: unknown): boolean {
 	return error instanceof BatchAuthorizationExpiryError;
 }
 
-function requireFreshProjection(
-	result: AssuranceProjectionResult,
+function requireFreshProjection<T extends AssuranceProjectionResult>(
+	result: T,
 	taskId: string,
-): AssuranceProjectionResult & { error: null } {
+): T & { error: null } {
 	if (result.error !== null)
 		throw new Error(`cannot reconcile Kernel projection for ${taskId}: ${result.error}`);
-	return result as AssuranceProjectionResult & { error: null };
+	return result as T & { error: null };
 }
 
 /** Next pending child whose direct dependents are all committed. */
@@ -213,6 +220,24 @@ function reportFor(
 		reason,
 		next_action: nextAction || (TERMINAL_NEXT_ACTIONS[record.batch_state] ?? "Inspect the batch run state."),
 		created_at: record.updated_at,
+	};
+}
+
+/** Derived observation only: Parent must re-read Kernel ownership before execution. */
+function executorHandoff(
+	record: BatchRunStateRecord,
+	taskId: string,
+	fresh: AssuranceProjectionResult & { error: null },
+): BatchRunReport {
+	return {
+		...reportFor(record, null,
+			"Route the enrolled child to foreground Executor, implement and stage its scoped work, then call Kernel advance_assurance. Submit any reserved Review verdict before continuing start_unattended_batch with the same Initiative."),
+		handoff: {
+			role: "executor", task_id: taskId,
+			run_id: fresh.projection.run_id ?? null,
+			record_revision: fresh.projection.record_revision,
+			next_obligation: fresh.projection.next_obligation,
+		},
 	};
 }
 
@@ -785,105 +810,11 @@ async function startBatchLocked(input: StartBatchInput): Promise<BatchRunReport>
 			break;
 		}
 		}
-	// Drive the child through the Kernel obligation surface only; rework
-		// below the limit retries the same child in this inner loop.
-		let childTerminal = false;
-		while (!childTerminal) {
-		const terminal = await input.kernel.advanceTask(input.root, child.task_id);
-		if (terminal.state === "completed") {
-			childTerminal = true;
-			// review-6: a successful settlement resets the consecutive-QA-failure
-			// counter so separated failures do not park later children.
-			record.consecutive_qa_failures = 0;
-			record.children = record.children.map((c) =>
-				c.task_id === child.task_id ? { ...c, state: "settled", reason: null } : c,
-			);
-			persist();
-			// Scope-bound commit; a lineage failure fails the whole batch.
-			try {
-				const planChild = input.children.find((c) => c.task_id === child.task_id);
-				const intentPath = planChild?.intent_path ?? undefined;
-				const { commit } = input.git?.commitChild
-					? await input.git.commitChild(input.root, child.task_id, input.batch_id, head, record.branch, intentPath)
-					: input.kernel.commitChild
-						? await input.kernel.commitChild(input.root, child.task_id, input.batch_id, head, record.branch, intentPath)
-						: await commitBatchChild({
-							root: input.root,
-							taskId: child.task_id,
-							batchId: input.batch_id,
-							expectedHead: head,
-							branch: record.branch,
-							intentPath,
-						});
-				record.children = record.children.map((c) =>
-					c.task_id === child.task_id ? { ...c, state: "committed", commit } : c,
-				);
-				record.commits.push(commit);
-				head = commit;
-				persist();
-			} catch (error) {
-				const message = error instanceof Error ? error.message : String(error);
-				record.children = record.children.map((c) =>
-					c.task_id === child.task_id ? { ...c, state: "needs_human", reason: message } : c,
-				);
-				// review-4: a commit failure is terminal; dependents must be
-				// skipped_blocked, not left pending.
-				skipDependents(record, child.task_id, `dependency ${child.task_id} failed to commit`);
-				record.batch_state = "failed";
-				persist();
-				break;
-			}
-		} else if (terminal.state === "stopped") {
-			record.children = record.children.map((c) =>
-				c.task_id === child.task_id
-					? { ...c, state: "needs_human", reason: "Kernel reported the child stopped" }
-					: c,
-			);
-			childTerminal = true;
-			skipDependents(record, child.task_id, `dependency ${child.task_id} parked`);
-			record.batch_state = "needs_human";
-			persist();
-		} else if (terminal.state === "rework" && terminal.operation === "qa") {
-			record.consecutive_qa_failures += 1;
-			if (record.consecutive_qa_failures >= record.budget.qa_failure_limit) {
-				record.children = record.children.map((c) =>
-					c.task_id === child.task_id
-						? { ...c, state: "needs_human", reason: `QA failure limit reached: ${terminal.summary}` }
-						: c,
-				);
-				record.batch_state = "needs_human";
-				childTerminal = true;
-				skipDependents(record, child.task_id, `dependency ${child.task_id} parked`);
-				persist();
-			} else {
-				// Below the limit: the inner loop re-drives the same child.
-				persist();
-			}
-		} else if (terminal.state === "failed" || terminal.state === "blocked" || terminal.state === "rework") {
-			const reason = terminal.state === "rework" ? terminal.summary : terminal.reason;
-			childTerminal = true;
-			record.children = record.children.map((c) =>
-				c.task_id === child.task_id ? { ...c, state: "needs_human", reason } : c,
-			);
-			skipDependents(record, child.task_id, `dependency ${child.task_id} parked`);
-			record.batch_state = "needs_human";
-			persist();
-		} else if (terminal.state === "review_ready") {
-			// A foreground Review reservation is owned by the calling host
-			// turn; the batch pauses here without parking the child.
-			record.children = record.children.map((c) =>
-				c.task_id === child.task_id
-					? { ...c, state: "enrolled", reason: `review reservation ${terminal.operation_id} open` }
-					: c,
-			);
-			persist();
-			return reportFor(
-				record,
-				`child ${child.task_id} holds an open Review reservation`,
-				"Submit the reserved foreground Review verdict, then call startBatch again to continue.",
-			);
-		}
-		}
+		const enrolled = requireFreshProjection(
+			await input.kernel.projectTask(input.root, child.task_id), child.task_id,
+		);
+		return executorHandoff(record, child.task_id, enrolled);
+
 	}
 
 	return finalize(input.root, record, stopReasonFor(record), "");
@@ -986,6 +917,24 @@ export async function resumeBatch(
 				});
 				return finalize(input.root, existing, "claim held by another batch", "needs-human-attention");
 			}
+			if (holdsClaim) {
+				const failures = Math.max(existing.consecutive_qa_failures, fresh.qa_failure_count ?? 0);
+				if (failures >= existing.budget.qa_failure_limit && fresh.last_qa_failure_at &&
+					Date.parse(fresh.last_qa_failure_at) > Date.parse(existing.confirmation_time)) {
+					const reason = "QA failure limit reached; repair and settle the own child through Kernel before resuming the batch";
+					skipDependents(existing, driven.task_id, `dependency ${driven.task_id} parked`);
+					existing = writeBatchRunState(input.root, {
+						...existing, batch_state: "needs_human", consecutive_qa_failures: failures,
+						children: existing.children.map((c) => c.task_id === driven.task_id ? { ...c, state: "needs_human", reason } : c),
+					});
+					return finalize(input.root, existing, reason, "Repair and settle the own child through Kernel, then re-confirm the batch.");
+				}
+				if (failures !== existing.consecutive_qa_failures)
+					existing = writeBatchRunState(input.root, { ...existing, consecutive_qa_failures: failures });
+				if (fresh.projection.artifact_state !== "frozen" &&
+					fresh.projection.next_obligation !== "resolve_user_decision" && fresh.projection.next_obligation !== "revise_intent")
+					return executorHandoff(existing, driven.task_id, fresh);
+			}
 			if (!holdsClaim) {
 				// review-1(4th round): a claimless projection still carries a
 				// projection body when the task is a terminal owner. If the fresh
@@ -1000,6 +949,7 @@ export async function resumeBatch(
 				if (settledRemotely) {
 					existing = writeBatchRunState(input.root, {
 						...existing,
+						consecutive_qa_failures: 0,
 						children: existing.children.map((c) =>
 							c.task_id === driven.task_id
 								? { ...c, state: "settled", reason: "crash after settlement; resuming at commit" }
@@ -1177,39 +1127,9 @@ async function driveInterruptedChild(
 			);
 			record.consecutive_qa_failures = 0;
 			persist();
-			try {
-				const planChild = input.children.find((c) => c.task_id === child.task_id);
-				const intentPath = planChild?.intent_path ?? undefined;
-				const { commit } = input.git?.commitChild
-					? await input.git.commitChild(input.root, child.task_id, input.batch_id, head, record.branch, intentPath)
-					: input.kernel.commitChild
-						? await input.kernel.commitChild(input.root, child.task_id, input.batch_id, head, record.branch, intentPath)
-						: await commitBatchChild({
-							root: input.root,
-							taskId: child.task_id,
-							batchId: input.batch_id,
-							expectedHead: head,
-							branch: record.branch,
-							intentPath,
-						});
-				record.children = record.children.map((c) =>
-					c.task_id === child.task_id ? { ...c, state: "committed", commit } : c,
-				);
-				record.commits.push(commit);
-				head = commit;
-				persist();
-				child = { ...child, state: "committed", commit };
-			} catch (error) {
-				const message = error instanceof Error ? error.message : String(error);
-				record.children = record.children.map((c) =>
-					c.task_id === child.task_id ? { ...c, state: "needs_human", reason: message } : c,
-				);
-				// review-4: dependents are skipped_blocked, not left pending.
-				skipDependents(record, child.task_id, `dependency ${child.task_id} failed to commit`);
-				record.batch_state = "failed";
-				persist();
-				return finalize(input.root, record, message, "");
-			}
+			// Use the same lookup/commit path for new settlement and crash recovery.
+			child = { ...child, state: "settled", reason: null };
+			continue;
 		} else if (terminal.state === "review_ready") {
 			record.children = record.children.map((c) =>
 				c.task_id === child.task_id
@@ -1226,7 +1146,7 @@ async function driveInterruptedChild(
 		} else if (terminal.state === "rework" && terminal.operation === "qa") {
 			// review-3(3rd round): interrupted-child rework applies the same
 			// consecutive-failure limit as startBatch instead of parking on the
-			// first rework; below the limit the loop re-drives the same child.
+			// first rework; below the limit implementation returns to the Parent.
 			record.consecutive_qa_failures += 1;
 			if (record.consecutive_qa_failures >= record.budget.qa_failure_limit) {
 				const reason = `QA failure limit reached: ${terminal.summary}`;
@@ -1239,6 +1159,8 @@ async function driveInterruptedChild(
 				return finalize(input.root, record, reason, "");
 			}
 			persist();
+			const fresh = requireFreshProjection(await input.kernel.projectTask(input.root, child.task_id), child.task_id);
+			return executorHandoff(record, child.task_id, fresh);
 		} else {
 			// stopped | failed | blocked: park and stop.
 			const reason =

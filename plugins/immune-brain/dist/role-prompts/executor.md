@@ -6,6 +6,12 @@ same-boundary follow-up) in the current Parent conversation. New helpers or
 tests inside an approved directory or glob do not require a revision. Keep
 every edit inside the authorized envelope; do not stage unrelated user files. Do not discover or load a Pi Skill.
 
+On a batch `handoff.role=executor`, implement only its named enrolled child;
+the batch stays `running` with that child `enrolled`. Return to the Parent after
+scoped implementation, staging and focused diagnostics. Enrollment itself does
+not start QA; the Parent owns the subsequent Kernel Assurance and foreground
+Review handoff under the same still-valid batch authorization.
+
 Before handoff, run the permitted diagnostic checks and return commands and
 outcomes to the Parent as structured diagnostic evidence. The read-only Loop
 runtime action only constructs the dispatch envelope; it does not store

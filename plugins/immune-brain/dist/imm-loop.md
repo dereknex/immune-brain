@@ -116,6 +116,23 @@ batch state transition: the shared `startBatch` driver in
 `runtime/unattended/` owns every batch transition, and each child is still
 enrolled, assured, and settled by the Kernel under an ordinary TaskRecord.
 
+A successful child Enrollment returns a `running` report with `handoff.role`
+`executor`; the child remains `enrolled`. The Parent implements that TaskIntent
+in the current foreground conversation, stages only its scoped changes, and
+runs focused diagnostics before Kernel Assurance. Re-entering the batch before
+implementation returns the same handoff without QA or another confirmation.
+The runtime owns no model invocation and adds no persisted execution lifecycle.
+
+After diagnostics pass, the Parent advances Kernel QA and dispatches any reserved
+foreground Review once using the exact returned `agent_params`, then submits its
+structured verdict. An open Review reservation stays with that Host invocation;
+batch re-entry waits for it rather than redispatching. On Kernel `done`, stage
+only that child's generated terminal audit evidence and call
+`start_unattended_batch` with the same slug. The driver reconciles settlement,
+adopts or creates the one scope-bound commit, then enrolls the next ready child
+under the still-valid authorization. Ordinary Executor handoff and below-limit
+QA repair do not park the batch; genuine budget/authority stops remain fail-closed.
+
 Batch execution never pushes a ref, opens or updates a pull request, resolves a
 user decision, or creates, switches, or deletes a Git worktree. Its sole Git
 effect is the batch branch `imm/<initiative-slug>` plus one scope-bounded commit
