@@ -114,7 +114,7 @@ export async function executePiUnattendedBatch(
 	// working-tree cleanliness against the authorized scope, recovery children,
 	// plan digest, and base HEAD are one shared projection, so neither Host
 	// re-implements a batch decision.
-	let now = new Date().toISOString();
+	const now = new Date().toISOString();
 	const preflight = await projectBatchPreflight({
 		root,
 		initiative_slug: initiativeSlug,
@@ -203,9 +203,6 @@ export async function executePiUnattendedBatch(
 	// review-2: verify cancellation signal right before authority issuance and startBatch
 	if (signal?.aborted) return batchReason("cancelled_before_execution");
 
-	now = new Date().toISOString();
-	if (Date.parse(expiresAt) <= Date.parse(now))
-		return batchReason("confirmation_failed", "confirmed batch deadline expired before authorization issuance");
 	const capability = batchRegistry.issue(binding, recoveryChildren as any, now);
 
 	let activeReviewDispatch: { operation_id: string; agent_params: Record<string, unknown> } | null = null;

@@ -1,77 +1,12 @@
-import { afterAll, describe, expect, it, mock } from "bun:test";
+import { describe, expect, it } from "bun:test";
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-// Delivery QA has no node_modules; use host seams only when the real package is absent.
-try { await import("typebox"); } catch {
-	const optional = Symbol("optional");
-	// Reuse the schema constructors from pi-canary-work-extension's delivery seam:
-	// the foreground Review regression also loads imm-canary-work's schemas.
-	mock.module("typebox", () => ({ Type: {
-		Array: (items: object) => ({ type: "array", items }),
-		Boolean: () => ({ type: "boolean" }),
-		Literal: (value: unknown) => ({ const: value }),
-		Null: () => ({ type: "null" }),
-		Number: () => ({ type: "number" }),
-		Object: (properties: Record<string, any>, options: object = {}) => ({
-			type: "object", properties,
-			required: Object.entries(properties).filter(([, value]) => !value[optional]).map(([key]) => key),
-			...options,
-		}),
-		Optional: (schema: Record<string, unknown>) => ({ ...schema, [optional]: true }),
-		Record: (_key: object, value: object) => ({ type: "object", additionalProperties: value }),
-		String: (options: object = {}) => ({ type: "string", ...options }),
-		Union: (anyOf: object[]) => ({ anyOf }),
-		Unknown: () => ({}),
-	} }));
-}
-try { await import("@earendil-works/pi-coding-agent"); } catch {
-	class DynamicBorder {
-		constructor(private style: (text: string) => string) {}
-		render(width: number) { return [this.style("─".repeat(Math.max(0, width)))]; }
-	}
-	mock.module("@earendil-works/pi-coding-agent", () => ({ DynamicBorder }));
-}
-try { await import("@earendil-works/pi-tui"); } catch {
-	class Text {
-		constructor(private text: string) {}
-		setText(text: string) { this.text = text; }
-		render() { return this.text.split("\n"); }
-		invalidate() {}
-	}
-	class Container {
-		private children: Array<{ render(width: number): string[] }> = [];
-		addChild(child: { render(width: number): string[] }) { this.children.push(child); }
-		render(width: number) { return this.children.flatMap((child) => child.render(width)); }
-		invalidate() {}
-	}
-	class SelectList {
-		onSelect?: (item: any) => void;
-		onCancel?: () => void;
-		private selected = 0;
-		constructor(private items: any[]) {}
-		render() { return this.items.map((item, index) => `${index === this.selected ? "> " : "  "}${item.label}`); }
-		handleInput(input: string) {
-			if (input === "\u001b[B") this.selected = Math.min(this.items.length - 1, this.selected + 1);
-			else if (input === "\u001b[A") this.selected = Math.max(0, this.selected - 1);
-			else if (input === "\r") this.onSelect?.(this.items[this.selected]);
-			else if (input === "\u001b") this.onCancel?.();
-		}
-	}
-	mock.module("@earendil-works/pi-tui", () => ({
-		Container, SelectList, Text,
-		sliceByColumn: (text: string, start: number, width?: number) => text.slice(start, width === undefined ? undefined : start + width),
-		truncateToWidth: (text: string, width: number, marker = "") => text.length <= width ? text : `${text.slice(0, Math.max(0, width - marker.length))}${marker}`,
-		visibleWidth: (text: string) => text.length,
-	}));
-}
-afterAll(() => mock.restore());
-
-const {
+import {
 	executePiUnattendedBatch,
-	default: registerBatchExtension,
-} = await import("../plugins/immune-brain/.pi-extension/imm-unattended-batch");
+	default as registerBatchExtension,
+} from "../plugins/immune-brain/.pi-extension/imm-unattended-batch";
 import type { GithubInitiativeObservation } from "../plugins/immune-brain/runtime/github_issue_tracker";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { revisionForContent } from "../plugins/immune-brain/runtime/kernel/storage";
