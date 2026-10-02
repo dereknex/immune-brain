@@ -525,7 +525,6 @@ async function startBatchLocked(input: StartBatchInput): Promise<BatchRunReport>
 			authorization_expires_at: input.authorization_expires_at,
 			budget: input.budget,
 			batch_state: "running",
-			consecutive_qa_failures: 0,
 			children: resumedChildren,
 		});
 	}

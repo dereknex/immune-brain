@@ -22,9 +22,9 @@ import { readGitHead } from "../kernel/pi_canary_prepare";
 import { readTaskIntent } from "../kernel/intent";
 import { localRunId, readAuditTaskPair, readTaskRecordRaw, readWorkspaceStateRaw } from "../kernel/storage";
 import { pathMatchesScope } from "../workspace_scope";
-import { projectBatchPlan } from "./batch_plan";
+import { DEFAULT_DEADLINE_MS, projectBatchPlan } from "./batch_plan";
 import { batchReason, type BatchReasonKey } from "./batch_reasons";
-import { isTerminalBatchState, type BatchRunStateRecord } from "./batch_state";
+import { isTerminalBatchState, readBatchRunState, type BatchRunStateRecord } from "./batch_state";
 import { readRunRowByTask, withKernelRead } from "../kernel/sqlite_store";
 import type {
 	BatchPlanBudget,
@@ -139,7 +139,13 @@ export function findExistingActiveBatch(root: string, initiativeSlug: string): B
 			return { corrupt: true, path: file };
 		}
 		if (isTerminalBatchState(candidate.batch_state)) continue;
-		return { corrupt: false, record: candidate };
+		try {
+			const record = readBatchRunState(root, file.slice(0, -5));
+			if (record) return { corrupt: false, record };
+		} catch {
+			// Reuse the state owner's full validation before offering a renewal.
+		}
+		return { corrupt: true, path: file };
 	}
 	return null;
 }
@@ -338,7 +344,11 @@ async function projectPlanSurface(input: {
 	let budget: BatchPlanBudget;
 
 	if (isResuming && existingBatch) {
-		budget = existingBatch.budget;
+		// Candidate only: renewal uses the same default window as a fresh plan,
+		// while preserving the confirmed count limits and the persisted record.
+		budget = { ...existingBatch.budget };
+		if (Date.parse(budget.deadline_at) <= Date.parse(now))
+			budget.deadline_at = new Date(Date.parse(now) + DEFAULT_DEADLINE_MS).toISOString();
 		try {
 			recoveryChildren = existingBatch.children.map((c) => {
 				const intentPath = `docs/plans/${c.task_id}.intent.json`;
@@ -678,9 +688,9 @@ export async function authorizeBatch<HostRejection>(
 	// so its expiry is the deadline the literal user confirmed rather than a fixed
 	// window that lapses while a child is parked on a foreground Review.
 	const isExistingExpired = isResuming && Date.parse(existingBatch!.authorization_expires_at) <= Date.now();
-	const expiresAt = isResuming && !isExistingExpired && existingBatch!.batch_state === "running"
-		? existingBatch!.authorization_expires_at
-		: budget.deadline_at;
+	const branchBefore = spawnSync("git", ["-C", root, "branch", "--show-current"], { encoding: "utf8" });
+	if (branchBefore.status !== 0)
+		return { outcome: "rejected", rejection: batchRejection("repository_became_unreadable") };
 
 	// ADR-0005 Decision 1: a resume of an intact, still-binding authorization
 	// reuses it instead of opening a second native gate. Anything that no longer
@@ -688,12 +698,14 @@ export async function authorizeBatch<HostRejection>(
 	const reuseBlockers: string[] = [];
 	if (isResuming && existingBatch) {
 		if (isExistingExpired) reuseBlockers.push("batch_authorization_expired");
+		if (Date.parse(existingBatch.budget.deadline_at) <= Date.now()) reuseBlockers.push("batch_budget_expired");
 		if (existingBatch.batch_state !== "running") reuseBlockers.push("batch_not_running");
 		if (existingBatch.plan_digest !== planDigest) reuseBlockers.push("batch_plan_digest_changed");
 		if (existingBatch.branch !== batchBranch) reuseBlockers.push("batch_branch_changed");
 		if (expectedBatchHead(existingBatch) !== baseHead) reuseBlockers.push("batch_head_lineage_moved");
 	}
 	const reuseAuthorization = isResuming && reuseBlockers.length === 0;
+	const expiresAt = reuseAuthorization ? existingBatch!.authorization_expires_at : budget.deadline_at;
 
 	const batchId = isResuming && existingBatch ? existingBatch.batch_id : `batch-${initiativeSlug}-${randomUUID()}`;
 	const facts: BatchConfirmationFacts = {
@@ -747,6 +759,19 @@ export async function authorizeBatch<HostRejection>(
 		isResuming && finalClaimTaskId !== null && isOwnBatchClaim(root, existingBatch!, finalClaimTaskId, batchBranch);
 	if (finalClaimTaskId && !finalOwnClaim)
 		return { outcome: "rejected", rejection: batchRejection("claim_appeared_during_confirmation", finalClaimTaskId) };
+
+	// Confirmation cannot adopt a changed record or extend its displayed window
+	// after the user answers. Re-read the clock and branch after the async checks.
+	if (isResuming) {
+		const current = findExistingActiveBatch(root, initiativeSlug);
+		if (!current || current.corrupt || JSON.stringify(current.record) !== JSON.stringify(existingBatch))
+			return { outcome: "rejected", rejection: batchRejection("plan_changed") };
+	}
+	const branchAfter = spawnSync("git", ["-C", root, "branch", "--show-current"], { encoding: "utf8" });
+	if (branchAfter.status !== 0 || branchAfter.stdout !== branchBefore.stdout)
+		return { outcome: "rejected", rejection: batchRejection("confirmation_failed", "Git branch moved after native confirmation") };
+	if (Date.parse(expiresAt) <= Date.now())
+		return { outcome: "rejected", rejection: batchRejection("confirmation_failed", "confirmed batch deadline expired before authorization issuance") };
 
 	const binding: BatchAuthorizationBinding = {
 		batch_id: batchId,
