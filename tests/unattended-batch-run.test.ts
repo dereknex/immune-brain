@@ -37,6 +37,15 @@ import {
 } from "../plugins/immune-brain/runtime/kernel/batch_authority";
 
 const FAR_FUTURE = "2099-01-01T00:00:00.000Z";
+function projectionFacts(): AssuranceProjectionResult["projection"] {
+	return {
+		run_id: null, record_revision: "r", workspace_revision: "w", intent_revision: 1, intent_content_hash: "sha256:intent", diff_hash: "sha256:diff",
+		lifecycle: "active", artifact_state: "active", risk: "material", next_obligation: "submit_assurance",
+		fresh_acceptance_ids: [], missing_acceptance_ids: [], stale_attestation_ids: [], fresh_approval_kinds: [], missing_approval_kinds: [],
+		blocking_finding_ids: [], unresolved_user_decision_ids: [], replan_required_ids: [], independence_violations: [],
+		open_user_decision_count: 0, completion_ready: false, authorization: { state: "none", blocked: null },
+	};
+}
 
 // Scripted unit fixtures model a Parent-ready snapshot between foreground calls.
 // The implementation/QA integration below uses the raw driver instead.
@@ -176,7 +185,7 @@ function scriptedKernel(advances: Record<string, BatchChildAdvanceResult[]>): Ba
 					task_id: taskId,
 					error: null,
 					claim: { task_id: taskId, lifecycle_status: "active" },
-					projection: { lifecycle: "active", completion_ready: false } as never,
+					projection: { ...projectionFacts(), lifecycle: "active", completion_ready: false } as never,
 				};
 			}
 			return {
@@ -184,7 +193,7 @@ function scriptedKernel(advances: Record<string, BatchChildAdvanceResult[]>): Ba
 					task_id: taskId,
 					error: null,
 					claim: null,
-					projection: { lifecycle: "active", completion_ready: false } as never,
+					projection: { ...projectionFacts(), lifecycle: "active", completion_ready: false } as never,
 			};
 		},
 		ownsTaskClaim(taskId) {
@@ -211,6 +220,7 @@ describe("foreground Executor handoff", () => {
 				contract: "assurance_kernel/assurance_projection/v1", task_id: taskId, error: null,
 				claim: kernel.enrolled.includes(taskId) ? { task_id: taskId, lifecycle_status: "active" } : null,
 				projection: {
+					...projectionFacts(),
 					run_id: kernel.enrolled.includes(taskId) ? "run-parent-handoff" : null,
 					record_revision: "revision-parent-handoff", lifecycle: "active", artifact_state: "active",
 					next_obligation: "submit_assurance", completion_ready: false,
@@ -701,20 +711,33 @@ describe("batch boundary regressions", () => {
 		} finally { rmSync(root, { recursive: true, force: true }); }
 	});
 
-	it.each(["start", "resume"])("%s parks Review rework immediately without consuming QA budget", async (entry) => {
+	it.each(["start", "resume"])("%s hands technical Review rework to Parent without consuming QA budget or asking for authorization", async (entry) => {
 		const root = tempRoot();
 		try {
-			const kernel = scriptedKernel({ "task-a": [{ state: "rework", operation: "review", summary: "blocking Review finding" }] });
+			const secret = "review-raw-output-canary";
+			const kernel = scriptedKernel({ "task-a": [{ state: "rework", operation: "review", summary: secret }] });
+			let repaired = false, calls = 0;
+			const advance = kernel.advanceTask.bind(kernel), project = kernel.projectTask.bind(kernel);
+			kernel.advanceTask = async (...args) => { calls++; const result = await advance(...args); repaired = true; return result; };
+			kernel.projectTask = async (...args) => {
+				const fresh = await project(...args);
+				return { ...fresh, projection: { ...fresh.projection, artifact_state: repaired ? "active" : "frozen",
+					next_obligation: repaired ? "resolve_findings" : "run_review", blocking_finding_ids: repaired ? ["review-A1"] : [], missing_acceptance_ids: ["A1"] } };
+			};
 			const request = input(root, [child("task-a", "S1"), child("task-b", "S2", ["task-a"]), child("task-c", "S3")], kernel);
 			if (entry === "resume") {
 				const prepared = prepareBatchRunState(request);
-				writeBatchRunState(root, { ...prepared, batch_state: "running",
-					children: prepared.children.map((c) => c.task_id === "task-a" ? { ...c, state: "enrolled" } : c) });
+				writeBatchRunState(root, { ...prepared, batch_state: "running", children: prepared.children.map(c => c.task_id === "task-a" ? { ...c, state: "enrolled" } : c) });
 				kernel.enrolled.push("task-a");
-			}
-			const report = entry === "start" ? await startBatch(request) : await resumeBatch(request, kernel.projectTask);
-			expect(report.batch_state).toBe("needs_human");
-			expect(report.children.map((c) => c.state)).toEqual(["needs_human", "skipped_blocked", "pending"]);
+			} else await startBatchOnce(request);
+			const report = entry === "start" ? await startBatchOnce(request) : await resumeBatchOnce(request, kernel.projectTask);
+			expect(report.batch_state).toBe("running");
+			expect(report.children.map(c => c.state)).toEqual(["enrolled", "pending", "pending"]);
+			expect(report.recovery).toMatchObject({ category: "repair", acceptance_ids: ["A1"], finding_ids: ["review-A1"], next_obligation: "resolve_findings" });
+			expect(report.next_action).toContain("resolve_finding");
+			expect(JSON.stringify(report)).not.toContain(secret);
+			await startBatchOnce(request);
+			expect(calls).toBe(1);
 			expect(readBatchRunState(root, "batch-001")!.consecutive_qa_failures).toBe(0);
 			expect(kernel.enrolled).toEqual(["task-a"]);
 			expect(kernel.commits).toEqual([]);
@@ -1147,7 +1170,7 @@ describe("startBatch state machine", () => {
 					task_id: "task-a",
 					error: null,
 					claim: null,
-					projection: { lifecycle: "active", completion_ready: false } as never,
+					projection: { ...projectionFacts(), lifecycle: "active", completion_ready: false } as never,
 				}) as never,
 			);
 			expect(report.batch_state).toBe("needs_human");

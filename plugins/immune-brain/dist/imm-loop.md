@@ -164,8 +164,24 @@ per completed child.
   and exactly one same-Host recovery action. Never recommend another Host,
   worktree, Direct Path, unmanaged implementation, or automatic retry.
 - After interruption, read a fresh projection and run only the pending obligation.
-  A committed QA result is honored; an interrupted precommit QA run produces no
-  approval. Do not rerun fresh QA simply because Review was interrupted.
+  `recovery` carries that task/run/record identity, affected acceptance/finding IDs
+  and one legal `next_action`; it is an observation, never execution readiness.
+  Own-claim technical rework goes to foreground Executor, not user authorization.
+  `review_preparation_failed` keeps the batch running/enrolled: repair the Review
+  evidence environment and resume `run_review`, retaining fresh QA without batch
+  re-confirmation.
+  Repair and verify the cause, then dispose each identified finding explicitly by
+  `resolve_finding` or evidence-bound `refute_finding`. Local green cannot close
+  findings or settle the task; obtain fresh Kernel QA and required Review.
+  Environment preparation/resolution/integrity failure is not an assertion finding.
+  Use its canonical descriptor reference/digest, phase/outcome, timing and byte
+  counts to diagnose; QA diagnostic metadata is capped at 16 KiB and contains no
+  stdout/stderr, argv, environment values or arbitrary executor error text.
+  A frozen child with `run_qa` pending returns to Parent; batch re-entry does not
+  blindly retry an unchanged failure. Fix the environment before a fresh attempt.
+  Scope/authority exceptions still use their existing native gates. A committed
+  QA result is honored; an interrupted precommit QA run produces no approval.
+  Do not rerun fresh QA simply because Review was interrupted.
 - Malformed or stale reviewer output is not a verdict. Keep the existing
   reservation only if the Host reports it valid; use its exact recovery action.
   Do not fabricate a pass or blindly redispatch Review.

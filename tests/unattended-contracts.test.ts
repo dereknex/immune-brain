@@ -358,7 +358,11 @@ const batchKernel = {
 		task_id: taskId,
 		error: null,
 		claim: enrolled ? { task_id: taskId, lifecycle_status: "active" } : null,
-		projection: { lifecycle: "active", artifact_state: implementationReady ? "frozen" : "active", next_obligation: "run_qa", completion_ready: false },
+		projection: { lifecycle: "active", artifact_state: implementationReady ? "frozen" : "active",
+			next_obligation: implementationReady ? (scenario === "resume" && advances === 0 ? "run_review" : "complete") : "run_qa",
+			completion_ready: implementationReady && (scenario !== "resume" || advances > 0),
+			record_revision: "fixture-revision", run_id: "fixture-run", missing_acceptance_ids: [],
+			blocking_finding_ids: [], unresolved_user_decision_ids: [], replan_required_ids: [], authorization: { state: "none", blocked: null } },
 	}),
 	ownsTaskClaim: (id) => enrolled && id === taskId,
 	advanceTask: async (taskRoot, id) => {

@@ -1761,6 +1761,9 @@ async function enrichAssuranceResult(
 }
 
 function nextActionForAssuranceResult(result: Record<string, unknown>, taskState: AssuranceTaskState): string {
+	if (result.recovery_error) return "inspect authority state";
+	const derived = result.recovery as { next_action: string } | undefined;
+	if (derived) return derived.next_action;
 	const recovery = recoveryActionForAssuranceFailure(
 		"error" in taskState ? taskState.error : result.reason,
 	);

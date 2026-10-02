@@ -257,8 +257,8 @@ export async function executePiUnattendedBatch(
 		projectTask: async (taskRoot, taskId) => {
 			const fresh = await projectAssuranceForTask(taskRoot, taskId);
 			if (!fresh.claim || fresh.projection.lifecycle !== "active" || fresh.error !== null) return fresh;
-			const { record } = await readTaskRecord(taskRoot, taskId);
-			if (!record) throw new Error(`Kernel record disappeared for ${taskId}`);
+			const { record, revision } = await readTaskRecord(taskRoot, taskId);
+			if (!record || revision !== fresh.projection.record_revision) throw new Error(`Kernel recovery projection changed for ${taskId}`);
 			return { ...fresh, ...batchQaFailureFacts(record) };
 		},
 		ownsTaskClaim: (taskId) => {

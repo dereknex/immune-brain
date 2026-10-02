@@ -1,0 +1,47 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "batch-execution-recovery-s2-failure-recovery",
+  "owner": "user",
+  "goal": "Make batch failure recovery reflect fresh Kernel obligations and findings, and expose safe check diagnostics so repair, finding disposition and fresh Assurance lead to settlement without redundant human approval.",
+  "acceptance": [
+    {
+      "id": "BER-S2-A1",
+      "assertion": "Meet S2 in docs/specs/batch-execution-recovery.spec.md: both Hosts return the fresh Kernel obligation and specific task/acceptance/finding identities with one legal recovery action. Ordinary own-claim technical repair is not presented as user authorization, unchanged QA is not retried blindly, environment failures remain distinct, and local green cannot settle a task with open findings. Behavioral tests exercise repair, verified finding disposition, fresh deterministic QA and required Review before settlement. QA diagnostics contain only bounded allowlisted descriptor identity, phase/outcome/timing and byte-count metadata; injected raw stdout/stderr and secret-bearing arguments/environment values never enter reports, findings, TaskRecord, audit or tracker evidence.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/shared-deterministic-qa.test.ts\",\n      \"tests/host-neutral-assurance-coordinator.test.ts\",\n      \"tests/unattended-batch-run.test.ts\",\n      \"tests/pi-batch-authority.test.ts\",\n      \"tests/claude-batch-authority.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    "docs/plans/batch-execution-recovery-s2-failure-recovery.intent.json",
+    "docs/specs/batch-execution-recovery.spec.md",
+    "plugins/immune-brain/.pi-extension/imm-canary-work.ts",
+    "plugins/immune-brain/.pi-extension/imm-unattended-batch.ts",
+    "plugins/immune-brain/.pi-extension/pi-canary-assurance-progression.ts",
+    "plugins/immune-brain/.pi-extension/runtime-stub.ts",
+    "plugins/immune-brain/dist/claude/mcp-server.mjs",
+    "plugins/immune-brain/dist/imm-loop.md",
+    "plugins/immune-brain/runtime/assurance/coordinator.ts",
+    "plugins/immune-brain/runtime/assurance/host_port.ts",
+    "plugins/immune-brain/runtime/assurance/qa.ts",
+    "plugins/immune-brain/runtime/claude/kernel_ports.ts",
+    "plugins/immune-brain/runtime/claude/mcp_server.ts",
+    "plugins/immune-brain/runtime/unattended/batch_plan.ts",
+    "plugins/immune-brain/runtime/unattended/batch_preflight.ts",
+    "plugins/immune-brain/runtime/unattended/batch_reasons.ts",
+    "plugins/immune-brain/runtime/unattended/batch_runner.ts",
+    "plugins/immune-brain/runtime/unattended/batch_state.ts",
+    "plugins/immune-brain/runtime/unattended/types.ts",
+    "tests/claude-batch-authority.test.ts",
+    "tests/claude-host-package.test.ts",
+    "tests/dual-host-assurance-conformance.test.ts",
+    "tests/host-neutral-assurance-coordinator.test.ts",
+    "tests/packaged-contract-tool-surface.test.ts",
+    "tests/pi-batch-authority.test.ts",
+    "tests/pi-canary-assurance-observability.test.ts",
+    "tests/pi-canary-verification-descriptor.test.ts",
+    "tests/shared-deterministic-qa.test.ts",
+    "tests/unattended-batch-run.test.ts",
+    "tests/unattended-contracts.test.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}

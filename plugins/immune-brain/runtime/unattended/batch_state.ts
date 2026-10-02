@@ -323,6 +323,9 @@ export interface BatchRunReport {
 		record_revision: string;
 		next_obligation: import("../kernel/types").AssuranceObligation;
 	};
+	/** Safe observation only; never an execution-readiness certificate. */
+	recovery?: import("../assurance/coordinator").AssuranceRecovery;
+	diagnostics?: import("../assurance/qa").QaCheckDiagnostic[];
 	/** The single next action for the operator. */
 	next_action: string;
 	created_at: string;

@@ -616,10 +616,20 @@ describe("project-owned-verification", () => {
 		const results: unknown[] = [];
 		for (const host of ["pi", "claude"] as const) {
 			const taskId = `prepare-failure-${host}`, root = projectVerificationFixture(taskId, "prepare-fail");
-			try { results.push(await projectVerificationCoordinator(root, host).coordinator.advance(taskId, { cwd: root } as never)); }
-			finally { rmSync(root, { recursive: true, force: true }); }
+			try {
+				const driven = projectVerificationCoordinator(root, host);
+				const result = await driven.coordinator.advance(taskId, { cwd: root } as never);
+				const fresh = await driven.ports.projectTask(root, taskId);
+				expect(result.recovery).toMatchObject({ category: "environment", task_id: taskId,
+					run_id: fresh.projection.run_id, record_revision: fresh.projection.record_revision, next_obligation: "run_qa" });
+				expect(result.diagnostics![0]!.elapsed_ms).toBeGreaterThanOrEqual(0);
+				results.push(result);
+			} finally { rmSync(root, { recursive: true, force: true }); }
 		}
-		const comparable = (results as Array<Record<string, unknown>>).map(({ operation_id: _operationId, ...result }) => result);
+		const comparable = (results as Array<any>).map(({ operation_id: _operationId, recovery, diagnostics, ...result }) => ({
+			...result, recovery: (({ task_id, run_id, record_revision, ...rest }) => rest)(recovery),
+			diagnostics: diagnostics.map(({ elapsed_ms, ...rest }) => rest),
+		}));
 		expect(comparable[0]).toEqual(comparable[1]);
 		expect(comparable[0]).toMatchObject({ state: "failed", operation: "qa" });
 		expect(JSON.stringify(comparable[0])).toContain("QA prepare failed");
@@ -629,6 +639,7 @@ describe("project-owned-verification", () => {
 				const result = await projectVerificationCoordinator(root, host).coordinator.advance(taskId, { cwd: root } as never);
 				expect(result).toMatchObject({ state: "failed", operation: "qa" });
 				expect(JSON.stringify(result)).toContain("verification_contract_migration_required");
+				expect(result.recovery).toMatchObject({ category: "authorization", task_id: taskId, next_action: expect.stringContaining("native gate") });
 			} finally { rmSync(root, { recursive: true, force: true }); }
 		}
 	});
@@ -1996,6 +2007,15 @@ describe("dual-host assurance conformance", () => {
 			const sharedReplaySlug = "conf-replay";
 			const cf = createConformanceFixture(`${sharedReplaySlug}-c`);
 			const pf = createConformanceFixture(`${sharedReplaySlug}-p`);
+			for (const [fixture, suffix] of [[cf, "c"], [pf, "p"]] as const) {
+				const intentPath = `docs/plans/${sharedReplaySlug}-${suffix}-c1.intent.json`;
+				const intent = JSON.parse(readFileSync(join(fixture.root, intentPath), "utf8"));
+				intent.acceptance[0].verification = JSON.stringify({ contract: "assurance_kernel/verification_descriptor/v2",
+					command: { executable: "bun", argv: ["--version"], cwd: ".", timeout_ms: 10000, max_output_bytes: 8192 } });
+				writeFileSync(join(fixture.root, intentPath), JSON.stringify(intent, null, 2) + "\n");
+				execFileSync("git", ["add", intentPath], { cwd: fixture.root });
+				execFileSync("git", ["commit", "-qm", "structured replay verification"], { cwd: fixture.root });
+			}
 
 			let cLastCommit: string | null = null;
 			const cr = createMcpRuntime({
@@ -2004,12 +2024,6 @@ describe("dual-host assurance conformance", () => {
 				interactive: true,
 				readInitiative: async () => cf.observation,
 				batchKernel: {
-					advanceTask: async () => {
-						releaseWorkspaceForTest(cf.root);
-						const claimPath = join(cf.root, ".imm", "state", "active-claim.json");
-						if (existsSync(claimPath)) rmSync(claimPath, { force: true });
-						return { state: "completed" };
-					},
 					commitChild: async () => {
 						writeFileSync(join(cf.root, "dummy.txt"), `${Date.now()}`);
 						execFileSync("git", ["add", "dummy.txt"], { cwd: cf.root });
@@ -2031,6 +2045,8 @@ describe("dual-host assurance conformance", () => {
 			await cr.runtime.kernelPorts().applyOrdinaryOperation({ cwd: cf.root }, {
 				taskId: `${sharedReplaySlug}-c-c1`, operation: { op: "freeze_artifacts", actor_id: "executor" },
 			});
+			expect((await cr.runtime.advance(`${sharedReplaySlug}-c-c1`)).state).toBe("completed");
+			execFileSync("git", ["add", `.imm/audit/${sharedReplaySlug}-c-c1`], { cwd: cf.root });
 			cRes1 = await cr.callTool("start_unattended_batch", { initiative_slug: `${sharedReplaySlug}-c` }, { toolCallId: "toolu-rp-ready" });
 
 			let pLastCommit: string | null = null;
@@ -2040,12 +2056,6 @@ describe("dual-host assurance conformance", () => {
 				interactive: true,
 				readInitiative: async () => pf.observation,
 				batchKernel: {
-					advanceTask: async () => {
-						releaseWorkspaceForTest(pf.root);
-						const claimPath = join(pf.root, ".imm", "state", "active-claim.json");
-						if (existsSync(claimPath)) rmSync(claimPath, { force: true });
-						return { state: "completed" };
-					},
 					commitChild: async () => {
 						writeFileSync(join(pf.root, "dummy.txt"), `${Date.now()}`);
 						execFileSync("git", ["add", "dummy.txt"], { cwd: pf.root });
@@ -2066,6 +2076,10 @@ describe("dual-host assurance conformance", () => {
 			await createPiAssuranceProgressionPorts().applyOrdinaryOperation({ cwd: pf.root }, {
 				taskId: `${sharedReplaySlug}-p-c1`, operation: { op: "freeze_artifacts", actor_id: "executor" },
 			});
+			const { AssuranceCoordinator: PiCoordinator } = await import("../plugins/immune-brain/runtime/assurance/coordinator");
+			const piProgression = new PiCoordinator(createPiAssuranceProgressionPorts() as never);
+			expect((await piProgression.advance(`${sharedReplaySlug}-p-c1`, { cwd: pf.root })).state).toBe("completed");
+			execFileSync("git", ["add", `.imm/audit/${sharedReplaySlug}-p-c1`], { cwd: pf.root });
 			pRes1 = await executePiUnattendedBatch(replayOptions);
 
 			expect(cRes1.state).toBe("started");

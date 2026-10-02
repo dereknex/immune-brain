@@ -22,6 +22,7 @@ import type { TaskIntentIdentityToken } from "../kernel/intent_token_registry";
 import type { AssuranceHostPort, HostReviewReservation } from "./host_port";
 import type { GithubTrackerResult as GithubTrackerProjectionResult } from "../github_issue_tracker";
 
+
 export type AssuranceRole = "qa" | "review";
 export interface AssuranceCorrelation {
 	record_revision: string;
@@ -38,7 +39,8 @@ export interface TaskTombstone {
 	terminal_event_id: string;
 }
 export interface TaskRecordRead {
-	record?: { contract?: string; findings: Array<{ kind: string; status: string }> } | null;
+	revision?: string;
+	record?: { contract?: string; findings: Array<{ kind: string; status: string; id?: string; acceptance_id?: string | null }> } | null;
 }
 export interface TaskIntentRead {
 	/**
@@ -211,12 +213,102 @@ export interface SnapshotDescriptor {
 	root: string;
 }
 
-export interface QaVerificationProgress {
+export type QaPreparationReason = "executable_or_cwd_unavailable" | "process_launch_failed" | "process_cleanup_failed"
+	| "protected_input_or_output_drift" | "execution_metadata_limit_exceeded" | "timeout" | "output_limit" | "nonzero_exit"
+	| "execution_failed" | "command_identity_changed" | "delivery_cleanup_failed" | "delivery_unavailable";
+export interface QaCheckDiagnostic {
+	acceptance_id: string;
+	descriptor_ref: string;
+	descriptor_digest: string;
+	stage: "resolution" | "prepare" | "check" | "integrity";
+	outcome: "running" | "passed" | QaPreparationReason;
+	elapsed_ms: number;
+	exit_code: number | null;
+	stdout_bytes: number | null;
+	stderr_bytes: number | null;
+}
+
+const QA_STAGES = ["resolution", "prepare", "check", "integrity"];
+const QA_OUTCOMES = ["running", "passed", "executable_or_cwd_unavailable", "process_launch_failed", "process_cleanup_failed",
+	"protected_input_or_output_drift", "execution_metadata_limit_exceeded", "timeout", "output_limit", "nonzero_exit", "execution_failed",
+	"command_identity_changed", "delivery_cleanup_failed", "delivery_unavailable"];
+/** The Tool boundary never spreads arbitrary executor fields. */
+export function qaDiagnosticMetadata(d: QaCheckDiagnostic): QaCheckDiagnostic {
+	if (typeof d.acceptance_id !== "string" || !d.acceptance_id
+		|| !/^acceptance\/\d{1,6}\/verification\/(command|environment\/prepare)$/.test(d.descriptor_ref)
+		|| !/^sha256:[a-f0-9]{64}$/.test(d.descriptor_digest) || !QA_STAGES.includes(d.stage) || !QA_OUTCOMES.includes(d.outcome)
+		|| !Number.isFinite(d.elapsed_ms) || d.elapsed_ms < 0
+		|| [d.stdout_bytes, d.stderr_bytes].some(n => n !== null && (!Number.isSafeInteger(n) || n < 0))
+		|| (d.exit_code !== null && !Number.isSafeInteger(d.exit_code))) throw new Error("invalid QA diagnostic metadata");
+	const safe = { acceptance_id: d.acceptance_id, descriptor_ref: d.descriptor_ref, descriptor_digest: d.descriptor_digest,
+		stage: d.stage, outcome: d.outcome, elapsed_ms: d.elapsed_ms, exit_code: d.exit_code, stdout_bytes: d.stdout_bytes, stderr_bytes: d.stderr_bytes };
+	if (Buffer.byteLength(JSON.stringify(safe)) > 16_384) throw new QaPreparationError("prepare", [], "execution_metadata_limit_exceeded");
+	return safe;
+}
+
+export interface QaVerificationProgressInput {
 	index: number;
 	total: number;
 	acceptance_id: string;
 	phase: "running" | "passed" | "failed";
 	elapsed_ms: number;
+	diagnostic?: QaCheckDiagnostic;
+}
+
+export class QaPreparationError extends Error {
+	constructor(public readonly stage: QaCheckDiagnostic["stage"], public readonly acceptance_ids: string[], public readonly reason: QaPreparationReason,
+		public readonly diagnostics: QaCheckDiagnostic[] = []) {
+		if (!QA_STAGES.includes(stage) || !QA_OUTCOMES.includes(reason)) throw new Error("invalid QA preparation classification");
+		const safe = diagnostics.map(qaDiagnosticMetadata);
+		if (Buffer.byteLength(JSON.stringify(safe)) > 16_384) throw new QaPreparationError("prepare", [], "execution_metadata_limit_exceeded");
+		super(`QA ${stage} failed (${reason}); affected checks=${acceptance_ids.length}`);
+		this.diagnostics = safe;
+		this.name = "QaPreparationError";
+	}
+}
+
+export type QaVerificationProgress = QaVerificationProgressInput;
+
+export interface AssuranceRecovery {
+	category: "repair" | "environment" | "authorization";
+	task_id: string;
+	run_id: string | null;
+	record_revision: string;
+	next_obligation: AssuranceProjectionResult["projection"]["next_obligation"];
+	acceptance_ids: string[];
+	finding_ids: string[];
+	next_action: string;
+}
+
+/** Observation only; fresh Kernel facts remain the sole owner of the obligation. */
+export function deriveAssuranceRecovery(taskId: string, fresh: AssuranceProjectionResult,
+	result: { state?: string; environment_failure?: boolean; diagnostics?: QaCheckDiagnostic[]; reason?: string },
+	findings: NonNullable<TaskRecordRead["record"]>["findings"] = []): AssuranceRecovery | null {
+	if (fresh.error || fresh.claim?.task_id !== taskId || fresh.projection.lifecycle !== "active") return null;
+	const p = fresh.projection;
+	const findingIds = [...p.blocking_finding_ids, ...p.unresolved_user_decision_ids, ...p.replan_required_ids];
+	const scope = result.reason?.includes("task delivery contains paths outside the authorization envelope");
+	const migration = result.reason?.includes("verification_contract_migration_required");
+	const unstaged = result.reason?.includes("task delivery has unstaged or untracked changes");
+	const reviewPreparation = result.state === "review_preparation_failed" && p.next_obligation === "run_review";
+	const authority = scope || migration || p.next_obligation === "resolve_user_decision" || p.next_obligation === "revise_intent"
+		|| p.unresolved_user_decision_ids.length > 0 || p.replan_required_ids.length > 0 || p.authorization.state !== "none";
+	const repair = unstaged || p.next_obligation === "resolve_findings" || p.blocking_finding_ids.length > 0;
+	if (!authority && !repair && !result.environment_failure && !reviewPreparation) return null;
+	const affected = findings.filter(f => f.status === "open" && f.id && findingIds.includes(f.id) && f.acceptance_id).map(f => f.acceptance_id!);
+	const category = authority ? "authorization" : repair ? "repair" : "environment";
+	return { category, task_id: taskId, run_id: p.run_id ?? null, record_revision: p.record_revision,
+		next_obligation: p.next_obligation, finding_ids: findingIds,
+		acceptance_ids: [...new Set(affected.length ? affected : result.diagnostics?.length ? result.diagnostics.map(d => d.acceptance_id) : reviewPreparation ? p.fresh_acceptance_ids : p.missing_acceptance_ids)],
+		next_action: scope ? "Reconcile the listed paths with the TaskIntent scope: unstage unrelated changes or submit the required native Intent revision."
+			: migration ? "route Planner for the verification descriptor v2 Intent revision and native gate"
+			: category === "authorization"
+			? p.authorization.blocked ? "inspect authority state" : p.next_obligation === "revise_intent" ? "route Planner for the required Intent revision and native gate" : "request_authorization"
+			: unstaged ? "Stage only the scoped implementation changes, then call advance_assurance."
+			: category === "repair" ? "Route foreground Executor to repair and verify the identified findings; dispose each by resolve_finding or evidence-bound refute_finding, then run fresh advance_assurance."
+			: reviewPreparation ? "Repair the Review evidence environment, then call advance_assurance to resume run_review; retain fresh QA and do not re-confirm the batch."
+			: "Repair the identified verification environment, then call advance_assurance; a local check is non-attesting.",
+	};
 }
 
 export interface ForegroundToolUpdate {
@@ -224,7 +316,13 @@ export interface ForegroundToolUpdate {
 	details: Record<string, unknown>;
 }
 
-export type AssuranceAdvanceResult =
+type AssuranceRecoveryFields = {
+	diagnostics?: QaCheckDiagnostic[];
+	environment_failure?: boolean;
+	recovery?: AssuranceRecovery;
+	recovery_error?: "fresh_kernel_projection_unavailable";
+};
+export type AssuranceAdvanceResult = AssuranceRecoveryFields & (
 	| { state: "review_ready"; operation: "review"; operation_id: string; snapshot_digest: string; review_bundle_digest: string; agent_params: unknown }
 	| { state: "rework"; operation: "qa"; operation_id: string; summary: string }
 	| { state: "cancelled"; operation: "qa" | "review"; operation_id: string; reason: string }
@@ -238,14 +336,14 @@ export type AssuranceAdvanceResult =
 	| { state: "settlement_unknown"; operation: "qa" | "review"; operation_id: string; reason: string }
 	| { state: "blocked"; reason: string; code?: "verdict_invalid" }
 	| { state: "completed" }
-	| { state: "stopped" };
+	| { state: "stopped" });
 
-export type AssuranceSubmitReviewResult =
+export type AssuranceSubmitReviewResult = AssuranceRecoveryFields & (
 	| { state: "rework"; operation: "review"; operation_id: string; summary: string }
 	| { state: "review_preparation_failed"; operation: "review"; operation_id: string; reason: string }
 	| { state: "completed" }
 	| { state: "settlement_unknown"; operation: "qa" | "review"; operation_id: string; reason: string }
-	| { state: "blocked"; reason: string; code?: "verdict_invalid" };
+	| { state: "blocked"; reason: string; code?: "verdict_invalid" });
 
 export type ActiveAssuranceState =
 	| { state: "running"; operation: "qa"; operation_id: string; deadline_seconds: number }
@@ -663,6 +761,36 @@ export class AssuranceCoordinator {
 	sessionGenerationValue(): number { return this.sessionGeneration; }
 
 	async advance(taskId: string, ctx: HostContext, signal?: AbortSignal, onUpdate?: (update: ForegroundToolUpdate) => void): Promise<AssuranceAdvanceResult> {
+		const checks = new Map<string, QaCheckDiagnostic>();
+		const result = await this.advanceOnce(taskId, ctx, signal, update => {
+			const diagnostic = update.details.diagnostic as QaCheckDiagnostic | undefined;
+			if (diagnostic) {
+				checks.set(diagnostic.descriptor_ref, diagnostic);
+				if (Buffer.byteLength(JSON.stringify([...checks.values()])) > 16_384)
+					throw new QaPreparationError("prepare", [diagnostic.acceptance_id], "execution_metadata_limit_exceeded",
+						[{ ...diagnostic, stage: "prepare", outcome: "execution_metadata_limit_exceeded" }]);
+			}
+			onUpdate?.(update);
+		});
+		const diagnostics = result.diagnostics ?? [...checks.values()];
+		return this.withRecovery(taskId, ctx, diagnostics.length ? { ...result, diagnostics } : result);
+	}
+
+	private async withRecovery<T extends AssuranceAdvanceResult | AssuranceSubmitReviewResult>(taskId: string, ctx: HostContext, enriched: T): Promise<T> {
+		if (!["failed", "blocked", "rework", "review_preparation_failed"].includes(enriched.state)) return enriched;
+		try {
+			const fresh = await this.ports.projectTask(ctx.cwd, taskId);
+			if (fresh.error || fresh.claim?.task_id !== taskId || fresh.projection.lifecycle !== "active")
+				return { ...enriched, recovery_error: "fresh_kernel_projection_unavailable" };
+			const record = await this.ports.readTaskRecord(ctx.cwd, taskId);
+			if (!record.record || record.revision !== fresh.projection.record_revision)
+				return { ...enriched, recovery_error: "fresh_kernel_projection_unavailable" };
+			const recovery = deriveAssuranceRecovery(taskId, fresh, enriched, record.record?.findings);
+			return recovery ? { ...enriched, recovery } : enriched;
+		} catch { return { ...enriched, recovery_error: "fresh_kernel_projection_unavailable" }; }
+	}
+
+	private async advanceOnce(taskId: string, ctx: HostContext, signal?: AbortSignal, onUpdate?: (update: ForegroundToolUpdate) => void): Promise<AssuranceAdvanceResult> {
 		if (this.isInvocationOpen(taskId)) return { state: "blocked", reason: "an authority invocation is already open" };
 		const active = this.active(taskId);
 		if (active?.state === "review_ready") {
@@ -822,6 +950,7 @@ export class AssuranceCoordinator {
 					operationController.abort(new Error(`deterministic QA exceeded its declared ${Math.ceil(qaJobTimeoutMs / 60_000)} minute job budget`));
 				}, qaJobTimeoutMs);
 				try {
+					phase = "verifying";
 					qaVerdict = await this.ports.runQa(assurance.snapshot, assurance.descriptors, {
 						signal: operationController.signal,
 						onProgress: (item) => progress("verifying", `QA ${item.index}/${item.total} ${item.acceptance_id} ${item.phase}`, {
@@ -830,6 +959,7 @@ export class AssuranceCoordinator {
 							acceptance_id: item.acceptance_id,
 							acceptance_phase: item.phase,
 							elapsed_ms: item.elapsed_ms,
+							...(item.diagnostic ? { diagnostic: qaDiagnosticMetadata(item.diagnostic) } : {}),
 						}),
 					});
 				} finally {
@@ -950,6 +1080,12 @@ export class AssuranceCoordinator {
 			progress("review_ready", "QA passed; invoke the reserved foreground Agent, then call submit_review", { snapshot_digest: snapshotDigest(review.snapshot), review_bundle_digest: review.snapshot.review_bundle_digest ?? "", agent_params: hostReservation.dispatch });
 			return { state: "review_ready", operation: "review", operation_id: operationId, snapshot_digest: snapshotDigest(review.snapshot), review_bundle_digest: review.snapshot.review_bundle_digest ?? "", agent_params: hostReservation.dispatch };
 		} catch (error) {
+			if (error instanceof QaPreparationError && !authorityCommitted && !authorityBoundaryStarted && !aborted())
+				return { state: "failed", operation: "qa", operation_id: operationId, reason: error.message,
+					environment_failure: true, diagnostics: error.diagnostics.map(qaDiagnosticMetadata) };
+			if (phase === "verifying" && !authorityCommitted && !authorityBoundaryStarted && !aborted() && !(error instanceof VerificationAbortedError))
+				return { state: "failed", operation: "qa", operation_id: operationId,
+					reason: "QA execution failed before attestation (execution_failed)", environment_failure: true };
 			if (reviewPreparationStarted) {
 				const reason = aborted() || error instanceof VerificationAbortedError
 					? `${phase}: host cancellation`
@@ -980,6 +1116,10 @@ export class AssuranceCoordinator {
 	}
 
 	async submitReview(taskId: string, ctx: HostContext, verdictInput: unknown): Promise<AssuranceSubmitReviewResult> {
+		return this.withRecovery(taskId, ctx, await this.submitReviewOnce(taskId, ctx, verdictInput));
+	}
+
+	private async submitReviewOnce(taskId: string, ctx: HostContext, verdictInput: unknown): Promise<AssuranceSubmitReviewResult> {
 		const unknown = this.unknownOperations.get(taskId);
 		if (unknown) return { state: "settlement_unknown", operation: unknown.operation, operation_id: unknown.operationId, reason: unknown.reason };
 		const rejected = this.rejectedReviewOperations.get(taskId);

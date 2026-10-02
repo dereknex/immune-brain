@@ -1362,6 +1362,88 @@ function reviewAdvisoryRecords(verdict) {
     evidence: finding.evidence ?? null
   }));
 }
+var QA_STAGES = ["resolution", "prepare", "check", "integrity"];
+var QA_OUTCOMES = [
+  "running",
+  "passed",
+  "executable_or_cwd_unavailable",
+  "process_launch_failed",
+  "process_cleanup_failed",
+  "protected_input_or_output_drift",
+  "execution_metadata_limit_exceeded",
+  "timeout",
+  "output_limit",
+  "nonzero_exit",
+  "execution_failed",
+  "command_identity_changed",
+  "delivery_cleanup_failed",
+  "delivery_unavailable"
+];
+function qaDiagnosticMetadata(d) {
+  if (typeof d.acceptance_id !== "string" || !d.acceptance_id || !/^acceptance\/\d{1,6}\/verification\/(command|environment\/prepare)$/.test(d.descriptor_ref) || !/^sha256:[a-f0-9]{64}$/.test(d.descriptor_digest) || !QA_STAGES.includes(d.stage) || !QA_OUTCOMES.includes(d.outcome) || !Number.isFinite(d.elapsed_ms) || d.elapsed_ms < 0 || [d.stdout_bytes, d.stderr_bytes].some((n) => n !== null && (!Number.isSafeInteger(n) || n < 0)) || d.exit_code !== null && !Number.isSafeInteger(d.exit_code))
+    throw new Error("invalid QA diagnostic metadata");
+  const safe = {
+    acceptance_id: d.acceptance_id,
+    descriptor_ref: d.descriptor_ref,
+    descriptor_digest: d.descriptor_digest,
+    stage: d.stage,
+    outcome: d.outcome,
+    elapsed_ms: d.elapsed_ms,
+    exit_code: d.exit_code,
+    stdout_bytes: d.stdout_bytes,
+    stderr_bytes: d.stderr_bytes
+  };
+  if (Buffer.byteLength(JSON.stringify(safe)) > 16384)
+    throw new QaPreparationError("prepare", [], "execution_metadata_limit_exceeded");
+  return safe;
+}
+
+class QaPreparationError extends Error {
+  stage;
+  acceptance_ids;
+  reason;
+  diagnostics;
+  constructor(stage, acceptance_ids, reason, diagnostics = []) {
+    if (!QA_STAGES.includes(stage) || !QA_OUTCOMES.includes(reason))
+      throw new Error("invalid QA preparation classification");
+    const safe = diagnostics.map(qaDiagnosticMetadata);
+    if (Buffer.byteLength(JSON.stringify(safe)) > 16384)
+      throw new QaPreparationError("prepare", [], "execution_metadata_limit_exceeded");
+    super(`QA ${stage} failed (${reason}); affected checks=${acceptance_ids.length}`);
+    this.stage = stage;
+    this.acceptance_ids = acceptance_ids;
+    this.reason = reason;
+    this.diagnostics = diagnostics;
+    this.diagnostics = safe;
+    this.name = "QaPreparationError";
+  }
+}
+function deriveAssuranceRecovery(taskId, fresh, result, findings = []) {
+  if (fresh.error || fresh.claim?.task_id !== taskId || fresh.projection.lifecycle !== "active")
+    return null;
+  const p = fresh.projection;
+  const findingIds = [...p.blocking_finding_ids, ...p.unresolved_user_decision_ids, ...p.replan_required_ids];
+  const scope = result.reason?.includes("task delivery contains paths outside the authorization envelope");
+  const migration = result.reason?.includes("verification_contract_migration_required");
+  const unstaged = result.reason?.includes("task delivery has unstaged or untracked changes");
+  const reviewPreparation = result.state === "review_preparation_failed" && p.next_obligation === "run_review";
+  const authority = scope || migration || p.next_obligation === "resolve_user_decision" || p.next_obligation === "revise_intent" || p.unresolved_user_decision_ids.length > 0 || p.replan_required_ids.length > 0 || p.authorization.state !== "none";
+  const repair = unstaged || p.next_obligation === "resolve_findings" || p.blocking_finding_ids.length > 0;
+  if (!authority && !repair && !result.environment_failure && !reviewPreparation)
+    return null;
+  const affected = findings.filter((f) => f.status === "open" && f.id && findingIds.includes(f.id) && f.acceptance_id).map((f) => f.acceptance_id);
+  const category = authority ? "authorization" : repair ? "repair" : "environment";
+  return {
+    category,
+    task_id: taskId,
+    run_id: p.run_id ?? null,
+    record_revision: p.record_revision,
+    next_obligation: p.next_obligation,
+    finding_ids: findingIds,
+    acceptance_ids: [...new Set(affected.length ? affected : result.diagnostics?.length ? result.diagnostics.map((d) => d.acceptance_id) : reviewPreparation ? p.fresh_acceptance_ids : p.missing_acceptance_ids)],
+    next_action: scope ? "Reconcile the listed paths with the TaskIntent scope: unstage unrelated changes or submit the required native Intent revision." : migration ? "route Planner for the verification descriptor v2 Intent revision and native gate" : category === "authorization" ? p.authorization.blocked ? "inspect authority state" : p.next_obligation === "revise_intent" ? "route Planner for the required Intent revision and native gate" : "request_authorization" : unstaged ? "Stage only the scoped implementation changes, then call advance_assurance." : category === "repair" ? "Route foreground Executor to repair and verify the identified findings; dispose each by resolve_finding or evidence-bound refute_finding, then run fresh advance_assurance." : reviewPreparation ? "Repair the Review evidence environment, then call advance_assurance to resume run_review; retain fresh QA and do not re-confirm the batch." : "Repair the identified verification environment, then call advance_assurance; a local check is non-attesting."
+  };
+}
 var QA_MIN_JOB_TIMEOUT_SECONDS = 15 * 60;
 var QA_MAX_JOB_TIMEOUT_SECONDS = 60 * 60;
 var QA_JOB_OVERHEAD_SECONDS = 2 * 60;
@@ -1673,6 +1755,36 @@ class AssuranceCoordinator {
     return this.sessionGeneration;
   }
   async advance(taskId, ctx, signal, onUpdate) {
+    const checks = new Map;
+    const result = await this.advanceOnce(taskId, ctx, signal, (update) => {
+      const diagnostic = update.details.diagnostic;
+      if (diagnostic) {
+        checks.set(diagnostic.descriptor_ref, diagnostic);
+        if (Buffer.byteLength(JSON.stringify([...checks.values()])) > 16384)
+          throw new QaPreparationError("prepare", [diagnostic.acceptance_id], "execution_metadata_limit_exceeded", [{ ...diagnostic, stage: "prepare", outcome: "execution_metadata_limit_exceeded" }]);
+      }
+      onUpdate?.(update);
+    });
+    const diagnostics = result.diagnostics ?? [...checks.values()];
+    return this.withRecovery(taskId, ctx, diagnostics.length ? { ...result, diagnostics } : result);
+  }
+  async withRecovery(taskId, ctx, enriched) {
+    if (!["failed", "blocked", "rework", "review_preparation_failed"].includes(enriched.state))
+      return enriched;
+    try {
+      const fresh = await this.ports.projectTask(ctx.cwd, taskId);
+      if (fresh.error || fresh.claim?.task_id !== taskId || fresh.projection.lifecycle !== "active")
+        return { ...enriched, recovery_error: "fresh_kernel_projection_unavailable" };
+      const record = await this.ports.readTaskRecord(ctx.cwd, taskId);
+      if (!record.record || record.revision !== fresh.projection.record_revision)
+        return { ...enriched, recovery_error: "fresh_kernel_projection_unavailable" };
+      const recovery = deriveAssuranceRecovery(taskId, fresh, enriched, record.record?.findings);
+      return recovery ? { ...enriched, recovery } : enriched;
+    } catch {
+      return { ...enriched, recovery_error: "fresh_kernel_projection_unavailable" };
+    }
+  }
+  async advanceOnce(taskId, ctx, signal, onUpdate) {
     if (this.isInvocationOpen(taskId))
       return { state: "blocked", reason: "an authority invocation is already open" };
     const active = this.active(taskId);
@@ -1824,6 +1936,7 @@ class AssuranceCoordinator {
           operationController.abort(new Error(`deterministic QA exceeded its declared ${Math.ceil(qaJobTimeoutMs / 60000)} minute job budget`));
         }, qaJobTimeoutMs);
         try {
+          phase = "verifying";
           qaVerdict = await this.ports.runQa(assurance.snapshot, assurance.descriptors, {
             signal: operationController.signal,
             onProgress: (item) => progress("verifying", `QA ${item.index}/${item.total} ${item.acceptance_id} ${item.phase}`, {
@@ -1831,7 +1944,8 @@ class AssuranceCoordinator {
               total: item.total,
               acceptance_id: item.acceptance_id,
               acceptance_phase: item.phase,
-              elapsed_ms: item.elapsed_ms
+              elapsed_ms: item.elapsed_ms,
+              ...item.diagnostic ? { diagnostic: qaDiagnosticMetadata(item.diagnostic) } : {}
             })
           });
         } finally {
@@ -1964,6 +2078,23 @@ class AssuranceCoordinator {
       progress("review_ready", "QA passed; invoke the reserved foreground Agent, then call submit_review", { snapshot_digest: snapshotDigest(review.snapshot), review_bundle_digest: review.snapshot.review_bundle_digest ?? "", agent_params: hostReservation.dispatch });
       return { state: "review_ready", operation: "review", operation_id: operationId, snapshot_digest: snapshotDigest(review.snapshot), review_bundle_digest: review.snapshot.review_bundle_digest ?? "", agent_params: hostReservation.dispatch };
     } catch (error) {
+      if (error instanceof QaPreparationError && !authorityCommitted && !authorityBoundaryStarted && !aborted())
+        return {
+          state: "failed",
+          operation: "qa",
+          operation_id: operationId,
+          reason: error.message,
+          environment_failure: true,
+          diagnostics: error.diagnostics.map(qaDiagnosticMetadata)
+        };
+      if (phase === "verifying" && !authorityCommitted && !authorityBoundaryStarted && !aborted() && !(error instanceof VerificationAbortedError))
+        return {
+          state: "failed",
+          operation: "qa",
+          operation_id: operationId,
+          reason: "QA execution failed before attestation (execution_failed)",
+          environment_failure: true
+        };
       if (reviewPreparationStarted) {
         const reason = aborted() || error instanceof VerificationAbortedError ? `${phase}: host cancellation` : `${phase}: ${boundedAssuranceError(error)}`;
         return this.reviewPreparationFailed(taskId, operationId, reason);
@@ -1989,6 +2120,9 @@ class AssuranceCoordinator {
     }
   }
   async submitReview(taskId, ctx, verdictInput) {
+    return this.withRecovery(taskId, ctx, await this.submitReviewOnce(taskId, ctx, verdictInput));
+  }
+  async submitReviewOnce(taskId, ctx, verdictInput) {
     const unknown = this.unknownOperations.get(taskId);
     if (unknown)
       return { state: "settlement_unknown", operation: unknown.operation, operation_id: unknown.operationId, reason: unknown.reason };
@@ -7857,7 +7991,6 @@ function initializeEnrollmentGitBase(root, input, previous, base, signal) {
 
 // plugins/immune-brain/runtime/assurance/qa.ts
 import { createHash as createHash17 } from "node:crypto";
-
 // plugins/immune-brain/runtime/assurance/delivery_workspace.ts
 import { execFileSync as execFileSync5 } from "node:child_process";
 import { createHash as createHash16 } from "node:crypto";
@@ -8117,19 +8250,6 @@ function deliveryTreeForSnapshot(snapshot, writeTree) {
     throw new Error("QA delivery identity does not match the frozen snapshot");
   return writeDeliveryTree(snapshot.root, captured);
 }
-
-class QaPreparationError extends Error {
-  stage;
-  acceptance_ids;
-  reason;
-  constructor(stage, acceptance_ids, reason) {
-    super(`QA ${stage} failed (${reason}); affected checks=${acceptance_ids.join(",")}`);
-    this.stage = stage;
-    this.acceptance_ids = acceptance_ids;
-    this.reason = reason;
-    this.name = "QaPreparationError";
-  }
-}
 async function runDeterministicQa(snapshot, descriptors, options = {}) {
   if (snapshot.role !== "qa")
     throw new Error("deterministic QA requires qa role");
@@ -8157,46 +8277,80 @@ async function runDeterministicQa(snapshot, descriptors, options = {}) {
     live();
     const ids = group.map((item) => item.id);
     const environment = group[0].descriptor.environment;
-    const delivery = (options._materializeDeliveryWorkspace ?? materializeDeliveryWorkspace)(snapshot.root, tree);
-    const home = mkdtempSync3(join9(tmpdir4(), "imm-qa-home-"));
+    const diagnostics = (stage, outcome, affected = group, commandStage = "check", elapsed = 0, result) => affected.map((item) => ({
+      acceptance_id: item.id,
+      descriptor_ref: `acceptance/${item.index}/verification/${commandStage === "prepare" ? "environment/prepare" : "command"}`,
+      descriptor_digest: `sha256:${createHash17("sha256").update(JSON.stringify(item.descriptor)).digest("hex")}`,
+      stage,
+      outcome,
+      elapsed_ms: elapsed,
+      exit_code: result?.exit_code ?? null,
+      stdout_bytes: result ? Buffer.byteLength(result.stdout) : null,
+      stderr_bytes: result ? Buffer.byteLength(result.stderr) : null
+    }));
+    const { delivery, home, deliveryPrefix } = (() => {
+      let delivery, home;
+      try {
+        delivery = (options._materializeDeliveryWorkspace ?? materializeDeliveryWorkspace)(snapshot.root, tree);
+        home = mkdtempSync3(join9(tmpdir4(), "imm-qa-home-"));
+        return { delivery, home, deliveryPrefix: `${realpathSync10(delivery.root)}${sep6}` };
+      } catch {
+        let reason = "delivery_unavailable";
+        try {
+          try {
+            delivery?.cleanup();
+          } finally {
+            if (home)
+              removeTaskOwnedTree(home);
+          }
+        } catch {
+          reason = "delivery_cleanup_failed";
+        }
+        throw new QaPreparationError("prepare", ids, reason, diagnostics("prepare", reason));
+      }
+    })();
     const clean = () => {
       if (options._materializeDeliveryWorkspace)
         return;
       try {
         assertDeliveryClean(delivery.root, tree, delivery.seal, environment.writable_paths);
       } catch {
-        throw new QaPreparationError("integrity", ids, "protected_input_or_output_drift");
+        throw new QaPreparationError("integrity", ids, "protected_input_or_output_drift", diagnostics("integrity", "protected_input_or_output_drift"));
       }
     };
     const groupCommands = [];
-    const deliveryPrefix = `${realpathSync10(delivery.root)}${sep6}`;
-    const execute = async (command, stage) => {
+    const execute = async (command, stage, affected = group) => {
+      const started = performance.now();
+      const fail = (errorStage, reason) => new QaPreparationError(errorStage, affected.map((item) => item.id), reason, diagnostics(errorStage, reason, affected, stage, Math.round(performance.now() - started)));
       live();
       clean();
       let frozen;
       try {
         frozen = (options._resolveVerificationCommand ?? resolveVerificationCommand)(delivery.root, command, path);
       } catch {
-        throw new QaPreparationError("resolution", ids, "executable_or_cwd_unavailable");
+        throw fail("resolution", "executable_or_cwd_unavailable");
       }
       let result;
       try {
         result = await (options._runFixedVerification ?? runFixedVerification)(delivery.root, command, frozen, { signal: options.signal, home, path });
       } catch (error) {
+        if (error instanceof VerificationAbortedError)
+          throw error;
         if (error instanceof VerificationLaunchError)
-          throw new QaPreparationError("resolution", ids, "process_launch_failed");
+          throw fail("resolution", "process_launch_failed");
         if (error instanceof VerificationCleanupError)
-          throw new QaPreparationError("resolution", ids, "process_cleanup_failed");
-        throw error;
+          throw fail("resolution", "process_cleanup_failed");
+        throw fail(stage, "execution_failed");
       }
       live();
       clean();
       groupCommands.push(frozen);
       if (frozen?.entry) {
+        const identityDiagnostics = diagnostics("integrity", "command_identity_changed", affected, stage, Math.round(performance.now() - started), result);
         if (!command.executable.startsWith("./"))
-          allCommands.push(frozen);
+          allCommands.push({ frozen, diagnostics: identityDiagnostics });
         else if (frozen.interpreter && !frozen.interpreter.path.startsWith(deliveryPrefix))
-          allCommands.push({ entry: frozen.interpreter, interpreter: null, interpreter_args: [] });
+          allCommands.push({ frozen: { entry: frozen.interpreter, interpreter: null, interpreter_args: [] }, diagnostics: identityDiagnostics });
       }
       evidence.push({
         stage,
@@ -8209,29 +8363,31 @@ async function runDeterministicQa(snapshot, descriptors, options = {}) {
         output_limited: result.output_limited
       });
       if (Buffer.byteLength(JSON.stringify(evidence)) > 16384)
-        throw new QaPreparationError("prepare", ids, "execution_metadata_limit_exceeded");
+        throw fail("prepare", "execution_metadata_limit_exceeded");
       return result;
     };
     try {
       clean();
       if (environment.prepare) {
+        const prepareStarted = performance.now();
         const result = await execute(environment.prepare, "prepare");
         if (result.exit_code !== 0 || result.timed_out || result.output_limited)
-          throw new QaPreparationError("prepare", ids, result.timed_out ? "timeout" : result.output_limited ? "output_limit" : "nonzero_exit");
+          throw new QaPreparationError("prepare", ids, result.timed_out ? "timeout" : result.output_limited ? "output_limit" : "nonzero_exit", diagnostics("prepare", result.timed_out ? "timeout" : result.output_limited ? "output_limit" : "nonzero_exit", group, "prepare", Math.round(performance.now() - prepareStarted), result));
       }
       for (const item of group) {
-        const started = Date.now();
-        const progress = (phase) => options.onProgress?.({
+        const started = performance.now();
+        const progress = (phase, outcome, result) => options.onProgress?.({
           index: item.index + 1,
           total: snapshot.acceptance.length,
           acceptance_id: item.id,
           phase,
-          elapsed_ms: Date.now() - started
+          elapsed_ms: Math.round(performance.now() - started),
+          diagnostic: diagnostics("check", outcome, [item], "check", Math.round(performance.now() - started), result)[0]
         });
-        progress("running");
-        const result = await execute(item.descriptor.command, "check");
+        progress("running", "running");
+        const result = await execute(item.descriptor.command, "check", [item]);
         const failed = result.exit_code !== 0 || result.timed_out || result.output_limited;
-        progress(failed ? "failed" : "passed");
+        progress(failed ? "failed" : "passed", result.timed_out ? "timeout" : result.output_limited ? "output_limit" : failed ? "nonzero_exit" : "passed", result);
         if (failed)
           findings.push({
             id: qaFindingId(item.id, snapshotDigest(snapshot)),
@@ -8241,22 +8397,33 @@ async function runDeterministicQa(snapshot, descriptors, options = {}) {
             findings_digest: ""
           });
       }
-      for (const frozen of groupCommands) {
-        if (frozen?.entry)
-          assertCommandIdentity(frozen);
+      try {
+        for (const frozen of groupCommands)
+          if (frozen?.entry)
+            assertCommandIdentity(frozen);
+      } catch {
+        throw new QaPreparationError("integrity", ids, "command_identity_changed", diagnostics("integrity", "command_identity_changed"));
       }
     } finally {
       try {
-        delivery.cleanup();
-      } finally {
-        removeTaskOwnedTree(home);
+        try {
+          delivery.cleanup();
+        } finally {
+          removeTaskOwnedTree(home);
+        }
+      } catch {
+        throw new QaPreparationError("integrity", ids, "delivery_cleanup_failed", diagnostics("integrity", "delivery_cleanup_failed"));
       }
     }
   }
   live();
-  for (const frozen of allCommands) {
-    if (frozen?.entry)
-      assertCommandIdentity(frozen);
+  for (const entry of allCommands) {
+    try {
+      if (entry.frozen?.entry)
+        assertCommandIdentity(entry.frozen);
+    } catch {
+      throw new QaPreparationError("integrity", entry.diagnostics.map((item) => item.acceptance_id), "command_identity_changed", entry.diagnostics);
+    }
   }
   const base = {
     contract: "assurance_kernel/assurance_verdict/v2",
@@ -11508,7 +11675,11 @@ async function lookupBatchCommit(input) {
 // plugins/immune-brain/runtime/unattended/batch_runner.ts
 function batchQaFailureFacts(record) {
   const failed = record.history.filter((event) => event.type === "request_rework" && event.authority?.authority_kind === "qa");
-  return { qa_failure_count: failed.length, last_qa_failure_at: failed.at(-1)?.at ?? null };
+  return {
+    qa_failure_count: failed.length,
+    last_qa_failure_at: failed.at(-1)?.at ?? null,
+    recovery_findings: record.findings.filter((f) => f.status === "open").map((f) => ({ id: f.id, kind: f.kind, status: f.status, acceptance_id: f.acceptance_id }))
+  };
 }
 function dependentsOf(record, taskId) {
   return record.children.filter((child) => child.blocked_by.includes(taskId));
@@ -11569,10 +11740,13 @@ function reportFor(record, reason, nextAction) {
     created_at: record.updated_at
   };
 }
-function executorHandoff(record, taskId, fresh) {
+function executorHandoff(record, taskId, fresh, failure = {}) {
+  const recovery = deriveAssuranceRecovery(taskId, fresh, failure, fresh.recovery_findings);
   return {
-    ...reportFor(record, null, "Route the enrolled child to foreground Executor, implement and stage its scoped work, then call Kernel advance_assurance. Submit any reserved Review verdict before continuing start_unattended_batch with the same Initiative."),
-    handoff: {
+    ...reportFor(record, null, recovery?.next_action ?? (fresh.projection.artifact_state === "frozen" ? "The child is frozen with pending QA. Call advance_assurance once; follow its diagnostics before retrying, then submit any reserved Review before batch continuation." : "Route the enrolled child to foreground Executor, implement and stage its scoped work, then call Kernel advance_assurance. Submit any reserved Review verdict before continuing start_unattended_batch with the same Initiative.")),
+    ...recovery ? { recovery } : {},
+    ...failure.diagnostics?.length ? { diagnostics: failure.diagnostics } : {},
+    handoff: recovery?.category === "authorization" ? undefined : {
       role: "executor",
       task_id: taskId,
       run_id: fresh.projection.run_id ?? null,
@@ -11581,8 +11755,8 @@ function executorHandoff(record, taskId, fresh) {
     }
   };
 }
-function finalize(root, record, reason, nextAction) {
-  const report = reportFor(record, reason, nextAction);
+function finalize(root, record, reason, nextAction, details = {}) {
+  const report = { ...reportFor(record, reason, nextAction), ...details };
   if (isTerminalBatchState(record.batch_state) || record.batch_state === "needs_human") {
     writeBatchRunReport(root, report);
   }
@@ -12000,11 +12174,11 @@ async function resumeBatch(input, projection) {
             consecutive_qa_failures: failures,
             children: existing.children.map((c) => c.task_id === driven.task_id ? { ...c, state: "needs_human", reason } : c)
           });
-          return finalize(input.root, existing, reason, "Repair and settle the own child through Kernel, then re-confirm the batch.");
+          return finalize(input.root, existing, reason, "Repair and settle the own child through Kernel, then re-confirm the batch.", { recovery: deriveAssuranceRecovery(driven.task_id, fresh, {}, fresh.recovery_findings) ?? undefined });
         }
         if (failures !== existing.consecutive_qa_failures)
           existing = writeBatchRunState(input.root, { ...existing, consecutive_qa_failures: failures });
-        if (fresh.projection.artifact_state !== "frozen" && fresh.projection.next_obligation !== "resolve_user_decision" && fresh.projection.next_obligation !== "revise_intent")
+        if (fresh.projection.next_obligation === "run_qa" || fresh.projection.artifact_state !== "frozen")
           return executorHandoff(existing, driven.task_id, fresh);
       }
       if (!holdsClaim) {
@@ -12124,18 +12298,22 @@ async function driveInterruptedChild(input, child) {
     } else if (terminal.state === "rework" && terminal.operation === "qa") {
       record.consecutive_qa_failures += 1;
       if (record.consecutive_qa_failures >= record.budget.qa_failure_limit) {
-        const reason = `QA failure limit reached: ${terminal.summary}`;
+        const reason = "QA failure limit reached";
         record.children = record.children.map((c) => c.task_id === child.task_id ? { ...c, state: "needs_human", reason } : c);
         record.batch_state = "needs_human";
         skipDependents(record, child.task_id, `dependency ${child.task_id} parked`);
         persist();
-        return finalize(input.root, record, reason, "");
+        const fresh = requireFreshProjection(await input.kernel.projectTask(input.root, child.task_id), child.task_id);
+        return finalize(input.root, record, reason, "Repair and settle the own child through Kernel, then re-confirm the batch.", { recovery: deriveAssuranceRecovery(child.task_id, fresh, terminal, fresh.recovery_findings) ?? undefined, diagnostics: terminal.diagnostics });
       }
       persist();
       const fresh = requireFreshProjection(await input.kernel.projectTask(input.root, child.task_id), child.task_id);
-      return executorHandoff(record, child.task_id, fresh);
+      return executorHandoff(record, child.task_id, fresh, terminal);
+    } else if (terminal.state === "rework" || terminal.environment_failure || terminal.state === "review_preparation_failed" || terminal.recovery?.category === "repair") {
+      const fresh = requireFreshProjection(await input.kernel.projectTask(input.root, child.task_id), child.task_id);
+      return executorHandoff(record, child.task_id, fresh, terminal);
     } else {
-      const reason = terminal.state === "stopped" ? "Kernel reported the child stopped" : terminal.state === "rework" ? terminal.summary : terminal.reason;
+      const reason = terminal.state === "stopped" ? "Kernel reported the child stopped" : terminal.reason;
       record.children = record.children.map((c) => c.task_id === child.task_id ? { ...c, state: "needs_human", reason } : c);
       record.batch_state = "needs_human";
       skipDependents(record, child.task_id, `dependency ${child.task_id} parked`);
@@ -13031,25 +13209,28 @@ class ClaudeRuntime {
       },
       advanceTask: async (root, taskId) => {
         const result = await this.coordinator.advance(taskId, { cwd: root });
+        const facts = { diagnostics: result.diagnostics, environment_failure: result.environment_failure, recovery: result.recovery };
         if (result.state === "completed")
-          return { state: "completed" };
+          return { state: "completed", ...facts };
         if (result.state === "stopped")
-          return { state: "stopped" };
+          return { state: "stopped", ...facts };
         if (result.state === "rework")
-          return { state: "rework", operation: result.operation, summary: result.summary };
+          return { state: "rework", operation: result.operation, summary: result.summary, ...facts };
         if (result.state === "review_ready")
-          return { state: "review_ready", operation_id: result.operation_id };
+          return { state: "review_ready", operation_id: result.operation_id, ...facts };
+        if (result.state === "review_preparation_failed")
+          return { state: result.state, operation: result.operation, operation_id: result.operation_id, reason: result.reason, ...facts };
         if (result.state === "blocked")
-          return { state: "blocked", reason: result.reason };
-        return { state: "failed", reason: result.reason ?? "advance failed" };
+          return { state: "blocked", reason: result.reason, ...facts };
+        return { state: "failed", reason: result.reason ?? "advance failed", ...facts };
       },
       projectTask: async (root, taskId) => {
         const fresh = await projectAssurance(root, taskId, diffSnapshotOf);
         if (!fresh.claim || fresh.projection.lifecycle !== "active" || fresh.error !== null)
           return fresh;
-        const { record } = readTaskRecordRaw(root, taskId);
-        if (!record)
-          throw new Error(`Kernel record disappeared for ${taskId}`);
+        const { record, revision } = readTaskRecordRaw(root, taskId);
+        if (!record || revision !== fresh.projection.record_revision)
+          throw new Error(`Kernel recovery projection changed for ${taskId}`);
         return { ...fresh, ...batchQaFailureFacts(record) };
       },
       ownsTaskClaim: (taskId) => {

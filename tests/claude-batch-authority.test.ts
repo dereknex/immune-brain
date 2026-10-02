@@ -440,16 +440,18 @@ describe("batch foreground Executor integration", () => {
 	for (const host of ["claude", "pi"] as const) it(`${host}: implements two children, runs real QA and Review, then commits each once`, async () => {
 		const slug = `foreground-${host}`;
 		const fixture = createBatchFixture(slug);
-		writeFileSync(join(fixture.root, "verify.ts"), 'import { strict as assert } from "node:assert"; assert.equal(await Bun.file(process.argv[2]).text(), "implemented");\n');
+		const outputCanary = "s2-verifier-raw-content-canary";
+		writeFileSync(join(fixture.root, "verify.ts"), `import { strict as assert } from "node:assert"; const actual = await Bun.file(process.argv[2]).text(); if (actual !== "implemented") console.error(${JSON.stringify(outputCanary)}); assert.equal(actual, "implemented");\n`);
+		writeFileSync(join(fixture.root, "prepare.ts"), `if (await Bun.file(process.argv[2]).text() === "environment-down") { console.error(${JSON.stringify(outputCanary)}); process.exit(1); }\n`);
 		for (const n of [1, 2]) {
 			const path = join(fixture.root, `docs/plans/${slug}-c${n}.intent.json`);
 			const intent = JSON.parse(readFileSync(path, "utf8"));
 			intent.risk = "material";
-			intent.scope_hint = [`docs/plans/${slug}-c${n}.intent.json`, "verify.ts", `impl-${n}.txt`];
+			intent.scope_hint = [`docs/plans/${slug}-c${n}.intent.json`, "verify.ts", "prepare.ts", `impl-${n}.txt`];
 			intent.acceptance[0].verification = JSON.stringify({
 				contract: "assurance_kernel/verification_descriptor/v2",
 				command: { executable: "bun", argv: ["verify.ts", `impl-${n}.txt`], cwd: ".", timeout_ms: 10000, max_output_bytes: 8192 },
-				environment: { prepare: null, writable_paths: [] },
+				environment: { prepare: { executable: "bun", argv: ["prepare.ts", `impl-${n}.txt`], cwd: ".", timeout_ms: 10000, max_output_bytes: 8192 }, writable_paths: [] },
 			});
 			writeFileSync(path, `${JSON.stringify(intent, null, 2)}\n`);
 		}
@@ -487,6 +489,24 @@ describe("batch foreground Executor integration", () => {
 				expect(readTaskRecordRaw(fixture.root, task).record?.attestations).toEqual([]);
 				expect(confirmations).toBe(1);
 				if (n === 1) {
+					writeFileSync(join(fixture.root, "impl-1.txt"), "environment-down");
+					execFileSync("git", ["add", "impl-1.txt"], { cwd: fixture.root });
+					const failedEnvironment: any = host === "claude" ? await client.callTool("advance_assurance", { task_id: task })
+						: await progression.advance(task, { cwd: fixture.root });
+					expect(failedEnvironment).toMatchObject({ state: "failed", recovery: { category: "environment", task_id: task, acceptance_ids: ["acc-1"], finding_ids: [], next_obligation: "run_qa" },
+						diagnostics: [{ stage: "prepare", outcome: "nonzero_exit", descriptor_ref: "acceptance/0/verification/environment/prepare" }] });
+					expect(JSON.stringify(failedEnvironment)).not.toContain(outputCanary);
+					const environmentRevision = readTaskRecordRaw(fixture.root, task).revision;
+					for (let retry = 0; retry < 2; retry++) {
+						const pending = await start();
+						expect(pending.report.handoff.next_obligation).toBe("run_qa");
+						expect(pending.report.batch_state).toBe("running");
+						expect(readTaskRecordRaw(fixture.root, task).revision).toBe(environmentRevision);
+						expect(readTaskRecordRaw(fixture.root, task).record!.findings).toEqual([]);
+						expect(readTaskRecordRaw(fixture.root, task).record!.attestations).toEqual([]);
+						expect(JSON.parse(readFileSync(statePath, "utf8")).consecutive_qa_failures).toBe(0);
+						expect(confirmations).toBe(1);
+					}
 					writeFileSync(join(fixture.root, "impl-1.txt"), "incorrect");
 					execFileSync("git", ["add", "impl-1.txt"], { cwd: fixture.root });
 					expect((await progression.advance(task, { cwd: fixture.root })).state).toBe("rework");
@@ -500,13 +520,39 @@ describe("batch foreground Executor integration", () => {
 					writeFileSync(join(fixture.root, "impl-1.txt"), "implemented");
 					execFileSync("git", ["add", "impl-1.txt"], { cwd: fixture.root });
 					const finding = readTaskRecordRaw(fixture.root, task).record!.findings.find((f) => f.kind === "blocking" && f.status === "open")!;
+					expect(repair.report.recovery).toMatchObject({ category: "repair", acceptance_ids: ["acc-1"], finding_ids: [finding.id], next_obligation: "resolve_findings" });
+					expect(JSON.stringify({ repair, record: readTaskRecordRaw(fixture.root, task).record })).not.toContain(outputCanary);
+					const beforeLocalGreen = readTaskRecordRaw(fixture.root, task).revision;
+					execFileSync(process.execPath, ["verify.ts", "impl-1.txt"], { cwd: fixture.root }); // Deliberately non-attesting.
+					expect(await progression.advance(task, { cwd: fixture.root })).toMatchObject({ state: "blocked", recovery: { category: "repair", finding_ids: [finding.id] } });
+					expect(readTaskRecordRaw(fixture.root, task).revision).toBe(beforeLocalGreen);
 					if (host === "claude") await client.runtime.resolveFinding(task, finding.id);
 					else await createPiAssuranceProgressionPorts().applyOrdinaryOperation({ cwd: fixture.root },
 						{ taskId: task, operation: { op: "resolve_finding", finding_id: finding.id, actor_id: "executor" } });
 				}
 				writeFileSync(join(fixture.root, `impl-${n}.txt`), "implemented");
 				execFileSync("git", ["add", `impl-${n}.txt`], { cwd: fixture.root });
+				if (n === 1) {
+					const reviewPorts = (progression as any).ports;
+					const writeEvidence = reviewPorts.writeReviewEvidence;
+					try {
+						reviewPorts.writeReviewEvidence = () => { throw new Error("fixture Review evidence directory unavailable"); };
+						expect(await progression.advance(task, { cwd: fixture.root })).toMatchObject({ state: "review_preparation_failed",
+							recovery: { category: "environment", task_id: task, next_obligation: "run_review", acceptance_ids: ["acc-1"], finding_ids: [] } });
+						const afterQa = readTaskRecordRaw(fixture.root, task);
+						for (let retry = 0; retry < 2; retry++) {
+							const pending = await start();
+							expect(pending.report).toMatchObject({ batch_state: "running", handoff: { role: "executor", task_id: task, next_obligation: "run_review" },
+								recovery: { category: "environment", record_revision: afterQa.revision, acceptance_ids: ["acc-1"], finding_ids: [], next_action: expect.stringContaining("retain fresh QA") } });
+							expect(pending.report.children.find((c: any) => c.task_id === task).state).toBe("enrolled");
+							expect(readTaskRecordRaw(fixture.root, task).revision).toBe(afterQa.revision);
+							expect(confirmations).toBe(1); expect(progression.active(task)).toBeNull();
+						}
+					} finally { reviewPorts.writeReviewEvidence = writeEvidence; }
+				}
+				const qaIdsBeforeReview = readTaskRecordRaw(fixture.root, task).record!.attestations.filter(a => a.kind === "qa").map(a => a.id);
 				const ready = await progression.advance(task, { cwd: fixture.root });
+				if (n === 1) expect(readTaskRecordRaw(fixture.root, task).record!.attestations.filter(a => a.kind === "qa").map(a => a.id)).toEqual(qaIdsBeforeReview);
 				expect(ready.state).toBe("review_ready");
 				expect(readTaskRecordRaw(fixture.root, task).record?.attestations.some((a) => a.kind === "qa" && a.acceptance_results.every((r) => r.status === "passed"))).toBe(true);
 				result = await start();
@@ -530,6 +576,7 @@ describe("batch foreground Executor integration", () => {
 				const auditDir = join(fixture.root, `.imm/audit/${task}`);
 				const audit = JSON.parse(readFileSync(join(auditDir, readdirSync(auditDir).find((name) => name.startsWith("run-"))!, "task-record.json"), "utf8"));
 				expect(audit.attestations.some((a: any) => a.kind === "review" && a.review_revision)).toBe(true);
+				expect(JSON.stringify({ audit, result, ready })).not.toContain(outputCanary);
 				execFileSync("git", ["add", `.imm/audit/${task}`], { cwd: fixture.root });
 				result = await start();
 				expect(result).toMatchObject({ state: "started" });

@@ -176,6 +176,7 @@ export interface TaskRecordRead {
 			id: string;
 			kind: string;
 			status: string;
+			acceptance_id?: string | null;
 			summary?: string;
 			anchor?: string | null;
 			evidence?: unknown;
@@ -555,12 +556,14 @@ export async function getSharedPiProgression(): Promise<any> {
 export async function advancePiTask(root: string, taskId: string): Promise<any> {
 	const progression = await getSharedPiProgression();
 	const result = await progression.advance(taskId, { cwd: root });
-	if (result.state === "completed") return { state: "completed" };
-	if (result.state === "stopped") return { state: "stopped" };
-	if (result.state === "rework") return { state: "rework", operation: result.operation, summary: result.summary };
-	if (result.state === "review_ready") return { state: "review_ready", operation_id: result.operation_id, agent_params: result.agent_params };
-	if (result.state === "blocked") return { state: "blocked", reason: result.reason };
-	return { state: "failed", reason: (result as { reason?: string }).reason ?? "advance failed" };
+	const facts = { diagnostics: result.diagnostics, environment_failure: result.environment_failure, recovery: result.recovery };
+	if (result.state === "completed") return { state: "completed", ...facts };
+	if (result.state === "stopped") return { state: "stopped", ...facts };
+	if (result.state === "rework") return { state: "rework", operation: result.operation, summary: result.summary, ...facts };
+	if (result.state === "review_ready") return { state: "review_ready", operation_id: result.operation_id, agent_params: result.agent_params, ...facts };
+	if (result.state === "review_preparation_failed") return { state: result.state, operation: result.operation, operation_id: result.operation_id, reason: result.reason, ...facts };
+	if (result.state === "blocked") return { state: "blocked", reason: result.reason, ...facts };
+	return { state: "failed", reason: (result as { reason?: string }).reason ?? "advance failed", ...facts };
 }
 
 export async function projectAssuranceForTask(root: string, taskId: string): Promise<any> {

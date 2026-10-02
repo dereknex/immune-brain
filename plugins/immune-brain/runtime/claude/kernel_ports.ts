@@ -1213,18 +1213,20 @@ export class ClaudeRuntime {
 			},
 			advanceTask: async (root, taskId) => {
 				const result = await this.coordinator.advance(taskId, { cwd: root });
-				if (result.state === "completed") return { state: "completed" };
-				if (result.state === "stopped") return { state: "stopped" };
-				if (result.state === "rework") return { state: "rework", operation: result.operation, summary: result.summary };
-				if (result.state === "review_ready") return { state: "review_ready", operation_id: result.operation_id };
-				if (result.state === "blocked") return { state: "blocked", reason: result.reason };
-				return { state: "failed", reason: (result as { reason?: string }).reason ?? "advance failed" };
+				const facts = { diagnostics: result.diagnostics, environment_failure: result.environment_failure, recovery: result.recovery };
+				if (result.state === "completed") return { state: "completed", ...facts };
+				if (result.state === "stopped") return { state: "stopped", ...facts };
+				if (result.state === "rework") return { state: "rework", operation: result.operation, summary: result.summary, ...facts };
+				if (result.state === "review_ready") return { state: "review_ready", operation_id: result.operation_id, ...facts };
+				if (result.state === "review_preparation_failed") return { state: result.state, operation: result.operation, operation_id: result.operation_id, reason: result.reason, ...facts };
+				if (result.state === "blocked") return { state: "blocked", reason: result.reason, ...facts };
+				return { state: "failed", reason: (result as { reason?: string }).reason ?? "advance failed", ...facts };
 			},
 			projectTask: async (root, taskId) => {
 				const fresh = await projectAssurance(root, taskId, diffSnapshotOf);
 				if (!fresh.claim || fresh.projection.lifecycle !== "active" || fresh.error !== null) return fresh;
-				const { record } = readTaskRecordRaw(root, taskId);
-				if (!record) throw new Error(`Kernel record disappeared for ${taskId}`);
+				const { record, revision } = readTaskRecordRaw(root, taskId);
+				if (!record || revision !== fresh.projection.record_revision) throw new Error(`Kernel recovery projection changed for ${taskId}`);
 				return { ...fresh, ...batchQaFailureFacts(record) };
 			},
 			ownsTaskClaim: (taskId) => {

@@ -1,0 +1,235 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "batch-execution-recovery-s2-failure-recovery",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "batch-execution-recovery-s2-failure-recovery",
+    "goal": "Make batch failure recovery reflect fresh Kernel obligations and findings, and expose safe check diagnostics so repair, finding disposition and fresh Assurance lead to settlement without redundant human approval.",
+    "acceptance": [
+      {
+        "id": "BER-S2-A1",
+        "assertion": "Meet S2 in docs/specs/batch-execution-recovery.spec.md: both Hosts return the fresh Kernel obligation and specific task/acceptance/finding identities with one legal recovery action. Ordinary own-claim technical repair is not presented as user authorization, unchanged QA is not retried blindly, environment failures remain distinct, and local green cannot settle a task with open findings. Behavioral tests exercise repair, verified finding disposition, fresh deterministic QA and required Review before settlement. QA diagnostics contain only bounded allowlisted descriptor identity, phase/outcome/timing and byte-count metadata; injected raw stdout/stderr and secret-bearing arguments/environment values never enter reports, findings, TaskRecord, audit or tracker evidence.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/shared-deterministic-qa.test.ts\",\n      \"tests/host-neutral-assurance-coordinator.test.ts\",\n      \"tests/unattended-batch-run.test.ts\",\n      \"tests/pi-batch-authority.test.ts\",\n      \"tests/claude-batch-authority.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      "docs/plans/batch-execution-recovery-s2-failure-recovery.intent.json",
+      "docs/specs/batch-execution-recovery.spec.md",
+      "plugins/immune-brain/.pi-extension/imm-canary-work.ts",
+      "plugins/immune-brain/.pi-extension/imm-unattended-batch.ts",
+      "plugins/immune-brain/.pi-extension/pi-canary-assurance-progression.ts",
+      "plugins/immune-brain/.pi-extension/runtime-stub.ts",
+      "plugins/immune-brain/dist/claude/mcp-server.mjs",
+      "plugins/immune-brain/dist/imm-loop.md",
+      "plugins/immune-brain/runtime/assurance/coordinator.ts",
+      "plugins/immune-brain/runtime/assurance/host_port.ts",
+      "plugins/immune-brain/runtime/assurance/qa.ts",
+      "plugins/immune-brain/runtime/claude/kernel_ports.ts",
+      "plugins/immune-brain/runtime/claude/mcp_server.ts",
+      "plugins/immune-brain/runtime/unattended/batch_plan.ts",
+      "plugins/immune-brain/runtime/unattended/batch_preflight.ts",
+      "plugins/immune-brain/runtime/unattended/batch_reasons.ts",
+      "plugins/immune-brain/runtime/unattended/batch_runner.ts",
+      "plugins/immune-brain/runtime/unattended/batch_state.ts",
+      "plugins/immune-brain/runtime/unattended/types.ts",
+      "tests/claude-batch-authority.test.ts",
+      "tests/claude-host-package.test.ts",
+      "tests/dual-host-assurance-conformance.test.ts",
+      "tests/host-neutral-assurance-coordinator.test.ts",
+      "tests/packaged-contract-tool-surface.test.ts",
+      "tests/pi-batch-authority.test.ts",
+      "tests/pi-canary-assurance-observability.test.ts",
+      "tests/pi-canary-verification-descriptor.test.ts",
+      "tests/shared-deterministic-qa.test.ts",
+      "tests/unattended-batch-run.test.ts",
+      "tests/unattended-contracts.test.ts"
+    ],
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/batch-execution-recovery-s2-failure-recovery.intent.json",
+    "content_hash": "sha256:c37e5ae97a8094c51cc8cb9ace1ba69dfa7eade852a25e58a0c49fd5dedcfc62"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:c37e5ae97a8094c51cc8cb9ace1ba69dfa7eade852a25e58a0c49fd5dedcfc62",
+  "git_base_head": "0f2825f35d1bcab3eb8dced3962c0f2ebd1dd84e",
+  "attestations": [
+    {
+      "id": "approval-qa-921f5cca",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:c37e5ae97a8094c51cc8cb9ace1ba69dfa7eade852a25e58a0c49fd5dedcfc62",
+      "diff_hash": "sha256:477481071c4ca9d3072faf74b50595c0cd327a3a70f30615058237698536bf12",
+      "actor_id": "deterministic-qa",
+      "summary": "all 1 project verification check(s) passed; execution=sha256:fddb82aa0170d935e7d0ca24de75dd47649b24afe757f800ce1a4d0bc7f8c47a",
+      "acceptance_results": [
+        {
+          "acceptance_id": "BER-S2-A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 1 project verification check(s) passed; execution=sha256:fddb82aa0170d935e7d0ca24de75dd47649b24afe757f800ce1a4d0bc7f8c47a"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-5873a641",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:c37e5ae97a8094c51cc8cb9ace1ba69dfa7eade852a25e58a0c49fd5dedcfc62",
+      "diff_hash": "sha256:9a3c09e8be8c111fcbf9d611728a4341e15c295760232926a406cf5b72ec0cbf",
+      "actor_id": "deterministic-qa",
+      "summary": "all 1 project verification check(s) passed; execution=sha256:e4aabdf7663bbf48e23acd5b2ddb25225487d4cb6c62cbae3036eeaf99f517f3",
+      "acceptance_results": [
+        {
+          "acceptance_id": "BER-S2-A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 1 project verification check(s) passed; execution=sha256:e4aabdf7663bbf48e23acd5b2ddb25225487d4cb6c62cbae3036eeaf99f517f3"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-3c7d3957",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:c37e5ae97a8094c51cc8cb9ace1ba69dfa7eade852a25e58a0c49fd5dedcfc62",
+      "diff_hash": "sha256:9a3c09e8be8c111fcbf9d611728a4341e15c295760232926a406cf5b72ec0cbf",
+      "actor_id": "parent-mediated-review",
+      "summary": "已验证 immutable revision 的 parent、tree、manifest 与 snapshot digest；结合 Kernel QA 通过证据，未发现恢复义务、finding disposition、QA/Review settlement 或诊断隐私方面的阻断问题。",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "0f2825f35d1bcab3eb8dced3962c0f2ebd1dd84e",
+        "review_commit": "275e035d41b03420469f3fdbef6d04b8b19f3abc",
+        "review_tree": "dc1114ad7d39cdc1d18415a63a15fe96af53163d",
+        "manifest_digest": "sha256:5935295bdc6df8967f8da8be72cc5041f036bfcf5646e94fd2b9d1853dc5f0a8"
+      }
+    }
+  ],
+  "findings": [
+    {
+      "id": "review-a67ed9e79913-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "BER-S2-A1",
+      "source": "review",
+      "review_round": 1,
+      "summary": "Review 准备失败仍被误报为需要用户决策：coordinator.ts:284-308 未为 review_preparation_failed 推导恢复动作，Claude kernel_ports.ts:1222 将其压成 failed，batch_runner.ts:1182-1199 随后把仍持有自身 claim 的 child 停泊为 needs_human，并要求重新确认。应保留这一失败分类，返回携带 fresh run_review 身份的技术修复动作，维持 running/enrolled，修复后仅恢复 Review，不重跑已提交 QA；补充两 Host 的回归测试。",
+      "anchor": "sha256:c45465a871d706c0dd98489985a9e6aca3dfa06ca97c26394163de505bee6fa3",
+      "evidence": {
+        "trigger": "Invariant class: recoverable own-claim Assurance failures must retain their actual obligation rather than become user-authorization requests. A material child has fresh committed QA, frozen artifacts, next_obligation=run_review, valid batch authorization, no open findings or user decisions, and no surviving Review reservation after interruption. During start_unattended_batch continuation, buildAssurance(review) or writeReviewEvidence fails, for example because the temporary evidence directory cannot be created. advanceOnce returns review_preparation_failed, but the added recovery derivation recognizes only finding repair, QA environment_failure and authorization cases, so it returns null for this class. Both batch paths then reach the generic park branch; Claude additionally erases review_preparation_failed into failed. The QA-environment and Review-finding handling added in this revision does not cover read-only Review preparation failures. The resulting report lacks the fresh run_review recovery identity and says a human decision/re-confirmation is required although Kernel QA remains valid and no new authorization is needed.",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/unattended/batch_runner.ts:resumeBatch",
+          "plugins/immune-brain/runtime/unattended/batch_runner.ts:driveInterruptedChild",
+          "plugins/immune-brain/runtime/claude/kernel_ports.ts:createBatchKernelPort.advanceTask",
+          "plugins/immune-brain/runtime/assurance/coordinator.ts:AssuranceCoordinator.advanceOnce",
+          "plugins/immune-brain/runtime/assurance/coordinator.ts:AssuranceCoordinator.withRecovery",
+          "plugins/immune-brain/runtime/assurance/coordinator.ts:deriveAssuranceRecovery"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "BER-S2-A1"
+        }
+      },
+      "counterevidence": null
+    }
+  ],
+  "history": [
+    {
+      "id": "freeze_artifacts:batch-execution-recovery-s2-failure-recovery:2026-10-02T11:20:37.790Z",
+      "at": "2026-10-02T11:20:37.790Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/batch-execution-recovery-s2-failure-recovery.intent.json"
+    },
+    {
+      "id": "record_approval:batch-execution-recovery-s2-failure-recovery:2026-10-02T11:22:49.747Z",
+      "at": "2026-10-02T11:22:49.747Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-921f5cca\naction_v2_sha256:44e137b6965de053557c413eb533e2dc49b103a6f1b8231745ac2da565862384",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-c9785bb2c878d64a",
+        "issued_at": "2026-10-02T11:22:49.747Z",
+        "expires_at": "2026-10-02T11:32:49.747Z"
+      }
+    },
+    {
+      "id": "request_rework:batch-execution-recovery-s2-failure-recovery:2026-10-02T11:30:22.328Z",
+      "at": "2026-10-02T11:30:22.328Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_1\naction_v2_sha256:093c5e5a6e23e9e2dc1bee48061a1405bb5231ecd72c201ee7b0ceeab846a801",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-5f1d96b3f54c4306",
+        "issued_at": "2026-10-02T11:30:22.328Z",
+        "expires_at": "2026-10-02T11:40:22.328Z"
+      }
+    },
+    {
+      "id": "resolve_finding:batch-execution-recovery-s2-failure-recovery:2026-10-02T11:42:19.941Z",
+      "at": "2026-10-02T11:42:19.941Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-a67ed9e79913-1-review-1\naction_v2_sha256:cc2a0465f9ee2a18d20d2f15d0a89fa16e331148441472abcbc5dbdd2f5e87d3"
+    },
+    {
+      "id": "freeze_artifacts:batch-execution-recovery-s2-failure-recovery:2026-10-02T11:42:38.304Z",
+      "at": "2026-10-02T11:42:38.304Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/batch-execution-recovery-s2-failure-recovery.intent.json"
+    },
+    {
+      "id": "record_approval:batch-execution-recovery-s2-failure-recovery:2026-10-02T11:45:19.102Z",
+      "at": "2026-10-02T11:45:19.102Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-5873a641\naction_v2_sha256:2d0c9ab40f120d8f59ecbd16101f6777daf3b421843f6a0cc11a4742c48d54b8",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-26c0d234f10b74bb",
+        "issued_at": "2026-10-02T11:45:19.103Z",
+        "expires_at": "2026-10-02T11:55:19.103Z"
+      }
+    },
+    {
+      "id": "record_approval:batch-execution-recovery-s2-failure-recovery:2026-10-02T11:50:34.326Z",
+      "at": "2026-10-02T11:50:34.326Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-3c7d3957\naction_v2_sha256:f3243113fd891531b7a09187e0c53c373af0a02147722203b7b300d3f3683485",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-ec9e1acba6ecf8ef",
+        "issued_at": "2026-10-02T11:50:34.326Z",
+        "expires_at": "2026-10-02T12:00:34.326Z"
+      }
+    },
+    {
+      "id": "complete:batch-execution-recovery-s2-failure-recovery:2026-10-02T11:50:36.001Z",
+      "at": "2026-10-02T11:50:36.001Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:9bd5cd50a6ffb944b836a9645c1a9d3bcf5f39a4db6dd6f74c70c286ea1d36ef"
+    }
+  ]
+}

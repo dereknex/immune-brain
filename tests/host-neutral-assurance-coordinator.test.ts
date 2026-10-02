@@ -15,6 +15,7 @@ import type { AssuranceHostPort, HostReviewReservation, ReviewRequest } from "..
 import type { AssuranceProjectionResult } from "../plugins/immune-brain/runtime/kernel/assurance_projection";
 import type { ReviewBundle } from "../plugins/immune-brain/runtime/assurance/review_evidence";
 import { VerificationAbortedError } from "../plugins/immune-brain/runtime/assurance/verification";
+import { QaPreparationError } from "../plugins/immune-brain/runtime/assurance/qa";
 
 const TASK = "phase3-task";
 const ROOT = "/tmp/phase3-assurance";
@@ -46,7 +47,7 @@ function projection(
 			unresolved_user_decision_ids: [],
 			replan_required_ids: [],
 			completion_ready: false,
-			authorization: { state: "blocked" },
+			authorization: { state: "none", blocked: null },
 		} as never,
 	} as AssuranceProjectionResult;
 }
@@ -116,6 +117,7 @@ function makeCoordinator(overrides: {
 	project?: AssuranceCoordinatorPorts["projectTask"];
 	assurance?: AssuranceCoordinatorPorts["buildAssurance"];
 	qa?: AssuranceCoordinatorPorts["runQa"];
+	record?: AssuranceCoordinatorPorts["readTaskRecord"];
 	qaJobTimeoutMs?: number;
 } = {}) {
 	let applyCount = 0;
@@ -124,11 +126,16 @@ function makeCoordinator(overrides: {
 	let currentLifecycle: "active" | "done" | "stopped" = "active";
 	let artifactState: "active" | "frozen" = "frozen";
 	let nextObligation: AssuranceProjectionResult["projection"]["next_obligation"] = "run_qa";
+	let findings: Array<{ id?: string; acceptance_id?: string | null; kind: string; status: string }> = [];
 	const host = overrides.host ?? new FakeReviewHost();
 	const ports: AssuranceCoordinatorPorts = {
 		host,
-		projectTask: overrides.project ?? (async () => projection(currentLifecycle, nextObligation, risk, artifactState)),
-		readTaskRecord: async () => ({ record: { findings: [] } }),
+		projectTask: overrides.project ?? (async () => {
+			const fresh = projection(currentLifecycle, nextObligation, risk, artifactState);
+			fresh.projection.blocking_finding_ids = findings.filter(f => f.kind === "blocking" && f.status === "open").map(f => f.id!);
+			return fresh;
+		}),
+		readTaskRecord: overrides.record ?? (async () => ({ revision: "record-1", record: { findings } })),
 		readTaskIntent: async () => ({ token: "intent-token" }),
 		buildAssurance: overrides.assurance ?? (async (_root, _task, role) => ({
 			snapshot: snapshot(role),
@@ -149,6 +156,7 @@ function makeCoordinator(overrides: {
 			await input.hooks?.beforeCommit?.();
 			input.hooks?.onCommit?.();
 			if (input.verdict.decision === "rework") {
+				findings = (input.verdict.findings ?? []).map(f => ({ ...f, status: "open" }));
 				artifactState = "active";
 				nextObligation = "resolve_findings";
 			} else if (input.snapshot.role === "qa") {
@@ -165,10 +173,111 @@ function makeCoordinator(overrides: {
 			}
 		},
 	};
-	return { coordinator: new AssuranceCoordinator(ports), host, counts: () => ({ applyCount }), qaRuns: () => qaRuns };
+	return { coordinator: new AssuranceCoordinator(ports), ports, host, counts: () => ({ applyCount }), qaRuns: () => qaRuns };
 }
 
 describe("host-neutral assurance coordinator", () => {
+	test("environment failure returns safe diagnostics and fresh obligations, not findings or authorization", async () => {
+		const diagnostic = { acceptance_id: "A1", descriptor_ref: "acceptance/0/verification/command", descriptor_digest: `sha256:${"a".repeat(64)}`,
+			stage: "resolution" as const, outcome: "process_launch_failed" as const, elapsed_ms: 2, exit_code: null, stdout_bytes: null, stderr_bytes: null };
+		const h = makeCoordinator({ qa: async () => { throw new QaPreparationError("resolution", ["A1"], "process_launch_failed", [diagnostic]); } });
+		const result = await h.coordinator.advance(TASK, ctx);
+		expect(result).toMatchObject({ state: "failed", diagnostics: [diagnostic], recovery: {
+			category: "environment", task_id: TASK, next_obligation: "run_qa", acceptance_ids: ["A1"], finding_ids: [],
+		} });
+		expect((result as any).recovery.next_action).toContain("environment");
+		expect((result as any).recovery.next_action).not.toContain("authorization");
+		expect(h.counts().applyCount).toBe(0);
+	});
+	for (const stage of ["build", "write", "reserve"] as const) test(`Review ${stage} failure preserves fresh QA and resumes only run_review after repair`, async () => {
+		const h = makeCoordinator();
+		const originalBuild = h.ports.buildAssurance, originalWrite = h.ports.writeReviewEvidence, originalReserve = h.host.prepareReview;
+		h.ports.buildAssurance = async (...args) => {
+			if (stage === "build" && args[2] === "review") throw new Error("fixture Review preparation unavailable");
+			return originalBuild(...args);
+		};
+		if (stage === "write") h.ports.writeReviewEvidence = () => { throw new Error("fixture evidence unavailable"); };
+		if (stage === "reserve") h.host.prepareReview = () => { throw new Error("fixture reservation unavailable"); };
+		expect(await h.coordinator.advance(TASK, ctx)).toMatchObject({ state: "review_preparation_failed", recovery: {
+			category: "environment", task_id: TASK, next_obligation: "run_review", acceptance_ids: ["A1"], finding_ids: [],
+			next_action: expect.stringContaining("retain fresh QA"),
+		} });
+		expect(h.coordinator.active(TASK)).toBeNull(); expect(h.qaRuns()).toBe(1); expect(h.counts().applyCount).toBe(1);
+		h.ports.buildAssurance = originalBuild; h.ports.writeReviewEvidence = originalWrite; h.host.prepareReview = originalReserve;
+		expect((await h.coordinator.advance(TASK, ctx)).state).toBe("review_ready");
+		expect(h.qaRuns()).toBe(1); expect(h.counts().applyCount).toBe(1);
+	});
+	test("open findings return exact repair identities and prevent local green from running QA", async () => {
+		const fresh = projection("active", "resolve_findings", "material", "active");
+		fresh.projection.blocking_finding_ids = ["qa-A1-current"];
+		fresh.projection.missing_acceptance_ids = ["A1"];
+		const h = makeCoordinator({ project: async () => fresh });
+		const result = await h.coordinator.advance(TASK, ctx);
+		expect(result).toMatchObject({ state: "blocked", recovery: {
+			category: "repair", task_id: TASK, next_obligation: "resolve_findings", acceptance_ids: ["A1"], finding_ids: ["qa-A1-current"],
+		} });
+		expect((result as any).recovery.next_action).toContain("resolve_finding");
+		expect(h.qaRuns()).toBe(0);
+		expect(h.counts().applyCount).toBe(0);
+	});
+	test("remaining findings are mapped to their own acceptance, never bulk-closed", async () => {
+		const fresh = projection("active", "resolve_findings", "material", "active");
+		fresh.projection.blocking_finding_ids = ["qa-A2"];
+		fresh.projection.missing_acceptance_ids = ["A1", "A2"];
+		const h = makeCoordinator({ project: async () => fresh, record: async () => ({ revision: "record-1", record: { findings: [
+			{ id: "qa-A1", kind: "blocking", status: "resolved", acceptance_id: "A1" },
+			{ id: "qa-A2", kind: "blocking", status: "open", acceptance_id: "A2" },
+		] } }) });
+		expect(await h.coordinator.advance(TASK, ctx)).toMatchObject({ state: "blocked", recovery: { acceptance_ids: ["A2"], finding_ids: ["qa-A2"] } });
+		expect(h.qaRuns()).toBe(0); expect(h.counts().applyCount).toBe(0);
+	});
+	test("progress and failure DTOs strip injected stdout/stderr/argv/environment fields", async () => {
+		const secret = "credential-metadata-canary-S2", updates: unknown[] = [];
+		const diagnostic = { acceptance_id: "A1", descriptor_ref: "acceptance/0/verification/command", descriptor_digest: `sha256:${"a".repeat(64)}`,
+			stage: "check" as const, outcome: "execution_failed" as const, elapsed_ms: 2, exit_code: null, stdout_bytes: null, stderr_bytes: null,
+			stdout: secret, stderr: secret, argv: [secret], environment: { SECRET_ENV: secret } };
+		const h = makeCoordinator({ qa: async (_s, _d, options) => {
+			options!.onProgress!({ index: 1, total: 1, acceptance_id: "A1", phase: "running", elapsed_ms: 0, diagnostic: { ...diagnostic, outcome: "running" } });
+			throw new QaPreparationError("check", ["A1"], "execution_failed", [diagnostic]);
+		} });
+		const result = await h.coordinator.advance(TASK, ctx, undefined, update => updates.push(update));
+		expect(result).toMatchObject({ state: "failed", recovery: { category: "environment" } });
+		expect(JSON.stringify({ result, updates })).not.toContain(secret);
+		expect(JSON.stringify(updates)).toContain("acceptance/0/verification/command");
+		expect(h.counts().applyCount).toBe(0);
+	});
+	test("oversized QA metadata fails loudly without clipping it into an approval", async () => {
+		const diagnostic = { acceptance_id: "A1", descriptor_ref: "acceptance/0/verification/command", descriptor_digest: `sha256:${"a".repeat(64)}`,
+			stage: "prepare" as const, outcome: "execution_failed" as const, elapsed_ms: 0, exit_code: null, stdout_bytes: null, stderr_bytes: null };
+		const h = makeCoordinator({ qa: async () => { throw new QaPreparationError("prepare", ["A1"], "execution_failed", Array(100).fill(diagnostic)); } });
+		const result = await h.coordinator.advance(TASK, ctx);
+		expect(result).toMatchObject({ state: "failed", reason: expect.stringContaining("execution_metadata_limit_exceeded"), environment_failure: true });
+		expect(h.counts().applyCount).toBe(0);
+		expect(Buffer.byteLength(JSON.stringify(result))).toBeLessThan(16_384);
+	});
+	test("unknown QA executor error text is not exposed as a failure reason", async () => {
+		const secret = "credential-unknown-error-canary-S2";
+		const h = makeCoordinator({ qa: async () => { throw new Error(`SECRET_ENV=${secret}`); } });
+		const result = await h.coordinator.advance(TASK, ctx);
+		expect(result).toMatchObject({ state: "failed", environment_failure: true, recovery: { category: "environment" } });
+		expect(JSON.stringify(result)).not.toContain(secret);
+		expect(h.counts().applyCount).toBe(0);
+	});
+	test.each(["scope", "unstaged"])("%s failure keeps the shared binding/staging recovery", async (kind) => {
+		const h = makeCoordinator({ assurance: async () => { throw new Error(kind === "scope"
+			? "task delivery contains paths outside the authorization envelope: private.ts"
+			: "task delivery has unstaged or untracked changes: scoped.ts"); } });
+		const result = await h.coordinator.advance(TASK, ctx);
+		expect(result).toMatchObject({ state: "failed", recovery: { category: kind === "scope" ? "authorization" : "repair", next_obligation: "run_qa" } });
+		expect((result as any).recovery.next_action).toContain(kind === "scope" ? "native Intent revision" : "Stage only");
+		expect(h.qaRuns()).toBe(0);
+	});
+	test("changed recovery record fails closed rather than fabricating fresh identities", async () => {
+		const fresh = projection("active", "resolve_findings", "material", "active"); fresh.projection.blocking_finding_ids = ["qa-A1"];
+		const h = makeCoordinator({ project: async () => fresh, record: async () => ({ revision: "changed", record: { findings: [] } }) });
+		expect(await h.coordinator.advance(TASK, ctx)).toMatchObject({ state: "blocked", recovery_error: "fresh_kernel_projection_unavailable" });
+		expect(h.qaRuns()).toBe(0);
+	});
 	test("routine completes after QA without a Review reservation", async () => {
 		const h = makeCoordinator({ risk: "routine" });
 		expect(await h.coordinator.advance(TASK, ctx)).toEqual({ state: "completed" });
@@ -215,6 +324,18 @@ describe("host-neutral assurance coordinator", () => {
 		expect(records[0].evidence).toMatchObject({ violated: { kind: "acceptance", ref: "A1" } });
 	});
 
+	test("structured Review rework returns fresh finding and acceptance identities before repair", async () => {
+		const h = makeCoordinator();
+		expect((await h.coordinator.advance(TASK, ctx)).state).toBe("review_ready");
+		const verdict = { contract: "assurance_kernel/assurance_verdict/v2", role: "review", task_id: TASK,
+			snapshot_digest: snapshotDigest(snapshot("review")), decision: "rework", findings: [{ id: "review-A1", kind: "blocking", acceptance_id: "A1",
+				summary: "fixture review repair", evidence: { trigger: "fixture violated assertion", caller_chain: ["src/change.ts"], violated: { kind: "acceptance", ref: "A1" } } }] };
+		expect(await h.coordinator.submitReview(TASK, ctx, verdict)).toMatchObject({ state: "rework", recovery: {
+			category: "repair", next_obligation: "resolve_findings", acceptance_ids: ["A1"], finding_ids: [expect.stringMatching(/^review-[a-f0-9]+-1-review-A1$/)],
+		} });
+		expect((await h.coordinator.advance(TASK, ctx)).state).toBe("blocked");
+		expect(h.qaRuns()).toBe(1); expect(h.counts().applyCount).toBe(2);
+	});
 	test("a blocking finding on a pass verdict is rejected", async () => {
 		const host = new FakeReviewHost();
 		const h = makeCoordinator({ host });

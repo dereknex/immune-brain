@@ -13,11 +13,14 @@ import {
 } from "../kernel/batch_authority";
 import type { AssuranceProjectionResult } from "../kernel/assurance_projection";
 import type { TaskRecord } from "../kernel/types";
+import { deriveAssuranceRecovery, type AssuranceRecovery, type TaskRecordRead } from "../assurance/coordinator";
+import type { QaCheckDiagnostic } from "../assurance/qa";
 
 /** Failed atomic QA attempts observed through Kernel history, including Parent-driven QA. */
-export function batchQaFailureFacts(record: Pick<TaskRecord, "history">) {
+export function batchQaFailureFacts(record: Pick<TaskRecord, "history"> & { findings: NonNullable<TaskRecordRead["record"]>["findings"] }) {
 	const failed = record.history.filter((event) => event.type === "request_rework" && event.authority?.authority_kind === "qa");
-	return { qa_failure_count: failed.length, last_qa_failure_at: failed.at(-1)?.at ?? null };
+	return { qa_failure_count: failed.length, last_qa_failure_at: failed.at(-1)?.at ?? null,
+		recovery_findings: record.findings.filter(f => f.status === "open").map(f => ({ id: f.id, kind: f.kind, status: f.status, acceptance_id: f.acceptance_id })) };
 }
 import type { BatchPlanChild } from "./types";
 import {
@@ -82,7 +85,7 @@ export interface BatchRunnerKernelPort {
 	 * persistence. Uses the real AssuranceProjectionResult contract; batch
 	 * ownership of the claim is verified separately through the authoritative
 	 * batch registry, because the Kernel claim carries no batch id. */
-	projectTask(root: string, taskId: string): Promise<AssuranceProjectionResult & { qa_failure_count?: number; last_qa_failure_at?: string | null }>;
+	projectTask(root: string, taskId: string): Promise<AssuranceProjectionResult & { qa_failure_count?: number; last_qa_failure_at?: string | null; recovery_findings?: NonNullable<TaskRecordRead["record"]>["findings"] }>;
 	/** Authoritative batch ownership check: true when the task's Kernel claim
 	 * is held under this batch's derived capability (consumed child slot). */
 	ownsTaskClaim(taskId: string): boolean;
@@ -99,13 +102,14 @@ export interface BatchRunnerKernelPort {
 	}): ValidatedBatchAuthorization;
 }
 
-export type BatchChildAdvanceResult =
+export type BatchChildAdvanceResult = { diagnostics?: QaCheckDiagnostic[]; environment_failure?: boolean; recovery?: AssuranceRecovery } & (
 	| { state: "completed" }
 	| { state: "stopped" }
 	| { state: "failed"; reason: string }
 	| { state: "rework"; operation: "qa" | "review"; summary: string }
 	| { state: "blocked"; reason: string }
-	| { state: "review_ready"; operation_id: string };
+	| { state: "review_ready"; operation_id: string }
+	| { state: "review_preparation_failed"; operation: "review"; operation_id: string; reason: string });
 
 export interface StartBatchInput {
 	root: string;
@@ -227,12 +231,17 @@ function reportFor(
 function executorHandoff(
 	record: BatchRunStateRecord,
 	taskId: string,
-	fresh: AssuranceProjectionResult & { error: null },
+	fresh: AssuranceProjectionResult & { error: null; recovery_findings?: NonNullable<TaskRecordRead["record"]>["findings"] },
+	failure: { state?: string; environment_failure?: boolean; diagnostics?: QaCheckDiagnostic[] } = {},
 ): BatchRunReport {
+	const recovery = deriveAssuranceRecovery(taskId, fresh, failure, fresh.recovery_findings);
 	return {
-		...reportFor(record, null,
-			"Route the enrolled child to foreground Executor, implement and stage its scoped work, then call Kernel advance_assurance. Submit any reserved Review verdict before continuing start_unattended_batch with the same Initiative."),
-		handoff: {
+		...reportFor(record, null, recovery?.next_action ?? (fresh.projection.artifact_state === "frozen"
+			? "The child is frozen with pending QA. Call advance_assurance once; follow its diagnostics before retrying, then submit any reserved Review before batch continuation."
+			: "Route the enrolled child to foreground Executor, implement and stage its scoped work, then call Kernel advance_assurance. Submit any reserved Review verdict before continuing start_unattended_batch with the same Initiative.")),
+		...(recovery ? { recovery } : {}),
+		...(failure.diagnostics?.length ? { diagnostics: failure.diagnostics } : {}),
+		handoff: recovery?.category === "authorization" ? undefined : {
 			role: "executor", task_id: taskId,
 			run_id: fresh.projection.run_id ?? null,
 			record_revision: fresh.projection.record_revision,
@@ -249,8 +258,9 @@ function finalize(
 	record: BatchRunStateRecord,
 	reason: string | null,
 	nextAction: string,
+	details: Pick<BatchRunReport, "recovery" | "diagnostics"> = {},
 ): BatchRunReport {
-	const report = reportFor(record, reason, nextAction);
+	const report = { ...reportFor(record, reason, nextAction), ...details };
 	if (isTerminalBatchState(record.batch_state) || record.batch_state === "needs_human") {
 		writeBatchRunReport(root, report);
 	}
@@ -927,12 +937,14 @@ export async function resumeBatch(
 						...existing, batch_state: "needs_human", consecutive_qa_failures: failures,
 						children: existing.children.map((c) => c.task_id === driven.task_id ? { ...c, state: "needs_human", reason } : c),
 					});
-					return finalize(input.root, existing, reason, "Repair and settle the own child through Kernel, then re-confirm the batch.");
+					return finalize(input.root, existing, reason, "Repair and settle the own child through Kernel, then re-confirm the batch.",
+						{ recovery: deriveAssuranceRecovery(driven.task_id, fresh, {}, fresh.recovery_findings) ?? undefined });
 				}
 				if (failures !== existing.consecutive_qa_failures)
 					existing = writeBatchRunState(input.root, { ...existing, consecutive_qa_failures: failures });
-				if (fresh.projection.artifact_state !== "frozen" &&
-					fresh.projection.next_obligation !== "resolve_user_decision" && fresh.projection.next_obligation !== "revise_intent")
+				// A failed preparation can leave frozen inputs with run_qa pending.
+				// The Parent owns that attempt; batch re-entry never blindly reruns it.
+				if (fresh.projection.next_obligation === "run_qa" || fresh.projection.artifact_state !== "frozen")
 					return executorHandoff(existing, driven.task_id, fresh);
 			}
 			if (!holdsClaim) {
@@ -1149,23 +1161,28 @@ async function driveInterruptedChild(
 			// first rework; below the limit implementation returns to the Parent.
 			record.consecutive_qa_failures += 1;
 			if (record.consecutive_qa_failures >= record.budget.qa_failure_limit) {
-				const reason = `QA failure limit reached: ${terminal.summary}`;
+				const reason = "QA failure limit reached";
 				record.children = record.children.map((c) =>
 					c.task_id === child.task_id ? { ...c, state: "needs_human", reason } : c,
 				);
 				record.batch_state = "needs_human";
 				skipDependents(record, child.task_id, `dependency ${child.task_id} parked`);
 				persist();
-				return finalize(input.root, record, reason, "");
+				const fresh = requireFreshProjection(await input.kernel.projectTask(input.root, child.task_id), child.task_id);
+				return finalize(input.root, record, reason, "Repair and settle the own child through Kernel, then re-confirm the batch.",
+					{ recovery: deriveAssuranceRecovery(child.task_id, fresh, terminal, fresh.recovery_findings) ?? undefined, diagnostics: terminal.diagnostics });
 			}
 			persist();
 			const fresh = requireFreshProjection(await input.kernel.projectTask(input.root, child.task_id), child.task_id);
-			return executorHandoff(record, child.task_id, fresh);
+			return executorHandoff(record, child.task_id, fresh, terminal);
+		} else if (terminal.state === "rework" || terminal.environment_failure || terminal.state === "review_preparation_failed" || terminal.recovery?.category === "repair") {
+			// Ordinary own-claim repair is a Parent handoff, not a new user gate.
+			const fresh = requireFreshProjection(await input.kernel.projectTask(input.root, child.task_id), child.task_id);
+			return executorHandoff(record, child.task_id, fresh, terminal);
 		} else {
 			// stopped | failed | blocked: park and stop.
 			const reason =
-				terminal.state === "stopped" ? "Kernel reported the child stopped"
-					: terminal.state === "rework" ? terminal.summary : terminal.reason;
+				terminal.state === "stopped" ? "Kernel reported the child stopped" : terminal.reason;
 			record.children = record.children.map((c) =>
 				c.task_id === child.task_id ? { ...c, state: "needs_human", reason } : c,
 			);

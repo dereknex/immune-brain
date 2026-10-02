@@ -55,6 +55,35 @@ describe("shared deterministic QA", () => {
 		expect(verdict.findings?.[0].summary).toBe(`verification failed (exit 1) stdout=${Buffer.byteLength(stdout)}B stderr=${Buffer.byteLength(stderr)}B`);
 		for (const output of ["unrecognized-credential", "postgres://", "expected 2"]) expect(JSON.stringify(verdict)).not.toContain(output);
 	});
+	test("diagnostics identify the canonical check without exposing output or arguments", async () => {
+		const secret = "credential-canary-qa-s2";
+		const items = [{ id: "A1", argv: [secret] }], s = snapshot("safe-diagnostics", items);
+		const progress: QaVerificationProgressInput[] = [];
+		await runDeterministicQa(s, descriptors(s, items), injection({
+			onProgress: item => progress.push(item),
+			_runFixedVerification: async () => ({ exit_code: 1, timed_out: false, output_limited: true, stdout: secret, stderr: secret }),
+		}));
+		expect(progress.at(-1)).toMatchObject({ diagnostic: {
+			acceptance_id: "A1", descriptor_ref: "acceptance/0/verification/command", stage: "check",
+			outcome: "output_limit", exit_code: 1, stdout_bytes: Buffer.byteLength(secret), stderr_bytes: Buffer.byteLength(secret),
+		} });
+		expect(progress.at(-1)?.diagnostic?.descriptor_digest).toMatch(/^sha256:[a-f0-9]{64}$/);
+		expect(JSON.stringify(progress)).not.toContain(secret);
+	});
+	test.each(["materialize", "resolve", "execute", "cleanup"] as const)("%s failure exposes classified metadata, not arbitrary argument/environment error text", async (phase) => {
+		const secret = "credential-error-canary-S2", items = [{ id: "A1", argv: [secret] }], s = snapshot("safe-errors", items);
+		const fail = () => { throw new Error(`SECRET_ENV=${secret}; argv=${secret}`); };
+		const options = { ...injection(), _runFixedVerification: async () => ({ exit_code: 0, timed_out: false, output_limited: false, stdout: "", stderr: "" }) };
+		if (phase === "materialize") options._materializeDeliveryWorkspace = fail;
+		if (phase === "resolve") options._resolveVerificationCommand = fail;
+		if (phase === "execute") options._runFixedVerification = async () => fail();
+		if (phase === "cleanup") options._materializeDeliveryWorkspace = root => ({ ...fakeDelivery(root), cleanup: fail });
+		const error = await runDeterministicQa(s, descriptors(s, items), options).then(() => null, error => error);
+		expect(error).toBeInstanceOf(QaPreparationError);
+		expect(error.diagnostics).toMatchObject([{ acceptance_id: "A1", descriptor_ref: "acceptance/0/verification/command",
+			outcome: ({ materialize: "delivery_unavailable", resolve: "executable_or_cwd_unavailable", execute: "execution_failed", cleanup: "delivery_cleanup_failed" })[phase] }]);
+		expect(JSON.stringify({ message: error.message, diagnostics: error.diagnostics })).not.toContain(secret);
+	});
 	test("cancellation never returns a verdict or starts the next descriptor", async () => {
 		const controller = new AbortController(); let calls = 0; const items = [{ id: "A1" }], s = snapshot("abort", items);
 		await expect(runDeterministicQa(s, descriptors(s, items), injection({ signal: controller.signal, _runFixedVerification: async () => { calls++; controller.abort(); return { exit_code: 0, timed_out: false, output_limited: false, stdout: "", stderr: "" }; } }))).rejects.toBeInstanceOf(VerificationAbortedError);
